@@ -353,17 +353,16 @@ if ( false !== $wrote_rsm_nav ) {
 	if ( ! is_wp_error( $rsm_nav_result ) ) {
 		$rsm_nav_header = $read( $rsm_nav_result['theme_dir'] . '/parts/header.html' );
 		$rsm_nav_style  = $read( $rsm_nav_result['theme_dir'] . '/style.css' );
-		$rsm_nav_post   = get_page_by_path( 'rsm-nav-wrapper-header-navigation', OBJECT, 'wp_navigation' );
 		$assert( str_contains( $rsm_nav_header, 'static-site-importer-source-nav' ), 'rsm-nav-wrapper-gets-source-nav-class' );
-		$assert( str_contains( $rsm_nav_header, '<!-- wp:navigation ' ), 'rsm-nav-header-uses-navigation-block' );
-		$assert( ! str_contains( $rsm_nav_header, '"tagName":"nav"' ), 'rsm-nav-header-avoids-nested-nav-wrapper' );
+		$assert( str_contains( $rsm_nav_header, '<!-- wp:list {"className":"nav-links"} -->' ), 'rsm-nav-header-preserves-list-block-owner' );
+		$assert( str_contains( $rsm_nav_header, '<ul class="wp-block-list nav-links">' ), 'rsm-nav-header-preserves-list-class-on-ul' );
+		$assert( ! str_contains( $rsm_nav_header, '"className":"nav-links"} /-->' ), 'rsm-nav-header-does-not-move-list-class-to-navigation' );
 		$assert( str_contains( $rsm_nav_style, '.static-site-importer-source-nav { position: fixed; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; }' ), 'rsm-nav-bridge-preserves-bare-nav-rule' );
 		$assert( str_contains( $rsm_nav_style, '.static-site-importer-source-nav .nav-logo { font-weight: 800; }' ), 'rsm-nav-bridge-preserves-descendant-nav-rule' );
 		$assert( str_contains( $rsm_nav_style, '@media (max-width: 700px) { .static-site-importer-source-nav { position: sticky; } }' ), 'rsm-nav-bridge-preserves-media-nav-rule' );
 		$assert( str_contains( $rsm_nav_style, 'body.admin-bar .static-site-importer-source-nav { top: 32px; }' ), 'rsm-nav-admin-bar-offset-targets-source-nav-wrapper' );
 		$assert( str_contains( $rsm_nav_style, '@media screen and (max-width: 782px) { body.admin-bar .static-site-importer-source-nav { top: 46px; } }' ), 'rsm-nav-admin-bar-mobile-offset-targets-source-nav-wrapper' );
 		$assert( ! str_contains( $rsm_nav_style, 'body.admin-bar nav { top:' ), 'rsm-nav-admin-bar-offset-avoids-original-nav-selector' );
-		$assert( $rsm_nav_post instanceof WP_Post, 'rsm-nav-post-exists' );
 	}
 }
 
@@ -521,19 +520,14 @@ if ( false !== $wrote_branded_nav ) {
 	$assert( ! is_wp_error( $branded_nav_result ), 'branded-nav-import-succeeds', is_wp_error( $branded_nav_result ) ? $branded_nav_result->get_error_message() : '' );
 	if ( ! is_wp_error( $branded_nav_result ) ) {
 		$branded_nav_header = $read( $branded_nav_result['theme_dir'] . '/parts/header.html' );
-		$branded_nav_post   = get_page_by_path( 'branded-nav-header-header-navigation', OBJECT, 'wp_navigation' );
 		$assert( str_contains( $branded_nav_header, 'nav-brand' ), 'branded-nav-header-preserves-brand-anchor' );
 		$assert( str_contains( $branded_nav_header, 'nav-logo' ), 'branded-nav-header-preserves-logo-markup' );
 		$assert( str_contains( $branded_nav_header, 'Studio Code' ), 'branded-nav-header-preserves-brand-text' );
-		$assert( str_contains( $branded_nav_header, '<!-- wp:navigation ' ), 'branded-nav-header-uses-navigation-block' );
-		$assert( ! str_contains( $branded_nav_header, '"tagName":"nav"' ), 'branded-nav-header-does-not-wrap-navigation-in-nav-group' );
-		$assert( $branded_nav_post instanceof WP_Post, 'branded-nav-post-exists' );
-		if ( $branded_nav_post instanceof WP_Post ) {
-			$assert( str_contains( $branded_nav_post->post_content, '"label":"Benefits"' ), 'branded-nav-menu-includes-benefits' );
-			$assert( str_contains( $branded_nav_post->post_content, '"label":"Get started"' ), 'branded-nav-menu-includes-cta' );
-			$assert( ! str_contains( $branded_nav_post->post_content, 'Studio Code' ), 'branded-nav-post-excludes-brand-text' );
-			$assert( ! str_contains( $branded_nav_post->post_content, 'SC' ), 'branded-nav-post-excludes-logo-text' );
-		}
+		$assert( str_contains( $branded_nav_header, '<!-- wp:list {"className":"nav-links"} -->' ), 'branded-nav-header-preserves-list-block-owner' );
+		$assert( str_contains( $branded_nav_header, '<ul class="wp-block-list nav-links">' ), 'branded-nav-header-preserves-list-class-on-ul' );
+		$assert( ! str_contains( $branded_nav_header, '"className":"nav-links"} /-->' ), 'branded-nav-header-does-not-move-list-class-to-navigation' );
+		$assert( str_contains( $branded_nav_header, '<a href="#benefits">Benefits</a>' ), 'branded-nav-menu-includes-benefits' );
+		$assert( str_contains( $branded_nav_header, '<a href="#cta" class="nav-cta">Get started</a>' ), 'branded-nav-menu-includes-cta' );
 	}
 }
 

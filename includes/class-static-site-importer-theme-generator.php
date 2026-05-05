@@ -759,6 +759,13 @@ class Static_Site_Importer_Theme_Generator {
 			}
 		}
 
+		if ( self::should_preserve_navigation_list_owner_classes( $element ) ) {
+			$list = self::footer_link_list_block( $doc, $element );
+			if ( null !== $list ) {
+				return $list;
+			}
+		}
+
 		if ( self::can_convert_element_to_navigation( $element ) ) {
 			$navigation = self::navigation_ref_block( $element, $theme_slug, $location );
 			if ( null !== $navigation ) {
@@ -810,7 +817,7 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		$class_name = $element->getAttribute( 'class' );
-		if ( 'nav' === $tag && 'nav' !== $wrapper_tag ) {
+		if ( 'nav' === $tag ) {
 			$class_name = self::append_class_token( $class_name, 'static-site-importer-source-nav' );
 		}
 
@@ -921,6 +928,17 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Check whether a navigation list's source classes must stay on the list owner.
+	 *
+	 * @param DOMElement $element Source element.
+	 * @return bool
+	 */
+	private static function should_preserve_navigation_list_owner_classes( DOMElement $element ): bool {
+		$tag = strtolower( $element->tagName );
+		return in_array( $tag, array( 'ul', 'ol' ), true ) && '' !== trim( $element->getAttribute( 'class' ) ) && self::can_convert_element_to_navigation( $element );
 	}
 
 	/**

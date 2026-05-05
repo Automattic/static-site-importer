@@ -518,9 +518,9 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * A top-level nav can contain brand chrome plus a nested menu list.
+	 * A top-level nav can contain brand chrome plus a classed menu list.
 	 */
-	public function test_branded_top_level_nav_preserves_brand_and_converts_only_menu_list(): void {
+	public function test_branded_top_level_nav_preserves_menu_list_class_owner(): void {
 		$html_path = $this->write_temp_fixture(
 			'branded-nav-header.html',
 			'<!doctype html><html><head><title>Branded Nav Header</title></head><body>' .
@@ -547,26 +547,24 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 
 		$theme_dir = $result['theme_dir'];
 		$header    = $this->read_file( $theme_dir . '/parts/header.html' );
-		$nav_post  = get_page_by_path( 'branded-nav-header-header-navigation', OBJECT, 'wp_navigation' );
 
 		$this->assertStringContainsString( 'nav-brand', $header );
 		$this->assertStringContainsString( 'nav-logo', $header );
 		$this->assertStringContainsString( 'Studio Code', $header );
 		$this->assertStringContainsString( 'New', $header );
-		$this->assertStringContainsString( '<!-- wp:navigation ', $header );
-		$this->assertStringNotContainsString( '"tagName":"nav"', $header );
+		$this->assertStringContainsString( '<!-- wp:list {"className":"nav-links"} -->', $header );
+		$this->assertStringContainsString( '<ul class="wp-block-list nav-links">', $header );
+		$this->assertStringNotContainsString( '<!-- wp:navigation {"ref":', $header );
+		$this->assertStringNotContainsString( '"className":"nav-links"} /-->', $header );
 		$this->assertStringNotContainsString( '<!-- wp:navigation-link ', $header );
-		$this->assertInstanceOf( WP_Post::class, $nav_post );
-		$this->assertStringContainsString( '"label":"Benefits"', $nav_post->post_content );
-		$this->assertStringContainsString( '"label":"How it works"', $nav_post->post_content );
-		$this->assertStringContainsString( '"label":"Use cases"', $nav_post->post_content );
-		$this->assertStringContainsString( '"label":"Get started"', $nav_post->post_content );
-		$this->assertStringNotContainsString( 'Studio Code', $nav_post->post_content );
-		$this->assertStringNotContainsString( 'SC', $nav_post->post_content );
+		$this->assertStringContainsString( '<a href="#benefits">Benefits</a>', $header );
+		$this->assertStringContainsString( '<a href="#workflow">How it works</a>', $header );
+		$this->assertStringContainsString( '<a href="#use-cases">Use cases</a>', $header );
+		$this->assertStringContainsString( '<a href="#cta" class="nav-cta">Get started</a>', $header );
 	}
 
 	/**
-	 * Source nav wrapper selectors keep matching when a branded nav uses a navigation entity.
+	 * Source nav wrapper selectors keep matching when a branded nav preserves a classed list.
 	 */
 	public function test_branded_nav_wrapper_gets_safe_selector_parity(): void {
 		$html_path = $this->write_temp_fixture(
@@ -597,18 +595,18 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$theme_dir = $result['theme_dir'];
 		$header    = $this->read_file( $theme_dir . '/parts/header.html' );
 		$style     = $this->read_file( $theme_dir . '/style.css' );
-		$nav_post  = get_page_by_path( 'rsm-nav-wrapper-header-navigation', OBJECT, 'wp_navigation' );
 
 		$this->assertStringContainsString( 'static-site-importer-source-nav', $header );
-		$this->assertStringContainsString( '<!-- wp:navigation ', $header );
-		$this->assertStringNotContainsString( '"tagName":"nav"', $header );
+		$this->assertStringContainsString( '<!-- wp:list {"className":"nav-links"} -->', $header );
+		$this->assertStringContainsString( '<ul class="wp-block-list nav-links">', $header );
+		$this->assertStringNotContainsString( '<!-- wp:navigation {"ref":', $header );
+		$this->assertStringNotContainsString( '"className":"nav-links"} /-->', $header );
 		$this->assertStringContainsString( '.static-site-importer-source-nav { position: fixed; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; }', $style );
 		$this->assertStringContainsString( '.static-site-importer-source-nav .nav-logo { font-weight: 800; }', $style );
 		$this->assertStringContainsString( '@media (max-width: 700px) { .static-site-importer-source-nav { position: sticky; } }', $style );
 		$this->assertStringContainsString( 'body.admin-bar .static-site-importer-source-nav { top: 32px; }', $style );
 		$this->assertStringContainsString( '@media screen and (max-width: 782px) { body.admin-bar .static-site-importer-source-nav { top: 46px; } }', $style );
 		$this->assertStringNotContainsString( 'body.admin-bar nav { top:', $style );
-		$this->assertInstanceOf( WP_Post::class, $nav_post );
 	}
 
 	/**
@@ -1306,8 +1304,6 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$header     = $this->read_file( $theme_dir . '/parts/header.html' );
 		$footer     = $this->read_file( $theme_dir . '/parts/footer.html' );
 		$report     = json_decode( $this->read_file( $result['report_path'] ), true );
-		$header_nav = get_page_by_path( 'relay-atlas-chrome-header-navigation', OBJECT, 'wp_navigation' );
-		$footer_nav = get_page_by_path( 'relay-atlas-chrome-footer-navigation', OBJECT, 'wp_navigation' );
 
 		foreach ( array( 'static-site-importer-source-nav', 'nav-inner', 'nav-logo', 'nav-links', 'nav-cta' ) as $class_name ) {
 			$this->assertStringContainsString( $class_name, $header );
@@ -1324,16 +1320,14 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$this->assertStringNotContainsString( '<!-- wp:paragraph {"className":"nav-cta"}', $header );
 		$this->assertStringContainsString( '<!-- wp:group {"className":"nav-cta"}', $header );
 		$this->assertSame( 1, substr_count( $header, '"className":"nav-inner"' ) );
+		$this->assertStringContainsString( '<!-- wp:list {"className":"nav-links"} -->', $header );
+		$this->assertStringContainsString( '<ul class="wp-block-list nav-links">', $header );
+		$this->assertStringNotContainsString( '"className":"nav-links"} /-->', $header );
 
 		$this->assertStringNotContainsString( '<!-- wp:html --><footer', $footer );
 		$this->assertStringNotContainsString( '<!-- wp:html --><div class="footer-inner"', $footer );
 		$this->assertStringNotContainsString( '<!-- wp:html --><div class="footer-left"', $footer );
 		$this->assertSame( 1, substr_count( $footer, '"className":"footer-inner"' ) );
-
-		$this->assertInstanceOf( WP_Post::class, $header_nav );
-		$this->assertInstanceOf( WP_Post::class, $footer_nav );
-		$this->assertStringContainsString( '"label":"Features"', $header_nav->post_content );
-		$this->assertStringContainsString( '"label":"Pricing"', $footer_nav->post_content );
 		$this->assertSame( 0, $report['quality']['core_html_block_count'] ?? null );
 		$this->assertSame( 0, $report['quality']['unsafe_svg_count'] ?? null );
 		$this->assertNotEmpty( $report['assets']['svg_icons'] ?? array() );
