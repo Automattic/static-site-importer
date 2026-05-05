@@ -24,7 +24,7 @@
         "league/html-to-markdown": "^5.1"
     },
     "require-dev": {
-        "chubes4/html-to-blocks-converter": "^0.7",
+        "chubes4/html-to-blocks-converter": "dev-main",
         "humbug/php-scoper": "^0.18.19"
     },
     "minimum-stability": "dev",

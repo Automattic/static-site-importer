@@ -472,6 +472,73 @@ MARKDOWN;
 	}
 
 	/**
+	 * Source-fragment conversion should produce scoped block output for targeted updates.
+	 */
+	public function test_source_fragment_conversion_returns_scoped_hero_block_output(): void {
+		$fragment = '<section id="hero" class="hero hero-dark">'
+			. '<div class="container"><p class="eyebrow">New season</p><h1>Launch faster</h1>'
+			. '<p>Use a targeted update instead of importing the whole page.</p>'
+			. '<a class="wp-block-button__link" href="/start">Start now</a></div></section>';
+		$seen_args = null;
+		$listener  = static function ( array $args ) use ( &$seen_args ): array {
+			$seen_args = $args;
+			return $args;
+		};
+
+		add_filter( 'bfb_html_to_blocks_args', $listener, 10, 1 );
+		try {
+			$result = bfb_convert_fragment(
+				$fragment,
+				array(
+					'source_id'       => 'homepage-v2',
+					'source_selector' => '#hero',
+					'region_id'       => 'hero',
+				)
+			);
+		} finally {
+			remove_filter( 'bfb_html_to_blocks_args', $listener, 10 );
+		}
+
+		$this->assertTrue( $result['success'] );
+		$this->assertSame( 'html', $result['from'] );
+		$this->assertSame( 'blocks', $result['to'] );
+		$this->assertSame( 'fragment', $result['scope']['type'] ?? null );
+		$this->assertSame( '#hero', $result['scope']['source_selector'] ?? null );
+		$this->assertSame( 'hero', $result['scope']['region_id'] ?? null );
+		$this->assertSame( $result['scope'], $result['provenance']['scope'] ?? null );
+		$this->assertSame( 'fragment', $seen_args['context']['conversion_scope'] ?? null );
+		$this->assertSame( '#hero', $seen_args['context']['source_fragment']['source_selector'] ?? null );
+		$this->assertNotSame( '', $result['content'] );
+		$this->assertStringContainsString( '<!-- wp:', $result['content'] );
+
+		$flat = $this->flatten_blocks( $result['blocks'] );
+		$this->assertContains( 'core/group', $flat, 'Hero section should become native group blocks.' );
+		$this->assertNotContains( 'core/html', $flat, 'Hero fragment should not require raw HTML fallback.' );
+		$this->assertStringContainsString( 'Launch faster', $result['content'] );
+		$this->assertStringContainsString( 'Use a targeted update instead of importing the whole page.', $result['content'] );
+
+		$this->assertSame( $result['scope'], $result['report']['scope'] ?? null );
+		$this->assertSame( 0, $result['report']['fallback_event_count'] ?? null );
+	}
+
+	/**
+	 * Fragment fallback diagnostics should stay attached to the fragment scope.
+	 */
+	public function test_source_fragment_conversion_scopes_fallback_diagnostics(): void {
+		$result = bfb_convert_fragment(
+			'<section id="widget"><iframe src="https://example.com/widget"></iframe></section>',
+			array( 'source_selector' => '#widget' )
+		);
+
+		$this->assertTrue( $result['success'] );
+		$this->assertSame( 'success_with_fallbacks', $result['status'] );
+		$this->assertSame( '#widget', $result['diagnostics'][0]['scope']['source_selector'] ?? null );
+		$this->assertSame( '#widget', $result['diagnostics'][0]['details']['scope']['source_selector'] ?? null );
+		$this->assertSame( '#widget', $result['report']['diagnostics'][0]['scope']['source_selector'] ?? null );
+		$this->assertSame( 1, $result['report']['fallback_event_count'] ?? null );
+	}
+
+	/**
 	 * Block analysis should expose fallback details without every consumer reimplementing metrics.
 	 */
 	public function test_block_analysis_reports_core_html_fallback_details(): void {

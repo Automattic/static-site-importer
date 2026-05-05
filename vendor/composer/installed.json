@@ -2,17 +2,17 @@
     "packages": [
         {
             "name": "chubes4/block-format-bridge",
-            "version": "v0.7.5",
-            "version_normalized": "0.7.5.0",
+            "version": "dev-main",
+            "version_normalized": "dev-main",
             "source": {
                 "type": "git",
                 "url": "https://github.com/chubes4/block-format-bridge.git",
-                "reference": "8acf414f94b645d10bb7ed3d62f03ac491f4327b"
+                "reference": "ee23147d72225d9b6bae23cad8da36681e5f13f8"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/chubes4/block-format-bridge/zipball/8acf414f94b645d10bb7ed3d62f03ac491f4327b",
-                "reference": "8acf414f94b645d10bb7ed3d62f03ac491f4327b",
+                "url": "https://api.github.com/repos/chubes4/block-format-bridge/zipball/ee23147d72225d9b6bae23cad8da36681e5f13f8",
+                "reference": "ee23147d72225d9b6bae23cad8da36681e5f13f8",
                 "shasum": ""
             },
             "require": {
@@ -21,10 +21,11 @@
                 "php": "^8.1"
             },
             "require-dev": {
-                "chubes4/html-to-blocks-converter": "^0.7",
+                "chubes4/html-to-blocks-converter": "dev-main",
                 "humbug/php-scoper": "^0.18.19"
             },
-            "time": "2026-05-04T15:24:49+00:00",
+            "time": "2026-05-05T16:51:03+00:00",
+            "default-branch": true,
             "type": "wordpress-plugin",
             "installation-source": "dist",
             "autoload": {
@@ -49,7 +50,7 @@
             "description": "WordPress plugin orchestrating bidirectional content format conversion (HTML, Blocks, Markdown) via a unified adapter API.",
             "homepage": "https://github.com/chubes4/block-format-bridge",
             "support": {
-                "source": "https://github.com/chubes4/block-format-bridge/tree/v0.7.5",
+                "source": "https://github.com/chubes4/block-format-bridge/tree/main",
                 "issues": "https://github.com/chubes4/block-format-bridge/issues"
             },
             "install-path": "../chubes4/block-format-bridge"

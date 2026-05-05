@@ -105,7 +105,8 @@ $assert(($svg['attrs']['width'] ?? '') === '14', 'svg-source-width-becomes-block
 $assert(($svg['attrs']['height'] ?? '') === '14', 'svg-source-height-becomes-block-attribute', \var_export($svg['attrs'] ?? [], \true));
 $assert(\str_contains($serialized_svg, '<figure class="wp-block-image is-resized">'), 'svg-figure-has-is-resized-class', $serialized_svg);
 $assert(\str_contains($serialized_svg, 'alt=""'), 'svg-image-serializes-empty-alt', $serialized_svg);
-$assert(\str_contains($serialized_svg, 'style="width:14;height:14"'), 'svg-image-serializes-resized-style', $serialized_svg);
+$assert(\str_contains($serialized_svg, 'style="width:14px;height:14px"'), 'svg-image-serializes-valid-resized-style', $serialized_svg);
+$assert(!\str_contains($serialized_svg, 'style="width:14;height:14"'), 'svg-image-does-not-serialize-unitless-resized-style', $serialized_svg);
 $assert(!\str_contains($serialized_svg, 'width="14"'), 'svg-image-omits-raw-width-attribute', $serialized_svg);
 $assert(!\str_contains($serialized_svg, 'height="14"'), 'svg-image-omits-raw-height-attribute', $serialized_svg);
 $assert(\str_contains($serialized_bitmap, 'width="900"'), 'bitmap-image-keeps-width-attribute', $serialized_bitmap);

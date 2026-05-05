@@ -9,6 +9,7 @@
  *   bfb_normalize( $content, $format )      — declared-format validation
  *   bfb_analyze_blocks( $blocks )           — block quality report
  *   bfb_conversion_report( $content, $from ) — conversion quality report
+ *   bfb_convert_fragment( $html, $options )  — scoped fragment conversion
  *   bfb_capabilities()                      — conversion substrate report
  *   bfb_get_adapter( $slug )                — registry lookup
  *
@@ -66,9 +67,13 @@ if ( ! function_exists( 'bfb_capabilities' ) ) {
 			),
 			'formats'        => $formats,
 			'conversions'    => array(
-				'html_to_blocks' => array(
+				'html_to_blocks'            => array(
 					'available' => (bool) $h2bc['available'],
 					'provider'  => 'html-to-blocks-converter',
+				),
+				'source_fragment_to_blocks' => array(
+					'available' => (bool) $h2bc['available'],
+					'provider'  => 'block-format-bridge',
 				),
 			),
 			'h2bc'           => $h2bc,
@@ -105,8 +110,71 @@ if ( ! function_exists( 'bfb_capabilities' ) ) {
 			'abilities'      => array(
 				'block-format-bridge/get-capabilities',
 				'block-format-bridge/convert',
+				'block-format-bridge/convert-fragment',
 				'block-format-bridge/normalize',
 			),
+		);
+	}
+}
+
+if ( ! function_exists( 'bfb_convert_fragment' ) ) {
+	/**
+	 * Convert a standalone source fragment to editor-valid block markup.
+	 *
+	 * This generic contract is intentionally small: callers pass a localized
+	 * HTML fragment plus optional provenance hints, and BFB returns serialized
+	 * block markup with diagnostics scoped to that fragment. Full-document
+	 * conversion remains on bfb_convert() / bfb_conversion_report().
+	 *
+	 * Supported provenance option keys: source_id, source_selector, region_id,
+	 * label. The values are copied into the returned scope and forwarded through
+	 * conversion context for substrate integrations that can use them.
+	 *
+	 * @param string               $html    Standalone HTML fragment.
+	 * @param array<string, mixed> $options Per-call conversion and provenance options.
+	 * @return array<string, mixed> Fragment conversion envelope.
+	 */
+	function bfb_convert_fragment( string $html, array $options = array() ): array {
+		$scope = bfb_normalize_fragment_scope( $options );
+
+		$conversion_options = $options;
+		$context            = isset( $conversion_options['context'] ) && is_array( $conversion_options['context'] ) ? $conversion_options['context'] : array();
+		$context            = array_merge(
+			$context,
+			array(
+				'conversion_scope' => 'fragment',
+				'source_fragment'  => $scope,
+			)
+		);
+
+		$conversion_options['context'] = $context;
+
+		$report     = bfb_conversion_report( $html, 'html', $conversion_options );
+		$serialized = isset( $report['serialized_blocks'] ) && is_string( $report['serialized_blocks'] ) ? $report['serialized_blocks'] : '';
+		$blocks     = '' !== $serialized ? parse_blocks( $serialized ) : array();
+		$status     = isset( $report['status'] ) ? (string) $report['status'] : 'failed';
+
+		$report['scope'] = $scope;
+		if ( isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ) {
+			$report['diagnostics'] = bfb_scope_fragment_diagnostics( $report['diagnostics'], $scope );
+		}
+
+		return array(
+			'success'           => 'failed' !== $status,
+			'status'            => $status,
+			'from'              => 'html',
+			'to'                => 'blocks',
+			'scope'             => $scope,
+			'content'           => $serialized,
+			'serialized_blocks' => $serialized,
+			'blocks'            => $blocks,
+			'diagnostics'       => isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array(),
+			'provenance'        => array(
+				'scope'        => $scope,
+				'source_bytes' => strlen( $html ),
+				'source_hash'  => hash( 'sha256', $html ),
+			),
+			'report'            => $report,
 		);
 	}
 }
@@ -272,6 +340,63 @@ if ( ! function_exists( 'bfb_filter_html_to_blocks_result' ) ) {
 		 * @param array<string, mixed>             $args    Raw handler arguments.
 		 */
 		return (array) apply_filters( 'bfb_html_to_blocks_result', $blocks, $content, $options, $args );
+	}
+}
+
+if ( ! function_exists( 'bfb_normalize_fragment_scope' ) ) {
+	/**
+	 * Normalize source-fragment provenance into a stable public shape.
+	 *
+	 * @param array<string, mixed> $options Fragment conversion options.
+	 * @return array<string, string>
+	 */
+	function bfb_normalize_fragment_scope( array $options ): array {
+		$scope = array( 'type' => 'fragment' );
+		$keys  = array( 'source_id', 'source_selector', 'region_id', 'label' );
+
+		foreach ( $keys as $key ) {
+			if ( isset( $options[ $key ] ) && is_scalar( $options[ $key ] ) ) {
+				$value = trim( (string) $options[ $key ] );
+				if ( '' !== $value ) {
+					$scope[ $key ] = $value;
+				}
+			}
+		}
+
+		if ( isset( $options['scope'] ) && is_array( $options['scope'] ) ) {
+			foreach ( $keys as $key ) {
+				if ( isset( $options['scope'][ $key ] ) && is_scalar( $options['scope'][ $key ] ) && ! isset( $scope[ $key ] ) ) {
+					$value = trim( (string) $options['scope'][ $key ] );
+					if ( '' !== $value ) {
+						$scope[ $key ] = $value;
+					}
+				}
+			}
+		}
+
+		return $scope;
+	}
+}
+
+if ( ! function_exists( 'bfb_scope_fragment_diagnostics' ) ) {
+	/**
+	 * Attach source-fragment scope to every diagnostic entry.
+	 *
+	 * @param array<int, array<string, mixed>> $diagnostics Diagnostics.
+	 * @param array<string, string>            $scope       Fragment scope.
+	 * @return array<int, array<string, mixed>> Scoped diagnostics.
+	 */
+	function bfb_scope_fragment_diagnostics( array $diagnostics, array $scope ): array {
+		foreach ( $diagnostics as $index => $diagnostic ) {
+			$details          = isset( $diagnostic['details'] ) && is_array( $diagnostic['details'] ) ? $diagnostic['details'] : array();
+			$details['scope'] = $scope;
+
+			$diagnostic['scope']   = $scope;
+			$diagnostic['details'] = $details;
+			$diagnostics[ $index ] = $diagnostic;
+		}
+
+		return $diagnostics;
 	}
 }
 

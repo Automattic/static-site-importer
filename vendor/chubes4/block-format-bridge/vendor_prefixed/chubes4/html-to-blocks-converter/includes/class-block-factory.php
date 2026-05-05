@@ -277,7 +277,9 @@ class HTML_To_Blocks_Block_Factory
         $is_svg_image = \preg_match('/\.svg(?:$|[?#])/i', (string) $url) === 1;
         $is_resized = $is_svg_image && !empty($attributes['width']) && !empty($attributes['height']);
         if ($is_resized) {
-            $img_attrs['style'] = 'width:' . $attributes['width'] . ';height:' . $attributes['height'];
+            $width = self::image_style_dimension($attributes['width']);
+            $height = self::image_style_dimension($attributes['height']);
+            $img_attrs['style'] = 'width:' . $width . ';height:' . $height;
             $img_attrs['width'] = null;
             $img_attrs['height'] = null;
         }
@@ -295,6 +297,20 @@ class HTML_To_Blocks_Block_Factory
             $class .= ' align' . $attributes['align'];
         }
         return '<figure class="' . esc_attr($class) . '">' . $img . $figcaption . '</figure>';
+    }
+    /**
+     * Normalizes image dimension attributes for CSS style declarations.
+     *
+     * @param mixed $value Dimension attribute value.
+     * @return string CSS dimension value.
+     */
+    private static function image_style_dimension($value): string
+    {
+        $value = \trim((string) $value);
+        if (\preg_match('/^-?(?:\d+|\d*\.\d+)$/', $value)) {
+            return $value . 'px';
+        }
+        return $value;
     }
     /**
      * Generates HTML for table block

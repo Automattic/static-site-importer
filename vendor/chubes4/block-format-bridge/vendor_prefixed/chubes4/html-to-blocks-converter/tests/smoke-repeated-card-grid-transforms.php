@@ -61,7 +61,7 @@ foreach (['esc_attr', 'esc_html', 'esc_url'] as $function_name) {
 if (!\function_exists('BlockFormatBridge\Vendor\wp_strip_all_tags')) {
     function wp_strip_all_tags($text)
     {
-        return wp_strip_all_tags($text);
+        return \strip_tags((string) $text);
     }
 }
 if (!\function_exists('BlockFormatBridge\Vendor\get_shortcode_regex')) {
@@ -211,6 +211,37 @@ $assert(\strpos($wrapped_serialized, 'article-grid') !== \false, 'generic-wrappe
 $assert(\strpos($wrapped_serialized, 'First story') !== \false && \strpos($wrapped_serialized, 'Second story') !== \false, 'generic-wrapper-preserves-card-content', $wrapped_serialized);
 $assert(!\in_array('core/html', $wrapped_names, \true), 'generic-wrapper-does-not-fallback-to-core-html', 'Blocks: ' . \implode(', ', $wrapped_names));
 $assert(\count($unsupported_fallback_events) === 0, 'generic-wrapper-emits-no-unsupported-fallback-events', (string) \count($unsupported_fallback_events));
+$extrachill_shell_grid = <<<'HTML'
+<div class="full-width-breakout ec-edge-shell">
+  <div class="home-3x3-grid">
+    <!-- Interviews Column -->
+    <div class="home-3x3-col">
+      <a class="home-3x3-card" href="https://extrachill.com/interviews/artist-profile">
+        <h3 class="home-3x3-title">Inside the Lowcountry Scene</h3>
+        <p class="home-3x3-excerpt">Interviews with independent artists building something real.</p>
+      </a>
+    </div>
+    <div class="home-3x3-col">
+      <a class="home-3x3-card" href="https://extrachill.com/events/weekend-guide">
+        <h3 class="home-3x3-title">Weekend Guide</h3>
+        <p class="home-3x3-excerpt">Shows worth leaving the house for.</p>
+      </a>
+    </div>
+  </div>
+</div>
+HTML;
+$unsupported_fallback_events = [];
+$shell_grid_blocks = html_to_blocks_raw_handler(['HTML' => $extrachill_shell_grid]);
+$shell_grid_serialized = serialize_blocks($shell_grid_blocks);
+$shell_grid_names = $flatten_block_names($shell_grid_blocks);
+$assert(\count($shell_grid_blocks) === 1, 'extrachill-shell-grid-single-wrapper');
+$assert(($shell_grid_blocks[0]['blockName'] ?? '') === 'core/group', 'extrachill-shell-grid-wrapper-is-group');
+$assert(\strpos($shell_grid_serialized, 'full-width-breakout ec-edge-shell') !== \false, 'extrachill-shell-grid-preserves-shell-classes', $shell_grid_serialized);
+$assert(\strpos($shell_grid_serialized, 'home-3x3-grid') !== \false, 'extrachill-shell-grid-preserves-grid-class', $shell_grid_serialized);
+$assert(\strpos($shell_grid_serialized, 'Inside the Lowcountry Scene') !== \false, 'extrachill-shell-grid-preserves-first-card', $shell_grid_serialized);
+$assert(\strpos($shell_grid_serialized, 'Weekend Guide') !== \false, 'extrachill-shell-grid-preserves-second-card', $shell_grid_serialized);
+$assert(!\in_array('core/html', $shell_grid_names, \true), 'extrachill-shell-grid-does-not-fallback-to-core-html', 'Blocks: ' . \implode(', ', $shell_grid_names));
+$assert(\count($unsupported_fallback_events) === 0, 'extrachill-shell-grid-emits-no-unsupported-fallback-events', (string) \count($unsupported_fallback_events));
 echo 'Assertions: ' . $assertions . \PHP_EOL;
 if (empty($failures)) {
     echo 'ALL PASS' . \PHP_EOL;
