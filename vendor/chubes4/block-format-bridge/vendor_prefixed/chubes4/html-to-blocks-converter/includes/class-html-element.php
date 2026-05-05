@@ -292,6 +292,7 @@ class HTML_To_Blocks_HTML_Element
         $children = array();
         $root_depth = null;
         $occurrence_counters = array();
+        $tag_positions = array();
         while ($processor->next_tag()) {
             if ($processor->is_tag_closer()) {
                 continue;
@@ -308,7 +309,10 @@ class HTML_To_Blocks_HTML_Element
             if ($depth !== $root_depth + 1) {
                 continue;
             }
-            $element_html = self::extract_element_html_at_occurrence($this->outer_html, $tag_lower, $occurrence);
+            if (!isset($tag_positions[$tag_lower])) {
+                $tag_positions[$tag_lower] = self::find_tag_positions($this->outer_html, $tag_lower);
+            }
+            $element_html = self::extract_element_html_at_occurrence($this->outer_html, $tag_lower, $occurrence, $tag_positions[$tag_lower]);
             if ($element_html) {
                 $element = self::from_html($element_html);
                 if ($element) {
@@ -326,9 +330,9 @@ class HTML_To_Blocks_HTML_Element
      * @param int    $occurrence Which occurrence (0-based)
      * @return string|null
      */
-    private static function extract_element_html_at_occurrence(string $html, string $tag_name, int $occurrence): ?string
+    private static function extract_element_html_at_occurrence(string $html, string $tag_name, int $occurrence, ?array $positions = null): ?string
     {
-        $positions = self::find_tag_positions($html, $tag_name);
+        $positions = $positions ?? self::find_tag_positions($html, $tag_name);
         if (!isset($positions[$occurrence])) {
             return null;
         }
@@ -372,21 +376,22 @@ class HTML_To_Blocks_HTML_Element
     private static function extract_balanced_element(string $html, string $tag_name): ?string
     {
         $depth = 0;
-        $len = \strlen($html);
-        $i = 0;
-        $open_pattern = '/^<' . \preg_quote($tag_name, '/') . '(?:\s|>)/i';
-        $close_pattern = '/^<\/' . \preg_quote($tag_name, '/') . '\s*>/i';
-        while ($i < $len) {
-            $remaining = \substr($html, $i);
-            if (\preg_match($open_pattern, $remaining)) {
-                ++$depth;
-            } elseif (\preg_match($close_pattern, $remaining, $close_match)) {
+        $tag_pattern = '/<\/?' . \preg_quote($tag_name, '/') . '(?:\s[^>]*)?>/i';
+        $matched_count = \preg_match_all($tag_pattern, $html, $matches, \PREG_OFFSET_CAPTURE);
+        if (\false === $matched_count || 0 === $matched_count) {
+            return null;
+        }
+        foreach ($matches[0] as $match) {
+            $tag_markup = $match[0];
+            $offset = $match[1];
+            if (0 === \strpos($tag_markup, '</')) {
                 --$depth;
                 if (0 === $depth) {
-                    return \substr($html, 0, $i + \strlen($close_match[0]));
+                    return \substr($html, 0, $offset + \strlen($tag_markup));
                 }
+                continue;
             }
-            ++$i;
+            ++$depth;
         }
         return null;
     }

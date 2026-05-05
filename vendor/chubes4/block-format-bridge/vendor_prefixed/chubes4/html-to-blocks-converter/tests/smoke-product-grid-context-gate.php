@@ -61,7 +61,7 @@ foreach (['esc_attr', 'esc_html', 'esc_url'] as $function_name) {
 if (!\function_exists('BlockFormatBridge\Vendor\wp_strip_all_tags')) {
     function wp_strip_all_tags($text)
     {
-        return wp_strip_all_tags($text);
+        return \strip_tags((string) $text);
     }
 }
 if (!\function_exists('BlockFormatBridge\Vendor\get_shortcode_regex')) {
@@ -71,12 +71,16 @@ if (!\function_exists('BlockFormatBridge\Vendor\get_shortcode_regex')) {
     }
 }
 $unsupported_fallback_events = [];
+$commerce_product_grid_events = [];
 if (!\function_exists('do_action')) {
     function do_action($hook_name, ...$args)
     {
-        global $unsupported_fallback_events;
+        global $unsupported_fallback_events, $commerce_product_grid_events;
         if ('html_to_blocks_unsupported_html_fallback' === $hook_name) {
             $unsupported_fallback_events[] = $args;
+        }
+        if ('html_to_blocks_commerce_product_grid_detected' === $hook_name) {
+            $commerce_product_grid_events[] = $args;
         }
     }
 }
@@ -144,11 +148,19 @@ $product_grid_html = <<<'HTML'
       <span class="product-card__price">$9 per roll</span>
       <a class="product-card__cta" href="/shop/sea-salt-butter/">View butter</a>
     </article>
+    <article class="product-card product-card--seasonal" data-product-slug="strawberry-jam">
+      <div class="product-card__image-placeholder" aria-label="Strawberry jam jar placeholder"><span>Seasonal</span></div>
+      <span class="product-card__category">Pantry</span>
+      <span class="product-card__badge">Limited</span>
+      <h3 class="product-card__name">Strawberry Jam</h3>
+      <p class="product-card__description">Peak-season berries simmered with lemon and cane sugar for bright spoonable fruit.</p>
+      <span class="product-card__price">$11 per jar</span>
+      <a class="product-card__cta" href="/shop/strawberry-jam/">View jam</a>
+    </article>
   </div>
 </section>
 HTML;
-// Future context-enabled expectations, after issue #228 threads conversion context.
-// First primitive should stay editor-valid and materializable without creating Woo products.
+// First context-enabled primitive stays editor-valid and materializable without creating Woo products.
 $expected_context_enabled_shape = ['gate' => 'explicit commerce/product context only', 'block_names' => ['core/group', 'core/heading', 'core/group', 'core/group', 'core/image', 'core/paragraph', 'core/paragraph', 'core/heading', 'core/paragraph', 'core/paragraph', 'core/buttons', 'core/button'], 'notes' => 'Preserve static editable placeholders until SSI or another importer materializes product state.'];
 $blocks = html_to_blocks_raw_handler(['HTML' => $product_grid_html]);
 $serialized = serialize_blocks($blocks);
@@ -161,16 +173,35 @@ $assert(!\in_array('core/html', $names, \true), 'product-grid-does-not-fallback-
 $assert(\count($unsupported_fallback_events) === 0, 'product-grid-emits-no-unsupported-fallback-events', (string) \count($unsupported_fallback_events));
 $assert(!\preg_match('/(?:^|, )woocommerce\//', $name_list), 'product-grid-does-not-create-commerce-blocks', $name_list);
 $assert(\strpos($serialized, '<!-- wp:woocommerce/') === \false, 'product-grid-serialization-has-no-woocommerce-blocks', $serialized);
-foreach (['product-grid', 'product-card', 'product-card__category', 'product-card__badge', 'product-card__price', 'product-card__cta'] as $class_name) {
+$assert(\count($commerce_product_grid_events) === 0, 'no-context-emits-no-commerce-diagnostic', (string) \count($commerce_product_grid_events));
+foreach (['product-grid', 'product-card', 'product-card__category', 'product-card__badge', 'product-card__price', 'product-card__cta', 'product-card__image-placeholder'] as $class_name) {
     $assert(\strpos($serialized, $class_name) !== \false, 'product-grid-preserves-' . $class_name, $serialized);
 }
-foreach (['Country Sourdough', '$14 per loaf', 'Bread', 'Best Seller', '/shop/country-sourdough/', 'Sea Salt Cultured Butter', '$9 per roll', 'Dairy', 'New Batch', '/shop/sea-salt-butter/'] as $snippet) {
+foreach (['Country Sourdough', '$14 per loaf', 'Bread', 'Best Seller', '/shop/country-sourdough/', 'Sea Salt Cultured Butter', '$9 per roll', 'Dairy', 'New Batch', '/shop/sea-salt-butter/', 'Strawberry Jam', '$11 per jar', 'Pantry', 'Limited', '/shop/strawberry-jam/'] as $snippet) {
     $assert(\strpos($serialized, $snippet) !== \false, 'product-grid-preserves-' . \preg_replace('/[^a-z0-9]+/i', '-', \strtolower($snippet)), $serialized);
 }
-$assert(\substr_count($serialized, 'product-card__image') === 2, 'product-grid-preserves-two-images', $serialized);
-$assert(\substr_count($serialized, '<h3 class="wp-block-heading product-card__name">') === 2, 'product-grid-preserves-two-product-name-headings', $serialized);
-$assert(\substr_count($serialized, 'product-card__price') === 2, 'product-grid-preserves-two-prices', $serialized);
-$assert(\substr_count($serialized, 'product-card__cta') === 2, 'product-grid-preserves-two-ctas', $serialized);
+$assert(\substr_count($serialized, '<!-- wp:image') === 2, 'product-grid-preserves-two-images', $serialized);
+$assert(\substr_count($serialized, 'product-card__image-placeholder') >= 1, 'product-grid-preserves-one-placeholder', $serialized);
+$assert(\substr_count($serialized, '<h3 class="wp-block-heading product-card__name">') === 3, 'product-grid-preserves-three-product-name-headings', $serialized);
+$assert(\substr_count($serialized, 'product-card__price') === 3, 'product-grid-preserves-three-prices', $serialized);
+$assert(\substr_count($serialized, 'product-card__cta') === 3, 'product-grid-preserves-three-ctas', $serialized);
+$commerce_product_grid_events = [];
+$context_blocks = html_to_blocks_raw_handler(['HTML' => $product_grid_html, 'context' => ['commerce' => ['source' => 'static-site-importer']]]);
+$context_serialized = serialize_blocks($context_blocks);
+$context_names = $flatten_block_names($context_blocks);
+$context_name_list = \implode(', ', $context_names);
+$commerce_diagnostic = $commerce_product_grid_events[0][0] ?? [];
+$assert(\count($commerce_product_grid_events) === 1, 'context-emits-one-commerce-diagnostic', (string) \count($commerce_product_grid_events));
+$assert(($commerce_diagnostic['type'] ?? '') === 'commerce_product_grid', 'context-diagnostic-type', \json_encode($commerce_diagnostic));
+$assert(($commerce_diagnostic['status'] ?? '') === 'static_editable_placeholder', 'context-diagnostic-status', \json_encode($commerce_diagnostic));
+$assert(($commerce_diagnostic['product_count'] ?? 0) === 3, 'context-diagnostic-product-count', \json_encode($commerce_diagnostic));
+$assert(($commerce_diagnostic['products'][0]['slug'] ?? '') === 'country-sourdough', 'context-diagnostic-first-product-slug', \json_encode($commerce_diagnostic));
+$assert(($commerce_diagnostic['products'][1]['name'] ?? '') === 'Sea Salt Cultured Butter', 'context-diagnostic-second-product-name', \json_encode($commerce_diagnostic));
+$assert(($commerce_diagnostic['products'][2]['placeholder'] ?? \false) === \true, 'context-diagnostic-third-product-placeholder', \json_encode($commerce_diagnostic));
+$assert(!\in_array('core/html', $context_names, \true), 'context-product-grid-does-not-fallback-to-core-html', $context_name_list);
+$assert(!\preg_match('/(?:^|, )woocommerce\//', $context_name_list), 'context-product-grid-does-not-create-commerce-blocks', $context_name_list);
+$assert(\strpos($context_serialized, '<!-- wp:woocommerce/') === \false, 'context-product-grid-serialization-has-no-woocommerce-blocks', $context_serialized);
+$assert(\strpos($context_serialized, 'Strawberry Jam') !== \false, 'context-product-grid-remains-editor-valid-static-output', $context_serialized);
 echo 'Assertions: ' . $assertions . \PHP_EOL;
 if (empty($failures)) {
     echo 'ALL PASS' . \PHP_EOL;

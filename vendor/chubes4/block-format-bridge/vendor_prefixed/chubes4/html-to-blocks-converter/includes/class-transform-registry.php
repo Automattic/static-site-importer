@@ -15,6 +15,12 @@ class HTML_To_Blocks_Transform_Registry
 {
     private static ?array $transforms = null;
     /**
+     * Repeated-card children validated during transform matching.
+     *
+     * @var array<int,array<int,HTML_To_Blocks_HTML_Element>>
+     */
+    private static array $repeated_card_grid_children = array();
+    /**
      * Gets all raw transforms for core blocks
      * Sorted by priority (lower = higher priority)
      *
@@ -925,7 +931,61 @@ class HTML_To_Blocks_Transform_Registry
         if ($element->has_attribute('class')) {
             $attributes['className'] = $element->get_attribute('class');
         }
+        $layout = self::extract_buttons_layout_attributes($element);
+        if (!empty($layout)) {
+            $attributes['layout'] = $layout;
+        }
         return self::create_buttons_block_from_anchors(self::get_direct_anchor_children_from_html($element->get_inner_html()), $attributes);
+    }
+    /**
+     * Extracts core/buttons layout attributes from a source container.
+     *
+     * Maps inline horizontal alignment to Gutenberg-compatible flex layout
+     * attributes so the buttons block round-trips through Gutenberg with the
+     * source horizontal alignment intact. core/buttons defaults to a flex
+     * layout, so the layout type is fixed to flex whenever any horizontal
+     * alignment intent is detected.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Container element.
+     * @return array Layout attribute map (possibly empty).
+     */
+    private static function extract_buttons_layout_attributes($element): array
+    {
+        $style = $element->has_attribute('style') ? $element->get_attribute('style') : '';
+        $classes = $element->has_attribute('class') ? $element->get_attribute('class') : '';
+        $justify = '';
+        if ('' !== $style) {
+            $justify = \strtolower(\trim(self::extract_css_property($style, 'justify-content')));
+        }
+        // Map common CSS justify-content values to Gutenberg's supported values.
+        $mapped_justify = '';
+        switch ($justify) {
+            case 'center':
+                $mapped_justify = 'center';
+                break;
+            case 'flex-start':
+            case 'start':
+            case 'left':
+                $mapped_justify = 'left';
+                break;
+            case 'flex-end':
+            case 'end':
+            case 'right':
+                $mapped_justify = 'right';
+                break;
+            case 'space-between':
+                $mapped_justify = 'space-between';
+                break;
+        }
+        if ('' === $mapped_justify && '' !== $classes) {
+            if (\preg_match('/(?:^|\s)is-content-justification-(left|right|center|space-between)(?:\s|$)/i', $classes, $matches)) {
+                $mapped_justify = \strtolower($matches[1]);
+            }
+        }
+        if ('' === $mapped_justify) {
+            return array();
+        }
+        return array('type' => 'flex', 'justifyContent' => $mapped_justify);
     }
     /**
      * Creates a buttons wrapper with button children from anchors.
@@ -1764,10 +1824,10 @@ class HTML_To_Blocks_Transform_Registry
                 $inner_blocks[] = HTML_To_Blocks_Block_Factory::create_block('core/column', $column_attributes, $column_blocks);
             }
             return HTML_To_Blocks_Block_Factory::create_block('core/columns', self::get_common_layout_attributes($element), $inner_blocks);
-        }), array('blockName' => 'core/group', 'priority' => 12, 'isMatch' => function ($element) {
+        }), array('blockName' => 'core/group', 'priority' => 3, 'isMatch' => function ($element) {
             return self::is_repeated_card_grid_element($element);
-        }, 'transform' => function ($element, $handler) {
-            return self::create_repeated_card_grid_group($element, $handler);
+        }, 'transform' => function ($element, $handler, $args = array()) {
+            return self::create_repeated_card_grid_group($element, $handler, $args);
         }), array('blockName' => 'core/column', 'priority' => 14, 'isMatch' => function ($element) {
             return self::is_column_element($element);
         }, 'transform' => function ($element, $handler) {
@@ -2324,13 +2384,15 @@ class HTML_To_Blocks_Transform_Registry
      */
     private static function is_repeated_card_grid_element($element): bool
     {
+        $cache_key = \spl_object_id($element);
+        unset(self::$repeated_card_grid_children[$cache_key]);
         if (!\in_array($element->get_tag_name(), array('DIV', 'SECTION'), \true)) {
             return \false;
         }
         if (!self::class_matches($element, '/(?:^|[-_\s])(?:grid|cards?|network|list)(?:$|[-_\s]|\d)/i')) {
             return \false;
         }
-        $card_count = 0;
+        $cards = array();
         foreach ($element->get_child_elements() as $child) {
             if (self::is_empty_decorative_element($child)) {
                 continue;
@@ -2338,9 +2400,13 @@ class HTML_To_Blocks_Transform_Registry
             if (!self::is_card_grid_item_element($child)) {
                 return \false;
             }
-            ++$card_count;
+            $cards[] = $child;
         }
-        return $card_count >= 2;
+        if (\count($cards) < 2) {
+            return \false;
+        }
+        self::$repeated_card_grid_children[$cache_key] = $cards;
+        return \true;
     }
     /**
      * Checks whether an element is one repeated card/grid item.
@@ -2368,16 +2434,84 @@ class HTML_To_Blocks_Transform_Registry
      * @param callable                    $handler Recursive raw handler.
      * @return array Block array.
      */
-    private static function create_repeated_card_grid_group($element, callable $handler): array
+    private static function create_repeated_card_grid_group($element, callable $handler, array $args = array()): array
     {
         $inner_blocks = array();
+        $cache_key = \spl_object_id($element);
+        $children = self::$repeated_card_grid_children[$cache_key] ?? $element->get_child_elements();
+        unset(self::$repeated_card_grid_children[$cache_key]);
+        $diagnostic = self::get_commerce_product_grid_diagnostic($element, $args);
+        if (null !== $diagnostic && \function_exists('do_action')) {
+            \do_action('html_to_blocks_commerce_product_grid_detected', $diagnostic, $element, $args);
+        }
+        foreach ($children as $child) {
+            $inner_blocks[] = self::create_card_grid_item_group($child, $handler);
+        }
+        return HTML_To_Blocks_Block_Factory::create_block('core/group', self::get_common_layout_attributes($element), $inner_blocks);
+    }
+    /**
+     * Builds a diagnostic payload for explicit commerce-context product grids.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element The grid wrapper.
+     * @param array                       $args Raw handler arguments.
+     * @return array|null Diagnostic payload, or null when the commerce gate is closed.
+     */
+    private static function get_commerce_product_grid_diagnostic($element, array $args): ?array
+    {
+        if (!self::has_explicit_commerce_context($args) || !self::is_product_grid_element($element)) {
+            return null;
+        }
+        $products = array();
         foreach ($element->get_child_elements() as $child) {
             if (self::is_empty_decorative_element($child)) {
                 continue;
             }
-            $inner_blocks[] = self::create_card_grid_item_group($child, $handler);
+            $products[] = \array_filter(array('slug' => $child->get_attribute('data-product-slug') ?? '', 'name' => self::get_first_text_for_selectors($child, array('.product-card__name', '.ss-product-name', 'h1', 'h2', 'h3', 'h4')), 'price' => self::get_first_text_for_selectors($child, array('.product-card__price', '.ss-product-price')), 'category' => self::get_first_text_for_selectors($child, array('.product-card__category', '.ss-product-category')), 'badge' => self::get_first_text_for_selectors($child, array('.product-card__badge', '.ss-product-badge')), 'cta' => self::get_first_text_for_selectors($child, array('.product-card__cta', '.ss-product-cta', 'a')), 'has_image' => null !== $child->query_selector('img'), 'placeholder' => null !== $child->query_selector('.product-card__image-placeholder')), function ($value) {
+                return !\is_string($value) || '' !== $value;
+            });
         }
-        return HTML_To_Blocks_Block_Factory::create_block('core/group', self::get_common_layout_attributes($element), $inner_blocks);
+        return array('type' => 'commerce_product_grid', 'status' => 'static_editable_placeholder', 'product_count' => \count($products), 'products' => $products, 'message' => 'Explicit commerce context detected; h2bc preserved editor-valid static product cards for downstream materialization.');
+    }
+    /**
+     * Checks whether raw-handler args explicitly opt into commerce-aware handling.
+     *
+     * @param array $args Raw handler arguments.
+     * @return bool True when explicit commerce context is present.
+     */
+    private static function has_explicit_commerce_context(array $args): bool
+    {
+        $context = $args['context'] ?? array();
+        if (!\is_array($context)) {
+            return \false;
+        }
+        return !empty($context['commerce']) || !empty($context['products']) || !empty($context['product_context']);
+    }
+    /**
+     * Checks whether a repeated card grid carries high-confidence product-grid markers.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element The grid wrapper.
+     * @return bool True when the grid is product-like.
+     */
+    private static function is_product_grid_element($element): bool
+    {
+        return self::class_matches($element, '/(?:^|[-_\s])products?(?:$|[-_\s])/i') || self::class_matches($element, '/(?:^|[-_\s])shop(?:$|[-_\s])/i') || 'product-grid' === ($element->get_attribute('data-commerce-region') ?? '');
+    }
+    /**
+     * Gets the first non-empty text from a simple selector list.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Source element.
+     * @param array                       $selectors Simple selectors to inspect.
+     * @return string Text content or empty string.
+     */
+    private static function get_first_text_for_selectors($element, array $selectors): string
+    {
+        foreach ($selectors as $selector) {
+            $match = $element->query_selector($selector);
+            if ($match && \trim($match->get_text_content()) !== '') {
+                return \trim($match->get_text_content());
+            }
+        }
+        return '';
     }
     /**
      * Creates one editable card group, preserving whole-card links as CTA buttons.
@@ -2388,13 +2522,69 @@ class HTML_To_Blocks_Transform_Registry
      */
     private static function create_card_grid_item_group($element, callable $handler): array
     {
-        $link_element = 'A' === $element->get_tag_name() ? $element : self::get_single_complex_card_anchor_child($element);
-        $content_html = $link_element ? $link_element->get_inner_html() : $element->get_inner_html();
-        $inner_blocks = $handler(array('HTML' => $content_html));
+        $children = $element->get_child_elements();
+        $link_element = 'A' === $element->get_tag_name() ? $element : self::get_single_complex_card_anchor_child($element, $children);
+        $inner_blocks = self::create_card_grid_item_inner_blocks($link_element ?: $element, $link_element ? null : $children);
+        if (null === $inner_blocks) {
+            $content_html = $link_element ? $link_element->get_inner_html() : $element->get_inner_html();
+            $inner_blocks = $handler(array('HTML' => $content_html));
+        }
         if ($link_element && $link_element->has_attribute('href')) {
             $inner_blocks[] = self::create_button_block_from_anchor(self::create_card_grid_cta_anchor($link_element));
         }
         return HTML_To_Blocks_Block_Factory::create_block('core/group', self::get_common_layout_attributes($element), $inner_blocks);
+    }
+    /**
+     * Convert common repeated-card children without re-entering the full raw handler.
+     *
+     * This keeps repeated card grids on the WordPress HTML API path while avoiding a
+     * fresh full transform pass for every card in large static exports.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Card content element.
+     * @return array<int,array<string,mixed>>|null Blocks, or null when the shape needs the generic handler.
+     */
+    private static function create_card_grid_item_inner_blocks($element, ?array $children = null): ?array
+    {
+        $blocks = array();
+        foreach ($children ?? $element->get_child_elements() as $child) {
+            $block = self::create_card_grid_child_block($child);
+            if (null === $block) {
+                return null;
+            }
+            if (!empty($block)) {
+                $blocks[] = $block;
+            }
+        }
+        return $blocks;
+    }
+    /**
+     * Convert one common card child to a native block.
+     *
+     * @param HTML_To_Blocks_HTML_Element $child Card child element.
+     * @return array<string,mixed>|array{}|null Block, empty array for ignored decorative children, or null for fallback.
+     */
+    private static function create_card_grid_child_block($child): ?array
+    {
+        if (self::is_empty_decorative_element($child)) {
+            return array();
+        }
+        $tag = $child->get_tag_name();
+        if (\preg_match('/^H[1-6]$/', $tag)) {
+            return HTML_To_Blocks_Block_Factory::create_block('core/heading', \array_merge(self::get_block_support_attributes($child, array('anchor' => \true, 'class_name' => \true)), array('level' => (int) \substr($tag, 1), 'content' => $child->get_inner_html())));
+        }
+        if ('IMG' === $tag) {
+            return self::create_image_block_from_img($child);
+        }
+        if (\in_array($tag, array('OL', 'UL'), \true)) {
+            return self::create_list_block_from_element($child);
+        }
+        if ('P' === $tag || 'SPAN' === $tag) {
+            return HTML_To_Blocks_Block_Factory::create_block('core/paragraph', \array_merge(self::get_block_support_attributes($child, array('anchor' => \true, 'class_name' => \true)), array('content' => $child->get_inner_html())));
+        }
+        if ('A' === $tag && self::is_button_like_anchor($child)) {
+            return HTML_To_Blocks_Block_Factory::create_block('core/buttons', array(), array(self::create_button_block_from_anchor($child)));
+        }
+        return null;
     }
     /**
      * Gets a single whole-card anchor child when it is the card's only content.
@@ -2402,9 +2592,9 @@ class HTML_To_Blocks_Transform_Registry
      * @param HTML_To_Blocks_HTML_Element $element The card item.
      * @return HTML_To_Blocks_HTML_Element|null Anchor child or null.
      */
-    private static function get_single_complex_card_anchor_child($element): ?HTML_To_Blocks_HTML_Element
+    private static function get_single_complex_card_anchor_child($element, ?array $children = null): ?HTML_To_Blocks_HTML_Element
     {
-        $children = \array_values(\array_filter($element->get_child_elements(), function ($child) {
+        $children = \array_values(\array_filter($children ?? $element->get_child_elements(), function ($child) {
             return !self::is_empty_decorative_element($child);
         }));
         if (\count($children) !== 1 || 'A' !== $children[0]->get_tag_name() || array() === $children[0]->get_child_elements()) {

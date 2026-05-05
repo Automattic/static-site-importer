@@ -86,6 +86,27 @@ if ( ! function_exists( 'bfb_register_abilities' ) ) {
 		);
 
 		wp_register_ability(
+			'block-format-bridge/convert-fragment',
+			array(
+				'label'               => __( 'Convert Source Fragment', 'block-format-bridge' ),
+				'description'         => __( 'Convert a standalone HTML fragment to block markup with fragment-scoped diagnostics and provenance.', 'block-format-bridge' ),
+				'category'            => BFB_ABILITY_CATEGORY,
+				'input_schema'        => array(
+					'type'       => 'object',
+					'properties' => array(
+						'html'    => array( 'type' => 'string' ),
+						'options' => array( 'type' => 'object' ),
+					),
+					'required'   => array( 'html' ),
+				),
+				'output_schema'       => array( 'type' => 'object' ),
+				'execute_callback'    => 'bfb_ability_convert_fragment',
+				'permission_callback' => 'bfb_ability_permission_callback',
+				'meta'                => array( 'show_in_rest' => true ),
+			)
+		);
+
+		wp_register_ability(
 			'block-format-bridge/normalize',
 			array(
 				'label'               => __( 'Normalize Content Format', 'block-format-bridge' ),
@@ -159,6 +180,26 @@ if ( ! function_exists( 'bfb_ability_convert' ) ) {
 			'to'      => $to,
 			'content' => $result,
 		);
+	}
+}
+
+if ( ! function_exists( 'bfb_ability_convert_fragment' ) ) {
+	/**
+	 * Ability callback for source-fragment conversion.
+	 *
+	 * @param array<string, mixed> $input Ability input.
+	 * @return array<string, mixed>
+	 */
+	function bfb_ability_convert_fragment( array $input ): array {
+		$html    = isset( $input['html'] ) ? (string) $input['html'] : '';
+		$options = isset( $input['options'] ) && is_array( $input['options'] ) ? $input['options'] : array();
+
+		$result = bfb_convert_fragment( $html, $options );
+		if ( empty( $result['success'] ) && '' !== $html ) {
+			return bfb_ability_error( 'bfb_fragment_conversion_failed', 'BFB fragment conversion failed.', $result );
+		}
+
+		return $result;
 	}
 }
 

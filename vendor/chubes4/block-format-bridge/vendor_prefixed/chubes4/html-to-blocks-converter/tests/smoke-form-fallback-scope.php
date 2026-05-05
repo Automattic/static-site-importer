@@ -54,7 +54,7 @@ foreach (['esc_attr', 'esc_html', 'esc_url'] as $function_name) {
 if (!\function_exists('BlockFormatBridge\Vendor\wp_strip_all_tags')) {
     function wp_strip_all_tags($text)
     {
-        return wp_strip_all_tags($text);
+        return \strip_tags((string) $text);
     }
 }
 if (!\function_exists('BlockFormatBridge\Vendor\get_shortcode_regex')) {
@@ -164,6 +164,26 @@ $assert(\str_contains($wrapped_form_serialized, 'Browse archive'), 'generic-form
 $assert(\str_contains($wrapped_form_serialized, '<!-- wp:html --><form class="search-form"'), 'generic-form-is-local-core-html-island', $wrapped_form_serialized);
 $assert(\count($fallback_events) === 1, 'generic-form-wrapper-emits-one-local-form-fallback', (string) \count($fallback_events));
 $assert(($fallback_events[0][1]['tag_name'] ?? '') === 'FORM', 'generic-form-fallback-context-is-form', \print_r($fallback_events, \true));
+$extrachill_network_search = <<<'HTML'
+<div class="home-network-search">
+  <h2 class="home-network-search-header">Search the Network</h2>
+  <p class="home-network-search-description">Find artists, events, discussions, and more across Extra Chill.</p>
+  <form action="https://extrachill.com/" class="search-form searchform" method="get">
+    <label for="home-network-search-input">Search for:</label>
+    <input id="home-network-search-input" name="s" type="search" value="" />
+    <button type="submit">Search</button>
+  </form>
+</div>
+HTML;
+$fallback_events = [];
+$network_search_serialized = serialize_blocks(html_to_blocks_raw_handler(['HTML' => $extrachill_network_search]));
+$assert(!\str_contains($network_search_serialized, '<!-- wp:html --><div class="home-network-search"'), 'extrachill-network-search-wrapper-is-not-core-html', $network_search_serialized);
+$assert(\str_contains($network_search_serialized, '<div class="wp-block-group home-network-search">'), 'extrachill-network-search-wrapper-becomes-group', $network_search_serialized);
+$assert(\str_contains($network_search_serialized, 'Search the Network'), 'extrachill-network-search-heading-remains-editable', $network_search_serialized);
+$assert(\str_contains($network_search_serialized, 'Find artists, events, discussions, and more across Extra Chill.'), 'extrachill-network-search-description-remains-editable', $network_search_serialized);
+$assert(\str_contains($network_search_serialized, '<!-- wp:html --><form action="https://extrachill.com/" class="search-form searchform" method="get">'), 'extrachill-network-search-form-is-local-core-html-island', $network_search_serialized);
+$assert(\count($fallback_events) === 1, 'extrachill-network-search-emits-one-local-form-fallback', (string) \count($fallback_events));
+$assert(($fallback_events[0][1]['tag_name'] ?? '') === 'FORM', 'extrachill-network-search-fallback-context-is-form', \print_r($fallback_events, \true));
 echo 'Assertions: ' . $assertions . \PHP_EOL;
 if (empty($failures)) {
     echo 'ALL PASS' . \PHP_EOL;

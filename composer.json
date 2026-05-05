@@ -5,7 +5,7 @@
   "license": "GPL-2.0-or-later",
   "require": {
     "php": "^8.1",
-    "chubes4/block-format-bridge": "^0.7.1"
+    "chubes4/block-format-bridge": "dev-main"
   },
   "repositories": [
     {
