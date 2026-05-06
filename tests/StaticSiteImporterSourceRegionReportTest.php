@@ -147,6 +147,10 @@ class StaticSiteImporterSourceRegionReportTest extends WP_UnitTestCase {
 		$this->assertSame( 'semantic_main', $selection['page_body']['mode'] ?? '' );
 		$this->assertSame( array(), $selection['unassigned_regions'] ?? array( 'not-set' ) );
 		$this->assertSame( 0, $selection['counts']['unassigned_regions'] ?? -1 );
+		$this->assertSame( 1, $selection['counts']['intentionally_ignored_regions'] ?? -1 );
+		$this->assertSame( 'accessibility_skip_link', $selection['intentionally_ignored_regions'][0]['role'] ?? '' );
+		$this->assertStringContainsString( 'a.skip-link', (string) ( $selection['intentionally_ignored_regions'][0]['selector'] ?? '' ) );
+		$this->assertSame( 'Skip to content', $selection['intentionally_ignored_regions'][0]['excerpt'] ?? '' );
 		$this->assertIsArray( $selection['extracted_header'] ?? null );
 		$this->assertNotEmpty( $selection['extracted_header']['parts'] ?? array() );
 	}
