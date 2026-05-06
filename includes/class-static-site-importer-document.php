@@ -176,7 +176,7 @@ class Static_Site_Importer_Document {
 
 		$extracted_header = null;
 		if ( $header_node instanceof DOMElement || $nav_node instanceof DOMElement ) {
-			$extracted_header = $this->describe_extracted_header( $header_node, $nav_node, $root );
+			$extracted_header = $this->describe_extracted_header( $header_node, $nav_node, $selection['effective_children'] );
 		}
 
 		$extracted_footer = null;
@@ -214,6 +214,7 @@ class Static_Site_Importer_Document {
 	 *     nav_node: ?DOMElement,
 	 *     footer_node: ?DOMElement,
 	 *     main_node: ?DOMElement,
+	 *     effective_children: DOMElement[],
 	 *     body_headers: DOMElement[],
 	 *     unassigned_children: DOMElement[],
 	 *     skipped_children: DOMElement[]
@@ -302,6 +303,7 @@ class Static_Site_Importer_Document {
 			'nav_node'            => $nav,
 			'footer_node'         => $footer,
 			'main_node'           => $main,
+			'effective_children'  => $effective_children,
 			'body_headers'        => $body_headers,
 			'unassigned_children' => $unassigned_children,
 			'skipped_children'    => $skipped_children,
@@ -640,12 +642,12 @@ class Static_Site_Importer_Document {
 	 *
 	 * @param ?DOMElement $header Selected header element.
 	 * @param ?DOMElement $nav    Selected nav element.
-	 * @param DOMElement  $root   Page root element.
+	 * @param DOMElement[] $effective_children Ordered list of effective siblings.
 	 * @return array<string,mixed>
 	 */
-	private function describe_extracted_header( ?DOMElement $header, ?DOMElement $nav, DOMElement $root ): array {
+	private function describe_extracted_header( ?DOMElement $header, ?DOMElement $nav, array $effective_children ): array {
 		$mode = 'none';
-		if ( $header instanceof DOMElement && $nav instanceof DOMElement && $this->is_leading_sibling( $root, $nav, $header ) ) {
+		if ( $header instanceof DOMElement && $nav instanceof DOMElement && $this->is_leading_sibling_in( $effective_children, $nav, $header ) ) {
 			$mode = 'leading_nav_plus_header';
 		} elseif ( $header instanceof DOMElement ) {
 			$mode = 'header_element';
@@ -699,10 +701,9 @@ class Static_Site_Importer_Document {
 	private function collect_unassigned_regions( array $selection ): array {
 		$regions   = array();
 		$main_node = $selection['main_node'];
-		$body      = $this->first_element( 'body' );
-		$root      = $body instanceof DOMElement ? $body : $this->dom->documentElement;
+		$effective_children = $selection['effective_children'];
 		foreach ( $selection['unassigned_children'] as $child ) {
-			$position  = ( $main_node instanceof DOMElement && $this->is_leading_sibling( $root, $child, $main_node ) ) ? 'before_main' : 'after_main';
+			$position  = ( $main_node instanceof DOMElement && $this->is_leading_sibling_in( $effective_children, $child, $main_node ) ) ? 'before_main' : 'after_main';
 			$regions[] = array(
 				'role'       => 'unassigned_body_child',
 				'reason'     => 'pre_main_or_post_main_sibling_not_assigned',
