@@ -1664,6 +1664,66 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Raw product-card HTML supplies commerce context without requiring products.json.
+	 */
+	public function test_raw_html_product_cards_supply_commerce_context(): void {
+		$html_path = $this->write_temp_fixture(
+			'index.html',
+			'<!doctype html><html><head><title>Raw HTML Store</title></head><body><main><section class="product-grid"><article class="product-card"><h2>Roasted Beans</h2><p class="price">$18.00</p></article><article class="product-card"><h2>Pour Over Kit</h2><p class="price">USD 42</p></article></section></main></body></html>'
+		);
+		$this->assertNotFalse( file_put_contents( trailingslashit( dirname( $html_path ) ) . 'products.json', '{"products":{"broken":true}}' ) );
+
+		$captured_contexts = array();
+		$args_filter       = static function ( array $handler_args ) use ( &$captured_contexts ): array {
+			if ( isset( $handler_args['context']['commerce'] ) && is_array( $handler_args['context']['commerce'] ) ) {
+				$captured_contexts[] = $handler_args['context']['commerce'];
+			}
+
+			return $handler_args;
+		};
+		add_filter( 'bfb_html_to_blocks_args', $args_filter, 10, 1 );
+
+		$result = Static_Site_Importer_Theme_Generator::import_theme(
+			$html_path,
+			array(
+				'name'        => 'Raw HTML Store',
+				'slug'        => 'raw-html-store',
+				'overwrite'   => true,
+				'activate'    => false,
+				'keep_source' => true,
+			)
+		);
+		remove_filter( 'bfb_html_to_blocks_args', $args_filter, 10 );
+
+		$this->assertNotWPError( $result );
+		$this->assertIsArray( $result );
+		$this->assertNotEmpty( $captured_contexts );
+		$this->assertSame( 'raw_html_products', $captured_contexts[0]['source'] ?? '' );
+		$this->assertSame( 'Roasted Beans', $captured_contexts[0]['products'][0]['name'] ?? '' );
+		$this->assertSame( 'roasted-beans', $captured_contexts[0]['products'][0]['slug'] ?? '' );
+		$this->assertSame( '18.00', $captured_contexts[0]['products'][0]['regular_price'] ?? '' );
+		$this->assertSame( '42.00', $captured_contexts[0]['products'][1]['regular_price'] ?? '' );
+
+		$report      = json_decode( $this->read_file( $result['report_path'] ), true );
+		$diagnostics = array_values(
+			array_filter(
+				$report['diagnostics'] ?? array(),
+				static fn ( $diagnostic ): bool => is_array( $diagnostic ) && 'products_manifest_invalid' === ( $diagnostic['code'] ?? '' )
+			)
+		);
+
+		$this->assertIsArray( $report );
+		$this->assertTrue( $report['commerce_context']['supplied'] ?? false );
+		$this->assertSame( 'raw_html_products', $report['commerce_context']['source'] ?? '' );
+		$this->assertSame( 2, $report['commerce_context']['product_count'] ?? null );
+		$this->assertSame( array(), $diagnostics );
+		if ( ! class_exists( 'WC_Product_Simple' ) ) {
+			$this->assertSame( 'woocommerce_inactive', $report['product_seeding']['reason'] ?? '' );
+			$this->assertSame( 2, $report['product_seeding']['counts']['skipped'] ?? null );
+		}
+	}
+
+	/**
 	 * Serialized freeform blocks are counted in generated-theme quality.
 	 */
 	public function test_generated_theme_quality_reports_serialized_freeform_blocks(): void {

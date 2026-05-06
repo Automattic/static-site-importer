@@ -56,7 +56,7 @@ ZIP intake rules:
 
 ## Generated Store Contract
 
-Static store generators may include an optional `products.json` file beside the selected entry HTML file. When present, Static Site Importer validates the manifest and records the contract result under `commerce.products_manifest` in `import-report.json`. When absent, non-commerce imports keep their existing report shape and no `commerce` section is added.
+Static store generators can expose products directly in raw HTML. Product cards using `.product-card` with a visible heading and price are accepted as commerce context and do not require a separate manifest. Generators may also include an optional `products.json` file beside the selected entry HTML file. When present, Static Site Importer validates the manifest and records the contract result under `commerce.products_manifest` in `import-report.json`.
 
 Minimal schema:
 
@@ -92,7 +92,7 @@ Optional product fields:
 - `stock_quantity`: integer stock quantity.
 - `source_selectors`: array of non-empty CSS selector strings for source-product cards.
 
-Invalid manifests do not abort the import. The report marks the manifest invalid and records path-addressed diagnostics such as `$.products[0].slug` so generators can fix the exact field.
+Invalid manifests do not abort the import. The report marks the manifest invalid and records path-addressed errors such as `$.products[0].slug`. If raw HTML product cards supply product context, the optional manifest does not add a top-level `products_manifest_invalid` diagnostic.
 
 ## CLI Usage
 

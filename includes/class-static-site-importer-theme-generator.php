@@ -142,7 +142,8 @@ class Static_Site_Importer_Theme_Generator {
 		self::record_source_region_selection( $document, $html_path );
 		self::record_source_documents_summary( $site_dir, $pages, $permalinks );
 		self::record_products_manifest( $site_dir );
-		self::$active_commerce_context = self::commerce_context_from_args( $args );
+		self::$active_commerce_context = self::commerce_context_from_args( $args, $pages );
+		self::suppress_manifest_diagnostic_when_raw_html_supplies_products();
 		self::record_commerce_context_summary();
 
 		self::$active_theme_dir         = $theme_dir;
@@ -558,8 +559,8 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		if ( preg_match( '#(^|/)index$#i', $extensionless ) ) {
-			$clean = preg_replace( '#(^|/)index$#i', '$1', $extensionless );
-			$clean = trim( (string) $clean, '/' );
+			$clean  = preg_replace( '#(^|/)index$#i', '$1', $extensionless );
+			$clean  = trim( (string) $clean, '/' );
 			$keys[] = '' === $clean ? '/' : $clean;
 			$keys[] = '' === $clean ? '/' : '/' . $clean . '/';
 			if ( '' !== $clean ) {
@@ -1900,9 +1901,10 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return string
 	 */
 	private static function normalize_route_path( string $path ): string {
-		$path     = str_replace( '\\', '/', strtok( $path, '?' ) ?: $path );
-		$path     = ltrim( $path, '/' );
-		$segments = array();
+		$path_without_query = strtok( $path, '?' );
+		$path               = str_replace( '\\', '/', false === $path_without_query ? $path : $path_without_query );
+		$path               = ltrim( $path, '/' );
+		$segments           = array();
 		foreach ( explode( '/', $path ) as $segment ) {
 			if ( '' === $segment || '.' === $segment ) {
 				continue;
@@ -3303,10 +3305,11 @@ class Static_Site_Importer_Theme_Generator {
 	/**
 	 * Resolve validated commerce context supplied by the caller.
 	 *
-	 * @param array<string, mixed> $args Import args.
+	 * @param array<string, mixed>                         $args  Import args.
+	 * @param array<string, Static_Site_Importer_Source_Page> $pages Source pages.
 	 * @return array<string, mixed>
 	 */
-	private static function commerce_context_from_args( array $args ): array {
+	private static function commerce_context_from_args( array $args, array $pages ): array {
 		if ( isset( $args['commerce_context'] ) && is_array( $args['commerce_context'] ) ) {
 			return $args['commerce_context'];
 		}
@@ -3319,7 +3322,147 @@ class Static_Site_Importer_Theme_Generator {
 			);
 		}
 
-		return array();
+		return self::commerce_context_from_raw_html_pages( $pages );
+	}
+
+	/**
+	 * Derive product context from raw storefront HTML.
+	 *
+	 * @param array<string, Static_Site_Importer_Source_Page> $pages Source pages.
+	 * @return array<string, mixed>
+	 */
+	private static function commerce_context_from_raw_html_pages( array $pages ): array {
+		$products       = array();
+		$selector_hints = array();
+
+		foreach ( $pages as $source_filename => $page ) {
+			if ( 'html' !== $page->body_format() ) {
+				continue;
+			}
+
+			$doc   = self::load_fragment_document( $page->body() );
+			$xpath = new DOMXPath( $doc );
+			$cards = $xpath->query( '//*[contains(concat(" ", normalize-space(@class), " "), " product-card ")]' );
+			if ( ! $cards instanceof DOMNodeList || 0 === $cards->length ) {
+				continue;
+			}
+
+			$selector_hints[] = array(
+				'source_filename' => $source_filename,
+				'grid_selector'   => '.product-grid',
+				'card_selector'   => '.product-card',
+			);
+
+			foreach ( $cards as $card ) {
+				if ( ! $card instanceof DOMElement ) {
+					continue;
+				}
+
+				$product = self::product_context_from_html_card( $xpath, $card, $source_filename );
+				if ( ! empty( $product ) ) {
+					$products[] = $product;
+				}
+			}
+		}
+
+		if ( empty( $products ) ) {
+			return array();
+		}
+
+		return array(
+			'source'         => 'raw_html_products',
+			'products'       => $products,
+			'selector_hints' => $selector_hints,
+		);
+	}
+
+	/**
+	 * Build one product context row from a product-card element.
+	 *
+	 * @param DOMXPath  $xpath           XPath helper for the source document.
+	 * @param DOMElement $card            Product card element.
+	 * @param string    $source_filename Source filename.
+	 * @return array<string, mixed>
+	 */
+	private static function product_context_from_html_card( DOMXPath $xpath, DOMElement $card, string $source_filename ): array {
+		$name = self::first_descendant_text( $xpath, $card, './/*[self::h1 or self::h2 or self::h3 or self::h4 or contains(concat(" ", normalize-space(@class), " "), " product-title ") or contains(concat(" ", normalize-space(@class), " "), " name ")]' );
+		if ( '' === $name ) {
+			return array();
+		}
+
+		$price = self::price_from_text( $card->textContent );
+		if ( '' === $price ) {
+			return array();
+		}
+
+		return array(
+			'name'             => $name,
+			'slug'             => sanitize_title( $name ),
+			'regular_price'    => $price,
+			'source_filename'  => $source_filename,
+			'card_selector'    => '.product-card',
+			'source_selectors' => array( '.product-card' ),
+		);
+	}
+
+	/**
+	 * Read the first matching descendant text.
+	 *
+	 * @param DOMXPath  $xpath XPath helper.
+	 * @param DOMElement $root  Root element.
+	 * @param string    $query XPath query.
+	 * @return string
+	 */
+	private static function first_descendant_text( DOMXPath $xpath, DOMElement $root, string $query ): string {
+		$nodes = $xpath->query( $query, $root );
+		if ( ! $nodes instanceof DOMNodeList ) {
+			return '';
+		}
+
+		foreach ( $nodes as $node ) {
+			if ( ! $node instanceof DOMNode ) {
+				continue;
+			}
+
+			$text = trim( preg_replace( '/\s+/', ' ', $node->textContent ) ?? '' );
+			if ( '' !== $text ) {
+				return $text;
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Extract a stable decimal price from visible product-card text.
+	 *
+	 * @param string $text Visible text.
+	 * @return string
+	 */
+	private static function price_from_text( string $text ): string {
+		if ( 1 !== preg_match( '/(?:\$|USD\s*)\s*([0-9]+(?:\.[0-9]{2})?)/i', $text, $matches ) ) {
+			return '';
+		}
+
+		return number_format( (float) $matches[1], 2, '.', '' );
+	}
+
+	/**
+	 * Do not warn about an optional manifest when raw HTML supplied product context.
+	 *
+	 * @return void
+	 */
+	private static function suppress_manifest_diagnostic_when_raw_html_supplies_products(): void {
+		if ( 'raw_html_products' !== ( self::$active_commerce_context['source'] ?? '' ) || empty( self::$conversion_report['diagnostics'] ) ) {
+			return;
+		}
+
+		self::$conversion_report['diagnostics'] = array_values(
+			array_filter(
+				self::$conversion_report['diagnostics'],
+				static fn ( $diagnostic ): bool => ! is_array( $diagnostic ) || 'products_manifest_invalid' !== ( $diagnostic['code'] ?? '' )
+			)
+		);
 	}
 
 	/**
@@ -3863,6 +4006,10 @@ class Static_Site_Importer_Theme_Generator {
 			if ( is_array( $report_manifest ) && true === ( $report_manifest['valid'] ?? false ) ) {
 				$manifest = isset( $report_manifest['products'] ) && is_array( $report_manifest['products'] ) ? $report_manifest['products'] : array();
 			}
+		}
+
+		if ( null === $manifest && 'raw_html_products' === ( self::$active_commerce_context['source'] ?? '' ) ) {
+			$manifest = isset( self::$active_commerce_context['products'] ) && is_array( self::$active_commerce_context['products'] ) ? self::$active_commerce_context['products'] : array();
 		}
 
 		if ( null === $manifest ) {
