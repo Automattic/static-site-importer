@@ -185,23 +185,26 @@ class Static_Site_Importer_Document {
 		}
 
 		$unassigned = $this->collect_unassigned_regions( $selection );
+		$ignored    = $this->collect_intentionally_ignored_regions( $selection );
 
 		$counts = array(
-			'source_landmarks'   => array(
+			'source_landmarks'              => array(
 				'main'   => $main_node instanceof DOMElement ? 1 : 0,
 				'header' => $this->dom->getElementsByTagName( 'header' )->length,
 				'nav'    => $this->dom->getElementsByTagName( 'nav' )->length,
 				'footer' => $this->dom->getElementsByTagName( 'footer' )->length,
 			),
-			'unassigned_regions' => count( $unassigned ),
+			'unassigned_regions'            => count( $unassigned ),
+			'intentionally_ignored_regions' => count( $ignored ),
 		);
 
 		return array(
-			'page_body'          => $page_body,
-			'extracted_header'   => $extracted_header,
-			'extracted_footer'   => $extracted_footer,
-			'unassigned_regions' => $unassigned,
-			'counts'             => $counts,
+			'page_body'                     => $page_body,
+			'extracted_header'              => $extracted_header,
+			'extracted_footer'              => $extracted_footer,
+			'unassigned_regions'            => $unassigned,
+			'intentionally_ignored_regions' => $ignored,
+			'counts'                        => $counts,
 		);
 	}
 
@@ -217,7 +220,8 @@ class Static_Site_Importer_Document {
 	 *     effective_children: DOMElement[],
 	 *     body_headers: DOMElement[],
 	 *     unassigned_children: DOMElement[],
-	 *     skipped_children: DOMElement[]
+	 *     skipped_children: DOMElement[],
+	 *     intentionally_ignored_children: DOMElement[]
 	 * }
 	 */
 	private function compute_selection(): array {
@@ -250,16 +254,22 @@ class Static_Site_Importer_Document {
 		$header_html = implode( "\n", $header_parts );
 		$footer_html = $footer instanceof DOMElement ? $this->outer_html( $footer ) : '';
 
-		$main_parts          = array();
-		$background          = array();
-		$main_html           = $main instanceof DOMElement ? $this->inner_html( $main ) : '';
-		$unassigned_children = array();
-		$skipped_children    = array();
+		$main_parts                     = array();
+		$background                     = array();
+		$main_html                      = $main instanceof DOMElement ? $this->inner_html( $main ) : '';
+		$unassigned_children            = array();
+		$skipped_children               = array();
+		$intentionally_ignored_children = array();
 
 		foreach ( $effective_children as $child ) {
 			$tag = strtolower( $child->tagName );
 			if ( in_array( $tag, array( 'style', 'script' ), true ) ) {
 				$skipped_children[] = $child;
+				continue;
+			}
+
+			if ( $this->is_accessibility_skip_link( $child ) ) {
+				$intentionally_ignored_children[] = $child;
 				continue;
 			}
 
@@ -293,20 +303,21 @@ class Static_Site_Importer_Document {
 		}
 
 		return array(
-			'fragments'           => array(
+			'fragments'                      => array(
 				'background' => trim( implode( "\n", $background ) ),
 				'header'     => trim( $header_html ),
 				'main'       => trim( implode( "\n", $main_parts ) ),
 				'footer'     => trim( $footer_html ),
 			),
-			'header_node'         => $header,
-			'nav_node'            => $nav,
-			'footer_node'         => $footer,
-			'main_node'           => $main,
-			'effective_children'  => $effective_children,
-			'body_headers'        => $body_headers,
-			'unassigned_children' => $unassigned_children,
-			'skipped_children'    => $skipped_children,
+			'header_node'                    => $header,
+			'nav_node'                       => $nav,
+			'footer_node'                    => $footer,
+			'main_node'                      => $main,
+			'effective_children'             => $effective_children,
+			'body_headers'                   => $body_headers,
+			'unassigned_children'            => $unassigned_children,
+			'skipped_children'               => $skipped_children,
+			'intentionally_ignored_children' => $intentionally_ignored_children,
 		);
 	}
 
@@ -611,6 +622,32 @@ class Static_Site_Importer_Document {
 	}
 
 	/**
+	 * Detect accessibility skip links that should not count as dropped content.
+	 *
+	 * @param DOMElement $node Node.
+	 * @return bool
+	 */
+	private function is_accessibility_skip_link( DOMElement $node ): bool {
+		if ( 'a' !== strtolower( $node->tagName ) ) {
+			return false;
+		}
+
+		$class = strtolower( ' ' . $node->getAttribute( 'class' ) . ' ' );
+		$href  = strtolower( trim( $node->getAttribute( 'href' ) ) );
+		$text  = strtolower( trim( preg_replace( '/\s+/', ' ', (string) $node->textContent ) ?? '' ) );
+
+		if ( preg_match( '/(^|[\s_-])skip-link([\s_-]|$)/', $class ) === 1 ) {
+			return true;
+		}
+
+		if ( ! str_starts_with( $href, '#' ) || ! str_starts_with( $text, 'skip to ' ) ) {
+			return false;
+		}
+
+		return in_array( $href, array( '#main', '#content', '#primary', '#site-content', '#storefront' ), true );
+	}
+
+	/**
 	 * Describe the page body selection for the import report.
 	 *
 	 * @param ?DOMElement $main Selected <main> element, if any.
@@ -699,8 +736,8 @@ class Static_Site_Importer_Document {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function collect_unassigned_regions( array $selection ): array {
-		$regions   = array();
-		$main_node = $selection['main_node'];
+		$regions            = array();
+		$main_node          = $selection['main_node'];
 		$effective_children = $selection['effective_children'];
 		foreach ( $selection['unassigned_children'] as $child ) {
 			$position  = ( $main_node instanceof DOMElement && $this->is_leading_sibling_in( $effective_children, $child, $main_node ) ) ? 'before_main' : 'after_main';
@@ -725,6 +762,32 @@ class Static_Site_Importer_Document {
 					'excerpt'    => $this->excerpt( $nested ),
 				);
 			}
+		}
+
+		return $regions;
+	}
+
+	/**
+	 * Collect source regions that were intentionally ignored during selection.
+	 *
+	 * @param array<string,mixed> $selection Shared selection model.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function collect_intentionally_ignored_regions( array $selection ): array {
+		$regions = array();
+		foreach ( $selection['intentionally_ignored_children'] as $child ) {
+			if ( ! $child instanceof DOMElement || ! $this->is_accessibility_skip_link( $child ) ) {
+				continue;
+			}
+
+			$regions[] = array(
+				'role'       => 'accessibility_skip_link',
+				'reason'     => 'intentional_accessibility_chrome',
+				'tag'        => strtolower( $child->tagName ),
+				'selector'   => $this->selector_path( $child ),
+				'line_range' => $this->element_line_range( $child ),
+				'excerpt'    => $this->excerpt( $child ),
+			);
 		}
 
 		return $regions;

@@ -3007,21 +3007,23 @@ class Static_Site_Importer_Theme_Generator {
 			),
 			'conversion_fragments'    => array(),
 			'source_region_selection' => array(
-				'entry_file'         => '',
-				'page_body'          => null,
-				'extracted_header'   => null,
-				'extracted_footer'   => null,
-				'unassigned_regions' => array(),
-				'counts'             => array(
-					'source_landmarks'   => array(
+				'entry_file'                    => '',
+				'page_body'                     => null,
+				'extracted_header'              => null,
+				'extracted_footer'              => null,
+				'unassigned_regions'            => array(),
+				'intentionally_ignored_regions' => array(),
+				'counts'                        => array(
+					'source_landmarks'              => array(
 						'main'   => 0,
 						'header' => 0,
 						'nav'    => 0,
 						'footer' => 0,
 					),
-					'unassigned_regions' => 0,
+					'unassigned_regions'            => 0,
+					'intentionally_ignored_regions' => 0,
 				),
-				'notes'              => array(
+				'notes'                         => array(
 					'Reports which source region became the page body, the extracted header/footer parts, and any meaningful direct body children that were not assigned to a generated region. Reporting only — does not change conversion behavior.',
 				),
 			),
