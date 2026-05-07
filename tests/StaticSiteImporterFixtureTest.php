@@ -208,6 +208,9 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 
 	/**
 	 * A generated store fixture records valid products.json metadata in the import report only.
+	 *
+	 * When WooCommerce is active, the import succeeds and seeds products. When WooCommerce is
+	 * missing, the import is hard-failed by the dependency gate unless the caller waives it.
 	 */
 	public function test_products_manifest_fixture_records_valid_contract_metadata(): void {
 		$plugin_root = dirname( __DIR__ );
@@ -216,11 +219,14 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$result = Static_Site_Importer_Theme_Generator::import_theme(
 			$fixture,
 			array(
-				'name'        => 'Generated Store Valid',
-				'slug'        => 'generated-store-valid',
-				'overwrite'   => true,
-				'activate'    => false,
-				'keep_source' => true,
+				'name'                      => 'Generated Store Valid',
+				'slug'                      => 'generated-store-valid',
+				'overwrite'                 => true,
+				'activate'                  => false,
+				'keep_source'                => true,
+				// Waive WC so this manifest-shape test stays focused on contract metadata.
+				// Hard-fail behavior is covered by test_commerce_intent_with_missing_woocommerce_fails_import.
+				'allow_missing_woocommerce' => true,
 			)
 		);
 
@@ -244,12 +250,131 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$this->assertSame( '54.00', $manifest['products'][0]['sale_price'] ?? '' );
 		$this->assertSame( array( 'Apparel' ), $manifest['products'][0]['categories'] ?? array() );
 		$this->assertSame( 'assets/signal-hoodie.jpg', $manifest['products'][0]['image'] ?? '' );
+
+		// Dependency gate is recorded for commerce-bearing imports regardless of WC status.
+		$dependencies = $report['commerce']['dependencies']['woocommerce'] ?? array();
+		$this->assertSame( true, $dependencies['required'] ?? null );
+		$this->assertSame( class_exists( 'WC_Product_Simple' ), $dependencies['active'] ?? null );
+		$this->assertContains( 'products_manifest', $dependencies['sources'] ?? array() );
+		$this->assertSame( 2, $dependencies['product_count'] ?? null );
+
 		if ( ! class_exists( 'WC_Product_Simple' ) ) {
+			// Waived path: import succeeds, products are not seeded, waiver diagnostic is recorded.
+			$this->assertNotContains( 'woocommerce_missing', $report['quality']['failure_reasons'] ?? array() );
+			$this->assertEmpty( $report['quality']['fail_import'] ?? null );
+			$this->assertSame( true, $dependencies['waived'] ?? null );
 			$this->assertSame( 'skipped', $report['product_seeding']['status'] ?? '' );
 			$this->assertSame( 'woocommerce_inactive', $report['product_seeding']['reason'] ?? '' );
 			$this->assertSame( array( 'created' => 0, 'updated' => 0, 'skipped' => 2, 'error' => 0 ), $report['product_seeding']['counts'] ?? array() );
 			$this->assertSame( 'signal-hoodie', $report['product_seeding']['products'][0]['slug'] ?? '' );
+
+			$waiver_diagnostics = array_values(
+				array_filter(
+					$report['diagnostics'] ?? array(),
+					static fn ( $diagnostic ): bool => is_array( $diagnostic ) && 'woocommerce_waived' === ( $diagnostic['code'] ?? '' )
+				)
+			);
+			$this->assertNotEmpty( $waiver_diagnostics );
+			$this->assertSame( 'warning', $waiver_diagnostics[0]['severity'] ?? '' );
 		}
+	}
+
+	/**
+	 * Commerce-bearing imports without WooCommerce hard-fail by default.
+	 *
+	 * Theme files are still written so callers can inspect the import report; the gate
+	 * trips fail_import even without --fail-on-quality so silent half-commerce never ships.
+	 */
+	public function test_commerce_intent_with_missing_woocommerce_fails_import(): void {
+		if ( class_exists( 'WC_Product_Simple' ) ) {
+			$this->markTestSkipped( 'Requires a runtime without WooCommerce active.' );
+		}
+
+		$plugin_root = dirname( __DIR__ );
+		$fixture     = $plugin_root . '/tests/fixtures/generated-store-valid/index.html';
+
+		$result = Static_Site_Importer_Theme_Generator::import_theme(
+			$fixture,
+			array(
+				'name'        => 'Generated Store Hard Fail',
+				'slug'        => 'generated-store-hard-fail',
+				'overwrite'   => true,
+				'activate'    => false,
+				'keep_source' => true,
+			)
+		);
+
+		$this->assertNotWPError( $result );
+		$this->assertIsArray( $result );
+		$this->assertFileExists( $result['report_path'] );
+
+		$report = json_decode( $this->read_file( $result['report_path'] ), true );
+		$this->assertIsArray( $report );
+		$this->assertSame( true, $result['quality']['fail_import'] ?? null );
+		$this->assertContains( 'woocommerce_missing', $result['quality']['failure_reasons'] ?? array() );
+		$this->assertSame( 1, $report['quality']['commerce_dependency_failures'] ?? null );
+		$this->assertSame( false, $result['quality']['pass'] ?? null );
+
+		$dependencies = $report['commerce']['dependencies']['woocommerce'] ?? array();
+		$this->assertSame( true, $dependencies['required'] ?? null );
+		$this->assertSame( false, $dependencies['active'] ?? null );
+		$this->assertSame( false, $dependencies['waived'] ?? null );
+		$this->assertContains( 'products_manifest', $dependencies['sources'] ?? array() );
+		$this->assertSame( 2, $dependencies['product_count'] ?? null );
+
+		$diagnostics = array_values(
+			array_filter(
+				$report['diagnostics'] ?? array(),
+				static fn ( $diagnostic ): bool => is_array( $diagnostic ) && 'woocommerce_missing' === ( $diagnostic['code'] ?? '' )
+			)
+		);
+		$this->assertNotEmpty( $diagnostics );
+		$this->assertSame( 'error', $diagnostics[0]['severity'] ?? '' );
+		$this->assertSame( 2, $diagnostics[0]['product_count'] ?? null );
+
+		$this->assertSame( 'woocommerce_required_but_missing', $report['product_seeding']['reason'] ?? '' );
+	}
+
+	/**
+	 * Non-commerce imports are unaffected by the WooCommerce dependency gate.
+	 *
+	 * Imports without a valid products.json and without inferred commerce context must
+	 * not record a commerce.dependencies block, must not emit dependency diagnostics,
+	 * and must not contribute to commerce_dependency_failures.
+	 */
+	public function test_non_commerce_import_is_not_affected_by_woocommerce_dependency_gate(): void {
+		$plugin_root = dirname( __DIR__ );
+		$fixture     = $plugin_root . '/tests/fixtures/wordpress-is-dead/index.html';
+
+		$result = Static_Site_Importer_Theme_Generator::import_theme(
+			$fixture,
+			array(
+				'name'        => 'Non-Commerce Import Gate Check',
+				'slug'        => 'non-commerce-import-gate-check',
+				'overwrite'   => true,
+				'activate'    => false,
+				'keep_source' => true,
+			)
+		);
+
+		$this->assertNotWPError( $result );
+		$this->assertIsArray( $result );
+
+		$report = json_decode( $this->read_file( $result['report_path'] ), true );
+		$this->assertIsArray( $report );
+		$this->assertArrayNotHasKey( 'dependencies', $report['commerce'] ?? array() );
+		$this->assertSame( 0, $report['quality']['commerce_dependency_failures'] ?? null );
+		$this->assertNotContains( 'woocommerce_missing', $report['quality']['failure_reasons'] ?? array() );
+
+		$dependency_codes = array( 'woocommerce_missing', 'woocommerce_present', 'woocommerce_waived' );
+		foreach ( $report['diagnostics'] ?? array() as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) ) {
+				continue;
+			}
+			$this->assertNotContains( $diagnostic['code'] ?? '', $dependency_codes );
+		}
+
+		$this->assertSame( 'no_validated_manifest', $report['product_seeding']['reason'] ?? '' );
 	}
 
 	/**
@@ -262,11 +387,13 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$result = Static_Site_Importer_Theme_Generator::import_theme(
 			$fixture,
 			array(
-				'name'        => 'Generated Store Invalid',
-				'slug'        => 'generated-store-invalid',
-				'overwrite'   => true,
-				'activate'    => false,
-				'keep_source' => true,
+				'name'                      => 'Generated Store Invalid',
+				'slug'                      => 'generated-store-invalid',
+				'overwrite'                 => true,
+				'activate'                  => false,
+				'keep_source'               => true,
+				// Invalid manifest never yields commerce intent, but be explicit so the focus stays on manifest validation.
+				'allow_missing_woocommerce' => true,
 			)
 		);
 
@@ -305,11 +432,13 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$result = Static_Site_Importer_Theme_Generator::import_theme(
 			$fixture,
 			array(
-				'name'        => 'Generated Store Inferred',
-				'slug'        => 'generated-store-inferred',
-				'overwrite'   => true,
-				'activate'    => false,
-				'keep_source' => true,
+				'name'                      => 'Generated Store Inferred',
+				'slug'                      => 'generated-store-inferred',
+				'overwrite'                 => true,
+				'activate'                  => false,
+				'keep_source'               => true,
+				// Inferred commerce context counts as intent; waive WC dependency for this inference test.
+				'allow_missing_woocommerce' => true,
 			)
 		);
 
@@ -350,11 +479,13 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$result = Static_Site_Importer_Theme_Generator::import_theme(
 			$fixture,
 			array(
-				'name'        => 'JSON LD Store',
-				'slug'        => 'json-ld-store',
-				'overwrite'   => true,
-				'activate'    => false,
-				'keep_source' => true,
+				'name'                      => 'JSON LD Store',
+				'slug'                      => 'json-ld-store',
+				'overwrite'                 => true,
+				'activate'                  => false,
+				'keep_source'               => true,
+				// JSON-LD inference yields commerce intent; waive WC dependency for this inference test.
+				'allow_missing_woocommerce' => true,
 			)
 		);
 
@@ -1699,12 +1830,14 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$result = Static_Site_Importer_Theme_Generator::import_theme(
 			$html_path,
 			array(
-				'name'             => 'Commerce Context',
-				'slug'             => 'commerce-context',
-				'overwrite'        => true,
-				'activate'         => false,
-				'keep_source'      => true,
-				'commerce_context' => array(
+				'name'                      => 'Commerce Context',
+				'slug'                      => 'commerce-context',
+				'overwrite'                 => true,
+				'activate'                  => false,
+				'keep_source'               => true,
+				// Caller-supplied commerce_context yields commerce intent; waive WC dependency for this forwarding test.
+				'allow_missing_woocommerce' => true,
+				'commerce_context'          => array(
 					'source'   => 'products.json',
 					'products' => array(
 						array(
@@ -1764,11 +1897,13 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$result = Static_Site_Importer_Theme_Generator::import_theme(
 			$html_path,
 			array(
-				'name'        => 'Raw HTML Store',
-				'slug'        => 'raw-html-store',
-				'overwrite'   => true,
-				'activate'    => false,
-				'keep_source' => true,
+				'name'                      => 'Raw HTML Store',
+				'slug'                      => 'raw-html-store',
+				'overwrite'                 => true,
+				'activate'                  => false,
+				'keep_source'               => true,
+				// HTML-card inference yields commerce intent; waive WC dependency for this inference test.
+				'allow_missing_woocommerce' => true,
 			)
 		);
 		remove_filter( 'bfb_html_to_blocks_args', $args_filter, 10 );
@@ -1813,11 +1948,13 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$result = Static_Site_Importer_Theme_Generator::import_theme(
 			$html_path,
 			array(
-				'name'        => 'Nested Product Prices',
-				'slug'        => 'nested-product-prices',
-				'overwrite'   => true,
-				'activate'    => false,
-				'keep_source' => true,
+				'name'                      => 'Nested Product Prices',
+				'slug'                      => 'nested-product-prices',
+				'overwrite'                 => true,
+				'activate'                  => false,
+				'keep_source'               => true,
+				// HTML-card inference yields commerce intent; waive WC dependency for this inference test.
+				'allow_missing_woocommerce' => true,
 			)
 		);
 

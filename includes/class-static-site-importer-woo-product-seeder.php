@@ -106,9 +106,12 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	/**
 	 * Determine whether WooCommerce product APIs are available.
 	 *
+	 * Public so the theme generator can run a dependency gate before commerce
+	 * imports proceed without a runtime that can host the seeded products.
+	 *
 	 * @return bool
 	 */
-	private static function woocommerce_available(): bool {
+	public static function woocommerce_available(): bool {
 		return class_exists( 'WC_Product_Simple' ) && post_type_exists( 'product' ) && taxonomy_exists( 'product_cat' );
 	}
 

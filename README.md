@@ -94,6 +94,24 @@ Optional product fields:
 
 Invalid manifests do not abort the import. The report marks the manifest invalid and records path-addressed errors such as `$.products[0].slug`. If raw HTML product cards supply product context, the optional manifest does not add a top-level `products_manifest_invalid` diagnostic.
 
+## WooCommerce Dependency
+
+Commerce-bearing imports require WooCommerce. Commerce intent is detected when any of these signals are present:
+
+- a valid `products.json` manifest with at least one product, or
+- caller-supplied `commerce_context` with at least one product, or
+- inferred commerce context from JSON-LD `Product` data or visible product cards.
+
+When intent is present and WooCommerce is not active, Static Site Importer hard-fails the import by default. Theme files are still written so the import report and generated artifacts can be inspected. The failure surfaces three ways:
+
+- `commerce.dependencies.woocommerce` block on the import report (`required`, `active`, `waived`, `sources`, `product_count`, `missing_apis`).
+- A `woocommerce_missing` error diagnostic in the report `diagnostics[]` list.
+- `quality.failure_reasons[]` contains `woocommerce_missing`, `quality.commerce_dependency_failures` is non-zero, and `quality.fail_import` is set regardless of `--fail-on-quality`.
+
+Pass `--allow-missing-woocommerce` (CLI) or `'allow_missing_woocommerce' => true` (PHP API) to import the theme without seeding products. The waiver records a `woocommerce_waived` warning diagnostic and clears the dependency failure. Non-commerce imports (no manifest, no inferred context) are unaffected: no `commerce.dependencies` block is recorded and no dependency diagnostics are emitted.
+
+The import-time auto-install of WooCommerce (`--ensure-woocommerce`) is intentionally out of scope for this gate; install WooCommerce explicitly with `wp plugin install woocommerce --activate` before retrying the import.
+
 ## CLI Usage
 
 ```bash
@@ -113,6 +131,12 @@ wp static-site-importer import-url https://example.com/ \
   --slug=example-import \
   --keep-source \
   --report=report.json
+
+# Commerce-bearing import on a host without WooCommerce: skip seeding and continue.
+wp static-site-importer import-theme /path/to/store/index.html \
+  --slug=store-no-woo \
+  --allow-missing-woocommerce \
+  --keep-source
 ```
 
 The CLI path imports all readable sibling `*.html` files in the same directory as the provided entry file plus recursive `.md` / `.markdown` content documents under the source tree. The entry file supplies the theme title, shared source chrome, background decoration, styles, and inline scripts; each source content file supplies a WordPress page body. `.mdx` files are unsupported and reported as skipped diagnostics.

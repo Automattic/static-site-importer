@@ -48,6 +48,9 @@ class Static_Site_Importer_CLI_Command {
 	 * [--max-fallbacks=<count>]
 	 * : Exit non-zero when unsupported HTML fallback count exceeds this threshold.
 	 *
+	 * [--allow-missing-woocommerce]
+	 * : Allow commerce-bearing imports to proceed when WooCommerce is not active. Default is to fail the import. Theme files are still written either way; the waiver only suppresses product seeding without aborting.
+	 *
 	 * [--report=<path>]
 	 * : Copy the generated import report JSON to an external archive path.
 	 *
@@ -88,15 +91,16 @@ class Static_Site_Importer_CLI_Command {
 		$result = Static_Site_Importer_Theme_Generator::import_theme(
 			$html_file,
 			array(
-				'slug'            => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
-				'name'            => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
-				'activate'        => isset( $assoc_args['activate'] ),
-				'overwrite'       => isset( $assoc_args['overwrite'] ),
-				'keep_source'     => isset( $assoc_args['keep-source'] ),
-				'fail_on_quality' => isset( $assoc_args['fail-on-quality'] ),
-				'max_fallbacks'   => isset( $assoc_args['max-fallbacks'] ) ? (int) $assoc_args['max-fallbacks'] : null,
-				'report'          => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
-				'source_metadata' => $source_metadata,
+				'slug'                      => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
+				'name'                      => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
+				'activate'                  => isset( $assoc_args['activate'] ),
+				'overwrite'                 => isset( $assoc_args['overwrite'] ),
+				'keep_source'               => isset( $assoc_args['keep-source'] ),
+				'fail_on_quality'           => isset( $assoc_args['fail-on-quality'] ),
+				'max_fallbacks'             => isset( $assoc_args['max-fallbacks'] ) ? (int) $assoc_args['max-fallbacks'] : null,
+				'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
+				'report'                    => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
+				'source_metadata'           => $source_metadata,
 			)
 		);
 
@@ -129,6 +133,25 @@ class Static_Site_Importer_CLI_Command {
 
 		if ( ! $result['quality']['pass'] ) {
 			WP_CLI::warning( 'Conversion quality checks reported issues. Inspect import-report.json for source fragments and diagnostics.' );
+		}
+
+		$failure_reasons       = isset( $result['quality']['failure_reasons'] ) && is_array( $result['quality']['failure_reasons'] ) ? $result['quality']['failure_reasons'] : array();
+		$commerce_dep_failure  = in_array( 'woocommerce_missing', $failure_reasons, true );
+		$allow_missing_woo_cli = isset( $assoc_args['allow-missing-woocommerce'] );
+
+		if ( $commerce_dep_failure && ! empty( $result['quality']['fail_import'] ) ) {
+			WP_CLI::error(
+				sprintf(
+					"WooCommerce is required for this import. The source declared products but WooCommerce is not active.\nInstall and activate WooCommerce, or rerun with --allow-missing-woocommerce to import the theme without seeding products.\nTheme files were written for inspection at: %s\nImport report: %s",
+					$result['theme_dir'],
+					$result['report_path']
+				)
+			);
+			return;
+		}
+
+		if ( $allow_missing_woo_cli ) {
+			WP_CLI::warning( 'WooCommerce dependency check waived via --allow-missing-woocommerce. Products were not seeded.' );
 		}
 
 		if ( ! empty( $result['quality']['fail_import'] ) ) {
@@ -165,6 +188,9 @@ class Static_Site_Importer_CLI_Command {
 	 *
 	 * [--max-fallbacks=<count>]
 	 * : Exit non-zero when unsupported HTML fallback count exceeds this threshold.
+	 *
+	 * [--allow-missing-woocommerce]
+	 * : Allow commerce-bearing imports to proceed when WooCommerce is not active.
 	 *
 	 * [--report=<path>]
 	 * : Copy the generated import report JSON to an external archive path.
