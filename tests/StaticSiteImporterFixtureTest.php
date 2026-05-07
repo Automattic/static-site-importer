@@ -1802,6 +1802,44 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Product-card inference accepts generated storefront cards with nested footer/meta prices.
+	 */
+	public function test_raw_html_product_cards_with_nested_footer_prices_supply_commerce_context(): void {
+		$html_path = $this->write_temp_fixture(
+			'index.html',
+			'<!doctype html><html><head><title>Nested Product Prices</title></head><body><main><section class="product-grid"><article class="product-card"><p class="product-kicker">Dining chair</p><h3>Pressed-Cane Dining Chair Kit</h3><p>Measured cane webbing, spline, groove cleaner...</p><div class="card-footer"><span class="price">$64</span><a class="cta" href="#planning">Measure first</a></div></article><article class="product-card"><div class="product-visual shio"></div><p class="product-kicker">Marinade staple</p><h4>Shio Koji Everyday Jar</h4><p>Salted rice koji for tender grilled chicken...</p><div class="product-meta"><span class="price">$14</span><a class="cta" href="#cart">Add to counter</a></div></article></section></main></body></html>'
+		);
+
+		$result = Static_Site_Importer_Theme_Generator::import_theme(
+			$html_path,
+			array(
+				'name'        => 'Nested Product Prices',
+				'slug'        => 'nested-product-prices',
+				'overwrite'   => true,
+				'activate'    => false,
+				'keep_source' => true,
+			)
+		);
+
+		$this->assertNotWPError( $result );
+		$this->assertIsArray( $result );
+
+		$report    = json_decode( $this->read_file( $result['report_path'] ), true );
+		$inference = $report['commerce_product_inference'] ?? array();
+
+		$this->assertIsArray( $report );
+		$this->assertSame( 'html_cards', $inference['strategy'] ?? '' );
+		$this->assertSame( 2, $inference['product_count'] ?? null );
+		$this->assertSame( 0, $inference['skipped_candidate_count'] ?? null );
+		$this->assertSame( 'Pressed-Cane Dining Chair Kit', $inference['products'][0]['name'] ?? '' );
+		$this->assertSame( '64.00', $inference['products'][0]['regular_price'] ?? '' );
+		$this->assertSame( 'Shio Koji Everyday Jar', $inference['products'][1]['name'] ?? '' );
+		$this->assertSame( '14.00', $inference['products'][1]['regular_price'] ?? '' );
+		$this->assertSame( 'html_cards', $report['commerce_context']['source'] ?? '' );
+		$this->assertSame( 2, $report['commerce_context']['product_count'] ?? null );
+	}
+
+	/**
 	 * Serialized freeform blocks are counted in generated-theme quality.
 	 */
 	public function test_generated_theme_quality_reports_serialized_freeform_blocks(): void {

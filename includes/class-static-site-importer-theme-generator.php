@@ -3798,7 +3798,11 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		foreach ( $nodes as $node ) {
-			if ( ! $node instanceof DOMElement || self::has_descendant_product_candidate( $node ) ) {
+			if (
+				! $node instanceof DOMElement ||
+				! self::element_looks_like_product_card( $node ) ||
+				self::has_descendant_product_candidate( $node )
+			) {
 				continue;
 			}
 
@@ -3854,7 +3858,12 @@ class Static_Site_Importer_Theme_Generator {
 		$haystack  = strtolower( $element->getAttribute( 'class' ) . ' ' . $element->getAttribute( 'id' ) );
 		$valid_tag = in_array( $tag, array( 'article', 'li', 'div' ), true );
 
-		return $valid_tag && ( str_contains( $haystack, 'product' ) || $element->hasAttribute( 'data-product-slug' ) || $element->hasAttribute( 'data-product-name' ) || $element->hasAttribute( 'data-price' ) );
+		return $valid_tag && (
+			$element->hasAttribute( 'data-product-slug' ) ||
+			$element->hasAttribute( 'data-product-name' ) ||
+			$element->hasAttribute( 'data-price' ) ||
+			( str_contains( $haystack, 'product' ) && preg_match( '/(?:^|[-_\s])(?:card|item|tile)(?:$|[-_\s])/', $haystack ) )
+		);
 	}
 
 	/**
