@@ -142,7 +142,8 @@ class Static_Site_Importer_Theme_Generator {
 		self::record_source_region_selection( $document, $html_path );
 		self::record_source_documents_summary( $site_dir, $pages, $permalinks );
 		self::record_products_manifest( $site_dir );
-		self::$active_commerce_context = self::commerce_context_from_args( $args );
+		$inferred_commerce_context     = self::should_infer_commerce_context( $args ) ? self::infer_commerce_context_from_pages( $pages ) : array();
+		self::$active_commerce_context = self::commerce_context_from_args( $args, $inferred_commerce_context );
 		self::record_commerce_context_summary();
 
 		self::$active_theme_dir         = $theme_dir;
@@ -154,7 +155,7 @@ class Static_Site_Importer_Theme_Generator {
 
 		$site_css                             = self::site_css( $site_dir, $document );
 		self::$decorative_empty_group_classes = array_fill_keys(
-			self::absolute_position_classes_from_css( $site_css ),
+			self::decorative_empty_group_classes_from_css( $site_css ),
 			true
 		);
 		self::pre_register_svg_symbol_sprites( $fragments, $pages );
@@ -2658,7 +2659,7 @@ class Static_Site_Importer_Theme_Generator {
 		if ( '' === $blocks ) {
 			self::record_conversion_empty( $source, $html );
 		}
-		$blocks = self::mark_empty_decorative_group_blocks( $blocks, $source );
+		$blocks = self::restore_dropped_empty_decorative_groups( $html, self::mark_empty_decorative_group_blocks( $blocks, $source ) );
 		self::finish_conversion_fragment( $source, $blocks );
 
 		return '' === $blocks ? '<!-- wp:html -->' . "\n" . $html . "\n" . '<!-- /wp:html -->' : $blocks;
@@ -2687,6 +2688,147 @@ class Static_Site_Importer_Theme_Generator {
 
 		// @phpstan-ignore-next-line argument.type -- Parsed blocks are normalized before serializing.
 		return $changed ? serialize_blocks( $blocks ) : $block_markup;
+	}
+
+	/**
+	 * Restore empty decorative divs when the converter drops them from card bodies.
+	 *
+	 * @param string $html         Source HTML fragment.
+	 * @param string $block_markup Serialized block markup.
+	 * @return string Serialized block markup.
+	 */
+	private static function restore_dropped_empty_decorative_groups( string $html, string $block_markup ): string {
+		if ( '' === trim( $html ) || '' === trim( $block_markup ) || empty( self::$decorative_empty_group_classes ) || ! function_exists( 'parse_blocks' ) || ! function_exists( 'serialize_blocks' ) ) {
+			return $block_markup;
+		}
+
+		$restore = self::empty_decorative_groups_by_parent_class( $html );
+		if ( empty( $restore ) ) {
+			return $block_markup;
+		}
+
+		/** @var array<int, array<string, mixed>> $blocks */
+		$blocks  = parse_blocks( $block_markup );
+		$changed = false;
+		self::restore_dropped_empty_decorative_groups_in_tree( $blocks, $restore, $changed );
+
+		// @phpstan-ignore-next-line argument.type -- Parsed blocks are normalized before serializing.
+		return $changed ? serialize_blocks( $blocks ) : $block_markup;
+	}
+
+	/**
+	 * Extract decorative empty div blocks keyed by their parent class token.
+	 *
+	 * @param string $html Source HTML fragment.
+	 * @return array<string, array<int, array<string, mixed>>>
+	 */
+	private static function empty_decorative_groups_by_parent_class( string $html ): array {
+		$doc     = self::load_fragment_document( $html );
+		$restore = array();
+
+		foreach ( $doc->getElementsByTagName( 'div' ) as $element ) {
+			if ( ! self::is_empty_decorative_theme_part_element( $element ) || ! $element->parentNode instanceof DOMElement ) {
+				continue;
+			}
+
+			$matched = false;
+			$block   = self::decorative_group_block_from_element( $element, $matched );
+			if ( null === $block || ! $matched ) {
+				continue;
+			}
+
+			$parent_classes = preg_split( '/\s+/', trim( $element->parentNode->getAttribute( 'class' ) ) );
+			$parent_classes = false === $parent_classes ? array() : $parent_classes;
+			foreach ( $parent_classes as $parent_class ) {
+				if ( '' !== $parent_class && self::class_token_looks_like_card_container( $parent_class ) ) {
+					$restore[ $parent_class ][] = $block;
+				}
+			}
+		}
+
+		return $restore;
+	}
+
+	/**
+	 * Whether a class token identifies a card-like container that can safely receive restored layers.
+	 *
+	 * @param string $class_name Class token.
+	 * @return bool
+	 */
+	private static function class_token_looks_like_card_container( string $class_name ): bool {
+		return str_contains( $class_name, 'card' ) || str_contains( $class_name, 'gallery' ) || str_contains( $class_name, 'product' ) || str_contains( $class_name, 'category' );
+	}
+
+	/**
+	 * Restore decorative blocks inside matching generated group blocks.
+	 *
+	 * @param array<int, array<string, mixed>>              $blocks  Parsed blocks.
+	 * @param array<string, array<int, array<string,mixed>>> $restore Blocks keyed by parent class.
+	 * @param bool                                          $changed Whether any block changed.
+	 * @return void
+	 */
+	private static function restore_dropped_empty_decorative_groups_in_tree( array &$blocks, array $restore, bool &$changed ): void {
+		foreach ( $blocks as &$block ) {
+			if ( 'core/group' === ( $block['blockName'] ?? '' ) ) {
+				$attrs   = is_array( $block['attrs'] ?? null ) ? $block['attrs'] : array();
+				$classes = preg_split( '/\s+/', trim( (string) ( $attrs['className'] ?? '' ) ) );
+				$classes = false === $classes ? array() : $classes;
+				foreach ( $classes as $class ) {
+					if ( ! isset( $restore[ $class ] ) || self::block_contains_any_decorative_group( $block, $restore[ $class ] ) ) {
+						continue;
+					}
+
+					$inner_blocks          = is_array( $block['innerBlocks'] ?? null ) ? $block['innerBlocks'] : array();
+					$block['innerBlocks']  = array_merge( $restore[ $class ], $inner_blocks );
+					$block['innerContent'] = self::prepend_inner_content_placeholders( is_array( $block['innerContent'] ?? null ) ? $block['innerContent'] : array(), count( $restore[ $class ] ) );
+					$changed               = true;
+					break;
+				}
+			}
+
+			if ( ! empty( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
+				self::restore_dropped_empty_decorative_groups_in_tree( $block['innerBlocks'], $restore, $changed );
+			}
+		}
+		unset( $block );
+	}
+
+	/**
+	 * Add innerContent placeholders for restored leading inner blocks.
+	 *
+	 * @param array<int, mixed> $inner_content Existing innerContent.
+	 * @param int              $count         Number of leading blocks to insert.
+	 * @return array<int, mixed>
+	 */
+	private static function prepend_inner_content_placeholders( array $inner_content, int $count ): array {
+		$placeholders = array_fill( 0, max( 0, $count ), null );
+		if ( empty( $inner_content ) ) {
+			return $placeholders;
+		}
+
+		$first = array_shift( $inner_content );
+		return array_merge( array( $first ), $placeholders, $inner_content );
+	}
+
+	/**
+	 * Check whether a generated block already contains any decorative class slated for restore.
+	 *
+	 * @param array<string, mixed>             $block        Parsed block.
+	 * @param array<int, array<string, mixed>> $restore_list Candidate restored blocks.
+	 * @return bool
+	 */
+	private static function block_contains_any_decorative_group( array $block, array $restore_list ): bool {
+		$haystack = wp_json_encode( $block, JSON_UNESCAPED_SLASHES );
+		$haystack = is_string( $haystack ) ? $haystack : '';
+		foreach ( $restore_list as $restore_block ) {
+			$attrs      = is_array( $restore_block['attrs'] ?? null ) ? $restore_block['attrs'] : array();
+			$class_name = (string) ( $attrs['className'] ?? '' );
+			if ( '' !== $class_name && str_contains( $haystack, $class_name ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -3309,20 +3451,626 @@ class Static_Site_Importer_Theme_Generator {
 	 * @param array<string, mixed> $args Import args.
 	 * @return array<string, mixed>
 	 */
-	private static function commerce_context_from_args( array $args ): array {
-		if ( isset( $args['commerce_context'] ) && is_array( $args['commerce_context'] ) ) {
-			return $args['commerce_context'];
-		}
-
+	private static function commerce_context_from_args( array $args, array $inferred_context = array() ): array {
 		$manifest = self::$conversion_report['commerce']['products_manifest'] ?? array();
 		if ( is_array( $manifest ) && true === ( $manifest['valid'] ?? false ) ) {
+			self::set_commerce_product_inference_report( 'manifest', isset( $manifest['products'] ) && is_array( $manifest['products'] ) ? $manifest['products'] : array() );
 			return array(
-				'source'   => 'products_manifest',
+				'source'   => 'products.json',
 				'products' => isset( $manifest['products'] ) && is_array( $manifest['products'] ) ? $manifest['products'] : array(),
 			);
 		}
 
+		if ( isset( $args['commerce_context'] ) && is_array( $args['commerce_context'] ) ) {
+			return $args['commerce_context'];
+		}
+
+		if ( ! empty( $inferred_context ) ) {
+			return $inferred_context;
+		}
+
 		return array();
+	}
+
+	/**
+	 * Determine whether SSI should infer products from source HTML.
+	 *
+	 * @param array<string, mixed> $args Import args.
+	 * @return bool
+	 */
+	private static function should_infer_commerce_context( array $args ): bool {
+		$manifest = self::$conversion_report['commerce']['products_manifest'] ?? array();
+		if ( is_array( $manifest ) && true === ( $manifest['valid'] ?? false ) ) {
+			return false;
+		}
+
+		return ! isset( $args['commerce_context'] ) || ! is_array( $args['commerce_context'] );
+	}
+
+	/**
+	 * Infer commerce context from static storefront HTML when no valid manifest exists.
+	 *
+	 * @param array<string, Static_Site_Importer_Source_Page> $pages Source pages.
+	 * @return array<string, mixed>
+	 */
+	private static function infer_commerce_context_from_pages( array $pages ): array {
+		$json_ld_products = array();
+		$card_products    = array();
+		$selector_hints   = array();
+		$rejected         = array();
+
+		foreach ( $pages as $filename => $page ) {
+			if ( 'html' !== $page->type() ) {
+				continue;
+			}
+
+			$html = self::read_visual_probe_file( $page->path() );
+			if ( '' === trim( $html ) ) {
+				continue;
+			}
+
+			$doc = self::load_html_document( $html );
+			if ( null === $doc ) {
+				continue;
+			}
+
+			$json_ld_products = array_merge( $json_ld_products, self::json_ld_products_from_document( $doc, $filename ) );
+			$cards            = self::product_card_products_from_document( $doc, $filename );
+			$card_products    = array_merge( $card_products, $cards['products'] );
+			$selector_hints   = array_merge( $selector_hints, $cards['selector_hints'] );
+			$rejected         = array_merge( $rejected, $cards['rejected'] );
+		}
+
+		if ( ! empty( $json_ld_products ) ) {
+			$products = self::dedupe_products_by_slug( $json_ld_products );
+			self::set_commerce_product_inference_report( 'json_ld', $products, array(), array(), array() );
+			return array(
+				'source'   => 'json_ld',
+				'products' => $products,
+			);
+		}
+
+		if ( count( $card_products ) >= 2 ) {
+			$products = self::dedupe_products_by_slug( $card_products );
+			self::set_commerce_product_inference_report( 'html_cards', $products, $selector_hints, $rejected, array() );
+			return array(
+				'source'         => 'html_cards',
+				'products'       => $products,
+				'selector_hints' => $selector_hints,
+			);
+		}
+
+		if ( ! empty( $card_products ) ) {
+			foreach ( $card_products as $product ) {
+				$rejected[] = array(
+					'source_filename' => isset( $product['source_filename'] ) ? (string) $product['source_filename'] : '',
+					'selector'        => isset( $product['card_selector'] ) ? (string) $product['card_selector'] : '',
+					'reason'          => 'html_card_inference_requires_repeated_products',
+				);
+			}
+		}
+
+		$warnings = array( 'No valid products.json manifest, JSON-LD Product data, or visible product cards with prices were found.' );
+		self::set_commerce_product_inference_report( 'none', array(), $selector_hints, $rejected, $warnings );
+		self::$conversion_report['diagnostics'][] = array(
+			'code'     => 'commerce_product_inference_none',
+			'severity' => 'warning',
+			'source'   => 'html',
+			'message'  => $warnings[0],
+		);
+
+		return array();
+	}
+
+	/**
+	 * Store commerce product inference diagnostics on the import report.
+	 *
+	 * @param string           $strategy       Extraction strategy.
+	 * @param array<int,array> $products       Products inferred or selected.
+	 * @param array<int,array> $selector_hints Selector hints.
+	 * @param array<int,array> $rejected       Rejected candidates.
+	 * @param array<int,string>  $warnings      Warnings.
+	 * @return void
+	 */
+	private static function set_commerce_product_inference_report( string $strategy, array $products, array $selector_hints = array(), array $rejected = array(), array $warnings = array() ): void {
+		self::$conversion_report['commerce_product_inference'] = array(
+			'strategy'                => $strategy,
+			'product_count'           => count( $products ),
+			'skipped_candidate_count' => count( $rejected ),
+			'selector_hints'          => $selector_hints,
+			'warnings'                => $warnings,
+			'rejected_candidates'     => $rejected,
+			'products'                => array_map(
+				static function ( array $product ): array {
+					$summary = array(
+						'name'          => isset( $product['name'] ) ? (string) $product['name'] : '',
+						'slug'          => isset( $product['slug'] ) ? (string) $product['slug'] : '',
+						'regular_price' => isset( $product['regular_price'] ) ? (string) $product['regular_price'] : '',
+					);
+					foreach ( array( 'source_filename', 'card_selector', 'image', 'categories' ) as $field ) {
+						if ( isset( $product[ $field ] ) ) {
+							$summary[ $field ] = $product[ $field ];
+						}
+					}
+					return $summary;
+				},
+				$products
+			),
+		);
+	}
+
+	/**
+	 * Parse a full HTML document for commerce extraction.
+	 *
+	 * @param string $html Source HTML.
+	 * @return DOMDocument|null
+	 */
+	private static function load_html_document( string $html ): ?DOMDocument {
+		$doc      = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$loaded   = $doc->loadHTML( $html );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+
+		return $loaded ? $doc : null;
+	}
+
+	/**
+	 * Extract JSON-LD Product objects from a document.
+	 *
+	 * @param DOMDocument $doc      Source document.
+	 * @param string      $filename Source filename.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private static function json_ld_products_from_document( DOMDocument $doc, string $filename ): array {
+		$products = array();
+		foreach ( $doc->getElementsByTagName( 'script' ) as $script ) {
+			if ( ! str_contains( strtolower( $script->getAttribute( 'type' ) ), 'ld+json' ) ) {
+				continue;
+			}
+
+			$data = json_decode( trim( $script->textContent ), true );
+			if ( JSON_ERROR_NONE !== json_last_error() ) {
+				continue;
+			}
+
+			foreach ( self::json_ld_product_nodes( $data ) as $node ) {
+				$product = self::product_from_json_ld_node( $node, $filename );
+				if ( ! empty( $product ) ) {
+					$products[] = $product;
+				}
+			}
+		}
+
+		return $products;
+	}
+
+	/**
+	 * Find Product-shaped nodes in decoded JSON-LD.
+	 *
+	 * @param mixed $node Decoded JSON-LD node.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private static function json_ld_product_nodes( $node ): array {
+		if ( ! is_array( $node ) ) {
+			return array();
+		}
+
+		$nodes = array();
+		$type  = $node['@type'] ?? '';
+		$types = is_array( $type ) ? $type : array( $type );
+		foreach ( $types as $candidate_type ) {
+			if ( is_string( $candidate_type ) && 'product' === strtolower( $candidate_type ) ) {
+				$nodes[] = $node;
+				break;
+			}
+		}
+
+		foreach ( array( '@graph', 'itemListElement', 'item' ) as $key ) {
+			if ( isset( $node[ $key ] ) ) {
+				$nodes = array_merge( $nodes, self::json_ld_product_nodes( $node[ $key ] ) );
+			}
+		}
+
+		if ( array_is_list( $node ) ) {
+			foreach ( $node as $child ) {
+				$nodes = array_merge( $nodes, self::json_ld_product_nodes( $child ) );
+			}
+		}
+
+		return $nodes;
+	}
+
+	/**
+	 * Normalize a JSON-LD Product node into the seeder product shape.
+	 *
+	 * @param array<string, mixed> $node     JSON-LD node.
+	 * @param string               $filename Source filename.
+	 * @return array<string, mixed>
+	 */
+	private static function product_from_json_ld_node( array $node, string $filename ): array {
+		$name  = self::commerce_scalar( $node['name'] ?? '' );
+		$price = self::commerce_price_from_json_ld_offer( $node['offers'] ?? array() );
+		if ( '' === $name || '' === $price ) {
+			return array();
+		}
+
+		$url  = self::commerce_scalar( $node['url'] ?? '' );
+		$slug = '' !== $url ? sanitize_title( basename( (string) wp_parse_url( $url, PHP_URL_PATH ) ) ) : sanitize_title( $name );
+		if ( '' === $slug ) {
+			$slug = sanitize_title( $name );
+		}
+
+		$image = $node['image'] ?? '';
+		if ( is_array( $image ) ) {
+			$image = reset( $image );
+		}
+
+		$product = array(
+			'name'            => $name,
+			'slug'            => $slug,
+			'regular_price'   => $price,
+			'description'     => self::commerce_scalar( $node['description'] ?? '' ),
+			'image'           => self::commerce_scalar( $image ),
+			'source_filename' => $filename,
+			'card_selector'   => 'script[type="application/ld+json"]',
+		);
+
+		$category = self::commerce_scalar( $node['category'] ?? '' );
+		if ( '' !== $category ) {
+			$product['categories'] = array( $category );
+		}
+
+		return $product;
+	}
+
+	/**
+	 * Extract a price from JSON-LD offers.
+	 *
+	 * @param mixed $offers Offers node.
+	 * @return string
+	 */
+	private static function commerce_price_from_json_ld_offer( $offers ): string {
+		if ( is_array( $offers ) && array_is_list( $offers ) ) {
+			foreach ( $offers as $offer ) {
+				$price = self::commerce_price_from_json_ld_offer( $offer );
+				if ( '' !== $price ) {
+					return $price;
+				}
+			}
+			return '';
+		}
+
+		if ( ! is_array( $offers ) ) {
+			return self::normalize_commerce_price( self::commerce_scalar( $offers ) );
+		}
+
+		foreach ( array( 'price', 'lowPrice', 'highPrice' ) as $key ) {
+			$price = self::normalize_commerce_price( self::commerce_scalar( $offers[ $key ] ?? '' ) );
+			if ( '' !== $price ) {
+				return $price;
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Extract visible product cards from a document.
+	 *
+	 * @param DOMDocument $doc      Source document.
+	 * @param string      $filename Source filename.
+	 * @return array{products:array<int,array<string,mixed>>,selector_hints:array<int,array<string,mixed>>,rejected:array<int,array<string,string>>}
+	 */
+	private static function product_card_products_from_document( DOMDocument $doc, string $filename ): array {
+		$products       = array();
+		$selector_hints = array();
+		$rejected       = array();
+		$xpath          = new DOMXPath( $doc );
+		$nodes          = $xpath->query( '//*[self::article or self::li or self::div][contains(translate(concat(" ", @class, " ", @id, " ", @itemtype, " "), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "product") or @data-product-slug or @data-product-name or @data-price]' );
+
+		if ( ! $nodes instanceof DOMNodeList ) {
+			return array(
+				'products'       => array(),
+				'selector_hints' => array(),
+				'rejected'       => array(),
+			);
+		}
+
+		foreach ( $nodes as $node ) {
+			if ( ! $node instanceof DOMElement || self::has_descendant_product_candidate( $node ) ) {
+				continue;
+			}
+
+			$selector = self::commerce_selector_for_element( $node );
+			$product  = self::product_from_card_element( $doc, $node, $filename, $selector );
+			if ( empty( $product ) ) {
+				$rejected[] = array(
+					'source_filename' => $filename,
+					'selector'        => $selector,
+					'reason'          => 'missing_name_or_price',
+				);
+				continue;
+			}
+
+			$products[]       = $product;
+			$selector_hints[] = array(
+				'source_filename' => $filename,
+				'card_selector'   => $selector,
+			);
+		}
+
+		return array(
+			'products'       => $products,
+			'selector_hints' => self::dedupe_selector_hints( $selector_hints ),
+			'rejected'       => $rejected,
+		);
+	}
+
+	/**
+	 * Check whether a broad candidate contains a more specific product/card candidate.
+	 *
+	 * @param DOMElement $element Candidate element.
+	 * @return bool
+	 */
+	private static function has_descendant_product_candidate( DOMElement $element ): bool {
+		foreach ( $element->getElementsByTagName( '*' ) as $child ) {
+			if ( self::element_looks_like_product_card( $child ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Check whether an element looks like a product/card candidate.
+	 *
+	 * @param DOMElement $element Element.
+	 * @return bool
+	 */
+	private static function element_looks_like_product_card( DOMElement $element ): bool {
+		$tag       = strtolower( $element->tagName );
+		$haystack  = strtolower( $element->getAttribute( 'class' ) . ' ' . $element->getAttribute( 'id' ) );
+		$valid_tag = in_array( $tag, array( 'article', 'li', 'div' ), true );
+
+		return $valid_tag && ( str_contains( $haystack, 'product' ) || $element->hasAttribute( 'data-product-slug' ) || $element->hasAttribute( 'data-product-name' ) || $element->hasAttribute( 'data-price' ) );
+	}
+
+	/**
+	 * Normalize one visible product card into the seeder product shape.
+	 *
+	 * @param DOMDocument $doc      Source document.
+	 * @param DOMElement  $element  Card element.
+	 * @param string      $filename Source filename.
+	 * @param string      $selector Selector hint.
+	 * @return array<string, mixed>
+	 */
+	private static function product_from_card_element( DOMDocument $doc, DOMElement $element, string $filename, string $selector ): array {
+		$name  = self::product_card_name( $element );
+		$price = self::normalize_commerce_price( self::product_card_price_text( $element ) );
+		if ( '' === $name || '' === $price ) {
+			return array();
+		}
+
+		$slug = sanitize_title( $element->getAttribute( 'data-product-slug' ) );
+		if ( '' === $slug ) {
+			$slug = sanitize_title( $name );
+		}
+
+		$product = array(
+			'name'            => $name,
+			'slug'            => $slug,
+			'regular_price'   => $price,
+			'source_filename' => $filename,
+			'card_selector'   => $selector,
+		);
+
+		$image = self::product_card_image( $element );
+		if ( '' !== $image ) {
+			$product['image'] = $image;
+		}
+
+		$category = self::product_card_category( $element );
+		if ( '' !== $category ) {
+			$product['categories'] = array( $category );
+		}
+
+		return $product;
+	}
+
+	/**
+	 * Extract a product name from a card.
+	 *
+	 * @param DOMElement $element Card element.
+	 * @return string
+	 */
+	private static function product_card_name( DOMElement $element ): string {
+		foreach ( array( 'h1', 'h2', 'h3', 'h4', 'h5', 'h6' ) as $tag ) {
+			$headings = $element->getElementsByTagName( $tag );
+			if ( $headings->length > 0 ) {
+				return self::clean_commerce_text( $headings->item( 0 )->textContent ?? '' );
+			}
+		}
+
+		foreach ( array( 'data-product-name', 'aria-label', 'title' ) as $attribute ) {
+			$value = self::clean_commerce_text( $element->getAttribute( $attribute ) );
+			if ( '' !== $value ) {
+				return $value;
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Extract raw price text from a card.
+	 *
+	 * @param DOMElement $element Card element.
+	 * @return string
+	 */
+	private static function product_card_price_text( DOMElement $element ): string {
+		foreach ( array( 'data-price', 'data-regular-price' ) as $attribute ) {
+			$value = self::clean_commerce_text( $element->getAttribute( $attribute ) );
+			if ( '' !== $value ) {
+				return $value;
+			}
+		}
+
+		foreach ( $element->getElementsByTagName( '*' ) as $child ) {
+			$haystack = strtolower( $child->getAttribute( 'class' ) . ' ' . $child->getAttribute( 'data-price' ) );
+			if ( str_contains( $haystack, 'price' ) ) {
+				return self::clean_commerce_text( $child->textContent );
+			}
+		}
+
+		return self::clean_commerce_text( $element->textContent );
+	}
+
+	/**
+	 * Extract image source from a product card.
+	 *
+	 * @param DOMElement $element Card element.
+	 * @return string
+	 */
+	private static function product_card_image( DOMElement $element ): string {
+		$images = $element->getElementsByTagName( 'img' );
+		if ( $images->length <= 0 ) {
+			return '';
+		}
+
+		$image = $images->item( 0 );
+		return $image instanceof DOMElement ? trim( $image->getAttribute( 'src' ) ) : '';
+	}
+
+	/**
+	 * Infer a product category from nearby section context.
+	 *
+	 * @param DOMElement $element Card element.
+	 * @return string
+	 */
+	private static function product_card_category( DOMElement $element ): string {
+		$parent = $element->parentNode;
+		while ( $parent instanceof DOMElement ) {
+			if ( in_array( strtolower( $parent->tagName ), array( 'section', 'main' ), true ) ) {
+				foreach ( array( 'h1', 'h2', 'h3' ) as $tag ) {
+					$headings = $parent->getElementsByTagName( $tag );
+					if ( $headings->length > 0 ) {
+						$category = self::clean_commerce_text( $headings->item( 0 )->textContent ?? '' );
+						if ( '' !== $category && self::product_card_name( $element ) !== $category ) {
+							return $category;
+						}
+					}
+				}
+			}
+
+			$parent = $parent->parentNode;
+		}
+
+		return '';
+	}
+
+	/**
+	 * Build a stable selector hint for a DOM element.
+	 *
+	 * @param DOMElement $element Element.
+	 * @return string
+	 */
+	private static function commerce_selector_for_element( DOMElement $element ): string {
+		$slug = sanitize_title( $element->getAttribute( 'data-product-slug' ) );
+		if ( '' !== $slug ) {
+			return '[data-product-slug="' . $slug . '"]';
+		}
+
+		$id = sanitize_html_class( $element->getAttribute( 'id' ) );
+		if ( '' !== $id ) {
+			return '#' . $id;
+		}
+
+		$classes = preg_split( '/\s+/', trim( $element->getAttribute( 'class' ) ) );
+		$classes = is_array( $classes ) ? array_values( array_filter( array_map( 'sanitize_html_class', $classes ) ) ) : array();
+		if ( ! empty( $classes ) ) {
+			return strtolower( $element->tagName ) . '.' . implode( '.', array_slice( $classes, 0, 2 ) );
+		}
+
+		return strtolower( $element->tagName );
+	}
+
+	/**
+	 * Normalize scalar commerce data.
+	 *
+	 * @param mixed $value Raw value.
+	 * @return string
+	 */
+	private static function commerce_scalar( $value ): string {
+		return is_scalar( $value ) ? self::clean_commerce_text( (string) $value ) : '';
+	}
+
+	/**
+	 * Normalize visible text.
+	 *
+	 * @param string $text Raw text.
+	 * @return string
+	 */
+	private static function clean_commerce_text( string $text ): string {
+		return trim( (string) preg_replace( '/\s+/', ' ', wp_strip_all_tags( html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) ) );
+	}
+
+	/**
+	 * Normalize a storefront price to the products.json decimal string shape.
+	 *
+	 * @param string $price Raw price.
+	 * @return string
+	 */
+	private static function normalize_commerce_price( string $price ): string {
+		if ( ! preg_match( '/(?:[$€£]\s*)?([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+)(?:\s*(?:USD|EUR|GBP))?/i', $price, $matches ) ) {
+			return '';
+		}
+
+		$number = str_replace( ',', '', $matches[1] );
+		return number_format( (float) $number, 2, '.', '' );
+	}
+
+	/**
+	 * Dedupe products by slug.
+	 *
+	 * @param array<int, array<string, mixed>> $products Products.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private static function dedupe_products_by_slug( array $products ): array {
+		$seen   = array();
+		$result = array();
+		foreach ( $products as $product ) {
+			$slug = isset( $product['slug'] ) ? (string) $product['slug'] : '';
+			if ( '' === $slug || isset( $seen[ $slug ] ) ) {
+				continue;
+			}
+			$seen[ $slug ] = true;
+			$result[]      = $product;
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Dedupe selector hints.
+	 *
+	 * @param array<int, array<string, mixed>> $hints Selector hints.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private static function dedupe_selector_hints( array $hints ): array {
+		$seen   = array();
+		$result = array();
+		foreach ( $hints as $hint ) {
+			$key = ( $hint['source_filename'] ?? '' ) . '|' . ( $hint['card_selector'] ?? '' );
+			if ( isset( $seen[ $key ] ) ) {
+				continue;
+			}
+			$seen[ $key ] = true;
+			$result[]     = $hint;
+		}
+
+		return $result;
 	}
 
 	/**
@@ -3866,6 +4614,10 @@ class Static_Site_Importer_Theme_Generator {
 			if ( is_array( $report_manifest ) && true === ( $report_manifest['valid'] ?? false ) ) {
 				$manifest = isset( $report_manifest['products'] ) && is_array( $report_manifest['products'] ) ? $report_manifest['products'] : array();
 			}
+		}
+
+		if ( null === $manifest && ! empty( self::$active_commerce_context['products'] ) && is_array( self::$active_commerce_context['products'] ) ) {
+			$manifest = self::$active_commerce_context['products'];
 		}
 
 		if ( null === $manifest ) {
@@ -5150,6 +5902,77 @@ class Static_Site_Importer_Theme_Generator {
 
 		$opacity = trim( preg_replace( '/\s*!important\s*$/i', '', $opacity ) ?? $opacity );
 		return (bool) preg_match( '/^0(?:\.0+)?%?$/', $opacity );
+	}
+
+	/**
+	 * Collect CSS classes that identify empty decorative layers.
+	 *
+	 * @param string $css Source CSS.
+	 * @return array<int, string> Class names.
+	 */
+	private static function decorative_empty_group_classes_from_css( string $css ): array {
+		$classes = array_merge(
+			self::absolute_position_classes_from_css( $css ),
+			self::sized_decorative_classes_from_css( $css )
+		);
+		$classes = array_values( array_unique( $classes ) );
+		sort( $classes, SORT_STRING );
+
+		return $classes;
+	}
+
+	/**
+	 * Collect terminal selector classes from rules that size decorative empty layers.
+	 *
+	 * @param string $css Source CSS.
+	 * @return array<int, string> Class names.
+	 */
+	private static function sized_decorative_classes_from_css( string $css ): array {
+		$css = preg_replace( '/\/\*.*?\*\//s', '', $css ) ?? $css;
+		if ( '' === trim( $css ) || ! str_contains( $css, '.' ) ) {
+			return array();
+		}
+
+		return self::sized_decorative_classes_from_css_scope( $css );
+	}
+
+	/**
+	 * Collect sized decorative classes inside one CSS block list.
+	 *
+	 * @param string $css CSS to inspect.
+	 * @return array<int, string> Class names.
+	 */
+	private static function sized_decorative_classes_from_css_scope( string $css ): array {
+		$classes = array();
+		$length  = strlen( $css );
+		$offset  = 0;
+
+		while ( $offset < $length && preg_match( '/\G\s*([^{}]+)\{/', $css, $match, 0, $offset ) ) {
+			$prelude    = trim( $match[1] );
+			$body_start = $offset + strlen( $match[0] );
+			$body_end   = self::find_css_block_end( $css, $body_start );
+			if ( null === $body_end ) {
+				break;
+			}
+
+			$body   = substr( $css, $body_start, $body_end - $body_start );
+			$offset = $body_end + 1;
+
+			if ( str_starts_with( $prelude, '@' ) ) {
+				$classes = array_merge( $classes, self::sized_decorative_classes_from_css_scope( $body ) );
+				continue;
+			}
+
+			if ( ! preg_match( '/(?:^|;)\s*(?:min-)?height\s*:/i', $body ) && ! preg_match( '/(?:^|;)\s*aspect-ratio\s*:/i', $body ) ) {
+				continue;
+			}
+
+			foreach ( explode( ',', $prelude ) as $selector ) {
+				$classes = array_merge( $classes, self::selector_terminal_classes( trim( $selector ) ) );
+			}
+		}
+
+		return array_values( array_unique( $classes ) );
 	}
 
 	/**

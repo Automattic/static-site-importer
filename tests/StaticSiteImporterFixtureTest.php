@@ -296,6 +296,84 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Generated stores without valid manifests infer WooCommerce products from visible product cards.
+	 */
+	public function test_static_store_product_cards_infer_commerce_context(): void {
+		$plugin_root = dirname( __DIR__ );
+		$fixture     = $plugin_root . '/tests/fixtures/generated-store-inferred/index.html';
+
+		$result = Static_Site_Importer_Theme_Generator::import_theme(
+			$fixture,
+			array(
+				'name'        => 'Generated Store Inferred',
+				'slug'        => 'generated-store-inferred',
+				'overwrite'   => true,
+				'activate'    => false,
+				'keep_source' => true,
+			)
+		);
+
+		$this->assertNotWPError( $result );
+		$this->assertIsArray( $result );
+
+		$report    = json_decode( $this->read_file( $result['report_path'] ), true );
+		$inference = $report['commerce_product_inference'] ?? array();
+
+		$this->assertIsArray( $report );
+		$this->assertSame( 'html_cards', $inference['strategy'] ?? '' );
+		$this->assertSame( 2, $inference['product_count'] ?? null );
+		$this->assertSame( 'html_cards', $report['commerce_context']['source'] ?? '' );
+		$this->assertSame( 2, $report['commerce_context']['product_count'] ?? null );
+		$this->assertSame( 'Signal Hoodie', $inference['products'][0]['name'] ?? '' );
+		$this->assertSame( 'signal-hoodie', $inference['products'][0]['slug'] ?? '' );
+		$this->assertSame( '64.00', $inference['products'][0]['regular_price'] ?? '' );
+		$this->assertSame( array( 'Field Gear' ), $inference['products'][0]['categories'] ?? array() );
+		$this->assertContains( '[data-product-slug="signal-hoodie"]', array_column( $report['commerce_context']['selector_hints'] ?? array(), 'card_selector' ) );
+
+		if ( ! class_exists( 'WC_Product_Simple' ) ) {
+			$this->assertSame( 'skipped', $report['product_seeding']['status'] ?? '' );
+			$this->assertSame( 'woocommerce_inactive', $report['product_seeding']['reason'] ?? '' );
+			$this->assertSame( array( 'created' => 0, 'updated' => 0, 'skipped' => 2, 'error' => 0 ), $report['product_seeding']['counts'] ?? array() );
+			$this->assertSame( 'field-notes', $report['product_seeding']['products'][1]['slug'] ?? '' );
+		}
+	}
+
+	/**
+	 * JSON-LD Product data wins over visible-card inference when no valid manifest exists.
+	 */
+	public function test_json_ld_product_data_infers_before_product_cards(): void {
+		$fixture = $this->write_temp_fixture(
+			'index.html',
+			'<!doctype html><html><head><script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"Structured Beans","url":"https://example.test/products/structured-beans","image":"assets/beans.jpg","description":"Single origin beans.","offers":{"@type":"Offer","price":"18","priceCurrency":"USD"}}</script></head><body><main><article class="product-card"><h2>Visible Beans</h2><p class="price">$22.00</p></article></main></body></html>'
+		);
+
+		$result = Static_Site_Importer_Theme_Generator::import_theme(
+			$fixture,
+			array(
+				'name'        => 'JSON LD Store',
+				'slug'        => 'json-ld-store',
+				'overwrite'   => true,
+				'activate'    => false,
+				'keep_source' => true,
+			)
+		);
+
+		$this->assertNotWPError( $result );
+		$this->assertIsArray( $result );
+
+		$report    = json_decode( $this->read_file( $result['report_path'] ), true );
+		$inference = $report['commerce_product_inference'] ?? array();
+
+		$this->assertIsArray( $report );
+		$this->assertSame( 'json_ld', $inference['strategy'] ?? '' );
+		$this->assertSame( 1, $inference['product_count'] ?? null );
+		$this->assertSame( 'json_ld', $report['commerce_context']['source'] ?? '' );
+		$this->assertSame( 'Structured Beans', $inference['products'][0]['name'] ?? '' );
+		$this->assertSame( 'structured-beans', $inference['products'][0]['slug'] ?? '' );
+		$this->assertSame( '18.00', $inference['products'][0]['regular_price'] ?? '' );
+	}
+
+	/**
 	 * Product/catalog decorative placeholders import without HTML fallbacks.
 	 */
 	public function test_product_catalog_decorative_placeholders_import_as_native_blocks(): void {
