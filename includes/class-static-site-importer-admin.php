@@ -200,6 +200,14 @@ class Static_Site_Importer_Admin {
 			self::redirect_error( $result->get_error_message() );
 		}
 
+		if ( ! empty( $result['quality']['fail_import'] ) ) {
+			$failure_reasons = isset( $result['quality']['failure_reasons'] ) && is_array( $result['quality']['failure_reasons'] ) ? $result['quality']['failure_reasons'] : array();
+			if ( in_array( 'woocommerce_missing', $failure_reasons, true ) ) {
+				self::redirect_error( 'WooCommerce is required for this import. The source declared products but WooCommerce is not active. Install and activate WooCommerce, then retry the import.' );
+			}
+			self::redirect_error( 'Conversion quality gate failed. Theme files were written for inspection; review the import report and retry.' );
+		}
+
 		wp_safe_redirect( add_query_arg( 'static_site_imported', rawurlencode( $result['theme_name'] ), admin_url( 'admin.php?page=static-site-importer' ) ) );
 		exit;
 	}

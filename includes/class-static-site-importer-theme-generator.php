@@ -207,6 +207,7 @@ class Static_Site_Importer_Theme_Generator {
 		self::record_visual_fidelity_targets( $pages, $page_ids, $permalinks, $writes, $theme_dir );
 		self::record_semantic_fidelity_targets( $pages, $page_ids, $permalinks, $writes, $theme_dir );
 		self::record_product_seeding_report( $args );
+		self::record_commerce_dependency_check( $args );
 		$quality     = self::finalize_quality_report( $args );
 		$report_json = wp_json_encode( self::$conversion_report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 		if ( false === $report_json ) {
@@ -3134,6 +3135,7 @@ class Static_Site_Importer_Theme_Generator {
 				'unsafe_svg_count'                   => 0,
 				'svg_materialization_failure_count'  => 0,
 				'svg_sprite_reference_failure_count' => 0,
+				'commerce_dependency_failures'       => 0,
 				'failure_reasons'                    => array(),
 			),
 			'source_documents'        => array(
@@ -4659,6 +4661,126 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
+	 * Record the WooCommerce dependency check for commerce-bearing imports.
+	 *
+	 * Commerce intent is detected when the import has either a validated
+	 * products.json manifest or any commerce_context (caller-supplied,
+	 * inferred from JSON-LD, or inferred from product cards) carrying at
+	 * least one product. When intent is present, WooCommerce must be active
+	 * or the caller must explicitly waive the requirement via
+	 * allow_missing_woocommerce. Without intent, no commerce.dependencies
+	 * shape is recorded and behavior is unchanged.
+	 *
+	 * @param array<string, mixed> $args Import args.
+	 * @return void
+	 */
+	private static function record_commerce_dependency_check( array $args ): void {
+		$intent = self::commerce_dependency_intent();
+		if ( ! $intent['present'] ) {
+			return;
+		}
+
+		$woocommerce_active = Static_Site_Importer_Woo_Product_Seeder::woocommerce_available();
+		$waived             = ! empty( $args['allow_missing_woocommerce'] );
+
+		$dependencies = array(
+			'woocommerce' => array(
+				'required'      => true,
+				'active'        => $woocommerce_active,
+				'sources'       => $intent['sources'],
+				'product_count' => $intent['product_count'],
+				'waived'        => $waived,
+				'missing_apis'  => $woocommerce_active ? array() : array( 'WC_Product_Simple', 'product_post_type', 'product_cat_taxonomy' ),
+			),
+		);
+
+		if ( ! isset( self::$conversion_report['commerce'] ) || ! is_array( self::$conversion_report['commerce'] ) ) {
+			self::$conversion_report['commerce'] = array();
+		}
+		self::$conversion_report['commerce']['dependencies'] = $dependencies;
+
+		if ( $woocommerce_active ) {
+			self::$conversion_report['diagnostics'][] = array(
+				'code'          => 'woocommerce_present',
+				'severity'      => 'info',
+				'source'        => 'commerce.dependencies.woocommerce',
+				'message'       => 'WooCommerce is active; commerce-bearing import will seed products.',
+				'product_count' => $intent['product_count'],
+				'sources'       => $intent['sources'],
+			);
+			return;
+		}
+
+		if ( $waived ) {
+			self::$conversion_report['diagnostics'][] = array(
+				'code'          => 'woocommerce_waived',
+				'severity'      => 'warning',
+				'source'        => 'commerce.dependencies.woocommerce',
+				'message'       => 'Commerce-bearing import proceeded without WooCommerce because allow_missing_woocommerce was set; products were not seeded.',
+				'product_count' => $intent['product_count'],
+				'sources'       => $intent['sources'],
+			);
+			return;
+		}
+
+		++self::$conversion_report['quality']['commerce_dependency_failures'];
+		self::$conversion_report['diagnostics'][] = array(
+			'code'          => 'woocommerce_missing',
+			'severity'      => 'error',
+			'source'        => 'commerce.dependencies.woocommerce',
+			'message'       => 'WooCommerce is required for this import. The source declared products but WooCommerce is not active. Install and activate WooCommerce, or pass allow_missing_woocommerce to import the theme without seeding products.',
+			'product_count' => $intent['product_count'],
+			'sources'       => $intent['sources'],
+		);
+
+		if ( isset( self::$conversion_report['product_seeding'] ) && is_array( self::$conversion_report['product_seeding'] ) ) {
+			self::$conversion_report['product_seeding']['reason'] = 'woocommerce_required_but_missing';
+		}
+	}
+
+	/**
+	 * Detect commerce intent for the active import.
+	 *
+	 * @return array{present:bool,sources:array<int,string>,product_count:int}
+	 */
+	private static function commerce_dependency_intent(): array {
+		$sources       = array();
+		$product_count = 0;
+
+		$manifest = self::$conversion_report['commerce']['products_manifest'] ?? array();
+		if ( is_array( $manifest ) && true === ( $manifest['valid'] ?? false ) ) {
+			$manifest_count = (int) ( $manifest['product_count'] ?? 0 );
+			if ( $manifest_count > 0 ) {
+				$sources[]     = 'products_manifest';
+				$product_count = $manifest_count;
+			}
+		}
+
+		$context = self::$conversion_report['commerce_context'] ?? array();
+		if ( is_array( $context ) && true === ( $context['supplied'] ?? false ) ) {
+			$context_count = (int) ( $context['product_count'] ?? 0 );
+			if ( $context_count > 0 ) {
+				$source = (string) ( $context['source'] ?? 'commerce_context' );
+				if ( '' === $source ) {
+					$source = 'commerce_context';
+				}
+				if ( ! in_array( $source, $sources, true ) ) {
+					$sources[] = $source;
+				}
+				if ( $context_count > $product_count ) {
+					$product_count = $context_count;
+				}
+			}
+		}
+
+		return array(
+			'present'       => ! empty( $sources ),
+			'sources'       => $sources,
+			'product_count' => $product_count,
+		);
+	}
+
+	/**
 	 * Browser-level visual probes the benchmark harness should run for every target.
 	 *
 	 * @return array<string, array<string, mixed>>
@@ -5319,6 +5441,9 @@ class Static_Site_Importer_Theme_Generator {
 		if ( $quality['svg_sprite_reference_failure_count'] > 0 ) {
 			$reasons[] = 'svg_sprite_reference_failure';
 		}
+		if ( ( $quality['commerce_dependency_failures'] ?? 0 ) > 0 ) {
+			$reasons[] = 'woocommerce_missing';
+		}
 
 		$quality['pass']            = empty( $reasons );
 		$quality['failure_reasons'] = $reasons;
@@ -5327,6 +5452,12 @@ class Static_Site_Importer_Theme_Generator {
 			$quality['fail_import'] = true;
 		}
 		if ( array_key_exists( 'max_fallbacks', $args ) && null !== $args['max_fallbacks'] && $quality['fallback_count'] > (int) $args['max_fallbacks'] ) {
+			$quality['fail_import'] = true;
+		}
+		// Commerce dependency failures are always import-failing regardless of --fail-on-quality.
+		// Silently producing a no-products WordPress site for a commerce import is qualitatively
+		// worse than a layout fallback, so the gate trips even without an explicit failure flag.
+		if ( in_array( 'woocommerce_missing', $reasons, true ) ) {
 			$quality['fail_import'] = true;
 		}
 
