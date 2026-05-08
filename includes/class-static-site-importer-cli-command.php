@@ -110,6 +110,11 @@ class Static_Site_Importer_CLI_Command {
 			)
 		);
 
+		if ( is_wp_error( $ability_result ) ) {
+			WP_CLI::error( $ability_result->get_error_message() );
+			return;
+		}
+
 		if ( empty( $ability_result['success'] ) ) {
 			$error = isset( $ability_result['error'] ) && is_array( $ability_result['error'] ) ? $ability_result['error'] : array();
 			WP_CLI::error( isset( $error['message'] ) ? (string) $error['message'] : 'Static site import failed.' );
