@@ -30,7 +30,7 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-th
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/abilities.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-admin.php';
 
-if ( defined( 'WP_CLI' ) && WP_CLI ) {
+if ( defined( 'WP_CLI' ) ) {
 	require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-cli-command.php';
 }
 
@@ -39,7 +39,7 @@ add_action(
 	static function (): void {
 		Static_Site_Importer_Admin::register();
 
-		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+		if ( defined( 'WP_CLI' ) ) {
 			WP_CLI::add_command( 'static-site-importer', 'Static_Site_Importer_CLI_Command' );
 		}
 	}

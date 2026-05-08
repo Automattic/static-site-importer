@@ -262,17 +262,18 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		return array(
-			'theme_slug'           => $theme_slug,
-			'theme_name'           => $theme_name,
-			'theme_dir'            => $theme_dir,
-			'report_path'          => $theme_dir . '/import-report.json',
-			'external_report_path' => $external_report_path,
-			'source_dir'           => $site_dir,
-			'source_deleted'       => $source_deleted,
-			'source_cleanup_error' => $source_cleanup_error,
-			'pages'                => $page_ids,
-			'quality'              => $quality,
-			'source_documents'     => self::$conversion_report['source_documents'],
+			'theme_slug'            => $theme_slug,
+			'theme_name'            => $theme_name,
+			'theme_dir'             => $theme_dir,
+			'report_path'           => $theme_dir . '/import-report.json',
+			'external_report_path'  => $external_report_path,
+			'import_report_summary' => self::import_report_summary( self::$conversion_report, $quality ),
+			'source_dir'            => $site_dir,
+			'source_deleted'        => $source_deleted,
+			'source_cleanup_error'  => $source_cleanup_error,
+			'pages'                 => $page_ids,
+			'quality'               => $quality,
+			'source_documents'      => self::$conversion_report['source_documents'],
 		);
 	}
 
@@ -5463,6 +5464,31 @@ class Static_Site_Importer_Theme_Generator {
 
 		self::$conversion_report['quality'] = $quality;
 		return $quality;
+	}
+
+	/**
+	 * Build the compact report summary consumed by validation harnesses.
+	 *
+	 * @param array<string, mixed> $report  Full conversion report.
+	 * @param array<string, mixed> $quality Finalized quality summary.
+	 * @return array<string, mixed>
+	 */
+	private static function import_report_summary( array $report, array $quality ): array {
+		$diagnostics = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
+
+		return array(
+			'status'                => ! empty( $quality['fail_import'] ) ? 'failed' : 'completed',
+			'entry_file'            => isset( $report['entry_file'] ) ? (string) $report['entry_file'] : '',
+			'quality_pass'          => ! empty( $quality['pass'] ),
+			'fail_import'           => ! empty( $quality['fail_import'] ),
+			'failure_reasons'       => isset( $quality['failure_reasons'] ) && is_array( $quality['failure_reasons'] ) ? array_values( $quality['failure_reasons'] ) : array(),
+			'fallback_count'        => (int) ( $quality['fallback_count'] ?? 0 ),
+			'core_html_block_count' => (int) ( $quality['core_html_block_count'] ?? 0 ),
+			'freeform_block_count'  => (int) ( $quality['freeform_block_count'] ?? 0 ),
+			'invalid_block_count'   => (int) ( $quality['invalid_block_count'] ?? 0 ),
+			'content_loss_count'    => (int) ( $quality['content_loss_count'] ?? 0 ),
+			'diagnostic_count'      => count( $diagnostics ),
+		);
 	}
 
 	/**

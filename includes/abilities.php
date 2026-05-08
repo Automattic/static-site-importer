@@ -54,11 +54,11 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 				'input_schema'        => array(
 					'type'       => 'object',
 					'properties' => array(
-						'html_path'       => array( 'type' => 'string' ),
-						'slug'            => array( 'type' => 'string' ),
-						'name'            => array( 'type' => 'string' ),
-						'activate'        => array( 'type' => 'boolean' ),
-						'overwrite'       => array( 'type' => 'boolean' ),
+						'html_path'                 => array( 'type' => 'string' ),
+						'slug'                      => array( 'type' => 'string' ),
+						'name'                      => array( 'type' => 'string' ),
+						'activate'                  => array( 'type' => 'boolean' ),
+						'overwrite'                 => array( 'type' => 'boolean' ),
 						'keep_source'               => array( 'type' => 'boolean' ),
 						'fail_on_quality'           => array( 'type' => 'boolean' ),
 						'max_fallbacks'             => array( 'type' => 'integer' ),
@@ -84,7 +84,7 @@ if ( ! function_exists( 'static_site_importer_ability_permission_callback' ) ) {
 	 * @return bool
 	 */
 	function static_site_importer_ability_permission_callback(): bool {
-		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+		if ( defined( 'WP_CLI' ) ) {
 			return true;
 		}
 
@@ -106,10 +106,10 @@ if ( ! function_exists( 'static_site_importer_ability_import_theme' ) ) {
 		}
 
 		$args = array(
-			'slug'            => isset( $input['slug'] ) ? (string) $input['slug'] : '',
-			'name'            => isset( $input['name'] ) ? (string) $input['name'] : '',
-			'activate'        => ! empty( $input['activate'] ),
-			'overwrite'       => ! empty( $input['overwrite'] ),
+			'slug'                      => isset( $input['slug'] ) ? (string) $input['slug'] : '',
+			'name'                      => isset( $input['name'] ) ? (string) $input['name'] : '',
+			'activate'                  => ! empty( $input['activate'] ),
+			'overwrite'                 => ! empty( $input['overwrite'] ),
 			'keep_source'               => ! empty( $input['keep_source'] ),
 			'fail_on_quality'           => ! empty( $input['fail_on_quality'] ),
 			'max_fallbacks'             => isset( $input['max_fallbacks'] ) ? (int) $input['max_fallbacks'] : null,
@@ -142,11 +142,40 @@ if ( ! function_exists( 'static_site_importer_ability_error' ) ) {
 	 */
 	function static_site_importer_ability_error( string $code, string $message, $data = null ): array {
 		return array(
-			'success' => false,
-			'error'   => array(
+			'success'               => false,
+			'error'                 => array(
 				'code'    => $code,
 				'message' => $message,
 				'data'    => $data,
+			),
+			'import_report_summary' => static_site_importer_failure_report_summary( $code, $message ),
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_failure_report_summary' ) ) {
+	/**
+	 * Build a minimal report summary for failures that happen before a report file exists.
+	 *
+	 * @param string $code    Error code.
+	 * @param string $message Error message.
+	 * @return array<string, mixed>
+	 */
+	function static_site_importer_failure_report_summary( string $code, string $message ): array {
+		return array(
+			'status'                => 'failed',
+			'quality_pass'          => false,
+			'fail_import'           => true,
+			'failure_reasons'       => array( $code ),
+			'fallback_count'        => 0,
+			'core_html_block_count' => 0,
+			'freeform_block_count'  => 0,
+			'invalid_block_count'   => 0,
+			'content_loss_count'    => 0,
+			'diagnostic_count'      => 1,
+			'error'                 => array(
+				'code'    => $code,
+				'message' => $message,
 			),
 		);
 	}

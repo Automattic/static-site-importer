@@ -97,9 +97,13 @@ class Static_Site_Importer_Theme_Generator {
 		self::$last_call = array( $html_path, $args );
 
 		return array(
-			'theme_slug' => $args['slug'],
-			'theme_name' => $args['name'],
-			'report_path' => '/tmp/import-report.json',
+			'theme_slug'            => $args['slug'],
+			'theme_name'            => $args['name'],
+			'report_path'           => '/tmp/import-report.json',
+			'import_report_summary' => array(
+				'status'       => 'completed',
+				'quality_pass' => true,
+			),
 		);
 	}
 }
@@ -135,6 +139,8 @@ $assert( static_site_importer_ability_permission_callback(), 'permission-allows-
 $missing = static_site_importer_ability_import_theme( array() );
 $assert( empty( $missing['success'] ), 'missing-html-path-fails' );
 $assert( 'static_site_importer_missing_html_path' === ( $missing['error']['code'] ?? '' ), 'missing-html-path-error-code' );
+$assert( 'failed' === ( $missing['import_report_summary']['status'] ?? '' ), 'missing-html-path-includes-report-summary' );
+$assert( in_array( 'static_site_importer_missing_html_path', $missing['import_report_summary']['failure_reasons'] ?? array(), true ), 'missing-html-path-summary-carries-error-code' );
 
 $result = static_site_importer_ability_import_theme(
 	array(
@@ -153,6 +159,7 @@ $result = static_site_importer_ability_import_theme(
 );
 
 $assert( ! empty( $result['success'] ), 'ability-import-succeeds' );
+$assert( 'completed' === ( $result['result']['import_report_summary']['status'] ?? '' ), 'ability-result-includes-import-report-summary' );
 $assert( '/tmp/source/index.html' === ( Static_Site_Importer_Theme_Generator::$last_call[0] ?? '' ), 'html-path-forwarded' );
 $args = Static_Site_Importer_Theme_Generator::$last_call[1] ?? array();
 $assert( 'fixture-theme' === ( $args['slug'] ?? '' ), 'slug-forwarded' );

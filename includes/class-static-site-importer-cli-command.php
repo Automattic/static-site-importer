@@ -66,7 +66,7 @@ class Static_Site_Importer_CLI_Command {
 		$source_metadata = array();
 		if ( isset( $assoc_args['url'] ) && '' !== trim( (string) $assoc_args['url'] ) ) {
 			if ( '' !== $html_file ) {
-				WP_CLI::error( 'Use either <html-entry-file> or --url, not both.' );
+				$this->error_or_json( 'static_site_importer_conflicting_sources', 'Use either <html-entry-file> or --url, not both.', $assoc_args );
 				return;
 			}
 
@@ -75,7 +75,7 @@ class Static_Site_Importer_CLI_Command {
 				trailingslashit( wp_upload_dir()['basedir'] ) . 'static-site-importer/' . wp_generate_uuid4()
 			);
 			if ( is_wp_error( $fetch ) ) {
-				WP_CLI::error( $fetch->get_error_message() );
+				$this->error_or_json( (string) $fetch->get_error_code(), $fetch->get_error_message(), $assoc_args );
 				return;
 			}
 
@@ -84,13 +84,13 @@ class Static_Site_Importer_CLI_Command {
 		}
 
 		if ( '' === $html_file ) {
-			WP_CLI::error( 'Missing <html-entry-file> argument or --url option.' );
+			$this->error_or_json( 'static_site_importer_missing_html_path', 'Missing <html-entry-file> argument or --url option.', $assoc_args );
 			return;
 		}
 
 		$ability = wp_get_ability( 'static-site-importer/import-theme' );
 		if ( ! $ability ) {
-			WP_CLI::error( 'Static Site Importer import ability is not registered.' );
+			$this->error_or_json( 'static_site_importer_ability_missing', 'Static Site Importer import ability is not registered.', $assoc_args );
 			return;
 		}
 
@@ -114,13 +114,18 @@ class Static_Site_Importer_CLI_Command {
 		$ability_result = $ability->execute( $ability_args );
 
 		if ( is_wp_error( $ability_result ) ) {
-			WP_CLI::error( $ability_result->get_error_message() );
+			$this->error_or_json( (string) $ability_result->get_error_code(), $ability_result->get_error_message(), $assoc_args );
 			return;
 		}
 
 		if ( empty( $ability_result['success'] ) ) {
 			$error = isset( $ability_result['error'] ) && is_array( $ability_result['error'] ) ? $ability_result['error'] : array();
-			WP_CLI::error( isset( $error['message'] ) ? (string) $error['message'] : 'Static site import failed.' );
+			$this->error_or_json(
+				isset( $error['code'] ) ? (string) $error['code'] : 'static_site_importer_failed',
+				isset( $error['message'] ) ? (string) $error['message'] : 'Static site import failed.',
+				$assoc_args,
+				isset( $ability_result['import_report_summary'] ) && is_array( $ability_result['import_report_summary'] ) ? $ability_result['import_report_summary'] : array()
+			);
 			return;
 		}
 
@@ -191,6 +196,40 @@ class Static_Site_Importer_CLI_Command {
 		if ( $allow_missing_woo_cli ) {
 			WP_CLI::warning( 'WooCommerce dependency check waived via --allow-missing-woocommerce. Products were not seeded.' );
 		}
+	}
+
+	/**
+	 * Emit a human WP-CLI error or a machine-readable JSON failure payload.
+	 *
+	 * @param string               $code           Error code.
+	 * @param string               $message        Error message.
+	 * @param array<string, mixed> $assoc_args     CLI associative args.
+	 * @param array<string, mixed> $report_summary Optional report summary.
+	 * @return void
+	 */
+	private function error_or_json( string $code, string $message, array $assoc_args, array $report_summary = array() ): void {
+		if ( isset( $assoc_args['format'] ) && 'json' === (string) $assoc_args['format'] ) {
+			if ( empty( $report_summary ) && function_exists( 'static_site_importer_failure_report_summary' ) ) {
+				$report_summary = static_site_importer_failure_report_summary( $code, $message );
+			}
+
+			WP_CLI::line(
+				(string) wp_json_encode(
+					array(
+						'success'               => false,
+						'error'                 => array(
+							'code'    => $code,
+							'message' => $message,
+						),
+						'import_report_summary' => $report_summary,
+					),
+					JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
+				)
+			);
+			WP_CLI::halt( 1 );
+		}
+
+		WP_CLI::error( $message );
 	}
 
 	/**

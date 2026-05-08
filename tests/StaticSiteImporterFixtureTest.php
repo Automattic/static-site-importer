@@ -207,6 +207,50 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Minimal semantic hero sections import as editable blocks, not freeform fallback.
+	 */
+	public function test_simple_main_hero_section_imports_without_freeform_fallback(): void {
+		$fixture_dir = trailingslashit( get_temp_dir() ) . 'static-site-importer-simple-hero-' . wp_generate_uuid4();
+		$this->assertTrue( wp_mkdir_p( $fixture_dir ) );
+
+		$fixture = trailingslashit( $fixture_dir ) . 'index.html';
+		$wrote   = file_put_contents(
+			$fixture,
+			'<!doctype html><html><head><title>Simple Hero</title></head><body><main><section class="hero"><h1>Smoke Test Storefront</h1><p>Synthetic fixture for iterator smoke runs.</p></section></main></body></html>'
+		);
+		$this->assertNotFalse( $wrote );
+
+		$result = Static_Site_Importer_Theme_Generator::import_theme(
+			$fixture,
+			array(
+				'name'        => 'Simple Hero Section',
+				'slug'        => 'simple-hero-section',
+				'overwrite'   => true,
+				'activate'    => false,
+				'keep_source' => true,
+			)
+		);
+
+		$this->assertNotWPError( $result );
+		$this->assertIsArray( $result );
+
+		$pattern = $this->read_file( $result['theme_dir'] . '/patterns/page-home.php' );
+		$report  = json_decode( $this->read_file( $result['report_path'] ), true );
+
+		$this->assertStringContainsString( '<!-- wp:group', $pattern );
+		$this->assertStringContainsString( '"tagName":"section"', $pattern );
+		$this->assertStringContainsString( '"className":"hero"', $pattern );
+		$this->assertStringContainsString( 'Smoke Test Storefront', $pattern );
+		$this->assertStringContainsString( 'Synthetic fixture for iterator smoke runs.', $pattern );
+		$this->assertStringNotContainsString( '<!-- wp:freeform', $pattern );
+		$this->assertStringNotContainsString( '<!-- wp:html', $pattern );
+		$this->assertSame( 0, $report['quality']['freeform_block_count'] ?? null );
+		$this->assertSame( 0, $report['quality']['core_html_block_count'] ?? null );
+		$this->assertSame( 0, $result['import_report_summary']['freeform_block_count'] ?? null );
+		$this->assertSame( false, $result['import_report_summary']['fail_import'] ?? null );
+	}
+
+	/**
 	 * A generated store fixture records valid products.json metadata in the import report only.
 	 *
 	 * When WooCommerce is active, the import succeeds and seeds products. When WooCommerce is
@@ -361,6 +405,7 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 			$cli_source,
 			'CLI human branch must report fail_import via WP_CLI::error before printing the success line.'
 		);
+		$this->assertStringContainsString( 'import_report_summary', $cli_source, 'CLI JSON failure payloads must include import_report_summary metadata.' );
 	}
 
 	/**
