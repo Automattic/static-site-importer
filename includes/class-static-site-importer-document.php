@@ -783,6 +783,7 @@ class Static_Site_Importer_Document {
 			$regions[] = array(
 				'role'       => 'accessibility_skip_link',
 				'reason'     => 'intentional_accessibility_chrome',
+				'actionable' => false,
 				'tag'        => strtolower( $child->tagName ),
 				'selector'   => $this->selector_path( $child ),
 				'line_range' => $this->element_line_range( $child ),
