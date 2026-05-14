@@ -42,13 +42,14 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$page       = $this->read_file( $theme_dir . '/templates/page.html' );
 		$header     = $this->read_file( $theme_dir . '/parts/header.html' );
 		$footer     = $this->read_file( $theme_dir . '/parts/footer.html' );
-		$style      = $this->read_file( $theme_dir . '/style.css' );
-		$functions  = $this->read_file( $theme_dir . '/functions.php' );
-		$theme_json = json_decode( $this->read_file( $theme_dir . '/theme.json' ), true );
-		$home_tmpl  = $this->read_file( $theme_dir . '/templates/page-home.html' );
-		$proof_tmpl = $this->read_file( $theme_dir . '/templates/page-proof.html' );
-		$home_pat   = $this->read_file( $theme_dir . '/patterns/page-home.php' );
-		$proof_pat  = $this->read_file( $theme_dir . '/patterns/page-proof.php' );
+		$style        = $this->read_file( $theme_dir . '/style.css' );
+		$editor_style = $this->read_file( $theme_dir . '/assets/css/editor-style.css' );
+		$functions    = $this->read_file( $theme_dir . '/functions.php' );
+		$theme_json   = json_decode( $this->read_file( $theme_dir . '/theme.json' ), true );
+		$home_tmpl    = $this->read_file( $theme_dir . '/templates/page-home.html' );
+		$proof_tmpl   = $this->read_file( $theme_dir . '/templates/page-proof.html' );
+		$home_pat     = $this->read_file( $theme_dir . '/patterns/page-home.php' );
+		$proof_pat    = $this->read_file( $theme_dir . '/patterns/page-proof.php' );
 
 		$this->assertStringContainsString( '<!-- wp:post-content', $front_page );
 		$this->assertStringContainsString( '<!-- wp:post-content {"tagName":"main"} /-->', $front_page );
@@ -84,6 +85,10 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 
 		$this->assertStringContainsString( '--accent', $style );
 		$this->assertStringContainsString( '.wp-block-button.btn > .wp-block-button__link', $style );
+		$this->assertStringContainsString( '.wp-block-group.is-layout-flow > * + * { margin-block-start: 0; margin-block-end: 0; }', $style );
+		$this->assertStringContainsString( '.wp-block-group.is-layout-flex { gap: 0; }', $style );
+		$this->assertStringContainsString( '.wp-block-group.is-layout-flow > * + * { margin-block-start: 0; margin-block-end: 0; }', $editor_style );
+		$this->assertStringContainsString( '.wp-block-group.is-layout-flex { gap: 0; }', $editor_style );
 		$this->assertStringContainsString( "add_theme_support( 'editor-styles' )", $functions );
 		$this->assertStringContainsString( "add_editor_style( 'assets/css/editor-style.css' )", $functions );
 		$this->assertStringContainsString( "add_action( 'enqueue_block_editor_assets'", $functions );
