@@ -2089,9 +2089,19 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$report  = $report_property->getValue();
 
 		$document = $report['generated_theme']['block_documents'][0] ?? array();
+		$freeform_diagnostic = $report['generated_theme']['freeform_blocks'][0] ?? array();
 
 		$this->assertSame( 2, $document['block_count'] ?? null );
 		$this->assertSame( 1, $document['freeform_block_count'] ?? null );
+		$this->assertSame( 'freeform_block', $freeform_diagnostic['type'] ?? '' );
+		$this->assertSame( 'parts/header.html', $freeform_diagnostic['source'] ?? '' );
+		$this->assertSame( '1', $freeform_diagnostic['block_path'] ?? '' );
+		$this->assertSame( 'a.nav-logo', $freeform_diagnostic['selector'] ?? '' );
+		$this->assertSame( 'html-to-blocks-converter', $freeform_diagnostic['converter'] ?? '' );
+		$this->assertSame( 'generated_theme_block_analysis', $freeform_diagnostic['stage'] ?? '' );
+		$this->assertSame( 'generated_document_contains_core_freeform', $freeform_diagnostic['reason'] ?? '' );
+		$this->assertStringContainsString( 'class="nav-logo"', $freeform_diagnostic['source_html_preview'] ?? '' );
+		$this->assertStringContainsString( 'wp:freeform', $freeform_diagnostic['emitted_block_preview'] ?? '' );
 		$this->assertSame( 1, $quality['freeform_block_count'] ?? null );
 		$this->assertFalse( $quality['pass'] ?? true );
 		$this->assertContains( 'freeform_block', $quality['failure_reasons'] ?? array() );

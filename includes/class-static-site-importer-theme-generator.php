@@ -3186,6 +3186,7 @@ class Static_Site_Importer_Theme_Generator {
 			),
 			'generated_theme'         => array(
 				'block_documents' => array(),
+				'freeform_blocks'  => array(),
 			),
 			'visual_fidelity'         => array(
 				'status'             => 'requires_external_render_check',
@@ -5138,10 +5139,12 @@ class Static_Site_Importer_Theme_Generator {
 				}
 				if ( 'core/freeform' === $name ) {
 					++$freeform_count;
+					self::record_generated_freeform_block( $source, array_merge( $path, array( $index ) ), $block, false );
 				}
 			} elseif ( '' !== trim( isset( $block['innerHTML'] ) && is_string( $block['innerHTML'] ) ? $block['innerHTML'] : '' ) ) {
 				++$freeform_count;
 				++$invalid_count;
+				self::record_generated_freeform_block( $source, array_merge( $path, array( $index ) ), $block, true );
 			}
 
 			if ( ! empty( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
@@ -5177,6 +5180,48 @@ class Static_Site_Importer_Theme_Generator {
 			),
 			$block
 		);
+	}
+
+	/**
+	 * Record an actionable generated freeform block diagnostic.
+	 *
+	 * @param string              $source     Theme-relative source document path.
+	 * @param array<int,int>      $path       Parsed block path.
+	 * @param array<string,mixed> $block      Parsed block.
+	 * @param bool                $malformed  Whether the block parser exposed raw HTML without a block name.
+	 * @return void
+	 */
+	private static function record_generated_freeform_block( string $source, array $path, array $block, bool $malformed ): void {
+		$html = '';
+		if ( isset( $block['innerHTML'] ) && is_string( $block['innerHTML'] ) ) {
+			$html = $block['innerHTML'];
+		}
+
+		$emitted = '';
+		if ( ! $malformed && function_exists( 'serialize_blocks' ) ) {
+			// @phpstan-ignore-next-line argument.type -- Parsed block shape comes from WordPress parse_blocks().
+			$emitted = serialize_blocks( array( $block ) );
+		}
+		if ( '' === trim( $emitted ) ) {
+			$emitted = $html;
+		}
+
+		$entry = self::fallback_diagnostic_entry(
+			'freeform_block',
+			$source,
+			$html,
+			array(
+				'reason' => $malformed ? 'generated_document_contains_malformed_freeform_html' : 'generated_document_contains_core_freeform',
+				'stage'  => 'generated_theme_block_analysis',
+				'path'   => implode( '.', $path ),
+			),
+			$block
+		);
+		$entry['emitted_block_preview'] = self::diagnostic_excerpt( $emitted );
+		$entry['malformed']             = $malformed;
+
+		self::$conversion_report['diagnostics'][]                         = $entry;
+		self::$conversion_report['generated_theme']['freeform_blocks'][] = $entry;
 	}
 
 	/**
