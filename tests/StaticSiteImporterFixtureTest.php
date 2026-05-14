@@ -64,6 +64,7 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'Slug: wordpress-is-dead-fixture/page-home', $home_pat );
 		$this->assertStringContainsString( 'Slug: wordpress-is-dead-fixture/page-proof', $proof_pat );
 		$this->assertStringNotContainsString( '<!-- wp:html /-->', $front_page );
+		$this->assertSame( '0', $theme_json['styles']['spacing']['blockGap'] ?? null );
 
 		$this->assertStringContainsString( 'WordPress', $header );
 		$this->assertStringNotContainsString( 'href="index.html"', $header );

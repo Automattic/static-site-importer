@@ -6537,6 +6537,8 @@ class Static_Site_Importer_Theme_Generator {
 			$data['settings']['color']['palette'] = $design_tokens['palette'];
 		}
 
+		$data['styles']['spacing']['blockGap'] = '0';
+
 		if ( ! empty( $design_tokens['styles'] ) ) {
 			$data['styles']['color'] = $design_tokens['styles'];
 		}
