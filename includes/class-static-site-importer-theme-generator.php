@@ -5692,9 +5692,10 @@ class Static_Site_Importer_Theme_Generator {
 		$button_bridge              = self::button_style_bridge_css( $css, $button_classes );
 		$admin_bar_bridge           = self::admin_bar_top_chrome_css( $css );
 		$source_nav_selector_bridge = self::source_nav_selector_bridge_css( $css );
+		$layout_gap_bridge          = self::imported_group_layout_gap_bridge_css();
 		$css                        = self::scope_source_button_css( $css, $button_classes );
 
-		return "/*\nTheme Name: " . $theme_name . "\nAuthor: Static Site Importer\nDescription: Imported from static HTML using Block Format Bridge.\nVersion: 0.1.0\nRequires at least: 6.6\n*/\n\n" . $css . "\n" . $button_bridge . $admin_bar_bridge . $source_nav_selector_bridge;
+		return "/*\nTheme Name: " . $theme_name . "\nAuthor: Static Site Importer\nDescription: Imported from static HTML using Block Format Bridge.\nVersion: 0.1.0\nRequires at least: 6.6\n*/\n\n" . $css . "\n" . $button_bridge . $admin_bar_bridge . $source_nav_selector_bridge . $layout_gap_bridge;
 	}
 
 	/**
@@ -5708,9 +5709,23 @@ class Static_Site_Importer_Theme_Generator {
 		$editor_bridge              = self::editor_absolute_overlay_css( $css );
 		$editor_reveal_bridge       = self::editor_reveal_animation_css( $css );
 		$source_nav_selector_bridge = self::source_nav_selector_bridge_css( $css );
+		$layout_gap_bridge          = self::imported_group_layout_gap_bridge_css();
 		$css                        = self::scope_source_button_css( $css, $button_classes );
 
-		return "/*\nStatic Site Importer editor styles.\nGenerated separately from frontend style.css so editor wrapper repairs do not leak to public rendering.\n*/\n\n" . $css . "\n" . $button_bridge . $source_nav_selector_bridge . $editor_bridge . $editor_reveal_bridge;
+		return "/*\nStatic Site Importer editor styles.\nGenerated separately from frontend style.css so editor wrapper repairs do not leak to public rendering.\n*/\n\n" . $css . "\n" . $button_bridge . $source_nav_selector_bridge . $layout_gap_bridge . $editor_bridge . $editor_reveal_bridge;
+	}
+
+	/**
+	 * Build layout-gap reset rules for imported source groups.
+	 *
+	 * Static HTML spacing is preserved by the imported source CSS. WordPress adds
+	 * block layout gap/margins to generated group wrappers, which can stretch
+	 * stacked hero and section groups beyond the source document height.
+	 *
+	 * @return string Additional CSS rules.
+	 */
+	private static function imported_group_layout_gap_bridge_css(): string {
+		return "\n/* Static Site Importer: preserve source-authored spacing inside converted group wrappers. */\n.wp-block-group.is-layout-flow > * + * { margin-block-start: 0; margin-block-end: 0; }\n.wp-block-group.is-layout-flex { gap: 0; }\n";
 	}
 
 	/**
