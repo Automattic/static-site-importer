@@ -115,18 +115,18 @@ $assert = static function ($condition, $label, $detail = '') use (&$failures, &$
         $failures[] = 'FAIL [' . $label . ']' . ('' !== $detail ? ': ' . $detail : '');
     }
 };
-$brand_link = '<a class="brand" href="#top" aria-label="Studio Code home"><span class="mark"></span><span>Studio Code</span></a>';
-foreach ([$brand_link, '<!-- wp:freeform -->' . $brand_link . '<!-- /wp:freeform -->'] as $index => $html) {
-    $serialized = serialize_blocks(html_to_blocks_raw_handler(['HTML' => $html]));
-    $label = 0 === $index ? 'raw' : 'freeform';
-    $assert(!\str_contains($serialized, '<!-- wp:html -->'), $label . '-avoids-core-html', $serialized);
-    $assert(!\str_contains($serialized, '<!-- wp:freeform -->'), $label . '-avoids-core-freeform', $serialized);
-    $assert(\str_contains($serialized, '<!-- wp:paragraph'), $label . '-uses-paragraph-block', $serialized);
-    $assert(\str_contains($serialized, 'href="#top"'), $label . '-preserves-href', $serialized);
-    $assert(\str_contains($serialized, 'aria-label="Studio Code home"'), $label . '-preserves-aria-label', $serialized);
-    $assert(\str_contains($serialized, 'class="brand"'), $label . '-preserves-link-class', $serialized);
-    $assert(\str_contains($serialized, '<span class="mark"></span>'), $label . '-preserves-decorative-span-class', $serialized);
-    $assert(\str_contains($serialized, '<span>Studio Code</span>'), $label . '-preserves-label-span', $serialized);
+$brand_cases = ['simple-span-brand' => ['html' => '<a class="brand" href="#top" aria-label="Studio Code home"><span class="mark"></span><span>Studio Code</span></a>', 'snippets' => ['href="#top"', 'aria-label="Studio Code home"', 'class="brand"', '<span class="mark"></span>', '<span>Studio Code</span>']], 'formatted-span-brand' => ['html' => '<a class="brand" href="#top" aria-label="Wickstead Refill Works home"><span class="brand-mark" aria-hidden="true">W</span><span><strong>Wickstead</strong><em>Refill Works</em></span></a>', 'snippets' => ['href="#top"', 'aria-label="Wickstead Refill Works home"', 'class="brand"', '<span class="brand-mark" aria-hidden="true">W</span>', '<strong>Wickstead</strong>', '<em>Refill Works</em>']]];
+foreach ($brand_cases as $case_name => $case) {
+    foreach ([$case['html'], '<!-- wp:freeform -->' . $case['html'] . '<!-- /wp:freeform -->'] as $index => $html) {
+        $serialized = serialize_blocks(html_to_blocks_raw_handler(['HTML' => $html]));
+        $label = $case_name . '-' . (0 === $index ? 'raw' : 'freeform');
+        $assert(!\str_contains($serialized, '<!-- wp:html -->'), $label . '-avoids-core-html', $serialized);
+        $assert(!\str_contains($serialized, '<!-- wp:freeform -->'), $label . '-avoids-core-freeform', $serialized);
+        $assert(\str_contains($serialized, '<!-- wp:paragraph'), $label . '-uses-paragraph-block', $serialized);
+        foreach ($case['snippets'] as $snippet) {
+            $assert(\str_contains($serialized, $snippet), $label . '-preserves-' . \md5($snippet), $serialized);
+        }
+    }
 }
 echo 'Assertions: ' . $assertions . \PHP_EOL;
 if (empty($failures)) {

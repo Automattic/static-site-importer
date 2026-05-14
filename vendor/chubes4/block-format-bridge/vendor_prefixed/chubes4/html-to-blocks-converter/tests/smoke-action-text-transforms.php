@@ -157,6 +157,13 @@ $smoke_assert('core/buttons' !== $class_sensitive_cta_row_transform['blockName']
 $ordinary_link = new HTML_To_Blocks_HTML_Element('p', [], '<p>Read <a href="/more">more</a>.</p>', 'Read <a href="/more">more</a>.');
 $ordinary_link_transform = $find_transform($ordinary_link);
 $smoke_assert('core/paragraph' === $ordinary_link_transform['blockName'], 'ordinary-link-stays-paragraph');
+$standalone_brand_anchor = new HTML_To_Blocks_HTML_Element('a', ['class' => 'brand', 'href' => '#top', 'aria-label' => 'Studio home'], '<a class="brand" href="#top" aria-label="Studio home"><span>Studio</span> <small>Tattoo</small></a>', '<span>Studio</span> <small>Tattoo</small>');
+$standalone_brand_anchor_transform = $find_transform($standalone_brand_anchor);
+$standalone_brand_anchor_block = \call_user_func($standalone_brand_anchor_transform['transform'], $standalone_brand_anchor, $handler);
+$smoke_assert('core/paragraph' === $standalone_brand_anchor_transform['blockName'], 'standalone-brand-anchor-becomes-paragraph');
+$smoke_assert(\strpos($standalone_brand_anchor_block['attrs']['content'], '<a class="brand" href="#top" aria-label="Studio home">') !== \false, 'standalone-brand-anchor-preserves-link-attributes');
+$smoke_assert(!isset($standalone_brand_anchor_block['attrs']['className']), 'standalone-brand-anchor-keeps-class-on-link-only');
+$smoke_assert(\strpos($standalone_brand_anchor_block['innerHTML'], '<!-- wp:html -->') === \false, 'standalone-brand-anchor-avoids-freeform');
 $static_button_tabs = new HTML_To_Blocks_HTML_Element('div', ['class' => 'use-case-tabs'], '<div class="use-case-tabs"><button class="use-case-tab active">Product Managers</button><button class="use-case-tab">Engineering Leads</button><button class="use-case-tab">GTM Teams</button><button class="use-case-tab">Executives</button></div>', '<button class="use-case-tab active">Product Managers</button><button class="use-case-tab">Engineering Leads</button><button class="use-case-tab">GTM Teams</button><button class="use-case-tab">Executives</button>');
 $static_button_tabs_transform = $find_transform($static_button_tabs);
 $static_button_tabs_block = \call_user_func($static_button_tabs_transform['transform'], $static_button_tabs, $handler);

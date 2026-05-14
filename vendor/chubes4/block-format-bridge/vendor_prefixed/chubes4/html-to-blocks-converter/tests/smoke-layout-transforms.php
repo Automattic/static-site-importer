@@ -143,13 +143,11 @@ $smoke_assert(($inline_flex_hero_group['attrs']['layout']['orientation'] ?? '') 
 $smoke_assert(($inline_flex_hero_group['attrs']['layout']['justifyContent'] ?? '') === 'center', 'inline-flex-hero-preserves-justify-content');
 $smoke_assert(($inline_flex_hero_group['attrs']['style']['dimensions']['minHeight'] ?? '') === '100svh', 'inline-flex-hero-preserves-min-height');
 $smoke_assert(($inline_flex_hero_group['attrs']['style']['spacing']['padding'] ?? '') === '9rem 2rem 5rem', 'inline-flex-hero-preserves-padding');
-$class_driven_hero = new Layout_Smoke_Element('section', ['class' => 'hero'], '<div class="container"><h1>Launch</h1></div><div class="hero-code-window"></div><div class="hero-scroll-hint"><span class="scroll-line"></span><p>scroll</p></div>');
-$class_driven_transform = $find_transform($class_driven_hero, 'core/group');
-$class_driven_hero_group = $class_driven_transform ? \call_user_func($class_driven_transform['transform'], $class_driven_hero, $handler) : null;
-$smoke_assert($class_driven_hero_group && 'core/group' === $class_driven_hero_group['blockName'], 'class-driven-hero-to-group');
-$smoke_assert(($class_driven_hero_group['attrs']['layout']['type'] ?? '') === 'flex', 'class-driven-hero-uses-flex-layout');
-$smoke_assert(($class_driven_hero_group['attrs']['layout']['orientation'] ?? '') === 'vertical', 'class-driven-hero-uses-vertical-layout');
-$smoke_assert(($class_driven_hero_group['attrs']['layout']['justifyContent'] ?? '') === 'center', 'class-driven-hero-centers-content');
+$class_only_hero = new Layout_Smoke_Element('section', ['class' => 'hero'], '<div class="container"><h1>Launch</h1></div><div class="hero-code-window"></div><div class="hero-scroll-hint"><span class="scroll-line"></span><p>scroll</p></div>');
+$class_only_transform = $find_transform($class_only_hero, 'core/group');
+$class_only_hero_group = $class_only_transform ? \call_user_func($class_only_transform['transform'], $class_only_hero, $handler) : null;
+$smoke_assert($class_only_hero_group && 'core/group' === $class_only_hero_group['blockName'], 'class-only-hero-to-group');
+$smoke_assert(!isset($class_only_hero_group['attrs']['layout']), 'class-only-hero-does-not-invent-flex-layout');
 $stack_group_element = new Layout_Smoke_Element('div', ['class' => 'wp-block-group is-layout-flex is-vertical is-nowrap is-content-justification-space-between custom-stack'], '<p>Stacked copy</p>');
 $stack_group_transform = $find_transform($stack_group_element, 'core/group');
 $stack_group = $stack_group_transform ? \call_user_func($stack_group_transform['transform'], $stack_group_element, $handler) : null;

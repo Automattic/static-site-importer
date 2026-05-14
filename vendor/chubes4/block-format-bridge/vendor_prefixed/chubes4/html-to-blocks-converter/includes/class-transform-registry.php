@@ -2326,9 +2326,6 @@ class HTML_To_Blocks_Transform_Registry
         if (\preg_match('/(?:^|\s)is-nowrap(?:\s|$)/i', $classes) || \strtolower(self::extract_css_property($style, 'flex-wrap')) === 'nowrap') {
             $attributes['layout']['flexWrap'] = 'nowrap';
         }
-        if (empty($attributes['layout']) && $element && self::is_hero_like_section($element)) {
-            $attributes['layout'] = array('type' => 'flex', 'orientation' => 'vertical', 'justifyContent' => 'center');
-        }
     }
     /**
      * Applies direct dimension declarations to block support attributes.
@@ -3159,14 +3156,27 @@ class HTML_To_Blocks_Transform_Registry
             }
             return \in_array($element->get_tag_name(), array('DIV', 'SPAN'), \true) && array() === $element->get_child_elements() && \trim($element->get_text_content()) !== '';
         }, 'transform' => function ($element) {
-            $content = $element->get_tag_name() === 'A' ? $element->get_outer_html() : $element->get_inner_html();
+            $content = $element->get_tag_name() === 'A' ? self::get_paragraph_anchor_content($element) : $element->get_inner_html();
             if (self::is_static_checkbox_label($element)) {
                 $content = \trim(\preg_replace('/<\s*input\b[^>]*>/i', '', $content));
             }
             $attributes = self::get_block_support_attributes($element, array('anchor' => \true, 'align' => \true, 'text_align' => \true, 'colors' => \true, 'typography' => \true, 'spacing' => \true, 'border' => \true, 'class_name' => \true));
+            if ($element->get_tag_name() === 'A') {
+                unset($attributes['className']);
+            }
             $attributes['content'] = $content;
             return HTML_To_Blocks_Block_Factory::create_block('core/paragraph', $attributes);
         }));
+    }
+    /**
+     * Gets paragraph content for a standalone anchor element.
+     *
+     * @param HTML_To_Blocks_HTML_Element $anchor Anchor element.
+     * @return string Paragraph content with link-owned attributes preserved.
+     */
+    private static function get_paragraph_anchor_content($anchor): string
+    {
+        return $anchor->get_outer_html();
     }
     /**
      * Checks whether a label is static visual UI text rather than a form label.
