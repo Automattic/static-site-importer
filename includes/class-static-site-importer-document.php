@@ -451,11 +451,15 @@ class Static_Site_Importer_Document {
 	 * @return bool
 	 */
 	private function is_plausible_global_header( array $effective_children, DOMElement $header ): bool {
+		if ( ! $this->contains_same_node( $effective_children, $header ) ) {
+			return false;
+		}
+
 		if ( $this->has_global_chrome_signal( $header ) ) {
 			return true;
 		}
 
-		return $this->contains_same_node( $effective_children, $header );
+		return true;
 	}
 
 	/**
