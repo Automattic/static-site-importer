@@ -46,6 +46,13 @@ class Static_Site_Importer_Theme_Generator {
 	private static string $active_theme_uri = '';
 
 	/**
+	 * Source site directory for import-scoped local asset reads.
+	 *
+	 * @var string
+	 */
+	private static string $active_source_dir = '';
+
+	/**
 	 * Materialized inline SVG assets keyed by SVG content hash.
 	 *
 	 * @var array<string, array<string, string>>
@@ -149,6 +156,7 @@ class Static_Site_Importer_Theme_Generator {
 
 		self::$active_theme_dir         = $theme_dir;
 		self::$active_theme_uri         = trailingslashit( get_theme_root_uri( $theme_slug ) ) . $theme_slug;
+		self::$active_source_dir        = $site_dir;
 		self::$materialized_svg_assets  = array();
 		self::$svg_sprite_symbols       = array();
 		self::$materialized_svg_sprites = array();
@@ -1132,6 +1140,11 @@ class Static_Site_Importer_Theme_Generator {
 			return self::html_block( self::node_html( $doc, $element ) );
 		}
 
+		$materialized_src = self::materialize_local_image_asset( $src, 'theme-part:image' );
+		if ( null !== $materialized_src ) {
+			$src = $materialized_src;
+		}
+
 		$class = trim( '' !== $class_name ? $class_name : $element->getAttribute( 'class' ) );
 		$attrs = array(
 			'url'      => esc_url_raw( $src ),
@@ -1162,6 +1175,74 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		return '<!-- wp:image ' . wp_json_encode( $attrs, JSON_UNESCAPED_SLASHES ) . ' --><figure class="' . esc_attr( $figure_class ) . '">' . $img_markup . '</figure><!-- /wp:image -->';
+	}
+
+	/**
+	 * Copy a local image referenced by a theme part into the generated theme.
+	 *
+	 * @param string $src    Source image URL/path.
+	 * @param string $source Diagnostic source label.
+	 * @return string|null Generated theme URL, or null when the source should be left unchanged.
+	 */
+	private static function materialize_local_image_asset( string $src, string $source ): ?string {
+		if ( '' === self::$active_source_dir || '' === self::$active_theme_dir || '' === self::$active_theme_uri || ! self::is_local_url( $src ) ) {
+			return null;
+		}
+
+		$path = wp_parse_url( $src, PHP_URL_PATH );
+		if ( ! is_string( $path ) || '' === trim( $path ) ) {
+			return null;
+		}
+
+		$path = ltrim( rawurldecode( $path ), '/' );
+		if ( '' === $path || str_contains( $path, '..' ) ) {
+			return null;
+		}
+
+		$extension = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
+		if ( ! in_array( $extension, array( 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif' ), true ) ) {
+			return null;
+		}
+
+		$source_file = realpath( trailingslashit( self::$active_source_dir ) . $path );
+		$source_root = realpath( self::$active_source_dir );
+		if ( false === $source_file || false === $source_root || ! is_file( $source_file ) || 0 !== strpos( $source_file, trailingslashit( $source_root ) ) ) {
+			return null;
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local static-site asset selected for import.
+		$contents = file_get_contents( $source_file );
+		if ( false === $contents || '' === $contents ) {
+			return null;
+		}
+
+		if ( 'svg' === $extension ) {
+			$contents = self::sanitize_inline_svg( $contents );
+			if ( null === $contents ) {
+				self::record_unsafe_inline_svg( $source, $src );
+				return null;
+			}
+		}
+
+		$hash     = substr( md5( $contents ), 0, 12 );
+		$basename = sanitize_file_name( pathinfo( $path, PATHINFO_FILENAME ) );
+		if ( '' === $basename ) {
+			$basename = 'image';
+		}
+
+		$relative = 'assets/media/' . $basename . '-' . $hash . '.' . $extension;
+		$target   = trailingslashit( self::$active_theme_dir ) . $relative;
+		$dir      = dirname( $target );
+		if ( ! wp_mkdir_p( $dir ) ) {
+			return null;
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes generated theme asset files during import.
+		if ( false === file_put_contents( $target, $contents ) ) {
+			return null;
+		}
+
+		return trailingslashit( self::$active_theme_uri ) . $relative;
 	}
 
 	/**
@@ -5408,7 +5489,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return true|WP_Error
 	 */
 	private static function ensure_dirs( string $theme_dir ) {
-		foreach ( array( $theme_dir, $theme_dir . '/templates', $theme_dir . '/parts', $theme_dir . '/patterns', $theme_dir . '/assets', $theme_dir . '/assets/css', $theme_dir . '/assets/icons' ) as $dir ) {
+		foreach ( array( $theme_dir, $theme_dir . '/templates', $theme_dir . '/parts', $theme_dir . '/patterns', $theme_dir . '/assets', $theme_dir . '/assets/css', $theme_dir . '/assets/icons', $theme_dir . '/assets/media' ) as $dir ) {
 			if ( ! wp_mkdir_p( $dir ) ) {
 				return new WP_Error( 'static_site_importer_mkdir_failed', sprintf( 'Failed to create directory: %s', $dir ) );
 			}

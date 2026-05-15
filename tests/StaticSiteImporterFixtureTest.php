@@ -307,6 +307,53 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Local images referenced from theme parts remain renderable after extraction.
+	 */
+	public function test_theme_part_local_svg_image_is_materialized(): void {
+		$fixture_dir = trailingslashit( get_temp_dir() ) . 'static-site-importer-theme-part-image-' . wp_generate_uuid4();
+		$assets_dir  = trailingslashit( $fixture_dir ) . 'assets';
+		$this->assertTrue( wp_mkdir_p( $assets_dir ) );
+
+		$svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img"><title>Studio mark</title><circle cx="60" cy="60" r="48" fill="#f4efe6" stroke="#0d0c0b" stroke-width="4"/></svg>';
+		$this->assertNotFalse( file_put_contents( trailingslashit( $assets_dir ) . 'studio-mark.svg', $svg ) );
+
+		$fixture = trailingslashit( $fixture_dir ) . 'index.html';
+		$wrote   = file_put_contents(
+			$fixture,
+			'<!doctype html><html><head><title>Theme Part Image</title></head><body>' .
+			'<header class="site-header"><div class="brand-lockup"><img src="assets/studio-mark.svg" alt="" width="52" height="52"><a class="brand" href="#top">Harbor &amp; Hawthorn</a></div></header>' .
+			'<main id="top"><h1>Theme part image</h1><p>Image asset fixture.</p></main>' .
+			'</body></html>'
+		);
+		$this->assertNotFalse( $wrote );
+
+		$result = Static_Site_Importer_Theme_Generator::import_theme(
+			$fixture,
+			array(
+				'name'        => 'Theme Part Image',
+				'slug'        => 'theme-part-image',
+				'overwrite'   => true,
+				'activate'    => false,
+				'keep_source' => true,
+			)
+		);
+
+		$this->assertNotWPError( $result );
+		$this->assertIsArray( $result );
+
+		$header = $this->read_file( $result['theme_dir'] . '/parts/header.html' );
+		$report = json_decode( $this->read_file( $result['report_path'] ), true );
+
+		$this->assertStringContainsString( '<!-- wp:image ', $header );
+		$this->assertStringContainsString( '/assets/media/studio-mark-', $header );
+		$this->assertStringNotContainsString( 'src="assets/studio-mark.svg"', $header );
+		$this->assertNotEmpty( glob( $result['theme_dir'] . '/assets/media/studio-mark-*.svg' ) );
+		$this->assertSame( 0, $report['quality']['core_html_block_count'] ?? null );
+		$this->assertSame( 0, $report['quality']['freeform_block_count'] ?? null );
+		$this->assertSame( 0, $report['quality']['unsafe_svg_count'] ?? null );
+	}
+
+	/**
 	 * A generated store fixture records valid products.json metadata in the import report only.
 	 *
 	 * When WooCommerce is active, the import succeeds and seeds products. When WooCommerce is
