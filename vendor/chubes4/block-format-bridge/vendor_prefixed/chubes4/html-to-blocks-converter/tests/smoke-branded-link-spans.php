@@ -115,7 +115,7 @@ $assert = static function ($condition, $label, $detail = '') use (&$failures, &$
         $failures[] = 'FAIL [' . $label . ']' . ('' !== $detail ? ': ' . $detail : '');
     }
 };
-$brand_cases = ['simple-span-brand' => ['html' => '<a class="brand" href="#top" aria-label="Studio Code home"><span class="mark"></span><span>Studio Code</span></a>', 'snippets' => ['href="#top"', 'aria-label="Studio Code home"', 'class="brand"', '<span class="mark"></span>', '<span>Studio Code</span>']], 'formatted-span-brand' => ['html' => '<a class="brand" href="#top" aria-label="Wickstead Refill Works home"><span class="brand-mark" aria-hidden="true">W</span><span><strong>Wickstead</strong><em>Refill Works</em></span></a>', 'snippets' => ['href="#top"', 'aria-label="Wickstead Refill Works home"', 'class="brand"', '<span class="brand-mark" aria-hidden="true">W</span>', '<strong>Wickstead</strong>', '<em>Refill Works</em>']]];
+$brand_cases = ['simple-span-brand' => ['html' => '<a class="brand" href="#top" aria-label="Studio Code home"><span class="mark"></span><span>Studio Code</span></a>', 'snippets' => ['href="#top"', 'aria-label="Studio Code home"', 'class="brand"', '<span class="mark"></span>', '<span>Studio Code</span>']], 'formatted-span-brand' => ['html' => '<a class="brand" href="#top" aria-label="Wickstead Refill Works home"><span class="brand-mark" aria-hidden="true">W</span><span><strong>Wickstead</strong><em>Refill Works</em></span></a>', 'snippets' => ['href="#top"', 'aria-label="Wickstead Refill Works home"', 'class="brand"', '<span class="brand-mark" aria-hidden="true">W</span>', '<strong>Wickstead</strong>', '<em>Refill Works</em>']], 'div-wrapped-logo-brand' => ['html' => '<a class="footer-logo" href="#"><div class="footer-logo-mark"><img src="/logo.svg" alt="" decoding="async" width="16" height="16" aria-hidden="true"></div>Relay Atlas</a>', 'snippets' => ['href="#"', 'class="footer-logo"', '<span class="footer-logo-mark"><img src="/logo.svg" alt="" decoding="async" width="16" height="16" aria-hidden="true"></span>', 'Relay Atlas']]];
 foreach ($brand_cases as $case_name => $case) {
     foreach ([$case['html'], '<!-- wp:freeform -->' . $case['html'] . '<!-- /wp:freeform -->'] as $index => $html) {
         $serialized = serialize_blocks(html_to_blocks_raw_handler(['HTML' => $html]));
@@ -126,6 +126,7 @@ foreach ($brand_cases as $case_name => $case) {
         foreach ($case['snippets'] as $snippet) {
             $assert(\str_contains($serialized, $snippet), $label . '-preserves-' . \md5($snippet), $serialized);
         }
+        $assert(!\str_contains($serialized, '<div'), $label . '-normalizes-block-wrappers', $serialized);
     }
 }
 echo 'Assertions: ' . $assertions . \PHP_EOL;

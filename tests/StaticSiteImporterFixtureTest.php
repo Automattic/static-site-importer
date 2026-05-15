@@ -259,6 +259,54 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Brand anchors in theme parts use the shared converter instead of freeform islands.
+	 */
+	public function test_theme_part_brand_anchors_import_without_freeform_blocks(): void {
+		$fixture_dir = trailingslashit( get_temp_dir() ) . 'static-site-importer-brand-anchor-' . wp_generate_uuid4();
+		$this->assertTrue( wp_mkdir_p( $fixture_dir ) );
+
+		$fixture = trailingslashit( $fixture_dir ) . 'index.html';
+		$wrote   = file_put_contents(
+			$fixture,
+			'<!doctype html><html><head><title>Brand Anchor</title></head><body>' .
+			'<header class="site-header"><div class="header-inner"><a class="brand" href="#top" aria-label="Harbor &amp; Hawthorn Tattoo home"><span>Harbor &amp; Hawthorn</span><small>Tattoo Studio</small></a><nav><a href="#booking">Booking</a></nav></div></header>' .
+			'<main id="top"><section id="booking" class="hero"><h1>Booking</h1><p>Converter-owned brand anchor fixture.</p></section></main>' .
+			'<footer class="site-footer"><div class="footer-inner"><div><a class="brand footer-brand" href="#top"><span class="brand-mark" aria-hidden="true">W</span><span><strong>Wickstead</strong><em>Refill Works</em></span></a></div><ul><li><a href="#booking">Booking</a></li></ul></div></footer>' .
+			'</body></html>'
+		);
+		$this->assertNotFalse( $wrote );
+
+		$result = Static_Site_Importer_Theme_Generator::import_theme(
+			$fixture,
+			array(
+				'name'        => 'Brand Anchor Theme Parts',
+				'slug'        => 'brand-anchor-theme-parts',
+				'overwrite'   => true,
+				'activate'    => false,
+				'keep_source' => true,
+			)
+		);
+
+		$this->assertNotWPError( $result );
+		$this->assertIsArray( $result );
+
+		$header = $this->read_file( $result['theme_dir'] . '/parts/header.html' );
+		$footer = $this->read_file( $result['theme_dir'] . '/parts/footer.html' );
+		$report = json_decode( $this->read_file( $result['report_path'] ), true );
+
+		$this->assertStringContainsString( '<!-- wp:paragraph', $header );
+		$this->assertStringContainsString( 'Harbor &amp; Hawthorn', $header );
+		$this->assertStringContainsString( 'aria-label="Harbor &amp; Hawthorn Tattoo home"', $header );
+		$this->assertStringContainsString( '<!-- wp:paragraph', $footer );
+		$this->assertStringContainsString( '<strong>Wickstead</strong>', $footer );
+		$this->assertStringContainsString( '<em>Refill Works</em>', $footer );
+		$this->assertStringNotContainsString( '<!-- wp:freeform', $header );
+		$this->assertStringNotContainsString( '<!-- wp:freeform', $footer );
+		$this->assertSame( 0, $report['quality']['freeform_block_count'] ?? null );
+		$this->assertSame( 0, $result['import_report_summary']['freeform_block_count'] ?? null );
+	}
+
+	/**
 	 * A generated store fixture records valid products.json metadata in the import report only.
 	 *
 	 * When WooCommerce is active, the import succeeds and seeds products. When WooCommerce is
@@ -831,10 +879,10 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 
 		$this->assertStringNotContainsString( '<!-- wp:html', $header );
 		$this->assertStringNotContainsString( '<!-- wp:html', $footer );
-		$this->assertStringNotContainsString( '<p><a href="#" class="nav-logo">', $header );
-		$this->assertStringNotContainsString( '<p class="footer-logo">HOMEBOY</p>', $footer );
-		$this->assertStringContainsString( '<!-- wp:freeform --><a href="#" class="nav-logo">HOME<span>BOY</span></a><!-- /wp:freeform -->', $header );
-		$this->assertStringContainsString( '<!-- wp:freeform --><div class="footer-logo">HOMEBOY</div><!-- /wp:freeform -->', $footer );
+		$this->assertStringContainsString( '<p><a href="#" class="nav-logo">HOME<span>BOY</span></a></p>', $header );
+		$this->assertStringContainsString( '<p class="footer-logo">HOMEBOY</p>', $footer );
+		$this->assertStringNotContainsString( '<!-- wp:freeform', $header );
+		$this->assertStringNotContainsString( '<!-- wp:freeform', $footer );
 	}
 
 	/**
@@ -1033,10 +1081,10 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$footer    = $this->read_file( $theme_dir . '/parts/footer.html' );
 		$report    = json_decode( $this->read_file( $result['report_path'] ), true );
 
-		$this->assertStringContainsString( '<!-- wp:freeform --><a href="#" class="nav-logo">HOME<span>BOY</span></a><!-- /wp:freeform -->', $header );
-		$this->assertStringNotContainsString( '<p><a href="#" class="nav-logo">HOME<span>BOY</span></a></p>', $header );
-		$this->assertStringNotContainsString( '<!-- wp:paragraph {"className":"footer-logo"} --><p class="footer-logo">HOMEBOY</p>', $footer );
-		$this->assertStringContainsString( '<!-- wp:freeform --><div class="footer-logo">HOMEBOY</div><!-- /wp:freeform -->', $footer );
+		$this->assertStringContainsString( '<p><a href="#" class="nav-logo">HOME<span>BOY</span></a></p>', $header );
+		$this->assertStringContainsString( '<!-- wp:paragraph {"className":"footer-logo"} --><p class="footer-logo">HOMEBOY</p>', $footer );
+		$this->assertStringNotContainsString( '<!-- wp:freeform', $header );
+		$this->assertStringNotContainsString( '<!-- wp:freeform', $footer );
 		$this->assertStringNotContainsString( 'paragraph_wrapper_required_for_identity_anchor', wp_json_encode( $report['diagnostics'] ?? array() ) ?: '' );
 		$this->assertStringNotContainsString( 'native_group_wrapper_preserved_identity_class', wp_json_encode( $report['diagnostics'] ?? array() ) ?: '' );
 	}

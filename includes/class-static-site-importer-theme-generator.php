@@ -782,10 +782,6 @@ class Static_Site_Importer_Theme_Generator {
 			return self::link_element_block( $doc, $element );
 		}
 
-		if ( self::should_preserve_theme_part_source_element( $element ) ) {
-			return self::freeform_block( self::node_html( $doc, $element ) );
-		}
-
 		if ( 'img' === $tag ) {
 			return self::image_element_block( $doc, $element );
 		}
@@ -1034,22 +1030,6 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
-	 * Check whether classed chrome needs exact source element ownership.
-	 *
-	 * @param DOMElement $element Source element.
-	 * @return bool
-	 */
-	private static function should_preserve_theme_part_source_element( DOMElement $element ): bool {
-		$tag = strtolower( $element->tagName );
-		if ( 'div' !== $tag || ! self::element_has_only_phrasing_content( $element ) ) {
-			return false;
-		}
-
-		$class = trim( $element->getAttribute( 'class' ) );
-		return preg_match( '/(^|[-_\s])footer-logo([-_\s]|$)/i', $class ) === 1;
-	}
-
-	/**
 	 * Check whether an element can be represented as one paragraph with inline markup.
 	 *
 	 * @param DOMElement $element Source element.
@@ -1121,21 +1101,7 @@ class Static_Site_Importer_Theme_Generator {
 
 		$class = trim( $element->getAttribute( 'class' ) );
 		if ( preg_match( '/(^|[-_\s])(brand|logo)([-_\s]|$)/i', $class ) ) {
-			$brand_anchor = self::brand_anchor_inline_block( $doc, $element );
-			if ( null !== $brand_anchor ) {
-				return $brand_anchor;
-			}
-
-			if ( ! self::element_has_only_phrasing_content( $element ) ) {
-				return self::logo_anchor_block( $doc, $element, $href, $class );
-			}
-
-			$anchor_attrs = ' href="' . esc_url( $href ) . '"';
-			if ( '' !== $class ) {
-				$anchor_attrs .= ' class="' . esc_attr( $class ) . '"';
-			}
-
-			return self::freeform_block( '<a' . $anchor_attrs . '>' . self::node_inner_html( $doc, $element ) . '</a>' );
+			return self::convert_fragment( self::node_html( $doc, $element ), 'theme-part:brand-anchor' );
 		}
 
 		if ( preg_match( '/(^|[-_\s])(btn|button|cta|pill)([-_\s]|$)/i', $class ) ) {
@@ -1149,170 +1115,6 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		return self::paragraph_block( '<a href="' . esc_url( $href ) . '"' . ( '' !== $class ? ' class="' . esc_attr( $class ) . '"' : '' ) . '>' . esc_html( $label ) . '</a>' );
-	}
-
-	/**
-	 * Preserve one brand anchor when block-level logo wrappers can become inline spans.
-	 *
-	 * @param DOMDocument $doc     Source DOM document.
-	 * @param DOMElement  $element Anchor element.
-	 * @return string|null
-	 */
-	private static function brand_anchor_inline_block( DOMDocument $doc, DOMElement $element ): ?string {
-		$inner = self::brand_anchor_inline_children_html( $doc, $element );
-		if ( null === $inner || ( '' === trim( wp_strip_all_tags( $inner ) ) && ! str_contains( strtolower( $inner ), '<img' ) ) ) {
-			return null;
-		}
-
-		if ( ! str_contains( strtolower( $inner ), '<img' ) && empty( self::direct_element_children( $element ) ) ) {
-			return self::paragraph_block( '<a' . self::element_attribute_markup( $element ) . '>' . $inner . '</a>' );
-		}
-
-		return self::freeform_block( '<a' . self::element_attribute_markup( $element ) . '>' . $inner . '</a>' );
-	}
-
-	/**
-	 * Convert a brand anchor's children to valid phrasing HTML.
-	 *
-	 * @param DOMDocument $doc     Source DOM document.
-	 * @param DOMElement  $element Source element.
-	 * @return string|null
-	 */
-	private static function brand_anchor_inline_children_html( DOMDocument $doc, DOMElement $element ): ?string {
-		$parts = array();
-		foreach ( $element->childNodes as $child ) {
-			$part = self::brand_anchor_inline_node_html( $doc, $child );
-			if ( null === $part ) {
-				return null;
-			}
-
-			$parts[] = $part;
-		}
-
-		return implode( '', $parts );
-	}
-
-	/**
-	 * Convert one node to phrasing HTML for a preserved brand anchor.
-	 *
-	 * @param DOMDocument $doc  Source DOM document.
-	 * @param DOMNode     $node Source node.
-	 * @return string|null
-	 */
-	private static function brand_anchor_inline_node_html( DOMDocument $doc, DOMNode $node ): ?string {
-		if ( $node instanceof DOMText ) {
-			return esc_html( $node->textContent );
-		}
-
-		if ( ! $node instanceof DOMElement ) {
-			return '';
-		}
-
-		$tag = strtolower( $node->tagName );
-		if ( 'div' === $tag ) {
-			$inner = self::brand_anchor_inline_children_html( $doc, $node );
-			return null === $inner ? null : '<span' . self::element_attribute_markup( $node ) . '>' . $inner . '</span>';
-		}
-
-		if ( 'img' === $tag ) {
-			return self::node_html( $doc, $node );
-		}
-
-		if ( ! self::is_phrasing_element( $node ) ) {
-			return null;
-		}
-
-		$inner = self::brand_anchor_inline_children_html( $doc, $node );
-		return null === $inner ? null : '<' . $tag . self::element_attribute_markup( $node ) . '>' . $inner . '</' . $tag . '>';
-	}
-
-	/**
-	 * Serialize source attributes for HTML rebuilt from DOM nodes.
-	 *
-	 * @param DOMElement $element Source element.
-	 * @return string
-	 */
-	private static function element_attribute_markup( DOMElement $element ): string {
-		$attributes = '';
-		foreach ( $element->attributes as $attribute ) {
-			$attributes .= ' ' . strtolower( $attribute->name ) . '="' . esc_attr( $attribute->value ) . '"';
-		}
-
-		return $attributes;
-	}
-
-	/**
-	 * Build valid native blocks for a logo anchor that contains image wrappers.
-	 *
-	 * @param DOMDocument $doc        Source DOM document.
-	 * @param DOMElement  $element    Anchor element.
-	 * @param string      $href       Anchor href.
-	 * @param string      $class_name Anchor class attribute.
-	 * @return string
-	 */
-	private static function logo_anchor_block( DOMDocument $doc, DOMElement $element, string $href, string $class_name ): string {
-		$children = array();
-		foreach ( $element->childNodes as $child ) {
-			if ( $child instanceof DOMText ) {
-				$text = trim( $child->textContent );
-				if ( '' !== $text ) {
-					$children[] = self::linked_text_block( $text, $href );
-				}
-				continue;
-			}
-
-			if ( ! $child instanceof DOMElement ) {
-				continue;
-			}
-
-			$img = self::sole_descendant_image( $child );
-			if ( $img instanceof DOMElement ) {
-				$children[] = self::image_element_block( $doc, $img, trim( $child->getAttribute( 'class' ) ), $href );
-				continue;
-			}
-
-			$text = trim( $child->textContent );
-			if ( '' !== $text && self::element_has_only_phrasing_content( $child ) ) {
-				$children[] = self::linked_text_block( $text, $href, trim( $child->getAttribute( 'class' ) ) );
-				continue;
-			}
-
-			$children[] = self::theme_part_element_block( $doc, $child, '', '' );
-		}
-
-		$inner = implode( '', array_filter( $children ) );
-		if ( '' === trim( $inner ) ) {
-			return self::html_block( self::node_html( $doc, $element ) );
-		}
-
-		return self::group_block( $inner, $class_name );
-	}
-
-	/**
-	 * Find a direct or singly wrapped image child.
-	 *
-	 * @param DOMElement $element Source element.
-	 * @return DOMElement|null
-	 */
-	private static function sole_descendant_image( DOMElement $element ): ?DOMElement {
-		if ( 'img' === strtolower( $element->tagName ) ) {
-			return $element;
-		}
-
-		$children = self::direct_element_children( $element );
-		return 1 === count( $children ) && 'img' === strtolower( $children[0]->tagName ) ? $children[0] : null;
-	}
-
-	/**
-	 * Build a paragraph containing a text link.
-	 *
-	 * @param string $text       Link text.
-	 * @param string $href       Link href.
-	 * @param string $class_name Source class attribute.
-	 * @return string
-	 */
-	private static function linked_text_block( string $text, string $href, string $class_name = '' ): string {
-		return self::paragraph_block( '<a href="' . esc_url( $href ) . '">' . esc_html( $text ) . '</a>', $class_name );
 	}
 
 	/**

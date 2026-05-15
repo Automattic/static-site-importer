@@ -837,7 +837,7 @@ function html_to_blocks_normalise_blocks($html)
                 if (!$in_paragraph) {
                     $in_paragraph = \true;
                 }
-                $paragraph_buffer .= $element_html;
+                $paragraph_buffer .= html_to_blocks_normalise_phrasing_fragment($element_html);
             }
             continue;
         }
@@ -857,4 +857,18 @@ function html_to_blocks_normalise_blocks($html)
         $output .= '<p>' . \trim($paragraph_buffer) . '</p>';
     }
     return !empty($output) ? $output : $html;
+}
+/**
+ * Normalize standalone phrasing fragments before wrapping them in paragraphs.
+ *
+ * @param string $html HTML fragment.
+ * @return string Normalized fragment.
+ */
+function html_to_blocks_normalise_phrasing_fragment(string $html): string
+{
+    if (\preg_match('/^\s*<\s*a\b[^>]*\sclass=("|\')([^"\']*)\1/i', $html, $matches) && \preg_match('/(^|[-_\s])(brand|logo)([-_\s]|$)/i', $matches[2])) {
+        $html = \preg_replace('/<\s*div\b([^>]*)>/i', '<span$1>', $html) ?? $html;
+        $html = \preg_replace('/<\s*\/\s*div\s*>/i', '</span>', $html) ?? $html;
+    }
+    return $html;
 }
