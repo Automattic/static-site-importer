@@ -230,10 +230,16 @@ $smoke_assert(\strpos($onmouseover_chip_block['innerHTML'], 'onmouseover') === \
 $onclick_submit_button = new HTML_To_Blocks_HTML_Element('button', ['class' => 'tab-btn', 'type' => 'submit', 'onclick' => 'submitForm()'], '<button class="tab-btn" type="submit" onclick="submitForm()">Submit</button>', 'Submit');
 $smoke_assert($find_transform($onclick_submit_button) === null, 'onclick-submit-button-falls-through');
 // -------------------------------------------------------------------------
-// Spans: classed leaf spans preserve source display semantics as fallback HTML.
+// Spans: numeric classed leaf spans become editable paragraph markup.
 // -------------------------------------------------------------------------
 $classed_leaf_span = new HTML_To_Blocks_HTML_Element('span', ['class' => 'service-number'], '<span class="service-number">01</span>', '01');
-$smoke_assert($find_transform($classed_leaf_span) === null, 'classed-leaf-span-falls-through');
+$classed_leaf_span_transform = $find_transform($classed_leaf_span);
+$smoke_assert($classed_leaf_span_transform !== null, 'numeric-classed-leaf-span-has-transform');
+$classed_leaf_span_block = \call_user_func($classed_leaf_span_transform['transform'], $classed_leaf_span);
+$smoke_assert(($classed_leaf_span_block['blockName'] ?? '') === 'core/paragraph', 'numeric-classed-leaf-span-becomes-paragraph');
+$smoke_assert(($classed_leaf_span_block['attrs']['content'] ?? '') === '<span class="service-number">01</span>', 'numeric-classed-leaf-span-preserves-markup');
+$classed_text_span = new HTML_To_Blocks_HTML_Element('span', ['class' => 'service-label'], '<span class="service-label">Repair</span>', 'Repair');
+$smoke_assert($find_transform($classed_text_span) === null, 'classed-text-leaf-span-falls-through');
 // -------------------------------------------------------------------------
 // Labels: static visual UI labels become text, real form labels fall through.
 // -------------------------------------------------------------------------

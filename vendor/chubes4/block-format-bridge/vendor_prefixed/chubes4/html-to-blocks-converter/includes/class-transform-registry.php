@@ -737,6 +737,10 @@ class HTML_To_Blocks_Transform_Registry
             return self::is_visual_diagram_span_container($element);
         }, 'transform' => function ($element) {
             return self::create_aria_hidden_inline_span_paragraph($element);
+        }), array('blockName' => 'core/paragraph', 'priority' => 8, 'selector' => 'span', 'isMatch' => function ($element) {
+            return self::is_numeric_label_span($element);
+        }, 'transform' => function ($element) {
+            return self::create_inline_span_label_paragraph($element);
         }), array('blockName' => 'core/group', 'priority' => 8, 'selector' => 'div,p', 'isMatch' => function ($element) {
             return self::is_static_visual_button_container($element);
         }, 'transform' => function ($element) {
@@ -911,6 +915,36 @@ class HTML_To_Blocks_Transform_Registry
         $attributes = self::get_block_support_attributes($element, array('anchor' => \true, 'class_name' => \true, 'colors' => \true, 'typography' => \true, 'spacing' => \true, 'border' => \true));
         $attributes['content'] = $element->get_inner_html();
         return HTML_To_Blocks_Block_Factory::create_block('core/paragraph', $attributes);
+    }
+    /**
+     * Checks whether a standalone span is a numeric visual label.
+     *
+     * Number-only label spans are commonly used as service, step, or index badges.
+     * Keep the span markup inside a native paragraph so class-based presentation
+     * survives without falling back to core/html.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Element to inspect.
+     * @return bool True when the span can safely become paragraph markup.
+     */
+    private static function is_numeric_label_span($element): bool
+    {
+        if ('SPAN' !== $element->get_tag_name() || !$element->has_attribute('class')) {
+            return \false;
+        }
+        if (\preg_match('/<\s*[a-z][^>]*>/i', $element->get_inner_html()) === 1) {
+            return \false;
+        }
+        return \preg_match('/^\d+$/', \trim($element->get_text_content())) === 1;
+    }
+    /**
+     * Creates a paragraph preserving numeric label span markup.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Numeric label span.
+     * @return array Block array.
+     */
+    private static function create_inline_span_label_paragraph($element): array
+    {
+        return HTML_To_Blocks_Block_Factory::create_block('core/paragraph', array('content' => \trim($element->get_outer_html())));
     }
     /**
      * Checks whether an aria-hidden div is only inline span labels.
@@ -2293,7 +2327,7 @@ class HTML_To_Blocks_Transform_Registry
             }
         }
         if (!empty($options['layout'])) {
-            self::apply_layout_support_attributes($attributes, $classes, $style, $element);
+            self::apply_layout_support_attributes($attributes, $classes, $style);
         }
         return $attributes;
     }
@@ -2410,7 +2444,7 @@ class HTML_To_Blocks_Transform_Registry
      * @param array  $attributes Block attributes.
      * @param string $classes Source class attribute.
      */
-    private static function apply_layout_support_attributes(array &$attributes, string $classes, string $style = '', $element = null): void
+    private static function apply_layout_support_attributes(array &$attributes, string $classes, string $style = ''): void
     {
         if (\preg_match('/(?:^|\s)is-layout-(flow|constrained|flex)(?:\s|$)/i', $classes, $matches)) {
             $type = \strtolower($matches[1]);
@@ -2913,8 +2947,8 @@ class HTML_To_Blocks_Transform_Registry
         if (\in_array($tag, array('OL', 'UL'), \true)) {
             return self::create_list_block_from_element($child);
         }
-        if (self::is_numbered_card_label_span($child)) {
-            return HTML_To_Blocks_Block_Factory::create_block('core/html', array('content' => $child->get_outer_html()));
+        if (self::is_card_label_span($child)) {
+            return self::create_inline_span_label_paragraph($child);
         }
         if ('P' === $tag || 'SPAN' === $tag) {
             return HTML_To_Blocks_Block_Factory::create_block('core/paragraph', \array_merge(self::get_block_support_attributes($child, array('anchor' => \true, 'class_name' => \true)), array('content' => $child->get_inner_html())));
@@ -2925,20 +2959,20 @@ class HTML_To_Blocks_Transform_Registry
         return null;
     }
     /**
-     * Checks whether a card child span is a numbered label that should keep its tag.
+     * Checks whether a card child span is a visual label that should keep its tag.
      *
      * @param HTML_To_Blocks_HTML_Element $child Card child element.
      * @return bool True when the span should remain source HTML.
      */
-    private static function is_numbered_card_label_span($child): bool
+    private static function is_card_label_span($child): bool
     {
         if ('SPAN' !== $child->get_tag_name() || !$child->has_attribute('class')) {
             return \false;
         }
-        if (!self::class_matches($child, '/(?:^|[-_\s])(?:card[-_\s]?number|item[-_\s]?number|service[-_\s]?number)(?:$|[-_\s])/i')) {
-            return \false;
+        if (self::class_matches($child, '/(?:^|[-_\s])(?:card[-_\s]?number|item[-_\s]?number|service[-_\s]?number)(?:$|[-_\s])/i')) {
+            return \preg_match('/^\s*\d{1,3}\s*$/', $child->get_text_content()) === 1;
         }
-        return \preg_match('/^\s*\d{1,3}\s*$/', $child->get_text_content()) === 1;
+        return self::class_matches($child, '/(?:^|\s)tag(?:$|\s)/i');
     }
     /**
      * Gets a single whole-card anchor child when it is the card's only content.
