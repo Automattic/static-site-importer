@@ -5653,7 +5653,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return string Additional CSS rules.
 	 */
 	private static function imported_group_layout_gap_bridge_css(): string {
-		return "\n/* Static Site Importer: preserve source-authored spacing inside converted group wrappers. */\n.wp-block-group.is-layout-flow > *,\n.wp-block-group.is-vertical > * { margin-block-start: 0; margin-block-end: 0; }\n.wp-block-group.is-layout-flex,\n.wp-block-group.is-vertical { gap: 0; }\n";
+		return "\n/* Static Site Importer: preserve source-authored spacing inside converted source wrappers. */\n.wp-block-post-content.is-layout-flow > *,\n.wp-block-group.is-layout-flow > *,\n.wp-block-group.is-vertical > * { margin-block-start: 0; margin-block-end: 0; }\n.wp-block-group.is-layout-flex,\n.wp-block-group.is-vertical { gap: 0; }\n";
 	}
 
 	/**
