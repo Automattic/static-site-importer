@@ -85,10 +85,16 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 
 		$this->assertStringContainsString( '--accent', $style );
 		$this->assertStringContainsString( '.wp-block-button.btn > .wp-block-button__link', $style );
-		$this->assertStringContainsString( '.wp-block-group.is-layout-flow > * + * { margin-block-start: 0; margin-block-end: 0; }', $style );
-		$this->assertStringContainsString( '.wp-block-group.is-layout-flex { gap: 0; }', $style );
-		$this->assertStringContainsString( '.wp-block-group.is-layout-flow > * + * { margin-block-start: 0; margin-block-end: 0; }', $editor_style );
-		$this->assertStringContainsString( '.wp-block-group.is-layout-flex { gap: 0; }', $editor_style );
+		$this->assertStringContainsString( '.wp-block-post-content.is-layout-flow > *', $style );
+		$this->assertStringContainsString( '.wp-block-group.is-layout-flow > *', $style );
+		$this->assertStringContainsString( '.wp-block-group.is-vertical > * { margin-block-start: 0; margin-block-end: 0; }', $style );
+		$this->assertStringContainsString( '.wp-block-group.is-layout-flex,', $style );
+		$this->assertStringContainsString( '.wp-block-group.is-vertical { gap: 0; }', $style );
+		$this->assertStringContainsString( '.wp-block-post-content.is-layout-flow > *', $editor_style );
+		$this->assertStringContainsString( '.wp-block-group.is-layout-flow > *', $editor_style );
+		$this->assertStringContainsString( '.wp-block-group.is-vertical > * { margin-block-start: 0; margin-block-end: 0; }', $editor_style );
+		$this->assertStringContainsString( '.wp-block-group.is-layout-flex,', $editor_style );
+		$this->assertStringContainsString( '.wp-block-group.is-vertical { gap: 0; }', $editor_style );
 		$this->assertStringContainsString( "add_theme_support( 'editor-styles' )", $functions );
 		$this->assertStringContainsString( "add_editor_style( 'assets/css/editor-style.css' )", $functions );
 		$this->assertStringContainsString( "add_action( 'enqueue_block_editor_assets'", $functions );
