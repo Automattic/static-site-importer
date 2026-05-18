@@ -12,12 +12,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/chubes4/block-format-bridge.git",
-                "reference": "388c70593881459230755607826febe17748b355"
+                "reference": "43d32a7a6bf3891c3786f34b1aee701867a013e5"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/chubes4/block-format-bridge/zipball/388c70593881459230755607826febe17748b355",
-                "reference": "388c70593881459230755607826febe17748b355",
+                "url": "https://api.github.com/repos/chubes4/block-format-bridge/zipball/43d32a7a6bf3891c3786f34b1aee701867a013e5",
+                "reference": "43d32a7a6bf3891c3786f34b1aee701867a013e5",
                 "shasum": ""
             },
             "require": {
@@ -56,7 +56,7 @@
                 "source": "https://github.com/chubes4/block-format-bridge/tree/main",
                 "issues": "https://github.com/chubes4/block-format-bridge/issues"
             },
-            "time": "2026-05-17T22:53:01+00:00"
+            "time": "2026-05-18T00:03:50+00:00"
         },
         {
             "name": "dflydev/dot-access-data",
