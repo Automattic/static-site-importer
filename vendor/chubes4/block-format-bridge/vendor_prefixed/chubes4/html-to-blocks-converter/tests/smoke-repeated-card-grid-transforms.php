@@ -227,6 +227,16 @@ $assert(\strpos($service_card_serialized, '<span class="tag">window seats</span>
 $assert(\strpos($service_card_serialized, '<p class="service-number">01</p>') === \false, 'service-card-classed-span-not-rewritten-to-paragraph', $service_card_serialized);
 $assert(\strpos($service_card_serialized, '<h3 class="wp-block-heading">Heels &amp; soles</h3>') !== \false, 'service-card-heading-remains-editable', $service_card_serialized);
 $assert(\strpos($service_card_serialized, '<p>Heel lifts and sole patching.</p>') !== \false, 'service-card-copy-remains-editable', $service_card_serialized);
+$tag_label_grid = <<<'HTML'
+<div class="collection-grid">
+	<article class="collection"><span class="tag">window seats</span><h3>Deep built-in bench cushions</h3><p>Thicker cores and boxed corners.</p></article>
+	<article class="collection"><span class="tag">dining chairs</span><h3>Flattened chair pads</h3><p>Firm low-profile foam.</p></article>
+</div>
+HTML;
+$tag_label_blocks = html_to_blocks_raw_handler(['HTML' => $tag_label_grid]);
+$tag_label_serialized = serialize_blocks($tag_label_blocks);
+$assert(\strpos($tag_label_serialized, '<span class="tag">window seats</span>') !== \false, 'card-tag-span-preserved', $tag_label_serialized);
+$assert(\strpos($tag_label_serialized, '<p style="margin-top:0;margin-right:0;margin-bottom:0;margin-left:0"><span class="tag">window seats</span></p>') !== \false, 'card-tag-wrapper-resets-margin', $tag_label_serialized);
 $extrachill_shell_grid = <<<'HTML'
 <div class="full-width-breakout ec-edge-shell">
   <div class="home-3x3-grid">
