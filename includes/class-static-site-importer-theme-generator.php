@@ -443,11 +443,11 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		if ( ! is_array( $include_pages ) || empty( $include_pages ) ) {
-			return array_values( $pages );
+			return self::order_front_page_first( array_values( $pages ) );
 		}
 
 		$allowed = array_fill_keys( array_map( 'strval', $include_pages ), true );
-		return array_values(
+		return self::order_front_page_first( array_values(
 			array_filter(
 				$pages,
 				static function ( $page ) use ( $allowed ): bool {
@@ -456,7 +456,35 @@ class Static_Site_Importer_Theme_Generator {
 					return isset( $allowed[ $page_id ] ) || isset( $allowed[ $page_slug ] );
 				}
 			)
+		) );
+	}
+
+	/**
+	 * Order exported pages so the configured front page becomes the entrypoint.
+	 *
+	 * @param array<int,object> $pages Pages.
+	 * @return array<int,object>
+	 */
+	private static function order_front_page_first( array $pages ): array {
+		$front_page_id = self::export_front_page_id();
+		if ( $front_page_id <= 0 ) {
+			return $pages;
+		}
+
+		usort(
+			$pages,
+			static function ( object $left, object $right ) use ( $front_page_id ): int {
+				$left_is_front  = isset( $left->ID ) && (int) $left->ID === $front_page_id;
+				$right_is_front = isset( $right->ID ) && (int) $right->ID === $front_page_id;
+				if ( $left_is_front === $right_is_front ) {
+					return 0;
+				}
+
+				return $left_is_front ? -1 : 1;
+			}
 		);
+
+		return $pages;
 	}
 
 	/**

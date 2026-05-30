@@ -24,6 +24,19 @@ file_put_contents( $theme_dir . '/templates/front-page.html', '<!-- wp:post-cont
 file_put_contents( $theme_dir . '/import-report.json', '{"status":"completed"}' );
 
 $GLOBALS['ssi_export_theme_root'] = $theme_root;
+$GLOBALS['ssi_export_bfb_calls']  = array();
+register_shutdown_function(
+	static function () use ( $theme_root ): void {
+		$iterator = new RecursiveIteratorIterator(
+			new RecursiveDirectoryIterator( $theme_root, FilesystemIterator::SKIP_DOTS ),
+			RecursiveIteratorIterator::CHILD_FIRST
+		);
+		foreach ( $iterator as $path ) {
+			$path->isDir() ? rmdir( $path->getPathname() ) : unlink( $path->getPathname() );
+		}
+		rmdir( $theme_root );
+	}
+);
 
 if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_Error {
@@ -124,6 +137,7 @@ if ( ! function_exists( 'get_posts' ) ) {
 
 if ( ! function_exists( 'bfb_convert' ) ) {
 	function bfb_convert( string $content, string $from, string $to ): string {
+		$GLOBALS['ssi_export_bfb_calls'][] = array( $from, $to );
 		return str_replace( array( '<!-- wp:paragraph -->', '<!-- /wp:paragraph -->', '<!-- wp:post-content /-->' ), '', $content );
 	}
 }
@@ -138,17 +152,34 @@ $result = Static_Site_Importer_Theme_Generator::export_theme(
 		'source_metadata' => array( 'source' => 'smoke' ),
 	)
 );
+$failures   = array();
+$assertions = 0;
+$assert     = static function ( bool $condition, string $label, string $detail = '' ) use ( &$assertions, &$failures ): void {
+	$assertions++;
+	if ( ! $condition ) {
+		$failures[] = 'FAIL [' . $label . ']' . ( '' !== $detail ? ': ' . $detail : '' );
+	}
+};
 
-assert( ! is_wp_error( $result ) );
-assert( 'static-site-importer/static-site-artifact-set/v1' === $result['artifact_set']['schema'] );
-assert( 'static-site/index.html' === $result['artifact_set']['entrypoint'] );
-assert( 2 === count( $result['files'] ) );
-assert( 'static-site/style.css' === $result['files'][0]['path'] );
-assert( 'static-site/index.html' === $result['files'][1]['path'] );
-assert( str_contains( $result['files'][1]['content'], 'Edited Playground content' ) );
-assert( str_contains( $result['files'][1]['content'], '<link rel="stylesheet" href="style.css">' ) );
-assert( 'completed' === $result['report']['status'] );
-assert( 'smoke' === $result['report']['source_metadata']['source'] );
-assert( 'completed' === $result['report']['import_report']['status'] );
+$assert( ! is_wp_error( $result ), 'export-succeeds', is_wp_error( $result ) ? $result->get_error_message() : '' );
+$assert( 'static-site-importer/static-site-artifact-set/v1' === ( $result['artifact_set']['schema'] ?? '' ), 'artifact-set-schema' );
+$assert( 'static-site/index.html' === ( $result['artifact_set']['entrypoint'] ?? '' ), 'entrypoint' );
+$assert( 2 === count( $result['files'] ?? array() ), 'exports-entrypoint-and-stylesheet' );
+$assert( 'static-site/style.css' === ( $result['files'][0]['path'] ?? '' ), 'stylesheet-exported' );
+$assert( 'static-site/index.html' === ( $result['files'][1]['path'] ?? '' ), 'entrypoint-exported' );
+$assert( str_contains( (string) ( $result['files'][1]['content'] ?? '' ), 'Edited Playground content' ), 'page-content-converted' );
+$assert( str_contains( (string) ( $result['files'][1]['content'] ?? '' ), '<link rel="stylesheet" href="style.css">' ), 'stylesheet-linked' );
+$assert( 'completed' === ( $result['report']['status'] ?? '' ), 'report-completed' );
+$assert( 'smoke' === ( $result['report']['source_metadata']['source'] ?? '' ), 'source-metadata-preserved' );
+$assert( 'completed' === ( $result['report']['import_report']['status'] ?? '' ), 'import-report-preserved' );
+$assert( count( $GLOBALS['ssi_export_bfb_calls'] ) >= 4, 'bfb-called-for-block-to-html' );
+foreach ( $GLOBALS['ssi_export_bfb_calls'] as $call ) {
+	$assert( 'blocks' === $call[0] && 'html' === $call[1], 'bfb-call-uses-blocks-to-html' );
+}
 
-echo "OK: export theme ability smoke passed\n";
+if ( $failures ) {
+	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
+	exit( 1 );
+}
+
+echo 'OK: export theme ability smoke passed (' . $assertions . " assertions)\n";
