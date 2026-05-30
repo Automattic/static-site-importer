@@ -293,8 +293,7 @@ class Static_Site_Importer_Theme_Generator {
 	 */
 	private static function collect_pages( string $site_dir ) {
 		$pages = array();
-		$paths = glob( trailingslashit( $site_dir ) . '*.html' );
-		foreach ( false === $paths ? array() : $paths as $path ) {
+		foreach ( self::collect_html_paths( $site_dir ) as $path ) {
 			$page = Static_Site_Importer_Source_Page::from_html_file( $site_dir, $path );
 			if ( is_wp_error( $page ) ) {
 				continue;
@@ -315,10 +314,21 @@ class Static_Site_Importer_Theme_Generator {
 		uksort(
 			$pages,
 			static function ( string $left, string $right ): int {
-				if ( self::is_index_source_filename( $left ) ) {
+				$left_is_root_index  = self::is_root_index_source_filename( $left );
+				$right_is_root_index = self::is_root_index_source_filename( $right );
+				if ( $left_is_root_index && ! $right_is_root_index ) {
 					return -1;
 				}
-				if ( self::is_index_source_filename( $right ) ) {
+				if ( ! $left_is_root_index && $right_is_root_index ) {
+					return 1;
+				}
+
+				$left_is_index  = self::is_index_source_filename( $left );
+				$right_is_index = self::is_index_source_filename( $right );
+				if ( $left_is_index && ! $right_is_index ) {
+					return -1;
+				}
+				if ( ! $left_is_index && $right_is_index ) {
 					return 1;
 				}
 
@@ -327,6 +337,41 @@ class Static_Site_Importer_Theme_Generator {
 		);
 
 		return $pages;
+	}
+
+	/**
+	 * Collect HTML source files anywhere under the static site root.
+	 *
+	 * @param string $site_dir Site directory.
+	 * @return array<int, string>
+	 */
+	private static function collect_html_paths( string $site_dir ): array {
+		$paths = array();
+		if ( ! is_dir( $site_dir ) ) {
+			return $paths;
+		}
+
+		$iterator = new RecursiveIteratorIterator(
+			new RecursiveCallbackFilterIterator(
+				new RecursiveDirectoryIterator( $site_dir, FilesystemIterator::SKIP_DOTS ),
+				static function ( SplFileInfo $file ): bool {
+					if ( $file->isDir() ) {
+						return self::is_importable_source_directory( $file->getFilename() );
+					}
+
+					return self::is_html_source_path( $file->getFilename() );
+				}
+			)
+		);
+
+		foreach ( $iterator as $file ) {
+			if ( $file instanceof SplFileInfo && $file->isFile() ) {
+				$paths[] = $file->getPathname();
+			}
+		}
+
+		sort( $paths, SORT_NATURAL | SORT_FLAG_CASE );
+		return $paths;
 	}
 
 	/**
@@ -345,12 +390,11 @@ class Static_Site_Importer_Theme_Generator {
 			new RecursiveCallbackFilterIterator(
 				new RecursiveDirectoryIterator( $site_dir, FilesystemIterator::SKIP_DOTS ),
 				static function ( SplFileInfo $file ): bool {
-					$name = $file->getFilename();
 					if ( $file->isDir() ) {
-						return ! in_array( $name, array( '.git', 'node_modules', 'vendor' ), true ) && ! str_starts_with( $name, '.' );
+						return self::is_importable_source_directory( $file->getFilename() );
 					}
 
-					return self::is_markdown_source_path( $name );
+					return self::is_markdown_source_path( $file->getFilename() );
 				}
 			)
 		);
@@ -376,6 +420,26 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
+	 * Check whether a path is an HTML content source.
+	 *
+	 * @param string $path File path or basename.
+	 * @return bool
+	 */
+	private static function is_html_source_path( string $path ): bool {
+		return 1 === preg_match( '/\.html?$/i', $path );
+	}
+
+	/**
+	 * Check whether a source directory should be scanned for importable pages.
+	 *
+	 * @param string $name Directory basename.
+	 * @return bool
+	 */
+	private static function is_importable_source_directory( string $name ): bool {
+		return ! in_array( $name, array( '.git', 'node_modules', 'vendor' ), true ) && ! str_starts_with( $name, '.' );
+	}
+
+	/**
 	 * Check whether a source filename is the site index.
 	 *
 	 * @param string $filename Source filename.
@@ -383,6 +447,16 @@ class Static_Site_Importer_Theme_Generator {
 	 */
 	private static function is_index_source_filename( string $filename ): bool {
 		return in_array( strtolower( basename( $filename ) ), array( 'index.html', 'index.md', 'index.markdown' ), true );
+	}
+
+	/**
+	 * Check whether a source filename is the root site index.
+	 *
+	 * @param string $filename Source filename.
+	 * @return bool
+	 */
+	private static function is_root_index_source_filename( string $filename ): bool {
+		return in_array( strtolower( trim( self::normalize_route_path( $filename ), '/' ) ), array( 'index.html', 'index.md', 'index.markdown' ), true );
 	}
 
 	/**
@@ -1638,7 +1712,7 @@ class Static_Site_Importer_Theme_Generator {
 			return sanitize_text_field( $title );
 		}
 
-		if ( self::is_index_source_filename( $filename ) ) {
+		if ( self::is_root_index_source_filename( $filename ) ) {
 			return 'Home';
 		}
 
@@ -1672,7 +1746,7 @@ class Static_Site_Importer_Theme_Generator {
 		$extensionless = preg_replace( '/\.(?:html?|md|markdown)$/i', '', self::normalize_route_path( $filename ) );
 		$extensionless = trim( (string) $extensionless, '/' );
 
-		if ( self::is_index_source_filename( $filename ) ) {
+		if ( self::is_root_index_source_filename( $filename ) ) {
 			return 'home';
 		}
 

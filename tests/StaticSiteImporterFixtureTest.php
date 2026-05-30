@@ -219,6 +219,63 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Recursive HTML discovery includes nested pages while skipping dependency and hidden directories.
+	 */
+	public function test_collect_pages_discovers_nested_html_sources(): void {
+		$fixture_dir = trailingslashit( get_temp_dir() ) . 'static-site-importer-nested-html-' . wp_generate_uuid4();
+		$write_html  = function ( string $relative_path, string $title ) use ( $fixture_dir ): void {
+			$path = trailingslashit( $fixture_dir ) . $relative_path;
+			$this->assertTrue( wp_mkdir_p( dirname( $path ) ) );
+			$this->assertNotFalse(
+				file_put_contents(
+					$path,
+					'<!doctype html><html><head><title>' . esc_html( $title ) . '</title></head><body><main><h1>' . esc_html( $title ) . '</h1></main></body></html>'
+				)
+			);
+		};
+
+		$write_html( 'index.html', 'Home' );
+		$write_html( 'about/index.html', 'About' );
+		$write_html( 'docs/guide.html', 'Guide' );
+		$write_html( '.hidden/secret.html', 'Hidden' );
+		$write_html( '.git/config.html', 'Git' );
+		$write_html( 'node_modules/pkg/index.html', 'Package' );
+		$write_html( 'vendor/pkg/index.html', 'Vendor' );
+
+		$method = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'collect_pages' );
+		$method->setAccessible( true );
+		$pages = $method->invoke( null, $fixture_dir );
+
+		$this->assertIsArray( $pages );
+		$this->assertSame( array( 'index.html', 'about/index.html', 'docs/guide.html' ), array_keys( $pages ) );
+		$this->assertArrayNotHasKey( '.hidden/secret.html', $pages );
+		$this->assertArrayNotHasKey( '.git/config.html', $pages );
+		$this->assertArrayNotHasKey( 'node_modules/pkg/index.html', $pages );
+		$this->assertArrayNotHasKey( 'vendor/pkg/index.html', $pages );
+
+		$result = Static_Site_Importer_Theme_Generator::import_theme(
+			trailingslashit( $fixture_dir ) . 'index.html',
+			array(
+				'name'        => 'Nested HTML Discovery',
+				'slug'        => 'nested-html-discovery',
+				'overwrite'   => true,
+				'activate'    => false,
+				'keep_source' => true,
+			)
+		);
+
+		$this->assertNotWPError( $result );
+		$this->assertIsArray( $result );
+		$this->assertSame( array( 'index.html', 'about/index.html', 'docs/guide.html' ), array_keys( $result['pages'] ) );
+		$this->assertSame( 'home', get_post_field( 'post_name', $result['pages']['index.html'] ?? 0 ) );
+		$this->assertSame( 'about', get_post_field( 'post_name', $result['pages']['about/index.html'] ?? 0 ) );
+		$this->assertSame( 'docs-guide', get_post_field( 'post_name', $result['pages']['docs/guide.html'] ?? 0 ) );
+
+		$report = json_decode( $this->read_file( $result['report_path'] ), true );
+		$this->assertSame( 3, (int) ( $report['source_documents']['counts_by_format']['html'] ?? 0 ) );
+	}
+
+	/**
 	 * Minimal semantic hero sections import as editable blocks, not freeform fallback.
 	 *
 	 * Covers validation duplicates #173, #174, #176, #177, #178, and #182.
