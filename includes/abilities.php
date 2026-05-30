@@ -181,13 +181,13 @@ if ( ! function_exists( 'static_site_importer_failure_report_summary' ) ) {
 	}
 }
 
-if ( doing_action( 'wp_abilities_api_categories_init' ) ) {
+if ( doing_action( 'wp_abilities_api_categories_init' ) || did_action( 'wp_abilities_api_categories_init' ) ) {
 	static_site_importer_register_ability_category();
 } elseif ( ! did_action( 'wp_abilities_api_categories_init' ) ) {
 	add_action( 'wp_abilities_api_categories_init', 'static_site_importer_register_ability_category' );
 }
 
-if ( doing_action( 'wp_abilities_api_init' ) ) {
+if ( doing_action( 'wp_abilities_api_init' ) || did_action( 'wp_abilities_api_init' ) ) {
 	static_site_importer_register_abilities();
 } elseif ( ! did_action( 'wp_abilities_api_init' ) ) {
 	add_action( 'wp_abilities_api_init', 'static_site_importer_register_abilities' );

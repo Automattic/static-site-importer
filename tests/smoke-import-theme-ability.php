@@ -42,13 +42,13 @@ if ( ! function_exists( 'current_user_can' ) ) {
 
 if ( ! function_exists( 'doing_action' ) ) {
 	function doing_action( string $hook ): bool {
-		return false;
+		return ! empty( $GLOBALS['doing_actions'][ $hook ] );
 	}
 }
 
 if ( ! function_exists( 'did_action' ) ) {
 	function did_action( string $hook ): int {
-		return 0;
+		return (int) ( $GLOBALS['did_actions'][ $hook ] ?? 0 );
 	}
 }
 
@@ -107,11 +107,9 @@ class Static_Site_Importer_Theme_Generator {
 		);
 	}
 }
-
+$GLOBALS['did_actions']['wp_abilities_api_categories_init'] = 1;
+$GLOBALS['did_actions']['wp_abilities_api_init']            = 1;
 require_once dirname( __DIR__ ) . '/includes/abilities.php';
-
-static_site_importer_register_ability_category();
-static_site_importer_register_abilities();
 
 $assertions = 0;
 $failures   = array();
@@ -122,6 +120,12 @@ $assert = static function ( bool $condition, string $label, string $detail = '' 
 		$failures[] = 'FAIL [' . $label . ']' . ( '' !== $detail ? ': ' . $detail : '' );
 	}
 };
+
+$assert( isset( $registered_categories['static-site-importer'] ), 'category-registers-after-api-init' );
+$assert( isset( $registered_abilities['static-site-importer/import-theme'] ), 'ability-registers-after-api-init' );
+
+static_site_importer_register_ability_category();
+static_site_importer_register_abilities();
 
 $assert( isset( $registered_categories['static-site-importer'] ), 'category-registered' );
 $assert( isset( $registered_abilities['static-site-importer/import-theme'] ), 'import-theme-ability-registered' );
