@@ -188,6 +188,12 @@ $result = static_site_importer_ability_import_theme(
 		'max_fallbacks'             => 0,
 		'allow_missing_woocommerce' => true,
 		'report'                    => '/tmp/report.json',
+		'asset_map'                 => array(
+			'assets/hero.jpg' => array(
+				'url'           => 'https://example.test/uploads/hero.jpg',
+				'attachment_id' => 123,
+			),
+		),
 		'source_metadata'           => array( 'final_url' => 'https://example.com/' ),
 	)
 );
@@ -200,6 +206,7 @@ $assert( 'fixture-theme' === ( $args['slug'] ?? '' ), 'slug-forwarded' );
 $assert( true === ( $args['activate'] ?? false ), 'activate-forwarded' );
 $assert( 0 === ( $args['max_fallbacks'] ?? null ), 'max-fallbacks-forwarded' );
 $assert( true === ( $args['allow_missing_woocommerce'] ?? false ), 'allow-missing-woocommerce-forwarded' );
+$assert( 123 === ( $args['asset_map']['assets/hero.jpg']['attachment_id'] ?? null ), 'asset-map-forwarded' );
 $assert( 'https://example.com/' === ( $args['source_metadata']['final_url'] ?? '' ), 'source-metadata-forwarded' );
 
 $export_ability = $registered_abilities['static-site-importer/export-theme'] ?? array();

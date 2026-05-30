@@ -64,6 +64,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'max_fallbacks'             => array( 'type' => 'integer' ),
 						'allow_missing_woocommerce' => array( 'type' => 'boolean' ),
 						'report'                    => array( 'type' => 'string' ),
+						'asset_map'                 => array( 'type' => 'object' ),
 						'source_metadata'           => array( 'type' => 'object' ),
 					),
 					'required'   => array( 'html_path' ),
@@ -173,6 +174,7 @@ if ( ! function_exists( 'static_site_importer_ability_import_theme' ) ) {
 			'max_fallbacks'             => isset( $input['max_fallbacks'] ) ? (int) $input['max_fallbacks'] : null,
 			'allow_missing_woocommerce' => ! empty( $input['allow_missing_woocommerce'] ),
 			'report'                    => isset( $input['report'] ) ? (string) $input['report'] : '',
+			'asset_map'                 => isset( $input['asset_map'] ) && is_array( $input['asset_map'] ) ? $input['asset_map'] : array(),
 			'source_metadata'           => isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array(),
 		);
 

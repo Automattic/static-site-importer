@@ -53,6 +53,13 @@ class Static_Site_Importer_Theme_Generator {
 	private static string $active_source_dir = '';
 
 	/**
+	 * Caller-supplied asset map keyed by source-relative path.
+	 *
+	 * @var array<string, array<string, mixed>>
+	 */
+	private static array $active_asset_map = array();
+
+	/**
 	 * Materialized inline SVG assets keyed by SVG content hash.
 	 *
 	 * @var array<string, array<string, string>>
@@ -157,6 +164,9 @@ class Static_Site_Importer_Theme_Generator {
 		self::$active_theme_dir         = $theme_dir;
 		self::$active_theme_uri         = trailingslashit( get_theme_root_uri( $theme_slug ) ) . $theme_slug;
 		self::$active_source_dir        = $site_dir;
+		self::$active_asset_map         = self::normalize_asset_map( isset( $args['asset_map'] ) && is_array( $args['asset_map'] ) ? $args['asset_map'] : array() );
+		self::$conversion_report['asset_map']['supplied']    = ! empty( self::$active_asset_map );
+		self::$conversion_report['asset_map']['entry_count'] = count( self::$active_asset_map );
 		self::$materialized_svg_assets  = array();
 		self::$svg_sprite_symbols       = array();
 		self::$materialized_svg_sprites = array();
@@ -169,10 +179,17 @@ class Static_Site_Importer_Theme_Generator {
 		);
 		self::pre_register_svg_symbol_sprites( $fragments, $pages );
 
-		$background_blocks = self::convert_fragment( self::rewrite_internal_links( $fragments['background'], $route_map, basename( $html_path ), 'background:' . basename( $html_path ) ), 'background:index.html' );
-		$header_blocks     = self::convert_header_fragment( self::strip_active_classes( self::rewrite_internal_links( $fragments['header'], $route_map, basename( $html_path ), 'header:' . basename( $html_path ) ) ), $theme_slug );
-		$has_footer_part   = '' !== trim( $fragments['footer'] );
-		$footer_blocks     = $has_footer_part ? self::convert_footer_fragment( self::rewrite_internal_links( $fragments['footer'], $route_map, basename( $html_path ), 'footer:' . basename( $html_path ) ), $theme_slug ) : '';
+		$entry_source        = basename( $html_path );
+		$background_source   = 'background:' . $entry_source;
+		$header_source       = 'header:' . $entry_source;
+		$footer_source       = 'footer:' . $entry_source;
+		$background_fragment = self::rewrite_asset_map_image_references( self::rewrite_internal_links( $fragments['background'], $route_map, $entry_source, $background_source ), $entry_source, $background_source );
+		$header_fragment     = self::rewrite_asset_map_image_references( self::rewrite_internal_links( $fragments['header'], $route_map, $entry_source, $header_source ), $entry_source, $header_source );
+		$footer_fragment     = self::rewrite_asset_map_image_references( self::rewrite_internal_links( $fragments['footer'], $route_map, $entry_source, $footer_source ), $entry_source, $footer_source );
+		$background_blocks   = self::convert_fragment( $background_fragment, 'background:index.html' );
+		$header_blocks       = self::convert_header_fragment( self::strip_active_classes( $header_fragment ), $theme_slug );
+		$has_footer_part     = '' !== trim( $fragments['footer'] );
+		$footer_blocks       = $has_footer_part ? self::convert_footer_fragment( $footer_fragment, $theme_slug ) : '';
 
 		$page_artifacts = self::page_artifacts( $pages, $route_map, $theme_slug );
 
@@ -1112,6 +1129,66 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
+	 * Rewrite local image references through the caller-supplied asset map.
+	 *
+	 * @param string $html        HTML fragment.
+	 * @param string $source_path Source-relative source path.
+	 * @param string $source      Diagnostic source label.
+	 * @return string
+	 */
+	private static function rewrite_asset_map_image_references( string $html, string $source_path, string $source ): string {
+		if ( '' === trim( $html ) || empty( self::$active_asset_map ) || ! str_contains( strtolower( $html ), '<img' ) ) {
+			return $html;
+		}
+
+		$doc = self::load_fragment_document( $html );
+		$root = $doc->documentElement;
+		if ( ! $root instanceof DOMElement ) {
+			return $html;
+		}
+
+		$changed = false;
+		foreach ( $root->getElementsByTagName( 'img' ) as $image ) {
+			$src = trim( $image->getAttribute( 'src' ) );
+			if ( '' === $src || ! self::is_local_url( $src ) ) {
+				continue;
+			}
+
+			$lookup = self::resolve_asset_map_reference( $src, $source_path, $source );
+			if ( null === $lookup ) {
+				continue;
+			}
+
+			$entry = $lookup['entry'];
+			if ( isset( $entry['url'] ) && '' !== trim( (string) $entry['url'] ) ) {
+				$image->setAttribute( 'src', esc_url_raw( (string) $entry['url'] ) );
+				$changed = true;
+			}
+
+			if ( isset( $entry['attachment_id'] ) && (int) $entry['attachment_id'] > 0 ) {
+				$attachment_id = (int) $entry['attachment_id'];
+				$image->setAttribute( 'data-id', (string) $attachment_id );
+				$image->setAttribute( 'class', self::append_class_token( $image->getAttribute( 'class' ), 'wp-image-' . $attachment_id ) );
+				$changed = true;
+			}
+
+			foreach ( array( 'width', 'height' ) as $dimension ) {
+				if ( isset( $entry[ $dimension ] ) && (int) $entry[ $dimension ] > 0 && ! $image->hasAttribute( $dimension ) ) {
+					$image->setAttribute( $dimension, (string) (int) $entry[ $dimension ] );
+					$changed = true;
+				}
+			}
+
+			if ( isset( $entry['alt'] ) && '' !== trim( (string) $entry['alt'] ) && '' === trim( $image->getAttribute( 'alt' ) ) ) {
+				$image->setAttribute( 'alt', (string) $entry['alt'] );
+				$changed = true;
+			}
+		}
+
+		return $changed ? self::node_inner_html( $doc, $root ) : $html;
+	}
+
+	/**
 	 * Strip static active classes from shared chrome before every page reuses it.
 	 *
 	 * @param string $html HTML fragment.
@@ -1647,16 +1724,33 @@ class Static_Site_Importer_Theme_Generator {
 		if ( '' !== $class ) {
 			$attrs['className'] = $class;
 		}
+		if ( (int) $element->getAttribute( 'data-id' ) > 0 ) {
+			$attrs['id'] = (int) $element->getAttribute( 'data-id' );
+			$class       = self::append_class_token( $class, 'wp-image-' . $attrs['id'] );
+			if ( '' !== $class ) {
+				$attrs['className'] = $class;
+			}
+		}
 		if ( '' !== $href ) {
 			$attrs['href']            = esc_url_raw( $href );
 			$attrs['linkDestination'] = 'custom';
 		}
 
 		$figure_class = trim( 'wp-block-image size-large ' . $class );
-		$img_attrs    = array(
+		$alt = $element->getAttribute( 'alt' );
+
+		$img_attrs = array(
 			'src' => esc_url( $src ),
-			'alt' => esc_attr( $element->getAttribute( 'alt' ) ),
+			'alt' => esc_attr( $alt ),
 		);
+		if ( isset( $attrs['id'] ) ) {
+			$img_attrs['class'] = esc_attr( 'wp-image-' . $attrs['id'] );
+		}
+		foreach ( array( 'width', 'height' ) as $dimension ) {
+			if ( (int) $element->getAttribute( $dimension ) > 0 ) {
+				$img_attrs[ $dimension ] = (string) (int) $element->getAttribute( $dimension );
+			}
+		}
 
 		$img_markup = '<img';
 		foreach ( $img_attrs as $name => $value ) {
@@ -1737,6 +1831,167 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		return trailingslashit( self::$active_theme_uri ) . $relative;
+	}
+
+	/**
+	 * Normalize caller-supplied asset map entries by source-relative key.
+	 *
+	 * @param array<string, mixed> $asset_map Raw asset map.
+	 * @return array<string, array<string, mixed>>
+	 */
+	private static function normalize_asset_map( array $asset_map ): array {
+		$normalized = array();
+		foreach ( $asset_map as $key => $entry ) {
+			if ( ! is_string( $key ) || ! is_array( $entry ) ) {
+				continue;
+			}
+
+			$path = self::normalize_asset_map_key( $key );
+			if ( '' === $path ) {
+				continue;
+			}
+
+			$normalized[ $path ] = $entry;
+		}
+
+		return $normalized;
+	}
+
+	/**
+	 * Resolve a local source URL through the active asset map and record the lookup.
+	 *
+	 * @param string $url         Source URL or path.
+	 * @param string $source_path Source-relative document path.
+	 * @param string $source      Diagnostic source label.
+	 * @return array{key:string,entry:array<string,mixed>}|null
+	 */
+	private static function resolve_asset_map_reference( string $url, string $source_path, string $source ): ?array {
+		if ( empty( self::$active_asset_map ) || ! self::is_local_url( $url ) ) {
+			return null;
+		}
+
+		$key = self::asset_map_lookup_key( $url, $source_path );
+		if ( '' === $key ) {
+			return null;
+		}
+
+		if ( isset( self::$active_asset_map[ $key ] ) ) {
+			self::record_asset_map_lookup( 'resolved', $source, $source_path, $url, $key, self::$active_asset_map[ $key ] );
+			return array(
+				'key'   => $key,
+				'entry' => self::$active_asset_map[ $key ],
+			);
+		}
+
+		self::record_asset_map_lookup( 'unresolved', $source, $source_path, $url, $key );
+		return null;
+	}
+
+	/**
+	 * Convert a source URL/path to an asset-map key relative to the source root.
+	 *
+	 * @param string $url         Source URL or path.
+	 * @param string $source_path Source-relative document path.
+	 * @return string
+	 */
+	private static function asset_map_lookup_key( string $url, string $source_path ): string {
+		$path = wp_parse_url( html_entity_decode( $url, ENT_QUOTES ), PHP_URL_PATH );
+		if ( ! is_string( $path ) || '' === trim( $path ) ) {
+			return '';
+		}
+
+		$path = rawurldecode( $path );
+		if ( str_starts_with( $path, '/' ) ) {
+			return self::normalize_asset_map_key( $path );
+		}
+
+		$base = trim( dirname( self::normalize_route_path( $source_path ) ), './' );
+		return self::normalize_asset_map_key( ( '.' === $base || '' === $base ? '' : $base . '/' ) . $path );
+	}
+
+	/**
+	 * Normalize an asset-map key without allowing traversal outside the source root.
+	 *
+	 * @param string $path Asset path.
+	 * @return string
+	 */
+	private static function normalize_asset_map_key( string $path ): string {
+		$path     = str_replace( '\\', '/', html_entity_decode( $path, ENT_QUOTES ) );
+		$path     = ltrim( $path, '/' );
+		$segments = array();
+
+		foreach ( explode( '/', $path ) as $segment ) {
+			if ( '' === $segment || '.' === $segment ) {
+				continue;
+			}
+
+			if ( '..' === $segment ) {
+				if ( empty( $segments ) ) {
+					return '';
+				}
+
+				array_pop( $segments );
+				continue;
+			}
+
+			$segments[] = $segment;
+		}
+
+		return implode( '/', $segments );
+	}
+
+	/**
+	 * Record asset map lookup diagnostics in the import report.
+	 *
+	 * @param string              $status      Lookup status.
+	 * @param string              $source      Diagnostic source label.
+	 * @param string              $source_path Source-relative document path.
+	 * @param string              $url         Original URL.
+	 * @param string              $key         Asset map key.
+	 * @param array<string,mixed> $entry       Optional resolved map entry.
+	 * @return void
+	 */
+	private static function record_asset_map_lookup( string $status, string $source, string $source_path, string $url, string $key, array $entry = array() ): void {
+		if ( ! isset( self::$conversion_report['asset_map'] ) || ! is_array( self::$conversion_report['asset_map'] ) ) {
+			self::$conversion_report['asset_map'] = array(
+				'supplied'         => ! empty( self::$active_asset_map ),
+				'entry_count'      => count( self::$active_asset_map ),
+				'resolved_count'   => 0,
+				'unresolved_count' => 0,
+				'resolved'         => array(),
+				'unresolved'       => array(),
+			);
+		}
+
+		$row = array(
+			'source'      => $source,
+			'source_path' => $source_path,
+			'url'         => $url,
+			'key'         => $key,
+		);
+
+		if ( 'resolved' === $status ) {
+			foreach ( array( 'url', 'attachment_id', 'mime_type', 'width', 'height', 'alt' ) as $field ) {
+				if ( isset( $entry[ $field ] ) ) {
+					$row[ $field ] = $entry[ $field ];
+				}
+			}
+
+			self::$conversion_report['asset_map']['resolved'][] = $row;
+			++self::$conversion_report['asset_map']['resolved_count'];
+			return;
+		}
+
+		self::$conversion_report['asset_map']['unresolved'][] = $row;
+		++self::$conversion_report['asset_map']['unresolved_count'];
+		self::$conversion_report['diagnostics'][] = array(
+			'type'        => 'asset_map_unresolved',
+			'source'      => $source,
+			'source_path' => $source_path,
+			'url'         => $url,
+			'key'         => $key,
+			'message'     => 'Local image reference had no matching asset_map entry; leaving the source reference unchanged.',
+		);
 	}
 
 	/**
@@ -2074,6 +2329,7 @@ class Static_Site_Importer_Theme_Generator {
 			$body = self::rewrite_markdown_links( $body, $route_map, $source_path, $source );
 		} else {
 			$body = self::rewrite_internal_links( $body, $route_map, $source_path, $source );
+			$body = self::rewrite_asset_map_image_references( $body, $source_path, $source );
 		}
 
 		return self::convert_fragment( $body, $source, $page->body_format() );
@@ -3550,6 +3806,14 @@ class Static_Site_Importer_Theme_Generator {
 			'assets'                  => array(
 				'svg_icons'   => array(),
 				'svg_sprites' => array(),
+			),
+			'asset_map'               => array(
+				'supplied'         => false,
+				'entry_count'      => 0,
+				'resolved_count'   => 0,
+				'unresolved_count' => 0,
+				'resolved'         => array(),
+				'unresolved'       => array(),
 			),
 			'generated_theme'         => array(
 				'block_documents' => array(),
