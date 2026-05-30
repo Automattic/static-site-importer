@@ -82,4 +82,50 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		$this->assertSame( '0', $diagnostics[0]['block_path'] ?? '' );
 		$this->assertStringContainsString( '<aside', $diagnostics[0]['source_html_preview'] ?? '' );
 	}
+
+	/**
+	 * Generated freeform findings normalize to repair-loop diagnostic fields.
+	 */
+	public function test_generated_freeform_diagnostic_includes_machine_actionable_shape(): void {
+		$reflection = new ReflectionClass( Static_Site_Importer_Theme_Generator::class );
+
+		$new_report = $reflection->getMethod( 'new_conversion_report' );
+		$new_report->setAccessible( true );
+
+		$report_property = $reflection->getProperty( 'conversion_report' );
+		$report_property->setAccessible( true );
+		$report_property->setValue( null, $new_report->invoke( null, '/tmp/source/index.html' ) );
+
+		$analyze = $reflection->getMethod( 'analyze_generated_theme_block_documents' );
+		$analyze->setAccessible( true );
+		$analyze->invoke(
+			null,
+			array(
+				'/tmp/generated/templates/page.html' => '<!-- wp:freeform --><div class="legacy-widget"><marquee>Sale</marquee></div><!-- /wp:freeform -->',
+			),
+			'/tmp/generated'
+		);
+
+		$normalize = $reflection->getMethod( 'normalize_import_diagnostics' );
+		$normalize->setAccessible( true );
+		$normalize->invoke( null );
+
+		$report      = $report_property->getValue();
+		$diagnostics = array_values(
+			array_filter(
+				$report['diagnostics'] ?? array(),
+				static fn ( $diagnostic ): bool => is_array( $diagnostic ) && 'freeform_block' === ( $diagnostic['type'] ?? '' )
+			)
+		);
+
+		$this->assertNotEmpty( $diagnostics );
+		$this->assertStringStartsWith( 'diag-', $diagnostics[0]['id'] ?? '' );
+		$this->assertSame( 'warning', $diagnostics[0]['severity'] ?? '' );
+		$this->assertSame( 'fallback_block', $diagnostics[0]['category'] ?? '' );
+		$this->assertSame( 'generated_document_contains_core_freeform', $diagnostics[0]['reason_code'] ?? '' );
+		$this->assertSame( 'replace_fallback_block', $diagnostics[0]['suggested_repair_class'] ?? '' );
+		$this->assertSame( 'templates/page.html', $diagnostics[0]['source_path'] ?? '' );
+		$this->assertSame( 'div.legacy-widget', $diagnostics[0]['selector'] ?? '' );
+		$this->assertSame( '0', $diagnostics[0]['context']['block_path'] ?? '' );
+	}
 }

@@ -85,6 +85,42 @@ if ( ! is_wp_error( $result ) ) {
 	$diagnostics = is_array( $report ) ? wp_list_pluck( $report['diagnostics'] ?? array(), 'type' ) : array();
 	$assert( in_array( 'unresolved_internal_link', $diagnostics, true ), 'unresolved-link-diagnostic' );
 	$assert( in_array( 'local_asset_not_materialized', $diagnostics, true ), 'local-asset-diagnostic' );
+
+	$unresolved_diagnostics = is_array( $report ) ? array_values(
+		array_filter(
+			$report['diagnostics'] ?? array(),
+			static fn ( $diagnostic ): bool => is_array( $diagnostic ) && 'unresolved_internal_link' === ( $diagnostic['type'] ?? '' )
+		)
+	) : array();
+	$asset_diagnostics      = is_array( $report ) ? array_values(
+		array_filter(
+			$report['diagnostics'] ?? array(),
+			static fn ( $diagnostic ): bool => is_array( $diagnostic ) && 'local_asset_not_materialized' === ( $diagnostic['type'] ?? '' )
+		)
+	) : array();
+
+	$assert( ! empty( $unresolved_diagnostics ), 'unresolved-link-diagnostic-record-present' );
+	if ( ! empty( $unresolved_diagnostics ) ) {
+		$link = $unresolved_diagnostics[0];
+		$assert( str_starts_with( (string) ( $link['id'] ?? '' ), 'diag-' ), 'unresolved-link-diagnostic-has-id' );
+		$assert( 'warning' === ( $link['severity'] ?? '' ), 'unresolved-link-diagnostic-has-severity' );
+		$assert( 'broken_internal_link' === ( $link['category'] ?? '' ), 'unresolved-link-diagnostic-has-category' );
+		$assert( 'unresolved_internal_link' === ( $link['reason_code'] ?? '' ), 'unresolved-link-diagnostic-has-reason-code' );
+		$assert( 'rewrite_or_create_internal_target' === ( $link['suggested_repair_class'] ?? '' ), 'unresolved-link-diagnostic-has-repair-class' );
+		$assert( '' !== (string) ( $link['source_path'] ?? '' ), 'unresolved-link-diagnostic-has-source-path' );
+		$assert( '' !== (string) ( $link['context']['href'] ?? '' ), 'unresolved-link-diagnostic-has-href-context' );
+	}
+
+	$assert( ! empty( $asset_diagnostics ), 'local-asset-diagnostic-record-present' );
+	if ( ! empty( $asset_diagnostics ) ) {
+		$asset = $asset_diagnostics[0];
+		$assert( 'unresolved_asset' === ( $asset['category'] ?? '' ), 'local-asset-diagnostic-has-category' );
+		$assert( 'materialize_or_rewrite_asset' === ( $asset['suggested_repair_class'] ?? '' ), 'local-asset-diagnostic-has-repair-class' );
+		$assert( '' !== (string) ( $asset['source_path'] ?? '' ), 'local-asset-diagnostic-has-source-path' );
+	}
+
+	$source_refs = $report['source_documents']['diagnostic_refs']['unresolved_link_count'] ?? array();
+	$assert( is_array( $source_refs ) && ! empty( $source_refs ), 'source-document-count-links-to-diagnostics' );
 }
 
 if ( ! empty( $failures ) ) {

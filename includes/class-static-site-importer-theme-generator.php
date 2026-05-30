@@ -6091,6 +6091,8 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return array<string, mixed>
 	 */
 	private static function finalize_quality_report( array $args ): array {
+		self::normalize_import_diagnostics();
+
 		$quality = self::$conversion_report['quality'];
 		$reasons = array();
 		if ( $quality['fallback_count'] > 0 ) {
@@ -6140,8 +6142,272 @@ class Static_Site_Importer_Theme_Generator {
 			$quality['fail_import'] = true;
 		}
 
+		$quality['diagnostic_refs']         = self::quality_diagnostic_refs( self::$conversion_report['diagnostics'] ?? array() );
 		self::$conversion_report['quality'] = $quality;
+		self::normalize_source_document_diagnostic_refs();
 		return $quality;
+	}
+
+	/**
+	 * Normalize import diagnostics into a stable, machine-actionable shape.
+	 *
+	 * Existing human-readable fields are preserved for backwards compatibility.
+	 * The added fields give repair loops generic, path-addressed records without
+	 * coupling the report to a specific downstream consumer.
+	 *
+	 * @return void
+	 */
+	private static function normalize_import_diagnostics(): void {
+		if ( empty( self::$conversion_report['diagnostics'] ) || ! is_array( self::$conversion_report['diagnostics'] ) ) {
+			return;
+		}
+
+		$normalized = array();
+		foreach ( array_values( self::$conversion_report['diagnostics'] ) as $index => $diagnostic ) {
+			if ( ! is_array( $diagnostic ) ) {
+				continue;
+			}
+
+			$type        = isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : 'import_diagnostic';
+			$source      = isset( $diagnostic['source'] ) && is_scalar( $diagnostic['source'] ) ? (string) $diagnostic['source'] : '';
+			$source_path = isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : self::diagnostic_source_path( $source );
+			$reason_code = self::diagnostic_reason_code( $type, $diagnostic );
+
+			$machine = array(
+				'id'                     => self::diagnostic_id( $index, $type, $source_path, $reason_code ),
+				'severity'               => self::diagnostic_severity( $type ),
+				'category'               => self::diagnostic_category( $type ),
+				'reason_code'            => $reason_code,
+				'suggested_repair_class' => self::diagnostic_repair_class( $type ),
+				'source_path'            => $source_path,
+			);
+
+			$selector = isset( $diagnostic['selector'] ) && is_scalar( $diagnostic['selector'] ) ? trim( (string) $diagnostic['selector'] ) : '';
+			if ( '' !== $selector ) {
+				$machine['selector'] = $selector;
+			}
+
+			if ( isset( $diagnostic['line'] ) && is_numeric( $diagnostic['line'] ) ) {
+				$machine['line'] = (int) $diagnostic['line'];
+			}
+
+			if ( isset( $diagnostic['line_range'] ) ) {
+				$machine['line_range'] = $diagnostic['line_range'];
+			}
+
+			$context = self::diagnostic_context( $diagnostic );
+			if ( ! empty( $context ) ) {
+				$machine['context'] = $context;
+			}
+
+			$normalized[] = array_merge( $machine, $diagnostic );
+		}
+
+		self::$conversion_report['diagnostics'] = $normalized;
+	}
+
+	/**
+	 * Build quality counter references into normalized diagnostics.
+	 *
+	 * @param array<int,array<string,mixed>> $diagnostics Normalized diagnostics.
+	 * @return array<string,array<int,string>> Diagnostic IDs keyed by quality count.
+	 */
+	private static function quality_diagnostic_refs( array $diagnostics ): array {
+		$types_by_count = array(
+			'fallback_count'                     => array( 'unsupported_html_fallback' ),
+			'content_loss_count'                 => array( 'content_loss_abort' ),
+			'empty_conversion_count'             => array( 'empty_conversion' ),
+			'core_html_block_count'              => array( 'core_html_block' ),
+			'freeform_block_count'               => array( 'freeform_block' ),
+			'invalid_block_count'                => array( 'invalid_block_document' ),
+			'unsafe_svg_count'                   => array( 'unsafe_inline_svg' ),
+			'svg_materialization_failure_count'  => array( 'svg_materialization_failure' ),
+			'svg_sprite_reference_failure_count' => array( 'svg_sprite_reference_failure' ),
+			'commerce_dependency_failures'       => array( 'commerce_dependency_failure' ),
+		);
+
+		$refs = array();
+		foreach ( $types_by_count as $count_key => $types ) {
+			$refs[ $count_key ] = array_values(
+				array_filter(
+					array_map(
+						static function ( array $diagnostic ) use ( $types ): string {
+							return in_array( $diagnostic['type'] ?? '', $types, true ) && isset( $diagnostic['id'] ) ? (string) $diagnostic['id'] : '';
+						},
+						$diagnostics
+					)
+				)
+			);
+		}
+
+		return $refs;
+	}
+
+	/**
+	 * Link source-document counts back to concrete diagnostics.
+	 *
+	 * @return void
+	 */
+	private static function normalize_source_document_diagnostic_refs(): void {
+		$diagnostics = isset( self::$conversion_report['diagnostics'] ) && is_array( self::$conversion_report['diagnostics'] ) ? self::$conversion_report['diagnostics'] : array();
+		$refs        = array(
+			'unresolved_link_count'      => array(),
+			'skipped_mdx_count'          => array(),
+			'markdown_parse_error_count' => array(),
+		);
+
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) || empty( $diagnostic['id'] ) ) {
+				continue;
+			}
+
+			$type = (string) ( $diagnostic['type'] ?? '' );
+			if ( 'unresolved_internal_link' === $type ) {
+				$refs['unresolved_link_count'][] = (string) $diagnostic['id'];
+			} elseif ( 'unsupported_source_document' === $type ) {
+				$refs['skipped_mdx_count'][] = (string) $diagnostic['id'];
+			} elseif ( 'markdown_parse_error' === $type ) {
+				$refs['markdown_parse_error_count'][] = (string) $diagnostic['id'];
+			}
+		}
+
+		self::$conversion_report['source_documents']['diagnostic_refs'] = $refs;
+	}
+
+	/**
+	 * Build a stable diagnostic ID.
+	 *
+	 * @param int    $index       Zero-based diagnostic position.
+	 * @param string $type        Diagnostic type.
+	 * @param string $source_path Source-relative path.
+	 * @param string $reason_code Reason code.
+	 * @return string Diagnostic ID.
+	 */
+	private static function diagnostic_id( int $index, string $type, string $source_path, string $reason_code ): string {
+		$slug = sanitize_key( $type . '-' . $reason_code . '-' . $source_path );
+		if ( '' === $slug ) {
+			$slug = 'import-diagnostic';
+		}
+
+		return sprintf( 'diag-%03d-%s', $index + 1, substr( $slug, 0, 80 ) );
+	}
+
+	/**
+	 * Infer a source-relative path from a diagnostic source label.
+	 *
+	 * @param string $source Diagnostic source label.
+	 * @return string Source-relative path or generated artifact path.
+	 */
+	private static function diagnostic_source_path( string $source ): string {
+		if ( str_contains( $source, ':' ) ) {
+			return (string) substr( $source, strpos( $source, ':' ) + 1 );
+		}
+
+		return $source;
+	}
+
+	/**
+	 * Normalize a diagnostic reason code.
+	 *
+	 * @param string              $type       Diagnostic type.
+	 * @param array<string,mixed> $diagnostic Diagnostic record.
+	 * @return string Reason code.
+	 */
+	private static function diagnostic_reason_code( string $type, array $diagnostic ): string {
+		foreach ( array( 'reason_code', 'reason', 'error_code' ) as $key ) {
+			if ( isset( $diagnostic[ $key ] ) && is_scalar( $diagnostic[ $key ] ) && '' !== trim( (string) $diagnostic[ $key ] ) ) {
+				return sanitize_key( (string) $diagnostic[ $key ] );
+			}
+		}
+
+		return sanitize_key( $type );
+	}
+
+	/**
+	 * Classify diagnostic severity for repair prioritization.
+	 *
+	 * @param string $type Diagnostic type.
+	 * @return string Severity.
+	 */
+	private static function diagnostic_severity( string $type ): string {
+		if ( in_array( $type, array( 'content_loss_abort', 'empty_conversion', 'invalid_block_document', 'commerce_dependency_failure' ), true ) ) {
+			return 'error';
+		}
+
+		return 'warning';
+	}
+
+	/**
+	 * Classify diagnostics by generic repair category.
+	 *
+	 * @param string $type Diagnostic type.
+	 * @return string Category.
+	 */
+	private static function diagnostic_category( string $type ): string {
+		$categories = array(
+			'local_asset_not_materialized'         => 'unresolved_asset',
+			'unresolved_internal_link'             => 'broken_internal_link',
+			'unsafe_inline_svg'                    => 'unsafe_svg',
+			'svg_materialization_failure'          => 'unresolved_asset',
+			'svg_sprite_reference_failure'         => 'unresolved_asset',
+			'unsupported_source_document'          => 'unsupported_source',
+			'unsupported_html_fallback'            => 'unsupported_element',
+			'core_html_block'                      => 'fallback_block',
+			'freeform_block'                       => 'fallback_block',
+			'invalid_block_document'               => 'conversion_quality',
+			'content_loss_abort'                   => 'conversion_quality',
+			'empty_conversion'                     => 'conversion_quality',
+			'source_region_unassigned'             => 'source_region',
+			'commerce_dependency_failure'          => 'conversion_quality',
+			'commerce_product_inference_unmatched' => 'conversion_quality',
+		);
+
+		return $categories[ $type ] ?? 'import_quality';
+	}
+
+	/**
+	 * Suggest a generic repair class for a diagnostic type.
+	 *
+	 * @param string $type Diagnostic type.
+	 * @return string Suggested repair class.
+	 */
+	private static function diagnostic_repair_class( string $type ): string {
+		$classes = array(
+			'local_asset_not_materialized'         => 'materialize_or_rewrite_asset',
+			'unresolved_internal_link'             => 'rewrite_or_create_internal_target',
+			'unsafe_inline_svg'                    => 'sanitize_or_externalize_svg',
+			'svg_materialization_failure'          => 'materialize_or_rewrite_asset',
+			'svg_sprite_reference_failure'         => 'materialize_or_rewrite_asset',
+			'unsupported_source_document'          => 'convert_source_document',
+			'unsupported_html_fallback'            => 'replace_unsupported_html',
+			'core_html_block'                      => 'replace_fallback_block',
+			'freeform_block'                       => 'replace_fallback_block',
+			'invalid_block_document'               => 'repair_generated_block_markup',
+			'content_loss_abort'                   => 'repair_source_conversion',
+			'empty_conversion'                     => 'repair_source_conversion',
+			'source_region_unassigned'             => 'assign_or_ignore_source_region',
+			'commerce_dependency_failure'          => 'install_or_configure_dependency',
+			'commerce_product_inference_unmatched' => 'provide_structured_product_data',
+		);
+
+		return $classes[ $type ] ?? 'inspect_import_diagnostic';
+	}
+
+	/**
+	 * Extract concise diagnostic context for repair prompts.
+	 *
+	 * @param array<string,mixed> $diagnostic Diagnostic record.
+	 * @return array<string,mixed> Context fields.
+	 */
+	private static function diagnostic_context( array $diagnostic ): array {
+		$context = array();
+		foreach ( array( 'href', 'tag', 'tag_name', 'block_name', 'block_path', 'excerpt', 'html_excerpt', 'source_html_preview', 'error_message' ) as $key ) {
+			if ( array_key_exists( $key, $diagnostic ) && null !== $diagnostic[ $key ] && '' !== $diagnostic[ $key ] ) {
+				$context[ $key ] = $diagnostic[ $key ];
+			}
+		}
+
+		return $context;
 	}
 
 	/**

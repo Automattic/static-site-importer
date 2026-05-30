@@ -757,7 +757,21 @@ if ( false !== $wrote_quality ) {
 		$assert( 1 === ( $quality_result['quality']['fallback_count'] ?? 0 ), 'quality-result-counts-fallbacks' );
 		$assert( false === ( $quality_result['quality']['pass'] ?? true ), 'quality-result-fails-when-fallbacks-exist' );
 		$assert( true === ( $quality_result['quality']['fail_import'] ?? false ), 'quality-gate-fails-when-max-fallbacks-exceeded' );
-		$assert( is_array( $quality_report ) && 'unsupported_html_fallback' === ( $quality_report['diagnostics'][0]['type'] ?? '' ), 'quality-report-records-fallback-diagnostic' );
+		$fallback_diagnostics = is_array( $quality_report ) ? array_values(
+			array_filter(
+				$quality_report['diagnostics'] ?? array(),
+				static fn ( $diagnostic ): bool => is_array( $diagnostic ) && 'unsupported_html_fallback' === ( $diagnostic['type'] ?? '' )
+			)
+		) : array();
+		$assert( ! empty( $fallback_diagnostics ), 'quality-report-records-fallback-diagnostic' );
+		$fallback_diagnostic = $fallback_diagnostics[0] ?? array();
+		$assert( str_starts_with( (string) ( $fallback_diagnostic['id'] ?? '' ), 'diag-' ), 'quality-fallback-diagnostic-has-id' );
+		$assert( 'warning' === ( $fallback_diagnostic['severity'] ?? '' ), 'quality-fallback-diagnostic-has-severity' );
+		$assert( 'unsupported_element' === ( $fallback_diagnostic['category'] ?? '' ), 'quality-fallback-diagnostic-has-category' );
+		$assert( 'replace_unsupported_html' === ( $fallback_diagnostic['suggested_repair_class'] ?? '' ), 'quality-fallback-diagnostic-has-repair-class' );
+		$assert( 'index.html' === ( $fallback_diagnostic['source_path'] ?? '' ), 'quality-fallback-diagnostic-has-source-path' );
+		$fallback_refs = $quality_report['quality']['diagnostic_refs']['fallback_count'] ?? array();
+		$assert( is_array( $fallback_refs ) && in_array( $fallback_diagnostic['id'] ?? '', $fallback_refs, true ), 'quality-fallback-count-links-to-diagnostic' );
 	}
 }
 
