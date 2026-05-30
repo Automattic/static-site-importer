@@ -286,6 +286,398 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
+	 * Export an imported or active block theme as static-site artifacts.
+	 *
+	 * @param array $args Export args.
+	 * @return array{artifact_set:array<string,mixed>,files:array<int,array<string,mixed>>,report:array<string,mixed>}|WP_Error
+	 */
+	public static function export_theme( array $args = array() ) {
+		if ( ! function_exists( 'bfb_convert' ) ) {
+			return new WP_Error( 'static_site_importer_missing_bfb', 'Block Format Bridge is required to export a static site.' );
+		}
+
+		$theme_slug = isset( $args['theme_slug'] ) && '' !== trim( (string) $args['theme_slug'] ) ? sanitize_title( (string) $args['theme_slug'] ) : self::active_theme_slug();
+		if ( '' === $theme_slug ) {
+			return new WP_Error( 'static_site_importer_missing_theme_slug', 'A theme_slug input is required when no active theme can be detected.' );
+		}
+
+		$theme_dir = self::export_theme_dir( $theme_slug );
+		if ( '' === $theme_dir || ! is_dir( $theme_dir ) ) {
+			return new WP_Error( 'static_site_importer_theme_not_found', sprintf( 'Theme directory not found for %s.', $theme_slug ) );
+		}
+
+		$entrypoint      = self::export_artifact_path( isset( $args['entrypoint'] ) ? (string) $args['entrypoint'] : 'static-site/index.html', 'static-site/index.html' );
+		$include_pages   = $args['include_pages'] ?? true;
+		$source_metadata = isset( $args['source_metadata'] ) && is_array( $args['source_metadata'] ) ? $args['source_metadata'] : array();
+		$diagnostics     = array();
+		$files           = array();
+
+		$stylesheet = self::export_theme_stylesheet_file( $theme_dir );
+		if ( null !== $stylesheet ) {
+			$files[] = $stylesheet;
+		}
+
+		$pages = self::export_pages( $include_pages );
+		if ( empty( $pages ) ) {
+			$diagnostics[] = array(
+				'level'   => 'warning',
+				'code'    => 'static_site_importer_export_no_pages',
+				'message' => 'No published pages were available to export; generated an entrypoint from theme templates only.',
+			);
+			$files[] = self::export_file_entry(
+				$entrypoint,
+				self::export_html_document( '', self::export_theme_chrome_html( $theme_dir, 'front-page' ), $theme_slug, null !== $stylesheet ),
+				'document',
+				'entrypoint'
+			);
+		} else {
+			$front_page_id = self::export_front_page_id();
+			$first         = true;
+			foreach ( $pages as $page ) {
+				$page_id   = isset( $page->ID ) ? (int) $page->ID : 0;
+				$is_front  = $first || ( $front_page_id > 0 && $page_id === $front_page_id );
+				$path      = $is_front ? $entrypoint : self::export_page_artifact_path( $page );
+				$template  = $is_front ? 'front-page' : 'page';
+				$page_html = bfb_convert( isset( $page->post_content ) ? (string) $page->post_content : '', 'blocks', 'html' );
+
+				$files[] = self::export_file_entry(
+					$path,
+					self::export_html_document( $page_html, self::export_theme_chrome_html( $theme_dir, $template ), self::export_page_title( $page, $theme_slug ), null !== $stylesheet ),
+					'document',
+					$is_front ? 'entrypoint' : 'page',
+					array(
+						'post_id'   => $page_id,
+						'post_name' => isset( $page->post_name ) ? (string) $page->post_name : '',
+					)
+				);
+
+				$first = false;
+			}
+		}
+
+		$import_report = self::read_theme_import_report( $theme_dir );
+		$report        = array(
+			'status'          => 'completed',
+			'theme_slug'      => $theme_slug,
+			'theme_dir'       => $theme_dir,
+			'entrypoint'      => $entrypoint,
+			'file_count'      => count( $files ),
+			'page_count'      => count( $pages ),
+			'source_metadata' => $source_metadata,
+			'diagnostics'     => $diagnostics,
+		);
+		if ( ! empty( $import_report ) ) {
+			$report['import_report'] = $import_report;
+		}
+
+		return array(
+			'artifact_set' => array(
+				'schema'     => 'static-site-importer/static-site-artifact-set/v1',
+				'theme_slug' => $theme_slug,
+				'entrypoint' => $entrypoint,
+				'files'      => $files,
+				'report'     => $report,
+			),
+			'files'        => $files,
+			'report'       => $report,
+		);
+	}
+
+	/**
+	 * Resolve the active theme slug.
+	 *
+	 * @return string
+	 */
+	private static function active_theme_slug(): string {
+		if ( function_exists( 'get_stylesheet' ) ) {
+			return sanitize_title( (string) get_stylesheet() );
+		}
+
+		return '';
+	}
+
+	/**
+	 * Resolve a theme directory for export.
+	 *
+	 * @param string $theme_slug Theme slug.
+	 * @return string
+	 */
+	private static function export_theme_dir( string $theme_slug ): string {
+		if ( function_exists( 'wp_get_theme' ) ) {
+			$theme = wp_get_theme( $theme_slug );
+			if ( is_object( $theme ) && method_exists( $theme, 'exists' ) && $theme->exists() && method_exists( $theme, 'get_stylesheet_directory' ) ) {
+				return (string) $theme->get_stylesheet_directory();
+			}
+		}
+
+		if ( function_exists( 'get_theme_root' ) ) {
+			return trailingslashit( get_theme_root( $theme_slug ) ) . $theme_slug;
+		}
+
+		return '';
+	}
+
+	/**
+	 * Get published pages selected by include_pages.
+	 *
+	 * @param mixed $include_pages Include pages argument.
+	 * @return array<int,object>
+	 */
+	private static function export_pages( $include_pages ): array {
+		if ( false === $include_pages || ! function_exists( 'get_posts' ) ) {
+			$page = self::export_front_page();
+			return null === $page ? array() : array( $page );
+		}
+
+		$pages = get_posts(
+			array(
+				'post_type'      => 'page',
+				'post_status'    => 'publish',
+				'posts_per_page' => -1,
+				'orderby'        => 'menu_order title',
+				'order'          => 'ASC',
+			)
+		);
+		if ( ! is_array( $pages ) ) {
+			return array();
+		}
+
+		if ( ! is_array( $include_pages ) || empty( $include_pages ) ) {
+			return array_values( $pages );
+		}
+
+		$allowed = array_fill_keys( array_map( 'strval', $include_pages ), true );
+		return array_values(
+			array_filter(
+				$pages,
+				static function ( $page ) use ( $allowed ): bool {
+					$page_id   = isset( $page->ID ) ? (string) $page->ID : '';
+					$page_slug = isset( $page->post_name ) ? (string) $page->post_name : '';
+					return isset( $allowed[ $page_id ] ) || isset( $allowed[ $page_slug ] );
+				}
+			)
+		);
+	}
+
+	/**
+	 * Get the configured front page post.
+	 *
+	 * @return object|null
+	 */
+	private static function export_front_page(): ?object {
+		$front_page_id = self::export_front_page_id();
+		if ( $front_page_id > 0 && function_exists( 'get_post' ) ) {
+			$page = get_post( $front_page_id );
+			if ( is_object( $page ) ) {
+				return $page;
+			}
+		}
+
+		if ( ! function_exists( 'get_posts' ) ) {
+			return null;
+		}
+
+		$pages = get_posts(
+			array(
+				'post_type'      => 'page',
+				'post_status'    => 'publish',
+				'posts_per_page' => 1,
+				'orderby'        => 'menu_order title',
+				'order'          => 'ASC',
+			)
+		);
+
+		return is_array( $pages ) && isset( $pages[0] ) && is_object( $pages[0] ) ? $pages[0] : null;
+	}
+
+	/**
+	 * Get the configured front page ID.
+	 *
+	 * @return int
+	 */
+	private static function export_front_page_id(): int {
+		if ( ! function_exists( 'get_option' ) || 'page' !== get_option( 'show_on_front' ) ) {
+			return 0;
+		}
+
+		return (int) get_option( 'page_on_front' );
+	}
+
+	/**
+	 * Convert template parts around exported page content.
+	 *
+	 * @param string $theme_dir Theme directory.
+	 * @param string $template  Template slug.
+	 * @return array{before:string,after:string}
+	 */
+	private static function export_theme_chrome_html( string $theme_dir, string $template ): array {
+		$before = self::convert_theme_block_file_to_html( $theme_dir . '/parts/header.html' );
+		$after  = self::convert_theme_block_file_to_html( $theme_dir . '/parts/footer.html' );
+
+		$template_html = self::read_file_if_readable( $theme_dir . '/templates/' . $template . '.html' );
+		if ( '' === $template_html && 'front-page' !== $template ) {
+			$template_html = self::read_file_if_readable( $theme_dir . '/templates/index.html' );
+		}
+
+		if ( '' !== $template_html ) {
+			$converted_template = bfb_convert( $template_html, 'blocks', 'html' );
+			if ( '' !== trim( $converted_template ) && '' === trim( $before . $after ) ) {
+				$before = $converted_template;
+			}
+		}
+
+		return array(
+			'before' => $before,
+			'after'  => $after,
+		);
+	}
+
+	/**
+	 * Convert a block markup file to HTML.
+	 *
+	 * @param string $path File path.
+	 * @return string
+	 */
+	private static function convert_theme_block_file_to_html( string $path ): string {
+		$content = self::read_file_if_readable( $path );
+		return '' === $content ? '' : bfb_convert( $content, 'blocks', 'html' );
+	}
+
+	/**
+	 * Read a file when available.
+	 *
+	 * @param string $path File path.
+	 * @return string
+	 */
+	private static function read_file_if_readable( string $path ): string {
+		if ( ! is_readable( $path ) ) {
+			return '';
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local generated theme artifacts for export.
+		$content = file_get_contents( $path );
+		return false === $content ? '' : (string) $content;
+	}
+
+	/**
+	 * Build a full static HTML document.
+	 *
+	 * @param string                    $page_html       Converted page body HTML.
+	 * @param array{before:string,after:string} $chrome          Converted theme chrome.
+	 * @param string                    $title           Document title.
+	 * @param bool                      $include_styles  Whether to link exported CSS.
+	 * @return string
+	 */
+	private static function export_html_document( string $page_html, array $chrome, string $title, bool $include_styles ): string {
+		$head = '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">';
+		if ( $include_styles ) {
+			$head .= '<link rel="stylesheet" href="style.css">';
+		}
+
+		return '<!doctype html>' . "\n"
+			. '<html><head>' . $head . '<title>' . esc_html( $title ) . '</title></head><body>' . "\n"
+			. trim( (string) ( $chrome['before'] ?? '' ) . "\n" . $page_html . "\n" . ( $chrome['after'] ?? '' ) ) . "\n"
+			. '</body></html>' . "\n";
+	}
+
+	/**
+	 * Build an artifact file entry.
+	 *
+	 * @param string              $path        Artifact path.
+	 * @param string              $content     File content.
+	 * @param string              $kind        File kind.
+	 * @param string              $role        File role.
+	 * @param array<string,mixed> $diagnostics Optional diagnostics/metadata.
+	 * @return array<string,mixed>
+	 */
+	private static function export_file_entry( string $path, string $content, string $kind, string $role, array $diagnostics = array() ): array {
+		$entry = array(
+			'path'    => $path,
+			'content' => $content,
+			'kind'    => $kind,
+			'role'    => $role,
+		);
+		if ( ! empty( $diagnostics ) ) {
+			$entry['diagnostics'] = $diagnostics;
+		}
+
+		return $entry;
+	}
+
+	/**
+	 * Export the theme stylesheet when present.
+	 *
+	 * @param string $theme_dir Theme directory.
+	 * @return array<string,mixed>|null
+	 */
+	private static function export_theme_stylesheet_file( string $theme_dir ): ?array {
+		$content = self::read_file_if_readable( $theme_dir . '/style.css' );
+		if ( '' === $content ) {
+			return null;
+		}
+
+		return self::export_file_entry( 'static-site/style.css', $content, 'asset', 'stylesheet' );
+	}
+
+	/**
+	 * Normalize an exported artifact path.
+	 *
+	 * @param string $path     Requested path.
+	 * @param string $fallback Fallback path.
+	 * @return string
+	 */
+	private static function export_artifact_path( string $path, string $fallback ): string {
+		$path = self::normalize_route_path( $path );
+		if ( '' === $path || str_ends_with( $path, '/' ) ) {
+			return $fallback;
+		}
+
+		return $path;
+	}
+
+	/**
+	 * Build a page artifact path.
+	 *
+	 * @param object $page Page object.
+	 * @return string
+	 */
+	private static function export_page_artifact_path( object $page ): string {
+		$slug = isset( $page->post_name ) && '' !== trim( (string) $page->post_name ) ? sanitize_title( (string) $page->post_name ) : 'page-' . ( isset( $page->ID ) ? (int) $page->ID : uniqid() );
+		return self::export_artifact_path( 'static-site/' . $slug . '/index.html', 'static-site/page/index.html' );
+	}
+
+	/**
+	 * Resolve a page title for export.
+	 *
+	 * @param object $page       Page object.
+	 * @param string $theme_slug Fallback theme slug.
+	 * @return string
+	 */
+	private static function export_page_title( object $page, string $theme_slug ): string {
+		if ( isset( $page->post_title ) && '' !== trim( (string) $page->post_title ) ) {
+			return (string) $page->post_title;
+		}
+
+		return $theme_slug;
+	}
+
+	/**
+	 * Read the import report bundled with an SSI-generated theme.
+	 *
+	 * @param string $theme_dir Theme directory.
+	 * @return array<string,mixed>
+	 */
+	private static function read_theme_import_report( string $theme_dir ): array {
+		$report = self::read_file_if_readable( $theme_dir . '/import-report.json' );
+		if ( '' === $report ) {
+			return array();
+		}
+
+		$decoded = json_decode( $report, true );
+		return is_array( $decoded ) ? $decoded : array();
+	}
+
+	/**
 	 * Collect importable source pages from a static site directory.
 	 *
 	 * @param string $site_dir Site directory.

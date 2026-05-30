@@ -74,6 +74,36 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 				'meta'                => array( 'show_in_rest' => true ),
 			)
 		);
+
+		wp_register_ability(
+			'static-site-importer/export-theme',
+			array(
+				'label'               => __( 'Export Static Site Theme', 'static-site-importer' ),
+				'description'         => __( 'Export an imported or active block theme and page content as static-site artifacts.', 'static-site-importer' ),
+				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
+				'input_schema'        => array(
+					'type'       => 'object',
+					'properties' => array(
+						'theme_slug'      => array( 'type' => 'string' ),
+						'entrypoint'      => array( 'type' => 'string' ),
+						'include_pages'   => array(
+							'oneOf' => array(
+								array( 'type' => 'boolean' ),
+								array(
+									'type'  => 'array',
+									'items' => array( 'type' => array( 'integer', 'string' ) ),
+								),
+							),
+						),
+						'source_metadata' => array( 'type' => 'object' ),
+					),
+				),
+				'output_schema'       => array( 'type' => 'object' ),
+				'execute_callback'    => 'static_site_importer_ability_export_theme',
+				'permission_callback' => 'static_site_importer_ability_permission_callback',
+				'meta'                => array( 'show_in_rest' => true ),
+			)
+		);
 	}
 }
 
@@ -89,6 +119,34 @@ if ( ! function_exists( 'static_site_importer_ability_permission_callback' ) ) {
 		}
 
 		return ! function_exists( 'current_user_can' ) || current_user_can( 'switch_themes' );
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_ability_export_theme' ) ) {
+	/**
+	 * Ability callback for static site theme exports.
+	 *
+	 * @param array<string, mixed> $input Ability input.
+	 * @return array<string, mixed>
+	 */
+	function static_site_importer_ability_export_theme( array $input ): array {
+		$args = array(
+			'theme_slug'      => isset( $input['theme_slug'] ) ? (string) $input['theme_slug'] : '',
+			'entrypoint'      => isset( $input['entrypoint'] ) ? (string) $input['entrypoint'] : 'static-site/index.html',
+			'include_pages'   => $input['include_pages'] ?? true,
+			'source_metadata' => isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array(),
+		);
+
+		$result = Static_Site_Importer_Theme_Generator::export_theme( $args );
+		if ( is_wp_error( $result ) ) {
+			/** @var WP_Error $result */
+			return static_site_importer_ability_error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
+		}
+
+		return array_merge(
+			array( 'success' => true ),
+			$result
+		);
 	}
 }
 

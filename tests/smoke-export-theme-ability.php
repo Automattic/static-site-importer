@@ -1,0 +1,154 @@
+<?php
+/**
+ * Smoke test: an imported block theme can export static-site artifacts.
+ *
+ * Run from the repository root:
+ * php tests/smoke-export-theme-ability.php
+ *
+ * @package StaticSiteImporter
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	define( 'ABSPATH', dirname( __DIR__ ) . '/' );
+}
+
+$theme_root = sys_get_temp_dir() . '/ssi-export-theme-' . uniqid();
+$theme_dir  = $theme_root . '/fixture-theme';
+
+mkdir( $theme_dir . '/parts', 0777, true );
+mkdir( $theme_dir . '/templates', 0777, true );
+file_put_contents( $theme_dir . '/style.css', 'body{background:#fff;}' );
+file_put_contents( $theme_dir . '/parts/header.html', '<!-- wp:paragraph --><p>Header</p><!-- /wp:paragraph -->' );
+file_put_contents( $theme_dir . '/parts/footer.html', '<!-- wp:paragraph --><p>Footer</p><!-- /wp:paragraph -->' );
+file_put_contents( $theme_dir . '/templates/front-page.html', '<!-- wp:post-content /-->' );
+file_put_contents( $theme_dir . '/import-report.json', '{"status":"completed"}' );
+
+$GLOBALS['ssi_export_theme_root'] = $theme_root;
+
+if ( ! class_exists( 'WP_Error' ) ) {
+	class WP_Error {
+		private string $code;
+		private string $message;
+		private mixed $data;
+
+		public function __construct( string $code, string $message, mixed $data = null ) {
+			$this->code    = $code;
+			$this->message = $message;
+			$this->data    = $data;
+		}
+
+		public function get_error_code(): string {
+			return $this->code;
+		}
+
+		public function get_error_message(): string {
+			return $this->message;
+		}
+
+		public function get_error_data(): mixed {
+			return $this->data;
+		}
+	}
+}
+
+if ( ! function_exists( 'is_wp_error' ) ) {
+	function is_wp_error( mixed $thing ): bool {
+		return $thing instanceof WP_Error;
+	}
+}
+
+if ( ! function_exists( 'sanitize_title' ) ) {
+	function sanitize_title( string $title ): string {
+		return trim( strtolower( preg_replace( '/[^a-z0-9]+/', '-', $title ) ), '-' );
+	}
+}
+
+if ( ! function_exists( 'trailingslashit' ) ) {
+	function trailingslashit( string $path ): string {
+		return rtrim( $path, '/\\' ) . '/';
+	}
+}
+
+if ( ! function_exists( 'esc_html' ) ) {
+	function esc_html( string $text ): string {
+		return htmlspecialchars( $text, ENT_QUOTES, 'UTF-8' );
+	}
+}
+
+if ( ! function_exists( 'wp_get_theme' ) ) {
+	function wp_get_theme( string $slug ): object {
+		$dir = $GLOBALS['ssi_export_theme_root'] . '/' . $slug;
+
+		return new class( $dir ) {
+			private string $dir;
+
+			public function __construct( string $dir ) {
+				$this->dir = $dir;
+			}
+
+			public function exists(): bool {
+				return is_dir( $this->dir );
+			}
+
+			public function get_stylesheet_directory(): string {
+				return $this->dir;
+			}
+		};
+	}
+}
+
+if ( ! function_exists( 'get_theme_root' ) ) {
+	function get_theme_root( string $stylesheet = '' ): string {
+		return $GLOBALS['ssi_export_theme_root'];
+	}
+}
+
+if ( ! function_exists( 'get_option' ) ) {
+	function get_option( string $name ) {
+		return 'show_on_front' === $name ? 'page' : ( 'page_on_front' === $name ? 42 : '' );
+	}
+}
+
+if ( ! function_exists( 'get_posts' ) ) {
+	function get_posts( array $args ): array {
+		return array(
+			(object) array(
+				'ID'           => 42,
+				'post_name'    => 'home',
+				'post_title'   => 'Edited Home',
+				'post_content' => '<!-- wp:paragraph --><p>Edited Playground content</p><!-- /wp:paragraph -->',
+			),
+		);
+	}
+}
+
+if ( ! function_exists( 'bfb_convert' ) ) {
+	function bfb_convert( string $content, string $from, string $to ): string {
+		return str_replace( array( '<!-- wp:paragraph -->', '<!-- /wp:paragraph -->', '<!-- wp:post-content /-->' ), '', $content );
+	}
+}
+
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
+
+$result = Static_Site_Importer_Theme_Generator::export_theme(
+	array(
+		'theme_slug'      => 'fixture-theme',
+		'entrypoint'      => 'static-site/index.html',
+		'include_pages'   => true,
+		'source_metadata' => array( 'source' => 'smoke' ),
+	)
+);
+
+assert( ! is_wp_error( $result ) );
+assert( 'static-site-importer/static-site-artifact-set/v1' === $result['artifact_set']['schema'] );
+assert( 'static-site/index.html' === $result['artifact_set']['entrypoint'] );
+assert( 2 === count( $result['files'] ) );
+assert( 'static-site/style.css' === $result['files'][0]['path'] );
+assert( 'static-site/index.html' === $result['files'][1]['path'] );
+assert( str_contains( $result['files'][1]['content'], 'Edited Playground content' ) );
+assert( str_contains( $result['files'][1]['content'], '<link rel="stylesheet" href="style.css">' ) );
+assert( 'completed' === $result['report']['status'] );
+assert( 'smoke' === $result['report']['source_metadata']['source'] );
+assert( 'completed' === $result['report']['import_report']['status'] );
+
+echo "OK: export theme ability smoke passed\n";

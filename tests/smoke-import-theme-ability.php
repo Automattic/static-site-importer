@@ -106,6 +106,34 @@ class Static_Site_Importer_Theme_Generator {
 			),
 		);
 	}
+
+	public static function export_theme( array $args = array() ): array|WP_Error {
+		self::$last_call = array( 'export', $args );
+
+		return array(
+			'artifact_set' => array(
+				'schema'     => 'static-site-importer/static-site-artifact-set/v1',
+				'entrypoint' => $args['entrypoint'],
+				'files'      => array(
+					array(
+						'path'    => $args['entrypoint'],
+						'content' => '<!doctype html><html><body>Fixture</body></html>',
+						'kind'    => 'document',
+						'role'    => 'entrypoint',
+					),
+				),
+			),
+			'files'        => array(
+				array(
+					'path'    => $args['entrypoint'],
+					'content' => '<!doctype html><html><body>Fixture</body></html>',
+					'kind'    => 'document',
+					'role'    => 'entrypoint',
+				),
+			),
+			'report'       => array( 'status' => 'completed' ),
+		);
+}
 }
 $GLOBALS['did_actions']['wp_abilities_api_categories_init'] = 1;
 $GLOBALS['did_actions']['wp_abilities_api_init']            = 1;
@@ -123,12 +151,14 @@ $assert = static function ( bool $condition, string $label, string $detail = '' 
 
 $assert( isset( $registered_categories['static-site-importer'] ), 'category-registers-after-api-init' );
 $assert( isset( $registered_abilities['static-site-importer/import-theme'] ), 'ability-registers-after-api-init' );
+$assert( isset( $registered_abilities['static-site-importer/export-theme'] ), 'export-ability-registers-after-api-init' );
 
 static_site_importer_register_ability_category();
 static_site_importer_register_abilities();
 
 $assert( isset( $registered_categories['static-site-importer'] ), 'category-registered' );
 $assert( isset( $registered_abilities['static-site-importer/import-theme'] ), 'import-theme-ability-registered' );
+$assert( isset( $registered_abilities['static-site-importer/export-theme'] ), 'export-theme-ability-registered' );
 
 $ability = $registered_abilities['static-site-importer/import-theme'] ?? array();
 $assert( 'static_site_importer_ability_import_theme' === ( $ability['execute_callback'] ?? '' ), 'execute-callback' );
@@ -171,6 +201,22 @@ $assert( true === ( $args['activate'] ?? false ), 'activate-forwarded' );
 $assert( 0 === ( $args['max_fallbacks'] ?? null ), 'max-fallbacks-forwarded' );
 $assert( true === ( $args['allow_missing_woocommerce'] ?? false ), 'allow-missing-woocommerce-forwarded' );
 $assert( 'https://example.com/' === ( $args['source_metadata']['final_url'] ?? '' ), 'source-metadata-forwarded' );
+
+$export_ability = $registered_abilities['static-site-importer/export-theme'] ?? array();
+$assert( 'static_site_importer_ability_export_theme' === ( $export_ability['execute_callback'] ?? '' ), 'export-execute-callback' );
+$export = static_site_importer_ability_export_theme(
+	array(
+		'theme_slug'      => 'fixture-theme',
+		'entrypoint'      => 'static-site/index.html',
+		'include_pages'   => false,
+		'source_metadata' => array( 'source' => 'smoke' ),
+	)
+);
+$assert( ! empty( $export['success'] ), 'ability-export-succeeds' );
+$assert( 'static-site/index.html' === ( $export['artifact_set']['entrypoint'] ?? '' ), 'ability-export-includes-entrypoint' );
+$export_args = Static_Site_Importer_Theme_Generator::$last_call[1] ?? array();
+$assert( 'fixture-theme' === ( $export_args['theme_slug'] ?? '' ), 'export-theme-slug-forwarded' );
+$assert( false === ( $export_args['include_pages'] ?? true ), 'export-include-pages-forwarded' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
