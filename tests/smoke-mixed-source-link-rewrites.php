@@ -84,7 +84,7 @@ if ( ! is_wp_error( $result ) ) {
 	$report      = json_decode( $read( $result['report_path'] ), true );
 	$diagnostics = is_array( $report ) ? wp_list_pluck( $report['diagnostics'] ?? array(), 'type' ) : array();
 	$assert( in_array( 'unresolved_internal_link', $diagnostics, true ), 'unresolved-link-diagnostic' );
-	$assert( in_array( 'local_asset_not_materialized', $diagnostics, true ), 'local-asset-diagnostic' );
+	$assert( ! in_array( 'local_asset_not_materialized', $diagnostics, true ), 'local-asset-no-longer-unmaterialized' );
 
 	$unresolved_diagnostics = is_array( $report ) ? array_values(
 		array_filter(
@@ -92,12 +92,7 @@ if ( ! is_wp_error( $result ) ) {
 			static fn ( $diagnostic ): bool => is_array( $diagnostic ) && 'unresolved_internal_link' === ( $diagnostic['type'] ?? '' )
 		)
 	) : array();
-	$asset_diagnostics      = is_array( $report ) ? array_values(
-		array_filter(
-			$report['diagnostics'] ?? array(),
-			static fn ( $diagnostic ): bool => is_array( $diagnostic ) && 'local_asset_not_materialized' === ( $diagnostic['type'] ?? '' )
-		)
-	) : array();
+	$local_assets           = is_array( $report ) ? ( $report['assets']['local'] ?? array() ) : array();
 
 	$assert( ! empty( $unresolved_diagnostics ), 'unresolved-link-diagnostic-record-present' );
 	if ( ! empty( $unresolved_diagnostics ) ) {
@@ -111,13 +106,8 @@ if ( ! is_wp_error( $result ) ) {
 		$assert( '' !== (string) ( $link['context']['href'] ?? '' ), 'unresolved-link-diagnostic-has-href-context' );
 	}
 
-	$assert( ! empty( $asset_diagnostics ), 'local-asset-diagnostic-record-present' );
-	if ( ! empty( $asset_diagnostics ) ) {
-		$asset = $asset_diagnostics[0];
-		$assert( 'unresolved_asset' === ( $asset['category'] ?? '' ), 'local-asset-diagnostic-has-category' );
-		$assert( 'materialize_or_rewrite_asset' === ( $asset['suggested_repair_class'] ?? '' ), 'local-asset-diagnostic-has-repair-class' );
-		$assert( '' !== (string) ( $asset['source_path'] ?? '' ), 'local-asset-diagnostic-has-source-path' );
-	}
+	$assert( ! empty( $local_assets ), 'local-asset-record-present' );
+	$assert( in_array( 'docs/images/flow.svg', wp_list_pluck( $local_assets, 'key' ), true ), 'markdown-local-asset-materialized' );
 
 	$source_refs = $report['source_documents']['diagnostic_refs']['unresolved_link_count'] ?? array();
 	$assert( is_array( $source_refs ) && ! empty( $source_refs ), 'source-document-count-links-to-diagnostics' );

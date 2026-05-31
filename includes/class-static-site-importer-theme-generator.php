@@ -62,6 +62,13 @@ class Static_Site_Importer_Theme_Generator {
 	private static array $active_asset_map = array();
 
 	/**
+	 * Resolved local asset metadata keyed by original and rewritten references.
+	 *
+	 * @var array<string, array<string, mixed>>
+	 */
+	private static array $active_asset_metadata = array();
+
+	/**
 	 * Materialized inline SVG assets keyed by SVG content hash.
 	 *
 	 * @var array<string, array<string, string>>
@@ -174,6 +181,7 @@ class Static_Site_Importer_Theme_Generator {
 		self::$active_theme_uri         = trailingslashit( get_theme_root_uri( $theme_slug ) ) . $theme_slug;
 		self::$active_source_dir        = $site_dir;
 		self::$active_asset_map         = self::normalize_asset_map( isset( $args['asset_map'] ) && is_array( $args['asset_map'] ) ? $args['asset_map'] : array() );
+		self::$active_asset_metadata    = array();
 		self::$conversion_report['asset_map']['supplied']    = ! empty( self::$active_asset_map );
 		self::$conversion_report['asset_map']['entry_count'] = count( self::$active_asset_map );
 		self::$materialized_svg_assets  = array();
@@ -181,7 +189,7 @@ class Static_Site_Importer_Theme_Generator {
 		self::$materialized_svg_sprites = array();
 		self::$button_wrapper_classes   = array();
 
-		$site_css                             = self::site_css( $site_dir, $document );
+		$site_css                             = self::site_css( $site_dir, $document, basename( $html_path ) );
 		self::$decorative_empty_group_classes = array_fill_keys(
 			self::decorative_empty_group_classes_from_css( $site_css ),
 			true
@@ -192,9 +200,9 @@ class Static_Site_Importer_Theme_Generator {
 		$background_source   = 'background:' . $entry_source;
 		$header_source       = 'header:' . $entry_source;
 		$footer_source       = 'footer:' . $entry_source;
-		$background_fragment = self::rewrite_asset_map_image_references( self::rewrite_internal_links( $fragments['background'], $route_map, $entry_source, $background_source ), $entry_source, $background_source );
-		$header_fragment     = self::rewrite_asset_map_image_references( self::rewrite_internal_links( $fragments['header'], $route_map, $entry_source, $header_source ), $entry_source, $header_source );
-		$footer_fragment     = self::rewrite_asset_map_image_references( self::rewrite_internal_links( $fragments['footer'], $route_map, $entry_source, $footer_source ), $entry_source, $footer_source );
+		$background_fragment = self::rewrite_local_asset_references( self::rewrite_internal_links( $fragments['background'], $route_map, $entry_source, $background_source ), $entry_source, $background_source );
+		$header_fragment     = self::rewrite_local_asset_references( self::rewrite_internal_links( $fragments['header'], $route_map, $entry_source, $header_source ), $entry_source, $header_source );
+		$footer_fragment     = self::rewrite_local_asset_references( self::rewrite_internal_links( $fragments['footer'], $route_map, $entry_source, $footer_source ), $entry_source, $footer_source );
 		$background_blocks   = self::convert_fragment( $background_fragment, 'background:index.html' );
 		$header_blocks       = self::convert_header_fragment( self::strip_active_classes( $header_fragment ), $theme_slug );
 		$has_footer_part     = '' !== trim( $fragments['footer'] );
@@ -377,6 +385,7 @@ class Static_Site_Importer_Theme_Generator {
 		self::$active_theme_uri         = trailingslashit( get_theme_root_uri( $theme_slug ) ) . $theme_slug;
 		self::$active_source_dir        = '';
 		self::$active_asset_map         = self::normalize_asset_map( isset( $args['asset_map'] ) && is_array( $args['asset_map'] ) ? $args['asset_map'] : array() );
+		self::$active_asset_metadata    = array();
 		self::$conversion_report['asset_map']['supplied']    = ! empty( self::$active_asset_map );
 		self::$conversion_report['asset_map']['entry_count'] = count( self::$active_asset_map );
 		self::$materialized_svg_assets  = array();
@@ -1777,6 +1786,118 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
+	 * Rewrite local HTML asset references after materializing safe source files.
+	 *
+	 * @param string $html        HTML fragment.
+	 * @param string $source_path Source-relative source path.
+	 * @param string $source      Diagnostic source label.
+	 * @return string
+	 */
+	private static function rewrite_local_asset_references( string $html, string $source_path, string $source ): string {
+		if ( '' === trim( $html ) ) {
+			return $html;
+		}
+
+		$html = self::rewrite_asset_map_image_references( $html, $source_path, $source );
+		if ( ! preg_match( '/\b(?:src|poster|srcset)\s*=|<source\b|<img\b|<video\b|<audio\b/i', $html ) ) {
+			return $html;
+		}
+
+		$doc  = self::load_fragment_document( $html );
+		$root = $doc->documentElement;
+		if ( ! $root instanceof DOMElement ) {
+			return $html;
+		}
+
+		$changed = false;
+		foreach ( $root->getElementsByTagName( '*' ) as $element ) {
+			foreach ( array( 'src', 'poster' ) as $attribute ) {
+				$value = trim( $element->getAttribute( $attribute ) );
+				if ( '' === $value || ! self::is_local_url( $value ) ) {
+					continue;
+				}
+
+				$asset = self::resolve_local_asset_reference( $value, $source_path, $source );
+				if ( null === $asset ) {
+					continue;
+				}
+
+				$element->setAttribute( $attribute, $asset['url'] );
+				self::apply_asset_metadata_to_media_element( $element, $asset );
+				$changed = true;
+			}
+
+			$srcset = trim( $element->getAttribute( 'srcset' ) );
+			if ( '' !== $srcset ) {
+				$rewritten = self::rewrite_srcset_asset_references( $srcset, $source_path, $source );
+				if ( $rewritten !== $srcset ) {
+					$element->setAttribute( 'srcset', $rewritten );
+					$changed = true;
+				}
+			}
+		}
+
+		return $changed ? self::node_inner_html( $doc, $root ) : $html;
+	}
+
+	/**
+	 * Rewrite one srcset attribute value through local asset materialization.
+	 *
+	 * @param string $srcset      Source srcset attribute.
+	 * @param string $source_path Source-relative source path.
+	 * @param string $source      Diagnostic source label.
+	 * @return string
+	 */
+	private static function rewrite_srcset_asset_references( string $srcset, string $source_path, string $source ): string {
+		$candidates = array();
+		$changed    = false;
+		foreach ( explode( ',', $srcset ) as $candidate ) {
+			$candidate = trim( $candidate );
+			if ( '' === $candidate ) {
+				continue;
+			}
+
+			$parts      = preg_split( '/\s+/', $candidate, 2 );
+			$url        = $parts[0] ?? '';
+			$descriptor = $parts[1] ?? '';
+			$asset      = self::resolve_local_asset_reference( $url, $source_path, $source );
+			if ( null !== $asset ) {
+				$url     = $asset['url'];
+				$changed = true;
+			}
+
+			$candidates[] = trim( $url . ( '' === $descriptor ? '' : ' ' . $descriptor ) );
+		}
+
+		return $changed ? implode( ', ', $candidates ) : $srcset;
+	}
+
+	/**
+	 * Add resolved metadata attributes to media elements before conversion.
+	 *
+	 * @param DOMElement          $element Media element.
+	 * @param array<string,mixed> $asset   Asset metadata.
+	 * @return void
+	 */
+	private static function apply_asset_metadata_to_media_element( DOMElement $element, array $asset ): void {
+		if ( isset( $asset['attachment_id'] ) && (int) $asset['attachment_id'] > 0 ) {
+			$attachment_id = (int) $asset['attachment_id'];
+			$element->setAttribute( 'data-id', (string) $attachment_id );
+			$element->setAttribute( 'class', self::append_class_token( $element->getAttribute( 'class' ), 'wp-image-' . $attachment_id ) );
+		}
+
+		foreach ( array( 'width', 'height' ) as $dimension ) {
+			if ( isset( $asset[ $dimension ] ) && (int) $asset[ $dimension ] > 0 && ! $element->hasAttribute( $dimension ) ) {
+				$element->setAttribute( $dimension, (string) (int) $asset[ $dimension ] );
+			}
+		}
+
+		if ( isset( $asset['alt'] ) && '' !== trim( (string) $asset['alt'] ) && '' === trim( $element->getAttribute( 'alt' ) ) ) {
+			$element->setAttribute( 'alt', (string) $asset['alt'] );
+		}
+	}
+
+	/**
 	 * Strip static active classes from shared chrome before every page reuses it.
 	 *
 	 * @param string $html HTML fragment.
@@ -2583,6 +2704,206 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
+	 * Resolve a source-local asset URL, materialize it into the generated theme, and return metadata.
+	 *
+	 * @param string $url         Source URL or path.
+	 * @param string $source_path Source-relative document path.
+	 * @param string $source      Diagnostic source label.
+	 * @return array<string,mixed>|null
+	 */
+	private static function resolve_local_asset_reference( string $url, string $source_path, string $source ): ?array {
+		if ( ! self::is_local_url( $url ) ) {
+			return null;
+		}
+
+		$mapped = self::resolve_asset_map_reference( $url, $source_path, $source );
+		if ( null !== $mapped ) {
+			$entry = $mapped['entry'];
+			self::remember_asset_metadata( $url, $mapped['key'], $entry );
+			return $entry;
+		}
+
+		$key = self::asset_map_lookup_key( $url, $source_path );
+		if ( '' === $key ) {
+			self::record_local_asset_diagnostic( 'local_asset_unsafe_path', $source, $source_path, $url, '', 'Local asset reference resolves outside the static source root; leaving it unchanged.' );
+			return null;
+		}
+
+		if ( '' === self::$active_source_dir || '' === self::$active_theme_dir || '' === self::$active_theme_uri ) {
+			self::record_local_asset_diagnostic( 'local_asset_not_materialized', $source, $source_path, $url, $key, 'Local asset reference could not be materialized because the import has no active source/theme context.' );
+			return null;
+		}
+
+		$real_source_dir = realpath( self::$active_source_dir );
+		$real_source     = false === $real_source_dir ? '' : realpath( trailingslashit( $real_source_dir ) . $key );
+		if ( '' === $real_source_dir || false === $real_source || ! self::path_is_under( $real_source, $real_source_dir ) || ! is_readable( $real_source ) || ! is_file( $real_source ) ) {
+			self::record_local_asset_diagnostic( 'local_asset_not_found', $source, $source_path, $url, $key, 'Local asset reference did not resolve to a readable file under the static source root; leaving it unchanged.' );
+			return null;
+		}
+
+		$extension = strtolower( pathinfo( $real_source, PATHINFO_EXTENSION ) );
+		if ( ! in_array( $extension, array( 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'woff', 'woff2' ), true ) ) {
+			self::record_local_asset_diagnostic( 'local_asset_unsupported_type', $source, $source_path, $url, $key, 'Local asset reference uses an unsupported file type for theme materialization; leaving it unchanged.' );
+			return null;
+		}
+
+		$target_relative = self::materialized_asset_relative_path( $key, $real_source );
+		if ( '' === $target_relative ) {
+			self::record_local_asset_diagnostic( 'local_asset_unsafe_path', $source, $source_path, $url, $key, 'Local asset reference could not be converted to a safe generated theme asset path; leaving it unchanged.' );
+			return null;
+		}
+
+		$target_path = trailingslashit( self::$active_theme_dir ) . $target_relative;
+		if ( ! is_file( $target_path ) ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local static-site assets selected for materialization.
+			$contents = file_get_contents( $real_source );
+			if ( false === $contents ) {
+				self::record_local_asset_diagnostic( 'local_asset_read_failed', $source, $source_path, $url, $key, 'Local asset reference could not be read; leaving it unchanged.' );
+				return null;
+			}
+
+			$result = self::write_file( $target_path, $contents );
+			if ( is_wp_error( $result ) ) {
+				self::record_local_asset_diagnostic( 'local_asset_write_failed', $source, $source_path, $url, $key, 'Local asset reference could not be written to the generated theme; leaving it unchanged.' );
+				return null;
+			}
+		}
+
+		$asset = array(
+			'source'      => $url,
+			'source_path' => $source_path,
+			'path'        => $key,
+			'url'         => trailingslashit( self::$active_theme_uri ) . $target_relative,
+			'mime_type'   => self::export_mime_type( $real_source ),
+			'theme_path'  => $target_relative,
+		);
+
+		$dimensions = self::image_dimensions( $real_source );
+		if ( ! empty( $dimensions ) ) {
+			$asset = array_merge( $asset, $dimensions );
+		}
+
+		self::record_local_asset_materialized( $source, $source_path, $url, $key, $asset );
+		self::remember_asset_metadata( $url, $key, $asset );
+
+		return $asset;
+	}
+
+	/**
+	 * Build a deterministic safe theme-relative path for a materialized source asset.
+	 *
+	 * @param string $key         Source-relative key.
+	 * @param string $source_path Absolute source path.
+	 * @return string
+	 */
+	private static function materialized_asset_relative_path( string $key, string $source_path ): string {
+		$normalized = self::normalize_artifact_materialization_path( 'assets/media/' . $key );
+		if ( '' === $normalized ) {
+			$basename = sanitize_file_name( basename( $source_path ) );
+			if ( '' === $basename ) {
+				return '';
+			}
+
+			$normalized = 'assets/media/' . md5( $key ) . '-' . $basename;
+		}
+
+		$directory = dirname( trailingslashit( self::$active_theme_dir ) . $normalized );
+		if ( ! is_dir( $directory ) && ! wp_mkdir_p( $directory ) ) {
+			return '';
+		}
+
+		return $normalized;
+	}
+
+	/**
+	 * Infer image dimensions when PHP can read them safely.
+	 *
+	 * @param string $path Absolute image path.
+	 * @return array<string,int>
+	 */
+	private static function image_dimensions( string $path ): array {
+		if ( ! function_exists( 'getimagesize' ) ) {
+			return array();
+		}
+
+		$size = @getimagesize( $path );
+		if ( ! is_array( $size ) || empty( $size[0] ) || empty( $size[1] ) ) {
+			return array();
+		}
+
+		return array(
+			'width'  => (int) $size[0],
+			'height' => (int) $size[1],
+		);
+	}
+
+	/**
+	 * Store metadata under all keys H2BC/BFB may see during conversion.
+	 *
+	 * @param string              $url   Original source reference.
+	 * @param string              $key   Source-relative key.
+	 * @param array<string,mixed> $asset Asset metadata.
+	 * @return void
+	 */
+	private static function remember_asset_metadata( string $url, string $key, array $asset ): void {
+		foreach ( array( $url, html_entity_decode( $url, ENT_QUOTES ), $key, '/' . ltrim( $key, '/' ), $asset['url'] ?? '' ) as $metadata_key ) {
+			$metadata_key = trim( (string) $metadata_key );
+			if ( '' !== $metadata_key ) {
+				self::$active_asset_metadata[ $metadata_key ] = $asset;
+			}
+		}
+	}
+
+	/**
+	 * Record a local asset materialization row in the import report.
+	 *
+	 * @param string              $source      Diagnostic source label.
+	 * @param string              $source_path Source-relative source path.
+	 * @param string              $url         Original URL.
+	 * @param string              $key         Source-relative key.
+	 * @param array<string,mixed> $asset       Asset metadata.
+	 * @return void
+	 */
+	private static function record_local_asset_materialized( string $source, string $source_path, string $url, string $key, array $asset ): void {
+		if ( ! isset( self::$conversion_report['assets']['local'] ) || ! is_array( self::$conversion_report['assets']['local'] ) ) {
+			self::$conversion_report['assets']['local'] = array();
+		}
+
+		self::$conversion_report['assets']['local'][] = array(
+			'source'      => $source,
+			'source_path' => $source_path,
+			'url'         => $url,
+			'key'         => $key,
+			'theme_path'  => $asset['theme_path'] ?? '',
+			'mime_type'   => $asset['mime_type'] ?? '',
+		);
+	}
+
+	/**
+	 * Record an actionable local asset diagnostic.
+	 *
+	 * @param string $type        Diagnostic type.
+	 * @param string $source      Diagnostic source label.
+	 * @param string $source_path Source-relative source path.
+	 * @param string $url         Original URL.
+	 * @param string $key         Source-relative key.
+	 * @param string $message     Diagnostic message.
+	 * @return void
+	 */
+	private static function record_local_asset_diagnostic( string $type, string $source, string $source_path, string $url, string $key, string $message ): void {
+		self::$conversion_report['diagnostics'][] = array(
+			'type'                   => $type,
+			'category'               => 'unresolved_asset',
+			'suggested_repair_class' => 'materialize_or_rewrite_asset',
+			'source'                 => $source,
+			'source_path'            => $source_path,
+			'url'                    => $url,
+			'key'                    => $key,
+			'message'                => $message,
+		);
+	}
+
+	/**
 	 * Build a reference to a deterministic wp_navigation entity.
 	 *
 	 * @param DOMElement $element    Navigation source element.
@@ -2920,7 +3241,7 @@ class Static_Site_Importer_Theme_Generator {
 			$body = self::rewrite_markdown_links( $body, $route_map, $source_path, $source );
 		} else {
 			$body = self::rewrite_internal_links( $body, $route_map, $source_path, $source );
-			$body = self::rewrite_asset_map_image_references( $body, $source_path, $source );
+			$body = self::rewrite_local_asset_references( $body, $source_path, $source );
 		}
 
 		return self::convert_fragment( $body, $source, $page->body_format() );
@@ -2948,8 +3269,9 @@ class Static_Site_Importer_Theme_Generator {
 				$destination = trim( $matches[3], '<>' );
 
 				if ( '!' === $prefix ) {
-					if ( self::is_local_url( $destination ) ) {
-						self::record_unresolved_internal_link( $source, $source_path, $destination, 'local_asset_not_materialized' );
+					$asset = self::resolve_local_asset_reference( $destination, $source_path, $source );
+					if ( null !== $asset ) {
+						return '![' . $label . '](' . $asset['url'] . ')';
 					}
 					return $matches[0];
 				}
@@ -3056,10 +3378,11 @@ class Static_Site_Importer_Theme_Generator {
 	 * Collect inline and linked local CSS.
 	 *
 	 * @param string                        $site_dir Site directory.
-	 * @param Static_Site_Importer_Document $document Source document.
+	 * @param Static_Site_Importer_Document $document          Source document.
+	 * @param string                        $inline_source_path Source-relative path for inline style URL resolution.
 	 * @return string
 	 */
-	private static function site_css( string $site_dir, Static_Site_Importer_Document $document ): string {
+	private static function site_css( string $site_dir, Static_Site_Importer_Document $document, string $inline_source_path = 'index.html' ): string {
 		$css           = array();
 		$real_site_dir = realpath( $site_dir );
 		$real_site_dir = false === $real_site_dir ? $site_dir : $real_site_dir;
@@ -3073,16 +3396,49 @@ class Static_Site_Importer_Theme_Generator {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local static-site stylesheet files from the import directory.
 			$contents = file_get_contents( $path );
 			if ( false !== $contents ) {
-				$css[] = trim( $contents );
+				$source_path = ltrim( str_replace( '\\', '/', substr( $path, strlen( trailingslashit( $real_site_dir ) ) ) ), '/' );
+				$css[]       = trim( self::rewrite_css_asset_references( $contents, $source_path, 'stylesheet:' . $source_path ) );
 			}
 		}
 
 		$inline = $document->inline_css();
 		if ( '' !== $inline ) {
-			$css[] = $inline;
+			$css[] = self::rewrite_css_asset_references( $inline, $inline_source_path, 'inline-style:' . $inline_source_path );
 		}
 
 		return trim( implode( "\n\n", array_filter( $css ) ) );
+	}
+
+	/**
+	 * Rewrite local CSS url(...) references through local asset materialization.
+	 *
+	 * @param string $css         CSS source.
+	 * @param string $source_path Source-relative stylesheet path.
+	 * @param string $source      Diagnostic source label.
+	 * @return string
+	 */
+	private static function rewrite_css_asset_references( string $css, string $source_path, string $source ): string {
+		if ( '' === trim( $css ) || ! str_contains( strtolower( $css ), 'url(' ) ) {
+			return $css;
+		}
+
+		return preg_replace_callback(
+			'/url\(\s*(["\']?)(.*?)\1\s*\)/i',
+			static function ( array $matches ) use ( $source_path, $source ): string {
+				$url = trim( html_entity_decode( (string) $matches[2], ENT_QUOTES ) );
+				if ( '' === $url || ! self::is_local_url( $url ) ) {
+					return $matches[0];
+				}
+
+				$asset = self::resolve_local_asset_reference( $url, $source_path, $source );
+				if ( null === $asset ) {
+					return $matches[0];
+				}
+
+				return 'url("' . esc_url_raw( (string) $asset['url'] ) . '")';
+			},
+			$css
+		) ?? $css;
 	}
 
 	/**
@@ -3872,7 +4228,7 @@ class Static_Site_Importer_Theme_Generator {
 		add_action( 'html_to_blocks_conversion_aborted_content_loss', $content_loss_listener, 10, 2 );
 		add_action( 'bfb_conversion_metadata', $commerce_metadata_listener, 10, 1 );
 		add_action( 'bfb_materialization_request', $commerce_request_listener, 10, 1 );
-		$conversion_options = empty( self::$active_commerce_context ) ? array() : self::conversion_options( $source );
+		$conversion_options = self::conversion_options( $source );
 		$blocks             = self::compile_fragment_to_blocks( $html, $source, $format, $conversion_options );
 		remove_action( 'html_to_blocks_unsupported_html_fallback', $fallback_listener, 10 );
 		remove_action( 'html_to_blocks_conversion_aborted_content_loss', $content_loss_listener, 10 );
@@ -4561,6 +4917,7 @@ class Static_Site_Importer_Theme_Generator {
 			'assets'                  => array(
 				'svg_icons'   => array(),
 				'svg_sprites' => array(),
+				'local'       => array(),
 			),
 			'asset_map'               => array(
 				'supplied'         => false,
@@ -5572,19 +5929,30 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return array<string, mixed>
 	 */
 	private static function conversion_options( string $source ): array {
-		if ( empty( self::$active_commerce_context ) ) {
-			return array();
+		$context = array();
+		if ( ! empty( self::$active_commerce_context ) ) {
+			$context['commerce'] = array_merge(
+				self::$active_commerce_context,
+				array(
+					'source_fragment' => $source,
+				)
+			);
+		}
+
+		if ( ! empty( self::$active_asset_metadata ) ) {
+			$context['asset_metadata'] = self::$active_asset_metadata;
+		}
+
+		if ( empty( $context ) ) {
+			return array(
+				'source' => array(
+					'fragment' => $source,
+				),
+			);
 		}
 
 		return array(
-			'context' => array(
-				'commerce' => array_merge(
-					self::$active_commerce_context,
-					array(
-						'source_fragment' => $source,
-					)
-				),
-			),
+			'context' => $context,
 			'source'  => array(
 				'fragment' => $source,
 			),

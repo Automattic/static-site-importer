@@ -544,9 +544,10 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$report = json_decode( $this->read_file( $result['report_path'] ), true );
 
 		$this->assertStringContainsString( '<!-- wp:image ', $header );
-		$this->assertStringContainsString( '/assets/media/studio-mark-', $header );
+		$this->assertStringContainsString( '/assets/media/assets/studio-mark.svg', $header );
 		$this->assertStringNotContainsString( 'src="assets/studio-mark.svg"', $header );
-		$this->assertNotEmpty( glob( $result['theme_dir'] . '/assets/media/studio-mark-*.svg' ) );
+		$this->assertFileExists( $result['theme_dir'] . '/assets/media/assets/studio-mark.svg' );
+		$this->assertSame( 'assets/studio-mark.svg', $report['assets']['local'][0]['key'] ?? null );
 		$this->assertSame( 0, $report['quality']['core_html_block_count'] ?? null );
 		$this->assertSame( 0, $report['quality']['freeform_block_count'] ?? null );
 		$this->assertSame( 0, $report['quality']['unsafe_svg_count'] ?? null );
@@ -2522,7 +2523,9 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$report      = json_decode( $this->read_file( $result['report_path'] ), true );
 		$diagnostics = $report['diagnostics'] ?? array();
 		$this->assertContains( 'unresolved_internal_link', wp_list_pluck( $diagnostics, 'type' ) );
-		$this->assertContains( 'local_asset_not_materialized', wp_list_pluck( $diagnostics, 'type' ) );
+		$this->assertNotContains( 'local_asset_not_materialized', wp_list_pluck( $diagnostics, 'type' ) );
+		$this->assertNotEmpty( $report['assets']['local'] ?? array() );
+		$this->assertContains( 'docs/images/flow.svg', wp_list_pluck( $report['assets']['local'] ?? array(), 'key' ) );
 	}
 
 	/**
