@@ -3285,7 +3285,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * Compile one source fragment into serialized block markup.
 	 *
 	 * Block Artifact Compiler owns the semantic artifact envelope. SSI remains the
-	 * materializer and falls back to BFB directly when the compiler is unavailable.
+	 * materializer that writes the compiler result into WordPress theme artifacts.
 	 *
 	 * @param string               $html    Source fragment.
 	 * @param string               $source  Source label.
@@ -3294,19 +3294,16 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return string Serialized block markup.
 	 */
 	private static function compile_fragment_to_blocks( string $html, string $source, string $format, array $options ): string {
-		if ( 'html' === $format && function_exists( 'bac_compile_fragment' ) ) {
-			$compiled = bac_compile_fragment( $html, $source, $format, $options );
-			self::record_block_artifact_compiler_result( $source, $compiled );
-
-			$artifacts = isset( $compiled['wordpress_artifacts'] ) && is_array( $compiled['wordpress_artifacts'] ) ? $compiled['wordpress_artifacts'] : array();
-			$markup    = isset( $artifacts['block_markup'] ) ? (string) $artifacts['block_markup'] : '';
-			if ( '' !== trim( $markup ) || 'failed' !== (string) ( $compiled['status'] ?? '' ) ) {
-				return $markup;
-			}
+		if ( 'html' !== $format ) {
+			// @phpstan-ignore-next-line function.notFound -- Loaded by the bundled Block Format Bridge runtime.
+			return (string) bfb_convert( $html, $format, 'blocks', $options );
 		}
 
-		// @phpstan-ignore-next-line function.notFound -- Loaded by the bundled Block Format Bridge runtime.
-		return (string) bfb_convert( $html, $format, 'blocks', $options );
+		$compiled = bac_compile_fragment( $html, $source, $format, $options );
+		self::record_block_artifact_compiler_result( $source, $compiled );
+
+		$artifacts = isset( $compiled['wordpress_artifacts'] ) && is_array( $compiled['wordpress_artifacts'] ) ? $compiled['wordpress_artifacts'] : array();
+		return isset( $artifacts['block_markup'] ) ? (string) $artifacts['block_markup'] : '';
 	}
 
 	/**
@@ -3317,7 +3314,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return void
 	 */
 	private static function record_block_artifact_compiler_result( string $source, array $compiled ): void {
-		$summary           = function_exists( 'bac_summarize_result' ) ? bac_summarize_result( $compiled ) : array();
+		$summary           = bac_summarize_result( $compiled );
 		$summary['source'] = '' !== (string) ( $summary['source'] ?? '' ) ? (string) $summary['source'] : $source;
 
 		self::$conversion_report['block_artifact_compiler']['available']      = true;
@@ -3854,7 +3851,7 @@ class Static_Site_Importer_Theme_Generator {
 				'unresolved'       => array(),
 			),
 			'block_artifact_compiler' => array(
-				'available'      => function_exists( 'bac_compile_website_artifact' ),
+				'available'      => true,
 				'fragment_count' => 0,
 				'fragments'      => array(),
 			),

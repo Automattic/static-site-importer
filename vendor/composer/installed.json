@@ -2,23 +2,24 @@
     "packages": [
         {
             "name": "chubes4/block-artifact-compiler",
-            "version": "dev-robust-artifact-boundary",
-            "version_normalized": "dev-robust-artifact-boundary",
+            "version": "dev-main",
+            "version_normalized": "dev-main",
             "source": {
                 "type": "git",
                 "url": "https://github.com/chubes4/block-artifact-compiler.git",
-                "reference": "76a96a85e79491dcd28de277f0f2874209a8d1ad"
+                "reference": "098b74f84b458b1bc75c89fa333291dc186e5fa1"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/chubes4/block-artifact-compiler/zipball/76a96a85e79491dcd28de277f0f2874209a8d1ad",
-                "reference": "76a96a85e79491dcd28de277f0f2874209a8d1ad",
+                "url": "https://api.github.com/repos/chubes4/block-artifact-compiler/zipball/098b74f84b458b1bc75c89fa333291dc186e5fa1",
+                "reference": "098b74f84b458b1bc75c89fa333291dc186e5fa1",
                 "shasum": ""
             },
             "require": {
                 "php": ">=8.1"
             },
-            "time": "2026-05-31T02:47:38+00:00",
+            "time": "2026-05-31T02:58:07+00:00",
+            "default-branch": true,
             "type": "wordpress-plugin",
             "installation-source": "dist",
             "autoload": {
@@ -36,7 +37,7 @@
             ],
             "description": "Compile website artifacts into WordPress-native block artifact bundles.",
             "support": {
-                "source": "https://github.com/chubes4/block-artifact-compiler/tree/robust-artifact-boundary",
+                "source": "https://github.com/chubes4/block-artifact-compiler/tree/main",
                 "issues": "https://github.com/chubes4/block-artifact-compiler/issues"
             },
             "install-path": "../chubes4/block-artifact-compiler"
