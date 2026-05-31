@@ -143,6 +143,7 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$this->assertTrue( $report['block_artifact_compiler']['available'] ?? false );
 		$this->assertGreaterThan( 0, $report['block_artifact_compiler']['fragment_count'] ?? 0 );
 		$this->assertNotEmpty( $report['block_artifact_compiler']['fragments'] ?? array() );
+		$this->assertArrayHasKey( 'component_count', $report['block_artifact_compiler']['fragments'][0] ?? array() );
 		$this->assertNotEmpty( $report['generated_theme']['block_documents'] ?? array() );
 		$this->assertSame( 'requires_external_render_check', $report['semantic_fidelity']['status'] ?? '' );
 		$this->assertSame( 'benchmark_harness', $report['semantic_fidelity']['gate_owner'] ?? '' );

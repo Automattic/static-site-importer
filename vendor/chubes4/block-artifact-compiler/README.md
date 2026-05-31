@@ -18,27 +18,39 @@ Input: a user-owned website artifact bundle.
 
 Output: a WordPress-native artifact bundle.
 
-The initial contract returns:
+The contract accepts messy AI-generated artifact shapes and normalizes them into a bounded, safe envelope before lower-level conversion runs. It accepts:
+
+- `files`, `artifacts`, or `outputs` arrays
+- path-to-content maps
+- `html`, `generated_html`, `content`, or `body` strings
+- shorthand `css`, `styles`, `js`, `javascript`, or `script` strings
+
+It rejects absolute paths, `..` escapes, empty paths, oversized files, and over-budget bundles.
+
+The compiler result returns:
 
 - serialized block markup
-- parsed block placeholder field
+- parsed blocks when WordPress parsing is available
+- component candidates from explicit `data-component` markers and repeated semantic class tokens
 - generated block type manifest placeholder
-- generated file manifest placeholder
+- generated file manifest for non-entry artifact files
 - diagnostics
 - provenance
 - optional BFB conversion report
 
-Future compiler passes can add component detection and generated custom block artifacts without changing the caller boundary.
+Future compiler passes can promote component candidates into generated custom block artifacts without changing the caller boundary.
 
 ## Public API
 
 ```php
 $result = bac_compile_website_artifact(
 	array(
+		'generated_html' => '<main><h1>Hello</h1></main>',
+		'css'            => 'main { max-width: 80rem; }',
 		'files' => array(
 			array(
-				'path'    => 'index.html',
-				'content' => '<main><h1>Hello</h1></main>',
+				'path'    => 'site.js',
+				'content' => 'console.log("preview behavior");',
 			),
 		),
 	)
@@ -56,12 +68,21 @@ array(
 		'block_markup' => '<!-- wp:paragraph -->...',
 		'blocks'       => array(),
 		'block_types'  => array(),
+		'components'   => array(),
 		'files'        => array(),
 	),
 	'provenance'          => array(...),
 	'diagnostics'         => array(),
 	'bfb_report'          => array(),
 )
+```
+
+For fragment conversion callers such as Static Site Importer:
+
+```php
+$compiled = bac_compile_fragment( $html, 'main:index.html', 'html', $options );
+$summary  = bac_summarize_result( $compiled );
+$markup   = $compiled['wordpress_artifacts']['block_markup'];
 ```
 
 ## Boundaries

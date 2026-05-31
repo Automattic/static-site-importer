@@ -3304,19 +3304,8 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return string Serialized block markup.
 	 */
 	private static function compile_fragment_to_blocks( string $html, string $source, string $format, array $options ): string {
-		if ( 'html' === $format && function_exists( 'bac_compile_website_artifact' ) ) {
-			$compiled = bac_compile_website_artifact(
-				array(
-					'files' => array(
-						array(
-							'path'    => self::compiler_fragment_path( $source ),
-							'kind'    => 'html',
-							'content' => $html,
-						),
-					),
-				),
-				$options
-			);
+		if ( 'html' === $format && function_exists( 'bac_compile_fragment' ) ) {
+			$compiled = bac_compile_fragment( $html, $source, $format, $options );
 			self::record_block_artifact_compiler_result( $source, $compiled );
 
 			$artifacts = isset( $compiled['wordpress_artifacts'] ) && is_array( $compiled['wordpress_artifacts'] ) ? $compiled['wordpress_artifacts'] : array();
@@ -3331,17 +3320,6 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
-	 * Build a stable virtual source path for compiler fragment input.
-	 *
-	 * @param string $source Source label.
-	 * @return string Virtual path.
-	 */
-	private static function compiler_fragment_path( string $source ): string {
-		$path = sanitize_title( str_replace( array( ':', '/', '\\' ), '-', $source ) );
-		return ( '' === $path ? 'fragment' : $path ) . '.html';
-	}
-
-	/**
 	 * Record a compact Block Artifact Compiler summary on the import report.
 	 *
 	 * @param string              $source   Source label.
@@ -3349,18 +3327,8 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return void
 	 */
 	private static function record_block_artifact_compiler_result( string $source, array $compiled ): void {
-		$artifacts   = isset( $compiled['wordpress_artifacts'] ) && is_array( $compiled['wordpress_artifacts'] ) ? $compiled['wordpress_artifacts'] : array();
-		$block_types = isset( $artifacts['block_types'] ) && is_array( $artifacts['block_types'] ) ? $artifacts['block_types'] : array();
-		$files       = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
-		$diagnostics = isset( $compiled['diagnostics'] ) && is_array( $compiled['diagnostics'] ) ? $compiled['diagnostics'] : array();
-		$summary     = array(
-			'source'           => $source,
-			'schema'           => isset( $compiled['schema'] ) ? (string) $compiled['schema'] : '',
-			'status'           => isset( $compiled['status'] ) ? (string) $compiled['status'] : '',
-			'block_type_count' => count( $block_types ),
-			'file_count'       => count( $files ),
-			'diagnostic_count' => count( $diagnostics ),
-		);
+		$summary           = function_exists( 'bac_summarize_result' ) ? bac_summarize_result( $compiled ) : array();
+		$summary['source'] = '' !== (string) ( $summary['source'] ?? '' ) ? (string) $summary['source'] : $source;
 
 		self::$conversion_report['block_artifact_compiler']['available']      = true;
 		self::$conversion_report['block_artifact_compiler']['fragments'][]    = $summary;
