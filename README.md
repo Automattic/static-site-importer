@@ -174,6 +174,21 @@ Important behavior:
 - Imported WordPress page posts store the converted page body in `post_content`, so routing, titles, front-page assignment, editor visibility, and body edits stay native.
 - Page patterns are generated as reusable/reference copies of each converted page body; they are not the primary storage for imported page content.
 
+## Static-Site Export Artifact Set
+
+`static-site-importer/export-theme` exports an imported or active block theme back to a static-site artifact set for Studio Web / WP Codebox round trips. Existing callers can continue reading the top-level `files` and `report` fields. New callers should prefer `artifact_set`, or `codebox_artifact_set` when they want the Studio Web-compatible alias directly.
+
+The export envelope includes:
+
+- `schema`, `artifact_type`, `version`, `id`, `generated_at`, `root`, and `entrypoint`.
+- `files[]` entries with safe artifact-relative paths, `role`, `kind`, `mime_type`, `encoding`, `bytes`, `sha256`, and inline `content`.
+- UTF-8 text content by default; binary content is transported as Base64 with `encoding: "base64"`.
+- source/materialization provenance under `provenance`.
+- import/validation summaries and `reports[]` references for repair loops.
+- `import-report.json` and `source-documents.json` metadata files when the exported theme has SSI import provenance.
+
+The default root remains `static-site` for backwards compatibility. Callers that need Studio Web's `website/` artifact root can pass `root: "website"` with `entrypoint: "website/index.html"`.
+
 ## Validation
 
 The repository has both WordPress-side fixture coverage and generated-artifact validation.

@@ -5,6 +5,8 @@
  * @package StaticSiteImporter
  */
 
+// phpcs:disable Generic.Formatting.MultipleStatementAlignment -- The generator keeps localized assignment alignment; PHPCBF exhausts memory on this large file.
+
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
@@ -536,12 +538,13 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		$entrypoint      = self::export_artifact_path( isset( $args['entrypoint'] ) ? (string) $args['entrypoint'] : 'static-site/index.html', 'static-site/index.html' );
+		$root            = self::export_artifact_root( isset( $args['root'] ) ? (string) $args['root'] : '', $entrypoint );
 		$include_pages   = $args['include_pages'] ?? true;
 		$source_metadata = isset( $args['source_metadata'] ) && is_array( $args['source_metadata'] ) ? $args['source_metadata'] : array();
 		$diagnostics     = array();
 		$files           = array();
 
-		$stylesheet = self::export_theme_stylesheet_file( $theme_dir );
+		$stylesheet = self::export_theme_stylesheet_file( $theme_dir, $root );
 		if ( null !== $stylesheet ) {
 			$files[] = $stylesheet;
 		}
@@ -565,7 +568,7 @@ class Static_Site_Importer_Theme_Generator {
 			foreach ( $pages as $page ) {
 				$page_id   = isset( $page->ID ) ? (int) $page->ID : 0;
 				$is_front  = $first || ( $front_page_id > 0 && $page_id === $front_page_id );
-				$path      = $is_front ? $entrypoint : self::export_page_artifact_path( $page );
+				$path      = $is_front ? $entrypoint : self::export_page_artifact_path( $page, $root );
 				$template  = $is_front ? 'front-page' : 'page';
 				$page_html = bfb_convert( isset( $page->post_content ) ? (string) $page->post_content : '', 'blocks', 'html' );
 
@@ -584,11 +587,43 @@ class Static_Site_Importer_Theme_Generator {
 			}
 		}
 
+		$files = array_merge( $files, self::export_theme_asset_files( $theme_dir, $root, $diagnostics ) );
+
 		$import_report = self::read_theme_import_report( $theme_dir );
-		$report        = array(
+		if ( ! empty( $import_report ) ) {
+			$files[] = self::export_file_entry(
+				$root . '/import-report.json',
+				self::json_encode_pretty( $import_report ),
+				'metadata',
+				'report',
+				array(
+					'source' => array(
+						'type' => 'static-site-importer-import-report',
+					),
+				)
+			);
+
+			$source_documents = isset( $import_report['source_documents'] ) && is_array( $import_report['source_documents'] ) ? $import_report['source_documents'] : array();
+			if ( ! empty( $source_documents ) ) {
+				$files[] = self::export_file_entry(
+					$root . '/source-documents.json',
+					self::json_encode_pretty( $source_documents ),
+					'metadata',
+					'source-document',
+					array(
+						'source' => array(
+							'type' => 'static-site-importer-source-documents',
+						),
+					)
+				);
+			}
+		}
+
+		$report = array(
 			'status'          => 'completed',
 			'theme_slug'      => $theme_slug,
 			'theme_dir'       => $theme_dir,
+			'root'            => $root,
 			'entrypoint'      => $entrypoint,
 			'file_count'      => count( $files ),
 			'page_count'      => count( $pages ),
@@ -599,16 +634,13 @@ class Static_Site_Importer_Theme_Generator {
 			$report['import_report'] = $import_report;
 		}
 
+		$artifact_set = self::export_artifact_set( $theme_slug, $root, $entrypoint, $files, $report, $source_metadata );
+
 		return array(
-			'artifact_set' => array(
-				'schema'     => 'static-site-importer/static-site-artifact-set/v1',
-				'theme_slug' => $theme_slug,
-				'entrypoint' => $entrypoint,
-				'files'      => $files,
-				'report'     => $report,
-			),
-			'files'        => $files,
-			'report'       => $report,
+			'artifact_set'         => $artifact_set,
+			'codebox_artifact_set' => self::export_codebox_artifact_set( $artifact_set ),
+			'files'                => $files,
+			'report'               => $report,
 		);
 	}
 
@@ -828,6 +860,7 @@ class Static_Site_Importer_Theme_Generator {
 	private static function export_html_document( string $page_html, array $chrome, string $title, bool $include_styles ): string {
 		$head = '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">';
 		if ( $include_styles ) {
+			// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedStylesheet -- This method emits standalone static HTML, not a WordPress-rendered page.
 			$head .= '<link rel="stylesheet" href="style.css">';
 		}
 
@@ -848,17 +881,104 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return array<string,mixed>
 	 */
 	private static function export_file_entry( string $path, string $content, string $kind, string $role, array $diagnostics = array() ): array {
+		$encoding = self::is_binary_content( $content ) ? 'base64' : 'utf8';
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Binary artifact files are explicitly represented as base64 for transport.
+		$body = 'base64' === $encoding ? base64_encode( $content ) : $content;
 		$entry = array(
-			'path'    => $path,
-			'content' => $content,
-			'kind'    => $kind,
-			'role'    => $role,
+			'path'      => $path,
+			'content'   => $body,
+			'kind'      => $kind,
+			'role'      => $role,
+			'mime_type' => self::export_mime_type( $path ),
+			'encoding'  => $encoding,
+			'bytes'     => strlen( $content ),
+			'sha256'    => hash( 'sha256', $content ),
 		);
 		if ( ! empty( $diagnostics ) ) {
-			$entry['diagnostics'] = $diagnostics;
+			$entry = array_merge( $entry, $diagnostics );
 		}
 
 		return $entry;
+	}
+
+	/**
+	 * Build the richer export artifact set envelope.
+	 *
+	 * @param string              $theme_slug      Theme slug.
+	 * @param string              $root            Artifact root.
+	 * @param string              $entrypoint      Entrypoint path.
+	 * @param array<int,array<string,mixed>> $files Exported files.
+	 * @param array<string,mixed> $report          Export report.
+	 * @param array<string,mixed> $source_metadata Source metadata.
+	 * @return array<string,mixed>
+	 */
+	private static function export_artifact_set( string $theme_slug, string $root, string $entrypoint, array $files, array $report, array $source_metadata ): array {
+		$generated_at = self::export_generated_at();
+		$id           = 'static-site-importer-' . $theme_slug . '-' . substr( hash( 'sha256', self::json_encode_pretty( array( $entrypoint, $files ) ) ), 0, 12 );
+
+		return array(
+			'schema'        => 'static-site-importer/static-site-artifact-set/v1',
+			'artifact_type' => 'static-site',
+			'version'       => 1,
+			'id'            => $id,
+			'generated_at'  => $generated_at,
+			'theme_slug'    => $theme_slug,
+			'root'          => $root,
+			'entrypoint'    => $entrypoint,
+			'files'         => $files,
+			'report'        => $report,
+			'reports'       => self::export_report_refs( $files ),
+			'import'        => array(
+				'status'      => empty( $report['diagnostics'] ) ? 'passed' : 'warning',
+				'theme_slug'  => $theme_slug,
+				'source_path' => $entrypoint,
+				'warnings'    => self::export_diagnostic_messages( $report['diagnostics'] ?? array(), 'warning' ),
+				'errors'      => self::export_diagnostic_messages( $report['diagnostics'] ?? array(), 'error' ),
+			),
+			'validation'    => array(
+				'status'     => self::export_validation_status( $report['diagnostics'] ?? array() ),
+				'checked_at' => $generated_at,
+				'checks'     => array(
+					array(
+						'name'    => 'entrypoint-present',
+						'status'  => self::export_has_file( $files, $entrypoint ) ? 'passed' : 'failed',
+						'message' => 'The static-site entrypoint is present in the exported file set.',
+					),
+				),
+			),
+			'provenance'    => array(
+				'producer'          => 'static-site-importer',
+				'contract'          => 'studio-web/static-site-artifact/v1-compatible',
+				'source_metadata'   => $source_metadata,
+				'materialized_from' => array(
+					'type'       => 'wordpress-block-theme',
+					'theme_slug' => $theme_slug,
+				),
+			),
+		);
+	}
+
+	/**
+	 * Build a Studio Web / Codebox-compatible alias for direct consumers.
+	 *
+	 * @param array<string,mixed> $artifact_set SSI artifact set.
+	 * @return array<string,mixed>
+	 */
+	private static function export_codebox_artifact_set( array $artifact_set ): array {
+		return array(
+			'schema'        => 'studio-web/static-site-artifact/v1',
+			'artifact_type' => 'static-site',
+			'version'       => 1,
+			'id'            => (string) ( $artifact_set['id'] ?? '' ),
+			'generated_at'  => (string) ( $artifact_set['generated_at'] ?? '' ),
+			'root'          => (string) ( $artifact_set['root'] ?? '' ),
+			'entrypoint'    => (string) ( $artifact_set['entrypoint'] ?? '' ),
+			'files'         => isset( $artifact_set['files'] ) && is_array( $artifact_set['files'] ) ? $artifact_set['files'] : array(),
+			'import'        => isset( $artifact_set['import'] ) && is_array( $artifact_set['import'] ) ? $artifact_set['import'] : array(),
+			'validation'    => isset( $artifact_set['validation'] ) && is_array( $artifact_set['validation'] ) ? $artifact_set['validation'] : array(),
+			'provenance'    => isset( $artifact_set['provenance'] ) && is_array( $artifact_set['provenance'] ) ? $artifact_set['provenance'] : array(),
+			'reports'       => isset( $artifact_set['reports'] ) && is_array( $artifact_set['reports'] ) ? $artifact_set['reports'] : array(),
+		);
 	}
 
 	/**
@@ -867,13 +987,65 @@ class Static_Site_Importer_Theme_Generator {
 	 * @param string $theme_dir Theme directory.
 	 * @return array<string,mixed>|null
 	 */
-	private static function export_theme_stylesheet_file( string $theme_dir ): ?array {
+	private static function export_theme_stylesheet_file( string $theme_dir, string $root ): ?array {
 		$content = self::read_file_if_readable( $theme_dir . '/style.css' );
 		if ( '' === $content ) {
 			return null;
 		}
 
-		return self::export_file_entry( 'static-site/style.css', $content, 'asset', 'stylesheet' );
+		return self::export_file_entry( $root . '/style.css', $content, 'asset', 'stylesheet' );
+	}
+
+	/**
+	 * Export browser assets that can be replayed by Codebox.
+	 *
+	 * @param string                    $theme_dir   Theme directory.
+	 * @param string                    $root        Artifact root.
+	 * @param array<int,array<string,mixed>> $diagnostics Export diagnostics.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function export_theme_asset_files( string $theme_dir, string $root, array &$diagnostics ): array {
+		$assets_dir = $theme_dir . '/assets';
+		if ( ! is_dir( $assets_dir ) ) {
+			return array();
+		}
+
+		$files    = array();
+		$iterator = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $assets_dir, FilesystemIterator::SKIP_DOTS ) );
+		foreach ( $iterator as $item ) {
+			if ( ! $item instanceof SplFileInfo || ! $item->isFile() || ! $item->isReadable() ) {
+				continue;
+			}
+
+			$relative = ltrim( str_replace( '\\', '/', substr( $item->getPathname(), strlen( $assets_dir ) ) ), '/' );
+			$path     = self::export_artifact_path( $root . '/assets/' . $relative, '' );
+			if ( '' === $path || ! self::export_is_supported_asset_path( $path ) ) {
+				$diagnostics[] = array(
+					'level'   => 'warning',
+					'code'    => 'static_site_importer_export_asset_skipped',
+					'message' => 'A theme asset was skipped because its path or type is not supported for static export.',
+					'path'    => $relative,
+				);
+				continue;
+			}
+
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local generated theme artifacts for export.
+			$content = file_get_contents( $item->getPathname() );
+			if ( false === $content ) {
+				continue;
+			}
+
+			$files[] = self::export_file_entry( $path, (string) $content, self::export_kind_from_path( $path ), self::export_role_from_path( $path ) );
+		}
+
+		usort(
+			$files,
+			static function ( array $left, array $right ): int {
+				return strcmp( (string) ( $left['path'] ?? '' ), (string) ( $right['path'] ?? '' ) );
+			}
+		);
+
+		return $files;
 	}
 
 	/**
@@ -893,14 +1065,31 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
+	 * Resolve the artifact root from input or entrypoint.
+	 *
+	 * @param string $root       Requested root.
+	 * @param string $entrypoint Entrypoint path.
+	 * @return string
+	 */
+	private static function export_artifact_root( string $root, string $entrypoint ): string {
+		$root = self::normalize_route_path( $root );
+		if ( '' !== $root && ! str_contains( $root, '/' ) ) {
+			return $root;
+		}
+
+		$parts = explode( '/', $entrypoint );
+		return '' !== ( $parts[0] ?? '' ) ? $parts[0] : 'static-site';
+	}
+
+	/**
 	 * Build a page artifact path.
 	 *
 	 * @param object $page Page object.
 	 * @return string
 	 */
-	private static function export_page_artifact_path( object $page ): string {
+	private static function export_page_artifact_path( object $page, string $root ): string {
 		$slug = isset( $page->post_name ) && '' !== trim( (string) $page->post_name ) ? sanitize_title( (string) $page->post_name ) : 'page-' . ( isset( $page->ID ) ? (int) $page->ID : uniqid() );
-		return self::export_artifact_path( 'static-site/' . $slug . '/index.html', 'static-site/page/index.html' );
+		return self::export_artifact_path( $root . '/' . $slug . '/index.html', $root . '/page/index.html' );
 	}
 
 	/**
@@ -916,6 +1105,187 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		return $theme_slug;
+	}
+
+	/**
+	 * Resolve a static export MIME type from path.
+	 *
+	 * @param string $path Artifact path.
+	 * @return string
+	 */
+	private static function export_mime_type( string $path ): string {
+		return match ( strtolower( pathinfo( $path, PATHINFO_EXTENSION ) ) ) {
+			'html', 'htm' => 'text/html',
+			'css'         => 'text/css',
+			'js', 'mjs'    => 'text/javascript',
+			'json'        => 'application/json',
+			'svg'         => 'image/svg+xml',
+			'png'         => 'image/png',
+			'jpg', 'jpeg'  => 'image/jpeg',
+			'gif'         => 'image/gif',
+			'webp'        => 'image/webp',
+			'avif'        => 'image/avif',
+			'woff'        => 'font/woff',
+			'woff2'       => 'font/woff2',
+			default       => 'application/octet-stream',
+		};
+	}
+
+	/**
+	 * Infer an exported file kind from path.
+	 *
+	 * @param string $path Artifact path.
+	 * @return string
+	 */
+	private static function export_kind_from_path( string $path ): string {
+		return match ( strtolower( pathinfo( $path, PATHINFO_EXTENSION ) ) ) {
+			'html', 'htm' => 'document',
+			'css'         => 'asset',
+			'js', 'mjs'    => 'asset',
+			'json'        => 'metadata',
+			default       => 'asset',
+		};
+	}
+
+	/**
+	 * Infer a Codebox/Studio Web file role from path.
+	 *
+	 * @param string $path Artifact path.
+	 * @return string
+	 */
+	private static function export_role_from_path( string $path ): string {
+		return match ( strtolower( pathinfo( $path, PATHINFO_EXTENSION ) ) ) {
+			'css'        => 'stylesheet',
+			'js', 'mjs'   => 'script',
+			'json'       => 'metadata',
+			default      => 'asset',
+		};
+	}
+
+	/**
+	 * Check whether an asset path is supported for static export.
+	 *
+	 * @param string $path Artifact path.
+	 * @return bool
+	 */
+	private static function export_is_supported_asset_path( string $path ): bool {
+		return in_array( strtolower( pathinfo( $path, PATHINFO_EXTENSION ) ), array( 'css', 'js', 'mjs', 'json', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'woff', 'woff2' ), true );
+	}
+
+	/**
+	 * Detect binary content that should be inlined as base64.
+	 *
+	 * @param string $content File content.
+	 * @return bool
+	 */
+	private static function is_binary_content( string $content ): bool {
+		return str_contains( $content, "\0" ) || ! preg_match( '//u', $content );
+	}
+
+	/**
+	 * JSON encode with stable options and a PHP fallback for smoke tests.
+	 *
+	 * @param mixed $data Data to encode.
+	 * @return string
+	 */
+	private static function json_encode_pretty( mixed $data ): string {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Smoke tests load this class without WordPress helpers.
+		$encoded = function_exists( 'wp_json_encode' ) ? wp_json_encode( $data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) : json_encode( $data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+		return is_string( $encoded ) ? $encoded . "\n" : "{}\n";
+	}
+
+	/**
+	 * Return the export timestamp.
+	 *
+	 * @return string
+	 */
+	private static function export_generated_at(): string {
+		return gmdate( 'Y-m-d\TH:i:s\Z' );
+	}
+
+	/**
+	 * Build report file references from exported files.
+	 *
+	 * @param array<int,array<string,mixed>> $files Exported files.
+	 * @return array<int,array<string,string>>
+	 */
+	private static function export_report_refs( array $files ): array {
+		$refs = array();
+		foreach ( $files as $file ) {
+			$role = (string) ( $file['role'] ?? '' );
+			if ( in_array( $role, array( 'report', 'source-document' ), true ) ) {
+				$refs[] = array(
+					'role' => $role,
+					'path' => (string) ( $file['path'] ?? '' ),
+				);
+			}
+		}
+
+		return $refs;
+	}
+
+	/**
+	 * Extract diagnostic messages by level/severity.
+	 *
+	 * @param mixed  $diagnostics Diagnostics.
+	 * @param string $level       Level to collect.
+	 * @return array<int,string>
+	 */
+	private static function export_diagnostic_messages( mixed $diagnostics, string $level ): array {
+		if ( ! is_array( $diagnostics ) ) {
+			return array();
+		}
+
+		$messages = array();
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) ) {
+				continue;
+			}
+
+			$diagnostic_level = (string) ( $diagnostic['level'] ?? ( $diagnostic['severity'] ?? '' ) );
+			if ( $level === $diagnostic_level ) {
+				$messages[] = (string) ( $diagnostic['message'] ?? ( $diagnostic['code'] ?? '' ) );
+			}
+		}
+
+		return array_values( array_filter( $messages ) );
+	}
+
+	/**
+	 * Resolve validation status from diagnostics.
+	 *
+	 * @param mixed $diagnostics Diagnostics.
+	 * @return string
+	 */
+	private static function export_validation_status( mixed $diagnostics ): string {
+		if ( ! is_array( $diagnostics ) ) {
+			return 'passed';
+		}
+
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( is_array( $diagnostic ) && 'error' === (string) ( $diagnostic['level'] ?? ( $diagnostic['severity'] ?? '' ) ) ) {
+				return 'failed';
+			}
+		}
+
+		return empty( $diagnostics ) ? 'passed' : 'warning';
+	}
+
+	/**
+	 * Check whether a file path exists in the export set.
+	 *
+	 * @param array<int,array<string,mixed>> $files Exported files.
+	 * @param string                        $path  Artifact path.
+	 * @return bool
+	 */
+	private static function export_has_file( array $files, string $path ): bool {
+		foreach ( $files as $file ) {
+			if ( (string) ( $file['path'] ?? '' ) === $path ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
