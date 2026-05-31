@@ -199,15 +199,17 @@ foreach ( array(
 	'active_theme_uri'             => 'https://example.test/wp-content/themes/imported',
 	'active_asset_map'             => array(),
 	'active_asset_metadata'        => array(),
+	'active_asset_materialization_policy' => 'copy_to_theme',
 	'active_asset_policy'          => 'media-library',
 	'active_imported_media_assets' => array(),
 	'recorded_local_asset_keys'    => array(),
 	'conversion_report'            => array(
 		'assets'      => array(
-			'policy'      => 'media-library',
-			'local'       => array(),
-			'svg_icons'   => array(),
-			'svg_sprites' => array(),
+			'policy'       => 'media-library',
+			'local_policy' => 'copy_to_theme',
+			'local'        => array(),
+			'svg_icons'    => array(),
+			'svg_sprites'  => array(),
 		),
 		'asset_map'   => array(
 			'supplied'         => false,
@@ -251,6 +253,8 @@ $assert( 1 === ( $asset['height'] ?? null ), 'metadata-height' );
 $report = $class->getProperty( 'conversion_report' )->getValue();
 $assert( 1 === count( $report['assets']['local'] ?? array() ), 'duplicate-source-single-report-row' );
 $assert( 'media-library' === ( $report['assets']['local'][0]['policy'] ?? '' ), 'report-policy' );
+$assert( 'copy_to_theme' === ( $report['assets']['local'][0]['materialization_policy'] ?? '' ), 'report-materialization-policy' );
+$assert( 'copied' === ( $report['assets']['local'][0]['outcome'] ?? '' ), 'report-outcome' );
 $assert( 701 === ( $report['assets']['local'][0]['attachment_id'] ?? null ), 'report-attachment-id' );
 
 $diagnostics = array_column( $report['diagnostics'] ?? array(), 'type' );

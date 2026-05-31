@@ -62,6 +62,13 @@ class Static_Site_Importer_Theme_Generator {
 	private static array $active_asset_map = array();
 
 	/**
+	 * Active local asset materialization policy.
+	 *
+	 * @var string
+	 */
+	private static string $active_asset_materialization_policy = 'copy_to_theme';
+
+	/**
 	 * Resolved local asset metadata keyed by original and rewritten references.
 	 *
 	 * @var array<string, array<string, mixed>>
@@ -201,7 +208,13 @@ class Static_Site_Importer_Theme_Generator {
 		self::$active_theme_dir         = $theme_dir;
 		self::$active_theme_uri         = trailingslashit( get_theme_root_uri( $theme_slug ) ) . $theme_slug;
 		self::$active_source_dir        = $site_dir;
+		$asset_policy = self::normalize_asset_materialization_policy( $args['asset_materialization_policy'] ?? '' );
+		if ( is_wp_error( $asset_policy ) ) {
+			return $asset_policy;
+		}
+
 		self::$active_asset_map         = self::normalize_asset_map( isset( $args['asset_map'] ) && is_array( $args['asset_map'] ) ? $args['asset_map'] : array() );
+		self::$active_asset_materialization_policy = $asset_policy;
 		self::$active_asset_metadata    = array();
 		self::$active_asset_policy      = self::normalize_asset_policy( isset( $args['asset_policy'] ) ? (string) $args['asset_policy'] : '' );
 		self::$active_imported_media_assets = array();
@@ -209,6 +222,7 @@ class Static_Site_Importer_Theme_Generator {
 		self::$conversion_report['assets']['policy']         = self::$active_asset_policy;
 		self::$conversion_report['asset_map']['supplied']    = ! empty( self::$active_asset_map );
 		self::$conversion_report['asset_map']['entry_count'] = count( self::$active_asset_map );
+		self::$conversion_report['assets']['local_policy']   = self::$active_asset_materialization_policy;
 		self::$materialized_svg_assets  = array();
 		self::$svg_sprite_symbols       = array();
 		self::$materialized_svg_sprites = array();
@@ -409,7 +423,13 @@ class Static_Site_Importer_Theme_Generator {
 		self::$active_theme_dir         = $theme_dir;
 		self::$active_theme_uri         = trailingslashit( get_theme_root_uri( $theme_slug ) ) . $theme_slug;
 		self::$active_source_dir        = '';
+		$asset_policy = self::normalize_asset_materialization_policy( $args['asset_materialization_policy'] ?? '' );
+		if ( is_wp_error( $asset_policy ) ) {
+			return $asset_policy;
+		}
+
 		self::$active_asset_map         = self::normalize_asset_map( isset( $args['asset_map'] ) && is_array( $args['asset_map'] ) ? $args['asset_map'] : array() );
+		self::$active_asset_materialization_policy = $asset_policy;
 		self::$active_asset_metadata    = array();
 		self::$active_asset_policy      = self::normalize_asset_policy( isset( $args['asset_policy'] ) ? (string) $args['asset_policy'] : '' );
 		self::$active_imported_media_assets = array();
@@ -417,6 +437,7 @@ class Static_Site_Importer_Theme_Generator {
 		self::$conversion_report['assets']['policy']         = self::$active_asset_policy;
 		self::$conversion_report['asset_map']['supplied']    = ! empty( self::$active_asset_map );
 		self::$conversion_report['asset_map']['entry_count'] = count( self::$active_asset_map );
+		self::$conversion_report['assets']['local_policy']   = self::$active_asset_materialization_policy;
 		self::$materialized_svg_assets  = array();
 		self::$svg_sprite_symbols       = array();
 		self::$materialized_svg_sprites = array();
@@ -1763,7 +1784,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return string
 	 */
 	private static function rewrite_asset_map_image_references( string $html, string $source_path, string $source ): string {
-		if ( '' === trim( $html ) || empty( self::$active_asset_map ) || ! str_contains( strtolower( $html ), '<img' ) ) {
+		if ( 'use_map' !== self::$active_asset_materialization_policy || '' === trim( $html ) || empty( self::$active_asset_map ) || ! str_contains( strtolower( $html ), '<img' ) ) {
 			return $html;
 		}
 
@@ -1827,7 +1848,6 @@ class Static_Site_Importer_Theme_Generator {
 			return $html;
 		}
 
-		$html = self::rewrite_asset_map_image_references( $html, $source_path, $source );
 		if ( ! preg_match( '/\b(?:src|poster|srcset)\s*=|<source\b|<img\b|<video\b|<audio\b/i', $html ) ) {
 			return $html;
 		}
@@ -2612,6 +2632,25 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
+	 * Normalize and validate the local asset materialization policy.
+	 *
+	 * @param mixed $policy Raw policy value.
+	 * @return string|WP_Error
+	 */
+	private static function normalize_asset_materialization_policy( $policy ) {
+		$policy = is_string( $policy ) ? sanitize_key( $policy ) : '';
+		if ( '' === $policy ) {
+			return 'copy_to_theme';
+		}
+
+		if ( in_array( $policy, array( 'copy_to_theme', 'preserve', 'use_map' ), true ) ) {
+			return $policy;
+		}
+
+		return new WP_Error( 'static_site_importer_invalid_asset_materialization_policy', 'Asset materialization policy must be one of: copy_to_theme, preserve, use_map.' );
+	}
+
+	/**
 	 * Resolve a local source URL through the active asset map and record the lookup.
 	 *
 	 * @param string $url         Source URL or path.
@@ -2761,17 +2800,28 @@ class Static_Site_Importer_Theme_Generator {
 			return null;
 		}
 
-		$mapped = self::resolve_asset_map_reference( $url, $source_path, $source );
-		if ( null !== $mapped ) {
-			$entry = $mapped['entry'];
-			self::remember_asset_metadata( $url, $mapped['key'], $entry );
-			return $entry;
-		}
-
 		$key = self::asset_map_lookup_key( $url, $source_path );
 		if ( '' === $key ) {
 			self::record_local_asset_diagnostic( 'local_asset_unsafe_path', $source, $source_path, $url, '', 'Local asset reference resolves outside the static source root; leaving it unchanged.' );
 			return null;
+		}
+
+		if ( 'use_map' === self::$active_asset_materialization_policy ) {
+			$mapped = self::resolve_asset_map_reference( $url, $source_path, $source );
+			if ( null === $mapped ) {
+				return null;
+			}
+
+			$entry = $mapped['entry'];
+			if ( ! isset( $entry['url'] ) || '' === trim( (string) $entry['url'] ) ) {
+				self::record_local_asset_diagnostic( 'asset_map_missing_url', $source, $source_path, $url, $key, 'Asset map entry did not provide a URL; leaving the source reference unchanged.' );
+				return null;
+			}
+
+			$entry['url'] = esc_url_raw( (string) $entry['url'] );
+			self::record_local_asset_outcome( 'mapped', $source, $source_path, $url, $key, $entry );
+			self::remember_asset_metadata( $url, $key, $entry );
+			return $entry;
 		}
 
 		if ( '' === self::$active_source_dir || '' === self::$active_theme_dir || '' === self::$active_theme_uri ) {
@@ -2792,13 +2842,31 @@ class Static_Site_Importer_Theme_Generator {
 			return null;
 		}
 
+		if ( 'preserve' === self::$active_asset_materialization_policy ) {
+			$asset = array(
+				'source'      => $url,
+				'source_path' => $source_path,
+				'path'        => $key,
+				'url'         => $url,
+				'mime_type'   => self::export_mime_type( $real_source ),
+			);
+
+			$dimensions = self::image_dimensions( $real_source );
+			if ( ! empty( $dimensions ) ) {
+				$asset = array_merge( $asset, $dimensions );
+			}
+
+			self::record_local_asset_outcome( 'preserved', $source, $source_path, $url, $key, $asset );
+			return null;
+		}
+
 		if ( 'media-library' === self::$active_asset_policy ) {
 			$asset = self::import_local_asset_to_media_library( $real_source, $key, $url, $source_path, $source );
 			if ( null === $asset ) {
 				return null;
 			}
 
-			self::record_local_asset_materialized( $source, $source_path, $url, $key, $asset );
+			self::record_local_asset_outcome( 'copied', $source, $source_path, $url, $key, $asset );
 			self::remember_asset_metadata( $url, $key, $asset );
 
 			return $asset;
@@ -2842,7 +2910,7 @@ class Static_Site_Importer_Theme_Generator {
 			$asset = array_merge( $asset, $dimensions );
 		}
 
-		self::record_local_asset_materialized( $source, $source_path, $url, $key, $asset );
+		self::record_local_asset_outcome( 'copied', $source, $source_path, $url, $key, $asset );
 		self::remember_asset_metadata( $url, $key, $asset );
 
 		return $asset;
@@ -3070,7 +3138,7 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
-	 * Record a local asset materialization row in the import report.
+	 * Record a local asset policy outcome row in the import report.
 	 *
 	 * @param string              $source      Diagnostic source label.
 	 * @param string              $source_path Source-relative source path.
@@ -3079,26 +3147,29 @@ class Static_Site_Importer_Theme_Generator {
 	 * @param array<string,mixed> $asset       Asset metadata.
 	 * @return void
 	 */
-	private static function record_local_asset_materialized( string $source, string $source_path, string $url, string $key, array $asset ): void {
+	private static function record_local_asset_outcome( string $outcome, string $source, string $source_path, string $url, string $key, array $asset ): void {
 		if ( ! isset( self::$conversion_report['assets']['local'] ) || ! is_array( self::$conversion_report['assets']['local'] ) ) {
 			self::$conversion_report['assets']['local'] = array();
 		}
 
-		$report_key = (string) ( $asset['policy'] ?? self::$active_asset_policy ) . ':' . $key;
+		$report_key = self::$active_asset_materialization_policy . ':' . (string) ( $asset['policy'] ?? self::$active_asset_policy ) . ':' . $key;
 		if ( isset( self::$recorded_local_asset_keys[ $report_key ] ) ) {
 			return;
 		}
 		self::$recorded_local_asset_keys[ $report_key ] = true;
 
 		$row = array(
-			'source'      => $source,
-			'source_path' => $source_path,
-			'url'         => $url,
-			'key'         => $key,
-			'policy'      => $asset['policy'] ?? self::$active_asset_policy,
-			'theme_path'  => $asset['theme_path'] ?? '',
-			'final_url'   => $asset['url'] ?? '',
-			'mime_type'   => $asset['mime_type'] ?? '',
+			'source'                 => $source,
+			'source_path'            => $source_path,
+			'url'                    => $url,
+			'key'                    => $key,
+			'policy'                 => $asset['policy'] ?? self::$active_asset_policy,
+			'materialization_policy' => self::$active_asset_materialization_policy,
+			'outcome'                => $outcome,
+			'rewritten_url'          => $asset['url'] ?? '',
+			'theme_path'             => $asset['theme_path'] ?? '',
+			'final_url'              => $asset['url'] ?? '',
+			'mime_type'              => $asset['mime_type'] ?? '',
 		);
 
 		foreach ( array( 'id', 'attachment_id', 'width', 'height', 'alt' ) as $field ) {
@@ -5149,7 +5220,8 @@ class Static_Site_Importer_Theme_Generator {
 				'diagnostics'    => array(),
 			),
 			'assets'                  => array(
-				'policy'      => 'theme',
+				'policy'       => 'theme',
+				'local_policy' => 'copy_to_theme',
 				'svg_icons'   => array(),
 				'svg_sprites' => array(),
 				'local'       => array(),

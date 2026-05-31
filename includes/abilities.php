@@ -65,6 +65,10 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'allow_missing_woocommerce' => array( 'type' => 'boolean' ),
 						'report'                    => array( 'type' => 'string' ),
 						'asset_policy'              => array( 'type' => 'string' ),
+						'asset_materialization_policy' => array(
+							'type' => 'string',
+							'enum' => array( 'copy_to_theme', 'preserve', 'use_map' ),
+						),
 						'asset_map'                 => array( 'type' => 'object' ),
 						'source_metadata'           => array( 'type' => 'object' ),
 					),
@@ -128,6 +132,11 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'allow_missing_woocommerce' => array( 'type' => 'boolean' ),
 						'report'                    => array( 'type' => 'string' ),
 						'asset_policy'              => array( 'type' => 'string' ),
+						'asset_materialization_policy' => array(
+							'type' => 'string',
+							'enum' => array( 'copy_to_theme', 'preserve', 'use_map' ),
+						),
+						'asset_map'                 => array( 'type' => 'object' ),
 						'compiler_options'          => array( 'type' => 'object' ),
 						'source_metadata'           => array( 'type' => 'object' ),
 					),
@@ -210,6 +219,8 @@ if ( ! function_exists( 'static_site_importer_ability_import_website_artifact' )
 			'allow_missing_woocommerce' => ! empty( $input['allow_missing_woocommerce'] ),
 			'report'                    => isset( $input['report'] ) ? (string) $input['report'] : '',
 			'asset_policy'              => isset( $input['asset_policy'] ) ? (string) $input['asset_policy'] : '',
+			'asset_materialization_policy' => isset( $input['asset_materialization_policy'] ) ? (string) $input['asset_materialization_policy'] : '',
+			'asset_map'                 => isset( $input['asset_map'] ) && is_array( $input['asset_map'] ) ? $input['asset_map'] : array(),
 			'compiler_options'          => isset( $input['compiler_options'] ) && is_array( $input['compiler_options'] ) ? $input['compiler_options'] : array(),
 			'source_metadata'           => isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array(),
 		);
@@ -251,6 +262,7 @@ if ( ! function_exists( 'static_site_importer_ability_import_theme' ) ) {
 			'allow_missing_woocommerce' => ! empty( $input['allow_missing_woocommerce'] ),
 			'report'                    => isset( $input['report'] ) ? (string) $input['report'] : '',
 			'asset_policy'              => isset( $input['asset_policy'] ) ? (string) $input['asset_policy'] : '',
+			'asset_materialization_policy' => isset( $input['asset_materialization_policy'] ) ? (string) $input['asset_materialization_policy'] : '',
 			'asset_map'                 => isset( $input['asset_map'] ) && is_array( $input['asset_map'] ) ? $input['asset_map'] : array(),
 			'source_metadata'           => isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array(),
 		);

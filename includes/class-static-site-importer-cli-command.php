@@ -51,12 +51,15 @@ class Static_Site_Importer_CLI_Command {
 	 * [--allow-missing-woocommerce]
 	 * : Allow commerce-bearing imports to proceed when WooCommerce is not active. Default is to fail the import. Theme files are still written either way; the waiver only suppresses product seeding without aborting.
 	 *
-	 * [--report=<path>]
-	 * : Copy the generated import report JSON to an external archive path.
-	 *
-	 * [--asset-policy=<policy>]
-	 * : Local asset handling policy. Use media-library to import supported resolved assets as WordPress attachments; defaults to theme-file materialization.
-	 *
+		 * [--report=<path>]
+		 * : Copy the generated import report JSON to an external archive path.
+		 *
+		 * [--asset-policy=<policy>]
+		 * : Copy target for resolved local assets. Use media-library to import supported copied assets as WordPress attachments; defaults to theme.
+		 *
+		 * [--asset-materialization-policy=<policy>]
+		 * : Local asset materialization policy. One of copy_to_theme, preserve, use_map. Defaults to copy_to_theme.
+		 *
 	 * [--format=<format>]
 	 * : Output format. Use json for machine-readable command output.
 	 *
@@ -108,6 +111,7 @@ class Static_Site_Importer_CLI_Command {
 			'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
 			'report'                    => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
 			'asset_policy'              => isset( $assoc_args['asset-policy'] ) ? (string) $assoc_args['asset-policy'] : '',
+			'asset_materialization_policy' => isset( $assoc_args['asset-materialization-policy'] ) ? (string) $assoc_args['asset-materialization-policy'] : '',
 			'source_metadata'           => $source_metadata,
 		);
 
@@ -236,12 +240,15 @@ class Static_Site_Importer_CLI_Command {
 	 * [--allow-missing-woocommerce]
 	 * : Allow commerce-bearing imports to proceed when WooCommerce is not active.
 	 *
-	 * [--report=<path>]
-	 * : Copy the generated import report JSON to an external archive path.
-	 *
-	 * [--asset-policy=<policy>]
-	 * : Local asset handling policy. Use media-library to import supported resolved assets as WordPress attachments; defaults to theme-file materialization.
-	 *
+		 * [--report=<path>]
+		 * : Copy the generated import report JSON to an external archive path.
+		 *
+		 * [--asset-policy=<policy>]
+		 * : Copy target for resolved local assets. Use media-library to import supported copied assets as WordPress attachments; defaults to theme.
+		 *
+		 * [--asset-materialization-policy=<policy>]
+		 * : Local asset materialization policy. One of copy_to_theme, preserve, use_map. Defaults to copy_to_theme.
+		 *
 	 * [--format=<format>]
 	 * : Output format. Use json for machine-readable command output.
 	 *
@@ -281,6 +288,7 @@ class Static_Site_Importer_CLI_Command {
 			'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
 			'report'                    => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
 			'asset_policy'              => isset( $assoc_args['asset-policy'] ) ? (string) $assoc_args['asset-policy'] : '',
+			'asset_materialization_policy' => isset( $assoc_args['asset-materialization-policy'] ) ? (string) $assoc_args['asset-materialization-policy'] : '',
 			'source_metadata'           => array( 'artifact_file' => $artifact_file ),
 		);
 

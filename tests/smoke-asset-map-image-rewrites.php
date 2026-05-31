@@ -54,6 +54,9 @@ $assert = static function ( bool $condition, string $label, string $detail = '' 
 
 $class = new ReflectionClass( Static_Site_Importer_Theme_Generator::class );
 
+$asset_policy = $class->getProperty( 'active_asset_materialization_policy' );
+$asset_policy->setValue( null, 'use_map' );
+
 $active_asset_map = $class->getProperty( 'active_asset_map' );
 $active_asset_map->setValue(
 	null,
