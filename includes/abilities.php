@@ -79,8 +79,8 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 		wp_register_ability(
 			'static-site-importer/export-theme',
 			array(
-				'label'               => __( 'Export Static Site Theme', 'static-site-importer' ),
-				'description'         => __( 'Export an imported or active block theme and page content as static-site artifacts.', 'static-site-importer' ),
+				'label'               => __( 'Export Website Artifact', 'static-site-importer' ),
+				'description'         => __( 'Export an imported or active block theme and page content as a BAC-compatible website artifact.', 'static-site-importer' ),
 				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
 				'input_schema'        => array(
 					'type'       => 'object',
@@ -157,7 +157,7 @@ if ( ! function_exists( 'static_site_importer_ability_permission_callback' ) ) {
 
 if ( ! function_exists( 'static_site_importer_ability_export_theme' ) ) {
 	/**
-	 * Ability callback for static site theme exports.
+	 * Ability callback for website artifact exports.
 	 *
 	 * @param array<string, mixed> $input Ability input.
 	 * @return array<string, mixed>
@@ -166,7 +166,7 @@ if ( ! function_exists( 'static_site_importer_ability_export_theme' ) ) {
 		$args = array(
 			'theme_slug'      => isset( $input['theme_slug'] ) ? (string) $input['theme_slug'] : '',
 			'root'            => isset( $input['root'] ) ? (string) $input['root'] : '',
-			'entrypoint'      => isset( $input['entrypoint'] ) ? (string) $input['entrypoint'] : 'static-site/index.html',
+			'entrypoint'      => isset( $input['entrypoint'] ) ? (string) $input['entrypoint'] : 'website/index.html',
 			'include_pages'   => $input['include_pages'] ?? true,
 			'source_metadata' => isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array(),
 		);

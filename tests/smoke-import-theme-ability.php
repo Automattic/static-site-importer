@@ -125,8 +125,8 @@ class Static_Site_Importer_Theme_Generator {
 		self::$last_call = array( 'export', $args );
 
 		return array(
-			'artifact_set' => array(
-				'schema'     => 'static-site-importer/static-site-artifact-set/v1',
+			'website_artifact' => array(
+				'schema'     => 'chubes4/website-artifact/v1',
 				'entrypoint' => $args['entrypoint'],
 				'files'      => array(
 					array(
@@ -137,15 +137,6 @@ class Static_Site_Importer_Theme_Generator {
 					),
 				),
 			),
-			'files'        => array(
-				array(
-					'path'    => $args['entrypoint'],
-					'content' => '<!doctype html><html><body>Fixture</body></html>',
-					'kind'    => 'document',
-					'role'    => 'entrypoint',
-				),
-			),
-			'report'       => array( 'status' => 'completed' ),
 		);
 }
 }
@@ -260,13 +251,16 @@ $assert( 'static_site_importer_ability_export_theme' === ( $export_ability['exec
 $export = static_site_importer_ability_export_theme(
 	array(
 		'theme_slug'      => 'fixture-theme',
-		'entrypoint'      => 'static-site/index.html',
+		'entrypoint'      => 'website/index.html',
 		'include_pages'   => false,
 		'source_metadata' => array( 'source' => 'smoke' ),
 	)
 );
 $assert( ! empty( $export['success'] ), 'ability-export-succeeds' );
-$assert( 'static-site/index.html' === ( $export['artifact_set']['entrypoint'] ?? '' ), 'ability-export-includes-entrypoint' );
+$assert( 'website/index.html' === ( $export['website_artifact']['entrypoint'] ?? '' ), 'ability-export-includes-entrypoint' );
+$assert( ! isset( $export['artifact_set'] ), 'ability-export-omits-legacy-artifact-set' );
+$assert( ! isset( $export['files'] ), 'ability-export-omits-legacy-files' );
+$assert( ! isset( $export['report'] ), 'ability-export-omits-legacy-report' );
 $export_args = Static_Site_Importer_Theme_Generator::$last_call[1] ?? array();
 $assert( 'fixture-theme' === ( $export_args['theme_slug'] ?? '' ), 'export-theme-slug-forwarded' );
 $assert( false === ( $export_args['include_pages'] ?? true ), 'export-include-pages-forwarded' );

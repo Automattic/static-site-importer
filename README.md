@@ -174,20 +174,20 @@ Important behavior:
 - Imported WordPress page posts store the converted page body in `post_content`, so routing, titles, front-page assignment, editor visibility, and body edits stay native.
 - Page patterns are generated as reusable/reference copies of each converted page body; they are not the primary storage for imported page content.
 
-## Static-Site Export Artifact Set
+## Website Artifact Export
 
-`static-site-importer/export-theme` exports an imported or active block theme back to a static-site artifact set. Existing callers can continue reading the top-level `files` and `report` fields. New callers should prefer `artifact_set` for the complete export envelope.
+`static-site-importer/export-theme` exports an imported or active block theme as a BAC-compatible website artifact. SSI owns the WordPress import/export/materialization path; Block Artifact Compiler owns the website artifact compilation contract. Studio Web, Codebox, and other products should consume the exported `website_artifact` object rather than SSI-specific static-site wrappers.
 
 The export envelope includes:
 
-- `schema`, `artifact_type`, `version`, `id`, `generated_at`, `root`, and `entrypoint`.
+- `schema: "chubes4/website-artifact/v1"`, `artifact_type: "website"`, `version`, `id`, `generated_at`, `root`, and `entrypoint`.
 - `files[]` entries with safe artifact-relative paths, `role`, `kind`, `mime_type`, `encoding`, `bytes`, `sha256`, and inline `content`.
 - UTF-8 text content by default; binary content is transported as Base64 with `encoding: "base64"`.
 - source/materialization provenance under `provenance`.
 - import/validation summaries and `reports[]` references for repair loops.
 - `import-report.json` and `source-documents.json` metadata files when the exported theme has SSI import provenance.
 
-The default root remains `static-site` for backwards compatibility. Callers that need another artifact root can pass `root` with a matching `entrypoint`, such as `root: "website"` and `entrypoint: "website/index.html"`.
+The default root is `website` with `entrypoint: "website/index.html"`. Callers can pass any safe single-segment root with a matching entrypoint, such as `root: "artifact"` and `entrypoint: "artifact/index.html"`.
 
 ## Validation
 

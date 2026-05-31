@@ -517,14 +517,14 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
-	 * Export an imported or active block theme as static-site artifacts.
+	 * Export an imported or active block theme as a website artifact.
 	 *
 	 * @param array $args Export args.
-	 * @return array{artifact_set:array<string,mixed>,files:array<int,array<string,mixed>>,report:array<string,mixed>}|WP_Error
+	 * @return array{website_artifact:array<string,mixed>}|WP_Error
 	 */
 	public static function export_theme( array $args = array() ) {
 		if ( ! function_exists( 'bfb_convert' ) ) {
-			return new WP_Error( 'static_site_importer_missing_bfb', 'Block Format Bridge is required to export a static site.' );
+			return new WP_Error( 'static_site_importer_missing_bfb', 'Block Format Bridge is required to export a website artifact.' );
 		}
 
 		$theme_slug = isset( $args['theme_slug'] ) && '' !== trim( (string) $args['theme_slug'] ) ? sanitize_title( (string) $args['theme_slug'] ) : self::active_theme_slug();
@@ -537,7 +537,7 @@ class Static_Site_Importer_Theme_Generator {
 			return new WP_Error( 'static_site_importer_theme_not_found', sprintf( 'Theme directory not found for %s.', $theme_slug ) );
 		}
 
-		$entrypoint      = self::export_artifact_path( isset( $args['entrypoint'] ) ? (string) $args['entrypoint'] : 'static-site/index.html', 'static-site/index.html' );
+		$entrypoint      = self::export_artifact_path( isset( $args['entrypoint'] ) ? (string) $args['entrypoint'] : 'website/index.html', 'website/index.html' );
 		$root            = self::export_artifact_root( isset( $args['root'] ) ? (string) $args['root'] : '', $entrypoint );
 		$include_pages   = $args['include_pages'] ?? true;
 		$source_metadata = isset( $args['source_metadata'] ) && is_array( $args['source_metadata'] ) ? $args['source_metadata'] : array();
@@ -634,12 +634,10 @@ class Static_Site_Importer_Theme_Generator {
 			$report['import_report'] = $import_report;
 		}
 
-		$artifact_set = self::export_artifact_set( $theme_slug, $root, $entrypoint, $files, $report, $source_metadata );
+		$website_artifact = self::export_website_artifact( $theme_slug, $root, $entrypoint, $files, $report, $source_metadata );
 
 		return array(
-			'artifact_set' => $artifact_set,
-			'files'        => $files,
-			'report'       => $report,
+			'website_artifact' => $website_artifact,
 		);
 	}
 
@@ -901,7 +899,7 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
-	 * Build the richer export artifact set envelope.
+	 * Build the BAC-compatible website artifact envelope.
 	 *
 	 * @param string              $theme_slug      Theme slug.
 	 * @param string              $root            Artifact root.
@@ -911,13 +909,13 @@ class Static_Site_Importer_Theme_Generator {
 	 * @param array<string,mixed> $source_metadata Source metadata.
 	 * @return array<string,mixed>
 	 */
-	private static function export_artifact_set( string $theme_slug, string $root, string $entrypoint, array $files, array $report, array $source_metadata ): array {
+	private static function export_website_artifact( string $theme_slug, string $root, string $entrypoint, array $files, array $report, array $source_metadata ): array {
 		$generated_at = self::export_generated_at();
-		$id           = 'static-site-importer-' . $theme_slug . '-' . substr( hash( 'sha256', self::json_encode_pretty( array( $entrypoint, $files ) ) ), 0, 12 );
+		$id           = 'website-artifact-' . $theme_slug . '-' . substr( hash( 'sha256', self::json_encode_pretty( array( $entrypoint, $files ) ) ), 0, 12 );
 
 		return array(
-			'schema'        => 'static-site-importer/static-site-artifact-set/v1',
-			'artifact_type' => 'static-site',
+			'schema'        => 'chubes4/website-artifact/v1',
+			'artifact_type' => 'website',
 			'version'       => 1,
 			'id'            => $id,
 			'generated_at'  => $generated_at,
@@ -941,7 +939,7 @@ class Static_Site_Importer_Theme_Generator {
 					array(
 						'name'    => 'entrypoint-present',
 						'status'  => self::export_has_file( $files, $entrypoint ) ? 'passed' : 'failed',
-						'message' => 'The static-site entrypoint is present in the exported file set.',
+						'message' => 'The website artifact entrypoint is present in the exported file set.',
 					),
 				),
 			),
@@ -972,7 +970,7 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
-	 * Export browser assets that can be replayed with the static artifact.
+	 * Export browser assets that can be replayed with the website artifact.
 	 *
 	 * @param string                    $theme_dir   Theme directory.
 	 * @param string                    $root        Artifact root.
@@ -1053,7 +1051,7 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		$parts = explode( '/', $entrypoint );
-		return '' !== ( $parts[0] ?? '' ) ? $parts[0] : 'static-site';
+		return '' !== ( $parts[0] ?? '' ) ? $parts[0] : 'website';
 	}
 
 	/**

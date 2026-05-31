@@ -1,6 +1,6 @@
 <?php
 /**
- * Smoke test: an imported block theme can export static-site artifacts.
+ * Smoke test: an imported block theme can export website artifacts.
  *
  * Run from the repository root:
  * php tests/smoke-export-theme-ability.php
@@ -146,11 +146,16 @@ if ( ! function_exists( 'bfb_convert' ) ) {
 }
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
+$bac_library = dirname( __DIR__ ) . '/vendor/chubes4/block-artifact-compiler/library.php';
+if ( is_readable( $bac_library ) ) {
+	require_once $bac_library;
+}
 
 $result = Static_Site_Importer_Theme_Generator::export_theme(
 	array(
 		'theme_slug'      => 'fixture-theme',
-		'entrypoint'      => 'static-site/index.html',
+		'root'            => 'website',
+		'entrypoint'      => 'website/index.html',
 		'include_pages'   => true,
 		'source_metadata' => array( 'source' => 'smoke' ),
 	)
@@ -165,42 +170,52 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 };
 
 $assert( ! is_wp_error( $result ), 'export-succeeds', is_wp_error( $result ) ? $result->get_error_message() : '' );
-$assert( 'static-site-importer/static-site-artifact-set/v1' === ( $result['artifact_set']['schema'] ?? '' ), 'artifact-set-schema' );
-$assert( 'static-site' === ( $result['artifact_set']['artifact_type'] ?? '' ), 'artifact-type' );
-$assert( 1 === ( $result['artifact_set']['version'] ?? 0 ), 'artifact-version' );
-$assert( 'static-site' === ( $result['artifact_set']['root'] ?? '' ), 'artifact-root' );
-$assert( 'static-site/index.html' === ( $result['artifact_set']['entrypoint'] ?? '' ), 'entrypoint' );
-$assert( 6 === count( $result['files'] ?? array() ), 'exports-entrypoint-assets-and-metadata' );
-$assert( 'static-site/style.css' === ( $result['files'][0]['path'] ?? '' ), 'stylesheet-exported' );
-$assert( 'static-site/index.html' === ( $result['files'][1]['path'] ?? '' ), 'entrypoint-exported' );
-$assert( 'text/html' === ( $result['files'][1]['mime_type'] ?? '' ), 'entrypoint-mime' );
-$assert( 'utf8' === ( $result['files'][1]['encoding'] ?? '' ), 'entrypoint-encoding' );
-$assert( isset( $result['files'][1]['bytes'] ) && $result['files'][1]['bytes'] > 0, 'entrypoint-bytes' );
-$assert( isset( $result['files'][1]['sha256'] ) && 64 === strlen( (string) $result['files'][1]['sha256'] ), 'entrypoint-hash' );
-$assert( str_contains( (string) ( $result['files'][1]['content'] ?? '' ), 'Edited Playground content' ), 'page-content-converted' );
-$assert( str_contains( (string) ( $result['files'][1]['content'] ?? '' ), '<link rel="stylesheet" href="style.css">' ), 'stylesheet-linked' );
+$artifact = $result['website_artifact'] ?? array();
+$assert( ! isset( $result['artifact_set'] ), 'legacy-artifact-set-removed' );
+$assert( ! isset( $result['files'] ), 'legacy-top-level-files-removed' );
+$assert( ! isset( $result['report'] ), 'legacy-top-level-report-removed' );
+$assert( 'chubes4/website-artifact/v1' === ( $artifact['schema'] ?? '' ), 'website-artifact-schema' );
+$assert( 'website' === ( $artifact['artifact_type'] ?? '' ), 'artifact-type' );
+$assert( 1 === ( $artifact['version'] ?? 0 ), 'artifact-version' );
+$assert( 'website' === ( $artifact['root'] ?? '' ), 'artifact-root' );
+$assert( 'website/index.html' === ( $artifact['entrypoint'] ?? '' ), 'entrypoint' );
+$assert( 6 === count( $artifact['files'] ?? array() ), 'exports-entrypoint-assets-and-metadata' );
+$assert( 'website/style.css' === ( $artifact['files'][0]['path'] ?? '' ), 'stylesheet-exported' );
+$assert( 'website/index.html' === ( $artifact['files'][1]['path'] ?? '' ), 'entrypoint-exported' );
+$assert( 'text/html' === ( $artifact['files'][1]['mime_type'] ?? '' ), 'entrypoint-mime' );
+$assert( 'utf8' === ( $artifact['files'][1]['encoding'] ?? '' ), 'entrypoint-encoding' );
+$assert( isset( $artifact['files'][1]['bytes'] ) && $artifact['files'][1]['bytes'] > 0, 'entrypoint-bytes' );
+$assert( isset( $artifact['files'][1]['sha256'] ) && 64 === strlen( (string) $artifact['files'][1]['sha256'] ), 'entrypoint-hash' );
+$assert( str_contains( (string) ( $artifact['files'][1]['content'] ?? '' ), 'Edited Playground content' ), 'page-content-converted' );
+$assert( str_contains( (string) ( $artifact['files'][1]['content'] ?? '' ), '<link rel="stylesheet" href="style.css">' ), 'stylesheet-linked' );
 $files_by_path = array();
-foreach ( $result['files'] ?? array() as $file ) {
+foreach ( $artifact['files'] ?? array() as $file ) {
 	$files_by_path[ $file['path'] ?? '' ] = $file;
 }
-$assert( 'script' === ( $files_by_path['static-site/assets/app.js']['role'] ?? '' ), 'script-role' );
-$assert( 'text/javascript' === ( $files_by_path['static-site/assets/app.js']['mime_type'] ?? '' ), 'script-mime' );
-$assert( 'base64' === ( $files_by_path['static-site/assets/logo.png']['encoding'] ?? '' ), 'binary-base64-encoding' );
-$assert( 'image/png' === ( $files_by_path['static-site/assets/logo.png']['mime_type'] ?? '' ), 'binary-mime' );
-$assert( 'report' === ( $files_by_path['static-site/import-report.json']['role'] ?? '' ), 'report-role' );
-$assert( 'source-document' === ( $files_by_path['static-site/source-documents.json']['role'] ?? '' ), 'source-document-role' );
-$assert( 'completed' === ( $result['report']['status'] ?? '' ), 'report-completed' );
-$assert( 'passed' === ( $result['artifact_set']['validation']['status'] ?? '' ), 'validation-passed' );
-$assert( 'passed' === ( $result['artifact_set']['import']['status'] ?? '' ), 'import-status-passed' );
-$assert( 'static-site-importer' === ( $result['artifact_set']['provenance']['producer'] ?? '' ), 'provenance-producer' );
-$assert( 'smoke' === ( $result['artifact_set']['provenance']['source_metadata']['source'] ?? '' ), 'provenance-source-metadata' );
-$assert( 'static-site/import-report.json' === ( $result['artifact_set']['reports'][0]['path'] ?? '' ), 'report-ref' );
-$assert( 'smoke' === ( $result['report']['source_metadata']['source'] ?? '' ), 'source-metadata-preserved' );
-$assert( 'completed' === ( $result['report']['import_report']['status'] ?? '' ), 'import-report-preserved' );
-$assert( count( $GLOBALS['ssi_export_bfb_calls'] ) >= 4, 'bfb-called-for-block-to-html' );
-foreach ( $GLOBALS['ssi_export_bfb_calls'] as $call ) {
-	$assert( 'blocks' === $call[0] && 'html' === $call[1], 'bfb-call-uses-blocks-to-html' );
+$assert( 'script' === ( $files_by_path['website/assets/app.js']['role'] ?? '' ), 'script-role' );
+$assert( 'text/javascript' === ( $files_by_path['website/assets/app.js']['mime_type'] ?? '' ), 'script-mime' );
+$assert( 'base64' === ( $files_by_path['website/assets/logo.png']['encoding'] ?? '' ), 'binary-base64-encoding' );
+$assert( 'image/png' === ( $files_by_path['website/assets/logo.png']['mime_type'] ?? '' ), 'binary-mime' );
+$assert( 'report' === ( $files_by_path['website/import-report.json']['role'] ?? '' ), 'report-role' );
+$assert( 'source-document' === ( $files_by_path['website/source-documents.json']['role'] ?? '' ), 'source-document-role' );
+$assert( 'completed' === ( $artifact['report']['status'] ?? '' ), 'report-completed' );
+$assert( 'passed' === ( $artifact['validation']['status'] ?? '' ), 'validation-passed' );
+$assert( 'passed' === ( $artifact['import']['status'] ?? '' ), 'import-status-passed' );
+$assert( 'static-site-importer' === ( $artifact['provenance']['producer'] ?? '' ), 'provenance-producer' );
+$assert( 'smoke' === ( $artifact['provenance']['source_metadata']['source'] ?? '' ), 'provenance-source-metadata' );
+$assert( 'website/import-report.json' === ( $artifact['reports'][0]['path'] ?? '' ), 'report-ref' );
+$assert( 'smoke' === ( $artifact['report']['source_metadata']['source'] ?? '' ), 'source-metadata-preserved' );
+$assert( 'completed' === ( $artifact['report']['import_report']['status'] ?? '' ), 'import-report-preserved' );
+if ( function_exists( 'bac_compile_website_artifact' ) ) {
+	$compiled = bac_compile_website_artifact( $artifact );
+	$assert( 'chubes4/block-artifact-compiler-result/v1' === ( $compiled['schema'] ?? '' ), 'bac-compiles-exported-artifact' );
+	$assert( 'website/index.html' === ( $compiled['input']['entry_path'] ?? '' ), 'bac-uses-website-entrypoint' );
 }
+$export_bfb_calls = array_filter(
+	$GLOBALS['ssi_export_bfb_calls'],
+	static fn ( array $call ): bool => 'blocks' === $call[0] && 'html' === $call[1]
+);
+$assert( count( $export_bfb_calls ) >= 4, 'bfb-called-for-block-to-html' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
