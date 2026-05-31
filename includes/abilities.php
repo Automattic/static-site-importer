@@ -86,6 +86,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 					'type'       => 'object',
 					'properties' => array(
 						'theme_slug'      => array( 'type' => 'string' ),
+						'root'            => array( 'type' => 'string' ),
 						'entrypoint'      => array( 'type' => 'string' ),
 						'include_pages'   => array(
 							'oneOf' => array(
@@ -164,6 +165,7 @@ if ( ! function_exists( 'static_site_importer_ability_export_theme' ) ) {
 	function static_site_importer_ability_export_theme( array $input ): array {
 		$args = array(
 			'theme_slug'      => isset( $input['theme_slug'] ) ? (string) $input['theme_slug'] : '',
+			'root'            => isset( $input['root'] ) ? (string) $input['root'] : '',
 			'entrypoint'      => isset( $input['entrypoint'] ) ? (string) $input['entrypoint'] : 'static-site/index.html',
 			'include_pages'   => $input['include_pages'] ?? true,
 			'source_metadata' => isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array(),
