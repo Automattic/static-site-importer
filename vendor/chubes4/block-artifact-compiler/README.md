@@ -88,7 +88,7 @@ Result shape:
 
 ```php
 array(
-	'schema'              => 'chubes4/block-artifact-compiler-result/v1',
+	'schema'              => 'block-artifact-compiler/result/v1',
 	'status'              => 'success',
 	'input'               => array(...),
 	'wordpress_artifacts' => array(

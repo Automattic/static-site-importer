@@ -208,7 +208,7 @@ $assert( 'smoke' === ( $artifact['report']['source_metadata']['source'] ?? '' ),
 $assert( 'completed' === ( $artifact['report']['import_report']['status'] ?? '' ), 'import-report-preserved' );
 if ( function_exists( 'bac_compile_website_artifact' ) ) {
 	$compiled = bac_compile_website_artifact( $artifact );
-	$assert( 'chubes4/block-artifact-compiler-result/v1' === ( $compiled['schema'] ?? '' ), 'bac-compiles-exported-artifact' );
+	$assert( 'block-artifact-compiler/result/v1' === ( $compiled['schema'] ?? '' ), 'bac-compiles-exported-artifact' );
 	$assert( 'website/index.html' === ( $compiled['input']['entry_path'] ?? '' ), 'bac-uses-website-entrypoint' );
 }
 $export_bfb_calls = array_filter(

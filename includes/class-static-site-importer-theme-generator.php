@@ -3982,7 +3982,7 @@ class Static_Site_Importer_Theme_Generator {
 			'type'        => 'website_artifact_materialization_contract_note',
 			'source'      => '' !== $source ? $source : 'website_artifact',
 			'message'     => 'Direct materialization consumed current BAC block_markup and files artifacts. Rich multi-page, template-part, and source-to-theme asset reference maps should be added to the BAC contract before SSI relies on them.',
-			'contract'    => 'chubes4/block-artifact-compiler-result/v1',
+			'contract'    => 'block-artifact-compiler/result/v1',
 			'constraints' => 'report_only',
 		);
 	}

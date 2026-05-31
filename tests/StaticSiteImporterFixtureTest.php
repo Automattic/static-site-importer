@@ -281,7 +281,7 @@ class StaticSiteImporterFixtureTest extends WP_UnitTestCase {
 		$this->assertNotFalse( file_put_contents( $fixture_dir . '/content.mdx', '# SSI should not parse this MDX on the BAC path' ) );
 
 		$compiled = array(
-			'schema'              => 'chubes4/block-artifact-compiler-result/v1',
+			'schema'              => 'block-artifact-compiler/result/v1',
 			'status'              => 'success',
 			'input'               => array(
 				'entry_path' => 'index.html',

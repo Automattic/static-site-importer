@@ -27,7 +27,7 @@ $result = bac_compile_website_artifact(
 	)
 );
 
-$assert( 'chubes4/block-artifact-compiler-result/v1' === ( $result['schema'] ?? '' ), 'result exposes schema' );
+$assert( 'block-artifact-compiler/result/v1' === ( $result['schema'] ?? '' ), 'result exposes schema' );
 $assert( 'block-artifact-compiler/website-artifact/v1' === ( $result['input']['schema'] ?? '' ), 'input metadata exposes canonical website artifact schema' );
 $assert( 'success_with_warnings' === ( $result['status'] ?? '' ), 'fallback status reflects missing BFB in smoke test', (string) ( $result['status'] ?? '' ) );
 $assert( 'index.html' === ( $result['input']['entry_path'] ?? '' ), 'entry path is captured' );
