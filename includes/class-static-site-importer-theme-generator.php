@@ -2953,7 +2953,12 @@ class Static_Site_Importer_Theme_Generator {
 			return array();
 		}
 
-		$size = @getimagesize( $path );
+		set_error_handler( static fn(): bool => true );
+		try {
+			$size = getimagesize( $path );
+		} finally {
+			restore_error_handler();
+		}
 		if ( ! is_array( $size ) || empty( $size[0] ) || empty( $size[1] ) ) {
 			return array();
 		}
@@ -4605,11 +4610,11 @@ class Static_Site_Importer_Theme_Generator {
 	private static function compiler_report_payload( array $compiled, array $summary ): array {
 		$artifacts = isset( $compiled['wordpress_artifacts'] ) && is_array( $compiled['wordpress_artifacts'] ) ? $compiled['wordpress_artifacts'] : array();
 		$payload   = array_merge( $summary, array(
-			'summary'     => $summary,
-			'input'       => isset( $compiled['input'] ) && is_array( $compiled['input'] ) ? $compiled['input'] : array(),
-			'provenance'  => isset( $compiled['provenance'] ) && is_array( $compiled['provenance'] ) ? $compiled['provenance'] : array(),
-			'diagnostics' => isset( $compiled['diagnostics'] ) && is_array( $compiled['diagnostics'] ) ? $compiled['diagnostics'] : array(),
-			'bfb_report'  => isset( $compiled['bfb_report'] ) && is_array( $compiled['bfb_report'] ) ? $compiled['bfb_report'] : array(),
+			'summary'             => $summary,
+			'input'               => isset( $compiled['input'] ) && is_array( $compiled['input'] ) ? $compiled['input'] : array(),
+			'provenance'          => isset( $compiled['provenance'] ) && is_array( $compiled['provenance'] ) ? $compiled['provenance'] : array(),
+			'diagnostics'         => isset( $compiled['diagnostics'] ) && is_array( $compiled['diagnostics'] ) ? $compiled['diagnostics'] : array(),
+			'bfb_report'          => isset( $compiled['bfb_report'] ) && is_array( $compiled['bfb_report'] ) ? $compiled['bfb_report'] : array(),
 			'wordpress_artifacts' => array(
 				'block_tree'  => isset( $artifacts['block_tree'] ) && is_array( $artifacts['block_tree'] ) ? $artifacts['block_tree'] : array(),
 				'block_types' => isset( $artifacts['block_types'] ) && is_array( $artifacts['block_types'] ) ? $artifacts['block_types'] : array(),
@@ -5256,9 +5261,9 @@ class Static_Site_Importer_Theme_Generator {
 			'assets'                  => array(
 				'policy'       => 'theme',
 				'local_policy' => 'copy_to_theme',
-				'svg_icons'   => array(),
-				'svg_sprites' => array(),
-				'local'       => array(),
+				'svg_icons'    => array(),
+				'svg_sprites'  => array(),
+				'local'        => array(),
 			),
 			'asset_map'               => array(
 				'supplied'         => false,
@@ -6287,7 +6292,7 @@ class Static_Site_Importer_Theme_Generator {
 		if ( empty( $context ) ) {
 			return array(
 				'include_bfb_report' => true,
-				'source' => array(
+				'source'             => array(
 					'fragment' => $source,
 				),
 			);
@@ -6295,8 +6300,8 @@ class Static_Site_Importer_Theme_Generator {
 
 		return array(
 			'include_bfb_report' => true,
-			'context' => $context,
-			'source'  => array(
+			'context'            => $context,
+			'source'             => array(
 				'fragment' => $source,
 			),
 		);
