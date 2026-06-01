@@ -45,6 +45,10 @@ function wp_get_ability( string $name ): object|null {
 				throw new RuntimeException( 'max_fallbacks should be omitted when --max-fallbacks is absent.' );
 			}
 
+			if ( 'copy_to_theme' !== ( $args['asset_materialization_policy'] ?? null ) ) {
+				throw new RuntimeException( 'asset_materialization_policy should default to copy_to_theme.' );
+			}
+
 			return new WP_Error( 'fixture_error', 'Fixture ability failure.' );
 		}
 	};

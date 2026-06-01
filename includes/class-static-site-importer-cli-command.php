@@ -111,7 +111,7 @@ class Static_Site_Importer_CLI_Command {
 			'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
 			'report'                    => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
 			'asset_policy'              => isset( $assoc_args['asset-policy'] ) ? (string) $assoc_args['asset-policy'] : '',
-			'asset_materialization_policy' => isset( $assoc_args['asset-materialization-policy'] ) ? (string) $assoc_args['asset-materialization-policy'] : '',
+			'asset_materialization_policy' => isset( $assoc_args['asset-materialization-policy'] ) ? (string) $assoc_args['asset-materialization-policy'] : 'copy_to_theme',
 			'source_metadata'           => $source_metadata,
 		);
 
@@ -288,7 +288,7 @@ class Static_Site_Importer_CLI_Command {
 			'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
 			'report'                    => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
 			'asset_policy'              => isset( $assoc_args['asset-policy'] ) ? (string) $assoc_args['asset-policy'] : '',
-			'asset_materialization_policy' => isset( $assoc_args['asset-materialization-policy'] ) ? (string) $assoc_args['asset-materialization-policy'] : '',
+			'asset_materialization_policy' => isset( $assoc_args['asset-materialization-policy'] ) ? (string) $assoc_args['asset-materialization-policy'] : 'copy_to_theme',
 			'source_metadata'           => array( 'artifact_file' => $artifact_file ),
 		);
 
