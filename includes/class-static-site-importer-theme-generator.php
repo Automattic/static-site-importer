@@ -7526,19 +7526,29 @@ class Static_Site_Importer_Theme_Generator {
 			$selector = self::diagnostic_selector_from_html( $element_html );
 		}
 
+		$emitted = '';
+		if ( function_exists( 'serialize_blocks' ) ) {
+			// @phpstan-ignore-next-line argument.type -- Parsed block shape comes from WordPress parse_blocks() or h2bc.
+			$emitted = serialize_blocks( array( $block ) );
+		}
+		if ( '' === trim( $emitted ) || preg_match( '/^<!--\s+wp:[^>]+\/-->$/', trim( $emitted ) ) ) {
+			$emitted = isset( $block['innerHTML'] ) && is_string( $block['innerHTML'] ) ? $block['innerHTML'] : $element_html;
+		}
+
 		$entry = array(
-			'type'                => $type,
-			'source'              => $source,
-			'selector'            => '' !== $selector ? $selector : null,
-			'excerpt'             => self::diagnostic_excerpt( wp_strip_all_tags( $element_html ) ),
-			'source_html_preview' => self::diagnostic_excerpt( $element_html ),
-			'reason'              => isset( $context['reason'] ) ? (string) $context['reason'] : 'unknown',
-			'tag_name'            => isset( $context['tag_name'] ) ? (string) $context['tag_name'] : self::diagnostic_tag_name_from_html( $element_html ),
-			'block_name'          => isset( $block['blockName'] ) ? (string) $block['blockName'] : null,
-			'converter'           => 'html-to-blocks-converter',
-			'stage'               => isset( $context['stage'] ) ? (string) $context['stage'] : 'html_to_blocks',
-			'html_length'         => strlen( $element_html ),
-			'html_excerpt'        => self::diagnostic_excerpt( $element_html ),
+			'type'                  => $type,
+			'source'                => $source,
+			'selector'              => '' !== $selector ? $selector : null,
+			'excerpt'               => self::diagnostic_excerpt( wp_strip_all_tags( $element_html ) ),
+			'source_html_preview'   => self::diagnostic_excerpt( $element_html ),
+			'emitted_block_preview' => self::diagnostic_excerpt( $emitted ),
+			'reason'                => isset( $context['reason'] ) ? (string) $context['reason'] : 'unknown',
+			'tag_name'              => isset( $context['tag_name'] ) ? (string) $context['tag_name'] : self::diagnostic_tag_name_from_html( $element_html ),
+			'block_name'            => isset( $block['blockName'] ) ? (string) $block['blockName'] : null,
+			'converter'             => 'html-to-blocks-converter',
+			'stage'                 => isset( $context['stage'] ) ? (string) $context['stage'] : 'html_to_blocks',
+			'html_length'           => strlen( $element_html ),
+			'html_excerpt'          => self::diagnostic_excerpt( $element_html ),
 		);
 
 		if ( isset( $context['occurrence'] ) ) {
@@ -8056,7 +8066,62 @@ class Static_Site_Importer_Theme_Generator {
 			'invalid_block_count'   => (int) ( $quality['invalid_block_count'] ?? 0 ),
 			'content_loss_count'    => (int) ( $quality['content_loss_count'] ?? 0 ),
 			'diagnostic_count'      => count( $diagnostics ),
+			'diagnostics'           => self::compact_import_report_diagnostics( $diagnostics ),
 		);
+	}
+
+	/**
+	 * Keep summary diagnostics compact while preserving repair-agent evidence.
+	 *
+	 * @param array<int,array<string,mixed>> $diagnostics Normalized diagnostics.
+	 * @return array<int,array<string,mixed>> Compact diagnostics for validation harnesses.
+	 */
+	private static function compact_import_report_diagnostics( array $diagnostics ): array {
+		$fields = array(
+			'id',
+			'type',
+			'severity',
+			'category',
+			'reason_code',
+			'suggested_repair_class',
+			'source_path',
+			'source',
+			'selector',
+			'excerpt',
+			'source_html_preview',
+			'emitted_block_preview',
+			'block_name',
+			'block_path',
+			'converter',
+			'stage',
+			'reason',
+			'message',
+			'tag_name',
+			'html_excerpt',
+			'context',
+		);
+
+		$compact = array();
+		foreach ( array_slice( $diagnostics, 0, 50 ) as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) ) {
+				continue;
+			}
+
+			$row = array();
+			foreach ( $fields as $field ) {
+				if ( ! array_key_exists( $field, $diagnostic ) || null === $diagnostic[ $field ] || '' === $diagnostic[ $field ] || array() === $diagnostic[ $field ] ) {
+					continue;
+				}
+
+				$row[ $field ] = $diagnostic[ $field ];
+			}
+
+			if ( ! empty( $row ) ) {
+				$compact[] = $row;
+			}
+		}
+
+		return $compact;
 	}
 
 	/**

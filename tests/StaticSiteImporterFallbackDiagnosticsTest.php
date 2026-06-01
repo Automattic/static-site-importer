@@ -38,7 +38,58 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		$this->assertSame( 'html_to_blocks', $diagnostic['stage'] ?? '' );
 		$this->assertSame( 'no_transform', $diagnostic['reason'] ?? '' );
 		$this->assertStringContainsString( '<iframe', $diagnostic['source_html_preview'] ?? '' );
+		$this->assertStringContainsString( '<iframe', $diagnostic['emitted_block_preview'] ?? '' );
 		$this->assertArrayHasKey( 'excerpt', $diagnostic );
+	}
+
+	/**
+	 * Import report summaries include compact machine-actionable diagnostics.
+	 */
+	public function test_import_report_summary_includes_compact_diagnostics(): void {
+		$reflection = new ReflectionClass( Static_Site_Importer_Theme_Generator::class );
+
+		$summary = $reflection->getMethod( 'import_report_summary' );
+		$summary->setAccessible( true );
+
+		$result = $summary->invoke(
+			null,
+			array(
+				'entry_file'  => '/tmp/source/index.html',
+				'diagnostics' => array(
+					array(
+						'id'                     => 'diag-001-unsupported_html_fallback-no_transform-indexhtml',
+						'type'                   => 'unsupported_html_fallback',
+						'severity'               => 'warning',
+						'category'               => 'unsupported_element',
+						'reason_code'            => 'no_transform',
+						'suggested_repair_class' => 'replace_unsupported_html',
+						'source_path'            => 'index.html',
+						'selector'               => 'iframe#store-widget.embedded.checkout',
+						'source_html_preview'    => '<iframe id="store-widget" class="embedded checkout"></iframe>',
+						'emitted_block_preview'  => '<!-- wp:html --><iframe id="store-widget" class="embedded checkout"></iframe><!-- /wp:html -->',
+						'block_name'             => 'core/html',
+						'converter'              => 'html-to-blocks-converter',
+						'stage'                  => 'html_to_blocks',
+						'reason'                 => 'no_transform',
+						'html_length'            => 64,
+					),
+				),
+			),
+			array(
+				'pass'           => false,
+				'fail_import'    => false,
+				'fallback_count' => 1,
+			)
+		);
+
+		$this->assertSame( 1, $result['diagnostic_count'] ?? 0 );
+		$this->assertCount( 1, $result['diagnostics'] ?? array() );
+		$this->assertSame( 'diag-001-unsupported_html_fallback-no_transform-indexhtml', $result['diagnostics'][0]['id'] ?? '' );
+		$this->assertSame( 'index.html', $result['diagnostics'][0]['source_path'] ?? '' );
+		$this->assertSame( 'iframe#store-widget.embedded.checkout', $result['diagnostics'][0]['selector'] ?? '' );
+		$this->assertStringContainsString( '<iframe', $result['diagnostics'][0]['source_html_preview'] ?? '' );
+		$this->assertStringContainsString( '<!-- wp:html -->', $result['diagnostics'][0]['emitted_block_preview'] ?? '' );
+		$this->assertArrayNotHasKey( 'html_length', $result['diagnostics'][0] ?? array() );
 	}
 
 	/**
