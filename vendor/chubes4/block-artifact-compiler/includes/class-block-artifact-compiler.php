@@ -10,6 +10,7 @@
  */
 class Block_Artifact_Compiler {
 
+
 	private const RESULT_SCHEMA = 'block-artifact-compiler/result/v1';
 	private const INPUT_SCHEMA  = 'block-artifact-compiler/website-artifact/v1';
 
@@ -25,61 +26,61 @@ class Block_Artifact_Compiler {
 	 * @return array<string,mixed> Compiler result envelope.
 	 */
 	public function compile( array $artifact, array $options = array() ): array {
-		$normalized  = $this->normalize_artifact( $artifact, $options );
-		$documents   = $this->compile_source_documents( $normalized, $options );
-		$entry       = $this->entry_file( $normalized );
-		$html        = is_array( $entry ) ? $entry['content'] : '';
-		$entry_path  = is_array( $entry ) ? $entry['path'] : '';
-		$diagnostics = array_merge( $normalized['diagnostics'], $documents['diagnostics'] );
+		$normalized  = $this->normalize_artifact($artifact, $options);
+		$documents   = $this->compile_source_documents($normalized, $options);
+		$entry       = $this->entry_file($normalized);
+		$html        = is_array($entry) ? $entry['content'] : '';
+		$entry_path  = is_array($entry) ? $entry['path'] : '';
+		$diagnostics = array_merge($normalized['diagnostics'], $documents['diagnostics']);
 
-		if ( '' === trim( $html ) && empty( $documents['documents'] ) ) {
-			$diagnostics[] = $this->diagnostic( 'missing_entry_html', 'error', 'No HTML entry file was available to compile.' );
+		if ( '' === trim($html) && empty($documents['documents']) ) {
+			$diagnostics[] = $this->diagnostic('missing_entry_html', 'error', 'No HTML entry file was available to compile.');
 		}
 
-		$conversion = '' !== trim( $html ) ? $this->convert_html_to_blocks( $html, $options ) : array(
+		$conversion    = '' !== trim($html) ? $this->convert_html_to_blocks($html, $options) : array(
 			'serialized_blocks' => '',
 			'blocks'            => array(),
 			'diagnostics'       => array(),
 			'report'            => array(),
 		);
-		$source_report = $this->source_report( $normalized, $entry_path, $html );
+		$source_report = $this->source_report($normalized, $entry_path, $html);
 
-		$diagnostics = array_merge( $diagnostics, $conversion['diagnostics'] );
-		$components  = $this->detect_components( $normalized, $entry_path, $documents['components'] );
-		$block_types = $this->build_block_types( $normalized, $diagnostics );
-		$files       = $this->wordpress_files_from_artifact( $normalized );
-		if ( '' === trim( $html ) && ! empty( $documents['documents'][0]['block_markup'] ) ) {
+		$diagnostics = array_merge($diagnostics, $conversion['diagnostics']);
+		$components  = $this->detect_components($normalized, $entry_path, $documents['components']);
+		$block_types = $this->build_block_types($normalized, $diagnostics);
+		$files       = $this->wordpress_files_from_artifact($normalized);
+		if ( '' === trim($html) && ! empty($documents['documents'][0]['block_markup']) ) {
 			$conversion['serialized_blocks'] = (string) $documents['documents'][0]['block_markup'];
 		}
 
 		return array(
 			'schema'              => self::RESULT_SCHEMA,
-			'status'              => $this->status_from_diagnostics( $diagnostics ),
+			'status'              => $this->status_from_diagnostics($diagnostics),
 			'input'               => array(
 				'schema'          => self::INPUT_SCHEMA,
 				'entry_path'      => $entry_path,
 				'entrypoints'     => $normalized['entrypoints'],
-				'file_count'      => count( $normalized['files'] ),
-				'accepted_count'  => count( $normalized['files'] ),
+				'file_count'      => count($normalized['files']),
+				'accepted_count'  => count($normalized['files']),
 				'rejected_count'  => $normalized['rejected_count'],
 				'bytes'           => $normalized['bytes'],
-				'files_by_kind'   => $this->count_files_by_kind( $normalized['files'] ),
-				'files_by_role'   => $this->count_files_by_field( $normalized['files'], 'role' ),
-				'files_by_mime'   => $this->count_files_by_field( $normalized['files'], 'mime_type' ),
+				'files_by_kind'   => $this->count_files_by_kind($normalized['files']),
+				'files_by_role'   => $this->count_files_by_field($normalized['files'], 'role'),
+				'files_by_mime'   => $this->count_files_by_field($normalized['files'], 'mime_type'),
 				'original_schema' => (string) ( $artifact['schema'] ?? '' ),
-				'source_report'    => $source_report,
+				'source_report'   => $source_report,
 			),
 			'wordpress_artifacts' => array(
 				'block_markup' => $conversion['serialized_blocks'],
 				'blocks'       => $conversion['blocks'],
-				'block_tree'   => $this->block_tree_report( $conversion['blocks'], $conversion['serialized_blocks'] ),
+				'block_tree'   => $this->block_tree_report($conversion['blocks'], $conversion['serialized_blocks']),
 				'block_types'  => $block_types,
 				'components'   => $components,
 				'documents'    => $documents['documents'],
 				'files'        => $files,
 			),
 			'provenance'          => array(
-				'source_hash' => hash( 'sha256', $this->artifact_hash_payload( $normalized ) ),
+				'source_hash' => hash('sha256', $this->artifact_hash_payload($normalized)),
 				'source'      => $entry_path,
 			),
 			'diagnostics'         => $diagnostics,
@@ -97,7 +98,7 @@ class Block_Artifact_Compiler {
 	 * @return array<string,mixed> Compiler result envelope.
 	 */
 	public function compile_fragment( string $content, string $source = 'fragment', string $format = 'html', array $options = array() ): array {
-		$path = $this->virtual_fragment_path( $source, $format );
+		$path = $this->virtual_fragment_path($source, $format);
 
 		return $this->compile(
 			array(
@@ -120,77 +121,77 @@ class Block_Artifact_Compiler {
 	 * @return array<string,mixed> Compact summary.
 	 */
 	public function summarize_result( array $compiled ): array {
-		$artifacts   = isset( $compiled['wordpress_artifacts'] ) && is_array( $compiled['wordpress_artifacts'] ) ? $compiled['wordpress_artifacts'] : array();
-		$block_types = isset( $artifacts['block_types'] ) && is_array( $artifacts['block_types'] ) ? $artifacts['block_types'] : array();
-		$components  = isset( $artifacts['components'] ) && is_array( $artifacts['components'] ) ? $artifacts['components'] : array();
-		$files       = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
-		$diagnostics = isset( $compiled['diagnostics'] ) && is_array( $compiled['diagnostics'] ) ? $compiled['diagnostics'] : array();
-		$source      = isset( $compiled['input']['source_report'] ) && is_array( $compiled['input']['source_report'] ) ? $compiled['input']['source_report'] : array();
-		$block_tree  = isset( $artifacts['block_tree'] ) && is_array( $artifacts['block_tree'] ) ? $artifacts['block_tree'] : array();
+		$artifacts   = isset($compiled['wordpress_artifacts']) && is_array($compiled['wordpress_artifacts']) ? $compiled['wordpress_artifacts'] : array();
+		$block_types = isset($artifacts['block_types']) && is_array($artifacts['block_types']) ? $artifacts['block_types'] : array();
+		$components  = isset($artifacts['components']) && is_array($artifacts['components']) ? $artifacts['components'] : array();
+		$files       = isset($artifacts['files']) && is_array($artifacts['files']) ? $artifacts['files'] : array();
+		$diagnostics = isset($compiled['diagnostics']) && is_array($compiled['diagnostics']) ? $compiled['diagnostics'] : array();
+		$source      = isset($compiled['input']['source_report']) && is_array($compiled['input']['source_report']) ? $compiled['input']['source_report'] : array();
+		$block_tree  = isset($artifacts['block_tree']) && is_array($artifacts['block_tree']) ? $artifacts['block_tree'] : array();
 
 		return array(
-			'schema'           => isset( $compiled['schema'] ) ? (string) $compiled['schema'] : '',
-			'status'           => isset( $compiled['status'] ) ? (string) $compiled['status'] : '',
-			'source'           => isset( $compiled['provenance']['source'] ) ? (string) $compiled['provenance']['source'] : '',
-			'source_element_count' => (int) ( $source['html']['element_count'] ?? 0 ),
-			'source_class_count'   => (int) ( $source['html']['class_count'] ?? 0 ),
+			'schema'                    => isset($compiled['schema']) ? (string) $compiled['schema'] : '',
+			'status'                    => isset($compiled['status']) ? (string) $compiled['status'] : '',
+			'source'                    => isset($compiled['provenance']['source']) ? (string) $compiled['provenance']['source'] : '',
+			'source_element_count'      => (int) ( $source['html']['element_count'] ?? 0 ),
+			'source_class_count'        => (int) ( $source['html']['class_count'] ?? 0 ),
 			'source_css_selector_count' => (int) ( $source['css']['selector_count'] ?? 0 ),
-			'block_count'      => (int) ( $block_tree['block_count'] ?? 0 ),
-			'block_depth'      => (int) ( $block_tree['max_depth'] ?? 0 ),
-			'block_type_count' => count( $block_types ),
-			'component_count'  => count( $components ),
-			'file_count'       => count( $files ),
-			'diagnostic_count' => count( $diagnostics ),
+			'block_count'               => (int) ( $block_tree['block_count'] ?? 0 ),
+			'block_depth'               => (int) ( $block_tree['max_depth'] ?? 0 ),
+			'block_type_count'          => count($block_types),
+			'component_count'           => count($components),
+			'file_count'                => count($files),
+			'diagnostic_count'          => count($diagnostics),
 		);
 	}
 
 	/**
 	 * Normalize supported website artifact input shapes.
 	 *
-	 * @param array<string,mixed> $artifact Raw artifact.
-	 * @param array<string,mixed> $options  Compiler options.
+	 * @param  array<string,mixed> $artifact Raw artifact.
+	 * @param  array<string,mixed> $options  Compiler options.
 	 * @return array{files:array<int,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>,rejected_count:int,bytes:int,entrypoints:array<int,string>}
 	 */
 	private function normalize_artifact( array $artifact, array $options ): array {
-		$limits      = array(
-			'max_files'       => max( 1, (int) ( $options['max_files'] ?? self::DEFAULT_MAX_FILES ) ),
-			'max_file_bytes'  => max( 1, (int) ( $options['max_file_bytes'] ?? self::DEFAULT_MAX_FILE_BYTES ) ),
-			'max_total_bytes' => max( 1, (int) ( $options['max_total_bytes'] ?? self::DEFAULT_MAX_TOTAL_BYTES ) ),
+		$limits          = array(
+			'max_files'       => max(1, (int) ( $options['max_files'] ?? self::DEFAULT_MAX_FILES )),
+			'max_file_bytes'  => max(1, (int) ( $options['max_file_bytes'] ?? self::DEFAULT_MAX_FILE_BYTES )),
+			'max_total_bytes' => max(1, (int) ( $options['max_total_bytes'] ?? self::DEFAULT_MAX_TOTAL_BYTES )),
 		);
-		$raw_entrypoints = $this->extract_entrypoints( $artifact );
-		$raw_files       = $this->extract_raw_files( $artifact );
-		$files       = array();
-		$diagnostics = array();
-		$total_bytes = 0;
-		$rejected    = 0;
-		$seen_paths  = array();
-		$entrypoints = array();
+		$raw_entrypoints = $this->extract_entrypoints($artifact);
+		$raw_files       = $this->extract_raw_files($artifact);
+		$files           = array();
+		$diagnostics     = array();
+		$total_bytes     = 0;
+		$rejected        = 0;
+		$seen_paths      = array();
+		$entrypoints     = array();
 
 		foreach ( $raw_entrypoints as $entrypoint ) {
-			$path = $this->safe_relative_path( $entrypoint );
+			$path = $this->safe_relative_path($entrypoint);
 			if ( '' === $path ) {
-				$diagnostics[] = $this->diagnostic( 'unsafe_entrypoint_path', 'warning', 'An artifact entrypoint was ignored because its path is empty, absolute, or escapes the artifact root.', array( 'path' => $entrypoint ) );
+				$diagnostics[] = $this->diagnostic('unsafe_entrypoint_path', 'warning', 'An artifact entrypoint was ignored because its path is empty, absolute, or escapes the artifact root.', array( 'path' => $entrypoint ));
 				continue;
 			}
 			$entrypoints[ $path ] = true;
 		}
 
 		foreach ( $raw_files as $index => $file ) {
-			if ( count( $files ) >= $limits['max_files'] ) {
+			if ( count($files) >= $limits['max_files'] ) {
 				++$rejected;
-				$diagnostics[] = $this->diagnostic( 'file_limit_exceeded', 'warning', 'Additional artifact files were ignored because the file limit was reached.', array( 'max_files' => $limits['max_files'] ) );
+				$diagnostics[] = $this->diagnostic('file_limit_exceeded', 'warning', 'Additional artifact files were ignored because the file limit was reached.', array( 'max_files' => $limits['max_files'] ));
 				break;
 			}
 
-			$path = $this->safe_relative_path( (string) ( $file['path'] ?? '' ) );
+			$path = $this->safe_relative_path( (string) ( $file['path'] ?? '' ));
 			if ( '' === $path ) {
 				++$rejected;
-				$diagnostics[] = $this->diagnostic( 'unsafe_artifact_path', 'warning', 'An artifact file was ignored because its path is empty, absolute, or escapes the artifact root.', array( 'index' => $index ) );
+				$diagnostics[] = $this->diagnostic('unsafe_artifact_path', 'warning', 'An artifact file was ignored because its path is empty, absolute, or escapes the artifact root.', array( 'index' => $index ));
 				continue;
 			}
 
-			$payload = $this->normalize_file_payload( $file, $path );
-			$diagnostics = array_merge( $diagnostics, $payload['diagnostics'] );
+			$payload     = $this->normalize_file_payload($file, $path);
+			$diagnostics = array_merge($diagnostics, $payload['diagnostics']);
 			if ( ! $payload['accepted'] ) {
 				++$rejected;
 				continue;
@@ -228,18 +229,19 @@ class Block_Artifact_Compiler {
 				continue;
 			}
 
-			$deduped_path                = $this->dedupe_path( $path, $seen_paths );
+			$deduped_path                = $this->dedupe_path($path, $seen_paths);
 			$seen_paths[ $deduped_path ] = true;
-			$total_bytes += $bytes;
-			$mime_type   = $this->normalize_mime_type( (string) ( $file['mime_type'] ?? $file['mime'] ?? $file['media_type'] ?? ( str_contains( (string) ( $file['type'] ?? '' ), '/' ) ? $file['type'] : '' ) ), $deduped_path );
-			$kind        = $this->normalize_kind( (string) ( $file['kind'] ?? $file['type'] ?? '' ), $deduped_path, $content, $mime_type );
-			$is_binary   = $payload['binary'] || $this->is_binary_mime_type( $mime_type );
-			$role        = $this->normalize_role( (string) ( $file['role'] ?? '' ), $kind, $mime_type, $deduped_path );
-			$intent      = $this->normalize_intent( (string) ( $file['intent'] ?? '' ), $kind, $role );
-			$is_entry    = ! empty( $entrypoints[ $deduped_path ] ) || ! empty( $file['entrypoint'] ) || 'entry' === $role;
-			$content_base64 = $payload['content_base64'];
+			$total_bytes                += $bytes;
+			$mime_type                   = $this->normalize_mime_type( (string) ( $file['mime_type'] ?? $file['mime'] ?? $file['media_type'] ?? ( str_contains( (string) ( $file['type'] ?? '' ), '/') ? $file['type'] : '' ) ), $deduped_path);
+			$kind                        = $this->normalize_kind( (string) ( $file['kind'] ?? $file['type'] ?? '' ), $deduped_path, $content, $mime_type);
+			$is_binary                   = $payload['binary'] || $this->is_binary_mime_type($mime_type);
+			$role                        = $this->normalize_role( (string) ( $file['role'] ?? '' ), $kind, $mime_type, $deduped_path);
+			$intent                      = $this->normalize_intent( (string) ( $file['intent'] ?? '' ), $kind, $role);
+			$is_entry                    = ! empty($entrypoints[ $deduped_path ]) || ! empty($file['entrypoint']) || 'entry' === $role;
+			$content_base64              = $payload['content_base64'];
 			if ( $is_binary && '' === $content_base64 ) {
-				$content_base64 = base64_encode( $content );
+             // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions -- Required for API authentication, not obfuscation.
+				$content_base64 = base64_encode($content);
 			}
 
 			if ( $is_entry ) {
@@ -247,20 +249,20 @@ class Block_Artifact_Compiler {
 			}
 
 			$normalized_file = array(
-				'path'    => $deduped_path,
-				'content' => $content,
-				'kind'    => $kind,
-				'bytes'   => $bytes,
-				'source'  => (string) ( $file['source'] ?? 'artifact' ),
-				'mime_type' => $mime_type,
-				'role'    => $role,
-				'encoding' => $payload['encoding'],
-				'binary'  => $is_binary,
+				'path'       => $deduped_path,
+				'content'    => $content,
+				'kind'       => $kind,
+				'bytes'      => $bytes,
+				'source'     => (string) ( $file['source'] ?? 'artifact' ),
+				'mime_type'  => $mime_type,
+				'role'       => $role,
+				'encoding'   => $payload['encoding'],
+				'binary'     => $is_binary,
 				'entrypoint' => $is_entry,
 				'provenance' => array(
 					'source_path' => $deduped_path,
 					'source'      => (string) ( $file['source'] ?? 'artifact' ),
-					'hash'        => hash( 'sha256', '' !== $content_base64 ? $content_base64 : $content ),
+					'hash'        => hash('sha256', '' !== $content_base64 ? $content_base64 : $content),
 				),
 			);
 
@@ -273,16 +275,16 @@ class Block_Artifact_Compiler {
 			$files[] = $normalized_file;
 
 			if ( 'mdx' === $kind ) {
-				$diagnostics[] = $this->diagnostic( 'mdx_source_document_detected', 'warning', 'MDX source document support is partial; BAC preserved the source and extracted inspectable document/component metadata.', array( 'path' => $deduped_path ) );
+				$diagnostics[] = $this->diagnostic('mdx_source_document_detected', 'warning', 'MDX source document support is partial; BAC preserved the source and extracted inspectable document/component metadata.', array( 'path' => $deduped_path ));
 			}
 		}
 
 		return array(
 			'files'          => $files,
-			'diagnostics'    => $this->dedupe_diagnostics( $diagnostics ),
+			'diagnostics'    => $this->dedupe_diagnostics($diagnostics),
 			'rejected_count' => $rejected,
 			'bytes'          => $total_bytes,
-			'entrypoints'    => array_keys( $entrypoints ),
+			'entrypoints'    => array_keys($entrypoints),
 		);
 	}
 
@@ -295,13 +297,13 @@ class Block_Artifact_Compiler {
 	private function extract_raw_files( array $artifact ): array {
 		$files = array();
 		foreach ( array( 'files', 'artifacts', 'outputs' ) as $key ) {
-			if ( isset( $artifact[ $key ] ) && is_array( $artifact[ $key ] ) ) {
-				$files = array_merge( $files, $this->normalize_file_collection( $artifact[ $key ], $key ) );
+			if ( isset($artifact[ $key ]) && is_array($artifact[ $key ]) ) {
+				$files = array_merge($files, $this->normalize_file_collection($artifact[ $key ], $key));
 			}
 		}
 
 		foreach ( array( 'html', 'generated_html', 'content', 'body' ) as $key ) {
-			if ( isset( $artifact[ $key ] ) && is_string( $artifact[ $key ] ) && '' !== trim( $artifact[ $key ] ) ) {
+			if ( isset($artifact[ $key ]) && is_string($artifact[ $key ]) && '' !== trim($artifact[ $key ]) ) {
 				$files[] = array(
 					'path'    => 'index.html',
 					'content' => $artifact[ $key ],
@@ -318,11 +320,11 @@ class Block_Artifact_Compiler {
 			'js'         => 'site.js',
 			'script'     => 'site.js',
 		) as $key => $path ) {
-			if ( isset( $artifact[ $key ] ) && is_string( $artifact[ $key ] ) && '' !== trim( $artifact[ $key ] ) ) {
+			if ( isset($artifact[ $key ]) && is_string($artifact[ $key ]) && '' !== trim($artifact[ $key ]) ) {
 				$files[] = array(
 					'path'    => $path,
 					'content' => $artifact[ $key ],
-					'kind'    => str_contains( $path, '.css' ) ? 'css' : 'js',
+					'kind'    => str_contains($path, '.css') ? 'css' : 'js',
 					'source'  => $key,
 				);
 			}
@@ -334,26 +336,26 @@ class Block_Artifact_Compiler {
 	/**
 	 * Extract explicit bundle entrypoints from common artifact shapes.
 	 *
-	 * @param array<string,mixed> $artifact Raw artifact.
+	 * @param  array<string,mixed> $artifact Raw artifact.
 	 * @return array<int,string> Entrypoint paths.
 	 */
 	private function extract_entrypoints( array $artifact ): array {
 		$entrypoints = array();
 		foreach ( array( 'entrypoint', 'entry', 'main' ) as $key ) {
-			if ( isset( $artifact[ $key ] ) && is_string( $artifact[ $key ] ) ) {
+			if ( isset($artifact[ $key ]) && is_string($artifact[ $key ]) ) {
 				$entrypoints[] = $artifact[ $key ];
 			}
 		}
 
-		if ( isset( $artifact['entrypoints'] ) && is_array( $artifact['entrypoints'] ) ) {
+		if ( isset($artifact['entrypoints']) && is_array($artifact['entrypoints']) ) {
 			foreach ( $artifact['entrypoints'] as $entrypoint ) {
-				if ( is_string( $entrypoint ) ) {
+				if ( is_string($entrypoint) ) {
 					$entrypoints[] = $entrypoint;
 				}
 			}
 		}
 
-		return array_values( array_unique( $entrypoints ) );
+		return array_values(array_unique($entrypoints));
 	}
 
 	/**
@@ -366,17 +368,17 @@ class Block_Artifact_Compiler {
 	private function normalize_file_collection( array $collection, string $source ): array {
 		$files = array();
 		foreach ( $collection as $key => $file ) {
-			if ( is_array( $file ) ) {
-				$path_source    = $file['path'] ?? $file['name'] ?? $key;
+			if ( is_array($file) ) {
+				$path_source     = $file['path'] ?? $file['name'] ?? $key;
 				$artifact_source = $file['source'] ?? $source;
-				$file['path']   = is_scalar( $path_source ) ? (string) $path_source : '';
-				$file['source'] = is_scalar( $artifact_source ) ? (string) $artifact_source : $source;
-				$files[] = $file;
+				$file['path']    = is_scalar($path_source) ? (string) $path_source : '';
+				$file['source']  = is_scalar($artifact_source) ? (string) $artifact_source : $source;
+				$files[]         = $file;
 				continue;
 			}
 
-			if ( is_string( $file ) ) {
-				$path    = is_string( $key ) ? $key : 'artifact-' . (string) $key . '.html';
+			if ( is_string($file) ) {
+				$path    = is_string($key) ? $key : 'artifact-' . (string) $key . '.html';
 				$files[] = array(
 					'path'    => $path,
 					'content' => $file,
@@ -392,14 +394,14 @@ class Block_Artifact_Compiler {
 	/**
 	 * Return the HTML entry file.
 	 *
-	 * @param array{files:array<int,array<string,mixed>>,entrypoints?:array<int,string>} $artifact Normalized artifact.
+	 * @param  array{files:array<int,array<string,mixed>>,entrypoints?:array<int,string>} $artifact Normalized artifact.
 	 * @return array<string,mixed>|null
 	 */
 	private function entry_file( array $artifact ): ?array {
-		$entrypoints = isset( $artifact['entrypoints'] ) && is_array( $artifact['entrypoints'] ) ? $artifact['entrypoints'] : array();
+		$entrypoints = $artifact['entrypoints'] ?? array();
 		foreach ( $entrypoints as $entrypoint ) {
 			foreach ( $artifact['files'] as $file ) {
-				if ( $entrypoint === $file['path'] && 'html' === $file['kind'] && empty( $file['binary'] ) ) {
+				if ( $entrypoint === $file['path'] && 'html' === $file['kind'] && empty($file['binary']) ) {
 					return $file;
 				}
 			}
@@ -408,14 +410,14 @@ class Block_Artifact_Compiler {
 		$preferred = array( 'index.html', 'index.htm', 'static-site/index.html', 'public/index.html' );
 		foreach ( $preferred as $path ) {
 			foreach ( $artifact['files'] as $file ) {
-				if ( $path === strtolower( (string) $file['path'] ) && empty( $file['binary'] ) ) {
+				if ( strtolower( (string) $file['path']) === $path && empty($file['binary']) ) {
 					return $file;
 				}
 			}
 		}
 
 		foreach ( $artifact['files'] as $file ) {
-			if ( 'html' === $file['kind'] && empty( $file['binary'] ) ) {
+			if ( 'html' === $file['kind'] && empty($file['binary']) ) {
 				return $file;
 			}
 		}
@@ -431,10 +433,10 @@ class Block_Artifact_Compiler {
 	 * @return array{serialized_blocks:string,blocks:array,diagnostics:array<int,array<string,mixed>>,report:array<string,mixed>}
 	 */
 	private function convert_html_to_blocks( string $html, array $options ): array {
-		if ( str_contains( $html, '<!-- wp:' ) && function_exists( 'parse_blocks' ) && function_exists( 'serialize_blocks' ) ) {
-			$blocks = parse_blocks( $html );
+		if ( str_contains($html, '<!-- wp:') && function_exists('parse_blocks') && function_exists('serialize_blocks') ) {
+			$blocks = parse_blocks($html);
 			return array(
-				'serialized_blocks' => serialize_blocks( $blocks ),
+				'serialized_blocks' => serialize_blocks($blocks),
 				'blocks'            => $blocks,
 				'diagnostics'       => array(),
 				'report'            => array(
@@ -444,17 +446,17 @@ class Block_Artifact_Compiler {
 			);
 		}
 
-		if ( function_exists( 'bfb_convert' ) ) {
-			$block_markup = (string) bfb_convert( $html, 'html', 'blocks', $options );
-			$report       = array( 'status' => '' === trim( $block_markup ) ? 'failed' : 'success_native' );
-			if ( ! empty( $options['include_bfb_report'] ) && function_exists( 'bfb_conversion_report' ) ) {
-				$report = bfb_conversion_report( $html, 'html', $options );
+		if ( function_exists('bfb_convert') ) {
+			$block_markup = (string) bfb_convert($html, 'html', 'blocks', $options);
+			$report       = array( 'status' => '' === trim($block_markup) ? 'failed' : 'success_native' );
+			if ( ! empty($options['include_bfb_report']) && function_exists('bfb_conversion_report') ) {
+				$report = bfb_conversion_report($html, 'html', $options);
 			}
 
 			return array(
 				'serialized_blocks' => $block_markup,
-				'blocks'            => function_exists( 'parse_blocks' ) && '' !== trim( $block_markup ) ? parse_blocks( $block_markup ) : array(),
-				'diagnostics'       => isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array(),
+				'blocks'            => function_exists('parse_blocks') && '' !== trim($block_markup) ? parse_blocks($block_markup) : array(),
+				'diagnostics'       => isset($report['diagnostics']) && is_array($report['diagnostics']) ? $report['diagnostics'] : array(),
 				'report'            => $report,
 			);
 		}
@@ -463,7 +465,7 @@ class Block_Artifact_Compiler {
 			'serialized_blocks' => '<!-- wp:html -->' . "\n" . $html . "\n" . '<!-- /wp:html -->',
 			'blocks'            => array(),
 			'diagnostics'       => array(
-				$this->diagnostic( 'bfb_unavailable', 'warning', 'BFB is unavailable; preserved source HTML as a core/html fallback.' ),
+				$this->diagnostic('bfb_unavailable', 'warning', 'BFB is unavailable; preserved source HTML as a core/html fallback.'),
 			),
 			'report'            => array( 'status' => 'success_with_fallbacks' ),
 		);
@@ -472,14 +474,14 @@ class Block_Artifact_Compiler {
 	/**
 	 * Build source-side structural evidence before conversion mutates the document.
 	 *
-	 * @param array{files:array<int,array<string,mixed>>} $artifact Normalized artifact.
+	 * @param  array{files:array<int,array<string,mixed>>} $artifact Normalized artifact.
 	 * @return array<string,mixed>
 	 */
 	private function source_report( array $artifact, string $entry_path, string $html ): array {
 		return array(
 			'entry_path' => $entry_path,
-			'html'       => $this->html_structure_report( $html ),
-			'css'        => $this->css_structure_report( $artifact['files'] ),
+			'html'       => $this->html_structure_report($html),
+			'css'        => $this->css_structure_report($artifact['files']),
 		);
 	}
 
@@ -490,68 +492,69 @@ class Block_Artifact_Compiler {
 	 */
 	private function html_structure_report( string $html ): array {
 		$report = array(
-			'bytes'                  => strlen( $html ),
-			'text_length'            => $this->plain_text_length( $html ),
-			'element_count'          => 0,
-			'id_count'               => 0,
-			'class_count'            => 0,
-			'unique_class_count'     => 0,
-			'tag_counts'             => array(),
-			'top_classes'            => array(),
-			'landmark_counts'        => array(),
-			'max_depth'              => 0,
+			'bytes'              => strlen($html),
+			'text_length'        => $this->plain_text_length($html),
+			'element_count'      => 0,
+			'id_count'           => 0,
+			'class_count'        => 0,
+			'unique_class_count' => 0,
+			'tag_counts'         => array(),
+			'top_classes'        => array(),
+			'landmark_counts'    => array(),
+			'max_depth'          => 0,
 		);
 
-		if ( '' === trim( $html ) || ! class_exists( 'DOMDocument' ) ) {
+		if ( '' === trim($html) || ! class_exists('DOMDocument') ) {
 			return $report;
 		}
 
-		$doc = new DOMDocument();
-		$previous = libxml_use_internal_errors( true );
-		$loaded = $doc->loadHTML( '<!doctype html><html><body>' . $html . '</body></html>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+		$doc      = new DOMDocument();
+		$previous = libxml_use_internal_errors(true);
+		$loaded   = $doc->loadHTML('<!doctype html><html><body>' . $html . '</body></html>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
 		libxml_clear_errors();
-		libxml_use_internal_errors( $previous );
+		libxml_use_internal_errors($previous);
 		if ( ! $loaded ) {
 			return $report;
 		}
 
 		$classes = array();
-		$walk = function ( $node, int $depth ) use ( &$walk, &$report, &$classes ): void {
+		$walk    = function ( $node, int $depth ) use ( &$walk, &$report, &$classes ): void {
 			if ( $node instanceof DOMElement ) {
-				$tag = strtolower( $node->tagName );
-				if ( ! in_array( $tag, array( 'html', 'body' ), true ) ) {
-					++$report['element_count'];
-					$report['max_depth'] = max( (int) $report['max_depth'], max( 0, $depth - 2 ) );
-					$report['tag_counts'][ $tag ] = (int) ( $report['tag_counts'][ $tag ] ?? 0 ) + 1;
-					if ( in_array( $tag, array( 'header', 'nav', 'main', 'section', 'article', 'aside', 'footer' ), true ) ) {
+				$tag = strtolower($node->tagName);
+				if ( ! in_array($tag, array( 'html', 'body' ), true) ) {
+						++$report['element_count'];
+						$report['max_depth']          = max( (int) $report['max_depth'], max(0, $depth - 2));
+						$report['tag_counts'][ $tag ] = (int) ( $report['tag_counts'][ $tag ] ?? 0 ) + 1;
+					if ( in_array($tag, array( 'header', 'nav', 'main', 'section', 'article', 'aside', 'footer' ), true) ) {
 						$report['landmark_counts'][ $tag ] = (int) ( $report['landmark_counts'][ $tag ] ?? 0 ) + 1;
 					}
-					if ( '' !== trim( $node->getAttribute( 'id' ) ) ) {
+					if ( '' !== trim($node->getAttribute('id')) ) {
 						++$report['id_count'];
 					}
-					$class_attr = trim( $node->getAttribute( 'class' ) );
+					$class_attr = trim($node->getAttribute('class'));
 					if ( '' !== $class_attr ) {
-						foreach ( preg_split( '/\s+/', $class_attr ) ?: array() as $class ) {
+						$class_parts = preg_split('/\s+/', $class_attr);
+						foreach ( false === $class_parts ? array() : $class_parts as $class ) {
 							if ( '' === $class ) {
 								continue;
 							}
-							++$report['class_count'];
-							$classes[ $class ] = (int) ( $classes[ $class ] ?? 0 ) + 1;
+								++$report['class_count'];
+								$classes[ $class ] = (int) ( $classes[ $class ] ?? 0 ) + 1;
 						}
 					}
 				}
 			}
 
 			foreach ( $node->childNodes as $child ) {
-				$walk( $child, $depth + 1 );
+				$walk($child, $depth + 1);
 			}
 		};
-		$walk( $doc, 0 );
+		$walk($doc, 0);
 
-		arsort( $classes );
-		arsort( $report['tag_counts'] );
-		$report['unique_class_count'] = count( $classes );
-		$report['top_classes'] = array_slice( $classes, 0, 40, true );
+		arsort($classes);
+		arsort($report['tag_counts']);
+		$report['unique_class_count'] = count($classes);
+		$report['top_classes']        = array_slice($classes, 0, 40, true);
 
 		return $report;
 	}
@@ -559,46 +562,46 @@ class Block_Artifact_Compiler {
 	/**
 	 * Summarize source CSS selectors that can be sensitive to DOM wrapper changes.
 	 *
-	 * @param array<int,array<string,mixed>> $files Normalized files.
+	 * @param  array<int,array<string,mixed>> $files Normalized files.
 	 * @return array<string,mixed>
 	 */
 	private function css_structure_report( array $files ): array {
 		$report = array(
-			'file_count'                    => 0,
-			'bytes'                         => 0,
-			'selector_count'                => 0,
-			'direct_child_selector_count'   => 0,
-			'sibling_selector_count'        => 0,
-			'pseudo_selector_count'         => 0,
-			'class_selector_count'          => 0,
-			'id_selector_count'             => 0,
-			'layout_sensitive_selectors'    => array(),
+			'file_count'                  => 0,
+			'bytes'                       => 0,
+			'selector_count'              => 0,
+			'direct_child_selector_count' => 0,
+			'sibling_selector_count'      => 0,
+			'pseudo_selector_count'       => 0,
+			'class_selector_count'        => 0,
+			'id_selector_count'           => 0,
+			'layout_sensitive_selectors'  => array(),
 		);
 
 		foreach ( $files as $file ) {
-			if ( 'css' !== ( $file['kind'] ?? '' ) || ! empty( $file['binary'] ) ) {
+			if ( 'css' !== ( $file['kind'] ?? '' ) || ! empty($file['binary']) ) {
 				continue;
 			}
 			$css = (string) ( $file['content'] ?? '' );
-			if ( '' === trim( $css ) ) {
+			if ( '' === trim($css) ) {
 				continue;
 			}
 			++$report['file_count'];
-			$report['bytes'] += strlen( $css );
-			$css = preg_replace( '/\/\*.*?\*\//s', '', $css ) ?? $css;
-			if ( preg_match_all( '/([^{}@][^{}]*)\{[^{}]*\}/', $css, $matches ) ) {
+			$report['bytes'] += strlen($css);
+			$css              = preg_replace('/\/\*.*?\*\//s', '', $css) ?? $css;
+			if ( preg_match_all('/([^{}@][^{}]*)\{[^{}]*\}/', $css, $matches) ) {
 				foreach ( $matches[1] as $selector_list ) {
-					foreach ( explode( ',', (string) $selector_list ) as $selector ) {
-						$selector = trim( preg_replace( '/\s+/', ' ', $selector ) ?? $selector );
+					foreach ( explode(',', (string) $selector_list) as $selector ) {
+						$selector = trim(preg_replace('/\s+/', ' ', $selector) ?? $selector);
 						if ( '' === $selector ) {
 							continue;
 						}
 						++$report['selector_count'];
-						$direct = str_contains( $selector, '>' );
-						$sibling = str_contains( $selector, '+' ) || str_contains( $selector, '~' );
-						$pseudo = str_contains( $selector, ':' );
-						$report['class_selector_count'] += substr_count( $selector, '.' );
-						$report['id_selector_count'] += substr_count( $selector, '#' );
+						$direct                          = str_contains($selector, '>');
+						$sibling                         = str_contains($selector, '+') || str_contains($selector, '~');
+						$pseudo                          = str_contains($selector, ':');
+						$report['class_selector_count'] += substr_count($selector, '.');
+						$report['id_selector_count']    += substr_count($selector, '#');
 						if ( $direct ) {
 							++$report['direct_child_selector_count'];
 						}
@@ -616,7 +619,7 @@ class Block_Artifact_Compiler {
 			}
 		}
 
-		$report['layout_sensitive_selectors'] = array_slice( array_values( array_unique( $report['layout_sensitive_selectors'] ) ), 0, 80 );
+		$report['layout_sensitive_selectors'] = array_slice(array_values(array_unique($report['layout_sensitive_selectors'])), 0, 80);
 
 		return $report;
 	}
@@ -624,13 +627,13 @@ class Block_Artifact_Compiler {
 	/**
 	 * Summarize the generated block tree without embedding the full serialized body.
 	 *
-	 * @param array<int,array<string,mixed>> $blocks Parsed blocks.
+	 * @param  array<int,array<string,mixed>> $blocks Parsed blocks.
 	 * @return array<string,mixed>
 	 */
 	private function block_tree_report( array $blocks, string $serialized_blocks ): array {
 		$report = array(
-			'bytes'              => strlen( $serialized_blocks ),
-			'text_length'        => $this->plain_text_length( $serialized_blocks ),
+			'bytes'              => strlen($serialized_blocks),
+			'text_length'        => $this->plain_text_length($serialized_blocks),
 			'block_count'        => 0,
 			'max_depth'          => 0,
 			'block_name_counts'  => array(),
@@ -640,36 +643,37 @@ class Block_Artifact_Compiler {
 		);
 
 		$classes = array();
-		$walk = function ( array $items, int $depth ) use ( &$walk, &$report, &$classes ): void {
+		$walk    = function ( array $items, int $depth ) use ( &$walk, &$report, &$classes ): void {
 			foreach ( $items as $block ) {
-				if ( ! is_array( $block ) ) {
-					continue;
+				if ( ! is_array($block) ) {
+						continue;
 				}
 				$name = (string) ( $block['blockName'] ?? '' );
 				if ( '' !== $name ) {
 					++$report['block_count'];
-					$report['max_depth'] = max( (int) $report['max_depth'], $depth );
+					$report['max_depth']                  = max( (int) $report['max_depth'], $depth);
 					$report['block_name_counts'][ $name ] = (int) ( $report['block_name_counts'][ $name ] ?? 0 ) + 1;
 				}
-				$class_attr = isset( $block['attrs']['className'] ) ? (string) $block['attrs']['className'] : '';
-				foreach ( preg_split( '/\s+/', trim( $class_attr ) ) ?: array() as $class ) {
+				$class_attr  = isset($block['attrs']['className']) ? (string) $block['attrs']['className'] : '';
+				$class_parts = preg_split('/\s+/', trim($class_attr));
+				foreach ( false === $class_parts ? array() : $class_parts as $class ) {
 					if ( '' === $class ) {
 						continue;
 					}
 					++$report['class_count'];
 					$classes[ $class ] = (int) ( $classes[ $class ] ?? 0 ) + 1;
 				}
-				if ( ! empty( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
-					$walk( $block['innerBlocks'], $depth + 1 );
+				if ( ! empty($block['innerBlocks']) && is_array($block['innerBlocks']) ) {
+					$walk($block['innerBlocks'], $depth + 1);
 				}
 			}
 		};
-		$walk( $blocks, 1 );
+		$walk($blocks, 1);
 
-		arsort( $classes );
-		arsort( $report['block_name_counts'] );
-		$report['unique_class_count'] = count( $classes );
-		$report['top_classes'] = array_slice( $classes, 0, 40, true );
+		arsort($classes);
+		arsort($report['block_name_counts']);
+		$report['unique_class_count'] = count($classes);
+		$report['top_classes']        = array_slice($classes, 0, 40, true);
 
 		return $report;
 	}
@@ -678,18 +682,19 @@ class Block_Artifact_Compiler {
 	 * Return a WordPress-compatible plain-text length in and out of WordPress.
 	 */
 	private function plain_text_length( string $html ): int {
-		if ( function_exists( 'wp_strip_all_tags' ) ) {
-			return strlen( trim( wp_strip_all_tags( $html ) ) );
+		if ( function_exists('wp_strip_all_tags') ) {
+			return strlen(trim(wp_strip_all_tags($html)));
 		}
 
-		return strlen( trim( strip_tags( $html ) ) );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- Used only when WordPress is not loaded.
+		return strlen(trim(strip_tags($html)));
 	}
 
 	/**
 	 * Compile Markdown and MDX content documents into WordPress-shaped artifacts.
 	 *
-	 * @param  array{files:array<int,array{path:string,content:string,kind:string,bytes:int,source:string,mime_type:string,provenance:array<string,mixed>}>} $artifact Normalized artifact.
-	 * @param  array<string,mixed>                                                                                                                           $options  Compiler options.
+	 * @param  array{files:array<int,array<string,mixed>>} $artifact Normalized artifact.
+	 * @param  array<string,mixed>                         $options  Compiler options.
 	 * @return array{documents:array<int,array<string,mixed>>,components:array<int,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}
 	 */
 	private function compile_source_documents( array $artifact, array $options ): array {
@@ -698,36 +703,36 @@ class Block_Artifact_Compiler {
 		$diagnostics = array();
 
 		foreach ( $artifact['files'] as $file ) {
-			if ( ! in_array( $file['kind'], array( 'markdown', 'mdx' ), true ) ) {
+			if ( ! in_array($file['kind'], array( 'markdown', 'mdx' ), true) ) {
 				continue;
 			}
 
-			$parsed               = $this->parse_frontmatter( $file['content'] );
+			$parsed               = $this->parse_frontmatter($file['content']);
 			$body                 = $parsed['body'];
 			$frontmatter          = $parsed['frontmatter'];
 			$document_diagnostics = array();
 
 			if ( 'mdx' === $file['kind'] ) {
-				$mdx                  = $this->extract_mdx_semantics( $body, $file, $artifact );
+				$mdx                  = $this->extract_mdx_semantics($body, $file, $artifact);
 				$body                 = $mdx['markdown_body'];
-				$components           = array_merge( $components, $mdx['components'] );
-				$document_diagnostics = array_merge( $document_diagnostics, $mdx['diagnostics'] );
+				$components           = array_merge($components, $mdx['components']);
+				$document_diagnostics = array_merge($document_diagnostics, $mdx['diagnostics']);
 			}
 
-			$conversion           = $this->convert_markdown_to_blocks( $body, $options );
-			$document_diagnostics = array_merge( $document_diagnostics, $conversion['diagnostics'] );
-			$diagnostics          = array_merge( $diagnostics, $document_diagnostics );
+			$conversion           = $this->convert_markdown_to_blocks($body, $options);
+			$document_diagnostics = array_merge($document_diagnostics, $conversion['diagnostics']);
+			$diagnostics          = array_merge($diagnostics, $document_diagnostics);
 
 			$documents[] = array(
 				'source_path'  => $file['path'],
 				'kind'         => $file['kind'],
-				'post_type'    => $this->frontmatter_string( $frontmatter, array( 'post_type', 'type' ), 'page' ),
-				'slug'         => $this->frontmatter_string( $frontmatter, array( 'slug' ), $this->slug_from_path( $file['path'] ) ),
-				'title'        => $this->frontmatter_string( $frontmatter, array( 'title' ), $this->title_from_path( $file['path'] ) ),
-				'excerpt'      => $this->frontmatter_string( $frontmatter, array( 'excerpt', 'description' ), '' ),
-				'date'         => $this->frontmatter_string( $frontmatter, array( 'date', 'published', 'published_at' ), '' ),
-				'template'     => $this->frontmatter_string( $frontmatter, array( 'template', 'layout' ), '' ),
-				'taxonomies'   => $this->frontmatter_taxonomies( $frontmatter ),
+				'post_type'    => $this->frontmatter_string($frontmatter, array( 'post_type', 'type' ), 'page'),
+				'slug'         => $this->frontmatter_string($frontmatter, array( 'slug' ), $this->slug_from_path($file['path'])),
+				'title'        => $this->frontmatter_string($frontmatter, array( 'title' ), $this->title_from_path($file['path'])),
+				'excerpt'      => $this->frontmatter_string($frontmatter, array( 'excerpt', 'description' ), ''),
+				'date'         => $this->frontmatter_string($frontmatter, array( 'date', 'published', 'published_at' ), ''),
+				'template'     => $this->frontmatter_string($frontmatter, array( 'template', 'layout' ), ''),
+				'taxonomies'   => $this->frontmatter_taxonomies($frontmatter),
 				'frontmatter'  => $frontmatter,
 				'block_markup' => $conversion['serialized_blocks'],
 				'diagnostics'  => $document_diagnostics,
@@ -738,7 +743,7 @@ class Block_Artifact_Compiler {
 		return array(
 			'documents'   => $documents,
 			'components'  => $components,
-			'diagnostics' => $this->dedupe_diagnostics( $diagnostics ),
+			'diagnostics' => $this->dedupe_diagnostics($diagnostics),
 		);
 	}
 
@@ -749,14 +754,14 @@ class Block_Artifact_Compiler {
 	 * @return array{serialized_blocks:string,blocks:array,diagnostics:array<int,array<string,mixed>>,report:array<string,mixed>}
 	 */
 	private function convert_markdown_to_blocks( string $markdown, array $options ): array {
-		if ( function_exists( 'bfb_convert' ) ) {
-			$block_markup = (string) bfb_convert( $markdown, 'markdown', 'blocks', $options );
+		if ( function_exists('bfb_convert') ) {
+			$block_markup = (string) bfb_convert($markdown, 'markdown', 'blocks', $options);
 			return array(
 				'serialized_blocks' => $block_markup,
-				'blocks'            => function_exists( 'parse_blocks' ) && '' !== trim( $block_markup ) ? parse_blocks( $block_markup ) : array(),
+				'blocks'            => function_exists('parse_blocks') && '' !== trim($block_markup) ? parse_blocks($block_markup) : array(),
 				'diagnostics'       => array(),
 				'report'            => array(
-					'status' => '' === trim( $block_markup ) ? 'failed' : 'success_native',
+					'status' => '' === trim($block_markup) ? 'failed' : 'success_native',
 					'source' => 'markdown',
 				),
 			);
@@ -766,7 +771,7 @@ class Block_Artifact_Compiler {
 			'serialized_blocks' => '<!-- wp:html -->' . "\n" . $markdown . "\n" . '<!-- /wp:html -->',
 			'blocks'            => array(),
 			'diagnostics'       => array(
-				$this->diagnostic( 'bfb_unavailable', 'warning', 'BFB is unavailable; preserved source Markdown as a core/html fallback.' ),
+				$this->diagnostic('bfb_unavailable', 'warning', 'BFB is unavailable; preserved source Markdown as a core/html fallback.'),
 			),
 			'report'            => array(
 				'status' => 'success_with_fallbacks',
@@ -778,9 +783,9 @@ class Block_Artifact_Compiler {
 	/**
 	 * Build component candidates from explicit markers and repeated class tokens.
 	 *
-	 * @param array{files:array<int,array<string,mixed>>} $artifact Normalized artifact.
-	 * @param string                                      $entry_path Entry path.
-	 * @param array<int,array<string,mixed>>              $source_document_components Source document components.
+	 * @param  array{files:array<int,array<string,mixed>>} $artifact                   Normalized artifact.
+	 * @param  string                                      $entry_path                 Entry path.
+	 * @param  array<int,array<string,mixed>>              $source_document_components Source document components.
 	 * @return array<int,array<string,mixed>> Component candidates.
 	 */
 	private function detect_components( array $artifact, string $entry_path, array $source_document_components = array() ): array {
@@ -793,8 +798,8 @@ class Block_Artifact_Compiler {
 		}
 
 		foreach ( $artifact['files'] as $file ) {
-			if ( in_array( $file['kind'], array( 'jsx', 'tsx' ), true ) ) {
-				foreach ( $this->detect_jsx_file_components( $file ) as $component ) {
+			if ( in_array($file['kind'], array( 'jsx', 'tsx' ), true) ) {
+				foreach ( $this->detect_jsx_file_components($file) as $component ) {
 					$candidates[ 'jsx-file:' . (string) $component['source'] . ':' . (string) $component['name'] ] = $component;
 				}
 			}
@@ -803,9 +808,9 @@ class Block_Artifact_Compiler {
 				continue;
 			}
 
-			if ( preg_match_all( '/data-component\s*=\s*(["\'])([^"\']+)\1/i', $file['content'], $matches ) ) {
+			if ( preg_match_all('/data-component\s*=\s*(["\'])([^"\']+)\1/i', $file['content'], $matches) ) {
 				foreach ( $matches[2] as $name ) {
-					$key = sanitize_key( $name );
+					$key = bac_sanitize_key($name);
 					if ( '' !== $key ) {
 						$candidates[ 'explicit:' . $key ] = array(
 							'name'        => $key,
@@ -817,12 +822,12 @@ class Block_Artifact_Compiler {
 				}
 			}
 
-			if ( preg_match_all( '/class\s*=\s*(["\'])([^"\']+)\1/i', $file['content'], $matches ) ) {
+			if ( preg_match_all('/class\s*=\s*(["\'])([^"\']+)\1/i', $file['content'], $matches) ) {
 				foreach ( $matches[2] as $class_list ) {
-					$class_tokens = preg_split( '/\s+/', trim( $class_list ) );
+					$class_tokens = preg_split('/\s+/', trim($class_list));
 					foreach ( false === $class_tokens ? array() : $class_tokens as $class ) {
-						$class = sanitize_key( $class );
-						if ( '' === $class || strlen( $class ) < 3 ) {
+						$class = bac_sanitize_key($class);
+						if ( '' === $class || strlen($class) < 3 ) {
 							continue;
 						}
 						$classes[ $class ] = ( $classes[ $class ] ?? 0 ) + 1;
@@ -832,7 +837,7 @@ class Block_Artifact_Compiler {
 		}
 
 		foreach ( $classes as $class => $count ) {
-			if ( $count < 2 && ! preg_match( '/(?:card|grid|hero|nav|header|footer|feature|testimonial|pricing|product|gallery|section)/', $class ) ) {
+			if ( $count < 2 && ! preg_match('/(?:card|grid|hero|nav|header|footer|feature|testimonial|pricing|product|gallery|section)/', $class) ) {
 				continue;
 			}
 
@@ -848,18 +853,18 @@ class Block_Artifact_Compiler {
 			$candidates,
 			static function ( array $left, array $right ): int {
 				$occurrence_comparison = $right['occurrences'] <=> $left['occurrences'];
-				return 0 !== $occurrence_comparison ? $occurrence_comparison : strcmp( (string) $left['name'], (string) $right['name'] );
+				return 0 !== $occurrence_comparison ? $occurrence_comparison : strcmp( (string) $left['name'], (string) $right['name']);
 			}
 		);
 
-		return array_slice( $candidates, 0, 25 );
+		return array_slice($candidates, 0, 25);
 	}
 
 	/**
 	 * Build generated custom block artifacts from block.json roots.
 	 *
-	 * @param array{files:array<int,array{path:string,content:string,kind:string,bytes:int,source:string}>} $artifact Normalized artifact.
-	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics collected during compilation.
+	 * @param  array{files:array<int,array<string,mixed>>} $artifact    Normalized artifact.
+	 * @param  array<int,array<string,mixed>>            $diagnostics Diagnostics collected during compilation.
 	 * @return array<int,array<string,mixed>> Block type artifacts.
 	 */
 	private function build_block_types( array $artifact, array &$diagnostics ): array {
@@ -867,25 +872,25 @@ class Block_Artifact_Compiler {
 		$block_roots = array();
 
 		foreach ( $artifact['files'] as $file ) {
-			if ( 'block.json' !== basename( $file['path'] ) ) {
+			if ( 'block.json' !== basename($file['path']) ) {
 				continue;
 			}
 
-			$directory                 = dirname( $file['path'] );
+			$directory                 = dirname($file['path']);
 			$directory                 = '.' === $directory ? '' : $directory;
 			$block_roots[ $directory ] = $file;
 		}
 
 		foreach ( $block_roots as $directory => $block_json_file ) {
-			$decoded = json_decode( $block_json_file['content'], true );
-			if ( ! is_array( $decoded ) ) {
+			$decoded = json_decode($block_json_file['content'], true);
+			if ( ! is_array($decoded) ) {
 				$decoded       = array();
-				$diagnostics[] = $this->diagnostic( 'invalid_block_json', 'warning', 'A generated block.json file could not be decoded.', array( 'path' => $block_json_file['path'] ) );
+				$diagnostics[] = $this->diagnostic('invalid_block_json', 'warning', 'A generated block.json file could not be decoded.', array( 'path' => $block_json_file['path'] ));
 			}
 
-			$name = isset( $decoded['name'] ) && is_string( $decoded['name'] ) ? trim( $decoded['name'] ) : '';
+			$name = isset($decoded['name']) && is_string($decoded['name']) ? trim($decoded['name']) : '';
 			if ( '' === $name ) {
-				$name          = 'generated/' . ( '' === $directory ? 'block' : sanitize_key( basename( $directory ) ) );
+				$name          = 'generated/' . ( '' === $directory ? 'block' : bac_sanitize_key(basename($directory)) );
 				$diagnostics[] = $this->diagnostic(
 					'block_json_missing_name',
 					'warning',
@@ -897,30 +902,30 @@ class Block_Artifact_Compiler {
 				);
 			}
 
-			$block_files   = $this->files_under_directory( $artifact['files'], $directory );
+			$block_files   = $this->files_under_directory($artifact['files'], $directory);
 			$block_types[] = array(
 				'schema'          => 'chubes4/wordpress-block-type-artifact/v1',
 				'name'            => $name,
-				'slug'            => sanitize_key( basename( $name ) ),
+				'slug'            => bac_sanitize_key(basename($name)),
 				'directory'       => $directory,
 				'block_json_path' => $block_json_file['path'],
 				'block_json'      => $decoded,
-				'metadata'        => $this->block_metadata_contract( $decoded ),
-				'assets'          => $this->block_asset_contract( $decoded, $block_files ),
-				'dependencies'    => $this->block_dependency_contract( $decoded, $block_files ),
+				'metadata'        => $this->block_metadata_contract($decoded),
+				'assets'          => $this->block_asset_contract($decoded, $block_files),
+				'dependencies'    => $this->block_dependency_contract($decoded, $block_files),
 				'provenance'      => array(
 					'source'      => $block_json_file['source'],
-					'source_hash' => hash( 'sha256', $this->file_hash_payload( $block_files ) ),
-					'files'       => array_values( array_map( static fn ( array $file ): string => $file['path'], $block_files ) ),
+					'source_hash' => hash('sha256', $this->file_hash_payload($block_files)),
+					'files'       => array_values(array_map(static fn ( array $file ): string => $file['path'], $block_files)),
 				),
 				'files'           => array_values(
 					array_map(
 						static function ( array $file ): array {
-							return array(
-								'path'  => $file['path'],
-								'kind'  => $file['kind'],
-								'bytes' => $file['bytes'],
-							);
+								return array(
+									'path'  => $file['path'],
+									'kind'  => $file['kind'],
+									'bytes' => $file['bytes'],
+								);
 						},
 						$block_files
 					)
@@ -931,7 +936,7 @@ class Block_Artifact_Compiler {
 		usort(
 			$block_types,
 			static function ( array $left, array $right ): int {
-				return strcmp( (string) $left['name'], (string) $right['name'] );
+				return strcmp( (string) $left['name'], (string) $right['name']);
 			}
 		);
 
@@ -941,14 +946,14 @@ class Block_Artifact_Compiler {
 	/**
 	 * Return files that belong to a block root directory.
 	 *
-	 * @param array<int,array{path:string,content:string,kind:string,bytes:int,source:string}> $files Files.
-	 * @return array<int,array{path:string,content:string,kind:string,bytes:int,source:string}> Files.
+	 * @param  array<int,array<string,mixed>> $files Files.
+	 * @return array<int,array<string,mixed>> Files.
 	 */
 	private function files_under_directory( array $files, string $directory ): array {
 		$matched = array();
 		$prefix  = '' === $directory ? '' : $directory . '/';
 		foreach ( $files as $file ) {
-			if ( '' === $prefix || str_starts_with( $file['path'], $prefix ) ) {
+			if ( '' === $prefix || str_starts_with($file['path'], $prefix) ) {
 				$matched[] = $file;
 			}
 		}
@@ -959,13 +964,13 @@ class Block_Artifact_Compiler {
 	/**
 	 * Normalize block.json metadata into the block artifact contract.
 	 *
-	 * @param array<string,mixed> $block_json Decoded block.json.
+	 * @param  array<string,mixed> $block_json Decoded block.json.
 	 * @return array<string,mixed> Metadata contract.
 	 */
 	private function block_metadata_contract( array $block_json ): array {
 		$metadata = array();
 		foreach ( array( 'apiVersion', 'title', 'category', 'description', 'keywords', 'attributes', 'supports', 'usesContext', 'providesContext', 'textdomain', 'example', 'variations', 'parent', 'ancestor', 'allowedBlocks' ) as $key ) {
-			if ( array_key_exists( $key, $block_json ) ) {
+			if ( array_key_exists($key, $block_json) ) {
 				$metadata[ $key ] = $block_json[ $key ];
 			}
 		}
@@ -976,8 +981,8 @@ class Block_Artifact_Compiler {
 	/**
 	 * Normalize render, editor, style, and script references from block.json.
 	 *
-	 * @param array<string,mixed> $block_json Decoded block.json.
-	 * @param array<int,array{path:string,content:string,kind:string,bytes:int,source:string}> $files Block files.
+	 * @param  array<string,mixed>             $block_json Decoded block.json.
+	 * @param  array<int,array<string,mixed>> $files      Block files.
 	 * @return array<string,array<int,array<string,mixed>>> Asset contract.
 	 */
 	private function block_asset_contract( array $block_json, array $files ): array {
@@ -992,17 +997,17 @@ class Block_Artifact_Compiler {
 		);
 
 		foreach (
-			array(
-				'render'       => 'render',
-				'editorScript' => 'editor_script',
-				'script'       => 'script',
-				'viewScript'   => 'view_script',
-				'editorStyle'  => 'editor_style',
-				'style'        => 'style',
-				'viewStyle'    => 'view_style',
-			) as $source_field => $target_field
+		array(
+			'render'       => 'render',
+			'editorScript' => 'editor_script',
+			'script'       => 'script',
+			'viewScript'   => 'view_script',
+			'editorStyle'  => 'editor_style',
+			'style'        => 'style',
+			'viewStyle'    => 'view_style',
+		) as $source_field => $target_field
 		) {
-			foreach ( $this->normalize_asset_references( $block_json[ $source_field ] ?? null, $files, $source_field ) as $reference ) {
+			foreach ( $this->normalize_asset_references($block_json[ $source_field ] ?? null, $files, $source_field) as $reference ) {
 				$assets[ $target_field ][] = $reference;
 			}
 		}
@@ -1013,29 +1018,29 @@ class Block_Artifact_Compiler {
 	/**
 	 * Normalize block.json asset references while preserving handles and generated file paths.
 	 *
-	 * @param mixed $value Asset reference value.
-	 * @param array<int,array{path:string,content:string,kind:string,bytes:int,source:string}> $files Block files.
+	 * @param  mixed                          $value Asset reference value.
+	 * @param  array<int,array<string,mixed>> $files Block files.
 	 * @return array<int,array<string,mixed>> Asset references.
 	 */
 	private function normalize_asset_references( mixed $value, array $files, string $source_field ): array {
 		$references = array();
-		$values     = is_array( $value ) ? array_values( $value ) : array( $value );
+		$values     = is_array($value) ? array_values($value) : array( $value );
 		foreach ( $values as $item ) {
-			if ( ! is_string( $item ) || '' === trim( $item ) ) {
+			if ( ! is_string($item) || '' === trim($item) ) {
 				continue;
 			}
 
-			$item        = trim( $item );
-			$is_file_ref = str_starts_with( $item, 'file:' );
-			$relative    = $is_file_ref ? substr( $item, 5 ) : '';
-			$file        = $is_file_ref ? $this->find_block_file_by_relative_path( $files, $relative ) : null;
+			$item        = trim($item);
+			$is_file_ref = str_starts_with($item, 'file:');
+			$relative    = $is_file_ref ? substr($item, 5) : '';
+			$file        = $is_file_ref ? $this->find_block_file_by_relative_path($files, $relative) : null;
 
 			$reference = array(
 				'reference'    => $item,
 				'source_field' => $source_field,
 				'type'         => $is_file_ref ? 'file' : 'handle',
 			);
-			if ( is_array( $file ) ) {
+			if ( is_array($file) ) {
 				$reference['path']  = $file['path'];
 				$reference['kind']  = $file['kind'];
 				$reference['bytes'] = $file['bytes'];
@@ -1050,14 +1055,14 @@ class Block_Artifact_Compiler {
 	/**
 	 * Return dependency references declared by block.json and generated .asset.php files.
 	 *
-	 * @param array<string,mixed> $block_json Decoded block.json.
-	 * @param array<int,array{path:string,content:string,kind:string,bytes:int,source:string}> $files Block files.
+	 * @param  array<string,mixed>             $block_json Decoded block.json.
+	 * @param  array<int,array<string,mixed>> $files      Block files.
 	 * @return array<string,mixed> Dependency contract.
 	 */
 	private function block_dependency_contract( array $block_json, array $files ): array {
 		$declared = array();
 		foreach ( array( 'editorScript', 'script', 'viewScript', 'editorStyle', 'style', 'viewStyle' ) as $field ) {
-			if ( ! array_key_exists( $field, $block_json ) ) {
+			if ( ! array_key_exists($field, $block_json) ) {
 				continue;
 			}
 			$declared[ $field ] = $block_json[ $field ];
@@ -1065,7 +1070,7 @@ class Block_Artifact_Compiler {
 
 		$asset_files = array();
 		foreach ( $files as $file ) {
-			if ( str_ends_with( $file['path'], '.asset.php' ) ) {
+			if ( str_ends_with($file['path'], '.asset.php') ) {
 				$asset_files[] = array(
 					'path'  => $file['path'],
 					'kind'  => $file['kind'],
@@ -1083,13 +1088,13 @@ class Block_Artifact_Compiler {
 	/**
 	 * Find a block-local generated file by its block.json file: reference.
 	 *
-	 * @param array<int,array{path:string,content:string,kind:string,bytes:int,source:string}> $files Block files.
-	 * @return array{path:string,content:string,kind:string,bytes:int,source:string}|null
+	 * @param  array<int,array<string,mixed>> $files Block files.
+	 * @return array<string,mixed>|null
 	 */
 	private function find_block_file_by_relative_path( array $files, string $relative_path ): ?array {
-		$relative_path = ltrim( str_replace( '\\', '/', $relative_path ), './' );
+		$relative_path = ltrim(str_replace('\\', '/', $relative_path), './');
 		foreach ( $files as $file ) {
-			if ( basename( $file['path'] ) === $relative_path || str_ends_with( $file['path'], '/' . $relative_path ) ) {
+			if ( basename($file['path']) === $relative_path || str_ends_with($file['path'], '/' . $relative_path) ) {
 				return $file;
 			}
 		}
@@ -1100,7 +1105,7 @@ class Block_Artifact_Compiler {
 	/**
 	 * Return non-entry files that SSI or another materializer may consume later.
 	 *
-	 * @param array{files:array<int,array<string,mixed>>} $artifact Normalized artifact.
+	 * @param  array{files:array<int,array<string,mixed>>} $artifact Normalized artifact.
 	 * @return array<int,array<string,mixed>> Files.
 	 */
 	private function wordpress_files_from_artifact( array $artifact ): array {
@@ -1110,20 +1115,20 @@ class Block_Artifact_Compiler {
 				continue;
 			}
 			$manifest_file = array(
-				'path'    => $file['path'],
-				'kind'    => $file['kind'],
-				'bytes'   => $file['bytes'],
-				'mime_type' => $file['mime_type'],
-				'role'    => $file['role'],
-				'encoding' => $file['encoding'],
-				'binary'  => $file['binary'],
+				'path'       => $file['path'],
+				'kind'       => $file['kind'],
+				'bytes'      => $file['bytes'],
+				'mime_type'  => $file['mime_type'],
+				'role'       => $file['role'],
+				'encoding'   => $file['encoding'],
+				'binary'     => $file['binary'],
 				'provenance' => $file['provenance'],
 			);
 
-			if ( ! empty( $file['intent'] ) ) {
+			if ( ! empty($file['intent']) ) {
 				$manifest_file['intent'] = $file['intent'];
 			}
-			if ( ! empty( $file['content_base64'] ) ) {
+			if ( ! empty($file['content_base64']) ) {
 				$manifest_file['content_base64'] = $file['content_base64'];
 			} else {
 				$manifest_file['content'] = $file['content'];
@@ -1139,25 +1144,25 @@ class Block_Artifact_Compiler {
 	 * Normalize a relative artifact path and reject unsafe locations.
 	 */
 	private function safe_relative_path( string $path ): string {
-		$path = str_replace( '\\', '/', trim( $path ) );
-		$path = preg_replace( '/\0+/', '', $path );
-		$path = ltrim( (string) $path );
-		if ( '' === $path || str_starts_with( $path, '/' ) || preg_match( '#^[a-z][a-z0-9+.-]*:#i', $path ) ) {
+		$path = str_replace('\\', '/', trim($path));
+		$path = preg_replace('/\0+/', '', $path);
+		$path = ltrim( (string) $path);
+		if ( '' === $path || str_starts_with($path, '/') || preg_match('#^[a-z][a-z0-9+.-]*:#i', $path) ) {
 			return '';
 		}
 
 		$segments = array();
-		foreach ( explode( '/', $path ) as $segment ) {
+		foreach ( explode('/', $path) as $segment ) {
 			if ( '' === $segment || '.' === $segment ) {
 				continue;
 			}
 			if ( '..' === $segment ) {
 				return '';
 			}
-			$segments[] = preg_replace( '/[^A-Za-z0-9._-]/', '-', $segment );
+			$segments[] = preg_replace('/[^A-Za-z0-9._-]/', '-', $segment);
 		}
 
-		return implode( '/', array_filter( $segments ) );
+		return implode('/', array_filter($segments));
 	}
 
 	/**
@@ -1166,25 +1171,26 @@ class Block_Artifact_Compiler {
 	 * @param mixed $content Raw content.
 	 */
 	private function normalize_content( mixed $content ): string {
-		if ( is_scalar( $content ) || null === $content ) {
+		if ( is_scalar($content) || null === $content ) {
 			return (string) $content;
 		}
 
-		$encoded = wp_json_encode( $content, JSON_UNESCAPED_SLASHES );
-		return is_string( $encoded ) ? $encoded : '';
+		$encoded = bac_json_encode($content, JSON_UNESCAPED_SLASHES);
+		return is_string($encoded) ? $encoded : '';
 	}
 
 	/**
 	 * Normalize file payloads from text or base64 content fields.
 	 *
-	 * @param array<string,mixed> $file Raw file entry.
+	 * @param  array<string,mixed> $file Raw file entry.
 	 * @return array{accepted:bool,content:string,content_base64:string,encoding:string,binary:bool,bytes:int,diagnostics:array<int,array<string,mixed>>}
 	 */
 	private function normalize_file_payload( array $file, string $path ): array {
 		$diagnostics = array();
-		if ( isset( $file['content_base64'] ) && is_string( $file['content_base64'] ) ) {
-			$base64  = preg_replace( '/\s+/', '', $file['content_base64'] ) ?? '';
-			$decoded = base64_decode( $base64, true );
+		if ( isset($file['content_base64']) && is_string($file['content_base64']) ) {
+			$base64 = preg_replace('/\s+/', '', $file['content_base64']) ?? '';
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes explicit artifact file payloads, not executable code.
+			$decoded = base64_decode($base64, true);
 			if ( false === $decoded ) {
 				return array(
 					'accepted'       => false,
@@ -1193,13 +1199,13 @@ class Block_Artifact_Compiler {
 					'encoding'       => 'base64',
 					'binary'         => false,
 					'bytes'          => 0,
-					'diagnostics'    => array( $this->diagnostic( 'invalid_base64_content', 'warning', 'An artifact file was ignored because content_base64 is not valid base64.', array( 'path' => $path ) ) ),
+					'diagnostics'    => array( $this->diagnostic('invalid_base64_content', 'warning', 'An artifact file was ignored because content_base64 is not valid base64.', array( 'path' => $path )) ),
 				);
 			}
 
-			$is_binary = $this->looks_binary( $decoded );
-			if ( ! $is_binary && isset( $file['content'] ) && is_string( $file['content'] ) && '' !== $file['content'] && $file['content'] !== $decoded ) {
-				$diagnostics[] = $this->diagnostic( 'content_base64_preferred', 'info', 'Both content and content_base64 were provided; decoded content_base64 was used as the canonical payload.', array( 'path' => $path ) );
+			$is_binary = $this->looks_binary($decoded);
+			if ( ! $is_binary && isset($file['content']) && is_string($file['content']) && '' !== $file['content'] && $file['content'] !== $decoded ) {
+				$diagnostics[] = $this->diagnostic('content_base64_preferred', 'info', 'Both content and content_base64 were provided; decoded content_base64 was used as the canonical payload.', array( 'path' => $path ));
 			}
 
 			return array(
@@ -1208,19 +1214,19 @@ class Block_Artifact_Compiler {
 				'content_base64' => $base64,
 				'encoding'       => 'base64',
 				'binary'         => $is_binary,
-				'bytes'          => strlen( $decoded ),
+				'bytes'          => strlen($decoded),
 				'diagnostics'    => $diagnostics,
 			);
 		}
 
-		$content = $this->normalize_content( $file['content'] ?? $file['body'] ?? $file['text'] ?? '' );
+		$content = $this->normalize_content($file['content'] ?? $file['body'] ?? $file['text'] ?? '');
 		return array(
 			'accepted'       => true,
 			'content'        => $content,
 			'content_base64' => '',
 			'encoding'       => 'text',
 			'binary'         => false,
-			'bytes'          => strlen( $content ),
+			'bytes'          => strlen($content),
 			'diagnostics'    => array(),
 		);
 	}
@@ -1229,18 +1235,18 @@ class Block_Artifact_Compiler {
 	 * Normalize file kind from explicit kind, path, and content.
 	 */
 	private function normalize_kind( string $kind, string $path, string $content, string $mime_type = '' ): string {
-		$kind = sanitize_key( $kind );
-		if ( in_array( $kind, array( 'html', 'css', 'js', 'jsx', 'tsx', 'json', 'markdown', 'mdx', 'asset', 'blocks' ), true ) ) {
+		$kind = bac_sanitize_key($kind);
+		if ( in_array($kind, array( 'html', 'css', 'js', 'jsx', 'tsx', 'json', 'markdown', 'mdx', 'asset', 'blocks' ), true) ) {
 			return $kind;
 		}
-		if ( str_contains( $mime_type, '/' ) ) {
-			if ( str_contains( $mime_type, 'html' ) ) {
+		if ( str_contains($mime_type, '/') ) {
+			if ( str_contains($mime_type, 'html') ) {
 				return 'html';
 			}
 			if ( 'text/css' === $mime_type ) {
 				return 'css';
 			}
-			if ( in_array( $mime_type, array( 'application/javascript', 'text/javascript', 'application/ecmascript', 'text/ecmascript' ), true ) ) {
+			if ( in_array($mime_type, array( 'application/javascript', 'text/javascript', 'application/ecmascript', 'text/ecmascript' ), true) ) {
 				return 'js';
 			}
 			if ( 'application/json' === $mime_type ) {
@@ -1248,7 +1254,7 @@ class Block_Artifact_Compiler {
 			}
 		}
 
-		$extension = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
+		$extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
 		return match ( $extension ) {
 			'html', 'htm'       => 'html',
 			'css'               => 'css',
@@ -1258,7 +1264,7 @@ class Block_Artifact_Compiler {
 			'json'              => 'json',
 			'md', 'markdown'    => 'markdown',
 			'mdx'               => 'mdx',
-			default             => str_contains( $content, '<!-- wp:' ) ? 'blocks' : 'asset',
+			default             => str_contains($content, '<!-- wp:') ? 'blocks' : 'asset',
 		};
 	}
 
@@ -1266,12 +1272,12 @@ class Block_Artifact_Compiler {
 	 * Normalize or infer a MIME type.
 	 */
 	private function normalize_mime_type( string $mime_type, string $path ): string {
-		$mime_type = strtolower( trim( $mime_type ) );
-		if ( preg_match( '#^[a-z0-9.+-]+/[a-z0-9.+-]+$#', $mime_type ) ) {
+		$mime_type = strtolower(trim($mime_type));
+		if ( preg_match('#^[a-z0-9.+-]+/[a-z0-9.+-]+$#', $mime_type) ) {
 			return $mime_type;
 		}
 
-		return match ( strtolower( pathinfo( $path, PATHINFO_EXTENSION ) ) ) {
+		return match ( strtolower(pathinfo($path, PATHINFO_EXTENSION)) ) {
 			'html', 'htm'       => 'text/html',
 			'css'               => 'text/css',
 			'js', 'mjs'          => 'application/javascript',
@@ -1299,13 +1305,13 @@ class Block_Artifact_Compiler {
 	 * Normalize a file role without making policy decisions about generated output.
 	 */
 	private function normalize_role( string $role, string $kind, string $mime_type, string $path ): string {
-		$role = sanitize_key( $role );
+		$role = bac_sanitize_key($role);
 		if ( '' !== $role ) {
 			return $role;
 		}
 
 		if ( 'html' === $kind ) {
-			return preg_match( '#(^|/)index\.html?$#i', $path ) ? 'entry' : 'document';
+			return preg_match('#(^|/)index\.html?$#i', $path) ? 'entry' : 'document';
 		}
 		if ( 'css' === $kind ) {
 			return 'stylesheet';
@@ -1313,13 +1319,13 @@ class Block_Artifact_Compiler {
 		if ( 'js' === $kind ) {
 			return 'script';
 		}
-		if ( str_starts_with( $mime_type, 'image/' ) ) {
+		if ( str_starts_with($mime_type, 'image/') ) {
 			return 'image';
 		}
-		if ( str_starts_with( $mime_type, 'font/' ) ) {
+		if ( str_starts_with($mime_type, 'font/') ) {
 			return 'font';
 		}
-		if ( in_array( $kind, array( 'json', 'markdown' ), true ) ) {
+		if ( in_array($kind, array( 'json', 'markdown' ), true) ) {
 			return 'data';
 		}
 
@@ -1330,7 +1336,7 @@ class Block_Artifact_Compiler {
 	 * Normalize CSS/JS intent metadata.
 	 */
 	private function normalize_intent( string $intent, string $kind, string $role ): string {
-		$intent = sanitize_key( $intent );
+		$intent = bac_sanitize_key($intent);
 		if ( '' !== $intent ) {
 			return $intent;
 		}
@@ -1348,26 +1354,26 @@ class Block_Artifact_Compiler {
 	 * Detect binary payloads conservatively.
 	 */
 	private function looks_binary( string $content ): bool {
-		return str_contains( $content, "\0" );
+		return str_contains($content, "\0");
 	}
 
 	/**
 	 * Return whether a MIME type should be treated as binary in result manifests.
 	 */
 	private function is_binary_mime_type( string $mime_type ): bool {
-		if ( str_starts_with( $mime_type, 'text/' ) ) {
+		if ( str_starts_with($mime_type, 'text/') ) {
 			return false;
 		}
 
-		return ! in_array( $mime_type, array( 'application/json', 'application/javascript', 'image/svg+xml' ), true );
+		return ! in_array($mime_type, array( 'application/json', 'application/javascript', 'image/svg+xml' ), true);
 	}
 
 	/**
 	 * Build a virtual path from an arbitrary fragment source label.
 	 */
 	private function virtual_fragment_path( string $source, string $format ): string {
-		$path      = $this->safe_relative_path( str_replace( array( ':', '#' ), '-', $source ) );
-		$extension = match ( sanitize_key( $format ) ) {
+		$path      = $this->safe_relative_path(str_replace(array( ':', '#' ), '-', $source));
+		$extension = match ( bac_sanitize_key($format) ) {
 			'css'      => 'css',
 			'js'       => 'js',
 			'markdown' => 'md',
@@ -1375,7 +1381,7 @@ class Block_Artifact_Compiler {
 			default    => 'html',
 		};
 
-		return ( '' === $path ? 'fragment' : preg_replace( '/\.[A-Za-z0-9]+$/', '', $path ) ) . '.' . $extension;
+		return ( '' === $path ? 'fragment' : preg_replace('/\.[A-Za-z0-9]+$/', '', $path) ) . '.' . $extension;
 	}
 
 	/**
@@ -1384,15 +1390,15 @@ class Block_Artifact_Compiler {
 	 * @param array<string,bool> $seen Seen paths.
 	 */
 	private function dedupe_path( string $path, array $seen ): string {
-		if ( ! isset( $seen[ $path ] ) ) {
+		if ( ! isset($seen[ $path ]) ) {
 			return $path;
 		}
 
-		$extension = pathinfo( $path, PATHINFO_EXTENSION );
-		$base      = '' === $extension ? $path : substr( $path, 0, -1 - strlen( $extension ) );
+		$extension = pathinfo($path, PATHINFO_EXTENSION);
+		$base      = '' === $extension ? $path : substr($path, 0, -1 - strlen($extension));
 		$suffix    = '' === $extension ? '' : '.' . $extension;
 		$index     = 2;
-		while ( isset( $seen[ $base . '-' . $index . $suffix ] ) ) {
+		while ( isset($seen[ $base . '-' . $index . $suffix ]) ) {
 			++$index;
 		}
 
@@ -1402,29 +1408,29 @@ class Block_Artifact_Compiler {
 	/**
 	 * Count normalized files by kind.
 	 *
-	 * @param  array<int,array{kind:string}> $files Files.
+	 * @param  array<int,array<string,mixed>> $files Files.
 	 * @return array<string,int>
 	 */
 	private function count_files_by_kind( array $files ): array {
-		return $this->count_files_by_field( $files, 'kind' );
+		return $this->count_files_by_field($files, 'kind');
 	}
 
 	/**
 	 * Count normalized files by a manifest field.
 	 *
-	 * @param array<int,array<string,mixed>> $files Files.
+	 * @param  array<int,array<string,mixed>> $files Files.
 	 * @return array<string,int>
 	 */
 	private function count_files_by_field( array $files, string $field ): array {
 		$counts = array();
 		foreach ( $files as $file ) {
-			$value = isset( $file[ $field ] ) ? (string) $file[ $field ] : '';
+			$value = isset($file[ $field ]) ? (string) $file[ $field ] : '';
 			if ( '' === $value ) {
 				continue;
 			}
 			$counts[ $value ] = ( $counts[ $value ] ?? 0 ) + 1;
 		}
-		ksort( $counts );
+		ksort($counts);
 
 		return $counts;
 	}
@@ -1435,7 +1441,7 @@ class Block_Artifact_Compiler {
 	 * @return array{frontmatter:array<string,mixed>,body:string}
 	 */
 	private function parse_frontmatter( string $content ): array {
-		if ( ! preg_match( '/\A---\s*\R(.*?)\R---\s*\R?/s', $content, $matches ) ) {
+		if ( ! preg_match('/\A---\s*\R(.*?)\R---\s*\R?/s', $content, $matches) ) {
 			return array(
 				'frontmatter' => array(),
 				'body'        => $content,
@@ -1443,24 +1449,24 @@ class Block_Artifact_Compiler {
 		}
 
 		$frontmatter       = array();
-		$frontmatter_lines = preg_split( '/\R/', trim( $matches[1] ) );
+		$frontmatter_lines = preg_split('/\R/', trim($matches[1]));
 		foreach ( false === $frontmatter_lines ? array() : $frontmatter_lines as $line ) {
-			if ( ! preg_match( '/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/', $line, $pair ) ) {
+			if ( ! preg_match('/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/', $line, $pair) ) {
 				continue;
 			}
 
-			$value = trim( $pair[2] );
-			$value = trim( $value, " \t\n\r\0\x0B\"'" );
-			if ( preg_match( '/^\[(.*)\]$/', $value, $list ) ) {
-				$value = array_values( array_filter( array_map( static fn ( string $item ): string => trim( $item, " \t\n\r\0\x0B\"'" ), explode( ',', $list[1] ) ), static fn ( string $item ): bool => '' !== $item ) );
+			$value = trim($pair[2]);
+			$value = trim($value, " \t\n\r\0\x0B\"'");
+			if ( preg_match('/^\[(.*)\]$/', $value, $list) ) {
+				$value = array_values(array_filter(array_map(static fn ( string $item ): string => trim($item, " \t\n\r\0\x0B\"'"), explode(',', $list[1])), static fn ( string $item ): bool => '' !== $item));
 			}
 
-			$frontmatter[ sanitize_key( $pair[1] ) ] = $value;
+			$frontmatter[ bac_sanitize_key($pair[1]) ] = $value;
 		}
 
 		return array(
 			'frontmatter' => $frontmatter,
-			'body'        => substr( $content, strlen( $matches[0] ) ),
+			'body'        => substr($content, strlen($matches[0])),
 		);
 	}
 
@@ -1472,14 +1478,14 @@ class Block_Artifact_Compiler {
 	 * @return array{markdown_body:string,components:array<int,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}
 	 */
 	private function extract_mdx_semantics( string $body, array $file, array $artifact ): array {
-		$imports     = $this->extract_mdx_imports( $body );
+		$imports     = $this->extract_mdx_imports($body);
 		$components  = array();
 		$diagnostics = array();
 
-		if ( preg_match_all( '/<([A-Z][A-Za-z0-9._-]*)(?:\s[^>]*)?\s*(?:>|\/>)/', $body, $matches ) ) {
+		if ( preg_match_all('/<([A-Z][A-Za-z0-9._-]*)(?:\s[^>]*)?\s*(?:>|\/>)/', $body, $matches) ) {
 			foreach ( $matches[1] as $name ) {
 				$import    = $imports[ $name ] ?? null;
-				$resolved  = is_array( $import ) ? $this->resolve_component_import( (string) $import['path'], (string) $file['path'], $artifact ) : '';
+				$resolved  = is_array($import) ? $this->resolve_component_import( (string) $import['path'], (string) $file['path'], $artifact) : '';
 				$component = array(
 					'name'        => $name,
 					'source'      => $file['path'],
@@ -1488,7 +1494,7 @@ class Block_Artifact_Compiler {
 					'provenance'  => array( 'source_path' => $file['path'] ),
 				);
 
-				if ( is_array( $import ) ) {
+				if ( is_array($import) ) {
 					$component['import_path'] = $import['path'];
 				}
 				if ( '' !== $resolved ) {
@@ -1497,7 +1503,7 @@ class Block_Artifact_Compiler {
 
 				$components[ $name ] = $component;
 
-				if ( ! is_array( $import ) ) {
+				if ( ! is_array($import) ) {
 					$diagnostics[] = $this->diagnostic(
 						'mdx_component_unresolved',
 						'warning',
@@ -1507,7 +1513,7 @@ class Block_Artifact_Compiler {
 							'component' => $name,
 						)
 					);
-				} elseif ( '' === $resolved && str_starts_with( (string) $import['path'], '.' ) ) {
+				} elseif ( '' === $resolved && str_starts_with( (string) $import['path'], '.') ) {
 					$diagnostics[] = $this->diagnostic(
 						'mdx_import_unresolved',
 						'warning',
@@ -1522,15 +1528,15 @@ class Block_Artifact_Compiler {
 			}
 		}
 
-		$markdown_body = preg_replace( '/^\s*import\s+[^;\r\n]+;?\s*$/m', '', $body ) ?? $body;
-		$markdown_body = preg_replace( '/^\s*export\s+[^\r\n]+\s*$/m', '', $markdown_body ) ?? $markdown_body;
-		$markdown_body = preg_replace( '/<([A-Z][A-Za-z0-9._-]*)(?:\s[^>]*)?\s*\/>/', '', $markdown_body ) ?? $markdown_body;
-		$markdown_body = preg_replace( '/<\/?[A-Z][A-Za-z0-9._-]*(?:\s[^>]*)?>/', '', $markdown_body ) ?? $markdown_body;
+		$markdown_body = preg_replace('/^\s*import\s+[^;\r\n]+;?\s*$/m', '', $body) ?? $body;
+		$markdown_body = preg_replace('/^\s*export\s+[^\r\n]+\s*$/m', '', $markdown_body) ?? $markdown_body;
+		$markdown_body = preg_replace('/<([A-Z][A-Za-z0-9._-]*)(?:\s[^>]*)?\s*\/>/', '', $markdown_body) ?? $markdown_body;
+		$markdown_body = preg_replace('/<\/?[A-Z][A-Za-z0-9._-]*(?:\s[^>]*)?>/', '', $markdown_body) ?? $markdown_body;
 
 		return array(
-			'markdown_body' => trim( $markdown_body ),
-			'components'    => array_values( $components ),
-			'diagnostics'   => $this->dedupe_diagnostics( $diagnostics ),
+			'markdown_body' => trim($markdown_body),
+			'components'    => array_values($components),
+			'diagnostics'   => $this->dedupe_diagnostics($diagnostics),
 		);
 	}
 
@@ -1541,22 +1547,22 @@ class Block_Artifact_Compiler {
 	 */
 	private function extract_mdx_imports( string $body ): array {
 		$imports = array();
-		if ( ! preg_match_all( '/^\s*import\s+(.+?)\s+from\s+["\']([^"\']+)["\'];?\s*$/m', $body, $matches, PREG_SET_ORDER ) ) {
+		if ( ! preg_match_all('/^\s*import\s+(.+?)\s+from\s+["\']([^"\']+)["\'];?\s*$/m', $body, $matches, PREG_SET_ORDER) ) {
 			return $imports;
 		}
 
 		foreach ( $matches as $match ) {
-			$clause = trim( $match[1] );
+			$clause = trim($match[1]);
 			$path   = $match[2];
-			if ( preg_match( '/^([A-Z][A-Za-z0-9_]*)/', $clause, $default ) ) {
+			if ( preg_match('/^([A-Z][A-Za-z0-9_]*)/', $clause, $default) ) {
 				$imports[ $default[1] ] = array( 'path' => $path );
 			}
-			if ( preg_match( '/\{([^}]+)\}/', $clause, $named ) ) {
-				foreach ( explode( ',', $named[1] ) as $name ) {
-					$parts = preg_split( '/\s+as\s+/i', trim( $name ) );
+			if ( preg_match('/\{([^}]+)\}/', $clause, $named) ) {
+				foreach ( explode(',', $named[1]) as $name ) {
+					$parts = preg_split('/\s+as\s+/i', trim($name));
 					$parts = false === $parts ? array() : $parts;
-					$alias = trim( (string) end( $parts ) );
-					if ( preg_match( '/^[A-Z][A-Za-z0-9_]*$/', $alias ) ) {
+					$alias = trim( (string) end($parts));
+					if ( preg_match('/^[A-Z][A-Za-z0-9_]*$/', $alias) ) {
 						$imports[ $alias ] = array( 'path' => $path );
 					}
 				}
@@ -1576,13 +1582,13 @@ class Block_Artifact_Compiler {
 		$components = array();
 		$content    = (string) ( $file['content'] ?? '' );
 
-		if ( preg_match_all( '/(?:export\s+default\s+)?function\s+([A-Z][A-Za-z0-9_]*)\s*\(/', $content, $matches ) ) {
+		if ( preg_match_all('/(?:export\s+default\s+)?function\s+([A-Z][A-Za-z0-9_]*)\s*\(/', $content, $matches) ) {
 			foreach ( $matches[1] as $name ) {
 				$components[ $name ] = true;
 			}
 		}
 
-		if ( preg_match_all( '/(?:export\s+)?(?:const|let|var)\s+([A-Z][A-Za-z0-9_]*)\s*=\s*(?:\([^)]*\)|[A-Za-z0-9_]+)\s*=>/', $content, $matches ) ) {
+		if ( preg_match_all('/(?:export\s+)?(?:const|let|var)\s+([A-Z][A-Za-z0-9_]*)\s*=\s*(?:\([^)]*\)|[A-Za-z0-9_]+)\s*=>/', $content, $matches) ) {
 			foreach ( $matches[1] as $name ) {
 				$components[ $name ] = true;
 			}
@@ -1596,7 +1602,7 @@ class Block_Artifact_Compiler {
 				'occurrences' => 1,
 				'provenance'  => array( 'source_path' => (string) ( $file['path'] ?? '' ) ),
 			),
-			array_keys( $components )
+			array_keys($components)
 		);
 	}
 
@@ -1606,12 +1612,12 @@ class Block_Artifact_Compiler {
 	 * @param array{files:array<int,array<string,mixed>>} $artifact Normalized artifact.
 	 */
 	private function resolve_component_import( string $import_path, string $source_path, array $artifact ): string {
-		if ( ! str_starts_with( $import_path, '.' ) ) {
+		if ( ! str_starts_with($import_path, '.') ) {
 			return '';
 		}
 
-		$base = dirname( $source_path );
-		$path = $this->normalize_relative_import_path( ( '.' === $base ? '' : $base . '/' ) . $import_path );
+		$base = dirname($source_path);
+		$path = $this->normalize_relative_import_path(( '.' === $base ? '' : $base . '/' ) . $import_path);
 		if ( '' === $path ) {
 			return '';
 		}
@@ -1623,7 +1629,7 @@ class Block_Artifact_Compiler {
 		}
 
 		foreach ( $artifact['files'] as $file ) {
-			if ( in_array( $file['path'], $candidates, true ) ) {
+			if ( in_array($file['path'], $candidates, true) ) {
 				return (string) $file['path'];
 			}
 		}
@@ -1636,18 +1642,18 @@ class Block_Artifact_Compiler {
 	 */
 	private function normalize_relative_import_path( string $path ): string {
 		$segments = array();
-		foreach ( explode( '/', str_replace( '\\', '/', $path ) ) as $segment ) {
+		foreach ( explode('/', str_replace('\\', '/', $path)) as $segment ) {
 			if ( '' === $segment || '.' === $segment ) {
 				continue;
 			}
 			if ( '..' === $segment ) {
-				array_pop( $segments );
+				array_pop($segments);
 				continue;
 			}
-			$segments[] = preg_replace( '/[^A-Za-z0-9._-]/', '-', $segment );
+			$segments[] = preg_replace('/[^A-Za-z0-9._-]/', '-', $segment);
 		}
 
-		return implode( '/', array_filter( $segments ) );
+		return implode('/', array_filter($segments));
 	}
 
 	/**
@@ -1658,7 +1664,7 @@ class Block_Artifact_Compiler {
 	 */
 	private function frontmatter_string( array $frontmatter, array $keys, string $fallback ): string {
 		foreach ( $keys as $key ) {
-			if ( isset( $frontmatter[ $key ] ) && is_scalar( $frontmatter[ $key ] ) && '' !== trim( (string) $frontmatter[ $key ] ) ) {
+			if ( isset($frontmatter[ $key ]) && is_scalar($frontmatter[ $key ]) && '' !== trim( (string) $frontmatter[ $key ]) ) {
 				return (string) $frontmatter[ $key ];
 			}
 		}
@@ -1675,7 +1681,7 @@ class Block_Artifact_Compiler {
 	private function frontmatter_taxonomies( array $frontmatter ): array {
 		$taxonomies = array();
 		foreach ( array( 'category', 'categories', 'tag', 'tags' ) as $key ) {
-			if ( isset( $frontmatter[ $key ] ) ) {
+			if ( isset($frontmatter[ $key ]) ) {
 				$taxonomies[ $key ] = $frontmatter[ $key ];
 			}
 		}
@@ -1687,16 +1693,16 @@ class Block_Artifact_Compiler {
 	 * Build a stable slug from a source path.
 	 */
 	private function slug_from_path( string $path ): string {
-		$base = preg_replace( '/\.[A-Za-z0-9]+$/', '', basename( $path ) );
+		$base = preg_replace('/\.[A-Za-z0-9]+$/', '', basename($path));
 		$base = '' === $base || null === $base ? 'document' : $base;
-		return sanitize_key( str_replace( array( '_', '.' ), '-', $base ) );
+		return bac_sanitize_key(str_replace(array( '_', '.' ), '-', $base));
 	}
 
 	/**
 	 * Build a readable fallback title from a source path.
 	 */
 	private function title_from_path( string $path ): string {
-		return ucwords( str_replace( '-', ' ', $this->slug_from_path( $path ) ) );
+		return ucwords(str_replace('-', ' ', $this->slug_from_path($path)));
 	}
 
 	/**
@@ -1711,7 +1717,7 @@ class Block_Artifact_Compiler {
 			'severity' => $severity,
 			'message'  => $message,
 		);
-		if ( ! empty( $details ) ) {
+		if ( ! empty($details) ) {
 			$diagnostic['details'] = $details;
 		}
 
@@ -1728,9 +1734,9 @@ class Block_Artifact_Compiler {
 		$deduped = array();
 		$seen    = array();
 		foreach ( $diagnostics as $diagnostic ) {
-			$details_json = wp_json_encode( $diagnostic['details'] ?? array() );
-			$key          = (string) ( $diagnostic['code'] ?? '' ) . '|' . md5( false === $details_json ? '' : $details_json );
-			if ( isset( $seen[ $key ] ) ) {
+			$details_json = bac_json_encode($diagnostic['details'] ?? array());
+			$key          = (string) ( $diagnostic['code'] ?? '' ) . '|' . md5(false === $details_json ? '' : $details_json);
+			if ( isset($seen[ $key ]) ) {
 				continue;
 			}
 			$seen[ $key ] = true;
@@ -1764,21 +1770,21 @@ class Block_Artifact_Compiler {
 	/**
 	 * Build a stable hash payload for provenance.
 	 *
-	 * @param array{files:array<int,array{path:string,content:string,kind:string,bytes:int,source:string}>} $artifact Normalized artifact.
+	 * @param array{files:array<int,array<string,mixed>>} $artifact Normalized artifact.
 	 */
 	private function artifact_hash_payload( array $artifact ): string {
-		return $this->file_hash_payload( $artifact['files'] );
+		return $this->file_hash_payload($artifact['files']);
 	}
 
 	/**
 	 * Build a stable hash payload from normalized files.
 	 *
-	 * @param array<int,array{path:string,content:string,kind:string,bytes:int,source:string}> $files Files.
+	 * @param array<int,array<string,mixed>> $files Files.
 	 */
 	private function file_hash_payload( array $files ): string {
 		$payload = '';
 		foreach ( $files as $file ) {
-			$content = isset( $file['content_base64'] ) ? (string) $file['content_base64'] : (string) $file['content'];
+			$content  = isset($file['content_base64']) ? (string) $file['content_base64'] : (string) $file['content'];
 			$payload .= $file['path'] . "\0" . $file['kind'] . "\0" . ( $file['mime_type'] ?? '' ) . "\0" . $content . "\0";
 		}
 

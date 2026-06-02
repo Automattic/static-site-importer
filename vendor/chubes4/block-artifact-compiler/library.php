@@ -5,24 +5,32 @@
  * @package BlockArtifactCompiler
  */
 
-if ( ! function_exists( 'sanitize_key' ) ) {
+if ( ! function_exists( 'bac_sanitize_key' ) ) {
 	/**
-	 * Minimal sanitize_key fallback for non-WordPress contract tests.
+	 * Sanitize keys in and out of WordPress.
 	 */
-	function sanitize_key( string $key ): string {
+	function bac_sanitize_key( string $key ): string {
+		if ( function_exists( 'sanitize_key' ) ) {
+			return sanitize_key( $key );
+		}
+
 		return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( $key ) ) ?? '';
 	}
 }
 
-if ( ! function_exists( 'wp_json_encode' ) ) {
+if ( ! function_exists( 'bac_json_encode' ) ) {
 	/**
-	 * Minimal wp_json_encode fallback for non-WordPress contract tests.
+	 * Encode JSON in and out of WordPress.
 	 *
 	 * @param mixed $value Value to encode.
 	 * @return string|false Encoded JSON or false.
 	 */
-	function wp_json_encode( mixed $value, int $flags = 0, int $depth = 512 ): string|false {
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- This is the non-WordPress fallback for wp_json_encode().
+	function bac_json_encode( mixed $value, int $flags = 0, int $depth = 512 ): string|false {
+		if ( function_exists( 'wp_json_encode' ) ) {
+			return wp_json_encode( $value, $flags, $depth );
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- This is the non-WordPress fallback for JSON encoding.
 		return json_encode( $value, $flags, max( 1, $depth ) );
 	}
 }

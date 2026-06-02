@@ -200,7 +200,7 @@ $blocks = bac_compile_website_artifact(
 	array(
 		'generated_html' => '<main><h1>Block artifact page</h1></main>',
 		'files'          => array(
-			'blocks/hero/block.json'       => wp_json_encode(
+			'blocks/hero/block.json'       => bac_json_encode(
 				array(
 					'apiVersion'   => 3,
 					'name'         => 'acme/hero',

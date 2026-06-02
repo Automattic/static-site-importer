@@ -12,12 +12,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/chubes4/block-artifact-compiler.git",
-                "reference": "cd059900ee33270efdf0782322c6a2e78e16b36d"
+                "reference": "84ef81d485f359662e72564567c44f59cb4bc723"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/chubes4/block-artifact-compiler/zipball/cd059900ee33270efdf0782322c6a2e78e16b36d",
-                "reference": "cd059900ee33270efdf0782322c6a2e78e16b36d",
+                "url": "https://api.github.com/repos/chubes4/block-artifact-compiler/zipball/84ef81d485f359662e72564567c44f59cb4bc723",
+                "reference": "84ef81d485f359662e72564567c44f59cb4bc723",
                 "shasum": ""
             },
             "require": {
@@ -40,10 +40,10 @@
             ],
             "description": "Compile website artifacts into WordPress-native block artifact bundles.",
             "support": {
-                "source": "https://github.com/chubes4/block-artifact-compiler/tree/main",
+                "source": "https://github.com/chubes4/block-artifact-compiler/tree/v0.1.2",
                 "issues": "https://github.com/chubes4/block-artifact-compiler/issues"
             },
-            "time": "2026-05-31T21:30:35+00:00"
+            "time": "2026-06-02T04:40:51+00:00"
         },
         {
             "name": "chubes4/block-format-bridge",
@@ -51,12 +51,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/chubes4/block-format-bridge.git",
-                "reference": "0e8a0c3b76dae9a2cd5653e9026af1af57d7aabd"
+                "reference": "a13b9d9bb359d60f9a6e586c8cf7a457fb9920e0"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/chubes4/block-format-bridge/zipball/0e8a0c3b76dae9a2cd5653e9026af1af57d7aabd",
-                "reference": "0e8a0c3b76dae9a2cd5653e9026af1af57d7aabd",
+                "url": "https://api.github.com/repos/chubes4/block-format-bridge/zipball/a13b9d9bb359d60f9a6e586c8cf7a457fb9920e0",
+                "reference": "a13b9d9bb359d60f9a6e586c8cf7a457fb9920e0",
                 "shasum": ""
             },
             "require": {
@@ -92,10 +92,10 @@
             "description": "WordPress plugin orchestrating bidirectional content format conversion (HTML, Blocks, Markdown) via a unified adapter API.",
             "homepage": "https://github.com/chubes4/block-format-bridge",
             "support": {
-                "source": "https://github.com/chubes4/block-format-bridge/tree/main",
+                "source": "https://github.com/chubes4/block-format-bridge/tree/v0.8.0",
                 "issues": "https://github.com/chubes4/block-format-bridge/issues"
             },
-            "time": "2026-05-18T00:14:37+00:00"
+            "time": "2026-06-02T04:16:37+00:00"
         },
         {
             "name": "dflydev/dot-access-data",
@@ -519,16 +519,16 @@
         },
         {
             "name": "nette/utils",
-            "version": "v4.1.3",
+            "version": "v4.1.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/nette/utils.git",
-                "reference": "bb3ea637e3d131d72acc033cfc2746ee893349fe"
+                "reference": "7da6c396d7ebe142bc857c20479d5e70a5e1aac7"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nette/utils/zipball/bb3ea637e3d131d72acc033cfc2746ee893349fe",
-                "reference": "bb3ea637e3d131d72acc033cfc2746ee893349fe",
+                "url": "https://api.github.com/repos/nette/utils/zipball/7da6c396d7ebe142bc857c20479d5e70a5e1aac7",
+                "reference": "7da6c396d7ebe142bc857c20479d5e70a5e1aac7",
                 "shasum": ""
             },
             "require": {
@@ -604,9 +604,9 @@
             ],
             "support": {
                 "issues": "https://github.com/nette/utils/issues",
-                "source": "https://github.com/nette/utils/tree/v4.1.3"
+                "source": "https://github.com/nette/utils/tree/v4.1.4"
             },
-            "time": "2026-02-13T03:05:33+00:00"
+            "time": "2026-05-11T20:49:54+00:00"
         },
         {
             "name": "psr/event-dispatcher",

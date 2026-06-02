@@ -3,7 +3,7 @@
         'name' => 'chubes4/static-site-importer',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => 'f0b5a927c9d1b802542c9552ca5fee73f7e4ce8e',
+        'reference' => '318df50de1b94e59539ffc10d477e6ef083251ec',
         'type' => 'wordpress-plugin',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -13,7 +13,7 @@
         'chubes4/block-artifact-compiler' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => 'cd059900ee33270efdf0782322c6a2e78e16b36d',
+            'reference' => '84ef81d485f359662e72564567c44f59cb4bc723',
             'type' => 'wordpress-plugin',
             'install_path' => __DIR__ . '/../chubes4/block-artifact-compiler',
             'aliases' => array(
@@ -24,7 +24,7 @@
         'chubes4/block-format-bridge' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '0e8a0c3b76dae9a2cd5653e9026af1af57d7aabd',
+            'reference' => 'a13b9d9bb359d60f9a6e586c8cf7a457fb9920e0',
             'type' => 'wordpress-plugin',
             'install_path' => __DIR__ . '/../chubes4/block-format-bridge',
             'aliases' => array(
@@ -35,7 +35,7 @@
         'chubes4/static-site-importer' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => 'f0b5a927c9d1b802542c9552ca5fee73f7e4ce8e',
+            'reference' => '318df50de1b94e59539ffc10d477e6ef083251ec',
             'type' => 'wordpress-plugin',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
@@ -87,9 +87,9 @@
             'dev_requirement' => false,
         ),
         'nette/utils' => array(
-            'pretty_version' => 'v4.1.3',
-            'version' => '4.1.3.0',
-            'reference' => 'bb3ea637e3d131d72acc033cfc2746ee893349fe',
+            'pretty_version' => 'v4.1.4',
+            'version' => '4.1.4.0',
+            'reference' => '7da6c396d7ebe142bc857c20479d5e70a5e1aac7',
             'type' => 'library',
             'install_path' => __DIR__ . '/../nette/utils',
             'aliases' => array(),

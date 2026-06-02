@@ -1,0 +1,55 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#.*#'
+			identifier: function.alreadyNarrowedType
+			count: 11
+			path: includes/class-static-site-importer-theme-generator.php
+
+		-
+			message: '#.*#'
+			identifier: isset.property
+			count: 2
+			path: includes/class-static-site-importer-theme-generator.php
+
+		-
+			message: '#.*#'
+			identifier: booleanAnd.rightAlwaysTrue
+			count: 1
+			path: includes/class-static-site-importer-theme-generator.php
+
+		-
+			message: '#.*#'
+			identifier: nullCoalesce.offset
+			count: 3
+			path: includes/class-static-site-importer-theme-generator.php
+
+		-
+			message: '#.*#'
+			identifier: method.unused
+			count: 1
+			path: includes/class-static-site-importer-theme-generator.php
+
+		-
+			message: '#.*#'
+			identifier: identical.alwaysFalse
+			count: 2
+			path: includes/class-static-site-importer-theme-generator.php
+
+		-
+			message: '#.*#'
+			identifier: isset.offset
+			count: 2
+			path: includes/class-static-site-importer-theme-generator.php
+
+		-
+			message: '#.*#'
+			identifier: function.impossibleType
+			count: 2
+			path: includes/class-static-site-importer-theme-generator.php
+
+		-
+			message: '#.*#'
+			identifier: booleanAnd.alwaysTrue
+			count: 1
+			path: includes/class-static-site-importer-theme-generator.php

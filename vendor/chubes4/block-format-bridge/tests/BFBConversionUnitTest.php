@@ -220,6 +220,35 @@ class BFBConversionUnitTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Resolved asset metadata should flow through BFB into h2bc media transforms.
+	 */
+	public function test_asset_metadata_context_enriches_h2bc_image_blocks(): void {
+		$serialized = bfb_convert(
+			'<img src="assets/hero.jpg" alt="Source alt" width="1200" height="800">',
+			'html',
+			'blocks',
+			array(
+				'context' => array(
+					'asset_metadata' => array(
+						'assets/hero.jpg' => array(
+							'id'  => 42,
+							'url' => 'https://example.test/wp-content/uploads/hero.jpg',
+						),
+					),
+				),
+			)
+		);
+
+		$blocks = parse_blocks( $serialized );
+		$image  = $this->first_block_named( $blocks, 'core/image' );
+
+		$this->assertNotNull( $image );
+		$this->assertSame( 42, $image['attrs']['id'] ?? null );
+		$this->assertStringContainsString( 'alt="Source alt"', $image['innerHTML'] ?? '' );
+		$this->assertStringContainsString( 'src="https://example.test/wp-content/uploads/hero.jpg"', $image['innerHTML'] ?? '' );
+	}
+
+	/**
 	 * BFB should expose h2bc's expanded layout transforms through bfb_convert().
 	 */
 	public function test_html_to_blocks_covers_expanded_layout_transforms(): void {
@@ -581,7 +610,51 @@ MARKDOWN;
 		$this->assertStringContainsString( 'fallback_events', $report['agent_guidance'] ?? '' );
 		$this->assertSame( 'no_transform', $report['fallback_events'][0]['reason'] ?? null );
 		$this->assertSame( 'IFRAME', $report['fallback_events'][0]['tag_name'] ?? null );
+		$this->assertSame( 'iframe', $report['fallback_events'][0]['source_tag'] ?? null );
+		$this->assertSame( 'https://example.com/widget', $report['fallback_events'][0]['attributes']['src'] ?? null );
+		$this->assertSame( 'core/html', $report['fallback_events'][0]['generated_block_type'] ?? null );
 		$this->assertStringContainsString( '<!-- wp:html', $report['serialized_blocks'] );
+	}
+
+	/**
+	 * Fallback reports should expose structured source signatures for import reports.
+	 */
+	public function test_conversion_report_exposes_structured_fallback_diagnostics(): void {
+		$cases = array(
+			'iframe'        => array(
+				'html'       => '<iframe id="map" class="embed map-frame" src="https://example.com/map"></iframe>',
+				'source_tag' => 'iframe',
+				'attribute'  => array( 'src', 'https://example.com/map' ),
+				'class'      => 'map-frame',
+			),
+			'form'          => array(
+				'html'       => '<form id="contact" class="lead-form" action="/contact"><input name="email" type="email"></form>',
+				'source_tag' => 'form',
+				'attribute'  => array( 'id', 'contact' ),
+				'class'      => 'lead-form',
+			),
+			'custom element' => array(
+				'html'       => '<pricing-card class="plan-card" data-plan="pro">Pro</pricing-card>',
+				'source_tag' => 'pricing-card',
+				'attribute'  => array( 'data-plan', 'pro' ),
+				'class'      => 'plan-card',
+			),
+		);
+
+		foreach ( $cases as $label => $case ) {
+			$report     = bfb_conversion_report( $case['html'], 'html' );
+			$diagnostic = $report['fallback_diagnostics'][0] ?? array();
+			$detail     = $report['diagnostics'][0]['details']['fallback_diagnostics'][0] ?? array();
+
+			$this->assertSame( 'success_with_fallbacks', $report['status'], "{$label} should be classified as a fallback." );
+			$this->assertSame( 'unsupported_html_fallback', $diagnostic['code'] ?? null, "{$label} should expose a fallback diagnostic code." );
+			$this->assertSame( 'no_transform', $diagnostic['reason_code'] ?? null, "{$label} should expose the h2bc reason code." );
+			$this->assertSame( $case['source_tag'], $diagnostic['source_tag'] ?? null, "{$label} should expose the source tag." );
+			$this->assertSame( $case['attribute'][1], $diagnostic['attributes'][ $case['attribute'][0] ] ?? null, "{$label} should expose useful source attributes." );
+			$this->assertContains( $case['class'], $diagnostic['classes'] ?? array(), "{$label} should expose source classes." );
+			$this->assertSame( 'core/html', $diagnostic['generated_block_type'] ?? null, "{$label} should expose the generated block type." );
+			$this->assertSame( $diagnostic, $detail, "{$label} should mirror fallback diagnostics into the public diagnostic details." );
+		}
 	}
 
 	/**
@@ -954,6 +1027,30 @@ MARKDOWN;
 		}
 
 		return $names;
+	}
+
+	/**
+	 * Find the first block with the requested name in a parsed block tree.
+	 *
+	 * @param array<int, array<string, mixed>> $blocks Parsed blocks.
+	 * @param string                          $name Block name.
+	 * @return array<string, mixed>|null Matching block, or null.
+	 */
+	private function first_block_named( array $blocks, string $name ): ?array {
+		foreach ( $blocks as $block ) {
+			if ( $name === ( $block['blockName'] ?? null ) ) {
+				return $block;
+			}
+
+			if ( ! empty( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
+				$inner = $this->first_block_named( $block['innerBlocks'], $name );
+				if ( null !== $inner ) {
+					return $inner;
+				}
+			}
+		}
+
+		return null;
 	}
 
 	/**

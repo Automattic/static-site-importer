@@ -435,14 +435,7 @@ if ( ! function_exists( 'bfb_conversion_report' ) ) {
 		$conversion_metadata      = array();
 		$materialization_requests = array();
 		$fallback_listener        = static function ( string $html, array $context, array $block ) use ( &$fallback_events ): void {
-			$fallback_events[] = array(
-				'reason'     => isset( $context['reason'] ) ? (string) $context['reason'] : '',
-				'tag_name'   => isset( $context['tag_name'] ) ? (string) $context['tag_name'] : '',
-				'occurrence' => isset( $context['occurrence'] ) ? (int) $context['occurrence'] : null,
-				'bytes'      => strlen( $html ),
-				'preview'    => bfb_preview_html( $html ),
-				'block_name' => isset( $block['blockName'] ) ? (string) $block['blockName'] : '',
-			);
+			$fallback_events[] = bfb_normalize_html_fallback_diagnostic( $html, $context, $block );
 		};
 		$metadata_listener        = static function ( array $metadata ) use ( &$conversion_metadata, &$materialization_requests ): void {
 			$normalized = bfb_normalize_conversion_metadata( $metadata );
@@ -485,6 +478,7 @@ if ( ! function_exists( 'bfb_conversion_report' ) ) {
 		$analysis['source_bytes']                  = strlen( $content );
 		$analysis['source_text_bytes']             = bfb_text_bytes( $content );
 		$analysis['fallback_events']               = $fallback_events;
+		$analysis['fallback_diagnostics']          = ! empty( $fallback_events ) ? $fallback_events : $analysis['fallbacks'];
 		$analysis['fallback_event_count']          = count( $fallback_events );
 		$analysis['conversion_metadata']           = $conversion_metadata;
 		$analysis['materialization_requests']      = $materialization_requests;
@@ -542,17 +536,19 @@ if ( ! function_exists( 'bfb_build_conversion_diagnostics' ) ) {
 			);
 			$guidance      = 'Conversion failed. Inspect the source format and adapter availability before retrying; do not bypass conversion with manual wp:html unless raw HTML preservation is explicitly required.';
 		} elseif ( $has_fallback_evidence ) {
-			$status        = 'success_with_fallbacks';
-			$diagnostics[] = array(
+			$fallback_diagnostics = isset( $report['fallback_diagnostics'] ) && is_array( $report['fallback_diagnostics'] ) ? $report['fallback_diagnostics'] : array();
+			$status               = 'success_with_fallbacks';
+			$diagnostics[]        = array(
 				'code'     => 'core_html_fallback',
 				'severity' => 'warning',
 				'message'  => 'Conversion completed, but some fragments were preserved as core/html fallback blocks.',
 				'details'  => array(
 					'core_html_blocks'     => $core_html_blocks,
 					'fallback_event_count' => $fallback_event_count,
+					'fallback_diagnostics' => $fallback_diagnostics,
 				),
 			);
-			$guidance      = 'Conversion completed with explicit fallback evidence. Review fallback_events and fallbacks to identify unsupported fragments; keep future writes routed through BFB unless the user explicitly wants raw HTML blocks.';
+			$guidance             = 'Conversion completed with explicit fallback evidence. Review fallback_events and fallbacks to identify unsupported fragments; keep future writes routed through BFB unless the user explicitly wants raw HTML blocks.';
 		} elseif ( $materialization_count > 0 ) {
 			$status        = 'success_with_materialization_requests';
 			$diagnostics[] = array(
@@ -642,6 +638,118 @@ if ( ! function_exists( 'bfb_normalize_conversion_metadata' ) ) {
 	}
 }
 
+if ( ! function_exists( 'bfb_normalize_html_fallback_diagnostic' ) ) {
+	/**
+	 * Normalize an unsupported HTML fallback event into a consumer-safe shape.
+	 *
+	 * @param string               $html    Unsupported HTML fragment.
+	 * @param array<string, mixed> $context Fallback context emitted by the converter.
+	 * @param array<string, mixed> $block   Generated fallback block.
+	 * @return array<string, mixed> Structured fallback diagnostic.
+	 */
+	function bfb_normalize_html_fallback_diagnostic( string $html, array $context = array(), array $block = array() ): array {
+		$signature            = bfb_extract_html_fragment_signature( $html );
+		$context_tag          = isset( $context['tag_name'] ) && is_scalar( $context['tag_name'] ) ? strtoupper( (string) $context['tag_name'] ) : '';
+		$tag_name             = '' !== $context_tag ? $context_tag : strtoupper( $signature['source_tag'] );
+		$reason_code          = isset( $context['reason'] ) && is_scalar( $context['reason'] ) ? sanitize_key( (string) $context['reason'] ) : '';
+		$generated_block_type = isset( $block['blockName'] ) && is_scalar( $block['blockName'] ) ? (string) $block['blockName'] : '';
+
+		return array(
+			'code'                 => 'unsupported_html_fallback',
+			'reason_code'          => '' !== $reason_code ? $reason_code : 'unknown',
+			'reason'               => '' !== $reason_code ? $reason_code : 'unknown',
+			'source_tag'           => '' !== $tag_name ? strtolower( $tag_name ) : '',
+			'tag_name'             => $tag_name,
+			'attributes'           => $signature['attributes'],
+			'classes'              => $signature['classes'],
+			'occurrence'           => isset( $context['occurrence'] ) && is_numeric( $context['occurrence'] ) ? (int) $context['occurrence'] : null,
+			'bytes'                => strlen( $html ),
+			'preview'              => bfb_preview_html( $html ),
+			'generated_block_type' => $generated_block_type,
+			'block_name'           => $generated_block_type,
+		);
+	}
+}
+
+if ( ! function_exists( 'bfb_extract_html_fragment_signature' ) ) {
+	/**
+	 * Extract a compact tag/attribute signature from an HTML fragment.
+	 *
+	 * @param string $html HTML fragment.
+	 * @return array{source_tag:string,attributes:array<string,string>,classes:array<int,string>}
+	 */
+	function bfb_extract_html_fragment_signature( string $html ): array {
+		$signature = array(
+			'source_tag' => '',
+			'attributes' => array(),
+			'classes'    => array(),
+		);
+
+		if ( preg_match( '/^\s*<\s*([a-z0-9:-]+)\b([^>]*)>/is', $html, $matches ) ) {
+			$signature['source_tag'] = strtolower( $matches[1] );
+			$signature['attributes'] = bfb_parse_html_fallback_attributes( $matches[2] );
+		}
+
+		$class_attr              = isset( $signature['attributes']['class'] ) ? $signature['attributes']['class'] : '';
+		$classes                 = preg_split( '/\s+/', trim( $class_attr ) );
+		$signature['classes']    = is_array( $classes ) ? array_values( array_filter( $classes ) ) : array();
+		$signature['attributes'] = array_slice( $signature['attributes'], 0, 20, true );
+
+		return $signature;
+	}
+}
+
+if ( ! function_exists( 'bfb_normalize_html_fallback_attributes' ) ) {
+	/**
+	 * Keep useful, non-executable source attributes for fallback diagnostics.
+	 *
+	 * @param array<string, mixed> $attributes Raw HTML attributes.
+	 * @return array<string, string> Normalized attributes.
+	 */
+	function bfb_normalize_html_fallback_attributes( array $attributes ): array {
+		$normalized = array();
+
+		foreach ( $attributes as $name => $value ) {
+			$name = strtolower( (string) $name );
+			if ( '' === $name || preg_match( '/^on/i', $name ) ) {
+				continue;
+			}
+
+			if ( ! in_array( $name, array( 'id', 'class', 'src', 'href', 'name', 'type', 'role', 'title', 'aria-label' ), true ) && 0 !== strpos( $name, 'data-' ) ) {
+				continue;
+			}
+
+			$normalized[ $name ] = substr( is_scalar( $value ) ? (string) $value : '', 0, 240 );
+		}
+
+		return $normalized;
+	}
+}
+
+if ( ! function_exists( 'bfb_parse_html_fallback_attributes' ) ) {
+	/**
+	 * Parse attributes from an opening HTML tag for fallback diagnostics.
+	 *
+	 * @param string $attribute_html Raw attribute text from the opening tag.
+	 * @return array<string, string> Normalized attributes.
+	 */
+	function bfb_parse_html_fallback_attributes( string $attribute_html ): array {
+		$attributes = array();
+		if ( ! preg_match_all( '/([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*("[^"]*"|\'[^\']*\'|[^\s"\'>]+))?/', $attribute_html, $matches, PREG_SET_ORDER ) ) {
+			return array();
+		}
+
+		foreach ( $matches as $match ) {
+			$name  = strtolower( $match[1] );
+			$value = isset( $match[2] ) ? trim( $match[2], " \t\n\r\0\x0B\"'" ) : '';
+
+			$attributes[ $name ] = html_entity_decode( $value, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		}
+
+		return bfb_normalize_html_fallback_attributes( $attributes );
+	}
+}
+
 if ( ! function_exists( 'bfb_text_retention_ratio' ) ) {
 	/**
 	 * Calculate the ratio of converted text bytes to source text bytes.
@@ -701,11 +809,17 @@ if ( ! function_exists( 'bfb_analyze_block_list' ) ) {
 				}
 
 				++$report['core_html_blocks'];
-				$report['fallbacks'][] = array(
-					'path'    => implode( '.', $block_path ),
-					'bytes'   => strlen( $html ),
-					'preview' => bfb_preview_html( $html ),
+				$fallback         = bfb_normalize_html_fallback_diagnostic(
+					$html,
+					array(
+						'reason'   => 'core_html_block',
+						'tag_name' => '',
+					),
+					$block
 				);
+				$fallback['path'] = implode( '.', $block_path );
+
+				$report['fallbacks'][] = $fallback;
 			}
 
 			if ( ! empty( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {

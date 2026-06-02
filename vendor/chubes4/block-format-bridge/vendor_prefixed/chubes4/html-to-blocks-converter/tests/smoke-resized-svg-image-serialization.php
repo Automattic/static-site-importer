@@ -36,7 +36,7 @@ foreach (['esc_attr', 'esc_html', 'esc_url'] as $function_name) {
 if (!\function_exists('BlockFormatBridge\Vendor\wp_strip_all_tags')) {
     function wp_strip_all_tags($text)
     {
-        return wp_strip_all_tags($text);
+        return \strip_tags((string) $text);
     }
 }
 if (!\function_exists('BlockFormatBridge\Vendor\get_shortcode_regex')) {

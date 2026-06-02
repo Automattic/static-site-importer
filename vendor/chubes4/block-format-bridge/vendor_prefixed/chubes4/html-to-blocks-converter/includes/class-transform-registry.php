@@ -122,13 +122,13 @@ class HTML_To_Blocks_Transform_Registry
     {
         return array(array('blockName' => 'core/gallery', 'priority' => 8, 'isMatch' => function ($element) {
             return self::is_gallery_element($element);
-        }, 'transform' => function ($element) {
-            return self::create_gallery_block($element);
+        }, 'transform' => function ($element, $handler = null, array $args = array()) {
+            return self::create_gallery_block($element, $args);
         }), array('blockName' => 'core/media-text', 'priority' => 8, 'isMatch' => function ($element) {
             $class = $element->has_attribute('class') ? $element->get_attribute('class') : '';
             return \preg_match('/(?:^|\s)(?:wp-block-media-text|media-text)(?:$|\s)/i', $class) === 1 && ($element->query_selector('img') || $element->query_selector('video'));
-        }, 'transform' => function ($element, $handler) {
-            return self::create_media_text_block($element, $handler);
+        }, 'transform' => function ($element, $handler, array $args = array()) {
+            return self::create_media_text_block($element, $handler, $args);
         }), array('blockName' => 'core/video', 'priority' => 9, 'isMatch' => function ($element) {
             $video = $element->get_tag_name() === 'VIDEO' ? $element : $element->query_selector('video');
             return $video && self::get_media_src($video) !== '';
@@ -192,7 +192,7 @@ class HTML_To_Blocks_Transform_Registry
      * @param HTML_To_Blocks_HTML_Element $element Gallery wrapper.
      * @return array Block array.
      */
-    private static function create_gallery_block($element): array
+    private static function create_gallery_block($element, array $args = array()): array
     {
         $images = $element->query_selector_all('img');
         $captions = $element->query_selector_all('figcaption');
@@ -200,7 +200,7 @@ class HTML_To_Blocks_Transform_Registry
         $ids = array();
         foreach ($images as $index => $img) {
             $caption = isset($captions[$index]) ? $captions[$index]->get_inner_html() : '';
-            $image_block = self::create_image_block_from_img($img, $caption);
+            $image_block = self::create_image_block_from_img($img, $caption, $args);
             $inner_blocks[] = $image_block;
             if (isset($image_block['attrs']['id'])) {
                 $ids[] = $image_block['attrs']['id'];
@@ -222,7 +222,7 @@ class HTML_To_Blocks_Transform_Registry
      * @param string                      $caption Optional caption HTML.
      * @return array Block array.
      */
-    private static function create_image_block_from_img($img, string $caption = ''): array
+    private static function create_image_block_from_img($img, string $caption = '', array $args = array()): array
     {
         $attributes = array('url' => $img->get_attribute('src') ?? '');
         self::apply_image_element_attributes($attributes, $img);
@@ -232,6 +232,7 @@ class HTML_To_Blocks_Transform_Registry
         if ($img->has_attribute('class') && \preg_match('/(?:^|\s)wp-image-(\d+)(?:$|\s)/', $img->get_attribute('class'), $matches)) {
             $attributes['id'] = (int) $matches[1];
         }
+        self::apply_image_asset_metadata($attributes, $args);
         return HTML_To_Blocks_Block_Factory::create_block('core/image', $attributes);
     }
     /**
@@ -249,13 +250,69 @@ class HTML_To_Blocks_Transform_Registry
         }
     }
     /**
+     * Applies caller-resolved asset metadata to image block attributes.
+     *
+     * @param array<string,mixed> $attributes Block attributes.
+     * @param array<string,mixed> $args       Raw handler arguments.
+     */
+    private static function apply_image_asset_metadata(array &$attributes, array $args): void
+    {
+        $metadata = self::get_asset_metadata_for_source($args, (string) ($attributes['url'] ?? ''));
+        if (empty($metadata)) {
+            return;
+        }
+        if (isset($metadata['url']) && \is_scalar($metadata['url']) && '' !== (string) $metadata['url']) {
+            $attributes['url'] = (string) $metadata['url'];
+        }
+        if (isset($metadata['id']) && \is_numeric($metadata['id']) && (int) $metadata['id'] > 0) {
+            $attributes['id'] = (int) $metadata['id'];
+        }
+        foreach (array('alt', 'width', 'height') as $attribute) {
+            if (!isset($attributes[$attribute]) && isset($metadata[$attribute]) && \is_scalar($metadata[$attribute])) {
+                $attributes[$attribute] = (string) $metadata[$attribute];
+            }
+        }
+    }
+    /**
+     * Returns caller-provided asset metadata for a source reference.
+     *
+     * @param array<string,mixed> $args   Raw handler arguments.
+     * @param string              $source Source URL/path from the HTML.
+     * @return array<string,mixed>
+     */
+    private static function get_asset_metadata_for_source(array $args, string $source): array
+    {
+        $context = isset($args['context']) && \is_array($args['context']) ? $args['context'] : array();
+        $maps = array('asset_metadata', 'resolved_assets', 'assets');
+        foreach ($maps as $map_key) {
+            if (empty($context[$map_key]) || !\is_array($context[$map_key])) {
+                continue;
+            }
+            $map = $context[$map_key];
+            if (isset($map[$source]) && \is_array($map[$source])) {
+                return $map[$source];
+            }
+            foreach ($map as $metadata) {
+                if (!\is_array($metadata)) {
+                    continue;
+                }
+                foreach (array('source', 'src', 'path', 'original') as $source_key) {
+                    if (isset($metadata[$source_key]) && (string) $metadata[$source_key] === $source) {
+                        return $metadata;
+                    }
+                }
+            }
+        }
+        return array();
+    }
+    /**
      * Creates a media-text block from a recognized two-column wrapper.
      *
      * @param HTML_To_Blocks_HTML_Element $element Media-text wrapper.
      * @param callable                    $handler Recursive raw handler.
      * @return array Block array.
      */
-    private static function create_media_text_block($element, $handler): array
+    private static function create_media_text_block($element, $handler, array $args = array()): array
     {
         $media = $element->query_selector('img') ? $element->query_selector('img') : $element->query_selector('video');
         $content = $element->query_selector('.wp-block-media-text__content');
@@ -266,6 +323,18 @@ class HTML_To_Blocks_Transform_Registry
         }
         if ($media && $media->has_attribute('class') && \preg_match('/(?:^|\s)wp-image-(\d+)(?:$|\s)/', $media->get_attribute('class'), $matches)) {
             $attributes['mediaId'] = (int) $matches[1];
+        }
+        $metadata = self::get_asset_metadata_for_source($args, (string) $attributes['mediaUrl']);
+        if (!empty($metadata)) {
+            if (isset($metadata['url']) && \is_scalar($metadata['url']) && '' !== (string) $metadata['url']) {
+                $attributes['mediaUrl'] = (string) $metadata['url'];
+            }
+            if (isset($metadata['id']) && \is_numeric($metadata['id']) && (int) $metadata['id'] > 0) {
+                $attributes['mediaId'] = (int) $metadata['id'];
+            }
+            if (!isset($attributes['mediaAlt']) && isset($metadata['alt']) && \is_scalar($metadata['alt'])) {
+                $attributes['mediaAlt'] = (string) $metadata['alt'];
+            }
         }
         if (\preg_match('/(?:^|\s)has-media-on-the-right(?:$|\s)/', $element->get_attribute('class') ?? '')) {
             $attributes['mediaPosition'] = 'right';
@@ -749,6 +818,10 @@ class HTML_To_Blocks_Transform_Registry
             return self::is_static_visual_button($element);
         }, 'transform' => function ($element) {
             return self::create_static_visual_button_paragraph($element);
+        }), array('blockName' => 'core/html', 'priority' => 8, 'selector' => 'div,p', 'isMatch' => function ($element) {
+            return self::is_class_sensitive_action_link_container($element);
+        }, 'transform' => function ($element) {
+            return HTML_To_Blocks_Block_Factory::create_block('core/html', array('content' => $element->get_outer_html()));
         }), array('blockName' => 'core/buttons', 'priority' => 8, 'selector' => 'div,p', 'isMatch' => function ($element) {
             return self::is_button_anchor_container($element) || self::is_single_button_anchor_wrapper($element);
         }, 'transform' => function ($element) {
@@ -786,7 +859,10 @@ class HTML_To_Blocks_Transform_Registry
         }
         if (self::is_action_link_container($element)) {
             foreach ($children as $child) {
-                if (self::is_class_sensitive_cta_anchor($child)) {
+                if (self::is_exact_cta_token_container($element) && self::is_generic_button_variant_anchor($child)) {
+                    return \false;
+                }
+                if (self::is_class_sensitive_cta_anchor($child) && !self::is_generic_button_variant_anchor($child)) {
                     return \false;
                 }
             }
@@ -1090,6 +1166,34 @@ class HTML_To_Blocks_Transform_Registry
         return self::class_matches($element, '/(?:^|[-_\s])(?:actions?|buttons?|cta)(?:$|[-_\s])/i');
     }
     /**
+     * Checks whether an action wrapper should preserve class-sensitive anchors as raw HTML.
+     *
+     * Some action rows use direct anchors whose source CSS targets the anchor
+     * classes themselves. Converting those wrappers to core/buttons or flowing the
+     * anchors through a paragraph moves the effective styling target and changes
+     * visual rhythm. Keep only explicit action containers with class-sensitive CTA
+     * anchors as raw HTML; simpler action rows continue through native buttons.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Element to inspect.
+     * @return bool True when the wrapper should remain raw HTML.
+     */
+    private static function is_class_sensitive_action_link_container($element): bool
+    {
+        if (!self::is_action_link_container($element)) {
+            return \false;
+        }
+        $children = self::get_direct_anchor_children_from_html($element->get_inner_html());
+        if (\count($children) < 1) {
+            return \false;
+        }
+        foreach ($children as $child) {
+            if (self::is_class_sensitive_cta_anchor($child) && !self::is_generic_button_variant_anchor($child)) {
+                return \true;
+            }
+        }
+        return \false;
+    }
+    /**
      * Gets direct anchor children when the HTML contains only sibling anchors and whitespace.
      *
      * @param string $html Inner HTML to inspect.
@@ -1196,7 +1300,36 @@ class HTML_To_Blocks_Transform_Registry
         if (\preg_match('/(?:^|\s)(?:wp-block-button__link|wp-element-button)(?:$|\s)/i', $class_name) === 1) {
             return \false;
         }
-        return \preg_match('/(?:^|\s)(?:button|cta-(?:btn|link)|(?:btn|link)-cta)(?:$|\s)/i', $class_name) === 1;
+        return \preg_match('/(?:^|\s)(?:cta-(?:btn|link)|(?:btn|link)-cta)(?:$|\s)/i', $class_name) === 1;
+    }
+    /**
+     * Checks whether a CTA/action container uses an explicit CTA class token.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Container element.
+     * @return bool True when the container should keep CTA-owned anchor classes.
+     */
+    private static function is_exact_cta_token_container($element): bool
+    {
+        $class_name = $element->get_attribute('class') ?? '';
+        return \preg_match('/(?:^|\s)(?:cta|cta[-_]?actions)(?:$|\s)/i', $class_name) === 1;
+    }
+    /**
+     * Checks whether an anchor has the generic button class plus visual variants.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Anchor element.
+     * @return bool True when the class shape is safe to treat as a native button.
+     */
+    private static function is_generic_button_variant_anchor($element): bool
+    {
+        // @phpstan-ignore-next-line booleanNot.alwaysFalse -- Defensive public API guard for untyped external callers.
+        if (!$element || $element->get_tag_name() !== 'A') {
+            return \false;
+        }
+        $class_name = \trim((string) ($element->get_attribute('class') ?? ''));
+        if (\preg_match('/(?:^|\s)button(?:$|\s)/i', $class_name) !== 1) {
+            return \false;
+        }
+        return \preg_match('/(?:^|\s)(?:primary|secondary)(?:$|\s)/i', $class_name) === 1;
     }
     /**
      * Creates a buttons wrapper with one button child from an anchor.
@@ -1344,7 +1477,7 @@ class HTML_To_Blocks_Transform_Registry
             }
             $img = $element->query_selector('img');
             return null !== $img;
-        }, 'transform' => function ($element) {
+        }, 'transform' => function ($element, $handler = null, array $args = array()) {
             $img = $element->query_selector('img');
             $figcaption = $element->query_selector('figcaption');
             $attributes = array('url' => $img->get_attribute('src') ?? '');
@@ -1369,6 +1502,7 @@ class HTML_To_Blocks_Transform_Registry
             if ($element->has_attribute('id') && $element->get_attribute('id') !== '') {
                 $attributes['anchor'] = $element->get_attribute('id');
             }
+            self::apply_image_asset_metadata($attributes, $args);
             $anchor_element = $element->query_selector('a');
             if ($anchor_element && $anchor_element->has_attribute('href')) {
                 $attributes['href'] = $anchor_element->get_attribute('href');
@@ -1383,7 +1517,7 @@ class HTML_To_Blocks_Transform_Registry
             return HTML_To_Blocks_Block_Factory::create_block('core/image', $attributes);
         }), array('blockName' => 'core/image', 'priority' => 15, 'isMatch' => function ($element) {
             return $element->get_tag_name() === 'IMG';
-        }, 'transform' => function ($element) {
+        }, 'transform' => function ($element, $handler = null, array $args = array()) {
             $attributes = array('url' => $element->get_attribute('src') ?? '');
             self::apply_image_element_attributes($attributes, $element);
             $class_name = $element->has_attribute('class') ? $element->get_attribute('class') : '';
@@ -1393,6 +1527,7 @@ class HTML_To_Blocks_Transform_Registry
             if (\preg_match('/(?:^|\s)wp-image-(\d+)(?:$|\s)/', $class_name, $matches)) {
                 $attributes['id'] = (int) $matches[1];
             }
+            self::apply_image_asset_metadata($attributes, $args);
             return HTML_To_Blocks_Block_Factory::create_block('core/image', $attributes);
         }));
     }
@@ -2953,7 +3088,42 @@ class HTML_To_Blocks_Transform_Registry
                 $blocks[] = $block;
             }
         }
+        foreach (self::get_direct_image_children_from_html($element->get_inner_html()) as $image) {
+            $image_src = $image->get_attribute('src') ?? '';
+            $has_image = \false;
+            foreach ($blocks as $block) {
+                if ('core/image' === ($block['blockName'] ?? '') && $image_src === ($block['attrs']['url'] ?? '')) {
+                    $has_image = \true;
+                    break;
+                }
+            }
+            if (!$has_image) {
+                \array_unshift($blocks, self::create_image_block_from_img($image));
+            }
+        }
         return $blocks;
+    }
+    /**
+     * Gets direct image children from raw inner HTML.
+     *
+     * @param string $html Inner HTML to inspect.
+     * @return array Image elements.
+     */
+    private static function get_direct_image_children_from_html(string $html): array
+    {
+        $remaining = $html;
+        $images = array();
+        if (!\preg_match_all('/<img\b[^>]*\/?>/i', $html, $matches)) {
+            return array();
+        }
+        foreach ($matches[0] as $image_html) {
+            $image = HTML_To_Blocks_HTML_Element::from_html($image_html);
+            if ($image) {
+                $images[] = $image;
+            }
+            $remaining = \str_replace($image_html, '', $remaining);
+        }
+        return '' === \trim(\preg_replace('/<[^>]+>.*?<\/[^>]+>/s', '', $remaining) ?? $remaining) ? $images : array();
     }
     /**
      * Convert one common card child to a native block.

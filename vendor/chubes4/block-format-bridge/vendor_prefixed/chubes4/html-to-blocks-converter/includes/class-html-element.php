@@ -36,6 +36,9 @@ class HTML_To_Blocks_HTML_Element
         if (empty($html)) {
             return null;
         }
+        if (\preg_match('/^<\s*(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)\b([^>]*)\/?>\s*$/i', $html, $matches)) {
+            return new self($matches[1], self::parse_attribute_string($matches[2]), $html, '');
+        }
         $processor = \WP_HTML_Processor::create_fragment($html);
         if (!$processor) {
             return null;
@@ -98,6 +101,30 @@ class HTML_To_Blocks_HTML_Element
         if ($names) {
             foreach ($names as $name) {
                 $attributes[$name] = $processor->get_attribute($name);
+            }
+        }
+        return $attributes;
+    }
+    /**
+     * Parses attributes from a raw opening tag string.
+     *
+     * @param string $attribute_string Raw attribute markup.
+     * @return array Attribute map.
+     */
+    private static function parse_attribute_string(string $attribute_string): array
+    {
+        $attributes = array();
+        if (\preg_match_all('/([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*("([^"]*)"|\'([^\']*)\'|([^\s"\'>]+))/', $attribute_string, $matches, \PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $value = '';
+                if (isset($match[3]) && '' !== $match[3]) {
+                    $value = $match[3];
+                } elseif (isset($match[4]) && '' !== $match[4]) {
+                    $value = $match[4];
+                } elseif (isset($match[5])) {
+                    $value = $match[5];
+                }
+                $attributes[\strtolower($match[1])] = \html_entity_decode($value, \ENT_QUOTES, 'UTF-8');
             }
         }
         return $attributes;

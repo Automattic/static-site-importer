@@ -2953,6 +2953,7 @@ class Static_Site_Importer_Theme_Generator {
 			return array();
 		}
 
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_set_error_handler -- Suppresses warnings from probing local image dimensions.
 		set_error_handler( static fn(): bool => true );
 		try {
 			$size = getimagesize( $path );
