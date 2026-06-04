@@ -870,7 +870,7 @@ class Static_Site_Importer_Theme_Generator {
 			$template_html = self::read_file_if_readable( $theme_dir . '/templates/index.html' );
 		}
 
-		if ( '' !== $template_html ) {
+		if ( '' !== $template_html && function_exists( 'bfb_convert' ) ) {
 			$converted_template = bfb_convert( $template_html, 'blocks', 'html' );
 			if ( '' !== trim( $converted_template ) && '' === trim( $before . $after ) ) {
 				$before = $converted_template;
@@ -891,7 +891,7 @@ class Static_Site_Importer_Theme_Generator {
 	 */
 	private static function convert_theme_block_file_to_html( string $path ): string {
 		$content = self::read_file_if_readable( $path );
-		return '' === $content ? '' : bfb_convert( $content, 'blocks', 'html' );
+		return '' === $content || ! function_exists( 'bfb_convert' ) ? '' : bfb_convert( $content, 'blocks', 'html' );
 	}
 
 	/**
