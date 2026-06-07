@@ -7,18 +7,18 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/chubes4/block-artifact-compiler.git",
-                "reference": "f1c49b907cd94b7c10cc8c9a67cf6b5122c02cab"
+                "reference": "130229703353fddee53e58b758c80e61d8919bb7"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/chubes4/block-artifact-compiler/zipball/f1c49b907cd94b7c10cc8c9a67cf6b5122c02cab",
-                "reference": "f1c49b907cd94b7c10cc8c9a67cf6b5122c02cab",
+                "url": "https://api.github.com/repos/chubes4/block-artifact-compiler/zipball/130229703353fddee53e58b758c80e61d8919bb7",
+                "reference": "130229703353fddee53e58b758c80e61d8919bb7",
                 "shasum": ""
             },
             "require": {
                 "php": ">=8.1"
             },
-            "time": "2026-06-07T16:54:06+00:00",
+            "time": "2026-06-07T19:40:38+00:00",
             "default-branch": true,
             "type": "wordpress-plugin",
             "installation-source": "dist",

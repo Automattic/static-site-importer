@@ -38,8 +38,11 @@ BAC treats Markdown and MDX as source documents, not generic assets:
 - `.md` and `.markdown` normalize as `kind: markdown` with `text/markdown`
 - `.mdx` normalizes as `kind: mdx` with BAC-local MIME type `text/mdx`
 - frontmatter maps to WordPress document metadata such as title, slug, post type, excerpt, date, template, and taxonomy hints
-- Markdown bodies are converted through Block Format Bridge when available, with a core/html preservation fallback otherwise
-- MDX bodies are reduced to Markdown-compatible text where feasible, while JSX imports/components stay inspectable as candidates and diagnostics
+- Markdown bodies are converted through Block Format Bridge when available
+- missing Block Format Bridge fails compilation by default when source conversion is required
+- `allow_bfb_unavailable_fallback` can be enabled for explicit standalone/test smoke coverage; that mode preserves source content in `core/html` and emits fallback diagnostics
+- MDX bodies are reduced to Markdown-compatible text where feasible, while JSX imports/components stay inspectable as conservative candidates and diagnostics
+- MDX/JSX handling is candidate extraction only; BAC does not evaluate MDX runtime semantics or compile JSX components
 
 The compiler result returns:
 
@@ -48,6 +51,7 @@ The compiler result returns:
 - component candidates from explicit `data-component` markers and repeated semantic class tokens
 - component candidates from MDX JSX references and generated JSX/TSX component files
 - post/page-like `documents` artifacts compiled from HTML, Markdown, and MDX source documents
+- a compiled `site` artifact with page route keys, shared chrome candidates, and theme-level style/script asset roles
 - generated custom block type artifacts discovered from `block.json` roots
 - generated plugin artifacts discovered from WordPress plugin headers
 - materializer-facing plugin and custom-block requirements showing which generated artifacts are provided and which custom blocks remain external
@@ -98,6 +102,33 @@ array(
 	'wordpress_artifacts' => array(
 		'block_markup' => '<!-- wp:paragraph -->...',
 		'blocks'       => array(),
+		'site'         => array(
+			'schema'         => 'block-artifact-compiler/compiled-site/v1',
+			'pages'          => array(
+				array(
+					'source_path' => 'website/menu.html',
+					'route_key'   => 'menu',
+					'slug'        => 'menu',
+					'post_type'   => 'page',
+					'title'       => 'Menu',
+					'entrypoint'  => false,
+					'artifact'    => 'wordpress_artifacts.documents',
+				),
+			),
+			'shared_regions' => array(
+				array(
+					'role'           => 'header',
+					'source_paths'   => array( 'website/index.html', 'website/menu.html' ),
+					'source_hash'    => '...',
+					'source_excerpt' => '<header>...</header>',
+				),
+			),
+			'theme_assets'   => array(
+				'styles'  => array(),
+				'scripts' => array(),
+			),
+			'provenance'     => array(...),
+		),
 		'documents'    => array(
 			array(
 				'source_path'       => 'website/menu.html',
@@ -209,6 +240,21 @@ $compiled = bac_compile_fragment( $html, 'main:index.html', 'html', $options );
 $summary  = bac_summarize_result( $compiled );
 $markup   = $compiled['wordpress_artifacts']['block_markup'];
 ```
+
+`bac_compile_fragment()` is the compiler-facing fragment envelope for supported source formats. Callers should pass `html`, `markdown`, or `blocks` instead of bypassing BAC to call BFB directly. BAC normalizes diagnostics, provenance, block tree reporting, and the optional BFB report around those conversions.
+
+When BFB is unavailable and conversion is required, the default result status is `failed` with a `bfb_unavailable` error diagnostic. Standalone smoke tests may opt into preservation fallback explicitly:
+
+```php
+$compiled = bac_compile_fragment(
+	$markdown,
+	'content/about.md',
+	'markdown',
+	array( 'allow_bfb_unavailable_fallback' => true )
+);
+```
+
+That fallback mode is not production conversion. It preserves source content as `core/html` and reports `bfb_unavailable_fallback` so downstream importers cannot mistake it for native conversion.
 
 ## Boundaries
 

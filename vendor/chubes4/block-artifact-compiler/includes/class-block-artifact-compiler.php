@@ -29,11 +29,12 @@ class Block_Artifact_Compiler {
 		$normalized  = $this->normalize_artifact($artifact, $options);
 		$documents   = $this->compile_source_documents($normalized, $options);
 		$entry       = $this->entry_file($normalized);
+		$block_entry = $this->entry_block_file($normalized);
 		$html        = is_array($entry) ? $entry['content'] : '';
 		$entry_path  = is_array($entry) ? $entry['path'] : '';
 		$diagnostics = array_merge($normalized['diagnostics'], $documents['diagnostics']);
 
-		if ( '' === trim($html) && empty($documents['documents']) ) {
+		if ( '' === trim($html) && ! is_array($block_entry) && empty($documents['documents']) ) {
 			$diagnostics[] = $this->diagnostic('missing_entry_html', 'error', 'No HTML entry file was available to compile.');
 		}
 
@@ -41,12 +42,19 @@ class Block_Artifact_Compiler {
 			'body_html' => '',
 			'metadata'  => array(),
 		);
-		$conversion    = '' !== trim($entry_document['body_html']) ? $this->convert_html_to_blocks($entry_document['body_html'], $options) : array(
+		$conversion    = '' !== trim($entry_document['body_html']) ? $this->convert_content_to_blocks($entry_document['body_html'], 'html', $options) : array(
 			'serialized_blocks' => '',
 			'blocks'            => array(),
 			'diagnostics'       => array(),
 			'report'            => array(),
 		);
+		if ( '' === trim($entry_document['body_html']) && is_array($block_entry) ) {
+			$entry_path  = (string) $block_entry['path'];
+			$conversion = $this->convert_content_to_blocks((string) $block_entry['content'], 'blocks', $options);
+		}
+		if ( '' === trim($entry_path) && ! empty($documents['documents'][0]['source_path']) ) {
+			$entry_path = (string) $documents['documents'][0]['source_path'];
+		}
 		$source_report = $this->source_report($normalized, $entry_path, $html);
 
 		$diagnostics = array_merge($diagnostics, $conversion['diagnostics']);
@@ -54,8 +62,10 @@ class Block_Artifact_Compiler {
 		$block_types = $this->build_block_types($normalized, $diagnostics);
 		$plugins     = $this->build_plugin_artifacts($normalized, $block_types);
 		$files       = $this->wordpress_files_from_artifact($normalized);
-		if ( '' === trim($html) && ! empty($documents['documents'][0]['block_markup']) ) {
+		if ( '' === trim($html) && ! is_array($block_entry) && ! empty($documents['documents'][0]['block_markup']) ) {
 			$conversion['serialized_blocks'] = (string) $documents['documents'][0]['block_markup'];
+			$conversion['blocks']            = isset($documents['documents'][0]['blocks']) && is_array($documents['documents'][0]['blocks']) ? $documents['documents'][0]['blocks'] : array();
+			$conversion['report']            = isset($documents['documents'][0]['bfb_report']) && is_array($documents['documents'][0]['bfb_report']) ? $documents['documents'][0]['bfb_report'] : array();
 		}
 		$requirements = $this->build_artifact_requirements($conversion['serialized_blocks'], $block_types, $plugins);
 
@@ -81,6 +91,7 @@ class Block_Artifact_Compiler {
 				'blocks'       => $conversion['blocks'],
 				'block_tree'   => $this->block_tree_report($conversion['blocks'], $conversion['serialized_blocks']),
 				'document_metadata' => $entry_document['metadata'],
+				'site'         => $this->compiled_site_artifact($normalized, $documents['documents']),
 				'block_types'  => $block_types,
 				'plugins'      => $plugins,
 				'requirements' => $requirements,
@@ -439,6 +450,31 @@ class Block_Artifact_Compiler {
 	}
 
 	/**
+	 * Return the entry file when the source is already serialized block markup.
+	 *
+	 * @param  array{files:array<int,array<string,mixed>>,entrypoints?:array<int,string>} $artifact Normalized artifact.
+	 * @return array<string,mixed>|null
+	 */
+	private function entry_block_file( array $artifact ): ?array {
+		$entrypoints = $artifact['entrypoints'] ?? array();
+		foreach ( $entrypoints as $entrypoint ) {
+			foreach ( $artifact['files'] as $file ) {
+				if ( $entrypoint === $file['path'] && 'blocks' === $file['kind'] && empty($file['binary']) ) {
+					return $file;
+				}
+			}
+		}
+
+		foreach ( $artifact['files'] as $file ) {
+			if ( 'blocks' === $file['kind'] && empty($file['binary']) ) {
+				return $file;
+			}
+		}
+
+		return null;
+	}
+
+	/**
 	 * Split a full HTML document into renderable body markup and document metadata.
 	 *
 	 * @param string $html       Source HTML.
@@ -637,17 +673,20 @@ class Block_Artifact_Compiler {
 	}
 
 	/**
-	 * Convert HTML to block markup through BFB/H2BC when available.
+	 * Convert supported source content to block markup through BFB/H2BC when available.
 	 *
-	 * @param  string              $html    Source HTML.
+	 * @param  string              $content Source content.
+	 * @param  string              $format  Source format.
 	 * @param  array<string,mixed> $options Compiler options.
 	 * @return array{serialized_blocks:string,blocks:array,diagnostics:array<int,array<string,mixed>>,report:array<string,mixed>}
 	 */
-	private function convert_html_to_blocks( string $html, array $options ): array {
-		if ( str_contains($html, '<!-- wp:') && function_exists('parse_blocks') && function_exists('serialize_blocks') ) {
-			$blocks = parse_blocks($html);
+	private function convert_content_to_blocks( string $content, string $format, array $options ): array {
+		$format = $this->normalize_fragment_format($format);
+		if ( 'blocks' === $format || str_contains($content, '<!-- wp:') ) {
+			$blocks           = function_exists('parse_blocks') ? parse_blocks($content) : array();
+			$serialized_blocks = function_exists('serialize_blocks') && ! empty($blocks) ? serialize_blocks($blocks) : $content;
 			return array(
-				'serialized_blocks' => serialize_blocks($blocks),
+				'serialized_blocks' => $serialized_blocks,
 				'blocks'            => $blocks,
 				'diagnostics'       => array(),
 				'report'            => array(
@@ -658,10 +697,10 @@ class Block_Artifact_Compiler {
 		}
 
 		if ( function_exists('bfb_convert') ) {
-			$block_markup = (string) bfb_convert($html, 'html', 'blocks', $options);
+			$block_markup = (string) bfb_convert($content, $format, 'blocks', $options);
 			$report       = array( 'status' => '' === trim($block_markup) ? 'failed' : 'success_native' );
 			if ( ! empty($options['include_bfb_report']) && function_exists('bfb_conversion_report') ) {
-				$report = bfb_conversion_report($html, 'html', $options);
+				$report = bfb_conversion_report($content, $format, $options);
 			}
 
 			return array(
@@ -672,13 +711,30 @@ class Block_Artifact_Compiler {
 			);
 		}
 
+		if ( empty($options['allow_bfb_unavailable_fallback']) ) {
+			return array(
+				'serialized_blocks' => '',
+				'blocks'            => array(),
+				'diagnostics'       => array(
+					$this->diagnostic('bfb_unavailable', 'error', 'BFB is unavailable; source conversion cannot run in production compile mode.', array( 'format' => $format )),
+				),
+				'report'            => array(
+					'status' => 'failed',
+					'source' => $format,
+				),
+			);
+		}
+
 		return array(
-			'serialized_blocks' => '<!-- wp:html -->' . "\n" . $html . "\n" . '<!-- /wp:html -->',
+			'serialized_blocks' => '<!-- wp:html -->' . "\n" . $content . "\n" . '<!-- /wp:html -->',
 			'blocks'            => array(),
 			'diagnostics'       => array(
-				$this->diagnostic('bfb_unavailable', 'warning', 'BFB is unavailable; preserved source HTML as a core/html fallback.'),
+				$this->diagnostic('bfb_unavailable_fallback', 'warning', 'BFB is unavailable; preserved source content as an explicit core/html fallback.', array( 'format' => $format )),
 			),
-			'report'            => array( 'status' => 'success_with_fallbacks' ),
+			'report'            => array(
+				'status' => 'success_with_fallbacks',
+				'source' => $format,
+			),
 		);
 	}
 
@@ -694,6 +750,151 @@ class Block_Artifact_Compiler {
 			'html'       => $this->html_structure_report($html),
 			'css'        => $this->css_structure_report($artifact['files']),
 		);
+	}
+
+	/**
+	 * Build a materializer-neutral compiled site/theme artifact.
+	 *
+	 * @param  array{files:array<int,array<string,mixed>>} $artifact  Normalized artifact.
+	 * @param  array<int,array<string,mixed>>              $documents Compiled document artifacts.
+	 * @return array<string,mixed> Compiled site artifact.
+	 */
+	private function compiled_site_artifact( array $artifact, array $documents ): array {
+		$pages = array_map(
+			static function ( array $document ): array {
+				return array(
+					'source_path' => (string) ( $document['source_path'] ?? '' ),
+					'route_key'   => (string) ( $document['slug'] ?? '' ),
+					'slug'        => (string) ( $document['slug'] ?? '' ),
+					'post_type'   => (string) ( $document['post_type'] ?? 'page' ),
+					'title'       => (string) ( $document['title'] ?? '' ),
+					'entrypoint'  => ! empty($document['entrypoint']),
+					'artifact'    => 'wordpress_artifacts.documents',
+				);
+			},
+			$documents
+		);
+
+		return array(
+			'schema'         => 'block-artifact-compiler/compiled-site/v1',
+			'pages'          => $pages,
+			'shared_regions' => $this->shared_region_contracts($artifact),
+			'theme_assets'   => $this->theme_asset_contracts($artifact),
+			'provenance'     => array(
+				'source_hash' => hash('sha256', $this->artifact_hash_payload($artifact)),
+			),
+		);
+	}
+
+	/**
+	 * Extract conservative shared region candidates from HTML documents.
+	 *
+	 * @param  array{files:array<int,array<string,mixed>>} $artifact Normalized artifact.
+	 * @return array<int,array<string,mixed>> Shared region contracts.
+	 */
+	private function shared_region_contracts( array $artifact ): array {
+		$regions = array();
+		foreach ( $artifact['files'] as $file ) {
+			if ( 'html' !== $file['kind'] || ! empty($file['binary']) ) {
+				continue;
+			}
+
+			foreach ( $this->html_region_candidates((string) $file['content']) as $region ) {
+				$key = (string) $region['role'] . ':' . (string) $region['hash'];
+				if ( ! isset($regions[ $key ]) ) {
+					$regions[ $key ] = array(
+						'role'           => $region['role'],
+						'source_paths'   => array(),
+						'source_hash'    => $region['hash'],
+						'source_excerpt' => $region['excerpt'],
+					);
+				}
+				$regions[ $key ]['source_paths'][] = $file['path'];
+			}
+		}
+
+		return array_values(
+			array_filter(
+				$regions,
+				static fn ( array $region ): bool => count($region['source_paths']) > 1
+			)
+		);
+	}
+
+	/**
+	 * Extract region candidates from one HTML document.
+	 *
+	 * @return array<int,array{role:string,hash:string,excerpt:string}>
+	 */
+	private function html_region_candidates( string $html ): array {
+		if ( '' === trim($html) || ! class_exists('DOMDocument') ) {
+			return array();
+		}
+
+		$doc      = new DOMDocument();
+		$previous = libxml_use_internal_errors(true);
+		$loaded   = $doc->loadHTML($html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+		libxml_clear_errors();
+		libxml_use_internal_errors($previous);
+		if ( ! $loaded ) {
+			return array();
+		}
+
+		$regions = array();
+		foreach ( array( 'header', 'footer', 'main' ) as $tag ) {
+			$node = $doc->getElementsByTagName($tag)->item(0);
+			if ( ! $node instanceof DOMElement ) {
+				continue;
+			}
+			$markup = trim((string) $doc->saveHTML($node));
+			if ( '' === $markup ) {
+				continue;
+			}
+
+			$regions[] = array(
+				'role'    => $tag,
+				'hash'    => hash('sha256', $markup),
+				'excerpt' => substr(preg_replace('/\s+/', ' ', $markup) ?? $markup, 0, 240),
+			);
+		}
+
+		return $regions;
+	}
+
+	/**
+	 * Return theme-level CSS and script assets for downstream materializers.
+	 *
+	 * @param  array{files:array<int,array<string,mixed>>} $artifact Normalized artifact.
+	 * @return array<string,array<int,array<string,mixed>>> Theme asset contract.
+	 */
+	private function theme_asset_contracts( array $artifact ): array {
+		$assets = array(
+			'styles'  => array(),
+			'scripts' => array(),
+		);
+
+		foreach ( $artifact['files'] as $file ) {
+			if ( 'css' === $file['kind'] ) {
+				$assets['styles'][] = array(
+					'path'       => $file['path'],
+					'role'       => $file['role'],
+					'intent'     => $file['intent'],
+					'bytes'      => $file['bytes'],
+					'provenance' => $file['provenance'],
+				);
+			}
+			if ( 'js' === $file['kind'] ) {
+				$assets['scripts'][] = array(
+					'path'       => $file['path'],
+					'role'       => $file['role'],
+					'intent'     => $file['intent'],
+					'bytes'      => $file['bytes'],
+					'provenance' => $file['provenance'],
+				);
+			}
+		}
+
+		return $assets;
 	}
 
 	/**
@@ -920,7 +1121,7 @@ class Block_Artifact_Compiler {
 
 			if ( 'html' === $file['kind'] ) {
 				$document             = $this->entry_document_contract($file['content'], $file['path']);
-				$conversion           = $this->convert_html_to_blocks($document['body_html'], $options);
+				$conversion           = $this->convert_content_to_blocks($document['body_html'], 'html', $options);
 				$document_diagnostics = $conversion['diagnostics'];
 				$diagnostics          = array_merge($diagnostics, $document_diagnostics);
 				$metadata             = $document['metadata'];
@@ -938,6 +1139,8 @@ class Block_Artifact_Compiler {
 					'entrypoint'        => ! empty($file['entrypoint']),
 					'document_metadata' => $metadata,
 					'block_markup'      => $conversion['serialized_blocks'],
+					'blocks'            => $conversion['blocks'],
+					'bfb_report'        => $conversion['report'],
 					'diagnostics'       => $document_diagnostics,
 					'provenance'        => $file['provenance'],
 				);
@@ -956,7 +1159,7 @@ class Block_Artifact_Compiler {
 				$document_diagnostics = array_merge($document_diagnostics, $mdx['diagnostics']);
 			}
 
-			$conversion           = $this->convert_markdown_to_blocks($body, $options);
+			$conversion           = $this->convert_content_to_blocks($body, 'markdown', $options);
 			$document_diagnostics = array_merge($document_diagnostics, $conversion['diagnostics']);
 			$diagnostics          = array_merge($diagnostics, $document_diagnostics);
 
@@ -972,6 +1175,8 @@ class Block_Artifact_Compiler {
 				'taxonomies'   => $this->frontmatter_taxonomies($frontmatter),
 				'frontmatter'  => $frontmatter,
 				'block_markup' => $conversion['serialized_blocks'],
+				'blocks'       => $conversion['blocks'],
+				'bfb_report'   => $conversion['report'],
 				'diagnostics'  => $document_diagnostics,
 				'provenance'   => $file['provenance'],
 			);
@@ -981,39 +1186,6 @@ class Block_Artifact_Compiler {
 			'documents'   => $documents,
 			'components'  => $components,
 			'diagnostics' => $this->dedupe_diagnostics($diagnostics),
-		);
-	}
-
-	/**
-	 * Convert Markdown through BFB when present, otherwise preserve it in a block fallback.
-	 *
-	 * @param  array<string,mixed> $options Compiler options.
-	 * @return array{serialized_blocks:string,blocks:array,diagnostics:array<int,array<string,mixed>>,report:array<string,mixed>}
-	 */
-	private function convert_markdown_to_blocks( string $markdown, array $options ): array {
-		if ( function_exists('bfb_convert') ) {
-			$block_markup = (string) bfb_convert($markdown, 'markdown', 'blocks', $options);
-			return array(
-				'serialized_blocks' => $block_markup,
-				'blocks'            => function_exists('parse_blocks') && '' !== trim($block_markup) ? parse_blocks($block_markup) : array(),
-				'diagnostics'       => array(),
-				'report'            => array(
-					'status' => '' === trim($block_markup) ? 'failed' : 'success_native',
-					'source' => 'markdown',
-				),
-			);
-		}
-
-		return array(
-			'serialized_blocks' => '<!-- wp:html -->' . "\n" . $markdown . "\n" . '<!-- /wp:html -->',
-			'blocks'            => array(),
-			'diagnostics'       => array(
-				$this->diagnostic('bfb_unavailable', 'warning', 'BFB is unavailable; preserved source Markdown as a core/html fallback.'),
-			),
-			'report'            => array(
-				'status' => 'success_with_fallbacks',
-				'source' => 'markdown',
-			),
 		);
 	}
 
@@ -1823,15 +1995,32 @@ class Block_Artifact_Compiler {
 	 */
 	private function virtual_fragment_path( string $source, string $format ): string {
 		$path      = $this->safe_relative_path(str_replace(array( ':', '#' ), '-', $source));
-		$extension = match ( bac_sanitize_key($format) ) {
+		$extension = match ( $this->normalize_fragment_format($format) ) {
 			'css'      => 'css',
 			'js'       => 'js',
 			'markdown' => 'md',
 			'mdx'      => 'mdx',
+			'blocks'   => 'blocks.html',
 			default    => 'html',
 		};
 
 		return ( '' === $path ? 'fragment' : preg_replace('/\.[A-Za-z0-9]+$/', '', $path) ) . '.' . $extension;
+	}
+
+	/**
+	 * Normalize public fragment source formats to BFB-facing format keys.
+	 */
+	private function normalize_fragment_format( string $format ): string {
+		$format = bac_sanitize_key($format);
+		return match ( $format ) {
+			'htm', 'html'      => 'html',
+			'md', 'markdown'   => 'markdown',
+			'wp-blocks', 'block-markup', 'blocks' => 'blocks',
+			'mdx'              => 'mdx',
+			'css'              => 'css',
+			'js', 'javascript' => 'js',
+			default            => 'html',
+		};
 	}
 
 	/**
@@ -1921,7 +2110,7 @@ class Block_Artifact_Compiler {
 	}
 
 	/**
-	 * Extract MDX imports and JSX component references while producing Markdown-compatible text.
+	 * Extract conservative MDX/JSX component candidates while producing Markdown-compatible text.
 	 *
 	 * @param  array<string,mixed>                         $file     Source file.
 	 * @param  array{files:array<int,array<string,mixed>>} $artifact Normalized artifact.
@@ -1930,7 +2119,14 @@ class Block_Artifact_Compiler {
 	private function extract_mdx_semantics( string $body, array $file, array $artifact ): array {
 		$imports     = $this->extract_mdx_imports($body);
 		$components  = array();
-		$diagnostics = array();
+		$diagnostics = array(
+			$this->diagnostic(
+				'mdx_candidate_extraction_only',
+				'info',
+				'MDX/JSX handling is conservative component candidate extraction; BAC does not evaluate MDX runtime semantics.',
+				array( 'path' => $file['path'] )
+			),
+		);
 
 		if ( preg_match_all('/<([A-Z][A-Za-z0-9._-]*)(?:\s[^>]*)?\s*(?:>|\/>)/', $body, $matches) ) {
 			foreach ( $matches[1] as $name ) {
@@ -1957,7 +2153,7 @@ class Block_Artifact_Compiler {
 					$diagnostics[] = $this->diagnostic(
 						'mdx_component_unresolved',
 						'warning',
-						'MDX component reference has no matching import.',
+						'MDX component candidate has no matching import.',
 						array(
 							'path'      => $file['path'],
 							'component' => $name,
@@ -1967,7 +2163,7 @@ class Block_Artifact_Compiler {
 					$diagnostics[] = $this->diagnostic(
 						'mdx_import_unresolved',
 						'warning',
-						'MDX component import could not be linked to a generated source file.',
+						'MDX component candidate import could not be linked to a generated source file.',
 						array(
 							'path'        => $file['path'],
 							'component'   => $name,

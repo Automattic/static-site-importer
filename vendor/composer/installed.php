@@ -13,7 +13,7 @@
         'chubes4/block-artifact-compiler' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => 'f1c49b907cd94b7c10cc8c9a67cf6b5122c02cab',
+            'reference' => '130229703353fddee53e58b758c80e61d8919bb7',
             'type' => 'wordpress-plugin',
             'install_path' => __DIR__ . '/../chubes4/block-artifact-compiler',
             'aliases' => array(

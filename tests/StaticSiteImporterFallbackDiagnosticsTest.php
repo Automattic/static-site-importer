@@ -11,6 +11,17 @@
 class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 
 	/**
+	 * SSI should consume BAC/BFB diagnostics instead of lower-level h2bc hooks.
+	 */
+	public function test_theme_generator_does_not_register_h2bc_conversion_hooks(): void {
+		$source = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php' );
+
+		$this->assertIsString( $source );
+		$this->assertStringNotContainsString( "add_action( 'html_to_blocks_", $source );
+		$this->assertStringNotContainsString( "remove_action( 'html_to_blocks_", $source );
+	}
+
+	/**
 	 * Unsupported fallback diagnostics include routing metadata for upstream triage.
 	 */
 	public function test_fallback_diagnostic_includes_actionable_routing_metadata(): void {

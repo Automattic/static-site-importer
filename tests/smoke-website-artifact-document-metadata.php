@@ -132,6 +132,7 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 	$multi_report    = json_decode( $read( $multi_page_result['report_path'] ), true );
 	$source_docs     = $multi_report['source_documents'] ?? array();
 	$bac_documents   = $source_docs['bac_documents'] ?? array();
+	$compiled_site   = $multi_report['block_artifact_compiler']['compiled_site'] ?? array();
 	$block_documents = $multi_report['generated_theme']['block_documents'] ?? array();
 	$documents_by_source = array();
 	$pattern_documents = array();
@@ -152,6 +153,9 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 	$assert( str_ends_with( (string) ( $documents_by_source['website/index.html']['permalink'] ?? '' ), '/' ), 'entry-index-has-front-page-permalink' );
 	$assert( 'menu' === ( $documents_by_source['website/menu.html']['slug'] ?? '' ), 'menu-page-materializes' );
 	$assert( 'contact' === ( $documents_by_source['website/contact.html']['slug'] ?? '' ), 'contact-page-materializes' );
+	$assert( 'block-artifact-compiler/compiled-site/v1' === ( $compiled_site['schema'] ?? '' ), 'compiled-site-contract-is-recorded' );
+	$assert( 3 === ( $compiled_site['page_count'] ?? null ), 'compiled-site-page-count-is-recorded' );
+	$assert( 'menu' === ( $compiled_site['pages'][1]['route_key'] ?? '' ), 'compiled-site-route-key-is-recorded' );
 	$assert( array() === $pattern_documents, 'bac-document-import-does-not-generate-page-pattern-copies' );
 }
 

@@ -16,6 +16,12 @@ $assert = static function ( bool $condition, string $message, string $detail = '
 	exit( 1 );
 };
 
+$fallback_options = array( 'allow_bfb_unavailable_fallback' => true );
+
+$missing_bfb = bac_compile_fragment( '<main><p>Needs BFB</p></main>', 'production-fragment.html' );
+$assert( 'failed' === ( $missing_bfb['status'] ?? '' ), 'missing BFB fails by default for production fragment compilation', (string) ( $missing_bfb['status'] ?? '' ) );
+$assert( ! empty( array_filter( $missing_bfb['diagnostics'] ?? array(), static fn ( array $diagnostic ): bool => 'bfb_unavailable' === ( $diagnostic['code'] ?? '' ) && 'error' === ( $diagnostic['severity'] ?? '' ) ) ), 'missing BFB default policy emits an error diagnostic' );
+
 $result = bac_compile_website_artifact(
 	array(
 		'files' => array(
@@ -24,7 +30,8 @@ $result = bac_compile_website_artifact(
 				'content' => '<main><h1>Hello compiler</h1><p>Initial contract.</p></main>',
 			),
 		),
-	)
+	),
+	$fallback_options
 );
 
 $assert( 'block-artifact-compiler/result/v1' === ( $result['schema'] ?? '' ), 'result exposes schema' );
@@ -49,7 +56,8 @@ $schema_less = bac_compile_website_artifact(
 				'content' => '<main><p>No input schema required.</p></main>',
 			),
 		),
-	)
+	),
+	$fallback_options
 );
 $assert( 'schema-less.html' === ( $schema_less['input']['entry_path'] ?? '' ), 'bundles without schema still compile' );
 $assert( '' === ( $schema_less['input']['original_schema'] ?? null ), 'omitted bundle schema is preserved as empty original schema metadata' );
@@ -70,7 +78,8 @@ $nested_source = bac_compile_website_artifact(
 				'source'  => array( 'metadata' => 'object' ),
 			),
 		),
-	)
+	),
+	$fallback_options
 );
 restore_error_handler();
 $assert( array() === $warnings, 'non-scalar file source metadata does not emit PHP warnings', implode( '; ', $warnings ) );
@@ -88,7 +97,8 @@ $messy = bac_compile_website_artifact(
 				'content' => 'nope',
 			),
 		),
-	)
+	),
+	$fallback_options
 );
 $assert( 'success_with_warnings' === ( $messy['status'] ?? '' ), 'unsafe AI artifact inputs produce warning status', (string) ( $messy['status'] ?? '' ) );
 $assert( 2 === ( $messy['input']['rejected_count'] ?? null ), 'unsafe paths are rejected' );
@@ -106,7 +116,8 @@ $markdown = bac_compile_website_artifact(
 			'content/changelog.markdown' => "---\ntitle: Changelog\npost_type: post\n---\n# Changes",
 			'assets/logo.bin'       => 'binary-ish',
 		),
-	)
+	),
+	$fallback_options
 );
 $assert( 'success_with_warnings' === ( $markdown['status'] ?? '' ), 'markdown documents compile with fallback warnings when BFB is unavailable', (string) ( $markdown['status'] ?? '' ) );
 $assert( 2 === ( $markdown['input']['files_by_kind']['markdown'] ?? 0 ), 'md and markdown files are classified as markdown' );
@@ -123,7 +134,8 @@ $mdx = bac_compile_website_artifact(
 			'components/Hero.jsx'     => 'export default function Hero() { return <section />; }',
 			'components/ProductGrid.tsx' => 'export function ProductGrid() { return <div />; }',
 		),
-	)
+	),
+	$fallback_options
 );
 $assert( 1 === ( $mdx['input']['files_by_kind']['mdx'] ?? 0 ), 'mdx files are classified as mdx' );
 $assert( 1 === ( $mdx['input']['files_by_kind']['jsx'] ?? 0 ), 'jsx files are classified as jsx component sources' );
@@ -135,8 +147,17 @@ $assert( ! empty( array_filter( $mdx['wordpress_artifacts']['components'] ?? arr
 $assert( ! empty( array_filter( $mdx['wordpress_artifacts']['components'] ?? array(), static fn ( array $component ): bool => 'jsx-component-file' === ( $component['signal'] ?? '' ) && 'components/Hero.jsx' === ( $component['source'] ?? '' ) ) ), 'jsx source files produce component candidates' );
 $assert( ! empty( array_filter( $mdx['diagnostics'] ?? array(), static fn ( array $diagnostic ): bool => 'mdx_component_unresolved' === ( $diagnostic['code'] ?? '' ) ) ), 'unresolved mdx components emit diagnostics' );
 
-$fragment = bac_compile_fragment( '<div class="feature-card">Feature</div>', 'main:index.html' );
+$fragment = bac_compile_fragment( '<div class="feature-card">Feature</div>', 'main:index.html', 'html', $fallback_options );
 $assert( 'main-index.html' === ( $fragment['input']['entry_path'] ?? '' ), 'fragment source is normalized to virtual path' );
+
+$markdown_fragment = bac_compile_fragment( '# Feature\n\nMarkdown fragment.', 'content/feature.md', 'markdown', $fallback_options );
+$assert( 'content/feature.md' === ( $markdown_fragment['input']['entry_path'] ?? '' ), 'markdown fragment keeps a virtual markdown source path' );
+$assert( 'markdown' === ( $markdown_fragment['bfb_report']['source'] ?? '' ), 'markdown fragment routes through BAC conversion envelope' );
+$assert( str_contains( (string) ( $markdown_fragment['wordpress_artifacts']['block_markup'] ?? '' ), 'Markdown fragment.' ), 'markdown fragment exposes top-level block markup' );
+
+$blocks_fragment = bac_compile_fragment( '<!-- wp:paragraph --><p>Native blocks</p><!-- /wp:paragraph -->', 'content/native.blocks', 'blocks' );
+$assert( 'success' === ( $blocks_fragment['status'] ?? '' ), 'serialized block fragments compile without BFB' );
+$assert( str_contains( (string) ( $blocks_fragment['wordpress_artifacts']['block_markup'] ?? '' ), 'Native blocks' ), 'serialized block fragments preserve block markup' );
 
 $full_document = bac_compile_website_artifact(
 	array(
@@ -146,7 +167,8 @@ $full_document = bac_compile_website_artifact(
 				'content' => '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ember & Rye</title><meta name="description" content="Wood-fired bakery"><link rel="stylesheet" href="/assets/site.css"></head><body><header class="site-header"><a href="/">Ember & Rye</a></header><main><section class="hero"><h1>Fire, flour, patience.</h1><p>Small-batch loaves.</p></section></main></body></html>',
 			),
 		),
-	)
+	),
+	$fallback_options
 );
 $full_document_markup = (string) ( $full_document['wordpress_artifacts']['block_markup'] ?? '' );
 $full_document_metadata = $full_document['wordpress_artifacts']['document_metadata'] ?? array();
@@ -178,7 +200,8 @@ $multi_page = bac_compile_website_artifact(
 				'content' => '<main><h1>Contact</h1><p>Email us.</p></main>',
 			),
 		)
-	)
+	),
+	$fallback_options
 );
 $multi_documents = $multi_page['wordpress_artifacts']['documents'] ?? array();
 $assert( 3 === count( $multi_documents ), 'multi-page HTML artifacts expose one document per HTML file' );
@@ -189,6 +212,28 @@ $assert( 'menu' === ( $multi_documents[1]['slug'] ?? '' ), 'nested HTML page slu
 $assert( 'Menu Page' === ( $multi_documents[1]['title'] ?? '' ), 'nested HTML document title comes from metadata' );
 $assert( 'Seasonal menu' === ( $multi_documents[1]['document_metadata']['meta'][0]['content'] ?? '' ), 'nested HTML document metadata is preserved' );
 $assert( str_contains( (string) ( $multi_documents[2]['block_markup'] ?? '' ), 'Contact' ), 'HTML document block markup preserves body content' );
+
+$compiled_site = $multi_page['wordpress_artifacts']['site'] ?? array();
+$assert( 'block-artifact-compiler/compiled-site/v1' === ( $compiled_site['schema'] ?? '' ), 'compiled site artifact exposes schema' );
+$assert( 3 === count( $compiled_site['pages'] ?? array() ), 'compiled site artifact exposes page routes' );
+$assert( 'menu' === ( $compiled_site['pages'][1]['route_key'] ?? '' ), 'compiled site page route keys come from document slugs' );
+
+$shared_chrome = bac_compile_website_artifact(
+	array(
+		'files' => array(
+			'home.html'  => '<!doctype html><html><body><header class="site-header">Shared nav</header><main><h1>Home</h1></main><footer>Shared footer</footer></body></html>',
+			'about.html' => '<!doctype html><html><body><header class="site-header">Shared nav</header><main><h1>About</h1></main><footer>Shared footer</footer></body></html>',
+			'site.css'   => 'body{font-family:sans-serif}',
+			'site.js'    => 'console.log("site")',
+		),
+	),
+	$fallback_options
+);
+$shared_regions = $shared_chrome['wordpress_artifacts']['site']['shared_regions'] ?? array();
+$assert( ! empty( array_filter( $shared_regions, static fn ( array $region ): bool => 'header' === ( $region['role'] ?? '' ) && 2 === count( $region['source_paths'] ?? array() ) ) ), 'compiled site artifact exposes shared header chrome candidates' );
+$assert( ! empty( array_filter( $shared_regions, static fn ( array $region ): bool => 'footer' === ( $region['role'] ?? '' ) && 2 === count( $region['source_paths'] ?? array() ) ) ), 'compiled site artifact exposes shared footer chrome candidates' );
+$assert( 1 === count( $shared_chrome['wordpress_artifacts']['site']['theme_assets']['styles'] ?? array() ), 'compiled site artifact exposes theme style assets' );
+$assert( 1 === count( $shared_chrome['wordpress_artifacts']['site']['theme_assets']['scripts'] ?? array() ), 'compiled site artifact exposes theme script assets' );
 
 $summary = bac_summarize_result( $messy );
 $assert( ( $summary['component_count'] ?? 0 ) > 0, 'summary exposes component count' );
@@ -223,7 +268,8 @@ $rich = bac_compile_website_artifact(
 				'content_base64' => 'not-valid-base64',
 			),
 		),
-	)
+	),
+	$fallback_options
 );
 $assert( 'pages/home.html' === ( $rich['input']['entry_path'] ?? '' ), 'explicit entrypoint selects nested HTML entry' );
 $assert( in_array( 'pages/home.html', $rich['input']['entrypoints'] ?? array(), true ), 'entrypoints are normalized into input metadata' );
@@ -277,7 +323,8 @@ $blocks = bac_compile_website_artifact(
 			'blocks/hero/editor.css'       => '.wp-block-acme-hero{outline:1px solid}',
 			'blocks/hero/render.php'       => '<?php echo $content;',
 		),
-	)
+	),
+	$fallback_options
 );
 $block_types = $blocks['wordpress_artifacts']['block_types'] ?? array();
 $assert( 1 === count( $block_types ), 'block.json roots are promoted into block type artifacts' );
@@ -314,7 +361,8 @@ $plugin_bundle = bac_compile_website_artifact(
 			),
 			'plugins/acme-blocks/blocks/hero/index.js'   => 'wp.blocks.registerBlockType("acme/hero", {});',
 		),
-	)
+	),
+	$fallback_options
 );
 $plugins = $plugin_bundle['wordpress_artifacts']['plugins'] ?? array();
 $assert( 1 === count( $plugins ), 'plugin header files are promoted into plugin artifacts' );
