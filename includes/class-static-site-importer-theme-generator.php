@@ -7713,94 +7713,21 @@ class Static_Site_Importer_Theme_Generator {
 		$quality['diagnostic_refs']         = self::quality_diagnostic_refs( self::$conversion_report['diagnostics'] ?? array() );
 		self::$conversion_report['quality'] = $quality;
 		self::normalize_source_document_diagnostic_refs();
-		self::$conversion_report['artifact_diagnostics'] = self::codebox_artifact_diagnostics( self::$conversion_report['diagnostics'] ?? array() );
-		return $quality;
-	}
-
-	/**
-	 * Project SSI-owned diagnostics into the generic Codebox artifact diagnostics contract.
-	 *
-	 * @param array<int,array<string,mixed>> $diagnostics Normalized SSI diagnostics.
-	 * @return array<string,mixed>
-	 */
-	private static function codebox_artifact_diagnostics( array $diagnostics ): array {
-		$rows = array();
-		foreach ( $diagnostics as $index => $diagnostic ) {
-			if ( ! is_array( $diagnostic ) ) {
-				continue;
-			}
-
-			$rows[] = self::codebox_artifact_diagnostic( $diagnostic, $index );
-		}
-
-		$summary = array(
-			'total'   => count( $rows ),
-			'error'   => count( array_filter( $rows, static fn ( array $row ): bool => 'error' === ( $row['severity'] ?? '' ) ) ),
-			'warning' => count( array_filter( $rows, static fn ( array $row ): bool => 'warning' === ( $row['severity'] ?? '' ) ) ),
-			'notice'  => count( array_filter( $rows, static fn ( array $row ): bool => 'notice' === ( $row['severity'] ?? '' ) ) ),
-			'info'    => count( array_filter( $rows, static fn ( array $row ): bool => 'info' === ( $row['severity'] ?? '' ) ) ),
-		);
-
-		return array(
-			'schema'      => 'wp-codebox/artifact-diagnostics/v1',
-			'status'      => empty( $rows ) ? 'clean' : 'reported',
-			'summary'     => $summary,
-			'diagnostics' => $rows,
-		);
-	}
-
-	/**
-	 * Convert one SSI diagnostic into a generic artifact diagnostic row.
-	 *
-	 * @param array<string,mixed> $diagnostic Normalized SSI diagnostic.
-	 * @param int                 $index      Diagnostic index.
-	 * @return array<string,mixed>
-	 */
-	private static function codebox_artifact_diagnostic( array $diagnostic, int $index ): array {
-		$type     = isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : 'static_site_importer_diagnostic';
-		$id       = isset( $diagnostic['id'] ) && is_scalar( $diagnostic['id'] ) ? (string) $diagnostic['id'] : 'static-site-importer-diagnostic-' . ( $index + 1 );
-		$path     = isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : '';
-		$message  = '';
-		foreach ( array( 'message', 'reason', 'excerpt', 'error_message' ) as $field ) {
-			if ( isset( $diagnostic[ $field ] ) && is_scalar( $diagnostic[ $field ] ) && '' !== trim( (string) $diagnostic[ $field ] ) ) {
-				$message = (string) $diagnostic[ $field ];
-				break;
-			}
-		}
-		if ( '' === $message ) {
-			$message = $type;
-		}
-
-		$row = array(
-			'id'         => $id,
-			'type'       => $type,
-			'severity'   => isset( $diagnostic['severity'] ) && is_scalar( $diagnostic['severity'] ) ? (string) $diagnostic['severity'] : self::diagnostic_severity( $type ),
-			'message'    => $message,
-			'category'   => isset( $diagnostic['category'] ) && is_scalar( $diagnostic['category'] ) ? (string) $diagnostic['category'] : self::diagnostic_category( $type ),
-			'source'     => 'static-site-importer',
-			'path'       => $path,
-			'stage'      => isset( $diagnostic['stage'] ) && is_scalar( $diagnostic['stage'] ) ? (string) $diagnostic['stage'] : 'import',
-			'code'       => isset( $diagnostic['reason_code'] ) && is_scalar( $diagnostic['reason_code'] ) ? (string) $diagnostic['reason_code'] : $type,
-			'provenance' => array(
+		self::$conversion_report['artifact_diagnostics'] = Static_Site_Importer_WP_Codebox_Artifact_Diagnostics_Normalizer::build(
+			array( 'diagnostics' => self::$conversion_report['diagnostics'] ?? array() ),
+			array(
+				'source'          => 'static-site-importer',
+				'stage'           => 'import',
 				'observationType' => 'static-site-importer/import-report',
-			),
-			'refs'       => array(
-				array(
-					'path' => 'import-report.json',
-					'kind' => 'static-site-importer/import-report',
+				'refs'            => array(
+					array(
+						'path' => 'import-report.json',
+						'kind' => 'static-site-importer/import-report',
+					),
 				),
-			),
-			'details'    => $diagnostic,
+			)
 		);
-
-		if ( isset( $diagnostic['selector'] ) && is_scalar( $diagnostic['selector'] ) && '' !== trim( (string) $diagnostic['selector'] ) ) {
-			$row['selector'] = (string) $diagnostic['selector'];
-		}
-
-		return array_filter(
-			$row,
-			static fn ( $value ): bool => ! ( '' === $value || array() === $value || null === $value )
-		);
+		return $quality;
 	}
 
 	/**
