@@ -140,15 +140,6 @@ class BFB_Markdown_Adapter implements BFB_Format_Adapter {
 	}
 
 	/**
-	 * @inheritDoc
-	 */
-	public function detect( string $content ): bool {
-		// Reserved for future use. v0.1.0 doesn't auto-detect.
-		unset( $content );
-		return false;
-	}
-
-	/**
 	 * Render markdown to HTML using league/commonmark with GFM extensions.
 	 *
 	 * Picks the prefixed namespace from the build distribution when

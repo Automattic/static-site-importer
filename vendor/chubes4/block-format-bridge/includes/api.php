@@ -60,6 +60,16 @@ if ( ! function_exists( 'bfb_capabilities' ) ) {
 
 		$h2bc = bfb_h2bc_capabilities();
 
+		$block_coverage = isset( $h2bc['inventory']['block_coverage'] ) && is_array( $h2bc['inventory']['block_coverage'] )
+			? $h2bc['inventory']['block_coverage']
+			: array(
+				'source'             => (string) ( $h2bc['inventory']['source'] ?? 'h2bc_capability_api_missing' ),
+				'requires'           => (string) ( $h2bc['inventory']['requires'] ?? 'https://github.com/chubes4/html-to-blocks-converter/issues/418' ),
+				'supported_blocks'   => array(),
+				'unsupported_blocks' => array(),
+				'classifications'    => array(),
+			);
+
 		return array(
 			'bridge'         => array(
 				'version' => defined( 'BFB_VERSION' ) ? BFB_VERSION : null,
@@ -77,13 +87,7 @@ if ( ! function_exists( 'bfb_capabilities' ) ) {
 				),
 			),
 			'h2bc'           => $h2bc,
-			'block_coverage' => array(
-				'source'             => 'not_available',
-				'requires'           => 'h2bc#56',
-				'supported_blocks'   => array(),
-				'unsupported_blocks' => array(),
-				'classifications'    => array(),
-			),
+			'block_coverage' => $block_coverage,
 			'hooks'          => array(
 				'filters' => array(
 					'bfb_register_format_adapter',
@@ -214,16 +218,142 @@ if ( ! function_exists( 'bfb_h2bc_capabilities' ) ) {
 			}
 		}
 
-		return array(
-			'available'   => null !== $handler,
-			'version'     => $version,
-			'path'        => $path,
-			'raw_handler' => $handler,
-			'inventory'   => array(
-				'source'   => 'not_available',
-				'requires' => 'h2bc#56',
-			),
+		$capability_function = bfb_h2bc_capability_function();
+		$inventory           = array(
+			'source'   => null !== $capability_function ? 'h2bc_capabilities' : 'h2bc_capability_api_missing',
+			'requires' => null !== $capability_function ? null : 'https://github.com/chubes4/html-to-blocks-converter/issues/418',
 		);
+
+		if ( null !== $capability_function ) {
+			$capability_report = $capability_function();
+			if ( is_array( $capability_report ) ) {
+				$inventory = bfb_normalize_h2bc_inventory( $capability_report );
+				if ( isset( $inventory['version'] ) && is_string( $inventory['version'] ) && '' !== $inventory['version'] ) {
+					$version = $inventory['version'];
+				}
+			}
+		}
+
+		return array(
+			'available'      => null !== $handler,
+			'version'        => $version,
+			'path'           => $path,
+			'raw_handler'    => $handler,
+			'capability_api' => $capability_function,
+			'inventory'      => $inventory,
+		);
+	}
+}
+
+if ( ! function_exists( 'bfb_h2bc_capability_function' ) ) {
+	/**
+	 * Resolve h2bc's public capability function when the active substrate exposes one.
+	 *
+	 * @return callable-string|null Callable function name, or null when h2bc lacks the API.
+	 */
+	function bfb_h2bc_capability_function(): ?string {
+		$candidates = array(
+			'\BlockFormatBridge\Vendor\html_to_blocks_capabilities',
+			'html_to_blocks_capabilities',
+		);
+		$defined    = get_defined_functions();
+		$functions  = array_map( 'strtolower', $defined['user'] );
+
+		foreach ( $candidates as $candidate ) {
+			if ( in_array( strtolower( ltrim( $candidate, '\\' ) ), $functions, true ) ) {
+				/** @var callable-string $candidate */
+				return $candidate;
+			}
+		}
+
+		return null;
+	}
+}
+
+if ( ! function_exists( 'bfb_normalize_h2bc_inventory' ) ) {
+	/**
+	 * Normalize h2bc-owned capability data into BFB's public capability shape.
+	 *
+	 * @param array<string, mixed> $report h2bc capability report.
+	 * @return array<string, mixed>
+	 */
+	function bfb_normalize_h2bc_inventory( array $report ): array {
+		$block_coverage = isset( $report['block_coverage'] ) && is_array( $report['block_coverage'] ) ? $report['block_coverage'] : array();
+		$transforms     = isset( $report['transforms'] ) && is_array( $report['transforms'] ) ? $report['transforms'] : array();
+
+		$supported_blocks   = bfb_h2bc_report_list( $report, $block_coverage, 'supported_blocks' );
+		$unsupported_blocks = bfb_h2bc_report_list( $report, $block_coverage, 'unsupported_blocks' );
+		$classifications    = bfb_h2bc_report_array( $report, $block_coverage, 'classifications' );
+		$families           = bfb_h2bc_report_list( $report, $transforms, 'families' );
+
+		return array(
+			'source'             => 'h2bc_capabilities',
+			'version'            => isset( $report['version'] ) && is_scalar( $report['version'] ) ? (string) $report['version'] : null,
+			'handler'            => isset( $report['handler'] ) && is_scalar( $report['handler'] ) ? (string) $report['handler'] : null,
+			'transform_families' => $families,
+			'block_coverage'     => array(
+				'source'             => 'h2bc_capabilities',
+				'supported_blocks'   => $supported_blocks,
+				'unsupported_blocks' => $unsupported_blocks,
+				'classifications'    => $classifications,
+			),
+			'raw'                => $report,
+		);
+	}
+}
+
+if ( ! function_exists( 'bfb_h2bc_report_list' ) ) {
+	/**
+	 * Return a normalized scalar list from possible report locations.
+	 *
+	 * @param array<string, mixed> $primary   Primary report data.
+	 * @param array<string, mixed> $secondary Secondary report data.
+	 * @param string               $key       Field key.
+	 * @return array<int, string>
+	 */
+	function bfb_h2bc_report_list( array $primary, array $secondary, string $key ): array {
+		$values = array();
+		if ( isset( $primary[ $key ] ) && is_array( $primary[ $key ] ) ) {
+			$values = $primary[ $key ];
+		} elseif ( isset( $secondary[ $key ] ) && is_array( $secondary[ $key ] ) ) {
+			$values = $secondary[ $key ];
+		}
+
+		return array_values(
+			array_filter(
+				array_map(
+					static function ( $value ): string {
+						return is_scalar( $value ) ? (string) $value : '';
+					},
+					$values
+				),
+				static function ( string $value ): bool {
+					return '' !== $value;
+				}
+			)
+		);
+	}
+}
+
+if ( ! function_exists( 'bfb_h2bc_report_array' ) ) {
+	/**
+	 * Return an array field from possible report locations.
+	 *
+	 * @param array<string, mixed> $primary   Primary report data.
+	 * @param array<string, mixed> $secondary Secondary report data.
+	 * @param string               $key       Field key.
+	 * @return array<string, mixed>
+	 */
+	function bfb_h2bc_report_array( array $primary, array $secondary, string $key ): array {
+		if ( isset( $primary[ $key ] ) && is_array( $primary[ $key ] ) ) {
+			return $primary[ $key ];
+		}
+
+		if ( isset( $secondary[ $key ] ) && is_array( $secondary[ $key ] ) ) {
+			return $secondary[ $key ];
+		}
+
+		return array();
 	}
 }
 
@@ -861,10 +991,6 @@ if ( ! function_exists( 'bfb_render_post' ) ) {
 	function bfb_render_post( $post, string $format, array $options = array() ): string {
 		$post_obj = get_post( $post );
 		if ( ! $post_obj ) {
-			return '';
-		}
-
-		if ( ! $post_obj instanceof WP_Post ) {
 			return '';
 		}
 

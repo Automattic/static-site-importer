@@ -115,13 +115,4 @@ class BFB_HTML_Adapter implements BFB_Format_Adapter {
 		}
 		return $html;
 	}
-
-	/**
-	 * @inheritDoc
-	 */
-	public function detect( string $content ): bool {
-		// Reserved for future use. v0.1.0 doesn't auto-detect.
-		unset( $content );
-		return false;
-	}
 }

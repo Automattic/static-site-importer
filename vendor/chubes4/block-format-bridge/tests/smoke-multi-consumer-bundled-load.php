@@ -98,6 +98,10 @@ function do_action( string $hook_name, ...$args ): void {
 	bfb_smoke_do_action_range( $hook_name, null, null, $args );
 }
 
+function wp_delete_file( string $file ): bool {
+	return unlink( $file );
+}
+
 function bfb_smoke_do_action_range( string $hook_name, ?int $min_priority, ?int $max_priority, array $args = array() ): void {
 	$GLOBALS['bfb_smoke_current_action'] = $hook_name;
 

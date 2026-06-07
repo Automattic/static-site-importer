@@ -53,17 +53,4 @@ interface BFB_Format_Adapter {
 	 * @return string Content in this adapter's format.
 	 */
 	public function from_blocks( array $blocks, array $options = array() ): string;
-
-	/**
-	 * Best-effort detection of whether $content is in this format.
-	 *
-	 * Reserved for future use. v0.1.0 does not consult detect() from
-	 * any production path — auto-detection is opt-in via filters and
-	 * per-call hints. Implementations may return false until the
-	 * detection rules are designed.
-	 *
-	 * @param string $content Content to test.
-	 * @return bool
-	 */
-	public function detect( string $content ): bool;
 }
