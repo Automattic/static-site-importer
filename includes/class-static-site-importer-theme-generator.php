@@ -455,6 +455,7 @@ class Static_Site_Importer_Theme_Generator {
 		if ( is_wp_error( $materialized ) ) {
 			return $materialized;
 		}
+		self::record_website_artifact_document_metadata( $artifacts );
 
 		$writes = array(
 			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $materialized['css'], array_keys( self::$button_wrapper_classes ) ),
@@ -4695,6 +4696,153 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
+	 * Record compiler-routed full-document metadata and head asset references.
+	 *
+	 * @param array<string,mixed> $artifacts WordPress artifacts from BAC.
+	 * @return void
+	 */
+	private static function record_website_artifact_document_metadata( array $artifacts ): void {
+		$metadata = isset( $artifacts['document_metadata'] ) && is_array( $artifacts['document_metadata'] ) ? $artifacts['document_metadata'] : array();
+		if ( 'block-artifact-compiler/document-metadata/v1' !== (string) ( $metadata['schema'] ?? '' ) ) {
+			return;
+		}
+
+		$normalized = array(
+			'schema'      => 'static-site-importer/document-metadata/v1',
+			'source'      => 'block-artifact-compiler/document_metadata',
+			'source_path' => isset( $metadata['source_path'] ) && is_scalar( $metadata['source_path'] ) ? (string) $metadata['source_path'] : '',
+			'title'       => isset( $metadata['title'] ) && is_scalar( $metadata['title'] ) ? sanitize_text_field( (string) $metadata['title'] ) : '',
+			'meta'        => self::normalize_document_metadata_rows( $metadata['meta'] ?? array(), array( 'charset', 'name', 'property', 'http_equiv', 'content' ) ),
+			'links'       => self::normalize_document_metadata_rows( $metadata['links'] ?? array(), array( 'rel', 'href', 'as', 'type', 'media', 'crossorigin', 'integrity' ) ),
+			'styles'      => self::normalize_hashed_head_assets( $metadata['styles'] ?? array() ),
+			'scripts'     => self::normalize_document_scripts( $metadata['scripts'] ?? array() ),
+		);
+
+		self::$conversion_report['generated_theme']['document_metadata'] = $normalized;
+		self::$conversion_report['diagnostics'][] = array(
+			'type'        => 'document_metadata_routed',
+			'source'      => $normalized['source_path'],
+			'severity'    => 'info',
+			'stage'       => 'website_artifact_materialization',
+			'message'     => 'Full-document head metadata/assets were routed through the generated_theme.document_metadata contract instead of generated page block content.',
+			'meta_count'  => count( $normalized['meta'] ),
+			'link_count'  => count( $normalized['links'] ),
+			'style_count' => count( $normalized['styles'] ),
+			'script_count' => count( $normalized['scripts'] ),
+		);
+	}
+
+	/**
+	 * Normalize scalar rows from the document metadata contract.
+	 *
+	 * @param mixed             $rows    Raw rows.
+	 * @param array<int,string> $allowed Allowed keys.
+	 * @return array<int,array<string,string>>
+	 */
+	private static function normalize_document_metadata_rows( mixed $rows, array $allowed ): array {
+		if ( ! is_array( $rows ) ) {
+			return array();
+		}
+
+		$normalized = array();
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$item = array();
+			foreach ( $allowed as $key ) {
+				if ( isset( $row[ $key ] ) && is_scalar( $row[ $key ] ) && '' !== trim( (string) $row[ $key ] ) ) {
+					$item[ $key ] = sanitize_text_field( (string) $row[ $key ] );
+				}
+			}
+
+			if ( ! empty( $item ) ) {
+				$normalized[] = $item;
+			}
+		}
+
+		return $normalized;
+	}
+
+	/**
+	 * Normalize hashed inline head asset summaries.
+	 *
+	 * @param mixed $rows Raw rows.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function normalize_hashed_head_assets( mixed $rows ): array {
+		if ( ! is_array( $rows ) ) {
+			return array();
+		}
+
+		$normalized = array();
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$hash = isset( $row['hash'] ) && is_scalar( $row['hash'] ) ? preg_replace( '/[^a-f0-9]/i', '', (string) $row['hash'] ) : '';
+			$bytes = isset( $row['bytes'] ) ? max( 0, (int) $row['bytes'] ) : 0;
+			if ( '' === $hash && 0 === $bytes ) {
+				continue;
+			}
+
+			$normalized[] = array(
+				'bytes' => $bytes,
+				'hash'  => $hash,
+			);
+		}
+
+		return $normalized;
+	}
+
+	/**
+	 * Normalize script references from the document metadata contract.
+	 *
+	 * @param mixed $rows Raw rows.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function normalize_document_scripts( mixed $rows ): array {
+		if ( ! is_array( $rows ) ) {
+			return array();
+		}
+
+		$normalized = array();
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$item = array();
+			foreach ( array( 'src', 'type', 'crossorigin', 'integrity' ) as $key ) {
+				if ( isset( $row[ $key ] ) && is_scalar( $row[ $key ] ) && '' !== trim( (string) $row[ $key ] ) ) {
+					$item[ $key ] = sanitize_text_field( (string) $row[ $key ] );
+				}
+			}
+
+			foreach ( array( 'defer', 'async' ) as $key ) {
+				if ( isset( $row[ $key ] ) ) {
+					$item[ $key ] = (bool) $row[ $key ];
+				}
+			}
+
+			if ( isset( $row['inline'] ) ) {
+				$inline = self::normalize_hashed_head_assets( array( $row['inline'] ) );
+				if ( ! empty( $inline ) ) {
+					$item['inline'] = $inline[0];
+				}
+			}
+
+			if ( ! empty( $item ) ) {
+				$normalized[] = $item;
+			}
+		}
+
+		return $normalized;
+	}
+
+	/**
 	 * Write compiler-emitted files that can be consumed without re-importing HTML.
 	 *
 	 * @param string              $theme_dir Theme directory.
@@ -5286,6 +5434,7 @@ class Static_Site_Importer_Theme_Generator {
 				'fragments'      => array(),
 			),
 			'generated_theme'         => array(
+				'document_metadata' => array(),
 				'block_documents' => array(),
 				'freeform_blocks' => array(),
 			),
