@@ -37,9 +37,11 @@ interface BFB_Format_Adapter {
     public function slug(): string;
     public function to_blocks( string $content, array $options = array() ): array;
     public function from_blocks( array $blocks, array $options = array() ): string;
-    public function detect( string $content ): bool; // reserved for future use
 }
 ```
+
+BFB is a declared-format conversion API. Callers pass the source format explicitly to `bfb_convert()` or
+`bfb_to_blocks()`; BFB does not silently guess between HTML, Blocks, Markdown, or custom adapters.
 
 BFB includes two adapters:
 
@@ -119,9 +121,9 @@ Rules:
 - Missing or malformed marker values should fall back to the normal HTML conversion path rather than guessing.
 
 The marker contract belongs in BFB because BFB is the public conversion substrate. The runtime HTML-element transforms
-belong in h2bc because `BFB_HTML_Adapter::to_blocks()` delegates HTML → Blocks conversion to
-`html_to_blocks_raw_handler()`. BFB will inherit marker support after h2bc implements those explicit raw transforms and
-the bundled dependency is refreshed.
+are currently supplied by h2bc through BFB's bundled dependency, and BFB verifies those markers through the public
+`bfb_convert( $html, 'html', 'blocks' )` path. h2bc should treat these attributes as an explicit shared extension
+contract with BFB, not as a license to infer Site Editor primitives from unmarked HTML.
 
 ## Install
 

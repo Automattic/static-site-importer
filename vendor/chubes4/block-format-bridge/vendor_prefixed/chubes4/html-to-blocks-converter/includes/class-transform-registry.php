@@ -876,6 +876,10 @@ class HTML_To_Blocks_Transform_Registry
             return self::is_static_visual_button_container($element);
         }, 'transform' => function ($element) {
             return self::create_static_visual_button_group($element);
+        }), array('blockName' => 'core/group', 'priority' => 8, 'selector' => 'button', 'isMatch' => function ($element) {
+            return self::is_static_toggle_button_chrome($element);
+        }, 'transform' => function ($element) {
+            return self::create_static_toggle_button_group($element);
         }), array('blockName' => 'core/paragraph', 'priority' => 8, 'selector' => 'button', 'isMatch' => function ($element) {
             return self::is_static_navigation_toggle_button($element);
         }, 'transform' => function ($element) {
@@ -1069,6 +1073,55 @@ class HTML_To_Blocks_Transform_Registry
         }
         $class_name = $element->has_attribute('class') ? $element->get_attribute('class') : '';
         return \preg_match('/(?:^|[-_\s])(?:tabs?|chips?|filters?|pills?|segmented|selector|use[-_]?case)(?:$|[-_\s])/i', $class_name) === 1;
+    }
+    /**
+     * Checks whether a button is inert navigation toggle chrome.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Element to inspect.
+     * @return bool True when the button can safely become native visual chrome.
+     */
+    private static function is_static_toggle_button_chrome($element): bool
+    {
+        if ('BUTTON' !== $element->get_tag_name()) {
+            return \false;
+        }
+        if ($element->has_attribute('form') || $element->has_attribute('name') || $element->has_attribute('value')) {
+            return \false;
+        }
+        $type = \strtolower(\trim((string) ($element->get_attribute('type') ?? '')));
+        if ('' !== $type && 'button' !== $type) {
+            return \false;
+        }
+        $class_name = $element->has_attribute('class') ? $element->get_attribute('class') : '';
+        if (\preg_match('/(?:^|[-_\s])(?:nav[-_\s]?toggle|menu[-_\s]?toggle|hamburger)(?:$|[-_\s])/i', $class_name) !== 1) {
+            return \false;
+        }
+        $children = $element->get_child_elements();
+        if (empty($children)) {
+            return \trim($element->get_text_content()) === '';
+        }
+        foreach ($children as $child) {
+            if (!\in_array($child->get_tag_name(), array('SPAN', 'DIV'), \true)) {
+                return \false;
+            }
+            if (self::is_empty_element($child)) {
+                continue;
+            }
+            if (!self::class_matches($child, '/(?:^|\s)sr-only(?:\s|$)/i') || array() !== $child->get_child_elements()) {
+                return \false;
+            }
+        }
+        return \true;
+    }
+    /**
+     * Creates native visual chrome for an inert navigation toggle button.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Button element.
+     * @return array Block array.
+     */
+    private static function create_static_toggle_button_group($element): array
+    {
+        return HTML_To_Blocks_Block_Factory::create_block('core/group', self::get_common_layout_attributes($element));
     }
     /**
      * Creates a native group from a static visual button row.

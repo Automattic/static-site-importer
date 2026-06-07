@@ -173,6 +173,19 @@ $assert(\str_contains($salt_star_serialized, 'class="wp-block-list nav-links"'),
 $assert(\str_contains($salt_star_serialized, 'href="#our-bakes"'), 'salt-star-nav-preserves-our-bakes-href', $salt_star_serialized);
 $assert(\str_contains($salt_star_serialized, 'href="#visit"'), 'salt-star-nav-preserves-visit-href', $salt_star_serialized);
 $assert(\str_contains($salt_star_serialized, 'href="#order"'), 'salt-star-nav-preserves-order-href', $salt_star_serialized);
+$restaurant_nav_html = <<<HTML
+<nav class="nav container" aria-label="Primary navigation">
+  <a class="brand" href="index.html"><img src="assets/img/ember-rye-mark.svg" alt="" width="46" height="46"><span><strong>Ember &amp; Rye</strong><small>Wood-Fired Pizza</small></span></a>
+  <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="primary-menu"><span class="sr-only">Toggle navigation</span><span></span><span></span><span></span></button>
+  <ul class="nav-links"><li><a href="menu.html">Menu</a></li><li><a href="reservations.html">Reservations</a></li></ul>
+</nav>
+HTML;
+$restaurant_nav_serialized = serialize_blocks(html_to_blocks_raw_handler(['HTML' => $restaurant_nav_html]));
+$assert(!\str_contains($restaurant_nav_serialized, '<!-- wp:html -->'), 'restaurant-nav-toggle-avoids-core-html-fallback', $restaurant_nav_serialized);
+$assert(\str_contains($restaurant_nav_serialized, '<nav class="wp-block-group nav container" aria-label="Primary navigation">'), 'restaurant-nav-wrapper-survives', $restaurant_nav_serialized);
+$assert(\str_contains($restaurant_nav_serialized, 'class="wp-block-group nav-toggle"'), 'restaurant-nav-toggle-becomes-native-chrome', $restaurant_nav_serialized);
+$assert(\str_contains($restaurant_nav_serialized, '<a class="brand" href="index.html">'), 'restaurant-nav-brand-link-survives', $restaurant_nav_serialized);
+$assert(\str_contains($restaurant_nav_serialized, 'class="wp-block-list nav-links"'), 'restaurant-nav-links-survive', $restaurant_nav_serialized);
 $studio_code_nav_serialized = serialize_blocks(html_to_blocks_raw_handler(array('HTML' => '<nav><div class="nav-logo"><div class="dot"></div>Studio Code</div></nav>')));
 $assert(!\str_contains($studio_code_nav_serialized, '<!-- wp:html -->'), 'studio-code-nav-logo-dot-avoids-core-html', $studio_code_nav_serialized);
 $assert(\str_contains($studio_code_nav_serialized, '<nav class="wp-block-group">'), 'studio-code-nav-wrapper-survives', $studio_code_nav_serialized);

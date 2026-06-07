@@ -101,6 +101,26 @@ class BFBConversionUnitTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Explicit Site Editor markers should convert through the public BFB path.
+	 */
+	public function test_site_editor_markers_convert_through_bfb_convert(): void {
+		$pattern = $this->blocks_from( '<section data-bfb-pattern="theme/pricing-table"><h2>Pricing</h2></section>', 'html' );
+		$this->assertSame( 'core/pattern', $pattern[0]['blockName'] ?? null, 'Pattern marker should convert to core/pattern.' );
+		$this->assertSame( 'theme/pricing-table', $pattern[0]['attrs']['slug'] ?? null, 'Pattern marker should preserve the explicit slug.' );
+
+		$template_part = $this->blocks_from( '<header data-bfb-template-part="header"><h1>Site</h1></header>', 'html' );
+		$this->assertSame( 'core/template-part', $template_part[0]['blockName'] ?? null, 'Template-part marker should convert to core/template-part.' );
+		$this->assertSame( 'header', $template_part[0]['attrs']['slug'] ?? null, 'Template-part marker should preserve the explicit slug.' );
+		$this->assertSame( 'header', $template_part[0]['attrs']['area'] ?? null, 'Standard template-part areas should set area.' );
+
+		$invalid_pattern = $this->blocks_from( '<section data-bfb-pattern="pricing-table"><h2>Pricing</h2></section>', 'html' );
+		$this->assertNotSame( 'core/pattern', $invalid_pattern[0]['blockName'] ?? null, 'Invalid pattern marker should fall through to normal HTML conversion.' );
+
+		$unmarked_header = $this->blocks_from( '<header><h1>Site</h1></header>', 'html' );
+		$this->assertNotSame( 'core/template-part', $unmarked_header[0]['blockName'] ?? null, 'Unmarked header should not be inferred as a template part.' );
+	}
+
+	/**
 	 * Conversion options should flow from the public API into adapters and h2bc args.
 	 */
 	public function test_conversion_options_flow_to_adapters_and_h2bc_args(): void {
@@ -199,10 +219,6 @@ class BFBConversionUnitTest extends WP_UnitTestCase {
 				return 'probe';
 			}
 
-			public function detect( string $content ): bool {
-				unset( $content );
-				return false;
-			}
 		};
 
 		$adapter_filter = static function ( $adapter, string $slug ) use ( $probe ) {

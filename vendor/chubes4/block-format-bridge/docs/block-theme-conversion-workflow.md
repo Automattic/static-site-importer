@@ -61,7 +61,8 @@ h2bc should:
 - Generate a core-block inventory and classification map from WordPress/Gutenberg `block.json` metadata.
 - Keep the generated coverage documentation in sync with that map.
 - Implement raw transforms when source HTML carries enough signal to preserve the author's intent.
-- Implement explicit BFB marker transforms for primitives such as pattern and template-part references.
+- Implement explicit shared marker transforms for primitives such as pattern and template-part references when BFB
+  documents the public marker vocabulary.
 - Fall back safely when markup is ambiguous.
 
 h2bc should not:
@@ -74,6 +75,7 @@ h2bc should not:
 Tracking:
 
 - h2bc #56: https://github.com/chubes4/html-to-blocks-converter/issues/56
+- h2bc #418: https://github.com/chubes4/html-to-blocks-converter/issues/418
 - h2bc #55: https://github.com/chubes4/html-to-blocks-converter/issues/55
 
 ## BFB Responsibilities
@@ -91,6 +93,7 @@ BFB should:
 - Expose ability operations for machine callers, including conversion and capability reporting.
 - Keep WP-CLI ergonomics thin and script-friendly for humans and shell-based tools.
 - Report what the active substrate supports so compiler consumers can plan fallbacks.
+- Consume h2bc's public capability API when available instead of reflecting over h2bc internals.
 
 BFB should not:
 

@@ -146,8 +146,8 @@ bfb_capabilities_smoke_assert( isset( $report['formats']['blocks'] ), 'Capabilit
 bfb_capabilities_smoke_assert( isset( $report['formats']['html'] ), 'Capability report should expose registered adapters.' );
 bfb_capabilities_smoke_assert( false === $report['formats']['html']['pivot'], 'Adapter formats should not be marked as pivot formats.' );
 bfb_capabilities_smoke_assert( isset( $report['conversions']['html_to_blocks'] ), 'Capability report should expose HTML to blocks availability.' );
-bfb_capabilities_smoke_assert( 'not_available' === $report['block_coverage']['source'], 'Capability report should include conservative block coverage placeholder.' );
-bfb_capabilities_smoke_assert( 'h2bc#56' === $report['block_coverage']['requires'], 'Capability report should point at the h2bc inventory follow-up.' );
+bfb_capabilities_smoke_assert( 'h2bc_capability_api_missing' === $report['block_coverage']['source'], 'Capability report should identify the missing h2bc capability API.' );
+bfb_capabilities_smoke_assert( 'https://github.com/chubes4/html-to-blocks-converter/issues/418' === $report['block_coverage']['requires'], 'Capability report should point at the h2bc capability API dependency.' );
 bfb_capabilities_smoke_assert( in_array( 'bfb_html_to_blocks_args', $report['hooks']['filters'], true ), 'Capability report should list HTML raw-handler args filter.' );
 bfb_capabilities_smoke_assert( in_array( 'bfb_diagnostic', $report['hooks']['actions'], true ), 'Capability report should list observability hooks.' );
 bfb_capabilities_smoke_assert( in_array( 'block-format-bridge/get-capabilities', $report['abilities'], true ), 'Capability report should list the capabilities ability.' );

@@ -44,8 +44,9 @@ The deterministic targets are:
 avoid implying a WordPress core contract that does not exist.
 
 Implementation note: the marker contract is documented here because BFB owns the public conversion substrate. The actual
-HTML-element transforms belong in html-to-blocks-converter, the library BFB delegates to for HTML → Blocks. BFB should not
-add a parallel pre-parser around h2bc for these markers.
+HTML-element transforms currently live in html-to-blocks-converter, the library BFB delegates to for HTML → Blocks. That
+is a shared extension contract: h2bc may recognize these explicitly documented BFB markers, while BFB verifies marker
+behavior through `bfb_convert( $html, 'html', 'blocks' )` instead of adding a parallel pre-parser around h2bc.
 
 ## Answers
 
