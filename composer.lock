@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a31209c0c6954ef362d0b085e0385e70",
+    "content-hash": "5ca1929fdbf2234c2980d0a0a02e3824",
     "packages": [
         {
             "name": "chubes4/block-artifact-compiler",
@@ -92,6 +92,43 @@
             "description": "WordPress plugin orchestrating bidirectional content format conversion (HTML, Blocks, Markdown) via a unified adapter API.",
             "homepage": "https://github.com/chubes4/block-format-bridge",
             "time": "2026-06-07T19:49:03+00:00"
+        },
+        {
+            "name": "chubes4/html-to-blocks-converter",
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/chubes4/html-to-blocks-converter",
+                "reference": "94977024d4b676c723232d0a7c3b01c8563c224a"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/chubes4/html-to-blocks-converter/zipball/94977024d4b676c723232d0a7c3b01c8563c224a",
+                "reference": "94977024d4b676c723232d0a7c3b01c8563c224a",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=7.4"
+            },
+            "default-branch": true,
+            "type": "wordpress-plugin",
+            "autoload": {
+                "files": [
+                    "library.php"
+                ]
+            },
+            "license": [
+                "GPL-2.0-or-later"
+            ],
+            "authors": [
+                {
+                    "name": "Chris Huber",
+                    "homepage": "https://chubes.net"
+                }
+            ],
+            "description": "Convert raw HTML into Gutenberg block arrays using WordPress' HTML API.",
+            "homepage": "https://github.com/chubes4/html-to-blocks-converter",
+            "time": "2026-06-07T20:27:36+00:00"
         },
         {
             "name": "dflydev/dot-access-data",
@@ -812,12 +849,13 @@
     ],
     "packages-dev": [],
     "aliases": [],
-    "minimum-stability": "stable",
+    "minimum-stability": "dev",
     "stability-flags": {
         "chubes4/block-artifact-compiler": 20,
-        "chubes4/block-format-bridge": 20
+        "chubes4/block-format-bridge": 20,
+        "chubes4/html-to-blocks-converter": 20
     },
-    "prefer-stable": false,
+    "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
         "php": "^8.1"

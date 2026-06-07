@@ -1,5 +1,0 @@
-/vendor/
-/node_modules/
-/.phpunit.cache/
-/.DS_Store
-*.log
