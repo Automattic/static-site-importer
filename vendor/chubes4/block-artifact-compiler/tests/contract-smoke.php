@@ -160,6 +160,36 @@ $assert( 'utf-8' === ( $full_document_metadata['meta'][0]['charset'] ?? '' ), 'c
 $assert( 'viewport' === ( $full_document_metadata['meta'][1]['name'] ?? '' ), 'viewport meta is routed to metadata contract' );
 $assert( '/assets/site.css' === ( $full_document_metadata['links'][0]['href'] ?? '' ), 'stylesheet link is routed to metadata contract' );
 
+$multi_page = bac_compile_website_artifact(
+	array(
+		'schema'     => 'block-artifact-compiler/website-artifact/v1',
+		'entrypoint' => 'website/index.html',
+		'files'      => array(
+			array(
+				'path'    => 'website/index.html',
+				'content' => '<!doctype html><html><head><title>Home Page</title></head><body><main><h1>Home</h1><p>Welcome.</p></main></body></html>',
+			),
+			array(
+				'path'    => 'website/menu.html',
+				'content' => '<!doctype html><html><head><title>Menu Page</title><meta name="description" content="Seasonal menu"></head><body><main><h1>Menu</h1><p>Pizza and small plates.</p></main></body></html>',
+			),
+			array(
+				'path'    => 'website/contact.html',
+				'content' => '<main><h1>Contact</h1><p>Email us.</p></main>',
+			),
+		)
+	)
+);
+$multi_documents = $multi_page['wordpress_artifacts']['documents'] ?? array();
+$assert( 3 === count( $multi_documents ), 'multi-page HTML artifacts expose one document per HTML file' );
+$assert( 'index' === ( $multi_documents[0]['slug'] ?? '' ), 'entry index slug comes from filename' );
+$assert( true === ( $multi_documents[0]['entrypoint'] ?? null ), 'entry HTML document preserves entrypoint identity' );
+$assert( 'Home Page' === ( $multi_documents[0]['title'] ?? '' ), 'entry HTML document title comes from metadata' );
+$assert( 'menu' === ( $multi_documents[1]['slug'] ?? '' ), 'nested HTML page slug comes from filename' );
+$assert( 'Menu Page' === ( $multi_documents[1]['title'] ?? '' ), 'nested HTML document title comes from metadata' );
+$assert( 'Seasonal menu' === ( $multi_documents[1]['document_metadata']['meta'][0]['content'] ?? '' ), 'nested HTML document metadata is preserved' );
+$assert( str_contains( (string) ( $multi_documents[2]['block_markup'] ?? '' ), 'Contact' ), 'HTML document block markup preserves body content' );
+
 $summary = bac_summarize_result( $messy );
 $assert( ( $summary['component_count'] ?? 0 ) > 0, 'summary exposes component count' );
 $assert( ( $summary['source_element_count'] ?? 0 ) > 0, 'summary exposes source element count' );

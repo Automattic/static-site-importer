@@ -914,7 +914,33 @@ class Block_Artifact_Compiler {
 		$diagnostics = array();
 
 		foreach ( $artifact['files'] as $file ) {
-			if ( ! in_array($file['kind'], array( 'markdown', 'mdx' ), true) ) {
+			if ( ! in_array($file['kind'], array( 'html', 'markdown', 'mdx' ), true) ) {
+				continue;
+			}
+
+			if ( 'html' === $file['kind'] ) {
+				$document             = $this->entry_document_contract($file['content'], $file['path']);
+				$conversion           = $this->convert_html_to_blocks($document['body_html'], $options);
+				$document_diagnostics = $conversion['diagnostics'];
+				$diagnostics          = array_merge($diagnostics, $document_diagnostics);
+				$metadata             = $document['metadata'];
+
+				$documents[] = array(
+					'source_path'       => $file['path'],
+					'kind'              => 'html',
+					'post_type'         => 'page',
+					'slug'              => $this->slug_from_path($file['path']),
+					'title'             => '' !== (string) ( $metadata['title'] ?? '' ) ? (string) $metadata['title'] : $this->title_from_path($file['path']),
+					'excerpt'           => '',
+					'date'              => '',
+					'template'          => '',
+					'taxonomies'        => array(),
+					'entrypoint'        => ! empty($file['entrypoint']),
+					'document_metadata' => $metadata,
+					'block_markup'      => $conversion['serialized_blocks'],
+					'diagnostics'       => $document_diagnostics,
+					'provenance'        => $file['provenance'],
+				);
 				continue;
 			}
 

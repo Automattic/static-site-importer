@@ -7,18 +7,18 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/chubes4/block-artifact-compiler.git",
-                "reference": "84ef81d485f359662e72564567c44f59cb4bc723"
+                "reference": "f1c49b907cd94b7c10cc8c9a67cf6b5122c02cab"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/chubes4/block-artifact-compiler/zipball/84ef81d485f359662e72564567c44f59cb4bc723",
-                "reference": "84ef81d485f359662e72564567c44f59cb4bc723",
+                "url": "https://api.github.com/repos/chubes4/block-artifact-compiler/zipball/f1c49b907cd94b7c10cc8c9a67cf6b5122c02cab",
+                "reference": "f1c49b907cd94b7c10cc8c9a67cf6b5122c02cab",
                 "shasum": ""
             },
             "require": {
                 "php": ">=8.1"
             },
-            "time": "2026-06-02T04:40:51+00:00",
+            "time": "2026-06-07T16:54:06+00:00",
             "default-branch": true,
             "type": "wordpress-plugin",
             "installation-source": "dist",
@@ -37,7 +37,7 @@
             ],
             "description": "Compile website artifacts into WordPress-native block artifact bundles.",
             "support": {
-                "source": "https://github.com/chubes4/block-artifact-compiler/tree/v0.1.2",
+                "source": "https://github.com/chubes4/block-artifact-compiler/tree/main",
                 "issues": "https://github.com/chubes4/block-artifact-compiler/issues"
             },
             "install-path": "../chubes4/block-artifact-compiler"

@@ -482,17 +482,17 @@ class Static_Site_Importer_Theme_Generator {
 			if ( is_wp_error( $result ) ) {
 				return $result;
 			}
+			self::analyze_imported_page_content_documents( $document_pages, $page_artifacts['contents'] );
 
 			self::record_bac_source_documents_summary( $artifacts['documents'] ?? array(), $document_pages, $page_ids, $permalinks );
-			foreach ( $page_artifacts['patterns'] as $filename => $pattern_slug ) {
+			foreach ( array_keys( $page_artifacts['patterns'] ) as $filename ) {
 				$page = $document_pages[ $filename ] ?? null;
 				$slug = $page instanceof Static_Site_Importer_Source_Page ? self::page_slug( $filename, $page ) : self::page_slug( $filename );
-				if ( '' === $pattern_slug || '' === $slug ) {
+				if ( '' === $slug ) {
 					continue;
 				}
 
 				$writes[ $theme_dir . '/templates/page-' . $slug . '.html' ] = self::content_template( '', false );
-				$writes[ $theme_dir . '/patterns/page-' . $slug . '.php' ]   = $page_artifacts['files'][ $filename ] ?? '';
 			}
 		} else {
 			self::record_button_wrapper_classes_from_blocks( $block_markup );
@@ -1658,6 +1658,27 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Analyze canonical imported page post content for conversion quality.
+	 *
+	 * @param array<string, Static_Site_Importer_Source_Page> $pages    Pages.
+	 * @param array<string,string>                           $contents Converted block markup keyed by filename.
+	 * @return void
+	 */
+	private static function analyze_imported_page_content_documents( array $pages, array $contents ): void {
+		foreach ( $pages as $filename => $page ) {
+			$slug    = self::page_slug( $filename, $page );
+			$source  = '' !== $slug ? 'posts/page-' . $slug . '.post_content' : 'posts/' . sanitize_title( $filename ) . '.post_content';
+			$content = $contents[ $filename ] ?? '';
+			if ( '' === trim( $content ) ) {
+				continue;
+			}
+
+			$analysis = self::analyze_generated_block_document( $source, $content );
+			self::$conversion_report['generated_theme']['block_documents'][] = $analysis;
+		}
 	}
 
 	/**
@@ -3643,6 +3664,10 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return string
 	 */
 	private static function page_slug( string $filename, ?Static_Site_Importer_Source_Page $page = null ): string {
+		if ( $page instanceof Static_Site_Importer_Source_Page && 'bac_document' === $page->type() && self::is_index_source_filename( $filename ) && filter_var( $page->metadata_value( 'entrypoint' ), FILTER_VALIDATE_BOOLEAN ) ) {
+			return 'home';
+		}
+
 		if ( $page instanceof Static_Site_Importer_Source_Page && '' !== trim( $page->metadata_value( 'slug' ) ) ) {
 			$slug = sanitize_title( $page->metadata_value( 'slug' ) );
 			if ( '' !== $slug ) {

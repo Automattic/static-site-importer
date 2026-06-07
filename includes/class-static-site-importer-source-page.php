@@ -171,7 +171,7 @@ class Static_Site_Importer_Source_Page {
 		}
 
 		$metadata = array();
-		foreach ( array( 'title', 'slug', 'status', 'post_type' ) as $key ) {
+		foreach ( array( 'title', 'slug', 'status', 'post_type', 'entrypoint' ) as $key ) {
 			if ( isset( $artifact[ $key ] ) && is_scalar( $artifact[ $key ] ) && '' !== trim( (string) $artifact[ $key ] ) ) {
 				$metadata[ $key ] = (string) $artifact[ $key ];
 			}
