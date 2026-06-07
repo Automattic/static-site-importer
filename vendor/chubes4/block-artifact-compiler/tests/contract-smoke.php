@@ -138,6 +138,28 @@ $assert( ! empty( array_filter( $mdx['diagnostics'] ?? array(), static fn ( arra
 $fragment = bac_compile_fragment( '<div class="feature-card">Feature</div>', 'main:index.html' );
 $assert( 'main-index.html' === ( $fragment['input']['entry_path'] ?? '' ), 'fragment source is normalized to virtual path' );
 
+$full_document = bac_compile_website_artifact(
+	array(
+		'files' => array(
+			array(
+				'path'    => 'index.html',
+				'content' => '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ember & Rye</title><meta name="description" content="Wood-fired bakery"><link rel="stylesheet" href="/assets/site.css"></head><body><header class="site-header"><a href="/">Ember & Rye</a></header><main><section class="hero"><h1>Fire, flour, patience.</h1><p>Small-batch loaves.</p></section></main></body></html>',
+			),
+		),
+	)
+);
+$full_document_markup = (string) ( $full_document['wordpress_artifacts']['block_markup'] ?? '' );
+$full_document_metadata = $full_document['wordpress_artifacts']['document_metadata'] ?? array();
+$assert( ! str_contains( $full_document_markup, '<meta' ), 'full document meta tags are not emitted as block content', $full_document_markup );
+$assert( ! str_contains( $full_document_markup, '<title' ), 'full document title tag is not emitted as block content', $full_document_markup );
+$assert( ! str_contains( $full_document_markup, '<link' ), 'full document link tags are not emitted as block content', $full_document_markup );
+$assert( str_contains( $full_document_markup, 'Fire, flour, patience.' ), 'full document body content is preserved in block content', $full_document_markup );
+$assert( 'block-artifact-compiler/document-metadata/v1' === ( $full_document_metadata['schema'] ?? '' ), 'full document exposes metadata contract' );
+$assert( 'Ember & Rye' === ( $full_document_metadata['title'] ?? '' ), 'full document title is routed to metadata contract' );
+$assert( 'utf-8' === ( $full_document_metadata['meta'][0]['charset'] ?? '' ), 'charset meta is routed to metadata contract' );
+$assert( 'viewport' === ( $full_document_metadata['meta'][1]['name'] ?? '' ), 'viewport meta is routed to metadata contract' );
+$assert( '/assets/site.css' === ( $full_document_metadata['links'][0]['href'] ?? '' ), 'stylesheet link is routed to metadata contract' );
+
 $summary = bac_summarize_result( $messy );
 $assert( ( $summary['component_count'] ?? 0 ) > 0, 'summary exposes component count' );
 $assert( ( $summary['source_element_count'] ?? 0 ) > 0, 'summary exposes source element count' );
@@ -245,5 +267,55 @@ $assert( in_array( 'blocks/hero/style.css', $hero['provenance']['files'] ?? arra
 
 $summary = bac_summarize_result( $blocks );
 $assert( 1 === ( $summary['block_type_count'] ?? 0 ), 'summary exposes block type count' );
+
+$plugin_bundle = bac_compile_website_artifact(
+	array(
+		'generated_html' => '<main><!-- wp:acme/hero {"headline":"Plugin block"} /--><!-- wp:vendor/card /--></main>',
+		'files'          => array(
+			'plugins/acme-blocks/acme-blocks.php'        => "<?php\n/**\n * Plugin Name: Acme Blocks\n * Description: Generated custom blocks.\n * Version: 0.1.0\n * Requires PHP: 8.1\n * Text Domain: acme-blocks\n */",
+			'plugins/acme-blocks/blocks/hero/block.json' => bac_json_encode(
+				array(
+					'apiVersion' => 3,
+					'name'       => 'acme/hero',
+					'title'      => 'Plugin Hero',
+					'category'   => 'design',
+				),
+				JSON_UNESCAPED_SLASHES
+			),
+			'plugins/acme-blocks/blocks/hero/index.js'   => 'wp.blocks.registerBlockType("acme/hero", {});',
+		),
+	)
+);
+$plugins = $plugin_bundle['wordpress_artifacts']['plugins'] ?? array();
+$assert( 1 === count( $plugins ), 'plugin header files are promoted into plugin artifacts' );
+$plugin = $plugins[0] ?? array();
+$assert( 'chubes4/wordpress-plugin-artifact/v1' === ( $plugin['schema'] ?? '' ), 'plugin artifact exposes contract schema' );
+$assert( 'acme-blocks' === ( $plugin['slug'] ?? '' ), 'plugin artifact exposes inferred slug' );
+$assert( 'Acme Blocks' === ( $plugin['headers']['name'] ?? '' ), 'plugin artifact preserves Plugin Name header' );
+$assert( '8.1' === ( $plugin['headers']['requires_php'] ?? '' ), 'plugin artifact preserves Requires PHP header' );
+$assert( 'plugins/acme-blocks/acme-blocks.php' === ( $plugin['plugin_file'] ?? '' ), 'plugin artifact exposes primary plugin file' );
+$assert( 'acme/hero' === ( $plugin['blocks'][0]['name'] ?? '' ), 'plugin artifact links generated block types in the plugin directory' );
+
+$requirements = $plugin_bundle['wordpress_artifacts']['requirements'] ?? array();
+$assert( 1 === count( $requirements['plugins'] ?? array() ), 'requirements expose provided plugin artifacts' );
+$assert( 'provided' === ( $requirements['plugins'][0]['status'] ?? '' ), 'plugin requirements mark generated plugin artifacts as provided' );
+$provided_block = null;
+$external_block = null;
+foreach ( $requirements['custom_blocks'] ?? array() as $requirement ) {
+	if ( 'acme/hero' === ( $requirement['name'] ?? '' ) ) {
+		$provided_block = $requirement;
+	}
+	if ( 'vendor/card' === ( $requirement['name'] ?? '' ) ) {
+		$external_block = $requirement;
+	}
+}
+$assert( is_array( $provided_block ), 'requirements include custom block usage satisfied by generated block.json' );
+$assert( 'provided' === ( $provided_block['status'] ?? '' ), 'provided custom block requirement is marked provided' );
+$assert( is_array( $external_block ), 'requirements include external custom block usage' );
+$assert( 'external' === ( $external_block['status'] ?? '' ), 'external custom block requirement stays external for downstream resolution' );
+
+$summary = bac_summarize_result( $plugin_bundle );
+$assert( 1 === ( $summary['plugin_artifact_count'] ?? 0 ), 'summary exposes plugin artifact count' );
+$assert( 2 === ( $summary['custom_block_requirement_count'] ?? 0 ), 'summary exposes custom block requirement count' );
 
 fwrite( STDOUT, "contract smoke passed\n" );

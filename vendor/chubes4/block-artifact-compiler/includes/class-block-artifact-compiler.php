@@ -37,7 +37,11 @@ class Block_Artifact_Compiler {
 			$diagnostics[] = $this->diagnostic('missing_entry_html', 'error', 'No HTML entry file was available to compile.');
 		}
 
-		$conversion    = '' !== trim($html) ? $this->convert_html_to_blocks($html, $options) : array(
+		$entry_document = '' !== trim($html) ? $this->entry_document_contract($html, $entry_path) : array(
+			'body_html' => '',
+			'metadata'  => array(),
+		);
+		$conversion    = '' !== trim($entry_document['body_html']) ? $this->convert_html_to_blocks($entry_document['body_html'], $options) : array(
 			'serialized_blocks' => '',
 			'blocks'            => array(),
 			'diagnostics'       => array(),
@@ -48,10 +52,12 @@ class Block_Artifact_Compiler {
 		$diagnostics = array_merge($diagnostics, $conversion['diagnostics']);
 		$components  = $this->detect_components($normalized, $entry_path, $documents['components']);
 		$block_types = $this->build_block_types($normalized, $diagnostics);
+		$plugins     = $this->build_plugin_artifacts($normalized, $block_types);
 		$files       = $this->wordpress_files_from_artifact($normalized);
 		if ( '' === trim($html) && ! empty($documents['documents'][0]['block_markup']) ) {
 			$conversion['serialized_blocks'] = (string) $documents['documents'][0]['block_markup'];
 		}
+		$requirements = $this->build_artifact_requirements($conversion['serialized_blocks'], $block_types, $plugins);
 
 		return array(
 			'schema'              => self::RESULT_SCHEMA,
@@ -74,7 +80,10 @@ class Block_Artifact_Compiler {
 				'block_markup' => $conversion['serialized_blocks'],
 				'blocks'       => $conversion['blocks'],
 				'block_tree'   => $this->block_tree_report($conversion['blocks'], $conversion['serialized_blocks']),
+				'document_metadata' => $entry_document['metadata'],
 				'block_types'  => $block_types,
+				'plugins'      => $plugins,
+				'requirements' => $requirements,
 				'components'   => $components,
 				'documents'    => $documents['documents'],
 				'files'        => $files,
@@ -121,13 +130,15 @@ class Block_Artifact_Compiler {
 	 * @return array<string,mixed> Compact summary.
 	 */
 	public function summarize_result( array $compiled ): array {
-		$artifacts   = isset($compiled['wordpress_artifacts']) && is_array($compiled['wordpress_artifacts']) ? $compiled['wordpress_artifacts'] : array();
-		$block_types = isset($artifacts['block_types']) && is_array($artifacts['block_types']) ? $artifacts['block_types'] : array();
-		$components  = isset($artifacts['components']) && is_array($artifacts['components']) ? $artifacts['components'] : array();
-		$files       = isset($artifacts['files']) && is_array($artifacts['files']) ? $artifacts['files'] : array();
-		$diagnostics = isset($compiled['diagnostics']) && is_array($compiled['diagnostics']) ? $compiled['diagnostics'] : array();
-		$source      = isset($compiled['input']['source_report']) && is_array($compiled['input']['source_report']) ? $compiled['input']['source_report'] : array();
-		$block_tree  = isset($artifacts['block_tree']) && is_array($artifacts['block_tree']) ? $artifacts['block_tree'] : array();
+		$artifacts    = isset($compiled['wordpress_artifacts']) && is_array($compiled['wordpress_artifacts']) ? $compiled['wordpress_artifacts'] : array();
+		$block_types  = isset($artifacts['block_types']) && is_array($artifacts['block_types']) ? $artifacts['block_types'] : array();
+		$plugins      = isset($artifacts['plugins']) && is_array($artifacts['plugins']) ? $artifacts['plugins'] : array();
+		$requirements = isset($artifacts['requirements']) && is_array($artifacts['requirements']) ? $artifacts['requirements'] : array();
+		$components   = isset($artifacts['components']) && is_array($artifacts['components']) ? $artifacts['components'] : array();
+		$files        = isset($artifacts['files']) && is_array($artifacts['files']) ? $artifacts['files'] : array();
+		$diagnostics  = isset($compiled['diagnostics']) && is_array($compiled['diagnostics']) ? $compiled['diagnostics'] : array();
+		$source       = isset($compiled['input']['source_report']) && is_array($compiled['input']['source_report']) ? $compiled['input']['source_report'] : array();
+		$block_tree   = isset($artifacts['block_tree']) && is_array($artifacts['block_tree']) ? $artifacts['block_tree'] : array();
 
 		return array(
 			'schema'                    => isset($compiled['schema']) ? (string) $compiled['schema'] : '',
@@ -139,6 +150,8 @@ class Block_Artifact_Compiler {
 			'block_count'               => (int) ( $block_tree['block_count'] ?? 0 ),
 			'block_depth'               => (int) ( $block_tree['max_depth'] ?? 0 ),
 			'block_type_count'          => count($block_types),
+			'plugin_artifact_count'     => count($plugins),
+			'custom_block_requirement_count' => isset($requirements['custom_blocks']) && is_array($requirements['custom_blocks']) ? count($requirements['custom_blocks']) : 0,
 			'component_count'           => count($components),
 			'file_count'                => count($files),
 			'diagnostic_count'          => count($diagnostics),
@@ -423,6 +436,204 @@ class Block_Artifact_Compiler {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Split a full HTML document into renderable body markup and document metadata.
+	 *
+	 * @param string $html       Source HTML.
+	 * @param string $entry_path Source path.
+	 * @return array{body_html:string,metadata:array<string,mixed>}
+	 */
+	private function entry_document_contract( string $html, string $entry_path ): array {
+		$metadata = array(
+			'schema'      => 'block-artifact-compiler/document-metadata/v1',
+			'source_path' => $entry_path,
+			'title'       => '',
+			'meta'        => array(),
+			'links'       => array(),
+			'styles'      => array(),
+			'scripts'     => array(),
+		);
+
+		if ( '' === trim($html) || ! class_exists('DOMDocument') ) {
+			return array(
+				'body_html' => $html,
+				'metadata'  => $metadata,
+			);
+		}
+
+		$doc      = new DOMDocument();
+		$previous = libxml_use_internal_errors(true);
+		$loaded   = $doc->loadHTML($html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+		libxml_clear_errors();
+		libxml_use_internal_errors($previous);
+		if ( ! $loaded ) {
+			return array(
+				'body_html' => $html,
+				'metadata'  => $metadata,
+			);
+		}
+
+		$head = $doc->getElementsByTagName('head')->item(0);
+		if ( $head instanceof DOMElement ) {
+			$metadata['title']   = $this->first_text_child($head, 'title');
+			$metadata['meta']    = $this->head_element_attributes($head, 'meta', array( 'charset', 'name', 'property', 'http-equiv', 'content' ));
+			$metadata['links']   = $this->head_element_attributes($head, 'link', array( 'rel', 'href', 'as', 'type', 'media', 'crossorigin', 'integrity' ));
+			$metadata['styles']  = $this->head_inline_contents($head, 'style');
+			$metadata['scripts'] = $this->head_script_contracts($head);
+		}
+
+		$body = $doc->getElementsByTagName('body')->item(0);
+		$body_html = $body instanceof DOMElement ? $this->inner_html($doc, $body) : $this->document_without_head($doc);
+
+		return array(
+			'body_html' => trim($body_html),
+			'metadata'  => $metadata,
+		);
+	}
+
+	/**
+	 * Read the first text child by tag name.
+	 *
+	 * @param DOMElement $root Root element.
+	 * @param string     $tag  Tag name.
+	 * @return string
+	 */
+	private function first_text_child( DOMElement $root, string $tag ): string {
+		$nodes = $root->getElementsByTagName($tag);
+		$node  = $nodes->length > 0 ? $nodes->item(0) : null;
+
+		return $node instanceof DOMNode ? trim((string) $node->textContent) : '';
+	}
+
+	/**
+	 * Collect safe attributes from head child elements.
+	 *
+	 * @param DOMElement        $head       Head element.
+	 * @param string            $tag        Tag name.
+	 * @param array<int,string> $attributes Attribute allow-list.
+	 * @return array<int,array<string,string>>
+	 */
+	private function head_element_attributes( DOMElement $head, string $tag, array $attributes ): array {
+		$items = array();
+		foreach ( $head->getElementsByTagName($tag) as $node ) {
+			if ( ! $node instanceof DOMElement ) {
+				continue;
+			}
+
+			$item = array();
+			foreach ( $attributes as $attribute ) {
+				$value = trim($node->getAttribute($attribute));
+				if ( '' !== $value ) {
+					$item[ str_replace('-', '_', $attribute) ] = $value;
+				}
+			}
+
+			if ( ! empty($item) ) {
+				$items[] = $item;
+			}
+		}
+
+		return $items;
+	}
+
+	/**
+	 * Collect inline head element contents.
+	 *
+	 * @param DOMElement $head Head element.
+	 * @param string     $tag  Tag name.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function head_inline_contents( DOMElement $head, string $tag ): array {
+		$items = array();
+		foreach ( $head->getElementsByTagName($tag) as $node ) {
+			$content = trim((string) $node->textContent);
+			if ( '' === $content ) {
+				continue;
+			}
+
+			$items[] = array(
+				'content' => $content,
+				'bytes'   => strlen($content),
+				'hash'    => hash('sha256', $content),
+			);
+		}
+
+		return $items;
+	}
+
+	/**
+	 * Collect script metadata from the document head.
+	 *
+	 * @param DOMElement $head Head element.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function head_script_contracts( DOMElement $head ): array {
+		$scripts = array();
+		foreach ( $head->getElementsByTagName('script') as $node ) {
+			if ( ! $node instanceof DOMElement ) {
+				continue;
+			}
+
+			$script = array();
+			foreach ( array( 'src', 'type', 'defer', 'async', 'crossorigin', 'integrity' ) as $attribute ) {
+				if ( $node->hasAttribute($attribute) ) {
+					$value = trim($node->getAttribute($attribute));
+					$script[ $attribute ] = '' === $value && in_array($attribute, array( 'defer', 'async' ), true) ? true : $value;
+				}
+			}
+
+			$content = trim((string) $node->textContent);
+			if ( '' !== $content ) {
+				$script['inline'] = array(
+					'bytes' => strlen($content),
+					'hash'  => hash('sha256', $content),
+				);
+			}
+
+			if ( ! empty($script) ) {
+				$scripts[] = $script;
+			}
+		}
+
+		return $scripts;
+	}
+
+	/**
+	 * Serialize a DOM element's children.
+	 *
+	 * @param DOMDocument $doc     Document.
+	 * @param DOMElement  $element Element.
+	 * @return string
+	 */
+	private function inner_html( DOMDocument $doc, DOMElement $element ): string {
+		$html = array();
+		foreach ( $element->childNodes as $child ) {
+			$serialized = $doc->saveHTML($child);
+			if ( false !== $serialized ) {
+				$html[] = $serialized;
+			}
+		}
+
+		return implode('', $html);
+	}
+
+	/**
+	 * Serialize the document after removing document-level head metadata.
+	 *
+	 * @param DOMDocument $doc Document.
+	 * @return string
+	 */
+	private function document_without_head( DOMDocument $doc ): string {
+		foreach ( iterator_to_array($doc->getElementsByTagName('head')) as $head ) {
+			if ( $head instanceof DOMNode && $head->parentNode instanceof DOMNode ) {
+				$head->parentNode->removeChild($head);
+			}
+		}
+
+		$html = $doc->saveHTML();
+		return false === $html ? '' : $html;
 	}
 
 	/**
@@ -1103,6 +1314,217 @@ class Block_Artifact_Compiler {
 	}
 
 	/**
+	 * Detect generated WordPress plugin artifact bundles without making install policy decisions.
+	 *
+	 * @param  array{files:array<int,array<string,mixed>>} $artifact    Normalized artifact.
+	 * @param  array<int,array<string,mixed>>              $block_types Generated block type artifacts.
+	 * @return array<int,array<string,mixed>> Plugin artifacts.
+	 */
+	private function build_plugin_artifacts( array $artifact, array $block_types ): array {
+		$plugin_roots = array();
+
+		foreach ( $artifact['files'] as $file ) {
+			$path = (string) $file['path'];
+			if ( ! str_ends_with(strtolower($path), '.php') ) {
+				continue;
+			}
+
+			$headers = $this->parse_plugin_headers((string) $file['content']);
+			if ( empty($headers) ) {
+				continue;
+			}
+
+			$directory = dirname($path);
+			$directory = '.' === $directory ? '' : $directory;
+			$slug      = '' === $directory ? bac_sanitize_key(basename($path, '.php')) : bac_sanitize_key(basename($directory));
+			if ( '' === $slug ) {
+				$slug = 'generated-plugin';
+			}
+
+			$plugin_roots[ $directory ] = array(
+				'slug'        => $slug,
+				'directory'   => $directory,
+				'plugin_file' => $path,
+				'headers'     => $headers,
+				'source_file' => $file,
+			);
+		}
+
+		$plugins = array();
+		foreach ( $plugin_roots as $directory => $root ) {
+			$plugin_files = $this->files_under_directory($artifact['files'], $directory);
+			$plugin_blocks = array_values(
+				array_filter(
+					$block_types,
+					static function ( array $block_type ) use ( $directory ): bool {
+						$block_directory = (string) ( $block_type['directory'] ?? '' );
+						return '' === $directory || $block_directory === $directory || str_starts_with($block_directory, $directory . '/');
+					}
+				)
+			);
+
+			$plugins[] = array(
+				'schema'      => 'chubes4/wordpress-plugin-artifact/v1',
+				'slug'        => $root['slug'],
+				'directory'   => $directory,
+				'plugin_file' => $root['plugin_file'],
+				'headers'     => $root['headers'],
+				'blocks'      => array_values(
+					array_map(
+						static function ( array $block_type ): array {
+							return array(
+								'name'            => (string) ( $block_type['name'] ?? '' ),
+								'directory'       => (string) ( $block_type['directory'] ?? '' ),
+								'block_json_path' => (string) ( $block_type['block_json_path'] ?? '' ),
+							);
+						},
+						$plugin_blocks
+					)
+				),
+				'provenance'  => array(
+					'source'      => (string) ( $root['source_file']['source'] ?? 'artifact' ),
+					'source_hash' => hash('sha256', $this->file_hash_payload($plugin_files)),
+					'files'       => array_values(array_map(static fn ( array $file ): string => $file['path'], $plugin_files)),
+				),
+				'files'       => array_values(
+					array_map(
+						static function ( array $file ): array {
+							return array(
+								'path'  => $file['path'],
+								'kind'  => $file['kind'],
+								'bytes' => $file['bytes'],
+							);
+						},
+						$plugin_files
+					)
+				),
+			);
+		}
+
+		usort(
+			$plugins,
+			static function ( array $left, array $right ): int {
+				return strcmp((string) $left['slug'], (string) $right['slug']);
+			}
+		);
+
+		return $plugins;
+	}
+
+	/**
+	 * Parse a minimal subset of WordPress plugin file headers.
+	 *
+	 * @return array<string,string> Header contract.
+	 */
+	private function parse_plugin_headers( string $content ): array {
+		$headers = array();
+		$fields  = array(
+			'name'             => 'Plugin Name',
+			'description'      => 'Description',
+			'version'          => 'Version',
+			'requires_at_least' => 'Requires at least',
+			'requires_php'     => 'Requires PHP',
+			'requires_plugins' => 'Requires Plugins',
+			'author'           => 'Author',
+			'text_domain'      => 'Text Domain',
+		);
+
+		foreach ( $fields as $target => $label ) {
+			if ( preg_match('/^[ \t*#\/]*' . preg_quote($label, '/') . ':[ \t]*(.+)$/mi', $content, $matches) ) {
+				$value = trim(strip_tags((string) $matches[1]));
+				if ( '' !== $value ) {
+					$headers[ $target ] = $value;
+				}
+			}
+		}
+
+		return isset($headers['name']) ? $headers : array();
+	}
+
+	/**
+	 * Build downstream-facing requirements detected from the generated bundle.
+	 *
+	 * @param  string                         $block_markup Serialized block markup.
+	 * @param  array<int,array<string,mixed>> $block_types  Generated block type artifacts.
+	 * @param  array<int,array<string,mixed>> $plugins      Generated plugin artifacts.
+	 * @return array<string,array<int,array<string,mixed>>> Requirement contract.
+	 */
+	private function build_artifact_requirements( string $block_markup, array $block_types, array $plugins ): array {
+		$provided_blocks = array();
+
+		foreach ( $block_types as $block_type ) {
+			$name = (string) ( $block_type['name'] ?? '' );
+			if ( '' !== $name ) {
+				$provided_blocks[ $name ] = (string) ( $block_type['directory'] ?? '' );
+			}
+		}
+
+		$custom_blocks = array();
+		foreach ( $this->detect_block_names($block_markup) as $name ) {
+			if ( str_starts_with($name, 'core/') ) {
+				continue;
+			}
+
+			$custom_blocks[ $name ] = array(
+				'name'       => $name,
+				'namespace'  => strtok($name, '/') ?: '',
+				'source'     => 'block_markup',
+				'status'     => isset($provided_blocks[ $name ]) ? 'provided' : 'external',
+				'directory'  => $provided_blocks[ $name ] ?? '',
+			);
+		}
+
+		foreach ( $provided_blocks as $name => $directory ) {
+			if ( isset($custom_blocks[ $name ]) ) {
+				continue;
+			}
+			$custom_blocks[ $name ] = array(
+				'name'       => $name,
+				'namespace'  => strtok($name, '/') ?: '',
+				'source'     => 'block_json',
+				'status'     => 'provided',
+				'directory'  => $directory,
+			);
+		}
+
+		ksort($custom_blocks);
+
+		return array(
+			'plugins'       => array_values(
+				array_map(
+					static function ( array $plugin ): array {
+						return array(
+							'slug'        => (string) ( $plugin['slug'] ?? '' ),
+							'plugin_file' => (string) ( $plugin['plugin_file'] ?? '' ),
+							'source'      => 'plugin_artifact',
+							'status'      => 'provided',
+						);
+					},
+					$plugins
+				)
+			),
+			'custom_blocks' => array_values($custom_blocks),
+		);
+	}
+
+	/**
+	 * Extract block names from serialized block comments.
+	 *
+	 * @return array<int,string> Block names.
+	 */
+	private function detect_block_names( string $block_markup ): array {
+		if ( '' === trim($block_markup) || ! preg_match_all('/<!--\s+wp:([a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9-]*)\b/i', $block_markup, $matches) ) {
+			return array();
+		}
+
+		$names = array_map('strtolower', $matches[1]);
+		$names = array_values(array_unique($names));
+		sort($names);
+
+		return $names;
+	}
+
+	/**
 	 * Return non-entry files that SSI or another materializer may consume later.
 	 *
 	 * @param  array{files:array<int,array<string,mixed>>} $artifact Normalized artifact.
@@ -1236,7 +1658,7 @@ class Block_Artifact_Compiler {
 	 */
 	private function normalize_kind( string $kind, string $path, string $content, string $mime_type = '' ): string {
 		$kind = bac_sanitize_key($kind);
-		if ( in_array($kind, array( 'html', 'css', 'js', 'jsx', 'tsx', 'json', 'markdown', 'mdx', 'asset', 'blocks' ), true) ) {
+		if ( in_array($kind, array( 'html', 'css', 'js', 'jsx', 'tsx', 'php', 'json', 'markdown', 'mdx', 'asset', 'blocks' ), true) ) {
 			return $kind;
 		}
 		if ( str_contains($mime_type, '/') ) {
@@ -1261,6 +1683,7 @@ class Block_Artifact_Compiler {
 			'js', 'mjs'          => 'js',
 			'jsx'                => 'jsx',
 			'tsx'                => 'tsx',
+			'php'                => 'php',
 			'json'              => 'json',
 			'md', 'markdown'    => 'markdown',
 			'mdx'               => 'mdx',
@@ -1283,6 +1706,7 @@ class Block_Artifact_Compiler {
 			'js', 'mjs'          => 'application/javascript',
 			'jsx'               => 'text/jsx',
 			'tsx'               => 'text/tsx',
+			'php'               => 'application/x-httpd-php',
 			'json'              => 'application/json',
 			'md', 'markdown'    => 'text/markdown',
 			'mdx'               => 'text/mdx',
@@ -1365,7 +1789,7 @@ class Block_Artifact_Compiler {
 			return false;
 		}
 
-		return ! in_array($mime_type, array( 'application/json', 'application/javascript', 'image/svg+xml' ), true);
+		return ! in_array($mime_type, array( 'application/json', 'application/javascript', 'application/x-httpd-php', 'image/svg+xml' ), true);
 	}
 
 	/**
