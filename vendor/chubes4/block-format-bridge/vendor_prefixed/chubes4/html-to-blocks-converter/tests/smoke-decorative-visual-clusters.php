@@ -187,6 +187,21 @@ $assert(\in_array('core/paragraph', $caption_only_figure_names, \true), 'caption
 $assert(\str_contains($caption_only_figure_serialized, 'gallery-tile tile-script'), 'caption-only-figure-class-survives', $caption_only_figure_serialized);
 $assert(\str_contains($caption_only_figure_serialized, 'Marked scripts at the table'), 'caption-only-figure-caption-survives', $caption_only_figure_serialized);
 $assert(!\in_array('core/html', $caption_only_figure_names, \true), 'caption-only-figure-has-no-html-fallback', $caption_only_figure_serialized);
+$hearthline_gallery_html = <<<'HTML'
+<div class="gallery-grid" aria-label="Illustrated views of the café">
+  <figure class="photo-card photo-one"><figcaption>Corner windows and amber evening light</figcaption></figure>
+  <figure class="photo-card photo-two"><figcaption>Hands learning a tile-laying game</figcaption></figure>
+  <figure class="photo-card photo-three"><figcaption>Staff shelf tags by mood and group size</figcaption></figure>
+</div>
+HTML;
+$hearthline_gallery_blocks = html_to_blocks_raw_handler(['HTML' => $hearthline_gallery_html]);
+$hearthline_gallery_serialized = serialize_blocks($hearthline_gallery_blocks);
+$hearthline_gallery_names = $flatten_block_names($hearthline_gallery_blocks);
+$assert(!\in_array('core/html', $hearthline_gallery_names, \true), 'hearthline-gallery-has-no-html-fallback', $hearthline_gallery_serialized);
+$assert(\substr_count($hearthline_gallery_serialized, 'photo-card') >= 3, 'hearthline-photo-card-classes-survive', $hearthline_gallery_serialized);
+$assert(\str_contains($hearthline_gallery_serialized, 'Corner windows and amber evening light'), 'hearthline-first-caption-survives', $hearthline_gallery_serialized);
+$assert(\str_contains($hearthline_gallery_serialized, 'Hands learning a tile-laying game'), 'hearthline-second-caption-survives', $hearthline_gallery_serialized);
+$assert(\str_contains($hearthline_gallery_serialized, 'Staff shelf tags by mood and group size'), 'hearthline-third-caption-survives', $hearthline_gallery_serialized);
 $nested_decorative_figure_html = <<<'HTML'
 <figure role="listitem" class="gallery-card"><div class="paper-illustration" aria-hidden="true"><span></span><span></span><span></span></div><figcaption>Deep fiction shelves with handwritten shelf talkers.</figcaption></figure>
 HTML;

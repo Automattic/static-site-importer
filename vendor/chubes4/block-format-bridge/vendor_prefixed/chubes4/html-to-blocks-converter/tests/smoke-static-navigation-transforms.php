@@ -26,7 +26,7 @@ if (!\function_exists('BlockFormatBridge\Vendor\esc_url')) {
 if (!\function_exists('BlockFormatBridge\Vendor\wp_strip_all_tags')) {
     function wp_strip_all_tags($value)
     {
-        return wp_strip_all_tags((string) $value);
+        return \strip_tags((string) $value);
     }
 }
 class WP_Block_Type_Registry

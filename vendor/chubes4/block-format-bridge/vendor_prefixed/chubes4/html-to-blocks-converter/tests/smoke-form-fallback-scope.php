@@ -184,6 +184,54 @@ $assert(\str_contains($network_search_serialized, 'Find artists, events, discuss
 $assert(\str_contains($network_search_serialized, '<!-- wp:html --><form action="https://extrachill.com/" class="search-form searchform" method="get">'), 'extrachill-network-search-form-is-local-core-html-island', $network_search_serialized);
 $assert(\count($fallback_events) === 1, 'extrachill-network-search-emits-one-local-form-fallback', (string) \count($fallback_events));
 $assert(($fallback_events[0][1]['tag_name'] ?? '') === 'FORM', 'extrachill-network-search-fallback-context-is-form', \print_r($fallback_events, \true));
+$eastbank_static_preview_form = <<<'HTML'
+<form class="static-form" aria-label="Repair intake preview form">
+  <label for="item">Item</label>
+  <input id="item" name="item" type="text" placeholder="Example: desk lamp, toaster, backpack zipper">
+  <label for="problem">What changed?</label>
+  <textarea id="problem" name="problem" rows="4" placeholder="Tell us what stopped working, what you tried, and whether parts are loose."></textarea>
+  <label for="visit">Preferred visit</label>
+  <select id="visit" name="visit">
+    <option>Thursday afternoon</option>
+    <option>Saturday walk-in counter</option>
+    <option>Next clinic or tool night</option>
+  </select>
+  <button type="button">Prepare my bench note</button>
+  <p class="form-note">Static preview only - bring this information with you or call the shop before visiting.</p>
+</form>
+HTML;
+$fallback_events = [];
+$eastbank_form_serialized = serialize_blocks(html_to_blocks_raw_handler(['HTML' => $eastbank_static_preview_form]));
+$assert(!\str_contains($eastbank_form_serialized, '<!-- wp:html -->'), 'eastbank-static-preview-form-avoids-core-html-fallback', $eastbank_form_serialized);
+$assert(\str_contains($eastbank_form_serialized, '<div class="wp-block-group static-form" aria-label="Repair intake preview form">'), 'eastbank-static-preview-form-becomes-group', $eastbank_form_serialized);
+$assert(\str_contains($eastbank_form_serialized, 'Item'), 'eastbank-static-preview-label-survives', $eastbank_form_serialized);
+$assert(\str_contains($eastbank_form_serialized, 'Example: desk lamp, toaster, backpack zipper'), 'eastbank-static-preview-placeholder-survives', $eastbank_form_serialized);
+$assert(\str_contains($eastbank_form_serialized, '<!-- wp:list -->'), 'eastbank-static-preview-select-becomes-list', $eastbank_form_serialized);
+$assert(\str_contains($eastbank_form_serialized, 'Thursday afternoon'), 'eastbank-static-preview-option-survives', $eastbank_form_serialized);
+$assert(\str_contains($eastbank_form_serialized, 'Prepare my bench note'), 'eastbank-static-preview-button-survives', $eastbank_form_serialized);
+$assert(\str_contains($eastbank_form_serialized, 'Static preview only'), 'eastbank-static-preview-note-survives', $eastbank_form_serialized);
+$assert(\count($fallback_events) === 0, 'eastbank-static-preview-emits-no-fallback-event', (string) \count($fallback_events));
+$ember_form_card = <<<'HTML'
+<form class="form-card reveal" aria-label="Reservation request form"><h2>Request a reservation</h2><label>Name<input type="text" name="name" placeholder="Your name"></label><label>Email<input type="email" name="email" placeholder="you@example.com"></label><div class="form-row"><label>Date<input type="date" placeholder="Preferred date"></label><label>Time<select><option>5:00 PM</option><option>7:30 PM</option></select></label></div><button class="btn" type="submit">Request Table</button></form>
+HTML;
+$fallback_events = [];
+$ember_form_card_serialized = serialize_blocks(html_to_blocks_raw_handler(['HTML' => $ember_form_card]));
+$assert(!\str_contains($ember_form_card_serialized, '<!-- wp:html -->'), 'ember-form-card-avoids-core-html-fallback', $ember_form_card_serialized);
+$assert(\str_contains($ember_form_card_serialized, '<div class="wp-block-group form-card reveal" aria-label="Reservation request form">'), 'ember-form-card-becomes-group', $ember_form_card_serialized);
+$assert(\str_contains($ember_form_card_serialized, 'Request a reservation'), 'ember-form-card-title-survives', $ember_form_card_serialized);
+$assert(\str_contains($ember_form_card_serialized, 'Name'), 'ember-form-card-name-label-survives', $ember_form_card_serialized);
+$assert(\str_contains($ember_form_card_serialized, 'Your name'), 'ember-form-card-name-placeholder-survives', $ember_form_card_serialized);
+$assert(\str_contains($ember_form_card_serialized, 'you@example.com'), 'ember-form-card-email-placeholder-survives', $ember_form_card_serialized);
+$assert(\str_contains($ember_form_card_serialized, 'Preferred date'), 'ember-form-card-date-placeholder-survives', $ember_form_card_serialized);
+$assert(\str_contains($ember_form_card_serialized, '<!-- wp:list -->'), 'ember-form-card-select-becomes-list', $ember_form_card_serialized);
+$assert(\str_contains($ember_form_card_serialized, '5:00 PM'), 'ember-form-card-first-option-survives', $ember_form_card_serialized);
+$assert(\str_contains($ember_form_card_serialized, 'Request Table'), 'ember-form-card-submit-text-survives', $ember_form_card_serialized);
+$assert(\count($fallback_events) === 0, 'ember-form-card-emits-no-fallback-event', (string) \count($fallback_events));
+$untargeted_real_form = '<form aria-label="Contact form"><label for="email">Email</label><input id="email" name="email" type="email"></form>';
+$fallback_events = [];
+$untargeted_real_form_serialized = serialize_blocks(html_to_blocks_raw_handler(['HTML' => $untargeted_real_form]));
+$assert(\str_contains($untargeted_real_form_serialized, '<!-- wp:html --><form aria-label="Contact form">'), 'untargeted-real-form-still-falls-back', $untargeted_real_form_serialized);
+$assert(\count($fallback_events) === 1, 'untargeted-real-form-emits-fallback-event', (string) \count($fallback_events));
 echo 'Assertions: ' . $assertions . \PHP_EOL;
 if (empty($failures)) {
     echo 'ALL PASS' . \PHP_EOL;

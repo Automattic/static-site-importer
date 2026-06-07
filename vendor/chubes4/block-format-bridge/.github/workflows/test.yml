@@ -35,6 +35,7 @@ jobs:
       - uses: Extra-Chill/homeboy-action@v2
         with:
           commands: test
+          version: '0.222.4'
           php-version: ${{ matrix.php-version }}
           # The WordPress extension's Playground backend needs Node to install
           # @wp-playground/cli; without this, push-context runs skip Node setup.

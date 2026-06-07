@@ -15,9 +15,9 @@ class HTML_To_Blocks_SVG_Icon_Classifier
     private const MAX_BYTES = 5120;
     private const MAX_NODES = 50;
     private const MAX_DEPTH = 5;
-    private const MAX_ICON_SIZE = 256;
-    private const ALLOWED_TAGS = array('svg', 'path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'ellipse', 'g', 'title', 'desc');
-    private const ALLOWED_ATTRIBUTES = array('aria-hidden', 'aria-label', 'class', 'cx', 'cy', 'd', 'fill', 'fill-opacity', 'height', 'points', 'r', 'role', 'rx', 'ry', 'stroke', 'stroke-linecap', 'stroke-linejoin', 'stroke-opacity', 'stroke-width', 'viewbox', 'width', 'x', 'x1', 'x2', 'y', 'y1', 'y2');
+    private const MAX_GRAPHIC_SIZE = 512;
+    private const ALLOWED_TAGS = array('svg', 'path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'ellipse', 'g', 'defs', 'pattern', 'title', 'desc');
+    private const ALLOWED_ATTRIBUTES = array('aria-hidden', 'aria-label', 'aria-labelledby', 'class', 'cx', 'cy', 'd', 'fill', 'fill-opacity', 'height', 'id', 'patternunits', 'points', 'r', 'role', 'rx', 'ry', 'stroke', 'stroke-linecap', 'stroke-linejoin', 'stroke-opacity', 'stroke-width', 'viewbox', 'width', 'x', 'x1', 'x2', 'y', 'y1', 'y2');
     /**
      * Classifies a source fragment as a safe inline SVG icon or a rejected SVG.
      *
@@ -45,7 +45,7 @@ class HTML_To_Blocks_SVG_Icon_Classifier
             $result['reason'] = 'invalid_svg';
             return $result;
         }
-        $state = array('nodes' => 0, 'max_depth' => 0, 'tags' => array(), 'reason' => '');
+        $state = array('nodes' => 0, 'max_depth' => 0, 'tags' => array(), 'reason' => '', 'local_refs' => self::collect_local_reference_ids($document->documentElement));
         $sanitized = self::sanitize_element($document->documentElement, $document, 1, $state);
         if (!$sanitized) {
             $result['reason'] = $state['reason'] ? $state['reason'] : 'unsafe_svg';
@@ -54,7 +54,7 @@ class HTML_To_Blocks_SVG_Icon_Classifier
         $view_box = $sanitized->getAttribute('viewBox');
         $width = $sanitized->getAttribute('width');
         $height = $sanitized->getAttribute('height');
-        if (!self::has_small_icon_dimensions($view_box, $width, $height)) {
+        if (!self::has_bounded_graphic_dimensions($view_box, $width, $height)) {
             $result['reason'] = 'dimension_limit';
             return $result;
         }
@@ -63,10 +63,11 @@ class HTML_To_Blocks_SVG_Icon_Classifier
             $result['reason'] = 'serialization_failed';
             return $result;
         }
+        $is_icon_sized = self::is_icon_sized_graphic($view_box, $width, $height);
         $result['is_safe'] = \true;
         $result['svg'] = $sanitized_svg;
-        $result['reason'] = 'safe_svg_icon';
-        $result['metadata'] = array('kind' => 'inline-svg-icon', 'viewBox' => $view_box, 'width' => $width, 'height' => $height, 'className' => $sanitized->getAttribute('class'), 'ariaLabel' => $sanitized->getAttribute('aria-label'), 'nodeCount' => $state['nodes'], 'maxDepth' => $state['max_depth'], 'tags' => \array_values(\array_unique($state['tags'])));
+        $result['reason'] = $is_icon_sized ? 'safe_svg_icon' : 'safe_inline_svg_illustration';
+        $result['metadata'] = array('kind' => $is_icon_sized ? 'inline-svg-icon' : 'inline-svg-illustration', 'viewBox' => $view_box, 'width' => $width, 'height' => $height, 'className' => $sanitized->getAttribute('class'), 'ariaLabel' => $sanitized->getAttribute('aria-label'), 'nodeCount' => $state['nodes'], 'maxDepth' => $state['max_depth'], 'tags' => \array_values(\array_unique($state['tags'])));
         return $result;
     }
     /**
@@ -96,7 +97,7 @@ class HTML_To_Blocks_SVG_Icon_Classifier
         foreach (\iterator_to_array($source->attributes) as $attribute) {
             $name = \strtolower($attribute->name);
             $value = \trim($attribute->value);
-            if (!self::is_allowed_attribute($name, $value)) {
+            if (!self::is_allowed_attribute($name, $value, $state)) {
                 $state['reason'] = 'disallowed_attribute';
                 return null;
             }
@@ -132,10 +133,13 @@ class HTML_To_Blocks_SVG_Icon_Classifier
      * @param string $value Attribute value.
      * @return bool True when safe.
      */
-    private static function is_allowed_attribute(string $name, string $value): bool
+    private static function is_allowed_attribute(string $name, string $value, array $state): bool
     {
         if (\strpos($name, 'on') === 0 || \in_array($name, array('href', 'xlink:href', 'src', 'style'), \true)) {
             return \false;
+        }
+        if ('id' === $name) {
+            return \preg_match('/^[A-Za-z][A-Za-z0-9_-]*$/', $value) === 1;
         }
         if ('xmlns' === $name && 'http://www.w3.org/2000/svg' === $value) {
             return \true;
@@ -143,17 +147,42 @@ class HTML_To_Blocks_SVG_Icon_Classifier
         if (!\in_array($name, self::ALLOWED_ATTRIBUTES, \true)) {
             return \false;
         }
-        return \preg_match('/url\s*\(|(?:https?:)?\/\/|data:/i', $value) !== 1;
+        if (\preg_match('/url\s*\(/i', $value) === 1) {
+            if (\preg_match('/^url\(#([A-Za-z][A-Za-z0-9_-]*)\)$/', $value, $matches) !== 1) {
+                return \false;
+            }
+            return \in_array($matches[1], $state['local_refs'] ?? array(), \true);
+        }
+        return \preg_match('/(?:https?:)?\/\/|data:/i', $value) !== 1;
     }
     /**
-     * Applies small icon dimension limits.
+     * Collects local paint server IDs that are safe to reference via url(#id).
+     *
+     * @param DOMElement $root Root SVG element.
+     * @return string[] Local reference IDs.
+     */
+    private static function collect_local_reference_ids(\DOMElement $root): array
+    {
+        $ids = array();
+        foreach ($root->getElementsByTagName('pattern') as $pattern) {
+            if ($pattern instanceof \DOMElement && $pattern->hasAttribute('id')) {
+                $id = \trim($pattern->getAttribute('id'));
+                if (\preg_match('/^[A-Za-z][A-Za-z0-9_-]*$/', $id) === 1) {
+                    $ids[] = $id;
+                }
+            }
+        }
+        return \array_values(\array_unique($ids));
+    }
+    /**
+     * Applies bounded inline graphic dimension limits.
      *
      * @param string $view_box SVG viewBox attribute.
      * @param string $width SVG width attribute.
      * @param string $height SVG height attribute.
-     * @return bool True when dimensions look icon-sized.
+     * @return bool True when dimensions look bounded.
      */
-    private static function has_small_icon_dimensions(string $view_box, string $width, string $height): bool
+    private static function has_bounded_graphic_dimensions(string $view_box, string $width, string $height): bool
     {
         if ('' !== $view_box) {
             $parts = \preg_split('/[\s,]+/', \trim($view_box));
@@ -163,7 +192,7 @@ class HTML_To_Blocks_SVG_Icon_Classifier
             if (\count($parts) !== 4 || !\is_numeric($parts[2]) || !\is_numeric($parts[3])) {
                 return \false;
             }
-            if ((float) $parts[2] <= 0 || (float) $parts[3] <= 0 || (float) $parts[2] > self::MAX_ICON_SIZE || (float) $parts[3] > self::MAX_ICON_SIZE) {
+            if ((float) $parts[2] <= 0 || (float) $parts[3] <= 0 || (float) $parts[2] > self::MAX_GRAPHIC_SIZE || (float) $parts[3] > self::MAX_GRAPHIC_SIZE) {
                 return \false;
             }
         }
@@ -171,7 +200,31 @@ class HTML_To_Blocks_SVG_Icon_Classifier
             if ('' === $dimension) {
                 continue;
             }
-            if (\preg_match('/^([0-9]+(?:\.[0-9]+)?)(?:px)?$/', $dimension, $matches) !== 1 || (float) $matches[1] > self::MAX_ICON_SIZE) {
+            if (\preg_match('/^([0-9]+(?:\.[0-9]+)?)(?:px)?$/', $dimension, $matches) !== 1 || (float) $matches[1] > self::MAX_GRAPHIC_SIZE) {
+                return \false;
+            }
+        }
+        return '' !== $view_box || '' !== $width || '' !== $height;
+    }
+    /**
+     * Checks whether a bounded SVG is small enough to keep icon metadata.
+     *
+     * @param string $view_box SVG viewBox attribute.
+     * @param string $width    SVG width attribute.
+     * @param string $height   SVG height attribute.
+     * @return bool True when dimensions look icon-sized.
+     */
+    private static function is_icon_sized_graphic(string $view_box, string $width, string $height): bool
+    {
+        if ('' !== $view_box) {
+            $parts = \preg_split('/[\s,]+/', \trim($view_box));
+            return \is_array($parts) && \count($parts) === 4 && \is_numeric($parts[2]) && \is_numeric($parts[3]) && (float) $parts[2] <= 256 && (float) $parts[3] <= 256;
+        }
+        foreach (array($width, $height) as $dimension) {
+            if ('' === $dimension) {
+                continue;
+            }
+            if (\preg_match('/^([0-9]+(?:\.[0-9]+)?)(?:px)?$/', $dimension, $matches) !== 1 || (float) $matches[1] > 256) {
                 return \false;
             }
         }
