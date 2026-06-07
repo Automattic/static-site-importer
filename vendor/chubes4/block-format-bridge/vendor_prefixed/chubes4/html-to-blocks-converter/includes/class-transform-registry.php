@@ -499,13 +499,17 @@ class HTML_To_Blocks_Transform_Registry
         }));
     }
     /**
-     * Creates an unordered list block from a simple definition list.
+     * Creates blocks from a simple definition list.
      *
      * @param HTML_To_Blocks_HTML_Element $definition_list The dl element.
      * @return array Block array.
      */
     private static function create_definition_list_block_from_element($definition_list): array
     {
+        $wrapper_pairs = self::get_definition_list_wrapper_pairs($definition_list);
+        if (!empty($wrapper_pairs)) {
+            return self::create_visual_definition_list_group_from_pairs($definition_list, $wrapper_pairs);
+        }
         $list_attributes = self::get_block_support_attributes($definition_list, array('anchor' => \true, 'class_name' => \true, 'colors' => \true, 'spacing' => \true, 'border' => \true));
         $list_attributes = \array_merge($list_attributes, array('ordered' => \false));
         $inner_blocks = array();
@@ -513,6 +517,44 @@ class HTML_To_Blocks_Transform_Registry
             $inner_blocks[] = HTML_To_Blocks_Block_Factory::create_block('core/list-item', array('content' => $pair['term'] . ': ' . $pair['description']));
         }
         return HTML_To_Blocks_Block_Factory::create_block('core/list', $list_attributes, $inner_blocks);
+    }
+    /**
+     * Creates grouped native blocks for generated visual metadata definition lists.
+     *
+     * @param HTML_To_Blocks_HTML_Element $definition_list The dl element.
+     * @param array<int,array{wrapper:HTML_To_Blocks_HTML_Element,term:HTML_To_Blocks_HTML_Element,description:HTML_To_Blocks_HTML_Element}> $wrapper_pairs
+     *        Definition wrapper pairs.
+     * @return array Block array.
+     */
+    private static function create_visual_definition_list_group_from_pairs($definition_list, array $wrapper_pairs): array
+    {
+        $inner_blocks = array();
+        foreach ($wrapper_pairs as $pair) {
+            $inner_blocks[] = HTML_To_Blocks_Block_Factory::create_block('core/group', self::get_visual_definition_list_group_attributes($pair['wrapper']), array(self::create_definition_list_paragraph_block($pair['term']), self::create_definition_list_paragraph_block($pair['description'])));
+        }
+        return HTML_To_Blocks_Block_Factory::create_block('core/group', self::get_visual_definition_list_group_attributes($definition_list), $inner_blocks);
+    }
+    /**
+     * Creates a paragraph block for a definition term or description.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Source dt or dd element.
+     * @return array Block array.
+     */
+    private static function create_definition_list_paragraph_block($element): array
+    {
+        $attributes = self::get_block_support_attributes($element, array('class_name' => \true, 'colors' => \true, 'typography' => \true, 'spacing' => \true, 'text_align' => \true));
+        $attributes['content'] = \trim($element->get_inner_html());
+        return HTML_To_Blocks_Block_Factory::create_block('core/paragraph', $attributes);
+    }
+    /**
+     * Gets wrapper-safe attributes for visual definition-list groups.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Source dl or wrapper element.
+     * @return array Block attributes.
+     */
+    private static function get_visual_definition_list_group_attributes($element): array
+    {
+        return self::get_block_support_attributes($element, array('anchor' => \true, 'class_name' => \true, 'align' => \true, 'colors' => \true, 'spacing' => \true, 'border' => \true, 'dimensions' => \true, 'layout' => \true, 'aria_label' => \true));
     }
     /**
      * Gets simple term/description pairs from a dl element.
@@ -530,7 +572,7 @@ class HTML_To_Blocks_Transform_Registry
         if (empty($children)) {
             return array();
         }
-        if (self::definition_list_has_only_wrapper_pairs($children)) {
+        if (!empty(self::get_definition_list_wrapper_pairs($definition_list))) {
             $pairs = array();
             foreach ($children as $child) {
                 $pairs[] = self::get_definition_pair_from_wrapper($child);
@@ -538,6 +580,26 @@ class HTML_To_Blocks_Transform_Registry
             return \array_values(\array_filter($pairs));
         }
         return self::get_direct_definition_list_pairs($children);
+    }
+    /**
+     * Gets simple wrapper pairs from generated dl > div > dt + dd markup.
+     *
+     * @param HTML_To_Blocks_HTML_Element $definition_list The dl element.
+     * @return array<int,array{wrapper:HTML_To_Blocks_HTML_Element,term:HTML_To_Blocks_HTML_Element,description:HTML_To_Blocks_HTML_Element}> Wrapper
+     *         pair data.
+     */
+    private static function get_definition_list_wrapper_pairs($definition_list): array
+    {
+        $children = $definition_list->get_child_elements();
+        if (empty($children) || !self::definition_list_has_only_wrapper_pairs($children)) {
+            return array();
+        }
+        $pairs = array();
+        foreach ($children as $child) {
+            $wrapper_children = $child->get_child_elements();
+            $pairs[] = array('wrapper' => $child, 'term' => $wrapper_children[0], 'description' => $wrapper_children[1]);
+        }
+        return $pairs;
     }
     /**
      * Checks whether all direct dl children are div wrappers around dt/dd pairs.
@@ -815,6 +877,10 @@ class HTML_To_Blocks_Transform_Registry
         }, 'transform' => function ($element) {
             return self::create_static_visual_button_group($element);
         }), array('blockName' => 'core/paragraph', 'priority' => 8, 'selector' => 'button', 'isMatch' => function ($element) {
+            return self::is_static_navigation_toggle_button($element);
+        }, 'transform' => function ($element) {
+            return self::create_static_navigation_toggle_paragraph($element);
+        }), array('blockName' => 'core/paragraph', 'priority' => 8, 'selector' => 'button', 'isMatch' => function ($element) {
             return self::is_static_visual_button($element);
         }, 'transform' => function ($element) {
             return self::create_static_visual_button_paragraph($element);
@@ -841,6 +907,41 @@ class HTML_To_Blocks_Transform_Registry
             $anchor = self::get_single_anchor_from_html($element->get_inner_html());
             return self::create_buttons_block_from_anchor($anchor);
         }));
+    }
+    /**
+     * Checks whether a button is static responsive-navigation chrome.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Element to inspect.
+     * @return bool True when the button can be represented as native editable text.
+     */
+    private static function is_static_navigation_toggle_button($element): bool
+    {
+        if ('BUTTON' !== $element->get_tag_name() || !$element->has_attribute('class')) {
+            return \false;
+        }
+        if (!self::class_matches($element, '/(?:^|[-_\s])(?:nav|menu)[-_\s]?toggle(?:$|[-_\s])/i')) {
+            return \false;
+        }
+        if ($element->has_attribute('form') || $element->has_attribute('name') || $element->has_attribute('value')) {
+            return \false;
+        }
+        $type = \strtolower(\trim((string) ($element->get_attribute('type') ?? '')));
+        if (\in_array($type, array('submit', 'reset'), \true)) {
+            return \false;
+        }
+        return '' !== \trim($element->get_text_content());
+    }
+    /**
+     * Creates editable text for static responsive-navigation chrome.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Button element.
+     * @return array Block array.
+     */
+    private static function create_static_navigation_toggle_paragraph($element): array
+    {
+        $attributes = self::get_block_support_attributes($element, array('anchor' => \true, 'class_name' => \true));
+        $attributes['content'] = esc_html(\trim($element->get_text_content()));
+        return HTML_To_Blocks_Block_Factory::create_block('core/paragraph', $attributes);
     }
     /**
      * Checks whether an element is a simple row/container of button-like anchors.
@@ -1134,7 +1235,7 @@ class HTML_To_Blocks_Transform_Registry
             return \false;
         }
         $href = \trim((string) ($element->get_attribute('href') ?? ''));
-        if ('' === $href || '#' !== $href[0]) {
+        if ('' === $href || \preg_match('/^(?:https?:|mailto:|tel:|javascript:)/i', $href) === 1) {
             return \false;
         }
         if (!self::class_matches($element, '/(?:^|[-_\s])brand(?:$|[-_\s])/i')) {
@@ -1546,7 +1647,11 @@ class HTML_To_Blocks_Transform_Registry
             $summary = \trim($summary_matches[1] ?? '');
             $content_html = \trim(\preg_replace('/<summary(?:\s[^>]*)?>.*?<\/summary>/is', '', $inner_html, 1));
             $inner_blocks = '' !== $content_html ? $handler(array('HTML' => $content_html)) : array();
-            $attributes = array('summary' => $summary);
+            $attributes = self::get_block_support_attributes($element, array('anchor' => \true, 'class_name' => \true));
+            $attributes['summary'] = $summary;
+            if ($element->has_attribute('open')) {
+                $attributes['showContent'] = \true;
+            }
             return HTML_To_Blocks_Block_Factory::create_block('core/details', $attributes, $inner_blocks);
         }));
     }
@@ -2240,19 +2345,44 @@ class HTML_To_Blocks_Transform_Registry
         if ('FORM' !== $element->get_tag_name()) {
             return \false;
         }
-        if (!$element->has_attribute('action')) {
+        if (!self::has_direct_form_controls($element)) {
             return \false;
         }
-        $action = \trim((string) $element->get_attribute('action'));
-        if ('#' !== $action) {
-            return \false;
+        $action = $element->has_attribute('action') ? \trim((string) $element->get_attribute('action')) : '';
+        $method = $element->has_attribute('method') ? \trim((string) $element->get_attribute('method')) : '';
+        if ('#' === $action) {
+            return \true;
         }
+        return '' === $action && '' === $method && self::has_static_placeholder_form_marker($element);
+    }
+    /**
+     * Checks whether a form has direct controls worth preserving.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Source form element.
+     * @return bool True when direct form controls are present.
+     */
+    private static function has_direct_form_controls($element): bool
+    {
         foreach ($element->get_child_elements() as $child) {
             if (\in_array($child->get_tag_name(), array('LABEL', 'INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'), \true)) {
                 return \true;
             }
         }
         return \false;
+    }
+    /**
+     * Checks whether a no-target form is explicitly presented as static preview copy.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Source form element.
+     * @return bool True when the source marks the form as inert preview/checklist UI.
+     */
+    private static function has_static_placeholder_form_marker($element): bool
+    {
+        $class = $element->has_attribute('class') ? (string) $element->get_attribute('class') : '';
+        $aria_label = $element->has_attribute('aria-label') ? (string) $element->get_attribute('aria-label') : '';
+        $text = wp_strip_all_tags($element->get_inner_html());
+        $haystack = \strtolower($class . ' ' . $aria_label . ' ' . $text);
+        return \false !== \strpos($haystack, 'static-form') || \false !== \strpos($haystack, 'form-card') || \false !== \strpos($haystack, 'static preview') || \false !== \strpos($haystack, 'preview form') || \false !== \strpos($haystack, 'preview only') || \false !== \strpos($haystack, 'checklist');
     }
     /**
      * Creates a native group from a static placeholder form.
@@ -2262,14 +2392,30 @@ class HTML_To_Blocks_Transform_Registry
      */
     private static function create_static_placeholder_form_group($element): array
     {
+        $inner_blocks = self::create_static_placeholder_form_child_blocks($element->get_child_elements());
+        return HTML_To_Blocks_Block_Factory::create_block('core/group', self::get_common_layout_attributes($element), $inner_blocks);
+    }
+    /**
+     * Creates editable blocks for static placeholder form children.
+     *
+     * @param array<int,HTML_To_Blocks_HTML_Element> $children Child elements.
+     * @return array<int,array<string,mixed>> Block arrays.
+     */
+    private static function create_static_placeholder_form_child_blocks(array $children): array
+    {
         $inner_blocks = array();
-        foreach ($element->get_child_elements() as $child) {
+        foreach ($children as $child) {
             $tag = $child->get_tag_name();
+            if (\preg_match('/^H([1-6])$/', $tag, $matches)) {
+                $inner_blocks[] = HTML_To_Blocks_Block_Factory::create_block('core/heading', array('level' => (int) $matches[1], 'content' => \trim($child->get_inner_html())));
+                continue;
+            }
             if ('LABEL' === $tag) {
                 $content = self::get_static_form_label_text($child);
                 if ('' !== $content) {
                     $inner_blocks[] = HTML_To_Blocks_Block_Factory::create_block('core/paragraph', array('content' => esc_html($content)));
                 }
+                $inner_blocks = \array_merge($inner_blocks, self::create_static_placeholder_form_child_blocks($child->get_child_elements()));
                 continue;
             }
             if ('BUTTON' === $tag) {
@@ -2279,14 +2425,58 @@ class HTML_To_Blocks_Transform_Registry
                 }
                 continue;
             }
+            if ('P' === $tag) {
+                $content = \trim(wp_strip_all_tags($child->get_inner_html()));
+                if ('' !== $content) {
+                    $attributes = self::get_block_support_attributes($child, array('class_name' => \true));
+                    $attributes['content'] = esc_html(\preg_replace('/\s+/', ' ', $content));
+                    $inner_blocks[] = HTML_To_Blocks_Block_Factory::create_block('core/paragraph', $attributes);
+                }
+                continue;
+            }
+            if ('SELECT' === $tag) {
+                $option_blocks = self::create_static_form_option_blocks($child);
+                if (!empty($option_blocks)) {
+                    $inner_blocks[] = HTML_To_Blocks_Block_Factory::create_block('core/list', array(), $option_blocks);
+                    continue;
+                }
+            }
             if (\in_array($tag, array('INPUT', 'TEXTAREA', 'SELECT'), \true)) {
                 $content = self::get_static_form_control_label($child);
                 if ('' !== $content) {
                     $inner_blocks[] = HTML_To_Blocks_Block_Factory::create_block('core/paragraph', array('content' => esc_html($content)));
                 }
+                continue;
+            }
+            if (\in_array($tag, array('DIV', 'SECTION'), \true)) {
+                $child_blocks = self::create_static_placeholder_form_child_blocks($child->get_child_elements());
+                if (!empty($child_blocks)) {
+                    $inner_blocks[] = HTML_To_Blocks_Block_Factory::create_block('core/group', self::get_common_layout_attributes($child), $child_blocks);
+                }
             }
         }
-        return HTML_To_Blocks_Block_Factory::create_block('core/group', self::get_common_layout_attributes($element), $inner_blocks);
+        return $inner_blocks;
+    }
+    /**
+     * Creates editable list item blocks from visible static select options.
+     *
+     * @param HTML_To_Blocks_HTML_Element $select Select element.
+     * @return array<int,array<string,mixed>> Option list-item blocks.
+     */
+    private static function create_static_form_option_blocks($select): array
+    {
+        $option_blocks = array();
+        foreach ($select->get_child_elements() as $child) {
+            if ('OPTION' !== $child->get_tag_name()) {
+                continue;
+            }
+            $content = \trim(wp_strip_all_tags($child->get_inner_html()));
+            if ('' === $content) {
+                continue;
+            }
+            $option_blocks[] = HTML_To_Blocks_Block_Factory::create_block('core/list-item', array('content' => esc_html(\preg_replace('/\s+/', ' ', $content))));
+        }
+        return $option_blocks;
     }
     /**
      * Gets visible text for a static form label.
@@ -2421,7 +2611,7 @@ class HTML_To_Blocks_Transform_Registry
      */
     private static function get_empty_decorative_group_attributes($element): array
     {
-        return self::get_block_support_attributes($element, array('anchor' => \true, 'class_name' => \true, 'align' => \true, 'colors' => \true, 'dimensions' => \true, 'spacing' => \true, 'border' => \true));
+        return self::get_block_support_attributes($element, array('anchor' => \true, 'class_name' => \true, 'align' => \true, 'colors' => \true, 'dimensions' => \true, 'spacing' => \true, 'border' => \true, 'aria_label' => \true));
     }
     /**
      * Gets attributes shared by layout blocks.
@@ -3092,7 +3282,7 @@ class HTML_To_Blocks_Transform_Registry
             $image_src = $image->get_attribute('src') ?? '';
             $has_image = \false;
             foreach ($blocks as $block) {
-                if ('core/image' === ($block['blockName'] ?? '') && $image_src === ($block['attrs']['url'] ?? '')) {
+                if ('core/image' === ($block['blockName'] ?? '') && ($block['attrs']['url'] ?? '') === $image_src) {
                     $has_image = \true;
                     break;
                 }
@@ -3324,7 +3514,7 @@ class HTML_To_Blocks_Transform_Registry
      */
     private static function is_empty_decorative_element($element): bool
     {
-        return self::is_empty_element($element) && (self::is_project_card_status_element($element) || self::class_matches($element, '/(?:^|[-_\s])(background|bg|pattern|texture|divider|separator|connector|rule|ruler|line|blank|overlay|grain|noise|glow|gradient|scan|dot|mark|bullet|icon|orb|blob|fill|img|image|media|photo|picture|thumb|progress|meter|gauge|today|traffic[-_]?light|tl[-_]?(?:red|yellow|green)|task[-_\s]?check)(?:$|[-_\s]|\d)/i') || self::has_visual_placeholder_background($element));
+        return self::is_empty_element($element) && (self::is_project_card_status_element($element) || self::class_matches($element, '/(?:^|[-_\s])(background|bg|pattern|texture|divider|separator|connector|rule|ruler|line|blank|overlay|grain|noise|glow|gradient|scan|dot|mark|bullet|icon|orb|blob|fill|img|image|media|photo|picture|thumb|patch|progress|meter|gauge|today|traffic[-_]?light|tl[-_]?(?:red|yellow|green)|task[-_\s]?check)(?:$|[-_\s]|\d)/i') || self::has_visual_placeholder_background($element));
     }
     /**
      * Checks whether a figure wraps a decorative visual placeholder and caption.
@@ -3361,10 +3551,30 @@ class HTML_To_Blocks_Transform_Registry
         if (\trim(wp_strip_all_tags($element->get_inner_html())) !== '') {
             return \false;
         }
-        foreach ($element->query_selector_all('a, button, input, select, textarea, img, video, audio, iframe, object, embed, svg') as $functional_child) {
-            return \false;
+        foreach ($element->get_child_elements() as $child) {
+            if (self::is_functional_element_or_descendant($child)) {
+                return \false;
+            }
         }
         return !empty($element->get_child_elements());
+    }
+    /**
+     * Checks whether an element subtree contains controls, media, or embeds.
+     *
+     * @param HTML_To_Blocks_HTML_Element $element Source element.
+     * @return bool True when the subtree contains functional markup.
+     */
+    private static function is_functional_element_or_descendant($element): bool
+    {
+        if (\in_array($element->get_tag_name(), array('A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'IMG', 'VIDEO', 'AUDIO', 'IFRAME', 'OBJECT', 'EMBED', 'SVG'), \true)) {
+            return \true;
+        }
+        foreach ($element->get_child_elements() as $child) {
+            if (self::is_functional_element_or_descendant($child)) {
+                return \true;
+            }
+        }
+        return \false;
     }
     /**
      * Checks whether an empty element carries visual background styling.
@@ -3521,7 +3731,7 @@ class HTML_To_Blocks_Transform_Registry
      */
     private static function get_paragraph_transforms()
     {
-        return array(array('blockName' => 'core/paragraph', 'priority' => 20, 'selector' => 'p,address,a,label,div,span', 'isMatch' => function ($element) {
+        return array(array('blockName' => 'core/paragraph', 'priority' => 20, 'selector' => 'p,address,a,label,div,span,strong,em', 'isMatch' => function ($element) {
             if (\in_array($element->get_tag_name(), array('P', 'ADDRESS', 'A'), \true)) {
                 return \true;
             }
@@ -3534,12 +3744,18 @@ class HTML_To_Blocks_Transform_Registry
             if ('SPAN' === $element->get_tag_name() && $element->has_attribute('class')) {
                 return \false;
             }
+            if (\in_array($element->get_tag_name(), array('STRONG', 'EM'), \true)) {
+                return array() === $element->get_child_elements() && \trim($element->get_text_content()) !== '';
+            }
             return \in_array($element->get_tag_name(), array('DIV', 'SPAN'), \true) && array() === $element->get_child_elements() && \trim($element->get_text_content()) !== '';
         }, 'transform' => function ($element) {
             if (self::is_inline_span_label($element)) {
                 return self::create_inline_span_label_paragraph($element);
             }
             $content = $element->get_tag_name() === 'A' ? self::get_paragraph_anchor_content($element) : $element->get_inner_html();
+            if (\in_array($element->get_tag_name(), array('STRONG', 'EM'), \true)) {
+                $content = \trim($element->get_outer_html());
+            }
             if (self::is_static_checkbox_label($element)) {
                 $content = \trim(\preg_replace('/<\s*input\b[^>]*>/i', '', $content));
             }

@@ -44,7 +44,7 @@ if (!\class_exists('WP_Block_Type_Registry', \false)) {
         }
         public function is_registered($name)
         {
-            return \in_array($name, ['core/html', 'core/list', 'core/list-item'], \true);
+            return \in_array($name, ['core/heading', 'core/html', 'core/group', 'core/list', 'core/list-item', 'core/paragraph'], \true);
         }
         public function get_registered($name)
         {
@@ -98,28 +98,47 @@ $flatten_block_names = static function (array $blocks) use (&$flatten_block_name
     return $names;
 };
 $html = <<<'HTML'
-<dl><div><dt>Best seller</dt><dd>Brownie Depth Set</dd></div><div><dt>Use case</dt><dd>Glossy tops · dense crumb · deep cocoa</dd></div></dl>
+<article class="product-card"><h3>Brownie Depth Set</h3><dl class="card-meta"><div class="meta-row"><dt class="meta-label">Best seller</dt><dd class="meta-value">Brownie Depth Set</dd></div><div class="meta-row"><dt class="meta-label">Use case</dt><dd class="meta-value">Glossy tops · dense crumb · deep cocoa</dd></div></dl></article>
 HTML;
 $blocks = html_to_blocks_raw_handler(['HTML' => $html]);
 $names = $flatten_block_names($blocks);
-$assert(\count($blocks) === 1, 'definition-list-produces-single-block');
-$assert(($blocks[0]['blockName'] ?? '') === 'core/list', 'definition-list-becomes-list');
-$assert(($blocks[0]['attrs']['ordered'] ?? null) === \false, 'definition-list-is-unordered');
-$assert(\count($blocks[0]['innerBlocks'] ?? []) === 2, 'definition-list-keeps-pair-count');
-$assert(!\in_array('core/html', $names, \true), 'definition-list-has-no-core-html', \implode(', ', $names));
-$assert(($blocks[0]['innerBlocks'][0]['attrs']['content'] ?? '') === 'Best seller: Brownie Depth Set', 'definition-list-first-pair-content');
-$assert(($blocks[0]['innerBlocks'][1]['attrs']['content'] ?? '') === 'Use case: Glossy tops · dense crumb · deep cocoa', 'definition-list-second-pair-content');
+$definition_group = null;
+foreach ($blocks as $block) {
+    if (($block['blockName'] ?? '') !== 'core/group') {
+        continue;
+    }
+    foreach ($block['innerBlocks'] ?? [] as $inner_block) {
+        if (($inner_block['attrs']['className'] ?? '') === 'card-meta') {
+            $definition_group = $inner_block;
+            break 2;
+        }
+    }
+}
+$assert(null !== $definition_group, 'visual-definition-list-produces-group');
+$assert(!\in_array('core/html', $names, \true), 'visual-definition-list-has-no-core-html', \implode(', ', $names));
+$assert(!\in_array('core/list', $names, \true), 'visual-definition-list-is-not-bulleted-list', \implode(', ', $names));
+$assert(\count($definition_group['innerBlocks'] ?? []) === 2, 'visual-definition-list-keeps-pair-count');
+$assert(($definition_group['innerBlocks'][0]['attrs']['className'] ?? '') === 'meta-row', 'visual-definition-list-preserves-row-class');
+$assert(($definition_group['innerBlocks'][0]['innerBlocks'][0]['blockName'] ?? '') === 'core/paragraph', 'visual-definition-list-term-is-paragraph');
+$assert(($definition_group['innerBlocks'][0]['innerBlocks'][0]['attrs']['className'] ?? '') === 'meta-label', 'visual-definition-list-preserves-term-class');
+$assert(($definition_group['innerBlocks'][0]['innerBlocks'][0]['attrs']['content'] ?? '') === 'Best seller', 'visual-definition-list-preserves-term-content');
+$assert(($definition_group['innerBlocks'][0]['innerBlocks'][1]['attrs']['className'] ?? '') === 'meta-value', 'visual-definition-list-preserves-description-class');
+$assert(($definition_group['innerBlocks'][0]['innerBlocks'][1]['attrs']['content'] ?? '') === 'Brownie Depth Set', 'visual-definition-list-preserves-description-content');
 $direct_blocks = html_to_blocks_raw_handler(['HTML' => '<dl><dt>Origin</dt><dd>Charleston</dd></dl>']);
 $assert(($direct_blocks[0]['blockName'] ?? '') === 'core/list', 'direct-definition-list-becomes-list');
 $assert(($direct_blocks[0]['innerBlocks'][0]['attrs']['content'] ?? '') === 'Origin: Charleston', 'direct-definition-list-content');
 $wrapper_stat_blocks = html_to_blocks_raw_handler(['HTML' => '<dl class="hero-stats" aria-label="Store highlights"><div><dt>5</dt><dd>workflow categories</dd></div><div><dt>18+</dt><dd>bench-ready tools</dd></div><div><dt>0</dt><dd>guesswork mornings</dd></div></dl>']);
 $assert(\count($wrapper_stat_blocks) === 1, 'wrapped-stat-definition-list-produces-single-block');
-$assert(($wrapper_stat_blocks[0]['blockName'] ?? '') === 'core/list', 'wrapped-stat-definition-list-becomes-list');
+$assert(($wrapper_stat_blocks[0]['blockName'] ?? '') === 'core/group', 'wrapped-stat-definition-list-becomes-group');
 $assert(($wrapper_stat_blocks[0]['attrs']['className'] ?? '') === 'hero-stats', 'wrapped-stat-definition-list-preserves-class');
 $assert(\count($wrapper_stat_blocks[0]['innerBlocks'] ?? []) === 3, 'wrapped-stat-definition-list-keeps-pair-count');
-$assert(($wrapper_stat_blocks[0]['innerBlocks'][0]['attrs']['content'] ?? '') === '5: workflow categories', 'wrapped-stat-definition-list-first-content');
-$assert(($wrapper_stat_blocks[0]['innerBlocks'][1]['attrs']['content'] ?? '') === '18+: bench-ready tools', 'wrapped-stat-definition-list-second-content');
-$assert(($wrapper_stat_blocks[0]['innerBlocks'][2]['attrs']['content'] ?? '') === '0: guesswork mornings', 'wrapped-stat-definition-list-third-content');
+$assert(($wrapper_stat_blocks[0]['attrs']['ariaLabel'] ?? '') === 'Store highlights', 'wrapped-stat-definition-list-preserves-aria-label');
+$assert(($wrapper_stat_blocks[0]['innerBlocks'][0]['innerBlocks'][0]['attrs']['content'] ?? '') === '5', 'wrapped-stat-definition-list-first-term');
+$assert(($wrapper_stat_blocks[0]['innerBlocks'][0]['innerBlocks'][1]['attrs']['content'] ?? '') === 'workflow categories', 'wrapped-stat-definition-list-first-description');
+$assert(($wrapper_stat_blocks[0]['innerBlocks'][1]['innerBlocks'][0]['attrs']['content'] ?? '') === '18+', 'wrapped-stat-definition-list-second-term');
+$assert(($wrapper_stat_blocks[0]['innerBlocks'][1]['innerBlocks'][1]['attrs']['content'] ?? '') === 'bench-ready tools', 'wrapped-stat-definition-list-second-description');
+$assert(($wrapper_stat_blocks[0]['innerBlocks'][2]['innerBlocks'][0]['attrs']['content'] ?? '') === '0', 'wrapped-stat-definition-list-third-term');
+$assert(($wrapper_stat_blocks[0]['innerBlocks'][2]['innerBlocks'][1]['attrs']['content'] ?? '') === 'guesswork mornings', 'wrapped-stat-definition-list-third-description');
 $complex_blocks = html_to_blocks_raw_handler(['HTML' => '<dl><div><dt>Term</dt><dd>Description</dd><p>Extra</p></div></dl>']);
 $complex_names = $flatten_block_names($complex_blocks);
 $assert(\in_array('core/html', $complex_names, \true), 'complex-definition-list-still-falls-back', \implode(', ', $complex_names));
