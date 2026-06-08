@@ -144,7 +144,7 @@ if ( ! function_exists( 'static_site_importer_ability_export_theme' ) ) {
 			'source_metadata' => isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array(),
 		);
 
-		$result = Static_Site_Importer_Theme_Generator::export_theme( $args );
+		$result = Static_Site_Importer_Theme_Exporter::export_theme( $args );
 		if ( is_wp_error( $result ) ) {
 			/** @var WP_Error $result */
 			return static_site_importer_ability_error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
