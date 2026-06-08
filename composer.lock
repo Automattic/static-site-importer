@@ -12,12 +12,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/chubes4/block-artifact-compiler",
-                "reference": "2f7c672991215e024ba83626073f216f684af2db"
+                "reference": "18abf681a29fcda28045d769269823133d482c35"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/chubes4/block-artifact-compiler/zipball/2f7c672991215e024ba83626073f216f684af2db",
-                "reference": "2f7c672991215e024ba83626073f216f684af2db",
+                "url": "https://api.github.com/repos/chubes4/block-artifact-compiler/zipball/18abf681a29fcda28045d769269823133d482c35",
+                "reference": "18abf681a29fcda28045d769269823133d482c35",
                 "shasum": ""
             },
             "require": {
@@ -39,7 +39,7 @@
                 "GPL-2.0-or-later"
             ],
             "description": "Compile website artifacts into WordPress-native block artifact bundles.",
-            "time": "2026-06-08T02:21:14+00:00"
+            "time": "2026-06-08T13:31:43+00:00"
         },
         {
             "name": "chubes4/block-format-bridge",

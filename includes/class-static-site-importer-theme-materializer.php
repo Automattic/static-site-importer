@@ -114,10 +114,6 @@ class Static_Site_Importer_Theme_Materializer {
 	 */
 	public static function template_part_artifact_writes( string $theme_dir, array $artifacts ) {
 		$template_parts = isset( $artifacts['template_parts'] ) && is_array( $artifacts['template_parts'] ) ? $artifacts['template_parts'] : array();
-		if ( empty( $template_parts ) ) {
-			return new WP_Error( 'static_site_importer_bac_template_parts_missing', 'BAC website artifact materialization requires wordpress_artifacts.template_parts.' );
-		}
-
 		$writes  = array();
 		$reports = array();
 		foreach ( $template_parts as $template_part ) {
@@ -144,7 +140,9 @@ class Static_Site_Importer_Theme_Materializer {
 		}
 
 		if ( ! isset( $writes[ $theme_dir . '/parts/header.html' ] ) ) {
-			return new WP_Error( 'static_site_importer_bac_header_template_part_missing', 'BAC website artifact materialization requires a header template part artifact.' );
+			$header = self::default_header_template_part();
+			$writes[ $theme_dir . '/parts/header.html' ] = $header['block_markup'];
+			$reports[] = self::template_part_artifact_report_payload( 'parts/header.html', $header, $header['block_markup'] );
 		}
 
 		return array(
@@ -201,6 +199,22 @@ class Static_Site_Importer_Theme_Materializer {
 	}
 
 	/**
+	 * Build the minimal generated header required by SSI's page templates.
+	 *
+	 * @return array<string,mixed> BAC-like template part artifact.
+	 */
+	private static function default_header_template_part(): array {
+		return array(
+			'schema'       => 'static-site-importer/template-part/v1',
+			'slug'         => 'header',
+			'area'         => 'header',
+			'source_paths' => array(),
+			'generated'    => true,
+			'block_markup' => '<!-- wp:group {"tagName":"header","layout":{"type":"constrained"}} --><header class="wp-block-group"><!-- wp:site-title /--></header><!-- /wp:group -->',
+		);
+	}
+
+	/**
 	 * Build a compact report row for a materialized BAC template part artifact.
 	 *
 	 * @param string              $path          Relative generated theme path.
@@ -213,6 +227,7 @@ class Static_Site_Importer_Theme_Materializer {
 			'path'               => $path,
 			'slug'               => isset( $template_part['slug'] ) && is_scalar( $template_part['slug'] ) ? (string) $template_part['slug'] : '',
 			'area'               => isset( $template_part['area'] ) && is_scalar( $template_part['area'] ) ? (string) $template_part['area'] : '',
+			'generated'          => ! empty( $template_part['generated'] ),
 			'source_paths'       => isset( $template_part['source_paths'] ) && is_array( $template_part['source_paths'] ) ? array_values( array_filter( $template_part['source_paths'], 'is_scalar' ) ) : array(),
 			'source_hash'        => isset( $template_part['source_hash'] ) && is_scalar( $template_part['source_hash'] ) ? (string) $template_part['source_hash'] : '',
 			'block_markup_bytes' => strlen( $markup ),

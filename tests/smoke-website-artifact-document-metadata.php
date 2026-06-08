@@ -134,8 +134,13 @@ $missing_template_parts_result = Static_Site_Importer_Theme_Generator::import_we
 	)
 );
 
-$assert( is_wp_error( $missing_template_parts_result ), 'missing-template-parts-import-fails' );
-$assert( 'static_site_importer_bac_template_parts_missing' === ( is_wp_error( $missing_template_parts_result ) ? $missing_template_parts_result->get_error_code() : '' ), 'missing-template-parts-error-code' );
+$assert( ! is_wp_error( $missing_template_parts_result ), 'missing-template-parts-import-succeeds', is_wp_error( $missing_template_parts_result ) ? $missing_template_parts_result->get_error_message() : '' );
+if ( ! is_wp_error( $missing_template_parts_result ) ) {
+	$missing_report = json_decode( $read( $missing_template_parts_result['report_path'] ), true );
+	$missing_header = $missing_report['generated_theme']['template_parts'][0] ?? array();
+	$assert( 'parts/header.html' === ( $missing_header['path'] ?? '' ), 'missing-template-parts-generates-header' );
+	$assert( true === ( $missing_header['generated'] ?? null ), 'missing-template-parts-report-marks-generated-header' );
+}
 
 $multi_page_result = Static_Site_Importer_Theme_Generator::import_website_artifact(
 	array(
