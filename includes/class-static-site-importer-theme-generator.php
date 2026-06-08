@@ -110,13 +110,16 @@ class Static_Site_Importer_Theme_Generator {
 			return $document_pages;
 		}
 
-		$page_ids = self::create_page_shells( $document_pages );
+		$page_ids = Static_Site_Importer_Page_Materializer::create_page_shells( $document_pages );
 		if ( is_wp_error( $page_ids ) ) {
 			return $page_ids;
 		}
 
-		$permalinks     = self::page_permalinks( $page_ids );
-		$page_artifacts = self::page_artifacts( $document_pages, $theme_slug );
+		$permalinks     = Static_Site_Importer_Page_Materializer::page_permalinks( $page_ids );
+		$page_artifacts = Static_Site_Importer_Page_Materializer::page_artifacts( $document_pages, $theme_slug );
+		foreach ( $page_artifacts['diagnostics'] as $diagnostic ) {
+			self::$conversion_report['diagnostics'][] = $diagnostic;
+		}
 
 		$materialized = self::materialize_website_artifact_files_to_theme( $theme_dir, $artifacts );
 		if ( is_wp_error( $materialized ) ) {
@@ -144,7 +147,7 @@ class Static_Site_Importer_Theme_Generator {
 			Static_Site_Importer_Theme_Materializer::base_theme_writes( $theme_dir, $theme_slug, $theme_name, $materialized['css'], $has_footer_part )
 		);
 		$writes = array_merge( $writes, $template_part_writes );
-		$result         = self::write_page_contents( $document_pages, $page_ids, $page_artifacts['contents'] );
+		$result         = Static_Site_Importer_Page_Materializer::write_page_contents( $document_pages, $page_ids, $page_artifacts['contents'] );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
@@ -153,7 +156,7 @@ class Static_Site_Importer_Theme_Generator {
 		self::record_bac_source_documents_summary( $artifacts['documents'] ?? array(), $document_pages, $page_ids, $permalinks );
 		foreach ( array_keys( $page_artifacts['patterns'] ) as $filename ) {
 			$page = $document_pages[ $filename ] ?? null;
-			$slug = $page instanceof Static_Site_Importer_Source_Page ? self::page_slug( $filename, $page ) : self::page_slug( $filename );
+			$slug = $page instanceof Static_Site_Importer_Source_Page ? Static_Site_Importer_Page_Materializer::page_slug( $filename, $page ) : Static_Site_Importer_Page_Materializer::page_slug( $filename );
 			if ( '' === $slug ) {
 				continue;
 			}
@@ -1115,16 +1118,6 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
-	 * Check whether a source filename is the root site index.
-	 *
-	 * @param string $filename Source filename.
-	 * @return bool
-	 */
-	private static function is_root_index_source_filename( string $filename ): bool {
-		return in_array( strtolower( trim( self::normalize_route_path( $filename ), '/' ) ), array( 'index.html' ), true );
-	}
-
-	/**
 	 * Get imported front page ID for HTML index sources.
 	 *
 	 * @param array<string,int> $page_ids Page IDs keyed by source filename.
@@ -1141,100 +1134,6 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
-	 * Create page shells so links can be rewritten before content conversion.
-	 *
-	 * @param array<string, Static_Site_Importer_Source_Page> $pages Pages.
-	 * @return array<string,int>|WP_Error
-	 */
-	private static function create_page_shells( array $pages ) {
-		$page_ids = array();
-		foreach ( $pages as $filename => $page ) {
-			$title  = self::page_title( $filename, $page );
-			$slug   = self::page_slug( $filename, $page );
-			$status = self::page_status( $page );
-			$type   = self::page_post_type( $page );
-
-			$existing = get_page_by_path( $slug, OBJECT, $type );
-			$postarr  = array(
-				'post_title'   => $title,
-				'post_name'    => $slug,
-				'post_status'  => $status,
-				'post_type'    => $type,
-				'post_content' => '',
-			);
-
-			if ( $existing instanceof WP_Post ) {
-				$postarr['ID'] = $existing->ID;
-			}
-
-			$page_id = wp_insert_post( $postarr, true );
-			if ( is_wp_error( $page_id ) ) {
-				return $page_id;
-			}
-
-			$page_ids[ $filename ] = (int) $page_id;
-		}
-
-		return $page_ids;
-	}
-
-	/**
-	 * Build page-specific template and pattern artifacts.
-	 *
-	 * @param array<string, Static_Site_Importer_Source_Page> $pages      Pages.
-	 * @param string                                                                    $theme_slug Theme slug.
-	 * @return array{patterns:array<string,string>,files:array<string,string>,contents:array<string,string>}
-	 */
-	private static function page_artifacts( array $pages, string $theme_slug ): array {
-		$patterns = array();
-		$files    = array();
-		$contents = array();
-
-		foreach ( $pages as $filename => $page ) {
-			$slug         = self::page_slug( $filename, $page );
-			$pattern_slug = sanitize_key( $theme_slug ) . '/page-' . $slug;
-			$content      = self::source_page_content_blocks( $page );
-
-			$patterns[ $filename ] = $pattern_slug;
-			$files[ $filename ]    = Static_Site_Importer_Theme_Materializer::pattern_file( self::page_title( $filename, $page ), $pattern_slug, $content );
-			$contents[ $filename ] = $content;
-		}
-
-		return array(
-			'patterns' => $patterns,
-			'files'    => $files,
-			'contents' => $contents,
-		);
-	}
-
-	/**
-	 * Store imported page bodies on their corresponding WordPress pages.
-	 *
-	 * @param array<string, Static_Site_Importer_Source_Page> $pages    Pages.
-	 * @param array<string,int>                                                         $page_ids Page IDs keyed by filename.
-	 * @param array<string,string>                                                      $contents Converted block markup keyed by filename.
-	 * @return true|WP_Error
-	 */
-	private static function write_page_contents( array $pages, array $page_ids, array $contents ) {
-		foreach ( array_keys( $pages ) as $filename ) {
-			$page_id = $page_ids[ $filename ] ?? 0;
-
-			$result = wp_update_post(
-				array(
-					'ID'           => $page_id,
-					'post_content' => wp_slash( trim( $contents[ $filename ] ?? '' ) ),
-				),
-				true
-			);
-			if ( is_wp_error( $result ) ) {
-				return $result;
-			}
-		}
-
-		return true;
-	}
-
-	/**
 	 * Analyze canonical imported page post content for conversion quality.
 	 *
 	 * @param array<string, Static_Site_Importer_Source_Page> $pages    Pages.
@@ -1243,7 +1142,7 @@ class Static_Site_Importer_Theme_Generator {
 	 */
 	private static function analyze_imported_page_content_documents( array $pages, array $contents ): void {
 		foreach ( $pages as $filename => $page ) {
-			$slug    = self::page_slug( $filename, $page );
+			$slug    = Static_Site_Importer_Page_Materializer::page_slug( $filename, $page );
 			$source  = '' !== $slug ? 'posts/page-' . $slug . '.post_content' : 'posts/' . sanitize_title( $filename ) . '.post_content';
 			$content = $contents[ $filename ] ?? '';
 			if ( '' === trim( $content ) ) {
@@ -1253,136 +1152,6 @@ class Static_Site_Importer_Theme_Generator {
 			$analysis = self::analyze_generated_block_document( $source, $content );
 			self::$conversion_report['generated_theme']['block_documents'][] = $analysis;
 		}
-	}
-
-	/**
-	 * Build permalink map keyed by source filename.
-	 *
-	 * @param array<string,int> $page_ids Page IDs keyed by filename.
-	 * @return array<string,string>
-	 */
-	private static function page_permalinks( array $page_ids ): array {
-		$permalinks = array();
-		foreach ( $page_ids as $filename => $page_id ) {
-			$permalink = get_permalink( $page_id );
-			if ( false !== $permalink ) {
-				$permalinks[ $filename ] = $permalink;
-				$basename                = basename( $filename );
-				if ( ! isset( $permalinks[ $basename ] ) ) {
-					$permalinks[ $basename ] = $permalink;
-				}
-			}
-		}
-
-		return $permalinks;
-	}
-
-	/**
-	 * Prepare one BAC document body for WordPress writes.
-	 *
-	 * @param Static_Site_Importer_Source_Page $page Source page.
-	 * @return string
-	 */
-	private static function source_page_content_blocks( Static_Site_Importer_Source_Page $page ): string {
-		$source_path = $page->source_key();
-		if ( 'blocks' !== $page->body_format() ) {
-			self::$conversion_report['diagnostics'][] = array(
-				'type'        => 'unsupported_document_artifact_format',
-				'source'      => $source,
-				'source_path' => $source_path,
-				'format'      => $page->body_format(),
-				'message'     => 'Website artifact imports require BAC document artifacts with serialized block markup.',
-			);
-			return '';
-		}
-
-		return trim( $page->body() );
-	}
-
-	/**
-	 * Build a WordPress page title from a source document.
-	 *
-	 * @param string                           $filename Source filename.
-	 * @param Static_Site_Importer_Source_Page $page     Source page.
-	 * @return string
-	 */
-	private static function page_title( string $filename, Static_Site_Importer_Source_Page $page ): string {
-		$title = $page->metadata_value( 'title' );
-		if ( '' !== trim( $title ) ) {
-			return sanitize_text_field( $title );
-		}
-
-		if ( self::is_root_index_source_filename( $filename ) ) {
-			return 'Home';
-		}
-
-		$title = preg_replace( '/\s+[—-]\s+.+$/u', '', $page->document()->title() );
-		if ( '' !== trim( (string) $title ) ) {
-			return trim( (string) $title );
-		}
-
-		return ucwords( str_replace( '-', ' ', self::page_slug( $filename, $page ) ) );
-	}
-
-	/**
-	 * Build a WordPress page slug from a source path.
-	 *
-	 * @param string                                $filename Source filename.
-	 * @param Static_Site_Importer_Source_Page|null $page     Source page.
-	 * @return string
-	 */
-	private static function page_slug( string $filename, ?Static_Site_Importer_Source_Page $page = null ): string {
-		if ( $page instanceof Static_Site_Importer_Source_Page && 'bac_document' === $page->type() && self::is_index_source_filename( $filename ) && filter_var( $page->metadata_value( 'entrypoint' ), FILTER_VALIDATE_BOOLEAN ) ) {
-			return 'home';
-		}
-
-		if ( $page instanceof Static_Site_Importer_Source_Page && '' !== trim( $page->metadata_value( 'slug' ) ) ) {
-			$slug = sanitize_title( $page->metadata_value( 'slug' ) );
-			if ( '' !== $slug ) {
-				return $slug;
-			}
-		}
-
-		$extensionless = preg_replace( '/\.(?:html?)$/i', '', self::normalize_route_path( $filename ) );
-		$extensionless = trim( (string) $extensionless, '/' );
-
-		if ( self::is_root_index_source_filename( $filename ) ) {
-			return 'home';
-		}
-
-		if ( str_ends_with( $extensionless, '/index' ) ) {
-			$extensionless = substr( $extensionless, 0, -6 );
-		}
-
-		return sanitize_title( str_replace( '/', '-', $extensionless ) );
-	}
-
-	/**
-	 * Build a safe WordPress page status from source metadata.
-	 *
-	 * @param Static_Site_Importer_Source_Page $page Source page.
-	 * @return string
-	 */
-	private static function page_status( Static_Site_Importer_Source_Page $page ): string {
-		$status = sanitize_key( $page->metadata_value( 'status' ) );
-
-		return in_array( $status, array( 'publish', 'draft', 'pending', 'private' ), true ) ? $status : 'publish';
-	}
-
-	/**
-	 * Build a safe WordPress post type from source metadata.
-	 *
-	 * @param Static_Site_Importer_Source_Page $page Source page.
-	 * @return string
-	 */
-	private static function page_post_type( Static_Site_Importer_Source_Page $page ): string {
-		$post_type = sanitize_key( $page->metadata_value( 'post_type' ) );
-		if ( '' === $post_type ) {
-			return 'page';
-		}
-
-		$post_type_object = get_post_type_object( $post_type );
-		return $post_type_object instanceof WP_Post_Type ? $post_type : 'page';
 	}
 
 	/**
@@ -1932,16 +1701,16 @@ class Static_Site_Importer_Theme_Generator {
 
 			$page        = $pages[ $source_path ];
 			$post_id     = (int) ( $page_ids[ $source_path ] ?? 0 );
-			$post_type   = self::page_post_type( $page );
+			$post_type   = Static_Site_Importer_Page_Materializer::page_post_type( $page );
 			$diagnostics = isset( $document['diagnostics'] ) && is_array( $document['diagnostics'] ) ? array_values( $document['diagnostics'] ) : array();
 
 			$record = array(
 				'source_path'  => $source_path,
 				'post_id'      => $post_id,
 				'post_type'    => $post_type,
-				'slug'         => self::page_slug( $source_path, $page ),
-				'title'        => self::page_title( $source_path, $page ),
-				'status'       => self::page_status( $page ),
+				'slug'         => Static_Site_Importer_Page_Materializer::page_slug( $source_path, $page ),
+				'title'        => Static_Site_Importer_Page_Materializer::page_title( $source_path, $page ),
+				'status'       => Static_Site_Importer_Page_Materializer::page_status( $page ),
 				'permalink'    => $permalinks[ $source_path ] ?? '',
 				'diagnostics'  => $diagnostics,
 				'materialized' => $post_id > 0,
