@@ -145,13 +145,36 @@ if ( ! function_exists( 'bfb_convert' ) ) {
 	}
 }
 
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
+if ( ! function_exists( '__' ) ) {
+	function __( string $text, string $domain = 'default' ): string {
+		return $text;
+	}
+}
+
+if ( ! function_exists( 'doing_action' ) ) {
+	function doing_action( string $hook_name ): bool {
+		return false;
+	}
+}
+
+if ( ! function_exists( 'did_action' ) ) {
+	function did_action( string $hook_name ): int {
+		return 0;
+	}
+}
+
+if ( ! function_exists( 'add_action' ) ) {
+	function add_action( string $hook_name, callable|string $callback ): void {}
+}
+
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-exporter.php';
+require_once dirname( __DIR__ ) . '/includes/abilities.php';
 $bac_library = dirname( __DIR__ ) . '/vendor/chubes4/block-artifact-compiler/library.php';
 if ( is_readable( $bac_library ) ) {
 	require_once $bac_library;
 }
 
-$result = Static_Site_Importer_Theme_Generator::export_theme(
+$result = static_site_importer_ability_export_theme(
 	array(
 		'theme_slug'      => 'fixture-theme',
 		'root'            => 'website',
@@ -170,6 +193,7 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 };
 
 $assert( ! is_wp_error( $result ), 'export-succeeds', is_wp_error( $result ) ? $result->get_error_message() : '' );
+$assert( true === ( $result['success'] ?? false ), 'ability-success' );
 $artifact = $result['website_artifact'] ?? array();
 $assert( ! isset( $result['artifact_set'] ), 'legacy-artifact-set-removed' );
 $assert( ! isset( $result['files'] ), 'legacy-top-level-files-removed' );
