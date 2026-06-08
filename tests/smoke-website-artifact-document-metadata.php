@@ -36,7 +36,7 @@ $read = static function ( string $path ): string {
 	return false === $contents ? '' : $contents;
 };
 
-$missing_template_parts_result = Static_Site_Importer_Theme_Generator::import_website_artifact(
+$result = Static_Site_Importer_Theme_Generator::import_website_artifact(
 	array(
 		'schema' => 'block-artifact-compiler/website-artifact/v1',
 		'files'  => array(
@@ -64,6 +64,74 @@ $missing_template_parts_result = Static_Site_Importer_Theme_Generator::import_we
 		'overwrite'   => true,
 		'activate'    => false,
 		'keep_source' => true,
+	)
+);
+
+$assert( ! is_wp_error( $result ), 'import-succeeds', is_wp_error( $result ) ? $result->get_error_message() : '' );
+
+if ( ! is_wp_error( $result ) ) {
+	$theme_dir = $result['theme_dir'];
+	$report    = json_decode( $read( $result['report_path'] ), true );
+	$page_ids  = array_values( $result['pages'] ?? array() );
+	$page_id   = (int) ( $page_ids[0] ?? 0 );
+	$page      = $page_id > 0 ? get_post( $page_id ) : null;
+	$content   = $page instanceof WP_Post ? $page->post_content : '';
+	$documents = array();
+	$pattern_documents = array();
+	$scripts = $report['assets']['scripts'] ?? array();
+	$template_parts = $report['generated_theme']['template_parts'] ?? array();
+	foreach ( $report['generated_theme']['block_documents'] ?? array() as $document ) {
+		if ( is_array( $document ) && isset( $document['path'] ) ) {
+			$documents[ $document['path'] ] = $document;
+			if ( str_starts_with( (string) $document['path'], 'patterns/page-' ) ) {
+				$pattern_documents[] = $document;
+			}
+		}
+	}
+	$metadata = $report['generated_theme']['document_metadata'] ?? array();
+
+	$assert( array() === $pattern_documents, 'single-document-import-does-not-generate-page-pattern-copy' );
+	$assert( str_contains( $content, 'Fire, flour, patience.' ), 'body-content-is-preserved' );
+	$assert( str_contains( $read( $theme_dir . '/parts/header.html' ), 'Ember &amp; Rye' ), 'bac-header-template-part-is-materialized' );
+	$assert( isset( $template_parts[0]['path'] ) && 'parts/header.html' === $template_parts[0]['path'], 'bac-header-template-part-report-is-recorded' );
+	$assert( str_contains( $content, 'logo.svg' ) && ! str_contains( $content, 'src="assets/logo.svg"' ), 'block-markup-local-asset-is-rewritten' );
+	$assert( ! str_contains( $content, 'src="assets/logo.svg"' ), 'block-markup-local-asset-source-url-is-removed' );
+	$assert( ! str_contains( $content, '<meta' ), 'page-content-has-no-meta-fragments' );
+	$assert( ! str_contains( $content, '<title' ), 'page-content-has-no-title-fragments' );
+	$assert( ! str_contains( $content, '<link' ), 'page-content-has-no-link-fragments' );
+	$assert( ! str_contains( $content, '<script' ), 'page-content-has-no-script-fragments' );
+	$assert( 0 === ( $documents['posts/page-home.post_content']['core_html_block_count'] ?? null ), 'report-page-content-has-zero-core-html' );
+	$assert( 0 === ( $report['quality']['core_html_block_count'] ?? null ), 'quality-core-html-count-is-zero' );
+	$assert( 'static-site-importer/document-metadata/v1' === ( $metadata['schema'] ?? '' ), 'metadata-contract-is-recorded' );
+	$assert( 'Ember & Rye' === ( $metadata['title'] ?? '' ), 'title-is-preserved-in-metadata' );
+	$assert( 'utf-8' === ( $metadata['meta'][0]['charset'] ?? '' ), 'charset-meta-is-preserved-in-metadata' );
+	$assert( 'viewport' === ( $metadata['meta'][1]['name'] ?? '' ), 'viewport-meta-is-preserved-in-metadata' );
+	$assert( '/assets/site.css' === ( $metadata['links'][0]['href'] ?? '' ), 'stylesheet-link-is-preserved-in-metadata' );
+	$assert( str_ends_with( (string) ( $scripts[0]['src'] ?? '' ), 'assets/js/main.js' ), 'script-src-is-preserved-in-asset-metadata' );
+	$assert( true === ( $scripts[0]['attributes']['defer'] ?? false ), 'script-defer-is-preserved-in-asset-metadata' );
+	$style = $read( $theme_dir . '/style.css' );
+	$assert( str_contains( $style, '.wp-block-group.photo-collage {display:grid;grid-template-columns:1fr 1fr;gap:24px}' ), 'source-display-rule-bridges-converted-group-wrapper' );
+	$assert( str_contains( $style, '.wp-block-group.photo-collage > .wp-block-image:first-child, .wp-block-group.photo-collage > .wp-block-image:first-child img {grid-row:span 2;height:100%}' ), 'source-image-grid-rule-bridges-native-image-block-wrapper' );
+	$assert( str_contains( $style, '.form-card .static-form-field {display:grid;gap:7px}' ), 'source-form-label-rule-bridges-static-form-field-wrapper' );
+	$assert( str_contains( $style, '.form-card .static-form-control.static-form-input, .form-card .static-form-control.static-form-select, .form-card .static-form-control.static-form-textarea {width:100%;border:1px solid #ccc}' ), 'source-form-control-rule-bridges-static-form-control-wrapper' );
+	$assert( str_contains( $style, '.contact-actions .wp-block-button.btn { width:100% }' ), 'source-button-layout-rule-bridges-core-button-wrapper' );
+}
+
+$missing_template_parts_result = Static_Site_Importer_Theme_Generator::import_website_artifact(
+	array(
+		'schema' => 'block-artifact-compiler/website-artifact/v1',
+		'files'  => array(
+			array(
+				'path'    => 'no-header.html',
+				'content' => '<main><h1>No Header</h1><p>This artifact has no compiler template parts.</p></main>',
+			),
+		),
+	),
+	array(
+		'name'      => 'No Header Artifact',
+		'slug'      => 'no-header-artifact-smoke',
+		'overwrite' => true,
+		'activate'  => false,
 	)
 );
 
