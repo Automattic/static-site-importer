@@ -195,14 +195,25 @@ class Static_Site_Importer_Theme_Generator {
 
 		$selector_provenance = self::selector_provenance_from_artifacts( $artifacts );
 
-		$writes = array(
-			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $materialized['css'], array_keys( self::$button_wrapper_classes ), $selector_provenance ),
-			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $materialized['css'], array_keys( self::$button_wrapper_classes ), $selector_provenance ),
-			$theme_dir . '/functions.php'               => self::functions_php( $theme_slug ),
-			$theme_dir . '/theme.json'                  => self::theme_json( $theme_name, $materialized['css'] ),
-			$theme_dir . '/templates/front-page.html'   => self::content_template( '', $has_footer_part ),
-			$theme_dir . '/templates/page.html'         => self::content_template( '', $has_footer_part ),
-			$theme_dir . '/templates/index.html'        => self::content_template( '', $has_footer_part ),
+		$stylesheet_writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes(
+			$theme_dir,
+			$theme_name,
+			$materialized['css'],
+			array_keys( self::$button_wrapper_classes ),
+			$selector_provenance,
+			static fn ( string $name, string $css, array $classes, array $provenance ): string => self::style_css( $name, $css, $classes, $provenance ),
+			static fn ( string $css, array $classes, array $provenance ): string => self::editor_style_css( $css, $classes, $provenance )
+		);
+
+		$writes = array_merge(
+			$stylesheet_writes,
+			array(
+				$theme_dir . '/functions.php'             => self::functions_php( $theme_slug ),
+				$theme_dir . '/theme.json'                => self::theme_json( $theme_name, $materialized['css'] ),
+				$theme_dir . '/templates/front-page.html' => self::content_template( '', $has_footer_part ),
+				$theme_dir . '/templates/page.html'       => self::content_template( '', $has_footer_part ),
+				$theme_dir . '/templates/index.html'      => self::content_template( '', $has_footer_part ),
+			)
 		);
 		$writes = array_merge( $writes, $template_part_writes );
 		$result         = self::write_page_contents( $document_pages, $page_ids, $page_artifacts['contents'] );
