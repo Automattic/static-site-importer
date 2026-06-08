@@ -355,6 +355,10 @@ class Static_Site_Importer_Report_Diagnostics {
 	public static function import_report_summary( array $report, array $quality ): array {
 		$diagnostics      = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
 		$source_documents = isset( $report['source_documents'] ) && is_array( $report['source_documents'] ) ? $report['source_documents'] : array();
+		$commerce         = isset( $report['commerce'] ) && is_array( $report['commerce'] ) ? $report['commerce'] : array();
+		$commerce_context = isset( $report['commerce_context'] ) && is_array( $report['commerce_context'] ) ? $report['commerce_context'] : array();
+		$plugin_materialization = isset( $report['plugin_materialization'] ) && is_array( $report['plugin_materialization'] ) ? $report['plugin_materialization'] : array();
+		$product_seeding        = isset( $report['product_seeding'] ) && is_array( $report['product_seeding'] ) ? $report['product_seeding'] : array();
 
 		return array(
 			'schema'                       => 'static-site-importer/import-metrics/v1',
@@ -376,6 +380,10 @@ class Static_Site_Importer_Report_Diagnostics {
 			'invalid_block_document_count' => (int) ( $quality['invalid_block_document_count'] ?? 0 ),
 			'source_document_count'        => (int) ( $source_documents['total_count'] ?? 0 ),
 			'unresolved_link_count'        => (int) ( $source_documents['unresolved_link_count'] ?? 0 ),
+			'commerce'                     => $commerce,
+			'commerce_context'             => $commerce_context,
+			'plugin_materialization'       => $plugin_materialization,
+			'product_seeding'              => $product_seeding,
 			'diagnostic_count'             => count( $diagnostics ),
 			'diagnostic_summary'           => self::compact_import_report_diagnostic_summary( $diagnostics ),
 			'warning_summaries'            => self::compact_import_report_diagnostic_summaries_by_severity( $diagnostics, 'warning' ),
