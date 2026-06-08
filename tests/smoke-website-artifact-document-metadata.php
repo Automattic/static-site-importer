@@ -63,7 +63,6 @@ $result = Static_Site_Importer_Theme_Generator::import_website_artifact(
 		'slug'        => 'ember-rye-document-metadata-smoke',
 		'overwrite'   => true,
 		'activate'    => false,
-		'keep_source' => true,
 	)
 );
 
@@ -162,7 +161,6 @@ $multi_page_result = Static_Site_Importer_Theme_Generator::import_website_artifa
 		'slug'        => 'ember-rye-multi-page-artifact-smoke',
 		'overwrite'   => true,
 		'activate'    => false,
-		'keep_source' => true,
 	)
 );
 

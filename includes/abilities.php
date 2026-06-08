@@ -28,7 +28,7 @@ if ( ! function_exists( 'static_site_importer_register_ability_category' ) ) {
 			STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
 			array(
 				'label'       => __( 'Static Site Importer', 'static-site-importer' ),
-				'description' => __( 'Static HTML site import capabilities.', 'static-site-importer' ),
+				'description' => __( 'Website artifact materialization capabilities.', 'static-site-importer' ),
 			)
 		);
 	}
@@ -90,15 +90,13 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'name'                         => array( 'type' => 'string' ),
 						'activate'                     => array( 'type' => 'boolean' ),
 						'overwrite'                    => array( 'type' => 'boolean' ),
-						'keep_source'                  => array( 'type' => 'boolean' ),
 						'fail_on_quality'              => array( 'type' => 'boolean' ),
 						'max_fallbacks'                => array( 'type' => 'integer' ),
 						'allow_missing_woocommerce'    => array( 'type' => 'boolean' ),
 						'report'                       => array( 'type' => 'string' ),
-						'asset_policy'                 => array( 'type' => 'string' ),
 						'asset_materialization_policy' => array(
 							'type' => 'string',
-							'enum' => array( 'copy_to_theme', 'preserve', 'use_map' ),
+							'enum' => array( 'copy_to_theme', 'use_map' ),
 						),
 						'asset_map'                    => array( 'type' => 'object' ),
 						'compiler_options'             => array( 'type' => 'object' ),
@@ -177,13 +175,11 @@ if ( ! function_exists( 'static_site_importer_ability_import_website_artifact' )
 			'name'                         => isset( $input['name'] ) ? (string) $input['name'] : '',
 			'activate'                     => ! empty( $input['activate'] ),
 			'overwrite'                    => ! empty( $input['overwrite'] ),
-			'keep_source'                  => ! empty( $input['keep_source'] ),
 			'fail_on_quality'              => ! empty( $input['fail_on_quality'] ),
 			'max_fallbacks'                => isset( $input['max_fallbacks'] ) ? (int) $input['max_fallbacks'] : null,
 			'allow_missing_woocommerce'    => ! empty( $input['allow_missing_woocommerce'] ),
 			'materialize_dependencies'     => array_key_exists( 'materialize_dependencies', $input ) ? (bool) $input['materialize_dependencies'] : true,
 			'report'                       => isset( $input['report'] ) ? (string) $input['report'] : '',
-			'asset_policy'                 => isset( $input['asset_policy'] ) ? (string) $input['asset_policy'] : '',
 			'asset_materialization_policy' => isset( $input['asset_materialization_policy'] ) ? (string) $input['asset_materialization_policy'] : '',
 			'asset_map'                    => isset( $input['asset_map'] ) && is_array( $input['asset_map'] ) ? $input['asset_map'] : array(),
 			'compiler_options'             => isset( $input['compiler_options'] ) && is_array( $input['compiler_options'] ) ? $input['compiler_options'] : array(),

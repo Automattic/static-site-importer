@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Static Site Importer
- * Description: Import static HTML sites into WordPress pages or block themes using Block Format Bridge.
+ * Description: Materialize compiled website artifacts into WordPress block themes.
  * Version: 1.1.3
  * Author: Chris Huber
  * Requires at least: 6.9

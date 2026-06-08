@@ -1,7 +1,7 @@
 {
   "name": "chubes4/static-site-importer",
   "type": "wordpress-plugin",
-  "description": "Import static HTML sites into WordPress pages or block themes using Block Format Bridge.",
+  "description": "Materialize compiled website artifacts into WordPress block themes.",
   "license": "GPL-2.0-or-later",
   "require": {
     "php": "^8.1",

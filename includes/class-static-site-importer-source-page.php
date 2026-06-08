@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Represents one importable source page, regardless of source format.
+ * Represents one importable BAC document artifact.
  */
 class Static_Site_Importer_Source_Page {
 
@@ -43,28 +43,21 @@ class Static_Site_Importer_Source_Page {
 	private Static_Site_Importer_Document $document;
 
 	/**
-	 * Body passed to Block Format Bridge for content conversion.
+	 * Serialized block markup for the document body.
 	 *
 	 * @var string
 	 */
 	private string $body;
 
 	/**
-	 * Body format passed to Block Format Bridge.
+	 * Body markup format.
 	 *
 	 * @var string
 	 */
 	private string $body_format;
 
 	/**
-	 * Raw frontmatter.
-	 *
-	 * @var string
-	 */
-	private string $frontmatter;
-
-	/**
-	 * Parsed conservative frontmatter metadata.
+	 * Parsed document metadata.
 	 *
 	 * @var array<string,string>
 	 */
@@ -77,71 +70,18 @@ class Static_Site_Importer_Source_Page {
 	 * @param string                        $path        Absolute source path.
 	 * @param string                        $type        Source type.
 	 * @param Static_Site_Importer_Document $document    Parsed HTML document.
-	 * @param string                        $body        Conversion body.
-	 * @param string                        $body_format Conversion body format.
-	 * @param string                        $frontmatter Raw frontmatter.
+	 * @param string                        $body        Serialized body markup.
+	 * @param string                        $body_format Body markup format.
 	 * @param array<string,string>          $metadata    Parsed metadata.
 	 */
-	private function __construct( string $source_key, string $path, string $type, Static_Site_Importer_Document $document, string $body, string $body_format, string $frontmatter = '', array $metadata = array() ) {
+	private function __construct( string $source_key, string $path, string $type, Static_Site_Importer_Document $document, string $body, string $body_format, array $metadata = array() ) {
 		$this->source_key  = $source_key;
 		$this->path        = $path;
 		$this->type        = $type;
 		$this->document    = $document;
 		$this->body        = $body;
 		$this->body_format = $body_format;
-		$this->frontmatter = $frontmatter;
 		$this->metadata    = $metadata;
-	}
-
-	/**
-	 * Create a source page from an HTML file.
-	 *
-	 * @param string $site_dir Static site root.
-	 * @param string $path     Absolute HTML file path.
-	 * @return self|WP_Error
-	 */
-	public static function from_html_file( string $site_dir, string $path ) {
-		$document = Static_Site_Importer_Document::from_file( $path );
-		if ( is_wp_error( $document ) ) {
-			return $document;
-		}
-
-		$fragments = $document->fragments();
-
-		return new self( self::relative_source_key( $site_dir, $path ), $path, 'html', $document, $fragments['main'], 'html' );
-	}
-
-	/**
-	 * Create a source page from a Markdown file.
-	 *
-	 * @param string $site_dir Static site root.
-	 * @param string $path     Absolute Markdown file path.
-	 * @return self|WP_Error
-	 */
-	public static function from_markdown_file( string $site_dir, string $path ) {
-		if ( ! is_file( $path ) ) {
-			return new WP_Error( 'static_site_importer_unreadable_file', sprintf( 'Markdown file is not readable: %s', $path ) );
-		}
-
-		$markdown = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local static-site Markdown source files from the import directory.
-		if ( false === $markdown || '' === trim( $markdown ) ) {
-			return new WP_Error( 'static_site_importer_empty_file', sprintf( 'Markdown file is empty: %s', $path ) );
-		}
-
-		$parts = self::parse_markdown_source( $markdown, basename( $path ) );
-		if ( is_wp_error( $parts ) ) {
-			return $parts;
-		}
-
-		$content     = $parts['content'];
-		$frontmatter = $parts['frontmatter'];
-		$metadata    = $parts['metadata'];
-		$html        = self::markdown_to_html( $content );
-		if ( is_wp_error( $html ) ) {
-			return $html;
-		}
-
-		return new self( self::relative_source_key( $site_dir, $path ), $path, 'markdown', new Static_Site_Importer_Document( '<main>' . $html . '</main>' ), $content, 'markdown', $frontmatter, $metadata );
 	}
 
 	/**
@@ -187,7 +127,7 @@ class Static_Site_Importer_Source_Page {
 		$title    = $metadata['title'] ?? '';
 		$document = new Static_Site_Importer_Document( '<!doctype html><html><head><title>' . esc_html( $title ) . '</title></head><body><main>' . $content . '</main></body></html>' );
 
-		return new self( $source_key, $source_key, 'bac_document', $document, $content, 'blocks', '', $metadata );
+		return new self( $source_key, $source_key, 'bac_document', $document, $content, 'blocks', $metadata );
 	}
 
 	/**
@@ -227,7 +167,7 @@ class Static_Site_Importer_Source_Page {
 	}
 
 	/**
-	 * Body passed to BFB for content conversion.
+	 * Serialized body markup.
 	 *
 	 * @return string
 	 */
@@ -236,7 +176,7 @@ class Static_Site_Importer_Source_Page {
 	}
 
 	/**
-	 * Body format passed to BFB for content conversion.
+	 * Body markup format.
 	 *
 	 * @return string
 	 */
@@ -245,16 +185,7 @@ class Static_Site_Importer_Source_Page {
 	}
 
 	/**
-	 * Raw frontmatter.
-	 *
-	 * @return string
-	 */
-	public function frontmatter(): string {
-		return $this->frontmatter;
-	}
-
-	/**
-	 * Parsed frontmatter metadata.
+	 * Parsed document metadata.
 	 *
 	 * @return array<string,string>
 	 */
@@ -263,7 +194,7 @@ class Static_Site_Importer_Source_Page {
 	}
 
 	/**
-	 * Get one parsed frontmatter metadata value.
+	 * Get one parsed document metadata value.
 	 *
 	 * @param string $key Metadata key.
 	 * @return string
@@ -272,23 +203,6 @@ class Static_Site_Importer_Source_Page {
 		$key = strtolower( str_replace( '-', '_', $key ) );
 
 		return $this->metadata[ $key ] ?? '';
-	}
-
-	/**
-	 * Build a normalized source key relative to the site root.
-	 *
-	 * @param string $site_dir Static site root.
-	 * @param string $path     Absolute source path.
-	 * @return string
-	 */
-	private static function relative_source_key( string $site_dir, string $path ): string {
-		$root = realpath( $site_dir );
-		$file = realpath( $path );
-		if ( false !== $root && false !== $file && str_starts_with( $file, trailingslashit( $root ) ) ) {
-			return str_replace( DIRECTORY_SEPARATOR, '/', substr( $file, strlen( trailingslashit( $root ) ) ) );
-		}
-
-		return basename( $path );
 	}
 
 	/**
@@ -318,113 +232,4 @@ class Static_Site_Importer_Source_Page {
 		return implode( '/', array_filter( $segments ) );
 	}
 
-	/**
-	 * Parse Markdown body and conservative YAML-style frontmatter metadata.
-	 *
-	 * @param string $markdown Markdown source.
-	 * @param string $source   Source label for diagnostics.
-	 * @return array{frontmatter:string,content:string,metadata:array<string,string>}|WP_Error
-	 */
-	private static function parse_markdown_source( string $markdown, string $source ) {
-		$markdown = preg_replace( "/\r\n?|\n/", "\n", $markdown ) ?? $markdown;
-		$markdown = preg_replace( '/^\xEF\xBB\xBF/', '', $markdown ) ?? $markdown;
-		$lines    = explode( "\n", $markdown );
-
-		if ( '---' !== trim( $lines[0] ) ) {
-			return array(
-				'frontmatter' => '',
-				'content'     => $markdown,
-				'metadata'    => array(),
-			);
-		}
-
-		$closing_line = null;
-		$count        = count( $lines );
-		for ( $i = 1; $i < $count; $i++ ) {
-			if ( '---' === trim( $lines[ $i ] ) ) {
-				$closing_line = $i;
-				break;
-			}
-		}
-
-		if ( null === $closing_line ) {
-			return new WP_Error( 'static_site_importer_malformed_markdown_frontmatter', sprintf( 'Malformed frontmatter in %s: missing closing --- delimiter.', $source ) );
-		}
-
-		$frontmatter_lines = array_slice( $lines, 1, $closing_line - 1 );
-		$metadata          = self::parse_frontmatter_lines( $frontmatter_lines, $source );
-		if ( is_wp_error( $metadata ) ) {
-			return $metadata;
-		}
-
-		return array(
-			'frontmatter' => implode( "\n", $frontmatter_lines ),
-			'content'     => ltrim( implode( "\n", array_slice( $lines, $closing_line + 1 ) ), "\n" ),
-			'metadata'    => $metadata,
-		);
-	}
-
-	/**
-	 * Parse conservative key/value YAML frontmatter lines.
-	 *
-	 * @param array<int,string> $lines  Frontmatter lines.
-	 * @param string            $source Source label for diagnostics.
-	 * @return array<string,string>|WP_Error
-	 */
-	private static function parse_frontmatter_lines( array $lines, string $source ) {
-		$metadata = array();
-		foreach ( $lines as $index => $line ) {
-			$trimmed = trim( $line );
-			if ( '' === $trimmed || str_starts_with( $trimmed, '#' ) ) {
-				continue;
-			}
-
-			if ( ! preg_match( '/^([A-Za-z0-9_-]+):\s*(.*)$/', $line, $matches ) ) {
-				return new WP_Error( 'static_site_importer_malformed_markdown_frontmatter', sprintf( 'Malformed frontmatter in %s on line %d: expected "key: value".', $source, $index + 2 ) );
-			}
-
-			$key   = strtolower( str_replace( '-', '_', $matches[1] ) );
-			$value = trim( $matches[2] );
-			if ( '' !== $value && ( '[' === $value[0] || '{' === $value[0] ) ) {
-				return new WP_Error( 'static_site_importer_malformed_markdown_frontmatter', sprintf( 'Malformed frontmatter in %s on line %d: only scalar metadata values are supported.', $source, $index + 2 ) );
-			}
-
-			$metadata[ $key ] = self::unquote_scalar( $value );
-		}
-
-		return $metadata;
-	}
-
-	/**
-	 * Unquote a simple YAML scalar value.
-	 *
-	 * @param string $value Scalar value.
-	 * @return string
-	 */
-	private static function unquote_scalar( string $value ): string {
-		$length = strlen( $value );
-		if ( $length >= 2 ) {
-			$quote = $value[0];
-			if ( ( '"' === $quote || "'" === $quote ) && $quote === $value[ $length - 1 ] ) {
-				return substr( $value, 1, -1 );
-			}
-		}
-
-		return $value;
-	}
-
-	/**
-	 * Convert Markdown to HTML using the bundled CommonMark runtime.
-	 *
-	 * @param string $markdown Markdown source.
-	 * @return string|WP_Error
-	 */
-	private static function markdown_to_html( string $markdown ) {
-		if ( ! class_exists( '\League\CommonMark\CommonMarkConverter' ) ) {
-			return new WP_Error( 'static_site_importer_missing_commonmark', 'League CommonMark is required to import Markdown content files.' );
-		}
-
-		$converter = new \League\CommonMark\CommonMarkConverter();
-		return (string) $converter->convert( $markdown );
-	}
 }
