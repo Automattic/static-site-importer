@@ -91,6 +91,16 @@ class Static_Site_Importer_Theme_Generator {
 			return new WP_Error( 'static_site_importer_missing_bac', 'Block Artifact Compiler is required to import a website artifact.' );
 		}
 
+		if ( ! isset( $args['_products_manifest_report'] ) ) {
+			$products_manifest_report = self::products_manifest_from_website_artifact( $artifact );
+			if ( null !== $products_manifest_report ) {
+				$args['_products_manifest_report'] = $products_manifest_report;
+				if ( ! isset( $args['products_manifest'] ) && ! empty( $products_manifest_report['valid'] ) ) {
+					$args['products_manifest'] = $products_manifest_report['products'];
+				}
+			}
+		}
+
 		$compiler_options = isset( $args['compiler_options'] ) && is_array( $args['compiler_options'] ) ? $args['compiler_options'] : array();
 		$compiled         = bac_compile_website_artifact( $artifact, array_merge( array( 'include_bfb_report' => true ), $compiler_options ) );
 		$document_pages   = self::bac_document_pages( $compiled );
@@ -137,6 +147,8 @@ class Static_Site_Importer_Theme_Generator {
 		self::$conversion_report   = Static_Site_Importer_Report_Diagnostics::new_conversion_report( $html_path, $source_metadata );
 		Static_Site_Importer_Report_Diagnostics::record_website_artifact_compiler_result( self::$conversion_report, $compiled );
 		Static_Site_Importer_Report_Diagnostics::record_direct_website_artifact_source_summary( self::$conversion_report, $compiled );
+		self::record_products_manifest_from_import_args( $args );
+		self::record_commerce_context_summary( $args );
 
 		self::$active_theme_dir         = $theme_dir;
 		self::$active_theme_uri         = trailingslashit( get_theme_root_uri( $theme_slug ) ) . $theme_slug;
@@ -217,6 +229,7 @@ class Static_Site_Importer_Theme_Generator {
 
 		self::analyze_generated_theme_block_documents( $writes, $theme_dir );
 		self::$conversion_report['theme_slug'] = $theme_slug;
+		self::materialize_required_plugins( $args );
 		self::record_product_seeding_report( $args );
 		self::record_commerce_dependency_check( $args );
 		$quality     = Static_Site_Importer_Report_Diagnostics::finalize_report( self::$conversion_report, $args );
@@ -2883,6 +2896,329 @@ class Static_Site_Importer_Theme_Generator {
 			'source'      => $source,
 			'source_path' => $source_path,
 			'href'        => $href,
+		);
+	}
+
+	/**
+	 * Record a products manifest that was extracted from an in-memory website artifact.
+	 *
+	 * @param array<string, mixed> $args Import args.
+	 * @return void
+	 */
+	private static function record_products_manifest_from_import_args( array $args ): void {
+		$report = isset( $args['_products_manifest_report'] ) && is_array( $args['_products_manifest_report'] ) ? $args['_products_manifest_report'] : array();
+		if ( empty( $report ) ) {
+			return;
+		}
+
+		if ( ! isset( self::$conversion_report['commerce'] ) || ! is_array( self::$conversion_report['commerce'] ) ) {
+			self::$conversion_report['commerce'] = array();
+		}
+
+		self::$conversion_report['commerce']['products_manifest'] = array(
+			'present'       => true,
+			'path'          => isset( $report['path'] ) ? (string) $report['path'] : 'products.json',
+			'contract'      => array(
+				'schema'          => 'static-site-importer/products.json',
+				'schema_version'  => 1,
+				'required_fields' => array( 'name', 'slug', 'regular_price' ),
+				'optional_fields' => array( 'sale_price', 'description', 'short_description', 'categories', 'image', 'status', 'stock_status', 'stock_quantity', 'source_selectors' ),
+			),
+			'valid'         => true === ( $report['valid'] ?? false ),
+			'product_count' => isset( $report['products'] ) && is_array( $report['products'] ) ? count( $report['products'] ) : 0,
+			'products'      => isset( $report['products'] ) && is_array( $report['products'] ) ? $report['products'] : array(),
+			'errors'        => isset( $report['errors'] ) && is_array( $report['errors'] ) ? $report['errors'] : array(),
+		);
+
+		if ( ! empty( self::$conversion_report['commerce']['products_manifest']['valid'] ) ) {
+			return;
+		}
+
+		self::$conversion_report['diagnostics'][] = array(
+			'code'     => 'products_manifest_invalid',
+			'severity' => 'warning',
+			'source'   => self::$conversion_report['commerce']['products_manifest']['path'],
+			'message'  => 'products.json is present but does not match the Static Site Importer generated-store contract.',
+			'errors'   => self::$conversion_report['commerce']['products_manifest']['errors'],
+		);
+	}
+
+	/**
+	 * Record commerce context from an already validated manifest.
+	 *
+	 * @param array<string, mixed> $args Import args.
+	 * @return void
+	 */
+	private static function record_commerce_context_summary( array $args ): void {
+		$manifest = self::$conversion_report['commerce']['products_manifest'] ?? array();
+		$products = array();
+		$source   = 'import_args';
+		if ( is_array( $manifest ) && true === ( $manifest['valid'] ?? false ) ) {
+			$products = isset( $manifest['products'] ) && is_array( $manifest['products'] ) ? $manifest['products'] : array();
+			$source   = 'products.json';
+		} elseif ( isset( $args['commerce_context']['products'] ) && is_array( $args['commerce_context']['products'] ) ) {
+			$products = $args['commerce_context']['products'];
+			$source   = isset( $args['commerce_context']['source'] ) ? (string) $args['commerce_context']['source'] : 'commerce_context';
+		}
+
+		if ( empty( $products ) ) {
+			return;
+		}
+
+		self::$conversion_report['commerce_context'] = array(
+			'supplied'       => true,
+			'source'         => $source,
+			'product_count'  => count( $products ),
+			'selector_hints' => array(),
+			'diagnostics'    => array(),
+		);
+	}
+
+	/**
+	 * Extract and validate products.json from a website artifact bundle.
+	 *
+	 * @param array<string, mixed> $artifact Website artifact bundle.
+	 * @return array{path:string,valid:bool,products:array<int,array<string,mixed>>,errors:array<int,array<string,string>>}|null
+	 */
+	private static function products_manifest_from_website_artifact( array $artifact ): ?array {
+		$files = isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? $artifact['files'] : array();
+		foreach ( $files as $file ) {
+			if ( ! is_array( $file ) ) {
+				continue;
+			}
+
+			$path = isset( $file['path'] ) && is_scalar( $file['path'] ) ? str_replace( '\\', '/', (string) $file['path'] ) : '';
+			if ( 'products.json' !== basename( $path ) ) {
+				continue;
+			}
+
+			$raw = self::website_artifact_file_text_content( $file );
+			if ( null === $raw ) {
+				return array(
+					'path'     => '' !== $path ? $path : 'products.json',
+					'valid'    => false,
+					'products' => array(),
+					'errors'   => array(
+						array(
+							'path'    => '$',
+							'message' => 'products.json could not be read from website artifact files.',
+						),
+					),
+				);
+			}
+
+			$data = json_decode( $raw, true );
+			if ( JSON_ERROR_NONE !== json_last_error() ) {
+				return array(
+					'path'     => '' !== $path ? $path : 'products.json',
+					'valid'    => false,
+					'products' => array(),
+					'errors'   => array(
+						array(
+							'path'    => '$',
+							'message' => 'products.json is not valid JSON: ' . json_last_error_msg(),
+						),
+					),
+				);
+			}
+
+			$validation = self::validate_products_manifest( $data );
+			return array(
+				'path'     => '' !== $path ? $path : 'products.json',
+				'valid'    => empty( $validation['errors'] ),
+				'products' => $validation['products'],
+				'errors'   => $validation['errors'],
+			);
+		}
+
+		return null;
+	}
+
+	/**
+	 * Get text content from a website artifact file entry.
+	 *
+	 * @param array<string, mixed> $file Artifact file entry.
+	 * @return string|null
+	 */
+	private static function website_artifact_file_text_content( array $file ): ?string {
+		if ( ! isset( $file['content'] ) || ! is_scalar( $file['content'] ) ) {
+			return null;
+		}
+
+		$content  = (string) $file['content'];
+		$encoding = isset( $file['encoding'] ) && is_scalar( $file['encoding'] ) ? strtolower( (string) $file['encoding'] ) : '';
+		if ( 'base64' !== $encoding ) {
+			return $content;
+		}
+
+		$decoded = base64_decode( $content, true );
+		return false === $decoded ? null : $decoded;
+	}
+
+	/**
+	 * Validate the generated store products manifest contract.
+	 *
+	 * @param mixed $data Decoded JSON data.
+	 * @return array{products:array<int,array<string,mixed>>,errors:array<int,array<string,string>>}
+	 */
+	private static function validate_products_manifest( $data ): array {
+		$products = array();
+		$errors   = array();
+
+		if ( ! is_array( $data ) || array_is_list( $data ) ) {
+			return array( 'products' => array(), 'errors' => array( array( 'path' => '$', 'message' => 'products.json must be an object with schema_version and products fields.' ) ) );
+		}
+
+		if ( 1 !== (int) ( $data['schema_version'] ?? 0 ) ) {
+			$errors[] = array( 'path' => '$.schema_version', 'message' => 'schema_version must be 1.' );
+		}
+		if ( ! isset( $data['products'] ) || ! is_array( $data['products'] ) || ! array_is_list( $data['products'] ) ) {
+			$errors[] = array( 'path' => '$.products', 'message' => 'products must be a JSON array.' );
+			return array( 'products' => array(), 'errors' => $errors );
+		}
+
+		foreach ( $data['products'] as $index => $product ) {
+			$path_prefix = '$.products[' . $index . ']';
+			if ( ! is_array( $product ) || array_is_list( $product ) ) {
+				$errors[] = array( 'path' => $path_prefix, 'message' => 'Product must be an object.' );
+				continue;
+			}
+
+			$name          = self::manifest_string( $product, 'name' );
+			$slug          = self::manifest_string( $product, 'slug' );
+			$regular_price = self::manifest_string( $product, 'regular_price' );
+			$sale_price    = self::manifest_string( $product, 'sale_price', false );
+			if ( '' === $name ) {
+				$errors[] = array( 'path' => $path_prefix . '.name', 'message' => 'name is required and must be a non-empty string.' );
+			}
+			if ( '' === $slug || ! preg_match( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $slug ) ) {
+				$errors[] = array( 'path' => $path_prefix . '.slug', 'message' => 'slug is required and must be a lowercase URL slug.' );
+			}
+			if ( '' === $regular_price || ! self::is_manifest_price( $regular_price ) ) {
+				$errors[] = array( 'path' => $path_prefix . '.regular_price', 'message' => 'regular_price is required and must be a decimal string such as "19.00".' );
+			}
+			if ( '' !== $sale_price && ! self::is_manifest_price( $sale_price ) ) {
+				$errors[] = array( 'path' => $path_prefix . '.sale_price', 'message' => 'sale_price must be a decimal string such as "15.00" when provided.' );
+			}
+			foreach ( array( 'description', 'short_description', 'status', 'stock_status', 'image' ) as $field ) {
+				if ( isset( $product[ $field ] ) && ! is_string( $product[ $field ] ) ) {
+					$errors[] = array( 'path' => $path_prefix . '.' . $field, 'message' => $field . ' must be a string when provided.' );
+				}
+			}
+			foreach ( array( 'categories', 'source_selectors' ) as $field ) {
+				if ( ! isset( $product[ $field ] ) ) {
+					continue;
+				}
+				$values = self::manifest_string_collection( $product[ $field ] );
+				if ( null === $values ) {
+					$errors[] = array( 'path' => $path_prefix . '.' . $field, 'message' => $field . ' must be an array of strings when provided.' );
+					continue;
+				}
+				foreach ( $values as $value_index => $value ) {
+					if ( '' === trim( $value ) ) {
+						$errors[] = array( 'path' => $path_prefix . '.' . $field . '[' . $value_index . ']', 'message' => $field . ' entries must be non-empty strings.' );
+					}
+				}
+			}
+			if ( isset( $product['stock_quantity'] ) && ! is_int( $product['stock_quantity'] ) ) {
+				$errors[] = array( 'path' => $path_prefix . '.stock_quantity', 'message' => 'stock_quantity must be an integer when provided.' );
+			}
+
+			$summary = array( 'name' => $name, 'slug' => $slug, 'regular_price' => $regular_price );
+			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'image', 'status', 'stock_status', 'stock_quantity', 'source_selectors' ) as $field ) {
+				if ( array_key_exists( $field, $product ) ) {
+					$summary[ $field ] = $product[ $field ];
+				}
+			}
+			$products[] = $summary;
+		}
+
+		return array( 'products' => empty( $errors ) ? $products : array(), 'errors' => $errors );
+	}
+
+	/**
+	 * Read a string field from a decoded manifest object.
+	 *
+	 * @param array<string,mixed> $data     Manifest object.
+	 * @param string              $key      Field key.
+	 * @param bool                $required Whether missing fields should return an empty string.
+	 * @return string
+	 */
+	private static function manifest_string( array $data, string $key, bool $required = true ): string {
+		if ( ! array_key_exists( $key, $data ) || ! is_string( $data[ $key ] ) ) {
+			return '';
+		}
+
+		$value = trim( $data[ $key ] );
+		return $required || '' !== $value ? $value : '';
+	}
+
+	/**
+	 * Normalize list or keyed-map string collections from products.json.
+	 *
+	 * @param mixed $value Raw manifest field value.
+	 * @return array<int|string,string>|null
+	 */
+	private static function manifest_string_collection( $value ): ?array {
+		if ( ! is_array( $value ) ) {
+			return null;
+		}
+
+		$normalized = array();
+		foreach ( $value as $key => $entry ) {
+			if ( ! is_string( $entry ) ) {
+				return null;
+			}
+			$normalized[ $key ] = $entry;
+		}
+
+		return $normalized;
+	}
+
+	/**
+	 * Check whether a manifest price uses a stable decimal string format.
+	 *
+	 * @param string $price Price string.
+	 * @return bool
+	 */
+	private static function is_manifest_price( string $price ): bool {
+		return 1 === preg_match( '/^(?:0|[1-9][0-9]*)(?:\.[0-9]{2})?$/', $price );
+	}
+
+	/**
+	 * Materialize plugins required by detected source intent.
+	 *
+	 * @param array<string, mixed> $args Import args.
+	 * @return void
+	 */
+	private static function materialize_required_plugins( array $args ): void {
+		self::$conversion_report['plugin_materialization'] = array(
+			'status'  => 'skipped',
+			'plugins' => array(),
+		);
+
+		$intent = self::commerce_dependency_intent();
+		if ( ! $intent['present'] ) {
+			self::$conversion_report['plugin_materialization']['reason'] = 'no_plugin_backed_intent';
+			return;
+		}
+		if ( ! empty( $args['allow_missing_woocommerce'] ) ) {
+			self::$conversion_report['plugin_materialization']['reason'] = 'woocommerce_requirement_waived';
+			return;
+		}
+		if ( array_key_exists( 'materialize_dependencies', $args ) && false === (bool) $args['materialize_dependencies'] ) {
+			self::$conversion_report['plugin_materialization']['reason'] = 'dependency_materialization_disabled';
+			return;
+		}
+
+		$report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
+			'woocommerce',
+			'woocommerce/woocommerce.php',
+			array( 'Static_Site_Importer_Woo_Product_Seeder', 'woocommerce_available' )
+		);
+		self::$conversion_report['plugin_materialization'] = array(
+			'status'  => 'failed' === ( $report['status'] ?? '' ) ? 'failed' : 'completed',
+			'plugins' => array( 'woocommerce' => $report ),
 		);
 	}
 
