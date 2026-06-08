@@ -12,6 +12,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 }
 
+if ( ! class_exists( 'WP_Error' ) ) {
+	class WP_Error {
+		private string $code;
+
+		public function __construct( string $code ) {
+			$this->code = $code;
+		}
+
+		public function get_error_code(): string {
+			return $this->code;
+		}
+	}
+}
+
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
 
 $failures   = array();
@@ -87,6 +101,25 @@ $assert( 3 === count( $provenance ), 'collector-reads-document-and-template-part
 $assert( str_contains( $style_css, 'Static Site Importer: transpose source selectors using block conversion provenance.' ), 'style-includes-provenance-bridge-comment' );
 $assert( str_contains( $style_css, '@media (max-width:560px) { .wp-block-heading.hero-title {font-size:2rem} .wp-block-group.feature-row {display:flex} .contact-actions .wp-block-button.btn {width:100%} }' ), 'style-preserves-media-scoped-provenance-rules', $style_css );
 $assert( str_contains( $editor_css, '@media (max-width:560px) { .wp-block-heading.hero-title {font-size:2rem} .wp-block-group.feature-row {display:flex} .contact-actions .wp-block-button.btn {width:100%} }' ), 'editor-preserves-media-scoped-provenance-rules', $editor_css );
+
+$documents = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'bac_documents_from_compiled_site_pages' );
+$missing_identity = $documents->invoke(
+	null,
+	array(
+		array(
+			'source_path' => 'index.html',
+			'slug'        => 'home',
+		),
+	),
+	array(
+		array(
+			'source_path'  => 'index.html',
+			'block_markup' => '<!-- wp:paragraph --><p>Home</p><!-- /wp:paragraph -->',
+		),
+	)
+);
+$assert( $missing_identity instanceof WP_Error, 'compiled-site-page-identity-is-required' );
+$assert( 'static_site_importer_compiled_site_page_identity_incomplete' === ( $missing_identity instanceof WP_Error ? $missing_identity->get_error_code() : '' ), 'compiled-site-page-identity-error-code' );
 
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
