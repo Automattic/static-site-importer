@@ -109,8 +109,8 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( str_ends_with( (string) ( $scripts[0]['src'] ?? '' ), 'assets/js/main.js' ), 'script-src-is-preserved-in-asset-metadata' );
 	$assert( true === ( $scripts[0]['attributes']['defer'] ?? false ), 'script-defer-is-preserved-in-asset-metadata' );
 	$style = $read( $theme_dir . '/style.css' );
-	$assert( str_contains( $style, '.wp-block-group.photo-collage {display:grid;grid-template-columns:1fr 1fr;gap:24px}' ), 'source-display-rule-bridges-converted-group-wrapper' );
-	$assert( str_contains( $style, '.wp-block-group.photo-collage > .wp-block-image:first-child, .wp-block-group.photo-collage > .wp-block-image:first-child img {grid-row:span 2;height:100%}' ), 'source-image-grid-rule-bridges-native-image-block-wrapper' );
+	$assert( str_contains( $style, '.wp-block-group.photo-collage { display:grid;grid-template-columns:1fr 1fr;gap:24px }' ), 'source-display-rule-bridges-converted-group-wrapper' );
+	$assert( str_contains( $style, '.wp-block-group.photo-collage .wp-block-image:first-child, .wp-block-group.photo-collage .wp-block-image img:first-child { grid-row:span 2;height:100% }' ), 'source-image-grid-rule-bridges-native-image-block-wrapper' );
 	$assert( str_contains( $style, '.form-card .static-form-field {display:grid;gap:7px}' ), 'source-form-label-rule-bridges-static-form-field-wrapper' );
 	$assert( str_contains( $style, '.form-card .static-form-control.static-form-input, .form-card .static-form-control.static-form-select, .form-card .static-form-control.static-form-textarea {width:100%;border:1px solid #ccc}' ), 'source-form-control-rule-bridges-static-form-control-wrapper' );
 	$assert( str_contains( $style, '.contact-actions .wp-block-button.btn { width:100% }' ), 'source-button-layout-rule-bridges-core-button-wrapper' );

@@ -5597,13 +5597,12 @@ class Static_Site_Importer_Theme_Generator {
 		$button_bridge              = self::button_style_bridge_css( $css, $button_classes );
 		$admin_bar_bridge           = self::admin_bar_top_chrome_css( $css );
 		$source_nav_selector_bridge = self::source_nav_selector_bridge_css( $css );
-		$source_display_bridge      = self::source_display_selector_bridge_css( $css );
-		$image_block_bridge         = self::source_image_block_selector_bridge_css( $css );
+		$selector_transposition     = self::source_block_selector_transposition_bridge_css( $css );
 		$form_control_bridge        = self::source_form_control_selector_bridge_css( $css );
 		$layout_gap_bridge          = self::imported_group_layout_gap_bridge_css();
 		$css                        = self::scope_source_button_css( $css, $button_classes );
 
-		return "/*\nTheme Name: " . $theme_name . "\nAuthor: Static Site Importer\nDescription: Materialized from a compiled website artifact.\nVersion: 0.1.0\nRequires at least: 6.6\n*/\n\n" . $css . "\n" . $button_bridge . $admin_bar_bridge . $source_nav_selector_bridge . $source_display_bridge . $image_block_bridge . $layout_gap_bridge . $form_control_bridge;
+		return "/*\nTheme Name: " . $theme_name . "\nAuthor: Static Site Importer\nDescription: Materialized from a compiled website artifact.\nVersion: 0.1.0\nRequires at least: 6.6\n*/\n\n" . $css . "\n" . $button_bridge . $admin_bar_bridge . $source_nav_selector_bridge . $selector_transposition . $layout_gap_bridge . $form_control_bridge;
 	}
 
 	/**
@@ -5617,13 +5616,12 @@ class Static_Site_Importer_Theme_Generator {
 		$editor_bridge              = self::editor_absolute_overlay_css( $css );
 		$editor_reveal_bridge       = self::editor_reveal_animation_css( $css );
 		$source_nav_selector_bridge = self::source_nav_selector_bridge_css( $css );
-		$source_display_bridge      = self::source_display_selector_bridge_css( $css );
-		$image_block_bridge         = self::source_image_block_selector_bridge_css( $css );
+		$selector_transposition     = self::source_block_selector_transposition_bridge_css( $css );
 		$form_control_bridge        = self::source_form_control_selector_bridge_css( $css );
 		$layout_gap_bridge          = self::imported_group_layout_gap_bridge_css();
 		$css                        = self::scope_source_button_css( $css, $button_classes );
 
-		return "/*\nStatic Site Importer editor styles.\nGenerated separately from frontend style.css so editor wrapper repairs do not leak to public rendering.\n*/\n\n" . $css . "\n" . $button_bridge . $source_nav_selector_bridge . $source_display_bridge . $image_block_bridge . $layout_gap_bridge . $form_control_bridge . $editor_bridge . $editor_reveal_bridge;
+		return "/*\nStatic Site Importer editor styles.\nGenerated separately from frontend style.css so editor wrapper repairs do not leak to public rendering.\n*/\n\n" . $css . "\n" . $button_bridge . $source_nav_selector_bridge . $selector_transposition . $layout_gap_bridge . $form_control_bridge . $editor_bridge . $editor_reveal_bridge;
 	}
 
 	/**
@@ -5637,6 +5635,142 @@ class Static_Site_Importer_Theme_Generator {
 	 */
 	private static function imported_group_layout_gap_bridge_css(): string {
 		return "\n/* Static Site Importer: preserve source-authored spacing inside converted source wrappers. */\n.wp-block-post-content.is-layout-flow > *,\n.wp-block-group.is-layout-flow > *,\n.wp-block-group.is-vertical > * { margin-block-start: 0; margin-block-end: 0; }\n.wp-block-group.is-layout-flex,\n.wp-block-group.is-vertical { gap: 0; }\n";
+	}
+
+	/**
+	 * Build generic selector parity rules for source DOM hooks moved onto block wrappers.
+	 *
+	 * @param string             $css            Source CSS.
+	 * @return string Additional CSS rules.
+	 */
+	private static function source_block_selector_transposition_bridge_css( string $css ): string {
+		$css            = preg_replace( '/\/\*.*?\*\//s', '', $css ) ?? $css;
+		if ( '' === trim( $css ) || ! str_contains( $css, '.' ) ) {
+			return '';
+		}
+
+		$rules = self::css_selector_transposition_rules_from_css(
+			$css,
+			static function ( string $selector ): array {
+				return self::source_block_transposed_selectors( $selector );
+			}
+		);
+		if ( empty( $rules ) ) {
+			return '';
+		}
+
+		return "\n/* Static Site Importer: transpose source selectors onto generated block wrappers. */\n" . implode( "\n", array_unique( $rules ) ) . "\n";
+	}
+
+	/**
+	 * Build selector-transposed rules from a CSS block list while preserving nested scopes.
+	 *
+	 * @param string   $css              CSS to inspect.
+	 * @param callable $selector_mapper  Callback receiving one source selector and returning rewritten selectors.
+	 * @return array<int, string> CSS rules.
+	 */
+	private static function css_selector_transposition_rules_from_css( string $css, callable $selector_mapper ): array {
+		$rules  = array();
+		$length = strlen( $css );
+		$offset = 0;
+
+		while ( $offset < $length && preg_match( '/\G\s*([^{}]+)\{/', $css, $match, 0, $offset ) ) {
+			$prelude    = trim( $match[1] );
+			$body_start = $offset + strlen( $match[0] );
+			$body_end   = self::find_css_block_end( $css, $body_start );
+			if ( null === $body_end ) {
+				break;
+			}
+
+			$body   = trim( substr( $css, $body_start, $body_end - $body_start ) );
+			$offset = $body_end + 1;
+
+			if ( '' === $prelude || '' === $body ) {
+				continue;
+			}
+
+			if ( str_starts_with( $prelude, '@' ) ) {
+				$nested = self::css_selector_transposition_rules_from_css( $body, $selector_mapper );
+				if ( ! empty( $nested ) ) {
+					$rules[] = $prelude . " {\n" . implode( "\n", $nested ) . "\n}";
+				}
+				continue;
+			}
+
+			$selectors = array();
+			foreach ( explode( ',', $prelude ) as $selector ) {
+				$rewritten = $selector_mapper( trim( $selector ) );
+				if ( is_array( $rewritten ) ) {
+					$selectors = array_merge( $selectors, array_filter( array_map( 'strval', $rewritten ) ) );
+				}
+			}
+
+			$selectors = array_values( array_unique( $selectors ) );
+			if ( empty( $selectors ) ) {
+				continue;
+			}
+
+			$rules[] = implode( ', ', $selectors ) . ' { ' . $body . ' }';
+		}
+
+		return $rules;
+	}
+
+	/**
+	 * Rewrite one source selector to known generated block DOM equivalents.
+	 *
+	 * @param string $selector Source selector.
+	 * @return array<int, string> Rewritten selectors.
+	 */
+	private static function source_block_transposed_selectors( string $selector ): array {
+		if ( '' === $selector || str_starts_with( $selector, '@' ) || str_contains( $selector, '.wp-block-' ) || str_contains( $selector, '#' ) || str_contains( $selector, '[' ) || str_contains( $selector, '>' ) || str_contains( $selector, '+' ) || str_contains( $selector, '~' ) ) {
+			return array();
+		}
+
+		if ( preg_match( '/^((?:[A-Za-z][A-Za-z0-9_-]*)?(?:\.[A-Za-z_-][A-Za-z0-9_-]*)+)\s+img((?::[A-Za-z_-][A-Za-z0-9_-]*(?:\([^)]*\))?)*)$/', $selector, $match ) ) {
+			$container = self::source_class_compound_to_group_selector( $match[1] );
+			if ( null === $container ) {
+				return array();
+			}
+
+			$pseudo = $match[2] ?? '';
+			return array( $container . ' .wp-block-image' . $pseudo, $container . ' .wp-block-image img' . $pseudo );
+		}
+
+		if ( preg_match( '/^((?:[A-Za-z][A-Za-z0-9_-]*)?(?:\.[A-Za-z_-][A-Za-z0-9_-]*)+)\s+(div|span|strong)$/i', $selector, $match ) ) {
+			$container = self::source_class_compound_to_group_selector( $match[1] );
+			if ( null === $container ) {
+				return array();
+			}
+
+			$tag = strtolower( $match[2] );
+			if ( 'div' === $tag ) {
+				return array( $container . ' .wp-block-group' );
+			}
+
+			return array( $container . ' p ' . $tag, $container . ' .wp-block-group ' . $tag );
+		}
+
+		$group_selector = self::source_class_compound_to_group_selector( $selector );
+		return null === $group_selector ? array() : array( $group_selector );
+	}
+
+	/**
+	 * Convert a source class compound selector to a generated group wrapper selector.
+	 *
+	 * @param string $selector Source class selector.
+	 * @return string|null Group selector.
+	 */
+	private static function source_class_compound_to_group_selector( string $selector ): ?string {
+		if ( '' === $selector || str_contains( $selector, ':' ) || str_contains( $selector, ' ' ) || str_contains( $selector, '.wp-block-' ) ) {
+			return null;
+		}
+
+		if ( ! preg_match( '/^(?:[A-Za-z][A-Za-z0-9_-]*)?((?:\.[A-Za-z_-][A-Za-z0-9_-]*)+)$/', $selector, $match ) ) {
+			return null;
+		}
+
+		return '.wp-block-group' . $match[1];
 	}
 
 	/**
