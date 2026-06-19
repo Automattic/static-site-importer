@@ -11,6 +11,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Transformer_Adapter' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-transformer-adapter.php';
+}
+
 /**
  * Generates a block theme from a static HTML document.
  */
@@ -45,12 +49,15 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public static function import_website_artifact( array $artifact, array $args = array() ) {
-		if ( ! function_exists( 'bac_compile_website_artifact' ) || ! function_exists( 'bac_summarize_result' ) ) {
-			return new WP_Error( 'static_site_importer_missing_bac', 'Block Artifact Compiler is required to import a website artifact.' );
+		if ( ! class_exists( 'Static_Site_Importer_Transformer_Adapter' ) ) {
+			return new WP_Error( 'static_site_importer_missing_transformer_adapter', 'Static Site Importer transformer adapter is required to import a website artifact.' );
 		}
 
 		$compiler_options = isset( $args['compiler_options'] ) && is_array( $args['compiler_options'] ) ? $args['compiler_options'] : array();
-		$compiled         = bac_compile_website_artifact( $artifact, array_merge( array( 'include_bfb_report' => true ), $compiler_options ) );
+		$compiled         = ( new Static_Site_Importer_Transformer_Adapter() )->compile_website_artifact( $artifact, array_merge( array( 'include_bfb_report' => true ), $compiler_options ) );
+		if ( is_wp_error( $compiled ) ) {
+			return $compiled;
+		}
 		$document_pages   = self::bac_document_pages( $compiled );
 		if ( is_wp_error( $document_pages ) ) {
 			return $document_pages;
@@ -261,9 +268,11 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return array{website_artifact:array<string,mixed>}|WP_Error
 	 */
 	public static function export_theme( array $args = array() ) {
-		if ( ! function_exists( 'bfb_convert' ) ) {
-			return new WP_Error( 'static_site_importer_missing_bfb', 'Block Format Bridge is required to export a website artifact.' );
+		if ( ! class_exists( '\Automattic\BlocksEngine\PhpTransformer\FormatBridge\FormatBridge' ) && ! function_exists( 'bfb_convert' ) ) {
+			return new WP_Error( 'static_site_importer_missing_transformer', 'Blocks Engine php-transformer or Block Format Bridge is required to export a website artifact.' );
 		}
+
+		$transformer = new Static_Site_Importer_Transformer_Adapter();
 
 		$theme_slug = isset( $args['theme_slug'] ) && '' !== trim( (string) $args['theme_slug'] ) ? sanitize_title( (string) $args['theme_slug'] ) : self::active_theme_slug();
 		if ( '' === $theme_slug ) {
@@ -296,7 +305,7 @@ class Static_Site_Importer_Theme_Generator {
 			);
 			$files[] = self::export_file_entry(
 				$entrypoint,
-				self::export_html_document( '', self::export_theme_chrome_html( $theme_dir, 'front-page' ), $theme_slug, null !== $stylesheet ),
+				self::export_html_document( '', self::export_theme_chrome_html( $theme_dir, 'front-page', $transformer ), $theme_slug, null !== $stylesheet ),
 				'document',
 				'entrypoint'
 			);
@@ -308,11 +317,11 @@ class Static_Site_Importer_Theme_Generator {
 				$is_front  = $first || ( $front_page_id > 0 && $page_id === $front_page_id );
 				$path      = $is_front ? $entrypoint : self::export_page_artifact_path( $page, $root );
 				$template  = $is_front ? 'front-page' : 'page';
-				$page_html = bfb_convert( isset( $page->post_content ) ? (string) $page->post_content : '', 'blocks', 'html' );
+				$page_html = $transformer->blocks_to_html( isset( $page->post_content ) ? (string) $page->post_content : '' );
 
 				$files[] = self::export_file_entry(
 					$path,
-					self::export_html_document( $page_html, self::export_theme_chrome_html( $theme_dir, $template ), self::export_page_title( $page, $theme_slug ), null !== $stylesheet ),
+					self::export_html_document( $page_html, self::export_theme_chrome_html( $theme_dir, $template, $transformer ), self::export_page_title( $page, $theme_slug ), null !== $stylesheet ),
 					'document',
 					$is_front ? 'entrypoint' : 'page',
 					array(
@@ -534,17 +543,17 @@ class Static_Site_Importer_Theme_Generator {
 	 * @param string $template  Template slug.
 	 * @return array{before:string,after:string}
 	 */
-	private static function export_theme_chrome_html( string $theme_dir, string $template ): array {
-		$before = self::convert_theme_block_file_to_html( $theme_dir . '/parts/header.html' );
-		$after  = self::convert_theme_block_file_to_html( $theme_dir . '/parts/footer.html' );
+	private static function export_theme_chrome_html( string $theme_dir, string $template, Static_Site_Importer_Transformer_Adapter $transformer ): array {
+		$before = self::convert_theme_block_file_to_html( $theme_dir . '/parts/header.html', $transformer );
+		$after  = self::convert_theme_block_file_to_html( $theme_dir . '/parts/footer.html', $transformer );
 
 		$template_html = self::read_file_if_readable( $theme_dir . '/templates/' . $template . '.html' );
 		if ( '' === $template_html && 'front-page' !== $template ) {
 			$template_html = self::read_file_if_readable( $theme_dir . '/templates/index.html' );
 		}
 
-		if ( '' !== $template_html && function_exists( 'bfb_convert' ) ) {
-			$converted_template = bfb_convert( $template_html, 'blocks', 'html' );
+		if ( '' !== $template_html ) {
+			$converted_template = $transformer->blocks_to_html( $template_html );
 			if ( '' !== trim( $converted_template ) && '' === trim( $before . $after ) ) {
 				$before = $converted_template;
 			}
@@ -562,9 +571,9 @@ class Static_Site_Importer_Theme_Generator {
 	 * @param string $path File path.
 	 * @return string
 	 */
-	private static function convert_theme_block_file_to_html( string $path ): string {
+	private static function convert_theme_block_file_to_html( string $path, Static_Site_Importer_Transformer_Adapter $transformer ): string {
 		$content = self::read_file_if_readable( $path );
-		return '' === $content || ! function_exists( 'bfb_convert' ) ? '' : bfb_convert( $content, 'blocks', 'html' );
+		return '' === $content ? '' : $transformer->blocks_to_html( $content );
 	}
 
 	/**

@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Transformer_Adapter' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-transformer-adapter.php';
+}
+
 /**
  * Builds SSI import reports and normalizes diagnostics for repair loops.
  */
@@ -152,7 +156,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$site      = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
 		$report['block_artifact_compiler']['available']        = true;
 		$report['block_artifact_compiler']['website_artifact'] = array(
-			'summary'     => function_exists( 'bac_summarize_result' ) ? bac_summarize_result( $compiled ) : array(),
+			'summary'     => ( new Static_Site_Importer_Transformer_Adapter() )->summarize_result( $compiled ),
 			'provenance'  => isset( $compiled['provenance'] ) && is_array( $compiled['provenance'] ) ? $compiled['provenance'] : array(),
 			'input'       => isset( $compiled['input'] ) && is_array( $compiled['input'] ) ? $compiled['input'] : array(),
 			'diagnostics' => isset( $compiled['diagnostics'] ) && is_array( $compiled['diagnostics'] ) ? $compiled['diagnostics'] : array(),

@@ -4,8 +4,64 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "5ca1929fdbf2234c2980d0a0a02e3824",
+    "content-hash": "5d3c4427090e91190891e81a1b08ecff",
     "packages": [
+        {
+            "name": "automattic/blocks-engine-php-transformer",
+            "version": "dev-draft/php-transformer-monorepo",
+            "dist": {
+                "type": "path",
+                "url": "../blocks-engine@draft-php-transformer-monorepo/php-transformer",
+                "reference": "06ce910c8e9d59c3d2258fca7379c3d3fd66e12d"
+            },
+            "require": {
+                "league/commonmark": "^2.5",
+                "league/html-to-markdown": "^5.1",
+                "php": ">=8.1"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Automattic\\BlocksEngine\\PhpTransformer\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Automattic\\BlocksEngine\\PhpTransformer\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "parity": [
+                    "@test:parity"
+                ],
+                "test": [
+                    "@test:canonical",
+                    "@test:parity"
+                ],
+                "test:canonical": [
+                    "php tests/contract/runtime-no-wordpress.php",
+                    "php tests/contract/runtime-wordpress-stubs.php",
+                    "php tests/contract/run.php"
+                ],
+                "test:parity": [
+                    "php tests/parity/run.php"
+                ],
+                "test:migration:examples": [
+                    "php tests/migration/examples.php"
+                ],
+                "test:migration:legacy-parity": [
+                    "BLOCKS_ENGINE_PARITY_LEGACY=1 php tests/parity/run.php --migration-comparison"
+                ]
+            },
+            "license": [
+                "GPL-3.0-or-later"
+            ],
+            "description": "PHP primitives for transforming HTML, Markdown, and website artifacts into WordPress block outputs.",
+            "transport-options": {
+                "symlink": true,
+                "relative": true
+            }
+        },
         {
             "name": "chubes4/block-artifact-compiler",
             "version": "dev-main",
@@ -847,6 +903,7 @@
     "aliases": [],
     "minimum-stability": "dev",
     "stability-flags": {
+        "automattic/blocks-engine-php-transformer": 20,
         "chubes4/block-artifact-compiler": 20,
         "chubes4/block-format-bridge": 20,
         "chubes4/html-to-blocks-converter": 20
