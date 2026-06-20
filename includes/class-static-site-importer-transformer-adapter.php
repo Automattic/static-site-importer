@@ -20,7 +20,7 @@ class Static_Site_Importer_Transformer_Adapter {
 	 * @return bool
 	 */
 	public function supports_website_artifact_compile(): bool {
-		return class_exists( '\Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler' );
+		return function_exists( 'blocks_engine_php_transformer_compile_artifact' );
 	}
 
 	/**
@@ -29,7 +29,7 @@ class Static_Site_Importer_Transformer_Adapter {
 	 * @return bool
 	 */
 	public function supports_blocks_to_html(): bool {
-		return class_exists( '\Automattic\BlocksEngine\PhpTransformer\FormatBridge\FormatBridge' );
+		return function_exists( 'blocks_engine_php_transformer_convert_format' );
 	}
 
 	/**
@@ -40,17 +40,11 @@ class Static_Site_Importer_Transformer_Adapter {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function compile_website_artifact( array $artifact, array $options = array() ) {
-		unset( $options );
-
 		if ( ! $this->supports_website_artifact_compile() ) {
 			return new WP_Error( 'static_site_importer_missing_transformer', 'Blocks Engine php-transformer is required to import a website artifact.' );
 		}
 
-		$compiler = new \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler();
-		$result   = $compiler->compile( $artifact );
-		if ( is_object( $result ) && method_exists( $result, 'toArray' ) ) {
-			$result = $result->toArray();
-		}
+		$result = blocks_engine_php_transformer_compile_artifact( $artifact, $options );
 
 		if ( is_array( $result ) ) {
 			return $this->compiled_result_from_transformer_contract( $result );
@@ -486,8 +480,10 @@ class Static_Site_Importer_Transformer_Adapter {
 	 */
 	public function blocks_to_html( string $block_markup, array $options = array() ): string {
 		if ( $this->supports_blocks_to_html() ) {
-			$bridge = new \Automattic\BlocksEngine\PhpTransformer\FormatBridge\FormatBridge();
-			return $bridge->convert( $block_markup, 'blocks', 'html', $options );
+			$result = blocks_engine_php_transformer_convert_format( $block_markup, 'blocks', 'html', $options );
+			if ( isset( $result['documents'][0]['content'] ) && is_scalar( $result['documents'][0]['content'] ) ) {
+				return (string) $result['documents'][0]['content'];
+			}
 		}
 
 		return '';

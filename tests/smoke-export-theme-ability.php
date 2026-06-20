@@ -28,16 +28,20 @@ file_put_contents( $theme_dir . '/import-report.json', '{"status":"completed","s
 
 $GLOBALS['ssi_export_theme_root'] = $theme_root;
 $GLOBALS['ssi_export_format_bridge_calls'] = array();
-eval(
-	'namespace Automattic\\BlocksEngine\\PhpTransformer\\FormatBridge {' .
-	'class FormatBridge {' .
-	'public function convert(string $content, string $from, string $to, array $options = array()): string {' .
-	'$GLOBALS["ssi_export_format_bridge_calls"][] = array($from, $to, $options);' .
-	'return str_replace(array("<!-- wp:paragraph -->", "<!-- /wp:paragraph -->", "<!-- wp:post-content /-->"), "", $content);' .
-	'}' .
-	'}' .
-	'}'
-);
+
+function blocks_engine_php_transformer_convert_format( string $content, string $from, string $to, array $options = array() ): array {
+	$GLOBALS['ssi_export_format_bridge_calls'][] = array( $from, $to, $options );
+	return array(
+		'schema'    => 'blocks-engine/php-transformer/result/v1',
+		'status'    => 'success',
+		'documents' => array(
+			array(
+				'format'  => $to,
+				'content' => str_replace( array( '<!-- wp:paragraph -->', '<!-- /wp:paragraph -->', '<!-- wp:post-content /-->' ), '', $content ),
+			),
+		),
+	);
+}
 register_shutdown_function(
 	static function () use ( $theme_root ): void {
 		$iterator = new RecursiveIteratorIterator(

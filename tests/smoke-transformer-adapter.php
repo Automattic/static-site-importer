@@ -8,14 +8,11 @@
  * @package StaticSiteImporter
  */
 
-namespace Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler {
-	class ArtifactCompiler {
-		public function compile( array $artifact ): object {
-			$GLOBALS['ssi_transformer_adapter_artifact_compiler_calls'][] = $artifact;
+namespace {
+	function blocks_engine_php_transformer_compile_artifact( array $artifact, array $options = array() ): array {
+		$GLOBALS['ssi_transformer_adapter_artifact_compiler_calls'][] = array( $artifact, $options );
 
-			return new class() {
-				public function toArray(): array {
-					return array(
+		return array(
 						'schema'            => 'blocks-engine/php-transformer/result/v1',
 						'status'            => 'success',
 						'components'        => array(),
@@ -99,23 +96,23 @@ namespace Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler {
 						'provenance'        => array(
 							array( 'source_hash' => 'abc123' ),
 						),
-					);
-				}
-			};
-		}
+		);
 	}
-}
 
-namespace Automattic\BlocksEngine\PhpTransformer\FormatBridge {
-	class FormatBridge {
-		public function convert( string $content, string $from, string $to, array $options = array() ): string {
-			$GLOBALS['ssi_transformer_adapter_format_bridge_calls'][] = array( $content, $from, $to, $options );
-			return '<p>FormatBridge rendered</p>';
-		}
+	function blocks_engine_php_transformer_convert_format( string $content, string $from, string $to, array $options = array() ): array {
+		$GLOBALS['ssi_transformer_adapter_format_bridge_calls'][] = array( $content, $from, $to, $options );
+		return array(
+			'schema'    => 'blocks-engine/php-transformer/result/v1',
+			'status'    => 'success',
+			'documents' => array(
+				array(
+					'format'  => 'html',
+					'content' => '<p>FormatBridge rendered</p>',
+				),
+			),
+		);
 	}
-}
 
-namespace {
 	if ( ! defined( 'ABSPATH' ) ) {
 		define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 	}
@@ -175,7 +172,8 @@ namespace {
 	$documents = $artifacts['documents'] ?? array();
 	$products  = $compiled['products_manifest'] ?? array();
 	$assert( ! is_wp_error( $compiled ), 'native-compile-succeeds' );
-	$assert( 1 === count( $GLOBALS['ssi_transformer_adapter_artifact_compiler_calls'] ), 'native-artifact-compiler-called' );
+	$assert( 1 === count( $GLOBALS['ssi_transformer_adapter_artifact_compiler_calls'] ), 'plugin-artifact-helper-called' );
+	$assert( true === ( $GLOBALS['ssi_transformer_adapter_artifact_compiler_calls'][0][1]['include_bfb_report'] ?? false ), 'compile-options-forwarded' );
 	$assert( 'block-artifact-compiler/result/v1' === ( $compiled['schema'] ?? '' ), 'native-result-mapped-to-bac-envelope' );
 	$assert( 'blocks-engine/php-transformer/compiled-site/v1' === ( $site['schema'] ?? '' ), 'native-compiled-site-contract-is-preserved' );
 	$assert( 4 === count( $pages ), 'native-keeps-compiled-site-pages-without-adapter-filtering' );
@@ -191,7 +189,7 @@ namespace {
 	$assert( array( 'Bread' ) === ( $products[0]['categories'] ?? array() ), 'native-product-categories-mapped-from-generic-report' );
 
 	$adapter_source = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-transformer-adapter.php' );
-	foreach ( array( 'transformer_result_to_bac_result', 'documents_from_transformer_result', 'site_from_compiled_site_report', 'template_parts_from_compiled_site_report', 'visual_repair_from_compiled_site_report', 'document_metadata_from_compiled_site_report', 'block_markup_from_compiled_site_page' ) as $removed_helper ) {
+	foreach ( array( 'transformer_result_to_bac_result', 'documents_from_transformer_result', 'site_from_compiled_site_report', 'template_parts_from_compiled_site_report', 'visual_repair_from_compiled_site_report', 'document_metadata_from_compiled_site_report', 'block_markup_from_compiled_site_page', 'ArtifactCompiler\\ArtifactCompiler', 'FormatBridge\\FormatBridge' ) as $removed_helper ) {
 		$assert( false !== $adapter_source && ! str_contains( $adapter_source, $removed_helper ), 'legacy-adapter-helper-removed-' . $removed_helper );
 	}
 

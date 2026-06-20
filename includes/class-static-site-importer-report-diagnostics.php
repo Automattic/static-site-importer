@@ -224,7 +224,7 @@ class Static_Site_Importer_Report_Diagnostics {
 
 		$emitted = '';
 		if ( function_exists( 'serialize_blocks' ) ) {
-			// @phpstan-ignore-next-line argument.type -- Parsed block shape comes from WordPress parse_blocks() or h2bc.
+			// @phpstan-ignore-next-line argument.type -- Parsed block shape comes from WordPress parse_blocks() or transformer diagnostics.
 			$emitted = serialize_blocks( array( $block ) );
 		}
 		if ( '' === trim( $emitted ) || preg_match( '/^<!--\s+wp:[^>]+\/-->$/', trim( $emitted ) ) ) {
