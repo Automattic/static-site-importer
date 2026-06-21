@@ -4,6 +4,21 @@
   "extensions": {
     "wordpress": {
       "settings": {
+        "bench_env": {
+          "STATIC_SITE_IMPORTER_CODEBOX_BROWSER_EVIDENCE": "runtime-post-step"
+        },
+        "wordpress_runtime_post_steps": [
+          {
+            "command": "wordpress.browser-probe",
+            "args": [
+              "url=/",
+              "wait-for=load",
+              "viewport=1280x900",
+              "capture=html,console,errors,network,performance,memory,screenshot",
+              "assert=no-errors"
+            ]
+          }
+        ],
         "validation_dependencies": [
           {
             "type": "github",

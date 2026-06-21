@@ -44,6 +44,32 @@ return static function (): array {
 		$report_path            = (string) ( $result['report_path'] ?? '' );
 		$validation_result_path = (string) ( $result['validation_result_path'] ?? '' );
 		$finding_packets_path   = (string) ( $result['finding_packets_path'] ?? '' );
+		$browser_evidence_mode  = getenv( 'STATIC_SITE_IMPORTER_CODEBOX_BROWSER_EVIDENCE' );
+		$browser_evidence_refs  = 'runtime-post-step' === $browser_evidence_mode ? array(
+			'browser_render_evidence' => array(
+				'artifact_ref' => 'files/browser/summary.json',
+				'kind'         => 'wp-codebox/browser-summary',
+			),
+			'screenshots'             => array(
+				array(
+					'artifact_ref' => 'files/browser/screenshot.png',
+					'kind'         => 'wp-codebox/browser-screenshot',
+				),
+			),
+			'browser_html'            => array(
+				'artifact_ref' => 'files/browser/snapshot.html',
+				'kind'         => 'wp-codebox/browser-html-snapshot',
+			),
+		) : array();
+		$raw_artifacts          = array(
+			array(
+				'artifact_ref' => basename( $finding_packets_path ),
+				'kind'         => 'blocks-engine/finding-packets',
+			),
+		);
+		if ( isset( $browser_evidence_refs['browser_html'] ) ) {
+			$raw_artifacts[] = $browser_evidence_refs['browser_html'];
+		}
 		$validation_result = array(
 			'success'      => ! empty( $result['quality']['pass'] ),
 			'schema'       => 'static-site-importer/codebox-validation-result/v1',
@@ -64,19 +90,16 @@ return static function (): array {
 					'artifact_ref' => basename( $validation_result_path ),
 					'kind'         => 'blocks-engine/import-validation-result',
 				),
-				'raw'                     => array(
-					array(
-						'artifact_ref' => basename( $finding_packets_path ),
-						'kind'         => 'blocks-engine/finding-packets',
-					),
-				),
+				'browser_render_evidence' => $browser_evidence_refs['browser_render_evidence'] ?? array(),
+				'screenshots'             => $browser_evidence_refs['screenshots'] ?? array(),
+				'raw'                     => $raw_artifacts,
 			),
 			'summary'      => array(
 				'quality_pass'          => ! empty( $result['quality']['pass'] ),
 				'import_report'         => is_readable( $report_path ) ? 'captured' : 'missing',
 				'block_validation'      => is_readable( $validation_result_path ) ? 'captured' : 'missing',
-				'browser_render'        => 'pending',
-				'screenshot_artifacts'  => 0,
+				'browser_render'        => 'runtime-post-step' === $browser_evidence_mode ? 'captured' : 'pending',
+				'screenshot_artifacts'  => 'runtime-post-step' === $browser_evidence_mode ? 1 : 0,
 				'visual_diff_artifacts' => 0,
 				'theme_slug'            => (string) ( $result['theme_slug'] ?? '' ),
 			),
