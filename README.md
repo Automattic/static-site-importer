@@ -40,7 +40,9 @@ When a generated artifact contains full-document HTML, Static Site Importer rout
 - Blocks Engine PHP transformer plugin installed and active.
 - Node dependencies installed only when running the JavaScript block-validation smoke tests.
 
-SSI does not load the transformer through Packagist or a local `vendor/` autoloader at runtime; WordPress loads the transformer plugin, and SSI calls `blocks_engine_php_transformer_compile_artifact()` and `blocks_engine_php_transformer_convert_format()`.
+SSI requires `automattic/blocks-engine-php-transformer:^0.1.0` in Composer to align installed dependencies with the tagged Blocks Engine PHP transformer release. Until the package is published on Packagist, `composer.json` includes an explicit package repository for the `php-transformer-v0.1.0` tag at `ac92ddb` with autoloading rooted at the Blocks Engine monorepo archive's `php-transformer/src/` directory. Remove that repository override once Packagist serves the package metadata.
+
+At runtime, WordPress still loads the transformer plugin, and SSI calls `blocks_engine_php_transformer_compile_artifact()` and `blocks_engine_php_transformer_convert_format()`.
 
 ## Admin Usage
 

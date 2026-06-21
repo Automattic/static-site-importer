@@ -3,7 +3,40 @@
   "type": "wordpress-plugin",
   "description": "Materialize compiled website artifacts into WordPress block themes.",
   "license": "GPL-2.0-or-later",
+  "repositories": [
+    {
+      "type": "package",
+      "package": {
+        "name": "automattic/blocks-engine-php-transformer",
+        "version": "0.1.0",
+        "description": "PHP primitives for transforming HTML, Markdown, and website artifacts into WordPress block outputs.",
+        "type": "library",
+        "license": "GPL-3.0-or-later",
+        "source": {
+          "type": "git",
+          "url": "https://github.com/Automattic/blocks-engine.git",
+          "reference": "ac92ddb"
+        },
+        "dist": {
+          "type": "zip",
+          "url": "https://github.com/Automattic/blocks-engine/archive/refs/tags/php-transformer-v0.1.0.zip",
+          "reference": "ac92ddb"
+        },
+        "autoload": {
+          "psr-4": {
+            "Automattic\\BlocksEngine\\PhpTransformer\\": "php-transformer/src/"
+          }
+        },
+        "require": {
+          "league/commonmark": "^2.5",
+          "league/html-to-markdown": "^5.1",
+          "php": ">=8.1"
+        }
+      }
+    }
+  ],
   "require": {
+    "automattic/blocks-engine-php-transformer": "^0.1.0",
     "php": "^8.1"
   },
   "minimum-stability": "dev",
