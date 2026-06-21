@@ -62,6 +62,12 @@ if ( ! function_exists( 'trailingslashit' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_mkdir_p' ) ) {
+	function wp_mkdir_p( string $path ): bool {
+		return is_dir( $path ) || mkdir( $path, 0777, true );
+	}
+}
+
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-stylesheet-materializer.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-document.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-source-page.php';
@@ -240,6 +246,87 @@ $missing_page_content = $source_pages->invoke(
 );
 $assert( $missing_page_content instanceof WP_Error, 'materialization-plan-page-content-is-required' );
 $assert( 'static_site_importer_materialization_plan_page_empty_content' === ( $missing_page_content instanceof WP_Error ? $missing_page_content->get_error_code() : '' ), 'materialization-plan-page-content-error-code' );
+
+$asset_theme_dir = sys_get_temp_dir() . '/ssi-materialization-plan-assets-' . uniqid( '', true );
+$asset_result    = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files(
+	$asset_theme_dir,
+	'https://example.test/wp-content/themes/generated',
+	array(
+		'site'  => array(
+			'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
+			'assets' => array(
+				array(
+					'path'    => 'assets/site.css',
+					'role'    => 'stylesheet',
+					'content' => '.native-plan{color:green}',
+				),
+				array(
+					'path'           => 'assets/logo.png',
+					'role'           => 'image',
+					'mime_type'      => 'image/png',
+					'content_base64' => base64_encode( "\x89PNG\r\n\x1a\n" ),
+				),
+			),
+		),
+		'files' => array(
+			array(
+				'path'    => 'assets/site.css',
+				'kind'    => 'css',
+				'content' => '.legacy-artifact{color:red}',
+			),
+		),
+	)
+);
+$assert( is_array( $asset_result ), 'materialization-plan-assets-succeed' );
+$asset_result = is_array( $asset_result ) ? $asset_result : array( 'css' => '', 'assets' => array() );
+$assert( str_contains( (string) $asset_result['css'], '.native-plan' ), 'materialization-plan-asset-css-wins' );
+$assert( ! str_contains( (string) $asset_result['css'], '.legacy-artifact' ), 'legacy-css-is-ignored-when-native-plan-assets-have-payloads' );
+$assert( file_exists( $asset_theme_dir . '/assets/materialized/assets/logo.png' ), 'materialization-plan-binary-asset-is-written' );
+$assert( 'materialization_plan.assets' === ( $asset_result['assets']['assets/logo.png']['origin'] ?? '' ), 'materialization-plan-asset-origin-is-reported' );
+$assert( str_ends_with( (string) ( $asset_result['assets']['assets/logo.png']['final_url'] ?? '' ), '/assets/materialized/assets/logo.png' ), 'materialization-plan-asset-final-url-shape' );
+
+$metadata_only = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files(
+	sys_get_temp_dir() . '/ssi-materialization-plan-assets-metadata-only-' . uniqid( '', true ),
+	'https://example.test/wp-content/themes/generated',
+	array(
+		'site'  => array(
+			'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
+			'assets' => array(
+				array(
+					'path' => 'assets/site.css',
+					'role' => 'stylesheet',
+				),
+			),
+		),
+		'files' => array(
+			array(
+				'path'    => 'assets/site.css',
+				'kind'    => 'css',
+				'content' => '.legacy-metadata-only{color:blue}',
+			),
+		),
+	)
+);
+$assert( is_array( $metadata_only ), 'metadata-only-materialization-plan-assets-fall-back-to-legacy' );
+$assert( str_contains( (string) ( is_array( $metadata_only ) ? $metadata_only['css'] : '' ), '.legacy-metadata-only' ), 'legacy-assets-used-when-native-plan-assets-have-no-payload-contract' );
+
+$bad_asset = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files(
+	sys_get_temp_dir() . '/ssi-materialization-plan-assets-bad-' . uniqid( '', true ),
+	'https://example.test/wp-content/themes/generated',
+	array(
+		'site' => array(
+			'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
+			'assets' => array(
+				array(
+					'path'           => 'assets/bad.png',
+					'content_base64' => 'not-valid-base64',
+				),
+			),
+		),
+	)
+);
+$assert( $bad_asset instanceof WP_Error, 'malformed-materialization-plan-asset-fails-explicitly' );
+$assert( 'static_site_importer_materialization_plan_asset_base64_invalid' === ( $bad_asset instanceof WP_Error ? $bad_asset->get_error_code() : '' ), 'malformed-materialization-plan-asset-error-code' );
 
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );

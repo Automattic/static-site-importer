@@ -96,6 +96,11 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}|WP_Error
 	 */
 	public static function materialize_website_artifact_files( string $theme_dir, string $theme_uri, array $artifacts ) {
+		$native_plan = self::materialize_materialization_plan_assets( $theme_dir, $theme_uri, $artifacts );
+		if ( is_wp_error( $native_plan ) || null !== $native_plan ) {
+			return $native_plan;
+		}
+
 		$files       = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
 		$css         = array();
 		$js          = array();
@@ -160,6 +165,138 @@ class Static_Site_Importer_Theme_Materializer {
 			'assets'      => $assets,
 			'diagnostics' => $diagnostics,
 		);
+	}
+
+	/**
+	 * Write native Blocks Engine asset materialization rows when the plan carries payloads.
+	 *
+	 * @param string              $theme_dir Theme directory.
+	 * @param string              $theme_uri Theme URI.
+	 * @param array<string,mixed> $artifacts WordPress artifacts from BAC/Blocks Engine.
+	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}|null|WP_Error
+	 */
+	private static function materialize_materialization_plan_assets( string $theme_dir, string $theme_uri, array $artifacts ) {
+		$site = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
+		if ( 'blocks-engine/php-transformer/materialization-plan/v1' !== (string) ( $site['schema'] ?? '' ) || ! array_key_exists( 'assets', $site ) ) {
+			return null;
+		}
+
+		if ( ! is_array( $site['assets'] ) ) {
+			return new WP_Error( 'static_site_importer_materialization_plan_assets_invalid', 'Blocks Engine materialization_plan.assets must be an array.' );
+		}
+
+		if ( ! self::materialization_plan_assets_include_payloads( $site['assets'] ) ) {
+			return null;
+		}
+
+		$css         = array();
+		$js          = array();
+		$assets      = array();
+		$diagnostics = array();
+
+		foreach ( $site['assets'] as $asset ) {
+			if ( ! is_array( $asset ) ) {
+				return new WP_Error( 'static_site_importer_materialization_plan_asset_invalid', 'Blocks Engine materialization_plan.assets entries must be arrays.' );
+			}
+
+			$relative = self::normalize_artifact_materialization_path( isset( $asset['path'] ) && is_scalar( $asset['path'] ) ? (string) $asset['path'] : '' );
+			if ( '' === $relative ) {
+				return new WP_Error( 'static_site_importer_materialization_plan_asset_path_invalid', 'Blocks Engine materialization_plan.assets entries must include safe relative paths.' );
+			}
+
+			$content = self::materialization_plan_asset_content( $asset, $relative );
+			if ( is_wp_error( $content ) ) {
+				return $content;
+			}
+
+			$kind  = isset( $asset['kind'] ) && is_scalar( $asset['kind'] ) ? (string) $asset['kind'] : '';
+			$role  = isset( $asset['role'] ) && is_scalar( $asset['role'] ) ? (string) $asset['role'] : '';
+			$lower = strtolower( $relative );
+			if ( 'css' === $kind || 'stylesheet' === $role || str_ends_with( $lower, '.css' ) ) {
+				$css[] = trim( $content );
+				continue;
+			}
+			if ( 'js' === $kind || 'script' === $role || str_ends_with( $lower, '.js' ) ) {
+				$js[] = trim( $content );
+				continue;
+			}
+
+			$target_relative = 'assets/materialized/' . $relative;
+			$target          = trailingslashit( $theme_dir ) . $target_relative;
+			$dir             = dirname( $target );
+			if ( ! wp_mkdir_p( $dir ) ) {
+				return new WP_Error( 'static_site_importer_materialization_plan_asset_mkdir_failed', sprintf( 'Failed to create materialization-plan asset directory: %s', $dir ) );
+			}
+
+			$result = self::write_file( $target, $content );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+
+			$mime_type = isset( $asset['mime_type'] ) && is_scalar( $asset['mime_type'] ) && '' !== (string) $asset['mime_type'] ? (string) $asset['mime_type'] : self::mime_type( $target );
+			$assets[ $relative ] = array(
+				'source'     => $relative,
+				'path'       => $relative,
+				'url'        => trailingslashit( $theme_uri ) . $target_relative,
+				'final_url'  => trailingslashit( $theme_uri ) . $target_relative,
+				'mime_type'  => $mime_type,
+				'theme_path' => $target_relative,
+				'policy'     => 'theme',
+				'origin'     => 'materialization_plan.assets',
+			);
+		}
+
+		return array(
+			'css'         => trim( implode( "\n\n", array_filter( $css ) ) ),
+			'js'          => trim( implode( "\n", array_filter( $js ) ) ),
+			'assets'      => $assets,
+			'diagnostics' => $diagnostics,
+		);
+	}
+
+	/**
+	 * Check whether native asset rows include write payloads.
+	 *
+	 * @param array<int,mixed> $assets Blocks Engine materialization-plan asset rows.
+	 * @return bool
+	 */
+	private static function materialization_plan_assets_include_payloads( array $assets ): bool {
+		foreach ( $assets as $asset ) {
+			if ( is_array( $asset ) && ( array_key_exists( 'content', $asset ) || array_key_exists( 'content_base64', $asset ) ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Decode a native materialization-plan asset payload.
+	 *
+	 * @param array<string,mixed> $asset    Blocks Engine asset row.
+	 * @param string              $relative Safe relative asset path.
+	 * @return string|WP_Error
+	 */
+	private static function materialization_plan_asset_content( array $asset, string $relative ) {
+		if ( isset( $asset['content_base64'] ) ) {
+			if ( ! is_scalar( $asset['content_base64'] ) ) {
+				return new WP_Error( 'static_site_importer_materialization_plan_asset_content_invalid', sprintf( 'Blocks Engine materialization_plan.assets content_base64 must be scalar: %s', $relative ) );
+			}
+
+			$base64  = preg_replace( '/\s+/', '', (string) $asset['content_base64'] ) ?? '';
+			$decoded = base64_decode( $base64, true );
+			if ( false === $decoded ) {
+				return new WP_Error( 'static_site_importer_materialization_plan_asset_base64_invalid', sprintf( 'Blocks Engine materialization_plan.assets content_base64 is not valid base64: %s', $relative ) );
+			}
+
+			return $decoded;
+		}
+
+		if ( isset( $asset['content'] ) && is_scalar( $asset['content'] ) ) {
+			return (string) $asset['content'];
+		}
+
+		return new WP_Error( 'static_site_importer_materialization_plan_asset_content_missing', sprintf( 'Blocks Engine materialization_plan.assets entries must include content or content_base64: %s', $relative ) );
 	}
 
 	/**
