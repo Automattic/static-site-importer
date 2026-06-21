@@ -1039,7 +1039,11 @@ class Static_Site_Importer_Theme_Generator {
 		$documents = isset( $artifacts['documents'] ) && is_array( $artifacts['documents'] ) ? $artifacts['documents'] : array();
 		$site      = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
 		if ( ! empty( $site['pages'] ) && is_array( $site['pages'] ) ) {
-			if ( ! in_array( (string) ( $site['schema'] ?? '' ), array( 'block-artifact-compiler/compiled-site/v1', 'blocks-engine/php-transformer/compiled-site/v1', 'blocks-engine/php-transformer/materialization-plan/v1' ), true ) ) {
+			if ( 'blocks-engine/php-transformer/materialization-plan/v1' === (string) ( $site['schema'] ?? '' ) ) {
+				return self::source_pages_from_materialization_plan_pages( $site['pages'] );
+			}
+
+			if ( ! in_array( (string) ( $site['schema'] ?? '' ), array( 'block-artifact-compiler/compiled-site/v1', 'blocks-engine/php-transformer/compiled-site/v1' ), true ) ) {
 				return new WP_Error( 'static_site_importer_compiled_site_missing', 'Website artifact document pages require a supported compiled-site contract.' );
 			}
 
@@ -1068,7 +1072,31 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
-	 * Attach BAC document markup to compiled-site page contracts.
+	 * Build source pages directly from Blocks Engine materialization-plan page rows.
+	 *
+	 * @param array<int,mixed> $site_pages Materialization-plan page rows.
+	 * @return array<string, Static_Site_Importer_Source_Page>|WP_Error
+	 */
+	private static function source_pages_from_materialization_plan_pages( array $site_pages ) {
+		$pages = array();
+		foreach ( $site_pages as $page_row ) {
+			if ( ! is_array( $page_row ) ) {
+				continue;
+			}
+
+			$page = Static_Site_Importer_Source_Page::from_materialization_plan_page( $page_row );
+			if ( is_wp_error( $page ) ) {
+				return $page;
+			}
+
+			$pages[ $page->source_key() ] = $page;
+		}
+
+		return $pages;
+	}
+
+	/**
+	 * Attach document markup to compiled-site page contracts.
 	 *
 	 * @param array<int,array<string,mixed>> $site_pages Compiled-site page rows.
 	 * @param array<int,mixed>               $documents  BAC document artifacts.

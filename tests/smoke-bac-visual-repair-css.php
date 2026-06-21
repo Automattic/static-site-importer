@@ -44,6 +44,18 @@ if ( ! function_exists( 'sanitize_key' ) ) {
 	}
 }
 
+if ( ! function_exists( 'sanitize_title' ) ) {
+	function sanitize_title( string $title ): string {
+		return trim( strtolower( preg_replace( '/[^a-z0-9]+/', '-', $title ) ), '-' );
+	}
+}
+
+if ( ! function_exists( 'esc_html' ) ) {
+	function esc_html( string $text ): string {
+		return htmlspecialchars( $text, ENT_QUOTES, 'UTF-8' );
+	}
+}
+
 if ( ! function_exists( 'trailingslashit' ) ) {
 	function trailingslashit( string $value ): string {
 		return rtrim( $value, '/\\' ) . '/';
@@ -51,6 +63,8 @@ if ( ! function_exists( 'trailingslashit' ) ) {
 }
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-stylesheet-materializer.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-document.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-source-page.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-materializer.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
 
@@ -171,6 +185,61 @@ $missing_content = Static_Site_Importer_Theme_Materializer::template_part_artifa
 );
 $assert( $missing_content instanceof WP_Error, 'materialization-plan-template-part-content-is-required' );
 $assert( 'static_site_importer_materialization_plan_template_part_content_missing' === ( $missing_content instanceof WP_Error ? $missing_content->get_error_code() : '' ), 'materialization-plan-template-part-content-error-code' );
+
+$source_pages = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'bac_document_pages' );
+$native_pages = $source_pages->invoke(
+	null,
+	array(
+		'wordpress_artifacts' => array(
+			'site'      => array(
+				'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
+				'pages'  => array(
+					array(
+						'source_path'  => 'website/index.html',
+						'post_type'    => 'page',
+						'slug'         => 'home-canonical',
+						'title'        => 'Home Canonical',
+						'entrypoint'   => true,
+						'block_markup' => '<!-- wp:paragraph --><p>Native page</p><!-- /wp:paragraph -->',
+					),
+				),
+			),
+			'documents' => array(
+				array(
+					'source_path'  => 'website/index.html',
+					'slug'         => 'legacy-home',
+					'title'        => 'Legacy Home',
+					'block_markup' => '<!-- wp:paragraph --><p>Legacy page</p><!-- /wp:paragraph -->',
+				),
+			),
+		),
+	)
+);
+$assert( is_array( $native_pages ), 'materialization-plan-pages-create-source-pages' );
+$native_page = is_array( $native_pages ) ? ( $native_pages['website/index.html'] ?? null ) : null;
+$assert( $native_page instanceof Static_Site_Importer_Source_Page, 'materialization-plan-page-source-key-is-used' );
+$assert( $native_page instanceof Static_Site_Importer_Source_Page && 'materialization_plan_page' === $native_page->type(), 'materialization-plan-page-type-is-native' );
+$assert( $native_page instanceof Static_Site_Importer_Source_Page && 'home-canonical' === $native_page->metadata_value( 'slug' ), 'materialization-plan-page-slug-wins-over-legacy-document' );
+$assert( $native_page instanceof Static_Site_Importer_Source_Page && str_contains( $native_page->body(), 'Native page' ), 'materialization-plan-page-body-wins-over-legacy-document' );
+
+$missing_page_content = $source_pages->invoke(
+	null,
+	array(
+		'wordpress_artifacts' => array(
+			'site' => array(
+				'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
+				'pages'  => array(
+					array(
+						'source_path' => 'website/index.html',
+						'slug'        => 'home',
+					),
+				),
+			),
+		),
+	)
+);
+$assert( $missing_page_content instanceof WP_Error, 'materialization-plan-page-content-is-required' );
+$assert( 'static_site_importer_materialization_plan_page_empty_content' === ( $missing_page_content instanceof WP_Error ? $missing_page_content->get_error_code() : '' ), 'materialization-plan-page-content-error-code' );
 
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );

@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Represents one importable BAC document artifact.
+ * Represents one importable source document.
  */
 class Static_Site_Importer_Source_Page {
 
@@ -128,6 +128,44 @@ class Static_Site_Importer_Source_Page {
 		$document = new Static_Site_Importer_Document( '<!doctype html><html><head><title>' . esc_html( $title ) . '</title></head><body><main>' . $content . '</main></body></html>' );
 
 		return new self( $source_key, $source_key, 'bac_document', $document, $content, 'blocks', $metadata );
+	}
+
+	/**
+	 * Create a source page from a Blocks Engine materialization-plan page row.
+	 *
+	 * @param array<string,mixed> $page Materialization-plan page row.
+	 * @return self|WP_Error
+	 */
+	public static function from_materialization_plan_page( array $page ) {
+		$source_key = self::normalize_artifact_source_key( isset( $page['source_path'] ) ? (string) $page['source_path'] : '' );
+		if ( '' === $source_key ) {
+			return new WP_Error( 'static_site_importer_materialization_plan_page_missing_source', 'Blocks Engine materialization-plan page is missing source_path.' );
+		}
+
+		$content = isset( $page['block_markup'] ) && is_scalar( $page['block_markup'] ) ? (string) $page['block_markup'] : '';
+		if ( '' === trim( $content ) ) {
+			return new WP_Error( 'static_site_importer_materialization_plan_page_empty_content', sprintf( 'Blocks Engine materialization-plan page is missing block markup: %s', $source_key ) );
+		}
+
+		$metadata = array();
+		foreach ( array( 'title', 'slug', 'status', 'post_type', 'entrypoint', 'body_format' ) as $key ) {
+			if ( isset( $page[ $key ] ) && is_scalar( $page[ $key ] ) && '' !== trim( (string) $page[ $key ] ) ) {
+				$metadata[ $key ] = (string) $page[ $key ];
+			}
+		}
+		if ( isset( $page['metadata'] ) && is_array( $page['metadata'] ) ) {
+			foreach ( $page['metadata'] as $key => $value ) {
+				if ( is_string( $key ) && is_scalar( $value ) ) {
+					$metadata[ strtolower( str_replace( '-', '_', $key ) ) ] = (string) $value;
+				}
+			}
+		}
+
+		$title       = $metadata['title'] ?? '';
+		$body_format = isset( $metadata['body_format'] ) && '' !== $metadata['body_format'] ? $metadata['body_format'] : 'blocks';
+		$document    = new Static_Site_Importer_Document( '<!doctype html><html><head><title>' . esc_html( $title ) . '</title></head><body><main>' . $content . '</main></body></html>' );
+
+		return new self( $source_key, $source_key, 'materialization_plan_page', $document, $content, $body_format, $metadata );
 	}
 
 	/**
