@@ -92,7 +92,7 @@ class Static_Site_Importer_Theme_Materializer {
 	 *
 	 * @param string              $theme_dir Theme directory.
 	 * @param string              $theme_uri Theme URI.
-	 * @param array<string,mixed> $artifacts WordPress artifacts from BAC.
+	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
 	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}|WP_Error
 	 */
 	public static function materialize_website_artifact_files( string $theme_dir, string $theme_uri, array $artifacts ) {
@@ -119,7 +119,7 @@ class Static_Site_Importer_Theme_Materializer {
 					'source'  => 'website_artifact:files',
 					'reason'  => 'unsafe_artifact_path',
 					'path'    => isset( $file['path'] ) && is_scalar( $file['path'] ) ? (string) $file['path'] : '',
-					'message' => 'A BAC file artifact was skipped because its path is not safe to materialize inside the generated theme.',
+					'message' => 'A website artifact file was skipped because its path is not safe to materialize inside the generated theme.',
 				);
 				continue;
 			}
@@ -172,7 +172,7 @@ class Static_Site_Importer_Theme_Materializer {
 	 *
 	 * @param string              $theme_dir Theme directory.
 	 * @param string              $theme_uri Theme URI.
-	 * @param array<string,mixed> $artifacts WordPress artifacts from BAC/Blocks Engine.
+	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
 	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}|null|WP_Error
 	 */
 	private static function materialize_materialization_plan_assets( string $theme_dir, string $theme_uri, array $artifacts ) {
@@ -300,10 +300,10 @@ class Static_Site_Importer_Theme_Materializer {
 	}
 
 	/**
-	 * Normalize BAC template part artifacts into generated theme writes.
+	 * Normalize template part artifacts into generated theme writes.
 	 *
 	 * @param string              $theme_dir Theme directory.
-	 * @param array<string,mixed> $artifacts WordPress artifacts from BAC.
+	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
 	 * @return array{writes:array<string,string>,reports:array<int,array<string,mixed>>}|WP_Error Absolute write paths and report rows.
 	 */
 	public static function template_part_artifact_writes( string $theme_dir, array $artifacts ) {
@@ -327,21 +327,21 @@ class Static_Site_Importer_Theme_Materializer {
 		$reports = array();
 		foreach ( $template_parts as $template_part ) {
 			if ( ! is_array( $template_part ) ) {
-				return new WP_Error( 'static_site_importer_bac_template_part_invalid', 'BAC template part artifacts must be arrays.' );
+				return new WP_Error( 'static_site_importer_template_part_invalid', 'Template part artifacts must be arrays.' );
 			}
 
 			$relative = self::template_part_artifact_relative_path( $template_part );
 			if ( '' === $relative ) {
-				return new WP_Error( 'static_site_importer_bac_template_part_unsupported', 'BAC template part artifacts must resolve to a supported header or footer theme part.' );
+				return new WP_Error( 'static_site_importer_template_part_unsupported', 'Template part artifacts must resolve to a supported header or footer theme part.' );
 			}
 
 			if ( ! isset( $template_part['block_markup'] ) || ! is_scalar( $template_part['block_markup'] ) ) {
-				return new WP_Error( 'static_site_importer_bac_template_part_markup_missing', 'BAC template part artifacts must include serialized block_markup.' );
+				return new WP_Error( 'static_site_importer_template_part_markup_missing', 'Template part artifacts must include serialized block_markup.' );
 			}
 
 			$markup = (string) $template_part['block_markup'];
 			if ( '' === trim( $markup ) ) {
-				return new WP_Error( 'static_site_importer_bac_template_part_markup_empty', 'BAC template part block_markup must not be empty.' );
+				return new WP_Error( 'static_site_importer_template_part_markup_empty', 'Template part artifact block_markup must not be empty.' );
 			}
 
 			$writes[ trailingslashit( $theme_dir ) . $relative ] = $markup;
@@ -483,9 +483,9 @@ class Static_Site_Importer_Theme_Materializer {
 	}
 
 	/**
-	 * Resolve a BAC template part artifact to an SSI-supported theme part path.
+	 * Resolve a template part artifact to an SSI-supported theme part path.
 	 *
-	 * @param array<string,mixed> $template_part BAC template part artifact.
+	 * @param array<string,mixed> $template_part Template part artifact.
 	 * @return string Relative theme path, or empty string when unsupported.
 	 */
 	private static function template_part_artifact_relative_path( array $template_part ): string {
@@ -505,7 +505,7 @@ class Static_Site_Importer_Theme_Materializer {
 	/**
 	 * Build the minimal generated header required by SSI's page templates.
 	 *
-	 * @return array<string,mixed> BAC-like template part artifact.
+	 * @return array<string,mixed> Template part artifact.
 	 */
 	private static function default_header_template_part(): array {
 		return array(
@@ -519,10 +519,10 @@ class Static_Site_Importer_Theme_Materializer {
 	}
 
 	/**
-	 * Build a compact report row for a materialized BAC template part artifact.
+	 * Build a compact report row for a materialized template part artifact.
 	 *
 	 * @param string              $path          Relative generated theme path.
-	 * @param array<string,mixed> $template_part BAC template part artifact.
+	 * @param array<string,mixed> $template_part Template part artifact.
 	 * @param string              $markup        Serialized block markup.
 	 * @return array<string,mixed>
 	 */

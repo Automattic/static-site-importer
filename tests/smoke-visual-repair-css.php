@@ -1,9 +1,9 @@
 <?php
 /**
- * Smoke test: BAC visual repair artifacts drive generated theme CSS.
+ * Smoke test: visual repair artifacts drive generated theme CSS.
  *
  * Run from the repository root:
- * php tests/smoke-bac-visual-repair-css.php
+ * php tests/smoke-visual-repair-css.php
  *
  * @package StaticSiteImporter
  */
@@ -93,17 +93,17 @@ $artifacts = array(
 				'schema'  => 'block-artifact-compiler/visual-repair-css/v1',
 				'target'  => 'frontend',
 				'path'    => 'assets/css/visual-repair.css',
-				'content' => "/* Block Artifact Compiler: visual repair artifacts. */\n.wp-block-group.hero-shell { gap: 0; }",
+				'content' => "/* Blocks Engine: visual repair artifacts. */\n.wp-block-group.hero-shell { gap: 0; }",
 			),
 			array(
 				'schema'  => 'block-artifact-compiler/visual-repair-css/v1',
 				'target'  => 'editor',
 				'path'    => 'assets/css/visual-repair-editor.css',
-				'content' => "/* Block Artifact Compiler: editor visual repair artifacts. */\n.editor-styles-wrapper .glow-orb { opacity: 1 !important; }",
+				'content' => "/* Blocks Engine: editor visual repair artifacts. */\n.editor-styles-wrapper .glow-orb { opacity: 1 !important; }",
 			),
 			array(
 				'target'  => 'frontend',
-				'content' => "/* Block Artifact Compiler: visual repair artifacts. */\n.wp-block-group.hero-shell { gap: 0; }",
+				'content' => "/* Blocks Engine: visual repair artifacts. */\n.wp-block-group.hero-shell { gap: 0; }",
 			),
 			array(
 				'target'  => 'unknown',
@@ -116,18 +116,18 @@ $artifacts = array(
 $collector = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'visual_repair_styles_from_artifacts' );
 $styles    = $collector->invoke( null, $artifacts );
 
-$writes     = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp/bac-visual-repair-smoke', 'BAC Visual Repair Smoke', '.hero-shell{display:grid}', $styles );
-$style_css  = (string) ( $writes['/tmp/bac-visual-repair-smoke/style.css'] ?? '' );
-$editor_css = (string) ( $writes['/tmp/bac-visual-repair-smoke/assets/css/editor-style.css'] ?? '' );
+$writes     = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp/visual-repair-smoke', 'Visual Repair Smoke', '.hero-shell{display:grid}', $styles );
+$style_css  = (string) ( $writes['/tmp/visual-repair-smoke/style.css'] ?? '' );
+$editor_css = (string) ( $writes['/tmp/visual-repair-smoke/assets/css/editor-style.css'] ?? '' );
 
 $assert( 2 === count( $styles['frontend'] ?? array() ), 'collector-dedupes-frontend-repair-css' );
 $assert( 2 === count( $styles['editor'] ?? array() ), 'collector-reads-editor-repair-css' );
-$assert( str_contains( $style_css, 'Block Artifact Compiler: visual repair artifacts.' ), 'style-includes-bac-frontend-repair-comment', $style_css );
-$assert( str_contains( $style_css, '.wp-block-group.hero-shell { gap: 0; }' ), 'style-includes-bac-frontend-repair-rule', $style_css );
+$assert( str_contains( $style_css, 'Blocks Engine: visual repair artifacts.' ), 'style-includes-frontend-repair-comment', $style_css );
+$assert( str_contains( $style_css, '.wp-block-group.hero-shell { gap: 0; }' ), 'style-includes-frontend-repair-rule', $style_css );
 $assert( str_contains( $style_css, '.compiled-site-repair { display: block; }' ), 'style-includes-compiled-site-repair-css', $style_css );
 $assert( ! str_contains( $style_css, 'editor visual repair artifacts' ), 'style-excludes-editor-repair-css', $style_css );
-$assert( str_contains( $editor_css, 'Block Artifact Compiler: editor visual repair artifacts.' ), 'editor-includes-bac-editor-repair-comment', $editor_css );
-$assert( str_contains( $editor_css, '.editor-styles-wrapper .glow-orb { opacity: 1 !important; }' ), 'editor-includes-bac-editor-repair-rule', $editor_css );
+$assert( str_contains( $editor_css, 'Blocks Engine: editor visual repair artifacts.' ), 'editor-includes-editor-repair-comment', $editor_css );
+$assert( str_contains( $editor_css, '.editor-styles-wrapper .glow-orb { opacity: 1 !important; }' ), 'editor-includes-editor-repair-rule', $editor_css );
 $assert( str_contains( $editor_css, '.compiled-site-repair { display: block; }' ), 'editor-includes-compiled-site-repair-css', $editor_css );
 $assert( ! str_contains( $editor_css, '.should-not-appear' ), 'unknown-target-repair-css-is-ignored', $editor_css );
 
@@ -145,7 +145,7 @@ $assert( $missing_source instanceof WP_Error, 'compiled-site-page-source-is-requ
 $assert( 'static_site_importer_compiled_site_page_missing_source' === ( $missing_source instanceof WP_Error ? $missing_source->get_error_code() : '' ), 'compiled-site-page-source-error-code' );
 
 $template_part_result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
-	'/tmp/bac-visual-repair-smoke',
+	'/tmp/visual-repair-smoke',
 	array(
 		'site'           => array(
 			'schema'               => 'blocks-engine/php-transformer/materialization-plan/v1',
@@ -171,12 +171,12 @@ $template_part_result = Static_Site_Importer_Theme_Materializer::template_part_a
 $assert( is_array( $template_part_result ), 'materialization-plan-template-part-writes-succeed' );
 $template_part_writes = is_array( $template_part_result ) ? $template_part_result['writes'] : array();
 $template_part_reports = is_array( $template_part_result ) ? $template_part_result['reports'] : array();
-$assert( str_contains( (string) ( $template_part_writes['/tmp/bac-visual-repair-smoke/parts/header.html'] ?? '' ), 'Plan Header' ), 'materialization-plan-template-part-write-is-used' );
-$assert( ! str_contains( (string) ( $template_part_writes['/tmp/bac-visual-repair-smoke/parts/header.html'] ?? '' ), 'Legacy Header' ), 'legacy-template-part-is-ignored-when-plan-writes-exist' );
+$assert( str_contains( (string) ( $template_part_writes['/tmp/visual-repair-smoke/parts/header.html'] ?? '' ), 'Plan Header' ), 'materialization-plan-template-part-write-is-used' );
+$assert( ! str_contains( (string) ( $template_part_writes['/tmp/visual-repair-smoke/parts/header.html'] ?? '' ), 'Legacy Header' ), 'legacy-template-part-is-ignored-when-plan-writes-exist' );
 $assert( array( 'parts/header.html' ) === ( $template_part_reports[0]['source_paths'] ?? array() ), 'materialization-plan-template-part-source-path-is-reported' );
 
 $navigation_part_result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
-	'/tmp/bac-visual-repair-smoke',
+	'/tmp/visual-repair-smoke',
 	array(
 		'site' => array(
 			'schema'     => 'blocks-engine/php-transformer/materialization-plan/v1',
@@ -193,11 +193,11 @@ $navigation_part_result = Static_Site_Importer_Theme_Materializer::template_part
 $assert( is_array( $navigation_part_result ), 'materialization-plan-navigation-rows-succeed' );
 $navigation_part_writes = is_array( $navigation_part_result ) ? $navigation_part_result['writes'] : array();
 $navigation_part_reports = is_array( $navigation_part_result ) ? $navigation_part_result['reports'] : array();
-$assert( str_contains( (string) ( $navigation_part_writes['/tmp/bac-visual-repair-smoke/parts/header.html'] ?? '' ), 'wp:navigation-link' ), 'materialization-plan-navigation-row-is-used-for-header' );
+$assert( str_contains( (string) ( $navigation_part_writes['/tmp/visual-repair-smoke/parts/header.html'] ?? '' ), 'wp:navigation-link' ), 'materialization-plan-navigation-row-is-used-for-header' );
 $assert( array( 'website/index.html#main-nav' ) === ( $navigation_part_reports[0]['source_paths'] ?? array() ), 'materialization-plan-navigation-source-path-is-reported' );
 
 $missing_navigation_content = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
-	'/tmp/bac-visual-repair-smoke',
+	'/tmp/visual-repair-smoke',
 	array(
 		'site' => array(
 			'schema'     => 'blocks-engine/php-transformer/materialization-plan/v1',
@@ -213,7 +213,7 @@ $assert( $missing_navigation_content instanceof WP_Error, 'materialization-plan-
 $assert( 'static_site_importer_materialization_plan_navigation_content_missing' === ( $missing_navigation_content instanceof WP_Error ? $missing_navigation_content->get_error_code() : '' ), 'materialization-plan-navigation-content-error-code' );
 
 $missing_content = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
-	'/tmp/bac-visual-repair-smoke',
+	'/tmp/visual-repair-smoke',
 	array(
 		'site' => array(
 			'schema'               => 'blocks-engine/php-transformer/materialization-plan/v1',
@@ -229,7 +229,7 @@ $missing_content = Static_Site_Importer_Theme_Materializer::template_part_artifa
 $assert( $missing_content instanceof WP_Error, 'materialization-plan-template-part-content-is-required' );
 $assert( 'static_site_importer_materialization_plan_template_part_content_missing' === ( $missing_content instanceof WP_Error ? $missing_content->get_error_code() : '' ), 'materialization-plan-template-part-content-error-code' );
 
-$source_pages = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'bac_document_pages' );
+$source_pages = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'website_artifact_source_pages' );
 $native_pages = $source_pages->invoke(
 	null,
 	array(
@@ -403,4 +403,4 @@ if ( ! empty( $failures ) ) {
 	exit( 1 );
 }
 
-echo 'OK: BAC visual repair CSS smoke passed (' . $assertions . " assertions)\n";
+echo 'OK: visual repair CSS smoke passed (' . $assertions . " assertions)\n";

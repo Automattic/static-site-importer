@@ -19,7 +19,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 				'entry_file'              => '/tmp/source/index.html',
 				'version'                 => 1,
 				'theme_slug'              => 'static-template-import',
-				'block_artifact_compiler' => array(
+				'blocks_engine'           => array(
 					'available'        => true,
 					'fragment_count'   => 0,
 					'website_artifact' => array(
@@ -97,7 +97,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 				'type'   => 'website_artifact',
 				'source' => 'artifact.json',
 			),
-			'block_artifact_compiler' => array(
+			'blocks_engine'           => array(
 				'website_artifact' => array(
 					'summary'    => array(
 						'schema' => 'block-artifact-compiler/result/v1',

@@ -20,7 +20,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 * @param string                  $theme_dir            Theme directory.
 	 * @param string                  $theme_name           Theme name.
 	 * @param string                  $css                  Source CSS.
-	 * @param array<string,array<int,string>> $visual_repair_styles BAC visual repair CSS content by target.
+	 * @param array<string,array<int,string>> $visual_repair_styles Visual repair CSS content by target.
 	 * @return array<string,string> Absolute stylesheet write paths mapped to file contents.
 	 */
 	public static function stylesheet_writes(
@@ -40,7 +40,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 *
 	 * @param string                          $theme_name           Theme name.
 	 * @param string                          $css                  Source CSS.
-	 * @param array<string,array<int,string>> $visual_repair_styles BAC visual repair CSS content by target.
+	 * @param array<string,array<int,string>> $visual_repair_styles Visual repair CSS content by target.
 	 * @return string
 	 */
 	private static function style_css( string $theme_name, string $css, array $visual_repair_styles = array() ): string {
@@ -54,7 +54,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 * Build editor-style.css.
 	 *
 	 * @param string                          $css                  Source CSS.
-	 * @param array<string,array<int,string>> $visual_repair_styles BAC visual repair CSS content by target.
+	 * @param array<string,array<int,string>> $visual_repair_styles Visual repair CSS content by target.
 	 * @return string
 	 */
 	private static function editor_style_css( string $css, array $visual_repair_styles = array() ): string {
@@ -64,7 +64,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	}
 
 	/**
-	 * Return compiled BAC visual repair CSS for one stylesheet target.
+	 * Return compiled visual repair CSS for one stylesheet target.
 	 *
 	 * @param array<string,array<int,string>> $visual_repair_styles Repair CSS content by target.
 	 * @param string                          $target               Stylesheet target.

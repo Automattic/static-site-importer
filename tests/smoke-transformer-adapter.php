@@ -10,7 +10,7 @@
 
 namespace {
 	function blocks_engine_php_transformer_compile_artifact( array $artifact, array $options = array() ): array {
-		$GLOBALS['ssi_transformer_adapter_artifact_compiler_calls'][] = array( $artifact, $options );
+		$GLOBALS['ssi_transformer_adapter_compile_calls'][] = array( $artifact, $options );
 		if ( isset( $GLOBALS['ssi_transformer_adapter_result_override'] ) && is_array( $GLOBALS['ssi_transformer_adapter_result_override'] ) ) {
 			return $GLOBALS['ssi_transformer_adapter_result_override'];
 		}
@@ -138,14 +138,14 @@ namespace {
 	}
 
 	function blocks_engine_php_transformer_convert_format( string $content, string $from, string $to, array $options = array() ): array {
-		$GLOBALS['ssi_transformer_adapter_format_bridge_calls'][] = array( $content, $from, $to, $options );
+		$GLOBALS['ssi_transformer_adapter_format_conversion_calls'][] = array( $content, $from, $to, $options );
 		return array(
 			'schema'    => 'blocks-engine/php-transformer/result/v1',
 			'status'    => 'success',
 			'documents' => array(
 				array(
 					'format'  => 'html',
-					'content' => '<p>FormatBridge rendered</p>',
+					'content' => '<p>Blocks Engine rendered</p>',
 				),
 			),
 		);
@@ -155,8 +155,8 @@ namespace {
 		define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 	}
 
-	$GLOBALS['ssi_transformer_adapter_format_bridge_calls'] = array();
-	$GLOBALS['ssi_transformer_adapter_artifact_compiler_calls'] = array();
+	$GLOBALS['ssi_transformer_adapter_format_conversion_calls'] = array();
+	$GLOBALS['ssi_transformer_adapter_compile_calls'] = array();
 
 	if ( ! class_exists( 'WP_Error' ) ) {
 		class WP_Error {
@@ -197,11 +197,11 @@ namespace {
 
 	$adapter = new Static_Site_Importer_Transformer_Adapter();
 	$html    = $adapter->blocks_to_html( '<!-- wp:paragraph --><p>Edited</p><!-- /wp:paragraph -->', array( 'source' => 'smoke' ) );
-	$assert( '<p>FormatBridge rendered</p>' === $html, 'format-bridge-result-is-used' );
-	$assert( 1 === count( $GLOBALS['ssi_transformer_adapter_format_bridge_calls'] ), 'format-bridge-called' );
-	$assert( 'blocks' === ( $GLOBALS['ssi_transformer_adapter_format_bridge_calls'][0][1] ?? '' ), 'format-bridge-from-format' );
-	$assert( 'html' === ( $GLOBALS['ssi_transformer_adapter_format_bridge_calls'][0][2] ?? '' ), 'format-bridge-to-format' );
-	$assert( 'smoke' === ( $GLOBALS['ssi_transformer_adapter_format_bridge_calls'][0][3]['source'] ?? '' ), 'format-bridge-options-forwarded' );
+	$assert( '<p>Blocks Engine rendered</p>' === $html, 'format-conversion-result-is-used' );
+	$assert( 1 === count( $GLOBALS['ssi_transformer_adapter_format_conversion_calls'] ), 'format-conversion-called' );
+	$assert( 'blocks' === ( $GLOBALS['ssi_transformer_adapter_format_conversion_calls'][0][1] ?? '' ), 'format-conversion-from-format' );
+	$assert( 'html' === ( $GLOBALS['ssi_transformer_adapter_format_conversion_calls'][0][2] ?? '' ), 'format-conversion-to-format' );
+	$assert( 'smoke' === ( $GLOBALS['ssi_transformer_adapter_format_conversion_calls'][0][3]['source'] ?? '' ), 'format-conversion-options-forwarded' );
 
 	$compiled  = $adapter->compile_website_artifact( array( 'schema' => 'block-artifact-compiler/website-artifact/v1' ), array( 'include_conversion_report' => true ) );
 	$artifacts = $compiled['wordpress_artifacts'] ?? array();
@@ -210,9 +210,15 @@ namespace {
 	$documents = $artifacts['documents'] ?? array();
 	$products  = $compiled['products_manifest'] ?? array();
 	$assert( ! is_wp_error( $compiled ), 'native-compile-succeeds' );
-	$assert( 1 === count( $GLOBALS['ssi_transformer_adapter_artifact_compiler_calls'] ), 'plugin-artifact-helper-called' );
-	$assert( true === ( $GLOBALS['ssi_transformer_adapter_artifact_compiler_calls'][0][1]['include_conversion_report'] ?? false ), 'compile-options-forwarded-as-native-report-request' );
-	$assert( 'block-artifact-compiler/result/v1' === ( $compiled['schema'] ?? '' ), 'native-result-mapped-to-bac-envelope' );
+	$assert( 1 === count( $GLOBALS['ssi_transformer_adapter_compile_calls'] ), 'plugin-compile-helper-called' );
+	$assert( true === ( $GLOBALS['ssi_transformer_adapter_compile_calls'][0][1]['include_conversion_report'] ?? false ), 'compile-options-forwarded-as-native-report-request' );
+	$assert( 'block-artifact-compiler/result/v1' === ( $compiled['schema'] ?? '' ), 'native-result-mapped-to-compiled-envelope' );
+	$assert( 'success' === ( $compiled['conversion_report']['status'] ?? '' ), 'conversion-report-shape-preserved' );
+	$assert( '<!-- wp:paragraph --><p>Native report Home</p><!-- /wp:paragraph -->' === ( $compiled['conversion_report']['serialized_blocks'] ?? '' ), 'conversion-report-uses-native-serialized-blocks' );
+	$assert( 'native_report_diagnostic' === ( $compiled['conversion_report']['diagnostics'][0]['code'] ?? '' ), 'conversion-report-uses-native-diagnostics' );
+	$assert( 'native-conversion-report' === ( $compiled['conversion_report']['fallbacks'][0]['source'] ?? '' ), 'conversion-report-uses-native-fallbacks' );
+	$assert( 'legacy_top_level_diagnostic' !== ( $compiled['conversion_report']['diagnostics'][0]['code'] ?? '' ), 'conversion-report-ignores-top-level-diagnostics' );
+	$assert( 'legacy-top-level' !== ( $compiled['conversion_report']['fallbacks'][0]['source'] ?? '' ), 'conversion-report-ignores-top-level-fallbacks' );
 	$assert( 'website/index.html' === ( $compiled['input']['entry_path'] ?? '' ), 'native-artifact-report-preserved-as-input' );
 	$assert( 'blocks-engine/php-transformer/materialization-plan/v1' === ( $site['schema'] ?? '' ), 'native-materialization-plan-contract-is-used' );
 	$assert( 4 === count( $pages ), 'native-keeps-materialization-plan-pages-without-adapter-filtering' );
@@ -230,8 +236,9 @@ namespace {
 
 	$native_report_compiled = $adapter->compile_website_artifact( array( 'schema' => 'block-artifact-compiler/website-artifact/v1' ), array( 'include_conversion_report' => true ) );
 	$assert( ! is_wp_error( $native_report_compiled ), 'native-report-compile-succeeds' );
-	$assert( 2 === count( $GLOBALS['ssi_transformer_adapter_artifact_compiler_calls'] ), 'plugin-artifact-helper-called-for-native-report' );
-	$assert( true === ( $GLOBALS['ssi_transformer_adapter_artifact_compiler_calls'][1][1]['include_conversion_report'] ?? false ), 'native-report-option-forwarded' );
+	$assert( 2 === count( $GLOBALS['ssi_transformer_adapter_compile_calls'] ), 'plugin-compile-helper-called-for-native-report' );
+	$assert( true === ( $GLOBALS['ssi_transformer_adapter_compile_calls'][1][1]['include_conversion_report'] ?? false ), 'native-report-option-forwarded' );
+	$assert( isset( $native_report_compiled['conversion_report'] ) && is_array( $native_report_compiled['conversion_report'] ), 'native-report-request-exposes-conversion-report' );
 
 	$GLOBALS['ssi_transformer_adapter_result_override'] = array(
 		'schema' => 'blocks-engine/php-transformer/result/v1',

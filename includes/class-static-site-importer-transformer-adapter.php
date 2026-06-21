@@ -129,6 +129,9 @@ class Static_Site_Importer_Transformer_Adapter {
 			'diagnostics'         => isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array(),
 			'provenance'          => isset( $result['provenance'] ) && is_array( $result['provenance'] ) ? $result['provenance'] : array(),
 		);
+		if ( isset( $result['conversion_report'] ) && is_array( $result['conversion_report'] ) ) {
+			$compiled['conversion_report'] = $result['conversion_report'];
+		}
 
 		return $compiled;
 	}
@@ -458,7 +461,7 @@ class Static_Site_Importer_Transformer_Adapter {
 	}
 
 	/**
-	 * Build a compact block tree report without depending on BAC helpers.
+	 * Build a compact block tree report from parsed blocks.
 	 *
 	 * @param array<int|string,mixed> $blocks Parsed blocks.
 	 * @return array<string,int>

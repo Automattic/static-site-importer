@@ -106,7 +106,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'resolved'         => array(),
 				'unresolved'       => array(),
 			),
-			'block_artifact_compiler' => array(
+			'blocks_engine'           => array(
 				'available'      => true,
 				'fragment_count' => 0,
 				'fragments'      => array(),
@@ -145,17 +145,17 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
-	 * Record the bundle-level compiler result used by import_website_artifact().
+	 * Record the bundle-level Blocks Engine result used by import_website_artifact().
 	 *
 	 * @param array<string,mixed> $report   Import report.
 	 * @param array<string,mixed> $compiled Compiler result envelope.
 	 * @return void
 	 */
-	public static function record_website_artifact_compiler_result( array &$report, array $compiled ): void {
+	public static function record_blocks_engine_result( array &$report, array $compiled ): void {
 		$artifacts = isset( $compiled['wordpress_artifacts'] ) && is_array( $compiled['wordpress_artifacts'] ) ? $compiled['wordpress_artifacts'] : array();
 		$site      = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
-		$report['block_artifact_compiler']['available']        = true;
-		$report['block_artifact_compiler']['website_artifact'] = array(
+		$report['blocks_engine']['available']        = true;
+		$report['blocks_engine']['website_artifact'] = array(
 			'summary'     => ( new Static_Site_Importer_Transformer_Adapter() )->summarize_result( $compiled ),
 			'provenance'  => isset( $compiled['provenance'] ) && is_array( $compiled['provenance'] ) ? $compiled['provenance'] : array(),
 			'input'       => isset( $compiled['input'] ) && is_array( $compiled['input'] ) ? $compiled['input'] : array(),
@@ -163,7 +163,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		);
 
 		if ( in_array( (string) ( $site['schema'] ?? '' ), array( 'block-artifact-compiler/compiled-site/v1', 'blocks-engine/php-transformer/compiled-site/v1' ), true ) ) {
-			$report['block_artifact_compiler']['compiled_site'] = self::compiled_site_report_payload( $site );
+			$report['blocks_engine']['compiled_site'] = self::compiled_site_report_payload( $site );
 		}
 		if ( 'blocks-engine/php-transformer/materialization-plan/v1' === (string) ( $site['schema'] ?? '' ) ) {
 			$report['block_artifact_compiler']['materialization_plan'] = self::compiled_site_report_payload( $site );
@@ -530,7 +530,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 */
 	private static function validation_provenance( array $report ): array {
 		$source   = isset( $report['source'] ) && is_array( $report['source'] ) ? $report['source'] : array();
-		$compiler = isset( $report['block_artifact_compiler']['website_artifact'] ) && is_array( $report['block_artifact_compiler']['website_artifact'] ) ? $report['block_artifact_compiler']['website_artifact'] : array();
+		$compiler = isset( $report['blocks_engine']['website_artifact'] ) && is_array( $report['blocks_engine']['website_artifact'] ) ? $report['blocks_engine']['website_artifact'] : array();
 
 		return array(
 			'producer'            => 'static-site-importer',
@@ -1010,7 +1010,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<string,mixed>
 	 */
 	private static function compact_import_report_compiler_summary( array $report ): array {
-		$compiler = isset( $report['block_artifact_compiler'] ) && is_array( $report['block_artifact_compiler'] ) ? $report['block_artifact_compiler'] : array();
+		$compiler = isset( $report['blocks_engine'] ) && is_array( $report['blocks_engine'] ) ? $report['blocks_engine'] : array();
 		$summary  = array(
 			'available'      => ! empty( $compiler['available'] ),
 			'fragment_count' => (int) ( $compiler['fragment_count'] ?? 0 ),

@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Creates, updates, and describes WordPress pages from BAC source pages.
+ * Creates, updates, and describes WordPress pages from source pages.
  */
 class Static_Site_Importer_Page_Materializer {
 	/**
@@ -165,7 +165,7 @@ class Static_Site_Importer_Page_Materializer {
 	 * @return string
 	 */
 	public static function page_slug( string $filename, ?Static_Site_Importer_Source_Page $page = null ): string {
-		if ( $page instanceof Static_Site_Importer_Source_Page && 'bac_document' === $page->type() && self::is_index_source_filename( $filename ) && filter_var( $page->metadata_value( 'entrypoint' ), FILTER_VALIDATE_BOOLEAN ) ) {
+		if ( $page instanceof Static_Site_Importer_Source_Page && 'wordpress_document_artifact' === $page->type() && self::is_index_source_filename( $filename ) && filter_var( $page->metadata_value( 'entrypoint' ), FILTER_VALIDATE_BOOLEAN ) ) {
 			return 'home';
 		}
 
@@ -219,7 +219,7 @@ class Static_Site_Importer_Page_Materializer {
 	}
 
 	/**
-	 * Prepare one BAC document body for WordPress writes.
+	 * Prepare one source page body for WordPress writes.
 	 *
 	 * @param Static_Site_Importer_Source_Page $page        Source page.
 	 * @param array<int,array<string,mixed>>    $diagnostics Diagnostics, passed by reference.
@@ -230,10 +230,10 @@ class Static_Site_Importer_Page_Materializer {
 		if ( 'blocks' !== $page->body_format() ) {
 			$diagnostics[] = array(
 				'type'        => 'unsupported_document_artifact_format',
-				'source'      => 'block-artifact-compiler/documents',
+				'source'      => 'blocks-engine/documents',
 				'source_path' => $source_path,
 				'format'      => $page->body_format(),
-				'message'     => 'Website artifact imports require BAC document artifacts with serialized block markup.',
+				'message'     => 'Website artifact imports require document artifacts with serialized block markup.',
 			);
 			return '';
 		}

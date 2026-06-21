@@ -194,7 +194,7 @@ Important behavior:
 
 ## Website Artifact Export
 
-`static-site-importer/export-theme` exports an imported or active block theme as a BAC-compatible website artifact. SSI owns the WordPress import/export/materialization path; Blocks Engine PHP transformer owns generic website artifact compilation. Studio Web, WP Codebox, and other products should consume the exported `website_artifact` object rather than SSI-specific static-site wrappers.
+`static-site-importer/export-theme` exports an imported or active block theme as a Blocks Engine website artifact. SSI owns the WordPress import/export/materialization path; Blocks Engine PHP transformer owns generic website artifact compilation. Studio Web, WP Codebox, and other products should consume the exported `website_artifact` object rather than SSI-specific static-site wrappers.
 
 The export envelope includes:
 
@@ -249,9 +249,9 @@ wp eval-file tests/smoke-wordpress-is-dead-fixture.php
 wp eval-file tests/smoke-mixed-source-fixture.php
 ```
 
-`php tests/smoke-transformer-adapter.php` runs outside WordPress and verifies the SSI-owned transformer adapter prefers php-transformer FormatBridge for export rendering, consumes the native artifact compiler's generic compiled-site/source-document/asset reports, keeps WordPress page mapping in SSI, and still contains the isolated legacy BAC compiled-site fallback.
+`php tests/smoke-transformer-adapter.php` runs outside WordPress and verifies the SSI-owned transformer adapter uses Blocks Engine format conversion for export rendering, consumes the native compiled-site/source-document/asset reports, and keeps WordPress page mapping in SSI.
 
-The native compiled-site report may include route metadata for HTML pages before every route has block markup. SSI's adapter records the generic report fields it consumes, but only forwards pages with matching materializable document artifacts to the current WordPress page materializer. The legacy BAC fallback remains isolated for older runtimes that emit document artifacts without a compiled-site route contract.
+The native compiled-site report may include route metadata for HTML pages before every route has block markup. SSI's adapter records the generic report fields it consumes, but only forwards pages with matching materializable document artifacts to the current WordPress page materializer.
 
 The `wordpress-is-dead` smoke verifies the multi-page fixture, generated block-theme artifacts, internal-link rewrites, persistent navigation entities, source CSS preservation, editor style support, conservative `theme.json` palette extraction, and selector fidelity across stored/rendered paths. The `mixed-source-site` smoke verifies an Astro-like source tree with `index.html`, nested Markdown content documents, explicit skipped-MDX diagnostics, report source counts, and generated page block markup.
 
@@ -308,6 +308,6 @@ The intended dependency direction is:
 Static Site Importer -> Blocks Engine PHP transformer
 ```
 
-SSI import reports consume Blocks Engine PHP transformer result envelopes for conversion-quality diagnostics, and record the compiled-site contract when importing website artifacts. BAC/BFB/H2BC names remain compatibility schemas or wrapper surfaces for older consumers; SSI should not call those lower-level converter packages directly or re-derive semantic page-route intent when the transformer supplies it.
+SSI import reports consume Blocks Engine PHP transformer result envelopes for conversion-quality diagnostics, and record the compiled-site contract when importing website artifacts. Legacy schema names remain wire contracts only; SSI should not call lower-level converter packages directly or re-derive semantic page-route intent when the transformer supplies it.
 
 Imported pages remain WordPress pages for routing, titles, front-page assignment, editor visibility, and body content edits. Their imported body layouts live on the page posts as block markup in `post_content`. The generated block theme owns shared header/footer parts, optional background decoration, frontend/editor styles, scripts, and template wrappers that render page bodies through `core/post-content`; the generic `templates/page.html` stays the fallback for pages created after import.

@@ -1,6 +1,6 @@
 <?php
 /**
- * BAC document metadata reporting helpers.
+ * Document metadata reporting helpers.
  *
  * @package StaticSiteImporter
  */
@@ -17,7 +17,7 @@ class Static_Site_Importer_Document_Metadata_Reporter {
 	 * Record compiler-routed full-document metadata and asset references.
 	 *
 	 * @param array<string,mixed> $report    Conversion report envelope, passed by reference.
-	 * @param array<string,mixed> $artifacts WordPress artifacts from BAC.
+	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
 	 * @return void
 	 */
 	public static function record( array &$report, array $artifacts ): void {
@@ -28,7 +28,7 @@ class Static_Site_Importer_Document_Metadata_Reporter {
 
 		$normalized = array(
 			'schema'      => 'static-site-importer/document-metadata/v1',
-			'source'      => 'block-artifact-compiler/document_metadata',
+			'source'      => 'blocks-engine/document_metadata',
 			'source_path' => isset( $metadata['source_path'] ) && is_scalar( $metadata['source_path'] ) ? (string) $metadata['source_path'] : '',
 			'title'       => isset( $metadata['title'] ) && is_scalar( $metadata['title'] ) ? sanitize_text_field( (string) $metadata['title'] ) : '',
 			'meta'        => self::normalize_document_metadata_rows( $metadata['meta'] ?? array(), array( 'charset', 'name', 'property', 'http_equiv', 'content' ) ),

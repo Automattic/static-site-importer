@@ -85,7 +85,7 @@ class Static_Site_Importer_Source_Page {
 	}
 
 	/**
-	 * Create a source page from a BAC WordPress document artifact.
+	 * Create a source page from a WordPress document artifact.
 	 *
 	 * @param array<string,mixed> $artifact WordPress document artifact.
 	 * @return self|WP_Error
@@ -96,7 +96,7 @@ class Static_Site_Importer_Source_Page {
 			$source_key = self::normalize_artifact_source_key( isset( $artifact['slug'] ) ? (string) $artifact['slug'] : '' );
 		}
 		if ( '' === $source_key ) {
-			return new WP_Error( 'static_site_importer_bac_document_missing_source', 'BAC document artifact is missing a source_path/path/slug.' );
+			return new WP_Error( 'static_site_importer_document_artifact_missing_source', 'WordPress document artifact is missing a source_path/path/slug.' );
 		}
 
 		$content = '';
@@ -107,7 +107,7 @@ class Static_Site_Importer_Source_Page {
 			}
 		}
 		if ( '' === trim( $content ) ) {
-			return new WP_Error( 'static_site_importer_bac_document_empty_content', sprintf( 'BAC document artifact is missing block markup: %s', $source_key ) );
+			return new WP_Error( 'static_site_importer_document_artifact_empty_content', sprintf( 'WordPress document artifact is missing block markup: %s', $source_key ) );
 		}
 
 		$metadata = array();
@@ -127,7 +127,7 @@ class Static_Site_Importer_Source_Page {
 		$title    = $metadata['title'] ?? '';
 		$document = new Static_Site_Importer_Document( '<!doctype html><html><head><title>' . esc_html( $title ) . '</title></head><body><main>' . $content . '</main></body></html>' );
 
-		return new self( $source_key, $source_key, 'bac_document', $document, $content, 'blocks', $metadata );
+		return new self( $source_key, $source_key, 'wordpress_document_artifact', $document, $content, 'blocks', $metadata );
 	}
 
 	/**
@@ -244,7 +244,7 @@ class Static_Site_Importer_Source_Page {
 	}
 
 	/**
-	 * Normalize a BAC document source key for report/result maps.
+	 * Normalize a document source key for report/result maps.
 	 *
 	 * @param string $source Source path or slug.
 	 * @return string

@@ -316,7 +316,7 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 	$multi_report    = json_decode( $read( $multi_page_result['report_path'] ), true );
 	$source_docs     = $multi_report['source_documents'] ?? array();
 	$blocks_engine_documents = $source_docs['blocks_engine_documents'] ?? array();
-	$materialization_plan = $multi_report['block_artifact_compiler']['materialization_plan'] ?? array();
+	$materialization_plan = $multi_report['blocks_engine']['materialization_plan'] ?? array();
 	$block_documents = $multi_report['generated_theme']['block_documents'] ?? array();
 	$template_parts  = $multi_report['generated_theme']['template_parts'] ?? array();
 	$documents_by_source = array();

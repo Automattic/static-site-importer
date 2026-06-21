@@ -27,10 +27,10 @@ file_put_contents( $theme_dir . '/templates/front-page.html', '<!-- wp:post-cont
 file_put_contents( $theme_dir . '/import-report.json', '{"status":"completed","source_documents":{"direct_website_artifact":{"document_count":1}}}' );
 
 $GLOBALS['ssi_export_theme_root'] = $theme_root;
-$GLOBALS['ssi_export_format_bridge_calls'] = array();
+$GLOBALS['ssi_export_format_conversion_calls'] = array();
 
 function blocks_engine_php_transformer_convert_format( string $content, string $from, string $to, array $options = array() ): array {
-	$GLOBALS['ssi_export_format_bridge_calls'][] = array( $from, $to, $options );
+	$GLOBALS['ssi_export_format_conversion_calls'][] = array( $from, $to, $options );
 	return array(
 		'schema'    => 'blocks-engine/php-transformer/result/v1',
 		'status'    => 'success',
@@ -232,11 +232,11 @@ $assert( 'smoke' === ( $artifact['provenance']['source_metadata']['source'] ?? '
 $assert( 'website/import-report.json' === ( $artifact['reports'][0]['path'] ?? '' ), 'report-ref' );
 $assert( 'smoke' === ( $artifact['report']['source_metadata']['source'] ?? '' ), 'source-metadata-preserved' );
 $assert( 'completed' === ( $artifact['report']['import_report']['status'] ?? '' ), 'import-report-preserved' );
-$export_format_bridge_calls = array_filter(
-	$GLOBALS['ssi_export_format_bridge_calls'],
+$export_format_conversion_calls = array_filter(
+	$GLOBALS['ssi_export_format_conversion_calls'],
 	static fn ( array $call ): bool => 'blocks' === $call[0] && 'html' === $call[1]
 );
-$assert( count( $export_format_bridge_calls ) >= 4, 'format-bridge-called-for-block-to-html' );
+$assert( count( $export_format_conversion_calls ) >= 4, 'format-conversion-called-for-block-to-html' );
 $assert( class_exists( 'Static_Site_Importer_Transformer_Adapter' ), 'export-routes-through-transformer-adapter' );
 
 if ( $failures ) {
