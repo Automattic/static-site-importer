@@ -1,5 +1,5 @@
 {
-  "schema": "block-artifact-compiler/website-artifact/v1",
+  "schema": "blocks-engine/php-transformer/site-artifact/v1",
   "html": "<main><section class=\"hero\"><h1>Website Artifact Fixture</h1><p>Compiled before SSI materialization.</p></section></main>",
   "css": ".hero{padding:4rem;background:#f6f2ea;color:#1b1b1b}",
   "js": "document.documentElement.dataset.fixture = 'website-artifact';"

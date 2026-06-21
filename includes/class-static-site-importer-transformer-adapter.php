@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Static_Site_Importer_Transformer_Adapter {
 
-	public const WEBSITE_ARTIFACT_SCHEMA = 'block-artifact-compiler/website-artifact/v1';
+	public const WEBSITE_ARTIFACT_SCHEMA = 'blocks-engine/php-transformer/site-artifact/v1';
 	public const TRANSFORMER_RESULT_SCHEMA = 'blocks-engine/php-transformer/result/v1';
 	private const CONVERSION_REPORT_OPTION = 'include_conversion_report';
 

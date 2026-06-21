@@ -109,7 +109,7 @@ namespace {
 		}
 	};
 
-	$compiled = ( new Static_Site_Importer_Transformer_Adapter() )->compile_website_artifact( array( 'schema' => 'block-artifact-compiler/website-artifact/v1' ) );
+	$compiled = ( new Static_Site_Importer_Transformer_Adapter() )->compile_website_artifact( array( 'schema' => 'blocks-engine/php-transformer/site-artifact/v1' ) );
 	$products = is_array( $compiled ) ? ( $compiled['products_manifest'] ?? array() ) : array();
 
 	$assert( ! is_wp_error( $compiled ), 'compile-succeeds', is_wp_error( $compiled ) ? $compiled->get_error_message() : '' );

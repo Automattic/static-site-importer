@@ -1043,7 +1043,7 @@ class Static_Site_Importer_Theme_Generator {
 				return self::source_pages_from_materialization_plan( $site );
 			}
 
-			if ( ! in_array( (string) ( $site['schema'] ?? '' ), array( 'block-artifact-compiler/compiled-site/v1', 'blocks-engine/php-transformer/compiled-site/v1' ), true ) ) {
+			if ( 'blocks-engine/php-transformer/compiled-site/v1' !== (string) ( $site['schema'] ?? '' ) ) {
 				return new WP_Error( 'static_site_importer_compiled_site_missing', 'Website artifact document pages require a supported compiled-site contract.' );
 			}
 

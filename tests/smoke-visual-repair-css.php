@@ -163,7 +163,7 @@ $template_part_result = Static_Site_Importer_Theme_Materializer::template_part_a
 			array(
 				'slug'         => 'header',
 				'area'         => 'header',
-				'block_markup' => '<!-- wp:paragraph --><p>Legacy Header</p><!-- /wp:paragraph -->',
+				'block_markup' => '<!-- wp:paragraph --><p>Fallback Header</p><!-- /wp:paragraph -->',
 			),
 		),
 	)
@@ -172,7 +172,7 @@ $assert( is_array( $template_part_result ), 'materialization-plan-template-part-
 $template_part_writes = is_array( $template_part_result ) ? $template_part_result['writes'] : array();
 $template_part_reports = is_array( $template_part_result ) ? $template_part_result['reports'] : array();
 $assert( str_contains( (string) ( $template_part_writes['/tmp/visual-repair-smoke/parts/header.html'] ?? '' ), 'Plan Header' ), 'materialization-plan-template-part-write-is-used' );
-$assert( ! str_contains( (string) ( $template_part_writes['/tmp/visual-repair-smoke/parts/header.html'] ?? '' ), 'Legacy Header' ), 'legacy-template-part-is-ignored-when-plan-writes-exist' );
+$assert( ! str_contains( (string) ( $template_part_writes['/tmp/visual-repair-smoke/parts/header.html'] ?? '' ), 'Fallback Header' ), 'fallback-template-part-is-ignored-when-plan-writes-exist' );
 $assert( array( 'parts/header.html' ) === ( $template_part_reports[0]['source_paths'] ?? array() ), 'materialization-plan-template-part-source-path-is-reported' );
 
 $navigation_part_result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
@@ -342,7 +342,7 @@ $asset_result    = Static_Site_Importer_Theme_Materializer::materialize_website_
 			array(
 				'path'    => 'assets/site.css',
 				'kind'    => 'css',
-				'content' => '.legacy-artifact{color:red}',
+				'content' => '.top-level-artifact{color:red}',
 			),
 		),
 	)
@@ -350,7 +350,7 @@ $asset_result    = Static_Site_Importer_Theme_Materializer::materialize_website_
 $assert( is_array( $asset_result ), 'materialization-plan-assets-succeed' );
 $asset_result = is_array( $asset_result ) ? $asset_result : array( 'css' => '', 'assets' => array() );
 $assert( str_contains( (string) $asset_result['css'], '.native-plan' ), 'materialization-plan-asset-css-wins' );
-$assert( ! str_contains( (string) $asset_result['css'], '.legacy-artifact' ), 'legacy-css-is-ignored-when-native-plan-assets-have-payloads' );
+$assert( ! str_contains( (string) $asset_result['css'], '.top-level-artifact' ), 'top-level-css-is-ignored-when-native-plan-assets-have-payloads' );
 $assert( file_exists( $asset_theme_dir . '/assets/materialized/assets/logo.png' ), 'materialization-plan-binary-asset-is-written' );
 $assert( 'materialization_plan.assets' === ( $asset_result['assets']['assets/logo.png']['origin'] ?? '' ), 'materialization-plan-asset-origin-is-reported' );
 $assert( str_ends_with( (string) ( $asset_result['assets']['assets/logo.png']['final_url'] ?? '' ), '/assets/materialized/assets/logo.png' ), 'materialization-plan-asset-final-url-shape' );
@@ -372,13 +372,13 @@ $metadata_only = Static_Site_Importer_Theme_Materializer::materialize_website_ar
 			array(
 				'path'    => 'assets/site.css',
 				'kind'    => 'css',
-				'content' => '.legacy-metadata-only{color:blue}',
+				'content' => '.top-level-metadata-only{color:blue}',
 			),
 		),
 	)
 );
-$assert( is_array( $metadata_only ), 'metadata-only-materialization-plan-assets-fall-back-to-legacy' );
-$assert( str_contains( (string) ( is_array( $metadata_only ) ? $metadata_only['css'] : '' ), '.legacy-metadata-only' ), 'legacy-assets-used-when-native-plan-assets-have-no-payload-contract' );
+$assert( is_array( $metadata_only ), 'metadata-only-materialization-plan-assets-fall-back-to-top-level-assets' );
+$assert( str_contains( (string) ( is_array( $metadata_only ) ? $metadata_only['css'] : '' ), '.top-level-metadata-only' ), 'top-level-assets-used-when-native-plan-assets-have-no-payload-contract' );
 
 $bad_asset = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files(
 	sys_get_temp_dir() . '/ssi-materialization-plan-assets-bad-' . uniqid( '', true ),

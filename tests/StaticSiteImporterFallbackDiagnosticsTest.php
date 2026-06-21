@@ -278,7 +278,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		$analyze->invoke(
 			null,
 			array(
-				'/tmp/generated/templates/page.html' => '<!-- wp:freeform --><div class="legacy-widget"><marquee>Sale</marquee></div><!-- /wp:freeform -->',
+				'/tmp/generated/templates/page.html' => '<!-- wp:freeform --><div class="unsupported-widget"><marquee>Sale</marquee></div><!-- /wp:freeform -->',
 			),
 			'/tmp/generated'
 		);
@@ -299,7 +299,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		$this->assertSame( 'generated_document_contains_core_freeform', $diagnostics[0]['reason_code'] ?? '' );
 		$this->assertSame( 'replace_fallback_block', $diagnostics[0]['suggested_repair_class'] ?? '' );
 		$this->assertSame( 'templates/page.html', $diagnostics[0]['source_path'] ?? '' );
-		$this->assertSame( 'div.legacy-widget', $diagnostics[0]['selector'] ?? '' );
+		$this->assertSame( 'div.unsupported-widget', $diagnostics[0]['selector'] ?? '' );
 		$this->assertSame( '0', $diagnostics[0]['context']['block_path'] ?? '' );
 	}
 }

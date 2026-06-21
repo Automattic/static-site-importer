@@ -171,7 +171,7 @@ $read = static function ( string $path ): string {
 
 $result = Static_Site_Importer_Theme_Generator::import_website_artifact(
 	array(
-		'schema' => 'block-artifact-compiler/website-artifact/v1',
+		'schema' => 'blocks-engine/php-transformer/site-artifact/v1',
 		'files'  => array(
 			array(
 				'path'    => 'index.html',
@@ -259,7 +259,7 @@ if ( ! is_wp_error( $result ) ) {
 
 $missing_template_parts_result = Static_Site_Importer_Theme_Generator::import_website_artifact(
 	array(
-		'schema' => 'block-artifact-compiler/website-artifact/v1',
+		'schema' => 'blocks-engine/php-transformer/site-artifact/v1',
 		'files'  => array(
 			array(
 				'path'    => 'no-header.html',
@@ -285,7 +285,7 @@ if ( ! is_wp_error( $missing_template_parts_result ) ) {
 
 $multi_page_result = Static_Site_Importer_Theme_Generator::import_website_artifact(
 	array(
-		'schema'     => 'block-artifact-compiler/website-artifact/v1',
+		'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
 		'entrypoint' => 'website/index.html',
 		'files'      => array(
 			array(

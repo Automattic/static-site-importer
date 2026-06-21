@@ -142,7 +142,7 @@ add_filter(
 		return array(
 			'provider'        => 'test-private-runtime',
 			'artifact'        => array(
-				'schema' => 'block-artifact-compiler/website-artifact/v1',
+				'schema' => 'blocks-engine/php-transformer/site-artifact/v1',
 				'files'  => array(
 					array(
 						'path'    => 'website/index.html',

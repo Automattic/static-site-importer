@@ -25,7 +25,7 @@ namespace {
 						'source_reports'    => array(
 							'artifact'      => array(
 								'schema'          => 'blocks-engine/php-transformer/site-artifact/v1',
-								'original_schema' => 'block-artifact-compiler/website-artifact/v1',
+								'original_schema' => 'blocks-engine/php-transformer/site-artifact/v1',
 								'entry_path'      => 'website/index.html',
 								'entrypoints'     => array( 'website/index.html' ),
 								'file_count'      => 3,
@@ -117,7 +117,7 @@ namespace {
 							),
 						),
 						'assets'            => array(
-							array( 'path' => 'assets/legacy-site.css', 'role' => 'stylesheet' ),
+							array( 'path' => 'assets/top-level-site.css', 'role' => 'stylesheet' ),
 						),
 						'diagnostics'       => array(
 							array(
@@ -203,7 +203,7 @@ namespace {
 	$assert( 'html' === ( $GLOBALS['ssi_transformer_adapter_format_conversion_calls'][0][2] ?? '' ), 'format-conversion-to-format' );
 	$assert( 'smoke' === ( $GLOBALS['ssi_transformer_adapter_format_conversion_calls'][0][3]['source'] ?? '' ), 'format-conversion-options-forwarded' );
 
-	$compiled  = $adapter->compile_website_artifact( array( 'schema' => 'block-artifact-compiler/website-artifact/v1' ), array( 'include_conversion_report' => true ) );
+	$compiled  = $adapter->compile_website_artifact( array( 'schema' => 'blocks-engine/php-transformer/site-artifact/v1' ), array( 'include_conversion_report' => true ) );
 	$artifacts = $compiled['artifacts'] ?? array();
 	$site      = $artifacts['site'] ?? array();
 	$pages     = $site['pages'] ?? array();
@@ -229,12 +229,12 @@ namespace {
 	$assert( 1 === count( $documents ), 'native-documents-preserve-transformer-documents-without-site-report-synthesis' );
 	$assert( 'content/about.md' === ( $documents[0]['source_path'] ?? '' ), 'native-document-from-transformer-documents' );
 	$assert( 'assets/native-site.css' === ( $artifacts['files'][0]['path'] ?? '' ), 'native-materialization-plan-assets-drive-artifact-files' );
-	$assert( 'assets/legacy-site.css' !== ( $artifacts['files'][0]['path'] ?? '' ), 'legacy-assets-do-not-override-native-materialization-plan-assets' );
+	$assert( 'assets/top-level-site.css' !== ( $artifacts['files'][0]['path'] ?? '' ), 'top-level-assets-do-not-override-native-materialization-plan-assets' );
 	$assert( 'rye-loaf-canonical' === ( $products[0]['slug'] ?? '' ), 'native-product-slug-mapped-from-generic-report' );
 	$assert( '12.00' === ( $products[0]['regular_price'] ?? '' ), 'native-product-price-normalized-from-generic-report' );
 	$assert( array( 'Bread' ) === ( $products[0]['categories'] ?? array() ), 'native-product-categories-mapped-from-generic-report' );
 
-	$native_report_compiled = $adapter->compile_website_artifact( array( 'schema' => 'block-artifact-compiler/website-artifact/v1' ), array( 'include_conversion_report' => true ) );
+	$native_report_compiled = $adapter->compile_website_artifact( array( 'schema' => 'blocks-engine/php-transformer/site-artifact/v1' ), array( 'include_conversion_report' => true ) );
 	$assert( ! is_wp_error( $native_report_compiled ), 'native-report-compile-succeeds' );
 	$assert( 2 === count( $GLOBALS['ssi_transformer_adapter_compile_calls'] ), 'plugin-compile-helper-called-for-native-report' );
 	$assert( true === ( $GLOBALS['ssi_transformer_adapter_compile_calls'][1][1]['include_conversion_report'] ?? false ), 'native-report-option-forwarded' );
@@ -247,7 +247,7 @@ namespace {
 			'artifact' => array( 'entry_path' => 'website/index.html' ),
 		),
 	);
-	$missing_plan = $adapter->compile_website_artifact( array( 'schema' => 'block-artifact-compiler/website-artifact/v1' ) );
+	$missing_plan = $adapter->compile_website_artifact( array( 'schema' => 'blocks-engine/php-transformer/site-artifact/v1' ) );
 	unset( $GLOBALS['ssi_transformer_adapter_result_override'] );
 	$assert( is_wp_error( $missing_plan ), 'missing-materialization-plan-errors' );
 	$assert( 'static_site_importer_transformer_missing_materialization_plan' === ( is_wp_error( $missing_plan ) ? $missing_plan->get_error_code() : '' ), 'missing-materialization-plan-error-code' );

@@ -197,10 +197,10 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 $assert( ! is_wp_error( $result ), 'export-succeeds', is_wp_error( $result ) ? $result->get_error_message() : '' );
 $assert( true === ( $result['success'] ?? false ), 'ability-success' );
 $artifact = $result['website_artifact'] ?? array();
-$assert( ! isset( $result['artifact_set'] ), 'legacy-artifact-set-removed' );
-$assert( ! isset( $result['files'] ), 'legacy-top-level-files-removed' );
-$assert( ! isset( $result['report'] ), 'legacy-top-level-report-removed' );
-$assert( 'block-artifact-compiler/website-artifact/v1' === ( $artifact['schema'] ?? '' ), 'website-artifact-schema' );
+$assert( ! isset( $result['artifact_set'] ), 'artifact-set-wrapper-removed' );
+$assert( ! isset( $result['files'] ), 'top-level-files-wrapper-removed' );
+$assert( ! isset( $result['report'] ), 'top-level-report-wrapper-removed' );
+$assert( 'blocks-engine/php-transformer/site-artifact/v1' === ( $artifact['schema'] ?? '' ), 'website-artifact-schema' );
 $assert( 'website' === ( $artifact['artifact_type'] ?? '' ), 'artifact-type' );
 $assert( 1 === ( $artifact['version'] ?? 0 ), 'artifact-version' );
 $assert( 'website' === ( $artifact['root'] ?? '' ), 'artifact-root' );
