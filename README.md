@@ -209,6 +209,19 @@ The export envelope includes:
 
 The default root is `website` with `entrypoint: "website/index.html"`. Callers can pass any safe single-segment root with a matching entrypoint, such as `root: "artifact"` and `entrypoint: "artifact/index.html"`.
 
+## Product Handoff Contract
+
+The product handoff contract is defined in `docs/product-handoff-contract.md` and locked by `tests/fixtures/product-handoff-contract/v1.json` plus `tests/smoke-product-handoff-contract.php`.
+
+The handoff path is:
+
+- product caller sends a `blocks-engine/php-transformer/site-artifact/v1` input artifact;
+- Blocks Engine returns `blocks-engine/php-transformer/result/v1` with a canonical `blocks-engine/php-transformer/materialization-plan/v1`;
+- SSI consumes that plan, writes WordPress state, and returns `static-site-importer/import-report/v1` with import validation and finding packet artifacts;
+- Codebox may validate the WordPress result and return `wp-codebox/validation-artifact-envelope/v1` artifact references.
+
+Blocks Engine does not know about Codebox. Products that need sandbox validation request it after SSI materializes WordPress.
+
 ## Validation
 
 The repository has both WordPress-side fixture coverage and generated-artifact validation.

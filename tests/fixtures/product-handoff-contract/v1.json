@@ -1,0 +1,144 @@
+{
+  "schema": "static-site-importer/product-handoff-contract/v1",
+  "version": 1,
+  "stages": {
+    "input_artifact": {
+      "owner": "product_caller",
+      "consumer": "blocks_engine",
+      "schema": "blocks-engine/php-transformer/site-artifact/v1",
+      "required_fields": ["schema", "files", "root", "entrypoint"],
+      "notes": "Portable static website bundle. Callers provide files; Blocks Engine compiles them."
+    },
+    "blocks_engine_result": {
+      "owner": "blocks_engine",
+      "consumer": "static_site_importer",
+      "schema": "blocks-engine/php-transformer/result/v1",
+      "required_fields": ["schema", "status", "source_reports.materialization_plan"],
+      "materialization_plan": {
+        "schema": "blocks-engine/php-transformer/materialization-plan/v1",
+        "required_fields": ["schema", "source_schema", "entry_path", "pages", "assets"]
+      },
+      "notes": "Blocks Engine emits the canonical WordPress materialization plan and remains unaware of Codebox validation details."
+    },
+    "ssi_import_report": {
+      "owner": "static_site_importer",
+      "consumer": "product_caller",
+      "schema": "static-site-importer/import-report/v1",
+      "required_fields": ["version", "theme_slug", "source", "blocks_engine", "generated_theme", "quality", "diagnostics", "import_validation_result", "finding_packets"],
+      "nested_artifacts": {
+        "import_validation_result": "blocks-engine/import-validation-result/v1",
+        "finding_packets": "blocks-engine/finding-packets/v1",
+        "artifact_diagnostics_fallback": "static-site-importer/artifact-diagnostics/v1"
+      },
+      "notes": "SSI writes WordPress state and reports materialized theme, page, asset, quality, and repair-loop outputs."
+    },
+    "codebox_validation_artifact_envelope": {
+      "owner": "wp_codebox",
+      "consumer": "product_caller",
+      "schema": "wp-codebox/validation-artifact-envelope/v1",
+      "required_fields": ["schema", "status", "artifacts", "refs"],
+      "artifact_kinds": ["render", "visual_comparison", "wordpress_state", "import_report", "diagnostics"],
+      "notes": "Codebox validates the WordPress result and returns artifact references. SSI treats this as an optional downstream validation envelope."
+    }
+  },
+  "example": {
+    "input_artifact": {
+      "schema": "blocks-engine/php-transformer/site-artifact/v1",
+      "root": "website",
+      "entrypoint": "website/index.html",
+      "files": [
+        {
+          "path": "website/index.html",
+          "role": "document",
+          "kind": "html",
+          "mime_type": "text/html",
+          "encoding": "utf-8",
+          "content": "<!doctype html><html><body><main><h1>Atlas Bakery</h1></main></body></html>"
+        }
+      ]
+    },
+    "blocks_engine_result": {
+      "schema": "blocks-engine/php-transformer/result/v1",
+      "status": "success",
+      "source_reports": {
+        "materialization_plan": {
+          "schema": "blocks-engine/php-transformer/materialization-plan/v1",
+          "source_schema": "blocks-engine/php-transformer/compiled-site/v1",
+          "entry_path": "website/index.html",
+          "pages": [
+            {
+              "source_path": "website/index.html",
+              "entrypoint": true,
+              "post_type": "page",
+              "slug": "home",
+              "title": "Atlas Bakery",
+              "block_markup": "<!-- wp:heading {\"level\":1} --><h1 class=\"wp-block-heading\">Atlas Bakery</h1><!-- /wp:heading -->"
+            }
+          ],
+          "assets": []
+        }
+      }
+    },
+    "ssi_import_report": {
+      "version": 1,
+      "schema": "static-site-importer/import-report/v1",
+      "theme_slug": "atlas-bakery",
+      "source": {
+        "type": "website_artifact",
+        "source": "artifact.json"
+      },
+      "blocks_engine": {
+        "available": true,
+        "website_artifact": {
+          "summary": {
+            "schema": "blocks-engine/php-transformer/result/v1",
+            "status": "success",
+            "source": "artifact.json"
+          }
+        }
+      },
+      "generated_theme": {
+        "slug": "atlas-bakery",
+        "files": ["style.css", "templates/front-page.html", "patterns/page-home.php"]
+      },
+      "quality": {
+        "fallback_count": 0,
+        "core_html_block_count": 0,
+        "invalid_block_document_count": 0
+      },
+      "diagnostics": [],
+      "import_validation_result": {
+        "schema": "blocks-engine/import-validation-result/v1",
+        "artifact_type": "ImportValidationResult",
+        "version": 1,
+        "status": "passed"
+      },
+      "finding_packets": {
+        "schema": "blocks-engine/finding-packets/v1",
+        "artifact_type": "FindingPacketSet",
+        "version": 1,
+        "status": "clean",
+        "count": 0,
+        "packets": []
+      }
+    },
+    "codebox_validation_artifact_envelope": {
+      "schema": "wp-codebox/validation-artifact-envelope/v1",
+      "status": "passed",
+      "artifacts": [
+        {
+          "kind": "import_report",
+          "ref": "artifact://codebox/run-123/import-report.json"
+        },
+        {
+          "kind": "visual_comparison",
+          "ref": "artifact://codebox/run-123/visual-comparison.json"
+        }
+      ],
+      "refs": {
+        "run": "codebox-run-123",
+        "site": "wordpress-site-123"
+      }
+    }
+  }
+}

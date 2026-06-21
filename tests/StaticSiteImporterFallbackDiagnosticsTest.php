@@ -90,6 +90,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 	 */
 	public function test_import_validation_result_and_finding_packets_are_machine_readable(): void {
 		$report = array(
+			'schema'                  => 'static-site-importer/import-report/v1',
 			'entry_file'              => '/tmp/source/index.html',
 			'version'                 => 1,
 			'theme_slug'              => 'static-template-import',
@@ -245,6 +246,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		);
 
 		$report      = $report_property->getValue();
+		$this->assertSame( 'static-site-importer/import-report/v1', $report['schema'] ?? '' );
 		$diagnostics = array_values(
 			array_filter(
 				$report['diagnostics'] ?? array(),

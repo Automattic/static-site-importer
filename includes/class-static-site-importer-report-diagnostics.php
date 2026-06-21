@@ -12,6 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Transformer_Adapter' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-transformer-adapter.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Product_Handoff_Contract' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-product-handoff-contract.php';
+}
 
 /**
  * Builds SSI import reports and normalizes diagnostics for repair loops.
@@ -27,6 +30,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 */
 	public static function new_conversion_report( string $html_path, array $source_metadata = array() ): array {
 		return array(
+			'schema'                  => Static_Site_Importer_Product_Handoff_Contract::SSI_IMPORT_REPORT_SCHEMA,
 			'version'                 => 1,
 			'entry_file'              => $html_path,
 			'source'                  => array_merge(
