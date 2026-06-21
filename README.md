@@ -9,7 +9,7 @@ Static Site Importer is a WordPress plugin. It requires the [Blocks Engine PHP t
 Static Site Importer is the WordPress materialization layer for static website inputs. It accepts two related shapes:
 
 - Static source imports: an HTML entry file, pasted HTML document, public HTML URL, direct HTML upload, or ZIP source tree.
-- Generated website artifacts: a `block-artifact-compiler/website-artifact/v1` bundle, such as the website artifact emitted by Studio Web or WP Codebox browser runtimes.
+- Generated website artifacts: a `blocks-engine/php-transformer/site-artifact/v1` bundle, such as the website artifact emitted by Studio Web or WP Codebox browser runtimes.
 
 The conversion stack is split by responsibility:
 
@@ -198,7 +198,7 @@ Important behavior:
 
 The export envelope includes:
 
-- `schema: "block-artifact-compiler/website-artifact/v1"`, `artifact_type: "website"`, `version`, `id`, `generated_at`, `root`, and `entrypoint`.
+- `schema: "blocks-engine/php-transformer/site-artifact/v1"`, `artifact_type: "website"`, `version`, `id`, `generated_at`, `root`, and `entrypoint`.
 - `files[]` entries with safe artifact-relative paths, `role`, `kind`, `mime_type`, `encoding`, `bytes`, `sha256`, and inline `content`.
 - UTF-8 text content by default; binary content is transported as Base64 with `encoding: "base64"`.
 - source/materialization provenance under `provenance`.
@@ -308,6 +308,6 @@ The intended dependency direction is:
 Static Site Importer -> Blocks Engine PHP transformer
 ```
 
-SSI import reports consume Blocks Engine PHP transformer result envelopes for conversion-quality diagnostics, and record the compiled-site contract when importing website artifacts. Legacy schema names remain wire contracts only; SSI should not call lower-level converter packages directly or re-derive semantic page-route intent when the transformer supplies it.
+SSI import reports consume Blocks Engine PHP transformer result envelopes for conversion-quality diagnostics, and record the compiled-site contract when importing website artifacts. Blocks Engine schemas are the active wire contract; SSI should not call lower-level converter packages directly or re-derive semantic page-route intent when the transformer supplies it.
 
 Imported pages remain WordPress pages for routing, titles, front-page assignment, editor visibility, and body content edits. Their imported body layouts live on the page posts as block markup in `post_content`. The generated block theme owns shared header/footer parts, optional background decoration, frontend/editor styles, scripts, and template wrappers that render page bodies through `core/post-content`; the generic `templates/page.html` stays the fallback for pages created after import.
