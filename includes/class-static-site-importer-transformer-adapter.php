@@ -50,11 +50,12 @@ class Static_Site_Importer_Transformer_Adapter {
 			return new WP_Error( 'static_site_importer_missing_transformer', 'Blocks Engine php-transformer is required to import a website artifact.' );
 		}
 
-		$options = $this->normalize_compile_options( $options );
+		$include_legacy_bfb_report = ! empty( $options[ self::LEGACY_BFB_REPORT_OPTION ] );
+		$options                   = $this->normalize_compile_options( $options );
 		$result = blocks_engine_php_transformer_compile_artifact( $artifact, $options );
 
 		if ( is_array( $result ) ) {
-			return $this->compiled_result_from_transformer_contract( $result );
+			return $this->compiled_result_from_transformer_contract( $result, $include_legacy_bfb_report );
 		}
 
 		return new WP_Error( 'static_site_importer_transformer_compile_failed', 'Blocks Engine php-transformer did not return a compiler result.' );
@@ -63,11 +64,12 @@ class Static_Site_Importer_Transformer_Adapter {
 	/**
 	 * Project the stable transformer contracts into SSI's compiled artifact envelope.
 	 *
-	 * @param array<string,mixed> $result TransformerResult::toArray() output.
+	 * @param array<string,mixed> $result                    TransformerResult::toArray() output.
+	 * @param bool                $include_legacy_bfb_report Whether to expose SSI's legacy bfb_report field.
 	 * @return array<string,mixed>
 	 */
-	private function compiled_result_from_transformer_contract( array $result ): array {
-		$compiled = $this->compiled_result_from_native_transformer_contract( $result );
+	private function compiled_result_from_transformer_contract( array $result, bool $include_legacy_bfb_report ): array {
+		$compiled = $this->compiled_result_from_native_transformer_contract( $result, $include_legacy_bfb_report );
 		if ( empty( $compiled['wordpress_artifacts'] ) ) {
 			$compiled = $this->compiled_result_from_legacy_mapping_compatibility( $result );
 		}
@@ -103,10 +105,11 @@ class Static_Site_Importer_Transformer_Adapter {
 	/**
 	 * Build SSI's consumed compiler envelope from the native Blocks Engine result.
 	 *
-	 * @param array<string,mixed> $result TransformerResult::toArray() output.
+	 * @param array<string,mixed> $result                    TransformerResult::toArray() output.
+	 * @param bool                $include_legacy_bfb_report Whether to expose SSI's legacy bfb_report field.
 	 * @return array<string,mixed>
 	 */
-	private function compiled_result_from_native_transformer_contract( array $result ): array {
+	private function compiled_result_from_native_transformer_contract( array $result, bool $include_legacy_bfb_report ): array {
 		$source_reports = isset( $result['source_reports'] ) && is_array( $result['source_reports'] ) ? $result['source_reports'] : array();
 		if ( empty( $source_reports ) ) {
 			return array();
@@ -129,7 +132,9 @@ class Static_Site_Importer_Transformer_Adapter {
 			'provenance'          => isset( $result['provenance'] ) && is_array( $result['provenance'] ) ? $result['provenance'] : array(),
 		);
 
-		$compiled[ self::LEGACY_BFB_REPORT_FIELD ] = $this->legacy_conversion_report_from_native_report( $result );
+		if ( $include_legacy_bfb_report ) {
+			$compiled[ self::LEGACY_BFB_REPORT_FIELD ] = $this->legacy_conversion_report_from_native_report( $result );
+		}
 
 		return $compiled;
 	}

@@ -287,6 +287,13 @@ namespace {
 	$assert( '12.00' === ( $products[0]['regular_price'] ?? '' ), 'native-product-price-normalized-from-generic-report' );
 	$assert( array( 'Bread' ) === ( $products[0]['categories'] ?? array() ), 'native-product-categories-mapped-from-generic-report' );
 
+	$native_report_compiled = $adapter->compile_website_artifact( array( 'schema' => 'block-artifact-compiler/website-artifact/v1' ), array( 'include_conversion_report' => true ) );
+	$assert( ! is_wp_error( $native_report_compiled ), 'native-report-compile-succeeds' );
+	$assert( 2 === count( $GLOBALS['ssi_transformer_adapter_artifact_compiler_calls'] ), 'plugin-artifact-helper-called-for-native-report' );
+	$assert( true === ( $GLOBALS['ssi_transformer_adapter_artifact_compiler_calls'][1][1]['include_conversion_report'] ?? false ), 'native-report-option-forwarded' );
+	$assert( ! array_key_exists( 'include_bfb_report', $GLOBALS['ssi_transformer_adapter_artifact_compiler_calls'][1][1] ?? array() ), 'native-report-options-do-not-forward-legacy-bfb-option' );
+	$assert( ! array_key_exists( 'bfb_report', is_array( $native_report_compiled ) ? $native_report_compiled : array() ), 'native-report-request-does-not-expose-legacy-bfb-report' );
+
 	if ( $failures ) {
 		fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 		exit( 1 );
