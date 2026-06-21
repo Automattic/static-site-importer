@@ -109,10 +109,10 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( 0 === ( $report['quality']['core_html_block_count'] ?? null ), 'quality-core-html-count-is-zero' );
 	$assert( is_file( $result['validation_result_path'] ?? '' ), 'validation-result-artifact-is-written' );
 	$assert( is_file( $result['finding_packets_path'] ?? '' ), 'finding-packets-artifact-is-written' );
-	$assert( 'static-site-importer/import-validation-result/v1' === ( $validation_result['schema'] ?? '' ), 'validation-result-schema' );
+	$assert( 'blocks-engine/import-validation-result/v1' === ( $validation_result['schema'] ?? '' ), 'validation-result-schema' );
 	$assert( 'ImportValidationResult' === ( $validation_result['artifact_type'] ?? '' ), 'validation-result-artifact-type' );
 	$assert( 'passed' === ( $validation_result['status'] ?? '' ), 'validation-result-status-passed' );
-	$assert( 'static-site-importer/finding-packets/v1' === ( $finding_packets['schema'] ?? '' ), 'finding-packets-schema' );
+	$assert( 'blocks-engine/finding-packets/v1' === ( $finding_packets['schema'] ?? '' ), 'finding-packets-schema' );
 	$assert( 'FindingPacketSet' === ( $finding_packets['artifact_type'] ?? '' ), 'finding-packets-artifact-type' );
 	$assert( 'static-site-importer/document-metadata/v1' === ( $metadata['schema'] ?? '' ), 'metadata-contract-is-recorded' );
 	$assert( 'Ember & Rye' === ( $metadata['title'] ?? '' ), 'title-is-preserved-in-metadata' );
@@ -186,14 +186,14 @@ $assert( ! is_wp_error( $multi_page_result ), 'multi-page-import-succeeds', is_w
 if ( ! is_wp_error( $multi_page_result ) ) {
 	$multi_report    = json_decode( $read( $multi_page_result['report_path'] ), true );
 	$source_docs     = $multi_report['source_documents'] ?? array();
-	$bac_documents   = $source_docs['bac_documents'] ?? array();
+	$blocks_engine_documents = $source_docs['blocks_engine_documents'] ?? array();
 	$compiled_site   = $multi_report['block_artifact_compiler']['compiled_site'] ?? array();
 	$block_documents = $multi_report['generated_theme']['block_documents'] ?? array();
 	$template_parts  = $multi_report['generated_theme']['template_parts'] ?? array();
 	$documents_by_source = array();
 	$pattern_documents = array();
 	$template_parts_by_path = array();
-	foreach ( $bac_documents as $document ) {
+	foreach ( $blocks_engine_documents as $document ) {
 		if ( is_array( $document ) && isset( $document['source_path'] ) ) {
 			$documents_by_source[ $document['source_path'] ] = $document;
 		}
@@ -209,8 +209,8 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 		}
 	}
 
-	$assert( 3 === ( $source_docs['bac_document_count'] ?? null ), 'multi-page-bac-document-count' );
-	$assert( 'block_artifact_compiler' === ( $source_docs['source'] ?? '' ), 'multi-page-source-is-bac' );
+	$assert( 3 === ( $source_docs['blocks_engine_document_count'] ?? null ), 'multi-page-blocks-engine-document-count' );
+	$assert( 'blocks_engine' === ( $source_docs['source'] ?? '' ), 'multi-page-source-is-blocks-engine' );
 	$assert( 'home' === ( $documents_by_source['website/index.html']['slug'] ?? '' ), 'entry-index-materializes-as-home' );
 	$assert( str_ends_with( (string) ( $documents_by_source['website/index.html']['permalink'] ?? '' ), '/' ), 'entry-index-has-front-page-permalink' );
 	$assert( 'menu' === ( $documents_by_source['website/menu.html']['slug'] ?? '' ), 'menu-page-materializes' );
@@ -222,7 +222,7 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 	$assert( true === ( $template_parts_by_path['parts/header.html']['generated'] ?? null ), 'multi-page-header-template-part-is-generated-by-ssi' );
 	$assert( ! isset( $template_parts_by_path['parts/footer.html'] ), 'multi-page-does-not-synthesize-footer-template-part' );
 	$assert( ! str_contains( $read( $multi_page_result['theme_dir'] . '/templates/front-page.html' ), '"slug":"footer"' ), 'multi-page-template-does-not-reference-synthesized-footer-part' );
-	$assert( array() === $pattern_documents, 'bac-document-import-does-not-generate-page-pattern-copies' );
+	$assert( array() === $pattern_documents, 'blocks-engine-document-import-does-not-generate-page-pattern-copies' );
 }
 
 if ( ! empty( $failures ) ) {

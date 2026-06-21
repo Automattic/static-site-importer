@@ -135,8 +135,8 @@ class Static_Site_Importer_Report_Diagnostics {
 			),
 			'diagnostics'             => array(),
 			'notes'                   => array(
-				'Blocks Engine transformer owns the website-artifact to WordPress-artifact envelope; Static Site Importer materializes the result, records compiler summaries, and owns product seeding.',
-				'Blocks Engine transformer owns HTML/block transform fidelity; Static Site Importer records converter diagnostics and quality gates the generated theme.',
+				'Blocks Engine owns the website-artifact to WordPress-artifact envelope and transform diagnostics; Static Site Importer materializes the result into WordPress.',
+				'Static Site Importer still owns WordPress writes, dependency materialization, and WooCommerce product seeding, which keeps this report helper from moving wholesale into Blocks Engine.',
 				'Generated-theme block validation uses WordPress server-side block parsing and serialization checks; editor-runtime validation remains the exact Gutenberg authority.',
 				'Visual fidelity requires browser rendering; use visual_fidelity.comparison_targets to compare source static HTML against the generated WordPress URL.',
 				'Semantic fidelity requires browser DOM extraction; use semantic_fidelity.comparison_targets to compare source static HTML against the generated WordPress URL.',
@@ -200,7 +200,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$report['diagnostics'][] = array(
 			'type'        => 'website_artifact_materialization_contract_note',
 			'source'      => '' !== $source ? $source : 'website_artifact',
-			'message'     => 'Direct materialization consumed block_markup, documents, files, and compiled-site artifacts. SSI owns WordPress writes and product seeding while Blocks Engine owns materializer-neutral site/theme compilation.',
+			'message'     => 'Direct materialization consumed block_markup, documents, files, and compiled-site artifacts. Static Site Importer owns WordPress writes and product seeding while Blocks Engine owns materializer-neutral site/theme compilation.',
 			'contract'    => 'block-artifact-compiler/result/v1',
 			'constraints' => 'report_only',
 		);
@@ -241,7 +241,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'reason'                => isset( $context['reason'] ) ? (string) $context['reason'] : 'unknown',
 			'tag_name'              => isset( $context['tag_name'] ) ? (string) $context['tag_name'] : self::diagnostic_tag_name_from_html( $element_html ),
 			'block_name'            => isset( $block['blockName'] ) ? (string) $block['blockName'] : null,
-			'converter'             => 'blocks-engine-php-transformer',
+			'engine'                => 'blocks-engine/php-transformer',
 			'stage'                 => isset( $context['stage'] ) ? (string) $context['stage'] : 'html_to_blocks',
 			'html_length'           => strlen( $element_html ),
 			'html_excerpt'          => self::diagnostic_excerpt( $element_html ),
@@ -287,7 +287,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$source_documents = isset( $report['source_documents'] ) && is_array( $report['source_documents'] ) ? $report['source_documents'] : array();
 
 		return array(
-			'schema'               => 'static-site-importer/import-validation-result/v1',
+			'schema'               => 'blocks-engine/import-validation-result/v1',
 			'artifact_type'        => 'ImportValidationResult',
 			'version'              => 1,
 			'status'               => ! empty( $quality['fail_import'] ) ? 'failed' : ( ! empty( $quality['pass'] ) ? 'passed' : 'reported' ),
@@ -351,7 +351,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		return array(
-			'schema'        => 'static-site-importer/finding-packets/v1',
+			'schema'        => 'blocks-engine/finding-packets/v1',
 			'artifact_type' => 'FindingPacketSet',
 			'version'       => 1,
 			'status'        => empty( $packets ) ? 'clean' : 'reported',
@@ -422,13 +422,13 @@ class Static_Site_Importer_Report_Diagnostics {
 		$report['artifact_diagnostics'] = Static_Site_Importer_WP_Codebox_Artifact_Diagnostics_Normalizer::build(
 			array( 'diagnostics' => $report['diagnostics'] ?? array() ),
 			array(
-				'source'          => 'static-site-importer',
+				'source'          => 'blocks-engine',
 				'stage'           => 'import',
-				'observationType' => 'static-site-importer/import-report',
+				'observationType' => 'blocks-engine/import-report',
 				'refs'            => array(
 					array(
 						'path' => 'import-report.json',
-						'kind' => 'static-site-importer/import-report',
+						'kind' => 'blocks-engine/import-report',
 					),
 				),
 			)
@@ -519,15 +519,15 @@ class Static_Site_Importer_Report_Diagnostics {
 		return array(
 			'import_report'            => array(
 				'path' => 'import-report.json',
-				'kind' => 'static-site-importer/import-report',
+				'kind' => 'blocks-engine/import-report',
 			),
 			'import_validation_result' => array(
 				'path' => 'import-validation-result.json',
-				'kind' => 'static-site-importer/import-validation-result',
+				'kind' => 'blocks-engine/import-validation-result',
 			),
 			'finding_packets'          => array(
 				'path' => 'finding-packets.json',
-				'kind' => 'static-site-importer/finding-packets',
+				'kind' => 'blocks-engine/finding-packets',
 			),
 		);
 	}
@@ -608,7 +608,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$severity = isset( $diagnostic['severity'] ) && is_scalar( $diagnostic['severity'] ) ? (string) $diagnostic['severity'] : self::diagnostic_severity( $type );
 
 		return array(
-			'schema'               => 'static-site-importer/finding-packet/v1',
+			'schema'               => 'blocks-engine/finding-packet/v1',
 			'artifact_type'        => 'FindingPacket',
 			'version'              => 1,
 			'id'                   => 'finding-' . preg_replace( '/^diag-/', '', $id ),
@@ -655,9 +655,12 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return string
 	 */
 	private static function finding_owner( array $diagnostic ): string {
-		$converter = isset( $diagnostic['converter'] ) && is_scalar( $diagnostic['converter'] ) ? (string) $diagnostic['converter'] : '';
-		if ( '' !== $converter ) {
-			return $converter;
+		$engine = isset( $diagnostic['engine'] ) && is_scalar( $diagnostic['engine'] ) ? (string) $diagnostic['engine'] : '';
+		if ( '' === $engine ) {
+			$engine = isset( $diagnostic['converter'] ) && is_scalar( $diagnostic['converter'] ) ? (string) $diagnostic['converter'] : '';
+		}
+		if ( '' !== $engine ) {
+			return $engine;
 		}
 
 		$type = isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : '';
@@ -665,7 +668,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			return 'static-site-importer';
 		}
 
-		return 'block-artifact-compiler';
+		return 'blocks-engine/php-transformer';
 	}
 
 	/**
@@ -699,9 +702,9 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
-	 * Preserve the BAC compiled-site contract in the SSI import report.
+	 * Preserve the Blocks Engine compiled-site contract in the import report.
 	 *
-	 * @param array<string,mixed> $site BAC compiled-site artifact.
+	 * @param array<string,mixed> $site Blocks Engine compiled-site artifact.
 	 * @return array<string,mixed>
 	 */
 	private static function compiled_site_report_payload( array $site ): array {
@@ -1158,7 +1161,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'emitted_block_preview',
 			'block_name',
 			'block_path',
-			'converter',
+			'engine',
 			'stage',
 			'reason',
 			'message',

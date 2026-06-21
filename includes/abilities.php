@@ -49,7 +49,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 			'static-site-importer/export-theme',
 			array(
 				'label'               => __( 'Export Website Artifact', 'static-site-importer' ),
-				'description'         => __( 'Export an imported or active block theme and page content as a BAC-compatible website artifact.', 'static-site-importer' ),
+				'description'         => __( 'Export an imported or active block theme and page content as a Blocks Engine website artifact.', 'static-site-importer' ),
 				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
 				'input_schema'        => array(
 					'type'       => 'object',

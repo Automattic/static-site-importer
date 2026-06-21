@@ -62,6 +62,19 @@ namespace {
 					),
 				),
 			),
+			'legacy_mapping' => array(
+				'block-artifact-compiler/result/v1' => array(
+					'status'                           => 'status',
+					'input'                            => 'source_reports.artifact',
+					'wordpress_artifacts.block_markup' => 'serialized_blocks',
+					'wordpress_artifacts.blocks'       => 'blocks',
+					'wordpress_artifacts.block_types'  => 'block_types',
+					'wordpress_artifacts.components'   => 'components',
+					'wordpress_artifacts.files'        => 'assets',
+					'diagnostics'                      => 'diagnostics',
+					'provenance'                       => 'provenance',
+				),
+			),
 			'provenance'     => array(
 				array( 'source_hash' => 'products-smoke' ),
 			),

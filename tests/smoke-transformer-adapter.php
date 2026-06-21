@@ -75,9 +75,67 @@ namespace {
 									'stylesheets' => array( 'assets/site.css' ),
 								),
 							),
+							'materialization_plan' => array(
+								'schema'      => 'blocks-engine/php-transformer/materialization-plan/v1',
+								'source_schema' => 'blocks-engine/php-transformer/compiled-site/v1',
+								'source_hash' => 'abc123',
+								'entry_path'  => 'website/index.html',
+								'pages'       => array(
+									array(
+										'source_path'  => 'website/index.html',
+										'entrypoint'   => true,
+										'post_type'    => 'page',
+										'slug'         => 'home-canonical',
+										'title'        => 'Home Canonical',
+										'block_markup' => '<!-- wp:paragraph --><p>Home</p><!-- /wp:paragraph -->',
+									),
+									array(
+										'source_path' => 'website/menu.html',
+										'entrypoint'  => false,
+										'post_type'   => 'page',
+										'slug'        => 'menu',
+										'title'       => 'Menu Page',
+									),
+									array(
+										'source_path' => 'content/about.md',
+										'entrypoint'  => false,
+										'post_type'   => 'page',
+										'slug'        => 'about-canonical',
+										'title'       => 'About',
+									),
+									array(
+										'source_path'    => 'products/rye-loaf.md',
+										'entrypoint'     => false,
+										'post_type'      => 'product',
+										'slug'           => 'rye-loaf-canonical',
+										'title'          => 'Rye Loaf',
+										'regular_price'  => '12',
+										'categories'     => array( 'Bread' ),
+									),
+								),
+								'assets'      => array(
+									array( 'path' => 'assets/site.css', 'role' => 'stylesheet' ),
+								),
+								'theme'       => array(
+									'stylesheets' => array( 'assets/site.css' ),
+								),
+							),
 						),
 						'blocks'            => array(
 							array( 'blockName' => 'core/paragraph', 'innerBlocks' => array() ),
+						),
+						'legacy_mapping'    => array(
+							'block-artifact-compiler/result/v1' => array(
+								'status'                           => 'status',
+								'input'                            => 'source_reports.artifact',
+								'wordpress_artifacts.block_markup' => 'serialized_blocks',
+								'wordpress_artifacts.blocks'       => 'blocks',
+								'wordpress_artifacts.block_types'  => 'block_types',
+								'wordpress_artifacts.components'   => 'components',
+								'wordpress_artifacts.files'        => 'assets',
+								'diagnostics'                      => 'diagnostics',
+								'provenance'                       => 'provenance',
+							),
 						),
 						'serialized_blocks' => '<!-- wp:paragraph --><p>Home</p><!-- /wp:paragraph -->',
 						'documents'         => array(
@@ -175,16 +233,16 @@ namespace {
 	$assert( 1 === count( $GLOBALS['ssi_transformer_adapter_artifact_compiler_calls'] ), 'plugin-artifact-helper-called' );
 	$assert( true === ( $GLOBALS['ssi_transformer_adapter_artifact_compiler_calls'][0][1]['include_bfb_report'] ?? false ), 'compile-options-forwarded' );
 	$assert( 'block-artifact-compiler/result/v1' === ( $compiled['schema'] ?? '' ), 'native-result-mapped-to-bac-envelope' );
-	$assert( 'blocks-engine/php-transformer/compiled-site/v1' === ( $site['schema'] ?? '' ), 'native-compiled-site-contract-is-preserved' );
+	$assert( 'blocks-engine/php-transformer/materialization-plan/v1' === ( $site['schema'] ?? '' ), 'native-materialization-plan-contract-is-used' );
 	$assert( 4 === count( $pages ), 'native-keeps-compiled-site-pages-without-adapter-filtering' );
 	$assert( 'website/index.html' === ( $pages[0]['source_path'] ?? '' ), 'native-entry-source-path' );
-	$assert( 'index' === ( $pages[0]['slug'] ?? '' ), 'native-entry-slug' );
+	$assert( 'home-canonical' === ( $pages[0]['slug'] ?? '' ), 'native-entry-slug-from-materialization-plan' );
 	$assert( true === ( $pages[0]['entrypoint'] ?? false ), 'native-entrypoint' );
-	$assert( 'about' === ( $pages[2]['slug'] ?? '' ), 'native-route-slug-from-source-document-compiled-site' );
+	$assert( 'about-canonical' === ( $pages[2]['slug'] ?? '' ), 'native-route-slug-from-materialization-plan' );
 	$assert( 1 === count( $documents ), 'native-documents-preserve-transformer-documents-without-compiled-site-synthesis' );
 	$assert( 'content/about.md' === ( $documents[0]['source_path'] ?? '' ), 'native-document-from-transformer-documents' );
 	$assert( 'assets/site.css' === ( $artifacts['files'][0]['path'] ?? '' ), 'native-assets-report-preserved' );
-	$assert( 'rye-loaf' === ( $products[0]['slug'] ?? '' ), 'native-product-slug-mapped-from-generic-report' );
+	$assert( 'rye-loaf-canonical' === ( $products[0]['slug'] ?? '' ), 'native-product-slug-mapped-from-generic-report' );
 	$assert( '12.00' === ( $products[0]['regular_price'] ?? '' ), 'native-product-price-normalized-from-generic-report' );
 	$assert( array( 'Bread' ) === ( $products[0]['categories'] ?? array() ), 'native-product-categories-mapped-from-generic-report' );
 

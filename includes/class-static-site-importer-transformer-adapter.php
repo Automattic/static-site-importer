@@ -1,6 +1,6 @@
 <?php
 /**
- * Product-owned adapter for transformer APIs.
+ * Blocks Engine transformer adapter.
  *
  * @package StaticSiteImporter
  */
@@ -13,6 +13,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Keeps SSI workflows insulated from transformer package implementation details.
  */
 class Static_Site_Importer_Transformer_Adapter {
+
+	public const WEBSITE_ARTIFACT_SCHEMA = 'block-artifact-compiler/website-artifact/v1';
+	public const COMPILED_RESULT_SCHEMA  = 'block-artifact-compiler/result/v1';
 
 	/**
 	 * Check whether the default Blocks Engine artifact compiler is available.
@@ -33,7 +36,7 @@ class Static_Site_Importer_Transformer_Adapter {
 	}
 
 	/**
-	 * Compile a website artifact into the BAC-compatible envelope SSI consumes.
+	 * Compile a website artifact through Blocks Engine into the envelope SSI consumes.
 	 *
 	 * @param array<string,mixed> $artifact Website artifact bundle.
 	 * @param array<string,mixed> $options  Compiler options.
@@ -60,57 +63,27 @@ class Static_Site_Importer_Transformer_Adapter {
 	 * @return array<string,mixed>
 	 */
 	private function compiled_result_from_transformer_contract( array $result ): array {
-		$source_reports = isset( $result['source_reports'] ) && is_array( $result['source_reports'] ) ? $result['source_reports'] : array();
-		$source_report  = isset( $source_reports['artifact'] ) && is_array( $source_reports['artifact'] ) ? $source_reports['artifact'] : array();
-		$compiled_site  = isset( $source_reports['compiled_site'] ) && is_array( $source_reports['compiled_site'] ) ? $source_reports['compiled_site'] : array();
-		$entry_path     = isset( $source_report['entry_path'] ) && is_scalar( $source_report['entry_path'] ) ? (string) $source_report['entry_path'] : '';
-		$provenance     = isset( $result['provenance'][0] ) && is_array( $result['provenance'][0] ) ? $result['provenance'][0] : array();
-		$blocks         = isset( $result['blocks'] ) && is_array( $result['blocks'] ) ? $result['blocks'] : array();
-		$serialized     = isset( $result['serialized_blocks'] ) && is_scalar( $result['serialized_blocks'] ) ? (string) $result['serialized_blocks'] : '';
-		$products       = $this->products_manifest_from_transformer_reports( $result, $compiled_site );
+		$compiled = $this->project_transformer_result( $result, self::COMPILED_RESULT_SCHEMA );
 
-		$compiled = array(
-			'schema'              => 'block-artifact-compiler/result/v1',
-			'status'              => isset( $result['status'] ) && is_scalar( $result['status'] ) ? (string) $result['status'] : 'failed',
-			'input'               => array(
-				'schema'          => isset( $source_report['schema'] ) && is_scalar( $source_report['schema'] ) ? (string) $source_report['schema'] : 'blocks-engine/php-transformer/site-artifact/v1',
-				'entry_path'      => $entry_path,
-				'entrypoints'     => isset( $source_report['entrypoints'] ) && is_array( $source_report['entrypoints'] ) ? $source_report['entrypoints'] : array(),
-				'file_count'      => (int) ( $source_report['file_count'] ?? 0 ),
-				'accepted_count'  => (int) ( $source_report['accepted_count'] ?? 0 ),
-				'rejected_count'  => (int) ( $source_report['rejected_count'] ?? 0 ),
-				'bytes'           => (int) ( $source_report['bytes'] ?? 0 ),
-				'files_by_kind'   => isset( $source_report['files_by_kind'] ) && is_array( $source_report['files_by_kind'] ) ? $source_report['files_by_kind'] : array(),
-				'files_by_role'   => isset( $source_report['files_by_role'] ) && is_array( $source_report['files_by_role'] ) ? $source_report['files_by_role'] : array(),
-				'files_by_mime'   => isset( $source_report['files_by_mime'] ) && is_array( $source_report['files_by_mime'] ) ? $source_report['files_by_mime'] : array(),
-				'original_schema' => isset( $source_report['original_schema'] ) && is_scalar( $source_report['original_schema'] ) ? (string) $source_report['original_schema'] : '',
-				'source_report'   => $source_report,
-			),
-			'wordpress_artifacts' => array(
-				'block_markup' => $serialized,
-				'blocks'       => $blocks,
-				'block_tree'   => $this->block_tree_report( $blocks ),
-				'block_types'  => isset( $result['block_types'] ) && is_array( $result['block_types'] ) ? $result['block_types'] : array(),
-				'components'   => isset( $result['components'] ) && is_array( $result['components'] ) ? $result['components'] : array(),
-				'document_metadata' => $this->document_metadata_from_compiled_site( $compiled_site ),
-				'documents'    => isset( $result['documents'] ) && is_array( $result['documents'] ) ? $result['documents'] : array(),
-				'files'        => isset( $result['assets'] ) && is_array( $result['assets'] ) ? $result['assets'] : array(),
-				'site'         => $compiled_site,
-				'template_parts' => isset( $compiled_site['template_parts'] ) && is_array( $compiled_site['template_parts'] ) ? $compiled_site['template_parts'] : array(),
-				'visual_repair' => isset( $compiled_site['visual_repair'] ) && is_array( $compiled_site['visual_repair'] ) ? $compiled_site['visual_repair'] : array(),
-			),
-			'provenance'          => array(
-				'source_hash' => isset( $provenance['source_hash'] ) && is_scalar( $provenance['source_hash'] ) ? (string) $provenance['source_hash'] : (string) ( $source_report['source_hash'] ?? '' ),
-				'source'      => '' !== $entry_path ? $entry_path : 'website_artifact',
-			),
-			'diagnostics'         => isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array(),
-			'bfb_report'          => array(
-				'status'            => isset( $result['status'] ) && is_scalar( $result['status'] ) ? (string) $result['status'] : 'failed',
-				'serialized_blocks' => $serialized,
-				'diagnostics'       => isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array(),
-				'fallbacks'         => isset( $result['fallbacks'] ) && is_array( $result['fallbacks'] ) ? $result['fallbacks'] : array(),
-			),
-		);
+		$source_reports       = isset( $result['source_reports'] ) && is_array( $result['source_reports'] ) ? $result['source_reports'] : array();
+		$compiled_site        = isset( $source_reports['compiled_site'] ) && is_array( $source_reports['compiled_site'] ) ? $source_reports['compiled_site'] : array();
+		$materialization_plan = isset( $source_reports['materialization_plan'] ) && is_array( $source_reports['materialization_plan'] ) ? $source_reports['materialization_plan'] : array();
+		$site_report          = ! empty( $materialization_plan ) ? $materialization_plan : $compiled_site;
+		$products             = $this->products_manifest_from_transformer_reports( $result, $site_report );
+		$artifacts            = isset( $compiled['wordpress_artifacts'] ) && is_array( $compiled['wordpress_artifacts'] ) ? $compiled['wordpress_artifacts'] : array();
+		$blocks               = isset( $artifacts['blocks'] ) && is_array( $artifacts['blocks'] ) ? $artifacts['blocks'] : array();
+
+		if ( ! isset( $artifacts['block_tree'] ) ) {
+			$artifacts['block_tree'] = $this->block_tree_report( $blocks );
+		}
+
+		$artifacts['document_metadata'] = $this->document_metadata_from_compiled_site( $site_report );
+		$artifacts['documents']         = isset( $result['documents'] ) && is_array( $result['documents'] ) ? $result['documents'] : array();
+		$artifacts['site']              = $site_report;
+		$artifacts['template_parts']    = isset( $site_report['template_parts'] ) && is_array( $site_report['template_parts'] ) ? $site_report['template_parts'] : array();
+		$artifacts['visual_repair']     = isset( $site_report['visual_repair'] ) && is_array( $site_report['visual_repair'] ) ? $site_report['visual_repair'] : array();
+
+		$compiled['wordpress_artifacts'] = $artifacts;
 
 		if ( ! empty( $products ) ) {
 			$compiled['products_manifest'] = $products;
@@ -120,7 +93,82 @@ class Static_Site_Importer_Transformer_Adapter {
 	}
 
 	/**
-	 * Extract SSI products from generic compiled-site/document reports.
+	 * Apply a Blocks Engine transformer legacy projection by schema.
+	 *
+	 * @param array<string,mixed> $result TransformerResult::toArray() output.
+	 * @param string              $schema Projection schema.
+	 * @return array<string,mixed>
+	 */
+	private function project_transformer_result( array $result, string $schema ): array {
+		$mapping   = isset( $result['legacy_mapping'][ $schema ] ) && is_array( $result['legacy_mapping'][ $schema ] ) ? $result['legacy_mapping'][ $schema ] : array();
+		$projected = array( 'schema' => $schema );
+
+		foreach ( $mapping as $target_path => $source_path ) {
+			if ( ! is_string( $target_path ) || ! is_string( $source_path ) ) {
+				continue;
+			}
+
+			$found = false;
+			$value = $this->array_path_get( $result, $source_path, $found );
+			if ( $found ) {
+				$this->array_path_set( $projected, $target_path, $value );
+			}
+		}
+
+		return $projected;
+	}
+
+	/**
+	 * Read a dot-notated array path.
+	 *
+	 * @param array<string,mixed> $data  Source data.
+	 * @param string              $path  Dot-notated path.
+	 * @param bool                $found Whether the path exists.
+	 * @return mixed
+	 */
+	private function array_path_get( array $data, string $path, bool &$found ) {
+		$value = $data;
+		foreach ( explode( '.', $path ) as $part ) {
+			if ( ! is_array( $value ) || ! array_key_exists( $part, $value ) ) {
+				$found = false;
+				return null;
+			}
+
+			$value = $value[ $part ];
+		}
+
+		$found = true;
+		return $value;
+	}
+
+	/**
+	 * Write a dot-notated array path.
+	 *
+	 * @param array<string,mixed> $data  Target data.
+	 * @param string              $path  Dot-notated path.
+	 * @param mixed               $value Value to set.
+	 * @return void
+	 */
+	private function array_path_set( array &$data, string $path, $value ): void {
+		$cursor = &$data;
+		$parts  = explode( '.', $path );
+		$last   = array_pop( $parts );
+
+		foreach ( $parts as $part ) {
+			if ( ! isset( $cursor[ $part ] ) || ! is_array( $cursor[ $part ] ) ) {
+				$cursor[ $part ] = array();
+			}
+
+			$cursor = &$cursor[ $part ];
+		}
+
+		if ( null !== $last ) {
+			$cursor[ $last ] = $value;
+		}
+	}
+
+	/**
+	 * Extract commerce products from generic compiled-site/document reports.
 	 *
 	 * @param array<string,mixed> $result        Transformer result array.
 	 * @param array<string,mixed> $compiled_site Generic compiled-site report.
@@ -183,7 +231,7 @@ class Static_Site_Importer_Transformer_Adapter {
 	}
 
 	/**
-	 * Normalize one generic product report row to SSI's products manifest contract.
+	 * Normalize one generic product report row to the importer product seeding contract.
 	 *
 	 * @param array<string,mixed> $row Generic report row.
 	 * @return array<string,mixed>
@@ -441,7 +489,7 @@ class Static_Site_Importer_Transformer_Adapter {
 	}
 
 	/**
-	 * Summarize a BAC-compatible compiler result.
+	 * Summarize a compiled website artifact result.
 	 *
 	 * @param array<string,mixed> $compiled Compiler result envelope.
 	 * @return array<string,mixed>

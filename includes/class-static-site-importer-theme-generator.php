@@ -646,7 +646,7 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
-	 * Build the BAC-compatible website artifact envelope.
+	 * Build the website artifact envelope consumed by Blocks Engine.
 	 *
 	 * @param string              $theme_slug      Theme slug.
 	 * @param string              $root            Artifact root.
@@ -661,7 +661,7 @@ class Static_Site_Importer_Theme_Generator {
 		$id           = 'website-artifact-' . $theme_slug . '-' . substr( hash( 'sha256', self::json_encode_pretty( array( $entrypoint, $files ) ) ), 0, 12 );
 
 		return array(
-			'schema'        => 'block-artifact-compiler/website-artifact/v1',
+			'schema'        => Static_Site_Importer_Transformer_Adapter::WEBSITE_ARTIFACT_SCHEMA,
 			'artifact_type' => 'website',
 			'version'       => 1,
 			'id'            => $id,
@@ -1039,7 +1039,7 @@ class Static_Site_Importer_Theme_Generator {
 		$documents = isset( $artifacts['documents'] ) && is_array( $artifacts['documents'] ) ? $artifacts['documents'] : array();
 		$site      = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
 		if ( ! empty( $site['pages'] ) && is_array( $site['pages'] ) ) {
-			if ( ! in_array( (string) ( $site['schema'] ?? '' ), array( 'block-artifact-compiler/compiled-site/v1', 'blocks-engine/php-transformer/compiled-site/v1' ), true ) ) {
+			if ( ! in_array( (string) ( $site['schema'] ?? '' ), array( 'block-artifact-compiler/compiled-site/v1', 'blocks-engine/php-transformer/compiled-site/v1', 'blocks-engine/php-transformer/materialization-plan/v1' ), true ) ) {
 				return new WP_Error( 'static_site_importer_compiled_site_missing', 'Website artifact document pages require a supported compiled-site contract.' );
 			}
 
@@ -1817,10 +1817,10 @@ class Static_Site_Importer_Theme_Generator {
 		self::$conversion_report['source_documents'] = array_merge(
 			self::$conversion_report['source_documents'],
 			array(
-				'source'             => 'block_artifact_compiler',
+				'source'             => 'blocks_engine',
 				'total_count'        => count( $records ),
-				'bac_documents'      => $records,
-				'bac_document_count' => count( $records ),
+				'blocks_engine_documents'      => $records,
+				'blocks_engine_document_count' => count( $records ),
 			)
 		);
 	}
@@ -1876,7 +1876,7 @@ class Static_Site_Importer_Theme_Generator {
 			'code'     => 'products_manifest_invalid',
 			'severity' => 'warning',
 			'source'   => self::$conversion_report['commerce']['products_manifest']['source'],
-			'message'  => 'products_manifest was supplied but does not match the Static Site Importer commerce contract.',
+			'message'  => 'products_manifest was supplied but does not match the importer product seeding contract.',
 			'errors'   => self::$conversion_report['commerce']['products_manifest']['errors'],
 		);
 	}

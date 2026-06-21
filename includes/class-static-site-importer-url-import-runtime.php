@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Transformer_Adapter' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-transformer-adapter.php';
+}
+
 /**
  * Imports a source URL through a provider that returns a website artifact.
  */
@@ -61,7 +65,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 	/**
 	 * Resolve the provider output.
 	 *
-	 * Providers return an array with an `artifact` key containing a BAC website
+	 * Providers return an array with an `artifact` key containing a website
 	 * artifact, plus optional `source_metadata` and `provider` fields.
 	 *
 	 * @param array<string,mixed> $request Provider request envelope.
@@ -113,7 +117,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 		return array(
 			'provider'        => 'public-url-fetcher',
 			'artifact'        => array(
-				'schema' => 'block-artifact-compiler/website-artifact/v1',
+				'schema' => Static_Site_Importer_Transformer_Adapter::WEBSITE_ARTIFACT_SCHEMA,
 				'files'  => array(
 					array(
 						'path'    => 'website/index.html',

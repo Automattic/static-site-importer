@@ -14,7 +14,7 @@ if ( ! class_exists( 'Static_Site_Importer_Transformer_Adapter' ) ) {
 }
 
 /**
- * Exports WordPress block themes to BAC-compatible website artifacts.
+ * Exports WordPress block themes to Blocks Engine website artifacts.
  */
 class Static_Site_Importer_Theme_Exporter {
 
@@ -402,7 +402,7 @@ class Static_Site_Importer_Theme_Exporter {
 	}
 
 	/**
-	 * Build the BAC-compatible website artifact envelope.
+	 * Build the website artifact envelope consumed by Blocks Engine.
 	 *
 	 * @param string              $theme_slug      Theme slug.
 	 * @param string              $root            Artifact root.
@@ -417,7 +417,7 @@ class Static_Site_Importer_Theme_Exporter {
 		$id           = 'website-artifact-' . $theme_slug . '-' . substr( hash( 'sha256', self::json_encode_pretty( array( $entrypoint, $files ) ) ), 0, 12 );
 
 		return array(
-			'schema'        => 'block-artifact-compiler/website-artifact/v1',
+			'schema'        => Static_Site_Importer_Transformer_Adapter::WEBSITE_ARTIFACT_SCHEMA,
 			'artifact_type' => 'website',
 			'version'       => 1,
 			'id'            => $id,

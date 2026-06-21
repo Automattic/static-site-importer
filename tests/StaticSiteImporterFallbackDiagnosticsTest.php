@@ -48,7 +48,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 						'source_html_preview'    => '<iframe id="store-widget" class="embedded checkout"></iframe>',
 						'emitted_block_preview'  => '<!-- wp:html --><iframe id="store-widget" class="embedded checkout"></iframe><!-- /wp:html -->',
 						'block_name'             => 'core/html',
-						'converter'              => 'blocks-engine-php-transformer',
+						'engine'                 => 'blocks-engine/php-transformer',
 						'stage'                  => 'generated_theme_block_analysis',
 						'reason'                 => 'generated_document_contains_core_html',
 						'html_length'            => 64,
@@ -140,7 +140,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 					'source_html_preview'    => '<iframe id="store-widget" class="embedded checkout"></iframe>',
 					'emitted_block_preview'  => '<!-- wp:html --><iframe id="store-widget" class="embedded checkout"></iframe><!-- /wp:html -->',
 					'block_name'             => 'core/html',
-					'converter'              => 'blocks-engine-php-transformer',
+					'engine'                 => 'blocks-engine/php-transformer',
 					'stage'                  => 'generated_theme_block_analysis',
 					'reason'                 => 'generated_document_contains_core_html',
 					'block_path'             => '0',
@@ -150,7 +150,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 
 		$quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, array() );
 
-		$this->assertSame( 'static-site-importer/import-validation-result/v1', $report['import_validation_result']['schema'] ?? '' );
+		$this->assertSame( 'blocks-engine/import-validation-result/v1', $report['import_validation_result']['schema'] ?? '' );
 		$this->assertSame( 'ImportValidationResult', $report['import_validation_result']['artifact_type'] ?? '' );
 		$this->assertSame( 'reported', $report['import_validation_result']['status'] ?? '' );
 		$this->assertFalse( $quality['pass'] ?? true );
@@ -159,14 +159,14 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		$this->assertSame( 'finding-packets.json', $report['import_validation_result']['artifacts']['finding_packets']['path'] ?? '' );
 		$this->assertSame( '/tmp/source/index.html', $report['import_validation_result']['reproduction_context']['entry_file'] ?? '' );
 
-		$this->assertSame( 'static-site-importer/finding-packets/v1', $report['finding_packets']['schema'] ?? '' );
+		$this->assertSame( 'blocks-engine/finding-packets/v1', $report['finding_packets']['schema'] ?? '' );
 		$this->assertSame( 1, $report['finding_packets']['count'] ?? 0 );
 		$packet = $report['finding_packets']['packets'][0] ?? array();
-		$this->assertSame( 'static-site-importer/finding-packet/v1', $packet['schema'] ?? '' );
+		$this->assertSame( 'blocks-engine/finding-packet/v1', $packet['schema'] ?? '' );
 		$this->assertSame( 'FindingPacket', $packet['artifact_type'] ?? '' );
 		$this->assertSame( 'core_html_block', $packet['type'] ?? '' );
 		$this->assertSame( 'warning', $packet['severity'] ?? '' );
-		$this->assertSame( 'blocks-engine-php-transformer', $packet['owner'] ?? '' );
+		$this->assertSame( 'blocks-engine/php-transformer', $packet['owner'] ?? '' );
 		$this->assertSame( 'replace_fallback_block', $packet['routing']['suggested_repair_class'] ?? '' );
 		$this->assertSame( 'templates/front-page.html', $packet['source']['path'] ?? '' );
 		$this->assertStringContainsString( '<iframe', $packet['source']['snippet'] ?? '' );
@@ -199,13 +199,13 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 				),
 			),
 			array(
-				'source'          => 'static-site-importer',
+				'source'          => 'blocks-engine',
 				'stage'           => 'import',
-				'observationType' => 'static-site-importer/import-report',
+				'observationType' => 'blocks-engine/import-report',
 				'refs'            => array(
 					array(
 						'path' => 'import-report.json',
-						'kind' => 'static-site-importer/import-report',
+						'kind' => 'blocks-engine/import-report',
 					),
 				),
 			)
@@ -217,11 +217,11 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		$this->assertSame( 'diag-001', $diagnostics['diagnostics'][0]['id'] ?? '' );
 		$this->assertSame( 'unsupported_html_fallback', $diagnostics['diagnostics'][0]['type'] ?? '' );
 		$this->assertSame( 'no_transform', $diagnostics['diagnostics'][0]['code'] ?? '' );
-		$this->assertSame( 'static-site-importer', $diagnostics['diagnostics'][0]['source'] ?? '' );
+		$this->assertSame( 'blocks-engine', $diagnostics['diagnostics'][0]['source'] ?? '' );
 		$this->assertSame( 'import', $diagnostics['diagnostics'][0]['stage'] ?? '' );
 		$this->assertSame( 'index.html', $diagnostics['diagnostics'][0]['path'] ?? '' );
 		$this->assertSame( 'iframe#store-widget', $diagnostics['diagnostics'][0]['selector'] ?? '' );
-		$this->assertSame( 'static-site-importer/import-report', $diagnostics['diagnostics'][0]['provenance']['observationType'] ?? '' );
+		$this->assertSame( 'blocks-engine/import-report', $diagnostics['diagnostics'][0]['provenance']['observationType'] ?? '' );
 		$this->assertSame( 'import-report.json', $diagnostics['diagnostics'][0]['refs'][0]['path'] ?? '' );
 		$this->assertSame( 'core/html', $diagnostics['diagnostics'][0]['details']['block_name'] ?? '' );
 		$this->assertSame( 'Asset file is missing.', $diagnostics['diagnostics'][1]['message'] ?? '' );
@@ -265,7 +265,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		$this->assertSame( 'templates/front-page.html', $diagnostics[0]['source'] ?? '' );
 		$this->assertSame( 'aside.widget-card', $diagnostics[0]['selector'] ?? '' );
 		$this->assertSame( 'core/html', $diagnostics[0]['block_name'] ?? '' );
-		$this->assertSame( 'blocks-engine-php-transformer', $diagnostics[0]['converter'] ?? '' );
+		$this->assertSame( 'blocks-engine/php-transformer', $diagnostics[0]['engine'] ?? '' );
 		$this->assertSame( 'generated_theme_block_analysis', $diagnostics[0]['stage'] ?? '' );
 		$this->assertSame( 'generated_document_contains_core_html', $diagnostics[0]['reason'] ?? '' );
 		$this->assertSame( '0', $diagnostics[0]['block_path'] ?? '' );
