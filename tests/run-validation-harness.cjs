@@ -47,9 +47,9 @@ const steps = [
     ],
   },
   {
-    name: 'BAC visual repair CSS smoke',
+    name: 'Visual repair CSS smoke',
     command: 'php',
-    args: [ path.join( repoRoot, 'tests/smoke-bac-visual-repair-css.php' ) ],
+    args: [ path.join( repoRoot, 'tests/smoke-visual-repair-css.php' ) ],
   },
   {
     name: 'Export theme ability smoke',

@@ -24,7 +24,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 					'fragment_count'   => 0,
 					'website_artifact' => array(
 						'summary' => array(
-							'schema'           => 'block-artifact-compiler/result/v1',
+							'schema'           => 'blocks-engine/php-transformer/result/v1',
 							'status'           => 'success',
 							'source'           => 'artifact.json',
 							'diagnostic_count' => 0,
@@ -68,7 +68,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		$this->assertSame( 1, $result['version'] ?? 0 );
 		$this->assertSame( 1, $result['report_version'] ?? 0 );
 		$this->assertSame( 'static-template-import', $result['theme_slug'] ?? '' );
-		$this->assertSame( 'block-artifact-compiler/result/v1', $result['compiler']['schema'] ?? '' );
+		$this->assertSame( 'blocks-engine/php-transformer/result/v1', $result['compiler']['schema'] ?? '' );
 		$this->assertSame( 'success', $result['compiler']['status'] ?? '' );
 		$this->assertSame( 1, $result['diagnostic_count'] ?? 0 );
 		$this->assertSame( 2, $result['source_document_count'] ?? 0 );
@@ -100,7 +100,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 			'blocks_engine'           => array(
 				'website_artifact' => array(
 					'summary'    => array(
-						'schema' => 'block-artifact-compiler/result/v1',
+						'schema' => 'blocks-engine/php-transformer/result/v1',
 						'status' => 'success',
 						'source' => 'artifact.json',
 					),

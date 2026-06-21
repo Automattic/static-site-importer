@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Static_Site_Importer_Transformer_Adapter {
 
 	public const WEBSITE_ARTIFACT_SCHEMA = 'block-artifact-compiler/website-artifact/v1';
-	public const COMPILED_RESULT_SCHEMA  = 'block-artifact-compiler/result/v1';
+	public const TRANSFORMER_RESULT_SCHEMA = 'blocks-engine/php-transformer/result/v1';
 	private const CONVERSION_REPORT_OPTION = 'include_conversion_report';
 
 	/**
@@ -73,7 +73,7 @@ class Static_Site_Importer_Transformer_Adapter {
 		$source_reports       = isset( $result['source_reports'] ) && is_array( $result['source_reports'] ) ? $result['source_reports'] : array();
 		$materialization_plan = isset( $source_reports['materialization_plan'] ) && is_array( $source_reports['materialization_plan'] ) ? $source_reports['materialization_plan'] : array();
 		$products             = $this->products_manifest_from_transformer_reports( $result, $materialization_plan );
-		$artifacts            = isset( $compiled['wordpress_artifacts'] ) && is_array( $compiled['wordpress_artifacts'] ) ? $compiled['wordpress_artifacts'] : array();
+		$artifacts            = isset( $compiled['artifacts'] ) && is_array( $compiled['artifacts'] ) ? $compiled['artifacts'] : array();
 		$blocks               = isset( $artifacts['blocks'] ) && is_array( $artifacts['blocks'] ) ? $artifacts['blocks'] : array();
 
 		if ( ! isset( $artifacts['block_tree'] ) ) {
@@ -87,7 +87,7 @@ class Static_Site_Importer_Transformer_Adapter {
 		$artifacts['template_parts']    = isset( $materialization_plan['template_parts'] ) && is_array( $materialization_plan['template_parts'] ) ? $materialization_plan['template_parts'] : array();
 		$artifacts['visual_repair']     = isset( $materialization_plan['visual_repair'] ) && is_array( $materialization_plan['visual_repair'] ) ? $materialization_plan['visual_repair'] : array();
 
-		$compiled['wordpress_artifacts'] = $artifacts;
+		$compiled['artifacts'] = $artifacts;
 
 		if ( ! empty( $products ) ) {
 			$compiled['products_manifest'] = $products;
@@ -116,10 +116,10 @@ class Static_Site_Importer_Transformer_Adapter {
 		$artifact = isset( $source_reports['artifact'] ) && is_array( $source_reports['artifact'] ) ? $source_reports['artifact'] : array();
 
 		$compiled = array(
-			'schema'              => self::COMPILED_RESULT_SCHEMA,
+			'schema'              => isset( $result['schema'] ) && is_scalar( $result['schema'] ) ? (string) $result['schema'] : self::TRANSFORMER_RESULT_SCHEMA,
 			'status'              => isset( $result['status'] ) && is_scalar( $result['status'] ) ? (string) $result['status'] : '',
 			'input'               => $artifact,
-			'wordpress_artifacts' => array(
+			'artifacts'           => array(
 				'block_markup' => isset( $result['serialized_blocks'] ) && is_scalar( $result['serialized_blocks'] ) ? (string) $result['serialized_blocks'] : '',
 				'blocks'       => isset( $result['blocks'] ) && is_array( $result['blocks'] ) ? $result['blocks'] : array(),
 				'block_types'  => isset( $result['block_types'] ) && is_array( $result['block_types'] ) ? $result['block_types'] : array(),
@@ -510,7 +510,7 @@ class Static_Site_Importer_Transformer_Adapter {
 	 * @return array<string,mixed>
 	 */
 	public function summarize_result( array $compiled ): array {
-		$artifacts   = isset( $compiled['wordpress_artifacts'] ) && is_array( $compiled['wordpress_artifacts'] ) ? $compiled['wordpress_artifacts'] : array();
+		$artifacts   = isset( $compiled['artifacts'] ) && is_array( $compiled['artifacts'] ) ? $compiled['artifacts'] : array();
 		$block_tree  = isset( $artifacts['block_tree'] ) && is_array( $artifacts['block_tree'] ) ? $artifacts['block_tree'] : array();
 		$block_types = isset( $artifacts['block_types'] ) && is_array( $artifacts['block_types'] ) ? $artifacts['block_types'] : array();
 		$components  = isset( $artifacts['components'] ) && is_array( $artifacts['components'] ) ? $artifacts['components'] : array();

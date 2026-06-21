@@ -233,15 +233,15 @@ $source_pages = new ReflectionMethod( Static_Site_Importer_Theme_Generator::clas
 $native_pages = $source_pages->invoke(
 	null,
 	array(
-		'wordpress_artifacts' => array(
+		'artifacts' => array(
 			'site'      => array(
 				'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
 				'pages'  => array(
 					array(
 						'source_path'  => 'website/index.html',
 						'post_type'    => 'page',
-						'slug'         => 'legacy-plan-page-slug',
-						'title'        => 'Legacy Plan Page Title',
+						'slug'         => 'planned-page-slug',
+						'title'        => 'Planned Page Title',
 						'entrypoint'   => true,
 						'block_markup' => '<!-- wp:paragraph --><p>Native page</p><!-- /wp:paragraph -->',
 					),
@@ -260,9 +260,9 @@ $native_pages = $source_pages->invoke(
 			'documents' => array(
 				array(
 					'source_path'  => 'website/index.html',
-					'slug'         => 'legacy-home',
-					'title'        => 'Legacy Home',
-					'block_markup' => '<!-- wp:paragraph --><p>Legacy page</p><!-- /wp:paragraph -->',
+					'slug'         => 'compiled-site-home',
+					'title'        => 'Compiled Site Home',
+					'block_markup' => '<!-- wp:paragraph --><p>Compiled site page</p><!-- /wp:paragraph -->',
 				),
 			),
 		),
@@ -272,15 +272,15 @@ $assert( is_array( $native_pages ), 'materialization-plan-pages-create-source-pa
 $native_page = is_array( $native_pages ) ? ( $native_pages['website/index.html'] ?? null ) : null;
 $assert( $native_page instanceof Static_Site_Importer_Source_Page, 'materialization-plan-page-source-key-is-used' );
 $assert( $native_page instanceof Static_Site_Importer_Source_Page && 'materialization_plan_page' === $native_page->type(), 'materialization-plan-page-type-is-native' );
-$assert( $native_page instanceof Static_Site_Importer_Source_Page && 'home-canonical' === $native_page->metadata_value( 'slug' ), 'materialization-plan-route-slug-wins-over-page-and-legacy-document' );
-$assert( $native_page instanceof Static_Site_Importer_Source_Page && 'Home Canonical' === $native_page->metadata_value( 'title' ), 'materialization-plan-route-title-wins-over-page-and-legacy-document' );
+$assert( $native_page instanceof Static_Site_Importer_Source_Page && 'home-canonical' === $native_page->metadata_value( 'slug' ), 'materialization-plan-route-slug-wins-over-page-and-compiled-site-document' );
+$assert( $native_page instanceof Static_Site_Importer_Source_Page && 'Home Canonical' === $native_page->metadata_value( 'title' ), 'materialization-plan-route-title-wins-over-page-and-compiled-site-document' );
 $assert( $native_page instanceof Static_Site_Importer_Source_Page && 'home-route' === $native_page->metadata_value( 'route_key' ), 'materialization-plan-route-key-is-preserved' );
-$assert( $native_page instanceof Static_Site_Importer_Source_Page && str_contains( $native_page->body(), 'Native page' ), 'materialization-plan-page-body-wins-over-legacy-document' );
+$assert( $native_page instanceof Static_Site_Importer_Source_Page && str_contains( $native_page->body(), 'Native page' ), 'materialization-plan-page-body-wins-over-compiled-site-document' );
 
 $malformed_routes = $source_pages->invoke(
 	null,
 	array(
-		'wordpress_artifacts' => array(
+		'artifacts' => array(
 			'site' => array(
 				'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
 				'pages'  => array(
@@ -301,7 +301,7 @@ $assert( 'static_site_importer_materialization_plan_route_invalid' === ( $malfor
 $missing_page_content = $source_pages->invoke(
 	null,
 	array(
-		'wordpress_artifacts' => array(
+		'artifacts' => array(
 			'site' => array(
 				'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
 				'pages'  => array(

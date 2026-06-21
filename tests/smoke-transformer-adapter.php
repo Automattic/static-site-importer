@@ -91,7 +91,7 @@ namespace {
 						'blocks'            => array(
 							array( 'blockName' => 'core/paragraph', 'innerBlocks' => array() ),
 						),
-						'serialized_blocks' => '<!-- wp:paragraph --><p>Legacy top-level Home</p><!-- /wp:paragraph -->',
+						'serialized_blocks' => '<!-- wp:paragraph --><p>Top-level Home</p><!-- /wp:paragraph -->',
 						'conversion_report' => array(
 							'status'            => 'success',
 							'serialized_blocks' => '<!-- wp:paragraph --><p>Native report Home</p><!-- /wp:paragraph -->',
@@ -121,13 +121,13 @@ namespace {
 						),
 						'diagnostics'       => array(
 							array(
-								'code'    => 'legacy_top_level_diagnostic',
-								'message' => 'Legacy top-level diagnostic.',
+								'code'    => 'top_level_diagnostic',
+								'message' => 'Top-level diagnostic.',
 							),
 						),
 						'fallbacks'         => array(
 							array(
-								'source' => 'legacy-top-level',
+								'source' => 'top-level',
 								'count'  => 1,
 							),
 						),
@@ -204,7 +204,7 @@ namespace {
 	$assert( 'smoke' === ( $GLOBALS['ssi_transformer_adapter_format_conversion_calls'][0][3]['source'] ?? '' ), 'format-conversion-options-forwarded' );
 
 	$compiled  = $adapter->compile_website_artifact( array( 'schema' => 'block-artifact-compiler/website-artifact/v1' ), array( 'include_conversion_report' => true ) );
-	$artifacts = $compiled['wordpress_artifacts'] ?? array();
+	$artifacts = $compiled['artifacts'] ?? array();
 	$site      = $artifacts['site'] ?? array();
 	$pages     = $site['pages'] ?? array();
 	$documents = $artifacts['documents'] ?? array();
@@ -212,13 +212,13 @@ namespace {
 	$assert( ! is_wp_error( $compiled ), 'native-compile-succeeds' );
 	$assert( 1 === count( $GLOBALS['ssi_transformer_adapter_compile_calls'] ), 'plugin-compile-helper-called' );
 	$assert( true === ( $GLOBALS['ssi_transformer_adapter_compile_calls'][0][1]['include_conversion_report'] ?? false ), 'compile-options-forwarded-as-native-report-request' );
-	$assert( 'block-artifact-compiler/result/v1' === ( $compiled['schema'] ?? '' ), 'native-result-mapped-to-compiled-envelope' );
+	$assert( 'blocks-engine/php-transformer/result/v1' === ( $compiled['schema'] ?? '' ), 'native-result-schema-is-preserved' );
 	$assert( 'success' === ( $compiled['conversion_report']['status'] ?? '' ), 'conversion-report-shape-preserved' );
 	$assert( '<!-- wp:paragraph --><p>Native report Home</p><!-- /wp:paragraph -->' === ( $compiled['conversion_report']['serialized_blocks'] ?? '' ), 'conversion-report-uses-native-serialized-blocks' );
 	$assert( 'native_report_diagnostic' === ( $compiled['conversion_report']['diagnostics'][0]['code'] ?? '' ), 'conversion-report-uses-native-diagnostics' );
 	$assert( 'native-conversion-report' === ( $compiled['conversion_report']['fallbacks'][0]['source'] ?? '' ), 'conversion-report-uses-native-fallbacks' );
-	$assert( 'legacy_top_level_diagnostic' !== ( $compiled['conversion_report']['diagnostics'][0]['code'] ?? '' ), 'conversion-report-ignores-top-level-diagnostics' );
-	$assert( 'legacy-top-level' !== ( $compiled['conversion_report']['fallbacks'][0]['source'] ?? '' ), 'conversion-report-ignores-top-level-fallbacks' );
+	$assert( 'top_level_diagnostic' !== ( $compiled['conversion_report']['diagnostics'][0]['code'] ?? '' ), 'conversion-report-ignores-top-level-diagnostics' );
+	$assert( 'top-level' !== ( $compiled['conversion_report']['fallbacks'][0]['source'] ?? '' ), 'conversion-report-ignores-top-level-fallbacks' );
 	$assert( 'website/index.html' === ( $compiled['input']['entry_path'] ?? '' ), 'native-artifact-report-preserved-as-input' );
 	$assert( 'blocks-engine/php-transformer/materialization-plan/v1' === ( $site['schema'] ?? '' ), 'native-materialization-plan-contract-is-used' );
 	$assert( 4 === count( $pages ), 'native-keeps-materialization-plan-pages-without-adapter-filtering' );

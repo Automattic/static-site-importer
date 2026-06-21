@@ -78,7 +78,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	private static function import_compiled_website_artifact( array $compiled, array $args = array() ) {
-		$artifacts    = isset( $compiled['wordpress_artifacts'] ) && is_array( $compiled['wordpress_artifacts'] ) ? $compiled['wordpress_artifacts'] : array();
+		$artifacts    = isset( $compiled['artifacts'] ) && is_array( $compiled['artifacts'] ) ? $compiled['artifacts'] : array();
 		$theme_name   = isset( $args['name'] ) && '' !== trim( (string) $args['name'] ) ? sanitize_text_field( (string) $args['name'] ) : 'Imported Website Artifact';
 		$theme_slug   = isset( $args['slug'] ) && '' !== trim( (string) $args['slug'] ) ? sanitize_title( (string) $args['slug'] ) : sanitize_title( $theme_name );
 		if ( '' === $theme_slug ) {
@@ -1028,14 +1028,14 @@ class Static_Site_Importer_Theme_Generator {
 	 * Normalize website artifact document rows into source pages.
 	 *
 	 * SSI consumes the compiled-site page contract when available, then attaches
-	 * the referenced `wordpress_artifacts.documents[]` block markup for WordPress
+	 * the referenced `artifacts.documents[]` block markup for WordPress
 	 * materialization.
 	 *
 	 * @param array<string,mixed> $compiled Compiler result envelope.
 	 * @return array<string, Static_Site_Importer_Source_Page>|WP_Error
 	 */
 	private static function website_artifact_source_pages( array $compiled ) {
-		$artifacts = isset( $compiled['wordpress_artifacts'] ) && is_array( $compiled['wordpress_artifacts'] ) ? $compiled['wordpress_artifacts'] : array();
+		$artifacts = isset( $compiled['artifacts'] ) && is_array( $compiled['artifacts'] ) ? $compiled['artifacts'] : array();
 		$documents = isset( $artifacts['documents'] ) && is_array( $artifacts['documents'] ) ? $artifacts['documents'] : array();
 		$site      = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
 		if ( ! empty( $site['pages'] ) && is_array( $site['pages'] ) ) {

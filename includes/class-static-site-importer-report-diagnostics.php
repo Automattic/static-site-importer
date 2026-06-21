@@ -152,7 +152,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return void
 	 */
 	public static function record_blocks_engine_result( array &$report, array $compiled ): void {
-		$artifacts = isset( $compiled['wordpress_artifacts'] ) && is_array( $compiled['wordpress_artifacts'] ) ? $compiled['wordpress_artifacts'] : array();
+		$artifacts = isset( $compiled['artifacts'] ) && is_array( $compiled['artifacts'] ) ? $compiled['artifacts'] : array();
 		$site      = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
 		$report['blocks_engine']['available']        = true;
 		$report['blocks_engine']['website_artifact'] = array(
@@ -166,7 +166,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			$report['blocks_engine']['compiled_site'] = self::compiled_site_report_payload( $site );
 		}
 		if ( 'blocks-engine/php-transformer/materialization-plan/v1' === (string) ( $site['schema'] ?? '' ) ) {
-			$report['block_artifact_compiler']['materialization_plan'] = self::compiled_site_report_payload( $site );
+			$report['blocks_engine']['materialization_plan'] = self::compiled_site_report_payload( $site );
 		}
 	}
 
@@ -178,7 +178,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return void
 	 */
 	public static function record_direct_website_artifact_source_summary( array &$report, array $compiled ): void {
-		$artifacts = isset( $compiled['wordpress_artifacts'] ) && is_array( $compiled['wordpress_artifacts'] ) ? $compiled['wordpress_artifacts'] : array();
+		$artifacts = isset( $compiled['artifacts'] ) && is_array( $compiled['artifacts'] ) ? $compiled['artifacts'] : array();
 		$files     = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
 		$source    = (string) ( $compiled['provenance']['source'] ?? ( $compiled['input']['entry_path'] ?? 'website_artifact' ) );
 
@@ -204,7 +204,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'type'        => 'website_artifact_materialization_contract_note',
 			'source'      => '' !== $source ? $source : 'website_artifact',
 			'message'     => 'Direct materialization consumed block_markup, documents, files, and compiled-site artifacts. Static Site Importer owns WordPress writes and product seeding while Blocks Engine owns materializer-neutral site/theme compilation.',
-			'contract'    => 'block-artifact-compiler/result/v1',
+			'contract'    => isset( $compiled['schema'] ) && is_scalar( $compiled['schema'] ) ? (string) $compiled['schema'] : 'blocks-engine/php-transformer/result/v1',
 			'constraints' => 'report_only',
 		);
 	}
