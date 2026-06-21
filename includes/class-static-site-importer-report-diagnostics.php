@@ -419,7 +419,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$quality['diagnostic_refs'] = self::quality_diagnostic_refs( $report['diagnostics'] ?? array() );
 		$report['quality']         = $quality;
 		self::normalize_source_document_diagnostic_refs( $report );
-		$report['artifact_diagnostics'] = Static_Site_Importer_WP_Codebox_Artifact_Diagnostics_Normalizer::build_for_import_report( $report );
+		$report['artifact_diagnostics'] = Static_Site_Importer_Artifact_Diagnostics_Adapter::build_for_import_report( $report );
 
 		return $quality;
 	}

@@ -175,10 +175,14 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Artifact diagnostics use the WP Codebox normalization contract.
+	 * Artifact diagnostics use SSI's schema when no WP Codebox PHP normalizer is available.
 	 */
-	public function test_wp_codebox_artifact_diagnostics_normalizer_accepts_import_report_shape(): void {
-		$diagnostics = Static_Site_Importer_WP_Codebox_Artifact_Diagnostics_Normalizer::build_for_import_report(
+	public function test_artifact_diagnostics_adapter_emits_static_site_importer_fallback_shape(): void {
+		if ( function_exists( 'wp_codebox_build_artifact_diagnostics' ) || class_exists( 'WP_Codebox_Artifact_Diagnostics_Normalizer' ) ) {
+			$this->markTestSkipped( 'WP Codebox exposes an artifact diagnostics normalizer.' );
+		}
+
+		$diagnostics = Static_Site_Importer_Artifact_Diagnostics_Adapter::build_for_import_report(
 			array(
 				'diagnostics' => array(
 					array(
@@ -193,6 +197,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 					),
 					array(
 						'type'          => 'missing_asset',
+						'severity'      => 'error',
 						'error_message' => 'Asset file is missing.',
 						'source_path'   => 'assets/hero.jpg',
 					),
@@ -200,23 +205,20 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 			)
 		);
 
-		$this->assertSame( 'wp-codebox/artifact-diagnostics/v1', $diagnostics['schema'] ?? '' );
+		$this->assertSame( 'static-site-importer/artifact-diagnostics/v1', $diagnostics['schema'] ?? '' );
 		$this->assertSame( 'reported', $diagnostics['status'] ?? '' );
-		$this->assertSame( array( 'total' => 2, 'error' => 0, 'warning' => 1, 'notice' => 1, 'info' => 0 ), $diagnostics['summary'] ?? array() );
+		$this->assertSame( 'static-site-importer', $diagnostics['source'] ?? '' );
+		$this->assertSame( array( 'total' => 2, 'error' => 1, 'warning' => 0, 'notice' => 1, 'info' => 0 ), $diagnostics['summary'] ?? array() );
 		$this->assertSame( 'diag-001', $diagnostics['diagnostics'][0]['id'] ?? '' );
 		$this->assertSame( 'unsupported_html_fallback', $diagnostics['diagnostics'][0]['type'] ?? '' );
-		$this->assertSame( 'no_transform', $diagnostics['diagnostics'][0]['code'] ?? '' );
-		$this->assertSame( 'blocks-engine', $diagnostics['diagnostics'][0]['source'] ?? '' );
-		$this->assertSame( 'import', $diagnostics['diagnostics'][0]['stage'] ?? '' );
-		$this->assertSame( 'index.html', $diagnostics['diagnostics'][0]['path'] ?? '' );
+		$this->assertSame( 'no_transform', $diagnostics['diagnostics'][0]['reason_code'] ?? '' );
+		$this->assertSame( 'index.html', $diagnostics['diagnostics'][0]['source_path'] ?? '' );
 		$this->assertSame( 'iframe#store-widget', $diagnostics['diagnostics'][0]['selector'] ?? '' );
-		$this->assertSame( 'blocks-engine/import-report', $diagnostics['diagnostics'][0]['provenance']['observationType'] ?? '' );
-		$this->assertSame( 'import-report.json', $diagnostics['diagnostics'][0]['refs'][0]['path'] ?? '' );
-		$this->assertSame( 'core/html', $diagnostics['diagnostics'][0]['details']['block_name'] ?? '' );
-		$this->assertSame( 'Asset file is missing.', $diagnostics['diagnostics'][1]['message'] ?? '' );
-		$this->assertSame( 'warning', $diagnostics['diagnostics'][1]['severity'] ?? '' );
+		$this->assertSame( 'core/html', $diagnostics['diagnostics'][0]['block_name'] ?? '' );
+		$this->assertSame( 'Asset file is missing.', $diagnostics['diagnostics'][1]['error_message'] ?? '' );
+		$this->assertSame( 'error', $diagnostics['diagnostics'][1]['severity'] ?? '' );
 
-		$empty = Static_Site_Importer_WP_Codebox_Artifact_Diagnostics_Normalizer::build( array( 'diagnostics' => array() ) );
+		$empty = Static_Site_Importer_Artifact_Diagnostics_Adapter::build_for_import_report( array( 'diagnostics' => array() ) );
 		$this->assertSame( 'clean', $empty['status'] ?? '' );
 		$this->assertSame( array( 'total' => 0, 'error' => 0, 'warning' => 0, 'notice' => 0, 'info' => 0 ), $empty['summary'] ?? array() );
 		$this->assertSame( array(), $empty['diagnostics'] ?? null );
