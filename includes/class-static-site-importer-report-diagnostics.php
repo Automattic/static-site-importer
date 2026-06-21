@@ -419,20 +419,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$quality['diagnostic_refs'] = self::quality_diagnostic_refs( $report['diagnostics'] ?? array() );
 		$report['quality']         = $quality;
 		self::normalize_source_document_diagnostic_refs( $report );
-		$report['artifact_diagnostics'] = Static_Site_Importer_WP_Codebox_Artifact_Diagnostics_Normalizer::build(
-			array( 'diagnostics' => $report['diagnostics'] ?? array() ),
-			array(
-				'source'          => 'blocks-engine',
-				'stage'           => 'import',
-				'observationType' => 'blocks-engine/import-report',
-				'refs'            => array(
-					array(
-						'path' => 'import-report.json',
-						'kind' => 'blocks-engine/import-report',
-					),
-				),
-			)
-		);
+		$report['artifact_diagnostics'] = Static_Site_Importer_WP_Codebox_Artifact_Diagnostics_Normalizer::build_for_import_report( $report );
 
 		return $quality;
 	}

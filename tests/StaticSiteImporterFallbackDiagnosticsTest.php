@@ -178,7 +178,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 	 * Artifact diagnostics use the WP Codebox normalization contract.
 	 */
 	public function test_wp_codebox_artifact_diagnostics_normalizer_accepts_import_report_shape(): void {
-		$diagnostics = Static_Site_Importer_WP_Codebox_Artifact_Diagnostics_Normalizer::build(
+		$diagnostics = Static_Site_Importer_WP_Codebox_Artifact_Diagnostics_Normalizer::build_for_import_report(
 			array(
 				'diagnostics' => array(
 					array(
@@ -195,17 +195,6 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 						'type'          => 'missing_asset',
 						'error_message' => 'Asset file is missing.',
 						'source_path'   => 'assets/hero.jpg',
-					),
-				),
-			),
-			array(
-				'source'          => 'blocks-engine',
-				'stage'           => 'import',
-				'observationType' => 'blocks-engine/import-report',
-				'refs'            => array(
-					array(
-						'path' => 'import-report.json',
-						'kind' => 'blocks-engine/import-report',
 					),
 				),
 			)

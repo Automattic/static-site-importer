@@ -46,6 +46,29 @@ class Static_Site_Importer_WP_Codebox_Artifact_Diagnostics_Normalizer {
 	}
 
 	/**
+	 * Build artifact diagnostics for a Static Site Importer import report.
+	 *
+	 * @param array<string,mixed> $report Import report.
+	 * @return array<string,mixed>
+	 */
+	public static function build_for_import_report( array $report ): array {
+		return self::build(
+			array( 'diagnostics' => $report['diagnostics'] ?? array() ),
+			array(
+				'source'          => 'blocks-engine',
+				'stage'           => 'import',
+				'observationType' => 'blocks-engine/import-report',
+				'refs'            => array(
+					array(
+						'path' => 'import-report.json',
+						'kind' => 'blocks-engine/import-report',
+					),
+				),
+			)
+		);
+	}
+
+	/**
 	 * Normalize diagnostics from one observation/import report.
 	 *
 	 * @param mixed                $observation       Observation-like value.
