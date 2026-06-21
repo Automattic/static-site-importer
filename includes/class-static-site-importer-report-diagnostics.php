@@ -648,7 +648,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		$durable = array();
-		foreach ( array( 'artifact_id', 'id', 'url', 'artifact_name', 'name', 'kind', 'role', 'sha256' ) as $key ) {
+		foreach ( array( 'artifact_id', 'id', 'url', 'artifact_name', 'name', 'sha256' ) as $key ) {
 			if ( ! isset( $ref[ $key ] ) || ! is_scalar( $ref[ $key ] ) ) {
 				continue;
 			}
@@ -662,10 +662,23 @@ class Static_Site_Importer_Report_Diagnostics {
 			$durable[ $normalized_key ] = $value;
 		}
 
-		if ( empty( $durable ) && isset( $ref['path'] ) && is_scalar( $ref['path'] ) ) {
+		if ( ! isset( $durable['artifact_name'] ) && isset( $ref['path'] ) && is_scalar( $ref['path'] ) ) {
 			$path = trim( (string) $ref['path'] );
 			if ( '' !== $path && ! self::is_local_path_ref( $path ) ) {
 				$durable['artifact_name'] = basename( $path );
+			}
+		}
+
+		if ( ! empty( $durable ) ) {
+			foreach ( array( 'kind', 'role' ) as $key ) {
+				if ( ! isset( $ref[ $key ] ) || ! is_scalar( $ref[ $key ] ) ) {
+					continue;
+				}
+
+				$value = trim( (string) $ref[ $key ] );
+				if ( '' !== $value ) {
+					$durable[ $key ] = $value;
+				}
 			}
 		}
 
