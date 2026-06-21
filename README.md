@@ -209,6 +209,34 @@ The export envelope includes:
 
 The default root is `website` with `entrypoint: "website/index.html"`. Callers can pass any safe single-segment root with a matching entrypoint, such as `root: "artifact"` and `entrypoint: "artifact/index.html"`.
 
+### Codebox validation product path
+
+`static-site-importer/validate-in-codebox` is the SSI product path for validating an import inside a disposable WP Codebox runtime. It accepts either a Blocks Engine website artifact (`artifact`) or durable refs to generated import output (`generated_theme_ref` / `theme_archive_ref`) and builds a `static-site-importer/codebox-validation-request/v1` envelope.
+
+The runtime provider hook is `static_site_importer_codebox_validation_result`. WP Codebox/Homeboy integrations should import the supplied artifact or generated theme output in a disposable runtime, run SSI import validation, run generated-theme block validation, collect browser/render evidence, and return `static-site-importer/codebox-validation-result/v1` with reviewer-facing artifact refs.
+
+Required artifact metadata lives under `artifacts` using `static-site-importer/codebox-validation-artifacts/v1`:
+
+- `generated_theme` or `theme_archive`
+- `import_report`
+- `block_validation_result`
+- `browser_render_evidence`
+- `screenshots[]` when available
+- `diffs[]` when available
+
+Reviewer-facing artifact fields should use durable refs or URLs. Host-local paths and `localhost` URLs are stripped from artifact refs; local paths may appear only under `operator_notes` for the machine operator.
+
+CLI entrypoint:
+
+```bash
+wp static-site-importer validate-in-codebox \
+  --artifact=/path/to/website-artifact.json \
+  --slug=example-import \
+  --name="Example Import"
+```
+
+Current upstream gap: SSI defines the product contract and dispatch hook, but a WP Codebox/Homeboy provider still needs to register `static_site_importer_codebox_validation_result` to execute the disposable runtime and return durable screenshot/diff/browser evidence refs. Until that provider is present, the ability returns a structured `blocked` result documenting the missing provider shape instead of faking validation evidence.
+
 ## Validation
 
 The repository has both WordPress-side fixture coverage and generated-artifact validation.
