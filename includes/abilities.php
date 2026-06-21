@@ -146,6 +146,39 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 				'meta'                => array( 'show_in_rest' => true ),
 			)
 		);
+
+		wp_register_ability(
+			'static-site-importer/validate-in-codebox',
+			array(
+				'label'               => __( 'Validate Import in Codebox', 'static-site-importer' ),
+				'description'         => __( 'Validate a website artifact or generated import output in a disposable WP Codebox runtime and return durable artifact metadata.', 'static-site-importer' ),
+				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
+				'input_schema'        => array(
+					'type'       => 'object',
+					'properties' => array(
+						'artifact'                  => array( 'type' => 'object' ),
+						'generated_theme_ref'       => array( 'type' => 'object' ),
+						'theme_archive_ref'         => array( 'type' => 'object' ),
+						'slug'                      => array( 'type' => 'string' ),
+						'name'                      => array( 'type' => 'string' ),
+						'activate'                  => array( 'type' => 'boolean' ),
+						'overwrite'                 => array( 'type' => 'boolean' ),
+						'fail_on_quality'           => array( 'type' => 'boolean' ),
+						'allow_missing_woocommerce' => array( 'type' => 'boolean' ),
+						'asset_materialization_policy' => array(
+							'type' => 'string',
+							'enum' => array( 'copy_to_theme', 'use_map' ),
+						),
+						'compiler_options'          => array( 'type' => 'object' ),
+						'source_metadata'           => array( 'type' => 'object' ),
+					),
+				),
+				'output_schema'       => array( 'type' => 'object' ),
+				'execute_callback'    => 'static_site_importer_ability_validate_in_codebox',
+				'permission_callback' => 'static_site_importer_ability_permission_callback',
+				'meta'                => array( 'show_in_rest' => true ),
+			)
+		);
 	}
 }
 
@@ -161,6 +194,27 @@ if ( ! function_exists( 'static_site_importer_ability_permission_callback' ) ) {
 		}
 
 		return ! function_exists( 'current_user_can' ) || current_user_can( 'switch_themes' );
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_ability_validate_in_codebox' ) ) {
+	/**
+	 * Ability callback for Codebox-backed validation.
+	 *
+	 * @param array<string, mixed> $input Ability input.
+	 * @return array<string, mixed>
+	 */
+	function static_site_importer_ability_validate_in_codebox( array $input ): array {
+		$result = Static_Site_Importer_Codebox_Validation::validate( $input );
+		if ( is_wp_error( $result ) ) {
+			/** @var WP_Error $result */
+			return static_site_importer_ability_error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
+		}
+
+		return array_merge(
+			array( 'success' => ! empty( $result['success'] ) ),
+			$result
+		);
 	}
 }
 

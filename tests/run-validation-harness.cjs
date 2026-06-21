@@ -64,6 +64,11 @@ const steps = [
     command: 'php',
     args: [ path.join( repoRoot, 'tests/smoke-url-import-runtime.php' ) ],
   },
+  {
+    name: 'Codebox validation contract smoke',
+    command: 'php',
+    args: [ path.join( repoRoot, 'tests/smoke-codebox-validation-contract.php' ) ],
+  },
   ! skipImport && {
     name: 'Import wordpress-is-dead fixture theme',
     command: wpCli[ 0 ],

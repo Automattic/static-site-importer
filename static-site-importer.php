@@ -33,8 +33,60 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-st
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-woo-product-seeder.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-product-handoff-contract.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-artifact-diagnostics-adapter.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-codebox-validation.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-report-diagnostics.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-transformer-adapter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-exporter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-generator.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/abilities.php';
+
+if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
+	WP_CLI::add_command(
+		'static-site-importer validate-in-codebox',
+		static function ( array $args, array $assoc_args ): void {
+			unset( $args );
+
+			$input = array(
+				'slug'                      => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
+				'name'                      => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
+				'activate'                  => ! isset( $assoc_args['no-activate'] ),
+				'overwrite'                 => ! isset( $assoc_args['no-overwrite'] ),
+				'fail_on_quality'           => isset( $assoc_args['fail-on-quality'] ),
+				'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
+			);
+
+			if ( isset( $assoc_args['artifact'] ) ) {
+				$artifact_json = file_get_contents( (string) $assoc_args['artifact'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads an operator-provided artifact file.
+				$artifact      = json_decode( false === $artifact_json ? '' : $artifact_json, true );
+				if ( ! is_array( $artifact ) ) {
+					WP_CLI::error( 'The --artifact file must contain a JSON object.' );
+				}
+
+				$input['artifact'] = $artifact;
+			}
+
+			if ( isset( $assoc_args['generated-theme-ref'] ) ) {
+				$input['generated_theme_ref'] = array( 'artifact_ref' => (string) $assoc_args['generated-theme-ref'] );
+			}
+
+			if ( isset( $assoc_args['theme-archive-ref'] ) ) {
+				$input['theme_archive_ref'] = array( 'artifact_ref' => (string) $assoc_args['theme-archive-ref'] );
+			}
+
+			$result = Static_Site_Importer_Codebox_Validation::validate( $input );
+			if ( is_wp_error( $result ) ) {
+				WP_CLI::error( $result->get_error_message() );
+			}
+
+			$json = wp_json_encode( $result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+			if ( false === $json ) {
+				WP_CLI::error( 'Failed to encode Codebox validation result.' );
+			}
+
+			WP_CLI::line( $json );
+			if ( empty( $result['success'] ) ) {
+				WP_CLI::halt( 1 );
+			}
+		}
+	);
+}
