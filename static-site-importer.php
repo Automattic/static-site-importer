@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Static Site Importer
  * Description: Materialize compiled website artifacts into WordPress block themes.
- * Version: 1.1.4
+ * Version: 1.1.6
  * Author: Chris Huber
  * Requires at least: 6.9
  * Requires PHP: 8.1
