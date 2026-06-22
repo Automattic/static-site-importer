@@ -3,10 +3,10 @@
 		return;
 	}
 
-	var el = element.createElement;
+	const el = element.createElement;
 
 	blocks.registerBlockType( 'static-site-importer/importer', {
-		edit: function () {
+		edit() {
 			return el(
 				'div',
 				{ className: 'ssi-importer ssi-importer--editor' },
@@ -18,7 +18,7 @@
 					: null
 			);
 		},
-		save: function () {
+		save() {
 			return null;
 		},
 	} );
