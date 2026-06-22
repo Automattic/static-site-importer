@@ -27,15 +27,6 @@ function static_site_importer_register_rest_routes(): void {
 }
 
 /**
- * Register default preview providers.
- *
- * @return void
- */
-function static_site_importer_register_preview_providers(): void {
-	add_filter( 'static_site_importer_preview_result', 'static_site_importer_rest_codebox_preview_result', 10, 3 );
-}
-
-/**
  * Require a site operator for import mutations.
  *
  * @return true|WP_Error
@@ -160,27 +151,13 @@ function static_site_importer_rest_create_preview( array $source, array $input, 
 		'provider'    => isset( $params['provider'] ) ? sanitize_key( (string) $params['provider'] ) : '',
 	);
 
-	/**
-	 * Creates a standalone WordPress preview for an SSI import request.
-	 *
-	 * Providers should return an array containing `preview.url` and/or
-	 * `preview.playground.blueprint_url`. Return null when no provider is available.
-	 *
-	 * @param array<string,mixed>|WP_Error|null $result  Provider result.
-	 * @param array<string,mixed>               $request Preview request.
-	 * @param array<string,mixed>               $params  Raw REST params.
-	 */
-	$result = apply_filters( 'static_site_importer_preview_result', null, $request, $params );
+	$result = static_site_importer_rest_codebox_preview_result( $request, $params );
 	if ( is_wp_error( $result ) ) {
 		return $result;
 	}
 
-	if ( null === $result ) {
-		return static_site_importer_rest_preview_unavailable_result( $request );
-	}
-
 	if ( ! is_array( $result ) ) {
-		return new WP_Error( 'static_site_importer_preview_result_invalid', __( 'Preview providers must return an array result, WP_Error, or null.', 'static-site-importer' ), array( 'status' => 500 ) );
+		return new WP_Error( 'static_site_importer_codebox_preview_result_invalid', __( 'WP Codebox preview must return an array result or WP_Error.', 'static-site-importer' ), array( 'status' => 500 ) );
 	}
 
 	return static_site_importer_rest_normalize_preview_result( $result );
@@ -197,16 +174,17 @@ function static_site_importer_rest_preview_unavailable_result( array $request ):
 		'success' => false,
 		'preview' => array(
 			'status'  => 'unavailable',
-			'message' => __( 'Preview unavailable: no Static Site Importer preview provider is configured for standalone WordPress previews.', 'static-site-importer' ),
+			'message' => __( 'Preview unavailable: WP Codebox is unavailable, not installed, or does not provide the required browser Playground session API.', 'static-site-importer' ),
 		),
+		'provider' => 'wp-codebox/create-browser-playground-session',
 		'request' => $request,
 	);
 }
 
 /**
- * Normalize provider output to the REST preview contract.
+ * Normalize preview output to the REST preview contract.
  *
- * @param array<string,mixed> $result Provider result.
+ * @param array<string,mixed> $result Preview result.
  * @return array<string,mixed>
  */
 function static_site_importer_rest_normalize_preview_result( array $result ): array {
@@ -240,18 +218,13 @@ function static_site_importer_rest_normalize_preview_result( array $result ): ar
 /**
  * Create a preview through WP Codebox's disposable browser Playground session API.
  *
- * @param array<string,mixed>|WP_Error|null $result  Existing provider result.
- * @param array<string,mixed>               $request Preview request.
- * @param array<string,mixed>               $params  Raw REST params.
- * @return array<string,mixed>|WP_Error|null
+ * @param array<string,mixed> $request Preview request.
+ * @param array<string,mixed> $params  Raw REST params.
+ * @return array<string,mixed>|WP_Error
  */
-function static_site_importer_rest_codebox_preview_result( $result, array $request, array $params ) {
-	if ( null !== $result ) {
-		return $result;
-	}
-
+function static_site_importer_rest_codebox_preview_result( array $request, array $params ) {
 	if ( ! class_exists( 'WP_Codebox_Abilities' ) || ! method_exists( 'WP_Codebox_Abilities', 'create_browser_playground_session' ) ) {
-		return null;
+		return static_site_importer_rest_preview_unavailable_result( $request );
 	}
 
 	$codebox_input = static_site_importer_rest_codebox_preview_input( $request, $params );
@@ -708,8 +681,4 @@ function static_site_importer_rest_entrypoint( array $files ): string {
 	}
 
 	return 'website/index.html';
-}
-
-if ( function_exists( 'add_filter' ) ) {
-	static_site_importer_register_preview_providers();
 }

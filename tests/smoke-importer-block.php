@@ -107,10 +107,6 @@ if ( ! function_exists( 'rest_ensure_response' ) ) {
 
 if ( ! function_exists( 'apply_filters' ) ) {
 	function apply_filters( string $hook, $value, ...$args ) {
-		if ( 'static_site_importer_preview_result' === $hook && ! empty( $GLOBALS['ssi_preview_provider'] ) && is_callable( $GLOBALS['ssi_preview_provider'] ) ) {
-			return $GLOBALS['ssi_preview_provider']( $value, ...$args );
-		}
-
 		return $value;
 	}
 }
@@ -270,69 +266,9 @@ $assert( str_contains( $view_js, 'webkitRelativePath' ), 'view-preserves-directo
 $assert( str_contains( $view_js, 'archive: await buildArchive' ), 'view-sends-zip-as-archive-payload' );
 $assert( ! str_contains( $view_js, 'activate: true' ), 'view-does-not-activate-current-site' );
 $assert( ! str_contains( $view_js, 'overwrite: true' ), 'view-does-not-overwrite-current-site' );
+$generic_preview_message = implode( ' ', array( 'no', 'preview', 'provider', 'is', 'configured' ) );
+$assert( ! str_contains( $view_js, $generic_preview_message ), 'view-does-not-reference-generic-preview-message' );
 $assert( str_contains( $view_js, 'Open WordPress preview' ) || str_contains( $html, 'Open WordPress preview' ), 'view-or-render-has-preview-link-label' );
-
-$GLOBALS['ssi_preview_provider'] = static function ( $result, array $request ): array {
-	$GLOBALS['ssi_preview_request'] = $request;
-
-	return array(
-		'success' => true,
-		'preview' => array(
-			'playground' => array(
-				'blueprint_url' => 'https://playground.wordpress.net/?blueprint-url=https://example.test/blueprint.json',
-			),
-		),
-	);
-};
-
-$preview_response = static_site_importer_rest_create_import(
-	new WP_REST_Request(
-		array(
-			'source' => array(
-				'files' => array(
-					array(
-						'path'    => 'uploaded/site/index.html',
-						'content' => '<main>Hello</main>',
-					),
-				),
-			),
-		)
-	)
-);
-$assert( true === ( $preview_response['success'] ?? null ), 'rest-preview-provider-result-succeeds' );
-$assert( isset( $preview_response['preview']['playground']['blueprint_url'] ), 'rest-preview-contract-exposes-playground-blueprint-url' );
-$assert( 'static-site-importer/preview-request/v1' === ( $GLOBALS['ssi_preview_request']['schema'] ?? '' ), 'rest-preview-request-has-schema' );
-$assert( isset( $GLOBALS['ssi_preview_request']['source']['artifact'] ), 'rest-preview-request-includes-artifact' );
-$assert( 'website/uploaded/site/index.html' === ( $GLOBALS['ssi_preview_request']['source']['artifact']['files'][0]['path'] ?? '' ), 'rest-directory-path-is-normalized' );
-
-$GLOBALS['ssi_preview_provider'] = null;
-$unavailable_response = static_site_importer_rest_create_import(
-	new WP_REST_Request(
-		array(
-			'source' => array(
-				'html' => '<main>No provider</main>',
-			),
-		)
-	)
-);
-$assert( false === ( $unavailable_response['success'] ?? null ), 'rest-preview-default-does-not-pretend-success' );
-$assert( 'unavailable' === ( $unavailable_response['preview']['status'] ?? '' ), 'rest-preview-default-reports-unavailable' );
-
-Static_Site_Importer_Theme_Generator::$last_artifact = array();
-$apply_response = static_site_importer_rest_create_import(
-	new WP_REST_Request(
-		array(
-			'apply_to_current_site' => true,
-			'activate'              => true,
-			'overwrite'             => true,
-			'source'                => array(
-				'html' => '<main>Apply</main>',
-			),
-		)
-	)
-);
-$assert( true === ( $apply_response['success'] ?? null ), 'rest-current-site-apply-is-explicitly-available' );
-$assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['activate'] ?? null ), 'rest-current-site-apply-preserves-activate' );
 
 WP_Codebox_Abilities::$next_session = array(
 	'success'         => true,
@@ -356,18 +292,30 @@ WP_Codebox_Abilities::$next_session = array(
 		'preview_url' => '/?preview=1',
 	),
 );
-$codebox_preview = static_site_importer_rest_codebox_preview_result(
-	null,
-	$GLOBALS['ssi_preview_request'],
-	array()
-);
-$assert( true === ( $codebox_preview['success'] ?? null ), 'rest-codebox-preview-provider-succeeds' );
-$assert( 'https://preview.example.test/ssi' === ( $codebox_preview['preview']['url'] ?? '' ), 'rest-codebox-preview-provider-exposes-preview-url' );
-$assert( isset( $codebox_preview['preview']['playground']['blueprint_url'] ), 'rest-codebox-preview-provider-exposes-blueprint-url' );
-$assert( 'wp-codebox/create-browser-playground-session' === ( $codebox_preview['provider'] ?? '' ), 'rest-codebox-preview-provider-identified' );
-$assert( 'static-site-importer/import-website-artifact' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['name'] ?? '' ), 'rest-codebox-preview-invokes-ssi-import-ability' );
-$assert( 'uploaded/site/index.html' === ( WP_Codebox_Abilities::$last_input['artifact_files'][0]['path'] ?? '' ), 'rest-codebox-preview-strips-website-prefix-for-browser-artifacts' );
 
+$preview_response = static_site_importer_rest_create_import(
+	new WP_REST_Request(
+		array(
+			'source' => array(
+				'files' => array(
+					array(
+						'path'    => 'uploaded/site/index.html',
+						'content' => '<main>Hello</main>',
+					),
+				),
+			),
+		)
+	)
+);
+$assert( true === ( $preview_response['success'] ?? null ), 'rest-preview-codebox-result-succeeds' );
+$assert( 'https://preview.example.test/ssi' === ( $preview_response['preview']['url'] ?? '' ), 'rest-preview-contract-exposes-codebox-preview-url' );
+$assert( isset( $preview_response['preview']['playground']['blueprint_url'] ), 'rest-preview-contract-exposes-playground-blueprint-url' );
+$assert( 'static-site-importer/import-website-artifact' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['name'] ?? '' ), 'rest-preview-codebox-invokes-ssi-import-ability' );
+$assert( isset( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['input']['artifact'] ), 'rest-preview-codebox-request-includes-artifact' );
+$assert( 'website/uploaded/site/index.html' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['input']['artifact']['files'][0]['path'] ?? '' ), 'rest-directory-path-is-normalized' );
+$assert( 'uploaded/site/index.html' === ( WP_Codebox_Abilities::$last_input['artifact_files'][0]['path'] ?? '' ), 'rest-preview-codebox-strips-website-prefix-for-browser-artifacts' );
+
+Static_Site_Importer_Theme_Generator::$last_artifact = array();
 WP_Codebox_Abilities::$next_session = array(
 	'success'    => true,
 	'schema'     => 'wp-codebox/browser-playground-session/v1',
@@ -375,13 +323,40 @@ WP_Codebox_Abilities::$next_session = array(
 	'playground' => array(),
 	'artifacts'  => array(),
 );
-$codebox_unavailable = static_site_importer_rest_codebox_preview_result(
-	null,
-	$GLOBALS['ssi_preview_request'],
-	array()
+$unavailable_response = static_site_importer_rest_create_import(
+	new WP_REST_Request(
+		array(
+			'source' => array(
+				'html' => '<main>No provider</main>',
+			),
+		)
+	)
 );
-$assert( false === ( $codebox_unavailable['success'] ?? null ), 'rest-codebox-preview-without-url-does-not-pretend-success' );
-$assert( 'unavailable' === ( $codebox_unavailable['preview']['status'] ?? '' ), 'rest-codebox-preview-without-url-reports-unavailable' );
+$assert( false === ( $unavailable_response['success'] ?? null ), 'rest-preview-default-does-not-pretend-success' );
+$assert( 'unavailable' === ( $unavailable_response['preview']['status'] ?? '' ), 'rest-preview-default-reports-unavailable' );
+$assert( str_contains( $unavailable_response['preview']['message'] ?? '', 'WP Codebox did not return a preview URL or Playground blueprint URL' ), 'rest-preview-default-codebox-no-url-diagnostic' );
+$assert( array() === Static_Site_Importer_Theme_Generator::$last_artifact, 'rest-preview-default-does-not-apply-to-current-site' );
+
+$codebox_missing = static_site_importer_rest_preview_unavailable_result( array( 'schema' => 'static-site-importer/preview-request/v1' ) );
+$assert( false === ( $codebox_missing['success'] ?? null ), 'rest-codebox-unavailable-does-not-pretend-success' );
+$assert( 'wp-codebox/create-browser-playground-session' === ( $codebox_missing['provider'] ?? '' ), 'rest-codebox-unavailable-identifies-required-api' );
+$assert( str_contains( $codebox_missing['preview']['message'] ?? '', 'WP Codebox is unavailable, not installed, or does not provide the required browser Playground session API' ), 'rest-codebox-unavailable-diagnostic-wording' );
+
+Static_Site_Importer_Theme_Generator::$last_artifact = array();
+$apply_response = static_site_importer_rest_create_import(
+	new WP_REST_Request(
+		array(
+			'apply_to_current_site' => true,
+			'activate'              => true,
+			'overwrite'             => true,
+			'source'                => array(
+				'html' => '<main>Apply</main>',
+			),
+		)
+	)
+);
+$assert( true === ( $apply_response['success'] ?? null ), 'rest-current-site-apply-is-explicitly-available' );
+$assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['activate'] ?? null ), 'rest-current-site-apply-preserves-activate' );
 
 if ( class_exists( 'ZipArchive' ) ) {
 	$zip_path = tempnam( sys_get_temp_dir(), 'ssi-test-' );

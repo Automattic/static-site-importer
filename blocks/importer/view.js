@@ -169,7 +169,7 @@
 				if ( response.ok && previewUrl( report ) ) {
 					showStatus( root, 'Preview ready.' );
 				} else if ( response.ok && report.preview && report.preview.status === 'unavailable' ) {
-					showStatus( root, report.preview.message || 'Preview unavailable: no preview provider is configured.' );
+					showStatus( root, report.preview.message || 'Preview unavailable: WP Codebox did not return a preview URL or Playground blueprint URL.' );
 				} else {
 					showStatus( root, response.ok && report.success ? 'Preview request complete.' : 'Preview request failed.' );
 				}
