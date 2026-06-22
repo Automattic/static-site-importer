@@ -50,8 +50,13 @@ function static_site_importer_render_block( array $attributes = array() ): strin
 				</label>
 
 				<label class="ssi-importer__field">
-					<span class="ssi-importer__label"><?php esc_html_e( 'Site files', 'static-site-importer' ); ?></span>
-					<input type="file" name="ssi_static_template[]" multiple data-static-site-importer-source-files>
+					<span class="ssi-importer__label"><?php esc_html_e( 'Site directory', 'static-site-importer' ); ?></span>
+					<input type="file" name="ssi_static_template[]" multiple webkitdirectory data-static-site-importer-source-files>
+				</label>
+
+				<label class="ssi-importer__field">
+					<span class="ssi-importer__label"><?php esc_html_e( 'ZIP archive', 'static-site-importer' ); ?></span>
+					<input type="file" name="ssi_static_archive" accept=".zip,application/zip" data-static-site-importer-source-archive>
 				</label>
 
 				<label class="ssi-importer__field">
@@ -59,13 +64,14 @@ function static_site_importer_render_block( array $attributes = array() ): strin
 					<textarea name="ssi_html" rows="6" data-static-site-importer-source-html></textarea>
 				</label>
 
-				<button type="button" class="ssi-importer__submit" data-static-site-importer-submit><?php esc_html_e( 'Start import', 'static-site-importer' ); ?></button>
+				<button type="button" class="ssi-importer__submit" data-static-site-importer-submit><?php esc_html_e( 'Create preview', 'static-site-importer' ); ?></button>
 			</form>
 		</section>
 
 		<section class="ssi-importer__report" aria-live="polite" hidden data-static-site-importer-status>
 			<p class="ssi-importer__label"><?php esc_html_e( 'Import status', 'static-site-importer' ); ?></p>
 			<p data-static-site-importer-progress></p>
+			<p hidden data-static-site-importer-preview-link-wrap><a href="#" target="_blank" rel="noopener noreferrer" data-static-site-importer-preview-link><?php esc_html_e( 'Open WordPress preview', 'static-site-importer' ); ?></a></p>
 			<textarea rows="10" readonly hidden data-static-site-importer-report></textarea>
 		</section>
 	</div>
