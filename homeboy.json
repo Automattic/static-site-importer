@@ -38,6 +38,10 @@
     {
       "file": "static-site-importer.php",
       "pattern": "(?m)^\\s*\\*?\\s*Version:\\s*([0-9.]+)"
+    },
+    {
+      "file": "static-site-importer.php",
+      "pattern": "STATIC_SITE_IMPORTER_VERSION',\\s*'([0-9.]+)"
     }
   ]
 }

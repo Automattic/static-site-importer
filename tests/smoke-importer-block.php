@@ -95,6 +95,12 @@ if ( ! function_exists( 'wp_create_nonce' ) ) {
 
 require_once dirname( __DIR__ ) . '/includes/block.php';
 
+$plugin_source = file_get_contents( dirname( __DIR__ ) . '/static-site-importer.php' );
+$assert( is_string( $plugin_source ), 'plugin-source-readable' );
+$assert( ! str_contains( $plugin_source, 'Requires Plugins: blocks-engine-php-transformer' ), 'transformer-is-not-a-required-wordpress-plugin' );
+$assert( str_contains( $plugin_source, "vendor/autoload.php" ), 'loads-composer-autoloader' );
+$assert( str_contains( $plugin_source, "vendor/automattic/blocks-engine-php-transformer/php-transformer/php-transformer.php" ), 'loads-composer-transformer-bootstrap' );
+
 $metadata = json_decode( file_get_contents( dirname( __DIR__ ) . '/blocks/importer/block.json' ), true );
 $assert( is_array( $metadata ), 'block-json-decodes' );
 $assert( 'static-site-importer/importer' === ( $metadata['name'] ?? '' ), 'block-name-is-product-importer' );

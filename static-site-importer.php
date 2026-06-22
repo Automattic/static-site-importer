@@ -6,7 +6,6 @@
  * Author: Chris Huber
  * Requires at least: 6.9
  * Requires PHP: 8.1
- * Requires Plugins: blocks-engine-php-transformer
  * Text Domain: static-site-importer
  *
  * @package StaticSiteImporter
@@ -18,7 +17,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 define( 'STATIC_SITE_IMPORTER_PATH', plugin_dir_path( __FILE__ ) );
 define( 'STATIC_SITE_IMPORTER_URL', plugin_dir_url( __FILE__ ) );
-define( 'STATIC_SITE_IMPORTER_VERSION', '1.1.4' );
+define( 'STATIC_SITE_IMPORTER_VERSION', '1.1.5' );
+
+$static_site_importer_autoload = STATIC_SITE_IMPORTER_PATH . 'vendor/autoload.php';
+if ( is_readable( $static_site_importer_autoload ) ) {
+	require_once $static_site_importer_autoload;
+}
+
+$static_site_importer_transformer = STATIC_SITE_IMPORTER_PATH . 'vendor/automattic/blocks-engine-php-transformer/php-transformer/php-transformer.php';
+if ( ! function_exists( 'blocks_engine_php_transformer_compile_artifact' ) && is_readable( $static_site_importer_transformer ) ) {
+	require_once $static_site_importer_transformer;
+}
 
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-document.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-source-page.php';
