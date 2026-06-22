@@ -51,9 +51,6 @@ function static_site_importer_rest_manage_permission() {
  */
 function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 	$params = $request->get_json_params();
-	if ( ! is_array( $params ) ) {
-		$params = array();
-	}
 
 	$source = isset( $params['source'] ) && is_array( $params['source'] ) ? $params['source'] : array();
 	$input  = static_site_importer_rest_import_args( $params );
@@ -171,13 +168,13 @@ function static_site_importer_rest_create_preview( array $source, array $input, 
  */
 function static_site_importer_rest_preview_unavailable_result( array $request ): array {
 	return array(
-		'success' => false,
-		'preview' => array(
+		'success'  => false,
+		'preview'  => array(
 			'status'  => 'unavailable',
 			'message' => __( 'Preview unavailable: WP Codebox is unavailable, not installed, or does not provide the required browser Playground session API.', 'static-site-importer' ),
 		),
 		'provider' => 'wp-codebox/create-browser-playground-session',
-		'request' => $request,
+		'request'  => $request,
 	);
 }
 
@@ -188,8 +185,8 @@ function static_site_importer_rest_preview_unavailable_result( array $request ):
  * @return array<string,mixed>
  */
 function static_site_importer_rest_normalize_preview_result( array $result ): array {
-	$preview = isset( $result['preview'] ) && is_array( $result['preview'] ) ? $result['preview'] : $result;
-	$url     = isset( $preview['url'] ) ? esc_url_raw( (string) $preview['url'] ) : '';
+	$preview    = isset( $result['preview'] ) && is_array( $result['preview'] ) ? $result['preview'] : $result;
+	$url        = isset( $preview['url'] ) ? esc_url_raw( (string) $preview['url'] ) : '';
 	$playground = isset( $preview['playground'] ) && is_array( $preview['playground'] ) ? $preview['playground'] : array();
 	if ( isset( $playground['blueprint_url'] ) ) {
 		$playground['blueprint_url'] = esc_url_raw( (string) $playground['blueprint_url'] );
@@ -223,7 +220,8 @@ function static_site_importer_rest_normalize_preview_result( array $result ): ar
  * @return array<string,mixed>|WP_Error
  */
 function static_site_importer_rest_codebox_preview_result( array $request, array $params ) {
-	if ( ! class_exists( 'WP_Codebox_Abilities' ) || ! method_exists( 'WP_Codebox_Abilities', 'create_browser_playground_session' ) ) {
+	$create_session = array( 'WP_Codebox_Abilities', 'create_browser_playground_session' );
+	if ( ! is_callable( $create_session ) ) {
 		return static_site_importer_rest_preview_unavailable_result( $request );
 	}
 
@@ -232,7 +230,7 @@ function static_site_importer_rest_codebox_preview_result( array $request, array
 		return $codebox_input;
 	}
 
-	$session = WP_Codebox_Abilities::create_browser_playground_session( $codebox_input );
+	$session = call_user_func( $create_session, $codebox_input );
 	if ( is_wp_error( $session ) ) {
 		return $session;
 	}
@@ -307,12 +305,12 @@ function static_site_importer_rest_codebox_preview_input( array $request, array 
 	 * @param array<string,mixed> $request SSI preview request.
 	 * @param array<string,mixed> $params  Raw REST params.
 	 */
-	$input = apply_filters( 'static_site_importer_codebox_preview_input', $input, $request, $params );
-	if ( ! is_array( $input ) ) {
+	$filtered_input = apply_filters( 'static_site_importer_codebox_preview_input', $input, $request, $params );
+	if ( ! is_array( $filtered_input ) ) {
 		return new WP_Error( 'static_site_importer_codebox_preview_input_invalid', __( 'WP Codebox preview input filters must return an array.', 'static-site-importer' ), array( 'status' => 500 ) );
 	}
 
-	return $input;
+	return $filtered_input;
 }
 
 /**
@@ -388,8 +386,8 @@ function static_site_importer_rest_codebox_preview_from_session( array $session,
 
 	if ( '' === $preview_url && '' === $blueprint_url ) {
 		return array(
-			'success' => false,
-			'preview' => array(
+			'success'  => false,
+			'preview'  => array(
 				'status'  => 'unavailable',
 				'message' => __( 'Preview unavailable: WP Codebox did not return a preview URL or Playground blueprint URL.', 'static-site-importer' ),
 			),
@@ -402,8 +400,8 @@ function static_site_importer_rest_codebox_preview_from_session( array $session,
 	}
 
 	return array(
-		'success' => true,
-		'preview' => array_filter(
+		'success'  => true,
+		'preview'  => array_filter(
 			array(
 				'status'     => 'ready',
 				'url'        => $preview_url,
@@ -448,11 +446,12 @@ function static_site_importer_rest_codebox_preview_url( array $playground, array
  * @return string
  */
 function static_site_importer_rest_codebox_blueprint_url( array $session ): string {
-	if ( ! class_exists( 'WP_Codebox_Browser_Task_Builder' ) || ! method_exists( 'WP_Codebox_Browser_Task_Builder', 'executable_blueprint_ref' ) ) {
+	$executable_blueprint_ref = array( 'WP_Codebox_Browser_Task_Builder', 'executable_blueprint_ref' );
+	if ( ! is_callable( $executable_blueprint_ref ) ) {
 		return '';
 	}
 
-	$blueprint_ref = WP_Codebox_Browser_Task_Builder::executable_blueprint_ref( $session );
+	$blueprint_ref = call_user_func( $executable_blueprint_ref, $session );
 	if ( ! is_array( $blueprint_ref ) ) {
 		return '';
 	}

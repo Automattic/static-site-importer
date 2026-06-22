@@ -538,19 +538,45 @@ class Static_Site_Importer_Report_Diagnostics {
 	 */
 	private static function visual_parity_artifact_contract( array $provided = array() ): array {
 		$slots = array(
-			'browser_render'           => array( 'kind' => 'browser_render_evidence', 'aliases' => array( 'browser-html', 'browser-artifact', 'artifact-bundle' ), 'reason' => 'Codebox/runtime browser render evidence was not provided.' ),
-			'source_screenshot'        => array( 'kind' => 'source_screenshot', 'reason' => 'Source screenshot was not captured by the runtime.' ),
-			'imported_screenshot'      => array( 'kind' => 'imported_screenshot', 'reason' => 'Imported WordPress screenshot was not captured by the runtime.' ),
-			'visual_diff'              => array( 'kind' => 'visual_diff', 'aliases' => array( 'visual_parity_artifact' ), 'reason' => 'Visual diff output was not captured by the runtime.' ),
-			'import_report'            => array( 'kind' => 'static-site-importer/import-report', 'artifact_name' => 'import-report.json' ),
-			'import_validation_result' => array( 'kind' => 'static-site-importer/import-validation-result', 'artifact_name' => 'import-validation-result.json' ),
-			'finding_packets'          => array( 'kind' => 'static-site-importer/finding-packets', 'artifact_name' => 'finding-packets.json' ),
-			'block_validation'         => array( 'kind' => 'gutenberg_block_validation', 'reason' => 'Block validation artifact was not provided by the runtime.' ),
+			'browser_render'           => array(
+				'kind'    => 'browser_render_evidence',
+				'aliases' => array( 'browser-html', 'browser-artifact', 'artifact-bundle' ),
+				'reason'  => 'Codebox/runtime browser render evidence was not provided.',
+			),
+			'source_screenshot'        => array(
+				'kind'   => 'source_screenshot',
+				'reason' => 'Source screenshot was not captured by the runtime.',
+			),
+			'imported_screenshot'      => array(
+				'kind'   => 'imported_screenshot',
+				'reason' => 'Imported WordPress screenshot was not captured by the runtime.',
+			),
+			'visual_diff'              => array(
+				'kind'    => 'visual_diff',
+				'aliases' => array( 'visual_parity_artifact' ),
+				'reason'  => 'Visual diff output was not captured by the runtime.',
+			),
+			'import_report'            => array(
+				'kind'          => 'static-site-importer/import-report',
+				'artifact_name' => 'import-report.json',
+			),
+			'import_validation_result' => array(
+				'kind'          => 'static-site-importer/import-validation-result',
+				'artifact_name' => 'import-validation-result.json',
+			),
+			'finding_packets'          => array(
+				'kind'          => 'static-site-importer/finding-packets',
+				'artifact_name' => 'finding-packets.json',
+			),
+			'block_validation'         => array(
+				'kind'   => 'gutenberg_block_validation',
+				'reason' => 'Block validation artifact was not provided by the runtime.',
+			),
 		);
 
 		$artifacts = array();
 		foreach ( $slots as $name => $slot ) {
-			$aliases = isset( $slot['aliases'] ) && is_array( $slot['aliases'] ) ? array_values( $slot['aliases'] ) : array();
+			$aliases = isset( $slot['aliases'] ) ? $slot['aliases'] : array();
 			$ref     = self::durable_artifact_ref( self::provided_visual_parity_artifact_ref( $provided, $name, (string) $slot['kind'], $aliases ) );
 			if ( empty( $ref ) && isset( $slot['artifact_name'] ) ) {
 				$ref = array(
@@ -567,18 +593,16 @@ class Static_Site_Importer_Report_Diagnostics {
 				empty( $ref )
 					? array(
 						'capture_state' => 'not_captured',
-						'reason'        => (string) ( $slot['reason'] ?? 'Artifact was not provided by the runtime.' ),
+						'reason'        => isset( $slot['reason'] ) ? (string) $slot['reason'] : 'Artifact was not provided by the runtime.',
 					)
 					: array( 'ref' => $ref )
 			);
 		}
 
-		$missing = array_values(
-			array_keys(
-				array_filter(
-					$artifacts,
-					static fn ( array $artifact ): bool => 'captured' !== ( $artifact['status'] ?? '' )
-				)
+		$missing = array_keys(
+			array_filter(
+				$artifacts,
+				static fn ( array $artifact ): bool => 'captured' !== $artifact['status']
 			)
 		);
 
@@ -1224,10 +1248,6 @@ class Static_Site_Importer_Report_Diagnostics {
 		);
 
 		foreach ( $diagnostics as $diagnostic ) {
-			if ( ! is_array( $diagnostic ) ) {
-				continue;
-			}
-
 			++$summary['total'];
 			$severity = isset( $diagnostic['severity'] ) && is_scalar( $diagnostic['severity'] ) ? (string) $diagnostic['severity'] : 'warning';
 			if ( ! array_key_exists( $severity, $summary ) ) {

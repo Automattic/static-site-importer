@@ -98,12 +98,12 @@
 	const setPreviewLink = function ( root, report ) {
 		const wrap = root.querySelector( '[data-static-site-importer-preview-link-wrap]' );
 		const link = root.querySelector( '[data-static-site-importer-preview-link]' );
-		const url = previewUrl( report );
 
 		if ( ! wrap || ! link ) {
 			return;
 		}
 
+		const url = previewUrl( report );
 		if ( url ) {
 			link.href = url;
 			wrap.hidden = false;
