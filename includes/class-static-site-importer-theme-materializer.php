@@ -22,11 +22,12 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param string $theme_name      Theme name.
 	 * @param string $css             Source CSS.
 	 * @param bool   $has_footer_part Whether a footer template part exists.
+	 * @param array<int,array<string,mixed>> $scripts Materialized script asset rows.
 	 * @return array<string,string> Absolute write paths mapped to file contents.
 	 */
-	public static function base_theme_writes( string $theme_dir, string $theme_slug, string $theme_name, string $css, bool $has_footer_part ): array {
+	public static function base_theme_writes( string $theme_dir, string $theme_slug, string $theme_name, string $css, bool $has_footer_part, array $scripts = array() ): array {
 		return array(
-			$theme_dir . '/functions.php'             => self::functions_php( $theme_slug ),
+			$theme_dir . '/functions.php'             => self::functions_php( $theme_slug, $scripts ),
 			$theme_dir . '/theme.json'                => self::theme_json( $theme_name, $css ),
 			$theme_dir . '/templates/front-page.html' => self::content_template( '', $has_footer_part ),
 			$theme_dir . '/templates/page.html'       => self::content_template( '', $has_footer_part ),
@@ -93,7 +94,7 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param string              $theme_dir Theme directory.
 	 * @param string              $theme_uri Theme URI.
 	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
-	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}|WP_Error
+	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,scripts:array<int,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}|WP_Error
 	 */
 	public static function materialize_website_artifact_files( string $theme_dir, string $theme_uri, array $artifacts ) {
 		$native_plan = self::materialize_materialization_plan_assets( $theme_dir, $theme_uri, $artifacts );
@@ -163,6 +164,7 @@ class Static_Site_Importer_Theme_Materializer {
 			'css'         => trim( implode( "\n\n", array_filter( $css ) ) ),
 			'js'          => trim( implode( "\n", array_filter( $js ) ) ),
 			'assets'      => $assets,
+			'scripts'     => array(),
 			'diagnostics' => $diagnostics,
 		);
 	}
@@ -173,7 +175,7 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param string              $theme_dir Theme directory.
 	 * @param string              $theme_uri Theme URI.
 	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
-	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}|null|WP_Error
+	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,scripts:array<int,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}|null|WP_Error
 	 */
 	private static function materialize_materialization_plan_assets( string $theme_dir, string $theme_uri, array $artifacts ) {
 		$site = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
@@ -192,7 +194,9 @@ class Static_Site_Importer_Theme_Materializer {
 		$css         = array();
 		$js          = array();
 		$assets      = array();
+		$scripts     = array();
 		$diagnostics = array();
+		$order       = 0;
 
 		foreach ( $site['assets'] as $asset ) {
 			if ( ! is_array( $asset ) ) {
@@ -212,14 +216,7 @@ class Static_Site_Importer_Theme_Materializer {
 			$kind  = isset( $asset['kind'] ) && is_scalar( $asset['kind'] ) ? (string) $asset['kind'] : '';
 			$role  = isset( $asset['role'] ) && is_scalar( $asset['role'] ) ? (string) $asset['role'] : '';
 			$lower = strtolower( $relative );
-			if ( 'css' === $kind || 'stylesheet' === $role || str_ends_with( $lower, '.css' ) ) {
-				$css[] = trim( $content );
-				continue;
-			}
-			if ( 'js' === $kind || 'script' === $role || str_ends_with( $lower, '.js' ) ) {
-				$js[] = trim( $content );
-				continue;
-			}
+			++$order;
 
 			$target_relative = 'assets/materialized/' . $relative;
 			$target          = trailingslashit( $theme_dir ) . $target_relative;
@@ -233,25 +230,144 @@ class Static_Site_Importer_Theme_Materializer {
 				return $result;
 			}
 
-			$mime_type = isset( $asset['mime_type'] ) && is_scalar( $asset['mime_type'] ) && '' !== (string) $asset['mime_type'] ? (string) $asset['mime_type'] : self::mime_type( $target );
-			$assets[ $relative ] = array(
-				'source'     => $relative,
-				'path'       => $relative,
-				'url'        => trailingslashit( $theme_uri ) . $target_relative,
-				'final_url'  => trailingslashit( $theme_uri ) . $target_relative,
-				'mime_type'  => $mime_type,
-				'theme_path' => $target_relative,
-				'policy'     => 'theme',
-				'origin'     => 'materialization_plan.assets',
-			);
+			$assets[ $relative ] = self::materialization_plan_asset_report( $asset, $relative, trailingslashit( $theme_uri ) . $target_relative, $target_relative, self::mime_type( $target ), $order );
+
+			if ( 'css' === $kind || 'stylesheet' === $role || str_ends_with( $lower, '.css' ) ) {
+				$css[] = array(
+					'path'    => $relative,
+					'content' => trim( $content ),
+				);
+				continue;
+			}
+			if ( 'js' === $kind || 'script' === $role || str_ends_with( $lower, '.js' ) ) {
+				$scripts[] = $assets[ $relative ];
+				continue;
+			}
 		}
 
 		return array(
-			'css'         => trim( implode( "\n\n", array_filter( $css ) ) ),
+			'css'         => trim( implode( "\n\n", array_filter( self::rewrite_materialized_css_chunks( $css, $assets ) ) ) ),
 			'js'          => trim( implode( "\n", array_filter( $js ) ) ),
 			'assets'      => $assets,
+			'scripts'     => $scripts,
 			'diagnostics' => $diagnostics,
 		);
+	}
+
+	/**
+	 * Build an SSI asset report row while preserving native Blocks Engine metadata.
+	 *
+	 * @param array<string,mixed> $asset           Blocks Engine asset row.
+	 * @param string              $relative        Safe source-relative path.
+	 * @param string              $url             Materialized theme URL.
+	 * @param string              $target_relative Materialized theme-relative path.
+	 * @param string              $fallback_mime   MIME type inferred from written path.
+	 * @param int                 $order           Native asset order.
+	 * @return array<string,mixed>
+	 */
+	private static function materialization_plan_asset_report( array $asset, string $relative, string $url, string $target_relative, string $fallback_mime, int $order ): array {
+		$mime_type = isset( $asset['mime_type'] ) && is_scalar( $asset['mime_type'] ) && '' !== (string) $asset['mime_type'] ? (string) $asset['mime_type'] : $fallback_mime;
+		$report    = array(
+			'source'     => $relative,
+			'path'       => $relative,
+			'url'        => $url,
+			'final_url'  => $url,
+			'mime_type'  => $mime_type,
+			'theme_path' => $target_relative,
+			'policy'     => 'theme',
+			'origin'     => 'materialization_plan.assets',
+			'order'      => $order,
+		);
+
+		foreach ( array( 'role', 'kind', 'type', 'media', 'as', 'crossorigin', 'integrity', 'placement', 'source_hash' ) as $key ) {
+			if ( isset( $asset[ $key ] ) && is_scalar( $asset[ $key ] ) && '' !== (string) $asset[ $key ] ) {
+				$report[ $key ] = (string) $asset[ $key ];
+			}
+		}
+
+		foreach ( array( 'defer', 'async' ) as $key ) {
+			if ( array_key_exists( $key, $asset ) ) {
+				$report[ $key ] = (bool) $asset[ $key ];
+			}
+		}
+
+		return $report;
+	}
+
+	/**
+	 * Rewrite CSS url(...) references to materialized theme URLs.
+	 *
+	 * @param array<int,array{path:string,content:string}> $chunks CSS chunks and their source paths.
+	 * @param array<string,array<string,mixed>>             $assets Materialized asset rows keyed by source path.
+	 * @return array<int,string>
+	 */
+	private static function rewrite_materialized_css_chunks( array $chunks, array $assets ): array {
+		$rewritten = array();
+		foreach ( $chunks as $chunk ) {
+			$rewritten[] = self::rewrite_materialized_css_urls( $chunk['content'], $chunk['path'], $assets );
+		}
+
+		return $rewritten;
+	}
+
+	/**
+	 * Rewrite one CSS payload's relative url(...) references.
+	 *
+	 * @param string                            $css             CSS payload.
+	 * @param string                            $stylesheet_path Source-relative stylesheet path.
+	 * @param array<string,array<string,mixed>> $assets          Materialized asset rows keyed by source path.
+	 * @return string
+	 */
+	private static function rewrite_materialized_css_urls( string $css, string $stylesheet_path, array $assets ): string {
+		if ( '' === trim( $css ) || empty( $assets ) ) {
+			return $css;
+		}
+
+		$stylesheet_dir = dirname( $stylesheet_path );
+		return preg_replace_callback(
+			'/url\(\s*(["\']?)([^)"\']+)\1\s*\)/i',
+			static function ( array $matches ) use ( $assets, $stylesheet_dir ): string {
+				$url = trim( (string) $matches[2] );
+				if ( '' === $url || str_starts_with( $url, '#' ) || str_starts_with( strtolower( $url ), 'data:' ) || preg_match( '#^[a-z][a-z0-9+.-]*:#i', $url ) || str_starts_with( $url, '/' ) ) {
+					return $matches[0];
+				}
+
+				$candidate = self::resolve_materialized_relative_url( $stylesheet_dir, $url );
+				if ( '' === $candidate || ! isset( $assets[ $candidate ]['final_url'] ) || ! is_scalar( $assets[ $candidate ]['final_url'] ) ) {
+					return $matches[0];
+				}
+
+				return 'url(' . $matches[1] . (string) $assets[ $candidate ]['final_url'] . $matches[1] . ')';
+			},
+			$css
+		) ?? $css;
+	}
+
+	/**
+	 * Resolve a relative asset URL against a source stylesheet path.
+	 *
+	 * @param string $base_dir Source stylesheet directory.
+	 * @param string $url      Relative CSS URL.
+	 * @return string Safe source-relative path, or empty string when it escapes the artifact root.
+	 */
+	private static function resolve_materialized_relative_url( string $base_dir, string $url ): string {
+		$path     = ( '.' === $base_dir ? '' : trim( $base_dir, '/' ) . '/' ) . strtok( $url, '?#' );
+		$segments = array();
+		foreach ( explode( '/', str_replace( '\\', '/', $path ) ) as $segment ) {
+			if ( '' === $segment || '.' === $segment ) {
+				continue;
+			}
+			if ( '..' === $segment ) {
+				if ( empty( $segments ) ) {
+					return '';
+				}
+				array_pop( $segments );
+				continue;
+			}
+			$segments[] = $segment;
+		}
+
+		return self::normalize_artifact_materialization_path( implode( '/', $segments ) );
 	}
 
 	/**
@@ -548,12 +664,38 @@ class Static_Site_Importer_Theme_Materializer {
 	 * Build functions.php.
 	 *
 	 * @param string $theme_slug Theme slug.
+	 * @param array<int,array<string,mixed>> $scripts Materialized script asset rows.
 	 * @return string
 	 */
-	private static function functions_php( string $theme_slug ): string {
+	private static function functions_php( string $theme_slug, array $scripts = array() ): string {
 		$style_handle  = sanitize_key( $theme_slug ) . '-style';
 		$editor_handle = sanitize_key( $theme_slug ) . '-editor-style';
 		$script_handle = sanitize_key( $theme_slug ) . '-site';
+		$script_lines  = '';
+
+		foreach ( $scripts as $script ) {
+			if ( ! is_array( $script ) || ! isset( $script['theme_path'] ) || ! is_scalar( $script['theme_path'] ) ) {
+				continue;
+			}
+
+			$theme_path = self::normalize_artifact_materialization_path( (string) $script['theme_path'] );
+			if ( '' === $theme_path ) {
+				continue;
+			}
+
+			$handle     = sanitize_key( $theme_slug . '-asset-' . preg_replace( '/\.[^.]+$/', '', str_replace( '/', '-', $theme_path ) ) );
+			$in_footer  = 'head' !== (string) ( $script['placement'] ?? '' );
+			$script_lines .= "\twp_enqueue_script( " . var_export( $handle, true ) . ", get_template_directory_uri() . " . var_export( '/' . $theme_path, true ) . ", array(), wp_get_theme()->get( 'Version' ), " . ( $in_footer ? 'true' : 'false' ) . " );\n";
+			if ( ! empty( $script['defer'] ) ) {
+				$script_lines .= "\twp_script_add_data( " . var_export( $handle, true ) . ", 'defer', true );\n";
+			}
+			if ( ! empty( $script['async'] ) ) {
+				$script_lines .= "\twp_script_add_data( " . var_export( $handle, true ) . ", 'async', true );\n";
+			}
+			if ( isset( $script['type'] ) && 'module' === strtolower( (string) $script['type'] ) ) {
+				$script_lines .= "\twp_script_add_data( " . var_export( $handle, true ) . ", 'type', 'module' );\n";
+			}
+		}
 
 		return "<?php\n" .
 			"/**\n" .
@@ -568,6 +710,7 @@ class Static_Site_Importer_Theme_Materializer {
 			"\tif ( file_exists( get_template_directory() . '/assets/site.js' ) ) {\n" .
 			"\t\twp_enqueue_script( '" . $script_handle . "', get_template_directory_uri() . '/assets/site.js', array(), wp_get_theme()->get( 'Version' ), true );\n" .
 			"\t}\n" .
+			$script_lines .
 			"} );\n\n" .
 			"add_action( 'enqueue_block_editor_assets', static function (): void {\n" .
 			"\twp_enqueue_style( '" . $editor_handle . "', get_template_directory_uri() . '/assets/css/editor-style.css', array(), wp_get_theme()->get( 'Version' ) );\n" .
