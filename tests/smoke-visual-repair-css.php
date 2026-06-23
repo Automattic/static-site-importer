@@ -116,7 +116,7 @@ $artifacts = array(
 $collector = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'visual_repair_styles_from_artifacts' );
 $styles    = $collector->invoke( null, $artifacts );
 
-$writes     = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp/visual-repair-smoke', 'Visual Repair Smoke', '.hero-shell{display:grid}', $styles );
+$writes     = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp/visual-repair-smoke', 'Visual Repair Smoke', '.hero-shell{display:grid}', array(), $styles );
 $style_css  = (string) ( $writes['/tmp/visual-repair-smoke/style.css'] ?? '' );
 $editor_css = (string) ( $writes['/tmp/visual-repair-smoke/assets/css/editor-style.css'] ?? '' );
 

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "46101b021cacc9a0062dc58e288ceab7",
+    "content-hash": "8be3e7032f0fefbe1b70aa081db27f5e",
     "packages": [
         {
             "name": "automattic/blocks-engine-figma-transformer",
@@ -12,12 +12,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/Automattic/blocks-engine.git",
-                "reference": "b4000938fa3d874872909a901a927bafc4b9927a"
+                "reference": "b34c9ea61bec5122105a64cc79cc26e68694206a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://github.com/Automattic/blocks-engine/archive/b4000938fa3d874872909a901a927bafc4b9927a.zip",
-                "reference": "b4000938fa3d874872909a901a927bafc4b9927a"
+                "url": "https://github.com/Automattic/blocks-engine/archive/b34c9ea61bec5122105a64cc79cc26e68694206a.zip",
+                "reference": "b34c9ea61bec5122105a64cc79cc26e68694206a"
             },
             "require": {
                 "php": ">=8.1"
@@ -47,12 +47,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/Automattic/blocks-engine.git",
-                "reference": "b4000938fa3d874872909a901a927bafc4b9927a"
+                "reference": "b34c9ea61bec5122105a64cc79cc26e68694206a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://github.com/Automattic/blocks-engine/archive/b4000938fa3d874872909a901a927bafc4b9927a.zip",
-                "reference": "b4000938fa3d874872909a901a927bafc4b9927a"
+                "url": "https://github.com/Automattic/blocks-engine/archive/b34c9ea61bec5122105a64cc79cc26e68694206a.zip",
+                "reference": "b34c9ea61bec5122105a64cc79cc26e68694206a"
             },
             "require": {
                 "league/commonmark": "^2.5",

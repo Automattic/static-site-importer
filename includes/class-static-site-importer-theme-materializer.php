@@ -21,16 +21,17 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param string $theme_slug      Theme slug.
 	 * @param string $theme_name      Theme name.
 	 * @param string $css             Source CSS.
+	 * @param bool   $has_header_part Whether a header template part exists.
 	 * @param bool   $has_footer_part Whether a footer template part exists.
 	 * @return array<string,string> Absolute write paths mapped to file contents.
 	 */
-	public static function base_theme_writes( string $theme_dir, string $theme_slug, string $theme_name, string $css, bool $has_footer_part ): array {
+	public static function base_theme_writes( string $theme_dir, string $theme_slug, string $theme_name, string $css, bool $has_header_part, bool $has_footer_part ): array {
 		return array(
 			$theme_dir . '/functions.php'             => self::functions_php( $theme_slug ),
 			$theme_dir . '/theme.json'                => self::theme_json( $theme_name, $css ),
-			$theme_dir . '/templates/front-page.html' => self::content_template( '', $has_footer_part ),
-			$theme_dir . '/templates/page.html'       => self::content_template( '', $has_footer_part ),
-			$theme_dir . '/templates/index.html'      => self::content_template( '', $has_footer_part ),
+			$theme_dir . '/templates/front-page.html' => self::content_template( '', $has_header_part, $has_footer_part ),
+			$theme_dir . '/templates/page.html'       => self::content_template( '', $has_header_part, $has_footer_part ),
+			$theme_dir . '/templates/index.html'      => self::content_template( '', $has_header_part, $has_footer_part ),
 		);
 	}
 
@@ -38,14 +39,16 @@ class Static_Site_Importer_Theme_Materializer {
 	 * Build a template that renders imported page content.
 	 *
 	 * @param string $background_blocks Background decoration blocks.
+	 * @param bool   $has_header_part   Whether a shared header template part was generated.
 	 * @param bool   $has_footer_part   Whether a shared footer template part was generated.
 	 * @return string
 	 */
-	public static function content_template( string $background_blocks, bool $has_footer_part ): string {
+	public static function content_template( string $background_blocks, bool $has_header_part, bool $has_footer_part ): string {
+		$header_part = $has_header_part ? '<!-- wp:template-part {"slug":"header","tagName":"header"} /-->' : '';
 		$footer_part = $has_footer_part ? '<!-- wp:template-part {"slug":"footer","tagName":"footer"} /-->' : '';
 
 		return trim(
-			'<!-- wp:template-part {"slug":"header","tagName":"header"} /-->' . "\n\n" .
+			$header_part . "\n\n" .
 			$background_blocks . "\n\n" .
 			'<!-- wp:post-content {"tagName":"main"} /-->' . "\n\n" .
 			$footer_part
@@ -351,12 +354,6 @@ class Static_Site_Importer_Theme_Materializer {
 			$reports[] = self::template_part_artifact_report_payload( $relative, $template_part, $markup );
 		}
 
-		if ( ! isset( $writes[ $theme_dir . '/parts/header.html' ] ) ) {
-			$header = self::default_header_template_part();
-			$writes[ $theme_dir . '/parts/header.html' ] = $header['block_markup'];
-			$reports[] = self::template_part_artifact_report_payload( 'parts/header.html', $header, $header['block_markup'] );
-		}
-
 		return array(
 			'writes'  => $writes,
 			'reports' => $reports,
@@ -503,22 +500,6 @@ class Static_Site_Importer_Theme_Materializer {
 		}
 
 		return '' !== $part ? 'parts/' . $part . '.html' : '';
-	}
-
-	/**
-	 * Build the minimal generated header required by SSI's page templates.
-	 *
-	 * @return array<string,mixed> Template part artifact.
-	 */
-	private static function default_header_template_part(): array {
-		return array(
-			'schema'       => 'static-site-importer/template-part/v1',
-			'slug'         => 'header',
-			'area'         => 'header',
-			'source_paths' => array(),
-			'generated'    => true,
-			'block_markup' => '<!-- wp:group {"tagName":"header","layout":{"type":"constrained"}} --><header class="wp-block-group"><!-- wp:site-title /--></header><!-- /wp:group -->',
-		);
 	}
 
 	/**

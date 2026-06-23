@@ -20,6 +20,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 * @param string                  $theme_dir            Theme directory.
 	 * @param string                  $theme_name           Theme name.
 	 * @param string                  $css                  Source CSS.
+	 * @param array<string,array<string,mixed>> $assets Materialized asset map.
 	 * @param array<string,array<int,string>> $visual_repair_styles Visual repair CSS content by target.
 	 * @return array<string,string> Absolute stylesheet write paths mapped to file contents.
 	 */
@@ -27,12 +28,108 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		string $theme_dir,
 		string $theme_name,
 		string $css,
+		array $assets,
 		array $visual_repair_styles
 	): array {
+		$css = self::rewrite_css_asset_urls( $css, $assets );
+
 		return array(
 			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $css, $visual_repair_styles ),
 			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $css, $visual_repair_styles ),
 		);
+	}
+
+	/**
+	 * Rewrite CSS url(...) references to materialized theme asset URLs.
+	 *
+	 * @param string                            $css    Source CSS.
+	 * @param array<string,array<string,mixed>> $assets Materialized asset map.
+	 * @return string
+	 */
+	private static function rewrite_css_asset_urls( string $css, array $assets ): string {
+		if ( '' === trim( $css ) || empty( $assets ) || ! str_contains( $css, 'url(' ) ) {
+			return $css;
+		}
+
+		$replacements = array();
+		foreach ( $assets as $source => $asset ) {
+			if ( ! is_array( $asset ) ) {
+				continue;
+			}
+
+			$url = isset( $asset['final_url'] ) && is_scalar( $asset['final_url'] ) ? (string) $asset['final_url'] : ( isset( $asset['url'] ) && is_scalar( $asset['url'] ) ? (string) $asset['url'] : '' );
+			if ( '' === $url ) {
+				continue;
+			}
+
+			foreach ( self::css_asset_replacement_keys( (string) $source ) as $key ) {
+				$replacements[ $key ] = $url;
+			}
+			if ( isset( $asset['path'] ) && is_scalar( $asset['path'] ) ) {
+				foreach ( self::css_asset_replacement_keys( (string) $asset['path'] ) as $key ) {
+					$replacements[ $key ] = $url;
+				}
+			}
+		}
+
+		if ( empty( $replacements ) ) {
+			return $css;
+		}
+
+		return (string) preg_replace_callback(
+			'#url\(\s*(["\']?)([^)"\']+)\1\s*\)#i',
+			static function ( array $matches ) use ( $replacements ): string {
+				$raw = trim( (string) $matches[2] );
+				if ( '' === $raw || preg_match( '#^(?:data:|https?://|//)#i', $raw ) ) {
+					return $matches[0];
+				}
+
+				$key = self::normalize_css_asset_ref( $raw );
+				if ( '' === $key || ! isset( $replacements[ $key ] ) ) {
+					return $matches[0];
+				}
+
+				return 'url("' . esc_url_raw( $replacements[ $key ] ) . '")';
+			},
+			$css
+		);
+	}
+
+	/**
+	 * Build lookup keys for a materialized asset path.
+	 *
+	 * @param string $path Asset path.
+	 * @return array<int,string>
+	 */
+	private static function css_asset_replacement_keys( string $path ): array {
+		$path = self::normalize_css_asset_ref( $path );
+		if ( '' === $path ) {
+			return array();
+		}
+
+		$keys = array( $path );
+		if ( str_starts_with( $path, 'website/' ) ) {
+			$keys[] = substr( $path, strlen( 'website/' ) );
+		}
+
+		return array_values( array_unique( array_filter( $keys ) ) );
+	}
+
+	/**
+	 * Normalize a CSS asset reference for replacement lookup.
+	 *
+	 * @param string $ref Asset reference.
+	 * @return string
+	 */
+	private static function normalize_css_asset_ref( string $ref ): string {
+		$ref = html_entity_decode( trim( $ref ), ENT_QUOTES | ENT_HTML5 );
+		$ref = strtok( $ref, '?#' );
+		$ref = str_replace( '\\', '/', false === $ref ? '' : $ref );
+		$ref = preg_replace( '#(^|/)\.(?=/|$)#', '', $ref );
+		$ref = preg_replace( '#/+#', '/', (string) $ref );
+		$ref = trim( (string) $ref, '/' );
+
+		return preg_match( '#^[A-Za-z0-9_./-]+$#', $ref ) ? $ref : '';
 	}
 
 	/**
