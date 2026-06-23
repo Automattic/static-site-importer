@@ -877,7 +877,7 @@ function static_site_importer_rest_source_artifact( array $source ) {
 	}
 
 	if ( empty( $files ) ) {
-		return new WP_Error( 'static_site_importer_missing_source', __( 'Add a website URL, site files, or raw HTML to start.', 'static-site-importer' ), array( 'status' => 400 ) );
+		return new WP_Error( 'static_site_importer_missing_source', __( 'Add a website URL, upload file(s), or paste HTML to start.', 'static-site-importer' ), array( 'status' => 400 ) );
 	}
 
 	return array(

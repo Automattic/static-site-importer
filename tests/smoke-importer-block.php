@@ -348,20 +348,23 @@ $assert( str_contains( $html, 'data-static-site-importer-provider="privateprovid
 $assert( str_contains( $html, 'data-static-site-importer-apply-to-current-site="1"' ), 'render-exposes-current-site-apply-flag' );
 $assert( str_contains( $html, 'data-static-site-importer-source-url' ), 'render-has-url-input-hook' );
 $assert( str_contains( $html, 'data-static-site-importer-source-files' ), 'render-has-file-input-hook' );
-$assert( str_contains( $html, 'webkitdirectory' ), 'render-has-directory-upload-affordance' );
-$assert( str_contains( $html, 'data-static-site-importer-source-archive' ), 'render-has-zip-upload-hook' );
-$assert( str_contains( $html, 'accept=&quot;.zip,application/zip&quot;' ) || str_contains( $html, 'accept=".zip,application/zip"' ), 'render-limits-archive-input-to-zip' );
+$assert( str_contains( $html, 'Upload file(s)' ), 'render-combines-file-upload-label' );
+$assert( ! str_contains( $html, 'data-static-site-importer-source-archive' ), 'render-omits-separate-zip-upload-hook' );
+$assert( str_contains( $html, 'accept=&quot;.zip,application/zip' ) || str_contains( $html, 'accept=".zip,application/zip' ), 'render-accepts-zip-in-combined-upload' );
 $assert( str_contains( $html, 'data-static-site-importer-source-html' ), 'render-has-html-input-hook' );
+$assert( str_contains( $html, '<summary class="ssi-importer__label">Paste HTML</summary>' ), 'render-collapses-paste-html-by-default' );
 $assert( str_contains( $html, 'data-static-site-importer-submit' ), 'render-has-submit-hook' );
 $assert( str_contains( $html, 'data-static-site-importer-preview-link' ), 'render-has-preview-link-hook' );
 $assert( str_contains( $html, 'data-static-site-importer-report' ), 'render-has-report-hook' );
+$assert( ! str_contains( $html, 'Import status' ), 'render-omits-import-status-section-copy' );
 $assert( str_contains( $html, 'Import your site' ), 'render-uses-custom-title' );
 $assert( str_contains( $html, 'https://example.com/source' ), 'render-uses-default-url' );
+$assert( str_contains( static_site_importer_render_block(), 'Generate WordPress website' ), 'render-preview-mode-button-generates-wordpress-website' );
 
 $view_js = file_get_contents( dirname( __DIR__ ) . '/blocks/importer/view.js' );
 $assert( is_string( $view_js ), 'view-js-readable' );
 $assert( str_contains( $view_js, 'webkitRelativePath' ), 'view-preserves-directory-relative-paths' );
-$assert( str_contains( $view_js, 'archive: await buildArchive' ), 'view-sends-zip-as-archive-payload' );
+$assert( str_contains( $view_js, 'archive: await buildArchive( files )' ), 'view-sends-zip-from-combined-upload-as-archive-payload' );
 $assert( str_contains( $view_js, 'apply_to_current_site: applyToCurrentSite' ), 'view-sends-current-site-apply-flag' );
 $assert( str_contains( $view_js, 'activate: applyToCurrentSite' ), 'view-activates-current-site-imports' );
 $assert( str_contains( $view_js, 'overwrite: applyToCurrentSite' ), 'view-overwrites-current-site-imports' );
