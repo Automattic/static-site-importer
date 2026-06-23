@@ -34,6 +34,18 @@
 		return file.webkitRelativePath || file.name || 'upload';
 	};
 
+	const shouldIncludeSiteFile = function ( path ) {
+		const normalized = String( path || '' ).replace( /\\/g, '/' ).replace( /^\/+/, '' );
+		const parts = normalized.split( '/' ).filter( Boolean );
+		const name = parts.length ? parts[ parts.length - 1 ] : '';
+
+		if ( name === '.DS_Store' ) {
+			return false;
+		}
+
+		return ! ( name.toLowerCase() === 'result.json' && ! parts.includes( 'assets' ) );
+	};
+
 	const droppedFilesByRoot = new WeakMap();
 
 	const selectedInputFiles = function ( inputs, root ) {
@@ -115,7 +127,8 @@
 	const buildFiles = async function ( inputs, root ) {
 		const selectedFiles = selectedInputFiles( inputs, root );
 		const files = selectedFiles.filter( function ( record ) {
-			return ! /\.zip$/i.test( record.file.name || record.path || '' );
+			const path = record.path || uploadedFilePath( record.file );
+			return ! /\.zip$/i.test( record.file.name || path || '' ) && shouldIncludeSiteFile( path );
 		} );
 		return Promise.all( files.map( async function ( upload ) {
 			const file = upload.file;

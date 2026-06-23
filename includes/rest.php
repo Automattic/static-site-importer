@@ -1043,6 +1043,10 @@ function static_site_importer_rest_source_artifact( array $source ) {
 				continue;
 			}
 
+			if ( ! static_site_importer_rest_should_include_artifact_file( $path ) ) {
+				continue;
+			}
+
 			if ( isset( $file['content'] ) ) {
 				$files[] = array(
 					'path'    => $path,
@@ -1135,6 +1139,10 @@ function static_site_importer_rest_archive_files( array $archive ) {
 			continue;
 		}
 
+		if ( ! static_site_importer_rest_should_include_artifact_file( $path ) ) {
+			continue;
+		}
+
 		$file_content = $zip->getFromIndex( $i );
 		if ( false === $file_content ) {
 			$zip->close();
@@ -1176,6 +1184,30 @@ function static_site_importer_rest_artifact_path( string $path ): string {
 	}
 
 	return str_starts_with( $path, 'website/' ) ? $path : 'website/' . $path;
+}
+
+/**
+ * Determine whether an uploaded artifact file belongs to the static site.
+ *
+ * @param string $path Normalized artifact path.
+ * @return bool
+ */
+function static_site_importer_rest_should_include_artifact_file( string $path ): bool {
+	$path  = str_replace( '\\', '/', $path );
+	$path  = preg_replace( '#/+#', '/', $path );
+	$path  = preg_replace( '#^website/#', '', ltrim( (string) $path, '/' ) );
+	$parts = array_values( array_filter( explode( '/', (string) $path ), 'strlen' ) );
+	$name  = end( $parts );
+
+	if ( false === $name ) {
+		return false;
+	}
+
+	if ( '.DS_Store' === $name ) {
+		return false;
+	}
+
+	return ! ( 'result.json' === strtolower( (string) $name ) && ! in_array( 'assets', $parts, true ) );
 }
 
 /**

@@ -414,6 +414,7 @@ $assert( str_contains( $view_js, 'webkitRelativePath' ), 'view-preserves-directo
 $assert( str_contains( $view_js, 'data-static-site-importer-source-directory' ), 'view-reads-directory-upload-input' );
 $assert( str_contains( $view_js, 'webkitGetAsEntry' ), 'view-supports-dropped-directory-entries' );
 $assert( str_contains( $view_js, 'archive: await buildArchive( uploadInputs, root )' ), 'view-sends-zip-from-combined-upload-as-archive-payload' );
+$assert( str_contains( $view_js, 'shouldIncludeSiteFile' ), 'view-skips-known-non-site-upload-files-before-reading' );
 $assert( str_contains( $view_js, 'apply_to_current_site: shouldApplyToCurrentSite' ), 'view-sends-current-runtime-apply-flag' );
 $assert( str_contains( $view_js, 'activate: shouldApplyToCurrentSite' ), 'view-activates-current-runtime-generation' );
 $assert( str_contains( $view_js, 'overwrite: shouldApplyToCurrentSite' ), 'view-overwrites-current-runtime-generation' );
@@ -718,6 +719,40 @@ if ( class_exists( 'ZipArchive' ) ) {
 	$assert( in_array( 'website/site/index.html', $paths, true ), 'rest-zip-extracts-normalized-entry' );
 	$assert( in_array( 'website/escape.html', $paths, true ), 'rest-zip-strips-traversal-entry' );
 }
+
+$artifact = static_site_importer_rest_source_artifact(
+	array(
+		'files' => array(
+			array(
+				'path'    => 'index.html',
+				'content' => '<main>Site</main>',
+			),
+			array(
+				'path'    => 'result.json',
+				'content' => '{"figma":"metadata"}',
+			),
+			array(
+				'path'    => 'figma-export/result.json',
+				'content' => '{"figma":"metadata"}',
+			),
+			array(
+				'path'    => '.DS_Store',
+				'content' => 'macos',
+			),
+			array(
+				'path'    => 'assets/data.json',
+				'content' => '{"site":"data"}',
+			),
+		),
+	)
+);
+$assert( is_array( $artifact ), 'rest-artifact-skips-non-site-metadata-builds' );
+$paths = array_column( $artifact['files'] ?? array(), 'path' );
+$assert( in_array( 'website/index.html', $paths, true ), 'rest-artifact-keeps-html-file' );
+$assert( in_array( 'website/assets/data.json', $paths, true ), 'rest-artifact-keeps-site-json-asset' );
+$assert( ! in_array( 'website/result.json', $paths, true ), 'rest-artifact-skips-root-figma-result-json' );
+$assert( ! in_array( 'website/figma-export/result.json', $paths, true ), 'rest-artifact-skips-nested-figma-result-json' );
+$assert( ! in_array( 'website/.DS_Store', $paths, true ), 'rest-artifact-skips-macos-metadata-file' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( PHP_EOL, $failures ) . PHP_EOL );
