@@ -32,6 +32,7 @@ $GLOBALS['ssi_test_options']     = array();
 $GLOBALS['ssi_home_url']         = 'https://example.test/';
 $GLOBALS['ssi_uuid_count']       = 0;
 $GLOBALS['ssi_transients']       = array();
+$GLOBALS['ssi_upload_dir']       = sys_get_temp_dir() . '/ssi-smoke-uploads-' . getmypid();
 
 defined( 'WEEK_IN_SECONDS' ) || define( 'WEEK_IN_SECONDS', 7 * 24 * 60 * 60 );
 
@@ -182,9 +183,40 @@ if ( ! function_exists( 'get_transient' ) ) {
 
 if ( ! function_exists( 'set_transient' ) ) {
 	function set_transient( string $name, $value, int $expiration = 0 ): bool {
+		if ( str_starts_with( $name, 'static_site_importer_figma_blueprint_' ) ) {
+			return false;
+		}
+
 		$GLOBALS['ssi_transients'][ $name ] = $value;
 
 		return true;
+	}
+}
+
+if ( ! function_exists( 'trailingslashit' ) ) {
+	function trailingslashit( string $path ): string {
+		return rtrim( $path, '/\\' ) . '/';
+	}
+}
+
+if ( ! function_exists( 'wp_mkdir_p' ) ) {
+	function wp_mkdir_p( string $path ): bool {
+		return is_dir( $path ) || mkdir( $path, 0777, true );
+	}
+}
+
+if ( ! function_exists( 'wp_upload_dir' ) ) {
+	function wp_upload_dir( $time = null, bool $create_dir = true ): array {
+		unset( $time );
+		if ( $create_dir && ! is_dir( $GLOBALS['ssi_upload_dir'] ) ) {
+			wp_mkdir_p( $GLOBALS['ssi_upload_dir'] );
+		}
+
+		return array(
+			'basedir' => $GLOBALS['ssi_upload_dir'],
+			'baseurl' => 'https://example.test/uploads',
+			'error'   => false,
+		);
 	}
 }
 
