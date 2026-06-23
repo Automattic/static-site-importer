@@ -35,7 +35,7 @@ function static_site_importer_render_block( array $attributes = array() ): strin
 	$provider    = isset( $attributes['provider'] ) ? sanitize_key( (string) $attributes['provider'] ) : '';
 	$default_url = isset( $attributes['defaultUrl'] ) ? esc_url_raw( (string) $attributes['defaultUrl'] ) : '';
 	$apply       = ! empty( $attributes['applyToCurrentSite'] );
-	$button_text = $apply ? __( 'Import to this site', 'static-site-importer' ) : __( 'Create preview', 'static-site-importer' );
+	$button_text = $apply ? __( 'Import to this site', 'static-site-importer' ) : __( 'Generate WordPress website', 'static-site-importer' );
 
 	ob_start();
 	?>
@@ -52,27 +52,20 @@ function static_site_importer_render_block( array $attributes = array() ): strin
 				</label>
 
 				<label class="ssi-importer__field">
-					<span class="ssi-importer__label"><?php esc_html_e( 'Site directory', 'static-site-importer' ); ?></span>
-					<input type="file" name="ssi_static_template[]" multiple webkitdirectory data-static-site-importer-source-files>
+					<span class="ssi-importer__label"><?php esc_html_e( 'Upload file(s)', 'static-site-importer' ); ?></span>
+					<input type="file" name="ssi_static_upload[]" accept=".zip,application/zip,.html,.htm,text/html,text/css,text/javascript,application/javascript,application/json,application/xml,text/xml,image/*,font/*" multiple data-static-site-importer-source-files>
 				</label>
 
-				<label class="ssi-importer__field">
-					<span class="ssi-importer__label"><?php esc_html_e( 'ZIP archive', 'static-site-importer' ); ?></span>
-					<input type="file" name="ssi_static_archive" accept=".zip,application/zip" data-static-site-importer-source-archive>
-				</label>
-
-				<label class="ssi-importer__field">
-					<span class="ssi-importer__label"><?php esc_html_e( 'Raw HTML', 'static-site-importer' ); ?></span>
+				<details class="ssi-importer__field">
+					<summary class="ssi-importer__label"><?php esc_html_e( 'Paste HTML', 'static-site-importer' ); ?></summary>
 					<textarea name="ssi_html" rows="6" data-static-site-importer-source-html></textarea>
-				</label>
+				</details>
 
 				<button type="button" class="ssi-importer__submit" data-static-site-importer-submit><?php echo esc_html( $button_text ); ?></button>
 			</form>
 		</section>
 
 		<section class="ssi-importer__report" aria-live="polite" hidden data-static-site-importer-status>
-			<p class="ssi-importer__label"><?php esc_html_e( 'Import status', 'static-site-importer' ); ?></p>
-			<p data-static-site-importer-progress></p>
 			<p hidden data-static-site-importer-preview-link-wrap><a href="#" target="_blank" rel="noopener noreferrer" data-static-site-importer-preview-link><?php esc_html_e( 'Open WordPress preview', 'static-site-importer' ); ?></a></p>
 			<textarea rows="10" readonly hidden data-static-site-importer-report></textarea>
 		</section>

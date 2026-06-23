@@ -48,6 +48,10 @@
 	gap: 6px;
 }
 
+.ssi-importer__field summary {
+	cursor: pointer;
+}
+
 .ssi-importer__field input,
 .ssi-importer__field textarea,
 .ssi-importer__report textarea {

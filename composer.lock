@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "770faafc95cd2e1835e1059309f7f630",
+    "content-hash": "ea22f62353dcd455b5c4c5d4a25ca0ae",
     "packages": [
         {
             "name": "automattic/blocks-engine-figma-transformer",
@@ -12,12 +12,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/Automattic/blocks-engine.git",
-                "reference": "193c86bd19d8e631b48ef6ae7b205dccb573359e"
+                "reference": "08aa7a4e4069b9836396f7a04f1f500ae01a3c8a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://github.com/Automattic/blocks-engine/archive/193c86bd19d8e631b48ef6ae7b205dccb573359e.zip",
-                "reference": "193c86bd19d8e631b48ef6ae7b205dccb573359e"
+                "url": "https://github.com/Automattic/blocks-engine/archive/08aa7a4e4069b9836396f7a04f1f500ae01a3c8a.zip",
+                "reference": "08aa7a4e4069b9836396f7a04f1f500ae01a3c8a"
             },
             "require": {
                 "php": ">=8.1"
@@ -43,16 +43,16 @@
         },
         {
             "name": "automattic/blocks-engine-php-transformer",
-            "version": "0.1.1",
+            "version": "0.1.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Automattic/blocks-engine.git",
-                "reference": "193c86bd19d8e631b48ef6ae7b205dccb573359e"
+                "reference": "08aa7a4e4069b9836396f7a04f1f500ae01a3c8a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://github.com/Automattic/blocks-engine/archive/193c86bd19d8e631b48ef6ae7b205dccb573359e.zip",
-                "reference": "193c86bd19d8e631b48ef6ae7b205dccb573359e"
+                "url": "https://github.com/Automattic/blocks-engine/archive/08aa7a4e4069b9836396f7a04f1f500ae01a3c8a.zip",
+                "reference": "08aa7a4e4069b9836396f7a04f1f500ae01a3c8a"
             },
             "require": {
                 "league/commonmark": "^2.5",

@@ -36,7 +36,10 @@
 
 	const buildFiles = async function ( input ) {
 		const selectedFiles = input && input.files ? Array.prototype.slice.call( input.files ) : [];
-		return Promise.all( selectedFiles.map( async function ( file ) {
+		const files = selectedFiles.filter( function ( file ) {
+			return ! /\.zip$/i.test( file.name || '' );
+		} );
+		return Promise.all( files.map( async function ( file ) {
 			const path = uploadedFilePath( file );
 			const record = {
 				path,
@@ -56,8 +59,11 @@
 	};
 
 	const buildArchive = async function ( input ) {
-		const file = input && input.files && input.files.length ? input.files[ 0 ] : null;
-		if ( ! file || ! /\.zip$/i.test( file.name || '' ) ) {
+		const selectedFiles = input && input.files ? Array.prototype.slice.call( input.files ) : [];
+		const file = selectedFiles.find( function ( upload ) {
+			return /\.zip$/i.test( upload.name || '' );
+		} );
+		if ( ! file ) {
 			return null;
 		}
 
@@ -71,7 +77,11 @@
 	};
 
 	const setReport = function ( root, report ) {
+		const status = root.querySelector( '[data-static-site-importer-status]' );
 		const reportEl = root.querySelector( '[data-static-site-importer-report]' );
+		if ( status ) {
+			status.hidden = false;
+		}
 		if ( reportEl ) {
 			reportEl.hidden = false;
 			reportEl.value = JSON.stringify( report, null, 2 );
@@ -81,7 +91,7 @@
 	const showStatus = function ( root, message ) {
 		const status = root.querySelector( '[data-static-site-importer-status]' );
 		const progress = root.querySelector( '[data-static-site-importer-progress]' );
-		if ( status ) {
+		if ( status && progress ) {
 			status.hidden = false;
 		}
 		if ( progress ) {
@@ -132,18 +142,18 @@
 			const sourceUrl = root.querySelector( '[data-static-site-importer-source-url]' );
 			const html = root.querySelector( '[data-static-site-importer-source-html]' );
 			const files = root.querySelector( '[data-static-site-importer-source-files]' );
-			const archive = root.querySelector( '[data-static-site-importer-source-archive]' );
 			const provider = root.getAttribute( 'data-static-site-importer-provider' ) || '';
 			const applyToCurrentSite = root.getAttribute( 'data-static-site-importer-apply-to-current-site' ) === '1';
 			const source = {
 				url: sourceUrl ? sourceUrl.value : '',
 				html: html ? html.value : '',
 				files: await buildFiles( files ),
-				archive: await buildArchive( archive ),
+				archive: await buildArchive( files ),
 			};
 
 			if ( ! hasSource( source ) ) {
-				showStatus( root, 'Add a website URL, site directory, ZIP archive, or raw HTML to start.' );
+				setReport( root, { success: false, error: { message: 'Add a website URL, upload file(s), or paste HTML to start.' } } );
+				showStatus( root, 'Add a website URL, upload file(s), or paste HTML to start.' );
 				return;
 			}
 

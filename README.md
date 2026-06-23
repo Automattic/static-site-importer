@@ -61,7 +61,7 @@ Open Static Site Importer in a disposable WordPress Playground site:
 
 [![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/Automattic/static-site-importer/main/docs/playground/blueprint.json)
 
-The blueprint installs and activates the packaged Static Site Importer release, logs the visitor in, and opens `/import/` with the `static-site-importer/importer` block configured to import into the current disposable Playground site. Testers can upload a ZIP, choose a local site directory, paste HTML, or enter one public URL. Separate preview sessions require WP Codebox, which the public WordPress Playground environment does not provide, so the public demo applies the import to the disposable site and returns that site's URL.
+The blueprint installs and activates the packaged Static Site Importer release, logs the visitor in, and opens `/import/` with the `static-site-importer/importer` block configured to import into the current disposable Playground site. Testers can upload site files or a ZIP, paste HTML, or enter one public URL. Separate preview sessions require WP Codebox, which the public WordPress Playground environment does not provide, so the public demo applies the import to the disposable site and returns that site's URL.
 
 URL intake rules:
 

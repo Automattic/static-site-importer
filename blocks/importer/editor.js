@@ -16,14 +16,14 @@
 				{ className: 'ssi-importer ssi-importer--editor' },
 				el( 'p', { className: 'ssi-importer__eyebrow' }, 'Static Site Importer' ),
 				el( 'h2', { className: 'ssi-importer__title' }, 'Bring a site into WordPress' ),
-				el( 'p', { className: 'ssi-importer__copy' }, 'Visitors paste a URL, upload site files, or add HTML. The block imports through Static Site Importer.' ),
+				el( 'p', { className: 'ssi-importer__copy' }, 'Visitors paste a URL, upload file(s), or paste HTML. The block imports through Static Site Importer.' ),
 				components && components.Notice
 					? el( components.Notice, { status: 'info', isDismissible: false }, 'URL imports use the generic Static Site Importer provider hook before falling back to the built-in public URL fetcher.' )
 					: null,
 				components && components.ToggleControl
 					? el( components.ToggleControl, {
 						label: 'Apply imports to this site',
-						help: applyToCurrentSite ? 'Imports mutate this WordPress site.' : 'Imports create a preview when possible.',
+						help: applyToCurrentSite ? 'Imports mutate this WordPress site.' : 'Imports generate a WordPress website preview when possible.',
 						checked: applyToCurrentSite,
 						onChange( value ) {
 							setAttributes( { applyToCurrentSite: Boolean( value ) } );
