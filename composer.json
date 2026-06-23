@@ -15,12 +15,12 @@
         "source": {
           "type": "git",
           "url": "https://github.com/Automattic/blocks-engine.git",
-          "reference": "ac92ddb"
+          "reference": "b4000938fa3d874872909a901a927bafc4b9927a"
         },
         "dist": {
           "type": "zip",
-          "url": "https://github.com/Automattic/blocks-engine/archive/refs/tags/php-transformer-v0.1.0.zip",
-          "reference": "ac92ddb"
+          "url": "https://github.com/Automattic/blocks-engine/archive/b4000938fa3d874872909a901a927bafc4b9927a.zip",
+          "reference": "b4000938fa3d874872909a901a927bafc4b9927a"
         },
         "autoload": {
           "psr-4": {
@@ -33,9 +33,46 @@
           "php": ">=8.1"
         }
       }
+    },
+    {
+      "type": "package",
+      "package": {
+        "name": "automattic/blocks-engine-figma-transformer",
+        "version": "0.1.0",
+        "description": "PHP primitives for transforming Figma designs into static HTML website artifacts.",
+        "type": "library",
+        "license": "GPL-3.0-or-later",
+        "source": {
+          "type": "git",
+          "url": "https://github.com/Automattic/blocks-engine.git",
+          "reference": "b4000938fa3d874872909a901a927bafc4b9927a"
+        },
+        "dist": {
+          "type": "zip",
+          "url": "https://github.com/Automattic/blocks-engine/archive/b4000938fa3d874872909a901a927bafc4b9927a.zip",
+          "reference": "b4000938fa3d874872909a901a927bafc4b9927a"
+        },
+        "autoload": {
+          "psr-4": {
+            "Automattic\\BlocksEngine\\FigmaTransformer\\": "figma-transformer/src/"
+          }
+        },
+        "bin": [
+          "figma-transformer/bin/figma-transformer",
+          "figma-transformer/bin/figma-visual-attribution"
+        ],
+        "require": {
+          "php": ">=8.1"
+        },
+        "suggest": {
+          "ext-zstd": "Decode zstd-compressed canvas.fig chunks when inspecting .fig archives.",
+          "ext-zip": "Read zipped .fig archives when the extension is not provided by the host PHP build."
+        }
+      }
     }
   ],
   "require": {
+    "automattic/blocks-engine-figma-transformer": "^0.1.0",
     "automattic/blocks-engine-php-transformer": "^0.1.0",
     "php": "^8.1"
   },

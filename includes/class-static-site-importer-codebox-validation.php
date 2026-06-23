@@ -24,7 +24,102 @@ class Static_Site_Importer_Codebox_Validation {
 	 * @return void
 	 */
 	public static function register_default_provider(): void {
+		add_filter( 'static_site_importer_codebox_validation_result', array( self::class, 'validate_in_local_runtime' ), 5, 3 );
 		add_filter( 'static_site_importer_codebox_validation_result', array( self::class, 'delegate_to_wp_codebox_host_delegation' ), 10, 3 );
+	}
+
+	/**
+	 * Run the SSI validation recipe in the current WordPress runtime when explicitly enabled for local development.
+	 *
+	 * @param mixed               $result  Existing provider result.
+	 * @param array<string,mixed> $request SSI validation request.
+	 * @param array<string,mixed> $input   Raw caller input.
+	 * @return array<string,mixed>|WP_Error|null
+	 */
+	public static function validate_in_local_runtime( mixed $result, array $request, array $input ) {
+		if ( null !== $result || ! self::local_runtime_provider_enabled( $input ) ) {
+			return $result;
+		}
+
+		if ( ! class_exists( 'Static_Site_Importer_Theme_Generator' ) ) {
+			return null;
+		}
+
+		$artifact = isset( $request['source']['artifact'] ) && is_array( $request['source']['artifact'] ) ? $request['source']['artifact'] : array();
+		if ( empty( $artifact ) ) {
+			return null;
+		}
+
+		$import_args             = isset( $request['import_args'] ) && is_array( $request['import_args'] ) ? $request['import_args'] : array();
+		$import_args['activate'] = true;
+		$import_args['overwrite'] = true;
+
+		$import_result = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
+		if ( is_wp_error( $import_result ) ) {
+			return $import_result;
+		}
+
+		$theme_dir = (string) ( $import_result['theme_dir'] ?? '' );
+		$artifact_dir = trailingslashit( $theme_dir ) . 'validation-artifacts';
+		if ( '' !== $theme_dir && function_exists( 'wp_mkdir_p' ) ) {
+			wp_mkdir_p( $artifact_dir );
+		}
+
+		$source_url          = self::materialize_source_artifact_for_browser( $artifact, $artifact_dir );
+		$source_screenshot   = self::capture_browser_screenshot( $source_url, $artifact_dir . '/source-screenshot.png' );
+		$imported_screenshot = self::capture_browser_screenshot( function_exists( 'home_url' ) ? home_url( '/' ) : '', $artifact_dir . '/imported-screenshot.png' );
+		$visual_diff         = self::write_visual_diff_artifact( $source_screenshot['path'] ?? '', $imported_screenshot['path'] ?? '', $artifact_dir . '/visual-diff.json', $artifact_dir . '/visual-diff.png' );
+
+		$screenshots = array();
+		if ( ! empty( $source_screenshot['artifact'] ) ) {
+			$screenshots[] = $source_screenshot['artifact'];
+		}
+		if ( ! empty( $imported_screenshot['artifact'] ) ) {
+			$screenshots[] = $imported_screenshot['artifact'];
+		}
+
+		$diffs = array();
+		if ( ! empty( $visual_diff['artifact'] ) ) {
+			$diffs[] = $visual_diff['artifact'];
+		}
+		if ( ! empty( $visual_diff['image_artifact'] ) ) {
+			$diffs[] = $visual_diff['image_artifact'];
+		}
+
+		$quality_pass = ! empty( $import_result['quality']['pass'] ) && ( ! isset( $visual_diff['summary']['pixel_delta_percent'] ) || (float) $visual_diff['summary']['pixel_delta_percent'] <= 5.0 );
+
+		$provider_artifacts = array(
+			'generated_theme'         => self::local_artifact_ref( (string) ( $import_result['theme_slug'] ?? '' ), 'wordpress-theme-directory' ),
+			'import_report'           => self::local_artifact_ref( 'import-report.json', 'blocks-engine/import-report' ),
+			'block_validation_result' => self::local_artifact_ref( 'import-validation-result.json', 'blocks-engine/import-validation-result' ),
+			'screenshots'             => $screenshots,
+			'diffs'                   => $diffs,
+			'raw'                     => array(
+				self::local_artifact_ref( 'finding-packets.json', 'blocks-engine/finding-packets' ),
+			),
+		);
+		if ( ! empty( $imported_screenshot['artifact'] ) ) {
+			$provider_artifacts['browser_render_evidence'] = self::local_artifact_ref( 'validation-artifacts/imported-screenshot.png', 'wp-codebox/browser-screenshot' );
+		}
+
+		return array(
+			'success'   => $quality_pass,
+			'status'    => $quality_pass ? 'succeeded' : 'failed',
+			'runtime'   => array(
+				'provider' => 'static-site-importer/local-runtime',
+				'status'   => 'completed',
+			),
+			'summary'   => array(
+				'quality_pass'          => $quality_pass,
+				'import_report'         => is_readable( (string) ( $import_result['report_path'] ?? '' ) ) ? 'captured' : 'missing',
+				'block_validation'      => is_readable( (string) ( $import_result['validation_result_path'] ?? '' ) ) ? 'captured' : 'missing',
+				'browser_render'        => ! empty( $imported_screenshot['artifact'] ) ? 'captured' : 'missing',
+				'screenshot_artifacts'  => count( $screenshots ),
+				'visual_diff_artifacts' => count( $diffs ),
+				'theme_slug'            => (string) ( $import_result['theme_slug'] ?? '' ),
+			) + ( isset( $visual_diff['summary'] ) && is_array( $visual_diff['summary'] ) ? $visual_diff['summary'] : array() ),
+			'artifacts' => $provider_artifacts,
+		);
 	}
 
 	/**
@@ -446,7 +541,7 @@ class Static_Site_Importer_Codebox_Validation {
 			return array();
 		}
 
-		$allowed = array( 'artifact_id', 'artifact_ref', 'url', 'path', 'relative_path', 'sha256', 'media_type', 'label', 'kind', 'status' );
+		$allowed = array( 'artifact_id', 'artifact_ref', 'artifact_name', 'url', 'path', 'relative_path', 'sha256', 'media_type', 'label', 'kind', 'status' );
 		$output  = array();
 		foreach ( $allowed as $key ) {
 			if ( ! array_key_exists( $key, $ref ) ) {
@@ -495,5 +590,214 @@ class Static_Site_Importer_Codebox_Validation {
 			|| str_starts_with( $value, 'file:' )
 			|| str_contains( $value, 'localhost' )
 			|| str_contains( $value, '127.0.0.1' );
+	}
+
+	/**
+	 * Determine whether same-runtime validation has been explicitly enabled.
+	 *
+	 * @param array<string,mixed> $input Raw caller input.
+	 * @return bool
+	 */
+	private static function local_runtime_provider_enabled( array $input ): bool {
+		if ( ! empty( $input['local_runtime_provider'] ) ) {
+			return true;
+		}
+		if ( defined( 'STATIC_SITE_IMPORTER_LOCAL_CODEBOX_VALIDATION' ) && STATIC_SITE_IMPORTER_LOCAL_CODEBOX_VALIDATION ) {
+			return true;
+		}
+		if ( false !== getenv( 'STATIC_SITE_IMPORTER_LOCAL_CODEBOX_VALIDATION' ) && '' !== getenv( 'STATIC_SITE_IMPORTER_LOCAL_CODEBOX_VALIDATION' ) ) {
+			return true;
+		}
+
+		return function_exists( 'get_option' ) && (bool) get_option( 'static_site_importer_local_codebox_validation', false );
+	}
+
+	/**
+	 * Write inline website artifact files to a browser-readable local source directory.
+	 *
+	 * @param array<string,mixed> $artifact     Website artifact.
+	 * @param string              $artifact_dir Validation artifact directory.
+	 * @return string Browser URL for the source entrypoint.
+	 */
+	private static function materialize_source_artifact_for_browser( array $artifact, string $artifact_dir ): string {
+		if ( '' === $artifact_dir || ! is_dir( $artifact_dir ) ) {
+			return '';
+		}
+
+		$source_dir = $artifact_dir . '/source';
+		if ( function_exists( 'wp_mkdir_p' ) ) {
+			wp_mkdir_p( $source_dir );
+		}
+		if ( ! is_dir( $source_dir ) ) {
+			return '';
+		}
+
+		$files = isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? $artifact['files'] : array();
+		if ( empty( $files ) && isset( $artifact['html'] ) ) {
+			$files = array(
+				array(
+					'path'    => 'website/index.html',
+					'content' => '<!doctype html><html><head><meta charset="utf-8"><title>Source Fixture</title><link rel="stylesheet" href="styles.css"></head><body>' . (string) $artifact['html'] . '<script src="script.js"></script></body></html>',
+				),
+				array(
+					'path'    => 'website/styles.css',
+					'content' => (string) ( $artifact['css'] ?? '' ),
+				),
+				array(
+					'path'    => 'website/script.js',
+					'content' => (string) ( $artifact['js'] ?? '' ),
+				),
+			);
+		}
+		foreach ( $files as $file ) {
+			if ( ! is_array( $file ) || empty( $file['path'] ) ) {
+				continue;
+			}
+
+			$path = self::safe_relative_artifact_path( (string) $file['path'] );
+			if ( '' === $path ) {
+				continue;
+			}
+
+			$target = $source_dir . '/' . $path;
+			$parent = dirname( $target );
+			if ( function_exists( 'wp_mkdir_p' ) ) {
+				wp_mkdir_p( $parent );
+			}
+
+			$content = isset( $file['content_base64'] ) ? base64_decode( (string) $file['content_base64'], true ) : (string) ( $file['content'] ?? '' );
+			if ( false === $content ) {
+				continue;
+			}
+
+			file_put_contents( $target, $content ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Local dev validation writes throwaway artifacts.
+		}
+
+		$entrypoint = self::safe_relative_artifact_path( (string) ( $artifact['entrypoint'] ?? 'website/index.html' ) );
+		$source_entry = $source_dir . '/' . $entrypoint;
+		if ( ! is_readable( $source_entry ) && is_readable( $source_dir . '/website/index.html' ) ) {
+			$source_entry = $source_dir . '/website/index.html';
+		}
+
+		return is_readable( $source_entry ) ? 'file://' . $source_entry : '';
+	}
+
+	/**
+	 * Capture a screenshot with Playwright CLI when available.
+	 *
+	 * @param string $url    Browser URL.
+	 * @param string $target Target screenshot path.
+	 * @return array{path?:string,artifact?:array<string,string>}
+	 */
+	private static function capture_browser_screenshot( string $url, string $target ): array {
+		if ( '' === $url || '' === $target ) {
+			return array();
+		}
+
+		$channel = false !== getenv( 'STATIC_SITE_IMPORTER_LOCAL_PLAYWRIGHT_CHANNEL' ) && '' !== getenv( 'STATIC_SITE_IMPORTER_LOCAL_PLAYWRIGHT_CHANNEL' ) ? (string) getenv( 'STATIC_SITE_IMPORTER_LOCAL_PLAYWRIGHT_CHANNEL' ) : 'chrome';
+		$command = 'npm exec --yes playwright screenshot -- --channel=' . escapeshellarg( $channel ) . ' --full-page --wait-for-timeout=1000 --viewport-size=1280,900 ' . escapeshellarg( $url ) . ' ' . escapeshellarg( $target ) . ' 2>&1';
+		exec( $command, $output, $exit_code ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_exec -- Explicit local development provider only.
+		if ( 0 !== $exit_code || ! is_readable( $target ) ) {
+			return array();
+		}
+
+		return array(
+			'path'     => $target,
+			'artifact' => self::local_artifact_ref( 'validation-artifacts/' . basename( $target ), str_contains( basename( $target ), 'source' ) ? 'source_screenshot' : 'imported_screenshot' ),
+		);
+	}
+
+	/**
+	 * Write a simple PNG pixel-diff summary and image.
+	 *
+	 * @param string $source_path   Source screenshot path.
+	 * @param string $imported_path Imported screenshot path.
+	 * @param string $json_path     Diff summary path.
+	 * @param string $image_path    Diff image path.
+	 * @return array<string,mixed>
+	 */
+	private static function write_visual_diff_artifact( string $source_path, string $imported_path, string $json_path, string $image_path ): array {
+		if ( ! extension_loaded( 'gd' ) || ! is_readable( $source_path ) || ! is_readable( $imported_path ) ) {
+			return array();
+		}
+
+		$source = imagecreatefrompng( $source_path );
+		$imported = imagecreatefrompng( $imported_path );
+		if ( false === $source || false === $imported ) {
+			return array();
+		}
+
+		$width = min( imagesx( $source ), imagesx( $imported ) );
+		$height = min( imagesy( $source ), imagesy( $imported ) );
+		$diff_image = imagecreatetruecolor( $width, $height );
+		$total_delta = 0;
+		$mismatched = 0;
+		$total = max( 1, $width * $height );
+
+		for ( $y = 0; $y < $height; ++$y ) {
+			for ( $x = 0; $x < $width; ++$x ) {
+				$source_rgb = imagecolorat( $source, $x, $y );
+				$imported_rgb = imagecolorat( $imported, $x, $y );
+				$delta_r = abs( ( ( $source_rgb >> 16 ) & 0xff ) - ( ( $imported_rgb >> 16 ) & 0xff ) );
+				$delta_g = abs( ( ( $source_rgb >> 8 ) & 0xff ) - ( ( $imported_rgb >> 8 ) & 0xff ) );
+				$delta_b = abs( ( $source_rgb & 0xff ) - ( $imported_rgb & 0xff ) );
+				$delta = ( $delta_r + $delta_g + $delta_b ) / 3;
+				$total_delta += $delta;
+				if ( $delta > 16 ) {
+					++$mismatched;
+				}
+
+				imagesetpixel( $diff_image, $x, $y, imagecolorallocate( $diff_image, (int) $delta, 0, 0 ) );
+			}
+		}
+
+		imagepng( $diff_image, $image_path );
+		imagedestroy( $source );
+		imagedestroy( $imported );
+		imagedestroy( $diff_image );
+
+		$summary = array(
+			'pixel_delta_percent' => round( ( $mismatched / $total ) * 100, 4 ),
+			'average_delta'       => round( $total_delta / $total, 4 ),
+			'compared_width'      => $width,
+			'compared_height'     => $height,
+		);
+		file_put_contents( $json_path, wp_json_encode( $summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) . "\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Local dev validation writes throwaway artifacts.
+
+		return array(
+			'summary'        => $summary,
+			'artifact'       => self::local_artifact_ref( 'validation-artifacts/visual-diff.json', 'visual_diff' ),
+			'image_artifact' => self::local_artifact_ref( 'validation-artifacts/visual-diff.png', 'visual_diff_image' ),
+		);
+	}
+
+	/**
+	 * Build a portable local artifact ref by artifact name only.
+	 *
+	 * @param string $artifact_name Artifact name or relative path.
+	 * @param string $kind          Artifact kind.
+	 * @return array<string,string>
+	 */
+	private static function local_artifact_ref( string $artifact_name, string $kind ): array {
+		return array_filter(
+			array(
+				'artifact_name' => $artifact_name,
+				'kind'          => $kind,
+			)
+		);
+	}
+
+	/**
+	 * Normalize a website artifact path for writing below the source validation directory.
+	 *
+	 * @param string $path Raw artifact path.
+	 * @return string
+	 */
+	private static function safe_relative_artifact_path( string $path ): string {
+		$path = str_replace( '\\', '/', $path );
+		$path = preg_replace( '#(^|/)\.\.(?=/|$)#', '', $path );
+		$path = trim( preg_replace( '#/+#', '/', (string) $path ), '/' );
+
+		return preg_match( '#^[A-Za-z0-9_./-]+$#', $path ) ? $path : '';
 	}
 }

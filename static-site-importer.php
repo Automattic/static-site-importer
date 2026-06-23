@@ -29,6 +29,11 @@ if ( ! function_exists( 'blocks_engine_php_transformer_compile_artifact' ) && is
 	require_once $static_site_importer_transformer;
 }
 
+$static_site_importer_figma_transformer = STATIC_SITE_IMPORTER_PATH . 'vendor/automattic/blocks-engine-figma-transformer/figma-transformer/figma-transformer.php';
+if ( ! function_exists( 'blocks_engine_figma_transformer_transform_scenegraph' ) && is_readable( $static_site_importer_figma_transformer ) ) {
+	require_once $static_site_importer_figma_transformer;
+}
+
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-document.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-source-page.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-fetcher.php';

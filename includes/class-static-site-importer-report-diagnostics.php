@@ -606,19 +606,52 @@ class Static_Site_Importer_Report_Diagnostics {
 			)
 		);
 
-		return array(
+		$metrics = self::visual_parity_metrics( $provided );
+
+		return array_filter(
+			array(
 			'schema'       => 'static-site-importer/visual-parity-artifacts/v1',
 			'status'       => empty( $missing ) ? 'complete' : 'pending',
 			'owner'        => 'codebox_runtime',
 			'contract'     => 'durable_artifact_refs_only',
 			'missing'      => $missing,
+			'metrics'      => $metrics,
 			'artifacts'    => $artifacts,
 			'local_paths'  => 'omitted',
 			'notes'        => array(
 				'Screenshot and diff slots stay pending until Codebox/runtime validation supplies durable artifact refs.',
 				'Reviewer-facing refs use artifact IDs, URLs, or artifact names; local filesystem paths are intentionally omitted.',
 			),
+			),
+			static fn ( mixed $value ): bool => array() !== $value
 		);
+	}
+
+	/**
+	 * Extract visual parity metrics from runtime validation output.
+	 *
+	 * @param array<string,mixed> $provided Runtime-provided validation artifacts.
+	 * @return array<string,mixed>
+	 */
+	private static function visual_parity_metrics( array $provided ): array {
+		$summaries = array();
+		if ( isset( $provided['summary'] ) && is_array( $provided['summary'] ) ) {
+			$summaries[] = $provided['summary'];
+		}
+		if ( isset( $provided['codebox_validation']['summary'] ) && is_array( $provided['codebox_validation']['summary'] ) ) {
+			$summaries[] = $provided['codebox_validation']['summary'];
+		}
+
+		$metrics = array();
+		foreach ( $summaries as $summary ) {
+			foreach ( array( 'pixel_delta_percent', 'average_delta', 'compared_width', 'compared_height', 'screenshot_artifacts', 'visual_diff_artifacts' ) as $key ) {
+				if ( isset( $summary[ $key ] ) && is_numeric( $summary[ $key ] ) ) {
+					$metrics[ $key ] = 0 + $summary[ $key ];
+				}
+			}
+		}
+
+		return $metrics;
 	}
 
 	/**

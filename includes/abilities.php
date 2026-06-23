@@ -171,6 +171,8 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'allow_missing_woocommerce'    => array( 'type' => 'boolean' ),
 						'compiler_options'             => array( 'type' => 'object' ),
 						'transform_options'            => array( 'type' => 'object' ),
+						'validation'                   => array( 'type' => 'object' ),
+						'validation_artifacts'         => array( 'type' => 'object' ),
 						'frame_id'                     => array( 'type' => 'string' ),
 					),
 				),
@@ -331,6 +333,7 @@ if ( ! function_exists( 'static_site_importer_ability_import_website_artifact' )
 		$args = array(
 			'slug'                         => isset( $input['slug'] ) ? (string) $input['slug'] : '',
 			'name'                         => isset( $input['name'] ) ? (string) $input['name'] : '',
+			'site_title'                   => isset( $input['site_title'] ) ? (string) $input['site_title'] : '',
 			'activate'                     => ! empty( $input['activate'] ),
 			'overwrite'                    => ! empty( $input['overwrite'] ),
 			'fail_on_quality'              => ! empty( $input['fail_on_quality'] ),

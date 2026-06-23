@@ -124,7 +124,10 @@ class Static_Site_Importer_Theme_Materializer {
 				continue;
 			}
 
-			$content = isset( $file['content'] ) && is_scalar( $file['content'] ) ? (string) $file['content'] : '';
+			$content = self::materialization_plan_asset_content( $file, $relative );
+			if ( is_wp_error( $content ) ) {
+				return $content;
+			}
 			$kind    = isset( $file['kind'] ) ? (string) $file['kind'] : '';
 			$lower   = strtolower( $relative );
 			if ( 'css' === $kind || str_ends_with( $lower, '.css' ) ) {

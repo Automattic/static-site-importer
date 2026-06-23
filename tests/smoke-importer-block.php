@@ -108,6 +108,26 @@ if ( ! function_exists( 'rest_ensure_response' ) ) {
 	}
 }
 
+if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
+	function blocks_engine_php_transformer_convert_format( string $content, string $from, string $to, array $options = array() ): array {
+		unset( $content, $options );
+		if ( 'html' !== $from || 'blocks' !== $to ) {
+			return array(
+				'schema'            => 'blocks-engine/php-transformer/result/v1',
+				'status'            => 'failed',
+				'serialized_blocks' => '',
+			);
+		}
+
+		return array(
+			'schema'            => 'blocks-engine/php-transformer/result/v1',
+			'status'            => 'success',
+			'serialized_blocks' => '<!-- wp:heading {"level":1} --><h1>Figma HTML</h1><!-- /wp:heading --><!-- wp:image {"url":"assets/hero.png","alt":"Hero"} --><figure class="wp-block-image"><img src="assets/hero.png" alt="Hero" /></figure><!-- /wp:image -->',
+			'diagnostics'       => array(),
+		);
+	}
+}
+
 if ( ! function_exists( 'apply_filters' ) ) {
 	function apply_filters( string $hook, $value, ...$args ) {
 		return $value;
@@ -305,6 +325,9 @@ require_once dirname( __DIR__ ) . '/includes/block.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-figma-import.php';
 require_once dirname( __DIR__ ) . '/includes/abilities.php';
 require_once dirname( __DIR__ ) . '/includes/rest.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-document.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-source-page.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-materializer.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-page-materializer.php';
 
 $plugin_source = file_get_contents( dirname( __DIR__ ) . '/static-site-importer.php' );
@@ -507,6 +530,33 @@ $assert( Static_Site_Importer_Page_Materializer::is_protected_page( new WP_Post(
 $assert( Static_Site_Importer_Page_Materializer::is_protected_page( new WP_Post( 42, 'other' ) ), 'protected-page-matches-id' );
 $assert( ! Static_Site_Importer_Page_Materializer::is_protected_page( new WP_Post( 9, 'ordinary' ) ), 'ordinary-page-is-not-protected' );
 
+$html_source_page = Static_Site_Importer_Source_Page::from_materialization_plan_page(
+	array(
+		'source_path'  => 'website/index.html',
+		'title'        => 'Figma HTML',
+		'slug'         => 'figma-html',
+		'body_format' => 'html',
+		'block_markup' => '<main><h1>Figma HTML</h1></main>',
+	)
+);
+$assert( ! is_wp_error( $html_source_page ), 'html-materialization-source-page-builds' );
+if ( ! is_wp_error( $html_source_page ) ) {
+	$html_page_artifacts = Static_Site_Importer_Page_Materializer::page_artifacts(
+		array( 'website/index.html' => $html_source_page ),
+		'figma-import',
+		array(
+			'website/assets/hero.png' => array(
+				'final_url' => 'https://example.test/wp-content/themes/figma-import/assets/materialized/website/assets/hero.png',
+			),
+		)
+	);
+	$assert( ! str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', '<!-- wp:html -->' ), 'html-materialization-avoids-core-html-block' );
+	$assert( str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', '<!-- wp:heading {"level":1} -->' ), 'html-materialization-converts-html-to-blocks' );
+	$assert( str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', 'https://example.test/wp-content/themes/figma-import/assets/materialized/website/assets/hero.png' ), 'html-materialization-rewrites-root-relative-asset-reference' );
+	$assert( ! str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', '"url":"assets/hero.png"' ), 'html-materialization-rewrites-block-json-asset-reference' );
+	$assert( array() === $html_page_artifacts['diagnostics'], 'html-materialization-does-not-emit-unsupported-format-diagnostic' );
+}
+
 Static_Site_Importer_Theme_Generator::$last_artifact = array();
 Static_Site_Importer_Theme_Generator::$last_args     = array();
 $figma_response = static_site_importer_rest_import_figma(
@@ -537,6 +587,12 @@ $figma_response = static_site_importer_rest_import_figma(
 						'role'      => 'css',
 						'mime_type' => 'text/css',
 					),
+					array(
+						'path'      => 'website/metadata.json',
+						'content'   => '{"title":"Fisiostetic"}',
+						'role'      => 'metadata',
+						'mime_type' => 'application/json',
+					),
 				),
 			),
 		)
@@ -550,6 +606,9 @@ $assert( 'website/index.html' === ( Static_Site_Importer_Theme_Generator::$last_
 $assert( 'website/assets/styles.css' === ( Static_Site_Importer_Theme_Generator::$last_artifact['files'][1]['path'] ?? '' ), 'figma-artifact-file-path-normalized' );
 $assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['activate'] ?? null ), 'figma-import-defaults-to-activate' );
 $assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['overwrite'] ?? null ), 'figma-import-defaults-to-overwrite' );
+$assert( '' === ( Static_Site_Importer_Theme_Generator::$last_args['slug'] ?? null ), 'figma-import-does-not-force-generic-slug' );
+$assert( 'Fisiostetic' === ( Static_Site_Importer_Theme_Generator::$last_args['name'] ?? null ), 'figma-import-name-derived-from-metadata' );
+$assert( 'Fisiostetic' === ( Static_Site_Importer_Theme_Generator::$last_args['site_title'] ?? null ), 'figma-import-site-title-derived-from-metadata' );
 $assert( 'figma-to-wordpress' === ( Static_Site_Importer_Theme_Generator::$last_artifact['provenance']['source'] ?? '' ), 'figma-artifact-provenance-source' );
 
 if ( class_exists( 'ZipArchive' ) ) {

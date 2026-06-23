@@ -273,6 +273,31 @@ class Static_Site_Importer_Page_Materializer {
 	 */
 	private static function source_page_content_blocks( Static_Site_Importer_Source_Page $page, array &$diagnostics ): string {
 		$source_path = $page->source_key();
+		if ( 'blocks' === $page->body_format() ) {
+			return trim( $page->body() );
+		}
+
+		if ( 'html' === $page->body_format() ) {
+			$body = trim( $page->body() );
+			if ( '' === $body ) {
+				return '';
+			}
+
+			$blocks = self::html_to_blocks( $body, $source_path, $diagnostics );
+			if ( '' !== trim( $blocks ) ) {
+				return $blocks;
+			}
+
+			$diagnostics[] = array(
+				'type'        => 'html_to_blocks_empty_output',
+				'source'      => 'blocks-engine/html-to-blocks',
+				'source_path' => $source_path,
+				'format'      => 'html',
+				'message'     => 'Blocks Engine HTML-to-blocks conversion did not return serialized block markup.',
+			);
+			return '';
+		}
+
 		if ( 'blocks' !== $page->body_format() ) {
 			$diagnostics[] = array(
 				'type'        => 'unsupported_document_artifact_format',
@@ -283,8 +308,30 @@ class Static_Site_Importer_Page_Materializer {
 			);
 			return '';
 		}
+	}
 
-		return trim( $page->body() );
+	/**
+	 * Convert raw HTML document content to serialized block markup.
+	 *
+	 * @param string                       $body        HTML body markup.
+	 * @param string                       $source_path Source path for diagnostics.
+	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics, passed by reference.
+	 */
+	private static function html_to_blocks( string $body, string $source_path, array &$diagnostics ): string {
+		$result = blocks_engine_php_transformer_convert_format( $body, 'html', 'blocks' );
+		if ( ! is_array( $result ) ) {
+			return '';
+		}
+
+		foreach ( isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array() as $diagnostic ) {
+			if ( is_array( $diagnostic ) ) {
+				$diagnostic['source']      = 'blocks-engine/html-to-blocks';
+				$diagnostic['source_path'] = $source_path;
+				$diagnostics[]            = $diagnostic;
+			}
+		}
+
+		return isset( $result['serialized_blocks'] ) && is_scalar( $result['serialized_blocks'] ) ? trim( (string) $result['serialized_blocks'] ) : '';
 	}
 
 	/**
@@ -308,12 +355,29 @@ class Static_Site_Importer_Page_Materializer {
 			$normalized_source = self::normalize_route_path( $source );
 			if ( '' !== $normalized_source ) {
 				$replacements[ $normalized_source ] = (string) $asset['final_url'];
+				if ( str_starts_with( $normalized_source, 'website/' ) ) {
+					$replacements[ substr( $normalized_source, strlen( 'website/' ) ) ] = (string) $asset['final_url'];
+				}
 			}
 		}
 
 		if ( empty( $replacements ) ) {
 			return $markup;
 		}
+
+		$markup = preg_replace_callback(
+			'/"(url|href|src)"\s*:\s*"([^"]*)"/i',
+			static function ( array $matches ) use ( $replacements ): string {
+				$url        = html_entity_decode( (string) $matches[2], ENT_QUOTES | ENT_HTML5 );
+				$normalized = self::normalize_route_path( $url );
+				if ( '' === $normalized || ! isset( $replacements[ $normalized ] ) ) {
+					return $matches[0];
+				}
+
+				return '"' . $matches[1] . '":' . wp_json_encode( esc_url( $replacements[ $normalized ] ) );
+			},
+			$markup
+		) ?? $markup;
 
 		return preg_replace_callback(
 			'/\b(src|href)=([' . "'\"" . '])([^' . "'\"" . ']*)\2/i',

@@ -81,6 +81,7 @@ class Static_Site_Importer_Theme_Generator {
 		$artifacts    = isset( $compiled['artifacts'] ) && is_array( $compiled['artifacts'] ) ? $compiled['artifacts'] : array();
 		$theme_name   = isset( $args['name'] ) && '' !== trim( (string) $args['name'] ) ? sanitize_text_field( (string) $args['name'] ) : 'Imported Website Artifact';
 		$theme_slug   = isset( $args['slug'] ) && '' !== trim( (string) $args['slug'] ) ? sanitize_title( (string) $args['slug'] ) : sanitize_title( $theme_name );
+		$site_title   = isset( $args['site_title'] ) && '' !== trim( (string) $args['site_title'] ) ? sanitize_text_field( (string) $args['site_title'] ) : '';
 		if ( '' === $theme_slug ) {
 			$theme_slug = 'imported-website-artifact';
 		}
@@ -237,6 +238,9 @@ class Static_Site_Importer_Theme_Generator {
 			}
 
 			switch_theme( $theme_slug );
+			if ( '' !== $site_title ) {
+				update_option( 'blogname', $site_title );
+			}
 			if ( 0 !== $front_page_id ) {
 				update_option( 'show_on_front', 'page' );
 				update_option( 'page_on_front', $front_page_id );

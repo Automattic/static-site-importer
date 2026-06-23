@@ -27,6 +27,10 @@ class Static_Site_Importer_Figma_Import {
 		}
 
 		$import_input = self::import_input( $input, $artifact );
+		$validation_artifacts = self::validation_artifacts( $input, $artifact, $import_input );
+		if ( ! empty( $validation_artifacts ) ) {
+			$import_input['validation_artifacts'] = $validation_artifacts;
+		}
 		if ( is_callable( 'static_site_importer_ability_import_website_artifact' ) ) {
 			return static_site_importer_ability_import_website_artifact( $import_input );
 		}
@@ -106,13 +110,16 @@ class Static_Site_Importer_Figma_Import {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public static function website_artifact_from_input( array $input ) {
-		if ( isset( $input['artifact_bundle'] ) && is_array( $input['artifact_bundle'] ) ) {
-			return self::website_artifact_from_bundle( $input['artifact_bundle'], $input );
-		}
-
 		$scenegraph = self::scenegraph_from_input( $input );
 		if ( ! empty( $scenegraph ) ) {
-			return self::website_artifact_from_scenegraph( $scenegraph, $input );
+			$artifact = self::website_artifact_from_scenegraph( $scenegraph, $input );
+			if ( ! is_wp_error( $artifact ) || ! isset( $input['artifact_bundle'] ) || ! is_array( $input['artifact_bundle'] ) ) {
+				return $artifact;
+			}
+		}
+
+		if ( isset( $input['artifact_bundle'] ) && is_array( $input['artifact_bundle'] ) ) {
+			return self::website_artifact_from_bundle( $input['artifact_bundle'], $input );
 		}
 
 		return new WP_Error( 'static_site_importer_figma_source_missing', 'Figma imports require an artifact_bundle or a Figma scenegraph.', array( 'status' => 400 ) );
@@ -270,6 +277,72 @@ class Static_Site_Importer_Figma_Import {
 	}
 
 	/**
+	 * Collect runtime validation artifact refs when the runner requests visual/block validation.
+	 *
+	 * @param array<string,mixed> $input        Figma import input.
+	 * @param array<string,mixed> $artifact     Website artifact.
+	 * @param array<string,mixed> $import_input Import args.
+	 * @return array<string,mixed>
+	 */
+	private static function validation_artifacts( array $input, array $artifact, array $import_input ): array {
+		if ( isset( $input['validation_artifacts'] ) && is_array( $input['validation_artifacts'] ) ) {
+			return $input['validation_artifacts'];
+		}
+
+		$validation = isset( $input['validation'] ) && is_array( $input['validation'] ) ? $input['validation'] : array();
+		$enabled    = array_key_exists( 'enabled', $validation ) ? ! empty( $validation['enabled'] ) : true;
+		if ( ! $enabled ) {
+			return array();
+		}
+
+		if ( ! class_exists( 'Static_Site_Importer_Codebox_Validation' ) ) {
+			return array();
+		}
+
+		$result = Static_Site_Importer_Codebox_Validation::validate(
+			array(
+				'artifact'           => $artifact,
+				'slug'               => $import_input['slug'] ?? '',
+				'name'               => $import_input['name'] ?? '',
+				'activate'           => false,
+				'overwrite'          => true,
+				'compiler_options'   => isset( $import_input['compiler_options'] ) && is_array( $import_input['compiler_options'] ) ? $import_input['compiler_options'] : array(),
+				'source_metadata'    => isset( $import_input['source_metadata'] ) && is_array( $import_input['source_metadata'] ) ? $import_input['source_metadata'] : array(),
+			)
+		);
+
+		if ( is_wp_error( $result ) || ! is_array( $result ) ) {
+			return array();
+		}
+
+		return self::validation_artifacts_from_codebox_result( $result );
+	}
+
+	/**
+	 * Map Codebox validation result refs into SSI visual parity artifact slots.
+	 *
+	 * @param array<string,mixed> $result Codebox validation result.
+	 * @return array<string,mixed>
+	 */
+	private static function validation_artifacts_from_codebox_result( array $result ): array {
+		$artifacts = isset( $result['artifacts'] ) && is_array( $result['artifacts'] ) ? $result['artifacts'] : array();
+		$screenshots = isset( $artifacts['screenshots'] ) && is_array( $artifacts['screenshots'] ) ? array_values( $artifacts['screenshots'] ) : array();
+		$diffs       = isset( $artifacts['diffs'] ) && is_array( $artifacts['diffs'] ) ? array_values( $artifacts['diffs'] ) : array();
+
+		return array_filter(
+			array(
+				'browser_render'      => isset( $artifacts['browser_render_evidence'] ) && is_array( $artifacts['browser_render_evidence'] ) ? $artifacts['browser_render_evidence'] : array(),
+				'block_validation'    => isset( $artifacts['block_validation_result'] ) && is_array( $artifacts['block_validation_result'] ) ? $artifacts['block_validation_result'] : array(),
+				'source_screenshot'   => isset( $screenshots[0] ) && is_array( $screenshots[0] ) ? $screenshots[0] : array(),
+				'imported_screenshot' => isset( $screenshots[1] ) && is_array( $screenshots[1] ) ? $screenshots[1] : array(),
+				'visual_diff'         => isset( $diffs[0] ) && is_array( $diffs[0] ) ? $diffs[0] : array(),
+				'codebox_validation'  => $result,
+			),
+			static fn( mixed $value ): bool => array() !== $value
+		);
+	}
+
+	/**
 	 * Build import ability input from Figma request fields.
 	 *
 	 * @param array<string,mixed> $input    Figma import input.
@@ -277,10 +350,13 @@ class Static_Site_Importer_Figma_Import {
 	 * @return array<string,mixed>
 	 */
 	private static function import_input( array $input, array $artifact ): array {
+		$title = self::display_title( $input, $artifact );
+
 		return array(
 			'artifact'                  => $artifact,
-			'slug'                      => isset( $input['slug'] ) ? (string) $input['slug'] : 'figma-import',
-			'name'                      => isset( $input['name'] ) ? (string) $input['name'] : 'Figma Import',
+			'slug'                      => isset( $input['slug'] ) ? (string) $input['slug'] : '',
+			'name'                      => isset( $input['name'] ) ? (string) $input['name'] : $title,
+			'site_title'                => $title,
 			'activate'                  => array_key_exists( 'activate', $input ) ? ! empty( $input['activate'] ) : true,
 			'overwrite'                 => array_key_exists( 'overwrite', $input ) ? ! empty( $input['overwrite'] ) : true,
 			'fail_on_quality'           => ! empty( $input['fail_on_quality'] ),
@@ -288,6 +364,66 @@ class Static_Site_Importer_Figma_Import {
 			'compiler_options'          => isset( $input['compiler_options'] ) && is_array( $input['compiler_options'] ) ? $input['compiler_options'] : array(),
 			'source_metadata'           => self::provenance( $input ),
 		);
+	}
+
+	/**
+	 * Derive a human-readable title for the imported site.
+	 *
+	 * @param array<string,mixed> $input    Figma import input.
+	 * @param array<string,mixed> $artifact Website artifact.
+	 */
+	private static function display_title( array $input, array $artifact ): string {
+		foreach ( array( 'site_title', 'title', 'name' ) as $key ) {
+			if ( isset( $input[ $key ] ) && is_scalar( $input[ $key ] ) && '' !== trim( (string) $input[ $key ] ) ) {
+				return sanitize_text_field( (string) $input[ $key ] );
+			}
+		}
+
+		$metadata = self::metadata_from_artifact( $artifact );
+		if ( isset( $metadata['title'] ) && is_scalar( $metadata['title'] ) && '' !== trim( (string) $metadata['title'] ) ) {
+			return sanitize_text_field( (string) $metadata['title'] );
+		}
+
+		$source = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
+		if ( isset( $source['name'] ) && is_scalar( $source['name'] ) && '' !== trim( (string) $source['name'] ) ) {
+			return sanitize_text_field( (string) $source['name'] );
+		}
+
+		$figma = isset( $input['figma'] ) && is_array( $input['figma'] ) ? $input['figma'] : array();
+		if ( isset( $figma['name'] ) && is_scalar( $figma['name'] ) && '' !== trim( (string) $figma['name'] ) ) {
+			return sanitize_text_field( (string) $figma['name'] );
+		}
+
+		return 'Figma Import';
+	}
+
+	/**
+	 * Read metadata.json from a website artifact when present.
+	 *
+	 * @param array<string,mixed> $artifact Website artifact.
+	 * @return array<string,mixed>
+	 */
+	private static function metadata_from_artifact( array $artifact ): array {
+		$files = isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? $artifact['files'] : array();
+		foreach ( $files as $file ) {
+			if ( ! is_array( $file ) || ! isset( $file['path'] ) || ! is_scalar( $file['path'] ) ) {
+				continue;
+			}
+
+			if ( 'website/metadata.json' !== (string) $file['path'] && 'metadata.json' !== (string) $file['path'] ) {
+				continue;
+			}
+
+			$content = isset( $file['content'] ) && is_scalar( $file['content'] ) ? (string) $file['content'] : '';
+			if ( '' === trim( $content ) ) {
+				continue;
+			}
+
+			$decoded = json_decode( $content, true );
+			return is_array( $decoded ) ? $decoded : array();
+		}
+
+		return array();
 	}
 
 	/**
