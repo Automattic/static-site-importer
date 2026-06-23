@@ -290,8 +290,11 @@ class Static_Site_Importer_Figma_Import {
 		}
 
 		$validation = isset( $input['validation'] ) && is_array( $input['validation'] ) ? $input['validation'] : array();
-		$enabled    = array_key_exists( 'enabled', $validation ) ? ! empty( $validation['enabled'] ) : true;
-		if ( ! $enabled ) {
+		if ( empty( $validation ) || ( array_key_exists( 'enabled', $validation ) && empty( $validation['enabled'] ) ) ) {
+			return array();
+		}
+
+		if ( empty( $validation['visual_parity'] ) && empty( $validation['block_validation'] ) ) {
 			return array();
 		}
 
