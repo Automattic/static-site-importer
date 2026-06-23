@@ -39,7 +39,7 @@ class Static_Site_Importer_Asset_Reporter {
 	/**
 	 * Normalize caller-supplied asset map entries by source-relative key.
 	 *
-	 * @param array<string, mixed> $asset_map Raw asset map.
+	 * @param array<mixed, mixed> $asset_map Raw asset map.
 	 * @return array<string, array<string, mixed>>
 	 */
 	private static function normalize_asset_map( array $asset_map ): array {

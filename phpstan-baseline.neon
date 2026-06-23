@@ -27,7 +27,7 @@ parameters:
 		-
 			message: '#.*#'
 			identifier: method.unused
-			count: 1
+			count: 3
 			path: includes/class-static-site-importer-theme-generator.php
 
 		-

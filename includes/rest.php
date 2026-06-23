@@ -50,6 +50,7 @@ function static_site_importer_rest_manage_permission() {
  * @return WP_REST_Response|WP_Error
  */
 function static_site_importer_rest_create_import( WP_REST_Request $request ) {
+	/** @var mixed $params */
 	$params = $request->get_json_params();
 	if ( ! is_array( $params ) ) {
 		$params = $request->get_params();
@@ -119,15 +120,15 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
 /**
  * Execute a mutating SSI import through the shared ability boundary.
  *
- * @param string $ability_name Ability name.
- * @param array<string,mixed> $input Ability input.
- * @param callable-string $fallback_callback Local callback for non-Abilities test/runtime contexts.
+ * @param string              $ability_name      Ability name.
+ * @param array<string,mixed> $input             Ability input.
+ * @param string              $fallback_callback Local callback for non-Abilities test/runtime contexts.
  * @return array<string,mixed>|WP_Error
  */
 function static_site_importer_rest_execute_import_ability( string $ability_name, array $input, string $fallback_callback ) {
 	if ( function_exists( 'wp_get_ability' ) ) {
 		$ability = wp_get_ability( $ability_name );
-		if ( is_object( $ability ) && is_callable( array( $ability, 'execute' ) ) ) {
+		if ( is_object( $ability ) ) {
 			$result = $ability->execute( $input );
 
 			return $result;
@@ -166,9 +167,9 @@ function static_site_importer_rest_create_preview( array $source, array $input, 
 	}
 
 	$request = array(
-		'schema'     => 'static-site-importer/preview-request/v1',
-		'request_id' => $request_id,
-		'source'     => array_filter(
+		'schema'      => 'static-site-importer/preview-request/v1',
+		'request_id'  => $request_id,
+		'source'      => array_filter(
 			array(
 				'url'      => $source_url,
 				'artifact' => $artifact,
@@ -182,12 +183,6 @@ function static_site_importer_rest_create_preview( array $source, array $input, 
 	if ( is_wp_error( $result ) ) {
 		static_site_importer_rest_persist_preview_attempt( static_site_importer_rest_preview_attempt_with_error( $attempt, $result ) );
 		return $result;
-	}
-
-	if ( ! is_array( $result ) ) {
-		$error = new WP_Error( 'static_site_importer_codebox_preview_result_invalid', __( 'WP Codebox preview must return an array result or WP_Error.', 'static-site-importer' ), array( 'status' => 500 ) );
-		static_site_importer_rest_persist_preview_attempt( static_site_importer_rest_preview_attempt_with_error( $attempt, $error ) );
-		return $error;
 	}
 
 	$normalized = static_site_importer_rest_normalize_preview_result( $result );
@@ -258,7 +253,7 @@ function static_site_importer_rest_normalize_preview_result( array $result ): ar
  * @return array<string,mixed>|WP_Error
  */
 function static_site_importer_rest_codebox_preview_result( array $request, array $params ) {
-	$create_session = array( 'WP_Codebox_Abilities', 'create_browser_playground_session' );
+	$create_session = class_exists( 'WP_Codebox_Abilities' ) ? array( 'WP_Codebox_Abilities', 'create_browser_playground_session' ) : null;
 	if ( ! is_callable( $create_session ) ) {
 		return static_site_importer_rest_preview_unavailable_result( $request );
 	}
@@ -268,6 +263,7 @@ function static_site_importer_rest_codebox_preview_result( array $request, array
 		return $codebox_input;
 	}
 
+	/** @var mixed $session */
 	$session = call_user_func( $create_session, $codebox_input );
 	if ( is_wp_error( $session ) ) {
 		return $session;
@@ -307,9 +303,9 @@ function static_site_importer_rest_codebox_preview_input( array $request, array 
 		),
 		'artifact_files'     => static_site_importer_rest_codebox_artifact_files( $artifact ),
 		'browser_runner'     => array(
-			'task_path'   => '/tmp/static-site-importer-preview-request.json',
-			'result_path' => '/tmp/static-site-importer-preview-result.json',
-			'invocation'  => array(
+			'task_path'     => '/tmp/static-site-importer-preview-request.json',
+			'result_path'   => '/tmp/static-site-importer-preview-result.json',
+			'invocation'    => array(
 				'type'  => 'ability',
 				'name'  => ! empty( $artifact ) ? 'static-site-importer/import-website-artifact' : 'static-site-importer/import-url',
 				'input' => array_filter(
@@ -344,6 +340,7 @@ function static_site_importer_rest_codebox_preview_input( array $request, array 
 	 * @param array<string,mixed> $request SSI preview request.
 	 * @param array<string,mixed> $params  Raw REST params.
 	 */
+	/** @var mixed $filtered_input */
 	$filtered_input = apply_filters( 'static_site_importer_codebox_preview_input', $input, $request, $params );
 	if ( ! is_array( $filtered_input ) ) {
 		return new WP_Error( 'static_site_importer_codebox_preview_input_invalid', __( 'WP Codebox preview input filters must return an array.', 'static-site-importer' ), array( 'status' => 500 ) );
@@ -487,15 +484,15 @@ function static_site_importer_rest_codebox_preview_url( array $playground, array
 function static_site_importer_rest_codebox_preview_url_extraction( array $playground, array $artifacts, string $blueprint_url ): array {
 	$candidates = array(
 		'playground.preview_public_url' => $playground['preview_public_url'] ?? null,
-		'playground.site_url'          => $playground['site_url'] ?? null,
-		'playground.preview_url'       => $playground['preview_url'] ?? null,
-		'artifacts.preview_url'        => $artifacts['preview_url'] ?? null,
+		'playground.site_url'           => $playground['site_url'] ?? null,
+		'playground.preview_url'        => $playground['preview_url'] ?? null,
+		'artifacts.preview_url'         => $artifacts['preview_url'] ?? null,
 	);
 	$summary    = array();
 
 	foreach ( $candidates as $key => $value ) {
-		$url      = is_scalar( $value ) ? esc_url_raw( (string) $value ) : '';
-		$absolute = preg_match( '#^https?://#i', $url );
+		$url       = is_scalar( $value ) ? esc_url_raw( (string) $value ) : '';
+		$absolute  = preg_match( '#^https?://#i', $url );
 		$summary[] = array(
 			'key'      => $key,
 			'present'  => '' !== $url,
@@ -527,11 +524,12 @@ function static_site_importer_rest_codebox_preview_url_extraction( array $playgr
  * @return string
  */
 function static_site_importer_rest_codebox_blueprint_url( array $session ): string {
-	$executable_blueprint_ref = array( 'WP_Codebox_Browser_Task_Builder', 'executable_blueprint_ref' );
+	$executable_blueprint_ref = class_exists( 'WP_Codebox_Browser_Task_Builder' ) ? array( 'WP_Codebox_Browser_Task_Builder', 'executable_blueprint_ref' ) : null;
 	if ( ! is_callable( $executable_blueprint_ref ) ) {
 		return '';
 	}
 
+	/** @var mixed $blueprint_ref */
 	$blueprint_ref = call_user_func( $executable_blueprint_ref, $session );
 	if ( ! is_array( $blueprint_ref ) ) {
 		return '';
@@ -730,7 +728,7 @@ function static_site_importer_rest_preview_attempt_with_result( array $attempt, 
 		$attempt['codebox'] = $codebox;
 	}
 	$attempt['preview_url_extraction'] = isset( $codebox['preview_url_extraction'] ) && is_array( $codebox['preview_url_extraction'] ) ? $codebox['preview_url_extraction'] : array();
-	$attempt['final'] = array(
+	$attempt['final']                  = array(
 		'success' => (bool) ( $result['success'] ?? false ),
 		'status'  => (string) ( $preview['status'] ?? ( ! empty( $result['success'] ) ? 'ready' : 'unavailable' ) ),
 		'error'   => empty( $result['success'] ) ? array( 'message' => (string) ( $preview['message'] ?? '' ) ) : array(),
@@ -843,6 +841,7 @@ function static_site_importer_rest_source_artifact( array $source ) {
 
 				$files[] = array(
 					'path'           => $path,
+					// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions -- Required for API authentication, not obfuscation.
 					'content_base64' => base64_encode( $content ),
 				);
 			}
@@ -891,13 +890,16 @@ function static_site_importer_rest_archive_files( array $archive ) {
 	}
 
 	$tmp = tempnam( sys_get_temp_dir(), 'ssi-zip-' );
+	// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- ZipArchive requires a local temp file path for uploaded archive staging.
 	if ( false === $tmp || false === file_put_contents( $tmp, $content ) ) {
 		return new WP_Error( 'static_site_importer_archive_tempfile_failed', __( 'Uploaded ZIP archive could not be staged for extraction.', 'static-site-importer' ), array( 'status' => 500 ) );
 	}
 
 	$zip = new ZipArchive();
 	if ( true !== $zip->open( $tmp ) ) {
-		@unlink( $tmp );
+		if ( file_exists( $tmp ) ) {
+			wp_delete_file( $tmp );
+		}
 		return new WP_Error( 'static_site_importer_archive_open_failed', __( 'Uploaded ZIP archive could not be opened.', 'static-site-importer' ), array( 'status' => 400 ) );
 	}
 
@@ -916,18 +918,23 @@ function static_site_importer_rest_archive_files( array $archive ) {
 		$file_content = $zip->getFromIndex( $i );
 		if ( false === $file_content ) {
 			$zip->close();
-			@unlink( $tmp );
+			if ( file_exists( $tmp ) ) {
+				wp_delete_file( $tmp );
+			}
 			return new WP_Error( 'static_site_importer_archive_entry_read_failed', __( 'A ZIP archive entry could not be read.', 'static-site-importer' ), array( 'status' => 400 ) );
 		}
 
 		$files[] = array(
 			'path'           => $path,
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions -- Required for API authentication, not obfuscation.
 			'content_base64' => base64_encode( $file_content ),
 		);
 	}
 
 	$zip->close();
-	@unlink( $tmp );
+	if ( file_exists( $tmp ) ) {
+		wp_delete_file( $tmp );
+	}
 
 	return $files;
 }

@@ -158,8 +158,8 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return void
 	 */
 	public static function record_blocks_engine_result( array &$report, array $compiled ): void {
-		$artifacts = isset( $compiled['artifacts'] ) && is_array( $compiled['artifacts'] ) ? $compiled['artifacts'] : array();
-		$site      = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
+		$artifacts                                   = isset( $compiled['artifacts'] ) && is_array( $compiled['artifacts'] ) ? $compiled['artifacts'] : array();
+		$site                                        = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
 		$report['blocks_engine']['available']        = true;
 		$report['blocks_engine']['website_artifact'] = array(
 			'summary'     => ( new Static_Site_Importer_Transformer_Adapter() )->summarize_result( $compiled ),
@@ -303,14 +303,14 @@ class Static_Site_Importer_Report_Diagnostics {
 		$source_documents = isset( $report['source_documents'] ) && is_array( $report['source_documents'] ) ? $report['source_documents'] : array();
 
 		return array(
-			'schema'               => 'blocks-engine/import-validation-result/v1',
-			'artifact_type'        => 'ImportValidationResult',
-			'version'              => 1,
-			'status'               => ! empty( $quality['fail_import'] ) ? 'failed' : ( ! empty( $quality['pass'] ) ? 'passed' : 'reported' ),
-			'quality_pass'         => ! empty( $quality['pass'] ),
-			'fail_import'          => ! empty( $quality['fail_import'] ),
-			'failure_reasons'      => isset( $quality['failure_reasons'] ) && is_array( $quality['failure_reasons'] ) ? array_values( $quality['failure_reasons'] ) : array(),
-			'counts'               => array(
+			'schema'                  => 'blocks-engine/import-validation-result/v1',
+			'artifact_type'           => 'ImportValidationResult',
+			'version'                 => 1,
+			'status'                  => ! empty( $quality['fail_import'] ) ? 'failed' : ( ! empty( $quality['pass'] ) ? 'passed' : 'reported' ),
+			'quality_pass'            => ! empty( $quality['pass'] ),
+			'fail_import'             => ! empty( $quality['fail_import'] ),
+			'failure_reasons'         => isset( $quality['failure_reasons'] ) && is_array( $quality['failure_reasons'] ) ? array_values( $quality['failure_reasons'] ) : array(),
+			'counts'                  => array(
 				'source_documents'              => (int) ( $source_documents['total_count'] ?? 0 ),
 				'diagnostics'                   => count( $diagnostics ),
 				'fallback_blocks'               => (int) ( $quality['fallback_count'] ?? 0 ),
@@ -326,28 +326,28 @@ class Static_Site_Importer_Report_Diagnostics {
 				'commerce_dependency_failures'  => (int) ( $quality['commerce_dependency_failures'] ?? 0 ),
 				'interaction_candidates'        => (int) ( $quality['interaction_candidate_count'] ?? 0 ),
 			),
-			'quality_gates'        => array(
-				'fallback_blocks'              => self::validation_gate( 'fallback_blocks', (int) ( $quality['fallback_count'] ?? 0 ), $quality ),
-				'conversion_failures'          => self::validation_gate( 'conversion_failures', (int) ( $quality['content_loss_count'] ?? 0 ) + (int) ( $quality['empty_conversion_count'] ?? 0 ) + (int) ( $quality['invalid_block_count'] ?? 0 ), $quality ),
-				'generated_fallback_blocks'    => self::validation_gate( 'generated_fallback_blocks', (int) ( $quality['core_html_block_count'] ?? 0 ) + (int) ( $quality['freeform_block_count'] ?? 0 ), $quality ),
-				'asset_materialization'        => self::validation_gate( 'asset_materialization', (int) ( $quality['svg_materialization_failure_count'] ?? 0 ) + (int) ( $quality['svg_sprite_reference_failure_count'] ?? 0 ), $quality ),
-				'commerce_dependencies'        => self::validation_gate( 'commerce_dependencies', (int) ( $quality['commerce_dependency_failures'] ?? 0 ), $quality ),
-				'interaction_candidates'       => self::validation_gate( 'interaction_candidates', (int) ( $quality['interaction_candidate_count'] ?? 0 ), $quality ),
-				'visual_fidelity'             => array(
+			'quality_gates'           => array(
+				'fallback_blocks'           => self::validation_gate( 'fallback_blocks', (int) ( $quality['fallback_count'] ?? 0 ), $quality ),
+				'conversion_failures'       => self::validation_gate( 'conversion_failures', (int) ( $quality['content_loss_count'] ?? 0 ) + (int) ( $quality['empty_conversion_count'] ?? 0 ) + (int) ( $quality['invalid_block_count'] ?? 0 ), $quality ),
+				'generated_fallback_blocks' => self::validation_gate( 'generated_fallback_blocks', (int) ( $quality['core_html_block_count'] ?? 0 ) + (int) ( $quality['freeform_block_count'] ?? 0 ), $quality ),
+				'asset_materialization'     => self::validation_gate( 'asset_materialization', (int) ( $quality['svg_materialization_failure_count'] ?? 0 ) + (int) ( $quality['svg_sprite_reference_failure_count'] ?? 0 ), $quality ),
+				'commerce_dependencies'     => self::validation_gate( 'commerce_dependencies', (int) ( $quality['commerce_dependency_failures'] ?? 0 ), $quality ),
+				'interaction_candidates'    => self::validation_gate( 'interaction_candidates', (int) ( $quality['interaction_candidate_count'] ?? 0 ), $quality ),
+				'visual_fidelity'           => array(
 					'status' => (string) ( $report['visual_fidelity']['status'] ?? 'requires_external_render_check' ),
 					'owner'  => (string) ( $report['visual_fidelity']['gate_owner'] ?? 'benchmark_harness' ),
 				),
-				'semantic_fidelity'           => array(
+				'semantic_fidelity'         => array(
 					'status' => (string) ( $report['semantic_fidelity']['status'] ?? 'requires_external_render_check' ),
 					'owner'  => (string) ( $report['semantic_fidelity']['gate_owner'] ?? 'benchmark_harness' ),
 				),
 			),
-			'diagnostic_summary'       => $summary['diagnostic_summary'] ?? array(),
-			'diagnostic_refs'          => isset( $quality['diagnostic_refs'] ) && is_array( $quality['diagnostic_refs'] ) ? $quality['diagnostic_refs'] : array(),
-			'artifacts'                => self::validation_artifact_refs(),
+			'diagnostic_summary'      => $summary['diagnostic_summary'] ?? array(),
+			'diagnostic_refs'         => isset( $quality['diagnostic_refs'] ) && is_array( $quality['diagnostic_refs'] ) ? $quality['diagnostic_refs'] : array(),
+			'artifacts'               => self::validation_artifact_refs(),
 			'visual_parity_artifacts' => isset( $report['visual_parity_artifacts'] ) && is_array( $report['visual_parity_artifacts'] ) ? $report['visual_parity_artifacts'] : self::visual_parity_artifact_contract(),
-			'provenance'               => self::validation_provenance( $report ),
-			'reproduction_context'      => self::validation_reproduction_context( $report ),
+			'provenance'              => self::validation_provenance( $report ),
+			'reproduction_context'    => self::validation_reproduction_context( $report ),
 		);
 	}
 
@@ -436,7 +436,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		$quality['diagnostic_refs'] = self::quality_diagnostic_refs( $report['diagnostics'] ?? array() );
-		$report['quality']         = $quality;
+		$report['quality']          = $quality;
 		self::normalize_source_document_diagnostic_refs( $report );
 		$report['artifact_diagnostics'] = Static_Site_Importer_Artifact_Diagnostics_Adapter::build_for_import_report( $report );
 
@@ -451,10 +451,10 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<string, mixed>
 	 */
 	public static function import_report_summary( array $report, array $quality ): array {
-		$diagnostics      = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
-		$source_documents = isset( $report['source_documents'] ) && is_array( $report['source_documents'] ) ? $report['source_documents'] : array();
-		$commerce         = isset( $report['commerce'] ) && is_array( $report['commerce'] ) ? $report['commerce'] : array();
-		$commerce_context = isset( $report['commerce_context'] ) && is_array( $report['commerce_context'] ) ? $report['commerce_context'] : array();
+		$diagnostics            = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
+		$source_documents       = isset( $report['source_documents'] ) && is_array( $report['source_documents'] ) ? $report['source_documents'] : array();
+		$commerce               = isset( $report['commerce'] ) && is_array( $report['commerce'] ) ? $report['commerce'] : array();
+		$commerce_context       = isset( $report['commerce_context'] ) && is_array( $report['commerce_context'] ) ? $report['commerce_context'] : array();
 		$plugin_materialization = isset( $report['plugin_materialization'] ) && is_array( $report['plugin_materialization'] ) ? $report['plugin_materialization'] : array();
 		$product_seeding        = isset( $report['product_seeding'] ) && is_array( $report['product_seeding'] ) ? $report['product_seeding'] : array();
 
@@ -601,10 +601,10 @@ class Static_Site_Importer_Report_Diagnostics {
 					'status' => empty( $ref ) ? 'pending' : 'captured',
 					'kind'   => (string) $slot['kind'],
 				),
-				empty( $ref )
+					empty( $ref )
 					? array(
 						'capture_state' => 'not_captured',
-						'reason'        => isset( $slot['reason'] ) ? (string) $slot['reason'] : 'Artifact was not provided by the runtime.',
+						'reason'        => (string) $slot['reason'],
 					)
 					: array( 'ref' => $ref )
 			);
@@ -618,14 +618,14 @@ class Static_Site_Importer_Report_Diagnostics {
 		);
 
 		return array(
-			'schema'       => 'static-site-importer/visual-parity-artifacts/v1',
-			'status'       => empty( $missing ) ? 'complete' : 'pending',
-			'owner'        => 'codebox_runtime',
-			'contract'     => 'durable_artifact_refs_only',
-			'missing'      => $missing,
-			'artifacts'    => $artifacts,
-			'local_paths'  => 'omitted',
-			'notes'        => array(
+			'schema'      => 'static-site-importer/visual-parity-artifacts/v1',
+			'status'      => empty( $missing ) ? 'complete' : 'pending',
+			'owner'       => 'codebox_runtime',
+			'contract'    => 'durable_artifact_refs_only',
+			'missing'     => $missing,
+			'artifacts'   => $artifacts,
+			'local_paths' => 'omitted',
+			'notes'       => array(
 				'Screenshot and diff slots stay pending until Codebox/runtime validation supplies durable artifact refs.',
 				'Reviewer-facing refs use artifact IDs, URLs, or artifact names; local filesystem paths are intentionally omitted.',
 			),
@@ -830,20 +830,20 @@ class Static_Site_Importer_Report_Diagnostics {
 					'block_path'  => isset( $diagnostic['block_path'] ) && is_scalar( $diagnostic['block_path'] ) ? (string) $diagnostic['block_path'] : '',
 				)
 			),
-			'source'              => array(
-				'path'         => isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : '',
-				'selector'     => isset( $diagnostic['selector'] ) && is_scalar( $diagnostic['selector'] ) ? (string) $diagnostic['selector'] : '',
-				'snippet'      => isset( $diagnostic['source_html_preview'] ) && is_scalar( $diagnostic['source_html_preview'] ) ? (string) $diagnostic['source_html_preview'] : ( isset( $diagnostic['html_excerpt'] ) && is_scalar( $diagnostic['html_excerpt'] ) ? (string) $diagnostic['html_excerpt'] : '' ),
+			'source'               => array(
+				'path'     => isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : '',
+				'selector' => isset( $diagnostic['selector'] ) && is_scalar( $diagnostic['selector'] ) ? (string) $diagnostic['selector'] : '',
+				'snippet'  => isset( $diagnostic['source_html_preview'] ) && is_scalar( $diagnostic['source_html_preview'] ) ? (string) $diagnostic['source_html_preview'] : ( isset( $diagnostic['html_excerpt'] ) && is_scalar( $diagnostic['html_excerpt'] ) ? (string) $diagnostic['html_excerpt'] : '' ),
 			),
-			'observed'            => array(
-				'output'       => isset( $diagnostic['emitted_block_preview'] ) && is_scalar( $diagnostic['emitted_block_preview'] ) ? (string) $diagnostic['emitted_block_preview'] : '',
-				'block_name'   => isset( $diagnostic['block_name'] ) && is_scalar( $diagnostic['block_name'] ) ? (string) $diagnostic['block_name'] : '',
-				'reason_code'  => isset( $diagnostic['reason_code'] ) && is_scalar( $diagnostic['reason_code'] ) ? (string) $diagnostic['reason_code'] : self::diagnostic_reason_code( $type, $diagnostic ),
+			'observed'             => array(
+				'output'      => isset( $diagnostic['emitted_block_preview'] ) && is_scalar( $diagnostic['emitted_block_preview'] ) ? (string) $diagnostic['emitted_block_preview'] : '',
+				'block_name'  => isset( $diagnostic['block_name'] ) && is_scalar( $diagnostic['block_name'] ) ? (string) $diagnostic['block_name'] : '',
+				'reason_code' => isset( $diagnostic['reason_code'] ) && is_scalar( $diagnostic['reason_code'] ) ? (string) $diagnostic['reason_code'] : self::diagnostic_reason_code( $type, $diagnostic ),
 			),
-			'expected'            => array(
+			'expected'             => array(
 				'outcome' => self::finding_expected_outcome( $diagnostic ),
 			),
-			'refs'                => array_values( self::validation_artifact_refs() ),
+			'refs'                 => array_values( self::validation_artifact_refs() ),
 		);
 	}
 
@@ -975,7 +975,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			$payload['diagnostics'] = self::compact_native_report_rows( $diagnostics );
 		}
 		if ( ! empty( $fallbacks ) ) {
-			$payload['fallbacks']             = self::compact_native_report_rows( $fallbacks );
+			$payload['fallbacks']            = self::compact_native_report_rows( $fallbacks );
 			$payload['fallback_diagnostics'] = self::compact_native_report_rows( $fallbacks );
 		}
 		if ( ! empty( $interaction_candidates ) ) {

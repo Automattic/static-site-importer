@@ -93,11 +93,13 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			$result = Static_Site_Importer_Codebox_Validation::validate( $input );
 			if ( is_wp_error( $result ) ) {
 				WP_CLI::error( $result->get_error_message() );
+				return;
 			}
 
 			$json = wp_json_encode( $result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 			if ( false === $json ) {
 				WP_CLI::error( 'Failed to encode Codebox validation result.' );
+				return;
 			}
 
 			WP_CLI::line( $json );

@@ -59,7 +59,7 @@ class Static_Site_Importer_Theme_Exporter {
 				'code'    => 'static_site_importer_export_no_pages',
 				'message' => 'No published pages were available to export; generated an entrypoint from theme templates only.',
 			);
-			$files[] = self::export_file_entry(
+			$files[]       = self::export_file_entry(
 				$entrypoint,
 				self::export_html_document( '', self::export_theme_chrome_html( $theme_dir, 'front-page', $transformer ), $theme_slug, null !== $stylesheet ),
 				'document',
@@ -166,7 +166,7 @@ class Static_Site_Importer_Theme_Exporter {
 	private static function export_theme_dir( string $theme_slug ): string {
 		if ( function_exists( 'wp_get_theme' ) ) {
 			$theme = wp_get_theme( $theme_slug );
-			if ( is_object( $theme ) && method_exists( $theme, 'exists' ) && $theme->exists() && method_exists( $theme, 'get_stylesheet_directory' ) ) {
+			if ( $theme->exists() ) {
 				return (string) $theme->get_stylesheet_directory();
 			}
 		}
@@ -199,10 +199,6 @@ class Static_Site_Importer_Theme_Exporter {
 				'order'          => 'ASC',
 			)
 		);
-		if ( ! is_array( $pages ) ) {
-			return array();
-		}
-
 		if ( ! is_array( $include_pages ) || empty( $include_pages ) ) {
 			return self::order_front_page_first( array_values( $pages ) );
 		}
@@ -212,8 +208,8 @@ class Static_Site_Importer_Theme_Exporter {
 			array_filter(
 				$pages,
 				static function ( $page ) use ( $allowed ): bool {
-					$page_id   = isset( $page->ID ) ? (string) $page->ID : '';
-					$page_slug = isset( $page->post_name ) ? (string) $page->post_name : '';
+					$page_id   = (string) $page->ID;
+					$page_slug = (string) $page->post_name;
 					return isset( $allowed[ $page_id ] ) || isset( $allowed[ $page_slug ] );
 				}
 			)
@@ -276,7 +272,7 @@ class Static_Site_Importer_Theme_Exporter {
 			)
 		);
 
-		return is_array( $pages ) && isset( $pages[0] ) && is_object( $pages[0] ) ? $pages[0] : null;
+		return $pages[0] ?? null;
 	}
 
 	/**
@@ -366,7 +362,7 @@ class Static_Site_Importer_Theme_Exporter {
 
 		return '<!doctype html>' . "\n"
 			. '<html><head>' . $head . '<title>' . esc_html( $title ) . '</title></head><body>' . "\n"
-			. trim( (string) ( $chrome['before'] ?? '' ) . "\n" . $page_html . "\n" . ( $chrome['after'] ?? '' ) ) . "\n"
+			. trim( $chrome['before'] . "\n" . $page_html . "\n" . $chrome['after'] ) . "\n"
 			. '</body></html>' . "\n";
 	}
 
@@ -383,7 +379,7 @@ class Static_Site_Importer_Theme_Exporter {
 	private static function export_file_entry( string $path, string $content, string $kind, string $role, array $diagnostics = array() ): array {
 		$encoding = self::is_binary_content( $content ) ? 'base64' : 'utf8';
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Binary artifact files are explicitly represented as base64 for transport.
-		$body = 'base64' === $encoding ? base64_encode( $content ) : $content;
+		$body  = 'base64' === $encoding ? base64_encode( $content ) : $content;
 		$entry = array(
 			'path'      => $path,
 			'content'   => $body,
@@ -554,7 +550,7 @@ class Static_Site_Importer_Theme_Exporter {
 		}
 
 		$parts = explode( '/', $entrypoint );
-		return '' !== ( $parts[0] ?? '' ) ? $parts[0] : 'website';
+		return '' !== $parts[0] ? $parts[0] : 'website';
 	}
 
 	/**
@@ -805,5 +801,4 @@ class Static_Site_Importer_Theme_Exporter {
 		$decoded = json_decode( $report, true );
 		return is_array( $decoded ) ? $decoded : array();
 	}
-
 }

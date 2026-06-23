@@ -269,5 +269,4 @@ class Static_Site_Importer_Source_Page {
 
 		return implode( '/', array_filter( $segments ) );
 	}
-
 }

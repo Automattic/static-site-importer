@@ -71,7 +71,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 * @return string CSS content.
 	 */
 	private static function visual_repair_css_for_target( array $visual_repair_styles, string $target ): string {
-		$styles = isset( $visual_repair_styles[ $target ] ) && is_array( $visual_repair_styles[ $target ] ) ? $visual_repair_styles[ $target ] : array();
+		$styles = $visual_repair_styles[ $target ] ?? array();
 		$styles = array_values( array_filter( array_map( 'strval', $styles ), static fn ( string $style ): bool => '' !== trim( $style ) ) );
 
 		return empty( $styles ) ? '' : "\n" . implode( "\n", $styles ) . "\n";

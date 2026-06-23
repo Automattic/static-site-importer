@@ -56,8 +56,10 @@ class Static_Site_Importer_Artifact_Diagnostics_Adapter {
 			return is_array( $diagnostics ) ? $diagnostics : null;
 		}
 
-		if ( class_exists( 'WP_Codebox_Artifact_Diagnostics_Normalizer' ) && is_callable( array( 'WP_Codebox_Artifact_Diagnostics_Normalizer', 'build' ) ) ) {
-			$diagnostics = call_user_func( array( 'WP_Codebox_Artifact_Diagnostics_Normalizer', 'build' ), $input, $options );
+		$normalizer = array( 'WP_Codebox_Artifact_Diagnostics_Normalizer', 'build' );
+		if ( class_exists( 'WP_Codebox_Artifact_Diagnostics_Normalizer' ) && is_callable( $normalizer ) ) {
+			/** @var callable $normalizer */
+			$diagnostics = call_user_func( $normalizer, $input, $options );
 
 			return is_array( $diagnostics ) ? $diagnostics : null;
 		}
@@ -101,7 +103,7 @@ class Static_Site_Importer_Artifact_Diagnostics_Adapter {
 		return count(
 			array_filter(
 				$diagnostics,
-				static fn ( mixed $diagnostic ): bool => is_array( $diagnostic ) && $severity === ( $diagnostic['severity'] ?? '' )
+				static fn ( mixed $diagnostic ): bool => is_array( $diagnostic ) && ( $diagnostic['severity'] ?? '' ) === $severity
 			)
 		);
 	}

@@ -31,7 +31,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 */
 	public static function adapter( string $id ): array {
 		$adapters = self::adapters();
-		return isset( $adapters[ $id ] ) && is_array( $adapters[ $id ] ) ? $adapters[ $id ] : array();
+		return $adapters[ $id ] ?? array();
 	}
 
 	/**
@@ -56,7 +56,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return array(
 			'products' => array(),
 			'errors'   => array(
-				array( 'path' => '$', 'message' => 'Entity materializer validator is unavailable.' ),
+				array(
+					'path'    => '$',
+					'message' => 'Entity materializer validator is unavailable.',
+				),
 			),
 		);
 	}
@@ -225,6 +228,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		 *
 		 * @param array<string,array<string,mixed>> $adapters Adapter definitions keyed by id.
 		 */
+		/** @var mixed $filtered */
 		$filtered = function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_entity_materializers', $adapters ) : $adapters;
 		return is_array( $filtered ) ? $filtered : $adapters;
 	}
@@ -240,21 +244,41 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$errors   = array();
 
 		if ( ! is_array( $data ) || array_is_list( $data ) ) {
-			return array( 'products' => array(), 'errors' => array( array( 'path' => '$', 'message' => 'products_manifest must be an object with schema_version and products fields.' ) ) );
+			return array(
+				'products' => array(),
+				'errors'   => array(
+					array(
+						'path'    => '$',
+						'message' => 'products_manifest must be an object with schema_version and products fields.',
+					),
+				),
+			);
 		}
 
 		if ( 1 !== (int) ( $data['schema_version'] ?? 0 ) ) {
-			$errors[] = array( 'path' => '$.schema_version', 'message' => 'schema_version must be 1.' );
+			$errors[] = array(
+				'path'    => '$.schema_version',
+				'message' => 'schema_version must be 1.',
+			);
 		}
 		if ( ! isset( $data['products'] ) || ! is_array( $data['products'] ) || ! array_is_list( $data['products'] ) ) {
-			$errors[] = array( 'path' => '$.products', 'message' => 'products must be a JSON array.' );
-			return array( 'products' => array(), 'errors' => $errors );
+			$errors[] = array(
+				'path'    => '$.products',
+				'message' => 'products must be a JSON array.',
+			);
+			return array(
+				'products' => array(),
+				'errors'   => $errors,
+			);
 		}
 
 		foreach ( $data['products'] as $index => $product ) {
 			$path_prefix = '$.products[' . $index . ']';
 			if ( ! is_array( $product ) || array_is_list( $product ) ) {
-				$errors[] = array( 'path' => $path_prefix, 'message' => 'Product must be an object.' );
+				$errors[] = array(
+					'path'    => $path_prefix,
+					'message' => 'Product must be an object.',
+				);
 				continue;
 			}
 
@@ -263,20 +287,35 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$regular_price = self::manifest_string( $product, 'regular_price' );
 			$sale_price    = self::manifest_string( $product, 'sale_price', false );
 			if ( '' === $name ) {
-				$errors[] = array( 'path' => $path_prefix . '.name', 'message' => 'name is required and must be a non-empty string.' );
+				$errors[] = array(
+					'path'    => $path_prefix . '.name',
+					'message' => 'name is required and must be a non-empty string.',
+				);
 			}
 			if ( '' === $slug || ! preg_match( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $slug ) ) {
-				$errors[] = array( 'path' => $path_prefix . '.slug', 'message' => 'slug is required and must be a lowercase URL slug.' );
+				$errors[] = array(
+					'path'    => $path_prefix . '.slug',
+					'message' => 'slug is required and must be a lowercase URL slug.',
+				);
 			}
 			if ( '' === $regular_price || ! self::is_manifest_price( $regular_price ) ) {
-				$errors[] = array( 'path' => $path_prefix . '.regular_price', 'message' => 'regular_price is required and must be a decimal string such as "19.00".' );
+				$errors[] = array(
+					'path'    => $path_prefix . '.regular_price',
+					'message' => 'regular_price is required and must be a decimal string such as "19.00".',
+				);
 			}
 			if ( '' !== $sale_price && ! self::is_manifest_price( $sale_price ) ) {
-				$errors[] = array( 'path' => $path_prefix . '.sale_price', 'message' => 'sale_price must be a decimal string such as "15.00" when provided.' );
+				$errors[] = array(
+					'path'    => $path_prefix . '.sale_price',
+					'message' => 'sale_price must be a decimal string such as "15.00" when provided.',
+				);
 			}
 			foreach ( array( 'description', 'short_description', 'status', 'stock_status', 'image' ) as $field ) {
 				if ( isset( $product[ $field ] ) && ! is_string( $product[ $field ] ) ) {
-					$errors[] = array( 'path' => $path_prefix . '.' . $field, 'message' => $field . ' must be a string when provided.' );
+					$errors[] = array(
+						'path'    => $path_prefix . '.' . $field,
+						'message' => $field . ' must be a string when provided.',
+					);
 				}
 			}
 			foreach ( array( 'categories', 'source_selectors' ) as $field ) {
@@ -285,20 +324,33 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 				$values = self::manifest_string_collection( $product[ $field ] );
 				if ( null === $values ) {
-					$errors[] = array( 'path' => $path_prefix . '.' . $field, 'message' => $field . ' must be an array of strings when provided.' );
+					$errors[] = array(
+						'path'    => $path_prefix . '.' . $field,
+						'message' => $field . ' must be an array of strings when provided.',
+					);
 					continue;
 				}
 				foreach ( $values as $value_index => $value ) {
 					if ( '' === trim( $value ) ) {
-						$errors[] = array( 'path' => $path_prefix . '.' . $field . '[' . $value_index . ']', 'message' => $field . ' entries must be non-empty strings.' );
+						$errors[] = array(
+							'path'    => $path_prefix . '.' . $field . '[' . $value_index . ']',
+							'message' => $field . ' entries must be non-empty strings.',
+						);
 					}
 				}
 			}
 			if ( isset( $product['stock_quantity'] ) && ! is_int( $product['stock_quantity'] ) ) {
-				$errors[] = array( 'path' => $path_prefix . '.stock_quantity', 'message' => 'stock_quantity must be an integer when provided.' );
+				$errors[] = array(
+					'path'    => $path_prefix . '.stock_quantity',
+					'message' => 'stock_quantity must be an integer when provided.',
+				);
 			}
 
-			$summary = array( 'name' => $name, 'slug' => $slug, 'regular_price' => $regular_price );
+			$summary = array(
+				'name'          => $name,
+				'slug'          => $slug,
+				'regular_price' => $regular_price,
+			);
 			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'image', 'status', 'stock_status', 'stock_quantity', 'source_selectors' ) as $field ) {
 				if ( array_key_exists( $field, $product ) ) {
 					$summary[ $field ] = $product[ $field ];
@@ -307,7 +359,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$products[] = $summary;
 		}
 
-		return array( 'products' => empty( $errors ) ? $products : array(), 'errors' => $errors );
+		return array(
+			'products' => empty( $errors ) ? $products : array(),
+			'errors'   => $errors,
+		);
 	}
 
 	/**

@@ -104,7 +104,6 @@ class Static_Site_Importer_Theme_Materializer {
 
 		$files       = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
 		$css         = array();
-		$js          = array();
 		$assets      = array();
 		$diagnostics = array();
 
@@ -162,7 +161,7 @@ class Static_Site_Importer_Theme_Materializer {
 
 		return array(
 			'css'         => trim( implode( "\n\n", array_filter( $css ) ) ),
-			'js'          => trim( implode( "\n", array_filter( $js ) ) ),
+			'js'          => '',
 			'assets'      => $assets,
 			'scripts'     => array(),
 			'diagnostics' => $diagnostics,
@@ -192,7 +191,6 @@ class Static_Site_Importer_Theme_Materializer {
 		}
 
 		$css         = array();
-		$js          = array();
 		$assets      = array();
 		$scripts     = array();
 		$diagnostics = array();
@@ -247,7 +245,7 @@ class Static_Site_Importer_Theme_Materializer {
 
 		return array(
 			'css'         => trim( implode( "\n\n", array_filter( self::rewrite_materialized_css_chunks( $css, $assets ) ) ) ),
-			'js'          => trim( implode( "\n", array_filter( $js ) ) ),
+			'js'          => '',
 			'assets'      => $assets,
 			'scripts'     => $scripts,
 			'diagnostics' => $diagnostics,
@@ -465,9 +463,9 @@ class Static_Site_Importer_Theme_Materializer {
 		}
 
 		if ( ! isset( $writes[ $theme_dir . '/parts/header.html' ] ) ) {
-			$header = self::default_header_template_part();
+			$header                                      = self::default_header_template_part();
 			$writes[ $theme_dir . '/parts/header.html' ] = $header['block_markup'];
-			$reports[] = self::template_part_artifact_report_payload( 'parts/header.html', $header, $header['block_markup'] );
+			$reports[]                                   = self::template_part_artifact_report_payload( 'parts/header.html', $header, $header['block_markup'] );
 		}
 
 		return array(
@@ -674,7 +672,7 @@ class Static_Site_Importer_Theme_Materializer {
 		$script_lines  = '';
 
 		foreach ( $scripts as $script ) {
-			if ( ! is_array( $script ) || ! isset( $script['theme_path'] ) || ! is_scalar( $script['theme_path'] ) ) {
+			if ( ! isset( $script['theme_path'] ) || ! is_scalar( $script['theme_path'] ) ) {
 				continue;
 			}
 
@@ -683,9 +681,9 @@ class Static_Site_Importer_Theme_Materializer {
 				continue;
 			}
 
-			$handle     = sanitize_key( $theme_slug . '-asset-' . preg_replace( '/\.[^.]+$/', '', str_replace( '/', '-', $theme_path ) ) );
-			$in_footer  = 'head' !== (string) ( $script['placement'] ?? '' );
-			$script_lines .= "\twp_enqueue_script( " . var_export( $handle, true ) . ", get_template_directory_uri() . " . var_export( '/' . $theme_path, true ) . ", array(), wp_get_theme()->get( 'Version' ), " . ( $in_footer ? 'true' : 'false' ) . " );\n";
+			$handle        = sanitize_key( $theme_slug . '-asset-' . preg_replace( '/\.[^.]+$/', '', str_replace( '/', '-', $theme_path ) ) );
+			$in_footer     = 'head' !== (string) ( $script['placement'] ?? '' );
+			$script_lines .= "\twp_enqueue_script( " . var_export( $handle, true ) . ', get_template_directory_uri() . ' . var_export( '/' . $theme_path, true ) . ", array(), wp_get_theme()->get( 'Version' ), " . ( $in_footer ? 'true' : 'false' ) . " );\n";
 			if ( ! empty( $script['defer'] ) ) {
 				$script_lines .= "\twp_script_add_data( " . var_export( $handle, true ) . ", 'defer', true );\n";
 			}

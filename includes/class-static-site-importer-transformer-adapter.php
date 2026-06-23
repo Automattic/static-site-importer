@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Static_Site_Importer_Transformer_Adapter {
 
-	public const WEBSITE_ARTIFACT_SCHEMA = 'blocks-engine/php-transformer/site-artifact/v1';
+	public const WEBSITE_ARTIFACT_SCHEMA   = 'blocks-engine/php-transformer/site-artifact/v1';
 	public const TRANSFORMER_RESULT_SCHEMA = 'blocks-engine/php-transformer/result/v1';
 	private const CONVERSION_REPORT_OPTION = 'include_conversion_report';
 
@@ -49,13 +49,9 @@ class Static_Site_Importer_Transformer_Adapter {
 		}
 
 		$options = $this->normalize_compile_options( $options );
-		$result = blocks_engine_php_transformer_compile_artifact( $artifact, $options );
+		$result  = blocks_engine_php_transformer_compile_artifact( $artifact, $options );
 
-		if ( is_array( $result ) ) {
-			return $this->compiled_result_from_transformer_contract( $result );
-		}
-
-		return new WP_Error( 'static_site_importer_transformer_compile_failed', 'Blocks Engine php-transformer did not return a compiler result.' );
+		return $this->compiled_result_from_transformer_contract( $result );
 	}
 
 	/**
@@ -76,9 +72,9 @@ class Static_Site_Importer_Transformer_Adapter {
 			$source_reports       = isset( $result['source_reports'] ) && is_array( $result['source_reports'] ) ? $result['source_reports'] : array();
 			$materialization_plan = isset( $source_reports['materialization_plan'] ) && is_array( $source_reports['materialization_plan'] ) ? $source_reports['materialization_plan'] : array();
 		}
-		$products             = $this->products_manifest_from_transformer_reports( $result, $materialization_plan );
-		$artifacts            = isset( $compiled['artifacts'] ) && is_array( $compiled['artifacts'] ) ? $compiled['artifacts'] : array();
-		$blocks               = isset( $artifacts['blocks'] ) && is_array( $artifacts['blocks'] ) ? $artifacts['blocks'] : array();
+		$products  = $this->products_manifest_from_transformer_reports( $result, $materialization_plan );
+		$artifacts = isset( $compiled['artifacts'] ) && is_array( $compiled['artifacts'] ) ? $compiled['artifacts'] : array();
+		$blocks    = isset( $artifacts['blocks'] ) && is_array( $artifacts['blocks'] ) ? $artifacts['blocks'] : array();
 
 		if ( ! isset( $artifacts['block_tree'] ) ) {
 			$artifacts['block_tree'] = $this->block_tree_report( $blocks );
@@ -120,7 +116,7 @@ class Static_Site_Importer_Transformer_Adapter {
 			return array();
 		}
 
-		return is_array( $view ) ? $view : array();
+		return $view;
 	}
 
 	/**
@@ -136,11 +132,11 @@ class Static_Site_Importer_Transformer_Adapter {
 		}
 
 		$compiled = array(
-			'schema'              => isset( $view['result_schema'] ) && is_scalar( $view['result_schema'] ) ? (string) $view['result_schema'] : self::TRANSFORMER_RESULT_SCHEMA,
-			'status'              => isset( $view['status'] ) && is_scalar( $view['status'] ) ? (string) $view['status'] : '',
-			'input'               => isset( $view['artifact_summary'] ) && is_array( $view['artifact_summary'] ) ? $view['artifact_summary'] : array(),
-			'artifact_summary'    => isset( $view['artifact_summary'] ) && is_array( $view['artifact_summary'] ) ? $view['artifact_summary'] : array(),
-			'artifacts'           => array(
+			'schema'           => isset( $view['result_schema'] ) && is_scalar( $view['result_schema'] ) ? (string) $view['result_schema'] : self::TRANSFORMER_RESULT_SCHEMA,
+			'status'           => isset( $view['status'] ) && is_scalar( $view['status'] ) ? (string) $view['status'] : '',
+			'input'            => isset( $view['artifact_summary'] ) && is_array( $view['artifact_summary'] ) ? $view['artifact_summary'] : array(),
+			'artifact_summary' => isset( $view['artifact_summary'] ) && is_array( $view['artifact_summary'] ) ? $view['artifact_summary'] : array(),
+			'artifacts'        => array(
 				'block_markup'  => isset( $view['block_markup'] ) && is_scalar( $view['block_markup'] ) ? (string) $view['block_markup'] : '',
 				'blocks'        => isset( $view['blocks'] ) && is_array( $view['blocks'] ) ? $view['blocks'] : array(),
 				'block_types'   => isset( $view['block_types'] ) && is_array( $view['block_types'] ) ? $view['block_types'] : array(),
@@ -148,8 +144,8 @@ class Static_Site_Importer_Transformer_Adapter {
 				'files'         => isset( $view['assets'] ) && is_array( $view['assets'] ) ? $view['assets'] : array(),
 				'compiled_site' => isset( $view['compiled_site'] ) && is_array( $view['compiled_site'] ) ? $view['compiled_site'] : array(),
 			),
-			'diagnostics'         => isset( $view['diagnostics'] ) && is_array( $view['diagnostics'] ) ? $view['diagnostics'] : array(),
-			'provenance'          => isset( $view['provenance'] ) && is_array( $view['provenance'] ) ? $view['provenance'] : array(),
+			'diagnostics'      => isset( $view['diagnostics'] ) && is_array( $view['diagnostics'] ) ? $view['diagnostics'] : array(),
+			'provenance'       => isset( $view['provenance'] ) && is_array( $view['provenance'] ) ? $view['provenance'] : array(),
 		);
 
 		if ( isset( $view['conversion_report'] ) && is_array( $view['conversion_report'] ) && ! empty( $view['conversion_report'] ) ) {
@@ -178,19 +174,19 @@ class Static_Site_Importer_Transformer_Adapter {
 
 		$artifact = isset( $source_reports['artifact'] ) && is_array( $source_reports['artifact'] ) ? $source_reports['artifact'] : array();
 
-		$compiled = array(
-			'schema'              => isset( $result['schema'] ) && is_scalar( $result['schema'] ) ? (string) $result['schema'] : self::TRANSFORMER_RESULT_SCHEMA,
-			'status'              => isset( $result['status'] ) && is_scalar( $result['status'] ) ? (string) $result['status'] : '',
-			'input'               => $artifact,
-			'artifacts'           => array(
+		$compiled          = array(
+			'schema'      => isset( $result['schema'] ) && is_scalar( $result['schema'] ) ? (string) $result['schema'] : self::TRANSFORMER_RESULT_SCHEMA,
+			'status'      => isset( $result['status'] ) && is_scalar( $result['status'] ) ? (string) $result['status'] : '',
+			'input'       => $artifact,
+			'artifacts'   => array(
 				'block_markup' => isset( $result['serialized_blocks'] ) && is_scalar( $result['serialized_blocks'] ) ? (string) $result['serialized_blocks'] : '',
 				'blocks'       => isset( $result['blocks'] ) && is_array( $result['blocks'] ) ? $result['blocks'] : array(),
 				'block_types'  => isset( $result['block_types'] ) && is_array( $result['block_types'] ) ? $result['block_types'] : array(),
 				'components'   => isset( $result['components'] ) && is_array( $result['components'] ) ? $result['components'] : array(),
 				'files'        => isset( $result['assets'] ) && is_array( $result['assets'] ) ? $result['assets'] : array(),
 			),
-			'diagnostics'         => isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array(),
-			'provenance'          => isset( $result['provenance'] ) && is_array( $result['provenance'] ) ? $result['provenance'] : array(),
+			'diagnostics' => isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array(),
+			'provenance'  => isset( $result['provenance'] ) && is_array( $result['provenance'] ) ? $result['provenance'] : array(),
 		);
 		$conversion_report = isset( $source_reports['conversion_report'] ) && is_array( $source_reports['conversion_report'] ) ? $source_reports['conversion_report'] : array();
 		if ( empty( $conversion_report ) && isset( $result['conversion_report'] ) && is_array( $result['conversion_report'] ) ) {
@@ -289,7 +285,7 @@ class Static_Site_Importer_Transformer_Adapter {
 			}
 
 			$seen[ $product['slug'] ] = true;
-			$products[]              = $product;
+			$products[]               = $product;
 		}
 
 		return $products;
@@ -403,7 +399,7 @@ class Static_Site_Importer_Transformer_Adapter {
 			return array();
 		}
 
-		$metadata = $this->html_document_metadata( $html );
+		$metadata                = $this->html_document_metadata( $html );
 		$metadata['schema']      = 'block-artifact-compiler/document-metadata/v1';
 		$metadata['source_path'] = isset( $page['source_path'] ) && is_scalar( $page['source_path'] ) ? (string) $page['source_path'] : '';
 

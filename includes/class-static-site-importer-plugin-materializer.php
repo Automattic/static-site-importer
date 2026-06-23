@@ -126,6 +126,8 @@ class Static_Site_Importer_Plugin_Materializer {
 	 *
 	 * @param callable|null $availability_check Optional availability callback.
 	 * @return bool
+	 *
+	 * @phpstan-impure Plugin activation can change callback results within one request.
 	 */
 	private static function available( ?callable $availability_check ): bool {
 		return null !== $availability_check && true === (bool) call_user_func( $availability_check );
@@ -148,16 +150,6 @@ class Static_Site_Importer_Plugin_Materializer {
 		foreach ( $files as $file ) {
 			if ( is_readable( $file ) ) {
 				require_once $file;
-			}
-		}
-
-		$required = array( 'plugins_api', 'activate_plugin', 'is_plugin_active' );
-		foreach ( $required as $function ) {
-			if ( ! function_exists( $function ) ) {
-				return new WP_Error(
-					'static_site_importer_plugin_materializer_unavailable',
-					sprintf( 'WordPress plugin materialization function is unavailable: %s.', $function )
-				);
 			}
 		}
 

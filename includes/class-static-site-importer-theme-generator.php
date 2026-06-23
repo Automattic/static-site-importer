@@ -28,18 +28,18 @@ class Static_Site_Importer_Theme_Generator {
 	private static array $conversion_report = array();
 
 	/**
-	 * Generated theme directory for import-scoped asset writes.
-	 *
-	 * @var string
-	 */
-	private static string $active_theme_dir = '';
-
-	/**
 	 * Generated theme URI for import-scoped asset references.
 	 *
 	 * @var string
 	 */
 	private static string $active_theme_uri = '';
+
+	/**
+	 * CSS classes that identify decorative empty layers.
+	 *
+	 * @var array<string, true>
+	 */
+	private static array $decorative_empty_group_classes = array();
 
 	/**
 	 * Import a website artifact bundle as a block theme.
@@ -105,8 +105,7 @@ class Static_Site_Importer_Theme_Generator {
 		self::record_products_manifest_from_import_args( $args, $compiled );
 		self::record_commerce_context_summary( $args );
 
-		self::$active_theme_dir         = $theme_dir;
-		self::$active_theme_uri         = trailingslashit( get_theme_root_uri( $theme_slug ) ) . $theme_slug;
+		self::$active_theme_uri = trailingslashit( get_theme_root_uri( $theme_slug ) ) . $theme_slug;
 		$asset_policy = Static_Site_Importer_Asset_Reporter::initialize_report( self::$conversion_report, $args );
 		if ( is_wp_error( $asset_policy ) ) {
 			return $asset_policy;
@@ -244,10 +243,10 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		return array(
-			'theme_slug'            => $theme_slug,
-			'theme_name'            => $theme_name,
-			'theme_dir'             => $theme_dir,
-			'report_path'           => $theme_dir . '/import-report.json',
+			'theme_slug'                      => $theme_slug,
+			'theme_name'                      => $theme_name,
+			'theme_dir'                       => $theme_dir,
+			'report_path'                     => $theme_dir . '/import-report.json',
 			'validation_result_path'          => $theme_dir . '/import-validation-result.json',
 			'finding_packets_path'            => $theme_dir . '/finding-packets.json',
 			'external_report_path'            => $external_report_path,
@@ -520,7 +519,7 @@ class Static_Site_Importer_Theme_Generator {
 			)
 		);
 
-		return is_array( $pages ) && isset( $pages[0] ) && is_object( $pages[0] ) ? $pages[0] : null;
+		return $pages[0] ?? null;
 	}
 
 	/**
@@ -1211,11 +1210,11 @@ class Static_Site_Importer_Theme_Generator {
 
 			$document = array_merge( $documents_by_source[ $source_path ] ?? array(), array_filter(
 				array(
-					'source_path' => $source_path,
-					'slug'        => $slug,
-					'route_key'   => $route_key,
-					'post_type'   => $post_type,
-					'title'       => isset( $page['title'] ) && is_scalar( $page['title'] ) ? (string) $page['title'] : '',
+					'source_path'  => $source_path,
+					'slug'         => $slug,
+					'route_key'    => $route_key,
+					'post_type'    => $post_type,
+					'title'        => isset( $page['title'] ) && is_scalar( $page['title'] ) ? (string) $page['title'] : '',
 					'block_markup' => isset( $page['block_markup'] ) && is_scalar( $page['block_markup'] ) ? (string) $page['block_markup'] : '',
 				),
 				static fn ( string $value ): bool => '' !== $value
@@ -1364,7 +1363,7 @@ class Static_Site_Importer_Theme_Generator {
 			'css'     => $result['css'],
 			'js'      => $result['js'],
 			'assets'  => $result['assets'],
-			'scripts' => isset( $result['scripts'] ) && is_array( $result['scripts'] ) ? $result['scripts'] : array(),
+			'scripts' => $result['scripts'],
 		);
 	}
 
@@ -1495,6 +1494,50 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		return $restore;
+	}
+
+	/**
+	 * Parse an HTML fragment into a wrapper document.
+	 *
+	 * @param string $html HTML fragment.
+	 * @return DOMDocument
+	 */
+	private static function load_fragment_document( string $html ): DOMDocument {
+		$doc      = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$doc->loadHTML( '<?xml encoding="UTF-8"><div data-static-site-importer-root="1">' . $html . '</div>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+
+		return $doc;
+	}
+
+	/**
+	 * Check whether an empty element is CSS-declared decorative chrome.
+	 *
+	 * @param DOMElement $element Source element.
+	 * @return bool
+	 */
+	private static function is_empty_decorative_theme_part_element( DOMElement $element ): bool {
+		if ( 'div' !== strtolower( $element->tagName ) || empty( self::$decorative_empty_group_classes ) ) {
+			return false;
+		}
+
+		foreach ( $element->childNodes as $child ) {
+			if ( $child instanceof DOMElement || ( $child instanceof DOMText && '' !== trim( $child->textContent ) ) ) {
+				return false;
+			}
+		}
+
+		$classes = preg_split( '/\s+/', trim( $element->getAttribute( 'class' ) ) );
+		$classes = false === $classes ? array() : $classes;
+		foreach ( $classes as $class ) {
+			if ( isset( self::$decorative_empty_group_classes[ $class ] ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -1817,6 +1860,26 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
+	 * Append a class to the first HTML class attribute in a serialized block fragment.
+	 *
+	 * @param string $html                 HTML fragment.
+	 * @param string $class_name_to_append Class to append.
+	 * @return string Updated HTML fragment.
+	 */
+	private static function append_class_to_first_html_class_attribute( string $html, string $class_name_to_append ): string {
+		$updated = preg_replace_callback(
+			'/class="([^"]*)"/',
+			static function ( array $matches ) use ( $class_name_to_append ): string {
+				return 'class="' . esc_attr( self::append_class_token( html_entity_decode( $matches[1], ENT_QUOTES ), $class_name_to_append ) ) . '"';
+			},
+			$html,
+			1
+		);
+
+		return null === $updated ? $html : $updated;
+	}
+
+	/**
 	 * Append a class token if it is not already present.
 	 *
 	 * @param string $classes Existing classes.
@@ -1885,10 +1948,6 @@ class Static_Site_Importer_Theme_Generator {
 
 		if ( empty( $records ) ) {
 			foreach ( $pages as $source_path => $page ) {
-				if ( ! $page instanceof Static_Site_Importer_Source_Page ) {
-					continue;
-				}
-
 				$post_id   = (int) ( $page_ids[ $source_path ] ?? 0 );
 				$records[] = array(
 					'source_path'  => (string) $source_path,
@@ -1907,8 +1966,8 @@ class Static_Site_Importer_Theme_Generator {
 		self::$conversion_report['source_documents'] = array_merge(
 			self::$conversion_report['source_documents'],
 			array(
-				'source'             => 'blocks_engine',
-				'total_count'        => count( $records ),
+				'source'                       => 'blocks_engine',
+				'total_count'                  => count( $records ),
 				'blocks_engine_documents'      => $records,
 				'blocks_engine_document_count' => count( $records ),
 			)
@@ -2405,5 +2464,4 @@ class Static_Site_Importer_Theme_Generator {
 
 		return is_string( $markup ) ? trim( $markup ) : '';
 	}
-
 }

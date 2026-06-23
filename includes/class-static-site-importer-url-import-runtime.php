@@ -125,7 +125,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 					),
 				),
 			),
-			'source_metadata' => isset( $fetch['metadata'] ) && is_array( $fetch['metadata'] ) ? $fetch['metadata'] : array(),
+			'source_metadata' => $fetch['metadata'],
 		);
 	}
 

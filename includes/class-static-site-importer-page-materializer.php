@@ -33,7 +33,7 @@ class Static_Site_Importer_Page_Materializer {
 				continue;
 			}
 
-			$postarr  = array(
+			$postarr = array(
 				'post_title'   => $title,
 				'post_name'    => $slug,
 				'post_status'  => $status,
@@ -302,7 +302,7 @@ class Static_Site_Importer_Page_Materializer {
 
 		$replacements = array();
 		foreach ( $assets as $source => $asset ) {
-			if ( ! is_string( $source ) || ! isset( $asset['final_url'] ) || ! is_scalar( $asset['final_url'] ) ) {
+			if ( ! isset( $asset['final_url'] ) || ! is_scalar( $asset['final_url'] ) ) {
 				continue;
 			}
 

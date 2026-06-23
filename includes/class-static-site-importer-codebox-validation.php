@@ -41,8 +41,9 @@ class Static_Site_Importer_Codebox_Validation {
 		}
 
 		$delegation_request = self::host_delegation_request( $request, $input );
-		if ( class_exists( 'WP_Codebox_Abilities' ) && method_exists( 'WP_Codebox_Abilities', 'request_host_delegation' ) ) {
-			$delegation_result = WP_Codebox_Abilities::request_host_delegation( $delegation_request );
+		$host_delegation_callback = array( 'WP_Codebox_Abilities', 'request_host_delegation' );
+		if ( is_callable( $host_delegation_callback ) ) {
+			$delegation_result = call_user_func( $host_delegation_callback, $delegation_request );
 		} elseif ( function_exists( 'has_filter' ) && has_filter( 'wp_codebox_host_delegation_request' ) ) {
 			$delegation_result = apply_filters( 'wp_codebox_host_delegation_request', null, $delegation_request );
 		} else {
@@ -79,9 +80,6 @@ class Static_Site_Importer_Codebox_Validation {
 		 * @param array<string,mixed> $input   Raw caller input.
 		 */
 		$request = apply_filters( 'static_site_importer_codebox_validation_request', $request, $input );
-		if ( ! is_array( $request ) ) {
-			return new WP_Error( 'static_site_importer_codebox_validation_request_invalid', 'Codebox validation request filters must return an array.' );
-		}
 
 		/**
 		 * Executes an SSI validation request in a disposable Codebox runtime.
@@ -102,10 +100,6 @@ class Static_Site_Importer_Codebox_Validation {
 
 		if ( null === $result ) {
 			return self::provider_unavailable_result( $request );
-		}
-
-		if ( ! is_array( $result ) ) {
-			return new WP_Error( 'static_site_importer_codebox_validation_result_invalid', 'Codebox validation providers must return an array result, WP_Error, or null.' );
 		}
 
 		return self::normalize_provider_result( $request, $result );
@@ -183,7 +177,7 @@ class Static_Site_Importer_Codebox_Validation {
 			'metadata'   => array(
 				'product'        => 'static-site-importer',
 				'request_schema' => self::REQUEST_SCHEMA,
-				'input_keys'     => array_values( array_map( 'strval', array_keys( $input ) ) ),
+				'input_keys'     => array_map( 'strval', array_keys( $input ) ),
 			),
 		);
 	}
@@ -339,16 +333,16 @@ class Static_Site_Importer_Codebox_Validation {
 	 */
 	private static function artifact_contract( array $request, array $artifacts ): array {
 		return array(
-			'schema'                 => self::ARTIFACT_SCHEMA,
-			'generated_theme'        => self::first_ref( $artifacts['generated_theme'] ?? array(), $request['source']['generated_theme_ref'] ?? array() ),
-			'theme_archive'          => self::first_ref( $artifacts['theme_archive'] ?? array(), $request['source']['theme_archive_ref'] ?? array() ),
-			'import_report'          => self::normalize_artifact_ref( $artifacts['import_report'] ?? array() ),
+			'schema'                  => self::ARTIFACT_SCHEMA,
+			'generated_theme'         => self::first_ref( $artifacts['generated_theme'] ?? array(), $request['source']['generated_theme_ref'] ?? array() ),
+			'theme_archive'           => self::first_ref( $artifacts['theme_archive'] ?? array(), $request['source']['theme_archive_ref'] ?? array() ),
+			'import_report'           => self::normalize_artifact_ref( $artifacts['import_report'] ?? array() ),
 			'block_validation_result' => self::normalize_artifact_ref( $artifacts['block_validation_result'] ?? array() ),
 			'browser_render_evidence' => self::normalize_artifact_ref( $artifacts['browser_render_evidence'] ?? array() ),
-			'screenshots'            => self::normalize_artifact_refs( $artifacts['screenshots'] ?? array() ),
-			'diffs'                  => self::normalize_artifact_refs( $artifacts['diffs'] ?? array() ),
-			'raw'                    => self::normalize_artifact_refs( $artifacts['raw'] ?? array() ),
-			'required'               => self::required_artifacts(),
+			'screenshots'             => self::normalize_artifact_refs( $artifacts['screenshots'] ?? array() ),
+			'diffs'                   => self::normalize_artifact_refs( $artifacts['diffs'] ?? array() ),
+			'raw'                     => self::normalize_artifact_refs( $artifacts['raw'] ?? array() ),
+			'required'                => self::required_artifacts(),
 		);
 	}
 
@@ -379,13 +373,13 @@ class Static_Site_Importer_Codebox_Validation {
 		$artifact = isset( $source['artifact'] ) && is_array( $source['artifact'] ) ? $source['artifact'] : array();
 
 		return array(
-			'schema'             => $request['schema'] ?? self::REQUEST_SCHEMA,
-			'product_path'       => $request['product_path'] ?? 'static-site-importer/validate-in-codebox',
-			'execution_scope'    => $request['execution_scope'] ?? 'disposable-wp-codebox-runtime',
+			'schema'              => $request['schema'] ?? self::REQUEST_SCHEMA,
+			'product_path'        => $request['product_path'] ?? 'static-site-importer/validate-in-codebox',
+			'execution_scope'     => $request['execution_scope'] ?? 'disposable-wp-codebox-runtime',
 			'has_inline_artifact' => ! empty( $artifact ),
-			'artifact_schema'    => isset( $artifact['schema'] ) ? (string) $artifact['schema'] : '',
-			'import_args'        => isset( $request['import_args'] ) && is_array( $request['import_args'] ) ? $request['import_args'] : array(),
-			'required_artifacts' => isset( $request['required_artifacts'] ) && is_array( $request['required_artifacts'] ) ? array_values( $request['required_artifacts'] ) : self::required_artifacts(),
+			'artifact_schema'     => isset( $artifact['schema'] ) ? (string) $artifact['schema'] : '',
+			'import_args'         => isset( $request['import_args'] ) && is_array( $request['import_args'] ) ? $request['import_args'] : array(),
+			'required_artifacts'  => isset( $request['required_artifacts'] ) && is_array( $request['required_artifacts'] ) ? array_values( $request['required_artifacts'] ) : self::required_artifacts(),
 		);
 	}
 

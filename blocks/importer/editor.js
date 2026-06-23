@@ -25,7 +25,7 @@
 						label: 'Apply imports to this site',
 						help: applyToCurrentSite ? 'Imports mutate this WordPress site.' : 'Imports create a preview when possible.',
 						checked: applyToCurrentSite,
-						onChange: function ( value ) {
+						onChange( value ) {
 							setAttributes( { applyToCurrentSite: Boolean( value ) } );
 						},
 					} )
