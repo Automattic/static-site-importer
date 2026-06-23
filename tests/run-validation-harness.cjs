@@ -40,6 +40,11 @@ const steps = [
     args: [ path.join( repoRoot, 'tests/smoke-website-artifact-products-manifest.php' ) ],
   },
   {
+    name: 'Entity materializer registry smoke',
+    command: 'php',
+    args: [ path.join( repoRoot, 'tests/smoke-entity-materializer-registry.php' ) ],
+  },
+  {
     name: 'Website artifact document metadata smoke',
     command: wpCli[ 0 ],
     args: [
