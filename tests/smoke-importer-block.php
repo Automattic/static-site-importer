@@ -463,6 +463,9 @@ $preview_response = static_site_importer_rest_create_import(
 $assert( true === ( $preview_response['success'] ?? null ), 'rest-preview-codebox-result-succeeds' );
 $assert( 'https://preview.example.test/ssi' === ( $preview_response['preview']['url'] ?? '' ), 'rest-preview-contract-exposes-codebox-preview-url' );
 $assert( isset( $preview_response['preview']['playground']['blueprint_url'] ), 'rest-preview-contract-exposes-playground-blueprint-url' );
+$preview_blueprint_url_parts = wp_parse_url( (string) $preview_response['preview']['playground']['blueprint_url'] );
+parse_str( (string) ( $preview_blueprint_url_parts['query'] ?? '' ), $preview_blueprint_url_query );
+$assert( '/?preview=1' === ( $preview_blueprint_url_query['url'] ?? '' ), 'rest-preview-playground-url-lands-on-relative-preview-path' );
 $assert( 'function' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['type'] ?? '' ), 'rest-preview-codebox-invokes-ssi-import-function-type' );
 $assert( 'static_site_importer_ability_import_website_artifact' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['name'] ?? '' ), 'rest-preview-codebox-invokes-ssi-import-function' );
 $assert( true === ( WP_Codebox_Abilities::$last_input['include_raw_browser_session'] ?? null ), 'rest-preview-codebox-requests-raw-session-for-blueprint-extraction' );

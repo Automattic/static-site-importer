@@ -755,7 +755,40 @@ function static_site_importer_rest_codebox_blueprint_url( array $session ): stri
 
 	$blueprint_endpoint = str_starts_with( $endpoint, 'http://' ) || str_starts_with( $endpoint, 'https://' ) ? $endpoint : rest_url( ltrim( $endpoint, '/' ) );
 
-	return esc_url_raw( 'https://playground.wordpress.net/?blueprint-url=' . rawurlencode( $blueprint_endpoint ) );
+	$playground = isset( $session['playground'] ) && is_array( $session['playground'] ) ? $session['playground'] : array();
+	$artifacts  = isset( $session['artifacts'] ) && is_array( $session['artifacts'] ) ? $session['artifacts'] : array();
+	$preview_url = static_site_importer_rest_codebox_relative_preview_path( (string) ( $playground['preview_url'] ?? $artifacts['preview_url'] ?? '' ) );
+	$url = 'https://playground.wordpress.net/?blueprint-url=' . rawurlencode( $blueprint_endpoint );
+	if ( '' !== $preview_url ) {
+		$url .= '&url=' . rawurlencode( $preview_url );
+	}
+
+	return esc_url_raw( $url );
+}
+
+/**
+ * Extract a Playground-local preview path for launch URLs.
+ *
+ * @param string $preview_url Preview URL from WP Codebox.
+ * @return string
+ */
+function static_site_importer_rest_codebox_relative_preview_path( string $preview_url ): string {
+	$preview_url = trim( $preview_url );
+	if ( '' === $preview_url ) {
+		return '';
+	}
+
+	if ( str_starts_with( $preview_url, '/' ) && ! str_starts_with( $preview_url, '//' ) ) {
+		return $preview_url;
+	}
+
+	$path = wp_parse_url( $preview_url, PHP_URL_PATH );
+	if ( ! is_string( $path ) || '' === $path ) {
+		return '';
+	}
+
+	$query = wp_parse_url( $preview_url, PHP_URL_QUERY );
+	return $path . ( is_string( $query ) && '' !== $query ? '?' . $query : '' );
 }
 
 /**
