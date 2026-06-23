@@ -490,5 +490,4 @@ class Static_Site_Importer_Codebox_Validation {
 			|| str_contains( $value, 'localhost' )
 			|| str_contains( $value, '127.0.0.1' );
 	}
-
 }

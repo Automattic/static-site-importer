@@ -83,9 +83,6 @@ function static_site_importer_rest_import_figma_preflight( WP_REST_Request $requ
  */
 function static_site_importer_rest_import_figma( WP_REST_Request $request ) {
 	$input = $request->get_json_params();
-	if ( ! is_array( $input ) ) {
-		$input = $request->get_params();
-	}
 
 	$artifact = Static_Site_Importer_Figma_Import::website_artifact_from_input( $input );
 	if ( is_wp_error( $artifact ) ) {
@@ -105,9 +102,7 @@ function static_site_importer_rest_import_figma( WP_REST_Request $request ) {
 	}
 
 	$response = rest_ensure_response( Static_Site_Importer_Figma_Import::runner_response( $result ) );
-	if ( $response instanceof WP_REST_Response ) {
-		static_site_importer_rest_add_figma_cors_headers( $response, $request );
-	}
+	static_site_importer_rest_add_figma_cors_headers( $response, $request );
 
 	return $response;
 }
@@ -115,11 +110,15 @@ function static_site_importer_rest_import_figma( WP_REST_Request $request ) {
 /**
  * Add CORS headers for the local Figma runner endpoint when explicitly enabled.
  *
- * @param WP_REST_Response $response REST response.
- * @param WP_REST_Request  $request  REST request.
+ * @param mixed           $response REST response.
+ * @param WP_REST_Request $request  REST request.
  * @return void
  */
-function static_site_importer_rest_add_figma_cors_headers( WP_REST_Response $response, WP_REST_Request $request ): void {
+function static_site_importer_rest_add_figma_cors_headers( $response, WP_REST_Request $request ): void {
+	if ( ! $response instanceof WP_REST_Response ) {
+		return;
+	}
+
 	if ( ! static_site_importer_rest_import_figma_allows_local_runner( $request ) ) {
 		return;
 	}
@@ -170,10 +169,11 @@ function static_site_importer_rest_import_figma_allows_local_runner( WP_REST_Req
  * @return array<int,string>
  */
 function static_site_importer_rest_figma_allowed_site_hosts(): array {
-	$hosts = array( 'localhost', '127.0.0.1', '::1' );
+	$hosts      = array( 'localhost', '127.0.0.1', '::1' );
 	$configured = get_option( 'static_site_importer_figma_allowed_site_hosts', array() );
 	if ( is_string( $configured ) ) {
-		$configured = preg_split( '/[\s,]+/', $configured ) ?: array();
+		$configured_hosts = preg_split( '/[\s,]+/', $configured );
+		$configured       = false === $configured_hosts ? array() : $configured_hosts;
 	}
 	if ( is_array( $configured ) ) {
 		foreach ( $configured as $host ) {
@@ -202,7 +202,7 @@ function static_site_importer_rest_figma_allowed_site_hosts(): array {
 	 */
 	$hosts = apply_filters( 'static_site_importer_figma_allowed_site_hosts', $hosts );
 
-	return is_array( $hosts ) ? array_values( array_filter( array_map( 'strval', $hosts ) ) ) : array( 'localhost', '127.0.0.1', '::1' );
+	return array_values( array_filter( array_map( 'strval', $hosts ) ) );
 }
 
 /**
@@ -323,7 +323,7 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
  * @return array<string,mixed>|WP_Error
  */
 function static_site_importer_rest_execute_import_ability( string $ability_name, array $input, string $fallback_callback, bool $prefer_fallback = false ) {
-	if ( $prefer_fallback && is_callable( $fallback_callback ) ) {
+	if ( $prefer_fallback ) {
 		return call_user_func( $fallback_callback, $input );
 	}
 
@@ -336,11 +336,7 @@ function static_site_importer_rest_execute_import_ability( string $ability_name,
 		}
 	}
 
-	if ( is_callable( $fallback_callback ) ) {
-		return call_user_func( $fallback_callback, $input );
-	}
-
-	return new WP_Error( 'static_site_importer_ability_unavailable', sprintf( 'Static Site Importer ability is unavailable: %s.', $ability_name ), array( 'status' => 500 ) );
+	return call_user_func( $fallback_callback, $input );
 }
 
 /**
@@ -490,20 +486,21 @@ function static_site_importer_rest_codebox_preview_input( array $request, array 
 	$import_args = isset( $request['import_args'] ) && is_array( $request['import_args'] ) ? $request['import_args'] : array();
 
 	$input = array(
-		'goal'               => __( 'Create a disposable WordPress preview for a Static Site Importer request.', 'static-site-importer' ),
-		'target'             => array(
+		'goal'                        => __( 'Create a disposable WordPress preview for a Static Site Importer request.', 'static-site-importer' ),
+		'include_raw_browser_session' => true,
+		'target'                      => array(
 			'kind' => 'static-site-importer-preview',
 			'ref'  => 'static-site-importer/importer',
 		),
-		'expected_artifacts' => array( 'preview', 'static-site-importer-report' ),
-		'context'            => array(
+		'expected_artifacts'          => array( 'preview', 'static-site-importer-report' ),
+		'context'                     => array(
 			'product'        => 'static-site-importer',
 			'request_schema' => (string) ( $request['schema'] ?? 'static-site-importer/preview-request/v1' ),
 			'request_id'     => (string) ( $request['request_id'] ?? '' ),
 			'source_url'     => isset( $source['url'] ) ? (string) $source['url'] : '',
 		),
-		'artifact_files'     => static_site_importer_rest_codebox_artifact_files( $artifact ),
-		'browser_runner'     => array(
+		'artifact_files'              => static_site_importer_rest_codebox_artifact_files( $artifact ),
+		'browser_runner'              => array(
 			'task_path'     => '/tmp/static-site-importer-preview-request.json',
 			'result_path'   => '/tmp/static-site-importer-preview-result.json',
 			'invocation'    => array(
@@ -525,7 +522,7 @@ function static_site_importer_rest_codebox_preview_input( array $request, array 
 				),
 			),
 		),
-		'orchestrator'       => array(
+		'orchestrator'                => array(
 			'type' => 'static-site-importer-preview',
 			'id'   => 'static-site-importer/importer',
 		),

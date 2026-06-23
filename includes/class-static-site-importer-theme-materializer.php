@@ -131,8 +131,8 @@ class Static_Site_Importer_Theme_Materializer {
 			if ( is_wp_error( $content ) ) {
 				return $content;
 			}
-			$kind    = isset( $file['kind'] ) ? (string) $file['kind'] : '';
-			$lower   = strtolower( $relative );
+			$kind  = isset( $file['kind'] ) ? (string) $file['kind'] : '';
+			$lower = strtolower( $relative );
 			if ( 'css' === $kind || str_ends_with( $lower, '.css' ) ) {
 				$css[] = trim( $content );
 				continue;

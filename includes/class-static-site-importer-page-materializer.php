@@ -309,6 +309,8 @@ class Static_Site_Importer_Page_Materializer {
 			);
 			return '';
 		}
+
+		return '';
 	}
 
 	/**
@@ -320,15 +322,17 @@ class Static_Site_Importer_Page_Materializer {
 	 */
 	private static function html_to_blocks( string $body, string $source_path, array &$diagnostics ): string {
 		$result = blocks_engine_php_transformer_convert_format( $body, 'html', 'blocks' );
-		if ( ! is_array( $result ) ) {
-			return '';
-		}
 
 		foreach ( isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array() as $diagnostic ) {
 			if ( is_array( $diagnostic ) ) {
-				$diagnostic['source']      = 'blocks-engine/html-to-blocks';
-				$diagnostic['source_path'] = $source_path;
-				$diagnostics[]            = $diagnostic;
+				/** @var array<string,mixed> $diagnostic */
+				$diagnostics[] = array_merge(
+					$diagnostic,
+					array(
+						'source'      => 'blocks-engine/html-to-blocks',
+						'source_path' => $source_path,
+					)
+				);
 			}
 		}
 

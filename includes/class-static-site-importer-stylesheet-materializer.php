@@ -53,10 +53,6 @@ class Static_Site_Importer_Stylesheet_Materializer {
 
 		$replacements = array();
 		foreach ( $assets as $source => $asset ) {
-			if ( ! is_array( $asset ) ) {
-				continue;
-			}
-
 			$url = isset( $asset['final_url'] ) && is_scalar( $asset['final_url'] ) ? (string) $asset['final_url'] : ( isset( $asset['url'] ) && is_scalar( $asset['url'] ) ? (string) $asset['url'] : '' );
 			if ( '' === $url ) {
 				continue;

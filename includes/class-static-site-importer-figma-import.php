@@ -26,25 +26,12 @@ class Static_Site_Importer_Figma_Import {
 			return static_site_importer_ability_error( (string) $artifact->get_error_code(), $artifact->get_error_message(), $artifact->get_error_data() );
 		}
 
-		$import_input = self::import_input( $input, $artifact );
+		$import_input         = self::import_input( $input, $artifact );
 		$validation_artifacts = self::validation_artifacts( $input, $artifact, $import_input );
 		if ( ! empty( $validation_artifacts ) ) {
 			$import_input['validation_artifacts'] = $validation_artifacts;
 		}
-		if ( is_callable( 'static_site_importer_ability_import_website_artifact' ) ) {
-			return static_site_importer_ability_import_website_artifact( $import_input );
-		}
-
-		$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_input );
-		if ( is_wp_error( $result ) ) {
-			/** @var WP_Error $result */
-			return static_site_importer_ability_error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
-		}
-
-		return array(
-			'success' => true,
-			'result'  => $result,
-		);
+		return static_site_importer_ability_import_website_artifact( $import_input );
 	}
 
 	/**
@@ -69,20 +56,20 @@ class Static_Site_Importer_Figma_Import {
 			);
 		}
 
-		$preview = isset( $ability_result['preview'] ) && is_array( $ability_result['preview'] ) ? $ability_result['preview'] : array();
+		$preview    = isset( $ability_result['preview'] ) && is_array( $ability_result['preview'] ) ? $ability_result['preview'] : array();
 		$playground = isset( $preview['playground'] ) && is_array( $preview['playground'] ) ? $preview['playground'] : array();
-		$open_url = isset( $preview['url'] ) ? (string) $preview['url'] : '';
+		$open_url   = isset( $preview['url'] ) ? (string) $preview['url'] : '';
 		if ( '' === $open_url && isset( $playground['blueprint_url'] ) ) {
 			$open_url = (string) $playground['blueprint_url'];
 		}
 
 		return array(
-			'schema'                => 'figma-to-wordpress/runner-response/v1',
-			'success'               => true,
-			'status'                => 'created',
-			'open_url'              => '' !== $open_url ? $open_url : home_url( '/' ),
-			'preview_session'       => $preview,
-			'materialization'       => self::materialization_summary( $ability_result ),
+			'schema'          => 'figma-to-wordpress/runner-response/v1',
+			'success'         => true,
+			'status'          => 'created',
+			'open_url'        => '' !== $open_url ? $open_url : home_url( '/' ),
+			'preview_session' => $preview,
+			'materialization' => self::materialization_summary( $ability_result ),
 		);
 	}
 
@@ -93,7 +80,7 @@ class Static_Site_Importer_Figma_Import {
 	 * @return array<string,mixed>
 	 */
 	private static function materialization_summary( array $ability_result ): array {
-		$result = isset( $ability_result['result'] ) && is_array( $ability_result['result'] ) ? $ability_result['result'] : array();
+		$result  = isset( $ability_result['result'] ) && is_array( $ability_result['result'] ) ? $ability_result['result'] : array();
 		$summary = isset( $result['import_report_summary'] ) && is_array( $result['import_report_summary'] ) ? $result['import_report_summary'] : array();
 
 		return array_filter(
@@ -173,12 +160,18 @@ class Static_Site_Importer_Figma_Import {
 			return new WP_Error( 'static_site_importer_figma_transform_failed', 'Blocks Engine Figma transformer returned an invalid result.', array( 'status' => 500 ) );
 		}
 		if ( isset( $transform['status'] ) && 'failed' === (string) $transform['status'] ) {
-			return new WP_Error( 'static_site_importer_figma_transform_failed', 'Blocks Engine Figma transformer failed.', array( 'status' => 500, 'transform' => $transform ) );
+			return new WP_Error( 'static_site_importer_figma_transform_failed', 'Blocks Engine Figma transformer failed.', array(
+				'status'    => 500,
+				'transform' => $transform,
+			) );
 		}
 
 		$files = self::normalize_files( isset( $transform['files'] ) && is_array( $transform['files'] ) ? $transform['files'] : array(), 'website/' );
 		if ( empty( $files ) ) {
-			return new WP_Error( 'static_site_importer_figma_transform_empty', 'Blocks Engine Figma transformer did not produce importable files.', array( 'status' => 500, 'transform' => $transform ) );
+			return new WP_Error( 'static_site_importer_figma_transform_empty', 'Blocks Engine Figma transformer did not produce importable files.', array(
+				'status'    => 500,
+				'transform' => $transform,
+			) );
 		}
 
 		return array(
@@ -201,7 +194,7 @@ class Static_Site_Importer_Figma_Import {
 		$normalized = array();
 		$root       = trim( str_replace( '\\', '/', $root ), '/' );
 		foreach ( $files as $file ) {
-			if ( ! is_array( $file ) || ! isset( $file['path'] ) ) {
+			if ( ! isset( $file['path'] ) ) {
 				continue;
 			}
 
@@ -250,7 +243,7 @@ class Static_Site_Importer_Figma_Import {
 	 * @param array<int,array<string,mixed>> $files      Normalized files.
 	 */
 	private static function entrypoint( string $entrypoint, array $files ): string {
-		$paths = array_map( static fn( array $file ): string => (string) ( $file['path'] ?? '' ), $files );
+		$paths      = array_map( static fn( array $file ): string => (string) ( $file['path'] ?? '' ), $files );
 		$entrypoint = self::artifact_path( $entrypoint, 'website' );
 
 		if ( '' !== $entrypoint && in_array( $entrypoint, $paths, true ) ) {
@@ -310,17 +303,17 @@ class Static_Site_Importer_Figma_Import {
 
 		$result = Static_Site_Importer_Codebox_Validation::validate(
 			array(
-				'artifact'           => $artifact,
-				'slug'               => $import_input['slug'] ?? '',
-				'name'               => $import_input['name'] ?? '',
-				'activate'           => false,
-				'overwrite'          => true,
-				'compiler_options'   => isset( $import_input['compiler_options'] ) && is_array( $import_input['compiler_options'] ) ? $import_input['compiler_options'] : array(),
-				'source_metadata'    => isset( $import_input['source_metadata'] ) && is_array( $import_input['source_metadata'] ) ? $import_input['source_metadata'] : array(),
+				'artifact'         => $artifact,
+				'slug'             => $import_input['slug'] ?? '',
+				'name'             => $import_input['name'] ?? '',
+				'activate'         => false,
+				'overwrite'        => true,
+				'compiler_options' => isset( $import_input['compiler_options'] ) && is_array( $import_input['compiler_options'] ) ? $import_input['compiler_options'] : array(),
+				'source_metadata'  => isset( $import_input['source_metadata'] ) && is_array( $import_input['source_metadata'] ) ? $import_input['source_metadata'] : array(),
 			)
 		);
 
-		if ( is_wp_error( $result ) || ! is_array( $result ) ) {
+		if ( is_wp_error( $result ) ) {
 			return array();
 		}
 
@@ -334,7 +327,7 @@ class Static_Site_Importer_Figma_Import {
 	 * @return array<string,mixed>
 	 */
 	private static function validation_artifacts_from_codebox_result( array $result ): array {
-		$artifacts = isset( $result['artifacts'] ) && is_array( $result['artifacts'] ) ? $result['artifacts'] : array();
+		$artifacts   = isset( $result['artifacts'] ) && is_array( $result['artifacts'] ) ? $result['artifacts'] : array();
 		$screenshots = isset( $artifacts['screenshots'] ) && is_array( $artifacts['screenshots'] ) ? array_values( $artifacts['screenshots'] ) : array();
 		$diffs       = isset( $artifacts['diffs'] ) && is_array( $artifacts['diffs'] ) ? array_values( $artifacts['diffs'] ) : array();
 

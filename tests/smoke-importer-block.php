@@ -459,6 +459,7 @@ $assert( true === ( $preview_response['success'] ?? null ), 'rest-preview-codebo
 $assert( 'https://preview.example.test/ssi' === ( $preview_response['preview']['url'] ?? '' ), 'rest-preview-contract-exposes-codebox-preview-url' );
 $assert( isset( $preview_response['preview']['playground']['blueprint_url'] ), 'rest-preview-contract-exposes-playground-blueprint-url' );
 $assert( 'static-site-importer/import-website-artifact' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['name'] ?? '' ), 'rest-preview-codebox-invokes-ssi-import-ability' );
+$assert( true === ( WP_Codebox_Abilities::$last_input['include_raw_browser_session'] ?? null ), 'rest-preview-codebox-requests-raw-session-for-blueprint-extraction' );
 $assert( isset( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['input']['artifact'] ), 'rest-preview-codebox-request-includes-artifact' );
 $assert( 'website/uploaded/site/index.html' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['input']['artifact']['files'][0]['path'] ?? '' ), 'rest-directory-path-is-normalized' );
 $assert( 'uploaded/site/index.html' === ( WP_Codebox_Abilities::$last_input['artifact_files'][0]['path'] ?? '' ), 'rest-preview-codebox-strips-website-prefix-for-browser-artifacts' );
