@@ -41,6 +41,16 @@ function static_site_importer_register_rest_routes(): void {
 			),
 		)
 	);
+
+	register_rest_route(
+		'static-site-importer/v1',
+		'/figma-preview-blueprint/(?P<ref>[a-f0-9]{64})',
+		array(
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => 'static_site_importer_rest_figma_preview_blueprint',
+			'permission_callback' => '__return_true',
+		)
+	);
 }
 
 /**
@@ -96,7 +106,7 @@ function static_site_importer_rest_import_figma( WP_REST_Request $request ) {
 			'overwrite' => array_key_exists( 'overwrite', $input ) ? ! empty( $input['overwrite'] ) : true,
 		)
 	);
-	$result = static_site_importer_rest_create_preview( array( 'artifact' => $artifact ), Static_Site_Importer_Figma_Import::import_input( $params, $artifact ), $params );
+	$result = static_site_importer_rest_create_figma_playground_preview( $artifact, Static_Site_Importer_Figma_Import::import_input( $params, $artifact ) );
 	if ( is_wp_error( $result ) ) {
 		return $result;
 	}
@@ -105,6 +115,135 @@ function static_site_importer_rest_import_figma( WP_REST_Request $request ) {
 	static_site_importer_rest_add_figma_cors_headers( $response, $request );
 
 	return $response;
+}
+
+/**
+ * Return a prepared Figma import Playground blueprint.
+ *
+ * @param WP_REST_Request $request REST request.
+ * @return WP_REST_Response|WP_Error
+ */
+function static_site_importer_rest_figma_preview_blueprint( WP_REST_Request $request ) {
+	$ref = strtolower( trim( (string) $request->get_param( 'ref' ) ) );
+	if ( ! preg_match( '/^[a-f0-9]{64}$/', $ref ) ) {
+		return new WP_Error( 'static_site_importer_figma_blueprint_ref_invalid', __( 'Figma preview blueprint ref is invalid.', 'static-site-importer' ), array( 'status' => 400 ) );
+	}
+
+	$blueprint = get_transient( static_site_importer_rest_figma_blueprint_transient_key( $ref ) );
+	if ( ! is_array( $blueprint ) ) {
+		return new WP_Error( 'static_site_importer_figma_blueprint_not_found', __( 'Figma preview blueprint expired. Create a new Figma preview.', 'static-site-importer' ), array( 'status' => 404 ) );
+	}
+
+	return rest_ensure_response( $blueprint );
+}
+
+/**
+ * Create a plain Playground preview for Figma imports.
+ *
+ * @param array<string,mixed> $artifact Website artifact.
+ * @param array<string,mixed> $input    Import ability input.
+ * @return array<string,mixed>|WP_Error
+ */
+function static_site_importer_rest_create_figma_playground_preview( array $artifact, array $input ) {
+	$blueprint = static_site_importer_rest_figma_playground_blueprint( $input );
+	$ref       = hash( 'sha256', wp_json_encode( $blueprint ) ?: serialize( $blueprint ) );
+	$stored    = set_transient( static_site_importer_rest_figma_blueprint_transient_key( $ref ), $blueprint, WEEK_IN_SECONDS );
+	if ( ! $stored ) {
+		return new WP_Error( 'static_site_importer_figma_blueprint_store_failed', __( 'Could not store the Figma preview blueprint.', 'static-site-importer' ), array( 'status' => 500 ) );
+	}
+
+	$endpoint      = rest_url( 'static-site-importer/v1/figma-preview-blueprint/' . $ref );
+	$blueprint_url = 'https://playground.wordpress.net/?blueprint-url=' . rawurlencode( $endpoint ) . '&url=%2F';
+
+	return array(
+		'success' => true,
+		'preview' => array(
+			'status'     => 'ready',
+			'playground' => array(
+				'blueprint_url' => esc_url_raw( $blueprint_url ),
+				'preview_url'   => '/',
+				'ref'           => $ref,
+			),
+		),
+		'provider' => 'static-site-importer/figma-direct-playground-blueprint',
+		'request'  => array(
+			'schema'     => 'static-site-importer/figma-preview-request/v1',
+			'artifact'   => array(
+				'entrypoint' => (string) ( $artifact['entrypoint'] ?? '' ),
+				'file_count'  => isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? count( $artifact['files'] ) : 0,
+			),
+			'blueprint' => array(
+				'ref' => $ref,
+			),
+		),
+	);
+}
+
+/**
+ * Build a self-contained Playground blueprint that imports the Figma artifact.
+ *
+ * @param array<string,mixed> $input Import ability input.
+ * @return array<string,mixed>
+ */
+function static_site_importer_rest_figma_playground_blueprint( array $input ): array {
+	$import_code = '<?php
+require_once "/wordpress/wp-load.php";
+
+if ( ! function_exists( "static_site_importer_ability_import_website_artifact" ) ) {
+	throw new RuntimeException( "Static Site Importer import function is unavailable." );
+}
+
+$input = ' . var_export( $input, true ) . ';
+$result = static_site_importer_ability_import_website_artifact( $input );
+
+if ( ! is_array( $result ) || empty( $result["success"] ) ) {
+	throw new RuntimeException( "Static Site Importer Figma import failed: " . wp_json_encode( $result ) );
+}
+
+update_option( "static_site_importer_figma_preview_result", $result, false );
+?>';
+
+	return array(
+		'$schema'           => 'https://playground.wordpress.net/blueprint-schema.json',
+		'landingPage'       => '/',
+		'preferredVersions' => array(
+			'php' => '8.2',
+			'wp'  => 'latest',
+		),
+		'features'          => array(
+			'networking' => true,
+		),
+		'steps'             => array(
+			array(
+				'step' => 'login',
+			),
+			array(
+				'step'       => 'installPlugin',
+				'pluginData' => array(
+					'resource' => 'url',
+					'url'      => 'https://github.com/Automattic/static-site-importer/releases/latest/download/static-site-importer.zip',
+				),
+				'options'    => array(
+					'activate'         => true,
+					'targetFolderName' => 'static-site-importer',
+				),
+			),
+			array(
+				'step' => 'runPHP',
+				'code' => $import_code,
+			),
+		),
+	);
+}
+
+/**
+ * Build the transient key for prepared Figma preview blueprints.
+ *
+ * @param string $ref Blueprint ref hash.
+ * @return string
+ */
+function static_site_importer_rest_figma_blueprint_transient_key( string $ref ): string {
+	return 'static_site_importer_figma_blueprint_' . substr( $ref, 0, 32 );
 }
 
 /**

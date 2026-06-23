@@ -31,6 +31,9 @@ $GLOBALS['ssi_options']          = array();
 $GLOBALS['ssi_test_options']     = array();
 $GLOBALS['ssi_home_url']         = 'https://example.test/';
 $GLOBALS['ssi_uuid_count']       = 0;
+$GLOBALS['ssi_transients']       = array();
+
+defined( 'WEEK_IN_SECONDS' ) || define( 'WEEK_IN_SECONDS', 7 * 24 * 60 * 60 );
 
 if ( ! function_exists( 'register_block_type' ) ) {
 	function register_block_type( string $path, array $args = array() ): bool {
@@ -171,6 +174,20 @@ if ( ! function_exists( 'update_option' ) ) {
 	}
 }
 
+if ( ! function_exists( 'get_transient' ) ) {
+	function get_transient( string $name ) {
+		return $GLOBALS['ssi_transients'][ $name ] ?? false;
+	}
+}
+
+if ( ! function_exists( 'set_transient' ) ) {
+	function set_transient( string $name, $value, int $expiration = 0 ): bool {
+		$GLOBALS['ssi_transients'][ $name ] = $value;
+
+		return true;
+	}
+}
+
 if ( ! function_exists( 'wp_generate_uuid4' ) ) {
 	function wp_generate_uuid4(): string {
 		++$GLOBALS['ssi_uuid_count'];
@@ -233,6 +250,10 @@ if ( ! class_exists( 'WP_REST_Request' ) ) {
 
 		public function get_json_params(): array {
 			return $this->params;
+		}
+
+		public function get_param( string $name ) {
+			return $this->params[ $name ] ?? null;
 		}
 
 		public function get_header( string $name ): string {
@@ -629,6 +650,7 @@ if ( ! is_wp_error( $html_source_page ) ) {
 
 Static_Site_Importer_Theme_Generator::$last_artifact = array();
 Static_Site_Importer_Theme_Generator::$last_args     = array();
+WP_Codebox_Abilities::$last_input = array();
 WP_Codebox_Abilities::$next_session = array(
 	'success'         => true,
 	'schema'          => 'wp-codebox/browser-playground-session/v1',
@@ -692,15 +714,23 @@ $assert( 'created' === ( $figma_response['status'] ?? '' ), 'figma-rest-response
 $assert( str_starts_with( $figma_response['open_url'] ?? '', 'https://playground.wordpress.net/?blueprint-url=' ), 'figma-rest-response-open-url-is-playground-blueprint' );
 $assert( isset( $figma_response['preview_session']['playground']['blueprint_url'] ), 'figma-rest-response-exposes-playground-blueprint-url' );
 $assert( array() === Static_Site_Importer_Theme_Generator::$last_artifact, 'figma-rest-preview-does-not-apply-to-current-site' );
-$assert( 'function' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['type'] ?? '' ), 'figma-rest-preview-invokes-ssi-import-function-type' );
-$assert( 'static_site_importer_ability_import_website_artifact' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['name'] ?? '' ), 'figma-rest-preview-invokes-ssi-import-function' );
-$assert( 'website/index.html' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['input']['artifact']['entrypoint'] ?? '' ), 'figma-artifact-entrypoint-normalized' );
-$assert( 'website/assets/styles.css' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['input']['artifact']['files'][1]['path'] ?? '' ), 'figma-artifact-file-path-normalized' );
-$assert( true === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['input']['activate'] ?? null ), 'figma-preview-defaults-to-activate-in-playground' );
-$assert( true === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['input']['overwrite'] ?? null ), 'figma-preview-defaults-to-overwrite-in-playground' );
-$assert( 'Fisiostetic' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['input']['name'] ?? null ), 'figma-import-name-derived-from-metadata' );
-$assert( 'Fisiostetic' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['input']['site_title'] ?? null ), 'figma-import-site-title-derived-from-metadata' );
-$assert( 'figma-to-wordpress' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['input']['artifact']['provenance']['source'] ?? '' ), 'figma-artifact-provenance-source' );
+$assert( array() === WP_Codebox_Abilities::$last_input, 'figma-rest-preview-does-not-use-codebox-runner' );
+$figma_open_url_parts = wp_parse_url( (string) $figma_response['open_url'] );
+parse_str( (string) ( $figma_open_url_parts['query'] ?? '' ), $figma_open_url_query );
+$assert( '/' === ( $figma_open_url_query['url'] ?? '' ), 'figma-playground-opens-imported-wordpress-front-page' );
+$figma_blueprint_ref = (string) ( $figma_response['preview_session']['playground']['ref'] ?? '' );
+$assert( preg_match( '/^[a-f0-9]{64}$/', $figma_blueprint_ref ) === 1, 'figma-preview-exposes-blueprint-ref' );
+$figma_blueprint_response = static_site_importer_rest_figma_preview_blueprint( new WP_REST_Request( array( 'ref' => $figma_blueprint_ref ) ) );
+$assert( is_array( $figma_blueprint_response ), 'figma-blueprint-hydrates' );
+$figma_blueprint_code = wp_json_encode( $figma_blueprint_response );
+$assert( str_contains( (string) $figma_blueprint_code, 'static_site_importer_ability_import_website_artifact' ), 'figma-blueprint-invokes-ssi-import-function' );
+$assert( str_contains( (string) $figma_blueprint_code, 'website/index.html' ) || str_contains( (string) $figma_blueprint_code, 'website\/index.html' ), 'figma-artifact-entrypoint-normalized' );
+$assert( str_contains( (string) $figma_blueprint_code, 'website/assets/styles.css' ) || str_contains( (string) $figma_blueprint_code, 'website\/assets\/styles.css' ), 'figma-artifact-file-path-normalized' );
+$assert( str_contains( (string) $figma_blueprint_code, "'activate' => true" ), 'figma-preview-defaults-to-activate-in-playground' );
+$assert( str_contains( (string) $figma_blueprint_code, "'overwrite' => true" ), 'figma-preview-defaults-to-overwrite-in-playground' );
+$assert( str_contains( (string) $figma_blueprint_code, "'name' => 'Fisiostetic'" ), 'figma-import-name-derived-from-metadata' );
+$assert( str_contains( (string) $figma_blueprint_code, "'site_title' => 'Fisiostetic'" ), 'figma-import-site-title-derived-from-metadata' );
+$assert( str_contains( (string) $figma_blueprint_code, "'source' => 'figma-to-wordpress'" ), 'figma-artifact-provenance-source' );
 
 if ( class_exists( 'ZipArchive' ) ) {
 	$zip_path = tempnam( sys_get_temp_dir(), 'ssi-test-' );
