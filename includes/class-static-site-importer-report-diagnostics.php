@@ -52,6 +52,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'svg_materialization_failure_count'  => 0,
 				'svg_sprite_reference_failure_count' => 0,
 				'commerce_dependency_failures'       => 0,
+				'interaction_candidate_count'        => 0,
 				'failure_reasons'                    => array(),
 			),
 			'source_documents'        => array(
@@ -172,6 +173,12 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 		if ( 'blocks-engine/php-transformer/materialization-plan/v1' === (string) ( $site['schema'] ?? '' ) ) {
 			$report['blocks_engine']['materialization_plan'] = self::compiled_site_report_payload( $site );
+		}
+
+		$conversion_report = isset( $compiled['conversion_report'] ) && is_array( $compiled['conversion_report'] ) ? $compiled['conversion_report'] : array();
+		if ( ! empty( $conversion_report ) ) {
+			$report['blocks_engine']['conversion_report'] = self::conversion_report_payload( $conversion_report );
+			self::record_conversion_report_quality_metadata( $report, $conversion_report );
 		}
 	}
 
@@ -317,6 +324,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'svg_materialization_failures'  => (int) ( $quality['svg_materialization_failure_count'] ?? 0 ),
 				'svg_sprite_reference_failures' => (int) ( $quality['svg_sprite_reference_failure_count'] ?? 0 ),
 				'commerce_dependency_failures'  => (int) ( $quality['commerce_dependency_failures'] ?? 0 ),
+				'interaction_candidates'        => (int) ( $quality['interaction_candidate_count'] ?? 0 ),
 			),
 			'quality_gates'        => array(
 				'fallback_blocks'              => self::validation_gate( 'fallback_blocks', (int) ( $quality['fallback_count'] ?? 0 ), $quality ),
@@ -324,6 +332,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'generated_fallback_blocks'    => self::validation_gate( 'generated_fallback_blocks', (int) ( $quality['core_html_block_count'] ?? 0 ) + (int) ( $quality['freeform_block_count'] ?? 0 ), $quality ),
 				'asset_materialization'        => self::validation_gate( 'asset_materialization', (int) ( $quality['svg_materialization_failure_count'] ?? 0 ) + (int) ( $quality['svg_sprite_reference_failure_count'] ?? 0 ), $quality ),
 				'commerce_dependencies'        => self::validation_gate( 'commerce_dependencies', (int) ( $quality['commerce_dependency_failures'] ?? 0 ), $quality ),
+				'interaction_candidates'       => self::validation_gate( 'interaction_candidates', (int) ( $quality['interaction_candidate_count'] ?? 0 ), $quality ),
 				'visual_fidelity'             => array(
 					'status' => (string) ( $report['visual_fidelity']['status'] ?? 'requires_external_render_check' ),
 					'owner'  => (string) ( $report['visual_fidelity']['gate_owner'] ?? 'benchmark_harness' ),
@@ -467,6 +476,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'freeform_block_count'         => (int) ( $quality['freeform_block_count'] ?? 0 ),
 			'invalid_block_count'          => (int) ( $quality['invalid_block_count'] ?? 0 ),
 			'invalid_block_document_count' => (int) ( $quality['invalid_block_document_count'] ?? 0 ),
+			'interaction_candidate_count'  => (int) ( $quality['interaction_candidate_count'] ?? 0 ),
 			'source_document_count'        => (int) ( $source_documents['total_count'] ?? 0 ),
 			'unresolved_link_count'        => (int) ( $source_documents['unresolved_link_count'] ?? 0 ),
 			'commerce'                     => $commerce,
@@ -497,6 +507,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'generated_fallback_blocks' => 'core_html_block_count',
 			'asset_materialization'     => 'svg_materialization_failure_count',
 			'commerce_dependencies'     => 'commerce_dependency_failures',
+			'interaction_candidates'    => 'interaction_candidate_count',
 		);
 		$ref_key  = $ref_keys[ $name ] ?? $name;
 
@@ -777,6 +788,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'svg_sprite_reference_failure',
 				'commerce_dependency_failure',
 				'commerce_product_inference_unmatched',
+				'interaction_candidate',
 			),
 			true
 		);
@@ -941,6 +953,192 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
+	 * Preserve optional Blocks Engine conversion-report fields for import-report consumers.
+	 *
+	 * @param array<string,mixed> $conversion_report Native conversion report.
+	 * @return array<string,mixed>
+	 */
+	private static function conversion_report_payload( array $conversion_report ): array {
+		$diagnostics            = self::array_values_if_list( $conversion_report['diagnostics'] ?? array() );
+		$fallbacks              = self::array_values_if_list( $conversion_report['fallbacks'] ?? array() );
+		$interaction_candidates = self::array_values_if_list( $conversion_report['interaction_candidates'] ?? array() );
+
+		$payload = array(
+			'schema'                      => isset( $conversion_report['schema'] ) && is_scalar( $conversion_report['schema'] ) ? (string) $conversion_report['schema'] : 'blocks-engine/php-transformer/conversion-report/v1',
+			'status'                      => isset( $conversion_report['status'] ) && is_scalar( $conversion_report['status'] ) ? (string) $conversion_report['status'] : '',
+			'diagnostic_count'            => count( $diagnostics ),
+			'fallback_count'              => count( $fallbacks ),
+			'interaction_candidate_count' => count( $interaction_candidates ),
+		);
+
+		if ( ! empty( $diagnostics ) ) {
+			$payload['diagnostics'] = self::compact_native_report_rows( $diagnostics );
+		}
+		if ( ! empty( $fallbacks ) ) {
+			$payload['fallbacks'] = self::compact_native_report_rows( $fallbacks );
+		}
+		if ( ! empty( $interaction_candidates ) ) {
+			$payload['interaction_candidates'] = self::compact_native_report_rows( $interaction_candidates );
+		}
+
+		return $payload;
+	}
+
+	/**
+	 * Reflect optional native conversion-report quality metadata without changing import behavior.
+	 *
+	 * @param array<string,mixed> $report            Import report.
+	 * @param array<string,mixed> $conversion_report Native conversion report.
+	 * @return void
+	 */
+	private static function record_conversion_report_quality_metadata( array &$report, array $conversion_report ): void {
+		$fallbacks              = self::array_values_if_list( $conversion_report['fallbacks'] ?? array() );
+		$interaction_candidates = self::array_values_if_list( $conversion_report['interaction_candidates'] ?? array() );
+
+		$report['quality']['interaction_candidate_count'] = (int) ( $report['quality']['interaction_candidate_count'] ?? 0 ) + count( $interaction_candidates );
+		$report['quality']['fallback_count']              = (int) ( $report['quality']['fallback_count'] ?? 0 ) + count( $fallbacks );
+
+		foreach ( $fallbacks as $fallback ) {
+			if ( ! is_array( $fallback ) ) {
+				continue;
+			}
+
+			$diagnostic = self::diagnostic_from_conversion_report_fallback( $fallback );
+			if ( ! empty( $diagnostic ) ) {
+				$report['diagnostics'][] = $diagnostic;
+			}
+		}
+
+		foreach ( $interaction_candidates as $candidate ) {
+			if ( ! is_array( $candidate ) ) {
+				continue;
+			}
+
+			$diagnostic = self::diagnostic_from_interaction_candidate( $candidate );
+			if ( ! empty( $diagnostic ) ) {
+				$report['diagnostics'][] = $diagnostic;
+			}
+		}
+	}
+
+	/**
+	 * Normalize a native fallback row into SSI's diagnostic shape when useful fields exist.
+	 *
+	 * @param array<string,mixed> $fallback Native fallback row.
+	 * @return array<string,mixed>
+	 */
+	private static function diagnostic_from_conversion_report_fallback( array $fallback ): array {
+		$source = self::first_scalar( $fallback, array( 'source_path', 'source', 'path' ) );
+		$reason = self::first_scalar( $fallback, array( 'reason_code', 'reason', 'code' ) );
+		if ( '' === $source && '' === $reason ) {
+			return array();
+		}
+
+		$diagnostic = array(
+			'type'      => 'unsupported_html_fallback',
+			'source'    => $source,
+			'reason'    => '' !== $reason ? $reason : 'native_conversion_report_fallback',
+			'engine'    => 'blocks-engine/php-transformer',
+			'stage'     => 'block_conversion',
+			'converter' => 'blocks-engine/php-transformer',
+		);
+
+		foreach ( array( 'source_path', 'selector', 'tag_name', 'block_name', 'block_path', 'message', 'excerpt', 'source_html_preview', 'emitted_block_preview', 'html_excerpt' ) as $field ) {
+			if ( isset( $fallback[ $field ] ) && is_scalar( $fallback[ $field ] ) && '' !== trim( (string) $fallback[ $field ] ) ) {
+				$diagnostic[ $field ] = (string) $fallback[ $field ];
+			}
+		}
+
+		return $diagnostic;
+	}
+
+	/**
+	 * Normalize a native interaction candidate into a report-only diagnostic.
+	 *
+	 * @param array<string,mixed> $candidate Native interaction candidate row.
+	 * @return array<string,mixed>
+	 */
+	private static function diagnostic_from_interaction_candidate( array $candidate ): array {
+		$source = self::first_scalar( $candidate, array( 'source_path', 'source', 'path' ) );
+		if ( '' === $source && '' === self::first_scalar( $candidate, array( 'selector', 'kind', 'type' ) ) ) {
+			return array();
+		}
+
+		$diagnostic = array(
+			'type'      => 'interaction_candidate',
+			'source'    => $source,
+			'reason'    => 'native_conversion_report_interaction_candidate',
+			'engine'    => 'blocks-engine/php-transformer',
+			'stage'     => 'interaction_detection',
+			'converter' => 'blocks-engine/php-transformer',
+		);
+
+		foreach ( array( 'source_path', 'selector', 'tag_name', 'message', 'excerpt', 'source_html_preview', 'html_excerpt', 'kind' ) as $field ) {
+			if ( isset( $candidate[ $field ] ) && is_scalar( $candidate[ $field ] ) && '' !== trim( (string) $candidate[ $field ] ) ) {
+				$diagnostic[ $field ] = (string) $candidate[ $field ];
+			}
+		}
+
+		return $diagnostic;
+	}
+
+	/**
+	 * Compact native report rows while preserving scalar diagnostic metadata.
+	 *
+	 * @param array<int,mixed> $rows Native report rows.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function compact_native_report_rows( array $rows ): array {
+		$fields  = array( 'type', 'kind', 'code', 'severity', 'source', 'source_path', 'path', 'selector', 'tag_name', 'block_name', 'block_path', 'reason', 'reason_code', 'message', 'excerpt', 'source_html_preview', 'emitted_block_preview', 'html_excerpt' );
+		$compact = array();
+		foreach ( array_slice( $rows, 0, 50 ) as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$entry = array();
+			foreach ( $fields as $field ) {
+				if ( isset( $row[ $field ] ) && is_scalar( $row[ $field ] ) && '' !== trim( (string) $row[ $field ] ) ) {
+					$entry[ $field ] = (string) $row[ $field ];
+				}
+			}
+
+			if ( ! empty( $entry ) ) {
+				$compact[] = $entry;
+			}
+		}
+
+		return $compact;
+	}
+
+	/**
+	 * Return array values only for list-like report rows.
+	 *
+	 * @param mixed $value Candidate list.
+	 * @return array<int,mixed>
+	 */
+	private static function array_values_if_list( mixed $value ): array {
+		return is_array( $value ) ? array_values( $value ) : array();
+	}
+
+	/**
+	 * Return the first non-empty scalar from a row.
+	 *
+	 * @param array<string,mixed> $row  Source row.
+	 * @param array<int,string>   $keys Candidate keys.
+	 * @return string
+	 */
+	private static function first_scalar( array $row, array $keys ): string {
+		foreach ( $keys as $key ) {
+			if ( isset( $row[ $key ] ) && is_scalar( $row[ $key ] ) && '' !== trim( (string) $row[ $key ] ) ) {
+				return (string) $row[ $key ];
+			}
+		}
+
+		return '';
+	}
+
+	/**
 	 * Normalize import diagnostics into a stable, machine-actionable shape.
 	 *
 	 * @param array<string,mixed> $report Import report.
@@ -1013,6 +1211,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'svg_materialization_failure_count'  => array( 'svg_materialization_failure' ),
 			'svg_sprite_reference_failure_count' => array( 'svg_sprite_reference_failure' ),
 			'commerce_dependency_failures'       => array( 'commerce_dependency_failure' ),
+			'interaction_candidate_count'        => array( 'interaction_candidate' ),
 		);
 
 		$refs = array();
@@ -1150,6 +1349,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'source_region_unassigned'             => 'source_region',
 			'commerce_dependency_failure'          => 'conversion_quality',
 			'commerce_product_inference_unmatched' => 'conversion_quality',
+			'interaction_candidate'                => 'source_interaction',
 		);
 
 		return $categories[ $type ] ?? 'import_quality';
@@ -1178,6 +1378,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'source_region_unassigned'             => 'assign_or_ignore_source_region',
 			'commerce_dependency_failure'          => 'install_or_configure_dependency',
 			'commerce_product_inference_unmatched' => 'provide_structured_product_data',
+			'interaction_candidate'                => 'inspect_interactive_behavior',
 		);
 
 		return $classes[ $type ] ?? 'inspect_import_diagnostic';
@@ -1191,7 +1392,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 */
 	private static function diagnostic_context( array $diagnostic ): array {
 		$context = array();
-		foreach ( array( 'href', 'tag', 'tag_name', 'block_name', 'block_path', 'excerpt', 'html_excerpt', 'source_html_preview', 'error_message' ) as $key ) {
+		foreach ( array( 'href', 'tag', 'tag_name', 'block_name', 'block_path', 'excerpt', 'html_excerpt', 'source_html_preview', 'error_message', 'kind' ) as $key ) {
 			if ( array_key_exists( $key, $diagnostic ) && null !== $diagnostic[ $key ] && '' !== $diagnostic[ $key ] ) {
 				$context[ $key ] = $diagnostic[ $key ];
 			}

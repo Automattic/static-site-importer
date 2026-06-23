@@ -129,8 +129,12 @@ class Static_Site_Importer_Transformer_Adapter {
 			'diagnostics'         => isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array(),
 			'provenance'          => isset( $result['provenance'] ) && is_array( $result['provenance'] ) ? $result['provenance'] : array(),
 		);
-		if ( isset( $result['conversion_report'] ) && is_array( $result['conversion_report'] ) ) {
-			$compiled['conversion_report'] = $result['conversion_report'];
+		$conversion_report = isset( $source_reports['conversion_report'] ) && is_array( $source_reports['conversion_report'] ) ? $source_reports['conversion_report'] : array();
+		if ( empty( $conversion_report ) && isset( $result['conversion_report'] ) && is_array( $result['conversion_report'] ) ) {
+			$conversion_report = $result['conversion_report'];
+		}
+		if ( ! empty( $conversion_report ) ) {
+			$compiled['conversion_report'] = $conversion_report;
 		}
 
 		return $compiled;
