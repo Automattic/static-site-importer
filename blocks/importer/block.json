@@ -21,6 +21,10 @@
     "defaultUrl": {
       "type": "string",
       "default": ""
+    },
+    "applyToCurrentSite": {
+      "type": "boolean",
+      "default": false
     }
   },
   "editorScript": "file:./editor.js",

@@ -28,6 +28,11 @@ class Static_Site_Importer_Page_Materializer {
 			$type   = self::page_post_type( $page );
 
 			$existing = get_page_by_path( $slug, OBJECT, $type );
+			if ( $existing instanceof WP_Post && self::is_protected_page( $existing ) ) {
+				$page_ids[ $filename ] = (int) $existing->ID;
+				continue;
+			}
+
 			$postarr  = array(
 				'post_title'   => $title,
 				'post_name'    => $slug,
@@ -94,6 +99,10 @@ class Static_Site_Importer_Page_Materializer {
 	public static function write_page_contents( array $pages, array $page_ids, array $contents ) {
 		foreach ( array_keys( $pages ) as $filename ) {
 			$page_id = $page_ids[ $filename ] ?? 0;
+			$post    = $page_id ? get_post( $page_id ) : null;
+			if ( $post instanceof WP_Post && self::is_protected_page( $post ) ) {
+				continue;
+			}
 
 			$result = wp_update_post(
 				array(
@@ -216,6 +225,43 @@ class Static_Site_Importer_Page_Materializer {
 
 		$post_type_object = get_post_type_object( $post_type );
 		return $post_type_object instanceof WP_Post_Type ? $post_type : 'page';
+	}
+
+	/**
+	 * Determine whether an existing page is protected from importer writes.
+	 *
+	 * The `static_site_importer_protected_pages` option accepts slugs, paths, or
+	 * numeric post IDs. The filter lets host products inject their own policy.
+	 *
+	 * @param WP_Post $post Existing WordPress post.
+	 * @return bool
+	 */
+	public static function is_protected_page( WP_Post $post ): bool {
+		$protected = get_option( 'static_site_importer_protected_pages', array() );
+		if ( is_string( $protected ) ) {
+			$protected = preg_split( '/[\s,]+/', $protected );
+		}
+		if ( ! is_array( $protected ) ) {
+			$protected = array();
+		}
+
+		$tokens = array_filter(
+			array_map(
+				static function ( $value ): string {
+					return is_scalar( $value ) ? trim( (string) $value ) : '';
+				},
+				$protected
+			),
+			static fn( string $value ): bool => '' !== $value
+		);
+
+		$path = trim( (string) get_page_uri( $post ), '/' );
+		$slug = (string) $post->post_name;
+		$id   = (string) $post->ID;
+
+		$is_protected = in_array( $id, $tokens, true ) || in_array( $slug, $tokens, true ) || in_array( $path, $tokens, true ) || in_array( '/' . $path, $tokens, true );
+
+		return (bool) apply_filters( 'static_site_importer_is_protected_page', $is_protected, $post, $tokens );
 	}
 
 	/**

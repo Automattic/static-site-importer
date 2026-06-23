@@ -51,6 +51,9 @@ function static_site_importer_rest_manage_permission() {
  */
 function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 	$params = $request->get_json_params();
+	if ( ! is_array( $params ) ) {
+		$params = $request->get_params();
+	}
 
 	$source = isset( $params['source'] ) && is_array( $params['source'] ) ? $params['source'] : array();
 	$input  = static_site_importer_rest_import_args( $params );
@@ -69,13 +72,7 @@ function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 		return $result;
 	}
 
-	return rest_ensure_response(
-		array(
-			'success'               => true,
-			'result'                => $result,
-			'import_report_summary' => isset( $result['import_report_summary'] ) && is_array( $result['import_report_summary'] ) ? $result['import_report_summary'] : array(),
-		)
-	);
+	return rest_ensure_response( $result );
 }
 
 /**
@@ -106,15 +103,42 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
 			$input['provider_args'] = $params['provider_args'];
 		}
 
-		return Static_Site_Importer_URL_Import_Runtime::import_url( $input );
+		return static_site_importer_rest_execute_import_ability( 'static-site-importer/import-url', $input, 'static_site_importer_ability_import_url' );
 	} else {
 		$artifact = static_site_importer_rest_source_artifact( $source );
 		if ( is_wp_error( $artifact ) ) {
 			return $artifact;
 		}
 
-		return Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $input );
+		$input['artifact'] = $artifact;
+
+		return static_site_importer_rest_execute_import_ability( 'static-site-importer/import-website-artifact', $input, 'static_site_importer_ability_import_website_artifact' );
 	}
+}
+
+/**
+ * Execute a mutating SSI import through the shared ability boundary.
+ *
+ * @param string $ability_name Ability name.
+ * @param array<string,mixed> $input Ability input.
+ * @param callable-string $fallback_callback Local callback for non-Abilities test/runtime contexts.
+ * @return array<string,mixed>|WP_Error
+ */
+function static_site_importer_rest_execute_import_ability( string $ability_name, array $input, string $fallback_callback ) {
+	if ( function_exists( 'wp_get_ability' ) ) {
+		$ability = wp_get_ability( $ability_name );
+		if ( is_object( $ability ) && is_callable( array( $ability, 'execute' ) ) ) {
+			$result = $ability->execute( $input );
+
+			return $result;
+		}
+	}
+
+	if ( is_callable( $fallback_callback ) ) {
+		return call_user_func( $fallback_callback, $input );
+	}
+
+	return new WP_Error( 'static_site_importer_ability_unavailable', sprintf( 'Static Site Importer ability is unavailable: %s.', $ability_name ), array( 'status' => 500 ) );
 }
 
 /**

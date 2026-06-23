@@ -134,6 +134,7 @@
 			const files = root.querySelector( '[data-static-site-importer-source-files]' );
 			const archive = root.querySelector( '[data-static-site-importer-source-archive]' );
 			const provider = root.getAttribute( 'data-static-site-importer-provider' ) || '';
+			const applyToCurrentSite = root.getAttribute( 'data-static-site-importer-apply-to-current-site' ) === '1';
 			const source = {
 				url: sourceUrl ? sourceUrl.value : '',
 				html: html ? html.value : '',
@@ -146,7 +147,7 @@
 				return;
 			}
 
-			showStatus( root, 'Creating WordPress preview...' );
+			showStatus( root, applyToCurrentSite ? 'Importing to this site...' : 'Creating WordPress preview...' );
 			submit.disabled = true;
 
 			try {
@@ -161,12 +162,17 @@
 					body: JSON.stringify( {
 						provider,
 						source,
+						apply_to_current_site: applyToCurrentSite,
+						activate: applyToCurrentSite,
+						overwrite: applyToCurrentSite,
 					} ),
 				} );
 				const report = await response.json();
 				setReport( root, report );
 				setPreviewLink( root, report );
-				if ( response.ok && previewUrl( report ) ) {
+				if ( response.ok && applyToCurrentSite && report.success ) {
+					showStatus( root, 'Import complete.' );
+				} else if ( response.ok && previewUrl( report ) ) {
 					showStatus( root, 'Preview ready.' );
 				} else if ( response.ok && report.preview && report.preview.status === 'unavailable' ) {
 					showStatus( root, report.preview.message || 'Preview unavailable: WP Codebox did not return a preview URL or Playground blueprint URL.' );

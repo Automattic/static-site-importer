@@ -34,10 +34,12 @@ function static_site_importer_render_block( array $attributes = array() ): strin
 	$intro       = isset( $attributes['intro'] ) && '' !== trim( (string) $attributes['intro'] ) ? (string) $attributes['intro'] : __( 'Paste a URL, upload site files, or add HTML. Static Site Importer will compile it into a block theme.', 'static-site-importer' );
 	$provider    = isset( $attributes['provider'] ) ? sanitize_key( (string) $attributes['provider'] ) : '';
 	$default_url = isset( $attributes['defaultUrl'] ) ? esc_url_raw( (string) $attributes['defaultUrl'] ) : '';
+	$apply       = ! empty( $attributes['applyToCurrentSite'] );
+	$button_text = $apply ? __( 'Import to this site', 'static-site-importer' ) : __( 'Create preview', 'static-site-importer' );
 
 	ob_start();
 	?>
-	<div class="ssi-importer" data-static-site-importer data-static-site-importer-rest-url="<?php echo esc_url( rest_url( 'static-site-importer/v1/imports' ) ); ?>" data-static-site-importer-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>" data-static-site-importer-provider="<?php echo esc_attr( $provider ); ?>">
+	<div class="ssi-importer" data-static-site-importer data-static-site-importer-rest-url="<?php echo esc_url( rest_url( 'static-site-importer/v1/imports' ) ); ?>" data-static-site-importer-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>" data-static-site-importer-provider="<?php echo esc_attr( $provider ); ?>" data-static-site-importer-apply-to-current-site="<?php echo $apply ? '1' : '0'; ?>">
 		<section class="ssi-importer__panel" aria-labelledby="ssi-importer-title">
 			<p class="ssi-importer__eyebrow"><?php esc_html_e( 'Static Site Importer', 'static-site-importer' ); ?></p>
 			<h1 id="ssi-importer-title" class="ssi-importer__title"><?php echo esc_html( $title ); ?></h1>
@@ -64,7 +66,7 @@ function static_site_importer_render_block( array $attributes = array() ): strin
 					<textarea name="ssi_html" rows="6" data-static-site-importer-source-html></textarea>
 				</label>
 
-				<button type="button" class="ssi-importer__submit" data-static-site-importer-submit><?php esc_html_e( 'Create preview', 'static-site-importer' ); ?></button>
+				<button type="button" class="ssi-importer__submit" data-static-site-importer-submit><?php echo esc_html( $button_text ); ?></button>
 			</form>
 		</section>
 

@@ -111,6 +111,24 @@ if ( ! function_exists( 'apply_filters' ) ) {
 	}
 }
 
+if ( ! function_exists( 'doing_action' ) ) {
+	function doing_action( ?string $hook = null ): bool {
+		return false;
+	}
+}
+
+if ( ! function_exists( 'did_action' ) ) {
+	function did_action( string $hook ): int {
+		return 0;
+	}
+}
+
+if ( ! function_exists( 'add_action' ) ) {
+	function add_action( string $hook, callable|string|array $callback, int $priority = 10, int $accepted_args = 1 ): bool {
+		return true;
+	}
+}
+
 if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_Error {
 		private string $code;
@@ -147,6 +165,18 @@ if ( ! class_exists( 'WP_REST_Request' ) ) {
 
 		public function get_json_params(): array {
 			return $this->params;
+		}
+	}
+}
+
+if ( ! class_exists( 'WP_Post' ) ) {
+	class WP_Post {
+		public int $ID;
+		public string $post_name;
+
+		public function __construct( int $id, string $post_name ) {
+			$this->ID        = $id;
+			$this->post_name = $post_name;
 		}
 	}
 }
@@ -214,8 +244,22 @@ if ( ! function_exists( 'wp_create_nonce' ) ) {
 	}
 }
 
+if ( ! function_exists( 'get_option' ) ) {
+	function get_option( string $name, $default = false ) {
+		return $GLOBALS['ssi_test_options'][ $name ] ?? $default;
+	}
+}
+
+if ( ! function_exists( 'get_page_uri' ) ) {
+	function get_page_uri( WP_Post $post ): string {
+		return 'tools/' . $post->post_name;
+	}
+}
+
 require_once dirname( __DIR__ ) . '/includes/block.php';
+require_once dirname( __DIR__ ) . '/includes/abilities.php';
 require_once dirname( __DIR__ ) . '/includes/rest.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-page-materializer.php';
 
 $plugin_source = file_get_contents( dirname( __DIR__ ) . '/static-site-importer.php' );
 $assert( is_string( $plugin_source ), 'plugin-source-readable' );
@@ -228,6 +272,7 @@ $assert( is_array( $metadata ), 'block-json-decodes' );
 $assert( 'static-site-importer/importer' === ( $metadata['name'] ?? '' ), 'block-name-is-product-importer' );
 $assert( 'Static Site Importer' === ( $metadata['title'] ?? '' ), 'block-title-is-product-name' );
 $assert( isset( $metadata['viewScript'] ), 'block-has-frontend-script' );
+$assert( false === ( $metadata['attributes']['applyToCurrentSite']['default'] ?? null ), 'block-defaults-to-preview-mode' );
 
 static_site_importer_register_block();
 
@@ -238,16 +283,18 @@ $assert( 'static_site_importer_render_block' === ( $registered['args']['render_c
 
 $html = static_site_importer_render_block(
 	array(
-		'title'      => 'Import your site',
-		'intro'      => 'Upload files, paste HTML, or start from a URL.',
-		'provider'   => 'Private Provider!',
-		'defaultUrl' => 'https://example.com/source',
+		'title'              => 'Import your site',
+		'intro'              => 'Upload files, paste HTML, or start from a URL.',
+		'provider'           => 'Private Provider!',
+		'defaultUrl'         => 'https://example.com/source',
+		'applyToCurrentSite' => true,
 	)
 );
 
 $assert( str_contains( $html, 'data-static-site-importer' ), 'render-has-root-hook' );
 $assert( str_contains( $html, 'data-static-site-importer-rest-url="https://example.test/wp-json/static-site-importer/v1/imports"' ), 'render-exposes-import-rest-route' );
 $assert( str_contains( $html, 'data-static-site-importer-provider="privateprovider"' ), 'render-sanitizes-provider' );
+$assert( str_contains( $html, 'data-static-site-importer-apply-to-current-site="1"' ), 'render-exposes-current-site-apply-flag' );
 $assert( str_contains( $html, 'data-static-site-importer-source-url' ), 'render-has-url-input-hook' );
 $assert( str_contains( $html, 'data-static-site-importer-source-files' ), 'render-has-file-input-hook' );
 $assert( str_contains( $html, 'webkitdirectory' ), 'render-has-directory-upload-affordance' );
@@ -264,8 +311,9 @@ $view_js = file_get_contents( dirname( __DIR__ ) . '/blocks/importer/view.js' );
 $assert( is_string( $view_js ), 'view-js-readable' );
 $assert( str_contains( $view_js, 'webkitRelativePath' ), 'view-preserves-directory-relative-paths' );
 $assert( str_contains( $view_js, 'archive: await buildArchive' ), 'view-sends-zip-as-archive-payload' );
-$assert( ! str_contains( $view_js, 'activate: true' ), 'view-does-not-activate-current-site' );
-$assert( ! str_contains( $view_js, 'overwrite: true' ), 'view-does-not-overwrite-current-site' );
+$assert( str_contains( $view_js, 'apply_to_current_site: applyToCurrentSite' ), 'view-sends-current-site-apply-flag' );
+$assert( str_contains( $view_js, 'activate: applyToCurrentSite' ), 'view-activates-current-site-imports' );
+$assert( str_contains( $view_js, 'overwrite: applyToCurrentSite' ), 'view-overwrites-current-site-imports' );
 $generic_preview_message = implode( ' ', array( 'no', 'preview', 'provider', 'is', 'configured' ) );
 $assert( ! str_contains( $view_js, $generic_preview_message ), 'view-does-not-reference-generic-preview-message' );
 $assert( str_contains( $view_js, 'Open WordPress preview' ) || str_contains( $html, 'Open WordPress preview' ), 'view-or-render-has-preview-link-label' );
@@ -357,6 +405,13 @@ $apply_response = static_site_importer_rest_create_import(
 );
 $assert( true === ( $apply_response['success'] ?? null ), 'rest-current-site-apply-is-explicitly-available' );
 $assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['activate'] ?? null ), 'rest-current-site-apply-preserves-activate' );
+$assert( isset( $apply_response['result'] ), 'rest-current-site-apply-returns-ability-envelope' );
+
+$GLOBALS['ssi_test_options']['static_site_importer_protected_pages'] = array( 'import', 'tools/settings', '42' );
+$assert( Static_Site_Importer_Page_Materializer::is_protected_page( new WP_Post( 7, 'import' ) ), 'protected-page-matches-slug' );
+$assert( Static_Site_Importer_Page_Materializer::is_protected_page( new WP_Post( 8, 'settings' ) ), 'protected-page-matches-path' );
+$assert( Static_Site_Importer_Page_Materializer::is_protected_page( new WP_Post( 42, 'other' ) ), 'protected-page-matches-id' );
+$assert( ! Static_Site_Importer_Page_Materializer::is_protected_page( new WP_Post( 9, 'ordinary' ) ), 'ordinary-page-is-not-protected' );
 
 if ( class_exists( 'ZipArchive' ) ) {
 	$zip_path = tempnam( sys_get_temp_dir(), 'ssi-test-' );
