@@ -162,7 +162,7 @@ class Static_Site_Importer_Source_Page {
 		}
 
 		$title       = $metadata['title'] ?? '';
-		$body_format = isset( $metadata['body_format'] ) && '' !== $metadata['body_format'] ? $metadata['body_format'] : 'blocks';
+		$body_format = 'blocks';
 		$document    = new Static_Site_Importer_Document( '<!doctype html><html><head><title>' . esc_html( $title ) . '</title></head><body><main>' . $content . '</main></body></html>' );
 
 		return new self( $source_key, $source_key, 'materialization_plan_page', $document, $content, $body_format, $metadata );

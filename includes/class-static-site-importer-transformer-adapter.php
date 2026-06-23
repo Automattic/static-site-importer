@@ -65,13 +65,17 @@ class Static_Site_Importer_Transformer_Adapter {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	private function compiled_result_from_transformer_contract( array $result ) {
-		$compiled = $this->compiled_result_from_native_transformer_contract( $result );
+		$view     = $this->materialization_view_from_result( $result );
+		$compiled = ! empty( $view ) ? $this->compiled_result_from_materialization_view( $view ) : $this->compiled_result_from_native_transformer_contract( $result );
 		if ( is_wp_error( $compiled ) ) {
 			return $compiled;
 		}
 
-		$source_reports       = isset( $result['source_reports'] ) && is_array( $result['source_reports'] ) ? $result['source_reports'] : array();
-		$materialization_plan = isset( $source_reports['materialization_plan'] ) && is_array( $source_reports['materialization_plan'] ) ? $source_reports['materialization_plan'] : array();
+		$materialization_plan = ! empty( $view['materialization_plan'] ) && is_array( $view['materialization_plan'] ) ? $view['materialization_plan'] : array();
+		if ( empty( $materialization_plan ) ) {
+			$source_reports       = isset( $result['source_reports'] ) && is_array( $result['source_reports'] ) ? $result['source_reports'] : array();
+			$materialization_plan = isset( $source_reports['materialization_plan'] ) && is_array( $source_reports['materialization_plan'] ) ? $source_reports['materialization_plan'] : array();
+		}
 		$products             = $this->products_manifest_from_transformer_reports( $result, $materialization_plan );
 		$artifacts            = isset( $compiled['artifacts'] ) && is_array( $compiled['artifacts'] ) ? $compiled['artifacts'] : array();
 		$blocks               = isset( $artifacts['blocks'] ) && is_array( $artifacts['blocks'] ) ? $artifacts['blocks'] : array();
@@ -80,10 +84,12 @@ class Static_Site_Importer_Transformer_Adapter {
 			$artifacts['block_tree'] = $this->block_tree_report( $blocks );
 		}
 
-		$artifacts['document_metadata'] = $this->document_metadata_from_compiled_site( $materialization_plan );
-		$artifacts['documents']         = isset( $result['documents'] ) && is_array( $result['documents'] ) ? $result['documents'] : array();
-		$artifacts['files']             = $this->artifact_files_from_site_report( $materialization_plan, $result );
+		$compiled_site_metadata_source  = ! empty( $view['compiled_site'] ) && is_array( $view['compiled_site'] ) ? $view['compiled_site'] : $materialization_plan;
+		$artifacts['document_metadata'] = $this->document_metadata_from_compiled_site( $compiled_site_metadata_source );
+		$artifacts['documents']         = ! empty( $view['documents'] ) && is_array( $view['documents'] ) ? $view['documents'] : ( isset( $result['documents'] ) && is_array( $result['documents'] ) ? $result['documents'] : array() );
+		$artifacts['files']             = $this->artifact_files_from_site_report( $materialization_plan, ! empty( $view ) ? $view : $result );
 		$artifacts['site']              = $materialization_plan;
+		$artifacts['compiled_site']     = ! empty( $view['compiled_site'] ) && is_array( $view['compiled_site'] ) ? $view['compiled_site'] : array();
 		$artifacts['template_parts']    = isset( $materialization_plan['template_parts'] ) && is_array( $materialization_plan['template_parts'] ) ? $materialization_plan['template_parts'] : array();
 		$artifacts['visual_repair']     = isset( $materialization_plan['visual_repair'] ) && is_array( $materialization_plan['visual_repair'] ) ? $materialization_plan['visual_repair'] : array();
 
@@ -91,6 +97,63 @@ class Static_Site_Importer_Transformer_Adapter {
 
 		if ( ! empty( $products ) ) {
 			$compiled['products_manifest'] = $products;
+		}
+
+		return $compiled;
+	}
+
+	/**
+	 * Project a v0.1.1 canonical transformer result through Blocks Engine's materialization view.
+	 *
+	 * @param array<string,mixed> $result TransformerResult::toArray() output.
+	 * @return array<string,mixed>
+	 */
+	private function materialization_view_from_result( array $result ): array {
+		$class = 'Automattic\\BlocksEngine\\PhpTransformer\\StaticSite\\MaterializationView';
+		if ( ! class_exists( $class ) ) {
+			return array();
+		}
+
+		try {
+			$view = ( new $class() )->fromResult( $result );
+		} catch ( Throwable ) {
+			return array();
+		}
+
+		return is_array( $view ) ? $view : array();
+	}
+
+	/**
+	 * Build SSI's compiler envelope from Blocks Engine's materialization view.
+	 *
+	 * @param array<string,mixed> $view MaterializationView::fromResult() output.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private function compiled_result_from_materialization_view( array $view ) {
+		$materialization_plan = isset( $view['materialization_plan'] ) && is_array( $view['materialization_plan'] ) ? $view['materialization_plan'] : array();
+		if ( 'blocks-engine/php-transformer/materialization-plan/v1' !== (string) ( $materialization_plan['schema'] ?? '' ) ) {
+			return new WP_Error( 'static_site_importer_transformer_missing_materialization_plan', 'Blocks Engine php-transformer compile results must include source_reports.materialization_plan.' );
+		}
+
+		$compiled = array(
+			'schema'              => isset( $view['result_schema'] ) && is_scalar( $view['result_schema'] ) ? (string) $view['result_schema'] : self::TRANSFORMER_RESULT_SCHEMA,
+			'status'              => isset( $view['status'] ) && is_scalar( $view['status'] ) ? (string) $view['status'] : '',
+			'input'               => isset( $view['artifact_summary'] ) && is_array( $view['artifact_summary'] ) ? $view['artifact_summary'] : array(),
+			'artifact_summary'    => isset( $view['artifact_summary'] ) && is_array( $view['artifact_summary'] ) ? $view['artifact_summary'] : array(),
+			'artifacts'           => array(
+				'block_markup'  => isset( $view['block_markup'] ) && is_scalar( $view['block_markup'] ) ? (string) $view['block_markup'] : '',
+				'blocks'        => isset( $view['blocks'] ) && is_array( $view['blocks'] ) ? $view['blocks'] : array(),
+				'block_types'   => isset( $view['block_types'] ) && is_array( $view['block_types'] ) ? $view['block_types'] : array(),
+				'components'    => isset( $view['components'] ) && is_array( $view['components'] ) ? $view['components'] : array(),
+				'files'         => isset( $view['assets'] ) && is_array( $view['assets'] ) ? $view['assets'] : array(),
+				'compiled_site' => isset( $view['compiled_site'] ) && is_array( $view['compiled_site'] ) ? $view['compiled_site'] : array(),
+			),
+			'diagnostics'         => isset( $view['diagnostics'] ) && is_array( $view['diagnostics'] ) ? $view['diagnostics'] : array(),
+			'provenance'          => isset( $view['provenance'] ) && is_array( $view['provenance'] ) ? $view['provenance'] : array(),
+		);
+
+		if ( isset( $view['conversion_report'] ) && is_array( $view['conversion_report'] ) && ! empty( $view['conversion_report'] ) ) {
+			$compiled['conversion_report'] = $view['conversion_report'];
 		}
 
 		return $compiled;

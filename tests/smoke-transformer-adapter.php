@@ -220,6 +220,9 @@ namespace {
 		}
 	}
 
+	if ( is_readable( dirname( __DIR__ ) . '/vendor/autoload.php' ) ) {
+		require_once dirname( __DIR__ ) . '/vendor/autoload.php';
+	}
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-transformer-adapter.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diagnostics-adapter.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
@@ -317,6 +320,92 @@ namespace {
 	$assert( ! is_wp_error( $tagged_dependency_compiled ), 'tagged-dependency-report-compile-succeeds' );
 	$assert( '<!-- wp:paragraph --><p>Tagged dependency report</p><!-- /wp:paragraph -->' === ( $tagged_dependency_compiled['conversion_report']['serialized_blocks'] ?? '' ), 'top-level-conversion-report-remains-compatible' );
 	$assert( 'tagged-dependency-top-level' === ( $tagged_dependency_compiled['conversion_report']['fallbacks'][0]['source'] ?? '' ), 'top-level-conversion-report-fallbacks-preserved' );
+
+	$GLOBALS['ssi_transformer_adapter_result_override'] = array(
+		'schema'            => 'blocks-engine/php-transformer/result/v1',
+		'status'            => 'success',
+		'components'        => array( array( 'name' => 'accordion' ) ),
+		'block_types'       => array( array( 'name' => 'core/details' ) ),
+		'source_reports'    => array(
+			'artifact'              => array(
+				'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
+				'entry_path' => 'website/index.html',
+			),
+			'compiled_site'        => array(
+				'schema'     => 'blocks-engine/php-transformer/compiled-site/v1',
+				'entry_path' => 'website/index.html',
+			),
+			'materialization_plan' => array(
+				'schema'                   => 'blocks-engine/php-transformer/materialization-plan/v1',
+				'entry_path'               => 'website/index.html',
+				'pages'                    => array(
+					array(
+						'source_path'  => 'website/index.html',
+						'slug'         => 'home-view',
+						'title'        => 'Home View',
+						'post_type'    => 'page',
+						'entrypoint'   => true,
+						'block_markup' => '<!-- wp:details --><details class="wp-block-details"><summary>Question</summary><p>Answer</p></details><!-- /wp:details -->',
+					),
+				),
+				'routes'                   => array(),
+				'navigation_links'         => array(),
+				'menus'                    => array(),
+				'template_parts'           => array(),
+				'template_part_writes'     => array(),
+				'assets'                   => array(
+					array(
+						'path'    => 'assets/view.css',
+						'role'    => 'stylesheet',
+						'kind'    => 'css',
+						'content' => '.view{display:block}',
+					),
+				),
+				'theme'                    => array(),
+				'asset_rewrite_candidates' => array(),
+				'rewrite_candidates'       => array(),
+				'totals'                   => array(),
+			),
+			'conversion_report'    => array(
+				'schema'                 => 'blocks-engine/php-transformer/conversion-report/v1',
+				'source_format'          => 'artifact',
+				'source_summary'         => array(),
+				'selector_summary'       => array(),
+				'fallback_diagnostics'   => array(),
+				'asset_refs'             => array(),
+				'navigation_candidates'  => array(),
+				'interaction_candidates' => array(
+					array(
+						'source_path' => 'website/index.html',
+						'selector'    => '.accordion button',
+						'kind'        => 'accordion',
+					),
+				),
+				'presentation_gaps'      => array(),
+				'metrics'                => array(),
+			),
+		),
+		'blocks'            => array( array( 'blockName' => 'core/details', 'innerBlocks' => array() ) ),
+		'serialized_blocks' => '<!-- wp:details --><details class="wp-block-details"><summary>Question</summary><p>Answer</p></details><!-- /wp:details -->',
+		'documents'         => array( array( 'source_path' => 'website/index.html', 'block_markup' => '<!-- wp:details /-->' ) ),
+		'assets'            => array( array( 'path' => 'assets/top-level-view.css', 'role' => 'stylesheet', 'kind' => 'css', 'content' => '.top{}' ) ),
+		'diagnostics'       => array( array( 'code' => 'view_diagnostic' ) ),
+		'fallbacks'         => array(),
+		'provenance'        => array( array( 'source' => 'canonical-view' ) ),
+		'coverage'          => array(),
+		'context'           => array(),
+		'metrics'           => array(),
+	);
+	$view_compiled = $adapter->compile_website_artifact( array( 'schema' => 'blocks-engine/php-transformer/site-artifact/v1' ) );
+	unset( $GLOBALS['ssi_transformer_adapter_result_override'] );
+	$assert( ! is_wp_error( $view_compiled ), 'materialization-view-compile-succeeds', is_wp_error( $view_compiled ) ? $view_compiled->get_error_message() : '' );
+	$assert( 'website/index.html' === ( $view_compiled['artifact_summary']['entry_path'] ?? '' ), 'materialization-view-exposes-artifact-summary' );
+	$assert( 'website/index.html' === ( $view_compiled['input']['entry_path'] ?? '' ), 'materialization-view-artifact-summary-drives-input' );
+	$assert( 'blocks-engine/php-transformer/compiled-site/v1' === ( $view_compiled['artifacts']['compiled_site']['schema'] ?? '' ), 'materialization-view-exposes-compiled-site' );
+	$assert( 'home-view' === ( $view_compiled['artifacts']['site']['pages'][0]['slug'] ?? '' ), 'materialization-view-materialization-plan-drives-site' );
+	$assert( 'assets/view.css' === ( $view_compiled['artifacts']['files'][0]['path'] ?? '' ), 'materialization-view-materialization-plan-assets-drive-files' );
+	$assert( 'view_diagnostic' === ( $view_compiled['diagnostics'][0]['code'] ?? '' ), 'materialization-view-exposes-diagnostics' );
+	$assert( '.accordion button' === ( $view_compiled['conversion_report']['interaction_candidates'][0]['selector'] ?? '' ), 'materialization-view-exposes-conversion-report' );
 
 	$GLOBALS['ssi_transformer_adapter_result_override'] = array(
 		'schema' => 'blocks-engine/php-transformer/result/v1',

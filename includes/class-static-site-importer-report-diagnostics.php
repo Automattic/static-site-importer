@@ -960,7 +960,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 */
 	private static function conversion_report_payload( array $conversion_report ): array {
 		$diagnostics            = self::array_values_if_list( $conversion_report['diagnostics'] ?? array() );
-		$fallbacks              = self::array_values_if_list( $conversion_report['fallbacks'] ?? array() );
+		$fallbacks              = self::conversion_report_fallback_rows( $conversion_report );
 		$interaction_candidates = self::array_values_if_list( $conversion_report['interaction_candidates'] ?? array() );
 
 		$payload = array(
@@ -975,7 +975,8 @@ class Static_Site_Importer_Report_Diagnostics {
 			$payload['diagnostics'] = self::compact_native_report_rows( $diagnostics );
 		}
 		if ( ! empty( $fallbacks ) ) {
-			$payload['fallbacks'] = self::compact_native_report_rows( $fallbacks );
+			$payload['fallbacks']             = self::compact_native_report_rows( $fallbacks );
+			$payload['fallback_diagnostics'] = self::compact_native_report_rows( $fallbacks );
 		}
 		if ( ! empty( $interaction_candidates ) ) {
 			$payload['interaction_candidates'] = self::compact_native_report_rows( $interaction_candidates );
@@ -992,7 +993,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return void
 	 */
 	private static function record_conversion_report_quality_metadata( array &$report, array $conversion_report ): void {
-		$fallbacks              = self::array_values_if_list( $conversion_report['fallbacks'] ?? array() );
+		$fallbacks              = self::conversion_report_fallback_rows( $conversion_report );
 		$interaction_candidates = self::array_values_if_list( $conversion_report['interaction_candidates'] ?? array() );
 
 		$report['quality']['interaction_candidate_count'] = (int) ( $report['quality']['interaction_candidate_count'] ?? 0 ) + count( $interaction_candidates );
@@ -1019,6 +1020,21 @@ class Static_Site_Importer_Report_Diagnostics {
 				$report['diagnostics'][] = $diagnostic;
 			}
 		}
+	}
+
+	/**
+	 * Return fallback rows from old and canonical Blocks Engine conversion-report fields.
+	 *
+	 * @param array<string,mixed> $conversion_report Native conversion report.
+	 * @return array<int,mixed>
+	 */
+	private static function conversion_report_fallback_rows( array $conversion_report ): array {
+		$fallbacks = self::array_values_if_list( $conversion_report['fallbacks'] ?? array() );
+		if ( ! empty( $fallbacks ) ) {
+			return $fallbacks;
+		}
+
+		return self::array_values_if_list( $conversion_report['fallback_diagnostics'] ?? array() );
 	}
 
 	/**

@@ -73,7 +73,7 @@ class Static_Site_Importer_Page_Materializer {
 		foreach ( $pages as $filename => $page ) {
 			$slug         = self::page_slug( $filename, $page );
 			$pattern_slug = sanitize_key( $theme_slug ) . '/page-' . $slug;
-			$content      = self::rewrite_materialized_asset_references( self::source_page_content_blocks( $page, $diagnostics ), $assets );
+			$content      = self::rewrite_materialized_asset_references( self::source_page_content_blocks( $page, $diagnostics ), $assets, $page->source_key() );
 
 			$patterns[ $filename ] = $pattern_slug;
 			$files[ $filename ]    = Static_Site_Importer_Theme_Materializer::pattern_file( self::page_title( $filename, $page ), $pattern_slug, $content );
@@ -292,9 +292,10 @@ class Static_Site_Importer_Page_Materializer {
 	 *
 	 * @param string                              $markup Serialized block markup.
 	 * @param array<string,array<string,mixed>>   $assets Materialized assets keyed by source path.
+	 * @param string                              $source_path Source page path for resolving page-relative URLs.
 	 * @return string Updated markup.
 	 */
-	private static function rewrite_materialized_asset_references( string $markup, array $assets ): string {
+	private static function rewrite_materialized_asset_references( string $markup, array $assets, string $source_path = '' ): string {
 		if ( '' === trim( $markup ) || empty( $assets ) ) {
 			return $markup;
 		}
@@ -315,16 +316,27 @@ class Static_Site_Importer_Page_Materializer {
 			return $markup;
 		}
 
+		$source_dir = dirname( self::normalize_route_path( $source_path ) );
+
 		return preg_replace_callback(
 			'/\b(src|href)=([' . "'\"" . '])([^' . "'\"" . ']*)\2/i',
-			static function ( array $matches ) use ( $replacements ): string {
+			static function ( array $matches ) use ( $replacements, $source_dir ): string {
 				$url        = html_entity_decode( (string) $matches[3], ENT_QUOTES | ENT_HTML5 );
 				$normalized = self::normalize_route_path( $url );
-				if ( '' === $normalized || ! isset( $replacements[ $normalized ] ) ) {
+				if ( '' !== $normalized && isset( $replacements[ $normalized ] ) ) {
+					return $matches[1] . '=' . $matches[2] . esc_url( $replacements[ $normalized ] ) . $matches[2];
+				}
+
+				if ( '' === $normalized || '' === $source_dir || '.' === $source_dir || str_starts_with( $url, '/' ) || preg_match( '#^[a-z][a-z0-9+.-]*:#i', $url ) ) {
 					return $matches[0];
 				}
 
-				return $matches[1] . '=' . $matches[2] . esc_url( $replacements[ $normalized ] ) . $matches[2];
+				$resolved = self::normalize_route_path( $source_dir . '/' . $url );
+				if ( '' === $resolved || ! isset( $replacements[ $resolved ] ) ) {
+					return $matches[0];
+				}
+
+				return $matches[1] . '=' . $matches[2] . esc_url( $replacements[ $resolved ] ) . $matches[2];
 			},
 			$markup
 		) ?? $markup;
