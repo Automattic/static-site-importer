@@ -59,7 +59,7 @@ Open Static Site Importer in a disposable WordPress Playground site:
 
 https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/Automattic/static-site-importer/main/docs/playground/blueprint.json
 
-The blueprint installs and activates the packaged Static Site Importer release, logs the visitor in, and opens `/import/` with the `static-site-importer/importer` block configured for `applyToCurrentSite`. Testers can upload a ZIP, choose a local site directory, paste HTML, or enter one public URL. The import runs inside the browser Playground site and activates the generated WordPress block theme there, so the imported result can be inspected without installing anything locally.
+The blueprint installs and activates the packaged Static Site Importer release, logs the visitor in, and opens `/import/` with the `static-site-importer/importer` block in preview mode. Testers can upload a ZIP, choose a local site directory, paste HTML, or enter one public URL. Static Site Importer returns a generated WordPress Playground preview URL, so the imported result can be inspected without mutating the demo page itself or installing anything locally.
 
 URL intake rules:
 

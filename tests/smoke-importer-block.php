@@ -512,7 +512,7 @@ $assert( is_array( $blueprint ), 'playground-blueprint-decodes' );
 $assert( '/import/' === ( $blueprint['landingPage'] ?? '' ), 'playground-blueprint-lands-on-import-page' );
 $blueprint_code = implode( "\n", array_map( static fn( array $step ): string => isset( $step['code'] ) ? (string) $step['code'] : '', $blueprint['steps'] ?? array() ) );
 $assert( str_contains( $blueprint_code, 'static-site-importer/importer' ), 'playground-blueprint-creates-importer-block-page' );
-$assert( str_contains( $blueprint_code, 'applyToCurrentSite' ), 'playground-blueprint-applies-imports-to-current-site' );
+$assert( ! str_contains( $blueprint_code, 'applyToCurrentSite' ), 'playground-blueprint-uses-preview-mode' );
 $assert( str_contains( $blueprint_code, 'static_site_importer_protected_pages' ), 'playground-blueprint-protects-import-page' );
 $plugin_step = $blueprint['steps'][1] ?? array();
 $assert( 'https://github.com/Automattic/static-site-importer/releases/latest/download/static-site-importer.zip' === ( $plugin_step['pluginData']['url'] ?? '' ), 'playground-blueprint-installs-packaged-release' );
