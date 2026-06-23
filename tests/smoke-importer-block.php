@@ -361,6 +361,7 @@ $assert( 'static-site-importer/importer' === ( $metadata['name'] ?? '' ), 'block
 $assert( 'Static Site Importer' === ( $metadata['title'] ?? '' ), 'block-title-is-product-name' );
 $assert( isset( $metadata['viewScript'] ), 'block-has-frontend-script' );
 $assert( false === ( $metadata['attributes']['applyToCurrentSite']['default'] ?? null ), 'block-defaults-to-preview-mode' );
+$assert( false === ( $metadata['attributes']['generateInCurrentRuntime']['default'] ?? null ), 'block-defaults-current-runtime-generation-off' );
 
 static_site_importer_register_block();
 
@@ -383,6 +384,7 @@ $assert( str_contains( $html, 'data-static-site-importer' ), 'render-has-root-ho
 $assert( str_contains( $html, 'data-static-site-importer-rest-url="https://example.test/wp-json/static-site-importer/v1/imports"' ), 'render-exposes-import-rest-route' );
 $assert( str_contains( $html, 'data-static-site-importer-provider="privateprovider"' ), 'render-sanitizes-provider' );
 $assert( str_contains( $html, 'data-static-site-importer-apply-to-current-site="1"' ), 'render-exposes-current-site-apply-flag' );
+$assert( str_contains( $html, 'data-static-site-importer-generate-in-current-runtime="0"' ), 'render-exposes-current-runtime-generation-flag' );
 $assert( ! str_contains( $html, 'data-static-site-importer-source-url' ), 'render-omits-url-input-hook' );
 $assert( str_contains( $html, 'data-static-site-importer-default-url="https://example.com/source"' ), 'render-preserves-default-url-for-programmatic-use' );
 $assert( str_contains( $html, 'data-static-site-importer-source-files' ), 'render-has-file-input-hook' );
@@ -404,6 +406,7 @@ $assert( ! str_contains( $html, 'Import status' ), 'render-omits-import-status-s
 $assert( str_contains( $html, 'Import your site' ), 'render-uses-custom-title' );
 $assert( str_contains( $html, 'https://example.com/source' ), 'render-uses-default-url' );
 $assert( str_contains( static_site_importer_render_block(), 'Generate WordPress website' ), 'render-preview-mode-button-generates-wordpress-website' );
+$assert( str_contains( static_site_importer_render_block( array( 'generateInCurrentRuntime' => true ) ), 'data-static-site-importer-generate-in-current-runtime="1"' ), 'render-can-target-current-runtime-with-generate-label' );
 
 $view_js = file_get_contents( dirname( __DIR__ ) . '/blocks/importer/view.js' );
 $assert( is_string( $view_js ), 'view-js-readable' );
@@ -411,9 +414,10 @@ $assert( str_contains( $view_js, 'webkitRelativePath' ), 'view-preserves-directo
 $assert( str_contains( $view_js, 'data-static-site-importer-source-directory' ), 'view-reads-directory-upload-input' );
 $assert( str_contains( $view_js, 'webkitGetAsEntry' ), 'view-supports-dropped-directory-entries' );
 $assert( str_contains( $view_js, 'archive: await buildArchive( uploadInputs, root )' ), 'view-sends-zip-from-combined-upload-as-archive-payload' );
-$assert( str_contains( $view_js, 'apply_to_current_site: applyToCurrentSite' ), 'view-sends-current-site-apply-flag' );
-$assert( str_contains( $view_js, 'activate: applyToCurrentSite' ), 'view-activates-current-site-imports' );
-$assert( str_contains( $view_js, 'overwrite: applyToCurrentSite' ), 'view-overwrites-current-site-imports' );
+$assert( str_contains( $view_js, 'apply_to_current_site: shouldApplyToCurrentSite' ), 'view-sends-current-runtime-apply-flag' );
+$assert( str_contains( $view_js, 'activate: shouldApplyToCurrentSite' ), 'view-activates-current-runtime-generation' );
+$assert( str_contains( $view_js, 'overwrite: shouldApplyToCurrentSite' ), 'view-overwrites-current-runtime-generation' );
+$assert( str_contains( $view_js, 'generate_in_current_runtime: generateInCurrentRuntime' ), 'view-sends-current-runtime-generation-flag' );
 $generic_preview_message = implode( ' ', array( 'no', 'preview', 'provider', 'is', 'configured' ) );
 $assert( ! str_contains( $view_js, $generic_preview_message ), 'view-does-not-reference-generic-preview-message' );
 $assert( str_contains( $view_js, 'Open WordPress preview' ) || str_contains( $html, 'Open WordPress preview' ), 'view-or-render-has-preview-link-label' );
@@ -576,6 +580,7 @@ $assert( str_contains( $blueprint_code, 'static-site-importer/importer' ), 'play
 $assert( str_contains( $blueprint_code, '"title":"Import HTML to WordPress"' ), 'playground-blueprint-uses-import-html-title' );
 $assert( str_contains( $blueprint_code, '"intro":"Upload a website or paste HTML. Static Site Importer will generate your new WordPress website."' ), 'playground-blueprint-uses-generate-website-copy' );
 $assert( str_contains( $blueprint_code, '"applyToCurrentSite":false' ), 'playground-blueprint-generates-wordpress-website' );
+$assert( str_contains( $blueprint_code, '"generateInCurrentRuntime":true' ), 'playground-blueprint-targets-current-runtime-generation' );
 $assert( str_contains( $blueprint_code, 'static_site_importer_protected_pages' ), 'playground-blueprint-protects-import-page' );
 $plugin_step = $blueprint['steps'][1] ?? array();
 $assert( 'https://github.com/Automattic/static-site-importer/releases/latest/download/static-site-importer.zip' === ( $plugin_step['pluginData']['url'] ?? '' ), 'playground-blueprint-installs-packaged-release' );
