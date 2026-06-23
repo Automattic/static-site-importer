@@ -463,8 +463,8 @@ $preview_response = static_site_importer_rest_create_import(
 $assert( true === ( $preview_response['success'] ?? null ), 'rest-preview-codebox-result-succeeds' );
 $assert( 'https://preview.example.test/ssi' === ( $preview_response['preview']['url'] ?? '' ), 'rest-preview-contract-exposes-codebox-preview-url' );
 $assert( isset( $preview_response['preview']['playground']['blueprint_url'] ), 'rest-preview-contract-exposes-playground-blueprint-url' );
-$assert( 'ability' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['type'] ?? '' ), 'rest-preview-codebox-invokes-ssi-import-ability-type' );
-$assert( 'static-site-importer/import-website-artifact' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['name'] ?? '' ), 'rest-preview-codebox-invokes-ssi-import-ability' );
+$assert( 'function' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['type'] ?? '' ), 'rest-preview-codebox-invokes-ssi-import-function-type' );
+$assert( 'static_site_importer_ability_import_website_artifact' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['name'] ?? '' ), 'rest-preview-codebox-invokes-ssi-import-function' );
 $assert( true === ( WP_Codebox_Abilities::$last_input['include_raw_browser_session'] ?? null ), 'rest-preview-codebox-requests-raw-session-for-blueprint-extraction' );
 $assert( true === ( WP_Codebox_Abilities::$last_input['runtime']['prepared_runtime']['enabled'] ?? null ), 'rest-preview-codebox-enables-prepared-runtime-for-blueprint-ref' );
 $assert( 'static-site-importer-preview' === ( WP_Codebox_Abilities::$last_input['runtime']['prepared_runtime']['cache_key'] ?? '' ), 'rest-preview-codebox-uses-stable-prepared-runtime-cache-key' );
@@ -689,8 +689,8 @@ $assert( 'created' === ( $figma_response['status'] ?? '' ), 'figma-rest-response
 $assert( str_starts_with( $figma_response['open_url'] ?? '', 'https://playground.wordpress.net/?blueprint-url=' ), 'figma-rest-response-open-url-is-playground-blueprint' );
 $assert( isset( $figma_response['preview_session']['playground']['blueprint_url'] ), 'figma-rest-response-exposes-playground-blueprint-url' );
 $assert( array() === Static_Site_Importer_Theme_Generator::$last_artifact, 'figma-rest-preview-does-not-apply-to-current-site' );
-$assert( 'ability' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['type'] ?? '' ), 'figma-rest-preview-invokes-ssi-import-ability-type' );
-$assert( 'static-site-importer/import-website-artifact' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['name'] ?? '' ), 'figma-rest-preview-invokes-ssi-import-ability' );
+$assert( 'function' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['type'] ?? '' ), 'figma-rest-preview-invokes-ssi-import-function-type' );
+$assert( 'static_site_importer_ability_import_website_artifact' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['name'] ?? '' ), 'figma-rest-preview-invokes-ssi-import-function' );
 $assert( 'website/index.html' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['input']['artifact']['entrypoint'] ?? '' ), 'figma-artifact-entrypoint-normalized' );
 $assert( 'website/assets/styles.css' === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['input']['artifact']['files'][1]['path'] ?? '' ), 'figma-artifact-file-path-normalized' );
 $assert( true === ( WP_Codebox_Abilities::$last_input['browser_runner']['invocation']['input']['activate'] ?? null ), 'figma-preview-defaults-to-activate-in-playground' );

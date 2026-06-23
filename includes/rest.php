@@ -519,8 +519,8 @@ function static_site_importer_rest_codebox_preview_input( array $request, array 
 			'task_path'     => '/tmp/static-site-importer-preview-request.json',
 			'result_path'   => '/tmp/static-site-importer-preview-result.json',
 			'invocation'    => array(
-				'type'  => 'ability',
-				'name'  => ! empty( $artifact ) ? 'static-site-importer/import-website-artifact' : 'static-site-importer/import-url',
+				'type'  => 'function',
+				'name'  => ! empty( $artifact ) ? 'static_site_importer_ability_import_website_artifact' : 'static_site_importer_ability_import_url',
 				'input' => array_filter(
 					array(
 						'artifact' => $artifact,
