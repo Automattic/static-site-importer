@@ -34,20 +34,93 @@
 		return file.webkitRelativePath || file.name || 'upload';
 	};
 
-	const selectedInputFiles = function ( inputs ) {
-		return Array.prototype.slice.call( inputs || [] ).flatMap( function ( input ) {
-			return input && input.files ? Array.prototype.slice.call( input.files ) : [];
+	const droppedFilesByRoot = new WeakMap();
+
+	const selectedInputFiles = function ( inputs, root ) {
+		const inputFiles = Array.prototype.slice.call( inputs || [] ).flatMap( function ( input ) {
+			return input && input.files ? Array.prototype.slice.call( input.files ).map( function ( file ) {
+				return { file, path: uploadedFilePath( file ) };
+			} ) : [];
+		} );
+		const droppedFiles = root ? droppedFilesByRoot.get( root ) || [] : [];
+		return inputFiles.concat( droppedFiles );
+	};
+
+	const readDirectoryEntries = function ( reader ) {
+		return new Promise( function ( resolve, reject ) {
+			const entries = [];
+			const readBatch = function () {
+				reader.readEntries( function ( batch ) {
+					if ( ! batch.length ) {
+						resolve( entries );
+						return;
+					}
+					entries.push.apply( entries, batch );
+					readBatch();
+				}, reject );
+			};
+			readBatch();
 		} );
 	};
 
-	const buildFiles = async function ( inputs ) {
-		const selectedFiles = selectedInputFiles( inputs );
-		const files = selectedFiles.filter( function ( file ) {
-			return ! /\.zip$/i.test( file.name || '' );
+	const fileFromEntry = function ( entry ) {
+		return new Promise( function ( resolve, reject ) {
+			entry.file( resolve, reject );
 		} );
-		return Promise.all( files.map( async function ( file ) {
-			const path = uploadedFilePath( file );
-			const record = {
+	};
+
+	const filesFromEntry = async function ( entry ) {
+		if ( entry.isFile ) {
+			const file = await fileFromEntry( entry );
+			return [ { file, path: ( entry.fullPath || file.name || 'upload' ).replace( /^\//, '' ) } ];
+		}
+
+		if ( entry.isDirectory ) {
+			const entries = await readDirectoryEntries( entry.createReader() );
+			const nested = await Promise.all( entries.map( filesFromEntry ) );
+			return nested.flat();
+		}
+
+		return [];
+	};
+
+	const droppedFiles = async function ( dataTransfer ) {
+		const items = Array.prototype.slice.call( dataTransfer && dataTransfer.items ? dataTransfer.items : [] );
+		const entries = items.map( function ( item ) {
+			return typeof item.webkitGetAsEntry === 'function' ? item.webkitGetAsEntry() : null;
+		} ).filter( Boolean );
+
+		if ( entries.length ) {
+			const nested = await Promise.all( entries.map( filesFromEntry ) );
+			return nested.flat();
+		}
+
+		return Array.prototype.slice.call( dataTransfer && dataTransfer.files ? dataTransfer.files : [] ).map( function ( file ) {
+			return { file, path: uploadedFilePath( file ) };
+		} );
+	};
+
+	const setDroppedFiles = function ( root, files ) {
+		droppedFilesByRoot.set( root, files );
+		const dropzone = root.querySelector( '[data-static-site-importer-dropzone]' );
+		if ( dropzone ) {
+			if ( files.length ) {
+				dropzone.setAttribute( 'data-static-site-importer-dropped-count', String( files.length ) );
+			} else {
+				dropzone.removeAttribute( 'data-static-site-importer-dropped-count' );
+			}
+		}
+	};
+
+	const buildFiles = async function ( inputs, root ) {
+		const selectedFiles = selectedInputFiles( inputs, root );
+		const files = selectedFiles.filter( function ( record ) {
+			return ! /\.zip$/i.test( record.file.name || record.path || '' );
+		} );
+		return Promise.all( files.map( async function ( upload ) {
+			const file = upload.file;
+			const path = upload.path || uploadedFilePath( file );
+			const output = {
 				path,
 				name: file.name || path,
 				type: file.type || '',
@@ -55,26 +128,27 @@
 			};
 
 			if ( /\.html?$/i.test( path ) || /^text\//i.test( file.type || '' ) ) {
-				record.content = await fileToText( file );
+				output.content = await fileToText( file );
 			} else {
-				record.content_base64 = await fileToBase64( file );
+				output.content_base64 = await fileToBase64( file );
 			}
 
-			return record;
+			return output;
 		} ) );
 	};
 
-	const buildArchive = async function ( inputs ) {
-		const selectedFiles = selectedInputFiles( inputs );
-		const file = selectedFiles.find( function ( upload ) {
-			return /\.zip$/i.test( upload.name || '' );
+	const buildArchive = async function ( inputs, root ) {
+		const selectedFiles = selectedInputFiles( inputs, root );
+		const archive = selectedFiles.find( function ( upload ) {
+			return /\.zip$/i.test( upload.file.name || upload.path || '' );
 		} );
-		if ( ! file ) {
+		if ( ! archive ) {
 			return null;
 		}
+		const file = archive.file;
 
 		return {
-			path: file.name || 'website.zip',
+			path: archive.path || file.name || 'website.zip',
 			name: file.name || 'website.zip',
 			type: file.type || 'application/zip',
 			size: file.size || 0,
@@ -138,7 +212,39 @@
 		);
 	};
 
+	const bindDropzone = function ( root ) {
+		const dropzone = root.querySelector( '[data-static-site-importer-dropzone]' );
+		if ( ! dropzone ) {
+			return;
+		}
+
+		[ 'dragenter', 'dragover' ].forEach( function ( eventName ) {
+			dropzone.addEventListener( eventName, function ( event ) {
+				event.preventDefault();
+				dropzone.classList.add( 'ssi-importer__upload-group--dragging' );
+			} );
+		} );
+
+		[ 'dragleave', 'drop' ].forEach( function ( eventName ) {
+			dropzone.addEventListener( eventName, function () {
+				dropzone.classList.remove( 'ssi-importer__upload-group--dragging' );
+			} );
+		} );
+
+		dropzone.addEventListener( 'drop', async function ( event ) {
+			event.preventDefault();
+			setDroppedFiles( root, await droppedFiles( event.dataTransfer ) );
+		} );
+	};
+
 	roots.forEach( function ( root ) {
+		bindDropzone( root );
+		root.querySelectorAll( '[data-static-site-importer-source-files], [data-static-site-importer-source-directory]' ).forEach( function ( input ) {
+			input.addEventListener( 'change', function () {
+				setDroppedFiles( root, [] );
+			} );
+		} );
+
 		const submit = root.querySelector( '[data-static-site-importer-submit]' );
 		if ( ! submit ) {
 			return;
@@ -153,13 +259,13 @@
 			const source = {
 				url: form ? form.getAttribute( 'data-static-site-importer-default-url' ) || '' : '',
 				html: html ? html.value : '',
-				files: await buildFiles( uploadInputs ),
-				archive: await buildArchive( uploadInputs ),
+				files: await buildFiles( uploadInputs, root ),
+				archive: await buildArchive( uploadInputs, root ),
 			};
 
 			if ( ! hasSource( source ) ) {
-				setReport( root, { success: false, error: { message: 'Add a website URL, upload file(s), or paste HTML to start.' } } );
-				showStatus( root, 'Add a website URL, upload file(s), or paste HTML to start.' );
+				setReport( root, { success: false, error: { message: 'Upload a website or paste HTML to start.' } } );
+				showStatus( root, 'Upload a website or paste HTML to start.' );
 				return;
 			}
 

@@ -46,10 +46,11 @@ function static_site_importer_render_block( array $attributes = array() ): strin
 			<p class="ssi-importer__copy"><?php echo esc_html( $intro ); ?></p>
 
 			<form class="ssi-importer__form" data-static-site-importer-form data-static-site-importer-default-url="<?php echo esc_attr( $default_url ); ?>">
-				<fieldset class="ssi-importer__field ssi-importer__upload-group">
+				<fieldset class="ssi-importer__field ssi-importer__upload-group" data-static-site-importer-dropzone>
 					<legend class="ssi-importer__label"><?php esc_html_e( 'Upload file(s)', 'static-site-importer' ); ?></legend>
+					<p class="ssi-importer__upload-copy"><?php esc_html_e( 'Drag a folder, ZIP, or static site files here. Or choose one of the browse options below.', 'static-site-importer' ); ?></p>
 					<label class="ssi-importer__upload-option">
-						<span><?php esc_html_e( 'Choose file(s) or ZIP', 'static-site-importer' ); ?></span>
+						<span><?php esc_html_e( 'Choose files or ZIP', 'static-site-importer' ); ?></span>
 						<input type="file" name="ssi_static_upload[]" accept=".zip,application/zip,.html,.htm,text/html,text/css,text/javascript,application/javascript,application/json,application/xml,text/xml,image/*,font/*" multiple data-static-site-importer-source-files>
 					</label>
 					<label class="ssi-importer__upload-option">

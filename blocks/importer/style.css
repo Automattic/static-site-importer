@@ -49,9 +49,30 @@
 }
 
 .ssi-importer__upload-group {
-	border: 0;
+	border: 1px dashed #9aa8b1;
+	border-radius: 14px;
 	margin: 0;
-	padding: 0;
+	padding: 14px;
+	background: #f8fafb;
+}
+
+.ssi-importer__upload-group--dragging {
+	border-color: #101517;
+	background: #eef3f6;
+}
+
+.ssi-importer__upload-copy {
+	margin: 0;
+	color: #4b565c;
+	font-size: 14px;
+	line-height: 1.4;
+}
+
+.ssi-importer__upload-group[data-static-site-importer-dropped-count]::after {
+	content: attr(data-static-site-importer-dropped-count) " dropped item(s) ready to import";
+	color: #245b32;
+	font-size: 13px;
+	font-weight: 700;
 }
 
 .ssi-importer__upload-option {
