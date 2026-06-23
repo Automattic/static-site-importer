@@ -1931,7 +1931,8 @@ class Static_Site_Importer_Theme_Generator {
 			return;
 		}
 
-		$validation = self::validate_products_manifest(
+		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest(
+			Static_Site_Importer_Entity_Materializer_Registry::product_adapter(),
 			array(
 				'schema_version' => 1,
 				'products'       => $products,
@@ -2002,136 +2003,6 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
-	 * Validate the generated store products manifest contract.
-	 *
-	 * @param mixed $data Decoded JSON data.
-	 * @return array{products:array<int,array<string,mixed>>,errors:array<int,array<string,string>>}
-	 */
-	private static function validate_products_manifest( $data ): array {
-		$products = array();
-		$errors   = array();
-
-		if ( ! is_array( $data ) || array_is_list( $data ) ) {
-			return array( 'products' => array(), 'errors' => array( array( 'path' => '$', 'message' => 'products_manifest must be an object with schema_version and products fields.' ) ) );
-		}
-
-		if ( 1 !== (int) ( $data['schema_version'] ?? 0 ) ) {
-			$errors[] = array( 'path' => '$.schema_version', 'message' => 'schema_version must be 1.' );
-		}
-		if ( ! isset( $data['products'] ) || ! is_array( $data['products'] ) || ! array_is_list( $data['products'] ) ) {
-			$errors[] = array( 'path' => '$.products', 'message' => 'products must be a JSON array.' );
-			return array( 'products' => array(), 'errors' => $errors );
-		}
-
-		foreach ( $data['products'] as $index => $product ) {
-			$path_prefix = '$.products[' . $index . ']';
-			if ( ! is_array( $product ) || array_is_list( $product ) ) {
-				$errors[] = array( 'path' => $path_prefix, 'message' => 'Product must be an object.' );
-				continue;
-			}
-
-			$name          = self::manifest_string( $product, 'name' );
-			$slug          = self::manifest_string( $product, 'slug' );
-			$regular_price = self::manifest_string( $product, 'regular_price' );
-			$sale_price    = self::manifest_string( $product, 'sale_price', false );
-			if ( '' === $name ) {
-				$errors[] = array( 'path' => $path_prefix . '.name', 'message' => 'name is required and must be a non-empty string.' );
-			}
-			if ( '' === $slug || ! preg_match( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $slug ) ) {
-				$errors[] = array( 'path' => $path_prefix . '.slug', 'message' => 'slug is required and must be a lowercase URL slug.' );
-			}
-			if ( '' === $regular_price || ! self::is_manifest_price( $regular_price ) ) {
-				$errors[] = array( 'path' => $path_prefix . '.regular_price', 'message' => 'regular_price is required and must be a decimal string such as "19.00".' );
-			}
-			if ( '' !== $sale_price && ! self::is_manifest_price( $sale_price ) ) {
-				$errors[] = array( 'path' => $path_prefix . '.sale_price', 'message' => 'sale_price must be a decimal string such as "15.00" when provided.' );
-			}
-			foreach ( array( 'description', 'short_description', 'status', 'stock_status', 'image' ) as $field ) {
-				if ( isset( $product[ $field ] ) && ! is_string( $product[ $field ] ) ) {
-					$errors[] = array( 'path' => $path_prefix . '.' . $field, 'message' => $field . ' must be a string when provided.' );
-				}
-			}
-			foreach ( array( 'categories', 'source_selectors' ) as $field ) {
-				if ( ! isset( $product[ $field ] ) ) {
-					continue;
-				}
-				$values = self::manifest_string_collection( $product[ $field ] );
-				if ( null === $values ) {
-					$errors[] = array( 'path' => $path_prefix . '.' . $field, 'message' => $field . ' must be an array of strings when provided.' );
-					continue;
-				}
-				foreach ( $values as $value_index => $value ) {
-					if ( '' === trim( $value ) ) {
-						$errors[] = array( 'path' => $path_prefix . '.' . $field . '[' . $value_index . ']', 'message' => $field . ' entries must be non-empty strings.' );
-					}
-				}
-			}
-			if ( isset( $product['stock_quantity'] ) && ! is_int( $product['stock_quantity'] ) ) {
-				$errors[] = array( 'path' => $path_prefix . '.stock_quantity', 'message' => 'stock_quantity must be an integer when provided.' );
-			}
-
-			$summary = array( 'name' => $name, 'slug' => $slug, 'regular_price' => $regular_price );
-			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'image', 'status', 'stock_status', 'stock_quantity', 'source_selectors' ) as $field ) {
-				if ( array_key_exists( $field, $product ) ) {
-					$summary[ $field ] = $product[ $field ];
-				}
-			}
-			$products[] = $summary;
-		}
-
-		return array( 'products' => empty( $errors ) ? $products : array(), 'errors' => $errors );
-	}
-
-	/**
-	 * Read a string field from a decoded manifest object.
-	 *
-	 * @param array<string,mixed> $data     Manifest object.
-	 * @param string              $key      Field key.
-	 * @param bool                $required Whether missing fields should return an empty string.
-	 * @return string
-	 */
-	private static function manifest_string( array $data, string $key, bool $required = true ): string {
-		if ( ! array_key_exists( $key, $data ) || ! is_string( $data[ $key ] ) ) {
-			return '';
-		}
-
-		$value = trim( $data[ $key ] );
-		return $required || '' !== $value ? $value : '';
-	}
-
-	/**
-	 * Normalize list or keyed-map string collections from products_manifest.
-	 *
-	 * @param mixed $value Raw manifest field value.
-	 * @return array<int|string,string>|null
-	 */
-	private static function manifest_string_collection( $value ): ?array {
-		if ( ! is_array( $value ) ) {
-			return null;
-		}
-
-		$normalized = array();
-		foreach ( $value as $key => $entry ) {
-			if ( ! is_string( $entry ) ) {
-				return null;
-			}
-			$normalized[ $key ] = $entry;
-		}
-
-		return $normalized;
-	}
-
-	/**
-	 * Check whether a manifest price uses a stable decimal string format.
-	 *
-	 * @param string $price Price string.
-	 * @return bool
-	 */
-	private static function is_manifest_price( string $price ): bool {
-		return 1 === preg_match( '/^(?:0|[1-9][0-9]*)(?:\.[0-9]{2})?$/', $price );
-	}
-
-	/**
 	 * Materialize plugins required by detected source intent.
 	 *
 	 * @param array<string, mixed> $args Import args.
@@ -2143,12 +2014,13 @@ class Static_Site_Importer_Theme_Generator {
 			'plugins' => array(),
 		);
 
-		$intent = self::commerce_dependency_intent();
+		$intent  = self::commerce_dependency_intent();
+		$adapter = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
 		if ( ! $intent['present'] ) {
 			self::$conversion_report['plugin_materialization']['reason'] = 'no_plugin_backed_intent';
 			return;
 		}
-		if ( ! empty( $args['allow_missing_woocommerce'] ) ) {
+		if ( ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? 'allow_missing_woocommerce' ) ] ) ) {
 			self::$conversion_report['plugin_materialization']['reason'] = 'woocommerce_requirement_waived';
 			return;
 		}
@@ -2157,14 +2029,10 @@ class Static_Site_Importer_Theme_Generator {
 			return;
 		}
 
-		$report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
-			'woocommerce',
-			'woocommerce/woocommerce.php',
-			array( 'Static_Site_Importer_Woo_Product_Seeder', 'woocommerce_available' )
-		);
+		$reports = Static_Site_Importer_Entity_Materializer_Registry::materialize_plugin_dependencies( $adapter );
 		self::$conversion_report['plugin_materialization'] = array(
-			'status'  => 'failed' === ( $report['status'] ?? '' ) ? 'failed' : 'completed',
-			'plugins' => array( 'woocommerce' => $report ),
+			'status'  => self::plugin_materialization_status( $reports ),
+			'plugins' => $reports,
 		);
 	}
 
@@ -2184,12 +2052,12 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		if ( null === $manifest ) {
-			self::$conversion_report['product_seeding']           = Static_Site_Importer_Woo_Product_Seeder::new_report();
+			self::$conversion_report['product_seeding']           = Static_Site_Importer_Entity_Materializer_Registry::new_entity_report( Static_Site_Importer_Entity_Materializer_Registry::product_adapter() );
 			self::$conversion_report['product_seeding']['reason'] = 'no_validated_manifest';
 			return;
 		}
 
-		self::$conversion_report['product_seeding'] = Static_Site_Importer_Woo_Product_Seeder::seed( $manifest );
+		self::$conversion_report['product_seeding'] = Static_Site_Importer_Entity_Materializer_Registry::materialize( Static_Site_Importer_Entity_Materializer_Registry::product_adapter(), $manifest );
 	}
 
 	/**
@@ -2210,19 +2078,10 @@ class Static_Site_Importer_Theme_Generator {
 			return;
 		}
 
-		$woocommerce_active = Static_Site_Importer_Woo_Product_Seeder::woocommerce_available();
-		$waived             = ! empty( $args['allow_missing_woocommerce'] );
-
-		$dependencies = array(
-			'woocommerce' => array(
-				'required'      => true,
-				'active'        => $woocommerce_active,
-				'sources'       => $intent['sources'],
-				'product_count' => $intent['product_count'],
-				'waived'        => $waived,
-				'missing_apis'  => $woocommerce_active ? array() : array( 'WC_Product_Simple', 'product_post_type', 'product_cat_taxonomy' ),
-			),
-		);
+		$adapter            = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
+		$waived             = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? 'allow_missing_woocommerce' ) ] );
+		$dependencies       = Static_Site_Importer_Entity_Materializer_Registry::dependency_rows( $adapter, $intent, $waived );
+		$woocommerce_active = Static_Site_Importer_Entity_Materializer_Registry::dependencies_available( $adapter );
 
 		if ( ! isset( self::$conversion_report['commerce'] ) || ! is_array( self::$conversion_report['commerce'] ) ) {
 			self::$conversion_report['commerce'] = array();
@@ -2266,6 +2125,22 @@ class Static_Site_Importer_Theme_Generator {
 		if ( isset( self::$conversion_report['product_seeding'] ) && is_array( self::$conversion_report['product_seeding'] ) ) {
 			self::$conversion_report['product_seeding']['reason'] = 'woocommerce_required_but_missing';
 		}
+	}
+
+	/**
+	 * Collapse dependency reports to the legacy plugin materialization status.
+	 *
+	 * @param array<string,array<string,mixed>> $reports Dependency reports keyed by plugin slug.
+	 * @return string
+	 */
+	private static function plugin_materialization_status( array $reports ): string {
+		foreach ( $reports as $report ) {
+			if ( is_array( $report ) && 'failed' === (string) ( $report['status'] ?? '' ) ) {
+				return 'failed';
+			}
+		}
+
+		return 'completed';
 	}
 
 	/**

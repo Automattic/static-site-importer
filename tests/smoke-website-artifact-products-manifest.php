@@ -98,6 +98,7 @@ namespace {
 		}
 	}
 
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-transformer-adapter.php';
 
 	$failures   = array();
@@ -124,6 +125,17 @@ namespace {
 	$assert( '5.50' === ( $products[1]['regular_price'] ?? '' ), 'normalizes-commerce-regular-price' );
 	$assert( '4.00' === ( $products[1]['sale_price'] ?? '' ), 'normalizes-commerce-sale-price' );
 	$assert( 'olive-rolls' === ( $products[2]['slug'] ?? '' ), 'maps-document-metadata-product' );
+
+	$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest(
+		Static_Site_Importer_Entity_Materializer_Registry::product_adapter(),
+		array(
+			'schema_version' => 1,
+			'products'       => $products,
+		)
+	);
+	$assert( array() === ( $validation['errors'] ?? array() ), 'woo-adapter-validator-accepts-compiled-products' );
+	$assert( 3 === count( $validation['products'] ?? array() ), 'woo-adapter-validator-preserves-product-count' );
+	$assert( 'Rye Loaf' === ( $validation['products'][0]['name'] ?? '' ), 'woo-adapter-validator-preserves-product-name' );
 
 	if ( $failures ) {
 		fwrite( STDERR, implode( "\n", $failures ) . "\n" );
