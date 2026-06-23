@@ -974,10 +974,10 @@ class Static_Site_Importer_Theme_Generator {
 				continue;
 			}
 
-			$title = function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( (string) $matches[1] ) : strip_tags( (string) $matches[1] );
+			$title = function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( (string) $matches[1] ) : preg_replace( '/<[^>]*>/', '', (string) $matches[1] );
 			$title = html_entity_decode( trim( $title ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 			$title = preg_split( '/\s+(?:\||\x{2014}|\x{2013}|-)\s+/u', $title )[0] ?? $title;
-			return function_exists( 'sanitize_text_field' ) ? sanitize_text_field( trim( $title ) ) : trim( strip_tags( $title ) );
+			return function_exists( 'sanitize_text_field' ) ? sanitize_text_field( trim( $title ) ) : trim( preg_replace( '/<[^>]*>/', '', $title ) );
 		}
 
 		return '';
