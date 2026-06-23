@@ -23,12 +23,13 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param string $css             Source CSS.
 	 * @param bool   $has_header_part Whether a header template part exists.
 	 * @param bool   $has_footer_part Whether a footer template part exists.
-	 * @param array<int,array<string,mixed>> $scripts Materialized script asset rows.
+	 * @param array<int,array<string,mixed>> $scripts     Materialized script asset rows.
+	 * @param array<int,array<string,mixed>> $stylesheets Materialized stylesheet asset rows.
 	 * @return array<string,string> Absolute write paths mapped to file contents.
 	 */
-	public static function base_theme_writes( string $theme_dir, string $theme_slug, string $theme_name, string $css, bool $has_header_part, bool $has_footer_part, array $scripts = array() ): array {
+	public static function base_theme_writes( string $theme_dir, string $theme_slug, string $theme_name, string $css, bool $has_header_part, bool $has_footer_part, array $scripts = array(), array $stylesheets = array() ): array {
 		return array(
-			$theme_dir . '/functions.php'             => self::functions_php( $theme_slug, $scripts ),
+			$theme_dir . '/functions.php'             => self::functions_php( $theme_slug, $scripts, $stylesheets ),
 			$theme_dir . '/theme.json'                => self::theme_json( $theme_name, $css ),
 			$theme_dir . '/templates/front-page.html' => self::content_template( '', $has_header_part, $has_footer_part ),
 			$theme_dir . '/templates/page.html'       => self::content_template( '', $has_header_part, $has_footer_part ),
@@ -97,7 +98,7 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param string              $theme_dir Theme directory.
 	 * @param string              $theme_uri Theme URI.
 	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
-	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,scripts:array<int,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}|WP_Error
+	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,scripts:array<int,array<string,mixed>>,stylesheets:array<int,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}|WP_Error
 	 */
 	public static function materialize_website_artifact_files( string $theme_dir, string $theme_uri, array $artifacts ) {
 		$native_plan = self::materialize_materialization_plan_assets( $theme_dir, $theme_uri, $artifacts );
@@ -170,6 +171,7 @@ class Static_Site_Importer_Theme_Materializer {
 			'js'          => '',
 			'assets'      => $assets,
 			'scripts'     => array(),
+			'stylesheets' => array(),
 			'diagnostics' => $diagnostics,
 		);
 	}
@@ -180,7 +182,7 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param string              $theme_dir Theme directory.
 	 * @param string              $theme_uri Theme URI.
 	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
-	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,scripts:array<int,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}|null|WP_Error
+	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,scripts:array<int,array<string,mixed>>,stylesheets:array<int,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}|null|WP_Error
 	 */
 	private static function materialize_materialization_plan_assets( string $theme_dir, string $theme_uri, array $artifacts ) {
 		$site = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
@@ -199,6 +201,7 @@ class Static_Site_Importer_Theme_Materializer {
 		$css         = array();
 		$assets      = array();
 		$scripts     = array();
+		$stylesheets = array();
 		$diagnostics = array();
 		$order       = 0;
 
@@ -252,13 +255,91 @@ class Static_Site_Importer_Theme_Materializer {
 			}
 		}
 
+		$font_stylesheets = self::materialize_font_materialization_stylesheets( $theme_dir, $theme_uri, $site, $assets, $order );
+		if ( is_wp_error( $font_stylesheets ) ) {
+			return $font_stylesheets;
+		}
+		$stylesheets = array_merge( $stylesheets, $font_stylesheets );
+
 		return array(
 			'css'         => trim( implode( "\n\n", array_filter( self::rewrite_materialized_css_chunks( $css, $assets ) ) ) ),
 			'js'          => '',
 			'assets'      => $assets,
 			'scripts'     => $scripts,
+			'stylesheets' => $stylesheets,
 			'diagnostics' => $diagnostics,
 		);
+	}
+
+	/**
+	 * Write theme font materialization stylesheet rows declared by Blocks Engine.
+	 *
+	 * @param string                            $theme_dir Theme directory.
+	 * @param string                            $theme_uri Theme URI.
+	 * @param array<string,mixed>               $site      Materialization plan site artifact.
+	 * @param array<string,array<string,mixed>> $assets    Materialized asset rows keyed by source path.
+	 * @param int                               $order     Current materialization order.
+	 * @return array<int,array<string,mixed>>|WP_Error
+	 */
+	private static function materialize_font_materialization_stylesheets( string $theme_dir, string $theme_uri, array $site, array &$assets, int &$order ) {
+		$theme = isset( $site['theme'] ) && is_array( $site['theme'] ) ? $site['theme'] : array();
+		$plan  = isset( $theme['font_materialization'] ) && is_array( $theme['font_materialization'] ) ? $theme['font_materialization'] : array();
+		if ( 'blocks-engine/php-transformer/font-materialization-plan/v1' !== (string) ( $plan['schema'] ?? '' ) ) {
+			return array();
+		}
+
+		$rows = isset( $plan['stylesheets'] ) && is_array( $plan['stylesheets'] ) ? $plan['stylesheets'] : array();
+		if ( empty( $rows ) && isset( $plan['css'] ) && is_scalar( $plan['css'] ) && '' !== trim( (string) $plan['css'] ) ) {
+			$rows[] = array(
+				'path'      => 'assets/css/fonts.css',
+				'role'      => 'stylesheet',
+				'mime_type' => 'text/css',
+				'content'   => trim( (string) $plan['css'] ) . "\n",
+			);
+		}
+
+		$stylesheets = array();
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				return new WP_Error( 'static_site_importer_font_materialization_stylesheet_invalid', 'Blocks Engine font_materialization.stylesheets entries must be arrays.' );
+			}
+
+			$relative = self::normalize_artifact_materialization_path( isset( $row['path'] ) && is_scalar( $row['path'] ) ? (string) $row['path'] : '' );
+			if ( '' === $relative ) {
+				return new WP_Error( 'static_site_importer_font_materialization_stylesheet_path_invalid', 'Blocks Engine font_materialization.stylesheets entries must include safe relative paths.' );
+			}
+
+			$content = isset( $row['content'] ) && is_scalar( $row['content'] ) ? (string) $row['content'] : '';
+			if ( '' === trim( $content ) ) {
+				continue;
+			}
+
+			$target = trailingslashit( $theme_dir ) . $relative;
+			$dir    = dirname( $target );
+			if ( ! wp_mkdir_p( $dir ) ) {
+				return new WP_Error( 'static_site_importer_font_materialization_stylesheet_mkdir_failed', sprintf( 'Failed to create font materialization stylesheet directory: %s', $dir ) );
+			}
+
+			$result = self::write_file( $target, $content );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+
+			++$order;
+			$asset = array_merge(
+				$row,
+				array(
+					'path'   => $relative,
+					'role'   => isset( $row['role'] ) && is_scalar( $row['role'] ) ? (string) $row['role'] : 'stylesheet',
+					'kind'   => isset( $row['kind'] ) && is_scalar( $row['kind'] ) ? (string) $row['kind'] : 'css',
+					'origin' => 'theme.font_materialization',
+				)
+			);
+			$assets[ $relative ] = self::materialization_plan_asset_report( $asset, $relative, trailingslashit( $theme_uri ) . $relative, $relative, self::mime_type( $target ), $order );
+			$stylesheets[]       = $assets[ $relative ];
+		}
+
+		return $stylesheets;
 	}
 
 	/**
@@ -274,6 +355,7 @@ class Static_Site_Importer_Theme_Materializer {
 	 */
 	private static function materialization_plan_asset_report( array $asset, string $relative, string $url, string $target_relative, string $fallback_mime, int $order ): array {
 		$mime_type = isset( $asset['mime_type'] ) && is_scalar( $asset['mime_type'] ) && '' !== (string) $asset['mime_type'] ? (string) $asset['mime_type'] : $fallback_mime;
+		$origin    = isset( $asset['origin'] ) && is_scalar( $asset['origin'] ) && '' !== (string) $asset['origin'] ? (string) $asset['origin'] : 'materialization_plan.assets';
 		$report    = array(
 			'source'     => $relative,
 			'path'       => $relative,
@@ -282,7 +364,7 @@ class Static_Site_Importer_Theme_Materializer {
 			'mime_type'  => $mime_type,
 			'theme_path' => $target_relative,
 			'policy'     => 'theme',
-			'origin'     => 'materialization_plan.assets',
+			'origin'     => $origin,
 			'order'      => $order,
 		);
 
@@ -650,14 +732,35 @@ class Static_Site_Importer_Theme_Materializer {
 	 * Build functions.php.
 	 *
 	 * @param string $theme_slug Theme slug.
-	 * @param array<int,array<string,mixed>> $scripts Materialized script asset rows.
+	 * @param array<int,array<string,mixed>> $scripts     Materialized script asset rows.
+	 * @param array<int,array<string,mixed>> $stylesheets Materialized stylesheet asset rows.
 	 * @return string
 	 */
-	private static function functions_php( string $theme_slug, array $scripts = array() ): string {
-		$style_handle  = sanitize_key( $theme_slug ) . '-style';
-		$editor_handle = sanitize_key( $theme_slug ) . '-editor-style';
-		$script_handle = sanitize_key( $theme_slug ) . '-site';
-		$script_lines  = '';
+	private static function functions_php( string $theme_slug, array $scripts = array(), array $stylesheets = array() ): string {
+		$style_handle     = sanitize_key( $theme_slug ) . '-style';
+		$editor_handle    = sanitize_key( $theme_slug ) . '-editor-style';
+		$script_handle    = sanitize_key( $theme_slug ) . '-site';
+		$script_lines     = '';
+		$stylesheet_lines = '';
+		$stylesheet_deps  = array();
+
+		foreach ( $stylesheets as $stylesheet ) {
+			if ( ! is_array( $stylesheet ) || ! isset( $stylesheet['theme_path'] ) || ! is_scalar( $stylesheet['theme_path'] ) ) {
+				continue;
+			}
+
+			$theme_path = self::normalize_artifact_materialization_path( (string) $stylesheet['theme_path'] );
+			if ( '' === $theme_path ) {
+				continue;
+			}
+
+			$handle             = sanitize_key( $theme_slug . '-asset-' . preg_replace( '/\.[^.]+$/', '', str_replace( '/', '-', $theme_path ) ) );
+			$stylesheet_deps[]  = $handle;
+			$stylesheet_lines  .= "\twp_enqueue_style( " . var_export( $handle, true ) . ", get_template_directory_uri() . " . var_export( '/' . $theme_path, true ) . ", array(), wp_get_theme()->get( 'Version' )";
+			$media              = isset( $stylesheet['media'] ) && is_scalar( $stylesheet['media'] ) && '' !== (string) $stylesheet['media'] ? (string) $stylesheet['media'] : '';
+			$stylesheet_lines  .= '' !== $media ? ', ' . var_export( $media, true ) . " );\n" : " );\n";
+		}
+		$stylesheet_dependencies = empty( $stylesheet_deps ) ? 'array()' : var_export( $stylesheet_deps, true );
 
 		foreach ( $scripts as $script ) {
 			if ( ! isset( $script['theme_path'] ) || ! is_scalar( $script['theme_path'] ) ) {
@@ -696,14 +799,16 @@ class Static_Site_Importer_Theme_Materializer {
 			"\tadd_editor_style( 'assets/css/editor-style.css' );\n" .
 			"} );\n\n" .
 			"add_action( 'wp_enqueue_scripts', static function (): void {\n" .
-			"\twp_enqueue_style( '" . $style_handle . "', get_stylesheet_uri(), array(), wp_get_theme()->get( 'Version' ) );\n" .
+			$stylesheet_lines .
+			"\twp_enqueue_style( '" . $style_handle . "', get_stylesheet_uri(), " . $stylesheet_dependencies . ", wp_get_theme()->get( 'Version' ) );\n" .
 			"\tif ( file_exists( get_template_directory() . '/assets/site.js' ) ) {\n" .
 			"\t\twp_enqueue_script( '" . $script_handle . "', get_template_directory_uri() . '/assets/site.js', array(), wp_get_theme()->get( 'Version' ), true );\n" .
 			"\t}\n" .
 			$script_lines .
 			"} );\n\n" .
 			"add_action( 'enqueue_block_editor_assets', static function (): void {\n" .
-			"\twp_enqueue_style( '" . $editor_handle . "', get_template_directory_uri() . '/assets/css/editor-style.css', array(), wp_get_theme()->get( 'Version' ) );\n" .
+			$stylesheet_lines .
+			"\twp_enqueue_style( '" . $editor_handle . "', get_template_directory_uri() . '/assets/css/editor-style.css', " . $stylesheet_dependencies . ", wp_get_theme()->get( 'Version' ) );\n" .
 			"} );\n";
 	}
 
