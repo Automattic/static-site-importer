@@ -473,10 +473,12 @@ $assert( str_contains( $view_js, 'webkitGetAsEntry' ), 'view-supports-dropped-di
 $assert( str_contains( $view_js, 'archive: await buildArchive( uploadInputs, root )' ), 'view-sends-zip-from-combined-upload-as-archive-payload' );
 $assert( str_contains( $view_js, 'shouldIncludeSiteFile' ), 'view-skips-known-non-site-upload-files-before-reading' );
 $assert( ! str_contains( $view_js, 'applyToCurrentSite || generateInCurrentRuntime' ), 'view-does-not-treat-current-runtime-generation-as-current-site-import' );
-$assert( str_contains( $view_js, 'apply_to_current_site: applyToCurrentSite' ), 'view-sends-current-site-apply-flag-only-from-apply-mode' );
-$assert( str_contains( $view_js, 'activate: applyToCurrentSite' ), 'view-activates-only-current-site-imports' );
-$assert( str_contains( $view_js, 'overwrite: applyToCurrentSite' ), 'view-overwrites-only-current-site-imports' );
-$assert( str_contains( $view_js, 'generate_in_current_runtime: generateInCurrentRuntime' ), 'view-sends-current-runtime-generation-flag' );
+$assert( str_contains( $view_js, 'isCurrentSiteImport' ), 'view-names-current-site-import-mode-explicitly' );
+$assert( str_contains( $view_js, 'isCurrentRuntimeGeneration' ), 'view-names-current-runtime-generation-mode-explicitly' );
+$assert( str_contains( $view_js, 'apply_to_current_site: isCurrentSiteImport' ), 'view-sends-current-site-apply-flag-only-from-apply-mode' );
+$assert( str_contains( $view_js, 'activate: isCurrentSiteImport' ), 'view-activates-only-current-site-imports' );
+$assert( str_contains( $view_js, 'overwrite: isCurrentSiteImport' ), 'view-overwrites-only-current-site-imports' );
+$assert( str_contains( $view_js, 'generate_in_current_runtime: isCurrentRuntimeGeneration' ), 'view-sends-current-runtime-generation-flag' );
 $generic_preview_message = implode( ' ', array( 'no', 'preview', 'provider', 'is', 'configured' ) );
 $assert( ! str_contains( $view_js, $generic_preview_message ), 'view-does-not-reference-generic-preview-message' );
 $assert( str_contains( $view_js, 'Open WordPress preview' ) || str_contains( $html, 'Open WordPress preview' ), 'view-or-render-has-preview-link-label' );
@@ -621,6 +623,10 @@ $assert( false === ( $codebox_missing['success'] ?? null ), 'rest-codebox-unavai
 $assert( 'wp-codebox/create-browser-playground-session' === ( $codebox_missing['provider'] ?? '' ), 'rest-codebox-unavailable-identifies-required-api' );
 $assert( str_contains( $codebox_missing['preview']['message'] ?? '', 'WP Codebox is unavailable, not installed, or does not provide the required browser Playground session API' ), 'rest-codebox-unavailable-diagnostic-wording' );
 
+$assert( 'preview' === static_site_importer_rest_import_mode( array() ), 'rest-mode-defaults-to-codebox-preview' );
+$assert( 'current_runtime' === static_site_importer_rest_import_mode( array( 'generate_in_current_runtime' => true ) ), 'rest-mode-supports-current-runtime-generation' );
+$assert( 'current_site' === static_site_importer_rest_import_mode( array( 'apply_to_current_site' => true, 'generate_in_current_runtime' => true ) ), 'rest-mode-current-site-import-wins-when-explicit' );
+
 Static_Site_Importer_Theme_Generator::$last_artifact = array();
 $apply_response = static_site_importer_rest_create_import(
 	new WP_REST_Request(
@@ -638,6 +644,27 @@ $assert( true === ( $apply_response['success'] ?? null ), 'rest-current-site-app
 $assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['activate'] ?? null ), 'rest-current-site-apply-preserves-activate' );
 $assert( isset( $apply_response['result'] ), 'rest-current-site-apply-returns-ability-envelope' );
 $assert( 'https://example.test/' === ( $apply_response['preview']['url'] ?? '' ), 'rest-current-site-apply-returns-site-preview-url' );
+
+Static_Site_Importer_Theme_Generator::$last_artifact = array();
+Static_Site_Importer_Theme_Generator::$last_args     = array();
+WP_Codebox_Abilities::$last_input = array();
+$runtime_response = static_site_importer_rest_create_import(
+	new WP_REST_Request(
+		array(
+			'apply_to_current_site'      => false,
+			'generate_in_current_runtime' => true,
+			'source'                      => array(
+				'html' => '<main>Generate</main>',
+			),
+		)
+	)
+);
+$assert( true === ( $runtime_response['success'] ?? null ), 'rest-current-runtime-generation-succeeds-without-codebox' );
+$assert( 'generated_in_current_runtime' === ( $runtime_response['mode'] ?? '' ), 'rest-current-runtime-generation-reports-mode' );
+$assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['activate'] ?? null ), 'rest-current-runtime-generation-activates-generated-site' );
+$assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['overwrite'] ?? null ), 'rest-current-runtime-generation-overwrites-generated-site' );
+$assert( array() === WP_Codebox_Abilities::$last_input, 'rest-current-runtime-generation-does-not-use-codebox-preview' );
+$assert( 'https://example.test/' === ( $runtime_response['preview']['url'] ?? '' ), 'rest-current-runtime-generation-returns-runtime-preview-url' );
 
 $blueprint = json_decode( file_get_contents( dirname( __DIR__ ) . '/docs/playground/blueprint.json' ), true );
 $assert( is_array( $blueprint ), 'playground-blueprint-decodes' );

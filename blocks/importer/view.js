@@ -268,8 +268,8 @@
 			const html = root.querySelector( '[data-static-site-importer-source-html]' );
 			const uploadInputs = root.querySelectorAll( '[data-static-site-importer-source-files], [data-static-site-importer-source-directory]' );
 			const provider = root.getAttribute( 'data-static-site-importer-provider' ) || '';
-			const applyToCurrentSite = root.getAttribute( 'data-static-site-importer-apply-to-current-site' ) === '1';
-			const generateInCurrentRuntime = root.getAttribute( 'data-static-site-importer-generate-in-current-runtime' ) === '1';
+			const isCurrentSiteImport = root.getAttribute( 'data-static-site-importer-apply-to-current-site' ) === '1';
+			const isCurrentRuntimeGeneration = root.getAttribute( 'data-static-site-importer-generate-in-current-runtime' ) === '1';
 			const source = {
 				url: form ? form.getAttribute( 'data-static-site-importer-default-url' ) || '' : '',
 				html: html ? html.value : '',
@@ -283,7 +283,7 @@
 				return;
 			}
 
-			showStatus( root, applyToCurrentSite ? 'Importing to this site...' : 'Generating WordPress website...' );
+			showStatus( root, isCurrentSiteImport ? 'Importing to this site...' : 'Generating WordPress website...' );
 			submit.disabled = true;
 
 			try {
@@ -298,17 +298,19 @@
 					body: JSON.stringify( {
 						provider,
 						source,
-						apply_to_current_site: applyToCurrentSite,
-						activate: applyToCurrentSite,
-						overwrite: applyToCurrentSite,
-						generate_in_current_runtime: generateInCurrentRuntime,
+						apply_to_current_site: isCurrentSiteImport,
+						activate: isCurrentSiteImport,
+						overwrite: isCurrentSiteImport,
+						generate_in_current_runtime: isCurrentRuntimeGeneration,
 					} ),
 				} );
 				const report = await response.json();
 				setReport( root, report );
 				setPreviewLink( root, report );
-				if ( response.ok && applyToCurrentSite && report.success ) {
-					showStatus( root, applyToCurrentSite ? 'Import complete.' : 'WordPress website generated.' );
+				if ( response.ok && isCurrentSiteImport && report.success ) {
+					showStatus( root, 'Import complete.' );
+				} else if ( response.ok && isCurrentRuntimeGeneration && report.success ) {
+					showStatus( root, 'WordPress website generated.' );
 				} else if ( response.ok && previewUrl( report ) ) {
 					showStatus( root, 'Preview ready.' );
 				} else if ( response.ok && report.preview && report.preview.status === 'unavailable' ) {
