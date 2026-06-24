@@ -530,12 +530,25 @@ function static_site_importer_rest_generate_in_current_runtime( array $source, a
 		return $result;
 	}
 
-	$preview           = isset( $result['preview'] ) && is_array( $result['preview'] ) ? $result['preview'] : array();
-	$preview['status'] = isset( $preview['status'] ) ? $preview['status'] : 'ready';
+	$preview                   = isset( $result['preview'] ) && is_array( $result['preview'] ) ? $result['preview'] : array();
+	$preview['status']         = isset( $preview['status'] ) ? $preview['status'] : 'ready';
+	$preview['url']            = static_site_importer_rest_current_runtime_preview_url();
+	$playground                = isset( $preview['playground'] ) && is_array( $preview['playground'] ) ? $preview['playground'] : array();
+	$playground['preview_url'] = $preview['url'];
+	$preview['playground']     = $playground;
 	$result['preview'] = $preview;
 	$result['mode']    = 'generated_in_current_runtime';
 
 	return $result;
+}
+
+/**
+ * Return the active runtime front page URL for public Playground generation.
+ *
+ * @return string
+ */
+function static_site_importer_rest_current_runtime_preview_url(): string {
+	return '/';
 }
 
 /**

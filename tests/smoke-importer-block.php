@@ -664,7 +664,8 @@ $assert( 'generated_in_current_runtime' === ( $runtime_response['mode'] ?? '' ),
 $assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['activate'] ?? null ), 'rest-current-runtime-generation-activates-generated-site' );
 $assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['overwrite'] ?? null ), 'rest-current-runtime-generation-overwrites-generated-site' );
 $assert( array() === WP_Codebox_Abilities::$last_input, 'rest-current-runtime-generation-does-not-use-codebox-preview' );
-$assert( 'https://example.test/' === ( $runtime_response['preview']['url'] ?? '' ), 'rest-current-runtime-generation-returns-runtime-preview-url' );
+$assert( '/' === ( $runtime_response['preview']['url'] ?? '' ), 'rest-current-runtime-generation-returns-active-runtime-front-page-url' );
+$assert( '/' === ( $runtime_response['preview']['playground']['preview_url'] ?? '' ), 'rest-current-runtime-generation-records-playground-preview-path' );
 
 $blueprint = json_decode( file_get_contents( dirname( __DIR__ ) . '/docs/playground/blueprint.json' ), true );
 $assert( is_array( $blueprint ), 'playground-blueprint-decodes' );
