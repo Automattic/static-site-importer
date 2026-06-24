@@ -41,7 +41,6 @@ function static_site_importer_register_rest_routes(): void {
 			),
 		)
 	);
-
 }
 
 /**
