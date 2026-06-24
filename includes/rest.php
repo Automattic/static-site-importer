@@ -192,9 +192,9 @@ function static_site_importer_rest_create_playground_preview( array $artifact, a
 		),
 		'provider' => 'static-site-importer/direct-playground-blueprint',
 		'request'  => array(
-			'schema'   => 'static-site-importer/playground-preview-request/v1',
-			'source'   => $source,
-			'artifact' => array(
+			'schema'    => 'static-site-importer/playground-preview-request/v1',
+			'source'    => $source,
+			'artifact'  => array(
 				'entrypoint' => (string) ( $artifact['entrypoint'] ?? '' ),
 				'file_count' => isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? count( $artifact['files'] ) : 0,
 			),
