@@ -69,7 +69,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 		'static-site-importer validate-in-codebox',
 		static function ( array $args, array $assoc_args ): void {
 			unset( $args );
-			$halt_on_failure = ! isset( $assoc_args['no-error-on-fail'] );
+			$halt_on_failure = ! isset( $assoc_args['allow-failure'] ) && false !== ( $assoc_args['error-on-fail'] ?? true ) && ! isset( $assoc_args['no-error-on-fail'] );
 
 			$input = array(
 				'slug'                      => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
