@@ -69,6 +69,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 		'static-site-importer validate-in-codebox',
 		static function ( array $args, array $assoc_args ): void {
 			unset( $args );
+			$halt_on_failure = ! isset( $assoc_args['no-error-on-fail'] );
 
 			$input = array(
 				'slug'                      => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
@@ -106,7 +107,11 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				}
 
 				WP_CLI::line( (string) $json );
-				WP_CLI::halt( 1 );
+				if ( $halt_on_failure ) {
+					WP_CLI::halt( 1 );
+				}
+
+				return;
 			}
 
 			$json = wp_json_encode( $result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
@@ -116,7 +121,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			}
 
 			WP_CLI::line( $json );
-			if ( empty( $result['success'] ) ) {
+			if ( $halt_on_failure && empty( $result['success'] ) ) {
 				WP_CLI::halt( 1 );
 			}
 		}
