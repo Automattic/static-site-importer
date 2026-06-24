@@ -370,6 +370,8 @@ if ( ! function_exists( 'static_site_importer_ability_error' ) ) {
 	 * @return array<string, mixed>
 	 */
 	function static_site_importer_ability_error( string $code, string $message, $data = null ): array {
+		$import_report_summary = is_array( $data ) && isset( $data['import_report_summary'] ) && is_array( $data['import_report_summary'] ) ? $data['import_report_summary'] : static_site_importer_failure_report_summary( $code, $message );
+
 		return array(
 			'success'               => false,
 			'error'                 => array(
@@ -377,7 +379,7 @@ if ( ! function_exists( 'static_site_importer_ability_error' ) ) {
 				'message' => $message,
 				'data'    => $data,
 			),
-			'import_report_summary' => static_site_importer_failure_report_summary( $code, $message ),
+			'import_report_summary' => $import_report_summary,
 		);
 	}
 }

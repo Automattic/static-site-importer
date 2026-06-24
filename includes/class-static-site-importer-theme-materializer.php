@@ -98,10 +98,11 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param string              $theme_dir Theme directory.
 	 * @param string              $theme_uri Theme URI.
 	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
+	 * @param bool                $write_files Whether to write materialized asset files.
 	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,scripts:array<int,array<string,mixed>>,stylesheets:array<int,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}|WP_Error
 	 */
-	public static function materialize_website_artifact_files( string $theme_dir, string $theme_uri, array $artifacts ) {
-		$native_plan = self::materialize_materialization_plan_assets( $theme_dir, $theme_uri, $artifacts );
+	public static function materialize_website_artifact_files( string $theme_dir, string $theme_uri, array $artifacts, bool $write_files = true ) {
+		$native_plan = self::materialize_materialization_plan_assets( $theme_dir, $theme_uri, $artifacts, $write_files );
 		if ( is_wp_error( $native_plan ) || null !== $native_plan ) {
 			return $native_plan;
 		}
@@ -145,14 +146,16 @@ class Static_Site_Importer_Theme_Materializer {
 
 			$target_relative = 'assets/materialized/' . $relative;
 			$target          = trailingslashit( $theme_dir ) . $target_relative;
-			$dir             = dirname( $target );
-			if ( ! wp_mkdir_p( $dir ) ) {
-				return new WP_Error( 'static_site_importer_artifact_asset_mkdir_failed', sprintf( 'Failed to create website artifact asset directory: %s', $dir ) );
-			}
+			if ( $write_files ) {
+				$dir = dirname( $target );
+				if ( ! wp_mkdir_p( $dir ) ) {
+					return new WP_Error( 'static_site_importer_artifact_asset_mkdir_failed', sprintf( 'Failed to create website artifact asset directory: %s', $dir ) );
+				}
 
-			$result = self::write_file( $target, $content );
-			if ( is_wp_error( $result ) ) {
-				return $result;
+				$result = self::write_file( $target, $content );
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
 			}
 
 			$assets[ $relative ] = array(
@@ -182,9 +185,10 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param string              $theme_dir Theme directory.
 	 * @param string              $theme_uri Theme URI.
 	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
+	 * @param bool                $write_files Whether to write materialized asset files.
 	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,scripts:array<int,array<string,mixed>>,stylesheets:array<int,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}|null|WP_Error
 	 */
-	private static function materialize_materialization_plan_assets( string $theme_dir, string $theme_uri, array $artifacts ) {
+	private static function materialize_materialization_plan_assets( string $theme_dir, string $theme_uri, array $artifacts, bool $write_files = true ) {
 		$site = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
 		if ( 'blocks-engine/php-transformer/materialization-plan/v1' !== (string) ( $site['schema'] ?? '' ) || ! array_key_exists( 'assets', $site ) ) {
 			return null;
@@ -230,14 +234,16 @@ class Static_Site_Importer_Theme_Materializer {
 
 			$target_relative = 'assets/materialized/' . $relative;
 			$target          = trailingslashit( $theme_dir ) . $target_relative;
-			$dir             = dirname( $target );
-			if ( ! wp_mkdir_p( $dir ) ) {
-				return new WP_Error( 'static_site_importer_materialization_plan_asset_mkdir_failed', sprintf( 'Failed to create materialization-plan asset directory: %s', $dir ) );
-			}
+			if ( $write_files ) {
+				$dir = dirname( $target );
+				if ( ! wp_mkdir_p( $dir ) ) {
+					return new WP_Error( 'static_site_importer_materialization_plan_asset_mkdir_failed', sprintf( 'Failed to create materialization-plan asset directory: %s', $dir ) );
+				}
 
-			$result = self::write_file( $target, $content );
-			if ( is_wp_error( $result ) ) {
-				return $result;
+				$result = self::write_file( $target, $content );
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
 			}
 
 			$assets[ $relative ] = self::materialization_plan_asset_report( $asset, $relative, trailingslashit( $theme_uri ) . $target_relative, $target_relative, self::mime_type( $target ), $order );
@@ -255,7 +261,7 @@ class Static_Site_Importer_Theme_Materializer {
 			}
 		}
 
-		$font_stylesheets = self::materialize_font_materialization_stylesheets( $theme_dir, $theme_uri, $site, $assets, $order );
+		$font_stylesheets = self::materialize_font_materialization_stylesheets( $theme_dir, $theme_uri, $site, $assets, $order, $write_files );
 		if ( is_wp_error( $font_stylesheets ) ) {
 			return $font_stylesheets;
 		}
@@ -279,9 +285,10 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param array<string,mixed>               $site      Materialization plan site artifact.
 	 * @param array<string,array<string,mixed>> $assets    Materialized asset rows keyed by source path.
 	 * @param int                               $order     Current materialization order.
+	 * @param bool                               $write_files Whether to write materialized asset files.
 	 * @return array<int,array<string,mixed>>|WP_Error
 	 */
-	private static function materialize_font_materialization_stylesheets( string $theme_dir, string $theme_uri, array $site, array &$assets, int &$order ) {
+	private static function materialize_font_materialization_stylesheets( string $theme_dir, string $theme_uri, array $site, array &$assets, int &$order, bool $write_files = true ) {
 		$theme = isset( $site['theme'] ) && is_array( $site['theme'] ) ? $site['theme'] : array();
 		$plan  = isset( $theme['font_materialization'] ) && is_array( $theme['font_materialization'] ) ? $theme['font_materialization'] : array();
 		if ( 'blocks-engine/php-transformer/font-materialization-plan/v1' !== (string) ( $plan['schema'] ?? '' ) ) {
@@ -315,14 +322,16 @@ class Static_Site_Importer_Theme_Materializer {
 			}
 
 			$target = trailingslashit( $theme_dir ) . $relative;
-			$dir    = dirname( $target );
-			if ( ! wp_mkdir_p( $dir ) ) {
-				return new WP_Error( 'static_site_importer_font_materialization_stylesheet_mkdir_failed', sprintf( 'Failed to create font materialization stylesheet directory: %s', $dir ) );
-			}
+			if ( $write_files ) {
+				$dir = dirname( $target );
+				if ( ! wp_mkdir_p( $dir ) ) {
+					return new WP_Error( 'static_site_importer_font_materialization_stylesheet_mkdir_failed', sprintf( 'Failed to create font materialization stylesheet directory: %s', $dir ) );
+				}
 
-			$result = self::write_file( $target, $content );
-			if ( is_wp_error( $result ) ) {
-				return $result;
+				$result = self::write_file( $target, $content );
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
 			}
 
 			++$order;
