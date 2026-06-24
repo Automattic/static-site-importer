@@ -413,8 +413,9 @@ $assert( is_array( $metadata ), 'block-json-decodes' );
 $assert( 'static-site-importer/importer' === ( $metadata['name'] ?? '' ), 'block-name-is-product-importer' );
 $assert( 'Static Site Importer' === ( $metadata['title'] ?? '' ), 'block-title-is-product-name' );
 $assert( isset( $metadata['viewScript'] ), 'block-has-frontend-script' );
-$assert( false === ( $metadata['attributes']['applyToCurrentSite']['default'] ?? null ), 'block-defaults-to-preview-mode' );
-$assert( false === ( $metadata['attributes']['generateInCurrentRuntime']['default'] ?? null ), 'block-defaults-current-runtime-generation-off' );
+$assert( false === ( $metadata['attributes']['applyToCurrentSite']['default'] ?? null ), 'block-defaults-current-site-import-off' );
+$assert( true === ( $metadata['attributes']['openInPlayground']['default'] ?? null ), 'block-defaults-to-open-in-playground' );
+$assert( ! isset( $metadata['attributes']['generateInCurrentRuntime'] ), 'block-has-no-current-runtime-generation-mode' );
 
 static_site_importer_register_block();
 
@@ -437,7 +438,7 @@ $assert( str_contains( $html, 'data-static-site-importer' ), 'render-has-root-ho
 $assert( str_contains( $html, 'data-static-site-importer-rest-url="https://example.test/wp-json/static-site-importer/v1/imports"' ), 'render-exposes-import-rest-route' );
 $assert( str_contains( $html, 'data-static-site-importer-provider="privateprovider"' ), 'render-sanitizes-provider' );
 $assert( str_contains( $html, 'data-static-site-importer-apply-to-current-site="1"' ), 'render-exposes-current-site-apply-flag' );
-$assert( str_contains( $html, 'data-static-site-importer-generate-in-current-runtime="0"' ), 'render-exposes-current-runtime-generation-flag' );
+$assert( str_contains( $html, 'data-static-site-importer-open-in-playground="0"' ), 'render-exposes-open-in-playground-flag' );
 $assert( ! str_contains( $html, 'data-static-site-importer-source-url' ), 'render-omits-url-input-hook' );
 $assert( str_contains( $html, 'data-static-site-importer-default-url="https://example.com/source"' ), 'render-preserves-default-url-for-programmatic-use' );
 $assert( str_contains( $html, 'data-static-site-importer-source-files' ), 'render-has-file-input-hook' );
@@ -459,11 +460,11 @@ $assert( ! str_contains( $html, 'Import status' ), 'render-omits-import-status-s
 $assert( str_contains( $html, 'Import your site' ), 'render-uses-custom-title' );
 $assert( str_contains( $html, 'https://example.com/source' ), 'render-uses-default-url' );
 $assert( str_contains( static_site_importer_render_block(), 'Generate WordPress website' ), 'render-preview-mode-button-generates-wordpress-website' );
-$runtime_generate_html = static_site_importer_render_block( array( 'generateInCurrentRuntime' => true ) );
-$assert( str_contains( $runtime_generate_html, 'data-static-site-importer-apply-to-current-site="0"' ), 'render-runtime-generation-does-not-enable-current-site-apply' );
-$assert( str_contains( $runtime_generate_html, 'data-static-site-importer-generate-in-current-runtime="1"' ), 'render-can-target-current-runtime-with-generate-label' );
-$assert( str_contains( $runtime_generate_html, 'Generate WordPress website' ), 'render-runtime-generation-button-generates-wordpress-website' );
-$assert( ! str_contains( $runtime_generate_html, 'Import to this site' ), 'render-runtime-generation-button-does-not-say-import-to-this-site' );
+$playground_html = static_site_importer_render_block( array( 'openInPlayground' => true ) );
+$assert( str_contains( $playground_html, 'data-static-site-importer-apply-to-current-site="0"' ), 'render-playground-does-not-enable-current-site-apply' );
+$assert( str_contains( $playground_html, 'data-static-site-importer-open-in-playground="1"' ), 'render-can-target-playground-with-generate-label' );
+$assert( str_contains( $playground_html, 'Generate WordPress website' ), 'render-playground-button-generates-wordpress-website' );
+$assert( ! str_contains( $playground_html, 'Import to this site' ), 'render-playground-button-does-not-say-import-to-this-site' );
 
 $view_js = file_get_contents( dirname( __DIR__ ) . '/blocks/importer/view.js' );
 $assert( is_string( $view_js ), 'view-js-readable' );
@@ -472,14 +473,12 @@ $assert( str_contains( $view_js, 'data-static-site-importer-source-directory' ),
 $assert( str_contains( $view_js, 'webkitGetAsEntry' ), 'view-supports-dropped-directory-entries' );
 $assert( str_contains( $view_js, 'archive: await buildArchive( uploadInputs, root )' ), 'view-sends-zip-from-combined-upload-as-archive-payload' );
 $assert( str_contains( $view_js, 'shouldIncludeSiteFile' ), 'view-skips-known-non-site-upload-files-before-reading' );
-$assert( ! str_contains( $view_js, 'applyToCurrentSite || generateInCurrentRuntime' ), 'view-does-not-treat-current-runtime-generation-as-current-site-import' );
+$assert( ! str_contains( $view_js, 'CurrentRuntime' ), 'view-does-not-reference-current-runtime-mode' );
+$assert( ! str_contains( $view_js, 'generate_in_current_runtime' ), 'view-does-not-send-current-runtime-flag' );
 $assert( str_contains( $view_js, 'isCurrentSiteImport' ), 'view-names-current-site-import-mode-explicitly' );
-$assert( str_contains( $view_js, 'isCurrentRuntimeGeneration' ), 'view-names-current-runtime-generation-mode-explicitly' );
-$assert( str_contains( $view_js, 'shouldWriteGeneratedSite = isCurrentSiteImport || isCurrentRuntimeGeneration' ), 'view-writes-generated-site-for-runtime-generation-without-marking-current-site-import' );
 $assert( str_contains( $view_js, 'apply_to_current_site: isCurrentSiteImport' ), 'view-sends-current-site-apply-flag-only-from-apply-mode' );
-$assert( str_contains( $view_js, 'activate: shouldWriteGeneratedSite' ), 'view-activates-current-site-and-runtime-generation' );
-$assert( str_contains( $view_js, 'overwrite: shouldWriteGeneratedSite' ), 'view-overwrites-current-site-and-runtime-generation' );
-$assert( str_contains( $view_js, 'generate_in_current_runtime: isCurrentRuntimeGeneration' ), 'view-sends-current-runtime-generation-flag' );
+$assert( str_contains( $view_js, 'activate: isCurrentSiteImport' ), 'view-activates-only-current-site-imports' );
+$assert( str_contains( $view_js, 'overwrite: isCurrentSiteImport' ), 'view-overwrites-only-current-site-imports' );
 $generic_preview_message = implode( ' ', array( 'no', 'preview', 'provider', 'is', 'configured' ) );
 $assert( ! str_contains( $view_js, $generic_preview_message ), 'view-does-not-reference-generic-preview-message' );
 $assert( str_contains( $view_js, 'Open WordPress preview' ) || str_contains( $html, 'Open WordPress preview' ), 'view-or-render-has-preview-link-label' );
@@ -507,19 +506,18 @@ WP_Codebox_Abilities::$next_session = array(
 	),
 );
 
-$preview_response = static_site_importer_rest_create_import(
-	new WP_REST_Request(
+$preview_source   = array(
+	'files' => array(
 		array(
-			'source' => array(
-				'files' => array(
-					array(
-						'path'    => 'uploaded/site/index.html',
-						'content' => '<main>Hello</main>',
-					),
-				),
-			),
-		)
-	)
+			'path'    => 'uploaded/site/index.html',
+			'content' => '<main>Hello</main>',
+		),
+	),
+);
+$preview_response = static_site_importer_rest_create_preview(
+	$preview_source,
+	static_site_importer_rest_import_args( array() ),
+	array( 'source' => $preview_source )
 );
 $assert( true === ( $preview_response['success'] ?? null ), 'rest-preview-codebox-result-succeeds' );
 $assert( 'https://preview.example.test/ssi' === ( $preview_response['preview']['url'] ?? '' ), 'rest-preview-contract-exposes-codebox-preview-url' );
@@ -560,19 +558,18 @@ WP_Codebox_Abilities::$next_session = array(
 		'hydration_endpoint' => '/wp-json/wp-codebox/v1/browser-blueprint-ref?ref=prepared%3Assi-product%3A' . str_repeat( 'b', 64 ),
 	),
 );
-$product_response = static_site_importer_rest_create_import(
-	new WP_REST_Request(
+$product_source   = array(
+	'files' => array(
 		array(
-			'source' => array(
-				'files' => array(
-					array(
-						'path'    => 'uploaded/product/index.html',
-						'content' => '<main>Product DTO</main>',
-					),
-				),
-			),
-		)
-	)
+			'path'    => 'uploaded/product/index.html',
+			'content' => '<main>Product DTO</main>',
+		),
+	),
+);
+$product_response = static_site_importer_rest_create_preview(
+	$product_source,
+	static_site_importer_rest_import_args( array() ),
+	array( 'source' => $product_source )
 );
 $assert( true === ( $product_response['success'] ?? null ), 'rest-preview-product-dto-succeeds-with-blueprint-ref' );
 $assert( isset( $product_response['preview']['playground']['blueprint_url'] ), 'rest-preview-product-dto-exposes-playground-blueprint-url' );
@@ -585,14 +582,11 @@ WP_Codebox_Abilities::$next_session = array(
 	'playground' => array(),
 	'artifacts'  => array(),
 );
-$unavailable_response = static_site_importer_rest_create_import(
-	new WP_REST_Request(
-		array(
-			'source' => array(
-				'html' => '<main>No provider</main>',
-			),
-		)
-	)
+$unavailable_source   = array( 'html' => '<main>No provider</main>' );
+$unavailable_response = static_site_importer_rest_create_preview(
+	$unavailable_source,
+	static_site_importer_rest_import_args( array() ),
+	array( 'source' => $unavailable_source )
 );
 $assert( false === ( $unavailable_response['success'] ?? null ), 'rest-preview-default-does-not-pretend-success' );
 $assert( 'unavailable' === ( $unavailable_response['preview']['status'] ?? '' ), 'rest-preview-default-reports-unavailable' );
@@ -624,9 +618,9 @@ $assert( false === ( $codebox_missing['success'] ?? null ), 'rest-codebox-unavai
 $assert( 'wp-codebox/create-browser-playground-session' === ( $codebox_missing['provider'] ?? '' ), 'rest-codebox-unavailable-identifies-required-api' );
 $assert( str_contains( $codebox_missing['preview']['message'] ?? '', 'WP Codebox is unavailable, not installed, or does not provide the required browser Playground session API' ), 'rest-codebox-unavailable-diagnostic-wording' );
 
-$assert( 'preview' === static_site_importer_rest_import_mode( array() ), 'rest-mode-defaults-to-codebox-preview' );
-$assert( 'current_runtime' === static_site_importer_rest_import_mode( array( 'generate_in_current_runtime' => true ) ), 'rest-mode-supports-current-runtime-generation' );
-$assert( 'current_site' === static_site_importer_rest_import_mode( array( 'apply_to_current_site' => true, 'generate_in_current_runtime' => true ) ), 'rest-mode-current-site-import-wins-when-explicit' );
+$assert( 'playground' === static_site_importer_rest_import_mode( array() ), 'rest-mode-defaults-to-open-in-playground' );
+$assert( 'playground' === static_site_importer_rest_import_mode( array( 'open_in_playground' => true ) ), 'rest-mode-supports-open-in-playground' );
+$assert( 'current_site' === static_site_importer_rest_import_mode( array( 'apply_to_current_site' => true, 'open_in_playground' => true ) ), 'rest-mode-current-site-import-wins-when-explicit' );
 
 Static_Site_Importer_Theme_Generator::$last_artifact = array();
 $apply_response = static_site_importer_rest_create_import(
@@ -649,26 +643,36 @@ $assert( 'https://example.test/' === ( $apply_response['preview']['url'] ?? '' )
 Static_Site_Importer_Theme_Generator::$last_artifact = array();
 Static_Site_Importer_Theme_Generator::$last_args     = array();
 WP_Codebox_Abilities::$last_input = array();
-$runtime_response = static_site_importer_rest_create_import(
+$playground_response = static_site_importer_rest_create_import(
 	new WP_REST_Request(
 		array(
-			'apply_to_current_site'      => false,
-			'generate_in_current_runtime' => true,
-			'source'                      => array(
+			'apply_to_current_site' => false,
+			'open_in_playground'    => true,
+			'source'                => array(
 				'html' => '<main>Generate</main>',
 			),
 		)
 	)
 );
-$assert( true === ( $runtime_response['success'] ?? null ), 'rest-current-runtime-generation-succeeds-without-codebox' );
-$assert( 'generated_in_current_runtime' === ( $runtime_response['mode'] ?? '' ), 'rest-current-runtime-generation-reports-mode' );
-$assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['activate'] ?? null ), 'rest-current-runtime-generation-activates-generated-site' );
-$assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['overwrite'] ?? null ), 'rest-current-runtime-generation-overwrites-generated-site' );
-$assert( 'generated-wordpress-website' === ( Static_Site_Importer_Theme_Generator::$last_args['slug'] ?? null ), 'rest-current-runtime-generation-uses-non-legacy-generated-theme-slug' );
-$assert( 'Generated WordPress Website' === ( Static_Site_Importer_Theme_Generator::$last_args['name'] ?? null ), 'rest-current-runtime-generation-uses-generated-theme-name' );
-$assert( array() === WP_Codebox_Abilities::$last_input, 'rest-current-runtime-generation-does-not-use-codebox-preview' );
-$assert( 'https://playground.wordpress.net/?url=%2F' === ( $runtime_response['preview']['url'] ?? '' ), 'rest-current-runtime-generation-returns-playground-front-page-url' );
-$assert( '/' === ( $runtime_response['preview']['playground']['preview_url'] ?? '' ), 'rest-current-runtime-generation-records-playground-preview-path' );
+$assert( true === ( $playground_response['success'] ?? null ), 'rest-playground-open-succeeds-without-codebox' );
+$assert( 'playground' === ( $playground_response['mode'] ?? '' ), 'rest-playground-open-reports-mode' );
+$assert( array() === Static_Site_Importer_Theme_Generator::$last_args, 'rest-playground-open-does-not-import-into-current-site' );
+$assert( array() === WP_Codebox_Abilities::$last_input, 'rest-playground-open-does-not-use-codebox-preview' );
+$assert( str_starts_with( $playground_response['preview']['url'] ?? '', 'https://playground.wordpress.net/#' ), 'rest-playground-open-returns-direct-playground-blueprint-url' );
+$assert( ! str_starts_with( $playground_response['preview']['url'] ?? '', 'https://playground.wordpress.net/?url=' ), 'rest-playground-open-does-not-return-empty-playground-url' );
+$assert( '/' === ( $playground_response['preview']['playground']['preview_url'] ?? '' ), 'rest-playground-open-records-playground-preview-path' );
+$playground_blueprint_json = rawurldecode( substr( (string) ( $playground_response['preview']['playground']['blueprint_url'] ?? '' ), strlen( 'https://playground.wordpress.net/#' ) ) );
+$playground_blueprint      = json_decode( $playground_blueprint_json, true );
+$assert( is_array( $playground_blueprint ), 'rest-playground-open-blueprint-decodes' );
+$playground_blueprint_code = wp_json_encode( $playground_blueprint );
+$playground_plugin_step    = $playground_blueprint['steps'][1] ?? array();
+$assert( 'https://github.com/Automattic/static-site-importer/releases/latest/download/static-site-importer.zip' === ( $playground_plugin_step['pluginData']['url'] ?? '' ), 'rest-playground-open-blueprint-installs-release-zip' );
+$assert( str_contains( (string) $playground_blueprint_code, 'static_site_importer_ability_import_website_artifact' ), 'rest-playground-open-blueprint-runs-import-ability' );
+$assert( str_contains( (string) $playground_blueprint_code, "'activate' => true" ), 'rest-playground-open-blueprint-activates-generated-site' );
+$assert( str_contains( (string) $playground_blueprint_code, "'overwrite' => true" ), 'rest-playground-open-blueprint-overwrites-generated-site' );
+$assert( str_contains( (string) $playground_blueprint_code, "'slug' => 'generated-wordpress-website'" ), 'rest-playground-open-blueprint-uses-non-legacy-generated-theme-slug' );
+$assert( str_contains( (string) $playground_blueprint_code, "'name' => 'Generated WordPress Website'" ), 'rest-playground-open-blueprint-uses-generated-theme-name' );
+$assert( ! str_contains( (string) $playground_blueprint_code, 'imported-website-artifact' ), 'rest-playground-open-blueprint-omits-legacy-theme-slug' );
 
 $blueprint = json_decode( file_get_contents( dirname( __DIR__ ) . '/docs/playground/blueprint.json' ), true );
 $assert( is_array( $blueprint ), 'playground-blueprint-decodes' );
@@ -678,7 +682,8 @@ $assert( str_contains( $blueprint_code, 'static-site-importer/importer' ), 'play
 $assert( str_contains( $blueprint_code, '"title":"Import HTML to WordPress"' ), 'playground-blueprint-uses-import-html-title' );
 $assert( str_contains( $blueprint_code, '"intro":"Upload a website or paste HTML. Static Site Importer will generate your new WordPress website."' ), 'playground-blueprint-uses-generate-website-copy' );
 $assert( str_contains( $blueprint_code, '"applyToCurrentSite":false' ), 'playground-blueprint-generates-wordpress-website' );
-$assert( str_contains( $blueprint_code, '"generateInCurrentRuntime":true' ), 'playground-blueprint-targets-current-runtime-generation' );
+$assert( str_contains( $blueprint_code, '"openInPlayground":true' ), 'playground-blueprint-targets-open-in-playground' );
+$assert( ! str_contains( $blueprint_code, 'generateInCurrentRuntime' ), 'playground-blueprint-does-not-reference-current-runtime-generation' );
 $assert( str_contains( $blueprint_code, 'static_site_importer_protected_pages' ), 'playground-blueprint-protects-import-page' );
 $plugin_step = $blueprint['steps'][1] ?? array();
 $assert( 'https://github.com/Automattic/static-site-importer/releases/latest/download/static-site-importer.zip' === ( $plugin_step['pluginData']['url'] ?? '' ), 'playground-blueprint-installs-packaged-release' );
@@ -779,16 +784,15 @@ $figma_response = static_site_importer_rest_import_figma(
 $assert( true === ( $figma_response['success'] ?? null ), 'figma-rest-response-succeeds' );
 $assert( 'figma-to-wordpress/runner-response/v1' === ( $figma_response['schema'] ?? '' ), 'figma-rest-response-uses-runner-schema' );
 $assert( 'created' === ( $figma_response['status'] ?? '' ), 'figma-rest-response-created-status' );
-$assert( str_starts_with( $figma_response['open_url'] ?? '', 'https://playground.wordpress.net/?blueprint-url=' ), 'figma-rest-response-open-url-is-playground-blueprint' );
+$assert( str_starts_with( $figma_response['open_url'] ?? '', 'https://playground.wordpress.net/#' ), 'figma-rest-response-open-url-is-direct-playground-blueprint' );
 $assert( isset( $figma_response['preview_session']['playground']['blueprint_url'] ), 'figma-rest-response-exposes-playground-blueprint-url' );
 $assert( array() === Static_Site_Importer_Theme_Generator::$last_artifact, 'figma-rest-preview-does-not-apply-to-current-site' );
 $assert( array() === WP_Codebox_Abilities::$last_input, 'figma-rest-preview-does-not-use-codebox-runner' );
 $figma_open_url_parts = wp_parse_url( (string) $figma_response['open_url'] );
-parse_str( (string) ( $figma_open_url_parts['query'] ?? '' ), $figma_open_url_query );
-$assert( '/' === ( $figma_open_url_query['url'] ?? '' ), 'figma-playground-opens-imported-wordpress-front-page' );
+$assert( isset( $figma_open_url_parts['fragment'] ), 'figma-playground-uses-self-contained-blueprint-fragment' );
 $figma_blueprint_ref = (string) ( $figma_response['preview_session']['playground']['ref'] ?? '' );
 $assert( preg_match( '/^[a-f0-9]{64}$/', $figma_blueprint_ref ) === 1, 'figma-preview-exposes-blueprint-ref' );
-$figma_blueprint_response = static_site_importer_rest_figma_preview_blueprint( new WP_REST_Request( array( 'ref' => $figma_blueprint_ref ) ) );
+$figma_blueprint_response = json_decode( rawurldecode( (string) ( $figma_open_url_parts['fragment'] ?? '' ) ), true );
 $assert( is_array( $figma_blueprint_response ), 'figma-blueprint-hydrates' );
 $figma_blueprint_code = wp_json_encode( $figma_blueprint_response );
 $assert( str_contains( (string) $figma_blueprint_code, 'static_site_importer_ability_import_website_artifact' ), 'figma-blueprint-invokes-ssi-import-function' );
