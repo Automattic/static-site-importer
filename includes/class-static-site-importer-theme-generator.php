@@ -98,11 +98,6 @@ class Static_Site_Importer_Theme_Generator {
 			return new WP_Error( 'static_site_importer_theme_exists', sprintf( 'Theme already exists: %s', $theme_slug ) );
 		}
 
-		$result = Static_Site_Importer_Theme_Materializer::ensure_dirs( $theme_dir );
-		if ( is_wp_error( $result ) ) {
-			return $result;
-		}
-
 		$source_metadata           = isset( $args['source_metadata'] ) && is_array( $args['source_metadata'] ) ? $args['source_metadata'] : array();
 		$source_metadata['source'] = 'website_artifact';
 		$html_path                 = (string) ( $compiled['provenance']['source'] ?? ( $compiled['input']['entry_path'] ?? 'website_artifact' ) );
@@ -129,7 +124,7 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		$permalinks     = Static_Site_Importer_Page_Materializer::page_permalinks( $page_ids );
-		$materialized = self::materialize_website_artifact_files_to_theme( $theme_dir, $artifacts );
+		$materialized = self::materialize_website_artifact_files_to_theme( $theme_dir, $artifacts, false );
 		if ( is_wp_error( $materialized ) ) {
 			return $materialized;
 		}
@@ -163,10 +158,6 @@ class Static_Site_Importer_Theme_Generator {
 			Static_Site_Importer_Theme_Materializer::base_theme_writes( $theme_dir, $theme_slug, $theme_name, $materialized['css'], $has_header_part, $has_footer_part, $materialized['scripts'], $materialized['stylesheets'] )
 		);
 		$writes = array_merge( $writes, $template_part_writes );
-		$result         = Static_Site_Importer_Page_Materializer::write_page_contents( $document_pages, $page_ids, $page_artifacts['contents'] );
-		if ( is_wp_error( $result ) ) {
-			return $result;
-		}
 		self::analyze_imported_page_content_documents( $document_pages, $page_artifacts['contents'] );
 
 		self::record_source_documents_summary( $artifacts['documents'] ?? array(), $document_pages, $page_ids, $permalinks );
@@ -203,6 +194,37 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		if ( false === $finding_packets_json ) {
 			return new WP_Error( 'static_site_importer_finding_packets_encode_failed', 'Failed to encode finding packets JSON.' );
+		}
+		if ( ! empty( $quality['fail_import'] ) ) {
+			return new WP_Error(
+				'static_site_importer_quality_gate_failed',
+				'Import failed quality gates; materialization was not completed.',
+				array(
+					'status'                   => 422,
+					'theme_slug'               => $theme_slug,
+					'theme_name'               => $theme_name,
+					'quality'                  => $quality,
+					'import_report_summary'    => self::$conversion_report['compact_summary'] ?? array(),
+					'import_validation_result' => $validation_result,
+					'finding_packets'          => $finding_packets,
+					'source_documents'         => self::$conversion_report['source_documents'] ?? array(),
+				)
+			);
+		}
+
+		$result = Static_Site_Importer_Theme_Materializer::ensure_dirs( $theme_dir );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		$materialized_write = self::materialize_website_artifact_files_to_theme( $theme_dir, $artifacts, true, false );
+		if ( is_wp_error( $materialized_write ) ) {
+			return $materialized_write;
+		}
+
+		$result = Static_Site_Importer_Page_Materializer::write_page_contents( $document_pages, $page_ids, $page_artifacts['contents'] );
+		if ( is_wp_error( $result ) ) {
+			return $result;
 		}
 
 		$writes[ $theme_dir . '/import-report.json' ]            = $report_json . "\n";
@@ -1414,20 +1436,24 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
-	 * Write compiler-emitted files that can be consumed without re-importing HTML.
+	 * Prepare or write compiler-emitted files that can be consumed without re-importing HTML.
 	 *
-	 * @param string              $theme_dir Theme directory.
-	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
+	 * @param string              $theme_dir          Theme directory.
+	 * @param array<string,mixed> $artifacts          WordPress artifacts from Blocks Engine.
+	 * @param bool                $write_files        Whether to write materialized asset files.
+	 * @param bool                $record_diagnostics Whether to append materialization diagnostics to the report.
 	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,scripts:array<int,array<string,mixed>>,stylesheets:array<int,array<string,mixed>>}|WP_Error
 	 */
-	private static function materialize_website_artifact_files_to_theme( string $theme_dir, array $artifacts ) {
-		$result = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files( $theme_dir, self::$active_theme_uri, $artifacts );
+	private static function materialize_website_artifact_files_to_theme( string $theme_dir, array $artifacts, bool $write_files = true, bool $record_diagnostics = true ) {
+		$result = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files( $theme_dir, self::$active_theme_uri, $artifacts, $write_files );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
 
-		foreach ( $result['diagnostics'] as $diagnostic ) {
-			self::$conversion_report['diagnostics'][] = $diagnostic;
+		if ( $record_diagnostics ) {
+			foreach ( $result['diagnostics'] as $diagnostic ) {
+				self::$conversion_report['diagnostics'][] = $diagnostic;
+			}
 		}
 		return array(
 			'css'         => $result['css'],
