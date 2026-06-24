@@ -148,35 +148,53 @@ function static_site_importer_rest_figma_preview_blueprint( WP_REST_Request $req
  * @return array<string,mixed>|WP_Error
  */
 function static_site_importer_rest_create_figma_playground_preview( array $artifact, array $input ) {
-	$blueprint      = static_site_importer_rest_figma_playground_blueprint( $input );
+	return static_site_importer_rest_create_playground_preview( $artifact, $input, 'figma' );
+}
+
+/**
+ * Build a self-contained Playground blueprint that imports the Figma artifact.
+ *
+ * @param array<string,mixed> $input Import ability input.
+ * @return array<string,mixed>
+ */
+function static_site_importer_rest_figma_playground_blueprint( array $input ): array {
+	return static_site_importer_rest_playground_blueprint( $input );
+}
+
+/**
+ * Create a direct Playground preview whose URL runs the import in the browser.
+ *
+ * @param array<string,mixed> $artifact Website artifact.
+ * @param array<string,mixed> $input    Import ability input.
+ * @param string              $source   Preview source label.
+ * @return array<string,mixed>|WP_Error
+ */
+function static_site_importer_rest_create_playground_preview( array $artifact, array $input, string $source = 'upload' ) {
+	$blueprint      = static_site_importer_rest_playground_blueprint( $input );
 	$blueprint_json = wp_json_encode( $blueprint );
 	if ( ! is_string( $blueprint_json ) ) {
-		return new WP_Error( 'static_site_importer_figma_blueprint_encode_failed', __( 'Could not encode the Figma preview blueprint.', 'static-site-importer' ), array( 'status' => 500 ) );
+		return new WP_Error( 'static_site_importer_playground_blueprint_encode_failed', __( 'Could not encode the Playground preview blueprint.', 'static-site-importer' ), array( 'status' => 500 ) );
 	}
 
-	$ref    = hash( 'sha256', $blueprint_json );
-	$stored = static_site_importer_rest_store_figma_blueprint( $ref, $blueprint );
-	if ( ! $stored ) {
-		return new WP_Error( 'static_site_importer_figma_blueprint_store_failed', __( 'Could not store the Figma preview blueprint.', 'static-site-importer' ), array( 'status' => 500 ) );
-	}
-
-	$endpoint      = rest_url( 'static-site-importer/v1/figma-preview-blueprint/' . $ref );
-	$blueprint_url = 'https://playground.wordpress.net/?blueprint-url=' . rawurlencode( $endpoint ) . '&url=%2F';
+	$ref           = hash( 'sha256', $blueprint_json );
+	$blueprint_url = 'https://playground.wordpress.net/#' . rawurlencode( $blueprint_json );
 
 	return array(
 		'success'  => true,
 		'preview'  => array(
 			'status'     => 'ready',
+			'url'        => esc_url_raw( $blueprint_url ),
 			'playground' => array(
 				'blueprint_url' => esc_url_raw( $blueprint_url ),
 				'preview_url'   => '/',
 				'ref'           => $ref,
 			),
 		),
-		'provider' => 'static-site-importer/figma-direct-playground-blueprint',
+		'provider' => 'static-site-importer/direct-playground-blueprint',
 		'request'  => array(
-			'schema'    => 'static-site-importer/figma-preview-request/v1',
-			'artifact'  => array(
+			'schema'   => 'static-site-importer/playground-preview-request/v1',
+			'source'   => $source,
+			'artifact' => array(
 				'entrypoint' => (string) ( $artifact['entrypoint'] ?? '' ),
 				'file_count' => isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? count( $artifact['files'] ) : 0,
 			),
@@ -188,12 +206,12 @@ function static_site_importer_rest_create_figma_playground_preview( array $artif
 }
 
 /**
- * Build a self-contained Playground blueprint that imports the Figma artifact.
+ * Build a WPSG-style self-contained Playground blueprint that runs the import.
  *
  * @param array<string,mixed> $input Import ability input.
  * @return array<string,mixed>
  */
-function static_site_importer_rest_figma_playground_blueprint( array $input ): array {
+function static_site_importer_rest_playground_blueprint( array $input ): array {
 	// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Generates self-contained Playground import code.
 	$input_literal = var_export( $input, true );
 	$import_code   = '<?php
@@ -206,10 +224,10 @@ $input = ' . $input_literal . ';
 $result = static_site_importer_ability_import_website_artifact( $input );
 
 if ( ! is_array( $result ) || empty( $result["success"] ) ) {
-	throw new RuntimeException( "Static Site Importer Figma import failed: " . wp_json_encode( $result ) );
+	throw new RuntimeException( "Static Site Importer Playground import failed: " . wp_json_encode( $result ) );
 }
 
-update_option( "static_site_importer_figma_preview_result", $result, false );
+update_option( "static_site_importer_playground_preview_result", $result, false );
 ?>';
 
 	return array(
@@ -454,17 +472,8 @@ function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 	$input  = static_site_importer_rest_import_args( $params );
 	$mode   = static_site_importer_rest_import_mode( $params );
 
-	if ( 'current_runtime' === $mode ) {
-		$result = static_site_importer_rest_generate_in_current_runtime( $source, $input, $params );
-		if ( is_wp_error( $result ) ) {
-			return $result;
-		}
-
-		return rest_ensure_response( $result );
-	}
-
-	if ( 'preview' === $mode ) {
-		$result = static_site_importer_rest_create_preview( $source, $input, $params );
+	if ( 'playground' === $mode ) {
+		$result = static_site_importer_rest_open_in_playground( $source, $input );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
@@ -483,24 +492,19 @@ function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 /**
  * Resolve the import execution mode from REST flags.
  *
- * Modes are intentionally separate:
- * - preview: non-mutating WP Codebox preview.
- * - current_runtime: public Playground generation in the active disposable runtime.
+ * Modes are intentionally limited:
+ * - playground: return a browser Playground URL that runs the import there.
  * - current_site: explicit import into the installed WordPress site.
  *
  * @param array<string,mixed> $params Request params.
- * @return 'preview'|'current_runtime'|'current_site'
+ * @return 'playground'|'current_site'
  */
 function static_site_importer_rest_import_mode( array $params ): string {
 	if ( ! empty( $params['apply_to_current_site'] ) ) {
 		return 'current_site';
 	}
 
-	if ( ! empty( $params['generate_in_current_runtime'] ) ) {
-		return 'current_runtime';
-	}
-
-	return 'preview';
+	return 'playground';
 }
 
 /**
@@ -514,14 +518,13 @@ function static_site_importer_rest_should_apply_to_current_site( array $params )
 }
 
 /**
- * Generate a WordPress website in the active disposable runtime without WP Codebox.
+ * Return a Playground URL that runs the import in the browser runtime.
  *
  * @param array<string,mixed> $source Source payload.
  * @param array<string,mixed> $input  Import args.
- * @param array<string,mixed> $params Request params.
  * @return array<string,mixed>|WP_Error
  */
-function static_site_importer_rest_generate_in_current_runtime( array $source, array $input, array $params ) {
+function static_site_importer_rest_open_in_playground( array $source, array $input ) {
 	$input['activate']  = true;
 	$input['overwrite'] = true;
 	if ( empty( $input['slug'] ) ) {
@@ -531,39 +534,20 @@ function static_site_importer_rest_generate_in_current_runtime( array $source, a
 		$input['name'] = __( 'Generated WordPress Website', 'static-site-importer' );
 	}
 
-	$result = static_site_importer_rest_apply_to_current_site( $source, $input, $params );
-	if ( ! is_array( $result ) ) {
+	$artifact = static_site_importer_rest_source_artifact( $source );
+	if ( is_wp_error( $artifact ) ) {
+		return $artifact;
+	}
+	$input['artifact'] = $artifact;
+
+	$result = static_site_importer_rest_create_playground_preview( $artifact, $input, 'upload' );
+	if ( is_wp_error( $result ) ) {
 		return $result;
 	}
 
-	$preview                   = isset( $result['preview'] ) && is_array( $result['preview'] ) ? $result['preview'] : array();
-	$preview['status']         = isset( $preview['status'] ) ? $preview['status'] : 'ready';
-	$preview['url']            = static_site_importer_rest_current_runtime_preview_url();
-	$playground                = isset( $preview['playground'] ) && is_array( $preview['playground'] ) ? $preview['playground'] : array();
-	$playground['preview_url'] = static_site_importer_rest_current_runtime_preview_path();
-	$preview['playground']     = $playground;
-	$result['preview']         = $preview;
-	$result['mode']            = 'generated_in_current_runtime';
+	$result['mode'] = 'playground';
 
 	return $result;
-}
-
-/**
- * Return the active runtime front page URL for public Playground generation.
- *
- * @return string
- */
-function static_site_importer_rest_current_runtime_preview_url(): string {
-	return 'https://playground.wordpress.net/?url=%2F';
-}
-
-/**
- * Return the active runtime front page path for public Playground generation.
- *
- * @return string
- */
-function static_site_importer_rest_current_runtime_preview_path(): string {
-	return '/';
 }
 
 /**

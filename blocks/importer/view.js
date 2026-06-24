@@ -269,8 +269,6 @@
 			const uploadInputs = root.querySelectorAll( '[data-static-site-importer-source-files], [data-static-site-importer-source-directory]' );
 			const provider = root.getAttribute( 'data-static-site-importer-provider' ) || '';
 			const isCurrentSiteImport = root.getAttribute( 'data-static-site-importer-apply-to-current-site' ) === '1';
-			const isCurrentRuntimeGeneration = root.getAttribute( 'data-static-site-importer-generate-in-current-runtime' ) === '1';
-			const shouldWriteGeneratedSite = isCurrentSiteImport || isCurrentRuntimeGeneration;
 			const source = {
 				url: form ? form.getAttribute( 'data-static-site-importer-default-url' ) || '' : '',
 				html: html ? html.value : '',
@@ -300,9 +298,8 @@
 						provider,
 						source,
 						apply_to_current_site: isCurrentSiteImport,
-						activate: shouldWriteGeneratedSite,
-						overwrite: shouldWriteGeneratedSite,
-						generate_in_current_runtime: isCurrentRuntimeGeneration,
+						activate: isCurrentSiteImport,
+						overwrite: isCurrentSiteImport,
 					} ),
 				} );
 				const report = await response.json();
@@ -310,8 +307,8 @@
 				setPreviewLink( root, report );
 				if ( response.ok && isCurrentSiteImport && report.success ) {
 					showStatus( root, 'Import complete.' );
-				} else if ( response.ok && isCurrentRuntimeGeneration && report.success ) {
-					showStatus( root, 'WordPress website generated.' );
+				} else if ( response.ok && report.success && previewUrl( report ) ) {
+					showStatus( root, 'Playground import ready.' );
 				} else if ( response.ok && previewUrl( report ) ) {
 					showStatus( root, 'Preview ready.' );
 				} else if ( response.ok && report.preview && report.preview.status === 'unavailable' ) {

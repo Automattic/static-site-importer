@@ -26,9 +26,9 @@
       "type": "boolean",
       "default": false
     },
-    "generateInCurrentRuntime": {
+    "openInPlayground": {
       "type": "boolean",
-      "default": false
+      "default": true
     }
   },
   "editorScript": "file:./editor.js",
