@@ -367,6 +367,7 @@ class Static_Site_Importer_Transformer_Adapter {
 			if ( isset( $file['content'] ) && is_scalar( $file['content'] ) ) {
 				$html = (string) $file['content'];
 			} elseif ( isset( $file['content_base64'] ) && is_scalar( $file['content_base64'] ) ) {
+				// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Website artifacts may carry trusted HTML payloads as base64 data.
 				$decoded = base64_decode( (string) $file['content_base64'], true );
 				$html    = false !== $decoded ? $decoded : '';
 			}
@@ -469,11 +470,11 @@ class Static_Site_Importer_Transformer_Adapter {
 		$products = array();
 		$seen     = array();
 		foreach ( array_merge( $primary, $secondary ) as $product ) {
-			if ( ! is_array( $product ) || empty( $product['slug'] ) || isset( $seen[ $product['slug'] ] ) ) {
+			if ( empty( $product['slug'] ) || isset( $seen[ $product['slug'] ] ) ) {
 				continue;
 			}
 			$seen[ $product['slug'] ] = true;
-			$products[]              = $product;
+			$products[]               = $product;
 		}
 
 		return $products;
@@ -505,11 +506,11 @@ class Static_Site_Importer_Transformer_Adapter {
 		$nodes = array();
 		$type  = $data['@type'] ?? null;
 		if ( is_string( $type ) && $this->json_ld_type_is_product( $type ) ) {
-			$nodes[] = $data;
+			$nodes[] = $this->json_ld_string_keyed_node( $data );
 		} elseif ( is_array( $type ) ) {
 			foreach ( $type as $type_entry ) {
 				if ( is_scalar( $type_entry ) && $this->json_ld_type_is_product( (string) $type_entry ) ) {
-					$nodes[] = $data;
+					$nodes[] = $this->json_ld_string_keyed_node( $data );
 					break;
 				}
 			}
@@ -526,6 +527,23 @@ class Static_Site_Importer_Transformer_Adapter {
 		}
 
 		return $nodes;
+	}
+
+	/**
+	 * Return a JSON-LD node with string keys for product row extraction.
+	 *
+	 * @param array<string|int,mixed> $data JSON-LD node.
+	 * @return array<string,mixed>
+	 */
+	private function json_ld_string_keyed_node( array $data ): array {
+		$node = array();
+		foreach ( $data as $key => $value ) {
+			if ( is_string( $key ) ) {
+				$node[ $key ] = $value;
+			}
+		}
+
+		return $node;
 	}
 
 	/**
@@ -563,7 +581,7 @@ class Static_Site_Importer_Transformer_Adapter {
 
 		$slug = '';
 		if ( '' !== $url ) {
-			$path = function_exists( 'wp_parse_url' ) ? wp_parse_url( $url, PHP_URL_PATH ) : parse_url( $url, PHP_URL_PATH );
+			$path = function_exists( 'wp_parse_url' ) ? wp_parse_url( $url, PHP_URL_PATH ) : $this->url_path_without_wordpress( $url );
 			$path = trim( is_string( $path ) ? $path : '', '/' );
 			$slug = '' !== $path ? basename( $path ) : '';
 		}
@@ -583,6 +601,20 @@ class Static_Site_Importer_Transformer_Adapter {
 	}
 
 	/**
+	 * Extract the path component from a URL when WordPress helpers are unavailable.
+	 *
+	 * @param string $url URL or path value.
+	 * @return string
+	 */
+	private function url_path_without_wordpress( string $url ): string {
+		if ( preg_match( '~^(?:[a-z][a-z0-9+.-]*://[^/?#]*)?([^?#]*)~i', $url, $matches ) ) {
+			return $matches[1];
+		}
+
+		return '';
+	}
+
+	/**
 	 * Return first XPath text match under an optional context node.
 	 *
 	 * @param DOMXPath        $xpath XPath helper.
@@ -596,7 +628,12 @@ class Static_Site_Importer_Transformer_Adapter {
 			return '';
 		}
 
-		return trim( (string) $nodes->item( 0 )->textContent );
+		$node = $nodes->item( 0 );
+		if ( ! $node instanceof DOMNode ) {
+			return '';
+		}
+
+		return trim( (string) $node->textContent );
 	}
 
 	/**

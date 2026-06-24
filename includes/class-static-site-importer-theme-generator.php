@@ -2466,17 +2466,17 @@ class Static_Site_Importer_Theme_Generator {
 			$first_invalid_block = $invalid_blocks[0] ?? self::first_parsed_block_summary( $analyzed_blocks );
 			$validation_message  = $serialization_mismatch ? 'Serialized block document differs from generated block markup.' : 'Generated block document contains parser-exposed invalid block markup.';
 			$diagnostic          = array(
-				'type'                   => 'invalid_block_document',
-				'source'                 => $relative_path,
-				'block_count'            => $block_count,
-				'core_html_block_count'  => $core_html_count,
-				'freeform_block_count'   => $freeform_count,
-				'invalid_block_count'    => $invalid_count,
-				'serialization_mismatch' => $serialization_mismatch,
-				'validation_message'     => $validation_message,
+				'type'                      => 'invalid_block_document',
+				'source'                    => $relative_path,
+				'block_count'               => $block_count,
+				'core_html_block_count'     => $core_html_count,
+				'freeform_block_count'      => $freeform_count,
+				'invalid_block_count'       => $invalid_count,
+				'serialization_mismatch'    => $serialization_mismatch,
+				'validation_message'        => $validation_message,
 				'parser_validation_message' => $validation_message,
-				'original_excerpt'       => Static_Site_Importer_Report_Diagnostics::diagnostic_excerpt( $block_markup ),
-				'serialized_excerpt'     => Static_Site_Importer_Report_Diagnostics::diagnostic_excerpt( $serialized ),
+				'original_excerpt'          => Static_Site_Importer_Report_Diagnostics::diagnostic_excerpt( $block_markup ),
+				'serialized_excerpt'        => Static_Site_Importer_Report_Diagnostics::diagnostic_excerpt( $serialized ),
 			);
 			if ( ! empty( $first_invalid_block ) ) {
 				$diagnostic['block_name']     = $first_invalid_block['block_name'];
@@ -2732,8 +2732,8 @@ class Static_Site_Importer_Theme_Generator {
 	private static function first_differing_block_document_token( string $original, string $serialized ): array {
 		$original_tokens   = preg_split( '/(<!--\s*\/?wp:[^>]+-->|<[^>]+>|\s+)/', self::normalize_block_document_for_report( $original ), -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY );
 		$serialized_tokens = preg_split( '/(<!--\s*\/?wp:[^>]+-->|<[^>]+>|\s+)/', self::normalize_block_document_for_report( $serialized ), -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY );
-		$original_tokens   = is_array( $original_tokens ) ? array_values( $original_tokens ) : array();
-		$serialized_tokens = is_array( $serialized_tokens ) ? array_values( $serialized_tokens ) : array();
+		$original_tokens   = false !== $original_tokens ? $original_tokens : array();
+		$serialized_tokens = false !== $serialized_tokens ? $serialized_tokens : array();
 		$limit             = max( count( $original_tokens ), count( $serialized_tokens ) );
 
 		for ( $index = 0; $index < $limit; ++$index ) {
