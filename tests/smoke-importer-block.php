@@ -390,6 +390,7 @@ if ( ! function_exists( 'get_page_uri' ) ) {
 }
 
 require_once dirname( __DIR__ ) . '/includes/block.php';
+require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 $figma_transformer_bootstrap = dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-figma-transformer/figma-transformer/figma-transformer.php';
 if ( is_readable( $figma_transformer_bootstrap ) ) {
 	require_once $figma_transformer_bootstrap;
@@ -456,6 +457,9 @@ $assert( str_contains( $html, 'Choose files or ZIP' ), 'render-has-file-or-zip-u
 $assert( str_contains( $html, 'Choose folder' ), 'render-has-folder-upload-affordance' );
 $assert( str_contains( $html, 'data-static-site-importer-source-directory' ), 'render-has-directory-upload-hook' );
 $assert( str_contains( $html, 'webkitdirectory' ), 'render-preserves-directory-upload-affordance' );
+$assert( str_contains( $html, 'Upload Figma file' ), 'render-has-separate-figma-upload-label' );
+$assert( str_contains( $html, 'data-static-site-importer-source-figma-file' ), 'render-has-separate-figma-upload-hook' );
+$assert( str_contains( $html, 'accept=&quot;.fig&quot;' ) || str_contains( $html, 'accept=".fig"' ), 'render-figma-upload-accepts-fig-only' );
 $assert( ! str_contains( $html, 'data-static-site-importer-source-archive' ), 'render-omits-separate-zip-upload-hook' );
 $assert( str_contains( $html, 'accept=&quot;.zip,application/zip' ) || str_contains( $html, 'accept=".zip,application/zip' ), 'render-accepts-zip-in-combined-upload' );
 $assert( str_contains( $html, 'data-static-site-importer-source-html' ), 'render-has-html-input-hook' );
@@ -479,6 +483,9 @@ $assert( str_contains( $view_js, 'webkitRelativePath' ), 'view-preserves-directo
 $assert( str_contains( $view_js, 'data-static-site-importer-source-directory' ), 'view-reads-directory-upload-input' );
 $assert( str_contains( $view_js, 'webkitGetAsEntry' ), 'view-supports-dropped-directory-entries' );
 $assert( str_contains( $view_js, 'archive: await buildArchive( uploadInputs, root )' ), 'view-sends-zip-from-combined-upload-as-archive-payload' );
+$assert( str_contains( $view_js, 'figma_file: await buildFigmaFile( figmaFile )' ), 'view-sends-distinct-figma-source-shape' );
+$assert( str_contains( $view_js, '/\\.(fig|zip)$/i' ), 'view-excludes-fig-files-from-generic-static-upload' );
+$assert( str_contains( $view_js, 'data-static-site-importer-source-figma-file' ), 'view-reads-separate-figma-file-input' );
 $assert( str_contains( $view_js, 'shouldIncludeSiteFile' ), 'view-skips-known-non-site-upload-files-before-reading' );
 $assert( ! str_contains( $view_js, 'CurrentRuntime' ), 'view-does-not-reference-current-runtime-mode' );
 $assert( ! str_contains( $view_js, 'generate_in_current_runtime' ), 'view-does-not-send-current-runtime-flag' );
@@ -680,6 +687,95 @@ $assert( str_contains( (string) $playground_blueprint_code, "'overwrite' => true
 $assert( str_contains( (string) $playground_blueprint_code, "'slug' => 'generated-wordpress-website'" ), 'rest-playground-open-blueprint-uses-non-legacy-generated-theme-slug' );
 $assert( str_contains( (string) $playground_blueprint_code, "'name' => 'Generated WordPress Website'" ), 'rest-playground-open-blueprint-uses-generated-theme-name' );
 $assert( ! str_contains( (string) $playground_blueprint_code, 'imported-website-artifact' ), 'rest-playground-open-blueprint-omits-legacy-theme-slug' );
+$assert( ! str_contains( (string) $playground_blueprint_code, 'Codebox' ), 'rest-playground-open-blueprint-does-not-introduce-codebox' );
+
+$figma_upload_artifact = Static_Site_Importer_Figma_Import::website_artifact_from_input(
+	array(
+		'source' => array(
+			'figma_file' => array(
+				'name'           => 'design.fig',
+				'type'           => 'application/octet-stream',
+				'content_base64' => base64_encode( 'not-a-zip' ),
+			),
+		),
+	)
+);
+$assert( is_wp_error( $figma_upload_artifact ) || is_array( $figma_upload_artifact ), 'figma-file-source-routes-through-transformer' );
+$generic_fig_artifact = static_site_importer_rest_source_artifact(
+	array(
+		'files' => array(
+			array(
+				'path'           => 'design.fig',
+				'content_base64' => base64_encode( 'not-a-site' ),
+			),
+		),
+	)
+);
+$assert( is_wp_error( $generic_fig_artifact ), 'rest-generic-static-upload-ignores-fig-file' );
+
+if ( class_exists( 'ZipArchive' ) ) {
+	$fig_payload = array(
+		'name'         => 'Public Import Fixture',
+		'NODE_CHANGES' => array(
+			'4:1' => array(
+				'node' => array(
+					'id'       => '4:1',
+					'type'     => 'FRAME',
+					'name'     => 'Landing',
+					'children' => array(
+						array(
+							'id'         => '4:2',
+							'type'       => 'TEXT',
+							'name'       => 'Heading',
+							'characters' => 'Synthetic FIG Upload',
+						),
+					),
+				),
+			),
+		),
+	);
+	$fig_json    = wp_json_encode( $fig_payload );
+	$fig_chunk   = gzdeflate( (string) $fig_json );
+	$fig_canvas  = 'fig-kiwi' . pack( 'V', 106 ) . pack( 'V', strlen( $fig_chunk ) ) . $fig_chunk;
+	$fig_path    = tempnam( sys_get_temp_dir(), 'ssi-fig-smoke-' );
+	$fig_archive = new ZipArchive();
+	$fig_archive->open( $fig_path, ZipArchive::OVERWRITE );
+	$fig_archive->addFromString( 'canvas.fig', $fig_canvas );
+	$fig_archive->addFromString( 'meta.json', '{"name":"Public Import Fixture"}' );
+	$fig_archive->close();
+
+	Static_Site_Importer_Theme_Generator::$last_artifact = array();
+	Static_Site_Importer_Theme_Generator::$last_args     = array();
+	WP_Codebox_Abilities::$last_input = array();
+	$fig_upload_response = static_site_importer_rest_create_import(
+		new WP_REST_Request(
+			array(
+				'apply_to_current_site' => false,
+				'source'                => array(
+					'figma_file' => array(
+						'name'           => 'design.fig',
+						'type'           => 'application/octet-stream',
+						'content_base64' => base64_encode( file_get_contents( $fig_path ) ),
+					),
+				),
+			)
+		)
+	);
+	@unlink( $fig_path );
+	$assert( ! is_wp_error( $fig_upload_response ), 'rest-fig-upload-playground-does-not-error', is_wp_error( $fig_upload_response ) ? $fig_upload_response->get_error_code() . ': ' . $fig_upload_response->get_error_message() : '' );
+	if ( is_wp_error( $fig_upload_response ) ) {
+		$fig_upload_response = array();
+	}
+	$assert( true === ( $fig_upload_response['success'] ?? null ), 'rest-fig-upload-playground-succeeds' );
+	$assert( 'playground' === ( $fig_upload_response['mode'] ?? '' ), 'rest-fig-upload-uses-playground-mode' );
+	$assert( str_starts_with( $fig_upload_response['preview']['url'] ?? '', 'https://playground.wordpress.net/#' ), 'rest-fig-upload-returns-direct-playground-blueprint-url' );
+	$assert( 'figma_file' === ( $fig_upload_response['request']['source'] ?? '' ), 'rest-fig-upload-records-distinct-source' );
+	$assert( array() === Static_Site_Importer_Theme_Generator::$last_args, 'rest-fig-upload-playground-does-not-import-current-site' );
+	$assert( array() === WP_Codebox_Abilities::$last_input, 'rest-fig-upload-playground-does-not-use-codebox' );
+	$fig_upload_blueprint_json = rawurldecode( substr( (string) ( $fig_upload_response['preview']['playground']['blueprint_url'] ?? '' ), strlen( 'https://playground.wordpress.net/#' ) ) );
+	$assert( str_contains( $fig_upload_blueprint_json, 'Synthetic FIG Upload' ), 'rest-fig-upload-blueprint-contains-transformed-artifact' );
+	$assert( ! str_contains( $fig_upload_blueprint_json, 'content_base64' ), 'rest-fig-upload-blueprint-does-not-carry-raw-fig-source' );
+}
 
 $blueprint = json_decode( file_get_contents( dirname( __DIR__ ) . '/docs/playground/blueprint.json' ), true );
 $assert( is_array( $blueprint ), 'playground-blueprint-decodes' );

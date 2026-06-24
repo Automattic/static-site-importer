@@ -420,7 +420,7 @@ function static_site_importer_rest_open_in_playground( array $source, array $inp
 	}
 	$input['artifact'] = $artifact;
 
-	$result = static_site_importer_rest_create_playground_open( $artifact, $input, 'upload' );
+	$result = static_site_importer_rest_create_playground_open( $artifact, $input, isset( $source['figma_file'] ) ? 'figma_file' : 'upload' );
 	if ( is_wp_error( $result ) ) {
 		return $result;
 	}
@@ -456,7 +456,7 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
 		return $result;
 	};
 
-	if ( isset( $source['url'] ) && '' !== trim( (string) $source['url'] ) ) {
+	if ( ! isset( $source['figma_file'] ) && isset( $source['url'] ) && '' !== trim( (string) $source['url'] ) ) {
 		$input['url'] = esc_url_raw( (string) $source['url'] );
 		if ( isset( $params['provider'] ) ) {
 			$input['provider'] = sanitize_key( (string) $params['provider'] );
@@ -1038,6 +1038,9 @@ function static_site_importer_rest_preview_source_summary( array $source, array 
 	if ( isset( $source['archive'] ) && is_array( $source['archive'] ) && ! empty( $source['archive'] ) ) {
 		$types[] = 'archive';
 	}
+	if ( isset( $source['figma_file'] ) && is_array( $source['figma_file'] ) && ! empty( $source['figma_file'] ) ) {
+		$types[] = 'figma_file';
+	}
 
 	return array_merge(
 		array( 'type' => 1 === count( $types ) ? $types[0] : ( empty( $types ) ? 'unknown' : 'mixed' ) ),
@@ -1219,6 +1222,10 @@ function static_site_importer_rest_import_args( array $params ): array {
 function static_site_importer_rest_source_artifact( array $source ) {
 	if ( isset( $source['artifact'] ) && is_array( $source['artifact'] ) ) {
 		return $source['artifact'];
+	}
+
+	if ( isset( $source['figma_file'] ) && is_array( $source['figma_file'] ) ) {
+		return Static_Site_Importer_Figma_Import::website_artifact_from_input( array( 'source' => $source ) );
 	}
 
 	$files = array();
@@ -1409,6 +1416,10 @@ function static_site_importer_rest_should_include_artifact_file( string $path ):
 	}
 
 	if ( '.DS_Store' === $name ) {
+		return false;
+	}
+
+	if ( preg_match( '/\.fig$/i', (string) $name ) ) {
 		return false;
 	}
 

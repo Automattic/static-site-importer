@@ -60,6 +60,15 @@ function static_site_importer_render_block( array $attributes = array() ): strin
 					</label>
 				</fieldset>
 
+				<fieldset class="ssi-importer__field">
+					<legend class="ssi-importer__label"><?php esc_html_e( 'Upload Figma file', 'static-site-importer' ); ?></legend>
+					<p class="ssi-importer__upload-copy"><?php esc_html_e( 'Choose a .fig file exported from Figma.', 'static-site-importer' ); ?></p>
+					<label class="ssi-importer__upload-option">
+						<span><?php esc_html_e( 'Choose .fig file', 'static-site-importer' ); ?></span>
+						<input type="file" name="ssi_figma_file" accept=".fig" data-static-site-importer-source-figma-file>
+					</label>
+				</fieldset>
+
 				<details class="ssi-importer__field">
 					<summary class="ssi-importer__label"><?php esc_html_e( 'Paste HTML', 'static-site-importer' ); ?></summary>
 					<textarea name="ssi_html" rows="6" data-static-site-importer-source-html></textarea>

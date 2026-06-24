@@ -198,6 +198,11 @@ class Static_Site_Importer_Figma_Import {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public static function website_artifact_from_input( array $input ) {
+		$figma_file = self::figma_file_from_input( $input );
+		if ( ! empty( $figma_file ) ) {
+			return self::website_artifact_from_figma_file( $figma_file, $input );
+		}
+
 		$scenegraph = self::scenegraph_from_input( $input );
 		if ( ! empty( $scenegraph ) ) {
 			$artifact = self::website_artifact_from_scenegraph( $scenegraph, $input );
@@ -248,6 +253,58 @@ class Static_Site_Importer_Figma_Import {
 		}
 
 		$transform = blocks_engine_figma_transformer_transform_scenegraph( $scenegraph, self::transform_options( $input ) );
+
+		return self::website_artifact_from_transform( $transform, $input );
+	}
+
+	/**
+	 * Transform an uploaded .fig file into a website artifact.
+	 *
+	 * @param array<string,mixed> $figma_file Uploaded .fig source payload.
+	 * @param array<string,mixed> $input      Full request input.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private static function website_artifact_from_figma_file( array $figma_file, array $input ) {
+		if ( ! function_exists( 'blocks_engine_figma_transformer_transform_file' ) ) {
+			return new WP_Error( 'static_site_importer_figma_transformer_unavailable', 'Blocks Engine Figma transformer is not available.', array( 'status' => 501 ) );
+		}
+
+		$name = isset( $figma_file['name'] ) ? (string) $figma_file['name'] : '';
+		if ( ! preg_match( '/\.fig$/i', $name ) ) {
+			return new WP_Error( 'static_site_importer_figma_file_type_invalid', 'Figma file uploads must use a .fig file.', array( 'status' => 400 ) );
+		}
+
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes uploaded .fig payload content.
+		$content = isset( $figma_file['content_base64'] ) ? base64_decode( (string) $figma_file['content_base64'], true ) : false;
+		if ( false === $content ) {
+			return new WP_Error( 'static_site_importer_figma_file_content_invalid', 'Uploaded .fig content could not be decoded.', array( 'status' => 400 ) );
+		}
+
+		$tmp = tempnam( sys_get_temp_dir(), 'ssi-fig-' );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Transformer requires a local file path for .fig archive inspection.
+		if ( false === $tmp || false === file_put_contents( $tmp, $content ) ) {
+			return new WP_Error( 'static_site_importer_figma_file_tempfile_failed', 'Uploaded .fig file could not be staged for transformation.', array( 'status' => 500 ) );
+		}
+
+		try {
+			$transform = blocks_engine_figma_transformer_transform_file( $tmp, self::transform_options( $input ) );
+		} finally {
+			if ( file_exists( $tmp ) ) {
+				wp_delete_file( $tmp );
+			}
+		}
+
+		return self::website_artifact_from_transform( $transform, $input );
+	}
+
+	/**
+	 * Convert a Blocks Engine Figma transform result into SSI's website artifact shape.
+	 *
+	 * @param mixed               $transform Transform result.
+	 * @param array<string,mixed> $input     Full request input.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private static function website_artifact_from_transform( $transform, array $input ) {
 		if ( is_object( $transform ) && is_callable( array( $transform, 'toArray' ) ) ) {
 			$transform = $transform->toArray();
 		}
@@ -276,6 +333,25 @@ class Static_Site_Importer_Figma_Import {
 			'files'      => $files,
 			'provenance' => self::provenance( $input ) + array( 'transform' => 'blocks-engine/figma-transformer' ),
 		);
+	}
+
+	/**
+	 * Extract the uploaded .fig file payload from supported request shapes.
+	 *
+	 * @param array<string,mixed> $input Figma import input.
+	 * @return array<string,mixed>
+	 */
+	private static function figma_file_from_input( array $input ): array {
+		if ( isset( $input['figma_file'] ) && is_array( $input['figma_file'] ) ) {
+			return $input['figma_file'];
+		}
+
+		$source = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
+		if ( isset( $source['figma_file'] ) && is_array( $source['figma_file'] ) ) {
+			return $source['figma_file'];
+		}
+
+		return array();
 	}
 
 	/**

@@ -128,7 +128,7 @@
 		const selectedFiles = selectedInputFiles( inputs, root );
 		const files = selectedFiles.filter( function ( record ) {
 			const path = record.path || uploadedFilePath( record.file );
-			return ! /\.zip$/i.test( record.file.name || path || '' ) && shouldIncludeSiteFile( path );
+			return ! /\.(fig|zip)$/i.test( record.file.name || path || '' ) && shouldIncludeSiteFile( path );
 		} );
 		return Promise.all( files.map( async function ( upload ) {
 			const file = upload.file;
@@ -164,6 +164,20 @@
 			path: archive.path || file.name || 'website.zip',
 			name: file.name || 'website.zip',
 			type: file.type || 'application/zip',
+			size: file.size || 0,
+			content_base64: await fileToBase64( file ),
+		};
+	};
+
+	const buildFigmaFile = async function ( input ) {
+		const file = input && input.files && input.files[ 0 ] ? input.files[ 0 ] : null;
+		if ( ! file ) {
+			return null;
+		}
+
+		return {
+			name: file.name || 'design.fig',
+			type: file.type || 'application/octet-stream',
 			size: file.size || 0,
 			content_base64: await fileToBase64( file ),
 		};
@@ -220,6 +234,7 @@
 		return Boolean(
 			( source.files && source.files.length > 0 ) ||
 			( source.archive && source.archive.content_base64 ) ||
+			( source.figma_file && source.figma_file.content_base64 ) ||
 			( source.html && source.html.trim() ) ||
 			( source.url && source.url.trim() )
 		);
@@ -266,6 +281,7 @@
 		submit.addEventListener( 'click', async function () {
 			const form = root.querySelector( '[data-static-site-importer-form]' );
 			const html = root.querySelector( '[data-static-site-importer-source-html]' );
+			const figmaFile = root.querySelector( '[data-static-site-importer-source-figma-file]' );
 			const uploadInputs = root.querySelectorAll( '[data-static-site-importer-source-files], [data-static-site-importer-source-directory]' );
 			const provider = root.getAttribute( 'data-static-site-importer-provider' ) || '';
 			const isCurrentSiteImport = root.getAttribute( 'data-static-site-importer-apply-to-current-site' ) === '1';
@@ -274,6 +290,7 @@
 				html: html ? html.value : '',
 				files: await buildFiles( uploadInputs, root ),
 				archive: await buildArchive( uploadInputs, root ),
+				figma_file: await buildFigmaFile( figmaFile ),
 			};
 
 			if ( ! hasSource( source ) ) {
