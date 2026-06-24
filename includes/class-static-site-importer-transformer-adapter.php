@@ -98,7 +98,39 @@ class Static_Site_Importer_Transformer_Adapter {
 			$compiled['products_manifest'] = $products;
 		}
 
+		$runtime_dependency_parity = $this->runtime_dependency_parity_report_from_result( $result, $view );
+		if ( ! empty( $runtime_dependency_parity ) ) {
+			$compiled['runtime_dependency_parity'] = $runtime_dependency_parity;
+		}
+
 		return $compiled;
+	}
+
+	/**
+	 * Read optional Blocks Engine runtime dependency parity reports from known envelopes.
+	 *
+	 * @param array<string,mixed> $result TransformerResult::toArray() output.
+	 * @param array<string,mixed> $view   Optional MaterializationView projection.
+	 * @return array<string,mixed>
+	 */
+	private function runtime_dependency_parity_report_from_result( array $result, array $view = array() ): array {
+		$candidates = array();
+		if ( isset( $result['source_reports'] ) && is_array( $result['source_reports'] ) ) {
+			$source_reports = $result['source_reports'];
+			$candidates[]   = $source_reports['runtime_dependency_parity'] ?? null;
+			$candidates[]   = isset( $source_reports['conversion_report'] ) && is_array( $source_reports['conversion_report'] ) ? ( $source_reports['conversion_report']['runtime_dependency_parity'] ?? null ) : null;
+		}
+		$candidates[] = isset( $result['conversion_report'] ) && is_array( $result['conversion_report'] ) ? ( $result['conversion_report']['runtime_dependency_parity'] ?? null ) : null;
+		$candidates[] = isset( $result['reports'] ) && is_array( $result['reports'] ) ? ( $result['reports']['runtime_dependency_parity'] ?? null ) : null;
+		$candidates[] = isset( $view['runtime_dependency_parity'] ) ? $view['runtime_dependency_parity'] : null;
+
+		foreach ( $candidates as $candidate ) {
+			if ( is_array( $candidate ) && ! empty( $candidate ) ) {
+				return $candidate;
+			}
+		}
+
+		return array();
 	}
 
 	/**

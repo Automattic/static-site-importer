@@ -53,6 +53,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'svg_sprite_reference_failure_count' => 0,
 				'commerce_dependency_failures'       => 0,
 				'interaction_candidate_count'        => 0,
+				'runtime_dependency_parity_issue_count' => 0,
 				'semantic_parity_failure_count'      => 0,
 				'failure_reasons'                    => array(),
 			),
@@ -183,6 +184,12 @@ class Static_Site_Importer_Report_Diagnostics {
 		if ( ! empty( $conversion_report ) ) {
 			$report['blocks_engine']['conversion_report'] = self::conversion_report_payload( $conversion_report );
 			self::record_conversion_report_quality_metadata( $report, $conversion_report );
+		}
+
+		$runtime_dependency_parity = isset( $compiled['runtime_dependency_parity'] ) && is_array( $compiled['runtime_dependency_parity'] ) ? $compiled['runtime_dependency_parity'] : array();
+		if ( ! empty( $runtime_dependency_parity ) ) {
+			$report['blocks_engine']['runtime_dependency_parity'] = self::runtime_dependency_parity_payload( $runtime_dependency_parity );
+			self::record_runtime_dependency_parity_quality_metadata( $report, $runtime_dependency_parity );
 		}
 
 		$semantic_parity = self::blocks_engine_semantic_parity_report( $compiled );
@@ -363,6 +370,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'svg_sprite_reference_failures' => (int) ( $quality['svg_sprite_reference_failure_count'] ?? 0 ),
 				'commerce_dependency_failures'  => (int) ( $quality['commerce_dependency_failures'] ?? 0 ),
 				'interaction_candidates'        => (int) ( $quality['interaction_candidate_count'] ?? 0 ),
+				'runtime_dependency_parity'     => (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ),
 				'semantic_parity_failures'      => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
 			),
 			'quality_gates'           => array(
@@ -372,6 +380,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'asset_materialization'     => self::validation_gate( 'asset_materialization', (int) ( $quality['svg_materialization_failure_count'] ?? 0 ) + (int) ( $quality['svg_sprite_reference_failure_count'] ?? 0 ), $quality ),
 				'commerce_dependencies'     => self::validation_gate( 'commerce_dependencies', (int) ( $quality['commerce_dependency_failures'] ?? 0 ), $quality ),
 				'interaction_candidates'    => self::validation_gate( 'interaction_candidates', (int) ( $quality['interaction_candidate_count'] ?? 0 ), $quality ),
+				'runtime_dependency_parity' => self::validation_gate( 'runtime_dependency_parity', (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ), $quality ),
 				'semantic_parity'           => self::validation_gate( 'semantic_parity', (int) ( $quality['semantic_parity_failure_count'] ?? 0 ), $quality ),
 				'visual_fidelity'           => array(
 					'status' => (string) ( $report['visual_fidelity']['status'] ?? 'requires_external_render_check' ),
@@ -461,6 +470,9 @@ class Static_Site_Importer_Report_Diagnostics {
 		if ( ( $quality['commerce_dependency_failures'] ?? 0 ) > 0 ) {
 			$reasons[] = 'woocommerce_missing';
 		}
+		if ( ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ) > 0 ) {
+			$reasons[] = 'runtime_dependency_parity';
+		}
 		if ( ( $quality['semantic_parity_failure_count'] ?? 0 ) > 0 ) {
 			$reasons[] = 'semantic_parity_failure';
 		}
@@ -520,7 +532,8 @@ class Static_Site_Importer_Report_Diagnostics {
 			'invalid_block_count'          => (int) ( $quality['invalid_block_count'] ?? 0 ),
 			'invalid_block_document_count' => (int) ( $quality['invalid_block_document_count'] ?? 0 ),
 			'interaction_candidate_count'  => (int) ( $quality['interaction_candidate_count'] ?? 0 ),
-			'semantic_parity_failure_count'  => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
+			'runtime_dependency_parity_issue_count' => (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ),
+			'semantic_parity_failure_count' => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
 			'source_document_count'        => (int) ( $source_documents['total_count'] ?? 0 ),
 			'unresolved_link_count'        => (int) ( $source_documents['unresolved_link_count'] ?? 0 ),
 			'commerce'                     => $commerce,
@@ -553,6 +566,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'asset_materialization'     => 'svg_materialization_failure_count',
 			'commerce_dependencies'     => 'commerce_dependency_failures',
 			'interaction_candidates'    => 'interaction_candidate_count',
+			'runtime_dependency_parity' => 'runtime_dependency_parity_issue_count',
 			'semantic_parity'           => 'semantic_parity_failure_count',
 		);
 		$ref_key  = $ref_keys[ $name ] ?? $name;
@@ -868,6 +882,9 @@ class Static_Site_Importer_Report_Diagnostics {
 				'commerce_dependency_failure',
 				'commerce_product_inference_unmatched',
 				'interaction_candidate',
+				'runtime_dependency_missing_dom_target',
+				'runtime_dependency_unsupported_element_reference',
+				'runtime_dependency_parity_issue',
 				'semantic_parity_navigation_missing',
 				'semantic_parity_navigation_mismatch',
 				'semantic_parity_landmark_missing',
@@ -966,6 +983,9 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 		if ( in_array( $type, array( 'content_loss_abort', 'empty_conversion', 'invalid_block_document' ), true ) ) {
 			return 'Convert the source content into valid non-empty WordPress block markup without losing source content.';
+		}
+		if ( in_array( $type, array( 'runtime_dependency_missing_dom_target', 'runtime_dependency_unsupported_element_reference', 'runtime_dependency_parity_issue' ), true ) ) {
+			return 'Runtime scripts should be preserved only with DOM targets and browser elements that exist in the imported WordPress page.';
 		}
 		if ( str_starts_with( $type, 'semantic_parity_' ) ) {
 			return 'Generate core WordPress blocks whose navigation, landmark, label, and URL semantics match the source structure.';
@@ -1323,6 +1343,178 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
+	 * Preserve optional Blocks Engine runtime dependency parity evidence compactly.
+	 *
+	 * @param array<string,mixed> $runtime_dependency_parity Native runtime dependency parity report.
+	 * @return array<string,mixed>
+	 */
+	private static function runtime_dependency_parity_payload( array $runtime_dependency_parity ): array {
+		$scripts  = self::runtime_dependency_parity_scripts( $runtime_dependency_parity );
+		$findings = self::runtime_dependency_parity_findings( $runtime_dependency_parity );
+
+		$payload = array(
+			'schema'                            => isset( $runtime_dependency_parity['schema'] ) && is_scalar( $runtime_dependency_parity['schema'] ) ? (string) $runtime_dependency_parity['schema'] : 'blocks-engine/runtime-dependency-parity/v1',
+			'status'                            => isset( $runtime_dependency_parity['status'] ) && is_scalar( $runtime_dependency_parity['status'] ) ? (string) $runtime_dependency_parity['status'] : '',
+			'script_count'                      => count( $scripts ),
+			'finding_count'                     => count( $findings ),
+			'missing_dom_target_count'          => count( array_filter( $findings, static fn ( array $finding ): bool => 'runtime_dependency_missing_dom_target' === ( $finding['type'] ?? '' ) ) ),
+			'unsupported_element_reference_count' => count( array_filter( $findings, static fn ( array $finding ): bool => 'runtime_dependency_unsupported_element_reference' === ( $finding['type'] ?? '' ) ) ),
+			'vendor_telemetry_script_count'     => count( array_filter( $findings, static fn ( array $finding ): bool => 'runtime_dependency_vendor_telemetry_script' === ( $finding['type'] ?? '' ) ) ),
+		);
+
+		if ( ! empty( $scripts ) ) {
+			$payload['scripts'] = self::compact_native_report_rows( $scripts );
+		}
+		if ( ! empty( $findings ) ) {
+			$payload['findings'] = self::compact_native_report_rows( $findings );
+		}
+
+		return $payload;
+	}
+
+	/**
+	 * Reflect runtime dependency parity findings into report quality metadata.
+	 *
+	 * @param array<string,mixed> $report                    Import report.
+	 * @param array<string,mixed> $runtime_dependency_parity Native runtime dependency parity report.
+	 * @return void
+	 */
+	private static function record_runtime_dependency_parity_quality_metadata( array &$report, array $runtime_dependency_parity ): void {
+		$issue_count = 0;
+		foreach ( self::runtime_dependency_parity_findings( $runtime_dependency_parity ) as $finding ) {
+			$diagnostic = self::diagnostic_from_runtime_dependency_parity_finding( $finding );
+			if ( empty( $diagnostic ) ) {
+				continue;
+			}
+
+			if ( 'runtime_dependency_vendor_telemetry_script' !== ( $diagnostic['type'] ?? '' ) ) {
+				++$issue_count;
+			}
+			$report['diagnostics'][] = $diagnostic;
+		}
+
+		$report['quality']['runtime_dependency_parity_issue_count'] = (int) ( $report['quality']['runtime_dependency_parity_issue_count'] ?? 0 ) + $issue_count;
+	}
+
+	/**
+	 * Return script rows from plausible runtime dependency parity fields.
+	 *
+	 * @param array<string,mixed> $runtime_dependency_parity Native runtime dependency parity report.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function runtime_dependency_parity_scripts( array $runtime_dependency_parity ): array {
+		foreach ( array( 'scripts', 'script_assets', 'assets' ) as $field ) {
+			$rows = self::array_values_if_list( $runtime_dependency_parity[ $field ] ?? array() );
+			if ( ! empty( $rows ) ) {
+				return array_values( array_filter( $rows, 'is_array' ) );
+			}
+		}
+
+		return array();
+	}
+
+	/**
+	 * Return normalized finding rows from plausible runtime dependency parity fields.
+	 *
+	 * @param array<string,mixed> $runtime_dependency_parity Native runtime dependency parity report.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function runtime_dependency_parity_findings( array $runtime_dependency_parity ): array {
+		$findings = array();
+		foreach ( self::array_values_if_list( $runtime_dependency_parity['findings'] ?? array() ) as $finding ) {
+			if ( is_array( $finding ) ) {
+				$findings[] = self::normalize_runtime_dependency_parity_finding( $finding );
+			}
+		}
+
+		foreach ( self::array_values_if_list( $runtime_dependency_parity['missing_dom_targets'] ?? array() ) as $target ) {
+			if ( is_array( $target ) ) {
+				$findings[] = self::normalize_runtime_dependency_parity_finding( array_merge( array( 'type' => 'missing_dom_target' ), $target ) );
+			}
+		}
+
+		foreach ( self::array_values_if_list( $runtime_dependency_parity['unsupported_elements'] ?? array() ) as $element ) {
+			if ( is_array( $element ) ) {
+				$findings[] = self::normalize_runtime_dependency_parity_finding( array_merge( array( 'type' => 'unsupported_element_reference' ), $element ) );
+			}
+		}
+
+		foreach ( self::array_values_if_list( $runtime_dependency_parity['vendor_telemetry_scripts'] ?? array() ) as $script ) {
+			if ( is_array( $script ) ) {
+				$findings[] = self::normalize_runtime_dependency_parity_finding( array_merge( array( 'type' => 'vendor_telemetry_script' ), $script ) );
+			}
+		}
+
+		return $findings;
+	}
+
+	/**
+	 * Normalize one runtime dependency parity row into SSI diagnostic-compatible fields.
+	 *
+	 * @param array<string,mixed> $finding Runtime dependency parity finding row.
+	 * @return array<string,mixed>
+	 */
+	private static function normalize_runtime_dependency_parity_finding( array $finding ): array {
+		$type = self::first_scalar( $finding, array( 'type', 'kind', 'code' ) );
+		$type = sanitize_key( $type );
+		if ( str_contains( $type, 'missing' ) && ( str_contains( $type, 'target' ) || str_contains( $type, 'dom' ) || str_contains( $type, 'selector' ) ) ) {
+			$type = 'runtime_dependency_missing_dom_target';
+		} elseif ( str_contains( $type, 'unsupported' ) && ( str_contains( $type, 'element' ) || str_contains( $type, 'dom' ) ) ) {
+			$type = 'runtime_dependency_unsupported_element_reference';
+		} elseif ( str_contains( $type, 'telemetry' ) || ! empty( $finding['telemetry'] ) ) {
+			$type = 'runtime_dependency_vendor_telemetry_script';
+		} elseif ( ! str_starts_with( $type, 'runtime_dependency_' ) ) {
+			$type = 'runtime_dependency_parity_issue';
+		}
+
+		$finding['type'] = $type;
+		return $finding;
+	}
+
+	/**
+	 * Normalize runtime dependency parity rows into SSI diagnostics.
+	 *
+	 * @param array<string,mixed> $finding Normalized runtime dependency parity finding row.
+	 * @return array<string,mixed>
+	 */
+	private static function diagnostic_from_runtime_dependency_parity_finding( array $finding ): array {
+		$type        = isset( $finding['type'] ) && is_scalar( $finding['type'] ) ? (string) $finding['type'] : 'runtime_dependency_parity_issue';
+		$source      = self::first_scalar( $finding, array( 'source_path', 'source', 'document_path', 'path' ) );
+		$script_path = self::first_scalar( $finding, array( 'script_path', 'script', 'asset_path', 'asset' ) );
+		$selector    = self::first_scalar( $finding, array( 'selector', 'target_selector', 'target', 'dom_target' ) );
+
+		if ( '' === $source && '' === $script_path && '' === $selector ) {
+			return array();
+		}
+
+		$diagnostic = array(
+			'type'        => $type,
+			'source'      => '' !== $source ? $source : $script_path,
+			'reason'      => self::first_scalar( $finding, array( 'reason_code', 'reason', 'message' ) ),
+			'engine'      => 'blocks-engine/php-transformer',
+			'stage'       => 'runtime_dependency_parity',
+			'converter'   => 'blocks-engine/php-transformer',
+			'severity'    => 'runtime_dependency_vendor_telemetry_script' === $type ? 'notice' : 'warning',
+			'script_path' => $script_path,
+		);
+
+		if ( '' !== $selector ) {
+			$diagnostic['selector'] = $selector;
+		}
+		if ( '' === $diagnostic['reason'] ) {
+			$diagnostic['reason'] = $type;
+		}
+
+		foreach ( array( 'source_path', 'message', 'excerpt', 'source_html_preview', 'html_excerpt', 'tag_name', 'element', 'handle', 'src' ) as $field ) {
+			if ( isset( $finding[ $field ] ) && is_scalar( $finding[ $field ] ) && '' !== trim( (string) $finding[ $field ] ) ) {
+				$diagnostic[ $field ] = (string) $finding[ $field ];
+			}
+		}
+
+		return $diagnostic;
+	}
+
+	/**
 	 * Return fallback rows from old and canonical Blocks Engine conversion-report fields.
 	 *
 	 * @param array<string,mixed> $conversion_report Native conversion report.
@@ -1405,7 +1597,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private static function compact_native_report_rows( array $rows ): array {
-		$fields  = array( 'type', 'kind', 'code', 'severity', 'source', 'source_path', 'path', 'selector', 'tag_name', 'block_name', 'block_path', 'attribute_path', 'reason', 'reason_code', 'message', 'excerpt', 'source_html_preview', 'emitted_block_preview', 'html_excerpt', 'expected', 'observed', 'label', 'source_label', 'generated_label', 'url', 'source_url', 'generated_url', 'landmark', 'role' );
+		$fields  = array( 'type', 'kind', 'code', 'severity', 'source', 'source_path', 'path', 'script_path', 'selector', 'target_selector', 'target', 'dom_target', 'tag_name', 'element', 'block_name', 'block_path', 'attribute_path', 'reason', 'reason_code', 'message', 'excerpt', 'source_html_preview', 'emitted_block_preview', 'html_excerpt', 'handle', 'src', 'role', 'discovered', 'materialized', 'enqueued', 'telemetry', 'vendor', 'expected', 'observed', 'label', 'source_label', 'generated_label', 'url', 'source_url', 'generated_url', 'landmark' );
 		$compact = array();
 		foreach ( array_slice( $rows, 0, 50 ) as $row ) {
 			if ( ! is_array( $row ) ) {
@@ -1415,7 +1607,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			$entry = array();
 			foreach ( $fields as $field ) {
 				if ( isset( $row[ $field ] ) && is_scalar( $row[ $field ] ) && '' !== trim( (string) $row[ $field ] ) ) {
-					$entry[ $field ] = (string) $row[ $field ];
+					$entry[ $field ] = is_bool( $row[ $field ] ) || is_numeric( $row[ $field ] ) ? $row[ $field ] : (string) $row[ $field ];
 				}
 			}
 
@@ -1550,6 +1742,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'svg_sprite_reference_failure_count' => array( 'svg_sprite_reference_failure' ),
 			'commerce_dependency_failures'       => array( 'commerce_dependency_failure' ),
 			'interaction_candidate_count'        => array( 'interaction_candidate' ),
+			'runtime_dependency_parity_issue_count' => array( 'runtime_dependency_missing_dom_target', 'runtime_dependency_unsupported_element_reference', 'runtime_dependency_parity_issue' ),
 			'semantic_parity_failure_count'      => array( 'semantic_parity_navigation_missing', 'semantic_parity_navigation_mismatch', 'semantic_parity_landmark_missing', 'semantic_parity_failure' ),
 		);
 
@@ -1689,6 +1882,10 @@ class Static_Site_Importer_Report_Diagnostics {
 			'commerce_dependency_failure'          => 'conversion_quality',
 			'commerce_product_inference_unmatched' => 'conversion_quality',
 			'interaction_candidate'                => 'source_interaction',
+			'runtime_dependency_missing_dom_target' => 'runtime_dependency_parity',
+			'runtime_dependency_unsupported_element_reference' => 'runtime_dependency_parity',
+			'runtime_dependency_vendor_telemetry_script' => 'runtime_dependency_parity',
+			'runtime_dependency_parity_issue'      => 'runtime_dependency_parity',
 			'semantic_parity_navigation_missing'   => 'semantic_parity',
 			'semantic_parity_navigation_mismatch'  => 'semantic_parity',
 			'semantic_parity_landmark_missing'     => 'semantic_parity',
@@ -1722,6 +1919,10 @@ class Static_Site_Importer_Report_Diagnostics {
 			'commerce_dependency_failure'          => 'install_or_configure_dependency',
 			'commerce_product_inference_unmatched' => 'provide_structured_product_data',
 			'interaction_candidate'                => 'inspect_interactive_behavior',
+			'runtime_dependency_missing_dom_target' => 'restore_or_remove_runtime_dom_dependency',
+			'runtime_dependency_unsupported_element_reference' => 'replace_unsupported_runtime_element',
+			'runtime_dependency_vendor_telemetry_script' => 'review_vendor_telemetry_script',
+			'runtime_dependency_parity_issue'      => 'inspect_runtime_dependency_parity',
 			'semantic_parity_navigation_missing'   => 'generate_core_navigation_parity',
 			'semantic_parity_navigation_mismatch'  => 'repair_core_navigation_items',
 			'semantic_parity_landmark_missing'     => 'generate_semantic_landmark_parity',
@@ -1739,7 +1940,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 */
 	private static function diagnostic_context( array $diagnostic ): array {
 		$context = array();
-		foreach ( array( 'href', 'tag', 'tag_name', 'block_name', 'block_path', 'excerpt', 'html_excerpt', 'source_html_preview', 'error_message', 'kind', 'expected', 'observed', 'label', 'source_label', 'generated_label', 'url', 'source_url', 'generated_url', 'landmark', 'role' ) as $key ) {
+		foreach ( array( 'href', 'tag', 'tag_name', 'block_name', 'block_path', 'excerpt', 'html_excerpt', 'source_html_preview', 'error_message', 'kind', 'script_path', 'element', 'handle', 'src', 'expected', 'observed', 'label', 'source_label', 'generated_label', 'url', 'source_url', 'generated_url', 'landmark', 'role' ) as $key ) {
 			if ( array_key_exists( $key, $diagnostic ) && null !== $diagnostic[ $key ] && '' !== $diagnostic[ $key ] ) {
 				$context[ $key ] = $diagnostic[ $key ];
 			}
@@ -1887,6 +2088,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'source_path',
 			'source',
 			'selector',
+			'script_path',
 			'excerpt',
 			'source_html_preview',
 			'emitted_block_preview',
@@ -1897,6 +2099,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'reason',
 			'message',
 			'tag_name',
+			'element',
 			'html_excerpt',
 			'context',
 		);

@@ -321,6 +321,131 @@ namespace {
 	$assert( 'interaction_candidate' === ( $report['diagnostics'][1]['type'] ?? '' ), 'interaction-candidate-becomes-report-diagnostic' );
 	$assert( 2 === ( $report['finding_packets']['count'] ?? 0 ), 'native-report-diagnostics-create-finding-packets' );
 
+	$runtime_dependency_parity = array(
+		'schema'                   => 'blocks-engine/runtime-dependency-parity/v1',
+		'status'                   => 'reported',
+		'scripts'                  => array(
+			array(
+				'path'         => 'assets/script.js',
+				'role'         => 'script',
+				'discovered'   => true,
+				'materialized' => true,
+				'enqueued'     => true,
+			),
+			array(
+				'path'         => 'assets/rum.js',
+				'role'         => 'script',
+				'discovered'   => true,
+				'materialized' => true,
+				'enqueued'     => true,
+				'telemetry'    => true,
+				'vendor'       => 'rum',
+			),
+		),
+		'missing_dom_targets'      => array(
+			array(
+				'source_path' => 'website/index.html',
+				'script_path' => 'assets/script.js',
+				'selector'    => '#canvas',
+				'message'     => 'script.js references #canvas, but the imported page does not contain that DOM target.',
+			),
+		),
+		'unsupported_elements'     => array(
+			array(
+				'source_path' => 'website/index.html',
+				'script_path' => 'assets/script.js',
+				'element'     => 'canvas',
+				'selector'    => 'canvas',
+			),
+		),
+		'vendor_telemetry_scripts' => array(
+			array(
+				'source_path' => 'website/index.html',
+				'script_path' => 'assets/rum.js',
+				'vendor'      => 'rum',
+				'telemetry'   => true,
+			),
+		),
+	);
+
+	$GLOBALS['ssi_transformer_adapter_result_override'] = array(
+		'schema'         => 'blocks-engine/php-transformer/result/v1',
+		'status'         => 'success',
+		'source_reports' => array(
+			'artifact'                  => array( 'entry_path' => 'website/index.html' ),
+			'materialization_plan'      => array(
+				'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
+				'pages'  => array(),
+			),
+			'runtime_dependency_parity' => $runtime_dependency_parity,
+		),
+	);
+	$runtime_parity_compiled = $adapter->compile_website_artifact( array( 'schema' => 'blocks-engine/php-transformer/site-artifact/v1' ) );
+	unset( $GLOBALS['ssi_transformer_adapter_result_override'] );
+	$assert( ! is_wp_error( $runtime_parity_compiled ), 'runtime-parity-compile-succeeds' );
+	$assert( 'blocks-engine/runtime-dependency-parity/v1' === ( $runtime_parity_compiled['runtime_dependency_parity']['schema'] ?? '' ), 'source-report-runtime-parity-preserved' );
+
+	$runtime_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
+	Static_Site_Importer_Report_Diagnostics::record_blocks_engine_result( $runtime_report, $runtime_parity_compiled );
+	Static_Site_Importer_Report_Diagnostics::finalize_report( $runtime_report, array() );
+	$runtime_payload = $runtime_report['blocks_engine']['runtime_dependency_parity'] ?? array();
+	$runtime_gate    = $runtime_report['import_validation_result']['quality_gates']['runtime_dependency_parity'] ?? array();
+	$assert( 2 === ( $runtime_payload['script_count'] ?? 0 ), 'runtime-parity-records-script-count' );
+	$assert( 'assets/script.js' === ( $runtime_payload['scripts'][0]['path'] ?? '' ), 'runtime-parity-preserves-script-path' );
+	$assert( true === ( $runtime_payload['scripts'][0]['materialized'] ?? false ), 'runtime-parity-preserves-script-materialized-state' );
+	$assert( true === ( $runtime_payload['scripts'][0]['enqueued'] ?? false ), 'runtime-parity-preserves-script-enqueued-state' );
+	$assert( 1 === ( $runtime_payload['missing_dom_target_count'] ?? 0 ), 'runtime-parity-counts-missing-dom-targets' );
+	$assert( 1 === ( $runtime_payload['unsupported_element_reference_count'] ?? 0 ), 'runtime-parity-counts-unsupported-elements' );
+	$assert( 1 === ( $runtime_payload['vendor_telemetry_script_count'] ?? 0 ), 'runtime-parity-counts-vendor-telemetry-scripts' );
+	$assert( 2 === ( $runtime_report['quality']['runtime_dependency_parity_issue_count'] ?? 0 ), 'runtime-parity-quality-count-excludes-telemetry-notice' );
+	$assert( 'reported' === ( $runtime_gate['status'] ?? '' ), 'runtime-parity-gate-reports-issues' );
+	$assert( 2 === ( $runtime_gate['count'] ?? 0 ), 'runtime-parity-gate-counts-actionable-issues' );
+	$assert( 2 === count( $runtime_gate['diagnostic_refs'] ?? array() ), 'runtime-parity-gate-has-diagnostic-refs' );
+	$assert( 'runtime_dependency_missing_dom_target' === ( $runtime_report['diagnostics'][0]['type'] ?? '' ), 'runtime-parity-missing-target-becomes-diagnostic' );
+	$assert( '#canvas' === ( $runtime_report['diagnostics'][0]['selector'] ?? '' ), 'runtime-parity-diagnostic-preserves-selector' );
+	$assert( 'assets/script.js' === ( $runtime_report['diagnostics'][0]['script_path'] ?? '' ), 'runtime-parity-diagnostic-preserves-script-path' );
+	$assert( 'runtime_dependency_vendor_telemetry_script' === ( $runtime_report['diagnostics'][2]['type'] ?? '' ), 'runtime-parity-telemetry-becomes-low-severity-diagnostic' );
+	$assert( 'notice' === ( $runtime_report['diagnostics'][2]['severity'] ?? '' ), 'runtime-parity-telemetry-is-notice' );
+	$assert( 2 === ( $runtime_report['finding_packets']['count'] ?? 0 ), 'runtime-parity-actionable-diagnostics-create-finding-packets' );
+	$assert( 'failed' === ( Static_Site_Importer_Report_Diagnostics::import_validation_result( $runtime_report, Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $runtime_report, array( 'fail_on_quality' => true ) ) )['status'] ?? '' ), 'runtime-parity-fail-on-quality-can-fail' );
+
+	$runtime_parity_locations = array(
+		'source_reports.conversion_report.runtime_dependency_parity' => array(
+			'source_reports' => array(
+				'artifact'             => array( 'entry_path' => 'website/index.html' ),
+				'materialization_plan' => array( 'schema' => 'blocks-engine/php-transformer/materialization-plan/v1' ),
+				'conversion_report'    => array( 'runtime_dependency_parity' => $runtime_dependency_parity ),
+			),
+		),
+		'conversion_report.runtime_dependency_parity' => array(
+			'source_reports'    => array(
+				'artifact'             => array( 'entry_path' => 'website/index.html' ),
+				'materialization_plan' => array( 'schema' => 'blocks-engine/php-transformer/materialization-plan/v1' ),
+			),
+			'conversion_report' => array( 'runtime_dependency_parity' => $runtime_dependency_parity ),
+		),
+		'reports.runtime_dependency_parity' => array(
+			'source_reports' => array(
+				'artifact'             => array( 'entry_path' => 'website/index.html' ),
+				'materialization_plan' => array( 'schema' => 'blocks-engine/php-transformer/materialization-plan/v1' ),
+			),
+			'reports'        => array( 'runtime_dependency_parity' => $runtime_dependency_parity ),
+		),
+	);
+	foreach ( $runtime_parity_locations as $label => $payload ) {
+		$GLOBALS['ssi_transformer_adapter_result_override'] = array_merge(
+			array(
+				'schema' => 'blocks-engine/php-transformer/result/v1',
+				'status' => 'success',
+			),
+			$payload
+		);
+		$location_compiled = $adapter->compile_website_artifact( array( 'schema' => 'blocks-engine/php-transformer/site-artifact/v1' ) );
+		unset( $GLOBALS['ssi_transformer_adapter_result_override'] );
+		$assert( ! is_wp_error( $location_compiled ), 'runtime-parity-location-compile-' . $label );
+		$assert( 'blocks-engine/runtime-dependency-parity/v1' === ( $location_compiled['runtime_dependency_parity']['schema'] ?? '' ), 'runtime-parity-location-consumed-' . $label );
+	}
+
 	$GLOBALS['ssi_transformer_adapter_result_override'] = array(
 		'schema'            => 'blocks-engine/php-transformer/result/v1',
 		'status'            => 'success',
