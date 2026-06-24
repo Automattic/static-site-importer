@@ -536,8 +536,8 @@ function static_site_importer_rest_generate_in_current_runtime( array $source, a
 	$playground                = isset( $preview['playground'] ) && is_array( $preview['playground'] ) ? $preview['playground'] : array();
 	$playground['preview_url'] = $preview['url'];
 	$preview['playground']     = $playground;
-	$result['preview'] = $preview;
-	$result['mode']    = 'generated_in_current_runtime';
+	$result['preview']         = $preview;
+	$result['mode']            = 'generated_in_current_runtime';
 
 	return $result;
 }
