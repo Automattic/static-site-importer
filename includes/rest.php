@@ -452,8 +452,18 @@ function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 
 	$source = isset( $params['source'] ) && is_array( $params['source'] ) ? $params['source'] : array();
 	$input  = static_site_importer_rest_import_args( $params );
+	$mode   = static_site_importer_rest_import_mode( $params );
 
-	if ( ! static_site_importer_rest_should_apply_to_current_site( $params ) ) {
+	if ( 'current_runtime' === $mode ) {
+		$result = static_site_importer_rest_generate_in_current_runtime( $source, $input, $params );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		return rest_ensure_response( $result );
+	}
+
+	if ( 'preview' === $mode ) {
 		$result = static_site_importer_rest_create_preview( $source, $input, $params );
 		if ( is_wp_error( $result ) ) {
 			return $result;
@@ -471,13 +481,61 @@ function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 }
 
 /**
+ * Resolve the import execution mode from REST flags.
+ *
+ * Modes are intentionally separate:
+ * - preview: non-mutating WP Codebox preview.
+ * - current_runtime: public Playground generation in the active disposable runtime.
+ * - current_site: explicit import into the installed WordPress site.
+ *
+ * @param array<string,mixed> $params Request params.
+ * @return 'preview'|'current_runtime'|'current_site'
+ */
+function static_site_importer_rest_import_mode( array $params ): string {
+	if ( ! empty( $params['apply_to_current_site'] ) ) {
+		return 'current_site';
+	}
+
+	if ( ! empty( $params['generate_in_current_runtime'] ) ) {
+		return 'current_runtime';
+	}
+
+	return 'preview';
+}
+
+/**
  * Determine whether the request explicitly targets the current WordPress site.
  *
  * @param array<string,mixed> $params Request params.
  * @return bool
  */
 function static_site_importer_rest_should_apply_to_current_site( array $params ): bool {
-	return ! empty( $params['apply_to_current_site'] );
+	return 'current_site' === static_site_importer_rest_import_mode( $params );
+}
+
+/**
+ * Generate a WordPress website in the active disposable runtime without WP Codebox.
+ *
+ * @param array<string,mixed> $source Source payload.
+ * @param array<string,mixed> $input  Import args.
+ * @param array<string,mixed> $params Request params.
+ * @return array<string,mixed>|WP_Error
+ */
+function static_site_importer_rest_generate_in_current_runtime( array $source, array $input, array $params ) {
+	$input['activate']  = array_key_exists( 'activate', $params ) ? ! empty( $params['activate'] ) : true;
+	$input['overwrite'] = array_key_exists( 'overwrite', $params ) ? ! empty( $params['overwrite'] ) : true;
+
+	$result = static_site_importer_rest_apply_to_current_site( $source, $input, $params );
+	if ( ! is_array( $result ) ) {
+		return $result;
+	}
+
+	$preview = isset( $result['preview'] ) && is_array( $result['preview'] ) ? $result['preview'] : array();
+	$preview['status'] = isset( $preview['status'] ) ? $preview['status'] : 'ready';
+	$result['preview'] = $preview;
+	$result['mode']    = 'generated_in_current_runtime';
+
+	return $result;
 }
 
 /**
