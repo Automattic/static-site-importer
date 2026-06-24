@@ -8,19 +8,19 @@
       "type": "package",
       "package": {
         "name": "automattic/blocks-engine-php-transformer",
-        "version": "0.1.12",
+        "version": "0.1.13",
         "description": "PHP primitives for transforming HTML, Markdown, and website artifacts into WordPress block outputs.",
         "type": "library",
         "license": "GPL-3.0-or-later",
         "source": {
           "type": "git",
           "url": "https://github.com/Automattic/blocks-engine.git",
-          "reference": "e708340b946ebe2c1d9fb316df2764cec9d95ad9"
+          "reference": "46a6d684729055b15911f60a2074985e3b6f9c41"
         },
         "dist": {
           "type": "zip",
-          "url": "https://github.com/Automattic/blocks-engine/archive/refs/tags/php-transformer-v0.1.12.zip",
-          "reference": "e708340b946ebe2c1d9fb316df2764cec9d95ad9"
+          "url": "https://github.com/Automattic/blocks-engine/archive/refs/tags/php-transformer-v0.1.13.zip",
+          "reference": "46a6d684729055b15911f60a2074985e3b6f9c41"
         },
         "autoload": {
           "psr-4": {
@@ -73,7 +73,7 @@
   ],
   "require": {
     "automattic/blocks-engine-figma-transformer": "^0.1.1",
-    "automattic/blocks-engine-php-transformer": "^0.1.12",
+    "automattic/blocks-engine-php-transformer": "^0.1.13",
     "php": "^8.1"
   },
   "minimum-stability": "dev",
