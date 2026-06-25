@@ -431,13 +431,15 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		$this->assertSame( 1, $fixture['quality_counts']['core_html_block_count'] ?? 0 );
 		$this->assertSame( 1, $fixture['import_report_quality_counts']['runtime_dependency_parity_issue_count'] ?? 0 );
 		$this->assertSame( 1, $fixture['diagnostic_summary']['type']['core_html_block'] ?? 0 );
-		$this->assertSame( 1, $fixture['diagnostic_summary']['repair_bucket']['fallback_block'] ?? 0 );
-		$this->assertSame( 1, $fixture['diagnostic_summary']['parser_owner']['blocks-engine'] ?? 0 );
+		$this->assertSame( 2, $fixture['diagnostic_summary']['repair_bucket']['fallback_block'] ?? 0 );
+		$this->assertSame( 2, $fixture['diagnostic_summary']['parser_owner']['blocks-engine'] ?? 0 );
 		$this->assertSame( 'templates/front-page.html', $fixture['diagnostics'][0]['source_path'] ?? '' );
 		$this->assertSame( 'a.wp-block-button__link', $fixture['diagnostics'][0]['selector'] ?? '' );
 		$this->assertSame( 'generated_document_contains_core_html', $fixture['diagnostics'][0]['code'] ?? '' );
 		$this->assertSame( 'fallback_block', $fixture['diagnostics'][0]['repair_bucket'] ?? '' );
 		$this->assertSame( 'blocks-engine', $fixture['diagnostics'][0]['parser_owner'] ?? '' );
+		$this->assertSame( 'unsupported_html_fallback', $fixture['diagnostics'][4]['type'] ?? '' );
+		$this->assertSame( 'fallback_block', $fixture['diagnostics'][4]['repair_bucket'] ?? '' );
 		$this->assertCount( 1, $fixture['runtime_dependency_target_gaps'] ?? array() );
 		$this->assertSame( '#cart-drawer', $fixture['runtime_dependency_target_gaps'][0]['selector'] ?? '' );
 		$this->assertCount( 1, $fixture['asset_diagnostics'] ?? array() );
@@ -450,7 +452,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 			array(
 				'parser_owner'  => 'blocks-engine',
 				'repair_bucket' => 'fallback_block',
-				'count'         => 1,
+				'count'         => 2,
 			),
 			$fixture['top_parser_buckets'] ?? array()
 		);
