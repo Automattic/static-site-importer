@@ -58,6 +58,9 @@ class Static_Site_Importer_Theme_Generator {
 				$args['site_title'] = $site_title;
 			}
 		}
+		if ( empty( $args['source_artifact_reference'] ) ) {
+			$args['source_artifact_reference'] = self::source_artifact_reference_from_artifact( $artifact, $args );
+		}
 
 		$compiler_options = isset( $args['compiler_options'] ) && is_array( $args['compiler_options'] ) ? $args['compiler_options'] : array();
 		$compiled         = ( new Static_Site_Importer_Transformer_Adapter() )->compile_website_artifact( $artifact, array_merge( array( 'include_conversion_report' => true ), $compiler_options ) );
@@ -98,10 +101,16 @@ class Static_Site_Importer_Theme_Generator {
 			return new WP_Error( 'static_site_importer_theme_exists', sprintf( 'Theme already exists: %s', $theme_slug ) );
 		}
 
+		$import_run_id             = self::import_run_id( $args );
+		$source_artifact_reference = self::source_artifact_reference_from_compiled( $compiled, $args );
 		$source_metadata           = isset( $args['source_metadata'] ) && is_array( $args['source_metadata'] ) ? $args['source_metadata'] : array();
 		$source_metadata['source'] = 'website_artifact';
 		$html_path                 = (string) ( $compiled['provenance']['source'] ?? ( $compiled['input']['entry_path'] ?? 'website_artifact' ) );
 		self::$conversion_report   = Static_Site_Importer_Report_Diagnostics::new_conversion_report( $html_path, $source_metadata );
+		self::$conversion_report['import_run_id']            = $import_run_id;
+		self::$conversion_report['source_artifact']           = $source_artifact_reference;
+		self::$conversion_report['source_of_truth']['import_run_id'] = $import_run_id;
+		self::$conversion_report['source_of_truth']['artifact']      = $source_artifact_reference;
 		Static_Site_Importer_Report_Diagnostics::record_blocks_engine_result( self::$conversion_report, $compiled );
 		Static_Site_Importer_Report_Diagnostics::record_direct_website_artifact_source_summary( self::$conversion_report, $compiled );
 		self::record_products_manifest_from_import_args( $args, $compiled );
@@ -118,7 +127,8 @@ class Static_Site_Importer_Theme_Generator {
 			return $document_pages;
 		}
 
-		$page_ids = Static_Site_Importer_Page_Materializer::create_page_shells( $document_pages );
+		$page_targets = Static_Site_Importer_Page_Materializer::page_targets( $document_pages );
+		$page_ids     = Static_Site_Importer_Page_Materializer::create_page_shells( $document_pages );
 		if ( is_wp_error( $page_ids ) ) {
 			return $page_ids;
 		}
@@ -180,21 +190,11 @@ class Static_Site_Importer_Theme_Generator {
 		self::materialize_required_plugins( $args );
 		self::record_product_seeding_report( $args );
 		self::record_commerce_dependency_check( $args );
-		$quality                = Static_Site_Importer_Report_Diagnostics::finalize_report( self::$conversion_report, $args );
+		$source_of_truth_manifest                    = self::source_of_truth_manifest( $import_run_id, $source_artifact_reference, $theme_dir, $theme_slug, $page_targets, $page_ids, $permalinks, $writes, $materialized );
+		self::$conversion_report['source_of_truth'] = $source_of_truth_manifest;
+		$quality                                    = Static_Site_Importer_Report_Diagnostics::finalize_report( self::$conversion_report, $args );
 		$validation_result      = self::$conversion_report['import_validation_result'] ?? array();
 		$finding_packets        = self::$conversion_report['finding_packets'] ?? array();
-		$report_json            = wp_json_encode( self::$conversion_report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
-		$validation_result_json = wp_json_encode( $validation_result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
-		$finding_packets_json   = wp_json_encode( $finding_packets, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
-		if ( false === $report_json ) {
-			return new WP_Error( 'static_site_importer_report_encode_failed', 'Failed to encode import report JSON.' );
-		}
-		if ( false === $validation_result_json ) {
-			return new WP_Error( 'static_site_importer_validation_result_encode_failed', 'Failed to encode import validation result JSON.' );
-		}
-		if ( false === $finding_packets_json ) {
-			return new WP_Error( 'static_site_importer_finding_packets_encode_failed', 'Failed to encode finding packets JSON.' );
-		}
 		if ( ! empty( $quality['fail_import'] ) ) {
 			return new WP_Error(
 				'static_site_importer_quality_gate_failed',
@@ -212,6 +212,26 @@ class Static_Site_Importer_Theme_Generator {
 			);
 		}
 
+		$cleanup = self::cleanup_stale_generated_theme_files( $theme_dir, $source_of_truth_manifest, $args );
+		if ( is_wp_error( $cleanup ) ) {
+			return $cleanup;
+		}
+		$source_of_truth_manifest['cleanup']       = $cleanup;
+		self::$conversion_report['source_of_truth'] = $source_of_truth_manifest;
+
+		$report_json            = wp_json_encode( self::$conversion_report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+		$validation_result_json = wp_json_encode( $validation_result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+		$finding_packets_json   = wp_json_encode( $finding_packets, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+		if ( false === $report_json ) {
+			return new WP_Error( 'static_site_importer_report_encode_failed', 'Failed to encode import report JSON.' );
+		}
+		if ( false === $validation_result_json ) {
+			return new WP_Error( 'static_site_importer_validation_result_encode_failed', 'Failed to encode import validation result JSON.' );
+		}
+		if ( false === $finding_packets_json ) {
+			return new WP_Error( 'static_site_importer_finding_packets_encode_failed', 'Failed to encode finding packets JSON.' );
+		}
+
 		$result = Static_Site_Importer_Theme_Materializer::ensure_dirs( $theme_dir );
 		if ( is_wp_error( $result ) ) {
 			return $result;
@@ -226,7 +246,16 @@ class Static_Site_Importer_Theme_Generator {
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
+		$result = Static_Site_Importer_Page_Materializer::record_page_provenance( $document_pages, $page_ids, $page_targets, $source_of_truth_manifest );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
 
+		$manifest_json = wp_json_encode( $source_of_truth_manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+		if ( false === $manifest_json ) {
+			return new WP_Error( 'static_site_importer_manifest_encode_failed', 'Failed to encode source-of-truth manifest JSON.' );
+		}
+		$writes[ $theme_dir . '/static-site-importer-manifest.json' ] = $manifest_json . "\n";
 		$writes[ $theme_dir . '/import-report.json' ]            = $report_json . "\n";
 		$writes[ $theme_dir . '/import-validation-result.json' ] = $validation_result_json . "\n";
 		$writes[ $theme_dir . '/finding-packets.json' ]          = $finding_packets_json . "\n";
@@ -283,16 +312,347 @@ class Static_Site_Importer_Theme_Generator {
 			'report_path'                     => $theme_dir . '/import-report.json',
 			'validation_result_path'          => $theme_dir . '/import-validation-result.json',
 			'finding_packets_path'            => $theme_dir . '/finding-packets.json',
+			'manifest_path'                   => $theme_dir . '/static-site-importer-manifest.json',
 			'external_report_path'            => $external_report_path,
 			'external_validation_result_path' => $external_validation_result_path,
 			'external_finding_packets_path'   => $external_finding_packets_path,
 			'import_report_summary'           => self::$conversion_report['compact_summary'],
 			'import_validation_result'        => $validation_result,
 			'finding_packets'                 => $finding_packets,
+			'source_of_truth'                 => $source_of_truth_manifest,
 			'pages'                           => $page_ids,
 			'quality'                         => $quality,
 			'source_documents'                => self::$conversion_report['source_documents'],
 		);
+	}
+
+	/**
+	 * Remove generated theme files from the previous SSI manifest when absent from the new desired manifest.
+	 *
+	 * @param string              $theme_dir        Theme directory.
+	 * @param array<string,mixed> $current_manifest Current source-of-truth manifest.
+	 * @param array<string,mixed> $args             Import args.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private static function cleanup_stale_generated_theme_files( string $theme_dir, array $current_manifest, array $args = array() ) {
+		$previous_manifest_path = trailingslashit( $theme_dir ) . 'static-site-importer-manifest.json';
+		$cleanup                = array(
+			'enabled'                => true,
+			'policy'                 => 'previous_manifest_file_targets_only',
+			'previous_manifest_path' => 'static-site-importer-manifest.json',
+			'deleted'                => array(),
+			'skipped'                => array(),
+			'pages'                  => array(
+				'enabled'     => true,
+				'policy'      => 'previous_manifest_provenance_report_first',
+				'action'      => self::stale_page_action( $args ),
+				'stale_pages' => array(),
+				'skipped'     => array(),
+				'counts'      => array(
+					'stale_pages'   => 0,
+					'pages_drafted' => 0,
+					'pages_deleted' => 0,
+					'skipped'       => 0,
+				),
+				'notes'       => array( 'Stale SSI-owned pages are reported by default. Drafting requires explicit stale_page_action=draft; deletion is not supported here.' ),
+			),
+			'counts'                 => array(
+				'deleted'       => 0,
+				'skipped'       => 0,
+				'pages_drafted' => 0,
+				'pages_deleted' => 0,
+			),
+			'protected'              => array(
+				'pages_deleted' => 0,
+				'pages_drafted' => 0,
+				'notes'         => array( 'Page deletion is intentionally disabled; this cleanup only removes prior SSI-generated theme files and assets.' ),
+			),
+		);
+
+		if ( ! is_file( $previous_manifest_path ) ) {
+			$cleanup['skipped'][] = array(
+				'path'   => 'static-site-importer-manifest.json',
+				'reason' => 'previous_manifest_missing',
+			);
+			$cleanup['counts']['skipped'] = count( $cleanup['skipped'] );
+			return $cleanup;
+		}
+
+		$previous_manifest_json = file_get_contents( $previous_manifest_path );
+		if ( false === $previous_manifest_json ) {
+			return new WP_Error( 'static_site_importer_previous_manifest_read_failed', 'Failed to read the previous Static Site Importer manifest.' );
+		}
+
+		$previous_manifest = json_decode( $previous_manifest_json, true );
+		if ( ! is_array( $previous_manifest ) || 'static-site-importer/source-of-truth-manifest/v1' !== (string) ( $previous_manifest['schema'] ?? '' ) ) {
+			$cleanup['skipped'][] = array(
+				'path'   => 'static-site-importer-manifest.json',
+				'reason' => 'previous_manifest_invalid',
+			);
+			$cleanup['counts']['skipped'] = count( $cleanup['skipped'] );
+			return $cleanup;
+		}
+
+		$page_reconciliation = self::reconcile_stale_manifest_pages( $previous_manifest, $current_manifest, $cleanup['pages']['action'] );
+		if ( is_wp_error( $page_reconciliation ) ) {
+			return $page_reconciliation;
+		}
+		$cleanup['pages']                         = $page_reconciliation;
+		$cleanup['protected']['pages_deleted']    = (int) ( $page_reconciliation['counts']['pages_deleted'] ?? 0 );
+		$cleanup['protected']['pages_drafted']    = (int) ( $page_reconciliation['counts']['pages_drafted'] ?? 0 );
+		$cleanup['counts']['pages_deleted']       = (int) ( $page_reconciliation['counts']['pages_deleted'] ?? 0 );
+		$cleanup['counts']['pages_drafted']       = (int) ( $page_reconciliation['counts']['pages_drafted'] ?? 0 );
+
+		$current_paths  = self::manifest_theme_file_paths( $current_manifest );
+		$previous_paths = self::manifest_theme_file_paths( $previous_manifest );
+		$stale_paths    = array_values( array_diff( array_keys( $previous_paths ), array_keys( $current_paths ) ) );
+
+		foreach ( $stale_paths as $relative ) {
+			$path = trailingslashit( $theme_dir ) . $relative;
+			if ( ! file_exists( $path ) ) {
+				$cleanup['skipped'][] = array(
+					'path'   => $relative,
+					'reason' => 'already_missing',
+				);
+				continue;
+			}
+
+			if ( ! is_file( $path ) ) {
+				$cleanup['skipped'][] = array(
+					'path'   => $relative,
+					'reason' => 'not_a_file',
+				);
+				continue;
+			}
+
+			if ( ! unlink( $path ) ) {
+				return new WP_Error( 'static_site_importer_stale_generated_file_delete_failed', sprintf( 'Failed to delete stale generated theme file: %s', $relative ) );
+			}
+
+			$cleanup['deleted'][] = array(
+				'path'   => $relative,
+				'reason' => 'absent_from_current_manifest',
+			);
+		}
+
+		$cleanup['counts']['deleted'] = count( $cleanup['deleted'] );
+		$cleanup['counts']['skipped'] = count( $cleanup['skipped'] );
+
+		return $cleanup;
+	}
+
+	/**
+	 * Resolve the explicitly requested stale page action.
+	 *
+	 * @param array<string,mixed> $args Import args.
+	 * @return string
+	 */
+	private static function stale_page_action( array $args ): string {
+		$action = isset( $args['stale_page_action'] ) && is_scalar( $args['stale_page_action'] ) ? sanitize_key( (string) $args['stale_page_action'] ) : '';
+		if ( '' === $action ) {
+			$option = get_option( 'static_site_importer_stale_page_action', '' );
+			$action = is_scalar( $option ) ? sanitize_key( (string) $option ) : '';
+		}
+
+		return 'draft' === $action ? 'draft' : 'report_only';
+	}
+
+	/**
+	 * Report or draft SSI-owned pages present in the previous manifest but absent from the current desired pages.
+	 *
+	 * @param array<string,mixed> $previous_manifest Previous source-of-truth manifest.
+	 * @param array<string,mixed> $current_manifest  Current source-of-truth manifest.
+	 * @param string              $action            Reconciliation action.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private static function reconcile_stale_manifest_pages( array $previous_manifest, array $current_manifest, string $action ) {
+		$reconciliation = array(
+			'enabled'     => true,
+			'policy'      => 'previous_manifest_provenance_report_first',
+			'action'      => 'draft' === $action ? 'draft' : 'report_only',
+			'stale_pages' => array(),
+			'skipped'     => array(),
+			'counts'      => array(
+				'stale_pages'   => 0,
+				'pages_drafted' => 0,
+				'pages_deleted' => 0,
+				'skipped'       => 0,
+			),
+			'notes'       => array( 'Only pages with valid Static Site Importer provenance meta are eligible. Protected pages and pages without SSI provenance are never mutated.' ),
+		);
+
+		$current_sources = array();
+		$current_posts   = array();
+		foreach ( self::manifest_pages( $current_manifest ) as $page ) {
+			$source_path = isset( $page['source_path'] ) && is_scalar( $page['source_path'] ) ? (string) $page['source_path'] : '';
+			$post_id     = (int) ( $page['materialized_post_id'] ?? 0 );
+			if ( '' !== $source_path ) {
+				$current_sources[ $source_path ] = true;
+			}
+			if ( $post_id > 0 ) {
+				$current_posts[ $post_id ] = true;
+			}
+		}
+
+		foreach ( self::manifest_pages( $previous_manifest ) as $page ) {
+			$source_path = isset( $page['source_path'] ) && is_scalar( $page['source_path'] ) ? (string) $page['source_path'] : '';
+			$post_id     = (int) ( $page['materialized_post_id'] ?? 0 );
+			if ( '' !== $source_path && isset( $current_sources[ $source_path ] ) ) {
+				continue;
+			}
+			if ( $post_id <= 0 || isset( $current_posts[ $post_id ] ) ) {
+				continue;
+			}
+
+			$post = get_post( $post_id );
+			if ( ! $post instanceof WP_Post ) {
+				$reconciliation['skipped'][] = array(
+					'post_id'     => $post_id,
+					'source_path' => $source_path,
+					'reason'      => 'post_missing',
+				);
+				continue;
+			}
+
+			if ( Static_Site_Importer_Page_Materializer::is_protected_page( $post ) ) {
+				$reconciliation['skipped'][] = array(
+					'post_id'     => $post_id,
+					'source_path' => $source_path,
+					'slug'        => (string) $post->post_name,
+					'reason'      => 'protected_page',
+				);
+				continue;
+			}
+
+			$provenance = self::page_provenance( $post_id );
+			if ( empty( $provenance ) ) {
+				$reconciliation['skipped'][] = array(
+					'post_id'     => $post_id,
+					'source_path' => $source_path,
+					'slug'        => (string) $post->post_name,
+					'reason'      => 'missing_static_site_importer_provenance',
+				);
+				continue;
+			}
+
+			$row = array(
+				'post_id'         => $post_id,
+				'post_type'       => (string) $post->post_type,
+				'slug'            => (string) $post->post_name,
+				'source_path'     => $source_path,
+				'previous_status' => (string) $post->post_status,
+				'action'          => 'report_only',
+			);
+
+			if ( 'draft' === $reconciliation['action'] ) {
+				if ( 'draft' !== $post->post_status ) {
+					$result = wp_update_post(
+						array(
+							'ID'          => $post_id,
+							'post_status' => 'draft',
+						),
+						true
+					);
+					if ( is_wp_error( $result ) ) {
+						return $result;
+					}
+					++$reconciliation['counts']['pages_drafted'];
+				}
+				$row['action']     = 'drafted';
+				$row['new_status'] = 'draft';
+			}
+
+			$reconciliation['stale_pages'][] = $row;
+		}
+
+		$reconciliation['counts']['stale_pages'] = count( $reconciliation['stale_pages'] );
+		$reconciliation['counts']['skipped']     = count( $reconciliation['skipped'] );
+
+		return $reconciliation;
+	}
+
+	/**
+	 * Extract desired pages from a manifest.
+	 *
+	 * @param array<string,mixed> $manifest Source-of-truth manifest.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function manifest_pages( array $manifest ): array {
+		$desired = isset( $manifest['desired'] ) && is_array( $manifest['desired'] ) ? $manifest['desired'] : array();
+		$pages   = isset( $desired['pages'] ) && is_array( $desired['pages'] ) ? $desired['pages'] : array();
+
+		return array_values( array_filter( $pages, 'is_array' ) );
+	}
+
+	/**
+	 * Read valid Static Site Importer page provenance meta.
+	 *
+	 * @param int $post_id Post ID.
+	 * @return array<string,mixed>
+	 */
+	private static function page_provenance( int $post_id ): array {
+		$raw = (string) get_post_meta( $post_id, '_static_site_importer_provenance', true );
+		if ( '' === trim( $raw ) ) {
+			return array();
+		}
+
+		$provenance = json_decode( $raw, true );
+		if ( ! is_array( $provenance ) || 'static-site-importer/page-provenance/v1' !== (string) ( $provenance['schema'] ?? '' ) ) {
+			return array();
+		}
+
+		return $provenance;
+	}
+
+	/**
+	 * Extract safe theme-relative file paths from a source-of-truth manifest.
+	 *
+	 * @param array<string,mixed> $manifest Source-of-truth manifest.
+	 * @return array<string,true>
+	 */
+	private static function manifest_theme_file_paths( array $manifest ): array {
+		$desired = isset( $manifest['desired'] ) && is_array( $manifest['desired'] ) ? $manifest['desired'] : array();
+		$paths   = array();
+
+		foreach ( $desired['files'] ?? array() as $file ) {
+			if ( ! is_array( $file ) ) {
+				continue;
+			}
+
+			$relative = self::normalize_manifest_theme_relative_path( isset( $file['path'] ) && is_scalar( $file['path'] ) ? (string) $file['path'] : '' );
+			if ( '' !== $relative ) {
+				$paths[ $relative ] = true;
+			}
+		}
+
+		foreach ( $desired['assets'] ?? array() as $asset ) {
+			if ( ! is_array( $asset ) ) {
+				continue;
+			}
+
+			$relative = self::normalize_manifest_theme_relative_path( isset( $asset['theme_path'] ) && is_scalar( $asset['theme_path'] ) ? (string) $asset['theme_path'] : '' );
+			if ( '' !== $relative ) {
+				$paths[ $relative ] = true;
+			}
+		}
+
+		return $paths;
+	}
+
+	/**
+	 * Normalize a manifest theme-relative path for safe file cleanup.
+	 *
+	 * @param string $path Manifest path.
+	 * @return string
+	 */
+	private static function normalize_manifest_theme_relative_path( string $path ): string {
+		$path = str_replace( '\\', '/', trim( $path ) );
+		$path = ltrim( $path, '/' );
+		if ( '' === $path || str_contains( $path, "\0" ) || str_starts_with( $path, '../' ) || str_contains( $path, '/../' ) || preg_match( '#^[a-z][a-z0-9+.-]*:#i', $path ) ) {
+			return '';
+		}
+
+		return $path;
 	}
 
 	/**
@@ -1086,6 +1446,220 @@ class Static_Site_Importer_Theme_Generator {
 
 		$decoded = json_decode( $report, true );
 		return is_array( $decoded ) ? $decoded : array();
+	}
+
+	/**
+	 * Build a stable import run id for report and provenance joins.
+	 *
+	 * @param array<string,mixed> $args Import args.
+	 * @return string
+	 */
+	private static function import_run_id( array $args ): string {
+		if ( isset( $args['import_run_id'] ) && is_scalar( $args['import_run_id'] ) && '' !== trim( (string) $args['import_run_id'] ) ) {
+			return sanitize_key( (string) $args['import_run_id'] );
+		}
+
+		if ( function_exists( 'wp_generate_uuid4' ) ) {
+			return 'ssi-' . wp_generate_uuid4();
+		}
+
+		return 'ssi-' . gmdate( 'YmdHis' ) . '-' . bin2hex( random_bytes( 4 ) );
+	}
+
+	/**
+	 * Extract artifact identity fields supplied with a source artifact.
+	 *
+	 * @param array<string,mixed> $artifact Website artifact bundle.
+	 * @param array<string,mixed> $args     Import args.
+	 * @return array<string,mixed>
+	 */
+	private static function source_artifact_reference_from_artifact( array $artifact, array $args = array() ): array {
+		$reference = array(
+			'schema'     => isset( $artifact['schema'] ) && is_scalar( $artifact['schema'] ) ? (string) $artifact['schema'] : '',
+			'id'         => '',
+			'hash'       => '',
+			'hash_algo'  => '',
+			'entrypoint' => isset( $artifact['entrypoint'] ) && is_scalar( $artifact['entrypoint'] ) ? (string) $artifact['entrypoint'] : '',
+		);
+
+		foreach ( array( 'artifact_id', 'id', 'run_id' ) as $key ) {
+			if ( isset( $args[ $key ] ) && is_scalar( $args[ $key ] ) && '' !== trim( (string) $args[ $key ] ) ) {
+				$reference['id'] = (string) $args[ $key ];
+				break;
+			}
+			if ( isset( $artifact[ $key ] ) && is_scalar( $artifact[ $key ] ) && '' !== trim( (string) $artifact[ $key ] ) ) {
+				$reference['id'] = (string) $artifact[ $key ];
+				break;
+			}
+		}
+
+		foreach ( array( 'artifact_hash', 'hash', 'sha256' ) as $key ) {
+			if ( isset( $args[ $key ] ) && is_scalar( $args[ $key ] ) && '' !== trim( (string) $args[ $key ] ) ) {
+				$reference['hash'] = (string) $args[ $key ];
+				break;
+			}
+			if ( isset( $artifact[ $key ] ) && is_scalar( $artifact[ $key ] ) && '' !== trim( (string) $artifact[ $key ] ) ) {
+				$reference['hash'] = (string) $artifact[ $key ];
+				break;
+			}
+		}
+
+		if ( isset( $args['artifact_hash_algo'] ) && is_scalar( $args['artifact_hash_algo'] ) ) {
+			$reference['hash_algo'] = (string) $args['artifact_hash_algo'];
+		} elseif ( isset( $artifact['hash_algo'] ) && is_scalar( $artifact['hash_algo'] ) ) {
+			$reference['hash_algo'] = (string) $artifact['hash_algo'];
+		} elseif ( isset( $artifact['sha256'] ) || isset( $args['sha256'] ) ) {
+			$reference['hash_algo'] = 'sha256';
+		}
+
+		return array_filter(
+			$reference,
+			static fn ( $value ): bool => '' !== $value
+		);
+	}
+
+	/**
+	 * Extract artifact identity fields from the compiled result and import args.
+	 *
+	 * @param array<string,mixed> $compiled Compiler result envelope.
+	 * @param array<string,mixed> $args     Import args.
+	 * @return array<string,mixed>
+	 */
+	private static function source_artifact_reference_from_compiled( array $compiled, array $args = array() ): array {
+		$reference  = isset( $args['source_artifact_reference'] ) && is_array( $args['source_artifact_reference'] ) ? $args['source_artifact_reference'] : array();
+		$provenance = isset( $compiled['provenance'] ) && is_array( $compiled['provenance'] ) ? $compiled['provenance'] : array();
+		$input      = isset( $compiled['input'] ) && is_array( $compiled['input'] ) ? $compiled['input'] : array();
+
+		foreach ( array( 'id' => array( 'artifact_id', 'id', 'run_id' ), 'hash' => array( 'artifact_hash', 'hash', 'sha256' ), 'hash_algo' => array( 'artifact_hash_algo', 'hash_algo' ) ) as $target => $keys ) {
+			if ( isset( $reference[ $target ] ) && is_scalar( $reference[ $target ] ) && '' !== trim( (string) $reference[ $target ] ) ) {
+				continue;
+			}
+			foreach ( $keys as $key ) {
+				foreach ( array( $args, $provenance, $input ) as $source ) {
+					if ( isset( $source[ $key ] ) && is_scalar( $source[ $key ] ) && '' !== trim( (string) $source[ $key ] ) ) {
+						$reference[ $target ] = (string) $source[ $key ];
+						break 2;
+					}
+				}
+			}
+		}
+
+		if ( ! isset( $reference['entrypoint'] ) && isset( $input['entry_path'] ) && is_scalar( $input['entry_path'] ) ) {
+			$reference['entrypoint'] = (string) $input['entry_path'];
+		}
+
+		return array_filter(
+			$reference,
+			static fn ( $value ): bool => is_scalar( $value ) ? '' !== trim( (string) $value ) : ! empty( $value )
+		);
+	}
+
+	/**
+	 * Build the source-of-truth manifest embedded in reports and written to disk.
+	 *
+	 * @param string                       $import_run_id Import run id.
+	 * @param array<string,mixed>          $artifact      Source artifact reference.
+	 * @param string                       $theme_dir     Theme directory.
+	 * @param string                       $theme_slug    Theme slug.
+	 * @param array<string,array<string,mixed>> $page_targets Page target rows.
+	 * @param array<string,int>            $page_ids      Page IDs keyed by source path.
+	 * @param array<string,string>         $permalinks    Permalinks keyed by source path.
+	 * @param array<string,string>         $writes        Theme writes.
+	 * @param array<string,mixed>          $materialized  Materialized asset summary.
+	 * @return array<string,mixed>
+	 */
+	private static function source_of_truth_manifest( string $import_run_id, array $artifact, string $theme_dir, string $theme_slug, array $page_targets, array $page_ids, array $permalinks, array $writes, array $materialized ): array {
+		$pages           = array();
+		$existing_pages  = array();
+		foreach ( $page_targets as $filename => $target ) {
+			if ( ! is_array( $target ) ) {
+				continue;
+			}
+			$post_id                         = (int) ( $page_ids[ $filename ] ?? 0 );
+			$target['materialized_post_id']   = $post_id;
+			$target['permalink']              = $permalinks[ $filename ] ?? '';
+			$target['provenance_meta_key']    = ! empty( $target['protected'] ) ? '' : '_static_site_importer_provenance';
+			$pages[]                          = $target;
+			if ( ! empty( $target['existing_post_id'] ) ) {
+				$existing_pages[] = array(
+					'source_path' => (string) ( $target['source_path'] ?? $filename ),
+					'post_id'     => (int) $target['existing_post_id'],
+					'post_type'   => (string) ( $target['post_type'] ?? 'page' ),
+					'slug'        => (string) ( $target['slug'] ?? '' ),
+					'protected'   => ! empty( $target['protected'] ),
+				);
+			}
+		}
+
+		$files = array();
+		foreach ( array_keys( $writes ) as $path ) {
+			$relative = self::theme_relative_path( (string) $path, $theme_dir );
+			if ( '' !== $relative ) {
+				$files[] = array(
+					'target_type' => 'theme_file',
+					'path'        => $relative,
+				);
+			}
+		}
+		foreach ( array( 'static-site-importer-manifest.json', 'import-report.json', 'import-validation-result.json', 'finding-packets.json' ) as $path ) {
+			$files[] = array(
+				'target_type' => 'theme_file',
+				'path'        => $path,
+			);
+		}
+
+		$assets = array();
+		foreach ( $materialized['assets'] ?? array() as $source => $asset ) {
+			if ( ! is_array( $asset ) ) {
+				continue;
+			}
+			$assets[] = array(
+				'source_path' => is_string( $source ) ? $source : (string) ( $asset['source'] ?? '' ),
+				'target_type' => 'theme_asset',
+				'theme_path'  => (string) ( $asset['theme_path'] ?? '' ),
+				'url'         => (string) ( $asset['final_url'] ?? ( $asset['url'] ?? '' ) ),
+				'policy'      => (string) ( $asset['policy'] ?? 'theme' ),
+			);
+		}
+
+		return array(
+			'schema'           => 'static-site-importer/source-of-truth-manifest/v1',
+			'version'          => 1,
+			'import_run_id'    => $import_run_id,
+			'artifact'         => $artifact,
+			'generated_theme'  => array(
+				'slug' => $theme_slug,
+			),
+			'desired'          => array(
+				'pages'  => $pages,
+				'files'  => $files,
+				'assets' => $assets,
+			),
+			'existing_matches' => array(
+				'pages' => $existing_pages,
+			),
+			'manifest_path'    => 'static-site-importer-manifest.json',
+			'cleanup'          => array(
+				'enabled' => false,
+				'notes'   => array( 'Stale cleanup/deletion is intentionally not part of this foundation layer.' ),
+			),
+		);
+	}
+
+	/**
+	 * Convert an absolute generated theme file path to a theme-relative path.
+	 *
+	 * @param string $path      Absolute path.
+	 * @param string $theme_dir Theme directory.
+	 * @return string
+	 */
+	private static function theme_relative_path( string $path, string $theme_dir ): string {
+		$prefix = trailingslashit( $theme_dir );
+		if ( ! str_starts_with( $path, $prefix ) ) {
+			return '';
+		}
+
+		return ltrim( substr( $path, strlen( $prefix ) ), '/\\' );
 	}
 
 	/**
