@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Contract' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-diagnostic-contract.php';
+}
+
 /**
  * Builds and dispatches SSI validation requests for disposable Codebox runtimes.
  */
@@ -17,7 +21,6 @@ class Static_Site_Importer_Codebox_Validation {
 	private const REQUEST_SCHEMA             = 'static-site-importer/codebox-validation-request/v1';
 	private const RESULT_SCHEMA              = 'static-site-importer/codebox-validation-result/v1';
 	private const ARTIFACT_SCHEMA            = 'static-site-importer/codebox-validation-artifacts/v1';
-	private const FIXTURE_DIAGNOSTICS_SCHEMA = 'static-site-importer/codebox-fixture-diagnostics/v1';
 
 	/**
 	 * Register the default WP Codebox host-delegation bridge.
@@ -88,7 +91,7 @@ class Static_Site_Importer_Codebox_Validation {
 	}
 
 	/**
-	 * Delegate SSI validation requests to WP Codebox/Homeboy host providers.
+	 * Delegate SSI validation requests to WP Codebox host providers.
 	 *
 	 * @param mixed               $result  Existing provider result.
 	 * @param array<string,mixed> $request SSI validation request.
@@ -133,7 +136,7 @@ class Static_Site_Importer_Codebox_Validation {
 		/**
 		 * Filters the SSI Codebox validation request before runtime dispatch.
 		 *
-		 * WP Codebox/Homeboy integrations may attach orchestration metadata here, but
+		 * WP Codebox integrations may attach orchestration metadata here, but
 		 * should not execute the run. Execution belongs to
 		 * `static_site_importer_codebox_validation_result`.
 		 *
@@ -533,7 +536,7 @@ class Static_Site_Importer_Codebox_Validation {
 			'request'       => self::request_summary( $request ),
 			'artifacts'     => self::artifact_contract( $request, array() ),
 			'runtime'       => array(
-				'provider' => 'wp-codebox/homeboy',
+				'provider' => 'wp-codebox',
 				'status'   => 'missing_provider',
 			),
 			'summary'       => array(
@@ -546,7 +549,7 @@ class Static_Site_Importer_Codebox_Validation {
 			),
 			'upstream_gaps' => array(
 				array(
-					'owner'        => 'wp-codebox/homeboy',
+					'owner'        => 'wp-codebox',
 					'capability'   => 'static-site-importer Codebox validation provider',
 					'missing'      => 'No provider is registered on static_site_importer_codebox_validation_result to run the SSI import, block validation, browser render capture, screenshot capture, and visual diff capture inside a disposable WP Codebox runtime.',
 					'needed_shape' => 'Accept static-site-importer/codebox-validation-request/v1 and return static-site-importer/codebox-validation-result/v1 with durable artifact references for generated theme/archive, import report, block validation result, browser/render evidence metadata, screenshots, and diffs.',
@@ -570,7 +573,7 @@ class Static_Site_Importer_Codebox_Validation {
 						'reason_code' => 'missing_provider',
 						'message'     => 'No Codebox validation provider is registered.',
 						'stage'       => 'runtime_dispatch',
-						'owner'       => 'wp-codebox/homeboy',
+						'owner'       => 'wp-codebox',
 					),
 				),
 			)
@@ -580,48 +583,13 @@ class Static_Site_Importer_Codebox_Validation {
 	}
 
 	/**
-	 * Build the fixture-level diagnostics envelope consumed by matrix runners.
+	 * Build the importer-owned diagnostics envelope.
 	 *
 	 * @param array<string,mixed> $result Provider or synthesized result.
 	 * @return array<string,mixed>
 	 */
 	private static function fixture_diagnostics( array $result ): array {
-		$request       = isset( $result['request'] ) && is_array( $result['request'] ) ? $result['request'] : array();
-		$import_args   = isset( $request['import_args'] ) && is_array( $request['import_args'] ) ? $request['import_args'] : array();
-		$import_report = self::provider_import_report( $result );
-		$summary       = isset( $result['summary'] ) && is_array( $result['summary'] ) ? $result['summary'] : array();
-		$artifacts     = isset( $result['artifacts'] ) && is_array( $result['artifacts'] ) ? $result['artifacts'] : array();
-
-		$diagnostics = array_merge(
-			self::diagnostic_rows_from_result( $result ),
-			self::diagnostic_rows_from_import_report( $import_report ),
-			self::blocks_engine_conversion_diagnostics( $import_report ),
-			self::runtime_dependency_target_gaps( $import_report )
-		);
-		$diagnostics = self::dedupe_diagnostics( $diagnostics );
-
-		$quality_counts = self::quality_counts( $import_report, $summary );
-
-		return array(
-			'schema'                         => self::FIXTURE_DIAGNOSTICS_SCHEMA,
-			'fixture'                        => array(
-				'slug' => isset( $result['slug'] ) && is_scalar( $result['slug'] ) ? (string) $result['slug'] : ( isset( $import_args['slug'] ) ? (string) $import_args['slug'] : '' ),
-				'name' => isset( $result['name'] ) && is_scalar( $result['name'] ) ? (string) $result['name'] : ( isset( $import_args['name'] ) ? (string) $import_args['name'] : '' ),
-			),
-			'status'                         => isset( $result['status'] ) && is_scalar( $result['status'] ) ? (string) $result['status'] : '',
-			'success'                        => ! empty( $result['success'] ),
-			'quality_counts'                 => $quality_counts,
-			'import_report_quality_counts'   => $quality_counts,
-			'diagnostic_summary'             => self::diagnostic_summary( $diagnostics ),
-			'diagnostics'                    => $diagnostics,
-			'by_category'                    => self::diagnostics_by_category( $diagnostics ),
-			'blocks_engine'                  => self::blocks_engine_summary( $import_report ),
-			'runtime_dependency_target_gaps' => self::runtime_dependency_target_gaps( $import_report ),
-			'asset_diagnostics'              => self::diagnostics_matching_types( $diagnostics, array( 'asset', 'image', 'local_asset_not_materialized', 'missing_asset', 'dropped_image' ) ),
-			'svg_diagnostics'                => self::diagnostics_matching_types( $diagnostics, array( 'svg', 'unsafe_inline_svg', 'svg_materialization_failure', 'svg_sprite_reference_failure' ) ),
-			'button_style_loss_hints'        => self::diagnostics_matching_types( $diagnostics, array( 'button', 'style_loss', 'presentation_gap' ) ),
-			'artifact_refs'                  => self::fixture_artifact_refs( $artifacts, $import_report ),
-		);
+		return Static_Site_Importer_Diagnostic_Contract::build( $result );
 	}
 
 	/**
@@ -733,7 +701,7 @@ class Static_Site_Importer_Codebox_Validation {
 	}
 
 	/**
-	 * Normalize diagnostic rows to a stable matrix-consumable subset.
+	 * Normalize diagnostic rows to a stable consumer-facing subset.
 	 *
 	 * @param array<int|string,mixed> $rows          Raw diagnostic rows.
 	 * @param string                  $default_stage Default stage.
@@ -882,7 +850,7 @@ class Static_Site_Importer_Codebox_Validation {
 	}
 
 	/**
-	 * Stable artifact references for matrix output.
+	 * Stable artifact references for validation output.
 	 *
 	 * @param array<string,mixed> $artifacts     Validation artifacts.
 	 * @param array<string,mixed> $import_report Import report.
