@@ -57,6 +57,43 @@ class Static_Site_Importer_Page_Materializer {
 	}
 
 	/**
+	 * Describe the intended WordPress targets before materialization writes.
+	 *
+	 * @param array<string, Static_Site_Importer_Source_Page> $pages Pages.
+	 * @return array<string,array<string,mixed>> Target rows keyed by source filename.
+	 */
+	public static function page_targets( array $pages ): array {
+		$targets = array();
+		foreach ( $pages as $filename => $page ) {
+			$slug     = self::page_slug( $filename, $page );
+			$type     = self::page_post_type( $page );
+			$existing = get_page_by_path( $slug, OBJECT, $type );
+			$row      = array(
+				'source_path'       => $page->source_key(),
+				'target_type'       => 'wordpress_post',
+				'post_type'         => $type,
+				'slug'              => $slug,
+				'title'             => self::page_title( $filename, $page ),
+				'status'            => self::page_status( $page ),
+				'existing_post_id'  => 0,
+				'existing_status'   => '',
+				'protected'         => false,
+				'materialized_post_id' => 0,
+			);
+
+			if ( $existing instanceof WP_Post ) {
+				$row['existing_post_id'] = (int) $existing->ID;
+				$row['existing_status']  = (string) $existing->post_status;
+				$row['protected']        = self::is_protected_page( $existing );
+			}
+
+			$targets[ $filename ] = $row;
+		}
+
+		return $targets;
+	}
+
+	/**
 	 * Build page-specific template and pattern artifacts.
 	 *
 	 * @param array<string, Static_Site_Importer_Source_Page> $pages      Pages.
@@ -115,6 +152,49 @@ class Static_Site_Importer_Page_Materializer {
 			if ( is_wp_error( $result ) ) {
 				return $result;
 			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Persist import provenance on pages owned by Static Site Importer.
+	 *
+	 * @param array<string, Static_Site_Importer_Source_Page> $pages          Pages.
+	 * @param array<string,int>                               $page_ids       Page IDs keyed by filename.
+	 * @param array<string,array<string,mixed>>                $page_targets   Target rows keyed by filename.
+	 * @param array<string,mixed>                              $manifest       Source-of-truth manifest.
+	 * @return true|WP_Error
+	 */
+	public static function record_page_provenance( array $pages, array $page_ids, array $page_targets, array $manifest ) {
+		foreach ( array_keys( $pages ) as $filename ) {
+			$page_id = (int) ( $page_ids[ $filename ] ?? 0 );
+			$post    = $page_id > 0 ? get_post( $page_id ) : null;
+			if ( ! $post instanceof WP_Post || self::is_protected_page( $post ) ) {
+				continue;
+			}
+
+			$target     = isset( $page_targets[ $filename ] ) && is_array( $page_targets[ $filename ] ) ? $page_targets[ $filename ] : array();
+			$provenance = array(
+				'schema'        => 'static-site-importer/page-provenance/v1',
+				'import_run_id' => (string) ( $manifest['import_run_id'] ?? '' ),
+				'artifact'      => isset( $manifest['artifact'] ) && is_array( $manifest['artifact'] ) ? $manifest['artifact'] : array(),
+				'source_path'   => (string) ( $target['source_path'] ?? $filename ),
+				'target'        => array(
+					'post_id'   => $page_id,
+					'post_type' => (string) ( $target['post_type'] ?? $post->post_type ),
+					'slug'      => (string) ( $target['slug'] ?? $post->post_name ),
+				),
+			);
+
+			$json = wp_json_encode( $provenance, JSON_UNESCAPED_SLASHES );
+			if ( false === $json ) {
+				return new WP_Error( 'static_site_importer_page_provenance_encode_failed', 'Failed to encode page provenance metadata.' );
+			}
+
+			update_post_meta( $page_id, '_static_site_importer_provenance', wp_slash( $json ) );
+			update_post_meta( $page_id, '_static_site_importer_import_run_id', (string) ( $manifest['import_run_id'] ?? '' ) );
+			update_post_meta( $page_id, '_static_site_importer_source_path', (string) ( $target['source_path'] ?? $filename ) );
 		}
 
 		return true;

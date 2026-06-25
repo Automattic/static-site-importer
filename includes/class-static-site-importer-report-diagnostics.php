@@ -105,6 +105,20 @@ class Static_Site_Importer_Report_Diagnostics {
 				'svg_sprites'  => array(),
 				'local'        => array(),
 			),
+			'source_of_truth'         => array(
+				'schema'           => 'static-site-importer/source-of-truth-manifest/v1',
+				'import_run_id'    => '',
+				'artifact'         => array(),
+				'desired'          => array(
+					'pages'  => array(),
+					'files'  => array(),
+					'assets' => array(),
+				),
+				'existing_matches' => array(
+					'pages' => array(),
+				),
+				'manifest_path'    => '',
+			),
 			'asset_map'               => array(
 				'supplied'         => false,
 				'entry_count'      => 0,

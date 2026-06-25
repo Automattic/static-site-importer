@@ -196,6 +196,8 @@ $result = Static_Site_Importer_Theme_Generator::import_website_artifact(
 		'slug'        => 'ember-rye-document-metadata-smoke',
 		'overwrite'   => true,
 		'activate'    => false,
+		'import_run_id' => 'ssi-smoke-run-001',
+		'artifact_hash' => 'sha256:ember-rye-smoke',
 	)
 );
 
@@ -204,6 +206,7 @@ $assert( ! is_wp_error( $result ), 'import-succeeds', is_wp_error( $result ) ? $
 if ( ! is_wp_error( $result ) ) {
 	$theme_dir = $result['theme_dir'];
 	$report    = json_decode( $read( $result['report_path'] ), true );
+	$manifest  = json_decode( $read( $result['manifest_path'] ?? '' ), true );
 	$validation_result = json_decode( $read( $result['validation_result_path'] ?? '' ), true );
 	$finding_packets   = json_decode( $read( $result['finding_packets_path'] ?? '' ), true );
 	$page_ids  = array_values( $result['pages'] ?? array() );
@@ -238,6 +241,20 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( 0 === ( $report['quality']['core_html_block_count'] ?? null ), 'quality-core-html-count-is-zero' );
 	$assert( is_file( $result['validation_result_path'] ?? '' ), 'validation-result-artifact-is-written' );
 	$assert( is_file( $result['finding_packets_path'] ?? '' ), 'finding-packets-artifact-is-written' );
+	$assert( is_file( $result['manifest_path'] ?? '' ), 'source-of-truth-manifest-is-written' );
+	$assert( 'ssi-smoke-run-001' === ( $report['import_run_id'] ?? '' ), 'report-includes-import-run-id' );
+	$assert( 'sha256:ember-rye-smoke' === ( $report['source_artifact']['hash'] ?? '' ), 'report-includes-source-artifact-hash' );
+	$assert( 'static-site-importer/source-of-truth-manifest/v1' === ( $report['source_of_truth']['schema'] ?? '' ), 'report-includes-source-of-truth-schema' );
+	$assert( 'ssi-smoke-run-001' === ( $manifest['import_run_id'] ?? '' ), 'manifest-includes-import-run-id' );
+	$assert( 'sha256:ember-rye-smoke' === ( $manifest['artifact']['hash'] ?? '' ), 'manifest-includes-source-artifact-hash' );
+	$assert( 'index.html' === ( $manifest['desired']['pages'][0]['source_path'] ?? '' ), 'manifest-includes-desired-page-source' );
+	$assert( $page_id === (int) ( $manifest['desired']['pages'][0]['materialized_post_id'] ?? 0 ), 'manifest-includes-materialized-page-id' );
+	$assert( 'static-site-importer-manifest.json' === ( $manifest['manifest_path'] ?? '' ), 'manifest-reports-relative-manifest-path' );
+	$assert( in_array( 'import-report.json', array_column( $manifest['desired']['files'] ?? array(), 'path' ), true ), 'manifest-includes-report-file-target' );
+	$assert( '_static_site_importer_provenance' === ( $manifest['desired']['pages'][0]['provenance_meta_key'] ?? '' ), 'manifest-identifies-page-provenance-meta-key' );
+	$provenance = json_decode( (string) get_post_meta( $page_id, '_static_site_importer_provenance', true ), true );
+	$assert( 'ssi-smoke-run-001' === ( $provenance['import_run_id'] ?? '' ), 'page-provenance-meta-includes-import-run-id' );
+	$assert( 'index.html' === ( $provenance['source_path'] ?? '' ), 'page-provenance-meta-includes-source-path' );
 	$assert( 'blocks-engine/import-validation-result/v1' === ( $validation_result['schema'] ?? '' ), 'validation-result-schema' );
 	$assert( 'ImportValidationResult' === ( $validation_result['artifact_type'] ?? '' ), 'validation-result-artifact-type' );
 	$assert( 'passed' === ( $validation_result['status'] ?? '' ), 'validation-result-status-passed' );

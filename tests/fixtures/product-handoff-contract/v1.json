@@ -31,7 +31,7 @@
       "owner": "static_site_importer",
       "consumer": "product_caller",
       "schema": "static-site-importer/import-report/v1",
-      "required_fields": ["version", "theme_slug", "source", "blocks_engine", "generated_theme", "quality", "diagnostics", "import_validation_result", "finding_packets"],
+      "required_fields": ["version", "theme_slug", "import_run_id", "source", "source_of_truth", "blocks_engine", "generated_theme", "quality", "diagnostics", "import_validation_result", "finding_packets"],
       "nested_artifacts": {
         "import_validation_result": "blocks-engine/import-validation-result/v1",
         "finding_packets": "blocks-engine/finding-packets/v1",
@@ -106,9 +106,60 @@
       "version": 1,
       "schema": "static-site-importer/import-report/v1",
       "theme_slug": "atlas-bakery",
+      "import_run_id": "ssi-run-123",
       "source": {
         "type": "website_artifact",
         "source": "artifact.json"
+      },
+      "source_artifact": {
+        "id": "artifact-123",
+        "hash": "sha256:abc123",
+        "hash_algo": "sha256",
+        "entrypoint": "website/index.html"
+      },
+      "source_of_truth": {
+        "schema": "static-site-importer/source-of-truth-manifest/v1",
+        "version": 1,
+        "import_run_id": "ssi-run-123",
+        "artifact": {
+          "id": "artifact-123",
+          "hash": "sha256:abc123",
+          "hash_algo": "sha256",
+          "entrypoint": "website/index.html"
+        },
+        "generated_theme": {
+          "slug": "atlas-bakery"
+        },
+        "desired": {
+          "pages": [
+            {
+              "source_path": "website/index.html",
+              "target_type": "wordpress_post",
+              "post_type": "page",
+              "slug": "home",
+              "title": "Atlas Bakery",
+              "status": "publish",
+              "existing_post_id": 0,
+              "protected": false,
+              "materialized_post_id": 42,
+              "provenance_meta_key": "_static_site_importer_provenance"
+            }
+          ],
+          "files": [
+            { "target_type": "theme_file", "path": "style.css" },
+            { "target_type": "theme_file", "path": "templates/front-page.html" },
+            { "target_type": "theme_file", "path": "static-site-importer-manifest.json" },
+            { "target_type": "theme_file", "path": "import-report.json" }
+          ],
+          "assets": []
+        },
+        "existing_matches": {
+          "pages": []
+        },
+        "manifest_path": "static-site-importer-manifest.json",
+        "cleanup": {
+          "enabled": false
+        }
       },
       "blocks_engine": {
         "available": true,
