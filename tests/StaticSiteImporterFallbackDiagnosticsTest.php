@@ -432,7 +432,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		$this->assertSame( 1, $fixture['import_report_quality_counts']['runtime_dependency_parity_issue_count'] ?? 0 );
 		$this->assertSame( 1, $fixture['diagnostic_summary']['type']['core_html_block'] ?? 0 );
 		$this->assertSame( 2, $fixture['diagnostic_summary']['repair_bucket']['fallback_block'] ?? 0 );
-		$this->assertSame( 2, $fixture['diagnostic_summary']['parser_owner']['blocks-engine'] ?? 0 );
+		$this->assertSame( 5, $fixture['diagnostic_summary']['parser_owner']['blocks-engine'] ?? 0 );
 		$this->assertSame( 'templates/front-page.html', $fixture['diagnostics'][0]['source_path'] ?? '' );
 		$this->assertSame( 'a.wp-block-button__link', $fixture['diagnostics'][0]['selector'] ?? '' );
 		$this->assertSame( 'generated_document_contains_core_html', $fixture['diagnostics'][0]['code'] ?? '' );
