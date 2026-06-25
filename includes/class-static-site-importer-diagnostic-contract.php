@@ -175,6 +175,9 @@ class Static_Site_Importer_Diagnostic_Contract {
 			if ( ! is_array( $row ) ) {
 				continue;
 			}
+			if ( self::is_report_only_diagnostic( $row ) ) {
+				continue;
+			}
 
 			$type          = self::first_scalar( $row, array( 'type', 'kind', 'code', 'reason_code' ), 'diagnostic' );
 			$reason_code   = self::first_scalar( $row, array( 'reason_code', 'code', 'reason', 'kind', 'type' ), $type );
@@ -415,6 +418,18 @@ class Static_Site_Importer_Diagnostic_Contract {
 		}
 
 		return $fallback;
+	}
+
+	/**
+	 * Check whether a diagnostic row is report evidence rather than repair work.
+	 *
+	 * @param array<string,mixed> $row Source row.
+	 * @return bool
+	 */
+	private static function is_report_only_diagnostic( array $row ): bool {
+		$constraints = strtolower( self::first_scalar( $row, array( 'constraints', 'constraint' ), '' ) );
+
+		return in_array( $constraints, array( 'report_only', 'report-only' ), true );
 	}
 
 	/**
