@@ -95,6 +95,7 @@ namespace {
 		}
 	}
 
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-codebox-validation.php';
 	Static_Site_Importer_Codebox_Validation::register_default_provider();
 
@@ -119,7 +120,7 @@ namespace {
 	$assert( 'blocked' === ( $blocked['status'] ?? '' ), 'blocked-status' );
 	$assert( 'static-site-importer/codebox-validation-result/v1' === ( $blocked['schema'] ?? '' ), 'result-schema' );
 	$assert( 'static-site-importer/codebox-validation-artifacts/v1' === ( $blocked['artifacts']['schema'] ?? '' ), 'artifact-schema' );
-	$assert( 'static-site-importer/codebox-fixture-diagnostics/v1' === ( $blocked['fixture_diagnostics']['schema'] ?? '' ), 'blocked-fixture-diagnostics-schema' );
+	$assert( 'static-site-importer/import-diagnostics/v1' === ( $blocked['fixture_diagnostics']['schema'] ?? '' ), 'blocked-fixture-diagnostics-schema' );
 	$assert( 'fixture-import' === ( $blocked['fixture_diagnostics']['fixture']['slug'] ?? '' ), 'blocked-fixture-slug' );
 	$assert( 'runtime_provider_unavailable' === ( $blocked['fixture_diagnostics']['diagnostics'][0]['type'] ?? '' ), 'blocked-fixture-diagnostic-type' );
 	$assert( ! empty( $blocked['upstream_gaps'][0]['needed_shape'] ), 'upstream-gap-is-concrete' );
@@ -134,13 +135,13 @@ namespace {
 				'schema'     => 'wp-codebox/host-delegation-result/v1',
 				'status'     => 'completed',
 				'request_id' => (string) ( $request['request_id'] ?? '' ),
-				'provider'   => 'test-homeboy',
+				'provider'   => 'test-host-provider',
 				'result'     => array(
 					'summary'   => array( 'quality_pass' => true ),
 					'artifacts' => array(
-						'import_report'           => array( 'artifact_ref' => 'hb-run://456/import-report.json' ),
-						'block_validation_result' => array( 'artifact_ref' => 'hb-run://456/block-validation.json' ),
-						'browser_render_evidence' => array( 'artifact_ref' => 'hb-run://456/browser-render.json' ),
+						'import_report'           => array( 'artifact_ref' => 'artifact://delegated/import-report.json' ),
+						'block_validation_result' => array( 'artifact_ref' => 'artifact://delegated/block-validation.json' ),
+						'browser_render_evidence' => array( 'artifact_ref' => 'artifact://delegated/browser-render.json' ),
 					),
 				),
 			);
@@ -158,9 +159,9 @@ namespace {
 
 	$assert( true === ( $delegated['success'] ?? false ), 'delegated-provider-success' );
 	$assert( 'succeeded' === ( $delegated['status'] ?? '' ), 'delegated-provider-status' );
-	$assert( 'test-homeboy' === ( $delegated['runtime']['provider'] ?? '' ), 'delegated-runtime-provider' );
+	$assert( 'test-host-provider' === ( $delegated['runtime']['provider'] ?? '' ), 'delegated-runtime-provider' );
 	$assert( 'completed' === ( $delegated['runtime']['host_delegation_status'] ?? '' ), 'delegated-host-status' );
-	$assert( 'hb-run://456/import-report.json' === ( $delegated['artifacts']['import_report']['artifact_ref'] ?? '' ), 'delegated-import-report-ref' );
+	$assert( 'artifact://delegated/import-report.json' === ( $delegated['artifacts']['import_report']['artifact_ref'] ?? '' ), 'delegated-import-report-ref' );
 
 	add_filter(
 		'static_site_importer_codebox_validation_result',
@@ -224,13 +225,13 @@ namespace {
 					),
 				),
 				'artifacts' => array(
-					'generated_theme'         => array( 'artifact_ref' => 'hb-run://123/theme', 'path' => '/Users/local/theme' ),
+					'generated_theme'         => array( 'artifact_ref' => 'artifact://validation/theme', 'path' => '/Users/local/theme' ),
 					'theme_archive'           => array( 'url' => 'https://artifacts.example/theme.zip', 'sha256' => 'abc' ),
-					'import_report'           => array( 'artifact_ref' => 'hb-run://123/import-report.json' ),
-					'block_validation_result' => array( 'artifact_ref' => 'hb-run://123/block-validation.json' ),
-					'browser_render_evidence' => array( 'artifact_ref' => 'hb-run://123/browser-render.json' ),
-					'screenshots'             => array( array( 'artifact_ref' => 'hb-run://123/home.png' ) ),
-					'diffs'                   => array( array( 'artifact_ref' => 'hb-run://123/home.diff.png' ) ),
+					'import_report'           => array( 'artifact_ref' => 'artifact://validation/import-report.json' ),
+					'block_validation_result' => array( 'artifact_ref' => 'artifact://validation/block-validation.json' ),
+					'browser_render_evidence' => array( 'artifact_ref' => 'artifact://validation/browser-render.json' ),
+					'screenshots'             => array( array( 'artifact_ref' => 'artifact://validation/home.png' ) ),
+					'diffs'                   => array( array( 'artifact_ref' => 'artifact://validation/home.diff.png' ) ),
 				),
 			);
 		}
@@ -246,18 +247,22 @@ namespace {
 	$assert( true === ( $provided['success'] ?? false ), 'provider-success' );
 	$assert( 'succeeded' === ( $provided['status'] ?? '' ), 'provider-status' );
 	$assert( 'test-codebox' === ( $provided['runtime']['provider'] ?? '' ), 'runtime-provider' );
-	$assert( 'hb-run://123/theme' === ( $provided['artifacts']['generated_theme']['artifact_ref'] ?? '' ), 'generated-theme-ref' );
+	$assert( 'artifact://validation/theme' === ( $provided['artifacts']['generated_theme']['artifact_ref'] ?? '' ), 'generated-theme-ref' );
 	$assert( ! isset( $provided['artifacts']['generated_theme']['path'] ), 'local-path-removed-from-reviewer-artifact' );
-	$assert( 'hb-run://123/import-report.json' === ( $provided['artifacts']['import_report']['artifact_ref'] ?? '' ), 'import-report-ref' );
-	$assert( 'hb-run://123/block-validation.json' === ( $provided['artifacts']['block_validation_result']['artifact_ref'] ?? '' ), 'block-validation-ref' );
-	$assert( 'hb-run://123/browser-render.json' === ( $provided['artifacts']['browser_render_evidence']['artifact_ref'] ?? '' ), 'browser-render-ref' );
+	$assert( 'artifact://validation/import-report.json' === ( $provided['artifacts']['import_report']['artifact_ref'] ?? '' ), 'import-report-ref' );
+	$assert( 'artifact://validation/block-validation.json' === ( $provided['artifacts']['block_validation_result']['artifact_ref'] ?? '' ), 'block-validation-ref' );
+	$assert( 'artifact://validation/browser-render.json' === ( $provided['artifacts']['browser_render_evidence']['artifact_ref'] ?? '' ), 'browser-render-ref' );
 	$assert( 1 === count( $provided['artifacts']['screenshots'] ?? array() ), 'screenshot-ref-count' );
 	$assert( 1 === count( $provided['artifacts']['diffs'] ?? array() ), 'diff-ref-count' );
-	$assert( 'static-site-importer/codebox-fixture-diagnostics/v1' === ( $provided['fixture_diagnostics']['schema'] ?? '' ), 'provided-fixture-diagnostics-schema' );
+	$assert( 'static-site-importer/import-diagnostics/v1' === ( $provided['fixture_diagnostics']['schema'] ?? '' ), 'provided-fixture-diagnostics-schema' );
 	$assert( 1 === ( $provided['fixture_diagnostics']['quality_counts']['core_html_block_count'] ?? 0 ), 'provided-quality-core-html-count' );
 	$assert( 1 === ( $provided['fixture_diagnostics']['diagnostic_summary']['type']['core_html_block'] ?? 0 ), 'provided-diagnostic-summary-core-html' );
+	$assert( 1 === ( $provided['fixture_diagnostics']['diagnostic_summary']['repair_bucket']['fallback_block'] ?? 0 ), 'provided-diagnostic-summary-repair-bucket' );
+	$assert( 1 <= ( $provided['fixture_diagnostics']['diagnostic_summary']['parser_owner']['blocks-engine'] ?? 0 ), 'provided-diagnostic-summary-parser-owner' );
 	$assert( 'templates/front-page.html' === ( $provided['fixture_diagnostics']['diagnostics'][0]['source_path'] ?? '' ), 'provided-diagnostic-source-path' );
 	$assert( 'a.wp-block-button__link' === ( $provided['fixture_diagnostics']['diagnostics'][0]['selector'] ?? '' ), 'provided-diagnostic-selector' );
+	$assert( 'fallback_block' === ( $provided['fixture_diagnostics']['diagnostics'][0]['repair_bucket'] ?? '' ), 'provided-diagnostic-repair-bucket' );
+	$assert( 'blocks-engine' === ( $provided['fixture_diagnostics']['diagnostics'][0]['parser_owner'] ?? '' ), 'provided-diagnostic-parser-owner' );
 	$assert( '#cart-drawer' === ( $provided['fixture_diagnostics']['runtime_dependency_target_gaps'][0]['selector'] ?? '' ), 'provided-runtime-target-gap-selector' );
 	$assert( 'assets/hero.jpg' === ( $provided['fixture_diagnostics']['asset_diagnostics'][0]['source_path'] ?? '' ), 'provided-asset-diagnostic-source' );
 	$assert( 'assets/icon.svg' === ( $provided['fixture_diagnostics']['svg_diagnostics'][0]['source_path'] ?? '' ), 'provided-svg-diagnostic-source' );

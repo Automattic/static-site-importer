@@ -47,6 +47,7 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-th
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-stylesheet-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-woo-product-seeder.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-product-handoff-contract.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-diagnostic-contract.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-artifact-diagnostics-adapter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-codebox-validation.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-report-diagnostics.php';

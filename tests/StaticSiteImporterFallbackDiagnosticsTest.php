@@ -319,9 +319,9 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Codebox validation output exposes fixture diagnostics for matrix grouping.
+	 * Codebox validation output exposes importer diagnostics for repair grouping.
 	 */
-	public function test_codebox_validation_result_includes_fixture_matrix_diagnostics(): void {
+	public function test_codebox_validation_result_includes_importer_diagnostics(): void {
 		$provider = static function (): array {
 			$import_report = array(
 				'quality'                  => array(
@@ -425,15 +425,19 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 
 		$this->assertIsArray( $result );
 		$fixture = $result['fixture_diagnostics'] ?? array();
-		$this->assertSame( 'static-site-importer/codebox-fixture-diagnostics/v1', $fixture['schema'] ?? '' );
+		$this->assertSame( 'static-site-importer/import-diagnostics/v1', $fixture['schema'] ?? '' );
 		$this->assertSame( 'fixture-one', $fixture['fixture']['slug'] ?? '' );
 		$this->assertSame( 'Fixture One', $fixture['fixture']['name'] ?? '' );
 		$this->assertSame( 1, $fixture['quality_counts']['core_html_block_count'] ?? 0 );
 		$this->assertSame( 1, $fixture['import_report_quality_counts']['runtime_dependency_parity_issue_count'] ?? 0 );
 		$this->assertSame( 1, $fixture['diagnostic_summary']['type']['core_html_block'] ?? 0 );
+		$this->assertSame( 1, $fixture['diagnostic_summary']['repair_bucket']['fallback_block'] ?? 0 );
+		$this->assertSame( 1, $fixture['diagnostic_summary']['parser_owner']['blocks-engine'] ?? 0 );
 		$this->assertSame( 'templates/front-page.html', $fixture['diagnostics'][0]['source_path'] ?? '' );
 		$this->assertSame( 'a.wp-block-button__link', $fixture['diagnostics'][0]['selector'] ?? '' );
 		$this->assertSame( 'generated_document_contains_core_html', $fixture['diagnostics'][0]['code'] ?? '' );
+		$this->assertSame( 'fallback_block', $fixture['diagnostics'][0]['repair_bucket'] ?? '' );
+		$this->assertSame( 'blocks-engine', $fixture['diagnostics'][0]['parser_owner'] ?? '' );
 		$this->assertCount( 1, $fixture['runtime_dependency_target_gaps'] ?? array() );
 		$this->assertSame( '#cart-drawer', $fixture['runtime_dependency_target_gaps'][0]['selector'] ?? '' );
 		$this->assertCount( 1, $fixture['asset_diagnostics'] ?? array() );
@@ -442,8 +446,78 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		$this->assertSame( 'assets/icon.svg', $fixture['svg_diagnostics'][0]['source_path'] ?? '' );
 		$this->assertCount( 1, $fixture['button_style_loss_hints'] ?? array() );
 		$this->assertSame( 'button.cta', $fixture['button_style_loss_hints'][0]['selector'] ?? '' );
+		$this->assertContains(
+			array(
+				'parser_owner'  => 'blocks-engine',
+				'repair_bucket' => 'fallback_block',
+				'count'         => 1,
+			),
+			$fixture['top_parser_buckets'] ?? array()
+		);
 		$this->assertSame( 'run-123/import-report.json', $fixture['artifact_refs']['import_report']['artifact_id'] ?? '' );
 		$this->assertArrayNotHasKey( 'path', $fixture['artifact_refs']['import_report'] ?? array() );
+	}
+
+	/**
+	 * Import diagnostics are product-owned and do not require Codebox runtime fields.
+	 */
+	public function test_import_diagnostic_contract_normalizes_parser_repair_buckets_without_codebox(): void {
+		$diagnostics = Static_Site_Importer_Diagnostic_Contract::build(
+			array(
+				'status'        => 'failed',
+				'success'       => false,
+				'import_report' => array(
+					'quality'       => array(
+						'invalid_block_count'                => 1,
+						'semantic_parity_failure_count'      => 1,
+						'runtime_dependency_parity_issue_count' => 1,
+					),
+					'diagnostics'   => array(
+						array(
+							'type'        => 'dropped_image_asset',
+							'source_path' => 'assets/hero.jpg',
+							'message'     => 'Dropped image asset.',
+						),
+						array(
+							'type'        => 'invalid_block_content',
+							'source_path' => 'templates/front-page.html',
+						),
+					),
+					'blocks_engine' => array(
+						'runtime_dependency_parity' => array(
+							'missing_dom_targets' => array(
+								array(
+									'type'     => 'runtime_dependency_target_missing',
+									'selector' => '#canvas',
+								),
+							),
+						),
+						'semantic_parity'           => array(
+							'findings' => array(
+								array(
+									'type'        => 'navigation_missing',
+									'source_path' => 'index.html',
+									'selector'    => 'header nav',
+								),
+							),
+						),
+					),
+				),
+			)
+		);
+
+		$this->assertSame( 'static-site-importer/import-diagnostics/v1', $diagnostics['schema'] ?? '' );
+		$this->assertSame( 4, $diagnostics['diagnostic_summary']['total'] ?? 0 );
+		$this->assertSame( 1, $diagnostics['diagnostic_summary']['repair_bucket']['dropped_images'] ?? 0 );
+		$this->assertSame( 1, $diagnostics['diagnostic_summary']['repair_bucket']['invalid_block_content'] ?? 0 );
+		$this->assertSame( 1, $diagnostics['diagnostic_summary']['repair_bucket']['runtime_target_gap'] ?? 0 );
+		$this->assertSame( 1, $diagnostics['diagnostic_summary']['repair_bucket']['semantic_parity'] ?? 0 );
+		$this->assertSame( 1, $diagnostics['diagnostic_summary']['parser_owner']['static-site-importer'] ?? 0 );
+		$this->assertSame( 3, $diagnostics['diagnostic_summary']['parser_owner']['blocks-engine'] ?? 0 );
+		$this->assertSame( 'static-site-importer', $diagnostics['by_repair_bucket']['dropped_images'][0]['parser_owner'] ?? '' );
+		$this->assertSame( 'blocks-engine', $diagnostics['by_repair_bucket']['runtime_target_gap'][0]['parser_owner'] ?? '' );
+		$this->assertSame( '#canvas', $diagnostics['runtime_dependency_target_gaps'][0]['selector'] ?? '' );
+		$this->assertSame( 'header nav', $diagnostics['by_repair_bucket']['semantic_parity'][0]['selector'] ?? '' );
 	}
 
 	/**
