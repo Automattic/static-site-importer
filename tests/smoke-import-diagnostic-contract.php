@@ -43,6 +43,12 @@ $diagnostics = Static_Site_Importer_Diagnostic_Contract::build(
 			),
 			'diagnostics'   => array(
 				array(
+					'type'        => 'document_metadata_routed',
+					'source_path' => 'website/index.html',
+					'severity'    => 'info',
+					'message'     => 'Full-document metadata/assets were routed through the generated_theme.document_metadata contract instead of generated page block content.',
+				),
+				array(
 					'type'        => 'dropped_image_asset',
 					'source_path' => 'assets/hero.jpg',
 					'message'     => 'Dropped image asset.',
@@ -76,12 +82,14 @@ $diagnostics = Static_Site_Importer_Diagnostic_Contract::build(
 );
 
 $assert( 'static-site-importer/import-diagnostics/v1' === ( $diagnostics['schema'] ?? '' ), 'schema' );
-$assert( 4 === ( $diagnostics['diagnostic_summary']['total'] ?? 0 ), 'total-count' );
+$assert( 5 === ( $diagnostics['diagnostic_summary']['total'] ?? 0 ), 'total-count' );
 $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['dropped_images'] ?? 0 ), 'dropped-images-bucket' );
+$assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['static_site_import_quality'] ?? 0 ), 'document-metadata-import-quality-bucket' );
 $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['invalid_block_content'] ?? 0 ), 'invalid-block-bucket' );
 $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['runtime_target_gap'] ?? 0 ), 'runtime-target-bucket' );
 $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['semantic_parity'] ?? 0 ), 'semantic-parity-bucket' );
 $assert( 'static-site-importer' === ( $diagnostics['by_repair_bucket']['dropped_images'][0]['parser_owner'] ?? '' ), 'dropped-images-owner' );
+$assert( 'document_metadata_routed' === ( $diagnostics['by_repair_bucket']['static_site_import_quality'][0]['type'] ?? '' ), 'document-metadata-type' );
 $assert( 'blocks-engine' === ( $diagnostics['by_repair_bucket']['runtime_target_gap'][0]['parser_owner'] ?? '' ), 'runtime-target-owner' );
 $assert( '#canvas' === ( $diagnostics['runtime_dependency_target_gaps'][0]['selector'] ?? '' ), 'runtime-target-selector' );
 $assert( 'header nav' === ( $diagnostics['by_repair_bucket']['semantic_parity'][0]['selector'] ?? '' ), 'semantic-selector' );

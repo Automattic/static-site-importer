@@ -462,6 +462,9 @@ class Static_Site_Importer_Diagnostic_Contract {
 		if ( '' !== $explicit ) {
 			return sanitize_key( $explicit );
 		}
+		if ( 'document_metadata_routed' === $type ) {
+			return 'static_site_import_quality';
+		}
 
 		$haystack = strtolower( implode( ' ', array( $type, $reason_code, self::first_scalar( $row, array( 'message', 'reason', 'detail' ), '' ) ) ) );
 		if ( str_contains( $haystack, 'runtime_dependency' ) || str_contains( $haystack, 'dom_target' ) || str_contains( $haystack, 'runtime_target' ) || str_contains( $haystack, 'canvas' ) || str_contains( $haystack, 'animation' ) ) {

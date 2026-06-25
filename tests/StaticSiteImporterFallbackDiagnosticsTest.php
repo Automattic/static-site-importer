@@ -476,6 +476,12 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 					),
 					'diagnostics'   => array(
 						array(
+							'type'        => 'document_metadata_routed',
+							'source_path' => 'website/index.html',
+							'severity'    => 'info',
+							'message'     => 'Full-document metadata/assets were routed through the generated_theme.document_metadata contract instead of generated page block content.',
+						),
+						array(
 							'type'        => 'dropped_image_asset',
 							'source_path' => 'assets/hero.jpg',
 							'message'     => 'Dropped image asset.',
@@ -509,14 +515,16 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		);
 
 		$this->assertSame( 'static-site-importer/import-diagnostics/v1', $diagnostics['schema'] ?? '' );
-		$this->assertSame( 4, $diagnostics['diagnostic_summary']['total'] ?? 0 );
+		$this->assertSame( 5, $diagnostics['diagnostic_summary']['total'] ?? 0 );
 		$this->assertSame( 1, $diagnostics['diagnostic_summary']['repair_bucket']['dropped_images'] ?? 0 );
+		$this->assertSame( 1, $diagnostics['diagnostic_summary']['repair_bucket']['static_site_import_quality'] ?? 0 );
 		$this->assertSame( 1, $diagnostics['diagnostic_summary']['repair_bucket']['invalid_block_content'] ?? 0 );
 		$this->assertSame( 1, $diagnostics['diagnostic_summary']['repair_bucket']['runtime_target_gap'] ?? 0 );
 		$this->assertSame( 1, $diagnostics['diagnostic_summary']['repair_bucket']['semantic_parity'] ?? 0 );
-		$this->assertSame( 1, $diagnostics['diagnostic_summary']['parser_owner']['static-site-importer'] ?? 0 );
+		$this->assertSame( 2, $diagnostics['diagnostic_summary']['parser_owner']['static-site-importer'] ?? 0 );
 		$this->assertSame( 3, $diagnostics['diagnostic_summary']['parser_owner']['blocks-engine'] ?? 0 );
 		$this->assertSame( 'static-site-importer', $diagnostics['by_repair_bucket']['dropped_images'][0]['parser_owner'] ?? '' );
+		$this->assertSame( 'document_metadata_routed', $diagnostics['by_repair_bucket']['static_site_import_quality'][0]['type'] ?? '' );
 		$this->assertSame( 'blocks-engine', $diagnostics['by_repair_bucket']['runtime_target_gap'][0]['parser_owner'] ?? '' );
 		$this->assertSame( '#canvas', $diagnostics['runtime_dependency_target_gaps'][0]['selector'] ?? '' );
 		$this->assertSame( 'header nav', $diagnostics['by_repair_bucket']['semantic_parity'][0]['selector'] ?? '' );
