@@ -118,6 +118,7 @@ class Static_Site_Importer_Theme_Materializer {
 			}
 
 			$relative = self::normalize_artifact_materialization_path( isset( $file['path'] ) ? (string) $file['path'] : '' );
+			$retention = self::source_retention_policy( $file, $relative, 'website_artifact:files' );
 			if ( '' === $relative ) {
 				$diagnostics[] = array(
 					'type'    => 'website_artifact_file_skipped',
@@ -127,6 +128,9 @@ class Static_Site_Importer_Theme_Materializer {
 					'message' => 'A website artifact file was skipped because its path is not safe to materialize inside the generated theme.',
 				);
 				continue;
+			}
+			if ( isset( $retention['diagnostic'] ) ) {
+				$diagnostics[] = $retention['diagnostic'];
 			}
 
 			$content = self::materialization_plan_asset_content( $file, $relative );
@@ -166,6 +170,9 @@ class Static_Site_Importer_Theme_Materializer {
 				'mime_type'  => self::mime_type( $target ),
 				'theme_path' => $target_relative,
 				'policy'     => 'theme',
+				'source_role'      => $retention['source_role'],
+				'keep_source'      => $retention['keep_source'],
+				'deletion_allowed' => $retention['deletion_allowed'],
 			);
 		}
 
@@ -215,8 +222,12 @@ class Static_Site_Importer_Theme_Materializer {
 			}
 
 			$relative = self::normalize_artifact_materialization_path( isset( $asset['path'] ) && is_scalar( $asset['path'] ) ? (string) $asset['path'] : '' );
+			$retention = self::source_retention_policy( $asset, $relative, 'materialization_plan.assets' );
 			if ( '' === $relative ) {
 				return new WP_Error( 'static_site_importer_materialization_plan_asset_path_invalid', 'Blocks Engine materialization_plan.assets entries must include safe relative paths.' );
+			}
+			if ( isset( $retention['diagnostic'] ) ) {
+				$diagnostics[] = $retention['diagnostic'];
 			}
 
 			$content = self::materialization_plan_asset_content( $asset, $relative );
@@ -246,7 +257,7 @@ class Static_Site_Importer_Theme_Materializer {
 				}
 			}
 
-			$assets[ $relative ] = self::materialization_plan_asset_report( $asset, $relative, trailingslashit( $theme_uri ) . $target_relative, $target_relative, self::mime_type( $target ), $order );
+			$assets[ $relative ] = self::materialization_plan_asset_report( $asset, $relative, trailingslashit( $theme_uri ) . $target_relative, $target_relative, self::mime_type( $target ), $order, $retention );
 
 			if ( 'css' === $kind || 'stylesheet' === $role || str_ends_with( $lower, '.css' ) ) {
 				$css[] = array(
@@ -344,7 +355,8 @@ class Static_Site_Importer_Theme_Materializer {
 					'origin' => 'theme.font_materialization',
 				)
 			);
-			$assets[ $relative ] = self::materialization_plan_asset_report( $asset, $relative, trailingslashit( $theme_uri ) . $relative, $relative, self::mime_type( $target ), $order );
+			$retention           = self::source_retention_policy( $asset, $relative, 'theme.font_materialization' );
+			$assets[ $relative ] = self::materialization_plan_asset_report( $asset, $relative, trailingslashit( $theme_uri ) . $relative, $relative, self::mime_type( $target ), $order, $retention );
 			$stylesheets[]       = $assets[ $relative ];
 		}
 
@@ -360,11 +372,15 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param string              $target_relative Materialized theme-relative path.
 	 * @param string              $fallback_mime   MIME type inferred from written path.
 	 * @param int                 $order           Native asset order.
+	 * @param array<string,mixed> $retention       Source retention policy.
 	 * @return array<string,mixed>
 	 */
-	private static function materialization_plan_asset_report( array $asset, string $relative, string $url, string $target_relative, string $fallback_mime, int $order ): array {
+	private static function materialization_plan_asset_report( array $asset, string $relative, string $url, string $target_relative, string $fallback_mime, int $order, array $retention = array() ): array {
 		$mime_type = isset( $asset['mime_type'] ) && is_scalar( $asset['mime_type'] ) && '' !== (string) $asset['mime_type'] ? (string) $asset['mime_type'] : $fallback_mime;
 		$origin    = isset( $asset['origin'] ) && is_scalar( $asset['origin'] ) && '' !== (string) $asset['origin'] ? (string) $asset['origin'] : 'materialization_plan.assets';
+		if ( empty( $retention ) ) {
+			$retention = self::source_retention_policy( $asset, $relative, $origin );
+		}
 		$report    = array(
 			'source'     => $relative,
 			'path'       => $relative,
@@ -375,6 +391,9 @@ class Static_Site_Importer_Theme_Materializer {
 			'policy'     => 'theme',
 			'origin'     => $origin,
 			'order'      => $order,
+			'source_role'      => $retention['source_role'],
+			'keep_source'      => $retention['keep_source'],
+			'deletion_allowed' => $retention['deletion_allowed'],
 		);
 
 		foreach ( array( 'role', 'kind', 'type', 'media', 'as', 'crossorigin', 'integrity', 'placement', 'source_hash' ) as $key ) {
@@ -390,6 +409,48 @@ class Static_Site_Importer_Theme_Materializer {
 		}
 
 		return $report;
+	}
+
+	/**
+	 * Resolve source retention semantics for materialized artifact payloads.
+	 *
+	 * Canonical sources are retained unless the row explicitly declares an ephemeral/importer-owned source role.
+	 *
+	 * @param array<string,mixed> $source Source artifact row.
+	 * @param string              $path   Source-relative path.
+	 * @param string              $origin Source origin label for diagnostics.
+	 * @return array{source_role:string,keep_source:bool,deletion_allowed:bool,diagnostic?:array<string,mixed>}
+	 */
+	private static function source_retention_policy( array $source, string $path, string $origin ): array {
+		$source_role = isset( $source['source_role'] ) && is_scalar( $source['source_role'] ) && '' !== trim( (string) $source['source_role'] ) ? strtolower( preg_replace( '/[^a-z0-9_-]+/i', '_', trim( (string) $source['source_role'] ) ) ?? '' ) : 'canonical';
+		if ( '' === $source_role ) {
+			$source_role = 'canonical';
+		}
+		$keep_source = array_key_exists( 'keep_source', $source ) ? (bool) $source['keep_source'] : true;
+		$ephemeral   = in_array( $source_role, array( 'ephemeral', 'importer_owned', 'importer-owned', 'temporary', 'temp' ), true );
+
+		$policy = array(
+			'source_role'      => $source_role,
+			'keep_source'      => $keep_source || ! $ephemeral,
+			'deletion_allowed' => $ephemeral && ! $keep_source,
+		);
+
+		if ( ! $keep_source && ! $ephemeral ) {
+			$policy['diagnostic'] = array(
+				'type'             => 'website_artifact_source_retention_guard',
+				'severity'         => 'warning',
+				'source'           => $origin,
+				'source_path'      => $path,
+				'path'             => $path,
+				'source_role'      => $source_role,
+				'keep_source'      => true,
+				'deletion_allowed' => false,
+				'reason'           => 'canonical_source_retained',
+				'message'          => 'Website artifact source was retained because destructive source handling requires source_role=ephemeral or source_role=importer_owned.',
+			);
+		}
+
+		return $policy;
 	}
 
 	/**
