@@ -90,6 +90,7 @@ $diagnostics = Static_Site_Importer_Diagnostic_Contract::build(
 $assert( 'static-site-importer/import-diagnostics/v1' === ( $diagnostics['schema'] ?? '' ), 'schema' );
 $assert( 4 === ( $diagnostics['diagnostic_summary']['total'] ?? 0 ), 'total-count' );
 $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['dropped_images'] ?? 0 ), 'dropped-images-bucket' );
+$assert( ! isset( $diagnostics['diagnostic_summary']['repair_bucket']['static_site_import_quality'] ), 'report-only-metadata-bucket-excluded' );
 $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['invalid_block_content'] ?? 0 ), 'invalid-block-bucket' );
 $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['runtime_target_gap'] ?? 0 ), 'runtime-target-bucket' );
 $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['semantic_parity'] ?? 0 ), 'semantic-parity-bucket' );
