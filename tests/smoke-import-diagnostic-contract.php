@@ -43,6 +43,18 @@ $diagnostics = Static_Site_Importer_Diagnostic_Contract::build(
 			),
 			'diagnostics'   => array(
 				array(
+					'type'        => 'website_artifact_materialization_contract_note',
+					'source_path' => 'website/index.html',
+					'constraints' => 'report_only',
+					'message'     => 'Direct materialization contract note.',
+				),
+				array(
+					'type'        => 'document_metadata_routed',
+					'source_path' => 'website/index.html',
+					'constraints' => 'report_only',
+					'message'     => 'Document metadata routing note.',
+				),
+				array(
 					'type'        => 'dropped_image_asset',
 					'source_path' => 'assets/hero.jpg',
 					'message'     => 'Dropped image asset.',
@@ -81,6 +93,8 @@ $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['dropped_im
 $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['invalid_block_content'] ?? 0 ), 'invalid-block-bucket' );
 $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['runtime_target_gap'] ?? 0 ), 'runtime-target-bucket' );
 $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['semantic_parity'] ?? 0 ), 'semantic-parity-bucket' );
+$assert( ! isset( $diagnostics['diagnostic_summary']['type']['website_artifact_materialization_contract_note'] ), 'report-only-contract-note-excluded' );
+$assert( ! isset( $diagnostics['diagnostic_summary']['type']['document_metadata_routed'] ), 'report-only-metadata-note-excluded' );
 $assert( 'static-site-importer' === ( $diagnostics['by_repair_bucket']['dropped_images'][0]['parser_owner'] ?? '' ), 'dropped-images-owner' );
 $assert( 'blocks-engine' === ( $diagnostics['by_repair_bucket']['runtime_target_gap'][0]['parser_owner'] ?? '' ), 'runtime-target-owner' );
 $assert( '#canvas' === ( $diagnostics['runtime_dependency_target_gaps'][0]['selector'] ?? '' ), 'runtime-target-selector' );
