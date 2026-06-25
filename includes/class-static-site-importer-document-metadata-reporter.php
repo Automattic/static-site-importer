@@ -43,6 +43,7 @@ class Static_Site_Importer_Document_Metadata_Reporter {
 			'source'       => $normalized['source_path'],
 			'severity'     => 'info',
 			'stage'        => 'website_artifact_materialization',
+			'constraints'  => 'report_only',
 			'message'      => 'Full-document metadata/assets were routed through the generated_theme.document_metadata contract instead of generated page block content.',
 			'meta_count'   => count( $normalized['meta'] ),
 			'link_count'   => count( $normalized['links'] ),
