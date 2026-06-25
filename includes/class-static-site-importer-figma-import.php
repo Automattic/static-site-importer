@@ -82,16 +82,16 @@ class Static_Site_Importer_Figma_Import {
 	 * @return array<string,mixed>
 	 */
 	private static function diagnostics_request_summary( array $input ): array {
-		$scenegraph = self::scenegraph_from_input( $input );
-		$source     = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
+		$normalized_source = self::source_from_input( $input );
+		$source            = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
 
 		return array_filter(
 			array(
-				'has_scenegraph'  => ! empty( $scenegraph ),
-				'has_bundle'      => isset( $input['artifact_bundle'] ) && is_array( $input['artifact_bundle'] ),
-				'frame_id'        => isset( $input['frame_id'] ) ? (string) $input['frame_id'] : '',
-				'source_file_key' => isset( $source['fileKey'] ) ? (string) $source['fileKey'] : '',
-				'node_ids'        => isset( $source['nodeIds'] ) && is_array( $source['nodeIds'] ) ? array_values( array_map( 'strval', $source['nodeIds'] ) ) : array(),
+				'has_scenegraph'  => ! empty( $normalized_source['scenegraph'] ),
+				'has_bundle'      => ! empty( $normalized_source['artifact_bundle'] ),
+				'frame_id'        => isset( $normalized_source['transform_options']['frame_id'] ) ? (string) $normalized_source['transform_options']['frame_id'] : '',
+				'source_file_key' => isset( $source['fileKey'] ) ? (string) $source['fileKey'] : (string) ( $source['file_key'] ?? '' ),
+				'node_ids'        => self::string_list( $source['nodeIds'] ?? ( $source['node_ids'] ?? array() ) ),
 			)
 		);
 	}
@@ -198,21 +198,22 @@ class Static_Site_Importer_Figma_Import {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public static function website_artifact_from_input( array $input ) {
-		$figma_file = self::figma_file_from_input( $input );
+		$source     = self::source_from_input( $input );
+		$figma_file = $source['figma_file'];
 		if ( ! empty( $figma_file ) ) {
 			return self::website_artifact_from_figma_file( $figma_file, $input );
 		}
 
-		$scenegraph = self::scenegraph_from_input( $input );
+		$scenegraph = $source['scenegraph'];
 		if ( ! empty( $scenegraph ) ) {
 			$artifact = self::website_artifact_from_scenegraph( $scenegraph, $input );
-			if ( ! is_wp_error( $artifact ) || ! isset( $input['artifact_bundle'] ) || ! is_array( $input['artifact_bundle'] ) ) {
+			if ( ! is_wp_error( $artifact ) || empty( $source['artifact_bundle'] ) ) {
 				return $artifact;
 			}
 		}
 
-		if ( isset( $input['artifact_bundle'] ) && is_array( $input['artifact_bundle'] ) ) {
-			return self::website_artifact_from_bundle( $input['artifact_bundle'], $input );
+		if ( ! empty( $source['artifact_bundle'] ) ) {
+			return self::website_artifact_from_bundle( $source['artifact_bundle'], $input );
 		}
 
 		return new WP_Error( 'static_site_importer_figma_source_missing', 'Figma imports require an artifact_bundle or a Figma scenegraph.', array( 'status' => 400 ) );
@@ -342,16 +343,9 @@ class Static_Site_Importer_Figma_Import {
 	 * @return array<string,mixed>
 	 */
 	private static function figma_file_from_input( array $input ): array {
-		if ( isset( $input['figma_file'] ) && is_array( $input['figma_file'] ) ) {
-			return $input['figma_file'];
-		}
+		$source = self::source_from_input( $input );
 
-		$source = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
-		if ( isset( $source['figma_file'] ) && is_array( $source['figma_file'] ) ) {
-			return $source['figma_file'];
-		}
-
-		return array();
+		return $source['figma_file'];
 	}
 
 	/**
@@ -431,19 +425,56 @@ class Static_Site_Importer_Figma_Import {
 	 * @return array<string,mixed>
 	 */
 	private static function scenegraph_from_input( array $input ): array {
-		if ( isset( $input['scenegraph'] ) && is_array( $input['scenegraph'] ) ) {
-			return $input['scenegraph'];
-		}
-		if ( isset( $input['figma'] ) && is_array( $input['figma'] ) ) {
-			$figma = $input['figma'];
-			if ( isset( $figma['scenegraph'] ) && is_array( $figma['scenegraph'] ) ) {
-				return $figma['scenegraph'];
+		$source = self::source_from_input( $input );
+
+		return $source['scenegraph'];
+	}
+
+	/**
+	 * Normalize supported Figma import source shapes into SSI's transformer contract.
+	 *
+	 * @param array<string,mixed> $input Figma import input.
+	 * @return array{scenegraph:array<string,mixed>,figma_file:array<string,mixed>,artifact_bundle:array<string,mixed>,transform_options:array<string,mixed>}
+	 */
+	public static function source_from_input( array $input ): array {
+		$source = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
+		$figma  = isset( $input['figma'] ) && is_array( $input['figma'] ) ? $input['figma'] : array();
+
+		$containers = array( $input, $figma, $source );
+		foreach ( array( $input, $figma, $source ) as $container ) {
+			if ( isset( $container['figma'] ) && is_array( $container['figma'] ) ) {
+				$containers[] = $container['figma'];
 			}
-
-			return $figma;
+			if ( isset( $container['payload'] ) && is_array( $container['payload'] ) ) {
+				$containers[] = $container['payload'];
+			}
 		}
 
-		return array();
+		$scenegraph      = array();
+		$figma_file      = array();
+		$artifact_bundle = array();
+		foreach ( $containers as $container ) {
+			if ( empty( $scenegraph ) && isset( $container['scenegraph'] ) && is_array( $container['scenegraph'] ) ) {
+				$scenegraph = $container['scenegraph'];
+			}
+			if ( empty( $figma_file ) && isset( $container['figma_file'] ) && is_array( $container['figma_file'] ) ) {
+				$figma_file = $container['figma_file'];
+			}
+			if ( empty( $artifact_bundle ) && isset( $container['artifact_bundle'] ) && is_array( $container['artifact_bundle'] ) ) {
+				$artifact_bundle = $container['artifact_bundle'];
+			}
+		}
+
+		if ( empty( $scenegraph ) && ! empty( $figma ) && ! self::is_metadata_only_figma_source( $figma ) ) {
+			$scenegraph = $figma;
+		}
+
+		return array(
+			'scenegraph'         => $scenegraph,
+			'figma_file'         => $figma_file,
+			'artifact_bundle'    => $artifact_bundle,
+			'transform_options'  => self::transform_options_from_containers( $containers ),
+		);
 	}
 
 	/**
@@ -606,12 +637,96 @@ class Static_Site_Importer_Figma_Import {
 	 * @return array<string,mixed>
 	 */
 	private static function transform_options( array $input ): array {
-		$options = isset( $input['transform_options'] ) && is_array( $input['transform_options'] ) ? $input['transform_options'] : array();
-		if ( isset( $input['frame_id'] ) ) {
-			$options['frame_id'] = (string) $input['frame_id'];
+		$source = self::source_from_input( $input );
+
+		return $source['transform_options'];
+	}
+
+	/**
+	 * Merge transformer options from accepted source containers.
+	 *
+	 * @param array<int,array<string,mixed>> $containers Source containers.
+	 * @return array<string,mixed>
+	 */
+	private static function transform_options_from_containers( array $containers ): array {
+		$options = array();
+		foreach ( array_reverse( $containers ) as $container ) {
+			if ( isset( $container['transform_options'] ) && is_array( $container['transform_options'] ) ) {
+				$options = array_replace( $options, $container['transform_options'] );
+			}
+		}
+
+		foreach ( array_reverse( $containers ) as $container ) {
+			foreach ( array( 'multi_page', 'frame_id', 'frame_ids', 'entry_frame_id', 'max_pages' ) as $key ) {
+				if ( array_key_exists( $key, $container ) ) {
+					$options[ $key ] = $container[ $key ];
+				}
+			}
+		}
+
+		if ( isset( $options['multi_page'] ) ) {
+			$options['multi_page'] = (bool) $options['multi_page'];
+		}
+		if ( isset( $options['frame_id'] ) ) {
+			$options['frame_id'] = (string) $options['frame_id'];
+		}
+		if ( isset( $options['frame_ids'] ) ) {
+			$options['frame_ids'] = self::string_list( $options['frame_ids'] );
+		}
+		if ( isset( $options['entry_frame_id'] ) ) {
+			$options['entry_frame_id'] = (string) $options['entry_frame_id'];
+		}
+		if ( isset( $options['max_pages'] ) ) {
+			$options['max_pages'] = max( 0, (int) $options['max_pages'] );
 		}
 
 		return $options;
+	}
+
+	/**
+	 * Normalize scalar or array values to a list of non-empty strings.
+	 *
+	 * @param mixed $value Value to normalize.
+	 * @return array<int,string>
+	 */
+	private static function string_list( $value ): array {
+		if ( is_scalar( $value ) ) {
+			$value = array( $value );
+		}
+		if ( ! is_array( $value ) ) {
+			return array();
+		}
+
+		$list = array();
+		foreach ( $value as $item ) {
+			if ( ! is_scalar( $item ) ) {
+				continue;
+			}
+
+			$item = trim( (string) $item );
+			if ( '' !== $item ) {
+				$list[] = $item;
+			}
+		}
+
+		return array_values( array_unique( $list ) );
+	}
+
+	/**
+	 * Determine whether a figma envelope only contains metadata/options.
+	 *
+	 * @param array<string,mixed> $figma Figma source envelope.
+	 * @return bool
+	 */
+	private static function is_metadata_only_figma_source( array $figma ): bool {
+		$metadata_keys = array( 'name', 'fileKey', 'file_key', 'nodeIds', 'node_ids', 'exportedAt', 'exported_at', 'transform_options', 'frame_id', 'frame_ids', 'entry_frame_id', 'multi_page', 'max_pages' );
+		foreach ( array_keys( $figma ) as $key ) {
+			if ( ! in_array( (string) $key, $metadata_keys, true ) ) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**
