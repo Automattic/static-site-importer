@@ -56,7 +56,13 @@ class Static_Site_Importer_Figma_Import {
 		if ( ! empty( $validation_artifacts ) ) {
 			$import_input['validation_artifacts'] = $validation_artifacts;
 		}
-		return static_site_importer_ability_import_website_artifact( $import_input );
+		$result                  = static_site_importer_ability_import_website_artifact( $import_input );
+		$figma_transform_report = self::figma_transform_report_from_metadata( isset( $import_input['source_metadata'] ) && is_array( $import_input['source_metadata'] ) ? $import_input['source_metadata'] : array() );
+		if ( ! empty( $figma_transform_report ) ) {
+			$result['figma_transform_report'] = $figma_transform_report;
+		}
+
+		return $result;
 	}
 
 	/**
@@ -72,24 +78,17 @@ class Static_Site_Importer_Figma_Import {
 		}
 
 		$import_input = self::import_input( $input, $artifact );
-		$scenegraph   = self::scenegraph_from_input( $input );
 
-		$transform_diagnostics = array();
-		if ( ! empty( $scenegraph ) && function_exists( 'blocks_engine_figma_transformer_transform_scenegraph' ) ) {
-			$transform = blocks_engine_figma_transformer_transform_scenegraph( $scenegraph, self::transform_options( $input ) );
-			if ( is_object( $transform ) && is_callable( array( $transform, 'toArray' ) ) ) {
-				$transform = $transform->toArray();
-			}
-			if ( is_array( $transform ) ) {
-				$transform_diagnostics = $transform['source_reports']['figma']['html']['transform_diagnostics'] ?? array();
-			}
-		}
+		$source_metadata        = isset( $import_input['source_metadata'] ) && is_array( $import_input['source_metadata'] ) ? $import_input['source_metadata'] : array();
+		$figma_transform_report = self::figma_transform_report_from_metadata( $source_metadata );
+		$transform_diagnostics  = self::transform_diagnostics_from_report( $figma_transform_report );
 
 		return array(
 			'schema'                  => 'static-site-importer/figma-diagnostics/v1',
 			'success'                 => true,
 			'request'                 => self::diagnostics_request_summary( $input ),
 			'artifact'                => self::diagnostics_artifact_summary( $artifact ),
+			'figma_transform_report'  => $figma_transform_report,
 			'transform_diagnostics'   => is_array( $transform_diagnostics ) ? $transform_diagnostics : array(),
 			'production_import_input' => array(
 				'slug'      => (string) ( $import_input['slug'] ?? '' ),
@@ -357,12 +356,40 @@ class Static_Site_Importer_Figma_Import {
 			return new WP_Error( 'static_site_importer_figma_transform_empty', self::empty_transform_message( $diagnostic ), $data );
 		}
 
+		$provenance = self::provenance( $input ) + array( 'transform' => 'blocks-engine/figma-transformer' );
+		$report     = self::figma_transform_report_from_transform( $transform );
+		if ( ! empty( $report ) ) {
+			$provenance['figma_transform_report'] = $report;
+		}
+
 		return array(
 			'schema'     => Static_Site_Importer_Transformer_Adapter::WEBSITE_ARTIFACT_SCHEMA,
 			'root'       => 'website',
 			'entrypoint' => self::entrypoint( 'website/index.html', $files ),
 			'files'      => $files,
-			'provenance' => self::provenance( $input ) + array( 'transform' => 'blocks-engine/figma-transformer' ),
+			'provenance' => $provenance,
+		);
+	}
+
+	/**
+	 * Extract durable Figma transform diagnostics from a Blocks Engine result.
+	 *
+	 * @param array<string,mixed> $transform Blocks Engine Figma transform result.
+	 * @return array<string,mixed>
+	 */
+	private static function figma_transform_report_from_transform( array $transform ): array {
+		$source_reports = isset( $transform['source_reports'] ) && is_array( $transform['source_reports'] ) ? $transform['source_reports'] : array();
+		$figma_report   = isset( $source_reports['figma'] ) && is_array( $source_reports['figma'] ) ? $source_reports['figma'] : array();
+		if ( empty( $figma_report ) ) {
+			return array();
+		}
+
+		return array(
+			'schema'         => 'static-site-importer/figma-transform-report/v1',
+			'source'         => 'blocks-engine/figma-transformer',
+			'source_reports' => array(
+				'figma' => $figma_report,
+			),
 		);
 	}
 
@@ -419,6 +446,30 @@ class Static_Site_Importer_Figma_Import {
 		}
 
 		return array();
+	}
+
+	/**
+	 * Read the durable Figma transform report from generic SSI metadata.
+	 *
+	 * @param array<string,mixed> $metadata SSI source metadata/provenance.
+	 * @return array<string,mixed>
+	 */
+	private static function figma_transform_report_from_metadata( array $metadata ): array {
+		$report = isset( $metadata['figma_transform_report'] ) && is_array( $metadata['figma_transform_report'] ) ? $metadata['figma_transform_report'] : array();
+
+		return $report;
+	}
+
+	/**
+	 * Extract the existing compact diagnostics bucket from the transform report.
+	 *
+	 * @param array<string,mixed> $report Durable Figma transform report.
+	 * @return array<string,mixed>
+	 */
+	private static function transform_diagnostics_from_report( array $report ): array {
+		$diagnostics = $report['source_reports']['figma']['html']['transform_diagnostics'] ?? array();
+
+		return is_array( $diagnostics ) ? $diagnostics : array();
 	}
 
 	/**
@@ -611,6 +662,8 @@ class Static_Site_Importer_Figma_Import {
 	public static function import_input( array $input, array $artifact ): array {
 		$title = self::display_title( $input, $artifact );
 
+		$source_metadata = isset( $artifact['provenance'] ) && is_array( $artifact['provenance'] ) ? $artifact['provenance'] : self::provenance( $input );
+
 		return array(
 			'artifact'                  => $artifact,
 			'slug'                      => isset( $input['slug'] ) ? (string) $input['slug'] : '',
@@ -621,7 +674,7 @@ class Static_Site_Importer_Figma_Import {
 			'fail_on_quality'           => ! empty( $input['fail_on_quality'] ),
 			'allow_missing_woocommerce' => ! empty( $input['allow_missing_woocommerce'] ),
 			'compiler_options'          => isset( $input['compiler_options'] ) && is_array( $input['compiler_options'] ) ? $input['compiler_options'] : array(),
-			'source_metadata'           => self::provenance( $input ),
+			'source_metadata'           => $source_metadata,
 		);
 	}
 

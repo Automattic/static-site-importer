@@ -957,45 +957,55 @@ $assert( str_contains( (string) $figma_blueprint_code, "'name' => 'Fisiostetic'"
 $assert( str_contains( (string) $figma_blueprint_code, "'site_title' => 'Fisiostetic'" ), 'figma-import-site-title-derived-from-metadata' );
 $assert( str_contains( (string) $figma_blueprint_code, "'source' => 'figma-to-wordpress'" ), 'figma-artifact-provenance-source' );
 
-$figma_diagnostics = Static_Site_Importer_Figma_Import::diagnostics_report(
-	array(
-		'schema'     => 'figma-to-wordpress/runner-request/v1',
-		'source'     => array(
-			'fileKey' => 'fixture-file-key',
-			'nodeIds' => array( '1:1' ),
-		),
-		'slug'       => 'figma-diagnostics',
-		'name'       => 'Figma Diagnostics',
-		'scenegraph' => array(
-			'name'  => 'Diagnostics Fixture',
-			'nodes' => array(
-				array(
-					'id'       => '1:1',
-					'type'     => 'FRAME',
-					'name'     => 'Landing Page',
-					'width'    => 640,
-					'height'   => 360,
-					'children' => array(
-						array(
-							'id'       => '1:2',
-							'type'     => 'TEXT',
-							'name'     => 'Heading',
-							'text'     => 'Hello diagnostics',
-							'fontSize' => 32,
-						),
+$figma_diagnostics_input = array(
+	'schema'     => 'figma-to-wordpress/runner-request/v1',
+	'source'     => array(
+		'fileKey' => 'fixture-file-key',
+		'nodeIds' => array( '1:1' ),
+	),
+	'slug'       => 'figma-diagnostics',
+	'name'       => 'Figma Diagnostics',
+	'scenegraph' => array(
+		'name'  => 'Diagnostics Fixture',
+		'nodes' => array(
+			array(
+				'id'       => '1:1',
+				'type'     => 'FRAME',
+				'name'     => 'Landing Page',
+				'width'    => 640,
+				'height'   => 360,
+				'children' => array(
+					array(
+						'id'       => '1:2',
+						'type'     => 'TEXT',
+						'name'     => 'Heading',
+						'text'     => 'Hello diagnostics',
+						'fontSize' => 32,
 					),
 				),
 			),
 		),
-	)
+	),
+);
+$figma_diagnostics       = Static_Site_Importer_Figma_Import::diagnostics_report(
+	$figma_diagnostics_input
 );
 $assert( is_array( $figma_diagnostics ), 'figma-diagnostics-builds-report' );
 $assert( true === ( $figma_diagnostics['success'] ?? null ), 'figma-diagnostics-succeeds' );
 $assert( 'static-site-importer/figma-diagnostics/v1' === ( $figma_diagnostics['schema'] ?? '' ), 'figma-diagnostics-uses-schema' );
 $assert( true === ( $figma_diagnostics['request']['has_scenegraph'] ?? null ), 'figma-diagnostics-summarizes-scenegraph-request' );
 $assert( 'website/index.html' === ( $figma_diagnostics['artifact']['entrypoint'] ?? '' ), 'figma-diagnostics-summarizes-artifact-entrypoint' );
+$assert( 'static-site-importer/figma-transform-report/v1' === ( $figma_diagnostics['figma_transform_report']['schema'] ?? '' ), 'figma-diagnostics-exposes-durable-transform-report' );
 $assert( isset( $figma_diagnostics['transform_diagnostics']['diagnostic_codes'] ), 'figma-diagnostics-exposes-transform-diagnostics' );
 $assert( 'figma-diagnostics' === ( $figma_diagnostics['production_import_input']['slug'] ?? '' ), 'figma-diagnostics-summarizes-production-import-input' );
+
+Static_Site_Importer_Theme_Generator::$last_artifact = array();
+Static_Site_Importer_Theme_Generator::$last_args     = array();
+$figma_import_result = Static_Site_Importer_Figma_Import::import( $figma_diagnostics_input );
+$assert( true === ( $figma_import_result['success'] ?? null ), 'figma-import-scenegraph-succeeds' );
+$assert( 'static-site-importer/figma-transform-report/v1' === ( $figma_import_result['figma_transform_report']['schema'] ?? '' ), 'figma-import-result-exposes-durable-transform-report' );
+$assert( 'static-site-importer/figma-transform-report/v1' === ( Static_Site_Importer_Theme_Generator::$last_artifact['provenance']['figma_transform_report']['schema'] ?? '' ), 'figma-artifact-provenance-preserves-transform-report' );
+$assert( 'static-site-importer/figma-transform-report/v1' === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata']['figma_transform_report']['schema'] ?? '' ), 'figma-import-source-metadata-preserves-transform-report' );
 
 if ( class_exists( 'ZipArchive' ) ) {
 	$zip_path = tempnam( sys_get_temp_dir(), 'ssi-test-' );
