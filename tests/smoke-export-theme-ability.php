@@ -175,7 +175,25 @@ if ( ! function_exists( 'add_action' ) ) {
 }
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-exporter.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-envelope.php';
 require_once dirname( __DIR__ ) . '/includes/abilities.php';
+
+if ( ! class_exists( 'Static_Site_Importer_Theme_Generator' ) ) {
+	class Static_Site_Importer_Theme_Generator {
+		public static array $last_artifact = array();
+
+		public static function import_website_artifact( array $artifact, array $args = array() ): array {
+			unset( $args );
+			self::$last_artifact = $artifact;
+
+			return array(
+				'theme_slug' => 'fixture-theme',
+				'report'     => array(),
+			);
+		}
+	}
+}
+
 $result = static_site_importer_ability_export_theme(
 	array(
 		'theme_slug'      => 'fixture-theme',
@@ -196,13 +214,13 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 
 $assert( ! is_wp_error( $result ), 'export-succeeds', is_wp_error( $result ) ? $result->get_error_message() : '' );
 $assert( true === ( $result['success'] ?? false ), 'ability-success' );
-$artifact = $result['website_artifact'] ?? array();
+$export_result = $result['result'] ?? array();
+$artifact       = $export_result['artifact_bundle'] ?? array();
 $assert( ! isset( $result['artifact_set'] ), 'artifact-set-wrapper-removed' );
 $assert( ! isset( $result['files'] ), 'top-level-files-wrapper-removed' );
 $assert( ! isset( $result['report'] ), 'top-level-report-wrapper-removed' );
-$assert( 'blocks-engine/php-transformer/site-artifact/v1' === ( $artifact['schema'] ?? '' ), 'website-artifact-schema' );
-$assert( 'website' === ( $artifact['artifact_type'] ?? '' ), 'artifact-type' );
-$assert( 1 === ( $artifact['version'] ?? 0 ), 'artifact-version' );
+$assert( 'static-site-importer/export-theme-result/v1' === ( $export_result['schema'] ?? '' ), 'export-result-schema' );
+$assert( 'studio-native/website-artifact-bundle/v1' === ( $artifact['schema'] ?? '' ), 'website-artifact-bundle-schema' );
 $assert( 'website' === ( $artifact['root'] ?? '' ), 'artifact-root' );
 $assert( 'website/index.html' === ( $artifact['entrypoint'] ?? '' ), 'entrypoint' );
 $assert( 6 === count( $artifact['files'] ?? array() ), 'exports-entrypoint-assets-and-metadata' );
@@ -232,6 +250,21 @@ $assert( 'smoke' === ( $artifact['provenance']['source_metadata']['source'] ?? '
 $assert( 'website/import-report.json' === ( $artifact['reports'][0]['path'] ?? '' ), 'report-ref' );
 $assert( 'smoke' === ( $artifact['report']['source_metadata']['source'] ?? '' ), 'source-metadata-preserved' );
 $assert( 'completed' === ( $artifact['report']['import_report']['status'] ?? '' ), 'import-report-preserved' );
+$normalized_artifact = Static_Site_Importer_Artifact_Envelope::website_artifact_from_bundle( $artifact );
+$assert( ! is_wp_error( $normalized_artifact ), 'bundle-normalizes-to-website-artifact' );
+$assert( 'blocks-engine/php-transformer/site-artifact/v1' === ( $normalized_artifact['schema'] ?? '' ), 'normalized-website-artifact-schema' );
+$assert( 'website/index.html' === ( $normalized_artifact['entrypoint'] ?? '' ), 'normalized-entrypoint' );
+$assert( 6 === count( $normalized_artifact['files'] ?? array() ), 'normalized-file-count' );
+$import_result = static_site_importer_ability_import_website_artifact(
+	array(
+		'artifact_bundle' => $artifact,
+		'slug'            => 'fixture-theme',
+		'name'            => 'Fixture Theme',
+	)
+);
+$assert( true === ( $import_result['success'] ?? false ), 'ability-imports-artifact-bundle' );
+$assert( 'blocks-engine/php-transformer/site-artifact/v1' === ( Static_Site_Importer_Theme_Generator::$last_artifact['schema'] ?? '' ), 'ability-import-normalizes-bundle-schema' );
+$assert( 'website/index.html' === ( Static_Site_Importer_Theme_Generator::$last_artifact['entrypoint'] ?? '' ), 'ability-import-normalizes-bundle-entrypoint' );
 $export_format_conversion_calls = array_filter(
 	$GLOBALS['ssi_export_format_conversion_calls'],
 	static fn ( array $call ): bool => 'blocks' === $call[0] && 'html' === $call[1]

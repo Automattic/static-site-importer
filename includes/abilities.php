@@ -86,6 +86,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 					'type'       => 'object',
 					'properties' => array(
 						'artifact'                     => array( 'type' => 'object' ),
+						'artifact_bundle'              => array( 'type' => 'object' ),
 						'slug'                         => array( 'type' => 'string' ),
 						'name'                         => array( 'type' => 'string' ),
 						'activate'                     => array( 'type' => 'boolean' ),
@@ -102,7 +103,6 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'source_metadata'              => array( 'type' => 'object' ),
 						'validation_artifacts'         => array( 'type' => 'object' ),
 					),
-					'required'   => array( 'artifact' ),
 				),
 				'output_schema'       => array( 'type' => 'object' ),
 				'execute_callback'    => 'static_site_importer_ability_import_website_artifact',
@@ -326,8 +326,15 @@ if ( ! function_exists( 'static_site_importer_ability_import_website_artifact' )
 	 */
 	function static_site_importer_ability_import_website_artifact( array $input ): array {
 		$artifact = isset( $input['artifact'] ) && is_array( $input['artifact'] ) ? $input['artifact'] : array();
+		if ( empty( $artifact ) && isset( $input['artifact_bundle'] ) && is_array( $input['artifact_bundle'] ) ) {
+			$artifact = Static_Site_Importer_Artifact_Envelope::website_artifact_from_bundle( $input['artifact_bundle'] );
+			if ( is_wp_error( $artifact ) ) {
+				/** @var WP_Error $artifact */
+				return static_site_importer_ability_error( (string) $artifact->get_error_code(), $artifact->get_error_message(), $artifact->get_error_data() );
+			}
+		}
 		if ( empty( $artifact ) ) {
-			return static_site_importer_ability_error( 'static_site_importer_missing_website_artifact', 'The artifact input is required.' );
+			return static_site_importer_ability_error( 'static_site_importer_missing_website_artifact', 'The artifact or artifact_bundle input is required.' );
 		}
 
 		$args = array(

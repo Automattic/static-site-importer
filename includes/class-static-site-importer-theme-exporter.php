@@ -12,9 +12,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Transformer_Adapter' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-transformer-adapter.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Artifact_Envelope' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-artifact-envelope.php';
+}
 
 /**
- * Exports WordPress block themes to Blocks Engine website artifacts.
+ * Exports WordPress block themes to canonical Studio Native artifact bundles.
  */
 class Static_Site_Importer_Theme_Exporter {
 
@@ -22,7 +25,7 @@ class Static_Site_Importer_Theme_Exporter {
 	 * Export an imported or active block theme as a website artifact.
 	 *
 	 * @param array $args Export args.
-	 * @return array{website_artifact:array<string,mixed>}|WP_Error
+	 * @return array{result:array<string,mixed>}|WP_Error
 	 */
 	public static function export_theme( array $args = array() ) {
 		$transformer = new Static_Site_Importer_Transformer_Adapter();
@@ -140,7 +143,7 @@ class Static_Site_Importer_Theme_Exporter {
 		$website_artifact = self::export_website_artifact( $theme_slug, $root, $entrypoint, $files, $report, $source_metadata );
 
 		return array(
-			'website_artifact' => $website_artifact,
+			'result' => Static_Site_Importer_Artifact_Envelope::export_result_from_website_artifact( $website_artifact ),
 		);
 	}
 
