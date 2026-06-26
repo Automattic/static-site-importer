@@ -195,7 +195,17 @@
 
 	const previewUrl = function ( report ) {
 		const preview = report && report.preview && typeof report.preview === 'object' ? report.preview : {};
-		return preview.url || '';
+		const playground = preview.playground && typeof preview.playground === 'object' ? preview.playground : {};
+		return playground.blueprint_url || preview.url || '';
+	};
+
+	const openPendingPreviewWindow = function () {
+		const openedWindow = window.open( 'about:blank', '_blank' );
+		if ( openedWindow ) {
+			openedWindow.opener = null;
+		}
+
+		return openedWindow;
 	};
 
 	const openPreview = function ( report, openedWindow ) {
@@ -272,7 +282,7 @@
 		const restUrl = root.getAttribute( 'data-static-site-importer-figma-rest-url' );
 		const nonce = root.getAttribute( 'data-static-site-importer-nonce' );
 		const isCurrentSiteImport = root.getAttribute( 'data-static-site-importer-apply-to-current-site' ) === '1';
-		const playgroundWindow = isCurrentSiteImport ? null : window.open( 'about:blank', '_blank', 'noopener,noreferrer' );
+		const playgroundWindow = isCurrentSiteImport ? null : openPendingPreviewWindow();
 		const formData = new FormData();
 		formData.append( 'figma_file', file );
 		formData.append( 'apply_to_current_site', isCurrentSiteImport ? '1' : '0' );
@@ -295,7 +305,7 @@
 				showStatus( root, 'Figma import complete.' );
 			} else if ( response.ok && report.success && previewUrl( report ) ) {
 				openPreview( report, playgroundWindow );
-				showStatus( root, 'WordPress preview opened.' );
+				showStatus( root, 'WordPress Playground opened.' );
 			} else {
 				if ( playgroundWindow ) {
 					playgroundWindow.close();
@@ -341,7 +351,7 @@
 			const uploadInputs = root.querySelectorAll( '[data-static-site-importer-source-files], [data-static-site-importer-source-directory]' );
 			const provider = root.getAttribute( 'data-static-site-importer-provider' ) || '';
 			const isCurrentSiteImport = root.getAttribute( 'data-static-site-importer-apply-to-current-site' ) === '1';
-			const playgroundWindow = isCurrentSiteImport ? null : window.open( 'about:blank', '_blank', 'noopener,noreferrer' );
+			const playgroundWindow = isCurrentSiteImport ? null : openPendingPreviewWindow();
 			const source = {
 				url: form ? form.getAttribute( 'data-static-site-importer-default-url' ) || '' : '',
 				html: html ? html.value : '',
@@ -384,7 +394,7 @@
 					showStatus( root, 'Import complete.' );
 				} else if ( response.ok && report.success && previewUrl( report ) ) {
 					openPreview( report, playgroundWindow );
-					showStatus( root, 'WordPress preview opened.' );
+					showStatus( root, 'WordPress Playground opened.' );
 				} else if ( response.ok && previewUrl( report ) ) {
 					openPreview( report, playgroundWindow );
 					showStatus( root, 'Preview opened.' );
