@@ -117,7 +117,7 @@ class Static_Site_Importer_Theme_Materializer {
 				continue;
 			}
 
-			$relative = self::normalize_artifact_materialization_path( isset( $file['path'] ) ? (string) $file['path'] : '' );
+			$relative  = self::normalize_artifact_materialization_path( isset( $file['path'] ) ? (string) $file['path'] : '' );
 			$retention = self::source_retention_policy( $file, $relative, 'website_artifact:files' );
 			if ( '' === $relative ) {
 				$diagnostics[] = array(
@@ -163,13 +163,13 @@ class Static_Site_Importer_Theme_Materializer {
 			}
 
 			$assets[ $relative ] = array(
-				'source'     => $relative,
-				'path'       => $relative,
-				'url'        => trailingslashit( $theme_uri ) . $target_relative,
-				'final_url'  => trailingslashit( $theme_uri ) . $target_relative,
-				'mime_type'  => self::mime_type( $target ),
-				'theme_path' => $target_relative,
-				'policy'     => 'theme',
+				'source'           => $relative,
+				'path'             => $relative,
+				'url'              => trailingslashit( $theme_uri ) . $target_relative,
+				'final_url'        => trailingslashit( $theme_uri ) . $target_relative,
+				'mime_type'        => self::mime_type( $target ),
+				'theme_path'       => $target_relative,
+				'policy'           => 'theme',
 				'source_role'      => $retention['source_role'],
 				'keep_source'      => $retention['keep_source'],
 				'deletion_allowed' => $retention['deletion_allowed'],
@@ -221,7 +221,7 @@ class Static_Site_Importer_Theme_Materializer {
 				return new WP_Error( 'static_site_importer_materialization_plan_asset_invalid', 'Blocks Engine materialization_plan.assets entries must be arrays.' );
 			}
 
-			$relative = self::normalize_artifact_materialization_path( isset( $asset['path'] ) && is_scalar( $asset['path'] ) ? (string) $asset['path'] : '' );
+			$relative  = self::normalize_artifact_materialization_path( isset( $asset['path'] ) && is_scalar( $asset['path'] ) ? (string) $asset['path'] : '' );
 			$retention = self::source_retention_policy( $asset, $relative, 'materialization_plan.assets' );
 			if ( '' === $relative ) {
 				return new WP_Error( 'static_site_importer_materialization_plan_asset_path_invalid', 'Blocks Engine materialization_plan.assets entries must include safe relative paths.' );
@@ -381,16 +381,16 @@ class Static_Site_Importer_Theme_Materializer {
 		if ( empty( $retention ) ) {
 			$retention = self::source_retention_policy( $asset, $relative, $origin );
 		}
-		$report    = array(
-			'source'     => $relative,
-			'path'       => $relative,
-			'url'        => $url,
-			'final_url'  => $url,
-			'mime_type'  => $mime_type,
-			'theme_path' => $target_relative,
-			'policy'     => 'theme',
-			'origin'     => $origin,
-			'order'      => $order,
+		$report = array(
+			'source'           => $relative,
+			'path'             => $relative,
+			'url'              => $url,
+			'final_url'        => $url,
+			'mime_type'        => $mime_type,
+			'theme_path'       => $target_relative,
+			'policy'           => 'theme',
+			'origin'           => $origin,
+			'order'            => $order,
 			'source_role'      => $retention['source_role'],
 			'keep_source'      => $retention['keep_source'],
 			'deletion_allowed' => $retention['deletion_allowed'],

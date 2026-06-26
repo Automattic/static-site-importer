@@ -378,7 +378,7 @@ class Static_Site_Importer_Theme_Generator {
 			return $cleanup;
 		}
 
-		$previous_manifest_json = file_get_contents( $previous_manifest_path );
+		$previous_manifest_json = file_get_contents( $previous_manifest_path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads an importer-owned local manifest file.
 		if ( false === $previous_manifest_json ) {
 			return new WP_Error( 'static_site_importer_previous_manifest_read_failed', 'Failed to read the previous Static Site Importer manifest.' );
 		}
@@ -425,7 +425,7 @@ class Static_Site_Importer_Theme_Generator {
 				continue;
 			}
 
-			if ( ! unlink( $path ) ) {
+			if ( ! wp_delete_file( $path ) ) {
 				return new WP_Error( 'static_site_importer_stale_generated_file_delete_failed', sprintf( 'Failed to delete stale generated theme file: %s', $relative ) );
 			}
 
@@ -1530,7 +1530,11 @@ class Static_Site_Importer_Theme_Generator {
 		$provenance = isset( $compiled['provenance'] ) && is_array( $compiled['provenance'] ) ? $compiled['provenance'] : array();
 		$input      = isset( $compiled['input'] ) && is_array( $compiled['input'] ) ? $compiled['input'] : array();
 
-		foreach ( array( 'id' => array( 'artifact_id', 'id', 'run_id' ), 'hash' => array( 'artifact_hash', 'hash', 'sha256' ), 'hash_algo' => array( 'artifact_hash_algo', 'hash_algo' ) ) as $target => $keys ) {
+		foreach ( array(
+			'id'        => array( 'artifact_id', 'id', 'run_id' ),
+			'hash'      => array( 'artifact_hash', 'hash', 'sha256' ),
+			'hash_algo' => array( 'artifact_hash_algo', 'hash_algo' ),
+		) as $target => $keys ) {
 			if ( isset( $reference[ $target ] ) && is_scalar( $reference[ $target ] ) && '' !== trim( (string) $reference[ $target ] ) ) {
 				continue;
 			}

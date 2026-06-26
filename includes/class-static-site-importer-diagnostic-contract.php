@@ -277,7 +277,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 		);
 		foreach ( $diagnostics as $diagnostic ) {
 			foreach ( array( 'severity', 'category', 'type', 'parser_owner', 'repair_bucket' ) as $field ) {
-				$value                         = isset( $diagnostic[ $field ] ) && is_scalar( $diagnostic[ $field ] ) ? (string) $diagnostic[ $field ] : 'unknown';
+				$value                       = isset( $diagnostic[ $field ] ) && is_scalar( $diagnostic[ $field ] ) ? (string) $diagnostic[ $field ] : 'unknown';
 				$summary[ $field ][ $value ] = ( $summary[ $field ][ $value ] ?? 0 ) + 1;
 			}
 		}
@@ -295,7 +295,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 	private static function diagnostics_by_field( array $diagnostics, string $field ): array {
 		$grouped = array();
 		foreach ( $diagnostics as $diagnostic ) {
-			$key             = isset( $diagnostic[ $field ] ) && is_scalar( $diagnostic[ $field ] ) ? (string) $diagnostic[ $field ] : 'uncategorized';
+			$key               = isset( $diagnostic[ $field ] ) && is_scalar( $diagnostic[ $field ] ) ? (string) $diagnostic[ $field ] : 'uncategorized';
 			$grouped[ $key ][] = $diagnostic;
 		}
 
@@ -355,7 +355,19 @@ class Static_Site_Importer_Diagnostic_Contract {
 		$values = array_values( $buckets );
 		usort(
 			$values,
-			static fn ( array $left, array $right ): int => ( $right['count'] <=> $left['count'] ) ?: strcmp( (string) $left['parser_owner'], (string) $right['parser_owner'] ) ?: strcmp( (string) $left['repair_bucket'], (string) $right['repair_bucket'] )
+			static function ( array $left, array $right ): int {
+				$count_compare = $right['count'] <=> $left['count'];
+				if ( 0 !== $count_compare ) {
+					return $count_compare;
+				}
+
+				$owner_compare = strcmp( (string) $left['parser_owner'], (string) $right['parser_owner'] );
+				if ( 0 !== $owner_compare ) {
+					return $owner_compare;
+				}
+
+				return strcmp( (string) $left['repair_bucket'], (string) $right['repair_bucket'] );
+			}
 		);
 
 		return $values;
@@ -544,13 +556,13 @@ class Static_Site_Importer_Diagnostic_Contract {
 	 */
 	private static function repair_mode( string $repair_bucket ): string {
 		$modes = array(
-			'button_style_loss'         => 'transformer-style-parity',
-			'broken_svg'                => 'svg-transformer-parity',
-			'dropped_images'            => 'asset-materialization',
-			'invalid_block_content'     => 'block-validation-parity',
-			'runtime_target_gap'        => 'runtime-dom-target-parity',
-			'semantic_parity'           => 'semantic-parity',
-			'fallback_block'            => 'fallback-block-replacement',
+			'button_style_loss'          => 'transformer-style-parity',
+			'broken_svg'                 => 'svg-transformer-parity',
+			'dropped_images'             => 'asset-materialization',
+			'invalid_block_content'      => 'block-validation-parity',
+			'runtime_target_gap'         => 'runtime-dom-target-parity',
+			'semantic_parity'            => 'semantic-parity',
+			'fallback_block'             => 'fallback-block-replacement',
 			'static_site_import_quality' => 'import-validation',
 		);
 

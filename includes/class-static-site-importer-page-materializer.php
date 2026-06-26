@@ -69,15 +69,15 @@ class Static_Site_Importer_Page_Materializer {
 			$type     = self::page_post_type( $page );
 			$existing = get_page_by_path( $slug, OBJECT, $type );
 			$row      = array(
-				'source_path'       => $page->source_key(),
-				'target_type'       => 'wordpress_post',
-				'post_type'         => $type,
-				'slug'              => $slug,
-				'title'             => self::page_title( $filename, $page ),
-				'status'            => self::page_status( $page ),
-				'existing_post_id'  => 0,
-				'existing_status'   => '',
-				'protected'         => false,
+				'source_path'          => $page->source_key(),
+				'target_type'          => 'wordpress_post',
+				'post_type'            => $type,
+				'slug'                 => $slug,
+				'title'                => self::page_title( $filename, $page ),
+				'status'               => self::page_status( $page ),
+				'existing_post_id'     => 0,
+				'existing_status'      => '',
+				'protected'            => false,
 				'materialized_post_id' => 0,
 			);
 
@@ -174,7 +174,7 @@ class Static_Site_Importer_Page_Materializer {
 				continue;
 			}
 
-			$target     = isset( $page_targets[ $filename ] ) && is_array( $page_targets[ $filename ] ) ? $page_targets[ $filename ] : array();
+			$target     = $page_targets[ $filename ] ?? array();
 			$provenance = array(
 				'schema'        => 'static-site-importer/page-provenance/v1',
 				'import_run_id' => (string) ( $manifest['import_run_id'] ?? '' ),

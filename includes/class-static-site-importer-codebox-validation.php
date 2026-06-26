@@ -18,9 +18,9 @@ if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Contract' ) ) {
  */
 class Static_Site_Importer_Codebox_Validation {
 
-	private const REQUEST_SCHEMA             = 'static-site-importer/codebox-validation-request/v1';
-	private const RESULT_SCHEMA              = 'static-site-importer/codebox-validation-result/v1';
-	private const ARTIFACT_SCHEMA            = 'static-site-importer/codebox-validation-artifacts/v1';
+	private const REQUEST_SCHEMA  = 'static-site-importer/codebox-validation-request/v1';
+	private const RESULT_SCHEMA   = 'static-site-importer/codebox-validation-result/v1';
+	private const ARTIFACT_SCHEMA = 'static-site-importer/codebox-validation-artifacts/v1';
 
 	/**
 	 * Register the default WP Codebox host-delegation bridge.
@@ -51,7 +51,7 @@ class Static_Site_Importer_Codebox_Validation {
 			return null;
 		}
 
-		$source = isset( $request['source'] ) && is_array( $request['source'] ) ? $request['source'] : array();
+		$source   = isset( $request['source'] ) && is_array( $request['source'] ) ? $request['source'] : array();
 		$artifact = isset( $source['artifact'] ) && is_array( $source['artifact'] ) ? $source['artifact'] : array();
 		if ( empty( $artifact ) ) {
 			return null;
@@ -386,11 +386,9 @@ class Static_Site_Importer_Codebox_Validation {
 				),
 				'import_report'           => self::local_file_artifact_ref( $report_path, 'blocks-engine/import-report' ),
 				'block_validation_result' => self::local_file_artifact_ref( $validation_result_path, 'blocks-engine/import-validation-result' ),
-				'raw'                     => array_values(
-					array_filter(
-						array(
-							self::local_file_artifact_ref( $finding_packets_path, 'blocks-engine/finding-packets' ),
-						)
+				'raw'                     => array_filter(
+					array(
+						self::local_file_artifact_ref( $finding_packets_path, 'blocks-engine/finding-packets' ),
 					)
 				),
 			),
@@ -405,10 +403,11 @@ class Static_Site_Importer_Codebox_Validation {
 	 */
 	private static function local_validation_artifact_dir( string $slug ) {
 		$upload_dir = function_exists( 'wp_upload_dir' ) ? wp_upload_dir() : array();
-		$base_dir   = isset( $upload_dir['basedir'] ) && is_string( $upload_dir['basedir'] ) ? $upload_dir['basedir'] : sys_get_temp_dir();
+		$base_dir   = isset( $upload_dir['basedir'] ) ? (string) $upload_dir['basedir'] : sys_get_temp_dir();
 		$run_id     = function_exists( 'wp_generate_uuid4' ) ? wp_generate_uuid4() : uniqid( 'validation-', true );
 		$directory  = trailingslashit( $base_dir ) . 'static-site-importer/codebox-validation-' . sanitize_title( $slug ) . '-' . sanitize_key( $run_id );
 
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- Standalone smoke-test fallback when WordPress filesystem helpers are unavailable.
 		$created = function_exists( 'wp_mkdir_p' ) ? wp_mkdir_p( $directory ) : ( is_dir( $directory ) || mkdir( $directory, 0777, true ) );
 		if ( ! $created ) {
 			return new WP_Error( 'static_site_importer_codebox_validation_artifact_dir_failed', 'Could not create Codebox validation artifact directory.' );
@@ -593,22 +592,6 @@ class Static_Site_Importer_Codebox_Validation {
 	}
 
 	/**
-	 * Extract an import report from common provider result slots.
-	 *
-	 * @param array<string,mixed> $result Provider result.
-	 * @return array<string,mixed>
-	 */
-	private static function provider_import_report( array $result ): array {
-		foreach ( array( $result['import_report'] ?? null, $result['summary']['import_report'] ?? null, $result['artifacts']['import_report'] ?? null ) as $candidate ) {
-			if ( is_array( $candidate ) && ( isset( $candidate['quality'] ) || isset( $candidate['diagnostics'] ) || isset( $candidate['blocks_engine'] ) ) ) {
-				return $candidate;
-			}
-		}
-
-		return array();
-	}
-
-	/**
 	 * Build a request summary from raw input when request creation failed.
 	 *
 	 * @param array<string,mixed> $input Raw caller input.
@@ -630,318 +613,6 @@ class Static_Site_Importer_Codebox_Validation {
 			),
 			'required_artifacts'  => self::required_artifacts(),
 		);
-	}
-
-	/**
-	 * Read provider-level diagnostic rows.
-	 *
-	 * @param array<string,mixed> $result Provider result.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function diagnostic_rows_from_result( array $result ): array {
-		$rows = array();
-		foreach ( array( $result['diagnostics'] ?? array(), $result['artifact_diagnostics']['diagnostics'] ?? array(), $result['import_validation_result']['diagnostics'] ?? array() ) as $candidate ) {
-			if ( is_array( $candidate ) ) {
-				$rows = array_merge( $rows, self::normalize_diagnostic_rows( $candidate ) );
-			}
-		}
-
-		return $rows;
-	}
-
-	/**
-	 * Read import-report diagnostic rows.
-	 *
-	 * @param array<string,mixed> $import_report Import report.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function diagnostic_rows_from_import_report( array $import_report ): array {
-		$rows = self::normalize_diagnostic_rows( isset( $import_report['diagnostics'] ) && is_array( $import_report['diagnostics'] ) ? $import_report['diagnostics'] : array() );
-		if ( isset( $import_report['artifact_diagnostics']['diagnostics'] ) && is_array( $import_report['artifact_diagnostics']['diagnostics'] ) ) {
-			$rows = array_merge( $rows, self::normalize_diagnostic_rows( $import_report['artifact_diagnostics']['diagnostics'] ) );
-		}
-
-		return $rows;
-	}
-
-	/**
-	 * Extract Blocks Engine conversion-report diagnostics and fallback rows.
-	 *
-	 * @param array<string,mixed> $import_report Import report.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function blocks_engine_conversion_diagnostics( array $import_report ): array {
-		$conversion_report = isset( $import_report['blocks_engine']['conversion_report'] ) && is_array( $import_report['blocks_engine']['conversion_report'] ) ? $import_report['blocks_engine']['conversion_report'] : array();
-		$rows              = array();
-		foreach ( array( 'diagnostics', 'fallback_diagnostics', 'fallbacks', 'presentation_gaps', 'interaction_candidates' ) as $field ) {
-			if ( isset( $conversion_report[ $field ] ) && is_array( $conversion_report[ $field ] ) ) {
-				$rows = array_merge( $rows, self::normalize_diagnostic_rows( $conversion_report[ $field ], 'blocks_engine_conversion_report' ) );
-			}
-		}
-
-		return $rows;
-	}
-
-	/**
-	 * Extract runtime dependency parity target gaps.
-	 *
-	 * @param array<string,mixed> $import_report Import report.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function runtime_dependency_target_gaps( array $import_report ): array {
-		$runtime_dependency_parity = isset( $import_report['blocks_engine']['runtime_dependency_parity'] ) && is_array( $import_report['blocks_engine']['runtime_dependency_parity'] ) ? $import_report['blocks_engine']['runtime_dependency_parity'] : array();
-		$rows                      = array();
-		foreach ( array( 'findings', 'missing_dom_targets', 'unsupported_elements' ) as $field ) {
-			if ( isset( $runtime_dependency_parity[ $field ] ) && is_array( $runtime_dependency_parity[ $field ] ) ) {
-				$rows = array_merge( $rows, self::normalize_diagnostic_rows( $runtime_dependency_parity[ $field ], 'runtime_dependency_parity' ) );
-			}
-		}
-
-		return $rows;
-	}
-
-	/**
-	 * Normalize diagnostic rows to a stable consumer-facing subset.
-	 *
-	 * @param array<int|string,mixed> $rows          Raw diagnostic rows.
-	 * @param string                  $default_stage Default stage.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function normalize_diagnostic_rows( array $rows, string $default_stage = '' ): array {
-		$normalized = array();
-		foreach ( array_values( $rows ) as $index => $row ) {
-			if ( ! is_array( $row ) ) {
-				continue;
-			}
-
-			$type        = self::first_scalar( $row, array( 'type', 'kind', 'code', 'reason_code' ), 'diagnostic' );
-			$reason_code = self::first_scalar( $row, array( 'reason_code', 'code', 'reason', 'kind', 'type' ), $type );
-			$source_path = self::first_scalar( $row, array( 'source_path', 'path', 'source', 'file', 'script_path' ), '' );
-			$diagnostic  = array(
-				'id'          => self::first_scalar( $row, array( 'id' ), sprintf( 'diag-%03d-%s', $index + 1, sanitize_key( $type . '-' . $reason_code . '-' . $source_path ) ) ),
-				'type'        => sanitize_key( $type ),
-				'severity'    => self::first_scalar( $row, array( 'severity', 'level' ), self::default_diagnostic_severity( $type ) ),
-				'category'    => self::diagnostic_category( $type ),
-				'reason_code' => sanitize_key( $reason_code ),
-				'source_path' => $source_path,
-				'selector'    => self::first_scalar( $row, array( 'selector', 'target_selector', 'css_selector' ), '' ),
-				'code'        => self::first_scalar( $row, array( 'code', 'error_code' ), sanitize_key( $reason_code ) ),
-				'stage'       => self::first_scalar( $row, array( 'stage' ), $default_stage ),
-				'owner'       => self::first_scalar( $row, array( 'owner', 'engine', 'converter' ), '' ),
-			);
-
-			foreach ( array( 'message', 'reason', 'excerpt', 'source_html_preview', 'emitted_block_preview', 'html_excerpt', 'block_name', 'block_path', 'script_path', 'element', 'tag_name', 'src', 'href', 'expected', 'observed' ) as $field ) {
-				$value = self::first_scalar( $row, array( $field ), '' );
-				if ( '' !== $value ) {
-					$diagnostic[ $field ] = $value;
-				}
-			}
-
-			$normalized[] = array_filter(
-				$diagnostic,
-				static fn ( mixed $value ): bool => '' !== $value
-			);
-		}
-
-		return $normalized;
-	}
-
-	/**
-	 * Return quality counts from import report first, then compact summaries.
-	 *
-	 * @param array<string,mixed> $import_report Import report.
-	 * @param array<string,mixed> $summary Provider summary.
-	 * @return array<string,int>
-	 */
-	private static function quality_counts( array $import_report, array $summary ): array {
-		$quality = isset( $import_report['quality'] ) && is_array( $import_report['quality'] ) ? $import_report['quality'] : $summary;
-		$keys    = array( 'fallback_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count' );
-
-		$counts = array();
-		foreach ( $keys as $key ) {
-			$counts[ $key ] = isset( $quality[ $key ] ) && is_numeric( $quality[ $key ] ) ? (int) $quality[ $key ] : 0;
-		}
-
-		return $counts;
-	}
-
-	/**
-	 * Summarize Blocks Engine import-report details.
-	 *
-	 * @param array<string,mixed> $import_report Import report.
-	 * @return array<string,mixed>
-	 */
-	private static function blocks_engine_summary( array $import_report ): array {
-		$blocks_engine = isset( $import_report['blocks_engine'] ) && is_array( $import_report['blocks_engine'] ) ? $import_report['blocks_engine'] : array();
-
-		$summary = array();
-		foreach ( array( 'website_artifact', 'conversion_report', 'runtime_dependency_parity', 'semantic_parity' ) as $field ) {
-			if ( isset( $blocks_engine[ $field ] ) && is_array( $blocks_engine[ $field ] ) && ! empty( $blocks_engine[ $field ] ) ) {
-				$summary[ $field ] = $blocks_engine[ $field ];
-			}
-		}
-
-		return $summary;
-	}
-
-	/**
-	 * Build diagnostic counts by severity and category.
-	 *
-	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics.
-	 * @return array<string,mixed>
-	 */
-	private static function diagnostic_summary( array $diagnostics ): array {
-		$summary = array(
-			'total'    => count( $diagnostics ),
-			'severity' => array(),
-			'category' => array(),
-			'type'     => array(),
-		);
-		foreach ( $diagnostics as $diagnostic ) {
-			foreach ( array( 'severity', 'category', 'type' ) as $field ) {
-				$value                       = isset( $diagnostic[ $field ] ) && is_scalar( $diagnostic[ $field ] ) ? (string) $diagnostic[ $field ] : 'unknown';
-				$summary[ $field ][ $value ] = ( $summary[ $field ][ $value ] ?? 0 ) + 1;
-			}
-		}
-
-		return $summary;
-	}
-
-	/**
-	 * Group diagnostics by category.
-	 *
-	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics.
-	 * @return array<string,array<int,array<string,mixed>>>
-	 */
-	private static function diagnostics_by_category( array $diagnostics ): array {
-		$grouped = array();
-		foreach ( $diagnostics as $diagnostic ) {
-			$category               = isset( $diagnostic['category'] ) && is_scalar( $diagnostic['category'] ) ? (string) $diagnostic['category'] : 'uncategorized';
-			$grouped[ $category ][] = $diagnostic;
-		}
-
-		return $grouped;
-	}
-
-	/**
-	 * Select diagnostics matching types or type fragments.
-	 *
-	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics.
-	 * @param array<int,string>              $needles     Type needles.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function diagnostics_matching_types( array $diagnostics, array $needles ): array {
-		return array_values(
-			array_filter(
-				$diagnostics,
-				static function ( array $diagnostic ) use ( $needles ): bool {
-					$type     = isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : '';
-					$category = isset( $diagnostic['category'] ) && is_scalar( $diagnostic['category'] ) ? (string) $diagnostic['category'] : '';
-					foreach ( $needles as $needle ) {
-						if ( $needle === $type || str_contains( $type, $needle ) || str_contains( $category, $needle ) ) {
-							return true;
-						}
-					}
-
-					return false;
-				}
-			)
-		);
-	}
-
-	/**
-	 * Stable artifact references for validation output.
-	 *
-	 * @param array<string,mixed> $artifacts     Validation artifacts.
-	 * @param array<string,mixed> $import_report Import report.
-	 * @return array<string,mixed>
-	 */
-	private static function fixture_artifact_refs( array $artifacts, array $import_report ): array {
-		$refs = $artifacts;
-		if ( isset( $import_report['import_validation_result']['artifacts'] ) && is_array( $import_report['import_validation_result']['artifacts'] ) ) {
-			$refs['import_validation_artifacts'] = $import_report['import_validation_result']['artifacts'];
-		}
-		if ( isset( $import_report['visual_parity_artifacts'] ) && is_array( $import_report['visual_parity_artifacts'] ) ) {
-			$refs['visual_parity_artifacts'] = $import_report['visual_parity_artifacts'];
-		}
-
-		return $refs;
-	}
-
-	/**
-	 * Remove duplicate diagnostics by id/type/source/selector/code.
-	 *
-	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function dedupe_diagnostics( array $diagnostics ): array {
-		$seen   = array();
-		$unique = array();
-		foreach ( $diagnostics as $diagnostic ) {
-			$key = implode( '|', array_map( 'strval', array( $diagnostic['id'] ?? '', $diagnostic['type'] ?? '', $diagnostic['source_path'] ?? '', $diagnostic['selector'] ?? '', $diagnostic['code'] ?? '' ) ) );
-			if ( isset( $seen[ $key ] ) ) {
-				continue;
-			}
-
-			$seen[ $key ] = true;
-			$unique[]     = $diagnostic;
-		}
-
-		return $unique;
-	}
-
-	/**
-	 * Resolve a scalar value from candidate fields.
-	 *
-	 * @param array<string,mixed> $row      Source row.
-	 * @param array<int,string>   $fields   Candidate fields.
-	 * @param string              $fallback Fallback value.
-	 * @return string
-	 */
-	private static function first_scalar( array $row, array $fields, string $fallback = '' ): string {
-		foreach ( $fields as $field ) {
-			if ( isset( $row[ $field ] ) && is_scalar( $row[ $field ] ) && '' !== trim( (string) $row[ $field ] ) ) {
-				return (string) $row[ $field ];
-			}
-		}
-
-		return $fallback;
-	}
-
-	/**
-	 * Classify diagnostics by generic category.
-	 *
-	 * @param string $type Diagnostic type.
-	 * @return string
-	 */
-	private static function diagnostic_category( string $type ): string {
-		if ( str_contains( $type, 'svg' ) ) {
-			return 'svg';
-		}
-		if ( str_contains( $type, 'asset' ) || str_contains( $type, 'image' ) ) {
-			return 'asset';
-		}
-		if ( str_contains( $type, 'runtime_dependency' ) || str_contains( $type, 'dom_target' ) ) {
-			return 'runtime_dependency_parity';
-		}
-		if ( str_contains( $type, 'core_html' ) || str_contains( $type, 'freeform' ) || str_contains( $type, 'fallback' ) ) {
-			return 'fallback_block';
-		}
-		if ( str_contains( $type, 'button' ) || str_contains( $type, 'style' ) || str_contains( $type, 'presentation' ) ) {
-			return 'style_loss_hint';
-		}
-
-		return 'import_quality';
-	}
-
-	/**
-	 * Default diagnostic severity.
-	 *
-	 * @param string $type Diagnostic type.
-	 * @return string
-	 */
-	private static function default_diagnostic_severity( string $type ): string {
-		return str_contains( $type, 'missing' ) || str_contains( $type, 'invalid' ) || str_contains( $type, 'error' ) ? 'error' : 'warning';
 	}
 
 	/**
