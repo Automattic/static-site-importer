@@ -271,13 +271,13 @@
 		[ 'dragenter', 'dragover' ].forEach( function ( eventName ) {
 			dropzone.addEventListener( eventName, function ( event ) {
 				event.preventDefault();
-				dropzone.classList.add( 'ssi-importer__upload-group--dragging' );
+				dropzone.classList.add( 'ssi-importer__dropzone--dragging' );
 			} );
 		} );
 
 		[ 'dragleave', 'drop' ].forEach( function ( eventName ) {
 			dropzone.addEventListener( eventName, function () {
-				dropzone.classList.remove( 'ssi-importer__upload-group--dragging' );
+				dropzone.classList.remove( 'ssi-importer__dropzone--dragging' );
 			} );
 		} );
 
@@ -287,8 +287,25 @@
 		} );
 	};
 
+	const bindUploadTrigger = function ( root ) {
+		const trigger = root.querySelector( '[data-static-site-importer-upload-trigger]' );
+		const sourceType = root.querySelector( '[data-static-site-importer-source-type]' );
+		if ( ! trigger || ! sourceType ) {
+			return;
+		}
+
+		trigger.addEventListener( 'click', function () {
+			const selector = sourceType.value === 'folder' ? '[data-static-site-importer-source-directory]' : '[data-static-site-importer-source-files]';
+			const input = root.querySelector( selector );
+			if ( input ) {
+				input.click();
+			}
+		} );
+	};
+
 	roots.forEach( function ( root ) {
 		bindDropzone( root );
+		bindUploadTrigger( root );
 		root.querySelectorAll( '[data-static-site-importer-source-files], [data-static-site-importer-source-directory]' ).forEach( function ( input ) {
 			input.addEventListener( 'change', function () {
 				setDroppedFiles( root, [] );

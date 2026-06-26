@@ -48,15 +48,21 @@
 	gap: 6px;
 }
 
-.ssi-importer__upload-group {
+.ssi-importer__dropzone,
+.ssi-importer__upload-controls {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.ssi-importer__dropzone {
 	border: 1px dashed #9aa8b1;
 	border-radius: 14px;
-	margin: 0;
 	padding: 14px;
 	background: #f8fafb;
 }
 
-.ssi-importer__upload-group--dragging {
+.ssi-importer__dropzone--dragging {
 	border-color: #101517;
 	background: #eef3f6;
 }
@@ -68,35 +74,29 @@
 	line-height: 1.4;
 }
 
-.ssi-importer__upload-group[data-static-site-importer-dropped-count]::after {
+.ssi-importer__dropzone[data-static-site-importer-dropped-count]::after {
 	content: attr(data-static-site-importer-dropped-count) " dropped item(s) ready to import";
 	color: #245b32;
 	font-size: 13px;
 	font-weight: 700;
 }
 
-.ssi-importer__upload-picker {
-	position: relative;
+.ssi-importer__upload-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 10px;
+	align-items: center;
 }
 
 .ssi-importer__upload-button {
-	display: inline-block;
+	border: 0;
 	border-radius: 999px;
 	padding: 10px 16px;
 	background: #101517;
 	color: #fff;
+	font: inherit;
 	font-weight: 700;
 	cursor: pointer;
-}
-
-.ssi-importer__upload-picker[open] .ssi-importer__upload-button {
-	border-radius: 16px 16px 0 0;
-}
-
-.ssi-importer__upload-choice {
-	display: grid;
-	gap: 6px;
-	padding: 10px 0 0;
 }
 
 .ssi-importer__field summary {
@@ -104,6 +104,7 @@
 }
 
 .ssi-importer__field input,
+.ssi-importer__field select,
 .ssi-importer__field textarea,
 .ssi-importer__report textarea {
 	box-sizing: border-box;
@@ -112,6 +113,10 @@
 	border-radius: 10px;
 	padding: 10px 12px;
 	font: inherit;
+}
+
+.ssi-importer__field input[hidden] {
+	display: none;
 }
 
 .ssi-importer__field textarea {
@@ -138,5 +143,9 @@
 @media (max-width: 900px) {
 	.ssi-importer {
 		width: auto;
+	}
+
+	.ssi-importer__upload-row {
+		grid-template-columns: 1fr;
 	}
 }
