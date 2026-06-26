@@ -40,17 +40,17 @@ class Static_Site_Importer_Artifact_Envelope {
 
 		return array_filter(
 			array(
-				'schema'       => self::WEBSITE_ARTIFACT_BUNDLE_SCHEMA,
-				'root'         => isset( $website_artifact['root'] ) ? (string) $website_artifact['root'] : 'website',
-				'entrypoint'   => isset( $website_artifact['entrypoint'] ) ? (string) $website_artifact['entrypoint'] : 'website/index.html',
-				'files'        => array_values( array_map( array( self::class, 'bundle_file_from_website_artifact_file' ), $files ) ),
-				'provenance'   => isset( $website_artifact['provenance'] ) && is_array( $website_artifact['provenance'] ) ? $website_artifact['provenance'] : array(),
-				'report'       => isset( $website_artifact['report'] ) && is_array( $website_artifact['report'] ) ? $website_artifact['report'] : array(),
-				'validation'   => isset( $website_artifact['validation'] ) && is_array( $website_artifact['validation'] ) ? $website_artifact['validation'] : array(),
-				'import'       => isset( $website_artifact['import'] ) && is_array( $website_artifact['import'] ) ? $website_artifact['import'] : array(),
-				'reports'      => isset( $website_artifact['reports'] ) && is_array( $website_artifact['reports'] ) ? $website_artifact['reports'] : array(),
+				'schema'     => self::WEBSITE_ARTIFACT_BUNDLE_SCHEMA,
+				'root'       => isset( $website_artifact['root'] ) ? (string) $website_artifact['root'] : 'website',
+				'entrypoint' => isset( $website_artifact['entrypoint'] ) ? (string) $website_artifact['entrypoint'] : 'website/index.html',
+				'files'      => array_values( array_map( array( self::class, 'bundle_file_from_website_artifact_file' ), $files ) ),
+				'provenance' => isset( $website_artifact['provenance'] ) && is_array( $website_artifact['provenance'] ) ? $website_artifact['provenance'] : array(),
+				'report'     => isset( $website_artifact['report'] ) && is_array( $website_artifact['report'] ) ? $website_artifact['report'] : array(),
+				'validation' => isset( $website_artifact['validation'] ) && is_array( $website_artifact['validation'] ) ? $website_artifact['validation'] : array(),
+				'import'     => isset( $website_artifact['import'] ) && is_array( $website_artifact['import'] ) ? $website_artifact['import'] : array(),
+				'reports'    => isset( $website_artifact['reports'] ) && is_array( $website_artifact['reports'] ) ? $website_artifact['reports'] : array(),
 			),
-			static fn ( $value ): bool => array() !== $value && null !== $value && '' !== $value
+			static fn ( $value ): bool => array() !== $value && '' !== $value
 		);
 	}
 
@@ -115,7 +115,7 @@ class Static_Site_Importer_Artifact_Envelope {
 	 * @return array<string,mixed>
 	 */
 	private static function website_artifact_file_from_bundle_file( $file ): array {
-		$file = is_array( $file ) ? $file : array();
+		$file       = is_array( $file ) ? $file : array();
 		$entrypoint = ! empty( $file['entrypoint'] ) || 'entrypoint' === ( $file['role'] ?? '' );
 
 		return array_filter(

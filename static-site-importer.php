@@ -90,7 +90,9 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			$root = realpath( dirname( $entry ) );
 			if ( false === $root ) {
 				WP_CLI::error( 'Could not resolve the source directory.' );
+				return;
 			}
+			$root = (string) $root;
 
 			$files    = array();
 			$iterator = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $root, FilesystemIterator::SKIP_DOTS ) );
@@ -108,11 +110,12 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				$content = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads operator-provided source files.
 				if ( false === $content ) {
 					WP_CLI::error( sprintf( 'Could not read source file: %s', $path ) );
+					return;
 				}
 
 				$files[] = array(
 					'path'           => $relative,
-					'content_base64' => base64_encode( $content ),
+					'content_base64' => base64_encode( $content ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes declared artifact payload bytes, including binary assets.
 				);
 			}
 

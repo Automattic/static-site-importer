@@ -347,10 +347,10 @@ class Static_Site_Importer_Theme_Generator {
 		$quality_passed    = empty( $quality['fail_import'] );
 		$review_pending    = ! $quality_passed || $diagnostic_count > 0;
 		$common            = array(
-			'schema'    => 'wp-codebox/live-progress-event/v1',
-			'run_id'    => $import_run_id,
+			'schema'        => 'wp-codebox/live-progress-event/v1',
+			'run_id'        => $import_run_id,
 			'source_schema' => 'static-site-importer/materialization-progress/v1',
-			'timestamp' => $now,
+			'timestamp'     => $now,
 		);
 
 		return array(
@@ -392,7 +392,10 @@ class Static_Site_Importer_Theme_Generator {
 					'label'     => $review_pending ? 'Review pending' : 'Saved to WordPress',
 					'artifacts' => array_filter(
 						array(
-							'import_report' => '' !== $report_path ? array( 'path' => $report_path, 'kind' => 'json' ) : null,
+							'import_report' => '' !== $report_path ? array(
+								'path' => $report_path,
+								'kind' => 'json',
+							) : null,
 						)
 					),
 				)
