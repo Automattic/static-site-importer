@@ -230,8 +230,7 @@ if ( ! is_wp_error( $result ) ) {
 
 	$assert( array() === $pattern_documents, 'single-document-import-does-not-generate-page-pattern-copy' );
 	$assert( str_contains( $content, 'Fire, flour, patience.' ), 'body-content-is-preserved' );
-	$assert( isset( $template_parts[0]['path'] ) && 'parts/header.html' === ( $template_parts[0]['path'] ?? '' ), 'default-header-template-part-report-is-recorded' );
-	$assert( true === ( $template_parts[0]['generated'] ?? null ), 'default-header-template-part-is-generated-by-ssi' );
+	$assert( array() === $template_parts, 'single-document-import-does-not-generate-template-parts' );
 	$assert( str_contains( $content, 'logo.svg' ) && ! str_contains( $content, 'src="assets/logo.svg"' ), 'block-markup-local-asset-is-rewritten' );
 	$assert( ! str_contains( $content, 'src="assets/logo.svg"' ), 'block-markup-local-asset-source-url-is-removed' );
 	$assert( ! str_contains( $content, '<meta' ), 'page-content-has-no-meta-fragments' );
@@ -311,9 +310,12 @@ $missing_template_parts_result = Static_Site_Importer_Theme_Generator::import_we
 $assert( ! is_wp_error( $missing_template_parts_result ), 'missing-template-parts-import-succeeds', is_wp_error( $missing_template_parts_result ) ? $missing_template_parts_result->get_error_message() : '' );
 if ( ! is_wp_error( $missing_template_parts_result ) ) {
 	$missing_report = json_decode( $read( $missing_template_parts_result['report_path'] ), true );
-	$missing_header = $missing_report['generated_theme']['template_parts'][0] ?? array();
-	$assert( 'parts/header.html' === ( $missing_header['path'] ?? '' ), 'missing-template-parts-generates-header' );
-	$assert( true === ( $missing_header['generated'] ?? null ), 'missing-template-parts-report-marks-generated-header' );
+	$missing_template_parts = $missing_report['generated_theme']['template_parts'] ?? array();
+	$missing_template       = $read( $missing_template_parts_result['theme_dir'] . '/templates/front-page.html' );
+	$assert( array() === $missing_template_parts, 'missing-template-parts-does-not-generate-header' );
+	$assert( ! is_file( $missing_template_parts_result['theme_dir'] . '/parts/header.html' ), 'missing-template-parts-does-not-write-header-file' );
+	$assert( ! str_contains( $missing_template, 'wp:template-part {"slug":"header"' ), 'missing-template-parts-template-does-not-reference-header' );
+	$assert( ! str_contains( $missing_template, 'wp:navigation' ), 'missing-template-parts-template-does-not-include-navigation' );
 }
 
 $multi_page_result = Static_Site_Importer_Theme_Generator::import_website_artifact(
@@ -383,9 +385,9 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 	$assert( 'blocks-engine/php-transformer/materialization-plan/v1' === ( $materialization_plan['schema'] ?? '' ), 'materialization-plan-contract-is-recorded' );
 	$assert( 3 === ( $materialization_plan['page_count'] ?? null ), 'materialization-plan-page-count-is-recorded' );
 	$assert( '' === ( $materialization_plan['pages'][1]['route_key'] ?? '' ), 'materialization-plan-route-key-preserves-transformer-contract' );
-	$assert( isset( $template_parts_by_path['parts/header.html'] ), 'multi-page-header-template-part-is-recorded' );
-	$assert( true === ( $template_parts_by_path['parts/header.html']['generated'] ?? null ), 'multi-page-header-template-part-is-generated-by-ssi' );
+	$assert( ! isset( $template_parts_by_path['parts/header.html'] ), 'multi-page-does-not-synthesize-header-template-part' );
 	$assert( ! isset( $template_parts_by_path['parts/footer.html'] ), 'multi-page-does-not-synthesize-footer-template-part' );
+	$assert( ! str_contains( $read( $multi_page_result['theme_dir'] . '/templates/front-page.html' ), '"slug":"header"' ), 'multi-page-template-does-not-reference-synthesized-header-part' );
 	$assert( ! str_contains( $read( $multi_page_result['theme_dir'] . '/templates/front-page.html' ), '"slug":"footer"' ), 'multi-page-template-does-not-reference-synthesized-footer-part' );
 	$assert( array() === $pattern_documents, 'blocks-engine-document-import-does-not-generate-page-pattern-copies' );
 }

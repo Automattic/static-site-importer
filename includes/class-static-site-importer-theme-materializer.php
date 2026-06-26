@@ -598,9 +598,6 @@ class Static_Site_Importer_Theme_Materializer {
 		if ( null === $template_parts ) {
 			$template_parts = isset( $artifacts['template_parts'] ) && is_array( $artifacts['template_parts'] ) ? $artifacts['template_parts'] : array();
 		}
-		if ( empty( $template_parts ) ) {
-			$template_parts = array( self::default_header_template_part() );
-		}
 
 		$writes  = array();
 		$reports = array();
@@ -630,21 +627,6 @@ class Static_Site_Importer_Theme_Materializer {
 		return array(
 			'writes'  => $writes,
 			'reports' => $reports,
-		);
-	}
-
-	/**
-	 * Build SSI's default header template part when the compiler has no chrome contract.
-	 *
-	 * @return array<string,mixed> Template part artifact.
-	 */
-	private static function default_header_template_part(): array {
-		return array(
-			'slug'         => 'header',
-			'area'         => 'header',
-			'title'        => 'Header',
-			'generated'    => true,
-			'block_markup' => '<!-- wp:group {"tagName":"header","layout":{"type":"constrained"}} --><header class="wp-block-group"><!-- wp:site-title /--><!-- wp:navigation /--></header><!-- /wp:group -->',
 		);
 	}
 

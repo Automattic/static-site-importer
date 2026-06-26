@@ -215,6 +215,16 @@ $navigation_part_reports = is_array( $navigation_part_result ) ? $navigation_par
 $assert( str_contains( (string) ( $navigation_part_writes['/tmp/visual-repair-smoke/parts/header.html'] ?? '' ), 'wp:navigation-link' ), 'materialization-plan-navigation-row-is-used-for-header' );
 $assert( array( 'website/index.html#main-nav' ) === ( $navigation_part_reports[0]['source_paths'] ?? array() ), 'materialization-plan-navigation-source-path-is-reported' );
 
+$empty_template_part_result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
+	'/tmp/visual-repair-smoke',
+	array()
+);
+$assert( is_array( $empty_template_part_result ), 'empty-template-part-input-succeeds' );
+$empty_template_part_writes = is_array( $empty_template_part_result ) ? $empty_template_part_result['writes'] : array();
+$empty_template_part_reports = is_array( $empty_template_part_result ) ? $empty_template_part_result['reports'] : array();
+$assert( array() === $empty_template_part_writes, 'empty-template-part-input-does-not-generate-header' );
+$assert( array() === $empty_template_part_reports, 'empty-template-part-input-does-not-report-header' );
+
 $missing_navigation_content = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
 	'/tmp/visual-repair-smoke',
 	array(
