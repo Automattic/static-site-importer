@@ -75,9 +75,28 @@
 	font-weight: 700;
 }
 
-.ssi-importer__upload-option {
+.ssi-importer__upload-picker {
+	position: relative;
+}
+
+.ssi-importer__upload-button {
+	display: inline-block;
+	border-radius: 999px;
+	padding: 10px 16px;
+	background: #101517;
+	color: #fff;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.ssi-importer__upload-picker[open] .ssi-importer__upload-button {
+	border-radius: 16px 16px 0 0;
+}
+
+.ssi-importer__upload-choice {
 	display: grid;
 	gap: 6px;
+	padding: 10px 0 0;
 }
 
 .ssi-importer__field summary {

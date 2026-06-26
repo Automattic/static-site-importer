@@ -169,11 +169,15 @@
 		};
 	};
 
-	const buildFigmaFile = async function ( input ) {
-		const file = input && input.files && input.files[ 0 ] ? input.files[ 0 ] : null;
-		if ( ! file ) {
+	const buildFigmaFile = async function ( inputs, root ) {
+		const selectedFiles = selectedInputFiles( inputs, root );
+		const upload = selectedFiles.find( function ( record ) {
+			return /\.fig$/i.test( record.file.name || record.path || '' );
+		} );
+		if ( ! upload ) {
 			return null;
 		}
+		const file = upload.file;
 
 		return {
 			name: file.name || 'design.fig',
@@ -230,6 +234,24 @@
 		}
 	};
 
+	const openPreview = function ( report, openedWindow ) {
+		const url = previewUrl( report );
+		if ( ! url ) {
+			if ( openedWindow ) {
+				openedWindow.close();
+			}
+			return false;
+		}
+
+		if ( openedWindow ) {
+			openedWindow.location.href = url;
+		} else {
+			window.open( url, '_blank', 'noopener,noreferrer' );
+		}
+
+		return true;
+	};
+
 	const hasSource = function ( source ) {
 		return Boolean(
 			( source.files && source.files.length > 0 ) ||
@@ -281,25 +303,28 @@
 		submit.addEventListener( 'click', async function () {
 			const form = root.querySelector( '[data-static-site-importer-form]' );
 			const html = root.querySelector( '[data-static-site-importer-source-html]' );
-			const figmaFile = root.querySelector( '[data-static-site-importer-source-figma-file]' );
 			const uploadInputs = root.querySelectorAll( '[data-static-site-importer-source-files], [data-static-site-importer-source-directory]' );
 			const provider = root.getAttribute( 'data-static-site-importer-provider' ) || '';
 			const isCurrentSiteImport = root.getAttribute( 'data-static-site-importer-apply-to-current-site' ) === '1';
+			const playgroundWindow = isCurrentSiteImport ? null : window.open( 'about:blank', '_blank', 'noopener,noreferrer' );
 			const source = {
 				url: form ? form.getAttribute( 'data-static-site-importer-default-url' ) || '' : '',
 				html: html ? html.value : '',
 				files: await buildFiles( uploadInputs, root ),
 				archive: await buildArchive( uploadInputs, root ),
-				figma_file: await buildFigmaFile( figmaFile ),
+				figma_file: await buildFigmaFile( uploadInputs, root ),
 			};
 
 			if ( ! hasSource( source ) ) {
+				if ( playgroundWindow ) {
+					playgroundWindow.close();
+				}
 				setReport( root, { success: false, error: { message: 'Upload a website or paste HTML to start.' } } );
 				showStatus( root, 'Upload a website or paste HTML to start.' );
 				return;
 			}
 
-			showStatus( root, isCurrentSiteImport ? 'Importing to this site...' : 'Generating WordPress website...' );
+			showStatus( root, isCurrentSiteImport ? 'Importing to this site...' : 'Opening WordPress Playground...' );
 			submit.disabled = true;
 
 			try {
@@ -325,17 +350,28 @@
 				if ( response.ok && isCurrentSiteImport && report.success ) {
 					showStatus( root, 'Import complete.' );
 				} else if ( response.ok && report.success && previewUrl( report ) ) {
-					showStatus( root, 'Playground import ready.' );
+					openPreview( report, playgroundWindow );
+					showStatus( root, 'WordPress Playground opened.' );
 				} else if ( response.ok && previewUrl( report ) ) {
-					showStatus( root, 'Preview ready.' );
+					openPreview( report, playgroundWindow );
+					showStatus( root, 'Preview opened.' );
 				} else if ( response.ok && report.preview && report.preview.status === 'unavailable' ) {
+					if ( playgroundWindow ) {
+						playgroundWindow.close();
+					}
 					showStatus( root, report.preview.message || 'Preview unavailable: WP Codebox did not return a preview URL or Playground blueprint URL.' );
 				} else {
+					if ( playgroundWindow ) {
+						playgroundWindow.close();
+					}
 					showStatus( root, response.ok && report.success ? 'Preview request complete.' : 'Preview request failed.' );
 				}
 			} catch ( error ) {
 				setReport( root, { success: false, error: { message: error.message } } );
 				setPreviewLink( root, null );
+				if ( playgroundWindow ) {
+					playgroundWindow.close();
+				}
 				showStatus( root, 'Preview request failed.' );
 			} finally {
 				submit.disabled = false;

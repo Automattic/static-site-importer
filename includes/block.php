@@ -31,12 +31,12 @@ function static_site_importer_register_block(): void {
  */
 function static_site_importer_render_block( array $attributes = array() ): string {
 	$title       = isset( $attributes['title'] ) && '' !== trim( (string) $attributes['title'] ) ? (string) $attributes['title'] : __( 'Bring a site into WordPress.', 'static-site-importer' );
-	$intro       = isset( $attributes['intro'] ) && '' !== trim( (string) $attributes['intro'] ) ? (string) $attributes['intro'] : __( 'Upload site files, choose a folder, upload a ZIP, or paste HTML. Static Site Importer will compile it into a block theme.', 'static-site-importer' );
+	$intro       = isset( $attributes['intro'] ) && '' !== trim( (string) $attributes['intro'] ) ? (string) $attributes['intro'] : __( 'Upload a static site, ZIP, or Figma export, or paste HTML. Static Site Importer will compile it into a block theme.', 'static-site-importer' );
 	$provider    = isset( $attributes['provider'] ) ? sanitize_key( (string) $attributes['provider'] ) : '';
 	$default_url = isset( $attributes['defaultUrl'] ) ? esc_url_raw( (string) $attributes['defaultUrl'] ) : '';
 	$apply       = ! empty( $attributes['applyToCurrentSite'] );
 	$playground  = ! empty( $attributes['openInPlayground'] );
-	$button_text = $apply ? __( 'Import to this site', 'static-site-importer' ) : __( 'Generate WordPress website', 'static-site-importer' );
+	$button_text = $apply ? __( 'Import to this site', 'static-site-importer' ) : __( 'Generate WordPress Website', 'static-site-importer' );
 
 	ob_start();
 	?>
@@ -48,25 +48,19 @@ function static_site_importer_render_block( array $attributes = array() ): strin
 
 			<form class="ssi-importer__form" data-static-site-importer-form data-static-site-importer-default-url="<?php echo esc_attr( $default_url ); ?>">
 				<fieldset class="ssi-importer__field ssi-importer__upload-group" data-static-site-importer-dropzone>
-					<legend class="ssi-importer__label"><?php esc_html_e( 'Upload file(s)', 'static-site-importer' ); ?></legend>
-					<p class="ssi-importer__upload-copy"><?php esc_html_e( 'Drag a folder, ZIP, or static site files here. Or choose one of the browse options below.', 'static-site-importer' ); ?></p>
-					<label class="ssi-importer__upload-option">
-						<span><?php esc_html_e( 'Choose files or ZIP', 'static-site-importer' ); ?></span>
-						<input type="file" name="ssi_static_upload[]" accept=".zip,application/zip,.html,.htm,text/html,text/css,text/javascript,application/javascript,application/json,application/xml,text/xml,image/*,font/*" multiple data-static-site-importer-source-files>
-					</label>
-					<label class="ssi-importer__upload-option">
-						<span><?php esc_html_e( 'Choose folder', 'static-site-importer' ); ?></span>
-						<input type="file" name="ssi_static_directory[]" multiple webkitdirectory data-static-site-importer-source-directory>
-					</label>
-				</fieldset>
-
-				<fieldset class="ssi-importer__field">
-					<legend class="ssi-importer__label"><?php esc_html_e( 'Upload Figma file', 'static-site-importer' ); ?></legend>
-					<p class="ssi-importer__upload-copy"><?php esc_html_e( 'Choose a .fig file exported from Figma.', 'static-site-importer' ); ?></p>
-					<label class="ssi-importer__upload-option">
-						<span><?php esc_html_e( 'Choose .fig file', 'static-site-importer' ); ?></span>
-						<input type="file" name="ssi_figma_file" accept=".fig" data-static-site-importer-source-figma-file>
-					</label>
+					<legend class="ssi-importer__label"><?php esc_html_e( 'Upload website source', 'static-site-importer' ); ?></legend>
+					<p class="ssi-importer__upload-copy"><?php esc_html_e( 'Drag a folder, ZIP, Figma export, or static site files here. Or choose a source below.', 'static-site-importer' ); ?></p>
+					<details class="ssi-importer__upload-picker">
+						<summary class="ssi-importer__upload-button"><?php esc_html_e( 'Upload source', 'static-site-importer' ); ?></summary>
+						<label class="ssi-importer__upload-choice">
+							<span><?php esc_html_e( 'Files, ZIP, or FIG', 'static-site-importer' ); ?></span>
+							<input type="file" name="ssi_static_upload[]" accept=".fig,.zip,application/zip,.html,.htm,text/html,text/css,text/javascript,application/javascript,application/json,application/xml,text/xml,image/*,font/*" multiple data-static-site-importer-source-files>
+						</label>
+						<label class="ssi-importer__upload-choice">
+							<span><?php esc_html_e( 'Folder', 'static-site-importer' ); ?></span>
+							<input type="file" name="ssi_static_directory[]" multiple webkitdirectory data-static-site-importer-source-directory>
+						</label>
+					</details>
 				</fieldset>
 
 				<details class="ssi-importer__field">

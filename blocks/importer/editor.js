@@ -16,7 +16,7 @@
 				{ className: 'ssi-importer ssi-importer--editor' },
 				el( 'p', { className: 'ssi-importer__eyebrow' }, 'Static Site Importer' ),
 				el( 'h2', { className: 'ssi-importer__title' }, 'Bring a site into WordPress' ),
-				el( 'p', { className: 'ssi-importer__copy' }, 'Visitors upload file(s), choose a folder, or paste HTML. The block imports through Static Site Importer.' ),
+				el( 'p', { className: 'ssi-importer__copy' }, 'Visitors upload a static site, ZIP, or Figma export, or paste HTML. The block imports through Static Site Importer.' ),
 				components && components.Notice
 					? el( components.Notice, { status: 'info', isDismissible: false }, 'URL imports use the generic Static Site Importer provider hook before falling back to the built-in public URL fetcher.' )
 					: null,
