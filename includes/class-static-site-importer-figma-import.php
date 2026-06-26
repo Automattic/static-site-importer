@@ -634,11 +634,11 @@ class Static_Site_Importer_Figma_Import {
 			return array();
 		}
 
-		if ( ! class_exists( 'Static_Site_Importer_Codebox_Validation' ) ) {
+		if ( ! class_exists( 'Static_Site_Importer_Validation_Runtime' ) ) {
 			return array();
 		}
 
-		$result = Static_Site_Importer_Codebox_Validation::validate(
+		$result = Static_Site_Importer_Validation_Runtime::validate_artifact(
 			array(
 				'artifact'         => $artifact,
 				'slug'             => $import_input['slug'] ?? '',
@@ -654,16 +654,16 @@ class Static_Site_Importer_Figma_Import {
 			return array();
 		}
 
-		return self::validation_artifacts_from_codebox_result( $result );
+		return self::validation_artifacts_from_validation_result( $result );
 	}
 
 	/**
-	 * Map Codebox validation result refs into SSI visual parity artifact slots.
+	 * Map validation result refs into SSI visual parity artifact slots.
 	 *
-	 * @param array<string,mixed> $result Codebox validation result.
+	 * @param array<string,mixed> $result Validation result.
 	 * @return array<string,mixed>
 	 */
-	private static function validation_artifacts_from_codebox_result( array $result ): array {
+	private static function validation_artifacts_from_validation_result( array $result ): array {
 		$artifacts   = isset( $result['artifacts'] ) && is_array( $result['artifacts'] ) ? $result['artifacts'] : array();
 		$screenshots = isset( $artifacts['screenshots'] ) && is_array( $artifacts['screenshots'] ) ? array_values( $artifacts['screenshots'] ) : array();
 		$diffs       = isset( $artifacts['diffs'] ) && is_array( $artifacts['diffs'] ) ? array_values( $artifacts['diffs'] ) : array();
@@ -675,7 +675,7 @@ class Static_Site_Importer_Figma_Import {
 				'source_screenshot'   => isset( $screenshots[0] ) && is_array( $screenshots[0] ) ? $screenshots[0] : array(),
 				'imported_screenshot' => isset( $screenshots[1] ) && is_array( $screenshots[1] ) ? $screenshots[1] : array(),
 				'visual_diff'         => isset( $diffs[0] ) && is_array( $diffs[0] ) ? $diffs[0] : array(),
-				'codebox_validation'  => $result,
+				'import_validation'   => $result,
 			),
 			static fn( mixed $value ): bool => array() !== $value
 		);

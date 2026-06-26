@@ -62,7 +62,7 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-pr
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-diagnostic-contract.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-artifact-diagnostics-adapter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-artifact-envelope.php';
-require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-codebox-validation.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-validation-runtime.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-report-diagnostics.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-transformer-adapter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-figma-import.php';
@@ -72,11 +72,48 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/abilities.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/block.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/rest.php';
 
-Static_Site_Importer_Codebox_Validation::register_default_provider();
 Static_Site_Importer_Figma_Import::register_default_zstd_decoder();
 
 add_action( 'init', 'static_site_importer_register_block' );
 add_action( 'rest_api_init', 'static_site_importer_register_rest_routes' );
+
+if ( ! function_exists( 'static_site_importer_cli_write_validation_output' ) ) {
+	/**
+	 * Write validation output to a file when requested, otherwise stdout.
+	 *
+	 * @param string $json   Validation JSON.
+	 * @param string $output Output path.
+	 * @return void
+	 */
+	function static_site_importer_cli_write_validation_output( string $json, string $output ): void {
+		if ( '' === $output ) {
+			WP_CLI::line( $json );
+			return;
+		}
+
+		$directory = dirname( $output );
+		if ( ! is_dir( $directory ) ) {
+			$created = function_exists( 'wp_mkdir_p' ) ? wp_mkdir_p( $directory ) : mkdir( $directory, 0777, true );
+			if ( ! $created ) {
+				WP_CLI::error( 'Failed to create validation output directory.' );
+			}
+		}
+
+		if ( false === file_put_contents( $output, $json . "\n" ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- CLI writes operator-requested validation artifact.
+			WP_CLI::error( 'Failed to write validation output file.' );
+		}
+
+		WP_CLI::line(
+			(string) wp_json_encode(
+				array(
+					'schema' => 'static-site-importer/validation-cli-output/v1',
+					'output' => $output,
+				),
+				JSON_UNESCAPED_SLASHES
+			)
+		);
+	}
+}
 
 if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 	WP_CLI::add_command(
@@ -149,7 +186,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 	);
 
 	WP_CLI::add_command(
-		'static-site-importer validate-in-codebox',
+		'static-site-importer validate-artifact',
 		static function ( array $args, array $assoc_args ): void {
 			unset( $args );
 			$halt_on_failure = ! isset( $assoc_args['allow-failure'] ) && false !== ( $assoc_args['error-on-fail'] ?? true ) && ! isset( $assoc_args['no-error-on-fail'] );
@@ -162,6 +199,10 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'fail_on_quality'           => isset( $assoc_args['fail-on-quality'] ),
 				'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
 			);
+			$output = isset( $assoc_args['output'] ) ? (string) $assoc_args['output'] : '';
+			if ( isset( $assoc_args['artifact-dir'] ) ) {
+				$input['artifact_dir'] = (string) $assoc_args['artifact-dir'];
+			}
 
 			if ( isset( $assoc_args['artifact'] ) ) {
 				$artifact_json = file_get_contents( (string) $assoc_args['artifact'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads an operator-provided artifact file.
@@ -181,15 +222,15 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				$input['theme_archive_ref'] = array( 'artifact_ref' => (string) $assoc_args['theme-archive-ref'] );
 			}
 
-			$result = Static_Site_Importer_Codebox_Validation::validate( $input );
+			$result = Static_Site_Importer_Validation_Runtime::validate_artifact( $input );
 			if ( is_wp_error( $result ) ) {
-				$error_result = Static_Site_Importer_Codebox_Validation::error_result_from_wp_error( $result, $input );
+				$error_result = Static_Site_Importer_Validation_Runtime::error_result_from_wp_error( $result, $input );
 				$json         = wp_json_encode( $error_result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 				if ( false === $json ) {
 					WP_CLI::error( $result->get_error_message() );
 				}
 
-				WP_CLI::line( (string) $json );
+				static_site_importer_cli_write_validation_output( (string) $json, $output );
 				if ( $halt_on_failure ) {
 					WP_CLI::halt( 1 );
 				}
@@ -199,11 +240,11 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 
 			$json = wp_json_encode( $result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 			if ( false === $json ) {
-				WP_CLI::error( 'Failed to encode Codebox validation result.' );
+				WP_CLI::error( 'Failed to encode validation result.' );
 				return;
 			}
 
-			WP_CLI::line( $json );
+			static_site_importer_cli_write_validation_output( $json, $output );
 			if ( $halt_on_failure && empty( $result['success'] ) ) {
 				WP_CLI::halt( 1 );
 			}

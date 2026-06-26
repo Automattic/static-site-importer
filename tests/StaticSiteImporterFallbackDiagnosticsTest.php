@@ -410,18 +410,15 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 			);
 		};
 
-		add_filter( 'static_site_importer_codebox_validation_result', $provider, 1 );
-		try {
-			$result = Static_Site_Importer_Codebox_Validation::validate(
-				array(
-					'artifact' => array( 'schema' => 'blocks-engine/php-transformer/site-artifact/v1' ),
-					'slug'     => 'fixture-one',
-					'name'     => 'Fixture One',
-				)
-			);
-		} finally {
-			remove_filter( 'static_site_importer_codebox_validation_result', $provider, 1 );
-		}
+		$result = $provider(
+			array(),
+			array(
+				'import_args' => array(
+					'slug' => 'fixture-one',
+					'name' => 'Fixture One',
+				),
+			)
+		);
 
 		$this->assertIsArray( $result );
 		$fixture = $result['fixture_diagnostics'] ?? array();
@@ -531,10 +528,10 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Pre-dispatch validation errors can still be consumed as structured JSON.
+	 * Validation errors can still be consumed as structured JSON.
 	 */
-	public function test_codebox_validation_error_result_is_structured(): void {
-		$error = Static_Site_Importer_Codebox_Validation::validate(
+	public function test_validation_error_result_is_structured(): void {
+		$error = Static_Site_Importer_Validation_Runtime::validate_artifact(
 			array(
 				'slug' => 'missing-artifact',
 				'name' => 'Missing Artifact',
@@ -542,7 +539,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		);
 
 		$this->assertWPError( $error );
-		$result = Static_Site_Importer_Codebox_Validation::error_result_from_wp_error(
+		$result = Static_Site_Importer_Validation_Runtime::error_result_from_wp_error(
 			$error,
 			array(
 				'slug' => 'missing-artifact',
@@ -550,11 +547,11 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 			)
 		);
 
-		$this->assertSame( 'static-site-importer/codebox-validation-result/v1', $result['schema'] ?? '' );
+		$this->assertSame( 'static-site-importer/import-validation-result/v1', $result['schema'] ?? '' );
 		$this->assertFalse( $result['success'] ?? true );
 		$this->assertSame( 'missing-artifact', $result['fixture_diagnostics']['fixture']['slug'] ?? '' );
-		$this->assertSame( 'validation_request_error', $result['fixture_diagnostics']['diagnostics'][0]['type'] ?? '' );
-		$this->assertSame( 'static_site_importer_codebox_validation_source_missing', $result['fixture_diagnostics']['diagnostics'][0]['code'] ?? '' );
+		$this->assertSame( 'validation_error', $result['fixture_diagnostics']['diagnostics'][0]['type'] ?? '' );
+		$this->assertSame( 'static_site_importer_validation_artifact_missing', $result['fixture_diagnostics']['diagnostics'][0]['code'] ?? '' );
 	}
 
 	/**

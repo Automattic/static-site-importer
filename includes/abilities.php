@@ -184,10 +184,10 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 		);
 
 		wp_register_ability(
-			'static-site-importer/validate-in-codebox',
+			'static-site-importer/validate-artifact',
 			array(
-				'label'               => __( 'Validate Import in Codebox', 'static-site-importer' ),
-				'description'         => __( 'Validate a website artifact or generated import output in a disposable WP Codebox runtime and return durable artifact metadata.', 'static-site-importer' ),
+				'label'               => __( 'Validate Static Site Artifact', 'static-site-importer' ),
+				'description'         => __( 'Validate a website artifact in the current WordPress runtime and return importer-owned diagnostics.', 'static-site-importer' ),
 				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
 				'input_schema'        => array(
 					'type'       => 'object',
@@ -210,7 +210,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 					),
 				),
 				'output_schema'       => array( 'type' => 'object' ),
-				'execute_callback'    => 'static_site_importer_ability_validate_in_codebox',
+				'execute_callback'    => 'static_site_importer_ability_validate_artifact',
 				'permission_callback' => 'static_site_importer_ability_permission_callback',
 				'meta'                => array( 'show_in_rest' => true ),
 			)
@@ -233,15 +233,15 @@ if ( ! function_exists( 'static_site_importer_ability_permission_callback' ) ) {
 	}
 }
 
-if ( ! function_exists( 'static_site_importer_ability_validate_in_codebox' ) ) {
+if ( ! function_exists( 'static_site_importer_ability_validate_artifact' ) ) {
 	/**
-	 * Ability callback for Codebox-backed validation.
+	 * Ability callback for importer-owned validation.
 	 *
 	 * @param array<string, mixed> $input Ability input.
 	 * @return array<string, mixed>
 	 */
-	function static_site_importer_ability_validate_in_codebox( array $input ): array {
-		$result = Static_Site_Importer_Codebox_Validation::validate( $input );
+	function static_site_importer_ability_validate_artifact( array $input ): array {
+		$result = Static_Site_Importer_Validation_Runtime::validate_artifact( $input );
 		if ( is_wp_error( $result ) ) {
 			/** @var WP_Error $result */
 			return static_site_importer_ability_error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
