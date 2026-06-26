@@ -429,6 +429,7 @@ $assert( is_string( $plugin_source ), 'plugin-source-readable' );
 $assert( ! str_contains( $plugin_source, 'Requires Plugins: blocks-engine-php-transformer' ), 'transformer-is-not-a-required-wordpress-plugin' );
 $assert( str_contains( $plugin_source, "vendor/autoload.php" ), 'loads-composer-autoloader' );
 $assert( str_contains( $plugin_source, "vendor/automattic/blocks-engine-php-transformer/php-transformer/php-transformer.php" ), 'loads-composer-transformer-bootstrap' );
+$assert( str_contains( $plugin_source, "vendor/automattic/blocks-engine-php-transformer/php-transformer.php" ), 'loads-composer-path-transformer-bootstrap' );
 $assert( str_contains( $plugin_source, 'Static_Site_Importer_Figma_Import::register_default_zstd_decoder();' ), 'plugin-registers-figma-zstd-decoder' );
 
 $known_zstd_command = false;

@@ -24,13 +24,25 @@ if ( is_readable( $static_site_importer_autoload ) ) {
 	require_once $static_site_importer_autoload;
 }
 
-$static_site_importer_transformer = STATIC_SITE_IMPORTER_PATH . 'vendor/automattic/blocks-engine-php-transformer/php-transformer/php-transformer.php';
-if ( ! function_exists( 'blocks_engine_php_transformer_compile_artifact' ) && is_readable( $static_site_importer_transformer ) ) {
+$static_site_importer_transformers = array(
+	STATIC_SITE_IMPORTER_PATH . 'vendor/automattic/blocks-engine-php-transformer/php-transformer/php-transformer.php',
+	STATIC_SITE_IMPORTER_PATH . 'vendor/automattic/blocks-engine-php-transformer/php-transformer.php',
+);
+foreach ( $static_site_importer_transformers as $static_site_importer_transformer ) {
+	if ( function_exists( 'blocks_engine_php_transformer_compile_artifact' ) || ! is_readable( $static_site_importer_transformer ) ) {
+		continue;
+	}
 	require_once $static_site_importer_transformer;
 }
 
-$static_site_importer_figma_transformer = STATIC_SITE_IMPORTER_PATH . 'vendor/automattic/blocks-engine-figma-transformer/figma-transformer/figma-transformer.php';
-if ( ( ! function_exists( 'blocks_engine_figma_transformer_transform_scenegraph' ) || ! function_exists( 'blocks_engine_figma_transformer_transform_file' ) ) && is_readable( $static_site_importer_figma_transformer ) ) {
+$static_site_importer_figma_transformers = array(
+	STATIC_SITE_IMPORTER_PATH . 'vendor/automattic/blocks-engine-figma-transformer/figma-transformer/figma-transformer.php',
+	STATIC_SITE_IMPORTER_PATH . 'vendor/automattic/blocks-engine-figma-transformer/figma-transformer.php',
+);
+foreach ( $static_site_importer_figma_transformers as $static_site_importer_figma_transformer ) {
+	if ( ( function_exists( 'blocks_engine_figma_transformer_transform_scenegraph' ) && function_exists( 'blocks_engine_figma_transformer_transform_file' ) ) || ! is_readable( $static_site_importer_figma_transformer ) ) {
+		continue;
+	}
 	require_once $static_site_importer_figma_transformer;
 }
 
