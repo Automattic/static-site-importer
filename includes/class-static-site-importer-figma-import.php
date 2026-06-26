@@ -56,7 +56,7 @@ class Static_Site_Importer_Figma_Import {
 		if ( ! empty( $validation_artifacts ) ) {
 			$import_input['validation_artifacts'] = $validation_artifacts;
 		}
-		$result                  = static_site_importer_ability_import_website_artifact( $import_input );
+		$result                 = static_site_importer_ability_import_website_artifact( $import_input );
 		$figma_transform_report = self::figma_transform_report_from_metadata( isset( $import_input['source_metadata'] ) && is_array( $import_input['source_metadata'] ) ? $import_input['source_metadata'] : array() );
 		if ( ! empty( $figma_transform_report ) ) {
 			$result['figma_transform_report'] = $figma_transform_report;
@@ -89,7 +89,7 @@ class Static_Site_Importer_Figma_Import {
 			'request'                 => self::diagnostics_request_summary( $input ),
 			'artifact'                => self::diagnostics_artifact_summary( $artifact ),
 			'figma_transform_report'  => $figma_transform_report,
-			'transform_diagnostics'   => is_array( $transform_diagnostics ) ? $transform_diagnostics : array(),
+			'transform_diagnostics'   => $transform_diagnostics,
 			'production_import_input' => array(
 				'slug'      => (string) ( $import_input['slug'] ?? '' ),
 				'name'      => (string) ( $import_input['name'] ?? '' ),
