@@ -406,6 +406,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				),
 			),
 			'diagnostic_summary'      => $summary['diagnostic_summary'] ?? array(),
+			'diagnostics'             => self::compact_import_report_diagnostics( $diagnostics ),
 			'diagnostic_refs'         => isset( $quality['diagnostic_refs'] ) && is_array( $quality['diagnostic_refs'] ) ? $quality['diagnostic_refs'] : array(),
 			'artifacts'               => self::validation_artifact_refs(),
 			'visual_parity_artifacts' => isset( $report['visual_parity_artifacts'] ) && is_array( $report['visual_parity_artifacts'] ) ? $report['visual_parity_artifacts'] : self::visual_parity_artifact_contract(),

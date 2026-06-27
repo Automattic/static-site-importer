@@ -401,6 +401,8 @@ namespace {
 	$assert( 'reported' === ( $runtime_gate['status'] ?? '' ), 'runtime-parity-gate-reports-issues' );
 	$assert( 2 === ( $runtime_gate['count'] ?? 0 ), 'runtime-parity-gate-counts-actionable-issues' );
 	$assert( 2 === count( $runtime_gate['diagnostic_refs'] ?? array() ), 'runtime-parity-gate-has-diagnostic-refs' );
+	$assert( 3 === count( $runtime_report['import_validation_result']['diagnostics'] ?? array() ), 'runtime-parity-validation-artifact-exposes-diagnostics' );
+	$assert( '#canvas' === ( $runtime_report['import_validation_result']['diagnostics'][0]['selector'] ?? '' ), 'runtime-parity-validation-artifact-preserves-selector' );
 	$assert( 'runtime_dependency_missing_dom_target' === ( $runtime_report['diagnostics'][0]['type'] ?? '' ), 'runtime-parity-missing-target-becomes-diagnostic' );
 	$assert( '#canvas' === ( $runtime_report['diagnostics'][0]['selector'] ?? '' ), 'runtime-parity-diagnostic-preserves-selector' );
 	$assert( 'assets/script.js' === ( $runtime_report['diagnostics'][0]['script_path'] ?? '' ), 'runtime-parity-diagnostic-preserves-script-path' );

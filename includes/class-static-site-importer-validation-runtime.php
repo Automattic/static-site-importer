@@ -102,6 +102,8 @@ class Static_Site_Importer_Validation_Runtime {
 			'import_report' => array(),
 		);
 		$result['fixture_diagnostics'] = Static_Site_Importer_Diagnostic_Contract::build( $result );
+		$result['diagnostics']         = isset( $result['fixture_diagnostics']['diagnostics'] ) && is_array( $result['fixture_diagnostics']['diagnostics'] ) ? $result['fixture_diagnostics']['diagnostics'] : array();
+		$result['diagnostic_summary']  = isset( $result['fixture_diagnostics']['diagnostic_summary'] ) && is_array( $result['fixture_diagnostics']['diagnostic_summary'] ) ? $result['fixture_diagnostics']['diagnostic_summary'] : array();
 
 		return $result;
 	}
@@ -152,6 +154,8 @@ class Static_Site_Importer_Validation_Runtime {
 			),
 		);
 		$result['fixture_diagnostics'] = Static_Site_Importer_Diagnostic_Contract::build( $result );
+		$result['diagnostics']         = isset( $result['fixture_diagnostics']['diagnostics'] ) && is_array( $result['fixture_diagnostics']['diagnostics'] ) ? $result['fixture_diagnostics']['diagnostics'] : array();
+		$result['diagnostic_summary']  = isset( $result['fixture_diagnostics']['diagnostic_summary'] ) && is_array( $result['fixture_diagnostics']['diagnostic_summary'] ) ? $result['fixture_diagnostics']['diagnostic_summary'] : array();
 
 		return $result;
 	}

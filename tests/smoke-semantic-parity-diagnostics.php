@@ -90,6 +90,9 @@ $validation = $report['import_validation_result'] ?? array();
 $assert( 'reported' === ( $validation['quality_gates']['semantic_parity']['status'] ?? '' ), 'validation-gate-reported' );
 $assert( 3 === ( $validation['quality_gates']['semantic_parity']['count'] ?? 0 ), 'validation-gate-count' );
 $assert( 3 === count( $validation['quality_gates']['semantic_parity']['diagnostic_refs'] ?? array() ), 'validation-gate-diagnostic-refs' );
+$assert( 3 === count( $validation['diagnostics'] ?? array() ), 'validation-artifact-exposes-diagnostics' );
+$assert( 'semantic_parity_navigation_missing' === ( $validation['diagnostics'][0]['type'] ?? '' ), 'validation-artifact-preserves-diagnostic-type' );
+$assert( 'header nav' === ( $validation['diagnostics'][0]['selector'] ?? '' ), 'validation-artifact-preserves-selector' );
 $assert( 3 === ( $report['finding_packets']['count'] ?? 0 ), 'finding-packets-created' );
 $assert( 'blocks-engine/php-transformer' === ( $validation['quality_gates']['semantic_fidelity']['owner'] ?? '' ), 'semantic-fidelity-owner' );
 
