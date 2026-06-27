@@ -105,17 +105,17 @@ $assert = static function ( bool $condition, string $label, string $detail = '' 
 
 $artifacts = array(
 	'visual_repair' => array(
-		'schema' => 'block-artifact-compiler/visual-repair-artifacts/v1',
+		'schema' => 'blocks-engine/php-transformer/visual-repair-artifacts/v1',
 		'css'    => '.compiled-site-repair { display: block; }',
 		'styles' => array(
 			array(
-				'schema'  => 'block-artifact-compiler/visual-repair-css/v1',
+				'schema'  => 'blocks-engine/php-transformer/visual-repair-css/v1',
 				'target'  => 'frontend',
 				'path'    => 'assets/css/visual-repair.css',
 				'content' => "/* Blocks Engine: visual repair artifacts. */\n.wp-block-group.hero-shell { gap: 0; }",
 			),
 			array(
-				'schema'  => 'block-artifact-compiler/visual-repair-css/v1',
+				'schema'  => 'blocks-engine/php-transformer/visual-repair-css/v1',
 				'target'  => 'editor',
 				'path'    => 'assets/css/visual-repair-editor.css',
 				'content' => "/* Blocks Engine: editor visual repair artifacts. */\n.editor-styles-wrapper .glow-orb { opacity: 1 !important; }",

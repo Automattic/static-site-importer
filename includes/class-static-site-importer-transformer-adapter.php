@@ -759,7 +759,7 @@ class Static_Site_Importer_Transformer_Adapter {
 		}
 
 		$metadata                = $this->html_document_metadata( $html );
-		$metadata['schema']      = 'block-artifact-compiler/document-metadata/v1';
+		$metadata['schema']      = 'blocks-engine/php-transformer/document-metadata/v1';
 		$metadata['source_path'] = isset( $page['source_path'] ) && is_scalar( $page['source_path'] ) ? (string) $page['source_path'] : '';
 
 		return $metadata;

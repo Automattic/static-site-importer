@@ -22,7 +22,7 @@ class Static_Site_Importer_Document_Metadata_Reporter {
 	 */
 	public static function record( array &$report, array $artifacts ): void {
 		$metadata = isset( $artifacts['document_metadata'] ) && is_array( $artifacts['document_metadata'] ) ? $artifacts['document_metadata'] : array();
-		if ( 'block-artifact-compiler/document-metadata/v1' !== (string) ( $metadata['schema'] ?? '' ) ) {
+		if ( 'blocks-engine/php-transformer/document-metadata/v1' !== (string) ( $metadata['schema'] ?? '' ) ) {
 			return;
 		}
 
