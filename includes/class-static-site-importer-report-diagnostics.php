@@ -936,12 +936,17 @@ class Static_Site_Importer_Report_Diagnostics {
 			'category'             => isset( $diagnostic['category'] ) && is_scalar( $diagnostic['category'] ) ? (string) $diagnostic['category'] : self::diagnostic_category( $type ),
 			'loss_class'           => isset( $diagnostic['loss_class'] ) && is_scalar( $diagnostic['loss_class'] ) ? (string) $diagnostic['loss_class'] : Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ),
 			'diagnostic_class'     => isset( $diagnostic['diagnostic_class'] ) && is_scalar( $diagnostic['diagnostic_class'] ) ? (string) $diagnostic['diagnostic_class'] : Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ),
+			'repair_class'         => isset( $diagnostic['repair_class'] ) && is_scalar( $diagnostic['repair_class'] ) ? (string) $diagnostic['repair_class'] : self::diagnostic_repair_class( $type ),
+			'acceptability'        => isset( $diagnostic['acceptability'] ) && is_scalar( $diagnostic['acceptability'] ) ? (string) $diagnostic['acceptability'] : self::diagnostic_acceptability( Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ) ),
+			'source_diagnostic'    => isset( $diagnostic['source_diagnostic'] ) && is_array( $diagnostic['source_diagnostic'] ) ? $diagnostic['source_diagnostic'] : self::source_diagnostic_identity( $diagnostic, $diagnostic ),
 			'owner'                => self::finding_owner( $diagnostic ),
 			'routing'              => array(
 				'component'              => self::finding_owner( $diagnostic ),
 				'stage'                  => isset( $diagnostic['stage'] ) && is_scalar( $diagnostic['stage'] ) ? (string) $diagnostic['stage'] : 'import',
 				'suggested_repair_class' => isset( $diagnostic['suggested_repair_class'] ) && is_scalar( $diagnostic['suggested_repair_class'] ) ? (string) $diagnostic['suggested_repair_class'] : self::diagnostic_repair_class( $type ),
+				'repair_class'           => isset( $diagnostic['repair_class'] ) && is_scalar( $diagnostic['repair_class'] ) ? (string) $diagnostic['repair_class'] : self::diagnostic_repair_class( $type ),
 				'loss_class'             => isset( $diagnostic['loss_class'] ) && is_scalar( $diagnostic['loss_class'] ) ? (string) $diagnostic['loss_class'] : Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ),
+				'acceptability'          => isset( $diagnostic['acceptability'] ) && is_scalar( $diagnostic['acceptability'] ) ? (string) $diagnostic['acceptability'] : self::diagnostic_acceptability( Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ) ),
 			),
 			'provenance'           => self::validation_provenance( $report ),
 			'reproduction_context' => array_merge(
@@ -1722,10 +1727,16 @@ class Static_Site_Importer_Report_Diagnostics {
 				'category'               => self::diagnostic_category( $type ),
 				'reason_code'            => $reason_code,
 				'suggested_repair_class' => self::diagnostic_repair_class( $type ),
+				'repair_class'           => self::diagnostic_repair_class( $type ),
 				'source_path'            => $source_path,
 			);
 			$machine['loss_class']       = Static_Site_Importer_Diagnostic_Loss_Classes::classify( array_merge( $diagnostic, $machine ) );
 			$machine['diagnostic_class'] = $machine['loss_class'];
+			$machine['acceptability']    = self::diagnostic_acceptability( $machine['loss_class'] );
+			$source_diagnostic           = self::source_diagnostic_identity( $diagnostic, $machine );
+			if ( ! empty( $source_diagnostic ) ) {
+				$machine['source_diagnostic'] = $source_diagnostic;
+			}
 
 			$selector = isset( $diagnostic['selector'] ) && is_scalar( $diagnostic['selector'] ) ? trim( (string) $diagnostic['selector'] ) : '';
 			if ( '' !== $selector ) {
@@ -2048,6 +2059,45 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
+	 * Classify whether a diagnostic is acceptable preservation/conversion or an imported-output defect.
+	 *
+	 * @param string $loss_class Normalized loss class.
+	 * @return string
+	 */
+	private static function diagnostic_acceptability( string $loss_class ): string {
+		if ( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND === $loss_class ) {
+			return 'acceptable_preservation';
+		}
+		if ( in_array( $loss_class, array( Static_Site_Importer_Diagnostic_Loss_Classes::NATIVE_CONVERSION, Static_Site_Importer_Diagnostic_Loss_Classes::EDITABLE_APPROXIMATION ), true ) ) {
+			return 'acceptable_conversion';
+		}
+
+		return 'unacceptable_imported_output_defect';
+	}
+
+	/**
+	 * Preserve source diagnostic identity fields alongside the normalized row.
+	 *
+	 * @param array<string,mixed> $diagnostic Raw diagnostic row.
+	 * @param array<string,mixed> $machine    Normalized diagnostic row.
+	 * @return array<string,string>
+	 */
+	private static function source_diagnostic_identity( array $diagnostic, array $machine ): array {
+		$identity = array();
+		foreach ( array( 'id', 'type', 'kind', 'code', 'reason_code', 'reason', 'message', 'source_path', 'selector', 'stage', 'engine' ) as $field ) {
+			$value = self::first_scalar( $diagnostic, array( $field ) );
+			if ( '' === $value ) {
+				$value = self::first_scalar( $machine, array( $field ) );
+			}
+			if ( '' !== $value ) {
+				$identity[ $field ] = $value;
+			}
+		}
+
+		return $identity;
+	}
+
+	/**
 	 * Extract concise diagnostic context for repair prompts.
 	 *
 	 * @param array<string,mixed> $diagnostic Diagnostic record.
@@ -2202,8 +2252,11 @@ class Static_Site_Importer_Report_Diagnostics {
 			'category',
 			'loss_class',
 			'diagnostic_class',
+			'acceptability',
 			'reason_code',
 			'suggested_repair_class',
+			'repair_class',
+			'source_diagnostic',
 			'source_path',
 			'source',
 			'selector',
