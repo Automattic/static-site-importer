@@ -61,7 +61,6 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-wo
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-product-handoff-contract.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-diagnostic-contract.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-artifact-diagnostics-adapter.php';
-require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-artifact-envelope.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-validation-runtime.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-report-diagnostics.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-transformer-adapter.php';

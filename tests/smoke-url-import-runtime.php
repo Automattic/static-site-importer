@@ -163,7 +163,7 @@ $result = Static_Site_Importer_URL_Import_Runtime::import_url(
 		'url'             => 'https://private.example.test/',
 		'slug'            => 'private-import',
 		'overwrite'       => true,
-		'source_metadata' => array( 'requested_by' => 'studio-web' ),
+		'source_metadata' => array( 'requested_by' => 'external-caller' ),
 	)
 );
 
@@ -171,7 +171,7 @@ $assert( ! is_wp_error( $result ), 'provider-import-succeeds' );
 $assert( 'private-import' === ( $result['theme_slug'] ?? '' ), 'result-passes-through' );
 $assert( 'website/index.html' === ( Static_Site_Importer_Theme_Generator::$last_artifact['files'][0]['path'] ?? '' ), 'provider-artifact-imported' );
 $assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['overwrite'] ?? null ), 'import-args-preserved' );
-$assert( 'studio-web' === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata']['requested_by'] ?? '' ), 'caller-metadata-preserved' );
+$assert( 'external-caller' === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata']['requested_by'] ?? '' ), 'caller-metadata-preserved' );
 $assert( 'private' === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata']['visibility'] ?? '' ), 'provider-metadata-merged' );
 $assert( 'test-private-runtime' === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata']['url_import_provider'] ?? '' ), 'provider-recorded' );
 

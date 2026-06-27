@@ -12,12 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Transformer_Adapter' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-transformer-adapter.php';
 }
-if ( ! class_exists( 'Static_Site_Importer_Artifact_Envelope' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-artifact-envelope.php';
-}
 
 /**
- * Exports WordPress block themes to canonical Studio Native artifact bundles.
+ * Exports WordPress block themes to website artifacts.
  */
 class Static_Site_Importer_Theme_Exporter {
 
@@ -143,7 +140,7 @@ class Static_Site_Importer_Theme_Exporter {
 		$website_artifact = self::export_website_artifact( $theme_slug, $root, $entrypoint, $files, $report, $source_metadata );
 
 		return array(
-			'result' => Static_Site_Importer_Artifact_Envelope::export_result_from_website_artifact( $website_artifact ),
+			'website_artifact' => $website_artifact,
 		);
 	}
 

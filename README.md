@@ -11,7 +11,7 @@ Static Site Importer is a WordPress plugin. It requires the [Blocks Engine PHP t
 Static Site Importer is the WordPress materialization layer for static website inputs. It accepts two related shapes:
 
 - Static source imports: an HTML entry file, pasted HTML document, public HTML URL, direct HTML upload, or ZIP source tree.
-- Generated website artifacts: a `blocks-engine/php-transformer/site-artifact/v1` bundle, such as the website artifact emitted by Studio Web or WP Codebox browser runtimes.
+- Generated website artifacts: a `blocks-engine/php-transformer/site-artifact/v1` bundle emitted by website generation or browser runtimes.
 
 The conversion stack is split by responsibility:
 
@@ -206,19 +206,18 @@ Important behavior:
 
 ## Website Artifact Export
 
-`static-site-importer/export-theme` exports an imported or active block theme as the canonical Studio Native handoff bundle. SSI owns the WordPress import/export/materialization path; Blocks Engine PHP transformer owns generic website artifact compilation inside SSI. Studio Native, WP Codebox, and other product callers should consume `result.artifact_bundle` instead of reading an SSI-private or Blocks Engine-specific wrapper.
+`static-site-importer/export-theme` exports an imported or active block theme as a Blocks Engine website artifact. SSI owns the WordPress import/export/materialization path; Blocks Engine PHP transformer owns generic website artifact compilation. Product callers should consume the exported `website_artifact` object instead of SSI-specific static-site wrappers.
 
 The export envelope includes:
 
-- `result.schema: "static-site-importer/export-theme-result/v1"`.
-- `result.artifact_bundle.schema: "studio-native/website-artifact-bundle/v1"`, `root`, and `entrypoint`.
+- `schema: "blocks-engine/php-transformer/site-artifact/v1"`, `artifact_type: "website"`, `version`, `id`, `generated_at`, `root`, and `entrypoint`.
 - `files[]` entries with safe artifact-relative paths, `role`, `kind`, `mime_type`, `encoding`, `bytes`, `sha256`, and inline `content`.
 - UTF-8 text content by default; binary content is transported as Base64 with `encoding: "base64"`.
 - source/materialization provenance under `provenance`.
 - import/validation summaries and `reports[]` references for repair loops.
 - `import-report.json` and `source-documents.json` metadata files when the exported theme has SSI import provenance.
 
-The default root is `website` with `entrypoint: "website/index.html"`. Callers can pass any safe single-segment root with a matching entrypoint, such as `root: "artifact"` and `entrypoint: "artifact/index.html"`. The import ability accepts the same canonical bundle through `artifact_bundle`; the lower-level `artifact` input remains available for direct Blocks Engine website artifacts.
+The default root is `website` with `entrypoint: "website/index.html"`. Callers can pass any safe single-segment root with a matching entrypoint, such as `root: "artifact"` and `entrypoint: "artifact/index.html"`. The import ability accepts the same canonical website artifact through `artifact`.
 
 ## Product Handoff Contract
 
