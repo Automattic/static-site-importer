@@ -189,6 +189,8 @@ class Static_Site_Importer_Diagnostic_Contract {
 			$reason_code   = self::first_identifier( $row, array( 'reason_code', 'code', 'reason', 'kind', 'type' ), $type );
 			$source_path   = self::first_scalar( $row, array( 'source_path', 'path', 'source', 'file', 'script_path' ), '' );
 			$repair_bucket = self::repair_bucket( $type, $reason_code, $row );
+			$loss_class    = Static_Site_Importer_Diagnostic_Loss_Classes::classify( array_merge( $row, array( 'repair_bucket' => $repair_bucket ) ) );
+			$repair_bucket = self::repair_bucket_for_loss_class( $repair_bucket, $loss_class );
 			$parser_owner  = self::parser_owner( $type, $repair_bucket, $row );
 			$diagnostic    = array(
 				'id'                      => self::first_scalar( $row, array( 'id' ), sprintf( 'diag-%03d-%s', $index + 1, sanitize_key( $type . '-' . $reason_code . '-' . $source_path ) ) ),
@@ -211,7 +213,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 				'runtime_target_selector' => self::first_scalar( $row, array( 'runtime_target_selector', 'target_selector', 'target', 'selector' ), '' ),
 				'missing_asset_path'      => self::missing_asset_path( $row ),
 			);
-			$diagnostic['loss_class']       = Static_Site_Importer_Diagnostic_Loss_Classes::classify( array_merge( $row, $diagnostic ) );
+			$diagnostic['loss_class']       = $loss_class;
 			$diagnostic['diagnostic_class'] = $diagnostic['loss_class'];
 			$diagnostic['repair_class']     = $diagnostic['repair_mode'];
 			$diagnostic['acceptability']    = self::diagnostic_acceptability( $diagnostic['loss_class'] );
@@ -646,6 +648,21 @@ class Static_Site_Importer_Diagnostic_Contract {
 	}
 
 	/**
+	 * Keep acceptable runtime islands out of actionable importer-quality buckets.
+	 *
+	 * @param string $repair_bucket Current repair bucket.
+	 * @param string $loss_class    Product-facing loss class.
+	 * @return string
+	 */
+	private static function repair_bucket_for_loss_class( string $repair_bucket, string $loss_class ): string {
+		if ( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND !== $loss_class ) {
+			return $repair_bucket;
+		}
+
+		return in_array( $repair_bucket, array( 'static_site_import_quality', 'import_quality' ), true ) ? Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND : $repair_bucket;
+	}
+
+	/**
 	 * Determine likely product owner for the parser/repair bucket.
 	 *
 	 * @param string              $type          Diagnostic type.
@@ -686,6 +703,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 			'broken_svg'                 => 'svg-transformer-parity',
 			'dropped_images'             => 'asset-materialization',
 			'invalid_block_content'      => 'block-validation-parity',
+			'preserved_runtime_island'   => 'accepted-runtime-preservation',
 			'runtime_target_gap'         => 'runtime-dom-target-parity',
 			'semantic_parity'            => 'semantic-parity',
 			'fallback_block'             => 'fallback-block-replacement',

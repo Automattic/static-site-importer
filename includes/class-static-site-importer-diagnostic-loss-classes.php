@@ -45,7 +45,7 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 		if (
 			self::contains_any(
 				$haystack,
-				array( 'runtime_dependency_vendor_telemetry_script', 'interaction_candidate', 'runtime_island', 'preserved_runtime' )
+				array( 'runtime_dependency_vendor_telemetry_script', 'interaction_candidate', 'runtime_island', 'runtimeisland', 'preserved_runtime', 'preservedasaboundedruntimeisland' )
 			)
 			|| self::is_preserved_runtime_element( $element, $selector )
 		) {

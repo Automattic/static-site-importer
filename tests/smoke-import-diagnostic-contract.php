@@ -83,6 +83,13 @@ $diagnostics = Static_Site_Importer_Diagnostic_Contract::build(
 					'source_path' => 'templates/front-page.html',
 				),
 				array(
+					'type'          => 'dom',
+					'source_path'   => 'templates/front-page.html',
+					'selector'      => '.site-header',
+					'reason'        => 'Runtime-dependent source markup was preserved as a bounded runtime island.',
+					'repair_bucket' => 'static_site_import_quality',
+				),
+				array(
 					'id'          => 'ssi-canvas-fallback',
 					'type'        => 'unsupported_html_fallback',
 					'source_path' => 'templates/front-page.html',
@@ -121,12 +128,13 @@ $diagnostics = Static_Site_Importer_Diagnostic_Contract::build(
 );
 
 $assert( 'static-site-importer/import-diagnostics/v1' === ( $diagnostics['schema'] ?? '' ), 'schema' );
-$assert( 5 === ( $diagnostics['diagnostic_summary']['total'] ?? 0 ), 'total-count' );
+$assert( 6 === ( $diagnostics['diagnostic_summary']['total'] ?? 0 ), 'total-count' );
 $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['dropped_images'] ?? 0 ), 'dropped-images-bucket' );
 $assert( ! isset( $diagnostics['diagnostic_summary']['repair_bucket']['static_site_import_quality'] ), 'report-only-metadata-bucket-excluded' );
 $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['invalid_block_content'] ?? 0 ), 'invalid-block-bucket' );
 $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['runtime_target_gap'] ?? 0 ), 'runtime-target-bucket' );
 $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['semantic_parity'] ?? 0 ), 'semantic-parity-bucket' );
+$assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['preserved_runtime_island'] ?? 0 ), 'preserved-runtime-bucket' );
 $assert( 1 === ( $diagnostics['diagnostic_summary']['repair_bucket']['fallback_block'] ?? 0 ), 'deduped-fallback-bucket' );
 $assert( ! isset( $diagnostics['diagnostic_summary']['type']['website_artifact_materialization_contract_note'] ), 'report-only-contract-note-excluded' );
 $assert( ! isset( $diagnostics['diagnostic_summary']['type']['document_metadata_routed'] ), 'report-only-metadata-note-excluded' );
@@ -135,13 +143,15 @@ $assert( 'blocks-engine' === ( $diagnostics['by_repair_bucket']['runtime_target_
 $assert( 'unsupported_loss' === ( $diagnostics['by_repair_bucket']['dropped_images'][0]['loss_class'] ?? '' ), 'dropped-images-loss-class' );
 $assert( 'importer_materialization_bug' === ( $diagnostics['by_repair_bucket']['invalid_block_content'][0]['loss_class'] ?? '' ), 'invalid-block-loss-class' );
 $assert( 'editable_approximation' === ( $diagnostics['by_repair_bucket']['semantic_parity'][0]['loss_class'] ?? '' ), 'semantic-parity-loss-class' );
+$assert( 'preserved_runtime_island' === ( $diagnostics['by_repair_bucket']['preserved_runtime_island'][0]['loss_class'] ?? '' ), 'preserved-runtime-loss-class' );
+$assert( 'accepted-runtime-preservation' === ( $diagnostics['by_repair_bucket']['preserved_runtime_island'][0]['repair_mode'] ?? '' ), 'preserved-runtime-repair-mode' );
 $assert( 'preserved_runtime_island' === ( $diagnostics['by_repair_bucket']['fallback_block'][0]['loss_class'] ?? '' ), 'canvas-fallback-loss-class' );
 $assert( 'acceptable_preservation' === ( $diagnostics['by_repair_bucket']['fallback_block'][0]['acceptability'] ?? '' ), 'canvas-fallback-acceptable-preservation' );
 $assert( 'fallback-block-replacement' === ( $diagnostics['by_repair_bucket']['fallback_block'][0]['repair_class'] ?? '' ), 'canvas-fallback-repair-class' );
 $assert( 'unsupported_html_fallback' === ( $diagnostics['by_repair_bucket']['fallback_block'][0]['source_diagnostic']['type'] ?? '' ), 'canvas-fallback-source-diagnostic-type' );
 $assert( 1 === ( $diagnostics['loss_class_summary']['unsupported_loss'] ?? 0 ), 'loss-class-summary-unsupported' );
 $assert( 2 === ( $diagnostics['loss_class_summary']['importer_materialization_bug'] ?? 0 ), 'loss-class-summary-importer' );
-$assert( 1 === ( $diagnostics['loss_class_summary']['preserved_runtime_island'] ?? 0 ), 'loss-class-summary-preserved-runtime' );
+$assert( 2 === ( $diagnostics['loss_class_summary']['preserved_runtime_island'] ?? 0 ), 'loss-class-summary-preserved-runtime' );
 $assert( '#canvas' === ( $diagnostics['runtime_dependency_target_gaps'][0]['selector'] ?? '' ), 'runtime-target-selector' );
 $assert( 'header nav' === ( $diagnostics['by_repair_bucket']['semantic_parity'][0]['selector'] ?? '' ), 'semantic-selector' );
 $assert( array() === ( $diagnostics['artifact_refs'] ?? null ), 'no-runtime-artifact-requirement' );

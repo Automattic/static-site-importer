@@ -53,6 +53,13 @@ $fixtures = array(
 		),
 		'expected'   => 'preserved_runtime_island',
 	),
+	'runtime-reason-phrase' => array(
+		'diagnostic' => array(
+			'type'   => 'dom',
+			'reason' => 'Runtime-dependent source markup was preserved as a bounded runtime island.',
+		),
+		'expected'   => 'preserved_runtime_island',
+	),
 	'unsupported' => array(
 		'diagnostic' => array(
 			'type' => 'content_loss_abort',
@@ -77,7 +84,7 @@ foreach ( $fixtures as $label => $fixture ) {
 $counts = Static_Site_Importer_Diagnostic_Loss_Classes::counts( array_column( $fixtures, 'diagnostic' ) );
 $assert( 1 === ( $counts['native_conversion'] ?? 0 ), 'counts-native' );
 $assert( 1 === ( $counts['editable_approximation'] ?? 0 ), 'counts-editable' );
-$assert( 1 === ( $counts['preserved_runtime_island'] ?? 0 ), 'counts-runtime' );
+$assert( 2 === ( $counts['preserved_runtime_island'] ?? 0 ), 'counts-runtime' );
 $assert( 1 === ( $counts['unsupported_loss'] ?? 0 ), 'counts-unsupported' );
 $assert( 1 === ( $counts['importer_materialization_bug'] ?? 0 ), 'counts-importer' );
 

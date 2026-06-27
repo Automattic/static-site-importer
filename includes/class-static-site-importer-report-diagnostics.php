@@ -945,6 +945,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'stage'                  => isset( $diagnostic['stage'] ) && is_scalar( $diagnostic['stage'] ) ? (string) $diagnostic['stage'] : 'import',
 				'suggested_repair_class' => isset( $diagnostic['suggested_repair_class'] ) && is_scalar( $diagnostic['suggested_repair_class'] ) ? (string) $diagnostic['suggested_repair_class'] : self::diagnostic_repair_class( $type ),
 				'repair_class'           => isset( $diagnostic['repair_class'] ) && is_scalar( $diagnostic['repair_class'] ) ? (string) $diagnostic['repair_class'] : self::diagnostic_repair_class( $type ),
+				'repair_bucket'          => isset( $diagnostic['repair_bucket'] ) && is_scalar( $diagnostic['repair_bucket'] ) ? (string) $diagnostic['repair_bucket'] : '',
 				'loss_class'             => isset( $diagnostic['loss_class'] ) && is_scalar( $diagnostic['loss_class'] ) ? (string) $diagnostic['loss_class'] : Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ),
 				'acceptability'          => isset( $diagnostic['acceptability'] ) && is_scalar( $diagnostic['acceptability'] ) ? (string) $diagnostic['acceptability'] : self::diagnostic_acceptability( Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ) ),
 			),
@@ -1737,6 +1738,10 @@ class Static_Site_Importer_Report_Diagnostics {
 			if ( ! empty( $source_diagnostic ) ) {
 				$machine['source_diagnostic'] = $source_diagnostic;
 			}
+			if ( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND === $machine['loss_class'] ) {
+				$machine['repair_bucket'] = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
+				$machine['group_key']     = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
+			}
 
 			$selector = isset( $diagnostic['selector'] ) && is_scalar( $diagnostic['selector'] ) ? trim( (string) $diagnostic['selector'] ) : '';
 			if ( '' !== $selector ) {
@@ -1757,6 +1762,13 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 
 			$row = array_merge( $machine, $diagnostic );
+			if ( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND === $machine['loss_class'] ) {
+				$repair_bucket = isset( $row['repair_bucket'] ) && is_scalar( $row['repair_bucket'] ) ? (string) $row['repair_bucket'] : '';
+				if ( '' === $repair_bucket || in_array( $repair_bucket, array( 'static_site_import_quality', 'import_quality' ), true ) ) {
+					$row['repair_bucket'] = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
+					$row['group_key']     = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
+				}
+			}
 			$key = self::diagnostic_dedupe_key( $row );
 			if ( isset( $seen[ $key ] ) ) {
 				$normalized[ $seen[ $key ] ] = self::merge_diagnostic_context( $normalized[ $seen[ $key ] ], $row );
@@ -2256,6 +2268,8 @@ class Static_Site_Importer_Report_Diagnostics {
 			'reason_code',
 			'suggested_repair_class',
 			'repair_class',
+			'repair_bucket',
+			'group_key',
 			'source_diagnostic',
 			'source_path',
 			'source',
