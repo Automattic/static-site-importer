@@ -63,9 +63,15 @@ $assert( 'importer_materialization_bug' === ( $report['diagnostics'][2]['loss_cl
 $assert( 1 === ( $report['compact_summary']['loss_class_summary']['editable_approximation'] ?? 0 ), 'compact-summary-editable-count' );
 $assert( 1 === ( $report['import_validation_result']['diagnostic_summary']['loss_class']['preserved_runtime_island'] ?? 0 ), 'validation-summary-runtime-count' );
 $assert( 'editable_approximation' === ( $report['import_validation_result']['diagnostics'][0]['loss_class'] ?? '' ), 'validation-diagnostic-loss-class' );
+$assert( 'acceptable_conversion' === ( $report['import_validation_result']['diagnostics'][0]['acceptability'] ?? '' ), 'validation-diagnostic-acceptability' );
+$assert( 'replace_fallback_block' === ( $report['import_validation_result']['diagnostics'][0]['repair_class'] ?? '' ), 'validation-diagnostic-repair-class' );
+$assert( 'core_html_block' === ( $report['import_validation_result']['diagnostics'][0]['source_diagnostic']['type'] ?? '' ), 'validation-diagnostic-source-diagnostic-type' );
 $assert( 'preserved_runtime_island' === ( $report['import_validation_result']['diagnostics'][1]['repair_bucket'] ?? '' ), 'validation-runtime-repair-bucket' );
 $assert( 'editable_approximation' === ( $report['finding_packets']['packets'][0]['loss_class'] ?? '' ), 'finding-packet-loss-class' );
 $assert( 'editable_approximation' === ( $report['finding_packets']['packets'][0]['routing']['loss_class'] ?? '' ), 'finding-packet-routing-loss-class' );
+$assert( 'acceptable_conversion' === ( $report['finding_packets']['packets'][0]['acceptability'] ?? '' ), 'finding-packet-acceptability' );
+$assert( 'replace_fallback_block' === ( $report['finding_packets']['packets'][0]['routing']['repair_class'] ?? '' ), 'finding-packet-routing-repair-class' );
+$assert( 'core_html_block' === ( $report['finding_packets']['packets'][0]['source_diagnostic']['type'] ?? '' ), 'finding-packet-source-diagnostic-type' );
 $assert( 'preserved_runtime_island' === ( $report['finding_packets']['packets'][1]['routing']['repair_bucket'] ?? '' ), 'finding-packet-runtime-routing-repair-bucket' );
 
 $runtime_only_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
@@ -78,6 +84,7 @@ $runtime_only_report['quality']['interaction_candidate_count'] = 1;
 $runtime_only_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $runtime_only_report, array() );
 $assert( true === ( $runtime_only_quality['pass'] ?? false ), 'preserved-runtime-island-does-not-fail-quality' );
 $assert( array() === ( $runtime_only_quality['failure_reasons'] ?? null ), 'preserved-runtime-island-not-failure-reason' );
+$assert( 'acceptable_preservation' === ( $runtime_only_report['import_validation_result']['diagnostics'][0]['acceptability'] ?? '' ), 'preserved-runtime-island-acceptability' );
 
 $cleanup_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
 $cleanup_report['diagnostics'][] = array(

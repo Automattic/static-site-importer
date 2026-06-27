@@ -146,6 +146,9 @@ $assert( 'editable_approximation' === ( $diagnostics['by_repair_bucket']['semant
 $assert( 'preserved_runtime_island' === ( $diagnostics['by_repair_bucket']['preserved_runtime_island'][0]['loss_class'] ?? '' ), 'preserved-runtime-loss-class' );
 $assert( 'accepted-runtime-preservation' === ( $diagnostics['by_repair_bucket']['preserved_runtime_island'][0]['repair_mode'] ?? '' ), 'preserved-runtime-repair-mode' );
 $assert( 'preserved_runtime_island' === ( $diagnostics['by_repair_bucket']['fallback_block'][0]['loss_class'] ?? '' ), 'canvas-fallback-loss-class' );
+$assert( 'acceptable_preservation' === ( $diagnostics['by_repair_bucket']['fallback_block'][0]['acceptability'] ?? '' ), 'canvas-fallback-acceptable-preservation' );
+$assert( 'fallback-block-replacement' === ( $diagnostics['by_repair_bucket']['fallback_block'][0]['repair_class'] ?? '' ), 'canvas-fallback-repair-class' );
+$assert( 'unsupported_html_fallback' === ( $diagnostics['by_repair_bucket']['fallback_block'][0]['source_diagnostic']['type'] ?? '' ), 'canvas-fallback-source-diagnostic-type' );
 $assert( 1 === ( $diagnostics['loss_class_summary']['unsupported_loss'] ?? 0 ), 'loss-class-summary-unsupported' );
 $assert( 2 === ( $diagnostics['loss_class_summary']['importer_materialization_bug'] ?? 0 ), 'loss-class-summary-importer' );
 $assert( 2 === ( $diagnostics['loss_class_summary']['preserved_runtime_island'] ?? 0 ), 'loss-class-summary-preserved-runtime' );
@@ -187,6 +190,7 @@ $assert( is_array( $quality_gate_error['errors'][0] ?? null ), 'ability-error-er
 $assert( 'core_html_block' === ( $quality_gate_error['errors'][0]['kind'] ?? '' ), 'ability-error-prevents-numeric-generic-errors' );
 $assert( 'fallback_block' === ( $quality_gate_error['fixture_diagnostics']['diagnostics'][0]['repair_bucket'] ?? '' ), 'ability-error-fixture-diagnostics-classified' );
 $assert( 'editable_approximation' === ( $quality_gate_error['fixture_diagnostics']['diagnostics'][0]['loss_class'] ?? '' ), 'ability-error-fixture-loss-classified' );
+$assert( 'acceptable_conversion' === ( $quality_gate_error['fixture_diagnostics']['diagnostics'][0]['acceptability'] ?? '' ), 'ability-error-fixture-acceptability-classified' );
 
 $numeric_contract = Static_Site_Importer_Diagnostic_Contract::build(
 	array(
