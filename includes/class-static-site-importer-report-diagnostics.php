@@ -61,6 +61,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'svg_materialization_failure_count'     => 0,
 				'svg_sprite_reference_failure_count'    => 0,
 				'commerce_dependency_failures'          => 0,
+				'companion_plugin_dependency_failures'  => 0,
 				'interaction_candidate_count'           => 0,
 				'runtime_dependency_parity_issue_count' => 0,
 				'semantic_parity_failure_count'         => 0,
@@ -494,6 +495,9 @@ class Static_Site_Importer_Report_Diagnostics {
 		if ( ( $quality['commerce_dependency_failures'] ?? 0 ) > 0 ) {
 			$reasons[] = 'woocommerce_missing';
 		}
+		if ( ( $quality['companion_plugin_dependency_failures'] ?? 0 ) > 0 ) {
+			$reasons[] = 'companion_plugin_missing';
+		}
 		if ( ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ) > 0 ) {
 			$reasons[] = 'runtime_dependency_parity';
 		}
@@ -513,6 +517,9 @@ class Static_Site_Importer_Report_Diagnostics {
 		if ( in_array( 'woocommerce_missing', $reasons, true ) ) {
 			$quality['fail_import'] = true;
 		}
+		if ( in_array( 'companion_plugin_missing', $reasons, true ) ) {
+			$quality['fail_import'] = true;
+		}
 
 		$quality['diagnostic_refs'] = self::quality_diagnostic_refs( $report['diagnostics'] ?? array() );
 		$report['quality']          = $quality;
@@ -520,6 +527,82 @@ class Static_Site_Importer_Report_Diagnostics {
 		$report['artifact_diagnostics'] = Static_Site_Importer_Artifact_Diagnostics_Adapter::build_for_import_report( $report );
 
 		return $quality;
+	}
+
+	/**
+	 * Record a generated companion-plugin dependency into a conversion report.
+	 *
+	 * Mirrors the WooCommerce/Jetpack directory-dependency surface so the gate and
+	 * diagnostics treat a generated companion as a first-class declared dependency:
+	 * a present companion emits an info diagnostic, a waived-but-missing one emits a
+	 * warning, and a required-but-missing one increments the dependency-failure
+	 * quality counter (which fails the import) and emits an error diagnostic. The
+	 * declared dependency row is stored under `companion_plugins.dependencies` keyed
+	 * by the namespaced companion slug, distinct from `commerce.dependencies`.
+	 *
+	 * @param array<string, mixed> $report     Conversion report (mutated in place).
+	 * @param array<string, mixed> $dependency Companion dependency definition.
+	 * @param bool                 $waived     Whether enforcement is waived.
+	 * @return void
+	 */
+	public static function record_companion_plugin_dependency( array &$report, array $dependency, bool $waived ): void {
+		$row  = Static_Site_Importer_Entity_Materializer_Registry::companion_dependency_row( $dependency, $waived );
+		$slug = (string) ( $row['slug'] ?? '' );
+		if ( '' === $slug ) {
+			return;
+		}
+
+		if ( ! isset( $report['companion_plugins'] ) || ! is_array( $report['companion_plugins'] ) ) {
+			$report['companion_plugins'] = array( 'dependencies' => array() );
+		}
+		if ( ! isset( $report['companion_plugins']['dependencies'] ) || ! is_array( $report['companion_plugins']['dependencies'] ) ) {
+			$report['companion_plugins']['dependencies'] = array();
+		}
+		$report['companion_plugins']['dependencies'][ $slug ] = $row;
+
+		if ( ! isset( $report['diagnostics'] ) || ! is_array( $report['diagnostics'] ) ) {
+			$report['diagnostics'] = array();
+		}
+
+		$source = 'companion_plugins.dependencies.' . $slug;
+
+		if ( ! empty( $row['active'] ) ) {
+			$report['diagnostics'][] = array(
+				'code'        => 'companion_plugin_present',
+				'severity'    => 'info',
+				'source'      => $source,
+				'message'     => sprintf( 'Companion plugin %s is active; generated blocks are available theme-independently.', $slug ),
+				'slug'        => $slug,
+				'block_names' => $row['block_names'] ?? array(),
+			);
+			return;
+		}
+
+		if ( $waived ) {
+			$report['diagnostics'][] = array(
+				'code'        => 'companion_plugin_waived',
+				'severity'    => 'warning',
+				'source'      => $source,
+				'message'     => sprintf( 'Companion plugin %s requirement was waived; generated blocks were not installed.', $slug ),
+				'slug'        => $slug,
+				'block_names' => $row['block_names'] ?? array(),
+			);
+			return;
+		}
+
+		if ( ! isset( $report['quality'] ) || ! is_array( $report['quality'] ) ) {
+			$report['quality'] = array();
+		}
+		$report['quality']['companion_plugin_dependency_failures'] = (int) ( $report['quality']['companion_plugin_dependency_failures'] ?? 0 ) + 1;
+
+		$report['diagnostics'][] = array(
+			'code'        => 'companion_plugin_missing',
+			'severity'    => 'error',
+			'source'      => $source,
+			'message'     => sprintf( 'Companion plugin %s is required to house generated blocks but is not installed/active.', $slug ),
+			'slug'        => $slug,
+			'block_names' => $row['block_names'] ?? array(),
+		);
 	}
 
 	/**

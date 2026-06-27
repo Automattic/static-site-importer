@@ -273,7 +273,118 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			);
 		}
 
+		foreach ( self::companion_dependencies( $adapter ) as $dependency ) {
+			$slug = (string) ( $dependency['slug'] ?? '' );
+			if ( '' === $slug ) {
+				continue;
+			}
+
+			$reports[ $slug ] = self::materialize_companion_dependency( $dependency );
+		}
+
 		return $reports;
+	}
+
+	/**
+	 * Build a generated companion-plugin dependency definition from a payload.
+	 *
+	 * Companion plugins are per-site and generated at import time, so they are not
+	 * static adapter entries like the WooCommerce/Jetpack directory slugs. This
+	 * builder produces a dependency definition of type `companion_plugin` that the
+	 * install path and diagnostics treat as a first-class declared dependency,
+	 * distinct from directory slugs.
+	 *
+	 * @param array<string,mixed> $payload Generated companion-plugin payload.
+	 * @return array<string,mixed>
+	 */
+	public static function companion_plugin_dependency( array $payload ): array {
+		$slug        = Static_Site_Importer_Companion_Plugin::plugin_slug( $payload );
+		$plugin_file = Static_Site_Importer_Companion_Plugin::plugin_file( $payload );
+		$mu_plugin   = ! empty( $payload['mu_plugin'] );
+
+		$dependency = array(
+			'type'        => 'companion_plugin',
+			'slug'        => $slug,
+			'plugin_file' => $plugin_file,
+			'mu_plugin'   => $mu_plugin,
+			'payload'     => $payload,
+		);
+
+		$dependency['availability_callback'] = static function () use ( $dependency ): bool {
+			return self::companion_plugin_available( $dependency );
+		};
+
+		return $dependency;
+	}
+
+	/**
+	 * Determine whether a generated companion plugin is installed and active.
+	 *
+	 * @param array<string,mixed> $dependency Companion dependency definition.
+	 * @return bool
+	 */
+	public static function companion_plugin_available( array $dependency ): bool {
+		$plugin_file = (string) ( $dependency['plugin_file'] ?? '' );
+		if ( '' === $plugin_file ) {
+			return false;
+		}
+
+		if ( ! empty( $dependency['mu_plugin'] ) ) {
+			if ( ! defined( 'WPMU_PLUGIN_DIR' ) ) {
+				return false;
+			}
+			return file_exists( rtrim( (string) WPMU_PLUGIN_DIR, '/' ) . '/' . $plugin_file );
+		}
+
+		return function_exists( 'is_plugin_active' ) && is_plugin_active( $plugin_file );
+	}
+
+	/**
+	 * Materialize a generated companion-plugin dependency.
+	 *
+	 * @param array<string,mixed> $dependency Companion dependency definition.
+	 * @return array<string,mixed>
+	 */
+	public static function materialize_companion_dependency( array $dependency ): array {
+		$payload = isset( $dependency['payload'] ) && is_array( $dependency['payload'] ) ? $dependency['payload'] : array();
+		return Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin(
+			$payload,
+			$dependency['availability_callback'] ?? null
+		);
+	}
+
+	/**
+	 * Build the dependency report row for a generated companion plugin.
+	 *
+	 * Mirrors the directory-plugin dependency row shape so the gate/diagnostics
+	 * surface a companion the same way they surface WooCommerce/Jetpack, but keys
+	 * it by the namespaced companion slug and flags its `generated` source.
+	 *
+	 * @param array<string,mixed> $dependency Companion dependency definition.
+	 * @param bool                $waived     Whether enforcement is waived.
+	 * @return array<string,mixed>
+	 */
+	public static function companion_dependency_row( array $dependency, bool $waived ): array {
+		$active = self::companion_plugin_available( $dependency );
+
+		$block_names = array();
+		$payload     = isset( $dependency['payload'] ) && is_array( $dependency['payload'] ) ? $dependency['payload'] : array();
+		$scaffold    = empty( $payload ) ? null : Static_Site_Importer_Companion_Plugin::scaffold( $payload );
+		if ( is_array( $scaffold ) && isset( $scaffold['block_names'] ) && is_array( $scaffold['block_names'] ) ) {
+			$block_names = array_values( array_map( 'strval', $scaffold['block_names'] ) );
+		}
+
+		return array(
+			'type'        => 'companion_plugin',
+			'source'      => 'generated',
+			'slug'        => (string) ( $dependency['slug'] ?? '' ),
+			'plugin_file' => (string) ( $dependency['plugin_file'] ?? '' ),
+			'mu_plugin'   => ! empty( $dependency['mu_plugin'] ),
+			'required'    => true,
+			'active'      => $active,
+			'waived'      => $waived,
+			'block_names' => $block_names,
+		);
 	}
 
 	/**
@@ -615,6 +726,22 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			array_filter(
 				$dependencies,
 				static fn ( mixed $dependency ): bool => is_array( $dependency ) && 'wp_org_plugin' === (string) ( $dependency['type'] ?? '' )
+			)
+		);
+	}
+
+	/**
+	 * Return generated companion-plugin dependency definitions for an adapter.
+	 *
+	 * @param array<string,mixed> $adapter Adapter definition.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function companion_dependencies( array $adapter ): array {
+		$dependencies = isset( $adapter['dependencies'] ) && is_array( $adapter['dependencies'] ) ? $adapter['dependencies'] : array();
+		return array_values(
+			array_filter(
+				$dependencies,
+				static fn ( mixed $dependency ): bool => is_array( $dependency ) && 'companion_plugin' === (string) ( $dependency['type'] ?? '' )
 			)
 		);
 	}
