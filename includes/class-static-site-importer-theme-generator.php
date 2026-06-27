@@ -190,6 +190,7 @@ class Static_Site_Importer_Theme_Generator {
 		self::materialize_required_plugins( $args );
 		self::record_product_seeding_report( $args );
 		self::record_commerce_dependency_check( $args );
+		self::record_form_materialization( $args );
 		$source_of_truth_manifest                    = self::source_of_truth_manifest( $import_run_id, $source_artifact_reference, $theme_dir, $theme_slug, $page_targets, $page_ids, $permalinks, $writes, $materialized );
 		self::$conversion_report['source_of_truth'] = $source_of_truth_manifest;
 		$quality                                    = Static_Site_Importer_Report_Diagnostics::finalize_report( self::$conversion_report, $args );
@@ -3006,6 +3007,23 @@ class Static_Site_Importer_Theme_Generator {
 		if ( isset( self::$conversion_report['product_seeding'] ) && is_array( self::$conversion_report['product_seeding'] ) ) {
 			self::$conversion_report['product_seeding']['reason'] = 'woocommerce_required_but_missing';
 		}
+	}
+
+	/**
+	 * Materialize detected form runtime islands through the configured provider.
+	 *
+	 * Mirrors the commerce path: preserved <form> findings carry the source form
+	 * metadata, the configured form provider maps them into working form-provider
+	 * blocks, and successfully mapped findings receive the runtime-mapped signal so
+	 * the honest fixture gate counts them as acceptable preservation instead of a
+	 * dead, unacceptable feature-parity loss. Forms that cannot be mapped keep no
+	 * signal and stay unacceptable.
+	 *
+	 * @param array<string, mixed> $args Import args.
+	 * @return void
+	 */
+	private static function record_form_materialization( array $args ): void {
+		Static_Site_Importer_Report_Diagnostics::materialize_form_findings( self::$conversion_report, $args );
 	}
 
 	/**

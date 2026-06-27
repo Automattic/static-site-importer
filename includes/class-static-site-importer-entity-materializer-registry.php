@@ -15,12 +15,121 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/**
-	 * Return the first adapter that handles product rows.
+	 * Per-capability provider selection contract.
+	 *
+	 * Each capability declares a default provider, the core setting/option that
+	 * overrides it, and the capability-scoped filter consumers use to register or
+	 * route to a different adapter (Gravity Forms, CF7, EDD, and so on). The
+	 * registry sits behind this so a capability resolves to exactly one adapter.
+	 *
+	 * @return array<string,array<string,string>>
+	 */
+	public static function capabilities(): array {
+		return array(
+			'form' => array(
+				'default_provider' => 'jetpack',
+				'option'           => 'static_site_importer_form_plugin',
+				'filter'           => 'ssi_form_plugin',
+			),
+			'shop' => array(
+				'default_provider' => 'woocommerce',
+				'option'           => 'static_site_importer_shop_plugin',
+				'filter'           => 'ssi_shop_plugin',
+			),
+		);
+	}
+
+	/**
+	 * Resolve the selected provider id for a capability.
+	 *
+	 * Resolution order: capability default, core setting/option override, the
+	 * capability-scoped filter, then the cross-capability provider filter.
+	 *
+	 * @param string $capability Capability key.
+	 * @return string
+	 */
+	public static function provider_for( string $capability ): string {
+		$capabilities = self::capabilities();
+		$config       = $capabilities[ $capability ] ?? array();
+		$provider     = (string) ( $config['default_provider'] ?? '' );
+
+		$option_key = (string) ( $config['option'] ?? '' );
+		if ( '' !== $option_key && function_exists( 'get_option' ) ) {
+			$stored = get_option( $option_key, '' );
+			if ( is_string( $stored ) && '' !== trim( $stored ) ) {
+				$provider = trim( $stored );
+			}
+		}
+
+		$capability_filter = (string) ( $config['filter'] ?? '' );
+		if ( '' !== $capability_filter && function_exists( 'apply_filters' ) ) {
+			/**
+			 * Filters the provider selected for a single materializer capability.
+			 *
+			 * @param string $provider   Selected provider id.
+			 * @param string $capability Capability key.
+			 */
+			$provider = (string) apply_filters( $capability_filter, $provider, $capability );
+		}
+
+		if ( function_exists( 'apply_filters' ) ) {
+			/**
+			 * Filters the provider selected for any materializer capability.
+			 *
+			 * @param string $provider   Selected provider id.
+			 * @param string $capability Capability key.
+			 */
+			$provider = (string) apply_filters( 'ssi_entity_materializer_provider', $provider, $capability );
+		}
+
+		return $provider;
+	}
+
+	/**
+	 * Resolve the registered adapter that serves a capability's selected provider.
+	 *
+	 * @param string $capability Capability key.
+	 * @return array<string,mixed>
+	 */
+	public static function adapter_for_capability( string $capability ): array {
+		$adapters = self::adapters();
+		$provider = self::provider_for( $capability );
+
+		$capability_adapters = array();
+		foreach ( $adapters as $adapter ) {
+			if ( ! is_array( $adapter ) || $capability !== (string) ( $adapter['capability'] ?? '' ) ) {
+				continue;
+			}
+
+			$capability_adapters[] = $adapter;
+			if ( $provider === (string) ( $adapter['provider'] ?? '' ) ) {
+				return $adapter;
+			}
+		}
+
+		// No adapter matched the selected provider; fall back to the first
+		// adapter registered for the capability so a misconfigured provider does
+		// not silently drop materialization.
+		return $capability_adapters[0] ?? array();
+	}
+
+	/**
+	 * Return the adapter that materializes detected forms.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public static function form_adapter(): array {
+		return self::adapter_for_capability( 'form' );
+	}
+
+	/**
+	 * Return the adapter that handles product rows.
 	 *
 	 * @return array<string,mixed>
 	 */
 	public static function product_adapter(): array {
-		return self::adapter( 'woocommerce_simple_product' );
+		$adapter = self::adapter_for_capability( 'shop' );
+		return ! empty( $adapter ) ? $adapter : self::adapter( 'woocommerce_simple_product' );
 	}
 
 	/**
@@ -56,6 +165,36 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return array(
 			'products' => array(),
 			'errors'   => array(
+				array(
+					'path'    => '$',
+					'message' => 'Entity materializer validator is unavailable.',
+				),
+			),
+		);
+	}
+
+	/**
+	 * Validate an entity manifest and return the validator's native result shape.
+	 *
+	 * Unlike validate_manifest(), this does not coerce the result to the product
+	 * contract, so capability adapters (forms, and future entity types) keep their
+	 * own validated keys (e.g. `forms`).
+	 *
+	 * @param array<string,mixed> $adapter Adapter definition.
+	 * @param mixed               $data    Manifest data.
+	 * @return array<string,mixed>
+	 */
+	public static function validate_manifest_generic( array $adapter, mixed $data ): array {
+		$validator = $adapter['validator'] ?? null;
+		if ( is_callable( $validator ) ) {
+			$result = call_user_func( $validator, $data );
+			if ( is_array( $result ) ) {
+				return $result;
+			}
+		}
+
+		return array(
+			'errors' => array(
 				array(
 					'path'    => '$',
 					'message' => 'Entity materializer validator is unavailable.',
@@ -205,6 +344,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'woocommerce_simple_product' => array(
 				'id'              => 'woocommerce_simple_product',
 				'entity_type'     => 'product',
+				'capability'      => 'shop',
+				'provider'        => 'woocommerce',
 				'label'           => 'WooCommerce simple product',
 				'report_key'      => 'product_seeding',
 				'waiver_arg'      => 'allow_missing_woocommerce',
@@ -218,6 +359,27 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						'plugin_file'           => 'woocommerce/woocommerce.php',
 						'availability_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'woocommerce_available' ),
 						'missing_apis'          => array( 'WC_Product_Simple', 'product_post_type', 'product_cat_taxonomy' ),
+					),
+				),
+			),
+			'jetpack_contact_form'       => array(
+				'id'              => 'jetpack_contact_form',
+				'entity_type'     => 'form',
+				'capability'      => 'form',
+				'provider'        => 'jetpack',
+				'label'           => 'Jetpack contact form',
+				'report_key'      => 'form_seeding',
+				'waiver_arg'      => 'allow_missing_jetpack',
+				'validator'       => array( self::class, 'validate_forms_manifest' ),
+				'materializer'    => array( 'Static_Site_Importer_Form_Seeder', 'seed' ),
+				'report_callback' => array( 'Static_Site_Importer_Form_Seeder', 'new_report' ),
+				'dependencies'    => array(
+					array(
+						'type'                  => 'wp_org_plugin',
+						'slug'                  => 'jetpack',
+						'plugin_file'           => 'jetpack/jetpack.php',
+						'availability_callback' => array( 'Static_Site_Importer_Form_Seeder', 'jetpack_forms_available' ),
+						'missing_apis'          => array( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form', 'jetpack/contact-form', 'jetpack/field-text' ),
 					),
 				),
 			),
@@ -362,6 +524,85 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return array(
 			'products' => empty( $errors ) ? $products : array(),
 			'errors'   => $errors,
+		);
+	}
+
+	/**
+	 * Validate detected form runtime islands into a normalized forms manifest.
+	 *
+	 * Each form carries the preserved <form> fallback metadata (action/method
+	 * form attributes plus the source control list). A form is only seedable when
+	 * it exposes at least one control the provider can map; submit-only forms are
+	 * rejected because they cannot reach feature parity.
+	 *
+	 * @param mixed $data Forms manifest data.
+	 * @return array{forms:array<int,array<string,mixed>>,errors:array<int,array<string,string>>}
+	 */
+	public static function validate_forms_manifest( mixed $data ): array {
+		$forms  = array();
+		$errors = array();
+
+		if ( ! is_array( $data ) ) {
+			return array(
+				'forms'  => array(),
+				'errors' => array(
+					array(
+						'path'    => '$',
+						'message' => 'forms_manifest must be an object or array of forms.',
+					),
+				),
+			);
+		}
+
+		$rows = isset( $data['forms'] ) && is_array( $data['forms'] ) ? $data['forms'] : $data;
+		if ( ! is_array( $rows ) ) {
+			$rows = array();
+		}
+
+		$index = 0;
+		foreach ( $rows as $form ) {
+			$path_prefix = '$.forms[' . $index . ']';
+			++$index;
+			if ( ! is_array( $form ) ) {
+				$errors[] = array(
+					'path'    => $path_prefix,
+					'message' => 'Form must be an object.',
+				);
+				continue;
+			}
+
+			$controls = isset( $form['controls'] ) && is_array( $form['controls'] ) ? array_values( array_filter( $form['controls'], 'is_array' ) ) : array();
+			$mappable = array_filter(
+				$controls,
+				static function ( array $control ): bool {
+					$type = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
+					$tag  = strtolower( trim( (string) ( $control['tag'] ?? '' ) ) );
+					return ! in_array( $type, array( 'submit', 'hidden', 'reset', 'image', 'file', 'button' ), true ) && '' !== ( $type . $tag );
+				}
+			);
+
+			if ( empty( $mappable ) ) {
+				$errors[] = array(
+					'path'    => $path_prefix . '.controls',
+					'message' => 'Form must declare at least one mappable input control.',
+				);
+				continue;
+			}
+
+			$forms[] = array(
+				'selector'    => isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '',
+				'source_path' => isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '',
+				'form'        => isset( $form['form'] ) && is_array( $form['form'] ) ? $form['form'] : array(),
+				'controls'    => $controls,
+			);
+		}
+
+		// Forms validate per row: a single unmappable form (for example a
+		// submit-only search form) is rejected without discarding the other
+		// mappable forms, so partial feature parity is still materialized.
+		return array(
+			'forms'  => $forms,
+			'errors' => $errors,
 		);
 	}
 

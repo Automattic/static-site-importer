@@ -58,6 +58,7 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-pa
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-stylesheet-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-woo-product-seeder.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-form-seeder.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-product-handoff-contract.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-diagnostic-loss-classes.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-diagnostic-contract.php';

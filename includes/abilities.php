@@ -92,6 +92,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'overwrite'                    => array( 'type' => 'boolean' ),
 						'fail_on_quality'              => array( 'type' => 'boolean' ),
 						'allow_missing_woocommerce'    => array( 'type' => 'boolean' ),
+						'allow_missing_jetpack'        => array( 'type' => 'boolean' ),
 						'report'                       => array( 'type' => 'string' ),
 						'asset_materialization_policy' => array(
 							'type' => 'string',
@@ -130,6 +131,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'overwrite'                    => array( 'type' => 'boolean' ),
 						'fail_on_quality'              => array( 'type' => 'boolean' ),
 						'allow_missing_woocommerce'    => array( 'type' => 'boolean' ),
+						'allow_missing_jetpack'        => array( 'type' => 'boolean' ),
 						'report'                       => array( 'type' => 'string' ),
 						'asset_materialization_policy' => array(
 							'type' => 'string',
@@ -169,6 +171,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'overwrite'                 => array( 'type' => 'boolean' ),
 						'fail_on_quality'           => array( 'type' => 'boolean' ),
 						'allow_missing_woocommerce' => array( 'type' => 'boolean' ),
+						'allow_missing_jetpack'     => array( 'type' => 'boolean' ),
 						'compiler_options'          => array( 'type' => 'object' ),
 						'transform_options'         => array( 'type' => 'object' ),
 						'validation'                => array( 'type' => 'object' ),
@@ -201,6 +204,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'overwrite'                    => array( 'type' => 'boolean' ),
 						'fail_on_quality'              => array( 'type' => 'boolean' ),
 						'allow_missing_woocommerce'    => array( 'type' => 'boolean' ),
+						'allow_missing_jetpack'        => array( 'type' => 'boolean' ),
 						'asset_materialization_policy' => array(
 							'type' => 'string',
 							'enum' => array( 'copy_to_theme', 'use_map' ),
@@ -338,6 +342,7 @@ if ( ! function_exists( 'static_site_importer_ability_import_website_artifact' )
 			'overwrite'                    => ! empty( $input['overwrite'] ),
 			'fail_on_quality'              => ! empty( $input['fail_on_quality'] ),
 			'allow_missing_woocommerce'    => ! empty( $input['allow_missing_woocommerce'] ),
+			'allow_missing_jetpack'        => ! empty( $input['allow_missing_jetpack'] ),
 			'materialize_dependencies'     => array_key_exists( 'materialize_dependencies', $input ) ? (bool) $input['materialize_dependencies'] : true,
 			'report'                       => isset( $input['report'] ) ? (string) $input['report'] : '',
 			'asset_materialization_policy' => isset( $input['asset_materialization_policy'] ) ? (string) $input['asset_materialization_policy'] : '',

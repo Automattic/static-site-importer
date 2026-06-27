@@ -222,10 +222,20 @@ class Static_Site_Importer_Diagnostic_Contract {
 				$diagnostic['source_diagnostic'] = $source_diagnostic;
 			}
 
-			foreach ( array( 'message', 'reason', 'excerpt', 'source_snippet', 'source_html_preview', 'emitted_block_preview', 'observed_output', 'html_excerpt', 'block_name', 'block_path', 'script_path', 'element', 'tag_name', 'tag', 'src', 'href', 'expected', 'observed', 'suggested_primitive' ) as $field ) {
+			foreach ( array( 'message', 'reason', 'excerpt', 'source_snippet', 'source_html_preview', 'emitted_block_preview', 'observed_output', 'html_excerpt', 'block_name', 'block_path', 'script_path', 'element', 'tag_name', 'tag', 'src', 'href', 'expected', 'observed', 'suggested_primitive', 'diagnostic_code', 'mapped_provider' ) as $field ) {
 				$value = self::first_scalar( $row, array( $field ), '' );
 				if ( '' !== $value ) {
 					$diagnostic[ $field ] = $value;
+				}
+			}
+
+			// Preserve the runtime-mapping signal a real provider sets when it
+			// materializes a preserved island (e.g. a <form> mapped to working
+			// form-provider blocks). The honest fixture gate treats a preserved
+			// runtime island as acceptable only when this signal is truthy.
+			foreach ( array( 'runtime_mapped', 'runtime_carried' ) as $signal ) {
+				if ( ! empty( $row[ $signal ] ) ) {
+					$diagnostic[ $signal ] = true;
 				}
 			}
 

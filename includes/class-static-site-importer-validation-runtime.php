@@ -46,6 +46,7 @@ class Static_Site_Importer_Validation_Runtime {
 			'overwrite'                 => array_key_exists( 'overwrite', $input ) ? (bool) $input['overwrite'] : true,
 			'fail_on_quality'           => ! empty( $input['fail_on_quality'] ),
 			'allow_missing_woocommerce' => ! empty( $input['allow_missing_woocommerce'] ),
+			'allow_missing_jetpack'     => ! empty( $input['allow_missing_jetpack'] ),
 			'report'                    => $report_path,
 			'source_metadata'           => array_merge(
 				isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array(),

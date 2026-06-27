@@ -18,6 +18,12 @@ if ( ! class_exists( 'Static_Site_Importer_Product_Handoff_Contract' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-diagnostic-loss-classes.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Form_Seeder' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-form-seeder.php';
+}
+if ( ! class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-entity-materializer-registry.php';
+}
 
 /**
  * Builds SSI import reports and normalizes diagnostics for repair loops.
@@ -1023,6 +1029,125 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
+	 * Materialize preserved <form> runtime islands through the configured provider.
+	 *
+	 * Collects preserved form findings, runs them through the form-capability
+	 * adapter, and stamps the runtime-mapped signal plus mapped-block evidence onto
+	 * each finding that a real provider could map. The form_seeding report records
+	 * provider, dependency availability, and per-form mapping outcomes. Forms with
+	 * no mappable controls keep no signal and stay an unacceptable parity loss.
+	 *
+	 * @param array<string,mixed> $report Import report (mutated in place).
+	 * @param array<string,mixed> $args   Import args.
+	 * @return array<string,mixed> The recorded form_seeding report.
+	 */
+	public static function materialize_form_findings( array &$report, array $args = array() ): array {
+		$adapter = Static_Site_Importer_Entity_Materializer_Registry::form_adapter();
+
+		$diagnostics = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
+		$indexes     = array();
+		foreach ( $diagnostics as $index => $diagnostic ) {
+			if ( is_array( $diagnostic ) && 'html_form_fallback' === (string) ( $diagnostic['diagnostic_code'] ?? '' ) ) {
+				$indexes[] = (int) $index;
+			}
+		}
+
+		if ( empty( $indexes ) ) {
+			$seeding           = Static_Site_Importer_Entity_Materializer_Registry::new_entity_report( $adapter );
+			$seeding['status'] = 'skipped';
+			$seeding['reason'] = 'no_form_findings';
+			$report['form_seeding'] = $seeding;
+			return $seeding;
+		}
+
+		$manifest_forms = array();
+		foreach ( $indexes as $index ) {
+			$diagnostic       = $report['diagnostics'][ $index ];
+			$manifest_forms[] = array(
+				'selector'    => isset( $diagnostic['selector'] ) && is_scalar( $diagnostic['selector'] ) ? (string) $diagnostic['selector'] : '',
+				'source_path' => isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : ( isset( $diagnostic['source'] ) && is_scalar( $diagnostic['source'] ) ? (string) $diagnostic['source'] : '' ),
+				'form'        => isset( $diagnostic['form'] ) && is_array( $diagnostic['form'] ) ? $diagnostic['form'] : array(),
+				'controls'    => isset( $diagnostic['controls'] ) && is_array( $diagnostic['controls'] ) ? $diagnostic['controls'] : array(),
+			);
+		}
+
+		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest_generic( $adapter, array( 'forms' => $manifest_forms ) );
+		$seeding    = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, array( 'forms' => isset( $validation['forms'] ) && is_array( $validation['forms'] ) ? $validation['forms'] : array() ) );
+
+		$seeding['provider']     = Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'form' );
+		$seeding['form_count']   = count( $manifest_forms );
+		$seeding['mapped_count'] = 0;
+		$seeding['waived']       = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? 'allow_missing_jetpack' ) ] );
+		if ( ! empty( $validation['errors'] ) ) {
+			$seeding['validation_errors'] = $validation['errors'];
+		}
+
+		$pending = $indexes;
+		$rows    = isset( $seeding['forms'] ) && is_array( $seeding['forms'] ) ? $seeding['forms'] : array();
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) || empty( $row['runtime_mapped'] ) ) {
+				continue;
+			}
+
+			++$seeding['mapped_count'];
+			$selector = isset( $row['selector'] ) && is_scalar( $row['selector'] ) ? (string) $row['selector'] : '';
+			$index    = self::form_finding_index_for_selector( $report['diagnostics'], $pending, $selector );
+			if ( null === $index ) {
+				continue;
+			}
+
+			$report['diagnostics'][ $index ] = self::mark_form_finding_mapped( $report['diagnostics'][ $index ], $row, $seeding['provider'] );
+			$pending                         = array_values( array_diff( $pending, array( $index ) ) );
+		}
+
+		$report['form_seeding'] = $seeding;
+		return $seeding;
+	}
+
+	/**
+	 * Resolve which pending form finding a materialized row maps onto.
+	 *
+	 * @param array<int,array<string,mixed>> $diagnostics Report diagnostics.
+	 * @param array<int,int>                 $pending     Pending diagnostic indexes.
+	 * @param string                         $selector    Materialized form selector.
+	 * @return int|null
+	 */
+	private static function form_finding_index_for_selector( array $diagnostics, array $pending, string $selector ): ?int {
+		if ( '' !== $selector ) {
+			foreach ( $pending as $index ) {
+				$diagnostic = $diagnostics[ $index ] ?? array();
+				if ( is_array( $diagnostic ) && $selector === (string) ( $diagnostic['selector'] ?? '' ) ) {
+					return $index;
+				}
+			}
+		}
+
+		return $pending[0] ?? null;
+	}
+
+	/**
+	 * Stamp the runtime-mapped signal and mapped-block evidence onto a finding.
+	 *
+	 * @param array<string,mixed> $diagnostic Diagnostic to mark.
+	 * @param array<string,mixed> $row        Materialized form row.
+	 * @param string              $provider   Resolved form provider id.
+	 * @return array<string,mixed>
+	 */
+	private static function mark_form_finding_mapped( array $diagnostic, array $row, string $provider ): array {
+		$diagnostic['runtime_mapped']  = true;
+		$diagnostic['runtime_carried'] = ! empty( $row['runtime_carried'] );
+		$diagnostic['mapped_provider'] = isset( $row['provider'] ) && is_scalar( $row['provider'] ) && '' !== (string) $row['provider'] ? (string) $row['provider'] : $provider;
+		$diagnostic['acceptability']   = 'acceptable_preservation';
+		$diagnostic['block_name']      = isset( $row['block_name'] ) && is_scalar( $row['block_name'] ) ? (string) $row['block_name'] : 'jetpack/contact-form';
+
+		if ( isset( $row['block_markup'] ) && is_scalar( $row['block_markup'] ) ) {
+			$diagnostic['emitted_block_preview'] = self::diagnostic_excerpt( (string) $row['block_markup'] );
+		}
+
+		return $diagnostic;
+	}
+
+	/**
 	 * Build a compact diagnostic excerpt.
 	 *
 	 * @param string $html Source HTML.
@@ -1583,6 +1708,46 @@ class Static_Site_Importer_Report_Diagnostics {
 			if ( isset( $fallback[ $field ] ) && is_scalar( $fallback[ $field ] ) && '' !== trim( (string) $fallback[ $field ] ) ) {
 				$diagnostic[ $field ] = (string) $fallback[ $field ];
 			}
+		}
+
+		$diagnostic_code = self::first_scalar( $fallback, array( 'diagnostic_code' ) );
+		if ( 'html_form_fallback' === $diagnostic_code ) {
+			$diagnostic = self::enrich_form_fallback_diagnostic( $diagnostic, $fallback, $diagnostic_code );
+		}
+
+		return $diagnostic;
+	}
+
+	/**
+	 * Carry preserved <form> runtime island metadata onto its SSI diagnostic.
+	 *
+	 * Keeps the native diagnostic_code, classifies the finding as a preserved
+	 * runtime island, and forwards the form attributes and source control list so
+	 * the configured form provider can materialize it and close the gate loop.
+	 *
+	 * @param array<string,mixed> $diagnostic      Base diagnostic.
+	 * @param array<string,mixed> $fallback        Native fallback row.
+	 * @param string              $diagnostic_code Native diagnostic code.
+	 * @return array<string,mixed>
+	 */
+	private static function enrich_form_fallback_diagnostic( array $diagnostic, array $fallback, string $diagnostic_code ): array {
+		$diagnostic['diagnostic_code'] = $diagnostic_code;
+		$diagnostic['loss_class']      = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
+		$diagnostic['diagnostic_class'] = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
+		$diagnostic['tag']             = 'form';
+		$diagnostic['tag_name']        = isset( $diagnostic['tag_name'] ) && '' !== $diagnostic['tag_name'] ? $diagnostic['tag_name'] : 'form';
+		$diagnostic['element']         = 'form';
+		$diagnostic['suggested_primitive'] = 'form';
+		$diagnostic['runtime_requirement'] = self::first_scalar( $fallback, array( 'runtime_requirement' ) );
+
+		if ( isset( $fallback['form'] ) && is_array( $fallback['form'] ) ) {
+			$diagnostic['form'] = $fallback['form'];
+		}
+		if ( isset( $fallback['controls'] ) && is_array( $fallback['controls'] ) ) {
+			$diagnostic['controls'] = array_values( array_filter( $fallback['controls'], 'is_array' ) );
+		}
+		if ( isset( $fallback['control_count'] ) && is_numeric( $fallback['control_count'] ) ) {
+			$diagnostic['control_count'] = (int) $fallback['control_count'];
 		}
 
 		return $diagnostic;
@@ -2291,6 +2456,10 @@ class Static_Site_Importer_Report_Diagnostics {
 			'element',
 			'html_excerpt',
 			'context',
+			'diagnostic_code',
+			'runtime_mapped',
+			'runtime_carried',
+			'mapped_provider',
 		);
 
 		$compact = array();
