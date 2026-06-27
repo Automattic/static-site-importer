@@ -69,13 +69,13 @@ class Static_Site_Importer_Validation_Runtime {
 	 * @return array<string,mixed>
 	 */
 	public static function error_result_from_wp_error( WP_Error $error, array $input = array() ): array {
-		$slug = isset( $input['slug'] ) ? sanitize_title( (string) $input['slug'] ) : '';
-		$result = array(
-			'success'      => false,
-			'schema'       => self::RESULT_SCHEMA,
-			'status'       => 'failed',
-			'fixture_id'   => $slug,
-			'request'      => array(
+		$slug                          = isset( $input['slug'] ) ? sanitize_title( (string) $input['slug'] ) : '';
+		$result                        = array(
+			'success'       => false,
+			'schema'        => self::RESULT_SCHEMA,
+			'status'        => 'failed',
+			'fixture_id'    => $slug,
+			'request'       => array(
 				'import_args' => array_filter(
 					array(
 						'slug' => $slug,
@@ -83,11 +83,11 @@ class Static_Site_Importer_Validation_Runtime {
 					)
 				),
 			),
-			'summary'      => array(
+			'summary'       => array(
 				'quality_pass' => false,
 				'error_code'   => $error->get_error_code(),
 			),
-			'diagnostics'  => array(
+			'diagnostics'   => array(
 				array(
 					'type'        => 'validation_error',
 					'severity'    => 'error',
@@ -98,7 +98,7 @@ class Static_Site_Importer_Validation_Runtime {
 					'owner'       => 'static-site-importer',
 				),
 			),
-			'artifacts'    => array(),
+			'artifacts'     => array(),
 			'import_report' => array(),
 		);
 		$result['fixture_diagnostics'] = Static_Site_Importer_Diagnostic_Contract::build( $result );
@@ -124,22 +124,22 @@ class Static_Site_Importer_Validation_Runtime {
 		$quality_pass           = ! empty( $quality['pass'] );
 		$import_report          = self::read_json_object_file( $report_path );
 
-		$result = array(
+		$result                        = array(
 			'success'       => $quality_pass,
 			'schema'        => self::RESULT_SCHEMA,
 			'status'        => $quality_pass ? 'passed' : 'failed',
 			'fixture_id'    => (string) ( $import_args['slug'] ?? '' ),
 			'request'       => array( 'import_args' => $import_args ),
 			'runtime'       => array(
-				'provider'      => 'static-site-importer/current-runtime',
-				'status'        => 'completed',
-				'artifact_dir'  => basename( $artifact_dir ),
+				'provider'     => 'static-site-importer/current-runtime',
+				'status'       => 'completed',
+				'artifact_dir' => basename( $artifact_dir ),
 			),
 			'summary'       => array(
-				'quality_pass'          => $quality_pass,
-				'import_report'         => is_readable( $report_path ) ? 'captured' : 'missing',
-				'block_validation'      => is_readable( $validation_result_path ) ? 'captured' : 'missing',
-				'theme_slug'            => (string) ( $import_result['theme_slug'] ?? '' ),
+				'quality_pass'     => $quality_pass,
+				'import_report'    => is_readable( $report_path ) ? 'captured' : 'missing',
+				'block_validation' => is_readable( $validation_result_path ) ? 'captured' : 'missing',
+				'theme_slug'       => (string) ( $import_result['theme_slug'] ?? '' ),
 			),
 			'import_report' => $import_report,
 			'artifacts'     => array(
@@ -176,7 +176,7 @@ class Static_Site_Importer_Validation_Runtime {
 			$directory  = trailingslashit( $base_dir ) . 'static-site-importer/validation-' . sanitize_title( $slug ) . '-' . sanitize_key( uniqid( '', true ) );
 		}
 
-		$created = function_exists( 'wp_mkdir_p' ) ? wp_mkdir_p( $directory ) : ( is_dir( $directory ) || mkdir( $directory, 0777, true ) );
+		$created = function_exists( 'wp_mkdir_p' ) ? wp_mkdir_p( $directory ) : false;
 		if ( ! $created ) {
 			return new WP_Error( 'static_site_importer_validation_artifact_dir_failed', 'Could not create validation artifact directory.' );
 		}

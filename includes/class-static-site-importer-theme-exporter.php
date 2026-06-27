@@ -22,7 +22,7 @@ class Static_Site_Importer_Theme_Exporter {
 	 * Export an imported or active block theme as a website artifact.
 	 *
 	 * @param array $args Export args.
-	 * @return array{result:array<string,mixed>}|WP_Error
+	 * @return array{website_artifact:array<string,mixed>}|WP_Error
 	 */
 	public static function export_theme( array $args = array() ) {
 		$transformer = new Static_Site_Importer_Transformer_Adapter();

@@ -93,7 +93,7 @@ if ( ! function_exists( 'static_site_importer_cli_write_validation_output' ) ) {
 
 		$directory = dirname( $output );
 		if ( ! is_dir( $directory ) ) {
-			$created = function_exists( 'wp_mkdir_p' ) ? wp_mkdir_p( $directory ) : mkdir( $directory, 0777, true );
+			$created = function_exists( 'wp_mkdir_p' ) ? wp_mkdir_p( $directory ) : false;
 			if ( ! $created ) {
 				WP_CLI::error( 'Failed to create validation output directory.' );
 			}
@@ -191,7 +191,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			unset( $args );
 			$halt_on_failure = ! isset( $assoc_args['allow-failure'] ) && false !== ( $assoc_args['error-on-fail'] ?? true ) && ! isset( $assoc_args['no-error-on-fail'] );
 
-			$input = array(
+			$input  = array(
 				'slug'                      => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
 				'name'                      => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
 				'activate'                  => ! isset( $assoc_args['no-activate'] ),

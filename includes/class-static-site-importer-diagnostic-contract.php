@@ -185,14 +185,14 @@ class Static_Site_Importer_Diagnostic_Contract {
 				continue;
 			}
 
-			$type          = self::first_identifier( $row, array( 'type', 'kind', 'code', 'reason_code' ), 'diagnostic' );
-			$reason_code   = self::first_identifier( $row, array( 'reason_code', 'code', 'reason', 'kind', 'type' ), $type );
-			$source_path   = self::first_scalar( $row, array( 'source_path', 'path', 'source', 'file', 'script_path' ), '' );
-			$repair_bucket = self::repair_bucket( $type, $reason_code, $row );
-			$loss_class    = Static_Site_Importer_Diagnostic_Loss_Classes::classify( array_merge( $row, array( 'repair_bucket' => $repair_bucket ) ) );
-			$repair_bucket = self::repair_bucket_for_loss_class( $repair_bucket, $loss_class );
-			$parser_owner  = self::parser_owner( $type, $repair_bucket, $row );
-			$diagnostic    = array(
+			$type                           = self::first_identifier( $row, array( 'type', 'kind', 'code', 'reason_code' ), 'diagnostic' );
+			$reason_code                    = self::first_identifier( $row, array( 'reason_code', 'code', 'reason', 'kind', 'type' ), $type );
+			$source_path                    = self::first_scalar( $row, array( 'source_path', 'path', 'source', 'file', 'script_path' ), '' );
+			$repair_bucket                  = self::repair_bucket( $type, $reason_code, $row );
+			$loss_class                     = Static_Site_Importer_Diagnostic_Loss_Classes::classify( array_merge( $row, array( 'repair_bucket' => $repair_bucket ) ) );
+			$repair_bucket                  = self::repair_bucket_for_loss_class( $repair_bucket, $loss_class );
+			$parser_owner                   = self::parser_owner( $type, $repair_bucket, $row );
+			$diagnostic                     = array(
 				'id'                      => self::first_scalar( $row, array( 'id' ), sprintf( 'diag-%03d-%s', $index + 1, sanitize_key( $type . '-' . $reason_code . '-' . $source_path ) ) ),
 				'type'                    => sanitize_key( $type ),
 				'kind'                    => sanitize_key( self::first_identifier( $row, array( 'kind', 'code', 'type' ), $type ) ),

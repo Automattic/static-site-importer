@@ -440,7 +440,7 @@ if ( ! function_exists( 'static_site_importer_error_diagnostics' ) ) {
 				'message'     => $message,
 				'stage'       => 'validation',
 				'owner'       => 'static-site-importer',
-			)
+			),
 		);
 	}
 }

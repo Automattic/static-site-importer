@@ -32,15 +32,15 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 			return $explicit;
 		}
 
-		$type        = sanitize_key( self::scalar( $diagnostic, array( 'type', 'kind', 'code' ) ) );
-		$category    = sanitize_key( self::scalar( $diagnostic, array( 'category' ) ) );
-		$repair      = sanitize_key( self::scalar( $diagnostic, array( 'suggested_repair_class', 'repair_bucket', 'group_key' ) ) );
-		$reason      = sanitize_key( self::scalar( $diagnostic, array( 'reason_code', 'reason', 'error_code' ) ) );
-		$stage       = sanitize_key( self::scalar( $diagnostic, array( 'stage' ) ) );
-		$block_name  = self::scalar( $diagnostic, array( 'block_name', 'observed_block_name' ) );
-		$element     = self::scalar( $diagnostic, array( 'element', 'tag_name', 'tag' ) );
-		$selector    = self::scalar( $diagnostic, array( 'selector', 'target_selector', 'runtime_target_selector' ) );
-		$haystack    = strtolower( implode( ' ', array( $type, $category, $repair, $reason, $stage, $block_name, $element, $selector ) ) );
+		$type       = sanitize_key( self::scalar( $diagnostic, array( 'type', 'kind', 'code' ) ) );
+		$category   = sanitize_key( self::scalar( $diagnostic, array( 'category' ) ) );
+		$repair     = sanitize_key( self::scalar( $diagnostic, array( 'suggested_repair_class', 'repair_bucket', 'group_key' ) ) );
+		$reason     = sanitize_key( self::scalar( $diagnostic, array( 'reason_code', 'reason', 'error_code' ) ) );
+		$stage      = sanitize_key( self::scalar( $diagnostic, array( 'stage' ) ) );
+		$block_name = self::scalar( $diagnostic, array( 'block_name', 'observed_block_name' ) );
+		$element    = self::scalar( $diagnostic, array( 'element', 'tag_name', 'tag' ) );
+		$selector   = self::scalar( $diagnostic, array( 'selector', 'target_selector', 'runtime_target_selector' ) );
+		$haystack   = strtolower( implode( ' ', array( $type, $category, $repair, $reason, $stage, $block_name, $element, $selector ) ) );
 
 		if (
 			self::contains_any(
@@ -119,10 +119,6 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	public static function counts( array $diagnostics ): array {
 		$counts = array_fill_keys( self::classes(), 0 );
 		foreach ( $diagnostics as $diagnostic ) {
-			if ( ! is_array( $diagnostic ) ) {
-				continue;
-			}
-
 			$class            = self::classify( $diagnostic );
 			$counts[ $class ] = ( $counts[ $class ] ?? 0 ) + 1;
 		}

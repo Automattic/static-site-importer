@@ -1722,7 +1722,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			$source_path = isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : self::diagnostic_source_path( $source );
 			$reason_code = self::diagnostic_reason_code( $type, $diagnostic );
 
-			$machine = array(
+			$machine                     = array(
 				'id'                     => self::diagnostic_id( $index, $type, $source_path, $reason_code ),
 				'severity'               => self::diagnostic_severity( $type ),
 				'category'               => self::diagnostic_category( $type ),
@@ -2166,11 +2166,11 @@ class Static_Site_Importer_Report_Diagnostics {
 	 */
 	private static function compact_import_report_diagnostic_summary( array $diagnostics ): array {
 		$summary = array(
-			'total'   => 0,
-			'error'   => 0,
-			'warning' => 0,
-			'notice'  => 0,
-			'info'    => 0,
+			'total'      => 0,
+			'error'      => 0,
+			'warning'    => 0,
+			'notice'     => 0,
+			'info'       => 0,
 			'loss_class' => Static_Site_Importer_Diagnostic_Loss_Classes::counts( $diagnostics ),
 		);
 
@@ -2203,11 +2203,11 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 
 			$summaries[] = array(
-				'id'      => isset( $diagnostic['id'] ) && is_scalar( $diagnostic['id'] ) ? (string) $diagnostic['id'] : '',
-				'type'    => isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : 'static_site_importer_diagnostic',
+				'id'         => isset( $diagnostic['id'] ) && is_scalar( $diagnostic['id'] ) ? (string) $diagnostic['id'] : '',
+				'type'       => isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : 'static_site_importer_diagnostic',
 				'loss_class' => isset( $diagnostic['loss_class'] ) && is_scalar( $diagnostic['loss_class'] ) ? (string) $diagnostic['loss_class'] : Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ),
-				'source'  => self::diagnostic_summary_source( $diagnostic ),
-				'message' => self::diagnostic_summary_message( $diagnostic ),
+				'source'     => self::diagnostic_summary_source( $diagnostic ),
+				'message'    => self::diagnostic_summary_message( $diagnostic ),
 			);
 
 			if ( count( $summaries ) >= 10 ) {
@@ -2296,7 +2296,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$compact = array();
 		foreach ( array_slice( $diagnostics, 0, 50 ) as $diagnostic ) {
 			$diagnostic = self::with_matrix_diagnostic_aliases( $diagnostic );
-			$row = array();
+			$row        = array();
 			foreach ( $fields as $field ) {
 				if ( ! array_key_exists( $field, $diagnostic ) || null === $diagnostic[ $field ] || '' === $diagnostic[ $field ] || array() === $diagnostic[ $field ] ) {
 					continue;
