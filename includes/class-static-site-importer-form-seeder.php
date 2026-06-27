@@ -63,14 +63,14 @@ class Static_Site_Importer_Form_Seeder {
 			return $report;
 		}
 
-		$available             = self::jetpack_forms_available();
-		$report['provider']    = self::PROVIDER_ID;
-		$report['available']   = $available;
-		$report['status']      = 'completed';
+		$available           = self::jetpack_forms_available();
+		$report['provider']  = self::PROVIDER_ID;
+		$report['available'] = $available;
+		$report['status']    = 'completed';
 
 		foreach ( $forms as $form ) {
-			$row                = self::seed_form( $form, $available );
-			$report['forms'][]  = $row;
+			$row               = self::seed_form( $form, $available );
+			$report['forms'][] = $row;
 
 			$status = $row['status'] ?? 'error';
 			if ( isset( $report['counts'][ $status ] ) ) {
@@ -182,13 +182,13 @@ class Static_Site_Importer_Form_Seeder {
 
 		if ( empty( $field_blocks ) ) {
 			return array(
-				'selector'      => $selector,
-				'provider'      => self::PROVIDER_ID,
-				'block_name'    => 'jetpack/contact-form',
-				'status'        => 'skipped',
-				'reason'        => 'no_mappable_form_fields',
+				'selector'       => $selector,
+				'provider'       => self::PROVIDER_ID,
+				'block_name'     => 'jetpack/contact-form',
+				'status'         => 'skipped',
+				'reason'         => 'no_mappable_form_fields',
 				'runtime_mapped' => false,
-				'skipped_types' => array_values( array_unique( array_filter( $skipped ) ) ),
+				'skipped_types'  => array_values( array_unique( array_filter( $skipped ) ) ),
 			);
 		}
 
@@ -198,17 +198,17 @@ class Static_Site_Importer_Form_Seeder {
 		$markup         = self::serialize_block( 'jetpack/contact-form', $form_attrs, $inner_blocks );
 
 		return array(
-			'selector'       => $selector,
-			'provider'       => self::PROVIDER_ID,
-			'block_name'     => 'jetpack/contact-form',
-			'status'         => 'mapped',
-			'field_count'    => count( $field_blocks ),
-			'field_blocks'   => $mapped_types,
-			'skipped_types'  => array_values( array_unique( array_filter( $skipped ) ) ),
-			'submit_text'    => $submit_text,
-			'runtime_mapped' => true,
+			'selector'        => $selector,
+			'provider'        => self::PROVIDER_ID,
+			'block_name'      => 'jetpack/contact-form',
+			'status'          => 'mapped',
+			'field_count'     => count( $field_blocks ),
+			'field_blocks'    => $mapped_types,
+			'skipped_types'   => array_values( array_unique( array_filter( $skipped ) ) ),
+			'submit_text'     => $submit_text,
+			'runtime_mapped'  => true,
 			'runtime_carried' => $available,
-			'block_markup'   => $markup,
+			'block_markup'    => $markup,
 		);
 	}
 
@@ -356,7 +356,7 @@ class Static_Site_Importer_Form_Seeder {
 		$attr_json = '';
 		if ( ! empty( $attrs ) ) {
 			$encoded = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs ) : json_encode( $attrs ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode
-			if ( is_string( $encoded ) && '' !== $encoded && '[]' !== $encoded ) {
+			if ( is_string( $encoded ) && '[]' !== $encoded ) {
 				$attr_json = ' ' . $encoded;
 			}
 		}
@@ -367,7 +367,7 @@ class Static_Site_Importer_Form_Seeder {
 
 		$inner = array();
 		foreach ( $inner_blocks as $block ) {
-			if ( ! is_array( $block ) || empty( $block['name'] ) ) {
+			if ( empty( $block['name'] ) ) {
 				continue;
 			}
 			$inner[] = self::serialize_block(

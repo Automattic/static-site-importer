@@ -97,12 +97,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 		$capability_adapters = array();
 		foreach ( $adapters as $adapter ) {
-			if ( ! is_array( $adapter ) || $capability !== (string) ( $adapter['capability'] ?? '' ) ) {
+			if ( (string) ( $adapter['capability'] ?? '' ) !== $capability ) {
 				continue;
 			}
 
 			$capability_adapters[] = $adapter;
-			if ( $provider === (string) ( $adapter['provider'] ?? '' ) ) {
+			if ( (string) ( $adapter['provider'] ?? '' ) === $provider ) {
 				return $adapter;
 			}
 		}
@@ -555,9 +555,6 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 
 		$rows = isset( $data['forms'] ) && is_array( $data['forms'] ) ? $data['forms'] : $data;
-		if ( ! is_array( $rows ) ) {
-			$rows = array();
-		}
 
 		$index = 0;
 		foreach ( $rows as $form ) {

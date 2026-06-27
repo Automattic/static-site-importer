@@ -1053,9 +1053,9 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		if ( empty( $indexes ) ) {
-			$seeding           = Static_Site_Importer_Entity_Materializer_Registry::new_entity_report( $adapter );
-			$seeding['status'] = 'skipped';
-			$seeding['reason'] = 'no_form_findings';
+			$seeding                = Static_Site_Importer_Entity_Materializer_Registry::new_entity_report( $adapter );
+			$seeding['status']      = 'skipped';
+			$seeding['reason']      = 'no_form_findings';
 			$report['form_seeding'] = $seeding;
 			return $seeding;
 		}
@@ -1116,7 +1116,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		if ( '' !== $selector ) {
 			foreach ( $pending as $index ) {
 				$diagnostic = $diagnostics[ $index ] ?? array();
-				if ( is_array( $diagnostic ) && $selector === (string) ( $diagnostic['selector'] ?? '' ) ) {
+				if ( (string) ( $diagnostic['selector'] ?? '' ) === $selector ) {
 					return $index;
 				}
 			}
@@ -1731,12 +1731,12 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<string,mixed>
 	 */
 	private static function enrich_form_fallback_diagnostic( array $diagnostic, array $fallback, string $diagnostic_code ): array {
-		$diagnostic['diagnostic_code'] = $diagnostic_code;
-		$diagnostic['loss_class']      = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
-		$diagnostic['diagnostic_class'] = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
-		$diagnostic['tag']             = 'form';
-		$diagnostic['tag_name']        = isset( $diagnostic['tag_name'] ) && '' !== $diagnostic['tag_name'] ? $diagnostic['tag_name'] : 'form';
-		$diagnostic['element']         = 'form';
+		$diagnostic['diagnostic_code']     = $diagnostic_code;
+		$diagnostic['loss_class']          = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
+		$diagnostic['diagnostic_class']    = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
+		$diagnostic['tag']                 = 'form';
+		$diagnostic['tag_name']            = isset( $diagnostic['tag_name'] ) && '' !== $diagnostic['tag_name'] ? $diagnostic['tag_name'] : 'form';
+		$diagnostic['element']             = 'form';
 		$diagnostic['suggested_primitive'] = 'form';
 		$diagnostic['runtime_requirement'] = self::first_scalar( $fallback, array( 'runtime_requirement' ) );
 
