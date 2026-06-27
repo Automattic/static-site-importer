@@ -1860,8 +1860,13 @@ class Static_Site_Importer_Report_Diagnostics {
 	 */
 	private static function diagnostic_reason_code( string $type, array $diagnostic ): string {
 		foreach ( array( 'reason_code', 'reason', 'error_code' ) as $key ) {
-			if ( isset( $diagnostic[ $key ] ) && is_scalar( $diagnostic[ $key ] ) && '' !== trim( (string) $diagnostic[ $key ] ) ) {
-				return sanitize_key( (string) $diagnostic[ $key ] );
+			if ( ! isset( $diagnostic[ $key ] ) || ! is_scalar( $diagnostic[ $key ] ) ) {
+				continue;
+			}
+
+			$value = trim( (string) $diagnostic[ $key ] );
+			if ( '' !== $value && ! preg_match( '/^\d+$/', $value ) ) {
+				return sanitize_key( $value );
 			}
 		}
 

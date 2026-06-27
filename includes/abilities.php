@@ -423,7 +423,7 @@ if ( ! function_exists( 'static_site_importer_error_diagnostics' ) ) {
 		);
 
 		foreach ( $candidates as $candidate ) {
-			$diagnostics = array_values( array_filter( $candidate, 'is_array' ) );
+			$diagnostics = array_values( array_filter( $candidate, 'static_site_importer_is_actionable_error_diagnostic' ) );
 			if ( ! empty( $diagnostics ) ) {
 				return $diagnostics;
 			}
@@ -442,6 +442,33 @@ if ( ! function_exists( 'static_site_importer_error_diagnostics' ) ) {
 				'owner'       => 'static-site-importer',
 			)
 		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_is_actionable_error_diagnostic' ) ) {
+	/**
+	 * Check whether an error diagnostic has machine-actionable identity or source context.
+	 *
+	 * @param mixed $diagnostic Candidate diagnostic.
+	 * @return bool
+	 */
+	function static_site_importer_is_actionable_error_diagnostic( $diagnostic ): bool {
+		if ( ! is_array( $diagnostic ) ) {
+			return false;
+		}
+
+		foreach ( array( 'type', 'kind', 'code', 'reason_code', 'reason', 'error_code', 'source_path', 'path', 'source', 'selector' ) as $field ) {
+			if ( ! isset( $diagnostic[ $field ] ) || ! is_scalar( $diagnostic[ $field ] ) ) {
+				continue;
+			}
+
+			$value = trim( (string) $diagnostic[ $field ] );
+			if ( '' !== $value && ! preg_match( '/^\d+$/', $value ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 }
 

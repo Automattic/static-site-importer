@@ -185,15 +185,15 @@ class Static_Site_Importer_Diagnostic_Contract {
 				continue;
 			}
 
-			$type          = self::first_scalar( $row, array( 'type', 'kind', 'code', 'reason_code' ), 'diagnostic' );
-			$reason_code   = self::first_scalar( $row, array( 'reason_code', 'code', 'reason', 'kind', 'type' ), $type );
+			$type          = self::first_identifier( $row, array( 'type', 'kind', 'code', 'reason_code' ), 'diagnostic' );
+			$reason_code   = self::first_identifier( $row, array( 'reason_code', 'code', 'reason', 'kind', 'type' ), $type );
 			$source_path   = self::first_scalar( $row, array( 'source_path', 'path', 'source', 'file', 'script_path' ), '' );
 			$repair_bucket = self::repair_bucket( $type, $reason_code, $row );
 			$parser_owner  = self::parser_owner( $type, $repair_bucket, $row );
 			$diagnostic    = array(
 				'id'                      => self::first_scalar( $row, array( 'id' ), sprintf( 'diag-%03d-%s', $index + 1, sanitize_key( $type . '-' . $reason_code . '-' . $source_path ) ) ),
 				'type'                    => sanitize_key( $type ),
-				'kind'                    => sanitize_key( self::first_scalar( $row, array( 'kind', 'code', 'type' ), $type ) ),
+				'kind'                    => sanitize_key( self::first_identifier( $row, array( 'kind', 'code', 'type' ), $type ) ),
 				'severity'                => self::first_scalar( $row, array( 'severity', 'level' ), self::default_diagnostic_severity( $type ) ),
 				'category'                => self::diagnostic_category( $type ),
 				'group_key'               => $repair_bucket,
@@ -439,6 +439,41 @@ class Static_Site_Importer_Diagnostic_Contract {
 		}
 
 		return $fallback;
+	}
+
+	/**
+	 * Resolve a diagnostic identity value without treating counts/indexes as codes.
+	 *
+	 * @param array<string,mixed> $row      Source row.
+	 * @param array<int,string>   $fields   Candidate fields.
+	 * @param string              $fallback Fallback value.
+	 * @return string
+	 */
+	private static function first_identifier( array $row, array $fields, string $fallback = '' ): string {
+		foreach ( $fields as $field ) {
+			if ( ! isset( $row[ $field ] ) || ! is_scalar( $row[ $field ] ) ) {
+				continue;
+			}
+
+			$value = trim( (string) $row[ $field ] );
+			if ( '' === $value || self::is_numeric_only_string( $value ) ) {
+				continue;
+			}
+
+			return $value;
+		}
+
+		return $fallback;
+	}
+
+	/**
+	 * Check whether a string is only a numeric count/index.
+	 *
+	 * @param string $value Value.
+	 * @return bool
+	 */
+	private static function is_numeric_only_string( string $value ): bool {
+		return 1 === preg_match( '/^\d+$/', trim( $value ) );
 	}
 
 	/**

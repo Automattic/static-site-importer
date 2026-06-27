@@ -161,6 +161,44 @@ $assert( 'core_html_block' === ( $quality_gate_error['errors'][0]['kind'] ?? '' 
 $assert( 'fallback_block' === ( $quality_gate_error['fixture_diagnostics']['diagnostics'][0]['repair_bucket'] ?? '' ), 'ability-error-fixture-diagnostics-classified' );
 $assert( 'editable_approximation' === ( $quality_gate_error['fixture_diagnostics']['diagnostics'][0]['loss_class'] ?? '' ), 'ability-error-fixture-loss-classified' );
 
+$numeric_contract = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'status'      => 'failed',
+		'success'     => false,
+		'diagnostics' => array(
+			array(
+				'type'        => '2',
+				'kind'        => '8',
+				'reason'      => '3',
+				'source_path' => 'website/index.html',
+			),
+		),
+	)
+);
+$numeric_diagnostic = $numeric_contract['diagnostics'][0] ?? array();
+$numeric_only       = static fn ( $value ): bool => is_scalar( $value ) && 1 === preg_match( '/^\d+$/', (string) $value );
+$assert( ! $numeric_only( $numeric_diagnostic['type'] ?? '' ), 'contract-type-not-numeric-only' );
+$assert( ! $numeric_only( $numeric_diagnostic['kind'] ?? '' ), 'contract-kind-not-numeric-only' );
+$assert( ! $numeric_only( $numeric_diagnostic['reason_code'] ?? '' ), 'contract-reason-code-not-numeric-only' );
+
+$numeric_quality_gate_error = static_site_importer_ability_error(
+	'static_site_importer_quality_gate_failed',
+	'Import failed quality gates; materialization was not completed.',
+	array(
+		'import_validation_result' => array(
+			'diagnostics' => array(
+				array(
+					'message' => '2',
+				),
+			),
+		),
+	)
+);
+$assert( 'validation_error' === ( $numeric_quality_gate_error['errors'][0]['kind'] ?? '' ), 'ability-error-rejects-numeric-message-diagnostic' );
+$assert( ! $numeric_only( $numeric_quality_gate_error['errors'][0]['reason'] ?? '' ), 'ability-error-reason-not-numeric-only' );
+$assert( ! $numeric_only( $numeric_quality_gate_error['fixture_diagnostics']['diagnostics'][0]['kind'] ?? '' ), 'fixture-diagnostic-kind-not-numeric-only' );
+$assert( ! $numeric_only( $numeric_quality_gate_error['fixture_diagnostics']['diagnostics'][0]['reason_code'] ?? '' ), 'fixture-diagnostic-reason-code-not-numeric-only' );
+
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );
