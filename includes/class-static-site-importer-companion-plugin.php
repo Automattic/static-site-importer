@@ -188,15 +188,17 @@ class Static_Site_Importer_Companion_Plugin {
 			);
 		}
 
-		$block_json = self::block_json( $block, $block_namespace . '/' . $name );
+		$render     = isset( $block['render'] ) && is_scalar( $block['render'] ) ? (string) $block['render'] : '';
+		$has_render = '' !== $render;
+
+		$block_json = self::block_json( $block, $block_namespace . '/' . $name, $has_render );
 		if ( is_wp_error( $block_json ) ) {
 			return $block_json;
 		}
 
 		$files = array( 'block.json' => $block_json );
 
-		$render = isset( $block['render'] ) && is_scalar( $block['render'] ) ? (string) $block['render'] : '';
-		if ( '' !== $render ) {
+		if ( $has_render ) {
 			$files['render.php'] = self::normalize_render( $render );
 		}
 
@@ -226,9 +228,10 @@ class Static_Site_Importer_Companion_Plugin {
 	 *
 	 * @param array<string,mixed> $block      Block payload entry.
 	 * @param string              $block_name Fully-qualified block name.
+	 * @param bool                $has_render Whether build_block writes a render.php for this block.
 	 * @return string|WP_Error
 	 */
-	private static function block_json( array $block, string $block_name ) {
+	private static function block_json( array $block, string $block_name, bool $has_render = false ) {
 		$raw = $block['block_json'] ?? null;
 		if ( is_string( $raw ) ) {
 			$decoded = json_decode( $raw, true );
@@ -253,6 +256,13 @@ class Static_Site_Importer_Companion_Plugin {
 		}
 		if ( ! isset( $decoded['apiVersion'] ) ) {
 			$decoded['apiVersion'] = 3;
+		}
+
+		// Wire the generated render.php so register_block_type() picks up the
+		// server-render callback. Respect any render value the upstream payload
+		// already declared, and never point a static block at a missing file.
+		if ( $has_render && ! isset( $decoded['render'] ) ) {
+			$decoded['render'] = 'file:./render.php';
 		}
 
 		return self::encode_json( $decoded );

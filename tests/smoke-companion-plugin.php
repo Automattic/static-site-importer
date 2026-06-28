@@ -153,9 +153,57 @@ if ( is_array( $descriptor ) ) {
 
 	$render = $files['ssi-example-site/blocks/custom-hero/render.php'] ?? '';
 	$assert( str_starts_with( ltrim( $render ), '<?php' ), 'render-php-opens-with-php-tag' );
+	// A block with render content must wire block.json -> render.php so
+	// register_block_type() actually invokes the generated render callback.
+	$assert( '' !== $render, 'render-block-emits-render-php' );
+	$assert( is_array( $block_json ) && 'file:./render.php' === ( $block_json['render'] ?? '' ), 'block-json-wires-render-file', is_array( $block_json ) && isset( $block_json['render'] ) ? (string) $block_json['render'] : '(absent)' );
 
 	$island_files = array_filter( array_keys( $files ), static fn ( string $path ): bool => str_contains( $path, '/islands/' ) && str_ends_with( $path, '.js' ) );
 	$assert( 1 === count( $island_files ), 'preserved-island-js-file-emitted' );
+}
+
+// A static block (no render content) must not get a render key pointing at a
+// render.php that build_block never writes, and an upstream-declared render
+// value must be preserved verbatim rather than clobbered to file:./render.php.
+$render_variants = Static_Site_Importer_Companion_Plugin::scaffold(
+	array(
+		'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+		'site_slug' => 'render-variants',
+		'site_name' => 'Render Variants',
+		'blocks'    => array(
+			array(
+				'name'       => 'Static Card',
+				'block_json' => array(
+					'title'    => 'Static Card',
+					'category' => 'design',
+				),
+			),
+			array(
+				'name'       => 'Declared Render',
+				'block_json' => array(
+					'title'    => 'Declared Render',
+					'category' => 'design',
+					'render'   => 'file:./custom-render.php',
+				),
+				'render'     => '<div class="ssi-declared"></div>',
+			),
+		),
+	)
+);
+$assert( is_array( $render_variants ), 'render-variants-scaffold-returns-descriptor', is_array( $render_variants ) ? '' : 'WP_Error returned' );
+
+if ( is_array( $render_variants ) ) {
+	$variant_files = $render_variants['files'];
+
+	$static_json_raw = $variant_files['ssi-render-variants/blocks/static-card/block.json'] ?? '';
+	$static_json     = json_decode( $static_json_raw, true );
+	$assert( is_array( $static_json ) && ! isset( $static_json['render'] ), 'static-block-json-omits-render-key', is_array( $static_json ) && isset( $static_json['render'] ) ? (string) $static_json['render'] : '(absent)' );
+	$assert( ! isset( $variant_files['ssi-render-variants/blocks/static-card/render.php'] ), 'static-block-emits-no-render-php' );
+
+	$declared_json_raw = $variant_files['ssi-render-variants/blocks/declared-render/block.json'] ?? '';
+	$declared_json     = json_decode( $declared_json_raw, true );
+	$assert( is_array( $declared_json ) && 'file:./custom-render.php' === ( $declared_json['render'] ?? '' ), 'block-json-preserves-upstream-render', is_array( $declared_json ) && isset( $declared_json['render'] ) ? (string) $declared_json['render'] : '(absent)' );
+	$assert( isset( $variant_files['ssi-render-variants/blocks/declared-render/render.php'] ), 'declared-render-block-emits-render-php' );
 }
 
 // mu-plugin variant materializes a root loader stub.
