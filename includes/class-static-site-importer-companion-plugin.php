@@ -3,10 +3,22 @@
  * Companion-plugin scaffolder.
  *
  * Generates a standalone, theme-independent WordPress plugin that houses a
- * site's generated custom blocks (registered from their own block.json) and any
- * preserved island JS, scoped to where it is used. The compiled artifact owns
- * the block.json + render + assets payload; this class is the deterministic
- * destination that turns that payload into an installable plugin file set.
+ * site's generated custom blocks as PHP-only dynamic blocks (WordPress 7.0),
+ * plus any preserved island JS scoped to where it is used.
+ *
+ * Each generated block is registered in PHP via register_block_type( $name,
+ * $args ) with an api_version, PHP-declared attributes, and a render_callback
+ * that includes the block's render.php. There is NO block.json and NO
+ * index.js/view.js build artifact for the block's editor representation:
+ * server-rendered (dynamic) blocks have no save()-vs-stored markup to diverge,
+ * so they cannot trigger "This block contains unexpected or invalid content"
+ * (#227) by construction. Component-local interactivity uses the Interactivity
+ * API (server-rendered data-wp-* directives) rather than a bundled editor
+ * script. See docs/companion-plugin-php-only-blocks.md.
+ *
+ * The compiled artifact owns the block spec + render + preserved-JS payload;
+ * this class is the deterministic destination that turns that payload into an
+ * installable plugin file set.
  *
  * The file-set builder is pure and side-effect free so it is testable without a
  * full WordPress runtime. The install/activate side effects live in
@@ -52,7 +64,7 @@ class Static_Site_Importer_Companion_Plugin {
 		if ( empty( $blocks ) ) {
 			return new WP_Error(
 				'static_site_importer_companion_plugin_blocks_missing',
-				'Companion-plugin payload must declare at least one block with a name and block.json.'
+				'Companion-plugin payload must declare at least one block with a name.'
 			);
 		}
 
@@ -63,6 +75,7 @@ class Static_Site_Importer_Companion_Plugin {
 
 		$files       = array();
 		$block_names = array();
+		$block_specs = array();
 		$preserved   = self::preserved_js( $payload, $block_namespace );
 
 		foreach ( $blocks as $block ) {
@@ -72,6 +85,7 @@ class Static_Site_Importer_Companion_Plugin {
 			}
 
 			$block_names[] = $built['block_name'];
+			$block_specs[] = $built['spec'];
 			foreach ( $built['files'] as $relative => $content ) {
 				$files[ $plugin_slug . '/blocks/' . $built['dir'] . '/' . $relative ] = $content;
 			}
@@ -84,7 +98,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$main_file = $plugin_slug . '/' . $plugin_slug . '.php';
 		$files     = array_merge(
 			array(
-				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_names, $preserved ),
+				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_specs, $preserved ),
 			),
 			$files
 		);
@@ -181,11 +195,40 @@ class Static_Site_Importer_Companion_Plugin {
 	}
 
 	/**
-	 * Build one block's file set and fully-qualified name.
+	 * Block.json keys (camelCase) mapped to register_block_type() argument keys
+	 * (the snake_case WP_Block_Type properties) that the PHP-only registration
+	 * carries into the generated plugin. Anything outside this list belongs to
+	 * the JS-build editor representation we deliberately no longer emit.
+	 */
+	private const BLOCK_SPEC_FIELDS = array(
+		'apiVersion'      => 'api_version',
+		'title'           => 'title',
+		'category'        => 'category',
+		'parent'          => 'parent',
+		'ancestor'        => 'ancestor',
+		'description'     => 'description',
+		'keywords'        => 'keywords',
+		'textdomain'      => 'textdomain',
+		'icon'            => 'icon',
+		'attributes'      => 'attributes',
+		'providesContext' => 'provides_context',
+		'usesContext'     => 'uses_context',
+		'supports'        => 'supports',
+		'styles'          => 'styles',
+		'example'         => 'example',
+	);
+
+	/**
+	 * Build one PHP-only dynamic block: its render.php (+ any carried assets) and
+	 * the PHP registration spec the main plugin file feeds to register_block_type.
 	 *
-	 * @param array<string,mixed> $block     Block payload entry.
+	 * No block.json and no index.js/view.js build artifact is emitted for the
+	 * block. The block is registered server-side via render_callback, so it is a
+	 * dynamic block with no save()-vs-stored markup that could go invalid.
+	 *
+	 * @param array<string,mixed> $block           Block payload entry.
 	 * @param string              $block_namespace Plugin block namespace.
-	 * @return array{block_name:string,dir:string,files:array<string,string>}|WP_Error
+	 * @return array{block_name:string,dir:string,spec:array<string,mixed>,files:array<string,string>}|WP_Error
 	 */
 	private static function build_block( array $block, string $block_namespace ) {
 		$name = isset( $block['name'] ) && is_scalar( $block['name'] ) ? self::sanitize_slug( (string) $block['name'] ) : '';
@@ -196,25 +239,21 @@ class Static_Site_Importer_Companion_Plugin {
 			);
 		}
 
-		$render     = isset( $block['render'] ) && is_scalar( $block['render'] ) ? (string) $block['render'] : '';
-		$has_render = '' !== $render;
-
-		$block_json = self::block_json( $block, $block_namespace . '/' . $name, $has_render );
-		if ( is_wp_error( $block_json ) ) {
-			return $block_json;
+		$block_name = $block_namespace . '/' . $name;
+		$args       = self::block_args( $block, $block_name );
+		if ( is_wp_error( $args ) ) {
+			return $args;
 		}
 
-		$files = array( 'block.json' => $block_json );
+		// The render callback always resolves to render.php, so it is always
+		// emitted even when the payload omits markup (an empty dynamic block).
+		$render              = isset( $block['render'] ) && is_scalar( $block['render'] ) ? (string) $block['render'] : '';
+		$files               = array();
+		$files['render.php'] = self::normalize_render( $render );
 
-		if ( $has_render ) {
-			$files['render.php'] = self::normalize_render( $render );
-		}
-
-		$view_js = isset( $block['view_js'] ) && is_scalar( $block['view_js'] ) ? (string) $block['view_js'] : '';
-		if ( '' !== $view_js ) {
-			$files['view.js'] = $view_js;
-		}
-
+		// Carried static assets (e.g. block stylesheets or a hand-written
+		// Interactivity API view module) ride alongside render.php. These are
+		// pass-through files, not generated JS build output.
 		$assets = isset( $block['assets'] ) && is_array( $block['assets'] ) ? $block['assets'] : array();
 		foreach ( $assets as $relative => $content ) {
 			$relative = self::sanitize_relative_path( (string) $relative );
@@ -225,26 +264,38 @@ class Static_Site_Importer_Companion_Plugin {
 		}
 
 		return array(
-			'block_name' => $block_namespace . '/' . $name,
+			'block_name' => $block_name,
 			'dir'        => $name,
+			'spec'       => array(
+				'name' => $block_name,
+				'dir'  => $name,
+				'args' => $args,
+			),
 			'files'      => $files,
 		);
 	}
 
 	/**
-	 * Resolve a block.json string, forcing the namespaced block name.
+	 * Resolve the register_block_type() argument array for a block.
+	 *
+	 * Accepts the existing block_json payload slot (object or JSON string) as the
+	 * source of the editor-facing metadata, but emits only the server-side
+	 * registration arguments WP_Block_Type understands. The fully-qualified name
+	 * is owned by the companion plugin namespace and passed separately to
+	 * register_block_type(), so it is intentionally not part of the args.
 	 *
 	 * @param array<string,mixed> $block      Block payload entry.
 	 * @param string              $block_name Fully-qualified block name.
-	 * @param bool                $has_render Whether build_block writes a render.php for this block.
-	 * @return string|WP_Error
+	 * @return array<string,mixed>|WP_Error
 	 */
-	private static function block_json( array $block, string $block_name, bool $has_render = false ) {
+	private static function block_args( array $block, string $block_name ) {
 		$raw = $block['block_json'] ?? null;
 		if ( is_string( $raw ) ) {
 			$decoded = json_decode( $raw, true );
 		} elseif ( is_array( $raw ) ) {
 			$decoded = $raw;
+		} elseif ( null === $raw ) {
+			$decoded = array();
 		} else {
 			$decoded = null;
 		}
@@ -256,24 +307,25 @@ class Static_Site_Importer_Companion_Plugin {
 			);
 		}
 
-		// The companion plugin owns the namespace, so the generated block.json is
-		// authoritative for the block name regardless of what the payload carried.
-		$decoded['name'] = $block_name;
-		if ( ! isset( $decoded['$schema'] ) ) {
-			$decoded = array( '$schema' => 'https://schemas.wp.org/trunk/block.json' ) + $decoded;
-		}
-		if ( ! isset( $decoded['apiVersion'] ) ) {
-			$decoded['apiVersion'] = 3;
+		$args = array();
+		foreach ( self::BLOCK_SPEC_FIELDS as $json_key => $arg_key ) {
+			if ( array_key_exists( $json_key, $decoded ) ) {
+				$args[ $arg_key ] = $decoded[ $json_key ];
+			}
 		}
 
-		// Wire the generated render.php so register_block_type() picks up the
-		// server-render callback. Respect any render value the upstream payload
-		// already declared, and never point a static block at a missing file.
-		if ( $has_render && ! isset( $decoded['render'] ) ) {
-			$decoded['render'] = 'file:./render.php';
+		// Server-rendered dynamic block: api_version >= 2 enables the new block
+		// wrapper, and we default to the current API version when unspecified.
+		if ( ! isset( $args['api_version'] ) ) {
+			$args['api_version'] = 3;
 		}
 
-		return self::encode_json( $decoded );
+		// Attributes must be a map for WP_Block_Type::prepare_attributes_for_render.
+		if ( isset( $args['attributes'] ) && ! is_array( $args['attributes'] ) ) {
+			unset( $args['attributes'] );
+		}
+
+		return $args;
 	}
 
 	/**
@@ -320,33 +372,40 @@ class Static_Site_Importer_Companion_Plugin {
 	/**
 	 * Render the main plugin PHP file.
 	 *
-	 * @param string                          $plugin_slug Plugin slug.
-	 * @param string                          $block_namespace   Block namespace.
-	 * @param string                          $site_name   Human-readable site name.
-	 * @param array<int,string>               $block_names Fully-qualified block names.
-	 * @param array<int,array<string,string>> $preserved   Preserved island descriptors.
+	 * @param string                          $plugin_slug     Plugin slug.
+	 * @param string                          $block_namespace Block namespace.
+	 * @param string                          $site_name       Human-readable site name.
+	 * @param array<int,array<string,mixed>>  $block_specs     PHP-only block registration specs.
+	 * @param array<int,array<string,string>> $preserved       Preserved island descriptors.
 	 * @return string
 	 */
 	private static function main_plugin_file(
 		string $plugin_slug,
 		string $block_namespace,
 		string $site_name,
-		array $block_names,
+		array $block_specs,
 		array $preserved
 	): string {
-		$header_name = sprintf( 'SSI Companion: %s', $site_name );
-		$fn_prefix   = str_replace( '-', '_', $plugin_slug );
-		$islands_php = self::export_islands_php( $preserved );
+		$header_name  = sprintf( 'SSI Companion: %s', $site_name );
+		$fn_prefix    = str_replace( '-', '_', $plugin_slug );
+		$const_prefix = strtoupper( $fn_prefix );
+		$islands_php  = self::export_islands_php( $preserved );
+		$specs_php    = self::export_block_specs_php( $block_specs );
 
 		$lines   = array();
 		$lines[] = '<?php';
 		$lines[] = '/**';
 		$lines[] = ' * Plugin Name: ' . $header_name;
-		$lines[] = ' * Description: Generated companion plugin housing custom blocks and preserved island JS for ' . $site_name . '. Generated by Static Site Importer.';
+		$lines[] = ' * Description: Generated companion plugin housing PHP-only dynamic blocks and preserved island JS for ' . $site_name . '. Generated by Static Site Importer.';
 		$lines[] = ' * Version: 1.0.0';
 		$lines[] = ' * Requires at least: 6.9';
 		$lines[] = ' * Requires PHP: 8.1';
 		$lines[] = ' * Text Domain: ' . $plugin_slug;
+		$lines[] = ' *';
+		$lines[] = ' * Blocks are registered in PHP via register_block_type( $name, $args ) with a';
+		$lines[] = ' * render_callback (dynamic / server-rendered). There is no block.json and no';
+		$lines[] = ' * JS build: a dynamic block has no save()-vs-stored markup to diverge, so it';
+		$lines[] = ' * cannot trigger "This block contains unexpected or invalid content".';
 		$lines[] = ' *';
 		$lines[] = ' * @package StaticSiteImporterCompanion';
 		$lines[] = ' */';
@@ -355,23 +414,55 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\texit;";
 		$lines[] = '}';
 		$lines[] = '';
-		$lines[] = sprintf( "define( '%s_DIR', plugin_dir_path( __FILE__ ) );", strtoupper( $fn_prefix ) );
-		$lines[] = sprintf( "define( '%s_URL', plugin_dir_url( __FILE__ ) );", strtoupper( $fn_prefix ) );
+		$lines[] = sprintf( "define( '%s_DIR', plugin_dir_path( __FILE__ ) );", $const_prefix );
+		$lines[] = sprintf( "define( '%s_URL', plugin_dir_url( __FILE__ ) );", $const_prefix );
 		$lines[] = '';
 		$lines[] = '/**';
-		$lines[] = ' * Register the generated custom blocks from their own block.json.';
+		$lines[] = ' * PHP-only dynamic block registration specs for this site.';
+		$lines[] = ' *';
+		$lines[] = ' * Each entry carries the fully-qualified block name, its render.php directory,';
+		$lines[] = ' * and the register_block_type() argument array (api_version, attributes, and';
+		$lines[] = ' * any editor metadata). The render_callback is attached at registration time.';
+		$lines[] = ' *';
+		$lines[] = ' * @return array<int,array<string,mixed>>';
+		$lines[] = ' */';
+		$lines[] = sprintf( 'function %s_block_specs() {', $fn_prefix );
+		$lines[] = "\treturn " . $specs_php . ';';
+		$lines[] = '}';
+		$lines[] = '';
+		$lines[] = '/**';
+		$lines[] = ' * Build a render_callback that server-renders a block from its render.php.';
+		$lines[] = ' *';
+		$lines[] = ' * render.php receives $attributes, $content, and $block in scope, mirroring the';
+		$lines[] = ' * block.json `render` template contract without needing a block.json file.';
+		$lines[] = ' *';
+		$lines[] = ' * @param string $block_dir Block directory under blocks/.';
+		$lines[] = ' * @return callable';
+		$lines[] = ' */';
+		$lines[] = sprintf( 'function %s_render_callback( $block_dir ) {', $fn_prefix );
+		$lines[] = "\treturn static function ( \$attributes, \$content, \$block ) use ( \$block_dir ) {";
+		$lines[] = sprintf( "\t\t\$render = %s_DIR . 'blocks/' . \$block_dir . '/render.php';", $const_prefix );
+		$lines[] = "\t\tif ( ! is_readable( \$render ) ) {";
+		$lines[] = "\t\t\treturn '';";
+		$lines[] = "\t\t}";
+		$lines[] = "\t\tob_start();";
+		$lines[] = "\t\tinclude \$render;";
+		$lines[] = "\t\treturn (string) ob_get_clean();";
+		$lines[] = "\t};";
+		$lines[] = '}';
+		$lines[] = '';
+		$lines[] = '/**';
+		$lines[] = ' * Register the generated PHP-only dynamic blocks.';
 		$lines[] = ' */';
 		$lines[] = sprintf( 'function %s_register_blocks() {', $fn_prefix );
-		$lines[] = sprintf( "\t\$blocks_dir = %s_DIR . 'blocks';", strtoupper( $fn_prefix ) );
-		$lines[] = "\tif ( ! is_dir( \$blocks_dir ) || ! function_exists( 'register_block_type' ) ) {";
+		$lines[] = "\tif ( ! function_exists( 'register_block_type' ) ) {";
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
 		$lines[] = '';
-		$lines[] = sprintf( "\tforeach ( %s as \$block_dir ) {", self::export_block_dirs_php( $block_names ) );
-		$lines[] = "\t\t\$path = \$blocks_dir . '/' . \$block_dir;";
-		$lines[] = "\t\tif ( is_dir( \$path ) ) {";
-		$lines[] = "\t\t\tregister_block_type( \$path );";
-		$lines[] = "\t\t}";
+		$lines[] = sprintf( "\tforeach ( %s_block_specs() as \$spec ) {", $fn_prefix );
+		$lines[] = "\t\t\$args                    = isset( \$spec['args'] ) && is_array( \$spec['args'] ) ? \$spec['args'] : array();";
+		$lines[] = sprintf( "\t\t\$args['render_callback'] = %s_render_callback( (string) \$spec['dir'] );", $fn_prefix );
+		$lines[] = "\t\tregister_block_type( (string) \$spec['name'], \$args );";
 		$lines[] = "\t}";
 		$lines[] = '}';
 		$lines[] = sprintf( "add_action( 'init', '%s_register_blocks' );", $fn_prefix );
@@ -469,51 +560,92 @@ class Static_Site_Importer_Companion_Plugin {
 	}
 
 	/**
-	 * Export the block directory list as a PHP array literal.
+	 * Export the PHP-only block registration specs as a PHP array literal.
 	 *
-	 * @param array<int,string> $block_names Fully-qualified block names.
+	 * @param array<int,array<string,mixed>> $block_specs Block registration specs.
 	 * @return string
 	 */
-	private static function export_block_dirs_php( array $block_names ): string {
-		$dirs = array();
-		foreach ( $block_names as $block_name ) {
-			$parts  = explode( '/', $block_name );
-			$dirs[] = "'" . self::php_single_quote( (string) end( $parts ) ) . "'";
+	private static function export_block_specs_php( array $block_specs ): string {
+		if ( empty( $block_specs ) ) {
+			return 'array()';
 		}
 
-		return 'array( ' . implode( ', ', $dirs ) . ' )';
+		return self::export_php_value( array_values( $block_specs ), 1 );
 	}
 
 	/**
-	 * Ensure the render markup opens with a PHP tag so register_block_type can use it.
+	 * Export an arbitrary scalar/array value as deterministic, lint-clean PHP.
 	 *
-	 * @param string $render Render markup or PHP.
+	 * Used to embed register_block_type() argument arrays (api_version,
+	 * attributes, supports, ...) directly into the generated plugin file so the
+	 * companion plugin needs no block.json to describe its blocks.
+	 *
+	 * @param mixed $value  Value to export.
+	 * @param int   $indent Current indentation depth (tabs).
+	 * @return string
+	 */
+	private static function export_php_value( $value, int $indent = 0 ): string {
+		if ( is_array( $value ) ) {
+			if ( array() === $value ) {
+				return 'array()';
+			}
+
+			$is_list = array_keys( $value ) === range( 0, count( $value ) - 1 );
+			$pad     = str_repeat( "\t", $indent + 1 );
+			$rows    = array();
+			foreach ( $value as $key => $item ) {
+				$exported = self::export_php_value( $item, $indent + 1 );
+				if ( $is_list ) {
+					$rows[] = $pad . $exported . ',';
+				} else {
+					$rows[] = $pad . "'" . self::php_single_quote( (string) $key ) . "' => " . $exported . ',';
+				}
+			}
+
+			return "array(\n" . implode( "\n", $rows ) . "\n" . str_repeat( "\t", $indent ) . ')';
+		}
+
+		if ( is_bool( $value ) ) {
+			return $value ? 'true' : 'false';
+		}
+
+		if ( null === $value ) {
+			return 'null';
+		}
+
+		if ( is_int( $value ) ) {
+			return (string) $value;
+		}
+
+		if ( is_float( $value ) ) {
+			// var_export keeps a parseable float literal (e.g. trailing .0).
+			return var_export( $value, true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.prevent_path_disclosure_var_export -- Generating a deterministic PHP literal for the scaffolded plugin file.
+		}
+
+		return "'" . self::php_single_quote( (string) $value ) . "'";
+	}
+
+	/**
+	 * Build a render.php template that the dynamic block's render_callback runs.
+	 *
+	 * The closure exposes $attributes, $content, and $block, so a render.php that
+	 * echoes from those variables works exactly like a block.json `render` file.
+	 * An empty payload falls back to passing inner content through unchanged.
+	 *
+	 * @param string $render Render markup or PHP from the payload.
 	 * @return string
 	 */
 	private static function normalize_render( string $render ): string {
 		$trimmed = ltrim( $render );
+		if ( '' === $trimmed ) {
+			return "<?php\n/**\n * Generated companion block render (server-rendered dynamic block).\n *\n * @package StaticSiteImporterCompanion\n *\n * @var array<string,mixed> \$attributes Block attributes.\n * @var string              \$content    Inner block content.\n * @var WP_Block            \$block      Block instance.\n */\n\necho \$content; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Inner block content is already sanitized by WordPress.\n";
+		}
+
 		if ( str_starts_with( $trimmed, '<?php' ) || str_starts_with( $trimmed, '<?=' ) ) {
 			return $render;
 		}
 
-		return "<?php\n/**\n * Generated companion block render.\n *\n * @package StaticSiteImporterCompanion\n */\n?>\n" . $render;
-	}
-
-	/**
-	 * JSON-encode a value with stable formatting, guarded for non-WP runtimes.
-	 *
-	 * @param array<string,mixed> $value Value to encode.
-	 * @return string
-	 */
-	private static function encode_json( array $value ): string {
-		$flags = JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
-		if ( function_exists( 'wp_json_encode' ) ) {
-			$encoded = wp_json_encode( $value, $flags );
-		} else {
-			$encoded = json_encode( $value, $flags ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Generated outside a WP runtime in tests; wp_json_encode used when available.
-		}
-
-		return false === $encoded ? '{}' : $encoded . "\n";
+		return "<?php\n/**\n * Generated companion block render (server-rendered dynamic block).\n *\n * @package StaticSiteImporterCompanion\n *\n * @var array<string,mixed> \$attributes Block attributes.\n * @var string              \$content    Inner block content.\n * @var WP_Block            \$block      Block instance.\n */\n?>\n" . $render;
 	}
 
 	/**
