@@ -103,7 +103,32 @@ class Static_Site_Importer_Transformer_Adapter {
 			$compiled['runtime_dependency_parity'] = $runtime_dependency_parity;
 		}
 
+		$companion_plugin_payload = $this->companion_plugin_payload_from_result( $result );
+		if ( ! empty( $companion_plugin_payload ) ) {
+			$compiled['companion_plugin_payload'] = $companion_plugin_payload;
+		}
+
 		return $compiled;
+	}
+
+	/**
+	 * Read the generated companion-plugin payload Blocks Engine emits when an
+	 * artifact compiles to PHP-only custom blocks that need a per-site plugin
+	 * home. The producer keys it under source_reports.companion_plugin_payload
+	 * (schema static-site-importer/companion-plugin/v1) only when non-empty, so
+	 * an absent slot means there are no generated blocks to house.
+	 *
+	 * @param array<string,mixed> $result TransformerResult::toArray() output.
+	 * @return array<string,mixed>
+	 */
+	private function companion_plugin_payload_from_result( array $result ): array {
+		if ( ! isset( $result['source_reports'] ) || ! is_array( $result['source_reports'] ) ) {
+			return array();
+		}
+
+		$payload = $result['source_reports']['companion_plugin_payload'] ?? null;
+
+		return is_array( $payload ) ? $payload : array();
 	}
 
 	/**

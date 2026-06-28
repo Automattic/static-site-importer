@@ -190,8 +190,10 @@ class Static_Site_Importer_Theme_Generator {
 		self::analyze_generated_theme_block_documents( $writes, $theme_dir );
 		self::$conversion_report['theme_slug'] = $theme_slug;
 		self::materialize_required_plugins( $args );
+		self::materialize_companion_plugin( $compiled, $args );
 		self::record_product_seeding_report( $args );
 		self::record_commerce_dependency_check( $args );
+		self::record_companion_plugin_dependency_check( $compiled, $args );
 		self::record_form_materialization( $args );
 		$source_of_truth_manifest                    = self::source_of_truth_manifest( $import_run_id, $source_artifact_reference, $theme_dir, $theme_slug, $page_targets, $page_ids, $permalinks, $writes, $materialized );
 		self::$conversion_report['source_of_truth'] = $source_of_truth_manifest;
@@ -2918,6 +2920,92 @@ class Static_Site_Importer_Theme_Generator {
 			'status'  => self::plugin_materialization_status( $reports ),
 			'plugins' => $reports,
 		);
+	}
+
+	/**
+	 * Read the generated companion-plugin payload carried by the compiled artifact.
+	 *
+	 * Blocks Engine emits source_reports.companion_plugin_payload (threaded into
+	 * the compiled envelope by the transformer adapter) only when an artifact
+	 * compiles to PHP-only custom blocks that need a per-site plugin home. A
+	 * payload without blocks is treated as absent so no companion is declared.
+	 *
+	 * @param array<string, mixed> $compiled Compiler result envelope.
+	 * @return array<string, mixed>
+	 */
+	private static function companion_plugin_payload( array $compiled ): array {
+		$payload = isset( $compiled['companion_plugin_payload'] ) && is_array( $compiled['companion_plugin_payload'] ) ? $compiled['companion_plugin_payload'] : array();
+		$blocks  = isset( $payload['blocks'] ) && is_array( $payload['blocks'] ) ? $payload['blocks'] : array();
+
+		return empty( $blocks ) ? array() : $payload;
+	}
+
+	/**
+	 * Install and activate the generated companion plugin carried by the artifact.
+	 *
+	 * Companion plugins are per-site and generated at import time, so the payload
+	 * is turned into a first-class `companion_plugin` dependency and run through
+	 * the same dependency-install path WooCommerce/Jetpack directory slugs use.
+	 * The install reports are merged into the plugin_materialization surface
+	 * alongside the directory-plugin reports. Honors the same
+	 * materialize_dependencies opt-out as the directory-plugin path.
+	 *
+	 * @param array<string, mixed> $compiled Compiler result envelope.
+	 * @param array<string, mixed> $args     Import args.
+	 * @return void
+	 */
+	private static function materialize_companion_plugin( array $compiled, array $args ): void {
+		$payload = self::companion_plugin_payload( $compiled );
+		if ( empty( $payload ) ) {
+			return;
+		}
+		if ( array_key_exists( 'materialize_dependencies', $args ) && false === (bool) $args['materialize_dependencies'] ) {
+			return;
+		}
+
+		$dependency = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $payload );
+		$reports    = Static_Site_Importer_Entity_Materializer_Registry::materialize_plugin_dependencies(
+			array( 'dependencies' => array( $dependency ) )
+		);
+		if ( empty( $reports ) ) {
+			return;
+		}
+
+		if ( ! isset( self::$conversion_report['plugin_materialization'] ) || ! is_array( self::$conversion_report['plugin_materialization'] ) ) {
+			self::$conversion_report['plugin_materialization'] = array(
+				'status'  => 'skipped',
+				'plugins' => array(),
+			);
+		}
+		$existing = isset( self::$conversion_report['plugin_materialization']['plugins'] ) && is_array( self::$conversion_report['plugin_materialization']['plugins'] ) ? self::$conversion_report['plugin_materialization']['plugins'] : array();
+		$merged   = array_merge( $existing, $reports );
+
+		self::$conversion_report['plugin_materialization']['plugins'] = $merged;
+		self::$conversion_report['plugin_materialization']['status']  = self::plugin_materialization_status( $merged );
+	}
+
+	/**
+	 * Record the generated companion-plugin dependency check for the import.
+	 *
+	 * Mirrors record_commerce_dependency_check: after the companion plugin has
+	 * been materialized, the declared dependency row and its diagnostics are
+	 * recorded so the quality gate enforces that generated blocks have an active
+	 * plugin home (or surfaces a waived warning). allow_missing_companion_plugin
+	 * waives enforcement the same way allow_missing_woocommerce does for commerce.
+	 *
+	 * @param array<string, mixed> $compiled Compiler result envelope.
+	 * @param array<string, mixed> $args     Import args.
+	 * @return void
+	 */
+	private static function record_companion_plugin_dependency_check( array $compiled, array $args ): void {
+		$payload = self::companion_plugin_payload( $compiled );
+		if ( empty( $payload ) ) {
+			return;
+		}
+
+		$waived     = ! empty( $args['allow_missing_companion_plugin'] );
+		$dependency = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $payload );
+		Static_Site_Importer_Report_Diagnostics::record_companion_plugin_dependency( self::$conversion_report, $dependency, $waived );
 	}
 
 	/**
