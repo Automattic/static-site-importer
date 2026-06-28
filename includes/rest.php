@@ -231,12 +231,29 @@ function static_site_importer_rest_create_playground_open( array $artifact, arra
 }
 
 /**
- * Build the WPSG-style self-contained Playground blueprint that runs the import.
+ * Build the Playground blueprint steps that import a website artifact on boot.
  *
- * @param array<string,mixed> $input Import ability input.
- * @return array<string,mixed>
+ * Public, reusable primitive: consumers (for example, a host shell or a site
+ * forge) can build the "import-on-boot" steps without reaching into the
+ * REST-internal blueprint builder. The steps are byte-identical to the ones
+ * {@see static_site_importer_rest_playground_blueprint()} ships today.
+ *
+ * The returned steps are:
+ * - login
+ * - installPlugin (SSI from GitHub releases) — omitted when $options['install'] is false
+ * - runPHP — runs static_site_importer_ability_import_website_artifact( $input )
+ *
+ * Pass `'install' => false` for hosts/runtimes where SSI is already present
+ * (for example, shipped as a mu-plugin in a sandbox runtime) so the blueprint
+ * skips the GitHub release install step and imports against the bundled plugin.
+ *
+ * @param array<string,mixed> $input   Import ability input.
+ * @param array<string,mixed> $options Optional. { install: bool (default true) }.
+ * @return array<int,array<string,mixed>>
  */
-function static_site_importer_rest_playground_blueprint( array $input ): array {
+function static_site_importer_playground_import_steps( array $input, array $options = array() ): array {
+	$install = ! array_key_exists( 'install', $options ) || ! empty( $options['install'] );
+
 	// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Generates self-contained Playground import code.
 	$input_literal = var_export( $input, true );
 	$import_code   = '<?php
@@ -255,6 +272,47 @@ if ( ! is_array( $result ) || empty( $result["success"] ) ) {
 update_option( "static_site_importer_playground_preview_result", $result, false );
 ?>';
 
+	$steps = array(
+		array(
+			'step' => 'login',
+		),
+	);
+
+	if ( $install ) {
+		$steps[] = array(
+			'step'       => 'installPlugin',
+			'pluginData' => array(
+				'resource' => 'url',
+				'url'      => 'https://github.com/Automattic/static-site-importer/releases/latest/download/static-site-importer.zip',
+			),
+			'options'    => array(
+				'activate'         => true,
+				'targetFolderName' => 'static-site-importer',
+			),
+		);
+	}
+
+	$steps[] = array(
+		'step' => 'runPHP',
+		'code' => $import_code,
+	);
+
+	return $steps;
+}
+
+/**
+ * Build the full Playground blueprint that imports a website artifact on boot.
+ *
+ * Public, reusable primitive that wraps {@see static_site_importer_playground_import_steps()}
+ * into a complete blueprint ($schema, landingPage, preferredVersions, features,
+ * steps). The blueprint shape is identical to what
+ * {@see static_site_importer_rest_playground_blueprint()} returns today.
+ *
+ * @param array<string,mixed> $input   Import ability input.
+ * @param array<string,mixed> $options Optional. { install: bool (default true) }.
+ * @return array<string,mixed>
+ */
+function static_site_importer_playground_import_blueprint( array $input, array $options = array() ): array {
 	return array(
 		'$schema'           => 'https://playground.wordpress.net/blueprint-schema.json',
 		'landingPage'       => '/',
@@ -265,27 +323,22 @@ update_option( "static_site_importer_playground_preview_result", $result, false 
 		'features'          => array(
 			'networking' => true,
 		),
-		'steps'             => array(
-			array(
-				'step' => 'login',
-			),
-			array(
-				'step'       => 'installPlugin',
-				'pluginData' => array(
-					'resource' => 'url',
-					'url'      => 'https://github.com/Automattic/static-site-importer/releases/latest/download/static-site-importer.zip',
-				),
-				'options'    => array(
-					'activate'         => true,
-					'targetFolderName' => 'static-site-importer',
-				),
-			),
-			array(
-				'step' => 'runPHP',
-				'code' => $import_code,
-			),
-		),
+		'steps'             => static_site_importer_playground_import_steps( $input, $options ),
 	);
+}
+
+/**
+ * Build the WPSG-style self-contained Playground blueprint that runs the import.
+ *
+ * Thin REST-internal wrapper retained for backward compatibility. Delegates to
+ * the public {@see static_site_importer_playground_import_blueprint()} primitive
+ * with the install step enabled so the public /import preview URL is unchanged.
+ *
+ * @param array<string,mixed> $input Import ability input.
+ * @return array<string,mixed>
+ */
+function static_site_importer_rest_playground_blueprint( array $input ): array {
+	return static_site_importer_playground_import_blueprint( $input );
 }
 
 /**
