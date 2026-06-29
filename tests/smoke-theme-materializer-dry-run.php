@@ -56,6 +56,13 @@ if ( ! function_exists( 'sanitize_key' ) ) {
 	}
 }
 
+if ( ! function_exists( 'sanitize_title' ) ) {
+	function sanitize_title( string $title ): string {
+		$title = strtolower( trim( $title ) );
+		return preg_replace( '/[^a-z0-9_\-]+/', '-', $title ) ?? '';
+	}
+}
+
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-materializer.php';
 
 $failures   = array();
@@ -160,6 +167,38 @@ $unsafe_theme_writes = Static_Site_Importer_Theme_Materializer::base_theme_write
 );
 $unsafe_theme_json   = json_decode( $unsafe_theme_writes[ $theme_dir . '/theme.json' ] ?? '', true );
 $assert( ! isset( $unsafe_theme_json['styles']['typography']['fontFamily'] ), 'unsafe-body-font-family-is-not-materialized' );
+
+// Sources commonly apply the body face through a CSS custom property
+// (`body { font-family: var(--font-body) }` defined in :root). theme.json must
+// carry the resolved typeface stack so the body font actually applies, instead
+// of an undefined `var(--font-body)` that silently falls back to the default.
+$var_font_writes = Static_Site_Importer_Theme_Materializer::base_theme_writes(
+	$theme_dir,
+	'imported-theme',
+	'Imported Theme',
+	":root { --font-body: 'Lora', Georgia, serif; } body { font-family: var(--font-body); }",
+	false,
+	false
+);
+$var_font_json   = json_decode( $var_font_writes[ $theme_dir . '/theme.json' ] ?? '', true );
+$assert(
+	"'Lora', Georgia, serif" === ( $var_font_json['styles']['typography']['fontFamily'] ?? '' ),
+	'var-body-font-family-resolves-to-concrete-typeface-in-theme-json',
+	(string) ( $var_font_json['styles']['typography']['fontFamily'] ?? '' )
+);
+
+// An unresolvable var() (no definition, no fallback) must never be written into
+// theme.json as a dead reference.
+$unresolved_var_writes = Static_Site_Importer_Theme_Materializer::base_theme_writes(
+	$theme_dir,
+	'imported-theme',
+	'Imported Theme',
+	'body { font-family: var(--font-missing); }',
+	false,
+	false
+);
+$unresolved_var_json   = json_decode( $unresolved_var_writes[ $theme_dir . '/theme.json' ] ?? '', true );
+$assert( ! isset( $unresolved_var_json['styles']['typography']['fontFamily'] ), 'unresolved-var-body-font-family-is-not-materialized' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
