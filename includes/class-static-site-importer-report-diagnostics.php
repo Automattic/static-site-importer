@@ -1241,6 +1241,318 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
+	 * Materialize detected product-grid fallbacks through the configured shop provider.
+	 *
+	 * Collects every `html_product_grid_fallback` finding, normalizes each detected
+	 * product into a `products-manifest/v1` row (deriving a slug, normalizing the
+	 * currency price text into a decimal string, and forwarding description, image,
+	 * and source selectors), runs the rows through the shop adapter's manifest
+	 * validator + seeder, and stamps the runtime-mapped / acceptable-preservation
+	 * signal onto each finding whose products were actually seeded. Findings whose
+	 * products could not be seeded (for example because WooCommerce is unavailable)
+	 * keep no signal and stay an unacceptable parity loss, which lets the existing
+	 * commerce dependency gate report the missing runtime.
+	 *
+	 * @param array<string,mixed> $report Import report (mutated in place).
+	 * @param array<string,mixed> $args   Import args.
+	 * @return array<string,mixed> The recorded product_finding_seeding report.
+	 */
+	public static function materialize_product_findings( array &$report, array $args = array() ): array {
+		$adapter = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
+
+		$diagnostics = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
+		$indexes     = self::product_grid_finding_indexes( $diagnostics );
+
+		if ( empty( $indexes ) ) {
+			$seeding                           = Static_Site_Importer_Entity_Materializer_Registry::new_entity_report( $adapter );
+			$seeding['status']                 = 'skipped';
+			$seeding['reason']                 = 'no_product_findings';
+			$report['product_finding_seeding'] = $seeding;
+			return $seeding;
+		}
+
+		$manifest_products = array();
+		$finding_slugs     = array();
+		foreach ( $indexes as $index ) {
+			$diagnostic = $report['diagnostics'][ $index ];
+			$products   = isset( $diagnostic['products'] ) && is_array( $diagnostic['products'] ) ? $diagnostic['products'] : array();
+			$container  = isset( $diagnostic['container_selector'] ) && is_scalar( $diagnostic['container_selector'] )
+				? (string) $diagnostic['container_selector']
+				: ( isset( $diagnostic['selector'] ) && is_scalar( $diagnostic['selector'] ) ? (string) $diagnostic['selector'] : '' );
+
+			foreach ( $products as $product ) {
+				if ( ! is_array( $product ) ) {
+					continue;
+				}
+
+				$row = self::product_finding_manifest_row( $product, $container );
+				if ( null === $row ) {
+					continue;
+				}
+
+				$manifest_products[]       = $row;
+				$finding_slugs[ $index ][] = $row['slug'];
+			}
+		}
+
+		$manifest   = array(
+			'schema_version' => 1,
+			'products'       => $manifest_products,
+		);
+		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest( $adapter, $manifest );
+		$validated  = isset( $validation['products'] ) && is_array( $validation['products'] ) ? $validation['products'] : array();
+
+		$seeding = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, array( 'products' => $validated ) );
+
+		$seeding['provider']      = Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'shop' );
+		$seeding['finding_count'] = count( $indexes );
+		$seeding['product_count'] = count( $manifest_products );
+		$seeding['mapped_count']  = 0;
+		$seeding['waived']        = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? 'allow_missing_woocommerce' ) ] );
+		$seeding['manifest']      = $manifest;
+		if ( ! empty( $validation['errors'] ) ) {
+			$seeding['validation_errors'] = $validation['errors'];
+		}
+
+		$seeded_slugs = array();
+		foreach ( ( isset( $seeding['products'] ) && is_array( $seeding['products'] ) ? $seeding['products'] : array() ) as $product_row ) {
+			if ( ! is_array( $product_row ) ) {
+				continue;
+			}
+			if ( in_array( (string) ( $product_row['status'] ?? '' ), array( 'created', 'updated' ), true ) ) {
+				$seeded_slugs[ (string) ( $product_row['slug'] ?? '' ) ] = true;
+			}
+		}
+
+		foreach ( $indexes as $index ) {
+			$slugs = $finding_slugs[ $index ] ?? array();
+			foreach ( $slugs as $slug ) {
+				if ( isset( $seeded_slugs[ $slug ] ) ) {
+					++$seeding['mapped_count'];
+					$report['diagnostics'][ $index ] = self::mark_product_finding_mapped( $report['diagnostics'][ $index ], $seeding['provider'] );
+					break;
+				}
+			}
+		}
+
+		$report['product_finding_seeding'] = $seeding;
+		return $seeding;
+	}
+
+	/**
+	 * Return diagnostic indexes for every detected product-grid fallback finding.
+	 *
+	 * @param array<int,mixed> $diagnostics Report diagnostics.
+	 * @return array<int,int>
+	 */
+	public static function product_grid_finding_indexes( array $diagnostics ): array {
+		$indexes = array();
+		foreach ( $diagnostics as $index => $diagnostic ) {
+			if ( ! is_array( $diagnostic ) ) {
+				continue;
+			}
+
+			$code = (string) ( $diagnostic['diagnostic_code'] ?? '' );
+			if ( '' === $code ) {
+				$code = (string) ( $diagnostic['kind'] ?? '' );
+			}
+
+			if ( 'html_product_grid_fallback' === $code ) {
+				$indexes[] = (int) $index;
+			}
+		}
+
+		return $indexes;
+	}
+
+	/**
+	 * Normalize one detected product into a products-manifest/v1 row.
+	 *
+	 * @param array<string,mixed> $product           Detected product entry.
+	 * @param string              $container_selector Owning grid container selector.
+	 * @return array<string,mixed>|null
+	 */
+	private static function product_finding_manifest_row( array $product, string $container_selector ): ?array {
+		$name = isset( $product['name'] ) && is_scalar( $product['name'] ) ? trim( (string) $product['name'] ) : '';
+		if ( '' === $name ) {
+			return null;
+		}
+
+		$slug_source = isset( $product['slug'] ) && is_scalar( $product['slug'] ) && '' !== trim( (string) $product['slug'] )
+			? (string) $product['slug']
+			: $name;
+		$slug        = self::product_slug( $slug_source );
+		if ( '' === $slug ) {
+			return null;
+		}
+
+		$row = array(
+			'name'          => $name,
+			'slug'          => $slug,
+			'regular_price' => self::normalize_product_price( isset( $product['price'] ) && is_scalar( $product['price'] ) ? (string) $product['price'] : '' ),
+		);
+
+		$sale_price = self::normalize_product_price( isset( $product['sale_price'] ) && is_scalar( $product['sale_price'] ) ? (string) $product['sale_price'] : '' );
+		if ( '' !== $sale_price ) {
+			$row['sale_price'] = $sale_price;
+		}
+
+		if ( isset( $product['description'] ) && is_scalar( $product['description'] ) && '' !== trim( (string) $product['description'] ) ) {
+			$row['description'] = (string) $product['description'];
+		}
+
+		$image = self::product_image_src( $product['image'] ?? null );
+		if ( '' !== $image ) {
+			$row['image'] = $image;
+		}
+
+		$selectors = array();
+		if ( isset( $product['source_selector'] ) && is_scalar( $product['source_selector'] ) && '' !== trim( (string) $product['source_selector'] ) ) {
+			$selectors[] = trim( (string) $product['source_selector'] );
+		}
+		if ( '' !== $container_selector ) {
+			$selectors[] = $container_selector;
+		}
+		$selectors = array_values( array_unique( $selectors ) );
+		if ( ! empty( $selectors ) ) {
+			$row['source_selectors'] = $selectors;
+		}
+
+		return $row;
+	}
+
+	/**
+	 * Derive a lowercase URL slug for a product.
+	 *
+	 * @param string $text Slug source text.
+	 * @return string
+	 */
+	private static function product_slug( string $text ): string {
+		if ( function_exists( 'sanitize_title' ) ) {
+			return sanitize_title( $text );
+		}
+
+		$slug = strtolower( trim( $text ) );
+		$slug = preg_replace( '/[^a-z0-9]+/', '-', $slug );
+		return trim( is_string( $slug ) ? $slug : '', '-' );
+	}
+
+	/**
+	 * Resolve the product image source from a string or {src, alt} object.
+	 *
+	 * @param mixed $image Detected product image.
+	 * @return string
+	 */
+	private static function product_image_src( mixed $image ): string {
+		if ( is_string( $image ) ) {
+			return trim( $image );
+		}
+
+		if ( is_array( $image ) ) {
+			$src = $image['src'] ?? '';
+			return is_scalar( $src ) ? trim( (string) $src ) : '';
+		}
+
+		return '';
+	}
+
+	/**
+	 * Normalize a human-readable currency price into a decimal manifest string.
+	 *
+	 * Generic and locale-tolerant: strips currency symbols, whitespace, and other
+	 * non-numeric characters, then resolves the decimal separator from the digit
+	 * grouping itself rather than any site or locale setting. Handles US grouping
+	 * ("$1,299.00" => "1299.00"), European grouping ("1.299,00 €" => "1299.00"),
+	 * symbol-only integers ("$24" => "24", "€18" => "18"), and bare decimals
+	 * ("18.00" => "18.00"). The fractional part is normalized to exactly two
+	 * decimals; integers stay integers so the manifest validator accepts both.
+	 *
+	 * @param string $price Raw price text.
+	 * @return string Decimal price string, or '' when no digits are present.
+	 */
+	public static function normalize_product_price( string $price ): string {
+		$clean = preg_replace( '/[^0-9.,]/', '', trim( $price ) );
+		$clean = is_string( $clean ) ? $clean : '';
+		if ( '' === $clean ) {
+			return '';
+		}
+
+		$comma_count = substr_count( $clean, ',' );
+		$dot_count   = substr_count( $clean, '.' );
+
+		$decimal_sep = '';
+		if ( $comma_count > 0 && $dot_count > 0 ) {
+			// When both separators appear, the rightmost one is the decimal point.
+			$decimal_sep = ( (int) strrpos( $clean, ',' ) > (int) strrpos( $clean, '.' ) ) ? ',' : '.';
+		} elseif ( 1 === $comma_count && 0 === $dot_count ) {
+			$decimal_sep = self::is_decimal_tail( $clean, ',' ) ? ',' : '';
+		} elseif ( 1 === $dot_count && 0 === $comma_count ) {
+			$decimal_sep = self::is_decimal_tail( $clean, '.' ) ? '.' : '';
+		}
+		// Repeated single separators (e.g. "1,234,567") are digit grouping only.
+
+		if ( '' !== $decimal_sep ) {
+			$parts    = explode( $decimal_sep, $clean );
+			$fraction = (string) array_pop( $parts );
+			$integer  = (string) preg_replace( '/[^0-9]/', '', implode( '', $parts ) );
+			$fraction = (string) preg_replace( '/[^0-9]/', '', $fraction );
+		} else {
+			$integer  = (string) preg_replace( '/[^0-9]/', '', $clean );
+			$fraction = '';
+		}
+
+		$integer = ltrim( $integer, '0' );
+		if ( '' === $integer ) {
+			$integer = '0';
+		}
+
+		if ( '' === $fraction ) {
+			return $integer;
+		}
+
+		if ( strlen( $fraction ) > 2 ) {
+			return number_format( (float) ( $integer . '.' . $fraction ), 2, '.', '' );
+		}
+
+		return $integer . '.' . str_pad( $fraction, 2, '0' );
+	}
+
+	/**
+	 * Decide whether a single separator's trailing digits read as a decimal part.
+	 *
+	 * @param string $clean Digit-and-separator string.
+	 * @param string $sep   Candidate decimal separator.
+	 * @return bool
+	 */
+	private static function is_decimal_tail( string $clean, string $sep ): bool {
+		$pos = strrpos( $clean, $sep );
+		if ( false === $pos ) {
+			return false;
+		}
+
+		$length = strlen( substr( $clean, $pos + 1 ) );
+		return $length >= 1 && $length <= 2;
+	}
+
+	/**
+	 * Stamp the runtime-mapped / acceptable-preservation signal onto a product finding.
+	 *
+	 * @param array<string,mixed> $diagnostic Diagnostic to mark.
+	 * @param string              $provider   Resolved shop provider id.
+	 * @return array<string,mixed>
+	 */
+	private static function mark_product_finding_mapped( array $diagnostic, string $provider ): array {
+		$diagnostic['runtime_mapped']  = true;
+		$diagnostic['mapped_provider'] = '' !== $provider ? $provider : 'woocommerce';
+		$diagnostic['acceptability']   = 'acceptable_preservation';
+		$diagnostic['block_name']      = isset( $diagnostic['block_name'] ) && is_scalar( $diagnostic['block_name'] ) && '' !== (string) $diagnostic['block_name']
+			? (string) $diagnostic['block_name']
+			: 'woocommerce/product-collection';
+
+		return $diagnostic;
+	}
+
+	/**
 	 * Build a compact diagnostic excerpt.
 	 *
 	 * @param string $html Source HTML.
@@ -1808,6 +2120,13 @@ class Static_Site_Importer_Report_Diagnostics {
 			$diagnostic = self::enrich_form_fallback_diagnostic( $diagnostic, $fallback, $diagnostic_code );
 		}
 
+		// The product-grid fallback may carry its code under `kind` (Blocks Engine
+		// product-grid contract) or `diagnostic_code` (normalized fallbacks).
+		$kind = self::first_scalar( $fallback, array( 'kind' ) );
+		if ( 'html_product_grid_fallback' === $diagnostic_code || 'html_product_grid_fallback' === $kind ) {
+			$diagnostic = self::enrich_product_grid_fallback_diagnostic( $diagnostic, $fallback );
+		}
+
 		return $diagnostic;
 	}
 
@@ -1841,6 +2160,43 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 		if ( isset( $fallback['control_count'] ) && is_numeric( $fallback['control_count'] ) ) {
 			$diagnostic['control_count'] = (int) $fallback['control_count'];
+		}
+
+		return $diagnostic;
+	}
+
+	/**
+	 * Carry preserved product-grid metadata onto its SSI diagnostic.
+	 *
+	 * Mirrors the form-fallback enrichment: keeps a stable diagnostic_code,
+	 * classifies the finding as a preserved runtime island, and forwards the
+	 * container selector plus the detected product list so the configured shop
+	 * provider can materialize the products and close the gate loop.
+	 *
+	 * @param array<string,mixed> $diagnostic Base diagnostic.
+	 * @param array<string,mixed> $fallback   Native fallback row.
+	 * @return array<string,mixed>
+	 */
+	private static function enrich_product_grid_fallback_diagnostic( array $diagnostic, array $fallback ): array {
+		$diagnostic['diagnostic_code']     = 'html_product_grid_fallback';
+		$diagnostic['loss_class']          = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
+		$diagnostic['diagnostic_class']    = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
+		$diagnostic['tag']                 = 'product-grid';
+		$diagnostic['element']             = 'product-grid';
+		$diagnostic['suggested_primitive'] = 'product';
+
+		$container = self::first_scalar( $fallback, array( 'container_selector', 'selector' ) );
+		if ( '' !== $container ) {
+			$diagnostic['container_selector'] = $container;
+			if ( empty( $diagnostic['selector'] ) ) {
+				$diagnostic['selector'] = $container;
+			}
+		}
+
+		if ( isset( $fallback['products'] ) && is_array( $fallback['products'] ) ) {
+			$products                    = array_values( array_filter( $fallback['products'], 'is_array' ) );
+			$diagnostic['products']      = $products;
+			$diagnostic['product_count'] = count( $products );
 		}
 
 		return $diagnostic;

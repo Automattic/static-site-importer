@@ -223,6 +223,7 @@ class Static_Site_Importer_Theme_Generator {
 		self::record_product_seeding_report( $args );
 		self::record_commerce_dependency_check( $args );
 		self::record_form_materialization( $args );
+		self::record_product_materialization( $args );
 		$source_of_truth_manifest                    = self::source_of_truth_manifest( $import_run_id, $source_artifact_reference, $theme_dir, $theme_slug, $page_targets, $page_ids, $permalinks, $writes, $materialized );
 		self::$conversion_report['source_of_truth'] = $source_of_truth_manifest;
 		$quality                                    = Static_Site_Importer_Report_Diagnostics::finalize_report( self::$conversion_report, $args );
@@ -3028,6 +3029,25 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
+	 * Materialize detected product-grid fallbacks through the configured shop provider.
+	 *
+	 * Mirrors the form path: preserved `html_product_grid_fallback` findings carry
+	 * the detected product list, the shop provider seeds them into real WooCommerce
+	 * products, and successfully seeded findings receive the runtime-mapped signal so
+	 * the honest fixture gate counts them as acceptable preservation instead of a
+	 * dead, unacceptable feature-parity loss. Commerce intent detection picks up the
+	 * same findings so the WooCommerce auto-install and dependency gate fire ahead of
+	 * this seeding step. Products that cannot be seeded keep no signal and stay
+	 * unacceptable.
+	 *
+	 * @param array<string, mixed> $args Import args.
+	 * @return void
+	 */
+	private static function record_product_materialization( array $args ): void {
+		Static_Site_Importer_Report_Diagnostics::materialize_product_findings( self::$conversion_report, $args );
+	}
+
+	/**
 	 * Collapse dependency reports to the legacy plugin materialization status.
 	 *
 	 * @param array<string,array<string,mixed>> $reports Dependency reports keyed by plugin slug.
@@ -3074,6 +3094,25 @@ class Static_Site_Importer_Theme_Generator {
 				}
 				if ( $context_count > $product_count ) {
 					$product_count = $context_count;
+				}
+			}
+		}
+
+		$diagnostics     = isset( self::$conversion_report['diagnostics'] ) && is_array( self::$conversion_report['diagnostics'] ) ? self::$conversion_report['diagnostics'] : array();
+		$finding_indexes = Static_Site_Importer_Report_Diagnostics::product_grid_finding_indexes( $diagnostics );
+		if ( ! empty( $finding_indexes ) ) {
+			$finding_product_count = 0;
+			foreach ( $finding_indexes as $index ) {
+				$diagnostic             = $diagnostics[ $index ] ?? array();
+				$products               = is_array( $diagnostic ) && isset( $diagnostic['products'] ) && is_array( $diagnostic['products'] ) ? $diagnostic['products'] : array();
+				$finding_product_count += count( $products );
+			}
+			if ( $finding_product_count > 0 ) {
+				if ( ! in_array( 'html_product_grid_fallback', $sources, true ) ) {
+					$sources[] = 'html_product_grid_fallback';
+				}
+				if ( $finding_product_count > $product_count ) {
+					$product_count = $finding_product_count;
 				}
 			}
 		}
