@@ -932,6 +932,8 @@ class Static_Site_Importer_Theme_Materializer {
 			return null;
 		}
 
+		$custom_properties = self::css_custom_properties( $css );
+
 		foreach ( $rule_matches as $rule_match ) {
 			$selectors = array_map( 'trim', explode( ',', strtolower( $rule_match[1] ) ) );
 			if ( ! in_array( 'body', $selectors, true ) ) {
@@ -943,12 +945,78 @@ class Static_Site_Importer_Theme_Materializer {
 			}
 
 			$value = trim( preg_replace( '/\s*!important\s*$/i', '', $property_match[1] ) );
+
+			// Source typography is commonly applied through CSS custom properties
+			// (`body { font-family: var(--font-body) }`). Resolve the reference to
+			// the concrete typeface stack so theme.json carries a font-family that
+			// actually applies, rather than an undefined `var(--font-body)` that
+			// silently falls back to the default theme font.
+			$value = self::resolve_css_variables( $value, $custom_properties );
+
 			if ( self::is_safe_font_family_value( $value ) ) {
 				return $value;
 			}
 		}
 
 		return null;
+	}
+
+	/**
+	 * Collect `--name: value` custom-property declarations from CSS.
+	 *
+	 * @param string $css Source CSS.
+	 * @return array<string,string> Map of property name to declared value.
+	 */
+	private static function css_custom_properties( string $css ): array {
+		if ( ! preg_match_all( '/(--[A-Za-z0-9_-]+)\s*:\s*([^;{}]+)/', $css, $matches, PREG_SET_ORDER ) ) {
+			return array();
+		}
+
+		$properties = array();
+		foreach ( $matches as $match ) {
+			$properties[ (string) $match[1] ] = trim( (string) $match[2] );
+		}
+
+		return $properties;
+	}
+
+	/**
+	 * Expand `var(--name[, fallback])` references using custom-property definitions.
+	 *
+	 * Bounded recursive passes resolve variables whose values reference other
+	 * variables. Unresolved references are left intact so the caller's safety
+	 * validation rejects them.
+	 *
+	 * @param string                $value      CSS value possibly containing var() references.
+	 * @param array<string,string>  $properties Custom-property map.
+	 * @return string
+	 */
+	private static function resolve_css_variables( string $value, array $properties ): string {
+		if ( false === strpos( $value, 'var(' ) ) {
+			return $value;
+		}
+
+		for ( $pass = 0; $pass < 5; $pass++ ) {
+			$expanded = preg_replace_callback(
+				'/var\(\s*(--[A-Za-z0-9_-]+)\s*(?:,\s*([^()]*))?\)/',
+				static function ( array $match ) use ( $properties ): string {
+					$name = (string) $match[1];
+					if ( isset( $properties[ $name ] ) && '' !== $properties[ $name ] ) {
+						return $properties[ $name ];
+					}
+
+					return ( isset( $match[2] ) && '' !== trim( (string) $match[2] ) ) ? trim( (string) $match[2] ) : (string) $match[0];
+				},
+				$value
+			);
+
+			if ( ! is_string( $expanded ) || $expanded === $value ) {
+				break;
+			}
+			$value = $expanded;
+		}
+
+		return trim( $value );
 	}
 
 	/**
@@ -967,7 +1035,14 @@ class Static_Site_Importer_Theme_Materializer {
 			return false;
 		}
 
-		return (bool) preg_match( '/^[A-Za-z0-9_\-\s,"\'().]+$/', $value );
+		// A real font-family stack never contains CSS function syntax. Reject any
+		// leftover parentheses (e.g. an unresolved `var(--font-body)`) so a dead
+		// custom-property reference is never written into theme.json.
+		if ( false !== strpos( $value, '(' ) || false !== strpos( $value, ')' ) ) {
+			return false;
+		}
+
+		return (bool) preg_match( '/^[A-Za-z0-9_\-\s,"\']+$/', $value );
 	}
 
 	/**
