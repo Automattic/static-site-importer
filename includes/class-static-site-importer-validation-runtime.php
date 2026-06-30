@@ -124,6 +124,9 @@ class Static_Site_Importer_Validation_Runtime {
 		$quality                = isset( $import_result['quality'] ) && is_array( $import_result['quality'] ) ? $import_result['quality'] : array();
 		$quality_pass           = ! empty( $quality['pass'] );
 		$import_report          = self::read_json_object_file( $report_path );
+		if ( empty( $import_report ) && isset( $import_result['import_report'] ) && is_array( $import_result['import_report'] ) ) {
+			$import_report = $import_result['import_report'];
+		}
 
 		$result                        = array(
 			'success'       => $quality_pass,

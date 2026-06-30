@@ -76,10 +76,11 @@ $artifact = array(
 $result = Static_Site_Importer_Theme_Generator::import_website_artifact(
 	$artifact,
 	array(
-		'name'      => 'Static Interactive Fixture',
-		'slug'      => 'static-interactive-fixture-smoke',
-		'overwrite' => true,
-		'activate'  => false,
+		'name'                         => 'Static Interactive Fixture',
+		'slug'                         => 'static-interactive-fixture-smoke',
+		'overwrite'                    => true,
+		'activate'                     => false,
+		'write_theme_report_artifacts' => true,
 	)
 );
 

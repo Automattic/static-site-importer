@@ -131,12 +131,13 @@ class Static_Site_Importer_Theme_Generator {
 			return new WP_Error( 'static_site_importer_theme_exists', sprintf( 'Theme already exists: %s', $theme_slug ) );
 		}
 
-		$import_run_id             = self::import_run_id( $args );
-		$source_artifact_reference = self::source_artifact_reference_from_compiled( $compiled, $args );
-		$source_metadata           = isset( $args['source_metadata'] ) && is_array( $args['source_metadata'] ) ? $args['source_metadata'] : array();
-		$source_metadata['source'] = 'website_artifact';
-		$html_path                 = (string) ( $compiled['provenance']['source'] ?? ( $compiled['input']['entry_path'] ?? 'website_artifact' ) );
-		self::$conversion_report   = Static_Site_Importer_Report_Diagnostics::new_conversion_report( $html_path, $source_metadata );
+		$import_run_id                = self::import_run_id( $args );
+		$write_theme_report_artifacts = self::write_theme_report_artifacts_enabled( $args );
+		$source_artifact_reference    = self::source_artifact_reference_from_compiled( $compiled, $args );
+		$source_metadata              = isset( $args['source_metadata'] ) && is_array( $args['source_metadata'] ) ? $args['source_metadata'] : array();
+		$source_metadata['source']    = 'website_artifact';
+		$html_path                    = (string) ( $compiled['provenance']['source'] ?? ( $compiled['input']['entry_path'] ?? 'website_artifact' ) );
+		self::$conversion_report      = Static_Site_Importer_Report_Diagnostics::new_conversion_report( $html_path, $source_metadata );
 		self::$conversion_report['import_run_id']            = $import_run_id;
 		self::$conversion_report['source_artifact']           = $source_artifact_reference;
 		self::$conversion_report['source_of_truth']['import_run_id'] = $import_run_id;
@@ -224,7 +225,7 @@ class Static_Site_Importer_Theme_Generator {
 		self::record_commerce_dependency_check( $args );
 		self::record_form_materialization( $args );
 		self::record_product_materialization( $args );
-		$source_of_truth_manifest                    = self::source_of_truth_manifest( $import_run_id, $source_artifact_reference, $theme_dir, $theme_slug, $page_targets, $page_ids, $permalinks, $writes, $materialized );
+		$source_of_truth_manifest                    = self::source_of_truth_manifest( $import_run_id, $source_artifact_reference, $theme_dir, $theme_slug, $page_targets, $page_ids, $permalinks, $writes, $materialized, $write_theme_report_artifacts );
 		self::$conversion_report['source_of_truth'] = $source_of_truth_manifest;
 		$quality                                    = Static_Site_Importer_Report_Diagnostics::finalize_report( self::$conversion_report, $args );
 		$validation_result      = self::$conversion_report['import_validation_result'] ?? array();
@@ -290,9 +291,11 @@ class Static_Site_Importer_Theme_Generator {
 			return new WP_Error( 'static_site_importer_manifest_encode_failed', 'Failed to encode source-of-truth manifest JSON.' );
 		}
 		$writes[ $theme_dir . '/static-site-importer-manifest.json' ] = $manifest_json . "\n";
-		$writes[ $theme_dir . '/import-report.json' ]            = $report_json . "\n";
-		$writes[ $theme_dir . '/import-validation-result.json' ] = $validation_result_json . "\n";
-		$writes[ $theme_dir . '/finding-packets.json' ]          = $finding_packets_json . "\n";
+		if ( $write_theme_report_artifacts ) {
+			$writes[ $theme_dir . '/import-report.json' ]            = $report_json . "\n";
+			$writes[ $theme_dir . '/import-validation-result.json' ] = $validation_result_json . "\n";
+			$writes[ $theme_dir . '/finding-packets.json' ]          = $finding_packets_json . "\n";
+		}
 		foreach ( $writes as $path => $content ) {
 			$result = Static_Site_Importer_Theme_Materializer::write_file( $path, $content );
 			if ( is_wp_error( $result ) ) {
@@ -343,13 +346,14 @@ class Static_Site_Importer_Theme_Generator {
 			'theme_slug'                      => $theme_slug,
 			'theme_name'                      => $theme_name,
 			'theme_dir'                       => $theme_dir,
-			'report_path'                     => $theme_dir . '/import-report.json',
-			'validation_result_path'          => $theme_dir . '/import-validation-result.json',
-			'finding_packets_path'            => $theme_dir . '/finding-packets.json',
+			'report_path'                     => $write_theme_report_artifacts ? $theme_dir . '/import-report.json' : '',
+			'validation_result_path'          => $write_theme_report_artifacts ? $theme_dir . '/import-validation-result.json' : '',
+			'finding_packets_path'            => $write_theme_report_artifacts ? $theme_dir . '/finding-packets.json' : '',
 			'manifest_path'                   => $theme_dir . '/static-site-importer-manifest.json',
 			'external_report_path'            => $external_report_path,
 			'external_validation_result_path' => $external_validation_result_path,
 			'external_finding_packets_path'   => $external_finding_packets_path,
+			'import_report'                   => self::$conversion_report,
 			'import_report_summary'           => self::$conversion_report['compact_summary'],
 			'import_validation_result'        => $validation_result,
 			'finding_packets'                 => $finding_packets,
@@ -1547,6 +1551,20 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
+	 * Whether to persist report/validation/finding JSON into the generated theme.
+	 *
+	 * @param array<string,mixed> $args Import args.
+	 * @return bool
+	 */
+	private static function write_theme_report_artifacts_enabled( array $args ): bool {
+		if ( ! array_key_exists( 'write_theme_report_artifacts', $args ) ) {
+			return false;
+		}
+
+		return false !== filter_var( $args['write_theme_report_artifacts'], FILTER_VALIDATE_BOOLEAN );
+	}
+
+	/**
 	 * Extract artifact identity fields supplied with a source artifact.
 	 *
 	 * @param array<string,mixed> $artifact Website artifact bundle.
@@ -1652,7 +1670,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * @param array<string,mixed>          $materialized  Materialized asset summary.
 	 * @return array<string,mixed>
 	 */
-	private static function source_of_truth_manifest( string $import_run_id, array $artifact, string $theme_dir, string $theme_slug, array $page_targets, array $page_ids, array $permalinks, array $writes, array $materialized ): array {
+	private static function source_of_truth_manifest( string $import_run_id, array $artifact, string $theme_dir, string $theme_slug, array $page_targets, array $page_ids, array $permalinks, array $writes, array $materialized, bool $write_theme_report_artifacts = false ): array {
 		$pages           = array();
 		$existing_pages  = array();
 		foreach ( $page_targets as $filename => $target ) {
@@ -1685,7 +1703,11 @@ class Static_Site_Importer_Theme_Generator {
 				);
 			}
 		}
-		foreach ( array( 'static-site-importer-manifest.json', 'import-report.json', 'import-validation-result.json', 'finding-packets.json' ) as $path ) {
+		$managed_metadata_files = array( 'static-site-importer-manifest.json' );
+		if ( $write_theme_report_artifacts ) {
+			$managed_metadata_files = array_merge( $managed_metadata_files, array( 'import-report.json', 'import-validation-result.json', 'finding-packets.json' ) );
+		}
+		foreach ( $managed_metadata_files as $path ) {
 			$files[] = array(
 				'target_type' => 'theme_file',
 				'path'        => $path,

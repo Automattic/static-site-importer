@@ -94,6 +94,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'allow_missing_woocommerce'    => array( 'type' => 'boolean' ),
 						'allow_missing_jetpack'        => array( 'type' => 'boolean' ),
 						'report'                       => array( 'type' => 'string' ),
+						'write_theme_report_artifacts' => array( 'type' => 'boolean' ),
 						'asset_materialization_policy' => array(
 							'type' => 'string',
 							'enum' => array( 'copy_to_theme', 'use_map' ),
@@ -133,6 +134,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'allow_missing_woocommerce'    => array( 'type' => 'boolean' ),
 						'allow_missing_jetpack'        => array( 'type' => 'boolean' ),
 						'report'                       => array( 'type' => 'string' ),
+						'write_theme_report_artifacts' => array( 'type' => 'boolean' ),
 						'asset_materialization_policy' => array(
 							'type' => 'string',
 							'enum' => array( 'copy_to_theme', 'use_map' ),
@@ -345,6 +347,7 @@ if ( ! function_exists( 'static_site_importer_ability_import_website_artifact' )
 			'allow_missing_jetpack'        => ! empty( $input['allow_missing_jetpack'] ),
 			'materialize_dependencies'     => array_key_exists( 'materialize_dependencies', $input ) ? (bool) $input['materialize_dependencies'] : true,
 			'report'                       => isset( $input['report'] ) ? (string) $input['report'] : '',
+			'write_theme_report_artifacts' => ! empty( $input['write_theme_report_artifacts'] ),
 			'asset_materialization_policy' => isset( $input['asset_materialization_policy'] ) ? (string) $input['asset_materialization_policy'] : '',
 			'asset_map'                    => isset( $input['asset_map'] ) && is_array( $input['asset_map'] ) ? $input['asset_map'] : array(),
 			'compiler_options'             => isset( $input['compiler_options'] ) && is_array( $input['compiler_options'] ) ? $input['compiler_options'] : array(),

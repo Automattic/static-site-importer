@@ -156,11 +156,12 @@ $result = Static_Site_Importer_Theme_Generator::import_website_artifact(
 		),
 	),
 	array(
-		'name'          => 'Source Of Truth Smoke',
-		'slug'          => 'source-of-truth-smoke-theme',
-		'overwrite'     => true,
-		'activate'      => false,
-		'import_run_id' => 'ssi-source-of-truth-smoke-run',
+		'name'                         => 'Source Of Truth Smoke',
+		'slug'                         => 'source-of-truth-smoke-theme',
+		'overwrite'                    => true,
+		'activate'                     => false,
+		'import_run_id'                => 'ssi-source-of-truth-smoke-run',
+		'write_theme_report_artifacts' => true,
 	)
 );
 
@@ -213,11 +214,12 @@ if ( ! is_wp_error( $result ) ) {
 			),
 		),
 		array(
-			'name'          => 'Source Of Truth Smoke',
-			'slug'          => 'source-of-truth-smoke-theme',
-			'overwrite'     => true,
-			'activate'      => false,
-			'import_run_id' => 'ssi-source-of-truth-smoke-reimport-run',
+			'name'                         => 'Source Of Truth Smoke',
+			'slug'                         => 'source-of-truth-smoke-theme',
+			'overwrite'                    => true,
+			'activate'                     => false,
+			'import_run_id'                => 'ssi-source-of-truth-smoke-reimport-run',
+			'write_theme_report_artifacts' => true,
 		)
 	);
 

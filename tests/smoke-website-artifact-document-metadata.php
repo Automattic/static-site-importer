@@ -205,10 +205,10 @@ $assert( ! is_wp_error( $result ), 'import-succeeds', is_wp_error( $result ) ? $
 
 if ( ! is_wp_error( $result ) ) {
 	$theme_dir = $result['theme_dir'];
-	$report    = json_decode( $read( $result['report_path'] ), true );
+	$report    = isset( $result['import_report'] ) && is_array( $result['import_report'] ) ? $result['import_report'] : array();
 	$manifest  = json_decode( $read( $result['manifest_path'] ?? '' ), true );
-	$validation_result = json_decode( $read( $result['validation_result_path'] ?? '' ), true );
-	$finding_packets   = json_decode( $read( $result['finding_packets_path'] ?? '' ), true );
+	$validation_result = isset( $result['import_validation_result'] ) && is_array( $result['import_validation_result'] ) ? $result['import_validation_result'] : array();
+	$finding_packets   = isset( $result['finding_packets'] ) && is_array( $result['finding_packets'] ) ? $result['finding_packets'] : array();
 	$page_ids  = array_values( $result['pages'] ?? array() );
 	$page_id   = (int) ( $page_ids[0] ?? 0 );
 	$progress_events = isset( $result['progress_events'] ) && is_array( $result['progress_events'] ) ? $result['progress_events'] : array();
@@ -239,8 +239,12 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( ! str_contains( $content, '<script' ), 'page-content-has-no-script-fragments' );
 	$assert( 0 === ( $documents['posts/page-home.post_content']['core_html_block_count'] ?? null ), 'report-page-content-has-zero-core-html' );
 	$assert( 0 === ( $report['quality']['core_html_block_count'] ?? null ), 'quality-core-html-count-is-zero' );
-	$assert( is_file( $result['validation_result_path'] ?? '' ), 'validation-result-artifact-is-written' );
-	$assert( is_file( $result['finding_packets_path'] ?? '' ), 'finding-packets-artifact-is-written' );
+	$assert( '' === ( $result['report_path'] ?? '' ), 'theme-report-artifact-is-not-written-by-default' );
+	$assert( '' === ( $result['validation_result_path'] ?? '' ), 'theme-validation-artifact-is-not-written-by-default' );
+	$assert( '' === ( $result['finding_packets_path'] ?? '' ), 'theme-finding-packets-artifact-is-not-written-by-default' );
+	$assert( ! is_file( $theme_dir . '/import-report.json' ), 'theme-report-file-is-absent-by-default' );
+	$assert( ! is_file( $theme_dir . '/import-validation-result.json' ), 'theme-validation-file-is-absent-by-default' );
+	$assert( ! is_file( $theme_dir . '/finding-packets.json' ), 'theme-finding-packets-file-is-absent-by-default' );
 	$assert( is_file( $result['manifest_path'] ?? '' ), 'source-of-truth-manifest-is-written' );
 	$assert( 'ssi-smoke-run-001' === ( $report['import_run_id'] ?? '' ), 'report-includes-import-run-id' );
 	$assert( 'sha256:ember-rye-smoke' === ( $report['source_artifact']['hash'] ?? '' ), 'report-includes-source-artifact-hash' );
@@ -254,7 +258,7 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( 'index.html' === ( $manifest['desired']['pages'][0]['source_path'] ?? '' ), 'manifest-includes-desired-page-source' );
 	$assert( $page_id === (int) ( $manifest['desired']['pages'][0]['materialized_post_id'] ?? 0 ), 'manifest-includes-materialized-page-id' );
 	$assert( 'static-site-importer-manifest.json' === ( $manifest['manifest_path'] ?? '' ), 'manifest-reports-relative-manifest-path' );
-	$assert( in_array( 'import-report.json', array_column( $manifest['desired']['files'] ?? array(), 'path' ), true ), 'manifest-includes-report-file-target' );
+	$assert( ! in_array( 'import-report.json', array_column( $manifest['desired']['files'] ?? array(), 'path' ), true ), 'manifest-omits-report-file-target-by-default' );
 	$assert( '_static_site_importer_provenance' === ( $manifest['desired']['pages'][0]['provenance_meta_key'] ?? '' ), 'manifest-identifies-page-provenance-meta-key' );
 	$provenance = json_decode( (string) get_post_meta( $page_id, '_static_site_importer_provenance', true ), true );
 	$assert( 'ssi-smoke-run-001' === ( $provenance['import_run_id'] ?? '' ), 'page-provenance-meta-includes-import-run-id' );
@@ -300,10 +304,11 @@ $missing_template_parts_result = Static_Site_Importer_Theme_Generator::import_we
 		),
 	),
 	array(
-		'name'      => 'No Header Artifact',
-		'slug'      => 'no-header-artifact-smoke',
-		'overwrite' => true,
-		'activate'  => false,
+		'name'                         => 'No Header Artifact',
+		'slug'                         => 'no-header-artifact-smoke',
+		'overwrite'                    => true,
+		'activate'                     => false,
+		'write_theme_report_artifacts' => true,
 	)
 );
 
@@ -338,10 +343,11 @@ $multi_page_result = Static_Site_Importer_Theme_Generator::import_website_artifa
 		)
 	),
 	array(
-		'name'        => 'Ember Rye Multi Page Artifact',
-		'slug'        => 'ember-rye-multi-page-artifact-smoke',
-		'overwrite'   => true,
-		'activate'    => false,
+		'name'                         => 'Ember Rye Multi Page Artifact',
+		'slug'                         => 'ember-rye-multi-page-artifact-smoke',
+		'overwrite'                    => true,
+		'activate'                     => false,
+		'write_theme_report_artifacts' => true,
 	)
 );
 

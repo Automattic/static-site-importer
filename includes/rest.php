@@ -1405,13 +1405,14 @@ function static_site_importer_rest_persist_preview_attempt( array $attempt ): vo
  */
 function static_site_importer_rest_import_args( array $params ): array {
 	return array(
-		'slug'                      => isset( $params['slug'] ) ? sanitize_title( (string) $params['slug'] ) : '',
-		'name'                      => isset( $params['name'] ) ? sanitize_text_field( (string) $params['name'] ) : '',
-		'activate'                  => ! empty( $params['activate'] ),
-		'overwrite'                 => ! empty( $params['overwrite'] ),
-		'fail_on_quality'           => ! empty( $params['fail_on_quality'] ),
-		'allow_missing_woocommerce' => ! empty( $params['allow_missing_woocommerce'] ),
-		'source_metadata'           => array(
+		'slug'                         => isset( $params['slug'] ) ? sanitize_title( (string) $params['slug'] ) : '',
+		'name'                         => isset( $params['name'] ) ? sanitize_text_field( (string) $params['name'] ) : '',
+		'activate'                     => ! empty( $params['activate'] ),
+		'overwrite'                    => ! empty( $params['overwrite'] ),
+		'fail_on_quality'              => ! empty( $params['fail_on_quality'] ),
+		'allow_missing_woocommerce'    => ! empty( $params['allow_missing_woocommerce'] ),
+		'write_theme_report_artifacts' => ! empty( $params['write_theme_report_artifacts'] ),
+		'source_metadata'              => array(
 			'source' => 'static_site_importer_block',
 		),
 	);
