@@ -782,7 +782,8 @@ add_filter(
 				),
 			),
 			'source_metadata' => array(
-				'source_url' => $request['url'],
+				'source_url'     => $request['url'],
+				'provider_token' => $request['provider_args']['token'] ?? '',
 			),
 		);
 	},
@@ -798,6 +799,10 @@ $url_playground_response = static_site_importer_rest_create_import(
 			'source'                => array(
 				'url' => 'facebook.com',
 			),
+			'provider'              => 'test-provider',
+			'provider_args'         => array(
+				'token' => 'playground-provider-arg',
+			),
 		)
 	)
 );
@@ -807,11 +812,14 @@ if ( is_wp_error( $url_playground_response ) ) {
 }
 $assert( true === ( $url_playground_response['success'] ?? null ), 'rest-playground-url-only-succeeds' );
 $assert( 'https://facebook.com' === ( $GLOBALS['ssi_last_url_provider_request']['url'] ?? '' ), 'rest-playground-url-only-normalizes-bare-host' );
+$assert( 'test-provider' === ( $GLOBALS['ssi_last_url_provider_request']['provider'] ?? '' ), 'rest-playground-url-only-preserves-provider-request' );
+$assert( 'playground-provider-arg' === ( $GLOBALS['ssi_last_url_provider_request']['provider_args']['token'] ?? '' ), 'rest-playground-url-only-preserves-provider-args' );
 $url_playground_blueprint_json = rawurldecode( substr( (string) ( $url_playground_response['preview']['playground']['blueprint_url'] ?? '' ), strlen( 'https://playground.wordpress.net/#' ) ) );
 $url_playground_blueprint      = json_decode( $url_playground_blueprint_json, true );
 $url_playground_import_code    = is_array( $url_playground_blueprint ) ? (string) ( $url_playground_blueprint['steps'][2]['code'] ?? '' ) : '';
 $assert( str_contains( $url_playground_blueprint_json, 'Facebook Fixture' ), 'rest-playground-url-only-blueprint-contains-fetched-artifact' );
 $assert( str_contains( $url_playground_import_code, "'source_url' => 'https://facebook.com'" ), 'rest-playground-url-only-blueprint-preserves-source-url' );
+$assert( str_contains( $url_playground_import_code, "'provider_token' => 'playground-provider-arg'" ), 'rest-playground-url-only-blueprint-preserves-provider-arg-metadata' );
 $assert( str_contains( $url_playground_import_code, "'url_import_provider' => 'test-url-playground-provider'" ), 'rest-playground-url-only-blueprint-preserves-provider' );
 $assert( array() === Static_Site_Importer_Theme_Generator::$last_args, 'rest-playground-url-only-does-not-import-current-site' );
 
@@ -828,6 +836,42 @@ $current_site_url_response = static_site_importer_rest_create_import(
 );
 $assert( ! is_wp_error( $current_site_url_response ), 'rest-current-site-url-only-does-not-error', is_wp_error( $current_site_url_response ) ? $current_site_url_response->get_error_code() . ': ' . $current_site_url_response->get_error_message() : '' );
 $assert( 'https://facebook.com' === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata']['source_url'] ?? '' ), 'rest-current-site-url-only-normalizes-bare-host' );
+
+$client_shell_html = '<!doctype html><html><head><title>Client App</title>' . str_repeat( '<script src="/bundle.js"></script>', 25 ) . '</head><body><div id="root"></div></body></html>' . str_repeat( ' ', 120000 );
+$pasted_shell_response = static_site_importer_rest_create_import(
+	new WP_REST_Request(
+		array(
+			'apply_to_current_site' => false,
+			'source'                => array(
+				'html' => $client_shell_html,
+			),
+		)
+	)
+);
+$assert( is_wp_error( $pasted_shell_response ), 'rest-pasted-client-shell-errors' );
+$assert( 'static_site_importer_client_rendered_app_shell' === ( is_wp_error( $pasted_shell_response ) ? $pasted_shell_response->get_error_code() : '' ), 'rest-pasted-client-shell-error-code' );
+$pasted_shell_error_data = is_wp_error( $pasted_shell_response ) ? $pasted_shell_response->get_error_data() : array();
+$assert( 'website/index.html' === ( $pasted_shell_error_data['diagnostic']['source_path'] ?? '' ), 'rest-pasted-client-shell-diagnostic-source-path' );
+
+$uploaded_shell_response = static_site_importer_rest_create_import(
+	new WP_REST_Request(
+		array(
+			'apply_to_current_site' => false,
+			'source'                => array(
+				'files' => array(
+					array(
+						'path'           => 'index.html',
+						'content_base64' => base64_encode( $client_shell_html ),
+					),
+				),
+			),
+		)
+	)
+);
+$assert( is_wp_error( $uploaded_shell_response ), 'rest-uploaded-client-shell-errors' );
+$assert( 'static_site_importer_client_rendered_app_shell' === ( is_wp_error( $uploaded_shell_response ) ? $uploaded_shell_response->get_error_code() : '' ), 'rest-uploaded-client-shell-error-code' );
+$uploaded_shell_error_data = is_wp_error( $uploaded_shell_response ) ? $uploaded_shell_response->get_error_data() : array();
+$assert( 'website/index.html' === ( $uploaded_shell_error_data['diagnostic']['source_path'] ?? '' ), 'rest-uploaded-client-shell-diagnostic-source-path' );
 
 // A real source document title now names the generated theme/site via the
 // site-identity primitive instead of collapsing to the generic constant.
@@ -849,6 +893,7 @@ $titled_blueprint_code = wp_json_encode( is_array( $titled_blueprint ) ? $titled
 $assert( str_contains( (string) $titled_blueprint_code, "'name' => 'Maya & Devon'" ), 'rest-playground-open-derives-name-from-source-document-title' );
 $assert( str_contains( (string) $titled_blueprint_code, "'slug' => 'maya-devon'" ), 'rest-playground-open-derives-slug-from-source-document-title' );
 $assert( ! str_contains( (string) $titled_blueprint_code, 'generated-wordpress-website' ), 'rest-playground-open-titled-source-omits-generic-constant' );
+$assert( ! str_contains( (string) $titled_blueprint_code, 'url_import_provider' ), 'rest-playground-open-non-url-source-omits-url-provider-metadata' );
 
 $figma_upload_artifact = Static_Site_Importer_Figma_Import::website_artifact_from_input(
 	array(

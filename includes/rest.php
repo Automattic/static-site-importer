@@ -475,6 +475,12 @@ function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 
 	$source = isset( $params['source'] ) && is_array( $params['source'] ) ? $params['source'] : array();
 	$input  = static_site_importer_rest_import_args( $params );
+	if ( isset( $params['provider'] ) ) {
+		$input['provider'] = sanitize_key( (string) $params['provider'] );
+	}
+	if ( isset( $params['provider_args'] ) && is_array( $params['provider_args'] ) ) {
+		$input['provider_args'] = $params['provider_args'];
+	}
 	$mode   = static_site_importer_rest_import_mode( $params );
 
 	if ( 'playground' === $mode ) {
@@ -533,29 +539,20 @@ function static_site_importer_rest_open_in_playground( array $source, array $inp
 	$input['activate']  = true;
 	$input['overwrite'] = true;
 
-	if ( static_site_importer_rest_is_url_only_source( $source ) ) {
-		$runtime = Static_Site_Importer_URL_Import_Runtime::website_artifact_from_url(
-			array(
-				'url' => (string) $source['url'],
-			)
-		);
-		if ( is_wp_error( $runtime ) ) {
-			return $runtime;
-		}
-
-		$artifact        = $runtime['artifact'];
-		$source_metadata = isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array();
-		if ( isset( $runtime['source_metadata'] ) && is_array( $runtime['source_metadata'] ) ) {
-			$source_metadata = array_merge( $source_metadata, $runtime['source_metadata'] );
-		}
-		$source_metadata['url_import_provider'] = isset( $runtime['provider'] ) ? (string) $runtime['provider'] : 'public-url-fetcher';
-		$input['source_metadata']              = $source_metadata;
-	} else {
-		$artifact = static_site_importer_rest_source_artifact( $source );
-		if ( is_wp_error( $artifact ) ) {
-			return $artifact;
-		}
+	$runtime = static_site_importer_rest_source_runtime( $source, $input );
+	if ( is_wp_error( $runtime ) ) {
+		return $runtime;
 	}
+
+	$artifact        = $runtime['artifact'];
+	$source_metadata = isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array();
+	if ( isset( $runtime['source_metadata'] ) && is_array( $runtime['source_metadata'] ) ) {
+		$source_metadata = array_merge( $source_metadata, $runtime['source_metadata'] );
+	}
+	if ( 'url' === (string) ( $source_metadata['source_type'] ?? '' ) && isset( $runtime['provider'] ) && '' !== (string) $runtime['provider'] ) {
+		$source_metadata['url_import_provider'] = (string) $runtime['provider'];
+	}
+	$input['source_metadata'] = $source_metadata;
 	$input['artifact'] = $artifact;
 
 	$identity = Static_Site_Importer_Site_Identity::resolve(
@@ -683,26 +680,22 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
 		return $result;
 	};
 
-	if ( ! isset( $source['figma_file'] ) && isset( $source['url'] ) && '' !== trim( (string) $source['url'] ) ) {
-		$input['url'] = esc_url_raw( Static_Site_Importer_URL_Fetcher::normalize_url( (string) $source['url'] ) );
-		if ( isset( $params['provider'] ) ) {
-			$input['provider'] = sanitize_key( (string) $params['provider'] );
-		}
-		if ( isset( $params['provider_args'] ) && is_array( $params['provider_args'] ) ) {
-			$input['provider_args'] = $params['provider_args'];
-		}
-
-		return $decorate_current_site_preview( static_site_importer_rest_execute_import_ability( 'static-site-importer/import-url', $input, 'static_site_importer_ability_import_url' ) );
-	} else {
-		$artifact = static_site_importer_rest_source_artifact( $source );
-		if ( is_wp_error( $artifact ) ) {
-			return $artifact;
-		}
-
-		$input['artifact'] = $artifact;
-
-		return $decorate_current_site_preview( static_site_importer_rest_execute_import_ability( 'static-site-importer/import-website-artifact', $input, 'static_site_importer_ability_import_website_artifact' ) );
+	$runtime = static_site_importer_rest_source_runtime( $source, $input );
+	if ( is_wp_error( $runtime ) ) {
+		return $runtime;
 	}
+
+	$source_metadata = isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array();
+	if ( isset( $runtime['source_metadata'] ) && is_array( $runtime['source_metadata'] ) ) {
+		$source_metadata = array_merge( $source_metadata, $runtime['source_metadata'] );
+	}
+	if ( 'url' === (string) ( $source_metadata['source_type'] ?? '' ) && isset( $runtime['provider'] ) && '' !== (string) $runtime['provider'] ) {
+		$source_metadata['url_import_provider'] = (string) $runtime['provider'];
+	}
+	$input['source_metadata'] = $source_metadata;
+	$input['artifact']        = $runtime['artifact'];
+
+	return $decorate_current_site_preview( static_site_importer_rest_execute_import_ability( 'static-site-importer/import-website-artifact', $input, 'static_site_importer_ability_import_website_artifact' ) );
 }
 
 /**
@@ -1448,25 +1441,59 @@ function static_site_importer_rest_import_args( array $params ): array {
  * @return array<string,mixed>|WP_Error
  */
 function static_site_importer_rest_source_artifact( array $source ) {
+	$runtime = static_site_importer_rest_source_runtime( $source );
+	if ( is_wp_error( $runtime ) ) {
+		return $runtime;
+	}
+
+	return $runtime['artifact'];
+}
+
+/**
+ * Convert REST source input into the normalized website artifact runtime envelope.
+ *
+ * @param array<string,mixed> $source Source payload.
+ * @param array<string,mixed> $input  Import input carrying optional provider args.
+ * @return array{artifact:array<string,mixed>,source_metadata:array<string,mixed>,provider:string}|WP_Error
+ */
+function static_site_importer_rest_source_runtime( array $source, array $input = array() ) {
 	if ( isset( $source['artifact'] ) && is_array( $source['artifact'] ) ) {
-		return $source['artifact'];
+		return array(
+			'artifact'        => $source['artifact'],
+			'source_metadata' => array(),
+			'provider'        => 'provided-artifact',
+		);
 	}
 
 	if ( isset( $source['figma_file'] ) && is_array( $source['figma_file'] ) ) {
-		return Static_Site_Importer_Figma_Import::website_artifact_from_input( array( 'source' => $source ) );
+		$artifact = Static_Site_Importer_Figma_Import::website_artifact_from_input( array( 'source' => $source ) );
+		if ( is_wp_error( $artifact ) ) {
+			return $artifact;
+		}
+
+		return array(
+			'artifact'        => $artifact,
+			'source_metadata' => array(),
+			'provider'        => 'figma-file',
+		);
 	}
 
 	if ( static_site_importer_rest_is_url_only_source( $source ) ) {
-		$runtime = Static_Site_Importer_URL_Import_Runtime::website_artifact_from_url(
-			array(
-				'url' => (string) $source['url'],
-			)
-		);
+		$url_input        = $input;
+		$url_input['url'] = (string) $source['url'];
+		$runtime          = Static_Site_Importer_URL_Import_Runtime::website_artifact_from_url( $url_input );
 		if ( is_wp_error( $runtime ) ) {
 			return $runtime;
 		}
 
-		return $runtime['artifact'];
+		$source_metadata = isset( $runtime['source_metadata'] ) && is_array( $runtime['source_metadata'] ) ? $runtime['source_metadata'] : array();
+		$source_metadata['source_type'] = isset( $source_metadata['source_type'] ) ? (string) $source_metadata['source_type'] : 'url';
+
+		return array(
+			'artifact'        => $runtime['artifact'],
+			'source_metadata' => $source_metadata,
+			'provider'        => isset( $runtime['provider'] ) ? (string) $runtime['provider'] : 'public-url-fetcher',
+		);
 	}
 
 	$files = array();
@@ -1530,11 +1557,67 @@ function static_site_importer_rest_source_artifact( array $source ) {
 		return new WP_Error( 'static_site_importer_missing_source', __( 'Add a website URL, upload file(s), or paste HTML to start.', 'static-site-importer' ), array( 'status' => 400 ) );
 	}
 
+	$source_quality = static_site_importer_rest_validate_static_html_sources( $files );
+	if ( is_wp_error( $source_quality ) ) {
+		return $source_quality;
+	}
+
 	return array(
-		'schema'     => Static_Site_Importer_Transformer_Adapter::WEBSITE_ARTIFACT_SCHEMA,
-		'entrypoint' => static_site_importer_rest_entrypoint( $files ),
-		'files'      => $files,
+		'artifact'        => array(
+			'schema'     => Static_Site_Importer_Transformer_Adapter::WEBSITE_ARTIFACT_SCHEMA,
+			'entrypoint' => static_site_importer_rest_entrypoint( $files ),
+			'files'      => $files,
+		),
+		'source_metadata' => array(),
+		'provider'        => 'rest-source',
 	);
+}
+
+/**
+ * Validate imported HTML files before building an artifact.
+ *
+ * @param array<int,array<string,mixed>> $files Artifact files.
+ * @return true|WP_Error
+ */
+function static_site_importer_rest_validate_static_html_sources( array $files ) {
+	foreach ( $files as $file ) {
+		if ( ! is_array( $file ) ) {
+			continue;
+		}
+
+		$path = isset( $file['path'] ) ? (string) $file['path'] : '';
+		if ( ! preg_match( '/\.html?$/i', $path ) ) {
+			continue;
+		}
+
+		$content = '';
+		if ( isset( $file['content'] ) ) {
+			$content = (string) $file['content'];
+		} elseif ( isset( $file['content_base64'] ) ) {
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes uploaded HTML artifact content for source-quality validation.
+			$decoded = base64_decode( (string) $file['content_base64'], true );
+			if ( false === $decoded ) {
+				continue;
+			}
+			$content = $decoded;
+		}
+
+		$diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $content );
+		if ( ! empty( $diagnostic ) && 'error' === ( $diagnostic['severity'] ?? '' ) ) {
+			$diagnostic['source_path'] = $path;
+
+			return new WP_Error(
+				'static_site_importer_client_rendered_app_shell',
+				__( 'This source appears to be a JavaScript-rendered application shell. Static Site Importer can import server-rendered HTML, but this source needs a browser-rendered capture before it can produce WordPress blocks.', 'static-site-importer' ),
+				array(
+					'status'     => 422,
+					'diagnostic' => $diagnostic,
+				)
+			);
+		}
+	}
+
+	return true;
 }
 
 /**
