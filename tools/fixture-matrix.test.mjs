@@ -2472,6 +2472,17 @@ test('default visual-parity source-url targets the staged source/ subdir on the 
   assert.ok(visualStep.args.includes('candidate-url=/'));
 });
 
+test('default visual-parity source-url follows nested fixture entrypoint', () => {
+  const step = visualParityCompareStep({
+    fixture: { id: 'liquid-bonsai', entrypoint: 'saveweb2zip-com-liquidbonsai-com/index.html' },
+    sourceBaseUrl: '/wp-content/uploads/static-site-importer-fixture-matrix',
+  });
+
+  assert.ok(
+    step.args.includes('source-url=/wp-content/uploads/static-site-importer-fixture-matrix/liquid-bonsai/source/saveweb2zip-com-liquidbonsai-com/index.html'),
+  );
+});
+
 test('stageFixtureSource copies the raw fixture source into the served source/ subdir', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-parity-stage-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-parity-stage-test' });
