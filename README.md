@@ -334,6 +334,20 @@ If no path is passed, the smoke uses `STATIC_SITE_IMPORTER_THEME_DIR`, then `WP_
 
 It validates `parts/header.html`, `parts/footer.html`, `patterns/*.php`, and `templates/*.html`, and reports invalid blocks with the file, nested block path, block name, validation reason, and failure summaries grouped by block name and file.
 
+### Fixture Matrix Rig
+
+The repo owns the Static Site Importer fixture matrix under `bench/`, `tools/`, `lib/fixture-matrix/`, `fixtures/`, and `rigs/static-site-importer-fixture-matrix/`. This is the product-level development gate for importer quality against generated static-site artifacts and the Blocks Engine fixture corpus.
+
+```bash
+npm run test:fixture-matrix
+node bench/static-site-fixture-matrix.bench.mjs \
+  --static-site-importer-path . \
+  --blocks-engine-php-transformer-path /path/to/blocks-engine/php-transformer \
+  --fixture-root /path/to/blocks-engine/fixtures/websites
+```
+
+See `docs/fixture-matrix.md` for the Homeboy/Lab/WP Codebox workflow, generated-artifact intake, visual parity, editor validation, and Blocks Engine corpus/override usage. SSI keeps only minimal matrix smoke fixtures under `tests/fixtures/fixture-matrix`; the canonical site corpus lives in Blocks Engine.
+
 ## Release Workflow
 
 This repo is Homeboy-managed:

@@ -1,0 +1,65 @@
+{
+  "id": "static-site-importer-fixture-matrix",
+  "description": "Static Site Importer fixture matrix workload that composes upstream WP Codebox recipe contracts while keeping SSI-specific fixture and diagnostic policy in the product repo.",
+  "components": {
+    "static-site-importer": {
+      "component_id": "static-site-importer",
+      "default_ref": "origin/main",
+      "path_setting": "HOMEBOY_RIG_COMPONENT_PATH__STATIC_SITE_IMPORTER_FIXTURE_MATRIX__STATIC_SITE_IMPORTER",
+      "branch": "main"
+    }
+  },
+  "resources": {
+    "exclusive": [
+      "static-site-importer-fixture-matrix:${env.HOMEBOY_SETTINGS_STATIC_SITE_IMPORTER_FIXTURE_MATRIX_NAMESPACE}"
+    ],
+    "paths": [
+      "${components.static-site-importer.path}",
+      "/tmp/static-site-importer-fixture-matrix-${env.HOMEBOY_SETTINGS_STATIC_SITE_IMPORTER_FIXTURE_MATRIX_NAMESPACE}"
+    ]
+  },
+  "bench": {
+    "default_component": "static-site-importer",
+    "iterations": 1,
+    "warmup_iterations": 0,
+    "result_gates": {
+      "failed_fixture_count": { "lte": 0 }
+    }
+  },
+  "bench_workloads": {
+    "nodejs": [
+      {
+        "path": "${package.root}/bench/static-site-fixture-matrix.bench.mjs",
+        "env_provider_extensions": ["wordpress"]
+      }
+    ]
+  },
+  "bench_profiles": {
+    "smoke": ["static-site-fixture-matrix"],
+    "fixture-matrix": ["static-site-fixture-matrix"]
+  },
+  "pipeline": {
+    "check": [
+      {
+        "kind": "requirement",
+        "label": "Static Site Importer checkout exists",
+        "file": "${components.static-site-importer.path}/static-site-importer.php",
+        "component": "static-site-importer",
+        "component_path_contains": "static-site-importer",
+        "remediation": "Pass homeboy bench --path /path/to/static-site-importer or update components.static-site-importer.path before running static-site-importer-fixture-matrix."
+      },
+      {
+        "kind": "command",
+        "label": "Fixture matrix workload validates",
+        "command": "node \"${package.root}/tools/fixture-matrix.test.mjs\""
+      }
+    ],
+    "down": [
+      {
+        "kind": "command",
+        "label": "Remove run-scoped SSI fixture matrix temp resources",
+        "command": "test -n \"${env.HOMEBOY_SETTINGS_STATIC_SITE_IMPORTER_FIXTURE_MATRIX_NAMESPACE}\" && rm -rf \"/tmp/static-site-importer-fixture-matrix-${env.HOMEBOY_SETTINGS_STATIC_SITE_IMPORTER_FIXTURE_MATRIX_NAMESPACE}\" || true"
+      }
+    ]
+  }
+}

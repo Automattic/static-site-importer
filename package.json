@@ -2,6 +2,7 @@
   "name": "static-site-importer",
   "private": true,
   "scripts": {
+    "test:fixture-matrix": "node --test tools/fixture-matrix.test.mjs",
     "test:js-block-validation": "node tests/smoke-generated-theme-block-validation.cjs",
     "test:validation": "node tests/run-validation-harness.cjs"
   },
