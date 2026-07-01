@@ -44,6 +44,7 @@ import {
   createFixtureMatrix,
   editorBlockValidationStep,
   EDITOR_INVALID_BLOCK_SELECTOR_GROUP,
+  EDITOR_OPEN_COMMAND,
   EDITOR_VALIDATE_BLOCKS_COMMAND,
   EDITOR_VALIDATION_METHOD,
   normalizeFixtureMatrixResult,
@@ -1838,7 +1839,7 @@ test('compares finding packet deltas by repair dimensions', () => {
   assert.equal(selectorFamily('#hero .cta'), 'id:hero');
 });
 
-test('recipe runs a wp.blocks.validateBlock editor-validation step on imported content after each import', () => {
+test('recipe runs a schema-supported editor-open step after each import', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'editor-validation-recipe-test' });
   const recipe = buildFixtureMatrixRecipe({
     matrix,
@@ -1846,19 +1847,17 @@ test('recipe runs a wp.blocks.validateBlock editor-validation step on imported c
     staticSiteImporterPath: '/tmp/static-site-importer',
   });
 
-  // [activate, validate(simple-site), editor-validation(simple-site)]
+  // [activate, validate(simple-site), editor-open(simple-site)]
   assert.equal(recipe.workflow.steps[1].command, 'wordpress.wp-cli');
   assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
   const editorStep = recipe.workflow.steps[2];
-  // The real validateBlock command, NOT the empty-post canvas probe.
-  assert.equal(editorStep.command, EDITOR_VALIDATE_BLOCKS_COMMAND);
-  assert.equal(editorStep.command, 'wordpress.editor-validate-blocks');
-  // No empty-post `post-new.php` URL and no bare `post-type` (which wp-codebox
-  // resolves to an empty post-new editor): it targets the imported static front
-  // page so it validates real imported content rather than a blank editor.
+  // Use the command accepted by the runner-side WP Codebox recipe schema.
+  assert.equal(editorStep.command, EDITOR_OPEN_COMMAND);
+  assert.equal(editorStep.command, 'wordpress.editor-open');
   assert.equal(editorStep.args.some((arg) => arg.includes('post-new.php')), false);
   assert.equal(editorStep.args.some((arg) => arg.startsWith('post-type=')), false);
-  assert.ok(editorStep.args.includes('target=front-page'));
+  assert.ok(editorStep.args.includes('target=site'));
+  assert.ok(editorStep.args.includes('capture=editor-state'));
 
   const disabled = buildFixtureMatrixRecipe({
     matrix,
@@ -1866,11 +1865,11 @@ test('recipe runs a wp.blocks.validateBlock editor-validation step on imported c
     staticSiteImporterPath: '/tmp/static-site-importer',
     editorValidation: false,
   });
-  assert.equal(disabled.workflow.steps.some((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND), false);
+  assert.equal(disabled.workflow.steps.some((step) => step.command === EDITOR_OPEN_COMMAND), false);
 });
 
-test('--no-editor-validation skips the editor-validate-blocks step while keeping native-rate + findings', () => {
-  // The editor-validate-blocks step launches a browser per site and is the
+test('--no-editor-validation skips the editor browser step while keeping native-rate + findings', () => {
+  // The editor browser step launches a browser per site and is the
   // slowest per-fixture step. --no-editor-validation skips it (companion to
   // --no-visual-parity) so findings/native-rate still get collected. This proves
   // the full thread: CLI flag -> bench env -> recipe step omission, plus that the
@@ -1906,7 +1905,7 @@ test('--no-editor-validation skips the editor-validate-blocks step while keeping
   assert.equal(skippedPlan.editor_validation.enabled, false);
   assert.ok(skippedPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_EDITOR_VALIDATION=0'));
 
-  // Recipe: the editor-validate-blocks step is present by default and omitted when
+  // Recipe: the editor-open step is present by default and omitted when
   // disabled, while the import/validate-artifact step (which feeds native-rate and
   // findings) always survives.
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'no-editor-validation-recipe' });
@@ -1915,7 +1914,7 @@ test('--no-editor-validation skips the editor-validate-blocks step while keeping
     artifactsDirectory: '/tmp/artifacts',
     staticSiteImporterPath: '/tmp/static-site-importer',
   });
-  assert.ok(enabledRecipe.workflow.steps.some((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND));
+  assert.ok(enabledRecipe.workflow.steps.some((step) => step.command === EDITOR_OPEN_COMMAND));
 
   const skippedRecipe = buildFixtureMatrixRecipe({
     matrix,
@@ -1924,7 +1923,7 @@ test('--no-editor-validation skips the editor-validate-blocks step while keeping
     editorValidation: false,
   });
   assert.equal(
-    skippedRecipe.workflow.steps.some((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND),
+    skippedRecipe.workflow.steps.some((step) => step.command === EDITOR_OPEN_COMMAND),
     false,
   );
   assert.ok(skippedRecipe.workflow.steps.some((step) => /static-site-importer validate-artifact/.test(step.args?.[0] ?? '')));
@@ -1954,30 +1953,29 @@ test('--no-editor-validation skips the editor-validate-blocks step while keeping
   assert.ok(result.findings.length >= 1);
 });
 
-test('editorBlockValidationStep invokes editor-validate-blocks against the most concrete imported target', () => {
-  // Defaults to the imported static front page (resolved at runtime from
-  // page_on_front by wp-codebox) — real imported content, not an empty editor.
+test('editorBlockValidationStep emits the schema-supported editor-open shape', () => {
+  // Defaults to the site editor because that target is accepted by the runner-side
+  // WP Codebox schema currently used by Homeboy Lab.
   const fallback = editorBlockValidationStep({ fixture: { id: 'simple' } });
-  assert.equal(fallback.command, 'wordpress.editor-validate-blocks');
-  assert.deepEqual(fallback.args, ['target=front-page']);
+  assert.equal(fallback.command, 'wordpress.editor-open');
+  assert.deepEqual(fallback.args, ['target=site', 'capture=editor-state']);
 
   // An explicit editor URL (e.g. post.php?post=<id>&action=edit) is honored.
   const byUrl = editorBlockValidationStep({ fixture: { id: 'shop', editor_url: '/wp-admin/post.php?post=42&action=edit' } });
-  assert.equal(byUrl.command, 'wordpress.editor-validate-blocks');
+  assert.equal(byUrl.command, 'wordpress.editor-open');
   assert.ok(byUrl.args.includes('url=/wp-admin/post.php?post=42&action=edit'));
+  assert.ok(byUrl.args.includes('capture=editor-state'));
 
   // An imported post id is preferred over a URL.
   const byPostId = editorBlockValidationStep({ fixture: { id: 'shop', post_id: 99 } });
   assert.ok(byPostId.args.includes('post-id=99'));
 
-  // Inline imported content wins over everything else, plus wait passthrough.
-  const byContent = editorBlockValidationStep({
-    content: '<!-- wp:paragraph --><p>Hi</p><!-- /wp:paragraph -->',
+  // Wait passthrough stays available.
+  const withWait = editorBlockValidationStep({
     fixture: { id: 'shop', post_id: 99, editor_wait_selector: '.is-root-container' },
   });
-  assert.ok(byContent.args.includes('content=<!-- wp:paragraph --><p>Hi</p><!-- /wp:paragraph -->'));
-  assert.ok(byContent.args.includes('wait-selector=.is-root-container'));
-  assert.equal(byContent.args.some((arg) => arg.startsWith('post-id=')), false);
+  assert.ok(withWait.args.includes('post-id=99'));
+  assert.ok(withWait.args.includes('wait-selector=.is-root-container'));
 });
 
 test('editor-canvas-probe invalid-block warnings become gating editor_block_invalid findings', () => {
@@ -2481,6 +2479,7 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
   assert.equal(visualStep.command, 'wordpress.visual-compare');
   assert.ok(visualStep.args.some((arg) => arg.startsWith('source-url=')));
   assert.ok(visualStep.args.some((arg) => arg.startsWith('candidate-url=')));
+  assert.ok(visualStep.args.includes('block-external-requests=true'));
   assert.ok(visualStep.args.includes('threshold=0.05'));
 
   const disabled = buildFixtureMatrixRecipe({
@@ -2503,6 +2502,8 @@ test('visualParityCompareStep composes the existing wordpress.visual-compare com
   assert.ok(step.args.includes('threshold=0.2'));
   assert.ok(step.args.includes('source-label=shop-source'));
   assert.ok(step.args.includes('candidate-label=shop-candidate'));
+  assert.ok(step.args.includes('block-external-requests=true'));
+  assert.ok(visualParityCompareStep({ fixture: { id: 'shop' }, block_external_requests: false }).args.includes('block-external-requests=false'));
 });
 
 test('visualParityCompareStep demotes full-page capture to an opt-in (default bounded viewport)', () => {
@@ -2521,7 +2522,7 @@ test('visualParityCompareStep demotes full-page capture to an opt-in (default bo
   }
 });
 
-test('default visual-parity source-url targets the staged source/ subdir on the served uploads path', () => {
+test('default visual-parity source-url targets the staged source/ subdir as a file URL', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-parity-source-url-test' });
   const recipe = buildFixtureMatrixRecipe({
     matrix,
@@ -2535,10 +2536,24 @@ test('default visual-parity source-url targets the staged source/ subdir on the 
   const sourceArg = visualStep.args.find((arg) => arg.startsWith('source-url='));
   assert.equal(
     sourceArg,
-    'source-url=/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/source/index.html',
+    'source-url=file:///tmp/artifacts/simple-site/source/index.html',
   );
   // Candidate defaults to the imported front page served at `/`.
   assert.ok(visualStep.args.includes('candidate-url=/'));
+});
+
+test('explicit visual-parity source base can still target a served uploads path', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-parity-served-source-url-test' });
+  const recipe = buildFixtureMatrixRecipe({
+    matrix,
+    artifactsDirectory: '/tmp/artifacts',
+    playgroundArtifactsDirectory: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    visualParitySourceBaseUrl: '/wp-content/uploads/static-site-importer-fixture-matrix',
+  });
+
+  const visualStep = recipe.workflow.steps[3];
+  assert.ok(visualStep.args.includes('source-url=/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/source/index.html'));
 });
 
 test('stageFixtureSource copies the raw fixture source into the served source/ subdir', () => {
