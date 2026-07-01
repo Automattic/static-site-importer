@@ -176,12 +176,7 @@ test('builds WP Codebox recipe setup for SSI Composer dependency overrides', () 
   });
   assert.equal(recipe.inputs.mounts.length, 0);
   assert.equal(recipe.workflow.steps[0].args[0], 'command=plugin activate static-site-importer/static-site-importer.php');
-  assert.deepEqual(recipe.metadata.dependency_overrides.blocks_engine_php_transformer, {
-    package: 'automattic/blocks-engine-php-transformer',
-    source_path: transformerPath,
-    applied_by: 'wp_codebox_dependency_overlay',
-    consumer: 'static-site-importer',
-  });
+  assert.equal(recipe.metadata, undefined);
 });
 
 test('fails recipe generation for invalid SSI dependency override paths', () => {
