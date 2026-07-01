@@ -18,6 +18,20 @@
       "/tmp/static-site-importer-fixture-matrix-${env.HOMEBOY_SETTINGS_STATIC_SITE_IMPORTER_FIXTURE_MATRIX_NAMESPACE}"
     ]
   },
+  "requirements": {
+    "runner_tools": [
+      {
+        "tool": "wp-codebox",
+        "command": "wp-codebox",
+        "env": ["HOMEBOY_WP_CODEBOX_BIN"],
+        "capabilities": [
+          "wordpress.editor-validate-blocks",
+          "wordpress.visual-compare"
+        ],
+        "remediation": "Use a runner with a WP Codebox binary from HOMEBOY_WP_CODEBOX_BIN that supports fixture-matrix browser validation and visual comparison commands."
+      }
+    ]
+  },
   "bench": {
     "default_component": "static-site-importer",
     "iterations": 1,

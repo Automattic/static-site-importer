@@ -44,7 +44,6 @@ import {
   createFixtureMatrix,
   editorBlockValidationStep,
   EDITOR_INVALID_BLOCK_SELECTOR_GROUP,
-  EDITOR_OPEN_COMMAND,
   EDITOR_VALIDATE_BLOCKS_COMMAND,
   EDITOR_VALIDATION_METHOD,
   normalizeFixtureMatrixResult,
@@ -145,6 +144,17 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   assert.equal(recipe.workflow.steps[0].args[0], 'command=plugin activate static-site-importer/static-site-importer.php');
   assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
   assert.match(recipe.workflow.steps[1].args[0], /--allow-failure/);
+});
+
+test('fixture-matrix rig requires env-backed WP Codebox editor and visual capabilities', () => {
+  const rig = JSON.parse(readFileSync(path.join(packageRoot, 'rigs', 'static-site-importer-fixture-matrix', 'rig.json'), 'utf8'));
+  const tool = rig.requirements.runner_tools.find((item) => item.tool === 'wp-codebox');
+
+  assert.ok(tool, 'expected a wp-codebox runner tool requirement');
+  assert.equal(tool.command, 'wp-codebox');
+  assert.deepEqual(tool.env, ['HOMEBOY_WP_CODEBOX_BIN']);
+  assert.ok(tool.capabilities.includes('wordpress.editor-validate-blocks'));
+  assert.ok(tool.capabilities.includes('wordpress.visual-compare'));
 });
 
 test('builds WP Codebox recipe setup for SSI Composer dependency overrides', () => {
@@ -1864,7 +1874,7 @@ test('compares finding packet deltas by repair dimensions', () => {
   assert.equal(selectorFamily('#hero .cta'), 'id:hero');
 });
 
-test('recipe runs a schema-supported editor-open step after each import', () => {
+test('recipe runs editor-validate-blocks against imported content after each import', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'editor-validation-recipe-test' });
   const recipe = buildFixtureMatrixRecipe({
     matrix,
@@ -1872,17 +1882,16 @@ test('recipe runs a schema-supported editor-open step after each import', () => 
     staticSiteImporterPath: '/tmp/static-site-importer',
   });
 
-  // [activate, validate(simple-site), editor-open(simple-site)]
+  // [activate, validate(simple-site), editor-validate-blocks(simple-site)]
   assert.equal(recipe.workflow.steps[1].command, 'wordpress.wp-cli');
   assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
   const editorStep = recipe.workflow.steps[2];
-  // Use the command accepted by the runner-side WP Codebox recipe schema.
-  assert.equal(editorStep.command, EDITOR_OPEN_COMMAND);
-  assert.equal(editorStep.command, 'wordpress.editor-open');
+  assert.equal(editorStep.command, EDITOR_VALIDATE_BLOCKS_COMMAND);
+  assert.equal(editorStep.command, 'wordpress.editor-validate-blocks');
   assert.equal(editorStep.args.some((arg) => arg.includes('post-new.php')), false);
   assert.equal(editorStep.args.some((arg) => arg.startsWith('post-type=')), false);
-  assert.ok(editorStep.args.includes('target=site'));
-  assert.ok(editorStep.args.includes('capture=editor-state'));
+  assert.ok(editorStep.args.includes('target=front-page'));
+  assert.equal(editorStep.args.some((arg) => arg.startsWith('capture=')), false);
 
   const disabled = buildFixtureMatrixRecipe({
     matrix,
@@ -1890,7 +1899,7 @@ test('recipe runs a schema-supported editor-open step after each import', () => 
     staticSiteImporterPath: '/tmp/static-site-importer',
     editorValidation: false,
   });
-  assert.equal(disabled.workflow.steps.some((step) => step.command === EDITOR_OPEN_COMMAND), false);
+  assert.equal(disabled.workflow.steps.some((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND), false);
 });
 
 test('--no-editor-validation skips the editor browser step while keeping native-rate + findings', () => {
@@ -1930,7 +1939,7 @@ test('--no-editor-validation skips the editor browser step while keeping native-
   assert.equal(skippedPlan.editor_validation.enabled, false);
   assert.ok(skippedPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_EDITOR_VALIDATION=0'));
 
-  // Recipe: the editor-open step is present by default and omitted when
+  // Recipe: the editor-validate-blocks step is present by default and omitted when
   // disabled, while the import/validate-artifact step (which feeds native-rate and
   // findings) always survives.
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'no-editor-validation-recipe' });
@@ -1939,7 +1948,7 @@ test('--no-editor-validation skips the editor browser step while keeping native-
     artifactsDirectory: '/tmp/artifacts',
     staticSiteImporterPath: '/tmp/static-site-importer',
   });
-  assert.ok(enabledRecipe.workflow.steps.some((step) => step.command === EDITOR_OPEN_COMMAND));
+  assert.ok(enabledRecipe.workflow.steps.some((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND));
 
   const skippedRecipe = buildFixtureMatrixRecipe({
     matrix,
@@ -1948,7 +1957,7 @@ test('--no-editor-validation skips the editor browser step while keeping native-
     editorValidation: false,
   });
   assert.equal(
-    skippedRecipe.workflow.steps.some((step) => step.command === EDITOR_OPEN_COMMAND),
+    skippedRecipe.workflow.steps.some((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND),
     false,
   );
   assert.ok(skippedRecipe.workflow.steps.some((step) => /static-site-importer validate-artifact/.test(step.args?.[0] ?? '')));
@@ -1978,18 +1987,18 @@ test('--no-editor-validation skips the editor browser step while keeping native-
   assert.ok(result.findings.length >= 1);
 });
 
-test('editorBlockValidationStep emits the schema-supported editor-open shape', () => {
-  // Defaults to the site editor because that target is accepted by the runner-side
-  // WP Codebox schema currently used by Homeboy Lab.
+test('editorBlockValidationStep emits editor-validate-blocks against real imported content', () => {
+  // Defaults to the imported front page because the import step has just set
+  // page_on_front, while the imported post ID is not known at recipe-build time.
   const fallback = editorBlockValidationStep({ fixture: { id: 'simple' } });
-  assert.equal(fallback.command, 'wordpress.editor-open');
-  assert.deepEqual(fallback.args, ['target=site', 'capture=editor-state']);
+  assert.equal(fallback.command, 'wordpress.editor-validate-blocks');
+  assert.deepEqual(fallback.args, ['target=front-page']);
 
   // An explicit editor URL (e.g. post.php?post=<id>&action=edit) is honored.
   const byUrl = editorBlockValidationStep({ fixture: { id: 'shop', editor_url: '/wp-admin/post.php?post=42&action=edit' } });
-  assert.equal(byUrl.command, 'wordpress.editor-open');
+  assert.equal(byUrl.command, 'wordpress.editor-validate-blocks');
   assert.ok(byUrl.args.includes('url=/wp-admin/post.php?post=42&action=edit'));
-  assert.ok(byUrl.args.includes('capture=editor-state'));
+  assert.equal(byUrl.args.some((arg) => arg.startsWith('capture=')), false);
 
   // An imported post id is preferred over a URL.
   const byPostId = editorBlockValidationStep({ fixture: { id: 'shop', post_id: 99 } });
@@ -2241,6 +2250,41 @@ test('editor-validate-blocks result from a codebox execution is associated to th
   const finding = result.findings.find((item) => item.kind === 'editor_block_invalid');
   assert.ok(finding, 'expected an editor_block_invalid finding from the codebox editor-validate result');
   assert.equal(finding.loss_acceptance, 'unacceptable');
+});
+
+test('unavailable editor validation fails honestly without fabricated validated-block metrics', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-editor-validate-unavailable-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'editor-validate-unavailable-test' });
+  const codeboxOutput = {
+    success: false,
+    schema: 'wp-codebox/recipe-run-result/v1',
+    executions: [
+      {
+        command: 'wordpress.wp-cli',
+        args: ['command=static-site-importer validate-artifact --artifact=/wordpress/wp-content/uploads/x/simple-site/artifact.json --slug=simple-site --name=Simple --allow-missing-woocommerce --allow-failure'],
+        result: { schema: 'wp-codebox/runtime-command-result/v1', status: 'ok', stdout: JSON.stringify({ success: true, fixture_id: 'simple-site' }) },
+      },
+      {
+        command: 'wordpress.editor-validate-blocks',
+        args: ['target=front-page'],
+        result: {
+          schema: 'wp-codebox/runtime-command-result/v1',
+          status: 'error',
+          error: 'Unknown command wordpress.editor-validate-blocks',
+        },
+      },
+    ],
+  };
+
+  const result = collectFixtureMatrixRunResults({ matrix, outputDirectory, codeboxOutput });
+  const fixture = result.fixtures[0];
+
+  assert.equal(fixture.status, 'failed');
+  assert.equal(fixture.editor_validation, null);
+  assert.notEqual(fixture.editor_quality.editor_validated, true);
+  assert.equal(fixture.editor_quality.editor_validated_block_total, undefined);
+  assert.equal(fixture.editor_quality.invalid_block_count, undefined);
+  assert.match(fixture.error, /Unknown command wordpress\.editor-validate-blocks/);
 });
 
 test('editor-validate-blocks invalid block is counted and surfaced as a gating finding with name and reason', () => {
