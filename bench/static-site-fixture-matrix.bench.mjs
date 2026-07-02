@@ -238,7 +238,8 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
   });
   const batchRecipeFile = path.join(outputDirectory, `wp-codebox-static-site-fixture-matrix-batch-${batchSuffix}.json`);
   const outputFile = path.join(outputDirectory, `wp-codebox-output-batch-${batchSuffix}.json`);
-  const artifactRefs = batchArtifactRefs({ outputDirectory, batchSuffix, batchRecipeFile, outputFile });
+  const codeboxArtifactsDirectory = batchCodeboxArtifactsDirectory(outputDirectory, batchSuffix);
+  const artifactRefs = batchArtifactRefs({ outputDirectory, batchSuffix, batchRecipeFile, outputFile, codeboxArtifactsDirectory });
   fs.writeFileSync(batchRecipeFile, `${JSON.stringify(batchRecipe, null, 2)}\n`);
 
   let batchRuntime = null;
@@ -247,7 +248,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
   try {
     batchRuntime = await runWpCodeboxRecipe({
       recipeFile: batchRecipeFile,
-      artifactsDir: outputDirectory,
+      artifactsDir: codeboxArtifactsDirectory,
       outputFile,
       wpCodeboxBin: options.wpCodeboxBin,
     });
@@ -264,7 +265,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       batchSuffix,
       batchRecipeFile,
       outputFile,
-      artifactsDir: outputDirectory,
+      artifactsDir: codeboxArtifactsDirectory,
       wpCodeboxBin: options.wpCodeboxBin,
       artifactRefs,
     });
@@ -276,6 +277,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     fixtures,
     batchRecipeFile,
     outputFile,
+    codeboxArtifactsDirectory,
     batchRuntime,
     batchError,
   });
@@ -445,6 +447,7 @@ export function fixtureMatrixBatchRunSummary(input = {}) {
     fixture_count: fixtureIds.length,
     recipe_file: input.batchRecipeFile || '',
     output_file: input.outputFile || '',
+    codebox_artifacts_directory: input.codeboxArtifactsDirectory || '',
     exit_code: batchRuntime?.exitCode ?? 0,
     error: batchError ? batchError.message : '',
     stderr_tail: batchError ? textTail(batchError.stderr) : '',
@@ -535,11 +538,18 @@ function replayArtifactsDirectory(outputDirectory) {
   return path.join(path.dirname(resolved), `${path.basename(resolved)}-wp-codebox-replay-artifacts`);
 }
 
-function batchArtifactRefs({ outputDirectory, batchSuffix, batchRecipeFile, outputFile }) {
+function batchCodeboxArtifactsDirectory(outputDirectory, batchSuffix) {
+  const resolved = path.resolve(outputDirectory);
+  return path.join(path.dirname(resolved), `${path.basename(resolved)}-wp-codebox-batch-${batchSuffix}-artifacts`);
+}
+
+function batchArtifactRefs({ outputDirectory, batchSuffix, batchRecipeFile, outputFile, codeboxArtifactsDirectory }) {
   return {
-    artifacts_directory: outputDirectory,
+    artifacts_directory: codeboxArtifactsDirectory,
     recipe_file: batchRecipeFile,
     output_file: outputFile,
+    fixture_artifacts_directory: outputDirectory,
+    codebox_artifacts_directory: codeboxArtifactsDirectory,
     cli_run: path.join(outputDirectory, 'cli-run.json'),
     matrix: path.join(outputDirectory, 'matrix.json'),
     result: path.join(outputDirectory, 'static-site-fixture-matrix-result.json'),
@@ -619,6 +629,7 @@ function optionsFromEnv(env = process.env) {
     editorValidation: !isFalsy(benchEnv.SSI_FIXTURE_MATRIX_EDITOR_VALIDATION ?? env.SSI_FIXTURE_MATRIX_EDITOR_VALIDATION),
     visualParity: !isFalsy(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY),
     visualParityGate: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE) || isTruthy(env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE),
+    visualParityFullPage: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE) || isTruthy(env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE),
     // Opt-in live-WP parity capture + comparison. Off by default; mirrors the
     // visual-parity-gate truthy env mapping. When on, the recipe appends the
     // capture-html step and the result collector runs the live-wp-parity comparator.
@@ -648,6 +659,7 @@ function visualParityRecipeInput(options) {
     pixelThreshold: options.pixelThreshold,
     visualParityCandidateUrl: options.visualParityCandidateUrl,
     visualParitySourceBaseUrl: options.visualParitySourceBaseUrl,
+    visualParityFullPage: options.visualParityFullPage,
   };
 }
 

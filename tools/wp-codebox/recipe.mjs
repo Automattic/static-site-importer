@@ -15,7 +15,7 @@ export function wpCodeboxBin(env = process.env) {
   if (helper?.wpCodeboxBin) {
     return helper.wpCodeboxBin(env);
   }
-  return env.SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN || env.WP_CODEBOX_BIN || 'wp-codebox';
+  return env.SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN || env.HOMEBOY_WP_CODEBOX_BIN || env.WP_CODEBOX_BIN || 'wp-codebox';
 }
 
 export function wpCodeboxCommand(bin = wpCodeboxBin()) {
