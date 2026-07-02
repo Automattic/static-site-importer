@@ -2907,6 +2907,70 @@ test('visual-compare diagnostics retain bounded generic visual-explanation evide
   assert.equal(finding.visual_property_diagnostics[0].property, 'font-size');
 });
 
+test('visual parity findings preserve generic attribution fields and bounded context', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-attribution-finding-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        status: 'passed',
+        diagnostics: [
+          {
+            id: 'visual-001',
+            kind: VISUAL_PARITY_MISMATCH_KIND,
+            category: 'visual',
+            severity: 'warning',
+            summary: 'Button styling differs between source and import.',
+            reason_code: 'visual_style_delta',
+            repair_bucket: 'visual_parity_mismatch',
+            pattern_family: 'visual_parity_mismatch:button_style:class:hero',
+            confidence: 0.82,
+            selector_evidence: {
+              source_selector: '.hero .cta',
+              target_selector: '.wp-block-button__link',
+              source_text: 'Start now',
+              target_text: 'Start now',
+            },
+            property_evidence: [
+              {
+                property: 'background-color',
+                source_value: '#111111',
+                target_value: '#ffffff',
+                delta: 'changed',
+              },
+            ],
+            style_deltas: [
+              {
+                property: 'border-radius',
+                source_value: '999px',
+                target_value: '4px',
+                severity: 'warning',
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  const finding = result.findings.find((item) => item.id === 'visual-001');
+  assert.ok(finding, 'expected visual parity finding');
+  assert.equal(finding.loss_class, 'visual_parity_mismatch');
+  assert.equal(finding.reason_code, 'visual_style_delta');
+  assert.equal(finding.repair_bucket, 'visual_parity_mismatch');
+  assert.equal(finding.pattern_family, 'visual_parity_mismatch:button_style:class:hero');
+  assert.equal(finding.confidence, 0.82);
+  assert.equal(finding.selector, '.hero .cta');
+  assert.equal(finding.selector_family, 'class:hero');
+  assert.equal(finding.source_snippet, 'Start now');
+  assert.equal(finding.observed_output, 'Start now');
+  assert.equal(finding.selector_evidence.target_selector, '.wp-block-button__link');
+  assert.equal(finding.property_evidence[0].property, 'background-color');
+  assert.equal(finding.style_deltas[0].property, 'border-radius');
+  assert.equal(result.summary.diagnostic_blind_spots.some((spot) => spot.kind === 'missing_source_context'), false);
+});
+
 test('visual-explanation.json is merged into collected visual parity artifacts generically', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-explanation-artifact-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-explanation-artifact-test' });
