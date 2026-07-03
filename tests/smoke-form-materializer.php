@@ -52,6 +52,11 @@ namespace {
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-transformer-adapter.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 
+	$transformer_bootstrap = dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/php-transformer/php-transformer.php';
+	if ( is_readable( $transformer_bootstrap ) ) {
+		require_once $transformer_bootstrap;
+	}
+
 	$failures   = array();
 	$assertions = 0;
 	$assert     = static function ( bool $condition, string $label, string $detail = '' ) use ( &$assertions, &$failures ): void {
@@ -182,6 +187,124 @@ namespace {
 	$assert( 'acceptable_preservation' === ( $mapped['acceptability'] ?? '' ), 'finding-acceptable-preservation' );
 	$assert( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND === Static_Site_Importer_Diagnostic_Loss_Classes::classify( $mapped ), 'finding-stays-preserved-runtime-island' );
 	$assert( empty( $unmapped['runtime_mapped'] ), 'unmappable-form-stays-unsignaled' );
+
+	// --- Form finding enrich carries readable_blocks for graft anchoring --------
+	$enrich_readable = $enrich->invoke(
+		null,
+		array(
+			'diagnostic_code' => 'html_form_fallback',
+			'reason'          => 'form_requires_runtime',
+			'source_path'     => 'website/index.html',
+			'selector'        => 'form.contact',
+			'tag'             => 'form',
+			'controls'        => array( array( 'tag' => 'input', 'type' => 'email', 'label' => 'Email' ) ),
+			'readable_blocks' => array( array( 'blockName' => 'core/group', 'attrs' => array(), 'innerBlocks' => array() ) ),
+		)
+	);
+	$assert( isset( $enrich_readable['readable_blocks'][0]['blockName'] ) && 'core/group' === $enrich_readable['readable_blocks'][0]['blockName'], 'enrich-carries-readable-blocks-for-graft' );
+
+	// --- Graft: seeded contact-form markup replaces the readable fallback -------
+	$transformer_available = function_exists( 'blocks_engine_php_transformer_transform_html' );
+	$build_form_diagnostic = static function ( array $transformer_fallback, string $source_path ) use ( $enrich ): array {
+		return $enrich->invoke(
+			null,
+			array(
+				'diagnostic_code' => 'html_form_fallback',
+				'reason'          => 'form_requires_runtime',
+				'source_path'     => $source_path,
+				'selector'        => $transformer_fallback['selector'] ?? '',
+				'tag'             => 'form',
+				'form'            => $transformer_fallback['form'] ?? array(),
+				'controls'        => $transformer_fallback['controls'] ?? array(),
+				'readable_blocks' => $transformer_fallback['readable_blocks'] ?? array(),
+			)
+		);
+	};
+
+	if ( $transformer_available ) {
+		// Single-form page: text + email + textarea + submit.
+		$single_html       = '<section><h2>Contact</h2><form class="contact" action="mailto:hello@example.com" method="post"><input id="name" type="text" name="name" required aria-label="Your name"><input id="email" type="email" name="email" required aria-label="Email"><textarea name="msg" aria-label="Message"></textarea><button type="submit">Send</button></form></section>';
+		$single_transform  = blocks_engine_php_transformer_transform_html( $single_html );
+		$single_serialized = (string) ( $single_transform['serialized_blocks'] ?? '' );
+		$single_fallback   = $single_transform['fallbacks'][0] ?? array();
+
+		$single_report                       = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/contact.html' );
+		$single_report['diagnostics'][]      = $build_form_diagnostic( $single_fallback, 'website/contact.html' );
+		$single_contents                     = array( 'website/contact.html' => $single_serialized );
+		$single_seeding                      = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $single_report, array(), $single_contents );
+
+		$single_grafted = (string) ( $single_contents['website/contact.html'] ?? '' );
+		$single_finding = $single_report['diagnostics'][0] ?? array();
+		$assert( 'completed' === ( $single_seeding['status'] ?? '' ), 'graft-seed-status-completed' );
+		$assert( 1 === ( $single_seeding['mapped_count'] ?? 0 ), 'graft-one-form-mapped' );
+		$assert( 1 === ( $single_seeding['grafted_count'] ?? 0 ), 'graft-one-form-grafted' );
+		$assert( true === ( $single_finding['content_grafted'] ?? false ), 'graft-finding-content-grafted' );
+		$assert( true === ( $single_finding['runtime_mapped'] ?? false ), 'graft-finding-runtime-mapped' );
+		$assert( 'jetpack/contact-form' === ( $single_finding['block_name'] ?? '' ), 'graft-finding-block-name' );
+		$assert( str_contains( $single_grafted, 'wp:jetpack/contact-form' ), 'graft-content-has-contact-form' );
+		$assert( str_contains( $single_grafted, 'wp:jetpack/field-text' ), 'graft-content-has-field-text' );
+		$assert( str_contains( $single_grafted, 'wp:jetpack/field-email' ), 'graft-content-has-field-email' );
+		$assert( str_contains( $single_grafted, 'wp:jetpack/field-textarea' ), 'graft-content-has-field-textarea' );
+		$assert( str_contains( $single_grafted, 'wp:jetpack/button' ), 'graft-content-has-submit-button' );
+		$assert( ! str_contains( $single_grafted, 'Your name (required)' ), 'graft-content-drops-paragraph-fallback' );
+		$assert( str_contains( $single_grafted, 'Contact' ), 'graft-content-preserves-surrounding-content' );
+		$assert( ! str_contains( $single_grafted, '<!-- wp:html' ), 'graft-content-has-no-core-html-island' );
+
+		// Multi-form page: two forms on one page graft independently.
+		$multi_html       = '<section><h2>Contact A</h2><form class="contact-a" action="mailto:a@example.com" method="post"><input id="a-email" type="email" name="email" required aria-label="Email"><textarea name="msg" aria-label="Message"></textarea><button type="submit">Send A</button></form></section><section><h2>Contact B</h2><form class="contact-b" action="mailto:b@example.com" method="post"><input id="b-name" type="text" name="name" required aria-label="Name"><button type="submit">Send B</button></form></section>';
+		$multi_transform  = blocks_engine_php_transformer_transform_html( $multi_html );
+		$multi_serialized = (string) ( $multi_transform['serialized_blocks'] ?? '' );
+
+		$multi_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/contact.html' );
+		foreach ( $multi_transform['fallbacks'] ?? array() as $multi_fallback ) {
+			$multi_report['diagnostics'][] = $build_form_diagnostic( $multi_fallback, 'website/contact.html' );
+		}
+		$multi_contents = array( 'website/contact.html' => $multi_serialized );
+		$multi_seeding  = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $multi_report, array(), $multi_contents );
+
+		$multi_grafted = (string) ( $multi_contents['website/contact.html'] ?? '' );
+		$assert( 2 === ( $multi_seeding['mapped_count'] ?? 0 ), 'graft-multi-two-forms-mapped' );
+		$assert( 2 === ( $multi_seeding['grafted_count'] ?? 0 ), 'graft-multi-two-forms-grafted' );
+		// Each form contributes one opening contact-form comment delimiter.
+		$assert( 2 === substr_count( $multi_grafted, '<!-- wp:jetpack/contact-form' ), 'graft-multi-two-contact-form-blocks' );
+		$assert( str_contains( $multi_grafted, 'wp:jetpack/field-email' ), 'graft-multi-form-a-field-email' );
+		$assert( str_contains( $multi_grafted, 'wp:jetpack/field-text' ), 'graft-multi-form-b-field-text' );
+		$assert( ! str_contains( $multi_grafted, 'Send A</a>' ), 'graft-multi-drops-form-a-fallback' );
+		$assert( str_contains( $multi_grafted, 'Contact A' ) && str_contains( $multi_grafted, 'Contact B' ), 'graft-multi-preserves-both-sections' );
+	}
+
+	// --- Graft leaves an unanchorable finding's fallback in place --------------
+	$unanchorable_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/unanchorable.html' );
+	$unanchorable_report['diagnostics'][] = array(
+		'type'            => 'unsupported_html_fallback',
+		'diagnostic_code' => 'html_form_fallback',
+		'loss_class'      => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+		'source_path'     => 'website/unanchorable.html',
+		'selector'        => 'form.no-readable',
+		'tag'             => 'form',
+		'form'            => array(),
+		'controls'        => array( array( 'tag' => 'input', 'type' => 'text', 'label' => 'Name' ) ),
+	);
+	$unanchorable_contents                = array( 'website/unanchorable.html' => '<!-- wp:paragraph --><p>keep this fallback page</p><!-- /wp:paragraph -->' );
+	$unanchorable_seeding                 = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $unanchorable_report, array(), $unanchorable_contents );
+
+	$unanchorable_grafted = (string) ( $unanchorable_contents['website/unanchorable.html'] ?? '' );
+	$unanchorable_finding = $unanchorable_report['diagnostics'][0] ?? array();
+	$unanchorable_diag    = null;
+	foreach ( $unanchorable_report['diagnostics'] ?? array() as $unanchorable_row ) {
+		if ( is_array( $unanchorable_row ) && 'form_block_graft_unanchorable' === ( $unanchorable_row['type'] ?? '' ) ) {
+			$unanchorable_diag = $unanchorable_row;
+			break;
+		}
+	}
+	$assert( 1 === ( $unanchorable_seeding['mapped_count'] ?? 0 ), 'graft-unanchorable-still-mapped' );
+	$assert( 0 === ( $unanchorable_seeding['grafted_count'] ?? 0 ), 'graft-unanchorable-not-grafted' );
+	$assert( true === ( $unanchorable_finding['runtime_mapped'] ?? false ), 'graft-unanchorable-runtime-mapped-kept' );
+	$assert( false === ( $unanchorable_finding['content_grafted'] ?? true ), 'graft-unanchorable-content-not-grafted' );
+	$assert( null !== $unanchorable_diag, 'graft-unanchorable-diagnostic-recorded' );
+	$assert( 'html_form_fallback_graft_unanchorable' === ( $unanchorable_diag['diagnostic_code'] ?? '' ), 'graft-unanchorable-diagnostic-code' );
+	$assert( 'no_readable_fallback_blocks' === ( $unanchorable_diag['reason'] ?? '' ), 'graft-unanchorable-reason' );
+	$assert( '<!-- wp:paragraph --><p>keep this fallback page</p><!-- /wp:paragraph -->' === $unanchorable_grafted, 'graft-unanchorable-fallback-left-in-place' );
 
 	// --- Provider override routes to a different registered adapter ----------
 	add_filter(

@@ -223,7 +223,7 @@ class Static_Site_Importer_Theme_Generator {
 		self::materialize_required_plugins( $args );
 		self::record_product_seeding_report( $args );
 		self::record_commerce_dependency_check( $args );
-		self::record_form_materialization( $args );
+		self::record_form_materialization( $args, $page_artifacts['contents'] );
 		self::record_product_materialization( $args );
 		$source_of_truth_manifest                    = self::source_of_truth_manifest( $import_run_id, $source_artifact_reference, $theme_dir, $theme_slug, $page_targets, $page_ids, $permalinks, $writes, $materialized, $write_theme_report_artifacts );
 		self::$conversion_report['source_of_truth'] = $source_of_truth_manifest;
@@ -3043,11 +3043,16 @@ class Static_Site_Importer_Theme_Generator {
 	 * dead, unacceptable feature-parity loss. Forms that cannot be mapped keep no
 	 * signal and stay unacceptable.
 	 *
-	 * @param array<string, mixed> $args Import args.
+	 * The grafted contact-form markup is written into the page contents in place of
+	 * each finding's readable fallback, so `write_page_contents()` persists the
+	 * working form rather than the dead fallback.
+	 *
+	 * @param array<string, mixed>   $args          Import args.
+	 * @param array<string, string>  $page_contents Materialized page post_content keyed by source filename, mutated in place.
 	 * @return void
 	 */
-	private static function record_form_materialization( array $args ): void {
-		Static_Site_Importer_Report_Diagnostics::materialize_form_findings( self::$conversion_report, $args );
+	private static function record_form_materialization( array $args, array &$page_contents ): void {
+		Static_Site_Importer_Report_Diagnostics::materialize_form_findings( self::$conversion_report, $args, $page_contents );
 	}
 
 	/**
