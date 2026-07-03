@@ -357,6 +357,43 @@ test('failed fixtures with passing import/editor quality and visual evidence rep
   assert.equal(result.summary.top_pattern_families[0].key, 'fixture_status_mismatch:fixture_status_mismatch:(none)');
 });
 
+test('runtime command telemetry does not become a fixture diagnostic', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-matrix-telemetry-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'telemetry-diagnostic-test' });
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: {
+      fixture_id: 'simple-site',
+      status: 'passed',
+      diagnostics: [
+        {
+          command: 'wordpress.visual-compare',
+          timing: {
+            startedAt: '2026-07-03T12:37:44.617Z',
+            finishedAt: '2026-07-03T12:37:46.251Z',
+            durationMs: 1634,
+          },
+        },
+      ],
+      quality_metrics: {
+        pass: true,
+        invalid_block_count: 0,
+      },
+      editor_validation: {
+        validation_method: EDITOR_VALIDATION_METHOD,
+        total_blocks: 1,
+        valid_blocks: 1,
+        invalid_blocks: 0,
+      },
+    },
+  });
+
+  assert.equal(result.summary.failed, 0);
+  assert.equal(result.findings.length, 0);
+  assert.equal(result.fixtures[0].status, 'passed');
+});
+
 test('fails the gate when a preserved_runtime_island carries no runtime-carried signal', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'runtime-island-no-signal-test' });
   const result = normalizeFixtureMatrixResult({
