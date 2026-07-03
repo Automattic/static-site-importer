@@ -919,6 +919,42 @@ test('suppresses pre-normalized count-only fixture diagnostics with fixture sour
   assert.equal(result.fanout_groups[0].findings.some((finding) => finding.kind === 'static_site_fixture_diagnostic'), false);
 });
 
+test('does not classify visual diff diagnostics as missing evidence', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-diff-evidence-test' });
+  const fixturePath = matrix.fixtures[0].fixture_path;
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        fixture_path: fixturePath,
+        status: 'passed',
+        diagnostics: [
+          {
+            id: 'visual-diff-default',
+            kind: 'static_site_fixture_diagnostic',
+            category: 'visual',
+            source_path: fixturePath,
+            visual_diff: {
+              viewport_id: 'default',
+              mismatch_percent: 12.5,
+              mismatch_pixels: 125,
+              diff_screenshot_path: 'files/browser/visual-compare/diff.png',
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  const fixture = result.fixtures.find((item) => item.fixture_id === 'simple-site');
+  const diagnostic = result.findings.find((finding) => finding.id === 'visual-diff-default');
+
+  assert.ok(diagnostic?.visual_diff, 'expected the visual diff evidence to be retained');
+  assert.equal(fixture.quality_gate.fixture_categories.includes('missing_evidence'), false);
+  assert.equal(result.summary.fixture_categories.missing_evidence, undefined);
+});
+
 test('collects SSI finding packet source and observed context from fixture artifacts', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-finding-packet-context-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'packet-context-test' });
