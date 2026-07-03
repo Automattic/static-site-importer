@@ -2805,7 +2805,14 @@ test('child_command_failures with fixture metadata attribute runtime failures wi
           kind: 'child_command_failed',
           batch_id: 'batch-002',
           fixture_ids: ['fixture-beta'],
+          command: { argv: ['wp-codebox', 'recipe-run', '/tmp/batch-002.json'] },
           exit_status: null,
+          stdout_tail: 'runtime stdout tail',
+          stderr_tail: 'runtime stderr tail',
+          recipe_file: '/tmp/batch-002.json',
+          output_file: '/tmp/batch-002-output.json',
+          artifacts_directory: '/tmp/batch-002-artifacts',
+          replay_command: { argv: ['wp-codebox', 'recipe-run', '--recipe', '/tmp/batch-002.json'] },
           message: 'WP Codebox recipe-run exited without a status.',
           artifact_refs: { batch_recipe: '/tmp/batch-002.json' },
         },
@@ -2822,10 +2829,19 @@ test('child_command_failures with fixture metadata attribute runtime failures wi
   assert.equal(beta.status, 'failed');
   assert.equal(finding.kind, 'recipe_step_failure');
   assert.equal(finding.loss_class, 'runtime_execution_failed');
+  assert.deepEqual(finding.command_argv, ['wp-codebox', 'recipe-run', '/tmp/batch-002.json']);
+  assert.equal(finding.stdout_tail, 'runtime stdout tail');
+  assert.equal(finding.stderr_tail, 'runtime stderr tail');
+  assert.equal(finding.recipe_file, '/tmp/batch-002.json');
+  assert.equal(finding.output_file, '/tmp/batch-002-output.json');
+  assert.equal(finding.artifacts_directory, '/tmp/batch-002-artifacts');
+  assert.deepEqual(finding.replay_command.argv, ['wp-codebox', 'recipe-run', '--recipe', '/tmp/batch-002.json']);
   assert.equal(result.summary.unacceptable_loss_classes.runtime_execution_failed, 1);
   assert.equal(result.summary.fixture_failure_categories.runtime_execution_failed, 1);
   assert.equal(result.summary.fixture_failure_categories.fixture_failed, undefined);
   assert.equal(result.summary.fixture_failure_categories.missing_evidence, undefined);
+  assert.equal(result.summary.fixture_exemplars[0].batch_id, 'batch-002');
+  assert.equal(result.summary.fixture_exemplars[0].stderr_tail, 'runtime stderr tail');
 });
 
 test('unavailable editor validation fails honestly without fabricated validated-block metrics', () => {
