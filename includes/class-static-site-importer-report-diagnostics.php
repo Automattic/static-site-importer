@@ -1134,11 +1134,19 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * provider, dependency availability, and per-form mapping outcomes. Forms with
 	 * no mappable controls keep no signal and stay an unacceptable parity loss.
 	 *
-	 * @param array<string,mixed> $report Import report (mutated in place).
-	 * @param array<string,mixed> $args   Import args.
+	 * When page contents are supplied, the seeded contact-form markup is grafted
+	 * into the matching page's post_content in place of the finding's readable
+	 * fallback region. The graft anchors on the finding's own readable_blocks (the
+	 * structural identity the finding already carries), scoped to the finding's
+	 * source page, and never matches visible copy. Findings that cannot be anchored
+	 * leave the fallback in place and record a structured graft diagnostic.
+	 *
+	 * @param array<string,mixed> $report         Import report (mutated in place).
+	 * @param array<string,mixed> $args           Import args.
+	 * @param array<string,string> $page_contents Materialized page post_content keyed by source filename, mutated in place when a finding is grafted.
 	 * @return array<string,mixed> The recorded form_seeding report.
 	 */
-	public static function materialize_form_findings( array &$report, array $args = array() ): array {
+	public static function materialize_form_findings( array &$report, array $args = array(), array &$page_contents = array() ): array {
 		$adapter = Static_Site_Importer_Entity_Materializer_Registry::form_adapter();
 
 		$diagnostics = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
@@ -1174,6 +1182,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$seeding['provider']     = Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'form' );
 		$seeding['form_count']   = count( $manifest_forms );
 		$seeding['mapped_count'] = 0;
+		$seeding['grafted_count'] = 0;
 		$seeding['waived']       = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? 'allow_missing_jetpack' ) ] );
 		if ( ! empty( $validation['errors'] ) ) {
 			$seeding['validation_errors'] = $validation['errors'];
@@ -1194,7 +1203,20 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 
 			$report['diagnostics'][ $index ] = self::mark_form_finding_mapped( $report['diagnostics'][ $index ], $row, $seeding['provider'] );
-			$pending                         = array_values( array_diff( $pending, array( $index ) ) );
+
+			if ( ! empty( $page_contents ) ) {
+				$markup = isset( $row['block_markup'] ) && is_scalar( $row['block_markup'] ) ? (string) $row['block_markup'] : '';
+				$graft  = self::graft_form_block_into_page_contents( $report['diagnostics'][ $index ], $markup, $page_contents );
+				if ( $graft['grafted'] ) {
+					++$seeding['grafted_count'];
+				}
+				$report['diagnostics'][ $index ] = $graft['finding'];
+				if ( ! empty( $graft['diagnostic'] ) ) {
+					$report['diagnostics'][] = $graft['diagnostic'];
+				}
+			}
+
+			$pending = array_values( array_diff( $pending, array( $index ) ) );
 		}
 
 		$report['form_seeding'] = $seeding;
@@ -1242,6 +1264,249 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		return $diagnostic;
+	}
+
+	/**
+	 * Graft seeded contact-form markup into a page's post_content in place of the
+	 * finding's readable fallback region.
+	 *
+	 * Anchors on the finding's own readable_blocks (serialized to the same
+	 * comment-delimited block markup the transformer emitted into post_content),
+	 * scoped to the finding's source page. Never matches visible copy. On a
+	 * successful graft the finding is stamped `content_grafted`; when no anchor can
+	 * be resolved the fallback is left untouched and a structured diagnostic is
+	 * returned so the loss surfaces instead of being guessed away.
+	 *
+	 * @param array<string,mixed>  $finding       Mapped form-fallback finding.
+	 * @param string               $block_markup  Seeded contact-form block markup.
+	 * @param array<string,string> $page_contents Materialized page post_content keyed by source filename, mutated in place.
+	 * @return array{grafted:bool, finding:array<string,mixed>, diagnostic:?array<string,mixed>}
+	 */
+	private static function graft_form_block_into_page_contents( array $finding, string $block_markup, array &$page_contents ): array {
+		$source_path = self::first_scalar( $finding, array( 'source_path', 'source' ) );
+		$selector    = isset( $finding['selector'] ) && is_scalar( $finding['selector'] ) ? (string) $finding['selector'] : '';
+
+		$unanchorable = static function ( string $reason ) use ( &$finding, $source_path, $selector ): array {
+			$finding['content_grafted'] = false;
+			return array(
+				'grafted'    => false,
+				'finding'    => $finding,
+				'diagnostic' => array(
+					'type'            => 'form_block_graft_unanchorable',
+					'reason'          => $reason,
+					'source_path'     => $source_path,
+					'selector'        => $selector,
+					'diagnostic_code' => 'html_form_fallback_graft_unanchorable',
+					'loss_class'      => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+					'message'         => 'Seeded contact-form markup could not be anchored to the readable fallback in post_content; the fallback was left in place.',
+				),
+			);
+		};
+
+		if ( '' === $block_markup ) {
+			return $unanchorable( 'no_seeded_block_markup' );
+		}
+
+		$readable = isset( $finding['readable_blocks'] ) && is_array( $finding['readable_blocks'] ) ? $finding['readable_blocks'] : array();
+		$region   = self::serialize_readable_form_blocks( $readable );
+		if ( '' === $region ) {
+			return $unanchorable( 'no_readable_fallback_blocks' );
+		}
+
+		$key = self::form_fallback_page_content_key( $source_path, $region, $page_contents );
+		if ( null === $key ) {
+			return $unanchorable( 'fallback_region_not_found_in_post_content' );
+		}
+
+		$content  = (string) ( $page_contents[ $key ] ?? '' );
+		$position = strpos( $content, $region );
+		if ( false === $position ) {
+			return $unanchorable( 'fallback_region_not_found_in_post_content' );
+		}
+
+		// Replace only the first remaining occurrence of this finding's readable
+		// region, so sibling forms with an identical fallback structure on the same
+		// page each consume one occurrence as findings are processed in turn.
+		$page_contents[ $key ]               = substr( $content, 0, $position ) . $block_markup . substr( $content, $position + strlen( $region ) );
+		$finding['content_grafted']          = true;
+		$finding['grafted_post_content_key'] = $key;
+
+		return array(
+			'grafted'    => true,
+			'finding'    => $finding,
+			'diagnostic' => null,
+		);
+	}
+
+	/**
+	 * Resolve the page content key that owns a form finding's fallback region.
+	 *
+	 * Prefers the finding's own source page; only falls back to scanning other
+	 * provided pages when the finding carries no resolvable source path.
+	 *
+	 * @param string               $source_path   Finding source path.
+	 * @param string               $region        Serialized readable fallback region.
+	 * @param array<string,string> $page_contents Materialized page post_content keyed by source filename.
+	 * @return string|null
+	 */
+	private static function form_fallback_page_content_key( string $source_path, string $region, array $page_contents ): ?string {
+		if ( '' !== $source_path ) {
+			foreach ( $page_contents as $key => $content ) {
+				if ( self::form_source_paths_match( $source_path, (string) $key ) && str_contains( (string) $content, $region ) ) {
+					return (string) $key;
+				}
+			}
+		}
+
+		foreach ( $page_contents as $key => $content ) {
+			if ( str_contains( (string) $content, $region ) ) {
+				return (string) $key;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Compare a finding source path against a page content key.
+	 *
+	 * @param string $source_path Finding source path.
+	 * @param string $key         Page content key.
+	 * @return bool
+	 */
+	private static function form_source_paths_match( string $source_path, string $key ): bool {
+		if ( $source_path === $key ) {
+			return true;
+		}
+
+		$normalized_source = self::normalize_form_source_path( $source_path );
+		$normalized_key    = self::normalize_form_source_path( $key );
+		if ( '' !== $normalized_source && $normalized_source === $normalized_key ) {
+			return true;
+		}
+
+		$source_base = basename( $source_path );
+		return '' !== $source_base && $source_base === basename( $key );
+	}
+
+	/**
+	 * Normalize a source path for form-fallback page matching.
+	 *
+	 * @param string $path Source path.
+	 * @return string
+	 */
+	private static function normalize_form_source_path( string $path ): string {
+		$path = trim( str_replace( '\\', '/', $path ), '/' );
+		if ( '' === $path ) {
+			return '';
+		}
+		if ( str_starts_with( $path, 'website/' ) ) {
+			$path = substr( $path, strlen( 'website/' ) );
+		}
+		return trim( $path, '/' );
+	}
+
+	/**
+	 * Serialize a transformer-style readable_blocks tree to comment-delimited
+	 * block markup.
+	 *
+	 * Mirrors Automattic\BlocksEngine\PhpTransformer\WordPress\Runtime block
+	 * serialization so the result matches the exact fallback region the
+	 * transformer emitted into serialized_blocks (and thus into post_content).
+	 *
+	 * @param array<int,array<string,mixed>> $readable_blocks Readable fallback block tree.
+	 * @return string
+	 */
+	private static function serialize_readable_form_blocks( array $readable_blocks ): string {
+		$serialized = '';
+		foreach ( array_values( $readable_blocks ) as $block ) {
+			if ( is_array( $block ) ) {
+				$serialized .= self::serialize_readable_form_block( $block );
+			}
+		}
+		return $serialized;
+	}
+
+	/**
+	 * Serialize one transformer-style block node to comment-delimited markup.
+	 *
+	 * @param array<string,mixed> $block Block node (blockName/attrs/innerBlocks/innerHTML/innerContent).
+	 * @return string
+	 */
+	private static function serialize_readable_form_block( array $block ): string {
+		$content = self::serialize_readable_form_inner_content( $block );
+		$name    = isset( $block['blockName'] ) && is_string( $block['blockName'] ) ? $block['blockName'] : '';
+		if ( '' === $name ) {
+			return $content;
+		}
+
+		$name  = str_starts_with( $name, 'core/' ) ? substr( $name, 5 ) : $name;
+		$attrs = self::serialize_readable_form_block_attributes( isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array() );
+		if ( '' === $content ) {
+			return '<!-- wp:' . $name . $attrs . ' /-->';
+		}
+
+		return '<!-- wp:' . $name . $attrs . ' -->' . $content . '<!-- /wp:' . $name . ' -->';
+	}
+
+	/**
+	 * Serialize a transformer-style block's inner content.
+	 *
+	 * @param array<string,mixed> $block Block node.
+	 * @return string
+	 */
+	private static function serialize_readable_form_inner_content( array $block ): string {
+		$inner_blocks  = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? array_values( array_filter( $block['innerBlocks'], 'is_array' ) ) : array();
+		$inner_content = $block['innerContent'] ?? null;
+
+		if ( ! is_array( $inner_content ) ) {
+			$serialized = '';
+			foreach ( $inner_blocks as $inner_block ) {
+				if ( is_array( $inner_block ) ) {
+					$serialized .= self::serialize_readable_form_block( $inner_block );
+				}
+			}
+			return $serialized . ( isset( $block['innerHTML'] ) && is_string( $block['innerHTML'] ) ? $block['innerHTML'] : '' );
+		}
+
+		$serialized = '';
+		$index      = 0;
+		foreach ( $inner_content as $part ) {
+			if ( null === $part ) {
+				$inner_block = $inner_blocks[ $index ] ?? null;
+				$serialized .= is_array( $inner_block ) ? self::serialize_readable_form_block( $inner_block ) : '';
+				++$index;
+				continue;
+			}
+			$serialized .= (string) $part;
+		}
+
+		return $serialized;
+	}
+
+	/**
+	 * Serialize block attributes for a comment delimiter, matching WordPress core.
+	 *
+	 * @param array<string,mixed> $attrs Block attributes.
+	 * @return string
+	 */
+	private static function serialize_readable_form_block_attributes( array $attrs ): string {
+		if ( array() === $attrs ) {
+			return '';
+		}
+
+		$encoded = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) : json_encode( $attrs, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+		if ( ! is_string( $encoded ) ) {
+			return '';
+		}
+
+		$encoded = preg_replace( '/--/', '\\u002d\\u002d', $encoded ) ?? $encoded;
+		$encoded = preg_replace( '/</', '\\u003c', $encoded ) ?? $encoded;
+		$encoded = preg_replace( '/>/', '\\u003e', $encoded ) ?? $encoded;
+		$encoded = preg_replace( '/&/', '\\u0026', $encoded ) ?? $encoded;
+		$encoded = preg_replace( '/\\\\"/', '\\u0022', $encoded ) ?? $encoded;
+
+		return ' ' . $encoded;
 	}
 
 	/**
@@ -2327,6 +2592,14 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 		if ( isset( $fallback['control_count'] ) && is_numeric( $fallback['control_count'] ) ) {
 			$diagnostic['control_count'] = (int) $fallback['control_count'];
+		}
+
+		// Carry the transformer's readable fallback block tree so the form graft
+		// can anchor the seeded contact-form markup to the exact fallback region
+		// the finding represents inside the page's post_content (the finding's own
+		// structural identity), instead of guessing by matching visible copy.
+		if ( isset( $fallback['readable_blocks'] ) && is_array( $fallback['readable_blocks'] ) ) {
+			$diagnostic['readable_blocks'] = array_values( array_filter( $fallback['readable_blocks'], 'is_array' ) );
 		}
 
 		return $diagnostic;
