@@ -955,6 +955,35 @@ test('does not classify visual diff diagnostics as missing evidence', () => {
   assert.equal(result.summary.fixture_categories.missing_evidence, undefined);
 });
 
+test('does not classify visual parity mismatch findings as missing evidence', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-mismatch-evidence-test' });
+  const fixturePath = matrix.fixtures[0].fixture_path;
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        fixture_path: fixturePath,
+        status: 'passed',
+        diagnostics: [
+          {
+            kind: 'visual_parity_mismatch',
+            source_path: fixturePath,
+            message: 'Pixel visual parity mismatch: 125/1000 overlap pixels (12.50%) exceed the 0.00% threshold.',
+          },
+        ],
+      },
+    ],
+  });
+
+  const fixture = result.fixtures.find((item) => item.fixture_id === 'simple-site');
+
+  assert.equal(fixture.quality_gate.fixture_categories.includes('visual_mismatch'), true);
+  assert.equal(fixture.quality_gate.fixture_categories.includes('missing_evidence'), false);
+  assert.equal(result.summary.fixture_categories.visual_mismatch, 1);
+  assert.equal(result.summary.fixture_categories.missing_evidence, undefined);
+});
+
 test('collects SSI finding packet source and observed context from fixture artifacts', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-finding-packet-context-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'packet-context-test' });
