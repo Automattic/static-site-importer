@@ -118,33 +118,55 @@ The comparison reports signed count deltas by repair bucket, `group_key`, kind,
 fixture, candidate repo, and selector family. Positive deltas mean the candidate
 has more findings in that group; negative deltas mean fewer findings.
 
-## Fixture Manifests (class / tags / complexity)
+## Fixture Manifests (taxonomy / budgets)
 
 Each fixture directory carries a `fixture.json` manifest authored alongside the
 fixture (owned by the corpus repo, `blocks-engine/fixtures/websites`). The
-manifest is the **sole source of truth** for a fixture's class — there is no
+manifest is the **sole source of truth** for a fixture's taxonomy — there is no
 runtime classification heuristic and no directory-name fallback.
 
 ```json
 {
-  "class": "marketing/static",
+  "fixture_class": "marketing/static",
   "tags": ["restaurant", "has-form", "multipage"],
-  "complexity": 1
+  "capabilities": ["forms", "local-css"],
+  "risk_profile": "low",
+  "complexity": 1,
+  "quality_budgets": {
+    "max_unacceptable_findings": 0,
+    "visual_mismatch_ratio": 0.1
+  }
 }
 ```
 
-- `class` — **required**. Must be one of the canonical `FIXTURE_CLASSES` values
+- `fixture_class` — **required** for known coverage. Must be one of the canonical `FIXTURE_CLASSES` values
   verbatim: `marketing/static`, `docs/blog`, `ecommerce/catalog`,
   `app/dashboard`, `canvas/webgl/audio/runtime-heavy`, `unknown`.
+- `class` — legacy alias for `fixture_class`, still accepted. When both are
+  present, `fixture_class` wins.
 - `tags` — optional free-form string array, used for lane/tag querying.
+- `capabilities` — optional authored string array for capability lanes such as
+  `forms`, `commerce-products`, `checkout`, `runtime-js`, `webgl`, or `audio`.
+- `risk_profile` — optional authored risk lane. Missing values normalize to
+  `unknown`; suggested starting values are `low`, `medium`, `high`, and
+  `extreme`.
 - `complexity` — optional integer `1`–`5` (values out of range are clamped).
+- `quality_budgets` — optional budget metadata copied into matrix artifacts and
+  results. The matrix records these values but does not fabricate or enforce
+  them unless a future gate explicitly consumes them.
 
 Class resolution order: an explicit class injected by the runner/tests → the
-manifest `class` → `unknown`. A missing manifest or an invalid `class` value does
-**not** crash the run: that single fixture resolves to `unknown` and a loud
-warning naming the fixture is written to stderr. `tags` and `complexity` are
-carried through onto each fixture, the per-fixture result, and the
-`result_summary`, so runs can be filtered/queried by lane (class) and tag.
+manifest `fixture_class` → legacy manifest `class` → `unknown`. A missing manifest
+or an invalid class value does **not** crash the run: that single fixture resolves
+to `unknown` and a loud warning naming the fixture is written to stderr. Matrix
+and result summaries include `manifest_coverage` with counts and fixture ids for
+unknown taxonomy plus a warning-state `gate` block. This is metadata, not a
+silent heuristic classification and not a hard failure.
+
+Authored taxonomy fields are carried through onto each fixture, the per-fixture
+result, artifact `source_metadata`, and summary rollups. Result summaries include
+`fixture_classes`, `classes`, `capabilities`, `risk_profiles`, and
+`quality_budgets` rollups.
 
 Run a single lane or tag subset (matrix-wide, runner, or bench):
 
@@ -152,15 +174,25 @@ Run a single lane or tag subset (matrix-wide, runner, or bench):
 # Operator runner
 node tools/run-fixture-matrix.mjs \
   --static-site-importer <path> --blocks-engine <path> \
-  --class marketing/static --tag restaurant
+  --class marketing/static --tag restaurant --capability forms --risk-profile low
 
 # Bench directly (also via SSI_FIXTURE_MATRIX_CLASS / SSI_FIXTURE_MATRIX_TAG)
 node bench/static-site-fixture-matrix.bench.mjs \
-  --fixture-root <root> --class marketing/static --tag restaurant
+  --fixture-root <root> --class marketing/static --tag restaurant --capability forms --risk-profile low
 ```
 
 `--class` selects a single class lane; `--tag` keeps only fixtures whose manifest
-tags include the tag; both together intersect.
+tags include the tag; `--capability` keeps only fixtures whose manifest
+capabilities include the capability; `--risk-profile` selects one authored risk
+lane. Filters intersect.
+
+Suggested corpus migration for `blocks-engine/fixtures/websites`: add or update
+`fixture.json` files incrementally as the corpus owner. Start by renaming authored
+`class` keys to `fixture_class` while leaving the legacy alias support in SSI,
+then add `capabilities`, `risk_profile`, and any `quality_budgets` only where a
+human knows the fixture intent. Fixtures without reviewed metadata should remain
+unknown and appear in `manifest_coverage.unknown_fixture_ids`; do not backfill
+truth from directory names or HTML heuristics.
 
 ## Generic Invocation
 

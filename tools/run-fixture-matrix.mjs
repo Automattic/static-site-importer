@@ -94,6 +94,9 @@ export function buildFixtureMatrixRunPlan(input) {
     // given manifest tag.
     ...(options.class ? { SSI_FIXTURE_MATRIX_CLASS: String(options.class) } : {}),
     ...(options.tag ? { SSI_FIXTURE_MATRIX_TAG: String(options.tag) } : {}),
+    ...(options.capability ? { SSI_FIXTURE_MATRIX_CAPABILITY: String(options.capability) } : {}),
+    ...(options.capabilities ? { SSI_FIXTURE_MATRIX_CAPABILITIES: String(options.capabilities) } : {}),
+    ...(options.riskProfile ? { SSI_FIXTURE_MATRIX_RISK_PROFILE: String(options.riskProfile) } : {}),
   };
   const fixtureCount = countTopLevelFixtureDirectories(options.fixtureRoot);
   const codeFreshness = buildCodeFreshness(options, options.gitRunner || defaultGitRunner);
