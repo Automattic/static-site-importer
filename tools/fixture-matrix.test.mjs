@@ -300,6 +300,100 @@ test('gates fixture matrix failures by unacceptable loss classes', () => {
   assert.equal(unacceptableResult.summary.unacceptable_loss_classes.fixture_failed, 1);
 });
 
+test('failed fixtures with passing import/editor quality report missing visual evidence instead of a generic fallback', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'missing-visual-evidence-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        status: 'failed',
+        quality_metrics: {
+          pass: true,
+          editor_invalid_count: 0,
+          invalid_block_count: 0,
+        },
+      },
+    ],
+  });
+
+  const finding = result.findings[0];
+  assert.equal(result.summary.failed, 1);
+  assert.equal(finding.kind, 'visual_evidence_missing');
+  assert.equal(finding.loss_class, 'visual_evidence_missing');
+  assert.match(finding.reason, /import quality and editor validity passed/);
+  assert.equal(result.summary.unacceptable_loss_classes.visual_evidence_missing, 1);
+  assert.equal(result.summary.top_pattern_families[0].key, 'visual_evidence_missing:visual_evidence_missing:(none)');
+});
+
+test('failed fixtures with passing import/editor quality and visual evidence report fixture status mismatch', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'fixture-status-mismatch-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        status: 'failed',
+        quality_metrics: {
+          pass: true,
+          editor_invalid_count: 0,
+          invalid_block_count: 0,
+        },
+        visual_parity_artifacts: {
+          schema: 'static-site-importer/visual-parity-artifacts/v1',
+          metrics: { mismatch_pixels: 0, total_pixels: 2048000 },
+          artifacts: { diff_screenshot: { status: 'captured' } },
+        },
+      },
+    ],
+  });
+
+  const finding = result.findings[0];
+  assert.equal(result.summary.failed, 1);
+  assert.equal(finding.kind, 'fixture_status_mismatch');
+  assert.equal(finding.loss_class, 'fixture_status_mismatch');
+  assert.match(finding.reason, /no structured visual-parity mismatch/);
+  assert.equal(result.summary.unacceptable_loss_classes.fixture_status_mismatch, 1);
+  assert.equal(result.summary.top_pattern_families[0].key, 'fixture_status_mismatch:fixture_status_mismatch:(none)');
+});
+
+test('runtime command telemetry does not become a fixture diagnostic', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-matrix-telemetry-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'telemetry-diagnostic-test' });
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: {
+      fixture_id: 'simple-site',
+      status: 'passed',
+      diagnostics: [
+        {
+          command: 'wordpress.visual-compare',
+          timing: {
+            startedAt: '2026-07-03T12:37:44.617Z',
+            finishedAt: '2026-07-03T12:37:46.251Z',
+            durationMs: 1634,
+          },
+        },
+      ],
+      quality_metrics: {
+        pass: true,
+        invalid_block_count: 0,
+      },
+      editor_validation: {
+        validation_method: EDITOR_VALIDATION_METHOD,
+        total_blocks: 1,
+        valid_blocks: 1,
+        invalid_blocks: 0,
+      },
+    },
+  });
+
+  assert.equal(result.summary.failed, 0);
+  assert.equal(result.findings.length, 0);
+  assert.equal(result.fixtures[0].status, 'passed');
+});
+
 test('fails the gate when a preserved_runtime_island carries no runtime-carried signal', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'runtime-island-no-signal-test' });
   const result = normalizeFixtureMatrixResult({
@@ -504,6 +598,33 @@ test('classifies script fallbacks and semantic parity without generic unsupporte
   assert.equal(result.summary.unacceptable_loss_classes.unsupported_loss, undefined);
 });
 
+test('preserves recipe step runtime execution failure loss class', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'recipe-step-failure-classification-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        status: 'failed',
+        diagnostics: [
+          {
+            kind: 'recipe_step_failure',
+            group_key: 'wp_codebox_recipe_step_failure',
+            loss_class: 'runtime_execution_failed',
+            command: 'wordpress.visual-compare',
+            message: 'WP Codebox recipe step failed.',
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(result.findings[0].loss_class, 'runtime_execution_failed');
+  assert.equal(result.findings[0].loss_acceptance, 'unacceptable');
+  assert.equal(result.summary.unacceptable_loss_classes.runtime_execution_failed, 1);
+  assert.equal(result.summary.unacceptable_loss_classes.unsupported_loss, undefined);
+});
+
 test('classifies fixtures from the per-fixture manifest as the sole source of truth', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-manifest-'));
   const shop = path.join(root, 'spring-shop');
@@ -514,7 +635,7 @@ test('classifies fixtures from the per-fixture manifest as the sole source of tr
   // manifest wins regardless of what a heuristic would have guessed.
   writeFileSync(path.join(shop, 'index.html'), '<h1>Just a hero</h1>');
   writeFileSync(path.join(shop, 'products', 'shoe.html'), '<h2>Shoe</h2>');
-  writeFileSync(path.join(shop, 'fixture.json'), JSON.stringify({ class: 'ecommerce/catalog', tags: ['Shop', 'has-cart'], complexity: 3 }));
+  writeFileSync(path.join(shop, 'fixture.json'), JSON.stringify({ fixture_class: 'ecommerce/catalog', tags: ['Shop', 'has-cart'], capabilities: ['commerce-products', 'checkout'], risk_profile: 'High Risk', complexity: 3, quality_budgets: { max_unacceptable_findings: 0 } }));
   writeFileSync(path.join(shader, 'index.html'), '<h1>Plain marketing copy</h1>');
   writeFileSync(path.join(shader, 'assets', 'shader.js'), 'document.querySelector("canvas");');
   writeFileSync(path.join(shader, 'fixture.json'), JSON.stringify({ class: 'canvas/webgl/audio/runtime-heavy', complexity: 9 }));
@@ -530,13 +651,35 @@ test('classifies fixtures from the per-fixture manifest as the sole source of tr
 
   // Tags and complexity are carried through onto the normalized fixture.
   assert.deepEqual(shopFixture.tags, ['Shop', 'has-cart']);
+  assert.deepEqual(shopFixture.capabilities, ['checkout', 'commerce-products']);
+  assert.equal(shopFixture.risk_profile, 'high-risk');
   assert.equal(shopFixture.complexity, 3);
+  assert.deepEqual(shopFixture.quality_budgets, { max_unacceptable_findings: 0 });
   // Complexity is clamped into the documented 1-5 range.
   assert.equal(shaderFixture.complexity, 5);
   assert.deepEqual(shaderFixture.tags, []);
 
   // An explicit class injected by tests/runner/result-merge still takes precedence.
   assert.equal(classifyFixture({ fixture_class: 'docs/blog', directory: shop }).fixture_class, 'docs/blog');
+});
+
+test('preserves legacy class manifest alias while preferring fixture_class', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-class-alias-'));
+  const legacy = path.join(root, 'legacy-class');
+  const preferred = path.join(root, 'preferred-class');
+  mkdirSync(legacy, { recursive: true });
+  mkdirSync(preferred, { recursive: true });
+  writeFileSync(path.join(legacy, 'index.html'), '<h1>Legacy</h1>');
+  writeFileSync(path.join(legacy, 'fixture.json'), JSON.stringify({ class: 'docs/blog' }));
+  writeFileSync(path.join(preferred, 'index.html'), '<h1>Preferred</h1>');
+  writeFileSync(path.join(preferred, 'fixture.json'), JSON.stringify({ class: 'docs/blog', fixture_class: 'app/dashboard' }));
+
+  const matrix = createFixtureMatrix({ fixture_root: root });
+  const byId = new Map(matrix.fixtures.map((fixture) => [fixture.id, fixture]));
+
+  assert.equal(byId.get('legacy-class').fixture_class, 'docs/blog');
+  assert.equal(byId.get('preferred-class').fixture_class, 'app/dashboard');
+  assert.equal(matrix.manifest_coverage.gate.status, 'passed');
 });
 
 test('falls back to unknown with a loud warning when the manifest is missing or invalid', () => {
@@ -570,6 +713,11 @@ test('falls back to unknown with a loud warning when the manifest is missing or 
   assert.equal(byId.get('bad-class').fixture_class, 'unknown');
   assert.deepEqual(byId.get('bad-class').taxonomy.signals, ['manifest_invalid_class']);
   assert.equal(byId.get('broken-json').fixture_class, 'unknown');
+  assert.equal(matrix.manifest_coverage.gate.status, 'warning');
+  assert.equal(matrix.manifest_coverage.unknown_fixture_class_count, 3);
+  assert.equal(matrix.manifest_coverage.missing_manifest_count, 2);
+  assert.equal(matrix.manifest_coverage.invalid_class_count, 1);
+  assert.deepEqual(matrix.manifest_coverage.unknown_fixture_ids, ['bad-class', 'broken-json', 'no-manifest']);
 
   // A clear, loud warning naming each offending fixture was emitted.
   const warningText = warnings.join('');
@@ -581,9 +729,9 @@ test('falls back to unknown with a loud warning when the manifest is missing or 
 test('filters the matrix by manifest class and tag lane', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-filter-'));
   const cases = [
-    ['landing', { class: 'marketing/static', tags: ['restaurant', 'has-form'] }],
-    ['brochure', { class: 'marketing/static', tags: ['agency'] }],
-    ['storefront', { class: 'ecommerce/catalog', tags: ['restaurant'] }],
+    ['landing', { class: 'marketing/static', tags: ['restaurant', 'has-form'], capabilities: ['forms'], risk_profile: 'low' }],
+    ['brochure', { class: 'marketing/static', tags: ['agency'], capabilities: ['static-html'], risk_profile: 'low' }],
+    ['storefront', { class: 'ecommerce/catalog', tags: ['restaurant'], capabilities: ['commerce-products', 'checkout'], risk_profile: 'high' }],
   ];
   for (const [name, manifest] of cases) {
     const dir = path.join(root, name);
@@ -601,6 +749,12 @@ test('filters the matrix by manifest class and tag lane', () => {
 
   const combined = createFixtureMatrix({ fixture_root: root, class: 'marketing/static', tag: 'restaurant' });
   assert.deepEqual(combined.fixtures.map((fixture) => fixture.id), ['landing']);
+
+  const capabilityLane = createFixtureMatrix({ fixture_root: root, capability: 'checkout' });
+  assert.deepEqual(capabilityLane.fixtures.map((fixture) => fixture.id), ['storefront']);
+
+  const riskLane = createFixtureMatrix({ fixture_root: root, risk_profile: 'low' });
+  assert.deepEqual(riskLane.fixtures.map((fixture) => fixture.id).sort(), ['brochure', 'landing']);
 });
 
 test('rolls fixture matrix summaries up by fixture class and repair bucket', () => {
@@ -610,7 +764,7 @@ test('rolls fixture matrix summaries up by fixture class and repair bucket', () 
   mkdirSync(shop, { recursive: true });
   mkdirSync(docs, { recursive: true });
   writeFileSync(path.join(shop, 'index.html'), '<h1>Shop</h1>');
-  writeFileSync(path.join(shop, 'fixture.json'), JSON.stringify({ class: 'ecommerce/catalog' }));
+  writeFileSync(path.join(shop, 'fixture.json'), JSON.stringify({ class: 'ecommerce/catalog', capabilities: ['commerce-products', 'checkout'], risk_profile: 'high' }));
   writeFileSync(path.join(docs, 'index.html'), '<article>Docs</article>');
   writeFileSync(path.join(docs, 'fixture.json'), JSON.stringify({ class: 'docs/blog' }));
   const matrix = createFixtureMatrix({ fixture_root: root, id: 'taxonomy-rollup-test' });
@@ -639,6 +793,10 @@ test('rolls fixture matrix summaries up by fixture class and repair bucket', () 
   assert.equal(result.summary.classes['ecommerce/catalog'].failed, 1);
   assert.equal(result.summary.classes['ecommerce/catalog'].repair_buckets.dropped_images, 1);
   assert.equal(result.summary.classes['ecommerce/catalog'].repair_buckets.invalid_block_content, 1);
+  assert.equal(result.summary.manifest_coverage.gate.status, 'passed');
+  assert.equal(result.summary.capabilities.checkout.fixture_count, 1);
+  assert.equal(result.summary.capabilities.checkout.finding_count, 2);
+  assert.equal(result.summary.risk_profiles.high.failed, 1);
   assert.equal(result.summary.quality_budgets['ecommerce/catalog'].findings_per_fixture, 2);
   assert.deepEqual(result.summary.quality_budgets['docs/blog'].dominant_repair_buckets, []);
 });
@@ -669,10 +827,36 @@ test('aggregates pattern families, fixture exemplars, and diagnostic blind spots
   });
 
   assert.equal(result.summary.top_pattern_families[0].key, 'runtime_target_gap:runtime_dependency_missing_dom_target:id:hero');
+  assert.equal(result.findings[0].loss_class, 'runtime_target_gap');
+  assert.equal(result.summary.unacceptable_loss_classes.runtime_target_gap, 1);
   assert.equal(result.summary.fixture_exemplars[0].fixture_id, 'simple-site');
   assert.equal(result.summary.fixture_exemplars[0].source_snippet, '<canvas id="hero"></canvas>');
   assert.equal(result.fanout_groups[0].count, 1);
   assert.ok(result.summary.diagnostic_blind_spots.some((spot) => spot.kind === 'generic_finding_family'));
+});
+
+test('accepted native-conversion diagnostics with reason and source path are not missing evidence', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'native-conversion-evidence-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        status: 'passed',
+        diagnostics: [
+          {
+            kind: 'woocommerce_waived',
+            loss_class: 'native_conversion',
+            source_path: 'commerce.dependencies.woocommerce',
+            message: 'Commerce-bearing import proceeded without WooCommerce because allow_missing_woocommerce was set; products were not seeded.',
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(result.findings[0].loss_class, 'native_conversion');
+  assert.equal(result.summary.fixture_categories.missing_evidence, undefined);
 });
 
 test('suppresses count-only fixture diagnostics from actionable fanout rollups', () => {
@@ -823,6 +1007,110 @@ test('suppresses pre-normalized count-only fixture diagnostics with fixture sour
   assert.equal(result.summary.diagnostic_blind_spots.some((spot) => spot.exemplars.some((exemplar) => exemplar.kind === 'static_site_fixture_diagnostic')), false);
   assert.equal(result.fanout_groups.length, 1);
   assert.equal(result.fanout_groups[0].findings.some((finding) => finding.kind === 'static_site_fixture_diagnostic'), false);
+});
+
+test('does not classify visual diff diagnostics as missing evidence', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-diff-evidence-test' });
+  const fixturePath = matrix.fixtures[0].fixture_path;
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        fixture_path: fixturePath,
+        status: 'passed',
+        diagnostics: [
+          {
+            id: 'visual-diff-default',
+            kind: 'static_site_fixture_diagnostic',
+            category: 'visual',
+            source_path: fixturePath,
+            visual_diff: {
+              viewport_id: 'default',
+              mismatch_percent: 12.5,
+              mismatch_pixels: 125,
+              diff_screenshot_path: 'files/browser/visual-compare/diff.png',
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  const fixture = result.fixtures.find((item) => item.fixture_id === 'simple-site');
+  const diagnostic = result.findings.find((finding) => finding.id === 'visual-diff-default');
+
+  assert.ok(diagnostic?.visual_diff, 'expected the visual diff evidence to be retained');
+  assert.equal(fixture.quality_gate.fixture_categories.includes('missing_evidence'), false);
+  assert.equal(result.summary.fixture_categories.missing_evidence, undefined);
+});
+
+test('classifies raw visual diff diagnostics as non-gating visual mismatches', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'raw-visual-diff-classification-test' });
+  const fixturePath = matrix.fixtures[0].fixture_path;
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        fixture_path: fixturePath,
+        status: 'failed',
+        diagnostics: [
+          {
+            id: 'visual-diff-default',
+            kind: 'static_site_fixture_diagnostic',
+            category: 'visual',
+            source_path: fixturePath,
+            visual_diff: {
+              viewport_id: 'default',
+              mismatch_percent: 15.9,
+              mismatch_pixels: 675101,
+              diff_screenshot_path: 'files/browser/visual-compare/diff.png',
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  const fixture = result.fixtures.find((item) => item.fixture_id === 'simple-site');
+  const finding = result.findings.find((item) => item.id === 'visual-diff-default');
+
+  assert.equal(finding.loss_class, 'visual_parity_mismatch');
+  assert.equal(finding.loss_acceptance, 'acceptable');
+  assert.equal(fixture.status, 'passed');
+  assert.equal(result.summary.unacceptable_finding_count, 0);
+  assert.equal(result.summary.fixture_categories.visual_mismatch, 1);
+  assert.equal(result.summary.fixture_failure_categories.visual_mismatch, undefined);
+});
+
+test('does not classify visual parity mismatch findings as missing evidence', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-mismatch-evidence-test' });
+  const fixturePath = matrix.fixtures[0].fixture_path;
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        fixture_path: fixturePath,
+        status: 'passed',
+        diagnostics: [
+          {
+            kind: 'visual_parity_mismatch',
+            source_path: fixturePath,
+            message: 'Pixel visual parity mismatch: 125/1000 overlap pixels (12.50%) exceed the 0.00% threshold.',
+          },
+        ],
+      },
+    ],
+  });
+
+  const fixture = result.fixtures.find((item) => item.fixture_id === 'simple-site');
+
+  assert.equal(fixture.quality_gate.fixture_categories.includes('visual_mismatch'), true);
+  assert.equal(fixture.quality_gate.fixture_categories.includes('missing_evidence'), false);
+  assert.equal(result.summary.fixture_categories.visual_mismatch, 1);
+  assert.equal(result.summary.fixture_categories.missing_evidence, undefined);
 });
 
 test('collects SSI finding packet source and observed context from fixture artifacts', () => {
@@ -1713,6 +2001,13 @@ test('runFixtureMatrix caps WP Codebox batches in flight at the configured concu
     // 6 single-fixture batches all executed.
     assert.equal(summary.runtime.batches.length, 6);
     assert.equal(summary.runtime.concurrency, 2);
+    assert.ok(Number.isFinite(summary.metadata.performance.artifact_writing_ms));
+    assert.ok(Number.isFinite(summary.metadata.performance.batch_execution_ms));
+    assert.ok(Number.isFinite(summary.metadata.performance.result_assembly_ms));
+    assert.equal(summary.metadata.source_staging.status, 'skipped');
+    assert.ok(summary.metadata.artifact_bytes.total > 0);
+    assert.ok(summary.runtime.batches.every((batch) => Number.isFinite(batch.performance.child_recipe_run_ms)));
+    assert.ok(summary.runtime.batches.every((batch) => batch.artifact_bytes.batch_recipe > 0));
 
     const stats = JSON.parse(readFileSync(workspace.statsFile, 'utf8'));
     // At most N (=2) sandboxes were ever live at once, and the pool genuinely
@@ -2340,6 +2635,215 @@ test('editor-validate-blocks result from a codebox execution is associated to th
   assert.equal(finding.loss_acceptance, 'unacceptable');
 });
 
+test('fixture matrix recipe steps emit fixture attribution metadata for import editor and visual phases', () => {
+  const matrix = createFixtureMatrix({
+    fixture_root: fixtureRoot,
+    id: 'recipe-step-metadata-test',
+    fixtures: [{ id: 'simple-site', fixture_path: path.join(fixtureRoot, 'simple-site'), directory: path.join(fixtureRoot, 'simple-site') }],
+  });
+  const recipe = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/static-site-importer', artifactsDirectory: '/artifacts/static-site-importer-fixture-matrix' });
+  const steps = recipe.workflow.steps.filter((step) => step.metadata?.fixture_id === 'simple-site');
+
+  assert.equal(steps.find((step) => step.metadata.phase === 'import').metadata.artifact, '/artifacts/static-site-importer-fixture-matrix/simple-site/artifact.json');
+  assert.equal(steps.find((step) => step.metadata.phase === 'editor').metadata.target, 'front-page');
+  assert.equal(steps.find((step) => step.metadata.phase === 'visual').metadata.candidate_url, '/');
+  assert.match(steps.find((step) => step.metadata.phase === 'visual').metadata.source_url, /simple-site\/source\/index\.html$/);
+});
+
+test('stepFailures are attributed by metadata fixture_id before phase index fallback and expose slow fixture metadata', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-step-failures-metadata-'));
+  const matrix = createFixtureMatrix({
+    fixture_root: fixtureRoot,
+    id: 'step-failures-metadata-test',
+    fixtures: [
+      { id: 'fixture-alpha', fixture_path: path.join(fixtureRoot, 'simple-site'), directory: path.join(fixtureRoot, 'simple-site') },
+      { id: 'fixture-beta', fixture_path: path.join(fixtureRoot, 'simple-site'), directory: path.join(fixtureRoot, 'simple-site') },
+    ],
+  });
+  const codeboxOutput = {
+    schema: 'wp-codebox/recipe-run-result/v1',
+    executions: [
+      {
+        command: 'wordpress.visual-compare',
+        recipePhase: 'visual',
+        recipeStepIndex: 7,
+        metadata: { fixture_id: 'fixture-alpha', phase: 'visual', source_url: 'file:///alpha/index.html', candidate_url: '/alpha/' },
+        args: ['source-url=file:///alpha/index.html', 'candidate-url=/alpha/'],
+      },
+    ],
+    stepFailures: [
+      {
+        recipePhase: 'visual',
+        recipeStepIndex: 7,
+        metadata: { fixture_id: 'fixture-beta', phase: 'visual', source_url: 'file:///beta/index.html', candidate_url: '/beta/' },
+        command: 'wordpress.visual-compare',
+        duration_ms: 120000,
+        timeout_class: 'browser_navigation_timeout',
+        message: 'Visual compare timed out.',
+      },
+    ],
+  };
+
+  const result = collectFixtureMatrixRunResults({ matrix, outputDirectory, codeboxOutput });
+  const alpha = result.fixtures.find((fixture) => fixture.fixture_id === 'fixture-alpha');
+  const beta = result.fixtures.find((fixture) => fixture.fixture_id === 'fixture-beta');
+  const diagnostic = beta.diagnostics.find((item) => item.kind === 'visual_timeout');
+
+  assert.equal(alpha.diagnostics.some((item) => item.kind === 'visual_timeout'), false);
+  assert.equal(diagnostic.recipe_step_index, 7);
+  assert.equal(diagnostic.recipe_phase, 'visual');
+  assert.equal(diagnostic.command, 'wordpress.visual-compare');
+  assert.equal(diagnostic.loss_class, 'visual_timeout');
+  assert.equal(diagnostic.duration_ms, 120000);
+  assert.equal(diagnostic.timeout_class, 'browser_navigation_timeout');
+  assert.equal(diagnostic.source_url, 'file:///beta/index.html');
+  assert.equal(diagnostic.candidate_url, '/beta/');
+  assert.equal(result.slow_fixtures[0].fixture_id, 'fixture-beta');
+  assert.equal(result.summary.slow_fixtures[0].fixture_id, 'fixture-beta');
+  assert.equal(result.summary.metadata.slow_fixtures[0].timeout_class, 'browser_navigation_timeout');
+  assert.deepEqual(beta.quality_gate.failure_categories, ['harness_diagnostic', 'visual_timeout']);
+  assert.equal(result.summary.fixture_failure_categories.visual_timeout, 1);
+});
+
+test('visual candidate-capture timeouts classify as fixture-attributed visual_timeout evidence', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-candidate-timeout-'));
+  const matrix = createFixtureMatrix({
+    fixture_root: fixtureRoot,
+    id: 'visual-candidate-timeout-test',
+    fixtures: [{ id: 'cursed-pangolin-fanwiki', fixture_path: path.join(fixtureRoot, 'simple-site'), directory: path.join(fixtureRoot, 'simple-site') }],
+  });
+  const codeboxOutput = {
+    schema: 'wp-codebox/recipe-run-result/v1',
+    executions: [
+      {
+        command: 'wordpress.visual-compare',
+        recipePhase: 'visual',
+        recipeStepIndex: 30,
+        metadata: { fixture_id: 'cursed-pangolin-fanwiki', phase: 'visual', source_url: 'file:///fanwiki/index.html', candidate_url: '/' },
+        args: ['source-url=file:///fanwiki/index.html', 'candidate-url=/'],
+      },
+    ],
+    stepFailures: [
+      {
+        recipePhase: 'visual',
+        recipeStepIndex: 30,
+        command: 'wordpress.visual-compare',
+        duration_ms: 120001,
+        message: 'candidate-capture exceeded 120000ms.',
+      },
+    ],
+  };
+
+  const result = collectFixtureMatrixRunResults({ matrix, outputDirectory, codeboxOutput });
+  const fixture = result.fixtures[0];
+  const finding = result.findings.find((item) => item.kind === 'visual_timeout');
+
+  assert.ok(finding, 'expected visual_timeout finding');
+  assert.equal(finding.fixture_id, 'cursed-pangolin-fanwiki');
+  assert.equal(finding.duration_ms, 120001);
+  assert.equal(finding.candidate_url, '/');
+  assert.deepEqual(fixture.quality_gate.failure_categories, ['harness_diagnostic', 'visual_timeout']);
+  assert.equal(result.summary.fixture_failure_categories.visual_timeout, 1);
+  assert.equal(result.summary.fixture_failure_categories.missing_evidence, undefined);
+  assert.equal(result.slow_fixtures[0].fixture_id, 'cursed-pangolin-fanwiki');
+});
+
+test('step_failures fall back to recipe phase index when metadata fixture_id is absent', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-step-failures-fallback-'));
+  const matrix = createFixtureMatrix({
+    fixture_root: fixtureRoot,
+    id: 'step-failures-fallback-test',
+    fixtures: [{ id: 'simple-site', fixture_path: path.join(fixtureRoot, 'simple-site'), directory: path.join(fixtureRoot, 'simple-site') }],
+  });
+  const codeboxOutput = {
+    schema: 'wp-codebox/recipe-run-result/v1',
+    executions: [
+      {
+        command: 'wordpress.editor-validate-blocks',
+        recipePhase: 'editor',
+        recipeStepIndex: 3,
+        metadata: { fixture_id: 'simple-site', phase: 'editor', post_id: 42 },
+        args: ['post-id=42'],
+      },
+    ],
+    step_failures: [
+      {
+        phase: 'editor',
+        index: 3,
+        command: 'wordpress.editor-validate-blocks',
+        durationMs: 2500,
+        error: 'Editor validation failed.',
+      },
+    ],
+  };
+
+  const result = collectFixtureMatrixRunResults({ matrix, outputDirectory, codeboxOutput });
+  const diagnostic = result.fixtures[0].diagnostics.find((item) => item.kind === 'recipe_step_failure');
+
+  assert.equal(diagnostic.recipe_step_index, 3);
+  assert.equal(diagnostic.recipe_phase, 'editor');
+  assert.equal(diagnostic.post_id, 42);
+  assert.equal(diagnostic.duration_ms, 2500);
+  assert.match(diagnostic.reason, /Editor validation failed/);
+});
+
+test('child_command_failures with fixture metadata attribute runtime failures without fallback smearing', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-child-command-failure-'));
+  const matrix = createFixtureMatrix({
+    fixture_root: fixtureRoot,
+    id: 'child-command-failure-test',
+    fixtures: [
+      { id: 'fixture-alpha', fixture_path: path.join(fixtureRoot, 'simple-site'), directory: path.join(fixtureRoot, 'simple-site') },
+      { id: 'fixture-beta', fixture_path: path.join(fixtureRoot, 'simple-site'), directory: path.join(fixtureRoot, 'simple-site') },
+    ],
+  });
+  const codeboxOutput = {
+    results: [{ fixture_id: 'fixture-alpha', success: true }],
+    runtime: {
+      child_command_failures: [
+        {
+          kind: 'child_command_failed',
+          batch_id: 'batch-002',
+          fixture_ids: ['fixture-beta'],
+          command: { argv: ['wp-codebox', 'recipe-run', '/tmp/batch-002.json'] },
+          exit_status: null,
+          stdout_tail: 'runtime stdout tail',
+          stderr_tail: 'runtime stderr tail',
+          recipe_file: '/tmp/batch-002.json',
+          output_file: '/tmp/batch-002-output.json',
+          artifacts_directory: '/tmp/batch-002-artifacts',
+          replay_command: { argv: ['wp-codebox', 'recipe-run', '--recipe', '/tmp/batch-002.json'] },
+          message: 'WP Codebox recipe-run exited without a status.',
+          artifact_refs: { batch_recipe: '/tmp/batch-002.json' },
+        },
+      ],
+    },
+  };
+
+  const result = collectFixtureMatrixRunResults({ matrix, outputDirectory, codeboxOutput });
+  const alpha = result.fixtures.find((fixture) => fixture.fixture_id === 'fixture-alpha');
+  const beta = result.fixtures.find((fixture) => fixture.fixture_id === 'fixture-beta');
+  const finding = result.findings.find((item) => item.fixture_id === 'fixture-beta');
+
+  assert.equal(alpha.status, 'passed');
+  assert.equal(beta.status, 'failed');
+  assert.equal(finding.kind, 'recipe_step_failure');
+  assert.equal(finding.loss_class, 'runtime_execution_failed');
+  assert.deepEqual(finding.command_argv, ['wp-codebox', 'recipe-run', '/tmp/batch-002.json']);
+  assert.equal(finding.stdout_tail, 'runtime stdout tail');
+  assert.equal(finding.stderr_tail, 'runtime stderr tail');
+  assert.equal(finding.recipe_file, '/tmp/batch-002.json');
+  assert.equal(finding.output_file, '/tmp/batch-002-output.json');
+  assert.equal(finding.artifacts_directory, '/tmp/batch-002-artifacts');
+  assert.deepEqual(finding.replay_command.argv, ['wp-codebox', 'recipe-run', '--recipe', '/tmp/batch-002.json']);
+  assert.equal(result.summary.unacceptable_loss_classes.runtime_execution_failed, 1);
+  assert.equal(result.summary.fixture_failure_categories.runtime_execution_failed, 1);
+  assert.equal(result.summary.fixture_failure_categories.fixture_failed, undefined);
+  assert.equal(result.summary.fixture_failure_categories.missing_evidence, undefined);
+  assert.equal(result.summary.fixture_exemplars[0].batch_id, 'batch-002');
+  assert.equal(result.summary.fixture_exemplars[0].stderr_tail, 'runtime stderr tail');
+});
+
 test('unavailable editor validation fails honestly without fabricated validated-block metrics', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-editor-validate-unavailable-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'editor-validate-unavailable-test' });
@@ -2417,6 +2921,8 @@ test('editor-validate-blocks invalid block is counted and surfaced as a gating f
   assert.match(finding.reason, /core\/columns/);
   assert.match(finding.reason, /content mismatch/);
   assert.equal(finding.loss_acceptance, 'unacceptable');
+  assert.equal(result.findings.some((item) => item.kind === 'invalid_block_content'), false);
+  assert.equal(result.summary.fixture_categories.missing_evidence, undefined);
   assert.equal(fixture.status, 'failed');
 });
 
@@ -2736,7 +3242,7 @@ test('default visual-parity source-url follows nested fixture entrypoint', () =>
 test('stageFixtureSource copies the raw fixture source into the served source/ subdir', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-parity-stage-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-parity-stage-test' });
-  writeFixtureMatrixArtifacts({ outputDirectory, matrix });
+  const written = writeFixtureMatrixArtifacts({ outputDirectory, matrix });
 
   const sourceDir = path.join(outputDirectory, 'simple-site', 'source');
   // The fixture's own files (index.html + style.css) are served from source/,
@@ -2749,6 +3255,34 @@ test('stageFixtureSource copies the raw fixture source into the served source/ s
   );
   // The import payload (artifact.json) is still written alongside, unchanged.
   assert.ok(existsSync(path.join(outputDirectory, 'simple-site', 'artifact.json')), 'artifact.json should still be written');
+  assert.equal(written.metadata.source_staging.status, 'staged');
+  assert.ok(written.metadata.artifact_bytes.staged_source > 0);
+  assert.ok(Number.isFinite(written.metadata.performance.artifact_writing_ms));
+});
+
+test('writeFixtureMatrixArtifacts skips raw source staging when visual evidence is disabled', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-no-visual-source-skip-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'no-visual-source-skip-test' });
+  const written = writeFixtureMatrixArtifacts({ outputDirectory, matrix, visualParity: false, liveWpParity: false });
+
+  assert.ok(existsSync(path.join(outputDirectory, 'simple-site', 'artifact.json')), 'artifact.json should still be written');
+  assert.equal(existsSync(path.join(outputDirectory, 'simple-site', 'source', 'index.html')), false);
+  assert.equal(written.metadata.source_staging.status, 'skipped');
+  assert.equal(written.metadata.source_staging.reason, 'visual_and_live_wp_parity_disabled');
+  assert.equal(written.metadata.artifact_bytes.staged_source, 0);
+  assert.ok(written.metadata.artifact_bytes.fixture_artifacts > 0);
+  assert.ok(written.metadata.artifact_bytes.total >= written.metadata.artifact_bytes.fixture_artifacts);
+  assert.ok(Number.isFinite(written.metadata.performance.artifact_writing_ms));
+});
+
+test('writeFixtureMatrixArtifacts preserves source staging for live-WP parity evidence', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-live-wp-source-stage-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'live-wp-source-stage-test' });
+  const written = writeFixtureMatrixArtifacts({ outputDirectory, matrix, visualParity: false, liveWpParity: true });
+
+  assert.ok(existsSync(path.join(outputDirectory, 'simple-site', 'source', 'index.html')));
+  assert.equal(written.metadata.source_staging.status, 'staged');
+  assert.ok(written.metadata.artifact_bytes.staged_source > 0);
 });
 
 test('stageFixtureSource direct call returns staged relative paths', () => {
@@ -2814,6 +3348,65 @@ test('(b) visual-compare mismatch over threshold with gate on becomes a gating u
   assert.equal(result.fixtures[0].status, 'failed');
 });
 
+test('fixture gate failures expose distinct categories for visual, evidence, and editor-invalid failures', () => {
+  const base = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'failure-category-test' });
+  const fixture = base.fixtures[0];
+  const matrix = {
+    ...base,
+    count: 3,
+    fixtures: [
+      { ...fixture, id: 'visual-clean-editor' },
+      { ...fixture, id: 'evidence-gap-clean-editor' },
+      { ...fixture, id: 'editor-invalid' },
+    ],
+  };
+  const cleanEditorQuality = {
+    block_composition: { total_blocks: 1, block_counts: { 'core/paragraph': 1 } },
+    editor_validation: { validation_method: EDITOR_VALIDATION_METHOD, total_blocks: 1, valid_blocks: 1, invalid_blocks: 0 },
+  };
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'visual-clean-editor',
+        status: 'passed',
+        ...cleanEditorQuality,
+        diagnostics: [{ kind: VISUAL_PARITY_MISMATCH_KIND, gate: true, selector: '.hero', message: 'Visual parity mismatch over threshold.' }],
+      },
+      {
+        fixture_id: 'evidence-gap-clean-editor',
+        status: 'failed',
+        ...cleanEditorQuality,
+        diagnostics: [{ kind: 'static_site_fixture_diagnostic', message: 'Generic SSI diagnostic without selector or artifact evidence.' }],
+      },
+      {
+        fixture_id: 'editor-invalid',
+        status: 'passed',
+        diagnostics: [{ kind: 'editor_block_invalid', selector: '.wp-block[data-block].is-invalid', message: 'This block contains unexpected or invalid content.' }],
+      },
+    ],
+  });
+
+  const byId = new Map(result.fixtures.map((row) => [row.fixture_id, row]));
+  assert.deepEqual(byId.get('visual-clean-editor').quality_gate.failure_categories, ['visual_mismatch']);
+  assert.equal(byId.get('visual-clean-editor').editor_quality.editor_invalid_count, 0);
+  assert.ok(!byId.get('visual-clean-editor').quality_gate.failure_categories.includes('editor_invalid'));
+  assert.deepEqual(byId.get('evidence-gap-clean-editor').quality_gate.failure_categories, ['harness_diagnostic', 'missing_evidence', 'unsupported_loss']);
+  assert.equal(byId.get('evidence-gap-clean-editor').editor_quality.editor_invalid_count, 0);
+  assert.deepEqual(byId.get('editor-invalid').quality_gate.failure_categories, ['editor_invalid']);
+  assert.equal(result.summary.fixture_failure_categories.visual_mismatch, 1);
+  assert.equal(result.summary.fixture_failure_categories.harness_diagnostic, 1);
+  assert.equal(result.summary.fixture_failure_categories.missing_evidence, 1);
+  assert.equal(result.summary.fixture_failure_categories.editor_invalid, 1);
+  assert.equal(result.summary.fixture_failure_categories.unsupported_loss, 1);
+  assert.deepEqual(result.summary.gate_failure_reasons.map((row) => row.category), [
+    'visual_mismatch',
+    'harness_diagnostic',
+    'editor_invalid',
+  ]);
+  assert.deepEqual(result.summary.gate_failure_reasons[1].categories, ['harness_diagnostic', 'missing_evidence', 'unsupported_loss']);
+});
+
 test('(c) visual-compare mismatch over threshold with gate off is captured but non-gating', () => {
   const payload = {
     schema: 'homeboy/VisualParityArtifact/v1',
@@ -2860,6 +3453,9 @@ test('visual-compare artifacts collected from fixture files gate the matrix when
   assert.equal(gated.fixtures[0].visual_parity_artifacts.schema, 'static-site-importer/visual-parity-artifacts/v1');
   assert.equal(gated.fixtures[0].visual_parity_artifacts.artifacts.diff_screenshot.status, 'captured');
   assert.equal(gated.fixtures[0].visual_parity_artifacts.metrics.mismatch_pixels, 700000);
+  assert.equal(finding.artifact_refs.find((ref) => ref.artifact_id === 'diff_screenshot')?.path, 'files/browser/visual-compare/diff.png');
+  const exemplar = gated.summary.top_pattern_families.find((family) => family.kind === VISUAL_PARITY_MISMATCH_KIND)?.exemplars[0];
+  assert.equal(exemplar.artifact_refs.find((ref) => ref.artifact_id === 'diff_screenshot')?.path, 'files/browser/visual-compare/diff.png');
 
   // Same artifact, gate off (default) -> captured, non-gating.
   const captured = collectFixtureMatrixRunResults({ matrix, outputDirectory });

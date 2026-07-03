@@ -70,6 +70,7 @@ export default async function runFixtureMatrixBench(context = {}) {
       failed_fixture_count: Number(resultSummary.failed || 0),
       not_run_fixture_count: Number(resultSummary.not_run || 0),
       finding_count: Number(resultSummary.finding_count || 0),
+      ...numericMetricMap(resultSummary.fixture_failure_categories || {}, 'failed_fixture_category'),
     },
     artifacts: {
       cli_run: { path: path.join(summary.output_directory, 'cli-run.json') },
@@ -91,7 +92,36 @@ export default async function runFixtureMatrixBench(context = {}) {
   };
 }
 
+function numericMetricMap(values, prefix) {
+  return Object.fromEntries(Object.entries(values || {}).map(([key, value]) => [`${prefix}_${key}`, Number(value || 0)]));
+}
+
+function writeJsonArtifact(filePath, payload) {
+  fs.writeFileSync(filePath, jsonArtifactText(payload));
+}
+
+function jsonArtifactText(payload) {
+  return `${JSON.stringify(payload, null, 2)}\n`;
+}
+
+function fileBytes(filePath) {
+  try {
+    return fs.statSync(filePath).size;
+  } catch {
+    return 0;
+  }
+}
+
+function nowMs() {
+  return process.hrtime.bigint();
+}
+
+function elapsedMs(startedAt) {
+  return Number((process.hrtime.bigint() - startedAt) / 1000000n);
+}
+
 export async function runFixtureMatrix(options) {
+  const performance = {};
   const outputDirectory = path.resolve(options.outputDirectory || path.join(process.cwd(), 'artifacts', 'static-site-importer-fixture-matrix'));
   const intake = options.artifactRoot
     ? materializeGeneratedArtifactFixtures({
@@ -110,12 +140,21 @@ export async function runFixtureMatrix(options) {
     fixture_root: fixtureRoot,
     entrypoint: options.entrypoint || 'index.html',
     maxDepth: options.maxDepth,
-    // Lane/tag selection: run "just the marketing/static lane" or only fixtures
-    // carrying a given manifest tag. Absent options leave the full matrix intact.
+    // Lane selection comes from authored fixture manifests only. Absent options
+    // leave the full matrix intact; missing metadata stays unknown rather than guessed.
     class: options.fixtureClass || options.class,
     tag: options.tag,
+    capabilities: options.capability || options.capabilities,
+    risk_profile: options.riskProfile || options.risk_profile,
   });
-  const written = writeFixtureMatrixArtifacts({ outputDirectory, matrix });
+  const artifactWriteStartedAt = nowMs();
+  const written = writeFixtureMatrixArtifacts({
+    outputDirectory,
+    matrix,
+    ...visualParityRecipeInput(options),
+    ...liveWpParityRecipeInput(options),
+  });
+  performance.artifact_writing_ms = elapsedMs(artifactWriteStartedAt);
   const recipe = buildFixtureMatrixRecipe({
     matrix,
     artifactsDirectory: outputDirectory,
@@ -130,7 +169,7 @@ export async function runFixtureMatrix(options) {
     ...liveWpParityRecipeInput(options),
   });
   const recipeFile = path.join(outputDirectory, 'wp-codebox-static-site-fixture-matrix-recipe.json');
-  fs.writeFileSync(recipeFile, `${JSON.stringify(recipe, null, 2)}\n`);
+  writeJsonArtifact(recipeFile, recipe);
   const replay = wpCodeboxReplayCommand({
     recipeFile,
     artifactsDir: replayArtifactsDirectory(outputDirectory),
@@ -149,6 +188,7 @@ export async function runFixtureMatrix(options) {
     // once and returns outcomes in batch order, so the assembled batchRuns /
     // batchResults / childCommandFailures stay deterministic regardless of which
     // sandbox finishes first.
+    const batchExecutionStartedAt = nowMs();
     const batchOutcomes = await mapWithConcurrency(batches, concurrency, (fixtures, batchIndex) => runFixtureMatrixBatch({
       fixtures,
       batchIndex,
@@ -157,6 +197,7 @@ export async function runFixtureMatrix(options) {
       staticSiteImporterPath,
       options,
     }));
+    performance.batch_execution_ms = elapsedMs(batchExecutionStartedAt);
 
     const batchRuns = [];
     const batchResults = [];
@@ -173,12 +214,14 @@ export async function runFixtureMatrix(options) {
         runtimeError ||= outcome.error;
       }
     }
+    const resultAssemblyStartedAt = nowMs();
     collectedResult = normalizeFixtureMatrixResult({
       matrix,
-      results: batchResults.flatMap((result) => result.fixtures),
+      results: attributeChildCommandFailures(batchResults.flatMap((result) => result.fixtures), childCommandFailures),
       // Editor-quality scoring is always on; the native-rate gate is opt-in.
       editorQuality: editorQualityGateInput(options),
     });
+    performance.result_assembly_ms = elapsedMs(resultAssemblyStartedAt);
     runtime = {
       exitCode: runtimeError ? (batchRuns.find((batch) => batch.exit_code)?.exit_code || 1) : 0,
       batchSize,
@@ -186,8 +229,24 @@ export async function runFixtureMatrix(options) {
       batches: batchRuns,
       childCommandFailures,
     };
+    const resultArtifactRewriteStartedAt = nowMs();
     writeFixtureMatrixResultArtifacts({ outputDirectory, matrix, result: collectedResult });
+    performance.result_artifact_writing_ms = elapsedMs(resultArtifactRewriteStartedAt);
   }
+
+  const writtenArtifactBytes = written.metadata?.artifact_bytes || {};
+  const artifactBytes = {
+    fixture_artifacts: Number(writtenArtifactBytes.fixture_artifacts || 0),
+    staged_source: Number(writtenArtifactBytes.staged_source || 0),
+    matrix: Number(writtenArtifactBytes.matrix || 0),
+    recipe: fileBytes(recipeFile),
+    result: fileBytes(path.join(outputDirectory, 'static-site-fixture-matrix-result.json')),
+    summary: fileBytes(path.join(outputDirectory, 'summary.json')),
+    finding_packets: fileBytes(path.join(outputDirectory, 'finding-packets.json')),
+  };
+  artifactBytes.total = Object.entries(artifactBytes)
+    .filter(([key, value]) => key !== 'total' && Number.isFinite(Number(value)))
+    .reduce((total, [, value]) => total + Number(value), 0);
 
   const summary = {
     schema: 'static-site-importer/fixture-matrix-cli-run/v1',
@@ -201,12 +260,22 @@ export async function runFixtureMatrix(options) {
     recipe_file: recipeFile,
     replay,
     artifact_refs: written.artifact_refs,
+    metadata: {
+      performance,
+      artifact_bytes: artifactBytes,
+      source_staging: written.metadata?.source_staging,
+    },
     ...(runtime?.childCommandFailures?.length ? { child_command_failures: runtime.childCommandFailures } : {}),
     result_file: path.join(outputDirectory, 'static-site-fixture-matrix-result.json'),
     result_summary: collectedResult.summary,
     runtime: runtime ? runtimeSummary(runtime, runtimeError) : null,
   };
-  fs.writeFileSync(path.join(outputDirectory, 'cli-run.json'), `${JSON.stringify(summary, null, 2)}\n`);
+  const cliRunBaseTotal = summary.metadata.artifact_bytes.total;
+  for (let index = 0; index < 3; index += 1) {
+    summary.metadata.artifact_bytes.cli_run = Buffer.byteLength(jsonArtifactText(summary));
+    summary.metadata.artifact_bytes.total = cliRunBaseTotal + summary.metadata.artifact_bytes.cli_run;
+  }
+  writeJsonArtifact(path.join(outputDirectory, 'cli-run.json'), summary);
   return { summary, runtimeError, runtime };
 }
 
@@ -241,11 +310,13 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
   const outputFile = path.join(outputDirectory, `wp-codebox-output-batch-${batchSuffix}.json`);
   const codeboxArtifactsDirectory = batchCodeboxArtifactsDirectory(outputDirectory, batchSuffix);
   const artifactRefs = batchArtifactRefs({ outputDirectory, batchSuffix, batchRecipeFile, outputFile, codeboxArtifactsDirectory });
-  fs.writeFileSync(batchRecipeFile, `${JSON.stringify(batchRecipe, null, 2)}\n`);
+  writeJsonArtifact(batchRecipeFile, batchRecipe);
 
   let batchRuntime = null;
   let batchError = null;
   let childCommandFailure = null;
+  let childRecipeRunMs = 0;
+  const childRecipeRunStartedAt = nowMs();
   try {
     batchRuntime = await runWpCodeboxRecipe({
       recipeFile: batchRecipeFile,
@@ -262,6 +333,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     };
     childCommandFailure = buildWpCodeboxChildCommandFailure({
       error,
+      fixtures,
       batchNumber,
       batchSuffix,
       batchRecipeFile,
@@ -270,6 +342,8 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       wpCodeboxBin: options.wpCodeboxBin,
       artifactRefs,
     });
+  } finally {
+    childRecipeRunMs = elapsedMs(childRecipeRunStartedAt);
   }
 
   const batchRun = fixtureMatrixBatchRunSummary({
@@ -281,6 +355,13 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     codeboxArtifactsDirectory,
     batchRuntime,
     batchError,
+    performance: {
+      child_recipe_run_ms: childRecipeRunMs,
+    },
+    artifactBytes: {
+      batch_recipe: fileBytes(batchRecipeFile),
+      batch_output: fileBytes(outputFile),
+    },
   });
   const batchResult = collectFixtureMatrixRunResults({
     matrix: batchMatrix,
@@ -454,6 +535,8 @@ export function fixtureMatrixBatchRunSummary(input = {}) {
     stderr_tail: batchError ? textTail(batchError.stderr) : '',
     stdout_tail: batchError ? textTail(batchError.stdout) : '',
     parsed_output: Boolean(batchRuntime?.json),
+    performance: input.performance || {},
+    artifact_bytes: input.artifactBytes || input.artifact_bytes || {},
   };
 }
 
@@ -483,7 +566,7 @@ function runtimeSummary(runtime, runtimeError) {
   };
 }
 
-function buildWpCodeboxChildCommandFailure({ error, batchNumber, batchSuffix, batchRecipeFile, outputFile, artifactsDir, wpCodeboxBin: bin, artifactRefs }) {
+function buildWpCodeboxChildCommandFailure({ error, fixtures, batchNumber, batchSuffix, batchRecipeFile, outputFile, artifactsDir, wpCodeboxBin: bin, artifactRefs }) {
   const command = wpCodeboxRecipeRunCommand({ recipeFile: batchRecipeFile, artifactsDir, outputFile, wpCodeboxBin: bin });
   return {
     schema: 'homeboy/child-command-failure/v1',
@@ -491,13 +574,68 @@ function buildWpCodeboxChildCommandFailure({ error, batchNumber, batchSuffix, ba
     label: `WP Codebox recipe-run batch ${batchSuffix}`,
     batch: batchNumber,
     batch_id: `batch-${batchSuffix}`,
+    fixture_ids: normalizeFixtureIds(fixtures),
     command,
+    command_argv: command.argv,
     exit_status: exitStatus(error),
     stdout_tail: tailText(error?.stdout),
     stderr_tail: tailText(error?.stderr),
+    recipe_file: batchRecipeFile,
+    output_file: outputFile,
+    artifacts_directory: artifactsDir,
+    replay_command: wpCodeboxReplayCommand({ recipeFile: batchRecipeFile, artifactsDir, wpCodeboxBin: bin }),
     artifact_refs: artifactRefs,
     message: error?.message || 'WP Codebox recipe-run failed',
   };
+}
+
+function attributeChildCommandFailures(results, failures) {
+  const failuresByFixture = new Map();
+  for (const failure of failures || []) {
+    for (const fixtureId of normalizeFixtureIdsFromFailure(failure)) {
+      failuresByFixture.set(fixtureId, [...(failuresByFixture.get(fixtureId) || []), childCommandFailureDiagnostic(failure)]);
+    }
+  }
+  if (failuresByFixture.size === 0) {
+    return results;
+  }
+  return results.map((result) => ({
+    ...result,
+    diagnostics: [
+      ...arrayValue(result.diagnostics),
+      ...(failuresByFixture.get(result.fixture_id) || []),
+    ],
+  }));
+}
+
+function normalizeFixtureIdsFromFailure(failure) {
+  return [...new Set(arrayValue(failure?.fixture_ids || failure?.fixtureIds).filter(Boolean).map((fixtureId) => String(fixtureId)))].sort();
+}
+
+function childCommandFailureDiagnostic(failure) {
+  return {
+    kind: 'recipe_step_failure',
+    group_key: 'wp_codebox_child_command_failure',
+    loss_class: 'runtime_execution_failed',
+    loss_acceptance: 'unacceptable',
+    batch_id: failure.batch_id || failure.batchId,
+    batch: failure.batch,
+    command: failure.command?.command || failure.command,
+    command_argv: failure.command_argv || failure.commandArgv || failure.command?.argv,
+    exit_status: failure.exit_status ?? failure.exitStatus ?? failure.exit_code ?? failure.exitCode,
+    stdout_tail: failure.stdout_tail || failure.stdoutTail,
+    stderr_tail: failure.stderr_tail || failure.stderrTail,
+    recipe_file: failure.recipe_file || failure.recipeFile,
+    output_file: failure.output_file || failure.outputFile,
+    artifacts_directory: failure.artifacts_directory || failure.artifactsDirectory,
+    replay_command: failure.replay_command || failure.replayCommand,
+    artifact_refs: failure.artifact_refs || failure.artifactRefs || {},
+    message: failure.message || 'WP Codebox child command failed.',
+  };
+}
+
+function arrayValue(value) {
+  return Array.isArray(value) ? value : [];
 }
 
 function wpCodeboxRecipeRunCommand({ recipeFile, artifactsDir, outputFile, wpCodeboxBin: bin }) {
@@ -616,10 +754,11 @@ function optionsFromEnv(env = process.env) {
     staticSiteImporterPlugin: benchEnv.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PLUGIN || env.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PLUGIN,
     entrypoint: benchEnv.SSI_FIXTURE_MATRIX_ENTRYPOINT || env.SSI_FIXTURE_MATRIX_ENTRYPOINT,
     maxDepth: benchEnv.SSI_FIXTURE_MATRIX_MAX_DEPTH || env.SSI_FIXTURE_MATRIX_MAX_DEPTH,
-    // Lane/tag selection from the manifest classification: run a single class lane
-    // and/or only fixtures carrying a given manifest tag.
+    // Lane selection from authored manifest taxonomy.
     fixtureClass: benchEnv.SSI_FIXTURE_MATRIX_CLASS || env.SSI_FIXTURE_MATRIX_CLASS,
     tag: benchEnv.SSI_FIXTURE_MATRIX_TAG || env.SSI_FIXTURE_MATRIX_TAG,
+    capabilities: benchEnv.SSI_FIXTURE_MATRIX_CAPABILITY || env.SSI_FIXTURE_MATRIX_CAPABILITY || benchEnv.SSI_FIXTURE_MATRIX_CAPABILITIES || env.SSI_FIXTURE_MATRIX_CAPABILITIES,
+    riskProfile: benchEnv.SSI_FIXTURE_MATRIX_RISK_PROFILE || env.SSI_FIXTURE_MATRIX_RISK_PROFILE,
     artifactRoot: benchEnv.SSI_FIXTURE_MATRIX_ARTIFACT_ROOT || env.SSI_FIXTURE_MATRIX_ARTIFACT_ROOT,
     blocksEnginePhpTransformerPath: benchEnv.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH || env.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH,
     wordpressVersion: benchEnv.SSI_FIXTURE_MATRIX_WORDPRESS_VERSION || env.SSI_FIXTURE_MATRIX_WORDPRESS_VERSION,
@@ -762,7 +901,7 @@ function shellArg(value) {
 }
 
 function printHelp() {
-  process.stdout.write(`Usage: static-site-fixture-matrix [fixture-root] [options]\n\nOptions:\n  --fixture-root <path>              Static-site fixture root. Defaults to this package's fixtures directory.\n  --output-directory <path>          Artifact output directory.\n  --static-site-importer-path <path> Static Site Importer checkout/plugin directory.\n  --static-site-importer-slug <slug> Plugin slug. Defaults to static-site-importer.\n  --static-site-importer-plugin <p>  Plugin activation file. Defaults to static-site-importer/static-site-importer.php.\n  --artifact-root <path>             Generated artifact root to normalize into fixtures.\n  --blocks-engine-php-transformer-path <path>\n                                     Blocks Engine repo root or php-transformer package path for Composer.\n  --entrypoint <file>                Fixture entrypoint. Defaults to index.html.\n  --max-depth <n>                    Fixture discovery depth. Defaults to 2.\n  --wordpress-version <version>      WP Codebox WordPress version. Defaults to latest.\n  --batch-size <n>                   Fixtures per WP Codebox run when --run is used. Defaults to 10.\n  --concurrency <n>                  Batches (WP Codebox sandboxes) to run in parallel. Defaults to ${DEFAULT_BATCH_CONCURRENCY}, hard-capped at ${MAX_BATCH_CONCURRENCY}.\n  --no-editor-validation            Skip browser editor block validation.\n  --no-visual-parity                Skip wordpress.visual-compare recipe steps. Same as SSI_FIXTURE_MATRIX_VISUAL_PARITY=0.\n  --run                             Execute WP Codebox recipes. Omit locally to only materialize artifacts.\n`);
+  process.stdout.write(`Usage: static-site-fixture-matrix [fixture-root] [options]\n\nOptions:\n  --fixture-root <path>              Static-site fixture root. Defaults to this package's fixtures directory.\n  --output-directory <path>          Artifact output directory.\n  --static-site-importer-path <path> Static Site Importer checkout/plugin directory.\n  --static-site-importer-slug <slug> Plugin slug. Defaults to static-site-importer.\n  --static-site-importer-plugin <p>  Plugin activation file. Defaults to static-site-importer/static-site-importer.php.\n  --artifact-root <path>             Generated artifact root to normalize into fixtures.\n  --blocks-engine-php-transformer-path <path>\n                                     Blocks Engine repo root or php-transformer package path for Composer.\n  --entrypoint <file>                Fixture entrypoint. Defaults to index.html.\n  --max-depth <n>                    Fixture discovery depth. Defaults to 2.\n  --class <fixture_class>            Filter to one authored fixture_class lane.\n  --tag <tag>                        Filter to fixtures carrying an authored tag.\n  --capability <capability>          Filter to fixtures carrying an authored capability.\n  --risk-profile <profile>           Filter to one authored risk_profile.\n  --wordpress-version <version>      WP Codebox WordPress version. Defaults to latest.\n  --batch-size <n>                   Fixtures per WP Codebox run when --run is used. Defaults to 10.\n  --concurrency <n>                  Batches (WP Codebox sandboxes) to run in parallel. Defaults to ${DEFAULT_BATCH_CONCURRENCY}, hard-capped at ${MAX_BATCH_CONCURRENCY}.\n  --no-editor-validation            Skip browser editor block validation.\n  --no-visual-parity                Skip wordpress.visual-compare recipe steps. Same as SSI_FIXTURE_MATRIX_VISUAL_PARITY=0.\n  --run                             Execute WP Codebox recipes. Omit locally to only materialize artifacts.\n`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
