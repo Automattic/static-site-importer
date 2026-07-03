@@ -300,6 +300,63 @@ test('gates fixture matrix failures by unacceptable loss classes', () => {
   assert.equal(unacceptableResult.summary.unacceptable_loss_classes.fixture_failed, 1);
 });
 
+test('failed fixtures with passing import/editor quality report missing visual evidence instead of a generic fallback', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'missing-visual-evidence-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        status: 'failed',
+        quality_metrics: {
+          pass: true,
+          editor_invalid_count: 0,
+          invalid_block_count: 0,
+        },
+      },
+    ],
+  });
+
+  const finding = result.findings[0];
+  assert.equal(result.summary.failed, 1);
+  assert.equal(finding.kind, 'visual_evidence_missing');
+  assert.equal(finding.loss_class, 'visual_evidence_missing');
+  assert.match(finding.reason, /import quality and editor validity passed/);
+  assert.equal(result.summary.unacceptable_loss_classes.visual_evidence_missing, 1);
+  assert.equal(result.summary.top_pattern_families[0].key, 'visual_evidence_missing:visual_evidence_missing:(none)');
+});
+
+test('failed fixtures with passing import/editor quality and visual evidence report fixture status mismatch', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'fixture-status-mismatch-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        status: 'failed',
+        quality_metrics: {
+          pass: true,
+          editor_invalid_count: 0,
+          invalid_block_count: 0,
+        },
+        visual_parity_artifacts: {
+          schema: 'static-site-importer/visual-parity-artifacts/v1',
+          metrics: { mismatch_pixels: 0, total_pixels: 2048000 },
+          artifacts: { diff_screenshot: { status: 'captured' } },
+        },
+      },
+    ],
+  });
+
+  const finding = result.findings[0];
+  assert.equal(result.summary.failed, 1);
+  assert.equal(finding.kind, 'fixture_status_mismatch');
+  assert.equal(finding.loss_class, 'fixture_status_mismatch');
+  assert.match(finding.reason, /no structured visual-parity mismatch/);
+  assert.equal(result.summary.unacceptable_loss_classes.fixture_status_mismatch, 1);
+  assert.equal(result.summary.top_pattern_families[0].key, 'fixture_status_mismatch:fixture_status_mismatch:(none)');
+});
+
 test('fails the gate when a preserved_runtime_island carries no runtime-carried signal', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'runtime-island-no-signal-test' });
   const result = normalizeFixtureMatrixResult({
@@ -2812,6 +2869,65 @@ test('(b) visual-compare mismatch over threshold with gate on becomes a gating u
   assert.equal(finding.loss_acceptance, 'unacceptable');
   assert.equal(result.summary.unacceptable_finding_count, 1);
   assert.equal(result.fixtures[0].status, 'failed');
+});
+
+test('fixture gate failures expose distinct categories for visual, evidence, and editor-invalid failures', () => {
+  const base = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'failure-category-test' });
+  const fixture = base.fixtures[0];
+  const matrix = {
+    ...base,
+    count: 3,
+    fixtures: [
+      { ...fixture, id: 'visual-clean-editor' },
+      { ...fixture, id: 'evidence-gap-clean-editor' },
+      { ...fixture, id: 'editor-invalid' },
+    ],
+  };
+  const cleanEditorQuality = {
+    block_composition: { total_blocks: 1, block_counts: { 'core/paragraph': 1 } },
+    editor_validation: { validation_method: EDITOR_VALIDATION_METHOD, total_blocks: 1, valid_blocks: 1, invalid_blocks: 0 },
+  };
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'visual-clean-editor',
+        status: 'passed',
+        ...cleanEditorQuality,
+        diagnostics: [{ kind: VISUAL_PARITY_MISMATCH_KIND, gate: true, selector: '.hero', message: 'Visual parity mismatch over threshold.' }],
+      },
+      {
+        fixture_id: 'evidence-gap-clean-editor',
+        status: 'failed',
+        ...cleanEditorQuality,
+        diagnostics: [{ kind: 'static_site_fixture_diagnostic', message: 'Generic SSI diagnostic without selector or artifact evidence.' }],
+      },
+      {
+        fixture_id: 'editor-invalid',
+        status: 'passed',
+        diagnostics: [{ kind: 'editor_block_invalid', selector: '.wp-block[data-block].is-invalid', message: 'This block contains unexpected or invalid content.' }],
+      },
+    ],
+  });
+
+  const byId = new Map(result.fixtures.map((row) => [row.fixture_id, row]));
+  assert.deepEqual(byId.get('visual-clean-editor').quality_gate.failure_categories, ['visual_mismatch']);
+  assert.equal(byId.get('visual-clean-editor').editor_quality.editor_invalid_count, 0);
+  assert.ok(!byId.get('visual-clean-editor').quality_gate.failure_categories.includes('editor_invalid'));
+  assert.deepEqual(byId.get('evidence-gap-clean-editor').quality_gate.failure_categories, ['harness_diagnostic', 'missing_evidence', 'unsupported_loss']);
+  assert.equal(byId.get('evidence-gap-clean-editor').editor_quality.editor_invalid_count, 0);
+  assert.deepEqual(byId.get('editor-invalid').quality_gate.failure_categories, ['editor_invalid']);
+  assert.equal(result.summary.fixture_failure_categories.visual_mismatch, 1);
+  assert.equal(result.summary.fixture_failure_categories.harness_diagnostic, 1);
+  assert.equal(result.summary.fixture_failure_categories.missing_evidence, 1);
+  assert.equal(result.summary.fixture_failure_categories.editor_invalid, 1);
+  assert.equal(result.summary.fixture_failure_categories.unsupported_loss, 1);
+  assert.deepEqual(result.summary.gate_failure_reasons.map((row) => row.category), [
+    'visual_mismatch',
+    'harness_diagnostic',
+    'editor_invalid',
+  ]);
+  assert.deepEqual(result.summary.gate_failure_reasons[1].categories, ['harness_diagnostic', 'missing_evidence', 'unsupported_loss']);
 });
 
 test('(c) visual-compare mismatch over threshold with gate off is captured but non-gating', () => {

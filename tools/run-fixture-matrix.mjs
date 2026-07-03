@@ -530,6 +530,8 @@ export function summarizeRun(plan, { status } = {}) {
     passed_fixture_count: Number(resultSummary.succeeded || resultSummary.passed || 0),
     failed_fixture_count: failedFixtureCount,
     finding_count: Number(resultSummary.finding_count || 0),
+    fixture_failure_categories: resultSummary.fixture_failure_categories || {},
+    gate_failure_reasons: normalizeSummaryRows(resultSummary.gate_failure_reasons),
     top_buckets: topObjectCounts(resultSummary.buckets || resultSummary.groups || {}),
     top_kinds: topObjectCounts(resultSummary.kinds || {}),
     top_pattern_families: normalizeSummaryRows(resultSummary.top_pattern_families),

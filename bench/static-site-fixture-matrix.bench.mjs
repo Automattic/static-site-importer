@@ -70,6 +70,7 @@ export default async function runFixtureMatrixBench(context = {}) {
       failed_fixture_count: Number(resultSummary.failed || 0),
       not_run_fixture_count: Number(resultSummary.not_run || 0),
       finding_count: Number(resultSummary.finding_count || 0),
+      ...numericMetricMap(resultSummary.fixture_failure_categories || {}, 'failed_fixture_category'),
     },
     artifacts: {
       cli_run: { path: path.join(summary.output_directory, 'cli-run.json') },
@@ -89,6 +90,10 @@ export default async function runFixtureMatrixBench(context = {}) {
       ...(summary.child_command_failures?.length ? { child_command_failures: summary.child_command_failures } : {}),
     },
   };
+}
+
+function numericMetricMap(values, prefix) {
+  return Object.fromEntries(Object.entries(values || {}).map(([key, value]) => [`${prefix}_${key}`, Number(value || 0)]));
 }
 
 export async function runFixtureMatrix(options) {
