@@ -955,6 +955,45 @@ test('does not classify visual diff diagnostics as missing evidence', () => {
   assert.equal(result.summary.fixture_categories.missing_evidence, undefined);
 });
 
+test('classifies raw visual diff diagnostics as non-gating visual mismatches', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'raw-visual-diff-classification-test' });
+  const fixturePath = matrix.fixtures[0].fixture_path;
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        fixture_path: fixturePath,
+        status: 'failed',
+        diagnostics: [
+          {
+            id: 'visual-diff-default',
+            kind: 'static_site_fixture_diagnostic',
+            category: 'visual',
+            source_path: fixturePath,
+            visual_diff: {
+              viewport_id: 'default',
+              mismatch_percent: 15.9,
+              mismatch_pixels: 675101,
+              diff_screenshot_path: 'files/browser/visual-compare/diff.png',
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  const fixture = result.fixtures.find((item) => item.fixture_id === 'simple-site');
+  const finding = result.findings.find((item) => item.id === 'visual-diff-default');
+
+  assert.equal(finding.loss_class, 'visual_parity_mismatch');
+  assert.equal(finding.loss_acceptance, 'acceptable');
+  assert.equal(fixture.status, 'passed');
+  assert.equal(result.summary.unacceptable_finding_count, 0);
+  assert.equal(result.summary.fixture_categories.visual_mismatch, 1);
+  assert.equal(result.summary.fixture_failure_categories.visual_mismatch, undefined);
+});
+
 test('does not classify visual parity mismatch findings as missing evidence', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-mismatch-evidence-test' });
   const fixturePath = matrix.fixtures[0].fixture_path;
