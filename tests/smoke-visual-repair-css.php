@@ -522,7 +522,9 @@ $assert( 'font' === ( $asset_result['assets']['fonts/native.woff2']['role'] ?? '
 $assert( 'font/woff2' === ( $asset_result['assets']['fonts/native.woff2']['mime_type'] ?? '' ), 'materialization-plan-font-mime-is-preserved' );
 $assert( '' === (string) ( $asset_result['js'] ?? '' ), 'materialization-plan-scripts-are-not-concatenated' );
 $assert( 2 === count( $asset_result['scripts'] ?? array() ), 'materialization-plan-script-rows-are-preserved' );
-$assert( 1 === count( $asset_result['stylesheets'] ?? array() ), 'font-materialization-stylesheet-row-is-preserved' );
+$assert( 2 === count( $asset_result['stylesheets'] ?? array() ), 'stylesheet-rows-are-preserved' );
+$assert( 'assets/css/fonts.css' === ( $asset_result['stylesheets'][0]['path'] ?? '' ), 'font-materialization-stylesheet-row-is-preserved-first' );
+$assert( 'assets/site.css' === ( $asset_result['stylesheets'][1]['path'] ?? '' ), 'source-stylesheet-row-is-preserved' );
 $assert( 'assets/app.js' === ( $asset_result['scripts'][0]['path'] ?? '' ), 'materialization-plan-script-order-first' );
 $assert( 'assets/vendor.js' === ( $asset_result['scripts'][1]['path'] ?? '' ), 'materialization-plan-script-order-second' );
 $assert( true === ( $asset_result['scripts'][0]['defer'] ?? false ), 'materialization-plan-script-defer-is-preserved' );
@@ -558,8 +560,9 @@ $assert( str_contains( $rewritten_content, 'src="https://example.test/wp-content
 $base_writes   = Static_Site_Importer_Theme_Materializer::base_theme_writes( $asset_theme_dir, 'fixture-theme', 'Fixture Theme', (string) $asset_result['css'], false, false, $asset_result['scripts'], $asset_result['stylesheets'] );
 $functions_php = (string) ( $base_writes[ $asset_theme_dir . '/functions.php' ] ?? '' );
 $assert( str_contains( $functions_php, '/assets/css/fonts.css' ), 'font-materialization-stylesheet-is-enqueued' );
-$assert( str_contains( $functions_php, "wp_enqueue_style( 'fixture-theme-style', get_stylesheet_uri(), array (\n  0 => 'fixture-theme-asset-assets-css-fonts',\n), wp_get_theme()->get( 'Version' ) );" ), 'theme-style-depends-on-font-materialization-stylesheet' );
-$assert( str_contains( $functions_php, "wp_enqueue_style( 'fixture-theme-editor-style', get_template_directory_uri() . '/assets/css/editor-style.css', array (\n  0 => 'fixture-theme-asset-assets-css-fonts',\n), wp_get_theme()->get( 'Version' ) );" ), 'editor-style-depends-on-font-materialization-stylesheet' );
+$assert( str_contains( $functions_php, '/assets/materialized/assets/site.css' ), 'source-stylesheet-asset-is-enqueued' );
+$assert( str_contains( $functions_php, "wp_enqueue_style( 'fixture-theme-style', get_stylesheet_uri(), array (\n  0 => 'fixture-theme-asset-assets-css-fonts',\n  1 => 'fixture-theme-asset-assets-materialized-assets-site',\n), wp_get_theme()->get( 'Version' ) );" ), 'theme-style-depends-on-materialized-stylesheets' );
+$assert( str_contains( $functions_php, "wp_enqueue_style( 'fixture-theme-editor-style', get_template_directory_uri() . '/assets/css/editor-style.css', array (\n  0 => 'fixture-theme-asset-assets-css-fonts',\n  1 => 'fixture-theme-asset-assets-materialized-assets-site',\n), wp_get_theme()->get( 'Version' ) );" ), 'editor-style-depends-on-materialized-stylesheets' );
 $assert( str_contains( $functions_php, '/assets/materialized/assets/app.js' ), 'materialization-plan-script-is-enqueued' );
 $assert( str_contains( $functions_php, "wp_script_add_data( 'fixture-theme-asset-assets-materialized-assets-app', 'defer', true );" ), 'materialization-plan-script-defer-is-enqueued' );
 $assert( str_contains( $functions_php, "wp_script_add_data( 'fixture-theme-asset-assets-materialized-assets-app', 'type', 'module' );" ), 'materialization-plan-script-type-is-enqueued' );
