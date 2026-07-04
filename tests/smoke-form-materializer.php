@@ -188,6 +188,41 @@ namespace {
 	$assert( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND === Static_Site_Importer_Diagnostic_Loss_Classes::classify( $mapped ), 'finding-stays-preserved-runtime-island' );
 	$assert( empty( $unmapped['runtime_mapped'] ), 'unmappable-form-stays-unsignaled' );
 
+	// --- Graft bridges source HTML paths to generated post_content keys ---------
+	$mapped_source_report                                                       = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
+	$mapped_source_report['source_documents']['blocks_engine_documents'][]      = array(
+		'source_path'  => 'website/index.html',
+		'post_type'    => 'page',
+		'slug'         => 'home',
+		'materialized' => true,
+	);
+	$mapped_source_report['diagnostics'][]                                      = array(
+		'type'            => 'unsupported_html_fallback',
+		'diagnostic_code' => 'html_form_fallback',
+		'loss_class'      => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+		'source_path'     => 'website/index.html',
+		'selector'        => 'form.contact',
+		'tag'             => 'form',
+		'controls'        => array(
+			array( 'tag' => 'input', 'type' => 'email', 'label' => 'Email', 'required' => true ),
+			array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+		),
+		'readable_blocks' => array(
+			array(
+				'blockName'    => 'core/paragraph',
+				'attrs'        => array(),
+				'innerBlocks'  => array(),
+				'innerHTML'    => '<p>Email Send</p>',
+				'innerContent' => array( '<p>Email Send</p>' ),
+			),
+		),
+	);
+	$mapped_source_contents                                                     = array( 'posts/page-home.post_content' => '<!-- wp:paragraph --><p>Email Send</p><!-- /wp:paragraph -->' );
+	$mapped_source_seeding                                                      = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $mapped_source_report, array(), $mapped_source_contents );
+	$assert( 1 === ( $mapped_source_seeding['grafted_count'] ?? 0 ), 'graft-source-document-to-post-content-key' );
+	$assert( str_contains( (string) $mapped_source_contents['posts/page-home.post_content'], 'wp:jetpack/contact-form' ), 'graft-source-document-key-contact-form' );
+	$assert( 'posts/page-home.post_content' === ( $mapped_source_report['diagnostics'][0]['graft_source_path'] ?? '' ), 'graft-source-path-recorded' );
+
 	// --- Form finding enrich carries readable_blocks for graft anchoring --------
 	$enrich_readable = $enrich->invoke(
 		null,
