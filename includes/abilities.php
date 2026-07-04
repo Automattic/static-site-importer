@@ -361,7 +361,7 @@ if ( ! function_exists( 'static_site_importer_ability_import_website_artifact' )
 			return static_site_importer_ability_error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
 		}
 
-		return static_site_importer_ability_import_success( is_array( $result ) ? $result : array(), $input );
+		return static_site_importer_ability_import_success( $result, $input );
 	}
 }
 

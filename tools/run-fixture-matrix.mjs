@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+/**
+ * External dependencies
+ */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -183,9 +186,10 @@ function normalizeOptions(input) {
   const fixtureRoot = path.resolve(input.fixtureRoot || path.join(blocksEngine, 'fixtures', 'websites'));
 
   const defaultBlocksEnginePhpTransformerPath = input.mode === 'release-proof' ? '' : blocksEngine;
-  const blocksEnginePhpTransformerPath = input.blocksEnginePhpTransformerPath === undefined
-    ? defaultBlocksEnginePhpTransformerPath
-    : (input.blocksEnginePhpTransformerPath ? path.resolve(input.blocksEnginePhpTransformerPath) : '');
+  let blocksEnginePhpTransformerPath = defaultBlocksEnginePhpTransformerPath;
+  if (input.blocksEnginePhpTransformerPath !== undefined) {
+    blocksEnginePhpTransformerPath = input.blocksEnginePhpTransformerPath ? path.resolve(input.blocksEnginePhpTransformerPath) : '';
+  }
   const mode = input.mode || (blocksEnginePhpTransformerPath ? 'development-override' : 'release-proof');
   const runId = input.runId || `ssi-matrix-${mode}-${timestamp()}`;
   const namespace = sanitizePathSegment(input.namespace || runId);

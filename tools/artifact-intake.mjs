@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 
+/**
+ * External dependencies
+ */
 import fs from 'node:fs';
+
+/**
+ * Internal dependencies
+ */
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
 
 const options = parseArgs(process.argv.slice(2));
@@ -16,11 +23,11 @@ if (options.manifest) {
 process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 
 function parseArgs(args) {
-  const options = {};
+  const parsedOptions = {};
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--help' || arg === '-h') {
-      options.help = true;
+      parsedOptions.help = true;
       continue;
     }
     if (arg.startsWith('--')) {
@@ -29,16 +36,16 @@ function parseArgs(args) {
       if (rawValue === undefined) {
         index += 1;
       }
-      options[camelCase(rawKey)] = value;
+      parsedOptions[camelCase(rawKey)] = value;
       continue;
     }
-    if (!options.artifactRoot) {
-      options.artifactRoot = arg;
-    } else if (!options.fixtureRoot) {
-      options.fixtureRoot = arg;
+    if (!parsedOptions.artifactRoot) {
+      parsedOptions.artifactRoot = arg;
+    } else if (!parsedOptions.fixtureRoot) {
+      parsedOptions.fixtureRoot = arg;
     }
   }
-  return options;
+  return parsedOptions;
 }
 
 function camelCase(value) {

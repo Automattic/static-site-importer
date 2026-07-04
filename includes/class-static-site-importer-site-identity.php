@@ -159,7 +159,7 @@ class Static_Site_Importer_Site_Identity {
 		}
 
 		$parts = preg_split( '/\s+(?:\||\x{2014}|\x{2013}|-)\s+/u', $title );
-		$first = is_array( $parts ) && isset( $parts[0] ) ? trim( (string) $parts[0] ) : $title;
+		$first = is_array( $parts ) ? trim( (string) $parts[0] ) : $title;
 
 		return '' !== $first ? $first : $title;
 	}

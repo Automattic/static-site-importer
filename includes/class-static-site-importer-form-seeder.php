@@ -103,7 +103,7 @@ class Static_Site_Importer_Form_Seeder {
 				'skipped' => 0,
 				'error'   => 0,
 			),
-			'forms'     => array(),
+			'forms'                => array(),
 		);
 	}
 
@@ -132,7 +132,7 @@ class Static_Site_Importer_Form_Seeder {
 		$field_text_block   = false;
 
 		if ( class_exists( 'WP_Block_Type_Registry' ) ) {
-			$registry = WP_Block_Type_Registry::get_instance();
+			$registry           = WP_Block_Type_Registry::get_instance();
 			$contact_form_block = $registry->is_registered( 'jetpack/contact-form' );
 			$field_text_block   = $registry->is_registered( 'jetpack/field-text' );
 		}
