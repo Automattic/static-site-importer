@@ -537,6 +537,93 @@ $assert( str_contains( $playground_html, 'data-static-site-importer-open-in-play
 $assert( str_contains( $playground_html, 'Generate WordPress Website' ), 'render-playground-button-generates-wordpress-website' );
 $assert( ! str_contains( $playground_html, 'Import to this site' ), 'render-playground-button-does-not-say-import-to-this-site' );
 
+/*
+ * Theming seam: the block ships a host-overridable `--ssi-importer-*` custom
+ * property surface with neutral defaults, plus filters to append wrapper classes
+ * and attributes. This lets a host theme reskin the importer to its own design
+ * system without touching SSI, forking the stylesheet, or using `!important`.
+ * The seam is additive and Studio-Native-agnostic.
+ */
+$block_css = file_get_contents( dirname( __DIR__ ) . '/blocks/importer/style.css' );
+$assert( is_string( $block_css ), 'block-css-readable' );
+
+// Themeable custom-property surface is declared on the block root with defaults.
+$ssi_expected_tokens = array(
+	'--ssi-importer-surface',
+	'--ssi-importer-surface-muted',
+	'--ssi-importer-fg',
+	'--ssi-importer-fg-muted',
+	'--ssi-importer-accent',
+	'--ssi-importer-accent-fg',
+	'--ssi-importer-accent-hover',
+	'--ssi-importer-border',
+	'--ssi-importer-dropzone-border',
+	'--ssi-importer-success',
+	'--ssi-importer-radius',
+	'--ssi-importer-radius-field',
+	'--ssi-importer-radius-pill',
+	'--ssi-importer-shadow',
+	'--ssi-importer-max-width',
+	'--ssi-importer-gap',
+	'--ssi-importer-padding',
+	'--ssi-importer-font',
+	'--ssi-importer-title-size',
+);
+foreach ( $ssi_expected_tokens as $ssi_token ) {
+	// Declared as a default (`--token:`) and consumed at least once (`var(--token)`).
+	$assert( str_contains( $block_css, $ssi_token . ':' ), 'block-css-declares-token' . str_replace( '--ssi-importer', '', $ssi_token ) );
+	$assert( str_contains( $block_css, 'var(' . $ssi_token . ')' ), 'block-css-consumes-token' . str_replace( '--ssi-importer', '', $ssi_token ) );
+}
+
+// Defaults preserve the standalone appearance (neutral surface, dark accent).
+$assert( str_contains( $block_css, '--ssi-importer-surface: #fff;' ), 'block-css-default-surface-intact' );
+$assert( str_contains( $block_css, '--ssi-importer-accent: #101517;' ), 'block-css-default-accent-intact' );
+$assert( str_contains( $block_css, '--ssi-importer-fg: #101517;' ), 'block-css-default-fg-intact' );
+
+// Seam ships no product-specific knowledge (fully host-agnostic).
+$assert( ! str_contains( strtolower( $block_css ), 'studio' ), 'block-css-has-no-studio-native-knowledge' );
+$assert( ! str_contains( $block_css, '--sw-' ), 'block-css-references-no-host-tokens' );
+$assert( ! str_contains( $block_css, '!important' ), 'block-css-uses-no-important-hacks' );
+
+// Additive/non-breaking: the default wrapper class + core hooks are unchanged.
+$default_wrapper = static_site_importer_render_block();
+$assert( str_contains( $default_wrapper, '<div class="ssi-importer"' ), 'render-default-wrapper-class-intact' );
+$assert( str_contains( $default_wrapper, 'data-static-site-importer ' ), 'render-default-preserves-core-root-hook' );
+
+// Wrapper-class filter: a host can append a scoping class; base class stays.
+$GLOBALS['ssi_filters']['static_site_importer_block_wrapper_classes'][] = static function ( string $classes ): string {
+	return $classes . ' host-native-importer';
+};
+$themed_class_html = static_site_importer_render_block();
+$assert( str_contains( $themed_class_html, 'ssi-importer host-native-importer' ), 'render-wrapper-class-filter-appends-host-class' );
+$assert( str_contains( $themed_class_html, 'data-static-site-importer ' ), 'render-wrapper-class-filter-keeps-core-hook' );
+$GLOBALS['ssi_filters']['static_site_importer_block_wrapper_classes'] = array();
+
+// A host that drops the base class still gets it back (defaults always apply).
+$GLOBALS['ssi_filters']['static_site_importer_block_wrapper_classes'][] = static function (): string {
+	return 'host-only';
+};
+$reasserted_html = static_site_importer_render_block();
+$assert( str_contains( $reasserted_html, 'ssi-importer host-only' ), 'render-wrapper-class-filter-reasserts-base-class' );
+$GLOBALS['ssi_filters']['static_site_importer_block_wrapper_classes'] = array();
+
+// Wrapper-attributes filter: a host can project its tokens via inline style.
+$GLOBALS['ssi_filters']['static_site_importer_block_wrapper_attributes'][] = static function ( array $attrs ): array {
+	$attrs['style']            = '--ssi-importer-accent:#3858e9;--ssi-importer-surface:#101517';
+	$attrs['data-host-native'] = '1';
+	// Attempts to override core hooks / class must be ignored by the seam.
+	$attrs['class']                              = 'evil-override';
+	$attrs['data-static-site-importer-rest-url'] = 'https://evil.example/';
+	return $attrs;
+};
+$themed_attr_html = static_site_importer_render_block();
+$assert( str_contains( $themed_attr_html, 'style="--ssi-importer-accent:#3858e9;--ssi-importer-surface:#101517"' ), 'render-wrapper-attr-filter-projects-host-tokens' );
+$assert( str_contains( $themed_attr_html, 'data-host-native="1"' ), 'render-wrapper-attr-filter-adds-host-attribute' );
+$assert( ! str_contains( $themed_attr_html, 'evil-override' ), 'render-wrapper-attr-filter-cannot-override-class' );
+$assert( str_contains( $themed_attr_html, 'data-static-site-importer-rest-url="https://example.test/wp-json/static-site-importer/v1/imports"' ), 'render-wrapper-attr-filter-cannot-override-core-hooks' );
+$assert( ! str_contains( $themed_attr_html, 'https://evil.example/' ), 'render-wrapper-attr-filter-rejects-core-hook-collision' );
+$GLOBALS['ssi_filters']['static_site_importer_block_wrapper_attributes'] = array();
+
 $view_js = file_get_contents( dirname( __DIR__ ) . '/blocks/importer/view.js' );
 $assert( is_string( $view_js ), 'view-js-readable' );
 $assert( str_contains( $view_js, 'webkitRelativePath' ), 'view-preserves-directory-relative-paths' );

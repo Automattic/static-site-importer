@@ -55,6 +55,82 @@ At runtime, SSI loads the transformer package from `vendor/` and calls `blocks_e
 
 The admin path always overwrites an existing generated theme with the same slug. Pasted HTML, fetched URL HTML, and direct HTML uploads are copied into a generated upload work directory as `index.html` and imported as a single-page site. ZIP uploads are for multi-page static sites or bundled source-site exports; they are extracted to an upload work directory, the selected `index.html` is used as the entry file, sibling HTML files from that extracted site directory are imported, and nested `.md` / `.markdown` files are imported as content pages. The importer does not require the original source model to be a single `index.html`; it needs one selected HTML entry file for shared shell/chrome and imports the source content documents it can read.
 
+## Theming The Importer Block
+
+The `static-site-importer/importer` block ships neutral, standalone-friendly defaults, and is fully themeable by a host so it can match the host's design system — without forking the block, patching its stylesheet, or using forced style overrides. There are three complementary, additive seams. Standalone consumers who set nothing still get the default importer.
+
+### 1. Design tokens (CSS custom properties)
+
+The block's every color, radius, spacing, and typography decision reads from a `--ssi-importer-*` custom property declared on the `.ssi-importer` root. Override the tokens on `.ssi-importer` (or any ancestor) to reskin the importer to your palette. Because they are ordinary custom properties, a later, equal-or-higher-specificity rule wins on the cascade — no `!important` needed.
+
+```css
+/* Host theme: map the importer onto your own design system. */
+.ssi-importer {
+	--ssi-importer-surface: var( --my-surface );
+	--ssi-importer-fg: var( --my-fg );
+	--ssi-importer-fg-muted: var( --my-muted );
+	--ssi-importer-accent: var( --my-accent );
+	--ssi-importer-accent-fg: var( --my-accent-contrast );
+	--ssi-importer-border: var( --my-border );
+	--ssi-importer-radius: 12px;
+}
+```
+
+Token surface (each declared with a default and consumed via `var()`):
+
+| Token | Controls |
+| --- | --- |
+| `--ssi-importer-surface` | Panel background |
+| `--ssi-importer-surface-muted` | Dropzone background |
+| `--ssi-importer-surface-dragging` | Dropzone background while dragging |
+| `--ssi-importer-fg` | Primary text |
+| `--ssi-importer-fg-muted` | Secondary/help text |
+| `--ssi-importer-accent` | Button background |
+| `--ssi-importer-accent-fg` | Button text |
+| `--ssi-importer-accent-hover` | Button hover background |
+| `--ssi-importer-border` | Field borders |
+| `--ssi-importer-border-subtle` | Panel border |
+| `--ssi-importer-dropzone-border` | Dropzone dashed border |
+| `--ssi-importer-dropzone-border-dragging` | Dropzone border while dragging |
+| `--ssi-importer-success` | Success/status text |
+| `--ssi-importer-radius` | Panel corner radius |
+| `--ssi-importer-radius-field` | Field corner radius |
+| `--ssi-importer-radius-dropzone` | Dropzone corner radius |
+| `--ssi-importer-radius-pill` | Button (pill) radius |
+| `--ssi-importer-shadow` | Panel elevation |
+| `--ssi-importer-max-width` | Panel max width |
+| `--ssi-importer-gap` | Vertical rhythm |
+| `--ssi-importer-padding` | Panel padding |
+| `--ssi-importer-font` | Font family |
+| `--ssi-importer-title-size` | Title font size |
+
+### 2. Wrapper classes (`static_site_importer_block_wrapper_classes`)
+
+Append a scoping class to the block wrapper — for example to bound your token overrides to your own surface. The base `ssi-importer` class is always re-asserted, so the defaults and base styles keep applying.
+
+```php
+add_filter(
+	'static_site_importer_block_wrapper_classes',
+	static function ( string $classes ): string {
+		return $classes . ' my-theme-importer';
+	}
+);
+```
+
+### 3. Wrapper attributes (`static_site_importer_block_wrapper_attributes`)
+
+Attach extra attributes to the wrapper — most usefully an inline `style` that projects your design tokens onto the importer's custom properties from PHP, or `data-`/`aria-` hooks. Attribute names are sanitized and values are escaped; the block's own `data-static-site-importer*` hooks and its `class` cannot be overridden through this filter.
+
+```php
+add_filter(
+	'static_site_importer_block_wrapper_attributes',
+	static function ( array $attrs ): array {
+		$attrs['style'] = '--ssi-importer-accent:#3858e9;--ssi-importer-surface:#101517';
+		return $attrs;
+	}
+);
+```
+
 ## Browser Playground Demo
 
 Open Static Site Importer in a disposable WordPress Playground site:

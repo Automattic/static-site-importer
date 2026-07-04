@@ -38,9 +38,52 @@ function static_site_importer_render_block( array $attributes = array() ): strin
 	$playground  = ! empty( $attributes['openInPlayground'] );
 	$button_text = $apply ? __( 'Import to this site', 'static-site-importer' ) : __( 'Generate WordPress Website', 'static-site-importer' );
 
+	/**
+	 * Filters the importer block wrapper CSS classes.
+	 *
+	 * Theming seam: a host theme or plugin can append its own class to the
+	 * importer wrapper (for example to scope `--ssi-importer-*` custom-property
+	 * overrides) without forking the block. Return the full space-separated
+	 * class string; `ssi-importer` is always present so the token defaults and
+	 * base styles apply.
+	 *
+	 * @param string              $classes    Space-separated wrapper class list.
+	 * @param array<string,mixed> $attributes Block attributes.
+	 */
+	$wrapper_classes = (string) apply_filters( 'static_site_importer_block_wrapper_classes', 'ssi-importer', $attributes );
+	if ( '' === trim( $wrapper_classes ) || false === strpos( ' ' . $wrapper_classes . ' ', ' ssi-importer ' ) ) {
+		$wrapper_classes = trim( 'ssi-importer ' . $wrapper_classes );
+	}
+
+	/**
+	 * Filters extra HTML attributes rendered on the importer block wrapper.
+	 *
+	 * Theming seam: a host can attach additional data-/aria-/style attributes to
+	 * the wrapper (for example to project its own design tokens onto the block's
+	 * `--ssi-importer-*` custom properties via an inline `style`) without forking
+	 * the block. Provide an attribute-name => value map; both are escaped before
+	 * output. Core importer hooks (`data-static-site-importer*`) always render and
+	 * cannot be overridden here.
+	 *
+	 * @param array<string,string> $attrs      Extra wrapper attributes (name => value).
+	 * @param array<string,mixed>  $attributes Block attributes.
+	 */
+	$wrapper_attrs = apply_filters( 'static_site_importer_block_wrapper_attributes', array(), $attributes );
+	$extra_attr    = '';
+	if ( is_array( $wrapper_attrs ) ) {
+		$reserved = array( 'class', 'data-static-site-importer' );
+		foreach ( $wrapper_attrs as $attr_name => $attr_value ) {
+			$attr_name = strtolower( preg_replace( '/[^a-z0-9_:-]/i', '', (string) $attr_name ) );
+			if ( '' === $attr_name || in_array( $attr_name, $reserved, true ) || 0 === strpos( $attr_name, 'data-static-site-importer' ) ) {
+				continue;
+			}
+			$extra_attr .= ' ' . $attr_name . '="' . esc_attr( (string) $attr_value ) . '"';
+		}
+	}
+
 	ob_start();
 	?>
-	<div class="ssi-importer" data-static-site-importer data-static-site-importer-rest-url="<?php echo esc_url( rest_url( 'static-site-importer/v1/imports' ) ); ?>" data-static-site-importer-figma-rest-url="<?php echo esc_url( rest_url( 'static-site-importer/v1/import-figma-file' ) ); ?>" data-static-site-importer-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>" data-static-site-importer-provider="<?php echo esc_attr( $provider ); ?>" data-static-site-importer-apply-to-current-site="<?php echo $apply ? '1' : '0'; ?>" data-static-site-importer-open-in-playground="<?php echo $playground ? '1' : '0'; ?>">
+	<div class="<?php echo esc_attr( $wrapper_classes ); ?>"<?php echo $extra_attr; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Name sanitized, value escaped with esc_attr() above. ?> data-static-site-importer data-static-site-importer-rest-url="<?php echo esc_url( rest_url( 'static-site-importer/v1/imports' ) ); ?>" data-static-site-importer-figma-rest-url="<?php echo esc_url( rest_url( 'static-site-importer/v1/import-figma-file' ) ); ?>" data-static-site-importer-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>" data-static-site-importer-provider="<?php echo esc_attr( $provider ); ?>" data-static-site-importer-apply-to-current-site="<?php echo $apply ? '1' : '0'; ?>" data-static-site-importer-open-in-playground="<?php echo $playground ? '1' : '0'; ?>">
 		<section class="ssi-importer__panel" aria-labelledby="ssi-importer-title">
 			<p class="ssi-importer__eyebrow"><?php esc_html_e( 'Static Site Importer', 'static-site-importer' ); ?></p>
 			<h1 id="ssi-importer-title" class="ssi-importer__title"><?php echo esc_html( $title ); ?></h1>
