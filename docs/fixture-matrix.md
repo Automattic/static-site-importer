@@ -174,17 +174,23 @@ Run a single lane or tag subset (matrix-wide, runner, or bench):
 # Operator runner
 node tools/run-fixture-matrix.mjs \
   --static-site-importer <path> --blocks-engine <path> \
-  --class marketing/static --tag restaurant --capability forms --risk-profile low
+  --class marketing/static --tag restaurant --capability forms --risk-profile low \
+  --complexity 1 --max-complexity 2
 
 # Bench directly (also via SSI_FIXTURE_MATRIX_CLASS / SSI_FIXTURE_MATRIX_TAG)
 node bench/static-site-fixture-matrix.bench.mjs \
-  --fixture-root <root> --class marketing/static --tag restaurant --capability forms --risk-profile low
+  --fixture-root <root> --class marketing/static --tag restaurant --capability forms --risk-profile low \
+  --complexity 1 --max-complexity 2
 ```
 
 `--class` selects a single class lane; `--tag` keeps only fixtures whose manifest
 tags include the tag; `--capability` keeps only fixtures whose manifest
 capabilities include the capability; `--risk-profile` selects one authored risk
-lane. Filters intersect.
+lane; `--complexity` selects fixtures whose authored manifest complexity exactly
+matches the integer; `--max-complexity` selects fixtures whose authored manifest
+complexity is less than or equal to the integer. Filters intersect. When either
+complexity filter is active, fixtures without an authored `complexity` value are
+excluded; the matrix never infers complexity from directory names or HTML.
 
 Suggested corpus migration for `blocks-engine/fixtures/websites`: add or update
 `fixture.json` files incrementally as the corpus owner. Start by renaming authored

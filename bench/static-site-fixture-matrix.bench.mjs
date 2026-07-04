@@ -146,6 +146,8 @@ export async function runFixtureMatrix(options) {
     tag: options.tag,
     capabilities: options.capability || options.capabilities,
     risk_profile: options.riskProfile || options.risk_profile,
+    complexity: options.complexity,
+    max_complexity: options.maxComplexity || options.max_complexity,
   });
   const artifactWriteStartedAt = nowMs();
   const written = writeFixtureMatrixArtifacts({
@@ -759,6 +761,8 @@ function optionsFromEnv(env = process.env) {
     tag: benchEnv.SSI_FIXTURE_MATRIX_TAG || env.SSI_FIXTURE_MATRIX_TAG,
     capabilities: benchEnv.SSI_FIXTURE_MATRIX_CAPABILITY || env.SSI_FIXTURE_MATRIX_CAPABILITY || benchEnv.SSI_FIXTURE_MATRIX_CAPABILITIES || env.SSI_FIXTURE_MATRIX_CAPABILITIES,
     riskProfile: benchEnv.SSI_FIXTURE_MATRIX_RISK_PROFILE || env.SSI_FIXTURE_MATRIX_RISK_PROFILE,
+    complexity: benchEnv.SSI_FIXTURE_MATRIX_COMPLEXITY || env.SSI_FIXTURE_MATRIX_COMPLEXITY,
+    maxComplexity: benchEnv.SSI_FIXTURE_MATRIX_MAX_COMPLEXITY || env.SSI_FIXTURE_MATRIX_MAX_COMPLEXITY,
     artifactRoot: benchEnv.SSI_FIXTURE_MATRIX_ARTIFACT_ROOT || env.SSI_FIXTURE_MATRIX_ARTIFACT_ROOT,
     blocksEnginePhpTransformerPath: benchEnv.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH || env.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH,
     wordpressVersion: benchEnv.SSI_FIXTURE_MATRIX_WORDPRESS_VERSION || env.SSI_FIXTURE_MATRIX_WORDPRESS_VERSION,
@@ -901,7 +905,32 @@ function shellArg(value) {
 }
 
 function printHelp() {
-  process.stdout.write(`Usage: static-site-fixture-matrix [fixture-root] [options]\n\nOptions:\n  --fixture-root <path>              Static-site fixture root. Defaults to this package's fixtures directory.\n  --output-directory <path>          Artifact output directory.\n  --static-site-importer-path <path> Static Site Importer checkout/plugin directory.\n  --static-site-importer-slug <slug> Plugin slug. Defaults to static-site-importer.\n  --static-site-importer-plugin <p>  Plugin activation file. Defaults to static-site-importer/static-site-importer.php.\n  --artifact-root <path>             Generated artifact root to normalize into fixtures.\n  --blocks-engine-php-transformer-path <path>\n                                     Blocks Engine repo root or php-transformer package path for Composer.\n  --entrypoint <file>                Fixture entrypoint. Defaults to index.html.\n  --max-depth <n>                    Fixture discovery depth. Defaults to 2.\n  --class <fixture_class>            Filter to one authored fixture_class lane.\n  --tag <tag>                        Filter to fixtures carrying an authored tag.\n  --capability <capability>          Filter to fixtures carrying an authored capability.\n  --risk-profile <profile>           Filter to one authored risk_profile.\n  --wordpress-version <version>      WP Codebox WordPress version. Defaults to latest.\n  --batch-size <n>                   Fixtures per WP Codebox run when --run is used. Defaults to 10.\n  --concurrency <n>                  Batches (WP Codebox sandboxes) to run in parallel. Defaults to ${DEFAULT_BATCH_CONCURRENCY}, hard-capped at ${MAX_BATCH_CONCURRENCY}.\n  --no-editor-validation            Skip browser editor block validation.\n  --no-visual-parity                Skip wordpress.visual-compare recipe steps. Same as SSI_FIXTURE_MATRIX_VISUAL_PARITY=0.\n  --run                             Execute WP Codebox recipes. Omit locally to only materialize artifacts.\n`);
+  process.stdout.write(`Usage: static-site-fixture-matrix [fixture-root] [options]
+
+Options:
+  --fixture-root <path>              Static-site fixture root. Defaults to this package's fixtures directory.
+  --output-directory <path>          Artifact output directory.
+  --static-site-importer-path <path> Static Site Importer checkout/plugin directory.
+  --static-site-importer-slug <slug> Plugin slug. Defaults to static-site-importer.
+  --static-site-importer-plugin <p>  Plugin activation file. Defaults to static-site-importer/static-site-importer.php.
+  --artifact-root <path>             Generated artifact root to normalize into fixtures.
+  --blocks-engine-php-transformer-path <path>
+                                     Blocks Engine repo root or php-transformer package path for Composer.
+  --entrypoint <file>                Fixture entrypoint. Defaults to index.html.
+  --max-depth <n>                    Fixture discovery depth. Defaults to 2.
+  --class <fixture_class>            Filter to one authored fixture_class lane.
+  --tag <tag>                        Filter to fixtures carrying an authored tag.
+  --capability <capability>          Filter to fixtures carrying an authored capability.
+  --risk-profile <profile>           Filter to one authored risk_profile.
+  --complexity <n>                   Filter to fixtures with authored complexity exactly n.
+  --max-complexity <n>               Filter to fixtures with authored complexity <= n.
+  --wordpress-version <version>      WP Codebox WordPress version. Defaults to latest.
+  --batch-size <n>                   Fixtures per WP Codebox run when --run is used. Defaults to 10.
+  --concurrency <n>                  Batches (WP Codebox sandboxes) to run in parallel. Defaults to ${DEFAULT_BATCH_CONCURRENCY}, hard-capped at ${MAX_BATCH_CONCURRENCY}.
+  --no-editor-validation            Skip browser editor block validation.
+  --no-visual-parity                Skip wordpress.visual-compare recipe steps. Same as SSI_FIXTURE_MATRIX_VISUAL_PARITY=0.
+  --run                             Execute WP Codebox recipes. Omit locally to only materialize artifacts.
+`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

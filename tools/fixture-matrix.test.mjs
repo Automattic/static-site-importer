@@ -757,6 +757,37 @@ test('filters the matrix by manifest class and tag lane', () => {
   assert.deepEqual(riskLane.fixtures.map((fixture) => fixture.id).sort(), ['brochure', 'landing']);
 });
 
+test('filters the matrix by authored complexity lanes', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-complexity-filter-'));
+  const cases = [
+    ['simple-landing', { class: 'marketing/static', tags: ['restaurant'], complexity: 1 }],
+    ['medium-brochure', { class: 'marketing/static', tags: ['agency'], complexity: 3 }],
+    ['advanced-storefront', { class: 'ecommerce/catalog', tags: ['restaurant'], complexity: 5 }],
+    ['unknown-complexity', { class: 'marketing/static', tags: ['restaurant'] }],
+  ];
+  for (const [name, manifest] of cases) {
+    const dir = path.join(root, name);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'index.html'), `<h1>${name}</h1>`);
+    writeFileSync(path.join(dir, 'fixture.json'), JSON.stringify(manifest));
+  }
+
+  const exactLane = createFixtureMatrix({ fixture_root: root, complexity: 3 });
+  assert.deepEqual(exactLane.fixtures.map((fixture) => fixture.id), ['medium-brochure']);
+  assert.deepEqual(exactLane.filter, { complexity: 3 });
+
+  const maxLane = createFixtureMatrix({ fixture_root: root, max_complexity: 3 });
+  assert.deepEqual(maxLane.fixtures.map((fixture) => fixture.id).sort(), ['medium-brochure', 'simple-landing']);
+  assert.deepEqual(maxLane.filter, { max_complexity: 3 });
+
+  const combined = createFixtureMatrix({ fixture_root: root, tag: 'restaurant', max_complexity: 2 });
+  assert.deepEqual(combined.fixtures.map((fixture) => fixture.id), ['simple-landing']);
+  assert.deepEqual(combined.filter, { tags: ['restaurant'], max_complexity: 2 });
+
+  const missingExcluded = createFixtureMatrix({ fixture_root: root, tag: 'restaurant', max_complexity: 5 });
+  assert.deepEqual(missingExcluded.fixtures.map((fixture) => fixture.id).sort(), ['advanced-storefront', 'simple-landing']);
+});
+
 test('rolls fixture matrix summaries up by fixture class and repair bucket', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-class-rollups-'));
   const shop = path.join(root, 'shop-catalog');
@@ -1324,6 +1355,28 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   });
   assert.deepEqual(releasePlan.dependency_overrides, {});
   assert.equal(releasePlan.steps.at(-1).args.some((arg) => arg.includes('SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH')), false);
+});
+
+test('fixture matrix operator plan forwards complexity lane settings', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-complexity-plan-'));
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  const fixtureRoot = path.join(root, 'fixtures');
+  mkdirSync(staticSiteImporter, { recursive: true });
+  mkdirSync(path.join(fixtureRoot, 'fixture-a'), { recursive: true });
+
+  const plan = buildFixtureMatrixRunPlan({
+    staticSiteImporter,
+    fixtureRoot,
+    complexity: '2',
+    maxComplexity: '3',
+    skipInstall: true,
+    skipSync: true,
+  });
+  const benchArgs = plan.steps.at(-1).args;
+
+  assert.deepEqual(plan.lane_filter, { complexity: '2', max_complexity: '3' });
+  assert.ok(benchArgs.includes('bench_env.SSI_FIXTURE_MATRIX_COMPLEXITY=2'));
+  assert.ok(benchArgs.includes('bench_env.SSI_FIXTURE_MATRIX_MAX_COMPLEXITY=3'));
 });
 
 test('fixture matrix records generic child command failures for failed WP Codebox batches', async () => {
