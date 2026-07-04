@@ -1,14 +1,76 @@
+/**
+ * Static Site Importer block styles.
+ *
+ * Theming seam: the block reskins entirely through the `--ssi-importer-*`
+ * custom properties declared on `.ssi-importer` below. Every color, radius,
+ * spacing, and font decision reads from a token, so a host theme or plugin can
+ * restyle the importer to match its own design system by overriding these
+ * custom properties on `.ssi-importer` (or any ancestor) — no forced overrides,
+ * no forking this stylesheet, no product-specific knowledge in this block.
+ *
+ * The values declared here are neutral, standalone-friendly defaults. A generic
+ * consumer with no host theme still gets a decent-looking importer; a host that
+ * sets the tokens gets a native, on-brand importer. See the block theming seam
+ * section of the README for the full token contract.
+ */
+
 .ssi-importer {
+	/* ── Theming seam: host-overridable design tokens ──────────────────── */
+
+	/* Surfaces */
+	--ssi-importer-surface: #fff;
+	--ssi-importer-surface-muted: #f8fafb;
+	--ssi-importer-surface-dragging: #eef3f6;
+
+	/* Text */
+	--ssi-importer-fg: #101517;
+	--ssi-importer-fg-muted: #4b565c;
+
+	/* Accent (primary action buttons) */
+	--ssi-importer-accent: #101517;
+	--ssi-importer-accent-fg: #fff;
+	--ssi-importer-accent-hover: var(--ssi-importer-accent);
+
+	/* Borders */
+	--ssi-importer-border: #cfd7dc;
+	--ssi-importer-border-subtle: color-mix(in srgb, currentColor 16%, transparent);
+	--ssi-importer-dropzone-border: #9aa8b1;
+	--ssi-importer-dropzone-border-dragging: #101517;
+
+	/* Status */
+	--ssi-importer-success: #245b32;
+
+	/* Radii */
+	--ssi-importer-radius: 24px;
+	--ssi-importer-radius-field: 10px;
+	--ssi-importer-radius-dropzone: 14px;
+	--ssi-importer-radius-pill: 999px;
+
+	/* Elevation */
+	--ssi-importer-shadow: 0 18px 60px rgb(16 21 23 / 10%);
+
+	/* Layout / rhythm */
+	--ssi-importer-max-width: 720px;
+	--ssi-importer-gap: 20px;
+	--ssi-importer-padding: clamp(24px, 5vw, 40px);
+
+	/* Typography */
+	--ssi-importer-font: inherit;
+	--ssi-importer-title-size: clamp(30px, 5vw, 56px);
+
+	/* ── Block styles (all read from the tokens above) ─────────────────── */
+
 	display: grid;
-	gap: 20px;
-	width: min(100%, 720px);
+	gap: var(--ssi-importer-gap);
+	width: min(100%, var(--ssi-importer-max-width));
 	margin: 0 auto;
-	padding: clamp(24px, 5vw, 40px);
-	border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
-	border-radius: 24px;
-	background: #fff;
-	color: #101517;
-	box-shadow: 0 18px 60px rgb(16 21 23 / 10%);
+	padding: var(--ssi-importer-padding);
+	border: 1px solid var(--ssi-importer-border-subtle);
+	border-radius: var(--ssi-importer-radius);
+	background: var(--ssi-importer-surface);
+	color: var(--ssi-importer-fg);
+	box-shadow: var(--ssi-importer-shadow);
+	font-family: var(--ssi-importer-font);
 }
 
 .ssi-importer--editor {
@@ -26,13 +88,13 @@
 
 .ssi-importer__title {
 	margin: 0 0 12px;
-	font-size: clamp(30px, 5vw, 56px);
+	font-size: var(--ssi-importer-title-size);
 	line-height: 1;
 }
 
 .ssi-importer__copy {
 	margin: 0 0 20px;
-	color: #4b565c;
+	color: var(--ssi-importer-fg-muted);
 	font-size: 16px;
 	line-height: 1.55;
 }
@@ -56,27 +118,27 @@
 }
 
 .ssi-importer__dropzone {
-	border: 1px dashed #9aa8b1;
-	border-radius: 14px;
+	border: 1px dashed var(--ssi-importer-dropzone-border);
+	border-radius: var(--ssi-importer-radius-dropzone);
 	padding: 14px;
-	background: #f8fafb;
+	background: var(--ssi-importer-surface-muted);
 }
 
 .ssi-importer__dropzone--dragging {
-	border-color: #101517;
-	background: #eef3f6;
+	border-color: var(--ssi-importer-dropzone-border-dragging);
+	background: var(--ssi-importer-surface-dragging);
 }
 
 .ssi-importer__upload-copy {
 	margin: 0;
-	color: #4b565c;
+	color: var(--ssi-importer-fg-muted);
 	font-size: 14px;
 	line-height: 1.4;
 }
 
 .ssi-importer__dropzone[data-static-site-importer-dropped-count]::after {
 	content: attr(data-static-site-importer-dropped-count) " dropped item(s) ready to import";
-	color: #245b32;
+	color: var(--ssi-importer-success);
 	font-size: 13px;
 	font-weight: 700;
 }
@@ -91,13 +153,17 @@
 .ssi-importer__upload-button {
 	min-width: 96px;
 	border: 0;
-	border-radius: 999px;
+	border-radius: var(--ssi-importer-radius-pill);
 	padding: 10px 16px;
-	background: #101517;
-	color: #fff;
+	background: var(--ssi-importer-accent);
+	color: var(--ssi-importer-accent-fg);
 	font: inherit;
 	font-weight: 700;
 	cursor: pointer;
+}
+
+.ssi-importer__upload-button:hover {
+	background: var(--ssi-importer-accent-hover);
 }
 
 .ssi-importer__field summary {
@@ -110,8 +176,8 @@
 .ssi-importer__report textarea {
 	box-sizing: border-box;
 	width: 100%;
-	border: 1px solid #cfd7dc;
-	border-radius: 10px;
+	border: 1px solid var(--ssi-importer-border);
+	border-radius: var(--ssi-importer-radius-field);
 	padding: 10px 12px;
 	font: inherit;
 }
@@ -132,12 +198,16 @@
 .ssi-importer__submit {
 	justify-self: center;
 	border: 0;
-	border-radius: 999px;
+	border-radius: var(--ssi-importer-radius-pill);
 	padding: 12px 20px;
-	background: #101517;
-	color: #fff;
+	background: var(--ssi-importer-accent);
+	color: var(--ssi-importer-accent-fg);
 	font-weight: 700;
 	cursor: pointer;
+}
+
+.ssi-importer__submit:hover:not(:disabled) {
+	background: var(--ssi-importer-accent-hover);
 }
 
 .ssi-importer__submit:disabled {
