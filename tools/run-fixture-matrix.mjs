@@ -175,7 +175,7 @@ function normalizeOptions(input) {
   const runId = input.runId || `ssi-matrix-${mode}-${timestamp()}`;
   const namespace = sanitizePathSegment(input.namespace || runId);
   const tempRoot = input.tempRoot ? path.resolve(input.tempRoot) : defaultTempRoot(namespace, input);
-  const output = path.resolve(input.output || path.join(process.cwd(), 'artifacts', `${runId}.homeboy-bench.json`));
+  const output = path.resolve(input.output || path.join(tempRoot, `${runId}.homeboy-bench.json`));
 
   return {
     ...input,

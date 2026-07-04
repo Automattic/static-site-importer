@@ -1,6 +1,7 @@
 node_modules/
 vendor/
 build/
+artifacts/
 .homeboy/
 .homeboy-build/
 .phpunit.result.cache
