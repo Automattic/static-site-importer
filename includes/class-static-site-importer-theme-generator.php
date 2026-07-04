@@ -383,7 +383,7 @@ class Static_Site_Importer_Theme_Generator {
 		$file_count        = count( $writes );
 		$diagnostic_count  = isset( $validation['diagnostics'] ) && is_array( $validation['diagnostics'] ) ? count( $validation['diagnostics'] ) : 0;
 		$quality_passed    = empty( $quality['fail_import'] );
-		$review_pending    = ! $quality_passed || $diagnostic_count > 0;
+		$review_pending    = ! $quality_passed;
 		$common            = array(
 			'schema'        => 'wp-codebox/live-progress-event/v1',
 			'run_id'        => $import_run_id,

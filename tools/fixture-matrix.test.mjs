@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -55,7 +55,7 @@ import {
   writeFixtureMatrixArtifacts,
 } from '../lib/fixture-matrix.mjs';
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
-import { wpCodeboxBin } from './wp-codebox/recipe.mjs';
+import { runWpCodeboxRecipe, wpCodeboxBin } from './wp-codebox/recipe.mjs';
 
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fixtureRoot = path.join(packageRoot, 'tests', 'fixtures', 'fixture-matrix');
@@ -182,6 +182,7 @@ test('fixture capability manifests drive per-fixture plugin provisioning without
   assert.deepEqual(fixtureSteps('shop-site')[0].args, ['action=install', 'plugin=woocommerce', 'activate=true']);
   assert.deepEqual(fixtureSteps('shop-forms-site')[0].args, ['action=install', 'plugin=woocommerce', 'activate=true']);
   assert.deepEqual(fixtureSteps('shop-forms-site')[1].args, ['action=install', 'plugin=jetpack', 'activate=true']);
+  assert.equal(fixtureSteps('shop-site')[0].continue_on_error, true);
   assert.equal(recipe.workflow.steps.some((step) => /--allow-missing-woocommerce/.test(step.args?.[0] || '')), false);
 });
 
@@ -1543,6 +1544,7 @@ function wpCodeboxCommand(bin) { return { command: bin, args: [] }; }
 async function runWpCodeboxRecipe() {
   const error = new Error('recipe-run failed');
   error.code = 17;
+  error.signal = 'SIGKILL';
   error.stdout = 'stdout line 1\\nstdout line 2';
   error.stderr = 'stderr line 1\\nstderr line 2';
   throw error;
@@ -1578,15 +1580,20 @@ module.exports = { wpCodeboxBin, wpCodeboxCommand, runWpCodeboxRecipe };
     assert.equal(summary.runtime.exit_code, 17);
     assert.equal(failure.schema, 'homeboy/child-command-failure/v1');
     assert.equal(failure.exit_status, 17);
+    assert.equal(failure.error_code, 17);
+    assert.equal(failure.error_signal, 'SIGKILL');
     assert.equal(failure.batch_id, 'batch-001');
     const expectedCodeboxArtifactsDirectory = path.join(root, 'artifacts-wp-codebox-batch-001-artifacts');
-    assert.deepEqual(failure.command.argv, [
+    assert.deepEqual(failure.command_argv, [
       '/tmp/wp-codebox',
       'recipe-run',
+      '--recipe',
       failure.artifact_refs.batch_recipe,
-      '--artifacts-dir', expectedCodeboxArtifactsDirectory,
+      '--artifacts', expectedCodeboxArtifactsDirectory,
       '--output', failure.artifact_refs.batch_output,
+      '--json',
     ]);
+    assert.equal(failure.command, failure.command_argv.join(' '));
     assert.equal(failure.stdout_tail, 'stdout line 1\nstdout line 2');
     assert.equal(failure.stderr_tail, 'stderr line 1\nstderr line 2');
     assert.equal(failure.artifact_refs.artifacts_directory, expectedCodeboxArtifactsDirectory);
@@ -1613,6 +1620,7 @@ module.exports = { wpCodeboxBin, wpCodeboxCommand, runWpCodeboxRecipe };
     assert.equal(benchResult.metrics.passed_fixture_count, 0);
     assert.equal(benchResult.metrics.failed_fixture_count, 1);
     assert.equal(benchResult.metadata.child_command_failures[0].exit_status, 17);
+    assert.equal(benchResult.metadata.child_command_failures[0].error_signal, 'SIGKILL');
     assert.equal(
       benchResult.metadata.child_command_failures[0].artifact_refs.artifacts_directory,
       `${process.env.SSI_FIXTURE_MATRIX_OUTPUT_DIRECTORY}-wp-codebox-batch-001-artifacts`,
@@ -1633,6 +1641,112 @@ module.exports = { wpCodeboxBin, wpCodeboxCommand, runWpCodeboxRecipe };
     restoreEnv('SSI_FIXTURE_MATRIX_BATCH_SIZE', previousBatchSize);
     restoreEnv('SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE', previousVisualParityFullPage);
   }
+});
+
+test('WP Codebox recipe runner streams oversized child output and reads result JSON from --output', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-codebox-large-output-'));
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  const fixtureRoot = path.join(root, 'fixtures');
+  const outputDirectory = path.join(root, 'artifacts');
+  const fakeCodeboxBin = path.join(root, 'fake-wp-codebox.mjs');
+  const fixtureId = 'large-output-fixture';
+  mkdirSync(staticSiteImporter, { recursive: true });
+  mkdirSync(path.join(fixtureRoot, fixtureId), { recursive: true });
+  writeFileSync(path.join(fixtureRoot, fixtureId, 'index.html'), '<h1>Large output fixture</h1>');
+  writeFileSync(fakeCodeboxBin, `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+const outputIndex = process.argv.indexOf('--output');
+const outputFile = outputIndex >= 0 ? process.argv[outputIndex + 1] : '';
+const fixtureId = process.env.SSI_TEST_FAKE_WP_CODEBOX_FIXTURE_ID || 'large-output-fixture';
+if (outputFile) {
+  writeFileSync(outputFile, JSON.stringify({ results: [{ fixture_id: fixtureId, status: 'succeeded' }] }));
+}
+const chunk = 'stdout chunk '.padEnd(1024 * 1024, 'x');
+for (let index = 0; index < 12; index += 1) {
+  process.stdout.write(chunk);
+}
+`, 'utf8');
+  chmodSync(fakeCodeboxBin, 0o755);
+
+  const { summary, runtimeError } = await runFixtureMatrix({
+    fixtureRoot,
+    outputDirectory,
+    staticSiteImporterPath: staticSiteImporter,
+    run: true,
+    batchSize: 1,
+    visualParity: false,
+    wpCodeboxBin: fakeCodeboxBin,
+  });
+
+  assert.equal(runtimeError, null);
+  assert.equal(summary.result_summary.succeeded, 1);
+  assert.equal(summary.child_command_failures?.length || 0, 0);
+  assert.deepEqual(JSON.parse(readFileSync(path.join(outputDirectory, 'wp-codebox-output-batch-001.json'), 'utf8')), {
+    results: [{ fixture_id: fixtureId, status: 'succeeded' }],
+  });
+});
+
+test('WP Codebox recipe runner falls back when the CLI rejects recipe-run --output', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-codebox-output-fallback-'));
+  const outputFile = path.join(root, 'wp-codebox-output.json');
+  const recipeFile = path.join(root, 'recipe.json');
+  const artifactsDir = path.join(root, 'artifacts');
+  const fakeCodeboxBin = path.join(root, 'fake-wp-codebox-no-output.mjs');
+  mkdirSync(artifactsDir, { recursive: true });
+  writeFileSync(recipeFile, '{}');
+  writeFileSync(fakeCodeboxBin, `#!/usr/bin/env node
+if (process.argv.includes('--output')) {
+  process.stderr.write('Unknown option: --output\\n');
+  process.exit(1);
+}
+const payload = JSON.stringify({ results: [{ fixture_id: 'fallback-fixture', status: 'succeeded' }] });
+process.stdout.write(payload);
+`, 'utf8');
+  chmodSync(fakeCodeboxBin, 0o755);
+
+  const result = await runWpCodeboxRecipe({ recipeFile, artifactsDir, outputFile, wpCodeboxBin: fakeCodeboxBin });
+
+  assert.deepEqual(result.json, { results: [{ fixture_id: 'fallback-fixture', status: 'succeeded' }] });
+  assert.deepEqual(JSON.parse(readFileSync(outputFile, 'utf8')), result.json);
+});
+
+test('WP Codebox recipe runner keeps bounded tails when oversized child output fails', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-codebox-large-failure-'));
+  const outputFile = path.join(root, 'wp-codebox-output.json');
+  const recipeFile = path.join(root, 'recipe.json');
+  const artifactsDir = path.join(root, 'artifacts');
+  const fakeCodeboxBin = path.join(root, 'fake-wp-codebox-fail.mjs');
+  mkdirSync(artifactsDir, { recursive: true });
+  writeFileSync(recipeFile, '{}');
+  writeFileSync(fakeCodeboxBin, `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+const outputIndex = process.argv.indexOf('--output');
+const outputFile = outputIndex >= 0 ? process.argv[outputIndex + 1] : '';
+if (outputFile) {
+  writeFileSync(outputFile, JSON.stringify({ results: [] }));
+}
+const stdoutChunk = 'stdout chunk '.padEnd(1024 * 1024, 'x');
+const stderrChunk = 'stderr chunk '.padEnd(1024 * 1024, 'y');
+for (let index = 0; index < 12; index += 1) {
+  process.stdout.write(stdoutChunk);
+  process.stderr.write(stderrChunk);
+}
+process.exit(23);
+`, 'utf8');
+  chmodSync(fakeCodeboxBin, 0o755);
+
+  await assert.rejects(
+    runWpCodeboxRecipe({ recipeFile, artifactsDir, outputFile, wpCodeboxBin: fakeCodeboxBin }),
+    (error) => {
+      assert.equal(error.code, 23);
+      assert.equal(error.signal, '');
+      assert.ok(error.stdout.length <= 64 * 1024);
+      assert.ok(error.stderr.length <= 64 * 1024);
+      assert.match(error.message, /^wp-codebox recipe-run failed with exit 23/);
+      return true;
+    },
+  );
+  assert.deepEqual(JSON.parse(readFileSync(outputFile, 'utf8')), { results: [] });
 });
 
 test('CLI --no-visual-parity disables visual steps and records a safe WP Codebox replay command', () => {
@@ -2477,6 +2591,7 @@ test('recipe runs editor-validate-blocks against imported content after each imp
   assert.equal(editorStep.args.some((arg) => arg.startsWith('post-type=')), false);
   assert.ok(editorStep.args.includes('target=front-page'));
   assert.equal(editorStep.args.some((arg) => arg.startsWith('capture=')), false);
+  assert.equal(editorStep.continue_on_error, true);
 
   const disabled = buildFixtureMatrixRecipe({
     matrix,
@@ -2577,6 +2692,7 @@ test('editorBlockValidationStep emits editor-validate-blocks against real import
   // page_on_front, while the imported post ID is not known at recipe-build time.
   const fallback = editorBlockValidationStep({ fixture: { id: 'simple' } });
   assert.equal(fallback.command, 'wordpress.editor-validate-blocks');
+  assert.equal(fallback.continue_on_error, true);
   assert.deepEqual(fallback.args, ['target=front-page']);
 
   // An explicit editor URL (e.g. post.php?post=<id>&action=edit) is honored.
@@ -2848,7 +2964,9 @@ test('fixture matrix recipe steps emit fixture attribution metadata for import e
 
   assert.equal(steps.find((step) => step.metadata.phase === 'import').metadata.artifact, '/artifacts/static-site-importer-fixture-matrix/simple-site/artifact.json');
   assert.equal(steps.find((step) => step.metadata.phase === 'editor').metadata.target, 'front-page');
+  assert.equal(steps.find((step) => step.metadata.phase === 'editor').continue_on_error, true);
   assert.equal(steps.find((step) => step.metadata.phase === 'visual').metadata.candidate_url, '/');
+  assert.equal(steps.find((step) => step.metadata.phase === 'visual').continue_on_error, true);
   assert.match(steps.find((step) => step.metadata.phase === 'visual').metadata.source_url, /simple-site\/source\/index\.html$/);
 });
 
@@ -2869,7 +2987,7 @@ test('stepFailures are attributed by metadata fixture_id before phase index fall
         command: 'wordpress.visual-compare',
         recipePhase: 'visual',
         recipeStepIndex: 7,
-        metadata: { fixture_id: 'fixture-alpha', phase: 'visual', source_url: 'file:///alpha/index.html', candidate_url: '/alpha/' },
+        recipeStepMetadata: { fixture_id: 'fixture-alpha', phase: 'visual', source_url: 'file:///alpha/index.html', candidate_url: '/alpha/' },
         args: ['source-url=file:///alpha/index.html', 'candidate-url=/alpha/'],
       },
     ],
@@ -2921,7 +3039,7 @@ test('visual candidate-capture timeouts classify as fixture-attributed visual_ti
         command: 'wordpress.visual-compare',
         recipePhase: 'visual',
         recipeStepIndex: 30,
-        metadata: { fixture_id: 'cursed-pangolin-fanwiki', phase: 'visual', source_url: 'file:///fanwiki/index.html', candidate_url: '/' },
+        recipeStepMetadata: { fixture_id: 'cursed-pangolin-fanwiki', phase: 'visual', source_url: 'file:///fanwiki/index.html', candidate_url: '/' },
         args: ['source-url=file:///fanwiki/index.html', 'candidate-url=/'],
       },
     ],
@@ -2964,7 +3082,7 @@ test('step_failures fall back to recipe phase index when metadata fixture_id is 
         command: 'wordpress.editor-validate-blocks',
         recipePhase: 'editor',
         recipeStepIndex: 3,
-        metadata: { fixture_id: 'simple-site', phase: 'editor', post_id: 42 },
+        recipeStepMetadata: { fixture_id: 'simple-site', phase: 'editor', post_id: 42 },
         args: ['post-id=42'],
       },
     ],
@@ -3009,6 +3127,8 @@ test('child_command_failures with fixture metadata attribute runtime failures wi
           fixture_ids: ['fixture-beta'],
           command: { argv: ['wp-codebox', 'recipe-run', '/tmp/batch-002.json'] },
           exit_status: null,
+          error_code: 'ENOENT',
+          error_signal: 'SIGKILL',
           stdout_tail: 'runtime stdout tail',
           stderr_tail: 'runtime stderr tail',
           recipe_file: '/tmp/batch-002.json',
@@ -3031,7 +3151,10 @@ test('child_command_failures with fixture metadata attribute runtime failures wi
   assert.equal(beta.status, 'failed');
   assert.equal(finding.kind, 'recipe_step_failure');
   assert.equal(finding.loss_class, 'runtime_execution_failed');
+  assert.equal(finding.command, 'wp-codebox recipe-run /tmp/batch-002.json');
   assert.deepEqual(finding.command_argv, ['wp-codebox', 'recipe-run', '/tmp/batch-002.json']);
+  assert.equal(finding.error_code, 'ENOENT');
+  assert.equal(finding.error_signal, 'SIGKILL');
   assert.equal(finding.stdout_tail, 'runtime stdout tail');
   assert.equal(finding.stderr_tail, 'runtime stderr tail');
   assert.equal(finding.recipe_file, '/tmp/batch-002.json');
@@ -3371,6 +3494,7 @@ test('visualParityCompareStep composes the existing wordpress.visual-compare com
     pixelThreshold: 0.2,
   });
   assert.equal(step.command, 'wordpress.visual-compare');
+  assert.equal(step.continue_on_error, true);
   assert.ok(step.args.includes('source-url=http://127.0.0.1:4173/shop/index.html'));
   assert.ok(step.args.includes('candidate-url=/?p=42'));
   assert.ok(step.args.includes('threshold=0.2'));
@@ -4067,6 +4191,8 @@ test('live-WP parity capture step renders DOM HTML deterministically with extern
 
   // The standalone step builder honors a per-fixture candidate override.
   const overridden = liveWpParityCaptureStep({ fixture: { id: 'x', candidate_url: '/about/' } });
+  assert.equal(overridden.continue_on_error, true);
+  assert.equal(overridden.metadata.fixture_id, 'x');
   assert.ok(overridden.args.includes('url=/about/'));
 });
 
