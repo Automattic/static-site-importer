@@ -1,9 +1,10 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const WP_CODEBOX_RECIPE_MAX_BUFFER = 64 * 1024 * 1024;
+const WP_CODEBOX_RECIPE_TAIL_BYTES = 64 * 1024;
 
 function externalHelper() {
   const helperPath = process.env.HOMEBOY_WP_CODEBOX_RECIPE_HELPER;
@@ -38,16 +39,37 @@ export async function runWpCodeboxRecipe(options = {}) {
     'recipe-run',
     '--recipe', options.recipeFile,
     '--artifacts', options.artifactsDir,
+    ...(options.outputFile ? ['--output', options.outputFile] : []),
     '--json',
   ].filter(Boolean);
+
+  if (options.outputFile) {
+    const result = await spawnRecipeWithTails(base.command, args);
+    const output = readTextFile(options.outputFile);
+    const parsed = parseJsonText(output);
+    if (result.status !== 0) {
+      const error = new Error(childFailureMessage(result));
+      error.code = result.error?.code || result.status || 1;
+      error.signal = result.signal || result.error?.signal || '';
+      error.stdout = result.stdout || '';
+      error.stderr = result.stderr || '';
+      throw error;
+    }
+
+    return {
+      exitCode: 0,
+      outputFile: options.outputFile,
+      stdout: result.stdout || '',
+      stderr: result.stderr || '',
+      json: parsed,
+    };
+  }
+
   const result = spawnSync(base.command, args, {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     maxBuffer: WP_CODEBOX_RECIPE_MAX_BUFFER,
   });
-  if (options.outputFile) {
-    fs.writeFileSync(options.outputFile, result.stdout || '', 'utf8');
-  }
   const parsed = parseJsonText(result.stdout);
   if (result.status !== 0) {
     const error = new Error(childFailureMessage(result));
@@ -65,6 +87,64 @@ export async function runWpCodeboxRecipe(options = {}) {
     stderr: result.stderr || '',
     json: parsed,
   };
+}
+
+function spawnRecipeWithTails(command, args) {
+  return new Promise((resolve) => {
+    const stdout = new RingTextBuffer(WP_CODEBOX_RECIPE_TAIL_BYTES);
+    const stderr = new RingTextBuffer(WP_CODEBOX_RECIPE_TAIL_BYTES);
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let spawnError = null;
+
+    child.stdout?.on('data', (chunk) => stdout.push(chunk));
+    child.stderr?.on('data', (chunk) => stderr.push(chunk));
+    child.on('error', (error) => {
+      spawnError = error;
+    });
+    child.on('close', (status, signal) => {
+      resolve({
+        status,
+        signal,
+        error: spawnError,
+        stdout: stdout.toString(),
+        stderr: stderr.toString(),
+      });
+    });
+  });
+}
+
+class RingTextBuffer {
+  constructor(limitBytes) {
+    this.limitBytes = limitBytes;
+    this.chunks = [];
+    this.bytes = 0;
+  }
+
+  push(chunk) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+    this.chunks.push(buffer);
+    this.bytes += buffer.length;
+    while (this.bytes > this.limitBytes && this.chunks.length > 1) {
+      this.bytes -= this.chunks.shift().length;
+    }
+    if (this.bytes > this.limitBytes) {
+      const only = this.chunks[0];
+      this.chunks[0] = only.subarray(only.length - this.limitBytes);
+      this.bytes = this.chunks[0].length;
+    }
+  }
+
+  toString() {
+    return Buffer.concat(this.chunks, this.bytes).toString('utf8');
+  }
+}
+
+function readTextFile(filePath) {
+  try {
+    return fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return '';
+  }
 }
 
 function childFailureMessage(result) {

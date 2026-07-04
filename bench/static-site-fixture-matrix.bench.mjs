@@ -577,7 +577,7 @@ function buildWpCodeboxChildCommandFailure({ error, fixtures, batchNumber, batch
     batch: batchNumber,
     batch_id: `batch-${batchSuffix}`,
     fixture_ids: normalizeFixtureIds(fixtures),
-    command,
+    command: command.command,
     command_argv: command.argv,
     exit_status: exitStatus(error),
     error_code: error?.code,
@@ -624,7 +624,7 @@ function childCommandFailureDiagnostic(failure) {
     loss_acceptance: 'unacceptable',
     batch_id: failure.batch_id || failure.batchId,
     batch: failure.batch,
-    command: failure.command?.command || failure.command,
+    command: printableFailureCommand(failure),
     command_argv: failure.command_argv || failure.commandArgv || failure.command?.argv,
     exit_status: failure.exit_status ?? failure.exitStatus ?? failure.exit_code ?? failure.exitCode,
     error_code: failure.error_code || failure.errorCode,
@@ -640,6 +640,17 @@ function childCommandFailureDiagnostic(failure) {
   };
 }
 
+function printableFailureCommand(failure) {
+  if (typeof failure?.command === 'string') {
+    return failure.command;
+  }
+  if (typeof failure?.command?.command === 'string') {
+    return failure.command.command;
+  }
+  const argv = failure?.command_argv || failure?.commandArgv || failure?.command?.argv;
+  return Array.isArray(argv) ? argv.map(shellArg).join(' ') : undefined;
+}
+
 function arrayValue(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -650,11 +661,15 @@ function wpCodeboxRecipeRunCommand({ recipeFile, artifactsDir, outputFile, wpCod
     base.command,
     ...(base.args || []),
     'recipe-run',
-    recipeFile,
-    '--artifacts-dir', artifactsDir,
+    '--recipe', recipeFile,
+    '--artifacts', artifactsDir,
     '--output', outputFile,
+    '--json',
   ];
-  return { argv };
+  return {
+    argv,
+    command: argv.map(shellArg).join(' '),
+  };
 }
 
 function wpCodeboxReplayCommand({ recipeFile, artifactsDir, wpCodeboxBin: bin }) {
