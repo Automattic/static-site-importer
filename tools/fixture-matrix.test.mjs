@@ -145,11 +145,44 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   assert.equal(recipe.workflow.steps[0].args[0], 'command=plugin activate static-site-importer/static-site-importer.php');
   assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
   assert.match(recipe.workflow.steps[1].args[0], /--allow-failure/);
+  assert.doesNotMatch(recipe.workflow.steps[1].args[0], /--allow-missing-woocommerce/);
   assert.deepEqual(recipe.inputs.stagedFiles[0], {
     source: '/tmp/artifacts/simple-site/artifact.json',
     target: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/artifact.json',
   });
   assert.deepEqual(recipe.inputs.mounts, []);
+});
+
+test('fixture capability manifests drive per-fixture plugin provisioning without waivers', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-recipe-capabilities-'));
+  const plain = path.join(root, 'plain-site');
+  const shop = path.join(root, 'shop-site');
+  const shopForms = path.join(root, 'shop-forms-site');
+  for (const directory of [plain, shop, shopForms]) {
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, 'index.html'), '<h1>Fixture</h1>');
+  }
+  writeFileSync(path.join(plain, 'fixture.json'), JSON.stringify({ class: 'marketing/static' }));
+  writeFileSync(path.join(shop, 'fixture.json'), JSON.stringify({ class: 'ecommerce/catalog', capabilities: ['commerce-products'] }));
+  writeFileSync(path.join(shopForms, 'fixture.json'), JSON.stringify({ class: 'ecommerce/catalog', capabilities: ['forms', 'commerce-products'] }));
+
+  const matrix = createFixtureMatrix({ fixture_root: root, id: 'recipe-capability-provisioning-test' });
+  const recipe = buildFixtureMatrixRecipe({
+    matrix,
+    artifactsDirectory: '/tmp/artifacts',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    editorValidation: false,
+    visualParity: false,
+  });
+  const fixtureSteps = (id) => recipe.workflow.steps.filter((step) => step.metadata?.fixture_id === id);
+
+  assert.deepEqual(fixtureSteps('plain-site').map((step) => step.command), ['wordpress.wp-cli']);
+  assert.deepEqual(fixtureSteps('shop-site').map((step) => step.command), ['wordpress.plugin-setup', 'wordpress.wp-cli']);
+  assert.deepEqual(fixtureSteps('shop-forms-site').map((step) => step.command), ['wordpress.plugin-setup', 'wordpress.plugin-setup', 'wordpress.wp-cli']);
+  assert.deepEqual(fixtureSteps('shop-site')[0].args, ['action=install', 'plugin=woocommerce', 'activate=true']);
+  assert.deepEqual(fixtureSteps('shop-forms-site')[0].args, ['action=install', 'plugin=woocommerce', 'activate=true']);
+  assert.deepEqual(fixtureSteps('shop-forms-site')[1].args, ['action=install', 'plugin=jetpack', 'activate=true']);
+  assert.equal(recipe.workflow.steps.some((step) => /--allow-missing-woocommerce/.test(step.args?.[0] || '')), false);
 });
 
 test('fixture-matrix rig requires env-backed WP Codebox editor and visual capabilities', () => {
@@ -888,6 +921,39 @@ test('accepted native-conversion diagnostics with reason and source path are not
 
   assert.equal(result.findings[0].loss_class, 'native_conversion');
   assert.equal(result.summary.fixture_categories.missing_evidence, undefined);
+});
+
+test('collects import-report dependency and seeding diagnostics into fixture findings', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-import-report-diagnostics-'));
+  const fixtureDirectory = path.join(outputDirectory, 'simple-site');
+  mkdirSync(fixtureDirectory, { recursive: true });
+  writeFileSync(path.join(fixtureDirectory, 'import-report.json'), JSON.stringify({
+    status: 'failed',
+    diagnostics: [
+      {
+        code: 'woocommerce_missing',
+        severity: 'error',
+        source: 'commerce.dependencies.woocommerce',
+        message: 'WooCommerce is required for this import.',
+      },
+    ],
+    product_seeding: {
+      status: 'skipped',
+      reason: 'woocommerce_required_but_missing',
+      counts: { created: 0, updated: 0, skipped: 2, error: 0 },
+    },
+  }));
+
+  const result = collectFixtureMatrixRunResults({
+    matrix: createFixtureMatrix({ fixture_root: fixtureRoot, id: 'import-report-diagnostics-test' }),
+    outputDirectory,
+  });
+  const diagnostics = result.fixtures[0].diagnostics;
+
+  assert.ok(diagnostics.some((diagnostic) => diagnostic.kind === 'woocommerce_missing'));
+  assert.ok(diagnostics.some((diagnostic) => diagnostic.kind === 'product_seeding_failed'));
+  assert.equal(result.fixtures[0].status, 'failed');
+  assert.equal(result.summary.unacceptable_loss_classes.importer_materialization_bug >= 1, true);
 });
 
 test('suppresses count-only fixture diagnostics from actionable fanout rollups', () => {
