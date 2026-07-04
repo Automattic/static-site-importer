@@ -174,6 +174,10 @@ if ( ! function_exists( 'add_action' ) ) {
 	function add_action( string $hook_name, callable|string $callback ): void {}
 }
 
+if ( ! function_exists( 'do_action' ) ) {
+	function do_action( string $hook_name, ...$args ): void {}
+}
+
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-exporter.php';
 require_once dirname( __DIR__ ) . '/includes/abilities.php';
 

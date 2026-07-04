@@ -117,12 +117,7 @@ class Static_Site_Importer_Plugin_Materializer {
 
 		$report['files'] = array_keys( $plan['files'] );
 
-		if ( self::available( $availability_check ) ) {
-			$report['status']    = 'already_available';
-			$report['installed'] = true;
-			$report['active']    = true;
-			return $report;
-		}
+		$already_available = self::available( $availability_check );
 
 		$report['attempted'] = true;
 
@@ -131,7 +126,7 @@ class Static_Site_Importer_Plugin_Materializer {
 			return self::failed_report( $report, $written );
 		}
 		$report['installed'] = true;
-		$report['actions'][] = 'installed';
+		$report['actions'][] = $already_available ? 'refreshed' : 'installed';
 
 		if ( false === $plan['activate'] ) {
 			// mu-plugins are always active; no activation call is required.
@@ -170,7 +165,7 @@ class Static_Site_Importer_Plugin_Materializer {
 			);
 		}
 
-		$report['status'] = 'installed_activated';
+		$report['status'] = $already_available ? 'refreshed' : 'installed_activated';
 		return $report;
 	}
 
