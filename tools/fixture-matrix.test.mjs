@@ -1,3 +1,6 @@
+/**
+ * External dependencies
+ */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -5,6 +8,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+
+/**
+ * Internal dependencies
+ */
 import runFixtureMatrixBench, {
   boundedConcurrency,
   composerPathRepositoryConfig,
@@ -43,7 +50,6 @@ import {
   buildFixtureArtifact,
   createFixtureMatrix,
   editorBlockValidationStep,
-  EDITOR_INVALID_BLOCK_SELECTOR_GROUP,
   EDITOR_VALIDATE_BLOCKS_COMMAND,
   EDITOR_VALIDATION_METHOD,
   normalizeFixtureMatrixResult,
@@ -1386,14 +1392,14 @@ test('materializes generated artifact roots into matrix-compatible fixtures', ()
 
 test('resolves Blocks Engine PHP transformer override paths', () => {
   const repoRoot = mkdtempSync(path.join(tmpdir(), 'blocks-engine-'));
-  const packageRoot = path.join(repoRoot, 'php-transformer');
-  mkdirSync(packageRoot, { recursive: true });
-  writeFileSync(path.join(packageRoot, 'composer.json'), JSON.stringify({
+  const transformerPackageRoot = path.join(repoRoot, 'php-transformer');
+  mkdirSync(transformerPackageRoot, { recursive: true });
+  writeFileSync(path.join(transformerPackageRoot, 'composer.json'), JSON.stringify({
     name: 'automattic/blocks-engine-php-transformer',
   }));
 
-  assert.equal(resolveBlocksEnginePhpTransformerPath(repoRoot), packageRoot);
-  assert.equal(resolveBlocksEnginePhpTransformerPath(packageRoot), packageRoot);
+  assert.equal(resolveBlocksEnginePhpTransformerPath(repoRoot), transformerPackageRoot);
+  assert.equal(resolveBlocksEnginePhpTransformerPath(transformerPackageRoot), transformerPackageRoot);
 });
 
 test('builds Composer path repository override matching SSI constraints', () => {
@@ -1445,10 +1451,10 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-canonical-matrix-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
   const blocksEngine = path.join(root, 'blocks-engine');
-  const fixtureRoot = path.join(blocksEngine, 'fixtures', 'websites');
+  const canonicalFixtureRoot = path.join(blocksEngine, 'fixtures', 'websites');
   mkdirSync(staticSiteImporter, { recursive: true });
   for (let index = 1; index <= CANONICAL_FIXTURE_COUNT; index += 1) {
-    mkdirSync(path.join(fixtureRoot, `fixture-${String(index).padStart(2, '0')}`), { recursive: true });
+    mkdirSync(path.join(canonicalFixtureRoot, `fixture-${String(index).padStart(2, '0')}`), { recursive: true });
   }
 
   const plan = buildFixtureMatrixRunPlan({
@@ -1463,7 +1469,7 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
 
   assert.equal(plan.mode, 'development-override');
   assert.equal(plan.homeboy_bin, '/tmp/homeboy-latest');
-  assert.equal(plan.fixture_root, fixtureRoot);
+  assert.equal(plan.fixture_root, canonicalFixtureRoot);
   assert.equal(plan.fixture_count, CANONICAL_FIXTURE_COUNT);
   assert.equal(plan.fixture_count_matches_canonical, true);
   assert.equal(plan.namespace, 'ssi-matrix-dev-proof');
@@ -1481,7 +1487,7 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   assert.equal(benchStep.command, '/tmp/homeboy-latest');
   assert.ok(benchStep.args.includes('--runner'));
   assert.ok(benchStep.args.includes('homeboy-lab'));
-  assert.ok(benchStep.args.includes(`bench_env.SSI_FIXTURE_MATRIX_FIXTURE_ROOT=${fixtureRoot}`));
+  assert.ok(benchStep.args.includes(`bench_env.SSI_FIXTURE_MATRIX_FIXTURE_ROOT=${canonicalFixtureRoot}`));
   assert.ok(benchStep.args.includes(`bench_env.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PATH=${staticSiteImporter}`));
   assert.ok(benchStep.args.includes(`bench_env.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH=${blocksEngine}`));
   assert.ok(benchStep.args.includes('bench_env.SSI_FIXTURE_MATRIX_RUN=1'));
@@ -1510,13 +1516,13 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
 test('fixture matrix operator plan forwards complexity lane settings', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-complexity-plan-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
-  const fixtureRoot = path.join(root, 'fixtures');
+  const laneFixtureRoot = path.join(root, 'fixtures');
   mkdirSync(staticSiteImporter, { recursive: true });
-  mkdirSync(path.join(fixtureRoot, 'fixture-a'), { recursive: true });
+  mkdirSync(path.join(laneFixtureRoot, 'fixture-a'), { recursive: true });
 
   const plan = buildFixtureMatrixRunPlan({
     staticSiteImporter,
-    fixtureRoot,
+    fixtureRoot: laneFixtureRoot,
     complexity: '2',
     maxComplexity: '3',
     skipInstall: true,
@@ -1532,12 +1538,12 @@ test('fixture matrix operator plan forwards complexity lane settings', () => {
 test('fixture matrix records generic child command failures for failed WP Codebox batches', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-codebox-failure-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
-  const fixtureRoot = path.join(root, 'fixtures');
+  const failureFixtureRoot = path.join(root, 'fixtures');
   const outputDirectory = path.join(root, 'artifacts');
   const helperPath = path.join(root, 'wp-codebox-recipe-helper.cjs');
   mkdirSync(staticSiteImporter, { recursive: true });
-  mkdirSync(path.join(fixtureRoot, 'failing-fixture'), { recursive: true });
-  writeFileSync(path.join(fixtureRoot, 'failing-fixture', 'index.html'), '<h1>Failing fixture</h1>');
+  mkdirSync(path.join(failureFixtureRoot, 'failing-fixture'), { recursive: true });
+  writeFileSync(path.join(failureFixtureRoot, 'failing-fixture', 'index.html'), '<h1>Failing fixture</h1>');
   writeFileSync(helperPath, `
 function wpCodeboxBin() { return '/tmp/wp-codebox'; }
 function wpCodeboxCommand(bin) { return { command: bin, args: [] }; }
@@ -1562,7 +1568,7 @@ module.exports = { wpCodeboxBin, wpCodeboxCommand, runWpCodeboxRecipe };
 
   try {
     const { summary, runtimeError } = await runFixtureMatrix({
-      fixtureRoot,
+      fixtureRoot: failureFixtureRoot,
       outputDirectory,
       staticSiteImporterPath: staticSiteImporter,
       run: true,
@@ -1604,7 +1610,7 @@ module.exports = { wpCodeboxBin, wpCodeboxCommand, runWpCodeboxRecipe };
     assert.equal(failure.artifact_refs.output_file, failure.artifact_refs.batch_output);
     assert.ok(readFileSync(path.join(outputDirectory, 'cli-run.json'), 'utf8').includes('child_command_failures'));
 
-    process.env.SSI_FIXTURE_MATRIX_FIXTURE_ROOT = fixtureRoot;
+    process.env.SSI_FIXTURE_MATRIX_FIXTURE_ROOT = failureFixtureRoot;
     process.env.SSI_FIXTURE_MATRIX_OUTPUT_DIRECTORY = path.join(root, 'bench-export-artifacts');
     process.env.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PATH = staticSiteImporter;
     process.env.SSI_FIXTURE_MATRIX_RUN = '1';
@@ -1646,13 +1652,13 @@ module.exports = { wpCodeboxBin, wpCodeboxCommand, runWpCodeboxRecipe };
 test('WP Codebox recipe runner streams oversized child output and reads result JSON from --output', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-codebox-large-output-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
-  const fixtureRoot = path.join(root, 'fixtures');
+  const largeOutputFixtureRoot = path.join(root, 'fixtures');
   const outputDirectory = path.join(root, 'artifacts');
   const fakeCodeboxBin = path.join(root, 'fake-wp-codebox.mjs');
   const fixtureId = 'large-output-fixture';
   mkdirSync(staticSiteImporter, { recursive: true });
-  mkdirSync(path.join(fixtureRoot, fixtureId), { recursive: true });
-  writeFileSync(path.join(fixtureRoot, fixtureId, 'index.html'), '<h1>Large output fixture</h1>');
+  mkdirSync(path.join(largeOutputFixtureRoot, fixtureId), { recursive: true });
+  writeFileSync(path.join(largeOutputFixtureRoot, fixtureId, 'index.html'), '<h1>Large output fixture</h1>');
   writeFileSync(fakeCodeboxBin, `#!/usr/bin/env node
 import { writeFileSync } from 'node:fs';
 const outputIndex = process.argv.indexOf('--output');
@@ -1669,7 +1675,7 @@ for (let index = 0; index < 12; index += 1) {
   chmodSync(fakeCodeboxBin, 0o755);
 
   const { summary, runtimeError } = await runFixtureMatrix({
-    fixtureRoot,
+    fixtureRoot: largeOutputFixtureRoot,
     outputDirectory,
     staticSiteImporterPath: staticSiteImporter,
     run: true,
@@ -1830,9 +1836,9 @@ test('code freshness guard blocks stale overrides unless explicitly allowed', ()
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-freshness-stale-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
   const blocksEngine = path.join(root, 'blocks-engine');
-  const fixtureRoot = path.join(blocksEngine, 'fixtures', 'websites');
+  const staleFixtureRoot = path.join(blocksEngine, 'fixtures', 'websites');
   mkdirSync(staticSiteImporter, { recursive: true });
-  mkdirSync(path.join(fixtureRoot, 'fixture-a'), { recursive: true });
+  mkdirSync(path.join(staleFixtureRoot, 'fixture-a'), { recursive: true });
 
   const gitRunner = fakeGitRunner({
     [path.resolve(blocksEngine)]: { branch: 'trunk', upstream: 'origin/trunk', behind: 33, ahead: 0, commit: 'staleabc' },
@@ -1876,9 +1882,9 @@ test('code freshness guard lets fresh and diverged overrides through with accura
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-freshness-fresh-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
   const blocksEngine = path.join(root, 'blocks-engine');
-  const fixtureRoot = path.join(blocksEngine, 'fixtures', 'websites');
+  const freshFixtureRoot = path.join(blocksEngine, 'fixtures', 'websites');
   mkdirSync(staticSiteImporter, { recursive: true });
-  mkdirSync(path.join(fixtureRoot, 'fixture-a'), { recursive: true });
+  mkdirSync(path.join(freshFixtureRoot, 'fixture-a'), { recursive: true });
 
   const freshPlan = buildFixtureMatrixRunPlan({
     staticSiteImporter,
@@ -1941,13 +1947,13 @@ function restoreEnv(key, value) {
 test('fixture matrix dry-run plan surfaces local fallback and dirty workspace warnings', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-warning-plan-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
-  const fixtureRoot = path.join(root, 'fixtures');
+  const warningFixtureRoot = path.join(root, 'fixtures');
   mkdirSync(staticSiteImporter, { recursive: true });
-  mkdirSync(path.join(fixtureRoot, 'fixture-a'), { recursive: true });
+  mkdirSync(path.join(warningFixtureRoot, 'fixture-a'), { recursive: true });
 
   const plan = buildFixtureMatrixRunPlan({
     staticSiteImporter,
-    fixtureRoot,
+    fixtureRoot: warningFixtureRoot,
     runId: 'proof/run 1',
     allowLocalFallback: true,
     allowDirtyLabWorkspace: true,
@@ -1975,13 +1981,13 @@ test('fixture matrix dry-run plan surfaces local fallback and dirty workspace wa
 test('--local forces hot local execution and suppresses the auto-offload-risk warning', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-local-plan-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
-  const fixtureRoot = path.join(root, 'fixtures');
+  const localFixtureRoot = path.join(root, 'fixtures');
   mkdirSync(staticSiteImporter, { recursive: true });
-  mkdirSync(path.join(fixtureRoot, 'fixture-a'), { recursive: true });
+  mkdirSync(path.join(localFixtureRoot, 'fixture-a'), { recursive: true });
 
   const plan = buildFixtureMatrixRunPlan({
     staticSiteImporter,
-    fixtureRoot,
+    fixtureRoot: localFixtureRoot,
     local: true,
     skipInstall: true,
     skipSync: true,
@@ -2261,18 +2267,18 @@ module.exports = { wpCodeboxBin, wpCodeboxCommand, runWpCodeboxRecipe };
 function setupConcurrencyWorkspace(prefix, fixtureCount) {
   const root = mkdtempSync(path.join(tmpdir(), prefix));
   const staticSiteImporter = path.join(root, 'static-site-importer');
-  const fixtureRoot = path.join(root, 'fixtures');
+  const concurrencyFixtureRoot = path.join(root, 'fixtures');
   const outputDirectory = path.join(root, 'artifacts');
   const helperPath = path.join(root, 'wp-codebox-recipe-helper.cjs');
   const statsFile = path.join(root, 'recipe-stats.json');
   mkdirSync(staticSiteImporter, { recursive: true });
   for (let index = 1; index <= fixtureCount; index += 1) {
-    const fixtureDir = path.join(fixtureRoot, `fixture-${String(index).padStart(2, '0')}`);
+    const fixtureDir = path.join(concurrencyFixtureRoot, `fixture-${String(index).padStart(2, '0')}`);
     mkdirSync(fixtureDir, { recursive: true });
     writeFileSync(path.join(fixtureDir, 'index.html'), `<h1>Fixture ${index}</h1>`);
   }
   writeConcurrencyRecipeHelper(helperPath);
-  return { root, staticSiteImporter, fixtureRoot, outputDirectory, helperPath, statsFile };
+  return { root, staticSiteImporter, fixtureRoot: concurrencyFixtureRoot, outputDirectory, helperPath, statsFile };
 }
 
 const CONCURRENCY_ENV_KEYS = [

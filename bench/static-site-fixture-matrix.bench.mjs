@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 
+/**
+ * External dependencies
+ */
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+/**
+ * Internal dependencies
+ */
 import { runWpCodeboxRecipe, wpCodeboxCommand, wpCodeboxBin } from '../tools/wp-codebox/recipe.mjs';
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
 import {
