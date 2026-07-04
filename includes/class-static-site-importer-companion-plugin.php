@@ -709,7 +709,7 @@ class Static_Site_Importer_Companion_Plugin {
 
 		if ( is_float( $value ) ) {
 			// var_export keeps a parseable float literal (e.g. trailing .0).
-			return var_export( $value, true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.prevent_path_disclosure_var_export -- Generating a deterministic PHP literal for the scaffolded plugin file.
+			return var_export( $value, true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Generating a deterministic PHP literal for the scaffolded plugin file.
 		}
 
 		return "'" . self::php_single_quote( (string) $value ) . "'";

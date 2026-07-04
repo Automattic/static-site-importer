@@ -999,13 +999,13 @@ class Static_Site_Importer_Theme_Materializer {
 		for ( $pass = 0; $pass < 5; $pass++ ) {
 			$expanded = preg_replace_callback(
 				'/var\(\s*(--[A-Za-z0-9_-]+)\s*(?:,\s*([^()]*))?\)/',
-				static function ( array $match ) use ( $properties ): string {
-					$name = (string) $match[1];
+				static function ( array $matches ) use ( $properties ): string {
+					$name = (string) $matches[1];
 					if ( isset( $properties[ $name ] ) && '' !== $properties[ $name ] ) {
 						return $properties[ $name ];
 					}
 
-					return ( isset( $match[2] ) && '' !== trim( (string) $match[2] ) ) ? trim( (string) $match[2] ) : (string) $match[0];
+					return ( isset( $matches[2] ) && '' !== trim( (string) $matches[2] ) ) ? trim( (string) $matches[2] ) : (string) $matches[0];
 				},
 				$value
 			);

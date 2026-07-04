@@ -35,8 +35,8 @@ class Static_Site_Importer_Block_Document_Reporter {
 				continue;
 			}
 
-			$block_markup = self::generated_block_document_markup( $relative_path, $content );
-			$analysis     = self::analyze_generated_block_document( $relative_path, $block_markup, $report );
+			$block_markup                                   = self::generated_block_document_markup( $relative_path, $content );
+			$analysis                                       = self::analyze_generated_block_document( $relative_path, $block_markup, $report );
 			$report['generated_theme']['block_documents'][] = $analysis;
 		}
 	}
@@ -173,7 +173,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 	private static function analyze_generated_block_list( array $blocks, int &$block_count, int &$core_html_count, int &$freeform_count, int &$invalid_count, array &$invalid_blocks, array &$report, string $source = '', array $path = array() ): void {
 		foreach ( $blocks as $index => $block ) {
 			$block_path = array_merge( $path, array( $index ) );
-			$name = isset( $block['blockName'] ) ? $block['blockName'] : null;
+			$name       = isset( $block['blockName'] ) ? $block['blockName'] : null;
 			if ( is_string( $name ) && '' !== $name ) {
 				++$block_count;
 				if ( 'core/html' === $name ) {
@@ -353,7 +353,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 		}
 
 		$blocks = parse_blocks( $markup );
-		return self::canonicalize_parsed_block_values_for_report( is_array( $blocks ) ? $blocks : array() );
+		return self::canonicalize_parsed_block_values_for_report( $blocks );
 	}
 
 	/**

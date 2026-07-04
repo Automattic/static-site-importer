@@ -1179,11 +1179,11 @@ class Static_Site_Importer_Report_Diagnostics {
 		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest_generic( $adapter, array( 'forms' => $manifest_forms ) );
 		$seeding    = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, array( 'forms' => isset( $validation['forms'] ) && is_array( $validation['forms'] ) ? $validation['forms'] : array() ) );
 
-		$seeding['provider']     = Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'form' );
-		$seeding['form_count']   = count( $manifest_forms );
-		$seeding['mapped_count'] = 0;
+		$seeding['provider']      = Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'form' );
+		$seeding['form_count']    = count( $manifest_forms );
+		$seeding['mapped_count']  = 0;
 		$seeding['grafted_count'] = 0;
-		$seeding['waived']       = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? 'allow_missing_jetpack' ) ] );
+		$seeding['waived']        = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? 'allow_missing_jetpack' ) ] );
 		if ( ! empty( $validation['errors'] ) ) {
 			$seeding['validation_errors'] = $validation['errors'];
 		}
@@ -1291,7 +1291,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		foreach ( $documents as $document ) {
-			if ( ! is_array( $document ) || $source_path !== (string) ( $document['source_path'] ?? '' ) ) {
+			if ( ! is_array( $document ) || (string) ( $document['source_path'] ?? '' ) !== $source_path ) {
 				continue;
 			}
 
@@ -1457,7 +1457,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<int,array{serialized:string,html:string}>
 	 */
 	private static function serialized_core_html_blocks( string $content ): array {
-		$blocks = array();
+		$blocks  = array();
 		$matches = array();
 		preg_match_all( '/<!--\s+wp:html\s+(\{.*?\})\s+\/-->/s', $content, $matches, PREG_SET_ORDER );
 		preg_match_all( '/<!--\s+wp:html\s+(\{.*?\})\s+-->(.*?)<!--\s+\/wp:html\s+-->/s', $content, $wrapped_matches, PREG_SET_ORDER );
@@ -1561,7 +1561,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		$source_base = basename( $source_path );
-		return '' !== $source_base && $source_base === basename( $key );
+		return '' !== $source_base && basename( $key ) === $source_base;
 	}
 
 	/**
@@ -1595,9 +1595,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	private static function serialize_readable_form_blocks( array $readable_blocks ): string {
 		$serialized = '';
 		foreach ( array_values( $readable_blocks ) as $block ) {
-			if ( is_array( $block ) ) {
-				$serialized .= self::serialize_readable_form_block( $block );
-			}
+			$serialized .= self::serialize_readable_form_block( $block );
 		}
 		return $serialized;
 	}
@@ -1637,9 +1635,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		if ( ! is_array( $inner_content ) ) {
 			$serialized = '';
 			foreach ( $inner_blocks as $inner_block ) {
-				if ( is_array( $inner_block ) ) {
-					$serialized .= self::serialize_readable_form_block( $inner_block );
-				}
+				$serialized .= self::serialize_readable_form_block( $inner_block );
 			}
 			return $serialized . ( isset( $block['innerHTML'] ) && is_string( $block['innerHTML'] ) ? $block['innerHTML'] : '' );
 		}
@@ -1670,6 +1666,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			return '';
 		}
 
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Fallback only for non-WordPress smoke tests; WordPress runtimes use wp_json_encode().
 		$encoded = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) : json_encode( $attrs, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
 		if ( ! is_string( $encoded ) ) {
 			return '';
@@ -1744,7 +1741,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'products'       => $manifest_products,
 		);
 		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest( $adapter, $manifest );
-		$validated  = isset( $validation['products'] ) && is_array( $validation['products'] ) ? $validation['products'] : array();
+		$validated  = $validation['products'];
 
 		$seeding = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, array( 'products' => $validated ) );
 
@@ -1925,9 +1922,11 @@ class Static_Site_Importer_Report_Diagnostics {
 		$dot_count   = substr_count( $clean, '.' );
 
 		$decimal_sep = '';
-		if ( $comma_count > 0 && $dot_count > 0 ) {
+		if ( 0 < $comma_count && 0 < $dot_count ) {
 			// When both separators appear, the rightmost one is the decimal point.
-			$decimal_sep = ( (int) strrpos( $clean, ',' ) > (int) strrpos( $clean, '.' ) ) ? ',' : '.';
+			$comma_position = strrpos( $clean, ',' );
+			$dot_position   = strrpos( $clean, '.' );
+			$decimal_sep    = false !== $comma_position && false !== $dot_position && $comma_position > $dot_position ? ',' : '.';
 		} elseif ( 1 === $comma_count && 0 === $dot_count ) {
 			$decimal_sep = self::is_decimal_tail( $clean, ',' ) ? ',' : '';
 		} elseif ( 1 === $dot_count && 0 === $comma_count ) {
@@ -2412,10 +2411,10 @@ class Static_Site_Importer_Report_Diagnostics {
 				continue;
 			}
 
-			$asset                                  = $script_assets[ $key ];
-			$diagnostic['runtime_carried']           = true;
-			$diagnostic['loss_class']                = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
-			$diagnostic['diagnostic_class']          = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
+			$asset                                    = $script_assets[ $key ];
+			$diagnostic['runtime_carried']            = true;
+			$diagnostic['loss_class']                 = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
+			$diagnostic['diagnostic_class']           = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
 			$diagnostic['materialized_runtime_asset'] = $asset;
 			if ( empty( $diagnostic['message'] ) ) {
 				$diagnostic['message'] = sprintf( 'Script fallback is carried by materialized theme asset %s.', (string) ( $asset['path'] ?? '' ) );

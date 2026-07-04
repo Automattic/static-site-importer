@@ -68,6 +68,7 @@ function static_site_importer_render_block( array $attributes = array() ): strin
 	 * @param array<string,string> $attrs      Extra wrapper attributes (name => value).
 	 * @param array<string,mixed>  $attributes Block attributes.
 	 */
+	/** @var mixed $wrapper_attrs */
 	$wrapper_attrs = apply_filters( 'static_site_importer_block_wrapper_attributes', array(), $attributes );
 	$extra_attr    = '';
 	if ( is_array( $wrapper_attrs ) ) {
