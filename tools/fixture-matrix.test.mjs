@@ -1296,6 +1296,7 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   assert.equal(plan.fixture_count_matches_canonical, true);
   assert.equal(plan.namespace, 'ssi-matrix-dev-proof');
   assert.equal(plan.temp_root, '/tmp/static-site-importer-fixture-matrix-ssi-matrix-dev-proof');
+  assert.equal(plan.output_file, '/tmp/static-site-importer-fixture-matrix-ssi-matrix-dev-proof/ssi-matrix-dev-proof.homeboy-bench.json');
   assert.equal(plan.shared_state, '/tmp/static-site-importer-fixture-matrix-ssi-matrix-dev-proof/shared-state');
   assert.equal(plan.artifact_root, '/tmp/static-site-importer-fixture-matrix-ssi-matrix-dev-proof/artifacts');
   assert.deepEqual(plan.warnings, []);
@@ -1324,6 +1325,14 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   });
   assert.deepEqual(releasePlan.dependency_overrides, {});
   assert.equal(releasePlan.steps.at(-1).args.some((arg) => arg.includes('SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH')), false);
+
+  const explicitOutput = path.join(root, 'custom-output', 'homeboy-bench.json');
+  const explicitOutputPlan = buildFixtureMatrixRunPlan({
+    staticSiteImporter,
+    blocksEngine,
+    output: explicitOutput,
+  });
+  assert.equal(explicitOutputPlan.output_file, explicitOutput);
 });
 
 test('fixture matrix records generic child command failures for failed WP Codebox batches', async () => {
