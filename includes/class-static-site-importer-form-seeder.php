@@ -63,10 +63,12 @@ class Static_Site_Importer_Form_Seeder {
 			return $report;
 		}
 
-		$available           = self::jetpack_forms_available();
-		$report['provider']  = self::PROVIDER_ID;
-		$report['available'] = $available;
-		$report['status']    = 'completed';
+		$availability                   = self::jetpack_forms_availability_details();
+		$available                      = ! empty( $availability['available'] );
+		$report['provider']             = self::PROVIDER_ID;
+		$report['available']            = $available;
+		$report['availability_details'] = $availability;
+		$report['status']               = 'completed';
 
 		foreach ( $forms as $form ) {
 			$row               = self::seed_form( $form, $available );
@@ -91,11 +93,12 @@ class Static_Site_Importer_Form_Seeder {
 	 */
 	public static function new_report( string $status = 'skipped' ): array {
 		return array(
-			'status'    => $status,
-			'reason'    => '',
-			'provider'  => self::PROVIDER_ID,
-			'available' => self::jetpack_forms_available(),
-			'counts'    => array(
+			'status'               => $status,
+			'reason'               => '',
+			'provider'             => self::PROVIDER_ID,
+			'available'            => self::jetpack_forms_available(),
+			'availability_details' => self::jetpack_forms_availability_details(),
+			'counts'               => array(
 				'mapped'  => 0,
 				'skipped' => 0,
 				'error'   => 0,
@@ -113,14 +116,34 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return bool
 	 */
 	public static function jetpack_forms_available(): bool {
-		if ( class_exists( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form' ) ) {
-			return true;
-		}
-		if ( class_exists( 'Grunion_Contact_Form' ) || class_exists( 'Contact_Form' ) ) {
-			return true;
+		$availability = self::jetpack_forms_availability_details();
+		return ! empty( $availability['available'] );
+	}
+
+	/**
+	 * Return the specific Jetpack Forms APIs present in the current runtime.
+	 *
+	 * @return array<string,bool>
+	 */
+	public static function jetpack_forms_availability_details(): array {
+		$contact_form_class = class_exists( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form' );
+		$legacy_class       = class_exists( 'Grunion_Contact_Form' ) || class_exists( 'Contact_Form' );
+		$contact_form_block = false;
+		$field_text_block   = false;
+
+		if ( class_exists( 'WP_Block_Type_Registry' ) ) {
+			$registry = WP_Block_Type_Registry::get_instance();
+			$contact_form_block = $registry->is_registered( 'jetpack/contact-form' );
+			$field_text_block   = $registry->is_registered( 'jetpack/field-text' );
 		}
 
-		return function_exists( 'is_plugin_active' ) && is_plugin_active( 'jetpack/jetpack.php' );
+		return array(
+			'available'          => ( $contact_form_class || $legacy_class || ( $contact_form_block && $field_text_block ) ),
+			'contact_form_class' => $contact_form_class,
+			'legacy_class'       => $legacy_class,
+			'contact_form_block' => $contact_form_block,
+			'field_text_block'   => $field_text_block,
+		);
 	}
 
 	/**

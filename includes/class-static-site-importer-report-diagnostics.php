@@ -1203,6 +1203,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 
 			$report['diagnostics'][ $index ] = self::mark_form_finding_mapped( $report['diagnostics'][ $index ], $row, $seeding['provider'] );
+			$report['diagnostics'][ $index ] = self::add_form_graft_source_path( $report['diagnostics'][ $index ], $report );
 
 			if ( ! empty( $page_contents ) ) {
 				$markup = isset( $row['block_markup'] ) && is_scalar( $row['block_markup'] ) ? (string) $row['block_markup'] : '';
@@ -1267,6 +1268,44 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
+	 * Add the generated post_content key that corresponds to a source HTML form.
+	 *
+	 * Blocks Engine form findings are keyed to source documents such as
+	 * `website/index.html`; generated theme content is keyed to post fields such as
+	 * `posts/page-home.post_content`. The source document manifest is the contract
+	 * that bridges those namespaces.
+	 *
+	 * @param array<string,mixed> $diagnostic Form finding.
+	 * @param array<string,mixed> $report     Import report.
+	 * @return array<string,mixed>
+	 */
+	private static function add_form_graft_source_path( array $diagnostic, array $report ): array {
+		$source_path = self::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
+		if ( '' === $source_path ) {
+			return $diagnostic;
+		}
+
+		$documents = $report['source_documents']['blocks_engine_documents'] ?? array();
+		if ( ! is_array( $documents ) ) {
+			return $diagnostic;
+		}
+
+		foreach ( $documents as $document ) {
+			if ( ! is_array( $document ) || $source_path !== (string) ( $document['source_path'] ?? '' ) ) {
+				continue;
+			}
+
+			$slug = isset( $document['slug'] ) && is_scalar( $document['slug'] ) ? trim( (string) $document['slug'] ) : '';
+			if ( '' !== $slug ) {
+				$diagnostic['graft_source_path'] = 'posts/page-' . $slug . '.post_content';
+			}
+			return $diagnostic;
+		}
+
+		return $diagnostic;
+	}
+
+	/**
 	 * Graft seeded contact-form markup into a page's post_content in place of the
 	 * finding's readable fallback region.
 	 *
@@ -1283,7 +1322,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array{grafted:bool, finding:array<string,mixed>, diagnostic:?array<string,mixed>}
 	 */
 	private static function graft_form_block_into_page_contents( array $finding, string $block_markup, array &$page_contents ): array {
-		$source_path = self::first_scalar( $finding, array( 'source_path', 'source' ) );
+		$source_path = self::first_scalar( $finding, array( 'graft_source_path', 'source_path', 'source' ) );
 		$selector    = isset( $finding['selector'] ) && is_scalar( $finding['selector'] ) ? (string) $finding['selector'] : '';
 
 		$unanchorable = static function ( string $reason ) use ( &$finding, $source_path, $selector ): array {
@@ -1310,12 +1349,14 @@ class Static_Site_Importer_Report_Diagnostics {
 		$readable = isset( $finding['readable_blocks'] ) && is_array( $finding['readable_blocks'] ) ? $finding['readable_blocks'] : array();
 		$region   = self::serialize_readable_form_blocks( $readable );
 		if ( '' === $region ) {
-			return $unanchorable( 'no_readable_fallback_blocks' );
+			$core_html_graft = self::graft_form_block_into_core_html_fallback( $finding, $block_markup, $source_path, $page_contents );
+			return $core_html_graft['grafted'] ? $core_html_graft : $unanchorable( 'no_readable_fallback_blocks' );
 		}
 
 		$key = self::form_fallback_page_content_key( $source_path, $region, $page_contents );
 		if ( null === $key ) {
-			return $unanchorable( 'fallback_region_not_found_in_post_content' );
+			$core_html_graft = self::graft_form_block_into_core_html_fallback( $finding, $block_markup, $source_path, $page_contents );
+			return $core_html_graft['grafted'] ? $core_html_graft : $unanchorable( 'fallback_region_not_found_in_post_content' );
 		}
 
 		$content  = (string) ( $page_contents[ $key ] ?? '' );
@@ -1336,6 +1377,140 @@ class Static_Site_Importer_Report_Diagnostics {
 			'finding'    => $finding,
 			'diagnostic' => null,
 		);
+	}
+
+	/**
+	 * Replace a serialized core/html form preservation block when readable blocks
+	 * are absent or no longer match generated post_content.
+	 *
+	 * @param array<string,mixed>  $finding       Mapped form-fallback finding.
+	 * @param string               $block_markup  Seeded contact-form block markup.
+	 * @param string               $source_path   Resolved post_content path.
+	 * @param array<string,string> $page_contents Materialized page post_content keyed by source filename.
+	 * @return array{grafted:bool, finding:array<string,mixed>, diagnostic:?array<string,mixed>}
+	 */
+	private static function graft_form_block_into_core_html_fallback( array $finding, string $block_markup, string $source_path, array &$page_contents ): array {
+		foreach ( self::form_fallback_page_content_keys_for_source( $source_path, $page_contents ) as $key ) {
+			$content = (string) ( $page_contents[ $key ] ?? '' );
+			foreach ( self::serialized_core_html_blocks( $content ) as $block ) {
+				if ( ! self::core_html_form_matches_finding( $block['html'], $finding ) ) {
+					continue;
+				}
+
+				$position = strpos( $content, $block['serialized'] );
+				if ( false === $position ) {
+					continue;
+				}
+
+				$page_contents[ $key ]               = substr( $content, 0, $position ) . $block_markup . substr( $content, $position + strlen( $block['serialized'] ) );
+				$finding['content_grafted']          = true;
+				$finding['grafted_post_content_key'] = $key;
+				$finding['graft_anchor']             = 'core_html_form_block';
+
+				return array(
+					'grafted'    => true,
+					'finding'    => $finding,
+					'diagnostic' => null,
+				);
+			}
+		}
+
+		$finding['content_grafted'] = false;
+		return array(
+			'grafted'    => false,
+			'finding'    => $finding,
+			'diagnostic' => null,
+		);
+	}
+
+	/**
+	 * Return candidate page content keys for a resolved source path, preferring the
+	 * matching page and falling back to the supplied order.
+	 *
+	 * @param string               $source_path   Resolved post_content path.
+	 * @param array<string,string> $page_contents Materialized page post_content keyed by source filename.
+	 * @return array<int,string>
+	 */
+	private static function form_fallback_page_content_keys_for_source( string $source_path, array $page_contents ): array {
+		$keys = array();
+		if ( '' !== $source_path ) {
+			foreach ( $page_contents as $key => $content ) {
+				if ( self::form_source_paths_match( $source_path, (string) $key ) ) {
+					$keys[] = (string) $key;
+				}
+			}
+		}
+
+		foreach ( array_keys( $page_contents ) as $key ) {
+			if ( ! in_array( (string) $key, $keys, true ) ) {
+				$keys[] = (string) $key;
+			}
+		}
+
+		return $keys;
+	}
+
+	/**
+	 * Extract serialized core/html blocks and their decoded HTML payloads.
+	 *
+	 * @param string $content Serialized block document.
+	 * @return array<int,array{serialized:string,html:string}>
+	 */
+	private static function serialized_core_html_blocks( string $content ): array {
+		$blocks = array();
+		$matches = array();
+		preg_match_all( '/<!--\s+wp:html\s+(\{.*?\})\s+\/-->/s', $content, $matches, PREG_SET_ORDER );
+		preg_match_all( '/<!--\s+wp:html\s+(\{.*?\})\s+-->(.*?)<!--\s+\/wp:html\s+-->/s', $content, $wrapped_matches, PREG_SET_ORDER );
+		$matches = array_merge( $matches, $wrapped_matches );
+
+		foreach ( $matches as $match ) {
+			$attrs = json_decode( (string) $match[1], true );
+			$html  = is_array( $attrs ) && isset( $attrs['content'] ) && is_scalar( $attrs['content'] ) ? (string) $attrs['content'] : ( isset( $match[2] ) ? (string) $match[2] : '' );
+			if ( '' !== $html ) {
+				$blocks[] = array(
+					'serialized' => (string) $match[0],
+					'html'       => $html,
+				);
+			}
+		}
+
+		return $blocks;
+	}
+
+	/**
+	 * Determine whether a decoded core/html form payload matches a form finding.
+	 *
+	 * @param string              $html    Decoded core/html payload.
+	 * @param array<string,mixed> $finding Form finding.
+	 * @return bool
+	 */
+	private static function core_html_form_matches_finding( string $html, array $finding ): bool {
+		if ( ! str_contains( strtolower( $html ), '<form' ) ) {
+			return false;
+		}
+
+		$form = isset( $finding['form'] ) && is_array( $finding['form'] ) ? $finding['form'] : array();
+		foreach ( array( 'class', 'action', 'method' ) as $field ) {
+			$value = isset( $form[ $field ] ) && is_scalar( $form[ $field ] ) ? trim( (string) $form[ $field ] ) : '';
+			if ( '' !== $value && ! str_contains( $html, $value ) ) {
+				return false;
+			}
+		}
+
+		$controls = isset( $finding['controls'] ) && is_array( $finding['controls'] ) ? $finding['controls'] : array();
+		foreach ( $controls as $control ) {
+			if ( ! is_array( $control ) ) {
+				continue;
+			}
+			foreach ( array( 'id', 'name' ) as $field ) {
+				$value = isset( $control[ $field ] ) && is_scalar( $control[ $field ] ) ? trim( (string) $control[ $field ] ) : '';
+				if ( '' !== $value && ! str_contains( $html, $value ) ) {
+					return false;
+				}
+			}
+		}
+
+		return true;
 	}
 
 	/**
