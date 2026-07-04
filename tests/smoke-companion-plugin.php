@@ -122,6 +122,14 @@ $payload = array(
 						'type'    => 'string',
 						'default' => '',
 					),
+					'content' => array(
+						'type'    => 'content',
+						'default' => '',
+					),
+					'text'    => array(
+						'type'    => 'text',
+						'default' => '',
+					),
 				),
 				'supports'   => array(
 					'interactivity' => true,
@@ -163,6 +171,8 @@ if ( is_array( $descriptor ) ) {
 	$assert( str_contains( $main, "'api_version' => 3" ), 'main-file-declares-api-version' );
 	$assert( str_contains( $main, "'name' => 'ssi-example-site/custom-hero'" ), 'main-file-carries-namespaced-block-name' );
 	$assert( str_contains( $main, "'attributes' =>" ) && str_contains( $main, "'heading' =>" ), 'main-file-declares-php-attributes' );
+	$assert( str_contains( $main, "'content' =>" ) && str_contains( $main, "'text' =>" ), 'main-file-preserves-semantic-attribute-names' );
+	$assert( ! str_contains( $main, "'type' => 'content'" ) && ! str_contains( $main, "'type' => 'text'" ), 'main-file-normalizes-invalid-rest-schema-types' );
 	$assert( ! str_contains( $main, 'register_block_type( $path )' ), 'main-file-does-not-register-from-block-json-path' );
 
 	// The render.php is the server-rendered template the render_callback runs.

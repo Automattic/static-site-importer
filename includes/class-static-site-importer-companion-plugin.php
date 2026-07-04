@@ -239,6 +239,8 @@ class Static_Site_Importer_Companion_Plugin {
 		'example'         => 'example',
 	);
 
+	private const JSON_SCHEMA_TYPES = array( 'array', 'object', 'string', 'number', 'integer', 'boolean', 'null' );
+
 	/**
 	 * Build one PHP-only dynamic block: its render.php (+ any carried assets) and
 	 * the PHP registration spec the main plugin file feeds to register_block_type.
@@ -344,9 +346,76 @@ class Static_Site_Importer_Companion_Plugin {
 		// Attributes must be a map for WP_Block_Type::prepare_attributes_for_render.
 		if ( isset( $args['attributes'] ) && ! is_array( $args['attributes'] ) ) {
 			unset( $args['attributes'] );
+		} elseif ( isset( $args['attributes'] ) ) {
+			$args['attributes'] = self::normalize_attribute_schemas( $args['attributes'] );
 		}
 
 		return $args;
+	}
+
+	/**
+	 * Normalize generated block attribute schemas before WordPress REST validates them.
+	 *
+	 * @param array<string,mixed> $attributes Block attribute schema map.
+	 * @return array<string,mixed>
+	 */
+	private static function normalize_attribute_schemas( array $attributes ): array {
+		foreach ( $attributes as $name => $schema ) {
+			if ( is_array( $schema ) ) {
+				$attributes[ $name ] = self::normalize_json_schema_types( $schema );
+			}
+		}
+
+		return $attributes;
+	}
+
+	/**
+	 * Convert semantic producer type labels into valid JSON Schema types.
+	 *
+	 * @param array<string,mixed> $schema JSON Schema fragment.
+	 * @return array<string,mixed>
+	 */
+	private static function normalize_json_schema_types( array $schema ): array {
+		if ( isset( $schema['type'] ) ) {
+			if ( is_string( $schema['type'] ) && ! in_array( $schema['type'], self::JSON_SCHEMA_TYPES, true ) ) {
+				$schema['type'] = 'string';
+			} elseif ( is_array( $schema['type'] ) ) {
+				$types          = array_values( array_intersect( $schema['type'], self::JSON_SCHEMA_TYPES ) );
+				$schema['type'] = ! empty( $types ) ? $types : 'string';
+			}
+		}
+
+		foreach ( array( 'properties', 'patternProperties' ) as $key ) {
+			if ( ! isset( $schema[ $key ] ) || ! is_array( $schema[ $key ] ) ) {
+				continue;
+			}
+
+			foreach ( $schema[ $key ] as $property => $property_schema ) {
+				if ( is_array( $property_schema ) ) {
+					$schema[ $key ][ $property ] = self::normalize_json_schema_types( $property_schema );
+				}
+			}
+		}
+
+		foreach ( array( 'items', 'additionalProperties' ) as $key ) {
+			if ( isset( $schema[ $key ] ) && is_array( $schema[ $key ] ) ) {
+				$schema[ $key ] = self::normalize_json_schema_types( $schema[ $key ] );
+			}
+		}
+
+		foreach ( array( 'oneOf', 'anyOf', 'allOf' ) as $key ) {
+			if ( ! isset( $schema[ $key ] ) || ! is_array( $schema[ $key ] ) ) {
+				continue;
+			}
+
+			foreach ( $schema[ $key ] as $index => $nested_schema ) {
+				if ( is_array( $nested_schema ) ) {
+					$schema[ $key ][ $index ] = self::normalize_json_schema_types( $nested_schema );
+				}
+			}
+		}
+
+		return $schema;
 	}
 
 	/**
