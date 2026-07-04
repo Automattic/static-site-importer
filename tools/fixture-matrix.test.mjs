@@ -1144,6 +1144,80 @@ test('does not classify visual parity mismatch findings as missing evidence', ()
   assert.equal(result.summary.fixture_categories.missing_evidence, undefined);
 });
 
+test('emits one visual parity mismatch when raw and artifact evidence describe the same comparison', () => {
+  const diagnostics = collectVisualParityDiagnostics({
+    visual_compare: {
+      comparison: {
+        mismatch_pixels: 125,
+        total_pixels: 1000,
+        overlap_mismatch_pixels: 125,
+        overlap_pixels: 1000,
+        dimension_mismatch: false,
+      },
+    },
+    visual_parity_artifacts: {
+      mismatch_pixels: 125,
+      total_pixels: 1000,
+      overlap_mismatch_pixels: 125,
+      overlap_pixels: 1000,
+      dimension_mismatch: false,
+      source_path: 'file:///tmp/source/index.html',
+    },
+  }, { threshold: 0 });
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].kind, VISUAL_PARITY_MISMATCH_KIND);
+  assert.equal(diagnostics[0].source_path, 'file:///tmp/source/index.html');
+});
+
+test('fixture diagnostics drop empty rows and normalize kindless carriers with explicit kind', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-diagnostic-hygiene-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'diagnostic-hygiene-test' });
+  const codeboxOutput = {
+    fixture_id: 'simple-site',
+    status: 'passed',
+    diagnostics: [
+      {},
+      {
+        loss_class: 'preserved_runtime_island',
+        message: 'Script runtime was preserved intentionally.',
+        runtime_carried: true,
+      },
+      {
+        loss_class: 'editable_approximation',
+        message: 'Converted to an editable approximation.',
+      },
+    ],
+    import_report: {
+      finding_packets: {
+        packets: [
+          {},
+          {
+            type: 'core_html_block',
+            loss_class: 'editable_approximation',
+            source_diagnostic: {
+              source_path: 'posts/page-home.post_content',
+              selector: 'section.hero',
+            },
+            message: 'Core HTML fallback remained editable.',
+          },
+        ],
+      },
+    },
+  };
+
+  const result = collectFixtureMatrixRunResults({ matrix, outputDirectory, codeboxOutput });
+  const diagnostics = result.fixtures[0].diagnostics;
+
+  assert.equal(diagnostics.length, 3);
+  assert.equal(diagnostics.every((diagnostic) => diagnostic && Object.keys(diagnostic).length > 0), true);
+  assert.equal(diagnostics.every((diagnostic) => typeof diagnostic.kind === 'string' && diagnostic.kind.length > 0), true);
+  assert.equal(result.summary.finding_count, 3);
+  assert.equal(result.summary.loss_classes.preserved_runtime_island, 1);
+  assert.equal(result.summary.loss_classes.editable_approximation, 2);
+  assert.equal(result.summary.loss_classes.unsupported_loss, undefined);
+});
+
 test('collects SSI finding packet source and observed context from fixture artifacts', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-finding-packet-context-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'packet-context-test' });
