@@ -34,26 +34,18 @@ export async function runWpCodeboxRecipe(options = {}) {
   }
 
   const base = wpCodeboxCommand(options.wpCodeboxBin || wpCodeboxBin());
-  const args = [
-    ...(base.args || []),
-    'recipe-run',
-    '--recipe', options.recipeFile,
-    '--artifacts', options.artifactsDir,
-    ...(options.outputFile ? ['--output', options.outputFile] : []),
-    '--json',
-  ].filter(Boolean);
+  const args = recipeRunArgs(base, options, { output: Boolean(options.outputFile) });
 
   if (options.outputFile) {
     const result = await spawnRecipeWithTails(base.command, args);
+    if (result.status !== 0 && recipeRunOutputUnsupported(result)) {
+      return runWpCodeboxRecipeStdoutFallback(base, options);
+    }
+
     const output = readTextFile(options.outputFile);
     const parsed = parseJsonText(output);
     if (result.status !== 0) {
-      const error = new Error(childFailureMessage(result));
-      error.code = result.error?.code || result.status || 1;
-      error.signal = result.signal || result.error?.signal || '';
-      error.stdout = result.stdout || '';
-      error.stderr = result.stderr || '';
-      throw error;
+      throw childFailureError(result);
     }
 
     return {
@@ -72,12 +64,7 @@ export async function runWpCodeboxRecipe(options = {}) {
   });
   const parsed = parseJsonText(result.stdout);
   if (result.status !== 0) {
-    const error = new Error(childFailureMessage(result));
-    error.code = result.error?.code || result.status || 1;
-    error.signal = result.signal || result.error?.signal || '';
-    error.stdout = result.stdout || '';
-    error.stderr = result.stderr || '';
-    throw error;
+    throw childFailureError(result);
   }
 
   return {
@@ -87,6 +74,48 @@ export async function runWpCodeboxRecipe(options = {}) {
     stderr: result.stderr || '',
     json: parsed,
   };
+}
+
+function recipeRunArgs(base, options, { output }) {
+  return [
+    ...(base.args || []),
+    'recipe-run',
+    '--recipe', options.recipeFile,
+    '--artifacts', options.artifactsDir,
+    ...(output && options.outputFile ? ['--output', options.outputFile] : []),
+    '--json',
+  ].filter(Boolean);
+}
+
+async function runWpCodeboxRecipeStdoutFallback(base, options) {
+  const result = await spawnRecipeToOutputFile(base.command, recipeRunArgs(base, options, { output: false }), options.outputFile);
+  const output = readTextFile(options.outputFile);
+  const parsed = parseJsonText(output);
+  if (result.status !== 0) {
+    throw childFailureError(result);
+  }
+
+  return {
+    exitCode: 0,
+    outputFile: options.outputFile,
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    json: parsed,
+  };
+}
+
+function childFailureError(result) {
+  const error = new Error(childFailureMessage(result));
+  error.code = result.error?.code || result.status || 1;
+  error.signal = result.signal || result.error?.signal || '';
+  error.stdout = result.stdout || '';
+  error.stderr = result.stderr || '';
+  return error;
+}
+
+function recipeRunOutputUnsupported(result) {
+  const text = `${result.stderr || ''}\n${result.stdout || ''}\n${result.error?.message || ''}`;
+  return /Unknown option:\s*--output/.test(text);
 }
 
 function spawnRecipeWithTails(command, args) {
@@ -108,6 +137,39 @@ function spawnRecipeWithTails(command, args) {
         error: spawnError,
         stdout: stdout.toString(),
         stderr: stderr.toString(),
+      });
+    });
+  });
+}
+
+function spawnRecipeToOutputFile(command, args, outputFile) {
+  return new Promise((resolve) => {
+    const stdout = new RingTextBuffer(WP_CODEBOX_RECIPE_TAIL_BYTES);
+    const stderr = new RingTextBuffer(WP_CODEBOX_RECIPE_TAIL_BYTES);
+    const output = fs.createWriteStream(outputFile, { encoding: 'utf8' });
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let spawnError = null;
+
+    child.stdout?.on('data', (chunk) => {
+      stdout.push(chunk);
+      if (!output.write(chunk)) {
+        child.stdout.pause();
+      }
+    });
+    output.on('drain', () => child.stdout?.resume());
+    child.stderr?.on('data', (chunk) => stderr.push(chunk));
+    child.on('error', (error) => {
+      spawnError = error;
+    });
+    child.on('close', (status, signal) => {
+      output.end(() => {
+        resolve({
+          status,
+          signal,
+          error: spawnError,
+          stdout: stdout.toString(),
+          stderr: stderr.toString(),
+        });
       });
     });
   });

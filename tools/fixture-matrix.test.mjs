@@ -1686,6 +1686,30 @@ for (let index = 0; index < 12; index += 1) {
   });
 });
 
+test('WP Codebox recipe runner falls back when the CLI rejects recipe-run --output', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-codebox-output-fallback-'));
+  const outputFile = path.join(root, 'wp-codebox-output.json');
+  const recipeFile = path.join(root, 'recipe.json');
+  const artifactsDir = path.join(root, 'artifacts');
+  const fakeCodeboxBin = path.join(root, 'fake-wp-codebox-no-output.mjs');
+  mkdirSync(artifactsDir, { recursive: true });
+  writeFileSync(recipeFile, '{}');
+  writeFileSync(fakeCodeboxBin, `#!/usr/bin/env node
+if (process.argv.includes('--output')) {
+  process.stderr.write('Unknown option: --output\\n');
+  process.exit(1);
+}
+const payload = JSON.stringify({ results: [{ fixture_id: 'fallback-fixture', status: 'succeeded' }] });
+process.stdout.write(payload);
+`, 'utf8');
+  chmodSync(fakeCodeboxBin, 0o755);
+
+  const result = await runWpCodeboxRecipe({ recipeFile, artifactsDir, outputFile, wpCodeboxBin: fakeCodeboxBin });
+
+  assert.deepEqual(result.json, { results: [{ fixture_id: 'fallback-fixture', status: 'succeeded' }] });
+  assert.deepEqual(JSON.parse(readFileSync(outputFile, 'utf8')), result.json);
+});
+
 test('WP Codebox recipe runner keeps bounded tails when oversized child output fails', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-codebox-large-failure-'));
   const outputFile = path.join(root, 'wp-codebox-output.json');
