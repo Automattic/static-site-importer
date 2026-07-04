@@ -50,8 +50,9 @@ export async function runWpCodeboxRecipe(options = {}) {
   }
   const parsed = parseJsonText(result.stdout);
   if (result.status !== 0) {
-    const error = new Error(`wp-codebox recipe-run failed with exit ${result.status}`);
-    error.code = result.status || 1;
+    const error = new Error(childFailureMessage(result));
+    error.code = result.error?.code || result.status || 1;
+    error.signal = result.signal || result.error?.signal || '';
     error.stdout = result.stdout || '';
     error.stderr = result.stderr || '';
     throw error;
@@ -64,6 +65,23 @@ export async function runWpCodeboxRecipe(options = {}) {
     stderr: result.stderr || '',
     json: parsed,
   };
+}
+
+function childFailureMessage(result) {
+  const parts = [];
+  if (result.status !== null && result.status !== undefined) {
+    parts.push(`exit ${result.status}`);
+  }
+  if (result.signal) {
+    parts.push(`signal ${result.signal}`);
+  }
+  if (result.error?.code) {
+    parts.push(`spawn ${result.error.code}`);
+  }
+  if (result.error?.message) {
+    parts.push(result.error.message);
+  }
+  return `wp-codebox recipe-run failed with ${parts.join(', ') || 'unknown child process failure'}`;
 }
 
 function parseJsonText(text) {
