@@ -235,10 +235,15 @@ class Static_Site_Importer_Bundle_Data_Source {
 		}
 
 		if ( self::is_object_list( $value ) ) {
+			/** @var array<int,array<string,mixed>> $objects */
 			$objects = array();
 			foreach ( $value as $entry ) {
 				if ( is_array( $entry ) && ! array_is_list( $entry ) ) {
-					$objects[] = $entry;
+					$object = array();
+					foreach ( $entry as $key => $item ) {
+						$object[ (string) $key ] = $item;
+					}
+					$objects[] = $object;
 				}
 			}
 			if ( array() !== $objects ) {

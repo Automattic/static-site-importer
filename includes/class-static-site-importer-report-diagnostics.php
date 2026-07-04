@@ -1927,9 +1927,9 @@ class Static_Site_Importer_Report_Diagnostics {
 			$comma_position = strrpos( $clean, ',' );
 			$dot_position   = strrpos( $clean, '.' );
 			$decimal_sep    = false !== $comma_position && false !== $dot_position && $comma_position > $dot_position ? ',' : '.';
-		} elseif ( 1 === $comma_count && 0 === $dot_count ) {
+		} elseif ( 1 === $comma_count ) {
 			$decimal_sep = self::is_decimal_tail( $clean, ',' ) ? ',' : '';
-		} elseif ( 1 === $dot_count && 0 === $comma_count ) {
+		} elseif ( 1 === $dot_count ) {
 			$decimal_sep = self::is_decimal_tail( $clean, '.' ) ? '.' : '';
 		}
 		// Repeated single separators (e.g. "1,234,567") are digit grouping only.
