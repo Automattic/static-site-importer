@@ -56,6 +56,7 @@ import {
   editorBlockValidationStep,
   EDITOR_VALIDATE_BLOCKS_COMMAND,
   EDITOR_VALIDATION_METHOD,
+  buildGutenbergIncompatibilityRegistry,
   normalizeFixtureMatrixResult,
   normalizeLossClass,
   stageFixtureSource,
@@ -110,6 +111,103 @@ test('execution-requested fixture matrices still fail missing validation results
   assert.equal(result.summary.unacceptable_finding_count, 1);
   assert.equal(result.summary.unacceptable_loss_classes.fixture_not_run, 1);
   assert.equal(result.findings.some((finding) => finding.loss_class === 'fixture_not_run'), true);
+});
+
+test('gutenberg incompatibility registry aggregates recurring custom block candidates across fixtures', () => {
+  const result = normalizeFixtureMatrixResult({
+    matrix: {
+      id: 'gutenberg-registry-synthetic',
+      fixture_root: '/tmp/fixtures',
+      fixtures: [
+        { id: 'artist', fixture_path: '/tmp/fixtures/artist' },
+        { id: 'coffee', fixture_path: '/tmp/fixtures/coffee' },
+        { id: 'saas', fixture_path: '/tmp/fixtures/saas' },
+      ],
+    },
+    results: [
+      {
+        fixture_id: 'artist',
+        status: 'failed',
+        diagnostics: [
+          { kind: 'unsupported_html_fallback', observed: { block_name: 'core/html' }, selector: '.newsletter form', source: { snippet: '<form class="newsletter"><input type="email"><button>Subscribe</button></form>' }, reason: 'No core form block can represent newsletter form submission.' },
+          { kind: 'unsupported_html_fallback', observed: { block_name: 'core/html' }, selector: '.logo svg', source: { snippet: '<svg><defs><linearGradient id="g"></linearGradient></defs></svg>' }, reason: 'Inline SVG gradient fallback.' },
+        ],
+      },
+      {
+        fixture_id: 'coffee',
+        status: 'failed',
+        diagnostics: [
+          { kind: 'unsupported_html_fallback', observed: { block_name: 'core/html' }, selector: '.map svg', source: { snippet: '<svg><filter id="blur"></filter></svg>' }, reason: 'Inline SVG filter fallback.' },
+        ],
+      },
+      {
+        fixture_id: 'saas',
+        status: 'failed',
+        diagnostics: [
+          { kind: 'preserved_runtime_island', loss_class: 'preserved_runtime_island', runtime_carried: true, selector: '.cart-control', source: { snippet: '<button class="add-to-cart">Add to cart</button><input class="qty" type="number">' }, reason: 'Quantity stepper and add-to-cart require runtime.' },
+          { kind: 'unsupported_html_fallback', observed: { block_name: 'core/html' }, selector: '.signup form', source: { snippet: '<form><input name="email"><button>Start</button></form>' }, reason: 'Static form fallback.' },
+        ],
+      },
+    ],
+  });
+
+  const registry = result.gutenberg_incompatibility_registry;
+  const byKey = Object.fromEntries(registry.patterns.map((row) => [row.pattern_key, row]));
+
+  assert.equal(registry.schema, 'static-site-importer/gutenberg-incompatibility-registry/v1');
+  assert.equal(byKey['static-form'].classification, 'custom-block-candidate');
+  assert.equal(byKey['static-form'].fixture_count, 2);
+  assert.equal(byKey['inline-svg-filter-gradient'].classification, 'custom-block-candidate');
+  assert.equal(byKey['inline-svg-filter-gradient'].fixture_count, 2);
+  assert.equal(byKey['js-commerce-controls'].classification, 'convertible');
+  assert.equal(byKey['js-commerce-controls'].fixture_count, 1);
+  assert.deepEqual(registry.summary.top_patterns[0].classification, 'custom-block-candidate');
+});
+
+test('gutenberg incompatibility registry keeps runtime islands separate and consumes editor divergence signals', () => {
+  const registry = buildGutenbergIncompatibilityRegistry({
+    matrix_id: 'runtime-and-editor-signals',
+    fixtures: [
+      {
+        fixture_id: 'canvas-fixture',
+        editor_render_divergence: [{ selector: '.hero-card', reason: 'Frontend renders but editor canvas drops the transformed child.' }],
+      },
+      {
+        fixture_id: 'runtime-fixture',
+      },
+    ],
+    findings: [
+      { fixture_id: 'runtime-fixture', kind: 'preserved_runtime_island', loss_class: 'preserved_runtime_island', runtime_carried: true, selector: 'canvas', reason: 'Canvas runtime island preserved.' },
+    ],
+  });
+  const byKey = Object.fromEntries(registry.patterns.map((row) => [row.pattern_key, row]));
+
+  assert.equal(byKey['legitimate-runtime-island'].classification, 'runtime-island');
+  assert.equal(byKey['editor-render-divergence'].classification, 'convertible');
+  assert.equal(byKey['editor-render-divergence'].signals.editor_render_divergence, 1);
+});
+
+test('gutenberg incompatibility registry artifacts are written with fixture matrix outputs', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-gutenberg-registry-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'gutenberg-registry-artifact-test' });
+  const written = writeFixtureMatrixArtifacts({
+    outputDirectory,
+    matrix,
+    result: normalizeFixtureMatrixResult({
+      matrix,
+      results: [
+        {
+          fixture_id: 'simple-site',
+          status: 'failed',
+          diagnostics: [{ kind: 'unsupported_html_fallback', observed: { block_name: 'core/html' }, source: { snippet: '<form><input><button>Send</button></form>' }, reason: 'No core form block.' }],
+        },
+      ],
+    }),
+  });
+
+  assert.ok(existsSync(path.join(outputDirectory, 'gutenberg-incompatibility-registry.json')));
+  assert.ok(existsSync(path.join(outputDirectory, 'gutenberg-incompatibility-registry.md')));
+  assert.ok(written.artifact_refs.some((ref) => ref.artifact_id === 'gutenberg-incompatibility-registry'));
 });
 
 test('matrix artifacts use the product base64 encoding for EVERY payload, including text', () => {
