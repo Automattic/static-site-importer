@@ -47,8 +47,7 @@ top-level fixtures):
 node tools/run-fixture-matrix.mjs \
   --runner homeboy-lab \
   --static-site-importer ~/Developer/static-site-importer \
-  --blocks-engine ~/Developer/blocks-engine \
-  --lab-only
+  --blocks-engine ~/Developer/blocks-engine
 ```
 
 The wrapper composes the existing Homeboy surfaces rather than replacing the
@@ -338,7 +337,12 @@ full-page, but SSI previously overrode it with `full-page=false`, which limited
 the evidence to the requested viewport and missed below-the-fold regressions. Use
 `visualParityFullPage: false` only for an explicitly bounded exploratory run.
 
-## Running the matrix locally
+## Running the Matrix
+
+The wrapper has three execution modes. Use `--dry-run` with any mode to inspect
+the composed Homeboy commands before running the matrix.
+
+### Local Hot Execution
 
 `homeboy bench` auto-offloads to a connected default Lab runner whenever one is
 configured — even with no `--runner` flag. The offload translates
@@ -357,6 +361,40 @@ node tools/run-fixture-matrix.mjs \
   --fixture-root <dir-of-fixture-subdirs> \
   --wp-codebox-bin <wp-codebox>/packages/cli/dist/index.js
 ```
+
+`--runner local` is accepted as an alias for `--local` because Homeboy's `local`
+runner is not a Lab offload target. The wrapper maps it to the same hot-local
+command plan and does not pass `--runner local` through to Homeboy.
+
+### Lab Offload
+
+To offload to the connected Lab runner, select the runner and omit `--local`:
+
+```
+node tools/run-fixture-matrix.mjs \
+  --runner homeboy-lab \
+  --static-site-importer <ssi-checkout> \
+  --blocks-engine <blocks-engine-checkout>
+```
+
+This passes `--runner homeboy-lab` to Homeboy and does not inject
+`--force-hot --allow-local-hot`, so Homeboy can hand the bench to the connected
+runner. Use `--lab-only` without `--local` when any Lab runner is acceptable and a
+local fallback should be treated as a failure.
+
+### Default / Auto Routing
+
+With no `--local`, `--runner`, or `--lab-only`, the wrapper leaves routing to
+`homeboy bench`. In environments with a connected default Lab runner this may
+offload automatically. If you need deterministic local execution, pass `--local`;
+if you need deterministic Lab execution, pass `--runner <id>` or `--lab-only`.
+
+Mutual-exclusion rules:
+
+- `--local` cannot be combined with `--runner <remote>`.
+- `--local` cannot be combined with `--lab-only`.
+- Pick exactly one explicit target for deterministic runs: local-hot (`--local`)
+  or Lab offload (`--runner homeboy-lab` / `--lab-only`).
 
 Notes:
 - The `editor-validate-blocks` step (#1597) requires a wp-codebox build that

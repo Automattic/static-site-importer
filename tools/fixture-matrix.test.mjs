@@ -1626,6 +1626,80 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   assert.ok(visualGateOptOutPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE=0'));
 });
 
+test('fixture matrix operator rejects contradictory local and Lab routing', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-routing-conflict-'));
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  const fixtureRoot = path.join(root, 'fixtures');
+  mkdirSync(staticSiteImporter, { recursive: true });
+  mkdirSync(path.join(fixtureRoot, 'fixture-a'), { recursive: true });
+
+  assert.throws(() => buildFixtureMatrixRunPlan({
+    local: true,
+    runner: 'homeboy-lab',
+    staticSiteImporter,
+    fixtureRoot,
+  }), /--local forces hot execution on this machine and cannot be combined with --runner homeboy-lab/);
+
+  assert.throws(() => buildFixtureMatrixRunPlan({
+    local: true,
+    labOnly: true,
+    staticSiteImporter,
+    fixtureRoot,
+  }), /--local forces hot execution on this machine and cannot be combined with --lab-only/);
+});
+
+test('fixture matrix operator composes legible local-hot and Lab offload routing', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-routing-plan-'));
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  const fixtureRoot = path.join(root, 'fixtures');
+  mkdirSync(staticSiteImporter, { recursive: true });
+  mkdirSync(path.join(fixtureRoot, 'fixture-a'), { recursive: true });
+
+  const labPlan = buildFixtureMatrixRunPlan({
+    runner: 'homeboy-lab',
+    staticSiteImporter,
+    fixtureRoot,
+    skipInstall: true,
+    skipSync: true,
+  });
+  const labArgs = labPlan.steps.at(-1).args;
+  assert.equal(labPlan.execution_target, 'lab-offload:homeboy-lab');
+  assert.match(labPlan.steps.at(-1).label, /lab-offload:homeboy-lab/);
+  assert.ok(labArgs.includes('--runner'));
+  assert.ok(labArgs.includes('homeboy-lab'));
+  assert.equal(labArgs.includes('--force-hot'), false);
+  assert.equal(labArgs.includes('--allow-local-hot'), false);
+
+  const localPlan = buildFixtureMatrixRunPlan({
+    local: true,
+    staticSiteImporter,
+    fixtureRoot,
+    skipInstall: true,
+    skipSync: true,
+  });
+  const localArgs = localPlan.steps.at(-1).args;
+  assert.equal(localPlan.execution_target, 'local-hot');
+  assert.match(localPlan.steps.at(-1).label, /local-hot/);
+  assert.ok(localArgs.includes('--force-hot'));
+  assert.ok(localArgs.includes('--allow-local-hot'));
+  assert.equal(localArgs.includes('--runner'), false);
+
+  const runnerLocalPlan = buildFixtureMatrixRunPlan({
+    runner: 'local',
+    staticSiteImporter,
+    fixtureRoot,
+    skipInstall: true,
+    skipSync: true,
+  });
+  const runnerLocalArgs = runnerLocalPlan.steps.at(-1).args;
+  assert.equal(runnerLocalPlan.execution_target, 'local-hot');
+  assert.equal(runnerLocalPlan.runner, '');
+  assert.equal(runnerLocalPlan.local, true);
+  assert.ok(runnerLocalArgs.includes('--force-hot'));
+  assert.ok(runnerLocalArgs.includes('--allow-local-hot'));
+  assert.equal(runnerLocalArgs.includes('--runner'), false);
+});
+
 test('fixture matrix operator plan forwards complexity lane settings', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-complexity-plan-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
