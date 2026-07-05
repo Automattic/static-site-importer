@@ -19,6 +19,7 @@ import runFixtureMatrixBench, {
   fixtureMatrixBatchRunSummary,
   mapWithConcurrency,
   materializeVisualCompareArtifacts,
+  materializeEditorFidelityArtifacts,
   resolveBlocksEnginePhpTransformerPath,
   runFixtureMatrix,
 } from '../bench/static-site-fixture-matrix.bench.mjs';
@@ -41,6 +42,9 @@ import {
   collectBlockComposition,
   collectEditorValidationDiagnostics,
   collectEditorValidation,
+  collectEditorFrontendParity,
+  collectEditorFrontendParityDiagnostics,
+  collectImportedFrontPage,
   collectFixtureMatrixRunResults,
   computeFixtureEditorQuality,
   parseSerializedBlockNames,
@@ -53,6 +57,8 @@ import {
   buildFixtureArtifact,
   createFixtureMatrix,
   editorBlockValidationStep,
+  editorCanvasCaptureStep,
+  EDITOR_RENDER_DIVERGENCE_KIND,
   EDITOR_VALIDATE_BLOCKS_COMMAND,
   EDITOR_VALIDATION_METHOD,
   normalizeFixtureMatrixResult,
@@ -4053,6 +4059,116 @@ test('visual-compare PNGs are copied to the bench artifact root and registered',
   assert.equal(fixture.diagnostics[0].artifact_refs.find((ref) => ref.artifact_id === 'diff_screenshot').path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'diff.png'));
 });
 
+test('editor-canvas capture step opens the imported post id and captures a screenshot', () => {
+  const step = editorCanvasCaptureStep({ fixture: { id: 'simple-site', post_id: 123, post_type: 'page' }, waitTimeout: '30s' });
+
+  assert.equal(step.command, 'wordpress.editor-open');
+  assert.equal(step.allowFailure, true);
+  assert.ok(step.args.includes('post-id=123'));
+  assert.ok(step.args.includes('post-type=page'));
+  assert.ok(step.args.includes('capture=steps,console,errors,html,screenshot,editor-state'));
+  assert.ok(step.args.includes('wait-timeout=30s'));
+  assert.equal(step.metadata.phase, 'editor-fidelity');
+  assert.equal(step.metadata.post_id, 123);
+  assert.equal(editorCanvasCaptureStep({ fixture: { id: 'simple-site' } }), null);
+});
+
+test('imported front-page post id is surfaced from SSI import provenance', () => {
+  const payload = {
+    result: { pages: { 'website/index.html': 77 } },
+    source_documents: {
+      pages: [
+        { source_path: 'website/about.html', post_id: 78, post_type: 'page', permalink: 'https://example.test/about/' },
+        { source_path: 'website/index.html', post_id: 77, post_type: 'page', permalink: 'https://example.test/' },
+      ],
+    },
+  };
+
+  assert.deepEqual(collectImportedFrontPage(payload), {
+    source_path: 'website/index.html',
+    post_id: 77,
+    post_type: 'page',
+    permalink: 'https://example.test/',
+    is_front_page: true,
+  });
+});
+
+test('editor frontend parity metrics emit editor_render_divergence only when over threshold', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-editor-parity-'));
+  const fixtureDirectory = path.join(outputDirectory, 'simple-site');
+  mkdirSync(fixtureDirectory, { recursive: true });
+  const frontend = solidPng(4, 4, [255, 255, 255, 255]);
+  const editor = solidPng(4, 4, [0, 0, 0, 255]);
+  writePng(path.join(fixtureDirectory, 'frontend.png'), frontend);
+  writePng(path.join(fixtureDirectory, 'editor.png'), editor);
+  const payload = {
+    post_id: 77,
+    editor_screenshot: 'editor.png',
+    frontend_screenshot: 'frontend.png',
+  };
+
+  const parity = collectEditorFrontendParity(payload, { fixtureArtifactsDirectory: fixtureDirectory });
+  assert.equal(parity.schema, 'static-site-importer/editor-frontend-parity/v1');
+  assert.equal(parity.metrics.raw_mismatch_pixels, 16);
+  assert.equal(parity.metrics.raw_total_pixels, 16);
+  assert.equal(parity.metrics.raw_mismatch_ratio, 1);
+
+  assert.deepEqual(collectEditorFrontendParityDiagnostics(payload, { fixtureArtifactsDirectory: fixtureDirectory, threshold: 1, gate: true }), []);
+  const diagnostics = collectEditorFrontendParityDiagnostics(payload, { fixtureArtifactsDirectory: fixtureDirectory, threshold: 0.1, gate: true });
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].kind, EDITOR_RENDER_DIVERGENCE_KIND);
+  assert.equal(diagnostics[0].gate, true);
+  assert.equal(diagnostics[0].editor_frontend_parity_gate, true);
+
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'editor-parity-gate-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{ fixture_id: 'simple-site', status: 'passed', diagnostics }],
+  });
+  const finding = result.findings.find((item) => item.kind === EDITOR_RENDER_DIVERGENCE_KIND);
+  assert.equal(finding.loss_class, 'editor_render_divergence');
+  assert.equal(finding.loss_acceptance, 'unacceptable');
+  assert.equal(result.fixtures[0].status, 'failed');
+});
+
+test('editor canvas screenshots are copied to the bench artifact root and registered', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-editor-persisted-output-'));
+  const codeboxArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-editor-codebox-artifacts-'));
+  const runtimeDirectory = path.join(codeboxArtifactsDirectory, 'runtime-123', 'files', 'browser');
+  mkdirSync(runtimeDirectory, { recursive: true });
+  writeFileSync(path.join(runtimeDirectory, 'editor-screenshot.png'), 'fake editor screenshot');
+  const result = {
+    fixtures: [
+      {
+        fixture_id: 'simple-site',
+        diagnostics: [
+          {
+            kind: EDITOR_RENDER_DIVERGENCE_KIND,
+            artifact_refs: [
+              { schema: 'homeboy/artifact-ref/v1', artifact_id: 'editor_screenshot', kind: 'editor-fidelity', path: 'files/browser/editor-screenshot.png' },
+            ],
+          },
+        ],
+        editor_frontend_parity: {
+          schema: 'static-site-importer/editor-frontend-parity/v1',
+          artifacts: {
+            editor_screenshot: { status: 'captured', ref: { path: 'files/browser/editor-screenshot.png' } },
+          },
+        },
+      },
+    ],
+  };
+
+  const persisted = materializeEditorFidelityArtifacts({ result, outputDirectory, codeboxArtifactsDirectory });
+  const artifact = persisted.artifacts['editor_fidelity_simple-site_editor_canvas'];
+  assert.ok(artifact, 'expected editor fidelity artifact registration');
+  assert.equal(readFileSync(artifact.path, 'utf8'), 'fake editor screenshot');
+  assert.equal(artifact.path, path.join(outputDirectory, 'editor-fidelity', 'simple-site', 'editor-canvas.png'));
+  assert.equal(persisted.result.fixtures[0].editor_frontend_parity.owner, 'bench_artifact_root');
+  assert.equal(persisted.result.fixtures[0].editor_frontend_parity.artifacts.editor_screenshot.ref.path, artifact.path);
+  assert.equal(persisted.result.fixtures[0].diagnostics[0].artifact_refs[0].path, artifact.path);
+});
+
 test('visual-compare dimension mismatch gates even with zero pixel metrics when gating is on', () => {
   const payload = { comparison: { mismatchPixels: 0, totalPixels: 0, dimensionMismatch: true } };
   const diagnostics = collectVisualParityDiagnostics(payload, { gate: true });
@@ -4686,6 +4802,12 @@ function syntheticVisualParityPng(width, height) {
 function blankPng(width, height) {
   const image = new PNG({ width, height });
   fillRect(image, 0, 0, width, height, [255, 255, 255, 255]);
+  return image;
+}
+
+function solidPng(width, height, rgba) {
+  const image = new PNG({ width, height });
+  fillRect(image, 0, 0, width, height, rgba);
   return image;
 }
 

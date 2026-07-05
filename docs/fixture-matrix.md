@@ -215,6 +215,8 @@ The workload composes these generic surfaces:
   includes #1597; older builds reject the recipe at schema validation.
 - WP Codebox `wordpress.visual-compare` command for the pixel visual-parity step
   (see below).
+- WP Codebox `wordpress.editor-open post-id=<id> capture=...,screenshot,...` for
+  editor-canvas screenshot evidence when the imported page id is available.
 
 SSI-specific behavior remains here: plugin slug/defaults, fixture artifact
 packing, `static-site-importer validate-artifact` command construction,
@@ -264,6 +266,57 @@ step and returned `validation_method: wp.blocks.validateBlock`,
 unit-tested in `tools/fixture-matrix.test.mjs`. The remaining enablement for a
 true imported-content assertion is targeting the imported post rather than a
 blank editor (gap documented above).
+
+## Editor-Fidelity Capture
+
+The editor-fidelity lane checks the gap between block validity and actual editor
+rendering. A fixture can have valid serialized blocks and a faithful frontend while
+the real block editor canvas shows blank/broken content or opaque fallback islands.
+
+SSI surfaces the imported front-page record generically from the import result:
+`source_documents.pages[]`, `source_of_truth.desired.pages[]`, or the returned
+`pages` map. The chosen record lands on the fixture result as `imported_front_page`
+with `post_id`, `post_type`, `source_path`, and `permalink` when available.
+
+The wp-codebox command used for the screenshot is:
+
+```text
+wordpress.editor-open post-id=<imported-front-page-post-id> post-type=page capture=steps,console,errors,html,screenshot,editor-state
+```
+
+`wordpress.editor-open` opens `/wp-admin/post.php?post=<id>&action=edit`, waits for
+the block editor shell, and writes `files/browser/editor-screenshot.png` as a
+full-page screenshot. SSI persists that screenshot under
+`editor-fidelity/<fixture-id>/editor-canvas.png` when wp-codebox exposes it in the
+run artifacts.
+
+When both the editor screenshot and imported frontend screenshot are available,
+`collectEditorFrontendParity` scores editor-canvas vs frontend-candidate PNGs using
+the same bounded offset-tolerant pixelmatch path as visual parity. Metrics land on
+`fixture.editor_frontend_parity.metrics`:
+
+- `raw_mismatch_pixels`, `raw_total_pixels`, `raw_mismatch_ratio`
+- `aligned_mismatch_pixels`, `aligned_total_pixels`, `aligned_mismatch_ratio`
+- `detected_offset`
+- `alignment_pixelmatch_threshold`
+
+Over-threshold divergence emits `editor_render_divergence`. Like visual parity,
+capture/scoring is non-gating by default. Pass
+`--editor-frontend-parity-gate` / `SSI_FIXTURE_MATRIX_EDITOR_FRONTEND_PARITY_GATE=1`
+to make over-threshold divergence unacceptable. The threshold is configurable via
+`--editor-frontend-parity-threshold` /
+`SSI_FIXTURE_MATRIX_EDITOR_FRONTEND_PARITY_THRESHOLD`; the default is exact parity
+(`0`).
+
+Current wp-codebox gap: recipes are static and cannot interpolate the JSON output
+of the SSI import step into a later `post-id=<id>` argument. SSI now writes and
+collects the imported page id, and the step helper composes the correct
+`wordpress.editor-open` command when a post id is known, but a single in-sandbox
+recipe needs an upstream wp-codebox primitive such as output interpolation,
+`target=front-page` support for `wordpress.editor-open`, or a composed
+`wordpress.editor-open-imported-front-page` style command. Without that, live runs
+can persist/score editor screenshots only when the screenshot artifact is produced
+by a post-id-targeted editor step.
 
 ## Pixel Visual Parity Gate
 

@@ -190,6 +190,7 @@ export async function runFixtureMatrix(options) {
   let runtimeError = null;
   let collectedResult = written.result;
   let visualParityArtifacts = {};
+  let editorFidelityArtifacts = {};
   if (options.run) {
     const batchSize = positiveInteger(options.batchSize, DEFAULT_BATCH_SIZE);
     const concurrency = boundedConcurrency(options.concurrency, DEFAULT_BATCH_CONCURRENCY, MAX_BATCH_CONCURRENCY);
@@ -217,6 +218,7 @@ export async function runFixtureMatrix(options) {
       batchRuns.push(outcome.batchRun);
       batchResults.push(outcome.batchResult);
       visualParityArtifacts = { ...visualParityArtifacts, ...(outcome.visualParityArtifacts || {}) };
+      editorFidelityArtifacts = { ...editorFidelityArtifacts, ...(outcome.editorFidelityArtifacts || {}) };
       if (outcome.childCommandFailure) {
         childCommandFailures.push(outcome.childCommandFailure);
       }
@@ -280,6 +282,7 @@ export async function runFixtureMatrix(options) {
     ...(runtime?.childCommandFailures?.length ? { child_command_failures: runtime.childCommandFailures } : {}),
     result_file: path.join(outputDirectory, 'static-site-fixture-matrix-result.json'),
     visual_parity_artifacts: visualParityArtifacts,
+    editor_fidelity_artifacts: editorFidelityArtifacts,
     result_summary: collectedResult.summary,
     runtime: runtime ? runtimeSummary(runtime, runtimeError) : null,
   };
@@ -383,6 +386,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     codeboxOutput: batchRuntime?.json,
     codeboxError: batchError,
     visualParity: visualParityGateInput(options),
+    editorFrontendParity: editorFrontendParityGateInput(options),
     liveWpParity: liveWpParityCollectorInput(options),
   });
   const visualCompare = materializeVisualCompareArtifacts({
@@ -390,8 +394,79 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     codeboxArtifactsDirectory,
     outputDirectory,
   });
+  const editorFidelity = materializeEditorFidelityArtifacts({
+    result: visualCompare.result,
+    codeboxArtifactsDirectory,
+    outputDirectory,
+  });
 
-  return { batchRun, batchResult: visualCompare.result, visualParityArtifacts: visualCompare.artifacts, error: batchError, childCommandFailure };
+  return { batchRun, batchResult: editorFidelity.result, visualParityArtifacts: visualCompare.artifacts, editorFidelityArtifacts: editorFidelity.artifacts, error: batchError, childCommandFailure };
+}
+
+export function materializeEditorFidelityArtifacts(input = {}) {
+  const result = input.result || {};
+  const outputDirectory = path.resolve(input.outputDirectory || input.output_directory || '');
+  const codeboxArtifactsDirectory = path.resolve(input.codeboxArtifactsDirectory || input.codebox_artifacts_directory || '');
+  const artifacts = {};
+  const fixtures = Array.isArray(result.fixtures) ? result.fixtures : [];
+  const updatedFixtures = fixtures.map((fixture) => materializeFixtureEditorFidelityArtifacts({
+    fixture,
+    outputDirectory,
+    codeboxArtifactsDirectory,
+    artifacts,
+  }));
+  return {
+    result: { ...result, fixtures: updatedFixtures },
+    artifacts,
+  };
+}
+
+function materializeFixtureEditorFidelityArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory, artifacts }) {
+  const editorParity = fixture.editor_frontend_parity || fixture.editorFrontendParity;
+  const slots = editorParity?.artifacts || {};
+  const fixtureId = fixture.fixture_id || fixture.fixtureId || '';
+  if (!fixtureId || !slots || typeof slots !== 'object') {
+    return fixture;
+  }
+
+  const rewrites = new Map();
+  const updatedSlots = { ...slots };
+  for (const slot of [
+    ['editor_screenshot', 'editor-canvas', ['editor_screenshot']],
+  ]) {
+    const [slotName, fileStem, artifactIds] = slot;
+    const refPath = slots[slotName]?.ref?.path || visualDiagnosticRefPath(fixture.diagnostics, artifactIds);
+    const sourcePath = resolveCodeboxArtifactPath(refPath, codeboxArtifactsDirectory);
+    if (!sourcePath || !fs.existsSync(sourcePath)) {
+      continue;
+    }
+    const persistedPath = path.join(outputDirectory, 'editor-fidelity', fixtureId, `${fileStem}.png`);
+    fs.mkdirSync(path.dirname(persistedPath), { recursive: true });
+    fs.copyFileSync(sourcePath, persistedPath);
+    rewrites.set(refPath, persistedPath);
+    updatedSlots[slotName] = {
+      ...slots[slotName],
+      status: 'captured',
+      kind: slotName,
+      ref: artifactRef(slotName, persistedPath, 'editor-fidelity'),
+    };
+    artifacts[`editor_fidelity_${artifactKey(fixtureId)}_${fileStem.replace(/-/g, '_')}`] = { path: persistedPath };
+  }
+
+  if (rewrites.size === 0) {
+    return fixture;
+  }
+
+  return {
+    ...fixture,
+    diagnostics: rewriteDiagnosticArtifactRefs(fixture.diagnostics, rewrites),
+    artifact_refs: rewriteArtifactRefs(fixture.artifact_refs, rewrites),
+    editor_frontend_parity: {
+      ...editorParity,
+      owner: 'bench_artifact_root',
+      artifacts: updatedSlots,
+    },
+  };
 }
 
 export function materializeVisualCompareArtifacts(input = {}) {
@@ -955,6 +1030,8 @@ function optionsFromEnv(env = process.env) {
     visualParityPixelmatchThreshold: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD,
     visualParityCandidateUrl: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_CANDIDATE_URL || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_CANDIDATE_URL,
     visualParitySourceBaseUrl: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL,
+    editorFrontendParityGate: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_EDITOR_FRONTEND_PARITY_GATE) || isTruthy(env.SSI_FIXTURE_MATRIX_EDITOR_FRONTEND_PARITY_GATE),
+    editorFrontendParityThreshold: benchEnv.SSI_FIXTURE_MATRIX_EDITOR_FRONTEND_PARITY_THRESHOLD || env.SSI_FIXTURE_MATRIX_EDITOR_FRONTEND_PARITY_THRESHOLD,
     minNativeRate: benchEnv.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE || env.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE,
   };
 }
@@ -990,6 +1067,13 @@ function visualParityGateInput(options) {
     maxHorizontalShift: options.visualParityMaxHorizontalShift,
     offsetTolerance: options.visualParityOffsetTolerance,
     pixelmatchThreshold: options.visualParityPixelmatchThreshold,
+  };
+}
+
+function editorFrontendParityGateInput(options) {
+  return {
+    threshold: options.editorFrontendParityThreshold,
+    gate: options.editorFrontendParityGate === true,
   };
 }
 

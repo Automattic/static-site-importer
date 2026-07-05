@@ -105,6 +105,8 @@ export function buildFixtureMatrixRunPlan(input) {
     ...(options.visualParityMaxHorizontalShift ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_HORIZONTAL_SHIFT: String(options.visualParityMaxHorizontalShift) } : {}),
     ...(options.visualParityOffsetTolerance ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_OFFSET_TOLERANCE: String(options.visualParityOffsetTolerance) } : {}),
     ...(options.visualParityPixelmatchThreshold ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD: String(options.visualParityPixelmatchThreshold) } : {}),
+    ...(options.editorFrontendParityGate ? { SSI_FIXTURE_MATRIX_EDITOR_FRONTEND_PARITY_GATE: '1' } : {}),
+    ...(options.editorFrontendParityThreshold ? { SSI_FIXTURE_MATRIX_EDITOR_FRONTEND_PARITY_THRESHOLD: String(options.editorFrontendParityThreshold) } : {}),
     // Opt-in live-WP parity capture (off by default). When set, the bench appends
     // the deterministic `wordpress.capture-html` step per fixture and runs the
     // blocks-engine live-wp-parity comparator host-side. Absent => byte-identical
@@ -177,6 +179,11 @@ export function buildFixtureMatrixRunPlan(input) {
       // --no-visual-parity) so a run still produces native-rate/loss-classes/
       // findings, just without the validateBlock editor-validity data.
       enabled: options.editorValidation !== false,
+    },
+    editor_fidelity: {
+      enabled: true,
+      gate: options.editorFrontendParityGate === true,
+      threshold: options.editorFrontendParityThreshold ? Number(options.editorFrontendParityThreshold) : null,
     },
     code_freshness: codeFreshness,
     transformer_commit: resolveTransformerCommit(codeFreshness),
@@ -652,7 +659,7 @@ function parseArgs(args) {
     if (arg.startsWith('--')) {
       const [rawKey, rawValue] = arg.slice(2).split('=');
       const key = camelCase(rawKey);
-      const booleanKeys = new Set(['dryRun', 'skipInstall', 'skipSync', 'labOnly', 'local', 'allowLocalFallback', 'detachAfterHandoff', 'allowDirtyLabWorkspace', 'allowStaleOverride', 'visualParityGate', 'visualParityAlignment', 'liveWpParity']);
+      const booleanKeys = new Set(['dryRun', 'skipInstall', 'skipSync', 'labOnly', 'local', 'allowLocalFallback', 'detachAfterHandoff', 'allowDirtyLabWorkspace', 'allowStaleOverride', 'visualParityGate', 'visualParityAlignment', 'liveWpParity', 'editorFrontendParityGate']);
       if (booleanKeys.has(key)) {
         options[key] = true;
         continue;
