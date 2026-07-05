@@ -84,7 +84,7 @@ export function buildFixtureMatrixRunPlan(input) {
     ...(options.wpCodeboxBin ? { SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN: options.wpCodeboxBin } : {}),
     ...(options.editorValidation === false ? { SSI_FIXTURE_MATRIX_EDITOR_VALIDATION: '0' } : {}),
     ...(options.visualParity === false ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY: '0' } : {}),
-    ...(options.visualParityGate ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE: '1' } : {}),
+    ...(options.visualParityGate === false ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE: '0' } : { SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE: '1' }),
     ...(options.pixelThreshold ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD: String(options.pixelThreshold) } : {}),
     // Opt-in live-WP parity capture (off by default). When set, the bench appends
     // the deterministic `wordpress.capture-html` step per fixture and runs the
@@ -134,14 +134,15 @@ export function buildFixtureMatrixRunPlan(input) {
     allow_stale_override: Boolean(options.allowStaleOverride),
     visual_parity: {
       enabled: options.visualParity !== false,
-      // Opt-in hard gate; default capture-only because pixel diffs can be flaky.
-      gate: Boolean(options.visualParityGate),
+      // Honest dev-loop fidelity gate by default; --no-visual-parity-gate is the
+      // explicit exploratory opt-out.
+      gate: options.visualParityGate !== false,
       pixel_threshold: options.pixelThreshold ? Number(options.pixelThreshold) : null,
     },
     editor_quality: {
       // Editor-quality metrics (native_conversion_rate, core_html_fallback_ratio,
       // editor_invalid_count) are always scored and emitted. The native-rate gate
-      // is opt-in and off by default, mirroring --visual-parity-gate.
+      // is opt-in and off by default.
       native_rate_gate: Boolean(options.minNativeRate),
       min_native_rate: options.minNativeRate ? Number(options.minNativeRate) : null,
     },
@@ -559,8 +560,21 @@ export function summarizeRun(plan, { status } = {}) {
     top_pattern_families: normalizeSummaryRows(resultSummary.top_pattern_families),
     fixture_exemplars: normalizeSummaryRows(resultSummary.fixture_exemplars),
     diagnostic_blind_spots: normalizeSummaryRows(resultSummary.diagnostic_blind_spots),
+    run_refs: buildRunRefs(findFirstKey(output, 'run_id') || plan.run_id, plan.homeboy_bin),
     artifact_urls: collectArtifactUrls(artifacts),
     output_file: plan.output_file,
+  };
+}
+
+function buildRunRefs(runId, homeboyBin = 'homeboy') {
+  const id = String(runId || '').trim();
+  if (!id) {
+    return null;
+  }
+  return {
+    homeboy_run_id: id,
+    show: `${homeboyBin} runs show ${id}`,
+    artifacts: `${homeboyBin} runs artifacts ${id}`,
   };
 }
 
