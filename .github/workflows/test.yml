@@ -30,7 +30,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: Extra-Chill/homeboy-action@51ae1b48299c60f3850f68780adb1a42951ce9c8  # v2.8.6
+      - uses: Extra-Chill/homeboy-action@9474cf7db35bf1a34e5bc59b43a85cda5ec57188  # v2.8.9
         with:
           commands: review test
           php-version: ${{ matrix.php-version }}
