@@ -45,6 +45,7 @@ import {
   computeFixtureEditorQuality,
   parseSerializedBlockNames,
   collectVisualParityDiagnostics,
+  classifyVisualDiffRegions,
   findBestVisualParityOffset,
   liveWpParityCaptureStep,
   liveWpParityEnabled,
@@ -1345,6 +1346,88 @@ test('findBestVisualParityOffset returns deterministic offset metrics for identi
   assert.equal(score.detected_offset.x, 0);
   assert.equal(score.aligned_mismatch_pixels, 0);
   assert.equal(score.aligned_mismatch_ratio, 0);
+});
+
+test('visual diff region classification identifies pure color-fill changes as color_shift', () => {
+  const { fixtureArtifactsDirectory, payload } = visualDiffClassificationFixture('color-shift', (source, candidate) => {
+    fillRect(source, 8, 8, 24, 18, [20, 90, 160, 255]);
+    fillRect(candidate, 8, 8, 24, 18, [220, 180, 40, 255]);
+  });
+
+  const classification = classifyVisualDiffRegions(payload, { fixtureArtifactsDirectory });
+  assert.equal(classification.visual_diff_regions[0].dominant_cause, 'color_shift');
+  assert.equal(classification.visual_diff_cause_summary.color_shift, classification.visual_diff_regions[0].pixel_count);
+});
+
+test('visual diff region classification identifies blanked content as missing_or_extra_element', () => {
+  const { fixtureArtifactsDirectory, payload } = visualDiffClassificationFixture('missing-element', (source) => {
+    fillRect(source, 8, 8, 24, 18, [20, 90, 160, 255]);
+  });
+
+  const classification = classifyVisualDiffRegions(payload, { fixtureArtifactsDirectory });
+  assert.equal(classification.visual_diff_regions[0].dominant_cause, 'missing_or_extra_element');
+});
+
+test('visual diff region classification identifies shifted blocks as position_offset', () => {
+  const fixtureArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-classify-shift-'));
+  const visualDirectory = path.join(fixtureArtifactsDirectory, 'files', 'browser', 'visual-compare', 'shifted-block');
+  mkdirSync(visualDirectory, { recursive: true });
+  const source = blankPng(48, 40);
+  fillRect(source, 8, 8, 18, 16, [20, 90, 160, 255]);
+  const candidate = shiftedPng(source, 6, 0);
+  const diff = exactDiffPng(source, candidate);
+  writePng(path.join(visualDirectory, 'source.png'), source);
+  writePng(path.join(visualDirectory, 'candidate.png'), candidate);
+  writePng(path.join(visualDirectory, 'diff.png'), diff);
+
+  const classification = classifyVisualDiffRegions(visualComparePayload({
+    sourceScreenshot: 'files/browser/visual-compare/shifted-block/source.png',
+    candidateScreenshot: 'files/browser/visual-compare/shifted-block/candidate.png',
+    diffScreenshot: 'files/browser/visual-compare/shifted-block/diff.png',
+    mismatchPixels: 192,
+    totalPixels: 1920,
+    overlapMismatchPixels: 192,
+    overlapPixels: 1920,
+  }), { fixtureArtifactsDirectory, maxHorizontalShift: 8 });
+
+  assert.equal(classification.visual_diff_regions[0].dominant_cause, 'position_offset');
+});
+
+test('visual diff region classification identifies resized boxes as restyle_geometry', () => {
+  const { fixtureArtifactsDirectory, payload } = visualDiffClassificationFixture('resized-box', (source, candidate) => {
+    fillRect(source, 8, 8, 18, 18, [20, 90, 160, 255]);
+    fillRect(candidate, 8, 8, 28, 18, [20, 90, 160, 255]);
+  });
+
+  const classification = classifyVisualDiffRegions(payload, { fixtureArtifactsDirectory });
+  assert.equal(classification.visual_diff_regions[0].dominant_cause, 'restyle_geometry');
+});
+
+test('visual diff region classification prefers computed screenshot regions over stale upstream regions', () => {
+  const fixtureArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-classify-overlap-'));
+  const visualDirectory = path.join(fixtureArtifactsDirectory, 'files', 'browser', 'visual-compare', 'overlap');
+  mkdirSync(visualDirectory, { recursive: true });
+  const source = blankPng(48, 40);
+  const candidate = blankPng(48, 40);
+  fillRect(source, 8, 8, 24, 18, [20, 90, 160, 255]);
+  fillRect(candidate, 8, 8, 24, 18, [220, 180, 40, 255]);
+  const diff = exactDiffPng(source, candidate);
+  writePng(path.join(visualDirectory, 'source.png'), source);
+  writePng(path.join(visualDirectory, 'candidate.png'), candidate);
+  writePng(path.join(visualDirectory, 'diff.png'), diff);
+
+  const classification = classifyVisualDiffRegions(visualComparePayload({
+    sourceScreenshot: 'files/browser/visual-compare/overlap/source.png',
+    candidateScreenshot: 'files/browser/visual-compare/overlap/candidate.png',
+    diffScreenshot: 'files/browser/visual-compare/overlap/diff.png',
+    mismatchPixels: countDiffPixels(diff),
+    totalPixels: 48 * 40,
+    overlapMismatchPixels: 24 * 18,
+    overlapPixels: 48 * 40,
+    mismatchRegions: [{ x: 0, y: 36, width: 48, height: 4, pixels: 192 }],
+  }), { fixtureArtifactsDirectory });
+
+  assert.deepEqual(classification.visual_diff_regions[0].bbox, { x: 8, y: 8, width: 24, height: 18 });
 });
 
 test('fixture diagnostics drop empty rows and normalize kindless carriers with explicit kind', () => {
@@ -4653,24 +4736,85 @@ test('live-WP parity collector failure is isolated and never sinks the lane', ()
   assert.equal(result.schema, 'static-site-importer/fixture-matrix-result/v1');
 });
 
-function visualComparePayload({ sourceScreenshot, candidateScreenshot, mismatchPixels, totalPixels, overlapMismatchPixels, overlapPixels }) {
+function visualComparePayload({ sourceScreenshot, candidateScreenshot, diffScreenshot, mismatchPixels, totalPixels, overlapMismatchPixels, overlapPixels, dimensionMismatch = false, mismatchRegions = [] }) {
   return {
     schema: 'wp-codebox/visual-compare-matrix/v1',
     comparisons: [
       {
         name: 'synthetic',
         source: { url: 'file:///synthetic/index.html' },
-        files: { sourceScreenshot, candidateScreenshot },
+        files: { sourceScreenshot, candidateScreenshot, ...(diffScreenshot ? { diffScreenshot } : {}) },
         comparison: {
           mismatchPixels,
           totalPixels,
           overlapMismatchPixels,
           overlapPixels,
-          dimensionMismatch: false,
+          dimensionMismatch,
+          ...(mismatchRegions.length ? { mismatchRegions } : {}),
         },
       },
     ],
   };
+}
+
+function visualDiffClassificationFixture(name, mutate) {
+  const fixtureArtifactsDirectory = mkdtempSync(path.join(tmpdir(), `ssi-visual-classify-${name}-`));
+  const visualDirectory = path.join(fixtureArtifactsDirectory, 'files', 'browser', 'visual-compare', name);
+  mkdirSync(visualDirectory, { recursive: true });
+  const source = blankPng(48, 40);
+  const candidate = blankPng(48, 40);
+  mutate(source, candidate);
+  const diff = exactDiffPng(source, candidate);
+  writePng(path.join(visualDirectory, 'source.png'), source);
+  writePng(path.join(visualDirectory, 'candidate.png'), candidate);
+  writePng(path.join(visualDirectory, 'diff.png'), diff);
+  const mismatchPixels = countDiffPixels(diff);
+  return {
+    fixtureArtifactsDirectory,
+    payload: visualComparePayload({
+      sourceScreenshot: `files/browser/visual-compare/${name}/source.png`,
+      candidateScreenshot: `files/browser/visual-compare/${name}/candidate.png`,
+      diffScreenshot: `files/browser/visual-compare/${name}/diff.png`,
+      mismatchPixels,
+      totalPixels: 48 * 40,
+      overlapMismatchPixels: mismatchPixels,
+      overlapPixels: 48 * 40,
+    }),
+  };
+}
+
+function exactDiffPng(source, candidate) {
+  const image = blankPng(source.width, source.height);
+  fillRect(image, 0, 0, image.width, image.height, [0, 0, 0, 0]);
+  for (let y = 0; y < source.height; y += 1) {
+    for (let x = 0; x < source.width; x += 1) {
+      const index = ((y * source.width) + x) << 2;
+      const differs = source.data[index] !== candidate.data[index]
+        || source.data[index + 1] !== candidate.data[index + 1]
+        || source.data[index + 2] !== candidate.data[index + 2]
+        || source.data[index + 3] !== candidate.data[index + 3];
+      if (differs) {
+        image.data[index] = 255;
+        image.data[index + 1] = 0;
+        image.data[index + 2] = 0;
+        image.data[index + 3] = 255;
+      }
+    }
+  }
+  return image;
+}
+
+function countDiffPixels(diff) {
+  let pixels = 0;
+  for (let y = 0; y < diff.height; y += 1) {
+    for (let x = 0; x < diff.width; x += 1) {
+      const index = ((y * diff.width) + x) << 2;
+      if (diff.data[index] || diff.data[index + 1] || diff.data[index + 2]) {
+        pixels += 1;
+      }
+    }
+  }
+  return pixels;
 }
 
 function syntheticVisualParityPng(width, height) {
