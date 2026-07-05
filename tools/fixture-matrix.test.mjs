@@ -188,7 +188,7 @@ test('fixture capability manifests drive per-fixture plugin provisioning without
   assert.deepEqual(fixtureSteps('shop-site')[0].args, ['action=install', 'plugin=woocommerce', 'activate=true']);
   assert.deepEqual(fixtureSteps('shop-forms-site')[0].args, ['action=install', 'plugin=woocommerce', 'activate=true']);
   assert.deepEqual(fixtureSteps('shop-forms-site')[1].args, ['action=install', 'plugin=jetpack', 'activate=true']);
-  assert.equal(fixtureSteps('shop-site')[0].continue_on_error, true);
+  assert.equal(fixtureSteps('shop-site')[0].allowFailure, true);
   assert.equal(recipe.workflow.steps.some((step) => /--allow-missing-woocommerce/.test(step.args?.[0] || '')), false);
 });
 
@@ -2597,7 +2597,7 @@ test('recipe runs editor-validate-blocks against imported content after each imp
   assert.equal(editorStep.args.some((arg) => arg.startsWith('post-type=')), false);
   assert.ok(editorStep.args.includes('target=front-page'));
   assert.equal(editorStep.args.some((arg) => arg.startsWith('capture=')), false);
-  assert.equal(editorStep.continue_on_error, true);
+  assert.equal(editorStep.allowFailure, true);
 
   const disabled = buildFixtureMatrixRecipe({
     matrix,
@@ -2698,7 +2698,7 @@ test('editorBlockValidationStep emits editor-validate-blocks against real import
   // page_on_front, while the imported post ID is not known at recipe-build time.
   const fallback = editorBlockValidationStep({ fixture: { id: 'simple' } });
   assert.equal(fallback.command, 'wordpress.editor-validate-blocks');
-  assert.equal(fallback.continue_on_error, true);
+  assert.equal(fallback.allowFailure, true);
   assert.deepEqual(fallback.args, ['target=front-page']);
 
   // An explicit editor URL (e.g. post.php?post=<id>&action=edit) is honored.
@@ -2970,9 +2970,9 @@ test('fixture matrix recipe steps emit fixture attribution metadata for import e
 
   assert.equal(steps.find((step) => step.metadata.phase === 'import').metadata.artifact, '/artifacts/static-site-importer-fixture-matrix/simple-site/artifact.json');
   assert.equal(steps.find((step) => step.metadata.phase === 'editor').metadata.target, 'front-page');
-  assert.equal(steps.find((step) => step.metadata.phase === 'editor').continue_on_error, true);
+  assert.equal(steps.find((step) => step.metadata.phase === 'editor').allowFailure, true);
   assert.equal(steps.find((step) => step.metadata.phase === 'visual').metadata.candidate_url, '/');
-  assert.equal(steps.find((step) => step.metadata.phase === 'visual').continue_on_error, true);
+  assert.equal(steps.find((step) => step.metadata.phase === 'visual').allowFailure, true);
   assert.match(steps.find((step) => step.metadata.phase === 'visual').metadata.source_url, /simple-site\/source\/index\.html$/);
 });
 
@@ -3500,7 +3500,7 @@ test('visualParityCompareStep composes the existing wordpress.visual-compare com
     pixelThreshold: 0.2,
   });
   assert.equal(step.command, 'wordpress.visual-compare');
-  assert.equal(step.continue_on_error, true);
+  assert.equal(step.allowFailure, true);
   assert.ok(step.args.includes('source-url=http://127.0.0.1:4173/shop/index.html'));
   assert.ok(step.args.includes('candidate-url=/?p=42'));
   assert.ok(step.args.includes('threshold=0.2'));
@@ -4197,7 +4197,7 @@ test('live-WP parity capture step renders DOM HTML deterministically with extern
 
   // The standalone step builder honors a per-fixture candidate override.
   const overridden = liveWpParityCaptureStep({ fixture: { id: 'x', candidate_url: '/about/' } });
-  assert.equal(overridden.continue_on_error, true);
+  assert.equal(overridden.allowFailure, true);
   assert.equal(overridden.metadata.fixture_id, 'x');
   assert.ok(overridden.args.includes('url=/about/'));
 });
