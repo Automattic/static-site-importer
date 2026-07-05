@@ -15,6 +15,7 @@ import { runWpCodeboxRecipe, wpCodeboxCommand, wpCodeboxBin } from '../tools/wp-
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
 import {
   buildFixtureMatrixRecipe,
+  classifyVisualDiffRegions,
   collectFixtureMatrixRunResults,
   createFixtureMatrix,
   normalizeFixtureMatrixResult,
@@ -85,6 +86,7 @@ export default async function runFixtureMatrixBench(context = {}) {
       result: { path: summary.result_file },
       summary: { path: path.join(summary.output_directory, 'summary.json') },
       finding_packets: { path: path.join(summary.output_directory, 'finding-packets.json') },
+      visual_diff_classification: { path: path.join(summary.output_directory, 'visual-diff-classification.json') },
       ...(summary.visual_parity_artifacts || {}),
     },
     metadata: {
@@ -255,6 +257,7 @@ export async function runFixtureMatrix(options) {
     result: fileBytes(path.join(outputDirectory, 'static-site-fixture-matrix-result.json')),
     summary: fileBytes(path.join(outputDirectory, 'summary.json')),
     finding_packets: fileBytes(path.join(outputDirectory, 'finding-packets.json')),
+    visual_diff_classification: fileBytes(path.join(outputDirectory, 'visual-diff-classification.json')),
   };
   artifactBytes.total = Object.entries(artifactBytes)
     .filter(([key, value]) => key !== 'total' && Number.isFinite(Number(value)))
@@ -450,16 +453,44 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
     return fixture;
   }
 
+  const updatedVisualParityArtifacts = {
+    ...visualParityArtifacts,
+    owner: 'bench_artifact_root',
+    missing: undefined,
+    artifacts: updatedSlots,
+  };
+  const classification = classifyVisualDiffRegions({
+    visual_parity_artifacts: updatedVisualParityArtifacts,
+    comparison: {
+      ...(visualParityArtifacts.metrics || {}),
+      mismatchPixels: visualParityArtifacts.metrics?.mismatch_pixels,
+      totalPixels: visualParityArtifacts.metrics?.total_pixels,
+      overlapMismatchPixels: visualParityArtifacts.metrics?.overlap_mismatch_pixels,
+      overlapPixels: visualParityArtifacts.metrics?.overlap_pixels,
+      dimensionMismatch: visualParityArtifacts.metrics?.dimension_mismatch,
+    },
+    files: {
+      sourceScreenshot: updatedSlots.source_screenshot?.ref?.path,
+      candidateScreenshot: updatedSlots.imported_screenshot?.ref?.path,
+      diffScreenshot: updatedSlots.diff_screenshot?.ref?.path,
+    },
+  }, { fixtureArtifactsDirectory: outputDirectory });
+
   return {
     ...fixture,
     diagnostics: rewriteDiagnosticArtifactRefs(fixture.diagnostics, rewrites),
     artifact_refs: rewriteArtifactRefs(fixture.artifact_refs, rewrites),
-    visual_parity_artifacts: {
-      ...visualParityArtifacts,
-      owner: 'bench_artifact_root',
-      missing: undefined,
-      artifacts: updatedSlots,
-    },
+    visual_parity_artifacts: classification ? {
+      ...updatedVisualParityArtifacts,
+      visual_diff_regions: classification.visual_diff_regions,
+      visual_diff_cause_summary: classification.visual_diff_cause_summary,
+      visual_diff_classification: classification,
+    } : updatedVisualParityArtifacts,
+    ...(classification ? {
+      visual_diff_regions: classification.visual_diff_regions,
+      visual_diff_cause_summary: classification.visual_diff_cause_summary,
+      visual_diff_classification: classification,
+    } : {}),
   };
 }
 
@@ -865,6 +896,7 @@ function batchArtifactRefs({ outputDirectory, batchSuffix, batchRecipeFile, outp
     result: path.join(outputDirectory, 'static-site-fixture-matrix-result.json'),
     summary: path.join(outputDirectory, 'summary.json'),
     finding_packets: path.join(outputDirectory, 'finding-packets.json'),
+    visual_diff_classification: path.join(outputDirectory, 'visual-diff-classification.json'),
     batch_recipe: path.join(outputDirectory, `wp-codebox-static-site-fixture-matrix-batch-${batchSuffix}.json`),
     batch_output: path.join(outputDirectory, `wp-codebox-output-batch-${batchSuffix}.json`),
   };
