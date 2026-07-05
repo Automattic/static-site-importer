@@ -235,7 +235,14 @@ if ( ! function_exists( 'static_site_importer_ability_permission_callback' ) ) {
 			return true;
 		}
 
-		return ! function_exists( 'current_user_can' ) || current_user_can( 'switch_themes' );
+		$allowed = ! function_exists( 'current_user_can' ) || current_user_can( 'switch_themes' );
+
+		/**
+		 * Filters whether the current request may run import abilities.
+		 *
+		 * @param bool $allowed Whether the current request is allowed.
+		 */
+		return (bool) apply_filters( 'static_site_importer_can_manage_imports', $allowed );
 	}
 }
 
