@@ -798,8 +798,8 @@ function optionsFromEnv(env = process.env) {
     wpCodeboxBin: benchEnv.SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN || env.SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN,
     editorValidation: !isFalsy(benchEnv.SSI_FIXTURE_MATRIX_EDITOR_VALIDATION ?? env.SSI_FIXTURE_MATRIX_EDITOR_VALIDATION),
     visualParity: !isFalsy(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY),
-    visualParityGate: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE) || isTruthy(env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE),
-    visualParityFullPage: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE) || isTruthy(env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE),
+    visualParityGate: !isFalsy(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE ?? true),
+    visualParityFullPage: optionalBoolean(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE),
     // Opt-in live-WP parity capture + comparison. Off by default; mirrors the
     // visual-parity-gate truthy env mapping. When on, the recipe appends the
     // capture-html step and the result collector runs the live-wp-parity comparator.
@@ -822,7 +822,7 @@ function editorValidationRecipeInput(options) {
 }
 
 // Visual-parity options shared by the recipe (capture step) and the result
-// collector (gating). Enable defaults on; gating defaults off (opt-in).
+// collector (gating). Capture and gating default on for honest dev-loop fidelity.
 function visualParityRecipeInput(options) {
   return {
     visualParity: options.visualParity !== false,
@@ -836,7 +836,7 @@ function visualParityRecipeInput(options) {
 function visualParityGateInput(options) {
   return {
     threshold: options.pixelThreshold,
-    gate: options.visualParityGate === true,
+    gate: options.visualParityGate !== false,
   };
 }
 
@@ -891,6 +891,13 @@ function isTruthy(value) {
 
 function isFalsy(value) {
   return value === false || value === '0' || value === 'false' || value === 'no' || value === 'off';
+}
+
+function optionalBoolean(value) {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  return !isFalsy(value);
 }
 
 function chunk(items, size) {

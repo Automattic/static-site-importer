@@ -1243,6 +1243,35 @@ test('emits one visual parity mismatch when raw and artifact evidence describe t
   assert.equal(diagnostics[0].source_path, 'file:///tmp/source/index.html');
 });
 
+test('collects visual parity artifacts from wp-codebox matrix summaries with per-fixture refs', () => {
+  const diagnostics = collectVisualParityDiagnostics({
+    schema: 'wp-codebox/visual-compare-matrix/v1',
+    comparisons: [
+      {
+        name: 'simple-site',
+        source: { url: 'file:///tmp/artifacts/simple-site/source/index.html' },
+        files: {
+          sourceScreenshot: 'files/browser/visual-compare/simple-site/source.png',
+          candidateScreenshot: 'files/browser/visual-compare/simple-site/candidate.png',
+          diffScreenshot: 'files/browser/visual-compare/simple-site/diff.png',
+          visualDiff: 'files/browser/visual-compare/simple-site/visual-diff.json',
+        },
+        comparison: {
+          mismatchPixels: 994,
+          totalPixels: 1000,
+          overlapMismatchPixels: 994,
+          overlapPixels: 1000,
+          dimensionMismatch: false,
+        },
+      },
+    ],
+  }, { threshold: 0, gate: true });
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].visual_parity_gate, true);
+  assert.equal(diagnostics[0].artifact_refs.find((ref) => ref.artifact_id === 'diff_screenshot').path, 'files/browser/visual-compare/simple-site/diff.png');
+});
+
 test('fixture diagnostics drop empty rows and normalize kindless carriers with explicit kind', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-diagnostic-hygiene-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'diagnostic-hygiene-test' });
@@ -1491,6 +1520,7 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   assert.ok(benchStep.args.includes(`bench_env.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PATH=${staticSiteImporter}`));
   assert.ok(benchStep.args.includes(`bench_env.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH=${blocksEngine}`));
   assert.ok(benchStep.args.includes('bench_env.SSI_FIXTURE_MATRIX_RUN=1'));
+  assert.ok(benchStep.args.includes('bench_env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE=1'));
   assert.ok(benchStep.args.includes('static_site_importer_fixture_matrix_namespace=ssi-matrix-dev-proof'));
   assert.ok(benchStep.args.includes('/tmp/static-site-importer-fixture-matrix-ssi-matrix-dev-proof/artifacts'));
   assert.deepEqual(benchStep.args.slice(-3), ['--', '--batch-size', '5']);
@@ -1511,6 +1541,14 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
     output: explicitOutput,
   });
   assert.equal(explicitOutputPlan.output_file, explicitOutput);
+
+  const visualGateOptOutPlan = buildFixtureMatrixRunPlan({
+    staticSiteImporter,
+    blocksEngine,
+    visualParityGate: false,
+  });
+  assert.equal(visualGateOptOutPlan.visual_parity.gate, false);
+  assert.ok(visualGateOptOutPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE=0'));
 });
 
 test('fixture matrix operator plan forwards complexity lane settings', () => {
@@ -1633,7 +1671,7 @@ module.exports = { wpCodeboxBin, wpCodeboxCommand, runWpCodeboxRecipe };
     );
     const benchBatchRecipe = JSON.parse(readFileSync(benchResult.metadata.child_command_failures[0].artifact_refs.batch_recipe, 'utf8'));
     const benchVisualStep = benchBatchRecipe.workflow.steps.find((step) => step.command === 'wordpress.visual-compare');
-    assert.ok(benchVisualStep.args.includes('full-page=true'), 'bench env can opt visual parity back into full-page screenshots');
+    assert.equal(visualCompareMatrixComparison(benchVisualStep).fullPage, true, 'bench defaults visual parity to full-page screenshots');
   } finally {
     if (previousHelper === undefined) {
       delete process.env.HOMEBOY_WP_CODEBOX_RECIPE_HELPER;
@@ -1800,6 +1838,14 @@ test('CLI --no-visual-parity disables visual steps and records a safe WP Codebox
   ]);
   assert.match(summary.replay.command, /wp-codebox recipe-run --recipe .* --artifacts .* --json/);
 });
+
+function visualCompareMatrixComparison(step) {
+  const matrixArg = step.args.find((arg) => typeof arg === 'string' && arg.startsWith('matrix-json='));
+  assert.ok(matrixArg, 'expected wordpress.visual-compare to use matrix-json');
+  const matrix = JSON.parse(matrixArg.slice('matrix-json='.length));
+  assert.equal(matrix.comparisons.length, 1);
+  return matrix.comparisons[0];
+}
 
 function fakeGitRunner(stateByPath) {
   return (cwd, args) => {
@@ -2035,6 +2081,11 @@ test('operator summary preserves matrix rollups for fanout agents', () => {
   });
 
   assert.equal(summary.run_id, 'ssi-matrix-rollup-proof');
+  assert.deepEqual(summary.run_refs, {
+    homeboy_run_id: 'ssi-matrix-rollup-proof',
+    show: 'homeboy runs show ssi-matrix-rollup-proof',
+    artifacts: 'homeboy runs artifacts ssi-matrix-rollup-proof',
+  });
   assert.equal(summary.top_pattern_families[0].count, 312);
   assert.equal(summary.fixture_exemplars[0].fixture_id, 'shader-site');
   assert.equal(summary.diagnostic_blind_spots[0].kind, 'missing_source_context');
@@ -2074,6 +2125,7 @@ test('summarizeBenchRun emits the operator summary on a gate-FAIL instead of thr
   assert.equal(result.summary.failed_fixture_count, 2);
   assert.equal(result.summary.finding_count, 22);
   assert.deepEqual(result.summary.top_buckets[0], { key: 'runtime_target_gap', count: 18 });
+  assert.equal(result.summary.run_refs.show, 'homeboy runs show ssi-live-2');
   assert.deepEqual(result.summary.artifact_urls, ['homeboy-runs:ssi-live-2', 'https://example.test/report.json']);
 });
 
@@ -3471,10 +3523,11 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
   // [activate, validate(simple-site), editor-validation(simple-site), visual-compare(simple-site)]
   const visualStep = recipe.workflow.steps[3];
   assert.equal(visualStep.command, 'wordpress.visual-compare');
-  assert.ok(visualStep.args.some((arg) => arg.startsWith('source-url=')));
-  assert.ok(visualStep.args.some((arg) => arg.startsWith('candidate-url=')));
-  assert.ok(visualStep.args.includes('block-external-requests=true'));
-  assert.ok(visualStep.args.includes('threshold=0.05'));
+  const comparison = visualCompareMatrixComparison(visualStep);
+  assert.equal(comparison.sourceUrl, 'file:///tmp/artifacts/simple-site/source/index.html');
+  assert.equal(comparison.candidateUrl, '/');
+  assert.equal(comparison.fullPage, true);
+  assert.equal(comparison.threshold, 0.05);
 
   const defaultThresholdRecipe = buildFixtureMatrixRecipe({
     matrix,
@@ -3483,7 +3536,7 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
   });
   const defaultThresholdVisualStep = defaultThresholdRecipe.workflow.steps[3];
   assert.equal(defaultThresholdVisualStep.command, 'wordpress.visual-compare');
-  assert.ok(defaultThresholdVisualStep.args.includes('threshold=0'), 'visual parity defaults to exact pixel parity');
+  assert.equal(visualCompareMatrixComparison(defaultThresholdVisualStep).threshold, 0, 'visual parity defaults to exact pixel parity');
 
   const disabled = buildFixtureMatrixRecipe({
     matrix,
@@ -3501,28 +3554,26 @@ test('visualParityCompareStep composes the existing wordpress.visual-compare com
   });
   assert.equal(step.command, 'wordpress.visual-compare');
   assert.equal(step.allowFailure, true);
-  assert.ok(step.args.includes('source-url=http://127.0.0.1:4173/shop/index.html'));
-  assert.ok(step.args.includes('candidate-url=/?p=42'));
-  assert.ok(step.args.includes('threshold=0.2'));
-  assert.ok(step.args.includes('source-label=shop-source'));
-  assert.ok(step.args.includes('candidate-label=shop-candidate'));
-  assert.ok(step.args.includes('block-external-requests=true'));
-  assert.ok(visualParityCompareStep({ fixture: { id: 'shop' }, block_external_requests: false }).args.includes('block-external-requests=false'));
+  const comparison = visualCompareMatrixComparison(step);
+  assert.equal(comparison.name, 'shop');
+  assert.equal(comparison.sourceUrl, 'http://127.0.0.1:4173/shop/index.html');
+  assert.equal(comparison.candidateUrl, '/?p=42');
+  assert.equal(comparison.threshold, 0.2);
+  assert.equal(comparison.sourceLabel, 'shop-source');
+  assert.equal(comparison.candidateLabel, 'shop-candidate');
+  assert.equal(comparison.fullPage, true);
 });
 
-test('visualParityCompareStep demotes full-page capture to an opt-in (default bounded viewport)', () => {
-  // Default: full-page is OFF (the OOM-prone unbounded screenshot is no longer
-  // the default; the deterministic static parity gate is the primary signal).
+test('visualParityCompareStep requests full-page capture by default with explicit opt-out', () => {
   const defaultStep = visualParityCompareStep({ fixture: { id: 'tall' } });
-  assert.ok(defaultStep.args.includes('full-page=false'));
+  assert.equal(visualCompareMatrixComparison(defaultStep).fullPage, true);
 
-  // Opt-in per fixture re-enables full-page evidence.
-  for (const optIn of [
-    { fixture: { id: 'tall' }, fullPage: true },
-    { fixture: { id: 'tall' }, visual_parity_full_page: true },
-    { fixture: { id: 'tall' }, visualParityFullPage: true },
+  for (const optOut of [
+    { fixture: { id: 'tall' }, fullPage: false },
+    { fixture: { id: 'tall' }, full_page: 'false' },
+    { fixture: { id: 'tall' }, visual_parity_full_page: '0' },
   ]) {
-    assert.ok(visualParityCompareStep(optIn).args.includes('full-page=true'));
+    assert.equal(visualCompareMatrixComparison(visualParityCompareStep(optOut)).fullPage, false);
   }
 });
 
@@ -3537,13 +3588,12 @@ test('default visual-parity source-url targets the staged source/ subdir as a fi
 
   // [activate, validate(simple-site), editor-validation(simple-site), visual-compare(simple-site)]
   const visualStep = recipe.workflow.steps[3];
-  const sourceArg = visualStep.args.find((arg) => arg.startsWith('source-url='));
   assert.equal(
-    sourceArg,
-    'source-url=file:///tmp/artifacts/simple-site/source/index.html',
+    visualCompareMatrixComparison(visualStep).sourceUrl,
+    'file:///tmp/artifacts/simple-site/source/index.html',
   );
   // Candidate defaults to the imported front page served at `/`.
-  assert.ok(visualStep.args.includes('candidate-url=/'));
+  assert.equal(visualCompareMatrixComparison(visualStep).candidateUrl, '/');
 });
 
 test('explicit visual-parity source base can still target a served uploads path', () => {
@@ -3557,7 +3607,7 @@ test('explicit visual-parity source base can still target a served uploads path'
   });
 
   const visualStep = recipe.workflow.steps[3];
-  assert.ok(visualStep.args.includes('source-url=/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/source/index.html'));
+  assert.equal(visualCompareMatrixComparison(visualStep).sourceUrl, '/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/source/index.html');
 });
 
 test('default visual-parity source-url follows nested fixture entrypoint', () => {
@@ -3567,7 +3617,7 @@ test('default visual-parity source-url follows nested fixture entrypoint', () =>
   });
 
   assert.ok(
-    step.args.includes('source-url=/wp-content/uploads/static-site-importer-fixture-matrix/liquid-bonsai/source/saveweb2zip-com-liquidbonsai-com/index.html'),
+    visualCompareMatrixComparison(step).sourceUrl === '/wp-content/uploads/static-site-importer-fixture-matrix/liquid-bonsai/source/saveweb2zip-com-liquidbonsai-com/index.html',
   );
 });
 

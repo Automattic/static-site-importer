@@ -70,10 +70,12 @@ performance benchmark. The rig and wrapper run a single Homeboy bench iteration
 by default; use repeated runs only for explicitly separate performance work.
 
 Output is a JSON operator summary with the run ID, fixture count, pass/fail
-counts, finding count, top buckets/kinds when present in Homeboy output, artifact
-URLs, and the structured Homeboy bench output file. Pass `--dry-run` to inspect
-the composed commands without running Lab/WP Codebox. Arguments after `--` are
-forwarded to the lower-level bench, preserving the existing script options:
+counts, finding count, top buckets/kinds when present in Homeboy output, a
+`run_refs` block with ready-to-run `homeboy runs show <id>` / `homeboy runs
+artifacts <id>` commands, artifact URLs, and the structured Homeboy bench output
+file. Pass `--dry-run` to inspect the composed commands without running
+Lab/WP Codebox. Arguments after `--` are forwarded to the lower-level bench,
+preserving the existing script options:
 
 ### Code freshness guard
 
@@ -270,31 +272,31 @@ Structural, feature, and editor-block validity all run *without ever rendering a
 browser*. After each fixture's import step, `buildFixtureMatrixRecipe` appends a
 `wordpress.visual-compare` step that renders the fixture's original static source
 vs the imported WordPress candidate in the same WP Codebox sandbox and emits
-`source.png`/`candidate.png`/`diff.png` plus `mismatch_pixels`/`total_pixels`
-(`wp-codebox/visual-compare/v1`). This is the exact recipe command the reusable
-`runVisualParityWorkload` helper composes in homeboy-extensions — the matrix
-emits it inline rather than spinning up a separate sandbox, so no new wp-codebox
-capability is introduced.
+`source.png`/`candidate.png`/`diff.png` plus `mismatch_pixels`/`total_pixels`.
+SSI sends the command as a one-entry `matrix-json` comparison so wp-codebox writes
+screenshots under `files/browser/visual-compare/<fixture-id>/...`; batch runs keep
+per-fixture visual evidence instead of overwriting every fixture into the default
+`files/browser/visual-compare/{source,candidate,diff}.png` paths. This is the
+exact recipe command the reusable `runVisualParityWorkload` helper composes in
+homeboy-extensions — the matrix emits it inline rather than spinning up a
+separate sandbox, so no new wp-codebox capability is introduced.
 
 `collectVisualParityDiagnostics` reads the comparison back out (from either the
-raw `wp-codebox/visual-compare/v1` diff or a normalized
-`homeboy/VisualParityArtifact/v1` artifact) and emits a `visual_parity_mismatch`
-diagnostic when `mismatch_pixels / total_pixels` exceeds the threshold (or a
-dimension mismatch is reported). Findings route to the visual-parity repair
-bucket (`candidate_repo: blocks-engine`, `repair_mode: visual-parity`). The
-screenshots, diff, and metrics are also captured into the SSI
+raw `wp-codebox/visual-compare/v1` diff, a `wp-codebox/visual-compare-matrix/v1`
+summary, or a normalized `homeboy/VisualParityArtifact/v1` artifact) and emits a
+`visual_parity_mismatch` diagnostic when the dimension-fair mismatch ratio
+exceeds the threshold. Findings route to the visual-parity repair bucket
+(`candidate_repo: blocks-engine`, `repair_mode: visual-parity`). The screenshots,
+diff, and metrics are also captured into the SSI
 `visual_parity_artifacts` slot (`static-site-importer/visual-parity-artifacts/v1`)
 on the fixture result, even when the gate is off.
 
-Gating is **opt-in**, because pixel diffs can be flaky. By default a mismatch is
-captured but non-gating (the `visual_parity_mismatch` loss class resolves to
-`acceptable`). Pass `--visual-parity-gate` (run wrapper) /
-`SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE=1` to make a mismatch-over-threshold a
-HARD gate (the loss class flips to the unacceptable, fixture-failing form, the
-same conditional-acceptance pattern as `preserved_runtime_island`). The mismatch
-threshold is configurable via `--pixel-threshold` /
-`SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD` (default `0.1`, also passed as
-the per-pixel `threshold=` arg so a higher value loosens the gate monotonically).
+The dev-loop wrapper gates visual parity by default because the fixture matrix is
+deterministic transformer feedback: a fidelity gate that ignores fidelity is not
+honest. Pass `--no-visual-parity-gate` /
+`SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE=0` for exploratory capture-only runs. The
+mismatch threshold is configurable via `--pixel-threshold` /
+`SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD` (default exact parity, `0`).
 Set `--no-visual-parity` / `visualParity: false` to omit the step entirely.
 
 Source/candidate wiring (verified by real local recipe-runs): the
@@ -314,18 +316,10 @@ to target a specific staged page or imported permalink. The wiring,
 source-staging, finding-parsing, threshold, and gating logic are unit-tested in
 `tools/fixture-matrix.test.mjs`.
 
-Sandbox egress note: a captured page that references external resources (Google
-Fonts, CDNs) would otherwise hang an egress-free sandbox until the 120s browser
-timeout. `wordpress.visual-compare` aborts cross-origin requests during capture by
-default (`block-external-requests`, wp-codebox) so both source and candidate
-render deterministically (offline, system-font fallback) and the comparison
-completes fast. Real measured ratios (15-saas, 38-medical-clinic, default
-viewport): the imported candidate currently diverges sharply from the source
-(0.94 and 0.44 mismatch ratios with dimension drift) — dominated by oversized
-inline SVG icons that lose CSS sizing and a frontend theme stylesheet that is not
-applied to the rendered page. The gate is capture-only by default
-(`--visual-parity-gate` to enforce); at any reasonable `--pixel-threshold` these
-imports are nowhere near the 1:1 project gate.
+Capture is full-page by default. wp-codebox's URL-target default is also
+full-page, but SSI previously overrode it with `full-page=false`, which limited
+the evidence to the requested viewport and missed below-the-fold regressions. Use
+`visualParityFullPage: false` only for an explicitly bounded exploratory run.
 
 ## Running the matrix locally
 
