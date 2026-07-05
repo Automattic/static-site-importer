@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { PNG } from 'pngjs';
 
 /**
  * Internal dependencies
@@ -44,6 +45,7 @@ import {
   computeFixtureEditorQuality,
   parseSerializedBlockNames,
   collectVisualParityDiagnostics,
+  findBestVisualParityOffset,
   liveWpParityCaptureStep,
   liveWpParityEnabled,
   runLiveWpParity,
@@ -1271,6 +1273,78 @@ test('collects visual parity artifacts from wp-codebox matrix summaries with per
   assert.equal(diagnostics.length, 1);
   assert.equal(diagnostics[0].visual_parity_gate, true);
   assert.equal(diagnostics[0].artifact_refs.find((ref) => ref.artifact_id === 'diff_screenshot').path, 'files/browser/visual-compare/simple-site/diff.png');
+});
+
+test('visual parity alignment scores pure vertical shift as parity and reports offset', () => {
+  const fixtureArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-shift-'));
+  const visualDirectory = path.join(fixtureArtifactsDirectory, 'files', 'browser', 'visual-compare', 'shifted');
+  mkdirSync(visualDirectory, { recursive: true });
+  const source = syntheticVisualParityPng(48, 96);
+  const candidate = shiftedPng(source, 0, 8);
+  writePng(path.join(visualDirectory, 'source.png'), source);
+  writePng(path.join(visualDirectory, 'candidate.png'), candidate);
+
+  const diagnostics = collectVisualParityDiagnostics(visualComparePayload({
+    sourceScreenshot: 'files/browser/visual-compare/shifted/source.png',
+    candidateScreenshot: 'files/browser/visual-compare/shifted/candidate.png',
+    mismatchPixels: 1843,
+    totalPixels: 4608,
+    overlapMismatchPixels: 1843,
+    overlapPixels: 4608,
+  }), {
+    fixtureArtifactsDirectory,
+    threshold: 0,
+    gate: true,
+    maxVerticalShift: 16,
+  });
+
+  assert.equal(diagnostics.some((diagnostic) => diagnostic.kind === VISUAL_PARITY_MISMATCH_KIND), false);
+  const offset = diagnostics.find((diagnostic) => diagnostic.kind === 'visual_parity_offset');
+  assert.ok(offset, 'expected shifted-but-matching content to report a non-gating offset diagnostic');
+  assert.equal(offset.detected_offset.y, 8);
+  assert.equal(offset.aligned_mismatch_ratio, 0);
+  assert.equal(offset.raw_mismatch_ratio, 1843 / 4608);
+});
+
+test('visual parity alignment still fails genuinely missing content', () => {
+  const fixtureArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-missing-'));
+  const visualDirectory = path.join(fixtureArtifactsDirectory, 'files', 'browser', 'visual-compare', 'missing');
+  mkdirSync(visualDirectory, { recursive: true });
+  const source = syntheticVisualParityPng(48, 96);
+  const candidate = blankPng(48, 96);
+  writePng(path.join(visualDirectory, 'source.png'), source);
+  writePng(path.join(visualDirectory, 'candidate.png'), candidate);
+
+  const diagnostics = collectVisualParityDiagnostics(visualComparePayload({
+    sourceScreenshot: 'files/browser/visual-compare/missing/source.png',
+    candidateScreenshot: 'files/browser/visual-compare/missing/candidate.png',
+    mismatchPixels: 1400,
+    totalPixels: 4608,
+    overlapMismatchPixels: 1400,
+    overlapPixels: 4608,
+  }), {
+    fixtureArtifactsDirectory,
+    threshold: 0.1,
+    gate: true,
+    maxVerticalShift: 16,
+  });
+
+  const mismatch = diagnostics.find((diagnostic) => diagnostic.kind === VISUAL_PARITY_MISMATCH_KIND);
+  assert.ok(mismatch, 'expected missing content to remain a visual-parity gate failure');
+  assert.equal(mismatch.visual_parity_gate, true);
+  assert.equal(mismatch.raw_mismatch_ratio, 1400 / 4608);
+  assert.ok(mismatch.aligned_mismatch_ratio > 0.1);
+});
+
+test('findBestVisualParityOffset returns deterministic offset metrics for identical shifted PNGs', () => {
+  const source = syntheticVisualParityPng(32, 64);
+  const candidate = shiftedPng(source, 0, 6);
+  const score = findBestVisualParityOffset(source, candidate, { maxVerticalShift: 10 });
+
+  assert.equal(score.detected_offset.y, 6);
+  assert.equal(score.detected_offset.x, 0);
+  assert.equal(score.aligned_mismatch_pixels, 0);
+  assert.equal(score.aligned_mismatch_ratio, 0);
 });
 
 test('fixture diagnostics drop empty rows and normalize kindless carriers with explicit kind', () => {
@@ -4504,3 +4578,75 @@ test('live-WP parity collector failure is isolated and never sinks the lane', ()
   assert.equal(result.fixtures[0].live_wp_parity, undefined, 'a comparator failure yields no live-WP result, not an aborted lane');
   assert.equal(result.schema, 'static-site-importer/fixture-matrix-result/v1');
 });
+
+function visualComparePayload({ sourceScreenshot, candidateScreenshot, mismatchPixels, totalPixels, overlapMismatchPixels, overlapPixels }) {
+  return {
+    schema: 'wp-codebox/visual-compare-matrix/v1',
+    comparisons: [
+      {
+        name: 'synthetic',
+        source: { url: 'file:///synthetic/index.html' },
+        files: { sourceScreenshot, candidateScreenshot },
+        comparison: {
+          mismatchPixels,
+          totalPixels,
+          overlapMismatchPixels,
+          overlapPixels,
+          dimensionMismatch: false,
+        },
+      },
+    ],
+  };
+}
+
+function syntheticVisualParityPng(width, height) {
+  const image = blankPng(width, height);
+  fillRect(image, 0, 0, width, height, [245, 245, 245, 255]);
+  fillRect(image, 0, 12, width, 24, [28, 28, 28, 255]);
+  fillRect(image, 6, 18, 16, 12, [220, 64, 64, 255]);
+  fillRect(image, 26, 44, 15, 20, [32, 96, 220, 255]);
+  fillRect(image, 4, 72, width - 8, 8, [20, 140, 80, 255]);
+  return image;
+}
+
+function blankPng(width, height) {
+  const image = new PNG({ width, height });
+  fillRect(image, 0, 0, width, height, [255, 255, 255, 255]);
+  return image;
+}
+
+function shiftedPng(source, xOffset, yOffset) {
+  const image = blankPng(source.width, source.height);
+  for (let y = 0; y < source.height; y += 1) {
+    for (let x = 0; x < source.width; x += 1) {
+      const targetX = x + xOffset;
+      const targetY = y + yOffset;
+      if (targetX < 0 || targetY < 0 || targetX >= image.width || targetY >= image.height) {
+        continue;
+      }
+      const sourceIndex = ((y * source.width) + x) << 2;
+      const targetIndex = ((targetY * image.width) + targetX) << 2;
+      image.data[targetIndex] = source.data[sourceIndex];
+      image.data[targetIndex + 1] = source.data[sourceIndex + 1];
+      image.data[targetIndex + 2] = source.data[sourceIndex + 2];
+      image.data[targetIndex + 3] = source.data[sourceIndex + 3];
+    }
+  }
+  return image;
+}
+
+function fillRect(image, x, y, width, height, rgba) {
+  for (let row = y; row < y + height; row += 1) {
+    for (let column = x; column < x + width; column += 1) {
+      const index = ((row * image.width) + column) << 2;
+      image.data[index] = rgba[0];
+      image.data[index + 1] = rgba[1];
+      image.data[index + 2] = rgba[2];
+      image.data[index + 3] = rgba[3];
+    }
+  }
+}
+
+function writePng(filePath, image) {
+  writeFileSync(filePath, PNG.sync.write(image));
+}

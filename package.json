@@ -11,5 +11,9 @@
     "@wordpress/blocks": "^15.18.0",
     "@wordpress/element": "^6.45.0",
     "jsdom": "^29.1.0"
+  },
+  "dependencies": {
+    "pixelmatch": "^7.2.0",
+    "pngjs": "^7.0.0"
   }
 }
