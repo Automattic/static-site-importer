@@ -283,13 +283,22 @@ separate sandbox, so no new wp-codebox capability is introduced.
 
 `collectVisualParityDiagnostics` reads the comparison back out (from either the
 raw `wp-codebox/visual-compare/v1` diff, a `wp-codebox/visual-compare-matrix/v1`
-summary, or a normalized `homeboy/VisualParityArtifact/v1` artifact) and emits a
-`visual_parity_mismatch` diagnostic when the dimension-fair mismatch ratio
-exceeds the threshold. Findings route to the visual-parity repair bucket
-(`candidate_repo: blocks-engine`, `repair_mode: visual-parity`). The screenshots,
-diff, and metrics are also captured into the SSI
-`visual_parity_artifacts` slot (`static-site-importer/visual-parity-artifacts/v1`)
-on the fixture result, even when the gate is off.
+summary, or a normalized `homeboy/VisualParityArtifact/v1` artifact). When the
+per-fixture `source.png` and `candidate.png` are available, SSI re-scores them with
+a deterministic bounded translation search before gating. The default search is
+vertical ±64px and horizontal 0px: this tolerates whole-page/header reflow without
+hiding horizontal layout drift. The gate uses `aligned_mismatch_ratio` when it is
+available and falls back to the dimension-fair overlap ratio for older evidence.
+`raw_mismatch_ratio` remains in diagnostics/artifacts for continuity.
+
+Alignment reports `detected_offset` separately. Offsets above the reporting
+tolerance emit a non-gating `visual_parity_offset` diagnostic so real drift remains
+visible and fixable while shifted-but-present content is not mis-scored as missing.
+Findings route to the visual-parity repair bucket (`candidate_repo: blocks-engine`,
+`repair_mode: visual-parity`). The screenshots, diff, and metrics are also
+captured into the SSI `visual_parity_artifacts` slot
+(`static-site-importer/visual-parity-artifacts/v1`) on the fixture result, even
+when the gate is off.
 
 The dev-loop wrapper gates visual parity by default because the fixture matrix is
 deterministic transformer feedback: a fidelity gate that ignores fidelity is not
@@ -297,7 +306,15 @@ honest. Pass `--no-visual-parity-gate` /
 `SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE=0` for exploratory capture-only runs. The
 mismatch threshold is configurable via `--pixel-threshold` /
 `SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD` (default exact parity, `0`).
-Set `--no-visual-parity` / `visualParity: false` to omit the step entirely.
+Alignment is enabled by default and can be configured with
+`SSI_FIXTURE_MATRIX_VISUAL_PARITY_ALIGNMENT=0`,
+`SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_VERTICAL_SHIFT`,
+`SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_HORIZONTAL_SHIFT`, and
+`SSI_FIXTURE_MATRIX_VISUAL_PARITY_OFFSET_TOLERANCE` (default `2` px). The
+alignment scorer uses `SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD`
+(default `0.1`) as its per-pixel anti-alias/color tolerance; this is separate from
+the mismatch-ratio gate threshold. Set `--no-visual-parity` /
+`visualParity: false` to omit the step entirely.
 
 Source/candidate wiring (verified by real local recipe-runs): the
 `wordpress.visual-compare` step renders and pixel-diffs locally in WP Codebox

@@ -948,6 +948,11 @@ function optionsFromEnv(env = process.env) {
     // capture-html step and the result collector runs the live-wp-parity comparator.
     liveWpParity: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_LIVE_WP_PARITY) || isTruthy(env.SSI_FIXTURE_MATRIX_LIVE_WP_PARITY),
     pixelThreshold: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD,
+    visualParityAlignment: optionalBoolean(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_ALIGNMENT ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_ALIGNMENT),
+    visualParityMaxVerticalShift: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_VERTICAL_SHIFT || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_VERTICAL_SHIFT,
+    visualParityMaxHorizontalShift: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_HORIZONTAL_SHIFT || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_HORIZONTAL_SHIFT,
+    visualParityOffsetTolerance: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_OFFSET_TOLERANCE || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_OFFSET_TOLERANCE,
+    visualParityPixelmatchThreshold: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD,
     visualParityCandidateUrl: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_CANDIDATE_URL || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_CANDIDATE_URL,
     visualParitySourceBaseUrl: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL,
     minNativeRate: benchEnv.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE || env.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE,
@@ -980,6 +985,11 @@ function visualParityGateInput(options) {
   return {
     threshold: options.pixelThreshold,
     gate: options.visualParityGate !== false,
+    alignment: options.visualParityAlignment,
+    maxVerticalShift: options.visualParityMaxVerticalShift,
+    maxHorizontalShift: options.visualParityMaxHorizontalShift,
+    offsetTolerance: options.visualParityOffsetTolerance,
+    pixelmatchThreshold: options.visualParityPixelmatchThreshold,
   };
 }
 

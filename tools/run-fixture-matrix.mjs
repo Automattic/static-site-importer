@@ -86,6 +86,11 @@ export function buildFixtureMatrixRunPlan(input) {
     ...(options.visualParity === false ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY: '0' } : {}),
     ...(options.visualParityGate === false ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE: '0' } : { SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE: '1' }),
     ...(options.pixelThreshold ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD: String(options.pixelThreshold) } : {}),
+    ...(options.visualParityAlignment === false ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_ALIGNMENT: '0' } : {}),
+    ...(options.visualParityMaxVerticalShift ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_VERTICAL_SHIFT: String(options.visualParityMaxVerticalShift) } : {}),
+    ...(options.visualParityMaxHorizontalShift ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_HORIZONTAL_SHIFT: String(options.visualParityMaxHorizontalShift) } : {}),
+    ...(options.visualParityOffsetTolerance ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_OFFSET_TOLERANCE: String(options.visualParityOffsetTolerance) } : {}),
+    ...(options.visualParityPixelmatchThreshold ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD: String(options.visualParityPixelmatchThreshold) } : {}),
     // Opt-in live-WP parity capture (off by default). When set, the bench appends
     // the deterministic `wordpress.capture-html` step per fixture and runs the
     // blocks-engine live-wp-parity comparator host-side. Absent => byte-identical
@@ -138,6 +143,11 @@ export function buildFixtureMatrixRunPlan(input) {
       // explicit exploratory opt-out.
       gate: options.visualParityGate !== false,
       pixel_threshold: options.pixelThreshold ? Number(options.pixelThreshold) : null,
+      alignment: options.visualParityAlignment !== false,
+      max_vertical_shift: options.visualParityMaxVerticalShift ? Number(options.visualParityMaxVerticalShift) : 64,
+      max_horizontal_shift: options.visualParityMaxHorizontalShift ? Number(options.visualParityMaxHorizontalShift) : 0,
+      offset_tolerance: options.visualParityOffsetTolerance ? Number(options.visualParityOffsetTolerance) : 2,
+      pixelmatch_threshold: options.visualParityPixelmatchThreshold ? Number(options.visualParityPixelmatchThreshold) : 0.1,
     },
     editor_quality: {
       // Editor-quality metrics (native_conversion_rate, core_html_fallback_ratio,
@@ -597,7 +607,7 @@ function parseArgs(args) {
     if (arg.startsWith('--')) {
       const [rawKey, rawValue] = arg.slice(2).split('=');
       const key = camelCase(rawKey);
-      const booleanKeys = new Set(['dryRun', 'skipInstall', 'skipSync', 'labOnly', 'local', 'allowLocalFallback', 'detachAfterHandoff', 'allowDirtyLabWorkspace', 'allowStaleOverride', 'visualParityGate', 'liveWpParity']);
+      const booleanKeys = new Set(['dryRun', 'skipInstall', 'skipSync', 'labOnly', 'local', 'allowLocalFallback', 'detachAfterHandoff', 'allowDirtyLabWorkspace', 'allowStaleOverride', 'visualParityGate', 'visualParityAlignment', 'liveWpParity']);
       if (booleanKeys.has(key)) {
         options[key] = true;
         continue;
