@@ -59,6 +59,7 @@ import {
   normalizeFixtureMatrixResult,
   normalizeLossClass,
   stageFixtureSource,
+  VISUAL_PARITY_DETERMINISTIC_CSS,
   VISUAL_PARITY_MISMATCH_KIND,
   visualParityCompareStep,
   wordpressServedPath,
@@ -3752,8 +3753,12 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
     pixelThreshold: 0.05,
   });
 
-  // [activate, validate(simple-site), editor-validation(simple-site), visual-compare(simple-site)]
-  const visualStep = recipe.workflow.steps[3];
+  // [activate, validate(simple-site), editor-validation(simple-site), visual-setup(simple-site), visual-compare(simple-site)]
+  const visualSetupStep = recipe.workflow.steps[3];
+  assert.equal(visualSetupStep.command, 'wordpress.wp-cli');
+  assert.equal(visualSetupStep.metadata.phase, 'visual-setup');
+  assert.match(visualSetupStep.args[0], /wp_update_custom_css_post/);
+  const visualStep = recipe.workflow.steps[4];
   assert.equal(visualStep.command, 'wordpress.visual-compare');
   const comparison = visualCompareMatrixComparison(visualStep);
   assert.equal(comparison.sourceUrl, 'file:///tmp/artifacts/simple-site/source/index.html');
@@ -3766,7 +3771,7 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
     artifactsDirectory: '/tmp/artifacts',
     staticSiteImporterPath: '/tmp/static-site-importer',
   });
-  const defaultThresholdVisualStep = defaultThresholdRecipe.workflow.steps[3];
+  const defaultThresholdVisualStep = defaultThresholdRecipe.workflow.steps.find((step) => step.command === 'wordpress.visual-compare');
   assert.equal(defaultThresholdVisualStep.command, 'wordpress.visual-compare');
   assert.equal(visualCompareMatrixComparison(defaultThresholdVisualStep).threshold, 0, 'visual parity defaults to exact pixel parity');
 
@@ -3818,8 +3823,7 @@ test('default visual-parity source-url targets the staged source/ subdir as a fi
     staticSiteImporterPath: '/tmp/static-site-importer',
   });
 
-  // [activate, validate(simple-site), editor-validation(simple-site), visual-compare(simple-site)]
-  const visualStep = recipe.workflow.steps[3];
+  const visualStep = recipe.workflow.steps.find((step) => step.command === 'wordpress.visual-compare');
   assert.equal(
     visualCompareMatrixComparison(visualStep).sourceUrl,
     'file:///tmp/artifacts/simple-site/source/index.html',
@@ -3838,7 +3842,7 @@ test('explicit visual-parity source base can still target a served uploads path'
     visualParitySourceBaseUrl: '/wp-content/uploads/static-site-importer-fixture-matrix',
   });
 
-  const visualStep = recipe.workflow.steps[3];
+  const visualStep = recipe.workflow.steps.find((step) => step.command === 'wordpress.visual-compare');
   assert.equal(visualCompareMatrixComparison(visualStep).sourceUrl, '/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/source/index.html');
 });
 
@@ -3863,10 +3867,10 @@ test('stageFixtureSource copies the raw fixture source into the served source/ s
   // preserving their relative layout so assets resolve.
   assert.ok(existsSync(path.join(sourceDir, 'index.html')), 'staged source index.html should exist');
   assert.ok(existsSync(path.join(sourceDir, 'style.css')), 'staged source style.css should exist');
-  assert.equal(
-    readFileSync(path.join(sourceDir, 'index.html'), 'utf8'),
-    readFileSync(path.join(fixtureRoot, 'simple-site', 'index.html'), 'utf8'),
-  );
+  const stagedHtml = readFileSync(path.join(sourceDir, 'index.html'), 'utf8');
+  assert.match(stagedHtml, /data-ssi-visual-parity-deterministic/);
+  assert.match(stagedHtml, /animation-duration: 0\.001ms !important/);
+  assert.ok(stagedHtml.includes(VISUAL_PARITY_DETERMINISTIC_CSS.trim()));
   // The import payload (artifact.json) is still written alongside, unchanged.
   assert.ok(existsSync(path.join(outputDirectory, 'simple-site', 'artifact.json')), 'artifact.json should still be written');
   assert.equal(written.metadata.source_staging.status, 'staged');
