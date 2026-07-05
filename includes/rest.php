@@ -449,7 +449,19 @@ function static_site_importer_rest_figma_allowed_site_hosts(): array {
  * @return true|WP_Error
  */
 function static_site_importer_rest_manage_permission() {
-	if ( function_exists( 'current_user_can' ) && current_user_can( 'switch_themes' ) ) {
+	$allowed = ! function_exists( 'current_user_can' ) || current_user_can( 'switch_themes' );
+
+	/**
+	 * Filters whether the current request may run import mutations.
+	 *
+	 * Host products can grant their own product-specific capability without giving
+	 * users broad theme-management access.
+	 *
+	 * @param bool $allowed Whether the current request is allowed.
+	 */
+	$allowed = (bool) apply_filters( 'static_site_importer_can_manage_imports', $allowed );
+
+	if ( $allowed ) {
 		return true;
 	}
 
