@@ -150,7 +150,10 @@ $theme_writes = Static_Site_Importer_Theme_Materializer::base_theme_writes(
 	false
 );
 $theme_json   = json_decode( $theme_writes[ $theme_dir . '/theme.json' ] ?? '', true );
+$front_page_template = (string) ( $theme_writes[ $theme_dir . '/templates/front-page.html' ] ?? '' );
 $assert( is_array( $theme_json ), 'generated-theme-json-decodes' );
+$assert( str_contains( $front_page_template, '<!-- wp:post-content /-->' ), 'post-content-template-uses-neutral-wrapper' );
+$assert( ! str_contains( $front_page_template, '"tagName":"main"' ), 'post-content-template-does-not-duplicate-source-main-selector' );
 $assert(
 	'"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' === ( $theme_json['styles']['typography']['fontFamily'] ?? '' ),
 	'body-font-family-is-materialized-in-theme-json',

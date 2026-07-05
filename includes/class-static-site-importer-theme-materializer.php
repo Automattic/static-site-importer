@@ -52,7 +52,7 @@ class Static_Site_Importer_Theme_Materializer {
 		return trim(
 			$header_part . "\n\n" .
 			$background_blocks . "\n\n" .
-			'<!-- wp:post-content {"tagName":"main"} /-->' . "\n\n" .
+			'<!-- wp:post-content /-->' . "\n\n" .
 			$footer_part
 		) . "\n";
 	}
