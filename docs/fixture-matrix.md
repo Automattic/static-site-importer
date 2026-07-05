@@ -280,6 +280,17 @@ exact recipe command the reusable `runVisualParityWorkload` helper composes in
 homeboy-extensions — the matrix emits it inline rather than spinning up a
 separate sandbox, so no new wp-codebox capability is introduced.
 
+Visual-parity capture is intentionally deterministic. SSI stages the static
+source with a small `data-ssi-visual-parity-deterministic` style block that
+finishes CSS animations/transitions and makes reveal/page-load elements visible;
+after import, the recipe installs the same CSS into the WordPress candidate via
+`wp_update_custom_css_post()` before taking screenshots. The visual compare step
+uses `waitFor=duration` with a fixed settle duration (`4000ms` by default) so both
+source and candidate are captured after DOM readiness plus the same settling
+window. Operators can override the settle contract with
+`SSI_FIXTURE_MATRIX_VISUAL_PARITY_WAIT_FOR` and
+`SSI_FIXTURE_MATRIX_VISUAL_PARITY_DURATION_MS` while investigating capture issues.
+
 `collectVisualParityDiagnostics` reads the comparison back out (from either the
 raw `wp-codebox/visual-compare/v1` diff, a `wp-codebox/visual-compare-matrix/v1`
 summary, or a normalized `homeboy/VisualParityArtifact/v1` artifact). When the
@@ -319,23 +330,30 @@ Source/candidate wiring (verified by real local recipe-runs): the
 `wordpress.visual-compare` step renders and pixel-diffs locally in WP Codebox
 against the real two pages. `writeFixtureMatrixArtifacts` stages each fixture's
 ORIGINAL static source (index.html + css/js/images) into
-`<artifacts>/<id>/source/...`, and that artifacts directory is mounted into the
-sandbox at the WordPress uploads path, so the source is served by the same
-in-sandbox WordPress origin as the candidate. The step composes
-`source-url=/wp-content/uploads/static-site-importer-fixture-matrix/<id>/source/index.html`
-(served, HTTP 200) and `candidate-url=/`. Because each fixture's import step runs
-with `activate=true` — which sets `show_on_front=page` + `page_on_front` to the
-imported front page — and the recipe interleaves `[import, visual-compare]` per
-fixture, `/` resolves to THIS fixture's imported front page at capture time, the
-real imported WordPress output. A fixture can override `source_url`/`candidate_url`
-to target a specific staged page or imported permalink. The wiring,
-source-staging, finding-parsing, threshold, and gating logic are unit-tested in
+`<artifacts>/<id>/source/...`, with only the deterministic capture CSS added to
+HTML files. The step composes
+`source-url=file://<artifacts>/<id>/source/index.html` and `candidate-url=/`.
+Because each fixture's import step runs with `activate=true` — which sets
+`show_on_front=page` + `page_on_front` to the imported front page — and the recipe
+interleaves `[import, visual-setup, visual-compare]` per fixture, `/` resolves to
+THIS fixture's imported front page at capture time, the real imported WordPress
+output. A fixture can override `source_url`/`candidate_url` to target a specific
+staged page or imported permalink. The wiring, source-staging, finding-parsing,
+threshold, deterministic setup, and gating logic are unit-tested in
 `tools/fixture-matrix.test.mjs`.
 
 Capture is full-page by default. wp-codebox's URL-target default is also
 full-page, but SSI previously overrode it with `full-page=false`, which limited
 the evidence to the requested viewport and missed below-the-fold regressions. Use
 `visualParityFullPage: false` only for an explicitly bounded exploratory run.
+
+Known wp-codebox gap: `wordpress.visual-compare` supports wait strategy, fixed
+duration, viewport, full-page, threshold, and artifact namespacing through
+`matrix-json`, but it does not currently expose a first-class reduced-motion /
+animation-freeze / injected-style option, and the `blockExternalRequests` field
+SSI carries is not consumed by wp-codebox's visual-compare matrix adapter. SSI's
+deterministic CSS setup is the current harness-level contract until wp-codebox
+offers native capture-freeze controls.
 
 ## Running the Matrix
 

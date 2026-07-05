@@ -987,6 +987,8 @@ function optionsFromEnv(env = process.env) {
     visualParityPixelmatchThreshold: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD,
     visualParityCandidateUrl: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_CANDIDATE_URL || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_CANDIDATE_URL,
     visualParitySourceBaseUrl: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL,
+    visualParityWaitFor: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_WAIT_FOR || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_WAIT_FOR,
+    visualParityDurationMs: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_DURATION_MS || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_DURATION_MS,
     minNativeRate: benchEnv.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE || env.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE,
   };
 }
@@ -1010,6 +1012,8 @@ function visualParityRecipeInput(options) {
     visualParityCandidateUrl: options.visualParityCandidateUrl,
     visualParitySourceBaseUrl: options.visualParitySourceBaseUrl,
     visualParityFullPage: options.visualParityFullPage,
+    visualParityWaitFor: options.visualParityWaitFor,
+    visualParityDurationMs: options.visualParityDurationMs,
   };
 }
 
