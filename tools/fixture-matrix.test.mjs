@@ -17,6 +17,7 @@ import runFixtureMatrixBench, {
   composerPathRepositoryConfig,
   fixtureMatrixBatchRunSummary,
   mapWithConcurrency,
+  materializeVisualCompareArtifacts,
   resolveBlocksEnginePhpTransformerPath,
   runFixtureMatrix,
 } from '../bench/static-site-fixture-matrix.bench.mjs';
@@ -3845,6 +3846,63 @@ test('visual-compare artifacts collected from fixture files gate the matrix when
   assert.ok(capturedFinding, 'expected the mismatch to still be captured');
   assert.equal(capturedFinding.loss_acceptance, 'acceptable');
   assert.equal(captured.fixtures[0].status, 'passed');
+});
+
+test('visual-compare PNGs are copied to the bench artifact root and registered', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-persisted-output-'));
+  const codeboxArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-codebox-artifacts-'));
+  const runtimeDirectory = path.join(codeboxArtifactsDirectory, 'runtime-123', 'files', 'browser', 'visual-compare', 'simple-site');
+  mkdirSync(runtimeDirectory, { recursive: true });
+  for (const fileName of ['source.png', 'candidate.png', 'diff.png']) {
+    writeFileSync(path.join(runtimeDirectory, fileName), `fake ${fileName}`);
+  }
+
+  const result = {
+    fixtures: [
+      {
+        fixture_id: 'simple-site',
+        diagnostics: [
+          {
+            kind: VISUAL_PARITY_MISMATCH_KIND,
+            artifact_refs: [
+              { schema: 'homeboy/artifact-ref/v1', artifact_id: 'source_screenshot', kind: 'visual-parity', path: 'files/browser/visual-compare/simple-site/source.png' },
+              { schema: 'homeboy/artifact-ref/v1', artifact_id: 'candidate_screenshot', kind: 'visual-parity', path: 'files/browser/visual-compare/simple-site/candidate.png' },
+              { schema: 'homeboy/artifact-ref/v1', artifact_id: 'diff_screenshot', kind: 'visual-parity', path: 'files/browser/visual-compare/simple-site/diff.png' },
+            ],
+          },
+        ],
+        visual_parity_artifacts: {
+          schema: 'static-site-importer/visual-parity-artifacts/v1',
+          owner: 'codebox_runtime',
+          artifacts: {
+            source_screenshot: { status: 'captured', ref: { path: 'files/browser/visual-compare/simple-site/source.png' } },
+            imported_screenshot: { status: 'pending', capture_state: 'not_captured' },
+            diff_screenshot: { status: 'captured', ref: { path: 'files/browser/visual-compare/simple-site/diff.png' } },
+          },
+        },
+      },
+    ],
+  };
+
+  const persisted = materializeVisualCompareArtifacts({ result, outputDirectory, codeboxArtifactsDirectory });
+  const fixture = persisted.result.fixtures[0];
+
+  assert.deepEqual(Object.keys(persisted.artifacts).sort(), [
+    'visual_compare_simple-site_candidate',
+    'visual_compare_simple-site_diff',
+    'visual_compare_simple-site_source',
+  ]);
+  for (const [key, artifact] of Object.entries(persisted.artifacts)) {
+    assert.ok(existsSync(artifact.path), `${key} should point at a copied PNG`);
+    assert.equal(artifact.path.includes('homeboy-run-'), false, 'persisted artifact must not live in a transient Homeboy runtime dir');
+    assert.ok(artifact.path.startsWith(path.join(outputDirectory, 'visual-compare', 'simple-site')));
+  }
+  assert.equal(readFileSync(path.join(outputDirectory, 'visual-compare', 'simple-site', 'source.png'), 'utf8'), 'fake source.png');
+  assert.equal(fixture.visual_parity_artifacts.owner, 'bench_artifact_root');
+  assert.equal(fixture.visual_parity_artifacts.artifacts.source_screenshot.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'source.png'));
+  assert.equal(fixture.visual_parity_artifacts.artifacts.imported_screenshot.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'candidate.png'));
+  assert.equal(fixture.visual_parity_artifacts.artifacts.diff_screenshot.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'diff.png'));
+  assert.equal(fixture.diagnostics[0].artifact_refs.find((ref) => ref.artifact_id === 'diff_screenshot').path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'diff.png'));
 });
 
 test('visual-compare dimension mismatch gates even with zero pixel metrics when gating is on', () => {

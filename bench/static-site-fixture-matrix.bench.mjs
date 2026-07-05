@@ -85,6 +85,7 @@ export default async function runFixtureMatrixBench(context = {}) {
       result: { path: summary.result_file },
       summary: { path: path.join(summary.output_directory, 'summary.json') },
       finding_packets: { path: path.join(summary.output_directory, 'finding-packets.json') },
+      ...(summary.visual_parity_artifacts || {}),
     },
     metadata: {
       matrix_id: summary.matrix_id,
@@ -188,6 +189,7 @@ export async function runFixtureMatrix(options) {
   let runtime = null;
   let runtimeError = null;
   let collectedResult = written.result;
+  let visualParityArtifacts = {};
   if (options.run) {
     const batchSize = positiveInteger(options.batchSize, DEFAULT_BATCH_SIZE);
     const concurrency = boundedConcurrency(options.concurrency, DEFAULT_BATCH_CONCURRENCY, MAX_BATCH_CONCURRENCY);
@@ -214,6 +216,7 @@ export async function runFixtureMatrix(options) {
     for (const outcome of batchOutcomes) {
       batchRuns.push(outcome.batchRun);
       batchResults.push(outcome.batchResult);
+      visualParityArtifacts = { ...visualParityArtifacts, ...(outcome.visualParityArtifacts || {}) };
       if (outcome.childCommandFailure) {
         childCommandFailures.push(outcome.childCommandFailure);
       }
@@ -276,6 +279,7 @@ export async function runFixtureMatrix(options) {
     },
     ...(runtime?.childCommandFailures?.length ? { child_command_failures: runtime.childCommandFailures } : {}),
     result_file: path.join(outputDirectory, 'static-site-fixture-matrix-result.json'),
+    visual_parity_artifacts: visualParityArtifacts,
     result_summary: collectedResult.summary,
     runtime: runtime ? runtimeSummary(runtime, runtimeError) : null,
   };
@@ -381,8 +385,147 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     visualParity: visualParityGateInput(options),
     liveWpParity: liveWpParityCollectorInput(options),
   });
+  const visualCompare = materializeVisualCompareArtifacts({
+    result: batchResult,
+    codeboxArtifactsDirectory,
+    outputDirectory,
+  });
 
-  return { batchRun, batchResult, error: batchError, childCommandFailure };
+  return { batchRun, batchResult: visualCompare.result, visualParityArtifacts: visualCompare.artifacts, error: batchError, childCommandFailure };
+}
+
+export function materializeVisualCompareArtifacts(input = {}) {
+  const result = input.result || {};
+  const outputDirectory = path.resolve(input.outputDirectory || input.output_directory || '');
+  const codeboxArtifactsDirectory = path.resolve(input.codeboxArtifactsDirectory || input.codebox_artifacts_directory || '');
+  const artifacts = {};
+  const fixtures = Array.isArray(result.fixtures) ? result.fixtures : [];
+  const updatedFixtures = fixtures.map((fixture) => materializeFixtureVisualCompareArtifacts({
+    fixture,
+    outputDirectory,
+    codeboxArtifactsDirectory,
+    artifacts,
+  }));
+  return {
+    result: { ...result, fixtures: updatedFixtures },
+    artifacts,
+  };
+}
+
+function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory, artifacts }) {
+  const visualParityArtifacts = fixture.visual_parity_artifacts || fixture.visualParityArtifacts;
+  const slots = visualParityArtifacts?.artifacts || {};
+  const fixtureId = fixture.fixture_id || fixture.fixtureId || '';
+  if (!fixtureId || !slots || typeof slots !== 'object') {
+    return fixture;
+  }
+
+  const rewrites = new Map();
+  const updatedSlots = { ...slots };
+  for (const slot of [
+    ['source_screenshot', 'source', ['source_screenshot']],
+    ['imported_screenshot', 'candidate', ['imported_screenshot', 'candidate_screenshot']],
+    ['diff_screenshot', 'diff', ['diff_screenshot']],
+  ]) {
+    const [slotName, fileStem, artifactIds] = slot;
+    const refPath = slots[slotName]?.ref?.path || visualDiagnosticRefPath(fixture.diagnostics, artifactIds);
+    const sourcePath = resolveCodeboxArtifactPath(refPath, codeboxArtifactsDirectory);
+    if (!sourcePath || !fs.existsSync(sourcePath)) {
+      continue;
+    }
+    const persistedPath = path.join(outputDirectory, 'visual-compare', fixtureId, `${fileStem}.png`);
+    fs.mkdirSync(path.dirname(persistedPath), { recursive: true });
+    fs.copyFileSync(sourcePath, persistedPath);
+    rewrites.set(refPath, persistedPath);
+    updatedSlots[slotName] = {
+      ...slots[slotName],
+      status: 'captured',
+      kind: slotName,
+      ref: artifactRef(slotName, persistedPath, 'visual-parity'),
+    };
+    artifacts[`visual_compare_${artifactKey(fixtureId)}_${fileStem}`] = { path: persistedPath };
+  }
+
+  if (rewrites.size === 0) {
+    return fixture;
+  }
+
+  return {
+    ...fixture,
+    diagnostics: rewriteDiagnosticArtifactRefs(fixture.diagnostics, rewrites),
+    artifact_refs: rewriteArtifactRefs(fixture.artifact_refs, rewrites),
+    visual_parity_artifacts: {
+      ...visualParityArtifacts,
+      owner: 'bench_artifact_root',
+      missing: undefined,
+      artifacts: updatedSlots,
+    },
+  };
+}
+
+function visualDiagnosticRefPath(diagnostics, artifactIds) {
+  for (const diagnostic of Array.isArray(diagnostics) ? diagnostics : []) {
+    for (const ref of Array.isArray(diagnostic?.artifact_refs) ? diagnostic.artifact_refs : []) {
+      if (artifactIds.includes(ref?.artifact_id) && ref.path) {
+        return ref.path;
+      }
+    }
+  }
+  return '';
+}
+
+function resolveCodeboxArtifactPath(refPath, codeboxArtifactsDirectory) {
+  if (!refPath || !codeboxArtifactsDirectory) {
+    return '';
+  }
+  if (path.isAbsolute(refPath)) {
+    return refPath;
+  }
+  const directPath = path.join(codeboxArtifactsDirectory, refPath);
+  if (fs.existsSync(directPath)) {
+    return directPath;
+  }
+  for (const entry of safeReadDirectory(codeboxArtifactsDirectory)) {
+    if (!entry.name.startsWith('runtime-') || !entry.isDirectory()) {
+      continue;
+    }
+    const runtimePath = path.join(codeboxArtifactsDirectory, entry.name, refPath);
+    if (fs.existsSync(runtimePath)) {
+      return runtimePath;
+    }
+  }
+  return directPath;
+}
+
+function safeReadDirectory(directory) {
+  try {
+    return fs.readdirSync(directory, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
+function rewriteDiagnosticArtifactRefs(diagnostics, rewrites) {
+  return Array.isArray(diagnostics)
+    ? diagnostics.map((diagnostic) => ({ ...diagnostic, artifact_refs: rewriteArtifactRefs(diagnostic.artifact_refs, rewrites) }))
+    : diagnostics;
+}
+
+function rewriteArtifactRefs(refs, rewrites) {
+  return Array.isArray(refs)
+    ? refs.map((ref) => rewrites.has(ref?.path) ? { ...ref, path: rewrites.get(ref.path) } : ref)
+    : refs;
+}
+
+function artifactRef(artifactId, filePath, kind) {
+  return { schema: 'homeboy/artifact-ref/v1', artifact_id: artifactId, kind, path: filePath };
+}
+
+function artifactKey(value) {
+  return String(value || 'fixture')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'fixture';
 }
 
 // Bounded-concurrency map that preserves input ordering. Spawns at most `limit`
