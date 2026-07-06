@@ -554,9 +554,9 @@ test('fixture capability manifests drive per-fixture plugin provisioning without
   });
   const fixtureSteps = (id) => recipe.workflow.steps.filter((step) => step.metadata?.fixture_id === id);
 
-  assert.deepEqual(fixtureSteps('plain-site').map((step) => step.command), ['wordpress.wp-cli']);
-  assert.deepEqual(fixtureSteps('shop-site').map((step) => step.command), ['wordpress.plugin-setup', 'wordpress.wp-cli']);
-  assert.deepEqual(fixtureSteps('shop-forms-site').map((step) => step.command), ['wordpress.plugin-setup', 'wordpress.plugin-setup', 'wordpress.wp-cli']);
+  assert.deepEqual(fixtureSteps('plain-site').map((step) => step.command), ['wordpress.wp-cli', 'wordpress.wp-cli']);
+  assert.deepEqual(fixtureSteps('shop-site').map((step) => step.command), ['wordpress.plugin-setup', 'wordpress.wp-cli', 'wordpress.wp-cli']);
+  assert.deepEqual(fixtureSteps('shop-forms-site').map((step) => step.command), ['wordpress.plugin-setup', 'wordpress.plugin-setup', 'wordpress.wp-cli', 'wordpress.wp-cli']);
   assert.deepEqual(fixtureSteps('shop-site')[0].args, ['action=install', 'plugin=woocommerce', 'activate=true']);
   assert.deepEqual(fixtureSteps('shop-forms-site')[0].args, ['action=install', 'plugin=woocommerce', 'activate=true']);
   assert.deepEqual(fixtureSteps('shop-forms-site')[1].args, ['action=install', 'plugin=jetpack', 'activate=true']);
@@ -3393,15 +3393,15 @@ test('recipe runs editor-validate-blocks against imported content after each imp
     staticSiteImporterPath: '/tmp/static-site-importer',
   });
 
-  // [activate, validate(simple-site), editor-open(simple-site), editor-validate-blocks(simple-site)]
+  // [activate, validate(simple-site), suppress Woo redirect, editor-open(simple-site), editor-validate-blocks(simple-site)]
   assert.equal(recipe.workflow.steps[1].command, 'wordpress.wp-cli');
   assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
-  const recipeEditorOpenStep = recipe.workflow.steps[2];
+  const recipeEditorOpenStep = recipe.workflow.steps[3];
   assert.equal(recipeEditorOpenStep.command, 'wordpress.editor-open');
   assert.ok(recipeEditorOpenStep.args.includes('target=front-page'));
   assert.ok(recipeEditorOpenStep.args.includes('capture=screenshot,editor-state,editor-validity'));
   assert.ok(recipeEditorOpenStep.args.includes('artifact-prefix=files/browser/editor-open/simple-site'));
-  const editorStep = recipe.workflow.steps[3];
+  const editorStep = recipe.workflow.steps[4];
   assert.equal(editorStep.command, EDITOR_VALIDATE_BLOCKS_COMMAND);
   assert.equal(editorStep.command, 'wordpress.editor-validate-blocks');
   assert.equal(editorStep.args.some((arg) => arg.includes('post-new.php')), false);
@@ -3417,6 +3417,31 @@ test('recipe runs editor-validate-blocks against imported content after each imp
     editorValidation: false,
   });
   assert.equal(disabled.workflow.steps.some((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND), false);
+});
+
+test('commerce fixture recipes suppress WooCommerce onboarding before editor-open', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-commerce-fixture-'));
+  const fixtureDirectory = path.join(root, 'coffee');
+  mkdirSync(fixtureDirectory, { recursive: true });
+  writeFileSync(path.join(fixtureDirectory, 'fixture.json'), JSON.stringify({ id: 'coffee', label: 'Coffee', capabilities: ['commerce-products'] }));
+  writeFileSync(path.join(fixtureDirectory, 'index.html'), '<main><button>Add to cart</button></main>');
+
+  const recipe = buildFixtureMatrixRecipe({
+    matrix: createFixtureMatrix({ fixture_root: root, id: 'commerce-editor-redirect-test' }),
+    artifactsDirectory: '/tmp/artifacts',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+  });
+  const setupStepIndex = recipe.workflow.steps.findIndex((step) => step.metadata?.setup === 'suppress-onboarding-redirect');
+  const importStepIndex = recipe.workflow.steps.findIndex((step) => step.metadata?.phase === 'import');
+  const editorOpenStepIndex = recipe.workflow.steps.findIndex((step) => step.command === 'wordpress.editor-open');
+
+  assert.notEqual(setupStepIndex, -1);
+  assert.ok(importStepIndex < setupStepIndex);
+  assert.ok(setupStepIndex < editorOpenStepIndex);
+  assert.equal(recipe.workflow.steps[setupStepIndex].command, 'wordpress.wp-cli');
+  assert.match(recipe.workflow.steps[setupStepIndex].args[0], /delete_transient/);
+  assert.match(recipe.workflow.steps[setupStepIndex].args[0], /_wc_activation_redirect/);
+  assert.match(recipe.workflow.steps[setupStepIndex].args[0], /woocommerce_onboarding_profile/);
 });
 
 test('fixture matrix browser surfaces default to front page and opt into bounded secondary pages', () => {
@@ -4519,12 +4544,11 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
     pixelThreshold: 0.05,
   });
 
-  // [activate, validate(simple-site), editor-open(simple-site), editor-validation(simple-site), visual-setup(simple-site), visual-compare(simple-site)]
-  const visualSetupStep = recipe.workflow.steps[4];
+  const visualSetupStep = recipe.workflow.steps.find((step) => step.metadata?.phase === 'visual-setup');
   assert.equal(visualSetupStep.command, 'wordpress.wp-cli');
   assert.equal(visualSetupStep.metadata.phase, 'visual-setup');
   assert.match(visualSetupStep.args[0], /wp_update_custom_css_post/);
-  const visualStep = recipe.workflow.steps[5];
+  const visualStep = recipe.workflow.steps.find((step) => step.command === 'wordpress.visual-compare');
   assert.equal(visualStep.command, 'wordpress.visual-compare');
   const comparison = visualCompareMatrixComparison(visualStep);
   assert.equal(comparison.sourceUrl, 'file:///tmp/artifacts/simple-site/source/index.html');
