@@ -32,10 +32,37 @@ class Static_Site_Importer_Theme_Materializer {
 		return array(
 			$theme_dir . '/functions.php'             => self::functions_php( $theme_slug, $scripts, $stylesheets ),
 			$theme_dir . '/theme.json'                => self::theme_json( $theme_name, $css, $artifacts ),
+			$theme_dir . '/templates/404.html'        => self::not_found_template( $has_header_part, $has_footer_part ),
+			$theme_dir . '/templates/archive.html'    => self::archive_template( $has_header_part, $has_footer_part ),
 			$theme_dir . '/templates/front-page.html' => self::content_template( '', $has_header_part, $has_footer_part ),
 			$theme_dir . '/templates/page.html'       => self::content_template( '', $has_header_part, $has_footer_part ),
 			$theme_dir . '/templates/index.html'      => self::content_template( '', $has_header_part, $has_footer_part ),
 		);
+	}
+
+	/**
+	 * Build the generated archive template.
+	 *
+	 * @param bool $has_header_part Whether a shared header template part was generated.
+	 * @param bool $has_footer_part Whether a shared footer template part was generated.
+	 * @return string
+	 */
+	private static function archive_template( bool $has_header_part, bool $has_footer_part ): string {
+		return self::content_template( '', $has_header_part, $has_footer_part );
+	}
+
+	/**
+	 * Build the generated 404 template.
+	 *
+	 * @param bool $has_header_part Whether a shared header template part was generated.
+	 * @param bool $has_footer_part Whether a shared footer template part was generated.
+	 * @return string
+	 */
+	private static function not_found_template( bool $has_header_part, bool $has_footer_part ): string {
+		$body = '<!-- wp:heading {"level":1} --><h1 class="wp-block-heading">Page not found</h1><!-- /wp:heading -->' . "\n\n" .
+			'<!-- wp:paragraph --><p>The requested page could not be found.</p><!-- /wp:paragraph -->';
+
+		return self::content_template( $body, $has_header_part, $has_footer_part );
 	}
 
 	/**
@@ -689,6 +716,10 @@ class Static_Site_Importer_Theme_Materializer {
 			$template_parts = isset( $artifacts['template_parts'] ) && is_array( $artifacts['template_parts'] ) ? $artifacts['template_parts'] : array();
 		}
 
+		if ( empty( $template_parts ) ) {
+			$template_parts = self::source_file_template_parts( $artifacts );
+		}
+
 		$writes  = array();
 		$reports = array();
 		foreach ( $template_parts as $template_part ) {
@@ -718,6 +749,127 @@ class Static_Site_Importer_Theme_Materializer {
 			'writes'  => $writes,
 			'reports' => $reports,
 		);
+	}
+
+	/**
+	 * Extract header/footer parts from source HTML files when the compiler has not
+	 * emitted explicit template-part artifacts.
+	 *
+	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function source_file_template_parts( array $artifacts ): array {
+		$files = isset( $artifacts['source_files'] ) && is_array( $artifacts['source_files'] ) ? $artifacts['source_files'] : array();
+		foreach ( $files as $file ) {
+			if ( ! is_array( $file ) || ! isset( $file['path'] ) || ! is_scalar( $file['path'] ) ) {
+				continue;
+			}
+
+			$path = (string) $file['path'];
+			if ( ! preg_match( '/\.html?$/i', $path ) ) {
+				continue;
+			}
+
+			$content = '';
+			if ( isset( $file['content'] ) && is_scalar( $file['content'] ) ) {
+				$content = (string) $file['content'];
+			} elseif ( isset( $file['content_base64'] ) && is_scalar( $file['content_base64'] ) ) {
+				$decoded = base64_decode( (string) $file['content_base64'], true );
+				if ( false !== $decoded ) {
+					$content = $decoded;
+				}
+			}
+			if ( '' === $content ) {
+				continue;
+			}
+
+			$parts = self::template_parts_from_html( $content, $path );
+			if ( ! empty( $parts ) ) {
+				return $parts;
+			}
+		}
+
+		return array();
+	}
+
+	/**
+	 * Convert source HTML landmarks into reusable block theme parts.
+	 *
+	 * @param string $html        Source HTML document.
+	 * @param string $source_path Source file path for reports.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function template_parts_from_html( string $html, string $source_path ): array {
+		$document  = new Static_Site_Importer_Document( $html );
+		$fragments = $document->fragments();
+		$parts     = array();
+
+		foreach ( array( 'header', 'footer' ) as $slug ) {
+			$fragment = trim( (string) ( $fragments[ $slug ] ?? '' ) );
+			if ( '' === $fragment ) {
+				$fragment = self::first_landmark_html( $html, $slug );
+			}
+			if ( '' === trim( $fragment ) ) {
+				continue;
+			}
+
+			$diagnostics = array();
+			$markup      = Static_Site_Importer_Page_Materializer::html_to_blocks( self::strip_inline_svg_markup( $fragment ), $source_path . '#' . $slug, $diagnostics );
+			if ( '' === trim( $markup ) ) {
+				continue;
+			}
+
+			$parts[] = array(
+				'source_path'  => $source_path . '#' . $slug,
+				'slug'         => $slug,
+				'title'        => ucfirst( $slug ),
+				'area'         => $slug,
+				'generated'    => true,
+				'block_markup' => trim( $markup ) . "\n",
+			);
+		}
+
+		return $parts;
+	}
+
+	/**
+	 * Remove inline SVG from synthesized source-derived template parts.
+	 *
+	 * @param string $html HTML fragment.
+	 * @return string
+	 */
+	private static function strip_inline_svg_markup( string $html ): string {
+		if ( '' === trim( $html ) || ! str_contains( strtolower( $html ), '<svg' ) ) {
+			return $html;
+		}
+
+		return (string) preg_replace( '#<svg\b[^>]*>.*?</svg>#is', '', $html );
+	}
+
+	/**
+	 * Return the first matching landmark's outer HTML.
+	 *
+	 * @param string $html Source HTML document.
+	 * @param string $tag  Landmark tag name.
+	 * @return string
+	 */
+	private static function first_landmark_html( string $html, string $tag ): string {
+		if ( '' === trim( $html ) ) {
+			return '';
+		}
+
+		$dom      = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$loaded   = $dom->loadHTML( $html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		if ( ! $loaded ) {
+			return '';
+		}
+
+		$nodes = $dom->getElementsByTagName( $tag );
+		$node  = $nodes->length > 0 ? $nodes->item( 0 ) : null;
+		return $node instanceof DOMElement ? trim( (string) $dom->saveHTML( $node ) ) : '';
 	}
 
 	/**
