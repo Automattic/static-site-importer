@@ -1570,7 +1570,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$id = trim( $control_node->getAttribute( 'id' ) );
 		if ( '' !== $id ) {
 			foreach ( $doc->getElementsByTagName( 'label' ) as $label_node ) {
-				if ( ! $label_node instanceof DOMElement || trim( $label_node->getAttribute( 'for' ) ) !== $id ) {
+				if ( trim( $label_node->getAttribute( 'for' ) ) !== $id ) {
 					continue;
 				}
 
@@ -1613,7 +1613,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				$nodes[] = $node;
 			}
 			foreach ( $nodes as $node ) {
-				if ( $node instanceof DOMNode && $node->parentNode instanceof DOMNode ) {
+				if ( $node->parentNode instanceof DOMNode ) {
 					$node->parentNode->removeChild( $node );
 				}
 			}

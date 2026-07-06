@@ -236,6 +236,18 @@ function normalizeOptions(input) {
   const executionIsLocal = executionTarget.local;
   const sharedStateExplicit = Boolean(input.sharedState);
   const artifactRootExplicit = Boolean(input.artifactRoot);
+  let sharedState = '';
+  if (sharedStateExplicit) {
+    sharedState = path.resolve(input.sharedState);
+  } else if (executionIsLocal) {
+    sharedState = path.join(tempRoot, 'shared-state');
+  }
+  let artifactRoot = '';
+  if (artifactRootExplicit) {
+    artifactRoot = path.resolve(input.artifactRoot);
+  } else if (executionIsLocal) {
+    artifactRoot = path.join(tempRoot, 'artifacts');
+  }
 
   return {
     ...input,
@@ -250,8 +262,8 @@ function normalizeOptions(input) {
     blocksEnginePhpTransformerPath,
     passthrough: Array.isArray(input.passthrough) ? input.passthrough : [],
     staticSiteImporter: path.resolve(input.staticSiteImporter),
-    sharedState: sharedStateExplicit ? path.resolve(input.sharedState) : (executionIsLocal ? path.join(tempRoot, 'shared-state') : ''),
-    artifactRoot: artifactRootExplicit ? path.resolve(input.artifactRoot) : (executionIsLocal ? path.join(tempRoot, 'artifacts') : ''),
+    sharedState,
+    artifactRoot,
     sharedStateExplicit,
     artifactRootExplicit,
     homeboyBin: input.homeboyBin || process.env.HOMEBOY_BIN || 'homeboy',
