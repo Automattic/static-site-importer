@@ -25,6 +25,7 @@
         "command": "wp-codebox",
         "env": ["HOMEBOY_WP_CODEBOX_BIN"],
         "capabilities": [
+          "wordpress.editor-open",
           "wordpress.editor-validate-blocks",
           "wordpress.visual-compare"
         ],

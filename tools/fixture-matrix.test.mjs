@@ -428,6 +428,7 @@ test('fixture-matrix rig requires env-backed WP Codebox editor and visual capabi
   assert.ok(tool, 'expected a wp-codebox runner tool requirement');
   assert.equal(tool.command, 'wp-codebox');
   assert.deepEqual(tool.env, ['HOMEBOY_WP_CODEBOX_BIN']);
+  assert.ok(tool.capabilities.includes('wordpress.editor-open'));
   assert.ok(tool.capabilities.includes('wordpress.editor-validate-blocks'));
   assert.ok(tool.capabilities.includes('wordpress.visual-compare'));
 });
@@ -3096,10 +3097,15 @@ test('recipe runs editor-validate-blocks against imported content after each imp
     staticSiteImporterPath: '/tmp/static-site-importer',
   });
 
-  // [activate, validate(simple-site), editor-validate-blocks(simple-site)]
+  // [activate, validate(simple-site), editor-open(simple-site), editor-validate-blocks(simple-site)]
   assert.equal(recipe.workflow.steps[1].command, 'wordpress.wp-cli');
   assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
-  const editorStep = recipe.workflow.steps[2];
+  const editorOpenStep = recipe.workflow.steps[2];
+  assert.equal(editorOpenStep.command, 'wordpress.editor-open');
+  assert.ok(editorOpenStep.args.includes('target=front-page'));
+  assert.ok(editorOpenStep.args.includes('capture=screenshot,editor-state,editor-validity'));
+  assert.ok(editorOpenStep.args.includes('artifact-prefix=files/browser/editor-open/simple-site'));
+  const editorStep = recipe.workflow.steps[3];
   assert.equal(editorStep.command, EDITOR_VALIDATE_BLOCKS_COMMAND);
   assert.equal(editorStep.command, 'wordpress.editor-validate-blocks');
   assert.equal(editorStep.args.some((arg) => arg.includes('post-new.php')), false);
@@ -3977,12 +3983,12 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
     pixelThreshold: 0.05,
   });
 
-  // [activate, validate(simple-site), editor-validation(simple-site), visual-setup(simple-site), visual-compare(simple-site)]
-  const visualSetupStep = recipe.workflow.steps[3];
+  // [activate, validate(simple-site), editor-open(simple-site), editor-validation(simple-site), visual-setup(simple-site), visual-compare(simple-site)]
+  const visualSetupStep = recipe.workflow.steps[4];
   assert.equal(visualSetupStep.command, 'wordpress.wp-cli');
   assert.equal(visualSetupStep.metadata.phase, 'visual-setup');
   assert.match(visualSetupStep.args[0], /wp_update_custom_css_post/);
-  const visualStep = recipe.workflow.steps[4];
+  const visualStep = recipe.workflow.steps[5];
   assert.equal(visualStep.command, 'wordpress.visual-compare');
   const comparison = visualCompareMatrixComparison(visualStep);
   assert.equal(comparison.sourceUrl, 'file:///tmp/artifacts/simple-site/source/index.html');
