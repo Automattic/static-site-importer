@@ -109,6 +109,9 @@ class Static_Site_Importer_Theme_Materializer {
 		}
 
 		$files       = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
+		if ( isset( $artifacts['source_files'] ) && is_array( $artifacts['source_files'] ) ) {
+			$files = array_merge( $files, $artifacts['source_files'] );
+		}
 		$css         = array();
 		$assets      = array();
 		$diagnostics = array();
@@ -273,6 +276,14 @@ class Static_Site_Importer_Theme_Materializer {
 			}
 		}
 
+		$supplemental = self::materialize_supplemental_artifact_file_assets( $theme_dir, $theme_uri, $artifacts, $assets, $order, $write_files );
+		if ( is_wp_error( $supplemental ) ) {
+			return $supplemental;
+		}
+		foreach ( $supplemental['diagnostics'] as $diagnostic ) {
+			$diagnostics[] = $diagnostic;
+		}
+
 		$font_stylesheets = self::materialize_font_materialization_stylesheets( $theme_dir, $theme_uri, $site, $assets, $order, $write_files );
 		if ( is_wp_error( $font_stylesheets ) ) {
 			return $font_stylesheets;
@@ -287,6 +298,84 @@ class Static_Site_Importer_Theme_Materializer {
 			'stylesheets' => $stylesheets,
 			'diagnostics' => $diagnostics,
 		);
+	}
+
+	/**
+	 * Materialize payload-bearing artifact files omitted from a native asset plan.
+	 *
+	 * Some generators emit CSS that references artifact-local files while their
+	 * native materialization plan only lists assets observed in DOM nodes. SSI owns
+	 * the final theme filesystem, so it keeps those file payloads available and in
+	 * the asset map for CSS URL rewriting.
+	 *
+	 * @param string                            $theme_dir   Theme directory.
+	 * @param string                            $theme_uri   Theme URI.
+	 * @param array<string,mixed>               $artifacts   WordPress artifacts from Blocks Engine.
+	 * @param array<string,array<string,mixed>> $assets      Materialized asset rows keyed by source path.
+	 * @param int                               $order       Current materialization order.
+	 * @param bool                              $write_files Whether to write materialized asset files.
+	 * @return array{diagnostics:array<int,array<string,mixed>>}|WP_Error
+	 */
+	private static function materialize_supplemental_artifact_file_assets( string $theme_dir, string $theme_uri, array $artifacts, array &$assets, int &$order, bool $write_files = true ) {
+		$files       = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
+		if ( isset( $artifacts['source_files'] ) && is_array( $artifacts['source_files'] ) ) {
+			$files = array_merge( $files, $artifacts['source_files'] );
+		}
+		$diagnostics = array();
+
+		foreach ( $files as $file ) {
+			if ( ! is_array( $file ) ) {
+				continue;
+			}
+
+			$relative = self::normalize_artifact_materialization_path( isset( $file['path'] ) && is_scalar( $file['path'] ) ? (string) $file['path'] : '' );
+			if ( '' === $relative || isset( $assets[ $relative ] ) ) {
+				continue;
+			}
+
+			$lower = strtolower( $relative );
+			$kind  = isset( $file['kind'] ) && is_scalar( $file['kind'] ) ? (string) $file['kind'] : '';
+			if ( 'html' === $kind || 'css' === $kind || 'js' === $kind || str_ends_with( $lower, '.html' ) || str_ends_with( $lower, '.htm' ) || str_ends_with( $lower, '.css' ) || str_ends_with( $lower, '.js' ) ) {
+				continue;
+			}
+
+			$content = self::materialization_plan_asset_content( $file, $relative );
+			if ( is_wp_error( $content ) ) {
+				return $content;
+			}
+
+			$retention = self::source_retention_policy( $file, $relative, 'website_artifact.files' );
+			if ( isset( $retention['diagnostic'] ) ) {
+				$diagnostics[] = $retention['diagnostic'];
+			}
+
+			$target_relative = 'assets/materialized/' . $relative;
+			$target          = trailingslashit( $theme_dir ) . $target_relative;
+			if ( $write_files ) {
+				$dir = dirname( $target );
+				if ( ! wp_mkdir_p( $dir ) ) {
+					return new WP_Error( 'static_site_importer_supplemental_artifact_asset_mkdir_failed', sprintf( 'Failed to create supplemental artifact asset directory: %s', $dir ) );
+				}
+
+				$result = self::write_file( $target, $content );
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
+			}
+
+			++$order;
+			$assets[ $relative ] = self::materialization_plan_asset_report(
+				array_merge( $file, array( 'origin' => 'website_artifact.files' ) ),
+				$relative,
+				trailingslashit( $theme_uri ) . $target_relative,
+				$target_relative,
+				self::mime_type( $target ),
+				$order,
+				$retention
+			);
+		}
+
+		return array( 'diagnostics' => $diagnostics );
 	}
 
 	/**
@@ -794,6 +883,195 @@ class Static_Site_Importer_Theme_Materializer {
 			'generated'          => ! empty( $template_part['generated'] ),
 			'source_paths'       => $source_paths,
 			'source_hash'        => isset( $template_part['source_hash'] ) && is_scalar( $template_part['source_hash'] ) ? (string) $template_part['source_hash'] : '',
+			'block_markup_bytes' => strlen( $markup ),
+			'block_markup_hash'  => hash( 'sha256', $markup ),
+		);
+	}
+
+	/**
+	 * Normalize compiler-declared WordPress template artifacts into generated theme writes.
+	 *
+	 * @param string              $theme_dir Theme directory.
+	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
+	 * @return array{writes:array<string,string>,reports:array<int,array<string,mixed>>}|WP_Error Absolute write paths and report rows.
+	 */
+	public static function template_artifact_writes( string $theme_dir, array $artifacts ) {
+		$templates = self::template_artifacts_from_materialization_plan( $artifacts );
+		if ( is_wp_error( $templates ) ) {
+			return $templates;
+		}
+
+		$writes  = array();
+		$reports = array();
+		foreach ( $templates as $template ) {
+			if ( ! is_array( $template ) ) {
+				return new WP_Error( 'static_site_importer_template_invalid', 'Template artifacts must be arrays.' );
+			}
+
+			$relative = self::template_artifact_relative_path( $template );
+			if ( '' === $relative ) {
+				return new WP_Error( 'static_site_importer_template_unsupported', 'Template artifacts must resolve to a safe templates/*.html path.' );
+			}
+
+			$markup = self::template_artifact_markup( $template );
+			if ( '' === trim( $markup ) ) {
+				return new WP_Error( 'static_site_importer_template_markup_empty', 'Template artifact block markup must not be empty.' );
+			}
+
+			$writes[ trailingslashit( $theme_dir ) . $relative ] = $markup;
+			$reports[] = self::template_artifact_report_payload( $relative, $template, $markup );
+		}
+
+		return array(
+			'writes'  => $writes,
+			'reports' => $reports,
+		);
+	}
+
+	/**
+	 * Build block template writes from conventional source document names.
+	 *
+	 * @param string               $theme_dir Theme directory.
+	 * @param array<string,string> $contents  Converted block markup keyed by source path.
+	 * @return array{writes:array<string,string>,reports:array<int,array<string,mixed>>}
+	 */
+	public static function source_document_template_writes( string $theme_dir, array $contents ): array {
+		$template_map = array(
+			'404'            => '404',
+			'archive'        => 'archive',
+			'search'         => 'search',
+			'search-results' => 'search',
+		);
+		$writes       = array();
+		$reports      = array();
+
+		foreach ( $contents as $source_path => $content ) {
+			$slug          = sanitize_title( preg_replace( '/\.[^.]+$/', '', basename( (string) $source_path ) ) ?? '' );
+			$template_slug = $template_map[ $slug ] ?? '';
+			if ( '' === $template_slug || '' === trim( (string) $content ) ) {
+				continue;
+			}
+
+			$relative            = 'templates/' . $template_slug . '.html';
+			$writes[ trailingslashit( $theme_dir ) . $relative ] = trim( (string) $content ) . "\n";
+			$reports[]           = array(
+				'path'              => $relative,
+				'slug'              => $template_slug,
+				'source'            => 'source_document',
+				'source_path'       => (string) $source_path,
+				'block_count'       => substr_count( (string) $content, '<!-- wp:' ),
+				'core_html_blocks'  => substr_count( (string) $content, '<!-- wp:html' ),
+			);
+		}
+
+		return array(
+			'writes'  => $writes,
+			'reports' => $reports,
+		);
+	}
+
+	/**
+	 * Read generic WordPress template writes from a Blocks Engine materialization plan.
+	 *
+	 * @param array<string,mixed> $artifacts WordPress artifacts from the transformer adapter.
+	 * @return array<int,array<string,mixed>>|WP_Error Template artifacts.
+	 */
+	private static function template_artifacts_from_materialization_plan( array $artifacts ) {
+		$site = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
+		if ( 'blocks-engine/php-transformer/materialization-plan/v1' !== (string) ( $site['schema'] ?? '' ) ) {
+			return array();
+		}
+
+		$template_rows = array();
+		if ( array_key_exists( 'template_writes', $site ) ) {
+			if ( ! is_array( $site['template_writes'] ) ) {
+				return new WP_Error( 'static_site_importer_materialization_plan_template_writes_invalid', 'Blocks Engine materialization_plan.template_writes must be an array.' );
+			}
+
+			foreach ( $site['template_writes'] as $write ) {
+				if ( ! is_array( $write ) ) {
+					return new WP_Error( 'static_site_importer_materialization_plan_template_write_invalid', 'Blocks Engine template write entries must be arrays.' );
+				}
+
+				if ( 'wp_template' !== (string) ( $write['type'] ?? '' ) ) {
+					continue;
+				}
+
+				$template_rows[] = $write;
+			}
+		}
+
+		if ( array_key_exists( 'templates', $site ) ) {
+			if ( ! is_array( $site['templates'] ) ) {
+				return new WP_Error( 'static_site_importer_materialization_plan_templates_invalid', 'Blocks Engine materialization_plan.templates must be an array.' );
+			}
+
+			foreach ( $site['templates'] as $template ) {
+				if ( ! is_array( $template ) ) {
+					return new WP_Error( 'static_site_importer_materialization_plan_template_invalid', 'Blocks Engine template entries must be arrays.' );
+				}
+
+				$template_rows[] = $template;
+			}
+		}
+
+		return $template_rows;
+	}
+
+	/**
+	 * Resolve a template artifact to a generated theme template path.
+	 *
+	 * @param array<string,mixed> $template Template artifact.
+	 * @return string Relative theme path, or empty string when unsupported.
+	 */
+	private static function template_artifact_relative_path( array $template ): string {
+		foreach ( array( 'path', 'theme_path', 'file' ) as $key ) {
+			if ( isset( $template[ $key ] ) && is_scalar( $template[ $key ] ) ) {
+				$relative = self::normalize_artifact_materialization_path( (string) $template[ $key ] );
+				if ( preg_match( '#^templates/[A-Za-z0-9._-]+\.html$#', $relative ) ) {
+					return $relative;
+				}
+			}
+		}
+
+		$slug = isset( $template['slug'] ) && is_scalar( $template['slug'] ) ? sanitize_title( (string) $template['slug'] ) : '';
+		if ( '' === $slug ) {
+			return '';
+		}
+
+		return 'templates/' . $slug . '.html';
+	}
+
+	/**
+	 * Extract serialized block markup from a template artifact.
+	 *
+	 * @param array<string,mixed> $template Template artifact.
+	 * @return string Serialized block markup.
+	 */
+	private static function template_artifact_markup( array $template ): string {
+		foreach ( array( 'block_markup', 'content', 'markup' ) as $key ) {
+			if ( isset( $template[ $key ] ) && is_scalar( $template[ $key ] ) ) {
+				return (string) $template[ $key ];
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Build a compact report row for a materialized template artifact.
+	 *
+	 * @param string              $path     Relative generated theme path.
+	 * @param array<string,mixed> $template Template artifact.
+	 * @param string              $markup   Serialized block markup.
+	 * @return array<string,mixed>
+	 */
+	private static function template_artifact_report_payload( string $path, array $template, string $markup ): array {
+		return array(
+			'path'               => $path,
+			'slug'               => isset( $template['slug'] ) && is_scalar( $template['slug'] ) ? (string) $template['slug'] : preg_replace( '#^templates/(.+)\.html$#', '$1', $path ),
+			'title'              => isset( $template['title'] ) && is_scalar( $template['title'] ) ? (string) $template['title'] : '',
+			'source_path'        => isset( $template['source_path'] ) && is_scalar( $template['source_path'] ) ? (string) $template['source_path'] : '',
 			'block_markup_bytes' => strlen( $markup ),
 			'block_markup_hash'  => hash( 'sha256', $markup ),
 		);

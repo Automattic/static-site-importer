@@ -93,6 +93,12 @@ class Static_Site_Importer_Theme_Generator {
 		if ( is_wp_error( $compiled ) ) {
 			return $compiled;
 		}
+		if ( isset( $artifact['files'] ) && is_array( $artifact['files'] ) ) {
+			if ( ! isset( $compiled['artifacts'] ) || ! is_array( $compiled['artifacts'] ) ) {
+				$compiled['artifacts'] = array();
+			}
+			$compiled['artifacts']['source_files'] = $artifact['files'];
+		}
 		$document_pages   = self::website_artifact_source_pages( $compiled );
 		if ( is_wp_error( $document_pages ) ) {
 			return $document_pages;
@@ -198,8 +204,19 @@ class Static_Site_Importer_Theme_Generator {
 			$stylesheet_writes,
 			Static_Site_Importer_Theme_Materializer::base_theme_writes( $theme_dir, $theme_slug, $theme_name, $materialized['css'], $has_header_part, $has_footer_part, $materialized['scripts'], $materialized['stylesheets'], $artifacts )
 		);
+		$template_writes = self::template_artifact_writes( $theme_dir, $artifacts );
+		if ( is_wp_error( $template_writes ) ) {
+			return $template_writes;
+		}
+		$writes = array_merge( $writes, $template_writes );
 		$writes = array_merge( $writes, $template_part_writes );
 		self::analyze_imported_page_content_documents( $document_pages, $page_artifacts['contents'] );
+
+		$source_template_writes = Static_Site_Importer_Theme_Materializer::source_document_template_writes( $theme_dir, $page_artifacts['contents'] );
+		$writes                 = array_merge( $writes, $source_template_writes['writes'] );
+		foreach ( $source_template_writes['reports'] as $report ) {
+			self::$conversion_report['generated_theme']['templates'][] = $report;
+		}
 
 		self::record_source_documents_summary( $artifacts['documents'] ?? array(), $document_pages, $page_ids, $permalinks );
 		foreach ( array_keys( $page_artifacts['patterns'] ) as $filename ) {
@@ -2048,6 +2065,26 @@ class Static_Site_Importer_Theme_Generator {
 
 		foreach ( $result['reports'] as $report ) {
 			self::$conversion_report['generated_theme']['template_parts'][] = $report;
+		}
+
+		return $result['writes'];
+	}
+
+	/**
+	 * Normalize full template artifacts into generated theme writes.
+	 *
+	 * @param string              $theme_dir Theme directory.
+	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
+	 * @return array<string,string>|WP_Error Absolute write paths keyed to serialized block markup.
+	 */
+	private static function template_artifact_writes( string $theme_dir, array $artifacts ) {
+		$result = Static_Site_Importer_Theme_Materializer::template_artifact_writes( $theme_dir, $artifacts );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		foreach ( $result['reports'] as $report ) {
+			self::$conversion_report['generated_theme']['templates'][] = $report;
 		}
 
 		return $result['writes'];
