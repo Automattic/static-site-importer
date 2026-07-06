@@ -176,19 +176,19 @@ class Static_Site_Importer_Theme_Generator {
 			return $materialized;
 		}
 
-		$page_artifacts = Static_Site_Importer_Page_Materializer::page_artifacts( $document_pages, $theme_slug, $materialized['assets'], $permalinks );
-		foreach ( $page_artifacts['diagnostics'] as $diagnostic ) {
-			self::$conversion_report['diagnostics'][] = $diagnostic;
-		}
-
-		Static_Site_Importer_Document_Metadata_Reporter::record( self::$conversion_report, $artifacts );
-
 		$template_part_writes = self::template_part_artifact_writes( $theme_dir, $artifacts );
 		if ( is_wp_error( $template_part_writes ) ) {
 			return $template_part_writes;
 		}
 		$has_header_part      = isset( $template_part_writes[ $theme_dir . '/parts/header.html' ] );
 		$has_footer_part      = isset( $template_part_writes[ $theme_dir . '/parts/footer.html' ] );
+
+		$page_artifacts = Static_Site_Importer_Page_Materializer::page_artifacts( $document_pages, $theme_slug, $materialized['assets'], $permalinks, $template_part_writes );
+		foreach ( $page_artifacts['diagnostics'] as $diagnostic ) {
+			self::$conversion_report['diagnostics'][] = $diagnostic;
+		}
+
+		Static_Site_Importer_Document_Metadata_Reporter::record( self::$conversion_report, $artifacts );
 
 		$visual_repair_styles = self::visual_repair_styles_from_artifacts( $artifacts );
 

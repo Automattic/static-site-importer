@@ -102,11 +102,12 @@ class Static_Site_Importer_Page_Materializer {
 	 *
 	 * @param array<string, Static_Site_Importer_Source_Page> $pages      Pages.
 	 * @param string                                          $theme_slug Theme slug.
-	 * @param array<string,array<string,mixed>>                 $assets     Materialized assets keyed by source path.
-	 * @param array<string,string>                              $permalinks Imported page permalinks keyed by source path.
+	 * @param array<string,array<string,mixed>>                 $assets              Materialized assets keyed by source path.
+	 * @param array<string,string>                              $permalinks          Imported page permalinks keyed by source path.
+	 * @param array<string,string>                              $template_part_writes Generated header/footer template part writes keyed by path.
 	 * @return array{patterns:array<string,string>,files:array<string,string>,asset_writes:array<string,string>,contents:array<string,string>,diagnostics:array<int,array<string,mixed>>}
 	 */
-	public static function page_artifacts( array $pages, string $theme_slug, array $assets = array(), array $permalinks = array() ): array {
+	public static function page_artifacts( array $pages, string $theme_slug, array $assets = array(), array $permalinks = array(), array $template_part_writes = array() ): array {
 		$patterns     = array();
 		$files        = array();
 		$contents     = array();
@@ -117,6 +118,7 @@ class Static_Site_Importer_Page_Materializer {
 			$slug         = self::page_slug( $filename, $page );
 			$pattern_slug = sanitize_key( $theme_slug ) . '/page-' . $slug;
 			$content      = self::rewrite_materialized_asset_references( self::source_page_content_blocks( $page, $diagnostics ), $assets, $page->source_key(), $permalinks );
+			$content      = self::dedupe_template_part_shell_blocks( $content, $template_part_writes, $page->source_key(), $diagnostics );
 			$content      = self::promote_inline_svg_html_blocks( $content, $theme_slug, $slug, $asset_writes, $diagnostics );
 			$content      = self::promote_navigation_list_blocks( $content, $diagnostics );
 
@@ -132,6 +134,182 @@ class Static_Site_Importer_Page_Materializer {
 			'contents'     => $contents,
 			'diagnostics'  => $diagnostics,
 		);
+	}
+
+	/**
+	 * Remove global shell blocks from page content after they are hoisted into theme parts.
+	 *
+	 * @param string                        $content              Serialized page block markup.
+	 * @param array<string,string>          $template_part_writes Generated header/footer template part writes keyed by path.
+	 * @param string                        $source_path          Source page path for diagnostics.
+	 * @param array<int,array<string,mixed>> $diagnostics          Diagnostics, passed by reference.
+	 * @return string
+	 */
+	private static function dedupe_template_part_shell_blocks( string $content, array $template_part_writes, string $source_path, array &$diagnostics ): string {
+		if ( '' === trim( $content ) || empty( $template_part_writes ) ) {
+			return $content;
+		}
+
+		$top_level = self::top_level_serialized_blocks( $content );
+		if ( empty( $top_level ) ) {
+			return $content;
+		}
+
+		$header_parts = self::template_part_write_sequences( $template_part_writes, 'header' );
+		$footer_parts = self::template_part_write_sequences( $template_part_writes, 'footer' );
+		$remove_start = 0;
+		$remove_end   = count( $top_level );
+
+		foreach ( $header_parts as $part_blocks ) {
+			$count = count( $part_blocks );
+			if ( $count > 0 && self::block_sequence_matches( array_slice( $top_level, 0, $count ), $part_blocks ) ) {
+				$remove_start = max( $remove_start, $count );
+				break;
+			}
+		}
+
+		foreach ( $footer_parts as $part_blocks ) {
+			$count = count( $part_blocks );
+			if ( $count > 0 && $remove_start <= count( $top_level ) - $count && self::block_sequence_matches( array_slice( $top_level, -$count ), $part_blocks ) ) {
+				$remove_end = min( $remove_end, count( $top_level ) - $count );
+				break;
+			}
+		}
+
+		if ( 0 === $remove_start && count( $top_level ) === $remove_end ) {
+			return $content;
+		}
+
+		$start_offset = $remove_start > 0 ? $top_level[ $remove_start - 1 ]['end'] : 0;
+		$end_offset   = $remove_end < count( $top_level ) ? $top_level[ $remove_end ]['start'] : strlen( $content );
+		$deduped      = trim( substr( $content, $start_offset, $end_offset - $start_offset ) );
+
+		$diagnostics[] = array(
+			'type'        => 'template_part_shell_deduped',
+			'source'      => 'static-site-importer/page-materializer',
+			'source_path' => $source_path,
+			'reason'      => 'matching_header_footer_template_parts',
+			'removed'     => array(
+				'leading_blocks'  => $remove_start,
+				'trailing_blocks' => count( $top_level ) - $remove_end,
+			),
+			'message'     => 'Page body blocks matching generated header/footer template parts were removed to avoid duplicate global shell rendering.',
+		);
+
+		return $deduped;
+	}
+
+	/**
+	 * Return top-level serialized block spans and normalized markup.
+	 *
+	 * @param string $markup Serialized block markup.
+	 * @return array<int,array{start:int,end:int,normalized:string}>
+	 */
+	private static function top_level_serialized_blocks( string $markup ): array {
+		if ( ! preg_match_all( '/<!--\s+(\/)?wp:([a-zA-Z0-9_\-\/]+)([^>]*)-->/', $markup, $matches, PREG_OFFSET_CAPTURE ) ) {
+			return array();
+		}
+
+		$blocks = array();
+		$stack  = array();
+		$count  = count( $matches[0] );
+
+		for ( $i = 0; $i < $count; $i++ ) {
+			$comment = $matches[0][ $i ][0];
+			$offset  = $matches[0][ $i ][1];
+			$closing = '/' === ( $matches[1][ $i ][0] ?? '' );
+			$self    = str_ends_with( trim( $matches[3][ $i ][0] ?? '' ), '/' );
+
+			if ( $closing ) {
+				$opened = array_pop( $stack );
+				if ( empty( $stack ) && is_array( $opened ) ) {
+					$end      = $offset + strlen( $comment );
+					$original = substr( $markup, (int) $opened['start'], $end - (int) $opened['start'] );
+					$blocks[] = array(
+						'start'      => (int) $opened['start'],
+						'end'        => $end,
+						'normalized' => self::normalize_shell_block_markup( $original ),
+					);
+				}
+				continue;
+			}
+
+			if ( empty( $stack ) && $self ) {
+				$end      = $offset + strlen( $comment );
+				$original = substr( $markup, $offset, $end - $offset );
+				$blocks[] = array(
+					'start'      => $offset,
+					'end'        => $end,
+					'normalized' => self::normalize_shell_block_markup( $original ),
+				);
+				continue;
+			}
+
+			if ( ! $self ) {
+				$stack[] = array( 'start' => $offset );
+			}
+		}
+
+		return $blocks;
+	}
+
+	/**
+	 * Extract normalized top-level block sequences from generated template part writes.
+	 *
+	 * @param array<string,string> $template_part_writes Generated template part writes.
+	 * @param string               $area                 Template part area.
+	 * @return array<int,array<int,array{normalized:string}>>
+	 */
+	private static function template_part_write_sequences( array $template_part_writes, string $area ): array {
+		$sequences = array();
+		foreach ( $template_part_writes as $path => $markup ) {
+			$normalized_path = strtolower( str_replace( '\\', '/', (string) $path ) );
+			if ( ! str_ends_with( $normalized_path, '/parts/' . $area . '.html' ) ) {
+				continue;
+			}
+
+			$blocks = self::top_level_serialized_blocks( (string) $markup );
+			if ( ! empty( $blocks ) ) {
+				$sequences[] = $blocks;
+			}
+		}
+
+		return $sequences;
+	}
+
+	/**
+	 * Check whether two top-level block sequences are the same rendered shell.
+	 *
+	 * @param array<int,array{normalized:string}> $page_blocks Page block sequence.
+	 * @param array<int,array{normalized:string}> $part_blocks Template part block sequence.
+	 * @return bool
+	 */
+	private static function block_sequence_matches( array $page_blocks, array $part_blocks ): bool {
+		if ( count( $page_blocks ) !== count( $part_blocks ) ) {
+			return false;
+		}
+
+		foreach ( $part_blocks as $index => $part_block ) {
+			if ( ( $page_blocks[ $index ]['normalized'] ?? '' ) !== ( $part_block['normalized'] ?? '' ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Normalize serialized block markup for shell dedupe comparisons.
+	 *
+	 * @param string $markup Serialized block markup.
+	 * @return string
+	 */
+	private static function normalize_shell_block_markup( string $markup ): string {
+		$markup = preg_replace( '/<!--\s+\/?wp:[^>]*?-->/', '', $markup ) ?? $markup;
+		$markup = html_entity_decode( $markup, ENT_QUOTES | ENT_HTML5 );
+		$markup = preg_replace( '/\s+/', ' ', $markup ) ?? $markup;
+
+		return trim( $markup );
 	}
 
 	/**
