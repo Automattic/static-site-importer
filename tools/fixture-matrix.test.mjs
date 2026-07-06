@@ -51,6 +51,7 @@ import {
   liveWpParityEnabled,
   runLiveWpParity,
   normalizeLiveWpParityReport,
+  selectFixtureSurfaces,
   buildFixtureArtifact,
   createFixtureMatrix,
   editorBlockValidationStep,
@@ -3210,6 +3211,58 @@ test('recipe runs editor-validate-blocks against imported content after each imp
     editorValidation: false,
   });
   assert.equal(disabled.workflow.steps.some((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND), false);
+});
+
+test('fixture matrix browser surfaces default to front page and opt into bounded secondary pages', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-surface-fixture-'));
+  const fixtureDirectory = path.join(root, 'artist');
+  mkdirSync(path.join(fixtureDirectory, 'merch'), { recursive: true });
+  writeFileSync(path.join(fixtureDirectory, 'fixture.json'), JSON.stringify({ id: 'artist', label: 'Artist' }));
+  writeFileSync(path.join(fixtureDirectory, 'index.html'), '<main>Home</main>');
+  writeFileSync(path.join(fixtureDirectory, 'contact.html'), '<main><form><input name="email"></form></main>');
+  writeFileSync(path.join(fixtureDirectory, 'merch', 'index.html'), '<main><button>Add to cart</button></main>');
+
+  const discoveredMatrix = createFixtureMatrix({ fixture_root: root, id: 'surface-recipe-test' });
+  const matrix = { ...discoveredMatrix, fixtures: discoveredMatrix.fixtures.filter((fixture) => fixture.id === 'artist'), count: 1 };
+  assert.deepEqual(selectFixtureSurfaces(matrix.fixtures[0]).map((surface) => surface.id), ['front-page']);
+  assert.deepEqual(selectFixtureSurfaces(matrix.fixtures[0], { surfaceCoverage: { maxExtraSurfaces: 1 } }).map((surface) => surface.id), ['front-page', 'contact']);
+
+  const defaultRecipe = buildFixtureMatrixRecipe({
+    matrix,
+    artifactsDirectory: '/tmp/artifacts',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+  });
+  assert.equal(defaultRecipe.workflow.steps.filter((step) => step.command === 'wordpress.editor-open').length, 1);
+  assert.equal(defaultRecipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare').length, 1);
+
+  const multiSurfaceRecipe = buildFixtureMatrixRecipe({
+    matrix,
+    artifactsDirectory: '/tmp/artifacts',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    surfaceCoverage: { maxExtraSurfaces: 2 },
+  });
+  const editorOpenSteps = multiSurfaceRecipe.workflow.steps.filter((step) => step.command === 'wordpress.editor-open');
+  const editorValidationSteps = multiSurfaceRecipe.workflow.steps.filter((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND);
+  const visualSteps = multiSurfaceRecipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare');
+
+  assert.equal(editorOpenSteps.length, 3);
+  assert.equal(editorValidationSteps.length, 3);
+  assert.equal(visualSteps.length, 3);
+  assert.ok(editorOpenSteps[0].args.includes('artifact-prefix=files/browser/editor-open/artist'));
+  assert.ok(editorOpenSteps[1].args.includes('url=/contact/'));
+  assert.ok(editorOpenSteps[1].args.includes('artifact-prefix=files/browser/editor-open/artist/contact'));
+  assert.ok(editorOpenSteps[2].args.includes('url=/merch/'));
+  assert.ok(editorOpenSteps[2].args.includes('artifact-prefix=files/browser/editor-open/artist/merch'));
+  assert.ok(editorValidationSteps[1].args.includes('url=/contact/'));
+
+  const contactComparison = visualCompareMatrixComparison(visualSteps[1]);
+  assert.equal(contactComparison.name, 'artist--contact');
+  assert.equal(contactComparison.sourceUrl, 'file:///tmp/artifacts/artist/source/contact.html');
+  assert.equal(contactComparison.candidateUrl, '/contact/');
+  const merchComparison = visualCompareMatrixComparison(visualSteps[2]);
+  assert.equal(merchComparison.name, 'artist--merch');
+  assert.equal(merchComparison.sourceUrl, 'file:///tmp/artifacts/artist/source/merch/index.html');
+  assert.equal(merchComparison.candidateUrl, '/merch/');
 });
 
 test('--no-editor-validation skips the editor browser step while keeping native-rate + findings', () => {
