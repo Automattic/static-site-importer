@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "static-site-importer/gutenberg-incompatibility-registry/v1",
+  "title": "Static Site Importer Gutenberg Incompatibility Registry",
+  "type": "object",
+  "required": ["schema", "matrix_id", "promotion_rule", "summary", "patterns"],
+  "properties": {
+    "schema": { "const": "static-site-importer/gutenberg-incompatibility-registry/v1" },
+    "matrix_id": { "type": "string" },
+    "generated_from": {
+      "type": "object",
+      "properties": {
+        "result_schema": { "type": "string" },
+        "fixture_count": { "type": "integer", "minimum": 0 },
+        "finding_count": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "promotion_rule": {
+      "type": "object",
+      "required": ["custom_block_candidate_fixture_threshold", "rule"],
+      "properties": {
+        "custom_block_candidate_fixture_threshold": { "type": "integer", "minimum": 1 },
+        "rule": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "summary": {
+      "type": "object",
+      "required": ["pattern_count", "custom_block_candidate_count", "convertible_count", "runtime_island_count", "top_patterns"],
+      "properties": {
+        "pattern_count": { "type": "integer", "minimum": 0 },
+        "custom_block_candidate_count": { "type": "integer", "minimum": 0 },
+        "convertible_count": { "type": "integer", "minimum": 0 },
+        "runtime_island_count": { "type": "integer", "minimum": 0 },
+        "top_patterns": { "type": "array", "items": { "$ref": "#/$defs/top_pattern" } }
+      },
+      "additionalProperties": false
+    },
+    "patterns": { "type": "array", "items": { "$ref": "#/$defs/pattern" } }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "classification": { "enum": ["convertible", "custom-block-candidate", "runtime-island"] },
+    "fallback_kind": { "enum": ["core_html", "data_uri", "runtime_island", "fidelity_loss"] },
+    "top_pattern": {
+      "type": "object",
+      "required": ["pattern_key", "classification", "fixture_count", "finding_count", "impact_score"],
+      "properties": {
+        "pattern_key": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "classification": { "$ref": "#/$defs/classification" },
+        "fixture_count": { "type": "integer", "minimum": 0 },
+        "finding_count": { "type": "integer", "minimum": 0 },
+        "impact_score": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "pattern": {
+      "type": "object",
+      "required": ["pattern_key", "description", "fallback_kind", "impossible_in_core_reason", "classification", "no_core_block_path", "fixture_count", "finding_count", "impact_score", "fixtures", "signals"],
+      "properties": {
+        "pattern_key": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "description": { "type": "string" },
+        "fallback_kind": { "$ref": "#/$defs/fallback_kind" },
+        "fallback_kinds": { "$ref": "#/$defs/counts" },
+        "impossible_in_core_reason": { "type": "string" },
+        "classification": { "$ref": "#/$defs/classification" },
+        "no_core_block_path": { "type": "boolean" },
+        "fixture_count": { "type": "integer", "minimum": 0 },
+        "finding_count": { "type": "integer", "minimum": 0 },
+        "impact_score": { "type": "number", "minimum": 0 },
+        "fixtures": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "fixture_counts": { "$ref": "#/$defs/counts" },
+        "selectors": { "type": "array", "items": { "type": "string" } },
+        "source_paths": { "type": "array", "items": { "type": "string" } },
+        "signals": { "$ref": "#/$defs/counts" },
+        "example": { "type": "object" },
+        "examples": { "type": "array", "items": { "type": "object" } }
+      },
+      "additionalProperties": false
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    }
+  }
+}

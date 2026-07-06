@@ -87,6 +87,8 @@ export default async function runFixtureMatrixBench(context = {}) {
       summary: { path: path.join(summary.output_directory, 'summary.json') },
       finding_packets: { path: path.join(summary.output_directory, 'finding-packets.json') },
       visual_diff_classification: { path: path.join(summary.output_directory, 'visual-diff-classification.json') },
+      gutenberg_incompatibility_registry: { path: path.join(summary.output_directory, 'gutenberg-incompatibility-registry.json') },
+      gutenberg_incompatibility_registry_report: { path: path.join(summary.output_directory, 'gutenberg-incompatibility-registry.md') },
       ...(summary.visual_parity_artifacts || {}),
     },
     metadata: {
@@ -258,6 +260,8 @@ export async function runFixtureMatrix(options) {
     summary: fileBytes(path.join(outputDirectory, 'summary.json')),
     finding_packets: fileBytes(path.join(outputDirectory, 'finding-packets.json')),
     visual_diff_classification: fileBytes(path.join(outputDirectory, 'visual-diff-classification.json')),
+    gutenberg_incompatibility_registry: fileBytes(path.join(outputDirectory, 'gutenberg-incompatibility-registry.json')),
+    gutenberg_incompatibility_registry_report: fileBytes(path.join(outputDirectory, 'gutenberg-incompatibility-registry.md')),
   };
   artifactBytes.total = Object.entries(artifactBytes)
     .filter(([key, value]) => key !== 'total' && Number.isFinite(Number(value)))
