@@ -60,6 +60,8 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 $header = '<!-- wp:group {"tagName":"header","className":"site-header"} --><header class="wp-block-group site-header"><p>Global Header</p></header><!-- /wp:group -->';
 $footer = '<!-- wp:group {"tagName":"footer","className":"site-footer"} --><footer class="wp-block-group site-footer"><p>Global Footer</p></footer><!-- /wp:group -->';
 $body   = '<!-- wp:paragraph --><p>Article body remains.</p><!-- /wp:paragraph -->';
+$article_header = '<!-- wp:group {"tagName":"header","className":"article-header"} --><header class="wp-block-group article-header"><h2>Article Header</h2></header><!-- /wp:group -->';
+$article_footer = '<!-- wp:group {"tagName":"footer","className":"article-footer"} --><footer class="wp-block-group article-footer"><p>Article Footer</p></footer><!-- /wp:group -->';
 
 $page = Static_Site_Importer_Source_Page::from_materialization_plan_page(
 	array(
@@ -89,9 +91,37 @@ $assert( str_contains( $content, 'Article body remains.' ), 'page-body-preserved
 $assert( 'template_part_shell_deduped' === ( $artifacts['diagnostics'][0]['type'] ?? '' ), 'dedupe-diagnostic-emitted' );
 $assert( 1 === ( $artifacts['diagnostics'][0]['removed']['leading_blocks'] ?? 0 ), 'diagnostic-leading-count' );
 $assert( 1 === ( $artifacts['diagnostics'][0]['removed']['trailing_blocks'] ?? 0 ), 'diagnostic-trailing-count' );
+$assert( 1 === ( $artifacts['diagnostics'][0]['removed_header_blocks'] ?? 0 ), 'diagnostic-removed-header-blocks' );
+$assert( 1 === ( $artifacts['diagnostics'][0]['removed_footer_blocks'] ?? 0 ), 'diagnostic-removed-footer-blocks' );
+$assert( 'parts/header.html' === ( $artifacts['diagnostics'][0]['matched_header_template_part'] ?? '' ), 'diagnostic-header-template-part-match' );
+$assert( 'parts/footer.html' === ( $artifacts['diagnostics'][0]['matched_footer_template_part'] ?? '' ), 'diagnostic-footer-template-part-match' );
+$assert( 0 === ( $artifacts['diagnostics'][0]['preserved_local_header_count'] ?? -1 ), 'diagnostic-no-local-header-after-global-dedupe' );
+$assert( 0 === ( $artifacts['diagnostics'][0]['preserved_local_footer_count'] ?? -1 ), 'diagnostic-no-local-footer-after-global-dedupe' );
 
-$article_header = '<!-- wp:group {"tagName":"header","className":"article-header"} --><header class="wp-block-group article-header"><h2>Article Header</h2></header><!-- /wp:group -->';
-$article_footer = '<!-- wp:group {"tagName":"footer","className":"article-footer"} --><footer class="wp-block-group article-footer"><p>Article Footer</p></footer><!-- /wp:group -->';
+$local_shell_page = Static_Site_Importer_Source_Page::from_materialization_plan_page(
+	array(
+		'source_path'  => 'local-shell.html',
+		'title'        => 'Local Shell',
+		'block_markup' => $header . "\n" . $article_header . "\n" . $body . "\n" . $article_footer . "\n" . $footer,
+	)
+);
+
+$local_shell_artifacts = $local_shell_page instanceof Static_Site_Importer_Source_Page ? Static_Site_Importer_Page_Materializer::page_artifacts(
+	array( 'local-shell.html' => $local_shell_page ),
+	'ssi-theme',
+	array(),
+	array(),
+	$template_part_writes
+) : array();
+$local_shell_content   = (string) ( $local_shell_artifacts['contents']['local-shell.html'] ?? '' );
+
+$assert( ! str_contains( $local_shell_content, 'Global Header' ), 'local-shell-global-header-removed' );
+$assert( ! str_contains( $local_shell_content, 'Global Footer' ), 'local-shell-global-footer-removed' );
+$assert( str_contains( $local_shell_content, 'Article Header' ), 'local-shell-local-header-preserved' );
+$assert( str_contains( $local_shell_content, 'Article Footer' ), 'local-shell-local-footer-preserved' );
+$assert( 1 === ( $local_shell_artifacts['diagnostics'][0]['preserved_local_header_count'] ?? 0 ), 'diagnostic-local-header-count-preserved' );
+$assert( 1 === ( $local_shell_artifacts['diagnostics'][0]['preserved_local_footer_count'] ?? 0 ), 'diagnostic-local-footer-count-preserved' );
+
 $local_page     = Static_Site_Importer_Source_Page::from_materialization_plan_page(
 	array(
 		'source_path'  => 'article.html',

@@ -163,19 +163,25 @@ class Static_Site_Importer_Page_Materializer {
 		$footer_parts = self::template_part_write_sequences( $template_part_writes, 'footer' );
 		$remove_start = 0;
 		$remove_end   = count( $top_level );
+		$matched_header_part = '';
+		$matched_footer_part = '';
 
-		foreach ( $header_parts as $part_blocks ) {
+		foreach ( $header_parts as $part ) {
+			$part_blocks = $part['blocks'];
 			$count = count( $part_blocks );
 			if ( $count > 0 && self::block_sequence_matches( array_slice( $top_level, 0, $count ), $part_blocks ) ) {
 				$remove_start = max( $remove_start, $count );
+				$matched_header_part = $part['path'];
 				break;
 			}
 		}
 
-		foreach ( $footer_parts as $part_blocks ) {
+		foreach ( $footer_parts as $part ) {
+			$part_blocks = $part['blocks'];
 			$count = count( $part_blocks );
 			if ( $count > 0 && $remove_start <= count( $top_level ) - $count && self::block_sequence_matches( array_slice( $top_level, -$count ), $part_blocks ) ) {
 				$remove_end = min( $remove_end, count( $top_level ) - $count );
+				$matched_footer_part = $part['path'];
 				break;
 			}
 		}
@@ -189,15 +195,21 @@ class Static_Site_Importer_Page_Materializer {
 		$deduped      = trim( substr( $content, $start_offset, $end_offset - $start_offset ) );
 
 		$diagnostics[] = array(
-			'type'        => 'template_part_shell_deduped',
-			'source'      => 'static-site-importer/page-materializer',
-			'source_path' => $source_path,
-			'reason'      => 'matching_header_footer_template_parts',
-			'removed'     => array(
+			'type'                         => 'template_part_shell_deduped',
+			'source'                       => 'static-site-importer/page-materializer',
+			'source_path'                  => $source_path,
+			'reason'                       => 'matching_header_footer_template_parts',
+			'removed_header_blocks'        => $remove_start,
+			'removed_footer_blocks'        => count( $top_level ) - $remove_end,
+			'matched_header_template_part' => $matched_header_part,
+			'matched_footer_template_part' => $matched_footer_part,
+			'preserved_local_header_count' => self::html_tag_count( $deduped, 'header' ),
+			'preserved_local_footer_count' => self::html_tag_count( $deduped, 'footer' ),
+			'removed'                      => array(
 				'leading_blocks'  => $remove_start,
 				'trailing_blocks' => count( $top_level ) - $remove_end,
 			),
-			'message'     => 'Page body blocks matching generated header/footer template parts were removed to avoid duplicate global shell rendering.',
+			'message'                      => 'Page body blocks matching generated header/footer template parts were removed to avoid duplicate global shell rendering.',
 		);
 
 		return $deduped;
@@ -262,7 +274,7 @@ class Static_Site_Importer_Page_Materializer {
 	 *
 	 * @param array<string,string> $template_part_writes Generated template part writes.
 	 * @param string               $area                 Template part area.
-	 * @return array<int,array<int,array{normalized:string}>>
+	 * @return array<int,array{path:string,blocks:array<int,array{normalized:string}>}>
 	 */
 	private static function template_part_write_sequences( array $template_part_writes, string $area ): array {
 		$sequences = array();
@@ -274,11 +286,41 @@ class Static_Site_Importer_Page_Materializer {
 
 			$blocks = self::top_level_serialized_blocks( (string) $markup );
 			if ( ! empty( $blocks ) ) {
-				$sequences[] = $blocks;
+				$sequences[] = array(
+					'path'   => self::template_part_report_path( (string) $path ),
+					'blocks' => $blocks,
+				);
 			}
 		}
 
 		return $sequences;
+	}
+
+	/**
+	 * Convert a generated template-part write path into a report-stable relative path.
+	 *
+	 * @param string $path Template part write path.
+	 * @return string
+	 */
+	private static function template_part_report_path( string $path ): string {
+		$normalized = str_replace( '\\', '/', $path );
+		$parts_pos  = strrpos( $normalized, '/parts/' );
+		if ( false !== $parts_pos ) {
+			return ltrim( substr( $normalized, $parts_pos + 1 ), '/' );
+		}
+
+		return basename( $normalized );
+	}
+
+	/**
+	 * Count preserved HTML tags in the post-dedupe page body.
+	 *
+	 * @param string $markup Serialized block markup.
+	 * @param string $tag    Tag name.
+	 * @return int
+	 */
+	private static function html_tag_count( string $markup, string $tag ): int {
+		return preg_match_all( '/<\s*' . preg_quote( $tag, '/' ) . '\b/i', $markup ) ?: 0;
 	}
 
 	/**
