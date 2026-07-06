@@ -287,7 +287,16 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
   assert.equal(registry.summary.fixture_decision_counts.editor_blocker, 1);
   assert.equal(registry.summary.fixture_decision_counts.native_editability_blocker, 1);
   assert.equal(registry.summary.fixture_decision_counts.provider_runtime_blocker, 1);
+  assert.deepEqual(registry.summary.fixture_decision_groups, {
+    editor_blocker: ['saas'],
+    native_editability_blocker: ['artist'],
+    provider_runtime_blocker: ['runtime-provider'],
+    solved_candidate: ['cv'],
+    visual_only_blocker: ['coffee'],
+  });
   assert.equal(registry.summary.editor_validity_counts.invalid_blocks, 1);
+  assert.match(markdown, /## Fixture Decision Groups/);
+  assert.match(markdown, /\| solved_candidate \| `cv` \|/);
   assert.match(markdown, /## Fixture Decisions/);
   assert.match(markdown, /solved_candidate/);
   assert.match(markdown, /native_editability_blocker/);
