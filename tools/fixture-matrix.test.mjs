@@ -57,6 +57,7 @@ import {
   EDITOR_VALIDATE_BLOCKS_COMMAND,
   EDITOR_VALIDATION_METHOD,
   buildGutenbergIncompatibilityRegistry,
+  renderGutenbergIncompatibilityRegistryMarkdown,
   normalizeFixtureMatrixResult,
   normalizeLossClass,
   stageFixtureSource,
@@ -185,6 +186,68 @@ test('gutenberg incompatibility registry keeps runtime islands separate and cons
   assert.equal(byKey['legitimate-runtime-island'].classification, 'runtime-island');
   assert.equal(byKey['editor-render-divergence'].classification, 'convertible');
   assert.equal(byKey['editor-render-divergence'].signals.editor_render_divergence, 1);
+});
+
+test('gutenberg incompatibility registry separates fixture decision axes', () => {
+  const registry = buildGutenbergIncompatibilityRegistry({
+    matrix_id: 'decision-axis-map',
+    fixtures: [
+      {
+        fixture_id: 'cv',
+        status: 'passed',
+        block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
+        editor_quality: { editor_validated_block_total: 8, editor_invalid_count: 0, core_html_block_count: 0 },
+      },
+      {
+        fixture_id: 'artist',
+        status: 'failed',
+        block_composition: { block_total: 10, native_block_count: 9, core_html_block_count: 1 },
+        editor_quality: { editor_validated_block_total: 10, editor_invalid_count: 0, core_html_block_count: 1 },
+        visual_diff_regions: [{ dominant_cause: 'position_offset', pixel_count: 2500 }],
+      },
+      {
+        fixture_id: 'saas',
+        status: 'failed',
+        editor_quality: { editor_validated_block_total: 6, editor_invalid_count: 1, core_html_block_count: 0 },
+      },
+    ],
+    findings: [
+      {
+        fixture_id: 'artist',
+        kind: 'unsupported_html_fallback',
+        observed_block_name: 'core/html',
+        reason_code: 'html_form_fallback',
+        selector: 'form.newsletter',
+        source_snippet: '<form><input type="email"><button>Subscribe</button></form>',
+      },
+      {
+        fixture_id: 'saas',
+        kind: 'editor_block_invalid',
+        loss_class: 'editor_block_invalid',
+        selector: '.hero',
+        reason: 'Editor block validation failed.',
+      },
+    ],
+  });
+  const decisions = Object.fromEntries(registry.fixture_decisions.map((row) => [row.fixture_id, row]));
+  const patterns = Object.fromEntries(registry.patterns.map((row) => [row.pattern_key, row]));
+  const markdown = renderGutenbergIncompatibilityRegistryMarkdown(registry);
+
+  assert.equal(decisions.cv.editor_validity_status, 'valid');
+  assert.equal(decisions.cv.native_editability_status, 'native_editable');
+  assert.equal(decisions.cv.solved_candidate_reason, 'passed editor validity, native editability, and visual parity without limitation patterns');
+  assert.equal(decisions.artist.native_editability_status, 'custom_block_candidate');
+  assert.equal(decisions.artist.visible_html_island_count, 1);
+  assert.deepEqual(decisions.artist.gutenberg_gap_patterns, ['static-form']);
+  assert.deepEqual(decisions.artist.visual_only_patterns, ['visual-position_offset']);
+  assert.equal(decisions.saas.editor_validity_status, 'invalid_blocks');
+  assert.equal(decisions.saas.native_editability_status, 'editor_invalid');
+  assert.equal(patterns['static-form'].limitation_type, 'real_gutenberg_gap');
+  assert.equal(patterns['visual-position_offset'].limitation_type, 'visual_only_style_drift');
+  assert.equal(registry.summary.fixture_decision_counts.native_editable, 1);
+  assert.equal(registry.summary.editor_validity_counts.invalid_blocks, 1);
+  assert.match(markdown, /## Fixture Decisions/);
+  assert.match(markdown, /`static-form`/);
 });
 
 test('gutenberg incompatibility registry attributes nested svg to the outer fallback island', () => {
