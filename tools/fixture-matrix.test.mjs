@@ -469,6 +469,65 @@ test('gutenberg incompatibility registry attributes nested svg to the outer fall
   assert.equal(byKey['inline-svg-filter-gradient'].fixtures[0], 'coffee');
 });
 
+test('gutenberg incompatibility registry does not treat handled contact links or provider forms as contact layout transformer gaps', () => {
+  const registry = buildGutenbergIncompatibilityRegistry({
+    matrix_id: 'contact-link-provider-separation',
+    fixtures: [
+      {
+        fixture_id: 'artist',
+        editor_validation: { total: 12 },
+        editor_canvas: { status: 'visible' },
+        visual_parity_artifacts: { screenshot: 'artist.png' },
+      },
+      {
+        fixture_id: 'artist-form',
+        editor_validation: { total: 12 },
+        editor_canvas: { status: 'visible' },
+        visual_parity_artifacts: { screenshot: 'artist-form.png' },
+      },
+    ],
+    findings: [
+      {
+        fixture_id: 'artist',
+        kind: 'link_affordance_preserved',
+        reason_code: 'native_link',
+        selector: 'a.contact-email',
+        source_snippet: '<a href="mailto:booking@example.com" class="contact-email">booking@example.com</a><a href="tel:+15551234567">Call</a>',
+        observed_block_name: 'core/paragraph',
+      },
+      {
+        fixture_id: 'artist',
+        kind: 'link_affordance_preserved',
+        reason_code: 'native_link',
+        selector: '.social-links a',
+        source_snippet: '<div class="social-links"><a class="social-link" href="https://example.com/social">Instagram</a></div>',
+        observed_block_name: 'core/buttons',
+      },
+      {
+        fixture_id: 'artist-form',
+        kind: 'unsupported_html_fallback',
+        observed_block_name: 'jetpack/contact-form',
+        diagnostic_code: 'html_form_fallback',
+        reason_code: 'form_requires_runtime',
+        pattern_family: 'interactive_form',
+        selector: 'form.contact-form',
+        source_snippet: '<form class="contact-form"><input name="email"><button>Send</button></form>',
+      },
+    ],
+  });
+  const byKey = Object.fromEntries(registry.patterns.map((row) => [row.pattern_key, row]));
+  const decisions = Object.fromEntries(registry.fixture_decisions.map((row) => [row.fixture_id, row]));
+
+  assert.equal(byKey['contact-layout'], undefined);
+  assert.equal(byKey['static-form'].limitation_type, 'provider_materializable');
+  assert.deepEqual(decisions.artist.transformer_gap_patterns, []);
+  assert.deepEqual(decisions.artist.provider_materializable_patterns, []);
+  assert.equal(decisions.artist.native_editability_status, 'native_editable');
+  assert.deepEqual(decisions['artist-form'].transformer_gap_patterns, []);
+  assert.deepEqual(decisions['artist-form'].provider_materializable_patterns, ['static-form']);
+  assert.equal(decisions['artist-form'].native_editability_status, 'html_islands_or_transformer_gap');
+});
+
 test('gutenberg incompatibility registry ranks tracked custom-block candidates before visual-only evidence', () => {
   const registry = buildGutenbergIncompatibilityRegistry({
     matrix_id: 'tracked-candidate-ranking',
