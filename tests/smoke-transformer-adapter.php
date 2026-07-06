@@ -203,9 +203,13 @@ namespace {
 	if ( ! defined( 'ABSPATH' ) ) {
 		define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 	}
+	if ( ! defined( 'OBJECT' ) ) {
+		define( 'OBJECT', 'OBJECT' );
+	}
 
 	$GLOBALS['ssi_transformer_adapter_format_conversion_calls'] = array();
 	$GLOBALS['ssi_transformer_adapter_compile_calls'] = array();
+	$GLOBALS['ssi_transformer_adapter_seeded_products'] = array();
 
 	if ( ! class_exists( 'WP_Error' ) ) {
 		class WP_Error {
@@ -239,12 +243,100 @@ namespace {
 			return (string) preg_replace( '/[^a-z0-9_\-]/', '', $key );
 		}
 	}
+	if ( ! function_exists( 'sanitize_title' ) ) {
+		function sanitize_title( $title ) {
+			$title = strtolower( trim( (string) $title ) );
+			$title = preg_replace( '/[^a-z0-9]+/', '-', $title );
+			return trim( (string) $title, '-' );
+		}
+	}
+	if ( ! function_exists( 'wp_kses_post' ) ) {
+		function wp_kses_post( $value ) {
+			return (string) $value;
+		}
+	}
+	if ( ! function_exists( 'get_option' ) ) {
+		function get_option( $name, $default = false ) {
+			unset( $name );
+			return $default;
+		}
+	}
+	if ( ! function_exists( 'apply_filters' ) ) {
+		function apply_filters( string $hook, $value, ...$args ) {
+			unset( $hook, $args );
+			return $value;
+		}
+	}
+	if ( ! function_exists( 'post_type_exists' ) ) {
+		function post_type_exists( $type ) {
+			return 'product' === $type;
+		}
+	}
+	if ( ! function_exists( 'taxonomy_exists' ) ) {
+		function taxonomy_exists( $taxonomy ) {
+			return 'product_cat' === $taxonomy;
+		}
+	}
+	if ( ! function_exists( 'get_page_by_path' ) ) {
+		function get_page_by_path( $path, $output = OBJECT, $post_type = 'post' ) {
+			unset( $path, $output, $post_type );
+			return null;
+		}
+	}
+	if ( ! function_exists( 'term_exists' ) ) {
+		function term_exists( $term, $taxonomy ) {
+			unset( $term, $taxonomy );
+			return null;
+		}
+	}
+	if ( ! function_exists( 'wp_insert_term' ) ) {
+		function wp_insert_term( $term, $taxonomy ) {
+			unset( $taxonomy );
+			return array( 'term_id' => abs( crc32( (string) $term ) ) );
+		}
+	}
+	if ( ! function_exists( 'wp_set_object_terms' ) ) {
+		function wp_set_object_terms( $object_id, $terms, $taxonomy ) {
+			unset( $object_id, $taxonomy );
+			return $terms;
+		}
+	}
+	if ( ! function_exists( 'wc_format_decimal' ) ) {
+		function wc_format_decimal( $value ) {
+			return (string) preg_replace( '/[^0-9.]/', '', (string) $value );
+		}
+	}
+	if ( ! class_exists( 'WC_Product_Simple' ) ) {
+		class WC_Product_Simple {
+			/** @var array<string,mixed> */
+			public array $data = array();
+			public function set_name( $value ): void { $this->data['name'] = $value; }
+			public function set_slug( $value ): void { $this->data['slug'] = $value; }
+			public function set_status( $value ): void { $this->data['status'] = $value; }
+			public function set_description( $value ): void { $this->data['description'] = $value; }
+			public function set_short_description( $value ): void { $this->data['short_description'] = $value; }
+			public function set_regular_price( $value ): void { $this->data['regular_price'] = $value; }
+			public function set_sale_price( $value ): void { $this->data['sale_price'] = $value; }
+			public function set_stock_status( $value ): void { $this->data['stock_status'] = $value; }
+			public function set_manage_stock( $value ): void { $this->data['manage_stock'] = $value; }
+			public function set_stock_quantity( $value ): void { $this->data['stock_quantity'] = $value; }
+			public function save(): int {
+				$id = count( $GLOBALS['ssi_transformer_adapter_seeded_products'] ?? array() ) + 1000;
+				$this->data['id'] = $id;
+				$GLOBALS['ssi_transformer_adapter_seeded_products'][ (string) ( $this->data['slug'] ?? '' ) ] = $this->data;
+				return $id;
+			}
+		}
+	}
 
 	if ( is_readable( dirname( __DIR__ ) . '/vendor/autoload.php' ) ) {
 		require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 	}
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-transformer-adapter.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diagnostics-adapter.php';
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 
 	$failures   = array();
@@ -320,6 +412,88 @@ namespace {
 	$assert( 'replace_unsupported_html' === ( $report['diagnostics'][0]['suggested_repair_class'] ?? '' ), 'native-fallback-gets-repair-class' );
 	$assert( 'interaction_candidate' === ( $report['diagnostics'][1]['type'] ?? '' ), 'interaction-candidate-becomes-report-diagnostic' );
 	$assert( 2 === ( $report['finding_packets']['count'] ?? 0 ), 'native-report-diagnostics-create-finding-packets' );
+
+	$GLOBALS['ssi_transformer_adapter_result_override'] = array(
+		'schema'         => 'blocks-engine/php-transformer/result/v1',
+		'status'         => 'success',
+		'source_reports' => array(
+			'artifact'              => array( 'entry_path' => 'website/index.html' ),
+			'materialization_plan' => array(
+				'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
+				'pages'  => array(),
+			),
+			'conversion_report'    => array(
+				'schema'               => 'blocks-engine/php-transformer/conversion-report/v1',
+				'fallback_diagnostics' => array(
+					array(
+						'diagnostic_code'        => 'html_form_fallback',
+						'source_path'            => 'website/index.html',
+						'selector'               => 'form.contact',
+						'reason'                 => 'form_requires_runtime',
+						'runtime_requirement'    => 'server_or_client_form_handler',
+						'materialization_target' => array(
+							'capability'    => 'form',
+							'entity'        => 'form',
+							'provider_role' => 'form_provider',
+						),
+						'form'                   => array( 'action' => '/contact', 'method' => 'post' ),
+						'controls'               => array(
+							array( 'tag' => 'input', 'type' => 'email', 'label' => 'Email', 'required' => true ),
+							array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+						),
+						'control_count'          => 2,
+					),
+					array(
+						'diagnostic_code'        => 'html_product_grid_fallback',
+						'kind'                   => 'html_product_grid_fallback',
+						'source_path'            => 'website/shop.html',
+						'selector'               => 'ul.products',
+						'container_selector'     => 'ul.products',
+						'reason'                 => 'commerce_products_detected',
+						'materialization_target' => array(
+							'capability'    => 'shop',
+							'entity'        => 'product',
+							'provider_role' => 'commerce_product_provider',
+						),
+						'products'               => array(
+							array(
+								'name'            => 'Adapter Tee',
+								'price'           => '$29',
+								'description'     => 'Provider materialized product.',
+								'source_selector' => 'ul.products li:nth-child(1)',
+							),
+						),
+						'product_count'          => 1,
+					),
+				),
+			),
+		),
+		'blocks'         => array(),
+		'documents'      => array(),
+		'assets'         => array(),
+		'diagnostics'    => array(),
+		'fallbacks'      => array(),
+		'provenance'     => array(),
+	);
+	$provider_compiled = $adapter->compile_website_artifact( array( 'schema' => 'blocks-engine/php-transformer/site-artifact/v1' ) );
+	unset( $GLOBALS['ssi_transformer_adapter_result_override'] );
+	$assert( ! is_wp_error( $provider_compiled ), 'provider-fallback-diagnostics-compile-succeeds' );
+	$provider_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
+	Static_Site_Importer_Report_Diagnostics::record_blocks_engine_result( $provider_report, $provider_compiled );
+	$form_seed    = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $provider_report, array( 'allow_missing_jetpack' => true ) );
+	$product_seed = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $provider_report, array( 'allow_missing_woocommerce' => true ) );
+	$provider_fallbacks = $provider_report['blocks_engine']['conversion_report']['fallback_diagnostics'] ?? array();
+	$assert( 'form' === ( $provider_fallbacks[0]['materialization_target']['capability'] ?? '' ), 'provider-report-preserves-form-materialization-target' );
+	$assert( 'shop' === ( $provider_fallbacks[1]['materialization_target']['capability'] ?? '' ), 'provider-report-preserves-shop-materialization-target' );
+	$assert( 'jetpack' === ( $form_seed['provider'] ?? '' ), 'provider-e2e-form-provider-jetpack' );
+	$assert( 1 === ( $form_seed['mapped_count'] ?? 0 ), 'provider-e2e-form-mapped' );
+	$assert( ! empty( $form_seed['waived'] ), 'provider-e2e-form-waiver-recorded' );
+	$assert( 'jetpack/contact-form' === ( $provider_report['diagnostics'][0]['block_name'] ?? '' ), 'provider-e2e-form-jetpack-block' );
+	$assert( 'woocommerce' === ( $product_seed['provider'] ?? '' ), 'provider-e2e-shop-provider-woocommerce' );
+	$assert( 1 === ( $product_seed['mapped_count'] ?? 0 ), 'provider-e2e-product-mapped' );
+	$assert( ! empty( $product_seed['waived'] ), 'provider-e2e-product-waiver-recorded' );
+	$assert( isset( $GLOBALS['ssi_transformer_adapter_seeded_products']['adapter-tee'] ), 'provider-e2e-woo-product-seeded' );
+	$assert( 'woocommerce/product-collection' === ( $provider_report['diagnostics'][1]['block_name'] ?? '' ), 'provider-e2e-product-block-name' );
 
 	$runtime_dependency_parity = array(
 		'schema'                   => 'blocks-engine/runtime-dependency-parity/v1',
@@ -551,9 +725,13 @@ namespace {
 	$view_compiled = $adapter->compile_website_artifact( array( 'schema' => 'blocks-engine/php-transformer/site-artifact/v1' ) );
 	unset( $GLOBALS['ssi_transformer_adapter_result_override'] );
 	$assert( ! is_wp_error( $view_compiled ), 'materialization-view-compile-succeeds', is_wp_error( $view_compiled ) ? $view_compiled->get_error_message() : '' );
-	$assert( 'website/index.html' === ( $view_compiled['artifact_summary']['entry_path'] ?? '' ), 'materialization-view-exposes-artifact-summary' );
+	if ( class_exists( 'Automattic\BlocksEngine\PhpTransformer\StaticSite\MaterializationView' ) ) {
+		$assert( 'website/index.html' === ( $view_compiled['artifact_summary']['entry_path'] ?? '' ), 'materialization-view-exposes-artifact-summary' );
+		$assert( 'blocks-engine/php-transformer/compiled-site/v1' === ( $view_compiled['artifacts']['compiled_site']['schema'] ?? '' ), 'materialization-view-exposes-compiled-site' );
+	} else {
+		$assert( ! isset( $view_compiled['artifact_summary'] ), 'native-contract-used-when-materialization-view-unavailable' );
+	}
 	$assert( 'website/index.html' === ( $view_compiled['input']['entry_path'] ?? '' ), 'materialization-view-artifact-summary-drives-input' );
-	$assert( 'blocks-engine/php-transformer/compiled-site/v1' === ( $view_compiled['artifacts']['compiled_site']['schema'] ?? '' ), 'materialization-view-exposes-compiled-site' );
 	$assert( 'home-view' === ( $view_compiled['artifacts']['site']['pages'][0]['slug'] ?? '' ), 'materialization-view-materialization-plan-drives-site' );
 	$assert( 'assets/view.css' === ( $view_compiled['artifacts']['files'][0]['path'] ?? '' ), 'materialization-view-materialization-plan-assets-drive-files' );
 	$assert( 'view_diagnostic' === ( $view_compiled['diagnostics'][0]['code'] ?? '' ), 'materialization-view-exposes-diagnostics' );

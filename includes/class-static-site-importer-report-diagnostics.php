@@ -2767,6 +2767,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		if ( isset( $fallback['control_count'] ) && is_numeric( $fallback['control_count'] ) ) {
 			$diagnostic['control_count'] = (int) $fallback['control_count'];
 		}
+		self::carry_materialization_metadata( $diagnostic, $fallback );
 
 		// Carry the transformer's readable fallback block tree so the form graft
 		// can anchor the seeded contact-form markup to the exact fallback region
@@ -2812,8 +2813,30 @@ class Static_Site_Importer_Report_Diagnostics {
 			$diagnostic['products']      = $products;
 			$diagnostic['product_count'] = count( $products );
 		}
+		self::carry_materialization_metadata( $diagnostic, $fallback );
 
 		return $diagnostic;
+	}
+
+	/**
+	 * Preserve provider materialization metadata on normalized SSI findings.
+	 *
+	 * @param array<string,mixed> $diagnostic Normalized diagnostic, mutated in place.
+	 * @param array<string,mixed> $fallback   Native Blocks Engine fallback row.
+	 * @return void
+	 */
+	private static function carry_materialization_metadata( array &$diagnostic, array $fallback ): void {
+		foreach ( array( 'materialization_target', 'form', 'controls', 'products' ) as $field ) {
+			if ( isset( $fallback[ $field ] ) && is_array( $fallback[ $field ] ) ) {
+				$diagnostic[ $field ] = $fallback[ $field ];
+			}
+		}
+
+		foreach ( array( 'materialization_hint', 'recoverability', 'actionability', 'suggested_repair_class', 'runtime_requirement' ) as $field ) {
+			if ( isset( $fallback[ $field ] ) && is_scalar( $fallback[ $field ] ) && '' !== trim( (string) $fallback[ $field ] ) ) {
+				$diagnostic[ $field ] = (string) $fallback[ $field ];
+			}
+		}
 	}
 
 	/**
@@ -2853,7 +2876,8 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private static function compact_native_report_rows( array $rows ): array {
-		$fields  = array( 'type', 'kind', 'code', 'severity', 'source', 'source_path', 'path', 'script_path', 'selector', 'target_selector', 'target', 'dom_target', 'tag_name', 'element', 'block_name', 'block_path', 'attribute_path', 'reason', 'reason_code', 'message', 'excerpt', 'source_html_preview', 'emitted_block_preview', 'html_excerpt', 'handle', 'src', 'role', 'discovered', 'materialized', 'enqueued', 'telemetry', 'vendor', 'expected', 'observed', 'label', 'source_label', 'generated_label', 'url', 'source_url', 'generated_url', 'landmark' );
+		$fields  = array( 'type', 'kind', 'code', 'diagnostic_code', 'severity', 'source', 'source_path', 'path', 'script_path', 'selector', 'container_selector', 'target_selector', 'target', 'dom_target', 'tag', 'tag_name', 'element', 'block_name', 'block_path', 'attribute_path', 'reason', 'reason_code', 'message', 'excerpt', 'source_html_preview', 'emitted_block_preview', 'html_excerpt', 'handle', 'src', 'role', 'discovered', 'materialized', 'enqueued', 'telemetry', 'vendor', 'expected', 'observed', 'label', 'source_label', 'generated_label', 'url', 'source_url', 'generated_url', 'landmark', 'runtime_requirement', 'recoverability', 'actionability', 'suggested_repair_class', 'suggested_primitive', 'materialization_hint', 'control_count', 'product_count' );
+		$array_fields = array( 'materialization_target', 'form', 'controls', 'products', 'readable_blocks' );
 		$compact = array();
 		foreach ( array_slice( $rows, 0, 50 ) as $row ) {
 			if ( ! is_array( $row ) ) {
@@ -2864,6 +2888,11 @@ class Static_Site_Importer_Report_Diagnostics {
 			foreach ( $fields as $field ) {
 				if ( isset( $row[ $field ] ) && is_scalar( $row[ $field ] ) && '' !== trim( (string) $row[ $field ] ) ) {
 					$entry[ $field ] = is_bool( $row[ $field ] ) || is_numeric( $row[ $field ] ) ? $row[ $field ] : (string) $row[ $field ];
+				}
+			}
+			foreach ( $array_fields as $field ) {
+				if ( isset( $row[ $field ] ) && is_array( $row[ $field ] ) && ! empty( $row[ $field ] ) ) {
+					$entry[ $field ] = self::compact_native_report_value( $row[ $field ] );
 				}
 			}
 
