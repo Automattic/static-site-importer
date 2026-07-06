@@ -196,7 +196,7 @@ class Static_Site_Importer_Theme_Generator {
 
 		$writes = array_merge(
 			$stylesheet_writes,
-			Static_Site_Importer_Theme_Materializer::base_theme_writes( $theme_dir, $theme_slug, $theme_name, $materialized['css'], $has_header_part, $has_footer_part, $materialized['scripts'], $materialized['stylesheets'] )
+			Static_Site_Importer_Theme_Materializer::base_theme_writes( $theme_dir, $theme_slug, $theme_name, $materialized['css'], $has_header_part, $has_footer_part, $materialized['scripts'], $materialized['stylesheets'], $artifacts )
 		);
 		$writes = array_merge( $writes, $template_part_writes );
 		self::analyze_imported_page_content_documents( $document_pages, $page_artifacts['contents'] );

@@ -119,6 +119,22 @@ $assert( false === ( $guarded['assets']['images/canonical.svg']['deletion_allowe
 $assert( 'website_artifact_source_retention_guard' === ( $guarded['diagnostics'][0]['type'] ?? '' ), 'canonical-source-guard-emits-diagnostic' );
 $assert( 'canonical_source_retained' === ( $guarded['diagnostics'][0]['reason'] ?? '' ), 'canonical-source-guard-reports-reason' );
 
+$missing_payload = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files(
+	$theme_dir,
+	'https://example.test/wp-content/themes/imported',
+	array(
+		'files' => array(
+			array(
+				'path' => 'images/missing.svg',
+				'kind' => 'image',
+			),
+		),
+	),
+	false
+);
+$assert( is_wp_error( $missing_payload ), 'artifact-file-missing-payload-errors' );
+$assert( 'static_site_importer_materialization_plan_asset_content_missing' === ( is_wp_error( $missing_payload ) ? $missing_payload->get_error_code() : '' ), 'artifact-file-missing-payload-error-code' );
+
 $ephemeral = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files(
 	$theme_dir,
 	'https://example.test/wp-content/themes/imported',
@@ -202,6 +218,72 @@ $unresolved_var_writes = Static_Site_Importer_Theme_Materializer::base_theme_wri
 );
 $unresolved_var_json   = json_decode( $unresolved_var_writes[ $theme_dir . '/theme.json' ] ?? '', true );
 $assert( ! isset( $unresolved_var_json['styles']['typography']['fontFamily'] ), 'unresolved-var-body-font-family-is-not-materialized' );
+
+$token_theme_writes = Static_Site_Importer_Theme_Materializer::base_theme_writes(
+	$theme_dir,
+	'imported-theme',
+	'Imported Theme',
+	'',
+	false,
+	false,
+	array(),
+	array(),
+	array(
+		'site' => array(
+			'schema'        => 'blocks-engine/php-transformer/materialization-plan/v1',
+			'design_tokens' => array(
+				'colors'        => array(
+					array(
+						'slug'  => 'Brand Primary',
+						'name'  => 'Brand Primary',
+						'color' => '#0f766e',
+					),
+					array(
+						'slug'  => 'unsafe-color',
+						'name'  => 'Unsafe Color',
+						'color' => 'url(https://example.test/bad.svg)',
+					),
+				),
+				'font_families' => array(
+					array(
+						'slug'        => 'display',
+						'name'        => 'Display',
+						'font_family' => 'Inter, Arial, sans-serif',
+					),
+				),
+				'layout'        => array(
+					'contentSize' => '960px',
+					'wideSize'    => '1280px',
+				),
+			),
+			'theme_json'    => array(
+				'settings' => array(
+					'spacing' => array(
+						'units' => array( 'px', 'rem', '%' ),
+					),
+				),
+				'styles'   => array(
+					'elements' => array(
+						'link' => array(
+							'color' => array(
+								'text' => 'var(--wp--preset--color--brand-primary)',
+							),
+						),
+					),
+				),
+			),
+		),
+	)
+);
+$token_theme_json   = json_decode( $token_theme_writes[ $theme_dir . '/theme.json' ] ?? '', true );
+$token_palette      = $token_theme_json['settings']['color']['palette'] ?? array();
+$token_fonts        = $token_theme_json['settings']['typography']['fontFamilies'] ?? array();
+$assert( '#0f766e' === ( $token_palette[0]['color'] ?? '' ), 'materialization-plan-color-token-promotes-to-theme-json' );
+$assert( 1 === count( $token_palette ), 'unsafe-materialization-plan-color-token-is-skipped' );
+$assert( 'Inter, Arial, sans-serif' === ( $token_fonts[0]['fontFamily'] ?? '' ), 'materialization-plan-font-token-promotes-to-theme-json' );
+$assert( '960px' === ( $token_theme_json['settings']['layout']['contentSize'] ?? '' ), 'materialization-plan-layout-token-overrides-content-size' );
+$assert( array( 'px', 'rem', '%' ) === ( $token_theme_json['settings']['spacing']['units'] ?? array() ), 'materialization-plan-theme-json-fragment-merges-settings' );
+$assert( 'var(--wp--preset--color--brand-primary)' === ( $token_theme_json['styles']['elements']['link']['color']['text'] ?? '' ), 'materialization-plan-theme-json-fragment-merges-styles' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );

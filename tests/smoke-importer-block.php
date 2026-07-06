@@ -1011,6 +1011,20 @@ $generic_fig_artifact = static_site_importer_rest_source_artifact(
 );
 $assert( is_wp_error( $generic_fig_artifact ), 'rest-generic-static-upload-ignores-fig-file' );
 
+$figma_missing_payload = Static_Site_Importer_Figma_Import::website_artifact_from_input(
+	array(
+		'artifact_bundle' => array(
+			'schema' => 'figma-to-wordpress/website-artifact-bundle/v1',
+			'root'   => 'website/',
+			'files'  => array(
+				array( 'path' => 'website/index.html' ),
+			),
+		),
+	)
+);
+$assert( is_wp_error( $figma_missing_payload ), 'figma-bundle-missing-file-payload-errors' );
+$assert( 'static_site_importer_figma_file_payload_missing' === ( is_wp_error( $figma_missing_payload ) ? $figma_missing_payload->get_error_code() : '' ), 'figma-bundle-missing-file-payload-error-code' );
+
 if ( class_exists( 'ZipArchive' ) ) {
 	$fig_payload = array(
 		'name'         => 'Public Import Fixture',
@@ -1128,7 +1142,7 @@ $html_source_page = Static_Site_Importer_Source_Page::from_materialization_plan_
 		'title'        => 'Figma HTML',
 		'slug'         => 'figma-html',
 		'body_format' => 'blocks',
-		'block_markup' => '<!-- wp:heading {"level":1} --><h1>Figma HTML</h1><!-- /wp:heading --><!-- wp:image {"url":"assets/hero.png","alt":"Hero"} --><figure class="wp-block-image"><img src="assets/hero.png" alt="Hero" /></figure><!-- /wp:image -->',
+		'block_markup' => '<!-- wp:heading {"level":1,"style":{"background":{"backgroundImage":"url(assets/bg.png)"}}} --><h1 style="background-image:url(&quot;assets/bg.png&quot;)">Figma HTML</h1><!-- /wp:heading --><!-- wp:image {"url":"assets/hero.png","alt":"Hero"} --><figure class="wp-block-image"><img src="assets/hero.png" alt="Hero" /></figure><!-- /wp:image -->',
 	)
 );
 $assert( ! is_wp_error( $html_source_page ), 'html-materialization-source-page-builds' );
@@ -1137,15 +1151,20 @@ if ( ! is_wp_error( $html_source_page ) ) {
 		array( 'website/index.html' => $html_source_page ),
 		'figma-import',
 		array(
+			'website/assets/bg.png' => array(
+				'final_url' => 'https://example.test/wp-content/themes/figma-import/assets/materialized/website/assets/bg.png',
+			),
 			'website/assets/hero.png' => array(
 				'final_url' => 'https://example.test/wp-content/themes/figma-import/assets/materialized/website/assets/hero.png',
 			),
 		)
 	);
 	$assert( ! str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', '<!-- wp:html -->' ), 'html-materialization-avoids-core-html-block' );
-	$assert( str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', '<!-- wp:heading {"level":1} -->' ), 'html-materialization-converts-html-to-blocks' );
+	$assert( str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', '<!-- wp:heading' ), 'html-materialization-converts-html-to-blocks' );
 	$assert( str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', 'https://example.test/wp-content/themes/figma-import/assets/materialized/website/assets/hero.png' ), 'html-materialization-rewrites-root-relative-asset-reference' );
 	$assert( ! str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', '"url":"assets/hero.png"' ), 'html-materialization-rewrites-block-json-asset-reference' );
+	$assert( str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', 'https://example.test/wp-content/themes/figma-import/assets/materialized/website/assets/bg.png' ), 'html-materialization-rewrites-css-url-asset-reference' );
+	$assert( ! str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', 'url(assets/bg.png)' ), 'html-materialization-removes-source-css-url-reference' );
 	$assert( array() === $html_page_artifacts['diagnostics'], 'html-materialization-does-not-emit-unsupported-format-diagnostic' );
 }
 
@@ -1271,6 +1290,9 @@ $assert( 'static-site-importer/figma-diagnostics/v1' === ( $figma_diagnostics['s
 $assert( true === ( $figma_diagnostics['request']['has_scenegraph'] ?? null ), 'figma-diagnostics-summarizes-scenegraph-request' );
 $assert( 'website/index.html' === ( $figma_diagnostics['artifact']['entrypoint'] ?? '' ), 'figma-diagnostics-summarizes-artifact-entrypoint' );
 $assert( 'static-site-importer/figma-transform-report/v1' === ( $figma_diagnostics['figma_transform_report']['schema'] ?? '' ), 'figma-diagnostics-exposes-durable-transform-report' );
+$assert( isset( $figma_diagnostics['figma_transform_report']['summary']['page_coverage']['selected_count'] ), 'figma-diagnostics-exposes-page-coverage-summary' );
+$assert( isset( $figma_diagnostics['figma_transform_report']['summary']['selected_pages'] ), 'figma-diagnostics-exposes-selected-pages-summary' );
+$assert( isset( $figma_diagnostics['figma_transform_report']['summary']['artifact_quality'] ), 'figma-diagnostics-exposes-artifact-quality-summary' );
 $assert( isset( $figma_diagnostics['transform_diagnostics']['diagnostic_codes'] ), 'figma-diagnostics-exposes-transform-diagnostics' );
 $assert( 'figma-diagnostics' === ( $figma_diagnostics['production_import_input']['slug'] ?? '' ), 'figma-diagnostics-summarizes-production-import-input' );
 
@@ -1279,6 +1301,7 @@ Static_Site_Importer_Theme_Generator::$last_args     = array();
 $figma_import_result = Static_Site_Importer_Figma_Import::import( $figma_diagnostics_input );
 $assert( true === ( $figma_import_result['success'] ?? null ), 'figma-import-scenegraph-succeeds' );
 $assert( 'static-site-importer/figma-transform-report/v1' === ( $figma_import_result['figma_transform_report']['schema'] ?? '' ), 'figma-import-result-exposes-durable-transform-report' );
+$assert( isset( $figma_import_result['figma_transform_report']['summary']['page_coverage'] ), 'figma-import-result-exposes-transform-summary' );
 $assert( 'static-site-importer/figma-transform-report/v1' === ( Static_Site_Importer_Theme_Generator::$last_artifact['provenance']['figma_transform_report']['schema'] ?? '' ), 'figma-artifact-provenance-preserves-transform-report' );
 $assert( 'static-site-importer/figma-transform-report/v1' === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata']['figma_transform_report']['schema'] ?? '' ), 'figma-import-source-metadata-preserves-transform-report' );
 
