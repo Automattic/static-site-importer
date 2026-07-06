@@ -3,6 +3,8 @@
   "private": true,
   "scripts": {
     "fig-intent-parity": "node tools/fig-intent-parity-report.mjs",
+    "fig-fixture-e2e": "node tools/run-fig-fixture-e2e.mjs",
+    "test:fig-fixture-e2e": "node --test tools/run-fig-fixture-e2e.test.mjs",
     "test:fixture-matrix": "node --test tools/fixture-matrix.test.mjs",
     "test:js-block-validation": "node tests/smoke-generated-theme-block-validation.cjs",
     "test:validation": "node tests/run-validation-harness.cjs"
