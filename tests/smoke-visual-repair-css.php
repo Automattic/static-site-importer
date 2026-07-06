@@ -68,6 +68,12 @@ if ( ! function_exists( 'esc_url' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_strip_all_tags' ) ) {
+	function wp_strip_all_tags( string $text ): string {
+		return strip_tags( $text );
+	}
+}
+
 if ( ! function_exists( 'trailingslashit' ) ) {
 	function trailingslashit( string $value ): string {
 		return rtrim( $value, '/\\' ) . '/';
@@ -226,6 +232,41 @@ $navigation_part_writes = is_array( $navigation_part_result ) ? $navigation_part
 $navigation_part_reports = is_array( $navigation_part_result ) ? $navigation_part_result['reports'] : array();
 $assert( str_contains( (string) ( $navigation_part_writes['/tmp/visual-repair-smoke/parts/header.html'] ?? '' ), 'wp:navigation-link' ), 'materialization-plan-navigation-row-is-used-for-header' );
 $assert( array( 'website/index.html#main-nav' ) === ( $navigation_part_reports[0]['source_paths'] ?? array() ), 'materialization-plan-navigation-source-path-is-reported' );
+
+if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
+	function blocks_engine_php_transformer_convert_format( string $content, string $from, string $to, array $options = array() ): array {
+		unset( $from, $to, $options );
+		$text = trim( preg_replace( '/\s+/', ' ', wp_strip_all_tags( $content ) ) ?? '' );
+		return array(
+			'serialized_blocks' => '<!-- wp:paragraph --><p>' . esc_html( $text ) . '</p><!-- /wp:paragraph -->',
+			'diagnostics'       => array(),
+		);
+	}
+}
+
+$source_file_part_result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
+	'/tmp/visual-repair-smoke',
+	array(
+		'source_files' => array(
+			array(
+				'path'    => 'index.html',
+				'content' => '<!doctype html><html><body><main><header><nav><a href="/news/">News</a><svg><path d="M0 0h1v1z" /></svg></nav></header><article><h1>Home</h1></article><footer><p>Footer</p></footer></main></body></html>',
+			),
+		),
+	)
+);
+$assert( is_array( $source_file_part_result ), 'source-file-template-part-fallback-succeeds' );
+$source_file_part_writes = is_array( $source_file_part_result ) ? $source_file_part_result['writes'] : array();
+$source_file_part_reports = is_array( $source_file_part_result ) ? $source_file_part_result['reports'] : array();
+$assert( isset( $source_file_part_writes['/tmp/visual-repair-smoke/parts/header.html'] ), 'source-file-template-part-fallback-writes-header' );
+$assert( isset( $source_file_part_writes['/tmp/visual-repair-smoke/parts/footer.html'] ), 'source-file-template-part-fallback-writes-footer' );
+$assert( ! str_contains( (string) $source_file_part_writes['/tmp/visual-repair-smoke/parts/header.html'], '<!-- wp:html' ), 'source-file-template-part-fallback-strips-inline-svg-html-fallback' );
+$assert( array( 'index.html#header' ) === ( $source_file_part_reports[0]['source_paths'] ?? array() ), 'source-file-template-part-fallback-reports-header-source' );
+
+$base_theme_writes = Static_Site_Importer_Theme_Materializer::base_theme_writes( '/tmp/visual-repair-smoke', 'visual-repair-smoke', 'Visual Repair Smoke', '', true, true );
+$assert( isset( $base_theme_writes['/tmp/visual-repair-smoke/templates/404.html'] ), 'base-theme-writes-404-template' );
+$assert( isset( $base_theme_writes['/tmp/visual-repair-smoke/templates/archive.html'] ), 'base-theme-writes-archive-template' );
+$assert( str_contains( $base_theme_writes['/tmp/visual-repair-smoke/templates/404.html'], 'wp:template-part {"slug":"header"' ), 'base-theme-404-template-uses-header-part' );
 
 $empty_template_part_result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
 	'/tmp/visual-repair-smoke',

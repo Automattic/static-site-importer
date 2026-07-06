@@ -94,6 +94,7 @@ class Static_Site_Importer_Transformer_Adapter {
 		$artifacts['document_metadata'] = $this->document_metadata_from_compiled_site( $compiled_site_metadata_source );
 		$artifacts['documents']         = ! empty( $view['documents'] ) && is_array( $view['documents'] ) ? $view['documents'] : ( isset( $result['documents'] ) && is_array( $result['documents'] ) ? $result['documents'] : array() );
 		$artifacts['files']             = $this->artifact_files_from_site_report( $materialization_plan, ! empty( $view ) ? $view : $result );
+		$artifacts['source_files']      = $this->source_files_from_artifact( $artifact );
 		$artifacts['site']              = $materialization_plan;
 		$artifacts['compiled_site']     = ! empty( $view['compiled_site'] ) && is_array( $view['compiled_site'] ) ? $view['compiled_site'] : array();
 		$artifacts['template_parts']    = isset( $materialization_plan['template_parts'] ) && is_array( $materialization_plan['template_parts'] ) ? $materialization_plan['template_parts'] : array();
@@ -111,6 +112,50 @@ class Static_Site_Importer_Transformer_Adapter {
 		}
 
 		return $compiled;
+	}
+
+	/**
+	 * Preserve safe source artifact files for downstream WordPress materializers.
+	 *
+	 * @param array<string,mixed> $artifact Website artifact bundle.
+	 * @return array<int,array<string,string>>
+	 */
+	private function source_files_from_artifact( array $artifact ): array {
+		$files  = isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? $artifact['files'] : array();
+		$result = array();
+
+		foreach ( $files as $file ) {
+			if ( ! is_array( $file ) || ! isset( $file['path'] ) || ! is_scalar( $file['path'] ) ) {
+				continue;
+			}
+
+			$path = ltrim( str_replace( '\\', '/', (string) $file['path'] ), '/' );
+			if ( '' === $path || str_contains( $path, '..' ) ) {
+				continue;
+			}
+
+			$content = '';
+			if ( isset( $file['content'] ) && is_scalar( $file['content'] ) ) {
+				$content = (string) $file['content'];
+			} elseif ( isset( $file['content_base64'] ) && is_scalar( $file['content_base64'] ) ) {
+				$decoded = base64_decode( (string) $file['content_base64'], true );
+				if ( false === $decoded ) {
+					continue;
+				}
+				$content = $decoded;
+			}
+
+			if ( '' === $content ) {
+				continue;
+			}
+
+			$result[] = array(
+				'path'    => $path,
+				'content' => $content,
+			);
+		}
+
+		return $result;
 	}
 
 	/**

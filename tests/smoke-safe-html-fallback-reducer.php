@@ -75,6 +75,10 @@ $input = implode(
 		'<!-- wp:html {"content":""} --><!-- /wp:html -->',
 		'<!-- wp:html {"content":"<section class=\"hero\"><h2 class=\"title\">Care <em>that works</em></h2><p class=\"lede\">Book today</p><img class=\"photo\" src=\"assets/hero.jpg\" alt=\"Clinic room\"><nav class=\"site-nav\"><ul><li><a href=\"#treatments\">Treatments</a></li><li><a href=\"#pricing\">Pricing</a></li><li>Contact</li></ul></nav><ul class=\"ticks\"><li>Assessment</li><li>Treatment</li></ul><a class=\"cta\" href=\"/book/\">Reserve</a></section>"} --><section class="hero"><h2 class="title">Care <em>that works</em></h2><p class="lede">Book today</p><img class="photo" src="assets/hero.jpg" alt="Clinic room"><nav class="site-nav"><ul><li><a href="#treatments">Treatments</a></li><li><a href="#pricing">Pricing</a></li><li>Contact</li></ul></nav><ul class="ticks"><li>Assessment</li><li>Treatment</li></ul><a class="cta" href="/book/">Reserve</a></section><!-- /wp:html -->',
 		'<!-- wp:html {"content":"<section class=\"nav-bar\"><ul><li>Services</li><li>Prices</li></ul></section>"} --><section class="nav-bar"><ul><li>Services</li><li>Prices</li></ul></section><!-- /wp:html -->',
+		'<!-- wp:html {"content":"<figure class=\"case-study\"><picture><source srcset=\"assets/team.webp\" type=\"image/webp\"><img src=\"assets/team.jpg\" alt=\"Care team\"></picture><figcaption>Care team caption</figcaption></figure>"} --><figure class="case-study"><picture><source srcset="assets/team.webp" type="image/webp"><img src="assets/team.jpg" alt="Care team"></picture><figcaption>Care team caption</figcaption></figure><!-- /wp:html -->',
+		'<!-- wp:html {"content":"<form class=\"site-search\" role=\"search\" action=\"/search/\"><label>Find care</label><input type=\"search\" name=\"s\" placeholder=\"Search services\" aria-label=\"Search services\"><button type=\"submit\">Go</button></form>"} --><form class="site-search" role="search" action="/search/"><label>Find care</label><input type="search" name="s" placeholder="Search services" aria-label="Search services"><button type="submit">Go</button></form><!-- /wp:html -->',
+		'<!-- wp:html {"content":"<input class=\"generated-search\" type=\"search\" name=\"s\" placeholder=\"Email Search for...\" aria-label=\"Email Search for...\">"} --><input class="generated-search" type="search" name="s" placeholder="Email Search for..." aria-label="Email Search for..."><!-- /wp:html -->',
+		'<!-- wp:html {"content":"<blockquote class=\"pull\"><p>Movement changed everything.</p><cite>Patient story</cite></blockquote><hr class=\"rule\">"} --><blockquote class="pull"><p>Movement changed everything.</p><cite>Patient story</cite></blockquote><hr class="rule"><!-- /wp:html -->',
 		'<!-- wp:html {"content":"<form class=\"lead-form\"><input name=\"email\"></form>"} --><form class="lead-form"><input name="email"></form><!-- /wp:html -->',
 		'</div><!-- /wp:group -->',
 	)
@@ -87,24 +91,34 @@ $output     = $method->invoke( null, $input );
 $before = $count_blocks( $input );
 $after  = $count_blocks( $output );
 
-$assert( 4 === ( $before['core/html'] ?? 0 ), 'before-has-four-html-fallbacks' );
+$assert( 8 === ( $before['core/html'] ?? 0 ), 'before-has-eight-html-fallbacks' );
 $assert( 1 === ( $after['core/html'] ?? 0 ), 'after-keeps-only-unsupported-form-fallback', print_r( $after, true ) );
 $assert( 3 === ( $after['core/group'] ?? 0 ), 'existing-and-section-groups-preserved' );
 $assert( 1 === ( $after['core/heading'] ?? 0 ), 'heading-converted' );
 $assert( 1 === ( $after['core/paragraph'] ?? 0 ), 'paragraph-converted' );
-$assert( 1 === ( $after['core/image'] ?? 0 ), 'image-converted' );
+$assert( 2 === ( $after['core/image'] ?? 0 ), 'images-converted' );
 $assert( 1 === ( $after['core/list'] ?? 0 ), 'list-converted' );
 $assert( 2 === ( $after['core/list-item'] ?? 0 ), 'list-items-converted' );
 $assert( 2 === ( $after['core/navigation'] ?? 0 ), 'navigation-converted' );
 $assert( 5 === ( $after['core/navigation-link'] ?? 0 ), 'navigation-links-converted' );
 $assert( 1 === ( $after['core/buttons'] ?? 0 ), 'button-wrapper-converted' );
 $assert( 1 === ( $after['core/button'] ?? 0 ), 'button-converted' );
+$assert( 2 === ( $after['core/search'] ?? 0 ), 'search-patterns-converted' );
+$assert( 1 === ( $after['core/quote'] ?? 0 ), 'blockquote-converted' );
+$assert( 1 === ( $after['core/separator'] ?? 0 ), 'separator-converted' );
 $assert( str_contains( $output, 'className":"hero' ), 'section-class-preserved' );
 $assert( str_contains( $output, 'className":"title' ), 'heading-class-preserved' );
 $assert( str_contains( $output, 'assets/hero.jpg' ), 'image-src-preserved' );
 $assert( str_contains( $output, 'Clinic room' ), 'image-alt-preserved' );
 $assert( str_contains( $output, '#treatments' ), 'navigation-url-preserved' );
 $assert( str_contains( $output, 'Contact' ), 'navigation-label-preserved' );
+$assert( str_contains( $output, 'assets/team.jpg' ), 'picture-img-src-preserved' );
+$assert( str_contains( $output, 'Care team caption' ), 'figure-caption-preserved' );
+$assert( str_contains( $output, '/search/' ), 'search-action-preserved' );
+$assert( str_contains( $output, 'Search services' ), 'search-placeholder-preserved' );
+$assert( str_contains( $output, 'Email Search for...' ), 'standalone-search-placeholder-preserved' );
+$assert( str_contains( $output, 'className":"generated-search' ), 'standalone-search-class-preserved' );
+$assert( str_contains( $output, 'Patient story' ), 'quote-citation-preserved' );
 $assert( str_contains( $output, '/book/' ), 'button-url-preserved' );
 $assert( str_contains( $output, '<form class="lead-form"><input name="email"></form>' ), 'unsupported-form-fallback-preserved' );
 

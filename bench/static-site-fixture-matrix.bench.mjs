@@ -86,6 +86,8 @@ export default async function runFixtureMatrixBench(context = {}) {
       result: { path: summary.result_file },
       summary: { path: path.join(summary.output_directory, 'summary.json') },
       finding_packets: { path: path.join(summary.output_directory, 'finding-packets.json') },
+      visual_parity_evidence_report: { path: path.join(summary.output_directory, 'visual-parity-evidence-report.json') },
+      visual_parity_evidence_report_markdown: { path: path.join(summary.output_directory, 'visual-parity-evidence-report.md') },
       visual_diff_classification: { path: path.join(summary.output_directory, 'visual-diff-classification.json') },
       gutenberg_incompatibility_registry: { path: path.join(summary.output_directory, 'gutenberg-incompatibility-registry.json') },
       gutenberg_incompatibility_registry_report: { path: path.join(summary.output_directory, 'gutenberg-incompatibility-registry.md') },
@@ -178,6 +180,8 @@ export async function runFixtureMatrix(options) {
     staticSiteImporterPlugin: options.staticSiteImporterPlugin,
     staticSiteImporterSlug: options.staticSiteImporterSlug,
     dependencyOverrides,
+    surfaceCoverage: options.surfaceCoverage,
+    maxExtraSurfaces: options.maxExtraSurfaces,
     ...editorValidationRecipeInput(options),
     ...surfaceCoverageRecipeInput(options),
     ...visualParityRecipeInput(options),
@@ -260,6 +264,8 @@ export async function runFixtureMatrix(options) {
     result: fileBytes(path.join(outputDirectory, 'static-site-fixture-matrix-result.json')),
     summary: fileBytes(path.join(outputDirectory, 'summary.json')),
     finding_packets: fileBytes(path.join(outputDirectory, 'finding-packets.json')),
+    visual_parity_evidence_report: fileBytes(path.join(outputDirectory, 'visual-parity-evidence-report.json')),
+    visual_parity_evidence_report_markdown: fileBytes(path.join(outputDirectory, 'visual-parity-evidence-report.md')),
     visual_diff_classification: fileBytes(path.join(outputDirectory, 'visual-diff-classification.json')),
     gutenberg_incompatibility_registry: fileBytes(path.join(outputDirectory, 'gutenberg-incompatibility-registry.json')),
     gutenberg_incompatibility_registry_report: fileBytes(path.join(outputDirectory, 'gutenberg-incompatibility-registry.md')),
@@ -325,6 +331,8 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     staticSiteImporterPlugin: options.staticSiteImporterPlugin,
     staticSiteImporterSlug: options.staticSiteImporterSlug,
     dependencyOverrides: prepareDependencyOverrides(options),
+    surfaceCoverage: options.surfaceCoverage,
+    maxExtraSurfaces: options.maxExtraSurfaces,
     ...editorValidationRecipeInput(options),
     ...surfaceCoverageRecipeInput(options),
     ...visualParityRecipeInput(options),
@@ -965,6 +973,8 @@ function optionsFromEnv(env = process.env) {
     staticSiteImporterPlugin: benchEnv.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PLUGIN || env.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PLUGIN,
     entrypoint: benchEnv.SSI_FIXTURE_MATRIX_ENTRYPOINT || env.SSI_FIXTURE_MATRIX_ENTRYPOINT,
     maxDepth: benchEnv.SSI_FIXTURE_MATRIX_MAX_DEPTH || env.SSI_FIXTURE_MATRIX_MAX_DEPTH,
+    surfaceCoverage: benchEnv.SSI_FIXTURE_MATRIX_SURFACE_COVERAGE || env.SSI_FIXTURE_MATRIX_SURFACE_COVERAGE,
+    maxExtraSurfaces: benchEnv.SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES || env.SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES,
     // Lane selection from authored manifest taxonomy.
     fixtureClass: benchEnv.SSI_FIXTURE_MATRIX_CLASS || env.SSI_FIXTURE_MATRIX_CLASS,
     tag: benchEnv.SSI_FIXTURE_MATRIX_TAG || env.SSI_FIXTURE_MATRIX_TAG,
@@ -1157,6 +1167,8 @@ Options:
                                      Blocks Engine repo root or php-transformer package path for Composer.
   --entrypoint <file>                Fixture entrypoint. Defaults to index.html.
   --max-depth <n>                    Fixture discovery depth. Defaults to 2.
+  --surface-coverage <n>             Capture front page plus up to n secondary HTML surfaces.
+  --max-extra-surfaces <n>           Secondary surface cap when surface coverage is boolean/object-driven.
   --class <fixture_class>            Filter to one authored fixture_class lane.
   --tag <tag>                        Filter to fixtures carrying an authored tag.
   --capability <capability>          Filter to fixtures carrying an authored capability.
