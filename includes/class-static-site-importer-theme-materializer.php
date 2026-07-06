@@ -25,12 +25,13 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param bool   $has_footer_part Whether a footer template part exists.
 	 * @param array<int,array<string,mixed>> $scripts     Materialized script asset rows.
 	 * @param array<int,array<string,mixed>> $stylesheets Materialized stylesheet asset rows.
+	 * @param array<string,mixed>            $artifacts   Compiled website artifacts.
 	 * @return array<string,string> Absolute write paths mapped to file contents.
 	 */
-	public static function base_theme_writes( string $theme_dir, string $theme_slug, string $theme_name, string $css, bool $has_header_part, bool $has_footer_part, array $scripts = array(), array $stylesheets = array() ): array {
+	public static function base_theme_writes( string $theme_dir, string $theme_slug, string $theme_name, string $css, bool $has_header_part, bool $has_footer_part, array $scripts = array(), array $stylesheets = array(), array $artifacts = array() ): array {
 		return array(
 			$theme_dir . '/functions.php'             => self::functions_php( $theme_slug, $scripts, $stylesheets ),
-			$theme_dir . '/theme.json'                => self::theme_json( $theme_name, $css ),
+			$theme_dir . '/theme.json'                => self::theme_json( $theme_name, $css, $artifacts ),
 			$theme_dir . '/templates/front-page.html' => self::content_template( '', $has_header_part, $has_footer_part ),
 			$theme_dir . '/templates/page.html'       => self::content_template( '', $has_header_part, $has_footer_part ),
 			$theme_dir . '/templates/index.html'      => self::content_template( '', $has_header_part, $has_footer_part ),
@@ -897,11 +898,12 @@ class Static_Site_Importer_Theme_Materializer {
 	/**
 	 * Build theme.json.
 	 *
-	 * @param string $theme_name Theme name.
-	 * @param string $css        Source CSS.
+	 * @param string              $theme_name Theme name.
+	 * @param string              $css        Source CSS.
+	 * @param array<string,mixed> $artifacts  Compiled website artifacts.
 	 * @return string
 	 */
-	private static function theme_json( string $theme_name, string $css ): string {
+	private static function theme_json( string $theme_name, string $css, array $artifacts = array() ): string {
 		$data = array(
 			'$schema'  => 'https://schemas.wp.org/trunk/theme.json',
 			'version'  => 3,
@@ -930,7 +932,233 @@ class Static_Site_Importer_Theme_Materializer {
 			$data['styles']['typography']['fontFamily'] = $body_font_family;
 		}
 
+		$data = self::merge_theme_json_fragment( $data, self::theme_json_fragment_from_artifacts( $artifacts ) );
+
 		return wp_json_encode( $data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) . "\n";
+	}
+
+	/**
+	 * Read explicit theme.json metadata from compiled artifacts.
+	 *
+	 * The importer only promotes data under stable generic keys. Figma-specific or
+	 * source-specific inference belongs upstream in the transformer contract.
+	 *
+	 * @param array<string,mixed> $artifacts Compiled website artifacts.
+	 * @return array<string,mixed>
+	 */
+	private static function theme_json_fragment_from_artifacts( array $artifacts ): array {
+		$site      = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
+		$theme     = isset( $site['theme'] ) && is_array( $site['theme'] ) ? $site['theme'] : array();
+		$fragments = array();
+
+		foreach ( array( $artifacts['theme_json'] ?? null, $site['theme_json'] ?? null, $theme['theme_json'] ?? null ) as $candidate ) {
+			if ( is_array( $candidate ) ) {
+				$fragments[] = self::safe_theme_json_fragment( $candidate );
+			}
+		}
+
+		foreach ( array( $artifacts['design_tokens'] ?? null, $site['design_tokens'] ?? null, $theme['design_tokens'] ?? null, $site['tokens'] ?? null ) as $candidate ) {
+			if ( is_array( $candidate ) ) {
+				$fragments[] = self::theme_json_fragment_from_design_tokens( $candidate );
+			}
+		}
+
+		$fragment = array();
+		foreach ( $fragments as $candidate ) {
+			$fragment = self::merge_theme_json_fragment( $fragment, $candidate );
+		}
+
+		return $fragment;
+	}
+
+	/**
+	 * Convert conservative design-token rows into theme.json settings/styles.
+	 *
+	 * @param array<string,mixed> $tokens Design token metadata.
+	 * @return array<string,mixed>
+	 */
+	private static function theme_json_fragment_from_design_tokens( array $tokens ): array {
+		$fragment = array();
+		$palette  = self::theme_json_palette_from_token_rows( $tokens['colors'] ?? $tokens['palette'] ?? array() );
+		$fonts    = self::theme_json_font_families_from_token_rows( $tokens['font_families'] ?? $tokens['fontFamilies'] ?? $tokens['fonts'] ?? array() );
+
+		if ( ! empty( $palette ) ) {
+			$fragment['settings']['color']['palette'] = $palette;
+		}
+
+		if ( ! empty( $fonts ) ) {
+			$fragment['settings']['typography']['fontFamilies'] = $fonts;
+		}
+
+		$layout = isset( $tokens['layout'] ) && is_array( $tokens['layout'] ) ? $tokens['layout'] : array();
+		foreach ( array( 'contentSize', 'wideSize' ) as $key ) {
+			if ( isset( $layout[ $key ] ) && is_scalar( $layout[ $key ] ) && self::is_safe_css_size_value( (string) $layout[ $key ] ) ) {
+				$fragment['settings']['layout'][ $key ] = (string) $layout[ $key ];
+			}
+		}
+
+		return $fragment;
+	}
+
+	/**
+	 * Normalize color token rows for theme.json palette.
+	 *
+	 * @param mixed $rows Token rows.
+	 * @return array<int,array{slug:string,name:string,color:string}>
+	 */
+	private static function theme_json_palette_from_token_rows( mixed $rows ): array {
+		if ( ! is_array( $rows ) ) {
+			return array();
+		}
+
+		$palette = array();
+		$seen    = array();
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$slug  = isset( $row['slug'] ) && is_scalar( $row['slug'] ) ? sanitize_title( (string) $row['slug'] ) : '';
+			$name  = isset( $row['name'] ) && is_scalar( $row['name'] ) ? trim( (string) $row['name'] ) : '';
+			$color = isset( $row['color'] ) && is_scalar( $row['color'] ) ? trim( (string) $row['color'] ) : '';
+
+			if ( '' === $slug || '' === $name || isset( $seen[ $slug ] ) || ! self::is_safe_color_value( $color ) ) {
+				continue;
+			}
+
+			$seen[ $slug ] = true;
+			$palette[]     = array(
+				'slug'  => $slug,
+				'name'  => $name,
+				'color' => $color,
+			);
+		}
+
+		return $palette;
+	}
+
+	/**
+	 * Normalize font-family token rows for theme.json typography settings.
+	 *
+	 * @param mixed $rows Token rows.
+	 * @return array<int,array{slug:string,name:string,fontFamily:string}>
+	 */
+	private static function theme_json_font_families_from_token_rows( mixed $rows ): array {
+		if ( ! is_array( $rows ) ) {
+			return array();
+		}
+
+		$fonts = array();
+		$seen  = array();
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$slug        = isset( $row['slug'] ) && is_scalar( $row['slug'] ) ? sanitize_title( (string) $row['slug'] ) : '';
+			$name        = isset( $row['name'] ) && is_scalar( $row['name'] ) ? trim( (string) $row['name'] ) : '';
+			$font_family = isset( $row['fontFamily'] ) && is_scalar( $row['fontFamily'] ) ? (string) $row['fontFamily'] : ( isset( $row['font_family'] ) && is_scalar( $row['font_family'] ) ? (string) $row['font_family'] : '' );
+
+			if ( '' === $slug || '' === $name || isset( $seen[ $slug ] ) || ! self::is_safe_font_family_value( $font_family ) ) {
+				continue;
+			}
+
+			$seen[ $slug ] = true;
+			$fonts[]       = array(
+				'slug'       => $slug,
+				'name'       => $name,
+				'fontFamily' => trim( $font_family ),
+			);
+		}
+
+		return $fonts;
+	}
+
+	/**
+	 * Filter an explicit theme.json fragment to importer-supported top-level keys.
+	 *
+	 * @param array<string,mixed> $fragment Candidate theme.json fragment.
+	 * @return array<string,mixed>
+	 */
+	private static function safe_theme_json_fragment( array $fragment ): array {
+		$safe = array();
+		foreach ( array( 'settings', 'styles', 'customTemplates', 'templateParts', 'patterns' ) as $key ) {
+			if ( isset( $fragment[ $key ] ) && self::theme_json_value_is_safe( $fragment[ $key ] ) ) {
+				$safe[ $key ] = $fragment[ $key ];
+			}
+		}
+
+		return $safe;
+	}
+
+	/**
+	 * Deep-merge a theme.json fragment into base data.
+	 *
+	 * @param array<string,mixed> $base     Base theme.json data.
+	 * @param array<string,mixed> $fragment Fragment to merge.
+	 * @return array<string,mixed>
+	 */
+	private static function merge_theme_json_fragment( array $base, array $fragment ): array {
+		foreach ( $fragment as $key => $value ) {
+			if ( is_array( $value ) && isset( $base[ $key ] ) && is_array( $base[ $key ] ) && self::array_is_assoc( $value ) && self::array_is_assoc( $base[ $key ] ) ) {
+				$base[ $key ] = self::merge_theme_json_fragment( $base[ $key ], $value );
+			} else {
+				$base[ $key ] = $value;
+			}
+		}
+
+		return $base;
+	}
+
+	/**
+	 * Check whether a theme.json fragment value is JSON-safe and bounded.
+	 *
+	 * @param mixed $value Candidate value.
+	 * @param int   $depth Current recursion depth.
+	 * @return bool
+	 */
+	private static function theme_json_value_is_safe( mixed $value, int $depth = 0 ): bool {
+		if ( $depth > 8 ) {
+			return false;
+		}
+
+		if ( is_string( $value ) ) {
+			return strlen( $value ) <= 1000 && ! preg_match( '/[<>]/', $value );
+		}
+
+		if ( is_int( $value ) || is_float( $value ) || is_bool( $value ) || null === $value ) {
+			return true;
+		}
+
+		if ( ! is_array( $value ) || count( $value ) > 200 ) {
+			return false;
+		}
+
+		foreach ( $value as $key => $child ) {
+			if ( ! is_int( $key ) && ( ! is_string( $key ) || ! preg_match( '/^[A-Za-z0-9_\-]+$/', $key ) ) ) {
+				return false;
+			}
+
+			if ( ! self::theme_json_value_is_safe( $child, $depth + 1 ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Check whether an array has string keys.
+	 *
+	 * @param array<mixed> $array Array to inspect.
+	 * @return bool
+	 */
+	private static function array_is_assoc( array $array ): bool {
+		if ( array() === $array ) {
+			return false;
+		}
+
+		return array_keys( $array ) !== range( 0, count( $array ) - 1 );
 	}
 
 	/**
@@ -1128,6 +1356,21 @@ class Static_Site_Importer_Theme_Materializer {
 		}
 
 		return (bool) preg_match( '/^(?:rgb|rgba|hsl|hsla)\(\s*[-+0-9.%\s,\/]+\s*\)$/i', $value );
+	}
+
+	/**
+	 * Check whether a CSS size is safe to expose in theme.json layout settings.
+	 *
+	 * @param string $value CSS size value.
+	 * @return bool
+	 */
+	private static function is_safe_css_size_value( string $value ): bool {
+		$value = trim( $value );
+		if ( '' === $value || strlen( $value ) > 80 || preg_match( '/[<>;{}]/', $value ) ) {
+			return false;
+		}
+
+		return (bool) preg_match( '/^(?:\d+(?:\.\d+)?(?:px|rem|em|vw|vh|%)|clamp\(\s*[-+0-9.%\s,\/a-z]+\s*\)|min\(\s*[-+0-9.%\s,\/a-z]+\s*\)|max\(\s*[-+0-9.%\s,\/a-z]+\s*\))$/i', $value );
 	}
 
 	/**

@@ -488,6 +488,29 @@ class Static_Site_Importer_Page_Materializer {
 			$markup
 		) ?? $markup;
 
+		$markup = preg_replace_callback(
+			'/\burl\(\s*(["\']?)([^"\')]+)\1\s*\)/i',
+			static function ( array $matches ) use ( $replacements, $source_dir ): string {
+				$url        = html_entity_decode( (string) $matches[2], ENT_QUOTES | ENT_HTML5 );
+				$normalized = self::normalize_route_path( $url );
+				if ( '' !== $normalized && isset( $replacements[ $normalized ] ) ) {
+					return 'url("' . esc_url( $replacements[ $normalized ] ) . '")';
+				}
+
+				if ( '' === $normalized || '' === $source_dir || '.' === $source_dir || str_starts_with( $url, '/' ) || preg_match( '#^[a-z][a-z0-9+.-]*:#i', $url ) ) {
+					return $matches[0];
+				}
+
+				$resolved = self::normalize_route_path( $source_dir . '/' . $url );
+				if ( '' === $resolved || ! isset( $replacements[ $resolved ] ) ) {
+					return $matches[0];
+				}
+
+				return 'url("' . esc_url( $replacements[ $resolved ] ) . '")';
+			},
+			$markup
+		) ?? $markup;
+
 		return preg_replace_callback(
 			'/\b(src|href)=([' . "'\"" . '])([^' . "'\"" . ']*)\2/i',
 			static function ( array $matches ) use ( $replacements, $source_dir ): string {

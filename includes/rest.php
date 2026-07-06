@@ -208,7 +208,7 @@ function static_site_importer_rest_create_playground_open( array $artifact, arra
 	$ref           = hash( 'sha256', $blueprint_json );
 	$blueprint_url = 'https://playground.wordpress.net/#' . rawurlencode( $blueprint_json );
 
-	return array(
+	$result = array(
 		'success'  => true,
 		'preview'  => array(
 			'status'     => 'ready',
@@ -232,6 +232,14 @@ function static_site_importer_rest_create_playground_open( array $artifact, arra
 			),
 		),
 	);
+
+	$source_metadata        = isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array();
+	$figma_transform_report = isset( $source_metadata['figma_transform_report'] ) && is_array( $source_metadata['figma_transform_report'] ) ? $source_metadata['figma_transform_report'] : array();
+	if ( ! empty( $figma_transform_report ) ) {
+		$result['figma_transform_report'] = $figma_transform_report;
+	}
+
+	return $result;
 }
 
 /**
