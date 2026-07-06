@@ -86,6 +86,8 @@ export default async function runFixtureMatrixBench(context = {}) {
       result: { path: summary.result_file },
       summary: { path: path.join(summary.output_directory, 'summary.json') },
       finding_packets: { path: path.join(summary.output_directory, 'finding-packets.json') },
+      visual_parity_evidence_report: { path: path.join(summary.output_directory, 'visual-parity-evidence-report.json') },
+      visual_parity_evidence_report_markdown: { path: path.join(summary.output_directory, 'visual-parity-evidence-report.md') },
       visual_diff_classification: { path: path.join(summary.output_directory, 'visual-diff-classification.json') },
       gutenberg_incompatibility_registry: { path: path.join(summary.output_directory, 'gutenberg-incompatibility-registry.json') },
       gutenberg_incompatibility_registry_report: { path: path.join(summary.output_directory, 'gutenberg-incompatibility-registry.md') },
@@ -178,7 +180,10 @@ export async function runFixtureMatrix(options) {
     staticSiteImporterPlugin: options.staticSiteImporterPlugin,
     staticSiteImporterSlug: options.staticSiteImporterSlug,
     dependencyOverrides,
+    surfaceCoverage: options.surfaceCoverage,
+    maxExtraSurfaces: options.maxExtraSurfaces,
     ...editorValidationRecipeInput(options),
+    ...surfaceCoverageRecipeInput(options),
     ...visualParityRecipeInput(options),
     ...liveWpParityRecipeInput(options),
   });
@@ -259,6 +264,8 @@ export async function runFixtureMatrix(options) {
     result: fileBytes(path.join(outputDirectory, 'static-site-fixture-matrix-result.json')),
     summary: fileBytes(path.join(outputDirectory, 'summary.json')),
     finding_packets: fileBytes(path.join(outputDirectory, 'finding-packets.json')),
+    visual_parity_evidence_report: fileBytes(path.join(outputDirectory, 'visual-parity-evidence-report.json')),
+    visual_parity_evidence_report_markdown: fileBytes(path.join(outputDirectory, 'visual-parity-evidence-report.md')),
     visual_diff_classification: fileBytes(path.join(outputDirectory, 'visual-diff-classification.json')),
     gutenberg_incompatibility_registry: fileBytes(path.join(outputDirectory, 'gutenberg-incompatibility-registry.json')),
     gutenberg_incompatibility_registry_report: fileBytes(path.join(outputDirectory, 'gutenberg-incompatibility-registry.md')),
@@ -283,6 +290,8 @@ export async function runFixtureMatrix(options) {
       performance,
       artifact_bytes: artifactBytes,
       source_staging: written.metadata?.source_staging,
+      surface_coverage: recipe.metadata?.surface_coverage,
+      runtime_cost_warnings: recipe.metadata?.runtime_cost_warnings || [],
     },
     ...(runtime?.childCommandFailures?.length ? { child_command_failures: runtime.childCommandFailures } : {}),
     result_file: path.join(outputDirectory, 'static-site-fixture-matrix-result.json'),
@@ -322,7 +331,10 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     staticSiteImporterPlugin: options.staticSiteImporterPlugin,
     staticSiteImporterSlug: options.staticSiteImporterSlug,
     dependencyOverrides: prepareDependencyOverrides(options),
+    surfaceCoverage: options.surfaceCoverage,
+    maxExtraSurfaces: options.maxExtraSurfaces,
     ...editorValidationRecipeInput(options),
+    ...surfaceCoverageRecipeInput(options),
     ...visualParityRecipeInput(options),
     ...liveWpParityRecipeInput(options),
   });
@@ -961,6 +973,8 @@ function optionsFromEnv(env = process.env) {
     staticSiteImporterPlugin: benchEnv.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PLUGIN || env.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PLUGIN,
     entrypoint: benchEnv.SSI_FIXTURE_MATRIX_ENTRYPOINT || env.SSI_FIXTURE_MATRIX_ENTRYPOINT,
     maxDepth: benchEnv.SSI_FIXTURE_MATRIX_MAX_DEPTH || env.SSI_FIXTURE_MATRIX_MAX_DEPTH,
+    surfaceCoverage: benchEnv.SSI_FIXTURE_MATRIX_SURFACE_COVERAGE || env.SSI_FIXTURE_MATRIX_SURFACE_COVERAGE,
+    maxExtraSurfaces: benchEnv.SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES || env.SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES,
     // Lane selection from authored manifest taxonomy.
     fixtureClass: benchEnv.SSI_FIXTURE_MATRIX_CLASS || env.SSI_FIXTURE_MATRIX_CLASS,
     tag: benchEnv.SSI_FIXTURE_MATRIX_TAG || env.SSI_FIXTURE_MATRIX_TAG,
@@ -993,6 +1007,8 @@ function optionsFromEnv(env = process.env) {
     visualParitySourceBaseUrl: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL,
     visualParityWaitFor: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_WAIT_FOR || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_WAIT_FOR,
     visualParityDurationMs: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_DURATION_MS || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_DURATION_MS,
+    surfaceCoverage: benchEnv.SSI_FIXTURE_MATRIX_SURFACE_COVERAGE || env.SSI_FIXTURE_MATRIX_SURFACE_COVERAGE,
+    maxExtraSurfaces: benchEnv.SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES || env.SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES,
     minNativeRate: benchEnv.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE || env.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE,
   };
 }
@@ -1004,6 +1020,13 @@ function optionsFromEnv(env = process.env) {
 function editorValidationRecipeInput(options) {
   return {
     editorValidation: options.editorValidation !== false,
+  };
+}
+
+function surfaceCoverageRecipeInput(options) {
+  return {
+    surfaceCoverage: options.surfaceCoverage,
+    maxExtraSurfaces: options.maxExtraSurfaces,
   };
 }
 
@@ -1144,6 +1167,8 @@ Options:
                                      Blocks Engine repo root or php-transformer package path for Composer.
   --entrypoint <file>                Fixture entrypoint. Defaults to index.html.
   --max-depth <n>                    Fixture discovery depth. Defaults to 2.
+  --surface-coverage <n>             Capture front page plus up to n secondary HTML surfaces.
+  --max-extra-surfaces <n>           Secondary surface cap when surface coverage is boolean/object-driven.
   --class <fixture_class>            Filter to one authored fixture_class lane.
   --tag <tag>                        Filter to fixtures carrying an authored tag.
   --capability <capability>          Filter to fixtures carrying an authored capability.
@@ -1153,6 +1178,7 @@ Options:
   --wordpress-version <version>      WP Codebox WordPress version. Defaults to latest.
   --batch-size <n>                   Fixtures per WP Codebox run when --run is used. Defaults to 10.
   --concurrency <n>                  Batches (WP Codebox sandboxes) to run in parallel. Defaults to ${DEFAULT_BATCH_CONCURRENCY}, hard-capped at ${MAX_BATCH_CONCURRENCY}.
+  --surface-coverage <n>             Opt into bounded secondary page browser evidence per fixture. Hard-capped at 5 extra surfaces.
   --no-editor-validation            Skip browser editor block validation.
   --no-visual-parity                Skip wordpress.visual-compare recipe steps. Same as SSI_FIXTURE_MATRIX_VISUAL_PARITY=0.
   --run                             Execute WP Codebox recipes. Omit locally to only materialize artifacts.

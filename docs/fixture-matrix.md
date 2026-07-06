@@ -81,7 +81,8 @@ fixture corpus. The wrapper composes existing repo-owned surfaces:
   result, editor-quality, visual-parity, and finding-packet artifacts.
 - `artifacts/fig-fixture-e2e/summary.json` aggregates pass/fail status with
   thresholds for exactly three fixtures, zero transform failures, zero import
-  failures, and a default minimum native conversion rate of `1`.
+  failures, zero Blocks Engine vector placeholders/missing assets, and a default
+  minimum native conversion rate of `1`.
 
 Example:
 
@@ -93,6 +94,30 @@ node tools/run-fig-fixture-e2e.mjs \
   --output-directory /path/to/artifacts/fig-fixture-e2e \
   --run
 ```
+
+The summary keeps the two architecture links separate. Blocks Engine transform
+metrics are under `transform` and `metrics.transform_*`; SSI import/materialization
+metrics are under `import_matrix` and `metrics.import_matrix_*`. Use these fields
+for performance and quality regression gates instead of treating `.fig -> blocks`
+as one opaque operation.
+
+To compare a candidate run to a saved baseline summary, pass the previous
+`summary.json` and an allowed regression ratio:
+
+```bash
+node tools/run-fig-fixture-e2e.mjs \
+  --blocks-engine /path/to/blocks-engine \
+  --static-site-importer /path/to/static-site-importer \
+  --baseline-summary /path/to/baseline/summary.json \
+  --max-baseline-regression-ratio 0.10 \
+  --max-import-findings 0 \
+  --run
+```
+
+`baseline_comparison.deltas` reports signed deltas for stage durations and quality
+counters. When `--max-baseline-regression-ratio` is set, positive deltas above the
+budget fail the wrapper; leave it unset to collect comparison evidence without a
+hard performance gate.
 
 Pass fixture paths with repeated `--fixture <path>` arguments instead of
 `SSI_FIG_E2E_FIXTURES` when that is easier for shells/scripts. Use `--dry-run` to
@@ -108,14 +133,28 @@ Sample summary shape:
   "status": "passed",
   "fixture_count": 3,
   "expected_fixture_count": 3,
+  "metrics": {
+    "transform_duration_ms": 12345,
+    "import_matrix_duration_ms": 67890,
+    "total_duration_ms": 80235,
+    "transform_vector_placeholder_count": 0,
+    "transform_missing_asset_count": 0,
+    "import_matrix_finding_count": 0,
+    "import_matrix_min_native_conversion_rate": 1
+  },
   "transform": {
+    "duration_ms": 12345,
     "completed_fixture_count": 3,
-    "failed_fixture_count": 0
+    "failed_fixture_count": 0,
+    "vector_placeholder_count": 0,
+    "missing_asset_count": 0
   },
   "import_matrix": {
     "enabled": true,
+    "duration_ms": 67890,
     "passed_fixture_count": 3,
     "failed_fixture_count": 0,
+    "finding_count": 0,
     "min_native_conversion_rate": 1
   }
 }
@@ -128,6 +167,15 @@ artifacts <id>` commands, artifact URLs, and the structured Homeboy bench output
 file. Pass `--dry-run` to inspect the composed commands without running
 Lab/WP Codebox. Arguments after `--` are forwarded to the lower-level bench,
 preserving the existing script options:
+
+Every matrix run also writes `visual-parity-evidence-report.json` and
+`visual-parity-evidence-report.md`. These artifacts make the staged-output proof
+less hand-wavy by reporting, per fixture, whether the generated site artifact,
+staged source HTML, imported WordPress browser snapshot, visual-compare evidence,
+screenshot refs, viewport/mobile evidence, live-WP parity, missing assets, and
+native/core HTML block counts are present. The report is a deterministic evidence
+coverage and risk summary; it complements screenshot/pixel diff evidence but does
+not replace it.
 
 ### Code freshness guard
 
@@ -309,6 +357,21 @@ blocks emit nothing. Set `--no-editor-validation` /
 step (the slowest per-site step, it launches a browser per fixture); the run
 still produces native-rate, loss-classes, pattern-families, and the rest of the
 findings — just no `validateBlock` editor-validity data.
+
+## Bounded Surface Coverage
+
+Browser evidence defaults to the imported front page only. Multi-page evidence is
+opt-in with `--surface-coverage <n>` on the operator wrapper, or
+`SSI_FIXTURE_MATRIX_SURFACE_COVERAGE=<n>` / `SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES=<n>`
+for the bench. The matrix caps requested secondary pages at `5` extra surfaces
+per fixture, keeps HTML paths sorted lexicographically, and emits a
+`surface_coverage` summary plus `surface_coverage_runtime_cost` warning so run
+cost is visible before execution.
+
+Surface artifact names are deterministic and collision-safe. If two HTML entries
+map to the same route-derived ID, such as `about.html` and `about/index.html`,
+the later surface receives a stable suffix (`about--2`) for editor-open artifact
+prefixes and visual comparison names.
 
 Live caveat: the `editor-validate-blocks` step runs locally in WP Codebox today
 (see "Running the matrix locally" below) — a real local recipe-run executed the

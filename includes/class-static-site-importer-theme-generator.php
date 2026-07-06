@@ -93,7 +93,7 @@ class Static_Site_Importer_Theme_Generator {
 		if ( is_wp_error( $compiled ) ) {
 			return $compiled;
 		}
-		if ( isset( $artifact['files'] ) && is_array( $artifact['files'] ) ) {
+		if ( isset( $artifact['files'] ) && is_array( $artifact['files'] ) && empty( $compiled['artifacts']['source_files'] ) ) {
 			if ( ! isset( $compiled['artifacts'] ) || ! is_array( $compiled['artifacts'] ) ) {
 				$compiled['artifacts'] = array();
 			}
