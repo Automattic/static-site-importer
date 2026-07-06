@@ -646,7 +646,7 @@ class Static_Site_Importer_Page_Materializer {
 	 * @return string|null Serialized block markup, or null when unsupported.
 	 */
 	private static function safe_html_fragment_to_blocks( string $html ): ?string {
-		if ( preg_match( '/<\s*(?:script|style|iframe|canvas|svg|form|input|select|textarea)\b/i', $html ) ) {
+		if ( preg_match( '/<\s*(?:script|style|iframe|canvas|svg)\b/i', $html ) ) {
 			return null;
 		}
 
@@ -730,11 +730,43 @@ class Static_Site_Importer_Page_Materializer {
 			return self::image_block( $node, $attrs );
 		}
 
+		if ( 'picture' === $tag ) {
+			$image = self::first_descendant_element( $node, 'img' );
+			return $image instanceof DOMElement ? self::image_block( $image, $attrs ) : null;
+		}
+
 		if ( 'figure' === $tag ) {
-			$children = self::element_children( $node );
-			if ( 1 === count( $children ) && 'img' === strtolower( $children[0]->tagName ) ) {
-				return self::image_block( $children[0], $attrs );
+			return self::figure_block( $node, $attrs );
+		}
+
+		if ( 'blockquote' === $tag ) {
+			return self::quote_block( $node, $attrs );
+		}
+
+		if ( 'hr' === $tag ) {
+			return self::separator_block( $attrs );
+		}
+
+		if ( 'form' === $tag ) {
+			return self::search_block( $node, $attrs );
+		}
+
+		if ( 'label' === $tag ) {
+			$content = self::safe_inline_html( $node );
+			return null === $content ? null : self::paragraph_block( $content, $attrs );
+		}
+
+		if ( 'input' === $tag ) {
+			$type  = strtolower( trim( $node->getAttribute( 'type' ) ) );
+			$name  = strtolower( trim( $node->getAttribute( 'name' ) ) );
+			$value = trim( $node->getAttribute( 'value' ) );
+			if ( in_array( $type, array( 'search', 'text' ), true ) && in_array( $name, array( 's', 'search', 'q' ), true ) ) {
+				return self::search_input_block( $node, $attrs );
 			}
+			if ( in_array( $type, array( 'button', 'submit', 'reset' ), true ) && '' !== $value ) {
+				return self::buttons_block( self::button_block( array_merge( $attrs, array( 'text' => self::escape_html( $value ) ) ) ) );
+			}
+			return null;
 		}
 
 		if ( in_array( $tag, array( 'div', 'section', 'header', 'footer', 'main', 'article', 'aside', 'nav' ), true ) ) {
@@ -790,6 +822,19 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		return $children;
+	}
+
+	/**
+	 * Return the first descendant element with the requested tag name.
+	 *
+	 * @param DOMElement $element Element.
+	 * @param string     $tag     Tag name.
+	 * @return DOMElement|null
+	 */
+	private static function first_descendant_element( DOMElement $element, string $tag ): ?DOMElement {
+		$matches = $element->getElementsByTagName( $tag );
+		$match   = $matches->item( 0 );
+		return $match instanceof DOMElement ? $match : null;
 	}
 
 	/**
@@ -930,6 +975,215 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		return self::serialized_block_markup( 'core/image', $attrs, '<figure class="wp-block-image' . self::extra_classes( $attrs ) . '"><img src="' . self::escape_attr( $src ) . '" alt="' . self::escape_attr( $alt ) . '" /></figure>' );
+	}
+
+	/**
+	 * Build an image block from a static figure/picture wrapper.
+	 *
+	 * @param DOMElement          $element Figure element.
+	 * @param array<string,mixed> $attrs   Block attrs.
+	 * @return string|null
+	 */
+	private static function figure_block( DOMElement $element, array $attrs ): ?string {
+		$children = self::element_children( $element );
+		if ( array() === $children || count( $children ) > 2 ) {
+			return null;
+		}
+
+		$image   = null;
+		$caption = '';
+		foreach ( $children as $child ) {
+			$tag = strtolower( $child->tagName );
+			if ( 'img' === $tag ) {
+				$image = $child;
+				continue;
+			}
+			if ( 'picture' === $tag ) {
+				$image = self::first_descendant_element( $child, 'img' );
+				continue;
+			}
+			if ( 'figcaption' === $tag ) {
+				$caption = self::safe_inline_html( $child );
+				if ( null === $caption ) {
+					return null;
+				}
+				continue;
+			}
+			return null;
+		}
+
+		if ( ! $image instanceof DOMElement ) {
+			return null;
+		}
+
+		$src = trim( $image->getAttribute( 'src' ) );
+		if ( '' === $src ) {
+			return null;
+		}
+
+		$attrs['url'] = $src;
+		$alt          = $image->getAttribute( 'alt' );
+		if ( '' !== $alt ) {
+			$attrs['alt'] = $alt;
+		}
+		if ( '' !== $caption ) {
+			$attrs['caption'] = $caption;
+		}
+
+		return self::serialized_block_markup( 'core/image', $attrs, '<figure class="wp-block-image' . self::extra_classes( $attrs ) . '"><img src="' . self::escape_attr( $src ) . '" alt="' . self::escape_attr( $alt ) . '" />' . ( '' === $caption ? '' : '<figcaption class="wp-element-caption">' . $caption . '</figcaption>' ) . '</figure>' );
+	}
+
+	/**
+	 * Build a static quote block.
+	 *
+	 * @param DOMElement          $element Blockquote element.
+	 * @param array<string,mixed> $attrs   Block attrs.
+	 * @return string|null
+	 */
+	private static function quote_block( DOMElement $element, array $attrs ): ?string {
+		$value    = '';
+		$citation = '';
+		foreach ( iterator_to_array( $element->childNodes ) as $child ) {
+			if ( XML_TEXT_NODE === $child->nodeType ) {
+				$text = trim( (string) $child->textContent );
+				if ( '' !== $text ) {
+					$value .= '<p>' . self::escape_html( $text ) . '</p>';
+				}
+				continue;
+			}
+
+			if ( ! $child instanceof DOMElement ) {
+				continue;
+			}
+
+			$tag     = strtolower( $child->tagName );
+			$content = self::safe_inline_html( $child );
+			if ( null === $content ) {
+				return null;
+			}
+			if ( 'cite' === $tag ) {
+				$citation = $content;
+				continue;
+			}
+			if ( 'p' !== $tag ) {
+				return null;
+			}
+			$value .= '<p>' . $content . '</p>';
+		}
+
+		if ( '' === trim( $value ) ) {
+			return null;
+		}
+
+		$attrs['value'] = $value;
+		if ( '' !== $citation ) {
+			$attrs['citation'] = $citation;
+		}
+
+		return self::serialized_block_markup( 'core/quote', $attrs, '<blockquote class="wp-block-quote' . self::extra_classes( $attrs ) . '">' . $value . ( '' === $citation ? '' : '<cite>' . $citation . '</cite>' ) . '</blockquote>' );
+	}
+
+	/**
+	 * Build a separator block.
+	 *
+	 * @param array<string,mixed> $attrs Block attrs.
+	 * @return string
+	 */
+	private static function separator_block( array $attrs ): string {
+		return self::serialized_block_markup( 'core/separator', $attrs, '<hr class="wp-block-separator has-alpha-channel-opacity' . self::extra_classes( $attrs ) . '" />' );
+	}
+
+	/**
+	 * Build a static search block from a non-runtime search form.
+	 *
+	 * @param DOMElement          $element Form element.
+	 * @param array<string,mixed> $attrs   Block attrs.
+	 * @return string|null
+	 */
+	private static function search_block( DOMElement $element, array $attrs ): ?string {
+		$inputs = iterator_to_array( $element->getElementsByTagName( 'input' ) );
+		if ( array() === $inputs || 0 !== $element->getElementsByTagName( 'textarea' )->length || 0 !== $element->getElementsByTagName( 'select' )->length ) {
+			return null;
+		}
+
+		$search_input = null;
+		$button_text  = '';
+		foreach ( $inputs as $input ) {
+			if ( ! $input instanceof DOMElement ) {
+				continue;
+			}
+			$type = strtolower( trim( $input->getAttribute( 'type' ) ) );
+			$name = strtolower( trim( $input->getAttribute( 'name' ) ) );
+			if ( in_array( $type, array( '', 'search', 'text' ), true ) && in_array( $name, array( '', 's', 'search', 'q' ), true ) ) {
+				$search_input = $input;
+				continue;
+			}
+			if ( in_array( $type, array( 'submit', 'button' ), true ) ) {
+				$button_text = trim( $input->getAttribute( 'value' ) );
+				continue;
+			}
+			if ( 'hidden' !== $type ) {
+				return null;
+			}
+		}
+
+		foreach ( iterator_to_array( $element->getElementsByTagName( 'button' ) ) as $button ) {
+			if ( ! $button instanceof DOMElement ) {
+				continue;
+			}
+			$content = self::safe_inline_html( $button );
+			if ( null === $content ) {
+				return null;
+			}
+			$button_text = trim( wp_strip_all_tags( $content ) );
+		}
+
+		$class = ' ' . strtolower( $element->getAttribute( 'class' ) ) . ' ';
+		$role  = strtolower( trim( $element->getAttribute( 'role' ) ) );
+		if ( ! $search_input instanceof DOMElement || ( 'search' !== $role && ! str_contains( $class, ' search' ) && ! str_contains( $class, 'search-' ) && ! str_contains( $class, '-search' ) ) ) {
+			return null;
+		}
+
+		$label       = trim( $search_input->getAttribute( 'aria-label' ) ) ?: 'Search';
+		$placeholder = trim( $search_input->getAttribute( 'placeholder' ) );
+		$action      = trim( $element->getAttribute( 'action' ) ) ?: '/';
+		if ( '' === $button_text ) {
+			$button_text = 'Search';
+		}
+
+		return self::search_block_markup( $attrs, $label, $placeholder, $button_text, $action );
+	}
+
+	/**
+	 * Build a static search block from a standalone generated search input.
+	 *
+	 * @param DOMElement          $element Input element.
+	 * @param array<string,mixed> $attrs   Block attrs.
+	 * @return string
+	 */
+	private static function search_input_block( DOMElement $element, array $attrs ): string {
+		$label       = trim( $element->getAttribute( 'aria-label' ) ) ?: 'Search';
+		$placeholder = trim( $element->getAttribute( 'placeholder' ) );
+		return self::search_block_markup( $attrs, $label, $placeholder, 'Search', '/' );
+	}
+
+	/**
+	 * Serialize a static search block.
+	 *
+	 * @param array<string,mixed> $attrs       Block attrs.
+	 * @param string              $label       Search label.
+	 * @param string              $placeholder Input placeholder.
+	 * @param string              $button_text Button text.
+	 * @param string              $action      Form action URL.
+	 * @return string
+	 */
+	private static function search_block_markup( array $attrs, string $label, string $placeholder, string $button_text, string $action ): string {
+		$attrs['label']       = $label;
+		$attrs['buttonText']  = $button_text;
+		$attrs['placeholder'] = $placeholder;
+		$attrs['query']       = array( 'post_type' => 'post' );
+
+		return self::serialized_block_markup( 'core/search', $attrs, '<form role="search" method="get" class="wp-block-search' . self::extra_classes( $attrs ) . '" action="' . self::escape_attr( $action ) . '"><label class="wp-block-search__label">' . self::escape_html( $label ) . '</label><div class="wp-block-search__inside-wrapper"><input class="wp-block-search__input" placeholder="' . self::escape_attr( $placeholder ) . '" value="" type="search" name="s" required /><button aria-label="' . self::escape_attr( $button_text ) . '" class="wp-block-search__button wp-element-button" type="submit">' . self::escape_html( $button_text ) . '</button></div></form>' );
 	}
 
 	/**
