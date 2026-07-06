@@ -230,6 +230,9 @@ function normalizeOptions(input) {
   const tempRoot = input.tempRoot ? path.resolve(input.tempRoot) : defaultTempRoot(namespace, input);
   const output = path.resolve(input.output || path.join(tempRoot, `${runId}.homeboy-bench.json`));
   const executionTarget = normalizeExecutionTarget(input);
+  const executionIsLocal = executionTarget.local;
+  const sharedStateExplicit = Boolean(input.sharedState);
+  const artifactRootExplicit = Boolean(input.artifactRoot);
 
   return {
     ...input,
@@ -244,8 +247,10 @@ function normalizeOptions(input) {
     blocksEnginePhpTransformerPath,
     passthrough: Array.isArray(input.passthrough) ? input.passthrough : [],
     staticSiteImporter: path.resolve(input.staticSiteImporter),
-    sharedState: input.sharedState ? path.resolve(input.sharedState) : path.join(tempRoot, 'shared-state'),
-    artifactRoot: input.artifactRoot ? path.resolve(input.artifactRoot) : path.join(tempRoot, 'artifacts'),
+    sharedState: sharedStateExplicit ? path.resolve(input.sharedState) : (executionIsLocal ? path.join(tempRoot, 'shared-state') : ''),
+    artifactRoot: artifactRootExplicit ? path.resolve(input.artifactRoot) : (executionIsLocal ? path.join(tempRoot, 'artifacts') : ''),
+    sharedStateExplicit,
+    artifactRootExplicit,
     homeboyBin: input.homeboyBin || process.env.HOMEBOY_BIN || 'homeboy',
   };
 }
@@ -287,8 +292,9 @@ function buildWarnings(options) {
   return [
     ...(!options.runner && !options.labOnly && !options.local ? [{
       code: 'lab_auto_offload_risk',
-      message: 'No --runner/--lab-only/--local routing was provided. `homeboy bench` auto-offloads to a connected default Lab runner, where local --shared-state/--artifact-root paths will fail. Pass --local to force local (hot) execution against local checkouts and a local WP Codebox, or --runner/--lab-only to route to a runner with the paths present.',
+      message: 'No --runner/--lab-only/--local routing was provided. `homeboy bench` may auto-offload to a connected default Lab runner. Default --shared-state/--artifact-root paths are omitted unless --local or explicit path overrides are provided.',
     }] : []),
+    ...labLocalTempPathWarnings(options),
     ...(options.local ? [{
       code: 'forced_local_execution',
       message: '--local forces hot local execution (--force-hot --allow-local-hot); the bench will not offload to a Lab runner even if one is connected.',
@@ -302,6 +308,30 @@ function buildWarnings(options) {
       message: '--allow-dirty-lab-workspace permits reusing or overwriting a dirty Lab workspace.',
     }] : []),
   ];
+}
+
+function labLocalTempPathWarnings(options) {
+  if (!isLabRouted(options)) {
+    return [];
+  }
+  return [
+    ...(options.sharedStateExplicit && isMacLocalTempPath(options.sharedState) ? [{
+      code: 'lab_local_shared_state_path',
+      message: `--shared-state points at macOS local temp (${options.sharedState}). Lab runners are Linux hosts and cannot use operator-local temp paths; omit --shared-state to let Homeboy choose runner-local state, or pass a path that exists on the runner.`,
+    }] : []),
+    ...(options.artifactRootExplicit && isMacLocalTempPath(options.artifactRoot) ? [{
+      code: 'lab_local_artifact_root_path',
+      message: `--artifact-root points at macOS local temp (${options.artifactRoot}). Lab runners are Linux hosts and cannot use operator-local temp paths; omit --artifact-root to let Homeboy choose runner-local artifacts, or pass a path that exists on the runner.`,
+    }] : []),
+  ];
+}
+
+function isLabRouted(options) {
+  return Boolean(options.runner || options.labOnly || (!options.local && !options.runner));
+}
+
+function isMacLocalTempPath(value) {
+  return /^\/(?:private\/)?var\/folders\//.test(String(value || ''));
 }
 
 // Surface corpus pin drift instead of letting `fixture_count_matches_canonical`
@@ -525,13 +555,15 @@ function buildSteps(options, settings) {
     '--profile', 'fixture-matrix',
     '--iterations', '1',
     '--path', options.staticSiteImporter,
-    '--shared-state', options.sharedState,
     '--run-id', options.runId,
     '--output', options.output,
     '--json',
     '--setting', `static_site_importer_fixture_matrix_namespace=${options.namespace}`,
     ...Object.entries(settings).flatMap(([key, value]) => ['--setting', `bench_env.${key}=${value}`]),
   ];
+  if (options.sharedState) {
+    benchArgs.push('--shared-state', options.sharedState);
+  }
   if (options.artifactRoot) {
     benchArgs.push('--artifact-root', options.artifactRoot);
   }
