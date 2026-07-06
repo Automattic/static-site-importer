@@ -430,7 +430,489 @@ class Static_Site_Importer_Page_Materializer {
 			}
 		}
 
-		return isset( $result['serialized_blocks'] ) && is_scalar( $result['serialized_blocks'] ) ? trim( (string) $result['serialized_blocks'] ) : '';
+		$serialized_blocks = isset( $result['serialized_blocks'] ) && is_scalar( $result['serialized_blocks'] ) ? trim( (string) $result['serialized_blocks'] ) : '';
+
+		return self::reduce_safe_html_fallback_blocks( $serialized_blocks );
+	}
+
+	/**
+	 * Replace safe static core/html fallbacks with native core blocks.
+	 *
+	 * @param string $markup Serialized block markup.
+	 * @return string
+	 */
+	private static function reduce_safe_html_fallback_blocks( string $markup ): string {
+		if ( '' === trim( $markup ) || ! function_exists( 'parse_blocks' ) || ! function_exists( 'serialize_block' ) ) {
+			return $markup;
+		}
+
+		return self::serialize_blocks_with_reduced_fallbacks( parse_blocks( $markup ) );
+	}
+
+	/**
+	 * Serialize parsed blocks while allowing fallback children to collapse or expand.
+	 *
+	 * @param array<int,array<string,mixed>> $blocks Parsed blocks.
+	 * @return string
+	 */
+	private static function serialize_blocks_with_reduced_fallbacks( array $blocks ): string {
+		$output = '';
+		foreach ( $blocks as $block ) {
+			if ( ! is_array( $block ) ) {
+				continue;
+			}
+
+			$name = isset( $block['blockName'] ) && is_string( $block['blockName'] ) ? $block['blockName'] : '';
+			if ( in_array( $name, array( 'core/html', 'core/freeform' ), true ) ) {
+				$output .= self::fallback_html_to_native_blocks( self::fallback_block_html( $block ), $name );
+				continue;
+			}
+
+			$inner_blocks = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
+			if ( array() === $inner_blocks ) {
+				$output .= serialize_block( $block );
+				continue;
+			}
+
+			$output .= self::serialize_container_block_with_reduced_fallbacks( $block, $inner_blocks );
+		}
+
+		return trim( $output );
+	}
+
+	/**
+	 * Serialize a block, replacing each null placeholder with reduced child output.
+	 *
+	 * @param array<string,mixed>            $block        Parsed block.
+	 * @param array<int,array<string,mixed>> $inner_blocks Parsed inner blocks.
+	 * @return string
+	 */
+	private static function serialize_container_block_with_reduced_fallbacks( array $block, array $inner_blocks ): string {
+		$name = isset( $block['blockName'] ) && is_string( $block['blockName'] ) ? $block['blockName'] : '';
+		if ( '' === $name ) {
+			return serialize_block( $block );
+		}
+
+		$attrs = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array();
+		$body  = '';
+		$index = 0;
+		foreach ( isset( $block['innerContent'] ) && is_array( $block['innerContent'] ) ? $block['innerContent'] : array() as $chunk ) {
+			if ( null === $chunk ) {
+				$body .= isset( $inner_blocks[ $index ] ) && is_array( $inner_blocks[ $index ] ) ? self::serialize_blocks_with_reduced_fallbacks( array( $inner_blocks[ $index ] ) ) : '';
+				++$index;
+				continue;
+
+			}
+
+			$body .= is_scalar( $chunk ) ? (string) $chunk : '';
+		}
+
+		return self::serialized_block_markup( $name, $attrs, $body );
+	}
+
+	/**
+	 * Extract raw HTML from a fallback block.
+	 *
+	 * @param array<string,mixed> $block Parsed fallback block.
+	 * @return string
+	 */
+	private static function fallback_block_html( array $block ): string {
+		if ( isset( $block['attrs']['content'] ) && is_scalar( $block['attrs']['content'] ) ) {
+			return (string) $block['attrs']['content'];
+		}
+
+		return isset( $block['innerHTML'] ) && is_scalar( $block['innerHTML'] ) ? (string) $block['innerHTML'] : '';
+	}
+
+	/**
+	 * Convert a bounded raw HTML fragment to serialized native core block markup.
+	 *
+	 * @param string $html Raw HTML fallback content.
+	 * @return string Empty when the fallback was empty; original fallback when unsafe.
+	 */
+	private static function fallback_html_to_native_blocks( string $html, string $fallback_block_name = 'core/html' ): string {
+		if ( '' === trim( $html ) ) {
+			return '';
+		}
+
+		$converted = self::safe_html_fragment_to_blocks( $html );
+		if ( null === $converted ) {
+			return self::serialized_block_markup( $fallback_block_name, array( 'content' => $html ), $html );
+		}
+
+		return $converted;
+	}
+
+	/**
+	 * Convert a safe static HTML fragment into core blocks.
+	 *
+	 * @param string $html Raw HTML fragment.
+	 * @return string|null Serialized block markup, or null when unsupported.
+	 */
+	private static function safe_html_fragment_to_blocks( string $html ): ?string {
+		if ( preg_match( '/<\s*(?:script|style|iframe|canvas|svg|form|input|select|textarea)\b/i', $html ) ) {
+			return null;
+		}
+
+		$previous = libxml_use_internal_errors( true );
+		$dom      = new DOMDocument( '1.0', 'UTF-8' );
+		$loaded   = $dom->loadHTML( '<!doctype html><html><body><div data-ssi-fragment-root="1">' . $html . '</div></body></html>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		if ( ! $loaded ) {
+			return null;
+		}
+
+		$xpath = new DOMXPath( $dom );
+		$root  = $xpath->query( '//*[@data-ssi-fragment-root="1"]' )->item( 0 );
+		if ( ! $root instanceof DOMElement ) {
+			return null;
+		}
+
+		$blocks = '';
+		foreach ( iterator_to_array( $root->childNodes ) as $child ) {
+			$block = self::safe_dom_node_to_block_markup( $child );
+			if ( null === $block ) {
+				return null;
+			}
+			$blocks .= $block;
+		}
+
+		return trim( $blocks );
+	}
+
+	/**
+	 * Convert a safe DOM node to serialized core block markup.
+	 *
+	 * @param DOMNode $node DOM node.
+	 * @return string|null Serialized block markup, empty whitespace, or null when unsupported.
+	 */
+	private static function safe_dom_node_to_block_markup( DOMNode $node ): ?string {
+		if ( XML_TEXT_NODE === $node->nodeType ) {
+			$text = trim( (string) $node->textContent );
+			return '' === $text ? '' : self::paragraph_block( self::escape_html( $text ), array() );
+		}
+
+		if ( ! $node instanceof DOMElement ) {
+			return '';
+		}
+
+		if ( $node->hasAttribute( 'style' ) ) {
+			return null;
+		}
+
+		$tag   = strtolower( $node->tagName );
+		$attrs = self::class_attrs_from_element( $node );
+
+		if ( preg_match( '/^h([1-6])$/', $tag, $matches ) ) {
+			$content = self::safe_inline_html( $node );
+			return null === $content ? null : self::heading_block( (int) $matches[1], $content, $attrs );
+		}
+
+		if ( 'p' === $tag ) {
+			$content = self::safe_inline_html( $node );
+			return null === $content ? null : self::paragraph_block( $content, $attrs );
+		}
+
+		if ( in_array( $tag, array( 'a', 'button' ), true ) ) {
+			$content = self::safe_inline_html( $node );
+			if ( null === $content || '' === trim( wp_strip_all_tags( $content ) ) ) {
+				return null;
+			}
+			$button_attrs = array_merge( $attrs, array( 'text' => $content ) );
+			if ( 'a' === $tag && '' !== trim( $node->getAttribute( 'href' ) ) ) {
+				$button_attrs['url'] = $node->getAttribute( 'href' );
+			}
+			return self::buttons_block( self::button_block( $button_attrs ) );
+		}
+
+		if ( in_array( $tag, array( 'ul', 'ol' ), true ) ) {
+			return self::list_block( $node, 'ol' === $tag, $attrs );
+		}
+
+		if ( 'img' === $tag ) {
+			return self::image_block( $node, $attrs );
+		}
+
+		if ( 'figure' === $tag ) {
+			$children = self::element_children( $node );
+			if ( 1 === count( $children ) && 'img' === strtolower( $children[0]->tagName ) ) {
+				return self::image_block( $children[0], $attrs );
+			}
+		}
+
+		if ( in_array( $tag, array( 'div', 'section', 'header', 'footer', 'main', 'article', 'aside', 'nav' ), true ) ) {
+			$children = '';
+			foreach ( iterator_to_array( $node->childNodes ) as $child ) {
+				$child_markup = self::safe_dom_node_to_block_markup( $child );
+				if ( null === $child_markup ) {
+					return null;
+				}
+				$children .= $child_markup;
+			}
+
+			if ( '' === trim( $children ) ) {
+				return '';
+			}
+
+			if ( 'div' !== $tag ) {
+				$attrs['tagName'] = $tag;
+			}
+			return self::group_block( $children, $attrs );
+		}
+
+		return null;
+	}
+
+	/**
+	 * Extract className block attrs from an element.
+	 *
+	 * @param DOMElement $element Element.
+	 * @return array<string,string>
+	 */
+	private static function class_attrs_from_element( DOMElement $element ): array {
+		$class = trim( preg_replace( '/\s+/', ' ', $element->getAttribute( 'class' ) ) ?? '' );
+		return '' === $class ? array() : array( 'className' => $class );
+	}
+
+	/**
+	 * Return child elements, ignoring whitespace text nodes.
+	 *
+	 * @param DOMElement $element Element.
+	 * @return DOMElement[]
+	 */
+	private static function element_children( DOMElement $element ): array {
+		$children = array();
+		foreach ( iterator_to_array( $element->childNodes ) as $child ) {
+			if ( $child instanceof DOMText && '' === trim( (string) $child->textContent ) ) {
+				continue;
+			}
+			if ( ! $child instanceof DOMElement ) {
+				return array();
+			}
+			$children[] = $child;
+		}
+
+		return $children;
+	}
+
+	/**
+	 * Serialize safe inline HTML from a text-bearing element.
+	 *
+	 * @param DOMElement $element Element.
+	 * @return string|null
+	 */
+	private static function safe_inline_html( DOMElement $element ): ?string {
+		$html = '';
+		foreach ( iterator_to_array( $element->childNodes ) as $child ) {
+			if ( XML_TEXT_NODE === $child->nodeType ) {
+				$html .= self::escape_html( (string) $child->textContent );
+				continue;
+			}
+
+			if ( ! $child instanceof DOMElement ) {
+				continue;
+			}
+
+			$tag = strtolower( $child->tagName );
+			if ( ! in_array( $tag, array( 'a', 'br', 'strong', 'b', 'em', 'i', 'span', 'small', 'mark', 'sub', 'sup' ), true ) || $child->hasAttribute( 'style' ) ) {
+				return null;
+			}
+
+			$inner = self::safe_inline_html( $child );
+			if ( null === $inner ) {
+				return null;
+			}
+
+			if ( 'br' === $tag ) {
+				$html .= '<br>';
+				continue;
+			}
+
+			$attrs = '';
+			if ( 'a' === $tag && '' !== trim( $child->getAttribute( 'href' ) ) ) {
+				$attrs .= ' href="' . self::escape_attr( $child->getAttribute( 'href' ) ) . '"';
+			}
+			if ( '' !== trim( $child->getAttribute( 'class' ) ) ) {
+				$attrs .= ' class="' . self::escape_attr( $child->getAttribute( 'class' ) ) . '"';
+			}
+			$html .= '<' . $tag . $attrs . '>' . $inner . '</' . $tag . '>';
+		}
+
+		return trim( $html );
+	}
+
+	/**
+	 * Build a paragraph block.
+	 *
+	 * @param string              $content Inner HTML.
+	 * @param array<string,mixed> $attrs   Block attrs.
+	 * @return string
+	 */
+	private static function paragraph_block( string $content, array $attrs ): string {
+		$attrs['content'] = $content;
+		return self::serialized_block_markup( 'core/paragraph', $attrs, '<p' . self::class_attribute( $attrs ) . '>' . $content . '</p>' );
+	}
+
+	/**
+	 * Build a heading block.
+	 *
+	 * @param int                 $level   Heading level.
+	 * @param string              $content Inner HTML.
+	 * @param array<string,mixed> $attrs   Block attrs.
+	 * @return string
+	 */
+	private static function heading_block( int $level, string $content, array $attrs ): string {
+		$level            = max( 1, min( 6, $level ) );
+		$attrs['level']   = $level;
+		$attrs['content'] = $content;
+		return self::serialized_block_markup( 'core/heading', $attrs, '<h' . $level . ' class="wp-block-heading' . self::extra_classes( $attrs ) . '">' . $content . '</h' . $level . '>' );
+	}
+
+	/**
+	 * Build a group block.
+	 *
+	 * @param string              $children Child block markup.
+	 * @param array<string,mixed> $attrs    Block attrs.
+	 * @return string
+	 */
+	private static function group_block( string $children, array $attrs ): string {
+		$tag = isset( $attrs['tagName'] ) && is_string( $attrs['tagName'] ) ? $attrs['tagName'] : 'div';
+		return self::serialized_block_markup( 'core/group', $attrs, '<' . $tag . ' class="wp-block-group' . self::extra_classes( $attrs ) . '">' . $children . '</' . $tag . '>' );
+	}
+
+	/**
+	 * Build a list block.
+	 *
+	 * @param DOMElement          $element List element.
+	 * @param bool                $ordered Whether the list is ordered.
+	 * @param array<string,mixed> $attrs   Block attrs.
+	 * @return string|null
+	 */
+	private static function list_block( DOMElement $element, bool $ordered, array $attrs ): ?string {
+		$items = '';
+		foreach ( self::element_children( $element ) as $child ) {
+			if ( 'li' !== strtolower( $child->tagName ) ) {
+				return null;
+			}
+			$content = self::safe_inline_html( $child );
+			if ( null === $content ) {
+				return null;
+			}
+			$items .= self::serialized_block_markup( 'core/list-item', array( 'content' => $content ), '<li>' . $content . '</li>' );
+		}
+
+		if ( '' === $items ) {
+			return '';
+		}
+
+		if ( $ordered ) {
+			$attrs['ordered'] = true;
+		}
+
+		$tag = $ordered ? 'ol' : 'ul';
+		return self::serialized_block_markup( 'core/list', $attrs, '<' . $tag . ' class="wp-block-list' . self::extra_classes( $attrs ) . '">' . $items . '</' . $tag . '>' );
+	}
+
+	/**
+	 * Build an image block.
+	 *
+	 * @param DOMElement          $element Image element.
+	 * @param array<string,mixed> $attrs   Block attrs.
+	 * @return string|null
+	 */
+	private static function image_block( DOMElement $element, array $attrs ): ?string {
+		$src = trim( $element->getAttribute( 'src' ) );
+		if ( '' === $src ) {
+			return null;
+		}
+
+		$attrs['url'] = $src;
+		$alt          = $element->getAttribute( 'alt' );
+		if ( '' !== $alt ) {
+			$attrs['alt'] = $alt;
+		}
+
+		return self::serialized_block_markup( 'core/image', $attrs, '<figure class="wp-block-image' . self::extra_classes( $attrs ) . '"><img src="' . self::escape_attr( $src ) . '" alt="' . self::escape_attr( $alt ) . '" /></figure>' );
+	}
+
+	/**
+	 * Build a buttons wrapper.
+	 *
+	 * @param string $button Button block markup.
+	 * @return string
+	 */
+	private static function buttons_block( string $button ): string {
+		return self::serialized_block_markup( 'core/buttons', array(), '<div class="wp-block-buttons">' . $button . '</div>' );
+	}
+
+	/**
+	 * Build a button block.
+	 *
+	 * @param array<string,mixed> $attrs Block attrs.
+	 * @return string
+	 */
+	private static function button_block( array $attrs ): string {
+		$text = isset( $attrs['text'] ) && is_scalar( $attrs['text'] ) ? (string) $attrs['text'] : '';
+		$url  = isset( $attrs['url'] ) && is_scalar( $attrs['url'] ) ? (string) $attrs['url'] : '';
+		$html = '<div class="wp-block-button' . self::extra_classes( $attrs ) . '"><a class="wp-block-button__link wp-element-button"' . ( '' === $url ? '' : ' href="' . self::escape_attr( $url ) . '"' ) . '>' . $text . '</a></div>';
+
+		return self::serialized_block_markup( 'core/button', $attrs, $html );
+	}
+
+	/**
+	 * Serialize a block wrapper around body HTML.
+	 *
+	 * @param string              $name Block name.
+	 * @param array<string,mixed> $attrs Block attrs.
+	 * @param string              $body Block body.
+	 * @return string
+	 */
+	private static function serialized_block_markup( string $name, array $attrs, string $body ): string {
+		$comment_name = str_starts_with( $name, 'core/' ) ? substr( $name, 5 ) : $name;
+		$attrs_json   = empty( $attrs ) ? '' : ' ' . wp_json_encode( $attrs, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+
+		return '<!-- wp:' . $comment_name . $attrs_json . ' -->' . $body . '<!-- /wp:' . $comment_name . ' -->';
+	}
+
+	/**
+	 * Render a class attribute for blocks without a default wrapper class.
+	 *
+	 * @param array<string,mixed> $attrs Block attrs.
+	 * @return string
+	 */
+	private static function class_attribute( array $attrs ): string {
+		return isset( $attrs['className'] ) && is_scalar( $attrs['className'] ) && '' !== trim( (string) $attrs['className'] ) ? ' class="' . self::escape_attr( (string) $attrs['className'] ) . '"' : '';
+	}
+
+	/**
+	 * Render extra classes after a core wrapper class.
+	 *
+	 * @param array<string,mixed> $attrs Block attrs.
+	 * @return string
+	 */
+	private static function extra_classes( array $attrs ): string {
+		return isset( $attrs['className'] ) && is_scalar( $attrs['className'] ) && '' !== trim( (string) $attrs['className'] ) ? ' ' . self::escape_attr( (string) $attrs['className'] ) : '';
+	}
+
+	/**
+	 * Escape text content.
+	 *
+	 * @param string $value Raw value.
+	 * @return string
+	 */
+	private static function escape_html( string $value ): string {
+		return htmlspecialchars( $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+	}
+
+	/**
+	 * Escape an HTML attribute value.
+	 *
+	 * @param string $value Raw value.
+	 * @return string
+	 */
+	private static function escape_attr( string $value ): string {
+		return htmlspecialchars( $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
 	}
 
 	/**
