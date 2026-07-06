@@ -399,6 +399,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'runtime_dependency_parity'     => (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ),
 				'semantic_parity_failures'      => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
 			),
+			'provider_runtime'        => self::provider_runtime_summary( $report ),
 			'quality_gates'           => array(
 				'fallback_blocks'           => self::validation_gate( 'fallback_blocks', (int) ( $quality['fallback_count'] ?? 0 ), $quality ),
 				'conversion_failures'       => self::validation_gate( 'conversion_failures', (int) ( $quality['content_loss_count'] ?? 0 ) + (int) ( $quality['empty_conversion_count'] ?? 0 ) + (int) ( $quality['invalid_block_count'] ?? 0 ), $quality ),
@@ -661,6 +662,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'commerce_context'                      => $commerce_context,
 			'plugin_materialization'                => $plugin_materialization,
 			'product_seeding'                       => $product_seeding,
+			'provider_runtime'                      => self::provider_runtime_summary( $report ),
 			'visual_parity_artifacts'               => isset( $report['visual_parity_artifacts'] ) && is_array( $report['visual_parity_artifacts'] ) ? $report['visual_parity_artifacts'] : self::visual_parity_artifact_contract(),
 			'semantic_parity'                       => self::compact_semantic_parity_summary( $report ),
 			'diagnostic_count'                      => count( $diagnostics ),
@@ -699,6 +701,213 @@ class Static_Site_Importer_Report_Diagnostics {
 			'count'           => $count,
 			'diagnostic_refs' => isset( $quality['diagnostic_refs'][ $ref_key ] ) && is_array( $quality['diagnostic_refs'][ $ref_key ] ) ? $quality['diagnostic_refs'][ $ref_key ] : array(),
 		);
+	}
+
+	/**
+	 * Summarize provider-owned materialization versus runtime-owned gaps.
+	 *
+	 * This is the operator-facing row set: it answers whether Jetpack/WooCommerce
+	 * actually handled a fallback, whether a missing dependency was explicitly
+	 * waived, and which remaining findings still require browser/runtime support.
+	 *
+	 * @param array<string,mixed> $report Full import report.
+	 * @return array<string,mixed>
+	 */
+	private static function provider_runtime_summary( array $report ): array {
+		$form_seeding    = isset( $report['form_seeding'] ) && is_array( $report['form_seeding'] ) ? $report['form_seeding'] : array();
+		$product_seeding = isset( $report['product_finding_seeding'] ) && is_array( $report['product_finding_seeding'] ) ? $report['product_finding_seeding'] : array();
+		$diagnostics     = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
+
+		$form_row    = self::provider_runtime_form_row( $form_seeding );
+		$product_row = self::provider_runtime_product_row( $product_seeding, $diagnostics );
+		$runtime_row = self::provider_runtime_gap_row( $report, $diagnostics );
+
+		return array(
+			'schema'                                      => 'static-site-importer/provider-runtime-summary/v1',
+			'forms_materialized_count'                    => (int) ( $form_row['materialized_count'] ?? 0 ),
+			'woo_products_seeded_count'                   => (int) ( $product_row['seeded_count'] ?? 0 ),
+			'cart_runtime_controls_preserved_count'       => (int) ( $product_row['cart_runtime_controls_preserved_count'] ?? 0 ),
+			'missing_provider_count'                      => count( array_filter( array( $form_row, $product_row ), static fn ( array $row ): bool => 'missing_provider' === ( $row['status'] ?? '' ) ) ),
+			'waived_dependency_count'                     => count( array_filter( array( $form_row, $product_row ), static fn ( array $row ): bool => 'waived_dependency' === ( $row['status'] ?? '' ) ) ),
+			'runtime_gap_count'                           => (int) ( $runtime_row['count'] ?? 0 ),
+			'fake_or_unsupported_count'                   => (int) ( $runtime_row['fake_or_unsupported_count'] ?? 0 ),
+			'rows'                                        => array_values( array_filter( array( $form_row, $product_row, $runtime_row ), static fn ( array $row ): bool => '' !== (string) ( $row['status'] ?? '' ) ) ),
+			'decision_notes'                              => array(
+				'provider_materialized means SSI replaced a static fallback with a real provider-backed WordPress primitive.',
+				'waived_dependency means the source needed a provider but the import was explicitly allowed to continue without enforcing that dependency.',
+				'runtime_gap means the provider/importer did not fake support; browser or application runtime work remains.',
+			),
+		);
+	}
+
+	/**
+	 * Build the Jetpack Forms provider row.
+	 *
+	 * @param array<string,mixed> $seeding Form materialization report.
+	 * @return array<string,mixed>
+	 */
+	private static function provider_runtime_form_row( array $seeding ): array {
+		if ( empty( $seeding ) ) {
+			return array();
+		}
+
+		$requested    = (int) ( $seeding['form_count'] ?? count( isset( $seeding['forms'] ) && is_array( $seeding['forms'] ) ? $seeding['forms'] : array() ) );
+		$materialized = (int) ( $seeding['mapped_count'] ?? ( $seeding['counts']['mapped'] ?? 0 ) );
+		$waived       = ! empty( $seeding['waived'] );
+		$status       = self::provider_runtime_materialization_status( $requested, $materialized, $seeding, $waived );
+
+		return array(
+			'capability'          => 'form',
+			'provider'            => isset( $seeding['provider'] ) && is_scalar( $seeding['provider'] ) ? (string) $seeding['provider'] : 'jetpack',
+			'status'              => $status,
+			'requested_count'     => $requested,
+			'materialized_count'  => $materialized,
+			'waived'              => $waived,
+			'reason'              => isset( $seeding['reason'] ) && is_scalar( $seeding['reason'] ) ? (string) $seeding['reason'] : '',
+			'unsupported_count'   => max( 0, $requested - $materialized ),
+			'decision'            => self::provider_runtime_decision( 'form', $status ),
+		);
+	}
+
+	/**
+	 * Build the WooCommerce product provider row.
+	 *
+	 * @param array<string,mixed>      $seeding     Product materialization report.
+	 * @param array<int,array|string>  $diagnostics Import diagnostics.
+	 * @return array<string,mixed>
+	 */
+	private static function provider_runtime_product_row( array $seeding, array $diagnostics ): array {
+		if ( empty( $seeding ) ) {
+			return array();
+		}
+
+		$requested = (int) ( $seeding['product_count'] ?? count( isset( $seeding['manifest']['products'] ) && is_array( $seeding['manifest']['products'] ) ? $seeding['manifest']['products'] : array() ) );
+		$created   = (int) ( $seeding['counts']['created'] ?? 0 );
+		$updated   = (int) ( $seeding['counts']['updated'] ?? 0 );
+		$seeded    = $created + $updated;
+		$waived    = ! empty( $seeding['waived'] );
+		$status    = self::provider_runtime_materialization_status( $requested, $seeded, $seeding, $waived );
+
+		return array(
+			'capability'                              => 'shop',
+			'provider'                                => isset( $seeding['provider'] ) && is_scalar( $seeding['provider'] ) ? (string) $seeding['provider'] : 'woocommerce',
+			'status'                                  => $status,
+			'requested_count'                         => $requested,
+			'seeded_count'                            => $seeded,
+			'materialized_count'                      => $seeded,
+			'cart_runtime_controls_preserved_count'   => self::cart_runtime_controls_preserved_count( $diagnostics ),
+			'waived'                                  => $waived,
+			'reason'                                  => isset( $seeding['reason'] ) && is_scalar( $seeding['reason'] ) ? (string) $seeding['reason'] : '',
+			'unsupported_count'                       => max( 0, $requested - $seeded ),
+			'decision'                                => self::provider_runtime_decision( 'shop', $status ),
+		);
+	}
+
+	/**
+	 * Build the runtime-owned gap row.
+	 *
+	 * @param array<string,mixed>     $report      Import report.
+	 * @param array<int,array|string> $diagnostics Import diagnostics.
+	 * @return array<string,mixed>
+	 */
+	private static function provider_runtime_gap_row( array $report, array $diagnostics ): array {
+		$runtime_parity = isset( $report['blocks_engine']['runtime_dependency_parity'] ) && is_array( $report['blocks_engine']['runtime_dependency_parity'] ) ? $report['blocks_engine']['runtime_dependency_parity'] : array();
+		$count          = (int) ( $runtime_parity['missing_dom_target_count'] ?? 0 ) + (int) ( $runtime_parity['unsupported_element_reference_count'] ?? 0 );
+
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) ) {
+				continue;
+			}
+			$type = isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : '';
+			if ( in_array( $type, array( 'runtime_dependency_missing_dom_target', 'runtime_dependency_unsupported_element_reference', 'runtime_dependency_parity_issue' ), true ) && empty( $runtime_parity ) ) {
+				++$count;
+			}
+		}
+
+		return array(
+			'capability'                => 'runtime',
+			'provider'                  => 'browser_or_application_runtime',
+			'status'                    => 0 === $count ? 'skipped' : 'runtime_gap',
+			'count'                     => $count,
+			'missing_dom_target_count'  => (int) ( $runtime_parity['missing_dom_target_count'] ?? 0 ),
+			'unsupported_element_count' => (int) ( $runtime_parity['unsupported_element_reference_count'] ?? 0 ),
+			'telemetry_notice_count'    => (int) ( $runtime_parity['vendor_telemetry_script_count'] ?? 0 ),
+			'fake_or_unsupported_count' => $count,
+			'decision'                  => 0 === $count ? 'No runtime-owned gaps were reported.' : 'Do not treat this as provider-materialized; browser/application runtime support still needs implementation or waiver.',
+		);
+	}
+
+	/**
+	 * Decide a provider row status.
+	 *
+	 * @param int                 $requested    Requested entity count.
+	 * @param int                 $materialized Materialized entity count.
+	 * @param array<string,mixed> $seeding      Provider materialization report.
+	 * @param bool                $waived       Whether the dependency was waived.
+	 * @return string
+	 */
+	private static function provider_runtime_materialization_status( int $requested, int $materialized, array $seeding, bool $waived ): string {
+		if ( 0 === $requested ) {
+			return 'skipped';
+		}
+		if ( $materialized > 0 ) {
+			return 'provider_materialized';
+		}
+		if ( $waived ) {
+			return 'waived_dependency';
+		}
+		if ( in_array( (string) ( $seeding['reason'] ?? '' ), array( 'woocommerce_inactive', 'materializer_unavailable', 'empty_validated_manifest' ), true ) || false === ( $seeding['available'] ?? true ) ) {
+			return 'missing_provider';
+		}
+
+		return 'runtime_gap';
+	}
+
+	/**
+	 * Count cart controls preserved by WooCommerce-backed product mapping.
+	 *
+	 * @param array<int,array|string> $diagnostics Import diagnostics.
+	 * @return int
+	 */
+	private static function cart_runtime_controls_preserved_count( array $diagnostics ): int {
+		$count = 0;
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) || empty( $diagnostic['runtime_mapped'] ) || 'woocommerce' !== (string) ( $diagnostic['mapped_provider'] ?? '' ) ) {
+				continue;
+			}
+			$products = isset( $diagnostic['products'] ) && is_array( $diagnostic['products'] ) ? $diagnostic['products'] : array();
+			foreach ( $products as $product ) {
+				if ( is_array( $product ) && ! empty( $product['has_cart_control'] ) ) {
+					++$count;
+				}
+			}
+		}
+
+		return $count;
+	}
+
+	/**
+	 * Human decision text for provider/runtime rows.
+	 *
+	 * @param string $capability Capability name.
+	 * @param string $status     Row status.
+	 * @return string
+	 */
+	private static function provider_runtime_decision( string $capability, string $status ): string {
+		if ( 'provider_materialized' === $status ) {
+			return 'form' === $capability ? 'Jetpack handled the form fallback; evaluate remaining form issues as runtime/provider behavior, not fake static HTML.' : 'WooCommerce handled product rows; cart controls are preserved by Woo runtime where counted.';
+		}
+		if ( 'waived_dependency' === $status ) {
+			return 'Dependency was missing but explicitly waived for this run; do not count as provider-materialized.';
+		}
+		if ( 'missing_provider' === $status ) {
+			return 'Required provider is unavailable; install/activate the provider or keep the import failing.';
+		}
+		if ( 'runtime_gap' === $status ) {
+			return 'Source intent remains runtime-owned and unsupported by the current provider path.';
+		}
+
+		return 'No provider/runtime work was requested for this capability.';
 	}
 
 	/**
