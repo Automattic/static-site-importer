@@ -1152,7 +1152,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$diagnostics = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
 		$indexes     = array();
 		foreach ( $diagnostics as $index => $diagnostic ) {
-			if ( is_array( $diagnostic ) && 'html_form_fallback' === (string) ( $diagnostic['diagnostic_code'] ?? '' ) ) {
+			if ( is_array( $diagnostic ) && self::is_materializable_form_diagnostic( $diagnostic ) ) {
 				$indexes[] = (int) $index;
 			}
 		}
@@ -1168,11 +1168,18 @@ class Static_Site_Importer_Report_Diagnostics {
 		$manifest_forms = array();
 		foreach ( $indexes as $index ) {
 			$diagnostic       = $report['diagnostics'][ $index ];
+			$controls         = isset( $diagnostic['controls'] ) && is_array( $diagnostic['controls'] ) ? $diagnostic['controls'] : array();
+			$form             = isset( $diagnostic['form'] ) && is_array( $diagnostic['form'] ) ? $diagnostic['form'] : array();
+			if ( empty( $controls ) && self::is_generated_core_html_form_diagnostic( $diagnostic ) ) {
+				$extracted = self::extract_form_manifest_from_diagnostic( $diagnostic );
+				$controls  = isset( $extracted['controls'] ) && is_array( $extracted['controls'] ) ? $extracted['controls'] : array();
+				$form      = isset( $extracted['form'] ) && is_array( $extracted['form'] ) ? $extracted['form'] : $form;
+			}
 			$manifest_forms[] = array(
 				'selector'    => isset( $diagnostic['selector'] ) && is_scalar( $diagnostic['selector'] ) ? (string) $diagnostic['selector'] : '',
 				'source_path' => isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : ( isset( $diagnostic['source'] ) && is_scalar( $diagnostic['source'] ) ? (string) $diagnostic['source'] : '' ),
-				'form'        => isset( $diagnostic['form'] ) && is_array( $diagnostic['form'] ) ? $diagnostic['form'] : array(),
-				'controls'    => isset( $diagnostic['controls'] ) && is_array( $diagnostic['controls'] ) ? $diagnostic['controls'] : array(),
+				'form'        => $form,
+				'controls'    => $controls,
 			);
 		}
 
@@ -1197,7 +1204,8 @@ class Static_Site_Importer_Report_Diagnostics {
 
 			++$seeding['mapped_count'];
 			$selector = isset( $row['selector'] ) && is_scalar( $row['selector'] ) ? (string) $row['selector'] : '';
-			$index    = self::form_finding_index_for_selector( $report['diagnostics'], $pending, $selector );
+			$source_path = isset( $row['source_path'] ) && is_scalar( $row['source_path'] ) ? (string) $row['source_path'] : '';
+			$index    = self::form_finding_index_for_selector( $report['diagnostics'], $pending, $selector, $source_path );
 			if ( null === $index ) {
 				continue;
 			}
@@ -1225,6 +1233,118 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
+	 * Determine whether a diagnostic can be passed to the form provider.
+	 *
+	 * @param array<string,mixed> $diagnostic Diagnostic row.
+	 * @return bool
+	 */
+	private static function is_materializable_form_diagnostic( array $diagnostic ): bool {
+		if ( 'html_form_fallback' === (string) ( $diagnostic['diagnostic_code'] ?? '' ) ) {
+			return true;
+		}
+
+		return self::is_generated_core_html_form_diagnostic( $diagnostic );
+	}
+
+	/**
+	 * Identify generated post_content core/html diagnostics that preserve a form.
+	 *
+	 * @param array<string,mixed> $diagnostic Diagnostic row.
+	 * @return bool
+	 */
+	private static function is_generated_core_html_form_diagnostic( array $diagnostic ): bool {
+		if ( 'core/html' !== (string) ( $diagnostic['block_name'] ?? '' ) ) {
+			return false;
+		}
+
+		$tag_name = strtolower( (string) ( $diagnostic['tag_name'] ?? $diagnostic['tag'] ?? $diagnostic['element'] ?? '' ) );
+		if ( 'form' === $tag_name ) {
+			return true;
+		}
+
+		$html = self::first_scalar( $diagnostic, array( 'source_html_preview', 'html_excerpt', 'excerpt' ) );
+		return '' !== $html && str_contains( strtolower( $html ), '<form' );
+	}
+
+	/**
+	 * Extract the provider manifest shape from a generated core/html form diagnostic.
+	 *
+	 * @param array<string,mixed> $diagnostic Diagnostic row.
+	 * @return array{form:array<string,string>,controls:array<int,array<string,mixed>>}
+	 */
+	private static function extract_form_manifest_from_diagnostic( array $diagnostic ): array {
+		$html = self::first_scalar( $diagnostic, array( 'source_html_preview', 'html_excerpt', 'excerpt' ) );
+		if ( '' === $html || ! str_contains( strtolower( $html ), '<form' ) ) {
+			return array( 'form' => array(), 'controls' => array() );
+		}
+
+		$doc = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$doc->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+
+		$form_node = $doc->getElementsByTagName( 'form' )->item( 0 );
+		if ( ! $form_node instanceof DOMElement ) {
+			return array( 'form' => array(), 'controls' => array() );
+		}
+
+		$form = array();
+		foreach ( array( 'class', 'action', 'method' ) as $attribute ) {
+			$value = trim( $form_node->getAttribute( $attribute ) );
+			if ( '' !== $value ) {
+				$form[ $attribute ] = $value;
+			}
+		}
+
+		$controls = array();
+		foreach ( array( 'input', 'textarea', 'select', 'button' ) as $tag_name ) {
+			foreach ( $form_node->getElementsByTagName( $tag_name ) as $control_node ) {
+				if ( ! $control_node instanceof DOMElement ) {
+					continue;
+				}
+
+				$control = array(
+					'tag'  => strtolower( $control_node->tagName ),
+					'type' => strtolower( trim( $control_node->getAttribute( 'type' ) ) ),
+				);
+				if ( 'button' === $control['tag'] && '' === $control['type'] ) {
+					$control['type'] = 'submit';
+				}
+				if ( 'input' === $control['tag'] && '' === $control['type'] ) {
+					$control['type'] = 'text';
+				}
+
+				foreach ( array( 'id', 'name', 'placeholder' ) as $attribute ) {
+					$value = trim( $control_node->getAttribute( $attribute ) );
+					if ( '' !== $value ) {
+						$control[ $attribute ] = $value;
+					}
+				}
+
+				$label = trim( $control_node->getAttribute( 'aria-label' ) );
+				if ( '' === $label ) {
+					$label = trim( $control_node->textContent );
+				}
+				if ( '' !== $label ) {
+					$control['label'] = $label;
+				}
+
+				if ( $control_node->hasAttribute( 'required' ) ) {
+					$control['required'] = true;
+				}
+
+				$controls[] = $control;
+			}
+		}
+
+		return array(
+			'form'     => $form,
+			'controls' => $controls,
+		);
+	}
+
+	/**
 	 * Resolve which pending form finding a materialized row maps onto.
 	 *
 	 * @param array<int,array<string,mixed>> $diagnostics Report diagnostics.
@@ -1232,7 +1352,17 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param string                         $selector    Materialized form selector.
 	 * @return int|null
 	 */
-	private static function form_finding_index_for_selector( array $diagnostics, array $pending, string $selector ): ?int {
+	private static function form_finding_index_for_selector( array $diagnostics, array $pending, string $selector, string $source_path = '' ): ?int {
+		if ( '' !== $selector && '' !== $source_path ) {
+			foreach ( $pending as $index ) {
+				$diagnostic = $diagnostics[ $index ] ?? array();
+				$diagnostic_source = self::first_scalar( is_array( $diagnostic ) ? $diagnostic : array(), array( 'source_path', 'source' ) );
+				if ( (string) ( $diagnostic['selector'] ?? '' ) === $selector && self::form_source_paths_match( $source_path, $diagnostic_source ) ) {
+					return $index;
+				}
+			}
+		}
+
 		if ( '' !== $selector ) {
 			foreach ( $pending as $index ) {
 				$diagnostic = $diagnostics[ $index ] ?? array();

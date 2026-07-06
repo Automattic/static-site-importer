@@ -173,6 +173,7 @@ class Static_Site_Importer_Form_Seeder {
 	private static function seed_form( array $form, bool $available ): array {
 		$controls = isset( $form['controls'] ) && is_array( $form['controls'] ) ? $form['controls'] : array();
 		$selector = isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '';
+		$source_path = isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '';
 
 		$field_blocks = array();
 		$mapped_types = array();
@@ -206,6 +207,7 @@ class Static_Site_Importer_Form_Seeder {
 		if ( empty( $field_blocks ) ) {
 			return array(
 				'selector'       => $selector,
+				'source_path'    => $source_path,
 				'provider'       => self::PROVIDER_ID,
 				'block_name'     => 'jetpack/contact-form',
 				'status'         => 'skipped',
@@ -222,6 +224,7 @@ class Static_Site_Importer_Form_Seeder {
 
 		return array(
 			'selector'        => $selector,
+			'source_path'     => $source_path,
 			'provider'        => self::PROVIDER_ID,
 			'block_name'      => 'jetpack/contact-form',
 			'status'          => 'mapped',
