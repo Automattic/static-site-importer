@@ -187,6 +187,42 @@ test('gutenberg incompatibility registry keeps runtime islands separate and cons
   assert.equal(byKey['editor-render-divergence'].signals.editor_render_divergence, 1);
 });
 
+test('gutenberg incompatibility registry attributes nested svg to the outer fallback island', () => {
+  const registry = buildGutenbergIncompatibilityRegistry({
+    matrix_id: 'nested-svg-attribution',
+    fixtures: [
+      { fixture_id: 'artist' },
+      { fixture_id: 'coffee' },
+    ],
+    findings: [
+      {
+        fixture_id: 'artist',
+        kind: 'unsupported_html_fallback',
+        observed_block_name: 'core/html',
+        reason_code: 'html_unsupported_element',
+        pattern_family: 'html_div',
+        selector: 'div.contact-content',
+        source_snippet: '<div class="contact-content"><a href="mailto:test@example.com"><svg><defs><linearGradient id="g"></linearGradient></defs></svg>Email</a></div>',
+      },
+      {
+        fixture_id: 'coffee',
+        kind: 'unsupported_html_fallback',
+        observed_block_name: 'core/html',
+        reason_code: 'html_inline_svg_fallback',
+        pattern_family: 'inline_svg',
+        selector: 'a.nav-logo > svg',
+        source_snippet: '<svg><defs><linearGradient id="g"></linearGradient></defs></svg>',
+      },
+    ],
+  });
+  const byKey = Object.fromEntries(registry.patterns.map((row) => [row.pattern_key, row]));
+
+  assert.equal(byKey['contact-layout'].finding_count, 1);
+  assert.equal(byKey['contact-layout'].fixtures[0], 'artist');
+  assert.equal(byKey['inline-svg-filter-gradient'].finding_count, 1);
+  assert.equal(byKey['inline-svg-filter-gradient'].fixtures[0], 'coffee');
+});
+
 test('gutenberg incompatibility registry artifacts are written with fixture matrix outputs', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-gutenberg-registry-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'gutenberg-registry-artifact-test' });
