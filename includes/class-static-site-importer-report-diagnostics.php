@@ -1536,6 +1536,9 @@ class Static_Site_Importer_Report_Diagnostics {
 
 				$label = trim( $control_node->getAttribute( 'aria-label' ) );
 				if ( '' === $label ) {
+					$label = self::label_text_for_form_control( $control_node, $doc );
+				}
+				if ( '' === $label ) {
 					$label = trim( $control_node->textContent );
 				}
 				if ( '' !== $label ) {
@@ -1554,6 +1557,69 @@ class Static_Site_Importer_Report_Diagnostics {
 			'form'     => $form,
 			'controls' => $controls,
 		);
+	}
+
+	/**
+	 * Resolve a form control's associated label text from parsed source HTML.
+	 *
+	 * @param DOMElement  $control_node Source form control node.
+	 * @param DOMDocument $doc          Parsed document.
+	 * @return string
+	 */
+	private static function label_text_for_form_control( DOMElement $control_node, DOMDocument $doc ): string {
+		$id = trim( $control_node->getAttribute( 'id' ) );
+		if ( '' !== $id ) {
+			foreach ( $doc->getElementsByTagName( 'label' ) as $label_node ) {
+				if ( ! $label_node instanceof DOMElement || trim( $label_node->getAttribute( 'for' ) ) !== $id ) {
+					continue;
+				}
+
+				$text = self::form_label_visible_text( $label_node );
+				if ( '' !== $text ) {
+					return $text;
+				}
+			}
+		}
+
+		$node = $control_node->parentNode;
+		while ( $node instanceof DOMElement ) {
+			if ( 'label' === strtolower( $node->tagName ) ) {
+				return self::form_label_visible_text( $node );
+			}
+			if ( 'form' === strtolower( $node->tagName ) ) {
+				break;
+			}
+			$node = $node->parentNode;
+		}
+
+		return '';
+	}
+
+	/**
+	 * Return label copy without nested form-control values.
+	 *
+	 * @param DOMElement $label_node Label element.
+	 * @return string
+	 */
+	private static function form_label_visible_text( DOMElement $label_node ): string {
+		$clone = $label_node->cloneNode( true );
+		if ( ! $clone instanceof DOMElement ) {
+			return '';
+		}
+
+		foreach ( array( 'input', 'textarea', 'select', 'button' ) as $tag_name ) {
+			$nodes = array();
+			foreach ( $clone->getElementsByTagName( $tag_name ) as $node ) {
+				$nodes[] = $node;
+			}
+			foreach ( $nodes as $node ) {
+				if ( $node instanceof DOMNode && $node->parentNode instanceof DOMNode ) {
+					$node->parentNode->removeChild( $node );
+				}
+			}
+		}
+
+		return trim( preg_replace( '/\s+/', ' ', $clone->textContent ) ?? $clone->textContent );
 	}
 
 	/**
