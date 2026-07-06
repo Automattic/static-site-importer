@@ -318,6 +318,9 @@ class Static_Site_Importer_Theme_Materializer {
 	 */
 	private static function materialize_supplemental_artifact_file_assets( string $theme_dir, string $theme_uri, array $artifacts, array &$assets, int &$order, bool $write_files = true ) {
 		$files       = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
+		if ( isset( $artifacts['source_files'] ) && is_array( $artifacts['source_files'] ) ) {
+			$files = array_merge( $files, $artifacts['source_files'] );
+		}
 		$diagnostics = array();
 
 		foreach ( $files as $file ) {
