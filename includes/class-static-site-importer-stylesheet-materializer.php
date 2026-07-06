@@ -138,9 +138,10 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 */
 	private static function style_css( string $theme_name, string $css, array $visual_repair_styles = array() ): string {
 		$admin_bar_bridge = self::admin_bar_top_chrome_css( $css );
+		$body_class_guard = self::wordpress_body_class_collision_guard_css( $css );
 		$repair_css       = self::visual_repair_css_for_target( $visual_repair_styles, 'frontend' );
 
-		return "/*\nTheme Name: " . $theme_name . "\nAuthor: Static Site Importer\nDescription: Materialized from a compiled website artifact.\nVersion: 0.1.0\nRequires at least: 6.6\n*/\n\n" . $css . "\n" . $admin_bar_bridge . $repair_css;
+		return "/*\nTheme Name: " . $theme_name . "\nAuthor: Static Site Importer\nDescription: Materialized from a compiled website artifact.\nVersion: 0.1.0\nRequires at least: 6.6\n*/\n\n" . $css . "\n" . $body_class_guard . $admin_bar_bridge . $repair_css;
 	}
 
 	/**
@@ -154,6 +155,96 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		$repair_css = self::visual_repair_css_for_target( $visual_repair_styles, 'editor' );
 
 		return "/*\nStatic Site Importer editor styles.\nGenerated separately from frontend style.css so editor wrapper repairs do not leak to public rendering.\n*/\n\n" . $css . "\n" . $repair_css;
+	}
+
+	/**
+	 * Prevent source utility/page classes from styling WordPress' generated body classes.
+	 *
+	 * WordPress adds generic classes such as `page` and `home` to <body>. Static
+	 * sites commonly use the same tokens for inner page wrappers, and layout rules
+	 * on those source classes must not shrink or pad the WordPress shell itself.
+	 *
+	 * @param string $css Source CSS.
+	 * @return string CSS guard rules.
+	 */
+	private static function wordpress_body_class_collision_guard_css( string $css ): string {
+		$body_classes = array(
+			'admin-bar',
+			'archive',
+			'attachment',
+			'author',
+			'blog',
+			'category',
+			'customize-support',
+			'date',
+			'error404',
+			'home',
+			'logged-in',
+			'no-customize-support',
+			'page',
+			'page-child',
+			'page-parent',
+			'page-template',
+			'page-template-default',
+			'paged',
+			'post-type-archive',
+			'privacy-policy',
+			'rtl',
+			'search',
+			'search-no-results',
+			'search-results',
+			'single',
+			'tag',
+			'wp-custom-logo',
+			'wp-embed-responsive',
+		);
+		$collisions   = array();
+
+		foreach ( self::layout_class_selectors_from_css( $css ) as $class_name ) {
+			if ( in_array( $class_name, $body_classes, true ) ) {
+				$collisions[] = $class_name;
+			}
+		}
+
+		$collisions = array_values( array_unique( $collisions ) );
+		if ( empty( $collisions ) ) {
+			return '';
+		}
+
+		$rules = array();
+		foreach ( $collisions as $class_name ) {
+			$rules[] = 'body.' . $class_name;
+		}
+
+		return "\n/* Static Site Importer: keep imported wrapper classes from styling WordPress body classes. */\n"
+			. implode( ', ', $rules ) . ' { width: auto; max-width: none; margin: 0; padding: 0; }' . "\n";
+	}
+
+	/**
+	 * @param string $css Source CSS.
+	 * @return array<int,string> Class selectors whose rule carries layout geometry.
+	 */
+	private static function layout_class_selectors_from_css( string $css ): array {
+		$css     = preg_replace( '/\/\*.*?\*\//s', '', $css ) ?? $css;
+		$classes = array();
+		if ( '' === trim( $css ) || ! preg_match_all( '/([^{}@][^{}]*)\{([^{}]*)\}/', $css, $matches, PREG_SET_ORDER ) ) {
+			return array();
+		}
+
+		foreach ( $matches as $match ) {
+			$body = (string) $match[2];
+			if ( ! preg_match( '/(?:^|;)\s*(?:width|max-width|min-width|margin|margin-[a-z-]+|padding|padding-[a-z-]+)\s*:/i', $body ) ) {
+				continue;
+			}
+
+			foreach ( explode( ',', (string) $match[1] ) as $selector ) {
+				if ( preg_match_all( '/\.([A-Za-z_-][A-Za-z0-9_-]*)/', $selector, $class_matches ) ) {
+					$classes = array_merge( $classes, $class_matches[1] );
+				}
+			}
+		}
+
+		return array_values( array_unique( $classes ) );
 	}
 
 	/**

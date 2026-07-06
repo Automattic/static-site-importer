@@ -150,6 +150,18 @@ $assert( str_contains( $editor_css, '.editor-styles-wrapper .glow-orb { opacity:
 $assert( str_contains( $editor_css, '.compiled-site-repair { display: block; }' ), 'editor-includes-compiled-site-repair-css', $editor_css );
 $assert( ! str_contains( $editor_css, '.should-not-appear' ), 'unknown-target-repair-css-is-ignored', $editor_css );
 
+$body_guard_writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes(
+	'/tmp/body-class-guard-smoke',
+	'Body Class Guard Smoke',
+	'.page { max-width: 720px; margin: 0 auto; padding: 5rem 2rem; } .admin-bar { padding-top: 2rem; } .home { color: red; } .card { max-width: 20rem; }',
+	array(),
+	array()
+);
+$body_guard_css    = (string) ( $body_guard_writes['/tmp/body-class-guard-smoke/style.css'] ?? '' );
+$assert( str_contains( $body_guard_css, 'body.page, body.admin-bar { width: auto; max-width: none; margin: 0; padding: 0; }' ), 'style-guards-wordpress-body-class-collisions', $body_guard_css );
+$assert( ! str_contains( $body_guard_css, 'body.card' ), 'style-does-not-guard-non-wordpress-body-class', $body_guard_css );
+$assert( ! str_contains( $body_guard_css, 'body.home' ), 'style-does-not-guard-non-layout-body-class', $body_guard_css );
+
 $documents      = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'documents_from_compiled_site_pages' );
 $missing_source = $documents->invoke(
 	null,
