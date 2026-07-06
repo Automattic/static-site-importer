@@ -129,6 +129,15 @@ file. Pass `--dry-run` to inspect the composed commands without running
 Lab/WP Codebox. Arguments after `--` are forwarded to the lower-level bench,
 preserving the existing script options:
 
+Every matrix run also writes `visual-parity-evidence-report.json` and
+`visual-parity-evidence-report.md`. These artifacts make the staged-output proof
+less hand-wavy by reporting, per fixture, whether the generated site artifact,
+staged source HTML, imported WordPress browser snapshot, visual-compare evidence,
+screenshot refs, viewport/mobile evidence, live-WP parity, missing assets, and
+native/core HTML block counts are present. The report is a deterministic evidence
+coverage and risk summary; it complements screenshot/pixel diff evidence but does
+not replace it.
+
 ### Code freshness guard
 
 Before running, the wrapper resolves the git freshness of the override/source
