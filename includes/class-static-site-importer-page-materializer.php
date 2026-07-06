@@ -819,7 +819,7 @@ class Static_Site_Importer_Page_Materializer {
 	 * @return string|null Serialized block markup, or null when unsupported.
 	 */
 	private static function safe_html_fragment_to_blocks( string $html ): ?string {
-		if ( preg_match( '/<\s*(?:script|style|iframe|canvas|svg)\b/i', $html ) ) {
+		if ( preg_match( '/<\s*(?:script|style|iframe|canvas|svg|select|textarea)\b/i', $html ) ) {
 			return null;
 		}
 
@@ -899,6 +899,10 @@ class Static_Site_Importer_Page_Materializer {
 			return self::navigation_block( $node, $attrs );
 		}
 
+		if ( 'form' === $tag ) {
+			return self::search_block( $node, $attrs );
+		}
+
 		if ( in_array( $tag, array( 'ul', 'ol' ), true ) ) {
 			return self::list_block( $node, 'ol' === $tag, $attrs );
 		}
@@ -924,10 +928,6 @@ class Static_Site_Importer_Page_Materializer {
 			return self::separator_block( $attrs );
 		}
 
-		if ( 'form' === $tag ) {
-			return self::search_block( $node, $attrs );
-		}
-
 		if ( 'label' === $tag ) {
 			$content = self::safe_inline_html( $node );
 			return null === $content ? null : self::paragraph_block( $content, $attrs );
@@ -946,7 +946,29 @@ class Static_Site_Importer_Page_Materializer {
 			return null;
 		}
 
+		if ( 'figcaption' === $tag ) {
+			$content = self::safe_inline_html( $node );
+			return null === $content ? null : self::paragraph_block( $content, $attrs );
+		}
+
 		if ( in_array( $tag, array( 'div', 'section', 'header', 'footer', 'main', 'article', 'aside', 'nav' ), true ) ) {
+			if ( 'nav' === $tag ) {
+				$navigation = self::navigation_block( $node, $attrs );
+				if ( null !== $navigation ) {
+					return $navigation;
+				}
+			}
+
+			$query = self::query_grid_block( $node, $attrs );
+			if ( null !== $query ) {
+				return $query;
+			}
+
+			$button_group = self::button_group_from_element( $node );
+			if ( null !== $button_group ) {
+				return $button_group;
+			}
+
 			$children = '';
 			foreach ( iterator_to_array( $node->childNodes ) as $child ) {
 				$child_markup = self::safe_dom_node_to_block_markup( $child );
@@ -1242,7 +1264,7 @@ class Static_Site_Importer_Page_Materializer {
 	 * @param array<string,mixed> $attrs   Block attrs.
 	 * @return string|null
 	 */
-	private static function image_block( DOMElement $element, array $attrs ): ?string {
+	private static function image_block( DOMElement $element, array $attrs, string $caption = '' ): ?string {
 		$src = trim( $element->getAttribute( 'src' ) );
 		if ( '' === $src ) {
 			return null;
@@ -1253,8 +1275,109 @@ class Static_Site_Importer_Page_Materializer {
 		if ( '' !== $alt ) {
 			$attrs['alt'] = $alt;
 		}
+		if ( '' !== trim( $caption ) ) {
+			$attrs['caption'] = $caption;
+		}
 
-		return self::serialized_block_markup( 'core/image', $attrs, '<figure class="wp-block-image' . self::extra_classes( $attrs ) . '"><img src="' . self::escape_attr( $src ) . '" alt="' . self::escape_attr( $alt ) . '" /></figure>' );
+		return self::serialized_block_markup( 'core/image', $attrs, '<figure class="wp-block-image' . self::extra_classes( $attrs ) . '"><img src="' . self::escape_attr( $src ) . '" alt="' . self::escape_attr( $alt ) . '" />' . ( '' === trim( $caption ) ? '' : '<figcaption class="wp-element-caption">' . $caption . '</figcaption>' ) . '</figure>' );
+	}
+
+	/**
+	 * Convert recurring post-card grids into a native query/post-template scaffold.
+	 *
+	 * @param DOMElement          $element Container element.
+	 * @param array<string,mixed> $attrs   Block attrs.
+	 * @return string|null
+	 */
+	private static function query_grid_block( DOMElement $element, array $attrs ): ?string {
+		$articles = array_values(
+			array_filter(
+				self::element_children( $element ),
+				static fn ( DOMElement $child ): bool => 'article' === strtolower( $child->tagName )
+			)
+		);
+		if ( count( $articles ) < 2 ) {
+			return null;
+		}
+
+		$class = strtolower( $element->getAttribute( 'class' ) );
+		if ( ! preg_match( '/(^|[\s_-])(archive|blog|card-grid|grid|loop|posts?|query)([\s_-]|$)/', $class ) ) {
+			return null;
+		}
+
+		$columns = min( 4, max( 2, count( $articles ) ) );
+		$attrs   = array_merge(
+			$attrs,
+			array(
+				'query' => array(
+					'perPage' => min( 12, count( $articles ) ),
+					'pages'   => 0,
+					'offset'  => 0,
+					'postType' => 'post',
+					'order'   => 'desc',
+					'orderBy' => 'date',
+					'inherit' => true,
+				),
+			)
+		);
+		$template_attrs = array(
+			'layout' => array(
+				'type'        => 'grid',
+				'columnCount' => $columns,
+			),
+		);
+		$card_attrs     = self::class_attrs_from_element( $articles[0] );
+		$card_attrs['tagName'] = 'article';
+		$card           = self::group_block(
+			self::serialized_block_markup( 'core/post-featured-image', array( 'isLink' => true ), '<figure class="wp-block-post-featured-image"><a href="#" target="_self"></a></figure>' ) .
+			self::serialized_block_markup( 'core/post-title', array( 'isLink' => true ), '<h2 class="wp-block-post-title"><a href="#" target="_self"></a></h2>' ) .
+			self::serialized_block_markup( 'core/post-date', array(), '<div class="wp-block-post-date"></div>' ) .
+			self::serialized_block_markup( 'core/post-excerpt', array(), '<div class="wp-block-post-excerpt"></div>' ),
+			$card_attrs
+		);
+
+		$post_template = self::serialized_block_markup( 'core/post-template', $template_attrs, $card );
+		return self::serialized_block_markup( 'core/query', $attrs, '<div class="wp-block-query' . self::extra_classes( $attrs ) . '">' . $post_template . '</div>' );
+	}
+
+	/**
+	 * Convert containers that only wrap multiple CTAs into one buttons block.
+	 *
+	 * @param DOMElement $element Container element.
+	 * @return string|null
+	 */
+	private static function button_group_from_element( DOMElement $element ): ?string {
+		$children = self::element_children( $element );
+		if ( count( $children ) < 2 ) {
+			return null;
+		}
+		$container_class = strtolower( $element->getAttribute( 'class' ) );
+		$looks_like_buttons = (bool) preg_match( '/(^|[\s_-])(actions?|buttons?|cta|call-to-action)([\s_-]|$)/', $container_class );
+
+		$buttons = '';
+		foreach ( $children as $child ) {
+			if ( ! in_array( strtolower( $child->tagName ), array( 'a', 'button' ), true ) ) {
+				return null;
+			}
+			$child_class = strtolower( $child->getAttribute( 'class' ) );
+			if ( preg_match( '/(^|[\s_-])(button|btn|cta|call-to-action)([\s_-]|$)/', $child_class ) ) {
+				$looks_like_buttons = true;
+			}
+			$content = self::safe_inline_html( $child );
+			if ( null === $content || '' === trim( wp_strip_all_tags( $content ) ) ) {
+				return null;
+			}
+			$button_attrs = array_merge( self::class_attrs_from_element( $child ), array( 'text' => $content ) );
+			if ( 'a' === strtolower( $child->tagName ) && '' !== trim( $child->getAttribute( 'href' ) ) ) {
+				$button_attrs['url'] = $child->getAttribute( 'href' );
+			}
+			$buttons .= self::button_block( $button_attrs );
+		}
+		if ( ! $looks_like_buttons ) {
+			return null;
+		}
+
+		return self::buttons_block( $buttons );
 	}
 
 	/**
