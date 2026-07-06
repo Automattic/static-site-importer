@@ -8,6 +8,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/**
+ * Internal dependencies
+ */
 import { MAX_EXTRA_SURFACE_COUNT, normalizeSurfaceCoverageOptions } from '../lib/fixture-matrix.mjs';
 
 export const RIG_ID = 'static-site-importer-fixture-matrix';
@@ -230,6 +233,21 @@ function normalizeOptions(input) {
   const tempRoot = input.tempRoot ? path.resolve(input.tempRoot) : defaultTempRoot(namespace, input);
   const output = path.resolve(input.output || path.join(tempRoot, `${runId}.homeboy-bench.json`));
   const executionTarget = normalizeExecutionTarget(input);
+  const executionIsLocal = executionTarget.local;
+  const sharedStateExplicit = Boolean(input.sharedState);
+  const artifactRootExplicit = Boolean(input.artifactRoot);
+  let sharedState = '';
+  if (sharedStateExplicit) {
+    sharedState = path.resolve(input.sharedState);
+  } else if (executionIsLocal) {
+    sharedState = path.join(tempRoot, 'shared-state');
+  }
+  let artifactRoot = '';
+  if (artifactRootExplicit) {
+    artifactRoot = path.resolve(input.artifactRoot);
+  } else if (executionIsLocal) {
+    artifactRoot = path.join(tempRoot, 'artifacts');
+  }
 
   return {
     ...input,
@@ -244,8 +262,10 @@ function normalizeOptions(input) {
     blocksEnginePhpTransformerPath,
     passthrough: Array.isArray(input.passthrough) ? input.passthrough : [],
     staticSiteImporter: path.resolve(input.staticSiteImporter),
-    sharedState: input.sharedState ? path.resolve(input.sharedState) : path.join(tempRoot, 'shared-state'),
-    artifactRoot: input.artifactRoot ? path.resolve(input.artifactRoot) : path.join(tempRoot, 'artifacts'),
+    sharedState,
+    artifactRoot,
+    sharedStateExplicit,
+    artifactRootExplicit,
     homeboyBin: input.homeboyBin || process.env.HOMEBOY_BIN || 'homeboy',
   };
 }
@@ -263,13 +283,14 @@ function normalizeExecutionTarget(input) {
     throw new Error('--local forces hot execution on this machine and cannot be combined with --lab-only. Use --local for local-hot execution, or use --lab-only/--runner without --local for Lab offload.');
   }
 
-  const executionTarget = local
-    ? 'local-hot'
-    : runner
-      ? `lab-offload:${runner}`
-      : labOnly
-        ? 'lab-offload:auto'
-        : 'auto';
+  let executionTarget = 'auto';
+  if (local) {
+    executionTarget = 'local-hot';
+  } else if (runner) {
+    executionTarget = `lab-offload:${runner}`;
+  } else if (labOnly) {
+    executionTarget = 'lab-offload:auto';
+  }
 
   return {
     runner,
@@ -287,8 +308,9 @@ function buildWarnings(options) {
   return [
     ...(!options.runner && !options.labOnly && !options.local ? [{
       code: 'lab_auto_offload_risk',
-      message: 'No --runner/--lab-only/--local routing was provided. `homeboy bench` auto-offloads to a connected default Lab runner, where local --shared-state/--artifact-root paths will fail. Pass --local to force local (hot) execution against local checkouts and a local WP Codebox, or --runner/--lab-only to route to a runner with the paths present.',
+      message: 'No --runner/--lab-only/--local routing was provided. `homeboy bench` may auto-offload to a connected default Lab runner. Default --shared-state/--artifact-root paths are omitted unless --local or explicit path overrides are provided.',
     }] : []),
+    ...labLocalTempPathWarnings(options),
     ...(options.local ? [{
       code: 'forced_local_execution',
       message: '--local forces hot local execution (--force-hot --allow-local-hot); the bench will not offload to a Lab runner even if one is connected.',
@@ -302,6 +324,30 @@ function buildWarnings(options) {
       message: '--allow-dirty-lab-workspace permits reusing or overwriting a dirty Lab workspace.',
     }] : []),
   ];
+}
+
+function labLocalTempPathWarnings(options) {
+  if (!isLabRouted(options)) {
+    return [];
+  }
+  return [
+    ...(options.sharedStateExplicit && isMacLocalTempPath(options.sharedState) ? [{
+      code: 'lab_local_shared_state_path',
+      message: `--shared-state points at macOS local temp (${options.sharedState}). Lab runners are Linux hosts and cannot use operator-local temp paths; omit --shared-state to let Homeboy choose runner-local state, or pass a path that exists on the runner.`,
+    }] : []),
+    ...(options.artifactRootExplicit && isMacLocalTempPath(options.artifactRoot) ? [{
+      code: 'lab_local_artifact_root_path',
+      message: `--artifact-root points at macOS local temp (${options.artifactRoot}). Lab runners are Linux hosts and cannot use operator-local temp paths; omit --artifact-root to let Homeboy choose runner-local artifacts, or pass a path that exists on the runner.`,
+    }] : []),
+  ];
+}
+
+function isLabRouted(options) {
+  return Boolean(options.runner || options.labOnly || (!options.local && !options.runner));
+}
+
+function isMacLocalTempPath(value) {
+  return /^\/(?:private\/)?var\/folders\//.test(String(value || ''));
 }
 
 // Surface corpus pin drift instead of letting `fixture_count_matches_canonical`
@@ -525,13 +571,15 @@ function buildSteps(options, settings) {
     '--profile', 'fixture-matrix',
     '--iterations', '1',
     '--path', options.staticSiteImporter,
-    '--shared-state', options.sharedState,
     '--run-id', options.runId,
     '--output', options.output,
     '--json',
     '--setting', `static_site_importer_fixture_matrix_namespace=${options.namespace}`,
     ...Object.entries(settings).flatMap(([key, value]) => ['--setting', `bench_env.${key}=${value}`]),
   ];
+  if (options.sharedState) {
+    benchArgs.push('--shared-state', options.sharedState);
+  }
   if (options.artifactRoot) {
     benchArgs.push('--artifact-root', options.artifactRoot);
   }
@@ -791,7 +839,6 @@ function sanitizePathSegment(value) {
 
 function printHelp() {
   process.stdout.write(`Usage: node tools/run-fixture-matrix.mjs --static-site-importer <path> --blocks-engine <path> [options] [-- <bench args>...]\n\nRuns the canonical Static Site Importer fixture matrix through Homeboy/Lab/WP Codebox.\n\nExecution modes:\n  --local                             Local hot execution on this machine. Injects --force-hot --allow-local-hot into routed Homeboy steps.\n  --runner <id>                       Lab offload to a Homeboy runner, for example homeboy-lab. Does not inject hot-local flags.\n  --lab-only                          Require Lab routing, using Homeboy's selected/default Lab runner.\n  no routing flags                    Auto mode; lets homeboy bench decide routing.\n\nRules:\n  --runner local                      Alias for --local.\n  --local cannot be combined with --runner <remote> or --lab-only. Pick local-hot or Lab offload.\n\nOptions:\n  --static-site-importer <path>       Static Site Importer checkout/plugin path. Required.\n  --blocks-engine <path>              Blocks Engine checkout. Defaults fixture root and PHP transformer override.\n  --fixture-root <path>               Fixture corpus. Defaults to <blocks-engine>/fixtures/websites.\n  --blocks-engine-php-transformer-path <path>\n                                      Override transformer package/repo path. Defaults to --blocks-engine.\n  --mode <development-override|release-proof>\n                                      Labels output; default is development-override when transformer override is used.\n  --run-id <id>                       Stable proof label. Defaults to ssi-matrix-<mode>-<timestamp>.\n  --shared-state <dir>                Shared Homeboy bench state directory.\n  --artifact-root <dir>               Homeboy artifact root.\n  --output <file>                     Structured Homeboy bench output file.\n  --batch-size <n>                    SSI fixture matrix WP Codebox batch size.\n  --concurrency <n>                   Parallel WP Codebox sandbox batches. Defaults to 4, hard-capped at 16.\n  --wordpress-version <version>       WP Codebox WordPress version.\n  --wp-codebox-bin <path>             WP Codebox CLI path.\n  --allow-stale-override              Proceed even when an override checkout is behind upstream.\n  --allow-local-fallback              Permit selected Lab runner fallback to local execution.\n  --allow-dirty-lab-workspace         Permit reusing/overwriting a dirty Lab workspace.\n  --detach-after-handoff              Return after runner daemon accepts the job.\n  --dry-run                           Print the plan without running Homeboy.\n  --skip-install                      Skip rig install.\n  --skip-sync                         Skip rig sync.\n  --no-editor-validation              Omit editor block validation.\n  --no-visual-parity                  Omit visual parity capture.\n  --no-visual-parity-gate             Capture visual parity without gating.\n  --help                              Show this help.\n`);
-  return;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

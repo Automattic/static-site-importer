@@ -176,19 +176,28 @@ class Static_Site_Importer_Theme_Generator {
 			return $materialized;
 		}
 
-		$page_artifacts = Static_Site_Importer_Page_Materializer::page_artifacts( $document_pages, $theme_slug, $materialized['assets'], $permalinks );
-		foreach ( $page_artifacts['diagnostics'] as $diagnostic ) {
-			self::$conversion_report['diagnostics'][] = $diagnostic;
-		}
-
-		Static_Site_Importer_Document_Metadata_Reporter::record( self::$conversion_report, $artifacts );
-
 		$template_part_writes = self::template_part_artifact_writes( $theme_dir, $artifacts );
 		if ( is_wp_error( $template_part_writes ) ) {
 			return $template_part_writes;
 		}
 		$has_header_part      = isset( $template_part_writes[ $theme_dir . '/parts/header.html' ] );
 		$has_footer_part      = isset( $template_part_writes[ $theme_dir . '/parts/footer.html' ] );
+		$page_artifacts       = Static_Site_Importer_Page_Materializer::page_artifacts(
+			$document_pages,
+			$theme_slug,
+			$materialized['assets'],
+			$permalinks,
+			$template_part_writes,
+			array(
+				'strip_template_header' => $has_header_part,
+				'strip_template_footer' => $has_footer_part,
+			)
+		);
+		foreach ( $page_artifacts['diagnostics'] as $diagnostic ) {
+			self::$conversion_report['diagnostics'][] = $diagnostic;
+		}
+
+		Static_Site_Importer_Document_Metadata_Reporter::record( self::$conversion_report, $artifacts );
 
 		$visual_repair_styles = self::visual_repair_styles_from_artifacts( $artifacts );
 
@@ -210,7 +219,7 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$writes = array_merge( $writes, $template_writes );
 		$writes = array_merge( $writes, $template_part_writes );
-		foreach ( isset( $page_artifacts['asset_writes'] ) && is_array( $page_artifacts['asset_writes'] ) ? $page_artifacts['asset_writes'] : array() as $relative_path => $content ) {
+		foreach ( $page_artifacts['asset_writes'] as $relative_path => $content ) {
 			$relative_path = ltrim( str_replace( '\\', '/', (string) $relative_path ), '/' );
 			if ( '' !== $relative_path && ! str_contains( $relative_path, '..' ) ) {
 				$writes[ $theme_dir . '/' . $relative_path ] = (string) $content;

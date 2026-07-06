@@ -58,8 +58,11 @@ lower-level bench:
 - `homeboy bench --rig static-site-importer-fixture-matrix --profile fixture-matrix --iterations 1`
 
 It sets the SSI matrix bench environment for the canonical fixture root, Static
-Site Importer checkout, WP Codebox execution, shared state, and optional Blocks
-Engine PHP transformer override. By default, `--blocks-engine` also supplies the
+Site Importer checkout, WP Codebox execution, and optional Blocks Engine PHP
+transformer override. Lab-routed runs omit default `--shared-state` and
+`--artifact-root` paths so Homeboy can choose runner-local locations; use
+`--local` for host-local state paths, or pass explicit paths only when they exist
+on the runner. By default, `--blocks-engine` also supplies the
 release-free transformer override path. Use `--blocks-engine-php-transformer-path`
 to point at a different repo/package, or run a final release/bump proof with
 `--mode release-proof` and the released SSI dependency installed.

@@ -1,9 +1,15 @@
+/**
+ * External dependencies
+ */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
+/**
+ * Internal dependencies
+ */
 import { buildFigIntentParityReport } from './fig-intent-parity-report.mjs';
 
 test('fig intent parity report catches missing generated pages, assets, links, text, and responsive risks', () => {

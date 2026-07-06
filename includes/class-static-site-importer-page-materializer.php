@@ -100,24 +100,31 @@ class Static_Site_Importer_Page_Materializer {
 	/**
 	 * Build page-specific template and pattern artifacts.
 	 *
-	 * @param array<string, Static_Site_Importer_Source_Page> $pages      Pages.
-	 * @param string                                          $theme_slug Theme slug.
-	 * @param array<string,array<string,mixed>>                 $assets     Materialized assets keyed by source path.
-	 * @param array<string,string>                              $permalinks Imported page permalinks keyed by source path.
-	 * @return array{patterns:array<string,string>,files:array<string,string>,contents:array<string,string>,diagnostics:array<int,array<string,mixed>>}
+	 * @param array<string, Static_Site_Importer_Source_Page> $pages               Pages.
+	 * @param string                                          $theme_slug          Theme slug.
+	 * @param array<string,array<string,mixed>>                 $assets              Materialized assets keyed by source path.
+	 * @param array<string,string>                              $permalinks          Imported page permalinks keyed by source path.
+	 * @param array<string,string>                              $template_part_writes Generated header/footer template part writes keyed by path.
+	 * @param array<string,bool>                                $options             Page materialization options.
+	 * @return array{patterns:array<string,string>,files:array<string,string>,asset_writes:array<string,string>,contents:array<string,string>,diagnostics:array<int,array<string,mixed>>}
 	 */
-	public static function page_artifacts( array $pages, string $theme_slug, array $assets = array(), array $permalinks = array() ): array {
-		$patterns    = array();
-		$files       = array();
-		$contents    = array();
+	public static function page_artifacts( array $pages, string $theme_slug, array $assets = array(), array $permalinks = array(), array $template_part_writes = array(), array $options = array() ): array {
+		$patterns     = array();
+		$files        = array();
+		$contents     = array();
 		$asset_writes = array();
-		$diagnostics = array();
+		$diagnostics  = array();
+		$strip_header = ! empty( $options['strip_template_header'] );
+		$strip_footer = ! empty( $options['strip_template_footer'] );
 
 		foreach ( $pages as $filename => $page ) {
 			$slug         = self::page_slug( $filename, $page );
 			$pattern_slug = sanitize_key( $theme_slug ) . '/page-' . $slug;
 			$content      = self::rewrite_materialized_asset_references( self::source_page_content_blocks( $page, $diagnostics ), $assets, $page->source_key(), $permalinks );
+			$content      = self::dedupe_template_part_shell_blocks( $content, $template_part_writes, $page->source_key(), $diagnostics );
+			$content      = self::strip_template_chrome_blocks( $content, $strip_header, $strip_footer, $page->source_key(), $diagnostics );
 			$content      = self::promote_inline_svg_html_blocks( $content, $theme_slug, $slug, $asset_writes, $diagnostics );
+			$content      = self::promote_navigation_list_blocks( $content, $diagnostics );
 
 			$patterns[ $filename ] = $pattern_slug;
 			$files[ $filename ]    = Static_Site_Importer_Theme_Materializer::pattern_file( self::page_title( $filename, $page ), $pattern_slug, $content );
@@ -125,12 +132,319 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		return array(
-			'patterns'    => $patterns,
-			'files'       => $files,
+			'patterns'     => $patterns,
+			'files'        => $files,
 			'asset_writes' => $asset_writes,
-			'contents'    => $contents,
-			'diagnostics' => $diagnostics,
+			'contents'     => $contents,
+			'diagnostics'  => $diagnostics,
 		);
+	}
+
+	/**
+	 * Remove global shell blocks from page content after they are hoisted into theme parts.
+	 *
+	 * @param string                        $content              Serialized page block markup.
+	 * @param array<string,string>          $template_part_writes Generated header/footer template part writes keyed by path.
+	 * @param string                        $source_path          Source page path for diagnostics.
+	 * @param array<int,array<string,mixed>> $diagnostics          Diagnostics, passed by reference.
+	 * @return string
+	 */
+	private static function dedupe_template_part_shell_blocks( string $content, array $template_part_writes, string $source_path, array &$diagnostics ): string {
+		if ( '' === trim( $content ) || empty( $template_part_writes ) ) {
+			return $content;
+		}
+
+		$top_level = self::top_level_serialized_blocks( $content );
+		if ( empty( $top_level ) ) {
+			return $content;
+		}
+
+		$header_parts = self::template_part_write_sequences( $template_part_writes, 'header' );
+		$footer_parts = self::template_part_write_sequences( $template_part_writes, 'footer' );
+		$remove_start = 0;
+		$remove_end   = count( $top_level );
+
+		foreach ( $header_parts as $part_blocks ) {
+			$count = count( $part_blocks );
+			if ( $count > 0 && self::block_sequence_matches( array_slice( $top_level, 0, $count ), $part_blocks ) ) {
+				$remove_start = max( $remove_start, $count );
+				break;
+			}
+		}
+
+		foreach ( $footer_parts as $part_blocks ) {
+			$count = count( $part_blocks );
+			if ( $count > 0 && $remove_start <= count( $top_level ) - $count && self::block_sequence_matches( array_slice( $top_level, -$count ), $part_blocks ) ) {
+				$remove_end = min( $remove_end, count( $top_level ) - $count );
+				break;
+			}
+		}
+
+		if ( 0 === $remove_start && count( $top_level ) === $remove_end ) {
+			return $content;
+		}
+
+		$start_offset = $remove_start > 0 ? $top_level[ $remove_start - 1 ]['end'] : 0;
+		$end_offset   = $remove_end < count( $top_level ) ? $top_level[ $remove_end ]['start'] : strlen( $content );
+		$deduped      = trim( substr( $content, $start_offset, $end_offset - $start_offset ) );
+
+		$diagnostics[] = array(
+			'type'        => 'template_part_shell_deduped',
+			'source'      => 'static-site-importer/page-materializer',
+			'source_path' => $source_path,
+			'reason'      => 'matching_header_footer_template_parts',
+			'removed'     => array(
+				'leading_blocks'  => $remove_start,
+				'trailing_blocks' => count( $top_level ) - $remove_end,
+			),
+			'message'     => 'Page body blocks matching generated header/footer template parts were removed to avoid duplicate global shell rendering.',
+		);
+
+		return $deduped;
+	}
+
+	/**
+	 * Return top-level serialized block spans and normalized markup.
+	 *
+	 * @param string $markup Serialized block markup.
+	 * @return array<int,array{start:int,end:int,normalized:string}>
+	 */
+	private static function top_level_serialized_blocks( string $markup ): array {
+		if ( ! preg_match_all( '/<!--\s+(\/)?wp:([a-zA-Z0-9_\-\/]+)([^>]*)-->/', $markup, $matches, PREG_OFFSET_CAPTURE ) ) {
+			return array();
+		}
+
+		$blocks = array();
+		$stack  = array();
+		$count  = count( $matches[0] );
+
+		for ( $i = 0; $i < $count; $i++ ) {
+			$comment = $matches[0][ $i ][0];
+			$offset  = $matches[0][ $i ][1];
+			$closing = '/' === ( $matches[1][ $i ][0] ?? '' );
+			$self    = str_ends_with( trim( $matches[3][ $i ][0] ?? '' ), '/' );
+
+			if ( $closing ) {
+				$opened = array_pop( $stack );
+				if ( empty( $stack ) && is_array( $opened ) ) {
+					$end      = $offset + strlen( $comment );
+					$original = substr( $markup, (int) $opened['start'], $end - (int) $opened['start'] );
+					$blocks[] = array(
+						'start'      => (int) $opened['start'],
+						'end'        => $end,
+						'normalized' => self::normalize_shell_block_markup( $original ),
+					);
+				}
+				continue;
+			}
+
+			if ( empty( $stack ) && $self ) {
+				$end      = $offset + strlen( $comment );
+				$original = substr( $markup, $offset, $end - $offset );
+				$blocks[] = array(
+					'start'      => $offset,
+					'end'        => $end,
+					'normalized' => self::normalize_shell_block_markup( $original ),
+				);
+				continue;
+			}
+
+			if ( ! $self ) {
+				$stack[] = array( 'start' => $offset );
+			}
+		}
+
+		return $blocks;
+	}
+
+	/**
+	 * Extract normalized top-level block sequences from generated template part writes.
+	 *
+	 * @param array<string,string> $template_part_writes Generated template part writes.
+	 * @param string               $area                 Template part area.
+	 * @return array<int,array<int,array{normalized:string}>>
+	 */
+	private static function template_part_write_sequences( array $template_part_writes, string $area ): array {
+		$sequences = array();
+		foreach ( $template_part_writes as $path => $markup ) {
+			$normalized_path = strtolower( str_replace( '\\', '/', (string) $path ) );
+			if ( ! str_ends_with( $normalized_path, '/parts/' . $area . '.html' ) ) {
+				continue;
+			}
+
+			$blocks = self::top_level_serialized_blocks( (string) $markup );
+			if ( ! empty( $blocks ) ) {
+				$sequences[] = $blocks;
+			}
+		}
+
+		return $sequences;
+	}
+
+	/**
+	 * Check whether two top-level block sequences are the same rendered shell.
+	 *
+	 * @param array<int,array{normalized:string}> $page_blocks Page block sequence.
+	 * @param array<int,array{normalized:string}> $part_blocks Template part block sequence.
+	 * @return bool
+	 */
+	private static function block_sequence_matches( array $page_blocks, array $part_blocks ): bool {
+		if ( count( $page_blocks ) !== count( $part_blocks ) ) {
+			return false;
+		}
+
+		foreach ( $part_blocks as $index => $part_block ) {
+			if ( ( $page_blocks[ $index ]['normalized'] ?? '' ) !== ( $part_block['normalized'] ?? '' ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Normalize serialized block markup for shell dedupe comparisons.
+	 *
+	 * @param string $markup Serialized block markup.
+	 * @return string
+	 */
+	private static function normalize_shell_block_markup( string $markup ): string {
+		$markup = preg_replace( '/<!--\s+\/?wp:[^>]*?-->/', '', $markup ) ?? $markup;
+		$markup = html_entity_decode( $markup, ENT_QUOTES | ENT_HTML5 );
+		$markup = preg_replace( '/\s+/', ' ', $markup ) ?? $markup;
+
+		return trim( $markup );
+	}
+
+	/**
+	 * Remove page-level chrome blocks when the generated theme owns template parts.
+	 *
+	 * @param string                       $markup       Serialized block markup.
+	 * @param bool                         $strip_header Whether to strip a leading header block.
+	 * @param bool                         $strip_footer Whether to strip a trailing footer block.
+	 * @param string                       $source_path  Source path for diagnostics.
+	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics, passed by reference.
+	 * @return string Updated serialized block markup.
+	 */
+	private static function strip_template_chrome_blocks( string $markup, bool $strip_header, bool $strip_footer, string $source_path, array &$diagnostics ): string {
+		if ( '' === trim( $markup ) || ( ! $strip_header && ! $strip_footer ) || ! function_exists( 'parse_blocks' ) || ! function_exists( 'serialize_blocks' ) ) {
+			return $markup;
+		}
+
+		$blocks  = parse_blocks( $markup );
+		$changed = false;
+
+		if ( $strip_header ) {
+			$index = self::first_meaningful_block_index( $blocks );
+			if ( null !== $index && self::is_template_chrome_block( $blocks[ $index ], 'header' ) ) {
+				array_splice( $blocks, $index, 1 );
+				$changed       = true;
+				$diagnostics[] = array(
+					'type'        => 'template_chrome_deduplicated',
+					'source'      => 'static-site-importer/page-materializer',
+					'source_path' => $source_path,
+					'part'        => 'header',
+					'message'     => 'A top-level page header block was removed because the generated theme includes a header template part.',
+				);
+			}
+		}
+
+		if ( $strip_footer ) {
+			$index = self::last_meaningful_block_index( $blocks );
+			if ( null !== $index && self::is_template_chrome_block( $blocks[ $index ], 'footer' ) ) {
+				array_splice( $blocks, $index, 1 );
+				$changed       = true;
+				$diagnostics[] = array(
+					'type'        => 'template_chrome_deduplicated',
+					'source'      => 'static-site-importer/page-materializer',
+					'source_path' => $source_path,
+					'part'        => 'footer',
+					'message'     => 'A top-level page footer block was removed because the generated theme includes a footer template part.',
+				);
+			}
+		}
+
+		return $changed ? trim( serialize_blocks( $blocks ) ) : $markup;
+	}
+
+	/**
+	 * Return the first top-level block carrying meaningful content.
+	 *
+	 * @param array<int,mixed> $blocks Parsed blocks.
+	 * @return int|null
+	 */
+	private static function first_meaningful_block_index( array $blocks ): ?int {
+		foreach ( $blocks as $index => $block ) {
+			if ( self::is_meaningful_parsed_block( $block ) ) {
+				return (int) $index;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Return the last top-level block carrying meaningful content.
+	 *
+	 * @param array<int,mixed> $blocks Parsed blocks.
+	 * @return int|null
+	 */
+	private static function last_meaningful_block_index( array $blocks ): ?int {
+		for ( $index = count( $blocks ) - 1; $index >= 0; --$index ) {
+			if ( self::is_meaningful_parsed_block( $blocks[ $index ] ) ) {
+				return $index;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Determine whether a parsed block contains actual output.
+	 *
+	 * @param mixed $block Parsed block.
+	 * @return bool
+	 */
+	private static function is_meaningful_parsed_block( $block ): bool {
+		if ( ! is_array( $block ) ) {
+			return false;
+		}
+
+		$name    = isset( $block['blockName'] ) && is_string( $block['blockName'] ) ? $block['blockName'] : '';
+		$content = isset( $block['innerHTML'] ) && is_scalar( $block['innerHTML'] ) ? trim( (string) $block['innerHTML'] ) : '';
+		$inner   = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
+
+		return '' !== $name || '' !== $content || ! empty( $inner );
+	}
+
+	/**
+	 * Determine whether a top-level parsed block represents a template chrome landmark.
+	 *
+	 * @param mixed  $block Parsed block.
+	 * @param string $part  Template part slug: header or footer.
+	 * @return bool
+	 */
+	private static function is_template_chrome_block( $block, string $part ): bool {
+		if ( ! is_array( $block ) || ! in_array( $part, array( 'header', 'footer' ), true ) ) {
+			return false;
+		}
+
+		$name  = isset( $block['blockName'] ) && is_string( $block['blockName'] ) ? $block['blockName'] : '';
+		$attrs = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array();
+		$tag   = isset( $attrs['tagName'] ) && is_scalar( $attrs['tagName'] ) ? strtolower( (string) $attrs['tagName'] ) : '';
+		$class = isset( $attrs['className'] ) && is_scalar( $attrs['className'] ) ? strtolower( (string) $attrs['className'] ) : '';
+
+		if ( $part === $tag ) {
+			return true;
+		}
+
+		if ( 'header' === $part && 'core/navigation' === $name ) {
+			return true;
+		}
+
+		$pattern = 'header' === $part ? '/(^|[-_\s])(?:site-header|header|navbar|navigation|masthead)([-_\s]|$)/' : '/(^|[-_\s])(?:site-footer|footer)([-_\s]|$)/';
+
+		return '' !== $class && (bool) preg_match( $pattern, $class );
 	}
 
 	/**
@@ -151,19 +465,19 @@ class Static_Site_Importer_Page_Materializer {
 		return preg_replace_callback(
 			'/<!-- wp:html(?:\s+(\{.*?\}))? -->(.*?)<!-- \/wp:html -->/s',
 			static function ( array $matches ) use ( $theme_slug, $page_slug, &$asset_writes, &$diagnostics ): string {
-				$attrs = isset( $matches[1] ) && '' !== trim( (string) $matches[1] ) ? json_decode( (string) $matches[1], true ) : array();
+				$attrs = '' !== trim( (string) $matches[1] ) ? json_decode( (string) $matches[1], true ) : array();
 				$html  = isset( $attrs['content'] ) && is_scalar( $attrs['content'] ) ? (string) $attrs['content'] : (string) $matches[2];
 				$svg   = self::safe_inline_svg( html_entity_decode( trim( $html ), ENT_QUOTES | ENT_HTML5 ) );
 				if ( '' === $svg ) {
 					return $matches[0];
 				}
 
-				$hash          = substr( sha1( $svg ), 0, 12 );
-				$asset_path    = 'assets/materialized/inline-svg/' . sanitize_title( $page_slug ) . '-' . $hash . '.svg';
+				$hash                        = substr( sha1( $svg ), 0, 12 );
+				$asset_path                  = 'assets/materialized/inline-svg/' . sanitize_title( $page_slug ) . '-' . $hash . '.svg';
 				$asset_writes[ $asset_path ] = $svg . "\n";
-				$url           = trailingslashit( get_theme_root_uri( sanitize_key( $theme_slug ) ) ) . sanitize_key( $theme_slug ) . '/' . $asset_path;
-				$alt           = self::svg_accessible_label( $svg );
-				$block_attrs   = array_filter(
+				$url                         = trailingslashit( get_theme_root_uri( sanitize_key( $theme_slug ) ) ) . sanitize_key( $theme_slug ) . '/' . $asset_path;
+				$alt                         = self::svg_accessible_label( $svg );
+				$block_attrs                 = array_filter(
 					array(
 						'url'       => esc_url_raw( $url ),
 						'alt'       => $alt,
@@ -171,15 +485,15 @@ class Static_Site_Importer_Page_Materializer {
 					),
 					static fn( $value ): bool => '' !== $value
 				);
-				$attrs_json    = wp_json_encode( $block_attrs, JSON_UNESCAPED_SLASHES );
-				$alt_attribute = '' !== $alt ? ' alt="' . esc_attr( $alt ) . '"' : ' alt=""';
+				$attrs_json                  = wp_json_encode( $block_attrs, JSON_UNESCAPED_SLASHES );
+				$alt_attribute               = '' !== $alt ? ' alt="' . esc_attr( $alt ) . '"' : ' alt=""';
 
 				$diagnostics[] = array(
-					'type'        => 'inline_svg_materialized',
-					'source'      => 'static-site-importer/page-materializer',
-					'asset_path'  => $asset_path,
-					'block_name'  => 'core/image',
-					'message'     => 'Safe inline SVG core/html block was materialized as a theme SVG asset and core/image block.',
+					'type'       => 'inline_svg_materialized',
+					'source'     => 'static-site-importer/page-materializer',
+					'asset_path' => $asset_path,
+					'block_name' => 'core/image',
+					'message'    => 'Safe inline SVG core/html block was materialized as a theme SVG asset and core/image block.',
 				);
 
 				return '<!-- wp:image ' . ( false !== $attrs_json ? $attrs_json : '{}' ) . ' --><figure class="wp-block-image blocks-engine-inline-svg"><img src="' . esc_url( $url ) . '"' . $alt_attribute . '/></figure><!-- /wp:image -->';
@@ -542,7 +856,177 @@ class Static_Site_Importer_Page_Materializer {
 			return $markup;
 		}
 
-		return self::serialize_blocks_with_reduced_fallbacks( parse_blocks( $markup ) );
+		$markup      = self::serialize_blocks_with_reduced_fallbacks( parse_blocks( $markup ) );
+		$diagnostics = array();
+
+		return self::promote_navigation_list_blocks( $markup, $diagnostics );
+	}
+
+	/**
+	 * Promote simple list blocks inside nav-like containers to native navigation blocks.
+	 *
+	 * @param string                         $markup      Serialized block markup.
+	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics, passed by reference.
+	 * @return string
+	 */
+	private static function promote_navigation_list_blocks( string $markup, array &$diagnostics ): string {
+		if ( '' === trim( $markup ) || ! function_exists( 'parse_blocks' ) || ! function_exists( 'serialize_blocks' ) ) {
+			return $markup;
+		}
+
+		$blocks  = array_values( parse_blocks( $markup ) );
+		$changed = false;
+		self::promote_navigation_list_blocks_in_tree( $blocks, false, $changed, $diagnostics );
+
+		/** @var array<int|string,array{blockName:string|null,attrs:array<mixed>,innerBlocks:array<array<mixed>>,innerHTML:string,innerContent:array<mixed>}> $blocks */
+		return $changed ? serialize_blocks( $blocks ) : $markup;
+	}
+
+	/**
+	 * Recursively promote nav-list blocks in parsed block trees.
+	 *
+	 * @param array<int,array<string,mixed>>  $blocks      Parsed blocks.
+	 * @param bool                           $inside_nav  Whether the parent context is nav-like.
+	 * @param bool                           $changed     Whether the tree changed, passed by reference.
+	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics, passed by reference.
+	 */
+	private static function promote_navigation_list_blocks_in_tree( array &$blocks, bool $inside_nav, bool &$changed, array &$diagnostics ): void {
+		foreach ( $blocks as &$block ) {
+			$name        = isset( $block['blockName'] ) && is_string( $block['blockName'] ) ? $block['blockName'] : '';
+			$attrs       = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array();
+			$is_nav_like = $inside_nav || self::is_navigation_like_block( $name, $attrs );
+
+			if ( $is_nav_like && 'core/list' === $name ) {
+				$navigation = self::navigation_block_from_list_block( $block );
+				if ( null !== $navigation ) {
+					$block         = $navigation;
+					$changed       = true;
+					$diagnostics[] = array(
+						'type'       => 'navigation_list_materialized',
+						'source'     => 'static-site-importer/page-materializer',
+						'block_name' => 'core/navigation',
+						'message'    => 'A simple list inside a navigation-like HTML artifact section was materialized as a core/navigation block.',
+					);
+					continue;
+				}
+			}
+
+			if ( isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
+				self::promote_navigation_list_blocks_in_tree( $block['innerBlocks'], $is_nav_like, $changed, $diagnostics );
+			}
+		}
+		unset( $block );
+	}
+
+	/**
+	 * Detect containers that represent site navigation from generic HTML artifact names/classes.
+	 *
+	 * @param string              $block_name Block name.
+	 * @param array<string,mixed> $attrs      Block attrs.
+	 * @return bool
+	 */
+	private static function is_navigation_like_block( string $block_name, array $attrs ): bool {
+		$tag = isset( $attrs['tagName'] ) && is_scalar( $attrs['tagName'] ) ? strtolower( (string) $attrs['tagName'] ) : '';
+		if ( 'core/navigation' === $block_name || 'nav' === $tag ) {
+			return true;
+		}
+
+		$class = isset( $attrs['className'] ) && is_scalar( $attrs['className'] ) ? strtolower( (string) $attrs['className'] ) : '';
+		return '' !== $class && (bool) preg_match( '/(^|[-_\s])(?:nav|navbar|navigation|menu|menubar)([-_\s]|$)/', $class );
+	}
+
+	/**
+	 * Convert a parsed list block to a parsed navigation block when every item is simple text/link content.
+	 *
+	 * @param array<string,mixed> $block Parsed list block.
+	 * @return array<string,mixed>|null
+	 */
+	private static function navigation_block_from_list_block( array $block ): ?array {
+		$items = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
+		if ( empty( $items ) ) {
+			return null;
+		}
+
+		$markup = '';
+		foreach ( $items as $item ) {
+			if ( ! is_array( $item ) || 'core/list-item' !== ( $item['blockName'] ?? '' ) ) {
+				return null;
+			}
+			$link = self::navigation_link_markup_from_list_item_block( $item );
+			if ( null === $link ) {
+				return null;
+			}
+			$markup .= $link;
+		}
+
+		$attrs = array();
+		if ( isset( $block['attrs']['className'] ) && is_scalar( $block['attrs']['className'] ) && '' !== trim( (string) $block['attrs']['className'] ) ) {
+			$attrs['className'] = (string) $block['attrs']['className'];
+		}
+
+		$navigation = array_values( parse_blocks( self::serialized_block_markup( 'core/navigation', $attrs, $markup ) ) );
+		return $navigation[0] ?? null;
+	}
+
+	/**
+	 * Build navigation-link markup from a parsed list item.
+	 *
+	 * @param array<string,mixed> $block Parsed list item block.
+	 * @return string|null
+	 */
+	private static function navigation_link_markup_from_list_item_block( array $block ): ?string {
+		$content = isset( $block['attrs']['content'] ) && is_scalar( $block['attrs']['content'] ) ? (string) $block['attrs']['content'] : '';
+		if ( '' === trim( $content ) && isset( $block['innerHTML'] ) && is_scalar( $block['innerHTML'] ) ) {
+			$content = preg_replace( '/^\s*<li[^>]*>|<\/li>\s*$/i', '', (string) $block['innerHTML'] ) ?? '';
+		}
+		if ( '' === trim( $content ) || str_contains( $content, '<ul' ) || str_contains( $content, '<ol' ) ) {
+			return null;
+		}
+
+		$previous = libxml_use_internal_errors( true );
+		$dom      = new DOMDocument( '1.0', 'UTF-8' );
+		$loaded   = $dom->loadHTML( '<!doctype html><html><body><div data-ssi-nav-item="1">' . $content . '</div></body></html>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		if ( ! $loaded ) {
+			return null;
+		}
+
+		$xpath      = new DOMXPath( $dom );
+		$root_nodes = $xpath->query( '//*[@data-ssi-nav-item="1"]' );
+		$root       = false !== $root_nodes ? $root_nodes->item( 0 ) : null;
+		if ( ! $root instanceof DOMElement ) {
+			return null;
+		}
+
+		$link = null;
+		foreach ( iterator_to_array( $root->childNodes ) as $child ) {
+			if ( $child instanceof DOMText && '' === trim( (string) $child->textContent ) ) {
+				continue;
+			}
+			if ( $child instanceof DOMElement && 'a' === strtolower( $child->tagName ) && null === $link ) {
+				$link = $child;
+				continue;
+			}
+			if ( $child instanceof DOMElement ) {
+				return null;
+			}
+		}
+
+		$label_source = $link instanceof DOMElement ? $link : $root;
+		$label        = self::safe_inline_html( $label_source );
+		if ( null === $label || '' === trim( wp_strip_all_tags( $label ) ) ) {
+			return null;
+		}
+
+		$attrs = array(
+			'label' => $label,
+			'type'  => 'custom',
+			'kind'  => 'custom',
+			'url'   => $link instanceof DOMElement && '' !== trim( $link->getAttribute( 'href' ) ) ? $link->getAttribute( 'href' ) : '',
+		);
+
+		return self::navigation_link_block( $attrs );
 	}
 
 	/**
@@ -554,10 +1038,6 @@ class Static_Site_Importer_Page_Materializer {
 	private static function serialize_blocks_with_reduced_fallbacks( array $blocks ): string {
 		$output = '';
 		foreach ( $blocks as $block ) {
-			if ( ! is_array( $block ) ) {
-				continue;
-			}
-
 			$name = isset( $block['blockName'] ) && is_string( $block['blockName'] ) ? $block['blockName'] : '';
 			if ( in_array( $name, array( 'core/html', 'core/freeform' ), true ) ) {
 				$output .= self::fallback_html_to_native_blocks( self::fallback_block_html( $block ), $name );
@@ -594,7 +1074,7 @@ class Static_Site_Importer_Page_Materializer {
 		$index = 0;
 		foreach ( isset( $block['innerContent'] ) && is_array( $block['innerContent'] ) ? $block['innerContent'] : array() as $chunk ) {
 			if ( null === $chunk ) {
-				$body .= isset( $inner_blocks[ $index ] ) && is_array( $inner_blocks[ $index ] ) ? self::serialize_blocks_with_reduced_fallbacks( array( $inner_blocks[ $index ] ) ) : '';
+				$body .= isset( $inner_blocks[ $index ] ) ? self::serialize_blocks_with_reduced_fallbacks( array( $inner_blocks[ $index ] ) ) : '';
 				++$index;
 				continue;
 
@@ -646,7 +1126,7 @@ class Static_Site_Importer_Page_Materializer {
 	 * @return string|null Serialized block markup, or null when unsupported.
 	 */
 	private static function safe_html_fragment_to_blocks( string $html ): ?string {
-		if ( preg_match( '/<\s*(?:script|style|iframe|canvas|svg)\b/i', $html ) ) {
+		if ( preg_match( '/<\s*(?:script|style|iframe|canvas|svg|select|textarea)\b/i', $html ) ) {
 			return null;
 		}
 
@@ -660,7 +1140,12 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		$xpath = new DOMXPath( $dom );
-		$root  = $xpath->query( '//*[@data-ssi-fragment-root="1"]' )->item( 0 );
+		$query = $xpath->query( '//*[@data-ssi-fragment-root="1"]' );
+		if ( false === $query ) {
+			return null;
+		}
+
+		$root = $query->item( 0 );
 		if ( ! $root instanceof DOMElement ) {
 			return null;
 		}
@@ -722,6 +1207,14 @@ class Static_Site_Importer_Page_Materializer {
 			return self::buttons_block( self::button_block( $button_attrs ) );
 		}
 
+		if ( 'nav' === $tag ) {
+			return self::navigation_block( $node, $attrs );
+		}
+
+		if ( 'form' === $tag ) {
+			return self::search_block( $node, $attrs );
+		}
+
 		if ( in_array( $tag, array( 'ul', 'ol' ), true ) ) {
 			return self::list_block( $node, 'ol' === $tag, $attrs );
 		}
@@ -747,10 +1240,6 @@ class Static_Site_Importer_Page_Materializer {
 			return self::separator_block( $attrs );
 		}
 
-		if ( 'form' === $tag ) {
-			return self::search_block( $node, $attrs );
-		}
-
 		if ( 'label' === $tag ) {
 			$content = self::safe_inline_html( $node );
 			return null === $content ? null : self::paragraph_block( $content, $attrs );
@@ -769,7 +1258,29 @@ class Static_Site_Importer_Page_Materializer {
 			return null;
 		}
 
+		if ( 'figcaption' === $tag ) {
+			$content = self::safe_inline_html( $node );
+			return null === $content ? null : self::paragraph_block( $content, $attrs );
+		}
+
 		if ( in_array( $tag, array( 'div', 'section', 'header', 'footer', 'main', 'article', 'aside', 'nav' ), true ) ) {
+			if ( 'nav' === $tag ) {
+				$navigation = self::navigation_block( $node, $attrs );
+				if ( null !== $navigation ) {
+					return $navigation;
+				}
+			}
+
+			$query = self::query_grid_block( $node, $attrs );
+			if ( null !== $query ) {
+				return $query;
+			}
+
+			$button_group = self::button_group_from_element( $node );
+			if ( null !== $button_group ) {
+				return $button_group;
+			}
+
 			$children = '';
 			foreach ( iterator_to_array( $node->childNodes ) as $child ) {
 				$child_markup = self::safe_dom_node_to_block_markup( $child );
@@ -956,13 +1467,116 @@ class Static_Site_Importer_Page_Materializer {
 	}
 
 	/**
+	 * Build a navigation block from a safe static navigation fragment.
+	 *
+	 * @param DOMElement          $element Navigation element.
+	 * @param array<string,mixed> $attrs   Block attrs.
+	 * @return string|null
+	 */
+	private static function navigation_block( DOMElement $element, array $attrs ): ?string {
+		$items = self::navigation_items_from_element( $element );
+		if ( null === $items || '' === $items ) {
+			return null;
+		}
+
+		return self::serialized_block_markup( 'core/navigation', $attrs, $items );
+	}
+
+	/**
+	 * Convert simple nav descendants into navigation-link inner blocks.
+	 *
+	 * @param DOMElement $element Source element.
+	 * @return string|null
+	 */
+	private static function navigation_items_from_element( DOMElement $element ): ?string {
+		$items = '';
+		foreach ( iterator_to_array( $element->childNodes ) as $child ) {
+			if ( $child instanceof DOMText && '' === trim( (string) $child->textContent ) ) {
+				continue;
+			}
+			if ( ! $child instanceof DOMElement ) {
+				return null;
+			}
+
+			$tag = strtolower( $child->tagName );
+			if ( in_array( $tag, array( 'ul', 'ol' ), true ) ) {
+				foreach ( self::element_children( $child ) as $list_item ) {
+					if ( 'li' !== strtolower( $list_item->tagName ) ) {
+						return null;
+					}
+					$item = self::navigation_item_from_element( $list_item );
+					if ( null === $item ) {
+						return null;
+					}
+					$items .= $item;
+				}
+				continue;
+			}
+
+			$item = self::navigation_item_from_element( $child );
+			if ( null === $item ) {
+				return null;
+			}
+			$items .= $item;
+		}
+
+		return $items;
+	}
+
+	/**
+	 * Convert a single nav child into a navigation-link block.
+	 *
+	 * @param DOMElement $element Source element.
+	 * @return string|null
+	 */
+	private static function navigation_item_from_element( DOMElement $element ): ?string {
+		$link_element = 'a' === strtolower( $element->tagName ) ? $element : null;
+		if ( null === $link_element ) {
+			$children = self::element_children( $element );
+			if ( 1 === count( $children ) && 'a' === strtolower( $children[0]->tagName ) ) {
+				$link_element = $children[0];
+			}
+		}
+
+		$label_source = $link_element instanceof DOMElement ? $link_element : $element;
+		$label        = self::safe_inline_html( $label_source );
+		if ( null === $label || '' === trim( wp_strip_all_tags( $label ) ) ) {
+			return null;
+		}
+
+		$url   = $link_element instanceof DOMElement && '' !== trim( $link_element->getAttribute( 'href' ) ) ? $link_element->getAttribute( 'href' ) : '';
+		$attrs = array(
+			'label' => $label,
+			'type'  => 'custom',
+			'kind'  => 'custom',
+			'url'   => $url,
+		);
+
+		return self::navigation_link_block( $attrs );
+	}
+
+	/**
+	 * Build a navigation link block with visible fallback HTML.
+	 *
+	 * @param array<string,mixed> $attrs Block attrs.
+	 * @return string
+	 */
+	private static function navigation_link_block( array $attrs ): string {
+		$label = isset( $attrs['label'] ) && is_scalar( $attrs['label'] ) ? (string) $attrs['label'] : '';
+		$url   = isset( $attrs['url'] ) && is_scalar( $attrs['url'] ) ? (string) $attrs['url'] : '';
+		$html  = '<a class="wp-block-navigation-item__content"' . ( '' === $url ? '' : ' href="' . self::escape_attr( $url ) . '"' ) . '><span class="wp-block-navigation-item__label">' . $label . '</span></a>';
+
+		return self::serialized_block_markup( 'core/navigation-link', $attrs, $html );
+	}
+
+	/**
 	 * Build an image block.
 	 *
 	 * @param DOMElement          $element Image element.
 	 * @param array<string,mixed> $attrs   Block attrs.
 	 * @return string|null
 	 */
-	private static function image_block( DOMElement $element, array $attrs ): ?string {
+	private static function image_block( DOMElement $element, array $attrs, string $caption = '' ): ?string {
 		$src = trim( $element->getAttribute( 'src' ) );
 		if ( '' === $src ) {
 			return null;
@@ -973,8 +1587,109 @@ class Static_Site_Importer_Page_Materializer {
 		if ( '' !== $alt ) {
 			$attrs['alt'] = $alt;
 		}
+		if ( '' !== trim( $caption ) ) {
+			$attrs['caption'] = $caption;
+		}
 
-		return self::serialized_block_markup( 'core/image', $attrs, '<figure class="wp-block-image' . self::extra_classes( $attrs ) . '"><img src="' . self::escape_attr( $src ) . '" alt="' . self::escape_attr( $alt ) . '" /></figure>' );
+		return self::serialized_block_markup( 'core/image', $attrs, '<figure class="wp-block-image' . self::extra_classes( $attrs ) . '"><img src="' . self::escape_attr( $src ) . '" alt="' . self::escape_attr( $alt ) . '" />' . ( '' === trim( $caption ) ? '' : '<figcaption class="wp-element-caption">' . $caption . '</figcaption>' ) . '</figure>' );
+	}
+
+	/**
+	 * Convert recurring post-card grids into a native query/post-template scaffold.
+	 *
+	 * @param DOMElement          $element Container element.
+	 * @param array<string,mixed> $attrs   Block attrs.
+	 * @return string|null
+	 */
+	private static function query_grid_block( DOMElement $element, array $attrs ): ?string {
+		$articles = array_values(
+			array_filter(
+				self::element_children( $element ),
+				static fn ( DOMElement $child ): bool => 'article' === strtolower( $child->tagName )
+			)
+		);
+		if ( count( $articles ) < 2 ) {
+			return null;
+		}
+
+		$class = strtolower( $element->getAttribute( 'class' ) );
+		if ( ! preg_match( '/(^|[\s_-])(archive|blog|card-grid|grid|loop|posts?|query)([\s_-]|$)/', $class ) ) {
+			return null;
+		}
+
+		$columns               = min( 4, max( 2, count( $articles ) ) );
+		$attrs                 = array_merge(
+			$attrs,
+			array(
+				'query' => array(
+					'perPage'  => min( 12, count( $articles ) ),
+					'pages'    => 0,
+					'offset'   => 0,
+					'postType' => 'post',
+					'order'    => 'desc',
+					'orderBy'  => 'date',
+					'inherit'  => true,
+				),
+			)
+		);
+		$template_attrs        = array(
+			'layout' => array(
+				'type'        => 'grid',
+				'columnCount' => $columns,
+			),
+		);
+		$card_attrs            = self::class_attrs_from_element( $articles[0] );
+		$card_attrs['tagName'] = 'article';
+		$card                  = self::group_block(
+			self::serialized_block_markup( 'core/post-featured-image', array( 'isLink' => true ), '<figure class="wp-block-post-featured-image"><a href="#" target="_self"></a></figure>' ) .
+			self::serialized_block_markup( 'core/post-title', array( 'isLink' => true ), '<h2 class="wp-block-post-title"><a href="#" target="_self"></a></h2>' ) .
+			self::serialized_block_markup( 'core/post-date', array(), '<div class="wp-block-post-date"></div>' ) .
+			self::serialized_block_markup( 'core/post-excerpt', array(), '<div class="wp-block-post-excerpt"></div>' ),
+			$card_attrs
+		);
+
+		$post_template = self::serialized_block_markup( 'core/post-template', $template_attrs, $card );
+		return self::serialized_block_markup( 'core/query', $attrs, '<div class="wp-block-query' . self::extra_classes( $attrs ) . '">' . $post_template . '</div>' );
+	}
+
+	/**
+	 * Convert containers that only wrap multiple CTAs into one buttons block.
+	 *
+	 * @param DOMElement $element Container element.
+	 * @return string|null
+	 */
+	private static function button_group_from_element( DOMElement $element ): ?string {
+		$children = self::element_children( $element );
+		if ( count( $children ) < 2 ) {
+			return null;
+		}
+		$container_class    = strtolower( $element->getAttribute( 'class' ) );
+		$looks_like_buttons = (bool) preg_match( '/(^|[\s_-])(actions?|buttons?|cta|call-to-action)([\s_-]|$)/', $container_class );
+
+		$buttons = '';
+		foreach ( $children as $child ) {
+			if ( ! in_array( strtolower( $child->tagName ), array( 'a', 'button' ), true ) ) {
+				return null;
+			}
+			$child_class = strtolower( $child->getAttribute( 'class' ) );
+			if ( preg_match( '/(^|[\s_-])(button|btn|cta|call-to-action)([\s_-]|$)/', $child_class ) ) {
+				$looks_like_buttons = true;
+			}
+			$content = self::safe_inline_html( $child );
+			if ( null === $content || '' === trim( wp_strip_all_tags( $content ) ) ) {
+				return null;
+			}
+			$button_attrs = array_merge( self::class_attrs_from_element( $child ), array( 'text' => $content ) );
+			if ( 'a' === strtolower( $child->tagName ) && '' !== trim( $child->getAttribute( 'href' ) ) ) {
+				$button_attrs['url'] = $child->getAttribute( 'href' );
+			}
+			$buttons .= self::button_block( $button_attrs );
+		}
+		if ( ! $looks_like_buttons ) {
+			return null;
+		}
+
+		return self::buttons_block( $buttons );
 	}
 
 	/**
@@ -1109,9 +1824,6 @@ class Static_Site_Importer_Page_Materializer {
 		$search_input = null;
 		$button_text  = '';
 		foreach ( $inputs as $input ) {
-			if ( ! $input instanceof DOMElement ) {
-				continue;
-			}
 			$type = strtolower( trim( $input->getAttribute( 'type' ) ) );
 			$name = strtolower( trim( $input->getAttribute( 'name' ) ) );
 			if ( in_array( $type, array( '', 'search', 'text' ), true ) && in_array( $name, array( '', 's', 'search', 'q' ), true ) ) {
@@ -1128,9 +1840,6 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		foreach ( iterator_to_array( $element->getElementsByTagName( 'button' ) ) as $button ) {
-			if ( ! $button instanceof DOMElement ) {
-				continue;
-			}
 			$content = self::safe_inline_html( $button );
 			if ( null === $content ) {
 				return null;
@@ -1144,9 +1853,15 @@ class Static_Site_Importer_Page_Materializer {
 			return null;
 		}
 
-		$label       = trim( $search_input->getAttribute( 'aria-label' ) ) ?: 'Search';
+		$label       = trim( $search_input->getAttribute( 'aria-label' ) );
 		$placeholder = trim( $search_input->getAttribute( 'placeholder' ) );
-		$action      = trim( $element->getAttribute( 'action' ) ) ?: '/';
+		$action      = trim( $element->getAttribute( 'action' ) );
+		if ( '' === $label ) {
+			$label = 'Search';
+		}
+		if ( '' === $action ) {
+			$action = '/';
+		}
 		if ( '' === $button_text ) {
 			$button_text = 'Search';
 		}
@@ -1162,8 +1877,11 @@ class Static_Site_Importer_Page_Materializer {
 	 * @return string
 	 */
 	private static function search_input_block( DOMElement $element, array $attrs ): string {
-		$label       = trim( $element->getAttribute( 'aria-label' ) ) ?: 'Search';
+		$label       = trim( $element->getAttribute( 'aria-label' ) );
 		$placeholder = trim( $element->getAttribute( 'placeholder' ) );
+		if ( '' === $label ) {
+			$label = 'Search';
+		}
 		return self::search_block_markup( $attrs, $label, $placeholder, 'Search', '/' );
 	}
 
