@@ -29,6 +29,8 @@ A pattern is promoted to `custom-block-candidate` when `no_core_block_path` is t
 
 The registry also emits `fixture_decisions[]` so acceptance decisions do not require re-reading pattern evidence by hand:
 
+- `summary.fixture_decision_counts`: deterministic counts by `acceptance_status`.
+- `summary.fixture_decision_groups`: deterministic, sorted fixture IDs by `acceptance_status`; use this for quick review of solved candidates and blocker cohorts before drilling into the full decision table.
 - `editor_validity_status`: `valid`, `invalid_blocks`, or `not_validated`; this is the corrupt/invalid block risk axis.
 - `native_editability_status`: `native_editable`, `editor_invalid`, `custom_block_candidate`, `runtime_island_preserved`, `html_islands_or_transformer_gap`, or `unknown`.
 - `visible_html_island_count`: visible `core/html` island pressure from block composition and findings.

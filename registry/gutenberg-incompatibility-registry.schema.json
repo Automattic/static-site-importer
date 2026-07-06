@@ -27,13 +27,14 @@
     },
     "summary": {
       "type": "object",
-      "required": ["pattern_count", "custom_block_candidate_count", "convertible_count", "runtime_island_count", "top_patterns"],
+      "required": ["pattern_count", "custom_block_candidate_count", "convertible_count", "runtime_island_count", "fixture_decision_counts", "fixture_decision_groups", "editor_validity_counts", "limitation_type_counts", "top_patterns"],
       "properties": {
         "pattern_count": { "type": "integer", "minimum": 0 },
         "custom_block_candidate_count": { "type": "integer", "minimum": 0 },
         "convertible_count": { "type": "integer", "minimum": 0 },
         "runtime_island_count": { "type": "integer", "minimum": 0 },
         "fixture_decision_counts": { "$ref": "#/$defs/counts" },
+        "fixture_decision_groups": { "$ref": "#/$defs/fixture_decision_groups" },
         "editor_validity_counts": { "$ref": "#/$defs/counts" },
         "limitation_type_counts": { "$ref": "#/$defs/counts" },
         "top_patterns": { "type": "array", "items": { "$ref": "#/$defs/top_pattern" } }
@@ -118,6 +119,15 @@
     "counts": {
       "type": "object",
       "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "fixture_decision_groups": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/acceptance_status" },
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" },
+        "uniqueItems": true
+      }
     }
   }
 }
