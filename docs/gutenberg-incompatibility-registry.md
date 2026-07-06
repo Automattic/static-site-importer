@@ -39,6 +39,7 @@ The registry also emits `fixture_decisions[]` so acceptance decisions do not req
 - `intentional_runtime_patterns`: runtime islands preserved by design.
 - `visual_only_patterns`: frontend visual drift patterns that do not imply invalid blocks or lost editability by themselves.
 - `solved_candidate_reason`: present only when the fixture passed, editor validation passed, no HTML/runtime islands remain, and no registry limitation pattern is attached.
+- `acceptance_status`: `solved_candidate`, `visual_only_blocker`, `editor_blocker`, `native_editability_blocker`, `provider_runtime_blocker`, or `evidence_gap`. Missing frontend/editor/block-validity evidence is `evidence_gap`; `provider_runtime_blocker` is reserved for failures where the provider/runtime blocked evidence capture.
 
 ## Seeded Generic Pattern Keys
 
