@@ -74,6 +74,7 @@ import {
 } from '../lib/fixture-matrix.mjs';
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
 import { runWpCodeboxRecipe, wpCodeboxBin } from './wp-codebox/recipe.mjs';
+import { editorOpenStep } from '../lib/fixture-matrix/steps/editor-open-step.mjs';
 
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fixtureRoot = path.join(packageRoot, 'tests', 'fixtures', 'fixture-matrix');
@@ -3631,6 +3632,52 @@ test('editorBlockValidationStep emits editor-validate-blocks against real import
   });
   assert.ok(withWait.args.includes('post-id=99'));
   assert.ok(withWait.args.includes('wait-selector=.is-root-container'));
+});
+
+test('editor step target builder preserves validation and open command precedence', () => {
+  const surface = {
+    id: 'contact',
+    postSlug: 'contact',
+    postType: 'page',
+    target: '/contact/',
+    editor_target_source: 'surface-slug-fallback',
+  };
+  const validation = editorBlockValidationStep({ fixture: { id: 'artist' }, surface });
+  assert.deepEqual(validation.args, ['post-type=page', 'post-slug=contact']);
+  assert.deepEqual(validation.metadata, {
+    fixture_id: 'artist',
+    fixture_path: undefined,
+    phase: 'editor',
+    surface_id: 'contact',
+    post_slug: 'contact',
+    post_type: 'page',
+    target: '/contact/',
+    editor_target_source: 'surface-slug-fallback',
+  });
+
+  const open = editorOpenStep({
+    fixture: { id: 'artist', editor_url: '/wp-admin/post.php?post=8&action=edit' },
+    surface: { id: 'contact', postId: 42, target: '/contact/', artifact_prefix: 'files/editor/contact' },
+    editorOpenTarget: 'front-page',
+    waitTimeout: 12000,
+  });
+  assert.equal(open.command, 'wordpress.editor-open');
+  assert.deepEqual(open.args, [
+    'post-id=42',
+    'wait-timeout=12000',
+    'capture=screenshot,editor-state,editor-validity',
+    'artifact-prefix=files/editor/contact',
+  ]);
+  assert.deepEqual(open.metadata, {
+    fixture_id: 'artist',
+    fixture_path: undefined,
+    phase: 'editor-open',
+    artifact_prefix: 'files/editor/contact',
+    surface_id: 'contact',
+    post_id: 42,
+    url: '/wp-admin/post.php?post=8&action=edit',
+    target: 'front-page',
+  });
 });
 
 test('editor-canvas-probe invalid-block warnings become gating editor_block_invalid findings', () => {
