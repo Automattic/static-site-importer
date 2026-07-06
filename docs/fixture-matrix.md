@@ -81,7 +81,8 @@ fixture corpus. The wrapper composes existing repo-owned surfaces:
   result, editor-quality, visual-parity, and finding-packet artifacts.
 - `artifacts/fig-fixture-e2e/summary.json` aggregates pass/fail status with
   thresholds for exactly three fixtures, zero transform failures, zero import
-  failures, and a default minimum native conversion rate of `1`.
+  failures, zero Blocks Engine vector placeholders/missing assets, and a default
+  minimum native conversion rate of `1`.
 
 Example:
 
@@ -93,6 +94,30 @@ node tools/run-fig-fixture-e2e.mjs \
   --output-directory /path/to/artifacts/fig-fixture-e2e \
   --run
 ```
+
+The summary keeps the two architecture links separate. Blocks Engine transform
+metrics are under `transform` and `metrics.transform_*`; SSI import/materialization
+metrics are under `import_matrix` and `metrics.import_matrix_*`. Use these fields
+for performance and quality regression gates instead of treating `.fig -> blocks`
+as one opaque operation.
+
+To compare a candidate run to a saved baseline summary, pass the previous
+`summary.json` and an allowed regression ratio:
+
+```bash
+node tools/run-fig-fixture-e2e.mjs \
+  --blocks-engine /path/to/blocks-engine \
+  --static-site-importer /path/to/static-site-importer \
+  --baseline-summary /path/to/baseline/summary.json \
+  --max-baseline-regression-ratio 0.10 \
+  --max-import-findings 0 \
+  --run
+```
+
+`baseline_comparison.deltas` reports signed deltas for stage durations and quality
+counters. When `--max-baseline-regression-ratio` is set, positive deltas above the
+budget fail the wrapper; leave it unset to collect comparison evidence without a
+hard performance gate.
 
 Pass fixture paths with repeated `--fixture <path>` arguments instead of
 `SSI_FIG_E2E_FIXTURES` when that is easier for shells/scripts. Use `--dry-run` to
@@ -108,14 +133,28 @@ Sample summary shape:
   "status": "passed",
   "fixture_count": 3,
   "expected_fixture_count": 3,
+  "metrics": {
+    "transform_duration_ms": 12345,
+    "import_matrix_duration_ms": 67890,
+    "total_duration_ms": 80235,
+    "transform_vector_placeholder_count": 0,
+    "transform_missing_asset_count": 0,
+    "import_matrix_finding_count": 0,
+    "import_matrix_min_native_conversion_rate": 1
+  },
   "transform": {
+    "duration_ms": 12345,
     "completed_fixture_count": 3,
-    "failed_fixture_count": 0
+    "failed_fixture_count": 0,
+    "vector_placeholder_count": 0,
+    "missing_asset_count": 0
   },
   "import_matrix": {
     "enabled": true,
+    "duration_ms": 67890,
     "passed_fixture_count": 3,
     "failed_fixture_count": 0,
+    "finding_count": 0,
     "min_native_conversion_rate": 1
   }
 }
