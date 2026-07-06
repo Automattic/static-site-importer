@@ -120,6 +120,46 @@ test('execution-requested fixture matrices still fail missing validation results
   assert.equal(result.findings.some((finding) => finding.loss_class === 'fixture_not_run'), true);
 });
 
+test('fixture matrix derives actionable families from selectorless diagnostic reasons', () => {
+  const result = normalizeFixtureMatrixResult({
+    matrix: {
+      id: 'diagnostic-actionability-test',
+      fixture_root: '/tmp/fixtures',
+      fixtures: [{ id: 'saas', fixture_path: '/tmp/fixtures/saas' }],
+    },
+    results: [
+      {
+        fixture_id: 'saas',
+        fixture_path: '/tmp/fixtures/saas',
+        status: 'failed',
+        diagnostics: [
+          {
+            kind: 'editor_block_invalid',
+            source_path: '/tmp/fixtures/saas',
+            reason: 'Editor reported block "core/group" as invalid: Expected attribute `%s` of value `%s`, saw `%s`. style margin-top:0 margin-top:0;max-width:1160px; Block validation failed for `%s` (%o).',
+          },
+          {
+            kind: 'visual_parity_mismatch',
+            source_path: 'file:///tmp/fixtures/saas/source/index.html',
+            reason: 'Aligned visual parity mismatch: 4017764/10002240 pixels (40.17%) exceed the 0.00% threshold.',
+          },
+        ],
+      },
+    ],
+  });
+
+  const editorFinding = result.findings.find((finding) => finding.kind === 'editor_block_invalid');
+  const visualFinding = result.findings.find((finding) => finding.kind === 'visual_parity_mismatch');
+
+  assert.equal(editorFinding.observed_block_name, 'core/group');
+  assert.equal(editorFinding.reason_code, 'editor_block_validation_style_mismatch');
+  assert.equal(editorFinding.pattern_family, 'editor_block_invalid:editor_block_invalid:editor-block-validation-style-mismatch');
+  assert.match(editorFinding.observed_output, /Block validation mismatch for core\/group/);
+  assert.equal(visualFinding.reason_code, 'visual_parity_pixel_mismatch');
+  assert.equal(visualFinding.pattern_family, 'visual_parity_mismatch:visual_parity_mismatch:visual-parity-pixel-mismatch');
+  assert.deepEqual(result.summary.diagnostic_blind_spots || [], []);
+});
+
 test('gutenberg incompatibility registry aggregates recurring custom block candidates across fixtures', () => {
   const result = normalizeFixtureMatrixResult({
     matrix: {
