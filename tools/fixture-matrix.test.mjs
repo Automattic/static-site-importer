@@ -2067,8 +2067,8 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   assert.equal(plan.namespace, 'ssi-matrix-dev-proof');
   assert.equal(plan.temp_root, '/tmp/static-site-importer-fixture-matrix-ssi-matrix-dev-proof');
   assert.equal(plan.output_file, '/tmp/static-site-importer-fixture-matrix-ssi-matrix-dev-proof/ssi-matrix-dev-proof.homeboy-bench.json');
-  assert.equal(plan.shared_state, '/tmp/static-site-importer-fixture-matrix-ssi-matrix-dev-proof/shared-state');
-  assert.equal(plan.artifact_root, '/tmp/static-site-importer-fixture-matrix-ssi-matrix-dev-proof/artifacts');
+  assert.equal(plan.shared_state, '');
+  assert.equal(plan.artifact_root, '');
   assert.deepEqual(plan.warnings, []);
   assert.equal(plan.dependency_overrides.blocks_engine_php_transformer.path, blocksEngine);
   assert.equal(plan.steps.some((step) => step.args.includes('install')), false);
@@ -2085,7 +2085,8 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   assert.ok(benchStep.args.includes('bench_env.SSI_FIXTURE_MATRIX_RUN=1'));
   assert.ok(benchStep.args.includes('bench_env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE=1'));
   assert.ok(benchStep.args.includes('static_site_importer_fixture_matrix_namespace=ssi-matrix-dev-proof'));
-  assert.ok(benchStep.args.includes('/tmp/static-site-importer-fixture-matrix-ssi-matrix-dev-proof/artifacts'));
+  assert.equal(benchStep.args.includes('--shared-state'), false);
+  assert.equal(benchStep.args.includes('--artifact-root'), false);
   assert.deepEqual(benchStep.args.slice(-3), ['--', '--batch-size', '5']);
 
   const releasePlan = buildFixtureMatrixRunPlan({
@@ -2166,11 +2167,30 @@ test('fixture matrix operator composes legible local-hot and Lab offload routing
   });
   const labArgs = labPlan.steps.at(-1).args;
   assert.equal(labPlan.execution_target, 'lab-offload:homeboy-lab');
+  assert.equal(labPlan.shared_state, '');
+  assert.equal(labPlan.artifact_root, '');
   assert.match(labPlan.steps.at(-1).label, /lab-offload:homeboy-lab/);
   assert.ok(labArgs.includes('--runner'));
   assert.ok(labArgs.includes('homeboy-lab'));
   assert.equal(labArgs.includes('--force-hot'), false);
   assert.equal(labArgs.includes('--allow-local-hot'), false);
+  assert.equal(labArgs.includes('--shared-state'), false);
+  assert.equal(labArgs.includes('--artifact-root'), false);
+
+  const explicitMacTempLabPlan = buildFixtureMatrixRunPlan({
+    runner: 'homeboy-lab',
+    staticSiteImporter,
+    fixtureRoot,
+    sharedState: '/var/folders/ab/example/shared-state',
+    artifactRoot: '/private/var/folders/ab/example/artifacts',
+    skipInstall: true,
+    skipSync: true,
+  });
+  assert.ok(explicitMacTempLabPlan.steps.at(-1).args.includes('/var/folders/ab/example/shared-state'));
+  assert.ok(explicitMacTempLabPlan.steps.at(-1).args.includes('/private/var/folders/ab/example/artifacts'));
+  const explicitMacTempWarningCodes = explicitMacTempLabPlan.warnings.map((warning) => warning.code);
+  assert.ok(explicitMacTempWarningCodes.includes('lab_local_shared_state_path'));
+  assert.ok(explicitMacTempWarningCodes.includes('lab_local_artifact_root_path'));
 
   const localPlan = buildFixtureMatrixRunPlan({
     local: true,
