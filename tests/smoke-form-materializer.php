@@ -223,6 +223,37 @@ namespace {
 	$assert( str_contains( (string) $mapped_source_contents['posts/page-home.post_content'], 'wp:jetpack/contact-form' ), 'graft-source-document-key-contact-form' );
 	$assert( 'posts/page-home.post_content' === ( $mapped_source_report['diagnostics'][0]['graft_source_path'] ?? '' ), 'graft-source-path-recorded' );
 
+	// --- Generated core/html form diagnostics materialize per page ---------------
+	$core_html_form = '<form class="newsletter-form" action="#" method="post" novalidate><input type="email" name="email" placeholder="your@email.com" autocomplete="email" required aria-label="Email address"><button type="submit">Subscribe</button></form>';
+	$core_html_block = static function ( string $html ): string {
+		return '<!-- wp:html ' . json_encode( array( 'content' => $html ) ) . ' -->' . $html . '<!-- /wp:html -->';
+	};
+	$duplicate_generated_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
+	foreach ( array( 'posts/page-home.post_content', 'posts/page-contact.post_content' ) as $post_content_key ) {
+		$duplicate_generated_report['diagnostics'][] = array(
+			'type'                => 'core_html_block',
+			'diagnostic_code'     => 'generated_document_contains_core_html',
+			'reason_code'         => 'generated_document_contains_core_html',
+			'loss_class'          => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+			'source_path'         => $post_content_key,
+			'selector'            => 'form.newsletter-form',
+			'tag_name'            => 'FORM',
+			'block_name'          => 'core/html',
+			'source_html_preview' => $core_html_form,
+		);
+	}
+	$duplicate_generated_contents = array(
+		'posts/page-home.post_content'    => '<!-- wp:group --><div class="wp-block-group">' . $core_html_block( $core_html_form ) . '</div><!-- /wp:group -->',
+		'posts/page-contact.post_content' => '<!-- wp:group --><div class="wp-block-group">' . $core_html_block( $core_html_form ) . '</div><!-- /wp:group -->',
+	);
+	$duplicate_generated_seeding = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $duplicate_generated_report, array(), $duplicate_generated_contents );
+	$assert( 2 === ( $duplicate_generated_seeding['mapped_count'] ?? 0 ), 'graft-generated-duplicate-forms-mapped' );
+	$assert( 2 === ( $duplicate_generated_seeding['grafted_count'] ?? 0 ), 'graft-generated-duplicate-forms-grafted' );
+	$assert( str_contains( (string) $duplicate_generated_contents['posts/page-home.post_content'], 'wp:jetpack/contact-form' ), 'graft-generated-home-contact-form' );
+	$assert( str_contains( (string) $duplicate_generated_contents['posts/page-contact.post_content'], 'wp:jetpack/contact-form' ), 'graft-generated-contact-contact-form' );
+	$assert( ! str_contains( (string) $duplicate_generated_contents['posts/page-home.post_content'], '<!-- wp:html' ), 'graft-generated-home-core-html-removed' );
+	$assert( ! str_contains( (string) $duplicate_generated_contents['posts/page-contact.post_content'], '<!-- wp:html' ), 'graft-generated-contact-core-html-removed' );
+
 	// --- Form finding enrich carries readable_blocks for graft anchoring --------
 	$enrich_readable = $enrich->invoke(
 		null,
