@@ -227,6 +227,13 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         fixture_id: 'runtime-provider',
         status: 'failed',
       },
+      {
+        fixture_id: 'cv-missing-editor-evidence',
+        status: 'passed',
+        visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
+        block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
+        editor_quality: { editor_validated_block_total: 8, editor_invalid_count: 0, core_html_block_count: 0 },
+      },
     ],
     findings: [
       {
@@ -281,6 +288,10 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
   assert.equal(decisions.saas.acceptance_status, 'editor_blocker');
   assert.equal(decisions['runtime-provider'].frontend_visual_status, 'provider_runtime_blocked');
   assert.equal(decisions['runtime-provider'].acceptance_status, 'provider_runtime_blocker');
+  assert.equal(decisions['cv-missing-editor-evidence'].frontend_visual_status, 'passed');
+  assert.equal(decisions['cv-missing-editor-evidence'].editor_canvas_status, 'not_captured');
+  assert.equal(decisions['cv-missing-editor-evidence'].native_editability_status, 'native_editable');
+  assert.equal(decisions['cv-missing-editor-evidence'].acceptance_status, 'evidence_gap');
   assert.equal(patterns['static-form'].limitation_type, 'real_gutenberg_gap');
   assert.equal(patterns['visual-position_offset'].limitation_type, 'visual_only_style_drift');
   assert.equal(registry.summary.fixture_decision_counts.solved_candidate, 1);
@@ -288,7 +299,9 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
   assert.equal(registry.summary.fixture_decision_counts.editor_blocker, 1);
   assert.equal(registry.summary.fixture_decision_counts.native_editability_blocker, 1);
   assert.equal(registry.summary.fixture_decision_counts.provider_runtime_blocker, 1);
+  assert.equal(registry.summary.fixture_decision_counts.evidence_gap, 1);
   assert.deepEqual(registry.summary.fixture_decision_groups, {
+    evidence_gap: ['cv-missing-editor-evidence'],
     editor_blocker: ['saas'],
     native_editability_blocker: ['artist'],
     provider_runtime_blocker: ['runtime-provider'],
