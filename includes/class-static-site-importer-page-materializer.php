@@ -500,7 +500,7 @@ class Static_Site_Importer_Page_Materializer {
 	 * @param string                       $source_path Source path for diagnostics.
 	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics, passed by reference.
 	 */
-	private static function html_to_blocks( string $body, string $source_path, array &$diagnostics ): string {
+	public static function html_to_blocks( string $body, string $source_path, array &$diagnostics ): string {
 		if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
 			$diagnostics[] = array(
 				'type'        => 'missing_transformer_bridge',
