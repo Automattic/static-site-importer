@@ -100,6 +100,8 @@ class Static_Site_Importer_Page_Materializer {
 	/**
 	 * Build page-specific template and pattern artifacts.
 	 *
+	 * @param array<string, Static_Site_Importer_Source_Page> $pages               Pages.
+	 * @param string                                          $theme_slug          Theme slug.
 	 * @param array<string,array<string,mixed>>                 $assets              Materialized assets keyed by source path.
 	 * @param array<string,string>                              $permalinks          Imported page permalinks keyed by source path.
 	 * @param array<string,string>                              $template_part_writes Generated header/footer template part writes keyed by path.
