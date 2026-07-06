@@ -8,6 +8,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/**
+ * Internal dependencies
+ */
 import { MAX_EXTRA_SURFACE_COUNT, normalizeSurfaceCoverageOptions } from '../lib/fixture-matrix.mjs';
 
 export const RIG_ID = 'static-site-importer-fixture-matrix';
@@ -263,13 +266,14 @@ function normalizeExecutionTarget(input) {
     throw new Error('--local forces hot execution on this machine and cannot be combined with --lab-only. Use --local for local-hot execution, or use --lab-only/--runner without --local for Lab offload.');
   }
 
-  const executionTarget = local
-    ? 'local-hot'
-    : runner
-      ? `lab-offload:${runner}`
-      : labOnly
-        ? 'lab-offload:auto'
-        : 'auto';
+  let executionTarget = 'auto';
+  if (local) {
+    executionTarget = 'local-hot';
+  } else if (runner) {
+    executionTarget = `lab-offload:${runner}`;
+  } else if (labOnly) {
+    executionTarget = 'lab-offload:auto';
+  }
 
   return {
     runner,
@@ -791,7 +795,6 @@ function sanitizePathSegment(value) {
 
 function printHelp() {
   process.stdout.write(`Usage: node tools/run-fixture-matrix.mjs --static-site-importer <path> --blocks-engine <path> [options] [-- <bench args>...]\n\nRuns the canonical Static Site Importer fixture matrix through Homeboy/Lab/WP Codebox.\n\nExecution modes:\n  --local                             Local hot execution on this machine. Injects --force-hot --allow-local-hot into routed Homeboy steps.\n  --runner <id>                       Lab offload to a Homeboy runner, for example homeboy-lab. Does not inject hot-local flags.\n  --lab-only                          Require Lab routing, using Homeboy's selected/default Lab runner.\n  no routing flags                    Auto mode; lets homeboy bench decide routing.\n\nRules:\n  --runner local                      Alias for --local.\n  --local cannot be combined with --runner <remote> or --lab-only. Pick local-hot or Lab offload.\n\nOptions:\n  --static-site-importer <path>       Static Site Importer checkout/plugin path. Required.\n  --blocks-engine <path>              Blocks Engine checkout. Defaults fixture root and PHP transformer override.\n  --fixture-root <path>               Fixture corpus. Defaults to <blocks-engine>/fixtures/websites.\n  --blocks-engine-php-transformer-path <path>\n                                      Override transformer package/repo path. Defaults to --blocks-engine.\n  --mode <development-override|release-proof>\n                                      Labels output; default is development-override when transformer override is used.\n  --run-id <id>                       Stable proof label. Defaults to ssi-matrix-<mode>-<timestamp>.\n  --shared-state <dir>                Shared Homeboy bench state directory.\n  --artifact-root <dir>               Homeboy artifact root.\n  --output <file>                     Structured Homeboy bench output file.\n  --batch-size <n>                    SSI fixture matrix WP Codebox batch size.\n  --concurrency <n>                   Parallel WP Codebox sandbox batches. Defaults to 4, hard-capped at 16.\n  --wordpress-version <version>       WP Codebox WordPress version.\n  --wp-codebox-bin <path>             WP Codebox CLI path.\n  --allow-stale-override              Proceed even when an override checkout is behind upstream.\n  --allow-local-fallback              Permit selected Lab runner fallback to local execution.\n  --allow-dirty-lab-workspace         Permit reusing/overwriting a dirty Lab workspace.\n  --detach-after-handoff              Return after runner daemon accepts the job.\n  --dry-run                           Print the plan without running Homeboy.\n  --skip-install                      Skip rig install.\n  --skip-sync                         Skip rig sync.\n  --no-editor-validation              Omit editor block validation.\n  --no-visual-parity                  Omit visual parity capture.\n  --no-visual-parity-gate             Capture visual parity without gating.\n  --help                              Show this help.\n`);
-  return;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

@@ -2061,36 +2061,36 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
 test('fixture matrix operator rejects contradictory local and Lab routing', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-routing-conflict-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
-  const fixtureRoot = path.join(root, 'fixtures');
+  const routingFixtureRoot = path.join(root, 'fixtures');
   mkdirSync(staticSiteImporter, { recursive: true });
-  mkdirSync(path.join(fixtureRoot, 'fixture-a'), { recursive: true });
+  mkdirSync(path.join(routingFixtureRoot, 'fixture-a'), { recursive: true });
 
   assert.throws(() => buildFixtureMatrixRunPlan({
     local: true,
     runner: 'homeboy-lab',
     staticSiteImporter,
-    fixtureRoot,
+    fixtureRoot: routingFixtureRoot,
   }), /--local forces hot execution on this machine and cannot be combined with --runner homeboy-lab/);
 
   assert.throws(() => buildFixtureMatrixRunPlan({
     local: true,
     labOnly: true,
     staticSiteImporter,
-    fixtureRoot,
+    fixtureRoot: routingFixtureRoot,
   }), /--local forces hot execution on this machine and cannot be combined with --lab-only/);
 });
 
 test('fixture matrix operator composes legible local-hot and Lab offload routing', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-routing-plan-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
-  const fixtureRoot = path.join(root, 'fixtures');
+  const routingFixtureRoot = path.join(root, 'fixtures');
   mkdirSync(staticSiteImporter, { recursive: true });
-  mkdirSync(path.join(fixtureRoot, 'fixture-a'), { recursive: true });
+  mkdirSync(path.join(routingFixtureRoot, 'fixture-a'), { recursive: true });
 
   const labPlan = buildFixtureMatrixRunPlan({
     runner: 'homeboy-lab',
     staticSiteImporter,
-    fixtureRoot,
+    fixtureRoot: routingFixtureRoot,
     skipInstall: true,
     skipSync: true,
   });
@@ -2105,7 +2105,7 @@ test('fixture matrix operator composes legible local-hot and Lab offload routing
   const localPlan = buildFixtureMatrixRunPlan({
     local: true,
     staticSiteImporter,
-    fixtureRoot,
+    fixtureRoot: routingFixtureRoot,
     skipInstall: true,
     skipSync: true,
   });
@@ -2119,7 +2119,7 @@ test('fixture matrix operator composes legible local-hot and Lab offload routing
   const runnerLocalPlan = buildFixtureMatrixRunPlan({
     runner: 'local',
     staticSiteImporter,
-    fixtureRoot,
+    fixtureRoot: routingFixtureRoot,
     skipInstall: true,
     skipSync: true,
   });
@@ -5417,7 +5417,7 @@ function exactDiffPng(source, candidate) {
   fillRect(image, 0, 0, image.width, image.height, [0, 0, 0, 0]);
   for (let y = 0; y < source.height; y += 1) {
     for (let x = 0; x < source.width; x += 1) {
-      const index = ((y * source.width) + x) << 2;
+      const index = ((y * source.width) + x) * 4;
       const differs = source.data[index] !== candidate.data[index]
         || source.data[index + 1] !== candidate.data[index + 1]
         || source.data[index + 2] !== candidate.data[index + 2]
@@ -5437,7 +5437,7 @@ function countDiffPixels(diff) {
   let pixels = 0;
   for (let y = 0; y < diff.height; y += 1) {
     for (let x = 0; x < diff.width; x += 1) {
-      const index = ((y * diff.width) + x) << 2;
+      const index = ((y * diff.width) + x) * 4;
       if (diff.data[index] || diff.data[index + 1] || diff.data[index + 2]) {
         pixels += 1;
       }
@@ -5471,8 +5471,8 @@ function shiftedPng(source, xOffset, yOffset) {
       if (targetX < 0 || targetY < 0 || targetX >= image.width || targetY >= image.height) {
         continue;
       }
-      const sourceIndex = ((y * source.width) + x) << 2;
-      const targetIndex = ((targetY * image.width) + targetX) << 2;
+      const sourceIndex = ((y * source.width) + x) * 4;
+      const targetIndex = ((targetY * image.width) + targetX) * 4;
       image.data[targetIndex] = source.data[sourceIndex];
       image.data[targetIndex + 1] = source.data[sourceIndex + 1];
       image.data[targetIndex + 2] = source.data[sourceIndex + 2];
@@ -5485,7 +5485,7 @@ function shiftedPng(source, xOffset, yOffset) {
 function fillRect(image, x, y, width, height, rgba) {
   for (let row = y; row < y + height; row += 1) {
     for (let column = x; column < x + width; column += 1) {
-      const index = ((row * image.width) + column) << 2;
+      const index = ((row * image.width) + column) * 4;
       image.data[index] = rgba[0];
       image.data[index + 1] = rgba[1];
       image.data[index + 2] = rgba[2];

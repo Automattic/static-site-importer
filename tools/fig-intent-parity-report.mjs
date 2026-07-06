@@ -5,6 +5,9 @@
  * optional imported WordPress site. This is intentionally file/CLI based so a
  * prior transform/import run can be audited deterministically without a browser.
  */
+/**
+ * External dependencies
+ */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -49,7 +52,7 @@ export function buildFigIntentParityReport(options = {}) {
 
   return {
     schema: 'static-site-importer/fig-intent-parity-report/v1',
-    status: regressions.some((row) => row.severity === 'error') ? 'failed' : regressions.length ? 'warning' : 'passed',
+    status: figIntentParityStatus(regressions),
     generated_at: new Date().toISOString(),
     paths: { summary: summaryPath, inspect: inspectPath, result: resultPath, artifact_dir: artifactDir, wp_root: options.wpRoot ? path.resolve(options.wpRoot) : null },
     fixture: {
@@ -87,6 +90,13 @@ export function buildFigIntentParityReport(options = {}) {
     },
     regressions,
   };
+}
+
+function figIntentParityStatus(regressions) {
+  if (regressions.some((row) => row.severity === 'error')) {
+    return 'failed';
+  }
+  return regressions.length ? 'warning' : 'passed';
 }
 
 function inspectGeneratedArtifacts(artifactDir) {

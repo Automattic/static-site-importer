@@ -4,6 +4,9 @@
  * Compose the cross-stack Figma fixture proof:
  * Blocks Engine .fig transform -> SSI generated-artifact import/parity matrix.
  */
+/**
+ * External dependencies
+ */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -397,7 +400,10 @@ function compareBaseline(plan, metrics) {
       continue;
     }
     const delta = currentValue - baselineValue;
-    const ratio = baselineValue === 0 ? (delta > 0 ? Number.POSITIVE_INFINITY : 0) : delta / baselineValue;
+    let ratio = delta / baselineValue;
+    if (baselineValue === 0) {
+      ratio = delta > 0 ? Number.POSITIVE_INFINITY : 0;
+    }
     const entry = { metric, baseline: baselineValue, current: currentValue, delta, ratio: roundRatio(ratio) };
     deltas.push(entry);
     if (maxRegressionRatio !== null && delta > 0 && ratio > maxRegressionRatio) {

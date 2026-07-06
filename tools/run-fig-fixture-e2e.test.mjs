@@ -1,9 +1,15 @@
+/**
+ * External dependencies
+ */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
+/**
+ * Internal dependencies
+ */
 import { buildFigFixtureE2EPlan, summarizeRun } from './run-fig-fixture-e2e.mjs';
 
 test('builds deterministic fig transform and SSI import matrix commands for three fixtures', () => {

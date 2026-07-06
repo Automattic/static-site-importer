@@ -722,7 +722,7 @@ class Static_Site_Importer_Figma_Import {
 		$normalized = array();
 		$root       = trim( str_replace( '\\', '/', $root ), '/' );
 		foreach ( $files as $file ) {
-			if ( ! is_array( $file ) || ! isset( $file['path'] ) ) {
+			if ( ! isset( $file['path'] ) ) {
 				continue;
 			}
 
