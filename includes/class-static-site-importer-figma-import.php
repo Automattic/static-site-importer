@@ -445,9 +445,9 @@ class Static_Site_Importer_Figma_Import {
 	 * @return array<string,mixed>
 	 */
 	private static function figma_transform_summary( array $figma_report, array $transform ): array {
-		$page_plan = isset( $figma_report['pages'] ) && is_array( $figma_report['pages'] ) ? $figma_report['pages'] : array();
-		$pages     = isset( $page_plan['pages'] ) && is_array( $page_plan['pages'] ) ? $page_plan['pages'] : array();
-		$diagnostics = isset( $transform['diagnostics'] ) && is_array( $transform['diagnostics'] ) ? $transform['diagnostics'] : array();
+		$page_plan        = isset( $figma_report['pages'] ) && is_array( $figma_report['pages'] ) ? $figma_report['pages'] : array();
+		$pages            = isset( $page_plan['pages'] ) && is_array( $page_plan['pages'] ) ? $page_plan['pages'] : array();
+		$diagnostics      = isset( $transform['diagnostics'] ) && is_array( $transform['diagnostics'] ) ? $transform['diagnostics'] : array();
 		$artifact_quality = self::first_nested_array( $figma_report, array( 'artifact_quality' ) );
 
 		$selected_pages = array();
@@ -604,8 +604,8 @@ class Static_Site_Importer_Figma_Import {
 			}
 
 			++$counts['total'];
-			$severity = isset( $diagnostic['severity'] ) && is_scalar( $diagnostic['severity'] ) ? (string) $diagnostic['severity'] : 'unknown';
-			$code     = isset( $diagnostic['code'] ) && is_scalar( $diagnostic['code'] ) ? (string) $diagnostic['code'] : 'unknown';
+			$severity                           = isset( $diagnostic['severity'] ) && is_scalar( $diagnostic['severity'] ) ? (string) $diagnostic['severity'] : 'unknown';
+			$code                               = isset( $diagnostic['code'] ) && is_scalar( $diagnostic['code'] ) ? (string) $diagnostic['code'] : 'unknown';
 			$counts['by_severity'][ $severity ] = ( $counts['by_severity'][ $severity ] ?? 0 ) + 1;
 			$counts['by_code'][ $code ]         = ( $counts['by_code'][ $code ] ?? 0 ) + 1;
 		}

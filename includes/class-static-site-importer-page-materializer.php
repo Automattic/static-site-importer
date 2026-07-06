@@ -107,11 +107,11 @@ class Static_Site_Importer_Page_Materializer {
 	 * @return array{patterns:array<string,string>,files:array<string,string>,asset_writes:array<string,string>,contents:array<string,string>,diagnostics:array<int,array<string,mixed>>}
 	 */
 	public static function page_artifacts( array $pages, string $theme_slug, array $assets = array(), array $permalinks = array() ): array {
-		$patterns    = array();
-		$files       = array();
-		$contents    = array();
+		$patterns     = array();
+		$files        = array();
+		$contents     = array();
 		$asset_writes = array();
-		$diagnostics = array();
+		$diagnostics  = array();
 
 		foreach ( $pages as $filename => $page ) {
 			$slug         = self::page_slug( $filename, $page );
@@ -126,11 +126,11 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		return array(
-			'patterns'    => $patterns,
-			'files'       => $files,
+			'patterns'     => $patterns,
+			'files'        => $files,
 			'asset_writes' => $asset_writes,
-			'contents'    => $contents,
-			'diagnostics' => $diagnostics,
+			'contents'     => $contents,
+			'diagnostics'  => $diagnostics,
 		);
 	}
 
@@ -159,12 +159,12 @@ class Static_Site_Importer_Page_Materializer {
 					return $matches[0];
 				}
 
-				$hash          = substr( sha1( $svg ), 0, 12 );
-				$asset_path    = 'assets/materialized/inline-svg/' . sanitize_title( $page_slug ) . '-' . $hash . '.svg';
+				$hash                        = substr( sha1( $svg ), 0, 12 );
+				$asset_path                  = 'assets/materialized/inline-svg/' . sanitize_title( $page_slug ) . '-' . $hash . '.svg';
 				$asset_writes[ $asset_path ] = $svg . "\n";
-				$url           = trailingslashit( get_theme_root_uri( sanitize_key( $theme_slug ) ) ) . sanitize_key( $theme_slug ) . '/' . $asset_path;
-				$alt           = self::svg_accessible_label( $svg );
-				$block_attrs   = array_filter(
+				$url                         = trailingslashit( get_theme_root_uri( sanitize_key( $theme_slug ) ) ) . sanitize_key( $theme_slug ) . '/' . $asset_path;
+				$alt                         = self::svg_accessible_label( $svg );
+				$block_attrs                 = array_filter(
 					array(
 						'url'       => esc_url_raw( $url ),
 						'alt'       => $alt,
@@ -172,15 +172,15 @@ class Static_Site_Importer_Page_Materializer {
 					),
 					static fn( $value ): bool => '' !== $value
 				);
-				$attrs_json    = wp_json_encode( $block_attrs, JSON_UNESCAPED_SLASHES );
-				$alt_attribute = '' !== $alt ? ' alt="' . esc_attr( $alt ) . '"' : ' alt=""';
+				$attrs_json                  = wp_json_encode( $block_attrs, JSON_UNESCAPED_SLASHES );
+				$alt_attribute               = '' !== $alt ? ' alt="' . esc_attr( $alt ) . '"' : ' alt=""';
 
 				$diagnostics[] = array(
-					'type'        => 'inline_svg_materialized',
-					'source'      => 'static-site-importer/page-materializer',
-					'asset_path'  => $asset_path,
-					'block_name'  => 'core/image',
-					'message'     => 'Safe inline SVG core/html block was materialized as a theme SVG asset and core/image block.',
+					'type'       => 'inline_svg_materialized',
+					'source'     => 'static-site-importer/page-materializer',
+					'asset_path' => $asset_path,
+					'block_name' => 'core/image',
+					'message'    => 'Safe inline SVG core/html block was materialized as a theme SVG asset and core/image block.',
 				);
 
 				return '<!-- wp:image ' . ( false !== $attrs_json ? $attrs_json : '{}' ) . ' --><figure class="wp-block-image blocks-engine-inline-svg"><img src="' . esc_url( $url ) . '"' . $alt_attribute . '/></figure><!-- /wp:image -->';
@@ -561,10 +561,11 @@ class Static_Site_Importer_Page_Materializer {
 			return $markup;
 		}
 
-		$blocks  = parse_blocks( $markup );
+		$blocks  = array_values( parse_blocks( $markup ) );
 		$changed = false;
 		self::promote_navigation_list_blocks_in_tree( $blocks, false, $changed, $diagnostics );
 
+		/** @var array<int|string,array{blockName:string|null,attrs:array<mixed>,innerBlocks:array<array<mixed>>,innerHTML:string,innerContent:array<mixed>}> $blocks */
 		return $changed ? serialize_blocks( $blocks ) : $markup;
 	}
 
@@ -578,10 +579,6 @@ class Static_Site_Importer_Page_Materializer {
 	 */
 	private static function promote_navigation_list_blocks_in_tree( array &$blocks, bool $inside_nav, bool &$changed, array &$diagnostics ): void {
 		foreach ( $blocks as &$block ) {
-			if ( ! is_array( $block ) ) {
-				continue;
-			}
-
 			$name        = isset( $block['blockName'] ) && is_string( $block['blockName'] ) ? $block['blockName'] : '';
 			$attrs       = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array();
 			$is_nav_like = $inside_nav || self::is_navigation_like_block( $name, $attrs );
@@ -589,8 +586,8 @@ class Static_Site_Importer_Page_Materializer {
 			if ( $is_nav_like && 'core/list' === $name ) {
 				$navigation = self::navigation_block_from_list_block( $block );
 				if ( null !== $navigation ) {
-					$block      = $navigation;
-					$changed    = true;
+					$block         = $navigation;
+					$changed       = true;
 					$diagnostics[] = array(
 						'type'       => 'navigation_list_materialized',
 						'source'     => 'static-site-importer/page-materializer',
@@ -654,8 +651,8 @@ class Static_Site_Importer_Page_Materializer {
 			$attrs['className'] = (string) $block['attrs']['className'];
 		}
 
-		$navigation = parse_blocks( self::serialized_block_markup( 'core/navigation', $attrs, $markup ) );
-		return isset( $navigation[0] ) && is_array( $navigation[0] ) ? $navigation[0] : null;
+		$navigation = array_values( parse_blocks( self::serialized_block_markup( 'core/navigation', $attrs, $markup ) ) );
+		return $navigation[0] ?? null;
 	}
 
 	/**
@@ -682,8 +679,9 @@ class Static_Site_Importer_Page_Materializer {
 			return null;
 		}
 
-		$xpath = new DOMXPath( $dom );
-		$root  = $xpath->query( '//*[@data-ssi-nav-item="1"]' )->item( 0 );
+		$xpath      = new DOMXPath( $dom );
+		$root_nodes = $xpath->query( '//*[@data-ssi-nav-item="1"]' );
+		$root       = false !== $root_nodes ? $root_nodes->item( 0 ) : null;
 		if ( ! $root instanceof DOMElement ) {
 			return null;
 		}
@@ -1306,30 +1304,30 @@ class Static_Site_Importer_Page_Materializer {
 			return null;
 		}
 
-		$columns = min( 4, max( 2, count( $articles ) ) );
-		$attrs   = array_merge(
+		$columns               = min( 4, max( 2, count( $articles ) ) );
+		$attrs                 = array_merge(
 			$attrs,
 			array(
 				'query' => array(
-					'perPage' => min( 12, count( $articles ) ),
-					'pages'   => 0,
-					'offset'  => 0,
+					'perPage'  => min( 12, count( $articles ) ),
+					'pages'    => 0,
+					'offset'   => 0,
 					'postType' => 'post',
-					'order'   => 'desc',
-					'orderBy' => 'date',
-					'inherit' => true,
+					'order'    => 'desc',
+					'orderBy'  => 'date',
+					'inherit'  => true,
 				),
 			)
 		);
-		$template_attrs = array(
+		$template_attrs        = array(
 			'layout' => array(
 				'type'        => 'grid',
 				'columnCount' => $columns,
 			),
 		);
-		$card_attrs     = self::class_attrs_from_element( $articles[0] );
+		$card_attrs            = self::class_attrs_from_element( $articles[0] );
 		$card_attrs['tagName'] = 'article';
-		$card           = self::group_block(
+		$card                  = self::group_block(
 			self::serialized_block_markup( 'core/post-featured-image', array( 'isLink' => true ), '<figure class="wp-block-post-featured-image"><a href="#" target="_self"></a></figure>' ) .
 			self::serialized_block_markup( 'core/post-title', array( 'isLink' => true ), '<h2 class="wp-block-post-title"><a href="#" target="_self"></a></h2>' ) .
 			self::serialized_block_markup( 'core/post-date', array(), '<div class="wp-block-post-date"></div>' ) .
@@ -1352,7 +1350,7 @@ class Static_Site_Importer_Page_Materializer {
 		if ( count( $children ) < 2 ) {
 			return null;
 		}
-		$container_class = strtolower( $element->getAttribute( 'class' ) );
+		$container_class    = strtolower( $element->getAttribute( 'class' ) );
 		$looks_like_buttons = (bool) preg_match( '/(^|[\s_-])(actions?|buttons?|cta|call-to-action)([\s_-]|$)/', $container_class );
 
 		$buttons = '';

@@ -135,7 +135,7 @@ class Static_Site_Importer_Theme_Materializer {
 			return $native_plan;
 		}
 
-		$files       = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
+		$files = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
 		if ( isset( $artifacts['source_files'] ) && is_array( $artifacts['source_files'] ) ) {
 			$files = array_merge( $files, $artifacts['source_files'] );
 		}
@@ -344,7 +344,7 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @return array{diagnostics:array<int,array<string,mixed>>}|WP_Error
 	 */
 	private static function materialize_supplemental_artifact_file_assets( string $theme_dir, string $theme_uri, array $artifacts, array &$assets, int &$order, bool $write_files = true ) {
-		$files       = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
+		$files = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
 		if ( isset( $artifacts['source_files'] ) && is_array( $artifacts['source_files'] ) ) {
 			$files = array_merge( $files, $artifacts['source_files'] );
 		}
@@ -774,6 +774,7 @@ class Static_Site_Importer_Theme_Materializer {
 			if ( isset( $file['content'] ) && is_scalar( $file['content'] ) ) {
 				$content = (string) $file['content'];
 			} elseif ( isset( $file['content_base64'] ) && is_scalar( $file['content_base64'] ) ) {
+				// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes trusted website artifact file content.
 				$decoded = base64_decode( (string) $file['content_base64'], true );
 				if ( false !== $decoded ) {
 					$content = $decoded;
@@ -1100,15 +1101,15 @@ class Static_Site_Importer_Theme_Materializer {
 				continue;
 			}
 
-			$relative            = 'templates/' . $template_slug . '.html';
+			$relative = 'templates/' . $template_slug . '.html';
 			$writes[ trailingslashit( $theme_dir ) . $relative ] = trim( (string) $content ) . "\n";
-			$reports[]           = array(
-				'path'              => $relative,
-				'slug'              => $template_slug,
-				'source'            => 'source_document',
-				'source_path'       => (string) $source_path,
-				'block_count'       => substr_count( (string) $content, '<!-- wp:' ),
-				'core_html_blocks'  => substr_count( (string) $content, '<!-- wp:html' ),
+			$reports[] = array(
+				'path'             => $relative,
+				'slug'             => $template_slug,
+				'source'           => 'source_document',
+				'source_path'      => (string) $source_path,
+				'block_count'      => substr_count( (string) $content, '<!-- wp:' ),
+				'core_html_blocks' => substr_count( (string) $content, '<!-- wp:html' ),
 			);
 		}
 
@@ -1576,15 +1577,15 @@ class Static_Site_Importer_Theme_Materializer {
 	/**
 	 * Check whether an array has string keys.
 	 *
-	 * @param array<mixed> $array Array to inspect.
+	 * @param array<mixed> $value Array to inspect.
 	 * @return bool
 	 */
-	private static function array_is_assoc( array $array ): bool {
-		if ( array() === $array ) {
+	private static function array_is_assoc( array $value ): bool {
+		if ( array() === $value ) {
 			return false;
 		}
 
-		return array_keys( $array ) !== range( 0, count( $array ) - 1 );
+		return array_keys( $value ) !== range( 0, count( $value ) - 1 );
 	}
 
 	/**

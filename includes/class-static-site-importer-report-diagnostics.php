@@ -724,16 +724,16 @@ class Static_Site_Importer_Report_Diagnostics {
 		$runtime_row = self::provider_runtime_gap_row( $report, $diagnostics );
 
 		return array(
-			'schema'                                      => 'static-site-importer/provider-runtime-summary/v1',
-			'forms_materialized_count'                    => (int) ( $form_row['materialized_count'] ?? 0 ),
-			'woo_products_seeded_count'                   => (int) ( $product_row['seeded_count'] ?? 0 ),
-			'cart_runtime_controls_preserved_count'       => (int) ( $product_row['cart_runtime_controls_preserved_count'] ?? 0 ),
-			'missing_provider_count'                      => count( array_filter( array( $form_row, $product_row ), static fn ( array $row ): bool => 'missing_provider' === ( $row['status'] ?? '' ) ) ),
-			'waived_dependency_count'                     => count( array_filter( array( $form_row, $product_row ), static fn ( array $row ): bool => 'waived_dependency' === ( $row['status'] ?? '' ) ) ),
-			'runtime_gap_count'                           => (int) ( $runtime_row['count'] ?? 0 ),
-			'fake_or_unsupported_count'                   => (int) ( $runtime_row['fake_or_unsupported_count'] ?? 0 ),
-			'rows'                                        => array_values( array_filter( array( $form_row, $product_row, $runtime_row ), static fn ( array $row ): bool => '' !== (string) ( $row['status'] ?? '' ) ) ),
-			'decision_notes'                              => array(
+			'schema'                                => 'static-site-importer/provider-runtime-summary/v1',
+			'forms_materialized_count'              => (int) ( $form_row['materialized_count'] ?? 0 ),
+			'woo_products_seeded_count'             => (int) ( $product_row['seeded_count'] ?? 0 ),
+			'cart_runtime_controls_preserved_count' => (int) ( $product_row['cart_runtime_controls_preserved_count'] ?? 0 ),
+			'missing_provider_count'                => count( array_filter( array( $form_row, $product_row ), static fn ( array $row ): bool => 'missing_provider' === ( $row['status'] ?? '' ) ) ),
+			'waived_dependency_count'               => count( array_filter( array( $form_row, $product_row ), static fn ( array $row ): bool => 'waived_dependency' === ( $row['status'] ?? '' ) ) ),
+			'runtime_gap_count'                     => (int) ( $runtime_row['count'] ?? 0 ),
+			'fake_or_unsupported_count'             => (int) ( $runtime_row['fake_or_unsupported_count'] ?? 0 ),
+			'rows'                                  => array_values( array_filter( array( $form_row, $product_row, $runtime_row ), static fn ( array $row ): bool => '' !== (string) ( $row['status'] ?? '' ) ) ),
+			'decision_notes'                        => array(
 				'provider_materialized means SSI replaced a static fallback with a real provider-backed WordPress primitive.',
 				'waived_dependency means the source needed a provider but the import was explicitly allowed to continue without enforcing that dependency.',
 				'runtime_gap means the provider/importer did not fake support; browser or application runtime work remains.',
@@ -758,15 +758,15 @@ class Static_Site_Importer_Report_Diagnostics {
 		$status       = self::provider_runtime_materialization_status( $requested, $materialized, $seeding, $waived );
 
 		return array(
-			'capability'          => 'form',
-			'provider'            => isset( $seeding['provider'] ) && is_scalar( $seeding['provider'] ) ? (string) $seeding['provider'] : 'jetpack',
-			'status'              => $status,
-			'requested_count'     => $requested,
-			'materialized_count'  => $materialized,
-			'waived'              => $waived,
-			'reason'              => isset( $seeding['reason'] ) && is_scalar( $seeding['reason'] ) ? (string) $seeding['reason'] : '',
-			'unsupported_count'   => max( 0, $requested - $materialized ),
-			'decision'            => self::provider_runtime_decision( 'form', $status ),
+			'capability'         => 'form',
+			'provider'           => isset( $seeding['provider'] ) && is_scalar( $seeding['provider'] ) ? (string) $seeding['provider'] : 'jetpack',
+			'status'             => $status,
+			'requested_count'    => $requested,
+			'materialized_count' => $materialized,
+			'waived'             => $waived,
+			'reason'             => isset( $seeding['reason'] ) && is_scalar( $seeding['reason'] ) ? (string) $seeding['reason'] : '',
+			'unsupported_count'  => max( 0, $requested - $materialized ),
+			'decision'           => self::provider_runtime_decision( 'form', $status ),
 		);
 	}
 
@@ -790,17 +790,17 @@ class Static_Site_Importer_Report_Diagnostics {
 		$status    = self::provider_runtime_materialization_status( $requested, $seeded, $seeding, $waived );
 
 		return array(
-			'capability'                              => 'shop',
-			'provider'                                => isset( $seeding['provider'] ) && is_scalar( $seeding['provider'] ) ? (string) $seeding['provider'] : 'woocommerce',
-			'status'                                  => $status,
-			'requested_count'                         => $requested,
-			'seeded_count'                            => $seeded,
-			'materialized_count'                      => $seeded,
-			'cart_runtime_controls_preserved_count'   => self::cart_runtime_controls_preserved_count( $diagnostics ),
-			'waived'                                  => $waived,
-			'reason'                                  => isset( $seeding['reason'] ) && is_scalar( $seeding['reason'] ) ? (string) $seeding['reason'] : '',
-			'unsupported_count'                       => max( 0, $requested - $seeded ),
-			'decision'                                => self::provider_runtime_decision( 'shop', $status ),
+			'capability'                            => 'shop',
+			'provider'                              => isset( $seeding['provider'] ) && is_scalar( $seeding['provider'] ) ? (string) $seeding['provider'] : 'woocommerce',
+			'status'                                => $status,
+			'requested_count'                       => $requested,
+			'seeded_count'                          => $seeded,
+			'materialized_count'                    => $seeded,
+			'cart_runtime_controls_preserved_count' => self::cart_runtime_controls_preserved_count( $diagnostics ),
+			'waived'                                => $waived,
+			'reason'                                => isset( $seeding['reason'] ) && is_scalar( $seeding['reason'] ) ? (string) $seeding['reason'] : '',
+			'unsupported_count'                     => max( 0, $requested - $seeded ),
+			'decision'                              => self::provider_runtime_decision( 'shop', $status ),
 		);
 	}
 
@@ -1377,9 +1377,9 @@ class Static_Site_Importer_Report_Diagnostics {
 
 		$manifest_forms = array();
 		foreach ( $indexes as $index ) {
-			$diagnostic       = $report['diagnostics'][ $index ];
-			$controls         = isset( $diagnostic['controls'] ) && is_array( $diagnostic['controls'] ) ? $diagnostic['controls'] : array();
-			$form             = isset( $diagnostic['form'] ) && is_array( $diagnostic['form'] ) ? $diagnostic['form'] : array();
+			$diagnostic = $report['diagnostics'][ $index ];
+			$controls   = isset( $diagnostic['controls'] ) && is_array( $diagnostic['controls'] ) ? $diagnostic['controls'] : array();
+			$form       = isset( $diagnostic['form'] ) && is_array( $diagnostic['form'] ) ? $diagnostic['form'] : array();
 			if ( empty( $controls ) && self::is_generated_core_html_form_diagnostic( $diagnostic ) ) {
 				$extracted = self::extract_form_manifest_from_diagnostic( $diagnostic );
 				$controls  = $extracted['controls'];
@@ -1413,9 +1413,9 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 
 			++$seeding['mapped_count'];
-			$selector = isset( $row['selector'] ) && is_scalar( $row['selector'] ) ? (string) $row['selector'] : '';
+			$selector    = isset( $row['selector'] ) && is_scalar( $row['selector'] ) ? (string) $row['selector'] : '';
 			$source_path = isset( $row['source_path'] ) && is_scalar( $row['source_path'] ) ? (string) $row['source_path'] : '';
-			$index    = self::form_finding_index_for_selector( $report['diagnostics'], $pending, $selector, $source_path );
+			$index       = self::form_finding_index_for_selector( $report['diagnostics'], $pending, $selector, $source_path );
 			if ( null === $index ) {
 				continue;
 			}
@@ -1491,7 +1491,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			);
 		}
 
-		$doc = new DOMDocument();
+		$doc      = new DOMDocument();
 		$previous = libxml_use_internal_errors( true );
 		$doc->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
 		libxml_clear_errors();
@@ -1633,7 +1633,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	private static function form_finding_index_for_selector( array $diagnostics, array $pending, string $selector, string $source_path = '' ): ?int {
 		if ( '' !== $selector && '' !== $source_path ) {
 			foreach ( $pending as $index ) {
-				$diagnostic = $diagnostics[ $index ] ?? array();
+				$diagnostic        = $diagnostics[ $index ] ?? array();
 				$diagnostic_source = self::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
 				if ( (string) ( $diagnostic['selector'] ?? '' ) === $selector && self::form_source_paths_match( $source_path, $diagnostic_source ) ) {
 					return $index;
@@ -3284,9 +3284,9 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private static function compact_native_report_rows( array $rows ): array {
-		$fields  = array( 'type', 'kind', 'code', 'diagnostic_code', 'severity', 'source', 'source_path', 'path', 'script_path', 'selector', 'container_selector', 'target_selector', 'target', 'dom_target', 'tag', 'tag_name', 'element', 'block_name', 'block_path', 'attribute_path', 'reason', 'reason_code', 'message', 'excerpt', 'source_html_preview', 'emitted_block_preview', 'html_excerpt', 'handle', 'src', 'role', 'discovered', 'materialized', 'enqueued', 'telemetry', 'vendor', 'expected', 'observed', 'label', 'source_label', 'generated_label', 'url', 'source_url', 'generated_url', 'landmark', 'runtime_requirement', 'recoverability', 'actionability', 'suggested_repair_class', 'suggested_primitive', 'materialization_hint', 'control_count', 'product_count' );
+		$fields       = array( 'type', 'kind', 'code', 'diagnostic_code', 'severity', 'source', 'source_path', 'path', 'script_path', 'selector', 'container_selector', 'target_selector', 'target', 'dom_target', 'tag', 'tag_name', 'element', 'block_name', 'block_path', 'attribute_path', 'reason', 'reason_code', 'message', 'excerpt', 'source_html_preview', 'emitted_block_preview', 'html_excerpt', 'handle', 'src', 'role', 'discovered', 'materialized', 'enqueued', 'telemetry', 'vendor', 'expected', 'observed', 'label', 'source_label', 'generated_label', 'url', 'source_url', 'generated_url', 'landmark', 'runtime_requirement', 'recoverability', 'actionability', 'suggested_repair_class', 'suggested_primitive', 'materialization_hint', 'control_count', 'product_count' );
 		$array_fields = array( 'materialization_target', 'form', 'controls', 'products', 'readable_blocks' );
-		$compact = array();
+		$compact      = array();
 		foreach ( array_slice( $rows, 0, 50 ) as $row ) {
 			if ( ! is_array( $row ) ) {
 				continue;
