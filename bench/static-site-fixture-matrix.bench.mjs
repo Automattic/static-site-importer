@@ -179,6 +179,7 @@ export async function runFixtureMatrix(options) {
     staticSiteImporterSlug: options.staticSiteImporterSlug,
     dependencyOverrides,
     ...editorValidationRecipeInput(options),
+    ...surfaceCoverageRecipeInput(options),
     ...visualParityRecipeInput(options),
     ...liveWpParityRecipeInput(options),
   });
@@ -283,6 +284,8 @@ export async function runFixtureMatrix(options) {
       performance,
       artifact_bytes: artifactBytes,
       source_staging: written.metadata?.source_staging,
+      surface_coverage: recipe.metadata?.surface_coverage,
+      runtime_cost_warnings: recipe.metadata?.runtime_cost_warnings || [],
     },
     ...(runtime?.childCommandFailures?.length ? { child_command_failures: runtime.childCommandFailures } : {}),
     result_file: path.join(outputDirectory, 'static-site-fixture-matrix-result.json'),
@@ -323,6 +326,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     staticSiteImporterSlug: options.staticSiteImporterSlug,
     dependencyOverrides: prepareDependencyOverrides(options),
     ...editorValidationRecipeInput(options),
+    ...surfaceCoverageRecipeInput(options),
     ...visualParityRecipeInput(options),
     ...liveWpParityRecipeInput(options),
   });
@@ -993,6 +997,8 @@ function optionsFromEnv(env = process.env) {
     visualParitySourceBaseUrl: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL,
     visualParityWaitFor: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_WAIT_FOR || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_WAIT_FOR,
     visualParityDurationMs: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_DURATION_MS || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_DURATION_MS,
+    surfaceCoverage: benchEnv.SSI_FIXTURE_MATRIX_SURFACE_COVERAGE || env.SSI_FIXTURE_MATRIX_SURFACE_COVERAGE,
+    maxExtraSurfaces: benchEnv.SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES || env.SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES,
     minNativeRate: benchEnv.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE || env.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE,
   };
 }
@@ -1004,6 +1010,13 @@ function optionsFromEnv(env = process.env) {
 function editorValidationRecipeInput(options) {
   return {
     editorValidation: options.editorValidation !== false,
+  };
+}
+
+function surfaceCoverageRecipeInput(options) {
+  return {
+    surfaceCoverage: options.surfaceCoverage,
+    maxExtraSurfaces: options.maxExtraSurfaces,
   };
 }
 
@@ -1153,6 +1166,7 @@ Options:
   --wordpress-version <version>      WP Codebox WordPress version. Defaults to latest.
   --batch-size <n>                   Fixtures per WP Codebox run when --run is used. Defaults to 10.
   --concurrency <n>                  Batches (WP Codebox sandboxes) to run in parallel. Defaults to ${DEFAULT_BATCH_CONCURRENCY}, hard-capped at ${MAX_BATCH_CONCURRENCY}.
+  --surface-coverage <n>             Opt into bounded secondary page browser evidence per fixture. Hard-capped at 5 extra surfaces.
   --no-editor-validation            Skip browser editor block validation.
   --no-visual-parity                Skip wordpress.visual-compare recipe steps. Same as SSI_FIXTURE_MATRIX_VISUAL_PARITY=0.
   --run                             Execute WP Codebox recipes. Omit locally to only materialize artifacts.
