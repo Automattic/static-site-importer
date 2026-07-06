@@ -1381,6 +1381,11 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @return true|WP_Error
 	 */
 	public static function write_file( string $path, string $content ) {
+		$dir = dirname( $path );
+		if ( '' !== $dir && '.' !== $dir && ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
+			return new WP_Error( 'static_site_importer_write_mkdir_failed', sprintf( 'Failed to create generated file directory: %s', $dir ) );
+		}
+
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes generated block-theme files to the selected theme directory.
 		$result = file_put_contents( $path, $content );
 		if ( false === $result ) {

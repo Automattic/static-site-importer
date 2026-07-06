@@ -110,12 +110,14 @@ class Static_Site_Importer_Page_Materializer {
 		$patterns    = array();
 		$files       = array();
 		$contents    = array();
+		$asset_writes = array();
 		$diagnostics = array();
 
 		foreach ( $pages as $filename => $page ) {
 			$slug         = self::page_slug( $filename, $page );
 			$pattern_slug = sanitize_key( $theme_slug ) . '/page-' . $slug;
 			$content      = self::rewrite_materialized_asset_references( self::source_page_content_blocks( $page, $diagnostics ), $assets, $page->source_key(), $permalinks );
+			$content      = self::promote_inline_svg_html_blocks( $content, $theme_slug, $slug, $asset_writes, $diagnostics );
 
 			$patterns[ $filename ] = $pattern_slug;
 			$files[ $filename ]    = Static_Site_Importer_Theme_Materializer::pattern_file( self::page_title( $filename, $page ), $pattern_slug, $content );
@@ -125,9 +127,103 @@ class Static_Site_Importer_Page_Materializer {
 		return array(
 			'patterns'    => $patterns,
 			'files'       => $files,
+			'asset_writes' => $asset_writes,
 			'contents'    => $contents,
 			'diagnostics' => $diagnostics,
 		);
+	}
+
+	/**
+	 * Promote safe SVG-only core/html blocks to materialized theme SVG assets.
+	 *
+	 * @param string                           $markup       Serialized block markup.
+	 * @param string                           $theme_slug   Generated theme slug.
+	 * @param string                           $page_slug    Page slug for stable asset names.
+	 * @param array<string,string>             $asset_writes Theme-relative SVG writes, passed by reference.
+	 * @param array<int,array<string,mixed>>    $diagnostics  Diagnostics, passed by reference.
+	 * @return string Updated serialized block markup.
+	 */
+	private static function promote_inline_svg_html_blocks( string $markup, string $theme_slug, string $page_slug, array &$asset_writes, array &$diagnostics ): string {
+		if ( '' === trim( $markup ) || ! str_contains( $markup, '<!-- wp:html' ) || ! str_contains( $markup, '<svg' ) ) {
+			return $markup;
+		}
+
+		return preg_replace_callback(
+			'/<!-- wp:html(?:\s+(\{.*?\}))? -->(.*?)<!-- \/wp:html -->/s',
+			static function ( array $matches ) use ( $theme_slug, $page_slug, &$asset_writes, &$diagnostics ): string {
+				$attrs = isset( $matches[1] ) && '' !== trim( (string) $matches[1] ) ? json_decode( (string) $matches[1], true ) : array();
+				$html  = isset( $attrs['content'] ) && is_scalar( $attrs['content'] ) ? (string) $attrs['content'] : (string) $matches[2];
+				$svg   = self::safe_inline_svg( html_entity_decode( trim( $html ), ENT_QUOTES | ENT_HTML5 ) );
+				if ( '' === $svg ) {
+					return $matches[0];
+				}
+
+				$hash          = substr( sha1( $svg ), 0, 12 );
+				$asset_path    = 'assets/materialized/inline-svg/' . sanitize_title( $page_slug ) . '-' . $hash . '.svg';
+				$asset_writes[ $asset_path ] = $svg . "\n";
+				$url           = trailingslashit( get_theme_root_uri( sanitize_key( $theme_slug ) ) ) . sanitize_key( $theme_slug ) . '/' . $asset_path;
+				$alt           = self::svg_accessible_label( $svg );
+				$block_attrs   = array_filter(
+					array(
+						'url'       => esc_url_raw( $url ),
+						'alt'       => $alt,
+						'className' => 'blocks-engine-inline-svg',
+					),
+					static fn( $value ): bool => '' !== $value
+				);
+				$attrs_json    = wp_json_encode( $block_attrs, JSON_UNESCAPED_SLASHES );
+				$alt_attribute = '' !== $alt ? ' alt="' . esc_attr( $alt ) . '"' : ' alt=""';
+
+				$diagnostics[] = array(
+					'type'        => 'inline_svg_materialized',
+					'source'      => 'static-site-importer/page-materializer',
+					'asset_path'  => $asset_path,
+					'block_name'  => 'core/image',
+					'message'     => 'Safe inline SVG core/html block was materialized as a theme SVG asset and core/image block.',
+				);
+
+				return '<!-- wp:image ' . ( false !== $attrs_json ? $attrs_json : '{}' ) . ' --><figure class="wp-block-image blocks-engine-inline-svg"><img src="' . esc_url( $url ) . '"' . $alt_attribute . '/></figure><!-- /wp:image -->';
+			},
+			$markup
+		) ?? $markup;
+	}
+
+	/**
+	 * Return sanitized SVG markup when the payload is a self-contained SVG image.
+	 *
+	 * @param string $svg Candidate SVG markup.
+	 * @return string Safe SVG markup, or empty string when unsupported.
+	 */
+	private static function safe_inline_svg( string $svg ): string {
+		$svg = trim( $svg );
+		if ( '' === $svg || ! preg_match( '/^<svg\b[\s\S]*<\/svg>$/i', $svg ) ) {
+			return '';
+		}
+		if ( preg_match( '/<(script|foreignObject|iframe|object|embed)\b/i', $svg ) || preg_match( '/\son[a-z]+\s*=/i', $svg ) ) {
+			return '';
+		}
+		if ( preg_match( '/\b(?:href|xlink:href|src)\s*=\s*(["\'])(?!#)[^"\']+\1/i', $svg ) ) {
+			return '';
+		}
+
+		return $svg;
+	}
+
+	/**
+	 * Extract a compact accessible label from SVG metadata.
+	 *
+	 * @param string $svg SVG markup.
+	 * @return string Label, or empty string.
+	 */
+	private static function svg_accessible_label( string $svg ): string {
+		if ( preg_match( '/\baria-label\s*=\s*(["\'])(.*?)\1/i', $svg, $matches ) ) {
+			return sanitize_text_field( html_entity_decode( (string) $matches[2], ENT_QUOTES | ENT_HTML5 ) );
+		}
+		if ( preg_match( '/<title\b[^>]*>(.*?)<\/title>/is', $svg, $matches ) ) {
+			return sanitize_text_field( html_entity_decode( wp_strip_all_tags( (string) $matches[1] ), ENT_QUOTES | ENT_HTML5 ) );
+		}
+
+		return '';
 	}
 
 	/**

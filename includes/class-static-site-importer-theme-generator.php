@@ -199,6 +199,12 @@ class Static_Site_Importer_Theme_Generator {
 			Static_Site_Importer_Theme_Materializer::base_theme_writes( $theme_dir, $theme_slug, $theme_name, $materialized['css'], $has_header_part, $has_footer_part, $materialized['scripts'], $materialized['stylesheets'], $artifacts )
 		);
 		$writes = array_merge( $writes, $template_part_writes );
+		foreach ( isset( $page_artifacts['asset_writes'] ) && is_array( $page_artifacts['asset_writes'] ) ? $page_artifacts['asset_writes'] : array() as $relative_path => $content ) {
+			$relative_path = ltrim( str_replace( '\\', '/', (string) $relative_path ), '/' );
+			if ( '' !== $relative_path && ! str_contains( $relative_path, '..' ) ) {
+				$writes[ $theme_dir . '/' . $relative_path ] = (string) $content;
+			}
+		}
 		self::analyze_imported_page_content_documents( $document_pages, $page_artifacts['contents'] );
 
 		self::record_source_documents_summary( $artifacts['documents'] ?? array(), $document_pages, $page_ids, $permalinks );
