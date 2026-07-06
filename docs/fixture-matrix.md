@@ -68,6 +68,59 @@ The fixture matrix is a deterministic transformer feedback gate, not a
 performance benchmark. The rig and wrapper run a single Homeboy bench iteration
 by default; use repeated runs only for explicitly separate performance work.
 
+## Three-Fig Fixture E2E
+
+Use `tools/run-fig-fixture-e2e.mjs` for the cross-stack proof that selected
+Figma fixtures can become working WordPress block themes without expanding the
+fixture corpus. The wrapper composes existing repo-owned surfaces:
+
+- Blocks Engine `figma-transformer/scripts/figma-fixture-matrix.php` transforms
+  each `.fig` into static HTML/CSS/assets.
+- SSI `bench/static-site-fixture-matrix.bench.mjs --artifact-root ... --run`
+  imports those generated artifacts in WP Codebox and emits the standard matrix
+  result, editor-quality, visual-parity, and finding-packet artifacts.
+- `artifacts/fig-fixture-e2e/summary.json` aggregates pass/fail status with
+  thresholds for exactly three fixtures, zero transform failures, zero import
+  failures, and a default minimum native conversion rate of `1`.
+
+Example:
+
+```bash
+SSI_FIG_E2E_FIXTURES="/path/to/Fisiostetic.fig:/path/to/FSE Pilot Build Theme.fig:/path/to/Twenty Twenty-Five (Community).fig" \
+node tools/run-fig-fixture-e2e.mjs \
+  --blocks-engine /path/to/blocks-engine \
+  --static-site-importer /path/to/static-site-importer \
+  --output-directory /path/to/artifacts/fig-fixture-e2e \
+  --run
+```
+
+Pass fixture paths with repeated `--fixture <path>` arguments instead of
+`SSI_FIG_E2E_FIXTURES` when that is easier for shells/scripts. Use `--dry-run` to
+write `plan.json` and `summary.json` without running the transform/import steps.
+Use `--expected-fixture-count` only for exploratory work; the release proof
+defaults to the three named fixtures.
+
+Sample summary shape:
+
+```json
+{
+  "schema": "static-site-importer/fig-fixture-e2e-summary/v1",
+  "status": "passed",
+  "fixture_count": 3,
+  "expected_fixture_count": 3,
+  "transform": {
+    "completed_fixture_count": 3,
+    "failed_fixture_count": 0
+  },
+  "import_matrix": {
+    "enabled": true,
+    "passed_fixture_count": 3,
+    "failed_fixture_count": 0,
+    "min_native_conversion_rate": 1
+  }
+}
+```
+
 Output is a JSON operator summary with the run ID, fixture count, pass/fail
 counts, finding count, top buckets/kinds when present in Homeboy output, a
 `run_refs` block with ready-to-run `homeboy runs show <id>` / `homeboy runs
