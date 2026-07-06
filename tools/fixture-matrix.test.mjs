@@ -223,6 +223,33 @@ test('gutenberg incompatibility registry attributes nested svg to the outer fall
   assert.equal(byKey['inline-svg-filter-gradient'].fixtures[0], 'coffee');
 });
 
+test('gutenberg incompatibility registry ranks tracked custom-block candidates before visual-only evidence', () => {
+  const registry = buildGutenbergIncompatibilityRegistry({
+    matrix_id: 'tracked-candidate-ranking',
+    fixtures: [
+      {
+        fixture_id: 'artist',
+        visual_diff_regions: [{ dominant_cause: 'restyle_geometry', pixel_count: 100000 }],
+      },
+    ],
+    findings: [
+      {
+        fixture_id: 'artist',
+        kind: 'unsupported_html_fallback',
+        observed_block_name: 'core/html',
+        reason_code: 'html_form_fallback',
+        pattern_family: 'interactive_form',
+        selector: 'form.newsletter-form',
+        source_snippet: '<form class="newsletter-form"><input type="email"><button>Subscribe</button></form>',
+      },
+    ],
+  });
+
+  assert.equal(registry.patterns[0].pattern_key, 'static-form');
+  assert.equal(registry.patterns[0].classification, 'convertible');
+  assert.equal(registry.patterns[1].pattern_key, 'visual-restyle_geometry');
+});
+
 test('gutenberg incompatibility registry artifacts are written with fixture matrix outputs', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-gutenberg-registry-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'gutenberg-registry-artifact-test' });
