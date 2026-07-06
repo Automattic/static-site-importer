@@ -866,6 +866,19 @@ class Static_Site_Importer_Theme_Materializer {
 			"/**\n" .
 			" * Generated theme bootstrap.\n" .
 			" */\n\n" .
+			"add_filter( 'upload_mimes', static function ( array \$mimes ): array {\n" .
+			"\t// Generated SVG media is sanitized by the import pipeline at build time.\n" .
+			"\t\$mimes['svg'] = 'image/svg+xml';\n" .
+			"\treturn \$mimes;\n" .
+			"} );\n\n" .
+			"add_filter( 'wp_check_filetype_and_ext', static function ( array \$data, string \$file, string \$filename, array \$mimes ): array {\n" .
+			"\tif ( 'svg' !== strtolower( pathinfo( \$filename, PATHINFO_EXTENSION ) ) ) {\n" .
+			"\t\treturn \$data;\n" .
+			"\t}\n" .
+			"\t\$data['ext'] = 'svg';\n" .
+			"\t\$data['type'] = 'image/svg+xml';\n" .
+			"\treturn \$data;\n" .
+			"}, 10, 4 );\n\n" .
 			"add_action( 'after_setup_theme', static function (): void {\n" .
 			"\tadd_theme_support( 'editor-styles' );\n" .
 			"\tadd_editor_style( 'assets/css/editor-style.css' );\n" .
