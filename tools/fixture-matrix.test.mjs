@@ -195,20 +195,36 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
       {
         fixture_id: 'cv',
         status: 'passed',
+        artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/cv/screenshot.png' }],
+        visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
         block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
         editor_quality: { editor_validated_block_total: 8, editor_invalid_count: 0, core_html_block_count: 0 },
       },
       {
         fixture_id: 'artist',
         status: 'failed',
+        artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/artist/screenshot.png' }],
         block_composition: { block_total: 10, native_block_count: 9, core_html_block_count: 1 },
         editor_quality: { editor_validated_block_total: 10, editor_invalid_count: 0, core_html_block_count: 1 },
         visual_diff_regions: [{ dominant_cause: 'position_offset', pixel_count: 2500 }],
       },
       {
+        fixture_id: 'coffee',
+        status: 'failed',
+        artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/coffee/screenshot.png' }],
+        editor_quality: { editor_validated_block_total: 12, editor_invalid_count: 0, core_html_block_count: 0 },
+        visual_diff_regions: [{ dominant_cause: 'font_metric_drift', pixel_count: 900 }],
+      },
+      {
         fixture_id: 'saas',
         status: 'failed',
+        artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/saas/screenshot.png' }],
+        visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
         editor_quality: { editor_validated_block_total: 6, editor_invalid_count: 1, core_html_block_count: 0 },
+      },
+      {
+        fixture_id: 'runtime-provider',
+        status: 'failed',
       },
     ],
     findings: [
@@ -227,26 +243,54 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         selector: '.hero',
         reason: 'Editor block validation failed.',
       },
+      {
+        fixture_id: 'runtime-provider',
+        kind: 'recipe_step_failure',
+        loss_class: 'runtime_execution_failed',
+        reason: 'wp-codebox command failed before evidence capture.',
+      },
     ],
   });
   const decisions = Object.fromEntries(registry.fixture_decisions.map((row) => [row.fixture_id, row]));
   const patterns = Object.fromEntries(registry.patterns.map((row) => [row.pattern_key, row]));
   const markdown = renderGutenbergIncompatibilityRegistryMarkdown(registry);
 
+  assert.equal(decisions.cv.frontend_visual_status, 'passed');
+  assert.equal(decisions.cv.editor_canvas_status, 'visible');
+  assert.equal(decisions.cv.block_validity_status, 'valid');
   assert.equal(decisions.cv.editor_validity_status, 'valid');
   assert.equal(decisions.cv.native_editability_status, 'native_editable');
-  assert.equal(decisions.cv.solved_candidate_reason, 'passed editor validity, native editability, and visual parity without limitation patterns');
+  assert.equal(decisions.cv.solved_candidate, true);
+  assert.equal(decisions.cv.acceptance_status, 'solved_candidate');
+  assert.equal(decisions.cv.solved_candidate_reason, 'passed frontend visual parity, editor canvas evidence, block validity, and native editability without limitation patterns');
   assert.equal(decisions.artist.native_editability_status, 'custom_block_candidate');
+  assert.equal(decisions.artist.frontend_visual_status, 'visual_mismatch');
+  assert.equal(decisions.artist.editor_canvas_status, 'visible');
+  assert.equal(decisions.artist.acceptance_status, 'native_editability_blocker');
   assert.equal(decisions.artist.visible_html_island_count, 1);
+  assert.equal(decisions.artist.visible_runtime_or_html_islands, 1);
   assert.deepEqual(decisions.artist.gutenberg_gap_patterns, ['static-form']);
   assert.deepEqual(decisions.artist.visual_only_patterns, ['visual-position_offset']);
+  assert.equal(decisions.coffee.native_editability_status, 'native_editable');
+  assert.equal(decisions.coffee.acceptance_status, 'visual_only_blocker');
+  assert.deepEqual(decisions.coffee.visual_only_patterns, ['visual-font_metric_drift']);
+  assert.equal(decisions.saas.editor_canvas_status, 'visible');
   assert.equal(decisions.saas.editor_validity_status, 'invalid_blocks');
   assert.equal(decisions.saas.native_editability_status, 'editor_invalid');
+  assert.equal(decisions.saas.acceptance_status, 'editor_blocker');
+  assert.equal(decisions['runtime-provider'].frontend_visual_status, 'provider_runtime_blocked');
+  assert.equal(decisions['runtime-provider'].acceptance_status, 'provider_runtime_blocker');
   assert.equal(patterns['static-form'].limitation_type, 'real_gutenberg_gap');
   assert.equal(patterns['visual-position_offset'].limitation_type, 'visual_only_style_drift');
-  assert.equal(registry.summary.fixture_decision_counts.native_editable, 1);
+  assert.equal(registry.summary.fixture_decision_counts.solved_candidate, 1);
+  assert.equal(registry.summary.fixture_decision_counts.visual_only_blocker, 1);
+  assert.equal(registry.summary.fixture_decision_counts.editor_blocker, 1);
+  assert.equal(registry.summary.fixture_decision_counts.native_editability_blocker, 1);
+  assert.equal(registry.summary.fixture_decision_counts.provider_runtime_blocker, 1);
   assert.equal(registry.summary.editor_validity_counts.invalid_blocks, 1);
   assert.match(markdown, /## Fixture Decisions/);
+  assert.match(markdown, /solved_candidate/);
+  assert.match(markdown, /native_editability_blocker/);
   assert.match(markdown, /`static-form`/);
 });
 
@@ -1702,6 +1746,42 @@ test('fixture diagnostics drop empty rows and normalize kindless carriers with e
   assert.equal(result.summary.loss_classes.preserved_runtime_island, 1);
   assert.equal(result.summary.loss_classes.editable_approximation, 2);
   assert.equal(result.summary.loss_classes.unsupported_loss, undefined);
+});
+
+test('fixture matrix intake preserves editor-open canvas evidence for acceptance decisions', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-editor-canvas-intake-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'editor-canvas-intake-test' });
+  const codeboxOutput = {
+    executions: [
+      {
+        command: 'wordpress.wp-cli',
+        args: ['command=static-site-importer validate-artifact --slug=simple-site --artifact=/tmp/simple-site/artifact.json'],
+        status: 'success',
+      },
+      {
+        command: 'wordpress.editor-open',
+        status: 'success',
+        editor_canvas: {
+          selector_summary: {
+            groups: [{ name: 'block-list', selector: '.block-editor-block-list__layout', count: 4 }],
+          },
+        },
+        editor_open: {
+          artifacts: {
+            screenshot: 'files/browser/editor-open/simple-site/screenshot.png',
+          },
+        },
+      },
+    ],
+  };
+
+  const result = collectFixtureMatrixRunResults({ matrix, outputDirectory, codeboxOutput });
+  const registry = buildGutenbergIncompatibilityRegistry(result);
+  const decision = registry.fixture_decisions.find((row) => row.fixture_id === 'simple-site');
+
+  assert.equal(result.fixtures[0].editor_canvas.selector_summary.groups[0].count, 4);
+  assert.equal(result.fixtures[0].editor_open.artifacts.screenshot, 'files/browser/editor-open/simple-site/screenshot.png');
+  assert.equal(decision.editor_canvas_status, 'visible');
 });
 
 test('collects SSI finding packet source and observed context from fixture artifacts', () => {
