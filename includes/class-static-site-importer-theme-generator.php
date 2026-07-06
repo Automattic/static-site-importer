@@ -210,6 +210,12 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$writes = array_merge( $writes, $template_writes );
 		$writes = array_merge( $writes, $template_part_writes );
+		foreach ( isset( $page_artifacts['asset_writes'] ) && is_array( $page_artifacts['asset_writes'] ) ? $page_artifacts['asset_writes'] : array() as $relative_path => $content ) {
+			$relative_path = ltrim( str_replace( '\\', '/', (string) $relative_path ), '/' );
+			if ( '' !== $relative_path && ! str_contains( $relative_path, '..' ) ) {
+				$writes[ $theme_dir . '/' . $relative_path ] = (string) $content;
+			}
+		}
 		self::analyze_imported_page_content_documents( $document_pages, $page_artifacts['contents'] );
 
 		$source_template_writes = Static_Site_Importer_Theme_Materializer::source_document_template_writes( $theme_dir, $page_artifacts['contents'] );

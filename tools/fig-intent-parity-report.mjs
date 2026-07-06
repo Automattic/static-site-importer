@@ -43,7 +43,7 @@ export function buildFigIntentParityReport(options = {}) {
   const generatedText = normalizeText(generated.text).toLowerCase();
   const missingGeneratedText = intentText.values.filter((text) => !generatedText.includes(normalizeText(text).toLowerCase()));
   const wordpress = options.wpRoot ? inspectWordPressSite(path.resolve(options.wpRoot), options) : null;
-  const expectedPageSlugs = expectedWordPressPageSlugs(generated.html_files);
+  const expectedPageSlugs = wordpress?.manifest?.expected_page_slugs?.length ? wordpress.manifest.expected_page_slugs : expectedWordPressPageSlugs(generated.html_files);
   const missingWordPressPageSlugs = wordpress ? missingPageSlugs(expectedPageSlugs, wordpress.pages) : [];
   const regressions = collectRegressions({ fixture, result, generated, intentText, missingGeneratedText, wordpress, missingWordPressPageSlugs });
 
@@ -150,17 +150,38 @@ function inspectWordPressSite(wpRoot, options) {
   const stylesheet = runTextCommand(wpCli, [...baseArgs, 'option', 'get', 'stylesheet'], { optional: true }).trim();
   const themeDir = stylesheet ? path.join(wpRoot, 'wp-content', 'themes', stylesheet) : null;
   const themeFiles = themeDir && fs.existsSync(themeDir) ? listFiles(themeDir) : [];
-  const normalizedText = normalizeText(pages.map((page) => extractVisibleText(page.content)).join(' ')).toLowerCase();
+  const manifest = inspectStaticSiteImporterManifest(themeDir);
+  const scopedPages = manifest.expected_page_slugs.length ? pages.filter((page) => manifest.expected_page_slugs.includes(slugify(page.slug)) || manifest.expected_page_slugs.includes(slugify(page.title))) : pages;
+  const normalizedText = normalizeText(scopedPages.map((page) => extractVisibleText(page.content)).join(' ')).toLowerCase();
 
   return {
     wp_root: wpRoot,
     stylesheet: stylesheet || null,
     theme_asset_count: themeFiles.filter((file) => /\.(avif|gif|jpe?g|png|svg|webp|woff2?|ttf|otf|css)$/i.test(file)).length,
     theme_css_files: themeFiles.filter((file) => /\.css$/i.test(file)),
-    pages: pages.map(({ content, ...page }) => page),
-    fallback_block_count: pages.reduce((total, page) => total + page.fallback_block_count, 0),
-    block_count: pages.reduce((total, page) => total + page.block_count, 0),
+    manifest,
+    pages: scopedPages.map(({ content, ...page }) => page),
+    site_page_count: pages.length,
+    fallback_block_count: scopedPages.reduce((total, page) => total + page.fallback_block_count, 0),
+    block_count: scopedPages.reduce((total, page) => total + page.block_count, 0),
     normalized_text: normalizedText,
+  };
+}
+
+function inspectStaticSiteImporterManifest(themeDir) {
+  const empty = { found: false, expected_page_slugs: [] };
+  if (!themeDir) {
+    return empty;
+  }
+  const manifestPath = path.join(themeDir, 'static-site-importer-manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    return empty;
+  }
+  const manifest = readJson(manifestPath);
+  const desiredPages = Array.isArray(manifest?.desired?.pages) ? manifest.desired.pages : [];
+  return {
+    found: true,
+    expected_page_slugs: [...new Set(desiredPages.map((page) => slugify(page?.slug || page?.title || '')).filter(Boolean))].sort(),
   };
 }
 

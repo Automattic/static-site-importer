@@ -69,8 +69,7 @@ if ( ! fs.existsSync( themeDir ) ) {
 }
 
 const targetFiles = [
-  'parts/header.html',
-  'parts/footer.html',
+  ...listFiles( path.join( themeDir, 'parts' ), '.html' ).map( ( file ) => path.join( 'parts', file ) ),
   ...listFiles( path.join( themeDir, 'patterns' ), '.php' ).map( ( file ) => path.join( 'patterns', file ) ),
   ...listFiles( path.join( themeDir, 'templates' ), '.html' ).map( ( file ) => path.join( 'templates', file ) ),
 ];
@@ -91,9 +90,34 @@ for ( const relativePath of targetFiles ) {
   }
 
   const content = extractBlockContent( fs.readFileSync( filePath, 'utf8' ) );
+  checkReferencedTemplateParts( content, relativePath );
   const blocks = withConsoleSilenced( () => parse( content ) );
   blockCount += countBlocks( blocks );
   validateBlocks( blocks, relativePath );
+}
+
+function checkReferencedTemplateParts( content, relativePath ) {
+  for ( const match of content.matchAll( /<!--\s+wp:template-part\s+(\{.*?\})\s+\/-->/g ) ) {
+    let attrs = {};
+    try {
+      attrs = JSON.parse( match[1] );
+    } catch ( error ) {
+      continue;
+    }
+    const slug = String( attrs.slug || '' ).replace( /[^a-z0-9_-]/gi, '' );
+    if ( ! slug ) {
+      continue;
+    }
+    const partPath = path.join( themeDir, 'parts', `${ slug }.html` );
+    if ( ! fs.existsSync( partPath ) ) {
+      failures.push( {
+        file: relativePath,
+        path: `parts/${ slug }.html`,
+        blockName: 'core/template-part',
+        reasons: [ `Referenced template part does not exist: parts/${ slug }.html` ],
+      } );
+    }
+  }
 }
 
 if ( failures.length ) {
