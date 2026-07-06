@@ -144,6 +144,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			),
 			'generated_theme'         => array(
 				'document_metadata' => array(),
+				'templates'         => array(),
 				'template_parts'    => array(),
 				'block_documents'   => array(),
 				'freeform_blocks'   => array(),
