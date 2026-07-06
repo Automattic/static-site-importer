@@ -65,3 +65,7 @@ The registry also emits `fixture_decisions[]` so acceptance decisions do not req
 - Static form: `<form>` architecture with input/select/textarea controls, submit buttons, labels, hidden fields, validation/response state, and newsletter/contact semantics. This should become a generic form block candidate when recurrence crosses threshold.
 - JS commerce controls: product purchase controls containing quantity inputs/steppers, add-to-cart buttons, option selectors, price/cart state, and runtime mutation. This should become a commerce control block candidate when recurrence crosses threshold.
 - SVG filter/gradient artwork: inline SVGs with defs/filter/gradient/mask/clip-path graphs or SVG data URIs whose DOM/ID graph must survive exactly. This should become an SVG artwork block candidate when recurrence crosses threshold.
+
+See `docs/companion-block-strategy.md` for the typed companion block contracts,
+runtime ownership boundaries, provider integration rules, and recommended build
+order for these candidates.
