@@ -3446,6 +3446,82 @@ test('fixture matrix secondary editor targets fall back to runtime slug resoluti
   assert.equal(resolved.editor_target_source, 'surface-slug-fallback');
 });
 
+test('fixture matrix result preserves per-surface visual and editor artifacts', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-surface-result-'));
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-surface-result-artifacts-'));
+  const fixtureDirectory = path.join(root, 'artist');
+  mkdirSync(fixtureDirectory, { recursive: true });
+  writeFileSync(path.join(fixtureDirectory, 'fixture.json'), JSON.stringify({ id: 'artist', label: 'Artist' }));
+  writeFileSync(path.join(fixtureDirectory, 'index.html'), '<main>Home</main>');
+  writeFileSync(path.join(fixtureDirectory, 'about.html'), '<main>About</main>');
+
+  const matrix = createFixtureMatrix({ fixture_root: root, id: 'surface-result-test' });
+  const execution = ({ phase, surfaceId, sourceEntry, output }) => ({
+    recipePhase: phase,
+    recipeStepIndex: surfaceId === 'front-page' ? 1 : 2,
+    metadata: {
+      fixture_id: 'artist',
+      surface_id: surfaceId,
+      source_entry: sourceEntry,
+      target: surfaceId === 'front-page' ? 'front-page' : '/about/',
+      candidate_url: surfaceId === 'front-page' ? '/' : '/about/',
+    },
+    output: JSON.stringify(output),
+  });
+  const visualOutput = (surfaceId, sourceEntry) => ({
+    schema: 'wp-codebox/visual-compare/v1',
+    summary: { mismatch_pixels: surfaceId === 'front-page' ? 0 : 10, total_pixels: 1000, overlap_mismatch_pixels: surfaceId === 'front-page' ? 0 : 10, overlap_pixels: 1000 },
+    artifacts: {
+      source_screenshot: `files/browser/visual/${surfaceId}/source.png`,
+      imported_screenshot: `files/browser/visual/${surfaceId}/imported.png`,
+      diff_screenshot: `files/browser/visual/${surfaceId}/diff.png`,
+    },
+    source: { path: sourceEntry },
+  });
+  const editorOutput = (surfaceId) => ({
+    schema: 'wordpress/editor-validate-blocks/v1',
+    validation_method: EDITOR_VALIDATION_METHOD,
+    total_blocks: 2,
+    valid_blocks: 2,
+    invalid_blocks: 0,
+    results: [{ name: 'core/paragraph', isValid: true }, { name: 'core/heading', isValid: true }],
+    artifacts: {
+      editor_screenshot: `files/browser/editor-open/artist/${surfaceId}/screenshot.png`,
+    },
+  });
+
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: {
+      executions: [
+        execution({ phase: 'editor', surfaceId: 'front-page', sourceEntry: 'index.html', output: editorOutput('front-page') }),
+        execution({ phase: 'visual', surfaceId: 'front-page', sourceEntry: 'index.html', output: visualOutput('front-page', 'index.html') }),
+        execution({ phase: 'editor', surfaceId: 'about', sourceEntry: 'about.html', output: editorOutput('about') }),
+        execution({ phase: 'visual', surfaceId: 'about', sourceEntry: 'about.html', output: visualOutput('about', 'about.html') }),
+      ],
+    },
+  });
+
+  const fixture = result.fixtures[0];
+  const surfaces = Object.fromEntries(fixture.surfaces.map((surface) => [surface.surface_id, surface]));
+  assert.deepEqual(Object.keys(surfaces), ['front-page', 'about']);
+  assert.equal(surfaces['front-page'].source_entry, 'index.html');
+  assert.equal(surfaces.about.source_entry, 'about.html');
+  assert.ok(surfaces['front-page'].artifact_refs.some((ref) => ref.path === 'files/browser/visual/front-page/source.png'));
+  assert.ok(surfaces.about.artifact_refs.some((ref) => ref.path === 'files/browser/editor-open/artist/about/screenshot.png'));
+  assert.equal(result.summary.surface_evidence.surface_count, 2);
+  assert.equal(result.summary.surface_evidence.visual_surface_count, 2);
+  assert.equal(result.summary.surface_evidence.editor_surface_count, 2);
+  assert.deepEqual(result.summary.surface_evidence.rows.map((row) => `${row.fixture_id}/${row.surface_id}`), ['artist/front-page', 'artist/about']);
+
+  const report = buildVisualParityEvidenceReport({ outputDirectory, matrix, result });
+  assert.deepEqual(report.surfaces.map((surface) => `${surface.fixture_id}/${surface.surface_id}`), ['artist/front-page', 'artist/about']);
+  assert.equal(report.summary.visual_compare_surface_count, 2);
+  assert.equal(report.summary.editor_surface_count, 2);
+  assert.ok(report.surfaces.find((surface) => surface.surface_id === 'about').artifact_paths.includes('files/browser/visual/about/source.png'));
+});
+
 test('--no-editor-validation skips the editor browser step while keeping native-rate + findings', () => {
   // The editor browser step launches a browser per site and is the
   // slowest per-fixture step. --no-editor-validation skips it (companion to
