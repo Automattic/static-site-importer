@@ -75,7 +75,7 @@
       {
         "kind": "command",
         "label": "Fixture matrix workload validates",
-        "command": "node \"${package.root}/tools/fixture-matrix.test.mjs\""
+        "command": "cd \"${package.root}\" && npm ci --ignore-scripts && node \"${package.root}/tools/fixture-matrix.test.mjs\""
       }
     ],
     "down": [
