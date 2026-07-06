@@ -33,16 +33,23 @@
         "custom_block_candidate_count": { "type": "integer", "minimum": 0 },
         "convertible_count": { "type": "integer", "minimum": 0 },
         "runtime_island_count": { "type": "integer", "minimum": 0 },
+        "fixture_decision_counts": { "$ref": "#/$defs/counts" },
+        "editor_validity_counts": { "$ref": "#/$defs/counts" },
+        "limitation_type_counts": { "$ref": "#/$defs/counts" },
         "top_patterns": { "type": "array", "items": { "$ref": "#/$defs/top_pattern" } }
       },
       "additionalProperties": false
     },
+    "fixture_decisions": { "type": "array", "items": { "$ref": "#/$defs/fixture_decision" } },
     "patterns": { "type": "array", "items": { "$ref": "#/$defs/pattern" } }
   },
   "additionalProperties": false,
   "$defs": {
     "classification": { "enum": ["convertible", "custom-block-candidate", "runtime-island"] },
     "fallback_kind": { "enum": ["core_html", "data_uri", "runtime_island", "fidelity_loss"] },
+    "limitation_type": { "enum": ["real_gutenberg_gap", "transformer_gap", "intentional_runtime_preservation", "visual_only_style_drift", "editor_validity_risk"] },
+    "editor_validity_status": { "enum": ["valid", "invalid_blocks", "not_validated"] },
+    "native_editability_status": { "enum": ["native_editable", "editor_invalid", "custom_block_candidate", "runtime_island_preserved", "html_islands_or_transformer_gap", "unknown"] },
     "top_pattern": {
       "type": "object",
       "required": ["pattern_key", "classification", "fixture_count", "finding_count", "impact_score"],
@@ -57,7 +64,7 @@
     },
     "pattern": {
       "type": "object",
-      "required": ["pattern_key", "description", "fallback_kind", "impossible_in_core_reason", "classification", "no_core_block_path", "fixture_count", "finding_count", "impact_score", "fixtures", "signals"],
+      "required": ["pattern_key", "description", "fallback_kind", "impossible_in_core_reason", "classification", "limitation_type", "no_core_block_path", "fixture_count", "finding_count", "impact_score", "fixtures", "signals"],
       "properties": {
         "pattern_key": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
         "description": { "type": "string" },
@@ -65,6 +72,7 @@
         "fallback_kinds": { "$ref": "#/$defs/counts" },
         "impossible_in_core_reason": { "type": "string" },
         "classification": { "$ref": "#/$defs/classification" },
+        "limitation_type": { "$ref": "#/$defs/limitation_type" },
         "no_core_block_path": { "type": "boolean" },
         "fixture_count": { "type": "integer", "minimum": 0 },
         "finding_count": { "type": "integer", "minimum": 0 },
@@ -76,6 +84,23 @@
         "signals": { "$ref": "#/$defs/counts" },
         "example": { "type": "object" },
         "examples": { "type": "array", "items": { "type": "object" } }
+      },
+      "additionalProperties": false
+    },
+    "fixture_decision": {
+      "type": "object",
+      "required": ["fixture_id", "editor_validity_status", "native_editability_status", "visible_html_island_count", "runtime_island_count", "gutenberg_gap_patterns", "transformer_gap_patterns", "intentional_runtime_patterns", "visual_only_patterns"],
+      "properties": {
+        "fixture_id": { "type": "string" },
+        "editor_validity_status": { "$ref": "#/$defs/editor_validity_status" },
+        "native_editability_status": { "$ref": "#/$defs/native_editability_status" },
+        "visible_html_island_count": { "type": "number", "minimum": 0 },
+        "runtime_island_count": { "type": "integer", "minimum": 0 },
+        "gutenberg_gap_patterns": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "transformer_gap_patterns": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "intentional_runtime_patterns": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "visual_only_patterns": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "solved_candidate_reason": { "type": "string" }
       },
       "additionalProperties": false
     },

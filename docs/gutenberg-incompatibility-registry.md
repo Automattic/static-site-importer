@@ -13,6 +13,7 @@ Each pattern row contains:
 - `fallback_kind`: one of `core_html`, `data_uri`, `runtime_island`, or `fidelity_loss`.
 - `impossible_in_core_reason`: concrete reason core blocks cannot represent the structure, behavior, or visual exactly.
 - `classification`: `convertible`, `custom-block-candidate`, or `runtime-island`.
+- `limitation_type`: decision-axis bucket: `real_gutenberg_gap`, `transformer_gap`, `intentional_runtime_preservation`, `visual_only_style_drift`, or `editor_validity_risk`.
 - `no_core_block_path`: whether existing core block semantics have no direct path to parity.
 - `fixture_count`, `fixtures`, `fixture_counts`: recurrence evidence across fixtures.
 - `finding_count`, `signals`, `fallback_kinds`, `impact_score`: aggregate impact from normalized matrix findings, visual diff regions, block composition, and future editor render divergence signals.
@@ -23,6 +24,19 @@ Each pattern row contains:
 Default threshold: `2` distinct fixtures.
 
 A pattern is promoted to `custom-block-candidate` when `no_core_block_path` is true and the pattern appears in at least the threshold number of distinct fixtures. Runtime-island patterns stay `runtime-island` even when recurring. Patterns with a plausible core-block or transformer path stay `convertible` until evidence proves core cannot express them.
+
+## Fixture Decisions
+
+The registry also emits `fixture_decisions[]` so acceptance decisions do not require re-reading pattern evidence by hand:
+
+- `editor_validity_status`: `valid`, `invalid_blocks`, or `not_validated`; this is the corrupt/invalid block risk axis.
+- `native_editability_status`: `native_editable`, `editor_invalid`, `custom_block_candidate`, `runtime_island_preserved`, `html_islands_or_transformer_gap`, or `unknown`.
+- `visible_html_island_count`: visible `core/html` island pressure from block composition and findings.
+- `gutenberg_gap_patterns`: real Gutenberg/custom-block candidate gaps affecting that fixture.
+- `transformer_gap_patterns`: fallback or attribution gaps that should be fixed in SSI/Blocks Engine before calling something a Gutenberg limitation.
+- `intentional_runtime_patterns`: runtime islands preserved by design.
+- `visual_only_patterns`: frontend visual drift patterns that do not imply invalid blocks or lost editability by themselves.
+- `solved_candidate_reason`: present only when the fixture passed, editor validation passed, no HTML/runtime islands remain, and no registry limitation pattern is attached.
 
 ## Seeded Generic Pattern Keys
 
