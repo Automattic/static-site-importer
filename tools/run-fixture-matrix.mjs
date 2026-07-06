@@ -8,6 +8,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { MAX_EXTRA_SURFACE_COUNT, normalizeSurfaceCoverageOptions } from '../lib/fixture-matrix.mjs';
+
 export const RIG_ID = 'static-site-importer-fixture-matrix';
 // Expected top-level fixture directory count in the canonical corpus
 // (`blocks-engine/fixtures/websites`). This is an intentional drift guard, not a
@@ -105,6 +107,8 @@ export function buildFixtureMatrixRunPlan(input) {
     ...(options.visualParityMaxHorizontalShift ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_HORIZONTAL_SHIFT: String(options.visualParityMaxHorizontalShift) } : {}),
     ...(options.visualParityOffsetTolerance ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_OFFSET_TOLERANCE: String(options.visualParityOffsetTolerance) } : {}),
     ...(options.visualParityPixelmatchThreshold ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD: String(options.visualParityPixelmatchThreshold) } : {}),
+    ...(options.surfaceCoverage ? { SSI_FIXTURE_MATRIX_SURFACE_COVERAGE: String(options.surfaceCoverage) } : {}),
+    ...(options.maxExtraSurfaces ? { SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES: String(options.maxExtraSurfaces) } : {}),
     // Opt-in live-WP parity capture (off by default). When set, the bench appends
     // the deterministic `wordpress.capture-html` step per fixture and runs the
     // blocks-engine live-wp-parity comparator host-side. Absent => byte-identical
@@ -126,6 +130,7 @@ export function buildFixtureMatrixRunPlan(input) {
   const codeFreshness = buildCodeFreshness(options, options.gitRunner || defaultGitRunner);
   const warnings = [
     ...buildWarnings(options),
+    ...buildSurfaceCoverageWarnings(options, fixtureCount),
     ...buildCanonicalDriftWarnings(fixtureCount, options.fixtureRoot),
     ...buildFreshnessWarnings(codeFreshness, options),
   ];
@@ -178,6 +183,7 @@ export function buildFixtureMatrixRunPlan(input) {
       // findings, just without the validateBlock editor-validity data.
       enabled: options.editorValidation !== false,
     },
+    surface_coverage: surfaceCoveragePlanSummary(options, fixtureCount),
     code_freshness: codeFreshness,
     transformer_commit: resolveTransformerCommit(codeFreshness),
     warnings,
@@ -307,6 +313,30 @@ function buildCanonicalDriftWarnings(fixtureCount, fixtureRoot) {
   return [{
     code: 'canonical_fixture_count_drift',
     message: `Discovered ${fixtureCount} top-level fixture director${fixtureCount === 1 ? 'y' : 'ies'} in ${fixtureRoot}, but CANONICAL_FIXTURE_COUNT is ${CANONICAL_FIXTURE_COUNT}. ${fixtureCount > CANONICAL_FIXTURE_COUNT ? 'The corpus grew; bump CANONICAL_FIXTURE_COUNT after confirming the new fixtures are intended.' : 'Fixtures are missing or the wrong fixture root was passed; restore the corpus or correct --fixture-root.'}`,
+  }];
+}
+
+function surfaceCoveragePlanSummary(options, fixtureCount) {
+  const config = normalizeSurfaceCoverageOptions(options);
+  return {
+    enabled: config.extraSurfaceCount > 0,
+    requested_extra_surfaces: config.requestedExtraSurfaceCount,
+    max_extra_surfaces: config.maxExtraSurfaceCount,
+    extra_surfaces_per_fixture: config.extraSurfaceCount,
+    capped: config.extraSurfaceCount < config.requestedExtraSurfaceCount,
+    fixture_count: fixtureCount,
+    max_browser_surface_count: fixtureCount * (1 + config.extraSurfaceCount),
+  };
+}
+
+function buildSurfaceCoverageWarnings(options, fixtureCount) {
+  const summary = surfaceCoveragePlanSummary(options, fixtureCount);
+  if (!summary.enabled) {
+    return [];
+  }
+  return [{
+    code: 'surface_coverage_runtime_cost',
+    message: `Surface coverage is enabled: up to ${summary.max_browser_surface_count} browser surfaces will run (${summary.extra_surfaces_per_fixture} extra per fixture, capped at ${MAX_EXTRA_SURFACE_COUNT}). Use --no-editor-validation or --no-visual-parity when collecting narrower evidence.`,
   }];
 }
 
@@ -604,6 +634,7 @@ export function summarizeRun(plan, { status } = {}) {
     run_id: findFirstKey(output, 'run_id') || plan.run_id,
     code_freshness: plan.code_freshness || null,
     transformer_commit: plan.transformer_commit || resolveTransformerCommit(plan.code_freshness),
+    surface_coverage: plan.surface_coverage || null,
     fixture_count: Number(findFirstKey(output, 'fixture_count') || plan.fixture_count || 0),
     passed_fixture_count: Number(resultSummary.succeeded || resultSummary.passed || 0),
     failed_fixture_count: failedFixtureCount,

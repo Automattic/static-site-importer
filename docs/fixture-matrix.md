@@ -310,6 +310,21 @@ step (the slowest per-site step, it launches a browser per fixture); the run
 still produces native-rate, loss-classes, pattern-families, and the rest of the
 findings — just no `validateBlock` editor-validity data.
 
+## Bounded Surface Coverage
+
+Browser evidence defaults to the imported front page only. Multi-page evidence is
+opt-in with `--surface-coverage <n>` on the operator wrapper, or
+`SSI_FIXTURE_MATRIX_SURFACE_COVERAGE=<n>` / `SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES=<n>`
+for the bench. The matrix caps requested secondary pages at `5` extra surfaces
+per fixture, keeps HTML paths sorted lexicographically, and emits a
+`surface_coverage` summary plus `surface_coverage_runtime_cost` warning so run
+cost is visible before execution.
+
+Surface artifact names are deterministic and collision-safe. If two HTML entries
+map to the same route-derived ID, such as `about.html` and `about/index.html`,
+the later surface receives a stable suffix (`about--2`) for editor-open artifact
+prefixes and visual comparison names.
+
 Live caveat: the `editor-validate-blocks` step runs locally in WP Codebox today
 (see "Running the matrix locally" below) — a real local recipe-run executed the
 step and returned `validation_method: wp.blocks.validateBlock`,
