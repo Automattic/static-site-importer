@@ -348,6 +348,7 @@ test('gutenberg incompatibility registry attributes nested svg to the outer fall
   const byKey = Object.fromEntries(registry.patterns.map((row) => [row.pattern_key, row]));
 
   assert.equal(byKey['contact-layout'].finding_count, 1);
+  assert.equal(byKey['contact-layout'].classification, 'convertible');
   assert.equal(byKey['contact-layout'].fixtures[0], 'artist');
   assert.equal(byKey['inline-svg-filter-gradient'].finding_count, 1);
   assert.equal(byKey['inline-svg-filter-gradient'].fixtures[0], 'coffee');
