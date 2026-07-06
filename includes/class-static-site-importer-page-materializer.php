@@ -104,7 +104,7 @@ class Static_Site_Importer_Page_Materializer {
 	 * @param string                                          $theme_slug Theme slug.
 	 * @param array<string,array<string,mixed>>                 $assets     Materialized assets keyed by source path.
 	 * @param array<string,string>                              $permalinks Imported page permalinks keyed by source path.
-	 * @return array{patterns:array<string,string>,files:array<string,string>,contents:array<string,string>,diagnostics:array<int,array<string,mixed>>}
+	 * @return array{patterns:array<string,string>,files:array<string,string>,asset_writes:array<string,string>,contents:array<string,string>,diagnostics:array<int,array<string,mixed>>}
 	 */
 	public static function page_artifacts( array $pages, string $theme_slug, array $assets = array(), array $permalinks = array() ): array {
 		$patterns    = array();
@@ -152,7 +152,7 @@ class Static_Site_Importer_Page_Materializer {
 		return preg_replace_callback(
 			'/<!-- wp:html(?:\s+(\{.*?\}))? -->(.*?)<!-- \/wp:html -->/s',
 			static function ( array $matches ) use ( $theme_slug, $page_slug, &$asset_writes, &$diagnostics ): string {
-				$attrs = isset( $matches[1] ) && '' !== trim( (string) $matches[1] ) ? json_decode( (string) $matches[1], true ) : array();
+				$attrs = '' !== trim( (string) $matches[1] ) ? json_decode( (string) $matches[1], true ) : array();
 				$html  = isset( $attrs['content'] ) && is_scalar( $attrs['content'] ) ? (string) $attrs['content'] : (string) $matches[2];
 				$svg   = self::safe_inline_svg( html_entity_decode( trim( $html ), ENT_QUOTES | ENT_HTML5 ) );
 				if ( '' === $svg ) {
@@ -727,10 +727,6 @@ class Static_Site_Importer_Page_Materializer {
 	private static function serialize_blocks_with_reduced_fallbacks( array $blocks ): string {
 		$output = '';
 		foreach ( $blocks as $block ) {
-			if ( ! is_array( $block ) ) {
-				continue;
-			}
-
 			$name = isset( $block['blockName'] ) && is_string( $block['blockName'] ) ? $block['blockName'] : '';
 			if ( in_array( $name, array( 'core/html', 'core/freeform' ), true ) ) {
 				$output .= self::fallback_html_to_native_blocks( self::fallback_block_html( $block ), $name );
@@ -767,7 +763,7 @@ class Static_Site_Importer_Page_Materializer {
 		$index = 0;
 		foreach ( isset( $block['innerContent'] ) && is_array( $block['innerContent'] ) ? $block['innerContent'] : array() as $chunk ) {
 			if ( null === $chunk ) {
-				$body .= isset( $inner_blocks[ $index ] ) && is_array( $inner_blocks[ $index ] ) ? self::serialize_blocks_with_reduced_fallbacks( array( $inner_blocks[ $index ] ) ) : '';
+				$body .= isset( $inner_blocks[ $index ] ) ? self::serialize_blocks_with_reduced_fallbacks( array( $inner_blocks[ $index ] ) ) : '';
 				++$index;
 				continue;
 
@@ -833,7 +829,12 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		$xpath = new DOMXPath( $dom );
-		$root  = $xpath->query( '//*[@data-ssi-fragment-root="1"]' )->item( 0 );
+		$query = $xpath->query( '//*[@data-ssi-fragment-root="1"]' );
+		if ( false === $query ) {
+			return null;
+		}
+
+		$root = $query->item( 0 );
 		if ( ! $root instanceof DOMElement ) {
 			return null;
 		}
@@ -1512,9 +1513,6 @@ class Static_Site_Importer_Page_Materializer {
 		$search_input = null;
 		$button_text  = '';
 		foreach ( $inputs as $input ) {
-			if ( ! $input instanceof DOMElement ) {
-				continue;
-			}
 			$type = strtolower( trim( $input->getAttribute( 'type' ) ) );
 			$name = strtolower( trim( $input->getAttribute( 'name' ) ) );
 			if ( in_array( $type, array( '', 'search', 'text' ), true ) && in_array( $name, array( '', 's', 'search', 'q' ), true ) ) {
@@ -1531,9 +1529,6 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		foreach ( iterator_to_array( $element->getElementsByTagName( 'button' ) ) as $button ) {
-			if ( ! $button instanceof DOMElement ) {
-				continue;
-			}
 			$content = self::safe_inline_html( $button );
 			if ( null === $content ) {
 				return null;
@@ -1547,9 +1542,15 @@ class Static_Site_Importer_Page_Materializer {
 			return null;
 		}
 
-		$label       = trim( $search_input->getAttribute( 'aria-label' ) ) ?: 'Search';
+		$label       = trim( $search_input->getAttribute( 'aria-label' ) );
 		$placeholder = trim( $search_input->getAttribute( 'placeholder' ) );
-		$action      = trim( $element->getAttribute( 'action' ) ) ?: '/';
+		$action      = trim( $element->getAttribute( 'action' ) );
+		if ( '' === $label ) {
+			$label = 'Search';
+		}
+		if ( '' === $action ) {
+			$action = '/';
+		}
 		if ( '' === $button_text ) {
 			$button_text = 'Search';
 		}
@@ -1565,8 +1566,11 @@ class Static_Site_Importer_Page_Materializer {
 	 * @return string
 	 */
 	private static function search_input_block( DOMElement $element, array $attrs ): string {
-		$label       = trim( $element->getAttribute( 'aria-label' ) ) ?: 'Search';
+		$label       = trim( $element->getAttribute( 'aria-label' ) );
 		$placeholder = trim( $element->getAttribute( 'placeholder' ) );
+		if ( '' === $label ) {
+			$label = 'Search';
+		}
 		return self::search_block_markup( $attrs, $label, $placeholder, 'Search', '/' );
 	}
 

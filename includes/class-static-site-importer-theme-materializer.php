@@ -805,7 +805,7 @@ class Static_Site_Importer_Theme_Materializer {
 		$parts     = array();
 
 		foreach ( array( 'header', 'footer' ) as $slug ) {
-			$fragment = trim( (string) ( $fragments[ $slug ] ?? '' ) );
+			$fragment = trim( $fragments[ $slug ] );
 			if ( '' === $fragment ) {
 				$fragment = self::first_landmark_html( $html, $slug );
 			}
@@ -1056,10 +1056,6 @@ class Static_Site_Importer_Theme_Materializer {
 		$writes  = array();
 		$reports = array();
 		foreach ( $templates as $template ) {
-			if ( ! is_array( $template ) ) {
-				return new WP_Error( 'static_site_importer_template_invalid', 'Template artifacts must be arrays.' );
-			}
-
 			$relative = self::template_artifact_relative_path( $template );
 			if ( '' === $relative ) {
 				return new WP_Error( 'static_site_importer_template_unsupported', 'Template artifacts must resolve to a safe templates/*.html path.' );
@@ -1565,7 +1561,7 @@ class Static_Site_Importer_Theme_Materializer {
 		}
 
 		foreach ( $value as $key => $child ) {
-			if ( ! is_int( $key ) && ( ! is_string( $key ) || ! preg_match( '/^[A-Za-z0-9_\-]+$/', $key ) ) ) {
+			if ( ! is_int( $key ) && ! preg_match( '/^[A-Za-z0-9_\-]+$/', $key ) ) {
 				return false;
 			}
 

@@ -1382,8 +1382,8 @@ class Static_Site_Importer_Report_Diagnostics {
 			$form             = isset( $diagnostic['form'] ) && is_array( $diagnostic['form'] ) ? $diagnostic['form'] : array();
 			if ( empty( $controls ) && self::is_generated_core_html_form_diagnostic( $diagnostic ) ) {
 				$extracted = self::extract_form_manifest_from_diagnostic( $diagnostic );
-				$controls  = isset( $extracted['controls'] ) && is_array( $extracted['controls'] ) ? $extracted['controls'] : array();
-				$form      = isset( $extracted['form'] ) && is_array( $extracted['form'] ) ? $extracted['form'] : $form;
+				$controls  = $extracted['controls'];
+				$form      = $extracted['form'];
 			}
 			$manifest_forms[] = array(
 				'selector'    => isset( $diagnostic['selector'] ) && is_scalar( $diagnostic['selector'] ) ? (string) $diagnostic['selector'] : '',
@@ -1485,7 +1485,10 @@ class Static_Site_Importer_Report_Diagnostics {
 	private static function extract_form_manifest_from_diagnostic( array $diagnostic ): array {
 		$html = self::first_scalar( $diagnostic, array( 'source_html_preview', 'html_excerpt', 'excerpt' ) );
 		if ( '' === $html || ! str_contains( strtolower( $html ), '<form' ) ) {
-			return array( 'form' => array(), 'controls' => array() );
+			return array(
+				'form'     => array(),
+				'controls' => array(),
+			);
 		}
 
 		$doc = new DOMDocument();
@@ -1496,7 +1499,10 @@ class Static_Site_Importer_Report_Diagnostics {
 
 		$form_node = $doc->getElementsByTagName( 'form' )->item( 0 );
 		if ( ! $form_node instanceof DOMElement ) {
-			return array( 'form' => array(), 'controls' => array() );
+			return array(
+				'form'     => array(),
+				'controls' => array(),
+			);
 		}
 
 		$form = array();
@@ -1510,10 +1516,6 @@ class Static_Site_Importer_Report_Diagnostics {
 		$controls = array();
 		foreach ( array( 'input', 'textarea', 'select', 'button' ) as $tag_name ) {
 			foreach ( $form_node->getElementsByTagName( $tag_name ) as $control_node ) {
-				if ( ! $control_node instanceof DOMElement ) {
-					continue;
-				}
-
 				$control = array(
 					'tag'  => strtolower( $control_node->tagName ),
 					'type' => strtolower( trim( $control_node->getAttribute( 'type' ) ) ),
@@ -1566,7 +1568,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		if ( '' !== $selector && '' !== $source_path ) {
 			foreach ( $pending as $index ) {
 				$diagnostic = $diagnostics[ $index ] ?? array();
-				$diagnostic_source = self::first_scalar( is_array( $diagnostic ) ? $diagnostic : array(), array( 'source_path', 'source' ) );
+				$diagnostic_source = self::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
 				if ( (string) ( $diagnostic['selector'] ?? '' ) === $selector && self::form_source_paths_match( $source_path, $diagnostic_source ) ) {
 					return $index;
 				}
