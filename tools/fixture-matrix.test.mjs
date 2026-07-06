@@ -51,6 +51,7 @@ import {
   liveWpParityEnabled,
   MAX_EXTRA_SURFACE_COUNT,
   normalizeSurfaceCoverageOptions,
+  resolveSurfaceEditorTarget,
   runLiveWpParity,
   normalizeLiveWpParityReport,
   selectFixtureSurfaces,
@@ -2455,8 +2456,10 @@ test('CLI surface coverage reaches bench recipe browser evidence steps', () => {
   const visualSteps = recipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare');
   assert.equal(editorOpenSteps.length, 3);
   assert.equal(visualSteps.length, 3);
-  assert.ok(editorOpenSteps[1].args.includes('url=/contact/'));
-  assert.ok(editorOpenSteps[2].args.includes('url=/merch/'));
+  assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
+  assert.ok(editorOpenSteps[1].args.includes('post-slug=contact'));
+  assert.ok(editorOpenSteps[2].args.includes('post-type=page'));
+  assert.ok(editorOpenSteps[2].args.includes('post-slug=merch'));
   assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
 });
 
@@ -2488,8 +2491,10 @@ test('runFixtureMatrix surface coverage reaches executed batch recipes', async (
     const visualSteps = batchRecipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare');
     assert.equal(editorOpenSteps.length, 3);
     assert.equal(visualSteps.length, 3);
-    assert.ok(editorOpenSteps[1].args.includes('url=/contact/'));
-    assert.ok(editorOpenSteps[2].args.includes('url=/merch/'));
+    assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
+    assert.ok(editorOpenSteps[1].args.includes('post-slug=contact'));
+    assert.ok(editorOpenSteps[2].args.includes('post-type=page'));
+    assert.ok(editorOpenSteps[2].args.includes('post-slug=merch'));
     assert.equal(visualCompareMatrixComparison(visualSteps[1]).candidateUrl, '/contact/');
     assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
   } finally {
@@ -3364,11 +3369,14 @@ test('fixture matrix browser surfaces default to front page and opt into bounded
   assert.equal(editorValidationSteps.length, 3);
   assert.equal(visualSteps.length, 3);
   assert.ok(editorOpenSteps[0].args.includes('artifact-prefix=files/browser/editor-open/artist'));
-  assert.ok(editorOpenSteps[1].args.includes('url=/about/'));
+  assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
+  assert.ok(editorOpenSteps[1].args.includes('post-slug=about'));
   assert.ok(editorOpenSteps[1].args.includes('artifact-prefix=files/browser/editor-open/artist/about'));
-  assert.ok(editorOpenSteps[2].args.includes('url=/about/'));
+  assert.ok(editorOpenSteps[2].args.includes('post-type=page'));
+  assert.ok(editorOpenSteps[2].args.includes('post-slug=about'));
   assert.ok(editorOpenSteps[2].args.includes('artifact-prefix=files/browser/editor-open/artist/about--2'));
-  assert.ok(editorValidationSteps[1].args.includes('url=/about/'));
+  assert.ok(editorValidationSteps[1].args.includes('post-type=page'));
+  assert.ok(editorValidationSteps[1].args.includes('post-slug=about'));
 
   const aboutComparison = visualCompareMatrixComparison(visualSteps[1]);
   assert.equal(aboutComparison.name, 'artist--about');
@@ -3381,6 +3389,61 @@ test('fixture matrix browser surfaces default to front page and opt into bounded
   assert.equal(multiSurfaceRecipe.metadata.surface_coverage.extra_surfaces_per_fixture, 2);
   assert.equal(multiSurfaceRecipe.metadata.surface_coverage.total_surface_count, 3);
   assert.equal(multiSurfaceRecipe.metadata.runtime_cost_warnings[0].code, 'surface_coverage_runtime_cost');
+});
+
+test('fixture matrix resolves secondary editor targets from imported page metadata', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-surface-targets-'));
+  const fixtureDirectory = path.join(root, 'artist');
+  mkdirSync(path.join(fixtureDirectory, 'merch'), { recursive: true });
+  writeFileSync(path.join(fixtureDirectory, 'fixture.json'), JSON.stringify({ id: 'artist', label: 'Artist' }));
+  writeFileSync(path.join(fixtureDirectory, 'index.html'), '<main>Home</main>');
+  writeFileSync(path.join(fixtureDirectory, 'contact.html'), '<main>Contact</main>');
+  writeFileSync(path.join(fixtureDirectory, 'merch', 'index.html'), '<main>Merch</main>');
+
+  const matrix = createFixtureMatrix({ fixture_root: root, id: 'surface-target-test' });
+  const importReport = {
+    desired: {
+      pages: [
+        { source_path: 'website/index.html', materialized_post_id: 101, slug: 'home', permalink: '/' },
+        { source_path: 'website/contact.html', materialized_post_id: 202, slug: 'contact', permalink: '/contact/' },
+        { source_path: 'website/merch/index.html', materialized_post_id: 303, slug: 'merch', permalink: '/merch/' },
+      ],
+    },
+  };
+
+  const surfaces = selectFixtureSurfaces(matrix.fixtures[0], { surfaceCoverage: 2 });
+  assert.deepEqual(surfaces.map((surface) => surface.id), ['front-page', 'contact', 'merch']);
+  assert.equal(resolveSurfaceEditorTarget(surfaces[1], { importReport }).postId, 202);
+  assert.equal(resolveSurfaceEditorTarget(surfaces[2], { importReport }).postId, 303);
+
+  const recipe = buildFixtureMatrixRecipe({
+    matrix,
+    artifactsDirectory: '/tmp/artifacts',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    surfaceCoverage: 2,
+    importReport,
+  });
+  const editorOpenSteps = recipe.workflow.steps.filter((step) => step.command === 'wordpress.editor-open');
+  const editorValidationSteps = recipe.workflow.steps.filter((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND);
+  const visualSteps = recipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare');
+
+  assert.ok(editorOpenSteps[0].args.includes('target=front-page'));
+  assert.ok(editorOpenSteps[1].args.includes('post-id=202'));
+  assert.ok(editorOpenSteps[2].args.includes('post-id=303'));
+  assert.ok(editorValidationSteps[1].args.includes('post-id=202'));
+  assert.ok(editorValidationSteps[2].args.includes('post-id=303'));
+  assert.equal(visualCompareMatrixComparison(visualSteps[1]).candidateUrl, '/contact/');
+  assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
+});
+
+test('fixture matrix secondary editor targets fall back to runtime slug resolution when imported page id is unavailable', () => {
+  const surface = { id: 'contact', target: '/contact/', source_entry: 'contact.html', candidate_url: '/contact/' };
+  const resolved = resolveSurfaceEditorTarget(surface, { importReport: { desired: { pages: [{ source_path: 'website/contact.html', slug: 'contact' }] } } });
+
+  assert.equal(resolved.postId, undefined);
+  assert.equal(resolved.postSlug, 'contact');
+  assert.equal(resolved.postType, 'page');
+  assert.equal(resolved.editor_target_source, 'surface-slug-fallback');
 });
 
 test('--no-editor-validation skips the editor browser step while keeping native-rate + findings', () => {
