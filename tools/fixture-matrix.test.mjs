@@ -193,6 +193,76 @@ test('gutenberg incompatibility registry keeps runtime islands separate and cons
   assert.equal(byKey['editor-render-divergence'].signals.editor_render_divergence, 1);
 });
 
+test('gutenberg incompatibility registry separates provider-materializable forms and commerce from core gaps', () => {
+  const registry = buildGutenbergIncompatibilityRegistry({
+    matrix_id: 'provider-materializable-patterns',
+    fixtures: [
+      { fixture_id: 'provider-fixture' },
+      { fixture_id: 'core-gap-fixture' },
+    ],
+    findings: [
+      {
+        fixture_id: 'provider-fixture',
+        kind: 'core_html_block',
+        observed_block_name: 'jetpack/contact-form',
+        reason_code: 'generated_document_contains_core_html',
+        selector: 'form.newsletter-form',
+        source_snippet: '<form class="newsletter-form"><input type="email"><button>Subscribe</button></form>',
+      },
+      {
+        fixture_id: 'provider-fixture',
+        kind: 'woocommerce_present',
+        source_path: 'commerce.dependencies.woocommerce',
+        reason: 'WooCommerce is active; commerce-bearing import will seed products.',
+      },
+      {
+        fixture_id: 'provider-fixture',
+        kind: 'core_html_block',
+        observed_block_name: 'core/html',
+        selector: 'button.add-to-cart',
+        source_snippet: '<button class="add-to-cart">Add</button>',
+      },
+      {
+        fixture_id: 'core-gap-fixture',
+        kind: 'core_html_block',
+        observed_block_name: 'core/html',
+        reason_code: 'html_form_fallback',
+        selector: 'form.unmapped',
+        source_snippet: '<form><input name="email"><button>Submit</button></form>',
+      },
+    ],
+  });
+  const providerDecision = registry.fixture_decisions.find((row) => row.fixture_id === 'provider-fixture');
+  const coreGapDecision = registry.fixture_decisions.find((row) => row.fixture_id === 'core-gap-fixture');
+  const patterns = Object.fromEntries(registry.patterns.map((row) => [row.pattern_key, row]));
+
+  assert.equal(patterns['static-form'].limitation_type, 'provider_materializable');
+  assert.equal(patterns['static-form'].provider_materialized_by.jetpack, 1);
+  assert.equal(patterns['js-commerce-controls'].limitation_type, 'provider_materializable');
+  assert.equal(patterns['js-commerce-controls'].provider_materialized_by.woocommerce, 1);
+  assert.deepEqual(providerDecision.provider_materializable_patterns, ['js-commerce-controls', 'static-form']);
+  assert.deepEqual(providerDecision.gutenberg_gap_patterns, []);
+  assert.deepEqual(coreGapDecision.gutenberg_gap_patterns, []);
+
+  const noProviderRegistry = buildGutenbergIncompatibilityRegistry({
+    matrix_id: 'plain-core-gap-patterns',
+    fixtures: [{ fixture_id: 'core-gap-fixture' }],
+    findings: [
+      {
+        fixture_id: 'core-gap-fixture',
+        kind: 'core_html_block',
+        observed_block_name: 'core/html',
+        reason_code: 'html_form_fallback',
+        selector: 'form.unmapped',
+        source_snippet: '<form><input name="email"><button>Submit</button></form>',
+      },
+    ],
+  });
+  const noProviderPatterns = Object.fromEntries(noProviderRegistry.patterns.map((row) => [row.pattern_key, row]));
+
+  assert.equal(noProviderPatterns['static-form'].limitation_type, 'real_gutenberg_gap');
+});
+
 test('gutenberg incompatibility registry separates fixture decision axes', () => {
   const registry = buildGutenbergIncompatibilityRegistry({
     matrix_id: 'decision-axis-map',

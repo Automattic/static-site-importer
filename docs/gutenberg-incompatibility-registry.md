@@ -13,17 +13,18 @@ Each pattern row contains:
 - `fallback_kind`: one of `core_html`, `data_uri`, `runtime_island`, or `fidelity_loss`.
 - `impossible_in_core_reason`: concrete reason core blocks cannot represent the structure, behavior, or visual exactly.
 - `classification`: `convertible`, `custom-block-candidate`, or `runtime-island`.
-- `limitation_type`: decision-axis bucket: `real_gutenberg_gap`, `transformer_gap`, `intentional_runtime_preservation`, `visual_only_style_drift`, or `editor_validity_risk`.
+- `limitation_type`: decision-axis bucket: `real_gutenberg_gap`, `provider_materializable`, `transformer_gap`, `intentional_runtime_preservation`, `visual_only_style_drift`, or `editor_validity_risk`.
 - `no_core_block_path`: whether existing core block semantics have no direct path to parity.
 - `fixture_count`, `fixtures`, `fixture_counts`: recurrence evidence across fixtures.
 - `finding_count`, `signals`, `fallback_kinds`, `impact_score`: aggregate impact from normalized matrix findings, visual diff regions, block composition, and future editor render divergence signals.
+- `provider_materialized_by`: provider evidence, currently Jetpack form blocks and WooCommerce materialization/availability signals, that separates plugin-materializable behavior from a core/Gutenberg impossibility.
 - `example` / `examples`: bounded source selector/snippet/reason evidence.
 
 ## Promotion Rule
 
 Default threshold: `2` distinct fixtures.
 
-A pattern is promoted to `custom-block-candidate` when `no_core_block_path` is true and the pattern appears in at least the threshold number of distinct fixtures. Runtime-island patterns stay `runtime-island` even when recurring. Patterns with a plausible core-block or transformer path stay `convertible` until evidence proves core cannot express them.
+A pattern is promoted to `custom-block-candidate` when `no_core_block_path` is true and the pattern appears in at least the threshold number of distinct fixtures. Runtime-island patterns stay `runtime-island` even when recurring. Patterns with Jetpack/Woo provider evidence are reported as `provider_materializable` rather than `real_gutenberg_gap`. Patterns with a plausible core-block or transformer path stay `convertible` until evidence proves core cannot express them.
 
 ## Fixture Decisions
 
@@ -35,6 +36,7 @@ The registry also emits `fixture_decisions[]` so acceptance decisions do not req
 - `native_editability_status`: `native_editable`, `editor_invalid`, `custom_block_candidate`, `runtime_island_preserved`, `html_islands_or_transformer_gap`, or `unknown`.
 - `visible_html_island_count`: visible `core/html` island pressure from block composition and findings.
 - `gutenberg_gap_patterns`: real Gutenberg/custom-block candidate gaps affecting that fixture.
+- `provider_materializable_patterns`: gaps in core blocks that have plugin-provider evidence, such as Jetpack forms or WooCommerce commerce controls.
 - `transformer_gap_patterns`: fallback or attribution gaps that should be fixed in SSI/Blocks Engine before calling something a Gutenberg limitation.
 - `intentional_runtime_patterns`: runtime islands preserved by design.
 - `visual_only_patterns`: frontend visual drift patterns that do not imply invalid blocks or lost editability by themselves.
