@@ -125,6 +125,7 @@ if ( ! is_wp_error( $page ) ) {
 		'relay-atlas',
 		array(),
 		array(),
+		array(),
 		array(
 			'strip_template_header' => true,
 			'strip_template_footer' => true,
