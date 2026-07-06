@@ -55,6 +55,7 @@ export function buildFigFixtureE2EPlan(input = {}) {
   const matrixOutputDirectory = path.join(options.outputDirectory, 'ssi-matrix');
   const matrixSummary = path.join(matrixOutputDirectory, 'summary.json');
   const matrixResult = path.join(matrixOutputDirectory, 'static-site-fixture-matrix-result.json');
+  const matrixCliRun = path.join(matrixOutputDirectory, 'cli-run.json');
   const summaryPath = path.join(options.outputDirectory, 'summary.json');
   const transformScript = path.join(options.blocksEngine, 'figma-transformer', 'scripts', 'figma-fixture-matrix.php');
   const benchScript = path.join(options.staticSiteImporter, 'bench', 'static-site-fixture-matrix.bench.mjs');
@@ -102,16 +103,19 @@ export function buildFigFixtureE2EPlan(input = {}) {
       transform_summary: transformSummary,
       matrix_summary: matrixSummary,
       matrix_result: matrixResult,
+      matrix_cli_run: matrixCliRun,
       matrix_output_directory: matrixOutputDirectory,
     },
     thresholds: {
       max_transform_failures: 0,
       max_import_failures: 0,
       min_native_rate: options.minNativeRate,
+      command_timeout_ms: options.timeoutMs,
+      per_fixture: options.perFixtureThresholds,
     },
     steps: {
-      transform: commandStep('figma-transform', transformArgv, { cwd: path.join(options.blocksEngine, 'figma-transformer') }),
-      import_matrix: commandStep('ssi-import-matrix', matrixArgv, { cwd: options.staticSiteImporter }),
+      transform: commandStep('figma-transform', transformArgv, { cwd: path.join(options.blocksEngine, 'figma-transformer'), timeoutMs: options.timeoutMs }),
+      import_matrix: commandStep('ssi-import-matrix', matrixArgv, { cwd: options.staticSiteImporter, timeoutMs: options.timeoutMs }),
     },
     warnings: buildPlanWarnings(options, transformScript, benchScript),
   };
@@ -120,12 +124,16 @@ export function buildFigFixtureE2EPlan(input = {}) {
 export function summarizeRun({ plan, transformStatus, matrixStatus }) {
   const transformSummary = readJsonIfExists(plan.artifacts.transform_summary);
   const matrixSummary = readJsonIfExists(plan.artifacts.matrix_summary);
+  const matrixResult = readJsonIfExists(plan.artifacts.matrix_result);
   const transformFixtures = Array.isArray(transformSummary?.fixtures) ? transformSummary.fixtures : [];
   const completedTransforms = transformFixtures.filter((fixture) => fixture.status === 'completed');
   const failedTransforms = transformFixtures.filter((fixture) => fixture.status && fixture.status !== 'completed');
   const matrixResultSummary = matrixSummary?.result_summary || {};
-  const failedImportFixtures = Number(matrixResultSummary.failed || 0);
-  const matrixNativeRate = minFixtureNativeRate(matrixSummary);
+  const matrixFixtures = Array.isArray(matrixResult?.fixtures) ? matrixResult.fixtures : [];
+  const passedImportFixtures = Number(matrixResultSummary.succeeded || matrixFixtures.filter((fixture) => fixture.status === 'passed').length || 0);
+  const failedImportFixtures = Number(matrixResultSummary.failed || matrixFixtures.filter((fixture) => fixture.status === 'failed').length || 0);
+  const matrixNativeRate = minFixtureNativeRate(matrixSummary, matrixResult);
+  const fixtureGates = buildFixtureGates({ plan, transformFixtures, matrixResult });
   const failures = [];
 
   if (plan.fixture_count !== plan.expected_fixture_count) {
@@ -133,6 +141,9 @@ export function summarizeRun({ plan, transformStatus, matrixStatus }) {
   }
   if (transformStatus && transformStatus.status !== 0) {
     failures.push(`figma transform command exited ${transformStatus.status}`);
+  }
+  if (transformStatus?.timed_out) {
+    failures.push(`figma transform command timed out after ${plan.thresholds.command_timeout_ms}ms`);
   }
   if (transformSummary && completedTransforms.length !== plan.expected_fixture_count) {
     failures.push(`completed ${completedTransforms.length}/${plan.expected_fixture_count} Figma transforms`);
@@ -143,11 +154,17 @@ export function summarizeRun({ plan, transformStatus, matrixStatus }) {
   if (matrixStatus && matrixStatus.status !== 0) {
     failures.push(`SSI matrix command exited ${matrixStatus.status}`);
   }
+  if (matrixStatus?.timed_out) {
+    failures.push(`SSI matrix command timed out after ${plan.thresholds.command_timeout_ms}ms`);
+  }
   if (matrixSummary && failedImportFixtures > plan.thresholds.max_import_failures) {
     failures.push(`${failedImportFixtures} SSI matrix fixture(s) failed`);
   }
   if (matrixNativeRate !== null && matrixNativeRate < plan.thresholds.min_native_rate) {
     failures.push(`minimum native conversion rate ${matrixNativeRate} is below ${plan.thresholds.min_native_rate}`);
+  }
+  for (const fixture of fixtureGates.filter((row) => row.status !== 'passed')) {
+    failures.push(`fixture ${fixture.fixture_id}: ${fixture.failures.join('; ')}`);
   }
 
   return {
@@ -159,6 +176,9 @@ export function summarizeRun({ plan, transformStatus, matrixStatus }) {
     expected_fixture_count: plan.expected_fixture_count,
     transform: {
       exit_code: transformStatus?.status ?? null,
+      signal: transformStatus?.signal ?? null,
+      duration_ms: transformStatus?.duration_ms ?? null,
+      timed_out: transformStatus?.timed_out ?? false,
       summary_path: plan.artifacts.transform_summary,
       completed_fixture_count: completedTransforms.length,
       failed_fixture_count: failedTransforms.length,
@@ -172,14 +192,19 @@ export function summarizeRun({ plan, transformStatus, matrixStatus }) {
     import_matrix: {
       enabled: plan.run_import_matrix,
       exit_code: matrixStatus?.status ?? null,
+      signal: matrixStatus?.signal ?? null,
+      duration_ms: matrixStatus?.duration_ms ?? null,
+      timed_out: matrixStatus?.timed_out ?? false,
       summary_path: plan.artifacts.matrix_summary,
       result_path: plan.artifacts.matrix_result,
-      fixture_count: Number(matrixSummary?.fixture_count || 0),
-      passed_fixture_count: Number(matrixResultSummary.succeeded || 0),
+      cli_run_path: plan.artifacts.matrix_cli_run,
+      fixture_count: Number(matrixSummary?.fixture_count || matrixFixtures.length || 0),
+      passed_fixture_count: passedImportFixtures,
       failed_fixture_count: failedImportFixtures,
       finding_count: Number(matrixResultSummary.finding_count || 0),
       min_native_conversion_rate: matrixNativeRate,
     },
+    fixture_gates: fixtureGates,
     artifacts: plan.artifacts,
     commands: {
       transform: plan.steps.transform.command,
@@ -206,6 +231,8 @@ function normalizeOptions(input) {
     batchSize: positiveInteger(input.batchSize || input.batch_size || process.env.SSI_FIG_E2E_BATCH_SIZE, 3),
     concurrency: positiveInteger(input.concurrency || process.env.SSI_FIG_E2E_CONCURRENCY, 1),
     minNativeRate: finiteNumber(input.minNativeRate || input.min_native_rate || process.env.SSI_FIG_E2E_MIN_NATIVE_RATE, 1),
+    perFixtureThresholds: normalizePerFixtureThresholds(input.perFixtureThresholds || input.per_fixture_thresholds || process.env.SSI_FIG_E2E_PER_FIXTURE_THRESHOLDS),
+    timeoutMs: nonNegativeInteger(input.timeoutMs || input.timeout_ms || process.env.SSI_FIG_E2E_TIMEOUT_MS, 0),
     phpBin: input.phpBin || input.php_bin || process.env.SSI_FIG_E2E_PHP_BIN || 'php',
     nodeBin: input.nodeBin || input.node_bin || process.env.SSI_FIG_E2E_NODE_BIN || process.execPath,
     wpCodeboxBin: input.wpCodeboxBin || input.wp_codebox_bin || process.env.SSI_FIG_E2E_WP_CODEBOX_BIN || '',
@@ -257,6 +284,8 @@ function parseArgs(args, env = process.env) {
     const key = rawKey.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
     if (key === 'fixture') {
       options.fixtures.push(value);
+    } else if (key === 'perFixtureThreshold') {
+      options.perFixtureThresholds = { ...(options.perFixtureThresholds || {}), ...parsePerFixtureThreshold(value) };
     } else {
       options[key] = value;
     }
@@ -296,10 +325,13 @@ function runCommand(step) {
     env: process.env,
     encoding: 'utf8',
     stdio: 'inherit',
+    ...(step.timeout_ms ? { timeout: step.timeout_ms } : {}),
   });
   return {
     status: typeof result.status === 'number' ? result.status : 1,
     signal: result.signal || null,
+    error: result.error ? result.error.message : null,
+    timed_out: result.error?.code === 'ETIMEDOUT',
     duration_ms: Date.now() - started,
   };
 }
@@ -310,6 +342,7 @@ function commandStep(label, argv, options = {}) {
     argv,
     command: argv.map(shellQuote).join(' '),
     cwd: options.cwd || process.cwd(),
+    timeout_ms: options.timeoutMs || options.timeout_ms || 0,
   };
 }
 
@@ -318,16 +351,111 @@ function normalizeFixtures(value) {
   return raw.map((fixture) => String(fixture || '').trim()).filter(Boolean).map((fixture) => path.resolve(fixture));
 }
 
-function minFixtureNativeRate(matrixSummary) {
+function normalizePerFixtureThresholds(value) {
+  if (!value) {
+    return {};
+  }
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return value;
+  }
+  return JSON.parse(String(value));
+}
+
+function parsePerFixtureThreshold(value) {
+  const [fixtureId, rawThresholds] = String(value || '').split(/:(.*)/s, 2);
+  if (!fixtureId || !rawThresholds) {
+    throw new Error('--per-fixture-threshold must use <fixture-id>:min-native-rate=<number>');
+  }
+  const thresholds = {};
+  for (const assignment of rawThresholds.split(',')) {
+    const [key, rawValue] = assignment.split('=');
+    if (key === 'min-native-rate') {
+      thresholds.min_native_rate = finiteNumber(rawValue, NaN);
+    } else {
+      throw new Error(`Unknown per-fixture threshold: ${key}`);
+    }
+  }
+  if (!Number.isFinite(thresholds.min_native_rate)) {
+    throw new Error(`Invalid min-native-rate in --per-fixture-threshold ${value}`);
+  }
+  return { [fixtureId]: thresholds };
+}
+
+function minFixtureNativeRate(matrixSummary, matrixResult = null) {
   const aggregateRate = Number(matrixSummary?.result_summary?.editor_quality?.native_conversion_rate);
   if (Number.isFinite(aggregateRate)) {
     return aggregateRate;
   }
-  const fixtures = Array.isArray(matrixSummary?.fixtures) ? matrixSummary.fixtures : [];
+  const fixtures = Array.isArray(matrixSummary?.fixtures) ? matrixSummary.fixtures : Array.isArray(matrixResult?.fixtures) ? matrixResult.fixtures : [];
   const rates = fixtures
     .map((fixture) => Number(fixture?.editor_quality?.native_conversion_rate))
     .filter((rate) => Number.isFinite(rate));
   return rates.length ? Math.min(...rates) : null;
+}
+
+function buildFixtureGates({ plan, transformFixtures, matrixResult }) {
+  const transformById = new Map(transformFixtures.map((fixture) => [String(fixture.id || ''), fixture]).filter(([id]) => id));
+  const matrixFixtures = Array.isArray(matrixResult?.fixtures) ? matrixResult.fixtures : [];
+  const matrixById = new Map(matrixFixtures.map((fixture) => [String(fixture.fixture_id || fixture.id || ''), fixture]).filter(([id]) => id));
+  const ids = [...new Set([...transformById.keys(), ...matrixById.keys()])].sort();
+
+  return ids.map((fixtureId) => {
+    const transform = transformById.get(fixtureId) || null;
+    const matrix = matrixById.get(fixtureId) || null;
+    const thresholds = perFixtureThresholds(plan, fixtureId);
+    const nativeRate = numberOrNull(matrix?.editor_quality?.native_conversion_rate);
+    const failures = [];
+
+    if (!transform) {
+      failures.push('missing Figma transform row');
+    } else if (transform.status !== 'completed') {
+      failures.push(`Figma transform status ${transform.status || 'unknown'}`);
+    }
+    if (plan.run_import_matrix) {
+      if (!matrix) {
+        failures.push('missing SSI import matrix row');
+      } else if (matrix.status !== 'passed') {
+        failures.push(`SSI import matrix status ${matrix.status || 'unknown'}`);
+      }
+    }
+    if (nativeRate !== null && nativeRate < thresholds.min_native_rate) {
+      failures.push(`native conversion rate ${nativeRate} below ${thresholds.min_native_rate}`);
+    }
+
+    return {
+      fixture_id: fixtureId,
+      status: failures.length ? 'failed' : 'passed',
+      thresholds,
+      failures,
+      transform: {
+        status: transform?.status || null,
+        artifact_dir: transform?.artifact_dir || null,
+        result_path: transform?.result_path || null,
+        inspect_path: transform?.inspect_path || null,
+      },
+      import_matrix: matrix ? {
+        status: matrix.status || null,
+        raw_status: matrix.raw_status || null,
+        native_conversion_rate: nativeRate,
+        finding_count: Array.isArray(matrix.findings) ? matrix.findings.length : null,
+        diagnostics_count: Array.isArray(matrix.diagnostics) ? matrix.diagnostics.length : null,
+        artifact_refs: matrix.artifact_refs || {},
+        visual_parity_artifacts: matrix.visual_parity_artifacts?.artifacts || null,
+      } : null,
+    };
+  });
+}
+
+function perFixtureThresholds(plan, fixtureId) {
+  const fixtureThresholds = plan.thresholds.per_fixture?.[fixtureId] || {};
+  return {
+    min_native_rate: numberOrNull(fixtureThresholds.min_native_rate ?? fixtureThresholds.minNativeRate) ?? plan.thresholds.min_native_rate,
+  };
+}
+
+function numberOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function readJsonIfExists(filePath) {
@@ -354,6 +482,11 @@ function positiveInteger(value, fallback) {
   return Number.isInteger(number) && number > 0 ? number : fallback;
 }
 
+function nonNegativeInteger(value, fallback) {
+  const number = Number(value);
+  return Number.isInteger(number) && number >= 0 ? number : fallback;
+}
+
 function finiteNumber(value, fallback) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -373,5 +506,5 @@ function shellQuote(value) {
 }
 
 function printHelp() {
-  process.stdout.write(`Usage: node tools/run-fig-fixture-e2e.mjs --blocks-engine <path> --fixture <file.fig> --fixture <file.fig> --fixture <file.fig> [options]\n\nRuns Blocks Engine Figma transforms and feeds the generated artifacts into the SSI WP Codebox fixture matrix.\n\nOptions:\n  --fixture <path>                         .fig fixture path. Repeat exactly three times for the release gate.\n  --blocks-engine <path>                   Blocks Engine checkout containing figma-transformer/. Required.\n  --static-site-importer <path>            SSI checkout. Defaults to this repo.\n  --blocks-engine-php-transformer-path <path>\n                                           Composer path override for SSI import. Defaults to --blocks-engine.\n  --output-directory <path>                Artifact root. Defaults to ./artifacts/fig-fixture-e2e.\n  --run                                    Launch SSI import/parity through WP Codebox. Without this, writes transform artifacts and a replayable matrix recipe only.\n  --dry-run                                Write plan/summary without running transform or import.\n  --expected-fixture-count <n>             Defaults to 3.\n  --min-native-rate <n>                    Defaults to 1.\n  --batch-size <n>                         Defaults to 3.\n  --concurrency <n>                        Defaults to 1.\n  --wp-codebox-bin <path>                  WP Codebox binary override for the SSI matrix.\n  --no-editor-validation                   Skip editor block validation.\n  --no-visual-parity                       Skip visual compare.\n  --live-wp-parity                         Enable live WP HTML parity capture.\n\nEnvironment equivalents:\n  SSI_FIG_E2E_BLOCKS_ENGINE=/path/to/blocks-engine\n  SSI_FIG_E2E_FIXTURES=/path/Fisiostetic.fig:${path.join('<path>', 'FSE Pilot Build Theme.fig')}:/path/Twenty Twenty-Five.fig\n  SSI_FIG_E2E_RUN=1\n`);
+  process.stdout.write(`Usage: node tools/run-fig-fixture-e2e.mjs --blocks-engine <path> --fixture <file.fig> --fixture <file.fig> --fixture <file.fig> [options]\n\nRuns Blocks Engine Figma transforms and feeds the generated artifacts into the SSI WP Codebox fixture matrix.\n\nOptions:\n  --fixture <path>                         .fig fixture path. Repeat exactly three times for the release gate.\n  --blocks-engine <path>                   Blocks Engine checkout containing figma-transformer/. Required.\n  --static-site-importer <path>            SSI checkout. Defaults to this repo.\n  --blocks-engine-php-transformer-path <path>\n                                           Composer path override for SSI import. Defaults to --blocks-engine.\n  --output-directory <path>                Artifact root. Defaults to ./artifacts/fig-fixture-e2e.\n  --run                                    Launch SSI import/parity through WP Codebox. Without this, writes transform artifacts and a replayable matrix recipe only.\n  --dry-run                                Write plan/summary without running transform or import.\n  --expected-fixture-count <n>             Defaults to 3.\n  --min-native-rate <n>                    Default native block conversion gate for every fixture. Defaults to 1.\n  --per-fixture-threshold <id:min-native-rate=n>\n                                           Override the native-rate gate for one fixture. Repeatable.\n  --timeout-ms <n>                         Timeout for each child stage. Defaults to 0 (disabled).\n  --batch-size <n>                         Defaults to 3.\n  --concurrency <n>                        Defaults to 1.\n  --wp-codebox-bin <path>                  WP Codebox binary override for the SSI matrix.\n  --no-editor-validation                   Skip editor block validation.\n  --no-visual-parity                       Skip visual compare.\n  --live-wp-parity                         Enable live WP HTML parity capture.\n\nEnvironment equivalents:\n  SSI_FIG_E2E_BLOCKS_ENGINE=/path/to/blocks-engine\n  SSI_FIG_E2E_FIXTURES=/path/Fisiostetic.fig:${path.join('<path>', 'FSE Pilot Build Theme.fig')}:/path/Twenty Twenty-Five.fig\n  SSI_FIG_E2E_PER_FIXTURE_THRESHOLDS='{"fisiostetic":{"min_native_rate":1}}'\n  SSI_FIG_E2E_RUN=1\n`);
 }
