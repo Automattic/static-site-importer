@@ -798,7 +798,15 @@ class Static_Site_Importer_Transformer_Adapter {
 
 		foreach ( array( 'categories', 'source_selectors' ) as $field ) {
 			if ( isset( $data[ $field ] ) && is_array( $data[ $field ] ) ) {
-				$product[ $field ] = array_values( array_filter( $data[ $field ], 'is_string' ) );
+				$product[ $field ] = array_values(
+					array_filter(
+						array_map(
+							static fn ( string $value ): string => trim( $value ),
+							array_filter( $data[ $field ], 'is_string' )
+						),
+						static fn ( string $value ): bool => '' !== $value
+					)
+				);
 			}
 		}
 

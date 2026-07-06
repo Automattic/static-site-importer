@@ -2102,11 +2102,12 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * keep no signal and stay an unacceptable parity loss, which lets the existing
 	 * commerce dependency gate report the missing runtime.
 	 *
-	 * @param array<string,mixed> $report Import report (mutated in place).
-	 * @param array<string,mixed> $args   Import args.
+	 * @param array<string,mixed>  $report        Import report (mutated in place).
+	 * @param array<string,mixed>  $args          Import args.
+	 * @param array<string,string> $page_contents Materialized page post_content keyed by source filename, mutated in place.
 	 * @return array<string,mixed> The recorded product_finding_seeding report.
 	 */
-	public static function materialize_product_findings( array &$report, array $args = array() ): array {
+	public static function materialize_product_findings( array &$report, array $args = array(), array &$page_contents = array() ): array {
 		$adapter = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
 
 		$diagnostics = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
@@ -2163,29 +2164,220 @@ class Static_Site_Importer_Report_Diagnostics {
 			$seeding['validation_errors'] = $validation['errors'];
 		}
 
-		$seeded_slugs = array();
+		$seeded_products_by_slug = array();
 		foreach ( ( isset( $seeding['products'] ) && is_array( $seeding['products'] ) ? $seeding['products'] : array() ) as $product_row ) {
 			if ( ! is_array( $product_row ) ) {
 				continue;
 			}
 			if ( in_array( (string) ( $product_row['status'] ?? '' ), array( 'created', 'updated' ), true ) ) {
-				$seeded_slugs[ (string) ( $product_row['slug'] ?? '' ) ] = true;
+				$slug = (string) ( $product_row['slug'] ?? '' );
+				if ( '' !== $slug ) {
+					$seeded_products_by_slug[ $slug ] = $product_row;
+				}
 			}
 		}
+
+		$seeding['shortcode_grafted_count'] = 0;
 
 		foreach ( $indexes as $index ) {
 			$slugs = $finding_slugs[ $index ] ?? array();
 			foreach ( $slugs as $slug ) {
-				if ( isset( $seeded_slugs[ $slug ] ) ) {
+				if ( isset( $seeded_products_by_slug[ $slug ] ) ) {
 					++$seeding['mapped_count'];
 					$report['diagnostics'][ $index ] = self::mark_product_finding_mapped( $report['diagnostics'][ $index ], $seeding['provider'] );
 					break;
+				}
+			}
+
+			if ( ! empty( $page_contents ) ) {
+				$graft = self::graft_product_add_to_cart_shortcodes_into_page_contents( $report['diagnostics'][ $index ], $seeded_products_by_slug, $page_contents );
+				$report['diagnostics'][ $index ] = $graft['finding'];
+				if ( $graft['grafted'] ) {
+					++$seeding['shortcode_grafted_count'];
+				}
+				if ( is_array( $graft['diagnostic'] ) ) {
+					$report['diagnostics'][] = $graft['diagnostic'];
 				}
 			}
 		}
 
 		$report['product_finding_seeding'] = $seeding;
 		return $seeding;
+	}
+
+	/**
+	 * Replace plain static product-card add-to-cart buttons with Woo shortcode blocks.
+	 *
+	 * This prototype only rewrites serialized Gutenberg button fallbacks. Raw HTML
+	 * runtime controls are left in place so SSI never embeds block markup inside an
+	 * arbitrary HTML island or fakes cart state.
+	 *
+	 * @param array<string,mixed>        $finding                 Product-grid finding.
+	 * @param array<string,array<mixed>> $seeded_products_by_slug Seeded Woo rows keyed by slug.
+	 * @param array<string,string>       $page_contents           Materialized page post_content keyed by source filename.
+	 * @return array{grafted:bool,finding:array<string,mixed>,diagnostic:?array<string,mixed>}
+	 */
+	private static function graft_product_add_to_cart_shortcodes_into_page_contents( array $finding, array $seeded_products_by_slug, array &$page_contents ): array {
+		$source_path = self::first_scalar( $finding, array( 'graft_source_path', 'source_path', 'source' ) );
+		$selector    = isset( $finding['selector'] ) && is_scalar( $finding['selector'] ) ? (string) $finding['selector'] : '';
+
+		$unanchorable = static function ( string $reason ) use ( &$finding, $source_path, $selector ): array {
+			$finding['product_shortcode_grafted'] = false;
+			return array(
+				'grafted'    => false,
+				'finding'    => $finding,
+				'diagnostic' => array(
+					'type'            => 'product_add_to_cart_graft_unanchorable',
+					'reason'          => $reason,
+					'source_path'     => $source_path,
+					'selector'        => $selector,
+					'diagnostic_code' => 'html_product_add_to_cart_graft_unanchorable',
+					'loss_class'      => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+					'message'         => 'Woo add-to-cart shortcode markup could not be safely anchored to plain serialized button controls; the static controls were left in place.',
+				),
+			);
+		};
+
+		$products = self::shortcode_graft_products( $finding, $seeded_products_by_slug );
+		if ( empty( $products ) ) {
+			return $unanchorable( 'no_safe_plain_add_to_cart_products' );
+		}
+
+		$readable = isset( $finding['readable_blocks'] ) && is_array( $finding['readable_blocks'] ) ? $finding['readable_blocks'] : array();
+		$region   = self::serialize_readable_form_blocks( $readable );
+		if ( '' === $region ) {
+			return $unanchorable( 'no_readable_fallback_blocks' );
+		}
+
+		$key = self::form_fallback_page_content_key( $source_path, $region, $page_contents );
+		if ( null === $key ) {
+			return $unanchorable( 'fallback_region_not_found_in_post_content' );
+		}
+
+		$shortcoded_region = self::replace_plain_cart_button_blocks_with_shortcodes( $region, $products );
+		if ( null === $shortcoded_region ) {
+			return $unanchorable( 'plain_serialized_button_controls_not_matched' );
+		}
+
+		$content  = (string) ( $page_contents[ $key ] ?? '' );
+		$position = strpos( $content, $region );
+		if ( false === $position ) {
+			return $unanchorable( 'fallback_region_not_found_in_post_content' );
+		}
+
+		$page_contents[ $key ]                    = substr( $content, 0, $position ) . $shortcoded_region . substr( $content, $position + strlen( $region ) );
+		$finding['product_shortcode_grafted']     = true;
+		$finding['grafted_post_content_key']      = $key;
+		$finding['grafted_add_to_cart_shortcode'] = true;
+
+		return array(
+			'grafted'    => true,
+			'finding'    => $finding,
+			'diagnostic' => null,
+		);
+	}
+
+	/**
+	 * Resolve products eligible for plain add-to-cart shortcode grafting.
+	 *
+	 * @param array<string,mixed>        $finding                 Product-grid finding.
+	 * @param array<string,array<mixed>> $seeded_products_by_slug Seeded Woo rows keyed by slug.
+	 * @return array<int,array{id:int,slug:string}>
+	 */
+	private static function shortcode_graft_products( array $finding, array $seeded_products_by_slug ): array {
+		$products = isset( $finding['products'] ) && is_array( $finding['products'] ) ? $finding['products'] : array();
+		$eligible = array();
+		foreach ( $products as $product ) {
+			if ( ! is_array( $product ) || ! self::is_plain_add_to_cart_product( $product ) ) {
+				return array();
+			}
+
+			$row  = self::product_finding_manifest_row( $product, '' );
+			$slug = is_array( $row ) ? (string) ( $row['slug'] ?? '' ) : '';
+			$id   = isset( $seeded_products_by_slug[ $slug ]['id'] ) ? (int) $seeded_products_by_slug[ $slug ]['id'] : 0;
+			if ( '' === $slug || $id <= 0 ) {
+				return array();
+			}
+
+			$eligible[] = array(
+				'id'   => $id,
+				'slug' => $slug,
+			);
+		}
+
+		return $eligible;
+	}
+
+	/**
+	 * Determine whether a detected product card has only a plain add-to-cart action.
+	 *
+	 * @param array<string,mixed> $product Detected product data.
+	 * @return bool
+	 */
+	private static function is_plain_add_to_cart_product( array $product ): bool {
+		if ( true !== ( $product['has_cart_control'] ?? false ) ) {
+			return false;
+		}
+
+		foreach ( array( 'has_quantity_control', 'has_option_control', 'has_variant_control', 'has_custom_state', 'requires_options' ) as $flag ) {
+			if ( true === ( $product[ $flag ] ?? false ) ) {
+				return false;
+			}
+		}
+
+		foreach ( array( 'quantity', 'options', 'variants', 'attributes', 'custom_state', 'form_controls' ) as $field ) {
+			if ( ! empty( $product[ $field ] ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Replace one serialized core/buttons add-to-cart control per product.
+	 *
+	 * @param string                    $region   Serialized fallback block region.
+	 * @param array<int,array{id:int}>  $products Eligible seeded products in card order.
+	 * @return string|null
+	 */
+	private static function replace_plain_cart_button_blocks_with_shortcodes( string $region, array $products ): ?string {
+		$pattern = '/<!--\s+wp:buttons\b.*?-->(?:(?!<!--\s+\/wp:buttons\s+-->).)*<!--\s+\/wp:buttons\s+-->/is';
+		$matches = array();
+		preg_match_all( $pattern, $region, $matches, PREG_OFFSET_CAPTURE );
+
+		$cart_controls = array_values(
+			array_filter(
+				$matches[0] ?? array(),
+				static fn( array $match ): bool => 1 === preg_match( '/\b(?:add\s+to\s+cart|buy\s+now|purchase|order\s+now)\b/i', wp_strip_all_tags( (string) $match[0] ) )
+			)
+		);
+
+		if ( count( $cart_controls ) !== count( $products ) ) {
+			return null;
+		}
+
+		$rewritten = '';
+		$cursor    = 0;
+		foreach ( $cart_controls as $index => $match ) {
+			$block    = (string) $match[0];
+			$position = (int) $match[1];
+			$rewritten .= substr( $region, $cursor, $position - $cursor );
+			$rewritten .= self::add_to_cart_shortcode_block( (int) $products[ $index ]['id'] );
+			$cursor     = $position + strlen( $block );
+		}
+
+		return $rewritten . substr( $region, $cursor );
+	}
+
+	/**
+	 * Build a Woo-owned add-to-cart shortcode block for a seeded product.
+	 *
+	 * @param int $product_id WooCommerce product post ID.
+	 * @return string
+	 */
+	private static function add_to_cart_shortcode_block( int $product_id ): string {
+		return '<!-- wp:shortcode -->[add_to_cart id="' . $product_id . '"]<!-- /wp:shortcode -->';
 	}
 
 	/**
