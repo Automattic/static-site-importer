@@ -64,6 +64,7 @@ import {
   normalizeFixtureMatrixResult,
   normalizeLossClass,
   stageFixtureSource,
+  buildVisualParityEvidenceReport,
   VISUAL_PARITY_DETERMINISTIC_CSS,
   VISUAL_PARITY_MISMATCH_KIND,
   visualParityCompareStep,
@@ -4900,6 +4901,78 @@ test('WP Codebox recipe browserEvidence visual refs are preserved with fixture i
   assert.equal(finding.visual_selector_diagnostics[0].selector, '.hero');
   assert.equal(finding.visual_layout_diagnostics[0].message, 'hero moved down');
   assert.equal(finding.visual_capture_diagnostics[0].phase, 'candidate');
+});
+
+test('visual parity evidence report summarizes staged output evidence and layout risks', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-evidence-report-'));
+  const fixtureRootDirectory = path.join(outputDirectory, 'fixtures');
+  const fixtureDirectory = path.join(fixtureRootDirectory, 'simple-site');
+  mkdirSync(fixtureDirectory, { recursive: true });
+  writeFileSync(path.join(fixtureDirectory, 'index.html'), '<h1>Simple SSI Fixture</h1>');
+  writeFileSync(path.join(fixtureDirectory, 'fixture.json'), JSON.stringify({ class: 'marketing/static' }));
+
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRootDirectory, id: 'visual-evidence-report-test' });
+  const artifactDirectory = path.join(outputDirectory, 'simple-site');
+  mkdirSync(path.join(artifactDirectory, 'source'), { recursive: true });
+  mkdirSync(path.join(artifactDirectory, 'files', 'browser'), { recursive: true });
+  writeFileSync(path.join(artifactDirectory, 'artifact.json'), JSON.stringify({ schema: 'blocks-engine/php-transformer/site-artifact/v1' }));
+  writeFileSync(path.join(artifactDirectory, 'source', 'index.html'), '<h1>Simple SSI Fixture</h1>');
+  writeFileSync(path.join(artifactDirectory, 'files', 'browser', 'snapshot.html'), '<main class="wp-site-blocks"><h1>Simple SSI Fixture</h1></main>');
+
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        status: 'failed',
+        missing_assets: [{ kind: 'missing_asset', path: 'images/hero.png', message: 'Missing imported asset.' }],
+        block_composition: { block_total: 5, native_block_count: 4, core_html_block_count: 1 },
+        visual_parity_artifacts: {
+          metrics: { mismatch_pixels: 0, total_pixels: 1000, mismatch_ratio: 0 },
+          capture_diagnostics: [{ phase: 'candidate', viewport: { width: 1280, height: 720 }, message: 'desktop viewport captured' }],
+          artifacts: {
+            source_screenshot: { status: 'captured', ref: { path: 'files/browser/visual-compare/source.png', kind: 'browser-visual-source-screenshot' } },
+            imported_screenshot: { status: 'captured', ref: { path: 'files/browser/visual-compare/candidate.png', kind: 'browser-visual-candidate-screenshot' } },
+          },
+        },
+      },
+    ],
+  });
+
+  const report = buildVisualParityEvidenceReport({ outputDirectory, matrix, result });
+  const fixture = report.fixtures[0];
+
+  assert.equal(report.schema, 'static-site-importer/visual-parity-evidence-report/v1');
+  assert.equal(report.summary.fixture_count, 1);
+  assert.equal(report.summary.generated_artifact_fixture_count, 1);
+  assert.equal(report.summary.staged_source_fixture_count, 1);
+  assert.equal(report.summary.imported_snapshot_fixture_count, 1);
+  assert.equal(report.summary.visual_compare_fixture_count, 1);
+  assert.equal(report.summary.screenshot_fixture_count, 1);
+  assert.equal(report.summary.viewport_evidence_fixture_count, 1);
+  assert.equal(report.summary.mobile_viewport_fixture_count, 0);
+  assert.equal(report.summary.missing_asset_fixture_count, 1);
+  assert.equal(report.summary.core_html_fixture_count, 1);
+  assert.equal(fixture.asset_resolution.missing_asset_count, 1);
+  assert.equal(fixture.block_theme.native_conversion_rate, 0.8);
+  assert.equal(fixture.block_theme.core_html_block_count, 1);
+  assert.ok(fixture.risk.reasons.includes('missing mobile viewport evidence'));
+  assert.ok(fixture.risk.reasons.includes('1 missing asset signal(s)'));
+  assert.ok(fixture.risk.reasons.includes('1 core/html block(s)'));
+});
+
+test('fixture matrix result artifacts include visual parity evidence JSON and markdown reports', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-evidence-artifacts-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-evidence-artifact-test' });
+  const written = writeFixtureMatrixArtifacts({ outputDirectory, matrix });
+  const reportPath = path.join(outputDirectory, 'visual-parity-evidence-report.json');
+  const markdownPath = path.join(outputDirectory, 'visual-parity-evidence-report.md');
+  const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+
+  assert.equal(report.schema, 'static-site-importer/visual-parity-evidence-report/v1');
+  assert.ok(existsSync(markdownPath));
+  assert.ok(written.artifact_refs.some((ref) => ref.artifact_id === 'visual-parity-evidence-report'));
+  assert.ok(written.artifact_refs.some((ref) => ref.artifact_id === 'visual-parity-evidence-report-markdown'));
 });
 
 // #554: at lane scale (~30+ fixtures) the aggregate result used to retain each
