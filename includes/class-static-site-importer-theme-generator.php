@@ -182,8 +182,17 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$has_header_part      = isset( $template_part_writes[ $theme_dir . '/parts/header.html' ] );
 		$has_footer_part      = isset( $template_part_writes[ $theme_dir . '/parts/footer.html' ] );
-
-		$page_artifacts = Static_Site_Importer_Page_Materializer::page_artifacts( $document_pages, $theme_slug, $materialized['assets'], $permalinks, $template_part_writes );
+		$page_artifacts       = Static_Site_Importer_Page_Materializer::page_artifacts(
+			$document_pages,
+			$theme_slug,
+			$materialized['assets'],
+			$permalinks,
+			$template_part_writes,
+			array(
+				'strip_template_header' => $has_header_part,
+				'strip_template_footer' => $has_footer_part,
+			)
+		);
 		foreach ( $page_artifacts['diagnostics'] as $diagnostic ) {
 			self::$conversion_report['diagnostics'][] = $diagnostic;
 		}

@@ -100,25 +100,29 @@ class Static_Site_Importer_Page_Materializer {
 	/**
 	 * Build page-specific template and pattern artifacts.
 	 *
-	 * @param array<string, Static_Site_Importer_Source_Page> $pages      Pages.
-	 * @param string                                          $theme_slug Theme slug.
+	 * @param array<string, Static_Site_Importer_Source_Page> $pages               Pages.
+	 * @param string                                          $theme_slug          Theme slug.
 	 * @param array<string,array<string,mixed>>                 $assets              Materialized assets keyed by source path.
 	 * @param array<string,string>                              $permalinks          Imported page permalinks keyed by source path.
 	 * @param array<string,string>                              $template_part_writes Generated header/footer template part writes keyed by path.
+	 * @param array<string,bool>                                $options             Page materialization options.
 	 * @return array{patterns:array<string,string>,files:array<string,string>,asset_writes:array<string,string>,contents:array<string,string>,diagnostics:array<int,array<string,mixed>>}
 	 */
-	public static function page_artifacts( array $pages, string $theme_slug, array $assets = array(), array $permalinks = array(), array $template_part_writes = array() ): array {
+	public static function page_artifacts( array $pages, string $theme_slug, array $assets = array(), array $permalinks = array(), array $template_part_writes = array(), array $options = array() ): array {
 		$patterns     = array();
 		$files        = array();
 		$contents     = array();
 		$asset_writes = array();
 		$diagnostics  = array();
+		$strip_header = ! empty( $options['strip_template_header'] );
+		$strip_footer = ! empty( $options['strip_template_footer'] );
 
 		foreach ( $pages as $filename => $page ) {
 			$slug         = self::page_slug( $filename, $page );
 			$pattern_slug = sanitize_key( $theme_slug ) . '/page-' . $slug;
 			$content      = self::rewrite_materialized_asset_references( self::source_page_content_blocks( $page, $diagnostics ), $assets, $page->source_key(), $permalinks );
 			$content      = self::dedupe_template_part_shell_blocks( $content, $template_part_writes, $page->source_key(), $diagnostics );
+			$content      = self::strip_template_chrome_blocks( $content, $strip_header, $strip_footer, $page->source_key(), $diagnostics );
 			$content      = self::promote_inline_svg_html_blocks( $content, $theme_slug, $slug, $asset_writes, $diagnostics );
 			$content      = self::promote_navigation_list_blocks( $content, $diagnostics );
 
@@ -310,6 +314,137 @@ class Static_Site_Importer_Page_Materializer {
 		$markup = preg_replace( '/\s+/', ' ', $markup ) ?? $markup;
 
 		return trim( $markup );
+	}
+
+	/**
+	 * Remove page-level chrome blocks when the generated theme owns template parts.
+	 *
+	 * @param string                       $markup       Serialized block markup.
+	 * @param bool                         $strip_header Whether to strip a leading header block.
+	 * @param bool                         $strip_footer Whether to strip a trailing footer block.
+	 * @param string                       $source_path  Source path for diagnostics.
+	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics, passed by reference.
+	 * @return string Updated serialized block markup.
+	 */
+	private static function strip_template_chrome_blocks( string $markup, bool $strip_header, bool $strip_footer, string $source_path, array &$diagnostics ): string {
+		if ( '' === trim( $markup ) || ( ! $strip_header && ! $strip_footer ) || ! function_exists( 'parse_blocks' ) || ! function_exists( 'serialize_blocks' ) ) {
+			return $markup;
+		}
+
+		$blocks  = parse_blocks( $markup );
+		$changed = false;
+
+		if ( $strip_header ) {
+			$index = self::first_meaningful_block_index( $blocks );
+			if ( null !== $index && self::is_template_chrome_block( $blocks[ $index ], 'header' ) ) {
+				array_splice( $blocks, $index, 1 );
+				$changed       = true;
+				$diagnostics[] = array(
+					'type'        => 'template_chrome_deduplicated',
+					'source'      => 'static-site-importer/page-materializer',
+					'source_path' => $source_path,
+					'part'        => 'header',
+					'message'     => 'A top-level page header block was removed because the generated theme includes a header template part.',
+				);
+			}
+		}
+
+		if ( $strip_footer ) {
+			$index = self::last_meaningful_block_index( $blocks );
+			if ( null !== $index && self::is_template_chrome_block( $blocks[ $index ], 'footer' ) ) {
+				array_splice( $blocks, $index, 1 );
+				$changed       = true;
+				$diagnostics[] = array(
+					'type'        => 'template_chrome_deduplicated',
+					'source'      => 'static-site-importer/page-materializer',
+					'source_path' => $source_path,
+					'part'        => 'footer',
+					'message'     => 'A top-level page footer block was removed because the generated theme includes a footer template part.',
+				);
+			}
+		}
+
+		return $changed ? trim( serialize_blocks( $blocks ) ) : $markup;
+	}
+
+	/**
+	 * Return the first top-level block carrying meaningful content.
+	 *
+	 * @param array<int,mixed> $blocks Parsed blocks.
+	 * @return int|null
+	 */
+	private static function first_meaningful_block_index( array $blocks ): ?int {
+		foreach ( $blocks as $index => $block ) {
+			if ( self::is_meaningful_parsed_block( $block ) ) {
+				return (int) $index;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Return the last top-level block carrying meaningful content.
+	 *
+	 * @param array<int,mixed> $blocks Parsed blocks.
+	 * @return int|null
+	 */
+	private static function last_meaningful_block_index( array $blocks ): ?int {
+		for ( $index = count( $blocks ) - 1; $index >= 0; --$index ) {
+			if ( self::is_meaningful_parsed_block( $blocks[ $index ] ) ) {
+				return $index;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Determine whether a parsed block contains actual output.
+	 *
+	 * @param mixed $block Parsed block.
+	 * @return bool
+	 */
+	private static function is_meaningful_parsed_block( $block ): bool {
+		if ( ! is_array( $block ) ) {
+			return false;
+		}
+
+		$name    = isset( $block['blockName'] ) && is_string( $block['blockName'] ) ? $block['blockName'] : '';
+		$content = isset( $block['innerHTML'] ) && is_scalar( $block['innerHTML'] ) ? trim( (string) $block['innerHTML'] ) : '';
+		$inner   = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
+
+		return '' !== $name || '' !== $content || ! empty( $inner );
+	}
+
+	/**
+	 * Determine whether a top-level parsed block represents a template chrome landmark.
+	 *
+	 * @param mixed  $block Parsed block.
+	 * @param string $part  Template part slug: header or footer.
+	 * @return bool
+	 */
+	private static function is_template_chrome_block( $block, string $part ): bool {
+		if ( ! is_array( $block ) || ! in_array( $part, array( 'header', 'footer' ), true ) ) {
+			return false;
+		}
+
+		$name  = isset( $block['blockName'] ) && is_string( $block['blockName'] ) ? $block['blockName'] : '';
+		$attrs = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array();
+		$tag   = isset( $attrs['tagName'] ) && is_scalar( $attrs['tagName'] ) ? strtolower( (string) $attrs['tagName'] ) : '';
+		$class = isset( $attrs['className'] ) && is_scalar( $attrs['className'] ) ? strtolower( (string) $attrs['className'] ) : '';
+
+		if ( $part === $tag ) {
+			return true;
+		}
+
+		if ( 'header' === $part && 'core/navigation' === $name ) {
+			return true;
+		}
+
+		$pattern = 'header' === $part ? '/(^|[-_\s])(?:site-header|header|navbar|navigation|masthead)([-_\s]|$)/' : '/(^|[-_\s])(?:site-footer|footer)([-_\s]|$)/';
+
+		return '' !== $class && (bool) preg_match( $pattern, $class );
 	}
 
 	/**
