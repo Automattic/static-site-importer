@@ -2418,6 +2418,84 @@ test('CLI --no-visual-parity disables visual steps and records a safe WP Codebox
   assert.match(summary.replay.command, /wp-codebox recipe-run --recipe .* --artifacts .* --json/);
 });
 
+test('CLI surface coverage reaches bench recipe browser evidence steps', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-surface-coverage-cli-'));
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  const cliFixtureRoot = path.join(root, 'fixtures');
+  const fixtureDirectory = path.join(cliFixtureRoot, 'artist');
+  const outputDirectory = path.join(root, 'artifacts');
+  mkdirSync(staticSiteImporter, { recursive: true });
+  mkdirSync(fixtureDirectory, { recursive: true });
+  writeFileSync(path.join(fixtureDirectory, 'index.html'), '<h1>Home</h1>');
+  writeFileSync(path.join(fixtureDirectory, 'contact.html'), '<h1>Contact</h1>');
+  writeFileSync(path.join(fixtureDirectory, 'merch.html'), '<h1>Merch</h1>');
+
+  const result = spawnSync(process.execPath, [
+    path.join(packageRoot, 'bench', 'static-site-fixture-matrix.bench.mjs'),
+    '--fixture-root', cliFixtureRoot,
+    '--output-directory', outputDirectory,
+    '--static-site-importer-path', staticSiteImporter,
+    '--max-depth', '1',
+    '--surface-coverage', '2',
+  ], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOMEBOY_WP_CODEBOX_RECIPE_HELPER: '',
+      HOMEBOY_WP_CODEBOX_BIN: '',
+      SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN: '',
+      WP_CODEBOX_BIN: '',
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const recipe = JSON.parse(readFileSync(path.join(outputDirectory, 'wp-codebox-static-site-fixture-matrix-recipe.json'), 'utf8'));
+  const editorOpenSteps = recipe.workflow.steps.filter((step) => step.command === 'wordpress.editor-open');
+  const visualSteps = recipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare');
+  assert.equal(editorOpenSteps.length, 3);
+  assert.equal(visualSteps.length, 3);
+  assert.ok(editorOpenSteps[1].args.includes('url=/contact/'));
+  assert.ok(editorOpenSteps[2].args.includes('url=/merch/'));
+  assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
+});
+
+test('runFixtureMatrix surface coverage reaches executed batch recipes', async () => {
+  const snapshot = snapshotConcurrencyEnv();
+  const workspace = setupConcurrencyWorkspace('ssi-surface-coverage-batch-', 0);
+  const fixtureDirectory = path.join(workspace.fixtureRoot, 'artist');
+  mkdirSync(fixtureDirectory, { recursive: true });
+  writeFileSync(path.join(fixtureDirectory, 'index.html'), '<h1>Home</h1>');
+  writeFileSync(path.join(fixtureDirectory, 'contact.html'), '<h1>Contact</h1>');
+  writeFileSync(path.join(fixtureDirectory, 'merch.html'), '<h1>Merch</h1>');
+  process.env.HOMEBOY_WP_CODEBOX_RECIPE_HELPER = workspace.helperPath;
+
+  try {
+    const { summary, runtimeError } = await runFixtureMatrix({
+      id: 'surface-batch-matrix',
+      fixtureRoot: workspace.fixtureRoot,
+      outputDirectory: workspace.outputDirectory,
+      staticSiteImporterPath: workspace.staticSiteImporter,
+      run: true,
+      batchSize: 1,
+      concurrency: 1,
+      surfaceCoverage: 2,
+    });
+
+    assert.equal(runtimeError, null);
+    const batchRecipe = JSON.parse(readFileSync(summary.runtime.batches[0].recipe_file, 'utf8'));
+    const editorOpenSteps = batchRecipe.workflow.steps.filter((step) => step.command === 'wordpress.editor-open');
+    const visualSteps = batchRecipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare');
+    assert.equal(editorOpenSteps.length, 3);
+    assert.equal(visualSteps.length, 3);
+    assert.ok(editorOpenSteps[1].args.includes('url=/contact/'));
+    assert.ok(editorOpenSteps[2].args.includes('url=/merch/'));
+    assert.equal(visualCompareMatrixComparison(visualSteps[1]).candidateUrl, '/contact/');
+    assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
+  } finally {
+    restoreConcurrencyEnv(snapshot);
+  }
+});
+
 function visualCompareMatrixComparison(step) {
   const matrixArg = step.args.find((arg) => typeof arg === 'string' && arg.startsWith('matrix-json='));
   assert.ok(matrixArg, 'expected wordpress.visual-compare to use matrix-json');

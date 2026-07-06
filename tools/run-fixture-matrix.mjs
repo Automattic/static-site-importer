@@ -98,6 +98,8 @@ export function buildFixtureMatrixRunPlan(input) {
     ...(options.concurrency ? { SSI_FIXTURE_MATRIX_CONCURRENCY: String(options.concurrency) } : {}),
     ...(options.wordpressVersion ? { SSI_FIXTURE_MATRIX_WORDPRESS_VERSION: options.wordpressVersion } : {}),
     ...(options.wpCodeboxBin ? { SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN: options.wpCodeboxBin } : {}),
+    ...(options.surfaceCoverage !== undefined ? { SSI_FIXTURE_MATRIX_SURFACE_COVERAGE: String(options.surfaceCoverage) } : {}),
+    ...(options.maxExtraSurfaces ? { SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES: String(options.maxExtraSurfaces) } : {}),
     ...(options.editorValidation === false ? { SSI_FIXTURE_MATRIX_EDITOR_VALIDATION: '0' } : {}),
     ...(options.visualParity === false ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY: '0' } : {}),
     ...(options.visualParityGate === false ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE: '0' } : { SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE: '1' }),
