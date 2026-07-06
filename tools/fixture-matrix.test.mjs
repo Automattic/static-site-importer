@@ -3396,11 +3396,11 @@ test('recipe runs editor-validate-blocks against imported content after each imp
   // [activate, validate(simple-site), editor-open(simple-site), editor-validate-blocks(simple-site)]
   assert.equal(recipe.workflow.steps[1].command, 'wordpress.wp-cli');
   assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
-  const editorOpenStep = recipe.workflow.steps[2];
-  assert.equal(editorOpenStep.command, 'wordpress.editor-open');
-  assert.ok(editorOpenStep.args.includes('target=front-page'));
-  assert.ok(editorOpenStep.args.includes('capture=screenshot,editor-state,editor-validity'));
-  assert.ok(editorOpenStep.args.includes('artifact-prefix=files/browser/editor-open/simple-site'));
+  const recipeEditorOpenStep = recipe.workflow.steps[2];
+  assert.equal(recipeEditorOpenStep.command, 'wordpress.editor-open');
+  assert.ok(recipeEditorOpenStep.args.includes('target=front-page'));
+  assert.ok(recipeEditorOpenStep.args.includes('capture=screenshot,editor-state,editor-validity'));
+  assert.ok(recipeEditorOpenStep.args.includes('artifact-prefix=files/browser/editor-open/simple-site'));
   const editorStep = recipe.workflow.steps[3];
   assert.equal(editorStep.command, EDITOR_VALIDATE_BLOCKS_COMMAND);
   assert.equal(editorStep.command, 'wordpress.editor-validate-blocks');
