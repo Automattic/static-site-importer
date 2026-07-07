@@ -4883,7 +4883,12 @@ test('visual-compare artifacts collected from fixture files gate the matrix when
   mkdirSync(fixtureDirectory, { recursive: true });
   writeFileSync(path.join(fixtureDirectory, 'visual-diff.json'), JSON.stringify({
     schema: 'wp-codebox/visual-compare/v1',
-    comparison: { mismatchPixels: 700000, totalPixels: 2048000, dimensionMismatch: false },
+    comparison: {
+      mismatchPixels: 700000,
+      totalPixels: 2048000,
+      dimensionMismatch: false,
+      options: { viewport: { width: 1280, height: 720 }, fullPage: true },
+    },
     files: {
       sourceScreenshot: 'files/browser/visual-compare/source.png',
       candidateScreenshot: 'files/browser/visual-compare/candidate.png',
@@ -4901,6 +4906,8 @@ test('visual-compare artifacts collected from fixture files gate the matrix when
   assert.equal(gated.fixtures[0].visual_parity_artifacts.schema, 'static-site-importer/visual-parity-artifacts/v1');
   assert.equal(gated.fixtures[0].visual_parity_artifacts.artifacts.diff_screenshot.status, 'captured');
   assert.equal(gated.fixtures[0].visual_parity_artifacts.metrics.mismatch_pixels, 700000);
+  assert.deepEqual(gated.fixtures[0].visual_parity_artifacts.metrics.viewport, { width: 1280, height: 720 });
+  assert.equal(gated.fixtures[0].visual_parity_artifacts.metrics.full_page, true);
   assert.equal(finding.artifact_refs.find((ref) => ref.artifact_id === 'diff_screenshot')?.path, 'files/browser/visual-compare/diff.png');
   const exemplar = gated.summary.top_pattern_families.find((family) => family.kind === VISUAL_PARITY_MISMATCH_KIND)?.exemplars[0];
   assert.equal(exemplar.artifact_refs.find((ref) => ref.artifact_id === 'diff_screenshot')?.path, 'files/browser/visual-compare/diff.png');
@@ -4911,6 +4918,47 @@ test('visual-compare artifacts collected from fixture files gate the matrix when
   assert.ok(capturedFinding, 'expected the mismatch to still be captured');
   assert.equal(capturedFinding.loss_acceptance, 'acceptable');
   assert.equal(captured.fixtures[0].status, 'passed');
+});
+
+test('visual evidence report infers viewport evidence from visual-compare metrics', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-metric-viewport-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-metric-viewport-test' });
+  const fixtureDirectory = path.join(outputDirectory, 'simple-site');
+  mkdirSync(path.join(fixtureDirectory, 'source'), { recursive: true });
+  writeFileSync(path.join(fixtureDirectory, 'artifact.json'), '{}');
+  writeFileSync(path.join(fixtureDirectory, 'source', 'index.html'), '<h1>Simple SSI Fixture</h1>');
+
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        status: 'passed',
+        visual_parity_artifacts: {
+          metrics: {
+            mismatch_pixels: 0,
+            total_pixels: 1000,
+            mismatch_ratio: 0,
+            viewport: { width: 390, height: 844 },
+            full_page: true,
+          },
+          artifacts: {
+            imported_screenshot: { status: 'captured', ref: { path: 'files/browser/visual-compare/candidate-mobile.png', kind: 'browser-visual-candidate-screenshot' } },
+          },
+        },
+      },
+    ],
+  });
+
+  const report = buildVisualParityEvidenceReport({ outputDirectory, matrix, result });
+  const viewport = report.fixtures[0].evidence.viewports.rows[0];
+
+  assert.equal(report.summary.viewport_evidence_fixture_count, 1);
+  assert.equal(report.summary.mobile_viewport_fixture_count, 1);
+  assert.equal(viewport.phase, 'visual-compare');
+  assert.equal(viewport.width, 390);
+  assert.equal(viewport.height, 844);
+  assert.equal(report.fixtures[0].risk.reasons.includes('missing mobile viewport evidence'), false);
 });
 
 test('visual-compare PNGs are copied to the bench artifact root and registered', () => {
