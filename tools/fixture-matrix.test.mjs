@@ -239,6 +239,7 @@ test('gutenberg incompatibility registry separates provider-materializable forms
     matrix_id: 'provider-materializable-patterns',
     fixtures: [
       { fixture_id: 'provider-fixture' },
+      { fixture_id: 'provider-fixture-2' },
       { fixture_id: 'core-gap-fixture' },
     ],
     findings: [
@@ -264,6 +265,19 @@ test('gutenberg incompatibility registry separates provider-materializable forms
         source_snippet: '<button class="add-to-cart">Add</button>',
       },
       {
+        fixture_id: 'provider-fixture-2',
+        kind: 'woocommerce_present',
+        source_path: 'commerce.dependencies.woocommerce',
+        reason: 'WooCommerce is active; commerce-bearing import will seed products.',
+      },
+      {
+        fixture_id: 'provider-fixture-2',
+        kind: 'core_html_block',
+        observed_block_name: 'core/html',
+        selector: 'button.add-to-cart',
+        source_snippet: '<button class="add-to-cart">Add</button>',
+      },
+      {
         fixture_id: 'core-gap-fixture',
         kind: 'core_html_block',
         observed_block_name: 'core/html',
@@ -278,9 +292,13 @@ test('gutenberg incompatibility registry separates provider-materializable forms
   const patterns = Object.fromEntries(registry.patterns.map((row) => [row.pattern_key, row]));
 
   assert.equal(patterns['static-form'].limitation_type, 'provider_materializable');
+  assert.equal(patterns['static-form'].classification, 'convertible');
   assert.equal(patterns['static-form'].provider_materialized_by.jetpack, 1);
   assert.equal(patterns['js-commerce-controls'].limitation_type, 'provider_materializable');
-  assert.equal(patterns['js-commerce-controls'].provider_materialized_by.woocommerce, 1);
+  assert.equal(patterns['js-commerce-controls'].classification, 'convertible');
+  assert.equal(patterns['js-commerce-controls'].provider_materialized_by.woocommerce, 2);
+  assert.equal(patterns['js-commerce-controls'].fixture_count, 2);
+  assert.equal(registry.summary.custom_block_candidate_count, 0);
   assert.deepEqual(providerDecision.provider_materializable_patterns, ['js-commerce-controls', 'static-form']);
   assert.deepEqual(providerDecision.gutenberg_gap_patterns, []);
   assert.deepEqual(coreGapDecision.gutenberg_gap_patterns, []);
@@ -302,6 +320,7 @@ test('gutenberg incompatibility registry separates provider-materializable forms
   const noProviderPatterns = Object.fromEntries(noProviderRegistry.patterns.map((row) => [row.pattern_key, row]));
 
   assert.equal(noProviderPatterns['static-form'].limitation_type, 'real_gutenberg_gap');
+  assert.equal(noProviderPatterns['static-form'].classification, 'convertible');
 });
 
 test('gutenberg incompatibility registry separates fixture decision axes', () => {
