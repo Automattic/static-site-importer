@@ -1,5 +1,8 @@
 {
   "auto_cleanup": false,
+  "capability_extensions": {
+    "deps": "nodejs"
+  },
   "changelog_target": "docs/CHANGELOG.md",
   "extensions": {
     "wordpress": {
