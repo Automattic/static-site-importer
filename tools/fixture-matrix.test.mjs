@@ -79,6 +79,13 @@ import { editorOpenStep } from '../lib/fixture-matrix/steps/editor-open-step.mjs
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fixtureRoot = path.join(packageRoot, 'tests', 'fixtures', 'fixture-matrix');
 
+test('Homeboy component links runtime and dependency extensions', () => {
+  const config = JSON.parse(readFileSync(path.join(packageRoot, 'homeboy.json'), 'utf8'));
+
+  assert.ok(config.extensions?.wordpress, 'WordPress extension is required for fixture runtime workloads');
+  assert.ok(config.extensions?.nodejs, 'Node.js extension is required for Lab dependency hydration');
+});
+
 test('discovers SSI fixtures and writes Blocks Engine site artifacts', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-matrix-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'test-matrix' });
