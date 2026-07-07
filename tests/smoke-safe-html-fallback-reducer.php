@@ -134,6 +134,27 @@ $assert( str_contains( $output, 'primary-nav' ), 'nav-class-preserved' );
 $assert( str_contains( $output, 'Search posts' ), 'search-placeholder-preserved' );
 $assert( str_contains( $output, '<form class="lead-form"><input name="email"></form>' ), 'unsupported-form-fallback-preserved' );
 
+$mixed_contact_html = '<div class="contact-content"><aside class="contact-sidebar"><div class="contact-block"><div class="label">Booking</div><h3>Book a Show</h3><p>Email <a href="mailto:booking@example.com" class="contact-email"><svg aria-hidden="true" viewBox="0 0 16 16"><path d="M1 1h14v14H1z"/></svg> booking@example.com</a></p></div></aside><div class="contact-form-wrap"><h2>Send a Message</h2><form class="contact-form"><label>Name<input name="name"></label><select name="topic"><option>Booking</option></select><textarea name="message"></textarea><button type="submit">Send</button></form></div></div>';
+$mixed_contact_input = '<!-- wp:html ' . wp_json_encode( array( 'content' => $mixed_contact_html ) ) . ' -->' . $mixed_contact_html . '<!-- /wp:html -->';
+$mixed_contact_output = $method->invoke( null, $mixed_contact_input );
+$mixed_contact_after  = $count_blocks( $mixed_contact_output );
+
+$assert( 1 === ( $count_blocks( $mixed_contact_input )['core/html'] ?? 0 ), 'mixed-contact-before-single-large-html' );
+$assert( 1 === ( $mixed_contact_after['core/html'] ?? 0 ), 'mixed-contact-after-single-bounded-form-html', print_r( $mixed_contact_after, true ) );
+$assert( 3 <= ( $mixed_contact_after['core/group'] ?? 0 ), 'mixed-contact-static-layout-groups-converted', print_r( $mixed_contact_after, true ) );
+$assert( in_array( 'core/heading', array_keys( $mixed_contact_after ), true ), 'mixed-contact-heading-converted' );
+$assert( str_contains( $mixed_contact_output, 'booking@example.com' ), 'mixed-contact-link-text-preserved' );
+$assert( str_contains( $mixed_contact_output, '<form class="contact-form">' ), 'mixed-contact-runtime-form-preserved' );
+
+$cart_control_html = '<article class="merch-card"><h3>EP Tee</h3><p>Washed black tee.</p><button class="qty-btn" data-dir="down" aria-label="Decrease quantity">-</button><span class="qty-display" aria-live="polite">1</span><button class="add-to-cart">Add</button></article>';
+$cart_control_input = '<!-- wp:html ' . wp_json_encode( array( 'content' => $cart_control_html ) ) . ' -->' . $cart_control_html . '<!-- /wp:html -->';
+$cart_control_output = $method->invoke( null, $cart_control_input );
+$cart_control_after  = $count_blocks( $cart_control_output );
+
+$assert( 3 === ( $cart_control_after['core/html'] ?? 0 ), 'cart-controls-remain-bounded-html-islands', print_r( $cart_control_after, true ) );
+$assert( 0 === ( $cart_control_after['core/button'] ?? 0 ), 'cart-controls-not-faked-as-core-buttons', print_r( $cart_control_after, true ) );
+$assert( str_contains( $cart_control_output, 'class="add-to-cart"' ), 'cart-add-control-preserved' );
+
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );

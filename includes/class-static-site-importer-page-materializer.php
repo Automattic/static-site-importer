@@ -1126,7 +1126,7 @@ class Static_Site_Importer_Page_Materializer {
 	 * @return string|null Serialized block markup, or null when unsupported.
 	 */
 	private static function safe_html_fragment_to_blocks( string $html ): ?string {
-		if ( preg_match( '/<\s*(?:script|style|iframe|canvas|svg|select|textarea)\b/i', $html ) ) {
+		if ( preg_match( '/<\s*(?:script|style|iframe|canvas)\b/i', $html ) ) {
 			return null;
 		}
 
@@ -1196,6 +1196,9 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		if ( in_array( $tag, array( 'a', 'button' ), true ) ) {
+			if ( 'button' === $tag && self::is_runtime_control_element( $node ) ) {
+				return null;
+			}
 			$content = self::safe_inline_html( $node );
 			if ( null === $content || '' === trim( wp_strip_all_tags( $content ) ) ) {
 				return null;
@@ -1285,7 +1288,7 @@ class Static_Site_Importer_Page_Materializer {
 			foreach ( iterator_to_array( $node->childNodes ) as $child ) {
 				$child_markup = self::safe_dom_node_to_block_markup( $child );
 				if ( null === $child_markup ) {
-					return null;
+					$child_markup = self::fallback_markup_for_dom_node( $child );
 				}
 				$children .= $child_markup;
 			}
@@ -1301,6 +1304,56 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Preserve an unsupported child as a bounded fallback inside an otherwise native container.
+	 *
+	 * @param DOMNode $node DOM node.
+	 * @return string
+	 */
+	private static function fallback_markup_for_dom_node( DOMNode $node ): string {
+		$html = self::dom_node_outer_html( $node );
+		return '' === trim( $html ) ? '' : self::serialized_block_markup( 'core/html', array( 'content' => $html ), $html );
+	}
+
+	/**
+	 * Serialize a DOM node back to its fragment HTML.
+	 *
+	 * @param DOMNode $node DOM node.
+	 * @return string
+	 */
+	private static function dom_node_outer_html( DOMNode $node ): string {
+		if ( $node instanceof DOMText ) {
+			return (string) $node->textContent;
+		}
+
+		if ( $node->ownerDocument instanceof DOMDocument ) {
+			return (string) $node->ownerDocument->saveHTML( $node );
+		}
+
+		return '';
+	}
+
+	/**
+	 * Detect source controls whose behavior depends on commerce/runtime JavaScript.
+	 *
+	 * @param DOMElement $element Element.
+	 * @return bool
+	 */
+	private static function is_runtime_control_element( DOMElement $element ): bool {
+		$class = strtolower( trim( preg_replace( '/\s+/', ' ', $element->getAttribute( 'class' ) ) ?? '' ) );
+		if ( '' !== $class && preg_match( '/(^|[-_\s])(?:add-to-cart|qty|quantity|cart)([-_\s]|$)/', $class ) ) {
+			return true;
+		}
+
+		foreach ( iterator_to_array( $element->attributes ) as $attribute ) {
+			if ( $attribute instanceof DOMAttr && preg_match( '/^data-(?:dir|cart|quantity|qty|product|product-id)$/', strtolower( $attribute->name ) ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -1367,6 +1420,9 @@ class Static_Site_Importer_Page_Materializer {
 			}
 
 			$tag = strtolower( $child->tagName );
+			if ( 'svg' === $tag && 'true' === strtolower( trim( $child->getAttribute( 'aria-hidden' ) ) ) ) {
+				continue;
+			}
 			if ( ! in_array( $tag, array( 'a', 'br', 'strong', 'b', 'em', 'i', 'span', 'small', 'mark', 'sub', 'sup' ), true ) || $child->hasAttribute( 'style' ) ) {
 				return null;
 			}
