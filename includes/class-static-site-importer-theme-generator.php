@@ -2972,14 +2972,16 @@ class Static_Site_Importer_Theme_Generator {
 			'plugins' => array(),
 		);
 
-		$intent  = self::commerce_dependency_intent();
-		$adapter = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
-		if ( ! $intent['present'] ) {
-			self::$conversion_report['plugin_materialization']['reason'] = 'no_plugin_backed_intent';
-			return;
+		$adapters = array();
+		if ( self::commerce_dependency_intent()['present'] ) {
+			$adapters[] = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
 		}
-		if ( ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? 'allow_missing_woocommerce' ) ] ) ) {
-			self::$conversion_report['plugin_materialization']['reason'] = 'woocommerce_requirement_waived';
+		if ( Static_Site_Importer_Report_Diagnostics::has_materializable_form_findings( self::$conversion_report ) ) {
+			$adapters[] = Static_Site_Importer_Entity_Materializer_Registry::form_adapter();
+		}
+
+		if ( empty( $adapters ) ) {
+			self::$conversion_report['plugin_materialization']['reason'] = 'no_plugin_backed_intent';
 			return;
 		}
 		if ( array_key_exists( 'materialize_dependencies', $args ) && false === (bool) $args['materialize_dependencies'] ) {
@@ -2987,7 +2989,20 @@ class Static_Site_Importer_Theme_Generator {
 			return;
 		}
 
-		$reports = Static_Site_Importer_Entity_Materializer_Registry::materialize_plugin_dependencies( $adapter );
+		$reports = array();
+		foreach ( $adapters as $adapter ) {
+			$waiver_arg = (string) ( $adapter['waiver_arg'] ?? '' );
+			if ( '' !== $waiver_arg && ! empty( $args[ $waiver_arg ] ) ) {
+				continue;
+			}
+			$reports = array_merge( $reports, Static_Site_Importer_Entity_Materializer_Registry::materialize_plugin_dependencies( $adapter ) );
+		}
+
+		if ( empty( $reports ) ) {
+			self::$conversion_report['plugin_materialization']['reason'] = 'plugin_requirements_waived';
+			return;
+		}
+
 		self::$conversion_report['plugin_materialization'] = array(
 			'status'  => self::plugin_materialization_status( $reports ),
 			'plugins' => $reports,

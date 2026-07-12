@@ -9,6 +9,18 @@
  */
 
 namespace {
+	if ( ! class_exists( 'WP_Block_Type_Registry' ) ) {
+		class WP_Block_Type_Registry {
+			public static function get_instance(): self {
+				return new self();
+			}
+
+			public function is_registered( string $name ): bool {
+				return in_array( $name, array( 'jetpack/contact-form', 'jetpack/field-text' ), true );
+			}
+		}
+	}
+
 	function blocks_engine_php_transformer_compile_artifact( array $artifact, array $options = array() ): array {
 		$GLOBALS['ssi_transformer_adapter_compile_calls'][] = array( $artifact, $options );
 		if ( isset( $GLOBALS['ssi_transformer_adapter_result_override'] ) && is_array( $GLOBALS['ssi_transformer_adapter_result_override'] ) ) {

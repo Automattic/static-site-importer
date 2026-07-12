@@ -44,6 +44,20 @@ namespace {
 		}
 	}
 
+	$GLOBALS['ssi_jetpack_form_blocks_available'] = true;
+
+	if ( ! class_exists( 'WP_Block_Type_Registry' ) ) {
+		class WP_Block_Type_Registry {
+			public static function get_instance(): self {
+				return new self();
+			}
+
+			public function is_registered( string $name ): bool {
+				return ! empty( $GLOBALS['ssi_jetpack_form_blocks_available'] ) && in_array( $name, array( 'jetpack/contact-form', 'jetpack/field-text' ), true );
+			}
+		}
+	}
+
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
@@ -122,6 +136,16 @@ namespace {
 	$assert( str_contains( $markup, 'hello@example.com' ), 'markup-mailto-recipient' );
 	$assert( str_contains( $markup, '"options":["Sales","Support"]' ), 'markup-select-options' );
 
+	// --- Provider blocks are never claimed without the provider runtime --------
+	$GLOBALS['ssi_jetpack_form_blocks_available'] = false;
+	$unavailable_seed                              = Static_Site_Importer_Form_Seeder::seed( $forms_manifest );
+	$unavailable_row                               = $unavailable_seed['forms'][0] ?? array();
+	$assert( 1 === ( $unavailable_seed['counts']['skipped'] ?? 0 ), 'seed-unavailable-provider-skips-form' );
+	$assert( 'provider_unavailable' === ( $unavailable_row['reason'] ?? '' ), 'seed-unavailable-provider-reason' );
+	$assert( false === ( $unavailable_row['runtime_mapped'] ?? true ), 'seed-unavailable-provider-not-runtime-mapped' );
+	$assert( empty( $unavailable_row['block_markup'] ), 'seed-unavailable-provider-emits-no-block-markup' );
+	$GLOBALS['ssi_jetpack_form_blocks_available'] = true;
+
 	// --- Native html_form_fallback row is enriched into a form finding -------
 	$enrich   = new ReflectionMethod( 'Static_Site_Importer_Report_Diagnostics', 'diagnostic_from_conversion_report_fallback' );
 	$enriched = $enrich->invoke(
@@ -144,6 +168,8 @@ namespace {
 	$assert( isset( $enriched['form']['action'] ) && 'mailto:hello@example.com' === $enriched['form']['action'], 'enrich-carries-form-metadata' );
 	$assert( isset( $enriched['controls'][0]['type'] ) && 'email' === $enriched['controls'][0]['type'], 'enrich-carries-controls' );
 	$assert( 'form' === ( $enriched['tag'] ?? '' ), 'enrich-tag-form' );
+	$assert( Static_Site_Importer_Report_Diagnostics::has_materializable_form_findings( array( 'diagnostics' => array( $enriched ) ) ), 'form-finding-requires-provider-dependency' );
+	$assert( ! Static_Site_Importer_Report_Diagnostics::has_materializable_form_findings( array( 'diagnostics' => array( array( 'diagnostic_code' => 'html_product_grid_fallback' ) ) ) ), 'non-form-finding-does-not-require-provider-dependency' );
 
 	// --- Gate loop: a mapped form finding receives the runtime-mapped signal --
 	$report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
