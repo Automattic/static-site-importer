@@ -409,8 +409,71 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     codeboxArtifactsDirectory,
     outputDirectory,
   });
+  const editorCanvas = materializeEditorCanvasArtifacts({
+    result: visualCompare.result,
+    codeboxArtifactsDirectory,
+    outputDirectory,
+  });
 
-  return { batchRun, batchResult: visualCompare.result, visualParityArtifacts: visualCompare.artifacts, error: batchError, childCommandFailure };
+  return { batchRun, batchResult: editorCanvas.result, visualParityArtifacts: visualCompare.artifacts, error: batchError, childCommandFailure };
+}
+
+export function materializeEditorCanvasArtifacts(input = {}) {
+  const result = input.result || {};
+  const outputDirectory = path.resolve(input.outputDirectory || input.output_directory || '');
+  const codeboxArtifactsDirectory = path.resolve(input.codeboxArtifactsDirectory || input.codebox_artifacts_directory || '');
+  return {
+    result: {
+      ...result,
+      fixtures: arrayValue(result.fixtures).map((fixture) => materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory })),
+    },
+  };
+}
+
+function materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory }) {
+  const fixtureId = fixture.fixture_id || fixture.fixtureId || '';
+  if (!fixtureId) {
+    return fixture;
+  }
+  const rewrites = new Map();
+  for (const ref of arrayValue(fixture.artifact_refs)) {
+    if (ref?.kind !== 'editor-canvas' || !ref.path) {
+      continue;
+    }
+    const sourcePath = resolveCodeboxArtifactPath(ref.path, codeboxArtifactsDirectory);
+    if (!sourcePath || !fs.existsSync(sourcePath)) {
+      continue;
+    }
+    const persistedPath = path.join(outputDirectory, 'editor-canvas', fixtureId, path.basename(ref.path));
+    fs.mkdirSync(path.dirname(persistedPath), { recursive: true });
+    fs.copyFileSync(sourcePath, persistedPath);
+    rewrites.set(ref.path, persistedPath);
+  }
+  if (rewrites.size === 0) {
+    return fixture;
+  }
+  return {
+    ...fixture,
+    artifact_refs: rewriteArtifactRefs(fixture.artifact_refs, rewrites),
+    editor_canvas: rewriteEditorEvidencePaths(fixture.editor_canvas, rewrites),
+    editor_open: rewriteEditorEvidencePaths(fixture.editor_open, rewrites),
+    surfaces: arrayValue(fixture.surfaces).map((surface) => ({
+      ...surface,
+      artifact_refs: rewriteArtifactRefs(surface.artifact_refs, rewrites),
+      editor_canvas: rewriteEditorEvidencePaths(surface.editor_canvas, rewrites),
+      editor_open: rewriteEditorEvidencePaths(surface.editor_open, rewrites),
+    })),
+  };
+}
+
+function rewriteEditorEvidencePaths(value, rewrites) {
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  const files = value.files && typeof value.files === 'object'
+    ? Object.fromEntries(Object.entries(value.files).map(([key, filePath]) => [key, rewrites.get(filePath) || filePath]))
+    : undefined;
+  return { ...value, ...(files ? { files } : {}), ...(value.screenshot ? { screenshot: rewrites.get(value.screenshot) || value.screenshot } : {}) };
 }
 
 export function materializeVisualCompareArtifacts(input = {}) {
