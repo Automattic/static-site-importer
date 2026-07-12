@@ -4,9 +4,10 @@
   "scripts": {
     "fig-intent-parity": "node tools/fig-intent-parity-report.mjs",
     "fig-fixture-e2e": "node tools/run-fig-fixture-e2e.mjs",
-    "test": "npm run test:fixture-matrix && npm run test:fig-fixture-e2e",
+    "test": "npm run test:fixture-matrix && npm run test:fig-fixture-e2e && npm run test:promote-solved-fixture",
     "test:fig-fixture-e2e": "node --test tools/run-fig-fixture-e2e.test.mjs",
     "test:fixture-matrix": "node --test tools/fixture-matrix.test.mjs",
+    "test:promote-solved-fixture": "node --test tools/promote-solved-fixture.test.mjs",
     "test:js-block-validation": "node tests/smoke-generated-theme-block-validation.cjs",
     "test:validation": "node tests/run-validation-harness.cjs"
   },

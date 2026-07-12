@@ -53,7 +53,7 @@
     "editor_canvas_status": { "enum": ["visible", "diverged", "not_captured", "provider_runtime_blocked"] },
     "editor_validity_status": { "enum": ["valid", "invalid_blocks", "not_validated"] },
     "native_editability_status": { "enum": ["native_editable", "editor_invalid", "custom_block_candidate", "runtime_island_preserved", "html_islands_or_transformer_gap", "unknown"] },
-    "acceptance_status": { "enum": ["solved_candidate", "visual_only_blocker", "editor_blocker", "native_editability_blocker", "provider_runtime_blocker", "evidence_gap"] },
+    "acceptance_status": { "enum": ["solved_candidate", "visual_only_blocker", "editor_blocker", "native_editability_blocker", "provider_runtime_blocker", "evidence_gap", "solved_regression"] },
     "top_pattern": {
       "type": "object",
       "required": ["pattern_key", "classification", "fixture_count", "finding_count", "impact_score"],
@@ -97,6 +97,7 @@
       "required": ["fixture_id", "frontend_visual_status", "editor_canvas_status", "block_validity_status", "editor_validity_status", "native_editability_status", "visible_html_island_count", "runtime_island_count", "visible_runtime_or_html_islands", "gutenberg_gap_patterns", "provider_materializable_patterns", "transformer_gap_patterns", "intentional_runtime_patterns", "visual_only_patterns", "solved_candidate", "acceptance_status", "acceptance_reason"],
       "properties": {
         "fixture_id": { "type": "string" },
+        "fixture_corpus": { "enum": ["active", "solved"] },
         "frontend_visual_status": { "$ref": "#/$defs/frontend_visual_status" },
         "editor_canvas_status": { "$ref": "#/$defs/editor_canvas_status" },
         "block_validity_status": { "$ref": "#/$defs/editor_validity_status" },

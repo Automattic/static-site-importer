@@ -305,6 +305,38 @@ human knows the fixture intent. Fixtures without reviewed metadata should remain
 unknown and appear in `manifest_coverage.unknown_fixture_ids`; do not backfill
 truth from directory names or HTML heuristics.
 
+## Solved Fixture Corpus and Promotion
+
+The Blocks Engine fixture corpus has a lifecycle:
+
+- `fixtures/candidates/` — untracked raw generation output (`.gitignore`d).
+- `fixtures/websites/` — active corpus under evaluation.
+- `fixtures/solved/` — permanent regression fixtures.
+
+When `--blocks-engine` is passed, the operator wrapper defaults `--fixture-root`
+to `<blocks-engine>/fixtures` and discovers fixtures from both `websites/` and
+`solved/`. A matrix created from a corpus parent includes `fixture_directories:
+["websites", "solved"]` so the split is visible in artifacts.
+
+Promote a fixture to `fixtures/solved/` only after a matrix run grades it
+`solved_candidate`:
+
+```bash
+node tools/promote-solved-fixture.mjs \
+  --fixture-id <id> \
+  --registry /path/to/run/gutenberg-incompatibility-registry.json \
+  --blocks-engine /path/to/blocks-engine
+```
+
+The tool refuses to move fixtures whose registry decision is not
+`solved_candidate` (no `--force`). It performs the move with `git mv` and prints
+the commit/push next steps.
+
+A solved fixture that regresses in a later matrix run is surfaced as
+`solved_regression` in the registry decision groups and counts. This is a hard
+failure: solved fixtures must stay solved, and a regression requires either a fix
+or a reviewed demotion back to `fixtures/websites/`.
+
 ## Generic Invocation
 
 The workload composes these generic surfaces:

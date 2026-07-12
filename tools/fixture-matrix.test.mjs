@@ -2170,7 +2170,8 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-canonical-matrix-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
   const blocksEngine = path.join(root, 'blocks-engine');
-  const canonicalFixtureRoot = path.join(blocksEngine, 'fixtures', 'websites');
+  const corpusRoot = path.join(blocksEngine, 'fixtures');
+  const canonicalFixtureRoot = path.join(corpusRoot, 'websites');
   mkdirSync(staticSiteImporter, { recursive: true });
   for (let index = 1; index <= CANONICAL_FIXTURE_COUNT; index += 1) {
     mkdirSync(path.join(canonicalFixtureRoot, `fixture-${String(index).padStart(2, '0')}`), { recursive: true });
@@ -2188,7 +2189,9 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
 
   assert.equal(plan.mode, 'development-override');
   assert.equal(plan.homeboy_bin, '/tmp/homeboy-latest');
-  assert.equal(plan.fixture_root, canonicalFixtureRoot);
+  assert.equal(plan.fixture_root, corpusRoot);
+  assert.equal(plan.active_fixture_count, CANONICAL_FIXTURE_COUNT);
+  assert.equal(plan.solved_fixture_count, 0);
   assert.equal(plan.fixture_count, CANONICAL_FIXTURE_COUNT);
   assert.equal(plan.fixture_count_matches_canonical, true);
   assert.equal(plan.namespace, 'ssi-matrix-dev-proof');
@@ -2206,7 +2209,7 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   assert.equal(benchStep.command, '/tmp/homeboy-latest');
   assert.ok(benchStep.args.includes('--runner'));
   assert.ok(benchStep.args.includes('homeboy-lab'));
-  assert.ok(benchStep.args.includes(`bench_env.SSI_FIXTURE_MATRIX_FIXTURE_ROOT=${canonicalFixtureRoot}`));
+  assert.ok(benchStep.args.includes(`bench_env.SSI_FIXTURE_MATRIX_FIXTURE_ROOT=${corpusRoot}`));
   assert.ok(benchStep.args.includes(`bench_env.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PATH=${staticSiteImporter}`));
   assert.ok(benchStep.args.includes(`bench_env.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH=${blocksEngine}`));
   assert.ok(benchStep.args.includes('bench_env.SSI_FIXTURE_MATRIX_RUN=1'));
@@ -5908,3 +5911,100 @@ function fillRect(image, x, y, width, height, rgba) {
 function writePng(filePath, image) {
   writeFileSync(filePath, PNG.sync.write(image));
 }
+
+test('fixture discovery includes both websites and solved corpus directories', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-corpus-discovery-'));
+  const websitesDir = path.join(root, 'websites', 'active-site');
+  const solvedDir = path.join(root, 'solved', 'solved-site');
+  mkdirSync(websitesDir, { recursive: true });
+  mkdirSync(solvedDir, { recursive: true });
+  writeFileSync(path.join(websitesDir, 'index.html'), '<h1>Active</h1>');
+  writeFileSync(path.join(websitesDir, 'fixture.json'), JSON.stringify({ fixture_class: 'marketing/static' }));
+  writeFileSync(path.join(solvedDir, 'index.html'), '<h1>Solved</h1>');
+  writeFileSync(path.join(solvedDir, 'fixture.json'), JSON.stringify({ fixture_class: 'docs/blog' }));
+
+  const matrix = createFixtureMatrix({ fixture_root: root, id: 'corpus-discovery-test' });
+
+  assert.equal(matrix.fixture_root, root);
+  assert.deepEqual(matrix.fixture_directories, ['websites', 'solved']);
+  assert.equal(matrix.count, 2);
+  const ids = matrix.fixtures.map((fixture) => fixture.id).sort();
+  assert.deepEqual(ids, ['active-site', 'solved-site']);
+  const solvedFixture = matrix.fixtures.find((fixture) => fixture.id === 'solved-site');
+  assert.equal(solvedFixture.fixture_corpus, 'solved');
+  assert.equal(solvedFixture.fixture_class, 'docs/blog');
+});
+
+test('fixture discovery falls back to single root when no websites subdirectory exists', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-single-root-discovery-'));
+  const fixtureDir = path.join(root, 'simple-site');
+  mkdirSync(fixtureDir, { recursive: true });
+  writeFileSync(path.join(fixtureDir, 'index.html'), '<h1>Simple</h1>');
+  writeFileSync(path.join(fixtureDir, 'fixture.json'), JSON.stringify({ fixture_class: 'marketing/static' }));
+
+  const matrix = createFixtureMatrix({ fixture_root: root, id: 'single-root-discovery-test' });
+
+  assert.equal(matrix.fixture_root, root);
+  assert.equal(matrix.fixture_directories, undefined);
+  assert.equal(matrix.count, 1);
+  assert.equal(matrix.fixtures[0].id, 'simple-site');
+  assert.equal(matrix.fixtures[0].fixture_corpus, 'active');
+});
+
+test('solved fixture that regresses is reported as solved_regression', () => {
+  const registry = buildGutenbergIncompatibilityRegistry({
+    matrix_id: 'solved-regression-test',
+    fixtures: [
+      {
+        fixture_id: 'cv',
+        fixture_corpus: 'solved',
+        fixture_path: '/fixtures/solved/cv',
+        status: 'passed',
+        artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/cv/screenshot.png' }],
+        visual_parity_artifacts: { comparison: { mismatch_ratio: 0.05 } },
+        block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
+        editor_quality: { editor_validated_block_total: 8, editor_invalid_count: 0, core_html_block_count: 0 },
+      },
+    ],
+    findings: [
+      {
+        fixture_id: 'cv',
+        kind: 'visual_parity_mismatch',
+        loss_class: 'visual_parity_mismatch',
+        loss_acceptance: 'unacceptable',
+        reason: 'Aligned visual parity mismatch: 5% exceed threshold.',
+      },
+    ],
+  });
+  const decision = registry.fixture_decisions.find((row) => row.fixture_id === 'cv');
+
+  assert.equal(decision.fixture_corpus, 'solved');
+  assert.equal(decision.acceptance_status, 'solved_regression');
+  assert.equal(decision.solved_candidate, false);
+  assert.equal(registry.summary.fixture_decision_counts.solved_regression, 1);
+  assert.deepEqual(registry.summary.fixture_decision_groups.solved_regression, ['cv']);
+});
+
+test('solved fixture that stays solved_candidate keeps solved_candidate status', () => {
+  const registry = buildGutenbergIncompatibilityRegistry({
+    matrix_id: 'solved-stays-solved-test',
+    fixtures: [
+      {
+        fixture_id: 'cv',
+        fixture_corpus: 'solved',
+        fixture_path: '/fixtures/solved/cv',
+        status: 'passed',
+        artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/cv/screenshot.png' }],
+        visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
+        block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
+        editor_quality: { editor_validated_block_total: 8, editor_invalid_count: 0, core_html_block_count: 0 },
+      },
+    ],
+    findings: [],
+  });
+  const decision = registry.fixture_decisions.find((row) => row.fixture_id === 'cv');
+
+  assert.equal(decision.fixture_corpus, 'solved');
+  assert.equal(decision.acceptance_status, 'solved_candidate');
+  assert.equal(decision.solved_candidate, true);
+});
