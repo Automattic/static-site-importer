@@ -19,6 +19,7 @@ import runFixtureMatrixBench, {
   fixtureMatrixBatchRunSummary,
   mapWithConcurrency,
   materializeVisualCompareArtifacts,
+  materializeEditorCanvasArtifacts,
   resolveBlocksEnginePhpTransformerPath,
   runFixtureMatrix,
 } from '../bench/static-site-fixture-matrix.bench.mjs';
@@ -1974,7 +1975,7 @@ test('fixture diagnostics drop empty rows and normalize kindless carriers with e
   assert.equal(result.summary.loss_classes.unsupported_loss, undefined);
 });
 
-test('fixture matrix intake preserves editor-open canvas evidence for acceptance decisions', () => {
+test('fixture matrix intake consumes native editor-open output as canvas evidence and attaches all emitted artifact refs', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-editor-canvas-intake-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'editor-canvas-intake-test' });
   const codeboxOutput = {
@@ -1987,16 +1988,12 @@ test('fixture matrix intake preserves editor-open canvas evidence for acceptance
       {
         command: 'wordpress.editor-open',
         status: 'success',
-        editor_canvas: {
-          selector_summary: {
-            groups: [{ name: 'block-list', selector: '.block-editor-block-list__layout', count: 4 }],
-          },
+        files: {
+          screenshot: 'files/browser/editor-screenshot.png',
+          editorState: 'files/browser/editor-state.json',
+          editorValidity: 'files/browser/editor-validity.json',
         },
-        editor_open: {
-          artifacts: {
-            screenshot: 'files/browser/editor-open/simple-site/screenshot.png',
-          },
-        },
+        summary: { editor: { blockCount: 4 } },
       },
     ],
   };
@@ -2005,9 +2002,69 @@ test('fixture matrix intake preserves editor-open canvas evidence for acceptance
   const registry = buildGutenbergIncompatibilityRegistry(result);
   const decision = registry.fixture_decisions.find((row) => row.fixture_id === 'simple-site');
 
-  assert.equal(result.fixtures[0].editor_canvas.selector_summary.groups[0].count, 4);
-  assert.equal(result.fixtures[0].editor_open.artifacts.screenshot, 'files/browser/editor-open/simple-site/screenshot.png');
+  assert.equal(result.fixtures[0].editor_canvas.screenshot, 'files/browser/editor-screenshot.png');
+  assert.equal(result.fixtures[0].editor_open.files.screenshot, 'files/browser/editor-screenshot.png');
+  assert.deepEqual(result.fixtures[0].artifact_refs.filter((ref) => ref.kind === 'editor-canvas').map((ref) => ref.path), [
+    'files/browser/editor-screenshot.png',
+    'files/browser/editor-state.json',
+    'files/browser/editor-validity.json',
+  ]);
   assert.equal(decision.editor_canvas_status, 'visible');
+});
+
+test('editor-open capture failure is distinct from editor evidence not requested', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'editor-capture-failure-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      diagnostics: [{ kind: 'recipe_step_failure', command: 'wordpress.editor-open', recipe_phase: 'editor-open', message: 'Editor navigation timed out.' }],
+    }],
+  });
+  const decision = buildGutenbergIncompatibilityRegistry(result).fixture_decisions[0];
+
+  assert.equal(decision.editor_canvas_status, 'capture_failed');
+  assert.equal(decision.acceptance_status, 'editor_capture_failed');
+});
+
+test('editor canvas artifacts are persisted in the matrix artifact root and refs are rewritten', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-editor-canvas-output-'));
+  const codeboxArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-editor-canvas-codebox-'));
+  const sourceDirectory = path.join(codeboxArtifactsDirectory, 'runtime-001', 'files', 'browser');
+  mkdirSync(sourceDirectory, { recursive: true });
+  writeFileSync(path.join(sourceDirectory, 'editor-screenshot.png'), 'screenshot');
+  writeFileSync(path.join(sourceDirectory, 'editor-state.json'), '{"blocks":3}');
+  const result = materializeEditorCanvasArtifacts({
+    outputDirectory,
+    codeboxArtifactsDirectory,
+    result: {
+      fixtures: [{
+        fixture_id: 'simple-site',
+        artifact_refs: [
+          { artifact_id: 'editor-open-screenshot', kind: 'editor-canvas', path: 'files/browser/editor-screenshot.png' },
+          { artifact_id: 'editor-open-editorState', kind: 'editor-canvas', path: 'files/browser/editor-state.json' },
+        ],
+        editor_canvas: { screenshot: 'files/browser/editor-screenshot.png' },
+        editor_open: { files: { screenshot: 'files/browser/editor-screenshot.png', editorState: 'files/browser/editor-state.json' } },
+        surfaces: [{
+          surface_id: 'front-page',
+          artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'editor-canvas', path: 'files/browser/editor-screenshot.png' }],
+          editor_open: { files: { screenshot: 'files/browser/editor-screenshot.png' } },
+        }],
+      }],
+    },
+  });
+  const fixture = result.result.fixtures[0];
+  const screenshotPath = path.join(outputDirectory, 'editor-canvas', 'simple-site', 'editor-screenshot.png');
+  const statePath = path.join(outputDirectory, 'editor-canvas', 'simple-site', 'editor-state.json');
+
+  assert.equal(existsSync(screenshotPath), true);
+  assert.equal(existsSync(statePath), true);
+  assert.equal(fixture.editor_canvas.screenshot, screenshotPath);
+  assert.equal(fixture.editor_open.files.editorState, statePath);
+  assert.equal(fixture.surfaces[0].editor_open.files.screenshot, screenshotPath);
+  assert.deepEqual(fixture.artifact_refs.map((ref) => ref.path), [screenshotPath, statePath]);
 });
 
 test('collects SSI finding packet source and observed context from fixture artifacts', () => {
