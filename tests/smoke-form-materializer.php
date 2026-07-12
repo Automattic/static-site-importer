@@ -254,29 +254,6 @@ namespace {
 	$assert( ! str_contains( (string) $duplicate_generated_contents['posts/page-home.post_content'], '<!-- wp:html' ), 'graft-generated-home-core-html-removed' );
 	$assert( ! str_contains( (string) $duplicate_generated_contents['posts/page-contact.post_content'], '<!-- wp:html' ), 'graft-generated-contact-core-html-removed' );
 
-	// --- Generated core/html labels carry into Jetpack fields ---------------------
-	$labelled_contact_form = '<form class="contact-form" action="mailto:artist@example.com" method="post"><label class="screen-reader-text" for="contact-name">Your name</label><input id="contact-name" type="text" name="name" placeholder="Name"><label>Email address <input type="email" name="email" placeholder="you@example.com" required></label><button type="submit">Send</button></form>';
-	$labelled_report       = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/contact.html' );
-	$labelled_report['diagnostics'][] = array(
-		'type'                => 'core_html_block',
-		'diagnostic_code'     => 'generated_document_contains_core_html',
-		'reason_code'         => 'generated_document_contains_core_html',
-		'loss_class'          => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
-		'source_path'         => 'posts/page-contact.post_content',
-		'selector'            => 'form.contact-form',
-		'tag_name'            => 'FORM',
-		'block_name'          => 'core/html',
-		'source_html_preview' => $labelled_contact_form,
-	);
-	$labelled_contents = array( 'posts/page-contact.post_content' => $core_html_block( $labelled_contact_form ) );
-	$labelled_seeding  = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $labelled_report, array(), $labelled_contents );
-	$labelled_grafted  = (string) ( $labelled_contents['posts/page-contact.post_content'] ?? '' );
-	$assert( 1 === ( $labelled_seeding['mapped_count'] ?? 0 ), 'graft-generated-labelled-form-mapped' );
-	$assert( 1 === ( $labelled_seeding['grafted_count'] ?? 0 ), 'graft-generated-labelled-form-grafted' );
-	$assert( str_contains( $labelled_grafted, '"label":"Your name"' ), 'graft-generated-label-for-carried' );
-	$assert( str_contains( $labelled_grafted, '"label":"Email address"' ), 'graft-generated-wrapped-label-carried' );
-	$assert( str_contains( $labelled_grafted, '"placeholder":"Name"' ), 'graft-generated-placeholder-still-carried' );
-
 	// --- Form finding enrich carries readable_blocks for graft anchoring --------
 	$enrich_readable = $enrich->invoke(
 		null,
