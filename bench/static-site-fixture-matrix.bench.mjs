@@ -226,8 +226,8 @@ export async function runFixtureMatrix(options) {
       batchRuns.push(outcome.batchRun);
       batchResults.push(outcome.batchResult);
       visualParityArtifacts = { ...visualParityArtifacts, ...(outcome.visualParityArtifacts || {}) };
-      if (outcome.childCommandFailure) {
-        childCommandFailures.push(outcome.childCommandFailure);
+      for (const failure of outcome.childCommandFailures || []) {
+        childCommandFailures.push(failure);
       }
       // Preserve the original first-failure-by-batch-order semantics: the earliest
       // batch that failed wins, independent of completion order.
@@ -313,9 +313,11 @@ export async function runFixtureMatrix(options) {
 // per-fixture artifact subdirectories, all keyed by the unique batch suffix), so
 // many of these can run concurrently without colliding. Returns a stable outcome
 // the caller folds back together in batch order.
-export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outputDirectory, staticSiteImporterPath, options }) {
+export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outputDirectory, staticSiteImporterPath, options, recovery = false }) {
   const batchNumber = batchIndex + 1;
-  const batchSuffix = String(batchNumber).padStart(3, '0');
+  const batchSuffix = recovery
+    ? `${String(batchNumber).padStart(3, '0')}-recovery-${fixtures[0].id}`
+    : String(batchNumber).padStart(3, '0');
   const batchMatrix = createFixtureMatrix({
     id: `${matrix.id}-batch-${batchSuffix}`,
     fixture_root: matrix.fixture_root,
@@ -368,6 +370,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       fixtures,
       batchNumber,
       batchSuffix,
+      batchId: `batch-${String(batchNumber).padStart(3, '0')}`,
       batchRecipeFile,
       outputFile,
       artifactsDir: codeboxArtifactsDirectory,
@@ -415,7 +418,44 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     outputDirectory,
   });
 
-  return { batchRun, batchResult: editorCanvas.result, visualParityArtifacts: visualCompare.artifacts, error: batchError, childCommandFailure };
+  if (!batchError || recovery) {
+    return {
+      batchRun,
+      batchResult: editorCanvas.result,
+      visualParityArtifacts: visualCompare.artifacts,
+      error: batchError,
+      childCommandFailures: childCommandFailure ? [childCommandFailure] : [],
+    };
+  }
+
+  // A recipe-level failure leaves the sandbox's state untrustworthy. Re-run each
+  // fixture in a fresh sandbox so one stalled step cannot classify its batch peers.
+  const recoveryOutcomes = [];
+  for (const fixture of fixtures) {
+    recoveryOutcomes.push(await runFixtureMatrixBatch({
+      fixtures: [fixture],
+      batchIndex,
+      matrix,
+      outputDirectory,
+      staticSiteImporterPath,
+      options,
+      recovery: true,
+    }));
+  }
+
+  const recoveryErrors = recoveryOutcomes.map((outcome) => outcome.error).filter(Boolean);
+  return {
+    batchRun: {
+      ...batchRun,
+      recovery_attempts: recoveryOutcomes.map((outcome) => outcome.batchRun),
+    },
+    batchResult: {
+      fixtures: recoveryOutcomes.flatMap((outcome) => outcome.batchResult.fixtures || []),
+    },
+    visualParityArtifacts: Object.assign({}, ...recoveryOutcomes.map((outcome) => outcome.visualParityArtifacts || {})),
+    error: recoveryErrors[0] || null,
+    childCommandFailures: recoveryOutcomes.flatMap((outcome) => outcome.childCommandFailures || []),
+  };
 }
 
 export function materializeEditorCanvasArtifacts(input = {}) {
@@ -828,14 +868,14 @@ function runtimeSummary(runtime, runtimeError) {
   };
 }
 
-function buildWpCodeboxChildCommandFailure({ error, fixtures, batchNumber, batchSuffix, batchRecipeFile, outputFile, artifactsDir, wpCodeboxBin: bin, artifactRefs }) {
+function buildWpCodeboxChildCommandFailure({ error, fixtures, batchNumber, batchSuffix, batchId, batchRecipeFile, outputFile, artifactsDir, wpCodeboxBin: bin, artifactRefs }) {
   const command = wpCodeboxRecipeRunCommand({ recipeFile: batchRecipeFile, artifactsDir, outputFile, wpCodeboxBin: bin });
   return {
     schema: 'homeboy/child-command-failure/v1',
     kind: 'child_command_failed',
     label: `WP Codebox recipe-run batch ${batchSuffix}`,
     batch: batchNumber,
-    batch_id: `batch-${batchSuffix}`,
+    batch_id: batchId || `batch-${batchSuffix}`,
     fixture_ids: normalizeFixtureIds(fixtures),
     command: command.command,
     command_argv: command.argv,

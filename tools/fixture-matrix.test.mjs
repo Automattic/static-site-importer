@@ -2485,7 +2485,7 @@ module.exports = { wpCodeboxBin, wpCodeboxCommand, runWpCodeboxRecipe };
     assert.equal(failure.error_code, 17);
     assert.equal(failure.error_signal, 'SIGKILL');
     assert.equal(failure.batch_id, 'batch-001');
-    const expectedCodeboxArtifactsDirectory = path.join(root, 'artifacts-wp-codebox-batch-001-artifacts');
+    const expectedCodeboxArtifactsDirectory = path.join(root, 'artifacts-wp-codebox-batch-001-recovery-failing-fixture-artifacts');
     assert.deepEqual(failure.command_argv, [
       '/tmp/wp-codebox',
       'recipe-run',
@@ -2525,7 +2525,7 @@ module.exports = { wpCodeboxBin, wpCodeboxCommand, runWpCodeboxRecipe };
     assert.equal(benchResult.metadata.child_command_failures[0].error_signal, 'SIGKILL');
     assert.equal(
       benchResult.metadata.child_command_failures[0].artifact_refs.artifacts_directory,
-      `${process.env.SSI_FIXTURE_MATRIX_OUTPUT_DIRECTORY}-wp-codebox-batch-001-artifacts`,
+      `${process.env.SSI_FIXTURE_MATRIX_OUTPUT_DIRECTORY}-wp-codebox-batch-001-recovery-failing-fixture-artifacts`,
     );
     const benchBatchRecipe = JSON.parse(readFileSync(benchResult.metadata.child_command_failures[0].artifact_refs.batch_recipe, 'utf8'));
     const benchVisualStep = benchBatchRecipe.workflow.steps.find((step) => step.command === 'wordpress.visual-compare');
@@ -3422,6 +3422,66 @@ test('runFixtureMatrix isolates a throwing batch so sibling batches still comple
     assert.equal(summary.result_summary.failed, 1);
   } finally {
     restoreConcurrencyEnv(snapshot);
+  }
+});
+
+test('runFixtureMatrix recovers healthy fixtures from a poisoned batch sandbox', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-recovery-'));
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  const failureFixtureRoot = path.join(root, 'fixtures');
+  const outputDirectory = path.join(root, 'artifacts');
+  const helperPath = path.join(root, 'wp-codebox-recipe-helper.cjs');
+  mkdirSync(staticSiteImporter, { recursive: true });
+  for (const fixtureId of ['healthy-before', 'hanging', 'healthy-after']) {
+    const fixtureDirectory = path.join(failureFixtureRoot, fixtureId);
+    mkdirSync(fixtureDirectory, { recursive: true });
+    writeFileSync(path.join(fixtureDirectory, 'index.html'), `<h1>${fixtureId}</h1>`);
+  }
+  writeFileSync(helperPath, `
+const fs = require('node:fs');
+function fixtureIds(recipeFile) {
+  return [...new Set(fs.readFileSync(recipeFile, 'utf8').split('--slug=').slice(1).map((part) => part.split(' ')[0]))];
+}
+function wpCodeboxBin() { return '/tmp/wp-codebox'; }
+function wpCodeboxCommand(bin) { return { command: bin, args: [] }; }
+async function runWpCodeboxRecipe(options) {
+  const ids = fixtureIds(options.recipeFile);
+  if (ids.includes('hanging')) {
+    const error = new Error('fixture hanging exceeded its deadline');
+    error.code = 124;
+    error.stderr = 'hanging fixture stderr';
+    error.stdout = 'hanging fixture stdout';
+    throw error;
+  }
+  return { exitCode: 0, outputFile: options.outputFile, json: { results: ids.map((fixture_id) => ({ fixture_id, status: 'succeeded' })) } };
+}
+module.exports = { wpCodeboxBin, wpCodeboxCommand, runWpCodeboxRecipe };
+`, 'utf8');
+  const previousHelper = process.env.HOMEBOY_WP_CODEBOX_RECIPE_HELPER;
+  process.env.HOMEBOY_WP_CODEBOX_RECIPE_HELPER = helperPath;
+
+  try {
+    const { summary, runtimeError } = await runFixtureMatrix({
+      id: 'poisoned-batch-recovery',
+      fixtureRoot: failureFixtureRoot,
+      outputDirectory,
+      staticSiteImporterPath: staticSiteImporter,
+      run: true,
+      batchSize: 3,
+      visualParity: false,
+    });
+
+    assert.match(runtimeError.message, /hanging/);
+    assert.equal(summary.result_summary.succeeded, 2);
+    assert.equal(summary.result_summary.failed, 1);
+    assert.deepEqual(summary.runtime.child_command_failures.map((failure) => failure.fixture_ids), [['hanging']]);
+    const recovery = summary.runtime.batches[0].recovery_attempts;
+    assert.equal(recovery.length, 3);
+    assert.deepEqual(recovery.map((attempt) => attempt.fixture_ids[0]).sort(), ['hanging', 'healthy-after', 'healthy-before']);
+    assert.equal(recovery.find((attempt) => attempt.fixture_ids[0] === 'hanging').stderr_tail, 'hanging fixture stderr');
+    assert.equal(summary.runtime.batches[0].stderr_tail, 'hanging fixture stderr');
+  } finally {
+    restoreEnv('HOMEBOY_WP_CODEBOX_RECIPE_HELPER', previousHelper);
   }
 });
 
