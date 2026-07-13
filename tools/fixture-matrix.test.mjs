@@ -16,6 +16,7 @@ import { PNG } from 'pngjs';
 import runFixtureMatrixBench, {
   boundedConcurrency,
   composerPathRepositoryConfig,
+  FIXTURE_MATRIX_PROGRESS_SCHEMA,
   fixtureMatrixBatchRunSummary,
   mapWithConcurrency,
   materializeVisualCompareArtifacts,
@@ -3483,6 +3484,60 @@ module.exports = { wpCodeboxBin, wpCodeboxCommand, runWpCodeboxRecipe };
   } finally {
     restoreEnv('HOMEBOY_WP_CODEBOX_RECIPE_HELPER', previousHelper);
   }
+});
+
+test('fixture matrix emits ordered lifecycle progress and isolates a silent shared batch promptly', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-progress-'));
+  const fixtureRoot = path.join(root, 'fixtures');
+  const outputDirectory = path.join(root, 'artifacts');
+  const wpCodeboxBin = path.join(root, 'wp-codebox');
+  for (const fixtureId of ['healthy-before', 'hanging', 'healthy-after']) {
+    mkdirSync(path.join(fixtureRoot, fixtureId), { recursive: true });
+    writeFileSync(path.join(fixtureRoot, fixtureId, 'index.html'), `<h1>${fixtureId}</h1>`);
+  }
+  writeFileSync(wpCodeboxBin, `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const recipePath = process.argv[process.argv.indexOf('--recipe') + 1];
+const recipe = fs.readFileSync(recipePath, 'utf8');
+const recovery = path.basename(recipePath).match(/-recovery-(.+)\\.json$/);
+const ids = recovery ? [recovery[1]] : [...new Set(recipe.split('--slug=').slice(1).map((part) => part.split(' ')[0]))];
+if (ids.includes('hanging')) {
+  setInterval(() => {}, 1000);
+} else {
+  const output = process.argv[process.argv.indexOf('--output') + 1];
+  fs.writeFileSync(output, JSON.stringify({ results: ids.map((fixture_id) => ({ fixture_id, status: 'succeeded' })) }));
+}
+`, 'utf8');
+  chmodSync(wpCodeboxBin, 0o755);
+  const events = [];
+  const startedAt = Date.now();
+  const { summary } = await runFixtureMatrix({
+    id: 'progress-matrix',
+    fixtureRoot,
+    outputDirectory,
+    staticSiteImporterPath: path.join(root, 'static-site-importer'),
+    run: true,
+    batchSize: 3,
+    recoveryConcurrency: 2,
+    batchInactivityTimeoutMs: 100,
+    visualParity: false,
+    wpCodeboxBin,
+    progress: (event) => events.push(event),
+  });
+  assert.ok(Date.now() - startedAt < 1500, 'inactivity recovery must not wait for a long command timeout');
+  assert.equal(summary.result_summary.succeeded, 2);
+  assert.equal(summary.result_summary.failed, 1);
+  assert.deepEqual(events.map((event) => event.schema), Array(events.length).fill(FIXTURE_MATRIX_PROGRESS_SCHEMA));
+  assert.ok(events.every((event) => Number.isInteger(event.completed) && event.completed >= 0 && event.total === 3 && event.current?.id));
+  assert.ok(events.find((event) => event.phase === 'batch' && event.status === 'timeout'));
+  assert.ok(events.find((event) => event.phase === 'fixture' && event.status === 'timeout' && event.current.id === 'hanging'));
+  const recoveryStart = events.findIndex((event) => event.phase === 'recovery' && event.status === 'started');
+  const healthyAfterComplete = events.findIndex((event) => event.phase === 'fixture' && event.status === 'completed' && event.current.id === 'healthy-after');
+  const matrixComplete = events.findIndex((event) => event.phase === 'matrix' && event.status === 'failed');
+  assert.ok(recoveryStart > events.findIndex((event) => event.phase === 'batch' && event.status === 'timeout'));
+  assert.ok(healthyAfterComplete > recoveryStart && healthyAfterComplete < matrixComplete);
+  assert.equal(events.at(-1).completed, 3);
 });
 
 test('runFixtureMatrixBench returns a partial result with survivors aggregated when a batch fails', async () => {

@@ -99,6 +99,7 @@ export function buildFixtureMatrixRunPlan(input) {
       : {}),
     ...(options.batchSize ? { SSI_FIXTURE_MATRIX_BATCH_SIZE: String(options.batchSize) } : {}),
     ...(options.concurrency ? { SSI_FIXTURE_MATRIX_CONCURRENCY: String(options.concurrency) } : {}),
+    ...(options.batchInactivityTimeoutMs ? { SSI_FIXTURE_MATRIX_BATCH_INACTIVITY_TIMEOUT_MS: String(options.batchInactivityTimeoutMs) } : {}),
     ...(options.wordpressVersion ? { SSI_FIXTURE_MATRIX_WORDPRESS_VERSION: options.wordpressVersion } : {}),
     ...(options.wpCodeboxBin ? { SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN: options.wpCodeboxBin } : {}),
     ...(options.surfaceCoverage !== undefined ? { SSI_FIXTURE_MATRIX_SURFACE_COVERAGE: String(options.surfaceCoverage) } : {}),
