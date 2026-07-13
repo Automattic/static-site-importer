@@ -34,8 +34,8 @@ const DEFAULT_BATCH_SIZE = 10;
 // up to the cap.
 const DEFAULT_BATCH_CONCURRENCY = 2;
 const MAX_BATCH_CONCURRENCY = 16;
-export const FIXTURE_MATRIX_PROGRESS_SCHEMA = 'homeboy/workload-progress/v1';
-export const FIXTURE_MATRIX_PROGRESS_PREFIX = '@@homeboy-progress@@ ';
+export const FIXTURE_MATRIX_PROGRESS_SCHEMA = 'homeboy/runner-progress/v1';
+export const FIXTURE_MATRIX_PROGRESS_PREFIX = 'HOMEBOY_RUNNER_PROGRESS ';
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 async function main() {
@@ -489,13 +489,15 @@ function createFixtureMatrixProgress(matrix, options) {
       write({
         schema: FIXTURE_MATRIX_PROGRESS_SCHEMA,
         phase,
-        status,
-        current: fixtureId ? { kind: 'fixture', id: fixtureId } : { kind: phase, id: matrix.id },
+        current_item: fixtureId || matrix.id,
         completed: complete.size,
         total: matrix.count,
-        ...(details.batch ? { batch: details.batch } : {}),
-        ...(details.recovery ? { recovery: true } : {}),
-        ...(details.timeout_ms ? { timeout_ms: details.timeout_ms } : {}),
+        metadata: {
+          lifecycle_status: status,
+          ...(details.batch ? { batch: details.batch } : {}),
+          ...(details.recovery ? { recovery: true } : {}),
+          ...(details.timeout_ms ? { timeout_ms: details.timeout_ms } : {}),
+        },
       });
     },
   };
