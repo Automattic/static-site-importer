@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 /**
  * Internal dependencies
  */
-import { runWpCodeboxRecipe, wpCodeboxCommand, wpCodeboxBin } from '../tools/wp-codebox/recipe.mjs';
+import { DEFAULT_RECIPE_INACTIVITY_TIMEOUT_MS, runWpCodeboxRecipe, wpCodeboxCommand, wpCodeboxBin } from '../tools/wp-codebox/recipe.mjs';
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
 import {
   buildFixtureMatrixRecipe,
@@ -34,6 +34,8 @@ const DEFAULT_BATCH_SIZE = 10;
 // up to the cap.
 const DEFAULT_BATCH_CONCURRENCY = 2;
 const MAX_BATCH_CONCURRENCY = 16;
+export const FIXTURE_MATRIX_PROGRESS_SCHEMA = 'homeboy/runner-progress/v1';
+export const FIXTURE_MATRIX_PROGRESS_PREFIX = 'HOMEBOY_RUNNER_PROGRESS ';
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 async function main() {
@@ -163,6 +165,8 @@ export async function runFixtureMatrix(options) {
     complexity: options.complexity,
     max_complexity: options.maxComplexity || options.max_complexity,
   });
+  const progress = createFixtureMatrixProgress(matrix, options);
+  progress.emit('matrix', 'started');
   const artifactWriteStartedAt = nowMs();
   const written = writeFixtureMatrixArtifacts({
     outputDirectory,
@@ -216,6 +220,7 @@ export async function runFixtureMatrix(options) {
       outputDirectory,
       staticSiteImporterPath,
       options,
+      progress,
     }));
     performance.batch_execution_ms = elapsedMs(batchExecutionStartedAt);
 
@@ -305,6 +310,7 @@ export async function runFixtureMatrix(options) {
     summary.metadata.artifact_bytes.total = cliRunBaseTotal + summary.metadata.artifact_bytes.cli_run;
   }
   writeJsonArtifact(path.join(outputDirectory, 'cli-run.json'), summary);
+  progress.emit('matrix', runtimeError ? 'failed' : 'completed');
   return { summary, runtimeError, runtime };
 }
 
@@ -313,7 +319,7 @@ export async function runFixtureMatrix(options) {
 // per-fixture artifact subdirectories, all keyed by the unique batch suffix), so
 // many of these can run concurrently without colliding. Returns a stable outcome
 // the caller folds back together in batch order.
-export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outputDirectory, staticSiteImporterPath, options, recovery = false }) {
+export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outputDirectory, staticSiteImporterPath, options, recovery = false, progress }) {
   const batchNumber = batchIndex + 1;
   const batchSuffix = recovery
     ? `${String(batchNumber).padStart(3, '0')}-recovery-${fixtures[0].id}`
@@ -345,6 +351,8 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
   const codeboxArtifactsDirectory = batchCodeboxArtifactsDirectory(outputDirectory, batchSuffix);
   const artifactRefs = batchArtifactRefs({ outputDirectory, batchSuffix, batchRecipeFile, outputFile, codeboxArtifactsDirectory });
   writeJsonArtifact(batchRecipeFile, batchRecipe);
+  progress?.emit(recovery ? 'recovery' : 'batch', 'started', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery });
+  progress?.emit('fixture', 'started', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery });
 
   let batchRuntime = null;
   let batchError = null;
@@ -357,6 +365,11 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       artifactsDir: codeboxArtifactsDirectory,
       outputFile,
       wpCodeboxBin: options.wpCodeboxBin,
+      inactivityTimeoutMs: batchInactivityTimeoutMs(options),
+      onInactivity: ({ timeout_ms }) => {
+        progress?.emit('batch', 'timeout', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery, timeout_ms });
+        if (recovery) progress?.emit('fixture', 'timeout', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery, timeout_ms });
+      },
     });
   } catch (error) {
     batchError = error;
@@ -417,6 +430,13 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     codeboxArtifactsDirectory,
     outputDirectory,
   });
+  if (!batchError || recovery) {
+    for (const fixture of editorCanvas.result.fixtures || []) {
+      const fixtureId = fixture.fixture_id || fixture.fixtureId || '';
+      progress?.emit('fixture', fixture.status === 'failed' ? 'failed' : 'completed', { fixture_id: fixtureId, batch: batchNumber, recovery });
+    }
+  }
+  progress?.emit(recovery ? 'recovery' : 'batch', batchError ? (batchError.inactivityTimedOut ? 'timeout' : 'failed') : 'completed', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery });
 
   if (!batchError || recovery) {
     return {
@@ -430,9 +450,8 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
 
   // A recipe-level failure leaves the sandbox's state untrustworthy. Re-run each
   // fixture in a fresh sandbox so one stalled step cannot classify its batch peers.
-  const recoveryOutcomes = [];
-  for (const fixture of fixtures) {
-    recoveryOutcomes.push(await runFixtureMatrixBatch({
+  progress?.emit('recovery', 'started', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery: true });
+  const recoveryOutcomes = await mapWithConcurrency(fixtures, boundedConcurrency(options.recoveryConcurrency, DEFAULT_BATCH_CONCURRENCY, MAX_BATCH_CONCURRENCY), (fixture) => runFixtureMatrixBatch({
       fixtures: [fixture],
       batchIndex,
       matrix,
@@ -440,8 +459,8 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       staticSiteImporterPath,
       options,
       recovery: true,
+      progress,
     }));
-  }
 
   const recoveryErrors = recoveryOutcomes.map((outcome) => outcome.error).filter(Boolean);
   return {
@@ -456,6 +475,36 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     error: recoveryErrors[0] || null,
     childCommandFailures: recoveryOutcomes.flatMap((outcome) => outcome.childCommandFailures || []),
   };
+}
+
+function createFixtureMatrixProgress(matrix, options) {
+  const complete = new Set();
+  const write = typeof options.progress === 'function'
+    ? options.progress
+    : (event) => process.stdout.write(`${FIXTURE_MATRIX_PROGRESS_PREFIX}${JSON.stringify(event)}\n`);
+  return {
+    emit(phase, status, details = {}) {
+      const fixtureId = details.fixture_id || '';
+      if (phase === 'fixture' && fixtureId && ['completed', 'failed', 'timeout'].includes(status)) complete.add(fixtureId);
+      write({
+        schema: FIXTURE_MATRIX_PROGRESS_SCHEMA,
+        phase,
+        current_item: fixtureId || matrix.id,
+        completed: complete.size,
+        total: matrix.count,
+        metadata: {
+          lifecycle_status: status,
+          ...(details.batch ? { batch: details.batch } : {}),
+          ...(details.recovery ? { recovery: true } : {}),
+          ...(details.timeout_ms ? { timeout_ms: details.timeout_ms } : {}),
+        },
+      });
+    },
+  };
+}
+
+function batchInactivityTimeoutMs(options) {
+  return positiveInteger(options.batchInactivityTimeoutMs || options.batch_inactivity_timeout_ms, DEFAULT_RECIPE_INACTIVITY_TIMEOUT_MS);
 }
 
 export function materializeEditorCanvasArtifacts(input = {}) {
@@ -1090,6 +1139,7 @@ function optionsFromEnv(env = process.env) {
     wordpressVersion: benchEnv.SSI_FIXTURE_MATRIX_WORDPRESS_VERSION || env.SSI_FIXTURE_MATRIX_WORDPRESS_VERSION,
     batchSize: benchEnv.SSI_FIXTURE_MATRIX_BATCH_SIZE || env.SSI_FIXTURE_MATRIX_BATCH_SIZE,
     concurrency: benchEnv.SSI_FIXTURE_MATRIX_CONCURRENCY || env.SSI_FIXTURE_MATRIX_CONCURRENCY,
+    batchInactivityTimeoutMs: benchEnv.SSI_FIXTURE_MATRIX_BATCH_INACTIVITY_TIMEOUT_MS || env.SSI_FIXTURE_MATRIX_BATCH_INACTIVITY_TIMEOUT_MS,
     run: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_RUN) || isTruthy(env.SSI_FIXTURE_MATRIX_RUN),
     wpCodeboxBin: benchEnv.SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN || env.SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN,
     editorValidation: !isFalsy(benchEnv.SSI_FIXTURE_MATRIX_EDITOR_VALIDATION ?? env.SSI_FIXTURE_MATRIX_EDITOR_VALIDATION),

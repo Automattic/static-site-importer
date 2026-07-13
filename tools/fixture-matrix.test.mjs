@@ -16,6 +16,8 @@ import { PNG } from 'pngjs';
 import runFixtureMatrixBench, {
   boundedConcurrency,
   composerPathRepositoryConfig,
+  FIXTURE_MATRIX_PROGRESS_PREFIX,
+  FIXTURE_MATRIX_PROGRESS_SCHEMA,
   fixtureMatrixBatchRunSummary,
   mapWithConcurrency,
   materializeVisualCompareArtifacts,
@@ -3484,6 +3486,88 @@ module.exports = { wpCodeboxBin, wpCodeboxCommand, runWpCodeboxRecipe };
     restoreEnv('HOMEBOY_WP_CODEBOX_RECIPE_HELPER', previousHelper);
   }
 });
+
+test('fixture matrix emits Homeboy runner-progress lifecycle events and isolates a silent shared batch promptly', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-progress-'));
+  const fixtureRoot = path.join(root, 'fixtures');
+  const outputDirectory = path.join(root, 'artifacts');
+  const wpCodeboxBin = path.join(root, 'wp-codebox');
+  for (const fixtureId of ['healthy-before', 'hanging', 'healthy-after']) {
+    mkdirSync(path.join(fixtureRoot, fixtureId), { recursive: true });
+    writeFileSync(path.join(fixtureRoot, fixtureId, 'index.html'), `<h1>${fixtureId}</h1>`);
+  }
+  writeFileSync(wpCodeboxBin, `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const recipePath = process.argv[process.argv.indexOf('--recipe') + 1];
+const recipe = fs.readFileSync(recipePath, 'utf8');
+const recovery = path.basename(recipePath).match(/-recovery-(.+)\\.json$/);
+const ids = recovery ? [recovery[1]] : [...new Set(recipe.split('--slug=').slice(1).map((part) => part.split(' ')[0]))];
+if (ids.includes('hanging')) {
+  setInterval(() => {}, 1000);
+} else {
+  const output = process.argv[process.argv.indexOf('--output') + 1];
+  fs.writeFileSync(output, JSON.stringify({ results: ids.map((fixture_id) => ({ fixture_id, status: 'succeeded' })) }));
+}
+`, 'utf8');
+  chmodSync(wpCodeboxBin, 0o755);
+  const events = [];
+  const startedAt = Date.now();
+  const { summary } = await runFixtureMatrix({
+    id: 'progress-matrix',
+    fixtureRoot,
+    outputDirectory,
+    staticSiteImporterPath: path.join(root, 'static-site-importer'),
+    run: true,
+    batchSize: 3,
+    recoveryConcurrency: 2,
+    batchInactivityTimeoutMs: 250,
+    visualParity: false,
+    wpCodeboxBin,
+    progress: (event) => events.push(event),
+  });
+  assert.ok(Date.now() - startedAt < 2000, 'inactivity recovery must not wait for a long command timeout');
+  assert.equal(summary.result_summary.succeeded, 2);
+  assert.equal(summary.result_summary.failed, 1);
+  assert.deepEqual(events.map((event) => event.schema), Array(events.length).fill(FIXTURE_MATRIX_PROGRESS_SCHEMA));
+  assert.ok(events.every((event) => Number.isInteger(event.completed) && event.completed >= 0 && event.total === 3 && event.current_item));
+  assert.ok(events.find((event) => event.phase === 'batch' && event.metadata.lifecycle_status === 'timeout'));
+  assert.ok(events.find((event) => event.phase === 'fixture' && event.metadata.lifecycle_status === 'timeout' && event.current_item === 'hanging'));
+  const recoveryStart = events.findIndex((event) => event.phase === 'recovery' && event.metadata.lifecycle_status === 'started');
+  const healthyAfterComplete = events.findIndex((event) => event.phase === 'fixture' && event.metadata.lifecycle_status === 'completed' && event.current_item === 'healthy-after');
+  const matrixComplete = events.findIndex((event) => event.phase === 'matrix' && event.metadata.lifecycle_status === 'failed');
+  assert.ok(recoveryStart > events.findIndex((event) => event.phase === 'batch' && event.metadata.lifecycle_status === 'timeout'));
+  assert.ok(healthyAfterComplete > recoveryStart && healthyAfterComplete < matrixComplete);
+  assert.equal(events.at(-1).completed, 3);
+
+  // This mirrors Homeboy #7874's accepted child envelope. SSI lifecycle detail
+  // stays in metadata, while an injected terminal-state field is rejected.
+  const accepted = events.map((event) => parseHomeboyRunnerProgress(`${FIXTURE_MATRIX_PROGRESS_PREFIX}${JSON.stringify(event)}`));
+  assert.ok(accepted.every(Boolean), 'start, completion, failure, timeout, and recovery events are accepted by Homeboy');
+  assert.ok(accepted.some((event) => event.metadata.lifecycle_status === 'started'));
+  assert.ok(accepted.some((event) => event.metadata.lifecycle_status === 'completed'));
+  assert.ok(accepted.some((event) => event.metadata.lifecycle_status === 'failed'));
+  assert.ok(accepted.some((event) => event.metadata.lifecycle_status === 'timeout'));
+  assert.ok(accepted.some((event) => event.phase === 'recovery'));
+  assert.equal(parseHomeboyRunnerProgress(`${FIXTURE_MATRIX_PROGRESS_PREFIX}${JSON.stringify({ ...events[0], status: 'succeeded' })}`), null);
+});
+
+function parseHomeboyRunnerProgress(line) {
+  const payload = line.startsWith(FIXTURE_MATRIX_PROGRESS_PREFIX) ? line.slice(FIXTURE_MATRIX_PROGRESS_PREFIX.length) : '';
+  try {
+    const event = JSON.parse(payload);
+    const allowed = new Set(['schema', 'phase', 'current_item', 'completed', 'total', 'metadata']);
+    if (event.schema !== FIXTURE_MATRIX_PROGRESS_SCHEMA
+      || Object.keys(event).some((key) => !allowed.has(key))
+      || (!event.phase && !event.current_item && event.completed === undefined && event.total === undefined && event.metadata === undefined)
+      || (event.completed !== undefined && event.total !== undefined && event.completed > event.total)) {
+      return null;
+    }
+    return event;
+  } catch {
+    return null;
+  }
+}
 
 test('runFixtureMatrixBench returns a partial result with survivors aggregated when a batch fails', async () => {
   // The bench-harness entry point is where the whole-run discard used to live:
