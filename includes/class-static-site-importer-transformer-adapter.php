@@ -138,6 +138,7 @@ class Static_Site_Importer_Transformer_Adapter {
 			if ( isset( $file['content'] ) && is_scalar( $file['content'] ) ) {
 				$content = (string) $file['content'];
 			} elseif ( isset( $file['content_base64'] ) && is_scalar( $file['content_base64'] ) ) {
+				// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes trusted website artifact file content.
 				$decoded = base64_decode( (string) $file['content_base64'], true );
 				if ( false === $decoded ) {
 					continue;

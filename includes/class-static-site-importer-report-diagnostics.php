@@ -2098,7 +2098,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$cart_controls = array_values(
 			array_filter(
 				$matches[0] ?? array(),
-				static fn( array $match ): bool => 1 === preg_match( '/\b(?:add\s+to\s+cart|buy\s+now|purchase|order\s+now)\b/i', wp_strip_all_tags( (string) $match[0] ) )
+				static fn( array $control_match ): bool => 1 === preg_match( '/\b(?:add\s+to\s+cart|buy\s+now|purchase|order\s+now)\b/i', wp_strip_all_tags( (string) $control_match[0] ) )
 			)
 		);
 
@@ -2108,9 +2108,9 @@ class Static_Site_Importer_Report_Diagnostics {
 
 		$rewritten = '';
 		$cursor    = 0;
-		foreach ( $cart_controls as $index => $match ) {
-			$block    = (string) $match[0];
-			$position = (int) $match[1];
+		foreach ( $cart_controls as $index => $control_match ) {
+			$block    = (string) $control_match[0];
+			$position = (int) $control_match[1];
 			$rewritten .= substr( $region, $cursor, $position - $cursor );
 			$rewritten .= self::add_to_cart_shortcode_block( (int) $products[ $index ]['id'] );
 			$cursor     = $position + strlen( $block );
