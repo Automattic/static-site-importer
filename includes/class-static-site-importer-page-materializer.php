@@ -319,7 +319,9 @@ class Static_Site_Importer_Page_Materializer {
 	 * @return int
 	 */
 	private static function html_tag_count( string $markup, string $tag ): int {
-		return preg_match_all( '/<\s*' . preg_quote( $tag, '/' ) . '\b/i', $markup ) ?: 0;
+		$count = preg_match_all( '/<\s*' . preg_quote( $tag, '/' ) . '\b/i', $markup );
+
+		return false === $count ? 0 : $count;
 	}
 
 	/**
@@ -1535,9 +1537,15 @@ class Static_Site_Importer_Page_Materializer {
 			return null;
 		}
 
-		$label       = trim( $search_input->getAttribute( 'aria-label' ) ) ?: 'Search';
+		$label       = trim( $search_input->getAttribute( 'aria-label' ) );
 		$placeholder = trim( $search_input->getAttribute( 'placeholder' ) );
-		$action      = trim( $element->getAttribute( 'action' ) ) ?: '/';
+		$action      = trim( $element->getAttribute( 'action' ) );
+		if ( '' === $label ) {
+			$label = 'Search';
+		}
+		if ( '' === $action ) {
+			$action = '/';
+		}
 		if ( '' === $button_text ) {
 			$button_text = 'Search';
 		}
@@ -1553,8 +1561,11 @@ class Static_Site_Importer_Page_Materializer {
 	 * @return string
 	 */
 	private static function search_input_block( DOMElement $element, array $attrs ): string {
-		$label       = trim( $element->getAttribute( 'aria-label' ) ) ?: 'Search';
+		$label       = trim( $element->getAttribute( 'aria-label' ) );
 		$placeholder = trim( $element->getAttribute( 'placeholder' ) );
+		if ( '' === $label ) {
+			$label = 'Search';
+		}
 		return self::search_block_markup( $attrs, $label, $placeholder, 'Search', '/' );
 	}
 

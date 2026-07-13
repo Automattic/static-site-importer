@@ -1296,7 +1296,10 @@ class Static_Site_Importer_Report_Diagnostics {
 	private static function extract_form_manifest_from_diagnostic( array $diagnostic ): array {
 		$html = self::first_scalar( $diagnostic, array( 'source_html_preview', 'html_excerpt', 'excerpt' ) );
 		if ( '' === $html || ! str_contains( strtolower( $html ), '<form' ) ) {
-			return array( 'form' => array(), 'controls' => array() );
+			return array(
+				'form'     => array(),
+				'controls' => array(),
+			);
 		}
 
 		$doc = new DOMDocument();
@@ -1307,7 +1310,10 @@ class Static_Site_Importer_Report_Diagnostics {
 
 		$form_node = $doc->getElementsByTagName( 'form' )->item( 0 );
 		if ( ! $form_node instanceof DOMElement ) {
-			return array( 'form' => array(), 'controls' => array() );
+			return array(
+				'form'     => array(),
+				'controls' => array(),
+			);
 		}
 
 		$form = array();
