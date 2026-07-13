@@ -705,6 +705,42 @@ test('fixture-matrix rig requires env-backed WP Codebox editor and visual capabi
   assert.ok(tool.capabilities.includes('wordpress.visual-compare'));
 });
 
+test('fixture-matrix rig preflight is declarative and checks hydrated prerequisites deterministically', () => {
+  const rig = JSON.parse(readFileSync(path.join(packageRoot, 'rigs', 'static-site-importer-fixture-matrix', 'rig.json'), 'utf8'));
+  const checks = rig.pipeline.check;
+  const hydrationRemediation = 'Dependencies are missing. Run `homeboy deps install --path /path/to/static-site-importer` so Homeboy hydrates the checkout, then rerun static-site-importer-fixture-matrix.';
+  const requiredFiles = [
+    'static-site-importer.php',
+    'bench/static-site-fixture-matrix.bench.mjs',
+    'tools/wp-codebox/recipe.mjs',
+    'node_modules/pixelmatch/index.js',
+    'node_modules/pngjs/lib/png.js',
+    'includes/class-static-site-importer-transformer-adapter.php',
+  ];
+  const declaredFiles = checks.map((check) => check.file).filter(Boolean).map((file) => file.replace('${components.static-site-importer.path}/', ''));
+  const declaredDirectories = checks.map((check) => check.dir).filter(Boolean).map((dir) => dir.replace('${components.static-site-importer.path}/', ''));
+
+  assert.ok(checks.every((check) => check.kind === 'requirement'));
+  assert.deepEqual(declaredFiles, requiredFiles);
+  assert.deepEqual(declaredDirectories, []);
+  assert.ok(checks.some((check) => check.executable === 'node'));
+  assert.equal(JSON.stringify(checks).includes('npm ci'), false);
+  assert.equal(JSON.stringify(checks).includes('fixture-matrix.test.mjs'), false);
+  assert.equal(checks.filter((check) => check.remediation === hydrationRemediation).length, 2);
+
+  const preflightFailures = (root) => checks.flatMap((check) => {
+    const declared = check.file || check.dir;
+    if (!declared) {
+      return [];
+    }
+    const relativePath = declared.replace('${components.static-site-importer.path}/', '');
+    return existsSync(path.join(root, relativePath)) ? [] : [relativePath];
+  });
+
+  assert.deepEqual(preflightFailures(packageRoot), []);
+  assert.deepEqual(preflightFailures(path.join(packageRoot, 'missing-hydration')), requiredFiles);
+});
+
 test('fixture-matrix WP Codebox batch runner uses Homeboy declared binary', () => {
   assert.equal(wpCodeboxBin({
     HOMEBOY_WP_CODEBOX_BIN: '/runner/wp-codebox-current',
