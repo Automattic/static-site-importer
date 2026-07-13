@@ -24,6 +24,7 @@ import runFixtureMatrixBench, {
   materializeEditorCanvasArtifacts,
   resolveBlocksEnginePhpTransformerPath,
   runFixtureMatrix,
+  validateHydratedComposerDependencies,
 } from '../bench/static-site-fixture-matrix.bench.mjs';
 import {
   buildCodeFreshness,
@@ -715,6 +716,7 @@ test('fixture-matrix rig preflight is declarative and checks hydrated prerequisi
     'tools/wp-codebox/recipe.mjs',
     'node_modules/pixelmatch/index.js',
     'node_modules/pngjs/lib/png.js',
+    'vendor/autoload.php',
     'includes/class-static-site-importer-transformer-adapter.php',
   ];
   const declaredFiles = checks.map((check) => check.file).filter(Boolean).map((file) => file.replace('${components.static-site-importer.path}/', ''));
@@ -2214,6 +2216,21 @@ test('resolves Blocks Engine PHP transformer override paths', () => {
 
   assert.equal(resolveBlocksEnginePhpTransformerPath(repoRoot), transformerPackageRoot);
   assert.equal(resolveBlocksEnginePhpTransformerPath(transformerPackageRoot), transformerPackageRoot);
+});
+
+test('requires Homeboy-hydrated Composer dependencies without installing them', () => {
+  const pluginRoot = mkdtempSync(path.join(tmpdir(), 'ssi-hydration-'));
+  const expectedAutoload = path.join(pluginRoot, 'vendor', 'autoload.php');
+
+  assert.throws(
+    () => validateHydratedComposerDependencies(pluginRoot),
+    (error) => error.message.includes('Homeboy hydration is incomplete')
+      && error.message.includes('homeboy rig up static-site-importer-fixture-matrix'),
+  );
+
+  mkdirSync(path.dirname(expectedAutoload), { recursive: true });
+  writeFileSync(expectedAutoload, '<?php');
+  assert.equal(validateHydratedComposerDependencies(pluginRoot), expectedAutoload);
 });
 
 test('builds Composer path repository override matching SSI constraints', () => {

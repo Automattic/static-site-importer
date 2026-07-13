@@ -4,7 +4,6 @@
  * External dependencies
  */
 import fs from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -150,7 +149,7 @@ export async function runFixtureMatrix(options) {
   const fixtureRoot = path.resolve(intake?.fixture_root || options.fixtureRoot || path.join(packageRoot, 'tests', 'fixtures', 'fixture-matrix'));
   const staticSiteImporterPath = options.staticSiteImporterPath || process.env.HOMEBOY_STATIC_SITE_IMPORTER_PATH || process.cwd();
   const dependencyOverrides = prepareDependencyOverrides(options);
-  ensureComposerDependencies(staticSiteImporterPath, { dependencyOverrides });
+  validateHydratedComposerDependencies(packageRoot);
   const matrix = createFixtureMatrix({
     id: options.id || `static-site-importer-fixture-matrix-${Date.now()}`,
     fixture_root: fixtureRoot,
@@ -757,26 +756,15 @@ export function boundedConcurrency(value, fallback, max) {
   return Math.max(1, Math.min(parsed, max));
 }
 
-function ensureComposerDependencies(pluginPath, options = {}) {
-  const dependencyOverrides = options.dependencyOverrides || {};
-  const blocksEnginePhpTransformerPath = dependencyOverrides.blocks_engine_php_transformer?.path || '';
-  if (blocksEnginePhpTransformerPath) {
-    updateComposerPathRepository(pluginPath, blocksEnginePhpTransformerPath);
-    return;
+export function validateHydratedComposerDependencies(pluginPath) {
+  const autoloadPath = path.join(pluginPath, 'vendor', 'autoload.php');
+  if (fs.existsSync(autoloadPath)) {
+    return autoloadPath;
   }
 
-  if (fs.existsSync(path.join(pluginPath, 'vendor', 'autoload.php')) || !fs.existsSync(path.join(pluginPath, 'composer.json'))) {
-    return;
-  }
-
-  const result = spawnSync('composer', ['install', '--no-interaction', '--prefer-dist', '--no-progress'], {
-    cwd: pluginPath,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  if (result.status !== 0) {
-    throw new Error(`Composer dependency install failed for ${pluginPath}: ${result.stderr || result.stdout || `exit ${result.status}`}`);
-  }
+  throw new Error(
+    `Homeboy hydration is incomplete: missing ${autoloadPath}. Run \`homeboy rig up static-site-importer-fixture-matrix\`, then rerun the fixture matrix.`,
+  );
 }
 
 function prepareDependencyOverrides(options) {
@@ -819,40 +807,6 @@ function composerPackageName(composerFile) {
   } catch {
     return '';
   }
-}
-
-function updateComposerPathRepository(pluginPath, packagePath) {
-  const composerFile = path.join(pluginPath, 'composer.json');
-  const lockFile = path.join(pluginPath, 'composer.lock');
-  const composerJson = fs.readFileSync(composerFile, 'utf8');
-  const composerLock = fs.existsSync(lockFile) ? fs.readFileSync(lockFile, 'utf8') : null;
-  let result = null;
-  try {
-    configureComposerPathRepository(pluginPath, packagePath);
-    result = spawnSync('composer', ['update', 'automattic/blocks-engine-php-transformer', '--with-dependencies', '--no-interaction', '--prefer-source', '--no-progress'], {
-      cwd: pluginPath,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-  } finally {
-    fs.writeFileSync(composerFile, composerJson);
-    if (composerLock !== null) {
-      fs.writeFileSync(lockFile, composerLock);
-    }
-  }
-  if (result.status !== 0) {
-    throw new Error(`Composer dependency override failed for ${pluginPath}: ${result.stderr || result.stdout || `exit ${result.status}`}`);
-  }
-}
-
-function configureComposerPathRepository(pluginPath, packagePath) {
-  const composerFile = path.join(pluginPath, 'composer.json');
-  const composer = JSON.parse(fs.readFileSync(composerFile, 'utf8'));
-  composer.repositories = composer.repositories && typeof composer.repositories === 'object' && !Array.isArray(composer.repositories)
-    ? composer.repositories
-    : {};
-  composer.repositories['blocks-engine-php-transformer-dev'] = composerPathRepositoryConfig(composer, packagePath);
-  fs.writeFileSync(composerFile, `${JSON.stringify(composer, null, 2)}\n`);
 }
 
 export function composerPathRepositoryConfig(rootComposer, packagePath) {
