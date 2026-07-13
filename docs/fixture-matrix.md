@@ -47,8 +47,7 @@ top-level fixtures):
 node tools/run-fixture-matrix.mjs \
   --runner homeboy-lab \
   --static-site-importer ~/Developer/static-site-importer \
-  --blocks-engine ~/Developer/blocks-engine \
-  --lab-only
+  --blocks-engine ~/Developer/blocks-engine
 ```
 
 The wrapper composes the existing Homeboy surfaces rather than replacing the
@@ -59,8 +58,11 @@ lower-level bench:
 - `homeboy bench --rig static-site-importer-fixture-matrix --profile fixture-matrix --iterations 1`
 
 It sets the SSI matrix bench environment for the canonical fixture root, Static
-Site Importer checkout, WP Codebox execution, shared state, and optional Blocks
-Engine PHP transformer override. By default, `--blocks-engine` also supplies the
+Site Importer checkout, WP Codebox execution, and optional Blocks Engine PHP
+transformer override. Lab-routed runs omit default `--shared-state` and
+`--artifact-root` paths so Homeboy can choose runner-local locations; use
+`--local` for host-local state paths, or pass explicit paths only when they exist
+on the runner. By default, `--blocks-engine` also supplies the
 release-free transformer override path. Use `--blocks-engine-php-transformer-path`
 to point at a different repo/package, or run a final release/bump proof with
 `--mode release-proof` and the released SSI dependency installed.
@@ -69,11 +71,114 @@ The fixture matrix is a deterministic transformer feedback gate, not a
 performance benchmark. The rig and wrapper run a single Homeboy bench iteration
 by default; use repeated runs only for explicitly separate performance work.
 
+## Three-Fig Fixture E2E
+
+Use `tools/run-fig-fixture-e2e.mjs` for the cross-stack proof that selected
+Figma fixtures can become working WordPress block themes without expanding the
+fixture corpus. The wrapper composes existing repo-owned surfaces:
+
+- Blocks Engine `figma-transformer/scripts/figma-fixture-matrix.php` transforms
+  each `.fig` into static HTML/CSS/assets.
+- SSI `bench/static-site-fixture-matrix.bench.mjs --artifact-root ... --run`
+  imports those generated artifacts in WP Codebox and emits the standard matrix
+  result, editor-quality, visual-parity, and finding-packet artifacts.
+- `artifacts/fig-fixture-e2e/summary.json` aggregates pass/fail status with
+  thresholds for exactly three fixtures, zero transform failures, zero import
+  failures, zero Blocks Engine vector placeholders/missing assets, and a default
+  minimum native conversion rate of `1`.
+
+Example:
+
+```bash
+SSI_FIG_E2E_FIXTURES="/path/to/Fisiostetic.fig:/path/to/FSE Pilot Build Theme.fig:/path/to/Twenty Twenty-Five (Community).fig" \
+node tools/run-fig-fixture-e2e.mjs \
+  --blocks-engine /path/to/blocks-engine \
+  --static-site-importer /path/to/static-site-importer \
+  --output-directory /path/to/artifacts/fig-fixture-e2e \
+  --run
+```
+
+The summary keeps the two architecture links separate. Blocks Engine transform
+metrics are under `transform` and `metrics.transform_*`; SSI import/materialization
+metrics are under `import_matrix` and `metrics.import_matrix_*`. Use these fields
+for performance and quality regression gates instead of treating `.fig -> blocks`
+as one opaque operation.
+
+To compare a candidate run to a saved baseline summary, pass the previous
+`summary.json` and an allowed regression ratio:
+
+```bash
+node tools/run-fig-fixture-e2e.mjs \
+  --blocks-engine /path/to/blocks-engine \
+  --static-site-importer /path/to/static-site-importer \
+  --baseline-summary /path/to/baseline/summary.json \
+  --max-baseline-regression-ratio 0.10 \
+  --max-import-findings 0 \
+  --run
+```
+
+`baseline_comparison.deltas` reports signed deltas for stage durations and quality
+counters. When `--max-baseline-regression-ratio` is set, positive deltas above the
+budget fail the wrapper; leave it unset to collect comparison evidence without a
+hard performance gate.
+
+Pass fixture paths with repeated `--fixture <path>` arguments instead of
+`SSI_FIG_E2E_FIXTURES` when that is easier for shells/scripts. Use `--dry-run` to
+write `plan.json` and `summary.json` without running the transform/import steps.
+Use `--expected-fixture-count` only for exploratory work; the release proof
+defaults to the three named fixtures.
+
+Sample summary shape:
+
+```json
+{
+  "schema": "static-site-importer/fig-fixture-e2e-summary/v1",
+  "status": "passed",
+  "fixture_count": 3,
+  "expected_fixture_count": 3,
+  "metrics": {
+    "transform_duration_ms": 12345,
+    "import_matrix_duration_ms": 67890,
+    "total_duration_ms": 80235,
+    "transform_vector_placeholder_count": 0,
+    "transform_missing_asset_count": 0,
+    "import_matrix_finding_count": 0,
+    "import_matrix_min_native_conversion_rate": 1
+  },
+  "transform": {
+    "duration_ms": 12345,
+    "completed_fixture_count": 3,
+    "failed_fixture_count": 0,
+    "vector_placeholder_count": 0,
+    "missing_asset_count": 0
+  },
+  "import_matrix": {
+    "enabled": true,
+    "duration_ms": 67890,
+    "passed_fixture_count": 3,
+    "failed_fixture_count": 0,
+    "finding_count": 0,
+    "min_native_conversion_rate": 1
+  }
+}
+```
+
 Output is a JSON operator summary with the run ID, fixture count, pass/fail
-counts, finding count, top buckets/kinds when present in Homeboy output, artifact
-URLs, and the structured Homeboy bench output file. Pass `--dry-run` to inspect
-the composed commands without running Lab/WP Codebox. Arguments after `--` are
-forwarded to the lower-level bench, preserving the existing script options:
+counts, finding count, top buckets/kinds when present in Homeboy output, a
+`run_refs` block with ready-to-run `homeboy runs show <id>` / `homeboy runs
+artifacts <id>` commands, artifact URLs, and the structured Homeboy bench output
+file. Pass `--dry-run` to inspect the composed commands without running
+Lab/WP Codebox. Arguments after `--` are forwarded to the lower-level bench,
+preserving the existing script options:
+
+Every matrix run also writes `visual-parity-evidence-report.json` and
+`visual-parity-evidence-report.md`. These artifacts make the staged-output proof
+less hand-wavy by reporting, per fixture, whether the generated site artifact,
+staged source HTML, imported WordPress browser snapshot, visual-compare evidence,
+screenshot refs, viewport/mobile evidence, live-WP parity, missing assets, and
+native/core HTML block counts are present. The report is a deterministic evidence
+coverage and risk summary; it complements screenshot/pixel diff evidence but does
+not replace it.
 
 ### Code freshness guard
 
@@ -200,6 +305,38 @@ human knows the fixture intent. Fixtures without reviewed metadata should remain
 unknown and appear in `manifest_coverage.unknown_fixture_ids`; do not backfill
 truth from directory names or HTML heuristics.
 
+## Solved Fixture Corpus and Promotion
+
+The Blocks Engine fixture corpus has a lifecycle:
+
+- `fixtures/candidates/` — untracked raw generation output (`.gitignore`d).
+- `fixtures/websites/` — active corpus under evaluation.
+- `fixtures/solved/` — permanent regression fixtures.
+
+When `--blocks-engine` is passed, the operator wrapper defaults `--fixture-root`
+to `<blocks-engine>/fixtures` and discovers fixtures from both `websites/` and
+`solved/`. A matrix created from a corpus parent includes `fixture_directories:
+["websites", "solved"]` so the split is visible in artifacts.
+
+Promote a fixture to `fixtures/solved/` only after a matrix run grades it
+`solved_candidate`:
+
+```bash
+node tools/promote-solved-fixture.mjs \
+  --fixture-id <id> \
+  --registry /path/to/run/gutenberg-incompatibility-registry.json \
+  --blocks-engine /path/to/blocks-engine
+```
+
+The tool refuses to move fixtures whose registry decision is not
+`solved_candidate` (no `--force`). It performs the move with `git mv` and prints
+the commit/push next steps.
+
+A solved fixture that regresses in a later matrix run is surfaced as
+`solved_regression` in the registry decision groups and counts. This is a hard
+failure: solved fixtures must stay solved, and a regression requires either a fix
+or a reviewed demotion back to `fixtures/websites/`.
+
 ## Generic Invocation
 
 The workload composes these generic surfaces:
@@ -256,6 +393,21 @@ step (the slowest per-site step, it launches a browser per fixture); the run
 still produces native-rate, loss-classes, pattern-families, and the rest of the
 findings — just no `validateBlock` editor-validity data.
 
+## Bounded Surface Coverage
+
+Browser evidence defaults to the imported front page only. Multi-page evidence is
+opt-in with `--surface-coverage <n>` on the operator wrapper, or
+`SSI_FIXTURE_MATRIX_SURFACE_COVERAGE=<n>` / `SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES=<n>`
+for the bench. The matrix caps requested secondary pages at `5` extra surfaces
+per fixture, keeps HTML paths sorted lexicographically, and emits a
+`surface_coverage` summary plus `surface_coverage_runtime_cost` warning so run
+cost is visible before execution.
+
+Surface artifact names are deterministic and collision-safe. If two HTML entries
+map to the same route-derived ID, such as `about.html` and `about/index.html`,
+the later surface receives a stable suffix (`about--2`) for editor-open artifact
+prefixes and visual comparison names.
+
 Live caveat: the `editor-validate-blocks` step runs locally in WP Codebox today
 (see "Running the matrix locally" below) — a real local recipe-run executed the
 step and returned `validation_method: wp.blocks.validateBlock`,
@@ -270,64 +422,96 @@ Structural, feature, and editor-block validity all run *without ever rendering a
 browser*. After each fixture's import step, `buildFixtureMatrixRecipe` appends a
 `wordpress.visual-compare` step that renders the fixture's original static source
 vs the imported WordPress candidate in the same WP Codebox sandbox and emits
-`source.png`/`candidate.png`/`diff.png` plus `mismatch_pixels`/`total_pixels`
-(`wp-codebox/visual-compare/v1`). This is the exact recipe command the reusable
-`runVisualParityWorkload` helper composes in homeboy-extensions — the matrix
-emits it inline rather than spinning up a separate sandbox, so no new wp-codebox
-capability is introduced.
+`source.png`/`candidate.png`/`diff.png` plus `mismatch_pixels`/`total_pixels`.
+SSI sends the command as a one-entry `matrix-json` comparison so wp-codebox writes
+screenshots under `files/browser/visual-compare/<fixture-id>/...`; batch runs keep
+per-fixture visual evidence instead of overwriting every fixture into the default
+`files/browser/visual-compare/{source,candidate,diff}.png` paths. This is the
+exact recipe command the reusable `runVisualParityWorkload` helper composes in
+homeboy-extensions — the matrix emits it inline rather than spinning up a
+separate sandbox, so no new wp-codebox capability is introduced.
+
+Visual-parity capture is intentionally deterministic. SSI stages the static
+source with a small `data-ssi-visual-parity-deterministic` style block that
+finishes CSS animations/transitions and makes reveal/page-load elements visible;
+after import, the recipe installs the same CSS into the WordPress candidate via
+`wp_update_custom_css_post()` before taking screenshots. The visual compare step
+uses `waitFor=duration` with a fixed settle duration (`4000ms` by default) so both
+source and candidate are captured after DOM readiness plus the same settling
+window. Operators can override the settle contract with
+`SSI_FIXTURE_MATRIX_VISUAL_PARITY_WAIT_FOR` and
+`SSI_FIXTURE_MATRIX_VISUAL_PARITY_DURATION_MS` while investigating capture issues.
 
 `collectVisualParityDiagnostics` reads the comparison back out (from either the
-raw `wp-codebox/visual-compare/v1` diff or a normalized
-`homeboy/VisualParityArtifact/v1` artifact) and emits a `visual_parity_mismatch`
-diagnostic when `mismatch_pixels / total_pixels` exceeds the threshold (or a
-dimension mismatch is reported). Findings route to the visual-parity repair
-bucket (`candidate_repo: blocks-engine`, `repair_mode: visual-parity`). The
-screenshots, diff, and metrics are also captured into the SSI
-`visual_parity_artifacts` slot (`static-site-importer/visual-parity-artifacts/v1`)
-on the fixture result, even when the gate is off.
+raw `wp-codebox/visual-compare/v1` diff, a `wp-codebox/visual-compare-matrix/v1`
+summary, or a normalized `homeboy/VisualParityArtifact/v1` artifact). When the
+per-fixture `source.png` and `candidate.png` are available, SSI re-scores them with
+a deterministic bounded translation search before gating. The default search is
+vertical ±64px and horizontal 0px: this tolerates whole-page/header reflow without
+hiding horizontal layout drift. The gate uses `aligned_mismatch_ratio` when it is
+available and falls back to the dimension-fair overlap ratio for older evidence.
+`raw_mismatch_ratio` remains in diagnostics/artifacts for continuity.
 
-Gating is **opt-in**, because pixel diffs can be flaky. By default a mismatch is
-captured but non-gating (the `visual_parity_mismatch` loss class resolves to
-`acceptable`). Pass `--visual-parity-gate` (run wrapper) /
-`SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE=1` to make a mismatch-over-threshold a
-HARD gate (the loss class flips to the unacceptable, fixture-failing form, the
-same conditional-acceptance pattern as `preserved_runtime_island`). The mismatch
-threshold is configurable via `--pixel-threshold` /
-`SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD` (default `0.1`, also passed as
-the per-pixel `threshold=` arg so a higher value loosens the gate monotonically).
-Set `--no-visual-parity` / `visualParity: false` to omit the step entirely.
+Alignment reports `detected_offset` separately. Offsets above the reporting
+tolerance emit a non-gating `visual_parity_offset` diagnostic so real drift remains
+visible and fixable while shifted-but-present content is not mis-scored as missing.
+Findings route to the visual-parity repair bucket (`candidate_repo: blocks-engine`,
+`repair_mode: visual-parity`). The screenshots, diff, and metrics are also
+captured into the SSI `visual_parity_artifacts` slot
+(`static-site-importer/visual-parity-artifacts/v1`) on the fixture result, even
+when the gate is off.
+
+The dev-loop wrapper gates visual parity by default because the fixture matrix is
+deterministic transformer feedback: a fidelity gate that ignores fidelity is not
+honest. Pass `--no-visual-parity-gate` /
+`SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE=0` for exploratory capture-only runs. The
+mismatch threshold is configurable via `--pixel-threshold` /
+`SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD` (default exact parity, `0`).
+Alignment is enabled by default and can be configured with
+`SSI_FIXTURE_MATRIX_VISUAL_PARITY_ALIGNMENT=0`,
+`SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_VERTICAL_SHIFT`,
+`SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_HORIZONTAL_SHIFT`, and
+`SSI_FIXTURE_MATRIX_VISUAL_PARITY_OFFSET_TOLERANCE` (default `2` px). The
+alignment scorer uses `SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD`
+(default `0.1`) as its per-pixel anti-alias/color tolerance; this is separate from
+the mismatch-ratio gate threshold. Set `--no-visual-parity` /
+`visualParity: false` to omit the step entirely.
 
 Source/candidate wiring (verified by real local recipe-runs): the
 `wordpress.visual-compare` step renders and pixel-diffs locally in WP Codebox
 against the real two pages. `writeFixtureMatrixArtifacts` stages each fixture's
 ORIGINAL static source (index.html + css/js/images) into
-`<artifacts>/<id>/source/...`, and that artifacts directory is mounted into the
-sandbox at the WordPress uploads path, so the source is served by the same
-in-sandbox WordPress origin as the candidate. The step composes
-`source-url=/wp-content/uploads/static-site-importer-fixture-matrix/<id>/source/index.html`
-(served, HTTP 200) and `candidate-url=/`. Because each fixture's import step runs
-with `activate=true` — which sets `show_on_front=page` + `page_on_front` to the
-imported front page — and the recipe interleaves `[import, visual-compare]` per
-fixture, `/` resolves to THIS fixture's imported front page at capture time, the
-real imported WordPress output. A fixture can override `source_url`/`candidate_url`
-to target a specific staged page or imported permalink. The wiring,
-source-staging, finding-parsing, threshold, and gating logic are unit-tested in
+`<artifacts>/<id>/source/...`, with only the deterministic capture CSS added to
+HTML files. The step composes
+`source-url=file://<artifacts>/<id>/source/index.html` and `candidate-url=/`.
+Because each fixture's import step runs with `activate=true` — which sets
+`show_on_front=page` + `page_on_front` to the imported front page — and the recipe
+interleaves `[import, visual-setup, visual-compare]` per fixture, `/` resolves to
+THIS fixture's imported front page at capture time, the real imported WordPress
+output. A fixture can override `source_url`/`candidate_url` to target a specific
+staged page or imported permalink. The wiring, source-staging, finding-parsing,
+threshold, deterministic setup, and gating logic are unit-tested in
 `tools/fixture-matrix.test.mjs`.
 
-Sandbox egress note: a captured page that references external resources (Google
-Fonts, CDNs) would otherwise hang an egress-free sandbox until the 120s browser
-timeout. `wordpress.visual-compare` aborts cross-origin requests during capture by
-default (`block-external-requests`, wp-codebox) so both source and candidate
-render deterministically (offline, system-font fallback) and the comparison
-completes fast. Real measured ratios (15-saas, 38-medical-clinic, default
-viewport): the imported candidate currently diverges sharply from the source
-(0.94 and 0.44 mismatch ratios with dimension drift) — dominated by oversized
-inline SVG icons that lose CSS sizing and a frontend theme stylesheet that is not
-applied to the rendered page. The gate is capture-only by default
-(`--visual-parity-gate` to enforce); at any reasonable `--pixel-threshold` these
-imports are nowhere near the 1:1 project gate.
+Capture is full-page by default. wp-codebox's URL-target default is also
+full-page, but SSI previously overrode it with `full-page=false`, which limited
+the evidence to the requested viewport and missed below-the-fold regressions. Use
+`visualParityFullPage: false` only for an explicitly bounded exploratory run.
 
-## Running the matrix locally
+Known wp-codebox gap: `wordpress.visual-compare` supports wait strategy, fixed
+duration, viewport, full-page, threshold, and artifact namespacing through
+`matrix-json`, but it does not currently expose a first-class reduced-motion /
+animation-freeze / injected-style option, and the `blockExternalRequests` field
+SSI carries is not consumed by wp-codebox's visual-compare matrix adapter. SSI's
+deterministic CSS setup is the current harness-level contract until wp-codebox
+offers native capture-freeze controls.
+
+## Running the Matrix
+
+The wrapper has three execution modes. Use `--dry-run` with any mode to inspect
+the composed Homeboy commands before running the matrix.
+
+### Local Hot Execution
 
 `homeboy bench` auto-offloads to a connected default Lab runner whenever one is
 configured — even with no `--runner` flag. The offload translates
@@ -346,6 +530,40 @@ node tools/run-fixture-matrix.mjs \
   --fixture-root <dir-of-fixture-subdirs> \
   --wp-codebox-bin <wp-codebox>/packages/cli/dist/index.js
 ```
+
+`--runner local` is accepted as an alias for `--local` because Homeboy's `local`
+runner is not a Lab offload target. The wrapper maps it to the same hot-local
+command plan and does not pass `--runner local` through to Homeboy.
+
+### Lab Offload
+
+To offload to the connected Lab runner, select the runner and omit `--local`:
+
+```
+node tools/run-fixture-matrix.mjs \
+  --runner homeboy-lab \
+  --static-site-importer <ssi-checkout> \
+  --blocks-engine <blocks-engine-checkout>
+```
+
+This passes `--runner homeboy-lab` to Homeboy and does not inject
+`--force-hot --allow-local-hot`, so Homeboy can hand the bench to the connected
+runner. Use `--lab-only` without `--local` when any Lab runner is acceptable and a
+local fallback should be treated as a failure.
+
+### Default / Auto Routing
+
+With no `--local`, `--runner`, or `--lab-only`, the wrapper leaves routing to
+`homeboy bench`. In environments with a connected default Lab runner this may
+offload automatically. If you need deterministic local execution, pass `--local`;
+if you need deterministic Lab execution, pass `--runner <id>` or `--lab-only`.
+
+Mutual-exclusion rules:
+
+- `--local` cannot be combined with `--runner <remote>`.
+- `--local` cannot be combined with `--lab-only`.
+- Pick exactly one explicit target for deterministic runs: local-hot (`--local`)
+  or Lab offload (`--runner homeboy-lab` / `--lab-only`).
 
 Notes:
 - The `editor-validate-blocks` step (#1597) requires a wp-codebox build that

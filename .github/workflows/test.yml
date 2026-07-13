@@ -30,9 +30,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: Extra-Chill/homeboy-action@42636bb42a936a11339ba8424c6589ea542a76e1  # v2.8.2
+      - uses: Extra-Chill/homeboy-action@9474cf7db35bf1a34e5bc59b43a85cda5ec57188  # v2.8.9
         with:
-          commands: test
+          commands: review test
+          args: --extension wordpress
           php-version: ${{ matrix.php-version }}
           node-version: '24'
           autofix: 'false'

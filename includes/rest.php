@@ -208,7 +208,7 @@ function static_site_importer_rest_create_playground_open( array $artifact, arra
 	$ref           = hash( 'sha256', $blueprint_json );
 	$blueprint_url = 'https://playground.wordpress.net/#' . rawurlencode( $blueprint_json );
 
-	return array(
+	$result = array(
 		'success'  => true,
 		'preview'  => array(
 			'status'     => 'ready',
@@ -232,6 +232,14 @@ function static_site_importer_rest_create_playground_open( array $artifact, arra
 			),
 		),
 	);
+
+	$source_metadata        = isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array();
+	$figma_transform_report = isset( $source_metadata['figma_transform_report'] ) && is_array( $source_metadata['figma_transform_report'] ) ? $source_metadata['figma_transform_report'] : array();
+	if ( ! empty( $figma_transform_report ) ) {
+		$result['figma_transform_report'] = $figma_transform_report;
+	}
+
+	return $result;
 }
 
 /**
@@ -449,7 +457,19 @@ function static_site_importer_rest_figma_allowed_site_hosts(): array {
  * @return true|WP_Error
  */
 function static_site_importer_rest_manage_permission() {
-	if ( function_exists( 'current_user_can' ) && current_user_can( 'switch_themes' ) ) {
+	$allowed = ! function_exists( 'current_user_can' ) || current_user_can( 'switch_themes' );
+
+	/**
+	 * Filters whether the current request may run import mutations.
+	 *
+	 * Host products can grant their own product-specific capability without giving
+	 * users broad theme-management access.
+	 *
+	 * @param bool $allowed Whether the current request is allowed.
+	 */
+	$allowed = (bool) apply_filters( 'static_site_importer_can_manage_imports', $allowed );
+
+	if ( $allowed ) {
 		return true;
 	}
 
@@ -481,7 +501,7 @@ function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 	if ( isset( $params['provider_args'] ) && is_array( $params['provider_args'] ) ) {
 		$input['provider_args'] = $params['provider_args'];
 	}
-	$mode   = static_site_importer_rest_import_mode( $params );
+	$mode = static_site_importer_rest_import_mode( $params );
 
 	if ( 'playground' === $mode ) {
 		$result = static_site_importer_rest_open_in_playground( $source, $input );
@@ -492,7 +512,7 @@ function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 		return rest_ensure_response( $result );
 	}
 
-	$result = static_site_importer_rest_apply_to_current_site( $source, $input, $params );
+	$result = static_site_importer_rest_apply_to_current_site( $source, $input );
 	if ( is_wp_error( $result ) ) {
 		return $result;
 	}
@@ -546,14 +566,12 @@ function static_site_importer_rest_open_in_playground( array $source, array $inp
 
 	$artifact        = $runtime['artifact'];
 	$source_metadata = isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array();
-	if ( isset( $runtime['source_metadata'] ) && is_array( $runtime['source_metadata'] ) ) {
-		$source_metadata = array_merge( $source_metadata, $runtime['source_metadata'] );
-	}
-	if ( 'url' === (string) ( $source_metadata['source_type'] ?? '' ) && isset( $runtime['provider'] ) && '' !== (string) $runtime['provider'] ) {
+	$source_metadata = array_merge( $source_metadata, $runtime['source_metadata'] );
+	if ( 'url' === (string) ( $source_metadata['source_type'] ?? '' ) && '' !== (string) $runtime['provider'] ) {
 		$source_metadata['url_import_provider'] = (string) $runtime['provider'];
 	}
 	$input['source_metadata'] = $source_metadata;
-	$input['artifact'] = $artifact;
+	$input['artifact']        = $artifact;
 
 	$identity = Static_Site_Importer_Site_Identity::resolve(
 		array(
@@ -659,10 +677,9 @@ function static_site_importer_build_playground_preview( array $artifact, array $
  *
  * @param array<string,mixed> $source Source payload.
  * @param array<string,mixed> $input  Import args.
- * @param array<string,mixed> $params Request params.
  * @return array<string,mixed>|WP_Error
  */
-function static_site_importer_rest_apply_to_current_site( array $source, array $input, array $params ) {
+function static_site_importer_rest_apply_to_current_site( array $source, array $input ) {
 	$decorate_current_site_preview = static function ( $result ) {
 		if ( ! is_array( $result ) ) {
 			return $result;
@@ -686,10 +703,8 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
 	}
 
 	$source_metadata = isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array();
-	if ( isset( $runtime['source_metadata'] ) && is_array( $runtime['source_metadata'] ) ) {
-		$source_metadata = array_merge( $source_metadata, $runtime['source_metadata'] );
-	}
-	if ( 'url' === (string) ( $source_metadata['source_type'] ?? '' ) && isset( $runtime['provider'] ) && '' !== (string) $runtime['provider'] ) {
+	$source_metadata = array_merge( $source_metadata, $runtime['source_metadata'] );
+	if ( 'url' === (string) ( $source_metadata['source_type'] ?? '' ) && '' !== (string) $runtime['provider'] ) {
 		$source_metadata['url_import_provider'] = (string) $runtime['provider'];
 	}
 	$input['source_metadata'] = $source_metadata;
@@ -958,10 +973,6 @@ function static_site_importer_rest_codebox_artifact_files( array $artifact ): ar
 	$files          = isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? $artifact['files'] : array();
 
 	foreach ( $files as $file ) {
-		if ( ! is_array( $file ) ) {
-			continue;
-		}
-
 		$path = isset( $file['path'] ) ? (string) $file['path'] : '';
 		$path = preg_replace( '#^website/#', '', $path );
 		$path = static_site_importer_rest_codebox_artifact_path( (string) $path );
@@ -1486,7 +1497,7 @@ function static_site_importer_rest_source_runtime( array $source, array $input =
 			return $runtime;
 		}
 
-		$source_metadata = isset( $runtime['source_metadata'] ) && is_array( $runtime['source_metadata'] ) ? $runtime['source_metadata'] : array();
+		$source_metadata                = isset( $runtime['source_metadata'] ) && is_array( $runtime['source_metadata'] ) ? $runtime['source_metadata'] : array();
 		$source_metadata['source_type'] = isset( $source_metadata['source_type'] ) ? (string) $source_metadata['source_type'] : 'url';
 
 		return array(
@@ -1578,13 +1589,9 @@ function static_site_importer_rest_source_runtime( array $source, array $input =
  *
  * @param array<int,array<string,mixed>> $files Artifact files.
  * @return true|WP_Error
- */
+	 */
 function static_site_importer_rest_validate_static_html_sources( array $files ) {
 	foreach ( $files as $file ) {
-		if ( ! is_array( $file ) ) {
-			continue;
-		}
-
 		$path = isset( $file['path'] ) ? (string) $file['path'] : '';
 		if ( ! preg_match( '/\.html?$/i', $path ) ) {
 			continue;

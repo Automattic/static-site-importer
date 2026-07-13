@@ -68,6 +68,12 @@ if ( ! function_exists( 'esc_url' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_strip_all_tags' ) ) {
+	function wp_strip_all_tags( string $text ): string {
+		return strip_tags( $text );
+	}
+}
+
 if ( ! function_exists( 'trailingslashit' ) ) {
 	function trailingslashit( string $value ): string {
 		return rtrim( $value, '/\\' ) . '/';
@@ -150,6 +156,18 @@ $assert( str_contains( $editor_css, '.editor-styles-wrapper .glow-orb { opacity:
 $assert( str_contains( $editor_css, '.compiled-site-repair { display: block; }' ), 'editor-includes-compiled-site-repair-css', $editor_css );
 $assert( ! str_contains( $editor_css, '.should-not-appear' ), 'unknown-target-repair-css-is-ignored', $editor_css );
 
+$body_guard_writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes(
+	'/tmp/body-class-guard-smoke',
+	'Body Class Guard Smoke',
+	'.page { max-width: 720px; margin: 0 auto; padding: 5rem 2rem; } .admin-bar { padding-top: 2rem; } .home { color: red; } .card { max-width: 20rem; }',
+	array(),
+	array()
+);
+$body_guard_css    = (string) ( $body_guard_writes['/tmp/body-class-guard-smoke/style.css'] ?? '' );
+$assert( str_contains( $body_guard_css, 'body.page, body.admin-bar { width: auto; max-width: none; margin: 0; padding: 0; }' ), 'style-guards-wordpress-body-class-collisions', $body_guard_css );
+$assert( ! str_contains( $body_guard_css, 'body.card' ), 'style-does-not-guard-non-wordpress-body-class', $body_guard_css );
+$assert( ! str_contains( $body_guard_css, 'body.home' ), 'style-does-not-guard-non-layout-body-class', $body_guard_css );
+
 $documents      = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'documents_from_compiled_site_pages' );
 $missing_source = $documents->invoke(
 	null,
@@ -214,6 +232,41 @@ $navigation_part_writes = is_array( $navigation_part_result ) ? $navigation_part
 $navigation_part_reports = is_array( $navigation_part_result ) ? $navigation_part_result['reports'] : array();
 $assert( str_contains( (string) ( $navigation_part_writes['/tmp/visual-repair-smoke/parts/header.html'] ?? '' ), 'wp:navigation-link' ), 'materialization-plan-navigation-row-is-used-for-header' );
 $assert( array( 'website/index.html#main-nav' ) === ( $navigation_part_reports[0]['source_paths'] ?? array() ), 'materialization-plan-navigation-source-path-is-reported' );
+
+if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
+	function blocks_engine_php_transformer_convert_format( string $content, string $from, string $to, array $options = array() ): array {
+		unset( $from, $to, $options );
+		$text = trim( preg_replace( '/\s+/', ' ', wp_strip_all_tags( $content ) ) ?? '' );
+		return array(
+			'serialized_blocks' => '<!-- wp:paragraph --><p>' . esc_html( $text ) . '</p><!-- /wp:paragraph -->',
+			'diagnostics'       => array(),
+		);
+	}
+}
+
+$source_file_part_result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
+	'/tmp/visual-repair-smoke',
+	array(
+		'source_files' => array(
+			array(
+				'path'    => 'index.html',
+				'content' => '<!doctype html><html><body><main><header><nav><a href="/news/">News</a><svg><path d="M0 0h1v1z" /></svg></nav></header><article><h1>Home</h1></article><footer><p>Footer</p></footer></main></body></html>',
+			),
+		),
+	)
+);
+$assert( is_array( $source_file_part_result ), 'source-file-template-part-fallback-succeeds' );
+$source_file_part_writes = is_array( $source_file_part_result ) ? $source_file_part_result['writes'] : array();
+$source_file_part_reports = is_array( $source_file_part_result ) ? $source_file_part_result['reports'] : array();
+$assert( isset( $source_file_part_writes['/tmp/visual-repair-smoke/parts/header.html'] ), 'source-file-template-part-fallback-writes-header' );
+$assert( isset( $source_file_part_writes['/tmp/visual-repair-smoke/parts/footer.html'] ), 'source-file-template-part-fallback-writes-footer' );
+$assert( ! str_contains( (string) $source_file_part_writes['/tmp/visual-repair-smoke/parts/header.html'], '<!-- wp:html' ), 'source-file-template-part-fallback-strips-inline-svg-html-fallback' );
+$assert( array( 'index.html#header' ) === ( $source_file_part_reports[0]['source_paths'] ?? array() ), 'source-file-template-part-fallback-reports-header-source' );
+
+$base_theme_writes = Static_Site_Importer_Theme_Materializer::base_theme_writes( '/tmp/visual-repair-smoke', 'visual-repair-smoke', 'Visual Repair Smoke', '', true, true );
+$assert( isset( $base_theme_writes['/tmp/visual-repair-smoke/templates/404.html'] ), 'base-theme-writes-404-template' );
+$assert( isset( $base_theme_writes['/tmp/visual-repair-smoke/templates/archive.html'] ), 'base-theme-writes-archive-template' );
+$assert( str_contains( $base_theme_writes['/tmp/visual-repair-smoke/templates/404.html'], 'wp:template-part {"slug":"header"' ), 'base-theme-404-template-uses-header-part' );
 
 $empty_template_part_result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
 	'/tmp/visual-repair-smoke',
@@ -483,6 +536,16 @@ $asset_result    = Static_Site_Importer_Theme_Materializer::materialize_website_
 					'content_base64' => base64_encode( "\x89PNG\r\n\x1a\n" ),
 				),
 				array(
+					'path'               => 'website/3-artist-music/assets/materialized-svg/cover.svg',
+					'role'               => 'image',
+					'kind'               => 'svg',
+					'mime_type'          => 'image/svg+xml',
+					'content'            => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#000"/></svg>' . "\n",
+					'source_role'        => 'importer_owned',
+					'keep_source'        => false,
+					'pipeline_sanitized' => true,
+				),
+				array(
 					'path'    => 'website/3-artist-music/merch.html',
 					'kind'    => 'html',
 					'role'    => 'document',
@@ -505,11 +568,14 @@ $assert( str_contains( (string) $asset_result['css'], '.native-plan' ), 'materia
 $assert( str_contains( (string) $asset_result['css'], 'assets/materialized/fonts/native.woff2' ), 'materialization-plan-css-font-url-is-rewritten' );
 $assert( ! str_contains( (string) $asset_result['css'], '.top-level-artifact' ), 'top-level-css-is-ignored-when-native-plan-assets-have-payloads' );
 $assert( file_exists( $asset_theme_dir . '/assets/materialized/assets/logo.png' ), 'materialization-plan-binary-asset-is-written' );
+$assert( file_exists( $asset_theme_dir . '/assets/materialized/website/3-artist-music/assets/materialized-svg/cover.svg' ), 'materialization-plan-svg-asset-is-written' );
 $assert( file_exists( $asset_theme_dir . '/assets/materialized/assets/app.js' ), 'materialization-plan-script-asset-is-written' );
 $assert( file_exists( $asset_theme_dir . '/assets/materialized/assets/vendor.js' ), 'materialization-plan-second-script-asset-is-written' );
 $assert( file_exists( $asset_theme_dir . '/assets/materialized/fonts/native.woff2' ), 'materialization-plan-font-asset-is-written' );
 $assert( ! file_exists( $asset_theme_dir . '/assets/materialized/website/3-artist-music/merch.html' ), 'materialization-plan-html-document-is-not-written-as-asset' );
 $assert( 'materialization_plan.assets' === ( $asset_result['assets']['assets/logo.png']['origin'] ?? '' ), 'materialization-plan-asset-origin-is-reported' );
+$assert( 'image/svg+xml' === ( $asset_result['assets']['website/3-artist-music/assets/materialized-svg/cover.svg']['mime_type'] ?? '' ), 'materialization-plan-svg-mime-is-reported' );
+$assert( false === ( $asset_result['assets']['website/3-artist-music/assets/materialized-svg/cover.svg']['keep_source'] ?? true ), 'materialization-plan-svg-importer-owned-source-is-not-retained' );
 $assert( ! isset( $asset_result['assets']['website/3-artist-music/merch.html'] ), 'materialization-plan-html-document-is-not-reported-as-asset' );
 $assert( file_exists( $asset_theme_dir . '/assets/css/fonts.css' ), 'font-materialization-stylesheet-is-written' );
 $assert( str_contains( (string) file_get_contents( $asset_theme_dir . '/assets/css/fonts.css' ), 'fonts.googleapis.com/css2?family=Open+Sans' ), 'font-materialization-preserves-google-font-import' );
@@ -536,7 +602,7 @@ $source_page = Static_Site_Importer_Source_Page::from_materialization_plan_page(
 		'source_path'  => 'website/3-artist-music/index.html',
 		'slug'         => 'home',
 		'title'        => 'Home',
-		'block_markup' => '<!-- wp:paragraph --><p><a href="merch.html">Merch</a><img src="assets/logo.png" alt="Logo"></p><!-- /wp:paragraph -->',
+		'block_markup' => '<!-- wp:paragraph --><p><a href="merch.html">Merch</a><img src="assets/logo.png" alt="Logo"></p><!-- /wp:paragraph --><!-- wp:image {"url":"website/3-artist-music/assets/materialized-svg/cover.svg","alt":"Cover"} --><figure class="wp-block-image"><img src="website/3-artist-music/assets/materialized-svg/cover.svg" alt="Cover"/></figure><!-- /wp:image -->',
 	)
 );
 $assert( $source_page instanceof Static_Site_Importer_Source_Page, 'source-page-for-link-rewrite-is-created' );
@@ -546,6 +612,7 @@ $page_artifacts = $source_page instanceof Static_Site_Importer_Source_Page ? Sta
 	array(
 		'website/3-artist-music/merch.html' => array( 'final_url' => 'https://example.test/wp-content/themes/generated/assets/materialized/website/3-artist-music/merch.html' ),
 		'website/3-artist-music/assets/logo.png' => array( 'final_url' => 'https://example.test/wp-content/themes/generated/assets/materialized/website/3-artist-music/assets/logo.png' ),
+		'website/3-artist-music/assets/materialized-svg/cover.svg' => array( 'final_url' => 'https://example.test/wp-content/themes/generated/assets/materialized/website/3-artist-music/assets/materialized-svg/cover.svg' ),
 	),
 	array(
 		'website/3-artist-music/merch.html' => 'https://example.test/merch/',
@@ -556,6 +623,7 @@ $rewritten_content = (string) ( $page_artifacts['contents']['website/3-artist-mu
 $assert( str_contains( $rewritten_content, 'href="https://example.test/merch/"' ), 'html-page-link-rewrites-to-imported-page-permalink' );
 $assert( ! str_contains( $rewritten_content, 'href="https://example.test/wp-content/themes/generated/assets/materialized/website/3-artist-music/merch.html"' ), 'html-page-link-does-not-rewrite-to-materialized-html-asset' );
 $assert( str_contains( $rewritten_content, 'src="https://example.test/wp-content/themes/generated/assets/materialized/website/3-artist-music/assets/logo.png"' ), 'non-html-asset-link-still-rewrites-to-materialized-asset' );
+$assert( str_contains( $rewritten_content, '"url":"https:\/\/example.test\/wp-content\/themes\/generated\/assets\/materialized\/website\/3-artist-music\/assets\/materialized-svg\/cover.svg"' ), 'core-image-svg-url-rewrites-to-materialized-asset' );
 
 $base_writes   = Static_Site_Importer_Theme_Materializer::base_theme_writes( $asset_theme_dir, 'fixture-theme', 'Fixture Theme', (string) $asset_result['css'], false, false, $asset_result['scripts'], $asset_result['stylesheets'] );
 $functions_php = (string) ( $base_writes[ $asset_theme_dir . '/functions.php' ] ?? '' );
@@ -564,6 +632,9 @@ $assert( str_contains( $functions_php, '/assets/materialized/assets/site.css' ),
 $assert( str_contains( $functions_php, "wp_enqueue_style( 'fixture-theme-style', get_stylesheet_uri(), array (\n  0 => 'fixture-theme-asset-assets-css-fonts',\n  1 => 'fixture-theme-asset-assets-materialized-assets-site',\n), wp_get_theme()->get( 'Version' ) );" ), 'theme-style-depends-on-materialized-stylesheets' );
 $assert( str_contains( $functions_php, "wp_enqueue_style( 'fixture-theme-editor-style', get_template_directory_uri() . '/assets/css/editor-style.css', array (\n  0 => 'fixture-theme-asset-assets-css-fonts',\n  1 => 'fixture-theme-asset-assets-materialized-assets-site',\n), wp_get_theme()->get( 'Version' ) );" ), 'editor-style-depends-on-materialized-stylesheets' );
 $assert( str_contains( $functions_php, '/assets/materialized/assets/app.js' ), 'materialization-plan-script-is-enqueued' );
+$assert( str_contains( $functions_php, "\$mimes['svg'] = 'image/svg+xml';" ), 'generated-theme-enables-svg-upload-mime' );
+$assert( str_contains( $functions_php, "add_filter( 'wp_check_filetype_and_ext'" ), 'generated-theme-corrects-svg-filetype-check' );
+$assert( str_contains( $functions_php, 'sanitized by the import pipeline at build time' ), 'generated-theme-documents-build-time-svg-sanitization' );
 $assert( str_contains( $functions_php, "wp_script_add_data( 'fixture-theme-asset-assets-materialized-assets-app', 'defer', true );" ), 'materialization-plan-script-defer-is-enqueued' );
 $assert( str_contains( $functions_php, "wp_script_add_data( 'fixture-theme-asset-assets-materialized-assets-app', 'type', 'module' );" ), 'materialization-plan-script-type-is-enqueued' );
 $assert( str_contains( $functions_php, "wp_script_add_data( 'fixture-theme-asset-assets-materialized-assets-vendor', 'async', true );" ), 'materialization-plan-script-async-is-enqueued' );

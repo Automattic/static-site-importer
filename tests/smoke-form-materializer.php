@@ -44,6 +44,20 @@ namespace {
 		}
 	}
 
+	$GLOBALS['ssi_jetpack_form_blocks_available'] = true;
+
+	if ( ! class_exists( 'WP_Block_Type_Registry' ) ) {
+		class WP_Block_Type_Registry {
+			public static function get_instance(): self {
+				return new self();
+			}
+
+			public function is_registered( string $name ): bool {
+				return ! empty( $GLOBALS['ssi_jetpack_form_blocks_available'] ) && in_array( $name, array( 'jetpack/contact-form', 'jetpack/field-text' ), true );
+			}
+		}
+	}
+
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
@@ -122,6 +136,16 @@ namespace {
 	$assert( str_contains( $markup, 'hello@example.com' ), 'markup-mailto-recipient' );
 	$assert( str_contains( $markup, '"options":["Sales","Support"]' ), 'markup-select-options' );
 
+	// --- Provider blocks are never claimed without the provider runtime --------
+	$GLOBALS['ssi_jetpack_form_blocks_available'] = false;
+	$unavailable_seed                              = Static_Site_Importer_Form_Seeder::seed( $forms_manifest );
+	$unavailable_row                               = $unavailable_seed['forms'][0] ?? array();
+	$assert( 1 === ( $unavailable_seed['counts']['skipped'] ?? 0 ), 'seed-unavailable-provider-skips-form' );
+	$assert( 'provider_unavailable' === ( $unavailable_row['reason'] ?? '' ), 'seed-unavailable-provider-reason' );
+	$assert( false === ( $unavailable_row['runtime_mapped'] ?? true ), 'seed-unavailable-provider-not-runtime-mapped' );
+	$assert( empty( $unavailable_row['block_markup'] ), 'seed-unavailable-provider-emits-no-block-markup' );
+	$GLOBALS['ssi_jetpack_form_blocks_available'] = true;
+
 	// --- Native html_form_fallback row is enriched into a form finding -------
 	$enrich   = new ReflectionMethod( 'Static_Site_Importer_Report_Diagnostics', 'diagnostic_from_conversion_report_fallback' );
 	$enriched = $enrich->invoke(
@@ -144,6 +168,8 @@ namespace {
 	$assert( isset( $enriched['form']['action'] ) && 'mailto:hello@example.com' === $enriched['form']['action'], 'enrich-carries-form-metadata' );
 	$assert( isset( $enriched['controls'][0]['type'] ) && 'email' === $enriched['controls'][0]['type'], 'enrich-carries-controls' );
 	$assert( 'form' === ( $enriched['tag'] ?? '' ), 'enrich-tag-form' );
+	$assert( Static_Site_Importer_Report_Diagnostics::has_materializable_form_findings( array( 'diagnostics' => array( $enriched ) ) ), 'form-finding-requires-provider-dependency' );
+	$assert( ! Static_Site_Importer_Report_Diagnostics::has_materializable_form_findings( array( 'diagnostics' => array( array( 'diagnostic_code' => 'html_product_grid_fallback' ) ) ) ), 'non-form-finding-does-not-require-provider-dependency' );
 
 	// --- Gate loop: a mapped form finding receives the runtime-mapped signal --
 	$report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
@@ -187,6 +213,95 @@ namespace {
 	$assert( 'acceptable_preservation' === ( $mapped['acceptability'] ?? '' ), 'finding-acceptable-preservation' );
 	$assert( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND === Static_Site_Importer_Diagnostic_Loss_Classes::classify( $mapped ), 'finding-stays-preserved-runtime-island' );
 	$assert( empty( $unmapped['runtime_mapped'] ), 'unmappable-form-stays-unsignaled' );
+
+	// --- Graft bridges source HTML paths to generated post_content keys ---------
+	$mapped_source_report                                                       = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
+	$mapped_source_report['source_documents']['blocks_engine_documents'][]      = array(
+		'source_path'  => 'website/index.html',
+		'post_type'    => 'page',
+		'slug'         => 'home',
+		'materialized' => true,
+	);
+	$mapped_source_report['diagnostics'][]                                      = array(
+		'type'            => 'unsupported_html_fallback',
+		'diagnostic_code' => 'html_form_fallback',
+		'loss_class'      => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+		'source_path'     => 'website/index.html',
+		'selector'        => 'form.contact',
+		'tag'             => 'form',
+		'controls'        => array(
+			array( 'tag' => 'input', 'type' => 'email', 'label' => 'Email', 'required' => true ),
+			array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+		),
+		'readable_blocks' => array(
+			array(
+				'blockName'    => 'core/paragraph',
+				'attrs'        => array(),
+				'innerBlocks'  => array(),
+				'innerHTML'    => '<p>Email Send</p>',
+				'innerContent' => array( '<p>Email Send</p>' ),
+			),
+		),
+	);
+	$mapped_source_contents                                                     = array( 'posts/page-home.post_content' => '<!-- wp:paragraph --><p>Email Send</p><!-- /wp:paragraph -->' );
+	$mapped_source_seeding                                                      = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $mapped_source_report, array(), $mapped_source_contents );
+	$assert( 1 === ( $mapped_source_seeding['grafted_count'] ?? 0 ), 'graft-source-document-to-post-content-key' );
+	$assert( str_contains( (string) $mapped_source_contents['posts/page-home.post_content'], 'wp:jetpack/contact-form' ), 'graft-source-document-key-contact-form' );
+	$assert( 'posts/page-home.post_content' === ( $mapped_source_report['diagnostics'][0]['graft_source_path'] ?? '' ), 'graft-source-path-recorded' );
+
+	// --- Generated core/html form diagnostics materialize per page ---------------
+	$core_html_form = '<form class="newsletter-form" action="#" method="post" novalidate><input type="email" name="email" placeholder="your@email.com" autocomplete="email" required aria-label="Email address"><button type="submit">Subscribe</button></form>';
+	$core_html_block = static function ( string $html ): string {
+		return '<!-- wp:html ' . json_encode( array( 'content' => $html ) ) . ' -->' . $html . '<!-- /wp:html -->';
+	};
+	$duplicate_generated_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
+	foreach ( array( 'posts/page-home.post_content', 'posts/page-contact.post_content' ) as $post_content_key ) {
+		$duplicate_generated_report['diagnostics'][] = array(
+			'type'                => 'core_html_block',
+			'diagnostic_code'     => 'generated_document_contains_core_html',
+			'reason_code'         => 'generated_document_contains_core_html',
+			'loss_class'          => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+			'source_path'         => $post_content_key,
+			'selector'            => 'form.newsletter-form',
+			'tag_name'            => 'FORM',
+			'block_name'          => 'core/html',
+			'source_html_preview' => $core_html_form,
+		);
+	}
+	$duplicate_generated_contents = array(
+		'posts/page-home.post_content'    => '<!-- wp:group --><div class="wp-block-group">' . $core_html_block( $core_html_form ) . '</div><!-- /wp:group -->',
+		'posts/page-contact.post_content' => '<!-- wp:group --><div class="wp-block-group">' . $core_html_block( $core_html_form ) . '</div><!-- /wp:group -->',
+	);
+	$duplicate_generated_seeding = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $duplicate_generated_report, array(), $duplicate_generated_contents );
+	$assert( 2 === ( $duplicate_generated_seeding['mapped_count'] ?? 0 ), 'graft-generated-duplicate-forms-mapped' );
+	$assert( 2 === ( $duplicate_generated_seeding['grafted_count'] ?? 0 ), 'graft-generated-duplicate-forms-grafted' );
+	$assert( str_contains( (string) $duplicate_generated_contents['posts/page-home.post_content'], 'wp:jetpack/contact-form' ), 'graft-generated-home-contact-form' );
+	$assert( str_contains( (string) $duplicate_generated_contents['posts/page-contact.post_content'], 'wp:jetpack/contact-form' ), 'graft-generated-contact-contact-form' );
+	$assert( ! str_contains( (string) $duplicate_generated_contents['posts/page-home.post_content'], '<!-- wp:html' ), 'graft-generated-home-core-html-removed' );
+	$assert( ! str_contains( (string) $duplicate_generated_contents['posts/page-contact.post_content'], '<!-- wp:html' ), 'graft-generated-contact-core-html-removed' );
+
+	// --- Generated core/html labels carry into Jetpack fields ---------------------
+	$labelled_contact_form = '<form class="contact-form" action="mailto:artist@example.com" method="post"><label class="screen-reader-text" for="contact-name">Your name</label><input id="contact-name" type="text" name="name" placeholder="Name"><label>Email address <input type="email" name="email" placeholder="you@example.com" required></label><button type="submit">Send</button></form>';
+	$labelled_report       = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/contact.html' );
+	$labelled_report['diagnostics'][] = array(
+		'type'                => 'core_html_block',
+		'diagnostic_code'     => 'generated_document_contains_core_html',
+		'reason_code'         => 'generated_document_contains_core_html',
+		'loss_class'          => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+		'source_path'         => 'posts/page-contact.post_content',
+		'selector'            => 'form.contact-form',
+		'tag_name'            => 'FORM',
+		'block_name'          => 'core/html',
+		'source_html_preview' => $labelled_contact_form,
+	);
+	$labelled_contents = array( 'posts/page-contact.post_content' => $core_html_block( $labelled_contact_form ) );
+	$labelled_seeding  = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $labelled_report, array(), $labelled_contents );
+	$labelled_grafted  = (string) ( $labelled_contents['posts/page-contact.post_content'] ?? '' );
+	$assert( 1 === ( $labelled_seeding['mapped_count'] ?? 0 ), 'graft-generated-labelled-form-mapped' );
+	$assert( 1 === ( $labelled_seeding['grafted_count'] ?? 0 ), 'graft-generated-labelled-form-grafted' );
+	$assert( str_contains( $labelled_grafted, '"label":"Your name"' ), 'graft-generated-label-for-carried' );
+	$assert( str_contains( $labelled_grafted, '"label":"Email address"' ), 'graft-generated-wrapped-label-carried' );
+	$assert( str_contains( $labelled_grafted, '"placeholder":"Name"' ), 'graft-generated-placeholder-still-carried' );
 
 	// --- Form finding enrich carries readable_blocks for graft anchoring --------
 	$enrich_readable = $enrich->invoke(

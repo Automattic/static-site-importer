@@ -157,8 +157,12 @@ JSON;
 
 	// Rendered HTML carries a product card for a product that also exists in the
 	// bundle data, with a different price, to prove bundle-data wins on dedupe.
+	// It also carries Artist merch-style cards whose product metadata is static
+	// while quantity/add controls remain source HTML runtime controls.
 	$index_html = '<!doctype html><html><body>'
 		. '<article class="product-card"><h2>Oatmeal Dinner Plate</h2><p class="price">$99.00</p></article>'
+		. '<article class="merch-card reveal"><div class="merch-tag">Apparel</div><div class="merch-name">EP Heavyweight Tee</div><p class="merch-desc">Washed black tee.</p><div class="merch-price">$30</div><button class="qty-btn">+</button><span class="qty-display">1</span><button class="add-to-cart">Add</button></article>'
+		. '<article class="merch-card reveal"><div class="merch-tag">Vinyl</div><div class="merch-name">EP on Vinyl</div><p class="merch-desc">Limited pressing.</p><div class="merch-price">$28</div><button class="add-to-cart">Add</button></article>'
 		. '<div id="featuredGrid" class="grid"></div>'
 		. '</body></html>';
 
@@ -195,7 +199,7 @@ JSON;
 	}
 
 	$assert( ! is_wp_error( $compiled ), 'compile-succeeds', is_wp_error( $compiled ) ? $compiled->get_error_message() : '' );
-	$assert( 4 === count( $products ), 'extracts-three-js-and-one-json-product', 'count=' . count( $products ) );
+	$assert( 6 === count( $products ), 'extracts-bundle-json-and-static-commerce-card-products', 'count=' . count( $products ) );
 
 	// js/products.js products materialize with name/price/category/description.
 	$plate = $by_slug['oatmeal-dinner-plate'] ?? array();
@@ -217,6 +221,16 @@ JSON;
 	$assert( array( 'Gear' ) === ( $dripper['categories'] ?? array() ), 'json-type-synonym-to-category' );
 	$assert( str_contains( (string) ( $dripper['description'] ?? '' ), 'pour-over cone' ), 'json-desc-synonym-to-description' );
 
+	$tee = $by_slug['ep-heavyweight-tee'] ?? array();
+	$assert( 'EP Heavyweight Tee' === ( $tee['name'] ?? '' ), 'merch-card-name-class-to-name' );
+	$assert( '30.00' === ( $tee['regular_price'] ?? '' ), 'merch-card-price-class-to-price' );
+	$assert( array( 'Apparel' ) === ( $tee['categories'] ?? array() ), 'merch-card-tag-to-category' );
+	$assert( array( '.merch-card' ) === ( $tee['source_selectors'] ?? array() ), 'merch-card-source-selector' );
+	$assert( str_contains( (string) ( $tee['description'] ?? '' ), 'Washed black' ), 'merch-card-description' );
+
+	$vinyl = $by_slug['ep-on-vinyl'] ?? array();
+	$assert( '28.00' === ( $vinyl['regular_price'] ?? '' ), 'second-merch-card-extracted' );
+
 	// Non-product arrays are not misdetected.
 	$assert( ! isset( $by_slug['home'] ) && ! isset( $by_slug['shop'] ) && ! isset( $by_slug['contact'] ), 'navigation-array-not-detected' );
 
@@ -232,7 +246,7 @@ JSON;
 		)
 	);
 	$assert( array() === ( $validation['errors'] ?? array() ), 'woo-adapter-validator-accepts-bundle-products', implode( '; ', array_map( static fn ( $e ) => ( $e['path'] ?? '' ) . ' ' . ( $e['message'] ?? '' ), $validation['errors'] ?? array() ) ) );
-	$assert( 4 === count( $validation['products'] ?? array() ), 'woo-adapter-validator-preserves-product-count' );
+	$assert( 6 === count( $validation['products'] ?? array() ), 'woo-adapter-validator-preserves-product-count' );
 	$assert( 'Oatmeal Dinner Plate' === ( $validation['products'][0]['name'] ?? ( $by_slug['oatmeal-dinner-plate']['name'] ?? '' ) ), 'woo-adapter-validator-preserves-name' );
 
 	if ( $failures ) {

@@ -2,7 +2,12 @@
   "name": "static-site-importer",
   "private": true,
   "scripts": {
+    "fig-intent-parity": "node tools/fig-intent-parity-report.mjs",
+    "fig-fixture-e2e": "node tools/run-fig-fixture-e2e.mjs",
+    "test": "npm run test:fixture-matrix && npm run test:fig-fixture-e2e && npm run test:promote-solved-fixture",
+    "test:fig-fixture-e2e": "node --test tools/run-fig-fixture-e2e.test.mjs",
     "test:fixture-matrix": "node --test tools/fixture-matrix.test.mjs",
+    "test:promote-solved-fixture": "node --test tools/promote-solved-fixture.test.mjs",
     "test:js-block-validation": "node tests/smoke-generated-theme-block-validation.cjs",
     "test:validation": "node tests/run-validation-harness.cjs"
   },
@@ -11,5 +16,9 @@
     "@wordpress/blocks": "^15.18.0",
     "@wordpress/element": "^6.45.0",
     "jsdom": "^29.1.0"
+  },
+  "dependencies": {
+    "pixelmatch": "^7.2.0",
+    "pngjs": "^7.0.0"
   }
 }

@@ -1,13 +1,20 @@
 #!/usr/bin/env node
 
+/**
+ * External dependencies
+ */
 import fs from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runWpCodeboxRecipe, wpCodeboxCommand, wpCodeboxBin } from '../tools/wp-codebox/recipe.mjs';
+
+/**
+ * Internal dependencies
+ */
+import { DEFAULT_RECIPE_INACTIVITY_TIMEOUT_MS, runWpCodeboxRecipe, wpCodeboxCommand, wpCodeboxBin } from '../tools/wp-codebox/recipe.mjs';
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
 import {
   buildFixtureMatrixRecipe,
+  classifyVisualDiffRegions,
   collectFixtureMatrixRunResults,
   createFixtureMatrix,
   normalizeFixtureMatrixResult,
@@ -26,6 +33,8 @@ const DEFAULT_BATCH_SIZE = 10;
 // up to the cap.
 const DEFAULT_BATCH_CONCURRENCY = 2;
 const MAX_BATCH_CONCURRENCY = 16;
+export const FIXTURE_MATRIX_PROGRESS_SCHEMA = 'homeboy/runner-progress/v1';
+export const FIXTURE_MATRIX_PROGRESS_PREFIX = 'HOMEBOY_RUNNER_PROGRESS ';
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 async function main() {
@@ -78,6 +87,12 @@ export default async function runFixtureMatrixBench(context = {}) {
       result: { path: summary.result_file },
       summary: { path: path.join(summary.output_directory, 'summary.json') },
       finding_packets: { path: path.join(summary.output_directory, 'finding-packets.json') },
+      visual_parity_evidence_report: { path: path.join(summary.output_directory, 'visual-parity-evidence-report.json') },
+      visual_parity_evidence_report_markdown: { path: path.join(summary.output_directory, 'visual-parity-evidence-report.md') },
+      visual_diff_classification: { path: path.join(summary.output_directory, 'visual-diff-classification.json') },
+      gutenberg_incompatibility_registry: { path: path.join(summary.output_directory, 'gutenberg-incompatibility-registry.json') },
+      gutenberg_incompatibility_registry_report: { path: path.join(summary.output_directory, 'gutenberg-incompatibility-registry.md') },
+      ...(summary.visual_parity_artifacts || {}),
     },
     metadata: {
       matrix_id: summary.matrix_id,
@@ -134,7 +149,7 @@ export async function runFixtureMatrix(options) {
   const fixtureRoot = path.resolve(intake?.fixture_root || options.fixtureRoot || path.join(packageRoot, 'tests', 'fixtures', 'fixture-matrix'));
   const staticSiteImporterPath = options.staticSiteImporterPath || process.env.HOMEBOY_STATIC_SITE_IMPORTER_PATH || process.cwd();
   const dependencyOverrides = prepareDependencyOverrides(options);
-  ensureComposerDependencies(staticSiteImporterPath, { dependencyOverrides });
+  validateHydratedComposerDependencies(packageRoot);
   const matrix = createFixtureMatrix({
     id: options.id || `static-site-importer-fixture-matrix-${Date.now()}`,
     fixture_root: fixtureRoot,
@@ -149,6 +164,8 @@ export async function runFixtureMatrix(options) {
     complexity: options.complexity,
     max_complexity: options.maxComplexity || options.max_complexity,
   });
+  const progress = createFixtureMatrixProgress(matrix, options);
+  progress.emit('matrix', 'started');
   const artifactWriteStartedAt = nowMs();
   const written = writeFixtureMatrixArtifacts({
     outputDirectory,
@@ -166,7 +183,10 @@ export async function runFixtureMatrix(options) {
     staticSiteImporterPlugin: options.staticSiteImporterPlugin,
     staticSiteImporterSlug: options.staticSiteImporterSlug,
     dependencyOverrides,
+    surfaceCoverage: options.surfaceCoverage,
+    maxExtraSurfaces: options.maxExtraSurfaces,
     ...editorValidationRecipeInput(options),
+    ...surfaceCoverageRecipeInput(options),
     ...visualParityRecipeInput(options),
     ...liveWpParityRecipeInput(options),
   });
@@ -181,6 +201,7 @@ export async function runFixtureMatrix(options) {
   let runtime = null;
   let runtimeError = null;
   let collectedResult = written.result;
+  let visualParityArtifacts = {};
   if (options.run) {
     const batchSize = positiveInteger(options.batchSize, DEFAULT_BATCH_SIZE);
     const concurrency = boundedConcurrency(options.concurrency, DEFAULT_BATCH_CONCURRENCY, MAX_BATCH_CONCURRENCY);
@@ -198,6 +219,7 @@ export async function runFixtureMatrix(options) {
       outputDirectory,
       staticSiteImporterPath,
       options,
+      progress,
     }));
     performance.batch_execution_ms = elapsedMs(batchExecutionStartedAt);
 
@@ -207,8 +229,9 @@ export async function runFixtureMatrix(options) {
     for (const outcome of batchOutcomes) {
       batchRuns.push(outcome.batchRun);
       batchResults.push(outcome.batchResult);
-      if (outcome.childCommandFailure) {
-        childCommandFailures.push(outcome.childCommandFailure);
+      visualParityArtifacts = { ...visualParityArtifacts, ...(outcome.visualParityArtifacts || {}) };
+      for (const failure of outcome.childCommandFailures || []) {
+        childCommandFailures.push(failure);
       }
       // Preserve the original first-failure-by-batch-order semantics: the earliest
       // batch that failed wins, independent of completion order.
@@ -245,6 +268,11 @@ export async function runFixtureMatrix(options) {
     result: fileBytes(path.join(outputDirectory, 'static-site-fixture-matrix-result.json')),
     summary: fileBytes(path.join(outputDirectory, 'summary.json')),
     finding_packets: fileBytes(path.join(outputDirectory, 'finding-packets.json')),
+    visual_parity_evidence_report: fileBytes(path.join(outputDirectory, 'visual-parity-evidence-report.json')),
+    visual_parity_evidence_report_markdown: fileBytes(path.join(outputDirectory, 'visual-parity-evidence-report.md')),
+    visual_diff_classification: fileBytes(path.join(outputDirectory, 'visual-diff-classification.json')),
+    gutenberg_incompatibility_registry: fileBytes(path.join(outputDirectory, 'gutenberg-incompatibility-registry.json')),
+    gutenberg_incompatibility_registry_report: fileBytes(path.join(outputDirectory, 'gutenberg-incompatibility-registry.md')),
   };
   artifactBytes.total = Object.entries(artifactBytes)
     .filter(([key, value]) => key !== 'total' && Number.isFinite(Number(value)))
@@ -266,9 +294,12 @@ export async function runFixtureMatrix(options) {
       performance,
       artifact_bytes: artifactBytes,
       source_staging: written.metadata?.source_staging,
+      surface_coverage: recipe.metadata?.surface_coverage,
+      runtime_cost_warnings: recipe.metadata?.runtime_cost_warnings || [],
     },
     ...(runtime?.childCommandFailures?.length ? { child_command_failures: runtime.childCommandFailures } : {}),
     result_file: path.join(outputDirectory, 'static-site-fixture-matrix-result.json'),
+    visual_parity_artifacts: visualParityArtifacts,
     result_summary: collectedResult.summary,
     runtime: runtime ? runtimeSummary(runtime, runtimeError) : null,
   };
@@ -278,6 +309,7 @@ export async function runFixtureMatrix(options) {
     summary.metadata.artifact_bytes.total = cliRunBaseTotal + summary.metadata.artifact_bytes.cli_run;
   }
   writeJsonArtifact(path.join(outputDirectory, 'cli-run.json'), summary);
+  progress.emit('matrix', runtimeError ? 'failed' : 'completed');
   return { summary, runtimeError, runtime };
 }
 
@@ -286,9 +318,11 @@ export async function runFixtureMatrix(options) {
 // per-fixture artifact subdirectories, all keyed by the unique batch suffix), so
 // many of these can run concurrently without colliding. Returns a stable outcome
 // the caller folds back together in batch order.
-export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outputDirectory, staticSiteImporterPath, options }) {
+export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outputDirectory, staticSiteImporterPath, options, recovery = false, progress }) {
   const batchNumber = batchIndex + 1;
-  const batchSuffix = String(batchNumber).padStart(3, '0');
+  const batchSuffix = recovery
+    ? `${String(batchNumber).padStart(3, '0')}-recovery-${fixtures[0].id}`
+    : String(batchNumber).padStart(3, '0');
   const batchMatrix = createFixtureMatrix({
     id: `${matrix.id}-batch-${batchSuffix}`,
     fixture_root: matrix.fixture_root,
@@ -304,7 +338,10 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     staticSiteImporterPlugin: options.staticSiteImporterPlugin,
     staticSiteImporterSlug: options.staticSiteImporterSlug,
     dependencyOverrides: prepareDependencyOverrides(options),
+    surfaceCoverage: options.surfaceCoverage,
+    maxExtraSurfaces: options.maxExtraSurfaces,
     ...editorValidationRecipeInput(options),
+    ...surfaceCoverageRecipeInput(options),
     ...visualParityRecipeInput(options),
     ...liveWpParityRecipeInput(options),
   });
@@ -313,6 +350,8 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
   const codeboxArtifactsDirectory = batchCodeboxArtifactsDirectory(outputDirectory, batchSuffix);
   const artifactRefs = batchArtifactRefs({ outputDirectory, batchSuffix, batchRecipeFile, outputFile, codeboxArtifactsDirectory });
   writeJsonArtifact(batchRecipeFile, batchRecipe);
+  progress?.emit(recovery ? 'recovery' : 'batch', 'started', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery });
+  progress?.emit('fixture', 'started', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery });
 
   let batchRuntime = null;
   let batchError = null;
@@ -325,6 +364,11 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       artifactsDir: codeboxArtifactsDirectory,
       outputFile,
       wpCodeboxBin: options.wpCodeboxBin,
+      inactivityTimeoutMs: batchInactivityTimeoutMs(options),
+      onInactivity: ({ timeout_ms }) => {
+        progress?.emit('batch', 'timeout', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery, timeout_ms });
+        if (recovery) progress?.emit('fixture', 'timeout', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery, timeout_ms });
+      },
     });
   } catch (error) {
     batchError = error;
@@ -338,6 +382,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       fixtures,
       batchNumber,
       batchSuffix,
+      batchId: `batch-${String(batchNumber).padStart(3, '0')}`,
       batchRecipeFile,
       outputFile,
       artifactsDir: codeboxArtifactsDirectory,
@@ -374,8 +419,311 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     visualParity: visualParityGateInput(options),
     liveWpParity: liveWpParityCollectorInput(options),
   });
+  const visualCompare = materializeVisualCompareArtifacts({
+    result: batchResult,
+    codeboxArtifactsDirectory,
+    outputDirectory,
+  });
+  const editorCanvas = materializeEditorCanvasArtifacts({
+    result: visualCompare.result,
+    codeboxArtifactsDirectory,
+    outputDirectory,
+  });
+  if (!batchError || recovery) {
+    for (const fixture of editorCanvas.result.fixtures || []) {
+      const fixtureId = fixture.fixture_id || fixture.fixtureId || '';
+      progress?.emit('fixture', fixture.status === 'failed' ? 'failed' : 'completed', { fixture_id: fixtureId, batch: batchNumber, recovery });
+    }
+  }
+  progress?.emit(recovery ? 'recovery' : 'batch', batchError ? (batchError.inactivityTimedOut ? 'timeout' : 'failed') : 'completed', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery });
 
-  return { batchRun, batchResult, error: batchError, childCommandFailure };
+  if (!batchError || recovery) {
+    return {
+      batchRun,
+      batchResult: editorCanvas.result,
+      visualParityArtifacts: visualCompare.artifacts,
+      error: batchError,
+      childCommandFailures: childCommandFailure ? [childCommandFailure] : [],
+    };
+  }
+
+  // A recipe-level failure leaves the sandbox's state untrustworthy. Re-run each
+  // fixture in a fresh sandbox so one stalled step cannot classify its batch peers.
+  progress?.emit('recovery', 'started', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery: true });
+  const recoveryOutcomes = await mapWithConcurrency(fixtures, boundedConcurrency(options.recoveryConcurrency, DEFAULT_BATCH_CONCURRENCY, MAX_BATCH_CONCURRENCY), (fixture) => runFixtureMatrixBatch({
+      fixtures: [fixture],
+      batchIndex,
+      matrix,
+      outputDirectory,
+      staticSiteImporterPath,
+      options,
+      recovery: true,
+      progress,
+    }));
+
+  const recoveryErrors = recoveryOutcomes.map((outcome) => outcome.error).filter(Boolean);
+  return {
+    batchRun: {
+      ...batchRun,
+      recovery_attempts: recoveryOutcomes.map((outcome) => outcome.batchRun),
+    },
+    batchResult: {
+      fixtures: recoveryOutcomes.flatMap((outcome) => outcome.batchResult.fixtures || []),
+    },
+    visualParityArtifacts: Object.assign({}, ...recoveryOutcomes.map((outcome) => outcome.visualParityArtifacts || {})),
+    error: recoveryErrors[0] || null,
+    childCommandFailures: recoveryOutcomes.flatMap((outcome) => outcome.childCommandFailures || []),
+  };
+}
+
+function createFixtureMatrixProgress(matrix, options) {
+  const complete = new Set();
+  const write = typeof options.progress === 'function'
+    ? options.progress
+    : (event) => process.stdout.write(`${FIXTURE_MATRIX_PROGRESS_PREFIX}${JSON.stringify(event)}\n`);
+  return {
+    emit(phase, status, details = {}) {
+      const fixtureId = details.fixture_id || '';
+      if (phase === 'fixture' && fixtureId && ['completed', 'failed', 'timeout'].includes(status)) complete.add(fixtureId);
+      write({
+        schema: FIXTURE_MATRIX_PROGRESS_SCHEMA,
+        phase,
+        current_item: fixtureId || matrix.id,
+        completed: complete.size,
+        total: matrix.count,
+        metadata: {
+          lifecycle_status: status,
+          ...(details.batch ? { batch: details.batch } : {}),
+          ...(details.recovery ? { recovery: true } : {}),
+          ...(details.timeout_ms ? { timeout_ms: details.timeout_ms } : {}),
+        },
+      });
+    },
+  };
+}
+
+function batchInactivityTimeoutMs(options) {
+  return positiveInteger(options.batchInactivityTimeoutMs || options.batch_inactivity_timeout_ms, DEFAULT_RECIPE_INACTIVITY_TIMEOUT_MS);
+}
+
+export function materializeEditorCanvasArtifacts(input = {}) {
+  const result = input.result || {};
+  const outputDirectory = path.resolve(input.outputDirectory || input.output_directory || '');
+  const codeboxArtifactsDirectory = path.resolve(input.codeboxArtifactsDirectory || input.codebox_artifacts_directory || '');
+  return {
+    result: {
+      ...result,
+      fixtures: arrayValue(result.fixtures).map((fixture) => materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory })),
+    },
+  };
+}
+
+function materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory }) {
+  const fixtureId = fixture.fixture_id || fixture.fixtureId || '';
+  if (!fixtureId) {
+    return fixture;
+  }
+  const rewrites = new Map();
+  for (const ref of arrayValue(fixture.artifact_refs)) {
+    if (ref?.kind !== 'editor-canvas' || !ref.path) {
+      continue;
+    }
+    const sourcePath = resolveCodeboxArtifactPath(ref.path, codeboxArtifactsDirectory);
+    if (!sourcePath || !fs.existsSync(sourcePath)) {
+      continue;
+    }
+    const persistedPath = path.join(outputDirectory, 'editor-canvas', fixtureId, path.basename(ref.path));
+    fs.mkdirSync(path.dirname(persistedPath), { recursive: true });
+    fs.copyFileSync(sourcePath, persistedPath);
+    rewrites.set(ref.path, persistedPath);
+  }
+  if (rewrites.size === 0) {
+    return fixture;
+  }
+  return {
+    ...fixture,
+    artifact_refs: rewriteArtifactRefs(fixture.artifact_refs, rewrites),
+    editor_canvas: rewriteEditorEvidencePaths(fixture.editor_canvas, rewrites),
+    editor_open: rewriteEditorEvidencePaths(fixture.editor_open, rewrites),
+    surfaces: arrayValue(fixture.surfaces).map((surface) => ({
+      ...surface,
+      artifact_refs: rewriteArtifactRefs(surface.artifact_refs, rewrites),
+      editor_canvas: rewriteEditorEvidencePaths(surface.editor_canvas, rewrites),
+      editor_open: rewriteEditorEvidencePaths(surface.editor_open, rewrites),
+    })),
+  };
+}
+
+function rewriteEditorEvidencePaths(value, rewrites) {
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  const files = value.files && typeof value.files === 'object'
+    ? Object.fromEntries(Object.entries(value.files).map(([key, filePath]) => [key, rewrites.get(filePath) || filePath]))
+    : undefined;
+  return { ...value, ...(files ? { files } : {}), ...(value.screenshot ? { screenshot: rewrites.get(value.screenshot) || value.screenshot } : {}) };
+}
+
+export function materializeVisualCompareArtifacts(input = {}) {
+  const result = input.result || {};
+  const outputDirectory = path.resolve(input.outputDirectory || input.output_directory || '');
+  const codeboxArtifactsDirectory = path.resolve(input.codeboxArtifactsDirectory || input.codebox_artifacts_directory || '');
+  const artifacts = {};
+  const fixtures = Array.isArray(result.fixtures) ? result.fixtures : [];
+  const updatedFixtures = fixtures.map((fixture) => materializeFixtureVisualCompareArtifacts({
+    fixture,
+    outputDirectory,
+    codeboxArtifactsDirectory,
+    artifacts,
+  }));
+  return {
+    result: { ...result, fixtures: updatedFixtures },
+    artifacts,
+  };
+}
+
+function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory, artifacts }) {
+  const visualParityArtifacts = fixture.visual_parity_artifacts || fixture.visualParityArtifacts;
+  const slots = visualParityArtifacts?.artifacts || {};
+  const fixtureId = fixture.fixture_id || fixture.fixtureId || '';
+  if (!fixtureId || !slots || typeof slots !== 'object') {
+    return fixture;
+  }
+
+  const rewrites = new Map();
+  const updatedSlots = { ...slots };
+  for (const slot of [
+    ['source_screenshot', 'source', ['source_screenshot']],
+    ['imported_screenshot', 'candidate', ['imported_screenshot', 'candidate_screenshot']],
+    ['diff_screenshot', 'diff', ['diff_screenshot']],
+  ]) {
+    const [slotName, fileStem, artifactIds] = slot;
+    const refPath = slots[slotName]?.ref?.path || visualDiagnosticRefPath(fixture.diagnostics, artifactIds);
+    const sourcePath = resolveCodeboxArtifactPath(refPath, codeboxArtifactsDirectory);
+    if (!sourcePath || !fs.existsSync(sourcePath)) {
+      continue;
+    }
+    const persistedPath = path.join(outputDirectory, 'visual-compare', fixtureId, `${fileStem}.png`);
+    fs.mkdirSync(path.dirname(persistedPath), { recursive: true });
+    fs.copyFileSync(sourcePath, persistedPath);
+    rewrites.set(refPath, persistedPath);
+    updatedSlots[slotName] = {
+      ...slots[slotName],
+      status: 'captured',
+      kind: slotName,
+      ref: artifactRef(slotName, persistedPath, 'visual-parity'),
+    };
+    artifacts[`visual_compare_${artifactKey(fixtureId)}_${fileStem}`] = { path: persistedPath };
+  }
+
+  if (rewrites.size === 0) {
+    return fixture;
+  }
+
+  const updatedVisualParityArtifacts = {
+    ...visualParityArtifacts,
+    owner: 'bench_artifact_root',
+    missing: undefined,
+    artifacts: updatedSlots,
+  };
+  const classification = classifyVisualDiffRegions({
+    visual_parity_artifacts: updatedVisualParityArtifacts,
+    comparison: {
+      ...(visualParityArtifacts.metrics || {}),
+      mismatchPixels: visualParityArtifacts.metrics?.mismatch_pixels,
+      totalPixels: visualParityArtifacts.metrics?.total_pixels,
+      overlapMismatchPixels: visualParityArtifacts.metrics?.overlap_mismatch_pixels,
+      overlapPixels: visualParityArtifacts.metrics?.overlap_pixels,
+      dimensionMismatch: visualParityArtifacts.metrics?.dimension_mismatch,
+    },
+    files: {
+      sourceScreenshot: updatedSlots.source_screenshot?.ref?.path,
+      candidateScreenshot: updatedSlots.imported_screenshot?.ref?.path,
+      diffScreenshot: updatedSlots.diff_screenshot?.ref?.path,
+    },
+  }, { fixtureArtifactsDirectory: outputDirectory });
+
+  return {
+    ...fixture,
+    diagnostics: rewriteDiagnosticArtifactRefs(fixture.diagnostics, rewrites),
+    artifact_refs: rewriteArtifactRefs(fixture.artifact_refs, rewrites),
+    visual_parity_artifacts: classification ? {
+      ...updatedVisualParityArtifacts,
+      visual_diff_regions: classification.visual_diff_regions,
+      visual_diff_cause_summary: classification.visual_diff_cause_summary,
+      visual_diff_classification: classification,
+    } : updatedVisualParityArtifacts,
+    ...(classification ? {
+      visual_diff_regions: classification.visual_diff_regions,
+      visual_diff_cause_summary: classification.visual_diff_cause_summary,
+      visual_diff_classification: classification,
+    } : {}),
+  };
+}
+
+function visualDiagnosticRefPath(diagnostics, artifactIds) {
+  for (const diagnostic of Array.isArray(diagnostics) ? diagnostics : []) {
+    for (const ref of Array.isArray(diagnostic?.artifact_refs) ? diagnostic.artifact_refs : []) {
+      if (artifactIds.includes(ref?.artifact_id) && ref.path) {
+        return ref.path;
+      }
+    }
+  }
+  return '';
+}
+
+function resolveCodeboxArtifactPath(refPath, codeboxArtifactsDirectory) {
+  if (!refPath || !codeboxArtifactsDirectory) {
+    return '';
+  }
+  if (path.isAbsolute(refPath)) {
+    return refPath;
+  }
+  const directPath = path.join(codeboxArtifactsDirectory, refPath);
+  if (fs.existsSync(directPath)) {
+    return directPath;
+  }
+  for (const entry of safeReadDirectory(codeboxArtifactsDirectory)) {
+    if (!entry.name.startsWith('runtime-') || !entry.isDirectory()) {
+      continue;
+    }
+    const runtimePath = path.join(codeboxArtifactsDirectory, entry.name, refPath);
+    if (fs.existsSync(runtimePath)) {
+      return runtimePath;
+    }
+  }
+  return directPath;
+}
+
+function safeReadDirectory(directory) {
+  try {
+    return fs.readdirSync(directory, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
+function rewriteDiagnosticArtifactRefs(diagnostics, rewrites) {
+  return Array.isArray(diagnostics)
+    ? diagnostics.map((diagnostic) => ({ ...diagnostic, artifact_refs: rewriteArtifactRefs(diagnostic.artifact_refs, rewrites) }))
+    : diagnostics;
+}
+
+function rewriteArtifactRefs(refs, rewrites) {
+  return Array.isArray(refs)
+    ? refs.map((ref) => rewrites.has(ref?.path) ? { ...ref, path: rewrites.get(ref.path) } : ref)
+    : refs;
+}
+
+function artifactRef(artifactId, filePath, kind) {
+  return { schema: 'homeboy/artifact-ref/v1', artifact_id: artifactId, kind, path: filePath };
+}
+
+function artifactKey(value) {
+  return String(value || 'fixture')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'fixture';
 }
 
 // Bounded-concurrency map that preserves input ordering. Spawns at most `limit`
@@ -408,26 +756,15 @@ export function boundedConcurrency(value, fallback, max) {
   return Math.max(1, Math.min(parsed, max));
 }
 
-function ensureComposerDependencies(pluginPath, options = {}) {
-  const dependencyOverrides = options.dependencyOverrides || {};
-  const blocksEnginePhpTransformerPath = dependencyOverrides.blocks_engine_php_transformer?.path || '';
-  if (blocksEnginePhpTransformerPath) {
-    updateComposerPathRepository(pluginPath, blocksEnginePhpTransformerPath);
-    return;
+export function validateHydratedComposerDependencies(pluginPath) {
+  const autoloadPath = path.join(pluginPath, 'vendor', 'autoload.php');
+  if (fs.existsSync(autoloadPath)) {
+    return autoloadPath;
   }
 
-  if (fs.existsSync(path.join(pluginPath, 'vendor', 'autoload.php')) || !fs.existsSync(path.join(pluginPath, 'composer.json'))) {
-    return;
-  }
-
-  const result = spawnSync('composer', ['install', '--no-interaction', '--prefer-dist', '--no-progress'], {
-    cwd: pluginPath,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  if (result.status !== 0) {
-    throw new Error(`Composer dependency install failed for ${pluginPath}: ${result.stderr || result.stdout || `exit ${result.status}`}`);
-  }
+  throw new Error(
+    `Homeboy hydration is incomplete: missing ${autoloadPath}. Run \`homeboy rig up static-site-importer-fixture-matrix\`, then rerun the fixture matrix.`,
+  );
 }
 
 function prepareDependencyOverrides(options) {
@@ -470,40 +807,6 @@ function composerPackageName(composerFile) {
   } catch {
     return '';
   }
-}
-
-function updateComposerPathRepository(pluginPath, packagePath) {
-  const composerFile = path.join(pluginPath, 'composer.json');
-  const lockFile = path.join(pluginPath, 'composer.lock');
-  const composerJson = fs.readFileSync(composerFile, 'utf8');
-  const composerLock = fs.existsSync(lockFile) ? fs.readFileSync(lockFile, 'utf8') : null;
-  let result = null;
-  try {
-    configureComposerPathRepository(pluginPath, packagePath);
-    result = spawnSync('composer', ['update', 'automattic/blocks-engine-php-transformer', '--with-dependencies', '--no-interaction', '--prefer-source', '--no-progress'], {
-      cwd: pluginPath,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-  } finally {
-    fs.writeFileSync(composerFile, composerJson);
-    if (composerLock !== null) {
-      fs.writeFileSync(lockFile, composerLock);
-    }
-  }
-  if (result.status !== 0) {
-    throw new Error(`Composer dependency override failed for ${pluginPath}: ${result.stderr || result.stdout || `exit ${result.status}`}`);
-  }
-}
-
-function configureComposerPathRepository(pluginPath, packagePath) {
-  const composerFile = path.join(pluginPath, 'composer.json');
-  const composer = JSON.parse(fs.readFileSync(composerFile, 'utf8'));
-  composer.repositories = composer.repositories && typeof composer.repositories === 'object' && !Array.isArray(composer.repositories)
-    ? composer.repositories
-    : {};
-  composer.repositories['blocks-engine-php-transformer-dev'] = composerPathRepositoryConfig(composer, packagePath);
-  fs.writeFileSync(composerFile, `${JSON.stringify(composer, null, 2)}\n`);
 }
 
 export function composerPathRepositoryConfig(rootComposer, packagePath) {
@@ -568,18 +871,20 @@ function runtimeSummary(runtime, runtimeError) {
   };
 }
 
-function buildWpCodeboxChildCommandFailure({ error, fixtures, batchNumber, batchSuffix, batchRecipeFile, outputFile, artifactsDir, wpCodeboxBin: bin, artifactRefs }) {
+function buildWpCodeboxChildCommandFailure({ error, fixtures, batchNumber, batchSuffix, batchId, batchRecipeFile, outputFile, artifactsDir, wpCodeboxBin: bin, artifactRefs }) {
   const command = wpCodeboxRecipeRunCommand({ recipeFile: batchRecipeFile, artifactsDir, outputFile, wpCodeboxBin: bin });
   return {
     schema: 'homeboy/child-command-failure/v1',
     kind: 'child_command_failed',
     label: `WP Codebox recipe-run batch ${batchSuffix}`,
     batch: batchNumber,
-    batch_id: `batch-${batchSuffix}`,
+    batch_id: batchId || `batch-${batchSuffix}`,
     fixture_ids: normalizeFixtureIds(fixtures),
-    command,
+    command: command.command,
     command_argv: command.argv,
     exit_status: exitStatus(error),
+    error_code: error?.code,
+    error_signal: error?.signal,
     stdout_tail: tailText(error?.stdout),
     stderr_tail: tailText(error?.stderr),
     recipe_file: batchRecipeFile,
@@ -622,9 +927,11 @@ function childCommandFailureDiagnostic(failure) {
     loss_acceptance: 'unacceptable',
     batch_id: failure.batch_id || failure.batchId,
     batch: failure.batch,
-    command: failure.command?.command || failure.command,
+    command: printableFailureCommand(failure),
     command_argv: failure.command_argv || failure.commandArgv || failure.command?.argv,
     exit_status: failure.exit_status ?? failure.exitStatus ?? failure.exit_code ?? failure.exitCode,
+    error_code: failure.error_code || failure.errorCode,
+    error_signal: failure.error_signal || failure.errorSignal,
     stdout_tail: failure.stdout_tail || failure.stdoutTail,
     stderr_tail: failure.stderr_tail || failure.stderrTail,
     recipe_file: failure.recipe_file || failure.recipeFile,
@@ -634,6 +941,17 @@ function childCommandFailureDiagnostic(failure) {
     artifact_refs: failure.artifact_refs || failure.artifactRefs || {},
     message: failure.message || 'WP Codebox child command failed.',
   };
+}
+
+function printableFailureCommand(failure) {
+  if (typeof failure?.command === 'string') {
+    return failure.command;
+  }
+  if (typeof failure?.command?.command === 'string') {
+    return failure.command.command;
+  }
+  const argv = failure?.command_argv || failure?.commandArgv || failure?.command?.argv;
+  return Array.isArray(argv) ? argv.map(shellArg).join(' ') : undefined;
 }
 
 function arrayValue(value) {
@@ -646,11 +964,15 @@ function wpCodeboxRecipeRunCommand({ recipeFile, artifactsDir, outputFile, wpCod
     base.command,
     ...(base.args || []),
     'recipe-run',
-    recipeFile,
-    '--artifacts-dir', artifactsDir,
+    '--recipe', recipeFile,
+    '--artifacts', artifactsDir,
     '--output', outputFile,
+    '--json',
   ];
-  return { argv };
+  return {
+    argv,
+    command: argv.map(shellArg).join(' '),
+  };
 }
 
 function wpCodeboxReplayCommand({ recipeFile, artifactsDir, wpCodeboxBin: bin }) {
@@ -696,6 +1018,7 @@ function batchArtifactRefs({ outputDirectory, batchSuffix, batchRecipeFile, outp
     result: path.join(outputDirectory, 'static-site-fixture-matrix-result.json'),
     summary: path.join(outputDirectory, 'summary.json'),
     finding_packets: path.join(outputDirectory, 'finding-packets.json'),
+    visual_diff_classification: path.join(outputDirectory, 'visual-diff-classification.json'),
     batch_recipe: path.join(outputDirectory, `wp-codebox-static-site-fixture-matrix-batch-${batchSuffix}.json`),
     batch_output: path.join(outputDirectory, `wp-codebox-output-batch-${batchSuffix}.json`),
   };
@@ -756,6 +1079,8 @@ function optionsFromEnv(env = process.env) {
     staticSiteImporterPlugin: benchEnv.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PLUGIN || env.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PLUGIN,
     entrypoint: benchEnv.SSI_FIXTURE_MATRIX_ENTRYPOINT || env.SSI_FIXTURE_MATRIX_ENTRYPOINT,
     maxDepth: benchEnv.SSI_FIXTURE_MATRIX_MAX_DEPTH || env.SSI_FIXTURE_MATRIX_MAX_DEPTH,
+    surfaceCoverage: benchEnv.SSI_FIXTURE_MATRIX_SURFACE_COVERAGE || env.SSI_FIXTURE_MATRIX_SURFACE_COVERAGE,
+    maxExtraSurfaces: benchEnv.SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES || env.SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES,
     // Lane selection from authored manifest taxonomy.
     fixtureClass: benchEnv.SSI_FIXTURE_MATRIX_CLASS || env.SSI_FIXTURE_MATRIX_CLASS,
     tag: benchEnv.SSI_FIXTURE_MATRIX_TAG || env.SSI_FIXTURE_MATRIX_TAG,
@@ -768,19 +1093,27 @@ function optionsFromEnv(env = process.env) {
     wordpressVersion: benchEnv.SSI_FIXTURE_MATRIX_WORDPRESS_VERSION || env.SSI_FIXTURE_MATRIX_WORDPRESS_VERSION,
     batchSize: benchEnv.SSI_FIXTURE_MATRIX_BATCH_SIZE || env.SSI_FIXTURE_MATRIX_BATCH_SIZE,
     concurrency: benchEnv.SSI_FIXTURE_MATRIX_CONCURRENCY || env.SSI_FIXTURE_MATRIX_CONCURRENCY,
+    batchInactivityTimeoutMs: benchEnv.SSI_FIXTURE_MATRIX_BATCH_INACTIVITY_TIMEOUT_MS || env.SSI_FIXTURE_MATRIX_BATCH_INACTIVITY_TIMEOUT_MS,
     run: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_RUN) || isTruthy(env.SSI_FIXTURE_MATRIX_RUN),
     wpCodeboxBin: benchEnv.SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN || env.SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN,
     editorValidation: !isFalsy(benchEnv.SSI_FIXTURE_MATRIX_EDITOR_VALIDATION ?? env.SSI_FIXTURE_MATRIX_EDITOR_VALIDATION),
     visualParity: !isFalsy(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY),
-    visualParityGate: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE) || isTruthy(env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE),
-    visualParityFullPage: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE) || isTruthy(env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE),
+    visualParityGate: !isFalsy(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE ?? true),
+    visualParityFullPage: optionalBoolean(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE),
     // Opt-in live-WP parity capture + comparison. Off by default; mirrors the
     // visual-parity-gate truthy env mapping. When on, the recipe appends the
     // capture-html step and the result collector runs the live-wp-parity comparator.
     liveWpParity: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_LIVE_WP_PARITY) || isTruthy(env.SSI_FIXTURE_MATRIX_LIVE_WP_PARITY),
     pixelThreshold: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD,
+    visualParityAlignment: optionalBoolean(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_ALIGNMENT ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_ALIGNMENT),
+    visualParityMaxVerticalShift: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_VERTICAL_SHIFT || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_VERTICAL_SHIFT,
+    visualParityMaxHorizontalShift: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_HORIZONTAL_SHIFT || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_HORIZONTAL_SHIFT,
+    visualParityOffsetTolerance: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_OFFSET_TOLERANCE || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_OFFSET_TOLERANCE,
+    visualParityPixelmatchThreshold: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD,
     visualParityCandidateUrl: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_CANDIDATE_URL || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_CANDIDATE_URL,
     visualParitySourceBaseUrl: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL,
+    visualParityWaitFor: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_WAIT_FOR || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_WAIT_FOR,
+    visualParityDurationMs: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_DURATION_MS || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_DURATION_MS,
     minNativeRate: benchEnv.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE || env.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE,
   };
 }
@@ -795,8 +1128,15 @@ function editorValidationRecipeInput(options) {
   };
 }
 
+function surfaceCoverageRecipeInput(options) {
+  return {
+    surfaceCoverage: options.surfaceCoverage,
+    maxExtraSurfaces: options.maxExtraSurfaces,
+  };
+}
+
 // Visual-parity options shared by the recipe (capture step) and the result
-// collector (gating). Enable defaults on; gating defaults off (opt-in).
+// collector (gating). Capture and gating default on for honest dev-loop fidelity.
 function visualParityRecipeInput(options) {
   return {
     visualParity: options.visualParity !== false,
@@ -804,13 +1144,20 @@ function visualParityRecipeInput(options) {
     visualParityCandidateUrl: options.visualParityCandidateUrl,
     visualParitySourceBaseUrl: options.visualParitySourceBaseUrl,
     visualParityFullPage: options.visualParityFullPage,
+    visualParityWaitFor: options.visualParityWaitFor,
+    visualParityDurationMs: options.visualParityDurationMs,
   };
 }
 
 function visualParityGateInput(options) {
   return {
     threshold: options.pixelThreshold,
-    gate: options.visualParityGate === true,
+    gate: options.visualParityGate !== false,
+    alignment: options.visualParityAlignment,
+    maxVerticalShift: options.visualParityMaxVerticalShift,
+    maxHorizontalShift: options.visualParityMaxHorizontalShift,
+    offsetTolerance: options.visualParityOffsetTolerance,
+    pixelmatchThreshold: options.visualParityPixelmatchThreshold,
   };
 }
 
@@ -867,6 +1214,13 @@ function isFalsy(value) {
   return value === false || value === '0' || value === 'false' || value === 'no' || value === 'off';
 }
 
+function optionalBoolean(value) {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  return !isFalsy(value);
+}
+
 function chunk(items, size) {
   const chunks = [];
   for (let index = 0; index < items.length; index += size) {
@@ -918,6 +1272,8 @@ Options:
                                      Blocks Engine repo root or php-transformer package path for Composer.
   --entrypoint <file>                Fixture entrypoint. Defaults to index.html.
   --max-depth <n>                    Fixture discovery depth. Defaults to 2.
+  --surface-coverage <n>             Capture front page plus up to n secondary HTML surfaces.
+  --max-extra-surfaces <n>           Secondary surface cap when surface coverage is boolean/object-driven.
   --class <fixture_class>            Filter to one authored fixture_class lane.
   --tag <tag>                        Filter to fixtures carrying an authored tag.
   --capability <capability>          Filter to fixtures carrying an authored capability.
@@ -927,6 +1283,7 @@ Options:
   --wordpress-version <version>      WP Codebox WordPress version. Defaults to latest.
   --batch-size <n>                   Fixtures per WP Codebox run when --run is used. Defaults to 10.
   --concurrency <n>                  Batches (WP Codebox sandboxes) to run in parallel. Defaults to ${DEFAULT_BATCH_CONCURRENCY}, hard-capped at ${MAX_BATCH_CONCURRENCY}.
+  --surface-coverage <n>             Opt into bounded secondary page browser evidence per fixture. Hard-capped at 5 extra surfaces.
   --no-editor-validation            Skip browser editor block validation.
   --no-visual-parity                Skip wordpress.visual-compare recipe steps. Same as SSI_FIXTURE_MATRIX_VISUAL_PARITY=0.
   --run                             Execute WP Codebox recipes. Omit locally to only materialize artifacts.

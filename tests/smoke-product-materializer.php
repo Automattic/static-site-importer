@@ -70,6 +70,11 @@ namespace {
 			return json_encode( $data );
 		}
 	}
+	if ( ! function_exists( 'wp_strip_all_tags' ) ) {
+		function wp_strip_all_tags( $text ) {
+			return strip_tags( (string) $text );
+		}
+	}
 
 	// --- WooCommerce runtime mock ------------------------------------------------
 	// Captures the seeded simple products so the smoke test can assert the prices
@@ -263,6 +268,82 @@ namespace {
 	$assert( 'acceptable_preservation' === ( $finding['acceptability'] ?? '' ), 'finding-acceptable-preservation' );
 	$assert( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND === Static_Site_Importer_Diagnostic_Loss_Classes::classify( $finding ), 'finding-stays-preserved-runtime-island' );
 	$assert( is_array( $report['product_finding_seeding'] ?? null ), 'report-records-product-finding-seeding' );
+
+	// --- Plain add-to-cart controls are grafted to Woo-owned shortcodes -------
+	$button_region = '<!-- wp:group --><div class="wp-block-group">'
+		. '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button">Add to cart</a></div><!-- /wp:button --></div><!-- /wp:buttons -->'
+		. '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button">Buy now</a></div><!-- /wp:button --></div><!-- /wp:buttons -->'
+		. '</div><!-- /wp:group -->';
+	$graft_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/shop.html' );
+	$graft_report['diagnostics'][] = array(
+		'type'               => 'unsupported_html_fallback',
+		'diagnostic_code'    => 'html_product_grid_fallback',
+		'loss_class'         => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+		'source_path'        => 'website/shop.html',
+		'container_selector' => 'ul.products',
+		'selector'           => 'ul.products',
+		'readable_blocks'    => array(
+			array(
+				'blockName'    => 'core/group',
+				'attrs'        => array(),
+				'innerBlocks'  => array(),
+				'innerContent' => array( '<div class="wp-block-group"><!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button">Add to cart</a></div><!-- /wp:button --></div><!-- /wp:buttons --><!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button">Buy now</a></div><!-- /wp:button --></div><!-- /wp:buttons --></div>' ),
+			),
+		),
+		'products'           => array(
+			array(
+				'name'             => 'Aero Mug',
+				'price'            => '$24',
+				'has_cart_control' => true,
+			),
+			array(
+				'name'             => 'Trail Pack',
+				'price'            => '$1,299.00',
+				'has_cart_control' => true,
+			),
+		),
+	);
+	$page_contents = array( 'website/shop.html' => $button_region );
+	$graft_seeding = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $graft_report, array(), $page_contents );
+	$assert( 1 === ( $graft_seeding['shortcode_grafted_count'] ?? 0 ), 'shortcode-grafted-count' );
+	$assert( true === ( $graft_report['diagnostics'][0]['product_shortcode_grafted'] ?? false ), 'finding-product-shortcode-grafted' );
+	$assert( str_contains( $page_contents['website/shop.html'], '<!-- wp:shortcode -->[add_to_cart id="' ), 'page-content-has-add-to-cart-shortcode' );
+	$assert( ! str_contains( $page_contents['website/shop.html'], '>Add to cart<' ), 'page-content-removes-static-add-to-cart' );
+	$assert( ! str_contains( $page_contents['website/shop.html'], '>Buy now<' ), 'page-content-removes-static-buy-now' );
+
+	// Grafting requires a seeded Woo product ID; source-only product metadata is not enough.
+	$graft_method = new ReflectionMethod( 'Static_Site_Importer_Report_Diagnostics', 'graft_product_add_to_cart_shortcodes_into_page_contents' );
+	$no_id_contents = array( 'website/shop.html' => $button_region );
+	$no_id_finding  = $graft_report['diagnostics'][0];
+	$no_id_result   = $graft_method->invokeArgs(
+		null,
+		array(
+			$no_id_finding,
+			array(
+				'aero-mug'   => array( 'slug' => 'aero-mug' ),
+				'trail-pack' => array(
+					'slug' => 'trail-pack',
+					'id'   => 1201,
+				),
+			),
+			&$no_id_contents,
+		)
+	);
+	$assert( false === ( $no_id_result['grafted'] ?? true ), 'no-product-id-not-grafted' );
+	$assert( 'no_safe_plain_add_to_cart_products' === ( $no_id_result['diagnostic']['reason'] ?? '' ), 'no-product-id-reason' );
+	$assert( ! str_contains( $no_id_contents['website/shop.html'], '[add_to_cart id=' ), 'no-product-id-no-shortcode' );
+
+	// Quantity/options/custom state stay as honest preserved runtime HTML.
+	$unsafe_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/shop.html' );
+	$unsafe_report['diagnostics'][] = $graft_report['diagnostics'][0];
+	$unsafe_report['diagnostics'][0]['products'][0]['has_quantity_control'] = true;
+	$unsafe_contents = array( 'website/shop.html' => str_replace( '<!-- wp:buttons -->', '<button class="qty-btn">+</button><span class="qty-display">1</span><!-- wp:buttons -->', $button_region ) );
+	$unsafe_seeding  = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $unsafe_report, array(), $unsafe_contents );
+	$assert( 0 === ( $unsafe_seeding['shortcode_grafted_count'] ?? -1 ), 'unsafe-shortcode-not-grafted' );
+	$assert( str_contains( $unsafe_contents['website/shop.html'], '>Add to cart<' ), 'unsafe-static-control-preserved' );
+	$assert( ! str_contains( $unsafe_contents['website/shop.html'], '[add_to_cart id=' ), 'unsafe-no-fake-woo-shortcode' );
+	$assert( str_contains( $unsafe_contents['website/shop.html'], 'class="qty-display">1</span>' ), 'unsafe-quantity-state-preserved' );
+	$assert( false === ( $unsafe_report['diagnostics'][0]['product_shortcode_grafted'] ?? true ), 'unsafe-finding-not-marked-grafted' );
 
 	// --- No product findings => skipped report ------------------------------
 	$empty_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/about.html' );

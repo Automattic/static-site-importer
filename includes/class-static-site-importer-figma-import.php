@@ -182,7 +182,7 @@ class Static_Site_Importer_Figma_Import {
 			$open_url = (string) $playground['blueprint_url'];
 		}
 
-		return array(
+		$response = array(
 			'schema'          => 'figma-to-wordpress/runner-response/v1',
 			'success'         => true,
 			'status'          => 'created',
@@ -190,6 +190,13 @@ class Static_Site_Importer_Figma_Import {
 			'preview_session' => $preview,
 			'materialization' => self::materialization_summary( $ability_result ),
 		);
+
+		$figma_transform_report = isset( $ability_result['figma_transform_report'] ) && is_array( $ability_result['figma_transform_report'] ) ? $ability_result['figma_transform_report'] : array();
+		if ( ! empty( $figma_transform_report ) ) {
+			$response['figma_transform_report'] = $figma_transform_report;
+		}
+
+		return $response;
 	}
 
 	/**
@@ -263,6 +270,9 @@ class Static_Site_Importer_Figma_Import {
 	 */
 	private static function website_artifact_from_bundle( array $bundle, array $input ) {
 		$files = self::normalize_files( isset( $bundle['files'] ) && is_array( $bundle['files'] ) ? $bundle['files'] : array(), (string) ( $bundle['root'] ?? 'website/' ) );
+		if ( is_wp_error( $files ) ) {
+			return $files;
+		}
 		if ( empty( $files ) ) {
 			return new WP_Error( 'static_site_importer_figma_bundle_empty', 'The Figma artifact bundle did not contain importable files.', array( 'status' => 400 ) );
 		}
@@ -372,6 +382,9 @@ class Static_Site_Importer_Figma_Import {
 		}
 
 		$files = self::normalize_files( isset( $transform['files'] ) && is_array( $transform['files'] ) ? $transform['files'] : array(), 'website/' );
+		if ( is_wp_error( $files ) ) {
+			return $files;
+		}
 		if ( empty( $files ) ) {
 			$diagnostic = self::first_transform_diagnostic( $transform );
 			$data       = array(
@@ -416,10 +429,188 @@ class Static_Site_Importer_Figma_Import {
 		return array(
 			'schema'         => 'static-site-importer/figma-transform-report/v1',
 			'source'         => 'blocks-engine/figma-transformer',
+			'status'         => isset( $transform['status'] ) && is_scalar( $transform['status'] ) ? (string) $transform['status'] : '',
+			'summary'        => self::figma_transform_summary( $figma_report, $transform ),
 			'source_reports' => array(
 				'figma' => $figma_report,
 			),
 		);
+	}
+
+	/**
+	 * Build a compact, stable summary of transformer quality diagnostics.
+	 *
+	 * @param array<string,mixed> $figma_report Raw Blocks Engine Figma report.
+	 * @param array<string,mixed> $transform    Full transform result.
+	 * @return array<string,mixed>
+	 */
+	private static function figma_transform_summary( array $figma_report, array $transform ): array {
+		$page_plan        = isset( $figma_report['pages'] ) && is_array( $figma_report['pages'] ) ? $figma_report['pages'] : array();
+		$pages            = isset( $page_plan['pages'] ) && is_array( $page_plan['pages'] ) ? $page_plan['pages'] : array();
+		$diagnostics      = isset( $transform['diagnostics'] ) && is_array( $transform['diagnostics'] ) ? $transform['diagnostics'] : array();
+		$artifact_quality = self::first_nested_array( $figma_report, array( 'artifact_quality' ) );
+
+		$selected_pages = array();
+		$page_warnings  = array();
+		foreach ( $pages as $page ) {
+			if ( ! is_array( $page ) ) {
+				continue;
+			}
+
+			$page_summary = array_filter(
+				array(
+					'path'     => isset( $page['path'] ) && is_scalar( $page['path'] ) ? (string) $page['path'] : '',
+					'name'     => isset( $page['name'] ) && is_scalar( $page['name'] ) ? (string) $page['name'] : '',
+					'frame_id' => isset( $page['frame_id'] ) && is_scalar( $page['frame_id'] ) ? (string) $page['frame_id'] : '',
+					'role'     => isset( $page['role'] ) && is_scalar( $page['role'] ) ? (string) $page['role'] : '',
+				)
+			);
+			if ( ! empty( $page_summary ) ) {
+				$selected_pages[] = $page_summary;
+			}
+
+			foreach ( isset( $page['diagnostics'] ) && is_array( $page['diagnostics'] ) ? $page['diagnostics'] : array() as $diagnostic ) {
+				if ( is_array( $diagnostic ) ) {
+					$page_warnings[] = array_merge( $page_summary, self::compact_diagnostic( $diagnostic ) );
+				}
+			}
+		}
+
+		return array(
+			'artifact_quality'   => self::compact_artifact_quality( $artifact_quality ),
+			'page_coverage'      => array(
+				'candidate_count' => isset( $page_plan['candidate_count'] ) && is_numeric( $page_plan['candidate_count'] ) ? (int) $page_plan['candidate_count'] : count( $pages ),
+				'selected_count'  => count( $selected_pages ),
+				'page_count'      => isset( $page_plan['page_count'] ) && is_numeric( $page_plan['page_count'] ) ? (int) $page_plan['page_count'] : count( $selected_pages ),
+			),
+			'selected_pages'     => $selected_pages,
+			'omitted_pages'      => self::compact_named_rows( self::first_nested_array( $figma_report, array( 'omitted_pages', 'omittedFrames', 'omitted_frames' ) ) ),
+			'selected_templates' => self::compact_named_rows( self::first_nested_array( $figma_report, array( 'selected_templates', 'selectedTemplates' ) ) ),
+			'omitted_templates'  => self::compact_named_rows( self::first_nested_array( $figma_report, array( 'omitted_templates', 'omittedTemplates' ) ) ),
+			'missing_assets'     => self::compact_named_rows( self::first_nested_array( $figma_report, array( 'missing_assets', 'missingAssets' ) ) ),
+			'page_warnings'      => $page_warnings,
+			'diagnostic_counts'  => self::diagnostic_counts( $diagnostics ),
+		);
+	}
+
+	/**
+	 * Return the first nested array value matching any key.
+	 *
+	 * @param mixed             $value Source value.
+	 * @param array<int,string> $keys  Candidate keys.
+	 * @return array<string|int,mixed>
+	 */
+	private static function first_nested_array( $value, array $keys ): array {
+		if ( ! is_array( $value ) ) {
+			return array();
+		}
+
+		foreach ( $keys as $key ) {
+			if ( isset( $value[ $key ] ) && is_array( $value[ $key ] ) ) {
+				return $value[ $key ];
+			}
+		}
+
+		foreach ( $value as $child ) {
+			$found = self::first_nested_array( $child, $keys );
+			if ( ! empty( $found ) ) {
+				return $found;
+			}
+		}
+
+		return array();
+	}
+
+	/**
+	 * Keep only stable, compact fields from a diagnostic row.
+	 *
+	 * @param array<string,mixed> $diagnostic Diagnostic row.
+	 * @return array<string,mixed>
+	 */
+	private static function compact_diagnostic( array $diagnostic ): array {
+		$compact = array();
+		foreach ( array( 'severity', 'code', 'message', 'source', 'reason', 'reason_code' ) as $key ) {
+			if ( isset( $diagnostic[ $key ] ) && is_scalar( $diagnostic[ $key ] ) ) {
+				$compact[ $key ] = (string) $diagnostic[ $key ];
+			}
+		}
+
+		return $compact;
+	}
+
+	/**
+	 * Compact an artifact quality report.
+	 *
+	 * @param array<string|int,mixed> $quality Artifact quality report.
+	 * @return array<string,mixed>
+	 */
+	private static function compact_artifact_quality( array $quality ): array {
+		if ( empty( $quality ) ) {
+			return array();
+		}
+
+		return array_filter(
+			array(
+				'status'         => isset( $quality['status'] ) && is_scalar( $quality['status'] ) ? (string) $quality['status'] : '',
+				'quality_status' => isset( $quality['quality_status'] ) && is_scalar( $quality['quality_status'] ) ? (string) $quality['quality_status'] : '',
+				'summary'        => isset( $quality['summary'] ) && is_array( $quality['summary'] ) ? $quality['summary'] : array(),
+				'signals'        => isset( $quality['signals'] ) && is_array( $quality['signals'] ) ? array_values( array_filter( array_map( static fn ( $signal ) => is_array( $signal ) ? self::compact_diagnostic( $signal ) : array(), $quality['signals'] ) ) ) : array(),
+			)
+		);
+	}
+
+	/**
+	 * Compact a list of page/template/asset rows.
+	 *
+	 * @param array<string|int,mixed> $rows Raw rows.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function compact_named_rows( array $rows ): array {
+		$compact = array();
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$item = array();
+			foreach ( array( 'path', 'name', 'frame_id', 'node_id', 'template', 'reason', 'reason_code', 'message' ) as $key ) {
+				if ( isset( $row[ $key ] ) && is_scalar( $row[ $key ] ) ) {
+					$item[ $key ] = (string) $row[ $key ];
+				}
+			}
+			if ( ! empty( $item ) ) {
+				$compact[] = $item;
+			}
+		}
+
+		return $compact;
+	}
+
+	/**
+	 * Count transform diagnostics by severity and code.
+	 *
+	 * @param array<int,mixed> $diagnostics Diagnostics.
+	 * @return array<string,mixed>
+	 */
+	private static function diagnostic_counts( array $diagnostics ): array {
+		$counts = array(
+			'total'       => 0,
+			'by_severity' => array(),
+			'by_code'     => array(),
+		);
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) ) {
+				continue;
+			}
+
+			++$counts['total'];
+			$severity                           = isset( $diagnostic['severity'] ) && is_scalar( $diagnostic['severity'] ) ? (string) $diagnostic['severity'] : 'unknown';
+			$code                               = isset( $diagnostic['code'] ) && is_scalar( $diagnostic['code'] ) ? (string) $diagnostic['code'] : 'unknown';
+			$counts['by_severity'][ $severity ] = ( $counts['by_severity'][ $severity ] ?? 0 ) + 1;
+			$counts['by_code'][ $code ]         = ( $counts['by_code'][ $code ] ?? 0 ) + 1;
+		}
+
+		return $counts;
 	}
 
 	/**
@@ -525,9 +716,9 @@ class Static_Site_Importer_Figma_Import {
 	 *
 	 * @param array<int,array<string,mixed>> $files Files.
 	 * @param string                         $root  Source root.
-	 * @return array<int,array<string,mixed>>
+	 * @return array<int,array<string,mixed>>|WP_Error
 	 */
-	private static function normalize_files( array $files, string $root ): array {
+	private static function normalize_files( array $files, string $root ) {
 		$normalized = array();
 		$root       = trim( str_replace( '\\', '/', $root ), '/' );
 		foreach ( $files as $file ) {
@@ -543,8 +734,28 @@ class Static_Site_Importer_Figma_Import {
 			$record = array( 'path' => $path );
 			if ( isset( $file['content_base64'] ) ) {
 				$record['content_base64'] = (string) $file['content_base64'];
+			} elseif ( array_key_exists( 'content', $file ) ) {
+				if ( ! is_scalar( $file['content'] ) ) {
+					return new WP_Error(
+						'static_site_importer_figma_file_payload_invalid',
+						'Figma transformer artifact file content must be scalar.',
+						array(
+							'status' => 400,
+							'path'   => $path,
+						)
+					);
+				}
+
+				$record['content'] = (string) $file['content'];
 			} else {
-				$record['content'] = isset( $file['content'] ) ? (string) $file['content'] : '';
+				return new WP_Error(
+					'static_site_importer_figma_file_payload_missing',
+					'Figma transformer artifact file entries must include content or content_base64 when no local artifact root is available.',
+					array(
+						'status' => 400,
+						'path'   => $path,
+					)
+				);
 			}
 
 			if ( isset( $file['mime_type'] ) ) {

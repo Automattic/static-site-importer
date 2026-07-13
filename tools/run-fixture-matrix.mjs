@@ -1,9 +1,17 @@
 #!/usr/bin/env node
 
+/**
+ * External dependencies
+ */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+/**
+ * Internal dependencies
+ */
+import { MAX_EXTRA_SURFACE_COUNT, normalizeSurfaceCoverageOptions } from '../lib/fixture-matrix.mjs';
 
 export const RIG_ID = 'static-site-importer-fixture-matrix';
 // Expected top-level fixture directory count in the canonical corpus
@@ -19,13 +27,27 @@ export const CANONICAL_FIXTURE_COUNT = 72;
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 async function main() {
-  const options = parseArgs(process.argv.slice(2));
+  let options;
+  try {
+    options = parseArgs(process.argv.slice(2));
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+    return;
+  }
   if (options.help) {
     printHelp();
     return;
   }
 
-  const plan = buildFixtureMatrixRunPlan(options);
+  let plan;
+  try {
+    plan = buildFixtureMatrixRunPlan(options);
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+    return;
+  }
 
   if (plan.code_freshness.would_block) {
     process.stderr.write(freshnessGuardBanner(plan.code_freshness, options));
@@ -77,12 +99,22 @@ export function buildFixtureMatrixRunPlan(input) {
       : {}),
     ...(options.batchSize ? { SSI_FIXTURE_MATRIX_BATCH_SIZE: String(options.batchSize) } : {}),
     ...(options.concurrency ? { SSI_FIXTURE_MATRIX_CONCURRENCY: String(options.concurrency) } : {}),
+    ...(options.batchInactivityTimeoutMs ? { SSI_FIXTURE_MATRIX_BATCH_INACTIVITY_TIMEOUT_MS: String(options.batchInactivityTimeoutMs) } : {}),
     ...(options.wordpressVersion ? { SSI_FIXTURE_MATRIX_WORDPRESS_VERSION: options.wordpressVersion } : {}),
     ...(options.wpCodeboxBin ? { SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN: options.wpCodeboxBin } : {}),
+    ...(options.surfaceCoverage !== undefined ? { SSI_FIXTURE_MATRIX_SURFACE_COVERAGE: String(options.surfaceCoverage) } : {}),
+    ...(options.maxExtraSurfaces ? { SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES: String(options.maxExtraSurfaces) } : {}),
     ...(options.editorValidation === false ? { SSI_FIXTURE_MATRIX_EDITOR_VALIDATION: '0' } : {}),
     ...(options.visualParity === false ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY: '0' } : {}),
-    ...(options.visualParityGate ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE: '1' } : {}),
+    ...(options.visualParityGate === false ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE: '0' } : { SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE: '1' }),
     ...(options.pixelThreshold ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD: String(options.pixelThreshold) } : {}),
+    ...(options.visualParityAlignment === false ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_ALIGNMENT: '0' } : {}),
+    ...(options.visualParityMaxVerticalShift ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_VERTICAL_SHIFT: String(options.visualParityMaxVerticalShift) } : {}),
+    ...(options.visualParityMaxHorizontalShift ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_HORIZONTAL_SHIFT: String(options.visualParityMaxHorizontalShift) } : {}),
+    ...(options.visualParityOffsetTolerance ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_OFFSET_TOLERANCE: String(options.visualParityOffsetTolerance) } : {}),
+    ...(options.visualParityPixelmatchThreshold ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD: String(options.visualParityPixelmatchThreshold) } : {}),
+    ...(options.surfaceCoverage ? { SSI_FIXTURE_MATRIX_SURFACE_COVERAGE: String(options.surfaceCoverage) } : {}),
+    ...(options.maxExtraSurfaces ? { SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES: String(options.maxExtraSurfaces) } : {}),
     // Opt-in live-WP parity capture (off by default). When set, the bench appends
     // the deterministic `wordpress.capture-html` step per fixture and runs the
     // blocks-engine live-wp-parity comparator host-side. Absent => byte-identical
@@ -100,17 +132,22 @@ export function buildFixtureMatrixRunPlan(input) {
     ...(options.complexity ? { SSI_FIXTURE_MATRIX_COMPLEXITY: String(options.complexity) } : {}),
     ...(options.maxComplexity ? { SSI_FIXTURE_MATRIX_MAX_COMPLEXITY: String(options.maxComplexity) } : {}),
   };
-  const fixtureCount = countTopLevelFixtureDirectories(options.fixtureRoot);
+  const corpusCounts = countCorpusFixtureDirectories(options.fixtureRoot);
+  const fixtureCount = corpusCounts.total;
+  const activeFixtureCount = corpusCounts.active;
+  const solvedFixtureCount = corpusCounts.solved;
   const codeFreshness = buildCodeFreshness(options, options.gitRunner || defaultGitRunner);
   const warnings = [
     ...buildWarnings(options),
-    ...buildCanonicalDriftWarnings(fixtureCount, options.fixtureRoot),
+    ...buildSurfaceCoverageWarnings(options, fixtureCount),
+    ...buildCanonicalDriftWarnings(activeFixtureCount, corpusCounts.active_root),
     ...buildFreshnessWarnings(codeFreshness, options),
   ];
 
   return {
     schema: 'static-site-importer/fixture-matrix-operator-run/v1',
     mode: options.mode,
+    execution_target: options.executionTarget,
     rig: RIG_ID,
     runner: options.runner,
     local: Boolean(options.local),
@@ -120,8 +157,10 @@ export function buildFixtureMatrixRunPlan(input) {
     homeboy_bin: options.homeboyBin,
     fixture_root: options.fixtureRoot,
     fixture_count: fixtureCount,
+    active_fixture_count: activeFixtureCount,
+    solved_fixture_count: solvedFixtureCount,
     canonical_fixture_count: CANONICAL_FIXTURE_COUNT,
-    fixture_count_matches_canonical: fixtureCount === CANONICAL_FIXTURE_COUNT,
+    fixture_count_matches_canonical: activeFixtureCount === CANONICAL_FIXTURE_COUNT,
     lane_filter: laneFilterSummary(options),
     output_file: options.output,
     temp_root: options.tempRoot,
@@ -131,14 +170,20 @@ export function buildFixtureMatrixRunPlan(input) {
     allow_stale_override: Boolean(options.allowStaleOverride),
     visual_parity: {
       enabled: options.visualParity !== false,
-      // Opt-in hard gate; default capture-only because pixel diffs can be flaky.
-      gate: Boolean(options.visualParityGate),
+      // Honest dev-loop fidelity gate by default; --no-visual-parity-gate is the
+      // explicit exploratory opt-out.
+      gate: options.visualParityGate !== false,
       pixel_threshold: options.pixelThreshold ? Number(options.pixelThreshold) : null,
+      alignment: options.visualParityAlignment !== false,
+      max_vertical_shift: options.visualParityMaxVerticalShift ? Number(options.visualParityMaxVerticalShift) : 64,
+      max_horizontal_shift: options.visualParityMaxHorizontalShift ? Number(options.visualParityMaxHorizontalShift) : 0,
+      offset_tolerance: options.visualParityOffsetTolerance ? Number(options.visualParityOffsetTolerance) : 2,
+      pixelmatch_threshold: options.visualParityPixelmatchThreshold ? Number(options.visualParityPixelmatchThreshold) : 0.1,
     },
     editor_quality: {
       // Editor-quality metrics (native_conversion_rate, core_html_fallback_ratio,
       // editor_invalid_count) are always scored and emitted. The native-rate gate
-      // is opt-in and off by default, mirroring --visual-parity-gate.
+      // is opt-in and off by default.
       native_rate_gate: Boolean(options.minNativeRate),
       min_native_rate: options.minNativeRate ? Number(options.minNativeRate) : null,
     },
@@ -149,6 +194,7 @@ export function buildFixtureMatrixRunPlan(input) {
       // findings, just without the validateBlock editor-validity data.
       enabled: options.editorValidation !== false,
     },
+    surface_coverage: surfaceCoveragePlanSummary(options, fixtureCount),
     code_freshness: codeFreshness,
     transformer_commit: resolveTransformerCommit(codeFreshness),
     warnings,
@@ -180,20 +226,38 @@ function normalizeOptions(input) {
   if (!input.fixtureRoot && !blocksEngine) {
     throw new Error('--blocks-engine or --fixture-root is required');
   }
-  const fixtureRoot = path.resolve(input.fixtureRoot || path.join(blocksEngine, 'fixtures', 'websites'));
+  const fixtureRoot = path.resolve(input.fixtureRoot || path.join(blocksEngine, 'fixtures'));
 
   const defaultBlocksEnginePhpTransformerPath = input.mode === 'release-proof' ? '' : blocksEngine;
-  const blocksEnginePhpTransformerPath = input.blocksEnginePhpTransformerPath === undefined
-    ? defaultBlocksEnginePhpTransformerPath
-    : (input.blocksEnginePhpTransformerPath ? path.resolve(input.blocksEnginePhpTransformerPath) : '');
+  let blocksEnginePhpTransformerPath = defaultBlocksEnginePhpTransformerPath;
+  if (input.blocksEnginePhpTransformerPath !== undefined) {
+    blocksEnginePhpTransformerPath = input.blocksEnginePhpTransformerPath ? path.resolve(input.blocksEnginePhpTransformerPath) : '';
+  }
   const mode = input.mode || (blocksEnginePhpTransformerPath ? 'development-override' : 'release-proof');
   const runId = input.runId || `ssi-matrix-${mode}-${timestamp()}`;
   const namespace = sanitizePathSegment(input.namespace || runId);
   const tempRoot = input.tempRoot ? path.resolve(input.tempRoot) : defaultTempRoot(namespace, input);
   const output = path.resolve(input.output || path.join(tempRoot, `${runId}.homeboy-bench.json`));
+  const executionTarget = normalizeExecutionTarget(input);
+  const executionIsLocal = executionTarget.local;
+  const sharedStateExplicit = Boolean(input.sharedState);
+  const artifactRootExplicit = Boolean(input.artifactRoot);
+  let sharedState = '';
+  if (sharedStateExplicit) {
+    sharedState = path.resolve(input.sharedState);
+  } else if (executionIsLocal) {
+    sharedState = path.join(tempRoot, 'shared-state');
+  }
+  let artifactRoot = '';
+  if (artifactRootExplicit) {
+    artifactRoot = path.resolve(input.artifactRoot);
+  } else if (executionIsLocal) {
+    artifactRoot = path.join(tempRoot, 'artifacts');
+  }
 
   return {
     ...input,
+    ...executionTarget,
     mode,
     runId,
     namespace,
@@ -204,10 +268,41 @@ function normalizeOptions(input) {
     blocksEnginePhpTransformerPath,
     passthrough: Array.isArray(input.passthrough) ? input.passthrough : [],
     staticSiteImporter: path.resolve(input.staticSiteImporter),
-    sharedState: input.sharedState ? path.resolve(input.sharedState) : path.join(tempRoot, 'shared-state'),
-    artifactRoot: input.artifactRoot ? path.resolve(input.artifactRoot) : path.join(tempRoot, 'artifacts'),
-    runner: input.runner || '',
+    sharedState,
+    artifactRoot,
+    sharedStateExplicit,
+    artifactRootExplicit,
     homeboyBin: input.homeboyBin || process.env.HOMEBOY_BIN || 'homeboy',
+  };
+}
+
+function normalizeExecutionTarget(input) {
+  const rawRunner = String(input.runner || '').trim();
+  const runner = rawRunner.toLowerCase() === 'local' ? '' : rawRunner;
+  const local = Boolean(input.local || rawRunner.toLowerCase() === 'local');
+  const labOnly = Boolean(input.labOnly);
+
+  if (local && runner) {
+    throw new Error(`--local forces hot execution on this machine and cannot be combined with --runner ${runner}. Use --local for local-hot execution, or use --runner ${runner} without --local for Lab offload.`);
+  }
+  if (local && labOnly) {
+    throw new Error('--local forces hot execution on this machine and cannot be combined with --lab-only. Use --local for local-hot execution, or use --lab-only/--runner without --local for Lab offload.');
+  }
+
+  let executionTarget = 'auto';
+  if (local) {
+    executionTarget = 'local-hot';
+  } else if (runner) {
+    executionTarget = `lab-offload:${runner}`;
+  } else if (labOnly) {
+    executionTarget = 'lab-offload:auto';
+  }
+
+  return {
+    runner,
+    local,
+    labOnly,
+    executionTarget,
   };
 }
 
@@ -219,8 +314,9 @@ function buildWarnings(options) {
   return [
     ...(!options.runner && !options.labOnly && !options.local ? [{
       code: 'lab_auto_offload_risk',
-      message: 'No --runner/--lab-only/--local routing was provided. `homeboy bench` auto-offloads to a connected default Lab runner, where local --shared-state/--artifact-root paths will fail. Pass --local to force local (hot) execution against local checkouts and a local WP Codebox, or --runner/--lab-only to route to a runner with the paths present.',
+      message: 'No --runner/--lab-only/--local routing was provided. `homeboy bench` may auto-offload to a connected default Lab runner. Default --shared-state/--artifact-root paths are omitted unless --local or explicit path overrides are provided.',
     }] : []),
+    ...labLocalTempPathWarnings(options),
     ...(options.local ? [{
       code: 'forced_local_execution',
       message: '--local forces hot local execution (--force-hot --allow-local-hot); the bench will not offload to a Lab runner even if one is connected.',
@@ -236,17 +332,66 @@ function buildWarnings(options) {
   ];
 }
 
+function labLocalTempPathWarnings(options) {
+  if (!isLabRouted(options)) {
+    return [];
+  }
+  return [
+    ...(options.sharedStateExplicit && isMacLocalTempPath(options.sharedState) ? [{
+      code: 'lab_local_shared_state_path',
+      message: `--shared-state points at macOS local temp (${options.sharedState}). Lab runners are Linux hosts and cannot use operator-local temp paths; omit --shared-state to let Homeboy choose runner-local state, or pass a path that exists on the runner.`,
+    }] : []),
+    ...(options.artifactRootExplicit && isMacLocalTempPath(options.artifactRoot) ? [{
+      code: 'lab_local_artifact_root_path',
+      message: `--artifact-root points at macOS local temp (${options.artifactRoot}). Lab runners are Linux hosts and cannot use operator-local temp paths; omit --artifact-root to let Homeboy choose runner-local artifacts, or pass a path that exists on the runner.`,
+    }] : []),
+  ];
+}
+
+function isLabRouted(options) {
+  return Boolean(options.runner || options.labOnly || (!options.local && !options.runner));
+}
+
+function isMacLocalTempPath(value) {
+  return /^\/(?:private\/)?var\/folders\//.test(String(value || ''));
+}
+
 // Surface corpus pin drift instead of letting `fixture_count_matches_canonical`
 // be a silently-ignored boolean. A discovered count below the pin means fixtures
 // went missing (or the wrong root was passed); above the pin means the corpus
-// grew and CANONICAL_FIXTURE_COUNT needs an intentional bump.
-function buildCanonicalDriftWarnings(fixtureCount, fixtureRoot) {
-  if (fixtureCount === CANONICAL_FIXTURE_COUNT) {
+// grew and CANONICAL_FIXTURE_COUNT needs an intentional bump. The pin applies
+// to the active corpus (`fixtures/websites`), not the solved regression corpus.
+function buildCanonicalDriftWarnings(activeFixtureCount, activeRoot) {
+  if (activeFixtureCount === CANONICAL_FIXTURE_COUNT) {
     return [];
   }
   return [{
     code: 'canonical_fixture_count_drift',
-    message: `Discovered ${fixtureCount} top-level fixture director${fixtureCount === 1 ? 'y' : 'ies'} in ${fixtureRoot}, but CANONICAL_FIXTURE_COUNT is ${CANONICAL_FIXTURE_COUNT}. ${fixtureCount > CANONICAL_FIXTURE_COUNT ? 'The corpus grew; bump CANONICAL_FIXTURE_COUNT after confirming the new fixtures are intended.' : 'Fixtures are missing or the wrong fixture root was passed; restore the corpus or correct --fixture-root.'}`,
+    message: `Discovered ${activeFixtureCount} top-level fixture director${activeFixtureCount === 1 ? 'y' : 'ies'} in ${activeRoot}, but CANONICAL_FIXTURE_COUNT is ${CANONICAL_FIXTURE_COUNT}. ${activeFixtureCount > CANONICAL_FIXTURE_COUNT ? 'The corpus grew; bump CANONICAL_FIXTURE_COUNT after confirming the new fixtures are intended.' : 'Fixtures are missing or the wrong root was passed; restore the corpus or correct --fixture-root.'}`,
+  }];
+}
+
+function surfaceCoveragePlanSummary(options, fixtureCount) {
+  const config = normalizeSurfaceCoverageOptions(options);
+  return {
+    enabled: config.extraSurfaceCount > 0,
+    requested_extra_surfaces: config.requestedExtraSurfaceCount,
+    max_extra_surfaces: config.maxExtraSurfaceCount,
+    extra_surfaces_per_fixture: config.extraSurfaceCount,
+    capped: config.extraSurfaceCount < config.requestedExtraSurfaceCount,
+    fixture_count: fixtureCount,
+    max_browser_surface_count: fixtureCount * (1 + config.extraSurfaceCount),
+  };
+}
+
+function buildSurfaceCoverageWarnings(options, fixtureCount) {
+  const summary = surfaceCoveragePlanSummary(options, fixtureCount);
+  if (!summary.enabled) {
+    return [];
+  }
+  return [{
+    code: 'surface_coverage_runtime_cost',
+    message: `Surface coverage is enabled: up to ${summary.max_browser_surface_count} browser surfaces will run (${summary.extra_surfaces_per_fixture} extra per fixture, capped at ${MAX_EXTRA_SURFACE_COUNT}). Use --no-editor-validation or --no-visual-parity when collecting narrower evidence.`,
   }];
 }
 
@@ -414,14 +559,14 @@ function buildSteps(options, settings) {
   const steps = [];
   if (!options.skipInstall) {
     steps.push({
-      label: 'Refresh installed SSI fixture matrix rig',
+      label: `Refresh installed SSI fixture matrix rig (${options.executionTarget})`,
       command: options.homeboyBin,
       args: withCommonRouting(['rig', 'install', packageRoot, '--id', RIG_ID, '--reinstall'], options),
     });
   }
   if (!options.skipSync) {
     steps.push({
-      label: 'Sync/materialize rig components',
+      label: `Sync/materialize rig components (${options.executionTarget})`,
       command: options.homeboyBin,
       args: withCommonRouting(['rig', 'sync', RIG_ID], options),
     });
@@ -433,13 +578,15 @@ function buildSteps(options, settings) {
     '--profile', 'fixture-matrix',
     '--iterations', '1',
     '--path', options.staticSiteImporter,
-    '--shared-state', options.sharedState,
     '--run-id', options.runId,
     '--output', options.output,
     '--json',
     '--setting', `static_site_importer_fixture_matrix_namespace=${options.namespace}`,
     ...Object.entries(settings).flatMap(([key, value]) => ['--setting', `bench_env.${key}=${value}`]),
   ];
+  if (options.sharedState) {
+    benchArgs.push('--shared-state', options.sharedState);
+  }
   if (options.artifactRoot) {
     benchArgs.push('--artifact-root', options.artifactRoot);
   }
@@ -448,7 +595,7 @@ function buildSteps(options, settings) {
     routedBenchArgs.push('--', ...options.passthrough);
   }
   steps.push({
-    label: 'Run SSI fixture matrix bench through Homeboy/Lab/WP Codebox',
+    label: `Run SSI fixture matrix bench through Homeboy/Lab/WP Codebox (${options.executionTarget})`,
     command: options.homeboyBin,
     args: routedBenchArgs,
   });
@@ -544,6 +691,7 @@ export function summarizeRun(plan, { status } = {}) {
     run_id: findFirstKey(output, 'run_id') || plan.run_id,
     code_freshness: plan.code_freshness || null,
     transformer_commit: plan.transformer_commit || resolveTransformerCommit(plan.code_freshness),
+    surface_coverage: plan.surface_coverage || null,
     fixture_count: Number(findFirstKey(output, 'fixture_count') || plan.fixture_count || 0),
     passed_fixture_count: Number(resultSummary.succeeded || resultSummary.passed || 0),
     failed_fixture_count: failedFixtureCount,
@@ -555,8 +703,21 @@ export function summarizeRun(plan, { status } = {}) {
     top_pattern_families: normalizeSummaryRows(resultSummary.top_pattern_families),
     fixture_exemplars: normalizeSummaryRows(resultSummary.fixture_exemplars),
     diagnostic_blind_spots: normalizeSummaryRows(resultSummary.diagnostic_blind_spots),
+    run_refs: buildRunRefs(findFirstKey(output, 'run_id') || plan.run_id, plan.homeboy_bin),
     artifact_urls: collectArtifactUrls(artifacts),
     output_file: plan.output_file,
+  };
+}
+
+function buildRunRefs(runId, homeboyBin = 'homeboy') {
+  const id = String(runId || '').trim();
+  if (!id) {
+    return null;
+  }
+  return {
+    homeboy_run_id: id,
+    show: `${homeboyBin} runs show ${id}`,
+    artifacts: `${homeboyBin} runs artifacts ${id}`,
   };
 }
 
@@ -579,7 +740,7 @@ function parseArgs(args) {
     if (arg.startsWith('--')) {
       const [rawKey, rawValue] = arg.slice(2).split('=');
       const key = camelCase(rawKey);
-      const booleanKeys = new Set(['dryRun', 'skipInstall', 'skipSync', 'labOnly', 'local', 'allowLocalFallback', 'detachAfterHandoff', 'allowDirtyLabWorkspace', 'allowStaleOverride', 'visualParityGate', 'liveWpParity']);
+      const booleanKeys = new Set(['dryRun', 'skipInstall', 'skipSync', 'labOnly', 'local', 'allowLocalFallback', 'detachAfterHandoff', 'allowDirtyLabWorkspace', 'allowStaleOverride', 'visualParityGate', 'visualParityAlignment', 'liveWpParity']);
       if (booleanKeys.has(key)) {
         options[key] = true;
         continue;
@@ -593,6 +754,23 @@ function parseArgs(args) {
     }
   }
   return options;
+}
+
+function countCorpusFixtureDirectories(fixtureRoot) {
+  const activeRoot = path.join(fixtureRoot, 'websites');
+  const solvedRoot = path.join(fixtureRoot, 'solved');
+  const active = fs.existsSync(activeRoot) && fs.statSync(activeRoot).isDirectory()
+    ? countTopLevelFixtureDirectories(activeRoot)
+    : countTopLevelFixtureDirectories(fixtureRoot);
+  const solved = fs.existsSync(solvedRoot) && fs.statSync(solvedRoot).isDirectory()
+    ? countTopLevelFixtureDirectories(solvedRoot)
+    : 0;
+  return {
+    active,
+    solved,
+    total: active + solved,
+    active_root: fs.existsSync(activeRoot) && fs.statSync(activeRoot).isDirectory() ? activeRoot : fixtureRoot,
+  };
 }
 
 function countTopLevelFixtureDirectories(fixtureRoot) {
@@ -684,7 +862,8 @@ function sanitizePathSegment(value) {
 }
 
 function printHelp() {
-  process.stdout.write(`Usage: node tools/run-fixture-matrix.mjs --runner <id> --static-site-importer <path> --blocks-engine <path> [options] [-- <bench args>...]\n\nRuns the canonical Static Site Importer fixture matrix through Homeboy/Lab/WP Codebox.\n\nOptions:\n  --static-site-importer <path>       Static Site Importer checkout/plugin path. Required.\n  --blocks-engine <path>              Blocks Engine checkout. Defaults fixture root and PHP transformer override.\n  --fixture-root <path>               Fixture corpus. Defaults to <blocks-engine>/fixtures/websites.\n  --blocks-engine-php-transformer-path <path>\n                                      Override transformer package/repo path. Defaults to --blocks-engine.\n  --runner <id>                       Homeboy Lab runner, for example homeboy-lab.\n  --local                             Force hot local execution (--force-hot --allow-local-hot). Use this to run against local checkouts, a local fixture root, and a local WP Codebox; without it, homeboy bench auto-offloads to a connected default Lab runner where local --shared-state/--artifact-root paths fail.\n  --mode <development-override|release-proof>\n                                      Labels output; default is development-override when transformer override is used.\n  --run-id <id>                       Stable proof label. Defaults to ssi-matrix-<mode>-<timestamp>.\n  --shared-state <dir>                Shared Homeboy bench state directory.\n  --artifact-root <dir>               Homeboy artifact root.\n  --output <file>                     Structured Homeboy bench output file.\n  --batch-size <n>                    SSI fixture matrix WP Codebox batch size.\n  --concurrency <n>                   Parallel WP Codebox sandbox batches. Defaults to 4, hard-capped at 16.\n  --wordpress-version <version>       WP Codebox WordPress version.\n  --wp-codebox-bin <path>             WP Codebox CLI path.\n  --allow-stale-override              Proceed even when an override checkout is behind/diverged vs upstream.\n  --no-editor-validation              Skip the wordpress.editor-validate-blocks step (slow, launches a browser per site). Findings/native-rate still produced.\n  --no-visual-parity                  Skip the wordpress.visual-compare render/diff step.\n  --visual-parity-gate                Make pixel mismatch over the threshold a HARD gate. Default: capture-only.\n  --pixel-threshold <ratio>           Max mismatch ratio (mismatch_pixels/total_pixels) before gating. Default 0.1.\n  --live-wp-parity                    Opt-in: capture each imported candidate's rendered DOM (deterministic wordpress.capture-html) and score it against the source with the blocks-engine live-wp-parity comparator (live-WP score + render-free proxy score + delta). Default: off (render-free static gate stays primary).\n  --min-native-rate <ratio>           Opt-in: fail fixtures whose native_conversion_rate is below this ratio (0-1, or a percentage like 80). Default: off (metrics only).\n  --class <fixture-class>             Run only the given manifest class lane (e.g. marketing/static). Default: all classes.\n  --tag <tag>                         Run only fixtures whose manifest tags include this tag. Default: all fixtures.\n  --complexity <n>                    Run only fixtures with authored complexity exactly n.\n  --max-complexity <n>                Run only fixtures with authored complexity <= n.\n  --lab-only                          Require Lab routing.\n  --allow-local-fallback              Allow selected Lab runner local fallback.\n  --allow-dirty-lab-workspace         Allow runner workspace overwrite.\n  --detach-after-handoff              Return after remote runner accepts the job.\n  --skip-install                      Skip homeboy rig install --reinstall.\n  --skip-sync                         Skip homeboy rig sync.\n  --dry-run                           Print the composed plan without running it.\n\nAny args after -- are passed through to the lower-level bench runner.\n`);
+  process.stdout.write(`Usage: node tools/run-fixture-matrix.mjs --static-site-importer <path> --blocks-engine <path> [options] [-- <bench args>...]\n\nRuns the canonical Static Site Importer fixture matrix through Homeboy/Lab/WP Codebox.\n\nExecution modes:\n  --local                             Local hot execution on this machine. Injects --force-hot --allow-local-hot into routed Homeboy steps.\n  --runner <id>                       Lab offload to a Homeboy runner, for example homeboy-lab. Does not inject hot-local flags.\n  --lab-only                          Require Lab routing, using Homeboy's selected/default Lab runner.\n  no routing flags                    Auto mode; lets homeboy bench decide routing.\n\nRules:\n  --runner local                      Alias for --local.\n  --local cannot be combined with --runner <remote> or --lab-only. Pick local-hot or Lab offload.\n\nOptions:\n  --static-site-importer <path>       Static Site Importer checkout/plugin path. Required.\n  --blocks-engine <path>              Blocks Engine checkout. Defaults fixture root and PHP transformer override.\n    --fixture-root <path>               Fixture corpus. Defaults to <blocks-engine>/fixtures, which discovers both fixtures/websites and fixtures/solved.
+\n  --blocks-engine-php-transformer-path <path>\n                                      Override transformer package/repo path. Defaults to --blocks-engine.\n  --mode <development-override|release-proof>\n                                      Labels output; default is development-override when transformer override is used.\n  --run-id <id>                       Stable proof label. Defaults to ssi-matrix-<mode>-<timestamp>.\n  --shared-state <dir>                Shared Homeboy bench state directory.\n  --artifact-root <dir>               Homeboy artifact root.\n  --output <file>                     Structured Homeboy bench output file.\n  --batch-size <n>                    SSI fixture matrix WP Codebox batch size.\n  --concurrency <n>                   Parallel WP Codebox sandbox batches. Defaults to 4, hard-capped at 16.\n  --wordpress-version <version>       WP Codebox WordPress version.\n  --wp-codebox-bin <path>             WP Codebox CLI path.\n  --allow-stale-override              Proceed even when an override checkout is behind upstream.\n  --allow-local-fallback              Permit selected Lab runner fallback to local execution.\n  --allow-dirty-lab-workspace         Permit reusing/overwriting a dirty Lab workspace.\n  --detach-after-handoff              Return after runner daemon accepts the job.\n  --dry-run                           Print the plan without running Homeboy.\n  --skip-install                      Skip rig install.\n  --skip-sync                         Skip rig sync.\n  --no-editor-validation              Omit editor block validation.\n  --no-visual-parity                  Omit visual parity capture.\n  --no-visual-parity-gate             Capture visual parity without gating.\n  --help                              Show this help.\n`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

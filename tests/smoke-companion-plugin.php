@@ -122,6 +122,22 @@ $payload = array(
 						'type'    => 'string',
 						'default' => '',
 					),
+					'content' => array(
+						'type'    => 'content',
+						'default' => '',
+					),
+					'text'    => array(
+						'type'    => 'text',
+						'default' => '',
+					),
+					'nested'  => array(
+						'type'       => 'object',
+						'properties' => array(
+							'caption' => array(
+								'type' => 'text',
+							),
+						),
+					),
 				),
 				'supports'   => array(
 					'interactivity' => true,
@@ -163,6 +179,12 @@ if ( is_array( $descriptor ) ) {
 	$assert( str_contains( $main, "'api_version' => 3" ), 'main-file-declares-api-version' );
 	$assert( str_contains( $main, "'name' => 'ssi-example-site/custom-hero'" ), 'main-file-carries-namespaced-block-name' );
 	$assert( str_contains( $main, "'attributes' =>" ) && str_contains( $main, "'heading' =>" ), 'main-file-declares-php-attributes' );
+	$assert( str_contains( $main, "'content' =>" ) && str_contains( $main, "'text' =>" ), 'main-file-preserves-semantic-attribute-names' );
+	$assert( ! str_contains( $main, "'type' => 'content'" ) && ! str_contains( $main, "'type' => 'text'" ), 'main-file-normalizes-invalid-rest-schema-types' );
+	$builtin_schema_types = array( 'array', 'object', 'string', 'number', 'integer', 'boolean', 'null' );
+	preg_match_all( "/'type' => '([^']+)'/", $main, $type_matches );
+	$invalid_schema_types = array_values( array_diff( $type_matches[1] ?? array(), $builtin_schema_types ) );
+	$assert( array() === $invalid_schema_types, 'main-file-emits-only-builtin-rest-schema-types', implode( ',', $invalid_schema_types ) );
 	$assert( ! str_contains( $main, 'register_block_type( $path )' ), 'main-file-does-not-register-from-block-json-path' );
 
 	// The render.php is the server-rendered template the render_callback runs.
@@ -274,6 +296,15 @@ $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/rend
 $assert( ! file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/block.json' ), 'install-emits-no-block-json' );
 $written_main = file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) ? (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) : '';
 $assert( str_contains( $written_main, 'register_block_type' ), 'written-main-file-registers-blocks' );
+
+// Existing active generated companions are refreshed from the current payload;
+// stale files from an older SSI build must not bypass scaffold normalization.
+file_put_contents( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php', "<?php\nreturn array( 'type' => 'content' );\n" );
+$refresh_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload, static fn (): bool => true );
+$refreshed_main = file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) ? (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) : '';
+$assert( 'refreshed' === ( $refresh_report['status'] ?? '' ), 'active-generated-plugin-refresh-status', (string) ( $refresh_report['status'] ?? '' ) );
+$assert( in_array( 'refreshed', $refresh_report['actions'] ?? array(), true ), 'active-generated-plugin-records-refresh-action' );
+$assert( ! str_contains( $refreshed_main, "'type' => 'content'" ), 'active-generated-plugin-overwrites-stale-invalid-schema' );
 
 // mu-plugin install writes the root loader and needs no activation call.
 $mu_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( array_merge( $payload, array( 'mu_plugin' => true ) ) );

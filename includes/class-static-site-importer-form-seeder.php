@@ -63,13 +63,15 @@ class Static_Site_Importer_Form_Seeder {
 			return $report;
 		}
 
-		$available           = self::jetpack_forms_available();
-		$report['provider']  = self::PROVIDER_ID;
-		$report['available'] = $available;
-		$report['status']    = 'completed';
+		$availability                   = self::jetpack_forms_availability_details();
+		$available                      = ! empty( $availability['available'] );
+		$report['provider']             = self::PROVIDER_ID;
+		$report['available']            = $available;
+		$report['availability_details'] = $availability;
+		$report['status']               = 'completed';
 
 		foreach ( $forms as $form ) {
-			$row               = self::seed_form( $form, $available );
+			$row               = $available ? self::seed_form( $form, true ) : self::unavailable_form_row( $form );
 			$report['forms'][] = $row;
 
 			$status = $row['status'] ?? 'error';
@@ -84,6 +86,24 @@ class Static_Site_Importer_Form_Seeder {
 	}
 
 	/**
+	 * Report a form that cannot be materialized until its configured provider is active.
+	 *
+	 * @param array<string, mixed> $form Validated form row.
+	 * @return array<string, mixed>
+	 */
+	private static function unavailable_form_row( array $form ): array {
+		return array(
+			'selector'       => isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '',
+			'source_path'    => isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '',
+			'provider'       => self::PROVIDER_ID,
+			'block_name'     => 'jetpack/contact-form',
+			'status'         => 'skipped',
+			'reason'         => 'provider_unavailable',
+			'runtime_mapped' => false,
+		);
+	}
+
+	/**
 	 * Build an initial report shape.
 	 *
 	 * @param string $status Report status.
@@ -91,16 +111,17 @@ class Static_Site_Importer_Form_Seeder {
 	 */
 	public static function new_report( string $status = 'skipped' ): array {
 		return array(
-			'status'    => $status,
-			'reason'    => '',
-			'provider'  => self::PROVIDER_ID,
-			'available' => self::jetpack_forms_available(),
-			'counts'    => array(
+			'status'               => $status,
+			'reason'               => '',
+			'provider'             => self::PROVIDER_ID,
+			'available'            => self::jetpack_forms_available(),
+			'availability_details' => self::jetpack_forms_availability_details(),
+			'counts'               => array(
 				'mapped'  => 0,
 				'skipped' => 0,
 				'error'   => 0,
 			),
-			'forms'     => array(),
+			'forms'                => array(),
 		);
 	}
 
@@ -113,14 +134,34 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return bool
 	 */
 	public static function jetpack_forms_available(): bool {
-		if ( class_exists( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form' ) ) {
-			return true;
-		}
-		if ( class_exists( 'Grunion_Contact_Form' ) || class_exists( 'Contact_Form' ) ) {
-			return true;
+		$availability = self::jetpack_forms_availability_details();
+		return ! empty( $availability['available'] );
+	}
+
+	/**
+	 * Return the specific Jetpack Forms APIs present in the current runtime.
+	 *
+	 * @return array<string,bool>
+	 */
+	public static function jetpack_forms_availability_details(): array {
+		$contact_form_class = class_exists( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form' );
+		$legacy_class       = class_exists( 'Grunion_Contact_Form' ) || class_exists( 'Contact_Form' );
+		$contact_form_block = false;
+		$field_text_block   = false;
+
+		if ( class_exists( 'WP_Block_Type_Registry' ) ) {
+			$registry           = WP_Block_Type_Registry::get_instance();
+			$contact_form_block = $registry->is_registered( 'jetpack/contact-form' );
+			$field_text_block   = $registry->is_registered( 'jetpack/field-text' );
 		}
 
-		return function_exists( 'is_plugin_active' ) && is_plugin_active( 'jetpack/jetpack.php' );
+		return array(
+			'available'          => ( $contact_form_class || $legacy_class || ( $contact_form_block && $field_text_block ) ),
+			'contact_form_class' => $contact_form_class,
+			'legacy_class'       => $legacy_class,
+			'contact_form_block' => $contact_form_block,
+			'field_text_block'   => $field_text_block,
+		);
 	}
 
 	/**
@@ -148,8 +189,9 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return array<string, mixed>
 	 */
 	private static function seed_form( array $form, bool $available ): array {
-		$controls = isset( $form['controls'] ) && is_array( $form['controls'] ) ? $form['controls'] : array();
-		$selector = isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '';
+		$controls    = isset( $form['controls'] ) && is_array( $form['controls'] ) ? $form['controls'] : array();
+		$selector    = isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '';
+		$source_path = isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '';
 
 		$field_blocks = array();
 		$mapped_types = array();
@@ -183,6 +225,7 @@ class Static_Site_Importer_Form_Seeder {
 		if ( empty( $field_blocks ) ) {
 			return array(
 				'selector'       => $selector,
+				'source_path'    => $source_path,
 				'provider'       => self::PROVIDER_ID,
 				'block_name'     => 'jetpack/contact-form',
 				'status'         => 'skipped',
@@ -199,6 +242,7 @@ class Static_Site_Importer_Form_Seeder {
 
 		return array(
 			'selector'        => $selector,
+			'source_path'     => $source_path,
 			'provider'        => self::PROVIDER_ID,
 			'block_name'      => 'jetpack/contact-form',
 			'status'          => 'mapped',

@@ -93,6 +93,12 @@ class Static_Site_Importer_Theme_Generator {
 		if ( is_wp_error( $compiled ) ) {
 			return $compiled;
 		}
+		if ( isset( $artifact['files'] ) && is_array( $artifact['files'] ) && empty( $compiled['artifacts']['source_files'] ) ) {
+			if ( ! isset( $compiled['artifacts'] ) || ! is_array( $compiled['artifacts'] ) ) {
+				$compiled['artifacts'] = array();
+			}
+			$compiled['artifacts']['source_files'] = $artifact['files'];
+		}
 		$document_pages   = self::website_artifact_source_pages( $compiled );
 		if ( is_wp_error( $document_pages ) ) {
 			return $document_pages;
@@ -170,19 +176,28 @@ class Static_Site_Importer_Theme_Generator {
 			return $materialized;
 		}
 
-		$page_artifacts = Static_Site_Importer_Page_Materializer::page_artifacts( $document_pages, $theme_slug, $materialized['assets'], $permalinks );
-		foreach ( $page_artifacts['diagnostics'] as $diagnostic ) {
-			self::$conversion_report['diagnostics'][] = $diagnostic;
-		}
-
-		Static_Site_Importer_Document_Metadata_Reporter::record( self::$conversion_report, $artifacts );
-
 		$template_part_writes = self::template_part_artifact_writes( $theme_dir, $artifacts );
 		if ( is_wp_error( $template_part_writes ) ) {
 			return $template_part_writes;
 		}
 		$has_header_part      = isset( $template_part_writes[ $theme_dir . '/parts/header.html' ] );
 		$has_footer_part      = isset( $template_part_writes[ $theme_dir . '/parts/footer.html' ] );
+		$page_artifacts       = Static_Site_Importer_Page_Materializer::page_artifacts(
+			$document_pages,
+			$theme_slug,
+			$materialized['assets'],
+			$permalinks,
+			$template_part_writes,
+			array(
+				'strip_template_header' => $has_header_part,
+				'strip_template_footer' => $has_footer_part,
+			)
+		);
+		foreach ( $page_artifacts['diagnostics'] as $diagnostic ) {
+			self::$conversion_report['diagnostics'][] = $diagnostic;
+		}
+
+		Static_Site_Importer_Document_Metadata_Reporter::record( self::$conversion_report, $artifacts );
 
 		$visual_repair_styles = self::visual_repair_styles_from_artifacts( $artifacts );
 
@@ -196,10 +211,27 @@ class Static_Site_Importer_Theme_Generator {
 
 		$writes = array_merge(
 			$stylesheet_writes,
-			Static_Site_Importer_Theme_Materializer::base_theme_writes( $theme_dir, $theme_slug, $theme_name, $materialized['css'], $has_header_part, $has_footer_part, $materialized['scripts'], $materialized['stylesheets'] )
+			Static_Site_Importer_Theme_Materializer::base_theme_writes( $theme_dir, $theme_slug, $theme_name, $materialized['css'], $has_header_part, $has_footer_part, $materialized['scripts'], $materialized['stylesheets'], $artifacts )
 		);
+		$template_writes = self::template_artifact_writes( $theme_dir, $artifacts );
+		if ( is_wp_error( $template_writes ) ) {
+			return $template_writes;
+		}
+		$writes = array_merge( $writes, $template_writes );
 		$writes = array_merge( $writes, $template_part_writes );
+		foreach ( $page_artifacts['asset_writes'] as $relative_path => $content ) {
+			$relative_path = ltrim( str_replace( '\\', '/', (string) $relative_path ), '/' );
+			if ( '' !== $relative_path && ! str_contains( $relative_path, '..' ) ) {
+				$writes[ $theme_dir . '/' . $relative_path ] = (string) $content;
+			}
+		}
 		self::analyze_imported_page_content_documents( $document_pages, $page_artifacts['contents'] );
+
+		$source_template_writes = Static_Site_Importer_Theme_Materializer::source_document_template_writes( $theme_dir, $page_artifacts['contents'] );
+		$writes                 = array_merge( $writes, $source_template_writes['writes'] );
+		foreach ( $source_template_writes['reports'] as $report ) {
+			self::$conversion_report['generated_theme']['templates'][] = $report;
+		}
 
 		self::record_source_documents_summary( $artifacts['documents'] ?? array(), $document_pages, $page_ids, $permalinks );
 		foreach ( array_keys( $page_artifacts['patterns'] ) as $filename ) {
@@ -224,7 +256,7 @@ class Static_Site_Importer_Theme_Generator {
 		self::record_product_seeding_report( $args );
 		self::record_commerce_dependency_check( $args );
 		self::record_form_materialization( $args, $page_artifacts['contents'] );
-		self::record_product_materialization( $args );
+		self::record_product_materialization( $args, $page_artifacts['contents'] );
 		$source_of_truth_manifest                    = self::source_of_truth_manifest( $import_run_id, $source_artifact_reference, $theme_dir, $theme_slug, $page_targets, $page_ids, $permalinks, $writes, $materialized, $write_theme_report_artifacts );
 		self::$conversion_report['source_of_truth'] = $source_of_truth_manifest;
 		$quality                                    = Static_Site_Importer_Report_Diagnostics::finalize_report( self::$conversion_report, $args );
@@ -383,7 +415,7 @@ class Static_Site_Importer_Theme_Generator {
 		$file_count        = count( $writes );
 		$diagnostic_count  = isset( $validation['diagnostics'] ) && is_array( $validation['diagnostics'] ) ? count( $validation['diagnostics'] ) : 0;
 		$quality_passed    = empty( $quality['fail_import'] );
-		$review_pending    = ! $quality_passed || $diagnostic_count > 0;
+		$review_pending    = ! $quality_passed;
 		$common            = array(
 			'schema'        => 'wp-codebox/live-progress-event/v1',
 			'run_id'        => $import_run_id,
@@ -2054,6 +2086,26 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/**
+	 * Normalize full template artifacts into generated theme writes.
+	 *
+	 * @param string              $theme_dir Theme directory.
+	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
+	 * @return array<string,string>|WP_Error Absolute write paths keyed to serialized block markup.
+	 */
+	private static function template_artifact_writes( string $theme_dir, array $artifacts ) {
+		$result = Static_Site_Importer_Theme_Materializer::template_artifact_writes( $theme_dir, $artifacts );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		foreach ( $result['reports'] as $report ) {
+			self::$conversion_report['generated_theme']['templates'][] = $report;
+		}
+
+		return $result['writes'];
+	}
+
+	/**
 	 * Check whether a source filename is the site index.
 	 *
 	 * @param string $filename Source filename.
@@ -2920,14 +2972,16 @@ class Static_Site_Importer_Theme_Generator {
 			'plugins' => array(),
 		);
 
-		$intent  = self::commerce_dependency_intent();
-		$adapter = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
-		if ( ! $intent['present'] ) {
-			self::$conversion_report['plugin_materialization']['reason'] = 'no_plugin_backed_intent';
-			return;
+		$adapters = array();
+		if ( self::commerce_dependency_intent()['present'] ) {
+			$adapters[] = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
 		}
-		if ( ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? 'allow_missing_woocommerce' ) ] ) ) {
-			self::$conversion_report['plugin_materialization']['reason'] = 'woocommerce_requirement_waived';
+		if ( Static_Site_Importer_Report_Diagnostics::has_materializable_form_findings( self::$conversion_report ) ) {
+			$adapters[] = Static_Site_Importer_Entity_Materializer_Registry::form_adapter();
+		}
+
+		if ( empty( $adapters ) ) {
+			self::$conversion_report['plugin_materialization']['reason'] = 'no_plugin_backed_intent';
 			return;
 		}
 		if ( array_key_exists( 'materialize_dependencies', $args ) && false === (bool) $args['materialize_dependencies'] ) {
@@ -2935,7 +2989,20 @@ class Static_Site_Importer_Theme_Generator {
 			return;
 		}
 
-		$reports = Static_Site_Importer_Entity_Materializer_Registry::materialize_plugin_dependencies( $adapter );
+		$reports = array();
+		foreach ( $adapters as $adapter ) {
+			$waiver_arg = (string) ( $adapter['waiver_arg'] ?? '' );
+			if ( '' !== $waiver_arg && ! empty( $args[ $waiver_arg ] ) ) {
+				continue;
+			}
+			$reports = array_merge( $reports, Static_Site_Importer_Entity_Materializer_Registry::materialize_plugin_dependencies( $adapter ) );
+		}
+
+		if ( empty( $reports ) ) {
+			self::$conversion_report['plugin_materialization']['reason'] = 'plugin_requirements_waived';
+			return;
+		}
+
 		self::$conversion_report['plugin_materialization'] = array(
 			'status'  => self::plugin_materialization_status( $reports ),
 			'plugins' => $reports,
@@ -3067,11 +3134,12 @@ class Static_Site_Importer_Theme_Generator {
 	 * this seeding step. Products that cannot be seeded keep no signal and stay
 	 * unacceptable.
 	 *
-	 * @param array<string, mixed> $args Import args.
+	 * @param array<string, mixed>  $args          Import args.
+	 * @param array<string, string> $page_contents Materialized page post_content keyed by source filename, mutated in place.
 	 * @return void
 	 */
-	private static function record_product_materialization( array $args ): void {
-		Static_Site_Importer_Report_Diagnostics::materialize_product_findings( self::$conversion_report, $args );
+	private static function record_product_materialization( array $args, array &$page_contents ): void {
+		Static_Site_Importer_Report_Diagnostics::materialize_product_findings( self::$conversion_report, $args, $page_contents );
 	}
 
 	/**

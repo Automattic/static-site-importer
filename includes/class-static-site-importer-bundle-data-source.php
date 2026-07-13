@@ -204,6 +204,7 @@ class Static_Site_Importer_Bundle_Data_Source {
 	 * @return array<int,array<int,array<string,mixed>>>
 	 */
 	private static function object_arrays_from_source( string $source, string $ext ): array {
+		/** @var array<int,array<int,array<string,mixed>>> $collected */
 		$collected = array();
 
 		if ( 'json' === $ext ) {
@@ -234,10 +235,15 @@ class Static_Site_Importer_Bundle_Data_Source {
 		}
 
 		if ( self::is_object_list( $value ) ) {
+			/** @var array<int,array<string,mixed>> $objects */
 			$objects = array();
 			foreach ( $value as $entry ) {
 				if ( is_array( $entry ) && ! array_is_list( $entry ) ) {
-					$objects[] = $entry;
+					$object = array();
+					foreach ( $entry as $key => $item ) {
+						$object[ (string) $key ] = $item;
+					}
+					$objects[] = $object;
 				}
 			}
 			if ( array() !== $objects ) {
@@ -558,7 +564,7 @@ class Static_Site_Importer_Bundle_Data_Source {
 			return self::PARSE_FAILED;
 		}
 
-		return ( (float) $raw === floor( (float) $raw ) && ! str_contains( $raw, '.' ) && ! str_contains( strtolower( $raw ), 'e' ) )
+		return ( floor( (float) $raw ) === (float) $raw && ! str_contains( $raw, '.' ) && ! str_contains( strtolower( $raw ), 'e' ) )
 			? (int) $raw
 			: (float) $raw;
 	}
@@ -723,8 +729,8 @@ class Static_Site_Importer_Bundle_Data_Source {
 			$next = $index + 1 < $length ? $source[ $index + 1 ] : '';
 
 			if ( '"' === $char || "'" === $char || '`' === $char ) {
-				$end  = self::skip_string( $source, $index );
-				$out .= substr( $source, $index, $end - $index );
+				$end   = self::skip_string( $source, $index );
+				$out  .= substr( $source, $index, $end - $index );
 				$index = $end;
 				continue;
 			}
@@ -771,8 +777,8 @@ class Static_Site_Importer_Bundle_Data_Source {
 		}
 
 		$matches = 0;
-		foreach ( $objects as $object ) {
-			if ( is_array( $object ) && self::is_product_shaped_object( $object ) ) {
+		foreach ( $objects as $item ) {
+			if ( self::is_product_shaped_object( $item ) ) {
 				++$matches;
 			}
 		}
@@ -783,13 +789,13 @@ class Static_Site_Importer_Bundle_Data_Source {
 	/**
 	 * Determine whether a single object carries product-shaped fields.
 	 *
-	 * @param array<string,mixed> $object Object.
+	 * @param array<string,mixed> $item Object.
 	 * @return bool
 	 */
-	private static function is_product_shaped_object( array $object ): bool {
-		$normalized = self::normalized_keys( $object );
-		$name       = self::first_key_value( $object, $normalized, self::NAME_KEYS );
-		$price      = self::first_key_value( $object, $normalized, self::PRICE_KEYS );
+	private static function is_product_shaped_object( array $item ): bool {
+		$normalized = self::normalized_keys( $item );
+		$name       = self::first_key_value( $item, $normalized, self::NAME_KEYS );
+		$price      = self::first_key_value( $item, $normalized, self::PRICE_KEYS );
 
 		return '' !== self::scalar_text( $name ) && '' !== self::price_to_decimal( $price );
 	}
@@ -797,15 +803,15 @@ class Static_Site_Importer_Bundle_Data_Source {
 	/**
 	 * Map a product-shaped object to a generic product report row.
 	 *
-	 * @param array<string,mixed> $object      Source object.
+	 * @param array<string,mixed> $item        Source object.
 	 * @param string              $source_path Artifact source path.
 	 * @return array<string,mixed>
 	 */
-	private static function product_row_from_object( array $object, string $source_path ): array {
-		$normalized = self::normalized_keys( $object );
+	private static function product_row_from_object( array $item, string $source_path ): array {
+		$normalized = self::normalized_keys( $item );
 
-		$name  = self::scalar_text( self::first_key_value( $object, $normalized, self::NAME_KEYS ) );
-		$price = self::price_to_decimal( self::first_key_value( $object, $normalized, self::PRICE_KEYS ) );
+		$name  = self::scalar_text( self::first_key_value( $item, $normalized, self::NAME_KEYS ) );
+		$price = self::price_to_decimal( self::first_key_value( $item, $normalized, self::PRICE_KEYS ) );
 		if ( '' === $name || '' === $price ) {
 			return array();
 		}
@@ -813,28 +819,28 @@ class Static_Site_Importer_Bundle_Data_Source {
 		$row = array(
 			'kind'             => 'product',
 			'name'             => $name,
-			'slug'             => self::slug_from_object( $object, $normalized, $name ),
+			'slug'             => self::slug_from_object( $item, $normalized, $name ),
 			'regular_price'    => $price,
 			'source_path'      => $source_path,
 			'source_selectors' => array( 'bundle-data:' . self::basename_path( $source_path ) ),
 		);
 
-		$sale = self::price_to_decimal( self::first_key_value( $object, $normalized, self::SALE_PRICE_KEYS ) );
+		$sale = self::price_to_decimal( self::first_key_value( $item, $normalized, self::SALE_PRICE_KEYS ) );
 		if ( '' !== $sale ) {
 			$row['sale_price'] = $sale;
 		}
 
-		$description = self::scalar_text( self::first_key_value( $object, $normalized, self::DESCRIPTION_KEYS ) );
+		$description = self::scalar_text( self::first_key_value( $item, $normalized, self::DESCRIPTION_KEYS ) );
 		if ( '' !== $description ) {
 			$row['description'] = $description;
 		}
 
-		$image = self::scalar_text( self::first_key_value( $object, $normalized, self::IMAGE_KEYS ) );
+		$image = self::scalar_text( self::first_key_value( $item, $normalized, self::IMAGE_KEYS ) );
 		if ( '' !== $image ) {
 			$row['image'] = $image;
 		}
 
-		$categories = self::string_collection( self::first_key_value( $object, $normalized, self::CATEGORY_KEYS ) );
+		$categories = self::string_collection( self::first_key_value( $item, $normalized, self::CATEGORY_KEYS ) );
 		if ( array() !== $categories ) {
 			$row['categories'] = $categories;
 		}
@@ -845,13 +851,13 @@ class Static_Site_Importer_Bundle_Data_Source {
 	/**
 	 * Derive a slug from an identifier-like field, falling back to the name.
 	 *
-	 * @param array<string,mixed>   $object     Source object.
+	 * @param array<string,mixed>   $item       Source object.
 	 * @param array<string,string>  $normalized Normalized-key map.
 	 * @param string                $name       Resolved product name.
 	 * @return string
 	 */
-	private static function slug_from_object( array $object, array $normalized, string $name ): string {
-		$candidate = self::scalar_text( self::first_key_value( $object, $normalized, self::SLUG_KEYS ) );
+	private static function slug_from_object( array $item, array $normalized, string $name ): string {
+		$candidate = self::scalar_text( self::first_key_value( $item, $normalized, self::SLUG_KEYS ) );
 		$source    = '' !== $candidate ? $candidate : $name;
 
 		return self::slugify( $source );
@@ -874,12 +880,12 @@ class Static_Site_Importer_Bundle_Data_Source {
 	/**
 	 * Map an object's keys to their normalized forms (lowercase alphanumerics).
 	 *
-	 * @param array<string,mixed> $object Source object.
+	 * @param array<string,mixed> $item Source object.
 	 * @return array<string,string> Normalized key => original key.
 	 */
-	private static function normalized_keys( array $object ): array {
+	private static function normalized_keys( array $item ): array {
 		$map = array();
-		foreach ( array_keys( $object ) as $key ) {
+		foreach ( array_keys( $item ) as $key ) {
 			$map[ self::normalize_key( (string) $key ) ] = (string) $key;
 		}
 
@@ -899,17 +905,17 @@ class Static_Site_Importer_Bundle_Data_Source {
 	/**
 	 * Return the first value whose normalized key matches a synonym.
 	 *
-	 * @param array<string,mixed>  $object     Source object.
+	 * @param array<string,mixed>  $item       Source object.
 	 * @param array<string,string> $normalized Normalized-key map.
 	 * @param array<int,string>    $synonyms   Normalized synonym list.
 	 * @return mixed
 	 */
-	private static function first_key_value( array $object, array $normalized, array $synonyms ): mixed {
+	private static function first_key_value( array $item, array $normalized, array $synonyms ): mixed {
 		foreach ( $synonyms as $synonym ) {
 			if ( isset( $normalized[ $synonym ] ) ) {
 				$original = $normalized[ $synonym ];
-				if ( array_key_exists( $original, $object ) ) {
-					return $object[ $original ];
+				if ( array_key_exists( $original, $item ) ) {
+					return $item[ $original ];
 				}
 			}
 		}

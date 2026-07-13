@@ -230,7 +230,17 @@ if ( ! is_wp_error( $result ) ) {
 
 	$assert( array() === $pattern_documents, 'single-document-import-does-not-generate-page-pattern-copy' );
 	$assert( str_contains( $content, 'Fire, flour, patience.' ), 'body-content-is-preserved' );
-	$assert( array() === $template_parts, 'single-document-import-does-not-generate-template-parts' );
+	$single_template_parts_by_path = array();
+	foreach ( $template_parts as $template_part ) {
+		if ( is_array( $template_part ) && isset( $template_part['path'] ) ) {
+			$single_template_parts_by_path[ $template_part['path'] ] = $template_part;
+		}
+	}
+	$assert( isset( $single_template_parts_by_path['parts/header.html'] ), 'single-document-import-generates-source-header-template-part' );
+	$assert( ! isset( $single_template_parts_by_path['parts/footer.html'] ), 'single-document-import-without-footer-does-not-generate-footer-template-part' );
+	$assert( is_file( $theme_dir . '/parts/header.html' ), 'single-document-import-writes-header-template-part-file' );
+	$assert( str_contains( $read( $theme_dir . '/templates/front-page.html' ), 'wp:template-part {"slug":"header"' ), 'single-document-template-references-header-part' );
+	$assert( ! str_contains( $read( $theme_dir . '/templates/front-page.html' ), 'wp:template-part {"slug":"footer"' ), 'single-document-template-does-not-reference-missing-footer-part' );
 	$assert( str_contains( $content, 'logo.svg' ) && ! str_contains( $content, 'src="assets/logo.svg"' ), 'block-markup-local-asset-is-rewritten' );
 	$assert( ! str_contains( $content, 'src="assets/logo.svg"' ), 'block-markup-local-asset-source-url-is-removed' );
 	$assert( ! str_contains( $content, '<meta' ), 'page-content-has-no-meta-fragments' );
@@ -391,10 +401,10 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 	$assert( 'blocks-engine/php-transformer/materialization-plan/v1' === ( $materialization_plan['schema'] ?? '' ), 'materialization-plan-contract-is-recorded' );
 	$assert( 3 === ( $materialization_plan['page_count'] ?? null ), 'materialization-plan-page-count-is-recorded' );
 	$assert( '' === ( $materialization_plan['pages'][1]['route_key'] ?? '' ), 'materialization-plan-route-key-preserves-transformer-contract' );
-	$assert( ! isset( $template_parts_by_path['parts/header.html'] ), 'multi-page-does-not-synthesize-header-template-part' );
-	$assert( ! isset( $template_parts_by_path['parts/footer.html'] ), 'multi-page-does-not-synthesize-footer-template-part' );
-	$assert( ! str_contains( $read( $multi_page_result['theme_dir'] . '/templates/front-page.html' ), '"slug":"header"' ), 'multi-page-template-does-not-reference-synthesized-header-part' );
-	$assert( ! str_contains( $read( $multi_page_result['theme_dir'] . '/templates/front-page.html' ), '"slug":"footer"' ), 'multi-page-template-does-not-reference-synthesized-footer-part' );
+	$assert( isset( $template_parts_by_path['parts/header.html'] ), 'multi-page-synthesizes-header-template-part' );
+	$assert( isset( $template_parts_by_path['parts/footer.html'] ), 'multi-page-synthesizes-footer-template-part' );
+	$assert( str_contains( $read( $multi_page_result['theme_dir'] . '/templates/front-page.html' ), '"slug":"header"' ), 'multi-page-template-references-synthesized-header-part' );
+	$assert( str_contains( $read( $multi_page_result['theme_dir'] . '/templates/front-page.html' ), '"slug":"footer"' ), 'multi-page-template-references-synthesized-footer-part' );
 	$assert( array() === $pattern_documents, 'blocks-engine-document-import-does-not-generate-page-pattern-copies' );
 }
 

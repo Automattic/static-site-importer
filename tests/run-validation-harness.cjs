@@ -75,15 +75,16 @@ const steps = [
     args: [ path.join( repoRoot, 'tests/smoke-url-import-runtime.php' ) ],
   },
   {
-    name: 'Codebox validation contract smoke',
+    name: 'Product handoff contract smoke',
     command: 'php',
-    args: [ path.join( repoRoot, 'tests/smoke-codebox-validation-contract.php' ) ],
+    args: [ path.join( repoRoot, 'tests/smoke-product-handoff-contract.php' ) ],
   },
   ! skipImport && {
     name: 'Import wordpress-is-dead fixture theme',
     command: wpCli[ 0 ],
     args: [
       ...wpCli.slice( 1 ),
+      `--require=${ path.join( repoRoot, 'static-site-importer.php' ) }`,
       'static-site-importer',
       'import-theme',
       importFixture,

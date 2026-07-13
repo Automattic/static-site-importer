@@ -23,6 +23,9 @@ if ( ! function_exists( 'static_site_importer_register_ability_category' ) ) {
 		if ( ! function_exists( 'wp_register_ability_category' ) ) {
 			return;
 		}
+		if ( function_exists( 'wp_get_ability_category' ) && wp_get_ability_category( STATIC_SITE_IMPORTER_ABILITY_CATEGORY ) ) {
+			return;
+		}
 
 		wp_register_ability_category(
 			STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
@@ -31,6 +34,23 @@ if ( ! function_exists( 'static_site_importer_register_ability_category' ) ) {
 				'description' => __( 'Website artifact materialization capabilities.', 'static-site-importer' ),
 			)
 		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_register_ability_once' ) ) {
+	/**
+	 * Register an ability unless it already exists in the current runtime.
+	 *
+	 * @param string               $name Ability name.
+	 * @param array<string, mixed> $args Ability arguments.
+	 * @return void
+	 */
+	function static_site_importer_register_ability_once( string $name, array $args ): void {
+		if ( function_exists( 'wp_get_ability' ) && wp_get_ability( $name ) ) {
+			return;
+		}
+
+		wp_register_ability( $name, $args );
 	}
 }
 
@@ -45,7 +65,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 			return;
 		}
 
-		wp_register_ability(
+		static_site_importer_register_ability_once(
 			'static-site-importer/export-theme',
 			array(
 				'label'               => __( 'Export Website Artifact', 'static-site-importer' ),
@@ -76,7 +96,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 			)
 		);
 
-		wp_register_ability(
+		static_site_importer_register_ability_once(
 			'static-site-importer/import-website-artifact',
 			array(
 				'label'               => __( 'Import Website Artifact', 'static-site-importer' ),
@@ -113,7 +133,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 			)
 		);
 
-		wp_register_ability(
+		static_site_importer_register_ability_once(
 			'static-site-importer/import-url',
 			array(
 				'label'               => __( 'Import URL', 'static-site-importer' ),
@@ -153,7 +173,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 			)
 		);
 
-		wp_register_ability(
+		static_site_importer_register_ability_once(
 			'static-site-importer/import-figma',
 			array(
 				'label'               => __( 'Import Figma Design', 'static-site-importer' ),
@@ -188,7 +208,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 			)
 		);
 
-		wp_register_ability(
+		static_site_importer_register_ability_once(
 			'static-site-importer/validate-artifact',
 			array(
 				'label'               => __( 'Validate Static Site Artifact', 'static-site-importer' ),
@@ -235,7 +255,14 @@ if ( ! function_exists( 'static_site_importer_ability_permission_callback' ) ) {
 			return true;
 		}
 
-		return ! function_exists( 'current_user_can' ) || current_user_can( 'switch_themes' );
+		$allowed = ! function_exists( 'current_user_can' ) || current_user_can( 'switch_themes' );
+
+		/**
+		 * Filters whether the current request may run import abilities.
+		 *
+		 * @param bool $allowed Whether the current request is allowed.
+		 */
+		return (bool) apply_filters( 'static_site_importer_can_manage_imports', $allowed );
 	}
 }
 
@@ -361,7 +388,7 @@ if ( ! function_exists( 'static_site_importer_ability_import_website_artifact' )
 			return static_site_importer_ability_error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
 		}
 
-		return static_site_importer_ability_import_success( is_array( $result ) ? $result : array(), $input );
+		return static_site_importer_ability_import_success( $result, $input );
 	}
 }
 

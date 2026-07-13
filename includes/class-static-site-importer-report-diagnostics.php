@@ -144,6 +144,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			),
 			'generated_theme'         => array(
 				'document_metadata' => array(),
+				'templates'         => array(),
 				'template_parts'    => array(),
 				'block_documents'   => array(),
 				'freeform_blocks'   => array(),
@@ -399,6 +400,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'runtime_dependency_parity'     => (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ),
 				'semantic_parity_failures'      => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
 			),
+			'provider_runtime'        => self::provider_runtime_summary( $report ),
 			'quality_gates'           => array(
 				'fallback_blocks'           => self::validation_gate( 'fallback_blocks', (int) ( $quality['fallback_count'] ?? 0 ), $quality ),
 				'conversion_failures'       => self::validation_gate( 'conversion_failures', (int) ( $quality['content_loss_count'] ?? 0 ) + (int) ( $quality['empty_conversion_count'] ?? 0 ) + (int) ( $quality['invalid_block_count'] ?? 0 ), $quality ),
@@ -661,6 +663,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'commerce_context'                      => $commerce_context,
 			'plugin_materialization'                => $plugin_materialization,
 			'product_seeding'                       => $product_seeding,
+			'provider_runtime'                      => self::provider_runtime_summary( $report ),
 			'visual_parity_artifacts'               => isset( $report['visual_parity_artifacts'] ) && is_array( $report['visual_parity_artifacts'] ) ? $report['visual_parity_artifacts'] : self::visual_parity_artifact_contract(),
 			'semantic_parity'                       => self::compact_semantic_parity_summary( $report ),
 			'diagnostic_count'                      => count( $diagnostics ),
@@ -699,6 +702,213 @@ class Static_Site_Importer_Report_Diagnostics {
 			'count'           => $count,
 			'diagnostic_refs' => isset( $quality['diagnostic_refs'][ $ref_key ] ) && is_array( $quality['diagnostic_refs'][ $ref_key ] ) ? $quality['diagnostic_refs'][ $ref_key ] : array(),
 		);
+	}
+
+	/**
+	 * Summarize provider-owned materialization versus runtime-owned gaps.
+	 *
+	 * This is the operator-facing row set: it answers whether Jetpack/WooCommerce
+	 * actually handled a fallback, whether a missing dependency was explicitly
+	 * waived, and which remaining findings still require browser/runtime support.
+	 *
+	 * @param array<string,mixed> $report Full import report.
+	 * @return array<string,mixed>
+	 */
+	private static function provider_runtime_summary( array $report ): array {
+		$form_seeding    = isset( $report['form_seeding'] ) && is_array( $report['form_seeding'] ) ? $report['form_seeding'] : array();
+		$product_seeding = isset( $report['product_finding_seeding'] ) && is_array( $report['product_finding_seeding'] ) ? $report['product_finding_seeding'] : array();
+		$diagnostics     = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
+
+		$form_row    = self::provider_runtime_form_row( $form_seeding );
+		$product_row = self::provider_runtime_product_row( $product_seeding, $diagnostics );
+		$runtime_row = self::provider_runtime_gap_row( $report, $diagnostics );
+
+		return array(
+			'schema'                                => 'static-site-importer/provider-runtime-summary/v1',
+			'forms_materialized_count'              => (int) ( $form_row['materialized_count'] ?? 0 ),
+			'woo_products_seeded_count'             => (int) ( $product_row['seeded_count'] ?? 0 ),
+			'cart_runtime_controls_preserved_count' => (int) ( $product_row['cart_runtime_controls_preserved_count'] ?? 0 ),
+			'missing_provider_count'                => count( array_filter( array( $form_row, $product_row ), static fn ( array $row ): bool => 'missing_provider' === ( $row['status'] ?? '' ) ) ),
+			'waived_dependency_count'               => count( array_filter( array( $form_row, $product_row ), static fn ( array $row ): bool => 'waived_dependency' === ( $row['status'] ?? '' ) ) ),
+			'runtime_gap_count'                     => (int) ( $runtime_row['count'] ?? 0 ),
+			'fake_or_unsupported_count'             => (int) ( $runtime_row['fake_or_unsupported_count'] ?? 0 ),
+			'rows'                                  => array_values( array_filter( array( $form_row, $product_row, $runtime_row ), static fn ( array $row ): bool => '' !== (string) ( $row['status'] ?? '' ) ) ),
+			'decision_notes'                        => array(
+				'provider_materialized means SSI replaced a static fallback with a real provider-backed WordPress primitive.',
+				'waived_dependency means the source needed a provider but the import was explicitly allowed to continue without enforcing that dependency.',
+				'runtime_gap means the provider/importer did not fake support; browser or application runtime work remains.',
+			),
+		);
+	}
+
+	/**
+	 * Build the Jetpack Forms provider row.
+	 *
+	 * @param array<string,mixed> $seeding Form materialization report.
+	 * @return array<string,mixed>
+	 */
+	private static function provider_runtime_form_row( array $seeding ): array {
+		if ( empty( $seeding ) ) {
+			return array();
+		}
+
+		$requested    = (int) ( $seeding['form_count'] ?? count( isset( $seeding['forms'] ) && is_array( $seeding['forms'] ) ? $seeding['forms'] : array() ) );
+		$materialized = (int) ( $seeding['mapped_count'] ?? ( $seeding['counts']['mapped'] ?? 0 ) );
+		$waived       = ! empty( $seeding['waived'] );
+		$status       = self::provider_runtime_materialization_status( $requested, $materialized, $seeding, $waived );
+
+		return array(
+			'capability'         => 'form',
+			'provider'           => isset( $seeding['provider'] ) && is_scalar( $seeding['provider'] ) ? (string) $seeding['provider'] : 'jetpack',
+			'status'             => $status,
+			'requested_count'    => $requested,
+			'materialized_count' => $materialized,
+			'waived'             => $waived,
+			'reason'             => isset( $seeding['reason'] ) && is_scalar( $seeding['reason'] ) ? (string) $seeding['reason'] : '',
+			'unsupported_count'  => max( 0, $requested - $materialized ),
+			'decision'           => self::provider_runtime_decision( 'form', $status ),
+		);
+	}
+
+	/**
+	 * Build the WooCommerce product provider row.
+	 *
+	 * @param array<string,mixed>      $seeding     Product materialization report.
+	 * @param array<int,array|string>  $diagnostics Import diagnostics.
+	 * @return array<string,mixed>
+	 */
+	private static function provider_runtime_product_row( array $seeding, array $diagnostics ): array {
+		if ( empty( $seeding ) ) {
+			return array();
+		}
+
+		$requested = (int) ( $seeding['product_count'] ?? count( isset( $seeding['manifest']['products'] ) && is_array( $seeding['manifest']['products'] ) ? $seeding['manifest']['products'] : array() ) );
+		$created   = (int) ( $seeding['counts']['created'] ?? 0 );
+		$updated   = (int) ( $seeding['counts']['updated'] ?? 0 );
+		$seeded    = $created + $updated;
+		$waived    = ! empty( $seeding['waived'] );
+		$status    = self::provider_runtime_materialization_status( $requested, $seeded, $seeding, $waived );
+
+		return array(
+			'capability'                            => 'shop',
+			'provider'                              => isset( $seeding['provider'] ) && is_scalar( $seeding['provider'] ) ? (string) $seeding['provider'] : 'woocommerce',
+			'status'                                => $status,
+			'requested_count'                       => $requested,
+			'seeded_count'                          => $seeded,
+			'materialized_count'                    => $seeded,
+			'cart_runtime_controls_preserved_count' => self::cart_runtime_controls_preserved_count( $diagnostics ),
+			'waived'                                => $waived,
+			'reason'                                => isset( $seeding['reason'] ) && is_scalar( $seeding['reason'] ) ? (string) $seeding['reason'] : '',
+			'unsupported_count'                     => max( 0, $requested - $seeded ),
+			'decision'                              => self::provider_runtime_decision( 'shop', $status ),
+		);
+	}
+
+	/**
+	 * Build the runtime-owned gap row.
+	 *
+	 * @param array<string,mixed>     $report      Import report.
+	 * @param array<int,array|string> $diagnostics Import diagnostics.
+	 * @return array<string,mixed>
+	 */
+	private static function provider_runtime_gap_row( array $report, array $diagnostics ): array {
+		$runtime_parity = isset( $report['blocks_engine']['runtime_dependency_parity'] ) && is_array( $report['blocks_engine']['runtime_dependency_parity'] ) ? $report['blocks_engine']['runtime_dependency_parity'] : array();
+		$count          = (int) ( $runtime_parity['missing_dom_target_count'] ?? 0 ) + (int) ( $runtime_parity['unsupported_element_reference_count'] ?? 0 );
+
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) ) {
+				continue;
+			}
+			$type = isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : '';
+			if ( in_array( $type, array( 'runtime_dependency_missing_dom_target', 'runtime_dependency_unsupported_element_reference', 'runtime_dependency_parity_issue' ), true ) && empty( $runtime_parity ) ) {
+				++$count;
+			}
+		}
+
+		return array(
+			'capability'                => 'runtime',
+			'provider'                  => 'browser_or_application_runtime',
+			'status'                    => 0 === $count ? 'skipped' : 'runtime_gap',
+			'count'                     => $count,
+			'missing_dom_target_count'  => (int) ( $runtime_parity['missing_dom_target_count'] ?? 0 ),
+			'unsupported_element_count' => (int) ( $runtime_parity['unsupported_element_reference_count'] ?? 0 ),
+			'telemetry_notice_count'    => (int) ( $runtime_parity['vendor_telemetry_script_count'] ?? 0 ),
+			'fake_or_unsupported_count' => $count,
+			'decision'                  => 0 === $count ? 'No runtime-owned gaps were reported.' : 'Do not treat this as provider-materialized; browser/application runtime support still needs implementation or waiver.',
+		);
+	}
+
+	/**
+	 * Decide a provider row status.
+	 *
+	 * @param int                 $requested    Requested entity count.
+	 * @param int                 $materialized Materialized entity count.
+	 * @param array<string,mixed> $seeding      Provider materialization report.
+	 * @param bool                $waived       Whether the dependency was waived.
+	 * @return string
+	 */
+	private static function provider_runtime_materialization_status( int $requested, int $materialized, array $seeding, bool $waived ): string {
+		if ( 0 === $requested ) {
+			return 'skipped';
+		}
+		if ( $materialized > 0 ) {
+			return 'provider_materialized';
+		}
+		if ( $waived ) {
+			return 'waived_dependency';
+		}
+		if ( in_array( (string) ( $seeding['reason'] ?? '' ), array( 'woocommerce_inactive', 'materializer_unavailable', 'empty_validated_manifest' ), true ) || false === ( $seeding['available'] ?? true ) ) {
+			return 'missing_provider';
+		}
+
+		return 'runtime_gap';
+	}
+
+	/**
+	 * Count cart controls preserved by WooCommerce-backed product mapping.
+	 *
+	 * @param array<int,array|string> $diagnostics Import diagnostics.
+	 * @return int
+	 */
+	private static function cart_runtime_controls_preserved_count( array $diagnostics ): int {
+		$count = 0;
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) || empty( $diagnostic['runtime_mapped'] ) || 'woocommerce' !== (string) ( $diagnostic['mapped_provider'] ?? '' ) ) {
+				continue;
+			}
+			$products = isset( $diagnostic['products'] ) && is_array( $diagnostic['products'] ) ? $diagnostic['products'] : array();
+			foreach ( $products as $product ) {
+				if ( is_array( $product ) && ! empty( $product['has_cart_control'] ) ) {
+					++$count;
+				}
+			}
+		}
+
+		return $count;
+	}
+
+	/**
+	 * Human decision text for provider/runtime rows.
+	 *
+	 * @param string $capability Capability name.
+	 * @param string $status     Row status.
+	 * @return string
+	 */
+	private static function provider_runtime_decision( string $capability, string $status ): string {
+		if ( 'provider_materialized' === $status ) {
+			return 'form' === $capability ? 'Jetpack handled the form fallback; evaluate remaining form issues as runtime/provider behavior, not fake static HTML.' : 'WooCommerce handled product rows; cart controls are preserved by Woo runtime where counted.';
+		}
+		if ( 'waived_dependency' === $status ) {
+			return 'Dependency was missing but explicitly waived for this run; do not count as provider-materialized.';
+		}
+		if ( 'missing_provider' === $status ) {
+			return 'Required provider is unavailable; install/activate the provider or keep the import failing.';
+		}
+		if ( 'runtime_gap' === $status ) {
+			return 'Source intent remains runtime-owned and unsupported by the current provider path.';
+		}
+
+		return 'No provider/runtime work was requested for this capability.';
 	}
 
 	/**
@@ -1152,7 +1362,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$diagnostics = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
 		$indexes     = array();
 		foreach ( $diagnostics as $index => $diagnostic ) {
-			if ( is_array( $diagnostic ) && 'html_form_fallback' === (string) ( $diagnostic['diagnostic_code'] ?? '' ) ) {
+			if ( is_array( $diagnostic ) && self::is_materializable_form_diagnostic( $diagnostic ) ) {
 				$indexes[] = (int) $index;
 			}
 		}
@@ -1167,23 +1377,30 @@ class Static_Site_Importer_Report_Diagnostics {
 
 		$manifest_forms = array();
 		foreach ( $indexes as $index ) {
-			$diagnostic       = $report['diagnostics'][ $index ];
+			$diagnostic = $report['diagnostics'][ $index ];
+			$controls   = isset( $diagnostic['controls'] ) && is_array( $diagnostic['controls'] ) ? $diagnostic['controls'] : array();
+			$form       = isset( $diagnostic['form'] ) && is_array( $diagnostic['form'] ) ? $diagnostic['form'] : array();
+			if ( empty( $controls ) && self::is_generated_core_html_form_diagnostic( $diagnostic ) ) {
+				$extracted = self::extract_form_manifest_from_diagnostic( $diagnostic );
+				$controls  = $extracted['controls'];
+				$form      = $extracted['form'];
+			}
 			$manifest_forms[] = array(
 				'selector'    => isset( $diagnostic['selector'] ) && is_scalar( $diagnostic['selector'] ) ? (string) $diagnostic['selector'] : '',
 				'source_path' => isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : ( isset( $diagnostic['source'] ) && is_scalar( $diagnostic['source'] ) ? (string) $diagnostic['source'] : '' ),
-				'form'        => isset( $diagnostic['form'] ) && is_array( $diagnostic['form'] ) ? $diagnostic['form'] : array(),
-				'controls'    => isset( $diagnostic['controls'] ) && is_array( $diagnostic['controls'] ) ? $diagnostic['controls'] : array(),
+				'form'        => $form,
+				'controls'    => $controls,
 			);
 		}
 
 		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest_generic( $adapter, array( 'forms' => $manifest_forms ) );
 		$seeding    = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, array( 'forms' => isset( $validation['forms'] ) && is_array( $validation['forms'] ) ? $validation['forms'] : array() ) );
 
-		$seeding['provider']     = Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'form' );
-		$seeding['form_count']   = count( $manifest_forms );
-		$seeding['mapped_count'] = 0;
+		$seeding['provider']      = Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'form' );
+		$seeding['form_count']    = count( $manifest_forms );
+		$seeding['mapped_count']  = 0;
 		$seeding['grafted_count'] = 0;
-		$seeding['waived']       = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? 'allow_missing_jetpack' ) ] );
+		$seeding['waived']        = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? 'allow_missing_jetpack' ) ] );
 		if ( ! empty( $validation['errors'] ) ) {
 			$seeding['validation_errors'] = $validation['errors'];
 		}
@@ -1196,13 +1413,15 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 
 			++$seeding['mapped_count'];
-			$selector = isset( $row['selector'] ) && is_scalar( $row['selector'] ) ? (string) $row['selector'] : '';
-			$index    = self::form_finding_index_for_selector( $report['diagnostics'], $pending, $selector );
+			$selector    = isset( $row['selector'] ) && is_scalar( $row['selector'] ) ? (string) $row['selector'] : '';
+			$source_path = isset( $row['source_path'] ) && is_scalar( $row['source_path'] ) ? (string) $row['source_path'] : '';
+			$index       = self::form_finding_index_for_selector( $report['diagnostics'], $pending, $selector, $source_path );
 			if ( null === $index ) {
 				continue;
 			}
 
 			$report['diagnostics'][ $index ] = self::mark_form_finding_mapped( $report['diagnostics'][ $index ], $row, $seeding['provider'] );
+			$report['diagnostics'][ $index ] = self::add_form_graft_source_path( $report['diagnostics'][ $index ], $report );
 
 			if ( ! empty( $page_contents ) ) {
 				$markup = isset( $row['block_markup'] ) && is_scalar( $row['block_markup'] ) ? (string) $row['block_markup'] : '';
@@ -1224,6 +1443,206 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
+	 * Determine whether import diagnostics require a form provider.
+	 *
+	 * This is intentionally shared with dependency provisioning so the provider is
+	 * active before the same finding is converted and grafted into page content.
+	 *
+	 * @param array<string,mixed> $report Import report.
+	 * @return bool
+	 */
+	public static function has_materializable_form_findings( array $report ): bool {
+		$diagnostics = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( is_array( $diagnostic ) && self::is_materializable_form_diagnostic( $diagnostic ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Determine whether a diagnostic can be passed to the form provider.
+	 *
+	 * @param array<string,mixed> $diagnostic Diagnostic row.
+	 * @return bool
+	 */
+	private static function is_materializable_form_diagnostic( array $diagnostic ): bool {
+		if ( 'html_form_fallback' === (string) ( $diagnostic['diagnostic_code'] ?? '' ) ) {
+			return true;
+		}
+
+		return self::is_generated_core_html_form_diagnostic( $diagnostic );
+	}
+
+	/**
+	 * Identify generated post_content core/html diagnostics that preserve a form.
+	 *
+	 * @param array<string,mixed> $diagnostic Diagnostic row.
+	 * @return bool
+	 */
+	private static function is_generated_core_html_form_diagnostic( array $diagnostic ): bool {
+		if ( 'core/html' !== (string) ( $diagnostic['block_name'] ?? '' ) ) {
+			return false;
+		}
+
+		$tag_name = strtolower( (string) ( $diagnostic['tag_name'] ?? $diagnostic['tag'] ?? $diagnostic['element'] ?? '' ) );
+		if ( 'form' === $tag_name ) {
+			return true;
+		}
+
+		$html = self::first_scalar( $diagnostic, array( 'source_html_preview', 'html_excerpt', 'excerpt' ) );
+		return '' !== $html && str_contains( strtolower( $html ), '<form' );
+	}
+
+	/**
+	 * Extract the provider manifest shape from a generated core/html form diagnostic.
+	 *
+	 * @param array<string,mixed> $diagnostic Diagnostic row.
+	 * @return array{form:array<string,string>,controls:array<int,array<string,mixed>>}
+	 */
+	private static function extract_form_manifest_from_diagnostic( array $diagnostic ): array {
+		$html = self::first_scalar( $diagnostic, array( 'source_html_preview', 'html_excerpt', 'excerpt' ) );
+		if ( '' === $html || ! str_contains( strtolower( $html ), '<form' ) ) {
+			return array(
+				'form'     => array(),
+				'controls' => array(),
+			);
+		}
+
+		$doc      = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$doc->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+
+		$form_node = $doc->getElementsByTagName( 'form' )->item( 0 );
+		if ( ! $form_node instanceof DOMElement ) {
+			return array(
+				'form'     => array(),
+				'controls' => array(),
+			);
+		}
+
+		$form = array();
+		foreach ( array( 'class', 'action', 'method' ) as $attribute ) {
+			$value = trim( $form_node->getAttribute( $attribute ) );
+			if ( '' !== $value ) {
+				$form[ $attribute ] = $value;
+			}
+		}
+
+		$controls = array();
+		foreach ( array( 'input', 'textarea', 'select', 'button' ) as $tag_name ) {
+			foreach ( $form_node->getElementsByTagName( $tag_name ) as $control_node ) {
+				$control = array(
+					'tag'  => strtolower( $control_node->tagName ),
+					'type' => strtolower( trim( $control_node->getAttribute( 'type' ) ) ),
+				);
+				if ( 'button' === $control['tag'] && '' === $control['type'] ) {
+					$control['type'] = 'submit';
+				}
+				if ( 'input' === $control['tag'] && '' === $control['type'] ) {
+					$control['type'] = 'text';
+				}
+
+				foreach ( array( 'id', 'name', 'placeholder' ) as $attribute ) {
+					$value = trim( $control_node->getAttribute( $attribute ) );
+					if ( '' !== $value ) {
+						$control[ $attribute ] = $value;
+					}
+				}
+
+				$label = trim( $control_node->getAttribute( 'aria-label' ) );
+				if ( '' === $label ) {
+					$label = self::label_text_for_form_control( $control_node, $doc );
+				}
+				if ( '' === $label ) {
+					$label = trim( $control_node->textContent );
+				}
+				if ( '' !== $label ) {
+					$control['label'] = $label;
+				}
+
+				if ( $control_node->hasAttribute( 'required' ) ) {
+					$control['required'] = true;
+				}
+
+				$controls[] = $control;
+			}
+		}
+
+		return array(
+			'form'     => $form,
+			'controls' => $controls,
+		);
+	}
+
+	/**
+	 * Resolve a form control's associated label text from parsed source HTML.
+	 *
+	 * @param DOMElement  $control_node Source form control node.
+	 * @param DOMDocument $doc          Parsed document.
+	 * @return string
+	 */
+	private static function label_text_for_form_control( DOMElement $control_node, DOMDocument $doc ): string {
+		$id = trim( $control_node->getAttribute( 'id' ) );
+		if ( '' !== $id ) {
+			foreach ( $doc->getElementsByTagName( 'label' ) as $label_node ) {
+				if ( trim( $label_node->getAttribute( 'for' ) ) !== $id ) {
+					continue;
+				}
+
+				$text = self::form_label_visible_text( $label_node );
+				if ( '' !== $text ) {
+					return $text;
+				}
+			}
+		}
+
+		$node = $control_node->parentNode;
+		while ( $node instanceof DOMElement ) {
+			if ( 'label' === strtolower( $node->tagName ) ) {
+				return self::form_label_visible_text( $node );
+			}
+			if ( 'form' === strtolower( $node->tagName ) ) {
+				break;
+			}
+			$node = $node->parentNode;
+		}
+
+		return '';
+	}
+
+	/**
+	 * Return label copy without nested form-control values.
+	 *
+	 * @param DOMElement $label_node Label element.
+	 * @return string
+	 */
+	private static function form_label_visible_text( DOMElement $label_node ): string {
+		$clone = $label_node->cloneNode( true );
+		if ( ! $clone instanceof DOMElement ) {
+			return '';
+		}
+
+		foreach ( array( 'input', 'textarea', 'select', 'button' ) as $tag_name ) {
+			$nodes = array();
+			foreach ( $clone->getElementsByTagName( $tag_name ) as $node ) {
+				$nodes[] = $node;
+			}
+			foreach ( $nodes as $node ) {
+				if ( $node->parentNode instanceof DOMNode ) {
+					$node->parentNode->removeChild( $node );
+				}
+			}
+		}
+
+		return trim( preg_replace( '/\s+/', ' ', $clone->textContent ) ?? $clone->textContent );
+	}
+
+	/**
 	 * Resolve which pending form finding a materialized row maps onto.
 	 *
 	 * @param array<int,array<string,mixed>> $diagnostics Report diagnostics.
@@ -1231,7 +1650,17 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param string                         $selector    Materialized form selector.
 	 * @return int|null
 	 */
-	private static function form_finding_index_for_selector( array $diagnostics, array $pending, string $selector ): ?int {
+	private static function form_finding_index_for_selector( array $diagnostics, array $pending, string $selector, string $source_path = '' ): ?int {
+		if ( '' !== $selector && '' !== $source_path ) {
+			foreach ( $pending as $index ) {
+				$diagnostic        = $diagnostics[ $index ] ?? array();
+				$diagnostic_source = self::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
+				if ( (string) ( $diagnostic['selector'] ?? '' ) === $selector && self::form_source_paths_match( $source_path, $diagnostic_source ) ) {
+					return $index;
+				}
+			}
+		}
+
 		if ( '' !== $selector ) {
 			foreach ( $pending as $index ) {
 				$diagnostic = $diagnostics[ $index ] ?? array();
@@ -1267,6 +1696,44 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
+	 * Add the generated post_content key that corresponds to a source HTML form.
+	 *
+	 * Blocks Engine form findings are keyed to source documents such as
+	 * `website/index.html`; generated theme content is keyed to post fields such as
+	 * `posts/page-home.post_content`. The source document manifest is the contract
+	 * that bridges those namespaces.
+	 *
+	 * @param array<string,mixed> $diagnostic Form finding.
+	 * @param array<string,mixed> $report     Import report.
+	 * @return array<string,mixed>
+	 */
+	private static function add_form_graft_source_path( array $diagnostic, array $report ): array {
+		$source_path = self::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
+		if ( '' === $source_path ) {
+			return $diagnostic;
+		}
+
+		$documents = $report['source_documents']['blocks_engine_documents'] ?? array();
+		if ( ! is_array( $documents ) ) {
+			return $diagnostic;
+		}
+
+		foreach ( $documents as $document ) {
+			if ( ! is_array( $document ) || (string) ( $document['source_path'] ?? '' ) !== $source_path ) {
+				continue;
+			}
+
+			$slug = isset( $document['slug'] ) && is_scalar( $document['slug'] ) ? trim( (string) $document['slug'] ) : '';
+			if ( '' !== $slug ) {
+				$diagnostic['graft_source_path'] = 'posts/page-' . $slug . '.post_content';
+			}
+			return $diagnostic;
+		}
+
+		return $diagnostic;
+	}
+
+	/**
 	 * Graft seeded contact-form markup into a page's post_content in place of the
 	 * finding's readable fallback region.
 	 *
@@ -1283,7 +1750,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array{grafted:bool, finding:array<string,mixed>, diagnostic:?array<string,mixed>}
 	 */
 	private static function graft_form_block_into_page_contents( array $finding, string $block_markup, array &$page_contents ): array {
-		$source_path = self::first_scalar( $finding, array( 'source_path', 'source' ) );
+		$source_path = self::first_scalar( $finding, array( 'graft_source_path', 'source_path', 'source' ) );
 		$selector    = isset( $finding['selector'] ) && is_scalar( $finding['selector'] ) ? (string) $finding['selector'] : '';
 
 		$unanchorable = static function ( string $reason ) use ( &$finding, $source_path, $selector ): array {
@@ -1310,12 +1777,14 @@ class Static_Site_Importer_Report_Diagnostics {
 		$readable = isset( $finding['readable_blocks'] ) && is_array( $finding['readable_blocks'] ) ? $finding['readable_blocks'] : array();
 		$region   = self::serialize_readable_form_blocks( $readable );
 		if ( '' === $region ) {
-			return $unanchorable( 'no_readable_fallback_blocks' );
+			$core_html_graft = self::graft_form_block_into_core_html_fallback( $finding, $block_markup, $source_path, $page_contents );
+			return $core_html_graft['grafted'] ? $core_html_graft : $unanchorable( 'no_readable_fallback_blocks' );
 		}
 
 		$key = self::form_fallback_page_content_key( $source_path, $region, $page_contents );
 		if ( null === $key ) {
-			return $unanchorable( 'fallback_region_not_found_in_post_content' );
+			$core_html_graft = self::graft_form_block_into_core_html_fallback( $finding, $block_markup, $source_path, $page_contents );
+			return $core_html_graft['grafted'] ? $core_html_graft : $unanchorable( 'fallback_region_not_found_in_post_content' );
 		}
 
 		$content  = (string) ( $page_contents[ $key ] ?? '' );
@@ -1336,6 +1805,140 @@ class Static_Site_Importer_Report_Diagnostics {
 			'finding'    => $finding,
 			'diagnostic' => null,
 		);
+	}
+
+	/**
+	 * Replace a serialized core/html form preservation block when readable blocks
+	 * are absent or no longer match generated post_content.
+	 *
+	 * @param array<string,mixed>  $finding       Mapped form-fallback finding.
+	 * @param string               $block_markup  Seeded contact-form block markup.
+	 * @param string               $source_path   Resolved post_content path.
+	 * @param array<string,string> $page_contents Materialized page post_content keyed by source filename.
+	 * @return array{grafted:bool, finding:array<string,mixed>, diagnostic:?array<string,mixed>}
+	 */
+	private static function graft_form_block_into_core_html_fallback( array $finding, string $block_markup, string $source_path, array &$page_contents ): array {
+		foreach ( self::form_fallback_page_content_keys_for_source( $source_path, $page_contents ) as $key ) {
+			$content = (string) ( $page_contents[ $key ] ?? '' );
+			foreach ( self::serialized_core_html_blocks( $content ) as $block ) {
+				if ( ! self::core_html_form_matches_finding( $block['html'], $finding ) ) {
+					continue;
+				}
+
+				$position = strpos( $content, $block['serialized'] );
+				if ( false === $position ) {
+					continue;
+				}
+
+				$page_contents[ $key ]               = substr( $content, 0, $position ) . $block_markup . substr( $content, $position + strlen( $block['serialized'] ) );
+				$finding['content_grafted']          = true;
+				$finding['grafted_post_content_key'] = $key;
+				$finding['graft_anchor']             = 'core_html_form_block';
+
+				return array(
+					'grafted'    => true,
+					'finding'    => $finding,
+					'diagnostic' => null,
+				);
+			}
+		}
+
+		$finding['content_grafted'] = false;
+		return array(
+			'grafted'    => false,
+			'finding'    => $finding,
+			'diagnostic' => null,
+		);
+	}
+
+	/**
+	 * Return candidate page content keys for a resolved source path, preferring the
+	 * matching page and falling back to the supplied order.
+	 *
+	 * @param string               $source_path   Resolved post_content path.
+	 * @param array<string,string> $page_contents Materialized page post_content keyed by source filename.
+	 * @return array<int,string>
+	 */
+	private static function form_fallback_page_content_keys_for_source( string $source_path, array $page_contents ): array {
+		$keys = array();
+		if ( '' !== $source_path ) {
+			foreach ( $page_contents as $key => $content ) {
+				if ( self::form_source_paths_match( $source_path, (string) $key ) ) {
+					$keys[] = (string) $key;
+				}
+			}
+		}
+
+		foreach ( array_keys( $page_contents ) as $key ) {
+			if ( ! in_array( (string) $key, $keys, true ) ) {
+				$keys[] = (string) $key;
+			}
+		}
+
+		return $keys;
+	}
+
+	/**
+	 * Extract serialized core/html blocks and their decoded HTML payloads.
+	 *
+	 * @param string $content Serialized block document.
+	 * @return array<int,array{serialized:string,html:string}>
+	 */
+	private static function serialized_core_html_blocks( string $content ): array {
+		$blocks  = array();
+		$matches = array();
+		preg_match_all( '/<!--\s+wp:html\s+(\{.*?\})\s+\/-->/s', $content, $matches, PREG_SET_ORDER );
+		preg_match_all( '/<!--\s+wp:html\s+(\{.*?\})\s+-->(.*?)<!--\s+\/wp:html\s+-->/s', $content, $wrapped_matches, PREG_SET_ORDER );
+		$matches = array_merge( $matches, $wrapped_matches );
+
+		foreach ( $matches as $match ) {
+			$attrs = json_decode( (string) $match[1], true );
+			$html  = is_array( $attrs ) && isset( $attrs['content'] ) && is_scalar( $attrs['content'] ) ? (string) $attrs['content'] : ( isset( $match[2] ) ? (string) $match[2] : '' );
+			if ( '' !== $html ) {
+				$blocks[] = array(
+					'serialized' => (string) $match[0],
+					'html'       => $html,
+				);
+			}
+		}
+
+		return $blocks;
+	}
+
+	/**
+	 * Determine whether a decoded core/html form payload matches a form finding.
+	 *
+	 * @param string              $html    Decoded core/html payload.
+	 * @param array<string,mixed> $finding Form finding.
+	 * @return bool
+	 */
+	private static function core_html_form_matches_finding( string $html, array $finding ): bool {
+		if ( ! str_contains( strtolower( $html ), '<form' ) ) {
+			return false;
+		}
+
+		$form = isset( $finding['form'] ) && is_array( $finding['form'] ) ? $finding['form'] : array();
+		foreach ( array( 'class', 'action', 'method' ) as $field ) {
+			$value = isset( $form[ $field ] ) && is_scalar( $form[ $field ] ) ? trim( (string) $form[ $field ] ) : '';
+			if ( '' !== $value && ! str_contains( $html, $value ) ) {
+				return false;
+			}
+		}
+
+		$controls = isset( $finding['controls'] ) && is_array( $finding['controls'] ) ? $finding['controls'] : array();
+		foreach ( $controls as $control ) {
+			if ( ! is_array( $control ) ) {
+				continue;
+			}
+			foreach ( array( 'id', 'name' ) as $field ) {
+				$value = isset( $control[ $field ] ) && is_scalar( $control[ $field ] ) ? trim( (string) $control[ $field ] ) : '';
+				if ( '' !== $value && ! str_contains( $html, $value ) ) {
+					return false;
+				}
+			}
+		}
+
+		return true;
 	}
 
 	/**
@@ -1386,7 +1989,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		$source_base = basename( $source_path );
-		return '' !== $source_base && $source_base === basename( $key );
+		return '' !== $source_base && basename( $key ) === $source_base;
 	}
 
 	/**
@@ -1420,9 +2023,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	private static function serialize_readable_form_blocks( array $readable_blocks ): string {
 		$serialized = '';
 		foreach ( array_values( $readable_blocks ) as $block ) {
-			if ( is_array( $block ) ) {
-				$serialized .= self::serialize_readable_form_block( $block );
-			}
+			$serialized .= self::serialize_readable_form_block( $block );
 		}
 		return $serialized;
 	}
@@ -1462,9 +2063,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		if ( ! is_array( $inner_content ) ) {
 			$serialized = '';
 			foreach ( $inner_blocks as $inner_block ) {
-				if ( is_array( $inner_block ) ) {
-					$serialized .= self::serialize_readable_form_block( $inner_block );
-				}
+				$serialized .= self::serialize_readable_form_block( $inner_block );
 			}
 			return $serialized . ( isset( $block['innerHTML'] ) && is_string( $block['innerHTML'] ) ? $block['innerHTML'] : '' );
 		}
@@ -1495,6 +2094,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			return '';
 		}
 
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Fallback only for non-WordPress smoke tests; WordPress runtimes use wp_json_encode().
 		$encoded = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) : json_encode( $attrs, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
 		if ( ! is_string( $encoded ) ) {
 			return '';
@@ -1522,11 +2122,12 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * keep no signal and stay an unacceptable parity loss, which lets the existing
 	 * commerce dependency gate report the missing runtime.
 	 *
-	 * @param array<string,mixed> $report Import report (mutated in place).
-	 * @param array<string,mixed> $args   Import args.
+	 * @param array<string,mixed>  $report        Import report (mutated in place).
+	 * @param array<string,mixed>  $args          Import args.
+	 * @param array<string,string> $page_contents Materialized page post_content keyed by source filename, mutated in place.
 	 * @return array<string,mixed> The recorded product_finding_seeding report.
 	 */
-	public static function materialize_product_findings( array &$report, array $args = array() ): array {
+	public static function materialize_product_findings( array &$report, array $args = array(), array &$page_contents = array() ): array {
 		$adapter = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
 
 		$diagnostics = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
@@ -1569,7 +2170,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'products'       => $manifest_products,
 		);
 		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest( $adapter, $manifest );
-		$validated  = isset( $validation['products'] ) && is_array( $validation['products'] ) ? $validation['products'] : array();
+		$validated  = $validation['products'];
 
 		$seeding = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, array( 'products' => $validated ) );
 
@@ -1583,29 +2184,220 @@ class Static_Site_Importer_Report_Diagnostics {
 			$seeding['validation_errors'] = $validation['errors'];
 		}
 
-		$seeded_slugs = array();
+		$seeded_products_by_slug = array();
 		foreach ( ( isset( $seeding['products'] ) && is_array( $seeding['products'] ) ? $seeding['products'] : array() ) as $product_row ) {
 			if ( ! is_array( $product_row ) ) {
 				continue;
 			}
 			if ( in_array( (string) ( $product_row['status'] ?? '' ), array( 'created', 'updated' ), true ) ) {
-				$seeded_slugs[ (string) ( $product_row['slug'] ?? '' ) ] = true;
+				$slug = (string) ( $product_row['slug'] ?? '' );
+				if ( '' !== $slug ) {
+					$seeded_products_by_slug[ $slug ] = $product_row;
+				}
 			}
 		}
+
+		$seeding['shortcode_grafted_count'] = 0;
 
 		foreach ( $indexes as $index ) {
 			$slugs = $finding_slugs[ $index ] ?? array();
 			foreach ( $slugs as $slug ) {
-				if ( isset( $seeded_slugs[ $slug ] ) ) {
+				if ( isset( $seeded_products_by_slug[ $slug ] ) ) {
 					++$seeding['mapped_count'];
 					$report['diagnostics'][ $index ] = self::mark_product_finding_mapped( $report['diagnostics'][ $index ], $seeding['provider'] );
 					break;
+				}
+			}
+
+			if ( ! empty( $page_contents ) ) {
+				$graft = self::graft_product_add_to_cart_shortcodes_into_page_contents( $report['diagnostics'][ $index ], $seeded_products_by_slug, $page_contents );
+				$report['diagnostics'][ $index ] = $graft['finding'];
+				if ( $graft['grafted'] ) {
+					++$seeding['shortcode_grafted_count'];
+				}
+				if ( is_array( $graft['diagnostic'] ) ) {
+					$report['diagnostics'][] = $graft['diagnostic'];
 				}
 			}
 		}
 
 		$report['product_finding_seeding'] = $seeding;
 		return $seeding;
+	}
+
+	/**
+	 * Replace plain static product-card add-to-cart buttons with Woo shortcode blocks.
+	 *
+	 * This prototype only rewrites serialized Gutenberg button fallbacks. Raw HTML
+	 * runtime controls are left in place so SSI never embeds block markup inside an
+	 * arbitrary HTML island or fakes cart state.
+	 *
+	 * @param array<string,mixed>        $finding                 Product-grid finding.
+	 * @param array<string,array<mixed>> $seeded_products_by_slug Seeded Woo rows keyed by slug.
+	 * @param array<string,string>       $page_contents           Materialized page post_content keyed by source filename.
+	 * @return array{grafted:bool,finding:array<string,mixed>,diagnostic:?array<string,mixed>}
+	 */
+	private static function graft_product_add_to_cart_shortcodes_into_page_contents( array $finding, array $seeded_products_by_slug, array &$page_contents ): array {
+		$source_path = self::first_scalar( $finding, array( 'graft_source_path', 'source_path', 'source' ) );
+		$selector    = isset( $finding['selector'] ) && is_scalar( $finding['selector'] ) ? (string) $finding['selector'] : '';
+
+		$unanchorable = static function ( string $reason ) use ( &$finding, $source_path, $selector ): array {
+			$finding['product_shortcode_grafted'] = false;
+			return array(
+				'grafted'    => false,
+				'finding'    => $finding,
+				'diagnostic' => array(
+					'type'            => 'product_add_to_cart_graft_unanchorable',
+					'reason'          => $reason,
+					'source_path'     => $source_path,
+					'selector'        => $selector,
+					'diagnostic_code' => 'html_product_add_to_cart_graft_unanchorable',
+					'loss_class'      => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+					'message'         => 'Woo add-to-cart shortcode markup could not be safely anchored to plain serialized button controls; the static controls were left in place.',
+				),
+			);
+		};
+
+		$products = self::shortcode_graft_products( $finding, $seeded_products_by_slug );
+		if ( empty( $products ) ) {
+			return $unanchorable( 'no_safe_plain_add_to_cart_products' );
+		}
+
+		$readable = isset( $finding['readable_blocks'] ) && is_array( $finding['readable_blocks'] ) ? $finding['readable_blocks'] : array();
+		$region   = self::serialize_readable_form_blocks( $readable );
+		if ( '' === $region ) {
+			return $unanchorable( 'no_readable_fallback_blocks' );
+		}
+
+		$key = self::form_fallback_page_content_key( $source_path, $region, $page_contents );
+		if ( null === $key ) {
+			return $unanchorable( 'fallback_region_not_found_in_post_content' );
+		}
+
+		$shortcoded_region = self::replace_plain_cart_button_blocks_with_shortcodes( $region, $products );
+		if ( null === $shortcoded_region ) {
+			return $unanchorable( 'plain_serialized_button_controls_not_matched' );
+		}
+
+		$content  = (string) ( $page_contents[ $key ] ?? '' );
+		$position = strpos( $content, $region );
+		if ( false === $position ) {
+			return $unanchorable( 'fallback_region_not_found_in_post_content' );
+		}
+
+		$page_contents[ $key ]                    = substr( $content, 0, $position ) . $shortcoded_region . substr( $content, $position + strlen( $region ) );
+		$finding['product_shortcode_grafted']     = true;
+		$finding['grafted_post_content_key']      = $key;
+		$finding['grafted_add_to_cart_shortcode'] = true;
+
+		return array(
+			'grafted'    => true,
+			'finding'    => $finding,
+			'diagnostic' => null,
+		);
+	}
+
+	/**
+	 * Resolve products eligible for plain add-to-cart shortcode grafting.
+	 *
+	 * @param array<string,mixed>        $finding                 Product-grid finding.
+	 * @param array<string,array<mixed>> $seeded_products_by_slug Seeded Woo rows keyed by slug.
+	 * @return array<int,array{id:int,slug:string}>
+	 */
+	private static function shortcode_graft_products( array $finding, array $seeded_products_by_slug ): array {
+		$products = isset( $finding['products'] ) && is_array( $finding['products'] ) ? $finding['products'] : array();
+		$eligible = array();
+		foreach ( $products as $product ) {
+			if ( ! is_array( $product ) || ! self::is_plain_add_to_cart_product( $product ) ) {
+				return array();
+			}
+
+			$row  = self::product_finding_manifest_row( $product, '' );
+			$slug = is_array( $row ) ? (string) ( $row['slug'] ?? '' ) : '';
+			$id   = isset( $seeded_products_by_slug[ $slug ]['id'] ) ? (int) $seeded_products_by_slug[ $slug ]['id'] : 0;
+			if ( '' === $slug || $id <= 0 ) {
+				return array();
+			}
+
+			$eligible[] = array(
+				'id'   => $id,
+				'slug' => $slug,
+			);
+		}
+
+		return $eligible;
+	}
+
+	/**
+	 * Determine whether a detected product card has only a plain add-to-cart action.
+	 *
+	 * @param array<string,mixed> $product Detected product data.
+	 * @return bool
+	 */
+	private static function is_plain_add_to_cart_product( array $product ): bool {
+		if ( true !== ( $product['has_cart_control'] ?? false ) ) {
+			return false;
+		}
+
+		foreach ( array( 'has_quantity_control', 'has_option_control', 'has_variant_control', 'has_custom_state', 'requires_options' ) as $flag ) {
+			if ( true === ( $product[ $flag ] ?? false ) ) {
+				return false;
+			}
+		}
+
+		foreach ( array( 'quantity', 'options', 'variants', 'attributes', 'custom_state', 'form_controls' ) as $field ) {
+			if ( ! empty( $product[ $field ] ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Replace one serialized core/buttons add-to-cart control per product.
+	 *
+	 * @param string                    $region   Serialized fallback block region.
+	 * @param array<int,array{id:int}>  $products Eligible seeded products in card order.
+	 * @return string|null
+	 */
+	private static function replace_plain_cart_button_blocks_with_shortcodes( string $region, array $products ): ?string {
+		$pattern = '/<!--\s+wp:buttons\b.*?-->(?:(?!<!--\s+\/wp:buttons\s+-->).)*<!--\s+\/wp:buttons\s+-->/is';
+		$matches = array();
+		preg_match_all( $pattern, $region, $matches, PREG_OFFSET_CAPTURE );
+
+		$cart_controls = array_values(
+			array_filter(
+				$matches[0] ?? array(),
+				static fn( array $match ): bool => 1 === preg_match( '/\b(?:add\s+to\s+cart|buy\s+now|purchase|order\s+now)\b/i', wp_strip_all_tags( (string) $match[0] ) )
+			)
+		);
+
+		if ( count( $cart_controls ) !== count( $products ) ) {
+			return null;
+		}
+
+		$rewritten = '';
+		$cursor    = 0;
+		foreach ( $cart_controls as $index => $match ) {
+			$block    = (string) $match[0];
+			$position = (int) $match[1];
+			$rewritten .= substr( $region, $cursor, $position - $cursor );
+			$rewritten .= self::add_to_cart_shortcode_block( (int) $products[ $index ]['id'] );
+			$cursor     = $position + strlen( $block );
+		}
+
+		return $rewritten . substr( $region, $cursor );
+	}
+
+	/**
+	 * Build a Woo-owned add-to-cart shortcode block for a seeded product.
+	 *
+	 * @param int $product_id WooCommerce product post ID.
+	 * @return string
+	 */
+	private static function add_to_cart_shortcode_block( int $product_id ): string {
+		return '<!-- wp:shortcode -->[add_to_cart id="' . $product_id . '"]<!-- /wp:shortcode -->';
 	}
 
 	/**
@@ -1750,12 +2542,14 @@ class Static_Site_Importer_Report_Diagnostics {
 		$dot_count   = substr_count( $clean, '.' );
 
 		$decimal_sep = '';
-		if ( $comma_count > 0 && $dot_count > 0 ) {
+		if ( 0 < $comma_count && 0 < $dot_count ) {
 			// When both separators appear, the rightmost one is the decimal point.
-			$decimal_sep = ( (int) strrpos( $clean, ',' ) > (int) strrpos( $clean, '.' ) ) ? ',' : '.';
-		} elseif ( 1 === $comma_count && 0 === $dot_count ) {
+			$comma_position = strrpos( $clean, ',' );
+			$dot_position   = strrpos( $clean, '.' );
+			$decimal_sep    = false !== $comma_position && false !== $dot_position && $comma_position > $dot_position ? ',' : '.';
+		} elseif ( 1 === $comma_count ) {
 			$decimal_sep = self::is_decimal_tail( $clean, ',' ) ? ',' : '';
-		} elseif ( 1 === $dot_count && 0 === $comma_count ) {
+		} elseif ( 1 === $dot_count ) {
 			$decimal_sep = self::is_decimal_tail( $clean, '.' ) ? '.' : '';
 		}
 		// Repeated single separators (e.g. "1,234,567") are digit grouping only.
@@ -2237,10 +3031,10 @@ class Static_Site_Importer_Report_Diagnostics {
 				continue;
 			}
 
-			$asset                                  = $script_assets[ $key ];
-			$diagnostic['runtime_carried']           = true;
-			$diagnostic['loss_class']                = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
-			$diagnostic['diagnostic_class']          = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
+			$asset                                    = $script_assets[ $key ];
+			$diagnostic['runtime_carried']            = true;
+			$diagnostic['loss_class']                 = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
+			$diagnostic['diagnostic_class']           = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
 			$diagnostic['materialized_runtime_asset'] = $asset;
 			if ( empty( $diagnostic['message'] ) ) {
 				$diagnostic['message'] = sprintf( 'Script fallback is carried by materialized theme asset %s.', (string) ( $asset['path'] ?? '' ) );
@@ -2593,6 +3387,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		if ( isset( $fallback['control_count'] ) && is_numeric( $fallback['control_count'] ) ) {
 			$diagnostic['control_count'] = (int) $fallback['control_count'];
 		}
+		self::carry_materialization_metadata( $diagnostic, $fallback );
 
 		// Carry the transformer's readable fallback block tree so the form graft
 		// can anchor the seeded contact-form markup to the exact fallback region
@@ -2638,8 +3433,30 @@ class Static_Site_Importer_Report_Diagnostics {
 			$diagnostic['products']      = $products;
 			$diagnostic['product_count'] = count( $products );
 		}
+		self::carry_materialization_metadata( $diagnostic, $fallback );
 
 		return $diagnostic;
+	}
+
+	/**
+	 * Preserve provider materialization metadata on normalized SSI findings.
+	 *
+	 * @param array<string,mixed> $diagnostic Normalized diagnostic, mutated in place.
+	 * @param array<string,mixed> $fallback   Native Blocks Engine fallback row.
+	 * @return void
+	 */
+	private static function carry_materialization_metadata( array &$diagnostic, array $fallback ): void {
+		foreach ( array( 'materialization_target', 'form', 'controls', 'products' ) as $field ) {
+			if ( isset( $fallback[ $field ] ) && is_array( $fallback[ $field ] ) ) {
+				$diagnostic[ $field ] = $fallback[ $field ];
+			}
+		}
+
+		foreach ( array( 'materialization_hint', 'recoverability', 'actionability', 'suggested_repair_class', 'runtime_requirement' ) as $field ) {
+			if ( isset( $fallback[ $field ] ) && is_scalar( $fallback[ $field ] ) && '' !== trim( (string) $fallback[ $field ] ) ) {
+				$diagnostic[ $field ] = (string) $fallback[ $field ];
+			}
+		}
 	}
 
 	/**
@@ -2679,8 +3496,9 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private static function compact_native_report_rows( array $rows ): array {
-		$fields  = array( 'type', 'kind', 'code', 'severity', 'source', 'source_path', 'path', 'script_path', 'selector', 'target_selector', 'target', 'dom_target', 'tag_name', 'element', 'block_name', 'block_path', 'attribute_path', 'reason', 'reason_code', 'message', 'excerpt', 'source_html_preview', 'emitted_block_preview', 'html_excerpt', 'handle', 'src', 'role', 'discovered', 'materialized', 'enqueued', 'telemetry', 'vendor', 'expected', 'observed', 'label', 'source_label', 'generated_label', 'url', 'source_url', 'generated_url', 'landmark' );
-		$compact = array();
+		$fields       = array( 'type', 'kind', 'code', 'diagnostic_code', 'severity', 'source', 'source_path', 'path', 'script_path', 'selector', 'container_selector', 'target_selector', 'target', 'dom_target', 'tag', 'tag_name', 'element', 'block_name', 'block_path', 'attribute_path', 'reason', 'reason_code', 'message', 'excerpt', 'source_html_preview', 'emitted_block_preview', 'html_excerpt', 'handle', 'src', 'role', 'discovered', 'materialized', 'enqueued', 'telemetry', 'vendor', 'expected', 'observed', 'label', 'source_label', 'generated_label', 'url', 'source_url', 'generated_url', 'landmark', 'runtime_requirement', 'recoverability', 'actionability', 'suggested_repair_class', 'suggested_primitive', 'materialization_hint', 'control_count', 'product_count' );
+		$array_fields = array( 'materialization_target', 'form', 'controls', 'products', 'readable_blocks' );
+		$compact      = array();
 		foreach ( array_slice( $rows, 0, 50 ) as $row ) {
 			if ( ! is_array( $row ) ) {
 				continue;
@@ -2690,6 +3508,11 @@ class Static_Site_Importer_Report_Diagnostics {
 			foreach ( $fields as $field ) {
 				if ( isset( $row[ $field ] ) && is_scalar( $row[ $field ] ) && '' !== trim( (string) $row[ $field ] ) ) {
 					$entry[ $field ] = is_bool( $row[ $field ] ) || is_numeric( $row[ $field ] ) ? $row[ $field ] : (string) $row[ $field ];
+				}
+			}
+			foreach ( $array_fields as $field ) {
+				if ( isset( $row[ $field ] ) && is_array( $row[ $field ] ) && ! empty( $row[ $field ] ) ) {
+					$entry[ $field ] = self::compact_native_report_value( $row[ $field ] );
 				}
 			}
 
@@ -3341,6 +4164,12 @@ class Static_Site_Importer_Report_Diagnostics {
 			'stage',
 			'reason',
 			'message',
+			'removed_header_blocks',
+			'removed_footer_blocks',
+			'matched_header_template_part',
+			'matched_footer_template_part',
+			'preserved_local_header_count',
+			'preserved_local_footer_count',
 			'tag_name',
 			'element',
 			'html_excerpt',

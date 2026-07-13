@@ -119,6 +119,22 @@ $assert( false === ( $guarded['assets']['images/canonical.svg']['deletion_allowe
 $assert( 'website_artifact_source_retention_guard' === ( $guarded['diagnostics'][0]['type'] ?? '' ), 'canonical-source-guard-emits-diagnostic' );
 $assert( 'canonical_source_retained' === ( $guarded['diagnostics'][0]['reason'] ?? '' ), 'canonical-source-guard-reports-reason' );
 
+$missing_payload = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files(
+	$theme_dir,
+	'https://example.test/wp-content/themes/imported',
+	array(
+		'files' => array(
+			array(
+				'path' => 'images/missing.svg',
+				'kind' => 'image',
+			),
+		),
+	),
+	false
+);
+$assert( is_wp_error( $missing_payload ), 'artifact-file-missing-payload-errors' );
+$assert( 'static_site_importer_materialization_plan_asset_content_missing' === ( is_wp_error( $missing_payload ) ? $missing_payload->get_error_code() : '' ), 'artifact-file-missing-payload-error-code' );
+
 $ephemeral = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files(
 	$theme_dir,
 	'https://example.test/wp-content/themes/imported',
@@ -150,7 +166,10 @@ $theme_writes = Static_Site_Importer_Theme_Materializer::base_theme_writes(
 	false
 );
 $theme_json   = json_decode( $theme_writes[ $theme_dir . '/theme.json' ] ?? '', true );
+$front_page_template = (string) ( $theme_writes[ $theme_dir . '/templates/front-page.html' ] ?? '' );
 $assert( is_array( $theme_json ), 'generated-theme-json-decodes' );
+$assert( str_contains( $front_page_template, '<!-- wp:post-content /-->' ), 'post-content-template-uses-neutral-wrapper' );
+$assert( ! str_contains( $front_page_template, '"tagName":"main"' ), 'post-content-template-does-not-duplicate-source-main-selector' );
 $assert(
 	'"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' === ( $theme_json['styles']['typography']['fontFamily'] ?? '' ),
 	'body-font-family-is-materialized-in-theme-json',
@@ -199,6 +218,195 @@ $unresolved_var_writes = Static_Site_Importer_Theme_Materializer::base_theme_wri
 );
 $unresolved_var_json   = json_decode( $unresolved_var_writes[ $theme_dir . '/theme.json' ] ?? '', true );
 $assert( ! isset( $unresolved_var_json['styles']['typography']['fontFamily'] ), 'unresolved-var-body-font-family-is-not-materialized' );
+
+$token_theme_writes = Static_Site_Importer_Theme_Materializer::base_theme_writes(
+	$theme_dir,
+	'imported-theme',
+	'Imported Theme',
+	'',
+	false,
+	false,
+	array(),
+	array(),
+	array(
+		'site' => array(
+			'schema'        => 'blocks-engine/php-transformer/materialization-plan/v1',
+			'design_tokens' => array(
+				'colors'        => array(
+					array(
+						'slug'  => 'Brand Primary',
+						'name'  => 'Brand Primary',
+						'color' => '#0f766e',
+					),
+					array(
+						'slug'  => 'unsafe-color',
+						'name'  => 'Unsafe Color',
+						'color' => 'url(https://example.test/bad.svg)',
+					),
+				),
+				'font_families' => array(
+					array(
+						'slug'        => 'display',
+						'name'        => 'Display',
+						'font_family' => 'Inter, Arial, sans-serif',
+					),
+				),
+				'layout'        => array(
+					'contentSize' => '960px',
+					'wideSize'    => '1280px',
+				),
+			),
+			'theme_json'    => array(
+				'settings' => array(
+					'spacing' => array(
+						'units' => array( 'px', 'rem', '%' ),
+					),
+				),
+				'styles'   => array(
+					'elements' => array(
+						'link' => array(
+							'color' => array(
+								'text' => 'var(--wp--preset--color--brand-primary)',
+							),
+						),
+					),
+				),
+			),
+		),
+	)
+);
+$token_theme_json   = json_decode( $token_theme_writes[ $theme_dir . '/theme.json' ] ?? '', true );
+$token_palette      = $token_theme_json['settings']['color']['palette'] ?? array();
+$token_fonts        = $token_theme_json['settings']['typography']['fontFamilies'] ?? array();
+$assert( '#0f766e' === ( $token_palette[0]['color'] ?? '' ), 'materialization-plan-color-token-promotes-to-theme-json' );
+$assert( 1 === count( $token_palette ), 'unsafe-materialization-plan-color-token-is-skipped' );
+$assert( 'Inter, Arial, sans-serif' === ( $token_fonts[0]['fontFamily'] ?? '' ), 'materialization-plan-font-token-promotes-to-theme-json' );
+$assert( '960px' === ( $token_theme_json['settings']['layout']['contentSize'] ?? '' ), 'materialization-plan-layout-token-overrides-content-size' );
+$assert( array( 'px', 'rem', '%' ) === ( $token_theme_json['settings']['spacing']['units'] ?? array() ), 'materialization-plan-theme-json-fragment-merges-settings' );
+$assert( 'var(--wp--preset--color--brand-primary)' === ( $token_theme_json['styles']['elements']['link']['color']['text'] ?? '' ), 'materialization-plan-theme-json-fragment-merges-styles' );
+
+$supplemental_assets = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files(
+	$theme_dir,
+	'https://example.test/wp-content/themes/imported',
+	array(
+		'site'  => array(
+			'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
+			'assets' => array(
+				array(
+					'path'    => 'style.css',
+					'kind'    => 'css',
+					'content' => '.hero { background-image: url("images/hero.png"); }',
+				),
+			),
+		),
+		'files' => array(
+			array(
+				'path'           => 'images/hero.png',
+				'kind'           => 'image',
+				'content_base64' => base64_encode( 'png-bytes' ),
+			),
+		),
+	),
+	false
+);
+$assert( ! is_wp_error( $supplemental_assets ), 'supplemental-artifact-assets-succeed', is_wp_error( $supplemental_assets ) ? $supplemental_assets->get_error_message() : '' );
+$assert( isset( $supplemental_assets['assets']['images/hero.png'] ), 'supplemental-artifact-asset-added-to-asset-map' );
+$assert( str_contains( $supplemental_assets['css'] ?? '', 'assets/materialized/images/hero.png' ), 'supplemental-artifact-asset-rewrites-css-url' );
+
+$template_writes = Static_Site_Importer_Theme_Materializer::template_artifact_writes(
+	$theme_dir,
+	array(
+		'site' => array(
+			'schema'          => 'blocks-engine/php-transformer/materialization-plan/v1',
+			'template_writes' => array(
+				array(
+					'type'    => 'wp_template',
+					'slug'    => 'archive',
+					'content' => '<!-- wp:query --><!-- wp:post-template --><!-- wp:post-title /--><!-- /wp:post-template --><!-- /wp:query -->',
+				),
+				array(
+					'type'    => 'wp_template',
+					'path'    => 'templates/404.html',
+					'content' => '<!-- wp:heading {"level":1} --><h1>Not found</h1><!-- /wp:heading -->',
+				),
+			),
+		),
+	)
+);
+$assert( ! is_wp_error( $template_writes ), 'template-artifact-writes-succeed', is_wp_error( $template_writes ) ? $template_writes->get_error_message() : '' );
+$assert( isset( $template_writes['writes'][ $theme_dir . '/templates/archive.html' ] ), 'archive-template-write-materializes-from-slug' );
+$assert( isset( $template_writes['writes'][ $theme_dir . '/templates/404.html' ] ), '404-template-write-materializes-from-path' );
+$assert( 'templates/archive.html' === ( $template_writes['reports'][0]['path'] ?? '' ), 'template-write-report-records-path' );
+
+$source_template_writes = Static_Site_Importer_Theme_Materializer::source_document_template_writes(
+	$theme_dir,
+	array(
+		'archive.html'        => '<!-- wp:query --><!-- wp:post-template --><!-- wp:post-title /--><!-- /wp:post-template --><!-- /wp:query -->',
+		'search-results.html' => '<!-- wp:search /-->',
+		'about.html'          => '<!-- wp:paragraph --><p>About</p><!-- /wp:paragraph -->',
+	)
+);
+$assert( isset( $source_template_writes['writes'][ $theme_dir . '/templates/archive.html' ] ), 'archive-source-document-materializes-template' );
+$assert( isset( $source_template_writes['writes'][ $theme_dir . '/templates/search.html' ] ), 'search-results-source-document-materializes-search-template' );
+$assert( ! isset( $source_template_writes['writes'][ $theme_dir . '/templates/about.html' ] ), 'ordinary-source-document-does-not-materialize-template' );
+
+$supplemental_asset = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files(
+	$theme_dir,
+	'https://example.test/wp-content/themes/imported',
+	array(
+		'site'  => array(
+			'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
+			'assets' => array(
+				array(
+					'path'    => 'style.css',
+					'kind'    => 'css',
+					'content' => '.hero{background-image:url("assets/hero.jpg")}',
+				),
+			),
+		),
+		'files' => array(
+			array(
+				'path'           => 'assets/hero.jpg',
+				'kind'           => 'image',
+				'content_base64' => base64_encode( 'fake-jpeg' ),
+			),
+		),
+	),
+	false
+);
+$assert( ! is_wp_error( $supplemental_asset ), 'supplemental-artifact-asset-succeeds', is_wp_error( $supplemental_asset ) ? $supplemental_asset->get_error_message() : '' );
+$assert( isset( $supplemental_asset['assets']['assets/hero.jpg'] ), 'supplemental-artifact-asset-is-reported' );
+$assert( str_contains( (string) ( $supplemental_asset['css'] ?? '' ), 'assets/materialized/assets/hero.jpg' ), 'supplemental-artifact-asset-rewrites-css-url' );
+
+$unsafe_template_writes = Static_Site_Importer_Theme_Materializer::template_artifact_writes(
+	$theme_dir,
+	array(
+		'site' => array(
+			'schema'          => 'blocks-engine/php-transformer/materialization-plan/v1',
+			'template_writes' => array(
+				array(
+					'type'    => 'wp_template',
+					'path'    => '../404.html',
+					'content' => '<!-- wp:post-content /-->',
+				),
+			),
+		),
+	)
+);
+$assert( is_wp_error( $unsafe_template_writes ), 'unsafe-template-path-errors' );
+$assert( 'static_site_importer_template_unsupported' === ( is_wp_error( $unsafe_template_writes ) ? $unsafe_template_writes->get_error_code() : '' ), 'unsafe-template-path-error-code' );
+
+$source_template_writes = Static_Site_Importer_Theme_Materializer::source_document_template_writes(
+	$theme_dir,
+	array(
+		'archive.html' => '<!-- wp:query --><!-- wp:post-template --><!-- wp:post-title /--><!-- /wp:post-template --><!-- /wp:query -->',
+		'404.html'     => '<!-- wp:heading {"level":1} --><h1>Not found</h1><!-- /wp:heading -->',
+		'index.html'   => '<!-- wp:post-content /-->',
+	)
+);
+$assert( isset( $source_template_writes['writes'][ $theme_dir . '/templates/archive.html' ] ), 'source-archive-document-materializes-archive-template' );
+$assert( isset( $source_template_writes['writes'][ $theme_dir . '/templates/404.html' ] ), 'source-404-document-materializes-404-template' );
+$assert( ! isset( $source_template_writes['writes'][ $theme_dir . '/templates/index.html' ] ), 'source-index-document-does-not-override-base-index-template' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );

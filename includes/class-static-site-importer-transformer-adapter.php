@@ -94,6 +94,7 @@ class Static_Site_Importer_Transformer_Adapter {
 		$artifacts['document_metadata'] = $this->document_metadata_from_compiled_site( $compiled_site_metadata_source );
 		$artifacts['documents']         = ! empty( $view['documents'] ) && is_array( $view['documents'] ) ? $view['documents'] : ( isset( $result['documents'] ) && is_array( $result['documents'] ) ? $result['documents'] : array() );
 		$artifacts['files']             = $this->artifact_files_from_site_report( $materialization_plan, ! empty( $view ) ? $view : $result );
+		$artifacts['source_files']      = $this->source_files_from_artifact( $artifact );
 		$artifacts['site']              = $materialization_plan;
 		$artifacts['compiled_site']     = ! empty( $view['compiled_site'] ) && is_array( $view['compiled_site'] ) ? $view['compiled_site'] : array();
 		$artifacts['template_parts']    = isset( $materialization_plan['template_parts'] ) && is_array( $materialization_plan['template_parts'] ) ? $materialization_plan['template_parts'] : array();
@@ -111,6 +112,51 @@ class Static_Site_Importer_Transformer_Adapter {
 		}
 
 		return $compiled;
+	}
+
+	/**
+	 * Preserve safe source artifact files for downstream WordPress materializers.
+	 *
+	 * @param array<string,mixed> $artifact Website artifact bundle.
+	 * @return array<int,array<string,string>>
+	 */
+	private function source_files_from_artifact( array $artifact ): array {
+		$files  = isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? $artifact['files'] : array();
+		$result = array();
+
+		foreach ( $files as $file ) {
+			if ( ! is_array( $file ) || ! isset( $file['path'] ) || ! is_scalar( $file['path'] ) ) {
+				continue;
+			}
+
+			$path = ltrim( str_replace( '\\', '/', (string) $file['path'] ), '/' );
+			if ( '' === $path || str_contains( $path, '..' ) ) {
+				continue;
+			}
+
+			$content = '';
+			if ( isset( $file['content'] ) && is_scalar( $file['content'] ) ) {
+				$content = (string) $file['content'];
+			} elseif ( isset( $file['content_base64'] ) && is_scalar( $file['content_base64'] ) ) {
+				// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes trusted website artifact file content.
+				$decoded = base64_decode( (string) $file['content_base64'], true );
+				if ( false === $decoded ) {
+					continue;
+				}
+				$content = $decoded;
+			}
+
+			if ( '' === $content ) {
+				continue;
+			}
+
+			$result[] = array(
+				'path'    => $path,
+				'content' => $content,
+			);
+		}
+
+		return $result;
 	}
 
 	/**
@@ -456,7 +502,7 @@ class Static_Site_Importer_Transformer_Adapter {
 		$dom      = $this->load_html_document( $html );
 		$xpath    = new DOMXPath( $dom );
 		$products = array();
-		$cards    = $xpath->query( "//*[contains(concat(' ', normalize-space(@class), ' '), ' product-card ')]" );
+		$cards    = $xpath->query( "//*[contains(concat(' ', normalize-space(@class), ' '), ' product-card ') or ((self::article or self::div or self::li) and contains(concat(' ', normalize-space(@class), ' '), '-card '))]" );
 		if ( false === $cards ) {
 			return array();
 		}
@@ -465,11 +511,15 @@ class Static_Site_Importer_Transformer_Adapter {
 			if ( ! $card instanceof DOMElement ) {
 				continue;
 			}
-			$name  = $this->first_xpath_text( $xpath, './/*[self::h1 or self::h2 or self::h3 or self::h4 or self::h5 or self::h6]', $card );
-			$price = $this->price_from_text( $this->first_xpath_text( $xpath, ".//*[contains(concat(' ', normalize-space(@class), ' '), ' price ')]", $card ) );
+			$name = $this->first_xpath_text( $xpath, './/*[self::h1 or self::h2 or self::h3 or self::h4 or self::h5 or self::h6]', $card );
+			if ( '' === $name ) {
+				$name = $this->first_xpath_text( $xpath, ".//*[contains(@class, 'name') or contains(@class, 'title')]", $card );
+			}
+			$price = $this->price_from_text( $this->first_xpath_text( $xpath, ".//*[contains(@class, 'price')]", $card ) );
 			if ( '' === $price ) {
 				$price = $this->price_from_text( (string) $card->textContent );
 			}
+			$selector = $this->source_selector_for_card( $card );
 
 			$product = $this->normalize_product_report_row(
 				array(
@@ -477,7 +527,9 @@ class Static_Site_Importer_Transformer_Adapter {
 					'name'             => $name,
 					'slug'             => $this->sanitize_slug( $name ),
 					'regular_price'    => $price,
-					'source_selectors' => array( '.product-card' ),
+					'description'      => $this->first_xpath_text( $xpath, ".//*[contains(@class, 'desc') or contains(@class, 'description')]", $card ),
+					'categories'       => array( $this->first_xpath_text( $xpath, ".//*[contains(@class, 'tag') or contains(@class, 'category') or contains(@class, 'type')]", $card ) ),
+					'source_selectors' => array( $selector ),
 					'source_path'      => $source_path,
 				)
 			);
@@ -487,6 +539,23 @@ class Static_Site_Importer_Transformer_Adapter {
 		}
 
 		return $products;
+	}
+
+	/**
+	 * Return the most specific class selector for a detected product card.
+	 *
+	 * @param DOMElement $card Detected product card element.
+	 * @return string
+	 */
+	private function source_selector_for_card( DOMElement $card ): string {
+		$classes = preg_split( '/\s+/', trim( $card->getAttribute( 'class' ) ) );
+		foreach ( is_array( $classes ) ? $classes : array() as $class ) {
+			if ( '' !== $class && ( 'product-card' === $class || str_ends_with( $class, '-card' ) ) ) {
+				return '.' . $class;
+			}
+		}
+
+		return '.product-card';
 	}
 
 	/**
@@ -729,7 +798,15 @@ class Static_Site_Importer_Transformer_Adapter {
 
 		foreach ( array( 'categories', 'source_selectors' ) as $field ) {
 			if ( isset( $data[ $field ] ) && is_array( $data[ $field ] ) ) {
-				$product[ $field ] = array_values( array_filter( $data[ $field ], 'is_string' ) );
+				$product[ $field ] = array_values(
+					array_filter(
+						array_map(
+							static fn ( string $value ): string => trim( $value ),
+							array_filter( $data[ $field ], 'is_string' )
+						),
+						static fn ( string $value ): bool => '' !== $value
+					)
+				);
 			}
 		}
 

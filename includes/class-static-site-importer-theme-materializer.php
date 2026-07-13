@@ -25,16 +25,44 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param bool   $has_footer_part Whether a footer template part exists.
 	 * @param array<int,array<string,mixed>> $scripts     Materialized script asset rows.
 	 * @param array<int,array<string,mixed>> $stylesheets Materialized stylesheet asset rows.
+	 * @param array<string,mixed>            $artifacts   Compiled website artifacts.
 	 * @return array<string,string> Absolute write paths mapped to file contents.
 	 */
-	public static function base_theme_writes( string $theme_dir, string $theme_slug, string $theme_name, string $css, bool $has_header_part, bool $has_footer_part, array $scripts = array(), array $stylesheets = array() ): array {
+	public static function base_theme_writes( string $theme_dir, string $theme_slug, string $theme_name, string $css, bool $has_header_part, bool $has_footer_part, array $scripts = array(), array $stylesheets = array(), array $artifacts = array() ): array {
 		return array(
 			$theme_dir . '/functions.php'             => self::functions_php( $theme_slug, $scripts, $stylesheets ),
-			$theme_dir . '/theme.json'                => self::theme_json( $theme_name, $css ),
+			$theme_dir . '/theme.json'                => self::theme_json( $theme_name, $css, $artifacts ),
+			$theme_dir . '/templates/404.html'        => self::not_found_template( $has_header_part, $has_footer_part ),
+			$theme_dir . '/templates/archive.html'    => self::archive_template( $has_header_part, $has_footer_part ),
 			$theme_dir . '/templates/front-page.html' => self::content_template( '', $has_header_part, $has_footer_part ),
 			$theme_dir . '/templates/page.html'       => self::content_template( '', $has_header_part, $has_footer_part ),
 			$theme_dir . '/templates/index.html'      => self::content_template( '', $has_header_part, $has_footer_part ),
 		);
+	}
+
+	/**
+	 * Build the generated archive template.
+	 *
+	 * @param bool $has_header_part Whether a shared header template part was generated.
+	 * @param bool $has_footer_part Whether a shared footer template part was generated.
+	 * @return string
+	 */
+	private static function archive_template( bool $has_header_part, bool $has_footer_part ): string {
+		return self::content_template( '', $has_header_part, $has_footer_part );
+	}
+
+	/**
+	 * Build the generated 404 template.
+	 *
+	 * @param bool $has_header_part Whether a shared header template part was generated.
+	 * @param bool $has_footer_part Whether a shared footer template part was generated.
+	 * @return string
+	 */
+	private static function not_found_template( bool $has_header_part, bool $has_footer_part ): string {
+		$body = '<!-- wp:heading {"level":1} --><h1 class="wp-block-heading">Page not found</h1><!-- /wp:heading -->' . "\n\n" .
+			'<!-- wp:paragraph --><p>The requested page could not be found.</p><!-- /wp:paragraph -->';
+
+		return self::content_template( $body, $has_header_part, $has_footer_part );
 	}
 
 	/**
@@ -52,7 +80,7 @@ class Static_Site_Importer_Theme_Materializer {
 		return trim(
 			$header_part . "\n\n" .
 			$background_blocks . "\n\n" .
-			'<!-- wp:post-content {"tagName":"main"} /-->' . "\n\n" .
+			'<!-- wp:post-content /-->' . "\n\n" .
 			$footer_part
 		) . "\n";
 	}
@@ -107,7 +135,10 @@ class Static_Site_Importer_Theme_Materializer {
 			return $native_plan;
 		}
 
-		$files       = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
+		$files = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
+		if ( isset( $artifacts['source_files'] ) && is_array( $artifacts['source_files'] ) ) {
+			$files = array_merge( $files, $artifacts['source_files'] );
+		}
 		$css         = array();
 		$assets      = array();
 		$diagnostics = array();
@@ -273,6 +304,14 @@ class Static_Site_Importer_Theme_Materializer {
 			}
 		}
 
+		$supplemental = self::materialize_supplemental_artifact_file_assets( $theme_dir, $theme_uri, $artifacts, $assets, $order, $write_files );
+		if ( is_wp_error( $supplemental ) ) {
+			return $supplemental;
+		}
+		foreach ( $supplemental['diagnostics'] as $diagnostic ) {
+			$diagnostics[] = $diagnostic;
+		}
+
 		$font_stylesheets = self::materialize_font_materialization_stylesheets( $theme_dir, $theme_uri, $site, $assets, $order, $write_files );
 		if ( is_wp_error( $font_stylesheets ) ) {
 			return $font_stylesheets;
@@ -287,6 +326,84 @@ class Static_Site_Importer_Theme_Materializer {
 			'stylesheets' => $stylesheets,
 			'diagnostics' => $diagnostics,
 		);
+	}
+
+	/**
+	 * Materialize payload-bearing artifact files omitted from a native asset plan.
+	 *
+	 * Some generators emit CSS that references artifact-local files while their
+	 * native materialization plan only lists assets observed in DOM nodes. SSI owns
+	 * the final theme filesystem, so it keeps those file payloads available and in
+	 * the asset map for CSS URL rewriting.
+	 *
+	 * @param string                            $theme_dir   Theme directory.
+	 * @param string                            $theme_uri   Theme URI.
+	 * @param array<string,mixed>               $artifacts   WordPress artifacts from Blocks Engine.
+	 * @param array<string,array<string,mixed>> $assets      Materialized asset rows keyed by source path.
+	 * @param int                               $order       Current materialization order.
+	 * @param bool                              $write_files Whether to write materialized asset files.
+	 * @return array{diagnostics:array<int,array<string,mixed>>}|WP_Error
+	 */
+	private static function materialize_supplemental_artifact_file_assets( string $theme_dir, string $theme_uri, array $artifacts, array &$assets, int &$order, bool $write_files = true ) {
+		$files = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
+		if ( isset( $artifacts['source_files'] ) && is_array( $artifacts['source_files'] ) ) {
+			$files = array_merge( $files, $artifacts['source_files'] );
+		}
+		$diagnostics = array();
+
+		foreach ( $files as $file ) {
+			if ( ! is_array( $file ) ) {
+				continue;
+			}
+
+			$relative = self::normalize_artifact_materialization_path( isset( $file['path'] ) && is_scalar( $file['path'] ) ? (string) $file['path'] : '' );
+			if ( '' === $relative || isset( $assets[ $relative ] ) ) {
+				continue;
+			}
+
+			$lower = strtolower( $relative );
+			$kind  = isset( $file['kind'] ) && is_scalar( $file['kind'] ) ? (string) $file['kind'] : '';
+			if ( 'html' === $kind || 'css' === $kind || 'js' === $kind || str_ends_with( $lower, '.html' ) || str_ends_with( $lower, '.htm' ) || str_ends_with( $lower, '.css' ) || str_ends_with( $lower, '.js' ) ) {
+				continue;
+			}
+
+			$content = self::materialization_plan_asset_content( $file, $relative );
+			if ( is_wp_error( $content ) ) {
+				return $content;
+			}
+
+			$retention = self::source_retention_policy( $file, $relative, 'website_artifact.files' );
+			if ( isset( $retention['diagnostic'] ) ) {
+				$diagnostics[] = $retention['diagnostic'];
+			}
+
+			$target_relative = 'assets/materialized/' . $relative;
+			$target          = trailingslashit( $theme_dir ) . $target_relative;
+			if ( $write_files ) {
+				$dir = dirname( $target );
+				if ( ! wp_mkdir_p( $dir ) ) {
+					return new WP_Error( 'static_site_importer_supplemental_artifact_asset_mkdir_failed', sprintf( 'Failed to create supplemental artifact asset directory: %s', $dir ) );
+				}
+
+				$result = self::write_file( $target, $content );
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
+			}
+
+			++$order;
+			$assets[ $relative ] = self::materialization_plan_asset_report(
+				array_merge( $file, array( 'origin' => 'website_artifact.files' ) ),
+				$relative,
+				trailingslashit( $theme_uri ) . $target_relative,
+				$target_relative,
+				self::mime_type( $target ),
+				$order,
+				$retention
+			);
+		}
+
+		return array( 'diagnostics' => $diagnostics );
 	}
 
 	/**
@@ -600,6 +717,10 @@ class Static_Site_Importer_Theme_Materializer {
 			$template_parts = isset( $artifacts['template_parts'] ) && is_array( $artifacts['template_parts'] ) ? $artifacts['template_parts'] : array();
 		}
 
+		if ( empty( $template_parts ) ) {
+			$template_parts = self::source_file_template_parts( $artifacts );
+		}
+
 		$writes  = array();
 		$reports = array();
 		foreach ( $template_parts as $template_part ) {
@@ -629,6 +750,128 @@ class Static_Site_Importer_Theme_Materializer {
 			'writes'  => $writes,
 			'reports' => $reports,
 		);
+	}
+
+	/**
+	 * Extract header/footer parts from source HTML files when the compiler has not
+	 * emitted explicit template-part artifacts.
+	 *
+	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function source_file_template_parts( array $artifacts ): array {
+		$files = isset( $artifacts['source_files'] ) && is_array( $artifacts['source_files'] ) ? $artifacts['source_files'] : array();
+		foreach ( $files as $file ) {
+			if ( ! is_array( $file ) || ! isset( $file['path'] ) || ! is_scalar( $file['path'] ) ) {
+				continue;
+			}
+
+			$path = (string) $file['path'];
+			if ( ! preg_match( '/\.html?$/i', $path ) ) {
+				continue;
+			}
+
+			$content = '';
+			if ( isset( $file['content'] ) && is_scalar( $file['content'] ) ) {
+				$content = (string) $file['content'];
+			} elseif ( isset( $file['content_base64'] ) && is_scalar( $file['content_base64'] ) ) {
+				// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes trusted website artifact file content.
+				$decoded = base64_decode( (string) $file['content_base64'], true );
+				if ( false !== $decoded ) {
+					$content = $decoded;
+				}
+			}
+			if ( '' === $content ) {
+				continue;
+			}
+
+			$parts = self::template_parts_from_html( $content, $path );
+			if ( ! empty( $parts ) ) {
+				return $parts;
+			}
+		}
+
+		return array();
+	}
+
+	/**
+	 * Convert source HTML landmarks into reusable block theme parts.
+	 *
+	 * @param string $html        Source HTML document.
+	 * @param string $source_path Source file path for reports.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function template_parts_from_html( string $html, string $source_path ): array {
+		$document  = new Static_Site_Importer_Document( $html );
+		$fragments = $document->fragments();
+		$parts     = array();
+
+		foreach ( array( 'header', 'footer' ) as $slug ) {
+			$fragment = trim( $fragments[ $slug ] );
+			if ( '' === $fragment ) {
+				$fragment = self::first_landmark_html( $html, $slug );
+			}
+			if ( '' === trim( $fragment ) ) {
+				continue;
+			}
+
+			$diagnostics = array();
+			$markup      = Static_Site_Importer_Page_Materializer::html_to_blocks( self::strip_inline_svg_markup( $fragment ), $source_path . '#' . $slug, $diagnostics );
+			if ( '' === trim( $markup ) ) {
+				continue;
+			}
+
+			$parts[] = array(
+				'source_path'  => $source_path . '#' . $slug,
+				'slug'         => $slug,
+				'title'        => ucfirst( $slug ),
+				'area'         => $slug,
+				'generated'    => true,
+				'block_markup' => trim( $markup ) . "\n",
+			);
+		}
+
+		return $parts;
+	}
+
+	/**
+	 * Remove inline SVG from synthesized source-derived template parts.
+	 *
+	 * @param string $html HTML fragment.
+	 * @return string
+	 */
+	private static function strip_inline_svg_markup( string $html ): string {
+		if ( '' === trim( $html ) || ! str_contains( strtolower( $html ), '<svg' ) ) {
+			return $html;
+		}
+
+		return (string) preg_replace( '#<svg\b[^>]*>.*?</svg>#is', '', $html );
+	}
+
+	/**
+	 * Return the first matching landmark's outer HTML.
+	 *
+	 * @param string $html Source HTML document.
+	 * @param string $tag  Landmark tag name.
+	 * @return string
+	 */
+	private static function first_landmark_html( string $html, string $tag ): string {
+		if ( '' === trim( $html ) ) {
+			return '';
+		}
+
+		$dom      = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$loaded   = $dom->loadHTML( $html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		if ( ! $loaded ) {
+			return '';
+		}
+
+		$nodes = $dom->getElementsByTagName( $tag );
+		$node  = $nodes->length > 0 ? $nodes->item( 0 ) : null;
+		return $node instanceof DOMElement ? trim( (string) $dom->saveHTML( $node ) ) : '';
 	}
 
 	/**
@@ -800,6 +1043,191 @@ class Static_Site_Importer_Theme_Materializer {
 	}
 
 	/**
+	 * Normalize compiler-declared WordPress template artifacts into generated theme writes.
+	 *
+	 * @param string              $theme_dir Theme directory.
+	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
+	 * @return array{writes:array<string,string>,reports:array<int,array<string,mixed>>}|WP_Error Absolute write paths and report rows.
+	 */
+	public static function template_artifact_writes( string $theme_dir, array $artifacts ) {
+		$templates = self::template_artifacts_from_materialization_plan( $artifacts );
+		if ( is_wp_error( $templates ) ) {
+			return $templates;
+		}
+
+		$writes  = array();
+		$reports = array();
+		foreach ( $templates as $template ) {
+			$relative = self::template_artifact_relative_path( $template );
+			if ( '' === $relative ) {
+				return new WP_Error( 'static_site_importer_template_unsupported', 'Template artifacts must resolve to a safe templates/*.html path.' );
+			}
+
+			$markup = self::template_artifact_markup( $template );
+			if ( '' === trim( $markup ) ) {
+				return new WP_Error( 'static_site_importer_template_markup_empty', 'Template artifact block markup must not be empty.' );
+			}
+
+			$writes[ trailingslashit( $theme_dir ) . $relative ] = $markup;
+			$reports[] = self::template_artifact_report_payload( $relative, $template, $markup );
+		}
+
+		return array(
+			'writes'  => $writes,
+			'reports' => $reports,
+		);
+	}
+
+	/**
+	 * Build block template writes from conventional source document names.
+	 *
+	 * @param string               $theme_dir Theme directory.
+	 * @param array<string,string> $contents  Converted block markup keyed by source path.
+	 * @return array{writes:array<string,string>,reports:array<int,array<string,mixed>>}
+	 */
+	public static function source_document_template_writes( string $theme_dir, array $contents ): array {
+		$template_map = array(
+			'404'            => '404',
+			'archive'        => 'archive',
+			'search'         => 'search',
+			'search-results' => 'search',
+		);
+		$writes       = array();
+		$reports      = array();
+
+		foreach ( $contents as $source_path => $content ) {
+			$slug          = sanitize_title( preg_replace( '/\.[^.]+$/', '', basename( (string) $source_path ) ) ?? '' );
+			$template_slug = $template_map[ $slug ] ?? '';
+			if ( '' === $template_slug || '' === trim( (string) $content ) ) {
+				continue;
+			}
+
+			$relative = 'templates/' . $template_slug . '.html';
+			$writes[ trailingslashit( $theme_dir ) . $relative ] = trim( (string) $content ) . "\n";
+			$reports[] = array(
+				'path'             => $relative,
+				'slug'             => $template_slug,
+				'source'           => 'source_document',
+				'source_path'      => (string) $source_path,
+				'block_count'      => substr_count( (string) $content, '<!-- wp:' ),
+				'core_html_blocks' => substr_count( (string) $content, '<!-- wp:html' ),
+			);
+		}
+
+		return array(
+			'writes'  => $writes,
+			'reports' => $reports,
+		);
+	}
+
+	/**
+	 * Read generic WordPress template writes from a Blocks Engine materialization plan.
+	 *
+	 * @param array<string,mixed> $artifacts WordPress artifacts from the transformer adapter.
+	 * @return array<int,array<string,mixed>>|WP_Error Template artifacts.
+	 */
+	private static function template_artifacts_from_materialization_plan( array $artifacts ) {
+		$site = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
+		if ( 'blocks-engine/php-transformer/materialization-plan/v1' !== (string) ( $site['schema'] ?? '' ) ) {
+			return array();
+		}
+
+		$template_rows = array();
+		if ( array_key_exists( 'template_writes', $site ) ) {
+			if ( ! is_array( $site['template_writes'] ) ) {
+				return new WP_Error( 'static_site_importer_materialization_plan_template_writes_invalid', 'Blocks Engine materialization_plan.template_writes must be an array.' );
+			}
+
+			foreach ( $site['template_writes'] as $write ) {
+				if ( ! is_array( $write ) ) {
+					return new WP_Error( 'static_site_importer_materialization_plan_template_write_invalid', 'Blocks Engine template write entries must be arrays.' );
+				}
+
+				if ( 'wp_template' !== (string) ( $write['type'] ?? '' ) ) {
+					continue;
+				}
+
+				$template_rows[] = $write;
+			}
+		}
+
+		if ( array_key_exists( 'templates', $site ) ) {
+			if ( ! is_array( $site['templates'] ) ) {
+				return new WP_Error( 'static_site_importer_materialization_plan_templates_invalid', 'Blocks Engine materialization_plan.templates must be an array.' );
+			}
+
+			foreach ( $site['templates'] as $template ) {
+				if ( ! is_array( $template ) ) {
+					return new WP_Error( 'static_site_importer_materialization_plan_template_invalid', 'Blocks Engine template entries must be arrays.' );
+				}
+
+				$template_rows[] = $template;
+			}
+		}
+
+		return $template_rows;
+	}
+
+	/**
+	 * Resolve a template artifact to a generated theme template path.
+	 *
+	 * @param array<string,mixed> $template Template artifact.
+	 * @return string Relative theme path, or empty string when unsupported.
+	 */
+	private static function template_artifact_relative_path( array $template ): string {
+		foreach ( array( 'path', 'theme_path', 'file' ) as $key ) {
+			if ( isset( $template[ $key ] ) && is_scalar( $template[ $key ] ) ) {
+				$relative = self::normalize_artifact_materialization_path( (string) $template[ $key ] );
+				if ( preg_match( '#^templates/[A-Za-z0-9._-]+\.html$#', $relative ) ) {
+					return $relative;
+				}
+			}
+		}
+
+		$slug = isset( $template['slug'] ) && is_scalar( $template['slug'] ) ? sanitize_title( (string) $template['slug'] ) : '';
+		if ( '' === $slug ) {
+			return '';
+		}
+
+		return 'templates/' . $slug . '.html';
+	}
+
+	/**
+	 * Extract serialized block markup from a template artifact.
+	 *
+	 * @param array<string,mixed> $template Template artifact.
+	 * @return string Serialized block markup.
+	 */
+	private static function template_artifact_markup( array $template ): string {
+		foreach ( array( 'block_markup', 'content', 'markup' ) as $key ) {
+			if ( isset( $template[ $key ] ) && is_scalar( $template[ $key ] ) ) {
+				return (string) $template[ $key ];
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Build a compact report row for a materialized template artifact.
+	 *
+	 * @param string              $path     Relative generated theme path.
+	 * @param array<string,mixed> $template Template artifact.
+	 * @param string              $markup   Serialized block markup.
+	 * @return array<string,mixed>
+	 */
+	private static function template_artifact_report_payload( string $path, array $template, string $markup ): array {
+		return array(
+			'path'               => $path,
+			'slug'               => isset( $template['slug'] ) && is_scalar( $template['slug'] ) ? (string) $template['slug'] : preg_replace( '#^templates/(.+)\.html$#', '$1', $path ),
+			'title'              => isset( $template['title'] ) && is_scalar( $template['title'] ) ? (string) $template['title'] : '',
+			'source_path'        => isset( $template['source_path'] ) && is_scalar( $template['source_path'] ) ? (string) $template['source_path'] : '',
+			'block_markup_bytes' => strlen( $markup ),
+			'block_markup_hash'  => hash( 'sha256', $markup ),
+		);
+	}
+
+	/**
 	 * Build functions.php.
 	 *
 	 * @param string $theme_slug Theme slug.
@@ -867,6 +1295,19 @@ class Static_Site_Importer_Theme_Materializer {
 			"/**\n" .
 			" * Generated theme bootstrap.\n" .
 			" */\n\n" .
+			"add_filter( 'upload_mimes', static function ( array \$mimes ): array {\n" .
+			"\t// Generated SVG media is sanitized by the import pipeline at build time.\n" .
+			"\t\$mimes['svg'] = 'image/svg+xml';\n" .
+			"\treturn \$mimes;\n" .
+			"} );\n\n" .
+			"add_filter( 'wp_check_filetype_and_ext', static function ( array \$data, string \$file, string \$filename, array \$mimes ): array {\n" .
+			"\tif ( 'svg' !== strtolower( pathinfo( \$filename, PATHINFO_EXTENSION ) ) ) {\n" .
+			"\t\treturn \$data;\n" .
+			"\t}\n" .
+			"\t\$data['ext'] = 'svg';\n" .
+			"\t\$data['type'] = 'image/svg+xml';\n" .
+			"\treturn \$data;\n" .
+			"}, 10, 4 );\n\n" .
 			"add_action( 'after_setup_theme', static function (): void {\n" .
 			"\tadd_theme_support( 'editor-styles' );\n" .
 			"\tadd_editor_style( 'assets/css/editor-style.css' );\n" .
@@ -885,11 +1326,12 @@ class Static_Site_Importer_Theme_Materializer {
 	/**
 	 * Build theme.json.
 	 *
-	 * @param string $theme_name Theme name.
-	 * @param string $css        Source CSS.
+	 * @param string              $theme_name Theme name.
+	 * @param string              $css        Source CSS.
+	 * @param array<string,mixed> $artifacts  Compiled website artifacts.
 	 * @return string
 	 */
-	private static function theme_json( string $theme_name, string $css ): string {
+	private static function theme_json( string $theme_name, string $css, array $artifacts = array() ): string {
 		$data = array(
 			'$schema'  => 'https://schemas.wp.org/trunk/theme.json',
 			'version'  => 3,
@@ -918,7 +1360,233 @@ class Static_Site_Importer_Theme_Materializer {
 			$data['styles']['typography']['fontFamily'] = $body_font_family;
 		}
 
+		$data = self::merge_theme_json_fragment( $data, self::theme_json_fragment_from_artifacts( $artifacts ) );
+
 		return wp_json_encode( $data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) . "\n";
+	}
+
+	/**
+	 * Read explicit theme.json metadata from compiled artifacts.
+	 *
+	 * The importer only promotes data under stable generic keys. Figma-specific or
+	 * source-specific inference belongs upstream in the transformer contract.
+	 *
+	 * @param array<string,mixed> $artifacts Compiled website artifacts.
+	 * @return array<string,mixed>
+	 */
+	private static function theme_json_fragment_from_artifacts( array $artifacts ): array {
+		$site      = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
+		$theme     = isset( $site['theme'] ) && is_array( $site['theme'] ) ? $site['theme'] : array();
+		$fragments = array();
+
+		foreach ( array( $artifacts['theme_json'] ?? null, $site['theme_json'] ?? null, $theme['theme_json'] ?? null ) as $candidate ) {
+			if ( is_array( $candidate ) ) {
+				$fragments[] = self::safe_theme_json_fragment( $candidate );
+			}
+		}
+
+		foreach ( array( $artifacts['design_tokens'] ?? null, $site['design_tokens'] ?? null, $theme['design_tokens'] ?? null, $site['tokens'] ?? null ) as $candidate ) {
+			if ( is_array( $candidate ) ) {
+				$fragments[] = self::theme_json_fragment_from_design_tokens( $candidate );
+			}
+		}
+
+		$fragment = array();
+		foreach ( $fragments as $candidate ) {
+			$fragment = self::merge_theme_json_fragment( $fragment, $candidate );
+		}
+
+		return $fragment;
+	}
+
+	/**
+	 * Convert conservative design-token rows into theme.json settings/styles.
+	 *
+	 * @param array<string,mixed> $tokens Design token metadata.
+	 * @return array<string,mixed>
+	 */
+	private static function theme_json_fragment_from_design_tokens( array $tokens ): array {
+		$fragment = array();
+		$palette  = self::theme_json_palette_from_token_rows( $tokens['colors'] ?? $tokens['palette'] ?? array() );
+		$fonts    = self::theme_json_font_families_from_token_rows( $tokens['font_families'] ?? $tokens['fontFamilies'] ?? $tokens['fonts'] ?? array() );
+
+		if ( ! empty( $palette ) ) {
+			$fragment['settings']['color']['palette'] = $palette;
+		}
+
+		if ( ! empty( $fonts ) ) {
+			$fragment['settings']['typography']['fontFamilies'] = $fonts;
+		}
+
+		$layout = isset( $tokens['layout'] ) && is_array( $tokens['layout'] ) ? $tokens['layout'] : array();
+		foreach ( array( 'contentSize', 'wideSize' ) as $key ) {
+			if ( isset( $layout[ $key ] ) && is_scalar( $layout[ $key ] ) && self::is_safe_css_size_value( (string) $layout[ $key ] ) ) {
+				$fragment['settings']['layout'][ $key ] = (string) $layout[ $key ];
+			}
+		}
+
+		return $fragment;
+	}
+
+	/**
+	 * Normalize color token rows for theme.json palette.
+	 *
+	 * @param mixed $rows Token rows.
+	 * @return array<int,array{slug:string,name:string,color:string}>
+	 */
+	private static function theme_json_palette_from_token_rows( mixed $rows ): array {
+		if ( ! is_array( $rows ) ) {
+			return array();
+		}
+
+		$palette = array();
+		$seen    = array();
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$slug  = isset( $row['slug'] ) && is_scalar( $row['slug'] ) ? sanitize_title( (string) $row['slug'] ) : '';
+			$name  = isset( $row['name'] ) && is_scalar( $row['name'] ) ? trim( (string) $row['name'] ) : '';
+			$color = isset( $row['color'] ) && is_scalar( $row['color'] ) ? trim( (string) $row['color'] ) : '';
+
+			if ( '' === $slug || '' === $name || isset( $seen[ $slug ] ) || ! self::is_safe_color_value( $color ) ) {
+				continue;
+			}
+
+			$seen[ $slug ] = true;
+			$palette[]     = array(
+				'slug'  => $slug,
+				'name'  => $name,
+				'color' => $color,
+			);
+		}
+
+		return $palette;
+	}
+
+	/**
+	 * Normalize font-family token rows for theme.json typography settings.
+	 *
+	 * @param mixed $rows Token rows.
+	 * @return array<int,array{slug:string,name:string,fontFamily:string}>
+	 */
+	private static function theme_json_font_families_from_token_rows( mixed $rows ): array {
+		if ( ! is_array( $rows ) ) {
+			return array();
+		}
+
+		$fonts = array();
+		$seen  = array();
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$slug        = isset( $row['slug'] ) && is_scalar( $row['slug'] ) ? sanitize_title( (string) $row['slug'] ) : '';
+			$name        = isset( $row['name'] ) && is_scalar( $row['name'] ) ? trim( (string) $row['name'] ) : '';
+			$font_family = isset( $row['fontFamily'] ) && is_scalar( $row['fontFamily'] ) ? (string) $row['fontFamily'] : ( isset( $row['font_family'] ) && is_scalar( $row['font_family'] ) ? (string) $row['font_family'] : '' );
+
+			if ( '' === $slug || '' === $name || isset( $seen[ $slug ] ) || ! self::is_safe_font_family_value( $font_family ) ) {
+				continue;
+			}
+
+			$seen[ $slug ] = true;
+			$fonts[]       = array(
+				'slug'       => $slug,
+				'name'       => $name,
+				'fontFamily' => trim( $font_family ),
+			);
+		}
+
+		return $fonts;
+	}
+
+	/**
+	 * Filter an explicit theme.json fragment to importer-supported top-level keys.
+	 *
+	 * @param array<string,mixed> $fragment Candidate theme.json fragment.
+	 * @return array<string,mixed>
+	 */
+	private static function safe_theme_json_fragment( array $fragment ): array {
+		$safe = array();
+		foreach ( array( 'settings', 'styles', 'customTemplates', 'templateParts', 'patterns' ) as $key ) {
+			if ( isset( $fragment[ $key ] ) && self::theme_json_value_is_safe( $fragment[ $key ] ) ) {
+				$safe[ $key ] = $fragment[ $key ];
+			}
+		}
+
+		return $safe;
+	}
+
+	/**
+	 * Deep-merge a theme.json fragment into base data.
+	 *
+	 * @param array<string,mixed> $base     Base theme.json data.
+	 * @param array<string,mixed> $fragment Fragment to merge.
+	 * @return array<string,mixed>
+	 */
+	private static function merge_theme_json_fragment( array $base, array $fragment ): array {
+		foreach ( $fragment as $key => $value ) {
+			if ( is_array( $value ) && isset( $base[ $key ] ) && is_array( $base[ $key ] ) && self::array_is_assoc( $value ) && self::array_is_assoc( $base[ $key ] ) ) {
+				$base[ $key ] = self::merge_theme_json_fragment( $base[ $key ], $value );
+			} else {
+				$base[ $key ] = $value;
+			}
+		}
+
+		return $base;
+	}
+
+	/**
+	 * Check whether a theme.json fragment value is JSON-safe and bounded.
+	 *
+	 * @param mixed $value Candidate value.
+	 * @param int   $depth Current recursion depth.
+	 * @return bool
+	 */
+	private static function theme_json_value_is_safe( mixed $value, int $depth = 0 ): bool {
+		if ( $depth > 8 ) {
+			return false;
+		}
+
+		if ( is_string( $value ) ) {
+			return strlen( $value ) <= 1000 && ! preg_match( '/[<>]/', $value );
+		}
+
+		if ( is_int( $value ) || is_float( $value ) || is_bool( $value ) || null === $value ) {
+			return true;
+		}
+
+		if ( ! is_array( $value ) || count( $value ) > 200 ) {
+			return false;
+		}
+
+		foreach ( $value as $key => $child ) {
+			if ( ! is_int( $key ) && ! preg_match( '/^[A-Za-z0-9_\-]+$/', $key ) ) {
+				return false;
+			}
+
+			if ( ! self::theme_json_value_is_safe( $child, $depth + 1 ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Check whether an array has string keys.
+	 *
+	 * @param array<mixed> $value Array to inspect.
+	 * @return bool
+	 */
+	private static function array_is_assoc( array $value ): bool {
+		if ( array() === $value ) {
+			return false;
+		}
+
+		return array_keys( $value ) !== range( 0, count( $value ) - 1 );
 	}
 
 	/**
@@ -1000,13 +1668,13 @@ class Static_Site_Importer_Theme_Materializer {
 		for ( $pass = 0; $pass < 5; $pass++ ) {
 			$expanded = preg_replace_callback(
 				'/var\(\s*(--[A-Za-z0-9_-]+)\s*(?:,\s*([^()]*))?\)/',
-				static function ( array $match ) use ( $properties ): string {
-					$name = (string) $match[1];
+				static function ( array $matches ) use ( $properties ): string {
+					$name = (string) $matches[1];
 					if ( isset( $properties[ $name ] ) && '' !== $properties[ $name ] ) {
 						return $properties[ $name ];
 					}
 
-					return ( isset( $match[2] ) && '' !== trim( (string) $match[2] ) ) ? trim( (string) $match[2] ) : (string) $match[0];
+					return ( isset( $matches[2] ) && '' !== trim( (string) $matches[2] ) ) ? trim( (string) $matches[2] ) : (string) $matches[0];
 				},
 				$value
 			);
@@ -1119,6 +1787,21 @@ class Static_Site_Importer_Theme_Materializer {
 	}
 
 	/**
+	 * Check whether a CSS size is safe to expose in theme.json layout settings.
+	 *
+	 * @param string $value CSS size value.
+	 * @return bool
+	 */
+	private static function is_safe_css_size_value( string $value ): bool {
+		$value = trim( $value );
+		if ( '' === $value || strlen( $value ) > 80 || preg_match( '/[<>;{}]/', $value ) ) {
+			return false;
+		}
+
+		return (bool) preg_match( '/^(?:\d+(?:\.\d+)?(?:px|rem|em|vw|vh|%)|clamp\(\s*[-+0-9.%\s,\/a-z]+\s*\)|min\(\s*[-+0-9.%\s,\/a-z]+\s*\)|max\(\s*[-+0-9.%\s,\/a-z]+\s*\))$/i', $value );
+	}
+
+	/**
 	 * Write a generated file.
 	 *
 	 * @param string $path    File path.
@@ -1126,6 +1809,11 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @return true|WP_Error
 	 */
 	public static function write_file( string $path, string $content ) {
+		$dir = dirname( $path );
+		if ( '' !== $dir && '.' !== $dir && ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
+			return new WP_Error( 'static_site_importer_write_mkdir_failed', sprintf( 'Failed to create generated file directory: %s', $dir ) );
+		}
+
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes generated block-theme files to the selected theme directory.
 		$result = file_put_contents( $path, $content );
 		if ( false === $result ) {

@@ -1,5 +1,8 @@
 {
   "auto_cleanup": false,
+  "capability_extensions": {
+    "deps": "wordpress"
+  },
   "changelog_target": "docs/CHANGELOG.md",
   "extensions": {
     "wordpress": {
@@ -21,6 +24,9 @@
         ],
         "validation_dependencies": []
       }
+    },
+    "nodejs": {
+      "settings": {}
     }
   },
   "id": "static-site-importer",
