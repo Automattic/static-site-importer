@@ -88,7 +88,7 @@ test('Homeboy component links runtime and dependency extensions', () => {
 
   assert.ok(config.extensions?.wordpress, 'WordPress extension is required for fixture runtime workloads');
   assert.ok(config.extensions?.nodejs, 'Node.js extension is required for Lab dependency hydration');
-  assert.equal(config.capability_extensions?.deps, 'nodejs', 'Node.js owns Lab dependency hydration');
+  assert.equal(config.capability_extensions?.deps, 'wordpress', 'WordPress owns npm and Composer Lab hydration');
 });
 
 test('discovers SSI fixtures and writes Blocks Engine site artifacts', () => {
