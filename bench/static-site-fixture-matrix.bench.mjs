@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 /**
  * Internal dependencies
@@ -36,6 +37,7 @@ const MAX_BATCH_CONCURRENCY = 16;
 export const FIXTURE_MATRIX_PROGRESS_SCHEMA = 'homeboy/runner-progress/v1';
 export const FIXTURE_MATRIX_PROGRESS_PREFIX = 'HOMEBOY_RUNNER_PROGRESS ';
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const require = createRequire(import.meta.url);
 
 async function main() {
   const options = { ...optionsFromEnv(), ...parseArgs(process.argv.slice(2)) };
@@ -423,6 +425,9 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     result: batchResult,
     codeboxArtifactsDirectory,
     outputDirectory,
+    visualAttributionNormalizer: options.visualAttributionNormalizer,
+    visualAttributionLoader: options.visualAttributionLoader,
+    homeboyExtensionPath: options.homeboyExtensionPath,
   });
   const editorCanvas = materializeEditorCanvasArtifacts({
     result: visualCompare.result,
@@ -575,6 +580,9 @@ export function materializeVisualCompareArtifacts(input = {}) {
     outputDirectory,
     codeboxArtifactsDirectory,
     artifacts,
+    visualAttributionNormalizer: input.visualAttributionNormalizer,
+    visualAttributionLoader: input.visualAttributionLoader,
+    homeboyExtensionPath: input.homeboyExtensionPath,
   }));
   return {
     result: { ...result, fixtures: updatedFixtures },
@@ -582,7 +590,7 @@ export function materializeVisualCompareArtifacts(input = {}) {
   };
 }
 
-function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory, artifacts }) {
+function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory, artifacts, visualAttributionNormalizer, visualAttributionLoader, homeboyExtensionPath }) {
   const visualParityArtifacts = fixture.visual_parity_artifacts || fixture.visualParityArtifacts;
   const slots = visualParityArtifacts?.artifacts || {};
   const fixtureId = fixture.fixture_id || fixture.fixtureId || '';
@@ -596,6 +604,10 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
     ['source_screenshot', 'source', ['source_screenshot']],
     ['imported_screenshot', 'candidate', ['imported_screenshot', 'candidate_screenshot']],
     ['diff_screenshot', 'diff', ['diff_screenshot']],
+    ['visual_diff', 'visual-diff.json', ['visual_diff']],
+    ['visual_explanation', 'visual-explanation.json', ['visual_explanation']],
+    ['source_dom_snapshot', 'source-dom-snapshot.json', ['source_dom_snapshot']],
+    ['candidate_dom_snapshot', 'candidate-dom-snapshot.json', ['candidate_dom_snapshot']],
   ]) {
     const [slotName, fileStem, artifactIds] = slot;
     const refPath = slots[slotName]?.ref?.path || visualDiagnosticRefPath(fixture.diagnostics, artifactIds);
@@ -603,7 +615,7 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
     if (!sourcePath || !fs.existsSync(sourcePath)) {
       continue;
     }
-    const persistedPath = path.join(outputDirectory, 'visual-compare', fixtureId, `${fileStem}.png`);
+    const persistedPath = path.join(outputDirectory, 'visual-compare', fixtureId, fileStem.includes('.') ? fileStem : `${fileStem}.png`);
     fs.mkdirSync(path.dirname(persistedPath), { recursive: true });
     fs.copyFileSync(sourcePath, persistedPath);
     rewrites.set(refPath, persistedPath);
@@ -642,6 +654,23 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
       diffScreenshot: updatedSlots.diff_screenshot?.ref?.path,
     },
   }, { fixtureArtifactsDirectory: outputDirectory });
+  const visualAttribution = materializeVisualAttribution({
+    fixture,
+    fixtureId,
+    outputDirectory,
+    slots: updatedSlots,
+    normalizer: visualAttributionNormalizer,
+    loader: visualAttributionLoader,
+    homeboyExtensionPath,
+  });
+  if (visualAttribution) {
+    updatedSlots.visual_attribution = {
+      status: 'captured',
+      kind: 'visual_attribution',
+      ref: artifactRef('visual_attribution', visualAttribution.path, 'visual-parity'),
+    };
+    artifacts[`visual_compare_${artifactKey(fixtureId)}_visual-attribution`] = { path: visualAttribution.path };
+  }
 
   return {
     ...fixture,
@@ -659,6 +688,87 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
       visual_diff_classification: classification,
     } : {}),
   };
+}
+
+function materializeVisualAttribution({ fixture, fixtureId, outputDirectory, slots, normalizer, loader, homeboyExtensionPath }) {
+  const visualDiffPath = slots.visual_diff?.ref?.path;
+  if (!visualDiffPath) {
+    return null;
+  }
+  const refs = {
+    visualExplanation: slots.visual_explanation?.ref?.path,
+    sourceDomSnapshot: slots.source_dom_snapshot?.ref?.path,
+    candidateDomSnapshot: slots.candidate_dom_snapshot?.ref?.path,
+  };
+  const visualDiff = readJsonArtifact(visualDiffPath);
+  const visualExplanation = readJsonArtifact(refs.visualExplanation);
+  const sourceDomSnapshot = readJsonArtifact(refs.sourceDomSnapshot);
+  const candidateDomSnapshot = readJsonArtifact(refs.candidateDomSnapshot);
+  const activeNormalizer = resolveWordPressVisualAttributionNormalizer({ normalizer, loader, homeboyExtensionPath });
+  let attribution;
+  try {
+    attribution = activeNormalizer
+      ? activeNormalizer({
+        visualDiff,
+        visualExplanation,
+        sourceDomSnapshot,
+        candidateDomSnapshot,
+        refs,
+        candidateProvenance: fixture.candidate_provenance || fixture.candidateProvenance,
+      })
+      : unavailableVisualAttribution(refs, visualExplanation, sourceDomSnapshot, candidateDomSnapshot);
+  } catch {
+    attribution = unavailableVisualAttribution(refs, visualExplanation, sourceDomSnapshot, candidateDomSnapshot, 'The Homeboy WordPress extension normalizer failed; attribution is limited to retained pixel evidence.');
+  }
+  const persistedPath = path.join(outputDirectory, 'visual-compare', fixtureId, 'visual-attribution.json');
+  writeJsonArtifact(persistedPath, attribution);
+  return { path: persistedPath };
+}
+
+function unavailableVisualAttribution(refs, visualExplanation, sourceDomSnapshot, candidateDomSnapshot, normalizerLimitation = 'The Homeboy WordPress extension normalizer was unavailable; attribution is limited to retained pixel evidence.') {
+  return {
+    schema: 'static-site-importer/visual-attribution-unavailable/v1',
+    evidence: refs,
+    limitations: [
+      normalizerLimitation,
+      ...(visualExplanation ? [] : ['WP Codebox visual explanation sidecar was not captured.']),
+      ...(sourceDomSnapshot && candidateDomSnapshot ? [] : ['WP Codebox DOM snapshot sidecars were not both captured.']),
+    ],
+  };
+}
+
+function readJsonArtifact(filePath) {
+  if (!filePath) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+export function resolveWordPressVisualAttributionNormalizer({ normalizer, loader, homeboyExtensionPath } = {}) {
+  if (typeof normalizer === 'function') {
+    return normalizer;
+  }
+  try {
+    let extension;
+    if (typeof loader === 'function') {
+      extension = loader();
+    } else {
+      const extensionPath = homeboyExtensionPath || process.env.HOMEBOY_EXTENSION_PATH;
+      if (!extensionPath) {
+        return null;
+      }
+      extension = require(path.resolve(extensionPath));
+    }
+    return typeof extension?.normalizeWordPressVisualAttribution === 'function'
+      ? extension.normalizeWordPressVisualAttribution
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function visualDiagnosticRefPath(diagnostics, artifactIds) {

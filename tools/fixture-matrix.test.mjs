@@ -5304,7 +5304,7 @@ test('visual evidence report infers viewport evidence from visual-compare metric
   assert.equal(report.fixtures[0].risk.reasons.includes('missing mobile viewport evidence'), false);
 });
 
-test('visual-compare PNGs are copied to the bench artifact root and registered', () => {
+test('visual-compare sidecars are normalized and retained under the bench artifact root', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-persisted-output-'));
   const codeboxArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-codebox-artifacts-'));
   const runtimeDirectory = path.join(codeboxArtifactsDirectory, 'runtime-123', 'files', 'browser', 'visual-compare', 'simple-site');
@@ -5312,11 +5312,27 @@ test('visual-compare PNGs are copied to the bench artifact root and registered',
   for (const fileName of ['source.png', 'candidate.png', 'diff.png']) {
     writeFileSync(path.join(runtimeDirectory, fileName), `fake ${fileName}`);
   }
+  writeFileSync(path.join(runtimeDirectory, 'visual-diff.json'), JSON.stringify({
+    schema: 'wp-codebox/visual-compare/v1',
+    comparison: { mismatchPixels: 120, totalPixels: 1000, mismatchRatio: 0.12, dimensionMismatch: false },
+  }));
+  writeFileSync(path.join(runtimeDirectory, 'visual-explanation.json'), JSON.stringify({
+    schema: 'wp-codebox/visual-explanation/v1',
+    mismatchRegions: [{ x: 10, y: 20, width: 30, height: 40, pixels: 120 }],
+    selectorDeltas: [{ selector: '.hero', sourcePath: '0.1', candidatePath: '0.1', boundingBox: { delta: { y: 12 } }, styles: [{ property: 'color', source: '#000', candidate: '#fff' }] }],
+  }));
+  for (const fileName of ['source-dom-snapshot.json', 'candidate-dom-snapshot.json']) {
+    writeFileSync(path.join(runtimeDirectory, fileName), JSON.stringify({
+      schema: 'wp-codebox/browser-dom-snapshot/v1',
+      snapshot: { elementCount: 3, capturedElements: [{ path: '0.1' }], truncated: false },
+    }));
+  }
 
   const result = {
     fixtures: [
       {
         fixture_id: 'simple-site',
+        candidate_provenance: { '0.1': { block: 'core/cover' } },
         diagnostics: [
           {
             kind: VISUAL_PARITY_MISMATCH_KIND,
@@ -5334,22 +5350,45 @@ test('visual-compare PNGs are copied to the bench artifact root and registered',
             source_screenshot: { status: 'captured', ref: { path: 'files/browser/visual-compare/simple-site/source.png' } },
             imported_screenshot: { status: 'pending', capture_state: 'not_captured' },
             diff_screenshot: { status: 'captured', ref: { path: 'files/browser/visual-compare/simple-site/diff.png' } },
+            visual_diff: { status: 'captured', ref: { path: 'files/browser/visual-compare/simple-site/visual-diff.json' } },
+            visual_explanation: { status: 'captured', ref: { path: 'files/browser/visual-compare/simple-site/visual-explanation.json' } },
+            source_dom_snapshot: { status: 'captured', ref: { path: 'files/browser/visual-compare/simple-site/source-dom-snapshot.json' } },
+            candidate_dom_snapshot: { status: 'captured', ref: { path: 'files/browser/visual-compare/simple-site/candidate-dom-snapshot.json' } },
           },
         },
       },
     ],
   };
 
-  const persisted = materializeVisualCompareArtifacts({ result, outputDirectory, codeboxArtifactsDirectory });
+  let normalizerInput;
+  const persisted = materializeVisualCompareArtifacts({
+    result,
+    outputDirectory,
+    codeboxArtifactsDirectory,
+    visualAttributionNormalizer(input) {
+      normalizerInput = input;
+      return {
+        schema: 'homeboy/WordPressVisualAttribution/v1',
+        mismatch_regions: input.visualExplanation.mismatchRegions,
+        top_findings: [{ kind: 'geometry', selector: '.hero' }, { kind: 'style', property: 'color' }],
+        computed_style_deltas: { paint: [{ property: 'color' }] },
+      };
+    },
+  });
   const fixture = persisted.result.fixtures[0];
 
   assert.deepEqual(Object.keys(persisted.artifacts).sort(), [
     'visual_compare_simple-site_candidate',
+    'visual_compare_simple-site_candidate-dom-snapshot.json',
     'visual_compare_simple-site_diff',
     'visual_compare_simple-site_source',
+    'visual_compare_simple-site_source-dom-snapshot.json',
+    'visual_compare_simple-site_visual-attribution',
+    'visual_compare_simple-site_visual-diff.json',
+    'visual_compare_simple-site_visual-explanation.json',
   ]);
   for (const [key, artifact] of Object.entries(persisted.artifacts)) {
-    assert.ok(existsSync(artifact.path), `${key} should point at a copied PNG`);
+    assert.ok(existsSync(artifact.path), `${key} should point at a retained artifact`);
     assert.equal(artifact.path.includes('homeboy-run-'), false, 'persisted artifact must not live in a transient Homeboy runtime dir');
     assert.ok(artifact.path.startsWith(path.join(outputDirectory, 'visual-compare', 'simple-site')));
   }
@@ -5359,6 +5398,42 @@ test('visual-compare PNGs are copied to the bench artifact root and registered',
   assert.equal(fixture.visual_parity_artifacts.artifacts.imported_screenshot.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'candidate.png'));
   assert.equal(fixture.visual_parity_artifacts.artifacts.diff_screenshot.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'diff.png'));
   assert.equal(fixture.diagnostics[0].artifact_refs.find((ref) => ref.artifact_id === 'diff_screenshot').path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'diff.png'));
+  assert.equal(fixture.visual_parity_artifacts.artifacts.visual_diff.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'visual-diff.json'));
+  assert.equal(fixture.visual_parity_artifacts.artifacts.source_dom_snapshot.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'source-dom-snapshot.json'));
+  assert.equal(fixture.visual_parity_artifacts.artifacts.visual_attribution.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'visual-attribution.json'));
+  assert.equal(normalizerInput.visualExplanation.selectorDeltas[0].boundingBox.delta.y, 12);
+  assert.equal(normalizerInput.sourceDomSnapshot.snapshot.elementCount, 3);
+  assert.deepEqual(normalizerInput.candidateProvenance, { '0.1': { block: 'core/cover' } });
+  assert.equal(JSON.parse(readFileSync(fixture.visual_parity_artifacts.artifacts.visual_attribution.ref.path, 'utf8')).top_findings.length, 2);
+});
+
+test('visual-compare attribution degrades explicitly when sidecars or the extension normalizer are unavailable', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-degraded-output-'));
+  const codeboxArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-degraded-codebox-'));
+  const runtimeDirectory = path.join(codeboxArtifactsDirectory, 'runtime-123', 'files', 'browser', 'visual-compare', 'simple-site');
+  mkdirSync(runtimeDirectory, { recursive: true });
+  writeFileSync(path.join(runtimeDirectory, 'visual-diff.json'), JSON.stringify({ schema: 'wp-codebox/visual-compare/v1', comparison: { mismatchPixels: 1, totalPixels: 10 } }));
+
+  const persisted = materializeVisualCompareArtifacts({
+    outputDirectory,
+    codeboxArtifactsDirectory,
+    result: {
+      fixtures: [{
+        fixture_id: 'simple-site',
+        visual_parity_artifacts: {
+          artifacts: {
+            visual_diff: { status: 'captured', ref: { path: 'files/browser/visual-compare/simple-site/visual-diff.json' } },
+          },
+        },
+      }],
+    },
+  });
+
+  const attributionPath = persisted.result.fixtures[0].visual_parity_artifacts.artifacts.visual_attribution.ref.path;
+  const attribution = JSON.parse(readFileSync(attributionPath, 'utf8'));
+  assert.equal(attribution.schema, 'static-site-importer/visual-attribution-unavailable/v1');
+  assert.ok(attribution.limitations.some((message) => message.includes('normalizer was unavailable')));
+  assert.ok(attribution.limitations.some((message) => message.includes('DOM snapshot')));
 });
 
 test('visual-compare dimension mismatch gates even with zero pixel metrics when gating is on', () => {
@@ -5588,6 +5663,8 @@ test('WP Codebox recipe browserEvidence visual refs are preserved with fixture i
           diffScreenshot: { path: 'files/browser/visual-compare/diff.png', kind: 'browser-visual-diff-screenshot' },
           visualDiff: { path: 'files/browser/visual-compare/visual-diff.json', kind: 'browser-visual-diff' },
           visualExplanation: { path: 'files/browser/visual-compare/visual-explanation.json', kind: 'browser-visual-explanation' },
+          sourceDomSnapshot: { path: 'files/browser/visual-compare/source-dom-snapshot.json', kind: 'browser-source-dom-snapshot' },
+          candidateDomSnapshot: { path: 'files/browser/visual-compare/candidate-dom-snapshot.json', kind: 'browser-candidate-dom-snapshot' },
           summary: { path: 'files/browser/visual-compare/summary.json', kind: 'browser-summary' },
         },
         summary: {
@@ -5626,6 +5703,8 @@ test('WP Codebox recipe browserEvidence visual refs are preserved with fixture i
   assert.equal(artifacts.diff_screenshot.ref.path, 'files/browser/visual-compare/diff.png');
   assert.equal(artifacts.visual_diff.ref.path, 'files/browser/visual-compare/visual-diff.json');
   assert.equal(artifacts.visual_explanation.ref.path, 'files/browser/visual-compare/visual-explanation.json');
+  assert.equal(artifacts.source_dom_snapshot.ref.path, 'files/browser/visual-compare/source-dom-snapshot.json');
+  assert.equal(artifacts.candidate_dom_snapshot.ref.path, 'files/browser/visual-compare/candidate-dom-snapshot.json');
   assert.equal(fixture.visual_parity_artifacts.visual_explanation.selector_diagnostics[0].selector, '.hero');
   assert.equal(fixture.visual_parity_artifacts.visual_explanation.layout_diagnostics[0].selector, '.hero');
   assert.ok(finding, 'expected a visual parity finding from WP Codebox browserEvidence');
