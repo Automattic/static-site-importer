@@ -627,10 +627,28 @@ $assert( str_contains( $rewritten_content, '"url":"https:\/\/example.test\/wp-co
 
 $base_writes   = Static_Site_Importer_Theme_Materializer::base_theme_writes( $asset_theme_dir, 'fixture-theme', 'Fixture Theme', (string) $asset_result['css'], false, false, $asset_result['scripts'], $asset_result['stylesheets'] );
 $functions_php = (string) ( $base_writes[ $asset_theme_dir . '/functions.php' ] ?? '' );
+if ( getenv( 'SSI_EVIDENCE' ) ) {
+	fwrite( STDOUT, "\n=== EVIDENCE: stylesheet rows ===\n" );
+	foreach ( (array) ( $asset_result['stylesheets'] ?? array() ) as $i => $row ) {
+		fwrite( STDOUT, sprintf( "  [%d] path=%s theme_path=%s media=%s\n", $i, (string) ( $row['path'] ?? '' ), (string) ( $row['theme_path'] ?? '' ), (string) ( $row['media'] ?? '' ) ) );
+	}
+	$es = strpos( $functions_php, "add_action( 'wp_enqueue_scripts'" );
+	$ee = strpos( $functions_php, "} );", $es ) + 4;
+	fwrite( STDOUT, "\n=== EVIDENCE: wp_enqueue_scripts action ===\n" . substr( $functions_php, $es, $ee - $es ) . "\n" );
+	$ds = strpos( $functions_php, "add_action( 'enqueue_block_editor_assets'" );
+	$de = strpos( $functions_php, "} );", $ds ) + 4;
+	fwrite( STDOUT, "\n=== EVIDENCE: enqueue_block_editor_assets action ===\n" . substr( $functions_php, $ds, $de - $ds ) . "\n" );
+}
 $assert( str_contains( $functions_php, '/assets/css/fonts.css' ), 'font-materialization-stylesheet-is-enqueued' );
 $assert( str_contains( $functions_php, '/assets/materialized/assets/site.css' ), 'source-stylesheet-asset-is-enqueued' );
 $assert( str_contains( $functions_php, "wp_enqueue_style( 'fixture-theme-style', get_stylesheet_uri(), array (\n  0 => 'fixture-theme-asset-assets-css-fonts',\n  1 => 'fixture-theme-asset-assets-materialized-assets-site',\n), wp_get_theme()->get( 'Version' ) );" ), 'theme-style-depends-on-materialized-stylesheets' );
 $assert( str_contains( $functions_php, "wp_enqueue_style( 'fixture-theme-editor-style', get_template_directory_uri() . '/assets/css/editor-style.css', array (\n  0 => 'fixture-theme-asset-assets-css-fonts',\n  1 => 'fixture-theme-asset-assets-materialized-assets-site',\n), wp_get_theme()->get( 'Version' ) );" ), 'editor-style-depends-on-materialized-stylesheets' );
+$assert( str_contains( $functions_php, "wp_enqueue_style( 'fixture-theme-asset-assets-css-fonts', get_template_directory_uri() . '/assets/css/fonts.css', array(), wp_get_theme()->get( 'Version' ) );" ), 'font-stylesheet-enqueue-row-binds-handle-to-path' );
+$assert( str_contains( $functions_php, "wp_enqueue_style( 'fixture-theme-asset-assets-materialized-assets-site', get_template_directory_uri() . '/assets/materialized/assets/site.css', array(), wp_get_theme()->get( 'Version' ), 'screen' );" ), 'source-stylesheet-enqueue-row-binds-handle-to-path-and-media' );
+$font_enq_pos    = strpos( $functions_php, "wp_enqueue_style( 'fixture-theme-asset-assets-css-fonts', get_template_directory_uri() . '/assets/css/fonts.css'" );
+$source_enq_pos  = strpos( $functions_php, "wp_enqueue_style( 'fixture-theme-asset-assets-materialized-assets-site', get_template_directory_uri() . '/assets/materialized/assets/site.css'" );
+$assert( false !== $font_enq_pos && false !== $source_enq_pos && $font_enq_pos < $source_enq_pos, 'font-stylesheet-enqueue-row-precedes-source-stylesheet-enqueue-row' );
+$assert( 2 === substr_count( $functions_php, "wp_enqueue_style( 'fixture-theme-asset-assets-materialized-assets-site', get_template_directory_uri() . '/assets/materialized/assets/site.css'" ), 'source-stylesheet-enqueue-row-is-emitted-in-both-enqueue-actions' );
 $assert( str_contains( $functions_php, '/assets/materialized/assets/app.js' ), 'materialization-plan-script-is-enqueued' );
 $assert( str_contains( $functions_php, "\$mimes['svg'] = 'image/svg+xml';" ), 'generated-theme-enables-svg-upload-mime' );
 $assert( str_contains( $functions_php, "add_filter( 'wp_check_filetype_and_ext'" ), 'generated-theme-corrects-svg-filetype-check' );
