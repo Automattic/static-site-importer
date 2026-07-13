@@ -73,9 +73,40 @@
         "remediation": "Pass homeboy bench --path /path/to/static-site-importer or update components.static-site-importer.path before running static-site-importer-fixture-matrix."
       },
       {
-        "kind": "command",
-        "label": "Fixture matrix workload validates",
-        "command": "cd \"${package.root}\" && npm ci --ignore-scripts && node \"${package.root}/tools/fixture-matrix.test.mjs\""
+        "kind": "requirement",
+        "label": "Fixture matrix workload entrypoint exists",
+        "file": "${components.static-site-importer.path}/bench/static-site-fixture-matrix.bench.mjs",
+        "remediation": "Refresh the Static Site Importer checkout before running static-site-importer-fixture-matrix."
+      },
+      {
+        "kind": "requirement",
+        "label": "Fixture matrix WP Codebox recipe entrypoint exists",
+        "file": "${components.static-site-importer.path}/tools/wp-codebox/recipe.mjs",
+        "remediation": "Refresh the Static Site Importer checkout before running static-site-importer-fixture-matrix."
+      },
+      {
+        "kind": "requirement",
+        "label": "Hydrated pixelmatch entrypoint exists",
+        "file": "${components.static-site-importer.path}/node_modules/pixelmatch/index.js",
+        "remediation": "Dependencies are missing. Run `homeboy deps install --path /path/to/static-site-importer` so Homeboy hydrates the checkout, then rerun static-site-importer-fixture-matrix."
+      },
+      {
+        "kind": "requirement",
+        "label": "Hydrated pngjs entrypoint exists",
+        "file": "${components.static-site-importer.path}/node_modules/pngjs/lib/png.js",
+        "remediation": "Dependencies are missing. Run `homeboy deps install --path /path/to/static-site-importer` so Homeboy hydrates the checkout, then rerun static-site-importer-fixture-matrix."
+      },
+      {
+        "kind": "requirement",
+        "label": "Static Site Importer transformer adapter exists",
+        "file": "${components.static-site-importer.path}/includes/class-static-site-importer-transformer-adapter.php",
+        "remediation": "Refresh the Static Site Importer checkout before running static-site-importer-fixture-matrix."
+      },
+      {
+        "kind": "requirement",
+        "label": "Node.js runtime exists",
+        "executable": "node",
+        "remediation": "Use a Homeboy runner with Node.js available on PATH before running static-site-importer-fixture-matrix."
       }
     ],
     "down": [
