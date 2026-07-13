@@ -8,6 +8,7 @@ import fs from 'node:fs';
 const require = createRequire(import.meta.url);
 const WP_CODEBOX_RECIPE_MAX_BUFFER = 64 * 1024 * 1024;
 const WP_CODEBOX_RECIPE_TAIL_BYTES = 64 * 1024;
+export const DEFAULT_RECIPE_INACTIVITY_TIMEOUT_MS = 120000;
 
 function externalHelper() {
   const helperPath = process.env.HOMEBOY_WP_CODEBOX_RECIPE_HELPER;
@@ -40,7 +41,7 @@ export async function runWpCodeboxRecipe(options = {}) {
   const args = recipeRunArgs(base, options, { output: Boolean(options.outputFile) });
 
   if (options.outputFile) {
-    const result = await spawnRecipeWithTails(base.command, args);
+    const result = await spawnRecipeWithTails(base.command, args, options);
     if (result.status !== 0 && recipeRunOutputUnsupported(result)) {
       return runWpCodeboxRecipeStdoutFallback(base, options);
     }
@@ -111,6 +112,8 @@ function childFailureError(result) {
   const error = new Error(childFailureMessage(result));
   error.code = result.error?.code || result.status || 1;
   error.signal = result.signal || result.error?.signal || '';
+  error.inactivityTimedOut = Boolean(result.inactivityTimedOut);
+  error.inactivityTimeoutMs = result.inactivityTimeoutMs || 0;
   error.stdout = result.stdout || '';
   error.stderr = result.stderr || '';
   return error;
@@ -121,27 +124,53 @@ function recipeRunOutputUnsupported(result) {
   return /Unknown option:\s*--output/.test(text);
 }
 
-function spawnRecipeWithTails(command, args) {
+function positiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function spawnRecipeWithTails(command, args, options = {}) {
   return new Promise((resolve) => {
     const stdout = new RingTextBuffer(WP_CODEBOX_RECIPE_TAIL_BYTES);
     const stderr = new RingTextBuffer(WP_CODEBOX_RECIPE_TAIL_BYTES);
     const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let spawnError = null;
+    const inactivityTimeoutMs = positiveInteger(options.inactivityTimeoutMs, DEFAULT_RECIPE_INACTIVITY_TIMEOUT_MS);
+    let inactivityTimedOut = false;
+    let timer = null;
+    const resetInactivityTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        inactivityTimedOut = true;
+        options.onInactivity?.({ timeout_ms: inactivityTimeoutMs });
+        child.kill('SIGTERM');
+      }, inactivityTimeoutMs);
+    };
 
-    child.stdout?.on('data', (chunk) => stdout.push(chunk));
-    child.stderr?.on('data', (chunk) => stderr.push(chunk));
+    child.stdout?.on('data', (chunk) => {
+      stdout.push(chunk);
+      resetInactivityTimer();
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr.push(chunk);
+      resetInactivityTimer();
+    });
     child.on('error', (error) => {
       spawnError = error;
     });
     child.on('close', (status, signal) => {
+      clearTimeout(timer);
       resolve({
         status,
         signal,
         error: spawnError,
+        inactivityTimedOut,
+        inactivityTimeoutMs,
         stdout: stdout.toString(),
         stderr: stderr.toString(),
       });
     });
+    resetInactivityTimer();
   });
 }
 

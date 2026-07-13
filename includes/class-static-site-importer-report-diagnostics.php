@@ -1234,6 +1234,26 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
+	 * Determine whether import diagnostics require a form provider.
+	 *
+	 * This is intentionally shared with dependency provisioning so the provider is
+	 * active before the same finding is converted and grafted into page content.
+	 *
+	 * @param array<string,mixed> $report Import report.
+	 * @return bool
+	 */
+	public static function has_materializable_form_findings( array $report ): bool {
+		$diagnostics = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( is_array( $diagnostic ) && self::is_materializable_form_diagnostic( $diagnostic ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * Determine whether a diagnostic can be passed to the form provider.
 	 *
 	 * @param array<string,mixed> $diagnostic Diagnostic row.

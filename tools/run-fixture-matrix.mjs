@@ -99,6 +99,7 @@ export function buildFixtureMatrixRunPlan(input) {
       : {}),
     ...(options.batchSize ? { SSI_FIXTURE_MATRIX_BATCH_SIZE: String(options.batchSize) } : {}),
     ...(options.concurrency ? { SSI_FIXTURE_MATRIX_CONCURRENCY: String(options.concurrency) } : {}),
+    ...(options.batchInactivityTimeoutMs ? { SSI_FIXTURE_MATRIX_BATCH_INACTIVITY_TIMEOUT_MS: String(options.batchInactivityTimeoutMs) } : {}),
     ...(options.wordpressVersion ? { SSI_FIXTURE_MATRIX_WORDPRESS_VERSION: options.wordpressVersion } : {}),
     ...(options.wpCodeboxBin ? { SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN: options.wpCodeboxBin } : {}),
     ...(options.surfaceCoverage !== undefined ? { SSI_FIXTURE_MATRIX_SURFACE_COVERAGE: String(options.surfaceCoverage) } : {}),
@@ -131,12 +132,15 @@ export function buildFixtureMatrixRunPlan(input) {
     ...(options.complexity ? { SSI_FIXTURE_MATRIX_COMPLEXITY: String(options.complexity) } : {}),
     ...(options.maxComplexity ? { SSI_FIXTURE_MATRIX_MAX_COMPLEXITY: String(options.maxComplexity) } : {}),
   };
-  const fixtureCount = countTopLevelFixtureDirectories(options.fixtureRoot);
+  const corpusCounts = countCorpusFixtureDirectories(options.fixtureRoot);
+  const fixtureCount = corpusCounts.total;
+  const activeFixtureCount = corpusCounts.active;
+  const solvedFixtureCount = corpusCounts.solved;
   const codeFreshness = buildCodeFreshness(options, options.gitRunner || defaultGitRunner);
   const warnings = [
     ...buildWarnings(options),
     ...buildSurfaceCoverageWarnings(options, fixtureCount),
-    ...buildCanonicalDriftWarnings(fixtureCount, options.fixtureRoot),
+    ...buildCanonicalDriftWarnings(activeFixtureCount, corpusCounts.active_root),
     ...buildFreshnessWarnings(codeFreshness, options),
   ];
 
@@ -153,8 +157,10 @@ export function buildFixtureMatrixRunPlan(input) {
     homeboy_bin: options.homeboyBin,
     fixture_root: options.fixtureRoot,
     fixture_count: fixtureCount,
+    active_fixture_count: activeFixtureCount,
+    solved_fixture_count: solvedFixtureCount,
     canonical_fixture_count: CANONICAL_FIXTURE_COUNT,
-    fixture_count_matches_canonical: fixtureCount === CANONICAL_FIXTURE_COUNT,
+    fixture_count_matches_canonical: activeFixtureCount === CANONICAL_FIXTURE_COUNT,
     lane_filter: laneFilterSummary(options),
     output_file: options.output,
     temp_root: options.tempRoot,
@@ -220,7 +226,7 @@ function normalizeOptions(input) {
   if (!input.fixtureRoot && !blocksEngine) {
     throw new Error('--blocks-engine or --fixture-root is required');
   }
-  const fixtureRoot = path.resolve(input.fixtureRoot || path.join(blocksEngine, 'fixtures', 'websites'));
+  const fixtureRoot = path.resolve(input.fixtureRoot || path.join(blocksEngine, 'fixtures'));
 
   const defaultBlocksEnginePhpTransformerPath = input.mode === 'release-proof' ? '' : blocksEngine;
   let blocksEnginePhpTransformerPath = defaultBlocksEnginePhpTransformerPath;
@@ -353,14 +359,15 @@ function isMacLocalTempPath(value) {
 // Surface corpus pin drift instead of letting `fixture_count_matches_canonical`
 // be a silently-ignored boolean. A discovered count below the pin means fixtures
 // went missing (or the wrong root was passed); above the pin means the corpus
-// grew and CANONICAL_FIXTURE_COUNT needs an intentional bump.
-function buildCanonicalDriftWarnings(fixtureCount, fixtureRoot) {
-  if (fixtureCount === CANONICAL_FIXTURE_COUNT) {
+// grew and CANONICAL_FIXTURE_COUNT needs an intentional bump. The pin applies
+// to the active corpus (`fixtures/websites`), not the solved regression corpus.
+function buildCanonicalDriftWarnings(activeFixtureCount, activeRoot) {
+  if (activeFixtureCount === CANONICAL_FIXTURE_COUNT) {
     return [];
   }
   return [{
     code: 'canonical_fixture_count_drift',
-    message: `Discovered ${fixtureCount} top-level fixture director${fixtureCount === 1 ? 'y' : 'ies'} in ${fixtureRoot}, but CANONICAL_FIXTURE_COUNT is ${CANONICAL_FIXTURE_COUNT}. ${fixtureCount > CANONICAL_FIXTURE_COUNT ? 'The corpus grew; bump CANONICAL_FIXTURE_COUNT after confirming the new fixtures are intended.' : 'Fixtures are missing or the wrong fixture root was passed; restore the corpus or correct --fixture-root.'}`,
+    message: `Discovered ${activeFixtureCount} top-level fixture director${activeFixtureCount === 1 ? 'y' : 'ies'} in ${activeRoot}, but CANONICAL_FIXTURE_COUNT is ${CANONICAL_FIXTURE_COUNT}. ${activeFixtureCount > CANONICAL_FIXTURE_COUNT ? 'The corpus grew; bump CANONICAL_FIXTURE_COUNT after confirming the new fixtures are intended.' : 'Fixtures are missing or the wrong root was passed; restore the corpus or correct --fixture-root.'}`,
   }];
 }
 
@@ -749,6 +756,23 @@ function parseArgs(args) {
   return options;
 }
 
+function countCorpusFixtureDirectories(fixtureRoot) {
+  const activeRoot = path.join(fixtureRoot, 'websites');
+  const solvedRoot = path.join(fixtureRoot, 'solved');
+  const active = fs.existsSync(activeRoot) && fs.statSync(activeRoot).isDirectory()
+    ? countTopLevelFixtureDirectories(activeRoot)
+    : countTopLevelFixtureDirectories(fixtureRoot);
+  const solved = fs.existsSync(solvedRoot) && fs.statSync(solvedRoot).isDirectory()
+    ? countTopLevelFixtureDirectories(solvedRoot)
+    : 0;
+  return {
+    active,
+    solved,
+    total: active + solved,
+    active_root: fs.existsSync(activeRoot) && fs.statSync(activeRoot).isDirectory() ? activeRoot : fixtureRoot,
+  };
+}
+
 function countTopLevelFixtureDirectories(fixtureRoot) {
   try {
     return fs.readdirSync(fixtureRoot, { withFileTypes: true })
@@ -838,7 +862,8 @@ function sanitizePathSegment(value) {
 }
 
 function printHelp() {
-  process.stdout.write(`Usage: node tools/run-fixture-matrix.mjs --static-site-importer <path> --blocks-engine <path> [options] [-- <bench args>...]\n\nRuns the canonical Static Site Importer fixture matrix through Homeboy/Lab/WP Codebox.\n\nExecution modes:\n  --local                             Local hot execution on this machine. Injects --force-hot --allow-local-hot into routed Homeboy steps.\n  --runner <id>                       Lab offload to a Homeboy runner, for example homeboy-lab. Does not inject hot-local flags.\n  --lab-only                          Require Lab routing, using Homeboy's selected/default Lab runner.\n  no routing flags                    Auto mode; lets homeboy bench decide routing.\n\nRules:\n  --runner local                      Alias for --local.\n  --local cannot be combined with --runner <remote> or --lab-only. Pick local-hot or Lab offload.\n\nOptions:\n  --static-site-importer <path>       Static Site Importer checkout/plugin path. Required.\n  --blocks-engine <path>              Blocks Engine checkout. Defaults fixture root and PHP transformer override.\n  --fixture-root <path>               Fixture corpus. Defaults to <blocks-engine>/fixtures/websites.\n  --blocks-engine-php-transformer-path <path>\n                                      Override transformer package/repo path. Defaults to --blocks-engine.\n  --mode <development-override|release-proof>\n                                      Labels output; default is development-override when transformer override is used.\n  --run-id <id>                       Stable proof label. Defaults to ssi-matrix-<mode>-<timestamp>.\n  --shared-state <dir>                Shared Homeboy bench state directory.\n  --artifact-root <dir>               Homeboy artifact root.\n  --output <file>                     Structured Homeboy bench output file.\n  --batch-size <n>                    SSI fixture matrix WP Codebox batch size.\n  --concurrency <n>                   Parallel WP Codebox sandbox batches. Defaults to 4, hard-capped at 16.\n  --wordpress-version <version>       WP Codebox WordPress version.\n  --wp-codebox-bin <path>             WP Codebox CLI path.\n  --allow-stale-override              Proceed even when an override checkout is behind upstream.\n  --allow-local-fallback              Permit selected Lab runner fallback to local execution.\n  --allow-dirty-lab-workspace         Permit reusing/overwriting a dirty Lab workspace.\n  --detach-after-handoff              Return after runner daemon accepts the job.\n  --dry-run                           Print the plan without running Homeboy.\n  --skip-install                      Skip rig install.\n  --skip-sync                         Skip rig sync.\n  --no-editor-validation              Omit editor block validation.\n  --no-visual-parity                  Omit visual parity capture.\n  --no-visual-parity-gate             Capture visual parity without gating.\n  --help                              Show this help.\n`);
+  process.stdout.write(`Usage: node tools/run-fixture-matrix.mjs --static-site-importer <path> --blocks-engine <path> [options] [-- <bench args>...]\n\nRuns the canonical Static Site Importer fixture matrix through Homeboy/Lab/WP Codebox.\n\nExecution modes:\n  --local                             Local hot execution on this machine. Injects --force-hot --allow-local-hot into routed Homeboy steps.\n  --runner <id>                       Lab offload to a Homeboy runner, for example homeboy-lab. Does not inject hot-local flags.\n  --lab-only                          Require Lab routing, using Homeboy's selected/default Lab runner.\n  no routing flags                    Auto mode; lets homeboy bench decide routing.\n\nRules:\n  --runner local                      Alias for --local.\n  --local cannot be combined with --runner <remote> or --lab-only. Pick local-hot or Lab offload.\n\nOptions:\n  --static-site-importer <path>       Static Site Importer checkout/plugin path. Required.\n  --blocks-engine <path>              Blocks Engine checkout. Defaults fixture root and PHP transformer override.\n    --fixture-root <path>               Fixture corpus. Defaults to <blocks-engine>/fixtures, which discovers both fixtures/websites and fixtures/solved.
+\n  --blocks-engine-php-transformer-path <path>\n                                      Override transformer package/repo path. Defaults to --blocks-engine.\n  --mode <development-override|release-proof>\n                                      Labels output; default is development-override when transformer override is used.\n  --run-id <id>                       Stable proof label. Defaults to ssi-matrix-<mode>-<timestamp>.\n  --shared-state <dir>                Shared Homeboy bench state directory.\n  --artifact-root <dir>               Homeboy artifact root.\n  --output <file>                     Structured Homeboy bench output file.\n  --batch-size <n>                    SSI fixture matrix WP Codebox batch size.\n  --concurrency <n>                   Parallel WP Codebox sandbox batches. Defaults to 4, hard-capped at 16.\n  --wordpress-version <version>       WP Codebox WordPress version.\n  --wp-codebox-bin <path>             WP Codebox CLI path.\n  --allow-stale-override              Proceed even when an override checkout is behind upstream.\n  --allow-local-fallback              Permit selected Lab runner fallback to local execution.\n  --allow-dirty-lab-workspace         Permit reusing/overwriting a dirty Lab workspace.\n  --detach-after-handoff              Return after runner daemon accepts the job.\n  --dry-run                           Print the plan without running Homeboy.\n  --skip-install                      Skip rig install.\n  --skip-sync                         Skip rig sync.\n  --no-editor-validation              Omit editor block validation.\n  --no-visual-parity                  Omit visual parity capture.\n  --no-visual-parity-gate             Capture visual parity without gating.\n  --help                              Show this help.\n`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

@@ -71,7 +71,7 @@ class Static_Site_Importer_Form_Seeder {
 		$report['status']               = 'completed';
 
 		foreach ( $forms as $form ) {
-			$row               = self::seed_form( $form, $available );
+			$row               = $available ? self::seed_form( $form, true ) : self::unavailable_form_row( $form );
 			$report['forms'][] = $row;
 
 			$status = $row['status'] ?? 'error';
@@ -83,6 +83,24 @@ class Static_Site_Importer_Form_Seeder {
 		}
 
 		return $report;
+	}
+
+	/**
+	 * Report a form that cannot be materialized until its configured provider is active.
+	 *
+	 * @param array<string, mixed> $form Validated form row.
+	 * @return array<string, mixed>
+	 */
+	private static function unavailable_form_row( array $form ): array {
+		return array(
+			'selector'       => isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '',
+			'source_path'    => isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '',
+			'provider'       => self::PROVIDER_ID,
+			'block_name'     => 'jetpack/contact-form',
+			'status'         => 'skipped',
+			'reason'         => 'provider_unavailable',
+			'runtime_mapped' => false,
+		);
 	}
 
 	/**

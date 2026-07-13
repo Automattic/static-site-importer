@@ -16,11 +16,15 @@ import { PNG } from 'pngjs';
 import runFixtureMatrixBench, {
   boundedConcurrency,
   composerPathRepositoryConfig,
+  FIXTURE_MATRIX_PROGRESS_PREFIX,
+  FIXTURE_MATRIX_PROGRESS_SCHEMA,
   fixtureMatrixBatchRunSummary,
   mapWithConcurrency,
   materializeVisualCompareArtifacts,
+  materializeEditorCanvasArtifacts,
   resolveBlocksEnginePhpTransformerPath,
   runFixtureMatrix,
+  validateHydratedComposerDependencies,
 } from '../bench/static-site-fixture-matrix.bench.mjs';
 import {
   buildCodeFreshness,
@@ -76,6 +80,14 @@ import { runWpCodeboxRecipe, wpCodeboxBin } from './wp-codebox/recipe.mjs';
 
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fixtureRoot = path.join(packageRoot, 'tests', 'fixtures', 'fixture-matrix');
+
+test('Homeboy component links runtime and dependency extensions', () => {
+  const config = JSON.parse(readFileSync(path.join(packageRoot, 'homeboy.json'), 'utf8'));
+
+  assert.ok(config.extensions?.wordpress, 'WordPress extension is required for fixture runtime workloads');
+  assert.ok(config.extensions?.nodejs, 'Node.js extension is required for Lab dependency hydration');
+  assert.equal(config.capability_extensions?.deps, 'wordpress', 'WordPress owns npm and Composer Lab hydration');
+});
 
 test('discovers SSI fixtures and writes Blocks Engine site artifacts', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-matrix-'));
@@ -502,6 +514,43 @@ test('fixture-matrix rig requires env-backed WP Codebox editor and visual capabi
   assert.ok(tool.capabilities.includes('wordpress.editor-open'));
   assert.ok(tool.capabilities.includes('wordpress.editor-validate-blocks'));
   assert.ok(tool.capabilities.includes('wordpress.visual-compare'));
+});
+
+test('fixture-matrix rig preflight is declarative and checks hydrated prerequisites deterministically', () => {
+  const rig = JSON.parse(readFileSync(path.join(packageRoot, 'rigs', 'static-site-importer-fixture-matrix', 'rig.json'), 'utf8'));
+  const checks = rig.pipeline.check;
+  const hydrationRemediation = 'Dependencies are missing. Run `homeboy deps install --path /path/to/static-site-importer` so Homeboy hydrates the checkout, then rerun static-site-importer-fixture-matrix.';
+  const requiredFiles = [
+    'static-site-importer.php',
+    'bench/static-site-fixture-matrix.bench.mjs',
+    'tools/wp-codebox/recipe.mjs',
+    'node_modules/pixelmatch/index.js',
+    'node_modules/pngjs/lib/png.js',
+    'vendor/autoload.php',
+    'includes/class-static-site-importer-transformer-adapter.php',
+  ];
+  const declaredFiles = checks.map((check) => check.file).filter(Boolean).map((file) => file.replace('${components.static-site-importer.path}/', ''));
+  const declaredDirectories = checks.map((check) => check.dir).filter(Boolean).map((dir) => dir.replace('${components.static-site-importer.path}/', ''));
+
+  assert.ok(checks.every((check) => check.kind === 'requirement'));
+  assert.deepEqual(declaredFiles, requiredFiles);
+  assert.deepEqual(declaredDirectories, []);
+  assert.ok(checks.some((check) => check.executable === 'node'));
+  assert.equal(JSON.stringify(checks).includes('npm ci'), false);
+  assert.equal(JSON.stringify(checks).includes('fixture-matrix.test.mjs'), false);
+  assert.equal(checks.filter((check) => check.remediation === hydrationRemediation).length, 2);
+
+  const preflightFailures = (root) => checks.flatMap((check) => {
+    const declared = check.file || check.dir;
+    if (!declared) {
+      return [];
+    }
+    const relativePath = declared.replace('${components.static-site-importer.path}/', '');
+    return existsSync(path.join(root, relativePath)) ? [] : [relativePath];
+  });
+
+  assert.deepEqual(preflightFailures(packageRoot), []);
+  assert.deepEqual(preflightFailures(path.join(packageRoot, 'missing-hydration')), requiredFiles);
 });
 
 test('fixture-matrix WP Codebox batch runner uses Homeboy declared binary', () => {
@@ -1776,7 +1825,7 @@ test('fixture diagnostics drop empty rows and normalize kindless carriers with e
   assert.equal(result.summary.loss_classes.unsupported_loss, undefined);
 });
 
-test('fixture matrix intake preserves editor-open canvas evidence for acceptance decisions', () => {
+test('fixture matrix intake consumes native editor-open output as canvas evidence and attaches all emitted artifact refs', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-editor-canvas-intake-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'editor-canvas-intake-test' });
   const codeboxOutput = {
@@ -1789,16 +1838,12 @@ test('fixture matrix intake preserves editor-open canvas evidence for acceptance
       {
         command: 'wordpress.editor-open',
         status: 'success',
-        editor_canvas: {
-          selector_summary: {
-            groups: [{ name: 'block-list', selector: '.block-editor-block-list__layout', count: 4 }],
-          },
+        files: {
+          screenshot: 'files/browser/editor-screenshot.png',
+          editorState: 'files/browser/editor-state.json',
+          editorValidity: 'files/browser/editor-validity.json',
         },
-        editor_open: {
-          artifacts: {
-            screenshot: 'files/browser/editor-open/simple-site/screenshot.png',
-          },
-        },
+        summary: { editor: { blockCount: 4 } },
       },
     ],
   };
@@ -1807,9 +1852,69 @@ test('fixture matrix intake preserves editor-open canvas evidence for acceptance
   const registry = buildGutenbergIncompatibilityRegistry(result);
   const decision = registry.fixture_decisions.find((row) => row.fixture_id === 'simple-site');
 
-  assert.equal(result.fixtures[0].editor_canvas.selector_summary.groups[0].count, 4);
-  assert.equal(result.fixtures[0].editor_open.artifacts.screenshot, 'files/browser/editor-open/simple-site/screenshot.png');
+  assert.equal(result.fixtures[0].editor_canvas.screenshot, 'files/browser/editor-screenshot.png');
+  assert.equal(result.fixtures[0].editor_open.files.screenshot, 'files/browser/editor-screenshot.png');
+  assert.deepEqual(result.fixtures[0].artifact_refs.filter((ref) => ref.kind === 'editor-canvas').map((ref) => ref.path), [
+    'files/browser/editor-screenshot.png',
+    'files/browser/editor-state.json',
+    'files/browser/editor-validity.json',
+  ]);
   assert.equal(decision.editor_canvas_status, 'visible');
+});
+
+test('editor-open capture failure is distinct from editor evidence not requested', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'editor-capture-failure-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      diagnostics: [{ kind: 'recipe_step_failure', command: 'wordpress.editor-open', recipe_phase: 'editor-open', message: 'Editor navigation timed out.' }],
+    }],
+  });
+  const decision = buildGutenbergIncompatibilityRegistry(result).fixture_decisions[0];
+
+  assert.equal(decision.editor_canvas_status, 'capture_failed');
+  assert.equal(decision.acceptance_status, 'editor_capture_failed');
+});
+
+test('editor canvas artifacts are persisted in the matrix artifact root and refs are rewritten', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-editor-canvas-output-'));
+  const codeboxArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-editor-canvas-codebox-'));
+  const sourceDirectory = path.join(codeboxArtifactsDirectory, 'runtime-001', 'files', 'browser');
+  mkdirSync(sourceDirectory, { recursive: true });
+  writeFileSync(path.join(sourceDirectory, 'editor-screenshot.png'), 'screenshot');
+  writeFileSync(path.join(sourceDirectory, 'editor-state.json'), '{"blocks":3}');
+  const result = materializeEditorCanvasArtifacts({
+    outputDirectory,
+    codeboxArtifactsDirectory,
+    result: {
+      fixtures: [{
+        fixture_id: 'simple-site',
+        artifact_refs: [
+          { artifact_id: 'editor-open-screenshot', kind: 'editor-canvas', path: 'files/browser/editor-screenshot.png' },
+          { artifact_id: 'editor-open-editorState', kind: 'editor-canvas', path: 'files/browser/editor-state.json' },
+        ],
+        editor_canvas: { screenshot: 'files/browser/editor-screenshot.png' },
+        editor_open: { files: { screenshot: 'files/browser/editor-screenshot.png', editorState: 'files/browser/editor-state.json' } },
+        surfaces: [{
+          surface_id: 'front-page',
+          artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'editor-canvas', path: 'files/browser/editor-screenshot.png' }],
+          editor_open: { files: { screenshot: 'files/browser/editor-screenshot.png' } },
+        }],
+      }],
+    },
+  });
+  const fixture = result.result.fixtures[0];
+  const screenshotPath = path.join(outputDirectory, 'editor-canvas', 'simple-site', 'editor-screenshot.png');
+  const statePath = path.join(outputDirectory, 'editor-canvas', 'simple-site', 'editor-state.json');
+
+  assert.equal(existsSync(screenshotPath), true);
+  assert.equal(existsSync(statePath), true);
+  assert.equal(fixture.editor_canvas.screenshot, screenshotPath);
+  assert.equal(fixture.editor_open.files.editorState, statePath);
+  assert.equal(fixture.surfaces[0].editor_open.files.screenshot, screenshotPath);
+  assert.deepEqual(fixture.artifact_refs.map((ref) => ref.path), [screenshotPath, statePath]);
 });
 
 test('collects SSI finding packet source and observed context from fixture artifacts', () => {
@@ -1923,6 +2028,21 @@ test('resolves Blocks Engine PHP transformer override paths', () => {
   assert.equal(resolveBlocksEnginePhpTransformerPath(transformerPackageRoot), transformerPackageRoot);
 });
 
+test('requires Homeboy-hydrated Composer dependencies without installing them', () => {
+  const pluginRoot = mkdtempSync(path.join(tmpdir(), 'ssi-hydration-'));
+  const expectedAutoload = path.join(pluginRoot, 'vendor', 'autoload.php');
+
+  assert.throws(
+    () => validateHydratedComposerDependencies(pluginRoot),
+    (error) => error.message.includes('Homeboy hydration is incomplete')
+      && error.message.includes('homeboy rig up static-site-importer-fixture-matrix'),
+  );
+
+  mkdirSync(path.dirname(expectedAutoload), { recursive: true });
+  writeFileSync(expectedAutoload, '<?php');
+  assert.equal(validateHydratedComposerDependencies(pluginRoot), expectedAutoload);
+});
+
 test('builds Composer path repository override matching SSI constraints', () => {
   const config = composerPathRepositoryConfig({
     require: {
@@ -1972,7 +2092,8 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-canonical-matrix-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
   const blocksEngine = path.join(root, 'blocks-engine');
-  const canonicalFixtureRoot = path.join(blocksEngine, 'fixtures', 'websites');
+  const corpusRoot = path.join(blocksEngine, 'fixtures');
+  const canonicalFixtureRoot = path.join(corpusRoot, 'websites');
   mkdirSync(staticSiteImporter, { recursive: true });
   for (let index = 1; index <= CANONICAL_FIXTURE_COUNT; index += 1) {
     mkdirSync(path.join(canonicalFixtureRoot, `fixture-${String(index).padStart(2, '0')}`), { recursive: true });
@@ -1990,7 +2111,9 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
 
   assert.equal(plan.mode, 'development-override');
   assert.equal(plan.homeboy_bin, '/tmp/homeboy-latest');
-  assert.equal(plan.fixture_root, canonicalFixtureRoot);
+  assert.equal(plan.fixture_root, corpusRoot);
+  assert.equal(plan.active_fixture_count, CANONICAL_FIXTURE_COUNT);
+  assert.equal(plan.solved_fixture_count, 0);
   assert.equal(plan.fixture_count, CANONICAL_FIXTURE_COUNT);
   assert.equal(plan.fixture_count_matches_canonical, true);
   assert.equal(plan.namespace, 'ssi-matrix-dev-proof');
@@ -2008,7 +2131,7 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   assert.equal(benchStep.command, '/tmp/homeboy-latest');
   assert.ok(benchStep.args.includes('--runner'));
   assert.ok(benchStep.args.includes('homeboy-lab'));
-  assert.ok(benchStep.args.includes(`bench_env.SSI_FIXTURE_MATRIX_FIXTURE_ROOT=${canonicalFixtureRoot}`));
+  assert.ok(benchStep.args.includes(`bench_env.SSI_FIXTURE_MATRIX_FIXTURE_ROOT=${corpusRoot}`));
   assert.ok(benchStep.args.includes(`bench_env.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PATH=${staticSiteImporter}`));
   assert.ok(benchStep.args.includes(`bench_env.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH=${blocksEngine}`));
   assert.ok(benchStep.args.includes('bench_env.SSI_FIXTURE_MATRIX_RUN=1'));
@@ -2226,7 +2349,7 @@ module.exports = { wpCodeboxBin, wpCodeboxCommand, runWpCodeboxRecipe };
     assert.equal(failure.error_code, 17);
     assert.equal(failure.error_signal, 'SIGKILL');
     assert.equal(failure.batch_id, 'batch-001');
-    const expectedCodeboxArtifactsDirectory = path.join(root, 'artifacts-wp-codebox-batch-001-artifacts');
+    const expectedCodeboxArtifactsDirectory = path.join(root, 'artifacts-wp-codebox-batch-001-recovery-failing-fixture-artifacts');
     assert.deepEqual(failure.command_argv, [
       '/tmp/wp-codebox',
       'recipe-run',
@@ -2266,7 +2389,7 @@ module.exports = { wpCodeboxBin, wpCodeboxCommand, runWpCodeboxRecipe };
     assert.equal(benchResult.metadata.child_command_failures[0].error_signal, 'SIGKILL');
     assert.equal(
       benchResult.metadata.child_command_failures[0].artifact_refs.artifacts_directory,
-      `${process.env.SSI_FIXTURE_MATRIX_OUTPUT_DIRECTORY}-wp-codebox-batch-001-artifacts`,
+      `${process.env.SSI_FIXTURE_MATRIX_OUTPUT_DIRECTORY}-wp-codebox-batch-001-recovery-failing-fixture-artifacts`,
     );
     const benchBatchRecipe = JSON.parse(readFileSync(benchResult.metadata.child_command_failures[0].artifact_refs.batch_recipe, 'utf8'));
     const benchVisualStep = benchBatchRecipe.workflow.steps.find((step) => step.command === 'wordpress.visual-compare');
@@ -3161,6 +3284,148 @@ test('runFixtureMatrix isolates a throwing batch so sibling batches still comple
     restoreConcurrencyEnv(snapshot);
   }
 });
+
+test('runFixtureMatrix recovers healthy fixtures from a poisoned batch sandbox', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-recovery-'));
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  const failureFixtureRoot = path.join(root, 'fixtures');
+  const outputDirectory = path.join(root, 'artifacts');
+  const helperPath = path.join(root, 'wp-codebox-recipe-helper.cjs');
+  mkdirSync(staticSiteImporter, { recursive: true });
+  for (const fixtureId of ['healthy-before', 'hanging', 'healthy-after']) {
+    const fixtureDirectory = path.join(failureFixtureRoot, fixtureId);
+    mkdirSync(fixtureDirectory, { recursive: true });
+    writeFileSync(path.join(fixtureDirectory, 'index.html'), `<h1>${fixtureId}</h1>`);
+  }
+  writeFileSync(helperPath, `
+const fs = require('node:fs');
+function fixtureIds(recipeFile) {
+  return [...new Set(fs.readFileSync(recipeFile, 'utf8').split('--slug=').slice(1).map((part) => part.split(' ')[0]))];
+}
+function wpCodeboxBin() { return '/tmp/wp-codebox'; }
+function wpCodeboxCommand(bin) { return { command: bin, args: [] }; }
+async function runWpCodeboxRecipe(options) {
+  const ids = fixtureIds(options.recipeFile);
+  if (ids.includes('hanging')) {
+    const error = new Error('fixture hanging exceeded its deadline');
+    error.code = 124;
+    error.stderr = 'hanging fixture stderr';
+    error.stdout = 'hanging fixture stdout';
+    throw error;
+  }
+  return { exitCode: 0, outputFile: options.outputFile, json: { results: ids.map((fixture_id) => ({ fixture_id, status: 'succeeded' })) } };
+}
+module.exports = { wpCodeboxBin, wpCodeboxCommand, runWpCodeboxRecipe };
+`, 'utf8');
+  const previousHelper = process.env.HOMEBOY_WP_CODEBOX_RECIPE_HELPER;
+  process.env.HOMEBOY_WP_CODEBOX_RECIPE_HELPER = helperPath;
+
+  try {
+    const { summary, runtimeError } = await runFixtureMatrix({
+      id: 'poisoned-batch-recovery',
+      fixtureRoot: failureFixtureRoot,
+      outputDirectory,
+      staticSiteImporterPath: staticSiteImporter,
+      run: true,
+      batchSize: 3,
+      visualParity: false,
+    });
+
+    assert.match(runtimeError.message, /hanging/);
+    assert.equal(summary.result_summary.succeeded, 2);
+    assert.equal(summary.result_summary.failed, 1);
+    assert.deepEqual(summary.runtime.child_command_failures.map((failure) => failure.fixture_ids), [['hanging']]);
+    const recovery = summary.runtime.batches[0].recovery_attempts;
+    assert.equal(recovery.length, 3);
+    assert.deepEqual(recovery.map((attempt) => attempt.fixture_ids[0]).sort(), ['hanging', 'healthy-after', 'healthy-before']);
+    assert.equal(recovery.find((attempt) => attempt.fixture_ids[0] === 'hanging').stderr_tail, 'hanging fixture stderr');
+    assert.equal(summary.runtime.batches[0].stderr_tail, 'hanging fixture stderr');
+  } finally {
+    restoreEnv('HOMEBOY_WP_CODEBOX_RECIPE_HELPER', previousHelper);
+  }
+});
+
+test('fixture matrix emits Homeboy runner-progress lifecycle events and isolates a silent shared batch promptly', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-progress-'));
+  const fixtureRoot = path.join(root, 'fixtures');
+  const outputDirectory = path.join(root, 'artifacts');
+  const wpCodeboxBin = path.join(root, 'wp-codebox');
+  for (const fixtureId of ['healthy-before', 'hanging', 'healthy-after']) {
+    mkdirSync(path.join(fixtureRoot, fixtureId), { recursive: true });
+    writeFileSync(path.join(fixtureRoot, fixtureId, 'index.html'), `<h1>${fixtureId}</h1>`);
+  }
+  writeFileSync(wpCodeboxBin, `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const recipePath = process.argv[process.argv.indexOf('--recipe') + 1];
+const recipe = fs.readFileSync(recipePath, 'utf8');
+const recovery = path.basename(recipePath).match(/-recovery-(.+)\\.json$/);
+const ids = recovery ? [recovery[1]] : [...new Set(recipe.split('--slug=').slice(1).map((part) => part.split(' ')[0]))];
+if (ids.includes('hanging')) {
+  setInterval(() => {}, 1000);
+} else {
+  const output = process.argv[process.argv.indexOf('--output') + 1];
+  fs.writeFileSync(output, JSON.stringify({ results: ids.map((fixture_id) => ({ fixture_id, status: 'succeeded' })) }));
+}
+`, 'utf8');
+  chmodSync(wpCodeboxBin, 0o755);
+  const events = [];
+  const startedAt = Date.now();
+  const { summary } = await runFixtureMatrix({
+    id: 'progress-matrix',
+    fixtureRoot,
+    outputDirectory,
+    staticSiteImporterPath: path.join(root, 'static-site-importer'),
+    run: true,
+    batchSize: 3,
+    recoveryConcurrency: 2,
+    batchInactivityTimeoutMs: 250,
+    visualParity: false,
+    wpCodeboxBin,
+    progress: (event) => events.push(event),
+  });
+  assert.ok(Date.now() - startedAt < 2000, 'inactivity recovery must not wait for a long command timeout');
+  assert.equal(summary.result_summary.succeeded, 2);
+  assert.equal(summary.result_summary.failed, 1);
+  assert.deepEqual(events.map((event) => event.schema), Array(events.length).fill(FIXTURE_MATRIX_PROGRESS_SCHEMA));
+  assert.ok(events.every((event) => Number.isInteger(event.completed) && event.completed >= 0 && event.total === 3 && event.current_item));
+  assert.ok(events.find((event) => event.phase === 'batch' && event.metadata.lifecycle_status === 'timeout'));
+  assert.ok(events.find((event) => event.phase === 'fixture' && event.metadata.lifecycle_status === 'timeout' && event.current_item === 'hanging'));
+  const recoveryStart = events.findIndex((event) => event.phase === 'recovery' && event.metadata.lifecycle_status === 'started');
+  const healthyAfterComplete = events.findIndex((event) => event.phase === 'fixture' && event.metadata.lifecycle_status === 'completed' && event.current_item === 'healthy-after');
+  const matrixComplete = events.findIndex((event) => event.phase === 'matrix' && event.metadata.lifecycle_status === 'failed');
+  assert.ok(recoveryStart > events.findIndex((event) => event.phase === 'batch' && event.metadata.lifecycle_status === 'timeout'));
+  assert.ok(healthyAfterComplete > recoveryStart && healthyAfterComplete < matrixComplete);
+  assert.equal(events.at(-1).completed, 3);
+
+  // This mirrors Homeboy #7874's accepted child envelope. SSI lifecycle detail
+  // stays in metadata, while an injected terminal-state field is rejected.
+  const accepted = events.map((event) => parseHomeboyRunnerProgress(`${FIXTURE_MATRIX_PROGRESS_PREFIX}${JSON.stringify(event)}`));
+  assert.ok(accepted.every(Boolean), 'start, completion, failure, timeout, and recovery events are accepted by Homeboy');
+  assert.ok(accepted.some((event) => event.metadata.lifecycle_status === 'started'));
+  assert.ok(accepted.some((event) => event.metadata.lifecycle_status === 'completed'));
+  assert.ok(accepted.some((event) => event.metadata.lifecycle_status === 'failed'));
+  assert.ok(accepted.some((event) => event.metadata.lifecycle_status === 'timeout'));
+  assert.ok(accepted.some((event) => event.phase === 'recovery'));
+  assert.equal(parseHomeboyRunnerProgress(`${FIXTURE_MATRIX_PROGRESS_PREFIX}${JSON.stringify({ ...events[0], status: 'succeeded' })}`), null);
+});
+
+function parseHomeboyRunnerProgress(line) {
+  const payload = line.startsWith(FIXTURE_MATRIX_PROGRESS_PREFIX) ? line.slice(FIXTURE_MATRIX_PROGRESS_PREFIX.length) : '';
+  try {
+    const event = JSON.parse(payload);
+    const allowed = new Set(['schema', 'phase', 'current_item', 'completed', 'total', 'metadata']);
+    if (event.schema !== FIXTURE_MATRIX_PROGRESS_SCHEMA
+      || Object.keys(event).some((key) => !allowed.has(key))
+      || (!event.phase && !event.current_item && event.completed === undefined && event.total === undefined && event.metadata === undefined)
+      || (event.completed !== undefined && event.total !== undefined && event.completed > event.total)) {
+      return null;
+    }
+    return event;
+  } catch {
+    return null;
+  }
+}
 
 test('runFixtureMatrixBench returns a partial result with survivors aggregated when a batch fails', async () => {
   // The bench-harness entry point is where the whole-run discard used to live:
@@ -5456,3 +5721,100 @@ function fillRect(image, x, y, width, height, rgba) {
 function writePng(filePath, image) {
   writeFileSync(filePath, PNG.sync.write(image));
 }
+
+test('fixture discovery includes both websites and solved corpus directories', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-corpus-discovery-'));
+  const websitesDir = path.join(root, 'websites', 'active-site');
+  const solvedDir = path.join(root, 'solved', 'solved-site');
+  mkdirSync(websitesDir, { recursive: true });
+  mkdirSync(solvedDir, { recursive: true });
+  writeFileSync(path.join(websitesDir, 'index.html'), '<h1>Active</h1>');
+  writeFileSync(path.join(websitesDir, 'fixture.json'), JSON.stringify({ fixture_class: 'marketing/static' }));
+  writeFileSync(path.join(solvedDir, 'index.html'), '<h1>Solved</h1>');
+  writeFileSync(path.join(solvedDir, 'fixture.json'), JSON.stringify({ fixture_class: 'docs/blog' }));
+
+  const matrix = createFixtureMatrix({ fixture_root: root, id: 'corpus-discovery-test' });
+
+  assert.equal(matrix.fixture_root, root);
+  assert.deepEqual(matrix.fixture_directories, ['websites', 'solved']);
+  assert.equal(matrix.count, 2);
+  const ids = matrix.fixtures.map((fixture) => fixture.id).sort();
+  assert.deepEqual(ids, ['active-site', 'solved-site']);
+  const solvedFixture = matrix.fixtures.find((fixture) => fixture.id === 'solved-site');
+  assert.equal(solvedFixture.fixture_corpus, 'solved');
+  assert.equal(solvedFixture.fixture_class, 'docs/blog');
+});
+
+test('fixture discovery falls back to single root when no websites subdirectory exists', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-single-root-discovery-'));
+  const fixtureDir = path.join(root, 'simple-site');
+  mkdirSync(fixtureDir, { recursive: true });
+  writeFileSync(path.join(fixtureDir, 'index.html'), '<h1>Simple</h1>');
+  writeFileSync(path.join(fixtureDir, 'fixture.json'), JSON.stringify({ fixture_class: 'marketing/static' }));
+
+  const matrix = createFixtureMatrix({ fixture_root: root, id: 'single-root-discovery-test' });
+
+  assert.equal(matrix.fixture_root, root);
+  assert.equal(matrix.fixture_directories, undefined);
+  assert.equal(matrix.count, 1);
+  assert.equal(matrix.fixtures[0].id, 'simple-site');
+  assert.equal(matrix.fixtures[0].fixture_corpus, 'active');
+});
+
+test('solved fixture that regresses is reported as solved_regression', () => {
+  const registry = buildGutenbergIncompatibilityRegistry({
+    matrix_id: 'solved-regression-test',
+    fixtures: [
+      {
+        fixture_id: 'cv',
+        fixture_corpus: 'solved',
+        fixture_path: '/fixtures/solved/cv',
+        status: 'passed',
+        artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/cv/screenshot.png' }],
+        visual_parity_artifacts: { comparison: { mismatch_ratio: 0.05 } },
+        block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
+        editor_quality: { editor_validated_block_total: 8, editor_invalid_count: 0, core_html_block_count: 0 },
+      },
+    ],
+    findings: [
+      {
+        fixture_id: 'cv',
+        kind: 'visual_parity_mismatch',
+        loss_class: 'visual_parity_mismatch',
+        loss_acceptance: 'unacceptable',
+        reason: 'Aligned visual parity mismatch: 5% exceed threshold.',
+      },
+    ],
+  });
+  const decision = registry.fixture_decisions.find((row) => row.fixture_id === 'cv');
+
+  assert.equal(decision.fixture_corpus, 'solved');
+  assert.equal(decision.acceptance_status, 'solved_regression');
+  assert.equal(decision.solved_candidate, false);
+  assert.equal(registry.summary.fixture_decision_counts.solved_regression, 1);
+  assert.deepEqual(registry.summary.fixture_decision_groups.solved_regression, ['cv']);
+});
+
+test('solved fixture that stays solved_candidate keeps solved_candidate status', () => {
+  const registry = buildGutenbergIncompatibilityRegistry({
+    matrix_id: 'solved-stays-solved-test',
+    fixtures: [
+      {
+        fixture_id: 'cv',
+        fixture_corpus: 'solved',
+        fixture_path: '/fixtures/solved/cv',
+        status: 'passed',
+        artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/cv/screenshot.png' }],
+        visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
+        block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
+        editor_quality: { editor_validated_block_total: 8, editor_invalid_count: 0, core_html_block_count: 0 },
+      },
+    ],
+    findings: [],
+  });
+  const decision = registry.fixture_decisions.find((row) => row.fixture_id === 'cv');
+
+  assert.equal(decision.fixture_corpus, 'solved');
+  assert.equal(decision.acceptance_status, 'solved_candidate');
+  assert.equal(decision.solved_candidate, true);
+});

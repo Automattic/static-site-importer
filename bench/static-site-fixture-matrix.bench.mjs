@@ -4,14 +4,13 @@
  * External dependencies
  */
 import fs from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
  * Internal dependencies
  */
-import { runWpCodeboxRecipe, wpCodeboxCommand, wpCodeboxBin } from '../tools/wp-codebox/recipe.mjs';
+import { DEFAULT_RECIPE_INACTIVITY_TIMEOUT_MS, runWpCodeboxRecipe, wpCodeboxCommand, wpCodeboxBin } from '../tools/wp-codebox/recipe.mjs';
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
 import {
   buildFixtureMatrixRecipe,
@@ -34,6 +33,8 @@ const DEFAULT_BATCH_SIZE = 10;
 // up to the cap.
 const DEFAULT_BATCH_CONCURRENCY = 2;
 const MAX_BATCH_CONCURRENCY = 16;
+export const FIXTURE_MATRIX_PROGRESS_SCHEMA = 'homeboy/runner-progress/v1';
+export const FIXTURE_MATRIX_PROGRESS_PREFIX = 'HOMEBOY_RUNNER_PROGRESS ';
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 async function main() {
@@ -148,7 +149,7 @@ export async function runFixtureMatrix(options) {
   const fixtureRoot = path.resolve(intake?.fixture_root || options.fixtureRoot || path.join(packageRoot, 'tests', 'fixtures', 'fixture-matrix'));
   const staticSiteImporterPath = options.staticSiteImporterPath || process.env.HOMEBOY_STATIC_SITE_IMPORTER_PATH || process.cwd();
   const dependencyOverrides = prepareDependencyOverrides(options);
-  ensureComposerDependencies(staticSiteImporterPath, { dependencyOverrides });
+  validateHydratedComposerDependencies(packageRoot);
   const matrix = createFixtureMatrix({
     id: options.id || `static-site-importer-fixture-matrix-${Date.now()}`,
     fixture_root: fixtureRoot,
@@ -163,6 +164,8 @@ export async function runFixtureMatrix(options) {
     complexity: options.complexity,
     max_complexity: options.maxComplexity || options.max_complexity,
   });
+  const progress = createFixtureMatrixProgress(matrix, options);
+  progress.emit('matrix', 'started');
   const artifactWriteStartedAt = nowMs();
   const written = writeFixtureMatrixArtifacts({
     outputDirectory,
@@ -216,6 +219,7 @@ export async function runFixtureMatrix(options) {
       outputDirectory,
       staticSiteImporterPath,
       options,
+      progress,
     }));
     performance.batch_execution_ms = elapsedMs(batchExecutionStartedAt);
 
@@ -226,8 +230,8 @@ export async function runFixtureMatrix(options) {
       batchRuns.push(outcome.batchRun);
       batchResults.push(outcome.batchResult);
       visualParityArtifacts = { ...visualParityArtifacts, ...(outcome.visualParityArtifacts || {}) };
-      if (outcome.childCommandFailure) {
-        childCommandFailures.push(outcome.childCommandFailure);
+      for (const failure of outcome.childCommandFailures || []) {
+        childCommandFailures.push(failure);
       }
       // Preserve the original first-failure-by-batch-order semantics: the earliest
       // batch that failed wins, independent of completion order.
@@ -305,6 +309,7 @@ export async function runFixtureMatrix(options) {
     summary.metadata.artifact_bytes.total = cliRunBaseTotal + summary.metadata.artifact_bytes.cli_run;
   }
   writeJsonArtifact(path.join(outputDirectory, 'cli-run.json'), summary);
+  progress.emit('matrix', runtimeError ? 'failed' : 'completed');
   return { summary, runtimeError, runtime };
 }
 
@@ -313,9 +318,11 @@ export async function runFixtureMatrix(options) {
 // per-fixture artifact subdirectories, all keyed by the unique batch suffix), so
 // many of these can run concurrently without colliding. Returns a stable outcome
 // the caller folds back together in batch order.
-export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outputDirectory, staticSiteImporterPath, options }) {
+export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outputDirectory, staticSiteImporterPath, options, recovery = false, progress }) {
   const batchNumber = batchIndex + 1;
-  const batchSuffix = String(batchNumber).padStart(3, '0');
+  const batchSuffix = recovery
+    ? `${String(batchNumber).padStart(3, '0')}-recovery-${fixtures[0].id}`
+    : String(batchNumber).padStart(3, '0');
   const batchMatrix = createFixtureMatrix({
     id: `${matrix.id}-batch-${batchSuffix}`,
     fixture_root: matrix.fixture_root,
@@ -343,6 +350,8 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
   const codeboxArtifactsDirectory = batchCodeboxArtifactsDirectory(outputDirectory, batchSuffix);
   const artifactRefs = batchArtifactRefs({ outputDirectory, batchSuffix, batchRecipeFile, outputFile, codeboxArtifactsDirectory });
   writeJsonArtifact(batchRecipeFile, batchRecipe);
+  progress?.emit(recovery ? 'recovery' : 'batch', 'started', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery });
+  progress?.emit('fixture', 'started', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery });
 
   let batchRuntime = null;
   let batchError = null;
@@ -355,6 +364,11 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       artifactsDir: codeboxArtifactsDirectory,
       outputFile,
       wpCodeboxBin: options.wpCodeboxBin,
+      inactivityTimeoutMs: batchInactivityTimeoutMs(options),
+      onInactivity: ({ timeout_ms }) => {
+        progress?.emit('batch', 'timeout', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery, timeout_ms });
+        if (recovery) progress?.emit('fixture', 'timeout', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery, timeout_ms });
+      },
     });
   } catch (error) {
     batchError = error;
@@ -368,6 +382,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       fixtures,
       batchNumber,
       batchSuffix,
+      batchId: `batch-${String(batchNumber).padStart(3, '0')}`,
       batchRecipeFile,
       outputFile,
       artifactsDir: codeboxArtifactsDirectory,
@@ -409,8 +424,144 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     codeboxArtifactsDirectory,
     outputDirectory,
   });
+  const editorCanvas = materializeEditorCanvasArtifacts({
+    result: visualCompare.result,
+    codeboxArtifactsDirectory,
+    outputDirectory,
+  });
+  if (!batchError || recovery) {
+    for (const fixture of editorCanvas.result.fixtures || []) {
+      const fixtureId = fixture.fixture_id || fixture.fixtureId || '';
+      progress?.emit('fixture', fixture.status === 'failed' ? 'failed' : 'completed', { fixture_id: fixtureId, batch: batchNumber, recovery });
+    }
+  }
+  progress?.emit(recovery ? 'recovery' : 'batch', batchError ? (batchError.inactivityTimedOut ? 'timeout' : 'failed') : 'completed', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery });
 
-  return { batchRun, batchResult: visualCompare.result, visualParityArtifacts: visualCompare.artifacts, error: batchError, childCommandFailure };
+  if (!batchError || recovery) {
+    return {
+      batchRun,
+      batchResult: editorCanvas.result,
+      visualParityArtifacts: visualCompare.artifacts,
+      error: batchError,
+      childCommandFailures: childCommandFailure ? [childCommandFailure] : [],
+    };
+  }
+
+  // A recipe-level failure leaves the sandbox's state untrustworthy. Re-run each
+  // fixture in a fresh sandbox so one stalled step cannot classify its batch peers.
+  progress?.emit('recovery', 'started', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery: true });
+  const recoveryOutcomes = await mapWithConcurrency(fixtures, boundedConcurrency(options.recoveryConcurrency, DEFAULT_BATCH_CONCURRENCY, MAX_BATCH_CONCURRENCY), (fixture) => runFixtureMatrixBatch({
+      fixtures: [fixture],
+      batchIndex,
+      matrix,
+      outputDirectory,
+      staticSiteImporterPath,
+      options,
+      recovery: true,
+      progress,
+    }));
+
+  const recoveryErrors = recoveryOutcomes.map((outcome) => outcome.error).filter(Boolean);
+  return {
+    batchRun: {
+      ...batchRun,
+      recovery_attempts: recoveryOutcomes.map((outcome) => outcome.batchRun),
+    },
+    batchResult: {
+      fixtures: recoveryOutcomes.flatMap((outcome) => outcome.batchResult.fixtures || []),
+    },
+    visualParityArtifacts: Object.assign({}, ...recoveryOutcomes.map((outcome) => outcome.visualParityArtifacts || {})),
+    error: recoveryErrors[0] || null,
+    childCommandFailures: recoveryOutcomes.flatMap((outcome) => outcome.childCommandFailures || []),
+  };
+}
+
+function createFixtureMatrixProgress(matrix, options) {
+  const complete = new Set();
+  const write = typeof options.progress === 'function'
+    ? options.progress
+    : (event) => process.stdout.write(`${FIXTURE_MATRIX_PROGRESS_PREFIX}${JSON.stringify(event)}\n`);
+  return {
+    emit(phase, status, details = {}) {
+      const fixtureId = details.fixture_id || '';
+      if (phase === 'fixture' && fixtureId && ['completed', 'failed', 'timeout'].includes(status)) complete.add(fixtureId);
+      write({
+        schema: FIXTURE_MATRIX_PROGRESS_SCHEMA,
+        phase,
+        current_item: fixtureId || matrix.id,
+        completed: complete.size,
+        total: matrix.count,
+        metadata: {
+          lifecycle_status: status,
+          ...(details.batch ? { batch: details.batch } : {}),
+          ...(details.recovery ? { recovery: true } : {}),
+          ...(details.timeout_ms ? { timeout_ms: details.timeout_ms } : {}),
+        },
+      });
+    },
+  };
+}
+
+function batchInactivityTimeoutMs(options) {
+  return positiveInteger(options.batchInactivityTimeoutMs || options.batch_inactivity_timeout_ms, DEFAULT_RECIPE_INACTIVITY_TIMEOUT_MS);
+}
+
+export function materializeEditorCanvasArtifacts(input = {}) {
+  const result = input.result || {};
+  const outputDirectory = path.resolve(input.outputDirectory || input.output_directory || '');
+  const codeboxArtifactsDirectory = path.resolve(input.codeboxArtifactsDirectory || input.codebox_artifacts_directory || '');
+  return {
+    result: {
+      ...result,
+      fixtures: arrayValue(result.fixtures).map((fixture) => materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory })),
+    },
+  };
+}
+
+function materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory }) {
+  const fixtureId = fixture.fixture_id || fixture.fixtureId || '';
+  if (!fixtureId) {
+    return fixture;
+  }
+  const rewrites = new Map();
+  for (const ref of arrayValue(fixture.artifact_refs)) {
+    if (ref?.kind !== 'editor-canvas' || !ref.path) {
+      continue;
+    }
+    const sourcePath = resolveCodeboxArtifactPath(ref.path, codeboxArtifactsDirectory);
+    if (!sourcePath || !fs.existsSync(sourcePath)) {
+      continue;
+    }
+    const persistedPath = path.join(outputDirectory, 'editor-canvas', fixtureId, path.basename(ref.path));
+    fs.mkdirSync(path.dirname(persistedPath), { recursive: true });
+    fs.copyFileSync(sourcePath, persistedPath);
+    rewrites.set(ref.path, persistedPath);
+  }
+  if (rewrites.size === 0) {
+    return fixture;
+  }
+  return {
+    ...fixture,
+    artifact_refs: rewriteArtifactRefs(fixture.artifact_refs, rewrites),
+    editor_canvas: rewriteEditorEvidencePaths(fixture.editor_canvas, rewrites),
+    editor_open: rewriteEditorEvidencePaths(fixture.editor_open, rewrites),
+    surfaces: arrayValue(fixture.surfaces).map((surface) => ({
+      ...surface,
+      artifact_refs: rewriteArtifactRefs(surface.artifact_refs, rewrites),
+      editor_canvas: rewriteEditorEvidencePaths(surface.editor_canvas, rewrites),
+      editor_open: rewriteEditorEvidencePaths(surface.editor_open, rewrites),
+    })),
+  };
+}
+
+function rewriteEditorEvidencePaths(value, rewrites) {
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  const files = value.files && typeof value.files === 'object'
+    ? Object.fromEntries(Object.entries(value.files).map(([key, filePath]) => [key, rewrites.get(filePath) || filePath]))
+    : undefined;
+  return { ...value, ...(files ? { files } : {}), ...(value.screenshot ? { screenshot: rewrites.get(value.screenshot) || value.screenshot } : {}) };
 }
 
 export function materializeVisualCompareArtifacts(input = {}) {
@@ -605,26 +756,15 @@ export function boundedConcurrency(value, fallback, max) {
   return Math.max(1, Math.min(parsed, max));
 }
 
-function ensureComposerDependencies(pluginPath, options = {}) {
-  const dependencyOverrides = options.dependencyOverrides || {};
-  const blocksEnginePhpTransformerPath = dependencyOverrides.blocks_engine_php_transformer?.path || '';
-  if (blocksEnginePhpTransformerPath) {
-    updateComposerPathRepository(pluginPath, blocksEnginePhpTransformerPath);
-    return;
+export function validateHydratedComposerDependencies(pluginPath) {
+  const autoloadPath = path.join(pluginPath, 'vendor', 'autoload.php');
+  if (fs.existsSync(autoloadPath)) {
+    return autoloadPath;
   }
 
-  if (fs.existsSync(path.join(pluginPath, 'vendor', 'autoload.php')) || !fs.existsSync(path.join(pluginPath, 'composer.json'))) {
-    return;
-  }
-
-  const result = spawnSync('composer', ['install', '--no-interaction', '--prefer-dist', '--no-progress'], {
-    cwd: pluginPath,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  if (result.status !== 0) {
-    throw new Error(`Composer dependency install failed for ${pluginPath}: ${result.stderr || result.stdout || `exit ${result.status}`}`);
-  }
+  throw new Error(
+    `Homeboy hydration is incomplete: missing ${autoloadPath}. Run \`homeboy rig up static-site-importer-fixture-matrix\`, then rerun the fixture matrix.`,
+  );
 }
 
 function prepareDependencyOverrides(options) {
@@ -667,40 +807,6 @@ function composerPackageName(composerFile) {
   } catch {
     return '';
   }
-}
-
-function updateComposerPathRepository(pluginPath, packagePath) {
-  const composerFile = path.join(pluginPath, 'composer.json');
-  const lockFile = path.join(pluginPath, 'composer.lock');
-  const composerJson = fs.readFileSync(composerFile, 'utf8');
-  const composerLock = fs.existsSync(lockFile) ? fs.readFileSync(lockFile, 'utf8') : null;
-  let result = null;
-  try {
-    configureComposerPathRepository(pluginPath, packagePath);
-    result = spawnSync('composer', ['update', 'automattic/blocks-engine-php-transformer', '--with-dependencies', '--no-interaction', '--prefer-source', '--no-progress'], {
-      cwd: pluginPath,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-  } finally {
-    fs.writeFileSync(composerFile, composerJson);
-    if (composerLock !== null) {
-      fs.writeFileSync(lockFile, composerLock);
-    }
-  }
-  if (result.status !== 0) {
-    throw new Error(`Composer dependency override failed for ${pluginPath}: ${result.stderr || result.stdout || `exit ${result.status}`}`);
-  }
-}
-
-function configureComposerPathRepository(pluginPath, packagePath) {
-  const composerFile = path.join(pluginPath, 'composer.json');
-  const composer = JSON.parse(fs.readFileSync(composerFile, 'utf8'));
-  composer.repositories = composer.repositories && typeof composer.repositories === 'object' && !Array.isArray(composer.repositories)
-    ? composer.repositories
-    : {};
-  composer.repositories['blocks-engine-php-transformer-dev'] = composerPathRepositoryConfig(composer, packagePath);
-  fs.writeFileSync(composerFile, `${JSON.stringify(composer, null, 2)}\n`);
 }
 
 export function composerPathRepositoryConfig(rootComposer, packagePath) {
@@ -765,14 +871,14 @@ function runtimeSummary(runtime, runtimeError) {
   };
 }
 
-function buildWpCodeboxChildCommandFailure({ error, fixtures, batchNumber, batchSuffix, batchRecipeFile, outputFile, artifactsDir, wpCodeboxBin: bin, artifactRefs }) {
+function buildWpCodeboxChildCommandFailure({ error, fixtures, batchNumber, batchSuffix, batchId, batchRecipeFile, outputFile, artifactsDir, wpCodeboxBin: bin, artifactRefs }) {
   const command = wpCodeboxRecipeRunCommand({ recipeFile: batchRecipeFile, artifactsDir, outputFile, wpCodeboxBin: bin });
   return {
     schema: 'homeboy/child-command-failure/v1',
     kind: 'child_command_failed',
     label: `WP Codebox recipe-run batch ${batchSuffix}`,
     batch: batchNumber,
-    batch_id: `batch-${batchSuffix}`,
+    batch_id: batchId || `batch-${batchSuffix}`,
     fixture_ids: normalizeFixtureIds(fixtures),
     command: command.command,
     command_argv: command.argv,
@@ -987,6 +1093,7 @@ function optionsFromEnv(env = process.env) {
     wordpressVersion: benchEnv.SSI_FIXTURE_MATRIX_WORDPRESS_VERSION || env.SSI_FIXTURE_MATRIX_WORDPRESS_VERSION,
     batchSize: benchEnv.SSI_FIXTURE_MATRIX_BATCH_SIZE || env.SSI_FIXTURE_MATRIX_BATCH_SIZE,
     concurrency: benchEnv.SSI_FIXTURE_MATRIX_CONCURRENCY || env.SSI_FIXTURE_MATRIX_CONCURRENCY,
+    batchInactivityTimeoutMs: benchEnv.SSI_FIXTURE_MATRIX_BATCH_INACTIVITY_TIMEOUT_MS || env.SSI_FIXTURE_MATRIX_BATCH_INACTIVITY_TIMEOUT_MS,
     run: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_RUN) || isTruthy(env.SSI_FIXTURE_MATRIX_RUN),
     wpCodeboxBin: benchEnv.SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN || env.SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN,
     editorValidation: !isFalsy(benchEnv.SSI_FIXTURE_MATRIX_EDITOR_VALIDATION ?? env.SSI_FIXTURE_MATRIX_EDITOR_VALIDATION),
