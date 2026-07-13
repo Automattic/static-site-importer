@@ -5370,8 +5370,12 @@ test('visual-compare sidecars are normalized and retained under the bench artifa
       return {
         schema: 'homeboy/WordPressVisualAttribution/v1',
         mismatch_regions: input.visualExplanation.mismatchRegions,
-        top_findings: [{ kind: 'geometry', selector: '.hero' }, { kind: 'style', property: 'color' }],
-        computed_style_deltas: { paint: [{ property: 'color' }] },
+        selector_deltas: [{ bounding_box: { delta: { y: 12 } } }],
+        top_findings: Array.from({ length: 8 }, (_, index) => ({ kind: index === 0 ? 'geometry' : 'style', selector: '.hero', property: `property-${index}` })),
+        computed_style_deltas: { paint: [{ property: 'color' }], typography: [{ property: 'font-size' }, { property: 'line-height' }] },
+        elements: { changed: [{ path: '0.1' }], added: [], removed: [{ path: '0.2' }] },
+        summary: { changed: 1, added: 0, removed: 1 },
+        limitations: ['Attribution uses bounded browser evidence.'],
       };
     },
   });
@@ -5404,7 +5408,21 @@ test('visual-compare sidecars are normalized and retained under the bench artifa
   assert.equal(normalizerInput.visualExplanation.selectorDeltas[0].boundingBox.delta.y, 12);
   assert.equal(normalizerInput.sourceDomSnapshot.snapshot.elementCount, 3);
   assert.deepEqual(normalizerInput.candidateProvenance, { '0.1': { block: 'core/cover' } });
-  assert.equal(JSON.parse(readFileSync(fixture.visual_parity_artifacts.artifacts.visual_attribution.ref.path, 'utf8')).top_findings.length, 2);
+  assert.equal(JSON.parse(readFileSync(fixture.visual_parity_artifacts.artifacts.visual_attribution.ref.path, 'utf8')).top_findings.length, 8);
+  assert.deepEqual(fixture.visual_parity_artifacts.visual_attribution_summary, {
+    schema: 'homeboy/WordPressVisualAttribution/v1',
+    status: 'available',
+    mismatch_region_count: 1,
+    selector_delta_count: 1,
+    geometry_delta_count: 1,
+    computed_style_delta_counts: { paint: 1, typography: 2 },
+    changed_count: 1,
+    added_count: 0,
+    removed_count: 1,
+    top_findings: Array.from({ length: 5 }, (_, index) => ({ kind: index === 0 ? 'geometry' : 'style', selector: '.hero', property: `property-${index}` })),
+    limitations_count: 1,
+    attribution_ref: path.join(outputDirectory, 'visual-compare', 'simple-site', 'visual-attribution.json'),
+  });
 });
 
 test('visual-compare attribution degrades explicitly when sidecars or the extension normalizer are unavailable', () => {
@@ -5434,6 +5452,8 @@ test('visual-compare attribution degrades explicitly when sidecars or the extens
   assert.equal(attribution.schema, 'static-site-importer/visual-attribution-unavailable/v1');
   assert.ok(attribution.limitations.some((message) => message.includes('normalizer was unavailable')));
   assert.ok(attribution.limitations.some((message) => message.includes('DOM snapshot')));
+  assert.equal(persisted.result.fixtures[0].visual_parity_artifacts.visual_attribution_summary.status, 'limited');
+  assert.equal(persisted.result.fixtures[0].visual_parity_artifacts.visual_attribution_summary.limitations_count, 3);
 });
 
 test('visual-compare dimension mismatch gates even with zero pixel metrics when gating is on', () => {
@@ -5740,6 +5760,20 @@ test('visual parity evidence report summarizes staged output evidence and layout
         visual_parity_artifacts: {
           metrics: { mismatch_pixels: 0, total_pixels: 1000, mismatch_ratio: 0 },
           capture_diagnostics: [{ phase: 'candidate', viewport: { width: 1280, height: 720 }, message: 'desktop viewport captured' }],
+          visual_attribution_summary: {
+            schema: 'homeboy/WordPressVisualAttribution/v1',
+            status: 'available',
+            mismatch_region_count: 2,
+            selector_delta_count: 3,
+            geometry_delta_count: 1,
+            computed_style_delta_counts: { paint: 2 },
+            changed_count: 3,
+            added_count: 1,
+            removed_count: 0,
+            top_findings: [{ kind: 'geometry', selector: '.hero' }],
+            limitations_count: 0,
+            attribution_ref: 'visual-compare/simple-site/visual-attribution.json',
+          },
           artifacts: {
             source_screenshot: { status: 'captured', ref: { path: 'files/browser/visual-compare/source.png', kind: 'browser-visual-source-screenshot' } },
             imported_screenshot: { status: 'captured', ref: { path: 'files/browser/visual-compare/candidate.png', kind: 'browser-visual-candidate-screenshot' } },
@@ -5761,11 +5795,17 @@ test('visual parity evidence report summarizes staged output evidence and layout
   assert.equal(report.summary.screenshot_fixture_count, 1);
   assert.equal(report.summary.viewport_evidence_fixture_count, 1);
   assert.equal(report.summary.mobile_viewport_fixture_count, 0);
+  assert.equal(report.summary.visual_attribution_fixture_count, 1);
+  assert.equal(report.summary.limited_visual_attribution_fixture_count, 0);
   assert.equal(report.summary.missing_asset_fixture_count, 1);
   assert.equal(report.summary.core_html_fixture_count, 1);
   assert.equal(fixture.asset_resolution.missing_asset_count, 1);
   assert.equal(fixture.block_theme.native_conversion_rate, 0.8);
   assert.equal(fixture.block_theme.core_html_block_count, 1);
+  assert.equal(fixture.evidence.visual_attribution.status, 'available');
+  assert.equal(fixture.evidence.visual_attribution.geometry_delta_count, 1);
+  assert.equal(fixture.evidence.visual_attribution.attribution_ref, 'visual-compare/simple-site/visual-attribution.json');
+  assert.equal(report.surfaces[0].evidence.visual_attribution.selector_delta_count, 3);
   assert.ok(fixture.risk.reasons.includes('missing mobile viewport evidence'));
   assert.ok(fixture.risk.reasons.includes('1 missing asset signal(s)'));
   assert.ok(fixture.risk.reasons.includes('1 core/html block(s)'));

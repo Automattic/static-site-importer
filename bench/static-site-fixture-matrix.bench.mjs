@@ -34,6 +34,7 @@ const DEFAULT_BATCH_SIZE = 10;
 // up to the cap.
 const DEFAULT_BATCH_CONCURRENCY = 2;
 const MAX_BATCH_CONCURRENCY = 16;
+const VISUAL_ATTRIBUTION_TOP_FINDINGS_LIMIT = 5;
 export const FIXTURE_MATRIX_PROGRESS_SCHEMA = 'homeboy/runner-progress/v1';
 export const FIXTURE_MATRIX_PROGRESS_PREFIX = 'HOMEBOY_RUNNER_PROGRESS ';
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -670,6 +671,7 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
       ref: artifactRef('visual_attribution', visualAttribution.path, 'visual-parity'),
     };
     artifacts[`visual_compare_${artifactKey(fixtureId)}_visual-attribution`] = { path: visualAttribution.path };
+    updatedVisualParityArtifacts.visual_attribution_summary = summarizeVisualAttribution(visualAttribution.attribution, visualAttribution.path);
   }
 
   return {
@@ -722,7 +724,56 @@ function materializeVisualAttribution({ fixture, fixtureId, outputDirectory, slo
   }
   const persistedPath = path.join(outputDirectory, 'visual-compare', fixtureId, 'visual-attribution.json');
   writeJsonArtifact(persistedPath, attribution);
-  return { path: persistedPath };
+  return { path: persistedPath, attribution };
+}
+
+function summarizeVisualAttribution(attribution, attributionPath) {
+  const value = attribution && typeof attribution === 'object' ? attribution : {};
+  const selectorDeltas = Array.isArray(value.selector_deltas) ? value.selector_deltas : [];
+  const styleDeltas = value.computed_style_deltas && typeof value.computed_style_deltas === 'object'
+    ? value.computed_style_deltas
+    : {};
+  const elements = value.elements && typeof value.elements === 'object' ? value.elements : {};
+  const summary = value.summary && typeof value.summary === 'object' ? value.summary : {};
+  return {
+    schema: typeof value.schema === 'string' ? value.schema : 'static-site-importer/visual-attribution-unavailable/v1',
+    status: value.schema === 'homeboy/WordPressVisualAttribution/v1' ? 'available' : 'limited',
+    mismatch_region_count: Array.isArray(value.mismatch_regions) ? value.mismatch_regions.length : 0,
+    selector_delta_count: selectorDeltas.length,
+    geometry_delta_count: selectorDeltas.filter((delta) => hasVisualAttributionGeometryDelta(delta?.bounding_box?.delta)).length,
+    computed_style_delta_counts: Object.fromEntries(Object.entries(styleDeltas)
+      .filter(([, deltas]) => Array.isArray(deltas))
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([category, deltas]) => [category, deltas.length])),
+    changed_count: finiteVisualAttributionCount(summary.changed, elements.changed),
+    added_count: finiteVisualAttributionCount(summary.added, elements.added),
+    removed_count: finiteVisualAttributionCount(summary.removed, elements.removed),
+    top_findings: (Array.isArray(value.top_findings) ? value.top_findings : [])
+      .slice(0, VISUAL_ATTRIBUTION_TOP_FINDINGS_LIMIT)
+      .map((finding) => compactVisualAttributionFinding(finding)),
+    limitations_count: Array.isArray(value.limitations) ? value.limitations.length : 0,
+    attribution_ref: attributionPath,
+  };
+}
+
+function hasVisualAttributionGeometryDelta(delta) {
+  return Object.values(delta && typeof delta === 'object' ? delta : {}).some((value) => Number(value) !== 0);
+}
+
+function finiteVisualAttributionCount(summaryValue, elements) {
+  const value = Number(summaryValue);
+  return Number.isFinite(value) && value >= 0 ? value : (Array.isArray(elements) ? elements.length : 0);
+}
+
+function compactVisualAttributionFinding(value) {
+  const finding = value && typeof value === 'object' ? value : {};
+  return Object.fromEntries(Object.entries({
+    kind: finding.kind,
+    summary: finding.summary,
+    selector: finding.selector,
+    category: finding.category,
+    property: finding.property,
+  }).filter(([, entry]) => typeof entry === 'string' && entry));
 }
 
 function unavailableVisualAttribution(refs, visualExplanation, sourceDomSnapshot, candidateDomSnapshot, normalizerLimitation = 'The Homeboy WordPress extension normalizer was unavailable; attribution is limited to retained pixel evidence.') {
