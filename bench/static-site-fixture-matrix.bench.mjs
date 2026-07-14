@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 /**
  * Internal dependencies
@@ -33,9 +34,11 @@ const DEFAULT_BATCH_SIZE = 10;
 // up to the cap.
 const DEFAULT_BATCH_CONCURRENCY = 2;
 const MAX_BATCH_CONCURRENCY = 16;
+const VISUAL_ATTRIBUTION_TOP_FINDINGS_LIMIT = 5;
 export const FIXTURE_MATRIX_PROGRESS_SCHEMA = 'homeboy/runner-progress/v1';
 export const FIXTURE_MATRIX_PROGRESS_PREFIX = 'HOMEBOY_RUNNER_PROGRESS ';
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const require = createRequire(import.meta.url);
 
 async function main() {
   const options = { ...optionsFromEnv(), ...parseArgs(process.argv.slice(2)) };
@@ -423,6 +426,9 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     result: batchResult,
     codeboxArtifactsDirectory,
     outputDirectory,
+    visualAttributionNormalizer: options.visualAttributionNormalizer,
+    visualAttributionLoader: options.visualAttributionLoader,
+    homeboyExtensionPath: options.homeboyExtensionPath,
   });
   const editorCanvas = materializeEditorCanvasArtifacts({
     result: visualCompare.result,
@@ -575,6 +581,9 @@ export function materializeVisualCompareArtifacts(input = {}) {
     outputDirectory,
     codeboxArtifactsDirectory,
     artifacts,
+    visualAttributionNormalizer: input.visualAttributionNormalizer,
+    visualAttributionLoader: input.visualAttributionLoader,
+    homeboyExtensionPath: input.homeboyExtensionPath,
   }));
   return {
     result: { ...result, fixtures: updatedFixtures },
@@ -582,7 +591,7 @@ export function materializeVisualCompareArtifacts(input = {}) {
   };
 }
 
-function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory, artifacts }) {
+function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory, artifacts, visualAttributionNormalizer, visualAttributionLoader, homeboyExtensionPath }) {
   const visualParityArtifacts = fixture.visual_parity_artifacts || fixture.visualParityArtifacts;
   const slots = visualParityArtifacts?.artifacts || {};
   const fixtureId = fixture.fixture_id || fixture.fixtureId || '';
@@ -596,6 +605,10 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
     ['source_screenshot', 'source', ['source_screenshot']],
     ['imported_screenshot', 'candidate', ['imported_screenshot', 'candidate_screenshot']],
     ['diff_screenshot', 'diff', ['diff_screenshot']],
+    ['visual_diff', 'visual-diff.json', ['visual_diff']],
+    ['visual_explanation', 'visual-explanation.json', ['visual_explanation']],
+    ['source_dom_snapshot', 'source-dom-snapshot.json', ['source_dom_snapshot']],
+    ['candidate_dom_snapshot', 'candidate-dom-snapshot.json', ['candidate_dom_snapshot']],
   ]) {
     const [slotName, fileStem, artifactIds] = slot;
     const refPath = slots[slotName]?.ref?.path || visualDiagnosticRefPath(fixture.diagnostics, artifactIds);
@@ -603,7 +616,7 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
     if (!sourcePath || !fs.existsSync(sourcePath)) {
       continue;
     }
-    const persistedPath = path.join(outputDirectory, 'visual-compare', fixtureId, `${fileStem}.png`);
+    const persistedPath = path.join(outputDirectory, 'visual-compare', fixtureId, fileStem.includes('.') ? fileStem : `${fileStem}.png`);
     fs.mkdirSync(path.dirname(persistedPath), { recursive: true });
     fs.copyFileSync(sourcePath, persistedPath);
     rewrites.set(refPath, persistedPath);
@@ -642,6 +655,24 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
       diffScreenshot: updatedSlots.diff_screenshot?.ref?.path,
     },
   }, { fixtureArtifactsDirectory: outputDirectory });
+  const visualAttribution = materializeVisualAttribution({
+    fixture,
+    fixtureId,
+    outputDirectory,
+    slots: updatedSlots,
+    normalizer: visualAttributionNormalizer,
+    loader: visualAttributionLoader,
+    homeboyExtensionPath,
+  });
+  if (visualAttribution) {
+    updatedSlots.visual_attribution = {
+      status: 'captured',
+      kind: 'visual_attribution',
+      ref: artifactRef('visual_attribution', visualAttribution.path, 'visual-parity'),
+    };
+    artifacts[`visual_compare_${artifactKey(fixtureId)}_visual-attribution`] = { path: visualAttribution.path };
+    updatedVisualParityArtifacts.visual_attribution_summary = summarizeVisualAttribution(visualAttribution.attribution, visualAttribution.path);
+  }
 
   return {
     ...fixture,
@@ -659,6 +690,136 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
       visual_diff_classification: classification,
     } : {}),
   };
+}
+
+function materializeVisualAttribution({ fixture, fixtureId, outputDirectory, slots, normalizer, loader, homeboyExtensionPath }) {
+  const visualDiffPath = slots.visual_diff?.ref?.path;
+  if (!visualDiffPath) {
+    return null;
+  }
+  const refs = {
+    visualExplanation: slots.visual_explanation?.ref?.path,
+    sourceDomSnapshot: slots.source_dom_snapshot?.ref?.path,
+    candidateDomSnapshot: slots.candidate_dom_snapshot?.ref?.path,
+  };
+  const visualDiff = readJsonArtifact(visualDiffPath);
+  const visualExplanation = readJsonArtifact(refs.visualExplanation);
+  const sourceDomSnapshot = readJsonArtifact(refs.sourceDomSnapshot);
+  const candidateDomSnapshot = readJsonArtifact(refs.candidateDomSnapshot);
+  const activeNormalizer = resolveWordPressVisualAttributionNormalizer({ normalizer, loader, homeboyExtensionPath });
+  let attribution;
+  try {
+    attribution = activeNormalizer
+      ? activeNormalizer({
+        visualDiff,
+        visualExplanation,
+        sourceDomSnapshot,
+        candidateDomSnapshot,
+        refs,
+        candidateProvenance: fixture.candidate_provenance || fixture.candidateProvenance,
+      })
+      : unavailableVisualAttribution(refs, visualExplanation, sourceDomSnapshot, candidateDomSnapshot);
+  } catch {
+    attribution = unavailableVisualAttribution(refs, visualExplanation, sourceDomSnapshot, candidateDomSnapshot, 'The Homeboy WordPress extension normalizer failed; attribution is limited to retained pixel evidence.');
+  }
+  const persistedPath = path.join(outputDirectory, 'visual-compare', fixtureId, 'visual-attribution.json');
+  writeJsonArtifact(persistedPath, attribution);
+  return { path: persistedPath, attribution };
+}
+
+function summarizeVisualAttribution(attribution, attributionPath) {
+  const value = attribution && typeof attribution === 'object' ? attribution : {};
+  const selectorDeltas = Array.isArray(value.selector_deltas) ? value.selector_deltas : [];
+  const styleDeltas = value.computed_style_deltas && typeof value.computed_style_deltas === 'object'
+    ? value.computed_style_deltas
+    : {};
+  const elements = value.elements && typeof value.elements === 'object' ? value.elements : {};
+  const summary = value.summary && typeof value.summary === 'object' ? value.summary : {};
+  return {
+    schema: typeof value.schema === 'string' ? value.schema : 'static-site-importer/visual-attribution-unavailable/v1',
+    status: value.schema === 'homeboy/WordPressVisualAttribution/v1' ? 'available' : 'limited',
+    mismatch_region_count: Array.isArray(value.mismatch_regions) ? value.mismatch_regions.length : 0,
+    selector_delta_count: selectorDeltas.length,
+    geometry_delta_count: selectorDeltas.filter((delta) => hasVisualAttributionGeometryDelta(delta?.bounding_box?.delta)).length,
+    computed_style_delta_counts: Object.fromEntries(Object.entries(styleDeltas)
+      .filter(([, deltas]) => Array.isArray(deltas))
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([category, deltas]) => [category, deltas.length])),
+    changed_count: finiteVisualAttributionCount(summary.changed, elements.changed),
+    added_count: finiteVisualAttributionCount(summary.added, elements.added),
+    removed_count: finiteVisualAttributionCount(summary.removed, elements.removed),
+    top_findings: (Array.isArray(value.top_findings) ? value.top_findings : [])
+      .slice(0, VISUAL_ATTRIBUTION_TOP_FINDINGS_LIMIT)
+      .map((finding) => compactVisualAttributionFinding(finding)),
+    limitations_count: Array.isArray(value.limitations) ? value.limitations.length : 0,
+    attribution_ref: attributionPath,
+  };
+}
+
+function hasVisualAttributionGeometryDelta(delta) {
+  return Object.values(delta && typeof delta === 'object' ? delta : {}).some((value) => Number(value) !== 0);
+}
+
+function finiteVisualAttributionCount(summaryValue, elements) {
+  const value = Number(summaryValue);
+  return Number.isFinite(value) && value >= 0 ? value : (Array.isArray(elements) ? elements.length : 0);
+}
+
+function compactVisualAttributionFinding(value) {
+  const finding = value && typeof value === 'object' ? value : {};
+  return Object.fromEntries(Object.entries({
+    kind: finding.kind,
+    summary: finding.summary,
+    selector: finding.selector,
+    category: finding.category,
+    property: finding.property,
+  }).filter(([, entry]) => typeof entry === 'string' && entry));
+}
+
+function unavailableVisualAttribution(refs, visualExplanation, sourceDomSnapshot, candidateDomSnapshot, normalizerLimitation = 'The Homeboy WordPress extension normalizer was unavailable; attribution is limited to retained pixel evidence.') {
+  return {
+    schema: 'static-site-importer/visual-attribution-unavailable/v1',
+    evidence: refs,
+    limitations: [
+      normalizerLimitation,
+      ...(visualExplanation ? [] : ['WP Codebox visual explanation sidecar was not captured.']),
+      ...(sourceDomSnapshot && candidateDomSnapshot ? [] : ['WP Codebox DOM snapshot sidecars were not both captured.']),
+    ],
+  };
+}
+
+function readJsonArtifact(filePath) {
+  if (!filePath) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+export function resolveWordPressVisualAttributionNormalizer({ normalizer, loader, homeboyExtensionPath } = {}) {
+  if (typeof normalizer === 'function') {
+    return normalizer;
+  }
+  try {
+    let extension;
+    if (typeof loader === 'function') {
+      extension = loader();
+    } else {
+      const extensionPath = homeboyExtensionPath || process.env.HOMEBOY_EXTENSION_PATH;
+      if (!extensionPath) {
+        return null;
+      }
+      extension = require(path.resolve(extensionPath));
+    }
+    return typeof extension?.normalizeWordPressVisualAttribution === 'function'
+      ? extension.normalizeWordPressVisualAttribution
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function visualDiagnosticRefPath(diagnostics, artifactIds) {
