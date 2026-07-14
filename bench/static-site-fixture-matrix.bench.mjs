@@ -812,7 +812,13 @@ export function resolveWordPressVisualAttributionNormalizer({ normalizer, loader
       if (!extensionPath) {
         return null;
       }
-      extension = require(path.resolve(extensionPath));
+      const resolvedExtensionPath = path.resolve(extensionPath);
+      const normalizerModulePath = path.join(resolvedExtensionPath, 'lib', 'wordpress-visual-attribution.js');
+      // Dev overlays include this self-contained module without the extension's
+      // unrelated package-root dependencies.
+      extension = fs.existsSync(normalizerModulePath)
+        ? require(normalizerModulePath)
+        : require(resolvedExtensionPath);
     }
     return typeof extension?.normalizeWordPressVisualAttribution === 'function'
       ? extension.normalizeWordPressVisualAttribution
