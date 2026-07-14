@@ -5054,15 +5054,22 @@ test('visual-compare attribution degrades explicitly when sidecars or the extens
   assert.equal(persisted.result.fixtures[0].visual_parity_artifacts.visual_attribution_summary.limitations_count, 3);
 });
 
-test('visual attribution normalizer loads its direct module before package-root fallback', () => {
+test('visual attribution normalizer resolves WordPress provider manifests before legacy extension paths', () => {
   const directModuleRoot = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-direct-'));
   const directModulePath = path.join(directModuleRoot, 'lib', 'wordpress-visual-attribution.js');
   mkdirSync(path.dirname(directModulePath), { recursive: true });
   writeFileSync(path.join(directModuleRoot, 'index.js'), "throw new Error('package root must not load');\n");
   writeFileSync(directModulePath, 'module.exports.normalizeWordPressVisualAttribution = () => ({ source: \'direct\' });\n');
 
-  const packageFallbackRoot = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-fallback-'));
-  writeFileSync(path.join(packageFallbackRoot, 'index.js'), 'module.exports.normalizeWordPressVisualAttribution = () => ({ source: \'package-root\' });\n');
+  const providerRoot = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-provider-'));
+  const providerModulePath = path.join(providerRoot, 'lib', 'wordpress-visual-attribution.js');
+  const providerManifestPath = path.join(providerRoot, 'lib', 'helper-manifest.js');
+  mkdirSync(path.dirname(providerModulePath), { recursive: true });
+  writeFileSync(providerModulePath, 'module.exports.normalizeWordPressVisualAttribution = () => ({ source: \'provider\' });\n');
+  writeFileSync(providerManifestPath, 'module.exports = {};\n');
+
+  const legacyRoot = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-legacy-'));
+  writeFileSync(path.join(legacyRoot, 'index.js'), 'module.exports.normalizeWordPressVisualAttribution = () => ({ source: \'legacy\' });\n');
 
   const invalidDirectModuleRoot = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-invalid-direct-'));
   const invalidDirectModulePath = path.join(invalidDirectModuleRoot, 'lib', 'wordpress-visual-attribution.js');
@@ -5071,11 +5078,39 @@ test('visual attribution normalizer loads its direct module before package-root 
   writeFileSync(invalidDirectModulePath, 'module.exports = {};\n');
 
   const missingModuleRoot = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-missing-'));
+  const originalHelperManifest = process.env.HOMEBOY_WORDPRESS_HELPER_MANIFEST;
+  const originalExtensionPath = process.env.HOMEBOY_EXTENSION_PATH;
+  try {
+    process.env.HOMEBOY_WORDPRESS_HELPER_MANIFEST = providerManifestPath;
+    process.env.HOMEBOY_EXTENSION_PATH = legacyRoot;
 
-  assert.equal(resolveWordPressVisualAttributionNormalizer({ homeboyExtensionPath: directModuleRoot })().source, 'direct');
-  assert.equal(resolveWordPressVisualAttributionNormalizer({ homeboyExtensionPath: packageFallbackRoot })().source, 'package-root');
-  assert.equal(resolveWordPressVisualAttributionNormalizer({ homeboyExtensionPath: invalidDirectModuleRoot }), null);
-  assert.equal(resolveWordPressVisualAttributionNormalizer({ homeboyExtensionPath: missingModuleRoot }), null);
+    assert.equal(resolveWordPressVisualAttributionNormalizer({ homeboyExtensionPath: directModuleRoot })().source, 'direct');
+    assert.equal(resolveWordPressVisualAttributionNormalizer()().source, 'provider');
+
+    delete process.env.HOMEBOY_EXTENSION_PATH;
+    process.env.HOMEBOY_WORDPRESS_HELPER_MANIFEST = path.join(providerRoot, 'helper-manifest.js');
+    assert.equal(resolveWordPressVisualAttributionNormalizer(), null);
+
+    process.env.HOMEBOY_WORDPRESS_HELPER_MANIFEST = path.join(providerRoot, 'lib', 'missing-helper-manifest.js');
+    assert.equal(resolveWordPressVisualAttributionNormalizer(), null);
+
+    delete process.env.HOMEBOY_WORDPRESS_HELPER_MANIFEST;
+    process.env.HOMEBOY_EXTENSION_PATH = legacyRoot;
+    assert.equal(resolveWordPressVisualAttributionNormalizer()().source, 'legacy');
+    assert.equal(resolveWordPressVisualAttributionNormalizer({ homeboyExtensionPath: invalidDirectModuleRoot }), null);
+    assert.equal(resolveWordPressVisualAttributionNormalizer({ homeboyExtensionPath: missingModuleRoot }), null);
+  } finally {
+    if (originalHelperManifest === undefined) {
+      delete process.env.HOMEBOY_WORDPRESS_HELPER_MANIFEST;
+    } else {
+      process.env.HOMEBOY_WORDPRESS_HELPER_MANIFEST = originalHelperManifest;
+    }
+    if (originalExtensionPath === undefined) {
+      delete process.env.HOMEBOY_EXTENSION_PATH;
+    } else {
+      process.env.HOMEBOY_EXTENSION_PATH = originalExtensionPath;
+    }
+  }
 });
 
 test('visual-compare dimension mismatch gates even with zero pixel metrics when gating is on', () => {
