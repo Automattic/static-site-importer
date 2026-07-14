@@ -808,7 +808,24 @@ export function resolveWordPressVisualAttributionNormalizer({ normalizer, loader
     if (typeof loader === 'function') {
       extension = loader();
     } else {
-      const extensionPath = homeboyExtensionPath || process.env.HOMEBOY_EXTENSION_PATH;
+      let extensionPath = homeboyExtensionPath;
+      if (!extensionPath) {
+        const helperManifestPath = process.env.HOMEBOY_WORDPRESS_HELPER_MANIFEST;
+        const resolvedHelperManifestPath = typeof helperManifestPath === 'string' && helperManifestPath
+          ? path.resolve(helperManifestPath)
+          : '';
+        if (
+          resolvedHelperManifestPath
+          && path.basename(resolvedHelperManifestPath) === 'helper-manifest.js'
+          && path.basename(path.dirname(resolvedHelperManifestPath)) === 'lib'
+          && fs.existsSync(resolvedHelperManifestPath)
+        ) {
+          extensionPath = path.dirname(path.dirname(resolvedHelperManifestPath));
+        }
+      }
+      if (!extensionPath) {
+        extensionPath = process.env.HOMEBOY_EXTENSION_PATH;
+      }
       if (!extensionPath) {
         return null;
       }
