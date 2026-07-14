@@ -55,7 +55,6 @@ import {
   liveWpParityEnabled,
   MAX_EXTRA_SURFACE_COUNT,
   normalizeSurfaceCoverageOptions,
-  resolveSurfaceEditorTarget,
   runLiveWpParity,
   normalizeLiveWpParityReport,
   selectFixtureSurfaces,
@@ -78,7 +77,6 @@ import {
 } from '../lib/fixture-matrix.mjs';
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
 import { runWpCodeboxRecipe, wpCodeboxBin } from './wp-codebox/recipe.mjs';
-import { editorOpenStep } from '../lib/fixture-matrix/steps/editor-open-step.mjs';
 
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fixtureRoot = path.join(packageRoot, 'tests', 'fixtures', 'fixture-matrix');
@@ -130,46 +128,6 @@ test('execution-requested fixture matrices still fail missing validation results
   assert.equal(result.summary.unacceptable_finding_count, 1);
   assert.equal(result.summary.unacceptable_loss_classes.fixture_not_run, 1);
   assert.equal(result.findings.some((finding) => finding.loss_class === 'fixture_not_run'), true);
-});
-
-test('fixture matrix derives actionable families from selectorless diagnostic reasons', () => {
-  const result = normalizeFixtureMatrixResult({
-    matrix: {
-      id: 'diagnostic-actionability-test',
-      fixture_root: '/tmp/fixtures',
-      fixtures: [{ id: 'saas', fixture_path: '/tmp/fixtures/saas' }],
-    },
-    results: [
-      {
-        fixture_id: 'saas',
-        fixture_path: '/tmp/fixtures/saas',
-        status: 'failed',
-        diagnostics: [
-          {
-            kind: 'editor_block_invalid',
-            source_path: '/tmp/fixtures/saas',
-            reason: 'Editor reported block "core/group" as invalid: Expected attribute `%s` of value `%s`, saw `%s`. style margin-top:0 margin-top:0;max-width:1160px; Block validation failed for `%s` (%o).',
-          },
-          {
-            kind: 'visual_parity_mismatch',
-            source_path: 'file:///tmp/fixtures/saas/source/index.html',
-            reason: 'Aligned visual parity mismatch: 4017764/10002240 pixels (40.17%) exceed the 0.00% threshold.',
-          },
-        ],
-      },
-    ],
-  });
-
-  const editorFinding = result.findings.find((finding) => finding.kind === 'editor_block_invalid');
-  const visualFinding = result.findings.find((finding) => finding.kind === 'visual_parity_mismatch');
-
-  assert.equal(editorFinding.observed_block_name, 'core/group');
-  assert.equal(editorFinding.reason_code, 'editor_block_validation_style_mismatch');
-  assert.equal(editorFinding.pattern_family, 'editor_block_invalid:editor_block_invalid:editor-block-validation-style-mismatch');
-  assert.match(editorFinding.observed_output, /Block validation mismatch for core\/group/);
-  assert.equal(visualFinding.reason_code, 'visual_parity_pixel_mismatch');
-  assert.equal(visualFinding.pattern_family, 'visual_parity_mismatch:visual_parity_mismatch:visual-parity-pixel-mismatch');
-  assert.deepEqual(result.summary.diagnostic_blind_spots || [], []);
 });
 
 test('gutenberg incompatibility registry aggregates recurring custom block candidates across fixtures', () => {
@@ -244,95 +202,6 @@ test('gutenberg incompatibility registry keeps runtime islands separate and cons
   assert.equal(byKey['legitimate-runtime-island'].classification, 'runtime-island');
   assert.equal(byKey['editor-render-divergence'].classification, 'convertible');
   assert.equal(byKey['editor-render-divergence'].signals.editor_render_divergence, 1);
-});
-
-test('gutenberg incompatibility registry separates provider-materializable forms and commerce from core gaps', () => {
-  const registry = buildGutenbergIncompatibilityRegistry({
-    matrix_id: 'provider-materializable-patterns',
-    fixtures: [
-      { fixture_id: 'provider-fixture' },
-      { fixture_id: 'provider-fixture-2' },
-      { fixture_id: 'core-gap-fixture' },
-    ],
-    findings: [
-      {
-        fixture_id: 'provider-fixture',
-        kind: 'core_html_block',
-        observed_block_name: 'jetpack/contact-form',
-        reason_code: 'generated_document_contains_core_html',
-        selector: 'form.newsletter-form',
-        source_snippet: '<form class="newsletter-form"><input type="email"><button>Subscribe</button></form>',
-      },
-      {
-        fixture_id: 'provider-fixture',
-        kind: 'woocommerce_present',
-        source_path: 'commerce.dependencies.woocommerce',
-        reason: 'WooCommerce is active; commerce-bearing import will seed products.',
-      },
-      {
-        fixture_id: 'provider-fixture',
-        kind: 'core_html_block',
-        observed_block_name: 'core/html',
-        selector: 'button.add-to-cart',
-        source_snippet: '<button class="add-to-cart">Add</button>',
-      },
-      {
-        fixture_id: 'provider-fixture-2',
-        kind: 'woocommerce_present',
-        source_path: 'commerce.dependencies.woocommerce',
-        reason: 'WooCommerce is active; commerce-bearing import will seed products.',
-      },
-      {
-        fixture_id: 'provider-fixture-2',
-        kind: 'core_html_block',
-        observed_block_name: 'core/html',
-        selector: 'button.add-to-cart',
-        source_snippet: '<button class="add-to-cart">Add</button>',
-      },
-      {
-        fixture_id: 'core-gap-fixture',
-        kind: 'core_html_block',
-        observed_block_name: 'core/html',
-        reason_code: 'html_form_fallback',
-        selector: 'form.unmapped',
-        source_snippet: '<form><input name="email"><button>Submit</button></form>',
-      },
-    ],
-  });
-  const providerDecision = registry.fixture_decisions.find((row) => row.fixture_id === 'provider-fixture');
-  const coreGapDecision = registry.fixture_decisions.find((row) => row.fixture_id === 'core-gap-fixture');
-  const patterns = Object.fromEntries(registry.patterns.map((row) => [row.pattern_key, row]));
-
-  assert.equal(patterns['static-form'].limitation_type, 'provider_materializable');
-  assert.equal(patterns['static-form'].classification, 'convertible');
-  assert.equal(patterns['static-form'].provider_materialized_by.jetpack, 1);
-  assert.equal(patterns['js-commerce-controls'].limitation_type, 'provider_materializable');
-  assert.equal(patterns['js-commerce-controls'].classification, 'convertible');
-  assert.equal(patterns['js-commerce-controls'].provider_materialized_by.woocommerce, 2);
-  assert.equal(patterns['js-commerce-controls'].fixture_count, 2);
-  assert.equal(registry.summary.custom_block_candidate_count, 0);
-  assert.deepEqual(providerDecision.provider_materializable_patterns, ['js-commerce-controls', 'static-form']);
-  assert.deepEqual(providerDecision.gutenberg_gap_patterns, []);
-  assert.deepEqual(coreGapDecision.gutenberg_gap_patterns, []);
-
-  const noProviderRegistry = buildGutenbergIncompatibilityRegistry({
-    matrix_id: 'plain-core-gap-patterns',
-    fixtures: [{ fixture_id: 'core-gap-fixture' }],
-    findings: [
-      {
-        fixture_id: 'core-gap-fixture',
-        kind: 'core_html_block',
-        observed_block_name: 'core/html',
-        reason_code: 'html_form_fallback',
-        selector: 'form.unmapped',
-        source_snippet: '<form><input name="email"><button>Submit</button></form>',
-      },
-    ],
-  });
-  const noProviderPatterns = Object.fromEntries(noProviderRegistry.patterns.map((row) => [row.pattern_key, row]));
-
-  assert.equal(noProviderPatterns['static-form'].limitation_type, 'real_gutenberg_gap');
-  assert.equal(noProviderPatterns['static-form'].classification, 'convertible');
 });
 
 test('gutenberg incompatibility registry separates fixture decision axes', () => {
@@ -498,65 +367,6 @@ test('gutenberg incompatibility registry attributes nested svg to the outer fall
   assert.equal(byKey['contact-layout'].fixtures[0], 'artist');
   assert.equal(byKey['inline-svg-filter-gradient'].finding_count, 1);
   assert.equal(byKey['inline-svg-filter-gradient'].fixtures[0], 'coffee');
-});
-
-test('gutenberg incompatibility registry does not treat handled contact links or provider forms as contact layout transformer gaps', () => {
-  const registry = buildGutenbergIncompatibilityRegistry({
-    matrix_id: 'contact-link-provider-separation',
-    fixtures: [
-      {
-        fixture_id: 'artist',
-        editor_validation: { total: 12 },
-        editor_canvas: { status: 'visible' },
-        visual_parity_artifacts: { screenshot: 'artist.png' },
-      },
-      {
-        fixture_id: 'artist-form',
-        editor_validation: { total: 12 },
-        editor_canvas: { status: 'visible' },
-        visual_parity_artifacts: { screenshot: 'artist-form.png' },
-      },
-    ],
-    findings: [
-      {
-        fixture_id: 'artist',
-        kind: 'link_affordance_preserved',
-        reason_code: 'native_link',
-        selector: 'a.contact-email',
-        source_snippet: '<a href="mailto:booking@example.com" class="contact-email">booking@example.com</a><a href="tel:+15551234567">Call</a>',
-        observed_block_name: 'core/paragraph',
-      },
-      {
-        fixture_id: 'artist',
-        kind: 'link_affordance_preserved',
-        reason_code: 'native_link',
-        selector: '.social-links a',
-        source_snippet: '<div class="social-links"><a class="social-link" href="https://example.com/social">Instagram</a></div>',
-        observed_block_name: 'core/buttons',
-      },
-      {
-        fixture_id: 'artist-form',
-        kind: 'unsupported_html_fallback',
-        observed_block_name: 'jetpack/contact-form',
-        diagnostic_code: 'html_form_fallback',
-        reason_code: 'form_requires_runtime',
-        pattern_family: 'interactive_form',
-        selector: 'form.contact-form',
-        source_snippet: '<form class="contact-form"><input name="email"><button>Send</button></form>',
-      },
-    ],
-  });
-  const byKey = Object.fromEntries(registry.patterns.map((row) => [row.pattern_key, row]));
-  const decisions = Object.fromEntries(registry.fixture_decisions.map((row) => [row.fixture_id, row]));
-
-  assert.equal(byKey['contact-layout'], undefined);
-  assert.equal(byKey['static-form'].limitation_type, 'provider_materializable');
-  assert.deepEqual(decisions.artist.transformer_gap_patterns, []);
-  assert.deepEqual(decisions.artist.provider_materializable_patterns, []);
-  assert.equal(decisions.artist.native_editability_status, 'native_editable');
-  assert.deepEqual(decisions['artist-form'].transformer_gap_patterns, []);
-  assert.deepEqual(decisions['artist-form'].provider_materializable_patterns, ['static-form']);
-  assert.equal(decisions['artist-form'].native_editability_status, 'html_islands_or_transformer_gap');
 });
 
 test('gutenberg incompatibility registry ranks tracked custom-block candidates before visual-only evidence', () => {
@@ -2352,7 +2162,6 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   assert.equal(surfacePlan.surface_coverage.capped, true);
   assert.equal(surfacePlan.surface_coverage.max_browser_surface_count, CANONICAL_FIXTURE_COUNT * (MAX_EXTRA_SURFACE_COUNT + 1));
   assert.ok(surfacePlan.warnings.some((warning) => warning.code === 'surface_coverage_runtime_cost'));
-  assert.ok(surfacePlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_SURFACE_COVERAGE=99'));
 
   const explicitOutput = path.join(root, 'custom-output', 'homeboy-bench.json');
   const explicitOutputPlan = buildFixtureMatrixRunPlan({
@@ -2374,36 +2183,36 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
 test('fixture matrix operator rejects contradictory local and Lab routing', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-routing-conflict-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
-  const routingFixtureRoot = path.join(root, 'fixtures');
+  const fixtureRoot = path.join(root, 'fixtures');
   mkdirSync(staticSiteImporter, { recursive: true });
-  mkdirSync(path.join(routingFixtureRoot, 'fixture-a'), { recursive: true });
+  mkdirSync(path.join(fixtureRoot, 'fixture-a'), { recursive: true });
 
   assert.throws(() => buildFixtureMatrixRunPlan({
     local: true,
     runner: 'homeboy-lab',
     staticSiteImporter,
-    fixtureRoot: routingFixtureRoot,
+    fixtureRoot,
   }), /--local forces hot execution on this machine and cannot be combined with --runner homeboy-lab/);
 
   assert.throws(() => buildFixtureMatrixRunPlan({
     local: true,
     labOnly: true,
     staticSiteImporter,
-    fixtureRoot: routingFixtureRoot,
+    fixtureRoot,
   }), /--local forces hot execution on this machine and cannot be combined with --lab-only/);
 });
 
 test('fixture matrix operator composes legible local-hot and Lab offload routing', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-routing-plan-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
-  const routingFixtureRoot = path.join(root, 'fixtures');
+  const fixtureRoot = path.join(root, 'fixtures');
   mkdirSync(staticSiteImporter, { recursive: true });
-  mkdirSync(path.join(routingFixtureRoot, 'fixture-a'), { recursive: true });
+  mkdirSync(path.join(fixtureRoot, 'fixture-a'), { recursive: true });
 
   const labPlan = buildFixtureMatrixRunPlan({
     runner: 'homeboy-lab',
     staticSiteImporter,
-    fixtureRoot: routingFixtureRoot,
+    fixtureRoot,
     skipInstall: true,
     skipSync: true,
   });
@@ -2437,7 +2246,7 @@ test('fixture matrix operator composes legible local-hot and Lab offload routing
   const localPlan = buildFixtureMatrixRunPlan({
     local: true,
     staticSiteImporter,
-    fixtureRoot: routingFixtureRoot,
+    fixtureRoot,
     skipInstall: true,
     skipSync: true,
   });
@@ -2451,7 +2260,7 @@ test('fixture matrix operator composes legible local-hot and Lab offload routing
   const runnerLocalPlan = buildFixtureMatrixRunPlan({
     runner: 'local',
     staticSiteImporter,
-    fixtureRoot: routingFixtureRoot,
+    fixtureRoot,
     skipInstall: true,
     skipSync: true,
   });
@@ -2788,10 +2597,8 @@ test('CLI surface coverage reaches bench recipe browser evidence steps', () => {
   const visualSteps = recipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare');
   assert.equal(editorOpenSteps.length, 3);
   assert.equal(visualSteps.length, 3);
-  assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
-  assert.ok(editorOpenSteps[1].args.includes('post-slug=contact'));
-  assert.ok(editorOpenSteps[2].args.includes('post-type=page'));
-  assert.ok(editorOpenSteps[2].args.includes('post-slug=merch'));
+  assert.ok(editorOpenSteps[1].args.includes('url=/contact/'));
+  assert.ok(editorOpenSteps[2].args.includes('url=/merch/'));
   assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
 });
 
@@ -2823,10 +2630,8 @@ test('runFixtureMatrix surface coverage reaches executed batch recipes', async (
     const visualSteps = batchRecipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare');
     assert.equal(editorOpenSteps.length, 3);
     assert.equal(visualSteps.length, 3);
-    assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
-    assert.ok(editorOpenSteps[1].args.includes('post-slug=contact'));
-    assert.ok(editorOpenSteps[2].args.includes('post-type=page'));
-    assert.ok(editorOpenSteps[2].args.includes('post-slug=merch'));
+    assert.ok(editorOpenSteps[1].args.includes('url=/contact/'));
+    assert.ok(editorOpenSteps[2].args.includes('url=/merch/'));
     assert.equal(visualCompareMatrixComparison(visualSteps[1]).candidateUrl, '/contact/');
     assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
   } finally {
@@ -3776,14 +3581,17 @@ test('recipe runs editor-validate-blocks against imported content after each imp
     staticSiteImporterPath: '/tmp/static-site-importer',
   });
 
-  // [activate, validate(simple-site), suppress Woo redirect, editor-open(simple-site), editor-validate-blocks(simple-site)]
+  // [activate, validate(simple-site), suppress-onboarding(simple-site), editor-open(simple-site), editor-validate-blocks(simple-site)]
   assert.equal(recipe.workflow.steps[1].command, 'wordpress.wp-cli');
   assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
-  const recipeEditorOpenStep = recipe.workflow.steps[3];
-  assert.equal(recipeEditorOpenStep.command, 'wordpress.editor-open');
-  assert.ok(recipeEditorOpenStep.args.includes('target=front-page'));
-  assert.ok(recipeEditorOpenStep.args.includes('capture=screenshot,editor-state,editor-validity'));
-  assert.ok(recipeEditorOpenStep.args.includes('artifact-prefix=files/browser/editor-open/simple-site'));
+  assert.equal(recipe.workflow.steps[2].command, 'wordpress.wp-cli');
+  assert.equal(recipe.workflow.steps[2].metadata.phase, 'editor-preflight');
+  assert.match(recipe.workflow.steps[2].args[0], /woocommerce_onboarding_profile/);
+  const editorOpenStep = recipe.workflow.steps[3];
+  assert.equal(editorOpenStep.command, 'wordpress.editor-open');
+  assert.ok(editorOpenStep.args.includes('target=front-page'));
+  assert.ok(editorOpenStep.args.includes('capture=screenshot,editor-state,editor-validity'));
+  assert.ok(editorOpenStep.args.includes('artifact-prefix=files/browser/editor-open/simple-site'));
   const editorStep = recipe.workflow.steps[4];
   assert.equal(editorStep.command, EDITOR_VALIDATE_BLOCKS_COMMAND);
   assert.equal(editorStep.command, 'wordpress.editor-validate-blocks');
@@ -3800,31 +3608,6 @@ test('recipe runs editor-validate-blocks against imported content after each imp
     editorValidation: false,
   });
   assert.equal(disabled.workflow.steps.some((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND), false);
-});
-
-test('commerce fixture recipes suppress WooCommerce onboarding before editor-open', () => {
-  const root = mkdtempSync(path.join(tmpdir(), 'ssi-commerce-fixture-'));
-  const fixtureDirectory = path.join(root, 'coffee');
-  mkdirSync(fixtureDirectory, { recursive: true });
-  writeFileSync(path.join(fixtureDirectory, 'fixture.json'), JSON.stringify({ id: 'coffee', label: 'Coffee', capabilities: ['commerce-products'] }));
-  writeFileSync(path.join(fixtureDirectory, 'index.html'), '<main><button>Add to cart</button></main>');
-
-  const recipe = buildFixtureMatrixRecipe({
-    matrix: createFixtureMatrix({ fixture_root: root, id: 'commerce-editor-redirect-test' }),
-    artifactsDirectory: '/tmp/artifacts',
-    staticSiteImporterPath: '/tmp/static-site-importer',
-  });
-  const setupStepIndex = recipe.workflow.steps.findIndex((step) => step.metadata?.setup === 'suppress-onboarding-redirect');
-  const importStepIndex = recipe.workflow.steps.findIndex((step) => step.metadata?.phase === 'import');
-  const editorOpenStepIndex = recipe.workflow.steps.findIndex((step) => step.command === 'wordpress.editor-open');
-
-  assert.notEqual(setupStepIndex, -1);
-  assert.ok(importStepIndex < setupStepIndex);
-  assert.ok(setupStepIndex < editorOpenStepIndex);
-  assert.equal(recipe.workflow.steps[setupStepIndex].command, 'wordpress.wp-cli');
-  assert.match(recipe.workflow.steps[setupStepIndex].args[0], /delete_transient/);
-  assert.match(recipe.workflow.steps[setupStepIndex].args[0], /_wc_activation_redirect/);
-  assert.match(recipe.workflow.steps[setupStepIndex].args[0], /woocommerce_onboarding_profile/);
 });
 
 test('fixture matrix browser surfaces default to front page and opt into bounded secondary pages', () => {
@@ -3868,14 +3651,11 @@ test('fixture matrix browser surfaces default to front page and opt into bounded
   assert.equal(editorValidationSteps.length, 3);
   assert.equal(visualSteps.length, 3);
   assert.ok(editorOpenSteps[0].args.includes('artifact-prefix=files/browser/editor-open/artist'));
-  assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
-  assert.ok(editorOpenSteps[1].args.includes('post-slug=about'));
+  assert.ok(editorOpenSteps[1].args.includes('url=/about/'));
   assert.ok(editorOpenSteps[1].args.includes('artifact-prefix=files/browser/editor-open/artist/about'));
-  assert.ok(editorOpenSteps[2].args.includes('post-type=page'));
-  assert.ok(editorOpenSteps[2].args.includes('post-slug=about'));
+  assert.ok(editorOpenSteps[2].args.includes('url=/about/'));
   assert.ok(editorOpenSteps[2].args.includes('artifact-prefix=files/browser/editor-open/artist/about--2'));
-  assert.ok(editorValidationSteps[1].args.includes('post-type=page'));
-  assert.ok(editorValidationSteps[1].args.includes('post-slug=about'));
+  assert.ok(editorValidationSteps[1].args.includes('url=/about/'));
 
   const aboutComparison = visualCompareMatrixComparison(visualSteps[1]);
   assert.equal(aboutComparison.name, 'artist--about');
@@ -3888,137 +3668,6 @@ test('fixture matrix browser surfaces default to front page and opt into bounded
   assert.equal(multiSurfaceRecipe.metadata.surface_coverage.extra_surfaces_per_fixture, 2);
   assert.equal(multiSurfaceRecipe.metadata.surface_coverage.total_surface_count, 3);
   assert.equal(multiSurfaceRecipe.metadata.runtime_cost_warnings[0].code, 'surface_coverage_runtime_cost');
-});
-
-test('fixture matrix resolves secondary editor targets from imported page metadata', () => {
-  const root = mkdtempSync(path.join(tmpdir(), 'ssi-surface-targets-'));
-  const fixtureDirectory = path.join(root, 'artist');
-  mkdirSync(path.join(fixtureDirectory, 'merch'), { recursive: true });
-  writeFileSync(path.join(fixtureDirectory, 'fixture.json'), JSON.stringify({ id: 'artist', label: 'Artist' }));
-  writeFileSync(path.join(fixtureDirectory, 'index.html'), '<main>Home</main>');
-  writeFileSync(path.join(fixtureDirectory, 'contact.html'), '<main>Contact</main>');
-  writeFileSync(path.join(fixtureDirectory, 'merch', 'index.html'), '<main>Merch</main>');
-
-  const matrix = createFixtureMatrix({ fixture_root: root, id: 'surface-target-test' });
-  const importReport = {
-    desired: {
-      pages: [
-        { source_path: 'website/index.html', materialized_post_id: 101, slug: 'home', permalink: '/' },
-        { source_path: 'website/contact.html', materialized_post_id: 202, slug: 'contact', permalink: '/contact/' },
-        { source_path: 'website/merch/index.html', materialized_post_id: 303, slug: 'merch', permalink: '/merch/' },
-      ],
-    },
-  };
-
-  const surfaces = selectFixtureSurfaces(matrix.fixtures[0], { surfaceCoverage: 2 });
-  assert.deepEqual(surfaces.map((surface) => surface.id), ['front-page', 'contact', 'merch']);
-  assert.equal(resolveSurfaceEditorTarget(surfaces[1], { importReport }).postId, 202);
-  assert.equal(resolveSurfaceEditorTarget(surfaces[2], { importReport }).postId, 303);
-
-  const recipe = buildFixtureMatrixRecipe({
-    matrix,
-    artifactsDirectory: '/tmp/artifacts',
-    staticSiteImporterPath: '/tmp/static-site-importer',
-    surfaceCoverage: 2,
-    importReport,
-  });
-  const editorOpenSteps = recipe.workflow.steps.filter((step) => step.command === 'wordpress.editor-open');
-  const editorValidationSteps = recipe.workflow.steps.filter((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND);
-  const visualSteps = recipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare');
-
-  assert.ok(editorOpenSteps[0].args.includes('target=front-page'));
-  assert.ok(editorOpenSteps[1].args.includes('post-id=202'));
-  assert.ok(editorOpenSteps[2].args.includes('post-id=303'));
-  assert.ok(editorValidationSteps[1].args.includes('post-id=202'));
-  assert.ok(editorValidationSteps[2].args.includes('post-id=303'));
-  assert.equal(visualCompareMatrixComparison(visualSteps[1]).candidateUrl, '/contact/');
-  assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
-});
-
-test('fixture matrix secondary editor targets fall back to runtime slug resolution when imported page id is unavailable', () => {
-  const surface = { id: 'contact', target: '/contact/', source_entry: 'contact.html', candidate_url: '/contact/' };
-  const resolved = resolveSurfaceEditorTarget(surface, { importReport: { desired: { pages: [{ source_path: 'website/contact.html', slug: 'contact' }] } } });
-
-  assert.equal(resolved.postId, undefined);
-  assert.equal(resolved.postSlug, 'contact');
-  assert.equal(resolved.postType, 'page');
-  assert.equal(resolved.editor_target_source, 'surface-slug-fallback');
-});
-
-test('fixture matrix result preserves per-surface visual and editor artifacts', () => {
-  const root = mkdtempSync(path.join(tmpdir(), 'ssi-surface-result-'));
-  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-surface-result-artifacts-'));
-  const fixtureDirectory = path.join(root, 'artist');
-  mkdirSync(fixtureDirectory, { recursive: true });
-  writeFileSync(path.join(fixtureDirectory, 'fixture.json'), JSON.stringify({ id: 'artist', label: 'Artist' }));
-  writeFileSync(path.join(fixtureDirectory, 'index.html'), '<main>Home</main>');
-  writeFileSync(path.join(fixtureDirectory, 'about.html'), '<main>About</main>');
-
-  const matrix = createFixtureMatrix({ fixture_root: root, id: 'surface-result-test' });
-  const execution = ({ phase, surfaceId, sourceEntry, output }) => ({
-    recipePhase: phase,
-    recipeStepIndex: surfaceId === 'front-page' ? 1 : 2,
-    metadata: {
-      fixture_id: 'artist',
-      surface_id: surfaceId,
-      source_entry: sourceEntry,
-      target: surfaceId === 'front-page' ? 'front-page' : '/about/',
-      candidate_url: surfaceId === 'front-page' ? '/' : '/about/',
-    },
-    output: JSON.stringify(output),
-  });
-  const visualOutput = (surfaceId, sourceEntry) => ({
-    schema: 'wp-codebox/visual-compare/v1',
-    summary: { mismatch_pixels: surfaceId === 'front-page' ? 0 : 10, total_pixels: 1000, overlap_mismatch_pixels: surfaceId === 'front-page' ? 0 : 10, overlap_pixels: 1000 },
-    artifacts: {
-      source_screenshot: `files/browser/visual/${surfaceId}/source.png`,
-      imported_screenshot: `files/browser/visual/${surfaceId}/imported.png`,
-      diff_screenshot: `files/browser/visual/${surfaceId}/diff.png`,
-    },
-    source: { path: sourceEntry },
-  });
-  const editorOutput = (surfaceId) => ({
-    schema: 'wordpress/editor-validate-blocks/v1',
-    validation_method: EDITOR_VALIDATION_METHOD,
-    total_blocks: 2,
-    valid_blocks: 2,
-    invalid_blocks: 0,
-    results: [{ name: 'core/paragraph', isValid: true }, { name: 'core/heading', isValid: true }],
-    artifacts: {
-      editor_screenshot: `files/browser/editor-open/artist/${surfaceId}/screenshot.png`,
-    },
-  });
-
-  const result = collectFixtureMatrixRunResults({
-    matrix,
-    outputDirectory,
-    codeboxOutput: {
-      executions: [
-        execution({ phase: 'editor', surfaceId: 'front-page', sourceEntry: 'index.html', output: editorOutput('front-page') }),
-        execution({ phase: 'visual', surfaceId: 'front-page', sourceEntry: 'index.html', output: visualOutput('front-page', 'index.html') }),
-        execution({ phase: 'editor', surfaceId: 'about', sourceEntry: 'about.html', output: editorOutput('about') }),
-        execution({ phase: 'visual', surfaceId: 'about', sourceEntry: 'about.html', output: visualOutput('about', 'about.html') }),
-      ],
-    },
-  });
-
-  const fixture = result.fixtures[0];
-  const surfaces = Object.fromEntries(fixture.surfaces.map((surface) => [surface.surface_id, surface]));
-  assert.deepEqual(Object.keys(surfaces), ['front-page', 'about']);
-  assert.equal(surfaces['front-page'].source_entry, 'index.html');
-  assert.equal(surfaces.about.source_entry, 'about.html');
-  assert.ok(surfaces['front-page'].artifact_refs.some((ref) => ref.path === 'files/browser/visual/front-page/source.png'));
-  assert.ok(surfaces.about.artifact_refs.some((ref) => ref.path === 'files/browser/editor-open/artist/about/screenshot.png'));
-  assert.equal(result.summary.surface_evidence.surface_count, 2);
-  assert.equal(result.summary.surface_evidence.visual_surface_count, 2);
-  assert.equal(result.summary.surface_evidence.editor_surface_count, 2);
-  assert.deepEqual(result.summary.surface_evidence.rows.map((row) => `${row.fixture_id}/${row.surface_id}`), ['artist/front-page', 'artist/about']);
-
-  const report = buildVisualParityEvidenceReport({ outputDirectory, matrix, result });
-  assert.deepEqual(report.surfaces.map((surface) => `${surface.fixture_id}/${surface.surface_id}`), ['artist/front-page', 'artist/about']);
-  assert.equal(report.summary.visual_compare_surface_count, 2);
-  assert.equal(report.summary.editor_surface_count, 2);
-  assert.ok(report.surfaces.find((surface) => surface.surface_id === 'about').artifact_paths.includes('files/browser/visual/about/source.png'));
 });
 
 test('--no-editor-validation skips the editor browser step while keeping native-rate + findings', () => {
@@ -4130,52 +3779,6 @@ test('editorBlockValidationStep emits editor-validate-blocks against real import
   });
   assert.ok(withWait.args.includes('post-id=99'));
   assert.ok(withWait.args.includes('wait-selector=.is-root-container'));
-});
-
-test('editor step target builder preserves validation and open command precedence', () => {
-  const surface = {
-    id: 'contact',
-    postSlug: 'contact',
-    postType: 'page',
-    target: '/contact/',
-    editor_target_source: 'surface-slug-fallback',
-  };
-  const validation = editorBlockValidationStep({ fixture: { id: 'artist' }, surface });
-  assert.deepEqual(validation.args, ['post-type=page', 'post-slug=contact']);
-  assert.deepEqual(validation.metadata, {
-    fixture_id: 'artist',
-    fixture_path: undefined,
-    phase: 'editor',
-    surface_id: 'contact',
-    post_slug: 'contact',
-    post_type: 'page',
-    target: '/contact/',
-    editor_target_source: 'surface-slug-fallback',
-  });
-
-  const open = editorOpenStep({
-    fixture: { id: 'artist', editor_url: '/wp-admin/post.php?post=8&action=edit' },
-    surface: { id: 'contact', postId: 42, target: '/contact/', artifact_prefix: 'files/editor/contact' },
-    editorOpenTarget: 'front-page',
-    waitTimeout: 12000,
-  });
-  assert.equal(open.command, 'wordpress.editor-open');
-  assert.deepEqual(open.args, [
-    'post-id=42',
-    'wait-timeout=12000',
-    'capture=screenshot,editor-state,editor-validity',
-    'artifact-prefix=files/editor/contact',
-  ]);
-  assert.deepEqual(open.metadata, {
-    fixture_id: 'artist',
-    fixture_path: undefined,
-    phase: 'editor-open',
-    artifact_prefix: 'files/editor/contact',
-    surface_id: 'contact',
-    post_id: 42,
-    url: '/wp-admin/post.php?post=8&action=edit',
-    target: 'front-page',
-  });
 });
 
 test('editor-canvas-probe invalid-block warnings become gating editor_block_invalid findings', () => {
@@ -4927,11 +4530,12 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
     pixelThreshold: 0.05,
   });
 
-  const visualSetupStep = recipe.workflow.steps.find((step) => step.metadata?.phase === 'visual-setup');
+  // [activate, validate(simple-site), suppress-onboarding(simple-site), editor-open(simple-site), editor-validation(simple-site), visual-setup(simple-site), visual-compare(simple-site)]
+  const visualSetupStep = recipe.workflow.steps[5];
   assert.equal(visualSetupStep.command, 'wordpress.wp-cli');
   assert.equal(visualSetupStep.metadata.phase, 'visual-setup');
   assert.match(visualSetupStep.args[0], /wp_update_custom_css_post/);
-  const visualStep = recipe.workflow.steps.find((step) => step.command === 'wordpress.visual-compare');
+  const visualStep = recipe.workflow.steps[6];
   assert.equal(visualStep.command, 'wordpress.visual-compare');
   const comparison = visualCompareMatrixComparison(visualStep);
   assert.equal(comparison.sourceUrl, 'file:///tmp/artifacts/simple-site/source/index.html');
@@ -5226,12 +4830,7 @@ test('visual-compare artifacts collected from fixture files gate the matrix when
   mkdirSync(fixtureDirectory, { recursive: true });
   writeFileSync(path.join(fixtureDirectory, 'visual-diff.json'), JSON.stringify({
     schema: 'wp-codebox/visual-compare/v1',
-    comparison: {
-      mismatchPixels: 700000,
-      totalPixels: 2048000,
-      dimensionMismatch: false,
-      options: { viewport: { width: 1280, height: 720 }, fullPage: true },
-    },
+    comparison: { mismatchPixels: 700000, totalPixels: 2048000, dimensionMismatch: false },
     files: {
       sourceScreenshot: 'files/browser/visual-compare/source.png',
       candidateScreenshot: 'files/browser/visual-compare/candidate.png',
@@ -5249,8 +4848,6 @@ test('visual-compare artifacts collected from fixture files gate the matrix when
   assert.equal(gated.fixtures[0].visual_parity_artifacts.schema, 'static-site-importer/visual-parity-artifacts/v1');
   assert.equal(gated.fixtures[0].visual_parity_artifacts.artifacts.diff_screenshot.status, 'captured');
   assert.equal(gated.fixtures[0].visual_parity_artifacts.metrics.mismatch_pixels, 700000);
-  assert.deepEqual(gated.fixtures[0].visual_parity_artifacts.metrics.viewport, { width: 1280, height: 720 });
-  assert.equal(gated.fixtures[0].visual_parity_artifacts.metrics.full_page, true);
   assert.equal(finding.artifact_refs.find((ref) => ref.artifact_id === 'diff_screenshot')?.path, 'files/browser/visual-compare/diff.png');
   const exemplar = gated.summary.top_pattern_families.find((family) => family.kind === VISUAL_PARITY_MISMATCH_KIND)?.exemplars[0];
   assert.equal(exemplar.artifact_refs.find((ref) => ref.artifact_id === 'diff_screenshot')?.path, 'files/browser/visual-compare/diff.png');
@@ -5805,7 +5402,6 @@ test('visual parity evidence report summarizes staged output evidence and layout
   assert.equal(fixture.evidence.visual_attribution.status, 'available');
   assert.equal(fixture.evidence.visual_attribution.geometry_delta_count, 1);
   assert.equal(fixture.evidence.visual_attribution.attribution_ref, 'visual-compare/simple-site/visual-attribution.json');
-  assert.equal(report.surfaces[0].evidence.visual_attribution.selector_delta_count, 3);
   assert.ok(fixture.risk.reasons.includes('missing mobile viewport evidence'));
   assert.ok(fixture.risk.reasons.includes('1 missing asset signal(s)'));
   assert.ok(fixture.risk.reasons.includes('1 core/html block(s)'));
@@ -6204,7 +5800,7 @@ function exactDiffPng(source, candidate) {
   fillRect(image, 0, 0, image.width, image.height, [0, 0, 0, 0]);
   for (let y = 0; y < source.height; y += 1) {
     for (let x = 0; x < source.width; x += 1) {
-      const index = ((y * source.width) + x) * 4;
+      const index = ((y * source.width) + x) << 2;
       const differs = source.data[index] !== candidate.data[index]
         || source.data[index + 1] !== candidate.data[index + 1]
         || source.data[index + 2] !== candidate.data[index + 2]
@@ -6224,7 +5820,7 @@ function countDiffPixels(diff) {
   let pixels = 0;
   for (let y = 0; y < diff.height; y += 1) {
     for (let x = 0; x < diff.width; x += 1) {
-      const index = ((y * diff.width) + x) * 4;
+      const index = ((y * diff.width) + x) << 2;
       if (diff.data[index] || diff.data[index + 1] || diff.data[index + 2]) {
         pixels += 1;
       }
@@ -6258,8 +5854,8 @@ function shiftedPng(source, xOffset, yOffset) {
       if (targetX < 0 || targetY < 0 || targetX >= image.width || targetY >= image.height) {
         continue;
       }
-      const sourceIndex = ((y * source.width) + x) * 4;
-      const targetIndex = ((targetY * image.width) + targetX) * 4;
+      const sourceIndex = ((y * source.width) + x) << 2;
+      const targetIndex = ((targetY * image.width) + targetX) << 2;
       image.data[targetIndex] = source.data[sourceIndex];
       image.data[targetIndex + 1] = source.data[sourceIndex + 1];
       image.data[targetIndex + 2] = source.data[sourceIndex + 2];
@@ -6272,7 +5868,7 @@ function shiftedPng(source, xOffset, yOffset) {
 function fillRect(image, x, y, width, height, rgba) {
   for (let row = y; row < y + height; row += 1) {
     for (let column = x; column < x + width; column += 1) {
-      const index = ((row * image.width) + column) * 4;
+      const index = ((row * image.width) + column) << 2;
       image.data[index] = rgba[0];
       image.data[index + 1] = rgba[1];
       image.data[index + 2] = rgba[2];

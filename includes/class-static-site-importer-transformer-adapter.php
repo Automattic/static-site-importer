@@ -502,7 +502,7 @@ class Static_Site_Importer_Transformer_Adapter {
 		$dom      = $this->load_html_document( $html );
 		$xpath    = new DOMXPath( $dom );
 		$products = array();
-		$cards    = $xpath->query( "//*[contains(concat(' ', normalize-space(@class), ' '), ' product-card ') or ((self::article or self::div or self::li) and contains(concat(' ', normalize-space(@class), ' '), '-card '))]" );
+		$cards    = $xpath->query( "//*[contains(concat(' ', normalize-space(@class), ' '), ' product-card ')]" );
 		if ( false === $cards ) {
 			return array();
 		}
@@ -511,15 +511,11 @@ class Static_Site_Importer_Transformer_Adapter {
 			if ( ! $card instanceof DOMElement ) {
 				continue;
 			}
-			$name = $this->first_xpath_text( $xpath, './/*[self::h1 or self::h2 or self::h3 or self::h4 or self::h5 or self::h6]', $card );
-			if ( '' === $name ) {
-				$name = $this->first_xpath_text( $xpath, ".//*[contains(@class, 'name') or contains(@class, 'title')]", $card );
-			}
-			$price = $this->price_from_text( $this->first_xpath_text( $xpath, ".//*[contains(@class, 'price')]", $card ) );
+			$name  = $this->first_xpath_text( $xpath, './/*[self::h1 or self::h2 or self::h3 or self::h4 or self::h5 or self::h6]', $card );
+			$price = $this->price_from_text( $this->first_xpath_text( $xpath, ".//*[contains(concat(' ', normalize-space(@class), ' '), ' price ')]", $card ) );
 			if ( '' === $price ) {
 				$price = $this->price_from_text( (string) $card->textContent );
 			}
-			$selector = $this->source_selector_for_card( $card );
 
 			$product = $this->normalize_product_report_row(
 				array(
@@ -527,9 +523,7 @@ class Static_Site_Importer_Transformer_Adapter {
 					'name'             => $name,
 					'slug'             => $this->sanitize_slug( $name ),
 					'regular_price'    => $price,
-					'description'      => $this->first_xpath_text( $xpath, ".//*[contains(@class, 'desc') or contains(@class, 'description')]", $card ),
-					'categories'       => array( $this->first_xpath_text( $xpath, ".//*[contains(@class, 'tag') or contains(@class, 'category') or contains(@class, 'type')]", $card ) ),
-					'source_selectors' => array( $selector ),
+					'source_selectors' => array( '.product-card' ),
 					'source_path'      => $source_path,
 				)
 			);
@@ -539,23 +533,6 @@ class Static_Site_Importer_Transformer_Adapter {
 		}
 
 		return $products;
-	}
-
-	/**
-	 * Return the most specific class selector for a detected product card.
-	 *
-	 * @param DOMElement $card Detected product card element.
-	 * @return string
-	 */
-	private function source_selector_for_card( DOMElement $card ): string {
-		$classes = preg_split( '/\s+/', trim( $card->getAttribute( 'class' ) ) );
-		foreach ( is_array( $classes ) ? $classes : array() as $class ) {
-			if ( '' !== $class && ( 'product-card' === $class || str_ends_with( $class, '-card' ) ) ) {
-				return '.' . $class;
-			}
-		}
-
-		return '.product-card';
 	}
 
 	/**

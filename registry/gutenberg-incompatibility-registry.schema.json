@@ -48,7 +48,7 @@
   "$defs": {
     "classification": { "enum": ["convertible", "custom-block-candidate", "runtime-island"] },
     "fallback_kind": { "enum": ["core_html", "data_uri", "runtime_island", "fidelity_loss"] },
-    "limitation_type": { "enum": ["real_gutenberg_gap", "provider_materializable", "transformer_gap", "intentional_runtime_preservation", "visual_only_style_drift", "editor_validity_risk"] },
+    "limitation_type": { "enum": ["real_gutenberg_gap", "transformer_gap", "intentional_runtime_preservation", "visual_only_style_drift", "editor_validity_risk"] },
     "frontend_visual_status": { "enum": ["passed", "visual_mismatch", "not_evaluated", "provider_runtime_blocked"] },
     "editor_canvas_status": { "enum": ["visible", "diverged", "not_captured", "capture_failed", "provider_runtime_blocked"] },
     "editor_validity_status": { "enum": ["valid", "invalid_blocks", "not_validated"] },
@@ -86,7 +86,6 @@
         "selectors": { "type": "array", "items": { "type": "string" } },
         "source_paths": { "type": "array", "items": { "type": "string" } },
         "signals": { "$ref": "#/$defs/counts" },
-        "provider_materialized_by": { "$ref": "#/$defs/counts" },
         "example": { "type": "object" },
         "examples": { "type": "array", "items": { "type": "object" } }
       },
@@ -94,7 +93,7 @@
     },
     "fixture_decision": {
       "type": "object",
-      "required": ["fixture_id", "frontend_visual_status", "editor_canvas_status", "block_validity_status", "editor_validity_status", "native_editability_status", "visible_html_island_count", "runtime_island_count", "visible_runtime_or_html_islands", "gutenberg_gap_patterns", "provider_materializable_patterns", "transformer_gap_patterns", "intentional_runtime_patterns", "visual_only_patterns", "solved_candidate", "acceptance_status", "acceptance_reason"],
+      "required": ["fixture_id", "frontend_visual_status", "editor_canvas_status", "block_validity_status", "editor_validity_status", "native_editability_status", "visible_html_island_count", "runtime_island_count", "visible_runtime_or_html_islands", "gutenberg_gap_patterns", "transformer_gap_patterns", "intentional_runtime_patterns", "visual_only_patterns", "solved_candidate", "acceptance_status", "acceptance_reason"],
       "properties": {
         "fixture_id": { "type": "string" },
         "fixture_corpus": { "enum": ["active", "solved"] },
@@ -107,7 +106,6 @@
         "runtime_island_count": { "type": "integer", "minimum": 0 },
         "visible_runtime_or_html_islands": { "type": "number", "minimum": 0 },
         "gutenberg_gap_patterns": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
-        "provider_materializable_patterns": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
         "transformer_gap_patterns": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
         "intentional_runtime_patterns": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
         "visual_only_patterns": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },

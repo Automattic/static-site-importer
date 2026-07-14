@@ -64,7 +64,6 @@ Acceptance criteria:
 - Missing WooCommerce produces existing commerce dependency diagnostics, not a silent static fallback.
 - Quantity/add-to-cart actions update Woo cart state through Woo APIs.
 - Product cards remain editable as layout/content while controls are provider-backed runtime islands.
-- Matrix registry maps `js-commerce-controls` to provider-materializable unless no Woo mapping exists.
 
 ### `ssi/<site>/runtime-island`
 
@@ -131,7 +130,6 @@ Second should be `commerce-control`, because Woo product materialization already
 ## Diagnostic Policy
 
 - `custom-block-candidate`: use when the pattern has no core block path, no provider owns the runtime, and recurrence clears the registry threshold.
-- `provider_materializable`: use when WooCommerce or a form provider can own the behavior.
 - `runtime-island`: use when preserving bounded DOM plus scoped script execution is the honest result.
 - `transformer_gap`: use when Blocks Engine can emit better native/core markup and no companion block should exist.
 

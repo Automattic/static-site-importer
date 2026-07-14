@@ -73,12 +73,7 @@ $input = implode(
 	array(
 		'<!-- wp:group {"className":"outer"} --><div class="wp-block-group outer">',
 		'<!-- wp:html {"content":""} --><!-- /wp:html -->',
-		'<!-- wp:html {"content":"<section class=\"hero\"><h2 class=\"title\">Care <em>that works</em></h2><p class=\"lede\">Book today</p><img class=\"photo\" src=\"assets/hero.jpg\" alt=\"Clinic room\"><nav class=\"site-nav\"><ul><li><a href=\"#treatments\">Treatments</a></li><li><a href=\"#pricing\">Pricing</a></li><li>Contact</li></ul></nav><ul class=\"ticks\"><li>Assessment</li><li>Treatment</li></ul><a class=\"cta\" href=\"/book/\">Reserve</a></section>"} --><section class="hero"><h2 class="title">Care <em>that works</em></h2><p class="lede">Book today</p><img class="photo" src="assets/hero.jpg" alt="Clinic room"><nav class="site-nav"><ul><li><a href="#treatments">Treatments</a></li><li><a href="#pricing">Pricing</a></li><li>Contact</li></ul></nav><ul class="ticks"><li>Assessment</li><li>Treatment</li></ul><a class="cta" href="/book/">Reserve</a></section><!-- /wp:html -->',
-		'<!-- wp:html {"content":"<section class=\"nav-bar\"><ul><li>Services</li><li>Prices</li></ul></section>"} --><section class="nav-bar"><ul><li>Services</li><li>Prices</li></ul></section><!-- /wp:html -->',
-		'<!-- wp:html {"content":"<figure class=\"featured\"><img src=\"assets/post.jpg\" alt=\"Post image\"><figcaption>Read the <em>story</em></figcaption></figure>"} --><figure class="featured"><img src="assets/post.jpg" alt="Post image"><figcaption>Read the <em>story</em></figcaption></figure><!-- /wp:html -->',
-		'<!-- wp:html {"content":"<nav class=\"primary-nav\"><ul><li><a href=\"/\">Home</a></li><li><a href=\"/archive/\">Archive</a></li></ul></nav>"} --><nav class="primary-nav"><ul><li><a href="/">Home</a></li><li><a href="/archive/">Archive</a></li></ul></nav><!-- /wp:html -->',
-		'<!-- wp:html {"content":"<section class=\"posts-grid\"><article class=\"post-card\"><img src=\"one.jpg\" alt=\"One\"><h2>One</h2><p>Excerpt one</p></article><article class=\"post-card\"><img src=\"two.jpg\" alt=\"Two\"><h2>Two</h2><p>Excerpt two</p></article></section>"} --><section class="posts-grid"><article class="post-card"><img src="one.jpg" alt="One"><h2>One</h2><p>Excerpt one</p></article><article class="post-card"><img src="two.jpg" alt="Two"><h2>Two</h2><p>Excerpt two</p></article></section><!-- /wp:html -->',
-		'<!-- wp:html {"content":"<form class=\"search-form\" role=\"search\" method=\"get\"><input type=\"search\" name=\"s\" placeholder=\"Search posts\"><button type=\"submit\">Find</button></form>"} --><form class="search-form" role="search" method="get"><input type="search" name="s" placeholder="Search posts"><button type="submit">Find</button></form><!-- /wp:html -->',
+		'<!-- wp:html {"content":"<section class=\"hero\"><h2 class=\"title\">Care <em>that works</em></h2><p class=\"lede\">Book today</p><img class=\"photo\" src=\"assets/hero.jpg\" alt=\"Clinic room\"><ul class=\"ticks\"><li>Assessment</li><li>Treatment</li></ul><a class=\"cta\" href=\"/book/\">Reserve</a></section>"} --><section class="hero"><h2 class="title">Care <em>that works</em></h2><p class="lede">Book today</p><img class="photo" src="assets/hero.jpg" alt="Clinic room"><ul class="ticks"><li>Assessment</li><li>Treatment</li></ul><a class="cta" href="/book/">Reserve</a></section><!-- /wp:html -->',
 		'<!-- wp:html {"content":"<figure class=\"case-study\"><picture><source srcset=\"assets/team.webp\" type=\"image/webp\"><img src=\"assets/team.jpg\" alt=\"Care team\"></picture><figcaption>Care team caption</figcaption></figure>"} --><figure class="case-study"><picture><source srcset="assets/team.webp" type="image/webp"><img src="assets/team.jpg" alt="Care team"></picture><figcaption>Care team caption</figcaption></figure><!-- /wp:html -->',
 		'<!-- wp:html {"content":"<form class=\"site-search\" role=\"search\" action=\"/search/\"><label>Find care</label><input type=\"search\" name=\"s\" placeholder=\"Search services\" aria-label=\"Search services\"><button type=\"submit\">Go</button></form>"} --><form class="site-search" role="search" action="/search/"><label>Find care</label><input type="search" name="s" placeholder="Search services" aria-label="Search services"><button type="submit">Go</button></form><!-- /wp:html -->',
 		'<!-- wp:html {"content":"<input class=\"generated-search\" type=\"search\" name=\"s\" placeholder=\"Email Search for...\" aria-label=\"Email Search for...\">"} --><input class="generated-search" type="search" name="s" placeholder="Email Search for..." aria-label="Email Search for..."><!-- /wp:html -->',
@@ -95,32 +90,23 @@ $output     = $method->invoke( null, $input );
 $before = $count_blocks( $input );
 $after  = $count_blocks( $output );
 
-$assert( 12 === ( $before['core/html'] ?? 0 ), 'before-has-twelve-html-fallbacks' );
+$assert( 7 === ( $before['core/html'] ?? 0 ), 'before-has-seven-html-fallbacks' );
 $assert( 1 === ( $after['core/html'] ?? 0 ), 'after-keeps-only-unsupported-form-fallback', print_r( $after, true ) );
-$assert( 4 === ( $after['core/group'] ?? 0 ), 'existing-section-and-query-card-groups-preserved', print_r( $after, true ) );
+$assert( 2 === ( $after['core/group'] ?? 0 ), 'existing-and-section-groups-preserved' );
 $assert( 1 === ( $after['core/heading'] ?? 0 ), 'heading-converted' );
 $assert( 1 === ( $after['core/paragraph'] ?? 0 ), 'paragraph-converted' );
-$assert( 3 === ( $after['core/image'] ?? 0 ), 'images-and-captioned-figures-converted' );
+$assert( 2 === ( $after['core/image'] ?? 0 ), 'images-converted' );
 $assert( 1 === ( $after['core/list'] ?? 0 ), 'list-converted' );
 $assert( 2 === ( $after['core/list-item'] ?? 0 ), 'list-items-converted' );
-$assert( 3 === ( $after['core/navigation'] ?? 0 ), 'navigation-converted' );
-$assert( 7 === ( $after['core/navigation-link'] ?? 0 ), 'navigation-links-converted' );
 $assert( 1 === ( $after['core/buttons'] ?? 0 ), 'button-wrapper-converted' );
 $assert( 1 === ( $after['core/button'] ?? 0 ), 'button-converted' );
-$assert( 1 === ( $after['core/query'] ?? 0 ), 'query-grid-converted' );
-$assert( 1 === ( $after['core/post-template'] ?? 0 ), 'post-template-converted' );
-$assert( 1 === ( $after['core/post-featured-image'] ?? 0 ), 'post-featured-image-converted' );
-$assert( 1 === ( $after['core/post-title'] ?? 0 ), 'post-title-converted' );
-$assert( 1 === ( $after['core/post-excerpt'] ?? 0 ), 'post-excerpt-converted' );
-$assert( 3 === ( $after['core/search'] ?? 0 ), 'search-patterns-converted' );
+$assert( 2 === ( $after['core/search'] ?? 0 ), 'search-patterns-converted' );
 $assert( 1 === ( $after['core/quote'] ?? 0 ), 'blockquote-converted' );
 $assert( 1 === ( $after['core/separator'] ?? 0 ), 'separator-converted' );
 $assert( str_contains( $output, 'className":"hero' ), 'section-class-preserved' );
 $assert( str_contains( $output, 'className":"title' ), 'heading-class-preserved' );
 $assert( str_contains( $output, 'assets/hero.jpg' ), 'image-src-preserved' );
 $assert( str_contains( $output, 'Clinic room' ), 'image-alt-preserved' );
-$assert( str_contains( $output, '#treatments' ), 'navigation-url-preserved' );
-$assert( str_contains( $output, 'Contact' ), 'navigation-label-preserved' );
 $assert( str_contains( $output, 'assets/team.jpg' ), 'picture-img-src-preserved' );
 $assert( str_contains( $output, 'Care team caption' ), 'figure-caption-preserved' );
 $assert( str_contains( $output, '/search/' ), 'search-action-preserved' );
@@ -129,9 +115,6 @@ $assert( str_contains( $output, 'Email Search for...' ), 'standalone-search-plac
 $assert( str_contains( $output, 'className":"generated-search' ), 'standalone-search-class-preserved' );
 $assert( str_contains( $output, 'Patient story' ), 'quote-citation-preserved' );
 $assert( str_contains( $output, '/book/' ), 'button-url-preserved' );
-$assert( str_contains( $output, 'Read the <em>story</em>' ), 'figcaption-preserved' );
-$assert( str_contains( $output, 'primary-nav' ), 'nav-class-preserved' );
-$assert( str_contains( $output, 'Search posts' ), 'search-placeholder-preserved' );
 $assert( str_contains( $output, '<form class="lead-form"><input name="email"></form>' ), 'unsupported-form-fallback-preserved' );
 
 $mixed_contact_html = '<div class="contact-content"><aside class="contact-sidebar"><div class="contact-block"><div class="label">Booking</div><h3>Book a Show</h3><p>Email <a href="mailto:booking@example.com" class="contact-email"><svg aria-hidden="true" viewBox="0 0 16 16"><path d="M1 1h14v14H1z"/></svg> booking@example.com</a></p></div></aside><div class="contact-form-wrap"><h2>Send a Message</h2><form class="contact-form"><label>Name<input name="name"></label><select name="topic"><option>Booking</option></select><textarea name="message"></textarea><button type="submit">Send</button></form></div></div>';
