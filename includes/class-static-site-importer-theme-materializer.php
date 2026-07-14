@@ -295,6 +295,7 @@ class Static_Site_Importer_Theme_Materializer {
 					'path'    => $relative,
 					'content' => trim( $content ),
 				);
+				$stylesheets[] = $assets[ $relative ];
 				continue;
 			}
 			if ( 'js' === $kind || 'script' === $role || str_ends_with( $lower, '.js' ) ) {
@@ -315,7 +316,7 @@ class Static_Site_Importer_Theme_Materializer {
 		if ( is_wp_error( $font_stylesheets ) ) {
 			return $font_stylesheets;
 		}
-		$stylesheets = array_merge( $stylesheets, $font_stylesheets );
+		$stylesheets = array_merge( $font_stylesheets, $stylesheets );
 
 		return array(
 			'css'         => trim( implode( "\n\n", array_filter( self::rewrite_materialized_css_chunks( $css, $assets ) ) ) ),
