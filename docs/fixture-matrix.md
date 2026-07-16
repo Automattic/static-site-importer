@@ -511,16 +511,16 @@ offers native capture-freeze controls.
 The wrapper has three execution modes. Use `--dry-run` with any mode to inspect
 the composed Homeboy commands before running the matrix.
 
-### Local Hot Execution
+### Local Placement
 
-`homeboy bench` auto-offloads to a connected default Lab runner whenever one is
-configured — even with no `--runner` flag. The offload translates
-component/checkout paths into the remote workspace but forwards
+`homeboy bench` receives typed placement explicitly. To run the matrix on this
+machine against local checkouts, a local fixture root, and a local WP Codebox,
+pass `--local` to `tools/run-fixture-matrix.mjs`. The wrapper passes
+`--placement local` to the bench command. Local setup commands remain local
+because `homeboy rig install` and `homeboy rig sync` do not support placement.
+Lab execution translates component/checkout paths into the remote workspace but forwards
 `--shared-state`/`--artifact-root` verbatim, so local-only paths fail on the
-runner (`Permission denied`). To run the matrix on this machine against local
-checkouts, a local fixture root, and a local WP Codebox, pass `--local` to
-`tools/run-fixture-matrix.mjs` (it injects `--force-hot --allow-local-hot` into
-every routed Homeboy step):
+runner (`Permission denied`).
 
 ```
 node tools/run-fixture-matrix.mjs \
@@ -531,9 +531,9 @@ node tools/run-fixture-matrix.mjs \
   --wp-codebox-bin <wp-codebox>/packages/cli/dist/index.js
 ```
 
-`--runner local` is accepted as an alias for `--local` because Homeboy's `local`
-runner is not a Lab offload target. The wrapper maps it to the same hot-local
-command plan and does not pass `--runner local` through to Homeboy.
+`--runner local` is accepted as an alias for `--local`. The wrapper maps it to
+the same `--placement local` bench plan and does not pass `--runner local`
+through to Homeboy.
 
 ### Lab Offload
 
@@ -546,24 +546,30 @@ node tools/run-fixture-matrix.mjs \
   --blocks-engine <blocks-engine-checkout>
 ```
 
-This passes `--runner homeboy-lab` to Homeboy and does not inject
-`--force-hot --allow-local-hot`, so Homeboy can hand the bench to the connected
-runner. Use `--lab-only` without `--local` when any Lab runner is acceptable and a
-local fallback should be treated as a failure.
+This passes `--placement lab --runner homeboy-lab` to Homeboy. Use `--lab-only`
+without `--local` when any Lab runner is acceptable; it passes `--placement lab`
+without a named runner.
+
+Use `--allow-local-fallback` when a Lab preference may fall back to the local
+machine. The wrapper passes `--placement lab-or-local` (and preserves a named
+`--runner` when supplied).
 
 ### Default / Auto Routing
 
-With no `--local`, `--runner`, or `--lab-only`, the wrapper leaves routing to
-`homeboy bench`. In environments with a connected default Lab runner this may
-offload automatically. If you need deterministic local execution, pass `--local`;
-if you need deterministic Lab execution, pass `--runner <id>` or `--lab-only`.
+With no `--local`, `--runner`, `--lab-only`, or `--allow-local-fallback`, the wrapper passes
+`--placement auto` to `homeboy bench`. Homeboy selects the execution location
+from its command contract, controller pressure, and ready Lab capacity. If you
+need deterministic local execution, pass `--local`; if you need deterministic
+Lab execution, pass `--runner <id>` or `--lab-only`.
 
 Mutual-exclusion rules:
 
 - `--local` cannot be combined with `--runner <remote>`.
 - `--local` cannot be combined with `--lab-only`.
-- Pick exactly one explicit target for deterministic runs: local-hot (`--local`)
-  or Lab offload (`--runner homeboy-lab` / `--lab-only`).
+- `--allow-local-fallback` selects `lab-or-local` placement and cannot be
+  combined with `--local` or `--lab-only`.
+- Pick exactly one explicit target for deterministic runs: local (`--local`) or
+  Lab (`--runner homeboy-lab` / `--lab-only`).
 
 Notes:
 - The `editor-validate-blocks` step (#1597) requires a wp-codebox build that

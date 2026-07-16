@@ -2193,22 +2193,46 @@ test('fixture matrix operator rejects contradictory local and Lab routing', () =
     runner: 'homeboy-lab',
     staticSiteImporter,
     fixtureRoot,
-  }), /--local forces hot execution on this machine and cannot be combined with --runner homeboy-lab/);
+  }), /--local selects local placement and cannot be combined with --runner homeboy-lab/);
 
   assert.throws(() => buildFixtureMatrixRunPlan({
     local: true,
     labOnly: true,
     staticSiteImporter,
     fixtureRoot,
-  }), /--local forces hot execution on this machine and cannot be combined with --lab-only/);
+  }), /--local selects local placement and cannot be combined with --lab-only/);
+
+  assert.throws(() => buildFixtureMatrixRunPlan({
+    local: true,
+    allowLocalFallback: true,
+    staticSiteImporter,
+    fixtureRoot,
+  }), /--allow-local-fallback selects lab-or-local placement and cannot be combined with --local/);
+
+  assert.throws(() => buildFixtureMatrixRunPlan({
+    labOnly: true,
+    allowLocalFallback: true,
+    staticSiteImporter,
+    fixtureRoot,
+  }), /--allow-local-fallback selects lab-or-local placement and cannot be combined with --lab-only/);
 });
 
-test('fixture matrix operator composes legible local-hot and Lab offload routing', () => {
+test('fixture matrix operator composes typed placement only for the bench step', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-routing-plan-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
   const fixtureRoot = path.join(root, 'fixtures');
   mkdirSync(staticSiteImporter, { recursive: true });
   mkdirSync(path.join(fixtureRoot, 'fixture-a'), { recursive: true });
+
+  const setupPlan = buildFixtureMatrixRunPlan({
+    runner: 'homeboy-lab',
+    staticSiteImporter,
+    fixtureRoot,
+  });
+  assert.deepEqual(setupPlan.steps.slice(0, -1).map((step) => step.args), [
+    ['rig', 'install', path.dirname(path.dirname(fileURLToPath(import.meta.url))), '--id', 'static-site-importer-fixture-matrix', '--reinstall'],
+    ['rig', 'sync', 'static-site-importer-fixture-matrix'],
+  ]);
 
   const labPlan = buildFixtureMatrixRunPlan({
     runner: 'homeboy-lab',
@@ -2218,14 +2242,12 @@ test('fixture matrix operator composes legible local-hot and Lab offload routing
     skipSync: true,
   });
   const labArgs = labPlan.steps.at(-1).args;
-  assert.equal(labPlan.execution_target, 'lab-offload:homeboy-lab');
+  assert.equal(labPlan.execution_target, 'lab:homeboy-lab');
+  assert.equal(labPlan.placement, 'lab');
   assert.equal(labPlan.shared_state, '');
   assert.equal(labPlan.artifact_root, '');
-  assert.match(labPlan.steps.at(-1).label, /lab-offload:homeboy-lab/);
-  assert.ok(labArgs.includes('--runner'));
-  assert.ok(labArgs.includes('homeboy-lab'));
-  assert.equal(labArgs.includes('--force-hot'), false);
-  assert.equal(labArgs.includes('--allow-local-hot'), false);
+  assert.match(labPlan.steps.at(-1).label, /lab:homeboy-lab/);
+  assert.deepEqual(labArgs.slice(-4), ['--placement', 'lab', '--runner', 'homeboy-lab']);
   assert.equal(labArgs.includes('--shared-state'), false);
   assert.equal(labArgs.includes('--artifact-root'), false);
 
@@ -2252,10 +2274,10 @@ test('fixture matrix operator composes legible local-hot and Lab offload routing
     skipSync: true,
   });
   const localArgs = localPlan.steps.at(-1).args;
-  assert.equal(localPlan.execution_target, 'local-hot');
-  assert.match(localPlan.steps.at(-1).label, /local-hot/);
-  assert.ok(localArgs.includes('--force-hot'));
-  assert.ok(localArgs.includes('--allow-local-hot'));
+  assert.equal(localPlan.execution_target, 'local');
+  assert.equal(localPlan.placement, 'local');
+  assert.match(localPlan.steps.at(-1).label, /local/);
+  assert.deepEqual(localArgs.slice(-2), ['--placement', 'local']);
   assert.equal(localArgs.includes('--runner'), false);
 
   const runnerLocalPlan = buildFixtureMatrixRunPlan({
@@ -2266,12 +2288,52 @@ test('fixture matrix operator composes legible local-hot and Lab offload routing
     skipSync: true,
   });
   const runnerLocalArgs = runnerLocalPlan.steps.at(-1).args;
-  assert.equal(runnerLocalPlan.execution_target, 'local-hot');
+  assert.equal(runnerLocalPlan.execution_target, 'local');
   assert.equal(runnerLocalPlan.runner, '');
   assert.equal(runnerLocalPlan.local, true);
-  assert.ok(runnerLocalArgs.includes('--force-hot'));
-  assert.ok(runnerLocalArgs.includes('--allow-local-hot'));
+  assert.deepEqual(runnerLocalArgs.slice(-2), ['--placement', 'local']);
   assert.equal(runnerLocalArgs.includes('--runner'), false);
+
+  const labOnlyPlan = buildFixtureMatrixRunPlan({
+    labOnly: true,
+    staticSiteImporter,
+    fixtureRoot,
+    skipInstall: true,
+    skipSync: true,
+  });
+  assert.equal(labOnlyPlan.execution_target, 'lab');
+  assert.deepEqual(labOnlyPlan.steps.at(-1).args.slice(-2), ['--placement', 'lab']);
+
+  const fallbackPlan = buildFixtureMatrixRunPlan({
+    runner: 'homeboy-lab',
+    allowLocalFallback: true,
+    staticSiteImporter,
+    fixtureRoot,
+    skipInstall: true,
+    skipSync: true,
+  });
+  assert.equal(fallbackPlan.execution_target, 'lab-or-local:homeboy-lab');
+  assert.deepEqual(fallbackPlan.steps.at(-1).args.slice(-4), ['--placement', 'lab-or-local', '--runner', 'homeboy-lab']);
+
+  const unnamedFallbackPlan = buildFixtureMatrixRunPlan({
+    allowLocalFallback: true,
+    staticSiteImporter,
+    fixtureRoot,
+    skipInstall: true,
+    skipSync: true,
+  });
+  assert.equal(unnamedFallbackPlan.execution_target, 'lab-or-local');
+  assert.deepEqual(unnamedFallbackPlan.steps.at(-1).args.slice(-2), ['--placement', 'lab-or-local']);
+  assert.ok(!unnamedFallbackPlan.warnings.some((warning) => warning.code === 'lab_auto_offload_risk'));
+
+  const autoPlan = buildFixtureMatrixRunPlan({
+    staticSiteImporter,
+    fixtureRoot,
+    skipInstall: true,
+    skipSync: true,
+  });
+  assert.equal(autoPlan.execution_target, 'auto');
+  assert.deepEqual(autoPlan.steps.at(-1).args.slice(-2), ['--placement', 'auto']);
 });
 
 test('fixture matrix operator plan forwards complexity lane settings', () => {
@@ -2810,10 +2872,9 @@ test('fixture matrix dry-run plan surfaces local fallback and dirty workspace wa
 
   assert.equal(plan.namespace, 'proof-run-1');
   assert.equal(plan.temp_root, '/tmp/static-site-importer-fixture-matrix-proof-run-1');
-  // The single-fixture temp corpus drifts from the canonical pin, so the plan
-  // surfaces a non-silent drift warning alongside the routing warnings.
+  // Explicit fallback resolves to lab-or-local rather than auto; the
+  // single-fixture temp corpus also surfaces a non-silent drift warning.
   assert.deepEqual(plan.warnings.map((warning) => warning.code), [
-    'lab_auto_offload_risk',
     'local_fallback_allowed',
     'dirty_lab_workspace_allowed',
     'canonical_fixture_count_drift',
@@ -2825,7 +2886,7 @@ test('fixture matrix dry-run plan surfaces local fallback and dirty workspace wa
   );
 });
 
-test('--local forces hot local execution and suppresses the auto-offload-risk warning', () => {
+test('--local selects typed local placement and suppresses the auto-placement warning', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-local-plan-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
   const localFixtureRoot = path.join(root, 'fixtures');
@@ -2840,17 +2901,15 @@ test('--local forces hot local execution and suppresses the auto-offload-risk wa
     skipSync: true,
   });
 
-  // The auto-offload risk warning is gone; the forced-local note replaces it.
+  // The auto-placement warning is gone; the local-placement note replaces it.
   const codes = plan.warnings.map((warning) => warning.code);
   assert.ok(!codes.includes('lab_auto_offload_risk'));
   assert.ok(codes.includes('forced_local_execution'));
   assert.equal(plan.local, true);
 
-  // The bench step carries --force-hot --allow-local-hot so homeboy bench stays
-  // local instead of offloading local-only paths to a connected Lab runner.
+  // The bench step carries typed local placement so local-only paths stay local.
   const benchStep = plan.steps.at(-1);
-  assert.ok(benchStep.args.includes('--force-hot'));
-  assert.ok(benchStep.args.includes('--allow-local-hot'));
+  assert.deepEqual(benchStep.args.slice(-2), ['--placement', 'local']);
 });
 
 test('operator summary preserves matrix rollups for fanout agents', () => {
