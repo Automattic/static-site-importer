@@ -30,7 +30,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: Extra-Chill/homeboy-action@5608026212ba9ff854243fdc167c02d280dfe6b5  # v2.8.13
+      - uses: Extra-Chill/homeboy-action@31e95050206332c4ebd36894387c980c99443ecf  # v2.8.15
         with:
           commands: review test
           args: --extension wordpress
