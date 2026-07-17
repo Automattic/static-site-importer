@@ -197,6 +197,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'input'       => isset( $compiled['input'] ) && is_array( $compiled['input'] ) ? $compiled['input'] : array(),
 			'diagnostics' => isset( $compiled['diagnostics'] ) && is_array( $compiled['diagnostics'] ) ? $compiled['diagnostics'] : array(),
 		);
+		$report['blocks_engine']['transformer']      = self::transformer_package_provenance();
 
 		if ( 'blocks-engine/php-transformer/compiled-site/v1' === (string) ( $site['schema'] ?? '' ) ) {
 			$report['blocks_engine']['compiled_site'] = self::compiled_site_report_payload( $site );
@@ -2407,6 +2408,14 @@ class Static_Site_Importer_Report_Diagnostics {
 					$row[ $field ] = (string) $asset[ $field ];
 				}
 			}
+			$payload = self::materialization_plan_asset_payload( $asset );
+			if ( null !== $payload ) {
+				$row['payload_present'] = true;
+				$row['payload_sha256']  = hash( 'sha256', $payload );
+				$row['payload_bytes']   = strlen( $payload );
+			} else {
+				$row['payload_present'] = false;
+			}
 			foreach ( array( 'defer', 'async' ) as $field ) {
 				if ( array_key_exists( $field, $asset ) ) {
 					$row[ $field ] = (bool) $asset[ $field ];
@@ -2422,6 +2431,49 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		return $rows;
+	}
+
+	/**
+	 * Return a materialization asset payload without retaining it in diagnostics.
+	 *
+	 * @param array<string,mixed> $asset Materialization-plan asset.
+	 * @return string|null
+	 */
+	private static function materialization_plan_asset_payload( array $asset ): ?string {
+		if ( isset( $asset['content_base64'] ) && is_scalar( $asset['content_base64'] ) ) {
+			$payload = base64_decode( (string) $asset['content_base64'], true );
+			if ( false !== $payload ) {
+				return $payload;
+			}
+		}
+		if ( isset( $asset['content'] ) && is_scalar( $asset['content'] ) ) {
+			return (string) $asset['content'];
+		}
+		return null;
+	}
+
+	/**
+	 * Read the effective transformer package identity from Composer's installed metadata.
+	 *
+	 * @return array<string,string>
+	 */
+	private static function transformer_package_provenance(): array {
+		$package = 'automattic/blocks-engine-php-transformer';
+		if ( ! class_exists( '\Composer\InstalledVersions' ) || ! \Composer\InstalledVersions::isInstalled( $package ) ) {
+			return array( 'package' => $package );
+		}
+
+		$provenance = array(
+			'package' => $package,
+			'version' => (string) \Composer\InstalledVersions::getPrettyVersion( $package ),
+		);
+		if ( method_exists( '\\Composer\\InstalledVersions', 'getReference' ) ) {
+			$reference = \Composer\InstalledVersions::getReference( $package );
+			if ( is_string( $reference ) && '' !== $reference ) {
+				$provenance['reference'] = $reference;
+			}
+		}
+		return $provenance;
 	}
 
 	/**
