@@ -692,6 +692,7 @@ export function summarizeRun(plan, { status } = {}) {
     failed_fixture_count: failedFixtureCount,
     finding_count: Number(resultSummary.finding_count || 0),
     fixture_failure_categories: resultSummary.fixture_failure_categories || {},
+    matrix_evidence_readiness: resultSummary.matrix_evidence_readiness || null,
     gate_failure_reasons: normalizeSummaryRows(resultSummary.gate_failure_reasons),
     top_buckets: topObjectCounts(resultSummary.buckets || resultSummary.groups || {}),
     top_kinds: topObjectCounts(resultSummary.kinds || {}),

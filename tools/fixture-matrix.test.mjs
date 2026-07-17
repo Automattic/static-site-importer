@@ -786,6 +786,82 @@ test('runtime command telemetry does not become a fixture diagnostic', () => {
   assert.equal(result.fixtures[0].status, 'passed');
 });
 
+test('fixture matrix captures installed transformer provenance and bounded materialization-plan asset evidence', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-matrix-runtime-evidence-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'runtime-evidence-test' });
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: {
+      fixture_id: 'simple-site',
+      status: 'passed',
+      import_report: {
+        blocks_engine: {
+          transformer: {
+            package: 'automattic/blocks-engine-php-transformer',
+            version: '0.2.6',
+            reference: '908c76a8d9b7679c87f59aa183f09b12ea9f89e6',
+          },
+          materialization_plan: {
+            schema: 'blocks-engine/php-transformer/materialization-plan/v1',
+            assets: [{
+              path: 'assets/site.css',
+              source: 'website/index.html',
+              role: 'stylesheet',
+              kind: 'css',
+              media_type: 'text/css',
+              placement: 'head',
+              payload_present: true,
+              payload_sha256: 'abc123',
+              payload_bytes: 42,
+            }, {
+              path: 'assets/app.js',
+              source: 'website/index.html',
+              role: 'runtime',
+              kind: 'script',
+              mime_type: 'application/javascript',
+              placement: 'footer',
+              defer: true,
+              async: false,
+              payload_present: true,
+              payload_sha256: 'def456',
+              payload_bytes: 84,
+            }],
+          },
+        },
+      },
+    },
+  });
+
+  const evidence = result.fixtures[0].matrix_evidence;
+  assert.equal(evidence.readiness, 'verified');
+  assert.deepEqual(evidence.transformer, {
+    package: 'automattic/blocks-engine-php-transformer',
+    version: '0.2.6',
+    reference: '908c76a8d9b7679c87f59aa183f09b12ea9f89e6',
+  });
+  assert.deepEqual(evidence.materialization_plan.assets[0], {
+    path: 'assets/app.js', source: 'website/index.html', role: 'runtime', kind: 'script', type: 'application/javascript', placement: 'footer', defer: true, async: false, payload_present: true, payload_sha256: 'def456', payload_bytes: 84,
+  });
+  assert.equal(evidence.materialization_plan.assets[1].payload_sha256, 'abc123');
+  assert.equal(result.summary.matrix_evidence_readiness.status, 'verified');
+});
+
+test('fixture matrix labels reports without runtime provenance and materialization evidence as legacy', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-matrix-legacy-evidence-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'legacy-runtime-evidence-test' });
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: { fixture_id: 'simple-site', status: 'passed', import_report: { blocks_engine: { available: true } } },
+  });
+
+  assert.equal(result.fixtures[0].matrix_evidence.readiness, 'legacy_evidence_missing');
+  assert.deepEqual(result.fixtures[0].matrix_evidence.missing, ['transformer_package', 'transformer_version', 'transformer_reference', 'materialization_plan']);
+  assert.equal(result.summary.matrix_evidence_readiness.status, 'incomplete');
+  assert.equal(result.summary.matrix_evidence_readiness.counts.legacy_evidence_missing, 1);
+});
+
 test('fails the gate when a preserved_runtime_island carries no runtime-carried signal', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'runtime-island-no-signal-test' });
   const result = normalizeFixtureMatrixResult({

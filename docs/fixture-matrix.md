@@ -171,6 +171,21 @@ file. Pass `--dry-run` to inspect the composed commands without running
 Lab/WP Codebox. Arguments after `--` are forwarded to the lower-level bench,
 preserving the existing script options:
 
+### Runtime evidence readiness
+
+Each collected fixture includes `matrix_evidence` with the Composer-installed
+`automattic/blocks-engine-php-transformer` package, version, and reference used
+by that candidate runtime. It also includes a bounded (50 assets) projection of
+the compiler materialization plan. Each asset records its path/source, role/kind,
+type/placement, `defer`/`async`, and payload presence, SHA-256, and byte count;
+payload source is never retained in the matrix output.
+
+`summary.matrix_evidence_readiness` aggregates the fixture states. `verified`
+means provenance and a current materialization plan were captured. Historical or
+otherwise incomplete outputs are explicitly `legacy_evidence_missing` (with the
+missing fields listed), so they cannot be read as evidence of current released
+transformer behavior. A dry, unexecuted matrix is `not_captured`.
+
 Every matrix run also writes `visual-parity-evidence-report.json` and
 `visual-parity-evidence-report.md`. These artifacts make the staged-output proof
 less hand-wavy by reporting, per fixture, whether the generated site artifact,
