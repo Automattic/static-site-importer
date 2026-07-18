@@ -62,6 +62,7 @@ $footer = '<!-- wp:group {"tagName":"footer","className":"site-footer"} --><foot
 $body   = '<!-- wp:paragraph --><p>Article body remains.</p><!-- /wp:paragraph -->';
 $article_header = '<!-- wp:group {"tagName":"header","className":"article-header"} --><header class="wp-block-group article-header"><h2>Article Header</h2></header><!-- /wp:group -->';
 $article_footer = '<!-- wp:group {"tagName":"footer","className":"article-footer"} --><footer class="wp-block-group article-footer"><p>Article Footer</p></footer><!-- /wp:group -->';
+$skip_link = '<!-- wp:html --><a class="skip-link" href="#main">Skip to content</a><!-- /wp:html -->';
 
 $page = Static_Site_Importer_Source_Page::from_materialization_plan_page(
 	array(
@@ -97,6 +98,28 @@ $assert( 'parts/header.html' === ( $artifacts['diagnostics'][0]['matched_header_
 $assert( 'parts/footer.html' === ( $artifacts['diagnostics'][0]['matched_footer_template_part'] ?? '' ), 'diagnostic-footer-template-part-match' );
 $assert( 0 === ( $artifacts['diagnostics'][0]['preserved_local_header_count'] ?? -1 ), 'diagnostic-no-local-header-after-global-dedupe' );
 $assert( 0 === ( $artifacts['diagnostics'][0]['preserved_local_footer_count'] ?? -1 ), 'diagnostic-no-local-footer-after-global-dedupe' );
+
+$skip_link_page = Static_Site_Importer_Source_Page::from_materialization_plan_page(
+	array(
+		'source_path'  => 'skip-link.html',
+		'title'        => 'Skip Link',
+		'block_markup' => $skip_link . "\n" . $header . "\n" . $body . "\n" . $footer,
+	)
+);
+
+$skip_link_artifacts = $skip_link_page instanceof Static_Site_Importer_Source_Page ? Static_Site_Importer_Page_Materializer::page_artifacts(
+	array( 'skip-link.html' => $skip_link_page ),
+	'ssi-theme',
+	array(),
+	array(),
+	$template_part_writes
+) : array();
+$skip_link_content   = (string) ( $skip_link_artifacts['contents']['skip-link.html'] ?? '' );
+
+$assert( str_contains( $skip_link_content, 'Skip to content' ), 'skip-link-preserved-before-global-header' );
+$assert( ! str_contains( $skip_link_content, 'Global Header' ), 'skip-link-followed-global-header-removed' );
+$assert( ! str_contains( $skip_link_content, 'Global Footer' ), 'skip-link-page-footer-removed' );
+$assert( str_contains( $skip_link_content, 'Article body remains.' ), 'skip-link-page-body-preserved' );
 
 $local_shell_page = Static_Site_Importer_Source_Page::from_materialization_plan_page(
 	array(
@@ -142,6 +165,27 @@ $local_content   = (string) ( $local_artifacts['contents']['article.html'] ?? ''
 $assert( str_contains( $local_content, 'Article Header' ), 'article-local-header-preserved' );
 $assert( str_contains( $local_content, 'Article Footer' ), 'article-local-footer-preserved' );
 $assert( array() === ( $local_artifacts['diagnostics'] ?? array() ), 'article-local-no-dedupe-diagnostic' );
+
+$nonmatching_prelude_page = Static_Site_Importer_Source_Page::from_materialization_plan_page(
+	array(
+		'source_path'  => 'nonmatching-prelude.html',
+		'title'        => 'Nonmatching Prelude',
+		'block_markup' => $skip_link . "\n" . $article_header . "\n" . $body . "\n" . $footer,
+	)
+);
+
+$nonmatching_prelude_artifacts = $nonmatching_prelude_page instanceof Static_Site_Importer_Source_Page ? Static_Site_Importer_Page_Materializer::page_artifacts(
+	array( 'nonmatching-prelude.html' => $nonmatching_prelude_page ),
+	'ssi-theme',
+	array(),
+	array(),
+	$template_part_writes
+) : array();
+$nonmatching_prelude_content   = (string) ( $nonmatching_prelude_artifacts['contents']['nonmatching-prelude.html'] ?? '' );
+
+$assert( str_contains( $nonmatching_prelude_content, 'Skip to content' ), 'nonmatching-prelude-preserved' );
+$assert( str_contains( $nonmatching_prelude_content, 'Article Header' ), 'nonmatching-header-preserved' );
+$assert( ! str_contains( $nonmatching_prelude_content, 'Global Footer' ), 'nonmatching-prelude-footer-removed' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
