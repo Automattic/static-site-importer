@@ -166,17 +166,19 @@ class Static_Site_Importer_Page_Materializer {
 		$footer_count = 0;
 		$matched_header_part = '';
 		$matched_footer_part = '';
+		$header_candidate_start = 0;
+		while ( $header_candidate_start < count( $top_level ) && self::is_accessibility_prelude_block( $top_level[ $header_candidate_start ] ) ) {
+			$header_candidate_start++;
+		}
 
 		foreach ( $header_parts as $part ) {
 			$part_blocks = $part['blocks'];
 			$count       = count( $part_blocks );
-			for ( $start = 0; $count > 0 && $start <= count( $top_level ) - $count; $start++ ) {
-				if ( self::block_sequence_matches( array_slice( $top_level, $start, $count ), $part_blocks ) ) {
-					$header_start         = $start;
-					$header_count         = $count;
-					$matched_header_part = $part['path'];
-					break 2;
-				}
+			if ( $count > 0 && $header_candidate_start <= count( $top_level ) - $count && self::block_sequence_matches( array_slice( $top_level, $header_candidate_start, $count ), $part_blocks ) ) {
+				$header_start         = $header_candidate_start;
+				$header_count         = $count;
+				$matched_header_part = $part['path'];
+				break;
 			}
 		}
 
@@ -283,6 +285,25 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		return $blocks;
+	}
+
+	/**
+	 * Check whether a top-level block is a same-page skip link.
+	 *
+	 * @param array{normalized:string} $block Top-level serialized block.
+	 * @return bool
+	 */
+	private static function is_accessibility_prelude_block( array $block ): bool {
+		if ( ! preg_match( '/<a\b[^>]*>/i', $block['normalized'], $matches ) ) {
+			return false;
+		}
+
+		$anchor = $matches[0];
+		if ( ! preg_match( '/\bclass\s*=\s*(["\'])(.*?)\1/is', $anchor, $class_matches ) || ! preg_match( '/(?:^|\s)skip-link(?:\s|$)/i', $class_matches[2] ) ) {
+			return false;
+		}
+
+		return 1 === preg_match( '/\bhref\s*=\s*(["\'])#.*?\1/is', $anchor );
 	}
 
 	/**

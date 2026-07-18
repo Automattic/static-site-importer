@@ -121,6 +121,27 @@ $assert( ! str_contains( $skip_link_content, 'Global Header' ), 'skip-link-follo
 $assert( ! str_contains( $skip_link_content, 'Global Footer' ), 'skip-link-page-footer-removed' );
 $assert( str_contains( $skip_link_content, 'Article body remains.' ), 'skip-link-page-body-preserved' );
 
+$body_header_page = Static_Site_Importer_Source_Page::from_materialization_plan_page(
+	array(
+		'source_path'  => 'body-header.html',
+		'title'        => 'Body Header',
+		'block_markup' => $body . "\n" . $header . "\n" . $footer,
+	)
+);
+
+$body_header_artifacts = $body_header_page instanceof Static_Site_Importer_Source_Page ? Static_Site_Importer_Page_Materializer::page_artifacts(
+	array( 'body-header.html' => $body_header_page ),
+	'ssi-theme',
+	array(),
+	array(),
+	$template_part_writes
+) : array();
+$body_header_content   = (string) ( $body_header_artifacts['contents']['body-header.html'] ?? '' );
+
+$assert( str_contains( $body_header_content, 'Article body remains.' ), 'body-before-identical-header-preserved' );
+$assert( str_contains( $body_header_content, 'Global Header' ), 'identical-header-after-body-preserved' );
+$assert( ! str_contains( $body_header_content, 'Global Footer' ), 'body-header-page-footer-removed' );
+
 $local_shell_page = Static_Site_Importer_Source_Page::from_materialization_plan_page(
 	array(
 		'source_path'  => 'local-shell.html',
