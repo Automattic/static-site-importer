@@ -22,6 +22,7 @@ import runFixtureMatrixBench, {
   mapWithConcurrency,
   materializeVisualCompareArtifacts,
   materializeEditorCanvasArtifacts,
+  optionsFromEnv,
   resolveWordPressVisualAttributionNormalizer,
   resolveBlocksEnginePhpTransformerPath,
   runFixtureMatrix,
@@ -73,6 +74,7 @@ import {
   VISUAL_PARITY_DETERMINISTIC_CSS,
   VISUAL_PARITY_MISMATCH_KIND,
   visualParityCompareStep,
+  normalizeVisualAttributionOptions,
   wordpressServedPath,
   writeFixtureMatrixArtifacts,
 } from '../lib/fixture-matrix.mjs';
@@ -4712,6 +4714,110 @@ test('visualParityCompareStep composes the existing wordpress.visual-compare com
   assert.equal(comparison.sourceLabel, 'shop-source');
   assert.equal(comparison.candidateLabel, 'shop-candidate');
   assert.equal(comparison.fullPage, true);
+});
+
+test('visual attribution options normalize positive limits and targeted selector lists', () => {
+  assert.deepEqual(normalizeVisualAttributionOptions({
+    maxExplanationElements: '500',
+    max_explanation_candidates: 600,
+    explainSelectors: [' .hero ', '.hero', '', '#footer'],
+  }), {
+    maxExplanationElements: 500,
+    maxExplanationCandidates: 600,
+    explainSelectors: ['.hero', '#footer'],
+  });
+  assert.deepEqual(normalizeVisualAttributionOptions({
+    maxExplanationElements: '0',
+    maxExplanationCandidates: '1.5',
+    explainSelectors: ' .hero, #footer, .hero ',
+  }), {
+    maxExplanationElements: undefined,
+    maxExplanationCandidates: undefined,
+    explainSelectors: ['.hero', '#footer'],
+  });
+});
+
+test('visual attribution defaults leave visual-compare matrix JSON byte-compatible', () => {
+  const step = visualParityCompareStep({ fixture: { id: 'shop' } });
+  assert.equal(step.args[0], 'matrix-json={"comparisons":[{"name":"shop","sourceUrl":"/wp-content/uploads/static-site-importer-fixture-matrix/shop/source/index.html","candidateUrl":"/","sourceLabel":"shop-source","candidateLabel":"shop-candidate","viewport":"1280x1600","fullPage":true,"waitFor":"duration","durationMs":"4000ms","blockExternalRequests":true,"threshold":0}]}');
+});
+
+test('visual attribution options reach every fixture matrix comparison', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-recipe-'));
+  const fixtureDirectory = path.join(root, 'fixture');
+  mkdirSync(fixtureDirectory, { recursive: true });
+  writeFileSync(path.join(fixtureDirectory, 'index.html'), '<h1>Home</h1>');
+  writeFileSync(path.join(fixtureDirectory, 'contact.html'), '<h1>Contact</h1>');
+  const recipe = buildFixtureMatrixRecipe({
+    matrix: createFixtureMatrix({ fixture_root: root }),
+    artifactsDirectory: '/tmp/artifacts',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    surfaceCoverage: 1,
+    maxExplanationElements: 500,
+    maxExplanationCandidates: 600,
+    explainSelectors: '.hero, #footer',
+  });
+  const comparisons = recipe.workflow.steps
+    .filter((step) => step.command === 'wordpress.visual-compare')
+    .map(visualCompareMatrixComparison);
+  assert.equal(comparisons.length, 2);
+  for (const comparison of comparisons) {
+    assert.equal(comparison.maxExplanationElements, 500);
+    assert.equal(comparison.maxExplanationCandidates, 600);
+    assert.deepEqual(comparison.explainSelectors, ['.hero', '#footer']);
+  }
+});
+
+test('fixture matrix maps visual attribution environment settings', () => {
+  const options = optionsFromEnv({
+    SSI_FIXTURE_MATRIX_MAX_EXPLANATION_ELEMENTS: '500',
+    SSI_FIXTURE_MATRIX_MAX_EXPLANATION_CANDIDATES: '600',
+    SSI_FIXTURE_MATRIX_EXPLAIN_SELECTORS: '.hero, #footer',
+  });
+  assert.equal(options.maxExplanationElements, '500');
+  assert.equal(options.maxExplanationCandidates, '600');
+  assert.equal(options.explainSelectors, '.hero, #footer');
+});
+
+test('fixture matrix operator plan exposes and forwards visual attribution settings', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-plan-'));
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  const fixtureRoot = path.join(root, 'fixtures');
+  mkdirSync(staticSiteImporter, { recursive: true });
+  mkdirSync(path.join(fixtureRoot, 'fixture'), { recursive: true });
+  const plan = buildFixtureMatrixRunPlan({
+    staticSiteImporter,
+    fixtureRoot,
+    maxExplanationElements: '500',
+    maxExplanationCandidates: '600',
+    explainSelectors: '.hero, #footer',
+  });
+  assert.deepEqual(plan.visual_attribution, {
+    max_explanation_elements: 500,
+    max_explanation_candidates: 600,
+    explain_selectors: ['.hero', '#footer'],
+  });
+  const args = plan.steps.at(-1).args;
+  assert.ok(args.includes('bench_env.SSI_FIXTURE_MATRIX_MAX_EXPLANATION_ELEMENTS=500'));
+  assert.ok(args.includes('bench_env.SSI_FIXTURE_MATRIX_MAX_EXPLANATION_CANDIDATES=600'));
+  assert.ok(args.includes('bench_env.SSI_FIXTURE_MATRIX_EXPLAIN_SELECTORS=.hero,#footer'));
+});
+
+test('fixture matrix evidence records effective visual attribution settings', async () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-evidence-'));
+  const { summary } = await runFixtureMatrix({
+    fixtureRoot,
+    outputDirectory,
+    staticSiteImporterPath: packageRoot,
+    maxExplanationElements: 500,
+    maxExplanationCandidates: 600,
+    explainSelectors: '.hero, #footer',
+  });
+  assert.deepEqual(summary.metadata.visual_attribution, {
+    maxExplanationElements: 500,
+    maxExplanationCandidates: 600,
+    explainSelectors: ['.hero', '#footer'],
+  });
 });
 
 test('visualParityCompareStep requests full-page capture by default with explicit opt-out', () => {

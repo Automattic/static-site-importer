@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 /**
  * Internal dependencies
  */
-import { MAX_EXTRA_SURFACE_COUNT, normalizeSurfaceCoverageOptions } from '../lib/fixture-matrix.mjs';
+import { MAX_EXTRA_SURFACE_COUNT, normalizeSurfaceCoverageOptions, normalizeVisualAttributionOptions } from '../lib/fixture-matrix.mjs';
 
 export const RIG_ID = 'static-site-importer-fixture-matrix';
 // Expected top-level fixture directory count in the canonical corpus
@@ -113,6 +113,9 @@ export function buildFixtureMatrixRunPlan(input) {
     ...(options.visualParityMaxHorizontalShift ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_HORIZONTAL_SHIFT: String(options.visualParityMaxHorizontalShift) } : {}),
     ...(options.visualParityOffsetTolerance ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_OFFSET_TOLERANCE: String(options.visualParityOffsetTolerance) } : {}),
     ...(options.visualParityPixelmatchThreshold ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD: String(options.visualParityPixelmatchThreshold) } : {}),
+    ...(options.maxExplanationElements ? { SSI_FIXTURE_MATRIX_MAX_EXPLANATION_ELEMENTS: String(options.maxExplanationElements) } : {}),
+    ...(options.maxExplanationCandidates ? { SSI_FIXTURE_MATRIX_MAX_EXPLANATION_CANDIDATES: String(options.maxExplanationCandidates) } : {}),
+    ...(options.explainSelectors.length ? { SSI_FIXTURE_MATRIX_EXPLAIN_SELECTORS: options.explainSelectors.join(',') } : {}),
     ...(options.surfaceCoverage ? { SSI_FIXTURE_MATRIX_SURFACE_COVERAGE: String(options.surfaceCoverage) } : {}),
     ...(options.maxExtraSurfaces ? { SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES: String(options.maxExtraSurfaces) } : {}),
     // Opt-in live-WP parity capture (off by default). When set, the bench appends
@@ -180,6 +183,11 @@ export function buildFixtureMatrixRunPlan(input) {
       max_horizontal_shift: options.visualParityMaxHorizontalShift ? Number(options.visualParityMaxHorizontalShift) : 0,
       offset_tolerance: options.visualParityOffsetTolerance ? Number(options.visualParityOffsetTolerance) : 2,
       pixelmatch_threshold: options.visualParityPixelmatchThreshold ? Number(options.visualParityPixelmatchThreshold) : 0.1,
+    },
+    visual_attribution: {
+      max_explanation_elements: options.maxExplanationElements ?? null,
+      max_explanation_candidates: options.maxExplanationCandidates ?? null,
+      explain_selectors: options.explainSelectors,
     },
     editor_quality: {
       // Editor-quality metrics (native_conversion_rate, core_html_fallback_ratio,
@@ -274,6 +282,7 @@ function normalizeOptions(input) {
     sharedStateExplicit,
     artifactRootExplicit,
     homeboyBin: input.homeboyBin || process.env.HOMEBOY_BIN || 'homeboy',
+    ...normalizeVisualAttributionOptions(input),
   };
 }
 
@@ -860,6 +869,13 @@ function sanitizePathSegment(value) {
 function printHelp() {
   process.stdout.write(`Usage: node tools/run-fixture-matrix.mjs --static-site-importer <path> --blocks-engine <path> [options] [-- <bench args>...]\n\nRuns the canonical Static Site Importer fixture matrix through Homeboy/Lab/WP Codebox.\n\nExecution modes:\n  --local                             Passes --placement local to homeboy bench.\n  --runner <id>                       Passes --placement lab --runner <id> to homeboy bench.\n  --lab-only                          Passes --placement lab without selecting a runner.\n  --allow-local-fallback              Passes --placement lab-or-local to homeboy bench.\n  no routing flags                    Passes --placement auto to homeboy bench.\n\nRules:\n  --runner local                      Alias for --local.\n  --local cannot be combined with --runner <remote>, --lab-only, or --allow-local-fallback.\n  --lab-only cannot be combined with --allow-local-fallback.\n\nOptions:\n  --static-site-importer <path>       Static Site Importer checkout/plugin path. Required.\n  --blocks-engine <path>              Blocks Engine checkout. Defaults fixture root and PHP transformer override.\n    --fixture-root <path>               Fixture corpus. Defaults to <blocks-engine>/fixtures, which discovers both fixtures/websites and fixtures/solved.
 \n  --blocks-engine-php-transformer-path <path>\n                                      Override transformer package/repo path. Defaults to --blocks-engine.\n  --mode <development-override|release-proof>\n                                      Labels output; default is development-override when transformer override is used.\n  --run-id <id>                       Stable proof label. Defaults to ssi-matrix-<mode>-<timestamp>.\n  --shared-state <dir>                Shared Homeboy bench state directory.\n  --artifact-root <dir>               Homeboy artifact root.\n  --output <file>                     Structured Homeboy bench output file.\n  --batch-size <n>                    SSI fixture matrix WP Codebox batch size.\n  --concurrency <n>                   Parallel WP Codebox sandbox batches. Defaults to 4, hard-capped at 16.\n  --wordpress-version <version>       WP Codebox WordPress version.\n  --wp-codebox-bin <path>             WP Codebox CLI path.\n  --allow-stale-override              Proceed even when an override checkout is behind upstream.\n  --allow-local-fallback              Permit selected Lab runner fallback to local execution.\n  --allow-dirty-lab-workspace         Permit reusing/overwriting a dirty Lab workspace.\n  --detach-after-handoff              Return after runner daemon accepts the job.\n  --dry-run                           Print the plan without running Homeboy.\n  --skip-install                      Skip rig install.\n  --skip-sync                         Skip rig sync.\n  --no-editor-validation              Omit editor block validation.\n  --no-visual-parity                  Omit visual parity capture.\n  --no-visual-parity-gate             Capture visual parity without gating.\n  --help                              Show this help.\n`);
+  printVisualAttributionHelp();
+}
+
+// Visual attribution controls are separate so the main usage text remains
+// readable alongside the long routing contract above.
+function printVisualAttributionHelp() {
+  process.stdout.write('  --max-explanation-elements <n>      Maximum source elements for visual attribution.\n  --max-explanation-candidates <n>    Maximum candidate elements for visual attribution.\n  --explain-selectors <list>          Comma-separated selectors targeted for visual attribution.\n');
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
