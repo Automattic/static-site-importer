@@ -2306,8 +2306,8 @@ test('fixture matrix operator composes typed placement only for the bench step',
     fixtureRoot,
   });
   assert.deepEqual(setupPlan.steps.slice(0, -1).map((step) => step.args), [
-    ['rig', 'install', path.dirname(path.dirname(fileURLToPath(import.meta.url))), '--id', 'static-site-importer-fixture-matrix', '--reinstall'],
-    ['rig', 'sync', 'static-site-importer-fixture-matrix'],
+    ['--placement', 'local', 'rig', 'install', path.dirname(path.dirname(fileURLToPath(import.meta.url))), '--id', 'static-site-importer-fixture-matrix', '--reinstall'],
+    ['--placement', 'local', 'rig', 'sync', 'static-site-importer-fixture-matrix'],
   ]);
 
   const labPlan = buildFixtureMatrixRunPlan({
@@ -2323,7 +2323,8 @@ test('fixture matrix operator composes typed placement only for the bench step',
   assert.equal(labPlan.shared_state, '');
   assert.equal(labPlan.artifact_root, '');
   assert.match(labPlan.steps.at(-1).label, /lab:homeboy-lab/);
-  assert.deepEqual(labArgs.slice(-4), ['--placement', 'lab', '--runner', 'homeboy-lab']);
+  assert.deepEqual(labArgs.slice(-2), ['--runner', 'homeboy-lab']);
+  assert.equal(labArgs.includes('--placement'), false);
   assert.equal(labArgs.includes('--shared-state'), false);
   assert.equal(labArgs.includes('--artifact-root'), false);
 
@@ -2389,7 +2390,8 @@ test('fixture matrix operator composes typed placement only for the bench step',
     skipSync: true,
   });
   assert.equal(fallbackPlan.execution_target, 'lab-or-local:homeboy-lab');
-  assert.deepEqual(fallbackPlan.steps.at(-1).args.slice(-4), ['--placement', 'lab-or-local', '--runner', 'homeboy-lab']);
+  assert.deepEqual(fallbackPlan.steps.at(-1).args.slice(-2), ['--runner', 'homeboy-lab']);
+  assert.equal(fallbackPlan.steps.at(-1).args.includes('--placement'), false);
 
   const unnamedFallbackPlan = buildFixtureMatrixRunPlan({
     allowLocalFallback: true,

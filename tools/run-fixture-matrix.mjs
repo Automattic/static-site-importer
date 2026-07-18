@@ -573,14 +573,14 @@ function buildSteps(options, settings) {
     steps.push({
       label: `Refresh installed SSI fixture matrix rig (${options.executionTarget})`,
       command: options.homeboyBin,
-      args: ['rig', 'install', packageRoot, '--id', RIG_ID, '--reinstall'],
+      args: ['--placement', 'local', 'rig', 'install', packageRoot, '--id', RIG_ID, '--reinstall'],
     });
   }
   if (!options.skipSync) {
     steps.push({
       label: `Sync/materialize rig components (${options.executionTarget})`,
       command: options.homeboyBin,
-      args: ['rig', 'sync', RIG_ID],
+      args: ['--placement', 'local', 'rig', 'sync', RIG_ID],
     });
   }
 
@@ -617,9 +617,10 @@ function buildSteps(options, settings) {
 
 function withBenchRouting(args, options) {
   const routed = [...args];
-  routed.push('--placement', options.placement);
   if (options.runner) {
     routed.push('--runner', options.runner);
+  } else {
+    routed.push('--placement', options.placement);
   }
   if (options.detachAfterHandoff) {
     routed.push('--detach-after-handoff');
