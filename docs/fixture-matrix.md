@@ -492,6 +492,17 @@ alignment scorer uses `SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD`
 the mismatch-ratio gate threshold. Set `--no-visual-parity` /
 `visualParity: false` to omit the step entirely.
 
+Visual-attribution depth is opt-in and uses WP Codebox's public matrix fields.
+Pass `--max-explanation-elements <n>`, `--max-explanation-candidates <n>`, and
+`--explain-selectors <selector[,selector...]>` through the operator wrapper, or
+set `SSI_FIXTURE_MATRIX_MAX_EXPLANATION_ELEMENTS`,
+`SSI_FIXTURE_MATRIX_MAX_EXPLANATION_CANDIDATES`, and
+`SSI_FIXTURE_MATRIX_EXPLAIN_SELECTORS` for direct bench runs. Positive integer
+limits and trimmed, de-duplicated selector lists are forwarded to every visual
+comparison as `maxExplanationElements`, `maxExplanationCandidates`, and
+`explainSelectors`. Leaving them unset preserves WP Codebox's defaults and the
+existing recipe JSON.
+
 Source/candidate wiring (verified by real local recipe-runs): the
 `wordpress.visual-compare` step renders and pixel-diffs locally in WP Codebox
 against the real two pages. `writeFixtureMatrixArtifacts` stages each fixture's

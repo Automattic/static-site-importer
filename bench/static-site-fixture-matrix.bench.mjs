@@ -21,6 +21,7 @@ import {
   normalizeFixtureMatrixResult,
   writeFixtureMatrixArtifacts,
   writeFixtureMatrixResultArtifacts,
+  normalizeVisualAttributionOptions,
 } from '../lib/fixture-matrix.mjs';
 
 const DEFAULT_BATCH_SIZE = 10;
@@ -299,6 +300,7 @@ export async function runFixtureMatrix(options) {
       source_staging: written.metadata?.source_staging,
       surface_coverage: recipe.metadata?.surface_coverage,
       runtime_cost_warnings: recipe.metadata?.runtime_cost_warnings || [],
+      visual_attribution: normalizeVisualAttributionOptions(options),
     },
     ...(runtime?.childCommandFailures?.length ? { child_command_failures: runtime.childCommandFailures } : {}),
     result_file: path.join(outputDirectory, 'static-site-fixture-matrix-result.json'),
@@ -1253,7 +1255,7 @@ function parseArgs(args) {
   return options;
 }
 
-function optionsFromEnv(env = process.env) {
+export function optionsFromEnv(env = process.env) {
   const benchEnv = settingsBenchEnv(env);
   return {
     fixtureRoot: benchEnv.SSI_FIXTURE_MATRIX_FIXTURE_ROOT || env.SSI_FIXTURE_MATRIX_FIXTURE_ROOT,
@@ -1298,6 +1300,9 @@ function optionsFromEnv(env = process.env) {
     visualParitySourceBaseUrl: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL,
     visualParityWaitFor: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_WAIT_FOR || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_WAIT_FOR,
     visualParityDurationMs: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_DURATION_MS || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_DURATION_MS,
+    maxExplanationElements: benchEnv.SSI_FIXTURE_MATRIX_MAX_EXPLANATION_ELEMENTS || env.SSI_FIXTURE_MATRIX_MAX_EXPLANATION_ELEMENTS,
+    maxExplanationCandidates: benchEnv.SSI_FIXTURE_MATRIX_MAX_EXPLANATION_CANDIDATES || env.SSI_FIXTURE_MATRIX_MAX_EXPLANATION_CANDIDATES,
+    explainSelectors: benchEnv.SSI_FIXTURE_MATRIX_EXPLAIN_SELECTORS || env.SSI_FIXTURE_MATRIX_EXPLAIN_SELECTORS,
     minNativeRate: benchEnv.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE || env.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE,
   };
 }
@@ -1330,6 +1335,7 @@ function visualParityRecipeInput(options) {
     visualParityFullPage: options.visualParityFullPage,
     visualParityWaitFor: options.visualParityWaitFor,
     visualParityDurationMs: options.visualParityDurationMs,
+    ...normalizeVisualAttributionOptions(options),
   };
 }
 
