@@ -2293,6 +2293,13 @@ test('fixture matrix operator rejects contradictory local and Lab routing', () =
     staticSiteImporter,
     fixtureRoot,
   }), /--allow-local-fallback selects lab-or-local placement and cannot be combined with --lab-only/);
+
+  assert.throws(() => buildFixtureMatrixRunPlan({
+    runner: 'homeboy-lab',
+    allowLocalFallback: true,
+    staticSiteImporter,
+    fixtureRoot,
+  }), /--allow-local-fallback selects unpinned lab-or-local placement and cannot be combined with --runner homeboy-lab/);
 });
 
 test('fixture matrix operator composes typed placement only for the bench step', () => {
@@ -2325,7 +2332,7 @@ test('fixture matrix operator composes typed placement only for the bench step',
   assert.equal(labPlan.shared_state, '');
   assert.equal(labPlan.artifact_root, '');
   assert.match(labPlan.steps.at(-1).label, /lab:homeboy-lab/);
-  assert.deepEqual(labArgs.slice(-4), ['--placement', 'lab', '--runner', 'homeboy-lab']);
+  assert.deepEqual(labArgs.slice(-2), ['--runner', 'homeboy-lab']);
   assert.equal(labArgs.includes('--shared-state'), false);
   assert.equal(labArgs.includes('--artifact-root'), false);
 
@@ -2382,17 +2389,6 @@ test('fixture matrix operator composes typed placement only for the bench step',
   assert.equal(labOnlyPlan.execution_target, 'lab');
   assert.deepEqual(labOnlyPlan.steps.at(-1).args.slice(-2), ['--placement', 'lab']);
 
-  const fallbackPlan = buildFixtureMatrixRunPlan({
-    runner: 'homeboy-lab',
-    allowLocalFallback: true,
-    staticSiteImporter,
-    fixtureRoot,
-    skipInstall: true,
-    skipSync: true,
-  });
-  assert.equal(fallbackPlan.execution_target, 'lab-or-local:homeboy-lab');
-  assert.deepEqual(fallbackPlan.steps.at(-1).args.slice(-4), ['--placement', 'lab-or-local', '--runner', 'homeboy-lab']);
-
   const unnamedFallbackPlan = buildFixtureMatrixRunPlan({
     allowLocalFallback: true,
     staticSiteImporter,
@@ -2412,6 +2408,35 @@ test('fixture matrix operator composes typed placement only for the bench step',
   });
   assert.equal(autoPlan.execution_target, 'auto');
   assert.deepEqual(autoPlan.steps.at(-1).args.slice(-2), ['--placement', 'auto']);
+});
+
+test('fixture matrix operator projects exact Homeboy arguments for every routing mode', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-routing-projection-'));
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  const fixtureRoot = path.join(root, 'fixtures');
+  mkdirSync(staticSiteImporter, { recursive: true });
+  mkdirSync(path.join(fixtureRoot, 'fixture-a'), { recursive: true });
+
+  const cases = [
+    ['auto', {}, ['--placement', 'auto']],
+    ['explicit runner', { runner: 'homeboy-lab' }, ['--runner', 'homeboy-lab']],
+    ['local', { local: true }, ['--placement', 'local']],
+    ['runner local alias', { runner: 'local' }, ['--placement', 'local']],
+    ['lab only', { labOnly: true }, ['--placement', 'lab']],
+    ['local fallback', { allowLocalFallback: true }, ['--placement', 'lab-or-local']],
+  ];
+
+  for (const [name, routing, expected] of cases) {
+    const args = buildFixtureMatrixRunPlan({
+      ...routing,
+      staticSiteImporter,
+      fixtureRoot,
+      skipInstall: true,
+      skipSync: true,
+    }).steps.at(-1).args;
+    const start = args.findIndex((arg) => arg === '--placement' || arg === '--runner');
+    assert.deepEqual(args.slice(start), expected, name);
+  }
 });
 
 test('fixture matrix operator plan forwards complexity lane settings', () => {
