@@ -160,16 +160,23 @@ class Static_Site_Importer_Page_Materializer {
 
 		$header_parts = self::template_part_write_sequences( $template_part_writes, 'header' );
 		$footer_parts = self::template_part_write_sequences( $template_part_writes, 'footer' );
-		$remove_start = 0;
-		$remove_end   = count( $top_level );
+		$header_start = null;
+		$footer_start = null;
+		$header_count = 0;
+		$footer_count = 0;
 		$matched_header_part = '';
 		$matched_footer_part = '';
+		$header_candidate_start = 0;
+		while ( $header_candidate_start < count( $top_level ) && self::is_accessibility_prelude_block( $top_level[ $header_candidate_start ] ) ) {
+			$header_candidate_start++;
+		}
 
 		foreach ( $header_parts as $part ) {
 			$part_blocks = $part['blocks'];
-			$count = count( $part_blocks );
-			if ( $count > 0 && self::block_sequence_matches( array_slice( $top_level, 0, $count ), $part_blocks ) ) {
-				$remove_start = max( $remove_start, $count );
+			$count       = count( $part_blocks );
+			if ( $count > 0 && $header_candidate_start <= count( $top_level ) - $count && self::block_sequence_matches( array_slice( $top_level, $header_candidate_start, $count ), $part_blocks ) ) {
+				$header_start         = $header_candidate_start;
+				$header_count         = $count;
 				$matched_header_part = $part['path'];
 				break;
 			}
@@ -178,35 +185,47 @@ class Static_Site_Importer_Page_Materializer {
 		foreach ( $footer_parts as $part ) {
 			$part_blocks = $part['blocks'];
 			$count = count( $part_blocks );
-			if ( $count > 0 && $remove_start <= count( $top_level ) - $count && self::block_sequence_matches( array_slice( $top_level, -$count ), $part_blocks ) ) {
-				$remove_end = min( $remove_end, count( $top_level ) - $count );
+			$start = count( $top_level ) - $count;
+			if ( $count > 0 && ( null === $header_start || $header_start + $header_count <= $start ) && self::block_sequence_matches( array_slice( $top_level, -$count ), $part_blocks ) ) {
+				$footer_start = $start;
+				$footer_count = $count;
 				$matched_footer_part = $part['path'];
 				break;
 			}
 		}
 
-		if ( 0 === $remove_start && count( $top_level ) === $remove_end ) {
+		if ( null === $header_start && null === $footer_start ) {
 			return $content;
 		}
 
-		$start_offset = $remove_start > 0 ? $top_level[ $remove_start - 1 ]['end'] : 0;
-		$end_offset   = $remove_end < count( $top_level ) ? $top_level[ $remove_end ]['start'] : strlen( $content );
-		$deduped      = trim( substr( $content, $start_offset, $end_offset - $start_offset ) );
+		$removals     = array();
+		if ( null !== $header_start ) {
+			$removals[] = array( 'start' => $top_level[ $header_start ]['start'], 'end' => $top_level[ $header_start + $header_count - 1 ]['end'] );
+		}
+		if ( null !== $footer_start ) {
+			$removals[] = array( 'start' => $top_level[ $footer_start ]['start'], 'end' => $top_level[ $footer_start + $footer_count - 1 ]['end'] );
+		}
+
+		$deduped = $content;
+		foreach ( array_reverse( $removals ) as $removal ) {
+			$deduped = substr( $deduped, 0, $removal['start'] ) . substr( $deduped, $removal['end'] );
+		}
+		$deduped = trim( $deduped );
 
 		$diagnostics[] = array(
 			'type'                         => 'template_part_shell_deduped',
 			'source'                       => 'static-site-importer/page-materializer',
 			'source_path'                  => $source_path,
 			'reason'                       => 'matching_header_footer_template_parts',
-			'removed_header_blocks'        => $remove_start,
-			'removed_footer_blocks'        => count( $top_level ) - $remove_end,
+			'removed_header_blocks'        => $header_count,
+			'removed_footer_blocks'        => $footer_count,
 			'matched_header_template_part' => $matched_header_part,
 			'matched_footer_template_part' => $matched_footer_part,
 			'preserved_local_header_count' => self::html_tag_count( $deduped, 'header' ),
 			'preserved_local_footer_count' => self::html_tag_count( $deduped, 'footer' ),
 			'removed'                      => array(
-				'leading_blocks'  => $remove_start,
-				'trailing_blocks' => count( $top_level ) - $remove_end,
+				'leading_blocks'  => $header_count,
+				'trailing_blocks' => $footer_count,
 			),
 			'message'                      => 'Page body blocks matching generated header/footer template parts were removed to avoid duplicate global shell rendering.',
 		);
@@ -266,6 +285,25 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		return $blocks;
+	}
+
+	/**
+	 * Check whether a top-level block is a same-page skip link.
+	 *
+	 * @param array{normalized:string} $block Top-level serialized block.
+	 * @return bool
+	 */
+	private static function is_accessibility_prelude_block( array $block ): bool {
+		if ( ! preg_match( '/<a\b[^>]*>/i', $block['normalized'], $matches ) ) {
+			return false;
+		}
+
+		$anchor = $matches[0];
+		if ( ! preg_match( '/\bclass\s*=\s*(["\'])(.*?)\1/is', $anchor, $class_matches ) || ! preg_match( '/(?:^|\s)skip-link(?:\s|$)/i', $class_matches[2] ) ) {
+			return false;
+		}
+
+		return 1 === preg_match( '/\bhref\s*=\s*(["\'])#.*?\1/is', $anchor );
 	}
 
 	/**
