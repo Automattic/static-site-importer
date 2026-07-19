@@ -950,6 +950,7 @@ class Static_Site_Importer_Theme_Materializer {
 
 		$writes  = array();
 		$reports = array();
+		$styles  = array();
 		foreach ( $template_parts as $template_part ) {
 			if ( ! is_array( $template_part ) ) {
 				return new WP_Error( 'static_site_importer_template_part_invalid', 'Template part artifacts must be arrays.' );
@@ -974,11 +975,23 @@ class Static_Site_Importer_Theme_Materializer {
 
 			$writes[ trailingslashit( $theme_dir ) . $relative ] = $markup;
 			$reports[] = self::template_part_artifact_report_payload( $relative, $template_part, $markup );
+			foreach ( isset( $template_part['stylesheet_assets'] ) && is_array( $template_part['stylesheet_assets'] ) ? $template_part['stylesheet_assets'] : array() as $asset ) {
+				if ( ! is_array( $asset ) || ! isset( $asset['content'] ) || ! is_scalar( $asset['content'] ) ) {
+					continue;
+				}
+				$path    = isset( $asset['path'] ) && is_scalar( $asset['path'] ) ? (string) $asset['path'] : '';
+				$type    = isset( $asset['type'] ) && is_scalar( $asset['type'] ) ? (string) $asset['type'] : '';
+				$content = trim( (string) $asset['content'] );
+				if ( '' !== $content && ( 'text/css' === $type || preg_match( '/\.css$/i', $path ) ) ) {
+					$styles[] = $content;
+				}
+			}
 		}
 
 		return array(
 			'writes'  => $writes,
 			'reports' => $reports,
+			'styles'  => array_values( array_unique( $styles ) ),
 		);
 	}
 
@@ -991,6 +1004,7 @@ class Static_Site_Importer_Theme_Materializer {
 	 */
 	private static function source_file_template_parts( array $artifacts ): array {
 		$files = isset( $artifacts['source_files'] ) && is_array( $artifacts['source_files'] ) ? $artifacts['source_files'] : array();
+		$static_css = self::source_file_static_css( $files );
 		foreach ( $files as $file ) {
 			if ( ! is_array( $file ) || ! isset( $file['path'] ) || ! is_scalar( $file['path'] ) ) {
 				continue;
@@ -1015,7 +1029,7 @@ class Static_Site_Importer_Theme_Materializer {
 				continue;
 			}
 
-			$parts = self::template_parts_from_html( $content, $path );
+			$parts = self::template_parts_from_html( $content, $path, $static_css );
 			if ( ! empty( $parts ) ) {
 				return $parts;
 			}
@@ -1025,13 +1039,42 @@ class Static_Site_Importer_Theme_Materializer {
 	}
 
 	/**
+	 * Collect source stylesheets for source-derived template-part conversion.
+	 *
+	 * @param array<int,array<string,mixed>> $files Source artifact files.
+	 * @return string
+	 */
+	private static function source_file_static_css( array $files ): string {
+		$styles = array();
+		foreach ( $files as $file ) {
+			if ( ! is_array( $file ) || ! isset( $file['path'] ) || ! is_scalar( $file['path'] ) || ! preg_match( '/\.css$/i', (string) $file['path'] ) ) {
+				continue;
+			}
+
+			$content = '';
+			if ( isset( $file['content'] ) && is_scalar( $file['content'] ) ) {
+				$content = (string) $file['content'];
+			} elseif ( isset( $file['content_base64'] ) && is_scalar( $file['content_base64'] ) ) {
+				// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes trusted website artifact file content.
+				$decoded = base64_decode( (string) $file['content_base64'], true );
+				$content = false === $decoded ? '' : $decoded;
+			}
+			if ( '' !== trim( $content ) ) {
+				$styles[] = trim( $content );
+			}
+		}
+
+		return implode( "\n\n", $styles );
+	}
+
+	/**
 	 * Convert source HTML landmarks into reusable block theme parts.
 	 *
 	 * @param string $html        Source HTML document.
 	 * @param string $source_path Source file path for reports.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private static function template_parts_from_html( string $html, string $source_path ): array {
+	private static function template_parts_from_html( string $html, string $source_path, string $static_css = '' ): array {
 		$document  = new Static_Site_Importer_Document( $html );
 		$fragments = $document->fragments();
 		$parts     = array();
@@ -1046,18 +1089,27 @@ class Static_Site_Importer_Theme_Materializer {
 			}
 
 			$diagnostics = array();
-			$markup      = Static_Site_Importer_Page_Materializer::html_to_blocks( self::strip_inline_svg_markup( $fragment ), $source_path . '#' . $slug, $diagnostics );
+			$assets      = array();
+			$markup      = Static_Site_Importer_Page_Materializer::html_to_blocks(
+				self::strip_inline_svg_markup( $fragment ),
+				$source_path . '#' . $slug,
+				$diagnostics,
+				'' === $static_css ? array() : array( 'static_css' => $static_css ),
+				$assets
+			);
 			if ( '' === trim( $markup ) ) {
 				continue;
 			}
 
 			$parts[] = array(
+				'origin'       => 'source_files.landmark',
 				'source_path'  => $source_path . '#' . $slug,
 				'slug'         => $slug,
 				'title'        => ucfirst( $slug ),
 				'area'         => $slug,
 				'generated'    => true,
 				'block_markup' => trim( $markup ) . "\n",
+				'stylesheet_assets' => $assets,
 			);
 		}
 
@@ -1137,6 +1189,7 @@ class Static_Site_Importer_Theme_Materializer {
 
 			$template_parts[] = array_filter(
 				array(
+					'origin'       => 'materialization_plan.template_part_writes',
 					'source_path'  => isset( $write['source_path'] ) && is_scalar( $write['source_path'] ) ? (string) $write['source_path'] : '',
 					'slug'         => isset( $write['slug'] ) && is_scalar( $write['slug'] ) ? (string) $write['slug'] : '',
 					'title'        => isset( $write['title'] ) && is_scalar( $write['title'] ) ? (string) $write['title'] : '',
@@ -1186,6 +1239,7 @@ class Static_Site_Importer_Theme_Materializer {
 
 			$template_parts[] = array_filter(
 				array(
+					'origin'       => 'materialization_plan.navigation',
 					'source_path'  => isset( $navigation['source_path'] ) && is_scalar( $navigation['source_path'] ) ? (string) $navigation['source_path'] : '',
 					'slug'         => isset( $navigation['slug'] ) && in_array( sanitize_key( (string) $navigation['slug'] ), array( 'header', 'footer' ), true ) ? sanitize_key( (string) $navigation['slug'] ) : 'header',
 					'title'        => isset( $navigation['title'] ) && is_scalar( $navigation['title'] ) ? (string) $navigation['title'] : 'Navigation',
@@ -1260,8 +1314,20 @@ class Static_Site_Importer_Theme_Materializer {
 			$source_paths = array( (string) $template_part['source_path'] );
 		}
 
+		$block_names = array();
+		if ( preg_match_all( '/<!--\s+wp:([a-z0-9-]+(?:\/[a-z0-9-]+)?)/i', $markup, $matches ) ) {
+			$block_names = array_values( array_unique( array_map(
+				static function ( string $block_name ): string {
+					$block_name = strtolower( $block_name );
+					return str_contains( $block_name, '/' ) ? $block_name : 'core/' . $block_name;
+				},
+				$matches[1]
+			) ) );
+		}
+
 		return array(
 			'path'               => $path,
+			'origin'             => isset( $template_part['origin'] ) && is_scalar( $template_part['origin'] ) ? (string) $template_part['origin'] : 'artifact.template_parts',
 			'slug'               => isset( $template_part['slug'] ) && is_scalar( $template_part['slug'] ) ? (string) $template_part['slug'] : '',
 			'area'               => isset( $template_part['area'] ) && is_scalar( $template_part['area'] ) ? (string) $template_part['area'] : '',
 			'generated'          => ! empty( $template_part['generated'] ),
@@ -1269,6 +1335,9 @@ class Static_Site_Importer_Theme_Materializer {
 			'source_hash'        => isset( $template_part['source_hash'] ) && is_scalar( $template_part['source_hash'] ) ? (string) $template_part['source_hash'] : '',
 			'block_markup_bytes' => strlen( $markup ),
 			'block_markup_hash'  => hash( 'sha256', $markup ),
+			'block_names'        => $block_names,
+			'contains_core_html' => in_array( 'core/html', $block_names, true ),
+			'control_marker_count' => substr_count( $markup, 'blocks-engine-control-' ),
 		);
 	}
 
@@ -1525,19 +1594,6 @@ class Static_Site_Importer_Theme_Materializer {
 			"/**\n" .
 			" * Generated theme bootstrap.\n" .
 			" */\n\n" .
-			"add_filter( 'upload_mimes', static function ( array \$mimes ): array {\n" .
-			"\t// Generated SVG media is sanitized by the import pipeline at build time.\n" .
-			"\t\$mimes['svg'] = 'image/svg+xml';\n" .
-			"\treturn \$mimes;\n" .
-			"} );\n\n" .
-			"add_filter( 'wp_check_filetype_and_ext', static function ( array \$data, string \$file, string \$filename, array \$mimes ): array {\n" .
-			"\tif ( 'svg' !== strtolower( pathinfo( \$filename, PATHINFO_EXTENSION ) ) ) {\n" .
-			"\t\treturn \$data;\n" .
-			"\t}\n" .
-			"\t\$data['ext'] = 'svg';\n" .
-			"\t\$data['type'] = 'image/svg+xml';\n" .
-			"\treturn \$data;\n" .
-			"}, 10, 4 );\n\n" .
 			"add_action( 'after_setup_theme', static function (): void {\n" .
 			"\tadd_theme_support( 'editor-styles' );\n" .
 			"\tadd_editor_style( 'assets/css/editor-style.css' );\n" .

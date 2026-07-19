@@ -841,11 +841,24 @@ test('fixture matrix captures installed transformer provenance and bounded mater
       fixture_id: 'simple-site',
       status: 'passed',
       import_report: {
+        generated_theme: {
+          template_parts: [{
+            path: 'parts/header.html',
+            origin: 'source_files.landmark',
+            source_paths: ['website/index.html#header'],
+            block_markup_hash: 'header123',
+            block_markup_bytes: 512,
+            block_names: ['core/group', 'core/navigation'],
+            contains_core_html: false,
+            control_marker_count: 2,
+          }],
+        },
         blocks_engine: {
           transformer: {
             package: 'automattic/blocks-engine-php-transformer',
             version: '0.2.6',
             reference: '908c76a8d9b7679c87f59aa183f09b12ea9f89e6',
+            source_fingerprint: 'sha256:source123',
           },
           materialization_plan: {
             schema: 'blocks-engine/php-transformer/materialization-plan/v1',
@@ -883,12 +896,17 @@ test('fixture matrix captures installed transformer provenance and bounded mater
   assert.deepEqual(evidence.transformer, {
     package: 'automattic/blocks-engine-php-transformer',
     version: '0.2.6',
-    reference: '908c76a8d9b7679c87f59aa183f09b12ea9f89e6',
+    reference: 'sha256:source123',
+    package_reference: '908c76a8d9b7679c87f59aa183f09b12ea9f89e6',
+    source_fingerprint: 'sha256:source123',
   });
   assert.deepEqual(evidence.materialization_plan.assets[0], {
     path: 'assets/app.js', source: 'website/index.html', role: 'runtime', kind: 'script', type: 'application/javascript', placement: 'footer', defer: true, async: false, payload_present: true, payload_sha256: 'def456', payload_bytes: 84,
   });
   assert.equal(evidence.materialization_plan.assets[1].payload_sha256, 'abc123');
+  assert.deepEqual(evidence.template_parts[0], {
+    path: 'parts/header.html', origin: 'source_files.landmark', source_paths: ['website/index.html#header'], block_markup_hash: 'header123', block_markup_bytes: 512, block_names: ['core/group', 'core/navigation'], contains_core_html: false, control_marker_count: 2,
+  });
   assert.equal(result.summary.matrix_evidence_readiness.status, 'verified');
 });
 

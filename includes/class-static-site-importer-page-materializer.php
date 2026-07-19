@@ -1078,8 +1078,10 @@ class Static_Site_Importer_Page_Materializer {
 	 * @param string                       $body        HTML body markup.
 	 * @param string                       $source_path Source path for diagnostics.
 	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics, passed by reference.
+	 * @param array<string,mixed>          $options     Transformer options.
+	 * @param array<int,array<string,mixed>> $assets    Generated transformer assets, passed by reference.
 	 */
-	public static function html_to_blocks( string $body, string $source_path, array &$diagnostics ): string {
+	public static function html_to_blocks( string $body, string $source_path, array &$diagnostics, array $options = array(), array &$assets = array() ): string {
 		if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
 			$diagnostics[] = array(
 				'type'        => 'missing_transformer_bridge',
@@ -1090,7 +1092,12 @@ class Static_Site_Importer_Page_Materializer {
 			return '';
 		}
 
-		$result = call_user_func( 'blocks_engine_php_transformer_convert_format', $body, 'html', 'blocks' );
+		$result = call_user_func( 'blocks_engine_php_transformer_convert_format', $body, 'html', 'blocks', $options );
+		foreach ( isset( $result['assets'] ) && is_array( $result['assets'] ) ? $result['assets'] : array() as $asset ) {
+			if ( is_array( $asset ) ) {
+				$assets[] = $asset;
+			}
+		}
 
 		foreach ( isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array() as $diagnostic ) {
 			if ( is_array( $diagnostic ) ) {

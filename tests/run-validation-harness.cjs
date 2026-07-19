@@ -65,6 +65,11 @@ const steps = [
     args: [ path.join( repoRoot, 'tests/smoke-visual-repair-css.php' ) ],
   },
   {
+    name: 'Generated media materializer smoke',
+    command: 'php',
+    args: [ path.join( repoRoot, 'tests/smoke-media-materializer.php' ) ],
+  },
+  {
     name: 'Export theme ability smoke',
     command: 'php',
     args: [ path.join( repoRoot, 'tests/smoke-export-theme-ability.php' ) ],
