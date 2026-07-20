@@ -97,6 +97,8 @@ $payload     = array(
 			'handle'  => 'hero-island',
 			'content' => $island_body,
 			'block'   => 'ssi-example-site/custom-hero',
+			'selector' => 'script:nth-of-type(1)',
+			'source_path' => 'index.html',
 		),
 	),
 );
@@ -108,6 +110,7 @@ $assert( is_array( $descriptor ), 'scaffold-returns-descriptor', is_array( $desc
 
 if ( is_array( $descriptor ) ) {
 	$assert( array( 'hero-island' ) === ( $descriptor['island_handles'] ?? null ), 'descriptor-exposes-island-handles' );
+	$assert( 'script:nth-of-type(1)' === ( $descriptor['runtime_scripts'][0]['selector'] ?? '' ), 'descriptor-exposes-runtime-selector' );
 
 	$files = $descriptor['files'];
 	$main  = $files['ssi-example-site/ssi-example-site.php'] ?? '';
@@ -122,6 +125,17 @@ if ( is_array( $descriptor ) ) {
 	);
 	$assert( 1 === count( $island_files ), 'companion-emits-one-island-js-file' );
 	$assert( in_array( $island_body, array_values( $island_files ), true ), 'companion-island-file-carries-js-body' );
+}
+
+$script_only = $payload;
+$script_only['blocks'] = array();
+$script_only['preserved_js'][0]['block'] = '';
+$script_only_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $script_only );
+$assert( is_array( $script_only_descriptor ), 'script-only-companion-is-supported' );
+if ( is_array( $script_only_descriptor ) ) {
+	$script_only_main = $script_only_descriptor['files']['ssi-example-site/ssi-example-site.php'] ?? '';
+	$assert( str_contains( $script_only_main, "add_action( 'wp_enqueue_scripts'" ), 'script-only-companion-enqueues-on-frontend' );
+	$assert( str_contains( $script_only_main, "'' !== ( \$island['block'] ?? '' )" ), 'global-enqueue-is-limited-to-unscoped-scripts' );
 }
 
 // 2. Theme decoupling: the generated theme functions.php no longer enqueues a
@@ -170,11 +184,35 @@ $assert( array( 'hero-island' ) === ( $row['island_handles'] ?? null ), 'depende
 // Active companion: present diagnostic flags JS as runtime-carried theme-independently.
 $GLOBALS['ssi_companion_js_active'] = true;
 $report                            = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
+$report['quality']['fallback_count'] = 1;
+$report['diagnostics'][] = array(
+	'code'       => 'html_script_fallback',
+	'kind'       => 'unsupported_html_fallback',
+	'type'       => 'unsupported_html_fallback',
+	'tag'        => 'script',
+	'selector'   => 'script:nth-of-type(1)',
+	'source_path' => 'index.html',
+);
 Static_Site_Importer_Report_Diagnostics::record_companion_plugin_dependency( $report, $dependency, false );
 $present = array_values( array_filter( $report['diagnostics'] ?? array(), static fn ( array $d ): bool => 'companion_plugin_present' === ( $d['code'] ?? '' ) ) );
 $assert( 1 === count( $present ), 'present-diagnostic-emitted-when-active' );
 $assert( array( 'hero-island' ) === ( $present[0]['island_handles'] ?? null ), 'present-diagnostic-carries-island-handles' );
 $assert( true === ( $present[0]['runtime_carried'] ?? false ), 'present-diagnostic-flags-runtime-carried' );
+$materialized = array_values( array_filter( $report['diagnostics'] ?? array(), static fn ( array $d ): bool => 'runtime_script_materialized' === ( $d['code'] ?? '' ) ) );
+$assert( 1 === count( $materialized ), 'companion-materialization-resolves-script-fallback' );
+$assert( 'native_conversion' === ( $materialized[0]['loss_class'] ?? '' ), 'materialized-script-is-native-conversion-outcome' );
+$assert( 0 === ( $report['quality']['fallback_count'] ?? -1 ), 'materialized-script-no-longer-counts-as-fallback' );
+$report['diagnostics'][] = array(
+	'code'        => 'html_script_fallback',
+	'kind'        => 'html',
+	'tag'         => 'script',
+	'selector'    => 'script:nth-of-type(1)',
+	'source_path' => 'index.html',
+	'reason'      => 'script_requires_runtime',
+);
+Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $report, array() );
+$unresolved = array_filter( $report['diagnostics'], static fn ( array $d ): bool => 'html_script_fallback' === ( $d['code'] ?? '' ) );
+$assert( empty( $unresolved ), 'finalization-reconciles-late-script-fallback-rows' );
 $stored = $report['companion_plugins']['dependencies']['ssi-example-site']['island_handles'] ?? null;
 $assert( array( 'hero-island' ) === $stored, 'report-stores-companion-island-handles' );
 

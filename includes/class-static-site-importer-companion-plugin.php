@@ -64,23 +64,23 @@ class Static_Site_Importer_Companion_Plugin {
 			);
 		}
 
-		$blocks = self::payload_blocks( $payload );
-		if ( empty( $blocks ) ) {
+		$blocks          = self::payload_blocks( $payload );
+		$plugin_slug     = 'ssi-' . $site_slug;
+		$block_namespace = $plugin_slug;
+		$preserved       = self::preserved_js( $payload, $block_namespace );
+		if ( empty( $blocks ) && empty( $preserved ) ) {
 			return new WP_Error(
-				'static_site_importer_companion_plugin_blocks_missing',
-				'Companion-plugin payload must declare at least one block with a name.'
+				'static_site_importer_companion_plugin_content_missing',
+				'Companion-plugin payload must declare at least one block or preserved script.'
 			);
 		}
 
-		$plugin_slug     = 'ssi-' . $site_slug;
-		$block_namespace = $plugin_slug;
 		$mu_plugin       = ! empty( $payload['mu_plugin'] );
 		$site_name       = self::site_name( $payload, $site_slug );
 
 		$files       = array();
 		$block_names = array();
 		$block_specs = array();
-		$preserved   = self::preserved_js( $payload, $block_namespace );
 
 		foreach ( $blocks as $block ) {
 			$built = self::build_block( $block, $block_namespace );
@@ -121,6 +121,15 @@ class Static_Site_Importer_Companion_Plugin {
 			// than theme-coupled.
 			'island_handles' => array_map(
 				static fn ( array $island ): string => (string) $island['handle'],
+				$preserved
+			),
+			'runtime_scripts' => array_map(
+				static fn ( array $island ): array => array(
+					'handle'      => (string) $island['handle'],
+					'block'       => (string) $island['block'],
+					'selector'    => (string) $island['selector'],
+					'source_path' => (string) $island['source_path'],
+				),
 				$preserved
 			),
 			'loader_file'    => '',
@@ -445,6 +454,8 @@ class Static_Site_Importer_Companion_Plugin {
 			$relative_raw = isset( $entry['src'] ) && is_scalar( $entry['src'] ) ? self::sanitize_relative_path( (string) $entry['src'] ) : '';
 			$relative     = '' !== $relative_raw ? $relative_raw : 'islands/' . $handle . '.js';
 			$block        = isset( $entry['block'] ) && is_scalar( $entry['block'] ) ? (string) $entry['block'] : '';
+			$selector     = isset( $entry['selector'] ) && is_scalar( $entry['selector'] ) ? (string) $entry['selector'] : '';
+			$source_path  = isset( $entry['source_path'] ) && is_scalar( $entry['source_path'] ) ? (string) $entry['source_path'] : '';
 
 			$islands[] = array(
 				'handle'       => $handle,
@@ -453,6 +464,8 @@ class Static_Site_Importer_Companion_Plugin {
 				// Scope: enqueue only when this block renders. Empty block means
 				// the island is unscoped, but slice 1 only emits scoped islands.
 				'block'        => $block,
+				'selector'     => $selector,
+				'source_path'  => $source_path,
 			);
 		}
 
@@ -590,6 +603,20 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = '}';
 		$lines[] = sprintf( "add_filter( 'render_block', '%s_enqueue_islands', 10, 2 );", $fn_prefix );
 		$lines[] = '';
+		$lines[] = '/** Enqueue preserved scripts that apply to the rendered frontend document. */';
+		$lines[] = sprintf( 'function %s_enqueue_global_islands() {', $fn_prefix );
+		$lines[] = "\tif ( ! function_exists( 'wp_enqueue_script' ) ) {";
+		$lines[] = "\t\treturn;";
+		$lines[] = "\t}";
+		$lines[] = sprintf( "\tforeach ( %s_islands() as \$island ) {", $fn_prefix );
+		$lines[] = "\t\tif ( '' !== ( \$island['block'] ?? '' ) || '' === ( \$island['src'] ?? '' ) ) {";
+		$lines[] = "\t\t\tcontinue;";
+		$lines[] = "\t\t}";
+		$lines[] = sprintf( "\t\twp_enqueue_script( \$island['handle'], %s_URL . \$island['src'], array(), '1.0.0', true );", strtoupper( $fn_prefix ) );
+		$lines[] = "\t}";
+		$lines[] = '}';
+		$lines[] = sprintf( "add_action( 'wp_enqueue_scripts', '%s_enqueue_global_islands' );", $fn_prefix );
+		$lines[] = '';
 
 		return implode( "\n", $lines );
 	}
@@ -639,10 +666,12 @@ class Static_Site_Importer_Companion_Plugin {
 		$rows = array();
 		foreach ( $preserved as $island ) {
 			$rows[] = sprintf(
-				"\t\tarray( 'handle' => '%s', 'src' => '%s', 'block' => '%s' ),",
+				"\t\tarray( 'handle' => '%s', 'src' => '%s', 'block' => '%s', 'selector' => '%s', 'source_path' => '%s' ),",
 				self::php_single_quote( $island['handle'] ),
 				self::php_single_quote( $island['relative_src'] ),
-				self::php_single_quote( $island['block'] )
+				self::php_single_quote( $island['block'] ),
+				self::php_single_quote( $island['selector'] ),
+				self::php_single_quote( $island['source_path'] )
 			);
 		}
 

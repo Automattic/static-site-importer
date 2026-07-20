@@ -254,7 +254,7 @@ class Static_Site_Importer_Theme_Generator {
 
 		self::analyze_generated_theme_block_documents( $writes, $theme_dir );
 		self::$conversion_report['theme_slug'] = $theme_slug;
-		self::materialize_required_plugins( $args );
+		self::materialize_required_plugins( $args, $artifacts, $theme_slug, $theme_name );
 		self::record_product_seeding_report( $args );
 		self::record_commerce_dependency_check( $args );
 		self::record_form_materialization( $args, $page_artifacts['contents'] );
@@ -2969,10 +2969,13 @@ class Static_Site_Importer_Theme_Generator {
 	/**
 	 * Materialize plugins required by detected source intent.
 	 *
-	 * @param array<string, mixed> $args Import args.
+	 * @param array<string, mixed> $args      Import args.
+	 * @param array<string, mixed> $artifacts Compiled artifact envelope.
+	 * @param string               $theme_slug Generated theme slug.
+	 * @param string               $theme_name Generated theme name.
 	 * @return void
 	 */
-	private static function materialize_required_plugins( array $args ): void {
+	private static function materialize_required_plugins( array $args, array $artifacts, string $theme_slug, string $theme_name ): void {
 		self::$conversion_report['plugin_materialization'] = array(
 			'status'  => 'skipped',
 			'plugins' => array(),
@@ -2986,16 +2989,34 @@ class Static_Site_Importer_Theme_Generator {
 			$adapters[] = Static_Site_Importer_Entity_Materializer_Registry::form_adapter();
 		}
 
-		if ( empty( $adapters ) ) {
+		$companion_payload = isset( $artifacts['companion_plugin_payload'] ) && is_array( $artifacts['companion_plugin_payload'] ) ? $artifacts['companion_plugin_payload'] : array();
+		if ( ! empty( $companion_payload ) ) {
+			$companion_payload['site_slug'] = '' !== (string) ( $companion_payload['site_slug'] ?? '' ) ? (string) $companion_payload['site_slug'] : $theme_slug;
+			$companion_payload['site_name'] = '' !== (string) ( $companion_payload['site_name'] ?? '' ) ? (string) $companion_payload['site_name'] : $theme_name;
+		}
+
+		if ( empty( $adapters ) && empty( $companion_payload ) ) {
 			self::$conversion_report['plugin_materialization']['reason'] = 'no_plugin_backed_intent';
 			return;
 		}
+		$reports = array();
 		if ( array_key_exists( 'materialize_dependencies', $args ) && false === (bool) $args['materialize_dependencies'] ) {
+			if ( ! empty( $companion_payload ) ) {
+				$dependency = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $companion_payload );
+				Static_Site_Importer_Report_Diagnostics::record_companion_plugin_dependency( self::$conversion_report, $dependency, false );
+			}
 			self::$conversion_report['plugin_materialization']['reason'] = 'dependency_materialization_disabled';
 			return;
 		}
 
-		$reports = array();
+		if ( ! empty( $companion_payload ) ) {
+			$dependency = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $companion_payload );
+			$slug       = (string) ( $dependency['slug'] ?? '' );
+			if ( '' !== $slug ) {
+				$reports[ $slug ] = Static_Site_Importer_Entity_Materializer_Registry::materialize_companion_dependency( $dependency );
+			}
+			Static_Site_Importer_Report_Diagnostics::record_companion_plugin_dependency( self::$conversion_report, $dependency, false );
+		}
 		foreach ( $adapters as $adapter ) {
 			$waiver_arg = (string) ( $adapter['waiver_arg'] ?? '' );
 			if ( '' !== $waiver_arg && ! empty( $args[ $waiver_arg ] ) ) {

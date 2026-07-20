@@ -1898,6 +1898,31 @@ test('visual diff region classification prefers computed screenshot regions over
   assert.deepEqual(classification.visual_diff_regions[0].bbox, { x: 8, y: 8, width: 24, height: 18 });
 });
 
+test('visual diff classification discards stale regions for an exact pixel match', () => {
+  const fixtureArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-classify-identical-'));
+  const visualDirectory = path.join(fixtureArtifactsDirectory, 'files', 'browser', 'visual-compare', 'identical');
+  mkdirSync(visualDirectory, { recursive: true });
+  const source = syntheticVisualParityPng(48, 40);
+  const candidate = PNG.sync.read(PNG.sync.write(source));
+  const diff = exactDiffPng(source, candidate);
+  writePng(path.join(visualDirectory, 'source.png'), source);
+  writePng(path.join(visualDirectory, 'candidate.png'), candidate);
+  writePng(path.join(visualDirectory, 'diff.png'), diff);
+
+  const classification = classifyVisualDiffRegions(visualComparePayload({
+    sourceScreenshot: 'files/browser/visual-compare/identical/source.png',
+    candidateScreenshot: 'files/browser/visual-compare/identical/candidate.png',
+    diffScreenshot: 'files/browser/visual-compare/identical/diff.png',
+    mismatchPixels: 0,
+    totalPixels: 48 * 40,
+    overlapMismatchPixels: 0,
+    overlapPixels: 48 * 40,
+    mismatchRegions: [{ x: 0, y: 0, width: 48, height: 40, pixels: 48 * 40 }],
+  }), { fixtureArtifactsDirectory });
+
+  assert.equal(classification, null);
+});
+
 test('fixture diagnostics drop empty rows and normalize kindless carriers with explicit kind', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-diagnostic-hygiene-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'diagnostic-hygiene-test' });
@@ -2110,6 +2135,40 @@ test('propagates accepted runtime preservation across duplicate script diagnosti
   assert.equal(result.summary.acceptable_finding_count, 2);
   assert.equal(result.summary.succeeded, 1);
   assert.equal(result.findings.every((finding) => finding.loss_acceptance === 'acceptable'), true);
+});
+
+test('resolved companion scripts suppress raw conversion-report fallback echoes', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-runtime-materialized-intake-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'runtime-materialized-intake-test' });
+  const codeboxOutput = {
+    fixture_id: 'simple-site',
+    status: 'passed',
+    import_report: {
+      diagnostics: [{
+        code: 'runtime_script_materialized',
+        kind: 'runtime_script_materialized',
+        loss_class: 'native_conversion',
+        source_path: 'website/index.html',
+        selector: 'script:nth-of-type(1)',
+      }],
+    },
+    blocks_engine: {
+      conversion_report: {
+        diagnostics: [{
+          code: 'html_script_fallback',
+          kind: 'html',
+          reason: 'script_requires_runtime',
+          source_path: 'website/index.html',
+          selector: 'script:nth-of-type(1)',
+        }],
+      },
+    },
+  };
+
+  const result = collectFixtureMatrixRunResults({ matrix, outputDirectory, codeboxOutput });
+  assert.equal(result.findings.some((finding) => finding.kind === 'html'), false);
+  assert.equal(result.findings.filter((finding) => finding.kind === 'runtime_script_materialized').length, 1);
+  assert.equal(result.summary.unacceptable_finding_count, 0);
 });
 
 test('materializes generated artifact roots into matrix-compatible fixtures', () => {

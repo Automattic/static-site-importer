@@ -369,6 +369,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 		$block_names    = array();
 		$island_handles = array();
+		$runtime_scripts = array();
 		$payload        = isset( $dependency['payload'] ) && is_array( $dependency['payload'] ) ? $dependency['payload'] : array();
 		$scaffold       = empty( $payload ) ? null : Static_Site_Importer_Companion_Plugin::scaffold( $payload );
 		if ( is_array( $scaffold ) && isset( $scaffold['block_names'] ) && is_array( $scaffold['block_names'] ) ) {
@@ -376,6 +377,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 		if ( is_array( $scaffold ) && isset( $scaffold['island_handles'] ) && is_array( $scaffold['island_handles'] ) ) {
 			$island_handles = array_values( array_map( 'strval', $scaffold['island_handles'] ) );
+		}
+		if ( is_array( $scaffold ) && isset( $scaffold['runtime_scripts'] ) && is_array( $scaffold['runtime_scripts'] ) ) {
+			$runtime_scripts = array_values( $scaffold['runtime_scripts'] );
 		}
 
 		return array(
@@ -392,6 +396,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			// scoped; lets the gate/diagnostics treat preserved island JS as
 			// companion-plugin-carried instead of theme-coupled.
 			'island_handles' => $island_handles,
+			'runtime_scripts' => $runtime_scripts,
 		);
 	}
 
