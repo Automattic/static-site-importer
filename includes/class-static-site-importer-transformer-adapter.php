@@ -99,6 +99,8 @@ class Static_Site_Importer_Transformer_Adapter {
 		$artifacts['compiled_site']     = ! empty( $view['compiled_site'] ) && is_array( $view['compiled_site'] ) ? $view['compiled_site'] : array();
 		$artifacts['template_parts']    = isset( $materialization_plan['template_parts'] ) && is_array( $materialization_plan['template_parts'] ) ? $materialization_plan['template_parts'] : array();
 		$artifacts['visual_repair']     = isset( $materialization_plan['visual_repair'] ) && is_array( $materialization_plan['visual_repair'] ) ? $materialization_plan['visual_repair'] : array();
+		$source_reports                 = isset( $result['source_reports'] ) && is_array( $result['source_reports'] ) ? $result['source_reports'] : array();
+		$artifacts['companion_plugin_payload'] = isset( $source_reports['companion_plugin_payload'] ) && is_array( $source_reports['companion_plugin_payload'] ) ? $source_reports['companion_plugin_payload'] : array();
 
 		$compiled['artifacts'] = $artifacts;
 

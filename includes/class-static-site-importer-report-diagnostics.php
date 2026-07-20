@@ -574,6 +574,8 @@ class Static_Site_Importer_Report_Diagnostics {
 
 		if ( ! empty( $row['active'] ) ) {
 			$island_handles = isset( $row['island_handles'] ) && is_array( $row['island_handles'] ) ? $row['island_handles'] : array();
+			$runtime_scripts = isset( $row['runtime_scripts'] ) && is_array( $row['runtime_scripts'] ) ? $row['runtime_scripts'] : array();
+			self::mark_companion_script_fallbacks_materialized( $report, $runtime_scripts, $slug );
 			$present        = array(
 				'code'           => 'companion_plugin_present',
 				'severity'       => 'info',
@@ -2822,6 +2824,61 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 		}
 		unset( $diagnostic );
+	}
+
+	/**
+	 * Resolve script fallback diagnostics after the generated companion plugin is active.
+	 *
+	 * @param array<string,mixed>            $report          Import report.
+	 * @param array<int,array<string,mixed>> $runtime_scripts Materialized companion scripts.
+	 * @param string                         $slug             Companion plugin slug.
+	 * @return void
+	 */
+	private static function mark_companion_script_fallbacks_materialized( array &$report, array $runtime_scripts, string $slug ): void {
+		$selectors = array();
+		foreach ( $runtime_scripts as $script ) {
+			if ( ! is_array( $script ) ) {
+				continue;
+			}
+			$selector = self::first_scalar( $script, array( 'selector' ) );
+			if ( '' !== $selector ) {
+				$selectors[ $selector ] = true;
+			}
+		}
+		if ( empty( $selectors ) || empty( $report['diagnostics'] ) || ! is_array( $report['diagnostics'] ) ) {
+			return;
+		}
+
+		$resolved = array();
+		foreach ( $report['diagnostics'] as &$diagnostic ) {
+			if ( ! is_array( $diagnostic ) || ! self::is_script_runtime_fallback_diagnostic( $diagnostic ) ) {
+				continue;
+			}
+			$selector = self::first_scalar( $diagnostic, array( 'selector' ) );
+			if ( '' === $selector || ! isset( $selectors[ $selector ] ) ) {
+				continue;
+			}
+
+			$diagnostic['original_code']                 = self::first_scalar( $diagnostic, array( 'code', 'diagnostic_code', 'kind', 'type' ) );
+			$diagnostic['code']                          = 'runtime_script_materialized';
+			$diagnostic['diagnostic_code']               = 'runtime_script_materialized';
+			$diagnostic['kind']                          = 'runtime_script_materialized';
+			$diagnostic['type']                          = 'runtime_script_materialized';
+			$diagnostic['severity']                      = 'info';
+			$diagnostic['loss_class']                    = Static_Site_Importer_Diagnostic_Loss_Classes::NATIVE_CONVERSION;
+			$diagnostic['diagnostic_class']              = Static_Site_Importer_Diagnostic_Loss_Classes::NATIVE_CONVERSION;
+			$diagnostic['repair_bucket']                 = Static_Site_Importer_Diagnostic_Loss_Classes::NATIVE_CONVERSION;
+			$diagnostic['runtime_carried']               = true;
+			$diagnostic['materialized_runtime_provider'] = 'companion_plugin';
+			$diagnostic['companion_plugin']              = $slug;
+			$diagnostic['message']                       = sprintf( 'Runtime script is materialized by active companion plugin %s.', $slug );
+			$resolved[ $selector ]                       = true;
+		}
+		unset( $diagnostic );
+
+		if ( ! empty( $resolved ) ) {
+			$report['quality']['fallback_count'] = max( 0, (int) ( $report['quality']['fallback_count'] ?? 0 ) - count( $resolved ) );
+		}
 	}
 
 	/**
