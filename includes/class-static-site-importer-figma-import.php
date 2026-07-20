@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Static_Site_Importer_Figma_Import {
 	/**
-	 * Register the default local Zstandard decoder for .fig uploads.
+	 * Register the default Zstandard decoder for .fig uploads.
 	 */
 	public static function register_default_zstd_decoder(): void {
 		if ( ! function_exists( 'add_filter' ) ) {
@@ -24,7 +24,18 @@ class Static_Site_Importer_Figma_Import {
 		add_filter(
 			'blocks_engine_figma_transformer_zstd_decoder',
 			static function ( $decoder ) {
-				if ( is_callable( $decoder ) || ! class_exists( '\Automattic\BlocksEngine\FigmaTransformer\Compression\ZstdCommandDecoder' ) ) {
+				if ( is_callable( $decoder ) ) {
+					return $decoder;
+				}
+
+				if ( function_exists( 'zstd_uncompress' ) ) {
+					return static function ( string $compressed ): string {
+						$uncompressed = zstd_uncompress( $compressed );
+						return is_string( $uncompressed ) ? $uncompressed : '';
+					};
+				}
+
+				if ( ! class_exists( '\\Automattic\\BlocksEngine\\FigmaTransformer\\Compression\\ZstdCommandDecoder' ) ) {
 					return $decoder;
 				}
 

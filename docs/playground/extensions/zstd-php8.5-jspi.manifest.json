@@ -1,0 +1,11 @@
+{
+  "name": "zstd",
+  "version": "0.13.3",
+  "mode": "php-extension",
+  "artifacts": [
+    {
+      "phpVersion": "8.5",
+      "sourcePath": "https://github.com/Automattic/static-site-importer/releases/latest/download/static-site-importer-zstd-php8.5-jspi.so"
+    }
+  ]
+}

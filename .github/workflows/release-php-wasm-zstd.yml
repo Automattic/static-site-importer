@@ -1,0 +1,31 @@
+name: Release PHP.wasm zstd
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-upload:
+    name: Build PHP 8.5 JSPI zstd side module
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          submodules: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build:php-wasm-zstd -- dist/php-wasm-zstd
+      - name: Verify the PHP.wasm artifact contract
+        run: npm run test:php-wasm-zstd
+      - name: Upload public Playground extension assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/php-wasm-zstd/static-site-importer-zstd-php8.5-jspi.so dist/php-wasm-zstd/static-site-importer-zstd-php8.5-jspi.manifest.json

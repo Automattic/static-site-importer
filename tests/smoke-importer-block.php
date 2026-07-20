@@ -448,12 +448,15 @@ $assert( str_contains( $plugin_source, "vendor/automattic/blocks-engine-php-tran
 $assert( str_contains( $plugin_source, "vendor/automattic/blocks-engine-php-transformer/php-transformer.php" ), 'loads-composer-path-transformer-bootstrap' );
 $assert( str_contains( $plugin_source, 'Static_Site_Importer_Figma_Import::register_default_zstd_decoder();' ), 'plugin-registers-figma-zstd-decoder' );
 
-$known_zstd_command = false;
-foreach ( array( '/opt/homebrew/bin/zstd', '/usr/local/bin/zstd', '/usr/bin/zstd' ) as $known_zstd_path ) {
-	$known_zstd_command = $known_zstd_command || is_executable( $known_zstd_path );
-}
-$figma_zstd_decoder = apply_filters( 'blocks_engine_figma_transformer_zstd_decoder', null );
-$assert( ! $known_zstd_command || is_callable( $figma_zstd_decoder ), 'figma-zstd-decoder-registers-when-command-exists' );
+$zstd_decoder_test = escapeshellarg( dirname( __DIR__ ) . '/tests/figma-zstd-decoder.php' );
+$zstd_native_output = array();
+$zstd_native_status = 0;
+exec( escapeshellarg( PHP_BINARY ) . ' -n ' . $zstd_decoder_test . ' native 2>&1', $zstd_native_output, $zstd_native_status );
+$assert( 0 === $zstd_native_status, 'figma-zstd-decoder-prefers-native-extension', implode( "\n", $zstd_native_output ) );
+$zstd_command_output = array();
+$zstd_command_status = 0;
+exec( escapeshellarg( PHP_BINARY ) . ' -n ' . $zstd_decoder_test . ' command 2>&1', $zstd_command_output, $zstd_command_status );
+$assert( 0 === $zstd_command_status, 'figma-zstd-decoder-falls-back-to-command', implode( "\n", $zstd_command_output ) );
 
 $rest_source = file_get_contents( dirname( __DIR__ ) . '/includes/rest.php' );
 $assert( is_string( $rest_source ), 'rest-source-readable' );
