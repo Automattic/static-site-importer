@@ -297,6 +297,15 @@ if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
 	}
 }
 
+if ( ! function_exists( 'blocks_engine_php_transformer_runtime_context' ) ) {
+	function blocks_engine_php_transformer_runtime_context( string $html, string $source_path, array $files ): array {
+		unset( $html, $source_path, $files );
+		return array(
+			'runtime_dom_selectors' => array( '.theme-toggle' ),
+		);
+	}
+}
+
 $source_file_part_result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
 	'/tmp/visual-repair-smoke',
 	array(
@@ -327,6 +336,7 @@ $assert( array( '.projected-template-part{display:flex}' ) === ( $source_file_pa
 $transform_options = $GLOBALS['static_site_importer_test_transform_options'] ?? array();
 $transform_content = $GLOBALS['static_site_importer_test_transform_content'] ?? array();
 $assert( ':root{--brand:#2c63ff}.btn{background:var(--brand);color:#fff}' === ( $transform_options[0]['static_css'] ?? '' ), 'source-file-template-part-fallback-passes-source-css-to-transformer' );
+$assert( array( '.theme-toggle' ) === ( $transform_options[0]['runtime_dom_selectors'] ?? array() ), 'source-file-template-part-fallback-passes-script-derived-runtime-context' );
 $assert( str_contains( (string) ( $transform_content[0] ?? '' ), '<svg>' ), 'source-file-template-part-fallback-passes-inline-svg-to-transformer' );
 $assert( isset( $source_file_part_writes['/tmp/visual-repair-smoke/assets/materialized-svg/inline-svg-test.svg'] ), 'source-file-template-part-fallback-writes-sanitized-importer-owned-svg' );
 $assert( str_contains( (string) $source_file_part_writes['/tmp/visual-repair-smoke/parts/header.html'], 'https://example.test/wp-content/themes/visual-repair-smoke/assets/materialized-svg/inline-svg-test.svg' ), 'source-file-template-part-fallback-rewrites-materialized-svg-url-once' );

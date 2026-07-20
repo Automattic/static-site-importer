@@ -1022,6 +1022,7 @@ class Static_Site_Importer_Theme_Materializer {
 	 */
 	private static function source_file_template_parts( array $artifacts ): array {
 		$files = isset( $artifacts['source_files'] ) && is_array( $artifacts['source_files'] ) ? $artifacts['source_files'] : array();
+		$source_files = $files;
 		$static_css = self::source_file_static_css( $files );
 		$entry_path = '';
 		foreach ( array( $artifacts['compiled_site']['entry_path'] ?? '', $artifacts['site']['entry_path'] ?? '' ) as $candidate ) {
@@ -1059,7 +1060,10 @@ class Static_Site_Importer_Theme_Materializer {
 				continue;
 			}
 
-			$parts = self::template_parts_from_html( $content, $path, $static_css );
+			$runtime_context = function_exists( 'blocks_engine_php_transformer_runtime_context' )
+				? blocks_engine_php_transformer_runtime_context( $content, $path, $source_files )
+				: array();
+			$parts = self::template_parts_from_html( $content, $path, $static_css, is_array( $runtime_context ) ? $runtime_context : array() );
 			if ( ! empty( $parts ) ) {
 				return $parts;
 			}
@@ -1102,9 +1106,10 @@ class Static_Site_Importer_Theme_Materializer {
 	 *
 	 * @param string $html        Source HTML document.
 	 * @param string $source_path Source file path for reports.
+	 * @param array<string,mixed> $runtime_context Script-derived transformer context.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private static function template_parts_from_html( string $html, string $source_path, string $static_css = '' ): array {
+	private static function template_parts_from_html( string $html, string $source_path, string $static_css = '', array $runtime_context = array() ): array {
 		$document  = new Static_Site_Importer_Document( $html );
 		$fragments = $document->fragments();
 		$parts     = array();
@@ -1124,7 +1129,7 @@ class Static_Site_Importer_Theme_Materializer {
 				$fragment,
 				$source_path . '#' . $slug,
 				$diagnostics,
-				'' === $static_css ? array() : array( 'static_css' => $static_css ),
+				array_merge( $runtime_context, '' === $static_css ? array() : array( 'static_css' => $static_css ) ),
 				$assets
 			);
 			if ( '' === trim( $markup ) ) {
