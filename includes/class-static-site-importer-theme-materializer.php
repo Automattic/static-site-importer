@@ -973,8 +973,6 @@ class Static_Site_Importer_Theme_Materializer {
 			$source_path = (string) strtok( $source_path, '#' );
 			$markup      = Static_Site_Importer_Page_Materializer::rewrite_materialized_asset_references( $markup, $assets, $source_path, $permalinks );
 
-			$writes[ trailingslashit( $theme_dir ) . $relative ] = $markup;
-			$reports[] = self::template_part_artifact_report_payload( $relative, $template_part, $markup );
 			foreach ( isset( $template_part['stylesheet_assets'] ) && is_array( $template_part['stylesheet_assets'] ) ? $template_part['stylesheet_assets'] : array() as $asset ) {
 				if ( ! is_array( $asset ) || ! isset( $asset['content'] ) || ! is_scalar( $asset['content'] ) ) {
 					continue;
@@ -985,7 +983,27 @@ class Static_Site_Importer_Theme_Materializer {
 				if ( '' !== $content && ( 'text/css' === $type || preg_match( '/\.css$/i', $path ) ) ) {
 					$styles[] = $content;
 				}
+
+				$target_path = isset( $asset['target_path'] ) && is_scalar( $asset['target_path'] ) ? ltrim( str_replace( '\\', '/', (string) $asset['target_path'] ), '/' ) : ltrim( str_replace( '\\', '/', $path ), '/' );
+				if (
+					'svg' === ( $asset['kind'] ?? '' )
+					&& 'importer_owned' === ( $asset['source_role'] ?? '' )
+					&& true === ( $asset['pipeline_sanitized'] ?? false )
+					&& preg_match( '#^assets/materialized-svg/[a-zA-Z0-9._-]+\.svg$#', $target_path )
+					&& preg_match( '/^<svg\b[\s\S]*<\/svg>$/i', $content )
+					&& ! preg_match( '/<(?:script|foreignObject|iframe|object|embed)\b|\son[a-z]+\s*=/i', $content )
+				) {
+					$writes[ trailingslashit( $theme_dir ) . $target_path ] = $content . "\n";
+					if ( function_exists( 'get_theme_root_uri' ) ) {
+						$theme_slug     = sanitize_key( basename( rtrim( str_replace( '\\', '/', $theme_dir ), '/' ) ) );
+						$asset_url      = trailingslashit( get_theme_root_uri( $theme_slug ) ) . $theme_slug . '/' . $target_path;
+						$reference_path = '' !== $path ? $path : $target_path;
+						$markup         = str_replace( $reference_path, $asset_url, $markup );
+					}
+				}
 			}
+			$writes[ trailingslashit( $theme_dir ) . $relative ] = $markup;
+			$reports[] = self::template_part_artifact_report_payload( $relative, $template_part, $markup );
 		}
 
 		return array(
@@ -1103,7 +1121,7 @@ class Static_Site_Importer_Theme_Materializer {
 			$diagnostics = array();
 			$assets      = array();
 			$markup      = Static_Site_Importer_Page_Materializer::html_to_blocks(
-				self::strip_inline_svg_markup( $fragment ),
+				$fragment,
 				$source_path . '#' . $slug,
 				$diagnostics,
 				'' === $static_css ? array() : array( 'static_css' => $static_css ),
@@ -1126,20 +1144,6 @@ class Static_Site_Importer_Theme_Materializer {
 		}
 
 		return $parts;
-	}
-
-	/**
-	 * Remove inline SVG from synthesized source-derived template parts.
-	 *
-	 * @param string $html HTML fragment.
-	 * @return string
-	 */
-	private static function strip_inline_svg_markup( string $html ): string {
-		if ( '' === trim( $html ) || ! str_contains( strtolower( $html ), '<svg' ) ) {
-			return $html;
-		}
-
-		return (string) preg_replace( '#<svg\b[^>]*>.*?</svg>#is', '', $html );
 	}
 
 	/**

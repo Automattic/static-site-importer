@@ -80,6 +80,13 @@ if ( ! function_exists( 'trailingslashit' ) ) {
 	}
 }
 
+if ( ! function_exists( 'get_theme_root_uri' ) ) {
+	function get_theme_root_uri( string $stylesheet_or_template = '' ): string {
+		unset( $stylesheet_or_template );
+		return 'https://example.test/wp-content/themes';
+	}
+}
+
 if ( ! function_exists( 'wp_mkdir_p' ) ) {
 	function wp_mkdir_p( string $path ): bool {
 		return is_dir( $path ) || mkdir( $path, 0777, true );
@@ -263,18 +270,29 @@ $assert( array( 'website/index.html#main-nav' ) === ( $navigation_part_reports[0
 if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
 	function blocks_engine_php_transformer_convert_format( string $content, string $from, string $to, array $options = array() ): array {
 		$GLOBALS['static_site_importer_test_transform_options'][] = $options;
+		$GLOBALS['static_site_importer_test_transform_content'][] = $content;
 		unset( $from, $to );
 		$text = trim( preg_replace( '/\s+/', ' ', wp_strip_all_tags( $content ) ) ?? '' );
+		$svg_asset = str_contains( $content, '<svg' ) ? array(
+			'source'             => 'inline-svg',
+			'path'               => 'assets/materialized-svg/inline-svg-test.svg',
+			'target_path'        => 'assets/materialized-svg/inline-svg-test.svg',
+			'kind'               => 'svg',
+			'source_role'        => 'importer_owned',
+			'pipeline_sanitized' => true,
+			'content'            => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1z" /></svg>',
+		) : null;
 		return array(
-			'serialized_blocks' => '<!-- wp:paragraph --><p>' . esc_html( $text ) . '</p><!-- /wp:paragraph -->',
+			'serialized_blocks' => '<!-- wp:paragraph --><p>' . esc_html( $text ) . ( null !== $svg_asset ? '<img src="assets/materialized-svg/inline-svg-test.svg" alt="" />' : '' ) . '</p><!-- /wp:paragraph -->',
 			'diagnostics'       => array(),
-			'assets'            => array(
+			'assets'            => array_values( array_filter( array(
 				array(
 					'path'    => 'assets/css/template-part-projection.css',
 					'type'    => 'text/css',
 					'content' => '.projected-template-part{display:flex}',
 				),
-			),
+				$svg_asset,
+			) ) ),
 		);
 	}
 }
@@ -307,7 +325,12 @@ $assert( false === ( $source_file_part_reports[0]['contains_core_html'] ?? true 
 $assert( 0 === ( $source_file_part_reports[0]['control_marker_count'] ?? -1 ), 'source-file-template-part-fallback-reports-control-marker-count' );
 $assert( array( '.projected-template-part{display:flex}' ) === ( $source_file_part_result['styles'] ?? array() ), 'source-file-template-part-fallback-retains-transformer-css-assets' );
 $transform_options = $GLOBALS['static_site_importer_test_transform_options'] ?? array();
+$transform_content = $GLOBALS['static_site_importer_test_transform_content'] ?? array();
 $assert( ':root{--brand:#2c63ff}.btn{background:var(--brand);color:#fff}' === ( $transform_options[0]['static_css'] ?? '' ), 'source-file-template-part-fallback-passes-source-css-to-transformer' );
+$assert( str_contains( (string) ( $transform_content[0] ?? '' ), '<svg>' ), 'source-file-template-part-fallback-passes-inline-svg-to-transformer' );
+$assert( isset( $source_file_part_writes['/tmp/visual-repair-smoke/assets/materialized-svg/inline-svg-test.svg'] ), 'source-file-template-part-fallback-writes-sanitized-importer-owned-svg' );
+$assert( str_contains( (string) $source_file_part_writes['/tmp/visual-repair-smoke/parts/header.html'], 'https://example.test/wp-content/themes/visual-repair-smoke/assets/materialized-svg/inline-svg-test.svg' ), 'source-file-template-part-fallback-rewrites-materialized-svg-url-once' );
+$assert( ! str_contains( (string) $source_file_part_writes['/tmp/visual-repair-smoke/parts/header.html'], '/visual-repair-smoke/https://' ), 'source-file-template-part-fallback-does-not-double-rewrite-svg-url' );
 
 $entrypoint_part_result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
 	'/tmp/visual-repair-smoke',
