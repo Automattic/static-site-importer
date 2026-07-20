@@ -2137,6 +2137,40 @@ test('propagates accepted runtime preservation across duplicate script diagnosti
   assert.equal(result.findings.every((finding) => finding.loss_acceptance === 'acceptable'), true);
 });
 
+test('resolved companion scripts suppress raw conversion-report fallback echoes', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-runtime-materialized-intake-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'runtime-materialized-intake-test' });
+  const codeboxOutput = {
+    fixture_id: 'simple-site',
+    status: 'passed',
+    import_report: {
+      diagnostics: [{
+        code: 'runtime_script_materialized',
+        kind: 'runtime_script_materialized',
+        loss_class: 'native_conversion',
+        source_path: 'website/index.html',
+        selector: 'script:nth-of-type(1)',
+      }],
+    },
+    blocks_engine: {
+      conversion_report: {
+        diagnostics: [{
+          code: 'html_script_fallback',
+          kind: 'html',
+          reason: 'script_requires_runtime',
+          source_path: 'website/index.html',
+          selector: 'script:nth-of-type(1)',
+        }],
+      },
+    },
+  };
+
+  const result = collectFixtureMatrixRunResults({ matrix, outputDirectory, codeboxOutput });
+  assert.equal(result.findings.some((finding) => finding.kind === 'html'), false);
+  assert.equal(result.findings.filter((finding) => finding.kind === 'runtime_script_materialized').length, 1);
+  assert.equal(result.summary.unacceptable_finding_count, 0);
+});
+
 test('materializes generated artifact roots into matrix-compatible fixtures', () => {
   const sourceRoot = mkdtempSync(path.join(tmpdir(), 'ssi-generated-artifacts-'));
   const fixtureOutput = mkdtempSync(path.join(tmpdir(), 'ssi-generated-fixtures-'));
