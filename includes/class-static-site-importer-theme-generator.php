@@ -89,26 +89,59 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		$compiler_options = isset( $args['compiler_options'] ) && is_array( $args['compiler_options'] ) ? $args['compiler_options'] : array();
-		$compiled         = ( new Static_Site_Importer_Transformer_Adapter() )->compile_website_artifact( $artifact, array_merge( array( 'include_conversion_report' => true ), $compiler_options ) );
+		$compiled         = ( new Static_Site_Importer_Transformer_Adapter() )->compile_website_artifact_result( $artifact, array_merge( array( 'include_conversion_report' => true ), $compiler_options ) );
 		if ( is_wp_error( $compiled ) ) {
 			return $compiled;
 		}
-		if ( isset( $artifact['files'] ) && is_array( $artifact['files'] ) && empty( $compiled['artifacts']['source_files'] ) ) {
-			if ( ! isset( $compiled['artifacts'] ) || ! is_array( $compiled['artifacts'] ) ) {
-				$compiled['artifacts'] = array();
-			}
-			$compiled['artifacts']['source_files'] = $artifact['files'];
-		}
-		$document_pages   = self::website_artifact_source_pages( $compiled );
-		if ( is_wp_error( $document_pages ) ) {
-			return $document_pages;
+		$plan = isset( $compiled['source_reports']['wordpress_site_plan'] ) && is_array( $compiled['source_reports']['wordpress_site_plan'] ) ? $compiled['source_reports']['wordpress_site_plan'] : array();
+		if ( empty( $plan ) ) {
+			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.', $compiled );
 		}
 
-		if ( 'failed' === (string) ( $compiled['status'] ?? '' ) || empty( $document_pages ) ) {
-			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce materializable document pages.', $compiled );
+		$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, $args );
+		if ( 'completed' !== $receipt['status'] ) {
+			$error = $receipt['errors'][0] ?? array();
+			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan materialization failed.' ), $receipt );
 		}
 
-		return self::import_compiled_website_artifact( $compiled, $args );
+		return self::legacy_result_from_wordpress_site_plan_receipt( $receipt, $compiled, $args );
+	}
+
+	/**
+	 * Project canonical materialization facts into the established public result envelope.
+	 *
+	 * @param array<string,mixed> $receipt  Materialization receipt.
+	 * @param array<string,mixed> $compiled Upstream compiler result.
+	 * @param array<string,mixed> $args     Import args.
+	 * @return array<string,mixed>
+	 */
+	private static function legacy_result_from_wordpress_site_plan_receipt( array $receipt, array $compiled, array $args ): array {
+		$plan        = $receipt['plan'];
+		$theme        = $receipt['theme'];
+		$diagnostics  = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
+		$quality      = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
+		$report       = array(
+			'schema'         => 'static-site-importer/import-report/v1',
+			'import_run_id'  => self::import_run_id( $args ),
+			'blocks_engine'  => isset( $compiled['source_reports'] ) && is_array( $compiled['source_reports'] ) ? $compiled['source_reports'] : array(),
+			'quality'        => $quality,
+			'diagnostics'    => $diagnostics,
+			'generated_theme' => array( 'wordpress_site_plan' => $plan ),
+		);
+		return array(
+			'theme_slug'               => $theme['slug'],
+			'theme_name'               => isset( $args['name'] ) ? (string) $args['name'] : $theme['slug'],
+			'theme_dir'                => $theme['dir'],
+			'pages'                    => $receipt['completed']['pages'],
+			'import_report'            => $report,
+			'import_report_summary'    => array( 'status' => $receipt['status'], 'diagnostic_count' => count( $diagnostics ) ),
+			'import_validation_result' => array( 'diagnostics' => $diagnostics, 'quality' => $quality ),
+			'finding_packets'          => array(),
+			'quality'                  => $quality,
+			'source_of_truth'          => array(),
+			'progress_events'          => array(),
+			'materialization_receipt'  => $receipt,
+		);
 	}
 
 	/**
