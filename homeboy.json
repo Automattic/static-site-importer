@@ -24,9 +24,6 @@
         ],
         "validation_dependencies": []
       }
-    },
-    "nodejs": {
-      "settings": {}
     }
   },
   "id": "static-site-importer",
