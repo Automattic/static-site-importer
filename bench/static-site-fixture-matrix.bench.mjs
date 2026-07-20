@@ -167,6 +167,7 @@ export async function runFixtureMatrix(options) {
     risk_profile: options.riskProfile || options.risk_profile,
     complexity: options.complexity,
     max_complexity: options.maxComplexity || options.max_complexity,
+    fixture_ids: options.fixtureIds,
   });
   const progress = createFixtureMatrixProgress(matrix, options);
   progress.emit('matrix', 'started');
@@ -250,6 +251,7 @@ export async function runFixtureMatrix(options) {
       results: attributeChildCommandFailures(batchResults.flatMap((result) => result.fixtures), childCommandFailures),
       // Editor-quality scoring is always on; the native-rate gate is opt-in.
       editorQuality: editorQualityGateInput(options),
+      requireSolvedCandidate: options.requireSolvedCandidate,
     });
     performance.result_assembly_ms = elapsedMs(resultAssemblyStartedAt);
     runtime = {
@@ -1307,6 +1309,8 @@ export function optionsFromEnv(env = process.env) {
     maxExplanationCandidates: benchEnv.SSI_FIXTURE_MATRIX_MAX_EXPLANATION_CANDIDATES || env.SSI_FIXTURE_MATRIX_MAX_EXPLANATION_CANDIDATES,
     explainSelectors: benchEnv.SSI_FIXTURE_MATRIX_EXPLAIN_SELECTORS || env.SSI_FIXTURE_MATRIX_EXPLAIN_SELECTORS,
     minNativeRate: benchEnv.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE || env.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE,
+    fixtureIds: benchEnv.SSI_FIXTURE_MATRIX_FIXTURE_IDS || env.SSI_FIXTURE_MATRIX_FIXTURE_IDS,
+    requireSolvedCandidate: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_REQUIRE_SOLVED_CANDIDATE) || isTruthy(env.SSI_FIXTURE_MATRIX_REQUIRE_SOLVED_CANDIDATE),
   };
 }
 

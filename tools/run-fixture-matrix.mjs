@@ -94,6 +94,8 @@ export function buildFixtureMatrixRunPlan(input) {
     SSI_FIXTURE_MATRIX_FIXTURE_ROOT: options.fixtureRoot,
     SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PATH: options.staticSiteImporter,
     SSI_FIXTURE_MATRIX_RUN: '1',
+    ...(options.fixtureIds.length ? { SSI_FIXTURE_MATRIX_FIXTURE_IDS: options.fixtureIds.join(',') } : {}),
+    ...(options.requireSolvedCandidate ? { SSI_FIXTURE_MATRIX_REQUIRE_SOLVED_CANDIDATE: '1' } : {}),
     ...(options.blocksEnginePhpTransformerPath
       ? { SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH: options.blocksEnginePhpTransformerPath }
       : {}),
@@ -136,7 +138,7 @@ export function buildFixtureMatrixRunPlan(input) {
     ...(options.maxComplexity ? { SSI_FIXTURE_MATRIX_MAX_COMPLEXITY: String(options.maxComplexity) } : {}),
   };
   const corpusCounts = countCorpusFixtureDirectories(options.fixtureRoot);
-  const fixtureCount = corpusCounts.total;
+  const fixtureCount = options.fixtureIds.length || corpusCounts.total;
   const activeFixtureCount = corpusCounts.active;
   const solvedFixtureCount = corpusCounts.solved;
   const codeFreshness = buildCodeFreshness(options, options.gitRunner || defaultGitRunner);
@@ -163,6 +165,8 @@ export function buildFixtureMatrixRunPlan(input) {
     fixture_count: fixtureCount,
     active_fixture_count: activeFixtureCount,
     solved_fixture_count: solvedFixtureCount,
+    selected_active_fixture_count: options.selectedActiveFixtureCount,
+    selected_solved_fixture_count: options.selectedSolvedFixtureCount,
     canonical_fixture_count: CANONICAL_FIXTURE_COUNT,
     fixture_count_matches_canonical: activeFixtureCount === CANONICAL_FIXTURE_COUNT,
     lane_filter: laneFilterSummary(options),
@@ -216,6 +220,9 @@ export function buildFixtureMatrixRunPlan(input) {
 
 function laneFilterSummary(options) {
   return {
+    ...(options.fixtureIds.length ? { fixture_ids: options.fixtureIds } : {}),
+    ...(options.targetFixture ? { target_fixture: options.targetFixture } : {}),
+    ...(options.promotionGate ? { promotion_gate: true } : {}),
     ...(options.class ? { class: String(options.class) } : {}),
     ...(options.tag ? { tag: String(options.tag) } : {}),
     ...(options.capability ? { capability: String(options.capability) } : {}),
@@ -236,6 +243,15 @@ function normalizeOptions(input) {
     throw new Error('--blocks-engine or --fixture-root is required');
   }
   const fixtureRoot = path.resolve(input.fixtureRoot || path.join(blocksEngine, 'fixtures'));
+  const selection = resolveFixtureSelection({
+    fixtureRoot,
+    targetFixture: input.targetFixture,
+    promotionGate: input.promotionGate,
+  });
+
+  if (input.promotionGate && (input.editorValidation === false || input.visualParity === false || input.visualParityGate === false)) {
+    throw new Error('--promotion-gate requires editor validation and gated visual parity; remove the validation or visual-parity opt-out.');
+  }
 
   const defaultBlocksEnginePhpTransformerPath = input.mode === 'release-proof' ? '' : blocksEngine;
   let blocksEnginePhpTransformerPath = defaultBlocksEnginePhpTransformerPath;
@@ -273,6 +289,13 @@ function normalizeOptions(input) {
     tempRoot,
     output,
     fixtureRoot,
+    fixtureIds: selection.fixtureIds,
+    targetFixture: selection.targetFixture,
+    promotionGate: selection.promotionGate,
+    requireSolvedCandidate: selection.promotionGate,
+    selectedActiveFixtureCount: selection.selectedActiveFixtureCount,
+    selectedSolvedFixtureCount: selection.selectedSolvedFixtureCount,
+    batchSize: input.batchSize || (selection.promotionGate ? 1 : input.batchSize),
     blocksEngine,
     blocksEnginePhpTransformerPath,
     passthrough: Array.isArray(input.passthrough) ? input.passthrough : [],
@@ -284,6 +307,46 @@ function normalizeOptions(input) {
     homeboyBin: input.homeboyBin || process.env.HOMEBOY_BIN || 'homeboy',
     ...normalizeVisualAttributionOptions(input),
   };
+}
+
+function resolveFixtureSelection({ fixtureRoot, targetFixture, promotionGate }) {
+  const target = String(targetFixture || '').trim();
+  if (promotionGate && !target) {
+    throw new Error('--promotion-gate requires --target-fixture <id>.');
+  }
+  if (!target) {
+    return {
+      fixtureIds: [],
+      targetFixture: '',
+      promotionGate: false,
+      selectedActiveFixtureCount: 0,
+      selectedSolvedFixtureCount: 0,
+    };
+  }
+
+  const activeRoot = path.join(fixtureRoot, 'websites');
+  if (!fs.existsSync(path.join(activeRoot, target, 'index.html'))) {
+    throw new Error(`--target-fixture "${target}" was not found under ${activeRoot}.`);
+  }
+  const solvedFixtureIds = promotionGate ? fixtureDirectoryNames(path.join(fixtureRoot, 'solved')) : [];
+  return {
+    fixtureIds: [...new Set([target, ...solvedFixtureIds])].sort(),
+    targetFixture: target,
+    promotionGate: Boolean(promotionGate),
+    selectedActiveFixtureCount: 1,
+    selectedSolvedFixtureCount: solvedFixtureIds.length,
+  };
+}
+
+function fixtureDirectoryNames(fixtureRoot) {
+  try {
+    return fs.readdirSync(fixtureRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.') && fs.existsSync(path.join(fixtureRoot, entry.name, 'index.html')))
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    return [];
+  }
 }
 
 function normalizeExecutionTarget(input) {
@@ -750,7 +813,7 @@ function parseArgs(args) {
     if (arg.startsWith('--')) {
       const [rawKey, rawValue] = arg.slice(2).split('=');
       const key = camelCase(rawKey);
-      const booleanKeys = new Set(['dryRun', 'skipInstall', 'skipSync', 'labOnly', 'local', 'allowLocalFallback', 'detachAfterHandoff', 'allowDirtyLabWorkspace', 'allowStaleOverride', 'visualParityGate', 'visualParityAlignment', 'liveWpParity']);
+      const booleanKeys = new Set(['dryRun', 'skipInstall', 'skipSync', 'labOnly', 'local', 'allowLocalFallback', 'detachAfterHandoff', 'allowDirtyLabWorkspace', 'allowStaleOverride', 'visualParityGate', 'visualParityAlignment', 'liveWpParity', 'promotionGate']);
       if (booleanKeys.has(key)) {
         options[key] = true;
         continue;
@@ -873,7 +936,7 @@ function sanitizePathSegment(value) {
 
 function printHelp() {
   process.stdout.write(`Usage: node tools/run-fixture-matrix.mjs --static-site-importer <path> --blocks-engine <path> [options] [-- <bench args>...]\n\nRuns the canonical Static Site Importer fixture matrix through Homeboy/Lab/WP Codebox.\n\nExecution modes:\n  --local                             Passes --placement local to homeboy bench.\n  --runner <id>                       Passes --runner <id> to homeboy bench (implies Lab placement).\n  --lab-only                          Passes --placement lab without selecting a runner.\n  --allow-local-fallback              Passes --placement lab-or-local to homeboy bench.\n  no routing flags                    Passes --placement auto to homeboy bench.\n\nRules:\n  --runner local                      Alias for --local.\n  --local cannot be combined with --runner <remote>, --lab-only, or --allow-local-fallback.\n  --lab-only cannot be combined with --allow-local-fallback.\n\nOptions:\n  --static-site-importer <path>       Static Site Importer checkout/plugin path. Required.\n  --blocks-engine <path>              Blocks Engine checkout. Defaults fixture root and PHP transformer override.\n    --fixture-root <path>               Fixture corpus. Defaults to <blocks-engine>/fixtures, which discovers both fixtures/websites and fixtures/solved.
-\n  --blocks-engine-php-transformer-path <path>\n                                      Override transformer package/repo path. Defaults to --blocks-engine.\n  --mode <development-override|release-proof>\n                                      Labels output; default is development-override when transformer override is used.\n  --run-id <id>                       Stable proof label. Defaults to ssi-matrix-<mode>-<timestamp>.\n  --shared-state <dir>                Shared Homeboy bench state directory.\n  --artifact-root <dir>               Homeboy artifact root.\n  --output <file>                     Structured Homeboy bench output file.\n  --batch-size <n>                    SSI fixture matrix WP Codebox batch size.\n  --concurrency <n>                   Parallel WP Codebox sandbox batches. Defaults to 4, hard-capped at 16.\n  --wordpress-version <version>       WP Codebox WordPress version.\n  --wp-codebox-bin <path>             WP Codebox CLI path.\n  --allow-stale-override              Proceed even when an override checkout is behind upstream.\n  --allow-local-fallback              Permit selected Lab runner fallback to local execution.\n  --allow-dirty-lab-workspace         Permit reusing/overwriting a dirty Lab workspace.\n  --detach-after-handoff              Return after runner daemon accepts the job.\n  --dry-run                           Print the plan without running Homeboy.\n  --skip-install                      Skip rig install.\n  --skip-sync                         Skip rig sync.\n  --no-editor-validation              Omit editor block validation.\n  --no-visual-parity                  Omit visual parity capture.\n  --no-visual-parity-gate             Capture visual parity without gating.\n  --help                              Show this help.\n`);
+\n  --blocks-engine-php-transformer-path <path>\n                                      Override transformer package/repo path. Defaults to --blocks-engine.\n  --mode <development-override|release-proof>\n                                      Labels output; default is development-override when transformer override is used.\n  --run-id <id>                       Stable proof label. Defaults to ssi-matrix-<mode>-<timestamp>.\n  --shared-state <dir>                Shared Homeboy bench state directory.\n  --artifact-root <dir>               Homeboy artifact root.\n  --output <file>                     Structured Homeboy bench output file.\n  --batch-size <n>                    SSI fixture matrix WP Codebox batch size.\n  --concurrency <n>                   Parallel WP Codebox sandbox batches. Defaults to 2, hard-capped at 16.\n  --target-fixture <id>               Run one active fixture for the fast inner loop.\n  --promotion-gate                    Run the target plus every solved fixture, one per batch, and require solved_candidate for all.\n  --wordpress-version <version>       WP Codebox WordPress version.\n  --wp-codebox-bin <path>             WP Codebox CLI path.\n  --allow-stale-override              Proceed even when an override checkout is behind upstream.\n  --allow-local-fallback              Permit selected Lab runner fallback to local execution.\n  --allow-dirty-lab-workspace         Permit reusing/overwriting a dirty Lab workspace.\n  --detach-after-handoff              Return after runner daemon accepts the job.\n  --dry-run                           Print the plan without running Homeboy.\n  --skip-install                      Skip rig install.\n  --skip-sync                         Skip rig sync.\n  --no-editor-validation              Omit editor block validation.\n  --no-visual-parity                  Omit visual parity capture.\n  --no-visual-parity-gate             Capture visual parity without gating.\n  --help                              Show this help.\n`);
   printVisualAttributionHelp();
 }
 

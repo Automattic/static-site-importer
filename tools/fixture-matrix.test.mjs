@@ -2278,6 +2278,10 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   for (let index = 1; index <= CANONICAL_FIXTURE_COUNT; index += 1) {
     mkdirSync(path.join(canonicalFixtureRoot, `fixture-${String(index).padStart(2, '0')}`), { recursive: true });
   }
+  writeFileSync(path.join(canonicalFixtureRoot, 'fixture-01', 'index.html'), '<h1>Target</h1>');
+  const solvedFixtureRoot = path.join(corpusRoot, 'solved', 'solved-site');
+  mkdirSync(solvedFixtureRoot, { recursive: true });
+  writeFileSync(path.join(solvedFixtureRoot, 'index.html'), '<h1>Solved</h1>');
 
   const plan = buildFixtureMatrixRunPlan({
     runner: 'homeboy-lab',
@@ -2293,8 +2297,8 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   assert.equal(plan.homeboy_bin, '/tmp/homeboy-latest');
   assert.equal(plan.fixture_root, corpusRoot);
   assert.equal(plan.active_fixture_count, CANONICAL_FIXTURE_COUNT);
-  assert.equal(plan.solved_fixture_count, 0);
-  assert.equal(plan.fixture_count, CANONICAL_FIXTURE_COUNT);
+  assert.equal(plan.solved_fixture_count, 1);
+  assert.equal(plan.fixture_count, CANONICAL_FIXTURE_COUNT + 1);
   assert.equal(plan.fixture_count_matches_canonical, true);
   assert.equal(plan.namespace, 'ssi-matrix-dev-proof');
   assert.equal(plan.temp_root, '/tmp/static-site-importer-fixture-matrix-ssi-matrix-dev-proof');
@@ -2330,6 +2334,44 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   assert.deepEqual(releasePlan.dependency_overrides, {});
   assert.equal(releasePlan.steps.at(-1).args.some((arg) => arg.includes('SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH')), false);
 
+  const targetPlan = buildFixtureMatrixRunPlan({
+    staticSiteImporter,
+    blocksEngine,
+    targetFixture: 'fixture-01',
+    skipInstall: true,
+    skipSync: true,
+  });
+  assert.equal(targetPlan.fixture_count, 1);
+  assert.deepEqual(targetPlan.lane_filter.fixture_ids, ['fixture-01']);
+  assert.equal(targetPlan.lane_filter.promotion_gate, undefined);
+  assert.ok(targetPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_FIXTURE_IDS=fixture-01'));
+
+  const promotionPlan = buildFixtureMatrixRunPlan({
+    staticSiteImporter,
+    blocksEngine,
+    targetFixture: 'fixture-01',
+    promotionGate: true,
+    skipInstall: true,
+    skipSync: true,
+  });
+  assert.equal(promotionPlan.fixture_count, 2);
+  assert.equal(promotionPlan.selected_active_fixture_count, 1);
+  assert.equal(promotionPlan.selected_solved_fixture_count, 1);
+  assert.deepEqual(promotionPlan.lane_filter.fixture_ids, ['fixture-01', 'solved-site']);
+  assert.equal(promotionPlan.lane_filter.promotion_gate, true);
+  assert.ok(promotionPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_FIXTURE_IDS=fixture-01,solved-site'));
+  assert.ok(promotionPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_REQUIRE_SOLVED_CANDIDATE=1'));
+  assert.ok(promotionPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_BATCH_SIZE=1'));
+
+  assert.throws(
+    () => buildFixtureMatrixRunPlan({ staticSiteImporter, blocksEngine, promotionGate: true }),
+    /--promotion-gate requires --target-fixture/
+  );
+  assert.throws(
+    () => buildFixtureMatrixRunPlan({ staticSiteImporter, blocksEngine, targetFixture: 'fixture-01', promotionGate: true, visualParity: false }),
+    /requires editor validation and gated visual parity/
+  );
+
   const surfacePlan = buildFixtureMatrixRunPlan({
     runner: 'homeboy-lab',
     staticSiteImporter,
@@ -2340,7 +2382,7 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   });
   assert.equal(surfacePlan.surface_coverage.extra_surfaces_per_fixture, MAX_EXTRA_SURFACE_COUNT);
   assert.equal(surfacePlan.surface_coverage.capped, true);
-  assert.equal(surfacePlan.surface_coverage.max_browser_surface_count, CANONICAL_FIXTURE_COUNT * (MAX_EXTRA_SURFACE_COUNT + 1));
+  assert.equal(surfacePlan.surface_coverage.max_browser_surface_count, (CANONICAL_FIXTURE_COUNT + 1) * (MAX_EXTRA_SURFACE_COUNT + 1));
   assert.ok(surfacePlan.warnings.some((warning) => warning.code === 'surface_coverage_runtime_cost'));
 
   const explicitOutput = path.join(root, 'custom-output', 'homeboy-bench.json');
@@ -6381,6 +6423,25 @@ test('fixture discovery falls back to single root when no websites subdirectory 
   assert.equal(matrix.fixtures[0].fixture_corpus, 'active');
 });
 
+test('fixture id filters select an active target plus solved regressions without staging copies', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-id-filter-'));
+  for (const [corpus, id] of [['websites', 'target-site'], ['websites', 'other-site'], ['solved', 'solved-site']]) {
+    const directory = path.join(root, corpus, id);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, 'index.html'), `<h1>${id}</h1>`);
+    writeFileSync(path.join(directory, 'fixture.json'), JSON.stringify({ fixture_class: 'marketing/static' }));
+  }
+
+  const matrix = createFixtureMatrix({
+    fixture_root: root,
+    fixture_ids: 'target-site,solved-site',
+  });
+
+  assert.deepEqual(matrix.filter.fixture_ids, ['solved-site', 'target-site']);
+  assert.deepEqual(matrix.fixtures.map((fixture) => fixture.id), ['solved-site', 'target-site']);
+  assert.equal(matrix.fixtures.find((fixture) => fixture.id === 'solved-site').fixture_corpus, 'solved');
+});
+
 test('solved fixture that regresses is reported as solved_regression', () => {
   const registry = buildGutenbergIncompatibilityRegistry({
     matrix_id: 'solved-regression-test',
@@ -6437,4 +6498,52 @@ test('solved fixture that stays solved_candidate keeps solved_candidate status',
   assert.equal(decision.fixture_corpus, 'solved');
   assert.equal(decision.acceptance_status, 'solved_candidate');
   assert.equal(decision.solved_candidate, true);
+});
+
+test('solved-candidate gate hard-fails regressions while preserving acceptance evidence', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-solved-candidate-gate-'));
+  for (const [corpus, id] of [['websites', 'target-site'], ['solved', 'solved-site']]) {
+    const directory = path.join(root, corpus, id);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, 'index.html'), `<h1>${id}</h1>`);
+    writeFileSync(path.join(directory, 'fixture.json'), JSON.stringify({ fixture_class: 'marketing/static' }));
+  }
+  const matrix = createFixtureMatrix({ fixture_root: root });
+  const acceptedResult = (fixtureId) => ({
+    fixture_id: fixtureId,
+    status: 'passed',
+    artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: `files/browser/editor-open/${fixtureId}/screenshot.png` }],
+    visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
+    block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
+    editor_validation: { total_blocks: 8, valid_blocks: 8, invalid_blocks: 0, validation_method: 'wp.blocks.validateBlock' },
+  });
+  const solvedRegression = {
+    ...acceptedResult('solved-site'),
+    visual_parity_artifacts: { comparison: { mismatch_ratio: 0.05 } },
+    diagnostics: [{
+      fixture_id: 'solved-site',
+      kind: 'visual_parity_mismatch',
+      loss_class: 'visual_parity_mismatch',
+      loss_acceptance: 'unacceptable',
+      reason: 'Exact visual parity regressed.',
+    }],
+  };
+
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [acceptedResult('target-site'), solvedRegression],
+    requireSolvedCandidate: true,
+  });
+
+  assert.equal(result.summary.succeeded, 1);
+  assert.equal(result.summary.failed, 1);
+  assert.deepEqual(result.summary.solved_candidate_gate, {
+    enabled: true,
+    required_status: 'solved_candidate',
+    failed_fixture_count: 1,
+    failed_fixture_ids: ['solved-site'],
+  });
+  assert.equal(result.summary.fixture_failure_categories.solved_regression, 1);
+  assert.ok(result.summary.gate_failure_reasons.some((reason) => reason.fixture_id === 'solved-site' && reason.category === 'solved_regression'));
+  assert.equal(result.gutenberg_incompatibility_registry.fixture_decisions.find((decision) => decision.fixture_id === 'solved-site').acceptance_status, 'solved_regression');
 });
