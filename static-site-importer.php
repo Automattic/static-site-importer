@@ -58,6 +58,7 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-as
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-document-metadata-reporter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-page-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-materializer.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-stylesheet-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-woo-product-seeder.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-form-seeder.php';

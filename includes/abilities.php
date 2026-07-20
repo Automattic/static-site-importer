@@ -97,6 +97,28 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 		);
 
 		static_site_importer_register_ability_once(
+			'static-site-importer/materialize-wordpress-site-plan',
+			array(
+				'label'               => __( 'Materialize WordPress Site Plan', 'static-site-importer' ),
+				'description'         => __( 'Materialize a validated Blocks Engine WordPress site plan without compiling source artifacts.', 'static-site-importer' ),
+				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
+				'input_schema'        => array(
+					'type'       => 'object',
+					'properties' => array(
+						'plan'      => array( 'type' => 'object' ),
+						'slug'      => array( 'type' => 'string' ),
+						'overwrite' => array( 'type' => 'boolean' ),
+					),
+					'required'   => array( 'plan', 'slug' ),
+				),
+				'output_schema'       => array( 'type' => 'object' ),
+				'execute_callback'    => 'static_site_importer_ability_materialize_wordpress_site_plan',
+				'permission_callback' => 'static_site_importer_ability_permission_callback',
+				'meta'                => array( 'show_in_rest' => true ),
+			)
+		);
+
+		static_site_importer_register_ability_once(
 			'static-site-importer/import-website-artifact',
 			array(
 				'label'               => __( 'Import Website Artifact', 'static-site-importer' ),
@@ -239,6 +261,25 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 				'execute_callback'    => 'static_site_importer_ability_validate_artifact',
 				'permission_callback' => 'static_site_importer_ability_permission_callback',
 				'meta'                => array( 'show_in_rest' => true ),
+			)
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_ability_materialize_wordpress_site_plan' ) ) {
+	/**
+	 * Ability callback for the self-contained Blocks Engine plan boundary.
+	 *
+	 * @param array<string,mixed> $input Ability input.
+	 * @return array<string,mixed>
+	 */
+	function static_site_importer_ability_materialize_wordpress_site_plan( array $input ): array {
+		$plan = isset( $input['plan'] ) && is_array( $input['plan'] ) ? $input['plan'] : array();
+		return Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+			$plan,
+			array(
+				'slug'      => isset( $input['slug'] ) ? (string) $input['slug'] : '',
+				'overwrite' => ! empty( $input['overwrite'] ),
 			)
 		);
 	}

@@ -50,6 +50,7 @@ require dirname( __DIR__ ) . '/includes/abilities.php';
 
 $expected_abilities = array(
 	'static-site-importer/export-theme',
+	'static-site-importer/materialize-wordpress-site-plan',
 	'static-site-importer/import-website-artifact',
 	'static-site-importer/import-url',
 	'static-site-importer/import-figma',
