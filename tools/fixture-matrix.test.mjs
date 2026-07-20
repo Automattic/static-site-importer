@@ -84,11 +84,11 @@ import { runWpCodeboxRecipe, wpCodeboxBin } from './wp-codebox/recipe.mjs';
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fixtureRoot = path.join(packageRoot, 'tests', 'fixtures', 'fixture-matrix');
 
-test('Homeboy component links runtime and dependency extensions', () => {
+test('Homeboy component assigns runtime and dependency capabilities to WordPress', () => {
   const config = JSON.parse(readFileSync(path.join(packageRoot, 'homeboy.json'), 'utf8'));
 
   assert.ok(config.extensions?.wordpress, 'WordPress extension is required for fixture runtime workloads');
-  assert.ok(config.extensions?.nodejs, 'Node.js extension is required for Lab dependency hydration');
+  assert.equal(config.extensions?.nodejs, undefined, 'Node.js must not register npm release actions for this WordPress plugin');
   assert.equal(config.capability_extensions?.deps, 'wordpress', 'WordPress owns npm and Composer Lab hydration');
 });
 
