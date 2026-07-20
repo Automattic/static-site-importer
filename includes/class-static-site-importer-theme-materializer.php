@@ -432,15 +432,25 @@ class Static_Site_Importer_Theme_Materializer {
 	}
 
 	private static function bounded_google_font_request( string $url, int $limit ) {
-		return wp_safe_remote_get(
-			$url,
-			array(
-				'timeout'             => 15,
-				'redirection'         => 0,
-				'limit_response_size' => $limit,
-				'headers'             => array( 'User-Agent' => 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' ),
-			)
+		$args = array(
+			'timeout'             => 15,
+			'redirection'         => 0,
+			'limit_response_size' => $limit,
+			'headers'             => array( 'User-Agent' => 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' ),
 		);
+		$response = null;
+		for ( $attempt = 1; $attempt <= 3; ++$attempt ) {
+			$response = wp_safe_remote_get( $url, $args );
+			$status   = is_wp_error( $response ) ? 0 : (int) wp_remote_retrieve_response_code( $response );
+			if ( ! is_wp_error( $response ) && 0 !== $status && ! in_array( $status, array( 408, 429 ), true ) && $status < 500 ) {
+				break;
+			}
+			if ( $attempt < 3 ) {
+				usleep( 100000 * $attempt );
+			}
+		}
+
+		return $response;
 	}
 
 	/** @param array<int,string> $families @param array<int,array<string,mixed>> $diagnostics @param array<string,string> $font_payloads */

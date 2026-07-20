@@ -475,7 +475,7 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   assert.deepEqual(recipe.inputs.mounts, []);
 });
 
-test('optionally captures bounded generated SVG font evidence after import', () => {
+test('gates visual capture on complete generated SVG font evidence after import', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'svg-font-evidence-recipe-test' });
   const recipe = buildFixtureMatrixRecipe({
     matrix,
@@ -491,8 +491,12 @@ test('optionally captures bounded generated SVG font evidence after import', () 
 
   assert.equal(step?.command, 'wordpress.wp-cli');
   assert.match(code, /svg-font-embedding-evidence\/v1/);
+  assert.match(code, /expected_font_svg_count/);
   assert.match(code, /has_data_font/);
+  assert.match(code, /Required self-contained SVG fonts are missing/);
   assert.doesNotMatch(code, /base64_encode/);
+  const lint = spawnSync('php', ['-l'], { input: `<?php\n${code}`, encoding: 'utf8' });
+  assert.equal(lint.status, 0, lint.stderr || lint.stdout);
 });
 
 test('retains generated SVG font evidence from runtime output', () => {
