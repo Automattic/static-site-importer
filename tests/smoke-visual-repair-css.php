@@ -212,6 +212,33 @@ $assert( str_contains( (string) ( $template_part_writes['/tmp/visual-repair-smok
 $assert( ! str_contains( (string) ( $template_part_writes['/tmp/visual-repair-smoke/parts/header.html'] ?? '' ), 'Fallback Header' ), 'fallback-template-part-is-ignored-when-plan-writes-exist' );
 $assert( array( 'parts/header.html' ) === ( $template_part_reports[0]['source_paths'] ?? array() ), 'materialization-plan-template-part-source-path-is-reported' );
 
+$rewritten_template_part_result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
+	'/tmp/visual-repair-smoke',
+	array(
+		'site' => array(
+			'schema'               => 'blocks-engine/php-transformer/materialization-plan/v1',
+			'template_part_writes' => array(
+				array(
+					'type'        => 'wp_template_part',
+					'source_path' => 'website/index.html#header',
+					'slug'        => 'header',
+					'area'        => 'header',
+					'content'     => '<!-- wp:paragraph --><p><img src="website/assets/materialized-svg/logo.svg" alt="Logo"></p><!-- /wp:paragraph -->',
+				),
+			),
+		),
+	),
+	array(
+		'website/assets/materialized-svg/logo.svg' => array(
+			'final_url' => 'https://example.test/themes/generated/assets/materialized/logo.svg',
+		),
+	)
+);
+$rewritten_template_part_writes = is_array( $rewritten_template_part_result ) ? $rewritten_template_part_result['writes'] : array();
+$rewritten_header_markup        = (string) ( $rewritten_template_part_writes['/tmp/visual-repair-smoke/parts/header.html'] ?? '' );
+$assert( str_contains( $rewritten_header_markup, 'src="https://example.test/themes/generated/assets/materialized/logo.svg"' ), 'template-part-materialized-asset-url-is-rewritten', $rewritten_header_markup );
+$assert( ! str_contains( $rewritten_header_markup, 'src="website/assets/' ), 'template-part-does-not-retain-source-relative-asset-url', $rewritten_header_markup );
+
 $navigation_part_result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
 	'/tmp/visual-repair-smoke',
 	array(
