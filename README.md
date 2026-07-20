@@ -2,7 +2,7 @@
 
 Import a static site or generated website artifact into WordPress pages and a companion block theme.
 
-[![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/Automattic/static-site-importer/main/docs/playground/blueprint.json)
+[![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?php=8.5&php-extension=https%3A%2F%2Fgithub.com%2FAutomattic%2Fstatic-site-importer%2Freleases%2Flatest%2Fdownload%2Fstatic-site-importer-zstd-php8.5-jspi.manifest.json&blueprint-url=https%3A%2F%2Fraw.githubusercontent.com%2FAutomattic%2Fstatic-site-importer%2Fmain%2Fdocs%2Fplayground%2Fblueprint.json)
 
 Static Site Importer is a WordPress plugin. It requires the [Blocks Engine PHP transformer](https://github.com/Automattic/blocks-engine/tree/trunk/php-transformer) Composer package and calls that package's canonical helper functions for generic artifact compilation and format conversion.
 
@@ -135,9 +135,11 @@ add_filter(
 
 Open Static Site Importer in a disposable WordPress Playground site:
 
-[![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/Automattic/static-site-importer/main/docs/playground/blueprint.json)
+[![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?php=8.5&php-extension=https%3A%2F%2Fgithub.com%2FAutomattic%2Fstatic-site-importer%2Freleases%2Flatest%2Fdownload%2Fstatic-site-importer-zstd-php8.5-jspi.manifest.json&blueprint-url=https%3A%2F%2Fraw.githubusercontent.com%2FAutomattic%2Fstatic-site-importer%2Fmain%2Fdocs%2Fplayground%2Fblueprint.json)
 
-The blueprint installs and activates the packaged Static Site Importer release, logs the visitor in, and opens `/import/` with the `static-site-importer/importer` block configured to generate a WordPress website. Testers can upload site files, choose a folder, upload a ZIP, or paste HTML.
+The blueprint installs and activates the packaged Static Site Importer release, logs the visitor in, and opens `/import/` with the `static-site-importer/importer` block configured to generate a WordPress website. Playground loads the PHP 8.5 JSPI `zstd` side module before PHP starts, so the existing Figma upload flow can decode zstd-compressed `.fig` canvas chunks. Testers can upload site files, choose a folder, upload a ZIP, paste HTML, or upload a Figma file.
+
+The extension manifest and side module are immutable named assets on each SSI GitHub Release. They are produced from pinned `php-ext-zstd` and vendored `libzstd` source by the release workflow. The README URL targets `releases/latest`, so it becomes usable after the first release containing these two assets has finished its upload; no unpublished branch, localhost URL, PECL installation, or host `zstd` executable is used.
 
 URL intake rules:
 
