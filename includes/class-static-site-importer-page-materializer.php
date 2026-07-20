@@ -597,7 +597,17 @@ class Static_Site_Importer_Page_Materializer {
 		$changed = false;
 
 		if ( $strip_header ) {
-			$index = self::first_meaningful_block_index( $blocks );
+			$index = null;
+			foreach ( $blocks as $candidate_index => $block ) {
+				if ( ! self::is_meaningful_parsed_block( $block ) ) {
+					continue;
+				}
+				if ( self::is_skip_link_block( $block ) ) {
+					continue;
+				}
+				$index = (int) $candidate_index;
+				break;
+			}
 			if ( null !== $index && self::is_template_chrome_block( $blocks[ $index ], 'header' ) ) {
 				array_splice( $blocks, $index, 1 );
 				$changed       = true;
@@ -627,6 +637,24 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		return $changed ? trim( serialize_blocks( $blocks ) ) : $markup;
+	}
+
+	/**
+	 * Determine whether a leading block is an accessibility skip link.
+	 *
+	 * @param mixed $block Parsed block.
+	 */
+	private static function is_skip_link_block( $block ): bool {
+		if ( ! is_array( $block ) ) {
+			return false;
+		}
+
+		$attrs = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array();
+		$class = isset( $attrs['className'] ) && is_scalar( $attrs['className'] ) ? (string) $attrs['className'] : '';
+		$html  = isset( $block['innerHTML'] ) && is_scalar( $block['innerHTML'] ) ? (string) $block['innerHTML'] : '';
+
+		return (bool) preg_match( '/(?:^|\s)skip-link(?:\s|$)/', $class )
+			|| (bool) preg_match( '/\bclass=["\'][^"\']*\bskip-link\b/i', $html );
 	}
 
 	/**
