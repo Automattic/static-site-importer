@@ -114,7 +114,7 @@ class Static_Site_Importer_Page_Materializer {
 		$contents     = array();
 		$asset_writes = array();
 		$diagnostics  = array();
-		$strip_header = ! empty( $options['strip_template_header'] ) && empty( $template_part_writes );
+		$strip_header = ! empty( $options['strip_template_header'] );
 		$strip_footer = ! empty( $options['strip_template_footer'] );
 		$svg_font_faces = isset( $options['svg_font_faces'] ) && is_string( $options['svg_font_faces'] ) ? $options['svg_font_faces'] : '';
 
