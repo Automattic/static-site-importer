@@ -73,6 +73,7 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-fi
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-exporter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-block-document-reporter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-generator.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/abilities.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/block.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/rest.php';
@@ -121,6 +122,25 @@ if ( ! function_exists( 'static_site_importer_cli_write_validation_output' ) ) {
 }
 
 if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
+	WP_CLI::add_command(
+		'static-site-importer materialize-wordpress-site-plan',
+		static function ( array $args, array $assoc_args ): void {
+			unset( $args );
+			$input = isset( $assoc_args['plan'] ) ? file_get_contents( (string) $assoc_args['plan'] ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads an operator-supplied canonical plan.
+			$plan  = is_string( $input ) ? json_decode( $input, true ) : null;
+			if ( ! is_array( $plan ) || empty( $assoc_args['slug'] ) ) {
+				WP_CLI::error( 'Provide --plan=<canonical-plan.json> and --slug=<theme-slug>.' );
+			}
+			$receipt = static_site_importer_ability_materialize_wordpress_site_plan(
+				array( 'plan' => $plan, 'slug' => (string) $assoc_args['slug'], 'overwrite' => isset( $assoc_args['overwrite'] ) )
+			);
+			WP_CLI::line( (string) wp_json_encode( $receipt, JSON_UNESCAPED_SLASHES ) );
+			if ( 'complete' !== $receipt['status'] ) {
+				WP_CLI::halt( 1 );
+			}
+		}
+	);
+
 	WP_CLI::add_command(
 		'static-site-importer import-theme',
 		static function ( array $args, array $assoc_args ): void {
