@@ -309,6 +309,26 @@ $assert( array( '.projected-template-part{display:flex}' ) === ( $source_file_pa
 $transform_options = $GLOBALS['static_site_importer_test_transform_options'] ?? array();
 $assert( ':root{--brand:#2c63ff}.btn{background:var(--brand);color:#fff}' === ( $transform_options[0]['static_css'] ?? '' ), 'source-file-template-part-fallback-passes-source-css-to-transformer' );
 
+$entrypoint_part_result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
+	'/tmp/visual-repair-smoke',
+	array(
+		'compiled_site' => array( 'entry_path' => 'index.html' ),
+		'source_files'  => array(
+			array(
+				'path'    => 'about.html',
+				'content' => '<html><body><header><a href="/">Back home</a></header><main>About</main><footer><p>Short footer.</p></footer></body></html>',
+			),
+			array(
+				'path'    => 'index.html',
+				'content' => '<html><body><header><a href="/editor">Try the editor</a></header><main>Home</main><footer><p>Full footer — sincerely, no snark.</p></footer></body></html>',
+			),
+		),
+	)
+);
+$entrypoint_part_writes = is_array( $entrypoint_part_result ) ? $entrypoint_part_result['writes'] : array();
+$assert( str_contains( (string) ( $entrypoint_part_writes['/tmp/visual-repair-smoke/parts/header.html'] ?? '' ), 'Try the editor' ), 'source-file-template-part-fallback-prefers-entrypoint-header' );
+$assert( str_contains( (string) ( $entrypoint_part_writes['/tmp/visual-repair-smoke/parts/footer.html'] ?? '' ), 'sincerely, no snark' ), 'source-file-template-part-fallback-preserves-entrypoint-footer-content' );
+
 $base_theme_writes = Static_Site_Importer_Theme_Materializer::base_theme_writes( '/tmp/visual-repair-smoke', 'visual-repair-smoke', 'Visual Repair Smoke', '', true, true );
 $assert( isset( $base_theme_writes['/tmp/visual-repair-smoke/templates/404.html'] ), 'base-theme-writes-404-template' );
 $assert( isset( $base_theme_writes['/tmp/visual-repair-smoke/templates/archive.html'] ), 'base-theme-writes-archive-template' );

@@ -1005,6 +1005,18 @@ class Static_Site_Importer_Theme_Materializer {
 	private static function source_file_template_parts( array $artifacts ): array {
 		$files = isset( $artifacts['source_files'] ) && is_array( $artifacts['source_files'] ) ? $artifacts['source_files'] : array();
 		$static_css = self::source_file_static_css( $files );
+		$entry_path = '';
+		foreach ( array( $artifacts['compiled_site']['entry_path'] ?? '', $artifacts['site']['entry_path'] ?? '' ) as $candidate ) {
+			if ( is_scalar( $candidate ) && '' !== trim( (string) $candidate ) ) {
+				$entry_path = ltrim( str_replace( '\\', '/', trim( (string) $candidate ) ), '/' );
+				break;
+			}
+		}
+		if ( '' !== $entry_path ) {
+			$entry_files = array_filter( $files, static fn( $file ): bool => is_array( $file ) && $entry_path === ltrim( str_replace( '\\', '/', (string) ( $file['path'] ?? '' ) ), '/' ) );
+			$other_files = array_filter( $files, static fn( $file ): bool => ! is_array( $file ) || $entry_path !== ltrim( str_replace( '\\', '/', (string) ( $file['path'] ?? '' ) ), '/' ) );
+			$files       = array_merge( $entry_files, $other_files );
+		}
 		foreach ( $files as $file ) {
 			if ( ! is_array( $file ) || ! isset( $file['path'] ) || ! is_scalar( $file['path'] ) ) {
 				continue;
