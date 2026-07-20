@@ -170,13 +170,14 @@ class Static_Site_Importer_Theme_Generator {
 			return $page_ids;
 		}
 
-		$permalinks     = Static_Site_Importer_Page_Materializer::page_permalinks( $page_ids );
-		$materialized = self::materialize_website_artifact_files_to_theme( $theme_dir, $artifacts, false );
+		$permalinks            = Static_Site_Importer_Page_Materializer::page_permalinks( $page_ids );
+		$svg_font_usage_markup = Static_Site_Importer_Page_Materializer::svg_font_usage_markup( $document_pages );
+		$materialized          = self::materialize_website_artifact_files_to_theme( $theme_dir, $artifacts, false, true, $svg_font_usage_markup );
 		if ( is_wp_error( $materialized ) ) {
 			return $materialized;
 		}
 
-		$template_part_writes = self::template_part_artifact_writes( $theme_dir, $artifacts );
+		$template_part_writes = self::template_part_artifact_writes( $theme_dir, $artifacts, $materialized['assets'], $permalinks );
 		if ( is_wp_error( $template_part_writes ) ) {
 			return $template_part_writes;
 		}
@@ -191,6 +192,7 @@ class Static_Site_Importer_Theme_Generator {
 			array(
 				'strip_template_header' => $has_header_part,
 				'strip_template_footer' => $has_footer_part,
+				'svg_font_faces'        => $materialized['svg_font_faces'],
 			)
 		);
 		foreach ( $page_artifacts['diagnostics'] as $diagnostic ) {
@@ -2069,11 +2071,13 @@ class Static_Site_Importer_Theme_Generator {
 	 * Normalize template part artifacts into generated theme writes.
 	 *
 	 * @param string              $theme_dir Theme directory.
-	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
+	 * @param array<string,mixed>                     $artifacts WordPress artifacts from Blocks Engine.
+	 * @param array<string,array<string,mixed>>       $assets Materialized assets keyed by source path.
+	 * @param array<string,string>                    $permalinks Imported page permalinks keyed by source path.
 	 * @return array<string,string>|WP_Error Absolute write paths keyed to serialized block markup.
 	 */
-	private static function template_part_artifact_writes( string $theme_dir, array $artifacts ) {
-		$result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes( $theme_dir, $artifacts );
+	private static function template_part_artifact_writes( string $theme_dir, array $artifacts, array $assets = array(), array $permalinks = array() ) {
+		$result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes( $theme_dir, $artifacts, $assets, $permalinks );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
@@ -2214,10 +2218,11 @@ class Static_Site_Importer_Theme_Generator {
 	 * @param array<string,mixed> $artifacts          WordPress artifacts from Blocks Engine.
 	 * @param bool                $write_files        Whether to write materialized asset files.
 	 * @param bool                $record_diagnostics Whether to append materialization diagnostics to the report.
+	 * @param string              $svg_font_usage_markup Bounded page SVG candidates that can be promoted.
 	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,scripts:array<int,array<string,mixed>>,stylesheets:array<int,array<string,mixed>>}|WP_Error
 	 */
-	private static function materialize_website_artifact_files_to_theme( string $theme_dir, array $artifacts, bool $write_files = true, bool $record_diagnostics = true ) {
-		$result = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files( $theme_dir, self::$active_theme_uri, $artifacts, $write_files );
+	private static function materialize_website_artifact_files_to_theme( string $theme_dir, array $artifacts, bool $write_files = true, bool $record_diagnostics = true, string $svg_font_usage_markup = '' ) {
+		$result = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files( $theme_dir, self::$active_theme_uri, $artifacts, $write_files, $svg_font_usage_markup );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
@@ -2233,6 +2238,7 @@ class Static_Site_Importer_Theme_Generator {
 			'assets'      => $result['assets'],
 			'scripts'     => $result['scripts'],
 			'stylesheets' => $result['stylesheets'],
+			'svg_font_faces' => $result['svg_font_faces'] ?? '',
 		);
 	}
 

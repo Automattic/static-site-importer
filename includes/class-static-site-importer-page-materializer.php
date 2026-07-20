@@ -116,6 +116,7 @@ class Static_Site_Importer_Page_Materializer {
 		$diagnostics  = array();
 		$strip_header = ! empty( $options['strip_template_header'] );
 		$strip_footer = ! empty( $options['strip_template_footer'] );
+		$svg_font_faces = isset( $options['svg_font_faces'] ) && is_string( $options['svg_font_faces'] ) ? $options['svg_font_faces'] : '';
 
 		foreach ( $pages as $filename => $page ) {
 			$slug         = self::page_slug( $filename, $page );
@@ -123,7 +124,7 @@ class Static_Site_Importer_Page_Materializer {
 			$content      = self::rewrite_materialized_asset_references( self::source_page_content_blocks( $page, $diagnostics ), $assets, $page->source_key(), $permalinks );
 			$content      = self::dedupe_template_part_shell_blocks( $content, $template_part_writes, $page->source_key(), $diagnostics );
 			$content      = self::strip_template_chrome_blocks( $content, $strip_header, $strip_footer, $page->source_key(), $diagnostics );
-			$content      = self::promote_inline_svg_html_blocks( $content, $theme_slug, $slug, $asset_writes, $diagnostics );
+			$content      = self::promote_inline_svg_html_blocks( $content, $theme_slug, $slug, $asset_writes, $diagnostics, $svg_font_faces );
 
 			$patterns[ $filename ] = $pattern_slug;
 			$files[ $filename ]    = Static_Site_Importer_Theme_Materializer::pattern_file( self::page_title( $filename, $page ), $pattern_slug, $content );
@@ -137,6 +138,36 @@ class Static_Site_Importer_Page_Materializer {
 			'contents'     => $contents,
 			'diagnostics'  => $diagnostics,
 		);
+	}
+
+	/**
+	 * Return bounded safe inline SVG candidates that page materialization can promote.
+	 *
+	 * @param array<string, Static_Site_Importer_Source_Page> $pages Source pages.
+	 * @param int                                             $limit Maximum candidate bytes.
+	 * @return string
+	 */
+	public static function svg_font_usage_markup( array $pages, int $limit = 262144 ): string {
+		$markup = '';
+		foreach ( $pages as $page ) {
+			if ( ! $page instanceof Static_Site_Importer_Source_Page || 'blocks' !== $page->body_format() || ! str_contains( $page->body(), '<svg' ) ) {
+				continue;
+			}
+			if ( ! preg_match_all( '/<!-- wp:html(?:\s+(\{.*?\}))? -->(.*?)<!-- \/wp:html -->/s', $page->body(), $blocks, PREG_SET_ORDER ) ) {
+				continue;
+			}
+			foreach ( $blocks as $block ) {
+				$attrs = isset( $block[1] ) && '' !== trim( (string) $block[1] ) ? json_decode( (string) $block[1], true ) : array();
+				$html  = isset( $attrs['content'] ) && is_scalar( $attrs['content'] ) ? (string) $attrs['content'] : (string) $block[2];
+				$svg   = self::safe_inline_svg( html_entity_decode( trim( $html ), ENT_QUOTES | ENT_HTML5 ) );
+				if ( '' === $svg || ! str_contains( $svg, '<text' ) || strlen( $svg ) > $limit - strlen( $markup ) ) {
+					continue;
+				}
+				$markup .= $svg;
+			}
+		}
+
+		return $markup;
 	}
 
 	/**
@@ -537,22 +568,24 @@ class Static_Site_Importer_Page_Materializer {
 	 * @param string                           $page_slug    Page slug for stable asset names.
 	 * @param array<string,string>             $asset_writes Theme-relative SVG writes, passed by reference.
 	 * @param array<int,array<string,mixed>>    $diagnostics  Diagnostics, passed by reference.
+	 * @param string                            $svg_font_faces Self-contained font CSS for matching SVG text.
 	 * @return string Updated serialized block markup.
 	 */
-	private static function promote_inline_svg_html_blocks( string $markup, string $theme_slug, string $page_slug, array &$asset_writes, array &$diagnostics ): string {
+	private static function promote_inline_svg_html_blocks( string $markup, string $theme_slug, string $page_slug, array &$asset_writes, array &$diagnostics, string $svg_font_faces = '' ): string {
 		if ( '' === trim( $markup ) || ! str_contains( $markup, '<!-- wp:html' ) || ! str_contains( $markup, '<svg' ) ) {
 			return $markup;
 		}
 
 		return preg_replace_callback(
 			'/<!-- wp:html(?:\s+(\{.*?\}))? -->(.*?)<!-- \/wp:html -->/s',
-			static function ( array $matches ) use ( $theme_slug, $page_slug, &$asset_writes, &$diagnostics ): string {
+			static function ( array $matches ) use ( $theme_slug, $page_slug, &$asset_writes, &$diagnostics, $svg_font_faces ): string {
 				$attrs = isset( $matches[1] ) && '' !== trim( (string) $matches[1] ) ? json_decode( (string) $matches[1], true ) : array();
 				$html  = isset( $attrs['content'] ) && is_scalar( $attrs['content'] ) ? (string) $attrs['content'] : (string) $matches[2];
 				$svg   = self::safe_inline_svg( html_entity_decode( trim( $html ), ENT_QUOTES | ENT_HTML5 ) );
 				if ( '' === $svg ) {
 					return $matches[0];
 				}
+				$svg = Static_Site_Importer_Theme_Materializer::embed_svg_font_faces( $svg, $svg_font_faces );
 
 				$hash          = substr( sha1( $svg ), 0, 12 );
 				$asset_path    = 'assets/materialized/inline-svg/' . sanitize_title( $page_slug ) . '-' . $hash . '.svg';
@@ -1714,7 +1747,7 @@ class Static_Site_Importer_Page_Materializer {
 	 * @param array<string,string>                $permalinks Imported page permalinks keyed by source path.
 	 * @return string Updated markup.
 	 */
-	private static function rewrite_materialized_asset_references( string $markup, array $assets, string $source_path = '', array $permalinks = array() ): string {
+	public static function rewrite_materialized_asset_references( string $markup, array $assets, string $source_path = '', array $permalinks = array() ): string {
 		if ( '' === trim( $markup ) || ( empty( $assets ) && empty( $permalinks ) ) ) {
 			return $markup;
 		}

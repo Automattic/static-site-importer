@@ -187,6 +187,7 @@ export async function runFixtureMatrix(options) {
     staticSiteImporterPlugin: options.staticSiteImporterPlugin,
     staticSiteImporterSlug: options.staticSiteImporterSlug,
     dependencyOverrides,
+    svgFontEvidence: true,
     surfaceCoverage: options.surfaceCoverage,
     maxExtraSurfaces: options.maxExtraSurfaces,
     ...editorValidationRecipeInput(options),
@@ -343,6 +344,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     staticSiteImporterPlugin: options.staticSiteImporterPlugin,
     staticSiteImporterSlug: options.staticSiteImporterSlug,
     dependencyOverrides: prepareDependencyOverrides(options),
+    svgFontEvidence: true,
     surfaceCoverage: options.surfaceCoverage,
     maxExtraSurfaces: options.maxExtraSurfaces,
     ...editorValidationRecipeInput(options),
@@ -1286,6 +1288,7 @@ export function optionsFromEnv(env = process.env) {
     visualParity: !isFalsy(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY),
     visualParityGate: !isFalsy(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE ?? true),
     visualParityFullPage: optionalBoolean(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE),
+    visualParityBlockExternalRequests: optionalBoolean(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS),
     // Opt-in live-WP parity capture + comparison. Off by default; mirrors the
     // visual-parity-gate truthy env mapping. When on, the recipe appends the
     // capture-html step and the result collector runs the live-wp-parity comparator.
@@ -1476,6 +1479,8 @@ Options:
   --surface-coverage <n>             Opt into bounded secondary page browser evidence per fixture. Hard-capped at 5 extra surfaces.
   --no-editor-validation            Skip browser editor block validation.
   --no-visual-parity                Skip wordpress.visual-compare recipe steps. Same as SSI_FIXTURE_MATRIX_VISUAL_PARITY=0.
+  --visual-parity-block-external-requests <bool>
+                                      Keep visual comparison offline when true (default). Same as SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS.
   --run                             Execute WP Codebox recipes. Omit locally to only materialize artifacts.
 `);
 }

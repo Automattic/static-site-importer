@@ -474,6 +474,48 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   assert.deepEqual(recipe.inputs.mounts, []);
 });
 
+test('optionally captures bounded generated SVG font evidence after import', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'svg-font-evidence-recipe-test' });
+  const recipe = buildFixtureMatrixRecipe({
+    matrix,
+    artifactsDirectory: '/tmp/artifacts',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    editorValidation: false,
+    visualParity: false,
+    svgFontEvidence: true,
+  });
+  const step = recipe.workflow.steps.find((candidate) => candidate.metadata?.phase === 'svg-font-evidence');
+  const encoded = (step?.args?.[0] || '').match(/([A-Za-z0-9+/=]{100,})/)?.[1] || '';
+  const code = Buffer.from(encoded, 'base64').toString('utf8');
+
+  assert.equal(step?.command, 'wordpress.wp-cli');
+  assert.match(code, /svg-font-embedding-evidence\/v1/);
+  assert.match(code, /has_data_font/);
+  assert.doesNotMatch(code, /base64_encode/);
+});
+
+test('retains generated SVG font evidence from runtime output', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-svg-font-runtime-evidence-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'svg-font-runtime-evidence-test' });
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: {
+      fixture_id: 'simple-site',
+      status: 'passed',
+      svg_font_embedding_evidence: {
+        schema: 'static-site-importer/svg-font-embedding-evidence/v1',
+        svg_count: 2,
+        embedded_font_svg_count: 1,
+        files: [{ path: 'assets/map.svg', bytes: 1234, sha256: 'abc', has_font_face: true, has_data_font: true }],
+      },
+    },
+  });
+
+  assert.equal(result.fixtures[0].svg_font_embedding_evidence.svg_count, 2);
+  assert.equal(result.fixtures[0].svg_font_embedding_evidence.files[0].has_data_font, true);
+});
+
 test('fixture capability manifests drive per-fixture plugin provisioning without waivers', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-recipe-capabilities-'));
   const plain = path.join(root, 'plain-site');
@@ -4804,6 +4846,11 @@ test('fixture matrix maps visual attribution environment settings', () => {
   assert.equal(options.explainSelectors, '.hero, #footer');
 });
 
+test('fixture matrix maps visual parity external request isolation', () => {
+  assert.equal(optionsFromEnv({ SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS: '0' }).visualParityBlockExternalRequests, false);
+  assert.equal(optionsFromEnv({ SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS: '1' }).visualParityBlockExternalRequests, true);
+});
+
 test('fixture matrix operator plan exposes and forwards visual attribution settings', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-plan-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
@@ -4858,7 +4905,7 @@ test('visualParityCompareStep requests full-page capture by default with explici
   }
 });
 
-test('default visual-parity source-url targets the staged source/ subdir as a file URL', () => {
+test('default visual-parity source-url targets the staged same-origin source tree', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-parity-source-url-test' });
   const recipe = buildFixtureMatrixRecipe({
     matrix,
@@ -4870,7 +4917,7 @@ test('default visual-parity source-url targets the staged source/ subdir as a fi
   const visualStep = recipe.workflow.steps.find((step) => step.command === 'wordpress.visual-compare');
   assert.equal(
     visualCompareMatrixComparison(visualStep).sourceUrl,
-    'file:///tmp/artifacts/simple-site/source/index.html',
+    '/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/source/index.html',
   );
   // Candidate defaults to the imported front page served at `/`.
   assert.equal(visualCompareMatrixComparison(visualStep).candidateUrl, '/');
@@ -4915,11 +4962,40 @@ test('stageFixtureSource copies the raw fixture source into the served source/ s
   assert.match(stagedHtml, /data-ssi-visual-parity-deterministic/);
   assert.match(stagedHtml, /animation-duration: 0\.001ms !important/);
   assert.ok(stagedHtml.includes(VISUAL_PARITY_DETERMINISTIC_CSS.trim()));
+  assert.match(stagedHtml, /data-ssi-visual-parity-svg-normalization/);
+  assert.match(stagedHtml, /new XMLSerializer\(\)\.serializeToString\(clone\)/);
   // The import payload (artifact.json) is still written alongside, unchanged.
   assert.ok(existsSync(path.join(outputDirectory, 'simple-site', 'artifact.json')), 'artifact.json should still be written');
   assert.equal(written.metadata.source_staging.status, 'staged');
   assert.ok(written.metadata.artifact_bytes.staged_source > 0);
   assert.ok(Number.isFinite(written.metadata.performance.artifact_writing_ms));
+});
+
+test('staged visual source uses the generated self-contained font stylesheet', () => {
+  const fixtureDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-parity-font-source-'));
+  const sourceDirectory = path.join(fixtureDirectory, 'fixture');
+  mkdirSync(sourceDirectory, { recursive: true });
+  writeFileSync(path.join(sourceDirectory, 'index.html'), '<html><head><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Example" rel="stylesheet"></head><body>Example</body></html>');
+
+  stageFixtureSource({ id: 'Font Fixture', directory: sourceDirectory }, fixtureDirectory);
+  const html = readFileSync(path.join(fixtureDirectory, 'source', 'index.html'), 'utf8');
+  assert.match(html, /href="\/wp-content\/themes\/font-fixture\/assets\/css\/embedded-fonts\.css"/);
+  assert.doesNotMatch(html, /href="https:\/\/fonts\.googleapis\.com\/css2/);
+  assert.match(html, /fetch\("\/wp-content\/themes\/font-fixture\/assets\/css\/embedded-fonts\.css"\)/);
+});
+
+test('fixture recipe stages source files into the WordPress runtime', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-parity-runtime-source-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-parity-runtime-source-test' });
+  writeFixtureMatrixArtifacts({ outputDirectory, matrix });
+  const recipe = buildFixtureMatrixRecipe({
+    matrix,
+    artifactsDirectory: outputDirectory,
+    playgroundArtifactsDirectory: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+  });
+  assert.ok(recipe.inputs.stagedFiles.some((file) => file.target.endsWith('/simple-site/source/index.html')));
+  assert.ok(recipe.inputs.stagedFiles.some((file) => file.target.endsWith('/simple-site/source/style.css')));
 });
 
 test('writeFixtureMatrixArtifacts skips raw source staging when visual evidence is disabled', () => {

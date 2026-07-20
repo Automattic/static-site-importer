@@ -127,10 +127,11 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param string              $theme_uri Theme URI.
 	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
 	 * @param bool                $write_files Whether to write materialized asset files.
+	 * @param string              $svg_font_usage_markup Bounded page SVG candidates that can be promoted.
 	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,scripts:array<int,array<string,mixed>>,stylesheets:array<int,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}|WP_Error
 	 */
-	public static function materialize_website_artifact_files( string $theme_dir, string $theme_uri, array $artifacts, bool $write_files = true ) {
-		$native_plan = self::materialize_materialization_plan_assets( $theme_dir, $theme_uri, $artifacts, $write_files );
+	public static function materialize_website_artifact_files( string $theme_dir, string $theme_uri, array $artifacts, bool $write_files = true, string $svg_font_usage_markup = '' ) {
+		$native_plan = self::materialize_materialization_plan_assets( $theme_dir, $theme_uri, $artifacts, $write_files, $svg_font_usage_markup );
 		if ( is_wp_error( $native_plan ) || null !== $native_plan ) {
 			return $native_plan;
 		}
@@ -226,7 +227,7 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param bool                $write_files Whether to write materialized asset files.
 	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,scripts:array<int,array<string,mixed>>,stylesheets:array<int,array<string,mixed>>,diagnostics:array<int,array<string,mixed>>}|null|WP_Error
 	 */
-	private static function materialize_materialization_plan_assets( string $theme_dir, string $theme_uri, array $artifacts, bool $write_files = true ) {
+	private static function materialize_materialization_plan_assets( string $theme_dir, string $theme_uri, array $artifacts, bool $write_files = true, string $svg_font_usage_markup = '' ) {
 		$site = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
 		if ( 'blocks-engine/php-transformer/materialization-plan/v1' !== (string) ( $site['schema'] ?? '' ) || ! array_key_exists( 'assets', $site ) ) {
 			return null;
@@ -246,6 +247,8 @@ class Static_Site_Importer_Theme_Materializer {
 		$stylesheets = array();
 		$diagnostics = array();
 		$order       = 0;
+		$svg_candidates = array_merge( $site['assets'], isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array(), isset( $artifacts['source_files'] ) && is_array( $artifacts['source_files'] ) ? $artifacts['source_files'] : array() );
+		$svg_font_faces = self::google_font_faces_for_svg_assets( $site, $svg_candidates, $diagnostics, $svg_font_usage_markup );
 
 		foreach ( $site['assets'] as $asset ) {
 			if ( ! is_array( $asset ) ) {
@@ -271,6 +274,9 @@ class Static_Site_Importer_Theme_Materializer {
 			$lower = strtolower( $relative );
 			if ( 'html' === $kind || str_ends_with( $lower, '.html' ) || str_ends_with( $lower, '.htm' ) ) {
 				continue;
+			}
+			if ( '' !== $svg_font_faces && self::is_svg_asset( $asset, $relative ) ) {
+				$content = self::embed_svg_font_faces( $content, $svg_font_faces );
 			}
 			++$order;
 
@@ -304,7 +310,7 @@ class Static_Site_Importer_Theme_Materializer {
 			}
 		}
 
-		$supplemental = self::materialize_supplemental_artifact_file_assets( $theme_dir, $theme_uri, $artifacts, $assets, $order, $write_files );
+		$supplemental = self::materialize_supplemental_artifact_file_assets( $theme_dir, $theme_uri, $artifacts, $assets, $order, $write_files, $svg_font_faces );
 		if ( is_wp_error( $supplemental ) ) {
 			return $supplemental;
 		}
@@ -312,7 +318,7 @@ class Static_Site_Importer_Theme_Materializer {
 			$diagnostics[] = $diagnostic;
 		}
 
-		$font_stylesheets = self::materialize_font_materialization_stylesheets( $theme_dir, $theme_uri, $site, $assets, $order, $write_files );
+		$font_stylesheets = self::materialize_font_materialization_stylesheets( $theme_dir, $theme_uri, $site, $assets, $order, $write_files, $svg_font_faces );
 		if ( is_wp_error( $font_stylesheets ) ) {
 			return $font_stylesheets;
 		}
@@ -325,7 +331,211 @@ class Static_Site_Importer_Theme_Materializer {
 			'scripts'     => $scripts,
 			'stylesheets' => $stylesheets,
 			'diagnostics' => $diagnostics,
+			'svg_font_faces' => $svg_font_faces,
 		);
+	}
+
+	/**
+	 * Resolve trusted Google Fonts plan imports to CSS that external SVG images can use.
+	 *
+	 * @param array<string,mixed>               $site        Materialization plan site artifact.
+	 * @param array<int,array<string,mixed>>    $assets      Candidate compiler asset rows.
+	 * @param array<int,array<string,mixed>>    $diagnostics Diagnostics, passed by reference.
+	 * @return string Self-contained @font-face CSS, or an empty string.
+	 */
+	private static function google_font_faces_for_svg_assets( array $site, array $assets, array &$diagnostics, string $svg_font_usage_markup = '' ): string {
+		$plan = isset( $site['theme']['font_materialization'] ) && is_array( $site['theme']['font_materialization'] ) ? $site['theme']['font_materialization'] : array();
+		if ( 'blocks-engine/php-transformer/font-materialization-plan/v1' !== (string) ( $plan['schema'] ?? '' ) || 'google_fonts' !== (string) ( $plan['provider'] ?? '' ) || empty( $plan['fonts'] ) || ! is_array( $plan['fonts'] ) ) {
+			return '';
+		}
+
+		$families = self::google_font_plan_families( $plan['fonts'] );
+		if ( empty( $families ) ) {
+			return '';
+		}
+		$has_matching_svg = false;
+		foreach ( $assets as $asset ) {
+			if ( ! is_array( $asset ) || ! self::is_svg_asset( $asset, isset( $asset['path'] ) && is_scalar( $asset['path'] ) ? (string) $asset['path'] : '' ) ) {
+				continue;
+			}
+			$content = isset( $asset['content'] ) && is_scalar( $asset['content'] ) ? (string) $asset['content'] : '';
+			if ( self::svg_uses_font_family( $content, $families ) ) {
+				$has_matching_svg = true;
+				break;
+			}
+		}
+		if ( ! $has_matching_svg && self::svg_uses_font_family( $svg_font_usage_markup, $families ) ) {
+			$has_matching_svg = true;
+		}
+		if ( ! $has_matching_svg ) {
+			return '';
+		}
+
+		$imports = array();
+		foreach ( isset( $plan['stylesheets'] ) && is_array( $plan['stylesheets'] ) ? $plan['stylesheets'] : array() as $stylesheet ) {
+			$content = is_array( $stylesheet ) && isset( $stylesheet['content'] ) && is_scalar( $stylesheet['content'] ) ? (string) $stylesheet['content'] : '';
+			if ( preg_match_all( '/@import\s+(?:url\()?\s*["\']?([^"\'\s\)]+)["\']?\s*\)?/i', $content, $matches ) ) {
+				$imports = array_merge( $imports, $matches[1] );
+			}
+		}
+		$imports = array_values( array_unique( $imports ) );
+		if ( empty( $imports ) ) {
+			$diagnostics[] = self::google_font_svg_diagnostic( 'stylesheet_import_missing', 'No Google Fonts stylesheet import was available for SVG font embedding.' );
+			return '';
+		}
+		foreach ( $imports as $import ) {
+			if ( ! self::is_google_fonts_stylesheet_url( $import ) ) {
+				$diagnostics[] = self::google_font_svg_diagnostic( 'untrusted_stylesheet_url', 'Every stylesheet import must be an allowlisted Google Fonts CSS endpoint before SVG font embedding can begin.' );
+				return '';
+			}
+		}
+
+		$faces = array();
+		$font_payloads = array();
+		$font_payload_bytes = 0;
+		foreach ( $imports as $import ) {
+			$response = self::bounded_google_font_request( $import, 262144 );
+			if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
+				$diagnostics[] = self::google_font_svg_diagnostic( 'stylesheet_fetch_failed', 'The allowlisted Google Fonts stylesheet could not be fetched for SVG embedding.' );
+				return '';
+			}
+			$css = (string) wp_remote_retrieve_body( $response );
+			if ( strlen( $css ) > 262144 ) {
+				$diagnostics[] = self::google_font_svg_diagnostic( 'stylesheet_response_too_large', 'The Google Fonts stylesheet exceeded the SVG font embedding response limit.' );
+				return '';
+			}
+			$embedded = self::embed_google_font_face_sources( $css, $families, $diagnostics, $font_payloads, $font_payload_bytes );
+			if ( '' === $embedded ) {
+				return '';
+			}
+			$faces[] = $embedded;
+		}
+
+		return implode( "\n", $faces );
+	}
+
+	/** @param array<int,mixed> $fonts @return array<int,string> */
+	private static function google_font_plan_families( array $fonts ): array {
+		$families = array();
+		foreach ( $fonts as $font ) {
+			$family = is_array( $font ) ? ( $font['family'] ?? $font['font_family'] ?? '' ) : $font;
+			if ( is_scalar( $family ) && '' !== trim( (string) $family ) ) {
+				$families[] = trim( (string) $family );
+			}
+		}
+		return array_values( array_unique( $families ) );
+	}
+
+	private static function is_google_fonts_stylesheet_url( string $url ): bool {
+		$parts = wp_parse_url( $url );
+		return is_array( $parts ) && 'https' === strtolower( (string) ( $parts['scheme'] ?? '' ) ) && 'fonts.googleapis.com' === strtolower( (string) ( $parts['host'] ?? '' ) ) && ( ! isset( $parts['port'] ) || 443 === (int) $parts['port'] ) && ! isset( $parts['user'], $parts['pass'] ) && in_array( (string) ( $parts['path'] ?? '' ), array( '/css', '/css2' ), true );
+	}
+
+	private static function bounded_google_font_request( string $url, int $limit ) {
+		return wp_safe_remote_get(
+			$url,
+			array(
+				'timeout'             => 15,
+				'redirection'         => 0,
+				'limit_response_size' => $limit,
+				'headers'             => array( 'User-Agent' => 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' ),
+			)
+		);
+	}
+
+	/** @param array<int,string> $families @param array<int,array<string,mixed>> $diagnostics @param array<string,string> $font_payloads */
+	private static function embed_google_font_face_sources( string $css, array $families, array &$diagnostics, array &$font_payloads, int &$font_payload_bytes ): string {
+		if ( ! preg_match_all( '/@font-face\s*\{([^{}]*)\}/is', $css, $faces ) ) {
+			$diagnostics[] = self::google_font_svg_diagnostic( 'stylesheet_font_faces_missing', 'The Google Fonts stylesheet did not contain embeddable @font-face rules.' );
+			return '';
+		}
+		$embedded = array();
+		foreach ( $faces[0] as $index => $face ) {
+			$body = $faces[1][ $index ];
+			if ( ! preg_match( '/font-family\s*:\s*(["\']?)([^;"\']+)\1\s*;/i', $body, $family_match ) || ! in_array( trim( $family_match[2] ), $families, true ) ) {
+				continue;
+			}
+			if ( str_contains( $face, '<' ) ) {
+				$diagnostics[] = self::google_font_svg_diagnostic( 'untrusted_font_url', 'A Google Fonts stylesheet referenced a non-allowlisted font payload URL.' );
+				return '';
+			}
+			if ( ! preg_match_all( '/url\(\s*(["\']?)([^"\'\s\)]+)\1\s*\)/i', $face, $urls ) ) {
+				continue;
+			}
+			$rewritten = $face;
+			$urls = array_unique( $urls[2] );
+			foreach ( $urls as $url ) {
+				$parts = wp_parse_url( $url );
+				$path = is_array( $parts ) ? strtolower( (string) ( $parts['path'] ?? '' ) ) : '';
+				if ( ! is_array( $parts ) || 'https' !== strtolower( (string) ( $parts['scheme'] ?? '' ) ) || 'fonts.gstatic.com' !== strtolower( (string) ( $parts['host'] ?? '' ) ) || ( isset( $parts['port'] ) && 443 !== (int) $parts['port'] ) || isset( $parts['user'], $parts['pass'] ) || ! preg_match( '/\.woff2?$/', $path ) ) {
+					$diagnostics[] = self::google_font_svg_diagnostic( 'untrusted_font_url', 'A Google Fonts stylesheet referenced a non-allowlisted font payload URL.' );
+					return '';
+				}
+			}
+			foreach ( $urls as $url ) {
+				$parts = wp_parse_url( $url );
+				$path = is_array( $parts ) ? strtolower( (string) ( $parts['path'] ?? '' ) ) : '';
+				if ( ! isset( $font_payloads[ $url ] ) ) {
+					$response = self::bounded_google_font_request( $url, 2097152 );
+					$payload = is_wp_error( $response ) ? '' : (string) wp_remote_retrieve_body( $response );
+					if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) || '' === $payload || strlen( $payload ) > 2097152 ) {
+						$diagnostics[] = self::google_font_svg_diagnostic( 'font_payload_fetch_failed', 'An allowlisted Google Fonts payload could not be embedded within the response limit.' );
+						return '';
+					}
+					if ( 4194304 < $font_payload_bytes + strlen( $payload ) ) {
+						$diagnostics[] = self::google_font_svg_diagnostic( 'font_payload_total_too_large', 'The unique Google Fonts payloads exceeded the SVG font embedding aggregate limit.' );
+						return '';
+					}
+					$font_payloads[ $url ] = $payload;
+					$font_payload_bytes += strlen( $payload );
+				}
+				$payload = $font_payloads[ $url ];
+				$mime = str_ends_with( $path, '.woff2' ) ? 'font/woff2' : 'font/woff';
+				$rewritten = str_replace( $url, 'data:' . $mime . ';base64,' . base64_encode( $payload ), $rewritten );
+			}
+			$embedded[] = $rewritten;
+		}
+		if ( empty( $embedded ) ) {
+			$diagnostics[] = self::google_font_svg_diagnostic( 'matching_font_faces_missing', 'No Google Fonts @font-face rules matched SVG text font-family usage.' );
+		}
+		return implode( "\n", $embedded );
+	}
+
+	/** @param array<string,mixed> $asset */
+	private static function is_svg_asset( array $asset, string $path ): bool {
+		return 'svg' === strtolower( (string) ( $asset['kind'] ?? '' ) ) || 'image/svg+xml' === strtolower( (string) ( $asset['mime_type'] ?? '' ) ) || str_ends_with( strtolower( $path ), '.svg' );
+	}
+
+	/** @param array<int,string> $families */
+	private static function svg_uses_font_family( string $svg, array $families ): bool {
+		if ( ! preg_match( '/<text\b/i', $svg ) ) {
+			return false;
+		}
+		foreach ( $families as $family ) {
+			if ( preg_match( '/font-family\s*[:=]\s*(["\']?)' . preg_quote( $family, '/' ) . '\\1/i', $svg ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public static function embed_svg_font_faces( string $svg, string $font_faces ): string {
+		if ( '' === $font_faces || ! self::svg_uses_font_family( $svg, self::font_families_from_faces( $font_faces ) ) || ! preg_match( '/<svg\b[^>]*>/i', $svg, $match, PREG_OFFSET_CAPTURE ) ) {
+			return $svg;
+		}
+		$offset = $match[0][1] + strlen( $match[0][0] );
+		return substr( $svg, 0, $offset ) . '<style type="text/css">' . $font_faces . '</style>' . substr( $svg, $offset );
+	}
+
+	/** @return array<int,string> */
+	private static function font_families_from_faces( string $css ): array {
+		preg_match_all( '/font-family\s*:\s*(["\']?)([^;"\']+)\1\s*;/i', $css, $matches );
+		return array_values( array_unique( array_map( 'trim', $matches[2] ?? array() ) ) );
+	}
+
+	/** @return array<string,string> */
+	private static function google_font_svg_diagnostic( string $reason, string $message ): array {
+		return array( 'type' => 'svg_font_embedding_failed', 'source' => 'static-site-importer/theme-materializer', 'reason' => $reason, 'message' => $message );
 	}
 
 	/**
@@ -342,9 +552,10 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param array<string,array<string,mixed>> $assets      Materialized asset rows keyed by source path.
 	 * @param int                               $order       Current materialization order.
 	 * @param bool                              $write_files Whether to write materialized asset files.
+	 * @param string                            $svg_font_faces Self-contained font CSS for matching SVG text.
 	 * @return array{diagnostics:array<int,array<string,mixed>>}|WP_Error
 	 */
-	private static function materialize_supplemental_artifact_file_assets( string $theme_dir, string $theme_uri, array $artifacts, array &$assets, int &$order, bool $write_files = true ) {
+	private static function materialize_supplemental_artifact_file_assets( string $theme_dir, string $theme_uri, array $artifacts, array &$assets, int &$order, bool $write_files = true, string $svg_font_faces = '' ) {
 		$files = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
 		if ( isset( $artifacts['source_files'] ) && is_array( $artifacts['source_files'] ) ) {
 			$files = array_merge( $files, $artifacts['source_files'] );
@@ -370,6 +581,9 @@ class Static_Site_Importer_Theme_Materializer {
 			$content = self::materialization_plan_asset_content( $file, $relative );
 			if ( is_wp_error( $content ) ) {
 				return $content;
+			}
+			if ( '' !== $svg_font_faces && self::is_svg_asset( $file, $relative ) ) {
+				$content = self::embed_svg_font_faces( $content, $svg_font_faces );
 			}
 
 			$retention = self::source_retention_policy( $file, $relative, 'website_artifact.files' );
@@ -415,9 +629,10 @@ class Static_Site_Importer_Theme_Materializer {
 	 * @param array<string,array<string,mixed>> $assets    Materialized asset rows keyed by source path.
 	 * @param int                               $order     Current materialization order.
 	 * @param bool                               $write_files Whether to write materialized asset files.
+	 * @param string                            $embedded_font_faces Self-contained font-face CSS resolved for SVG assets.
 	 * @return array<int,array<string,mixed>>|WP_Error
 	 */
-	private static function materialize_font_materialization_stylesheets( string $theme_dir, string $theme_uri, array $site, array &$assets, int &$order, bool $write_files = true ) {
+	private static function materialize_font_materialization_stylesheets( string $theme_dir, string $theme_uri, array $site, array &$assets, int &$order, bool $write_files = true, string $embedded_font_faces = '' ) {
 		$theme = isset( $site['theme'] ) && is_array( $site['theme'] ) ? $site['theme'] : array();
 		$plan  = isset( $theme['font_materialization'] ) && is_array( $theme['font_materialization'] ) ? $theme['font_materialization'] : array();
 		if ( 'blocks-engine/php-transformer/font-materialization-plan/v1' !== (string) ( $plan['schema'] ?? '' ) ) {
@@ -431,6 +646,16 @@ class Static_Site_Importer_Theme_Materializer {
 				'role'      => 'stylesheet',
 				'mime_type' => 'text/css',
 				'content'   => trim( (string) $plan['css'] ) . "\n",
+			);
+		}
+		if ( '' !== trim( $embedded_font_faces ) ) {
+			$rows[] = array(
+				'path'        => 'assets/css/embedded-fonts.css',
+				'role'        => 'stylesheet',
+				'mime_type'   => 'text/css',
+				'content'     => trim( $embedded_font_faces ) . "\n",
+				'source_role' => 'importer_owned',
+				'keep_source' => false,
 			);
 		}
 
@@ -697,10 +922,12 @@ class Static_Site_Importer_Theme_Materializer {
 	 * Normalize template part artifacts into generated theme writes.
 	 *
 	 * @param string              $theme_dir Theme directory.
-	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
+	 * @param array<string,mixed>                     $artifacts WordPress artifacts from Blocks Engine.
+	 * @param array<string,array<string,mixed>>       $assets Materialized assets keyed by source path.
+	 * @param array<string,string>                    $permalinks Imported page permalinks keyed by source path.
 	 * @return array{writes:array<string,string>,reports:array<int,array<string,mixed>>}|WP_Error Absolute write paths and report rows.
 	 */
-	public static function template_part_artifact_writes( string $theme_dir, array $artifacts ) {
+	public static function template_part_artifact_writes( string $theme_dir, array $artifacts, array $assets = array(), array $permalinks = array() ) {
 		$template_parts = self::template_part_artifacts_from_materialization_plan( $artifacts );
 		if ( is_wp_error( $template_parts ) ) {
 			return $template_parts;
@@ -741,6 +968,9 @@ class Static_Site_Importer_Theme_Materializer {
 			if ( '' === trim( $markup ) ) {
 				return new WP_Error( 'static_site_importer_template_part_markup_empty', 'Template part artifact block_markup must not be empty.' );
 			}
+			$source_path = isset( $template_part['source_path'] ) && is_scalar( $template_part['source_path'] ) ? (string) $template_part['source_path'] : '';
+			$source_path = (string) strtok( $source_path, '#' );
+			$markup      = Static_Site_Importer_Page_Materializer::rewrite_materialized_asset_references( $markup, $assets, $source_path, $permalinks );
 
 			$writes[ trailingslashit( $theme_dir ) . $relative ] = $markup;
 			$reports[] = self::template_part_artifact_report_payload( $relative, $template_part, $markup );
