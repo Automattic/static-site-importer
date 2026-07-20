@@ -336,6 +336,27 @@ to `<blocks-engine>/fixtures` and discovers fixtures from both `websites/` and
 Promote a fixture to `fixtures/solved/` only after a matrix run grades it
 `solved_candidate`:
 
+Use the target lane while iterating, then the target-plus-solved promotion lane
+before promotion:
+
+```bash
+node tools/run-fixture-matrix.mjs \
+  --static-site-importer . \
+  --blocks-engine /path/to/blocks-engine \
+  --target-fixture <id>
+
+node tools/run-fixture-matrix.mjs \
+  --static-site-importer . \
+  --blocks-engine /path/to/blocks-engine \
+  --target-fixture <id> \
+  --promotion-gate
+```
+
+The promotion lane selects the active target plus every fixture under
+`fixtures/solved/`, defaults to one fixture per isolated WP Codebox batch, and
+requires every selected fixture to retain `solved_candidate`. A target that is
+not solved or any `solved_regression` fails the aggregate.
+
 ```bash
 node tools/promote-solved-fixture.mjs \
   --fixture-id <id> \
