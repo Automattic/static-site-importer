@@ -466,6 +466,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 */
 	public static function finalize_quality_report( array &$report, array $args ): array {
 		$materialization_plan = isset( $report['blocks_engine']['materialization_plan'] ) && is_array( $report['blocks_engine']['materialization_plan'] ) ? $report['blocks_engine']['materialization_plan'] : array();
+		self::mark_active_companion_script_fallbacks_materialized( $report );
 		self::mark_materialized_script_fallbacks_carried( $report, $materialization_plan );
 		self::normalize_import_diagnostics( $report );
 
@@ -2878,6 +2879,27 @@ class Static_Site_Importer_Report_Diagnostics {
 
 		if ( ! empty( $resolved ) ) {
 			$report['quality']['fallback_count'] = max( 0, (int) ( $report['quality']['fallback_count'] ?? 0 ) - count( $resolved ) );
+		}
+	}
+
+	/**
+	 * Reconcile late-added fallback rows against active companion dependencies.
+	 *
+	 * @param array<string,mixed> $report Import report.
+	 * @return void
+	 */
+	private static function mark_active_companion_script_fallbacks_materialized( array &$report ): void {
+		$dependencies = $report['companion_plugins']['dependencies'] ?? array();
+		if ( ! is_array( $dependencies ) ) {
+			return;
+		}
+
+		foreach ( $dependencies as $slug => $dependency ) {
+			if ( ! is_array( $dependency ) || empty( $dependency['active'] ) ) {
+				continue;
+			}
+			$runtime_scripts = isset( $dependency['runtime_scripts'] ) && is_array( $dependency['runtime_scripts'] ) ? $dependency['runtime_scripts'] : array();
+			self::mark_companion_script_fallbacks_materialized( $report, $runtime_scripts, (string) $slug );
 		}
 	}
 

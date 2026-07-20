@@ -202,6 +202,17 @@ $materialized = array_values( array_filter( $report['diagnostics'] ?? array(), s
 $assert( 1 === count( $materialized ), 'companion-materialization-resolves-script-fallback' );
 $assert( 'native_conversion' === ( $materialized[0]['loss_class'] ?? '' ), 'materialized-script-is-native-conversion-outcome' );
 $assert( 0 === ( $report['quality']['fallback_count'] ?? -1 ), 'materialized-script-no-longer-counts-as-fallback' );
+$report['diagnostics'][] = array(
+	'code'        => 'html_script_fallback',
+	'kind'        => 'html',
+	'tag'         => 'script',
+	'selector'    => 'script:nth-of-type(1)',
+	'source_path' => 'index.html',
+	'reason'      => 'script_requires_runtime',
+);
+Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $report, array() );
+$unresolved = array_filter( $report['diagnostics'], static fn ( array $d ): bool => 'html_script_fallback' === ( $d['code'] ?? '' ) );
+$assert( empty( $unresolved ), 'finalization-reconciles-late-script-fallback-rows' );
 $stored = $report['companion_plugins']['dependencies']['ssi-example-site']['island_handles'] ?? null;
 $assert( array( 'hero-island' ) === $stored, 'report-stores-companion-island-handles' );
 
