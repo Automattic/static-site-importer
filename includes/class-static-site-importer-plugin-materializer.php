@@ -14,6 +14,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Static_Site_Importer_Plugin_Materializer {
 
+	/** Option identifying the generated companion that owns document-global runtime assets. */
+	public const ACTIVE_COMPANION_OPTION = 'static_site_importer_active_companion_plugin';
+
 	/**
 	 * Ensure a WordPress.org plugin is installed, active, and exposes expected APIs.
 	 *
@@ -130,6 +133,11 @@ class Static_Site_Importer_Plugin_Materializer {
 
 		if ( false === $plan['activate'] ) {
 			// mu-plugins are always active; no activation call is required.
+			$plugin_file = (string) $descriptor['plugin_file'];
+			self::replace_active_generated_companion( $plugin_file, $report );
+			if ( function_exists( 'update_option' ) ) {
+				update_option( self::ACTIVE_COMPANION_OPTION, $plugin_file, false );
+			}
 			$report['active'] = true;
 			$report['status'] = 'installed_activated';
 			return $report;
@@ -154,7 +162,6 @@ class Static_Site_Importer_Plugin_Materializer {
 				)
 			);
 		}
-
 		if ( null !== $availability_check && ! self::available( $availability_check ) ) {
 			return self::failed_report(
 				$report,
@@ -164,9 +171,35 @@ class Static_Site_Importer_Plugin_Materializer {
 				)
 			);
 		}
+		self::replace_active_generated_companion( $plugin_file, $report );
+		if ( function_exists( 'update_option' ) ) {
+			update_option( self::ACTIVE_COMPANION_OPTION, $plugin_file, false );
+		}
 
 		$report['status'] = $already_available ? 'refreshed' : 'installed_activated';
 		return $report;
+	}
+
+	/**
+	 * Deactivate the regular generated companion replaced by this import.
+	 *
+	 * @param string               $plugin_file New generated companion basename.
+	 * @param array<string, mixed> $report      Materialization report.
+	 */
+	private static function replace_active_generated_companion( string $plugin_file, array &$report ): void {
+		if ( ! function_exists( 'get_option' ) ) {
+			return;
+		}
+
+		$previous = (string) get_option( self::ACTIVE_COMPANION_OPTION, '' );
+		if ( '' === $previous || $plugin_file === $previous || ! function_exists( 'deactivate_plugins' ) ) {
+			return;
+		}
+
+		if ( ! function_exists( 'is_plugin_active' ) || is_plugin_active( $previous ) ) {
+			deactivate_plugins( $previous );
+			$report['actions'][] = 'replaced:' . $previous;
+		}
 	}
 
 	/**
