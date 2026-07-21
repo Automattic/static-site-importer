@@ -56,6 +56,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			$state['resolved'] = $resolved;
 			$state['theme_dir'] = $theme_dir;
+			$state['theme'] = array(
+				'slug' => $slug,
+				'dir'  => $theme_dir,
+				'uri'  => $theme_uri,
+			);
 			self::preflight( $state, ! empty( $args['overwrite'] ) );
 		} catch ( InvalidArgumentException $error ) {
 			$state['diagnostics'][] = array( 'reason_code' => $error->getMessage() );
@@ -69,6 +74,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			$state['page_ids'][ $page['reconciliation_identity'] ] = $post;
 			$state['source_ids'][ $page['source_path'] ] = $post;
+			update_post_meta( $post, '_static_site_importer_provenance', wp_json_encode( array( 'import_run_id' => (string) ( $args['import_run_id'] ?? '' ), 'source_path' => $page['source_path'], 'reconciliation_identity' => $page['reconciliation_identity'] ) ) );
 			$state['applied']['posts'][] = array( 'id' => $post, 'reconciliation_identity' => $page['reconciliation_identity'] );
 		}
 
@@ -88,7 +94,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$state['applied']['operations'][] = $result;
 		}
 
-		return self::receipt( 'complete', $state );
+		return self::receipt( 'completed', $state );
 	}
 
 	/** @param array<string,mixed> $state */
@@ -97,6 +103,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$state['page_ids'] = array();
 		$state['source_ids'] = array();
 		foreach ( $state['resolved']['pages'] as $page ) {
+			if ( ! isset( $page['resolved_block_markup'] ) || ! is_string( $page['resolved_block_markup'] ) || '' === trim( $page['resolved_block_markup'] ) ) {
+				throw new InvalidArgumentException( 'page_missing_final_block_markup' );
+			}
 			$key = strtolower( $page['slug'] );
 			if ( isset( $pages_by_slug[ $key ] ) ) {
 				throw new InvalidArgumentException( 'duplicate_page_slug' );
@@ -262,16 +271,31 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	/** @param array<string,mixed> $state @return array<string,mixed> */
 	private static function receipt( string $status, array $state ): array {
 		$plan = $state['plan'];
+		$errors = array();
+		$pages  = isset( $state['source_ids'] ) && is_array( $state['source_ids'] ) ? $state['source_ids'] : array();
+		foreach ( $state['diagnostics'] as $diagnostic ) {
+			if ( isset( $diagnostic['reason_code'] ) && is_string( $diagnostic['reason_code'] ) ) {
+				$errors[] = array( 'code' => $diagnostic['reason_code'], 'message' => $diagnostic['reason_code'] );
+			}
+		}
 		return array(
 			'schema'                    => self::RECEIPT_SCHEMA,
 			'status'                    => $status,
 			'plan_hash'                 => $state['plan_hash'],
+			'plan'                      => $state['resolved'] ?? $plan,
+			'theme'                     => $state['theme'] ?? array(),
+			'completed'                 => array(
+				'pages'      => $pages,
+				'files'      => $state['applied']['files'],
+				'operations' => $state['applied']['operations'],
+			),
 			'reconciliation_identities' => array_merge( array_column( $plan['pages'] ?? array(), 'reconciliation_identity' ), array_map( static fn( array $write ): string => hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ), $plan['writes'] ?? array() ) ),
 			'wordpress'                 => $state['applied']['posts'],
 			'generated_files'           => $state['applied']['files'],
 			'operations'                => $state['applied']['operations'],
 			'skipped_targets'           => $state['skipped'],
 			'diagnostics'               => $state['diagnostics'],
+			'errors'                    => $errors,
 		);
 	}
 

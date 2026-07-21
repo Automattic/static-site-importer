@@ -136,7 +136,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				array( 'plan' => $plan, 'slug' => (string) $assoc_args['slug'], 'overwrite' => isset( $assoc_args['overwrite'] ) )
 			);
 			WP_CLI::line( (string) wp_json_encode( $receipt, JSON_UNESCAPED_SLASHES ) );
-			if ( 'complete' !== $receipt['status'] ) {
+			if ( 'completed' !== $receipt['status'] ) {
 				WP_CLI::halt( 1 );
 			}
 		}

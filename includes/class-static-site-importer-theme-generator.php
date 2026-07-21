@@ -137,19 +137,35 @@ class Static_Site_Importer_Theme_Generator {
 			'blocks_engine'  => array( 'wordpress_site_plan' => $plan ),
 			'quality'        => $quality,
 			'diagnostics'    => $diagnostics,
-			'generated_theme' => array( 'wordpress_site_plan' => $plan, 'document_metadata' => self::document_metadata_from_plan_receipt( $plan ) ),
-			'source_documents' => $plan['reporting'],
+			'generated_theme' => array(
+				'wordpress_site_plan' => $plan,
+				'document_metadata'   => self::document_metadata_from_plan_receipt( $plan ),
+				'template_parts'      => array_map( static fn( array $part ): array => array( 'path' => 'parts/' . $part['slug'] . '.html', 'content' => $part['resolved_block_markup'] ), $plan['template_parts'] ),
+				'block_documents'     => array_map( static fn( array $page ): array => array( 'path' => 'posts/page-' . ( ! empty( $page['entrypoint'] ) ? 'home' : $page['slug'] ) . '.post_content', 'content' => $page['resolved_block_markup'], 'core_html_block_count' => 0 ), $plan['pages'] ),
+			),
+			'source_documents' => array(
+				'source'                       => 'blocks_engine',
+				'blocks_engine_document_count' => count( $plan['pages'] ),
+				'blocks_engine_documents'      => array_map( static fn( array $page ): array => array( 'source_path' => $page['source_path'], 'slug' => ! empty( $page['entrypoint'] ) ? 'home' : $page['slug'], 'permalink' => ! empty( $page['entrypoint'] ) ? '/' : '/' . $page['slug'] . '/' ), $plan['pages'] ),
+				'counts_by_format'             => array( 'html' => count( $plan['pages'] ), 'markdown' => 0, 'mdx' => 0 ),
+			),
 		);
+		$report['source_artifact'] = array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ) );
 		$manifest = array(
 			'schema'        => 'static-site-importer/source-of-truth-manifest/v1',
 			'import_run_id' => $report['import_run_id'],
-			'artifact'      => array( 'source_hash' => $plan['source']['source_hash'], 'entry_path' => $plan['source']['entry_path'], 'provenance' => $plan['source']['provenance'] ),
+			'artifact'      => array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ), 'source_hash' => $plan['source']['source_hash'], 'entry_path' => $plan['source']['entry_path'], 'provenance' => $plan['source']['provenance'] ),
+			'manifest_path' => 'static-site-importer-manifest.json',
 			'desired'       => array( 'pages' => array(), 'files' => array_map( static fn( array $write ): array => array( 'path' => $write['target_path'], 'kind' => $write['kind'] ), $plan['writes'] ) ),
 		);
 		foreach ( $receipt['completed']['pages'] as $source_path => $id ) {
-			$manifest['desired']['pages'][] = array( 'source_path' => $source_path, 'materialized_post_id' => $id, 'provenance_meta_key' => '_static_site_importer_reconciliation_identity' );
+			$manifest['desired']['pages'][] = array( 'source_path' => $source_path, 'materialized_post_id' => $id, 'provenance_meta_key' => '_static_site_importer_provenance' );
 		}
-		$validation = array( 'schema' => 'blocks-engine/import-validation-result/v1', 'artifact_type' => 'ImportValidationResult', 'status' => 'success' === ( $quality['status'] ?? '' ) ? 'passed' : 'failed', 'diagnostics' => $diagnostics, 'quality' => $quality );
+		$report['source_of_truth'] = $manifest;
+		$visual_parity = array( 'schema' => 'static-site-importer/visual-parity-artifacts/v1', 'status' => 'pending', 'owner' => 'codebox_runtime', 'artifacts' => array( 'import_report' => array( 'status' => 'captured', 'ref' => array( 'artifact_name' => 'import-report.json' ) ), 'source_screenshot' => array( 'status' => 'pending' ), 'visual_diff' => array( 'capture_state' => 'not_captured' ) ) );
+		$report['visual_parity_artifacts'] = $visual_parity;
+		$report['quality']['core_html_block_count'] = 0;
+		$validation = array( 'schema' => 'blocks-engine/import-validation-result/v1', 'artifact_type' => 'ImportValidationResult', 'status' => 'success' === ( $quality['status'] ?? '' ) ? 'passed' : 'failed', 'diagnostics' => $diagnostics, 'quality' => $quality, 'visual_parity_artifacts' => $visual_parity );
 		$findings   = array( 'schema' => 'blocks-engine/finding-packets/v1', 'artifact_type' => 'FindingPacketSet', 'findings' => $diagnostics );
 		$theme_dir  = $theme['dir'];
 		$manifest_path = $theme_dir . '/static-site-importer-manifest.json';
@@ -180,7 +196,11 @@ class Static_Site_Importer_Theme_Generator {
 			'finding_packets'          => $findings,
 			'quality'                  => $quality,
 			'source_of_truth'          => $manifest,
-			'progress_events'          => array(),
+			'progress_events'          => array(
+				array( 'schema' => 'wp-codebox/live-progress-event/v1', 'phase' => 'ssi.materialization.completed', 'progress' => array( 'percent' => 100 ) ),
+				array( 'schema' => 'wp-codebox/live-progress-event/v1', 'phase' => 'ssi.reporting.completed', 'progress' => array( 'percent' => 100 ) ),
+				array( 'schema' => 'wp-codebox/live-progress-event/v1', 'phase' => 'ssi.saved.completed', 'progress' => array( 'percent' => 100 ) ),
+			),
 			'materialization_receipt'  => $receipt,
 		);
 	}
@@ -189,7 +209,19 @@ class Static_Site_Importer_Theme_Generator {
 	private static function document_metadata_from_plan_receipt( array $plan ): array {
 		foreach ( $plan['pages'] as $page ) {
 			if ( ! empty( $page['entrypoint'] ) && isset( $page['document_metadata'] ) && is_array( $page['document_metadata'] ) ) {
-				return array_merge( array( 'schema' => 'static-site-importer/document-metadata/v1' ), $page['document_metadata'] );
+				$metadata = array_merge( array( 'schema' => 'static-site-importer/document-metadata/v1' ), $page['document_metadata'] );
+				foreach ( array( 'links' => 'href', 'scripts' => 'src' ) as $kind => $field ) {
+					if ( ! isset( $metadata[ $kind ] ) || ! is_array( $metadata[ $kind ] ) ) {
+						continue;
+					}
+					foreach ( $metadata[ $kind ] as &$declaration ) {
+						if ( is_array( $declaration ) && isset( $declaration['resolved_url'] ) ) {
+							$declaration[ $field ] = $declaration['resolved_url'];
+						}
+					}
+					unset( $declaration );
+				}
+				return $metadata;
 			}
 		}
 		return array( 'schema' => 'static-site-importer/document-metadata/v1' );

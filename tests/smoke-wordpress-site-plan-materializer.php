@@ -56,10 +56,16 @@ function wp_insert_post( array $post, bool $wp_error ) {
 
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 
+$assert = static function ( bool $condition, string $message ): void {
+	if ( ! $condition ) {
+		throw new RuntimeException( $message );
+	}
+};
+
 $artifact = array(
 	'entrypoint' => 'index.html',
 	'files'      => array(
-		'index.html'       => '<header><p>Header</p></header><main><img src="assets/logo.svg"><h1>Home</h1></main>',
+		'index.html'       => '<html><head><link rel="stylesheet" href="/assets/site.css"></head><body><header><p>Header</p></header><main><img src="assets/logo.svg"><h1>Home</h1></main></body></html>',
 		'about.html'       => '<main><h1>About</h1></main>',
 		'assets/logo.svg'  => '<svg xmlns="http://www.w3.org/2000/svg"/>',
 		'assets/site.css'  => 'main { background: url(assets/logo.svg); }',
@@ -67,41 +73,43 @@ $artifact = array(
 );
 $result = ( new ArtifactCompiler() )->compile( $artifact )->toArray();
 $plan   = $result['source_reports']['wordpress_site_plan'];
-assert( 'blocks-engine/wordpress-site-plan/v2' === $plan['schema'] );
+$assert( 'blocks-engine/wordpress-site-plan/v2' === $plan['schema'], 'compiler emits the released v2 site plan' );
+$assert( isset( $result['source_reports']['wordpress_site_plan']['reporting'] ), 'compiler exposes the plan in source reports' );
 
 $receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan' ) );
-assert( 'complete' === $receipt['status'] );
-assert( 'static-site-importer/materialization-receipt/v1' === $receipt['schema'] );
-assert( count( $plan['writes'] ) === count( $receipt['generated_files'] ) );
-assert( file_exists( $GLOBALS['ssi_plan_root'] . '/site-plan/templates/front-page.html' ) );
-assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-plan/assets/assets/site.css' ), 'https://example.test/wp-content/themes/site-plan/assets/assets/logo.svg' ) );
-assert( 'page' === $GLOBALS['ssi_plan_options']['show_on_front'] );
+$assert( 'completed' === $receipt['status'], 'valid plan completes' );
+$assert( 'static-site-importer/materialization-receipt/v1' === $receipt['schema'], 'receipt schema is stable' );
+$assert( count( $plan['writes'] ) === count( $receipt['generated_files'] ), 'all canonical writes are materialized' );
+$assert( file_exists( $GLOBALS['ssi_plan_root'] . '/site-plan/templates/front-page.html' ), 'templates are materialized' );
+$assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-plan/assets/assets/site.css' ), 'https://example.test/wp-content/themes/site-plan/assets/assets/logo.svg' ), 'root-relative stylesheet references resolve to declared theme assets' );
+$assert( 'page' === $GLOBALS['ssi_plan_options']['show_on_front'], 'site-reading operation is materialized' );
+$assert( $receipt['plan']['pages'][0]['document_metadata']['links'][0]['resolved_url'] === 'https://example.test/wp-content/themes/site-plan/assets/assets/site.css', 'resolved metadata retains the declared stylesheet destination' );
 
 $repeat = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan' ) );
-assert( 'complete' === $repeat['status'] );
-assert( count( $GLOBALS['ssi_plan_posts'] ) === count( $plan['pages'] ) );
+$assert( 'completed' === $repeat['status'], 'reconciliation repeat completes' );
+$assert( count( $GLOBALS['ssi_plan_posts'] ) === count( $plan['pages'] ), 'reconciliation preserves source page identity' );
 
 $before_posts = count( $GLOBALS['ssi_plan_posts'] );
 $before_files = count( glob( $GLOBALS['ssi_plan_root'] . '/reject/**/*' ) ?: array() );
 $invalid = $plan;
 $invalid['schema'] = 'blocks-engine/wordpress-site-plan/v1';
 $rejected = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $invalid, array( 'slug' => 'reject' ) );
-assert( 'rejected' === $rejected['status'] );
-assert( $before_posts === count( $GLOBALS['ssi_plan_posts'] ) );
-assert( $before_files === count( glob( $GLOBALS['ssi_plan_root'] . '/reject/**/*' ) ?: array() ) );
+$assert( 'rejected' === $rejected['status'], 'invalid plan is rejected' );
+$assert( $before_posts === count( $GLOBALS['ssi_plan_posts'] ), 'invalid plan creates no posts' );
+$assert( $before_files === count( glob( $GLOBALS['ssi_plan_root'] . '/reject/**/*' ) ?: array() ), 'invalid plan writes no files' );
 
 $unsafe = $GLOBALS['ssi_plan_root'] . '/unsafe';
 mkdir( $unsafe, 0777, true );
 symlink( sys_get_temp_dir(), $unsafe . '/assets' );
 $unsafe_result = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'unsafe', 'overwrite' => true ) );
-assert( 'rejected' === $unsafe_result['status'] );
-assert( 'unsafe_destination_path' === $unsafe_result['diagnostics'][0]['reason_code'] );
+$assert( 'rejected' === $unsafe_result['status'], 'unsafe destination is rejected' );
+$assert( 'unsafe_destination_path' === $unsafe_result['diagnostics'][0]['reason_code'], 'unsafe destination is diagnosed' );
 
 $GLOBALS['ssi_plan_posts']      = array();
 $GLOBALS['ssi_plan_meta']       = array();
 $GLOBALS['ssi_plan_fail_after'] = 1;
 $partial = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'partial-plan' ) );
-assert( 'partial' === $partial['status'] );
-assert( 'simulated_post_failure' === $partial['diagnostics'][0]['reason_code'] );
+$assert( 'partial' === $partial['status'], 'runtime mutation failure returns partial receipt' );
+$assert( 'simulated_post_failure' === $partial['diagnostics'][0]['reason_code'], 'partial receipt keeps mutation failure identity' );
 
 echo "WordPress site plan materializer smoke passed.\n";
