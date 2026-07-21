@@ -35,29 +35,9 @@ const steps = [
     args: [ path.join( repoRoot, 'tests/smoke-site-identity.php' ) ],
   },
   {
-    name: 'Transformer adapter smoke',
-    command: 'php',
-    args: [ path.join( repoRoot, 'tests/smoke-transformer-adapter.php' ) ],
-  },
-  {
-    name: 'Website artifact products manifest smoke',
-    command: 'php',
-    args: [ path.join( repoRoot, 'tests/smoke-website-artifact-products-manifest.php' ) ],
-  },
-  {
     name: 'Entity materializer registry smoke',
     command: 'php',
     args: [ path.join( repoRoot, 'tests/smoke-entity-materializer-registry.php' ) ],
-  },
-  {
-    name: 'Website artifact document metadata smoke',
-    command: wpCli[ 0 ],
-    args: [
-      ...wpCli.slice( 1 ),
-      '--skip-plugins=static-site-importer',
-      'eval-file',
-      path.join( repoRoot, 'tests/smoke-website-artifact-document-metadata.php' ),
-    ],
   },
   {
     name: 'Visual repair CSS smoke',

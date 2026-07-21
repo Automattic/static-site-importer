@@ -9,10 +9,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-if ( ! class_exists( 'Static_Site_Importer_Transformer_Adapter' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-transformer-adapter.php';
-}
-
 if ( ! class_exists( 'Static_Site_Importer_URL_Fetcher' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-url-fetcher.php';
 }
@@ -139,7 +135,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 		return array(
 			'provider'        => 'public-url-fetcher',
 			'artifact'        => array(
-				'schema' => Static_Site_Importer_Transformer_Adapter::WEBSITE_ARTIFACT_SCHEMA,
+				'schema' => 'blocks-engine/php-transformer/site-artifact/v1',
 				'files'  => array(
 					array(
 						'path'    => 'website/index.html',

@@ -340,12 +340,6 @@ if ( ! class_exists( 'WP_Post' ) ) {
 	}
 }
 
-if ( ! class_exists( 'Static_Site_Importer_Transformer_Adapter' ) ) {
-	class Static_Site_Importer_Transformer_Adapter {
-		public const WEBSITE_ARTIFACT_SCHEMA = 'blocks-engine/website-artifact/v1';
-	}
-}
-
 if ( ! class_exists( 'Static_Site_Importer_Theme_Generator' ) ) {
 	class Static_Site_Importer_Theme_Generator {
 		public static array $last_artifact = array();
@@ -863,7 +857,7 @@ add_filter(
 		return array(
 			'provider'        => 'test-url-playground-provider',
 			'artifact'        => array(
-				'schema' => Static_Site_Importer_Transformer_Adapter::WEBSITE_ARTIFACT_SCHEMA,
+				'schema' => 'blocks-engine/php-transformer/site-artifact/v1',
 				'files'  => array(
 					array(
 						'path'    => 'website/index.html',

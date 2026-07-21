@@ -11,10 +11,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-if ( ! class_exists( 'Static_Site_Importer_Transformer_Adapter' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-transformer-adapter.php';
-}
-
 if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
 }
@@ -57,8 +53,9 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public static function import_website_artifact( array $artifact, array $args = array() ) {
-		if ( ! class_exists( 'Static_Site_Importer_Transformer_Adapter' ) ) {
-			return new WP_Error( 'static_site_importer_missing_transformer_adapter', 'Static Site Importer transformer adapter is required to import a website artifact.' );
+		$compiler_class = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactCompiler';
+		if ( ! class_exists( $compiler_class ) ) {
+			return new WP_Error( 'static_site_importer_missing_transformer', 'Blocks Engine php-transformer is required to import a website artifact.' );
 		}
 		// site_title (blogname) intentionally stays restricted to an explicit arg
 		// or a real extracted document title; it never falls back to the host or
@@ -89,9 +86,9 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		$compiler_options = isset( $args['compiler_options'] ) && is_array( $args['compiler_options'] ) ? $args['compiler_options'] : array();
-		$compiled         = ( new Static_Site_Importer_Transformer_Adapter() )->compile_website_artifact_result( $artifact, array_merge( array( 'include_conversion_report' => true ), $compiler_options ) );
-		if ( is_wp_error( $compiled ) ) {
-			return $compiled;
+		$compiled = ( new $compiler_class() )->compile( $artifact, array_merge( array( 'include_conversion_report' => true ), $compiler_options ) )->toArray();
+		if ( ! is_array( $compiled ) ) {
+			return new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid result.' );
 		}
 		$plan = isset( $compiled['source_reports']['wordpress_site_plan'] ) && is_array( $compiled['source_reports']['wordpress_site_plan'] ) ? $compiled['source_reports']['wordpress_site_plan'] : array();
 		if ( empty( $plan ) ) {
@@ -879,8 +876,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return array{website_artifact:array<string,mixed>}|WP_Error
 	 */
 	public static function export_theme( array $args = array() ) {
-		$transformer = new Static_Site_Importer_Transformer_Adapter();
-		if ( ! $transformer->supports_blocks_to_html() ) {
+		if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
 			return new WP_Error( 'static_site_importer_missing_transformer', 'Blocks Engine php-transformer is required to export a website artifact.' );
 		}
 
@@ -915,7 +911,7 @@ class Static_Site_Importer_Theme_Generator {
 			);
 			$files[] = self::export_file_entry(
 				$entrypoint,
-				self::export_html_document( '', self::export_theme_chrome_html( $theme_dir, 'front-page', $transformer ), $theme_slug, null !== $stylesheet ),
+				self::export_html_document( '', self::export_theme_chrome_html( $theme_dir, 'front-page' ), $theme_slug, null !== $stylesheet ),
 				'document',
 				'entrypoint'
 			);
@@ -927,11 +923,11 @@ class Static_Site_Importer_Theme_Generator {
 				$is_front  = $first || ( $front_page_id > 0 && $page_id === $front_page_id );
 				$path      = $is_front ? $entrypoint : self::export_page_artifact_path( $page, $root );
 				$template  = $is_front ? 'front-page' : 'page';
-				$page_html = $transformer->blocks_to_html( isset( $page->post_content ) ? (string) $page->post_content : '' );
+				$page_html = self::blocks_to_html( isset( $page->post_content ) ? (string) $page->post_content : '' );
 
 				$files[] = self::export_file_entry(
 					$path,
-					self::export_html_document( $page_html, self::export_theme_chrome_html( $theme_dir, $template, $transformer ), self::export_page_title( $page, $theme_slug ), null !== $stylesheet ),
+					self::export_html_document( $page_html, self::export_theme_chrome_html( $theme_dir, $template ), self::export_page_title( $page, $theme_slug ), null !== $stylesheet ),
 					'document',
 					$is_front ? 'entrypoint' : 'page',
 					array(
@@ -1153,9 +1149,9 @@ class Static_Site_Importer_Theme_Generator {
 	 * @param string $template  Template slug.
 	 * @return array{before:string,after:string}
 	 */
-	private static function export_theme_chrome_html( string $theme_dir, string $template, Static_Site_Importer_Transformer_Adapter $transformer ): array {
-		$before = self::convert_theme_block_file_to_html( $theme_dir . '/parts/header.html', $transformer );
-		$after  = self::convert_theme_block_file_to_html( $theme_dir . '/parts/footer.html', $transformer );
+	private static function export_theme_chrome_html( string $theme_dir, string $template ): array {
+		$before = self::convert_theme_block_file_to_html( $theme_dir . '/parts/header.html' );
+		$after  = self::convert_theme_block_file_to_html( $theme_dir . '/parts/footer.html' );
 
 		$template_html = self::read_file_if_readable( $theme_dir . '/templates/' . $template . '.html' );
 		if ( '' === $template_html && 'front-page' !== $template ) {
@@ -1163,7 +1159,7 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		if ( '' !== $template_html ) {
-			$converted_template = $transformer->blocks_to_html( $template_html );
+			$converted_template = self::blocks_to_html( $template_html );
 			if ( '' !== trim( $converted_template ) && '' === trim( $before . $after ) ) {
 				$before = $converted_template;
 			}
@@ -1181,9 +1177,20 @@ class Static_Site_Importer_Theme_Generator {
 	 * @param string $path File path.
 	 * @return string
 	 */
-	private static function convert_theme_block_file_to_html( string $path, Static_Site_Importer_Transformer_Adapter $transformer ): string {
+	private static function convert_theme_block_file_to_html( string $path ): string {
 		$content = self::read_file_if_readable( $path );
-		return '' === $content ? '' : $transformer->blocks_to_html( $content );
+		return '' === $content ? '' : self::blocks_to_html( $content );
+	}
+
+	/**
+	 * Render serialized block markup with Blocks Engine's native format bridge.
+	 *
+	 * @param string $block_markup Serialized blocks.
+	 * @return string
+	 */
+	private static function blocks_to_html( string $block_markup ): string {
+		$result = blocks_engine_php_transformer_convert_format( $block_markup, 'blocks', 'html' );
+		return isset( $result['documents'][0]['content'] ) && is_scalar( $result['documents'][0]['content'] ) ? (string) $result['documents'][0]['content'] : '';
 	}
 
 	/**
@@ -1271,7 +1278,7 @@ class Static_Site_Importer_Theme_Generator {
 		$id           = 'website-artifact-' . $theme_slug . '-' . substr( hash( 'sha256', self::json_encode_pretty( array( $entrypoint, $files ) ) ), 0, 12 );
 
 		return array(
-			'schema'        => Static_Site_Importer_Transformer_Adapter::WEBSITE_ARTIFACT_SCHEMA,
+			'schema'        => 'blocks-engine/php-transformer/site-artifact/v1',
 			'artifact_type' => 'website',
 			'version'       => 1,
 			'id'            => $id,
@@ -1868,446 +1875,6 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		return ltrim( substr( $path, strlen( $prefix ) ), '/\\' );
-	}
-
-	/**
-	 * Normalize website artifact document rows into source pages.
-	 *
-	 * SSI consumes the compiled-site page contract when available, then attaches
-	 * the referenced `artifacts.documents[]` block markup for WordPress
-	 * materialization.
-	 *
-	 * @param array<string,mixed> $compiled Compiler result envelope.
-	 * @return array<string, Static_Site_Importer_Source_Page>|WP_Error
-	 */
-	private static function website_artifact_source_pages( array $compiled ) {
-		$artifacts = isset( $compiled['artifacts'] ) && is_array( $compiled['artifacts'] ) ? $compiled['artifacts'] : array();
-		$documents = isset( $artifacts['documents'] ) && is_array( $artifacts['documents'] ) ? $artifacts['documents'] : array();
-		$site      = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
-		if ( ! empty( $site['pages'] ) && is_array( $site['pages'] ) ) {
-			if ( 'blocks-engine/php-transformer/materialization-plan/v1' === (string) ( $site['schema'] ?? '' ) ) {
-				return self::source_pages_from_materialization_plan( $site, $documents );
-			}
-
-			if ( 'blocks-engine/php-transformer/compiled-site/v1' !== (string) ( $site['schema'] ?? '' ) ) {
-				return new WP_Error( 'static_site_importer_compiled_site_missing', 'Website artifact document pages require a supported compiled-site contract.' );
-			}
-
-			$documents = self::documents_from_compiled_site_pages( $site['pages'], $documents );
-			if ( is_wp_error( $documents ) ) {
-				return $documents;
-			}
-		}
-
-		$pages     = array();
-
-		foreach ( $documents as $document ) {
-			if ( ! is_array( $document ) ) {
-				continue;
-			}
-
-			$page = Static_Site_Importer_Source_Page::from_wordpress_document_artifact( $document );
-			if ( is_wp_error( $page ) ) {
-				return $page;
-			}
-
-			$pages[ $page->source_key() ] = $page;
-		}
-
-		return $pages;
-	}
-
-	/**
-	 * Build source pages directly from Blocks Engine materialization-plan page rows.
-	 *
-	 * @param array<string,mixed> $site      Materialization-plan site report.
-	 * @param array<int,mixed>    $documents Document artifacts with serialized block markup.
-	 * @return array<string, Static_Site_Importer_Source_Page>|WP_Error
-	 */
-	private static function source_pages_from_materialization_plan( array $site, array $documents = array() ) {
-		$site_pages = isset( $site['pages'] ) && is_array( $site['pages'] ) ? $site['pages'] : array();
-		$routes     = self::materialization_plan_routes_by_source_path( $site );
-		if ( is_wp_error( $routes ) ) {
-			return $routes;
-		}
-		$documents_by_source = self::document_artifacts_by_source_path( $documents );
-
-		$pages = array();
-		foreach ( $site_pages as $page_row ) {
-			if ( ! is_array( $page_row ) ) {
-				continue;
-			}
-
-			$source_path = isset( $page_row['source_path'] ) && is_scalar( $page_row['source_path'] ) ? self::normalize_route_path( (string) $page_row['source_path'] ) : '';
-			if ( '' !== $source_path && isset( $routes[ $source_path ] ) ) {
-				$page_row = array_merge( $page_row, $routes[ $source_path ] );
-			}
-			if ( '' !== $source_path && ( ! isset( $page_row['block_markup'] ) || ! is_scalar( $page_row['block_markup'] ) || '' === trim( (string) $page_row['block_markup'] ) ) && isset( $documents_by_source[ $source_path ] ) ) {
-				$document = $documents_by_source[ $source_path ];
-				foreach ( array( 'block_markup', 'content', 'post_content' ) as $content_key ) {
-					if ( isset( $document[ $content_key ] ) && is_scalar( $document[ $content_key ] ) && '' !== trim( (string) $document[ $content_key ] ) ) {
-						$page_row['block_markup'] = (string) $document[ $content_key ];
-						break;
-					}
-				}
-			}
-
-			$page = Static_Site_Importer_Source_Page::from_materialization_plan_page( $page_row );
-			if ( is_wp_error( $page ) ) {
-				return $page;
-			}
-
-			$pages[ $page->source_key() ] = $page;
-		}
-
-		return $pages;
-	}
-
-	/**
-	 * Normalize document artifacts by source path for materialization-plan joins.
-	 *
-	 * @param array<int,mixed> $documents Document artifact rows.
-	 * @return array<string,array<string,mixed>>
-	 */
-	private static function document_artifacts_by_source_path( array $documents ): array {
-		$documents_by_source = array();
-		foreach ( $documents as $document ) {
-			if ( ! is_array( $document ) ) {
-				continue;
-			}
-
-			$source_path = '';
-			foreach ( array( 'source_path', 'path', 'slug' ) as $key ) {
-				if ( isset( $document[ $key ] ) && is_scalar( $document[ $key ] ) && '' !== trim( (string) $document[ $key ] ) ) {
-					$source_path = self::normalize_route_path( (string) $document[ $key ] );
-					break;
-				}
-			}
-
-			if ( '' !== $source_path ) {
-				$documents_by_source[ $source_path ] = $document;
-			}
-		}
-
-		return $documents_by_source;
-	}
-
-	/**
-	 * Normalize native materialization-plan route rows by source path.
-	 *
-	 * @param array<string,mixed> $site Materialization-plan site report.
-	 * @return array<string,array<string,mixed>>|WP_Error Route rows keyed by normalized source path.
-	 */
-	private static function materialization_plan_routes_by_source_path( array $site ) {
-		if ( ! array_key_exists( 'routes', $site ) ) {
-			return array();
-		}
-
-		if ( ! is_array( $site['routes'] ) ) {
-			return new WP_Error( 'static_site_importer_materialization_plan_routes_invalid', 'Blocks Engine materialization_plan.routes must be an array.' );
-		}
-
-		$routes = array();
-		foreach ( $site['routes'] as $route ) {
-			if ( ! is_array( $route ) ) {
-				return new WP_Error( 'static_site_importer_materialization_plan_route_invalid', 'Blocks Engine materialization-plan route entries must be arrays.' );
-			}
-
-			$source_path = isset( $route['source_path'] ) && is_scalar( $route['source_path'] ) ? self::normalize_route_path( (string) $route['source_path'] ) : '';
-			if ( '' === $source_path ) {
-				return new WP_Error( 'static_site_importer_materialization_plan_route_missing_source', 'Blocks Engine materialization-plan route is missing source_path.' );
-			}
-
-			$normalized = array();
-			foreach ( array( 'slug', 'title', 'post_type', 'status', 'entrypoint', 'body_format' ) as $key ) {
-				if ( isset( $route[ $key ] ) && is_scalar( $route[ $key ] ) && '' !== trim( (string) $route[ $key ] ) ) {
-					$normalized[ $key ] = (string) $route[ $key ];
-				}
-			}
-			if ( ! isset( $normalized['slug'] ) && isset( $route['target_slug'] ) && is_scalar( $route['target_slug'] ) && '' !== trim( (string) $route['target_slug'] ) ) {
-				$normalized['slug'] = (string) $route['target_slug'];
-			}
-			if ( ! isset( $normalized['title'] ) && isset( $route['target_title'] ) && is_scalar( $route['target_title'] ) && '' !== trim( (string) $route['target_title'] ) ) {
-				$normalized['title'] = (string) $route['target_title'];
-			}
-
-			if ( isset( $route['route_key'] ) && is_scalar( $route['route_key'] ) && '' !== trim( (string) $route['route_key'] ) ) {
-				$normalized['route_key'] = (string) $route['route_key'];
-			}
-			$route_path = '';
-			if ( isset( $route['path'] ) && is_scalar( $route['path'] ) && '' !== trim( (string) $route['path'] ) ) {
-				$route_path = (string) $route['path'];
-			} elseif ( isset( $route['target_path'] ) && is_scalar( $route['target_path'] ) && '' !== trim( (string) $route['target_path'] ) ) {
-				$route_path = (string) $route['target_path'];
-			}
-			if ( '' !== $route_path ) {
-				$normalized['route_path'] = self::normalize_route_path( $route_path );
-				if ( '' === $normalized['route_path'] && ! empty( $route['source_relation'] ) && 'entrypoint' === (string) $route['source_relation'] ) {
-					$normalized['entrypoint'] = '1';
-				}
-				if ( '' === $normalized['route_path'] && isset( $normalized['slug'] ) && in_array( sanitize_title( $normalized['slug'] ), array( 'index', 'home' ), true ) ) {
-					$normalized['slug'] = 'home';
-				}
-			}
-
-			if ( isset( $route['metadata'] ) && is_array( $route['metadata'] ) ) {
-				$normalized['metadata'] = $route['metadata'];
-			}
-
-			$routes[ $source_path ] = $normalized;
-		}
-
-		return $routes;
-	}
-
-	/**
-	 * Attach document markup to compiled-site page contracts.
-	 *
-	 * @param array<int,array<string,mixed>> $site_pages Compiled-site page rows.
-	 * @param array<int,mixed>               $documents  Document artifacts.
-	 * @return array<int,array<string,mixed>>|WP_Error Document artifacts ordered by compiled-site pages.
-	 */
-	private static function documents_from_compiled_site_pages( array $site_pages, array $documents ) {
-		$documents_by_source = array();
-		foreach ( $documents as $document ) {
-			if ( ! is_array( $document ) ) {
-				continue;
-			}
-
-			$source_path = isset( $document['source_path'] ) && is_scalar( $document['source_path'] ) ? (string) $document['source_path'] : '';
-			if ( '' !== $source_path ) {
-				$documents_by_source[ $source_path ] = $document;
-			}
-		}
-
-		$compiled_documents = array();
-		foreach ( $site_pages as $page ) {
-			if ( ! is_array( $page ) ) {
-				continue;
-			}
-
-			$source_path = isset( $page['source_path'] ) && is_scalar( $page['source_path'] ) ? (string) $page['source_path'] : '';
-			if ( '' === $source_path ) {
-				return new WP_Error( 'static_site_importer_compiled_site_page_missing_source', 'Compiled-site page is missing source_path.' );
-			}
-			$metadata  = isset( $page['metadata'] ) && is_array( $page['metadata'] ) ? $page['metadata'] : array();
-			$slug      = isset( $page['slug'] ) && is_scalar( $page['slug'] ) ? sanitize_title( (string) $page['slug'] ) : '';
-			if ( '' === $slug ) {
-				$slug = Static_Site_Importer_Page_Materializer::page_slug( $source_path );
-			}
-			if ( ! empty( $page['entrypoint'] ) && in_array( $slug, array( 'index', 'home' ), true ) ) {
-				$slug = 'home';
-			}
-			$route_key = isset( $page['route_key'] ) && is_scalar( $page['route_key'] ) ? trim( (string) $page['route_key'] ) : $slug;
-			$post_type = isset( $page['post_type'] ) && is_scalar( $page['post_type'] ) ? trim( (string) $page['post_type'] ) : '';
-			if ( '' === $post_type && isset( $metadata['post_type'] ) && is_scalar( $metadata['post_type'] ) ) {
-				$post_type = trim( (string) $metadata['post_type'] );
-			}
-			if ( '' === $post_type && in_array( (string) ( $page['kind'] ?? 'html' ), array( 'html', 'document', 'markdown', 'mdx' ), true ) ) {
-				$post_type = 'page';
-			}
-			if ( '' === $route_key || '' === $slug || '' === $post_type ) {
-				return new WP_Error( 'static_site_importer_compiled_site_page_identity_incomplete', sprintf( 'Compiled-site page is missing route_key, slug, or post_type: %s', $source_path ) );
-			}
-			if ( ! isset( $documents_by_source[ $source_path ] ) && ( ! isset( $page['block_markup'] ) || ! is_scalar( $page['block_markup'] ) || '' === trim( (string) $page['block_markup'] ) ) ) {
-				return new WP_Error( 'static_site_importer_compiled_site_page_missing_document', sprintf( 'Compiled-site page does not reference a document artifact: %s', $source_path ) );
-			}
-
-			$document = array_merge( $documents_by_source[ $source_path ] ?? array(), array_filter(
-				array(
-					'source_path'  => $source_path,
-					'slug'         => $slug,
-					'route_key'    => $route_key,
-					'post_type'    => $post_type,
-					'title'        => isset( $page['title'] ) && is_scalar( $page['title'] ) ? (string) $page['title'] : '',
-					'block_markup' => isset( $page['block_markup'] ) && is_scalar( $page['block_markup'] ) ? (string) $page['block_markup'] : '',
-				),
-				static fn ( string $value ): bool => '' !== $value
-			) );
-
-			if ( ! empty( $page['entrypoint'] ) ) {
-				$document['entrypoint'] = '1';
-			}
-
-			$compiled_documents[] = $document;
-		}
-
-		return $compiled_documents;
-	}
-
-	/**
-	 * Normalize template part artifacts into generated theme writes.
-	 *
-	 * @param string                                  $theme_dir Theme directory.
-	 * @param array<string,mixed>                     $artifacts WordPress artifacts from Blocks Engine.
-	 * @param array<string,array<string,mixed>>       $assets Materialized assets keyed by source path.
-	 * @param array<string,string>                    $permalinks Imported page permalinks keyed by source path.
-	 * @return array{writes:array<string,string>,reports:array<int,array<string,mixed>>,styles:array<int,string>}|WP_Error Template-part artifacts.
-	 */
-	private static function template_part_artifact_writes( string $theme_dir, array $artifacts, array $assets = array(), array $permalinks = array() ) {
-		$result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes( $theme_dir, $artifacts, $assets, $permalinks );
-		if ( is_wp_error( $result ) ) {
-			return $result;
-		}
-
-		foreach ( $result['reports'] as $report ) {
-			self::$conversion_report['generated_theme']['template_parts'][] = $report;
-		}
-
-		return $result;
-	}
-
-	/**
-	 * Normalize full template artifacts into generated theme writes.
-	 *
-	 * @param string              $theme_dir Theme directory.
-	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
-	 * @return array<string,string>|WP_Error Absolute write paths keyed to serialized block markup.
-	 */
-	private static function template_artifact_writes( string $theme_dir, array $artifacts ) {
-		$result = Static_Site_Importer_Theme_Materializer::template_artifact_writes( $theme_dir, $artifacts );
-		if ( is_wp_error( $result ) ) {
-			return $result;
-		}
-
-		foreach ( $result['reports'] as $report ) {
-			self::$conversion_report['generated_theme']['templates'][] = $report;
-		}
-
-		return $result['writes'];
-	}
-
-	/**
-	 * Check whether a source filename is the site index.
-	 *
-	 * @param string $filename Source filename.
-	 * @return bool
-	 */
-	private static function is_index_source_filename( string $filename ): bool {
-		return in_array( strtolower( basename( $filename ) ), array( 'index.html' ), true );
-	}
-
-	/**
-	 * Get imported front page ID for HTML index sources.
-	 *
-	 * @param array<string,int> $page_ids Page IDs keyed by source filename.
-	 * @return int
-	 */
-	private static function front_page_id( array $page_ids ): int {
-		foreach ( $page_ids as $filename => $page_id ) {
-			if ( self::is_index_source_filename( $filename ) ) {
-				return (int) $page_id;
-			}
-		}
-
-		return 0;
-	}
-
-	/**
-	 * Analyze canonical imported page post content for conversion quality.
-	 *
-	 * @param array<string, Static_Site_Importer_Source_Page> $pages    Pages.
-	 * @param array<string,string>                           $contents Converted block markup keyed by filename.
-	 * @return void
-	 */
-	private static function analyze_imported_page_content_documents( array $pages, array $contents ): void {
-		foreach ( $pages as $filename => $page ) {
-			$slug    = Static_Site_Importer_Page_Materializer::page_slug( $filename, $page );
-			$source  = '' !== $slug ? 'posts/page-' . $slug . '.post_content' : 'posts/' . sanitize_title( $filename ) . '.post_content';
-			$content = $contents[ $filename ] ?? '';
-			if ( '' === trim( $content ) ) {
-				continue;
-			}
-
-			$analysis = array_merge(
-				Static_Site_Importer_Block_Document_Reporter::analyze_generated_block_document( $source, $content, self::$conversion_report ),
-				array(
-					'target'      => 'materialized_post_content',
-					'source_path' => $page->source_key(),
-					'slug'        => $slug,
-					'post_type'   => Static_Site_Importer_Page_Materializer::page_post_type( $page ),
-				)
-			);
-			self::$conversion_report['materialized_content']['block_documents'][] = $analysis;
-			self::$conversion_report['generated_theme']['block_documents'][]      = $analysis;
-		}
-	}
-
-	/**
-	 * Normalize a route-like path without resolving outside the source root.
-	 *
-	 * @param string $path Route path.
-	 * @return string
-	 */
-	private static function normalize_route_path( string $path ): string {
-		$path_without_query = strtok( $path, '?' );
-		$path               = str_replace( '\\', '/', false === $path_without_query ? $path : $path_without_query );
-		$path               = ltrim( $path, '/' );
-		$segments           = array();
-		foreach ( explode( '/', $path ) as $segment ) {
-			if ( '' === $segment || '.' === $segment ) {
-				continue;
-			}
-			if ( '..' === $segment ) {
-				array_pop( $segments );
-				continue;
-			}
-
-			$segments[] = $segment;
-		}
-
-		return implode( '/', $segments );
-	}
-
-	/**
-	 * Check whether a URL is local to the imported source tree.
-	 *
-	 * @param string $url URL or path.
-	 * @return bool
-	 */
-	private static function is_local_url( string $url ): bool {
-		$url = trim( $url );
-		if ( '' === $url || str_starts_with( $url, '#' ) ) {
-			return false;
-		}
-
-		$lower = strtolower( $url );
-		if ( preg_match( '#^[a-z][a-z0-9+.-]*:#i', $lower ) || str_starts_with( $lower, '//' ) ) {
-			return false;
-		}
-
-		return true;
-	}
-
-	/**
-	 * Prepare or write compiler-emitted files that can be consumed without re-importing HTML.
-	 *
-	 * @param string              $theme_dir          Theme directory.
-	 * @param array<string,mixed> $artifacts          WordPress artifacts from Blocks Engine.
-	 * @param bool                $write_files        Whether to write materialized asset files.
-	 * @param bool                $record_diagnostics Whether to append materialization diagnostics to the report.
-	 * @param string              $svg_font_usage_markup Bounded page SVG candidates that can be promoted.
-	 * @return array{css:string,js:string,assets:array<string,array<string,mixed>>,scripts:array<int,array<string,mixed>>,stylesheets:array<int,array<string,mixed>>}|WP_Error
-	 */
-	private static function materialize_website_artifact_files_to_theme( string $theme_dir, array $artifacts, bool $write_files = true, bool $record_diagnostics = true, string $svg_font_usage_markup = '' ) {
-		$result = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files( $theme_dir, self::$active_theme_uri, $artifacts, $write_files, $svg_font_usage_markup );
-		if ( is_wp_error( $result ) ) {
-			return $result;
-		}
-
-		if ( $record_diagnostics ) {
-			foreach ( $result['diagnostics'] as $diagnostic ) {
-				self::$conversion_report['diagnostics'][] = $diagnostic;
-			}
-		}
-		return array(
-			'css'         => $result['css'],
-			'js'          => $result['js'],
-			'assets'      => $result['assets'],
-			'scripts'     => $result['scripts'],
-			'stylesheets' => $result['stylesheets'],
-			'svg_font_faces' => $result['svg_font_faces'] ?? '',
-		);
 	}
 
 	/**

@@ -273,7 +273,7 @@ $export_format_conversion_calls = array_filter(
 	static fn ( array $call ): bool => 'blocks' === $call[0] && 'html' === $call[1]
 );
 $assert( count( $export_format_conversion_calls ) >= 4, 'format-conversion-called-for-block-to-html' );
-$assert( class_exists( 'Static_Site_Importer_Transformer_Adapter' ), 'export-routes-through-transformer-adapter' );
+$assert( function_exists( 'blocks_engine_php_transformer_convert_format' ), 'export-routes-through-blocks-engine-format-bridge' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );

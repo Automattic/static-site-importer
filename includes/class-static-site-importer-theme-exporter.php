@@ -9,10 +9,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-if ( ! class_exists( 'Static_Site_Importer_Transformer_Adapter' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-transformer-adapter.php';
-}
-
 /**
  * Exports WordPress block themes to website artifacts.
  */
@@ -25,8 +21,7 @@ class Static_Site_Importer_Theme_Exporter {
 	 * @return array{website_artifact:array<string,mixed>}|WP_Error
 	 */
 	public static function export_theme( array $args = array() ) {
-		$transformer = new Static_Site_Importer_Transformer_Adapter();
-		if ( ! $transformer->supports_blocks_to_html() ) {
+		if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
 			return new WP_Error( 'static_site_importer_missing_transformer', 'Blocks Engine php-transformer is required to export a website artifact.' );
 		}
 
@@ -61,7 +56,7 @@ class Static_Site_Importer_Theme_Exporter {
 			);
 			$files[]       = self::export_file_entry(
 				$entrypoint,
-				self::export_html_document( '', self::export_theme_chrome_html( $theme_dir, 'front-page', $transformer ), $theme_slug, null !== $stylesheet ),
+				self::export_html_document( '', self::export_theme_chrome_html( $theme_dir, 'front-page' ), $theme_slug, null !== $stylesheet ),
 				'document',
 				'entrypoint'
 			);
@@ -73,11 +68,11 @@ class Static_Site_Importer_Theme_Exporter {
 				$is_front  = $first || ( $front_page_id > 0 && $page_id === $front_page_id );
 				$path      = $is_front ? $entrypoint : self::export_page_artifact_path( $page, $root );
 				$template  = $is_front ? 'front-page' : 'page';
-				$page_html = $transformer->blocks_to_html( isset( $page->post_content ) ? (string) $page->post_content : '' );
+				$page_html = self::blocks_to_html( isset( $page->post_content ) ? (string) $page->post_content : '' );
 
 				$files[] = self::export_file_entry(
 					$path,
-					self::export_html_document( $page_html, self::export_theme_chrome_html( $theme_dir, $template, $transformer ), self::export_page_title( $page, $theme_slug ), null !== $stylesheet ),
+					self::export_html_document( $page_html, self::export_theme_chrome_html( $theme_dir, $template ), self::export_page_title( $page, $theme_slug ), null !== $stylesheet ),
 					'document',
 					$is_front ? 'entrypoint' : 'page',
 					array(
@@ -295,9 +290,9 @@ class Static_Site_Importer_Theme_Exporter {
 	 * @param string $template  Template slug.
 	 * @return array{before:string,after:string}
 	 */
-	private static function export_theme_chrome_html( string $theme_dir, string $template, Static_Site_Importer_Transformer_Adapter $transformer ): array {
-		$before = self::convert_theme_block_file_to_html( $theme_dir . '/parts/header.html', $transformer );
-		$after  = self::convert_theme_block_file_to_html( $theme_dir . '/parts/footer.html', $transformer );
+	private static function export_theme_chrome_html( string $theme_dir, string $template ): array {
+		$before = self::convert_theme_block_file_to_html( $theme_dir . '/parts/header.html' );
+		$after  = self::convert_theme_block_file_to_html( $theme_dir . '/parts/footer.html' );
 
 		$template_html = self::read_file_if_readable( $theme_dir . '/templates/' . $template . '.html' );
 		if ( '' === $template_html && 'front-page' !== $template ) {
@@ -305,7 +300,7 @@ class Static_Site_Importer_Theme_Exporter {
 		}
 
 		if ( '' !== $template_html ) {
-			$converted_template = $transformer->blocks_to_html( $template_html );
+			$converted_template = self::blocks_to_html( $template_html );
 			if ( '' !== trim( $converted_template ) && '' === trim( $before . $after ) ) {
 				$before = $converted_template;
 			}
@@ -323,9 +318,20 @@ class Static_Site_Importer_Theme_Exporter {
 	 * @param string $path File path.
 	 * @return string
 	 */
-	private static function convert_theme_block_file_to_html( string $path, Static_Site_Importer_Transformer_Adapter $transformer ): string {
+	private static function convert_theme_block_file_to_html( string $path ): string {
 		$content = self::read_file_if_readable( $path );
-		return '' === $content ? '' : $transformer->blocks_to_html( $content );
+		return '' === $content ? '' : self::blocks_to_html( $content );
+	}
+
+	/**
+	 * Render serialized block markup with Blocks Engine's native format bridge.
+	 *
+	 * @param string $block_markup Serialized blocks.
+	 * @return string
+	 */
+	private static function blocks_to_html( string $block_markup ): string {
+		$result = blocks_engine_php_transformer_convert_format( $block_markup, 'blocks', 'html' );
+		return isset( $result['documents'][0]['content'] ) && is_scalar( $result['documents'][0]['content'] ) ? (string) $result['documents'][0]['content'] : '';
 	}
 
 	/**
@@ -413,7 +419,7 @@ class Static_Site_Importer_Theme_Exporter {
 		$id           = 'website-artifact-' . $theme_slug . '-' . substr( hash( 'sha256', self::json_encode_pretty( array( $entrypoint, $files ) ) ), 0, 12 );
 
 		return array(
-			'schema'        => Static_Site_Importer_Transformer_Adapter::WEBSITE_ARTIFACT_SCHEMA,
+			'schema'        => 'blocks-engine/php-transformer/site-artifact/v1',
 			'artifact_type' => 'website',
 			'version'       => 1,
 			'id'            => $id,

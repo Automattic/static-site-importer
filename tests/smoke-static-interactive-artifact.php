@@ -35,8 +35,6 @@ $read = static function ( string $path ): string {
 	return false === $contents ? '' : $contents;
 };
 
-$assert( class_exists( 'Automattic\\BlocksEngine\\PhpTransformer\\StaticSite\\MaterializationView' ), 'materialization-view-class-available' );
-
 $artifact = array(
 	'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
 	'entrypoint' => 'website/index.html',

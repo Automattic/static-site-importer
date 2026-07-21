@@ -26,7 +26,7 @@ Static Site Importer is the WordPress materialization layer for static website i
 The conversion stack is split by responsibility:
 
 - **Static Site Importer** owns WordPress intake, safety checks, page/theme creation, asset placement, import reports, quality gates, and block-theme materialization.
-- **Blocks Engine PHP transformer** owns the generic artifact compiler, `blocks-engine/php-transformer/compiled-site/v1` source report, source documents, asset reports, and format conversion helpers. SSI maps those generic results into its current WordPress materialization envelope inside `Static_Site_Importer_Transformer_Adapter`.
+- **Blocks Engine PHP transformer** owns the generic `ArtifactCompiler`, its diagnostics, and the `source_reports.wordpress_site_plan` v2 output. SSI materializes that plan into WordPress and returns the receipt and import report.
 
 When a generated artifact contains full-document HTML, Static Site Importer routes document metadata, head content, styles, scripts, and page body fragments to the right WordPress destinations before calling the conversion stack. A `core/html` block in imported page content is therefore a materialization/conversion quality issue to fix in this stack, not a product-layer workaround to hide upstream.
 
@@ -314,8 +314,8 @@ The product handoff contract is defined in `docs/product-handoff-contract.md` an
 The handoff path is:
 
 - product caller sends a `blocks-engine/php-transformer/site-artifact/v1` input artifact;
-- Blocks Engine returns `blocks-engine/php-transformer/result/v1` with a canonical `blocks-engine/php-transformer/materialization-plan/v1`;
-- SSI consumes that plan, writes WordPress state, and returns `static-site-importer/import-report/v1` with import validation and finding packet artifacts;
+- Blocks Engine `ArtifactCompiler` returns `blocks-engine/php-transformer/result/v1` with `source_reports.wordpress_site_plan` using `blocks-engine/wordpress-site-plan/v2`;
+- SSI consumes that v2 plan, writes WordPress state, and returns a materialization receipt plus `static-site-importer/import-report/v1` with import validation and finding packet artifacts;
 - Codebox may validate the WordPress result and return `wp-codebox/validation-artifact-envelope/v1` artifact references.
 
 Blocks Engine does not know about Codebox. Products that need sandbox validation request it after SSI materializes WordPress.
@@ -392,9 +392,7 @@ wp eval-file tests/smoke-wordpress-is-dead-fixture.php
 wp eval-file tests/smoke-mixed-source-fixture.php
 ```
 
-`php tests/smoke-transformer-adapter.php` runs outside WordPress and verifies the SSI-owned transformer adapter uses Blocks Engine format conversion for export rendering, consumes the native compiled-site/source-document/asset reports, and keeps WordPress page mapping in SSI.
-
-The native compiled-site report may include route metadata for HTML pages before every route has block markup. SSI's adapter records the generic report fields it consumes, but only forwards pages with matching materializable document artifacts to the current WordPress page materializer.
+`php tests/smoke-wordpress-site-plan-materializer.php` runs outside WordPress and verifies that Blocks Engine's direct `ArtifactCompiler` output is consumed through `source_reports.wordpress_site_plan` v2 and materialized into the stable receipt contract.
 
 The `wordpress-is-dead` smoke verifies the multi-page fixture, generated block-theme artifacts, internal-link rewrites, persistent navigation entities, source CSS preservation, editor style support, conservative `theme.json` palette extraction, and selector fidelity across stored/rendered paths. The `mixed-source-site` smoke verifies an Astro-like source tree with `index.html`, nested Markdown content documents, explicit skipped-MDX diagnostics, report source counts, and generated page block markup.
 

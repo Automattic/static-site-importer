@@ -175,19 +175,6 @@ $assert( str_contains( $body_guard_css, 'body.page, body.admin-bar { width: auto
 $assert( ! str_contains( $body_guard_css, 'body.card' ), 'style-does-not-guard-non-wordpress-body-class', $body_guard_css );
 $assert( ! str_contains( $body_guard_css, 'body.home' ), 'style-does-not-guard-non-layout-body-class', $body_guard_css );
 
-$documents      = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'documents_from_compiled_site_pages' );
-$missing_source = $documents->invoke(
-	null,
-	array(
-		array(
-			'slug' => 'home',
-		),
-	),
-	array()
-);
-$assert( $missing_source instanceof WP_Error, 'compiled-site-page-source-is-required' );
-$assert( 'static_site_importer_compiled_site_page_missing_source' === ( $missing_source instanceof WP_Error ? $missing_source->get_error_code() : '' ), 'compiled-site-page-source-error-code' );
-
 $template_part_result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
 	'/tmp/visual-repair-smoke',
 	array(
@@ -410,121 +397,6 @@ $missing_content = Static_Site_Importer_Theme_Materializer::template_part_artifa
 $assert( $missing_content instanceof WP_Error, 'materialization-plan-template-part-content-is-required' );
 $assert( 'static_site_importer_materialization_plan_template_part_content_missing' === ( $missing_content instanceof WP_Error ? $missing_content->get_error_code() : '' ), 'materialization-plan-template-part-content-error-code' );
 
-$source_pages = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'website_artifact_source_pages' );
-$native_pages = $source_pages->invoke(
-	null,
-	array(
-		'artifacts' => array(
-			'site'      => array(
-				'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
-				'pages'  => array(
-					array(
-						'source_path'  => 'website/index.html',
-						'post_type'    => 'page',
-						'slug'         => 'planned-page-slug',
-						'title'        => 'Planned Page Title',
-						'entrypoint'   => true,
-						'block_markup' => '<!-- wp:paragraph --><p>Native page</p><!-- /wp:paragraph -->',
-					),
-				),
-				'routes' => array(
-					array(
-						'source_path' => 'website/index.html',
-						'path'        => '/',
-						'route_key'   => 'home-route',
-						'post_type'   => 'page',
-						'slug'        => 'home-canonical',
-						'title'       => 'Home Canonical',
-					),
-				),
-			),
-			'documents' => array(
-				array(
-					'source_path'  => 'website/index.html',
-					'slug'         => 'compiled-site-home',
-					'title'        => 'Compiled Site Home',
-					'block_markup' => '<!-- wp:paragraph --><p>Compiled site page</p><!-- /wp:paragraph -->',
-				),
-			),
-		),
-	)
-);
-$assert( is_array( $native_pages ), 'materialization-plan-pages-create-source-pages' );
-$native_page = is_array( $native_pages ) ? ( $native_pages['website/index.html'] ?? null ) : null;
-$assert( $native_page instanceof Static_Site_Importer_Source_Page, 'materialization-plan-page-source-key-is-used' );
-$assert( $native_page instanceof Static_Site_Importer_Source_Page && 'materialization_plan_page' === $native_page->type(), 'materialization-plan-page-type-is-native' );
-$assert( $native_page instanceof Static_Site_Importer_Source_Page && 'home-canonical' === $native_page->metadata_value( 'slug' ), 'materialization-plan-route-slug-wins-over-page-and-compiled-site-document' );
-$assert( $native_page instanceof Static_Site_Importer_Source_Page && 'Home Canonical' === $native_page->metadata_value( 'title' ), 'materialization-plan-route-title-wins-over-page-and-compiled-site-document' );
-$assert( $native_page instanceof Static_Site_Importer_Source_Page && 'home-route' === $native_page->metadata_value( 'route_key' ), 'materialization-plan-route-key-is-preserved' );
-$assert( $native_page instanceof Static_Site_Importer_Source_Page && str_contains( $native_page->body(), 'Native page' ), 'materialization-plan-page-body-wins-over-compiled-site-document' );
-
-$document_backed_native_pages = $source_pages->invoke(
-	null,
-	array(
-		'artifacts' => array(
-			'site'      => array(
-				'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
-				'pages'  => array(
-					array(
-						'source_path' => 'website/about.html',
-						'post_type'   => 'page',
-						'slug'        => 'about',
-						'title'       => 'About',
-					),
-				),
-			),
-			'documents' => array(
-				array(
-					'source_path'  => 'website/about.html',
-					'block_markup' => '<!-- wp:paragraph --><p>Document backed native page</p><!-- /wp:paragraph -->',
-				),
-			),
-		),
-	)
-);
-$document_backed_native_page = is_array( $document_backed_native_pages ) ? ( $document_backed_native_pages['website/about.html'] ?? null ) : null;
-$assert( $document_backed_native_page instanceof Static_Site_Importer_Source_Page, 'materialization-plan-page-can-use-document-artifact-markup' );
-$assert( $document_backed_native_page instanceof Static_Site_Importer_Source_Page && str_contains( $document_backed_native_page->body(), 'Document backed native page' ), 'materialization-plan-page-body-comes-from-document-artifact' );
-
-$target_route_pages = $source_pages->invoke(
-	null,
-	array(
-		'artifacts' => array(
-			'site' => array(
-				'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
-				'pages'  => array(
-					array(
-						'source_path'  => 'website/nested/index.html',
-						'post_type'    => 'page',
-						'slug'         => 'index',
-						'title'        => 'Nested Home',
-						'entrypoint'   => true,
-						'block_markup' => '<!-- wp:paragraph --><p>Nested home</p><!-- /wp:paragraph -->',
-						'metadata'     => array(
-							'slug' => 'index',
-						),
-					),
-				),
-				'routes' => array(
-					array(
-						'kind'            => 'route',
-						'source_path'     => 'website/nested/index.html',
-						'target_path'     => '/',
-						'target_slug'     => 'index',
-						'title'           => 'Nested Home Route',
-						'source_relation' => 'entrypoint',
-					),
-				),
-			),
-		),
-	)
-);
-$target_route_page = is_array( $target_route_pages ) ? ( $target_route_pages['website/nested/index.html'] ?? null ) : null;
-$assert( $target_route_page instanceof Static_Site_Importer_Source_Page, 'materialization-plan-target-route-page-source-key-is-used' );
-$assert( $target_route_page instanceof Static_Site_Importer_Source_Page && 'home' === $target_route_page->metadata_value( 'slug' ), 'materialization-plan-target-root-route-normalizes-home-slug' );
-$assert( $target_route_page instanceof Static_Site_Importer_Source_Page && '1' === $target_route_page->metadata_value( 'entrypoint' ), 'materialization-plan-target-root-route-preserves-entrypoint' );
-$assert( $target_route_page instanceof Static_Site_Importer_Source_Page && str_contains( $target_route_page->body(), 'Nested home' ), 'materialization-plan-target-route-page-body-is-preserved' );
-
 $site_title = Static_Site_Importer_Site_Identity::title_from_website_artifact(
 	array(
 		'entrypoint' => 'website/nested/index.html',
@@ -537,46 +409,6 @@ $site_title = Static_Site_Importer_Site_Identity::title_from_website_artifact(
 	)
 );
 $assert( 'Northline Plumbing & Heating' === $site_title, 'website-artifact-entrypoint-title-infers-site-title' );
-
-$malformed_routes = $source_pages->invoke(
-	null,
-	array(
-		'artifacts' => array(
-			'site' => array(
-				'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
-				'pages'  => array(
-					array(
-						'source_path'  => 'website/index.html',
-						'slug'         => 'home',
-						'block_markup' => '<!-- wp:paragraph --><p>Home</p><!-- /wp:paragraph -->',
-					),
-				),
-				'routes' => array( 'not-a-route-row' ),
-			),
-		),
-	)
-);
-$assert( $malformed_routes instanceof WP_Error, 'materialization-plan-route-row-must-be-array' );
-$assert( 'static_site_importer_materialization_plan_route_invalid' === ( $malformed_routes instanceof WP_Error ? $malformed_routes->get_error_code() : '' ), 'materialization-plan-route-row-error-code' );
-
-$missing_page_content = $source_pages->invoke(
-	null,
-	array(
-		'artifacts' => array(
-			'site' => array(
-				'schema' => 'blocks-engine/php-transformer/materialization-plan/v1',
-				'pages'  => array(
-					array(
-						'source_path' => 'website/index.html',
-						'slug'        => 'home',
-					),
-				),
-			),
-		),
-	)
-);
-$assert( $missing_page_content instanceof WP_Error, 'materialization-plan-page-content-is-required' );
-$assert( 'static_site_importer_materialization_plan_page_empty_content' === ( $missing_page_content instanceof WP_Error ? $missing_page_content->get_error_code() : '' ), 'materialization-plan-page-content-error-code' );
 
 $asset_theme_dir = sys_get_temp_dir() . '/ssi-materialization-plan-assets-' . uniqid( '', true );
 $asset_result    = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files(

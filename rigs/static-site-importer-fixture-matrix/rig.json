@@ -111,12 +111,6 @@
       },
       {
         "kind": "requirement",
-        "label": "Static Site Importer transformer adapter exists",
-        "file": "${components.static-site-importer.path}/includes/class-static-site-importer-transformer-adapter.php",
-        "remediation": "Refresh the Static Site Importer checkout before running static-site-importer-fixture-matrix."
-      },
-      {
-        "kind": "requirement",
         "label": "Node.js runtime exists",
         "executable": "node",
         "remediation": "Use a Homeboy runner with Node.js available on PATH before running static-site-importer-fixture-matrix."
