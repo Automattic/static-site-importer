@@ -2169,6 +2169,10 @@ test('editor canvas artifacts are persisted in the matrix artifact root and refs
   assert.equal(fixture.editor_open.files.editorState, statePath);
   assert.equal(fixture.surfaces[0].editor_open.files.screenshot, screenshotPath);
   assert.deepEqual(fixture.artifact_refs.map((ref) => ref.path), [screenshotPath, statePath]);
+  assert.deepEqual(result.artifacts, {
+    'editor_canvas_simple-site_editor-open-screenshot': { path: screenshotPath },
+    'editor_canvas_simple-site_editor-open-editorState': { path: statePath },
+  });
 });
 
 test('editor canvas materialization recovers stale absolute runtime artifact paths', () => {
@@ -2187,6 +2191,7 @@ test('editor canvas materialization recovers stale absolute runtime artifact pat
   const screenshotPath = path.join(outputDirectory, 'editor-canvas', 'simple-site', 'editor-screenshot.png');
   assert.equal(existsSync(screenshotPath), true);
   assert.equal(result.result.fixtures[0].editor_canvas.screenshot, screenshotPath);
+  assert.deepEqual(result.artifacts, { 'editor_canvas_simple-site_editor-open-screenshot': { path: screenshotPath } });
 });
 
 test('collects SSI finding packet source and observed context from fixture artifacts', () => {
