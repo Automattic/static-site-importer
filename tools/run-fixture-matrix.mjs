@@ -96,6 +96,7 @@ export function buildFixtureMatrixRunPlan(input) {
     SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PATH: options.staticSiteImporter,
     SSI_FIXTURE_MATRIX_RUN: '1',
     ...(options.fixtureIds.length ? { SSI_FIXTURE_MATRIX_FIXTURE_IDS: options.fixtureIds.join(',') } : {}),
+    ...(options.solvedOnly ? { SSI_FIXTURE_MATRIX_FIXTURE_CORPUS: 'solved' } : {}),
     ...(options.requireSolvedCandidate ? { SSI_FIXTURE_MATRIX_REQUIRE_SOLVED_CANDIDATE: '1' } : {}),
     ...(options.blocksEnginePhpTransformerPath
       ? { SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH: options.blocksEnginePhpTransformerPath }
@@ -227,6 +228,7 @@ function laneFilterSummary(options) {
     ...(options.targetFixture ? { target_fixture: options.targetFixture } : {}),
     ...(options.promotionGate ? { promotion_gate: true } : {}),
     ...(options.solvedOnly ? { solved_only: true, identity: SOLVED_ONLY_LANE_ID } : {}),
+    ...(options.solvedOnly ? { fixture_corpus: 'solved' } : {}),
     ...(options.class ? { class: String(options.class) } : {}),
     ...(options.tag ? { tag: String(options.tag) } : {}),
     ...(options.capability ? { capability: String(options.capability) } : {}),
@@ -890,7 +892,7 @@ function countCorpusFixtureDirectories(fixtureRoot) {
     ? countTopLevelFixtureDirectories(activeRoot)
     : countTopLevelFixtureDirectories(fixtureRoot);
   const solved = fs.existsSync(solvedRoot) && fs.statSync(solvedRoot).isDirectory()
-    ? countTopLevelFixtureDirectories(solvedRoot)
+    ? fixtureDirectoryNames(solvedRoot).length
     : 0;
   return {
     active,

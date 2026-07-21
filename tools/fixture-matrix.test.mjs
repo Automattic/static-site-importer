@@ -2410,6 +2410,7 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
     fixture_ids: ['solved-site'],
     solved_only: true,
     identity: SOLVED_ONLY_LANE_ID,
+    fixture_corpus: 'solved',
   });
   assert.ok(solvedOnlyPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_FIXTURE_IDS=solved-site'));
   assert.ok(solvedOnlyPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_REQUIRE_SOLVED_CANDIDATE=1'));
@@ -2514,10 +2515,12 @@ test('--solved-only selects exactly the valid solved fixture corpus', () => {
   const fixtureRoot = path.join(root, 'fixtures');
   mkdirSync(staticSiteImporter, { recursive: true });
   mkdirSync(path.join(fixtureRoot, 'websites', 'active-site'), { recursive: true });
+  mkdirSync(path.join(fixtureRoot, 'websites', 'solved-a'), { recursive: true });
   mkdirSync(path.join(fixtureRoot, 'solved', 'solved-b'), { recursive: true });
   mkdirSync(path.join(fixtureRoot, 'solved', 'solved-a'), { recursive: true });
   mkdirSync(path.join(fixtureRoot, 'solved', 'incomplete'), { recursive: true });
   writeFileSync(path.join(fixtureRoot, 'websites', 'active-site', 'index.html'), '<h1>Active</h1>');
+  writeFileSync(path.join(fixtureRoot, 'websites', 'solved-a', 'index.html'), '<h1>Active collision</h1>');
   writeFileSync(path.join(fixtureRoot, 'solved', 'solved-a', 'index.html'), '<h1>Solved A</h1>');
   writeFileSync(path.join(fixtureRoot, 'solved', 'solved-b', 'index.html'), '<h1>Solved B</h1>');
 
@@ -2530,8 +2533,19 @@ test('--solved-only selects exactly the valid solved fixture corpus', () => {
   });
 
   assert.deepEqual(plan.lane_filter.fixture_ids, ['solved-a', 'solved-b']);
+  assert.equal(plan.lane_filter.fixture_corpus, 'solved');
+  assert.equal(plan.solved_fixture_count, 2);
   assert.equal(plan.selected_active_fixture_count, 0);
   assert.equal(plan.selected_solved_fixture_count, 2);
+  assert.ok(plan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_FIXTURE_CORPUS=solved'));
+
+  const matrix = createFixtureMatrix({
+    fixture_root: fixtureRoot,
+    fixture_ids: plan.lane_filter.fixture_ids,
+    fixture_corpus: plan.lane_filter.fixture_corpus,
+  });
+  assert.equal(matrix.count, 2);
+  assert.ok(matrix.fixtures.every((fixture) => fixture.fixture_corpus === 'solved'));
 });
 
 test('fixture matrix operator composes typed placement only for the bench step', () => {

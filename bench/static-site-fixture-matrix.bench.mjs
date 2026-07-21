@@ -168,6 +168,7 @@ export async function runFixtureMatrix(options) {
     complexity: options.complexity,
     max_complexity: options.maxComplexity || options.max_complexity,
     fixture_ids: options.fixtureIds,
+    fixture_corpus: options.fixtureCorpus,
   });
   const progress = createFixtureMatrixProgress(matrix, options);
   progress.emit('matrix', 'started');
@@ -1310,6 +1311,7 @@ export function optionsFromEnv(env = process.env) {
     explainSelectors: benchEnv.SSI_FIXTURE_MATRIX_EXPLAIN_SELECTORS || env.SSI_FIXTURE_MATRIX_EXPLAIN_SELECTORS,
     minNativeRate: benchEnv.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE || env.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE,
     fixtureIds: benchEnv.SSI_FIXTURE_MATRIX_FIXTURE_IDS || env.SSI_FIXTURE_MATRIX_FIXTURE_IDS,
+    fixtureCorpus: benchEnv.SSI_FIXTURE_MATRIX_FIXTURE_CORPUS || env.SSI_FIXTURE_MATRIX_FIXTURE_CORPUS,
     requireSolvedCandidate: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_REQUIRE_SOLVED_CANDIDATE) || isTruthy(env.SSI_FIXTURE_MATRIX_REQUIRE_SOLVED_CANDIDATE),
   };
 }
