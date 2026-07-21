@@ -713,7 +713,9 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
     codeboxArtifactsDirectory,
     artifacts,
   }));
-  const secondaryRewrites = new Map(secondary.flatMap((entry) => [...entry.rewrites]));
+  // Nested front-page comparisons share the primary route's stable artifact IDs.
+  // Apply those rewrites too so every result-level visual reference is retained.
+  const secondaryRewrites = new Map([...rewrites, ...secondary.flatMap((entry) => [...entry.rewrites])]);
   return rewriteVisualEvidencePaths({
     ...materialized,
     visual_parity_comparisons: secondary.map((entry) => entry.comparison),
