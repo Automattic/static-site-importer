@@ -602,8 +602,13 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
   const visualParityArtifacts = fixture.visual_parity_artifacts || fixture.visualParityArtifacts;
   const slots = visualParityArtifacts?.artifacts || {};
   const fixtureId = fixture.fixture_id || fixture.fixtureId || '';
-  if (!fixtureId || !slots || typeof slots !== 'object') {
+  if (!fixtureId) {
     return fixture;
+  }
+  if (!slots || typeof slots !== 'object') {
+    const secondary = arrayValue(fixture.visual_parity_comparisons).map((comparison) => materializeSecondaryVisualCompareArtifacts({ comparison, fixtureId, outputDirectory, codeboxArtifactsDirectory, artifacts }));
+    const rewrites = new Map(secondary.flatMap((entry) => [...entry.rewrites]));
+    return rewriteVisualEvidencePaths({ ...fixture, visual_parity_comparisons: secondary.map((entry) => entry.comparison) }, rewrites);
   }
 
   const rewrites = new Map();
@@ -681,7 +686,7 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
     updatedVisualParityArtifacts.visual_attribution_summary = summarizeVisualAttribution(visualAttribution.attribution, visualAttribution.path);
   }
 
-  return {
+  const materialized = {
     ...fixture,
     diagnostics: rewriteDiagnosticArtifactRefs(fixture.diagnostics, rewrites),
     artifact_refs: rewriteArtifactRefs(fixture.artifact_refs, rewrites),
@@ -697,6 +702,82 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
       visual_diff_classification: classification,
     } : {}),
   };
+  const comparisons = arrayValue(fixture.visual_parity_comparisons);
+  if (comparisons.length === 0) {
+    return materialized;
+  }
+  const secondary = comparisons.map((comparison) => materializeSecondaryVisualCompareArtifacts({
+    comparison,
+    fixtureId,
+    outputDirectory,
+    codeboxArtifactsDirectory,
+    artifacts,
+  }));
+  const secondaryRewrites = new Map(secondary.flatMap((entry) => [...entry.rewrites]));
+  return rewriteVisualEvidencePaths({
+    ...materialized,
+    visual_parity_comparisons: secondary.map((entry) => entry.comparison),
+  }, secondaryRewrites);
+}
+
+function materializeSecondaryVisualCompareArtifacts({ comparison, fixtureId, outputDirectory, codeboxArtifactsDirectory, artifacts }) {
+  const visualParityArtifacts = comparison?.visual_parity_artifacts || comparison?.visualParityArtifacts;
+  const slots = visualParityArtifacts?.artifacts || {};
+  const surfaceId = artifactKey(comparison?.surface_id || comparison?.surfaceId || 'front-page');
+  // The primary route keeps its long-standing IDs and location. Every additional
+  // route is fixture/surface-scoped so identical runtime filenames cannot collide.
+  if (surfaceId === 'front-page' || !slots || typeof slots !== 'object') {
+    return { comparison, rewrites: new Map() };
+  }
+  const rewrites = new Map();
+  const updatedSlots = { ...slots };
+  for (const [slotName, fileStem] of [
+    ['source_screenshot', 'source'],
+    ['imported_screenshot', 'candidate'],
+    ['diff_screenshot', 'diff'],
+    ['visual_diff', 'visual-diff.json'],
+    ['visual_explanation', 'visual-explanation.json'],
+    ['source_dom_snapshot', 'source-dom-snapshot.json'],
+    ['candidate_dom_snapshot', 'candidate-dom-snapshot.json'],
+  ]) {
+    const refPath = slots[slotName]?.ref?.path;
+    const sourcePath = resolveCodeboxArtifactPath(refPath, codeboxArtifactsDirectory);
+    if (!sourcePath || !fs.existsSync(sourcePath)) {
+      continue;
+    }
+    const persistedPath = path.join(outputDirectory, 'visual-compare', fixtureId, surfaceId, fileStem.includes('.') ? fileStem : `${fileStem}.png`);
+    fs.mkdirSync(path.dirname(persistedPath), { recursive: true });
+    fs.copyFileSync(sourcePath, persistedPath);
+    rewrites.set(refPath, persistedPath);
+    const artifactId = `visual_compare_${artifactKey(fixtureId)}_${surfaceId}_${fileStem}`;
+    updatedSlots[slotName] = {
+      ...slots[slotName],
+      status: 'captured',
+      kind: slotName,
+      ref: artifactRef(artifactId, persistedPath, 'visual-parity'),
+    };
+    artifacts[artifactId] = { path: persistedPath };
+  }
+  return {
+    rewrites,
+    comparison: rewriteVisualEvidencePaths({
+      ...comparison,
+      visual_parity_artifacts: { ...visualParityArtifacts, owner: 'bench_artifact_root', artifacts: updatedSlots },
+    }, rewrites),
+  };
+}
+
+function rewriteVisualEvidencePaths(value, rewrites) {
+  if (!value || typeof value !== 'object' || rewrites.size === 0) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => rewriteVisualEvidencePaths(entry, rewrites));
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [
+    key,
+    typeof entry === 'string' && rewrites.has(entry) ? rewrites.get(entry) : rewriteVisualEvidencePaths(entry, rewrites),
+  ]));
 }
 
 function materializeVisualAttribution({ fixture, fixtureId, outputDirectory, slots, normalizer, loader, homeboyExtensionPath }) {

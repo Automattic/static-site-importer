@@ -5612,6 +5612,64 @@ test('visual-compare sidecars are normalized and retained under the bench artifa
   });
 });
 
+test('visual-compare materialization retains non-colliding fixture and surface artifact sets', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-multi-surface-output-'));
+  const codeboxArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-multi-surface-codebox-'));
+  const makeComparison = (surfaceId) => {
+    const relative = `files/browser/visual-compare/simple-site--${surfaceId}`;
+    const runtimeDirectory = path.join(codeboxArtifactsDirectory, 'runtime-123', relative);
+    mkdirSync(runtimeDirectory, { recursive: true });
+    for (const fileName of ['source.png', 'candidate.png', 'diff.png']) {
+      writeFileSync(path.join(runtimeDirectory, fileName), `${surfaceId}:${fileName}`);
+    }
+    return {
+      surface_id: surfaceId,
+      visual_parity_artifacts: {
+        artifacts: Object.fromEntries([
+          ['source_screenshot', 'source.png'],
+          ['imported_screenshot', 'candidate.png'],
+          ['diff_screenshot', 'diff.png'],
+        ].map(([slot, fileName]) => [slot, { status: 'captured', ref: { path: `${relative}/${fileName}` } }])),
+      },
+    };
+  };
+  const primary = makeComparison('front-page');
+  const secondary = makeComparison('about');
+  const persisted = materializeVisualCompareArtifacts({
+    outputDirectory,
+    codeboxArtifactsDirectory,
+    result: {
+      fixtures: [{
+        fixture_id: 'simple-site',
+        diagnostics: [{ artifact_refs: [{ artifact_id: 'diff_screenshot', path: 'files/browser/visual-compare/simple-site--about/diff.png' }] }],
+        visual_parity_artifacts: primary.visual_parity_artifacts,
+        visual_parity_comparisons: [primary, secondary],
+      }],
+    },
+  });
+  const fixture = persisted.result.fixtures[0];
+  const secondaryArtifacts = fixture.visual_parity_comparisons[1].visual_parity_artifacts.artifacts;
+  const normalized = normalizeFixtureMatrixResult({
+    matrix: { id: 'multi-surface-materialization', fixture_root: '/tmp', fixtures: [{ id: 'simple-site', fixture_path: '/tmp/simple-site' }] },
+    results: persisted.result.fixtures,
+  }).fixtures[0];
+
+  assert.ok(existsSync(path.join(outputDirectory, 'visual-compare', 'simple-site', 'source.png')));
+  assert.ok(existsSync(path.join(outputDirectory, 'visual-compare', 'simple-site', 'about', 'source.png')));
+  assert.deepEqual(Object.keys(persisted.artifacts).sort(), [
+    'visual_compare_simple-site_about_candidate',
+    'visual_compare_simple-site_about_diff',
+    'visual_compare_simple-site_about_source',
+    'visual_compare_simple-site_candidate',
+    'visual_compare_simple-site_diff',
+    'visual_compare_simple-site_source',
+  ]);
+  assert.notEqual(fixture.visual_parity_artifacts.artifacts.source_screenshot.ref.path, secondaryArtifacts.source_screenshot.ref.path);
+  assert.equal(secondaryArtifacts.diff_screenshot.ref.artifact_id, 'visual_compare_simple-site_about_diff');
+  assert.equal(fixture.diagnostics[0].artifact_refs[0].path, secondaryArtifacts.diff_screenshot.ref.path);
+  assert.equal(normalized.visual_parity_comparisons[1].visual_parity_artifacts.artifacts.source_screenshot.ref.path, secondaryArtifacts.source_screenshot.ref.path);
+});
+
 test('visual-compare attribution degrades explicitly when sidecars or the extension normalizer are unavailable', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-degraded-output-'));
   const codeboxArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-degraded-codebox-'));
