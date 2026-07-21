@@ -123,7 +123,8 @@ class Static_Site_Importer_Theme_Generator {
 			return $dependencies;
 		}
 		$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared );
-		$receipt['completed']['runtime_declarations'] = array( 'dependencies' => $dependencies, 'entities' => array() );
+		$receipt['completed']['runtime_declarations']['dependencies'] = $dependencies;
+		$receipt['completed']['runtime_declarations']['entities'] = array();
 		$receipt['runtime_lifecycle'] = $lifecycle;
 		if ( 'completed' !== $receipt['status'] ) {
 			$error = $receipt['errors'][0] ?? array();
@@ -338,6 +339,9 @@ class Static_Site_Importer_Theme_Generator {
 			}
 			$kind = (string) ( $declaration['kind'] ?? '' );
 			$key = (string) ( $declaration['reconciliation_identity'] ?? '' );
+			if ( 'asset_publication' === $kind ) {
+				continue;
+			}
 			$name = (string) ( $declaration[ 'entity_collection' === $kind ? 'type' : 'capability' ] ?? '' );
 			$capability = self::runtime_declaration_capability( $kind, $name );
 			$required = self::runtime_declaration_is_required( $declaration, $declarations );

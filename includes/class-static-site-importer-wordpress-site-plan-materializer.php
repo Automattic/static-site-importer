@@ -42,7 +42,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'plan'        => $plan,
 			'plan_hash'   => self::hash( $plan ),
 			'diagnostics' => array(),
-			'applied'     => array( 'posts' => array(), 'files' => array(), 'operations' => array() ),
+			'applied'     => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'runtime_declarations' => array( 'asset_publications' => array() ) ),
 			'skipped'     => array(),
 			'existing_matches' => array( 'pages' => array() ),
 			'report_destinations' => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
@@ -71,7 +71,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$theme_uri = trailingslashit( get_theme_root_uri() ) . $slug;
 			try {
 				// Resolver proof is canonical semantics, not an inference from copied files.
-				$resolved = ( new WordPressSitePlanResolver() )->resolve( $plan, array( 'theme_uri' => $theme_uri, 'require_proven_dynamic_client_assets' => true ) );
+				$resolved = ( new WordPressSitePlanResolver() )->resolve( $plan, array( 'theme_uri' => $theme_uri, 'require_proven_dynamic_client_assets' => true, 'runtime_capabilities' => array( 'asset_materialization' ) ) );
 			} catch ( InvalidArgumentException $error ) {
 				throw new InvalidArgumentException( 'canonical_destination_rejected' );
 			}
@@ -95,7 +95,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	/** @param array<string,mixed> $prepared @return array<string,mixed> */
 	public static function materialize_prepared( array $prepared ): array {
 		if ( 'prepared' !== ( $prepared['status'] ?? '' ) || ! isset( $prepared['plan'] ) || ! is_array( $prepared['plan'] ) ) {
-			return self::receipt( 'rejected', array( 'plan' => array(), 'plan_hash' => '', 'diagnostics' => array( array( 'reason_code' => 'invalid_prepared_state' ) ), 'applied' => array( 'posts' => array(), 'files' => array(), 'operations' => array() ), 'skipped' => array(), 'existing_matches' => array( 'pages' => array() ) ) );
+			return self::receipt( 'rejected', array( 'plan' => array(), 'plan_hash' => '', 'diagnostics' => array( array( 'reason_code' => 'invalid_prepared_state' ) ), 'applied' => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'runtime_declarations' => array( 'asset_publications' => array() ) ), 'skipped' => array(), 'existing_matches' => array( 'pages' => array() ) ) );
 		}
 		$state = self::prepare( $prepared['plan'], isset( $prepared['args'] ) && is_array( $prepared['args'] ) ? $prepared['args'] : array() );
 		if ( 'prepared' !== ( $state['status'] ?? '' ) ) {
@@ -123,6 +123,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				return self::failed_receipt( $state, $result->get_error_code() );
 			}
 			$state['applied']['files'][] = $result;
+		}
+		$publications = self::verify_asset_publications( $state );
+		if ( is_wp_error( $publications ) ) {
+			return self::failed_receipt( $state, $publications->get_error_code() );
 		}
 
 		if ( ! empty( $args['activate'] ) ) {
@@ -273,6 +277,60 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return array( 'target_path' => $write['target_path'], 'hash' => hash( 'sha256', $data ), 'payload_hash' => $write['payload_hash'] ?? hash( 'sha256', $data ), 'reconciliation_identity' => $write['reconciliation_identity'] ?? hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ) );
 	}
 
+	/** Verify every canonical asset publication against its resolved write and references. */
+	private static function verify_asset_publications( array &$state ) {
+		$writes = array();
+		foreach ( $state['resolved']['writes'] as $write ) {
+			$writes[ $write['reconciliation_identity'] ] = $write;
+		}
+		$files = array();
+		foreach ( $state['applied']['files'] as $file ) {
+			$files[ $file['reconciliation_identity'] ] = $file;
+		}
+		$references = array();
+		foreach ( $state['resolved']['resolution']['asset_publication_references'] ?? array() as $reference ) {
+			$references[ $reference['declaration_reconciliation_identity'] ][] = $reference;
+		}
+
+		foreach ( $state['resolved']['runtime_declarations'] as $declaration ) {
+			if ( 'asset_publication' !== ( $declaration['kind'] ?? '' ) ) {
+				continue;
+			}
+			$id = $declaration['reconciliation_identity'];
+			$write = null;
+			foreach ( $state['resolved']['writes'] as $candidate ) {
+				if ( $declaration['source_path'] === ( $candidate['source_path'] ?? '' ) && 'theme_asset' === ( $candidate['kind'] ?? '' ) ) {
+					$write = $candidate;
+					break;
+				}
+			}
+			$applied = is_array( $write ) ? ( $files[ $write['reconciliation_identity'] ] ?? null ) : null;
+			$valid = is_array( $write ) && is_array( $applied )
+				&& $declaration['expected_content_hash'] === ( $write['canonical_payload_hash'] ?? $write['payload_hash'] )
+				&& $write['payload_hash'] === $applied['hash'];
+			foreach ( $references[ $id ] ?? array() as $reference ) {
+				$target = $writes[ $reference['write_reconciliation_identity'] ] ?? null;
+				$valid = $valid && is_array( $target )
+					&& $reference['target_path'] === $target['target_path']
+					&& $reference['count'] === substr_count( (string) ( $target['payload']['data'] ?? '' ), $reference['expected_resolved_url'] );
+			}
+			$state['applied']['runtime_declarations']['asset_publications'][ $id ] = array(
+				'status'                  => $valid ? 'completed' : 'failed',
+				'capability'              => $declaration['destination']['capability'],
+				'source_path'             => $declaration['source_path'],
+				'target_path'             => is_array( $write ) ? $write['target_path'] : '',
+				'write_reconciliation_identity' => is_array( $write ) ? $write['reconciliation_identity'] : '',
+				'expected_content_hash'   => $declaration['expected_content_hash'],
+				'actual_content_hash'     => is_array( $applied ) ? $applied['hash'] : '',
+				'references'              => $references[ $id ] ?? array(),
+			);
+			if ( ! $valid ) {
+				return new WP_Error( 'static_site_importer_asset_publication_verification_failed' );
+			}
+		}
+		return true;
+	}
+
 	/** @param array<string,mixed> $operation @param array<string,int> $page_ids */
 	private static function apply_operation( array $operation, array $page_ids ) {
 		$id = $page_ids[ $operation['front_page_reconciliation_identity'] ] ?? 0;
@@ -378,8 +436,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'pages'      => $pages,
 				'files'      => $state['applied']['files'],
 				'operations' => $state['applied']['operations'],
+				'runtime_declarations' => $state['applied']['runtime_declarations'] ?? array( 'asset_publications' => array() ),
+				'declaration_ids' => array_keys( $state['applied']['runtime_declarations']['asset_publications'] ?? array() ),
 			),
-			'reconciliation_identities' => array_merge( array_column( $plan['pages'] ?? array(), 'reconciliation_identity' ), array_column( $plan['writes'] ?? array(), 'reconciliation_identity' ) ),
+			'reconciliation_identities' => array_merge( array_column( $plan['pages'] ?? array(), 'reconciliation_identity' ), array_column( $plan['writes'] ?? array(), 'reconciliation_identity' ), array_column( $plan['runtime_declarations'] ?? array(), 'reconciliation_identity' ) ),
 			'wordpress'                 => $state['applied']['posts'],
 			'generated_files'           => $state['applied']['files'],
 			'operations'                => $state['applied']['operations'],
