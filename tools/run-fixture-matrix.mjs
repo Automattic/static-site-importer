@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { MAX_EXTRA_SURFACE_COUNT, normalizeSurfaceCoverageOptions, normalizeVisualAttributionOptions } from '../lib/fixture-matrix.mjs';
 
 export const RIG_ID = 'static-site-importer-fixture-matrix';
+export const SOLVED_ONLY_LANE_ID = 'fixtures-solved-only/v1';
 // Expected top-level fixture directory count in the canonical corpus
 // (`blocks-engine/fixtures/websites`). This is an intentional drift guard, not a
 // derived value: the corpus lives in a different repo, so deriving the canonical
@@ -167,6 +168,8 @@ export function buildFixtureMatrixRunPlan(input) {
     solved_fixture_count: solvedFixtureCount,
     selected_active_fixture_count: options.selectedActiveFixtureCount,
     selected_solved_fixture_count: options.selectedSolvedFixtureCount,
+    selected_fixture_count: fixtureCount,
+    ...(options.laneIdentity ? { lane_identity: options.laneIdentity } : {}),
     canonical_fixture_count: CANONICAL_FIXTURE_COUNT,
     fixture_count_matches_canonical: activeFixtureCount === CANONICAL_FIXTURE_COUNT,
     lane_filter: laneFilterSummary(options),
@@ -223,6 +226,7 @@ function laneFilterSummary(options) {
     ...(options.fixtureIds.length ? { fixture_ids: options.fixtureIds } : {}),
     ...(options.targetFixture ? { target_fixture: options.targetFixture } : {}),
     ...(options.promotionGate ? { promotion_gate: true } : {}),
+    ...(options.solvedOnly ? { solved_only: true, identity: SOLVED_ONLY_LANE_ID } : {}),
     ...(options.class ? { class: String(options.class) } : {}),
     ...(options.tag ? { tag: String(options.tag) } : {}),
     ...(options.capability ? { capability: String(options.capability) } : {}),
@@ -247,10 +251,12 @@ function normalizeOptions(input) {
     fixtureRoot,
     targetFixture: input.targetFixture,
     promotionGate: input.promotionGate,
+    solvedOnly: input.solvedOnly,
+    input,
   });
 
-  if (input.promotionGate && (input.editorValidation === false || input.visualParity === false || input.visualParityGate === false)) {
-    throw new Error('--promotion-gate requires editor validation and gated visual parity; remove the validation or visual-parity opt-out.');
+  if ((input.promotionGate || input.solvedOnly) && (input.editorValidation === false || input.visualParity === false || input.visualParityGate === false)) {
+    throw new Error(`${input.solvedOnly ? '--solved-only' : '--promotion-gate'} requires editor validation and gated visual parity; remove the validation or visual-parity opt-out.`);
   }
 
   const defaultBlocksEnginePhpTransformerPath = input.mode === 'release-proof' ? '' : blocksEngine;
@@ -292,10 +298,12 @@ function normalizeOptions(input) {
     fixtureIds: selection.fixtureIds,
     targetFixture: selection.targetFixture,
     promotionGate: selection.promotionGate,
-    requireSolvedCandidate: selection.promotionGate,
+    solvedOnly: selection.solvedOnly,
+    laneIdentity: selection.solvedOnly ? SOLVED_ONLY_LANE_ID : '',
+    requireSolvedCandidate: selection.requireSolvedCandidate,
     selectedActiveFixtureCount: selection.selectedActiveFixtureCount,
     selectedSolvedFixtureCount: selection.selectedSolvedFixtureCount,
-    batchSize: input.batchSize || (selection.promotionGate ? 1 : input.batchSize),
+    batchSize: input.batchSize || (selection.isolatedBatches ? 1 : input.batchSize),
     blocksEngine,
     blocksEnginePhpTransformerPath,
     passthrough: Array.isArray(input.passthrough) ? input.passthrough : [],
@@ -309,8 +317,25 @@ function normalizeOptions(input) {
   };
 }
 
-function resolveFixtureSelection({ fixtureRoot, targetFixture, promotionGate }) {
+function resolveFixtureSelection({ fixtureRoot, targetFixture, promotionGate, solvedOnly, input }) {
   const target = String(targetFixture || '').trim();
+  if (solvedOnly) {
+    assertSolvedOnlySelectionIsCompatible(input);
+    const solvedFixtureIds = fixtureDirectoryNames(path.join(fixtureRoot, 'solved'));
+    if (!solvedFixtureIds.length) {
+      throw new Error(`--solved-only requires at least one valid fixture under ${path.join(fixtureRoot, 'solved')}.`);
+    }
+    return {
+      fixtureIds: solvedFixtureIds,
+      targetFixture: '',
+      promotionGate: false,
+      solvedOnly: true,
+      requireSolvedCandidate: true,
+      isolatedBatches: true,
+      selectedActiveFixtureCount: 0,
+      selectedSolvedFixtureCount: solvedFixtureIds.length,
+    };
+  }
   if (promotionGate && !target) {
     throw new Error('--promotion-gate requires --target-fixture <id>.');
   }
@@ -319,6 +344,9 @@ function resolveFixtureSelection({ fixtureRoot, targetFixture, promotionGate }) 
       fixtureIds: [],
       targetFixture: '',
       promotionGate: false,
+      solvedOnly: false,
+      requireSolvedCandidate: false,
+      isolatedBatches: false,
       selectedActiveFixtureCount: 0,
       selectedSolvedFixtureCount: 0,
     };
@@ -333,9 +361,29 @@ function resolveFixtureSelection({ fixtureRoot, targetFixture, promotionGate }) 
     fixtureIds: [...new Set([target, ...solvedFixtureIds])].sort(),
     targetFixture: target,
     promotionGate: Boolean(promotionGate),
+    solvedOnly: false,
+    requireSolvedCandidate: Boolean(promotionGate),
+    isolatedBatches: Boolean(promotionGate),
     selectedActiveFixtureCount: 1,
     selectedSolvedFixtureCount: solvedFixtureIds.length,
   };
+}
+
+function assertSolvedOnlySelectionIsCompatible(input) {
+  const incompatible = [
+    ['targetFixture', '--target-fixture'],
+    ['promotionGate', '--promotion-gate'],
+    ['class', '--class'],
+    ['tag', '--tag'],
+    ['capability', '--capability'],
+    ['capabilities', '--capabilities'],
+    ['riskProfile', '--risk-profile'],
+    ['complexity', '--complexity'],
+    ['maxComplexity', '--max-complexity'],
+  ].filter(([key]) => input[key] !== undefined && input[key] !== false).map(([, flag]) => flag);
+  if (incompatible.length) {
+    throw new Error(`--solved-only selects the complete fixtures/solved corpus and cannot be combined with ${incompatible.join(', ')}.`);
+  }
 }
 
 function fixtureDirectoryNames(fixtureRoot) {
@@ -764,6 +812,12 @@ export function summarizeRun(plan, { status } = {}) {
     code_freshness: plan.code_freshness || null,
     transformer_commit: plan.transformer_commit || resolveTransformerCommit(plan.code_freshness),
     surface_coverage: plan.surface_coverage || null,
+    lane_identity: plan.lane_identity || null,
+    active_fixture_count: Number(plan.active_fixture_count || 0),
+    solved_fixture_count: Number(plan.solved_fixture_count || 0),
+    selected_fixture_count: Number(plan.selected_fixture_count || plan.fixture_count || 0),
+    selected_active_fixture_count: Number(plan.selected_active_fixture_count || 0),
+    selected_solved_fixture_count: Number(plan.selected_solved_fixture_count || 0),
     fixture_count: Number(findFirstKey(output, 'fixture_count') || plan.fixture_count || 0),
     passed_fixture_count: Number(resultSummary.succeeded || resultSummary.passed || 0),
     failed_fixture_count: failedFixtureCount,
@@ -813,7 +867,7 @@ function parseArgs(args) {
     if (arg.startsWith('--')) {
       const [rawKey, rawValue] = arg.slice(2).split('=');
       const key = camelCase(rawKey);
-      const booleanKeys = new Set(['dryRun', 'skipInstall', 'skipSync', 'labOnly', 'local', 'allowLocalFallback', 'detachAfterHandoff', 'allowDirtyLabWorkspace', 'allowStaleOverride', 'visualParityGate', 'visualParityAlignment', 'liveWpParity', 'promotionGate']);
+      const booleanKeys = new Set(['dryRun', 'skipInstall', 'skipSync', 'labOnly', 'local', 'allowLocalFallback', 'detachAfterHandoff', 'allowDirtyLabWorkspace', 'allowStaleOverride', 'visualParityGate', 'visualParityAlignment', 'liveWpParity', 'promotionGate', 'solvedOnly']);
       if (booleanKeys.has(key)) {
         options[key] = true;
         continue;
@@ -937,7 +991,12 @@ function sanitizePathSegment(value) {
 function printHelp() {
   process.stdout.write(`Usage: node tools/run-fixture-matrix.mjs --static-site-importer <path> --blocks-engine <path> [options] [-- <bench args>...]\n\nRuns the canonical Static Site Importer fixture matrix through Homeboy/Lab/WP Codebox.\n\nExecution modes:\n  --local                             Passes --placement local to homeboy bench.\n  --runner <id>                       Passes --runner <id> to homeboy bench (implies Lab placement).\n  --lab-only                          Passes --placement lab without selecting a runner.\n  --allow-local-fallback              Passes --placement lab-or-local to homeboy bench.\n  no routing flags                    Passes --placement auto to homeboy bench.\n\nRules:\n  --runner local                      Alias for --local.\n  --local cannot be combined with --runner <remote>, --lab-only, or --allow-local-fallback.\n  --lab-only cannot be combined with --allow-local-fallback.\n\nOptions:\n  --static-site-importer <path>       Static Site Importer checkout/plugin path. Required.\n  --blocks-engine <path>              Blocks Engine checkout. Defaults fixture root and PHP transformer override.\n    --fixture-root <path>               Fixture corpus. Defaults to <blocks-engine>/fixtures, which discovers both fixtures/websites and fixtures/solved.
 \n  --blocks-engine-php-transformer-path <path>\n                                      Override transformer package/repo path. Defaults to --blocks-engine.\n  --mode <development-override|release-proof>\n                                      Labels output; default is development-override when transformer override is used.\n  --run-id <id>                       Stable proof label. Defaults to ssi-matrix-<mode>-<timestamp>.\n  --shared-state <dir>                Shared Homeboy bench state directory.\n  --artifact-root <dir>               Homeboy artifact root.\n  --output <file>                     Structured Homeboy bench output file.\n  --batch-size <n>                    SSI fixture matrix WP Codebox batch size.\n  --concurrency <n>                   Parallel WP Codebox sandbox batches. Defaults to 2, hard-capped at 16.\n  --target-fixture <id>               Run one active fixture for the fast inner loop.\n  --promotion-gate                    Run the target plus every solved fixture, one per batch, and require solved_candidate for all.\n  --wordpress-version <version>       WP Codebox WordPress version.\n  --wp-codebox-bin <path>             WP Codebox CLI path.\n  --allow-stale-override              Proceed even when an override checkout is behind upstream.\n  --allow-local-fallback              Permit selected Lab runner fallback to local execution.\n  --allow-dirty-lab-workspace         Permit reusing/overwriting a dirty Lab workspace.\n  --detach-after-handoff              Return after runner daemon accepts the job.\n  --dry-run                           Print the plan without running Homeboy.\n  --skip-install                      Skip rig install.\n  --skip-sync                         Skip rig sync.\n  --no-editor-validation              Omit editor block validation.\n  --no-visual-parity                  Omit visual parity capture.\n  --no-visual-parity-gate             Capture visual parity without gating.\n  --help                              Show this help.\n`);
+  printSolvedOnlyHelp();
   printVisualAttributionHelp();
+}
+
+function printSolvedOnlyHelp() {
+  process.stdout.write('  --solved-only                       Run every valid fixtures/solved fixture, one per batch, and require solved_candidate for all.\n');
 }
 
 // Visual attribution controls are separate so the main usage text remains
