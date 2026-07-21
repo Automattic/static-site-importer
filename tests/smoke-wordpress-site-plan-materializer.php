@@ -15,6 +15,7 @@ define( 'OBJECT', 'OBJECT' );
 $GLOBALS['ssi_plan_root']       = sys_get_temp_dir() . '/ssi-plan-' . bin2hex( random_bytes( 4 ) );
 $GLOBALS['ssi_plan_posts']      = array();
 $GLOBALS['ssi_plan_meta']       = array();
+$GLOBALS['ssi_plan_options']    = array( 'show_on_front' => 'posts', 'page_on_front' => 0, 'blogname' => 'Before' );
 $GLOBALS['ssi_plan_fail_after'] = 0;
 mkdir( $GLOBALS['ssi_plan_root'], 0777, true );
 
@@ -36,6 +37,8 @@ function wp_json_encode( $value, int $options = 0 ) { return json_encode( $value
 function wp_slash( string $value ): string { return addslashes( $value ); }
 function wp_mkdir_p( string $path ): bool { return is_dir( $path ) || mkdir( $path, 0777, true ); }
 function update_option( string $key, $value ): void { $GLOBALS['ssi_plan_options'][ $key ] = $value; }
+function switch_theme( string $slug ): void { $GLOBALS['ssi_plan_options']['stylesheet'] = $slug; }
+function sanitize_text_field( string $value ): string { return $value; }
 function update_post_meta( int $id, string $key, string $value ): void { $GLOBALS['ssi_plan_meta'][ $id ][ $key ] = $value; }
 function get_posts( array $args ): array {
 	foreach ( $GLOBALS['ssi_plan_meta'] as $id => $meta ) {
@@ -82,8 +85,15 @@ $assert( 'static-site-importer/materialization-receipt/v1' === $receipt['schema'
 $assert( count( $plan['writes'] ) === count( $receipt['generated_files'] ), 'all canonical writes are materialized' );
 $assert( file_exists( $GLOBALS['ssi_plan_root'] . '/site-plan/templates/front-page.html' ), 'templates are materialized' );
 $assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-plan/assets/assets/site.css' ), 'https://example.test/wp-content/themes/site-plan/assets/assets/logo.svg' ), 'root-relative stylesheet references resolve to declared theme assets' );
-$assert( 'page' === $GLOBALS['ssi_plan_options']['show_on_front'], 'site-reading operation is materialized' );
+$assert( 'posts' === $GLOBALS['ssi_plan_options']['show_on_front'], 'plan-only materialization does not change reading settings by default' );
 $assert( $receipt['plan']['pages'][0]['document_metadata']['links'][0]['resolved_url'] === 'https://example.test/wp-content/themes/site-plan/assets/assets/site.css', 'resolved metadata retains the declared stylesheet destination' );
+
+$GLOBALS['ssi_plan_options'] = array( 'show_on_front' => 'posts', 'page_on_front' => 0, 'blogname' => 'Before' );
+$preview = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan', 'overwrite' => true ) );
+$assert( 'completed' === $preview['status'], 'preview materialization completes' );
+$assert( 'posts' === $GLOBALS['ssi_plan_options']['show_on_front'] && ! isset( $GLOBALS['ssi_plan_options']['stylesheet'] ), 'activate=false preserves runtime options' );
+$activated = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan', 'overwrite' => true, 'activate' => true, 'site_title' => 'Activated Plan' ) );
+$assert( 'site-plan' === $GLOBALS['ssi_plan_options']['stylesheet'] && 'page' === $GLOBALS['ssi_plan_options']['show_on_front'] && 'Activated Plan' === $GLOBALS['ssi_plan_options']['blogname'], 'activate=true applies theme title and reading policy' );
 
 $repeat = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan' ) );
 $assert( 'completed' === $repeat['status'], 'reconciliation repeat completes' );
@@ -104,6 +114,13 @@ symlink( sys_get_temp_dir(), $unsafe . '/assets' );
 $unsafe_result = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'unsafe', 'overwrite' => true ) );
 $assert( 'rejected' === $unsafe_result['status'], 'unsafe destination is rejected' );
 $assert( 'unsafe_destination_path' === $unsafe_result['diagnostics'][0]['reason_code'], 'unsafe destination is diagnosed' );
+
+$dynamic_artifact = $artifact;
+$dynamic_artifact['files']['assets/site.js'] = 'window.sitePlan = true;';
+$dynamic_plan = ( new ArtifactCompiler() )->compile( $dynamic_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$dynamic_rejected = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $dynamic_plan, array( 'slug' => 'dynamic-plan' ) );
+$assert( 'rejected' === $dynamic_rejected['status'], 'unproven dynamic client assets are rejected before mutation' );
+$assert( 'canonical_destination_rejected' === $dynamic_rejected['diagnostics'][0]['reason_code'], 'dynamic asset rejection is actionable' );
 
 $GLOBALS['ssi_plan_posts']      = array();
 $GLOBALS['ssi_plan_meta']       = array();

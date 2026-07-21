@@ -26,6 +26,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'diagnostics' => array(),
 			'applied'     => array( 'posts' => array(), 'files' => array(), 'operations' => array() ),
 			'skipped'     => array(),
+			'report_destinations' => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
 		);
 
 		try {
@@ -50,7 +51,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			$theme_uri = trailingslashit( get_theme_root_uri() ) . $slug;
 			try {
-				$resolved = ( new WordPressSitePlanResolver() )->resolve( $plan, array( 'theme_uri' => $theme_uri ) );
+				$has_dynamic_client_assets = ! empty( array_filter( $plan['assets'], static fn( array $asset ): bool => 'js' === ( $asset['kind'] ?? '' ) ) );
+				$resolved = ( new WordPressSitePlanResolver() )->resolve( $plan, array( 'theme_uri' => $theme_uri, 'require_proven_dynamic_client_assets' => $has_dynamic_client_assets ) );
 			} catch ( InvalidArgumentException $error ) {
 				throw new InvalidArgumentException( 'canonical_destination_rejected' );
 			}
@@ -86,12 +88,20 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$state['applied']['files'][] = $result;
 		}
 
-		foreach ( $state['resolved']['operations'] as $operation ) {
+		if ( ! empty( $args['activate'] ) ) {
+			foreach ( $state['resolved']['operations'] as $operation ) {
 			$result = self::apply_operation( $operation, $state['page_ids'] );
 			if ( is_wp_error( $result ) ) {
 				return self::failed_receipt( $state, $result->get_error_code() );
 			}
 			$state['applied']['operations'][] = $result;
+			}
+			switch_theme( $state['theme']['slug'] );
+			$state['applied']['operations'][] = array( 'kind' => 'activate_theme', 'theme_slug' => $state['theme']['slug'] );
+			if ( '' !== trim( (string) ( $args['site_title'] ?? '' ) ) ) {
+				update_option( 'blogname', sanitize_text_field( (string) $args['site_title'] ) );
+				$state['applied']['operations'][] = array( 'kind' => 'site_title' );
+			}
 		}
 
 		return self::receipt( 'completed', $state );
@@ -138,6 +148,15 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			if ( is_dir( $path ) || ( file_exists( $path ) && ! $overwrite && self::file_hash( $path ) !== self::payload_hash( $write ) ) ) {
 				throw new InvalidArgumentException( 'file_conflict' );
+			}
+		}
+		foreach ( $state['report_destinations'] ?? array() as $path ) {
+			$parent = is_string( $path ) ? dirname( $path ) : '';
+			while ( '' !== $parent && ! file_exists( $parent ) ) {
+				$parent = dirname( $parent );
+			}
+			if ( ! is_string( $path ) || '' === $path || is_link( $path ) || ( file_exists( $path ) && ! is_writable( $path ) ) || '' === $parent || is_link( $parent ) || ! is_dir( $parent ) || ! is_writable( $parent ) ) {
+				throw new InvalidArgumentException( 'report_destination_not_ready' );
 			}
 		}
 	}

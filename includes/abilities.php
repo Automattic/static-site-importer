@@ -104,7 +104,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
 				'input_schema'        => array(
 					'type'       => 'object',
-					'properties' => array( 'plan' => array( 'type' => 'object' ), 'slug' => array( 'type' => 'string' ), 'overwrite' => array( 'type' => 'boolean' ) ),
+					'properties' => array( 'plan' => array( 'type' => 'object' ), 'slug' => array( 'type' => 'string' ), 'activate' => array( 'type' => 'boolean' ), 'site_title' => array( 'type' => 'string' ), 'overwrite' => array( 'type' => 'boolean' ) ),
 					'required'   => array( 'plan', 'slug' ),
 				),
 				'output_schema'       => array( 'type' => 'object' ),
@@ -265,10 +265,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 if ( ! function_exists( 'static_site_importer_ability_materialize_wordpress_site_plan' ) ) {
 	/** @param array<string,mixed> $input @return array<string,mixed> */
 	function static_site_importer_ability_materialize_wordpress_site_plan( array $input ): array {
-		return Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
-			isset( $input['plan'] ) && is_array( $input['plan'] ) ? $input['plan'] : array(),
-			array( 'slug' => (string) ( $input['slug'] ?? '' ), 'overwrite' => ! empty( $input['overwrite'] ) )
-		);
+		return Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( isset( $input['plan'] ) && is_array( $input['plan'] ) ? $input['plan'] : array(), $input );
 	}
 }
 

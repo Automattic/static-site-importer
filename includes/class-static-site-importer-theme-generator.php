@@ -98,6 +98,9 @@ class Static_Site_Importer_Theme_Generator {
 			$diagnostics = isset( $compiled['source_reports']['wordpress_site_plan_diagnostics'] ) && is_array( $compiled['source_reports']['wordpress_site_plan_diagnostics'] ) ? wp_json_encode( $compiled['source_reports']['wordpress_site_plan_diagnostics'] ) : '';
 			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.' . ( false !== $diagnostics ? ' ' . $diagnostics : '' ), $compiled );
 		}
+		if ( ! empty( $args['fail_on_quality'] ) && 'success' !== (string) ( $plan['quality']['status'] ?? '' ) ) {
+			return new WP_Error( 'static_site_importer_quality_gate_failed', 'Website artifact did not pass the canonical plan quality gate.', array( 'quality' => $plan['quality'] ?? array(), 'diagnostics' => $plan['diagnostics'] ?? array() ) );
+		}
 
 		$theme_dir = trailingslashit( get_theme_root() ) . $args['slug'];
 		$report_destinations = array( $theme_dir . '/static-site-importer-manifest.json' );
@@ -116,7 +119,13 @@ class Static_Site_Importer_Theme_Generator {
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan materialization failed.' ), $receipt );
 		}
 
-		return self::legacy_result_from_wordpress_site_plan_receipt( $receipt, $args );
+		try {
+			return self::legacy_result_from_wordpress_site_plan_receipt( $receipt, $args );
+		} catch ( Throwable $error ) {
+			$receipt['status'] = 'partial';
+			$receipt['errors'][] = array( 'code' => 'static_site_importer_projection_write_failed', 'message' => $error->getMessage() );
+			return new WP_Error( 'static_site_importer_projection_write_failed', 'Website materialization completed partially because a public projection could not be written.', $receipt );
+		}
 	}
 
 	/**
@@ -181,6 +190,18 @@ class Static_Site_Importer_Theme_Generator {
 			self::write_plan_projection( $validation_path, $validation );
 			self::write_plan_projection( $findings_path, $findings );
 		}
+		$external_report_path = '';
+		$external_validation_result_path = '';
+		$external_finding_packets_path = '';
+		if ( '' !== trim( (string) ( $args['report'] ?? '' ) ) ) {
+			$external_report_path = (string) $args['report'];
+			$external_dir = dirname( $external_report_path );
+			$external_validation_result_path = trailingslashit( $external_dir ) . 'import-validation-result.json';
+			$external_finding_packets_path = trailingslashit( $external_dir ) . 'finding-packets.json';
+			self::write_plan_projection( $external_report_path, $report );
+			self::write_plan_projection( $external_validation_result_path, $validation );
+			self::write_plan_projection( $external_finding_packets_path, $findings );
+		}
 		return array(
 			'theme_slug'               => $theme['slug'],
 			'theme_name'               => isset( $args['name'] ) ? (string) $args['name'] : $theme['slug'],
@@ -188,6 +209,9 @@ class Static_Site_Importer_Theme_Generator {
 			'report_path'              => $report_path,
 			'validation_result_path'   => $validation_path,
 			'finding_packets_path'     => $findings_path,
+			'external_report_path'     => $external_report_path,
+			'external_validation_result_path' => $external_validation_result_path,
+			'external_finding_packets_path' => $external_finding_packets_path,
 			'manifest_path'            => $manifest_path,
 			'pages'                    => $receipt['completed']['pages'],
 			'import_report'            => $report,
