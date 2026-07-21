@@ -24,8 +24,10 @@ if ( ! defined( 'WPMU_PLUGIN_DIR' ) ) {
 // Controllable plugin-activation stubs so the install path is exercised without
 // a WordPress runtime. is_plugin_active reports inactive until activate_plugin
 // records the activation intent.
-$GLOBALS['ssi_companion_active']    = array();
-$GLOBALS['ssi_companion_activated'] = array();
+$GLOBALS['ssi_companion_active']      = array();
+$GLOBALS['ssi_companion_activated']   = array();
+$GLOBALS['ssi_companion_deactivated'] = array();
+$GLOBALS['ssi_companion_options']     = array();
 
 if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_Error {
@@ -85,6 +87,26 @@ if ( ! function_exists( 'activate_plugin' ) ) {
 		$GLOBALS['ssi_companion_active'][]    = $plugin_file;
 		$GLOBALS['ssi_companion_activated'][] = $plugin_file;
 		return null;
+	}
+}
+
+if ( ! function_exists( 'deactivate_plugins' ) ) {
+	function deactivate_plugins( string $plugin_file ): void {
+		$GLOBALS['ssi_companion_active']        = array_values( array_diff( $GLOBALS['ssi_companion_active'], array( $plugin_file ) ) );
+		$GLOBALS['ssi_companion_deactivated'][] = $plugin_file;
+	}
+}
+
+if ( ! function_exists( 'get_option' ) ) {
+	function get_option( string $name, mixed $default = false ): mixed {
+		return $GLOBALS['ssi_companion_options'][ $name ] ?? $default;
+	}
+}
+
+if ( ! function_exists( 'update_option' ) ) {
+	function update_option( string $name, mixed $value, bool $autoload = false ): bool {
+		$GLOBALS['ssi_companion_options'][ $name ] = $value;
+		return true;
 	}
 }
 
@@ -291,6 +313,7 @@ $assert( true === ( $report['active'] ?? false ), 'install-reports-active' );
 $assert( in_array( 'installed', $report['actions'] ?? array(), true ), 'install-records-installed-action' );
 $assert( in_array( 'activated', $report['actions'] ?? array(), true ), 'install-records-activated-action' );
 $assert( in_array( 'ssi-example-site/ssi-example-site.php', $GLOBALS['ssi_companion_activated'], true ), 'install-activates-companion-plugin' );
+$assert( 'ssi-example-site/ssi-example-site.php' === get_option( Static_Site_Importer_Plugin_Materializer::ACTIVE_COMPANION_OPTION ), 'install-records-current-companion-plugin' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ), 'install-writes-main-file-to-disk' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/render.php' ), 'install-writes-render-php-to-disk' );
 $assert( ! file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/block.json' ), 'install-emits-no-block-json' );
@@ -348,6 +371,14 @@ Static_Site_Importer_Report_Diagnostics::record_companion_plugin_dependency( $wa
 $assert( 0 === (int) ( $waived_report['quality']['companion_plugin_dependency_failures'] ?? 0 ), 'waived-companion-no-quality-failure' );
 $waived_diag = array_values( array_filter( $waived_report['diagnostics'] ?? array(), static fn ( array $d ): bool => 'companion_plugin_waived' === ( $d['code'] ?? '' ) ) );
 $assert( 1 === count( $waived_diag ), 'waived-companion-emits-warning' );
+
+// A new site replaces the previous regular companion so document-global
+// scripts from separate imports cannot execute together.
+$replacement_payload = array_merge( $payload, array( 'site_slug' => 'replacement-site' ) );
+$replacement_report  = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $replacement_payload );
+$assert( in_array( 'ssi-example-site/ssi-example-site.php', $GLOBALS['ssi_companion_deactivated'], true ), 'replacement-deactivates-previous-companion' );
+$assert( in_array( 'replaced:ssi-example-site/ssi-example-site.php', $replacement_report['actions'] ?? array(), true ), 'replacement-reports-previous-companion' );
+$assert( 'ssi-replacement-site/ssi-replacement-site.php' === get_option( Static_Site_Importer_Plugin_Materializer::ACTIVE_COMPANION_OPTION ), 'replacement-records-current-companion-plugin' );
 
 // Cleanup generated fixtures.
 $cleanup = static function ( string $dir ) use ( &$cleanup ): void {

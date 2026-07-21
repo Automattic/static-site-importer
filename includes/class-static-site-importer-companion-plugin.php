@@ -102,7 +102,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$main_file = $plugin_slug . '/' . $plugin_slug . '.php';
 		$files     = array_merge(
 			array(
-				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_specs, $preserved ),
+				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_specs, $preserved, $main_file ),
 			),
 			$files
 		);
@@ -480,6 +480,7 @@ class Static_Site_Importer_Companion_Plugin {
 	 * @param string                          $site_name       Human-readable site name.
 	 * @param array<int,array<string,mixed>>  $block_specs     PHP-only block registration specs.
 	 * @param array<int,array<string,string>> $preserved       Preserved island descriptors.
+	 * @param string                          $plugin_file     Generated plugin basename.
 	 * @return string
 	 */
 	private static function main_plugin_file(
@@ -487,7 +488,8 @@ class Static_Site_Importer_Companion_Plugin {
 		string $block_namespace,
 		string $site_name,
 		array $block_specs,
-		array $preserved
+		array $preserved,
+		string $plugin_file
 	): string {
 		$header_name  = sprintf( 'SSI Companion: %s', $site_name );
 		$fn_prefix    = str_replace( '-', '_', $plugin_slug );
@@ -606,6 +608,9 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = '/** Enqueue preserved scripts that apply to the rendered frontend document. */';
 		$lines[] = sprintf( 'function %s_enqueue_global_islands() {', $fn_prefix );
 		$lines[] = "\tif ( ! function_exists( 'wp_enqueue_script' ) ) {";
+		$lines[] = "\t\treturn;";
+		$lines[] = "\t}";
+		$lines[] = sprintf( "\tif ( function_exists( 'get_option' ) && %s !== (string) get_option( 'static_site_importer_active_companion_plugin', '' ) ) {", var_export( $plugin_file, true ) );
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
 		$lines[] = sprintf( "\tforeach ( %s_islands() as \$island ) {", $fn_prefix );

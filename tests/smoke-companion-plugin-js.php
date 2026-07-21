@@ -135,6 +135,7 @@ if ( is_array( $script_only_descriptor ) ) {
 	$script_only_main = $script_only_descriptor['files']['ssi-example-site/ssi-example-site.php'] ?? '';
 	$assert( str_contains( $script_only_main, "add_action( 'wp_enqueue_scripts'" ), 'script-only-companion-enqueues-on-frontend' );
 	$assert( str_contains( $script_only_main, "'' !== ( \$island['block'] ?? '' )" ), 'global-enqueue-is-limited-to-unscoped-scripts' );
+	$assert( str_contains( $script_only_main, "get_option( 'static_site_importer_active_companion_plugin', '' )" ), 'global-enqueue-is-limited-to-current-site-companion' );
 }
 
 // 2. Gate/diagnostics account for the JS as companion-plugin-carried.
