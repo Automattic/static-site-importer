@@ -5670,6 +5670,60 @@ test('visual-compare materialization retains non-colliding fixture and surface a
   assert.equal(normalized.visual_parity_comparisons[1].visual_parity_artifacts.artifacts.source_screenshot.ref.path, secondaryArtifacts.source_screenshot.ref.path);
 });
 
+test('visual-compare aggregate intake retains source-path-identified routes without surface metadata', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-aggregate-output-'));
+  const codeboxArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-aggregate-codebox-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-aggregate-intake-test' });
+  const makeComparison = (sourcePath, artifactDirectory) => {
+    const runtimeDirectory = path.join(codeboxArtifactsDirectory, 'runtime-123', artifactDirectory);
+    mkdirSync(runtimeDirectory, { recursive: true });
+    const files = {};
+    for (const [key, fileName] of Object.entries({ sourceScreenshot: 'source.png', candidateScreenshot: 'candidate.png', diffScreenshot: 'diff.png' })) {
+      writeFileSync(path.join(runtimeDirectory, fileName), `${sourcePath}:${fileName}`);
+      files[key] = `${artifactDirectory}/${fileName}`;
+    }
+    return {
+      source: { path: sourcePath },
+      summary: { mismatchPixels: 20, totalPixels: 100, mismatchRatio: 0.2 },
+      files,
+    };
+  };
+  const frontPage = makeComparison('index.html', 'files/browser/visual-compare/3-artist-music');
+  const music = makeComparison('music.html', 'files/browser/visual-compare/3-artist-music--music');
+  const collected = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: {
+      fixture_id: 'simple-site',
+      status: 'completed',
+      comparisons: [frontPage, music],
+    },
+    visualParity: { threshold: 0.1, gate: true },
+  });
+  const persisted = materializeVisualCompareArtifacts({ result: collected, outputDirectory, codeboxArtifactsDirectory });
+  const fixture = persisted.result.fixtures[0];
+  const comparisons = fixture.visual_parity_comparisons;
+  const bySurface = Object.fromEntries(comparisons.map((comparison) => [comparison.surface_id, comparison]));
+  const retainedRefs = comparisons.flatMap((comparison) => Object.values(comparison.visual_parity_artifacts.artifacts)
+    .filter((slot) => slot.status === 'captured')
+    .map((slot) => slot.ref?.path)
+    .filter(Boolean));
+
+  assert.deepEqual(comparisons.map((comparison) => comparison.surface_id).sort(), ['front-page', 'music']);
+  assert.equal(bySurface.music.visual_parity_artifacts.artifacts.diff_screenshot.ref.artifact_id, 'visual_compare_simple-site_music_diff');
+  assert.ok(retainedRefs.every((ref) => ref.startsWith(path.join(outputDirectory, 'visual-compare', 'simple-site'))));
+  assert.equal(new Set(retainedRefs).size, retainedRefs.length, 'route artifact refs must not collide');
+  assert.deepEqual(Object.keys(persisted.artifacts).sort(), [
+    'visual_compare_simple-site_candidate',
+    'visual_compare_simple-site_diff',
+    'visual_compare_simple-site_music_candidate',
+    'visual_compare_simple-site_music_diff',
+    'visual_compare_simple-site_music_source',
+    'visual_compare_simple-site_source',
+  ]);
+  assert.ok(fixture.diagnostics.every((diagnostic) => diagnostic.artifact_refs.every((ref) => ref.path.startsWith(path.join(outputDirectory, 'visual-compare', 'simple-site')))));
+});
+
 test('visual-compare attribution degrades explicitly when sidecars or the extension normalizer are unavailable', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-degraded-output-'));
   const codeboxArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-degraded-codebox-'));
