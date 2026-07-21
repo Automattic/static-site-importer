@@ -26,6 +26,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'diagnostics' => array(),
 			'applied'     => array( 'posts' => array(), 'files' => array(), 'operations' => array() ),
 			'skipped'     => array(),
+			'existing_matches' => array( 'pages' => array() ),
 			'report_destinations' => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
 		);
 
@@ -70,13 +71,16 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 
 		foreach ( $state['ordered_pages'] as $page ) {
+			if ( ! empty( $page['skip_materialization'] ) ) {
+				continue;
+			}
 			$post = self::materialize_page( $page, $state['source_ids'] );
 			if ( is_wp_error( $post ) ) {
 				return self::failed_receipt( $state, $post->get_error_code() );
 			}
 			$state['page_ids'][ $page['reconciliation_identity'] ] = $post;
 			$state['source_ids'][ $page['source_path'] ] = $post;
-			update_post_meta( $post, '_static_site_importer_provenance', wp_json_encode( array( 'schema' => 'static-site-importer/page-provenance/v1', 'import_run_id' => (string) ( $args['import_run_id'] ?? '' ), 'source_path' => $page['source_path'], 'reconciliation_identity' => $page['reconciliation_identity'] ) ) );
+			update_post_meta( $post, '_static_site_importer_provenance', wp_json_encode( array( 'schema' => 'static-site-importer/page-provenance/v1', 'import_run_id' => (string) ( $args['import_run_id'] ?? '' ), 'source_path' => $page['source_path'], 'reconciliation_identity' => $page['reconciliation_identity'], 'content_hash' => $page['content_hash'] ) ) );
 			$state['applied']['posts'][] = array( 'id' => $post, 'reconciliation_identity' => $page['reconciliation_identity'] );
 		}
 
@@ -112,27 +116,31 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** @param array<string,mixed> $state */
 	private static function preflight( array &$state, bool $overwrite ): void {
-		$pages_by_slug = array();
+		$pages_by_route = array();
 		$state['page_ids'] = array();
 		$state['source_ids'] = array();
 		foreach ( $state['resolved']['pages'] as $page ) {
 			if ( ! isset( $page['resolved_block_markup'] ) || ! is_string( $page['resolved_block_markup'] ) || '' === trim( $page['resolved_block_markup'] ) ) {
 				throw new InvalidArgumentException( 'page_missing_final_block_markup' );
 			}
-			$key = strtolower( $page['slug'] );
-			if ( isset( $pages_by_slug[ $key ] ) ) {
-				throw new InvalidArgumentException( 'duplicate_page_slug' );
+			$route = (string) ( $page['route']['path'] ?? '' );
+			if ( isset( $pages_by_route[ $route ] ) ) {
+				throw new InvalidArgumentException( 'duplicate_page_route' );
 			}
-			$pages_by_slug[ $key ] = true;
+			$pages_by_route[ $route ] = true;
 			$existing = self::reconciled_post( $page['reconciliation_identity'] );
 			if ( $existing ) {
-				$state['page_ids'][ $page['reconciliation_identity'] ] = (int) $existing->ID;
-				$state['source_ids'][ $page['source_path'] ] = (int) $existing->ID;
+				$page = self::plan_existing_page( $state, $page, $existing, 'reconciliation_identity_match' );
+				$state['resolved']['pages'][ array_search( $page['source_path'], array_column( $state['resolved']['pages'], 'source_path' ), true ) ] = $page;
 				continue;
 			}
-			$conflict = get_page_by_path( $page['slug'], OBJECT, 'page' );
+			$conflict = '' === trim( $route, '/' ) ? null : get_page_by_path( trim( $route, '/' ), OBJECT, 'page' );
 			if ( $conflict && ! $overwrite ) {
 				throw new InvalidArgumentException( 'post_conflict' );
+			}
+			if ( $conflict ) {
+				$page = self::plan_existing_page( $state, $page, $conflict, 'canonical_route_match' );
+				$state['resolved']['pages'][ array_search( $page['source_path'], array_column( $state['resolved']['pages'], 'source_path' ), true ) ] = $page;
 			}
 		}
 		$state['ordered_pages'] = self::parent_ordered_pages( $state['resolved']['pages'] );
@@ -173,9 +181,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( false === $parent ) {
 			return new WP_Error( 'missing_parent_page' );
 		}
-		$existing = self::reconciled_post( $page['reconciliation_identity'] );
 		$post = array(
-			'ID'           => $existing ? (int) $existing->ID : 0,
+			'ID'           => (int) ( $page['planned_existing_id'] ?? 0 ),
 			'post_type'    => 'page',
 			'post_status'  => 'publish',
 			'post_title'   => $page['title'],
@@ -189,6 +196,31 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		update_post_meta( (int) $id, self::RECONCILIATION_META_KEY, $page['reconciliation_identity'] );
 		return (int) $id;
+	}
+
+	/** @param array<string,mixed> $state @param array<string,mixed> $page */
+	private static function plan_existing_page( array &$state, array $page, WP_Post $existing, string $reason ): array {
+		$id        = (int) $existing->ID;
+		$protected = class_exists( 'Static_Site_Importer_Page_Materializer' ) && Static_Site_Importer_Page_Materializer::is_protected_page( $existing );
+		$page['planned_existing_id'] = $id;
+		$state['page_ids'][ $page['reconciliation_identity'] ] = $id;
+		$state['source_ids'][ $page['source_path'] ] = $id;
+		$row = array(
+			'post_id'     => $id,
+			'source_path' => $page['source_path'],
+			'route'       => $page['route']['path'],
+			'permalink'   => function_exists( 'get_permalink' ) ? get_permalink( $existing ) : $page['route']['path'],
+			'slug'        => $page['slug'],
+			'post_type'   => $page['post_type'],
+			'protected'   => $protected,
+			'reason'      => $reason,
+		);
+		$state['existing_matches']['pages'][] = $row;
+		if ( $protected ) {
+			$page['skip_materialization'] = true;
+			$state['skipped'][] = $row;
+		}
+		return $page;
 	}
 
 	/** @param array<string,mixed> $write */
@@ -319,6 +351,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'generated_files'           => $state['applied']['files'],
 			'operations'                => $state['applied']['operations'],
 			'skipped_targets'           => $state['skipped'],
+			'existing_matches'          => $state['existing_matches'],
 			'diagnostics'               => $state['diagnostics'],
 			'errors'                    => $errors,
 		);

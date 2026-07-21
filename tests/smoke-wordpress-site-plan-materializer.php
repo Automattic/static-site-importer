@@ -65,6 +65,9 @@ $assert = static function ( bool $condition, string $message ): void {
 	}
 };
 
+$theme_generator_source = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php' );
+$assert( false === strpos( (string) $theme_generator_source, 'function import_compiled_website_artifact' ), 'canonical import has no legacy compiled-artifact execution path' );
+
 $artifact = array(
 	'entrypoint' => 'index.html',
 	'files'      => array(
