@@ -1571,6 +1571,9 @@ class Static_Site_Importer_Theme_Materializer {
 					'contentSize' => '760px',
 					'wideSize'    => '1200px',
 				),
+				'spacing' => array(
+					'blockGap' => true,
+				),
 			),
 		);
 

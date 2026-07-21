@@ -168,6 +168,7 @@ $theme_writes = Static_Site_Importer_Theme_Materializer::base_theme_writes(
 $theme_json   = json_decode( $theme_writes[ $theme_dir . '/theme.json' ] ?? '', true );
 $front_page_template = (string) ( $theme_writes[ $theme_dir . '/templates/front-page.html' ] ?? '' );
 $assert( is_array( $theme_json ), 'generated-theme-json-decodes' );
+$assert( true === ( $theme_json['settings']['spacing']['blockGap'] ?? null ), 'generated-theme-enables-block-gap-support' );
 $assert( str_contains( $front_page_template, '<!-- wp:post-content /-->' ), 'post-content-template-uses-neutral-wrapper' );
 $assert( ! str_contains( $front_page_template, '"tagName":"main"' ), 'post-content-template-does-not-duplicate-source-main-selector' );
 $assert(
@@ -259,7 +260,8 @@ $token_theme_writes = Static_Site_Importer_Theme_Materializer::base_theme_writes
 			'theme_json'    => array(
 				'settings' => array(
 					'spacing' => array(
-						'units' => array( 'px', 'rem', '%' ),
+						'blockGap' => false,
+						'units'    => array( 'px', 'rem', '%' ),
 					),
 				),
 				'styles'   => array(
@@ -282,6 +284,7 @@ $assert( '#0f766e' === ( $token_palette[0]['color'] ?? '' ), 'materialization-pl
 $assert( 1 === count( $token_palette ), 'unsafe-materialization-plan-color-token-is-skipped' );
 $assert( 'Inter, Arial, sans-serif' === ( $token_fonts[0]['fontFamily'] ?? '' ), 'materialization-plan-font-token-promotes-to-theme-json' );
 $assert( '960px' === ( $token_theme_json['settings']['layout']['contentSize'] ?? '' ), 'materialization-plan-layout-token-overrides-content-size' );
+$assert( false === ( $token_theme_json['settings']['spacing']['blockGap'] ?? null ), 'materialization-plan-theme-json-fragment-overrides-block-gap-support' );
 $assert( array( 'px', 'rem', '%' ) === ( $token_theme_json['settings']['spacing']['units'] ?? array() ), 'materialization-plan-theme-json-fragment-merges-settings' );
 $assert( 'var(--wp--preset--color--brand-primary)' === ( $token_theme_json['styles']['elements']['link']['color']['text'] ?? '' ), 'materialization-plan-theme-json-fragment-merges-styles' );
 
