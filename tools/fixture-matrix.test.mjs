@@ -954,10 +954,14 @@ test('fixture matrix consumes bounded evidence from the public validation envelo
     codeboxOutput: {
       fixture_id: 'simple-site',
       status: 'passed',
-      blocks_engine: {
-        transformer: { package: 'automattic/blocks-engine-php-transformer', version: 'dev-trunk', reference: 'a'.repeat(40) },
-        wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+      runtime_evidence: {
+        schema: 'static-site-importer/runtime-evidence/v1',
+        blocks_engine: {
+          transformer: { package: 'automattic/blocks-engine-php-transformer', version: 'dev-trunk', reference: 'a'.repeat(40) },
+          wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+        },
       },
+      blocks_engine: { diagnostics: [{ code: 'conversion-warning' }] },
       materialization_receipt: {
         schema: 'static-site-importer/materialization-receipt/v1',
         status: 'completed',

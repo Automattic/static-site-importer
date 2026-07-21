@@ -109,9 +109,11 @@ $assert( 1 === count( $result['diagnostics'] ?? array() ), 'top-level-diagnostic
 $assert( 'semantic_parity_navigation_missing' === ( $result['diagnostics'][0]['type'] ?? '' ), 'top-level-diagnostic-type-preserved' );
 $assert( 'footer nav' === ( $result['diagnostics'][0]['selector'] ?? '' ), 'top-level-diagnostic-selector-preserved' );
 $assert( 1 === ( $result['diagnostic_summary']['total'] ?? 0 ), 'top-level-diagnostic-summary-present' );
-$assert( str_repeat( 'a', 40 ) === ( $result['blocks_engine']['transformer']['reference'] ?? '' ), 'transformer-provenance-exported' );
-$assert( 'blocks-engine/wordpress-site-plan/v2' === ( $result['blocks_engine']['wordpress_site_plan']['schema'] ?? '' ), 'site-plan-schema-exported' );
-$assert( ! isset( $result['blocks_engine']['wordpress_site_plan']['pages'] ), 'site-plan-payload-remains-private' );
+$assert( 'static-site-importer/runtime-evidence/v1' === ( $result['runtime_evidence']['schema'] ?? '' ), 'runtime-evidence-schema-exported' );
+$assert( str_repeat( 'a', 40 ) === ( $result['runtime_evidence']['blocks_engine']['transformer']['reference'] ?? '' ), 'transformer-provenance-exported' );
+$assert( 'blocks-engine/wordpress-site-plan/v2' === ( $result['runtime_evidence']['blocks_engine']['wordpress_site_plan']['schema'] ?? '' ), 'site-plan-schema-exported' );
+$assert( ! isset( $result['runtime_evidence']['blocks_engine']['wordpress_site_plan']['pages'] ), 'site-plan-payload-remains-private' );
+$assert( ! isset( $result['blocks_engine'] ), 'diagnostic-key-remains-unclaimed' );
 $assert( 'plan-hash' === ( $result['materialization_receipt']['plan_hash'] ?? '' ), 'materialization-receipt-exported' );
 $assert( array( 'website/index.html' => 4 ) === ( $result['materialization_receipt']['completed']['pages'] ?? array() ), 'materialization-completion-exported' );
 

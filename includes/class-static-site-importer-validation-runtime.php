@@ -151,12 +151,15 @@ class Static_Site_Importer_Validation_Runtime {
 				'theme_slug'       => (string) ( $import_result['theme_slug'] ?? '' ),
 			),
 			'import_report' => $import_report,
-			'blocks_engine' => array(
-				'transformer'         => $transformer,
-				'wordpress_site_plan' => array_filter(
-					array(
-						'schema' => isset( $wordpress_site_plan['schema'] ) ? (string) $wordpress_site_plan['schema'] : '',
-					)
+			'runtime_evidence' => array(
+				'schema'        => 'static-site-importer/runtime-evidence/v1',
+				'blocks_engine' => array(
+					'transformer'         => $transformer,
+					'wordpress_site_plan' => array_filter(
+						array(
+							'schema' => isset( $wordpress_site_plan['schema'] ) ? (string) $wordpress_site_plan['schema'] : '',
+						)
+					),
 				),
 			),
 			'materialization_receipt' => array(
