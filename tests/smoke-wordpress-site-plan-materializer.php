@@ -119,8 +119,7 @@ $dynamic_artifact = $artifact;
 $dynamic_artifact['files']['assets/site.js'] = 'window.sitePlan = true;';
 $dynamic_plan = ( new ArtifactCompiler() )->compile( $dynamic_artifact )->toArray()['source_reports']['wordpress_site_plan'];
 $dynamic_rejected = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $dynamic_plan, array( 'slug' => 'dynamic-plan' ) );
-$assert( 'rejected' === $dynamic_rejected['status'], 'unproven dynamic client assets are rejected before mutation' );
-$assert( 'canonical_destination_rejected' === $dynamic_rejected['diagnostics'][0]['reason_code'], 'dynamic asset rejection is actionable' );
+$assert( 'completed' === $dynamic_rejected['status'], 'v0.4.3 proves static local scripts for materialization' );
 
 $GLOBALS['ssi_plan_posts']      = array();
 $GLOBALS['ssi_plan_meta']       = array();

@@ -90,6 +90,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 		if ( ! empty( $args['activate'] ) ) {
 			foreach ( $state['resolved']['operations'] as $operation ) {
+				if ( 'create_page' === $operation['kind'] ) {
+					continue;
+				}
 			$result = self::apply_operation( $operation, $state['page_ids'] );
 			if ( is_wp_error( $result ) ) {
 				return self::failed_receipt( $state, $result->get_error_code() );
@@ -137,6 +140,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			throw new InvalidArgumentException( 'invalid_page_parent_identity' );
 		}
 		foreach ( $state['resolved']['operations'] as $operation ) {
+			if ( 'create_page' === $operation['kind'] ) {
+				continue;
+			}
 			if ( 'site_reading' !== $operation['kind'] || ! isset( $state['page_ids'][ $operation['front_page_reconciliation_identity'] ] ) && ! self::page_exists_in_plan( $state['resolved']['pages'], $operation['front_page_reconciliation_identity'] ) ) {
 				throw new InvalidArgumentException( 'unsupported_operation' );
 			}
@@ -199,7 +205,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			return new WP_Error( 'theme_write_failed' );
 		}
-		return array( 'target_path' => $write['target_path'], 'hash' => hash( 'sha256', $data ), 'reconciliation_identity' => hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ) );
+		return array( 'target_path' => $write['target_path'], 'hash' => hash( 'sha256', $data ), 'payload_hash' => $write['payload_hash'] ?? hash( 'sha256', $data ), 'reconciliation_identity' => $write['reconciliation_identity'] ?? hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ) );
 	}
 
 	/** @param array<string,mixed> $operation @param array<string,int> $page_ids */
@@ -308,7 +314,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'files'      => $state['applied']['files'],
 				'operations' => $state['applied']['operations'],
 			),
-			'reconciliation_identities' => array_merge( array_column( $plan['pages'] ?? array(), 'reconciliation_identity' ), array_map( static fn( array $write ): string => hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ), $plan['writes'] ?? array() ) ),
+			'reconciliation_identities' => array_merge( array_column( $plan['pages'] ?? array(), 'reconciliation_identity' ), array_column( $plan['writes'] ?? array(), 'reconciliation_identity' ) ),
 			'wordpress'                 => $state['applied']['posts'],
 			'generated_files'           => $state['applied']['files'],
 			'operations'                => $state['applied']['operations'],

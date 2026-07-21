@@ -98,7 +98,7 @@ class Static_Site_Importer_Theme_Generator {
 			$diagnostics = isset( $compiled['source_reports']['wordpress_site_plan_diagnostics'] ) && is_array( $compiled['source_reports']['wordpress_site_plan_diagnostics'] ) ? wp_json_encode( $compiled['source_reports']['wordpress_site_plan_diagnostics'] ) : '';
 			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.' . ( false !== $diagnostics ? ' ' . $diagnostics : '' ), $compiled );
 		}
-		if ( ! empty( $args['fail_on_quality'] ) && 'success' !== (string) ( $plan['quality']['status'] ?? '' ) ) {
+		if ( ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) ) {
 			return new WP_Error( 'static_site_importer_quality_gate_failed', 'Website artifact did not pass the canonical plan quality gate.', array( 'quality' => $plan['quality'] ?? array(), 'diagnostics' => $plan['diagnostics'] ?? array() ) );
 		}
 
@@ -193,7 +193,7 @@ class Static_Site_Importer_Theme_Generator {
 		$visual_parity = array( 'schema' => 'static-site-importer/visual-parity-artifacts/v1', 'status' => 'pending', 'owner' => 'codebox_runtime', 'artifacts' => array( 'import_report' => array( 'status' => 'captured', 'ref' => array( 'artifact_name' => 'import-report.json' ) ), 'source_screenshot' => array( 'status' => 'pending' ), 'visual_diff' => array( 'capture_state' => 'not_captured' ) ) );
 		$report['visual_parity_artifacts'] = $visual_parity;
 		$report['quality']['core_html_block_count'] = 0;
-		$validation = array( 'schema' => 'blocks-engine/import-validation-result/v1', 'artifact_type' => 'ImportValidationResult', 'status' => 'success' === ( $quality['status'] ?? '' ) ? 'passed' : 'failed', 'diagnostics' => $diagnostics, 'quality' => $quality, 'visual_parity_artifacts' => $visual_parity );
+		$validation = array( 'schema' => 'blocks-engine/import-validation-result/v1', 'artifact_type' => 'ImportValidationResult', 'status' => ! empty( $quality['pass'] ) ? 'passed' : 'failed', 'diagnostics' => $diagnostics, 'quality' => $quality, 'visual_parity_artifacts' => $visual_parity );
 		$findings   = array( 'schema' => 'blocks-engine/finding-packets/v1', 'artifact_type' => 'FindingPacketSet', 'findings' => $diagnostics );
 		$theme_dir  = $theme['dir'];
 		$manifest_path = $theme_dir . '/static-site-importer-manifest.json';
