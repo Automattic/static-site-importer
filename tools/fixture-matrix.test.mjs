@@ -3145,8 +3145,9 @@ test('CLI surface coverage reaches bench recipe browser evidence steps', () => {
   const visualSteps = recipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare');
   assert.equal(editorOpenSteps.length, 3);
   assert.equal(visualSteps.length, 3);
-  assert.ok(editorOpenSteps[1].args.includes('url=/contact/'));
-  assert.ok(editorOpenSteps[2].args.includes('url=/merch/'));
+  assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
+  assert.ok(editorOpenSteps[1].args.includes('post-slug=contact'));
+  assert.ok(editorOpenSteps[2].args.includes('post-slug=merch'));
   assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
 });
 
@@ -3178,8 +3179,9 @@ test('runFixtureMatrix surface coverage reaches executed batch recipes', async (
     const visualSteps = batchRecipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare');
     assert.equal(editorOpenSteps.length, 3);
     assert.equal(visualSteps.length, 3);
-    assert.ok(editorOpenSteps[1].args.includes('url=/contact/'));
-    assert.ok(editorOpenSteps[2].args.includes('url=/merch/'));
+    assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
+    assert.ok(editorOpenSteps[1].args.includes('post-slug=contact'));
+    assert.ok(editorOpenSteps[2].args.includes('post-slug=merch'));
     assert.equal(visualCompareMatrixComparison(visualSteps[1]).candidateUrl, '/contact/');
     assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
   } finally {
@@ -4219,11 +4221,16 @@ test('fixture matrix browser surfaces default to front page and opt into bounded
   assert.equal(editorValidationSteps.length, 3);
   assert.equal(visualSteps.length, 3);
   assert.ok(editorOpenSteps[0].args.includes('artifact-prefix=files/browser/editor-open/artist'));
-  assert.ok(editorOpenSteps[1].args.includes('url=/about/'));
+  assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
+  assert.ok(editorOpenSteps[1].args.includes('post-slug=about'));
+  assert.equal(editorOpenSteps[1].args.some((arg) => arg.startsWith('url=')), false);
   assert.ok(editorOpenSteps[1].args.includes('artifact-prefix=files/browser/editor-open/artist/about'));
-  assert.ok(editorOpenSteps[2].args.includes('url=/about/'));
+  assert.ok(editorOpenSteps[2].args.includes('post-type=page'));
+  assert.ok(editorOpenSteps[2].args.includes('post-slug=about'));
   assert.ok(editorOpenSteps[2].args.includes('artifact-prefix=files/browser/editor-open/artist/about--2'));
-  assert.ok(editorValidationSteps[1].args.includes('url=/about/'));
+  assert.ok(editorValidationSteps[1].args.includes('post-type=page'));
+  assert.ok(editorValidationSteps[1].args.includes('post-slug=about'));
+  assert.equal(editorValidationSteps[1].args.some((arg) => arg.startsWith('url=')), false);
 
   const aboutComparison = visualCompareMatrixComparison(visualSteps[1]);
   assert.equal(aboutComparison.name, 'artist--about');
