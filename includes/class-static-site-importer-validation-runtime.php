@@ -127,6 +127,11 @@ class Static_Site_Importer_Validation_Runtime {
 		if ( empty( $import_report ) && isset( $import_result['import_report'] ) && is_array( $import_result['import_report'] ) ) {
 			$import_report = $import_result['import_report'];
 		}
+		$blocks_engine          = isset( $import_report['blocks_engine'] ) && is_array( $import_report['blocks_engine'] ) ? $import_report['blocks_engine'] : array();
+		$transformer            = isset( $blocks_engine['transformer'] ) && is_array( $blocks_engine['transformer'] ) ? $blocks_engine['transformer'] : array();
+		$wordpress_site_plan    = isset( $blocks_engine['wordpress_site_plan'] ) && is_array( $blocks_engine['wordpress_site_plan'] ) ? $blocks_engine['wordpress_site_plan'] : array();
+		$receipt                = isset( $import_result['materialization_receipt'] ) && is_array( $import_result['materialization_receipt'] ) ? $import_result['materialization_receipt'] : array();
+		$completed              = isset( $receipt['completed'] ) && is_array( $receipt['completed'] ) ? $receipt['completed'] : array();
 
 		$result                        = array(
 			'success'       => $quality_pass,
@@ -146,6 +151,25 @@ class Static_Site_Importer_Validation_Runtime {
 				'theme_slug'       => (string) ( $import_result['theme_slug'] ?? '' ),
 			),
 			'import_report' => $import_report,
+			'blocks_engine' => array(
+				'transformer'         => $transformer,
+				'wordpress_site_plan' => array_filter(
+					array(
+						'schema' => isset( $wordpress_site_plan['schema'] ) ? (string) $wordpress_site_plan['schema'] : '',
+					)
+				),
+			),
+			'materialization_receipt' => array(
+				'schema'    => isset( $receipt['schema'] ) ? (string) $receipt['schema'] : '',
+				'status'    => isset( $receipt['status'] ) ? (string) $receipt['status'] : '',
+				'plan_hash' => isset( $receipt['plan_hash'] ) ? (string) $receipt['plan_hash'] : '',
+				'completed' => array(
+					'pages'           => isset( $completed['pages'] ) && is_array( $completed['pages'] ) ? $completed['pages'] : array(),
+					'files'           => isset( $completed['files'] ) && is_array( $completed['files'] ) ? $completed['files'] : array(),
+					'operations'      => isset( $completed['operations'] ) && is_array( $completed['operations'] ) ? $completed['operations'] : array(),
+					'declaration_ids' => isset( $completed['declaration_ids'] ) && is_array( $completed['declaration_ids'] ) ? $completed['declaration_ids'] : array(),
+				),
+			),
 			'artifacts'     => array(
 				'generated_theme'         => array(
 					'artifact_ref' => (string) ( $import_result['theme_slug'] ?? '' ),

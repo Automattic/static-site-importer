@@ -945,6 +945,37 @@ test('fixture matrix captures installed transformer provenance and bounded mater
   assert.equal(result.summary.matrix_evidence_readiness.status, 'verified');
 });
 
+test('fixture matrix consumes bounded evidence from the public validation envelope', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-matrix-validation-envelope-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'validation-envelope-test' });
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: {
+      fixture_id: 'simple-site',
+      status: 'passed',
+      blocks_engine: {
+        transformer: { package: 'automattic/blocks-engine-php-transformer', version: 'dev-trunk', reference: 'a'.repeat(40) },
+        wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+      },
+      materialization_receipt: {
+        schema: 'static-site-importer/materialization-receipt/v1',
+        status: 'completed',
+        plan_hash: 'plan-hash',
+        completed: { pages: { 'website/index.html': 4 }, files: ['parts/header.html'], operations: [], declaration_ids: ['declaration-1'] },
+      },
+    },
+  });
+
+  const evidence = result.fixtures[0].matrix_evidence;
+  assert.equal(evidence.readiness, 'verified');
+  assert.equal(evidence.transformer.package_reference, 'a'.repeat(40));
+  assert.equal(evidence.wordpress_site_plan.schema, 'blocks-engine/wordpress-site-plan/v2');
+  assert.deepEqual(evidence.materialization_receipt, {
+    schema: 'static-site-importer/materialization-receipt/v1', status: 'completed', plan_hash: 'plan-hash', page_count: 1, file_count: 1, operation_count: 0, declaration_count: 1,
+  });
+});
+
 test('fixture matrix labels reports without runtime provenance and materialization evidence as legacy', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-matrix-legacy-evidence-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'legacy-runtime-evidence-test' });

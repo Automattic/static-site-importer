@@ -49,7 +49,18 @@ file_put_contents(
 	$report_path,
 	json_encode(
 		array(
-			'quality'     => array(
+			'blocks_engine' => array(
+				'transformer' => array(
+					'package'   => 'automattic/blocks-engine-php-transformer',
+					'version'   => 'dev-main',
+					'reference' => str_repeat( 'a', 40 ),
+				),
+				'wordpress_site_plan' => array(
+					'schema' => 'blocks-engine/wordpress-site-plan/v2',
+					'pages'  => array( array( 'canonical_block_markup' => '<!-- wp:paragraph --><p>Private plan payload</p><!-- /wp:paragraph -->' ) ),
+				),
+			),
+			'quality'       => array(
 				'semantic_parity_failure_count' => 1,
 			),
 			'diagnostics' => array(
@@ -73,6 +84,17 @@ $result = $method->invoke(
 		'external_report_path' => $report_path,
 		'quality'              => array( 'pass' => false ),
 		'theme_slug'           => 'ssi-fixture-theme',
+		'materialization_receipt' => array(
+			'schema'    => 'static-site-importer/materialization-receipt/v1',
+			'status'    => 'completed',
+			'plan_hash' => 'plan-hash',
+			'completed' => array(
+				'pages'           => array( 'website/index.html' => 4 ),
+				'files'           => array( 'parts/header.html' ),
+				'operations'      => array(),
+				'declaration_ids' => array( 'declaration-1' ),
+			),
+		),
 	),
 	$artifact_dir,
 	array(
@@ -87,6 +109,11 @@ $assert( 1 === count( $result['diagnostics'] ?? array() ), 'top-level-diagnostic
 $assert( 'semantic_parity_navigation_missing' === ( $result['diagnostics'][0]['type'] ?? '' ), 'top-level-diagnostic-type-preserved' );
 $assert( 'footer nav' === ( $result['diagnostics'][0]['selector'] ?? '' ), 'top-level-diagnostic-selector-preserved' );
 $assert( 1 === ( $result['diagnostic_summary']['total'] ?? 0 ), 'top-level-diagnostic-summary-present' );
+$assert( str_repeat( 'a', 40 ) === ( $result['blocks_engine']['transformer']['reference'] ?? '' ), 'transformer-provenance-exported' );
+$assert( 'blocks-engine/wordpress-site-plan/v2' === ( $result['blocks_engine']['wordpress_site_plan']['schema'] ?? '' ), 'site-plan-schema-exported' );
+$assert( ! isset( $result['blocks_engine']['wordpress_site_plan']['pages'] ), 'site-plan-payload-remains-private' );
+$assert( 'plan-hash' === ( $result['materialization_receipt']['plan_hash'] ?? '' ), 'materialization-receipt-exported' );
+$assert( array( 'website/index.html' => 4 ) === ( $result['materialization_receipt']['completed']['pages'] ?? array() ), 'materialization-completion-exported' );
 
 unlink( $report_path );
 rmdir( $artifact_dir );
