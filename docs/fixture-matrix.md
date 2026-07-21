@@ -357,6 +357,26 @@ The promotion lane selects the active target plus every fixture under
 requires every selected fixture to retain `solved_candidate`. A target that is
 not solved or any `solved_regression` fails the aggregate.
 
+CI can run the solved regression corpus without an active target:
+
+```bash
+node tools/run-fixture-matrix.mjs \
+  --static-site-importer . \
+  --blocks-engine /path/to/blocks-engine \
+  --solved-only
+```
+
+`--solved-only` selects all and only valid fixture directories (those containing
+`index.html`) under `fixtures/solved/`. It rejects an empty solved corpus, forces
+the existing `solved_candidate` acceptance gate, and defaults to one isolated WP
+Codebox batch per fixture. Editor validation and gated exact visual parity remain
+required; `--no-editor-validation`, `--no-visual-parity`, and
+`--no-visual-parity-gate` fail before execution. It cannot be combined with the
+target, promotion, or manifest selection flags because the lane must cover the
+complete solved corpus. The replayable plan and operator summary identify this
+lane as `fixtures-solved-only/v1` and include active, solved, and selected corpus
+counts so CI artifacts prove the exact selection.
+
 ```bash
 node tools/promote-solved-fixture.mjs \
   --fixture-id <id> \

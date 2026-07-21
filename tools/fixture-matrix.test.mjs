@@ -32,6 +32,7 @@ import {
   buildCodeFreshness,
   buildFixtureMatrixRunPlan,
   CANONICAL_FIXTURE_COUNT,
+  SOLVED_ONLY_LANE_ID,
   resolvePathFreshness,
   summarizeBenchRun,
   summarizeRun,
@@ -2372,6 +2373,46 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
     /requires editor validation and gated visual parity/
   );
 
+  const solvedOnlyPlan = buildFixtureMatrixRunPlan({
+    staticSiteImporter,
+    blocksEngine,
+    solvedOnly: true,
+    skipInstall: true,
+    skipSync: true,
+  });
+  assert.equal(solvedOnlyPlan.lane_identity, SOLVED_ONLY_LANE_ID);
+  assert.equal(solvedOnlyPlan.fixture_count, 1);
+  assert.equal(solvedOnlyPlan.selected_active_fixture_count, 0);
+  assert.equal(solvedOnlyPlan.selected_solved_fixture_count, 1);
+  assert.deepEqual(solvedOnlyPlan.lane_filter, {
+    fixture_ids: ['solved-site'],
+    solved_only: true,
+    identity: SOLVED_ONLY_LANE_ID,
+  });
+  assert.ok(solvedOnlyPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_FIXTURE_IDS=solved-site'));
+  assert.ok(solvedOnlyPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_REQUIRE_SOLVED_CANDIDATE=1'));
+  assert.ok(solvedOnlyPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_BATCH_SIZE=1'));
+
+  const emptySolvedRoot = path.join(root, 'empty-solved-fixtures');
+  mkdirSync(path.join(emptySolvedRoot, 'websites', 'fixture-01'), { recursive: true });
+  writeFileSync(path.join(emptySolvedRoot, 'websites', 'fixture-01', 'index.html'), '<h1>Target</h1>');
+  assert.throws(
+    () => buildFixtureMatrixRunPlan({ staticSiteImporter, fixtureRoot: emptySolvedRoot, solvedOnly: true }),
+    /--solved-only requires at least one valid fixture under .*\/solved/
+  );
+  assert.throws(
+    () => buildFixtureMatrixRunPlan({ staticSiteImporter, blocksEngine, solvedOnly: true, targetFixture: 'fixture-01' }),
+    /--solved-only selects the complete fixtures\/solved corpus and cannot be combined with --target-fixture/
+  );
+  assert.throws(
+    () => buildFixtureMatrixRunPlan({ staticSiteImporter, blocksEngine, solvedOnly: true, class: 'marketing/static' }),
+    /--solved-only selects the complete fixtures\/solved corpus and cannot be combined with --class/
+  );
+  assert.throws(
+    () => buildFixtureMatrixRunPlan({ staticSiteImporter, blocksEngine, solvedOnly: true, editorValidation: false }),
+    /--solved-only requires editor validation and gated visual parity/
+  );
+
   const surfacePlan = buildFixtureMatrixRunPlan({
     runner: 'homeboy-lab',
     staticSiteImporter,
@@ -2443,6 +2484,32 @@ test('fixture matrix operator rejects contradictory local and Lab routing', () =
     staticSiteImporter,
     fixtureRoot,
   }), /--allow-local-fallback selects unpinned lab-or-local placement and cannot be combined with --runner homeboy-lab/);
+});
+
+test('--solved-only selects exactly the valid solved fixture corpus', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-solved-only-selection-'));
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  const fixtureRoot = path.join(root, 'fixtures');
+  mkdirSync(staticSiteImporter, { recursive: true });
+  mkdirSync(path.join(fixtureRoot, 'websites', 'active-site'), { recursive: true });
+  mkdirSync(path.join(fixtureRoot, 'solved', 'solved-b'), { recursive: true });
+  mkdirSync(path.join(fixtureRoot, 'solved', 'solved-a'), { recursive: true });
+  mkdirSync(path.join(fixtureRoot, 'solved', 'incomplete'), { recursive: true });
+  writeFileSync(path.join(fixtureRoot, 'websites', 'active-site', 'index.html'), '<h1>Active</h1>');
+  writeFileSync(path.join(fixtureRoot, 'solved', 'solved-a', 'index.html'), '<h1>Solved A</h1>');
+  writeFileSync(path.join(fixtureRoot, 'solved', 'solved-b', 'index.html'), '<h1>Solved B</h1>');
+
+  const plan = buildFixtureMatrixRunPlan({
+    staticSiteImporter,
+    fixtureRoot,
+    solvedOnly: true,
+    skipInstall: true,
+    skipSync: true,
+  });
+
+  assert.deepEqual(plan.lane_filter.fixture_ids, ['solved-a', 'solved-b']);
+  assert.equal(plan.selected_active_fixture_count, 0);
+  assert.equal(plan.selected_solved_fixture_count, 2);
 });
 
 test('fixture matrix operator composes typed placement only for the bench step', () => {
@@ -3195,6 +3262,7 @@ test('operator summary preserves matrix rollups for fanout agents', () => {
   assert.equal(summary.top_pattern_families[0].count, 312);
   assert.equal(summary.fixture_exemplars[0].fixture_id, 'shader-site');
   assert.equal(summary.diagnostic_blind_spots[0].kind, 'missing_source_context');
+  assert.equal(summary.lane_identity, null);
 });
 
 test('summarizeBenchRun emits the operator summary on a gate-FAIL instead of throwing', () => {
@@ -3233,6 +3301,28 @@ test('summarizeBenchRun emits the operator summary on a gate-FAIL instead of thr
   assert.deepEqual(result.summary.top_buckets[0], { key: 'runtime_target_gap', count: 18 });
   assert.equal(result.summary.run_refs.show, 'homeboy runs show ssi-live-2');
   assert.deepEqual(result.summary.artifact_urls, ['homeboy-runs:ssi-live-2', 'https://example.test/report.json']);
+});
+
+test('operator summary preserves solved-only lane identity and corpus counts', () => {
+  const summary = summarizeRun({
+    mode: 'release-proof',
+    run_id: 'solved-only-proof',
+    lane_identity: SOLVED_ONLY_LANE_ID,
+    active_fixture_count: 72,
+    solved_fixture_count: 3,
+    selected_fixture_count: 3,
+    selected_active_fixture_count: 0,
+    selected_solved_fixture_count: 3,
+    fixture_count: 3,
+    output_file: path.join(tmpdir(), 'missing-homeboy-bench.json'),
+  });
+
+  assert.equal(summary.lane_identity, SOLVED_ONLY_LANE_ID);
+  assert.equal(summary.active_fixture_count, 72);
+  assert.equal(summary.solved_fixture_count, 3);
+  assert.equal(summary.selected_fixture_count, 3);
+  assert.equal(summary.selected_active_fixture_count, 0);
+  assert.equal(summary.selected_solved_fixture_count, 3);
 });
 
 test('summarizeBenchRun reports a clean pass when the bench exits zero', () => {
