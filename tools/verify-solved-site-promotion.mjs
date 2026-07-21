@@ -14,6 +14,7 @@ export function verifySolvedSitePromotion(input) {
   const matrix = readJson(options.matrixResult, 'matrix result');
   const registry = readJson(options.registry, 'registry');
   const runtime = readJson(options.runtimeInputs, 'runtime inputs');
+  const artifactIndex = readJson(options.artifactIndex, 'artifact index');
   assert(matrix.schema === MATRIX_SCHEMA, `Matrix schema must be ${MATRIX_SCHEMA}.`);
   assert(registry.schema === REGISTRY_SCHEMA, `Registry schema must be ${REGISTRY_SCHEMA}.`);
   assertSha(options.staticSiteImporterSha, 'Static Site Importer candidate SHA');
@@ -29,10 +30,11 @@ export function verifySolvedSitePromotion(input) {
   assert(matrix.summary?.solved_candidate_gate?.failed_fixture_count === 0, 'Solved-candidate gate reported failures.');
 
   validateRuntime(runtime, options);
+  const registeredArtifacts = indexRegisteredArtifacts(artifactIndex, options.artifactRoot);
   const decisions = new Map((registry.fixture_decisions || []).map((row) => [row.fixture_id, row]));
-  const requiredFiles = [options.matrixResult, options.registry];
+  const requiredFiles = [options.matrixResult, options.registry, options.artifactIndex];
   for (const fixture of matrix.fixtures) {
-    verifyFixture(fixture, decisions.get(fixture.fixture_id), options, requiredFiles);
+    verifyFixture(fixture, decisions.get(fixture.fixture_id), options, requiredFiles, registeredArtifacts);
   }
 
   const artifacts = artifactManifest(requiredFiles, options.artifactRoot);
@@ -79,8 +81,9 @@ export function verifySolvedSitePromotion(input) {
   return receipt;
 }
 
-function verifyFixture(fixture, decision, options, requiredFiles) {
+function verifyFixture(fixture, decision, options, requiredFiles, registeredArtifacts) {
   const id = String(fixture.fixture_id || 'unknown');
+  const fixtureKey = artifactKey(id);
   assert(fixture.status === 'passed' && fixture.success === true, `${id}: fixture did not pass.`);
   assert(decision?.acceptance_status === 'solved_candidate', `${id}: acceptance status is not solved_candidate.`);
   const quality = fixture.quality_metrics || {};
@@ -96,13 +99,16 @@ function verifyFixture(fixture, decision, options, requiredFiles) {
   assert(editor.validation_method === 'wp.blocks.validateBlock', `${id}: editor validation must use wp.blocks.validateBlock.`);
   assert(Number(editor.total_blocks) > 0 && editor.valid_blocks === editor.total_blocks && Number(editor.invalid_blocks) === 0, `${id}: editor validation is incomplete or invalid.`);
   assert(fixture.editor_canvas?.status === 'captured', `${id}: editor canvas evidence is missing.`);
-  addRequiredFile(requiredFiles, fixture.editor_canvas?.screenshot, `${id}: editor screenshot`);
+  const editorScreenshot = fixture.editor_canvas?.screenshot;
+  assert(typeof editorScreenshot === 'string' && editorScreenshot, `${id}: editor screenshot path is missing.`);
+  addRegisteredArtifact(requiredFiles, registeredArtifacts, `editor_canvas_${fixtureKey}_${artifactKey(path.basename(editorScreenshot))}`, `${id}: editor screenshot`);
   const visual = fixture.visual_parity_artifacts || {};
   assert(Number(visual.metrics?.mismatch_ratio) === 0 && Number(visual.metrics?.mismatch_pixels) === 0, `${id}: visual mismatch must be exactly zero.`);
-  for (const slot of ['source_screenshot', 'imported_screenshot', 'diff_screenshot', 'visual_diff']) {
+  for (const [slot, artifactName] of Object.entries({ source_screenshot: 'source', imported_screenshot: 'candidate', diff_screenshot: 'diff', visual_diff: 'visual-diff.json' })) {
     const artifact = visual.artifacts?.[slot];
     assert(artifact?.status === 'captured', `${id}: ${slot} evidence is missing.`);
-    addRequiredFile(requiredFiles, artifact?.ref?.path, `${id}: ${slot}`);
+    assert(typeof artifact?.ref?.path === 'string' && artifact.ref.path, `${id}: ${slot} path is missing.`);
+    addRegisteredArtifact(requiredFiles, registeredArtifacts, `visual_compare_${fixtureKey}_${artifactName}`, `${id}: ${slot}`);
   }
   const evidence = fixture.matrix_evidence || {};
   assert(evidence.readiness === 'verified' && (evidence.missing || []).length === 0, `${id}: runtime evidence is incomplete.`);
@@ -135,14 +141,51 @@ function artifactManifest(files, root) {
   }).sort((left, right) => left.path.localeCompare(right.path));
 }
 
-function addRequiredFile(files, value, label) {
-  assert(typeof value === 'string' && value, `${label} path is missing.`);
-  files.push(value);
+function indexRegisteredArtifacts(index, root) {
+  assert(index.schema === 'homeboy/command-result/v3', 'Artifact index must be a Homeboy command result.');
+  const artifacts = index.data?.payload?.artifacts;
+  assert(Array.isArray(artifacts), 'Artifact index does not contain a registered artifact inventory.');
+  const registered = new Map();
+  const harvestedFiles = filesWithin(root);
+  for (const artifact of artifacts) {
+    if (!artifact?.name || !artifact?.path) continue;
+    const entries = registered.get(artifact.name) || [];
+    entries.push(resolveRegisteredPath(artifact.path, root, harvestedFiles));
+    registered.set(artifact.name, entries);
+  }
+  return registered;
+}
+
+function resolveRegisteredPath(value, root, harvestedFiles) {
+  const registeredPath = path.resolve(path.isAbsolute(value) ? value : path.join(root, value));
+  if (isFileWithinRoot(registeredPath, root)) return registeredPath;
+  const basename = path.basename(registeredPath);
+  const matches = harvestedFiles.filter((file) => path.basename(file) === basename);
+  assert(matches.length === 1, `Registered artifact path could not be resolved uniquely under artifact root: ${value}`);
+  return matches[0];
+}
+
+function filesWithin(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = path.join(directory, entry.name);
+    return entry.isDirectory() ? filesWithin(entryPath) : entry.isFile() ? [entryPath] : [];
+  });
+}
+
+function isFileWithinRoot(file, root) {
+  const relative = path.relative(root, file);
+  return relative && !relative.startsWith('..') && !path.isAbsolute(relative) && fs.existsSync(file) && fs.statSync(file).isFile();
+}
+
+function addRegisteredArtifact(files, registeredArtifacts, name, label) {
+  const matches = registeredArtifacts.get(name) || [];
+  assert(matches.length === 1, `${label} must have exactly one registered artifact named ${name}.`);
+  files.push(matches[0]);
 }
 
 function normalizeOptions(input) {
   const options = { ...input };
-  for (const key of ['matrixResult', 'registry', 'runtimeInputs', 'artifactRoot', 'staticSiteImporterSha', 'blocksEngineSha', 'fixtureTreeSha', 'solvedFixtureCount', 'runUrl', 'artifactUrl', 'output', 'manifestOutput']) {
+  for (const key of ['matrixResult', 'registry', 'runtimeInputs', 'artifactIndex', 'artifactRoot', 'staticSiteImporterSha', 'blocksEngineSha', 'fixtureTreeSha', 'solvedFixtureCount', 'runUrl', 'artifactUrl', 'output', 'manifestOutput']) {
     assert(options[key] !== undefined && options[key] !== '', `--${kebab(key)} is required.`);
   }
   options.artifactRoot = path.resolve(options.artifactRoot);
@@ -170,11 +213,12 @@ function readJson(file, label) {
 }
 function assertSha(value, label) { assert(/^[a-f0-9]{40}$/.test(String(value || '')), `${label} must be a full commit SHA.`); }
 function assert(condition, message) { if (!condition) throw new Error(message); }
+function artifactKey(value) { return String(value || 'fixture').toLowerCase().replace(/[^a-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || 'fixture'; }
 function camel(value) { return value.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase()); }
 function kebab(value) { return value.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`); }
 
 function printHelp() {
-  process.stdout.write('Usage: node tools/verify-solved-site-promotion.mjs --matrix-result <file> --registry <file> --runtime-inputs <file> --artifact-root <dir> --static-site-importer-sha <sha> --blocks-engine-sha <sha> --fixture-tree-sha <sha> --solved-fixture-count <n> --run-url <url> --artifact-url <url> --output <file> --manifest-output <file>\n');
+  process.stdout.write('Usage: node tools/verify-solved-site-promotion.mjs --matrix-result <file> --registry <file> --runtime-inputs <file> --artifact-index <file> --artifact-root <dir> --static-site-importer-sha <sha> --blocks-engine-sha <sha> --fixture-tree-sha <sha> --solved-fixture-count <n> --run-url <url> --artifact-url <url> --output <file> --manifest-output <file>\n');
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

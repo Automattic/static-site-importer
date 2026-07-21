@@ -175,6 +175,7 @@ jobs:
             --matrix-result "${matrix_results[0]}" \
             --registry "${registries[0]}" \
             --runtime-inputs "$ARTIFACT_ROOT/runtime-inputs.json" \
+            --artifact-index "$ARTIFACT_ROOT/homeboy-bench-result.json" \
             --artifact-root "$ARTIFACT_ROOT" \
             --static-site-importer-sha "$STATIC_SITE_IMPORTER_SHA" \
             --blocks-engine-sha "$BLOCKS_ENGINE_SHA" \
