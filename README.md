@@ -455,7 +455,7 @@ This repo is Homeboy-managed:
 
 ## Boundary
 
-This plugin owns static-site and website-artifact import workflows plus generated WordPress artifacts. [Blocks Engine PHP transformer](https://github.com/Automattic/blocks-engine/tree/trunk/php-transformer) owns generic artifact compilation, including the materializer-neutral `blocks-engine/php-transformer/compiled-site/v1` page route and theme-asset report. SSI maps that report into its WordPress import contract and keeps product-specific page/product mapping here.
+This plugin owns static-site and website-artifact import workflows plus generated WordPress artifacts. [Blocks Engine PHP transformer](https://github.com/Automattic/blocks-engine/tree/trunk/php-transformer) owns generic artifact compilation and emits `source_reports.wordpress_site_plan` using `blocks-engine/wordpress-site-plan/v2`; SSI materializes that plan and records its receipt. `compiled-site` and `materialization-plan` v1 remain Theme Materializer compatibility-only contracts until the canonical chrome/SVG media parity tracker is accepted.
 
 The intended dependency direction is:
 
@@ -463,6 +463,6 @@ The intended dependency direction is:
 Static Site Importer -> Blocks Engine PHP transformer
 ```
 
-SSI import reports consume Blocks Engine PHP transformer result envelopes for conversion-quality diagnostics, and record the compiled-site contract when importing website artifacts. Blocks Engine schemas are the active wire contract; SSI should not call lower-level converter packages directly or re-derive semantic page-route intent when the transformer supplies it.
+SSI import reports record `blocks_engine.transformer` provenance and `blocks_engine.wordpress_site_plan`; they do not project compiled-site or materialization-plan v1 payloads. Blocks Engine schemas are the active wire contract; SSI should not call lower-level converter packages directly or re-derive semantic page-route intent when the transformer supplies it.
 
 Imported pages remain WordPress pages for routing, titles, front-page assignment, editor visibility, and body content edits. Their imported body layouts live on the page posts as block markup in `post_content`. The generated block theme owns shared header/footer parts, optional background decoration, frontend/editor styles, scripts, and template wrappers that render page bodies through `core/post-content`; the generic `templates/page.html` stays the fallback for pages created after import.

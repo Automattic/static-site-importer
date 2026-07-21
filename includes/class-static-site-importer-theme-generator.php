@@ -167,7 +167,10 @@ class Static_Site_Importer_Theme_Generator {
 		$report       = array(
 			'schema'         => 'static-site-importer/import-report/v1',
 			'import_run_id'  => self::import_run_id( $args ),
-			'blocks_engine'  => array( 'wordpress_site_plan' => $plan ),
+			'blocks_engine'  => array(
+				'transformer'         => self::transformer_provenance(),
+				'wordpress_site_plan' => $plan,
+			),
 			'quality'        => $quality,
 			'diagnostics'    => $diagnostics,
 			'entity_lifecycle' => $entity_lifecycle,
@@ -289,6 +292,35 @@ class Static_Site_Importer_Theme_Generator {
 				array( 'schema' => 'wp-codebox/live-progress-event/v1', 'phase' => 'ssi.saved.completed', 'progress' => array( 'percent' => 100 ) ),
 			),
 			'materialization_receipt'  => $receipt,
+		);
+	}
+
+	/**
+	 * Report the installed Blocks Engine compiler identity without projecting its result.
+	 *
+	 * @return array{package:string,version:string,reference:string}
+	 */
+	private static function transformer_provenance(): array {
+		$package   = 'automattic/blocks-engine-php-transformer';
+		$version   = 'unknown';
+		$reference = 'unknown';
+		$class     = '\\Composer\\InstalledVersions';
+
+		if ( class_exists( $class ) && $class::isInstalled( $package ) ) {
+			try {
+				$version = (string) ( $class::getPrettyVersion( $package ) ?: $version );
+				if ( method_exists( $class, 'getReference' ) ) {
+					$reference = (string) ( $class::getReference( $package ) ?: $reference );
+				}
+			} catch ( Throwable ) {
+				// Keep the stable fallback identity when Composer metadata is incomplete.
+			}
+		}
+
+		return array(
+			'package'   => $package,
+			'version'   => $version,
+			'reference' => $reference,
 		);
 	}
 

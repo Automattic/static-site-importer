@@ -11,6 +11,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Writes generated theme artifacts to disk.
+ *
+ * @deprecated Retain this v1 compatibility surface until the canonical chrome/SVG media parity tracker is accepted.
  */
 class Static_Site_Importer_Theme_Materializer {
 
