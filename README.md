@@ -8,7 +8,7 @@ Static Site Importer is a WordPress plugin. It requires the [Blocks Engine PHP t
 
 ## Canonical Site Plans
 
-`static-site-importer/materialize-wordpress-site-plan` is the generic plan-only boundary for a `blocks-engine/wordpress-site-plan/v2` produced by Blocks Engine 0.4.3. SSI calls the package's canonical validator and resolver, then owns WordPress/filesystem preflight, materialization, reconciliation, and the `static-site-importer/materialization-receipt/v1` response. It accepts no source HTML or transformer result envelope.
+`static-site-importer/materialize-wordpress-site-plan` is the generic plan-only boundary for a `blocks-engine/wordpress-site-plan/v2` produced by Blocks Engine 0.4.4. SSI calls the package's canonical validator and resolver, then owns WordPress/filesystem preflight, materialization, reconciliation, and the `static-site-importer/materialization-receipt/v1` response. It accepts no source HTML or transformer result envelope.
 
 For an isolated runtime matrix, invoke the ability with `plan`, `slug`, and optional `overwrite`, or use:
 
