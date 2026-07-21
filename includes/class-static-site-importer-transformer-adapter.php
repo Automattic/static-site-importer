@@ -66,11 +66,12 @@ class Static_Site_Importer_Transformer_Adapter {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function compile_website_artifact_result( array $artifact, array $options = array() ) {
-		if ( ! $this->supports_website_artifact_compile() ) {
+		$class = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactCompiler';
+		if ( ! class_exists( $class ) ) {
 			return new WP_Error( 'static_site_importer_missing_transformer', 'Blocks Engine php-transformer is required to import a website artifact.' );
 		}
 
-		$result = call_user_func( 'blocks_engine_php_transformer_compile_artifact', $artifact, $this->normalize_compile_options( $options ) );
+		$result = ( new $class() )->compile( $artifact, $this->normalize_compile_options( $options ) )->toArray();
 		return is_array( $result ) ? $result : new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid result.' );
 	}
 

@@ -95,27 +95,38 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$plan = isset( $compiled['source_reports']['wordpress_site_plan'] ) && is_array( $compiled['source_reports']['wordpress_site_plan'] ) ? $compiled['source_reports']['wordpress_site_plan'] : array();
 		if ( empty( $plan ) ) {
-			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.', $compiled );
+			$diagnostics = isset( $compiled['source_reports']['wordpress_site_plan_diagnostics'] ) && is_array( $compiled['source_reports']['wordpress_site_plan_diagnostics'] ) ? wp_json_encode( $compiled['source_reports']['wordpress_site_plan_diagnostics'] ) : '';
+			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.' . ( false !== $diagnostics ? ' ' . $diagnostics : '' ), $compiled );
 		}
 
+		$theme_dir = trailingslashit( get_theme_root() ) . $args['slug'];
+		$report_destinations = array( $theme_dir . '/static-site-importer-manifest.json' );
+		if ( ! empty( $args['write_theme_report_artifacts'] ) ) {
+			$report_destinations = array_merge( $report_destinations, array( $theme_dir . '/import-report.json', $theme_dir . '/import-validation-result.json', $theme_dir . '/finding-packets.json' ) );
+		}
+		if ( ! empty( $args['report'] ) ) {
+			$report_destinations[] = (string) $args['report'];
+			$report_destinations[] = trailingslashit( dirname( (string) $args['report'] ) ) . 'import-validation-result.json';
+			$report_destinations[] = trailingslashit( dirname( (string) $args['report'] ) ) . 'finding-packets.json';
+		}
+		$args['report_destinations'] = $report_destinations;
 		$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, $args );
 		if ( 'completed' !== $receipt['status'] ) {
 			$error = $receipt['errors'][0] ?? array();
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan materialization failed.' ), $receipt );
 		}
 
-		return self::legacy_result_from_wordpress_site_plan_receipt( $receipt, $compiled, $args );
+		return self::legacy_result_from_wordpress_site_plan_receipt( $receipt, $args );
 	}
 
 	/**
 	 * Project canonical materialization facts into the established public result envelope.
 	 *
 	 * @param array<string,mixed> $receipt  Materialization receipt.
-	 * @param array<string,mixed> $compiled Upstream compiler result.
 	 * @param array<string,mixed> $args     Import args.
 	 * @return array<string,mixed>
 	 */
-	private static function legacy_result_from_wordpress_site_plan_receipt( array $receipt, array $compiled, array $args ): array {
+	private static function legacy_result_from_wordpress_site_plan_receipt( array $receipt, array $args ): array {
 		$plan        = $receipt['plan'];
 		$theme        = $receipt['theme'];
 		$diagnostics  = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
@@ -123,25 +134,73 @@ class Static_Site_Importer_Theme_Generator {
 		$report       = array(
 			'schema'         => 'static-site-importer/import-report/v1',
 			'import_run_id'  => self::import_run_id( $args ),
-			'blocks_engine'  => isset( $compiled['source_reports'] ) && is_array( $compiled['source_reports'] ) ? $compiled['source_reports'] : array(),
+			'blocks_engine'  => array( 'wordpress_site_plan' => $plan ),
 			'quality'        => $quality,
 			'diagnostics'    => $diagnostics,
-			'generated_theme' => array( 'wordpress_site_plan' => $plan ),
+			'generated_theme' => array( 'wordpress_site_plan' => $plan, 'document_metadata' => self::document_metadata_from_plan_receipt( $plan ) ),
+			'source_documents' => $plan['reporting'],
 		);
+		$manifest = array(
+			'schema'        => 'static-site-importer/source-of-truth-manifest/v1',
+			'import_run_id' => $report['import_run_id'],
+			'artifact'      => array( 'source_hash' => $plan['source']['source_hash'], 'entry_path' => $plan['source']['entry_path'], 'provenance' => $plan['source']['provenance'] ),
+			'desired'       => array( 'pages' => array(), 'files' => array_map( static fn( array $write ): array => array( 'path' => $write['target_path'], 'kind' => $write['kind'] ), $plan['writes'] ) ),
+		);
+		foreach ( $receipt['completed']['pages'] as $source_path => $id ) {
+			$manifest['desired']['pages'][] = array( 'source_path' => $source_path, 'materialized_post_id' => $id, 'provenance_meta_key' => '_static_site_importer_reconciliation_identity' );
+		}
+		$validation = array( 'schema' => 'blocks-engine/import-validation-result/v1', 'artifact_type' => 'ImportValidationResult', 'status' => 'success' === ( $quality['status'] ?? '' ) ? 'passed' : 'failed', 'diagnostics' => $diagnostics, 'quality' => $quality );
+		$findings   = array( 'schema' => 'blocks-engine/finding-packets/v1', 'artifact_type' => 'FindingPacketSet', 'findings' => $diagnostics );
+		$theme_dir  = $theme['dir'];
+		$manifest_path = $theme_dir . '/static-site-importer-manifest.json';
+		self::write_plan_projection( $manifest_path, $manifest );
+		$report_path = '';
+		$validation_path = '';
+		$findings_path = '';
+		if ( ! empty( $args['write_theme_report_artifacts'] ) ) {
+			$report_path = $theme_dir . '/import-report.json';
+			$validation_path = $theme_dir . '/import-validation-result.json';
+			$findings_path = $theme_dir . '/finding-packets.json';
+			self::write_plan_projection( $report_path, $report );
+			self::write_plan_projection( $validation_path, $validation );
+			self::write_plan_projection( $findings_path, $findings );
+		}
 		return array(
 			'theme_slug'               => $theme['slug'],
 			'theme_name'               => isset( $args['name'] ) ? (string) $args['name'] : $theme['slug'],
 			'theme_dir'                => $theme['dir'],
+			'report_path'              => $report_path,
+			'validation_result_path'   => $validation_path,
+			'finding_packets_path'     => $findings_path,
+			'manifest_path'            => $manifest_path,
 			'pages'                    => $receipt['completed']['pages'],
 			'import_report'            => $report,
 			'import_report_summary'    => array( 'status' => $receipt['status'], 'diagnostic_count' => count( $diagnostics ) ),
-			'import_validation_result' => array( 'diagnostics' => $diagnostics, 'quality' => $quality ),
-			'finding_packets'          => array(),
+			'import_validation_result' => $validation,
+			'finding_packets'          => $findings,
 			'quality'                  => $quality,
-			'source_of_truth'          => array(),
+			'source_of_truth'          => $manifest,
 			'progress_events'          => array(),
 			'materialization_receipt'  => $receipt,
 		);
+	}
+
+	/** @param array<string,mixed> $plan @return array<string,mixed> */
+	private static function document_metadata_from_plan_receipt( array $plan ): array {
+		foreach ( $plan['pages'] as $page ) {
+			if ( ! empty( $page['entrypoint'] ) && isset( $page['document_metadata'] ) && is_array( $page['document_metadata'] ) ) {
+				return array_merge( array( 'schema' => 'static-site-importer/document-metadata/v1' ), $page['document_metadata'] );
+			}
+		}
+		return array( 'schema' => 'static-site-importer/document-metadata/v1' );
+	}
+
+	/** @param array<string,mixed> $payload */
+	private static function write_plan_projection( string $path, array $payload ): void {
+		$json = wp_json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+		if ( false === $json || false === file_put_contents( $path, $json . "\n" ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes preflighted public import artifacts.
+			throw new RuntimeException( 'Failed to write a preflighted import artifact.' );
+		}
 	}
 
 	/**
