@@ -27,6 +27,18 @@ namespace {
 		}
 	}
 
+	if ( ! class_exists( 'WP_Error' ) ) {
+		class WP_Error {
+			public function __construct( private string $code, private string $message ) {}
+			public function get_error_code(): string { return $this->code; }
+			public function get_error_message(): string { return $this->message; }
+		}
+	}
+
+	if ( ! function_exists( 'is_wp_error' ) ) {
+		function is_wp_error( mixed $value ): bool { return $value instanceof WP_Error; }
+	}
+
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 
@@ -74,6 +86,13 @@ namespace {
 	$assert( 'woocommerce_inactive' === ( $seeding['reason'] ?? '' ), 'missing-woocommerce-skip-reason-preserved' );
 	$assert( 1 === ( $seeding['counts']['skipped'] ?? 0 ), 'missing-woocommerce-skipped-count-preserved' );
 	$assert( 'woocommerce_inactive' === ( $seeding['products'][0]['reason'] ?? '' ), 'missing-woocommerce-product-row-reason-preserved' );
+
+	$failing = Static_Site_Importer_Entity_Materializer_Registry::materialize(
+		array( 'materializer' => static fn( array $manifest ) => new WP_Error( 'adapter_failed', 'Adapter failed.' ) ),
+		array()
+	);
+	$assert( is_wp_error( $failing ), 'failing-adapter-wp-error-is-preserved' );
+	$assert( 'adapter_failed' === $failing->get_error_code(), 'failing-adapter-error-code-is-preserved' );
 
 	if ( $failures ) {
 		fwrite( STDERR, implode( "\n", $failures ) . "\n" );

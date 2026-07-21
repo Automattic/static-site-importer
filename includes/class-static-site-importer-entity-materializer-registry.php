@@ -208,12 +208,15 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 *
 	 * @param array<string,mixed> $adapter  Adapter definition.
 	 * @param array<string,mixed> $manifest Validated manifest.
-	 * @return array<string,mixed>
+	 * @return array<string,mixed>|WP_Error
 	 */
-	public static function materialize( array $adapter, array $manifest ): array {
+	public static function materialize( array $adapter, array $manifest ) {
 		$materializer = $adapter['materializer'] ?? null;
 		if ( is_callable( $materializer ) ) {
 			$result = call_user_func( $materializer, $manifest );
+			if ( function_exists( 'is_wp_error' ) && is_wp_error( $result ) ) {
+				return $result;
+			}
 			if ( is_array( $result ) ) {
 				return $result;
 			}

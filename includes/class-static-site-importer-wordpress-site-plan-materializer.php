@@ -20,6 +20,24 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	 * @return array<string,mixed> Receipt.
 	 */
 	public static function materialize( array $plan, array $args = array() ): array {
+		$prepared = self::prepare( $plan, $args );
+		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
+			return $prepared['receipt'];
+		}
+		return self::materialize_prepared( $prepared );
+	}
+
+	/**
+	 * Validate and resolve every destination without mutating WordPress or the filesystem.
+	 *
+	 * The resulting state may be passed to materialize_prepared(). That method prepares
+	 * again before writing so changes after this check cannot bypass conflict protection.
+	 *
+	 * @param array<string,mixed> $plan Canonical v2 plan.
+	 * @param array<string,mixed> $args Materialization options.
+	 * @return array<string,mixed> Prepared state or a rejected receipt.
+	 */
+	public static function prepare( array $plan, array $args = array() ): array {
 		$state = array(
 			'plan'        => $plan,
 			'plan_hash'   => self::hash( $plan ),
@@ -34,7 +52,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			WordPressSitePlan::assertValid( $plan );
 		} catch ( InvalidArgumentException $error ) {
 			$state['diagnostics'][] = array( 'reason_code' => 'canonical_plan_rejected' );
-			return self::receipt( 'rejected', $state );
+			return array( 'status' => 'rejected', 'receipt' => self::receipt( 'rejected', $state ) );
 		}
 
 		try {
@@ -52,8 +70,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			$theme_uri = trailingslashit( get_theme_root_uri() ) . $slug;
 			try {
-				$has_dynamic_client_assets = ! empty( array_filter( $plan['assets'], static fn( array $asset ): bool => 'js' === ( $asset['kind'] ?? '' ) ) );
-				$resolved = ( new WordPressSitePlanResolver() )->resolve( $plan, array( 'theme_uri' => $theme_uri, 'require_proven_dynamic_client_assets' => $has_dynamic_client_assets ) );
+				// Resolver proof is canonical semantics, not an inference from copied files.
+				$resolved = ( new WordPressSitePlanResolver() )->resolve( $plan, array( 'theme_uri' => $theme_uri, 'require_proven_dynamic_client_assets' => true ) );
 			} catch ( InvalidArgumentException $error ) {
 				throw new InvalidArgumentException( 'canonical_destination_rejected' );
 			}
@@ -64,11 +82,26 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'dir'  => $theme_dir,
 				'uri'  => $theme_uri,
 			);
-			self::preflight( $state, ! empty( $args['overwrite'] ) );
+			self::preflight_state( $state, ! empty( $args['overwrite'] ) );
 		} catch ( InvalidArgumentException $error ) {
 			$state['diagnostics'][] = array( 'reason_code' => $error->getMessage() );
-			return self::receipt( 'rejected', $state );
+			return array( 'status' => 'rejected', 'receipt' => self::receipt( 'rejected', $state ) );
 		}
+		$state['status'] = 'prepared';
+		$state['args']   = $args;
+		return $state;
+	}
+
+	/** @param array<string,mixed> $prepared @return array<string,mixed> */
+	public static function materialize_prepared( array $prepared ): array {
+		if ( 'prepared' !== ( $prepared['status'] ?? '' ) || ! isset( $prepared['plan'] ) || ! is_array( $prepared['plan'] ) ) {
+			return self::receipt( 'rejected', array( 'plan' => array(), 'plan_hash' => '', 'diagnostics' => array( array( 'reason_code' => 'invalid_prepared_state' ) ), 'applied' => array( 'posts' => array(), 'files' => array(), 'operations' => array() ), 'skipped' => array(), 'existing_matches' => array( 'pages' => array() ) ) );
+		}
+		$state = self::prepare( $prepared['plan'], isset( $prepared['args'] ) && is_array( $prepared['args'] ) ? $prepared['args'] : array() );
+		if ( 'prepared' !== ( $state['status'] ?? '' ) ) {
+			return $state['receipt'];
+		}
+		$args = $state['args'];
 
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) ) {
@@ -115,7 +148,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	}
 
 	/** @param array<string,mixed> $state */
-	private static function preflight( array &$state, bool $overwrite ): void {
+	private static function preflight_state( array &$state, bool $overwrite ): void {
 		$pages_by_route = array();
 		$state['page_ids'] = array();
 		$state['source_ids'] = array();

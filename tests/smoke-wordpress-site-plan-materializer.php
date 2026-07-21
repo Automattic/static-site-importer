@@ -118,11 +118,24 @@ $unsafe_result = Static_Site_Importer_WordPress_Site_Plan_Materializer::material
 $assert( 'rejected' === $unsafe_result['status'], 'unsafe destination is rejected' );
 $assert( 'unsafe_destination_path' === $unsafe_result['diagnostics'][0]['reason_code'], 'unsafe destination is diagnosed' );
 
+$external_dynamic_plan = $plan;
+$external_dynamic_plan['reference_semantics']['dynamic_client_assets'] = array( 'status' => 'unresolved', 'materializer_may_reject' => true );
+$external_rejected = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $external_dynamic_plan, array( 'slug' => 'external-dynamic-plan' ) );
+$assert( 'rejected' === $external_rejected['status'], 'external dynamic scripts reject from canonical proof before mutation' );
+$assert( ! is_dir( $GLOBALS['ssi_plan_root'] . '/external-dynamic-plan' ), 'external dynamic scripts create no theme directory' );
+
+$inline_dynamic_plan = $plan;
+$inline_dynamic_plan['reference_semantics']['dynamic_client_assets'] = array( 'status' => 'unresolved', 'materializer_may_reject' => true );
+$inline_rejected = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $inline_dynamic_plan, array( 'slug' => 'inline-dynamic-plan' ) );
+$assert( 'rejected' === $inline_rejected['status'], 'inline unresolved dynamic scripts reject from canonical proof before mutation' );
+$assert( ! is_dir( $GLOBALS['ssi_plan_root'] . '/inline-dynamic-plan' ), 'inline unresolved dynamic scripts create no theme directory' );
+
 $dynamic_artifact = $artifact;
+$dynamic_artifact['files']['index.html'] .= '<script src="assets/site.js"></script>';
 $dynamic_artifact['files']['assets/site.js'] = 'window.sitePlan = true;';
 $dynamic_plan = ( new ArtifactCompiler() )->compile( $dynamic_artifact )->toArray()['source_reports']['wordpress_site_plan'];
-$dynamic_rejected = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $dynamic_plan, array( 'slug' => 'dynamic-plan' ) );
-$assert( 'completed' === $dynamic_rejected['status'], 'v0.4.3 proves static local scripts for materialization' );
+$dynamic_completed = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $dynamic_plan, array( 'slug' => 'dynamic-plan' ) );
+$assert( 'completed' === $dynamic_completed['status'], 'declared static local scripts are proven and materialize' );
 
 $GLOBALS['ssi_plan_posts']      = array();
 $GLOBALS['ssi_plan_meta']       = array();

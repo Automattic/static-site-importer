@@ -117,19 +117,32 @@ class Static_Site_Importer_Theme_Generator {
 			$report_destinations[] = trailingslashit( dirname( (string) $args['report'] ) ) . 'finding-packets.json';
 		}
 		$args['report_destinations'] = $report_destinations;
+		$prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare( $plan, $args );
+		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
+			return new WP_Error( 'static_site_importer_materialization_failed', 'WordPress site plan destination preflight failed.', $prepared['receipt'] ?? array() );
+		}
 		$dependencies = self::materialize_prepared_dependencies( $lifecycle, $args );
 		if ( is_wp_error( $dependencies ) ) {
 			return $dependencies;
 		}
-		$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, $args );
+		$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared );
 		$receipt['completed']['runtime_declarations'] = array( 'dependencies' => $dependencies, 'entities' => array() );
 		$receipt['runtime_lifecycle'] = $lifecycle;
 		if ( 'completed' !== $receipt['status'] ) {
 			$error = $receipt['errors'][0] ?? array();
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan materialization failed.' ), $receipt );
 		}
-		$entities = self::materialize_prepared_entities( $lifecycle, $args );
+		$entity_result = self::materialize_prepared_entities( $lifecycle, $args );
+		$entities      = $entity_result['reports'];
 		$receipt['completed']['runtime_declarations']['entities'] = $entities;
+		if ( null !== $entity_result['error'] ) {
+			$error = $entity_result['error'];
+			$receipt['status'] = 'partial';
+			$receipt['errors'][] = $error;
+			$receipt['completed']['declaration_ids'] = array_keys( array_filter( array_merge( $dependencies, $entities ), static fn( $report ): bool => 'waived' !== ( $report['status'] ?? '' ) ) );
+			$receipt['completed']['action_ids'] = array_values( array_filter( array_column( $receipt['completed']['operations'], 'reconciliation_identity' ) ) );
+			return new WP_Error( $error['code'], $error['message'], $receipt );
+		}
 
 		try {
 			return self::legacy_result_from_wordpress_site_plan_receipt( $receipt, $args, $lifecycle, $dependencies, $entities );
@@ -387,11 +400,11 @@ class Static_Site_Importer_Theme_Generator {
 		return $reports;
 	}
 
-	/** @return array<string,mixed> */
+	/** @return array{reports:array<string,mixed>,error:?array{code:string,message:string}} */
 	private static function materialize_prepared_entities( array $lifecycle, array $args ): array {
 		$reports = array();
 		if ( empty( $args['seed_entities'] ) ) {
-			return $reports;
+			return array( 'reports' => $reports, 'error' => null );
 		}
 		foreach ( $lifecycle['entities'] as $id => $prepared ) {
 			$adapter = $prepared['adapter'];
@@ -399,9 +412,22 @@ class Static_Site_Importer_Theme_Generator {
 				$reports[ $id ] = array( 'status' => 'waived', 'provider' => $adapter['provider'] ?? '' );
 				continue;
 			}
-			$reports[ $id ] = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, $prepared['manifest'] );
+			$report = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, $prepared['manifest'] );
+			if ( is_wp_error( $report ) ) {
+				$reports[ $id ] = array( 'status' => 'error', 'reason' => $report->get_error_code() );
+				return array( 'reports' => $reports, 'error' => array( 'code' => (string) $report->get_error_code(), 'message' => $report->get_error_message() ) );
+			}
+			$reports[ $id ] = $report;
+			$counts = isset( $report['counts'] ) && is_array( $report['counts'] ) ? $report['counts'] : array();
+			$expected = count( isset( $prepared['manifest']['products'] ) && is_array( $prepared['manifest']['products'] ) ? $prepared['manifest']['products'] : ( $prepared['manifest']['forms'] ?? array() ) );
+			$completed = array_sum( array_map( 'intval', array_intersect_key( $counts, array_flip( array( 'created', 'updated', 'mapped', 'skipped' ) ) ) ) );
+			if ( in_array( $report['status'] ?? '', array( 'failed', 'error' ), true ) || ! empty( $counts['failed'] ) || ! empty( $counts['error'] ) || ( ! empty( $prepared['required'] ) && $completed < $expected ) ) {
+				$code = isset( $report['code'] ) && is_scalar( $report['code'] ) ? (string) $report['code'] : 'static_site_importer_entity_materialization_failed';
+				$message = isset( $report['error'] ) && is_scalar( $report['error'] ) ? (string) $report['error'] : ( isset( $report['reason'] ) && is_scalar( $report['reason'] ) && '' !== (string) $report['reason'] ? (string) $report['reason'] : 'Runtime entity materialization failed for declaration: ' . $id . '.' );
+				return array( 'reports' => $reports, 'error' => array( 'code' => $code, 'message' => $message ) );
+			}
 		}
-		return $reports;
+		return array( 'reports' => $reports, 'error' => null );
 	}
 
 	/** @param array<string,mixed> $plan @return array<string,mixed> */
