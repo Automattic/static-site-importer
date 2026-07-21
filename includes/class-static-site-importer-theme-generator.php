@@ -116,7 +116,9 @@ class Static_Site_Importer_Theme_Generator {
 		$args['report_destinations'] = $report_destinations;
 		$prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare( $plan, $args );
 		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
-			return new WP_Error( 'static_site_importer_materialization_failed', 'WordPress site plan destination preflight failed.', $prepared['receipt'] ?? array() );
+			$receipt = isset( $prepared['receipt'] ) && is_array( $prepared['receipt'] ) ? $prepared['receipt'] : array();
+			$error   = $receipt['errors'][0] ?? array();
+			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan destination preflight failed.' ), $receipt );
 		}
 		$dependencies = self::materialize_prepared_dependencies( $lifecycle, $args );
 		if ( is_wp_error( $dependencies ) ) {
