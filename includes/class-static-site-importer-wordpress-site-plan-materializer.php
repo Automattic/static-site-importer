@@ -51,7 +51,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		try {
 			WordPressSitePlan::assertValid( $plan );
 		} catch ( InvalidArgumentException $error ) {
-			$state['diagnostics'][] = array( 'reason_code' => 'canonical_plan_rejected' );
+			$state['diagnostics'][] = array( 'reason_code' => 'canonical_plan_rejected', 'message' => $error->getMessage() );
 			return array( 'status' => 'rejected', 'receipt' => self::receipt( 'rejected', $state ) );
 		}
 
@@ -73,7 +73,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				// Resolver proof is canonical semantics, not an inference from copied files.
 				$resolved = ( new WordPressSitePlanResolver() )->resolve( $plan, array( 'theme_uri' => $theme_uri, 'require_proven_dynamic_client_assets' => true, 'runtime_capabilities' => array( 'asset_materialization' ) ) );
 			} catch ( InvalidArgumentException $error ) {
-				throw new InvalidArgumentException( 'canonical_destination_rejected' );
+				$state['diagnostics'][] = array( 'reason_code' => 'canonical_destination_rejected', 'message' => $error->getMessage() );
+				return array( 'status' => 'rejected', 'receipt' => self::receipt( 'rejected', $state ) );
 			}
 			$state['resolved'] = $resolved;
 			$state['theme_dir'] = $theme_dir;
@@ -427,7 +428,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$pages  = isset( $state['source_ids'] ) && is_array( $state['source_ids'] ) ? $state['source_ids'] : array();
 		foreach ( $state['diagnostics'] as $diagnostic ) {
 			if ( isset( $diagnostic['reason_code'] ) && is_string( $diagnostic['reason_code'] ) ) {
-				$errors[] = array( 'code' => $diagnostic['reason_code'], 'message' => $diagnostic['reason_code'] );
+				$errors[] = array( 'code' => $diagnostic['reason_code'], 'message' => is_string( $diagnostic['message'] ?? null ) ? $diagnostic['message'] : $diagnostic['reason_code'] );
 			}
 		}
 		return array(
