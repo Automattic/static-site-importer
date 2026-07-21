@@ -1179,6 +1179,8 @@ class Static_Site_Importer_Report_Diagnostics {
 				$extracted = self::extract_form_manifest_from_diagnostic( $diagnostic );
 				$controls  = isset( $extracted['controls'] ) && is_array( $extracted['controls'] ) ? $extracted['controls'] : array();
 				$form      = isset( $extracted['form'] ) && is_array( $extracted['form'] ) ? $extracted['form'] : $form;
+				$report['diagnostics'][ $index ]['controls'] = $controls;
+				$report['diagnostics'][ $index ]['form']     = $form;
 			}
 			$manifest_forms[] = array(
 				'selector'    => isset( $diagnostic['selector'] ) && is_scalar( $diagnostic['selector'] ) ? (string) $diagnostic['selector'] : '',
@@ -1218,7 +1220,11 @@ class Static_Site_Importer_Report_Diagnostics {
 			$report['diagnostics'][ $index ] = self::mark_form_finding_mapped( $report['diagnostics'][ $index ], $row, $seeding['provider'] );
 			$report['diagnostics'][ $index ] = self::add_form_graft_source_path( $report['diagnostics'][ $index ], $report );
 
-			if ( ! empty( $page_contents ) ) {
+			$generated_document_owns_graft = ! self::is_generated_core_html_form_diagnostic( $report['diagnostics'][ $index ] )
+				&& self::has_matching_generated_form_diagnostic( $report['diagnostics'][ $index ], $report['diagnostics'] );
+			if ( $generated_document_owns_graft ) {
+				$report['diagnostics'][ $index ]['graft_delegated_to_generated_document'] = true;
+			} elseif ( ! empty( $page_contents ) ) {
 				$markup = isset( $row['block_markup'] ) && is_scalar( $row['block_markup'] ) ? (string) $row['block_markup'] : '';
 				$graft  = self::graft_form_block_into_page_contents( $report['diagnostics'][ $index ], $markup, $page_contents );
 				if ( $graft['grafted'] ) {
@@ -1278,7 +1284,9 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return bool
 	 */
 	private static function is_generated_core_html_form_diagnostic( array $diagnostic ): bool {
-		if ( 'core/html' !== (string) ( $diagnostic['block_name'] ?? '' ) ) {
+		$is_generated_core_html = 'core/html' === (string) ( $diagnostic['block_name'] ?? '' )
+			|| 'generated_document_contains_core_html' === (string) ( $diagnostic['reason'] ?? $diagnostic['reason_code'] ?? '' );
+		if ( ! $is_generated_core_html ) {
 			return false;
 		}
 
@@ -1292,6 +1300,60 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
+	 * Check whether a generated-document finding owns the same form as a source finding.
+	 *
+	 * Named controls provide stable identity when generated URLs and Figma instance
+	 * classes differ from the source document.
+	 *
+	 * @param array<string,mixed>              $finding    Source form finding.
+	 * @param array<int,array<string,mixed>>    $diagnostics Import diagnostics.
+	 * @return bool
+	 */
+	private static function has_matching_generated_form_diagnostic( array $finding, array $diagnostics ): bool {
+		$identity = self::named_form_control_identity( $finding );
+		if ( empty( $identity ) ) {
+			return false;
+		}
+
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) || ! self::is_generated_core_html_form_diagnostic( $diagnostic ) ) {
+				continue;
+			}
+			if ( $identity === self::named_form_control_identity( $diagnostic ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Build stable identities for named form controls.
+	 *
+	 * @param array<string,mixed> $finding Form finding.
+	 * @return array<int,string>
+	 */
+	private static function named_form_control_identity( array $finding ): array {
+		$identity = array();
+		$controls = isset( $finding['controls'] ) && is_array( $finding['controls'] ) ? $finding['controls'] : array();
+		foreach ( $controls as $control ) {
+			if ( ! is_array( $control ) ) {
+				continue;
+			}
+			$name = isset( $control['name'] ) && is_scalar( $control['name'] ) ? strtolower( trim( (string) $control['name'] ) ) : '';
+			$id   = isset( $control['id'] ) && is_scalar( $control['id'] ) ? strtolower( trim( (string) $control['id'] ) ) : '';
+			if ( '' === $name && '' === $id ) {
+				continue;
+			}
+			$tag        = isset( $control['tag'] ) && is_scalar( $control['tag'] ) ? strtolower( trim( (string) $control['tag'] ) ) : '';
+			$type       = isset( $control['type'] ) && is_scalar( $control['type'] ) ? strtolower( trim( (string) $control['type'] ) ) : '';
+			$identity[] = implode( ':', array( $tag, $type, $name, $id ) );
+		}
+		sort( $identity );
+		return $identity;
+	}
+
+	/**
 	 * Extract the provider manifest shape from a generated core/html form diagnostic.
 	 *
 	 * @param array<string,mixed> $diagnostic Diagnostic row.
@@ -1299,6 +1361,16 @@ class Static_Site_Importer_Report_Diagnostics {
 	 */
 	private static function extract_form_manifest_from_diagnostic( array $diagnostic ): array {
 		$html = self::first_scalar( $diagnostic, array( 'source_html_preview', 'html_excerpt', 'excerpt' ) );
+		return self::form_manifest_from_html( $html );
+	}
+
+	/**
+	 * Extract a provider-neutral form manifest from complete HTML.
+	 *
+	 * @param string $html Form HTML.
+	 * @return array{form:array<string,string>,controls:array<int,array<string,mixed>>}
+	 */
+	public static function form_manifest_from_html( string $html ): array {
 		if ( '' === $html || ! str_contains( strtolower( $html ), '<form' ) ) {
 			return array(
 				'form'     => array(),

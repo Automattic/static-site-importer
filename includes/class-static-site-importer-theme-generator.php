@@ -229,12 +229,6 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		self::analyze_imported_page_content_documents( $document_pages, $page_artifacts['contents'] );
 
-		$source_template_writes = Static_Site_Importer_Theme_Materializer::source_document_template_writes( $theme_dir, $page_artifacts['contents'] );
-		$writes                 = array_merge( $writes, $source_template_writes['writes'] );
-		foreach ( $source_template_writes['reports'] as $report ) {
-			self::$conversion_report['generated_theme']['templates'][] = $report;
-		}
-
 		self::record_source_documents_summary( $artifacts['documents'] ?? array(), $document_pages, $page_ids, $permalinks );
 		foreach ( array_keys( $page_artifacts['patterns'] ) as $filename ) {
 			$page = $document_pages[ $filename ] ?? null;
@@ -257,8 +251,35 @@ class Static_Site_Importer_Theme_Generator {
 		self::materialize_required_plugins( $args, $artifacts, $theme_slug, $theme_name );
 		self::record_product_seeding_report( $args );
 		self::record_commerce_dependency_check( $args );
-		self::record_form_materialization( $args, $page_artifacts['contents'] );
+
+		$form_documents = $page_artifacts['contents'];
+		foreach ( $writes as $path => $content ) {
+			$relative_path = ltrim( str_replace( trailingslashit( $theme_dir ), '', $path ), '/' );
+			if ( str_starts_with( $relative_path, 'templates/' ) || str_starts_with( $relative_path, 'parts/' ) || str_starts_with( $relative_path, 'patterns/' ) ) {
+				$form_documents[ $relative_path ] = $content;
+			}
+		}
+		self::record_form_materialization( $args, $form_documents );
+		foreach ( array_keys( $page_artifacts['contents'] ) as $filename ) {
+			$page_artifacts['contents'][ $filename ] = $form_documents[ $filename ];
+		}
+		foreach ( $writes as $path => $content ) {
+			$relative_path = ltrim( str_replace( trailingslashit( $theme_dir ), '', $path ), '/' );
+			if ( array_key_exists( $relative_path, $form_documents ) ) {
+				$writes[ $path ] = $form_documents[ $relative_path ];
+			}
+		}
 		self::record_product_materialization( $args, $page_artifacts['contents'] );
+
+		$source_template_writes = Static_Site_Importer_Theme_Materializer::source_document_template_writes( $theme_dir, $page_artifacts['contents'] );
+		$writes                 = array_merge( $writes, $source_template_writes['writes'] );
+		foreach ( $source_template_writes['reports'] as $report ) {
+			self::$conversion_report['generated_theme']['templates'][] = $report;
+		}
+
+		Static_Site_Importer_Block_Document_Reporter::reset_generated_block_document_analysis( self::$conversion_report );
+		self::analyze_imported_page_content_documents( $document_pages, $page_artifacts['contents'] );
+		self::analyze_generated_theme_block_documents( $writes, $theme_dir );
 		$source_of_truth_manifest                    = self::source_of_truth_manifest( $import_run_id, $source_artifact_reference, $theme_dir, $theme_slug, $page_targets, $page_ids, $permalinks, $writes, $materialized, $write_theme_report_artifacts );
 		self::$conversion_report['source_of_truth'] = $source_of_truth_manifest;
 		$quality                                    = Static_Site_Importer_Report_Diagnostics::finalize_report( self::$conversion_report, $args );

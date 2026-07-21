@@ -42,6 +42,30 @@ class Static_Site_Importer_Block_Document_Reporter {
 	}
 
 	/**
+	 * Clear generated-document analysis before analyzing mutated final documents.
+	 *
+	 * @param array<string,mixed> $report Conversion report (mutated by reference).
+	 * @return void
+	 */
+	public static function reset_generated_block_document_analysis( array &$report ): void {
+		foreach ( array( 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count' ) as $metric ) {
+			$report['quality'][ $metric ] = 0;
+		}
+
+		$diagnostics = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
+		$report['diagnostics'] = array_values(
+			array_filter(
+				$diagnostics,
+				static function ( $diagnostic ): bool {
+					return ! is_array( $diagnostic ) || 'generated_theme_block_analysis' !== (string) ( $diagnostic['stage'] ?? '' );
+				}
+			)
+		);
+		$report['materialized_content']['block_documents'] = array();
+		$report['generated_theme']['block_documents']      = array();
+	}
+
+	/**
 	 * Determine whether a generated file should contain block markup.
 	 *
 	 * @param string $relative_path Theme-relative path.
@@ -120,6 +144,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 			$validation_message  = $serialization_mismatch ? 'Serialized block document differs from generated block markup.' : 'Generated block document contains parser-exposed invalid block markup.';
 			$diagnostic          = array(
 				'type'                      => 'invalid_block_document',
+				'stage'                     => 'generated_theme_block_analysis',
 				'source'                    => $relative_path,
 				'block_count'               => $block_count,
 				'core_html_block_count'     => $core_html_count,
@@ -250,7 +275,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 			$html = $block['innerHTML'];
 		}
 
-		$report['diagnostics'][] = Static_Site_Importer_Report_Diagnostics::fallback_diagnostic_entry(
+		$diagnostic = Static_Site_Importer_Report_Diagnostics::fallback_diagnostic_entry(
 			'core_html_block',
 			$source,
 			$html,
@@ -261,6 +286,12 @@ class Static_Site_Importer_Block_Document_Reporter {
 			),
 			$block
 		);
+		if ( 'form' === strtolower( (string) ( $diagnostic['tag_name'] ?? '' ) ) ) {
+			$manifest               = Static_Site_Importer_Report_Diagnostics::form_manifest_from_html( $html );
+			$diagnostic['form']     = $manifest['form'];
+			$diagnostic['controls'] = $manifest['controls'];
+		}
+		$report['diagnostics'][] = $diagnostic;
 	}
 
 	/**

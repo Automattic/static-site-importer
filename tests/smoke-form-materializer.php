@@ -280,6 +280,36 @@ namespace {
 	$assert( ! str_contains( (string) $duplicate_generated_contents['posts/page-home.post_content'], '<!-- wp:html' ), 'graft-generated-home-core-html-removed' );
 	$assert( ! str_contains( (string) $duplicate_generated_contents['posts/page-contact.post_content'], '<!-- wp:html' ), 'graft-generated-contact-core-html-removed' );
 
+	// A source fallback delegates to its generated-document finding instead of
+	// reporting a duplicate unanchorable graft after URL/class normalization.
+	$delegated_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
+	$delegated_report['diagnostics'][] = array(
+		'type'            => 'unsupported_html_fallback',
+		'diagnostic_code' => 'html_form_fallback',
+		'source_path'     => 'website/index.html',
+		'selector'        => 'main > form',
+		'form'            => array( 'class' => 'source-form', 'action' => 'index.html', 'method' => 'post' ),
+		'controls'        => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ) ),
+	);
+	$delegated_report['diagnostics'][] = array(
+		'type'                => 'core_html_block',
+		'reason'              => 'generated_document_contains_core_html',
+		'stage'               => 'generated_theme_block_analysis',
+		'source'              => 'parts/footer.html',
+		'source_path'         => 'parts/footer.html',
+		'selector'            => 'form.generated-form',
+		'tag_name'            => 'FORM',
+		'block_name'          => 'core/html',
+		'source_html_preview' => $core_html_form,
+		'form'                => array( 'class' => 'newsletter-form', 'action' => '#', 'method' => 'post' ),
+		'controls'            => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ) ),
+	);
+	$delegated_contents = array( 'parts/footer.html' => $core_html_block( $core_html_form ) );
+	$delegated_seeding  = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $delegated_report, array(), $delegated_contents );
+	$assert( true === ( $delegated_report['diagnostics'][0]['graft_delegated_to_generated_document'] ?? false ), 'source-form-graft-delegated' );
+	$assert( 1 === ( $delegated_seeding['grafted_count'] ?? 0 ), 'delegated-generated-form-grafted-once' );
+	$assert( 0 === count( array_filter( $delegated_report['diagnostics'], static fn ( array $diagnostic ): bool => 'form_block_graft_unanchorable' === ( $diagnostic['type'] ?? '' ) ) ), 'delegated-source-form-no-unanchorable-warning' );
+
 	// --- Form finding enrich carries readable_blocks for graft anchoring --------
 	$enrich_readable = $enrich->invoke(
 		null,

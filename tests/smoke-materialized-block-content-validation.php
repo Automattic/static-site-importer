@@ -180,6 +180,20 @@ $analyze->invoke(
 $slash_report = $report_property->getValue();
 $assert( 0 === ( $slash_report['quality']['invalid_block_count'] ?? -1 ), 'escaped-url-slashes-are-not-invalid-blocks' );
 
+$form_html    = '<form class="newsletter" action="#" method="post"><input type="email" name="email" required><button type="submit">Subscribe</button></form>';
+$form_content = '<!-- wp:html ' . wp_json_encode( array( 'content' => $form_html ) ) . ' -->' . $form_html . '<!-- /wp:html -->';
+$form_report  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( '/tmp/source/index.html' );
+Static_Site_Importer_Block_Document_Reporter::analyze_generated_block_document( 'parts/footer.html', $form_content, $form_report );
+$form_findings = array_values( array_filter( $form_report['diagnostics'], static fn ( array $diagnostic ): bool => 'generated_document_contains_core_html' === ( $diagnostic['reason'] ?? '' ) ) );
+$form_finding  = $form_findings[0] ?? array();
+$assert( 'email' === ( $form_finding['controls'][0]['name'] ?? '' ), 'generated-form-diagnostic-retains-control-name' );
+$assert( 'post' === ( $form_finding['form']['method'] ?? '' ), 'generated-form-diagnostic-retains-method' );
+
+Static_Site_Importer_Block_Document_Reporter::reset_generated_block_document_analysis( $form_report );
+Static_Site_Importer_Block_Document_Reporter::analyze_generated_block_document( 'parts/footer.html', '<!-- wp:jetpack/contact-form --><!-- wp:jetpack/field-email {"label":"Email"} /--><!-- /wp:jetpack/contact-form -->', $form_report );
+$assert( 0 === ( $form_report['quality']['core_html_block_count'] ?? -1 ), 'post-graft-analysis-has-no-core-html' );
+$assert( 0 === count( array_filter( $form_report['diagnostics'], static fn ( array $diagnostic ): bool => 'generated_document_contains_core_html' === ( $diagnostic['reason'] ?? '' ) ) ), 'pre-graft-core-html-diagnostic-removed' );
+
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );
