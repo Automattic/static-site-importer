@@ -111,6 +111,39 @@ test('matrix evidence fails closed when the materialization receipt is absent', 
   assert.ok(evidence.missing.includes('materialization_receipt'));
 });
 
+test('matrix evidence consumes the bounded fixture diagnostic contract', () => {
+  const reference = 'b'.repeat(40);
+  const evidence = collectMatrixEvidence({
+    fixture_diagnostics: {
+      blocks_engine: {
+        transformer: { package: 'automattic/blocks-engine-php-transformer', version: 'dev-trunk', reference },
+        wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2', asset_count: 1, assets: [{ target_path: 'assets/app.js', payload_sha256: 'sha256' }] },
+      },
+      materialization_receipt: {
+        schema: 'static-site-importer/materialization-receipt/v1',
+        status: 'completed',
+        plan_hash: 'plan-hash',
+        page_count: 1,
+        file_count: 2,
+        operation_count: 3,
+        declaration_count: 4,
+      },
+    },
+  });
+  assert.equal(evidence.readiness, 'verified');
+  assert.equal(evidence.transformer.package_reference, reference);
+  assert.equal(evidence.wordpress_site_plan.asset_count, 1);
+  assert.deepEqual(evidence.materialization_receipt, { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed', plan_hash: 'plan-hash', page_count: 1, file_count: 2, operation_count: 3, declaration_count: 4 });
+});
+
+test('block composition uses nested runtime quality metrics and diagnostic fallback counts', () => {
+  const composition = collectBlockComposition({
+    quality_metrics: { metrics: { block_count: 318 } },
+    fixture_diagnostics: { quality_counts: { core_html_block_count: 0, freeform_block_count: 0 } },
+  });
+  assert.deepEqual(composition, { block_total: 318, native_block_count: 318, core_html_block_count: 0, block_type_counts: null, source: 'quality_counts' });
+});
+
 test('Homeboy component assigns runtime and dependency capabilities to WordPress', () => {
   const config = JSON.parse(readFileSync(path.join(packageRoot, 'homeboy.json'), 'utf8'));
 
