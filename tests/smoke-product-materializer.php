@@ -137,7 +137,6 @@ namespace {
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-loss-classes.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-product-handoff-contract.php';
-	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-transformer-adapter.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 
 	$failures   = array();

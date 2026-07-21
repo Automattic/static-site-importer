@@ -1575,7 +1575,7 @@ function static_site_importer_rest_source_runtime( array $source, array $input =
 
 	return array(
 		'artifact'        => array(
-			'schema'     => Static_Site_Importer_Transformer_Adapter::WEBSITE_ARTIFACT_SCHEMA,
+			'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
 			'entrypoint' => static_site_importer_rest_entrypoint( $files ),
 			'files'      => $files,
 		),

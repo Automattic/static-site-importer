@@ -577,7 +577,6 @@ test('fixture-matrix rig preflight is declarative and checks hydrated prerequisi
     'node_modules/pixelmatch/index.js',
     'node_modules/pngjs/lib/png.js',
     'vendor/autoload.php',
-    'includes/class-static-site-importer-transformer-adapter.php',
   ];
   const declaredFiles = checks.map((check) => check.file).filter(Boolean).map((file) => file.replace('${components.static-site-importer.path}/', ''));
   const declaredDirectories = checks.map((check) => check.dir).filter(Boolean).map((dir) => dir.replace('${components.static-site-importer.path}/', ''));
@@ -864,8 +863,8 @@ test('fixture matrix captures installed transformer provenance and bounded mater
             reference: '908c76a8d9b7679c87f59aa183f09b12ea9f89e6',
             source_fingerprint: 'sha256:source123',
           },
-          materialization_plan: {
-            schema: 'blocks-engine/php-transformer/materialization-plan/v1',
+          wordpress_site_plan: {
+            schema: 'blocks-engine/wordpress-site-plan/v2',
             assets: [{
               path: 'assets/site.css',
               source: 'website/index.html',
@@ -904,10 +903,10 @@ test('fixture matrix captures installed transformer provenance and bounded mater
     package_reference: '908c76a8d9b7679c87f59aa183f09b12ea9f89e6',
     source_fingerprint: 'sha256:source123',
   });
-  assert.deepEqual(evidence.materialization_plan.assets[0], {
+  assert.deepEqual(evidence.wordpress_site_plan.assets[0], {
     path: 'assets/app.js', source: 'website/index.html', role: 'runtime', kind: 'script', type: 'application/javascript', placement: 'footer', defer: true, async: false, payload_present: true, payload_sha256: 'def456', payload_bytes: 84,
   });
-  assert.equal(evidence.materialization_plan.assets[1].payload_sha256, 'abc123');
+  assert.equal(evidence.wordpress_site_plan.assets[1].payload_sha256, 'abc123');
   assert.deepEqual(evidence.template_parts[0], {
     path: 'parts/header.html', origin: 'source_files.landmark', source_paths: ['website/index.html#header'], block_markup_hash: 'header123', block_markup_bytes: 512, block_names: ['core/group', 'core/navigation'], contains_core_html: false, control_marker_count: 2,
   });
@@ -924,9 +923,30 @@ test('fixture matrix labels reports without runtime provenance and materializati
   });
 
   assert.equal(result.fixtures[0].matrix_evidence.readiness, 'legacy_evidence_missing');
-  assert.deepEqual(result.fixtures[0].matrix_evidence.missing, ['transformer_package', 'transformer_version', 'transformer_reference', 'materialization_plan']);
+  assert.deepEqual(result.fixtures[0].matrix_evidence.missing, ['transformer_package', 'transformer_version', 'transformer_reference', 'wordpress_site_plan']);
   assert.equal(result.summary.matrix_evidence_readiness.status, 'incomplete');
   assert.equal(result.summary.matrix_evidence_readiness.counts.legacy_evidence_missing, 1);
+});
+
+test('fixture matrix rejects placeholder transformer provenance', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-matrix-placeholder-provenance-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'placeholder-provenance-test' });
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: {
+      fixture_id: 'simple-site',
+      status: 'passed',
+      import_report: {
+        blocks_engine: {
+          transformer: { package: 'unknown', version: 'dev-unknown', reference: '0000000000000000000000000000000000000000' },
+          wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(result.fixtures[0].matrix_evidence.missing, ['transformer_package', 'transformer_version', 'transformer_reference']);
 });
 
 test('fails the gate when a preserved_runtime_island carries no runtime-carried signal', () => {

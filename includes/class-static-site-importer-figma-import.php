@@ -289,7 +289,7 @@ class Static_Site_Importer_Figma_Import {
 		}
 
 		return array(
-			'schema'     => Static_Site_Importer_Transformer_Adapter::WEBSITE_ARTIFACT_SCHEMA,
+			'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
 			'root'       => 'website',
 			'entrypoint' => self::entrypoint( isset( $bundle['entrypoint'] ) ? (string) $bundle['entrypoint'] : '', $files ),
 			'files'      => $files,
@@ -416,7 +416,7 @@ class Static_Site_Importer_Figma_Import {
 		}
 
 		return array(
-			'schema'     => Static_Site_Importer_Transformer_Adapter::WEBSITE_ARTIFACT_SCHEMA,
+			'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
 			'root'       => 'website',
 			'entrypoint' => self::entrypoint( 'website/index.html', $files ),
 			'files'      => $files,

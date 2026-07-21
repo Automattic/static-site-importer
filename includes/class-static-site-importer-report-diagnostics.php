@@ -9,9 +9,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-if ( ! class_exists( 'Static_Site_Importer_Transformer_Adapter' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-transformer-adapter.php';
-}
 if ( ! class_exists( 'Static_Site_Importer_Product_Handoff_Contract' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-product-handoff-contract.php';
 }
@@ -178,53 +175,6 @@ class Static_Site_Importer_Report_Diagnostics {
 				'Semantic fidelity requires browser DOM extraction; use semantic_fidelity.comparison_targets to compare source static HTML against the generated WordPress URL.',
 			),
 		);
-	}
-
-	/**
-	 * Record the bundle-level Blocks Engine result used by import_website_artifact().
-	 *
-	 * @param array<string,mixed> $report   Import report.
-	 * @param array<string,mixed> $compiled Compiler result envelope.
-	 * @return void
-	 */
-	public static function record_blocks_engine_result( array &$report, array $compiled ): void {
-		$artifacts                                   = isset( $compiled['artifacts'] ) && is_array( $compiled['artifacts'] ) ? $compiled['artifacts'] : array();
-		$site                                        = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
-		$report['blocks_engine']['available']        = true;
-		$report['blocks_engine']['website_artifact'] = array(
-			'summary'     => ( new Static_Site_Importer_Transformer_Adapter() )->summarize_result( $compiled ),
-			'provenance'  => isset( $compiled['provenance'] ) && is_array( $compiled['provenance'] ) ? $compiled['provenance'] : array(),
-			'input'       => isset( $compiled['input'] ) && is_array( $compiled['input'] ) ? $compiled['input'] : array(),
-			'diagnostics' => isset( $compiled['diagnostics'] ) && is_array( $compiled['diagnostics'] ) ? $compiled['diagnostics'] : array(),
-		);
-		$report['blocks_engine']['transformer']      = self::transformer_package_provenance();
-
-		if ( 'blocks-engine/php-transformer/compiled-site/v1' === (string) ( $site['schema'] ?? '' ) ) {
-			$report['blocks_engine']['compiled_site'] = self::compiled_site_report_payload( $site );
-		}
-		if ( 'blocks-engine/php-transformer/materialization-plan/v1' === (string) ( $site['schema'] ?? '' ) ) {
-			$report['blocks_engine']['materialization_plan'] = self::compiled_site_report_payload( $site );
-		}
-
-		$conversion_report = isset( $compiled['conversion_report'] ) && is_array( $compiled['conversion_report'] ) ? $compiled['conversion_report'] : array();
-		if ( ! empty( $conversion_report ) ) {
-			$report['blocks_engine']['conversion_report'] = self::conversion_report_payload( $conversion_report );
-			self::record_conversion_report_quality_metadata( $report, $conversion_report );
-		}
-
-		self::mark_materialized_script_fallbacks_carried( $report, $site );
-
-		$runtime_dependency_parity = isset( $compiled['runtime_dependency_parity'] ) && is_array( $compiled['runtime_dependency_parity'] ) ? $compiled['runtime_dependency_parity'] : array();
-		if ( ! empty( $runtime_dependency_parity ) ) {
-			$report['blocks_engine']['runtime_dependency_parity'] = self::runtime_dependency_parity_payload( $runtime_dependency_parity );
-			self::record_runtime_dependency_parity_quality_metadata( $report, $runtime_dependency_parity );
-		}
-
-		$semantic_parity = self::blocks_engine_semantic_parity_report( $compiled );
-		if ( ! empty( $semantic_parity ) ) {
-			$report['blocks_engine']['semantic_parity'] = self::semantic_parity_report_payload( $semantic_parity );
-			self::record_semantic_parity_quality_metadata( $report, $semantic_parity );
-		}
 	}
 
 	/**
@@ -465,9 +415,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<string, mixed>
 	 */
 	public static function finalize_quality_report( array &$report, array $args ): array {
-		$materialization_plan = isset( $report['blocks_engine']['materialization_plan'] ) && is_array( $report['blocks_engine']['materialization_plan'] ) ? $report['blocks_engine']['materialization_plan'] : array();
 		self::mark_active_companion_script_fallbacks_materialized( $report );
-		self::mark_materialized_script_fallbacks_carried( $report, $materialization_plan );
 		self::normalize_import_diagnostics( $report );
 
 		$quality = $report['quality'];
@@ -2433,175 +2381,6 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
-	 * Preserve the Blocks Engine compiled-site contract in the import report.
-	 *
-	 * @param array<string,mixed> $site Blocks Engine compiled-site artifact.
-	 * @return array<string,mixed>
-	 */
-	private static function compiled_site_report_payload( array $site ): array {
-		$pages          = isset( $site['pages'] ) && is_array( $site['pages'] ) ? $site['pages'] : array();
-		$shared_regions = isset( $site['shared_regions'] ) && is_array( $site['shared_regions'] ) ? $site['shared_regions'] : array();
-		$theme_assets   = isset( $site['theme_assets'] ) && is_array( $site['theme_assets'] ) ? $site['theme_assets'] : array();
-		$assets         = isset( $site['assets'] ) && is_array( $site['assets'] ) ? $site['assets'] : array();
-
-		$payload = array(
-			'schema'              => (string) ( $site['schema'] ?? '' ),
-			'page_count'          => count( $pages ),
-			'pages'               => self::compiled_site_pages_report_payload( $pages ),
-			'shared_region_count' => count( $shared_regions ),
-			'shared_regions'      => $shared_regions,
-			'theme_assets'        => array(
-				'styles'  => isset( $theme_assets['styles'] ) && is_array( $theme_assets['styles'] ) ? $theme_assets['styles'] : array(),
-				'scripts' => isset( $theme_assets['scripts'] ) && is_array( $theme_assets['scripts'] ) ? $theme_assets['scripts'] : array(),
-			),
-			'provenance'          => isset( $site['provenance'] ) && is_array( $site['provenance'] ) ? $site['provenance'] : array(),
-		);
-
-		if ( ! empty( $assets ) ) {
-			$payload['assets'] = self::materialization_plan_assets_report_payload( $assets );
-		}
-
-		return $payload;
-	}
-
-	/**
-	 * Preserve compact materialization-plan asset metadata for downstream diagnostics.
-	 *
-	 * @param array<int,mixed> $assets Materialization-plan assets.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function materialization_plan_assets_report_payload( array $assets ): array {
-		$rows = array();
-		foreach ( $assets as $asset ) {
-			if ( ! is_array( $asset ) ) {
-				continue;
-			}
-
-			$row = array();
-			foreach ( array( 'source', 'path', 'target_path', 'kind', 'role', 'intent', 'media_type', 'mime_type', 'placement', 'source_path', 'selector', 'hash' ) as $field ) {
-				if ( isset( $asset[ $field ] ) && is_scalar( $asset[ $field ] ) && '' !== trim( (string) $asset[ $field ] ) ) {
-					$row[ $field ] = (string) $asset[ $field ];
-				}
-			}
-			$payload = self::materialization_plan_asset_payload( $asset );
-			if ( null !== $payload ) {
-				$row['payload_present'] = true;
-				$row['payload_sha256']  = hash( 'sha256', $payload );
-				$row['payload_bytes']   = strlen( $payload );
-			} else {
-				$row['payload_present'] = false;
-			}
-			foreach ( array( 'defer', 'async' ) as $field ) {
-				if ( array_key_exists( $field, $asset ) ) {
-					$row[ $field ] = (bool) $asset[ $field ];
-				}
-			}
-			if ( isset( $asset['bytes'] ) && is_numeric( $asset['bytes'] ) ) {
-				$row['bytes'] = (int) $asset['bytes'];
-			}
-
-			if ( ! empty( $row ) ) {
-				$rows[] = $row;
-			}
-		}
-
-		return $rows;
-	}
-
-	/**
-	 * Return a materialization asset payload without retaining it in diagnostics.
-	 *
-	 * @param array<string,mixed> $asset Materialization-plan asset.
-	 * @return string|null
-	 */
-	private static function materialization_plan_asset_payload( array $asset ): ?string {
-		if ( isset( $asset['content_base64'] ) && is_scalar( $asset['content_base64'] ) ) {
-			$payload = base64_decode( (string) $asset['content_base64'], true );
-			if ( false !== $payload ) {
-				return $payload;
-			}
-		}
-		if ( isset( $asset['content'] ) && is_scalar( $asset['content'] ) ) {
-			return (string) $asset['content'];
-		}
-		return null;
-	}
-
-	/**
-	 * Read the effective transformer package identity from Composer's installed metadata.
-	 *
-	 * @return array<string,string>
-	 */
-	private static function transformer_package_provenance(): array {
-		$package = 'automattic/blocks-engine-php-transformer';
-		if ( ! class_exists( '\Composer\InstalledVersions' ) || ! \Composer\InstalledVersions::isInstalled( $package ) ) {
-			return array( 'package' => $package );
-		}
-
-		$provenance = array(
-			'package' => $package,
-			'version' => (string) \Composer\InstalledVersions::getPrettyVersion( $package ),
-		);
-		if ( method_exists( '\\Composer\\InstalledVersions', 'getReference' ) ) {
-			$reference = \Composer\InstalledVersions::getReference( $package );
-			if ( is_string( $reference ) && '' !== $reference ) {
-				$provenance['reference'] = $reference;
-			}
-		}
-		if ( method_exists( '\\Composer\\InstalledVersions', 'getInstallPath' ) ) {
-			$install_path = \Composer\InstalledVersions::getInstallPath( $package );
-			if ( is_string( $install_path ) && is_dir( $install_path ) ) {
-				$files    = array();
-				$iterator = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $install_path, FilesystemIterator::SKIP_DOTS ) );
-				foreach ( $iterator as $file ) {
-					if ( ! $file instanceof SplFileInfo || ! $file->isFile() ) {
-						continue;
-					}
-					$relative = ltrim( str_replace( '\\', '/', substr( $file->getPathname(), strlen( $install_path ) ) ), '/' );
-					if ( 'composer.json' === $relative || 'php-transformer.php' === $relative || str_starts_with( $relative, 'src/' ) ) {
-						$files[ $relative ] = hash_file( 'sha256', $file->getPathname() );
-					}
-				}
-				ksort( $files );
-				if ( ! empty( $files ) ) {
-					$provenance['source_fingerprint'] = 'sha256:' . hash( 'sha256', wp_json_encode( $files ) );
-					if ( ! isset( $provenance['reference'] ) ) {
-						$provenance['reference'] = $provenance['source_fingerprint'];
-					}
-				}
-			}
-		}
-		return $provenance;
-	}
-
-	/**
-	 * Normalize compiled-site page rows for reports.
-	 *
-	 * @param array<int,mixed> $pages Compiled-site page rows.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function compiled_site_pages_report_payload( array $pages ): array {
-		$normalized = array();
-		foreach ( $pages as $page ) {
-			if ( ! is_array( $page ) ) {
-				continue;
-			}
-
-			$normalized[] = array(
-				'source_path' => isset( $page['source_path'] ) && is_scalar( $page['source_path'] ) ? (string) $page['source_path'] : '',
-				'route_key'   => isset( $page['route_key'] ) && is_scalar( $page['route_key'] ) ? (string) $page['route_key'] : '',
-				'slug'        => isset( $page['slug'] ) && is_scalar( $page['slug'] ) ? (string) $page['slug'] : '',
-				'post_type'   => isset( $page['post_type'] ) && is_scalar( $page['post_type'] ) ? (string) $page['post_type'] : '',
-				'title'       => isset( $page['title'] ) && is_scalar( $page['title'] ) ? (string) $page['title'] : '',
-				'entrypoint'  => ! empty( $page['entrypoint'] ),
-				'artifact'    => isset( $page['artifact'] ) && is_scalar( $page['artifact'] ) ? (string) $page['artifact'] : '',
-			);
-		}
-
-		return $normalized;
-	}
-
-	/**
 	 * Preserve optional Blocks Engine conversion-report fields for import-report consumers.
 	 *
 	 * @param array<string,mixed> $conversion_report Native conversion report.
@@ -2886,43 +2665,6 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
-	 * Mark script fallback diagnostics as carried when the materialization plan emits the matching script asset.
-	 *
-	 * @param array<string,mixed> $report Import report.
-	 * @param array<string,mixed> $site   Blocks Engine materialization plan.
-	 * @return void
-	 */
-	private static function mark_materialized_script_fallbacks_carried( array &$report, array $site ): void {
-		$script_assets = self::materialized_runtime_script_assets_by_selector( $site );
-		if ( empty( $script_assets ) || empty( $report['diagnostics'] ) || ! is_array( $report['diagnostics'] ) ) {
-			return;
-		}
-
-		foreach ( $report['diagnostics'] as &$diagnostic ) {
-			if ( ! is_array( $diagnostic ) || ! self::is_script_runtime_fallback_diagnostic( $diagnostic ) ) {
-				continue;
-			}
-
-			$source_path = self::first_scalar( $diagnostic, array( 'source_path', 'source', 'path' ) );
-			$selector    = self::first_scalar( $diagnostic, array( 'selector' ) );
-			$key         = self::materialized_runtime_script_asset_key( $source_path, $selector );
-			if ( '' === $key || ! isset( $script_assets[ $key ] ) ) {
-				continue;
-			}
-
-			$asset                                    = $script_assets[ $key ];
-			$diagnostic['runtime_carried']            = true;
-			$diagnostic['loss_class']                 = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
-			$diagnostic['diagnostic_class']           = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
-			$diagnostic['materialized_runtime_asset'] = $asset;
-			if ( empty( $diagnostic['message'] ) ) {
-				$diagnostic['message'] = sprintf( 'Script fallback is carried by materialized theme asset %s.', (string) ( $asset['path'] ?? '' ) );
-			}
-		}
-		unset( $diagnostic );
-	}
-
-	/**
 	 * Resolve script fallback diagnostics after the generated companion plugin is active.
 	 *
 	 * @param array<string,mixed>            $report          Import report.
@@ -2996,89 +2738,6 @@ class Static_Site_Importer_Report_Diagnostics {
 			$runtime_scripts = isset( $dependency['runtime_scripts'] ) && is_array( $dependency['runtime_scripts'] ) ? $dependency['runtime_scripts'] : array();
 			self::mark_companion_script_fallbacks_materialized( $report, $runtime_scripts, (string) $slug );
 		}
-	}
-
-	/**
-	 * Index materialized executable script assets by source document and selector.
-	 *
-	 * @param array<string,mixed> $site Blocks Engine materialization plan.
-	 * @return array<string,array<string,string>>
-	 */
-	private static function materialized_runtime_script_assets_by_selector( array $site ): array {
-		if ( 'blocks-engine/php-transformer/materialization-plan/v1' !== (string) ( $site['schema'] ?? '' ) || empty( $site['assets'] ) || ! is_array( $site['assets'] ) ) {
-			return array();
-		}
-
-		$indexed = array();
-		foreach ( $site['assets'] as $asset ) {
-			if ( ! is_array( $asset ) ) {
-				continue;
-			}
-
-			$role   = self::first_scalar( $asset, array( 'role' ) );
-			$kind   = self::first_scalar( $asset, array( 'kind' ) );
-			$source = self::first_scalar( $asset, array( 'source' ) );
-			if ( 'script' !== $role || 'js' !== $kind || 'inline-script' !== $source ) {
-				continue;
-			}
-
-			$source_path = self::first_scalar( $asset, array( 'source_path' ) );
-			$selector    = self::first_scalar( $asset, array( 'selector' ) );
-			$key         = self::materialized_runtime_script_asset_key( $source_path, $selector );
-			if ( '' === $key ) {
-				continue;
-			}
-
-			$indexed[ $key ] = array_filter(
-				array(
-					'path'        => self::first_scalar( $asset, array( 'path', 'target_path' ) ),
-					'source_path' => $source_path,
-					'selector'    => $selector,
-					'role'        => $role,
-					'kind'        => $kind,
-					'source'      => $source,
-				),
-				static fn ( string $value ): bool => '' !== $value
-			);
-		}
-
-		return $indexed;
-	}
-
-	/**
-	 * Build a stable materialized script lookup key.
-	 *
-	 * @param string $source_path Source document path.
-	 * @param string $selector    Source element selector.
-	 * @return string
-	 */
-	private static function materialized_runtime_script_asset_key( string $source_path, string $selector ): string {
-		$source_path = trim( $source_path );
-		$selector    = trim( $selector );
-		if ( '' === $source_path || '' === $selector ) {
-			return '';
-		}
-
-		return $source_path . "\0" . $selector;
-	}
-
-	/**
-	 * Check whether a diagnostic describes a script fallback that needs carried runtime evidence.
-	 *
-	 * @param array<string,mixed> $diagnostic Diagnostic row.
-	 * @return bool
-	 */
-	private static function is_script_runtime_fallback_diagnostic( array $diagnostic ): bool {
-		$parts = array();
-		foreach ( array( 'diagnostic_code', 'kind', 'type', 'reason_code', 'reason', 'code', 'tag_name', 'tag', 'element', 'message' ) as $field ) {
-			if ( isset( $diagnostic[ $field ] ) && is_scalar( $diagnostic[ $field ] ) && '' !== trim( (string) $diagnostic[ $field ] ) ) {
-				$parts[] = (string) $diagnostic[ $field ];
-			}
-		}
-
-		$haystack = implode( ' ', $parts );
-
-		return (bool) preg_match( '/html[_\s-]+script[_\s-]+fallback|script[_\s-]+requires[_\s-]+runtime|\bscript\b/i', $haystack );
 	}
 
 	/**

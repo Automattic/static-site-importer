@@ -68,8 +68,6 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-di
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-artifact-diagnostics-adapter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-validation-runtime.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-report-diagnostics.php';
-require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-bundle-data-source.php';
-require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-transformer-adapter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-figma-import.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-exporter.php';
@@ -186,7 +184,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			$entrypoint     = false !== $entry_realpath ? ltrim( str_replace( '\\', '/', substr( $entry_realpath, strlen( $root ) ) ), '/' ) : basename( $entry );
 			$input          = array(
 				'artifact'                     => array(
-					'schema'     => Static_Site_Importer_Transformer_Adapter::WEBSITE_ARTIFACT_SCHEMA,
+					'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
 					'entrypoint' => $entrypoint,
 					'files'      => $files,
 				),

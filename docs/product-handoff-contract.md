@@ -11,7 +11,7 @@ Static Site Importer's product handoff uses four machine-readable envelopes. The
 
 ## Ownership
 
-- Blocks Engine owns static artifact compilation and the WordPressSitePlan v2. SSI retains migration support for previously persisted source-of-truth manifests; it does not execute legacy materialization-plan v1 imports.
+- Blocks Engine owns static artifact compilation and the WordPressSitePlan v2. SSI production imports consume that plan; Theme Materializer retains materialization-plan v1 compatibility only until the canonical chrome/SVG media parity tracker is accepted.
 - SSI owns WordPress writes, page provenance post meta, the generated theme `static-site-importer-manifest.json`, and the import report.
 - Codebox owns optional WordPress validation and artifact references.
 - Product callers consume these outputs directly; they should not depend on legacy SSI wrapper history.
