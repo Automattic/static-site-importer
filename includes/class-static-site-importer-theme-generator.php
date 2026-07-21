@@ -142,7 +142,7 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		try {
-			return self::legacy_result_from_wordpress_site_plan_receipt( $receipt, $args, $lifecycle, $dependencies, $entities );
+			return self::public_result_from_wordpress_site_plan_receipt( $receipt, $args, $lifecycle, $dependencies, $entities );
 		} catch ( Throwable $error ) {
 			$receipt['status'] = 'partial';
 			$receipt['errors'][] = array( 'code' => 'static_site_importer_projection_write_failed', 'message' => $error->getMessage() );
@@ -157,7 +157,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * @param array<string,mixed> $args     Import args.
 	 * @return array<string,mixed>
 	 */
-	private static function legacy_result_from_wordpress_site_plan_receipt( array $receipt, array $args, array $lifecycle = array(), array $dependencies = array(), array $entities = array() ): array {
+	private static function public_result_from_wordpress_site_plan_receipt( array $receipt, array $args, array $lifecycle = array(), array $dependencies = array(), array $entities = array() ): array {
 		$plan        = $receipt['plan'];
 		$theme        = $receipt['theme'];
 		$diagnostics  = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
