@@ -104,7 +104,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
 				'input_schema'        => array(
 					'type'       => 'object',
-					'properties' => array( 'plan' => array( 'type' => 'object' ), 'slug' => array( 'type' => 'string' ), 'overwrite' => array( 'type' => 'boolean' ) ),
+					'properties' => array( 'plan' => array( 'type' => 'object' ), 'slug' => array( 'type' => 'string' ), 'activate' => array( 'type' => 'boolean' ), 'site_title' => array( 'type' => 'string' ), 'overwrite' => array( 'type' => 'boolean' ) ),
 					'required'   => array( 'plan', 'slug' ),
 				),
 				'output_schema'       => array( 'type' => 'object' ),
@@ -126,11 +126,17 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'artifact'                     => array( 'type' => 'object' ),
 						'slug'                         => array( 'type' => 'string' ),
 						'name'                         => array( 'type' => 'string' ),
+						'site_title'                   => array( 'type' => 'string' ),
+						'stale_page_action'            => array( 'type' => 'string', 'enum' => array( 'report_only', 'draft' ) ),
 						'activate'                     => array( 'type' => 'boolean' ),
 						'overwrite'                    => array( 'type' => 'boolean' ),
 						'fail_on_quality'              => array( 'type' => 'boolean' ),
 						'allow_missing_woocommerce'    => array( 'type' => 'boolean' ),
 						'allow_missing_jetpack'        => array( 'type' => 'boolean' ),
+						'materialize_dependencies'     => array( 'type' => 'boolean' ),
+						'seed_entities'                => array( 'type' => 'boolean' ),
+						'products_manifest'            => array( 'type' => 'object' ),
+						'commerce_context'             => array( 'type' => 'object' ),
 						'report'                       => array( 'type' => 'string' ),
 						'write_theme_report_artifacts' => array( 'type' => 'boolean' ),
 						'asset_materialization_policy' => array(
@@ -166,6 +172,8 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'work_dir'                     => array( 'type' => 'string' ),
 						'slug'                         => array( 'type' => 'string' ),
 						'name'                         => array( 'type' => 'string' ),
+						'site_title'                   => array( 'type' => 'string' ),
+						'stale_page_action'            => array( 'type' => 'string', 'enum' => array( 'report_only', 'draft' ) ),
 						'activate'                     => array( 'type' => 'boolean' ),
 						'overwrite'                    => array( 'type' => 'boolean' ),
 						'fail_on_quality'              => array( 'type' => 'boolean' ),
@@ -207,6 +215,8 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'goal'                      => array( 'type' => 'string' ),
 						'slug'                      => array( 'type' => 'string' ),
 						'name'                      => array( 'type' => 'string' ),
+						'site_title'                => array( 'type' => 'string' ),
+						'stale_page_action'         => array( 'type' => 'string', 'enum' => array( 'report_only', 'draft' ) ),
 						'activate'                  => array( 'type' => 'boolean' ),
 						'overwrite'                 => array( 'type' => 'boolean' ),
 						'fail_on_quality'           => array( 'type' => 'boolean' ),
@@ -265,10 +275,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 if ( ! function_exists( 'static_site_importer_ability_materialize_wordpress_site_plan' ) ) {
 	/** @param array<string,mixed> $input @return array<string,mixed> */
 	function static_site_importer_ability_materialize_wordpress_site_plan( array $input ): array {
-		return Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
-			isset( $input['plan'] ) && is_array( $input['plan'] ) ? $input['plan'] : array(),
-			array( 'slug' => (string) ( $input['slug'] ?? '' ), 'overwrite' => ! empty( $input['overwrite'] ) )
-		);
+		return Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( isset( $input['plan'] ) && is_array( $input['plan'] ) ? $input['plan'] : array(), $input );
 	}
 }
 
@@ -395,12 +402,16 @@ if ( ! function_exists( 'static_site_importer_ability_import_website_artifact' )
 			'slug'                         => isset( $input['slug'] ) ? (string) $input['slug'] : '',
 			'name'                         => isset( $input['name'] ) ? (string) $input['name'] : '',
 			'site_title'                   => isset( $input['site_title'] ) ? (string) $input['site_title'] : '',
+			'stale_page_action'            => isset( $input['stale_page_action'] ) ? (string) $input['stale_page_action'] : '',
 			'activate'                     => ! empty( $input['activate'] ),
 			'overwrite'                    => ! empty( $input['overwrite'] ),
 			'fail_on_quality'              => ! empty( $input['fail_on_quality'] ),
 			'allow_missing_woocommerce'    => ! empty( $input['allow_missing_woocommerce'] ),
 			'allow_missing_jetpack'        => ! empty( $input['allow_missing_jetpack'] ),
 			'materialize_dependencies'     => array_key_exists( 'materialize_dependencies', $input ) ? (bool) $input['materialize_dependencies'] : true,
+			'seed_entities'                => ! empty( $input['seed_entities'] ),
+			'products_manifest'            => isset( $input['products_manifest'] ) && is_array( $input['products_manifest'] ) ? $input['products_manifest'] : array(),
+			'commerce_context'             => isset( $input['commerce_context'] ) && is_array( $input['commerce_context'] ) ? $input['commerce_context'] : array(),
 			'report'                       => isset( $input['report'] ) ? (string) $input['report'] : '',
 			'write_theme_report_artifacts' => ! empty( $input['write_theme_report_artifacts'] ),
 			'asset_materialization_policy' => isset( $input['asset_materialization_policy'] ) ? (string) $input['asset_materialization_policy'] : '',

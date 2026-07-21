@@ -163,11 +163,15 @@ $result = Static_Site_Importer_URL_Import_Runtime::import_url(
 		'url'             => 'private.example.test/',
 		'slug'            => 'private-import',
 		'overwrite'       => true,
+		'site_title'      => 'Private Import',
+		'stale_page_action' => 'draft',
 		'source_metadata' => array( 'requested_by' => 'external-caller' ),
 	)
 );
 
 $assert( ! is_wp_error( $result ), 'provider-import-succeeds' );
+$assert( 'Private Import' === Static_Site_Importer_Theme_Generator::$last_args['site_title'], 'url-import-forwards-site-title' );
+$assert( 'draft' === Static_Site_Importer_Theme_Generator::$last_args['stale_page_action'], 'url-import-forwards-stale-page-action' );
 $assert( 'private-import' === ( $result['theme_slug'] ?? '' ), 'result-passes-through' );
 $assert( 'website/index.html' === ( Static_Site_Importer_Theme_Generator::$last_artifact['files'][0]['path'] ?? '' ), 'provider-artifact-imported' );
 $assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['overwrite'] ?? null ), 'import-args-preserved' );

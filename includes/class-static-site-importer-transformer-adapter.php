@@ -59,6 +59,23 @@ class Static_Site_Importer_Transformer_Adapter {
 	}
 
 	/**
+	 * Compile without projecting the transformer result through SSI-owned views.
+	 *
+	 * @param array<string,mixed> $artifact Website artifact bundle.
+	 * @param array<string,mixed> $options Compiler options.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function compile_website_artifact_result( array $artifact, array $options = array() ) {
+		$class = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactCompiler';
+		if ( ! class_exists( $class ) ) {
+			return new WP_Error( 'static_site_importer_missing_transformer', 'Blocks Engine php-transformer is required to import a website artifact.' );
+		}
+
+		$result = ( new $class() )->compile( $artifact, $this->normalize_compile_options( $options ) )->toArray();
+		return is_array( $result ) ? $result : new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid result.' );
+	}
+
+	/**
 	 * Project the stable transformer contracts into SSI's compiled artifact envelope.
 	 *
 	 * @param array<string,mixed> $result TransformerResult::toArray() output.

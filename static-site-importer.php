@@ -70,11 +70,11 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-va
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-report-diagnostics.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-bundle-data-source.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-transformer-adapter.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-figma-import.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-exporter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-block-document-reporter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-generator.php';
-require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/abilities.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/block.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/rest.php';
@@ -136,7 +136,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				array( 'plan' => $plan, 'slug' => (string) $assoc_args['slug'], 'overwrite' => isset( $assoc_args['overwrite'] ) )
 			);
 			WP_CLI::line( (string) wp_json_encode( $receipt, JSON_UNESCAPED_SLASHES ) );
-			if ( 'complete' !== $receipt['status'] ) {
+			if ( 'completed' !== $receipt['status'] ) {
 				WP_CLI::halt( 1 );
 			}
 		}

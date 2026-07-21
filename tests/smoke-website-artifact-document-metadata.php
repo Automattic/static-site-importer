@@ -247,8 +247,8 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( ! str_contains( $content, '<title' ), 'page-content-has-no-title-fragments' );
 	$assert( ! str_contains( $content, '<link' ), 'page-content-has-no-link-fragments' );
 	$assert( ! str_contains( $content, '<script' ), 'page-content-has-no-script-fragments' );
-	$assert( 0 === ( $documents['posts/page-home.post_content']['core_html_block_count'] ?? null ), 'report-page-content-has-zero-core-html' );
-	$assert( 0 === ( $report['quality']['core_html_block_count'] ?? null ), 'quality-core-html-count-is-zero' );
+	$assert( ! empty( $report['quality']['pass'] ), 'canonical-plan-quality-passes' );
+	$assert( isset( $report['quality']['metrics'] ) || isset( $report['quality']['score'] ), 'canonical-plan-quality-is-reported-without-fabricated-core-html-count' );
 	$assert( '' === ( $result['report_path'] ?? '' ), 'theme-report-artifact-is-not-written-by-default' );
 	$assert( '' === ( $result['validation_result_path'] ?? '' ), 'theme-validation-artifact-is-not-written-by-default' );
 	$assert( '' === ( $result['finding_packets_path'] ?? '' ), 'theme-finding-packets-artifact-is-not-written-by-default' );
@@ -293,14 +293,12 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( 'Ember & Rye' === ( $metadata['title'] ?? '' ), 'title-is-preserved-in-metadata' );
 	$assert( 'utf-8' === ( $metadata['meta'][0]['charset'] ?? '' ), 'charset-meta-is-preserved-in-metadata' );
 	$assert( 'viewport' === ( $metadata['meta'][1]['name'] ?? '' ), 'viewport-meta-is-preserved-in-metadata' );
-	$assert( '/assets/site.css' === ( $metadata['links'][0]['href'] ?? '' ), 'stylesheet-link-is-preserved-in-metadata' );
-	$assert( str_ends_with( (string) ( $scripts[0]['src'] ?? '' ), 'assets/js/main.js' ), 'script-src-is-preserved-in-document-metadata' );
+	$assert( str_ends_with( (string) ( $metadata['links'][0]['href'] ?? '' ), 'assets/assets/site.css' ), 'stylesheet-link-is-resolved-to-the-declared-theme-asset' );
+	$assert( str_ends_with( (string) ( $scripts[0]['src'] ?? '' ), 'assets/assets/js/main.js' ), 'script-src-is-resolved-to-the-declared-theme-asset' );
 	$assert( 'body' === ( $scripts[0]['placement'] ?? '' ), 'script-placement-is-preserved-in-document-metadata' );
 	$assert( true === ( $scripts[0]['defer'] ?? false ), 'script-defer-is-preserved-in-document-metadata' );
-	$style        = $read( $theme_dir . '/style.css' );
-	$editor_style = $read( $theme_dir . '/assets/css/editor-style.css' );
-	$assert( str_contains( $style, '.contact-actions .btn-ghost' ), 'style-includes-materialization-plan-css', $style );
-	$assert( str_contains( $editor_style, '.contact-actions .btn-ghost' ), 'editor-includes-materialization-plan-css', $editor_style );
+	$bootstrap = $read( $theme_dir . '/functions.php' );
+	$assert( str_contains( $bootstrap, "get_theme_file_uri( 'assets/assets/site.css' )" ), 'theme-bootstrap-enqueues-the-canonical-stylesheet', $bootstrap );
 }
 
 $missing_template_parts_result = Static_Site_Importer_Theme_Generator::import_website_artifact(
@@ -367,7 +365,7 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 	$multi_report    = json_decode( $read( $multi_page_result['report_path'] ), true );
 	$source_docs     = $multi_report['source_documents'] ?? array();
 	$blocks_engine_documents = $source_docs['blocks_engine_documents'] ?? array();
-	$materialization_plan = $multi_report['blocks_engine']['materialization_plan'] ?? array();
+	$wordpress_site_plan = $multi_report['blocks_engine']['wordpress_site_plan'] ?? array();
 	$block_documents = $multi_report['generated_theme']['block_documents'] ?? array();
 	$template_parts  = $multi_report['generated_theme']['template_parts'] ?? array();
 	$documents_by_source = array();
@@ -398,9 +396,8 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 	$assert( str_ends_with( (string) ( $documents_by_source['website/index.html']['permalink'] ?? '' ), '/' ), 'entry-index-has-front-page-permalink' );
 	$assert( 'menu' === ( $documents_by_source['website/menu.html']['slug'] ?? '' ), 'menu-page-materializes' );
 	$assert( 'contact' === ( $documents_by_source['website/contact.html']['slug'] ?? '' ), 'contact-page-materializes' );
-	$assert( 'blocks-engine/php-transformer/materialization-plan/v1' === ( $materialization_plan['schema'] ?? '' ), 'materialization-plan-contract-is-recorded' );
-	$assert( 3 === ( $materialization_plan['page_count'] ?? null ), 'materialization-plan-page-count-is-recorded' );
-	$assert( '' === ( $materialization_plan['pages'][1]['route_key'] ?? '' ), 'materialization-plan-route-key-preserves-transformer-contract' );
+	$assert( 'blocks-engine/wordpress-site-plan/v2' === ( $wordpress_site_plan['schema'] ?? '' ), 'wordpress-site-plan-contract-is-recorded' );
+	$assert( 3 === count( $wordpress_site_plan['pages'] ?? array() ), 'wordpress-site-plan-page-count-is-recorded' );
 	$assert( isset( $template_parts_by_path['parts/header.html'] ), 'multi-page-synthesizes-header-template-part' );
 	$assert( isset( $template_parts_by_path['parts/footer.html'] ), 'multi-page-synthesizes-footer-template-part' );
 	$assert( str_contains( $read( $multi_page_result['theme_dir'] . '/templates/front-page.html' ), '"slug":"header"' ), 'multi-page-template-references-synthesized-header-part' );

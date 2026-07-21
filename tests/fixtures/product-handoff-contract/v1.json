@@ -13,10 +13,10 @@
       "owner": "blocks_engine",
       "consumer": "static_site_importer",
       "schema": "blocks-engine/php-transformer/result/v1",
-      "required_fields": ["schema", "status", "source_reports.materialization_plan"],
-      "materialization_plan": {
-        "schema": "blocks-engine/php-transformer/materialization-plan/v1",
-        "required_fields": ["schema", "source_schema", "entry_path", "pages", "assets"]
+      "required_fields": ["schema", "status", "source_reports.wordpress_site_plan"],
+      "wordpress_site_plan": {
+        "schema": "blocks-engine/wordpress-site-plan/v2",
+        "required_fields": ["schema", "source", "pages", "assets", "writes"]
       },
       "notes": "Blocks Engine emits the canonical WordPress materialization plan and remains unaware of Codebox validation details."
     },
@@ -68,10 +68,9 @@
       "schema": "blocks-engine/php-transformer/result/v1",
       "status": "success",
       "source_reports": {
-        "materialization_plan": {
-          "schema": "blocks-engine/php-transformer/materialization-plan/v1",
-          "source_schema": "blocks-engine/php-transformer/compiled-site/v1",
-          "entry_path": "website/index.html",
+        "wordpress_site_plan": {
+          "schema": "blocks-engine/wordpress-site-plan/v2",
+          "source": { "entry_path": "website/index.html" },
           "pages": [
             {
               "source_path": "website/index.html",
@@ -82,7 +81,8 @@
               "block_markup": "<!-- wp:heading {\"level\":1} --><h1 class=\"wp-block-heading\">Atlas Bakery</h1><!-- /wp:heading -->"
             }
           ],
-          "assets": []
+          "assets": [],
+          "writes": []
         }
       }
     },

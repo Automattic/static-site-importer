@@ -1260,9 +1260,11 @@ $figma_diagnostics_input = array(
 		'fileKey' => 'fixture-file-key',
 		'nodeIds' => array( '1:1' ),
 	),
-	'slug'       => 'figma-diagnostics',
-	'name'       => 'Figma Diagnostics',
-	'scenegraph' => array(
+	'slug'              => 'figma-diagnostics',
+	'name'              => 'Figma Diagnostics',
+	'site_title'        => 'Figma Controls',
+	'stale_page_action' => 'draft',
+	'scenegraph'        => array(
 		'name'  => 'Diagnostics Fixture',
 		'nodes' => array(
 			array(
@@ -1307,6 +1309,8 @@ $assert( 'static-site-importer/figma-transform-report/v1' === ( $figma_import_re
 $assert( isset( $figma_import_result['figma_transform_report']['summary']['page_coverage'] ), 'figma-import-result-exposes-transform-summary' );
 $assert( 'static-site-importer/figma-transform-report/v1' === ( Static_Site_Importer_Theme_Generator::$last_artifact['provenance']['figma_transform_report']['schema'] ?? '' ), 'figma-artifact-provenance-preserves-transform-report' );
 $assert( 'static-site-importer/figma-transform-report/v1' === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata']['figma_transform_report']['schema'] ?? '' ), 'figma-import-source-metadata-preserves-transform-report' );
+$assert( 'Figma Controls' === ( Static_Site_Importer_Theme_Generator::$last_args['site_title'] ?? '' ), 'figma-import-forwards-site-title' );
+$assert( 'draft' === ( Static_Site_Importer_Theme_Generator::$last_args['stale_page_action'] ?? '' ), 'figma-import-forwards-stale-page-action' );
 
 if ( class_exists( 'ZipArchive' ) ) {
 	$zip_path = tempnam( sys_get_temp_dir(), 'ssi-test-' );

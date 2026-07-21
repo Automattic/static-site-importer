@@ -18,7 +18,7 @@ class Static_Site_Importer_Product_Handoff_Contract {
 	public const CONTRACT_SCHEMA                             = 'static-site-importer/product-handoff-contract/v1';
 	public const INPUT_ARTIFACT_SCHEMA                       = 'blocks-engine/php-transformer/site-artifact/v1';
 	public const BLOCKS_ENGINE_RESULT_SCHEMA                 = 'blocks-engine/php-transformer/result/v1';
-	public const MATERIALIZATION_PLAN_SCHEMA                 = 'blocks-engine/php-transformer/materialization-plan/v1';
+	public const MATERIALIZATION_PLAN_SCHEMA                 = 'blocks-engine/wordpress-site-plan/v2';
 	public const SSI_IMPORT_REPORT_SCHEMA                    = 'static-site-importer/import-report/v1';
 	public const SSI_IMPORT_VALIDATION_RESULT_SCHEMA         = 'blocks-engine/import-validation-result/v1';
 	public const SSI_FINDING_PACKETS_SCHEMA                  = 'blocks-engine/finding-packets/v1';

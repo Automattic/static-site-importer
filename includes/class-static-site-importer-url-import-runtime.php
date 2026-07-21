@@ -168,6 +168,8 @@ class Static_Site_Importer_URL_Import_Runtime {
 		$args = array(
 			'slug'                         => isset( $input['slug'] ) ? (string) $input['slug'] : '',
 			'name'                         => isset( $input['name'] ) ? (string) $input['name'] : '',
+			'site_title'                   => isset( $input['site_title'] ) ? (string) $input['site_title'] : '',
+			'stale_page_action'            => isset( $input['stale_page_action'] ) ? (string) $input['stale_page_action'] : '',
 			'activate'                     => ! empty( $input['activate'] ),
 			'overwrite'                    => ! empty( $input['overwrite'] ),
 			'fail_on_quality'              => ! empty( $input['fail_on_quality'] ),

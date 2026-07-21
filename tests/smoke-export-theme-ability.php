@@ -184,10 +184,11 @@ require_once dirname( __DIR__ ) . '/includes/abilities.php';
 if ( ! class_exists( 'Static_Site_Importer_Theme_Generator' ) ) {
 	class Static_Site_Importer_Theme_Generator {
 		public static array $last_artifact = array();
+		public static array $last_args = array();
 
 		public static function import_website_artifact( array $artifact, array $args = array() ): array {
-			unset( $args );
 			self::$last_artifact = $artifact;
+			self::$last_args = $args;
 
 			return array(
 				'theme_slug' => 'fixture-theme',
@@ -258,11 +259,15 @@ $import_result = static_site_importer_ability_import_website_artifact(
 		'artifact' => $artifact,
 		'slug'     => 'fixture-theme',
 		'name'     => 'Fixture Theme',
+		'site_title' => 'Fixture Site',
+		'stale_page_action' => 'draft',
 	)
 );
 $assert( true === ( $import_result['success'] ?? false ), 'ability-imports-website-artifact' );
 $assert( 'blocks-engine/php-transformer/site-artifact/v1' === ( Static_Site_Importer_Theme_Generator::$last_artifact['schema'] ?? '' ), 'ability-import-website-artifact-schema' );
 $assert( 'website/index.html' === ( Static_Site_Importer_Theme_Generator::$last_artifact['entrypoint'] ?? '' ), 'ability-import-website-artifact-entrypoint' );
+$assert( 'Fixture Site' === ( Static_Site_Importer_Theme_Generator::$last_args['site_title'] ?? '' ), 'ability-import-website-artifact-forwards-site-title' );
+$assert( 'draft' === ( Static_Site_Importer_Theme_Generator::$last_args['stale_page_action'] ?? '' ), 'ability-import-website-artifact-forwards-stale-page-action' );
 $export_format_conversion_calls = array_filter(
 	$GLOBALS['ssi_export_format_conversion_calls'],
 	static fn ( array $call ): bool => 'blocks' === $call[0] && 'html' === $call[1]

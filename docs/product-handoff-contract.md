@@ -5,13 +5,13 @@ Static Site Importer's product handoff uses four machine-readable envelopes. The
 ## Stages
 
 1. Product caller provides an input artifact with schema `blocks-engine/php-transformer/site-artifact/v1`.
-2. Blocks Engine compiles it and returns `blocks-engine/php-transformer/result/v1` with `source_reports.materialization_plan` using `blocks-engine/php-transformer/materialization-plan/v1`.
-3. SSI consumes the materialization plan, writes WordPress pages/theme/assets, records source-of-truth provenance, and returns an import report with nested `blocks-engine/import-validation-result/v1` and `blocks-engine/finding-packets/v1` artifacts.
+2. Blocks Engine compiles it and returns `blocks-engine/php-transformer/result/v1` with `source_reports.wordpress_site_plan` using `blocks-engine/wordpress-site-plan/v2`.
+3. SSI validates its destination, reports, caller overrides, and typed runtime declarations before mutation; it prepares declared dependencies, applies the canonical WordPress site plan, seeds declared entities, then writes report projections. The materializer receipt (`static-site-importer/materialization-receipt/v1`) is the mutation boundary and records completed pages, files, operations, and runtime declarations for partial results.
 4. Codebox may validate the WordPress result and return `wp-codebox/validation-artifact-envelope/v1` with artifact references for rendered output, visual comparison, WordPress state, import report, and diagnostics.
 
 ## Ownership
 
-- Blocks Engine owns static artifact compilation and the materialization plan.
+- Blocks Engine owns static artifact compilation and the WordPressSitePlan v2. SSI retains migration support for previously persisted source-of-truth manifests; it does not execute legacy materialization-plan v1 imports.
 - SSI owns WordPress writes, page provenance post meta, the generated theme `static-site-importer-manifest.json`, and the import report.
 - Codebox owns optional WordPress validation and artifact references.
 - Product callers consume these outputs directly; they should not depend on legacy SSI wrapper history.
