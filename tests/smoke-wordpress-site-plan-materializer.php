@@ -9,6 +9,10 @@
 
 require dirname( __DIR__ ) . '/vendor/autoload.php';
 
+if ( ! defined( 'ABSPATH' ) ) {
+	define( 'ABSPATH', dirname( __DIR__ ) . '/' );
+}
+
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler;
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\RuntimeDeclarations;
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
@@ -60,6 +64,8 @@ function wp_insert_post( array $post, bool $wp_error ) {
 }
 
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
 
 $assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
@@ -93,6 +99,19 @@ $assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-pla
 $assert( 'posts' === $GLOBALS['ssi_plan_options']['show_on_front'], 'plan-only materialization does not change reading settings by default' );
 $assert( $receipt['plan']['pages'][0]['document_metadata']['links'][0]['resolved_url'] === 'https://example.test/wp-content/themes/site-plan/assets/assets/site.css', 'resolved metadata retains the declared stylesheet destination' );
 $assert( array() === $receipt['completed']['runtime_declarations']['asset_publications'], 'plans without publication declarations retain an explicit empty receipt collection' );
+
+$entity_artifact = $artifact;
+$entity_artifact['runtime_declarations'] = array(
+	array( 'kind' => 'dependency', 'capability' => 'shop', 'source_path' => 'index.html', 'required_for' => array( 'entity_collection:products' ) ),
+	array( 'kind' => 'entity_collection', 'type' => 'products', 'source_path' => 'index.html', 'payload' => array( 'schema' => 'generic/products/v1', 'entities' => array( array( 'name' => 'Aero Mug', 'slug' => 'aero-mug', 'regular_price' => '24', 'source_selectors' => array( '.product-card' ) ) ) ) ),
+);
+$entity_plan = ( new ArtifactCompiler() )->compile( $entity_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$prepare_lifecycle = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'prepare_wordpress_site_plan_lifecycle' );
+$entity_lifecycle = $prepare_lifecycle->invoke( null, $entity_plan, array() );
+$assert( 'runtime_declarations' === ( $entity_lifecycle['status'] ?? '' ), 'v2 entity declarations enter the active SSI runtime lifecycle' );
+$assert( 'woocommerce_simple_product' === ( $entity_lifecycle['entities'][ $entity_plan['runtime_declarations'][1]['reconciliation_identity'] ]['adapter']['id'] ?? '' ) || 'woocommerce_simple_product' === ( reset( $entity_lifecycle['entities'] )['adapter']['id'] ?? '' ), 'product collections resolve through the configured WooCommerce adapter' );
+$prepared_entity = reset( $entity_lifecycle['entities'] );
+$assert( 'Aero Mug' === ( $prepared_entity['manifest']['products'][0]['name'] ?? '' ) && true === ( $prepared_entity['required'] ?? false ), 'v2 product rows validate and retain their required dependency relationship' );
 
 $publication_svg = '<svg xmlns="http://www.w3.org/2000/svg"><text style="font-family:Example">Example</text></svg>';
 $publication_css = '@font-face{font-family:Example;src:url(font.woff2)}';
