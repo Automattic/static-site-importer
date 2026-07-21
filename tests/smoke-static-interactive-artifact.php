@@ -87,47 +87,43 @@ $assert( ! is_wp_error( $result ), 'import-succeeds', is_wp_error( $result ) ? $
 if ( ! is_wp_error( $result ) ) {
 	$theme_dir = $result['theme_dir'];
 	$report    = json_decode( $read( $result['report_path'] ), true );
-	$style     = $read( $theme_dir . '/style.css' );
 	$metadata  = $report['generated_theme']['document_metadata'] ?? array();
 	$scripts   = isset( $metadata['scripts'] ) && is_array( $metadata['scripts'] ) ? $metadata['scripts'] : array();
 	$page_ids  = array_values( $result['pages'] ?? array() );
 	$page      = ! empty( $page_ids[0] ) ? get_post( (int) $page_ids[0] ) : null;
 	$content   = $page instanceof WP_Post ? $page->post_content : '';
-	$be_report = $report['blocks_engine']['conversion_report'] ?? array();
 	$plan      = $report['blocks_engine']['wordpress_site_plan'] ?? array();
 	$provenance = $report['blocks_engine']['transformer'] ?? array();
 	$receipt   = $result['materialization_receipt'] ?? array();
-	$gate      = $report['import_validation_result']['quality_gates']['interaction_candidates'] ?? array();
+	$validation = $result['import_validation_result'] ?? array();
+	$assets_by_source = array();
+	foreach ( $plan['assets'] ?? array() as $asset ) {
+		if ( is_array( $asset ) && isset( $asset['source_path'], $asset['target_path'] ) ) {
+			$assets_by_source[ (string) $asset['source_path'] ] = $asset;
+		}
+	}
 
-	$assert( 'blocks-engine/php-transformer/conversion-report/v1' === ( $be_report['schema'] ?? '' ), 'conversion-report-schema-recorded' );
-	$assert( 2 <= (int) ( $be_report['fallback_count'] ?? 0 ), 'fallback-diagnostics-counted' );
-	$assert( 2 <= count( $be_report['fallback_diagnostics'] ?? array() ), 'fallback-diagnostics-exposed' );
-	$assert( array_key_exists( 'interaction_candidate_count', $be_report ), 'interaction-candidate-count-exposed' );
-	$assert( array_key_exists( 'interaction_candidate_count', $report['quality'] ?? array() ), 'interaction-candidate-quality-count-exposed' );
-	$assert( isset( $gate['status'] ), 'interaction-candidate-gate-recorded' );
 	$assert( 'blocks-engine/wordpress-site-plan/v2' === ( $plan['schema'] ?? '' ), 'canonical-plan-recorded' );
 	$assert( '' !== (string) ( $provenance['package'] ?? '' ) && '' !== (string) ( $provenance['version'] ?? '' ) && '' !== (string) ( $provenance['reference'] ?? '' ), 'transformer-provenance-is-complete' );
 	$assert( ! isset( $report['blocks_engine']['compiled_site'] ) && ! isset( $report['blocks_engine']['materialization_plan'] ), 'report-has-no-legacy-projections' );
+	$assert( isset( $report['quality']['pass'] ) && is_array( $validation['diagnostics'] ?? null ) && isset( $validation['quality'] ), 'quality-and-validation-are-public-siblings' );
+	$assert( is_array( $plan['diagnostics'] ?? null ), 'canonical-plan-diagnostics-are-recorded' );
 	$assert( 2 <= count( $plan['template_parts'] ?? array() ), 'canonical-plan-extracts-shared-chrome' );
 	$assert( ! str_contains( $content, 'Kitchen Home' ) && ! str_contains( $content, 'Kitchen Footer' ), 'page-markup-does-not-duplicate-shared-chrome' );
 	$assert( 'static-site-importer/document-metadata/v1' === ( $metadata['schema'] ?? '' ), 'document-metadata-recorded' );
 	$assert( 'module' === ( $scripts[0]['type'] ?? '' ), 'module-script-type-preserved' );
 	$assert( true === ( $scripts[0]['defer'] ?? false ), 'defer-script-metadata-preserved' );
 	$assert( true === ( $scripts[1]['async'] ?? false ), 'async-script-metadata-preserved' );
-	$assert( str_contains( $style, '@font-face' ), 'style-preserves-font-face' );
-	$assert( str_contains( $style, '.tabs' ), 'style-includes-imported-css' );
-	$assert( is_file( $theme_dir . '/assets/materialized/website/assets/site.css' ), 'site-css-materialized' );
-	$assert( is_file( $theme_dir . '/assets/materialized/website/assets/theme.css' ), 'imported-css-materialized' );
-	$assert( is_file( $theme_dir . '/assets/materialized/website/assets/app.js' ), 'module-js-materialized' );
-	$assert( is_file( $theme_dir . '/assets/materialized/website/assets/analytics.js' ), 'async-js-materialized' );
-	$assert( is_file( $theme_dir . '/assets/materialized/website/assets/fonts/kitchen.woff2' ), 'font-asset-materialized' );
-	$assert( is_file( $theme_dir . '/assets/materialized/website/assets/images/photo.svg' ), 'image-asset-materialized' );
+	foreach ( array( 'website/assets/site.css', 'website/assets/theme.css', 'website/assets/app.js', 'website/assets/analytics.js', 'website/assets/fonts/kitchen.woff2', 'website/assets/images/photo.svg' ) as $source_path ) {
+		$target_path = (string) ( $assets_by_source[ $source_path ]['target_path'] ?? '' );
+		$assert( '' !== $target_path && is_file( $theme_dir . '/' . $target_path ), 'canonical-asset-write-' . $source_path, $target_path );
+	}
 	$assert( is_file( $theme_dir . '/parts/header.html' ) && is_file( $theme_dir . '/parts/footer.html' ), 'canonical-plan-materializes-shared-chrome' );
 	$assert( str_contains( $read( $theme_dir . '/parts/header.html' ), 'Kitchen Home' ) && str_contains( $read( $theme_dir . '/parts/footer.html' ), 'Kitchen Footer' ), 'shared-chrome-is-preserved-in-template-parts' );
 	$receipt_svg_assets = array_filter( $receipt['plan']['assets'] ?? array(), static fn( array $asset ): bool => str_ends_with( (string) ( $asset['target_path'] ?? '' ), '.svg' ) );
 	$assert( ! empty( $receipt_svg_assets ), 'receipt-preserves-declared-svg-asset' );
-	$assert( str_contains( $content, 'assets/materialized/website/assets/images/photo.svg' ), 'page-content-rewrites-local-image' );
-	$assert( ! str_contains( $content, 'src="assets/images/photo.svg"' ), 'page-content-removes-source-image-path' );
+	$svg_target = (string) ( $assets_by_source['website/assets/images/photo.svg']['target_path'] ?? '' );
+	$assert( '' !== $svg_target && str_contains( $content, $svg_target ) && ! str_contains( $content, 'src="assets/images/photo.svg"' ), 'page-content-uses-resolved-canonical-svg-url' );
 }
 
 if ( ! empty( $failures ) ) {

@@ -302,8 +302,8 @@ class Static_Site_Importer_Theme_Generator {
 	 */
 	private static function transformer_provenance(): array {
 		$package   = 'automattic/blocks-engine-php-transformer';
-		$version   = 'unknown';
-		$reference = 'unknown';
+		$version   = '';
+		$reference = '';
 		$class     = '\\Composer\\InstalledVersions';
 
 		if ( class_exists( $class ) && $class::isInstalled( $package ) ) {
@@ -313,7 +313,7 @@ class Static_Site_Importer_Theme_Generator {
 					$reference = (string) ( $class::getReference( $package ) ?: $reference );
 				}
 			} catch ( Throwable ) {
-				// Keep the stable fallback identity when Composer metadata is incomplete.
+				// Missing Composer metadata remains absent so downstream evidence is incomplete.
 			}
 		}
 

@@ -928,6 +928,27 @@ test('fixture matrix labels reports without runtime provenance and materializati
   assert.equal(result.summary.matrix_evidence_readiness.counts.legacy_evidence_missing, 1);
 });
 
+test('fixture matrix rejects placeholder transformer provenance', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-matrix-placeholder-provenance-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'placeholder-provenance-test' });
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: {
+      fixture_id: 'simple-site',
+      status: 'passed',
+      import_report: {
+        blocks_engine: {
+          transformer: { package: 'unknown', version: 'dev-unknown', reference: '0000000000000000000000000000000000000000' },
+          wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(result.fixtures[0].matrix_evidence.missing, ['transformer_package', 'transformer_version', 'transformer_reference']);
+});
+
 test('fails the gate when a preserved_runtime_island carries no runtime-carried signal', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'runtime-island-no-signal-test' });
   const result = normalizeFixtureMatrixResult({

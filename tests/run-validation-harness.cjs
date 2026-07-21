@@ -64,6 +64,28 @@ const steps = [
     command: 'php',
     args: [ path.join( repoRoot, 'tests/smoke-product-handoff-contract.php' ) ],
   },
+  {
+    name: 'Website artifact document metadata smoke',
+    command: wpCli[ 0 ],
+    args: [
+      ...wpCli.slice( 1 ),
+      `--require=${ path.join( repoRoot, 'static-site-importer.php' ) }`,
+      '--skip-plugins=static-site-importer',
+      'eval-file',
+      path.join( repoRoot, 'tests/smoke-website-artifact-document-metadata.php' ),
+    ],
+  },
+  {
+    name: 'Static interactive artifact smoke',
+    command: wpCli[ 0 ],
+    args: [
+      ...wpCli.slice( 1 ),
+      `--require=${ path.join( repoRoot, 'static-site-importer.php' ) }`,
+      '--skip-plugins=static-site-importer',
+      'eval-file',
+      path.join( repoRoot, 'tests/smoke-static-interactive-artifact.php' ),
+    ],
+  },
   ! skipImport && {
     name: 'Import wordpress-is-dead fixture theme',
     command: wpCli[ 0 ],
