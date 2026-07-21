@@ -167,3 +167,63 @@ test('summary compares staged metrics against a baseline when requested', () => 
   assert.equal(summary.baseline_comparison.regressions[0].metric, 'transform_duration_ms');
   assert.ok(summary.failures.some((failure) => failure.includes('transform_duration_ms regressed')));
 });
+
+test('summary consumes root-level fixture accounting and fails the real matrix result', () => {
+  const root = fs.mkdtempSync(path.join(tmpdir(), 'ssi-fig-e2e-root-summary-'));
+  const matrixSummary = path.join(root, 'summary.json');
+  fs.writeFileSync(matrixSummary, JSON.stringify({
+    fixture_count: 3,
+    succeeded: 0,
+    failed: 3,
+    not_run: 0,
+    finding_count: 19,
+  }));
+  const plan = summaryPlan(root, matrixSummary);
+
+  const summary = summarizeRun({ plan, transformStatus: null, matrixStatus: { status: 0, duration_ms: 1 } });
+
+  assert.equal(summary.status, 'failed');
+  assert.equal(summary.import_matrix.failed_fixture_count, 3);
+  assert.equal(summary.import_matrix.finding_count, 19);
+  assert.ok(summary.failures.includes('3 SSI matrix fixture(s) failed'));
+});
+
+test('summary fails closed when fixture accounting is absent or incomplete', () => {
+  const root = fs.mkdtempSync(path.join(tmpdir(), 'ssi-fig-e2e-invalid-summary-'));
+  const matrixSummary = path.join(root, 'summary.json');
+  fs.writeFileSync(matrixSummary, JSON.stringify({ fixture_count: 3 }));
+  const plan = summaryPlan(root, matrixSummary);
+
+  const summary = summarizeRun({ plan, transformStatus: null, matrixStatus: { status: 0, duration_ms: 1 } });
+
+  assert.equal(summary.status, 'failed');
+  assert.ok(summary.failures.includes('SSI matrix summary is missing fixture result accounting'));
+});
+
+function summaryPlan(root, matrixSummary) {
+  return {
+    fixture_count: 3,
+    expected_fixture_count: 3,
+    run_import_matrix: true,
+    thresholds: {
+      max_transform_failures: 0,
+      max_import_failures: 0,
+      min_native_rate: 1,
+      max_transform_vector_placeholders: 0,
+      max_transform_missing_assets: 0,
+      max_import_findings: null,
+      max_baseline_regression_ratio: null,
+    },
+    artifacts: {
+      transform_summary: path.join(root, 'missing-transform-summary.json'),
+      matrix_summary: matrixSummary,
+      matrix_result: path.join(root, 'matrix-result.json'),
+      matrix_output_directory: root,
+    },
+    steps: {
+      transform: { command: 'transform' },
+      import_matrix: { command: 'matrix' },
+    },
+    warnings: [],
+  };
+}

@@ -6,6 +6,16 @@ Import a static site or generated website artifact into WordPress pages and a co
 
 Static Site Importer is a WordPress plugin. It requires the [Blocks Engine PHP transformer](https://github.com/Automattic/blocks-engine/tree/trunk/php-transformer) Composer package and calls that package's canonical helper functions for generic artifact compilation and format conversion.
 
+## Canonical Site Plans
+
+`static-site-importer/materialize-wordpress-site-plan` is the generic plan-only boundary for a `blocks-engine/wordpress-site-plan/v2` produced by Blocks Engine 0.4.0. SSI calls the package's canonical validator and resolver, then owns WordPress/filesystem preflight, materialization, reconciliation, and the `static-site-importer/materialization-receipt/v1` response. It accepts no source HTML or transformer result envelope.
+
+For an isolated runtime matrix, invoke the ability with `plan`, `slug`, and optional `overwrite`, or use:
+
+```bash
+wp static-site-importer materialize-wordpress-site-plan --plan=/path/to/plan.json --slug=generated-site
+```
+
 ## Architecture Stack
 
 Static Site Importer is the WordPress materialization layer for static website inputs. It accepts two related shapes:
@@ -42,7 +52,7 @@ When a generated artifact contains full-document HTML, Static Site Importer rout
 - Composer dependencies installed with `composer install`.
 - Node dependencies installed only when running the JavaScript block-validation smoke tests.
 
-SSI requires `automattic/blocks-engine-php-transformer:^0.2.6` in Composer to align installed dependencies with the tagged Blocks Engine PHP transformer release. Until the package is published on Packagist, `composer.json` includes an explicit package repository for the `php-transformer-v0.2.6` tag at `908c76a` with autoloading rooted at the Blocks Engine monorepo archive's `php-transformer/src/` directory. Remove that repository override once Packagist serves the package metadata.
+SSI requires `automattic/blocks-engine-php-transformer:^0.4.0`. Until the package is published on Packagist, `composer.json` includes an explicit package repository for the `php-transformer-v0.4.0` tag with autoloading rooted at the Blocks Engine monorepo archive's `php-transformer/src/` directory. Remove that repository override once Packagist serves the package metadata.
 
 At runtime, SSI loads the transformer package from `vendor/` and calls `blocks_engine_php_transformer_compile_artifact()` and `blocks_engine_php_transformer_convert_format()` directly.
 
