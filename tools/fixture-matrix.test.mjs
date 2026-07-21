@@ -962,6 +962,7 @@ test('fixture matrix consumes bounded evidence from the public validation envelo
         },
       },
       blocks_engine: { diagnostics: [{ code: 'conversion-warning' }] },
+      quality_metrics: { status: 'success', pass: true, metrics: { block_count: 315, fallback_count: 0 } },
       materialization_receipt: {
         schema: 'static-site-importer/materialization-receipt/v1',
         status: 'completed',
@@ -975,6 +976,7 @@ test('fixture matrix consumes bounded evidence from the public validation envelo
   assert.equal(evidence.readiness, 'verified');
   assert.equal(evidence.transformer.package_reference, 'a'.repeat(40));
   assert.equal(evidence.wordpress_site_plan.schema, 'blocks-engine/wordpress-site-plan/v2');
+  assert.deepEqual(result.fixtures[0].block_composition, { block_total: 315, native_block_count: 315, core_html_block_count: 0, block_type_counts: null, source: 'quality_counts' });
   assert.deepEqual(evidence.materialization_receipt, {
     schema: 'static-site-importer/materialization-receipt/v1', status: 'completed', plan_hash: 'plan-hash', page_count: 1, file_count: 1, operation_count: 0, declaration_count: 1,
   });
