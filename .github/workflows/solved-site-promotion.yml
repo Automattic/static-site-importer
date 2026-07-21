@@ -102,9 +102,18 @@ jobs:
 
       - name: Install Static Site Importer dependencies
         working-directory: static-site-importer
+        env:
+          BLOCKS_ENGINE_SHA: ${{ inputs.blocks-engine-sha }}
         run: |
           npm ci
           composer install --no-interaction --prefer-dist --no-progress
+          TRANSFORMER_VERSION=$(composer show automattic/blocks-engine-php-transformer --format=json | php -r "\$package = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo ltrim(\$package['versions'][0], 'v');")
+          composer config --json repositories.blocks-engine-candidate "{\"type\":\"path\",\"url\":\"../blocks-engine/php-transformer\",\"options\":{\"symlink\":false,\"versions\":{\"automattic/blocks-engine-php-transformer\":\"${TRANSFORMER_VERSION}\"}}}"
+          composer update automattic/blocks-engine-php-transformer --with-dependencies --no-interaction --prefer-dist --no-progress
+          php -r "\$lock = json_decode(file_get_contents('composer.lock'), true, 512, JSON_THROW_ON_ERROR); \$found = false; foreach (\$lock['packages'] as &\$package) { if (\$package['name'] === 'automattic/blocks-engine-php-transformer') { \$package['dist']['reference'] = getenv('BLOCKS_ENGINE_SHA'); \$found = true; } } if (! \$found) { throw new RuntimeException('Transformer candidate is absent from composer.lock.'); } file_put_contents('composer.lock', json_encode(\$lock, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);"
+          composer install --no-interaction --prefer-dist --no-progress
+          INSTALLED_TRANSFORMER_REFERENCE=$(composer show automattic/blocks-engine-php-transformer --format=json | php -r "\$package = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo \$package['dist']['reference'];")
+          test "$INSTALLED_TRANSFORMER_REFERENCE" = "$BLOCKS_ENGINE_SHA"
 
       - name: Install pinned Homeboy and Extensions
         run: |
