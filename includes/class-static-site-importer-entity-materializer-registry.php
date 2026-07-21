@@ -799,7 +799,20 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > 262144 || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'form' ), true ) ) {
 			return null;
 		}
-		return array( 'schema' => 'generic/block-binding/v1', 'source_path' => $binding['source_path'], 'search_block_markup' => $binding['search_block_markup'], 'occurrence' => $binding['occurrence'], 'role' => $binding['role'] );
+		$normalized = array( 'schema' => 'generic/block-binding/v1', 'source_path' => $binding['source_path'], 'search_block_markup' => $binding['search_block_markup'], 'occurrence' => $binding['occurrence'], 'role' => $binding['role'] );
+		if ( isset( $binding['superseded_runtime_selectors'] ) ) {
+			if ( ! is_array( $binding['superseded_runtime_selectors'] ) || array() === $binding['superseded_runtime_selectors'] ) {
+				return null;
+			}
+			$selectors = array_values( array_unique( $binding['superseded_runtime_selectors'] ) );
+			foreach ( $selectors as $selector ) {
+				if ( ! is_string( $selector ) || '' === trim( $selector ) || strlen( $selector ) > 1024 ) {
+					return null;
+				}
+			}
+			$normalized['superseded_runtime_selectors'] = $selectors;
+		}
+		return $normalized;
 	}
 
 	/**

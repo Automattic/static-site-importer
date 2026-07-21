@@ -261,9 +261,12 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		} );
 		$seen = array();
 		foreach ( $bindings as $binding ) {
-			if ( ! is_array( $binding ) || 'static-site-importer/runtime-entity-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! isset( $pages[ $binding['source_path'] ] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || ! is_string( $binding['replacement_block_markup'] ?? null ) || '' === trim( $binding['replacement_block_markup'] ) || ! is_string( $binding['reconciliation_identity'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', $binding['reconciliation_identity'] ) || isset( $seen[ $binding['reconciliation_identity'] ] ) ) {
+			$selectors = $binding['superseded_runtime_selectors'] ?? array();
+			if ( ! is_array( $binding ) || 'static-site-importer/runtime-entity-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! isset( $pages[ $binding['source_path'] ] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || ! is_string( $binding['replacement_block_markup'] ?? null ) || '' === trim( $binding['replacement_block_markup'] ) || ! is_string( $binding['reconciliation_identity'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', $binding['reconciliation_identity'] ) || isset( $seen[ $binding['reconciliation_identity'] ] ) || ! is_array( $selectors ) ) {
 				throw new InvalidArgumentException( 'runtime_entity_binding_invalid' );
 			}
+			$selectors = array_values( array_unique( $selectors ) );
+			foreach ( $selectors as $selector ) if ( ! is_string( $selector ) || '' === trim( $selector ) || strlen( $selector ) > 1024 ) throw new InvalidArgumentException( 'runtime_entity_binding_invalid' );
 			$seen[ $binding['reconciliation_identity'] ] = true;
 			$index = $pages[ $binding['source_path'] ];
 			$content = (string) ( $plan['pages'][ $index ]['materialized_block_markup'] ?? $plan['pages'][ $index ]['resolved_block_markup'] ?? '' );
@@ -285,7 +288,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			$materialized = substr( $content, 0, $position ) . $binding['replacement_block_markup'] . substr( $content, $position + strlen( $binding['search_block_markup'] ) );
 			$plan['pages'][ $index ]['materialized_block_markup'] = $materialized;
-			$reports[ $binding['reconciliation_identity'] ] = array( 'status' => 'prepared', 'source_path' => $binding['source_path'], 'role' => $binding['role'] ?? '', 'declaration_id' => $binding['declaration_id'] ?? '' );
+			$reports[ $binding['reconciliation_identity'] ] = array( 'status' => 'prepared', 'source_path' => $binding['source_path'], 'role' => $binding['role'] ?? '', 'declaration_id' => $binding['declaration_id'] ?? '', 'superseded_runtime_selectors' => $selectors );
 		}
 		foreach ( $reports as &$report ) {
 			$index = $pages[ $report['source_path'] ];

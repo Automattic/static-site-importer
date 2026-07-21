@@ -166,7 +166,7 @@ class Static_Site_Importer_Theme_Generator {
 	private static function public_result_from_wordpress_site_plan_receipt( array $receipt, array $args, array $lifecycle = array(), array $dependencies = array(), array $entities = array() ): array {
 		$plan        = $receipt['plan'];
 		$theme        = $receipt['theme'];
-		$diagnostics  = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
+		$diagnostics  = self::diagnostics_after_completed_entity_bindings( isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array(), $receipt );
 		$quality      = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
 		$entity_lifecycle = array( 'status' => $lifecycle['status'] ?? 'not_requested', 'entities' => $entities, 'dependencies' => $dependencies );
 		$diagnostics = array_merge( $diagnostics, $lifecycle['diagnostics'] ?? array() );
@@ -300,6 +300,22 @@ class Static_Site_Importer_Theme_Generator {
 			),
 			'materialization_receipt'  => $receipt,
 		);
+	}
+
+	/** Retain source diagnostics unless a persisted provider replacement explicitly covers them. */
+	private static function diagnostics_after_completed_entity_bindings( array $diagnostics, array $receipt ): array {
+		$superseded_runtime_selectors = array();
+		foreach ( $receipt['completed']['runtime_declarations']['entity_bindings'] ?? array() as $binding ) {
+			if ( ! is_array( $binding ) || 'completed' !== ( $binding['status'] ?? null ) ) {
+				continue;
+			}
+			foreach ( $binding['superseded_runtime_selectors'] ?? array() as $selector ) {
+				if ( is_string( $selector ) ) {
+					$superseded_runtime_selectors[ (string) ( $binding['source_path'] ?? '' ) . "\n" . $selector ] = true;
+				}
+			}
+		}
+		return array_values( array_filter( $diagnostics, static fn( mixed $diagnostic ): bool => ! is_array( $diagnostic ) || 'preserved_runtime_island' !== ( $diagnostic['code'] ?? null ) || ! isset( $superseded_runtime_selectors[ (string) ( $diagnostic['source_path'] ?? '' ) . "\n" . (string) ( $diagnostic['selector'] ?? '' ) ] ) ) );
 	}
 
 	/**
@@ -514,6 +530,7 @@ class Static_Site_Importer_Theme_Generator {
 						'role'                     => $binding['role'],
 						'declaration_id'           => $declaration_id,
 						'reconciliation_identity'  => hash( 'sha256', "static-site-importer/runtime-entity-binding/v1\n{$declaration_id}\n{$binding['source_path']}\n{$binding['occurrence']}\n" . hash( 'sha256', $binding['search_block_markup'] ) ),
+						'superseded_runtime_selectors' => $binding['superseded_runtime_selectors'] ?? array(),
 					);
 				}
 			}
