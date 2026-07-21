@@ -4,10 +4,11 @@
   "scripts": {
     "fig-intent-parity": "node tools/fig-intent-parity-report.mjs",
     "fig-fixture-e2e": "node tools/run-fig-fixture-e2e.mjs",
-    "test": "npm run test:site-plan-materializer && npm run test:fixture-matrix && npm run test:fig-fixture-e2e && npm run test:promote-solved-fixture && npm run test:php-wasm-zstd",
+    "test": "npm run test:site-plan-materializer && npm run test:fixture-matrix && npm run test:solved-site-promotion && npm run test:fig-fixture-e2e && npm run test:promote-solved-fixture && npm run test:php-wasm-zstd",
     "test:site-plan-materializer": "php tests/smoke-wordpress-site-plan-materializer.php",
     "test:fig-fixture-e2e": "node --test tools/run-fig-fixture-e2e.test.mjs",
     "test:fixture-matrix": "node --test tools/fixture-matrix.test.mjs",
+    "test:solved-site-promotion": "node --test tools/verify-solved-site-promotion.test.mjs",
     "test:promote-solved-fixture": "node --test tools/promote-solved-fixture.test.mjs",
     "test:php-wasm-zstd": "node --test tools/php-wasm-zstd.test.mjs",
     "build:php-wasm-zstd": "bash tools/build-php-wasm-zstd.sh",

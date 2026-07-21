@@ -49,6 +49,7 @@ import {
   collectEditorValidationDiagnostics,
   collectEditorValidation,
   collectFixtureMatrixRunResults,
+  collectMatrixEvidence,
   computeFixtureEditorQuality,
   parseSerializedBlockNames,
   collectVisualParityDiagnostics,
@@ -84,6 +85,31 @@ import { runWpCodeboxRecipe, wpCodeboxBin } from './wp-codebox/recipe.mjs';
 
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fixtureRoot = path.join(packageRoot, 'tests', 'fixtures', 'fixture-matrix');
+
+test('matrix evidence requires and summarizes the canonical materialization receipt', () => {
+  const evidence = collectMatrixEvidence({
+    import_report: {
+      blocks_engine: {
+        transformer: { package: 'automattic/blocks-engine-php-transformer', version: 'dev-trunk', reference: 'a'.repeat(40) },
+        wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2', assets: [] },
+      },
+    },
+    materialization_receipt: {
+      schema: 'static-site-importer/materialization-receipt/v1',
+      status: 'completed',
+      plan_hash: 'plan-hash',
+      completed: { pages: { 'index.html': 1 }, files: [{ target_path: 'style.css' }], operations: [], declaration_ids: ['asset'] },
+    },
+  });
+  assert.equal(evidence.readiness, 'verified');
+  assert.deepEqual(evidence.materialization_receipt, { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed', plan_hash: 'plan-hash', page_count: 1, file_count: 1, operation_count: 0, declaration_count: 1 });
+});
+
+test('matrix evidence fails closed when the materialization receipt is absent', () => {
+  const evidence = collectMatrixEvidence({ import_report: { blocks_engine: { transformer: { package: 'package', version: '1.0.0', reference: 'a'.repeat(40) }, wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2', assets: [] } } } });
+  assert.equal(evidence.readiness, 'legacy_evidence_missing');
+  assert.ok(evidence.missing.includes('materialization_receipt'));
+});
 
 test('Homeboy component assigns runtime and dependency capabilities to WordPress', () => {
   const config = JSON.parse(readFileSync(path.join(packageRoot, 'homeboy.json'), 'utf8'));
@@ -844,6 +870,12 @@ test('fixture matrix captures installed transformer provenance and bounded mater
       fixture_id: 'simple-site',
       status: 'passed',
       import_report: {
+        materialization_receipt: {
+          schema: 'static-site-importer/materialization-receipt/v1',
+          status: 'completed',
+          plan_hash: 'plan-hash',
+          completed: { pages: { 'index.html': 1 }, files: [], operations: [], declaration_ids: [] },
+        },
         generated_theme: {
           template_parts: [{
             path: 'parts/header.html',
@@ -923,7 +955,7 @@ test('fixture matrix labels reports without runtime provenance and materializati
   });
 
   assert.equal(result.fixtures[0].matrix_evidence.readiness, 'legacy_evidence_missing');
-  assert.deepEqual(result.fixtures[0].matrix_evidence.missing, ['transformer_package', 'transformer_version', 'transformer_reference', 'wordpress_site_plan']);
+  assert.deepEqual(result.fixtures[0].matrix_evidence.missing, ['transformer_package', 'transformer_version', 'transformer_reference', 'wordpress_site_plan', 'materialization_receipt']);
   assert.equal(result.summary.matrix_evidence_readiness.status, 'incomplete');
   assert.equal(result.summary.matrix_evidence_readiness.counts.legacy_evidence_missing, 1);
 });
@@ -946,7 +978,7 @@ test('fixture matrix rejects placeholder transformer provenance', () => {
     },
   });
 
-  assert.deepEqual(result.fixtures[0].matrix_evidence.missing, ['transformer_package', 'transformer_version', 'transformer_reference']);
+  assert.deepEqual(result.fixtures[0].matrix_evidence.missing, ['transformer_package', 'transformer_version', 'transformer_reference', 'materialization_receipt']);
 });
 
 test('fails the gate when a preserved_runtime_island carries no runtime-carried signal', () => {
@@ -2725,6 +2757,34 @@ test('fixture matrix operator plan forwards complexity lane settings', () => {
   assert.deepEqual(plan.lane_filter, { complexity: '2', max_complexity: '3' });
   assert.ok(benchArgs.includes('bench_env.SSI_FIXTURE_MATRIX_COMPLEXITY=2'));
   assert.ok(benchArgs.includes('bench_env.SSI_FIXTURE_MATRIX_MAX_COMPLEXITY=3'));
+});
+
+test('fixture matrix operator preserves exact-zero visual thresholds', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-zero-visual-threshold-plan-'));
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  const zeroThresholdFixtureRoot = path.join(root, 'fixtures');
+  mkdirSync(staticSiteImporter, { recursive: true });
+  mkdirSync(path.join(zeroThresholdFixtureRoot, 'fixture-a'), { recursive: true });
+
+  const benchArgs = buildFixtureMatrixRunPlan({
+    staticSiteImporter,
+    fixtureRoot: zeroThresholdFixtureRoot,
+    pixelThreshold: '0',
+    visualParityPixelmatchThreshold: '0',
+    visualParityMaxVerticalShift: '0',
+    visualParityMaxHorizontalShift: '0',
+    skipInstall: true,
+    skipSync: true,
+  }).steps.at(-1).args;
+
+  for (const setting of [
+    'bench_env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD=0',
+    'bench_env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD=0',
+    'bench_env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_VERTICAL_SHIFT=0',
+    'bench_env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_HORIZONTAL_SHIFT=0',
+  ]) {
+    assert.ok(benchArgs.includes(setting), `${setting} must survive CLI normalization`);
+  }
 });
 
 test('fixture matrix records generic child command failures for failed WP Codebox batches', async () => {

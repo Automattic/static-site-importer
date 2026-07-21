@@ -1,0 +1,196 @@
+name: Solved Site Promotion
+
+on:
+  workflow_call:
+    inputs:
+      static-site-importer-sha:
+        description: Full Static Site Importer candidate commit SHA.
+        required: true
+        type: string
+      static-site-importer-repository:
+        description: Repository containing the Static Site Importer candidate SHA.
+        required: false
+        default: Automattic/static-site-importer
+        type: string
+      blocks-engine-sha:
+        description: Full Blocks Engine candidate commit SHA.
+        required: true
+        type: string
+      blocks-engine-repository:
+        description: Repository containing the Blocks Engine candidate SHA.
+        required: false
+        default: Automattic/blocks-engine
+        type: string
+      wordpress-version:
+        description: Exact WordPress version used by WP Codebox.
+        required: false
+        default: '7.0.2'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  solved-site-promotion:
+    name: Solved site promotion gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      NODE_VERSION: '20.19.4'
+      PHP_VERSION: '8.1.29'
+      HOMEBOY_VERSION: v0.298.1
+      HOMEBOY_SHA256: 543a1eb7348a9dcde3bee671dbbeaabb9486781d350792bed8a77424fdad60d5
+      HOMEBOY_EXTENSIONS_REF: 615fe3632d0cd30e9a70d5aea82be80460d733d5
+      WP_CODEBOX_VERSION: v0.12.29
+      WP_CODEBOX_SHA256: d332924b3b91ef8e47b5ebca7063b2964734d3ac081dd62fa18ec9417fefdcd5
+      WORDPRESS_VERSION: ${{ inputs.wordpress-version }}
+
+    steps:
+      - name: Validate immutable candidates
+        env:
+          STATIC_SITE_IMPORTER_SHA: ${{ inputs.static-site-importer-sha }}
+          BLOCKS_ENGINE_SHA: ${{ inputs.blocks-engine-sha }}
+        run: |
+          [[ "$STATIC_SITE_IMPORTER_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$BLOCKS_ENGINE_SHA" =~ ^[a-f0-9]{40}$ ]]
+
+      - name: Checkout Static Site Importer candidate
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.static-site-importer-repository }}
+          ref: ${{ inputs.static-site-importer-sha }}
+          path: static-site-importer
+
+      - name: Checkout Blocks Engine candidate
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.blocks-engine-repository }}
+          ref: ${{ inputs.blocks-engine-sha }}
+          path: blocks-engine
+
+      - name: Initialize immutable run evidence
+        env:
+          STATIC_SITE_IMPORTER_SHA: ${{ inputs.static-site-importer-sha }}
+          BLOCKS_ENGINE_SHA: ${{ inputs.blocks-engine-sha }}
+        run: |
+          RUN_ID="solved-site-promotion-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RUN_DIR="$RUNNER_TEMP/$RUN_ID"
+          ARTIFACT_ROOT="$RUN_DIR/evidence"
+          mkdir -p "$ARTIFACT_ROOT" "$RUN_DIR/homeboy-shared-state"
+          FIXTURE_TREE_SHA=$(git -C blocks-engine rev-parse "${BLOCKS_ENGINE_SHA}:fixtures/solved")
+          SOLVED_FIXTURE_COUNT=$(find blocks-engine/fixtures/solved -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+          test "$SOLVED_FIXTURE_COUNT" -gt 0
+          {
+            echo "RUN_ID=$RUN_ID"
+            echo "RUN_DIR=$RUN_DIR"
+            echo "ARTIFACT_ROOT=$ARTIFACT_ROOT"
+            echo "FIXTURE_TREE_SHA=$FIXTURE_TREE_SHA"
+            echo "SOLVED_FIXTURE_COUNT=$SOLVED_FIXTURE_COUNT"
+          } >> "$GITHUB_ENV"
+
+      - name: Setup pinned Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pinned PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          coverage: none
+          tools: composer:v2
+
+      - name: Install Static Site Importer dependencies
+        working-directory: static-site-importer
+        run: |
+          npm ci
+          composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Install pinned Homeboy and Extensions
+        run: |
+          mkdir -p "$RUNNER_TEMP/homeboy"
+          curl --fail --location --retry 3 --retry-all-errors --output "$RUNNER_TEMP/homeboy.tar.xz" "https://github.com/Extra-Chill/homeboy/releases/download/${HOMEBOY_VERSION}/homeboy-x86_64-unknown-linux-gnu.tar.xz"
+          echo "${HOMEBOY_SHA256}  $RUNNER_TEMP/homeboy.tar.xz" | sha256sum --check --status
+          tar --extract --xz --file "$RUNNER_TEMP/homeboy.tar.xz" --directory "$RUNNER_TEMP/homeboy" --strip-components=1
+          chmod +x "$RUNNER_TEMP/homeboy/homeboy"
+          "$RUNNER_TEMP/homeboy/homeboy" extension install https://github.com/Extra-Chill/homeboy-extensions --id nodejs --ref "$HOMEBOY_EXTENSIONS_REF"
+          "$RUNNER_TEMP/homeboy/homeboy" extension install https://github.com/Extra-Chill/homeboy-extensions --id wordpress --ref "$HOMEBOY_EXTENSIONS_REF"
+          echo "HOMEBOY_BIN=$RUNNER_TEMP/homeboy/homeboy" >> "$GITHUB_ENV"
+
+      - name: Install pinned WP Codebox
+        run: |
+          mkdir -p "$RUNNER_TEMP/wp-codebox"
+          curl --fail --location --retry 3 --retry-all-errors --output "$RUNNER_TEMP/wp-codebox/workspace.tgz" "https://github.com/Automattic/wp-codebox/releases/download/${WP_CODEBOX_VERSION}/02-wp-codebox-workspace-${WP_CODEBOX_VERSION#v}.tgz"
+          echo "${WP_CODEBOX_SHA256}  $RUNNER_TEMP/wp-codebox/workspace.tgz" | sha256sum --check --status
+          npm install --global --prefix "$RUNNER_TEMP/wp-codebox" "$RUNNER_TEMP/wp-codebox/workspace.tgz"
+          node "$RUNNER_TEMP/wp-codebox/lib/node_modules/wp-codebox-workspace/node_modules/playwright/cli.js" install --with-deps chromium
+          "$RUNNER_TEMP/wp-codebox/bin/wp-codebox" commands --json
+          echo "WP_CODEBOX_BIN=$RUNNER_TEMP/wp-codebox/bin/wp-codebox" >> "$GITHUB_ENV"
+
+      - name: Record pinned runtime inputs
+        env:
+          STATIC_SITE_IMPORTER_SHA: ${{ inputs.static-site-importer-sha }}
+          BLOCKS_ENGINE_SHA: ${{ inputs.blocks-engine-sha }}
+        run: |
+          node -e 'const fs=require("node:fs"); fs.writeFileSync(process.argv[1], JSON.stringify({nodeVersion:process.version.replace(/^v/, ""),phpVersion:process.argv[2],wordpressVersion:process.env.WORDPRESS_VERSION,homeboyVersion:process.env.HOMEBOY_VERSION,homeboySha256:process.env.HOMEBOY_SHA256,homeboyExtensionsRef:process.env.HOMEBOY_EXTENSIONS_REF,wpCodeboxVersion:process.env.WP_CODEBOX_VERSION,wpCodeboxSha256:process.env.WP_CODEBOX_SHA256,staticSiteImporterSha:process.env.STATIC_SITE_IMPORTER_SHA,blocksEngineSha:process.env.BLOCKS_ENGINE_SHA}, null, 2)+"\n")' "$ARTIFACT_ROOT/runtime-inputs.json" "$(php -r 'echo PHP_VERSION;')"
+
+      - name: Run solved fixture matrix
+        working-directory: static-site-importer
+        env:
+          HOMEBOY_WP_CODEBOX_BIN: ${{ runner.temp }}/wp-codebox/bin/wp-codebox
+        run: |
+          set -o pipefail
+          set +e
+          node tools/run-fixture-matrix.mjs \
+            --solved-only \
+            --local \
+            --static-site-importer "$GITHUB_WORKSPACE/static-site-importer" \
+            --blocks-engine "$GITHUB_WORKSPACE/blocks-engine" \
+            --homeboy-bin "$HOMEBOY_BIN" \
+            --wp-codebox-bin "$WP_CODEBOX_BIN" \
+            --wordpress-version "$WORDPRESS_VERSION" \
+            --pixel-threshold 0 \
+            --visual-parity-pixelmatch-threshold 0 \
+            --visual-parity-max-vertical-shift 0 \
+            --visual-parity-max-horizontal-shift 0 \
+            --run-id "$RUN_ID" \
+            --output "$ARTIFACT_ROOT/homeboy-bench-result.json" \
+            --shared-state "$RUN_DIR/homeboy-shared-state" \
+            --artifact-root "$ARTIFACT_ROOT" | tee "$ARTIFACT_ROOT/operator-output.log"
+          matrix_status=${PIPESTATUS[0]}
+          set -e
+          echo "MATRIX_STATUS=$matrix_status" >> "$GITHUB_ENV"
+
+      - name: Verify and issue promotion receipt
+        working-directory: static-site-importer
+        env:
+          STATIC_SITE_IMPORTER_SHA: ${{ inputs.static-site-importer-sha }}
+          BLOCKS_ENGINE_SHA: ${{ inputs.blocks-engine-sha }}
+        run: |
+          mapfile -t matrix_results < <(find "$ARTIFACT_ROOT" -name static-site-fixture-matrix-result.json -type f)
+          mapfile -t registries < <(find "$ARTIFACT_ROOT" -name gutenberg-incompatibility-registry.json -type f)
+          test "${#matrix_results[@]}" -eq 1
+          test "${#registries[@]}" -eq 1
+          node tools/verify-solved-site-promotion.mjs \
+            --matrix-result "${matrix_results[0]}" \
+            --registry "${registries[0]}" \
+            --runtime-inputs "$ARTIFACT_ROOT/runtime-inputs.json" \
+            --artifact-root "$ARTIFACT_ROOT" \
+            --static-site-importer-sha "$STATIC_SITE_IMPORTER_SHA" \
+            --blocks-engine-sha "$BLOCKS_ENGINE_SHA" \
+            --fixture-tree-sha "$FIXTURE_TREE_SHA" \
+            --solved-fixture-count "$SOLVED_FIXTURE_COUNT" \
+            --run-url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --artifact-url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}#artifacts" \
+            --output "$ARTIFACT_ROOT/solved-site-promotion-receipt.json" \
+            --manifest-output "$ARTIFACT_ROOT/solved-site-artifact-manifest.json"
+          test "$MATRIX_STATUS" -eq 0
+
+      - name: Upload promotion evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: solved-site-promotion-${{ inputs.static-site-importer-sha }}-${{ inputs.blocks-engine-sha }}
+          path: ${{ env.ARTIFACT_ROOT }}
+          if-no-files-found: error
+          retention-days: 14
