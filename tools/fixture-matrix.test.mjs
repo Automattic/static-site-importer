@@ -2173,6 +2173,10 @@ test('editor canvas artifacts are persisted in the matrix artifact root and refs
   assert.equal(fixture.editor_open.files.editorState, statePath);
   assert.equal(fixture.surfaces[0].editor_open.files.screenshot, screenshotPath);
   assert.deepEqual(fixture.artifact_refs.map((ref) => ref.path), [screenshotPath, statePath]);
+  assert.deepEqual(result.artifacts, {
+    'editor_canvas_simple-site_editor-screenshot.png': { path: screenshotPath },
+    'editor_canvas_simple-site_editor-state.json': { path: statePath },
+  });
 });
 
 test('collects SSI finding packet source and observed context from fixture artifacts', () => {

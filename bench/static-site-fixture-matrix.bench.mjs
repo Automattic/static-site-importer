@@ -454,7 +454,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     return {
       batchRun,
       batchResult: editorCanvas.result,
-      visualParityArtifacts: visualCompare.artifacts,
+      visualParityArtifacts: { ...visualCompare.artifacts, ...editorCanvas.artifacts },
       error: batchError,
       childCommandFailures: childCommandFailure ? [childCommandFailure] : [],
     };
@@ -523,15 +523,17 @@ export function materializeEditorCanvasArtifacts(input = {}) {
   const result = input.result || {};
   const outputDirectory = path.resolve(input.outputDirectory || input.output_directory || '');
   const codeboxArtifactsDirectory = path.resolve(input.codeboxArtifactsDirectory || input.codebox_artifacts_directory || '');
+  const artifacts = {};
   return {
     result: {
       ...result,
-      fixtures: arrayValue(result.fixtures).map((fixture) => materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory })),
+      fixtures: arrayValue(result.fixtures).map((fixture) => materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory, artifacts })),
     },
+    artifacts,
   };
 }
 
-function materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory }) {
+function materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory, artifacts }) {
   const fixtureId = fixture.fixture_id || fixture.fixtureId || '';
   if (!fixtureId) {
     return fixture;
@@ -547,8 +549,11 @@ function materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, cod
     }
     const persistedPath = path.join(outputDirectory, 'editor-canvas', fixtureId, path.basename(ref.path));
     fs.mkdirSync(path.dirname(persistedPath), { recursive: true });
-    fs.copyFileSync(sourcePath, persistedPath);
+    if (sourcePath !== persistedPath) {
+      fs.copyFileSync(sourcePath, persistedPath);
+    }
     rewrites.set(ref.path, persistedPath);
+    artifacts[`editor_canvas_${artifactKey(fixtureId)}_${artifactKey(path.basename(ref.path))}`] = { path: persistedPath };
   }
   if (rewrites.size === 0) {
     return fixture;
