@@ -137,7 +137,7 @@ class Static_Site_Importer_Theme_Generator {
 			$error = $entity_result['error'];
 			$receipt['status'] = 'partial';
 			$receipt['errors'][] = $error;
-			$receipt['completed']['declaration_ids'] = array_keys( array_filter( array_merge( $dependencies, $entities ), static fn( $report ): bool => 'waived' !== ( $report['status'] ?? '' ) ) );
+			$receipt['completed']['declaration_ids'] = array_values( array_unique( array_merge( $receipt['completed']['declaration_ids'] ?? array(), array_keys( array_filter( array_merge( $dependencies, $entities ), static fn( $report ): bool => 'waived' !== ( $report['status'] ?? '' ) ) ) ) ) );
 			$receipt['completed']['action_ids'] = array_values( array_filter( array_column( $receipt['completed']['operations'], 'reconciliation_identity' ) ) );
 			return new WP_Error( $error['code'], $error['message'], $receipt );
 		}

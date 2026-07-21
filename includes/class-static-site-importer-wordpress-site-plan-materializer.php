@@ -274,7 +274,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			return new WP_Error( 'theme_write_failed' );
 		}
-		return array( 'target_path' => $write['target_path'], 'hash' => hash( 'sha256', $data ), 'payload_hash' => $write['payload_hash'] ?? hash( 'sha256', $data ), 'reconciliation_identity' => $write['reconciliation_identity'] ?? hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ) );
+		return array( 'target_path' => $write['target_path'], 'hash' => self::file_hash( $path ), 'payload_hash' => $write['payload_hash'] ?? hash( 'sha256', $data ), 'reconciliation_identity' => $write['reconciliation_identity'] ?? hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ) );
 	}
 
 	/** Verify every canonical asset publication against its resolved write and references. */
@@ -310,9 +310,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				&& $write['payload_hash'] === $applied['hash'];
 			foreach ( $references[ $id ] ?? array() as $reference ) {
 				$target = $writes[ $reference['write_reconciliation_identity'] ] ?? null;
+				$target_path = is_array( $target ) ? $state['theme_dir'] . '/' . $target['target_path'] : '';
+				$target_content = '' !== $target_path && is_file( $target_path ) ? file_get_contents( $target_path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Verifies the final declared theme write.
 				$valid = $valid && is_array( $target )
 					&& $reference['target_path'] === $target['target_path']
-					&& $reference['count'] === substr_count( (string) ( $target['payload']['data'] ?? '' ), $reference['expected_resolved_url'] );
+					&& is_string( $target_content )
+					&& $target['payload_hash'] === hash( 'sha256', $target_content )
+					&& $reference['count'] === substr_count( $target_content, $reference['expected_resolved_url'] );
 			}
 			$state['applied']['runtime_declarations']['asset_publications'][ $id ] = array(
 				'status'                  => $valid ? 'completed' : 'failed',
