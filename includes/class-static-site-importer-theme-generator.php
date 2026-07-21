@@ -2138,11 +2138,11 @@ class Static_Site_Importer_Theme_Generator {
 	/**
 	 * Normalize template part artifacts into generated theme writes.
 	 *
-	 * @param string              $theme_dir Theme directory.
+	 * @param string                                  $theme_dir Theme directory.
 	 * @param array<string,mixed>                     $artifacts WordPress artifacts from Blocks Engine.
 	 * @param array<string,array<string,mixed>>       $assets Materialized assets keyed by source path.
 	 * @param array<string,string>                    $permalinks Imported page permalinks keyed by source path.
-	 * @return array<string,string>|WP_Error Absolute write paths keyed to serialized block markup.
+	 * @return array{writes:array<string,string>,reports:array<int,array<string,mixed>>,styles:array<int,string>}|WP_Error Template-part artifacts.
 	 */
 	private static function template_part_artifact_writes( string $theme_dir, array $artifacts, array $assets = array(), array $permalinks = array() ) {
 		$result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes( $theme_dir, $artifacts, $assets, $permalinks );
@@ -2154,7 +2154,7 @@ class Static_Site_Importer_Theme_Generator {
 			self::$conversion_report['generated_theme']['template_parts'][] = $report;
 		}
 
-		return $result['writes'];
+		return $result;
 	}
 
 	/**

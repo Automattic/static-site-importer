@@ -195,6 +195,7 @@ class Static_Site_Importer_Page_Materializer {
 		$footer_start = null;
 		$header_count = 0;
 		$footer_count = 0;
+		$header_reason = '';
 		$matched_header_part = '';
 		$matched_footer_part = '';
 		$header_candidate_start = 0;
@@ -208,6 +209,27 @@ class Static_Site_Importer_Page_Materializer {
 			if ( $count > 0 && $header_candidate_start <= count( $top_level ) - $count && self::block_sequence_matches( array_slice( $top_level, $header_candidate_start, $count ), $part_blocks ) ) {
 				$header_start         = $header_candidate_start;
 				$header_count         = $count;
+				$matched_header_part = $part['path'];
+				break;
+			}
+		}
+
+		if ( null === $header_start && isset( $top_level[ $header_candidate_start ] ) && ! self::is_header_shell_block( $top_level[ $header_candidate_start + 1 ] ?? array() ) ) {
+			$candidate_semantics = self::header_shell_semantics( $top_level[ $header_candidate_start ] );
+			foreach ( $header_parts as $part ) {
+				$part_semantics = self::header_shell_semantics(
+					array(
+						'normalized' => implode( "\n", array_column( $part['blocks'], 'normalized' ) ),
+						'original'   => implode( "\n", array_column( $part['blocks'], 'original' ) ),
+					)
+				);
+				if ( '' === $candidate_semantics || $candidate_semantics !== $part_semantics ) {
+					continue;
+				}
+
+				$header_start         = $header_candidate_start;
+				$header_count         = 1;
+				$header_reason        = 'semantic_header_identity_and_navigation_match';
 				$matched_header_part = $part['path'];
 				break;
 			}
@@ -247,7 +269,9 @@ class Static_Site_Importer_Page_Materializer {
 			'type'                         => 'template_part_shell_deduped',
 			'source'                       => 'static-site-importer/page-materializer',
 			'source_path'                  => $source_path,
-			'reason'                       => 'matching_header_footer_template_parts',
+			'reason'                       => '' !== $header_reason ? $header_reason : 'matching_header_footer_template_parts',
+			'header_removal_reason'        => $header_reason,
+			'header_match_signal'          => '' !== $header_reason ? 'stable_header_classes_and_navigation_destinations' : 'exact_block_sequence',
 			'removed_header_blocks'        => $header_count,
 			'removed_footer_blocks'        => $footer_count,
 			'matched_header_template_part' => $matched_header_part,
@@ -258,7 +282,7 @@ class Static_Site_Importer_Page_Materializer {
 				'leading_blocks'  => $header_count,
 				'trailing_blocks' => $footer_count,
 			),
-			'message'                      => 'Page body blocks matching generated header/footer template parts were removed to avoid duplicate global shell rendering.',
+			'message'                      => '' !== $header_reason ? 'A leading header with the same stable identity and navigation destinations as the generated header template part was removed.' : 'Page body blocks matching generated header/footer template parts were removed to avoid duplicate global shell rendering.',
 		);
 
 		return $deduped;
@@ -268,7 +292,7 @@ class Static_Site_Importer_Page_Materializer {
 	 * Return top-level serialized block spans and normalized markup.
 	 *
 	 * @param string $markup Serialized block markup.
-	 * @return array<int,array{start:int,end:int,normalized:string}>
+	 * @return array<int,array{start:int,end:int,normalized:string,original:string}>
 	 */
 	private static function top_level_serialized_blocks( string $markup ): array {
 		if ( ! preg_match_all( '/<!--\s+(\/)?wp:([a-zA-Z0-9_\-\/]+)([^>]*)-->/', $markup, $matches, PREG_OFFSET_CAPTURE ) ) {
@@ -294,6 +318,7 @@ class Static_Site_Importer_Page_Materializer {
 						'start'      => (int) $opened['start'],
 						'end'        => $end,
 						'normalized' => self::normalize_shell_block_markup( $original ),
+						'original'   => $original,
 					);
 				}
 				continue;
@@ -306,6 +331,7 @@ class Static_Site_Importer_Page_Materializer {
 					'start'      => $offset,
 					'end'        => $end,
 					'normalized' => self::normalize_shell_block_markup( $original ),
+					'original'   => $original,
 				);
 				continue;
 			}
@@ -330,7 +356,18 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		$anchor = $matches[0];
-		if ( ! preg_match( '/\bclass\s*=\s*(["\'])(.*?)\1/is', $anchor, $class_matches ) || ! preg_match( '/(?:^|\s)skip-link(?:\s|$)/i', $class_matches[2] ) ) {
+		if ( ! preg_match_all( '/\bclass\s*=\s*(["\'])(.*?)\1/is', $block['normalized'], $class_matches ) ) {
+			return false;
+		}
+
+		$has_skip_link_class = false;
+		foreach ( $class_matches[2] as $classes ) {
+			if ( preg_match( '/(?:^|\s)skip-link(?:\s|$)/i', $classes ) ) {
+				$has_skip_link_class = true;
+				break;
+			}
+		}
+		if ( ! $has_skip_link_class ) {
 			return false;
 		}
 
@@ -338,11 +375,124 @@ class Static_Site_Importer_Page_Materializer {
 	}
 
 	/**
+	 * Check whether a serialized block renders a header landmark.
+	 *
+	 * @param array{normalized?:string} $block Serialized block.
+	 * @return bool
+	 */
+	private static function is_header_shell_block( array $block ): bool {
+		return 1 === preg_match( '/<header\b/i', $block['normalized'] ?? '' );
+	}
+
+	/**
+	 * Build a semantic fingerprint that tolerates route-specific header actions.
+	 *
+	 * @param array{normalized?:string,original?:string} $block Serialized block.
+	 * @return string
+	 */
+	private static function header_shell_semantics( array $block ): string {
+		$markup = $block['normalized'] ?? '';
+		if ( ! preg_match( '/<header\b([^>]*)>/i', $markup, $header_matches ) || ! preg_match( '/\bclass\s*=\s*(["\'])(.*?)\1/is', $header_matches[1], $class_matches ) ) {
+			return '';
+		}
+
+		$classes = array_values(
+			array_filter(
+				preg_split( '/\s+/', strtolower( html_entity_decode( $class_matches[2], ENT_QUOTES | ENT_HTML5 ) ) ) ?: array(),
+				static fn( string $class ): bool => '' !== $class && ! str_starts_with( $class, 'wp-' ) && ! str_starts_with( $class, 'is-layout-' ) && ! str_starts_with( $class, 'has-' ) && ! str_starts_with( $class, 'blocks-engine-' )
+			)
+		);
+		if ( empty( $classes ) ) {
+			return '';
+		}
+
+		$links = self::serialized_navigation_links( $block['original'] ?? '' );
+		if ( empty( $links ) && preg_match_all( '/<nav\b[^>]*>(.*?)<\/nav>/is', $markup, $navigation_matches ) ) {
+			foreach ( $navigation_matches[1] as $navigation ) {
+				if ( ! preg_match_all( '/<a\b[^>]*\bhref\s*=\s*(["\'])(.*?)\1[^>]*>(.*?)<\/a>/is', $navigation, $link_matches, PREG_SET_ORDER ) ) {
+					continue;
+				}
+				foreach ( $link_matches as $link ) {
+					$links[] = self::navigation_link_semantics( wp_strip_all_tags( $link[3] ), $link[2] );
+				}
+			}
+		}
+
+		return empty( $links ) ? '' : implode( ' ', $classes ) . '|' . implode( '|', $links );
+	}
+
+	/**
+	 * Extract ordered navigation-link semantics from serialized dynamic blocks.
+	 *
+	 * @param string $markup Raw serialized block markup.
+	 * @return array<int,string>
+	 */
+	private static function serialized_navigation_links( string $markup ): array {
+		if ( ! preg_match_all( '/<!--\s+wp:navigation-link\s+(.+?)\/-->/is', $markup, $matches ) ) {
+			return array();
+		}
+
+		$links = array();
+		foreach ( $matches[1] as $attributes ) {
+			$start = strpos( $attributes, '{' );
+			$end   = strrpos( $attributes, '}' );
+			if ( false === $start || false === $end || $end < $start ) {
+				continue;
+			}
+
+			$decoded = json_decode( substr( $attributes, $start, $end - $start + 1 ), true );
+			if ( ! is_array( $decoded ) || ! isset( $decoded['label'], $decoded['url'] ) ) {
+				continue;
+			}
+
+			$links[] = self::navigation_link_semantics( (string) $decoded['label'], (string) $decoded['url'] );
+		}
+
+		return $links;
+	}
+
+	/**
+	 * Normalize a navigation label and destination into a stable route identity.
+	 *
+	 * @param string $label Link label.
+	 * @param string $url   Link destination.
+	 * @return string
+	 */
+	private static function navigation_link_semantics( string $label, string $url ): string {
+		$label = strtolower( trim( preg_replace( '/\s+/', ' ', html_entity_decode( $label, ENT_QUOTES | ENT_HTML5 ) ) ?? $label ) );
+		$url   = trim( html_entity_decode( $url, ENT_QUOTES | ENT_HTML5 ) );
+		$parts = parse_url( $url );
+		$path  = is_array( $parts ) ? (string) ( $parts['path'] ?? '' ) : $url;
+
+		// Relative HTML routes may be coerced into hostnames before materialization.
+		if ( '' === $path && is_array( $parts ) && preg_match( '/\.html?$/i', (string) ( $parts['host'] ?? '' ) ) ) {
+			$path = (string) $parts['host'];
+		}
+
+		$path = preg_replace( '#/+#', '/', str_replace( '\\', '/', $path ) ) ?? $path;
+		$path = preg_replace( '#(?:^|/)index\.html?$#i', '', $path ) ?? $path;
+		$path = preg_replace( '/\.html?$/i', '', $path ) ?? $path;
+		$path = trim( $path, '/' );
+		if ( '' === $path ) {
+			$path = 'home';
+		}
+
+		if ( is_array( $parts ) && isset( $parts['query'] ) ) {
+			$path .= '?' . $parts['query'];
+		}
+		if ( is_array( $parts ) && isset( $parts['fragment'] ) ) {
+			$path .= '#' . $parts['fragment'];
+		}
+
+		return $label . '@' . strtolower( $path );
+	}
+
+	/**
 	 * Extract normalized top-level block sequences from generated template part writes.
 	 *
 	 * @param array<string,string> $template_part_writes Generated template part writes.
 	 * @param string               $area                 Template part area.
-	 * @return array<int,array{path:string,blocks:array<int,array{normalized:string}>}>
+	 * @return array<int,array{path:string,blocks:array<int,array{normalized:string,original:string}>}>
 	 */
 	private static function template_part_write_sequences( array $template_part_writes, string $area ): array {
 		$sequences = array();
@@ -447,7 +597,17 @@ class Static_Site_Importer_Page_Materializer {
 		$changed = false;
 
 		if ( $strip_header ) {
-			$index = self::first_meaningful_block_index( $blocks );
+			$index = null;
+			foreach ( $blocks as $candidate_index => $block ) {
+				if ( ! self::is_meaningful_parsed_block( $block ) ) {
+					continue;
+				}
+				if ( self::is_skip_link_block( $block ) ) {
+					continue;
+				}
+				$index = (int) $candidate_index;
+				break;
+			}
 			if ( null !== $index && self::is_template_chrome_block( $blocks[ $index ], 'header' ) ) {
 				array_splice( $blocks, $index, 1 );
 				$changed       = true;
@@ -477,6 +637,24 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		return $changed ? trim( serialize_blocks( $blocks ) ) : $markup;
+	}
+
+	/**
+	 * Determine whether a leading block is an accessibility skip link.
+	 *
+	 * @param mixed $block Parsed block.
+	 */
+	private static function is_skip_link_block( $block ): bool {
+		if ( ! is_array( $block ) ) {
+			return false;
+		}
+
+		$attrs = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array();
+		$class = isset( $attrs['className'] ) && is_scalar( $attrs['className'] ) ? (string) $attrs['className'] : '';
+		$html  = isset( $block['innerHTML'] ) && is_scalar( $block['innerHTML'] ) ? (string) $block['innerHTML'] : '';
+
+		return (bool) preg_match( '/(?:^|\s)skip-link(?:\s|$)/', $class )
+			|| (bool) preg_match( '/\bclass=["\'][^"\']*\bskip-link\b/i', $html );
 	}
 
 	/**
@@ -928,8 +1106,10 @@ class Static_Site_Importer_Page_Materializer {
 	 * @param string                       $body        HTML body markup.
 	 * @param string                       $source_path Source path for diagnostics.
 	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics, passed by reference.
+	 * @param array<string,mixed>          $options     Transformer options.
+	 * @param array<int,array<string,mixed>> $assets    Generated transformer assets, passed by reference.
 	 */
-	public static function html_to_blocks( string $body, string $source_path, array &$diagnostics ): string {
+	public static function html_to_blocks( string $body, string $source_path, array &$diagnostics, array $options = array(), array &$assets = array() ): string {
 		if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
 			$diagnostics[] = array(
 				'type'        => 'missing_transformer_bridge',
@@ -940,7 +1120,12 @@ class Static_Site_Importer_Page_Materializer {
 			return '';
 		}
 
-		$result = call_user_func( 'blocks_engine_php_transformer_convert_format', $body, 'html', 'blocks' );
+		$result = call_user_func( 'blocks_engine_php_transformer_convert_format', $body, 'html', 'blocks', $options );
+		foreach ( isset( $result['assets'] ) && is_array( $result['assets'] ) ? $result['assets'] : array() as $asset ) {
+			if ( is_array( $asset ) ) {
+				$assets[] = $asset;
+			}
+		}
 
 		foreach ( isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array() as $diagnostic ) {
 			if ( is_array( $diagnostic ) ) {

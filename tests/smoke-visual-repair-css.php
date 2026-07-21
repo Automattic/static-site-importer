@@ -80,6 +80,13 @@ if ( ! function_exists( 'trailingslashit' ) ) {
 	}
 }
 
+if ( ! function_exists( 'get_theme_root_uri' ) ) {
+	function get_theme_root_uri( string $stylesheet_or_template = '' ): string {
+		unset( $stylesheet_or_template );
+		return 'https://example.test/wp-content/themes';
+	}
+}
+
 if ( ! function_exists( 'wp_mkdir_p' ) ) {
 	function wp_mkdir_p( string $path ): bool {
 		return is_dir( $path ) || mkdir( $path, 0777, true );
@@ -262,11 +269,39 @@ $assert( array( 'website/index.html#main-nav' ) === ( $navigation_part_reports[0
 
 if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
 	function blocks_engine_php_transformer_convert_format( string $content, string $from, string $to, array $options = array() ): array {
-		unset( $from, $to, $options );
+		$GLOBALS['static_site_importer_test_transform_options'][] = $options;
+		$GLOBALS['static_site_importer_test_transform_content'][] = $content;
+		unset( $from, $to );
 		$text = trim( preg_replace( '/\s+/', ' ', wp_strip_all_tags( $content ) ) ?? '' );
+		$svg_asset = str_contains( $content, '<svg' ) ? array(
+			'source'             => 'inline-svg',
+			'path'               => 'assets/materialized-svg/inline-svg-test.svg',
+			'target_path'        => 'assets/materialized-svg/inline-svg-test.svg',
+			'kind'               => 'svg',
+			'source_role'        => 'importer_owned',
+			'pipeline_sanitized' => true,
+			'content'            => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1z" /></svg>',
+		) : null;
 		return array(
-			'serialized_blocks' => '<!-- wp:paragraph --><p>' . esc_html( $text ) . '</p><!-- /wp:paragraph -->',
+			'serialized_blocks' => '<!-- wp:paragraph --><p>' . esc_html( $text ) . ( null !== $svg_asset ? '<img src="assets/materialized-svg/inline-svg-test.svg" alt="" />' : '' ) . '</p><!-- /wp:paragraph -->',
 			'diagnostics'       => array(),
+			'assets'            => array_values( array_filter( array(
+				array(
+					'path'    => 'assets/css/template-part-projection.css',
+					'type'    => 'text/css',
+					'content' => '.projected-template-part{display:flex}',
+				),
+				$svg_asset,
+			) ) ),
+		);
+	}
+}
+
+if ( ! function_exists( 'blocks_engine_php_transformer_runtime_context' ) ) {
+	function blocks_engine_php_transformer_runtime_context( string $html, string $source_path, array $files ): array {
+		unset( $html, $source_path, $files );
+		return array(
+			'runtime_dom_selectors' => array( '.theme-toggle' ),
 		);
 	}
 }
@@ -279,6 +314,10 @@ $source_file_part_result = Static_Site_Importer_Theme_Materializer::template_par
 				'path'    => 'index.html',
 				'content' => '<!doctype html><html><body><main><header><nav><a href="/news/">News</a><svg><path d="M0 0h1v1z" /></svg></nav></header><article><h1>Home</h1></article><footer><p>Footer</p></footer></main></body></html>',
 			),
+			array(
+				'path'    => 'css/style.css',
+				'content' => ':root{--brand:#2c63ff}.btn{background:var(--brand);color:#fff}',
+			),
 		),
 	)
 );
@@ -289,6 +328,39 @@ $assert( isset( $source_file_part_writes['/tmp/visual-repair-smoke/parts/header.
 $assert( isset( $source_file_part_writes['/tmp/visual-repair-smoke/parts/footer.html'] ), 'source-file-template-part-fallback-writes-footer' );
 $assert( ! str_contains( (string) $source_file_part_writes['/tmp/visual-repair-smoke/parts/header.html'], '<!-- wp:html' ), 'source-file-template-part-fallback-strips-inline-svg-html-fallback' );
 $assert( array( 'index.html#header' ) === ( $source_file_part_reports[0]['source_paths'] ?? array() ), 'source-file-template-part-fallback-reports-header-source' );
+$assert( 'source_files.landmark' === ( $source_file_part_reports[0]['origin'] ?? '' ), 'source-file-template-part-fallback-reports-origin' );
+$assert( array( 'core/paragraph' ) === ( $source_file_part_reports[0]['block_names'] ?? array() ), 'source-file-template-part-fallback-reports-block-shape' );
+$assert( false === ( $source_file_part_reports[0]['contains_core_html'] ?? true ), 'source-file-template-part-fallback-reports-core-html-absence' );
+$assert( 0 === ( $source_file_part_reports[0]['control_marker_count'] ?? -1 ), 'source-file-template-part-fallback-reports-control-marker-count' );
+$assert( array( '.projected-template-part{display:flex}' ) === ( $source_file_part_result['styles'] ?? array() ), 'source-file-template-part-fallback-retains-transformer-css-assets' );
+$transform_options = $GLOBALS['static_site_importer_test_transform_options'] ?? array();
+$transform_content = $GLOBALS['static_site_importer_test_transform_content'] ?? array();
+$assert( ':root{--brand:#2c63ff}.btn{background:var(--brand);color:#fff}' === ( $transform_options[0]['static_css'] ?? '' ), 'source-file-template-part-fallback-passes-source-css-to-transformer' );
+$assert( array( '.theme-toggle' ) === ( $transform_options[0]['runtime_dom_selectors'] ?? array() ), 'source-file-template-part-fallback-passes-script-derived-runtime-context' );
+$assert( str_contains( (string) ( $transform_content[0] ?? '' ), '<svg>' ), 'source-file-template-part-fallback-passes-inline-svg-to-transformer' );
+$assert( isset( $source_file_part_writes['/tmp/visual-repair-smoke/assets/materialized-svg/inline-svg-test.svg'] ), 'source-file-template-part-fallback-writes-sanitized-importer-owned-svg' );
+$assert( str_contains( (string) $source_file_part_writes['/tmp/visual-repair-smoke/parts/header.html'], 'https://example.test/wp-content/themes/visual-repair-smoke/assets/materialized-svg/inline-svg-test.svg' ), 'source-file-template-part-fallback-rewrites-materialized-svg-url-once' );
+$assert( ! str_contains( (string) $source_file_part_writes['/tmp/visual-repair-smoke/parts/header.html'], '/visual-repair-smoke/https://' ), 'source-file-template-part-fallback-does-not-double-rewrite-svg-url' );
+
+$entrypoint_part_result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes(
+	'/tmp/visual-repair-smoke',
+	array(
+		'compiled_site' => array( 'entry_path' => 'index.html' ),
+		'source_files'  => array(
+			array(
+				'path'    => 'about.html',
+				'content' => '<html><body><header><a href="/">Back home</a></header><main>About</main><footer><p>Short footer.</p></footer></body></html>',
+			),
+			array(
+				'path'    => 'index.html',
+				'content' => '<html><body><header><a href="/editor">Try the editor</a></header><main>Home</main><footer><p>Full footer — sincerely, no snark.</p></footer></body></html>',
+			),
+		),
+	)
+);
+$entrypoint_part_writes = is_array( $entrypoint_part_result ) ? $entrypoint_part_result['writes'] : array();
+$assert( str_contains( (string) ( $entrypoint_part_writes['/tmp/visual-repair-smoke/parts/header.html'] ?? '' ), 'Try the editor' ), 'source-file-template-part-fallback-prefers-entrypoint-header' );
+$assert( str_contains( (string) ( $entrypoint_part_writes['/tmp/visual-repair-smoke/parts/footer.html'] ?? '' ), 'sincerely, no snark' ), 'source-file-template-part-fallback-preserves-entrypoint-footer-content' );
 
 $base_theme_writes = Static_Site_Importer_Theme_Materializer::base_theme_writes( '/tmp/visual-repair-smoke', 'visual-repair-smoke', 'Visual Repair Smoke', '', true, true );
 $assert( isset( $base_theme_writes['/tmp/visual-repair-smoke/templates/404.html'] ), 'base-theme-writes-404-template' );
@@ -677,9 +749,8 @@ $source_enq_pos  = strpos( $functions_php, "wp_enqueue_style( 'fixture-theme-ass
 $assert( false !== $font_enq_pos && false !== $source_enq_pos && $font_enq_pos < $source_enq_pos, 'font-stylesheet-enqueue-row-precedes-source-stylesheet-enqueue-row' );
 $assert( 2 === substr_count( $functions_php, "wp_enqueue_style( 'fixture-theme-asset-assets-materialized-assets-site', get_template_directory_uri() . '/assets/materialized/assets/site.css'" ), 'source-stylesheet-enqueue-row-is-emitted-in-both-enqueue-actions' );
 $assert( str_contains( $functions_php, '/assets/materialized/assets/app.js' ), 'materialization-plan-script-is-enqueued' );
-$assert( str_contains( $functions_php, "\$mimes['svg'] = 'image/svg+xml';" ), 'generated-theme-enables-svg-upload-mime' );
-$assert( str_contains( $functions_php, "add_filter( 'wp_check_filetype_and_ext'" ), 'generated-theme-corrects-svg-filetype-check' );
-$assert( str_contains( $functions_php, 'sanitized by the import pipeline at build time' ), 'generated-theme-documents-build-time-svg-sanitization' );
+$assert( ! str_contains( $functions_php, "\$mimes['svg'] = 'image/svg+xml';" ), 'generated-theme-does-not-enable-unsanitized-svg-uploads' );
+$assert( ! str_contains( $functions_php, "add_filter( 'wp_check_filetype_and_ext'" ), 'generated-theme-does-not-bypass-svg-filetype-checks' );
 $assert( str_contains( $functions_php, "wp_script_add_data( 'fixture-theme-asset-assets-materialized-assets-app', 'defer', true );" ), 'materialization-plan-script-defer-is-enqueued' );
 $assert( str_contains( $functions_php, "wp_script_add_data( 'fixture-theme-asset-assets-materialized-assets-app', 'type', 'module' );" ), 'materialization-plan-script-type-is-enqueued' );
 $assert( str_contains( $functions_php, "wp_script_add_data( 'fixture-theme-asset-assets-materialized-assets-vendor', 'async', true );" ), 'materialization-plan-script-async-is-enqueued' );
