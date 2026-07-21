@@ -167,13 +167,9 @@ jobs:
           STATIC_SITE_IMPORTER_SHA: ${{ inputs.static-site-importer-sha }}
           BLOCKS_ENGINE_SHA: ${{ inputs.blocks-engine-sha }}
         run: |
-          mapfile -t matrix_results < <(find "$ARTIFACT_ROOT" -name static-site-fixture-matrix-result.json -type f)
-          mapfile -t registries < <(find "$ARTIFACT_ROOT" -name gutenberg-incompatibility-registry.json -type f)
-          test "${#matrix_results[@]}" -eq 1
-          test "${#registries[@]}" -eq 1
           node tools/verify-solved-site-promotion.mjs \
-            --matrix-result "${matrix_results[0]}" \
-            --registry "${registries[0]}" \
+            --matrix-result artifact:result \
+            --registry artifact:gutenberg_incompatibility_registry \
             --runtime-inputs "$ARTIFACT_ROOT/runtime-inputs.json" \
             --artifact-index "$ARTIFACT_ROOT/homeboy-bench-result.json" \
             --artifact-root "$ARTIFACT_ROOT" \

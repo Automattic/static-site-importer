@@ -50,6 +50,18 @@ test('issues an accepted immutable promotion receipt', () => {
   assert.ok(receipt.evidence.artifacts.every((row) => /^[a-f0-9]{64}$/.test(row.sha256)));
 });
 
+test('resolves matrix and registry inputs from the registered artifact inventory', () => {
+  const input = fixture();
+  input.artifactIndex.data.payload.artifacts.push(
+    { name: 'result', path: `/relocated/${path.basename(input.paths.matrix)}` },
+    { name: 'gutenberg_incompatibility_registry', path: `/relocated/${path.basename(input.paths.registry)}` },
+  );
+  write(input.paths.artifactIndex, input.artifactIndex);
+  input.options.matrixResult = 'artifact:result';
+  input.options.registry = 'artifact:gutenberg_incompatibility_registry';
+  assert.equal(verifySolvedSitePromotion(input.options).status, 'accepted');
+});
+
 for (const [name, mutate, pattern] of [
   ['empty corpus', (input) => { input.matrix.fixtures = []; input.matrix.summary.fixture_count = 0; }, /non-empty/],
   ['failed decision', (input) => { input.registry.fixture_decisions[0].acceptance_status = 'visual_only_blocker'; }, /solved_candidate/],

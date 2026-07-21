@@ -11,10 +11,13 @@ const REGISTRY_SCHEMA = 'static-site-importer/gutenberg-incompatibility-registry
 
 export function verifySolvedSitePromotion(input) {
   const options = normalizeOptions(input);
-  const matrix = readJson(options.matrixResult, 'matrix result');
-  const registry = readJson(options.registry, 'registry');
-  const runtime = readJson(options.runtimeInputs, 'runtime inputs');
   const artifactIndex = readJson(options.artifactIndex, 'artifact index');
+  const registeredArtifacts = indexRegisteredArtifacts(artifactIndex, options.artifactRoot);
+  const matrixResult = resolveInputFile(options.matrixResult, registeredArtifacts, 'matrix result');
+  const registryFile = resolveInputFile(options.registry, registeredArtifacts, 'registry');
+  const matrix = readJson(matrixResult, 'matrix result');
+  const registry = readJson(registryFile, 'registry');
+  const runtime = readJson(options.runtimeInputs, 'runtime inputs');
   assert(matrix.schema === MATRIX_SCHEMA, `Matrix schema must be ${MATRIX_SCHEMA}.`);
   assert(registry.schema === REGISTRY_SCHEMA, `Registry schema must be ${REGISTRY_SCHEMA}.`);
   assertSha(options.staticSiteImporterSha, 'Static Site Importer candidate SHA');
@@ -30,9 +33,8 @@ export function verifySolvedSitePromotion(input) {
   assert(matrix.summary?.solved_candidate_gate?.failed_fixture_count === 0, 'Solved-candidate gate reported failures.');
 
   validateRuntime(runtime, options);
-  const registeredArtifacts = indexRegisteredArtifacts(artifactIndex, options.artifactRoot);
   const decisions = new Map((registry.fixture_decisions || []).map((row) => [row.fixture_id, row]));
-  const requiredFiles = [options.matrixResult, options.registry, options.artifactIndex];
+  const requiredFiles = [matrixResult, registryFile, options.artifactIndex];
   for (const fixture of matrix.fixtures) {
     verifyFixture(fixture, decisions.get(fixture.fixture_id), options, requiredFiles, registeredArtifacts);
   }
@@ -175,6 +177,14 @@ function filesWithin(directory) {
 function isFileWithinRoot(file, root) {
   const relative = path.relative(root, file);
   return relative && !relative.startsWith('..') && !path.isAbsolute(relative) && fs.existsSync(file) && fs.statSync(file).isFile();
+}
+
+function resolveInputFile(value, registeredArtifacts, label) {
+  if (!value.startsWith('artifact:')) return value;
+  const name = value.slice('artifact:'.length);
+  const matches = registeredArtifacts.get(name) || [];
+  assert(matches.length === 1, `${label} must have exactly one registered artifact named ${name}.`);
+  return matches[0];
 }
 
 function addRegisteredArtifact(files, registeredArtifacts, name, label) {
