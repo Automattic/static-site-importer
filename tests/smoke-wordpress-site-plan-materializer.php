@@ -10,6 +10,7 @@
 require dirname( __DIR__ ) . '/vendor/autoload.php';
 
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler;
+use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\RuntimeDeclarations;
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
 
 define( 'OBJECT', 'OBJECT' );
@@ -91,6 +92,33 @@ $assert( file_exists( $GLOBALS['ssi_plan_root'] . '/site-plan/templates/front-pa
 $assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-plan/assets/assets/site.css' ), 'https://example.test/wp-content/themes/site-plan/assets/assets/logo.svg' ), 'root-relative stylesheet references resolve to declared theme assets' );
 $assert( 'posts' === $GLOBALS['ssi_plan_options']['show_on_front'], 'plan-only materialization does not change reading settings by default' );
 $assert( $receipt['plan']['pages'][0]['document_metadata']['links'][0]['resolved_url'] === 'https://example.test/wp-content/themes/site-plan/assets/assets/site.css', 'resolved metadata retains the declared stylesheet destination' );
+$assert( array() === $receipt['completed']['runtime_declarations']['asset_publications'], 'plans without publication declarations retain an explicit empty receipt collection' );
+
+$publication_svg = '<svg xmlns="http://www.w3.org/2000/svg"><text style="font-family:Example">Example</text></svg>';
+$publication_css = '@font-face{font-family:Example;src:url(font.woff2)}';
+$publication_font = 'local-font-bytes';
+$publication_token = 'asset-' . substr( hash( 'sha256', 'assets/assets/font.woff2' ), 0, 16 );
+$publication_face = '@font-face{font-family:Example;src:url({{wordpress-site-plan:asset:' . $publication_token . '}});}';
+$publication_content = '<svg xmlns="http://www.w3.org/2000/svg"><text style="font-family:Example">Example</text><style>' . $publication_face . '</style></svg>';
+$publication_input = array( 'css' => array( array( 'source_path' => 'assets/fonts.css', 'content_hash' => hash( 'sha256', $publication_css ), 'font_faces' => array( $publication_face ) ) ), 'fonts' => array( array( 'source_path' => 'assets/font.woff2', 'content_hash' => hash( 'sha256', base64_encode( $publication_font ) ) ) ) );
+$publication_declaration = array(
+	'kind' => 'asset_publication', 'type' => 'asset', 'source_path' => 'assets/logo.svg',
+	'provenance' => array( 'source_path' => 'assets/logo.svg', 'source' => 'files', 'hash' => hash( 'sha256', $publication_svg ), 'mime_type' => 'image/svg+xml', 'role' => 'image', 'bytes' => strlen( $publication_svg ) ),
+	'destination' => array( 'capability' => 'asset_materialization', 'required' => true ), 'source_role' => 'image', 'mime_type' => 'image/svg+xml',
+	'source_hash' => hash( 'sha256', $publication_svg ), 'expected_content_hash' => hash( 'sha256', $publication_content ),
+	'sanitization' => array( 'schema' => 'generic/svg-sanitization/v1', 'input_hash' => hash( 'sha256', $publication_svg ) ),
+	'reference_targets' => array( array( 'target_path' => 'assets/assets/fonts.css', 'write_reconciliation_identity' => hash( 'sha256', "wordpress-site-plan/write/v2\nassets/fonts.css\nassets/assets/fonts.css" ), 'token' => $publication_token, 'count' => 1, 'context' => 'css_url' ) ),
+	'transformation' => array( 'kind' => 'svg_font_enrichment', 'css_source_paths' => array( 'assets/fonts.css' ), 'font_source_paths' => array( 'assets/font.woff2' ), 'input_hash' => RuntimeDeclarations::hash( $publication_input ), 'expected_content_hash' => hash( 'sha256', $publication_content ) ),
+);
+$publication_artifact = array( 'entrypoint' => 'index.html', 'runtime_declarations' => array( $publication_declaration ), 'files' => array( 'index.html' => '<main><img src="assets/logo.svg"></main>', 'assets/logo.svg' => $publication_svg, 'assets/fonts.css' => $publication_css, 'assets/font.woff2' => $publication_font ) );
+$publication_plan = ( new ArtifactCompiler() )->compile( $publication_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$publication_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $publication_plan, array( 'slug' => 'publication-plan' ) );
+$publication_id = $publication_plan['runtime_declarations'][0]['reconciliation_identity'];
+$publication_report = $publication_receipt['completed']['runtime_declarations']['asset_publications'][ $publication_id ] ?? array();
+$publication_file = $GLOBALS['ssi_plan_root'] . '/publication-plan/assets/assets/logo.svg';
+$assert( 'completed' === $publication_receipt['status'] && 'completed' === ( $publication_report['status'] ?? '' ), 'required asset publication capability completes and is receipt-owned' );
+$assert( hash_file( 'sha256', $publication_file ) === ( $publication_report['actual_content_hash'] ?? '' ) && $publication_plan['runtime_declarations'][0]['expected_content_hash'] === ( $publication_report['expected_content_hash'] ?? '' ), 'publication receipt proves canonical and resolved content integrity' );
+$assert( str_contains( file_get_contents( $publication_file ), 'https://example.test/wp-content/themes/publication-plan/assets/assets/font.woff2' ), 'font-bearing SVG resolves only its declared local font URL' );
 
 $GLOBALS['ssi_plan_options'] = array( 'show_on_front' => 'posts', 'page_on_front' => 0, 'blogname' => 'Before' );
 $preview = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan', 'overwrite' => true ) );

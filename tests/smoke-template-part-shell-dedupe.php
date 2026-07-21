@@ -45,7 +45,6 @@ if ( ! function_exists( 'wp_strip_all_tags' ) ) {
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-document.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-source-page.php';
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-materializer.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-page-materializer.php';
 
 $failures   = array();

@@ -64,7 +64,6 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-companion-plugin.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-materializer.php';
 
 $failures   = array();
 $assertions = 0;
@@ -138,38 +137,7 @@ if ( is_array( $script_only_descriptor ) ) {
 	$assert( str_contains( $script_only_main, "'' !== ( \$island['block'] ?? '' )" ), 'global-enqueue-is-limited-to-unscoped-scripts' );
 }
 
-// 2. Theme decoupling: the generated theme functions.php no longer enqueues a
-//    theme-coupled site.js, and the preserved island JS body never lands in the
-//    theme. A legitimate per-asset script still rides the theme (path intact).
-$theme_dir   = '/tmp/ssi-theme';
-$legit_asset = 'assets/materialized/app.js';
-$writes      = Static_Site_Importer_Theme_Materializer::base_theme_writes(
-	$theme_dir,
-	'example-site',
-	'Example Site',
-	'body { color: #000; }',
-	false,
-	false,
-	array(
-		array(
-			'theme_path' => $legit_asset,
-			'placement'  => 'body',
-		),
-	),
-	array()
-);
-
-$functions_php = $writes[ $theme_dir . '/functions.php' ] ?? '';
-$assert( '' !== $functions_php, 'theme-functions-php-generated' );
-$assert( ! str_contains( $functions_php, 'site.js' ), 'theme-no-longer-enqueues-site-js' );
-$assert( ! str_contains( $functions_php, $island_body ), 'theme-does-not-carry-preserved-island-js' );
-$assert( ! isset( $writes[ $theme_dir . '/assets/site.js' ] ), 'theme-writes-omit-site-js-asset' );
-$write_blob = implode( "\n", array_values( $writes ) );
-$assert( ! str_contains( $write_blob, $island_body ), 'no-theme-write-carries-preserved-island-js' );
-// Theme path otherwise intact: legitimate per-asset scripts still enqueue.
-$assert( str_contains( $functions_php, $legit_asset ), 'theme-still-enqueues-legitimate-asset-scripts' );
-
-// 3. Gate/diagnostics account for the JS as companion-plugin-carried.
+// 2. Gate/diagnostics account for the JS as companion-plugin-carried.
 $GLOBALS['ssi_companion_js_active'] = false;
 if ( ! function_exists( 'is_plugin_active' ) ) {
 	function is_plugin_active( string $plugin_file ): bool {

@@ -431,7 +431,6 @@ require_once dirname( __DIR__ ) . '/includes/abilities.php';
 require_once dirname( __DIR__ ) . '/includes/rest.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-document.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-source-page.php';
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-materializer.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-page-materializer.php';
 
 $plugin_source = file_get_contents( dirname( __DIR__ ) . '/static-site-importer.php' );

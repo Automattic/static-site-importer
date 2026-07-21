@@ -455,7 +455,7 @@ This repo is Homeboy-managed:
 
 ## Boundary
 
-This plugin owns static-site and website-artifact import workflows plus generated WordPress artifacts. [Blocks Engine PHP transformer](https://github.com/Automattic/blocks-engine/tree/trunk/php-transformer) owns generic artifact compilation and emits `source_reports.wordpress_site_plan` using `blocks-engine/wordpress-site-plan/v2`; SSI materializes that plan and records its receipt. `compiled-site` and `materialization-plan` v1 remain Theme Materializer compatibility-only contracts until the canonical chrome/SVG media parity tracker is accepted.
+This plugin owns static-site and website-artifact import workflows plus generated WordPress artifacts. [Blocks Engine PHP transformer](https://github.com/Automattic/blocks-engine/tree/trunk/php-transformer) owns generic artifact compilation and emits `source_reports.wordpress_site_plan` using `blocks-engine/wordpress-site-plan/v2`; SSI materializes that plan and records its receipt.
 
 The intended dependency direction is:
 

@@ -127,7 +127,7 @@ class Static_Site_Importer_Page_Materializer {
 			$content      = self::promote_inline_svg_html_blocks( $content, $theme_slug, $slug, $asset_writes, $diagnostics, $svg_font_faces );
 
 			$patterns[ $filename ] = $pattern_slug;
-			$files[ $filename ]    = Static_Site_Importer_Theme_Materializer::pattern_file( self::page_title( $filename, $page ), $pattern_slug, $content );
+			$files[ $filename ]    = self::pattern_file( self::page_title( $filename, $page ), $pattern_slug, $content );
 			$contents[ $filename ] = $content;
 		}
 
@@ -138,6 +138,17 @@ class Static_Site_Importer_Page_Materializer {
 			'contents'     => $contents,
 			'diagnostics'  => $diagnostics,
 		);
+	}
+
+	private static function pattern_file( string $title, string $pattern_slug, string $content ): string {
+		return "<?php\n" .
+			"/**\n" .
+			' * Title: ' . $title . "\n" .
+			' * Slug: ' . $pattern_slug . "\n" .
+			" * Categories: static-site-importer\n" .
+			" */\n" .
+			"?>\n" .
+			trim( $content ) . "\n";
 	}
 
 	/**
@@ -763,7 +774,7 @@ class Static_Site_Importer_Page_Materializer {
 				if ( '' === $svg ) {
 					return $matches[0];
 				}
-				$svg = Static_Site_Importer_Theme_Materializer::embed_svg_font_faces( $svg, $svg_font_faces );
+				$svg = self::embed_svg_font_faces( $svg, $svg_font_faces );
 
 				$hash          = substr( sha1( $svg ), 0, 12 );
 				$asset_path    = 'assets/materialized/inline-svg/' . sanitize_title( $page_slug ) . '-' . $hash . '.svg';
@@ -793,6 +804,23 @@ class Static_Site_Importer_Page_Materializer {
 			},
 			$markup
 		) ?? $markup;
+	}
+
+	private static function embed_svg_font_faces( string $svg, string $font_faces ): string {
+		preg_match_all( '/font-family\s*:\s*(["\']?)([^;"\']+)\1\s*;/i', $font_faces, $matches );
+		$families = array_values( array_unique( array_map( 'trim', $matches[2] ?? array() ) ) );
+		$uses_family = false;
+		foreach ( $families as $family ) {
+			if ( preg_match( '/font-family\s*[:=]\s*(["\']?)' . preg_quote( $family, '/' ) . '\\1/i', $svg ) ) {
+				$uses_family = true;
+				break;
+			}
+		}
+		if ( '' === $font_faces || ! str_contains( $svg, '<text' ) || ! $uses_family || ! preg_match( '/<svg\b[^>]*>/i', $svg, $match, PREG_OFFSET_CAPTURE ) ) {
+			return $svg;
+		}
+		$offset = $match[0][1] + strlen( $match[0][0] );
+		return substr( $svg, 0, $offset ) . '<style type="text/css">' . $font_faces . '</style>' . substr( $svg, $offset );
 	}
 
 	/**
