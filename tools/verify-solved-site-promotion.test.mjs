@@ -53,6 +53,19 @@ test('resolves uniquely named durable copies of transient runtime evidence', () 
   assert.ok(receipt.evidence.artifacts.some((row) => row.path === 'uuid-editor.png'));
 });
 
+test('materializes host runtime evidence into the durable artifact root', () => {
+  const input = fixture();
+  const externalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-promotion-runtime-'));
+  const externalEditor = path.join(externalRoot, 'editor.png');
+  fs.writeFileSync(externalEditor, 'runtime editor screenshot');
+  input.matrix.fixtures[0].editor_canvas.screenshot = externalEditor;
+  write(input.paths.matrix, input.matrix);
+  const receipt = verifySolvedSitePromotion(input.options);
+  const artifact = receipt.evidence.artifacts.find((row) => row.path.endsWith('-editor.png'));
+  assert.match(artifact?.path || '', /^runtime-evidence\/[a-f0-9]{64}-editor\.png$/);
+  assert.equal(fs.readFileSync(path.join(input.root, artifact.path), 'utf8'), 'runtime editor screenshot');
+});
+
 for (const [name, mutate, pattern] of [
   ['empty corpus', (input) => { input.matrix.fixtures = []; input.matrix.summary.fixture_count = 0; }, /non-empty/],
   ['failed decision', (input) => { input.registry.fixture_decisions[0].acceptance_status = 'visual_only_blocker'; }, /solved_candidate/],

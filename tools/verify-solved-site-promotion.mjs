@@ -143,6 +143,15 @@ function addRequiredFile(files, value, label, root) {
     files.push(resolved);
     return;
   }
+  if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
+    const content = fs.readFileSync(resolved);
+    const digest = crypto.createHash('sha256').update(content).digest('hex');
+    const durable = path.join(root, 'runtime-evidence', `${digest}-${path.basename(value)}`);
+    fs.mkdirSync(path.dirname(durable), { recursive: true });
+    fs.writeFileSync(durable, content);
+    files.push(durable);
+    return;
+  }
   const basename = path.basename(value);
   const matches = filesBelow(root).filter((file) => path.basename(file) === basename || path.basename(file).endsWith(`-${basename}`));
   assert(matches.length === 1, `${label} must resolve to exactly one durable evidence file; found ${matches.length}.`);
