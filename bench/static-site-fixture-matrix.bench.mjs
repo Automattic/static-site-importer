@@ -97,6 +97,7 @@ export default async function runFixtureMatrixBench(context = {}) {
       gutenberg_incompatibility_registry: { path: path.join(summary.output_directory, 'gutenberg-incompatibility-registry.json') },
       gutenberg_incompatibility_registry_report: { path: path.join(summary.output_directory, 'gutenberg-incompatibility-registry.md') },
       ...(summary.visual_parity_artifacts || {}),
+      ...(summary.editor_canvas_artifacts || {}),
     },
     metadata: {
       matrix_id: summary.matrix_id,
@@ -209,6 +210,7 @@ export async function runFixtureMatrix(options) {
   let runtimeError = null;
   let collectedResult = written.result;
   let visualParityArtifacts = {};
+  let editorCanvasArtifacts = {};
   if (options.run) {
     const batchSize = positiveInteger(options.batchSize, DEFAULT_BATCH_SIZE);
     const concurrency = boundedConcurrency(options.concurrency, DEFAULT_BATCH_CONCURRENCY, MAX_BATCH_CONCURRENCY);
@@ -237,6 +239,7 @@ export async function runFixtureMatrix(options) {
       batchRuns.push(outcome.batchRun);
       batchResults.push(outcome.batchResult);
       visualParityArtifacts = { ...visualParityArtifacts, ...(outcome.visualParityArtifacts || {}) };
+      editorCanvasArtifacts = { ...editorCanvasArtifacts, ...(outcome.editorCanvasArtifacts || {}) };
       for (const failure of outcome.childCommandFailures || []) {
         childCommandFailures.push(failure);
       }
@@ -309,6 +312,7 @@ export async function runFixtureMatrix(options) {
     ...(runtime?.childCommandFailures?.length ? { child_command_failures: runtime.childCommandFailures } : {}),
     result_file: path.join(outputDirectory, 'static-site-fixture-matrix-result.json'),
     visual_parity_artifacts: visualParityArtifacts,
+    editor_canvas_artifacts: editorCanvasArtifacts,
     result_summary: collectedResult.summary,
     runtime: runtime ? runtimeSummary(runtime, runtimeError) : null,
   };
@@ -455,6 +459,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       batchRun,
       batchResult: editorCanvas.result,
       visualParityArtifacts: visualCompare.artifacts,
+      editorCanvasArtifacts: editorCanvas.artifacts,
       error: batchError,
       childCommandFailures: childCommandFailure ? [childCommandFailure] : [],
     };
@@ -484,6 +489,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       fixtures: recoveryOutcomes.flatMap((outcome) => outcome.batchResult.fixtures || []),
     },
     visualParityArtifacts: Object.assign({}, ...recoveryOutcomes.map((outcome) => outcome.visualParityArtifacts || {})),
+    editorCanvasArtifacts: Object.assign({}, ...recoveryOutcomes.map((outcome) => outcome.editorCanvasArtifacts || {})),
     error: recoveryErrors[0] || null,
     childCommandFailures: recoveryOutcomes.flatMap((outcome) => outcome.childCommandFailures || []),
   };
@@ -523,15 +529,17 @@ export function materializeEditorCanvasArtifacts(input = {}) {
   const result = input.result || {};
   const outputDirectory = path.resolve(input.outputDirectory || input.output_directory || '');
   const codeboxArtifactsDirectory = path.resolve(input.codeboxArtifactsDirectory || input.codebox_artifacts_directory || '');
+  const artifacts = {};
   return {
     result: {
       ...result,
-      fixtures: arrayValue(result.fixtures).map((fixture) => materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory })),
+      fixtures: arrayValue(result.fixtures).map((fixture) => materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory, artifacts })),
     },
+    artifacts,
   };
 }
 
-function materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory }) {
+function materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory, artifacts }) {
   const fixtureId = fixture.fixture_id || fixture.fixtureId || '';
   if (!fixtureId) {
     return fixture;
@@ -549,6 +557,8 @@ function materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, cod
     fs.mkdirSync(path.dirname(persistedPath), { recursive: true });
     fs.copyFileSync(sourcePath, persistedPath);
     rewrites.set(ref.path, persistedPath);
+    const artifactId = String(ref.artifact_id || ref.id || path.basename(ref.path, path.extname(ref.path))).replace(/[^a-z0-9_.-]+/gi, '-');
+    artifacts[`editor_canvas_${fixtureId}_${artifactId}`] = { path: persistedPath };
   }
   if (rewrites.size === 0) {
     return fixture;
@@ -951,7 +961,16 @@ function resolveCodeboxArtifactPath(refPath, codeboxArtifactsDirectory) {
     return '';
   }
   if (path.isAbsolute(refPath)) {
-    return refPath;
+    if (fs.existsSync(refPath)) {
+      return refPath;
+    }
+    const artifactMarker = `${path.sep}artifacts${path.sep}`;
+    const markerIndex = refPath.lastIndexOf(artifactMarker);
+    if (markerIndex !== -1) {
+      refPath = refPath.slice(markerIndex + artifactMarker.length);
+    } else {
+      return refPath;
+    }
   }
   const directPath = path.join(codeboxArtifactsDirectory, refPath);
   if (fs.existsSync(directPath)) {

@@ -49,10 +49,28 @@ file_put_contents(
 	$report_path,
 	json_encode(
 		array(
-			'quality'     => array(
+			'quality'       => array(
+				'block_count'                    => 12,
 				'semantic_parity_failure_count' => 1,
 			),
-			'diagnostics' => array(
+			'blocks_engine' => array(
+				'transformer'         => array(
+					'package'   => 'automattic/blocks-engine-php-transformer',
+					'version'   => 'dev-trunk',
+					'reference' => str_repeat( 'a', 40 ),
+				),
+				'wordpress_site_plan' => array(
+					'schema' => 'blocks-engine/wordpress-site-plan/v2',
+					'assets' => array(
+						array(
+							'target_path'    => 'assets/app.js',
+							'payload_sha256' => 'asset-hash',
+							'content_base64' => str_repeat( 'x', 4096 ),
+						),
+					),
+				),
+			),
+			'diagnostics'   => array(
 				array(
 					'type'        => 'semantic_parity_navigation_missing',
 					'severity'    => 'warning',
@@ -70,9 +88,20 @@ $method = new ReflectionMethod( Static_Site_Importer_Validation_Runtime::class, 
 $result = $method->invoke(
 	null,
 	array(
-		'external_report_path' => $report_path,
-		'quality'              => array( 'pass' => false ),
-		'theme_slug'           => 'ssi-fixture-theme',
+		'external_report_path'    => $report_path,
+		'quality'                 => array( 'pass' => false ),
+		'theme_slug'              => 'ssi-fixture-theme',
+		'materialization_receipt' => array(
+			'schema'    => 'static-site-importer/materialization-receipt/v1',
+			'status'    => 'completed',
+			'plan_hash' => 'plan-hash',
+			'completed' => array(
+				'pages'           => array( 'index.html' => 1 ),
+				'files'           => array( array( 'target_path' => 'style.css' ) ),
+				'operations'      => array(),
+				'declaration_ids' => array( 'runtime-app' ),
+			),
+		),
 	),
 	$artifact_dir,
 	array(
@@ -87,6 +116,11 @@ $assert( 1 === count( $result['diagnostics'] ?? array() ), 'top-level-diagnostic
 $assert( 'semantic_parity_navigation_missing' === ( $result['diagnostics'][0]['type'] ?? '' ), 'top-level-diagnostic-type-preserved' );
 $assert( 'footer nav' === ( $result['diagnostics'][0]['selector'] ?? '' ), 'top-level-diagnostic-selector-preserved' );
 $assert( 1 === ( $result['diagnostic_summary']['total'] ?? 0 ), 'top-level-diagnostic-summary-present' );
+$assert( str_repeat( 'a', 40 ) === ( $result['fixture_diagnostics']['blocks_engine']['transformer']['reference'] ?? '' ), 'transformer-provenance-preserved' );
+$assert( 1 === ( $result['fixture_diagnostics']['blocks_engine']['wordpress_site_plan']['asset_count'] ?? 0 ), 'site-plan-asset-count-preserved' );
+$assert( ! isset( $result['fixture_diagnostics']['blocks_engine']['wordpress_site_plan']['assets'][0]['content_base64'] ), 'site-plan-asset-payload-omitted' );
+$assert( 'completed' === ( $result['fixture_diagnostics']['materialization_receipt']['status'] ?? '' ), 'materialization-receipt-status-preserved' );
+$assert( 1 === ( $result['fixture_diagnostics']['materialization_receipt']['page_count'] ?? 0 ), 'materialization-receipt-counts-preserved' );
 
 unlink( $report_path );
 rmdir( $artifact_dir );

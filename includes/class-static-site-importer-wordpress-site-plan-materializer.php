@@ -73,7 +73,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				// Resolver proof is canonical semantics, not an inference from copied files.
 				$resolved = ( new WordPressSitePlanResolver() )->resolve( $plan, array( 'theme_uri' => $theme_uri, 'require_proven_dynamic_client_assets' => true, 'runtime_capabilities' => array( 'asset_materialization' ) ) );
 			} catch ( InvalidArgumentException $error ) {
-				throw new InvalidArgumentException( 'canonical_destination_rejected' );
+				throw new InvalidArgumentException( $error->getMessage(), 0, $error );
 			}
 			$state['resolved'] = $resolved;
 			$state['theme_dir'] = $theme_dir;

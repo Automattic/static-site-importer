@@ -145,8 +145,9 @@ class Static_Site_Importer_Validation_Runtime {
 				'block_validation' => is_readable( $validation_result_path ) ? 'captured' : 'missing',
 				'theme_slug'       => (string) ( $import_result['theme_slug'] ?? '' ),
 			),
-			'import_report' => $import_report,
-			'artifacts'     => array(
+			'import_report'            => $import_report,
+			'materialization_receipt' => isset( $import_result['materialization_receipt'] ) && is_array( $import_result['materialization_receipt'] ) ? $import_result['materialization_receipt'] : array(),
+			'artifacts'                 => array(
 				'generated_theme'         => array(
 					'artifact_ref' => (string) ( $import_result['theme_slug'] ?? '' ),
 					'kind'         => 'wordpress-theme-directory',
