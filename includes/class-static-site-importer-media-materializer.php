@@ -15,9 +15,10 @@ final class Static_Site_Importer_Media_Materializer {
 	 *
 	 * @param array<string,mixed>                         $artifacts           Compiled artifacts.
 	 * @param array<string,array<string,mixed>>           $materialized_assets Materialized asset reports keyed by source path.
+	 * @param string                                      $svg_font_faces      Self-contained font CSS for matching SVG text.
 	 * @return array{attachments:array<int,array<string,mixed>>,replacements:array<string,array{url:string,id:int}>}|WP_Error
 	 */
-	public static function materialize_sanitized_svgs( array $artifacts, array $materialized_assets ) {
+	public static function materialize_sanitized_svgs( array $artifacts, array $materialized_assets, string $svg_font_faces = '' ) {
 		$site   = isset( $artifacts['site'] ) && is_array( $artifacts['site'] ) ? $artifacts['site'] : array();
 		$assets = isset( $site['assets'] ) && is_array( $site['assets'] ) ? $site['assets'] : array();
 		$result = array(
@@ -55,6 +56,9 @@ final class Static_Site_Importer_Media_Materializer {
 			$processed[ $source_path ] = true;
 
 			$content = self::asset_content( $asset );
+			if ( '' !== $svg_font_faces ) {
+				$content = Static_Site_Importer_Theme_Materializer::embed_svg_font_faces( $content, $svg_font_faces );
+			}
 			if ( '' === $content || ! self::is_safe_svg( $content ) ) {
 				return new WP_Error( 'static_site_importer_generated_svg_unsafe', sprintf( 'Generated SVG failed the attachment safety gate: %s', $source_path ) );
 			}

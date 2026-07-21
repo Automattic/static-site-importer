@@ -309,7 +309,7 @@ class Static_Site_Importer_Theme_Generator {
 			);
 		}
 
-		$media = Static_Site_Importer_Media_Materializer::materialize_sanitized_svgs( $artifacts, $materialized['assets'] );
+		$media = Static_Site_Importer_Media_Materializer::materialize_sanitized_svgs( $artifacts, $materialized['assets'], $materialized['svg_font_faces'] );
 		if ( is_wp_error( $media ) ) {
 			return $media;
 		}
@@ -351,7 +351,7 @@ class Static_Site_Importer_Theme_Generator {
 			return $result;
 		}
 
-		$materialized_write = self::materialize_website_artifact_files_to_theme( $theme_dir, $artifacts, true, false );
+		$materialized_write = self::materialize_website_artifact_files_to_theme( $theme_dir, $artifacts, true, false, $svg_font_usage_markup );
 		if ( is_wp_error( $materialized_write ) ) {
 			return $materialized_write;
 		}

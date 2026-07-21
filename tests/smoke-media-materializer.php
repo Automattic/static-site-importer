@@ -70,7 +70,8 @@ class WP_Error {
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-materializer.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-media-materializer.php';
 
-$svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/></svg>';
+$svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><text x="2" y="12" font-family="Inter">Ready</text></svg>';
+$font_faces = '@font-face{font-family:Inter;src:url(data:font/woff2;base64,d09GMg==) format("woff2");font-weight:400;font-style:normal;}';
 $path = 'website/assets/materialized-svg/status.svg';
 $old_url = 'https://example.test/wp-content/themes/generated/assets/materialized/' . $path;
 $artifacts = array(
@@ -101,7 +102,8 @@ $artifacts = array(
 );
 $result = Static_Site_Importer_Media_Materializer::materialize_sanitized_svgs(
 	$artifacts,
-	array( $path => array( 'final_url' => $old_url ) )
+	array( $path => array( 'final_url' => $old_url ) ),
+	$font_faces
 );
 
 $failures = array();
@@ -115,6 +117,7 @@ $assert( is_array( $result ), 'materialization-succeeds' );
 $assert( 1 === count( $result['attachments'] ?? array() ), 'only-unique-sanitized-importer-owned-svg-attached' );
 $assert( 'image/svg+xml' === ( $result['attachments'][0]['mime_type'] ?? '' ), 'attachment-mime-recorded' );
 $assert( file_exists( (string) ( $attachments[1]['file'] ?? '' ) ), 'sanitized-svg-written-to-uploads' );
+$assert( str_contains( (string) file_get_contents( (string) ( $attachments[1]['file'] ?? '' ) ), $font_faces ), 'attachment-preserves-embedded-font-faces' );
 $rewritten = Static_Site_Importer_Media_Materializer::rewrite_block_media( '<!-- wp:paragraph --><p><img src="' . $old_url . '" /></p><!-- /wp:paragraph -->', $result['replacements'] ?? array() );
 $assert( str_contains( $rewritten, '/wp-content/uploads/static-site-importer/' ), 'block-url-rewritten-to-attachment' );
 $assert( ! str_contains( $rewritten, '/wp-content/themes/generated/' ), 'theme-asset-url-removed-from-block' );
@@ -124,4 +127,4 @@ if ( $failures ) {
 	exit( 1 );
 }
 
-echo "PASS smoke-media-materializer.php (6 assertions)\n";
+echo "PASS smoke-media-materializer.php (7 assertions)\n";
