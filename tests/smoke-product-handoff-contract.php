@@ -49,8 +49,8 @@ foreach ( $expected_stage_schemas as $stage => $schema ) {
 	$assert( isset( $example[ $stage ] ) && is_array( $example[ $stage ] ), $stage . '-example-present' );
 }
 
-$assert( $schemas['blocks_engine_materialization_plan'] === ( $stages['blocks_engine_result']['materialization_plan']['schema'] ?? '' ), 'materialization-plan-schema-matches-code' );
-$assert( $schemas['blocks_engine_materialization_plan'] === ( $example['blocks_engine_result']['source_reports']['materialization_plan']['schema'] ?? '' ), 'materialization-plan-example-schema' );
+$assert( $schemas['blocks_engine_materialization_plan'] === ( $stages['blocks_engine_result']['wordpress_site_plan']['schema'] ?? '' ), 'wordpress-site-plan-schema-matches-code' );
+$assert( $schemas['blocks_engine_materialization_plan'] === ( $example['blocks_engine_result']['source_reports']['wordpress_site_plan']['schema'] ?? '' ), 'wordpress-site-plan-example-schema' );
 $assert( ! isset( $example['blocks_engine_result']['codebox'] ), 'blocks-engine-example-keeps-codebox-out' );
 $assert( $schemas['ssi_import_validation_result'] === ( $example['ssi_import_report']['import_validation_result']['schema'] ?? '' ), 'import-validation-schema' );
 $assert( $schemas['ssi_finding_packets'] === ( $example['ssi_import_report']['finding_packets']['schema'] ?? '' ), 'finding-packets-schema' );

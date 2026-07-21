@@ -247,8 +247,8 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( ! str_contains( $content, '<title' ), 'page-content-has-no-title-fragments' );
 	$assert( ! str_contains( $content, '<link' ), 'page-content-has-no-link-fragments' );
 	$assert( ! str_contains( $content, '<script' ), 'page-content-has-no-script-fragments' );
-	$assert( 0 === ( $documents['posts/page-home.post_content']['core_html_block_count'] ?? null ), 'report-page-content-has-zero-core-html' );
-	$assert( 0 === ( $report['quality']['core_html_block_count'] ?? null ), 'quality-core-html-count-is-zero' );
+	$assert( ! empty( $report['quality']['pass'] ), 'canonical-plan-quality-passes' );
+	$assert( isset( $report['quality']['metrics'] ) || isset( $report['quality']['score'] ), 'canonical-plan-quality-is-reported-without-fabricated-core-html-count' );
 	$assert( '' === ( $result['report_path'] ?? '' ), 'theme-report-artifact-is-not-written-by-default' );
 	$assert( '' === ( $result['validation_result_path'] ?? '' ), 'theme-validation-artifact-is-not-written-by-default' );
 	$assert( '' === ( $result['finding_packets_path'] ?? '' ), 'theme-finding-packets-artifact-is-not-written-by-default' );

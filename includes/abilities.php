@@ -405,7 +405,6 @@ if ( ! function_exists( 'static_site_importer_ability_import_website_artifact' )
 			'seed_entities'                => ! empty( $input['seed_entities'] ),
 			'products_manifest'            => isset( $input['products_manifest'] ) && is_array( $input['products_manifest'] ) ? $input['products_manifest'] : array(),
 			'commerce_context'             => isset( $input['commerce_context'] ) && is_array( $input['commerce_context'] ) ? $input['commerce_context'] : array(),
-			'materialize_dependencies'     => array_key_exists( 'materialize_dependencies', $input ) ? (bool) $input['materialize_dependencies'] : true,
 			'report'                       => isset( $input['report'] ) ? (string) $input['report'] : '',
 			'write_theme_report_artifacts' => ! empty( $input['write_theme_report_artifacts'] ),
 			'asset_materialization_policy' => isset( $input['asset_materialization_policy'] ) ? (string) $input['asset_materialization_policy'] : '',
