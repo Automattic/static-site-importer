@@ -10,6 +10,7 @@
 require dirname( __DIR__ ) . '/vendor/autoload.php';
 
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler;
+use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
 
 define( 'OBJECT', 'OBJECT' );
 $GLOBALS['ssi_plan_root']       = sys_get_temp_dir() . '/ssi-plan-' . bin2hex( random_bytes( 4 ) );
@@ -118,17 +119,26 @@ $unsafe_result = Static_Site_Importer_WordPress_Site_Plan_Materializer::material
 $assert( 'rejected' === $unsafe_result['status'], 'unsafe destination is rejected' );
 $assert( 'unsafe_destination_path' === $unsafe_result['diagnostics'][0]['reason_code'], 'unsafe destination is diagnosed' );
 
-$external_dynamic_plan = $plan;
-$external_dynamic_plan['reference_semantics']['dynamic_client_assets'] = array( 'status' => 'unresolved', 'materializer_may_reject' => true );
-$external_rejected = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $external_dynamic_plan, array( 'slug' => 'external-dynamic-plan' ) );
-$assert( 'rejected' === $external_rejected['status'], 'external dynamic scripts reject from canonical proof before mutation' );
-$assert( ! is_dir( $GLOBALS['ssi_plan_root'] . '/external-dynamic-plan' ), 'external dynamic scripts create no theme directory' );
+$external_dynamic_artifact = $artifact;
+$external_dynamic_artifact['files']['index.html'] .= '<script src="https://cdn.example.test/runtime.js"></script>';
+$external_dynamic_plan = ( new ArtifactCompiler() )->compile( $external_dynamic_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+WordPressSitePlan::assertValid( $external_dynamic_plan );
+$assert( 'not_proven' === $external_dynamic_plan['reference_semantics']['dynamic_client_assets']['status'], 'compiler marks external dynamic scripts as not proven' );
 
-$inline_dynamic_plan = $plan;
-$inline_dynamic_plan['reference_semantics']['dynamic_client_assets'] = array( 'status' => 'unresolved', 'materializer_may_reject' => true );
-$inline_rejected = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $inline_dynamic_plan, array( 'slug' => 'inline-dynamic-plan' ) );
-$assert( 'rejected' === $inline_rejected['status'], 'inline unresolved dynamic scripts reject from canonical proof before mutation' );
-$assert( ! is_dir( $GLOBALS['ssi_plan_root'] . '/inline-dynamic-plan' ), 'inline unresolved dynamic scripts create no theme directory' );
+$dynamic_before_posts   = $GLOBALS['ssi_plan_posts'];
+$dynamic_before_meta    = $GLOBALS['ssi_plan_meta'];
+$dynamic_before_options = $GLOBALS['ssi_plan_options'];
+$dynamic_prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare( $external_dynamic_plan, array( 'slug' => 'external-dynamic-plan' ) );
+$assert( 'rejected' === $dynamic_prepared['status'], 'external dynamic scripts reject during preparation' );
+$assert( 'canonical_destination_rejected' === $dynamic_prepared['receipt']['diagnostics'][0]['reason_code'], 'preparation reports canonical destination rejection' );
+$assert( $dynamic_before_posts === $GLOBALS['ssi_plan_posts'] && $dynamic_before_meta === $GLOBALS['ssi_plan_meta'] && $dynamic_before_options === $GLOBALS['ssi_plan_options'], 'preparation rejects external dynamic scripts before page or option mutation' );
+$assert( ! is_dir( $GLOBALS['ssi_plan_root'] . '/external-dynamic-plan' ), 'preparation rejects external dynamic scripts before file mutation' );
+
+$dynamic_rejected = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $external_dynamic_plan, array( 'slug' => 'external-dynamic-plan' ) );
+$assert( 'rejected' === $dynamic_rejected['status'], 'external dynamic scripts reject during materialization' );
+$assert( 'canonical_destination_rejected' === $dynamic_rejected['diagnostics'][0]['reason_code'], 'materialization reports canonical destination rejection' );
+$assert( $dynamic_before_posts === $GLOBALS['ssi_plan_posts'] && $dynamic_before_meta === $GLOBALS['ssi_plan_meta'] && $dynamic_before_options === $GLOBALS['ssi_plan_options'], 'materialization rejects external dynamic scripts before page or option mutation' );
+$assert( ! is_dir( $GLOBALS['ssi_plan_root'] . '/external-dynamic-plan' ), 'materialization rejects external dynamic scripts before file mutation' );
 
 $dynamic_artifact = $artifact;
 $dynamic_artifact['files']['index.html'] .= '<script src="assets/site.js"></script>';
