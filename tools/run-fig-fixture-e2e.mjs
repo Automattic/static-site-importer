@@ -140,8 +140,8 @@ export function summarizeRun({ plan, transformStatus, matrixStatus }) {
   const transformFixtures = Array.isArray(transformSummary?.fixtures) ? transformSummary.fixtures : [];
   const completedTransforms = transformFixtures.filter((fixture) => fixture.status === 'completed');
   const failedTransforms = transformFixtures.filter((fixture) => fixture.status && fixture.status !== 'completed');
-  const matrixResultSummary = matrixSummary?.result_summary || {};
-  const failedImportFixtures = Number(matrixResultSummary.failed || 0);
+  const matrixResultSummary = matrixResultSummaryFrom(matrixSummary);
+  const failedImportFixtures = Number(matrixResultSummary?.failed || 0);
   const matrixNativeRate = minFixtureNativeRate(matrixSummary);
   const metrics = summaryMetrics({ plan, transformStatus, matrixStatus, transformSummary, matrixSummary });
   const baselineComparison = compareBaseline(plan, metrics);
@@ -161,6 +161,12 @@ export function summarizeRun({ plan, transformStatus, matrixStatus }) {
   }
   if (matrixStatus && matrixStatus.status !== 0) {
     failures.push(`SSI matrix command exited ${matrixStatus.status}`);
+  }
+  if (plan.run_import_matrix && matrixSummary && !matrixResultSummary) {
+    failures.push('SSI matrix summary is missing fixture result accounting');
+  }
+  if (matrixResultSummary && matrixFixtureAccounting(matrixResultSummary) !== Number(matrixSummary?.fixture_count || 0)) {
+    failures.push('SSI matrix fixture result accounting does not match fixture_count');
   }
   if (matrixSummary && failedImportFixtures > plan.thresholds.max_import_failures) {
     failures.push(`${failedImportFixtures} SSI matrix fixture(s) failed`);
@@ -215,9 +221,9 @@ export function summarizeRun({ plan, transformStatus, matrixStatus }) {
       summary_path: plan.artifacts.matrix_summary,
       result_path: plan.artifacts.matrix_result,
       fixture_count: Number(matrixSummary?.fixture_count || 0),
-      passed_fixture_count: Number(matrixResultSummary.succeeded || 0),
+      passed_fixture_count: Number(matrixResultSummary?.succeeded || 0),
       failed_fixture_count: failedImportFixtures,
-      finding_count: Number(matrixResultSummary.finding_count || 0),
+      finding_count: Number(matrixResultSummary?.finding_count || 0),
       min_native_conversion_rate: matrixNativeRate,
     },
     artifacts: plan.artifacts,
@@ -365,7 +371,7 @@ function normalizeFixtures(value) {
 
 function summaryMetrics({ plan, transformStatus, matrixStatus, transformSummary, matrixSummary }) {
   const transformFixtures = Array.isArray(transformSummary?.fixtures) ? transformSummary.fixtures : [];
-  const matrixResultSummary = matrixSummary?.result_summary || {};
+  const matrixResultSummary = matrixResultSummaryFrom(matrixSummary);
   const transformDuration = numberOr(transformStatus?.duration_ms, sumFixtureMetric(transformFixtures, 'duration_ms'));
   const importDuration = numberOr(matrixStatus?.duration_ms, numberOr(matrixSummary?.runtime?.duration_ms, null));
   return {
@@ -379,9 +385,9 @@ function summaryMetrics({ plan, transformStatus, matrixStatus, transformSummary,
     transform_missing_asset_count: sumQuality(transformFixtures, transformMissingAssetCount),
     import_matrix_enabled: plan.run_import_matrix ? 1 : 0,
     import_matrix_fixture_count: Number(matrixSummary?.fixture_count || 0),
-    import_matrix_passed_fixture_count: Number(matrixResultSummary.succeeded || 0),
-    import_matrix_failed_fixture_count: Number(matrixResultSummary.failed || 0),
-    import_matrix_finding_count: Number(matrixResultSummary.finding_count || 0),
+    import_matrix_passed_fixture_count: Number(matrixResultSummary?.succeeded || 0),
+    import_matrix_failed_fixture_count: Number(matrixResultSummary?.failed || 0),
+    import_matrix_finding_count: Number(matrixResultSummary?.finding_count || 0),
     import_matrix_min_native_conversion_rate: minFixtureNativeRate(matrixSummary),
   };
 }
@@ -479,7 +485,7 @@ function roundRatio(value) {
 }
 
 function minFixtureNativeRate(matrixSummary) {
-  const aggregateRate = Number(matrixSummary?.result_summary?.editor_quality?.native_conversion_rate);
+  const aggregateRate = Number(matrixResultSummaryFrom(matrixSummary)?.editor_quality?.native_conversion_rate);
   if (Number.isFinite(aggregateRate)) {
     return aggregateRate;
   }
@@ -488,6 +494,23 @@ function minFixtureNativeRate(matrixSummary) {
     .map((fixture) => Number(fixture?.editor_quality?.native_conversion_rate))
     .filter((rate) => Number.isFinite(rate));
   return rates.length ? Math.min(...rates) : null;
+}
+
+function matrixResultSummaryFrom(matrixSummary) {
+  if (!matrixSummary || typeof matrixSummary !== 'object') {
+    return null;
+  }
+  const candidate = matrixSummary.result_summary && typeof matrixSummary.result_summary === 'object'
+    ? matrixSummary.result_summary
+    : matrixSummary;
+  return ['succeeded', 'failed'].every((key) => Number.isInteger(Number(candidate[key])))
+    && (candidate.not_run === undefined || Number.isInteger(Number(candidate.not_run)))
+    ? { ...candidate, not_run: Number(candidate.not_run || 0) }
+    : null;
+}
+
+function matrixFixtureAccounting(summary) {
+  return Number(summary.succeeded) + Number(summary.failed) + Number(summary.not_run);
 }
 
 function readJsonIfExists(filePath) {
