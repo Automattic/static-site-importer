@@ -47,6 +47,8 @@ $protected_id = wp_insert_post(
 );
 $assert( ! is_wp_error( $protected_id ), 'protected-page-created', is_wp_error( $protected_id ) ? $protected_id->get_error_message() : '' );
 update_option( 'static_site_importer_protected_pages', array( 'protected', (string) $protected_id ) );
+delete_post_meta( (int) $protected_id, '_static_site_importer_provenance' );
+delete_post_meta( (int) $protected_id, '_static_site_importer_reconciliation_identity' );
 
 $user_page = get_page_by_path( 'ssi-user-source-of-truth', OBJECT, 'page' );
 $user_id = wp_insert_post(
@@ -103,6 +105,7 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( $manifest === ( $report['source_of_truth'] ?? array() ), 'report-embeds-written-manifest' );
 	$assert( 'ssi-source-of-truth-smoke-run' === ( $home_meta['import_run_id'] ?? '' ), 'owned-page-has-provenance-meta' );
 	$assert( '' === (string) get_post_meta( (int) $protected_id, '_static_site_importer_provenance', true ), 'protected-page-has-no-provenance-meta' );
+	$assert( '' === (string) get_post_meta( (int) $protected_id, '_static_site_importer_reconciliation_identity', true ), 'protected-page-has-no-reconciliation-identity-meta' );
 	$assert( str_contains( (string) get_post_field( 'post_content', $protected_id ), 'Protected original content.' ), 'protected-page-content-unchanged' );
 	$matches = $manifest['existing_matches']['pages'] ?? array();
 	$protected_match = array_values( array_filter( $matches, static fn( array $row ): bool => (int) ( $row['post_id'] ?? 0 ) === (int) $protected_id ) );

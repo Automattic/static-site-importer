@@ -920,6 +920,7 @@ class Static_Site_Importer_Figma_Import {
 			'slug'                      => isset( $input['slug'] ) ? (string) $input['slug'] : '',
 			'name'                      => isset( $input['name'] ) ? (string) $input['name'] : $title,
 			'site_title'                => $title,
+			'stale_page_action'         => isset( $input['stale_page_action'] ) ? (string) $input['stale_page_action'] : '',
 			'activate'                  => array_key_exists( 'activate', $input ) ? ! empty( $input['activate'] ) : true,
 			'overwrite'                 => array_key_exists( 'overwrite', $input ) ? ! empty( $input['overwrite'] ) : true,
 			'fail_on_quality'           => ! empty( $input['fail_on_quality'] ),

@@ -215,6 +215,8 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'goal'                      => array( 'type' => 'string' ),
 						'slug'                      => array( 'type' => 'string' ),
 						'name'                      => array( 'type' => 'string' ),
+						'site_title'                => array( 'type' => 'string' ),
+						'stale_page_action'         => array( 'type' => 'string', 'enum' => array( 'report_only', 'draft' ) ),
 						'activate'                  => array( 'type' => 'boolean' ),
 						'overwrite'                 => array( 'type' => 'boolean' ),
 						'fail_on_quality'           => array( 'type' => 'boolean' ),

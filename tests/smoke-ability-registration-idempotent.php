@@ -59,7 +59,7 @@ $expected_abilities = array(
 
 assert( array( STATIC_SITE_IMPORTER_ABILITY_CATEGORY ) === array_keys( $GLOBALS['ssi_ability_categories'] ) );
 assert( $expected_abilities === array_keys( $GLOBALS['ssi_abilities'] ) );
-foreach ( array( 'static-site-importer/import-website-artifact', 'static-site-importer/import-url' ) as $ability ) {
+foreach ( array( 'static-site-importer/import-website-artifact', 'static-site-importer/import-url', 'static-site-importer/import-figma' ) as $ability ) {
 	$properties = $GLOBALS['ssi_abilities'][ $ability ]['input_schema']['properties'];
 	assert( 'string' === $properties['site_title']['type'] );
 	assert( array( 'report_only', 'draft' ) === $properties['stale_page_action']['enum'] );
