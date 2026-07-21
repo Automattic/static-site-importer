@@ -227,6 +227,16 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return $report;
 	}
 
+	/** Resolve provider-owned block markup for one canonical entity binding. */
+	public static function binding_block_markup( array $adapter, array $entity, array $result ): string {
+		$callback = $adapter['binding_callback'] ?? null;
+		if ( ! is_callable( $callback ) ) {
+			return '';
+		}
+		$markup = call_user_func( $callback, $entity, $result );
+		return is_string( $markup ) ? trim( $markup ) : '';
+	}
+
 	/**
 	 * Build an adapter-owned empty entity report.
 	 *
@@ -478,6 +488,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'waiver_arg'      => 'allow_missing_woocommerce',
 				'validator'       => array( self::class, 'validate_woo_products_manifest' ),
 				'materializer'    => array( 'Static_Site_Importer_Woo_Product_Seeder', 'seed' ),
+				'binding_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_block_markup' ),
 				'report_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'new_report' ),
 				'dependencies'    => array(
 					array(
@@ -499,6 +510,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'waiver_arg'      => 'allow_missing_jetpack',
 				'validator'       => array( self::class, 'validate_forms_manifest' ),
 				'materializer'    => array( 'Static_Site_Importer_Form_Seeder', 'seed' ),
+				'binding_callback' => array( 'Static_Site_Importer_Form_Seeder', 'binding_block_markup' ),
 				'report_callback' => array( 'Static_Site_Importer_Form_Seeder', 'new_report' ),
 				'dependencies'    => array(
 					array(
@@ -531,6 +543,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	public static function validate_woo_products_manifest( mixed $data ): array {
 		$products = array();
 		$errors   = array();
+		$seen_slugs = array();
 
 		if ( ! is_array( $data ) || array_is_list( $data ) ) {
 			return array(
@@ -587,6 +600,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'message' => 'slug is required and must be a lowercase URL slug.',
 				);
 			}
+			if ( '' !== $slug && isset( $seen_slugs[ $slug ] ) ) {
+				$errors[] = array( 'path' => $path_prefix . '.slug', 'message' => 'slug must be unique within one product collection.' );
+			}
+			$seen_slugs[ $slug ] = true;
 			if ( '' === $regular_price || ! self::is_manifest_price( $regular_price ) ) {
 				$errors[] = array(
 					'path'    => $path_prefix . '.regular_price',
@@ -645,6 +662,24 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					$summary[ $field ] = $product[ $field ];
 				}
 			}
+			if ( isset( $product['bindings'] ) ) {
+				if ( ! is_array( $product['bindings'] ) || ! array_is_list( $product['bindings'] ) || empty( $product['bindings'] ) ) {
+					$errors[] = array( 'path' => $path_prefix . '.bindings', 'message' => 'bindings must be a non-empty list of canonical source-page replacement anchors.' );
+				} else {
+					$bindings = array();
+					foreach ( $product['bindings'] as $binding_index => $candidate ) {
+						$binding = self::normalize_block_binding( $candidate );
+						if ( null === $binding || empty( $binding ) ) {
+							$errors[] = array( 'path' => $path_prefix . '.bindings[' . $binding_index . ']', 'message' => 'binding must be a canonical generic/block-binding/v1 source-page replacement anchor.' );
+							continue;
+						}
+						$bindings[] = $binding;
+					}
+					if ( ! empty( $bindings ) ) {
+						$summary['bindings'] = $bindings;
+					}
+				}
+			}
 			$products[] = $summary;
 		}
 
@@ -668,6 +703,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	public static function validate_forms_manifest( mixed $data ): array {
 		$forms  = array();
 		$errors = array();
+		$seen_forms = array();
 
 		if ( ! is_array( $data ) ) {
 			return array(
@@ -713,12 +749,37 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				continue;
 			}
 
-			$forms[] = array(
+			$row = array(
 				'selector'    => isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '',
 				'source_path' => isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '',
 				'form'        => isset( $form['form'] ) && is_array( $form['form'] ) ? $form['form'] : array(),
 				'controls'    => $controls,
 			);
+			$form_key = $row['source_path'] . "\n" . $row['selector'];
+			if ( isset( $seen_forms[ $form_key ] ) ) {
+				$errors[] = array( 'path' => $path_prefix, 'message' => 'source_path and selector must identify one unique form.' );
+				continue;
+			}
+			$seen_forms[ $form_key ] = true;
+			if ( isset( $form['bindings'] ) ) {
+				if ( ! is_array( $form['bindings'] ) || ! array_is_list( $form['bindings'] ) || empty( $form['bindings'] ) ) {
+					$errors[] = array( 'path' => $path_prefix . '.bindings', 'message' => 'bindings must be a non-empty list of canonical source-page replacement anchors.' );
+					continue;
+				}
+				$bindings = array();
+				foreach ( $form['bindings'] as $binding_index => $candidate ) {
+					$binding = self::normalize_block_binding( $candidate );
+					if ( null === $binding || empty( $binding ) ) {
+						$errors[] = array( 'path' => $path_prefix . '.bindings[' . $binding_index . ']', 'message' => 'binding must be a canonical generic/block-binding/v1 source-page replacement anchor.' );
+						continue;
+					}
+					$bindings[] = $binding;
+				}
+				if ( ! empty( $bindings ) ) {
+					$row['bindings'] = $bindings;
+				}
+			}
+			$forms[] = $row;
 		}
 
 		// Forms validate per row: a single unmappable form (for example a
@@ -728,6 +789,17 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'forms'  => $forms,
 			'errors' => $errors,
 		);
+	}
+
+	/** @return array<string,mixed>|null */
+	private static function normalize_block_binding( mixed $binding ): ?array {
+		if ( null === $binding ) {
+			return array();
+		}
+		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > 262144 || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'form' ), true ) ) {
+			return null;
+		}
+		return array( 'schema' => 'generic/block-binding/v1', 'source_path' => $binding['source_path'], 'search_block_markup' => $binding['search_block_markup'], 'occurrence' => $binding['occurrence'], 'role' => $binding['role'] );
 	}
 
 	/**

@@ -20,6 +20,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Static_Site_Importer_Form_Seeder {
 
+	/** Return the provider block emitted for one mapped form binding. */
+	public static function binding_block_markup( array $entity, array $result ): string {
+		unset( $entity );
+		return ! empty( $result['runtime_mapped'] ) && is_string( $result['block_markup'] ?? null ) ? $result['block_markup'] : '';
+	}
+
 	/**
 	 * Provider id this seeder materializes for.
 	 */

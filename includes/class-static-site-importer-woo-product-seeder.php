@@ -14,6 +14,13 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Static_Site_Importer_Woo_Product_Seeder {
 
+	/** Return a Woo-owned cart control for one seeded product binding. */
+	public static function binding_block_markup( array $entity, array $result ): string {
+		unset( $entity );
+		$id = isset( $result['id'] ) ? (int) $result['id'] : 0;
+		return $id > 0 ? '<!-- wp:shortcode -->[add_to_cart id="' . $id . '"]<!-- /wp:shortcode -->' : '';
+	}
+
 	/**
 	 * Seed simple products from a validated manifest.
 	 *
