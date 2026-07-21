@@ -63,6 +63,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 			'by_category'                    => self::diagnostics_by_field( $diagnostics, 'category' ),
 			'top_parser_buckets'             => self::top_parser_buckets( $diagnostics ),
 			'blocks_engine'                  => self::blocks_engine_summary( $import_report ),
+			'materialization_receipt'        => self::materialization_receipt_summary( $result, $import_report ),
 			'runtime_dependency_target_gaps' => self::runtime_dependency_target_gaps( $import_report ),
 			'asset_diagnostics'              => self::diagnostics_matching_types( $diagnostics, array( 'asset', 'image', 'local_asset_not_materialized', 'missing_asset', 'dropped_image' ) ),
 			'svg_diagnostics'                => self::diagnostics_matching_types( $diagnostics, array( 'svg', 'unsafe_inline_svg', 'svg_materialization_failure', 'svg_sprite_reference_failure' ) ),
@@ -277,9 +278,71 @@ class Static_Site_Importer_Diagnostic_Contract {
 		$blocks_engine = isset( $import_report['blocks_engine'] ) && is_array( $import_report['blocks_engine'] ) ? $import_report['blocks_engine'] : array();
 
 		$summary = array();
-		foreach ( array( 'website_artifact', 'conversion_report', 'runtime_dependency_parity', 'semantic_parity' ) as $field ) {
+		foreach ( array( 'transformer', 'website_artifact', 'conversion_report', 'runtime_dependency_parity', 'semantic_parity' ) as $field ) {
 			if ( isset( $blocks_engine[ $field ] ) && is_array( $blocks_engine[ $field ] ) && ! empty( $blocks_engine[ $field ] ) ) {
 				$summary[ $field ] = $blocks_engine[ $field ];
+			}
+		}
+		$plan = isset( $blocks_engine['wordpress_site_plan'] ) && is_array( $blocks_engine['wordpress_site_plan'] ) ? $blocks_engine['wordpress_site_plan'] : array();
+		if ( ! empty( $plan ) ) {
+			$assets = isset( $plan['assets'] ) && is_array( $plan['assets'] ) ? $plan['assets'] : array();
+			$summary['wordpress_site_plan'] = array(
+				'schema'      => isset( $plan['schema'] ) && is_scalar( $plan['schema'] ) ? (string) $plan['schema'] : '',
+				'asset_count' => count( $assets ),
+				'assets'      => array_map( array( self::class, 'plan_asset_summary' ), array_slice( $assets, 0, 50 ) ),
+			);
+		}
+
+		return $summary;
+	}
+
+	/**
+	 * Retain immutable materialization evidence without duplicating the full site plan.
+	 *
+	 * @param array<string,mixed> $result        Provider result.
+	 * @param array<string,mixed> $import_report Import report.
+	 * @return array<string,mixed>
+	 */
+	private static function materialization_receipt_summary( array $result, array $import_report ): array {
+		$receipt = array();
+		foreach ( array( $result['materialization_receipt'] ?? null, $import_report['materialization_receipt'] ?? null ) as $candidate ) {
+			if ( is_array( $candidate ) && ! empty( $candidate ) ) {
+				$receipt = $candidate;
+				break;
+			}
+		}
+		if ( empty( $receipt ) ) {
+			return array();
+		}
+
+		$completed = isset( $receipt['completed'] ) && is_array( $receipt['completed'] ) ? $receipt['completed'] : array();
+
+		return array(
+			'schema'            => isset( $receipt['schema'] ) && is_scalar( $receipt['schema'] ) ? (string) $receipt['schema'] : '',
+			'status'            => isset( $receipt['status'] ) && is_scalar( $receipt['status'] ) ? (string) $receipt['status'] : '',
+			'plan_hash'         => isset( $receipt['plan_hash'] ) && is_scalar( $receipt['plan_hash'] ) ? (string) $receipt['plan_hash'] : '',
+			'page_count'        => isset( $completed['pages'] ) && is_array( $completed['pages'] ) ? count( $completed['pages'] ) : 0,
+			'file_count'        => isset( $completed['files'] ) && is_array( $completed['files'] ) ? count( $completed['files'] ) : 0,
+			'operation_count'   => isset( $completed['operations'] ) && is_array( $completed['operations'] ) ? count( $completed['operations'] ) : 0,
+			'declaration_count' => isset( $completed['declaration_ids'] ) && is_array( $completed['declaration_ids'] ) ? count( $completed['declaration_ids'] ) : 0,
+		);
+	}
+
+	/**
+	 * Bound a site-plan asset to fields needed for runtime attribution.
+	 *
+	 * @param mixed $asset Site-plan asset.
+	 * @return array<string,mixed>
+	 */
+	private static function plan_asset_summary( $asset ): array {
+		if ( ! is_array( $asset ) ) {
+			return array();
+		}
+
+		$summary = array();
+		foreach ( array( 'path', 'target_path', 'source', 'source_path', 'role', 'intent', 'kind', 'type', 'media_type', 'mime_type', 'placement', 'defer', 'async', 'payload_present', 'payload_sha256', 'payload_bytes', 'bytes', 'hash' ) as $field ) {
+			if ( isset( $asset[ $field ] ) && is_scalar( $asset[ $field ] ) ) {
+				$summary[ $field ] = $asset[ $field ];
 			}
 		}
 
