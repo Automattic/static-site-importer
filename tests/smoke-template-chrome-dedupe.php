@@ -98,6 +98,7 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 $chrome_markup = implode(
 	'',
 	array(
+		'<!-- wp:paragraph {"className":"skip-link"} --><p class="skip-link"><a href="#main">Skip to content</a></p><!-- /wp:paragraph -->',
 		'<!-- wp:group {"tagName":"header","className":"site-header"} --><header class="wp-block-group site-header"><!-- wp:navigation --><!-- wp:navigation-link {"label":"Product","url":"#product"} /--><!-- /wp:navigation --></header><!-- /wp:group -->',
 		'<!-- wp:group {"className":"hero"} --><div class="wp-block-group hero"><!-- wp:heading {"level":1} --><h1 class="wp-block-heading">Every launch.</h1><!-- /wp:heading --></div><!-- /wp:group -->',
 		'<!-- wp:group {"tagName":"footer","className":"site-footer"} --><footer class="wp-block-group site-footer"><!-- wp:paragraph --><p>Relay Atlas</p><!-- /wp:paragraph --></footer><!-- /wp:group -->',
@@ -135,6 +136,7 @@ if ( ! is_wp_error( $page ) ) {
 	$content = $with_template_parts['contents']['index.html'];
 	$assert( ! str_contains( $content, 'tagName":"header' ), 'strips-leading-header-when-template-part-exists' );
 	$assert( ! str_contains( $content, 'tagName":"footer' ), 'strips-trailing-footer-when-template-part-exists' );
+	$assert( str_contains( $content, 'Skip to content' ), 'keeps-leading-accessibility-skip-link' );
 	$assert( str_contains( $content, 'Every launch.' ), 'keeps-page-body-content' );
 
 	$parts = array_values( array_filter( array_map( static fn( array $diagnostic ): string => (string) ( $diagnostic['part'] ?? '' ), $with_template_parts['diagnostics'] ) ) );

@@ -2548,6 +2548,29 @@ class Static_Site_Importer_Report_Diagnostics {
 				$provenance['reference'] = $reference;
 			}
 		}
+		if ( method_exists( '\\Composer\\InstalledVersions', 'getInstallPath' ) ) {
+			$install_path = \Composer\InstalledVersions::getInstallPath( $package );
+			if ( is_string( $install_path ) && is_dir( $install_path ) ) {
+				$files    = array();
+				$iterator = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $install_path, FilesystemIterator::SKIP_DOTS ) );
+				foreach ( $iterator as $file ) {
+					if ( ! $file instanceof SplFileInfo || ! $file->isFile() ) {
+						continue;
+					}
+					$relative = ltrim( str_replace( '\\', '/', substr( $file->getPathname(), strlen( $install_path ) ) ), '/' );
+					if ( 'composer.json' === $relative || 'php-transformer.php' === $relative || str_starts_with( $relative, 'src/' ) ) {
+						$files[ $relative ] = hash_file( 'sha256', $file->getPathname() );
+					}
+				}
+				ksort( $files );
+				if ( ! empty( $files ) ) {
+					$provenance['source_fingerprint'] = 'sha256:' . hash( 'sha256', wp_json_encode( $files ) );
+					if ( ! isset( $provenance['reference'] ) ) {
+						$provenance['reference'] = $provenance['source_fingerprint'];
+					}
+				}
+			}
+		}
 		return $provenance;
 	}
 

@@ -150,6 +150,52 @@ $assert( 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko)
 $assert( $GLOBALS['ssi_svg_font_requests'][0]['args']['headers']['User-Agent'] === ( $GLOBALS['ssi_svg_font_requests'][1]['args']['headers']['User-Agent'] ?? '' ), 'font-request-uses-browser-user-agent' );
 $assert( empty( $deprecations ), 'embedding-emits-no-deprecations' );
 
+$transient_attempts = array();
+$GLOBALS['ssi_svg_font_filters']['pre_http_request'] = array(
+	static function ( mixed $preempt, array $args, string $url ) use ( $css_url, $font_url, &$transient_attempts ): mixed {
+		$transient_attempts[ $url ] = ( $transient_attempts[ $url ] ?? 0 ) + 1;
+		if ( $css_url === $url ) {
+			return 1 === $transient_attempts[ $url ]
+				? new WP_Error( 'http_request_failed', 'Temporary stylesheet transport failure.' )
+				: array( 'body' => "@font-face{font-family:'Example Family';src:url($font_url) format('woff2')}", 'response' => array( 'code' => 200 ) );
+		}
+		if ( $font_url === $url ) {
+			return 1 === $transient_attempts[ $url ]
+				? array( 'body' => 'temporary failure', 'response' => array( 'code' => 503 ) )
+				: array( 'body' => 'woff2-payload', 'response' => array( 'code' => 200 ) );
+		}
+		return new WP_Error( 'unexpected_request' );
+	}
+);
+$before = count( $GLOBALS['ssi_svg_font_requests'] );
+$retried = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files( $theme_dir, 'https://example.test/themes/generated', $plan( array( $css_url ), $svg ), false );
+$retried = is_array( $retried ) ? $retried : array( 'diagnostics' => array(), 'svg_font_faces' => '' );
+$assert( 4 === count( $GLOBALS['ssi_svg_font_requests'] ) - $before, 'transient-stylesheet-and-font-failures-are-retried-once' );
+$assert( array( $css_url => 2, $font_url => 2 ) === $transient_attempts, 'retries-remain-scoped-to-original-allowlisted-urls' );
+$assert( str_contains( (string) ( $retried['svg_font_faces'] ?? '' ), 'data:font/woff2;base64,' ), 'transient-failures-recover-self-contained-fonts' );
+$assert( empty( $retried['diagnostics'] ), 'recovered-transient-failures-emit-no-failure-diagnostic' );
+
+$GLOBALS['ssi_svg_font_filters']['pre_http_request'] = array(
+	static fn( mixed $preempt, array $args, string $url ): WP_Error => new WP_Error( 'http_request_failed', 'Persistent transport failure.' ),
+);
+$before = count( $GLOBALS['ssi_svg_font_requests'] );
+$exhausted = Static_Site_Importer_Theme_Materializer::materialize_website_artifact_files( $theme_dir, 'https://example.test/themes/generated', $plan( array( $css_url ), $svg ), false );
+$exhausted = is_array( $exhausted ) ? $exhausted : array( 'diagnostics' => array(), 'svg_font_faces' => '' );
+$assert( 3 === count( $GLOBALS['ssi_svg_font_requests'] ) - $before, 'persistent-transport-failure-exhausts-bounded-attempts' );
+$assert( 'stylesheet_fetch_failed' === ( $exhausted['diagnostics'][0]['reason'] ?? '' ), 'exhausted-retries-retain-specific-failure-diagnostic' );
+
+$GLOBALS['ssi_svg_font_filters']['pre_http_request'] = array(
+	static function ( mixed $preempt, array $args, string $url ) use ( $css_url, $font_url ): mixed {
+		if ( $css_url === $url ) {
+			return array( 'body' => "@font-face{font-family:'Example Family';font-style:normal;src:url($font_url) format('woff2')}", 'response' => array( 'code' => 200 ) );
+		}
+		if ( $font_url === $url ) {
+			return array( 'body' => 'woff2-payload', 'response' => array( 'code' => 200 ) );
+		}
+		return new WP_Error( 'unexpected_request' );
+	}
+);
+
 $inline_svg = '<svg xmlns="http://www.w3.org/2000/svg"><text font-family="Example Family">Page label</text></svg>';
 $page_markup = '<!-- wp:html {"content":' . wp_json_encode( $inline_svg ) . '} -->' . $inline_svg . '<!-- /wp:html -->';
 $page = Static_Site_Importer_Source_Page::from_wordpress_document_artifact(

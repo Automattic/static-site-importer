@@ -177,10 +177,11 @@ class Static_Site_Importer_Theme_Generator {
 			return $materialized;
 		}
 
-		$template_part_writes = self::template_part_artifact_writes( $theme_dir, $artifacts, $materialized['assets'], $permalinks );
-		if ( is_wp_error( $template_part_writes ) ) {
-			return $template_part_writes;
+		$template_part_result = self::template_part_artifact_writes( $theme_dir, $artifacts, $materialized['assets'], $permalinks );
+		if ( is_wp_error( $template_part_result ) ) {
+			return $template_part_result;
 		}
+		$template_part_writes = $template_part_result['writes'];
 		$has_header_part      = isset( $template_part_writes[ $theme_dir . '/parts/header.html' ] );
 		$has_footer_part      = isset( $template_part_writes[ $theme_dir . '/parts/footer.html' ] );
 		$page_artifacts       = Static_Site_Importer_Page_Materializer::page_artifacts(
@@ -202,6 +203,12 @@ class Static_Site_Importer_Theme_Generator {
 		Static_Site_Importer_Document_Metadata_Reporter::record( self::$conversion_report, $artifacts );
 
 		$visual_repair_styles = self::visual_repair_styles_from_artifacts( $artifacts );
+		foreach ( $template_part_result['styles'] as $style ) {
+			$visual_repair_styles['frontend'][] = $style;
+			$visual_repair_styles['editor'][]   = $style;
+		}
+		$visual_repair_styles['frontend'] = array_values( array_unique( $visual_repair_styles['frontend'] ) );
+		$visual_repair_styles['editor']   = array_values( array_unique( $visual_repair_styles['editor'] ) );
 
 		$stylesheet_writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes(
 			$theme_dir,
@@ -302,6 +309,23 @@ class Static_Site_Importer_Theme_Generator {
 			);
 		}
 
+		$media = Static_Site_Importer_Media_Materializer::materialize_sanitized_svgs( $artifacts, $materialized['assets'], $materialized['svg_font_faces'] );
+		if ( is_wp_error( $media ) ) {
+			return $media;
+		}
+		if ( ! empty( $media['replacements'] ) ) {
+			foreach ( $page_artifacts['contents'] as $filename => $content ) {
+				$page_artifacts['contents'][ $filename ] = Static_Site_Importer_Media_Materializer::rewrite_block_media( (string) $content, $media['replacements'] );
+			}
+			foreach ( $writes as $path => $content ) {
+				$writes[ $path ] = Static_Site_Importer_Media_Materializer::rewrite_block_media( (string) $content, $media['replacements'] );
+			}
+		}
+		self::$conversion_report['media_library'] = array(
+			'sanitized_svg_attachment_count' => count( $media['attachments'] ),
+			'attachments'                    => $media['attachments'],
+		);
+
 		$cleanup = self::cleanup_stale_generated_theme_files( $theme_dir, $source_of_truth_manifest, $args );
 		if ( is_wp_error( $cleanup ) ) {
 			return $cleanup;
@@ -327,7 +351,7 @@ class Static_Site_Importer_Theme_Generator {
 			return $result;
 		}
 
-		$materialized_write = self::materialize_website_artifact_files_to_theme( $theme_dir, $artifacts, true, false );
+		$materialized_write = self::materialize_website_artifact_files_to_theme( $theme_dir, $artifacts, true, false, $svg_font_usage_markup );
 		if ( is_wp_error( $materialized_write ) ) {
 			return $materialized_write;
 		}
@@ -2091,11 +2115,11 @@ class Static_Site_Importer_Theme_Generator {
 	/**
 	 * Normalize template part artifacts into generated theme writes.
 	 *
-	 * @param string              $theme_dir Theme directory.
+	 * @param string                                  $theme_dir Theme directory.
 	 * @param array<string,mixed>                     $artifacts WordPress artifacts from Blocks Engine.
 	 * @param array<string,array<string,mixed>>       $assets Materialized assets keyed by source path.
 	 * @param array<string,string>                    $permalinks Imported page permalinks keyed by source path.
-	 * @return array<string,string>|WP_Error Absolute write paths keyed to serialized block markup.
+	 * @return array{writes:array<string,string>,reports:array<int,array<string,mixed>>,styles:array<int,string>}|WP_Error Template-part artifacts.
 	 */
 	private static function template_part_artifact_writes( string $theme_dir, array $artifacts, array $assets = array(), array $permalinks = array() ) {
 		$result = Static_Site_Importer_Theme_Materializer::template_part_artifact_writes( $theme_dir, $artifacts, $assets, $permalinks );
@@ -2107,7 +2131,7 @@ class Static_Site_Importer_Theme_Generator {
 			self::$conversion_report['generated_theme']['template_parts'][] = $report;
 		}
 
-		return $result['writes'];
+		return $result;
 	}
 
 	/**
