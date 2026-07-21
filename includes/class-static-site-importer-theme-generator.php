@@ -140,12 +140,25 @@ class Static_Site_Importer_Theme_Generator {
 		$theme        = $receipt['theme'];
 		$diagnostics  = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
 		$quality      = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
+		$entity_lifecycle = array( 'status' => 'not_requested', 'entities' => array(), 'dependencies' => array() );
+		if ( isset( $args['products_manifest'] ) && is_array( $args['products_manifest'] ) ) {
+			$adapter = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
+			$entity_lifecycle['entities']['products'] = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, $args['products_manifest'] );
+			if ( empty( $args['allow_missing_woocommerce'] ) && ! empty( $args['materialize_dependencies'] ) ) {
+				$entity_lifecycle['dependencies'] = Static_Site_Importer_Entity_Materializer_Registry::materialize_plugin_dependencies( $adapter );
+			}
+			$entity_lifecycle['status'] = 'explicit_products_manifest';
+		} elseif ( ! empty( $args['materialize_dependencies'] ) || ! empty( $args['seed_entities'] ) ) {
+			$diagnostics[] = array( 'code' => 'canonical_plan_missing_entity_declarations', 'severity' => 'warning', 'message' => 'WordPress site plan v2 does not declare dependency or entity intent; provide an explicit validated products_manifest.' );
+			$entity_lifecycle['status'] = 'canonical_plan_missing_entity_declarations';
+		}
 		$report       = array(
 			'schema'         => 'static-site-importer/import-report/v1',
 			'import_run_id'  => self::import_run_id( $args ),
 			'blocks_engine'  => array( 'wordpress_site_plan' => $plan ),
 			'quality'        => $quality,
 			'diagnostics'    => $diagnostics,
+			'entity_lifecycle' => $entity_lifecycle,
 			'generated_theme' => array(
 				'wordpress_site_plan' => $plan,
 				'document_metadata'   => self::document_metadata_from_plan_receipt( $plan ),
@@ -165,11 +178,17 @@ class Static_Site_Importer_Theme_Generator {
 			'import_run_id' => $report['import_run_id'],
 			'artifact'      => array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ), 'source_hash' => $plan['source']['source_hash'], 'entry_path' => $plan['source']['entry_path'], 'provenance' => $plan['source']['provenance'] ),
 			'manifest_path' => 'static-site-importer-manifest.json',
-			'desired'       => array( 'pages' => array(), 'files' => array_map( static fn( array $write ): array => array( 'path' => $write['target_path'], 'kind' => $write['kind'] ), $plan['writes'] ) ),
+			'generated_theme' => array( 'slug' => $theme['slug'], 'dir' => $theme['dir'] ),
+			'desired'       => array( 'pages' => array(), 'files' => array_merge( array_map( static fn( array $write ): array => array( 'path' => $write['target_path'], 'kind' => $write['kind'] ), $plan['writes'] ), array( array( 'path' => 'static-site-importer-manifest.json', 'kind' => 'ssi_manifest' ) ) ), 'assets' => array_map( static fn( array $asset ): array => array( 'source_path' => $asset['source_path'], 'theme_path' => $asset['target_path'] ), $plan['assets'] ) ),
 		);
 		foreach ( $receipt['completed']['pages'] as $source_path => $id ) {
 			$manifest['desired']['pages'][] = array( 'source_path' => $source_path, 'materialized_post_id' => $id, 'provenance_meta_key' => '_static_site_importer_provenance' );
 		}
+		$cleanup = self::cleanup_stale_generated_theme_files( $theme['dir'], $manifest, $args );
+		if ( is_wp_error( $cleanup ) ) {
+			throw new RuntimeException( $cleanup->get_error_message() );
+		}
+		$manifest['cleanup'] = $cleanup;
 		$report['source_of_truth'] = $manifest;
 		$visual_parity = array( 'schema' => 'static-site-importer/visual-parity-artifacts/v1', 'status' => 'pending', 'owner' => 'codebox_runtime', 'artifacts' => array( 'import_report' => array( 'status' => 'captured', 'ref' => array( 'artifact_name' => 'import-report.json' ) ), 'source_screenshot' => array( 'status' => 'pending' ), 'visual_diff' => array( 'capture_state' => 'not_captured' ) ) );
 		$report['visual_parity_artifacts'] = $visual_parity;
