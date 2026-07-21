@@ -2171,6 +2171,24 @@ test('editor canvas artifacts are persisted in the matrix artifact root and refs
   assert.deepEqual(fixture.artifact_refs.map((ref) => ref.path), [screenshotPath, statePath]);
 });
 
+test('editor canvas materialization recovers stale absolute runtime artifact paths', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-editor-canvas-output-'));
+  const codeboxArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-editor-canvas-codebox-'));
+  const runtimeDirectory = path.join(codeboxArtifactsDirectory, 'runtime-001', 'editor-canvas', 'simple-site');
+  const stalePath = path.join(path.sep, 'stale', 'runtime', 'artifacts', 'editor-canvas', 'simple-site', 'editor-screenshot.png');
+  mkdirSync(runtimeDirectory, { recursive: true });
+  writeFileSync(path.join(runtimeDirectory, 'editor-screenshot.png'), 'screenshot');
+
+  const result = materializeEditorCanvasArtifacts({
+    outputDirectory,
+    codeboxArtifactsDirectory,
+    result: { fixtures: [{ fixture_id: 'simple-site', artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'editor-canvas', path: stalePath }], editor_canvas: { status: 'captured', screenshot: stalePath } }] },
+  });
+  const screenshotPath = path.join(outputDirectory, 'editor-canvas', 'simple-site', 'editor-screenshot.png');
+  assert.equal(existsSync(screenshotPath), true);
+  assert.equal(result.result.fixtures[0].editor_canvas.screenshot, screenshotPath);
+});
+
 test('collects SSI finding packet source and observed context from fixture artifacts', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-finding-packet-context-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'packet-context-test' });

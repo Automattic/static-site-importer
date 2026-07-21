@@ -951,7 +951,16 @@ function resolveCodeboxArtifactPath(refPath, codeboxArtifactsDirectory) {
     return '';
   }
   if (path.isAbsolute(refPath)) {
-    return refPath;
+    if (fs.existsSync(refPath)) {
+      return refPath;
+    }
+    const artifactMarker = `${path.sep}artifacts${path.sep}`;
+    const markerIndex = refPath.lastIndexOf(artifactMarker);
+    if (markerIndex !== -1) {
+      refPath = refPath.slice(markerIndex + artifactMarker.length);
+    } else {
+      return refPath;
+    }
   }
   const directPath = path.join(codeboxArtifactsDirectory, refPath);
   if (fs.existsSync(directPath)) {

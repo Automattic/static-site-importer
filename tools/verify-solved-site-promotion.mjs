@@ -96,13 +96,13 @@ function verifyFixture(fixture, decision, options, requiredFiles) {
   assert(editor.validation_method === 'wp.blocks.validateBlock', `${id}: editor validation must use wp.blocks.validateBlock.`);
   assert(Number(editor.total_blocks) > 0 && editor.valid_blocks === editor.total_blocks && Number(editor.invalid_blocks) === 0, `${id}: editor validation is incomplete or invalid.`);
   assert(fixture.editor_canvas?.status === 'captured', `${id}: editor canvas evidence is missing.`);
-  addRequiredFile(requiredFiles, fixture.editor_canvas?.screenshot, `${id}: editor screenshot`);
+  addRequiredFile(requiredFiles, fixture.editor_canvas?.screenshot, `${id}: editor screenshot`, options.artifactRoot);
   const visual = fixture.visual_parity_artifacts || {};
   assert(Number(visual.metrics?.mismatch_ratio) === 0 && Number(visual.metrics?.mismatch_pixels) === 0, `${id}: visual mismatch must be exactly zero.`);
   for (const slot of ['source_screenshot', 'imported_screenshot', 'diff_screenshot', 'visual_diff']) {
     const artifact = visual.artifacts?.[slot];
     assert(artifact?.status === 'captured', `${id}: ${slot} evidence is missing.`);
-    addRequiredFile(requiredFiles, artifact?.ref?.path, `${id}: ${slot}`);
+    addRequiredFile(requiredFiles, artifact?.ref?.path, `${id}: ${slot}`, options.artifactRoot);
   }
   const evidence = fixture.matrix_evidence || {};
   assert(evidence.readiness === 'verified' && (evidence.missing || []).length === 0, `${id}: runtime evidence is incomplete.`);
@@ -135,9 +135,25 @@ function artifactManifest(files, root) {
   }).sort((left, right) => left.path.localeCompare(right.path));
 }
 
-function addRequiredFile(files, value, label) {
+function addRequiredFile(files, value, label, root) {
   assert(typeof value === 'string' && value, `${label} path is missing.`);
-  files.push(value);
+  const resolved = path.isAbsolute(value) ? value : path.join(root, value);
+  const relative = path.relative(root, resolved);
+  if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
+    files.push(resolved);
+    return;
+  }
+  const basename = path.basename(value);
+  const matches = filesBelow(root).filter((file) => path.basename(file) === basename || path.basename(file).endsWith(`-${basename}`));
+  assert(matches.length === 1, `${label} must resolve to exactly one durable evidence file; found ${matches.length}.`);
+  files.push(matches[0]);
+}
+
+function filesBelow(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const file = path.join(directory, entry.name);
+    return entry.isDirectory() ? filesBelow(file) : (entry.isFile() ? [file] : []);
+  });
 }
 
 function normalizeOptions(input) {
