@@ -176,8 +176,8 @@ jobs:
           STATIC_SITE_IMPORTER_SHA: ${{ inputs.static-site-importer-sha }}
           BLOCKS_ENGINE_SHA: ${{ inputs.blocks-engine-sha }}
         run: |
-          mapfile -t matrix_results < <(find "$ARTIFACT_ROOT" -name static-site-fixture-matrix-result.json -type f)
-          mapfile -t registries < <(find "$ARTIFACT_ROOT" -name gutenberg-incompatibility-registry.json -type f)
+          mapfile -t matrix_results < <(find "$ARTIFACT_ROOT" -name '*static-site-fixture-matrix-result.json' -type f)
+          mapfile -t registries < <(find "$ARTIFACT_ROOT" -name '*gutenberg-incompatibility-registry.json' -type f)
           test "${#matrix_results[@]}" -eq 1
           test "${#registries[@]}" -eq 1
           node tools/verify-solved-site-promotion.mjs \
