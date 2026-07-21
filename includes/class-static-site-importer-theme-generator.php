@@ -141,13 +141,31 @@ class Static_Site_Importer_Theme_Generator {
 		$diagnostics  = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
 		$quality      = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
 		$entity_lifecycle = array( 'status' => 'not_requested', 'entities' => array(), 'dependencies' => array() );
-		if ( isset( $args['products_manifest'] ) && is_array( $args['products_manifest'] ) ) {
+		$declarations = isset( $plan['runtime_declarations'] ) && is_array( $plan['runtime_declarations'] ) ? $plan['runtime_declarations'] : array();
+		foreach ( $declarations as $declaration ) {
+			if ( ! is_array( $declaration ) || 'entity_collection' !== ( $declaration['kind'] ?? '' ) ) {
+				continue;
+			}
+			$type = (string) ( $declaration['type'] ?? '' );
+			if ( 'products' !== $type ) {
+				if ( ! empty( $declaration['required'] ) ) {
+					throw new RuntimeException( 'Unsupported required canonical runtime declaration: ' . $type );
+				}
+				$diagnostics[] = array( 'code' => 'unsupported_optional_runtime_declaration', 'severity' => 'warning', 'reconciliation_identity' => $declaration['reconciliation_identity'] ?? '', 'message' => 'SSI has no configured adapter for optional declaration ' . $type . '.' );
+				continue;
+			}
+			$adapter = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
+			$manifest = array( 'products' => $declaration['payload']['entities'] ?? array() );
+			$entity_lifecycle['entities'][ $declaration['reconciliation_identity'] ] = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, $manifest );
+			$entity_lifecycle['status'] = 'runtime_declarations';
+		}
+		if ( isset( $args['products_manifest'] ) && is_array( $args['products_manifest'] ) && ! empty( $args['products_manifest'] ) ) {
 			$adapter = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
 			$entity_lifecycle['entities']['products'] = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, $args['products_manifest'] );
 			if ( empty( $args['allow_missing_woocommerce'] ) && ! empty( $args['materialize_dependencies'] ) ) {
 				$entity_lifecycle['dependencies'] = Static_Site_Importer_Entity_Materializer_Registry::materialize_plugin_dependencies( $adapter );
 			}
-			$entity_lifecycle['status'] = 'explicit_products_manifest';
+			$entity_lifecycle['status'] = 'caller_override';
 		} elseif ( ! empty( $args['materialize_dependencies'] ) || ! empty( $args['seed_entities'] ) ) {
 			$diagnostics[] = array( 'code' => 'canonical_plan_missing_entity_declarations', 'severity' => 'warning', 'message' => 'WordPress site plan v2 does not declare dependency or entity intent; provide an explicit validated products_manifest.' );
 			$entity_lifecycle['status'] = 'canonical_plan_missing_entity_declarations';
@@ -192,7 +210,6 @@ class Static_Site_Importer_Theme_Generator {
 		$report['source_of_truth'] = $manifest;
 		$visual_parity = array( 'schema' => 'static-site-importer/visual-parity-artifacts/v1', 'status' => 'pending', 'owner' => 'codebox_runtime', 'artifacts' => array( 'import_report' => array( 'status' => 'captured', 'ref' => array( 'artifact_name' => 'import-report.json' ) ), 'source_screenshot' => array( 'status' => 'pending' ), 'visual_diff' => array( 'capture_state' => 'not_captured' ) ) );
 		$report['visual_parity_artifacts'] = $visual_parity;
-		$report['quality']['core_html_block_count'] = 0;
 		$validation = array( 'schema' => 'blocks-engine/import-validation-result/v1', 'artifact_type' => 'ImportValidationResult', 'status' => ! empty( $quality['pass'] ) ? 'passed' : 'failed', 'diagnostics' => $diagnostics, 'quality' => $quality, 'visual_parity_artifacts' => $visual_parity );
 		$findings   = array( 'schema' => 'blocks-engine/finding-packets/v1', 'artifact_type' => 'FindingPacketSet', 'findings' => $diagnostics );
 		$theme_dir  = $theme['dir'];
