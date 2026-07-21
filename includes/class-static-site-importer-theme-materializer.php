@@ -991,6 +991,7 @@ class Static_Site_Importer_Theme_Materializer {
 	 */
 	private static function source_file_template_parts( array $artifacts ): array {
 		$files = isset( $artifacts['source_files'] ) && is_array( $artifacts['source_files'] ) ? $artifacts['source_files'] : array();
+		$files = self::entrypoint_first_source_files( $files, $artifacts );
 		foreach ( $files as $file ) {
 			if ( ! is_array( $file ) || ! isset( $file['path'] ) || ! is_scalar( $file['path'] ) ) {
 				continue;
@@ -1022,6 +1023,43 @@ class Static_Site_Importer_Theme_Materializer {
 		}
 
 		return array();
+	}
+
+	/**
+	 * Order source files so the site entrypoint is scanned first.
+	 *
+	 * The entrypoint page is the imported front page, so its chrome is the
+	 * authoritative candidate for shared template parts. Without this ordering
+	 * the fallback synthesizes parts from whichever file happens to sort first.
+	 *
+	 * @param array<int,mixed>    $files     Source files.
+	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
+	 * @return array<int,mixed>
+	 */
+	private static function entrypoint_first_source_files( array $files, array $artifacts ): array {
+		$entrypoint = '';
+		foreach ( array( 'entry_path', 'entrypoint' ) as $key ) {
+			if ( isset( $artifacts[ $key ] ) && is_scalar( $artifacts[ $key ] ) && '' !== trim( (string) $artifacts[ $key ] ) ) {
+				$entrypoint = ltrim( str_replace( '\\', '/', trim( (string) $artifacts[ $key ] ) ), '/' );
+				break;
+			}
+		}
+		if ( '' === $entrypoint ) {
+			return $files;
+		}
+
+		$leading  = array();
+		$trailing = array();
+		foreach ( $files as $file ) {
+			$path = is_array( $file ) && isset( $file['path'] ) && is_scalar( $file['path'] ) ? ltrim( str_replace( '\\', '/', (string) $file['path'] ), '/' ) : '';
+			if ( '' !== $path && ( $path === $entrypoint || str_ends_with( $path, '/' . $entrypoint ) ) ) {
+				$leading[] = $file;
+				continue;
+			}
+			$trailing[] = $file;
+		}
+
+		return array_merge( $leading, $trailing );
 	}
 
 	/**
@@ -1079,7 +1117,11 @@ class Static_Site_Importer_Theme_Materializer {
 	}
 
 	/**
-	 * Return the first matching landmark's outer HTML.
+	 * Return the first separable landmark's outer HTML.
+	 *
+	 * Landmarks nested inside `<main>` remain part of the page body markup, so
+	 * synthesizing a shared template part from them would render the same chrome
+	 * twice. Only landmarks outside the page body are reusable site chrome.
 	 *
 	 * @param string $html Source HTML document.
 	 * @param string $tag  Landmark tag name.
@@ -1099,9 +1141,42 @@ class Static_Site_Importer_Theme_Materializer {
 			return '';
 		}
 
-		$nodes = $dom->getElementsByTagName( $tag );
-		$node  = $nodes->length > 0 ? $nodes->item( 0 ) : null;
-		return $node instanceof DOMElement ? trim( (string) $dom->saveHTML( $node ) ) : '';
+		$mains = $dom->getElementsByTagName( 'main' );
+		$main  = $mains->length > 0 ? $mains->item( 0 ) : null;
+
+		foreach ( $dom->getElementsByTagName( $tag ) as $node ) {
+			if ( ! $node instanceof DOMElement ) {
+				continue;
+			}
+
+			if ( $main instanceof DOMElement && self::dom_is_descendant_of( $node, $main ) ) {
+				continue;
+			}
+
+			return trim( (string) $dom->saveHTML( $node ) );
+		}
+
+		return '';
+	}
+
+	/**
+	 * Check whether a DOM node is contained by another element.
+	 *
+	 * @param DOMElement $candidate Candidate element.
+	 * @param DOMElement $ancestor  Ancestor element.
+	 * @return bool
+	 */
+	private static function dom_is_descendant_of( DOMElement $candidate, DOMElement $ancestor ): bool {
+		$node = $candidate->parentNode;
+		while ( $node instanceof DOMNode ) {
+			if ( $node->isSameNode( $ancestor ) ) {
+				return true;
+			}
+
+			$node = $node->parentNode;
+		}
+
+		return false;
 	}
 
 	/**

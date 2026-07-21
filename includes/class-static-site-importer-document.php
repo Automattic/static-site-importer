@@ -228,12 +228,12 @@ class Static_Site_Importer_Document {
 		$body = $this->first_element( 'body' );
 		$root = $body instanceof DOMElement ? $body : $this->dom->documentElement;
 
-		$footer             = $this->first_element( 'footer' );
 		$main               = $this->first_element( 'main' );
+		$footer             = $this->first_separable_landmark( 'footer', $main );
 		$effective_children = $this->effective_root_children( $root, $main );
 
 		$header       = $this->first_plausible_global_header( $effective_children );
-		$nav          = $this->first_plausible_global_nav( $effective_children, $header );
+		$nav          = $this->first_plausible_global_nav( $effective_children, $header, $main );
 		$body_headers = $this->body_content_headers( $effective_children, $header, $nav );
 
 		if ( $header instanceof DOMElement && $this->contains_same_node( $body_headers, $header ) ) {
@@ -425,12 +425,21 @@ class Static_Site_Importer_Document {
 	/**
 	 * Find a nav that is plausible reusable site chrome.
 	 *
+	 * Navs embedded inside the page body (`<main>`) are page content, not
+	 * separable global chrome: extracting them duplicates the markup because the
+	 * body keeps its own copy.
+	 *
 	 * @param DOMElement[]    $effective_children Effective body-level direct children.
 	 * @param DOMElement|null $header             Selected header element.
+	 * @param DOMElement|null $main               Main landmark element if present.
 	 * @return DOMElement|null
 	 */
-	private function first_plausible_global_nav( array $effective_children, ?DOMElement $header ): ?DOMElement {
+	private function first_plausible_global_nav( array $effective_children, ?DOMElement $header, ?DOMElement $main = null ): ?DOMElement {
 		foreach ( $this->dom->getElementsByTagName( 'nav' ) as $nav ) {
+			if ( $main instanceof DOMElement && $this->is_descendant_of( $nav, $main ) ) {
+				continue;
+			}
+
 			if ( $header instanceof DOMElement && $this->is_descendant_of( $nav, $header ) ) {
 				return $nav;
 			}
@@ -438,6 +447,32 @@ class Static_Site_Importer_Document {
 			if ( $this->contains_same_node( $effective_children, $nav ) || $this->has_global_chrome_signal( $nav ) ) {
 				return $nav;
 			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Find the first landmark that is separable from the page body.
+	 *
+	 * Landmarks nested inside `<main>` stay in the page body fragment, so
+	 * extracting them as shared chrome would duplicate their markup.
+	 *
+	 * @param string          $tag  Landmark tag name.
+	 * @param DOMElement|null $main Main landmark element if present.
+	 * @return DOMElement|null
+	 */
+	private function first_separable_landmark( string $tag, ?DOMElement $main ): ?DOMElement {
+		foreach ( $this->dom->getElementsByTagName( $tag ) as $node ) {
+			if ( ! $node instanceof DOMElement ) {
+				continue;
+			}
+
+			if ( $main instanceof DOMElement && $this->is_descendant_of( $node, $main ) ) {
+				continue;
+			}
+
+			return $node;
 		}
 
 		return null;

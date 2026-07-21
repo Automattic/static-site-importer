@@ -95,6 +95,7 @@ class Static_Site_Importer_Transformer_Adapter {
 		$artifacts['documents']         = ! empty( $view['documents'] ) && is_array( $view['documents'] ) ? $view['documents'] : ( isset( $result['documents'] ) && is_array( $result['documents'] ) ? $result['documents'] : array() );
 		$artifacts['files']             = $this->artifact_files_from_site_report( $materialization_plan, ! empty( $view ) ? $view : $result );
 		$artifacts['source_files']      = $this->source_files_from_artifact( $artifact );
+		$artifacts['entry_path']        = $this->entry_path_from_artifact( $artifact );
 		$artifacts['site']              = $materialization_plan;
 		$artifacts['compiled_site']     = ! empty( $view['compiled_site'] ) && is_array( $view['compiled_site'] ) ? $view['compiled_site'] : array();
 		$artifacts['template_parts']    = isset( $materialization_plan['template_parts'] ) && is_array( $materialization_plan['template_parts'] ) ? $materialization_plan['template_parts'] : array();
@@ -114,6 +115,22 @@ class Static_Site_Importer_Transformer_Adapter {
 		}
 
 		return $compiled;
+	}
+
+	/**
+	 * Read the declared website entrypoint from an artifact bundle.
+	 *
+	 * @param array<string,mixed> $artifact Website artifact bundle.
+	 * @return string
+	 */
+	private function entry_path_from_artifact( array $artifact ): string {
+		foreach ( array( 'entry_path', 'entrypoint' ) as $key ) {
+			if ( isset( $artifact[ $key ] ) && is_scalar( $artifact[ $key ] ) && '' !== trim( (string) $artifact[ $key ] ) ) {
+				return ltrim( str_replace( '\\', '/', trim( (string) $artifact[ $key ] ) ), '/' );
+			}
+		}
+
+		return '';
 	}
 
 	/**
