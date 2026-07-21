@@ -265,8 +265,9 @@ class Static_Site_Importer_Theme_Generator {
 			$key = (string) ( $declaration['reconciliation_identity'] ?? '' );
 			$name = (string) ( $declaration[ 'entity_collection' === $kind ? 'type' : 'capability' ] ?? '' );
 			$capability = self::runtime_declaration_capability( $kind, $name );
+			$required = self::runtime_declaration_is_required( $declaration, $declarations );
 			if ( '' === $capability ) {
-				if ( ! empty( $declaration['required'] ) ) {
+				if ( $required ) {
 					return new WP_Error( 'static_site_importer_unsupported_required_runtime_declaration', 'SSI cannot materialize required runtime declaration: ' . $name . '.', array( 'status' => 'rejected', 'declaration_id' => $key ) );
 				}
 				$lifecycle['diagnostics'][] = array( 'code' => 'unsupported_optional_runtime_declaration', 'severity' => 'warning', 'reconciliation_identity' => $key, 'message' => 'SSI has no configured adapter for optional declaration ' . $name . '.' );
@@ -277,7 +278,7 @@ class Static_Site_Importer_Theme_Generator {
 				return new WP_Error( 'static_site_importer_runtime_provider_unavailable', 'SSI has no configured provider for runtime capability: ' . $capability . '.', array( 'status' => 'rejected', 'declaration_id' => $key ) );
 			}
 			if ( 'dependency' === $kind ) {
-				$lifecycle['dependencies'][ $key ] = array( 'adapter' => $adapter, 'declaration' => $declaration );
+				$lifecycle['dependencies'][ $key ] = array( 'adapter' => $adapter, 'declaration' => $declaration, 'required' => $required );
 				continue;
 			}
 			if ( 'entity_collection' === $kind ) {
@@ -287,7 +288,7 @@ class Static_Site_Importer_Theme_Generator {
 				if ( ! empty( $validation['errors'] ) ) {
 					return new WP_Error( 'static_site_importer_runtime_entity_invalid', 'Runtime entity declaration failed SSI provider validation.', array( 'status' => 'rejected', 'declaration_id' => $key, 'errors' => $validation['errors'] ) );
 				}
-				$lifecycle['entities'][ $key ] = array( 'adapter' => $adapter, 'manifest' => $manifest, 'declaration' => $declaration );
+				$lifecycle['entities'][ $key ] = array( 'adapter' => $adapter, 'manifest' => $manifest, 'declaration' => $declaration, 'required' => $required );
 			}
 		}
 		if ( isset( $args['products_manifest'] ) && is_array( $args['products_manifest'] ) && ! empty( $args['products_manifest'] ) ) {
@@ -303,6 +304,19 @@ class Static_Site_Importer_Theme_Generator {
 			$lifecycle['status'] = 'runtime_declarations';
 		}
 		return $lifecycle;
+	}
+
+	private static function runtime_declaration_is_required( array $declaration, array $declarations ): bool {
+		$key = (string) ( $declaration['kind'] ?? '' ) . ':' . (string) ( $declaration['type'] ?? $declaration['capability'] ?? '' );
+		if ( ! empty( $declaration['required_for'] ) ) {
+			return true;
+		}
+		foreach ( $declarations as $candidate ) {
+			if ( is_array( $candidate ) && in_array( $key, $candidate['required_for'] ?? array(), true ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static function runtime_declaration_capability( string $kind, string $name ): string {
@@ -329,11 +343,11 @@ class Static_Site_Importer_Theme_Generator {
 				$reports[ $id ] = array( 'status' => 'waived', 'provider' => $adapter['provider'] ?? '' );
 				continue;
 			}
-			if ( empty( $args['materialize_dependencies'] ) && ! Static_Site_Importer_Entity_Materializer_Registry::dependencies_available( $adapter ) ) {
+			if ( empty( $args['materialize_dependencies'] ) && ! Static_Site_Importer_Entity_Materializer_Registry::dependencies_available( $adapter ) && ! empty( $prepared['required'] ) ) {
 				return new WP_Error( 'static_site_importer_required_runtime_dependency_missing', 'A required runtime dependency is unavailable and dependency materialization is disabled.', array( 'status' => 'rejected', 'declaration_id' => $id ) );
 			}
 			$reports[ $id ] = ! empty( $args['materialize_dependencies'] ) ? Static_Site_Importer_Entity_Materializer_Registry::materialize_plugin_dependencies( $adapter ) : array( 'status' => 'available' );
-			if ( ! Static_Site_Importer_Entity_Materializer_Registry::dependencies_available( $adapter ) ) {
+			if ( ! Static_Site_Importer_Entity_Materializer_Registry::dependencies_available( $adapter ) && ! empty( $prepared['required'] ) ) {
 				return new WP_Error( 'static_site_importer_required_runtime_dependency_missing', 'SSI could not prepare a required runtime dependency.', array( 'status' => 'partial', 'completed_declaration_ids' => array_keys( $reports ) ) );
 			}
 		}
