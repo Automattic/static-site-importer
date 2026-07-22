@@ -995,6 +995,36 @@ if ( is_wp_error( $figma_upload_artifact ) && 'static_site_importer_figma_transf
 	$assert( isset( $figma_upload_error_data['diagnostic'] ) && is_array( $figma_upload_error_data['diagnostic'] ), 'figma-empty-transform-error-exposes-diagnostic' );
 	$assert( 'Blocks Engine Figma transformer did not produce importable files.' !== $figma_upload_artifact->get_error_message(), 'figma-empty-transform-error-message-includes-diagnostic' );
 }
+$staged_figma_root = ABSPATH . '.studio-import';
+if ( ! is_dir( $staged_figma_root ) ) {
+	mkdir( $staged_figma_root );
+}
+$staged_figma_path = $staged_figma_root . '/design.fig';
+file_put_contents( $staged_figma_path, 'not-a-zip' );
+$staged_figma_artifact = Static_Site_Importer_Figma_Import::website_artifact_from_input(
+	array(
+		'source' => array(
+			'figma_file' => array(
+				'name'        => 'design.fig',
+				'staged_path' => $staged_figma_path,
+			),
+		),
+	)
+);
+$assert( 'static_site_importer_figma_staged_file_invalid' !== ( is_wp_error( $staged_figma_artifact ) ? $staged_figma_artifact->get_error_code() : '' ), 'figma-staged-file-routes-through-transformer' );
+$outside_staged_figma = Static_Site_Importer_Figma_Import::website_artifact_from_input(
+	array(
+		'source' => array(
+			'figma_file' => array(
+				'name'        => 'design.fig',
+				'staged_path' => __FILE__,
+			),
+		),
+	)
+);
+$assert( 'static_site_importer_figma_staged_file_invalid' === ( is_wp_error( $outside_staged_figma ) ? $outside_staged_figma->get_error_code() : '' ), 'figma-staged-file-rejects-outside-path' );
+unlink( $staged_figma_path );
+rmdir( $staged_figma_root );
 $generic_fig_artifact = static_site_importer_rest_source_artifact(
 	array(
 		'files' => array(
