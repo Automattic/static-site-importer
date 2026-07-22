@@ -94,6 +94,11 @@ namespace {
 	$assert( is_wp_error( $failing ), 'failing-adapter-wp-error-is-preserved' );
 	$assert( 'adapter_failed' === $failing->get_error_code(), 'failing-adapter-error-code-is-preserved' );
 
+	$duplicate_products = Static_Site_Importer_Entity_Materializer_Registry::validate_woo_products_manifest( array( 'schema_version' => 1, 'products' => array( array( 'name' => 'One', 'slug' => 'same', 'regular_price' => '10' ), array( 'name' => 'Two', 'slug' => 'same', 'regular_price' => '12' ) ) ) );
+	$assert( ! empty( $duplicate_products['errors'] ), 'duplicate-product-slugs-reject-provider-result-ambiguity' );
+	$duplicate_forms = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( array( 'source_path' => 'index.html', 'selector' => 'form', 'controls' => array( array( 'tag' => 'input', 'type' => 'email' ) ) ), array( 'source_path' => 'index.html', 'selector' => 'form', 'controls' => array( array( 'tag' => 'input', 'type' => 'email' ) ) ) ) ) );
+	$assert( ! empty( $duplicate_forms['errors'] ), 'duplicate-form-identities-reject-provider-result-ambiguity' );
+
 	if ( $failures ) {
 		fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 		exit( 1 );

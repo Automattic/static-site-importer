@@ -604,13 +604,38 @@ test('fixture capability manifests drive per-fixture plugin provisioning without
   const fixtureSteps = (id) => recipe.workflow.steps.filter((step) => step.metadata?.fixture_id === id);
 
   assert.deepEqual(fixtureSteps('plain-site').map((step) => step.command), ['wordpress.wp-cli', 'wordpress.wp-cli']);
-  assert.deepEqual(fixtureSteps('shop-site').map((step) => step.command), ['wordpress.plugin-setup', 'wordpress.wp-cli', 'wordpress.wp-cli']);
-  assert.deepEqual(fixtureSteps('shop-forms-site').map((step) => step.command), ['wordpress.plugin-setup', 'wordpress.plugin-setup', 'wordpress.wp-cli', 'wordpress.wp-cli']);
+  // Each capability provider gets a best-effort install followed by a fail-closed
+  // readiness assertion (wordpress.run-php) before the import runs.
+  assert.deepEqual(fixtureSteps('shop-site').map((step) => step.command), ['wordpress.plugin-setup', 'wordpress.run-php', 'wordpress.wp-cli', 'wordpress.wp-cli']);
+  assert.deepEqual(fixtureSteps('shop-forms-site').map((step) => step.command), ['wordpress.plugin-setup', 'wordpress.plugin-setup', 'wordpress.run-php', 'wordpress.run-php', 'wordpress.wp-cli', 'wordpress.wp-cli']);
   assert.deepEqual(fixtureSteps('shop-site')[0].args, ['action=install', 'plugin=woocommerce', 'activate=true']);
   assert.deepEqual(fixtureSteps('shop-forms-site')[0].args, ['action=install', 'plugin=woocommerce', 'activate=true']);
   assert.deepEqual(fixtureSteps('shop-forms-site')[1].args, ['action=install', 'plugin=jetpack', 'activate=true']);
   assert.equal(fixtureSteps('shop-site')[0].allowFailure, true);
   assert.equal(recipe.workflow.steps.some((step) => /--allow-missing-woocommerce/.test(step.args?.[0] || '')), false);
+
+  // The readiness gate is fail-closed: it must not allow failure and must assert
+  // the provider runtime is present so a silently-missing provider (e.g. a flaked
+  // Jetpack install) is a hard error rather than a degraded fallback finding.
+  const shopReadiness = fixtureSteps('shop-site').filter((step) => step.metadata?.phase === 'capability-readiness');
+  assert.equal(shopReadiness.length, 1);
+  assert.equal(shopReadiness[0].command, 'wordpress.run-php');
+  assert.notEqual(shopReadiness[0].allowFailure, true);
+  assert.equal(shopReadiness[0].metadata.plugin_slug, 'woocommerce');
+  assert.match(shopReadiness[0].args[0], /shortcode_exists\('add_to_cart'\)/);
+  assert.match(shopReadiness[0].args[0], /exit\(1\)/);
+
+  const formsReadiness = fixtureSteps('shop-forms-site').filter((step) => step.metadata?.phase === 'capability-readiness');
+  assert.deepEqual(formsReadiness.map((step) => step.metadata.plugin_slug), ['woocommerce', 'jetpack']);
+  assert.ok(formsReadiness.every((step) => step.command === 'wordpress.run-php' && step.allowFailure !== true));
+  const jetpackReadiness = formsReadiness.find((step) => step.metadata.plugin_slug === 'jetpack');
+  assert.match(jetpackReadiness.args[0], /jetpack\/contact-form/);
+  assert.match(jetpackReadiness.args[0], /exit\(1\)/);
+  // The readiness gate for a capability runs before that fixture's import step.
+  const shopFormsCommands = fixtureSteps('shop-forms-site');
+  const lastReadinessIndex = shopFormsCommands.map((step) => step.metadata?.phase).lastIndexOf('capability-readiness');
+  const importIndex = shopFormsCommands.findIndex((step) => String(step.args?.[0] || '').includes('validate-artifact'));
+  assert.ok(lastReadinessIndex >= 0 && importIndex > lastReadinessIndex, 'readiness gates precede the import');
 });
 
 test('fixture-matrix rig requires env-backed WP Codebox editor and visual capabilities', () => {
@@ -3145,8 +3170,9 @@ test('CLI surface coverage reaches bench recipe browser evidence steps', () => {
   const visualSteps = recipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare');
   assert.equal(editorOpenSteps.length, 3);
   assert.equal(visualSteps.length, 3);
-  assert.ok(editorOpenSteps[1].args.includes('url=/contact/'));
-  assert.ok(editorOpenSteps[2].args.includes('url=/merch/'));
+  assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
+  assert.ok(editorOpenSteps[1].args.includes('post-slug=contact'));
+  assert.ok(editorOpenSteps[2].args.includes('post-slug=merch'));
   assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
 });
 
@@ -3178,8 +3204,9 @@ test('runFixtureMatrix surface coverage reaches executed batch recipes', async (
     const visualSteps = batchRecipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare');
     assert.equal(editorOpenSteps.length, 3);
     assert.equal(visualSteps.length, 3);
-    assert.ok(editorOpenSteps[1].args.includes('url=/contact/'));
-    assert.ok(editorOpenSteps[2].args.includes('url=/merch/'));
+    assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
+    assert.ok(editorOpenSteps[1].args.includes('post-slug=contact'));
+    assert.ok(editorOpenSteps[2].args.includes('post-slug=merch'));
     assert.equal(visualCompareMatrixComparison(visualSteps[1]).candidateUrl, '/contact/');
     assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
   } finally {
@@ -4219,11 +4246,16 @@ test('fixture matrix browser surfaces default to front page and opt into bounded
   assert.equal(editorValidationSteps.length, 3);
   assert.equal(visualSteps.length, 3);
   assert.ok(editorOpenSteps[0].args.includes('artifact-prefix=files/browser/editor-open/artist'));
-  assert.ok(editorOpenSteps[1].args.includes('url=/about/'));
+  assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
+  assert.ok(editorOpenSteps[1].args.includes('post-slug=about'));
+  assert.equal(editorOpenSteps[1].args.some((arg) => arg.startsWith('url=')), false);
   assert.ok(editorOpenSteps[1].args.includes('artifact-prefix=files/browser/editor-open/artist/about'));
-  assert.ok(editorOpenSteps[2].args.includes('url=/about/'));
+  assert.ok(editorOpenSteps[2].args.includes('post-type=page'));
+  assert.ok(editorOpenSteps[2].args.includes('post-slug=about'));
   assert.ok(editorOpenSteps[2].args.includes('artifact-prefix=files/browser/editor-open/artist/about--2'));
-  assert.ok(editorValidationSteps[1].args.includes('url=/about/'));
+  assert.ok(editorValidationSteps[1].args.includes('post-type=page'));
+  assert.ok(editorValidationSteps[1].args.includes('post-slug=about'));
+  assert.equal(editorValidationSteps[1].args.some((arg) => arg.startsWith('url=')), false);
 
   const aboutComparison = visualCompareMatrixComparison(visualSteps[1]);
   assert.equal(aboutComparison.name, 'artist--about');

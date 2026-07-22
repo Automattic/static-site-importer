@@ -9,6 +9,10 @@
 
 require dirname( __DIR__ ) . '/vendor/autoload.php';
 
+if ( ! defined( 'ABSPATH' ) ) {
+	define( 'ABSPATH', dirname( __DIR__ ) . '/' );
+}
+
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler;
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\RuntimeDeclarations;
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
@@ -60,6 +64,10 @@ function wp_insert_post( array $post, bool $wp_error ) {
 }
 
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
 
 $assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
@@ -93,6 +101,58 @@ $assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-pla
 $assert( 'posts' === $GLOBALS['ssi_plan_options']['show_on_front'], 'plan-only materialization does not change reading settings by default' );
 $assert( $receipt['plan']['pages'][0]['document_metadata']['links'][0]['resolved_url'] === 'https://example.test/wp-content/themes/site-plan/assets/assets/site.css', 'resolved metadata retains the declared stylesheet destination' );
 $assert( array() === $receipt['completed']['runtime_declarations']['asset_publications'], 'plans without publication declarations retain an explicit empty receipt collection' );
+
+$entity_artifact = $artifact;
+$entity_search = '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button">Add</a></div><!-- /wp:button --></div><!-- /wp:buttons -->';
+$entity_artifact['files']['index.html'] = '<main><h1>Home</h1><div class="wp-block-buttons"><button>Add</button></div></main>';
+$entity_artifact['runtime_declarations'] = array(
+	array( 'kind' => 'dependency', 'capability' => 'shop', 'source_path' => 'index.html', 'required_for' => array( 'entity_collection:products' ) ),
+	array( 'kind' => 'entity_collection', 'type' => 'products', 'source_path' => 'index.html', 'payload' => array( 'schema' => 'generic/products/v1', 'entities' => array( array( 'name' => 'Aero Mug', 'slug' => 'aero-mug', 'regular_price' => '24', 'source_selectors' => array( '.product-card' ), 'bindings' => array( array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'index.html', 'search_block_markup' => $entity_search, 'occurrence' => 1, 'role' => 'commerce_controls', 'superseded_runtime_selectors' => array( '.add-to-cart' ) ) ) ) ) ) ),
+);
+$entity_plan = ( new ArtifactCompiler() )->compile( $entity_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$prepare_lifecycle = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'prepare_wordpress_site_plan_lifecycle' );
+$entity_lifecycle = $prepare_lifecycle->invoke( null, $entity_plan, array() );
+$assert( 'runtime_declarations' === ( $entity_lifecycle['status'] ?? '' ), 'v2 entity declarations enter the active SSI runtime lifecycle' );
+$assert( 'woocommerce_simple_product' === ( $entity_lifecycle['entities'][ $entity_plan['runtime_declarations'][1]['reconciliation_identity'] ]['adapter']['id'] ?? '' ) || 'woocommerce_simple_product' === ( reset( $entity_lifecycle['entities'] )['adapter']['id'] ?? '' ), 'product collections resolve through the configured WooCommerce adapter' );
+$prepared_entity = reset( $entity_lifecycle['entities'] );
+$assert( 'Aero Mug' === ( $prepared_entity['manifest']['products'][0]['name'] ?? '' ) && true === ( $prepared_entity['required'] ?? false ), 'v2 product rows validate and retain their required dependency relationship' );
+$binding_method = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'runtime_entity_bindings' );
+$entity_declaration_id = (string) array_key_first( $entity_lifecycle['entities'] );
+$entity_bindings = $binding_method->invoke( null, $entity_lifecycle, array( $entity_declaration_id => array( 'products' => array( array( 'id' => 42, 'slug' => 'aero-mug', 'status' => 'created' ) ) ) ) );
+$assert( ! is_wp_error( $entity_bindings ) && '[add_to_cart id="42"]' === trim( strip_tags( $entity_bindings[0]['replacement_block_markup'] ?? '' ) ), 'provider result resolves into a canonical runtime entity binding' );
+$assert( array( '.add-to-cart' ) === ( $entity_bindings[0]['superseded_runtime_selectors'] ?? null ), 'provider binding retains its explicit runtime-selector coverage' );
+$waived_bindings = $binding_method->invoke( null, $entity_lifecycle, array( $entity_declaration_id => array( 'status' => 'waived', 'provider' => 'woocommerce' ) ) );
+$assert( array() === $waived_bindings, 'explicit provider waiver retains static fallback without requiring provider markup' );
+
+$binding_artifact = array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => '<main><h1>Binding</h1><p>Replace me</p></main>' ) );
+$binding_plan = ( new ArtifactCompiler() )->compile( $binding_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$binding_search = '<!-- wp:paragraph {"content":"Replace me"} --><p>Replace me</p><!-- /wp:paragraph -->';
+$binding_replacement = '<!-- wp:shortcode -->[add_to_cart id="42"]<!-- /wp:shortcode -->';
+$binding_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $binding_plan, array( 'slug' => 'binding-plan', 'runtime_entity_bindings' => array( array( 'schema' => 'static-site-importer/runtime-entity-binding/v1', 'source_path' => 'index.html', 'search_block_markup' => $binding_search, 'replacement_block_markup' => $binding_replacement, 'occurrence' => 1, 'role' => 'commerce_controls', 'declaration_id' => $entity_declaration_id, 'reconciliation_identity' => hash( 'sha256', 'binding-test' ), 'superseded_runtime_selectors' => array( '.add-to-cart' ) ) ) ) );
+$assert( str_contains( $binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '', '[add_to_cart id="42"]' ) && ! isset( $binding_receipt['plan']['pages'][0]['materialized_block_markup'] ), 'runtime binding is receipt-owned without mutating the canonical resolved plan' );
+$assert( hash( 'sha256', $binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ) === ( $binding_receipt['completed']['materialized_pages']['index.html']['content_hash'] ?? '' ), 'materialized page receipt owns the final provider-bound content hash' );
+$binding_post_id = (int) ( $binding_receipt['completed']['pages']['index.html'] ?? 0 );
+$assert( str_contains( $GLOBALS['ssi_plan_posts'][ $binding_post_id ]['post_content'] ?? '', '[add_to_cart id=\"42\"]' ), 'page write uses provider-bound markup rather than the static fallback' );
+$assert( 'completed' === ( reset( $binding_receipt['completed']['runtime_declarations']['entity_bindings'] )['status'] ?? '' ), 'receipt proves canonical runtime entity binding completion' );
+$assert( array( '.add-to-cart' ) === ( reset( $binding_receipt['completed']['runtime_declarations']['entity_bindings'] )['superseded_runtime_selectors'] ?? null ), 'completed receipt retains provider runtime-selector coverage' );
+$reconcile_diagnostics = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'diagnostics_after_completed_entity_bindings' );
+$runtime_diagnostics = array( array( 'code' => 'preserved_runtime_island', 'source_path' => 'index.html', 'selector' => '.add-to-cart' ), array( 'code' => 'preserved_runtime_island', 'source_path' => 'index.html', 'selector' => '.qty-btn' ), array( 'code' => 'preserved_runtime_island', 'source_path' => 'other.html', 'selector' => '.add-to-cart' ) );
+$assert( array( '.qty-btn', '.add-to-cart' ) === array_column( $reconcile_diagnostics->invoke( null, $runtime_diagnostics, $binding_receipt ), 'selector' ), 'completed provider coverage removes only the matching page runtime finding and preserves same-selector findings on other pages' );
+$prepared_binding_receipt = $binding_receipt;
+foreach ( $prepared_binding_receipt['completed']['runtime_declarations']['entity_bindings'] as &$prepared_binding_report ) $prepared_binding_report['status'] = 'prepared';
+unset( $prepared_binding_report );
+$assert( 3 === count( $reconcile_diagnostics->invoke( null, $runtime_diagnostics, $prepared_binding_receipt ) ), 'unpersisted provider bindings never suppress runtime findings' );
+$invalid_coverage_binding = array( 'schema' => 'static-site-importer/runtime-entity-binding/v1', 'source_path' => 'index.html', 'search_block_markup' => $binding_search, 'replacement_block_markup' => $binding_replacement, 'occurrence' => 1, 'role' => 'commerce_controls', 'declaration_id' => $entity_declaration_id, 'reconciliation_identity' => hash( 'sha256', 'invalid-coverage-binding' ), 'superseded_runtime_selectors' => '.add-to-cart' );
+$invalid_coverage_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $binding_plan, array( 'slug' => 'invalid-coverage-plan', 'runtime_entity_bindings' => array( $invalid_coverage_binding ) ) );
+$assert( 'rejected' === $invalid_coverage_receipt['status'] && 'runtime_entity_binding_invalid' === ( $invalid_coverage_receipt['errors'][0]['code'] ?? '' ), 'direct materializer callers cannot forge malformed runtime-selector coverage' );
+$duplicate_binding_plan = ( new ArtifactCompiler() )->compile( array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => '<main><p>Same</p><p>Same</p></main>' ) ) )->toArray()['source_reports']['wordpress_site_plan'];
+$duplicate_search = '<!-- wp:paragraph {"content":"Same"} --><p>Same</p><!-- /wp:paragraph -->';
+$duplicate_binding_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $duplicate_binding_plan, array( 'slug' => 'duplicate-binding-plan', 'runtime_entity_bindings' => array( array( 'schema' => 'static-site-importer/runtime-entity-binding/v1', 'source_path' => 'index.html', 'search_block_markup' => $duplicate_search, 'replacement_block_markup' => '<!-- wp:shortcode -->[add_to_cart id="42"]<!-- /wp:shortcode -->', 'occurrence' => 1, 'role' => 'commerce_controls', 'declaration_id' => 'products', 'reconciliation_identity' => hash( 'sha256', 'duplicate-binding-1' ) ), array( 'schema' => 'static-site-importer/runtime-entity-binding/v1', 'source_path' => 'index.html', 'search_block_markup' => $duplicate_search, 'replacement_block_markup' => '<!-- wp:shortcode -->[add_to_cart id="43"]<!-- /wp:shortcode -->', 'occurrence' => 2, 'role' => 'commerce_controls', 'declaration_id' => 'products', 'reconciliation_identity' => hash( 'sha256', 'duplicate-binding-2' ) ) ) ) );
+$duplicate_markup = $duplicate_binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '';
+$assert( str_contains( $duplicate_markup, '[add_to_cart id="42"]' ) && str_contains( $duplicate_markup, '[add_to_cart id="43"]' ), 'duplicate markup anchors resolve by descending deterministic occurrence' );
+$invalid_binding = array( 'schema' => 'static-site-importer/runtime-entity-binding/v1', 'source_path' => 'index.html', 'search_block_markup' => '<!-- wp:paragraph --><p>Missing</p><!-- /wp:paragraph -->', 'replacement_block_markup' => $binding_replacement, 'occurrence' => 1, 'role' => 'commerce_controls', 'declaration_id' => $entity_declaration_id, 'reconciliation_identity' => hash( 'sha256', 'invalid-binding-test' ) );
+$invalid_binding_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $binding_plan, array( 'slug' => 'invalid-binding-plan', 'runtime_entity_bindings' => array( $invalid_binding ) ) );
+$assert( 'rejected' === $invalid_binding_receipt['status'] && 'runtime_entity_binding_cardinality_mismatch' === ( $invalid_binding_receipt['errors'][0]['code'] ?? '' ), 'missing or ambiguous provider anchors fail before page writes' );
 
 $publication_svg = '<svg xmlns="http://www.w3.org/2000/svg"><text style="font-family:Example">Example</text></svg>';
 $publication_css = '@font-face{font-family:Example;src:url(font.woff2)}';
