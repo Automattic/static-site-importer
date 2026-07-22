@@ -104,6 +104,46 @@ metrics are under `import_matrix` and `metrics.import_matrix_*`. Use these field
 for performance and quality regression gates instead of treating `.fig -> blocks`
 as one opaque operation.
 
+### Blocks Engine Acceptance Provider
+
+SSI owns the adapter from concrete three-Fig E2E artifacts to Blocks Engine's
+`blocks-engine/figma-wordpress-stage-evidence/v1` contract. It does not treat an
+aggregate matrix status as evidence. It validates and copies Blocks Engine's Figma-owned
+acceptance stage files, then combines them with SSI import/editor/fallback facts,
+a deployable `wordpress-site-plan/v2`, isolated WordPress identities, and the
+remaining downstream parity artifacts.
+
+Run the provider after a real E2E run, choosing the evaluator output directory
+up front so every reference is evaluator-relative:
+
+```bash
+node tools/fig-acceptance-provider.mjs \
+  --fig /path/to/Fisiostetic.fig \
+  --fixture-id fisiostetic \
+  --fixture-output /tmp/figma-wordpress-acceptance/fixtures/fisiostetic \
+  --transform-summary /path/to/artifacts/fig-fixture-e2e/figma-transform/summary.json \
+  --matrix-result /path/to/artifacts/fig-fixture-e2e/ssi-matrix/static-site-fixture-matrix-result.json \
+  --matrix-output /path/to/artifacts/fig-fixture-e2e/ssi-matrix \
+  --site-plan /path/to/fisiostetic-site-plan.json
+```
+
+For the canonical run, supply the full provider config documented in
+[`fig-acceptance-provider.md`](fig-acceptance-provider.md). The E2E command then
+writes the combined manifest and invokes the evaluator directly:
+
+```bash
+node tools/run-fig-fixture-e2e.mjs \
+  --blocks-engine /path/to/blocks-engine \
+  --fixture /path/to/a.fig --fixture /path/to/b.fig --fixture /path/to/c.fig \
+  --acceptance-config /path/to/acceptance-config.json \
+  --run
+```
+
+Reviewer-facing artifacts are under
+`/tmp/figma-wordpress-acceptance/fixtures/<fixture-id>/ssi-acceptance-provider/`:
+`stages/*.json` are the 13 contract records, `artifacts/` contains copied
+resolvable evidence, and `manifest-fragment.json` is the exact provider output.
+
 To compare a candidate run to a saved baseline summary, pass the previous
 `summary.json` and an allowed regression ratio:
 

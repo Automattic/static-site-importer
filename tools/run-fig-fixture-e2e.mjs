@@ -12,6 +12,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { buildFigAcceptanceProvider } from './fig-acceptance-provider.mjs';
+
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const DEFAULT_EXPECTED_FIXTURE_COUNT = 3;
 const SUMMARY_SCHEMA = 'static-site-importer/fig-fixture-e2e-summary/v1';
@@ -57,6 +59,25 @@ export function runFigFixtureE2E(input = {}) {
   const transformStatus = runCommand(plan.steps.transform);
   const matrixStatus = transformStatus.status === 0 ? runCommand(plan.steps.import_matrix) : null;
   const summary = summarizeRun({ plan, transformStatus, matrixStatus });
+  if (summary.status === 'passed' && plan.acceptance.enabled) {
+    try {
+      const manifest = writeFigAcceptanceManifest(plan);
+      const acceptanceStatus = runCommand(plan.steps.acceptance_matrix);
+      summary.acceptance = {
+        enabled: true,
+        manifest_path: manifest.path,
+        summary_path: path.join(plan.acceptance.output_directory, 'summary.json'),
+        exit_code: acceptanceStatus.status,
+      };
+      if (acceptanceStatus.status !== 0) {
+        summary.status = 'failed';
+        summary.failures.push(`production acceptance matrix exited ${acceptanceStatus.status}`);
+      }
+    } catch (error) {
+      summary.status = 'failed';
+      summary.failures.push(`acceptance provider failed: ${error.message}`);
+    }
+  }
   writeJson(plan.artifacts.summary, summary);
   return { plan, summary };
 }
@@ -68,7 +89,10 @@ export function buildFigFixtureE2EPlan(input = {}) {
   const matrixSummary = path.join(matrixOutputDirectory, 'summary.json');
   const matrixResult = path.join(matrixOutputDirectory, 'static-site-fixture-matrix-result.json');
   const summaryPath = path.join(options.outputDirectory, 'summary.json');
+  const acceptanceOutput = path.join(options.outputDirectory, 'production-acceptance');
+  const acceptanceManifest = path.join(acceptanceOutput, 'manifest.json');
   const transformScript = path.join(options.blocksEngine, 'figma-transformer', 'scripts', 'figma-fixture-matrix.php');
+  const acceptanceScript = path.join(options.blocksEngine, 'scripts', 'production-acceptance-matrix.php');
   const benchScript = path.join(options.staticSiteImporter, 'bench', 'static-site-fixture-matrix.bench.mjs');
 
   const transformArgv = [
@@ -117,6 +141,12 @@ export function buildFigFixtureE2EPlan(input = {}) {
       matrix_result: matrixResult,
       matrix_output_directory: matrixOutputDirectory,
     },
+    acceptance: {
+      enabled: Boolean(options.acceptanceConfig),
+      config_path: options.acceptanceConfig || null,
+      output_directory: acceptanceOutput,
+      manifest_path: acceptanceManifest,
+    },
     thresholds: {
       max_transform_failures: 0,
       max_import_failures: 0,
@@ -129,9 +159,42 @@ export function buildFigFixtureE2EPlan(input = {}) {
     steps: {
       transform: commandStep('figma-transform', transformArgv, { cwd: path.join(options.blocksEngine, 'figma-transformer') }),
       import_matrix: commandStep('ssi-import-matrix', matrixArgv, { cwd: options.staticSiteImporter }),
+      ...(options.acceptanceConfig ? {
+        acceptance_matrix: commandStep('production-acceptance-matrix', [options.phpBin, acceptanceScript, `--profile=${options.expectedFixtureCount === 3 ? 'production' : 'manifest'}`, `--manifest=${acceptanceManifest}`, `--output=${acceptanceOutput}`], { cwd: options.blocksEngine }),
+      } : {}),
     },
-    warnings: buildPlanWarnings(options, transformScript, benchScript),
+    warnings: buildPlanWarnings(options, transformScript, benchScript, acceptanceScript),
   };
+}
+
+export function writeFigAcceptanceManifest(plan) {
+  const config = readJsonIfExists(plan.acceptance.config_path);
+  if (!config) throw new Error(`acceptance config is missing or invalid: ${plan.acceptance.config_path}`);
+  const transformSummary = readJsonIfExists(plan.artifacts.transform_summary);
+  const fixtures = Array.isArray(transformSummary?.fixtures) ? transformSummary.fixtures : [];
+  const configuredFixtures = config.fixtures && typeof config.fixtures === 'object' && !Array.isArray(config.fixtures) ? config.fixtures : {};
+  const fragments = fixtures.map((fixture) => {
+    const id = requiredString(fixture?.id, 'transform fixture id');
+    const configured = configuredFixtures[id];
+    if (!configured || typeof configured !== 'object' || Array.isArray(configured)) throw new Error(`acceptance config has no fixture ${id}`);
+    return buildFigAcceptanceProvider({
+      fig: fixture.path,
+      fixtureId: id,
+      fixtureOutput: path.join(plan.acceptance.output_directory, 'fixtures', id),
+      transformSummary: plan.artifacts.transform_summary,
+      matrixResult: plan.artifacts.matrix_result,
+      matrixOutput: plan.artifacts.matrix_output_directory,
+      providerIdentity: config.provider_identity,
+      runtimeIdentity: config.runtime_identity,
+      sitePlan: configured.site_plan,
+      htmlWordpressMobileParity: configured.html_wordpress_mobile_parity,
+      figmaWordpressDesktopParity: configured.figma_wordpress_desktop_parity,
+      figmaWordpressMobileParity: configured.figma_wordpress_mobile_parity,
+    });
+  });
+  if (fragments.length !== plan.expected_fixture_count) throw new Error(`acceptance provider completed ${fragments.length}/${plan.expected_fixture_count} fixtures`);
+  writeJson(plan.acceptance.manifest_path, { fixtures: fragments });
+  return { path: plan.acceptance.manifest_path, fixtures: fragments };
 }
 
 export function summarizeRun({ plan, transformStatus, matrixStatus }) {
@@ -246,6 +309,7 @@ function normalizeOptions(input) {
     blocksEnginePhpTransformerPath: path.resolve(input.blocksEnginePhpTransformerPath || input.blocks_engine_php_transformer_path || process.env.SSI_FIG_E2E_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH || blocksEngine),
     fixtures,
     outputDirectory,
+    acceptanceConfig: input.acceptanceConfig || input.acceptance_config || process.env.SSI_FIG_E2E_ACCEPTANCE_CONFIG || '',
     baselineSummary: input.baselineSummary || input.baseline_summary || process.env.SSI_FIG_E2E_BASELINE_SUMMARY || '',
     expectedFixtureCount: positiveInteger(input.expectedFixtureCount || input.expected_fixture_count || process.env.SSI_FIG_E2E_EXPECTED_FIXTURE_COUNT, DEFAULT_EXPECTED_FIXTURE_COUNT),
     maxPages: positiveInteger(input.maxPages || input.max_pages || process.env.SSI_FIG_E2E_MAX_PAGES, 3),
@@ -318,7 +382,7 @@ function parseArgs(args, env = process.env) {
   return options;
 }
 
-function buildPlanWarnings(options, transformScript, benchScript) {
+function buildPlanWarnings(options, transformScript, benchScript, acceptanceScript) {
   const warnings = [];
   if (options.fixtures.length !== options.expectedFixtureCount) {
     warnings.push(`Expected ${options.expectedFixtureCount} fixture paths; received ${options.fixtures.length}.`);
@@ -333,6 +397,12 @@ function buildPlanWarnings(options, transformScript, benchScript) {
   }
   if (!fs.existsSync(benchScript)) {
     warnings.push(`SSI fixture matrix bench script not found: ${benchScript}`);
+  }
+  if (options.acceptanceConfig && !fs.existsSync(options.acceptanceConfig)) {
+    warnings.push(`Acceptance config does not exist: ${options.acceptanceConfig}`);
+  }
+  if (options.acceptanceConfig && !fs.existsSync(acceptanceScript)) {
+    warnings.push(`Blocks Engine production acceptance script not found: ${acceptanceScript}`);
   }
   if (!options.run) {
     warnings.push('Import/parity matrix is planned only; pass --run or SSI_FIG_E2E_RUN=1 to launch WP Codebox.');
@@ -559,5 +629,6 @@ function shellQuote(value) {
 }
 
 function printHelp() {
+  process.stdout.write('Acceptance mode: --acceptance-config <path> supplies provider identities, site plans, and downstream parity inputs, then runs the production evaluator.\n\n');
   process.stdout.write(`Usage: node tools/run-fig-fixture-e2e.mjs --blocks-engine <path> --fixture <file.fig> --fixture <file.fig> --fixture <file.fig> [options]\n\nRuns Blocks Engine Figma transforms and feeds the generated artifacts into the SSI WP Codebox fixture matrix.\n\nOptions:\n  --fixture <path>                         .fig fixture path. Repeat exactly three times for the release gate.\n  --blocks-engine <path>                   Blocks Engine checkout containing figma-transformer/. Required.\n  --static-site-importer <path>            SSI checkout. Defaults to this repo.\n  --blocks-engine-php-transformer-path <path>\n                                           Composer path override for SSI import. Defaults to --blocks-engine.\n  --output-directory <path>                Artifact root. Defaults to ./artifacts/fig-fixture-e2e.\n  --baseline-summary <path>                Previous summary.json to compare staged metrics against.\n  --max-baseline-regression-ratio <n>      Fail if compared numeric metrics regress by more than this ratio.\n  --run                                    Launch SSI import/parity through WP Codebox. Without this, writes transform artifacts and a replayable matrix recipe only.\n  --dry-run                                Write plan/summary without running transform or import.\n  --expected-fixture-count <n>             Defaults to 3.\n  --min-native-rate <n>                    Defaults to 1.\n  --max-transform-vector-placeholders <n>  Defaults to 0.\n  --max-transform-missing-assets <n>       Defaults to 0.\n  --max-import-findings <n>                Optional SSI finding count budget.\n  --batch-size <n>                         Defaults to 3.\n  --concurrency <n>                        Defaults to 1.\n  --wp-codebox-bin <path>                  WP Codebox binary override for the SSI matrix.\n  --no-editor-validation                   Skip editor block validation.\n  --no-visual-parity                       Skip visual compare.\n  --live-wp-parity                         Enable live WP HTML parity capture.\n\nEnvironment equivalents:\n  SSI_FIG_E2E_BLOCKS_ENGINE=/path/to/blocks-engine\n  SSI_FIG_E2E_FIXTURES=/path/Fisiostetic.fig:${path.join('<path>', 'FSE Pilot Build Theme.fig')}:/path/Twenty Twenty-Five.fig\n  SSI_FIG_E2E_RUN=1\n`);
 }

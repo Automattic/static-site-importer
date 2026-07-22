@@ -4,6 +4,7 @@
   "scripts": {
     "fig-intent-parity": "node tools/fig-intent-parity-report.mjs",
     "fig-fixture-e2e": "node tools/run-fig-fixture-e2e.mjs",
+    "fig-acceptance-provider": "node tools/fig-acceptance-provider.mjs",
     "test": "npm run test:site-plan-materializer && npm run test:fixture-matrix && npm run test:solved-site-promotion && npm run test:fig-fixture-e2e && npm run test:promote-solved-fixture && npm run test:php-wasm-zstd",
     "test:site-plan-materializer": "php tests/smoke-wordpress-site-plan-materializer.php",
     "test:fig-fixture-e2e": "node --test tools/run-fig-fixture-e2e.test.mjs",
