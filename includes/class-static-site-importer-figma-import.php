@@ -323,6 +323,9 @@ class Static_Site_Importer_Figma_Import {
 	 */
 	private static function website_artifact_from_figma_file( array $figma_file, array $input ) {
 		$name = isset( $figma_file['name'] ) ? (string) $figma_file['name'] : '';
+		if ( isset( $figma_file['staged_path'] ) ) {
+			return self::website_artifact_from_staged_figma_file( (string) $figma_file['staged_path'], $name, $input );
+		}
 
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes uploaded .fig payload content.
 		$content = isset( $figma_file['content_base64'] ) ? base64_decode( (string) $figma_file['content_base64'], true ) : false;
@@ -343,6 +346,34 @@ class Static_Site_Importer_Figma_Import {
 				wp_delete_file( $tmp );
 			}
 		}
+	}
+
+	/**
+	 * Transform a Studio-staged .fig file without copying its bytes through JSON and PHP source.
+	 *
+	 * @param string              $path  Staged file path.
+	 * @param string              $name  Original file name.
+	 * @param array<string,mixed> $input Full request input.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private static function website_artifact_from_staged_figma_file( string $path, string $name, array $input ) {
+		$staging_root = realpath( ABSPATH . '.studio-import' );
+		$resolved     = realpath( $path );
+		if ( false === $staging_root || false === $resolved ) {
+			return new WP_Error( 'static_site_importer_figma_staged_file_invalid', 'Staged Figma file could not be resolved.', array( 'status' => 400 ) );
+		}
+
+		$normalized_root = rtrim( str_replace( '\\', '/', $staging_root ), '/' ) . '/';
+		$normalized_path = str_replace( '\\', '/', $resolved );
+		if ( ! str_starts_with( $normalized_path, $normalized_root ) || is_link( $path ) || ! is_file( $resolved ) || ! is_readable( $resolved ) ) {
+			return new WP_Error( 'static_site_importer_figma_staged_file_invalid', 'Staged Figma file must be a readable regular file inside the Studio import directory.', array( 'status' => 400 ) );
+		}
+
+		if ( ! preg_match( '/\.fig$/i', $name ) || ! preg_match( '/\.fig$/i', $normalized_path ) ) {
+			return new WP_Error( 'static_site_importer_figma_file_type_invalid', 'Staged Figma files must use the .fig extension.', array( 'status' => 400 ) );
+		}
+
+		return self::website_artifact_from_figma_file_path( $resolved, $name, $input );
 	}
 
 	/**
