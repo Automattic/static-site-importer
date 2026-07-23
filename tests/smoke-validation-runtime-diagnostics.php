@@ -29,6 +29,45 @@ if ( ! function_exists( 'sanitize_title' ) ) {
 	}
 }
 
+if ( ! function_exists( 'sanitize_text_field' ) ) {
+	function sanitize_text_field( $value ) {
+		return trim( strip_tags( (string) $value ) );
+	}
+}
+
+if ( ! function_exists( 'trailingslashit' ) ) {
+	function trailingslashit( $value ) {
+		return rtrim( (string) $value, '/\\' ) . '/';
+	}
+}
+
+if ( ! function_exists( 'wp_mkdir_p' ) ) {
+	function wp_mkdir_p( $directory ) {
+		return is_dir( $directory ) || mkdir( $directory, 0777, true );
+	}
+}
+
+if ( ! function_exists( 'is_wp_error' ) ) {
+	function is_wp_error( $value ) {
+		return false;
+	}
+}
+
+if ( ! class_exists( 'Static_Site_Importer_Theme_Generator' ) ) {
+	class Static_Site_Importer_Theme_Generator {
+		public static array $last_args = array();
+
+		public static function import_website_artifact( array $artifact, array $args = array() ): array {
+			self::$last_args = $args;
+
+			return array(
+				'quality'    => array( 'pass' => true ),
+				'theme_slug' => 'validation-theme',
+			);
+		}
+	}
+}
+
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-validation-runtime.php';
 
@@ -122,7 +161,32 @@ $assert( ! isset( $result['fixture_diagnostics']['blocks_engine']['wordpress_sit
 $assert( 'completed' === ( $result['fixture_diagnostics']['materialization_receipt']['status'] ?? '' ), 'materialization-receipt-status-preserved' );
 $assert( 1 === ( $result['fixture_diagnostics']['materialization_receipt']['page_count'] ?? 0 ), 'materialization-receipt-counts-preserved' );
 
+$default_artifact_dir = $artifact_dir . '/default-materialization';
+$default_result       = Static_Site_Importer_Validation_Runtime::validate_artifact(
+	array(
+		'artifact'     => array( 'schema' => 'test/website-artifact/v1' ),
+		'artifact_dir' => $default_artifact_dir,
+		'slug'         => 'default-materialization',
+	)
+);
+$assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['materialize_dependencies'] ?? null ), 'validation-defaults-dependency-materialization-on' );
+$assert( true === ( $default_result['request']['import_args']['materialize_dependencies'] ?? null ), 'validation-result-records-default-dependency-materialization' );
+
+$override_artifact_dir = $artifact_dir . '/disabled-materialization';
+$override_result       = Static_Site_Importer_Validation_Runtime::validate_artifact(
+	array(
+		'artifact'                 => array( 'schema' => 'test/website-artifact/v1' ),
+		'artifact_dir'             => $override_artifact_dir,
+		'slug'                     => 'disabled-materialization',
+		'materialize_dependencies' => false,
+	)
+);
+$assert( false === ( Static_Site_Importer_Theme_Generator::$last_args['materialize_dependencies'] ?? null ), 'validation-honors-disabled-dependency-materialization' );
+$assert( false === ( $override_result['request']['import_args']['materialize_dependencies'] ?? null ), 'validation-result-records-disabled-dependency-materialization' );
+
 unlink( $report_path );
+rmdir( $default_artifact_dir );
+rmdir( $override_artifact_dir );
 rmdir( $artifact_dir );
 
 if ( $failures ) {

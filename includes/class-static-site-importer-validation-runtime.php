@@ -44,6 +44,7 @@ class Static_Site_Importer_Validation_Runtime {
 			'name'                      => isset( $input['name'] ) ? sanitize_text_field( (string) $input['name'] ) : $slug,
 			'activate'                  => array_key_exists( 'activate', $input ) ? (bool) $input['activate'] : true,
 			'overwrite'                 => array_key_exists( 'overwrite', $input ) ? (bool) $input['overwrite'] : true,
+			'materialize_dependencies'  => array_key_exists( 'materialize_dependencies', $input ) ? (bool) $input['materialize_dependencies'] : true,
 			'fail_on_quality'           => ! empty( $input['fail_on_quality'] ),
 			'allow_missing_woocommerce' => ! empty( $input['allow_missing_woocommerce'] ),
 			'allow_missing_jetpack'     => ! empty( $input['allow_missing_jetpack'] ),
