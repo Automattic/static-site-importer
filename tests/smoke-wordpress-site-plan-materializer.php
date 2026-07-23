@@ -235,6 +235,27 @@ $dynamic_plan = ( new ArtifactCompiler() )->compile( $dynamic_artifact )->toArra
 $dynamic_completed = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $dynamic_plan, array( 'slug' => 'dynamic-plan' ) );
 $assert( 'completed' === $dynamic_completed['status'], 'declared static local scripts are proven and materialize' );
 
+$GLOBALS['ssi_plan_posts'] = array();
+$GLOBALS['ssi_plan_meta']  = array();
+$nested_index_artifact = array(
+	'entrypoint' => 'website/index.html',
+	'files'      => array(
+		'website/index.html'            => '<main><h1>Home</h1></main>',
+		'website/about/index.html'      => '<main><h1>About</h1></main>',
+		'website/about/team/index.html' => '<main><h1>Team</h1></main>',
+	),
+);
+$nested_index_plan    = ( new ArtifactCompiler() )->compile( $nested_index_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$nested_index_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $nested_index_plan, array( 'slug' => 'nested-index-plan' ) );
+$nested_index_ids     = $nested_index_receipt['completed']['pages'] ?? array();
+$home_id              = (int) ( $nested_index_ids['website/index.html'] ?? 0 );
+$about_id             = (int) ( $nested_index_ids['website/about/index.html'] ?? 0 );
+$team_id              = (int) ( $nested_index_ids['website/about/team/index.html'] ?? 0 );
+$assert( 'completed' === $nested_index_receipt['status'] && 3 === count( array_unique( array( $home_id, $about_id, $team_id ) ) ), 'wrapper-root nested index pages materialize as distinct WordPress posts' );
+$assert( 'index' === ( $GLOBALS['ssi_plan_posts'][ $home_id ]['post_name'] ?? null ) && 0 === ( $GLOBALS['ssi_plan_posts'][ $home_id ]['post_parent'] ?? null ), 'wrapper entrypoint preserves its root page identity' );
+$assert( 'about' === ( $GLOBALS['ssi_plan_posts'][ $about_id ]['post_name'] ?? null ) && 0 === ( $GLOBALS['ssi_plan_posts'][ $about_id ]['post_parent'] ?? null ), 'nested index page slug matches its top-level canonical route' );
+$assert( 'team' === ( $GLOBALS['ssi_plan_posts'][ $team_id ]['post_name'] ?? null ) && $about_id === ( $GLOBALS['ssi_plan_posts'][ $team_id ]['post_parent'] ?? null ), 'deeper nested index page preserves canonical slug and WordPress parent identity' );
+
 $GLOBALS['ssi_plan_posts']      = array();
 $GLOBALS['ssi_plan_meta']       = array();
 $GLOBALS['ssi_plan_fail_after'] = 1;
