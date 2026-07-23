@@ -71,11 +71,13 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-fi
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-exporter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-block-document-reporter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-generator.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-commerce-presentation.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/abilities.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/block.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/rest.php';
 
 Static_Site_Importer_Figma_Import::register_default_zstd_decoder();
+Static_Site_Importer_Commerce_Presentation::register();
 
 add_action( 'init', 'static_site_importer_register_block' );
 add_action( 'rest_api_init', 'static_site_importer_register_rest_routes' );
