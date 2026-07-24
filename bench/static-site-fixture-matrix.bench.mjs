@@ -104,6 +104,9 @@ export default async function runFixtureMatrixBench(context = {}) {
       fixture_root: summary.fixture_root,
       output_directory: summary.output_directory,
       result_summary: summary.result_summary,
+      execution_requested: summary.metadata.execution_requested,
+      execution_status: summary.metadata.execution_status,
+      execution_evidence: summary.metadata.execution_evidence,
       runtime: summary.runtime,
       // Surface failing batches at the top level (also nested in runtime) so a
       // gate-FAIL run stays attributable without re-reading the runtime block.
@@ -303,6 +306,9 @@ export async function runFixtureMatrix(options) {
     replay,
     artifact_refs: written.artifact_refs,
     metadata: {
+      execution_requested: Boolean(options.run),
+      execution_status: collectedResult.summary.execution_status,
+      execution_evidence: executionEvidenceMetadata(options.run),
       performance,
       artifact_bytes: artifactBytes,
       source_staging: written.metadata?.source_staging,
@@ -325,6 +331,26 @@ export async function runFixtureMatrix(options) {
   writeJsonArtifact(path.join(outputDirectory, 'cli-run.json'), summary);
   progress.emit('matrix', runtimeError ? 'failed' : 'completed');
   return { summary, runtimeError, runtime };
+}
+
+function executionEvidenceMetadata(executionRequested) {
+  if (executionRequested) {
+    return {
+      status: 'requested',
+      blind_spots: [],
+    };
+  }
+
+  return {
+    status: 'plan_only',
+    gate_reason: 'execution_not_requested',
+    blind_spots: [
+      'transformer_execution',
+      'wordpress_materialization',
+      'editor_validation',
+      'visual_parity',
+    ],
+  };
 }
 
 // Provision and reconcile a single batch in its own WP Codebox sandbox. Pure with

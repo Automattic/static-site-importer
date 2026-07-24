@@ -47,7 +47,8 @@
       "static_site_importer_fixture_matrix_namespace"
     ],
     "result_gates": {
-      "failed_fixture_count": { "lte": 0 }
+      "failed_fixture_count": { "lte": 0 },
+      "not_run_fixture_count": { "lte": 0 }
     }
   },
   "bench_workloads": {
