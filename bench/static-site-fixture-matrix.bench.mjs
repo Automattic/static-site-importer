@@ -651,6 +651,28 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
     artifacts[`visual_compare_${artifactKey(fixtureId)}_${fileStem}`] = { path: persistedPath };
   }
 
+  const comparisonRefPaths = new Set(arrayValue(fixture.visual_parity_comparisons).flatMap((comparison) => Object.values(
+    comparison?.visual_parity_artifacts?.artifacts || comparison?.visualParityArtifacts?.artifacts || {},
+  ).map((slot) => slot?.ref?.path).filter(Boolean)));
+  for (const diagnostic of arrayValue(fixture.diagnostics)) {
+    for (const ref of arrayValue(diagnostic?.artifact_refs)) {
+      if (ref?.kind !== 'visual-parity' || !ref.path || rewrites.has(ref.path) || comparisonRefPaths.has(ref.path)) {
+        continue;
+      }
+      const sourcePath = resolveCodeboxArtifactPath(ref.path, codeboxArtifactsDirectory);
+      if (!sourcePath || !fs.existsSync(sourcePath)) {
+        continue;
+      }
+      const comparisonName = path.basename(path.dirname(ref.path));
+      const fileName = path.basename(ref.path);
+      const persistedPath = path.join(outputDirectory, 'visual-compare', comparisonName, fileName);
+      fs.mkdirSync(path.dirname(persistedPath), { recursive: true });
+      fs.copyFileSync(sourcePath, persistedPath);
+      rewrites.set(ref.path, persistedPath);
+      artifacts[`visual_compare_${artifactKey(comparisonName)}_${artifactKey(fileName)}`] = { path: persistedPath };
+    }
+  }
+
   if (rewrites.size === 0) {
     return fixture;
   }
@@ -1584,7 +1606,7 @@ Options:
   --wordpress-version <version>      WP Codebox WordPress version. Defaults to latest.
   --batch-size <n>                   Fixtures per WP Codebox run when --run is used. Defaults to 10.
   --concurrency <n>                  Batches (WP Codebox sandboxes) to run in parallel. Defaults to ${DEFAULT_BATCH_CONCURRENCY}, hard-capped at ${MAX_BATCH_CONCURRENCY}.
-  --surface-coverage <n>             Opt into bounded secondary page browser evidence per fixture. Hard-capped at 5 extra surfaces.
+  --surface-coverage <n>             Opt into bounded secondary page browser evidence per fixture. Hard-capped at 10 extra surfaces.
   --no-editor-validation            Skip browser editor block validation.
   --no-visual-parity                Skip wordpress.visual-compare recipe steps. Same as SSI_FIXTURE_MATRIX_VISUAL_PARITY=0.
   --visual-parity-block-external-requests <bool>
