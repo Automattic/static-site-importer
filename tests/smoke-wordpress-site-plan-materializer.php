@@ -107,6 +107,19 @@ $assert( count( $plan['pages'] ) === count( $unbound_provenance ) && count( $pla
 $assert( 'blocks-engine/wordpress-site-plan-resolver' === ( $unbound_provenance[0]['stages'][0]['stage'] ?? '' ) && hash( 'sha256', $receipt['plan']['pages'][0]['resolved_block_markup'] ) === ( $unbound_provenance[0]['stages'][0]['output']['sha256'] ?? '' ), 'ordinary page provenance records the resolver output hash' );
 $assert( false === ( $receipt['completed']['block_provenance_truncated'] ?? true ) && ! str_contains( (string) wp_json_encode( $unbound_provenance ), (string) $receipt['plan']['pages'][0]['resolved_block_markup'] ), 'provenance uses structural evidence without raw page markup' );
 
+$nested_route_result = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'website/index.html',
+		'files'      => array(
+			'website/api/index.html'       => '<main><h1>API</h1></main>',
+			'website/lifecycle/index.html' => '<main><h1>Lifecycle</h1></main>',
+			'website/index.html'           => '<main><h1>Home</h1></main>',
+		),
+	)
+)->toArray();
+$nested_routes = array_column( $nested_route_result['source_reports']['wordpress_site_plan']['routes'], 'target_path', 'source_path' );
+$assert( 3 === count( $nested_routes ) && '/' === ( $nested_routes['website/index.html'] ?? '' ) && '/api' === ( $nested_routes['website/api/index.html'] ?? '' ) && '/lifecycle' === ( $nested_routes['website/lifecycle/index.html'] ?? '' ), 'nested index documents retain distinct routes when the declared root entrypoint is ordered last' );
+
 $product_grid_artifact = array(
 	'entrypoint' => 'index.html',
 	'files'      => array(
@@ -124,7 +137,7 @@ $bridged_lifecycle = ( new ReflectionMethod( Static_Site_Importer_Theme_Generato
 $assert( 'runtime_declarations' === ( $bridged_lifecycle['status'] ?? '' ) && true === ( reset( $bridged_lifecycle['entities'] )['required'] ?? false ), 'bridged product entities enter the required canonical seeding lifecycle' );
 
 $entity_artifact = $artifact;
-$entity_search = '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button">Add</a></div><!-- /wp:button --></div><!-- /wp:buttons -->';
+$entity_search = '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button {"tagName":"button","text":"Add"} --><div class="wp-block-button"><button type="button" class="wp-block-button__link wp-element-button">Add</button></div><!-- /wp:button --></div><!-- /wp:buttons -->';
 $entity_artifact['files']['index.html'] = '<main><h1>Home</h1><div class="wp-block-buttons"><button>Add</button></div></main>';
 $entity_artifact['runtime_declarations'] = array(
 	array( 'kind' => 'dependency', 'capability' => 'shop', 'source_path' => 'index.html', 'required_for' => array( 'entity_collection:products' ) ),
