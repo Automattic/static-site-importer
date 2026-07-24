@@ -66,6 +66,20 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 		}
 
 		static_site_importer_register_ability_once(
+			'static-site-importer/get-runtime-package-manifest',
+			array(
+				'label'               => __( 'Get Runtime Package Manifest', 'static-site-importer' ),
+				'description'         => __( 'Return the capability-scoped runtime package profiles shipped with Static Site Importer.', 'static-site-importer' ),
+				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
+				'input_schema'        => array( 'type' => 'object' ),
+				'output_schema'       => array( 'type' => 'object' ),
+				'execute_callback'    => 'static_site_importer_ability_get_runtime_package_manifest',
+				'permission_callback' => 'static_site_importer_ability_read_runtime_manifest_permission_callback',
+				'meta'                => array( 'show_in_rest' => true ),
+			)
+		);
+
+		static_site_importer_register_ability_once(
 			'static-site-importer/export-theme',
 			array(
 				'label'               => __( 'Export Website Artifact', 'static-site-importer' ),
@@ -268,6 +282,58 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 				'permission_callback' => 'static_site_importer_ability_permission_callback',
 				'meta'                => array( 'show_in_rest' => true ),
 			)
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_ability_read_runtime_manifest_permission_callback' ) ) {
+	/**
+	 * Filter access to the non-sensitive runtime package manifest.
+	 *
+	 * @return bool
+	 */
+	function static_site_importer_ability_read_runtime_manifest_permission_callback(): bool {
+		/**
+		 * Filters whether the current request may inspect runtime package profiles.
+		 *
+		 * @param bool $allowed Whether manifest inspection is allowed.
+		 */
+		return (bool) apply_filters( 'static_site_importer_can_read_runtime_package_manifest', true );
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_ability_get_runtime_package_manifest' ) ) {
+	/**
+	 * Return the package manifest used by archive consumers.
+	 *
+	 * @return array<string, mixed>
+	 */
+	function static_site_importer_ability_get_runtime_package_manifest(): array {
+		$path = STATIC_SITE_IMPORTER_PATH . 'runtime-package-manifest.json';
+		if ( ! is_readable( $path ) ) {
+			return array(
+				'success' => false,
+				'error'   => array(
+					'code'    => 'static_site_importer_runtime_package_manifest_missing',
+					'message' => 'The Static Site Importer runtime package manifest is unavailable.',
+				),
+			);
+		}
+
+		$manifest = json_decode( (string) file_get_contents( $path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a plugin-owned immutable contract.
+		if ( ! is_array( $manifest ) || 'static-site-importer/runtime-package-manifest/v1' !== ( $manifest['schema'] ?? null ) || ! isset( $manifest['profiles'] ) || ! is_array( $manifest['profiles'] ) ) {
+			return array(
+				'success' => false,
+				'error'   => array(
+					'code'    => 'static_site_importer_runtime_package_manifest_invalid',
+					'message' => 'The Static Site Importer runtime package manifest is invalid.',
+				),
+			);
+		}
+
+		return array(
+			'success'  => true,
+			'manifest' => $manifest,
 		);
 	}
 }
