@@ -686,6 +686,12 @@ test('fixture-matrix rig preflight is declarative and checks hydrated prerequisi
   assert.deepEqual(preflightFailures(path.join(packageRoot, 'missing-hydration')), requiredFiles);
 });
 
+test('fixture-matrix rig requires executed fixtures before transformer evidence can pass', () => {
+  const rig = JSON.parse(readFileSync(path.join(packageRoot, 'rigs', 'static-site-importer-fixture-matrix', 'rig.json'), 'utf8'));
+
+  assert.deepEqual(rig.bench.result_gates.not_run_fixture_count, { lte: 0 });
+});
+
 test('fixture-matrix WP Codebox batch runner uses Homeboy declared binary', () => {
   assert.equal(wpCodeboxBin({
     HOMEBOY_WP_CODEBOX_BIN: '/runner/wp-codebox-current',
@@ -4064,6 +4070,12 @@ test('runFixtureMatrixBench returns a partial result with survivors aggregated w
     assert.equal(benchResult.metrics.passed_fixture_count, 3);
     assert.equal(benchResult.metrics.failed_fixture_count, 1);
     assert.equal(benchResult.metrics.not_run_fixture_count, 0);
+    assert.equal(benchResult.metadata.execution_requested, true);
+    assert.equal(benchResult.metadata.execution_status, 'requested');
+    assert.deepEqual(benchResult.metadata.execution_evidence, {
+      status: 'requested',
+      blind_spots: [],
+    });
 
     // The result-gate (failed_fixture_count <= 0) will fail on this, while the
     // partial result is still emitted and the failing batch stays attributable.
@@ -4130,6 +4142,18 @@ test('runFixtureMatrixBench reads workload args from context.args when imported'
     assert.equal(benchResult.metrics.fixture_count, 1);
     assert.equal(benchResult.metadata.fixture_root, path.resolve(contextFixtureRoot));
     assert.equal(benchResult.metadata.output_directory, path.resolve(outputDirectory));
+    assert.equal(benchResult.metadata.execution_requested, false);
+    assert.equal(benchResult.metadata.execution_status, 'not_requested');
+    assert.deepEqual(benchResult.metadata.execution_evidence, {
+      status: 'plan_only',
+      gate_reason: 'execution_not_requested',
+      blind_spots: [
+        'transformer_execution',
+        'wordpress_materialization',
+        'editor_validation',
+        'visual_parity',
+      ],
+    });
     const matrix = JSON.parse(readFileSync(benchResult.artifacts.matrix.path, 'utf8'));
     assert.deepEqual(matrix.fixtures.map((fixture) => fixture.id), ['context-fixture']);
     assert.equal(existsSync(path.join(argvOutputDirectory, 'matrix.json')), false);
