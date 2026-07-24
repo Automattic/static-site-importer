@@ -40,6 +40,11 @@ const steps = [
     args: [ path.join( repoRoot, 'tests/smoke-entity-materializer-registry.php' ) ],
   },
   {
+    name: 'Provider presentation smoke',
+    command: 'php',
+    args: [ path.join( repoRoot, 'tests/smoke-provider-presentation.php' ) ],
+  },
+  {
     name: 'Visual repair CSS smoke',
     command: 'php',
     args: [ path.join( repoRoot, 'tests/smoke-visual-repair-css.php' ) ],
