@@ -350,15 +350,16 @@ namespace {
 	$assert( 'skipped' === ( $empty_seed['status'] ?? '' ), 'no-findings-skipped' );
 	$assert( 'no_product_findings' === ( $empty_seed['reason'] ?? '' ), 'no-findings-reason' );
 
-	// --- product_grid_finding_indexes detects both `kind` and `diagnostic_code`
+	// --- product_grid_finding_indexes detects plan and fallback discriminator fields
 	$indexes = Static_Site_Importer_Report_Diagnostics::product_grid_finding_indexes(
 		array(
 			array( 'diagnostic_code' => 'html_form_fallback' ),
 			array( 'kind' => 'html_product_grid_fallback' ),
 			array( 'diagnostic_code' => 'html_product_grid_fallback' ),
+			array( 'code' => 'html_product_grid_fallback' ),
 		)
 	);
-	$assert( array( 1, 2 ) === $indexes, 'finding-indexes-detect-kind-and-code' );
+	$assert( array( 1, 2, 3 ) === $indexes, 'finding-indexes-detect-plan-and-fallback-codes' );
 
 	if ( empty( $failures ) ) {
 		echo 'PASS smoke-product-materializer.php (' . $assertions . " assertions)\n";

@@ -16,6 +16,10 @@ Static Site Importer's product handoff uses four machine-readable envelopes. The
 - Codebox owns optional WordPress validation and artifact references.
 - Product callers consume these outputs directly; they should not depend on legacy SSI wrapper history.
 
+## Commerce Findings
+
+When the canonical plan contains a Blocks Engine `html_product_grid_fallback`, SSI converts only its extracted product rows into a required `shop` dependency and `products` entity collection before the v2 lifecycle runs. Those declarations use the existing WooCommerce simple-product adapter and seeder. The finding does not itself provide canonical replacement-block anchors, so SSI does not infer cart-control bindings from selectors; provider bindings require explicit source anchors in the entity declaration.
+
 ## Boundary
 
 Blocks Engine stays out of Codebox details. If a caller wants Codebox validation, it asks Codebox after SSI materializes WordPress and passes SSI output or runtime references through the Codebox-owned envelope.

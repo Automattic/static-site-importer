@@ -19,6 +19,10 @@ if ( ! class_exists( 'Static_Site_Importer_Block_Document_Reporter' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-block-document-reporter.php';
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Report_Diagnostics' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-report-diagnostics.php';
+}
+
 /**
  * Generates a block theme from a static HTML document.
  */
@@ -95,6 +99,7 @@ class Static_Site_Importer_Theme_Generator {
 			$diagnostics = isset( $compiled['source_reports']['wordpress_site_plan_diagnostics'] ) && is_array( $compiled['source_reports']['wordpress_site_plan_diagnostics'] ) ? wp_json_encode( $compiled['source_reports']['wordpress_site_plan_diagnostics'] ) : '';
 			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.' . ( false !== $diagnostics ? ' ' . $diagnostics : '' ), $compiled );
 		}
+		$plan = self::bridge_product_grid_findings_to_runtime_declarations( $plan );
 		if ( ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) ) {
 			return new WP_Error( 'static_site_importer_quality_gate_failed', 'Website artifact did not pass the canonical plan quality gate.', array( 'quality' => $plan['quality'] ?? array(), 'diagnostics' => $plan['diagnostics'] ?? array() ) );
 		}
@@ -154,6 +159,56 @@ class Static_Site_Importer_Theme_Generator {
 			$receipt['errors'][] = array( 'code' => 'static_site_importer_projection_write_failed', 'message' => $error->getMessage() );
 			return new WP_Error( 'static_site_importer_projection_write_failed', 'Website materialization completed partially because a public projection could not be written.', $receipt );
 		}
+	}
+
+	/**
+	 * Declare detected Blocks Engine product grids for the canonical v2 lifecycle.
+	 *
+	 * Product-grid findings carry product data but no canonical block replacement
+	 * anchors, so this bridge seeds only the explicit commerce entities. Provider
+	 * bindings remain limited to declarations that include their own exact anchors.
+	 *
+	 * @param array<string,mixed> $plan Compiled WordPress site plan.
+	 * @return array<string,mixed>
+	 */
+	private static function bridge_product_grid_findings_to_runtime_declarations( array $plan ): array {
+		$diagnostics = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
+		$products    = Static_Site_Importer_Report_Diagnostics::product_grid_manifest_products( $diagnostics );
+		if ( empty( $products ) ) {
+			return $plan;
+		}
+
+		$adapter    = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
+		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest_generic( $adapter, array( 'schema_version' => 1, 'products' => $products ) );
+		if ( ! empty( $validation['errors'] ) || empty( $validation['products'] ) ) {
+			return $plan;
+		}
+
+		$declarations = isset( $plan['runtime_declarations'] ) && is_array( $plan['runtime_declarations'] ) ? $plan['runtime_declarations'] : array();
+		foreach ( $declarations as $declaration ) {
+			if ( is_array( $declaration ) && 'entity_collection' === ( $declaration['kind'] ?? null ) && 'products' === ( $declaration['type'] ?? null ) ) {
+				return $plan;
+			}
+		}
+
+		$source_path = (string) ( $plan['source']['entry_path'] ?? '' );
+		$identity    = hash( 'sha256', "static-site-importer/product-grid-bridge/v1\n" . wp_json_encode( $validation['products'] ) );
+		$declarations[] = array(
+			'kind'                    => 'dependency',
+			'capability'              => 'shop',
+			'source_path'             => $source_path,
+			'required_for'            => array( 'entity_collection:products' ),
+			'reconciliation_identity' => hash( 'sha256', $identity . "\ndependency" ),
+		);
+		$declarations[] = array(
+			'kind'                    => 'entity_collection',
+			'type'                    => 'products',
+			'source_path'             => $source_path,
+			'payload'                 => array( 'schema' => 'generic/products/v1', 'entities' => $validation['products'] ),
+			'reconciliation_identity' => hash( 'sha256', $identity . "\nentities" ),
+		);
+		$plan['runtime_declarations'] = $declarations;
+		return $plan;
 	}
 
 	/**

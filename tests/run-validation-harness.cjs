@@ -65,6 +65,11 @@ const steps = [
     args: [ path.join( repoRoot, 'tests/smoke-product-handoff-contract.php' ) ],
   },
   {
+    name: 'Woo product finding materialization smoke',
+    command: 'php',
+    args: [ path.join( repoRoot, 'tests/smoke-product-materializer.php' ) ],
+  },
+  {
     name: 'Website artifact document metadata smoke',
     command: wpCli[ 0 ],
     args: [

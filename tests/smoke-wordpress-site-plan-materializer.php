@@ -107,6 +107,22 @@ $assert( count( $plan['pages'] ) === count( $unbound_provenance ) && count( $pla
 $assert( 'blocks-engine/wordpress-site-plan-resolver' === ( $unbound_provenance[0]['stages'][0]['stage'] ?? '' ) && hash( 'sha256', $receipt['plan']['pages'][0]['resolved_block_markup'] ) === ( $unbound_provenance[0]['stages'][0]['output']['sha256'] ?? '' ), 'ordinary page provenance records the resolver output hash' );
 $assert( false === ( $receipt['completed']['block_provenance_truncated'] ?? true ) && ! str_contains( (string) wp_json_encode( $unbound_provenance ), (string) $receipt['plan']['pages'][0]['resolved_block_markup'] ), 'provenance uses structural evidence without raw page markup' );
 
+$product_grid_artifact = array(
+	'entrypoint' => 'index.html',
+	'files'      => array(
+		'index.html' => '<main><ul class="products"><li><article class="product-card"><h3>Tour Tee</h3><p>Heavy cotton shirt.</p><div class="price">$30</div><button class="add-to-cart">Add to cart</button></article></li><li><article class="product-card"><h3>Signed CD</h3><p>Hand-signed disc.</p><div class="price">$15</div><button class="add-to-cart">Add to cart</button></article></li></ul></main>',
+	),
+);
+$product_grid_plan = ( new ArtifactCompiler() )->compile( $product_grid_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$bridge_product_grid = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'bridge_product_grid_findings_to_runtime_declarations' );
+$bridged_product_grid_plan = $bridge_product_grid->invoke( null, $product_grid_plan );
+$bridged_declarations = $bridged_product_grid_plan['runtime_declarations'] ?? array();
+$assert( 2 === count( $bridged_declarations ) && 'shop' === ( $bridged_declarations[0]['capability'] ?? '' ) && 'products' === ( $bridged_declarations[1]['type'] ?? '' ), 'active Blocks Engine product-grid findings bridge into explicit v2 commerce declarations' );
+$assert( true === in_array( 'entity_collection:products', $bridged_declarations[0]['required_for'] ?? array(), true ), 'bridged product entities retain the required commerce dependency relationship' );
+$assert( array( 'tour-tee', 'signed-cd' ) === array_column( $bridged_declarations[1]['payload']['entities'] ?? array(), 'slug' ), 'bridge preserves product-grid evidence as normalized Woo entity rows' );
+$bridged_lifecycle = ( new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'prepare_wordpress_site_plan_lifecycle' ) )->invoke( null, $bridged_product_grid_plan, array() );
+$assert( 'runtime_declarations' === ( $bridged_lifecycle['status'] ?? '' ) && true === ( reset( $bridged_lifecycle['entities'] )['required'] ?? false ), 'bridged product entities enter the required canonical seeding lifecycle' );
+
 $entity_artifact = $artifact;
 $entity_search = '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button">Add</a></div><!-- /wp:button --></div><!-- /wp:buttons -->';
 $entity_artifact['files']['index.html'] = '<main><h1>Home</h1><div class="wp-block-buttons"><button>Add</button></div></main>';

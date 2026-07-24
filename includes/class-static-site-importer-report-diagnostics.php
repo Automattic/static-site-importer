@@ -2166,7 +2166,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				continue;
 			}
 
-			$code = (string) ( $diagnostic['diagnostic_code'] ?? '' );
+			$code = (string) ( $diagnostic['diagnostic_code'] ?? $diagnostic['code'] ?? '' );
 			if ( '' === $code ) {
 				$code = (string) ( $diagnostic['kind'] ?? '' );
 			}
@@ -2177,6 +2177,39 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		return $indexes;
+	}
+
+	/**
+	 * Normalize active product-grid findings into the Woo manifest row contract.
+	 *
+	 * This is intentionally limited to the Blocks Engine product-grid discriminator.
+	 * Callers own how the rows are declared or materialized; this helper owns only
+	 * the source-finding to validated-product data bridge.
+	 *
+	 * @param array<int,mixed> $diagnostics Plan or report diagnostics.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function product_grid_manifest_products( array $diagnostics ): array {
+		$products = array();
+		foreach ( self::product_grid_finding_indexes( $diagnostics ) as $index ) {
+			$finding = $diagnostics[ $index ] ?? array();
+			if ( ! is_array( $finding ) ) {
+				continue;
+			}
+			$container = isset( $finding['container_selector'] ) && is_scalar( $finding['container_selector'] )
+				? (string) $finding['container_selector']
+				: ( isset( $finding['selector'] ) && is_scalar( $finding['selector'] ) ? (string) $finding['selector'] : '' );
+			foreach ( is_array( $finding['products'] ?? null ) ? $finding['products'] : array() as $product ) {
+				if ( ! is_array( $product ) ) {
+					continue;
+				}
+				$row = self::product_finding_manifest_row( $product, $container );
+				if ( null !== $row ) {
+					$products[] = $row;
+				}
+			}
+		}
+		return $products;
 	}
 
 	/**
