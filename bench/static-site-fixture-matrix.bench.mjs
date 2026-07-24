@@ -117,6 +117,7 @@ function numericMetricMap(values, prefix) {
 }
 
 function writeJsonArtifact(filePath, payload) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, jsonArtifactText(payload));
 }
 
@@ -610,6 +611,9 @@ export function materializeVisualCompareArtifacts(input = {}) {
 
 function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, codeboxArtifactsDirectory, artifacts, visualAttributionNormalizer, visualAttributionLoader, homeboyExtensionPath }) {
   const visualParityArtifacts = fixture.visual_parity_artifacts || fixture.visualParityArtifacts;
+  if (!visualParityArtifacts) {
+    return fixture;
+  }
   const slots = visualParityArtifacts?.artifacts || {};
   const fixtureId = fixture.fixture_id || fixture.fixtureId || '';
   if (!fixtureId) {
@@ -622,6 +626,7 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
   }
 
   const rewrites = new Map();
+  const unavailableArtifactPaths = new Set();
   const updatedSlots = { ...slots };
   for (const slot of [
     ['source_screenshot', 'source', ['source_screenshot']],
@@ -636,6 +641,17 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
     const refPath = slots[slotName]?.ref?.path || visualDiagnosticRefPath(fixture.diagnostics, artifactIds);
     const sourcePath = resolveCodeboxArtifactPath(refPath, codeboxArtifactsDirectory);
     if (!sourcePath || !fs.existsSync(sourcePath)) {
+      if (refPath) {
+        unavailableArtifactPaths.add(refPath);
+        updatedSlots[slotName] = {
+          ...slots[slotName],
+          status: 'pending',
+          kind: slotName,
+          capture_state: 'artifact_not_persisted',
+          reason: 'artifact_not_persisted',
+          ref: undefined,
+        };
+      }
       continue;
     }
     const persistedPath = path.join(outputDirectory, 'visual-compare', fixtureId, fileStem.includes('.') ? fileStem : `${fileStem}.png`);
@@ -671,10 +687,6 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
       rewrites.set(ref.path, persistedPath);
       artifacts[`visual_compare_${artifactKey(comparisonName)}_${artifactKey(fileName)}`] = { path: persistedPath };
     }
-  }
-
-  if (rewrites.size === 0) {
-    return fixture;
   }
 
   const updatedVisualParityArtifacts = {
@@ -716,12 +728,14 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
     };
     artifacts[`visual_compare_${artifactKey(fixtureId)}_visual-attribution`] = { path: visualAttribution.path };
     updatedVisualParityArtifacts.visual_attribution_summary = summarizeVisualAttribution(visualAttribution.attribution, visualAttribution.path);
+  } else if (updatedSlots.visual_diff?.reason === 'artifact_not_persisted') {
+    updatedVisualParityArtifacts.visual_attribution_summary = unavailableVisualAttributionSummary();
   }
 
   const materialized = {
     ...fixture,
-    diagnostics: rewriteDiagnosticArtifactRefs(fixture.diagnostics, rewrites),
-    artifact_refs: rewriteArtifactRefs(fixture.artifact_refs, rewrites),
+    diagnostics: rewriteDiagnosticArtifactRefs(fixture.diagnostics, rewrites, unavailableArtifactPaths),
+    artifact_refs: rewriteArtifactRefs(fixture.artifact_refs, rewrites, unavailableArtifactPaths),
     visual_parity_artifacts: classification ? {
       ...updatedVisualParityArtifacts,
       visual_diff_regions: classification.visual_diff_regions,
@@ -816,7 +830,7 @@ function rewriteVisualEvidencePaths(value, rewrites) {
 
 function materializeVisualAttribution({ fixture, fixtureId, outputDirectory, slots, normalizer, loader, homeboyExtensionPath }) {
   const visualDiffPath = slots.visual_diff?.ref?.path;
-  if (!visualDiffPath) {
+  if (!visualDiffPath || !fs.existsSync(visualDiffPath)) {
     return null;
   }
   const refs = {
@@ -847,6 +861,15 @@ function materializeVisualAttribution({ fixture, fixtureId, outputDirectory, slo
   const persistedPath = path.join(outputDirectory, 'visual-compare', fixtureId, 'visual-attribution.json');
   writeJsonArtifact(persistedPath, attribution);
   return { path: persistedPath, attribution };
+}
+
+function unavailableVisualAttributionSummary() {
+  return {
+    schema: 'static-site-importer/visual-attribution-unavailable/v1',
+    status: 'unavailable',
+    reason: 'primary_visual_diff_not_persisted',
+    limitations: ['Primary visual diff was not retained, so visual attribution was not materialized.'],
+  };
 }
 
 function summarizeVisualAttribution(attribution, attributionPath) {
@@ -1018,15 +1041,17 @@ function safeReadDirectory(directory) {
   }
 }
 
-function rewriteDiagnosticArtifactRefs(diagnostics, rewrites) {
+function rewriteDiagnosticArtifactRefs(diagnostics, rewrites, unavailablePaths = new Set()) {
   return Array.isArray(diagnostics)
-    ? diagnostics.map((diagnostic) => ({ ...diagnostic, artifact_refs: rewriteArtifactRefs(diagnostic.artifact_refs, rewrites) }))
+    ? diagnostics.map((diagnostic) => ({ ...diagnostic, artifact_refs: rewriteArtifactRefs(diagnostic.artifact_refs, rewrites, unavailablePaths) }))
     : diagnostics;
 }
 
-function rewriteArtifactRefs(refs, rewrites) {
+function rewriteArtifactRefs(refs, rewrites, unavailablePaths = new Set()) {
   return Array.isArray(refs)
-    ? refs.map((ref) => rewrites.has(ref?.path) ? { ...ref, path: rewrites.get(ref.path) } : ref)
+    ? refs
+      .filter((ref) => !unavailablePaths.has(ref?.path))
+      .map((ref) => rewrites.has(ref?.path) ? { ...ref, path: rewrites.get(ref.path) } : ref)
     : refs;
 }
 
