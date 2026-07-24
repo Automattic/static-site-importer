@@ -11,6 +11,7 @@ use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanRe
 final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	public const RECEIPT_SCHEMA = 'static-site-importer/materialization-receipt/v1';
 	private const RECONCILIATION_META_KEY = '_static_site_importer_reconciliation_identity';
+	private const BLOCK_PROVENANCE_LIMIT = 50;
 
 	/**
 	 * Materialize a fully canonical v2 plan. Compilation and plan validation belong to Blocks Engine.
@@ -487,12 +488,21 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$plan = $state['plan'];
 		$resolved_plan = $state['resolved'] ?? $plan;
 		$materialized_pages = array();
+		$block_provenance = array();
+		$block_provenance_count = 0;
 		$written_sources = array_fill_keys( array_filter( array_column( $state['applied']['posts'] ?? array(), 'source_path' ), 'is_string' ), true );
 		foreach ( $resolved_plan['pages'] as &$page ) {
-			if ( isset( $page['materialized_block_markup'] ) ) {
-				if ( isset( $written_sources[ $page['source_path'] ] ) ) {
+			if ( isset( $written_sources[ $page['source_path'] ] ) ) {
+				$materialized_markup = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' );
+				++$block_provenance_count;
+				if ( count( $block_provenance ) < self::BLOCK_PROVENANCE_LIMIT ) {
+					$block_provenance[] = self::block_provenance( $page, $materialized_markup );
+				}
+				if ( isset( $page['materialized_block_markup'] ) ) {
 					$materialized_pages[ $page['source_path'] ] = array( 'block_markup' => $page['materialized_block_markup'], 'content_hash' => hash( 'sha256', $page['materialized_block_markup'] ) );
 				}
+			}
+			if ( isset( $page['materialized_block_markup'] ) ) {
 				unset( $page['materialized_block_markup'] );
 			}
 		}
@@ -516,6 +526,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'operations' => $state['applied']['operations'],
 				'runtime_declarations' => $state['applied']['runtime_declarations'] ?? array( 'asset_publications' => array() ),
 				'materialized_pages' => $materialized_pages,
+				'block_provenance' => $block_provenance,
+				'block_provenance_count' => $block_provenance_count,
+				'block_provenance_truncated' => $block_provenance_count > count( $block_provenance ),
 				'declaration_ids' => array_keys( $state['applied']['runtime_declarations']['asset_publications'] ?? array() ),
 			),
 			'reconciliation_identities' => array_merge( array_column( $plan['pages'] ?? array(), 'reconciliation_identity' ), array_column( $plan['writes'] ?? array(), 'reconciliation_identity' ), array_column( $plan['runtime_declarations'] ?? array(), 'reconciliation_identity' ) ),
@@ -526,6 +539,46 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'existing_matches'          => $state['existing_matches'],
 			'diagnostics'               => $state['diagnostics'],
 			'errors'                    => $errors,
+		);
+	}
+
+	/**
+	 * Record bounded stage evidence for one WordPress page without retaining markup.
+	 *
+	 * @param array<string,mixed> $page              Resolved compiler page.
+	 * @param string              $materialized_markup WordPress post-content markup.
+	 * @return array<string,mixed>
+	 */
+	private static function block_provenance( array $page, string $materialized_markup ): array {
+		$resolved_markup = (string) ( $page['resolved_block_markup'] ?? '' );
+		$resolved_evidence = self::bounded_block_markup_evidence( $resolved_markup );
+		$stages = array(
+			array( 'stage' => 'blocks-engine/wordpress-site-plan-resolver', 'output' => $resolved_evidence ),
+		);
+		if ( $resolved_markup !== $materialized_markup ) {
+			$stages[] = array(
+				'stage' => 'static-site-importer/runtime-entity-bindings',
+				'input_sha256' => $resolved_evidence['sha256'],
+				'output' => self::bounded_block_markup_evidence( $materialized_markup ),
+			);
+		}
+
+		return array(
+			// This mirrors the page meta provenance written during materialization.
+			'source' => array(
+				'schema' => 'static-site-importer/page-provenance/v1',
+				'source_path' => (string) ( $page['source_path'] ?? '' ),
+				'reconciliation_identity' => (string) ( $page['reconciliation_identity'] ?? '' ),
+			),
+			'stages' => $stages,
+		);
+	}
+
+	/** @return array{sha256:string,bytes:int} */
+	private static function bounded_block_markup_evidence( string $markup ): array {
+		return array(
+			'sha256'  => hash( 'sha256', $markup ),
+			'bytes'   => strlen( $markup ),
 		);
 	}
 

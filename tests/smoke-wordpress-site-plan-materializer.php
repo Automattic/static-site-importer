@@ -68,6 +68,7 @@ require dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-s
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
 
 $assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
@@ -101,6 +102,10 @@ $assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-pla
 $assert( 'posts' === $GLOBALS['ssi_plan_options']['show_on_front'], 'plan-only materialization does not change reading settings by default' );
 $assert( $receipt['plan']['pages'][0]['document_metadata']['links'][0]['resolved_url'] === 'https://example.test/wp-content/themes/site-plan/assets/assets/site.css', 'resolved metadata retains the declared stylesheet destination' );
 $assert( array() === $receipt['completed']['runtime_declarations']['asset_publications'], 'plans without publication declarations retain an explicit empty receipt collection' );
+$unbound_provenance = $receipt['completed']['block_provenance'] ?? array();
+$assert( count( $plan['pages'] ) === count( $unbound_provenance ) && count( $plan['pages'] ) === ( $receipt['completed']['block_provenance_count'] ?? 0 ), 'ordinary resolved pages receive receipt provenance without runtime bindings' );
+$assert( 'blocks-engine/wordpress-site-plan-resolver' === ( $unbound_provenance[0]['stages'][0]['stage'] ?? '' ) && hash( 'sha256', $receipt['plan']['pages'][0]['resolved_block_markup'] ) === ( $unbound_provenance[0]['stages'][0]['output']['sha256'] ?? '' ), 'ordinary page provenance records the resolver output hash' );
+$assert( false === ( $receipt['completed']['block_provenance_truncated'] ?? true ) && ! str_contains( (string) wp_json_encode( $unbound_provenance ), (string) $receipt['plan']['pages'][0]['resolved_block_markup'] ), 'provenance uses structural evidence without raw page markup' );
 
 $entity_artifact = $artifact;
 $entity_search = '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button">Add</a></div><!-- /wp:button --></div><!-- /wp:buttons -->';
@@ -131,6 +136,11 @@ $binding_replacement = '<!-- wp:shortcode -->[add_to_cart id="42"]<!-- /wp:short
 $binding_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $binding_plan, array( 'slug' => 'binding-plan', 'runtime_entity_bindings' => array( array( 'schema' => 'static-site-importer/runtime-entity-binding/v1', 'source_path' => 'index.html', 'search_block_markup' => $binding_search, 'replacement_block_markup' => $binding_replacement, 'occurrence' => 1, 'role' => 'commerce_controls', 'declaration_id' => $entity_declaration_id, 'reconciliation_identity' => hash( 'sha256', 'binding-test' ), 'superseded_runtime_selectors' => array( '.add-to-cart' ) ) ) ) );
 $assert( str_contains( $binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '', '[add_to_cart id="42"]' ) && ! isset( $binding_receipt['plan']['pages'][0]['materialized_block_markup'] ), 'runtime binding is receipt-owned without mutating the canonical resolved plan' );
 $assert( hash( 'sha256', $binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ) === ( $binding_receipt['completed']['materialized_pages']['index.html']['content_hash'] ?? '' ), 'materialized page receipt owns the final provider-bound content hash' );
+$binding_provenance = $binding_receipt['completed']['block_provenance'][0] ?? array();
+$assert( 'static-site-importer/page-provenance/v1' === ( $binding_provenance['source']['schema'] ?? '' ) && 'index.html' === ( $binding_provenance['source']['source_path'] ?? '' ) && ! isset( $binding_provenance['source']['compiler_node_id'] ), 'receipt uses existing sanitized page provenance without fabricating compiler identities' );
+$assert( 'blocks-engine/wordpress-site-plan-resolver' === ( $binding_provenance['stages'][0]['stage'] ?? '' ) && hash( 'sha256', $binding_receipt['plan']['pages'][0]['resolved_block_markup'] ) === ( $binding_provenance['stages'][0]['output']['sha256'] ?? '' ), 'receipt records the resolver output before runtime binding' );
+$assert( 'static-site-importer/runtime-entity-bindings' === ( $binding_provenance['stages'][1]['stage'] ?? '' ) && ( $binding_provenance['stages'][0]['output']['sha256'] ?? '' ) === ( $binding_provenance['stages'][1]['input_sha256'] ?? '' ) && hash( 'sha256', $binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ) === ( $binding_provenance['stages'][1]['output']['sha256'] ?? '' ), 'receipt distinguishes the runtime-binding output from resolver output' );
+$assert( ! str_contains( (string) wp_json_encode( $binding_provenance ), '[add_to_cart id="42"]' ), 'runtime-bound provenance does not leak provider markup' );
 $binding_post_id = (int) ( $binding_receipt['completed']['pages']['index.html'] ?? 0 );
 $assert( str_contains( $GLOBALS['ssi_plan_posts'][ $binding_post_id ]['post_content'] ?? '', '[add_to_cart id=\"42\"]' ), 'page write uses provider-bound markup rather than the static fallback' );
 $assert( 'completed' === ( reset( $binding_receipt['completed']['runtime_declarations']['entity_bindings'] )['status'] ?? '' ), 'receipt proves canonical runtime entity binding completion' );
@@ -234,6 +244,42 @@ $dynamic_artifact['files']['assets/site.js'] = 'window.sitePlan = true;';
 $dynamic_plan = ( new ArtifactCompiler() )->compile( $dynamic_artifact )->toArray()['source_reports']['wordpress_site_plan'];
 $dynamic_completed = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $dynamic_plan, array( 'slug' => 'dynamic-plan' ) );
 $assert( 'completed' === $dynamic_completed['status'], 'declared static local scripts are proven and materialize' );
+
+$many_files = array( 'index.html' => '<main><h1>Index</h1></main>' );
+for ( $index = 1; $index <= 50; ++$index ) {
+	$many_files[ 'page-' . $index . '.html' ] = '<main><h1>Page ' . $index . '</h1></main>';
+}
+$many_plan = ( new ArtifactCompiler() )->compile( array( 'entrypoint' => 'index.html', 'files' => $many_files ) )->toArray()['source_reports']['wordpress_site_plan'];
+$many_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $many_plan, array( 'slug' => 'many-pages-plan' ) );
+$assert( 51 === ( $many_receipt['completed']['block_provenance_count'] ?? 0 ) && 50 === count( $many_receipt['completed']['block_provenance'] ?? array() ) && true === ( $many_receipt['completed']['block_provenance_truncated'] ?? false ), 'receipt enforces the provenance cap before downstream projection' );
+
+$provider_receipt_diagnostics = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'materialization_receipt' => array(
+			'schema'    => 'static-site-importer/materialization-receipt/v1',
+			'status'    => 'completed',
+			'plan_hash' => 'provider-plan-hash',
+			'completed' => array(
+				'block_provenance_count' => 1,
+				'block_provenance'       => array(
+					array(
+						'source'   => array( 'schema' => 'static-site-importer/page-provenance/v1', 'source_path' => 'index.html', 'reconciliation_identity' => 'page-index', 'raw_source_html' => '<main>provider source markup</main>', 'unknown_source_key' => 'provider payload' ),
+						'stages'   => array(
+							array( 'stage' => 'blocks-engine/wordpress-site-plan-resolver', 'output' => array( 'sha256' => 'resolved-hash', 'bytes' => 18, 'preview' => '<p>provider preview</p>' ), 'provider_html' => '<p>provider HTML</p>' ),
+							array( 'stage' => 'static-site-importer/runtime-entity-bindings', 'input_sha256' => 'resolved-hash', 'output' => array( 'sha256' => 'bound-hash', 'bytes' => 21, 'count' => 1, 'raw_markup' => '<p>bound markup</p>' ), 'unknown_stage_key' => 'provider value' ),
+							array( 'stage' => 'provider-extra-stage', 'output' => array( 'sha256' => 'must-not-survive' ) ),
+						),
+						'unknown_row_key' => array( 'provider' => 'payload' ),
+					),
+				),
+			),
+		),
+	)
+);
+$projected_provider_provenance = $provider_receipt_diagnostics['materialization_receipt']['block_provenance'] ?? array();
+$projected_provider_json        = (string) wp_json_encode( $projected_provider_provenance );
+$assert( array( array( 'source' => array( 'schema' => 'static-site-importer/page-provenance/v1', 'source_path' => 'index.html', 'reconciliation_identity' => 'page-index' ), 'stages' => array( array( 'stage' => 'blocks-engine/wordpress-site-plan-resolver', 'output' => array( 'sha256' => 'resolved-hash', 'bytes' => 18 ) ), array( 'stage' => 'static-site-importer/runtime-entity-bindings', 'input_sha256' => 'resolved-hash', 'output' => array( 'sha256' => 'bound-hash', 'bytes' => 21, 'count' => 1 ) ) ) ) ) === $projected_provider_provenance, 'fixture diagnostics project only bounded provenance identity and stage metadata' );
+$assert( ! str_contains( $projected_provider_json, 'provider source markup' ) && ! str_contains( $projected_provider_json, 'provider HTML' ) && ! str_contains( $projected_provider_json, 'provider preview' ) && ! str_contains( $projected_provider_json, 'unknown_source_key' ) && ! str_contains( $projected_provider_json, 'unknown_row_key' ) && ! str_contains( $projected_provider_json, 'unknown_stage_key' ) && ! str_contains( $projected_provider_json, 'provider-extra-stage' ), 'fixture diagnostics reject provider markup, previews, nested payloads, and unknown provenance keys' );
 
 $GLOBALS['ssi_plan_posts'] = array();
 $GLOBALS['ssi_plan_meta']  = array();
