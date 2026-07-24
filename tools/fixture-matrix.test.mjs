@@ -607,7 +607,7 @@ test('fixture capability manifests drive per-fixture plugin provisioning without
   // Each capability provider gets a best-effort install followed by a fail-closed
   // readiness assertion (wordpress.run-php) before the import runs.
   assert.deepEqual(fixtureSteps('shop-site').map((step) => step.command), ['wordpress.plugin-setup', 'wordpress.run-php', 'wordpress.wp-cli', 'wordpress.wp-cli']);
-  assert.deepEqual(fixtureSteps('shop-forms-site').map((step) => step.command), ['wordpress.plugin-setup', 'wordpress.plugin-setup', 'wordpress.run-php', 'wordpress.run-php', 'wordpress.wp-cli', 'wordpress.wp-cli']);
+  assert.deepEqual(fixtureSteps('shop-forms-site').map((step) => step.command), ['wordpress.plugin-setup', 'wordpress.plugin-setup', 'wordpress.run-php', 'wordpress.run-php', 'wordpress.run-php', 'wordpress.wp-cli', 'wordpress.wp-cli']);
   assert.deepEqual(fixtureSteps('shop-site')[0].args, ['action=install', 'plugin=woocommerce', 'activate=true']);
   assert.deepEqual(fixtureSteps('shop-forms-site')[0].args, ['action=install', 'plugin=woocommerce', 'activate=true']);
   assert.deepEqual(fixtureSteps('shop-forms-site')[1].args, ['action=install', 'plugin=jetpack', 'activate=true']);
