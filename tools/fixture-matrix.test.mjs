@@ -127,13 +127,23 @@ test('matrix evidence consumes the bounded fixture diagnostic contract', () => {
         file_count: 2,
         operation_count: 3,
         declaration_count: 4,
+        block_provenance_count: 1,
+        block_provenance: [{ source: { schema: 'static-site-importer/page-provenance/v1', source_path: 'contact.html', reconciliation_identity: 'page-id' }, stages: [{ stage: 'blocks-engine/wordpress-site-plan-resolver', output: { sha256: 'resolved-hash', bytes: 18 } }, { stage: 'static-site-importer/runtime-entity-bindings', input_sha256: 'resolved-hash', output: { sha256: 'bound-hash', bytes: 21 } }] }],
       },
     },
   });
   assert.equal(evidence.readiness, 'verified');
   assert.equal(evidence.transformer.package_reference, reference);
   assert.equal(evidence.wordpress_site_plan.asset_count, 1);
-  assert.deepEqual(evidence.materialization_receipt, { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed', plan_hash: 'plan-hash', page_count: 1, file_count: 2, operation_count: 3, declaration_count: 4 });
+  assert.equal(evidence.materialization_receipt.schema, 'static-site-importer/materialization-receipt/v1');
+  assert.equal(evidence.materialization_receipt.status, 'completed');
+  assert.equal(evidence.materialization_receipt.plan_hash, 'plan-hash');
+  assert.deepEqual(evidence.materialization_receipt.block_provenance, [{
+    source: { schema: 'static-site-importer/page-provenance/v1', source_path: 'contact.html', reconciliation_identity: 'page-id' },
+    stages: [{ stage: 'blocks-engine/wordpress-site-plan-resolver', output: { sha256: 'resolved-hash', bytes: 18 } }, { stage: 'static-site-importer/runtime-entity-bindings', input_sha256: 'resolved-hash', output: { sha256: 'bound-hash', bytes: 21 } }],
+  }]);
+  assert.equal(evidence.materialization_receipt.block_provenance_count, 1);
+  assert.equal(JSON.stringify(evidence.materialization_receipt.block_provenance).includes('preview'), false);
 });
 
 test('block composition uses nested runtime quality metrics and diagnostic fallback counts', () => {

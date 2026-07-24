@@ -19,6 +19,8 @@ if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
 class Static_Site_Importer_Diagnostic_Contract {
 
 	public const IMPORT_DIAGNOSTICS_SCHEMA = 'static-site-importer/import-diagnostics/v1';
+	private const BLOCK_PROVENANCE_LIMIT = 50;
+	private const BLOCK_PROVENANCE_STAGE_LIMIT = 2;
 
 	/**
 	 * Build an importer-owned diagnostics envelope from a validation/import result.
@@ -325,7 +327,98 @@ class Static_Site_Importer_Diagnostic_Contract {
 			'file_count'        => isset( $completed['files'] ) && is_array( $completed['files'] ) ? count( $completed['files'] ) : 0,
 			'operation_count'   => isset( $completed['operations'] ) && is_array( $completed['operations'] ) ? count( $completed['operations'] ) : 0,
 			'declaration_count' => isset( $completed['declaration_ids'] ) && is_array( $completed['declaration_ids'] ) ? count( $completed['declaration_ids'] ) : 0,
+			'block_provenance'  => self::block_provenance_summary( isset( $completed['block_provenance'] ) && is_array( $completed['block_provenance'] ) ? $completed['block_provenance'] : array() ),
+			'block_provenance_count' => isset( $completed['block_provenance_count'] ) ? (int) $completed['block_provenance_count'] : 0,
+			'block_provenance_truncated' => ! empty( $completed['block_provenance_truncated'] ),
 		);
+	}
+
+	/**
+	 * Project provider-supplied provenance to immutable attribution metadata.
+	 *
+	 * @param array<int|string,mixed> $provenance Provider receipt provenance.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function block_provenance_summary( array $provenance ): array {
+		$summary = array();
+		foreach ( array_slice( array_values( $provenance ), 0, self::BLOCK_PROVENANCE_LIMIT ) as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$source = isset( $row['source'] ) && is_array( $row['source'] ) ? $row['source'] : array();
+			$entry  = array(
+				'source' => self::provenance_source_summary( $source ),
+				'stages' => self::provenance_stage_summary( isset( $row['stages'] ) && is_array( $row['stages'] ) ? $row['stages'] : array() ),
+			);
+			if ( ! empty( $entry['source'] ) || ! empty( $entry['stages'] ) ) {
+				$summary[] = $entry;
+			}
+		}
+
+		return $summary;
+	}
+
+	/** @param array<string,mixed> $source @return array<string,string> */
+	private static function provenance_source_summary( array $source ): array {
+		$summary = array();
+		foreach ( array( 'schema', 'source_path', 'reconciliation_identity' ) as $field ) {
+			$value = isset( $source[ $field ] ) ? self::bounded_provenance_string( $source[ $field ], 1024 ) : '';
+			if ( '' !== $value ) {
+				$summary[ $field ] = $value;
+			}
+		}
+
+		return $summary;
+	}
+
+	/** @param array<int|string,mixed> $stages @return array<int,array<string,mixed>> */
+	private static function provenance_stage_summary( array $stages ): array {
+		$summary = array();
+		foreach ( array_slice( array_values( $stages ), 0, self::BLOCK_PROVENANCE_STAGE_LIMIT ) as $stage ) {
+			if ( ! is_array( $stage ) ) {
+				continue;
+			}
+
+			$entry = array();
+			$name = isset( $stage['stage'] ) ? self::bounded_provenance_string( $stage['stage'], 1024 ) : '';
+			if ( '' !== $name ) {
+				$entry['stage'] = $name;
+			}
+			foreach ( array( 'input_sha256', 'input_bytes', 'input_count' ) as $field ) {
+				if ( isset( $stage[ $field ] ) && is_scalar( $stage[ $field ] ) ) {
+					$value = 'input_sha256' === $field ? self::bounded_provenance_string( $stage[ $field ], 128 ) : (int) $stage[ $field ];
+					if ( '' !== $value ) {
+						$entry[ $field ] = $value;
+					}
+				}
+			}
+			$output = isset( $stage['output'] ) && is_array( $stage['output'] ) ? $stage['output'] : array();
+			foreach ( array( 'sha256', 'bytes', 'count' ) as $field ) {
+				if ( isset( $output[ $field ] ) && is_scalar( $output[ $field ] ) ) {
+					$value = 'sha256' === $field ? self::bounded_provenance_string( $output[ $field ], 128 ) : (int) $output[ $field ];
+					if ( '' !== $value ) {
+						$entry['output'][ $field ] = $value;
+					}
+				}
+			}
+			if ( ! empty( $entry ) ) {
+				$summary[] = $entry;
+			}
+		}
+
+		return $summary;
+	}
+
+	/** @param mixed $value */
+	private static function bounded_provenance_string( $value, int $limit ): string {
+		if ( ! is_scalar( $value ) ) {
+			return '';
+		}
+
+		$value = substr( (string) $value, 0, $limit );
+
+		return str_contains( $value, '<' ) || str_contains( $value, '>' ) ? '' : $value;
 	}
 
 	/**
