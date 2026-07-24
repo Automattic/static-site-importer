@@ -24,74 +24,39 @@ if ( ! defined( 'ABSPATH' ) ) {
  * scoped to the inline add-to-cart control so no other WooCommerce surface is
  * affected, and the CSS is only emitted when WooCommerce actually renders on
  * the page.
+ *
+ * The generic delivery pipeline — hooking, admin/active guards, stylesheet
+ * handle resolution, and inline enqueue — lives in the provider presentation
+ * base; this subclass supplies only the WooCommerce-specific active check,
+ * preferred handles, and CSS.
  */
-class Static_Site_Importer_Commerce_Presentation {
+class Static_Site_Importer_Commerce_Presentation extends Static_Site_Importer_Provider_Presentation {
 
 	/**
-	 * Register the frontend presentation hooks.
-	 *
-	 * @return void
+	 * @inheritDoc
 	 */
-	public static function register(): void {
-		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'enqueue_add_to_cart_normalization' ), 20 );
+	protected static function provider_slug(): string {
+		return 'commerce';
 	}
 
 	/**
-	 * Whether the WooCommerce add-to-cart inline control can render in this
-	 * runtime. Only then is the normalization CSS meaningful.
+	 * The WooCommerce add-to-cart inline control can render when its shortcode is
+	 * registered or WooCommerce is loaded. Only then is the reset meaningful.
 	 *
 	 * @return bool
 	 */
-	private static function woocommerce_add_to_cart_available(): bool {
+	protected static function is_active(): bool {
 		return shortcode_exists( 'add_to_cart' ) || class_exists( 'WooCommerce' );
 	}
 
 	/**
-	 * Attach the normalization CSS to a registered frontend stylesheet handle so
-	 * it loads in document order after WooCommerce's own styles.
+	 * WooCommerce stylesheet handles, in cascade-preference order, so the reset
+	 * follows Woo's own styles.
 	 *
-	 * @return void
+	 * @return array<int, string>
 	 */
-	public static function enqueue_add_to_cart_normalization(): void {
-		if ( is_admin() || ! self::woocommerce_add_to_cart_available() ) {
-			return;
-		}
-
-		$handle = self::inline_style_handle();
-		if ( '' === $handle ) {
-			return;
-		}
-
-		wp_add_inline_style( $handle, self::add_to_cart_normalization_css() );
-	}
-
-	/**
-	 * Resolve a registered, enqueued frontend stylesheet handle to attach the
-	 * inline CSS to. Prefers a WooCommerce handle so the reset follows Woo's own
-	 * styles in the cascade, then falls back to the active theme stylesheet.
-	 *
-	 * @return string
-	 */
-	private static function inline_style_handle(): string {
-		foreach ( array( 'wc-blocks-style', 'woocommerce-general', 'woocommerce-layout', 'woocommerce-inline' ) as $handle ) {
-			if ( wp_style_is( $handle, 'enqueued' ) || wp_style_is( $handle, 'registered' ) ) {
-				return $handle;
-			}
-		}
-
-		if ( wp_style_is( 'wc-blocks-style', 'registered' ) ) {
-			return 'wc-blocks-style';
-		}
-
-		// Register a lightweight own handle so the reset still ships when no
-		// WooCommerce stylesheet is enqueued (blocks-only stores).
-		$own = 'static-site-importer-commerce';
-		if ( ! wp_style_is( $own, 'registered' ) ) {
-			wp_register_style( $own, false, array(), '0.1.0' );
-		}
-		wp_enqueue_style( $own );
-
-		return $own;
+	protected static function preferred_style_handles(): array {
+		return array( 'wc-blocks-style', 'woocommerce-general', 'woocommerce-layout', 'woocommerce-inline' );
 	}
 
 	/**
@@ -99,7 +64,7 @@ class Static_Site_Importer_Commerce_Presentation {
 	 *
 	 * @return string
 	 */
-	private static function add_to_cart_normalization_css(): string {
+	protected static function css(): string {
 		return implode(
 			'',
 			array(

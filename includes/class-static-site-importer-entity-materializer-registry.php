@@ -490,6 +490,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'materializer'    => array( 'Static_Site_Importer_Woo_Product_Seeder', 'seed' ),
 				'binding_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_block_markup' ),
 				'report_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'new_report' ),
+				'presentation'    => 'Static_Site_Importer_Commerce_Presentation',
 				'dependencies'    => array(
 					array(
 						'type'                  => 'wp_org_plugin',
@@ -532,6 +533,32 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		/** @var mixed $filtered */
 		$filtered = function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_entity_materializers', $adapters ) : $adapters;
 		return is_array( $filtered ) ? $filtered : $adapters;
+	}
+
+	/**
+	 * Register the frontend presentation for every adapter that declares one.
+	 *
+	 * Each adapter may name a `Static_Site_Importer_Provider_Presentation`
+	 * subclass under its `presentation` key. This keeps a provider fully described
+	 * in one place — materialization, binding, reporting, and presentation — and
+	 * lets the plugin bootstrap register all of them without hardcoding each.
+	 *
+	 * @return void
+	 */
+	public static function register_presentations(): void {
+		$registered = array();
+		foreach ( self::adapters() as $adapter ) {
+			$presentation = isset( $adapter['presentation'] ) ? (string) $adapter['presentation'] : '';
+			if ( '' === $presentation || isset( $registered[ $presentation ] ) ) {
+				continue;
+			}
+			if ( ! class_exists( $presentation ) || ! is_subclass_of( $presentation, 'Static_Site_Importer_Provider_Presentation' ) ) {
+				continue;
+			}
+
+			$registered[ $presentation ] = true;
+			call_user_func( array( $presentation, 'register' ) );
+		}
 	}
 
 	/**
