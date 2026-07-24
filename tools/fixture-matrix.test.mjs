@@ -5925,6 +5925,62 @@ test('visual-compare attribution degrades explicitly when sidecars or the extens
   assert.equal(persisted.result.fixtures[0].visual_parity_artifacts.visual_attribution_summary.limitations_count, 3);
 });
 
+test('visual-compare materialization preserves evidence when the primary visual diff was not retained', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-missing-diff-output-'));
+  const codeboxArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-missing-diff-codebox-'));
+  const secondaryDirectory = path.join(codeboxArtifactsDirectory, 'runtime-123', 'files', 'browser', 'visual-compare', 'simple-site--contact');
+  mkdirSync(secondaryDirectory, { recursive: true });
+  writeFileSync(path.join(secondaryDirectory, 'candidate.png'), 'secondary candidate');
+
+  const persisted = materializeVisualCompareArtifacts({
+    outputDirectory,
+    codeboxArtifactsDirectory,
+    result: {
+      fixtures: [{
+        fixture_id: 'simple-site',
+        diagnostics: [{
+          kind: VISUAL_PARITY_MISMATCH_KIND,
+          artifact_refs: [
+            {
+              schema: 'homeboy/artifact-ref/v1',
+              artifact_id: 'candidate_screenshot',
+              kind: 'visual-parity',
+              path: 'files/browser/visual-compare/simple-site--contact/candidate.png',
+            },
+            {
+              schema: 'homeboy/artifact-ref/v1',
+              artifact_id: 'visual_diff',
+              kind: 'visual-parity',
+              path: 'files/browser/visual-compare/simple-site/visual-diff.json',
+            },
+          ],
+        }],
+        visual_parity_artifacts: {
+          artifacts: {
+            visual_diff: { status: 'captured', ref: { path: 'files/browser/visual-compare/simple-site/visual-diff.json' } },
+          },
+        },
+      }],
+    },
+  });
+  const fixture = persisted.result.fixtures[0];
+
+  assert.ok(existsSync(fixture.diagnostics[0].artifact_refs[0].path));
+  assert.equal(fixture.diagnostics[0].artifact_refs.length, 1, 'unpersisted artifact refs are omitted');
+  assert.equal(fixture.visual_parity_artifacts.artifacts.visual_diff.status, 'pending');
+  assert.equal(fixture.visual_parity_artifacts.artifacts.visual_diff.capture_state, 'artifact_not_persisted');
+  assert.equal(fixture.visual_parity_artifacts.artifacts.visual_diff.reason, 'artifact_not_persisted');
+  assert.equal(fixture.visual_parity_artifacts.artifacts.visual_diff.ref, undefined);
+  assert.equal(fixture.visual_parity_artifacts.artifacts.visual_attribution, undefined);
+  assert.equal(persisted.artifacts['visual_compare_simple-site_visual-attribution'], undefined);
+  assert.deepEqual(fixture.visual_parity_artifacts.visual_attribution_summary, {
+    schema: 'static-site-importer/visual-attribution-unavailable/v1',
+    status: 'unavailable',
+    reason: 'primary_visual_diff_not_persisted',
+    limitations: ['Primary visual diff was not retained, so visual attribution was not materialized.'],
+  });
+});
+
 test('visual attribution normalizer resolves WordPress provider manifests before legacy extension paths', () => {
   const directModuleRoot = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-direct-'));
   const directModulePath = path.join(directModuleRoot, 'lib', 'wordpress-visual-attribution.js');
