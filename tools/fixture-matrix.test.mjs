@@ -4380,7 +4380,7 @@ test('editorBlockValidationStep emits editor-validate-blocks against real import
     fixture: { id: 'shop' },
     surface: { post_slug: 'contact', post_type: 'page' },
   });
-  assert.deepEqual(byPostSlug.args, ['post-slug=contact', 'post-type=page']);
+  assert.deepEqual(byPostSlug.args, ['post-type=page', 'post-slug=contact']);
   assert.equal(byPostSlug.metadata.post_slug, 'contact');
 
   // Wait passthrough stays available.

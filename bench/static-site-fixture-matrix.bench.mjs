@@ -651,9 +651,12 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
     artifacts[`visual_compare_${artifactKey(fixtureId)}_${fileStem}`] = { path: persistedPath };
   }
 
+  const comparisonRefPaths = new Set(arrayValue(fixture.visual_parity_comparisons).flatMap((comparison) => Object.values(
+    comparison?.visual_parity_artifacts?.artifacts || comparison?.visualParityArtifacts?.artifacts || {},
+  ).map((slot) => slot?.ref?.path).filter(Boolean)));
   for (const diagnostic of arrayValue(fixture.diagnostics)) {
     for (const ref of arrayValue(diagnostic?.artifact_refs)) {
-      if (ref?.kind !== 'visual-parity' || !ref.path || rewrites.has(ref.path)) {
+      if (ref?.kind !== 'visual-parity' || !ref.path || rewrites.has(ref.path) || comparisonRefPaths.has(ref.path)) {
         continue;
       }
       const sourcePath = resolveCodeboxArtifactPath(ref.path, codeboxArtifactsDirectory);
