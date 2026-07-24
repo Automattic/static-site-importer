@@ -4215,13 +4215,16 @@ test('fixture matrix browser surfaces default to front page and opt into bounded
   writeFileSync(path.join(fixtureDirectory, 'about.html'), '<main>About flat</main>');
   writeFileSync(path.join(fixtureDirectory, 'about', 'index.html'), '<main>About nested</main>');
   writeFileSync(path.join(fixtureDirectory, 'contact.html'), '<main><form><input name="email"></form></main>');
+  writeFileSync(path.join(fixtureDirectory, 'faculty.html'), '<main>Faculty</main>');
   writeFileSync(path.join(fixtureDirectory, 'merch', 'index.html'), '<main><button>Add to cart</button></main>');
+  writeFileSync(path.join(fixtureDirectory, 'news.html'), '<main>News</main>');
+  writeFileSync(path.join(fixtureDirectory, 'programs.html'), '<main>Programs</main>');
 
   const discoveredMatrix = createFixtureMatrix({ fixture_root: root, id: 'surface-recipe-test' });
   const matrix = { ...discoveredMatrix, fixtures: discoveredMatrix.fixtures.filter((fixture) => fixture.id === 'artist'), count: 1 };
   assert.deepEqual(selectFixtureSurfaces(matrix.fixtures[0]).map((surface) => surface.id), ['front-page']);
   assert.deepEqual(selectFixtureSurfaces(matrix.fixtures[0], { surfaceCoverage: { maxExtraSurfaces: 1 } }).map((surface) => surface.id), ['front-page', 'about']);
-  assert.deepEqual(selectFixtureSurfaces(matrix.fixtures[0], { surfaceCoverage: 99 }).map((surface) => surface.id), ['front-page', 'about', 'about--2', 'contact', 'merch']);
+  assert.deepEqual(selectFixtureSurfaces(matrix.fixtures[0], { surfaceCoverage: 7 }).map((surface) => surface.id), ['front-page', 'about', 'about--2', 'contact', 'faculty', 'merch', 'news', 'programs']);
   assert.equal(normalizeSurfaceCoverageOptions({ surfaceCoverage: 99 }).extraSurfaceCount, MAX_EXTRA_SURFACE_COUNT);
 
   const defaultRecipe = buildFixtureMatrixRecipe({
@@ -4372,6 +4375,13 @@ test('editorBlockValidationStep emits editor-validate-blocks against real import
   // An imported post id is preferred over a URL.
   const byPostId = editorBlockValidationStep({ fixture: { id: 'shop', post_id: 99 } });
   assert.ok(byPostId.args.includes('post-id=99'));
+
+  const byPostSlug = editorBlockValidationStep({
+    fixture: { id: 'shop' },
+    surface: { post_slug: 'contact', post_type: 'page' },
+  });
+  assert.deepEqual(byPostSlug.args, ['post-slug=contact', 'post-type=page']);
+  assert.equal(byPostSlug.metadata.post_slug, 'contact');
 
   // Wait passthrough stays available.
   const withWait = editorBlockValidationStep({
@@ -5358,6 +5368,7 @@ test('stageFixtureSource copies the raw fixture source into the served source/ s
   assert.match(stagedHtml, /animation-duration: 0\.001ms !important/);
   assert.ok(stagedHtml.includes(VISUAL_PARITY_DETERMINISTIC_CSS.trim()));
   assert.match(stagedHtml, /data-ssi-visual-parity-svg-normalization/);
+  assert.match(stagedHtml, /clone\.style\.setProperty\('color', computed\.color\)/);
   assert.match(stagedHtml, /new XMLSerializer\(\)\.serializeToString\(clone\)/);
   // The import payload (artifact.json) is still written alongside, unchanged.
   assert.ok(existsSync(path.join(outputDirectory, 'simple-site', 'artifact.json')), 'artifact.json should still be written');
@@ -5662,6 +5673,9 @@ test('visual-compare sidecars are normalized and retained under the bench artifa
       snapshot: { elementCount: 3, capturedElements: [{ path: '0.1' }], truncated: false },
     }));
   }
+  const secondaryRuntimeDirectory = path.join(codeboxArtifactsDirectory, 'runtime-123', 'files', 'browser', 'visual-compare', 'simple-site--contact');
+  mkdirSync(secondaryRuntimeDirectory, { recursive: true });
+  writeFileSync(path.join(secondaryRuntimeDirectory, 'candidate.png'), 'secondary candidate');
 
   const result = {
     fixtures: [
@@ -5675,6 +5689,12 @@ test('visual-compare sidecars are normalized and retained under the bench artifa
               { schema: 'homeboy/artifact-ref/v1', artifact_id: 'source_screenshot', kind: 'visual-parity', path: 'files/browser/visual-compare/simple-site/source.png' },
               { schema: 'homeboy/artifact-ref/v1', artifact_id: 'candidate_screenshot', kind: 'visual-parity', path: 'files/browser/visual-compare/simple-site/candidate.png' },
               { schema: 'homeboy/artifact-ref/v1', artifact_id: 'diff_screenshot', kind: 'visual-parity', path: 'files/browser/visual-compare/simple-site/diff.png' },
+            ],
+          },
+          {
+            kind: VISUAL_PARITY_MISMATCH_KIND,
+            artifact_refs: [
+              { schema: 'homeboy/artifact-ref/v1', artifact_id: 'candidate_screenshot', kind: 'visual-parity', path: 'files/browser/visual-compare/simple-site--contact/candidate.png' },
             ],
           },
         ],
@@ -5717,6 +5737,7 @@ test('visual-compare sidecars are normalized and retained under the bench artifa
   const fixture = persisted.result.fixtures[0];
 
   assert.deepEqual(Object.keys(persisted.artifacts).sort(), [
+    'visual_compare_simple-site--contact_candidate.png',
     'visual_compare_simple-site_candidate',
     'visual_compare_simple-site_candidate-dom-snapshot.json',
     'visual_compare_simple-site_diff',
@@ -5737,6 +5758,7 @@ test('visual-compare sidecars are normalized and retained under the bench artifa
   assert.equal(fixture.visual_parity_artifacts.artifacts.imported_screenshot.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'candidate.png'));
   assert.equal(fixture.visual_parity_artifacts.artifacts.diff_screenshot.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'diff.png'));
   assert.equal(fixture.diagnostics[0].artifact_refs.find((ref) => ref.artifact_id === 'diff_screenshot').path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'diff.png'));
+  assert.equal(fixture.diagnostics[1].artifact_refs[0].path, path.join(outputDirectory, 'visual-compare', 'simple-site--contact', 'candidate.png'));
   assert.equal(fixture.visual_parity_artifacts.artifacts.visual_diff.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'visual-diff.json'));
   assert.equal(fixture.visual_parity_artifacts.artifacts.source_dom_snapshot.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'source-dom-snapshot.json'));
   assert.equal(fixture.visual_parity_artifacts.artifacts.visual_attribution.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'visual-attribution.json'));
