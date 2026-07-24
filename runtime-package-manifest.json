@@ -1,0 +1,77 @@
+{
+  "schema": "static-site-importer/runtime-package-manifest/v1",
+  "package": "static-site-importer",
+  "package_root": "static-site-importer",
+  "profiles": {
+    "website-artifact-import": {
+      "description": "WordPress runtime files required to validate, compile, and materialize website artifacts as block themes.",
+      "abilities": [
+        "static-site-importer/import-website-artifact",
+        "static-site-importer/materialize-wordpress-site-plan",
+        "static-site-importer/validate-artifact",
+        "static-site-importer/get-runtime-package-manifest"
+      ],
+      "selectors": [
+        {
+          "type": "file",
+          "path": "runtime-package-manifest.json"
+        },
+        {
+          "type": "file",
+          "path": "static-site-importer.php"
+        },
+        {
+          "type": "prefix",
+          "path": "blocks/"
+        },
+        {
+          "type": "prefix",
+          "path": "includes/"
+        },
+        {
+          "type": "file",
+          "path": "vendor/autoload.php"
+        },
+        {
+          "type": "prefix",
+          "path": "vendor/composer/"
+        },
+        {
+          "type": "prefix",
+          "path": "vendor/automattic/blocks-engine-php-transformer/php-transformer/"
+        },
+        {
+          "type": "prefix",
+          "path": "vendor/dflydev/"
+        },
+        {
+          "type": "prefix",
+          "path": "vendor/league/"
+        },
+        {
+          "type": "prefix",
+          "path": "vendor/nette/"
+        },
+        {
+          "type": "prefix",
+          "path": "vendor/psr/"
+        },
+        {
+          "type": "prefix",
+          "path": "vendor/symfony/"
+        }
+      ],
+      "required_files": [
+        "runtime-package-manifest.json",
+        "static-site-importer.php",
+        "includes/abilities.php",
+        "includes/class-static-site-importer-theme-generator.php",
+        "includes/class-static-site-importer-validation-runtime.php",
+        "includes/class-static-site-importer-wordpress-site-plan-materializer.php",
+        "vendor/autoload.php",
+        "vendor/composer/autoload_real.php",
+        "vendor/automattic/blocks-engine-php-transformer/php-transformer/php-transformer.php"
+      ]
+    }
+  }
+}

@@ -11,12 +11,19 @@
 if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 }
+if ( ! defined( 'STATIC_SITE_IMPORTER_PATH' ) ) {
+	define( 'STATIC_SITE_IMPORTER_PATH', dirname( __DIR__ ) . '/' );
+}
 
 $GLOBALS['ssi_ability_categories'] = array();
 $GLOBALS['ssi_abilities']          = array();
 
 function __( string $text, string $domain = 'default' ): string {
 	return $text;
+}
+
+function apply_filters( string $hook, $value ) {
+	return $value;
 }
 
 function doing_action( string $hook ): bool {
@@ -49,6 +56,7 @@ require dirname( __DIR__ ) . '/includes/abilities.php';
 require dirname( __DIR__ ) . '/includes/abilities.php';
 
 $expected_abilities = array(
+	'static-site-importer/get-runtime-package-manifest',
 	'static-site-importer/export-theme',
 	'static-site-importer/materialize-wordpress-site-plan',
 	'static-site-importer/import-website-artifact',
@@ -64,5 +72,10 @@ foreach ( array( 'static-site-importer/import-website-artifact', 'static-site-im
 	assert( 'string' === $properties['site_title']['type'] );
 	assert( array( 'report_only', 'draft' ) === $properties['stale_page_action']['enum'] );
 }
+$manifest_result = static_site_importer_ability_get_runtime_package_manifest();
+assert( true === $manifest_result['success'] );
+assert( 'static-site-importer/runtime-package-manifest/v1' === $manifest_result['manifest']['schema'] );
+assert( isset( $manifest_result['manifest']['profiles']['website-artifact-import'] ) );
+assert( true === static_site_importer_ability_read_runtime_manifest_permission_callback() );
 
 echo "Ability registration idempotency smoke passed.\n";

@@ -6,6 +6,12 @@ Import a static site or generated website artifact into WordPress pages and a co
 
 Static Site Importer is a WordPress plugin. It requires the [Blocks Engine PHP transformer](https://github.com/Automattic/blocks-engine/tree/trunk/php-transformer) Composer package and calls that package's canonical helper functions for generic artifact compilation and format conversion.
 
+## Runtime package profiles
+
+`runtime-package-manifest.json` is the canonical package-composition contract for constrained or embedded WordPress runtimes. Consumers locate the manifest inside the normal plugin release, select a named profile, copy only matching relative paths, and fail if any declared `required_files` entry is absent. The contract is deployment-neutral: storage, archive transport, scheduling, and runtime infrastructure remain consumer concerns.
+
+The initial `website-artifact-import` profile provides the artifact import, validation, WordPress site-plan materialization, and manifest-inspection abilities. It includes SSI's WordPress/PHP runtime and the Blocks Engine PHP transformer dependency while excluding Figma, tests, tools, docs, Node dependencies, and other development-only trees. The same immutable contract is available from `static-site-importer/get-runtime-package-manifest` for runtime discovery.
+
 ## Canonical Site Plans
 
 `static-site-importer/materialize-wordpress-site-plan` is the generic plan-only boundary for a `blocks-engine/wordpress-site-plan/v2` produced by Blocks Engine 0.4.4. SSI calls the package's canonical validator and resolver, then owns WordPress/filesystem preflight, materialization, reconciliation, and the `static-site-importer/materialization-receipt/v1` response. It accepts no source HTML or transformer result envelope.
