@@ -721,6 +721,7 @@ test('builds WP Codebox recipe setup for SSI Composer dependency overrides', () 
     name: 'automattic/blocks-engine-php-transformer',
   }));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'recipe-dependency-override-test' });
+  const reference = 'a'.repeat(40);
 
   const recipe = buildFixtureMatrixRecipe({
     matrix,
@@ -730,6 +731,7 @@ test('builds WP Codebox recipe setup for SSI Composer dependency overrides', () 
       blocks_engine_php_transformer: {
         package: 'automattic/blocks-engine-php-transformer',
         path: transformerPath,
+        reference,
       },
     },
   });
@@ -739,6 +741,7 @@ test('builds WP Codebox recipe setup for SSI Composer dependency overrides', () 
     package: 'automattic/blocks-engine-php-transformer',
     consumer: 'static-site-importer',
     source: transformerPath,
+    reference,
   });
   assert.equal(recipe.inputs.mounts.length, 0);
   assert.equal(recipe.workflow.steps[0].args[0], 'command=plugin activate static-site-importer/static-site-importer.php');
@@ -761,6 +764,21 @@ test('fails recipe generation for invalid SSI dependency override paths', () => 
       },
     },
   }), /composer\.json not found/);
+
+  writeFileSync(path.join(root, 'composer.json'), JSON.stringify({
+    name: 'automattic/blocks-engine-php-transformer',
+  }));
+  assert.throws(() => buildFixtureMatrixRecipe({
+    matrix,
+    artifactsDirectory: '/tmp/artifacts',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    dependencyOverrides: {
+      blocks_engine_php_transformer: {
+        path: root,
+        reference: 'not-an-immutable-reference',
+      },
+    },
+  }), /reference must be a 40-64 character hexadecimal immutable reference/);
 });
 
 test('normalizes SSI diagnostics into product repair groups', () => {
@@ -3323,6 +3341,7 @@ test('code freshness guard lets fresh and diverged overrides through with accura
   mkdirSync(staticSiteImporter, { recursive: true });
   mkdirSync(path.join(freshFixtureRoot, 'fixture-a'), { recursive: true });
 
+  const transformerReference = 'b'.repeat(40);
   const freshPlan = buildFixtureMatrixRunPlan({
     staticSiteImporter,
     blocksEngine,
@@ -3330,7 +3349,7 @@ test('code freshness guard lets fresh and diverged overrides through with accura
     skipInstall: true,
     skipSync: true,
     gitRunner: fakeGitRunner({
-      [path.resolve(blocksEngine)]: { branch: 'trunk', upstream: 'origin/trunk', behind: 0, ahead: 2, commit: 'aheadcommit' },
+      [path.resolve(blocksEngine)]: { branch: 'trunk', upstream: 'origin/trunk', behind: 0, ahead: 2, commit: transformerReference },
       [path.resolve(staticSiteImporter)]: { branch: 'main', upstream: 'origin/main', behind: 0, ahead: 0, commit: 'freshcommit' },
     }),
   });
@@ -3338,6 +3357,8 @@ test('code freshness guard lets fresh and diverged overrides through with accura
   assert.equal(freshPlan.code_freshness.would_block, false);
   assert.deepEqual(freshPlan.code_freshness.stale_overrides, []);
   assert.equal(freshPlan.code_freshness.paths.blocks_engine_php_transformer_path.status, 'ahead');
+  assert.equal(freshPlan.dependency_overrides.blocks_engine_php_transformer.reference, transformerReference);
+  assert.ok(freshPlan.steps.at(-1).args.includes(`bench_env.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_REFERENCE=${transformerReference}`));
   assert.equal(freshPlan.warnings.some((warning) => warning.code === 'stale_override'), false);
 
   const diverged = resolvePathFreshness(
@@ -5283,6 +5304,13 @@ test('fixture matrix maps visual attribution environment settings', () => {
   assert.equal(options.maxExplanationElements, '500');
   assert.equal(options.maxExplanationCandidates, '600');
   assert.equal(options.explainSelectors, '.hero, #footer');
+});
+
+test('fixture matrix maps the portable transformer reference setting', () => {
+  const reference = 'c'.repeat(40);
+  assert.equal(optionsFromEnv({
+    SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_REFERENCE: reference,
+  }).blocksEnginePhpTransformerReference, reference);
 });
 
 test('fixture matrix maps visual parity external request isolation', () => {

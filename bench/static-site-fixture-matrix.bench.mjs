@@ -1141,6 +1141,9 @@ function prepareDependencyOverrides(options) {
         blocks_engine_php_transformer: {
           package: 'automattic/blocks-engine-php-transformer',
           path: blocksEnginePhpTransformerPath,
+          ...(options.blocksEnginePhpTransformerReference
+            ? { reference: options.blocksEnginePhpTransformerReference }
+            : {}),
         },
       }
       : {}),
@@ -1456,6 +1459,7 @@ export function optionsFromEnv(env = process.env) {
     maxComplexity: benchEnv.SSI_FIXTURE_MATRIX_MAX_COMPLEXITY || env.SSI_FIXTURE_MATRIX_MAX_COMPLEXITY,
     artifactRoot: benchEnv.SSI_FIXTURE_MATRIX_ARTIFACT_ROOT || env.SSI_FIXTURE_MATRIX_ARTIFACT_ROOT,
     blocksEnginePhpTransformerPath: benchEnv.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH || env.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH,
+    blocksEnginePhpTransformerReference: benchEnv.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_REFERENCE || env.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_REFERENCE,
     wordpressVersion: benchEnv.SSI_FIXTURE_MATRIX_WORDPRESS_VERSION || env.SSI_FIXTURE_MATRIX_WORDPRESS_VERSION,
     batchSize: benchEnv.SSI_FIXTURE_MATRIX_BATCH_SIZE || env.SSI_FIXTURE_MATRIX_BATCH_SIZE,
     concurrency: benchEnv.SSI_FIXTURE_MATRIX_CONCURRENCY || env.SSI_FIXTURE_MATRIX_CONCURRENCY,
@@ -1644,6 +1648,8 @@ Options:
   --artifact-root <path>             Generated artifact root to normalize into fixtures.
   --blocks-engine-php-transformer-path <path>
                                      Blocks Engine repo root or php-transformer package path for Composer.
+  --blocks-engine-php-transformer-reference <ref>
+                                     Immutable 40-64 character hexadecimal package source reference.
   --entrypoint <file>                Fixture entrypoint. Defaults to index.html.
   --max-depth <n>                    Fixture discovery depth. Defaults to 2.
   --surface-coverage <n>             Capture front page plus up to n secondary HTML surfaces.

@@ -91,6 +91,8 @@ async function main() {
 
 export function buildFixtureMatrixRunPlan(input) {
   const options = normalizeOptions(input);
+  const codeFreshness = buildCodeFreshness(options, options.gitRunner || defaultGitRunner);
+  const transformerReference = resolveTransformerReference(codeFreshness);
   const settings = {
     SSI_FIXTURE_MATRIX_FIXTURE_ROOT: options.fixtureRoot,
     SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PATH: options.staticSiteImporter,
@@ -100,6 +102,9 @@ export function buildFixtureMatrixRunPlan(input) {
     ...(options.requireSolvedCandidate ? { SSI_FIXTURE_MATRIX_REQUIRE_SOLVED_CANDIDATE: '1' } : {}),
     ...(options.blocksEnginePhpTransformerPath
       ? { SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH: options.blocksEnginePhpTransformerPath }
+      : {}),
+    ...(transformerReference
+      ? { SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_REFERENCE: transformerReference }
       : {}),
     ...(options.batchSize ? { SSI_FIXTURE_MATRIX_BATCH_SIZE: String(options.batchSize) } : {}),
     ...(options.concurrency ? { SSI_FIXTURE_MATRIX_CONCURRENCY: String(options.concurrency) } : {}),
@@ -143,7 +148,6 @@ export function buildFixtureMatrixRunPlan(input) {
   const fixtureCount = options.fixtureIds.length || corpusCounts.total;
   const activeFixtureCount = corpusCounts.active;
   const solvedFixtureCount = corpusCounts.solved;
-  const codeFreshness = buildCodeFreshness(options, options.gitRunner || defaultGitRunner);
   const warnings = [
     ...buildWarnings(options),
     ...buildSurfaceCoverageWarnings(options, fixtureCount),
@@ -216,7 +220,12 @@ export function buildFixtureMatrixRunPlan(input) {
     transformer_commit: resolveTransformerCommit(codeFreshness),
     warnings,
     dependency_overrides: options.blocksEnginePhpTransformerPath
-      ? { blocks_engine_php_transformer: { path: options.blocksEnginePhpTransformerPath } }
+      ? {
+        blocks_engine_php_transformer: {
+          path: options.blocksEnginePhpTransformerPath,
+          ...(transformerReference ? { reference: transformerReference } : {}),
+        },
+      }
       : {},
     steps: buildSteps(options, settings),
   };
@@ -648,6 +657,11 @@ function buildFreshnessWarnings(codeFreshness, options) {
 function resolveTransformerCommit(codeFreshness) {
   const entry = codeFreshness?.paths?.blocks_engine_php_transformer_path || codeFreshness?.paths?.blocks_engine;
   return entry?.commit || '';
+}
+
+function resolveTransformerReference(codeFreshness) {
+  const entry = codeFreshness?.paths?.blocks_engine_php_transformer_path || codeFreshness?.paths?.blocks_engine;
+  return entry?.in_git_repo && !entry.dirty && /^[a-f0-9]{40,64}$/i.test(entry.commit || '') ? entry.commit : '';
 }
 
 function freshnessGuardBanner(codeFreshness, options) {
