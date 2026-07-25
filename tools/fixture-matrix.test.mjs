@@ -3342,16 +3342,18 @@ test('code freshness guard lets fresh and diverged overrides through with accura
   mkdirSync(path.join(freshFixtureRoot, 'fixture-a'), { recursive: true });
 
   const transformerReference = 'b'.repeat(40);
+  const gitRunner = fakeGitRunner({
+    [path.resolve(blocksEngine)]: { branch: 'trunk', upstream: 'origin/trunk', behind: 0, ahead: 2, commit: transformerReference },
+    [path.resolve(staticSiteImporter)]: { branch: 'main', upstream: 'origin/main', behind: 0, ahead: 0, commit: 'freshcommit' },
+  });
   const freshPlan = buildFixtureMatrixRunPlan({
     staticSiteImporter,
     blocksEngine,
     runId: 'ssi-freshness-fresh',
     skipInstall: true,
     skipSync: true,
-    gitRunner: fakeGitRunner({
-      [path.resolve(blocksEngine)]: { branch: 'trunk', upstream: 'origin/trunk', behind: 0, ahead: 2, commit: transformerReference },
-      [path.resolve(staticSiteImporter)]: { branch: 'main', upstream: 'origin/main', behind: 0, ahead: 0, commit: 'freshcommit' },
-    }),
+    dependencyOverlayReferences: true,
+    gitRunner,
   });
 
   assert.equal(freshPlan.code_freshness.would_block, false);
@@ -3360,6 +3362,17 @@ test('code freshness guard lets fresh and diverged overrides through with accura
   assert.equal(freshPlan.dependency_overrides.blocks_engine_php_transformer.reference, transformerReference);
   assert.ok(freshPlan.steps.at(-1).args.includes(`bench_env.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_REFERENCE=${transformerReference}`));
   assert.equal(freshPlan.warnings.some((warning) => warning.code === 'stale_override'), false);
+
+  const compatiblePlan = buildFixtureMatrixRunPlan({
+    staticSiteImporter,
+    blocksEngine,
+    runId: 'ssi-freshness-compatible',
+    skipInstall: true,
+    skipSync: true,
+    gitRunner,
+  });
+  assert.equal(compatiblePlan.dependency_overrides.blocks_engine_php_transformer.reference, undefined);
+  assert.equal(compatiblePlan.steps.at(-1).args.some((arg) => arg.includes('SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_REFERENCE')), false);
 
   const diverged = resolvePathFreshness(
     'blocks_engine_php_transformer_path',
