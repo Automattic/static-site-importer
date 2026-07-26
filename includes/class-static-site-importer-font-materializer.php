@@ -239,16 +239,98 @@ final class Static_Site_Importer_Font_Materializer {
 	}
 
 	/** @param array<int,string> $families */
-	private static function svg_uses_font_family( string $svg, array $families ): bool {
+	public static function svg_uses_font_family( string $svg, array $families ): bool {
 		if ( ! preg_match( '/<text\b/i', $svg ) ) {
 			return false;
 		}
+		$expected = array();
 		foreach ( $families as $family ) {
-			if ( preg_match( '/font-family\s*[:=]\s*(["\']?)' . preg_quote( $family, '/' ) . '\1/i', $svg ) ) {
-				return true;
+			$family = self::normalize_font_family( is_scalar( $family ) ? (string) $family : '' );
+			if ( '' !== $family ) {
+				$expected[ $family ] = true;
+			}
+		}
+		if ( empty( $expected ) ) {
+			return false;
+		}
+
+		$values = array();
+		if ( preg_match_all( '/\bfont-family\s*=\s*(["\'])(.*?)\1/is', $svg, $attributes ) ) {
+			$values = array_merge( $values, $attributes[2] );
+		}
+		if ( preg_match_all( '/\bfont-family\s*=\s*(?!["\'])([^\s>]+)/i', $svg, $attributes ) ) {
+			$values = array_merge( $values, $attributes[1] );
+		}
+		if ( preg_match_all( '/\bfont-family\s*:\s*([^;}]+)/i', $svg, $declarations ) ) {
+			$values = array_merge( $values, $declarations[1] );
+		}
+
+		foreach ( $values as $value ) {
+			foreach ( self::font_family_tokens( (string) $value ) as $family ) {
+				if ( isset( $expected[ $family ] ) ) {
+					return true;
+				}
 			}
 		}
 		return false;
+	}
+
+	/** @return array<int,string> */
+	private static function font_family_tokens( string $value ): array {
+		$value = preg_replace( '/\s*!important\s*$/i', '', html_entity_decode( $value, ENT_QUOTES | ENT_HTML5 ) ) ?? $value;
+		$tokens = array();
+		$token = '';
+		$quote = '';
+		$escaped = false;
+		$length = strlen( $value );
+		for ( $index = 0; $index < $length; ++$index ) {
+			$character = $value[ $index ];
+			if ( $escaped ) {
+				$token .= $character;
+				$escaped = false;
+				continue;
+			}
+			if ( '\\' === $character ) {
+				$token .= $character;
+				$escaped = true;
+				continue;
+			}
+			if ( '' !== $quote ) {
+				$token .= $character;
+				if ( $quote === $character ) {
+					$quote = '';
+				}
+				continue;
+			}
+			if ( '"' === $character || "'" === $character ) {
+				$quote = $character;
+				$token .= $character;
+				continue;
+			}
+			if ( ',' === $character ) {
+				$family = self::normalize_font_family( $token );
+				if ( '' !== $family ) {
+					$tokens[] = $family;
+				}
+				$token = '';
+				continue;
+			}
+			$token .= $character;
+		}
+		$family = self::normalize_font_family( $token );
+		if ( '' !== $family ) {
+			$tokens[] = $family;
+		}
+		return array_values( array_unique( $tokens ) );
+	}
+
+	private static function normalize_font_family( string $family ): string {
+		$family = trim( $family );
+		if ( 2 <= strlen( $family ) && ( ( '"' === $family[0] && '"' === $family[ strlen( $family ) - 1 ] ) || ( "'" === $family[0] && "'" === $family[ strlen( $family ) - 1 ] ) ) ) {
+			$family = substr( $family, 1, -1 );
+		}
+		$family = preg_replace( '/\s+/', ' ', trim( $family ) ) ?? '';
+		return strtolower( $family );
 	}
 
 	private static function embed_svg_font_faces( string $svg, string $font_faces ): string {

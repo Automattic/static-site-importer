@@ -136,7 +136,7 @@ $font_result = ( new ArtifactCompiler() )->compile(
 	array(
 		'entrypoint' => 'index.html',
 		'files'      => array(
-			'index.html' => '<html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Example+Font:wght@400&amp;display=swap"><style>body{font-family:"Example Font",sans-serif}</style></head><body><main><svg xmlns="http://www.w3.org/2000/svg"><text font-family="Example Font">Label</text></svg></main></body></html>',
+			'index.html' => '<html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Example+Font:wght@400&amp;display=swap"><style>body{font-family:"Example Font",sans-serif}</style></head><body><main><svg xmlns="http://www.w3.org/2000/svg"><text font-family="Example Font, sans-serif">Label</text></svg></main></body></html>',
 		),
 	)
 )->toArray();
@@ -154,6 +154,9 @@ $font_svg_files = array_values( array_filter( $font_receipt['completed']['font_m
 $assert( 1 === count( $font_svg_files ), 'matching generated SVG receives a font overlay' );
 $assert( str_contains( (string) file_get_contents( $font_root . '/' . $font_svg_files[0]['target_path'] ), 'data:font/woff2;base64,' ), 'generated SVG embeds the declared font payload' );
 $assert( 2 === count( $GLOBALS['ssi_plan_font_requests'] ), 'font materialization fetches one declared stylesheet and one unique payload' );
+$assert( Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><text style="font-family:\'Example Font\', serif">Label</text></svg>', array( 'Example Font' ) ), 'SVG style declarations match quoted families within fallback lists' );
+$assert( Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><text font-family="serif, Example Font">Label</text></svg>', array( 'example font' ) ), 'SVG presentation attributes normalize case and fallback-list position' );
+$assert( ! Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><text font-family="Example Font Pro, sans-serif">Label</text></svg>', array( 'Example Font' ) ), 'SVG font matching compares complete family tokens instead of prefixes' );
 
 $font_without_svg_result = ( new ArtifactCompiler() )->compile(
 	array(
