@@ -23,6 +23,7 @@ $GLOBALS['ssi_plan_posts']      = array();
 $GLOBALS['ssi_plan_meta']       = array();
 $GLOBALS['ssi_plan_options']    = array( 'show_on_front' => 'posts', 'page_on_front' => 0, 'blogname' => 'Before' );
 $GLOBALS['ssi_plan_fail_after'] = 0;
+$GLOBALS['ssi_plan_font_requests'] = array();
 mkdir( $GLOBALS['ssi_plan_root'], 0777, true );
 
 class WP_Error {
@@ -42,6 +43,19 @@ function trailingslashit( string $path ): string { return rtrim( $path, '/' ) . 
 function wp_json_encode( $value, int $options = 0 ) { return json_encode( $value, $options ); }
 function wp_slash( string $value ): string { return addslashes( $value ); }
 function wp_mkdir_p( string $path ): bool { return is_dir( $path ) || mkdir( $path, 0777, true ); }
+function wp_parse_url( string $url ) { return parse_url( $url ); }
+function wp_safe_remote_get( string $url, array $args ) {
+	$GLOBALS['ssi_plan_font_requests'][] = array( 'url' => $url, 'args' => $args );
+	if ( str_starts_with( $url, 'https://fonts.googleapis.com/' ) ) {
+		return array( 'response' => array( 'code' => 200 ), 'body' => "@font-face{font-family:'Example Font';font-style:normal;font-weight:400;src:url(https://fonts.gstatic.com/s/example/font.woff2) format('woff2')}" );
+	}
+	if ( 'https://fonts.gstatic.com/s/example/font.woff2' === $url ) {
+		return array( 'response' => array( 'code' => 200 ), 'body' => 'font-payload' );
+	}
+	return new WP_Error( 'unexpected_request' );
+}
+function wp_remote_retrieve_response_code( $response ): int { return (int) ( $response['response']['code'] ?? 0 ); }
+function wp_remote_retrieve_body( $response ): string { return (string) ( $response['body'] ?? '' ); }
 function update_option( string $key, $value ): void { $GLOBALS['ssi_plan_options'][ $key ] = $value; }
 function switch_theme( string $slug ): void { $GLOBALS['ssi_plan_options']['stylesheet'] = $slug; }
 function sanitize_text_field( string $value ): string { return $value; }
@@ -63,6 +77,7 @@ function wp_insert_post( array $post, bool $wp_error ) {
 	return $id;
 }
 
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-font-materializer.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
@@ -106,6 +121,50 @@ $unbound_provenance = $receipt['completed']['block_provenance'] ?? array();
 $assert( count( $plan['pages'] ) === count( $unbound_provenance ) && count( $plan['pages'] ) === ( $receipt['completed']['block_provenance_count'] ?? 0 ), 'ordinary resolved pages receive receipt provenance without runtime bindings' );
 $assert( 'blocks-engine/wordpress-site-plan-resolver' === ( $unbound_provenance[0]['stages'][0]['stage'] ?? '' ) && hash( 'sha256', $receipt['plan']['pages'][0]['resolved_block_markup'] ) === ( $unbound_provenance[0]['stages'][0]['output']['sha256'] ?? '' ), 'ordinary page provenance records the resolver output hash' );
 $assert( false === ( $receipt['completed']['block_provenance_truncated'] ?? true ) && ! str_contains( (string) wp_json_encode( $unbound_provenance ), (string) $receipt['plan']['pages'][0]['resolved_block_markup'] ), 'provenance uses structural evidence without raw page markup' );
+
+$font_result = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			'index.html' => '<html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Example+Font:wght@400&amp;display=swap"><style>body{font-family:"Example Font",sans-serif}</style></head><body><main><svg xmlns="http://www.w3.org/2000/svg"><text font-family="Example Font">Label</text></svg></main></body></html>',
+		),
+	)
+)->toArray();
+$font_plan = $font_result['source_reports']['wordpress_site_plan'];
+$font_materialization = $font_result['source_reports']['materialization_plan']['theme']['font_materialization'];
+$font_plan_hash = hash( 'sha256', (string) wp_json_encode( $font_plan, JSON_UNESCAPED_SLASHES ) );
+$font_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $font_plan, array( 'slug' => 'font-site-plan', 'font_materialization' => $font_materialization ) );
+$font_root = $GLOBALS['ssi_plan_root'] . '/font-site-plan';
+$assert( 'completed' === $font_receipt['status'], 'canonical font materialization completes' );
+$assert( $font_plan_hash === $font_receipt['plan_hash'], 'font overlay leaves the canonical source plan unchanged' );
+$assert( file_exists( $font_root . '/assets/css/fonts.css' ), 'declared font stylesheet is materialized' );
+$assert( str_contains( (string) file_get_contents( $font_root . '/assets/css/embedded-fonts.css' ), 'data:font/woff2;base64,' ), 'self-contained font stylesheet is materialized' );
+$assert( str_contains( (string) file_get_contents( $font_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-embedded-fonts'" ), 'generated theme loads self-contained font stylesheet' );
+$font_svg_files = array_values( array_filter( $font_receipt['completed']['font_materialization']['files'] ?? array(), static fn( array $file ): bool => str_ends_with( (string) ( $file['target_path'] ?? '' ), '.svg' ) ) );
+$assert( 1 === count( $font_svg_files ), 'matching generated SVG receives a font overlay' );
+$assert( str_contains( (string) file_get_contents( $font_root . '/' . $font_svg_files[0]['target_path'] ), 'data:font/woff2;base64,' ), 'generated SVG embeds the declared font payload' );
+$assert( 2 === count( $GLOBALS['ssi_plan_font_requests'] ), 'font materialization fetches one declared stylesheet and one unique payload' );
+
+$font_without_svg_result = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			'index.html' => '<html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Example+Font:wght@400&amp;display=swap"><style>body{font-family:"Example Font",sans-serif}</style></head><body><main>Text</main></body></html>',
+		),
+	)
+)->toArray();
+$font_without_svg_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$font_without_svg_result['source_reports']['wordpress_site_plan'],
+	array(
+		'slug'                 => 'font-site-plan-without-svg',
+		'font_materialization' => $font_without_svg_result['source_reports']['materialization_plan']['theme']['font_materialization'],
+	)
+);
+$font_without_svg_root = $GLOBALS['ssi_plan_root'] . '/font-site-plan-without-svg';
+$assert( 'completed' === $font_without_svg_receipt['status'], 'canonical font materialization completes without SVG consumers' );
+$assert( str_contains( (string) file_get_contents( $font_without_svg_root . '/assets/css/embedded-fonts.css' ), 'data:font/woff2;base64,' ), 'page fonts are self-contained without SVG consumers' );
+$assert( str_contains( (string) file_get_contents( $font_without_svg_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-embedded-fonts'" ), 'page fonts load without SVG consumers' );
+$assert( 4 === count( $GLOBALS['ssi_plan_font_requests'] ), 'each font materialization resolves its declared stylesheet and payload' );
 
 $nested_route_result = ( new ArtifactCompiler() )->compile(
 	array(
