@@ -77,6 +77,9 @@ class Static_Site_Importer_Companion_Plugin {
 				if ( ! is_string( $declared_name ) || ! preg_match( '/^[a-z0-9-]+\/[a-z0-9-]+$/', $declared_name ) ) {
 					return new WP_Error( 'static_site_importer_companion_plugin_block_json_name_invalid', sprintf( 'Block %s must declare a valid WordPress block name.', $name ) );
 				}
+				if ( str_starts_with( $declared_name, 'core/' ) ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_block_json_name_reserved', sprintf( 'Block %s cannot declare the reserved WordPress core block name %s.', $name, $declared_name ), array( 'block' => $name, 'block_name' => $declared_name ) );
+				}
 			}
 			$effective_name = '' !== $declared_name ? $declared_name : $namespace . '/' . $name;
 			if ( isset( $block_names[ $effective_name ] ) ) {
@@ -94,11 +97,11 @@ class Static_Site_Importer_Companion_Plugin {
 			}
 			$metadata = $block['block_json'];
 			if ( isset( $block['render'] ) && is_scalar( $block['render'] ) ) {
-				unset( $metadata['render'] );
+				$metadata['render'] = 'file:./render.php';
 			}
 			$references = self::metadata_file_references( $metadata );
 			foreach ( $references as $path ) {
-				if ( 'render.php' !== $path && ! array_key_exists( $path, $assets ) ) {
+				if ( ! array_key_exists( $path, $assets ) && ! ( 'render.php' === $path && isset( $block['render'] ) && is_scalar( $block['render'] ) ) ) {
 					return new WP_Error( 'static_site_importer_companion_plugin_metadata_asset_missing', sprintf( 'Block %s metadata references undeclared asset %s.', $name, $path ) );
 				}
 			}
@@ -645,13 +648,18 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\t}";
 		$lines[] = '';
 		$lines[] = sprintf( "\tforeach ( %s_block_specs() as \$spec ) {", $fn_prefix );
-		$lines[] = "\t\tif ( ! empty( \$spec['metadata'] ) ) {";
-		$lines[] = sprintf( "\t\t\tregister_block_type( %s_DIR . 'blocks/' . (string) \$spec['dir'] );", $const_prefix );
-		$lines[] = "\t\t\tcontinue;";
+		$lines[] = sprintf( "\t\t\$registered = ! empty( \$spec['metadata'] ) ? register_block_type( %s_DIR . 'blocks/' . (string) \$spec['dir'] ) : null;", $const_prefix );
+		$lines[] = "\t\tif ( empty( \$spec['metadata'] ) ) {";
+		$lines[] = "\t\t\t\$args                    = isset( \$spec['args'] ) && is_array( \$spec['args'] ) ? \$spec['args'] : array();";
+		$lines[] = sprintf( "\t\t\t\$args['render_callback'] = %s_render_callback( (string) \$spec['dir'] );", $fn_prefix );
+		$lines[] = "\t\t\t\$registered              = register_block_type( (string) \$spec['name'], \$args );";
 		$lines[] = "\t\t}";
-		$lines[] = "\t\t\$args                    = isset( \$spec['args'] ) && is_array( \$spec['args'] ) ? \$spec['args'] : array();";
-		$lines[] = sprintf( "\t\t\$args['render_callback'] = %s_render_callback( (string) \$spec['dir'] );", $fn_prefix );
-		$lines[] = "\t\tregister_block_type( (string) \$spec['name'], \$args );";
+		$lines[] = "\t\tif ( \$registered instanceof WP_Block_Type && (string) \$spec['name'] === \$registered->name ) {";
+		$lines[] = "\t\t\tif ( ! isset( \$GLOBALS['static_site_importer_companion_block_owners'] ) || ! is_array( \$GLOBALS['static_site_importer_companion_block_owners'] ) ) {";
+		$lines[] = "\t\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'] = array();";
+		$lines[] = "\t\t\t}";
+		$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'][ (string) \$spec['name'] ] = array( 'plugin_file' => %s, 'plugin_path' => __FILE__ );", var_export( $plugin_file, true ) );
+		$lines[] = "\t\t}";
 		$lines[] = "\t}";
 		$lines[] = '}';
 		$lines[] = sprintf( "add_action( 'init', '%s_register_blocks' );", $fn_prefix );
@@ -907,8 +915,10 @@ class Static_Site_Importer_Companion_Plugin {
 	/** @return array<int,string> */
 	private static function metadata_file_references( array $block_json ): array {
 		$references = array();
-		foreach ( array( 'editorScript', 'style', 'editorStyle', 'viewScript', 'render' ) as $key ) {
-			$values = isset( $block_json[ $key ] ) && is_array( $block_json[ $key ] ) ? $block_json[ $key ] : array( $block_json[ $key ] ?? null );
+		foreach ( array( 'editorScript', 'script', 'viewScript', 'viewScriptModule', 'style', 'editorStyle', 'viewStyle', 'render', 'variations' ) as $key ) {
+			$values = 'variations' === $key
+				? array( $block_json[ $key ] ?? null )
+				: ( isset( $block_json[ $key ] ) && is_array( $block_json[ $key ] ) ? $block_json[ $key ] : array( $block_json[ $key ] ?? null ) );
 			foreach ( $values as $value ) {
 				if ( ! is_string( $value ) || ! str_starts_with( $value, 'file:./' ) ) {
 					continue;

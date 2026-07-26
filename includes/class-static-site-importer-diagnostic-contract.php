@@ -40,7 +40,8 @@ class Static_Site_Importer_Diagnostic_Contract {
 			self::diagnostic_rows_from_import_report( $import_report ),
 			self::blocks_engine_conversion_diagnostics( $import_report ),
 			self::runtime_dependency_target_gaps( $import_report ),
-			self::semantic_parity_diagnostics( $import_report )
+			self::semantic_parity_diagnostics( $import_report ),
+			self::gutenberg_gap_diagnostics( $import_report )
 		);
 		$diagnostics = self::dedupe_diagnostics( $diagnostics );
 
@@ -72,6 +73,18 @@ class Static_Site_Importer_Diagnostic_Contract {
 			'button_style_loss_hints'        => self::diagnostics_matching_types( $diagnostics, array( 'button', 'style_loss', 'presentation_gap' ) ),
 			'artifact_refs'                  => self::artifact_refs( $artifacts, $import_report ),
 		);
+	}
+
+	/** Extract compiler Gutenberg gaps with their materialization outcome. */
+	private static function gutenberg_gap_diagnostics( array $import_report ): array {
+		$blocks_engine = isset( $import_report['blocks_engine'] ) && is_array( $import_report['blocks_engine'] ) ? $import_report['blocks_engine'] : array();
+		$gaps = isset( $blocks_engine['gutenberg_gaps'] ) && is_array( $blocks_engine['gutenberg_gaps'] ) ? $blocks_engine['gutenberg_gaps'] : array();
+		foreach ( $gaps as $index => $gap ) {
+			if ( is_array( $gap ) && ! isset( $gap['type'] ) && ! isset( $gap['code'] ) ) {
+				$gaps[ $index ]['type'] = 'gutenberg_gap';
+			}
+		}
+		return self::normalize_diagnostic_rows( $gaps, 'gutenberg_gaps' );
 	}
 
 	/**
@@ -225,11 +238,14 @@ class Static_Site_Importer_Diagnostic_Contract {
 				$diagnostic['source_diagnostic'] = $source_diagnostic;
 			}
 
-			foreach ( array( 'message', 'reason', 'excerpt', 'source_snippet', 'source_html_preview', 'emitted_block_preview', 'observed_output', 'html_excerpt', 'block_name', 'block_path', 'script_path', 'element', 'tag_name', 'tag', 'src', 'href', 'expected', 'observed', 'suggested_primitive', 'diagnostic_code', 'mapped_provider' ) as $field ) {
+			foreach ( array( 'message', 'reason', 'excerpt', 'source_snippet', 'source_html_preview', 'emitted_block_preview', 'observed_output', 'html_excerpt', 'block_name', 'block_path', 'script_path', 'element', 'tag_name', 'tag', 'src', 'href', 'expected', 'observed', 'suggested_primitive', 'diagnostic_code', 'mapped_provider', 'materialization_status' ) as $field ) {
 				$value = self::first_scalar( $row, array( $field ), '' );
 				if ( '' !== $value ) {
 					$diagnostic[ $field ] = $value;
 				}
+			}
+			if ( isset( $row['references'] ) && is_array( $row['references'] ) ) {
+				$diagnostic['references'] = $row['references'];
 			}
 
 			// Preserve the runtime-mapping signal a real provider sets when it

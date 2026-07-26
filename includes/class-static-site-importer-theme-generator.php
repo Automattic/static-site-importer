@@ -100,6 +100,7 @@ class Static_Site_Importer_Theme_Generator {
 			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.' . ( false !== $diagnostics ? ' ' . $diagnostics : '' ), $compiled );
 		}
 		$companion_payload = null;
+		$gutenberg_gaps    = isset( $compiled['source_reports']['gutenberg_gaps'] ) && is_array( $compiled['source_reports']['gutenberg_gaps'] ) ? $compiled['source_reports']['gutenberg_gaps'] : array();
 		if ( array_key_exists( 'companion_plugin_payload', $compiled['source_reports'] ?? array() ) ) {
 			$companion_payload = $compiled['source_reports']['companion_plugin_payload'];
 			if ( ! is_array( $companion_payload ) ) {
@@ -172,6 +173,7 @@ class Static_Site_Importer_Theme_Generator {
 		$prepared['args']['runtime_entity_bindings'] = $bindings;
 		$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared );
 		$receipt['completed']['companion_plugin'] = $companion_materialization;
+		$receipt['extensions']['gutenberg_gaps'] = self::project_gutenberg_gaps( $gutenberg_gaps, (string) ( $companion_materialization['status'] ?? 'not_materialized' ) );
 		$receipt['completed']['runtime_declarations']['dependencies'] = $dependencies;
 		$receipt['completed']['runtime_declarations']['entities'] = $entities;
 		$receipt['runtime_lifecycle'] = $lifecycle;
@@ -186,6 +188,33 @@ class Static_Site_Importer_Theme_Generator {
 			$receipt['errors'][] = array( 'code' => 'static_site_importer_projection_write_failed', 'message' => $error->getMessage() );
 			return new WP_Error( 'static_site_importer_projection_write_failed', 'Website materialization completed partially because a public projection could not be written.', $receipt );
 		}
+	}
+
+	/** Project compiler gap rows into stable materialization diagnostics. */
+	private static function project_gutenberg_gaps( array $gaps, string $materialization_status = 'not_materialized' ): array {
+		$projected = array();
+		foreach ( $gaps as $index => $gap ) {
+			if ( ! is_array( $gap ) ) {
+				continue;
+			}
+			$row = array(
+				'id'                     => isset( $gap['id'] ) && is_scalar( $gap['id'] ) ? (string) $gap['id'] : 'gutenberg-gap-' . ( $index + 1 ),
+				'type'                   => 'gutenberg_gap',
+				'code'                   => 'gutenberg_gap',
+				'materialization_status' => $materialization_status,
+			);
+			foreach ( array( 'block_name', 'source_path', 'path', 'message', 'reason_code' ) as $field ) {
+				if ( isset( $gap[ $field ] ) && is_scalar( $gap[ $field ] ) ) {
+					$row[ $field ] = (string) $gap[ $field ];
+				}
+			}
+			if ( isset( $gap['references'] ) && is_array( $gap['references'] ) ) {
+				$row['references'] = $gap['references'];
+			}
+			$projected[] = $row;
+		}
+
+		return $projected;
 	}
 
 	/**
@@ -252,12 +281,15 @@ class Static_Site_Importer_Theme_Generator {
 		$quality      = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
 		$entity_lifecycle = array( 'status' => $lifecycle['status'] ?? 'not_requested', 'entities' => $entities, 'dependencies' => $dependencies );
 		$diagnostics = array_merge( $diagnostics, $lifecycle['diagnostics'] ?? array() );
+		$gutenberg_gaps = isset( $receipt['extensions']['gutenberg_gaps'] ) && is_array( $receipt['extensions']['gutenberg_gaps'] ) ? $receipt['extensions']['gutenberg_gaps'] : array();
+		$diagnostics = array_merge( $diagnostics, $gutenberg_gaps );
 		$report       = array(
 			'schema'         => 'static-site-importer/import-report/v1',
 			'import_run_id'  => self::import_run_id( $args ),
 			'blocks_engine'  => array(
 				'transformer'         => self::transformer_provenance(),
 				'wordpress_site_plan' => $plan,
+				'gutenberg_gaps'      => $gutenberg_gaps,
 			),
 			'quality'        => $quality,
 			'diagnostics'    => $diagnostics,

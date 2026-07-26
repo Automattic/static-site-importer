@@ -122,6 +122,10 @@ class Static_Site_Importer_Plugin_Materializer {
 		$report                = self::new_generated_report( (string) $descriptor['slug'], (string) $descriptor['plugin_file'] );
 		$report['mu_plugin']   = (bool) $descriptor['mu_plugin'];
 		$report['block_names'] = $descriptor['block_names'];
+		$collision             = self::generated_block_name_collision( $descriptor['block_names'], $descriptor );
+		if ( is_wp_error( $collision ) ) {
+			return self::failed_report( $report, $collision );
+		}
 
 		$plan = self::generated_install_plan( $descriptor );
 		if ( is_wp_error( $plan ) ) {
@@ -188,6 +192,51 @@ class Static_Site_Importer_Plugin_Materializer {
 
 		$report['status'] = $already_available ? 'refreshed' : 'installed_activated';
 		return $report;
+	}
+
+	/** Preflight registered block names before generated files are written. */
+	private static function generated_block_name_collision( array $block_names, array $descriptor ) {
+		$registry = class_exists( 'WP_Block_Type_Registry' ) ? WP_Block_Type_Registry::get_instance() : null;
+		foreach ( $block_names as $block_name ) {
+			if ( ! is_string( $block_name ) || '' === $block_name ) {
+				continue;
+			}
+			$registered = $registry && $registry->is_registered( $block_name );
+			if ( function_exists( 'apply_filters' ) ) {
+				/** Filters runtime registry collision detection for generated companion blocks. */
+				$registered = (bool) apply_filters( 'ssi_companion_plugin_block_name_collision', $registered, $block_name, $registry );
+			}
+			if ( $registered && ! self::current_companion_owns_registered_block( $block_name, $descriptor ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_block_name_collision', sprintf( 'Generated companion block name %s is already registered.', $block_name ), array( 'block_name' => $block_name, 'status' => 'rejected', 'reason_code' => 'runtime_block_name_collision' ) );
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Whether an existing block registration belongs to this active generated companion.
+	 *
+	 * The generated plugin records its exact plugin file and runtime path when it
+	 * registers a block. Both must match the pending descriptor; a matching block
+	 * name or namespace alone never establishes ownership.
+	 */
+	private static function current_companion_owns_registered_block( string $block_name, array $descriptor ): bool {
+		$plugin_file = isset( $descriptor['plugin_file'] ) && is_string( $descriptor['plugin_file'] ) ? $descriptor['plugin_file'] : '';
+		if ( '' === $plugin_file || ! function_exists( 'get_option' ) || $plugin_file !== (string) get_option( self::ACTIVE_COMPANION_OPTION, '' ) ) {
+			return false;
+		}
+		if ( empty( $descriptor['mu_plugin'] ) && ( ! function_exists( 'is_plugin_active' ) || ! is_plugin_active( $plugin_file ) ) ) {
+			return false;
+		}
+
+		$owners = $GLOBALS['static_site_importer_companion_block_owners'] ?? array();
+		$owner  = is_array( $owners ) && isset( $owners[ $block_name ] ) && is_array( $owners[ $block_name ] ) ? $owners[ $block_name ] : array();
+		$base   = ! empty( $descriptor['mu_plugin'] ) ? ( defined( 'WPMU_PLUGIN_DIR' ) ? (string) WPMU_PLUGIN_DIR : '' ) : ( defined( 'WP_PLUGIN_DIR' ) ? (string) WP_PLUGIN_DIR : '' );
+		$path   = '' === $base ? '' : rtrim( str_replace( '\\', '/', $base ), '/' ) . '/' . $plugin_file;
+
+		return $plugin_file === (string) ( $owner['plugin_file'] ?? '' )
+			&& $path === str_replace( '\\', '/', (string) ( $owner['plugin_path'] ?? '' ) );
 	}
 
 	/**
@@ -354,7 +403,11 @@ class Static_Site_Importer_Plugin_Materializer {
 		$report['error']  = array(
 			'code'    => (string) $error->get_error_code(),
 			'message' => $error->get_error_message(),
+			'data'    => $error->get_error_data(),
 		);
+		if ( is_array( $report['error']['data'] ) && isset( $report['error']['data']['reason_code'] ) ) {
+			$report['diagnostics'][] = array_merge( $report['error']['data'], array( 'code' => $report['error']['code'], 'message' => $report['error']['message'] ) );
+		}
 
 		return $report;
 	}

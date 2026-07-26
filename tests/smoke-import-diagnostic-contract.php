@@ -247,6 +247,29 @@ $assert( 1 === ( $deduped_contract['diagnostic_summary']['total'] ?? 0 ), 'contr
 $assert( '<iframe id="map"></iframe>' === ( $deduped_contract['diagnostics'][0]['source_snippet'] ?? '' ), 'contract-preserves-source-snippet' );
 $assert( '<!-- wp:html --><iframe id="map"></iframe><!-- /wp:html -->' === ( $deduped_contract['diagnostics'][0]['emitted_block_preview'] ?? '' ), 'contract-merges-duplicate-output-preview' );
 
+$gaps_contract = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'status'        => 'completed',
+		'success'       => true,
+		'import_report' => array(
+			'blocks_engine' => array(
+				'gutenberg_gaps' => array(
+					array(
+						'id'                     => 'gap-42',
+						'block_name'             => 'blocks-engine/example',
+						'references'             => array( 'file:./view.js' ),
+						'source_path'            => 'pages/index.html',
+						'materialization_status' => 'installed_activated',
+					),
+				),
+			),
+		),
+	)
+);
+$gaps_diagnostics = array_values( array_filter( $gaps_contract['diagnostics'] ?? array(), static fn ( array $diagnostic ): bool => 'gap-42' === ( $diagnostic['id'] ?? '' ) ) );
+$gaps_diagnostic = $gaps_diagnostics[0] ?? array();
+$assert( 'gap-42' === ( $gaps_diagnostic['id'] ?? '' ) && 'blocks-engine/example' === ( $gaps_diagnostic['block_name'] ?? '' ) && 'pages/index.html' === ( $gaps_diagnostic['source_path'] ?? '' ) && 'installed_activated' === ( $gaps_diagnostic['materialization_status'] ?? '' ) && array( 'file:./view.js' ) === ( $gaps_diagnostic['references'] ?? array() ), 'contract-projects-gutenberg-gap-provenance-and-materialization-status' );
+
 $numeric_quality_gate_error = static_site_importer_ability_error(
 	'static_site_importer_quality_gate_failed',
 	'Import failed quality gates; materialization was not completed.',

@@ -93,6 +93,16 @@ $plan   = $result['source_reports']['wordpress_site_plan'];
 $assert( 'blocks-engine/wordpress-site-plan/v2' === $plan['schema'], 'compiler emits the released v2 site plan' );
 $assert( isset( $result['source_reports']['wordpress_site_plan']['reporting'] ), 'compiler exposes the plan in source reports' );
 
+// Gutenberg gaps are SSI receipt/report extensions and must never alter the
+// compiler-owned plan, whose schema and hash are producer contracts.
+$canonical_plan = $plan;
+$project_gaps   = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'project_gutenberg_gaps' );
+$gaps           = $project_gaps->invoke( null, array( array( 'id' => 'gap-plan-contract', 'block_name' => 'example/gap', 'references' => array( 'file:./view.js' ), 'source_path' => 'index.html' ) ), 'installed_activated' );
+$assert( $canonical_plan === $plan && ! isset( $plan['gutenberg_gaps'] ), 'gutenberg-gap-projection-does-not-mutate-canonical-plan' );
+$gap_contract = Static_Site_Importer_Diagnostic_Contract::build( array( 'success' => true, 'status' => 'completed', 'import_report' => array( 'blocks_engine' => array( 'wordpress_site_plan' => $plan, 'gutenberg_gaps' => $gaps ) ) ) );
+$gap_diagnostics = array_values( array_filter( $gap_contract['diagnostics'] ?? array(), static fn( array $diagnostic ): bool => 'gap-plan-contract' === ( $diagnostic['id'] ?? '' ) ) );
+$assert( 'installed_activated' === ( $gap_diagnostics[0]['materialization_status'] ?? '' ) && array( 'file:./view.js' ) === ( $gap_diagnostics[0]['references'] ?? array() ), 'gutenberg-gap-diagnostics-retain-materialization-status-and-references' );
+
 $receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan' ) );
 $assert( 'completed' === $receipt['status'], 'valid plan completes' );
 $assert( 'static-site-importer/materialization-receipt/v1' === $receipt['schema'], 'receipt schema is stable' );
