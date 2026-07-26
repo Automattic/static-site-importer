@@ -66,6 +66,7 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-di
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-artifact-diagnostics-adapter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-validation-runtime.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-report-diagnostics.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-font-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-figma-import.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-exporter.php';

@@ -100,6 +100,8 @@ class Static_Site_Importer_Theme_Generator {
 			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.' . ( false !== $diagnostics ? ' ' . $diagnostics : '' ), $compiled );
 		}
 		$plan = self::bridge_product_grid_findings_to_runtime_declarations( $plan );
+		$materialization_plan = isset( $compiled['source_reports']['materialization_plan'] ) && is_array( $compiled['source_reports']['materialization_plan'] ) ? $compiled['source_reports']['materialization_plan'] : array();
+		$args['font_materialization'] = isset( $materialization_plan['theme']['font_materialization'] ) && is_array( $materialization_plan['theme']['font_materialization'] ) ? $materialization_plan['theme']['font_materialization'] : array();
 		if ( ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) ) {
 			return new WP_Error( 'static_site_importer_quality_gate_failed', 'Website artifact did not pass the canonical plan quality gate.', array( 'quality' => $plan['quality'] ?? array(), 'diagnostics' => $plan['diagnostics'] ?? array() ) );
 		}
@@ -261,6 +263,18 @@ class Static_Site_Importer_Theme_Generator {
 			array_filter( array( 'schema' => $plan['source']['schema'] ?? null, 'source_hash' => $plan['source']['source_hash'] ?? null, 'entry_path' => $plan['source']['entry_path'] ?? null ) )
 		);
 		$artifact['hash'] = (string) ( $args['artifact_hash'] ?? $artifact['hash'] ?? $plan['source']['source_hash'] );
+		$desired_files = array_map( static fn( array $write ): array => array( 'path' => $write['target_path'], 'kind' => $write['kind'] ), $plan['writes'] );
+		$desired_file_paths = array_fill_keys( array_column( $desired_files, 'path' ), true );
+		$desired_assets = array_map( static fn( array $asset ): array => array( 'source_path' => $asset['source_path'], 'theme_path' => $asset['target_path'] ), $plan['assets'] );
+		foreach ( $receipt['completed']['font_materialization']['files'] ?? array() as $file ) {
+			$path = is_array( $file ) && is_scalar( $file['target_path'] ?? null ) ? (string) $file['target_path'] : '';
+			if ( '' === $path || isset( $desired_file_paths[ $path ] ) ) {
+				continue;
+			}
+			$desired_file_paths[ $path ] = true;
+			$desired_files[] = array( 'path' => $path, 'kind' => 'font_materialization' );
+			$desired_assets[] = array( 'source_path' => (string) ( $file['source_path'] ?? 'theme.font_materialization' ), 'theme_path' => $path );
+		}
 		$manifest = array(
 			'schema'        => 'static-site-importer/source-of-truth-manifest/v1',
 			'version'       => 1,
@@ -268,7 +282,7 @@ class Static_Site_Importer_Theme_Generator {
 			'artifact'      => array_merge( $artifact, array( 'provenance' => $plan['source']['provenance'] ) ),
 			'manifest_path' => 'static-site-importer-manifest.json',
 			'generated_theme' => array( 'slug' => $theme['slug'], 'dir' => $theme['dir'] ),
-			'desired'       => array( 'pages' => array(), 'files' => array_merge( array_map( static fn( array $write ): array => array( 'path' => $write['target_path'], 'kind' => $write['kind'] ), $plan['writes'] ), array( array( 'path' => 'static-site-importer-manifest.json', 'kind' => 'ssi_manifest' ) ) ), 'assets' => array_map( static fn( array $asset ): array => array( 'source_path' => $asset['source_path'], 'theme_path' => $asset['target_path'] ), $plan['assets'] ) ),
+			'desired'       => array( 'pages' => array(), 'files' => array_merge( $desired_files, array( array( 'path' => 'static-site-importer-manifest.json', 'kind' => 'ssi_manifest' ) ) ), 'assets' => $desired_assets ),
 		);
 		foreach ( $plan['pages'] as $page ) {
 			$source_path = $page['source_path'];

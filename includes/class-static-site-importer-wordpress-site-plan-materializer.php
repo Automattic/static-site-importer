@@ -104,6 +104,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			return $state['receipt'];
 		}
 		$args = $state['args'];
+		$font_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay(
+			isset( $args['font_materialization'] ) && is_array( $args['font_materialization'] ) ? $args['font_materialization'] : array(),
+			$state['resolved']
+		);
+		if ( is_wp_error( $font_overlay ) ) {
+			return self::failed_receipt( $state, $font_overlay->get_error_code() );
+		}
 
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) ) {
@@ -138,6 +145,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( is_wp_error( $publications ) ) {
 			return self::failed_receipt( $state, $publications->get_error_code() );
 		}
+		$font_materialization = self::apply_font_overlay( $state, $font_overlay );
+		if ( is_wp_error( $font_materialization ) ) {
+			return self::failed_receipt( $state, $font_materialization->get_error_code() );
+		}
+		$state['applied']['font_materialization'] = $font_materialization;
 
 		if ( ! empty( $args['activate'] ) ) {
 			foreach ( $state['resolved']['operations'] as $operation ) {
@@ -340,6 +352,44 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return array( 'target_path' => $write['target_path'], 'hash' => self::file_hash( $path ), 'payload_hash' => $write['payload_hash'] ?? hash( 'sha256', $data ), 'reconciliation_identity' => $write['reconciliation_identity'] ?? hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ) );
 	}
 
+	/** @param array<string,mixed> $state @param array{writes:array<int,array<string,string>>,diagnostics:array<int,array<string,string>>} $overlay */
+	private static function apply_font_overlay( array &$state, array $overlay ) {
+		$reports = array();
+		foreach ( $overlay['writes'] as $write ) {
+			$target = (string) ( $write['target_path'] ?? '' );
+			if ( ! self::safe_destination( $state['theme_dir'], $target ) ) {
+				return new WP_Error( 'static_site_importer_font_materialization_destination_invalid' );
+			}
+			$result = self::write_file(
+				$state['theme_dir'],
+				array(
+					'target_path'            => $target,
+					'source_path'            => (string) ( $write['source_path'] ?? $target ),
+					'payload'                => array( 'encoding' => 'utf8', 'data' => (string) ( $write['content'] ?? '' ) ),
+					'payload_hash'           => hash( 'sha256', (string) ( $write['content'] ?? '' ) ),
+					'reconciliation_identity' => hash( 'sha256', "font-materialization\n" . $target ),
+				)
+			);
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			$result['source_path'] = (string) ( $write['source_path'] ?? $target );
+			$reports[] = $result;
+			$replaced = false;
+			foreach ( $state['applied']['files'] as $index => $file ) {
+				if ( $target === ( $file['target_path'] ?? null ) ) {
+					$state['applied']['files'][ $index ] = $result;
+					$replaced = true;
+					break;
+				}
+			}
+			if ( ! $replaced ) {
+				$state['applied']['files'][] = $result;
+			}
+		}
+		return array( 'status' => 'completed', 'files' => $reports, 'diagnostics' => $overlay['diagnostics'] );
+	}
+
 	/** Verify every canonical asset publication against its resolved write and references. */
 	private static function verify_asset_publications( array &$state ) {
 		$writes = array();
@@ -525,6 +575,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'files'      => $state['applied']['files'],
 				'operations' => $state['applied']['operations'],
 				'runtime_declarations' => $state['applied']['runtime_declarations'] ?? array( 'asset_publications' => array() ),
+				'font_materialization' => $state['applied']['font_materialization'] ?? array( 'status' => 'not_requested', 'files' => array(), 'diagnostics' => array() ),
 				'materialized_pages' => $materialized_pages,
 				'block_provenance' => $block_provenance,
 				'block_provenance_count' => $block_provenance_count,
