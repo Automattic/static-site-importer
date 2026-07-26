@@ -48,6 +48,7 @@ The registry also emits `fixture_decisions[]` so acceptance decisions do not req
 - `js-commerce-controls`: quantity steppers, add-to-cart controls, cart counters, product option state, and commerce mutation behavior. Core blocks do not provide purchase-control semantics.
 - `inline-svg-filter-gradient`: inline SVG DOM with `defs`, filters, masks, clip paths, gradients, symbols, or data-URI SVG preservation. Core image/media blocks cannot preserve arbitrary editable SVG DOM graphs.
 - `css-grid-masonry`: masonry/dense grid layouts that require source-order-independent packing or arbitrary grid placement semantics.
+- `semantic-description-list`: paired `dt`/`dd` description-list semantics with no core block editing model.
 - `position-sticky-nav`: sticky/fixed navigation or header behavior coupled to scroll state or offsets. This is initially `convertible` because simple sticky layout can be approximated by core layout/navigation blocks.
 - `editor-render-divergence`: future editor-fidelity signal for frontend/editor render divergence.
 - `legitimate-runtime-island`: expected runtime behavior that is intentionally preserved rather than converted into static editable attributes.
@@ -64,6 +65,7 @@ The registry also emits `fixture_decisions[]` so acceptance decisions do not req
 - Static form: `<form>` architecture with input/select/textarea controls, submit buttons, labels, hidden fields, validation/response state, and newsletter/contact semantics. This should become a generic form block candidate when recurrence crosses threshold.
 - JS commerce controls: product purchase controls containing quantity inputs/steppers, add-to-cart buttons, option selectors, price/cart state, and runtime mutation. This should become a commerce control block candidate when recurrence crosses threshold.
 - SVG filter/gradient artwork: inline SVGs with defs/filter/gradient/mask/clip-path graphs or SVG data URIs whose DOM/ID graph must survive exactly. This should become an SVG artwork block candidate when recurrence crosses threshold.
+- Semantic description list: paired term/definition markup is carried by the demand-driven `blocks-engine/description-list` typed companion block after recurrence establishes the core gap.
 
 See `docs/companion-block-strategy.md` for the typed companion block contracts,
 runtime ownership boundaries, provider integration rules, and recommended build

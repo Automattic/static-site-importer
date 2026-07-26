@@ -135,8 +135,9 @@ $payload = array(
 	'site_name'    => 'Example Site',
 	'blocks'       => array(
 		array(
-			'name'       => 'Custom Hero',
+			'name'       => 'custom-hero',
 			'block_json' => array(
+				'name'       => 'example/custom-hero',
 				'title'      => 'Custom Hero',
 				'category'   => 'design',
 				'attributes' => array(
@@ -164,18 +165,37 @@ $payload = array(
 				'supports'   => array(
 					'interactivity' => true,
 				),
+				'editorScript' => 'file:./editor.js',
+				'style'        => 'file:./style.css',
+				'editorStyle'  => 'file:./editor.css',
+				'viewScript'   => 'file:./view.js',
 			),
 			'render'     => '<div class="ssi-hero"><?php echo esc_html( $attributes["heading"] ?? "" ); ?></div>',
+			'assets'     => array(
+				'editor.js'  => 'window.SSIEditor = true;',
+				'style.css'  => '.ssi-hero { color: inherit; }',
+				'editor.css' => '.editor-styles-wrapper .ssi-hero { color: inherit; }',
+				'view.js'    => 'window.SSIView = true;',
+			),
 		),
 	),
 	'preserved_js' => array(
 		array(
 			'handle'  => 'hero-island',
 			'content' => 'document.addEventListener("DOMContentLoaded",function(){});',
-			'block'   => 'ssi-example-site/custom-hero',
+			'block'   => 'example/custom-hero',
 		),
 	),
 );
+
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $payload ), 'canonical-payload-validates' );
+$invalid_payload = $payload;
+$invalid_payload['blocks'][0]['assets']['../escape.js'] = 'unsafe';
+$invalid_result = Static_Site_Importer_Companion_Plugin::validate_payload( $invalid_payload );
+$assert( is_wp_error( $invalid_result ), 'invalid-payload-rejected-before-materialization' );
+$invalid_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $invalid_payload );
+$assert( 'failed' === ( $invalid_report['status'] ?? '' ), 'invalid-payload-prevents-file-mutations' );
+$assert( ! file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/escape.js' ), 'invalid-payload-writes-no-unsafe-file' );
 
 // 1. Scaffolder emits a valid plugin file set.
 $descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $payload );
@@ -184,7 +204,7 @@ $assert( is_array( $descriptor ), 'scaffold-returns-descriptor', is_array( $desc
 if ( is_array( $descriptor ) ) {
 	$assert( 'ssi-example-site' === $descriptor['slug'], 'scaffold-namespaces-slug', (string) $descriptor['slug'] );
 	$assert( 'ssi-example-site/ssi-example-site.php' === $descriptor['plugin_file'], 'scaffold-plugin-file-path', (string) $descriptor['plugin_file'] );
-	$assert( array( 'ssi-example-site/custom-hero' ) === $descriptor['block_names'], 'scaffold-namespaces-block-name' );
+	$assert( array( 'example/custom-hero' ) === $descriptor['block_names'], 'scaffold-preserves-declared-block-name' );
 	$assert( false === $descriptor['mu_plugin'], 'scaffold-regular-plugin-by-default' );
 
 	$files = $descriptor['files'];
@@ -193,13 +213,10 @@ if ( is_array( $descriptor ) ) {
 	$assert( str_contains( $main, "add_filter( 'render_block'" ), 'main-file-scopes-island-enqueue' );
 	$assert( str_contains( $main, 'wp_enqueue_script' ), 'main-file-enqueues-island-js' );
 
-	// PHP-only dynamic block: registered in PHP via register_block_type( name,
-	// args ) with a render_callback + PHP-declared attributes, NOT from a
-	// block.json path.
-	$assert( str_contains( $main, "register_block_type( (string) \$spec['name'], \$args )" ), 'main-file-registers-block-via-php-args' );
-	$assert( str_contains( $main, "'render_callback'" ), 'main-file-wires-render-callback' );
+	$assert( str_contains( $main, "register_block_type( SSI_EXAMPLE_SITE_DIR . 'blocks/' . (string) \$spec['dir'] )" ), 'main-file-registers-metadata-block-directory' );
+	$assert( str_contains( $main, "register_block_type( (string) \$spec['name'], \$args )" ), 'main-file-retains-php-only-fallback-registration' );
 	$assert( str_contains( $main, "'api_version' => 3" ), 'main-file-declares-api-version' );
-	$assert( str_contains( $main, "'name' => 'ssi-example-site/custom-hero'" ), 'main-file-carries-namespaced-block-name' );
+	$assert( str_contains( $main, "'name' => 'example/custom-hero'" ), 'main-file-carries-declared-block-name' );
 	$assert( str_contains( $main, "'attributes' =>" ) && str_contains( $main, "'heading' =>" ), 'main-file-declares-php-attributes' );
 	$assert( str_contains( $main, "'content' =>" ) && str_contains( $main, "'text' =>" ), 'main-file-preserves-semantic-attribute-names' );
 	$assert( ! str_contains( $main, "'type' => 'content'" ) && ! str_contains( $main, "'type' => 'text'" ), 'main-file-normalizes-invalid-rest-schema-types' );
@@ -207,32 +224,23 @@ if ( is_array( $descriptor ) ) {
 	preg_match_all( "/'type' => '([^']+)'/", $main, $type_matches );
 	$invalid_schema_types = array_values( array_diff( $type_matches[1] ?? array(), $builtin_schema_types ) );
 	$assert( array() === $invalid_schema_types, 'main-file-emits-only-builtin-rest-schema-types', implode( ',', $invalid_schema_types ) );
-	$assert( ! str_contains( $main, 'register_block_type( $path )' ), 'main-file-does-not-register-from-block-json-path' );
+	$block_json = $files['ssi-example-site/blocks/custom-hero/block.json'] ?? '';
+	$assert( '' !== $block_json, 'metadata-block-json-emitted' );
+	$assert( str_contains( $block_json, '"editorScript": "file:./editor.js"' ), 'metadata-block-json-declares-editor-script' );
+	$assert( str_contains( $block_json, '"viewScript": "file:./view.js"' ), 'metadata-block-json-declares-view-script' );
+	$assert( isset( $files['ssi-example-site/blocks/custom-hero/editor.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/style.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/editor.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view.js'] ), 'metadata-block-assets-emitted' );
 
 	// The render.php is the server-rendered template the render_callback runs.
 	$render = $files['ssi-example-site/blocks/custom-hero/render.php'] ?? '';
 	$assert( '' !== $render, 'render-php-emitted' );
 	$assert( str_starts_with( ltrim( $render ), '<?php' ), 'render-php-opens-with-php-tag' );
 
-	// No block.json / index.js / view.js build artifact is emitted for the block.
-	$block_artifacts = array_filter(
-		array_keys( $files ),
-		static fn ( string $path ): bool => str_contains( $path, '/blocks/' ) && (
-			str_ends_with( $path, '/block.json' ) || str_ends_with( $path, '/index.js' ) || str_ends_with( $path, '/view.js' )
-		)
-	);
-	$assert( array() === $block_artifacts, 'no-block-json-or-js-build-emitted', implode( ',', $block_artifacts ) );
-
 	// Preserved island JS (#496) is separate carried JS and still rides along.
 	$island_files = array_filter( array_keys( $files ), static fn ( string $path ): bool => str_contains( $path, '/islands/' ) && str_ends_with( $path, '.js' ) );
 	$assert( 1 === count( $island_files ), 'preserved-island-js-file-emitted' );
 }
 
-// Render variants under the PHP-only model: every block is a dynamic block, so
-// it always gets a render.php + a PHP-registered render_callback regardless of
-// whether the payload carried markup. No block.json is ever emitted, and a
-// block.json `render` key from the upstream payload must NOT leak into the PHP
-// register_block_type() args (render is handled by the render_callback).
+// Metadata blocks remain dynamic through their generated render.php.
 $render_variants = Static_Site_Importer_Companion_Plugin::scaffold(
 	array(
 		'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
@@ -240,14 +248,15 @@ $render_variants = Static_Site_Importer_Companion_Plugin::scaffold(
 		'site_name' => 'Render Variants',
 		'blocks'    => array(
 			array(
-				'name'       => 'Static Card',
+				'name'       => 'static-card',
 				'block_json' => array(
+					'name'     => 'blocks-engine/description-list',
 					'title'    => 'Static Card',
 					'category' => 'design',
 				),
 			),
 			array(
-				'name'       => 'Declared Render',
+				'name'       => 'declared-render',
 				'block_json' => array(
 					'title'    => 'Declared Render',
 					'category' => 'design',
@@ -264,19 +273,20 @@ if ( is_array( $render_variants ) ) {
 	$variant_files = $render_variants['files'];
 	$variant_main  = $variant_files['ssi-render-variants/ssi-render-variants.php'] ?? '';
 
-	// A block with no payload markup is still a dynamic block: render.php is
-	// always emitted (default template) and registered via render_callback.
-	$assert( isset( $variant_files['ssi-render-variants/blocks/static-card/render.php'] ), 'static-block-emits-render-php' );
-	$assert( str_contains( $variant_main, "'name' => 'ssi-render-variants/static-card'" ), 'static-block-registered-via-php' );
+	// A block with no render payload remains static and uses its saved post markup.
+	$assert( ! isset( $variant_files['ssi-render-variants/blocks/static-card/render.php'] ), 'static-block-omits-render-php' );
+	$assert( str_contains( $variant_main, "'metadata' => true" ), 'static-block-registered-from-metadata' );
+	$static_block_json = $variant_files['ssi-render-variants/blocks/static-card/block.json'] ?? '';
+	$assert( str_contains( $static_block_json, '"name": "blocks-engine/description-list"' ), 'static-block-preserves-canonical-name' );
+	$assert( ! str_contains( $static_block_json, '"render"' ), 'static-block-preserves-static-rendering' );
 
 	// A block with payload markup emits that markup as render.php.
 	$declared_render = $variant_files['ssi-render-variants/blocks/declared-render/render.php'] ?? '';
 	$assert( str_contains( $declared_render, 'ssi-declared' ), 'declared-render-block-emits-payload-markup' );
 
-	// No block.json anywhere, and the upstream block.json `render` key does not
-	// leak into the PHP registration args.
+	// Metadata is emitted and the generated render.php remains its render target.
 	$variant_block_json = array_filter( array_keys( $variant_files ), static fn ( string $path ): bool => str_ends_with( $path, '/block.json' ) );
-	$assert( array() === $variant_block_json, 'render-variants-emit-no-block-json', implode( ',', $variant_block_json ) );
+	$assert( 2 === count( $variant_block_json ), 'render-variants-emit-block-json', implode( ',', $variant_block_json ) );
 	$assert( ! str_contains( $variant_main, 'file:./custom-render.php' ), 'php-args-drop-upstream-render-key' );
 }
 
@@ -316,7 +326,8 @@ $assert( in_array( 'ssi-example-site/ssi-example-site.php', $GLOBALS['ssi_compan
 $assert( 'ssi-example-site/ssi-example-site.php' === get_option( Static_Site_Importer_Plugin_Materializer::ACTIVE_COMPANION_OPTION ), 'install-records-current-companion-plugin' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ), 'install-writes-main-file-to-disk' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/render.php' ), 'install-writes-render-php-to-disk' );
-$assert( ! file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/block.json' ), 'install-emits-no-block-json' );
+$assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/block.json' ), 'install-emits-block-json' );
+$assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/editor.js' ), 'install-emits-declared-editor-asset' );
 $written_main = file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) ? (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) : '';
 $assert( str_contains( $written_main, 'register_block_type' ), 'written-main-file-registers-blocks' );
 
@@ -347,7 +358,7 @@ $assert( is_callable( $dependency['availability_callback'] ?? null ), 'dependenc
 $active_row = Static_Site_Importer_Entity_Materializer_Registry::companion_dependency_row( $dependency, false );
 $assert( 'generated' === ( $active_row['source'] ?? '' ), 'dependency-row-source-generated' );
 $assert( true === ( $active_row['active'] ?? false ), 'dependency-row-active-when-installed' );
-$assert( array( 'ssi-example-site/custom-hero' ) === ( $active_row['block_names'] ?? array() ), 'dependency-row-carries-block-names' );
+$assert( array( 'example/custom-hero' ) === ( $active_row['block_names'] ?? array() ), 'dependency-row-carries-block-names' );
 
 // A not-yet-installed companion surfaces as a gate-visible failure.
 $missing_payload    = array_merge( $payload, array( 'site_slug' => 'second-site' ) );
