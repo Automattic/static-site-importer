@@ -4,17 +4,26 @@ Static Site Importer should use generated companion blocks only for generic
 runtime/editor gaps that WordPress core blocks cannot model with stable,
 editable Gutenberg markup. The Blocks Engine producer stays product-neutral: it
 emits typed facts, diagnostics, and `source_reports.companion_plugin_payload`.
-SSI owns WordPress runtime materialization: generated PHP-only dynamic blocks,
-provider dependency checks, activation, and import diagnostics.
+SSI owns WordPress runtime materialization: generated metadata blocks, legacy
+PHP-only dynamic registration, provider dependency checks, activation, and
+import diagnostics.
 
 The existing seam is enough for first implementations:
 
 - Blocks Engine emits `static-site-importer/companion-plugin/v1` payloads under `source_reports.companion_plugin_payload`.
 - SSI materializes that payload as a generated plugin dependency under `companion_plugins.dependencies`.
-- The generated plugin registers PHP-only dynamic blocks and can carry scoped island JS without a build step.
+- Typed payload blocks write `block.json`, render files, and declared assets; WordPress registers them from their block directories so `editorScript`, `style`, `editorStyle`, and `viewScript` file references resolve normally. PHP-only dynamic registration remains available for legacy scaffolds.
 - Provider-backed features should continue to use SSI entity materializer adapters before falling back to a companion block.
 
 ## Candidate Blocks
+
+### `blocks-engine/description-list`
+
+Purpose: preserve editable paired term/definition semantics when authored `dt`/`dd` structure has no core block path.
+
+Blocks Engine owns the canonical block name, direct `dl > (dt+ dd+)+` detection, grouped attributes, static `dl`/`dt`/`dd` serialization, editor behavior, and the typed payload. SSI preserves the declared canonical name and materializes its `block.json` plus declared assets only when Blocks Engine emits the payload.
+
+Registry ownership: this is a `real_gutenberg_gap` with `no_core_block_path` in the incompatibility registry. Registry classification remains evidence only and never creates a companion plugin. The compiled typed payload is the sole materialization trigger.
 
 ### `ssi/<site>/svg-artwork`
 
@@ -116,16 +125,17 @@ Acceptance criteria:
 
 ## Build Order
 
-Build `svg-artwork` first.
+`blocks-engine/description-list` is the first typed core-gap implementation. Build `svg-artwork` next.
 
 Reasons:
 
-- It is the cleanest true Gutenberg gap: no provider dependency and no cart/submission semantics.
+- Description List proves demand-driven typed payload materialization with a bounded semantic structure and no provider dependency.
+- SVG artwork is the next clean true Gutenberg gap: no provider dependency and no cart/submission semantics.
 - The registry already identifies `inline-svg-filter-gradient` as a strong candidate.
 - Blocks Engine already distinguishes native-image-compatible SVGs from SVGs requiring inline document context, so the first implementation can be narrow.
 - It reduces current fixture blockers caused by complex SVG artwork falling back to `core/html` or data URI preservation while keeping the result editable and dynamic.
 
-Second should be `commerce-control`, because Woo product materialization already exists and the remaining gap is binding detected controls to product/cart runtime. `runtime-island` should follow once scoped script packaging into companion payload is proven. `provider-form` should be last unless Jetpack evidence shows repeated unmappable-but-provider-capable shells, because existing Jetpack form materialization should remain preferred.
+After `svg-artwork`, build `commerce-control`, because Woo product materialization already exists and the remaining gap is binding detected controls to product/cart runtime. `runtime-island` should follow once scoped script packaging into companion payload is proven. `provider-form` should be last unless Jetpack evidence shows repeated unmappable-but-provider-capable shells, because existing Jetpack form materialization should remain preferred.
 
 ## Diagnostic Policy
 

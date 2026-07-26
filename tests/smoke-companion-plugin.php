@@ -28,10 +28,12 @@ $GLOBALS['ssi_companion_active']      = array();
 $GLOBALS['ssi_companion_activated']   = array();
 $GLOBALS['ssi_companion_deactivated'] = array();
 $GLOBALS['ssi_companion_options']     = array();
+$GLOBALS['static_site_importer_companion_block_owners'] = array();
+$GLOBALS['ssi_companion_actions']     = array();
 
 if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_Error {
-		public function __construct( private string $code, private string $message ) {}
+		public function __construct( private string $code, private string $message, private mixed $data = null ) {}
 
 		public function get_error_code(): string {
 			return $this->code;
@@ -40,6 +42,31 @@ if ( ! class_exists( 'WP_Error' ) ) {
 		public function get_error_message(): string {
 			return $this->message;
 		}
+
+		public function get_error_data(): mixed {
+			return $this->data;
+		}
+	}
+}
+
+if ( ! class_exists( 'WP_Block_Type_Registry' ) ) {
+	class WP_Block_Type_Registry {
+		public static array $registered = array();
+
+		public static function get_instance(): self {
+			static $instance;
+			return $instance ??= new self();
+		}
+
+		public function is_registered( string $name ): bool {
+			return in_array( $name, self::$registered, true );
+		}
+	}
+}
+
+if ( ! class_exists( 'WP_Block_Type' ) ) {
+	class WP_Block_Type {
+		public function __construct( public string $name ) {}
 	}
 }
 
@@ -73,6 +100,43 @@ if ( ! function_exists( 'sanitize_key' ) ) {
 if ( ! function_exists( 'wp_mkdir_p' ) ) {
 	function wp_mkdir_p( string $path ): bool {
 		return is_dir( $path ) || mkdir( $path, 0777, true );
+	}
+}
+
+if ( ! function_exists( 'plugin_dir_path' ) ) {
+	function plugin_dir_path( string $file ): string {
+		return dirname( $file ) . '/';
+	}
+}
+
+if ( ! function_exists( 'plugin_dir_url' ) ) {
+	function plugin_dir_url( string $file ): string {
+		return 'https://example.test/plugins/' . basename( dirname( $file ) ) . '/';
+	}
+}
+
+if ( ! function_exists( 'add_action' ) ) {
+	function add_action( string $hook, callable|string $callback ): void {
+		$GLOBALS['ssi_companion_actions'][ $hook ][] = $callback;
+	}
+}
+
+if ( ! function_exists( 'add_filter' ) ) {
+	function add_filter( string $hook, callable|string $callback ): void {}
+}
+
+if ( ! function_exists( 'register_block_type' ) ) {
+	function register_block_type( string $block, array $args = array() ): WP_Block_Type|false {
+		$name = isset( $args['name'] ) ? (string) $args['name'] : '';
+		if ( '' === $name && is_file( $block . '/block.json' ) ) {
+			$metadata = json_decode( (string) file_get_contents( $block . '/block.json' ), true );
+			$name     = is_array( $metadata ) ? (string) ( $metadata['name'] ?? '' ) : '';
+		}
+		if ( '' === $name || in_array( $name, WP_Block_Type_Registry::$registered, true ) ) {
+			return false;
+		}
+		WP_Block_Type_Registry::$registered[] = $name;
+		return new WP_Block_Type( $name );
 	}
 }
 
@@ -135,8 +199,9 @@ $payload = array(
 	'site_name'    => 'Example Site',
 	'blocks'       => array(
 		array(
-			'name'       => 'Custom Hero',
+			'name'       => 'custom-hero',
 			'block_json' => array(
+				'name'       => 'example/custom-hero',
 				'title'      => 'Custom Hero',
 				'category'   => 'design',
 				'attributes' => array(
@@ -164,18 +229,64 @@ $payload = array(
 				'supports'   => array(
 					'interactivity' => true,
 				),
+				'editorScript' => 'file:./editor.js',
+				'script'       => array( 'file:./script.js', 'shared-script-handle' ),
+				'style'        => 'file:./style.css',
+				'editorStyle'  => 'file:./editor.css',
+				'viewScript'   => array( 'file:./view.js' ),
+				'viewScriptModule' => array( 'file:./view-module.js' ),
+				'viewStyle'       => array( 'file:./view.css' ),
+				'variations'      => 'file:./variations.php',
 			),
 			'render'     => '<div class="ssi-hero"><?php echo esc_html( $attributes["heading"] ?? "" ); ?></div>',
+			'assets'     => array(
+				'editor.js'  => 'window.SSIEditor = true;',
+				'script.js'  => 'window.SSIScript = true;',
+				'style.css'  => '.ssi-hero { color: inherit; }',
+				'editor.css' => '.editor-styles-wrapper .ssi-hero { color: inherit; }',
+				'view.js'    => 'window.SSIView = true;',
+				'view-module.js' => 'export const SSIView = true;',
+				'view.css' => '.ssi-hero { display: block; }',
+				'variations.php' => '<?php return array();',
+			),
 		),
 	),
 	'preserved_js' => array(
 		array(
 			'handle'  => 'hero-island',
 			'content' => 'document.addEventListener("DOMContentLoaded",function(){});',
-			'block'   => 'ssi-example-site/custom-hero',
+			'block'   => 'example/custom-hero',
 		),
 	),
 );
+
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $payload ), 'canonical-payload-validates-all-core-metadata-fields' );
+$missing_metadata_asset = $payload;
+unset( $missing_metadata_asset['blocks'][0]['assets']['view-module.js'] );
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $missing_metadata_asset ) ), 'array-metadata-file-reference-requires-declared-asset' );
+$missing_render = $payload;
+$missing_render['blocks'][0]['render'] = null;
+$missing_render['blocks'][0]['block_json']['render'] = 'file:./render.php';
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $missing_render ) ), 'supplied-render-file-requires-declared-asset' );
+$missing_variations = $payload;
+unset( $missing_variations['blocks'][0]['assets']['variations.php'] );
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $missing_variations ) ), 'variations-file-reference-requires-declared-asset' );
+$generated_render = $payload;
+$generated_render['blocks'][0]['block_json']['render'] = 'file:./missing-upstream-render.php';
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $generated_render ), 'scalar-render-source-generates-render-file' );
+$unowned_name = $payload;
+$unowned_name['blocks'][0]['block_json']['name'] = 'other-producer/unowned';
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $unowned_name ), 'syntactically-valid-canonical-name-is-preserved' );
+$reserved_name = $payload;
+$reserved_name['blocks'][0]['block_json']['name'] = 'core/paragraph';
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $reserved_name ) ), 'reserved-core-name-rejected' );
+$invalid_payload = $payload;
+$invalid_payload['blocks'][0]['assets']['../escape.js'] = 'unsafe';
+$invalid_result = Static_Site_Importer_Companion_Plugin::validate_payload( $invalid_payload );
+$assert( is_wp_error( $invalid_result ), 'invalid-payload-rejected-before-materialization' );
+$invalid_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $invalid_payload );
+$assert( 'failed' === ( $invalid_report['status'] ?? '' ), 'invalid-payload-prevents-file-mutations' );
+$assert( ! file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/escape.js' ), 'invalid-payload-writes-no-unsafe-file' );
 
 // 1. Scaffolder emits a valid plugin file set.
 $descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $payload );
@@ -184,7 +295,7 @@ $assert( is_array( $descriptor ), 'scaffold-returns-descriptor', is_array( $desc
 if ( is_array( $descriptor ) ) {
 	$assert( 'ssi-example-site' === $descriptor['slug'], 'scaffold-namespaces-slug', (string) $descriptor['slug'] );
 	$assert( 'ssi-example-site/ssi-example-site.php' === $descriptor['plugin_file'], 'scaffold-plugin-file-path', (string) $descriptor['plugin_file'] );
-	$assert( array( 'ssi-example-site/custom-hero' ) === $descriptor['block_names'], 'scaffold-namespaces-block-name' );
+	$assert( array( 'example/custom-hero' ) === $descriptor['block_names'], 'scaffold-preserves-declared-canonical-name' );
 	$assert( false === $descriptor['mu_plugin'], 'scaffold-regular-plugin-by-default' );
 
 	$files = $descriptor['files'];
@@ -193,13 +304,11 @@ if ( is_array( $descriptor ) ) {
 	$assert( str_contains( $main, "add_filter( 'render_block'" ), 'main-file-scopes-island-enqueue' );
 	$assert( str_contains( $main, 'wp_enqueue_script' ), 'main-file-enqueues-island-js' );
 
-	// PHP-only dynamic block: registered in PHP via register_block_type( name,
-	// args ) with a render_callback + PHP-declared attributes, NOT from a
-	// block.json path.
-	$assert( str_contains( $main, "register_block_type( (string) \$spec['name'], \$args )" ), 'main-file-registers-block-via-php-args' );
-	$assert( str_contains( $main, "'render_callback'" ), 'main-file-wires-render-callback' );
+	$assert( str_contains( $main, "register_block_type( SSI_EXAMPLE_SITE_DIR . 'blocks/' . (string) \$spec['dir'] )" ), 'main-file-registers-metadata-block-directory' );
+	$assert( str_contains( $main, "\$registered instanceof WP_Block_Type" ) && str_contains( $main, "static_site_importer_companion_block_owners" ) && str_contains( $main, "'plugin_file' => 'ssi-example-site/ssi-example-site.php'" ), 'main-file-records-owner-only-after-matching-registration' );
+	$assert( str_contains( $main, "register_block_type( (string) \$spec['name'], \$args )" ), 'main-file-retains-php-only-fallback-registration' );
 	$assert( str_contains( $main, "'api_version' => 3" ), 'main-file-declares-api-version' );
-	$assert( str_contains( $main, "'name' => 'ssi-example-site/custom-hero'" ), 'main-file-carries-namespaced-block-name' );
+	$assert( str_contains( $main, "'name' => 'example/custom-hero'" ), 'main-file-carries-declared-block-name' );
 	$assert( str_contains( $main, "'attributes' =>" ) && str_contains( $main, "'heading' =>" ), 'main-file-declares-php-attributes' );
 	$assert( str_contains( $main, "'content' =>" ) && str_contains( $main, "'text' =>" ), 'main-file-preserves-semantic-attribute-names' );
 	$assert( ! str_contains( $main, "'type' => 'content'" ) && ! str_contains( $main, "'type' => 'text'" ), 'main-file-normalizes-invalid-rest-schema-types' );
@@ -207,32 +316,29 @@ if ( is_array( $descriptor ) ) {
 	preg_match_all( "/'type' => '([^']+)'/", $main, $type_matches );
 	$invalid_schema_types = array_values( array_diff( $type_matches[1] ?? array(), $builtin_schema_types ) );
 	$assert( array() === $invalid_schema_types, 'main-file-emits-only-builtin-rest-schema-types', implode( ',', $invalid_schema_types ) );
-	$assert( ! str_contains( $main, 'register_block_type( $path )' ), 'main-file-does-not-register-from-block-json-path' );
+	$block_json = $files['ssi-example-site/blocks/custom-hero/block.json'] ?? '';
+	$assert( '' !== $block_json, 'metadata-block-json-emitted' );
+	$assert( str_contains( $block_json, '"editorScript": "file:./editor.js"' ), 'metadata-block-json-declares-editor-script' );
+	$assert( str_contains( $block_json, '"viewScript"' ) && str_contains( $block_json, '"file:./view.js"' ), 'metadata-block-json-declares-view-script' );
+	$assert( str_contains( $block_json, '"viewScriptModule"' ) && str_contains( $block_json, '"viewStyle"' ) && str_contains( $block_json, '"script"' ), 'metadata-block-json-retains-all-core-metadata-fields' );
+	$assert( isset( $files['ssi-example-site/blocks/custom-hero/editor.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/script.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/style.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/editor.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view-module.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/variations.php'] ), 'metadata-block-assets-emitted' );
 
 	// The render.php is the server-rendered template the render_callback runs.
 	$render = $files['ssi-example-site/blocks/custom-hero/render.php'] ?? '';
 	$assert( '' !== $render, 'render-php-emitted' );
 	$assert( str_starts_with( ltrim( $render ), '<?php' ), 'render-php-opens-with-php-tag' );
 
-	// No block.json / index.js / view.js build artifact is emitted for the block.
-	$block_artifacts = array_filter(
-		array_keys( $files ),
-		static fn ( string $path ): bool => str_contains( $path, '/blocks/' ) && (
-			str_ends_with( $path, '/block.json' ) || str_ends_with( $path, '/index.js' ) || str_ends_with( $path, '/view.js' )
-		)
-	);
-	$assert( array() === $block_artifacts, 'no-block-json-or-js-build-emitted', implode( ',', $block_artifacts ) );
-
 	// Preserved island JS (#496) is separate carried JS and still rides along.
 	$island_files = array_filter( array_keys( $files ), static fn ( string $path ): bool => str_contains( $path, '/islands/' ) && str_ends_with( $path, '.js' ) );
 	$assert( 1 === count( $island_files ), 'preserved-island-js-file-emitted' );
 }
 
-// Render variants under the PHP-only model: every block is a dynamic block, so
-// it always gets a render.php + a PHP-registered render_callback regardless of
-// whether the payload carried markup. No block.json is ever emitted, and a
-// block.json `render` key from the upstream payload must NOT leak into the PHP
-// register_block_type() args (render is handled by the render_callback).
+WP_Block_Type_Registry::$registered[] = 'example/custom-hero';
+$collision_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload );
+$assert( 'failed' === ( $collision_report['status'] ?? '' ) && 'static_site_importer_companion_plugin_block_name_collision' === ( $collision_report['error']['code'] ?? '' ) && 'runtime_block_name_collision' === ( $collision_report['diagnostics'][0]['reason_code'] ?? '' ), 'registered-block-name-collision-fails-with-structured-receipt' );
+WP_Block_Type_Registry::$registered = array();
+
+// Metadata blocks remain dynamic through their generated render.php.
 $render_variants = Static_Site_Importer_Companion_Plugin::scaffold(
 	array(
 		'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
@@ -240,14 +346,15 @@ $render_variants = Static_Site_Importer_Companion_Plugin::scaffold(
 		'site_name' => 'Render Variants',
 		'blocks'    => array(
 			array(
-				'name'       => 'Static Card',
+				'name'       => 'static-card',
 				'block_json' => array(
+					'name'     => 'blocks-engine/description-list',
 					'title'    => 'Static Card',
 					'category' => 'design',
 				),
 			),
 			array(
-				'name'       => 'Declared Render',
+				'name'       => 'declared-render',
 				'block_json' => array(
 					'title'    => 'Declared Render',
 					'category' => 'design',
@@ -264,19 +371,20 @@ if ( is_array( $render_variants ) ) {
 	$variant_files = $render_variants['files'];
 	$variant_main  = $variant_files['ssi-render-variants/ssi-render-variants.php'] ?? '';
 
-	// A block with no payload markup is still a dynamic block: render.php is
-	// always emitted (default template) and registered via render_callback.
-	$assert( isset( $variant_files['ssi-render-variants/blocks/static-card/render.php'] ), 'static-block-emits-render-php' );
-	$assert( str_contains( $variant_main, "'name' => 'ssi-render-variants/static-card'" ), 'static-block-registered-via-php' );
+	// A block with no render payload remains static and uses its saved post markup.
+	$assert( ! isset( $variant_files['ssi-render-variants/blocks/static-card/render.php'] ), 'static-block-omits-render-php' );
+	$assert( str_contains( $variant_main, "'metadata' => true" ), 'static-block-registered-from-metadata' );
+	$static_block_json = $variant_files['ssi-render-variants/blocks/static-card/block.json'] ?? '';
+	$assert( str_contains( $static_block_json, '"name": "blocks-engine/description-list"' ), 'static-block-preserves-canonical-name' );
+	$assert( ! str_contains( $static_block_json, '"render"' ), 'static-block-preserves-static-rendering' );
 
 	// A block with payload markup emits that markup as render.php.
 	$declared_render = $variant_files['ssi-render-variants/blocks/declared-render/render.php'] ?? '';
 	$assert( str_contains( $declared_render, 'ssi-declared' ), 'declared-render-block-emits-payload-markup' );
 
-	// No block.json anywhere, and the upstream block.json `render` key does not
-	// leak into the PHP registration args.
+	// Metadata is emitted and the generated render.php remains its render target.
 	$variant_block_json = array_filter( array_keys( $variant_files ), static fn ( string $path ): bool => str_ends_with( $path, '/block.json' ) );
-	$assert( array() === $variant_block_json, 'render-variants-emit-no-block-json', implode( ',', $variant_block_json ) );
+	$assert( 2 === count( $variant_block_json ), 'render-variants-emit-block-json', implode( ',', $variant_block_json ) );
 	$assert( ! str_contains( $variant_main, 'file:./custom-render.php' ), 'php-args-drop-upstream-render-key' );
 }
 
@@ -316,18 +424,48 @@ $assert( in_array( 'ssi-example-site/ssi-example-site.php', $GLOBALS['ssi_compan
 $assert( 'ssi-example-site/ssi-example-site.php' === get_option( Static_Site_Importer_Plugin_Materializer::ACTIVE_COMPANION_OPTION ), 'install-records-current-companion-plugin' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ), 'install-writes-main-file-to-disk' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/render.php' ), 'install-writes-render-php-to-disk' );
-$assert( ! file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/block.json' ), 'install-emits-no-block-json' );
+$assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/block.json' ), 'install-emits-block-json' );
+$assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/editor.js' ), 'install-emits-declared-editor-asset' );
 $written_main = file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) ? (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) : '';
 $assert( str_contains( $written_main, 'register_block_type' ), 'written-main-file-registers-blocks' );
+
+// A foreign registration that wins before generated plugin init must never be
+// marked as companion-owned, so a later materialization still fails closed.
+WP_Block_Type_Registry::$registered[] = 'example/custom-hero';
+$GLOBALS['static_site_importer_companion_block_owners'] = array();
+require WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php';
+foreach ( $GLOBALS['ssi_companion_actions']['init'] ?? array() as $callback ) {
+	call_user_func( $callback );
+}
+$assert( ! isset( $GLOBALS['static_site_importer_companion_block_owners']['example/custom-hero'] ), 'foreign-registration-before-generated-init-records-no-owner' );
+$foreign_init_collision = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload, static fn (): bool => true );
+$assert( 'failed' === ( $foreign_init_collision['status'] ?? '' ) && 'runtime_block_name_collision' === ( $foreign_init_collision['diagnostics'][0]['reason_code'] ?? '' ), 'foreign-registration-before-generated-init-blocks-refresh' );
+WP_Block_Type_Registry::$registered = array();
+$GLOBALS['ssi_companion_actions'] = array();
 
 // Existing active generated companions are refreshed from the current payload;
 // stale files from an older SSI build must not bypass scaffold normalization.
 file_put_contents( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php', "<?php\nreturn array( 'type' => 'content' );\n" );
+$GLOBALS['static_site_importer_companion_block_owners']['example/custom-hero'] = array(
+	'plugin_file' => 'ssi-example-site/ssi-example-site.php',
+	'plugin_path' => WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php',
+);
+WP_Block_Type_Registry::$registered[] = 'example/custom-hero';
 $refresh_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload, static fn (): bool => true );
 $refreshed_main = file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) ? (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) : '';
 $assert( 'refreshed' === ( $refresh_report['status'] ?? '' ), 'active-generated-plugin-refresh-status', (string) ( $refresh_report['status'] ?? '' ) );
 $assert( in_array( 'refreshed', $refresh_report['actions'] ?? array(), true ), 'active-generated-plugin-records-refresh-action' );
 $assert( ! str_contains( $refreshed_main, "'type' => 'content'" ), 'active-generated-plugin-overwrites-stale-invalid-schema' );
+$assert( 'refreshed' === ( $refresh_report['status'] ?? '' ), 'active-companion-owned-registration-refreshes-successfully' );
+
+$GLOBALS['static_site_importer_companion_block_owners']['example/custom-hero'] = array(
+	'plugin_file' => 'foreign/foreign.php',
+	'plugin_path' => WP_PLUGIN_DIR . '/foreign/foreign.php',
+);
+$foreign_collision = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload, static fn (): bool => true );
+$assert( 'failed' === ( $foreign_collision['status'] ?? '' ) && 'runtime_block_name_collision' === ( $foreign_collision['diagnostics'][0]['reason_code'] ?? '' ), 'foreign-registered-block-fails-before-refresh-write' );
+WP_Block_Type_Registry::$registered = array();
+$GLOBALS['static_site_importer_companion_block_owners'] = array();
 
 // mu-plugin install writes the root loader and needs no activation call.
 $mu_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( array_merge( $payload, array( 'mu_plugin' => true ) ) );
@@ -347,7 +485,7 @@ $assert( is_callable( $dependency['availability_callback'] ?? null ), 'dependenc
 $active_row = Static_Site_Importer_Entity_Materializer_Registry::companion_dependency_row( $dependency, false );
 $assert( 'generated' === ( $active_row['source'] ?? '' ), 'dependency-row-source-generated' );
 $assert( true === ( $active_row['active'] ?? false ), 'dependency-row-active-when-installed' );
-$assert( array( 'ssi-example-site/custom-hero' ) === ( $active_row['block_names'] ?? array() ), 'dependency-row-carries-block-names' );
+$assert( array( 'example/custom-hero' ) === ( $active_row['block_names'] ?? array() ), 'dependency-row-carries-block-names' );
 
 // A not-yet-installed companion surfaces as a gate-visible failure.
 $missing_payload    = array_merge( $payload, array( 'site_slug' => 'second-site' ) );

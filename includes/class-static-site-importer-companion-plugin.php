@@ -3,18 +3,13 @@
  * Companion-plugin scaffolder.
  *
  * Generates a standalone, theme-independent WordPress plugin that houses a
- * site's generated custom blocks as PHP-only dynamic blocks (WordPress 7.0),
- * plus any preserved island JS scoped to where it is used.
+ * site's typed metadata blocks, legacy PHP-only dynamic blocks, and preserved
+ * island JS scoped to where it is used.
  *
- * Each generated block is registered in PHP via register_block_type( $name,
- * $args ) with an api_version, PHP-declared attributes, and a render_callback
- * that includes the block's render.php. There is NO block.json and NO
- * index.js/view.js build artifact for the block's editor representation:
- * server-rendered (dynamic) blocks have no save()-vs-stored markup to diverge,
- * so they cannot trigger "This block contains unexpected or invalid content"
- * (#227) by construction. Component-local interactivity uses the Interactivity
- * API (server-rendered data-wp-* directives) rather than a bundled editor
- * script. See docs/companion-plugin-php-only-blocks.md.
+ * Typed blocks carry their block.json metadata and are registered from their
+ * directory, allowing WordPress to resolve declared editor and frontend assets.
+ * Legacy PHP-only dynamic blocks remain supported through register_block_type()
+ * arguments and a render callback.
  *
  * The compiled artifact owns the block spec + render + preserved-JS payload;
  * this class is the deterministic destination that turns that payload into an
@@ -44,6 +39,84 @@ class Static_Site_Importer_Companion_Plugin {
 	 * Payload schema identifier consumed by the scaffolder.
 	 */
 	public const PAYLOAD_SCHEMA = 'static-site-importer/companion-plugin/v1';
+
+	/**
+	 * Validate a canonical compiled companion payload before any WordPress writes.
+	 *
+	 * @param array<string,mixed> $payload Generated companion-plugin payload.
+	 * @return true|WP_Error
+	 */
+	public static function validate_payload( array $payload ) {
+		if ( self::PAYLOAD_SCHEMA !== ( $payload['schema'] ?? null ) ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_schema_invalid', 'Companion-plugin payload must use static-site-importer/companion-plugin/v1.' );
+		}
+		if ( '' === self::site_slug( $payload ) ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_site_slug_missing', 'Companion-plugin payload must declare a non-empty site_slug.' );
+		}
+		$blocks = $payload['blocks'] ?? array();
+		if ( ! is_array( $blocks ) || ! array_is_list( $blocks ) ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_blocks_invalid', 'Companion-plugin blocks must be an array.' );
+		}
+		$names       = array();
+		$block_names = array();
+		$namespace   = 'ssi-' . self::site_slug( $payload );
+		foreach ( $blocks as $index => $block ) {
+			if ( ! is_array( $block ) || array_is_list( $block ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_block_invalid', sprintf( 'Companion-plugin block %d must be an object.', $index ) );
+			}
+			$name = isset( $block['name'] ) && is_string( $block['name'] ) ? $block['name'] : '';
+			if ( ! preg_match( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $name ) || isset( $names[ $name ] ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_block_name_invalid', 'Companion-plugin block names must be unique lowercase slugs.' );
+			}
+			$names[ $name ] = true;
+			if ( ! isset( $block['block_json'] ) || ! is_array( $block['block_json'] ) || array_is_list( $block['block_json'] ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_block_json_invalid', sprintf( 'Block %s must declare block_json as an object.', $name ) );
+			}
+			$declared_name = $block['block_json']['name'] ?? '';
+			if ( '' !== $declared_name ) {
+				if ( ! is_string( $declared_name ) || ! preg_match( '/^[a-z0-9-]+\/[a-z0-9-]+$/', $declared_name ) ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_block_json_name_invalid', sprintf( 'Block %s must declare a valid WordPress block name.', $name ) );
+				}
+				if ( str_starts_with( $declared_name, 'core/' ) ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_block_json_name_reserved', sprintf( 'Block %s cannot declare the reserved WordPress core block name %s.', $name, $declared_name ), array( 'block' => $name, 'block_name' => $declared_name ) );
+				}
+			}
+			$effective_name = '' !== $declared_name ? $declared_name : $namespace . '/' . $name;
+			if ( isset( $block_names[ $effective_name ] ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_block_json_name_invalid', sprintf( 'Block %s resolves to a duplicate WordPress block name.', $name ) );
+			}
+			$block_names[ $effective_name ] = true;
+			$assets = $block['assets'] ?? array();
+			if ( ! is_array( $assets ) || array_is_list( $assets ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_assets_invalid', sprintf( 'Block %s assets must be an object.', $name ) );
+			}
+			foreach ( $assets as $path => $content ) {
+				if ( ! is_string( $path ) || $path !== self::sanitize_relative_path( $path ) || ! is_scalar( $content ) ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_asset_path_invalid', sprintf( 'Block %s has an unsafe asset path.', $name ) );
+				}
+			}
+			$metadata = $block['block_json'];
+			if ( isset( $block['render'] ) && is_scalar( $block['render'] ) ) {
+				$metadata['render'] = 'file:./render.php';
+			}
+			$references = self::metadata_file_references( $metadata );
+			foreach ( $references as $path ) {
+				if ( ! array_key_exists( $path, $assets ) && ! ( 'render.php' === $path && isset( $block['render'] ) && is_scalar( $block['render'] ) ) ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_metadata_asset_missing', sprintf( 'Block %s metadata references undeclared asset %s.', $name, $path ) );
+				}
+			}
+		}
+		foreach ( $payload['preserved_js'] ?? array() as $entry ) {
+			if ( ! is_array( $entry ) || ! isset( $entry['src'] ) ) {
+				continue;
+			}
+			$src = is_string( $entry['src'] ) ? $entry['src'] : '';
+			if ( $src !== self::sanitize_relative_path( $src ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_asset_path_invalid', 'Companion-plugin preserved script has an unsafe asset path.' );
+			}
+		}
+		return true;
+	}
 
 	/**
 	 * Build the standalone plugin scaffold from a generated payload.
@@ -251,12 +324,9 @@ class Static_Site_Importer_Companion_Plugin {
 	private const JSON_SCHEMA_TYPES = array( 'array', 'object', 'string', 'number', 'integer', 'boolean', 'null' );
 
 	/**
-	 * Build one PHP-only dynamic block: its render.php (+ any carried assets) and
-	 * the PHP registration spec the main plugin file feeds to register_block_type.
-	 *
-	 * No block.json and no index.js/view.js build artifact is emitted for the
-	 * block. The block is registered server-side via render_callback, so it is a
-	 * dynamic block with no save()-vs-stored markup that could go invalid.
+	 * Build one block directory and its registration spec. Typed blocks retain
+	 * block.json and declared assets; blocks with a render payload also receive a
+	 * normalized render.php. Legacy schema-less entries use PHP registration.
 	 *
 	 * @param array<string,mixed> $block           Block payload entry.
 	 * @param string              $block_namespace Plugin block namespace.
@@ -271,17 +341,19 @@ class Static_Site_Importer_Companion_Plugin {
 			);
 		}
 
-		$block_name = $block_namespace . '/' . $name;
-		$args       = self::block_args( $block, $block_name );
+		$declared_name = is_string( $block['block_json']['name'] ?? null ) ? $block['block_json']['name'] : '';
+		$block_name    = preg_match( '/^[a-z0-9-]+\/[a-z0-9-]+$/', $declared_name ) ? $declared_name : $block_namespace . '/' . $name;
+		$args           = self::block_args( $block, $block_name );
 		if ( is_wp_error( $args ) ) {
 			return $args;
 		}
 
-		// The render callback always resolves to render.php, so it is always
-		// emitted even when the payload omits markup (an empty dynamic block).
-		$render              = isset( $block['render'] ) && is_scalar( $block['render'] ) ? (string) $block['render'] : '';
-		$files               = array();
-		$files['render.php'] = self::normalize_render( $render );
+		$has_render = isset( $block['render'] ) && is_scalar( $block['render'] );
+		$render     = $has_render ? (string) $block['render'] : '';
+		$files      = array();
+		if ( $has_render ) {
+			$files['render.php'] = self::normalize_render( $render );
+		}
 
 		// Carried static assets (e.g. block stylesheets or a hand-written
 		// Interactivity API view module) ride alongside render.php. These are
@@ -294,6 +366,19 @@ class Static_Site_Importer_Companion_Plugin {
 			}
 			$files[ $relative ] = (string) $content;
 		}
+		$metadata = isset( $block['block_json'] ) && is_array( $block['block_json'] ) && ! array_is_list( $block['block_json'] );
+		if ( $metadata ) {
+			$block_json           = $block['block_json'];
+			$block_json['name']   = $block_name;
+			if ( $has_render ) {
+				$block_json['render'] = 'file:./render.php';
+			}
+			$json                 = wp_json_encode( $block_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+			if ( false === $json ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_block_json_invalid', sprintf( 'Block %s block_json could not be encoded.', $block_name ) );
+			}
+			$files['block.json'] = $json . "\n";
+		}
 
 		return array(
 			'block_name' => $block_name,
@@ -302,6 +387,7 @@ class Static_Site_Importer_Companion_Plugin {
 				'name' => $block_name,
 				'dir'  => $name,
 				'args' => $args,
+				'metadata' => $metadata,
 			),
 			'files'      => $files,
 		);
@@ -501,16 +587,14 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = '<?php';
 		$lines[] = '/**';
 		$lines[] = ' * Plugin Name: ' . $header_name;
-		$lines[] = ' * Description: Generated companion plugin housing PHP-only dynamic blocks and preserved island JS for ' . $site_name . '. Generated by Static Site Importer.';
+		$lines[] = ' * Description: Generated companion plugin housing typed blocks and preserved island JS for ' . $site_name . '. Generated by Static Site Importer.';
 		$lines[] = ' * Version: 1.0.0';
 		$lines[] = ' * Requires at least: 6.9';
 		$lines[] = ' * Requires PHP: 8.1';
 		$lines[] = ' * Text Domain: ' . $plugin_slug;
 		$lines[] = ' *';
-		$lines[] = ' * Blocks are registered in PHP via register_block_type( $name, $args ) with a';
-		$lines[] = ' * render_callback (dynamic / server-rendered). There is no block.json and no';
-		$lines[] = ' * JS build: a dynamic block has no save()-vs-stored markup to diverge, so it';
-		$lines[] = ' * cannot trigger "This block contains unexpected or invalid content".';
+		$lines[] = ' * Typed blocks register from block.json directories. Legacy dynamic blocks use';
+		$lines[] = ' * PHP args and a render_callback for backward compatibility.';
 		$lines[] = ' *';
 		$lines[] = ' * @package StaticSiteImporterCompanion';
 		$lines[] = ' */';
@@ -523,11 +607,10 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = sprintf( "define( '%s_URL', plugin_dir_url( __FILE__ ) );", $const_prefix );
 		$lines[] = '';
 		$lines[] = '/**';
-		$lines[] = ' * PHP-only dynamic block registration specs for this site.';
+		$lines[] = ' * Generated block registration specs for this site.';
 		$lines[] = ' *';
-		$lines[] = ' * Each entry carries the fully-qualified block name, its render.php directory,';
-		$lines[] = ' * and the register_block_type() argument array (api_version, attributes, and';
-		$lines[] = ' * any editor metadata). The render_callback is attached at registration time.';
+		$lines[] = ' * Metadata blocks register from their directory; legacy PHP-only blocks carry';
+		$lines[] = ' * register_block_type() arguments and a render callback.';
 		$lines[] = ' *';
 		$lines[] = ' * @return array<int,array<string,mixed>>';
 		$lines[] = ' */';
@@ -557,7 +640,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = '}';
 		$lines[] = '';
 		$lines[] = '/**';
-		$lines[] = ' * Register the generated PHP-only dynamic blocks.';
+		$lines[] = ' * Register generated metadata blocks and legacy PHP-only dynamic blocks.';
 		$lines[] = ' */';
 		$lines[] = sprintf( 'function %s_register_blocks() {', $fn_prefix );
 		$lines[] = "\tif ( ! function_exists( 'register_block_type' ) ) {";
@@ -565,9 +648,18 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\t}";
 		$lines[] = '';
 		$lines[] = sprintf( "\tforeach ( %s_block_specs() as \$spec ) {", $fn_prefix );
-		$lines[] = "\t\t\$args                    = isset( \$spec['args'] ) && is_array( \$spec['args'] ) ? \$spec['args'] : array();";
-		$lines[] = sprintf( "\t\t\$args['render_callback'] = %s_render_callback( (string) \$spec['dir'] );", $fn_prefix );
-		$lines[] = "\t\tregister_block_type( (string) \$spec['name'], \$args );";
+		$lines[] = sprintf( "\t\t\$registered = ! empty( \$spec['metadata'] ) ? register_block_type( %s_DIR . 'blocks/' . (string) \$spec['dir'] ) : null;", $const_prefix );
+		$lines[] = "\t\tif ( empty( \$spec['metadata'] ) ) {";
+		$lines[] = "\t\t\t\$args                    = isset( \$spec['args'] ) && is_array( \$spec['args'] ) ? \$spec['args'] : array();";
+		$lines[] = sprintf( "\t\t\t\$args['render_callback'] = %s_render_callback( (string) \$spec['dir'] );", $fn_prefix );
+		$lines[] = "\t\t\t\$registered              = register_block_type( (string) \$spec['name'], \$args );";
+		$lines[] = "\t\t}";
+		$lines[] = "\t\tif ( \$registered instanceof WP_Block_Type && (string) \$spec['name'] === \$registered->name ) {";
+		$lines[] = "\t\t\tif ( ! isset( \$GLOBALS['static_site_importer_companion_block_owners'] ) || ! is_array( \$GLOBALS['static_site_importer_companion_block_owners'] ) ) {";
+		$lines[] = "\t\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'] = array();";
+		$lines[] = "\t\t\t}";
+		$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'][ (string) \$spec['name'] ] = array( 'plugin_file' => %s, 'plugin_path' => __FILE__ );", var_export( $plugin_file, true ) );
+		$lines[] = "\t\t}";
 		$lines[] = "\t}";
 		$lines[] = '}';
 		$lines[] = sprintf( "add_action( 'init', '%s_register_blocks' );", $fn_prefix );
@@ -804,8 +896,7 @@ class Static_Site_Importer_Companion_Plugin {
 	 */
 	private static function sanitize_relative_path( string $value ): string {
 		$value = str_replace( '\\', '/', trim( $value ) );
-		$value = ltrim( $value, '/' );
-		if ( '' === $value || str_contains( $value, '../' ) || str_contains( $value, './' ) ) {
+		if ( '' === $value || str_starts_with( $value, '/' ) || str_contains( $value, '../' ) || str_contains( $value, './' ) ) {
 			return '';
 		}
 
@@ -819,6 +910,27 @@ class Static_Site_Importer_Companion_Plugin {
 		}
 
 		return implode( '/', $segments );
+	}
+
+	/** @return array<int,string> */
+	private static function metadata_file_references( array $block_json ): array {
+		$references = array();
+		foreach ( array( 'editorScript', 'script', 'viewScript', 'viewScriptModule', 'style', 'editorStyle', 'viewStyle', 'render', 'variations' ) as $key ) {
+			$values = 'variations' === $key
+				? array( $block_json[ $key ] ?? null )
+				: ( isset( $block_json[ $key ] ) && is_array( $block_json[ $key ] ) ? $block_json[ $key ] : array( $block_json[ $key ] ?? null ) );
+			foreach ( $values as $value ) {
+				if ( ! is_string( $value ) || ! str_starts_with( $value, 'file:./' ) ) {
+					continue;
+				}
+				$path = self::sanitize_relative_path( substr( $value, 7 ) );
+				if ( '' === $path ) {
+					return array( '' );
+				}
+				$references[] = $path;
+			}
+		}
+		return array_values( array_unique( $references ) );
 	}
 
 	/**

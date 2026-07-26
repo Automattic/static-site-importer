@@ -2752,6 +2752,14 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 	}
 
+	/** Identify diagnostics that represent a source script awaiting runtime carriage. */
+	private static function is_script_runtime_fallback_diagnostic( array $diagnostic ): bool {
+		$code   = self::first_scalar( $diagnostic, array( 'code', 'diagnostic_code', 'kind', 'type', 'reason' ) );
+		$tag    = strtolower( self::first_scalar( $diagnostic, array( 'tag' ) ) );
+		$reason = strtolower( $code );
+		return 'script' === $tag || str_contains( $reason, 'script' ) || str_contains( $reason, 'runtime' );
+	}
+
 	/**
 	 * Reconcile late-added fallback rows against active companion dependencies.
 	 *

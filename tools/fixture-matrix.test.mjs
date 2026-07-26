@@ -277,6 +277,24 @@ test('gutenberg incompatibility registry keeps runtime islands separate and cons
   assert.equal(byKey['editor-render-divergence'].signals.editor_render_divergence, 1);
 });
 
+test('gutenberg incompatibility registry promotes recurring semantic description lists without materializing a plugin', () => {
+  const registry = buildGutenbergIncompatibilityRegistry({
+    matrix_id: 'semantic-description-list',
+    fixtures: [{ fixture_id: 'catalog' }, { fixture_id: 'documentation' }],
+    findings: [
+      { fixture_id: 'catalog', observed_block_name: 'core/html', source_snippet: '<dl><dt>Size</dt><dd>Large</dd></dl>' },
+      { fixture_id: 'documentation', observed_block_name: 'core/html', source_snippet: '<dl><dt>API</dt><dd>Stable</dd></dl>' },
+    ],
+  });
+  const pattern = registry.patterns.find((row) => row.pattern_key === 'semantic-description-list');
+
+  assert.equal(pattern.classification, 'custom-block-candidate');
+  assert.equal(pattern.limitation_type, 'real_gutenberg_gap');
+  assert.equal(pattern.no_core_block_path, true);
+  assert.equal(pattern.fixture_count, 2);
+  assert.equal(JSON.stringify(registry).includes('companion_plugin_payload'), false);
+});
+
 test('gutenberg incompatibility registry separates fixture decision axes', () => {
   const registry = buildGutenbergIncompatibilityRegistry({
     matrix_id: 'decision-axis-map',
