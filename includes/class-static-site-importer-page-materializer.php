@@ -809,13 +809,7 @@ class Static_Site_Importer_Page_Materializer {
 	private static function embed_svg_font_faces( string $svg, string $font_faces ): string {
 		preg_match_all( '/font-family\s*:\s*(["\']?)([^;"\']+)\1\s*;/i', $font_faces, $matches );
 		$families = array_values( array_unique( array_map( 'trim', $matches[2] ?? array() ) ) );
-		$uses_family = false;
-		foreach ( $families as $family ) {
-			if ( preg_match( '/font-family\s*[:=]\s*(["\']?)' . preg_quote( $family, '/' ) . '\\1/i', $svg ) ) {
-				$uses_family = true;
-				break;
-			}
-		}
+		$uses_family = Static_Site_Importer_Font_Materializer::svg_uses_font_family( $svg, $families );
 		if ( '' === $font_faces || ! str_contains( $svg, '<text' ) || ! $uses_family || ! preg_match( '/<svg\b[^>]*>/i', $svg, $match, PREG_OFFSET_CAPTURE ) ) {
 			return $svg;
 		}
