@@ -6026,6 +6026,7 @@ test('visual-compare attribution degrades explicitly when sidecars or the extens
   const persisted = materializeVisualCompareArtifacts({
     outputDirectory,
     codeboxArtifactsDirectory,
+    visualAttributionLoader: () => null,
     result: {
       fixtures: [{
         fixture_id: 'simple-site',
