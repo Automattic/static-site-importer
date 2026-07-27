@@ -1,0 +1,8 @@
+{
+  "schema": "homeboy/test-manifest/v1",
+  "tests": {
+    "tests/form-materializer-smoke.php": {
+      "environment": "standalone-php"
+    }
+  }
+}
