@@ -106,12 +106,15 @@ namespace {
 		'forms' => array(
 			array(
 				'selector' => 'form.contact',
-				'form'     => array( 'action' => 'mailto:hello@example.com', 'method' => 'post' ),
+				'form'     => array( 'action' => 'mailto:hello@example.com', 'method' => 'post', 'class' => 'form contact' ),
 				'controls' => array(
-					array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'label' => 'Your name', 'required' => true ),
+					array( 'tag' => 'input', 'type' => 'text', 'id' => 'contact-name', 'name' => 'name', 'label' => 'Your name', 'required' => true ),
 					array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email', 'required' => true ),
 					array( 'tag' => 'input', 'type' => 'tel', 'name' => 'phone', 'label' => 'Phone' ),
+					array( 'tag' => 'input', 'type' => 'number', 'name' => 'attendees', 'label' => 'Attendees' ),
 					array( 'tag' => 'select', 'type' => 'select', 'name' => 'topic', 'label' => 'Topic', 'options' => array( array( 'label' => 'Sales' ), array( 'label' => 'Support' ) ) ),
+					array( 'tag' => 'input', 'type' => 'radio', 'name' => 'format', 'label' => 'In person', 'options' => array( 'In person', 'Online' ) ),
+					array( 'tag' => 'input', 'type' => 'checkbox', 'name' => 'updates', 'label' => 'Send me updates' ),
 					array( 'tag' => 'textarea', 'type' => 'textarea', 'name' => 'message', 'label' => 'Message' ),
 					array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send message' ),
 				),
@@ -124,16 +127,29 @@ namespace {
 	$row    = $seed['forms'][0] ?? array();
 	$markup = (string) ( $row['block_markup'] ?? '' );
 	$assert( true === ( $row['runtime_mapped'] ?? false ), 'seed-form-runtime-mapped' );
-	$assert( 5 === ( $row['field_count'] ?? 0 ), 'seed-five-fields-mapped' );
+	$assert( 8 === ( $row['field_count'] ?? 0 ), 'seed-eight-fields-mapped' );
 	$assert( str_contains( $markup, 'wp:jetpack/contact-form' ), 'markup-contact-form' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-text' ), 'markup-field-text' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-email' ), 'markup-field-email' );
-	$assert( str_contains( $markup, 'wp:jetpack/field-telephone' ), 'markup-field-telephone' );
+	$assert( ! str_contains( $markup, 'wp:jetpack/field-telephone' ), 'markup-avoids-unstable-field-telephone-template' );
+	$assert( str_contains( $markup, 'wp:jetpack/field-number' ), 'markup-field-number' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-select' ), 'markup-field-select' );
+	$assert( str_contains( $markup, 'wp:jetpack/field-radio' ), 'markup-field-radio' );
+	$assert( str_contains( $markup, 'wp:jetpack/field-checkbox' ), 'markup-field-checkbox' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-textarea' ), 'markup-field-textarea' );
 	$assert( str_contains( $markup, 'wp:jetpack/button' ), 'markup-submit-button' );
 	$assert( str_contains( $markup, 'hello@example.com' ), 'markup-mailto-recipient' );
 	$assert( str_contains( $markup, '"options":["Sales","Support"]' ), 'markup-select-options' );
+	$assert( str_contains( $markup, '<div class="wp-block-jetpack-contact-form form contact">' ), 'markup-contact-form-wrapper-and-source-classes' );
+	$assert( str_contains( $markup, '<!-- wp:jetpack/field-text {"required":true,"id":"contact-name"} -->' ), 'markup-field-wrapper-open' );
+	$assert( str_contains( $markup, '<div><!-- wp:jetpack/label {"label":"Your name","requiredText":"*"} /-->' ), 'markup-field-label-child' );
+	$assert( str_contains( $markup, '<!-- wp:jetpack/input {"type":"text"} /--></div>' ), 'markup-field-input-child-and-wrapper-close' );
+	$assert( str_contains( $markup, '<!-- wp:jetpack/input {"type":"dropdown"} /-->' ), 'markup-select-input-child' );
+	$assert( str_contains( $markup, '<!-- wp:jetpack/input {"type":"textarea"} /-->' ), 'markup-textarea-input-child' );
+	$assert( str_contains( $markup, '<!-- wp:jetpack/input {"type":"tel"} /-->' ), 'markup-telephone-input-child' );
+	$assert( str_contains( $markup, '<!-- wp:jetpack/options {"type":"radio"} -->' ), 'markup-radio-options-child' );
+	$assert( str_contains( $markup, '<ul><!-- wp:jetpack/option {"label":"In person"} /-->' ), 'markup-radio-option-wrapper' );
+	$assert( str_contains( $markup, '<!-- wp:jetpack/option {"label":"Send me updates","isStandalone":true} /-->' ), 'markup-checkbox-option-child' );
 
 	// --- Provider blocks are never claimed without the provider runtime --------
 	$GLOBALS['ssi_jetpack_form_blocks_available'] = false;

@@ -37,13 +37,14 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return array<string,string>
 	 */
 	private static function field_block_map(): array {
+		// field-telephone rewrites its valid input child to an editor-invalid phone-input block.
 		return array(
 			'text'     => 'jetpack/field-text',
 			'search'   => 'jetpack/field-text',
 			'password' => 'jetpack/field-text',
-			'number'   => 'jetpack/field-text',
+			'number'   => 'jetpack/field-number',
 			'email'    => 'jetpack/field-email',
-			'tel'      => 'jetpack/field-telephone',
+			'tel'      => 'jetpack/field-text',
 			'url'      => 'jetpack/field-url',
 			'date'     => 'jetpack/field-date',
 			'textarea' => 'jetpack/field-textarea',
@@ -284,16 +285,14 @@ class Static_Site_Importer_Form_Seeder {
 
 		$attrs = array();
 		$label = self::control_text( $control );
-		if ( '' !== $label ) {
-			$attrs['label'] = $label;
-		}
 		if ( ! empty( $control['required'] ) ) {
 			$attrs['required'] = true;
 		}
-		$placeholder = isset( $control['placeholder'] ) && is_scalar( $control['placeholder'] ) ? trim( (string) $control['placeholder'] ) : '';
-		if ( '' !== $placeholder ) {
-			$attrs['placeholder'] = $placeholder;
+		$id = isset( $control['id'] ) && is_scalar( $control['id'] ) ? trim( (string) $control['id'] ) : '';
+		if ( '' !== $id ) {
+			$attrs['id'] = $id;
 		}
+		$placeholder = isset( $control['placeholder'] ) && is_scalar( $control['placeholder'] ) ? trim( (string) $control['placeholder'] ) : '';
 
 		if ( in_array( $lookup, array( 'select', 'radio', 'checkbox' ), true ) ) {
 			$options = self::option_labels( $control );
@@ -302,9 +301,69 @@ class Static_Site_Importer_Form_Seeder {
 			}
 		}
 
+		$inner_blocks = array();
+		if ( 'checkbox' === $lookup ) {
+			$inner_blocks[] = array(
+				'name'  => 'jetpack/option',
+				'attrs' => array(
+					'label'        => $label,
+					'isStandalone' => true,
+				),
+			);
+		} elseif ( '' !== $label ) {
+			$label_attrs = array( 'label' => $label );
+			if ( ! empty( $control['required'] ) ) {
+				$label_attrs['requiredText'] = '*';
+			}
+			$inner_blocks[] = array(
+				'name'  => 'jetpack/label',
+				'attrs' => $label_attrs,
+			);
+		}
+		if ( 'radio' === $lookup ) {
+			$options = $attrs['options'] ?? array();
+			if ( empty( $options ) && '' !== $label ) {
+				$options = array( $label );
+			}
+			$option_blocks = array();
+			foreach ( $options as $option ) {
+				$option_blocks[] = array(
+					'name'  => 'jetpack/option',
+					'attrs' => array( 'label' => $option ),
+				);
+			}
+			$inner_blocks[] = array(
+				'name'        => 'jetpack/options',
+				'attrs'       => array( 'type' => 'radio' ),
+				'innerBlocks' => $option_blocks,
+				'wrapper'     => 'ul',
+			);
+		}
+
+		$input_attrs = array();
+		if ( '' !== $placeholder ) {
+			$input_attrs['placeholder'] = $placeholder;
+		}
+		if ( 'textarea' === $lookup ) {
+			$input_attrs['type'] = 'textarea';
+		} elseif ( 'select' === $lookup ) {
+			$input_attrs['type'] = 'dropdown';
+		} elseif ( ! in_array( $lookup, array( 'checkbox', 'radio' ), true ) ) {
+			$input_attrs['type'] = $type;
+		}
+
+		if ( ! in_array( $lookup, array( 'checkbox', 'radio' ), true ) ) {
+			$inner_blocks[] = array(
+				'name'  => 'jetpack/input',
+				'attrs' => $input_attrs,
+			);
+		}
+
 		return array(
-			'name'  => $map[ $lookup ],
-			'attrs' => $attrs,
+			'name'        => $map[ $lookup ],
+			'attrs'       => $attrs,
+			'innerBlocks' => $inner_blocks,
+			'wrapper'     => 'div',
 		);
 	}
 
@@ -338,6 +397,11 @@ class Static_Site_Importer_Form_Seeder {
 		$attrs    = array();
 		$metadata = isset( $form['form'] ) && is_array( $form['form'] ) ? $form['form'] : array();
 		$action   = isset( $metadata['action'] ) && is_scalar( $metadata['action'] ) ? trim( (string) $metadata['action'] ) : '';
+		$class    = isset( $metadata['class'] ) && is_scalar( $metadata['class'] ) ? trim( (string) $metadata['class'] ) : '';
+
+		if ( '' !== $class ) {
+			$attrs['className'] = $class;
+		}
 
 		if ( '' !== $action && 0 === stripos( $action, 'mailto:' ) ) {
 			$recipient = trim( substr( $action, 7 ) );
@@ -400,9 +464,10 @@ class Static_Site_Importer_Form_Seeder {
 	 * @param string                          $name        Block name.
 	 * @param array<string, mixed>            $attrs       Block attributes.
 	 * @param array<int, array<string,mixed>> $inner_blocks Child block definitions.
+	 * @param string                          $wrapper     Persisted inner-block wrapper element.
 	 * @return string
 	 */
-	private static function serialize_block( string $name, array $attrs, array $inner_blocks = array() ): string {
+	private static function serialize_block( string $name, array $attrs, array $inner_blocks = array(), string $wrapper = '' ): string {
 		$attr_json = '';
 		if ( ! empty( $attrs ) ) {
 			$encoded = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs ) : json_encode( $attrs ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode
@@ -423,11 +488,33 @@ class Static_Site_Importer_Form_Seeder {
 			$inner[] = self::serialize_block(
 				(string) $block['name'],
 				isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array(),
-				isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array()
+				isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array(),
+				isset( $block['wrapper'] ) && is_string( $block['wrapper'] ) ? $block['wrapper'] : ''
 			);
 		}
 
-		return '<!-- wp:' . $name . $attr_json . ' -->' . "\n" . implode( "\n", $inner ) . "\n" . '<!-- /wp:' . $name . ' -->';
+		$inner_markup = implode( "\n", $inner );
+		if ( 'jetpack/contact-form' === $name ) {
+			$classes = 'wp-block-jetpack-contact-form';
+			if ( isset( $attrs['className'] ) && is_scalar( $attrs['className'] ) && '' !== trim( (string) $attrs['className'] ) ) {
+				$classes .= ' ' . trim( (string) $attrs['className'] );
+			}
+			$inner_markup = '<div class="' . self::escape_attribute( $classes ) . '">' . $inner_markup . '</div>';
+		} elseif ( in_array( $wrapper, array( 'div', 'ul' ), true ) ) {
+			$inner_markup = '<' . $wrapper . '>' . $inner_markup . '</' . $wrapper . '>';
+		}
+
+		return '<!-- wp:' . $name . $attr_json . ' -->' . "\n" . $inner_markup . "\n" . '<!-- /wp:' . $name . ' -->';
+	}
+
+	/**
+	 * Escape a block wrapper attribute without requiring WordPress to be loaded.
+	 *
+	 * @param string $value Raw attribute value.
+	 * @return string
+	 */
+	private static function escape_attribute( string $value ): string {
+		return htmlspecialchars( $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
 	}
 
 	/**
