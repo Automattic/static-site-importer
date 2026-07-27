@@ -3,7 +3,7 @@
  * Smoke coverage for the configurable form provider layer and Jetpack form adapter.
  *
  * Run from the repository root:
- * php tests/smoke-form-materializer.php
+ * php tests/form-materializer-smoke.php
  *
  * @package StaticSiteImporter
  */
@@ -465,7 +465,7 @@ namespace {
 	$assert( 'woocommerce' === Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'shop' ), 'shop-provider-unaffected-by-form-override' );
 
 	if ( empty( $failures ) ) {
-		echo 'PASS smoke-form-materializer.php (' . $assertions . " assertions)\n";
+		echo 'PASS form-materializer-smoke.php (' . $assertions . " assertions)\n";
 		exit( 0 );
 	}
 
