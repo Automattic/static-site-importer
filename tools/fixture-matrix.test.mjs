@@ -1157,6 +1157,63 @@ test('passes the gate when a preserved_runtime_island carries a runtime-carried 
   assert.equal(result.fixtures[0].status, 'passed');
 });
 
+test('passes the gate for the transformer accepted runtime preservation contract', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'runtime-island-preservation-status-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        status: 'failed',
+        diagnostics: [
+          {
+            kind: 'dom',
+            loss_class: 'runtime_island_preserved',
+            preservation_status: 'accepted_runtime_preservation',
+            runtime_requirement: 'client_script_execution',
+            disposition: 'preserve',
+            js_handling: 'preserve_verbatim',
+            source_path: 'website/index.html',
+            selector: '.site-nav',
+            message: 'Runtime-dependent source markup was preserved as a bounded runtime island.',
+          },
+        ],
+      },
+    ],
+  });
+
+  const finding = result.findings[0];
+  assert.equal(finding.loss_acceptance, 'acceptable');
+  assert.equal(finding.preservation_status, 'accepted_runtime_preservation');
+  assert.equal(finding.runtime_requirement, 'client_script_execution');
+  assert.equal(finding.js_handling, 'preserve_verbatim');
+  assert.equal(result.summary.acceptable_loss_classes.preserved_runtime_island, 1);
+  assert.equal(result.summary.unacceptable_loss_classes.preserved_runtime_island, undefined);
+  assert.equal(result.fixtures[0].status, 'passed');
+});
+
+test('loss class summaries reflect conditional finding verdicts', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'conditional-loss-summary-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      {
+        fixture_id: 'simple-site',
+        status: 'failed',
+        diagnostics: [
+          { kind: 'dom', loss_class: 'preserved_runtime_island', preservation_status: 'accepted_runtime_preservation', selector: '.working-runtime' },
+          { kind: 'dom', loss_class: 'preserved_runtime_island', selector: '.dead-runtime' },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(result.summary.acceptable_loss_classes.preserved_runtime_island, 1);
+  assert.equal(result.summary.unacceptable_loss_classes.preserved_runtime_island, 1);
+  assert.equal(result.summary.acceptable_finding_count, 1);
+  assert.equal(result.summary.unacceptable_finding_count, 1);
+});
+
 test('passes the gate when a preserved_runtime_island is explicitly accepted runtime preservation', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'runtime-island-repair-mode-test' });
   const result = normalizeFixtureMatrixResult({
