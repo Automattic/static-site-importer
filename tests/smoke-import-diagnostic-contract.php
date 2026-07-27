@@ -288,6 +288,29 @@ $assert( ! $numeric_only( $numeric_quality_gate_error['errors'][0]['reason'] ?? 
 $assert( ! $numeric_only( $numeric_quality_gate_error['fixture_diagnostics']['diagnostics'][0]['kind'] ?? '' ), 'fixture-diagnostic-kind-not-numeric-only' );
 $assert( ! $numeric_only( $numeric_quality_gate_error['fixture_diagnostics']['diagnostics'][0]['reason_code'] ?? '' ), 'fixture-diagnostic-reason-code-not-numeric-only' );
 
+$runtime_preservation_contract = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'status'      => 'completed',
+		'success'     => true,
+		'diagnostics' => array(
+			array(
+				'code'                => 'preserved_runtime_island',
+				'loss_class'          => 'runtime_island_preserved',
+				'selector'            => '.site-nav',
+				'runtime_requirement' => 'client_script_execution',
+				'preservation_status' => 'accepted_runtime_preservation',
+				'disposition'         => 'preserve',
+				'js_handling'         => 'preserve_verbatim',
+			)
+		),
+	)
+);
+$runtime_preservation_diagnostic = $runtime_preservation_contract['diagnostics'][0] ?? array();
+$assert( 'accepted_runtime_preservation' === ( $runtime_preservation_diagnostic['preservation_status'] ?? '' ), 'contract-preserves-runtime-acceptance-status' );
+$assert( 'client_script_execution' === ( $runtime_preservation_diagnostic['runtime_requirement'] ?? '' ), 'contract-preserves-runtime-requirement' );
+$assert( 'preserve' === ( $runtime_preservation_diagnostic['disposition'] ?? '' ), 'contract-preserves-runtime-disposition' );
+$assert( 'preserve_verbatim' === ( $runtime_preservation_diagnostic['js_handling'] ?? '' ), 'contract-preserves-runtime-js-handling' );
+
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );
