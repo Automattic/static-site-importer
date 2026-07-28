@@ -22,6 +22,10 @@ assert.ok(manifestUrl, 'README launch URL must provide a PHP extension manifest'
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
+const diagnostics = [];
+page.on('console', (message) => diagnostics.push(`console.${message.type()}: ${message.text()}`));
+page.on('pageerror', (error) => diagnostics.push(`pageerror: ${error.message}`));
+page.on('requestfailed', (request) => diagnostics.push(`requestfailed: ${request.url()} (${request.failure()?.errorText})`));
 
 try {
   // This is deliberately a browser fetch from Playground's origin: Node fetch
@@ -41,7 +45,10 @@ try {
     if (wordpress) break;
     await page.waitForTimeout(1_000);
   }
-  assert.ok(wordpress, 'Playground must boot its WordPress frame');
+  assert.ok(
+    wordpress,
+    `Playground must boot its WordPress frame; frames=${JSON.stringify(page.frames().map((frame) => frame.url()))}; diagnostics=${JSON.stringify(diagnostics.slice(-20))}`,
+  );
   if (!wordpress.url().includes('/import/')) await wordpress.waitForURL(/\/import\//, { timeout: 120_000 });
   await wordpress.locator('.ssi-importer').waitFor({ state: 'visible', timeout: 120_000 });
 
