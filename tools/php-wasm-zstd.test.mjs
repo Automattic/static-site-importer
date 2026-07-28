@@ -49,19 +49,23 @@ test( 'release publication keeps immutable assets and blueprints separate from t
 		readFile( path.join( root, '.github/workflows/release-php-wasm-zstd.yml' ), 'utf8' ),
 		readFile( path.join( root, 'docs/playground/publication-contract.md' ), 'utf8' ),
 	] );
-	assert.match( workflow, /PHP_WASM_ZSTD_ASSET_BASE_URL: https:\/\/automattic\.github\.io\/static-site-importer\/playground\/extensions\/\$\{\{ github\.event\.release\.tag_name \}\}/ );
+	assert.match( workflow, /workflow_dispatch:/ );
+	assert.match( workflow, /RELEASE_TAG: \$\{\{ github\.event\.release\.tag_name \|\| inputs\.release_tag \}\}/ );
+	assert.match( workflow, /PHP_WASM_ZSTD_ASSET_BASE_URL: https:\/\/automattic\.github\.io\/static-site-importer\/playground\/extensions\/\$\{\{ env\.RELEASE_TAG \}\}/ );
 	assert.match( workflow, /playground\/extensions\/\$RELEASE_TAG/ );
 	assert.match( workflow, /playground\/extensions\/latest/ );
 	assert.match( workflow, /releases\/download\/\$\{tag\}/ );
 	assert.match( workflow, /access-control-allow-origin/ );
+	assert.match( workflow, /git -C "\$pages_dir" add \.nojekyll playground/ );
+	assert.match( workflow, /git -C "\$pages_dir" diff --cached --quiet/ );
 	assert.doesNotMatch( workflow, /gh release upload/ );
 	assert.ok(
 		workflow.indexOf( 'Verify the immutable Playground launch end to end' ) < workflow.indexOf( 'Advance the verified latest aliases' ),
 		'latest aliases must advance only after the immutable browser verification',
 	);
 	assert.ok(
-		workflow.indexOf( 'Advance the verified latest aliases' ) < workflow.indexOf( 'Verify the exact README Playground launch' ),
-		'the published README URL must be verified after latest advances',
+		workflow.indexOf( 'Wait for the latest Pages aliases' ) < workflow.indexOf( 'Verify the exact README Playground launch' ),
+		'the published README URL must be verified after latest deploys',
 	);
 	assert.match( publication, /\{\{RELEASE_TAG\}\}/ );
 	assert.match( publication, /Homeboy remains the sole\s+release owner/ );
