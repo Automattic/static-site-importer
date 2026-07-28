@@ -13,10 +13,14 @@
       "step": "login"
     },
     {
+      "step": "runPHP",
+      "code": "<?php if ( ! extension_loaded( 'zstd' ) ) { throw new RuntimeException( 'The zstd Playground extension did not load.' ); } ?>"
+    },
+    {
       "step": "installPlugin",
       "pluginData": {
         "resource": "url",
-        "url": "https://github.com/Automattic/static-site-importer/releases/latest/download/static-site-importer.zip"
+        "url": "https://github.com/Automattic/static-site-importer/releases/download/{{RELEASE_TAG}}/static-site-importer.zip"
       },
       "options": {
         "activate": true,

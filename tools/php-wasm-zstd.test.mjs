@@ -4,8 +4,8 @@ import path from 'node:path';
 import test from 'node:test';
 
 const root = path.resolve( import.meta.dirname, '..' );
-const releaseBase = 'https://github.com/Automattic/static-site-importer/releases/latest/download';
-const manifestUrl = `${ releaseBase }/static-site-importer-zstd-php8.5-jspi.manifest.json`;
+const pagesBase = 'https://automattic.github.io/static-site-importer/playground/extensions';
+const manifestUrl = `${ pagesBase }/latest/static-site-importer-zstd-php8.5-jspi.manifest.json`;
 
 test( 'PHP.wasm zstd build uses pinned JSPI-compatible upstream sources', async () => {
 	const build = await readFile( path.join( root, 'tools/build-php-wasm-zstd.sh' ), 'utf8' );
@@ -18,13 +18,13 @@ test( 'PHP.wasm zstd build uses pinned JSPI-compatible upstream sources', async 
 	assert.doesNotMatch( build, /pecl|zstd -d|\/usr\/bin\/zstd/i );
 } );
 
-test( 'manifest publishes a PHP 8.5 JSPI zstd artifact through the release contract', async () => {
+test( 'manifest publishes a PHP 8.5 JSPI zstd artifact through the CORS-capable Pages contract', async () => {
 	const manifest = JSON.parse( await readFile( path.join( root, 'docs/playground/extensions/zstd-php8.5-jspi.manifest.json' ), 'utf8' ) );
 	assert.equal( manifest.name, 'zstd' );
 	assert.equal( manifest.mode, 'php-extension' );
 	assert.deepEqual( manifest.artifacts, [ {
 		phpVersion: '8.5',
-		sourcePath: `${ releaseBase }/static-site-importer-zstd-php8.5-jspi.so`,
+		sourcePath: `${ pagesBase }/latest/static-site-importer-zstd-php8.5-jspi.so`,
 	} ] );
 } );
 
@@ -40,6 +40,29 @@ test( 'Playground starts PHP 8.5 and both README launch links load zstd before b
 		const url = new URL( link );
 		assert.equal( url.searchParams.get( 'php' ), '8.5' );
 		assert.equal( url.searchParams.get( 'php-extension' ), manifestUrl );
-		assert.equal( url.searchParams.get( 'blueprint-url' ), 'https://raw.githubusercontent.com/Automattic/static-site-importer/main/docs/playground/blueprint.json' );
+		assert.equal( url.searchParams.get( 'blueprint-url' ), 'https://automattic.github.io/static-site-importer/playground/latest/blueprint.json' );
 	}
+} );
+
+test( 'release publication keeps immutable assets and blueprints separate from the latest convenience paths', async () => {
+	const [ workflow, publication ] = await Promise.all( [
+		readFile( path.join( root, '.github/workflows/release-php-wasm-zstd.yml' ), 'utf8' ),
+		readFile( path.join( root, 'docs/playground/publication-contract.md' ), 'utf8' ),
+	] );
+	assert.match( workflow, /PHP_WASM_ZSTD_ASSET_BASE_URL: https:\/\/automattic\.github\.io\/static-site-importer\/playground\/extensions\/\$\{\{ github\.event\.release\.tag_name \}\}/ );
+	assert.match( workflow, /playground\/extensions\/\$RELEASE_TAG/ );
+	assert.match( workflow, /playground\/extensions\/latest/ );
+	assert.match( workflow, /releases\/download\/\$\{tag\}/ );
+	assert.match( workflow, /access-control-allow-origin/ );
+	assert.doesNotMatch( workflow, /gh release upload/ );
+	assert.ok(
+		workflow.indexOf( 'Verify the immutable Playground launch end to end' ) < workflow.indexOf( 'Advance the verified latest aliases' ),
+		'latest aliases must advance only after the immutable browser verification',
+	);
+	assert.ok(
+		workflow.indexOf( 'Advance the verified latest aliases' ) < workflow.indexOf( 'Verify the exact README Playground launch' ),
+		'the published README URL must be verified after latest advances',
+	);
+	assert.match( publication, /\{\{RELEASE_TAG\}\}/ );
+	assert.match( publication, /Homeboy remains the sole\s+release owner/ );
 } );
