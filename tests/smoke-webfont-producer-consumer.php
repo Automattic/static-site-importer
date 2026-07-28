@@ -32,32 +32,6 @@ function wp_safe_remote_get( string $url, array $args ) {
 function wp_remote_retrieve_response_code( $response ): int { return (int) ( $response['response']['code'] ?? 0 ); }
 function wp_remote_retrieve_body( $response ): string { return (string) ( $response['body'] ?? '' ); }
 
-$checkout_candidates = array_filter( array_merge( array( getenv( 'BLOCKS_ENGINE_DIR' ) ?: '' ), glob( dirname( dirname( __DIR__ ) ) . '/blocks-engine*' ) ?: array() ) );
-$blocks_engine_root = '';
-foreach ( $checkout_candidates as $candidate ) {
-	$builder = $candidate . '/php-transformer/src/StaticSite/FontMaterialization/FontMaterializationPlanBuilder.php';
-	if ( is_file( $builder ) && str_contains( (string) file_get_contents( $builder ), 'webfont_contract' ) && is_dir( $candidate . '/fixtures/websites/37-art-gallery-exhibition' ) ) {
-		$blocks_engine_root = $candidate;
-		break;
-	}
-}
-if ( '' === $blocks_engine_root ) {
-	echo "Webfont producer-consumer smoke skipped: Blocks Engine checkout unavailable.\n";
-	exit( 0 );
-}
-$blocks_engine = $blocks_engine_root . '/php-transformer/src/';
-require $blocks_engine . 'StaticSite/FontMaterialization/FontMaterializationPlanBuilder.php';
-spl_autoload_register(
-	static function ( string $class ) use ( $blocks_engine ): void {
-		$prefix = 'Automattic\\BlocksEngine\\PhpTransformer\\';
-		if ( str_starts_with( $class, $prefix ) ) {
-			$path = $blocks_engine . str_replace( '\\', '/', substr( $class, strlen( $prefix ) ) ) . '.php';
-			if ( is_file( $path ) ) require $path;
-		}
-	},
-	true,
-	true
-);
 require dirname( __DIR__ ) . '/vendor/autoload.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-font-materializer.php';
 
@@ -65,15 +39,12 @@ $assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) throw new RuntimeException( $message );
 };
 
-$fixture_root = $blocks_engine_root . '/fixtures/websites/37-art-gallery-exhibition';
-$files = array();
-foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $fixture_root, FilesystemIterator::SKIP_DOTS ) ) as $file ) {
-	if ( $file->isFile() ) $files[ substr( $file->getPathname(), strlen( $fixture_root ) + 1 ) ] = file_get_contents( $file->getPathname() );
-}
+$fixture_html = '<!doctype html><html><head><link rel="stylesheet" href="css/style.css"></head><body><main>Inter fixture</main></body></html>';
+$fixture_css  = "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');\n:root{--font:'Inter',system-ui,sans-serif}body{font-family:var(--font)}";
 $producer_plan = ( new Automattic\BlocksEngine\PhpTransformer\StaticSite\FontMaterialization\FontMaterializationPlanBuilder() )->fromWebFontSources(
-	(string) $files['index.html'],
-	(string) $files['css/style.css'],
-	array( array( 'path' => 'css/style.css', 'content' => (string) $files['css/style.css'], 'source_hash' => hash( 'sha256', (string) $files['css/style.css'] ) ) )
+	$fixture_html,
+	$fixture_css,
+	array( array( 'path' => 'css/style.css', 'content' => $fixture_css, 'source_hash' => hash( 'sha256', $fixture_css ) ) )
 );
 $contract = $producer_plan['webfont_contract'] ?? array();
 $assert( 'blocks-engine/webfont-materialization/v1' === ( $contract['schema'] ?? '' ) && 1 === count( $contract['imports'] ?? array() ) && 9 === count( $contract['faces'] ?? array() ), 'fixture 37 sibling compiler emits the nested shared import and typed Inter face records' );
