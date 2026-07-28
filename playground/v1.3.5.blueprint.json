@@ -1,0 +1,35 @@
+{
+  "$schema": "https://playground.wordpress.net/blueprint-schema.json",
+  "landingPage": "/import/",
+  "preferredVersions": {
+    "php": "8.5",
+    "wp": "latest"
+  },
+  "features": {
+    "networking": true
+  },
+  "steps": [
+    {
+      "step": "login"
+    },
+    {
+      "step": "runPHP",
+      "code": "<?php if ( ! extension_loaded( 'zstd' ) ) { throw new RuntimeException( 'The zstd Playground extension did not load.' ); } ?>"
+    },
+    {
+      "step": "installPlugin",
+      "pluginData": {
+        "resource": "url",
+        "url": "https://github.com/Automattic/static-site-importer/releases/download/v1.3.5/static-site-importer.zip"
+      },
+      "options": {
+        "activate": true,
+        "targetFolderName": "static-site-importer"
+      }
+    },
+    {
+      "step": "runPHP",
+      "code": "<?php require_once '/wordpress/wp-load.php';\n$page = get_page_by_path( 'import', OBJECT, 'page' );\n$content = '<!-- wp:static-site-importer/importer {\"title\":\"Import HTML to WordPress\",\"intro\":\"Upload a website or paste HTML. Static Site Importer will generate your new WordPress website.\",\"applyToCurrentSite\":false,\"openInPlayground\":true} /-->';\n$post = array(\n    'post_title' => 'Import Static Site',\n    'post_name' => 'import',\n    'post_type' => 'page',\n    'post_status' => 'publish',\n    'post_content' => $content,\n    'comment_status' => 'closed',\n    'ping_status' => 'closed',\n);\nif ( $page instanceof WP_Post ) {\n    $post['ID'] = $page->ID;\n    wp_update_post( $post );\n} else {\n    wp_insert_post( $post );\n}\nupdate_option( 'static_site_importer_protected_pages', array( 'import' ), false );\n?>"
+    }
+  ]
+}
