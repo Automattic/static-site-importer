@@ -5838,26 +5838,33 @@ test('visual-compare sidecars are normalized and retained under the bench artifa
   };
 
   let normalizerInput;
+  let visualAttributionLoaderCalls = 0;
   const persisted = materializeVisualCompareArtifacts({
     result,
     outputDirectory,
     codeboxArtifactsDirectory,
-    visualAttributionNormalizer(input) {
-      normalizerInput = input;
+    visualAttributionLoader() {
+      visualAttributionLoaderCalls += 1;
       return {
-        schema: 'homeboy/WordPressVisualAttribution/v1',
-        mismatch_regions: input.visualExplanation.mismatchRegions,
-        selector_deltas: [{ bounding_box: { delta: { y: 12 } } }],
-        top_findings: Array.from({ length: 8 }, (_, index) => ({ kind: index === 0 ? 'geometry' : 'style', selector: '.hero', property: `property-${index}` })),
-        computed_style_deltas: { paint: [{ property: 'color' }], typography: [{ property: 'font-size' }, { property: 'line-height' }] },
-        elements: { changed: [{ path: '0.1' }], added: [], removed: [{ path: '0.2' }] },
-        summary: { changed: 1, added: 0, removed: 1 },
-        limitations: ['Attribution uses bounded browser evidence.'],
+        normalizeWordPressVisualAttribution(input) {
+          normalizerInput = input;
+          return {
+            schema: 'homeboy/WordPressVisualAttribution/v1',
+            mismatch_regions: input.visualExplanation.mismatchRegions,
+            selector_deltas: [{ bounding_box: { delta: { y: 12 } } }],
+            top_findings: Array.from({ length: 8 }, (_, index) => ({ kind: index === 0 ? 'geometry' : 'style', selector: '.hero', property: `property-${index}` })),
+            computed_style_deltas: { paint: [{ property: 'color' }], typography: [{ property: 'font-size' }, { property: 'line-height' }] },
+            elements: { changed: [{ path: '0.1' }], added: [], removed: [{ path: '0.2' }] },
+            summary: { changed: 1, added: 0, removed: 1 },
+            limitations: ['Attribution uses bounded browser evidence.'],
+          };
+        },
       };
     },
   });
   const fixture = persisted.result.fixtures[0];
 
+  assert.equal(visualAttributionLoaderCalls, 1);
   assert.deepEqual(Object.keys(persisted.artifacts).sort(), [
     'visual_compare_simple-site--contact_candidate.png',
     'visual_compare_simple-site_candidate',
@@ -6022,11 +6029,15 @@ test('visual-compare attribution degrades explicitly when sidecars or the extens
   const runtimeDirectory = path.join(codeboxArtifactsDirectory, 'runtime-123', 'files', 'browser', 'visual-compare', 'simple-site');
   mkdirSync(runtimeDirectory, { recursive: true });
   writeFileSync(path.join(runtimeDirectory, 'visual-diff.json'), JSON.stringify({ schema: 'wp-codebox/visual-compare/v1', comparison: { mismatchPixels: 1, totalPixels: 10 } }));
+  let visualAttributionLoaderCalls = 0;
 
   const persisted = materializeVisualCompareArtifacts({
     outputDirectory,
     codeboxArtifactsDirectory,
-    visualAttributionLoader: () => null,
+    visualAttributionLoader() {
+      visualAttributionLoaderCalls += 1;
+      return null;
+    },
     result: {
       fixtures: [{
         fixture_id: 'simple-site',
@@ -6041,6 +6052,7 @@ test('visual-compare attribution degrades explicitly when sidecars or the extens
 
   const attributionPath = persisted.result.fixtures[0].visual_parity_artifacts.artifacts.visual_attribution.ref.path;
   const attribution = JSON.parse(readFileSync(attributionPath, 'utf8'));
+  assert.equal(visualAttributionLoaderCalls, 1);
   assert.equal(attribution.schema, 'static-site-importer/visual-attribution-unavailable/v1');
   assert.ok(attribution.limitations.some((message) => message.includes('normalizer was unavailable')));
   assert.ok(attribution.limitations.some((message) => message.includes('DOM snapshot')));
