@@ -365,8 +365,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				array(
 					'target_path'            => $target,
 					'source_path'            => (string) ( $write['source_path'] ?? $target ),
-					'payload'                => array( 'encoding' => 'utf8', 'data' => (string) ( $write['content'] ?? '' ) ),
-					'payload_hash'           => hash( 'sha256', (string) ( $write['content'] ?? '' ) ),
+					'payload'                => array( 'encoding' => (string) ( $write['encoding'] ?? 'utf8' ), 'data' => (string) ( $write['content'] ?? '' ) ),
+					'payload_hash'           => 'base64' === ( $write['encoding'] ?? 'utf8' ) ? hash( 'sha256', (string) base64_decode( (string) ( $write['content'] ?? '' ), true ) ) : hash( 'sha256', (string) ( $write['content'] ?? '' ) ),
 					'reconciliation_identity' => hash( 'sha256', "font-materialization\n" . $target ),
 				)
 			);
@@ -387,7 +387,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				$state['applied']['files'][] = $result;
 			}
 		}
-		return array( 'status' => 'completed', 'files' => $reports, 'diagnostics' => $overlay['diagnostics'] );
+		return array( 'status' => 'completed', 'files' => $reports, 'diagnostics' => $overlay['diagnostics'], 'faces' => $overlay['faces'] ?? array(), 'required_faces' => $overlay['required_faces'] ?? array() );
 	}
 
 	/** Verify every canonical asset publication against its resolved write and references. */
