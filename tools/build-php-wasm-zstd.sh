@@ -8,7 +8,7 @@ readonly LIBZSTD_REF='63779c798237346c2b245c546c40b72a5a5913fe'
 readonly PHP_WASM_COMPILE_EXTENSION_VERSION='3.1.45'
 readonly ARTIFACT_NAME='static-site-importer-zstd-php8.5-jspi.so'
 readonly MANIFEST_NAME='static-site-importer-zstd-php8.5-jspi.manifest.json'
-readonly RELEASE_BASE_URL='https://github.com/Automattic/static-site-importer/releases/latest/download'
+readonly PAGES_BASE_URL='https://automattic.github.io/static-site-importer/playground/extensions'
 
 root="$(git rev-parse --show-toplevel)"
 out_dir="${1:-$root/dist/php-wasm-zstd}"
@@ -43,16 +43,16 @@ mv "$module_path" "$out_dir/$ARTIFACT_NAME"
 
 node -e '
 const fs = require("node:fs");
-const [output, manifestName, artifactName, releaseBase] = process.argv.slice(1);
+const [output, manifestName, artifactName, assetBase] = process.argv.slice(1);
 const manifest = {
   name: "zstd",
   version: "0.13.3",
   mode: "php-extension",
-  artifacts: [{ phpVersion: "8.5", sourcePath: `${releaseBase}/${artifactName}` }],
+  artifacts: [{ phpVersion: "8.5", sourcePath: `${assetBase}/${artifactName}` }],
 };
 fs.writeFileSync(`${output}/${manifestName}`, JSON.stringify(manifest, null, 2) + "\n");
 manifest.artifacts[0].sourcePath = artifactName;
 fs.writeFileSync(`${output}/manifest.json`, JSON.stringify(manifest, null, 2) + "\n");
-' "$out_dir" "$MANIFEST_NAME" "$ARTIFACT_NAME" "$RELEASE_BASE_URL"
+' "$out_dir" "$MANIFEST_NAME" "$ARTIFACT_NAME" "${PHP_WASM_ZSTD_ASSET_BASE_URL:-$PAGES_BASE_URL/latest}"
 
 printf 'Built %s and %s in %s\n' "$ARTIFACT_NAME" "$MANIFEST_NAME" "$out_dir"

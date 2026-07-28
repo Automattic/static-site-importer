@@ -6,10 +6,11 @@ on:
 
 permissions:
   contents: write
+  pages: write
 
 jobs:
-  build-and-upload:
-    name: Build PHP 8.5 JSPI zstd side module
+  build-and-publish:
+    name: Build and publish PHP 8.5 JSPI zstd side module
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -22,10 +23,71 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run build:php-wasm-zstd -- dist/php-wasm-zstd
+      - name: Build the immutable release asset
+        env:
+          PHP_WASM_ZSTD_ASSET_BASE_URL: https://automattic.github.io/static-site-importer/playground/extensions/${{ github.event.release.tag_name }}
+        run: npm run build:php-wasm-zstd -- dist/php-wasm-zstd
       - name: Verify the PHP.wasm artifact contract
         run: npm run test:php-wasm-zstd
-      - name: Upload public Playground extension assets
+      - name: Publish immutable CORS-capable Pages assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" dist/php-wasm-zstd/static-site-importer-zstd-php8.5-jspi.so dist/php-wasm-zstd/static-site-importer-zstd-php8.5-jspi.manifest.json
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          pages_dir="$RUNNER_TEMP/static-site-importer-pages"
+          if git fetch origin gh-pages; then
+            git worktree add --detach "$pages_dir" origin/gh-pages
+          else
+            git worktree add --detach "$pages_dir"
+            git -C "$pages_dir" checkout --orphan gh-pages
+            git -C "$pages_dir" rm -rf . || true
+          fi
+          touch "$pages_dir/.nojekyll"
+          mkdir -p "$pages_dir/playground/extensions/$RELEASE_TAG"
+          cp dist/php-wasm-zstd/static-site-importer-zstd-php8.5-jspi.* "$pages_dir/playground/extensions/$RELEASE_TAG/"
+          node -e '
+            const fs = require("node:fs");
+            const [source, output, tag] = process.argv.slice(1);
+            const blueprint = JSON.parse(fs.readFileSync(source, "utf8"));
+            blueprint.steps.find((step) => step.step === "installPlugin").pluginData.url = `https://github.com/Automattic/static-site-importer/releases/download/${tag}/static-site-importer.zip`;
+            fs.writeFileSync(output, JSON.stringify(blueprint, null, 2) + "\n");
+          ' docs/playground/blueprint.json "$pages_dir/playground/$RELEASE_TAG.blueprint.json" "$RELEASE_TAG"
+          git -C "$pages_dir" add playground
+          git -C "$pages_dir" -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Publish immutable Playground assets for $RELEASE_TAG"
+          git -C "$pages_dir" push origin HEAD:gh-pages
+          if ! gh api "repos/$GITHUB_REPOSITORY/pages" >/dev/null 2>&1; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/pages" -f 'source[branch]=gh-pages' -f 'source[path]=/'
+          fi
+      - name: Wait for the CORS publication contract
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          url="https://automattic.github.io/static-site-importer/playground/extensions/$RELEASE_TAG/static-site-importer-zstd-php8.5-jspi.manifest.json"
+          for attempt in $(seq 1 30); do
+            headers="$(curl --silent --show-error --location --dump-header - --output /dev/null "$url")"
+            if printf '%s' "$headers" | tr -d '\r' | grep -qi '^access-control-allow-origin: \*'; then exit 0; fi
+            sleep 10
+          done
+          echo "GitHub Pages did not publish CORS headers for $url" >&2
+          exit 1
+      - name: Verify the immutable Playground launch end to end
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          PLAYGROUND_EXTENSION_MANIFEST_URL: https://automattic.github.io/static-site-importer/playground/extensions/${{ github.event.release.tag_name }}/static-site-importer-zstd-php8.5-jspi.manifest.json
+          PLAYGROUND_BLUEPRINT_URL: https://automattic.github.io/static-site-importer/playground/${{ github.event.release.tag_name }}.blueprint.json
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:playground-launch
+      - name: Advance the verified latest aliases
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          pages_dir="$RUNNER_TEMP/static-site-importer-pages"
+          mkdir -p "$pages_dir/playground/latest" "$pages_dir/playground/extensions/latest"
+          cp dist/php-wasm-zstd/static-site-importer-zstd-php8.5-jspi.* "$pages_dir/playground/extensions/latest/"
+          cp "$pages_dir/playground/$RELEASE_TAG.blueprint.json" "$pages_dir/playground/latest/blueprint.json"
+          git -C "$pages_dir" add playground
+          git -C "$pages_dir" -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Advance Playground latest to $RELEASE_TAG"
+          git -C "$pages_dir" push origin HEAD:gh-pages
+      - name: Verify the exact README Playground launch
+        run: npm run test:playground-launch
