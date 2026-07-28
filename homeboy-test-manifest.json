@@ -3,6 +3,9 @@
   "tests": {
     "tests/form-materializer-smoke.php": {
       "environment": "standalone-php"
+    },
+    "tests/smoke-webfont-producer-consumer.php": {
+      "environment": "standalone-php"
     }
   }
 }

@@ -47,7 +47,7 @@ function wp_parse_url( string $url ) { return parse_url( $url ); }
 function wp_safe_remote_get( string $url, array $args ) {
 	$GLOBALS['ssi_plan_font_requests'][] = array( 'url' => $url, 'args' => $args );
 	if ( 'https://fonts.googleapis.com/css2?family=Inter-like:wght@400;700' === $url ) {
-		return array( 'response' => array( 'code' => 200 ), 'body' => "@font-face{font-family:'Inter-like';font-style:normal;font-weight:400 700;font-stretch:75% 125%;src:url(https://fonts.example.test/inter.woff2) format('woff2');unicode-range:U+0000-00FF}" );
+		return array( 'response' => array( 'code' => 200 ), 'body' => "@font-face{font-family:'Inter-like';font-style:normal;font-weight:100 900;font-stretch:75% 125%;src:url(https://fonts.example.test/inter.woff2) format('woff2');unicode-range:U+0000-00FF}" );
 	}
 	if ( 'https://fonts.example.test/inter.woff2' === $url ) {
 		return array( 'response' => array( 'code' => 200 ), 'body' => 'inter-variable-glyph-payload' );
@@ -167,27 +167,32 @@ $assert( ! Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><
 $inter_payload = 'inter-variable-glyph-payload';
 $typed_font_plan = array(
 	'schema' => 'blocks-engine/php-transformer/font-materialization-plan/v1',
-	'imports' => array( array( 'id' => 'webfont-import-inter', 'href' => 'https://fonts.googleapis.com/css2?family=Inter-like:wght@400;700' ) ),
-	'face_records' => array(
-		array( 'id' => 'webfont-face-inter-400', 'import_ref' => 'webfont-import-inter', 'family' => 'Inter-like', 'style' => 'normal', 'weight' => array( 'kind' => 'static', 'value' => 400 ) ),
-		array( 'id' => 'webfont-face-inter-700', 'import_ref' => 'webfont-import-inter', 'family' => 'Inter-like', 'style' => 'normal', 'weight' => array( 'kind' => 'static', 'value' => 700 ) ),
+	'webfont_contract' => array(
+		'schema' => 'blocks-engine/webfont-materialization/v1',
+		'imports' => array( array( 'id' => 'webfont-import-inter', 'state' => 'declared', 'source' => array( 'url' => 'https://fonts.googleapis.com/css2?family=Inter-like:wght@400;700', 'format' => 'css', 'expected_digest' => null, 'observed_digest' => null ) ) ),
+		'faces' => array(
+			array( 'id' => 'webfont-face-inter-400', 'import_id' => 'webfont-import-inter', 'receipt_id' => 'webfont-receipt-inter-400', 'state' => 'declared', 'family' => 'Inter-like', 'style' => 'normal', 'weight' => array( 'kind' => 'static', 'value' => 400 ), 'axes' => array( 'wght' => array( 'kind' => 'static', 'value' => 400 ) ), 'unicode_ranges' => array() ),
+			array( 'id' => 'webfont-face-inter-700', 'import_id' => 'webfont-import-inter', 'receipt_id' => 'webfont-receipt-inter-700', 'state' => 'declared', 'family' => 'Inter-like', 'style' => 'normal', 'weight' => array( 'kind' => 'static', 'value' => 700 ), 'axes' => array( 'wght' => array( 'kind' => 'static', 'value' => 700 ) ), 'unicode_ranges' => array() ),
+			array( 'id' => 'webfont-face-inter-variable', 'import_id' => 'webfont-import-inter', 'receipt_id' => 'webfont-receipt-inter-variable', 'state' => 'declared', 'family' => 'Inter-like', 'style' => 'normal', 'weight' => array( 'kind' => 'range', 'min' => 100, 'max' => 900 ), 'axes' => array( 'wght' => array( 'kind' => 'range', 'min' => 100, 'max' => 900 ), 'wdth' => array( 'kind' => 'range', 'min' => 75, 'max' => 125 ) ), 'unicode_ranges' => array( 'U+0000-00FF' ) ),
+		),
+		'receipts' => array( array( 'id' => 'webfont-receipt-inter-400', 'face_id' => 'webfont-face-inter-400', 'import_id' => 'webfont-import-inter', 'state' => 'pending_browser_readiness' ), array( 'id' => 'webfont-receipt-inter-700', 'face_id' => 'webfont-face-inter-700', 'import_id' => 'webfont-import-inter', 'state' => 'pending_browser_readiness' ), array( 'id' => 'webfont-receipt-inter-variable', 'face_id' => 'webfont-face-inter-variable', 'import_id' => 'webfont-import-inter', 'state' => 'pending_browser_readiness' ) ),
+		'browser_readiness' => array( 'state' => 'required', 'required_receipt_ids' => array( 'webfont-receipt-inter-400', 'webfont-receipt-inter-700', 'webfont-receipt-inter-variable' ) ),
+		'diagnostics' => array(),
 	),
-	'receipts' => array( array( 'id' => 'webfont-receipt-inter-400', 'face_ref' => 'webfont-face-inter-400' ), array( 'id' => 'webfont-receipt-inter-700', 'face_ref' => 'webfont-face-inter-700' ) ),
-	'browser_readiness' => array( 'schema' => 'blocks-engine/php-transformer/webfont-browser-readiness/v1', 'required' => true, 'face_records' => array( 'webfont-face-inter-400', 'webfont-face-inter-700' ), 'receipt_refs' => array( 'webfont-receipt-inter-400', 'webfont-receipt-inter-700' ) ),
 );
 $typed_font_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $font_plan, array( 'slug' => 'typed-font-site-plan', 'font_materialization' => $typed_font_plan ) );
 $typed_font_root = $GLOBALS['ssi_plan_root'] . '/typed-font-site-plan';
 $typed_faces = $typed_font_receipt['completed']['font_materialization']['required_faces'] ?? array();
-$assert( 'completed' === $typed_font_receipt['status'] && 2 === count( $typed_faces ), 'typed imported faces retain required family, weight, source URL, digest, and target-path receipt provenance' );
+$assert( 'completed' === $typed_font_receipt['status'] && 3 === count( $typed_faces ) && array( 'kind' => 'range', 'min' => 100, 'max' => 900 ) === ( $typed_faces[2]['weight'] ?? null ) && array( 'kind' => 'range', 'min' => 75, 'max' => 125 ) === ( $typed_faces[2]['axes']['wdth'] ?? null ) && array( 'U+0000-00FF' ) === ( $typed_faces[2]['unicode_ranges'] ?? null ), 'nested producer contract retains static and range weights, all axes, unicode ranges, and receipt provenance' );
 $assert( $inter_payload === file_get_contents( $typed_font_root . '/' . $typed_faces[0]['assets'][0]['target_path'] ) && $inter_payload === file_get_contents( $typed_font_root . '/' . $typed_faces[1]['assets'][0]['target_path'] ), 'typed font assets are locally materialized as verified binary payloads without network-dependent test fixtures' );
 $typed_css = (string) file_get_contents( $typed_font_root . '/assets/css/embedded-fonts.css' );
-$assert( str_contains( $typed_css, 'font-weight:400 700' ) && str_contains( $typed_css, 'font-stretch:75% 125%' ) && str_contains( $typed_css, 'unicode-range:U+0000-00FF' ) && ! str_contains( $typed_css, 'fonts.example.test' ), 'producer font faces preserve all declared axes and unicode ranges while rewriting only local sources' );
+$assert( str_contains( $typed_css, 'font-weight:100 900' ) && str_contains( $typed_css, 'font-stretch:75% 125%' ) && str_contains( $typed_css, 'unicode-range:U+0000-00FF' ) && ! str_contains( $typed_css, 'fonts.example.test' ), 'producer font faces preserve all declared axes and unicode ranges while rewriting only local sources' );
 $typed_readiness = (string) file_get_contents( $typed_font_root . '/assets/js/font-readiness.js' );
 $assert( str_contains( $typed_readiness, 'document.fonts.load' ) && str_contains( $typed_readiness, 'SSI glyph evidence') && str_contains( $typed_readiness, 'status:"missing"' ), 'required typed faces install a glyph-based document.fonts readiness probe with retained missing evidence' );
 $invalid_typed_plan = $typed_font_plan;
-$invalid_typed_plan['face_records'][1]['expected_sha256'] = str_repeat( '0', 64 );
+$invalid_typed_plan['webfont_contract']['imports'][0]['source']['expected_digest'] = 'sha256:' . str_repeat( '0', 64 );
 $invalid_typed_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $font_plan, array( 'slug' => 'invalid-typed-font-site-plan', 'font_materialization' => $invalid_typed_plan ) );
-$assert( 'partial' === $invalid_typed_receipt['status'] && 'static_site_importer_font_materialization_producer_font_digest_mismatch' === ( $invalid_typed_receipt['errors'][0]['code'] ?? '' ), 'required producer face substitution or digest mismatch fails explicitly before theme activation' );
+$assert( 'partial' === $invalid_typed_receipt['status'] && 'static_site_importer_font_materialization_producer_stylesheet_failed' === ( $invalid_typed_receipt['errors'][0]['code'] ?? '' ), 'required producer source digest mismatch fails explicitly before theme activation' );
 
 $font_without_svg_result = ( new ArtifactCompiler() )->compile(
 	array(
@@ -208,7 +213,7 @@ $font_without_svg_root = $GLOBALS['ssi_plan_root'] . '/font-site-plan-without-sv
 $assert( 'completed' === $font_without_svg_receipt['status'], 'canonical font materialization completes without SVG consumers' );
 $assert( str_contains( (string) file_get_contents( $font_without_svg_root . '/assets/css/embedded-fonts.css' ), 'data:font/woff2;base64,' ), 'page fonts are self-contained without SVG consumers' );
 $assert( str_contains( (string) file_get_contents( $font_without_svg_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-embedded-fonts'" ), 'page fonts load without SVG consumers' );
-$assert( 8 === count( $GLOBALS['ssi_plan_font_requests'] ), 'each successful and rejected font materialization resolves only its declared stylesheet or typed payload URLs' );
+$assert( 7 === count( $GLOBALS['ssi_plan_font_requests'] ), 'each successful and rejected font materialization resolves only its declared stylesheet or typed payload URLs' );
 
 $nested_route_result = ( new ArtifactCompiler() )->compile(
 	array(
