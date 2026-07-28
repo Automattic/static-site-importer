@@ -553,6 +553,7 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   assert.equal(recipe.workflow.steps[0].command, 'wordpress.wp-cli');
   assert.equal(recipe.workflow.steps[0].args[0], 'command=plugin activate static-site-importer/static-site-importer.php');
   assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
+  assert.match(recipe.workflow.steps[1].args[0], /--format=fixture-matrix/);
   assert.match(recipe.workflow.steps[1].args[0], /--allow-failure/);
   assert.doesNotMatch(recipe.workflow.steps[1].args[0], /--allow-missing-woocommerce/);
   assert.deepEqual(recipe.inputs.stagedFiles[0], {
@@ -4654,6 +4655,26 @@ test('collectEditorValidation reads the editor-validate-blocks shape into headli
   assert.equal(metrics.valid_blocks, 3);
   assert.equal(metrics.invalid_blocks, 0);
   assert.equal(collectEditorValidation({ unrelated: true }), null);
+});
+
+test('collectEditorValidation derives cross-surface totals from authoritative block results', () => {
+  const metrics = collectEditorValidation({
+    validation_method: 'wp.blocks.validateBlock',
+    validation_provider: 'wordpress-block-editor',
+    total_blocks: 1,
+    valid_blocks: 1,
+    invalid_blocks: 0,
+    results: [
+      { name: 'core/separator', isValid: false, issues: ['Invalid separator'] },
+      { name: 'core/heading', isValid: true, issues: [] },
+      { name: 'core/column', isValid: false, issues: ['Invalid column'] },
+      { name: 'core/paragraph', isValid: true, issues: [] },
+    ],
+  });
+
+  assert.equal(metrics.total_blocks, 4);
+  assert.equal(metrics.valid_blocks, 2);
+  assert.equal(metrics.invalid_blocks, 2);
 });
 
 test('editor-validate-blocks all-valid output reports a 1.0 valid-block rate with zero invalid and no findings', () => {

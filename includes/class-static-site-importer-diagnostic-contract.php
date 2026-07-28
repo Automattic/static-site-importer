@@ -276,7 +276,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 	 */
 	private static function quality_counts( array $import_report, array $summary ): array {
 		$quality = isset( $import_report['quality'] ) && is_array( $import_report['quality'] ) ? $import_report['quality'] : $summary;
-		$keys    = array( 'fallback_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count' );
+		$keys    = array( 'block_count', 'fallback_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count' );
 
 		$counts = array();
 		foreach ( $keys as $key ) {

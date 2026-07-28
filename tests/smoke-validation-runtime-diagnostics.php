@@ -161,6 +161,16 @@ $assert( ! isset( $result['fixture_diagnostics']['blocks_engine']['wordpress_sit
 $assert( 'completed' === ( $result['fixture_diagnostics']['materialization_receipt']['status'] ?? '' ), 'materialization-receipt-status-preserved' );
 $assert( 1 === ( $result['fixture_diagnostics']['materialization_receipt']['page_count'] ?? 0 ), 'materialization-receipt-counts-preserved' );
 
+$matrix_result = Static_Site_Importer_Validation_Runtime::fixture_matrix_result( $result );
+$assert( Static_Site_Importer_Validation_Runtime::FIXTURE_MATRIX_RESULT_SCHEMA === ( $matrix_result['schema'] ?? '' ), 'fixture-matrix-schema' );
+$assert( ! isset( $matrix_result['import_report'] ), 'fixture-matrix-omits-full-import-report' );
+$assert( 1 === count( $matrix_result['diagnostics'] ?? array() ), 'fixture-matrix-keeps-actionable-diagnostics' );
+$assert( ! isset( $matrix_result['fixture_diagnostics']['diagnostics'] ), 'fixture-matrix-does-not-duplicate-diagnostics' );
+$assert( 12 === ( $matrix_result['fixture_diagnostics']['quality_counts']['block_count'] ?? 0 ), 'fixture-matrix-keeps-block-count' );
+$assert( str_repeat( 'a', 40 ) === ( $matrix_result['fixture_diagnostics']['blocks_engine']['transformer']['reference'] ?? '' ), 'fixture-matrix-keeps-transformer-reference' );
+$assert( 'blocks-engine/wordpress-site-plan/v2' === ( $matrix_result['fixture_diagnostics']['blocks_engine']['wordpress_site_plan']['schema'] ?? '' ), 'fixture-matrix-keeps-site-plan' );
+$assert( 'completed' === ( $matrix_result['fixture_diagnostics']['materialization_receipt']['status'] ?? '' ), 'fixture-matrix-keeps-materialization-receipt' );
+
 $default_artifact_dir = $artifact_dir . '/default-materialization';
 $default_result       = Static_Site_Importer_Validation_Runtime::validate_artifact(
 	array(
