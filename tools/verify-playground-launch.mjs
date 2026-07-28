@@ -6,6 +6,7 @@ import { chromium } from 'playwright';
 const root = path.resolve(import.meta.dirname, '..');
 const readme = await readFile(path.join(root, 'README.md'), 'utf8');
 const launchUrl = [ ...readme.matchAll(/\]\((https:\/\/playground\.wordpress\.net\/\?[^)]+)\)/g) ][0]?.[1];
+const figFixture = process.env.PLAYGROUND_FIG_FIXTURE;
 
 assert.ok(launchUrl, 'README must include a WordPress Playground launch URL');
 
@@ -21,6 +22,10 @@ assert.ok(manifestUrl, 'README launch URL must provide a PHP extension manifest'
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
+const diagnostics = [];
+page.on('console', (message) => diagnostics.push(`console.${message.type()}: ${message.text()}`));
+page.on('pageerror', (error) => diagnostics.push(`pageerror: ${error.message}`));
+page.on('requestfailed', (request) => diagnostics.push(`requestfailed: ${request.url()} (${request.failure()?.errorText})`));
 
 try {
   // This is deliberately a browser fetch from Playground's origin: Node fetch
@@ -40,9 +45,33 @@ try {
     if (wordpress) break;
     await page.waitForTimeout(1_000);
   }
-  assert.ok(wordpress, 'Playground must boot its WordPress frame');
+  assert.ok(
+    wordpress,
+    `Playground must boot its WordPress frame; frames=${JSON.stringify(page.frames().map((frame) => frame.url()))}; diagnostics=${JSON.stringify(diagnostics.slice(-20))}`,
+  );
   if (!wordpress.url().includes('/import/')) await wordpress.waitForURL(/\/import\//, { timeout: 120_000 });
   await wordpress.locator('.ssi-importer').waitFor({ state: 'visible', timeout: 120_000 });
+
+  const zstdMarker = await wordpress.evaluate(async () => {
+    const response = await fetch('/wp-content/ssi-playground-zstd-loaded.txt');
+    return response.ok ? response.text() : null;
+  });
+  assert.equal(zstdMarker, 'zstd', 'the running Playground PHP must have loaded zstd');
+
+  if (figFixture) {
+    const importer = wordpress.locator('.ssi-importer');
+    const restUrl = await importer.getAttribute('data-static-site-importer-figma-rest-url');
+    assert.ok(restUrl, 'Figma importer must expose its REST endpoint');
+    const responsePromise = page.waitForResponse(
+      (response) => response.url() === restUrl && response.request().method() === 'POST',
+      { timeout: 300_000 },
+    );
+    await wordpress.locator('[data-static-site-importer-source-figma-file]').setInputFiles(figFixture);
+    const response = await responsePromise;
+    const report = await response.json();
+    assert.equal(response.ok(), true, JSON.stringify(report));
+    assert.equal(report.success, true, JSON.stringify(report));
+  }
 } finally {
   await browser.close();
 }

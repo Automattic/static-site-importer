@@ -6529,6 +6529,36 @@ test('visual parity evidence report summarizes staged output evidence and layout
   assert.ok(fixture.risk.reasons.includes('1 core/html block(s)'));
 });
 
+test('visual parity evidence report requires captured comparison evidence', () => {
+  const fixtures = [
+    {
+      fixture_id: 'editor-screenshot-only',
+      artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'editor-canvas', path: 'files/browser/editor-open.png' }],
+      visual_parity_artifacts: {
+        artifacts: {
+          visual_diff: { status: 'pending', capture_state: 'not_captured' },
+        },
+      },
+    },
+    { fixture_id: 'metrics', visual_parity_artifacts: { metrics: { mismatch_pixels: 0, total_pixels: 1000 } } },
+    { fixture_id: 'captured-source', visual_parity_artifacts: { artifacts: { source_screenshot: { status: 'captured' } } } },
+    { fixture_id: 'captured-candidate', visual_parity_artifacts: { artifacts: { imported_screenshot: { status: 'captured' } } } },
+    { fixture_id: 'captured-diff', visual_parity_artifacts: { artifacts: { diff_screenshot: { status: 'captured' } } } },
+    { fixture_id: 'normalized-comparison', visual_parity_comparisons: [{ source_path: '/' }] },
+    { fixture_id: 'typed-compare-ref', artifact_refs: [{ artifact_id: 'visual-compare-result', kind: 'diagnostic' }] },
+    { fixture_id: 'typed-diff-ref', artifact_refs: [{ artifact_id: 'result', kind: 'browser-visual-diff' }] },
+  ];
+  const report = buildVisualParityEvidenceReport({ result: { fixtures } });
+  const rows = new Map(report.fixtures.map((fixture) => [fixture.fixture_id, fixture]));
+
+  assert.equal(report.summary.visual_compare_fixture_count, fixtures.length - 1);
+  assert.equal(rows.get('editor-screenshot-only').evidence.visual_compare.status, 'missing');
+  assert.equal(rows.get('editor-screenshot-only').evidence.screenshots.status, 'present');
+  for (const fixture of fixtures.slice(1)) {
+    assert.equal(rows.get(fixture.fixture_id).evidence.visual_compare.status, 'present', fixture.fixture_id);
+  }
+});
+
 test('fixture matrix result artifacts include visual parity evidence JSON and markdown reports', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-evidence-artifacts-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-evidence-artifact-test' });

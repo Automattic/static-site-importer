@@ -21,8 +21,11 @@ published. README uses those convenience URLs; reproducible consumers use the
 tagged URLs. This avoids combining a mutable `main` blueprint with released
 plugin or extension assets.
 
-The workflow provisions GitHub Pages from `gh-pages` when it is absent, retains
-previous tagged directories, and verifies the immutable launch in a real browser
-before advancing either `latest` alias. It then verifies the exact README launch
-URL. The workflow never creates or edits a release; Homeboy remains the sole
+GitHub Pages is configured once at the repository level to publish the
+`gh-pages` branch root. The workflow verifies that target before building,
+retains previous tagged directories, and verifies the immutable launch in a real
+browser before advancing either `latest` alias. It then waits for those aliases
+to deploy and verifies the exact README launch URL. A failed publication can be
+resumed for an existing tag through `workflow_dispatch`; publication commits are
+idempotent. The workflow never creates or edits a release. Homeboy remains the sole
 release owner.
