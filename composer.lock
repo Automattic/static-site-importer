@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "9e5896e5d54d2540760354475c13a475",
+    "content-hash": "1b054df09bbcd30ef61624dd810429d5",
     "packages": [
         {
             "name": "automattic/blocks-engine-figma-transformer",
@@ -43,16 +43,16 @@
         },
         {
             "name": "automattic/blocks-engine-php-transformer",
-            "version": "0.4.8",
+            "version": "0.4.9",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Automattic/blocks-engine.git",
-                "reference": "8da403712e01d7ca21d53018292e37dc530b790c"
+                "reference": "0cd65716f31ef5a0ffef84ba7415e45b0fe218d3"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://github.com/Automattic/blocks-engine/archive/refs/tags/php-transformer-v0.4.8.zip",
-                "reference": "8da403712e01d7ca21d53018292e37dc530b790c"
+                "url": "https://github.com/Automattic/blocks-engine/archive/refs/tags/php-transformer-v0.4.9.zip",
+                "reference": "0cd65716f31ef5a0ffef84ba7415e45b0fe218d3"
             },
             "require": {
                 "league/commonmark": "^2.5",
