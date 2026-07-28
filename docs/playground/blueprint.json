@@ -14,7 +14,7 @@
     },
     {
       "step": "runPHP",
-      "code": "<?php if ( ! extension_loaded( 'zstd' ) ) { throw new RuntimeException( 'The zstd Playground extension did not load.' ); } ?>"
+      "code": "<?php if ( ! extension_loaded( 'zstd' ) ) { throw new RuntimeException( 'The zstd Playground extension did not load.' ); } file_put_contents( '/wordpress/wp-content/ssi-playground-zstd-loaded.txt', 'zstd' ); ?>"
     },
     {
       "step": "installPlugin",

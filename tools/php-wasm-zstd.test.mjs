@@ -33,7 +33,9 @@ test( 'Playground starts PHP 8.5 and both README launch links load zstd before b
 		readFile( path.join( root, 'docs/playground/blueprint.json' ), 'utf8' ),
 		readFile( path.join( root, 'README.md' ), 'utf8' ),
 	] );
-	assert.equal( JSON.parse( blueprint ).preferredVersions.php, '8.5' );
+	const parsedBlueprint = JSON.parse( blueprint );
+	assert.equal( parsedBlueprint.preferredVersions.php, '8.5' );
+	assert.ok( parsedBlueprint.steps.some( ( step ) => step.step === 'runPHP' && step.code.includes( "extension_loaded( 'zstd' )" ) && step.code.includes( 'ssi-playground-zstd-loaded.txt' ) ) );
 	const links = [ ...readme.matchAll( /\]\((https:\/\/playground\.wordpress\.net\/\?[^)]+)\)/g ) ].map( ( match ) => match[ 1 ] );
 	assert.equal( links.length, 2 );
 	for ( const link of links ) {
