@@ -115,6 +115,18 @@ test('matrix evidence fails closed when the materialization receipt is absent', 
   assert.ok(evidence.missing.includes('materialization_receipt'));
 });
 
+test('legacy validation payloads without a receipt contract remain consumable', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-legacy-no-sidecar-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'legacy-no-sidecar' });
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: { fixture_id: 'simple-site', status: 'passed', success: true, import_report: { blocks_engine: { available: true } } },
+  });
+  assert.equal(result.fixtures[0].status, 'passed');
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, 'missing');
+});
+
 test('matrix evidence consumes the bounded fixture diagnostic contract', () => {
   const reference = 'b'.repeat(40);
   const evidence = collectMatrixEvidence({
@@ -577,6 +589,26 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
     target: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/artifact.json',
   });
   assert.deepEqual(recipe.inputs.mounts, []);
+});
+
+test('matrix import recipes declare the complete required sidecar contract', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'complete-sidecar-contract' });
+  const recipe = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi', runId: 'run-1', attemptId: 'attempt-1' });
+  const command = recipe.workflow.steps[1].args[0];
+  for (const flag of ['--receipt-sidecar=', '--receipt-run-id=run-1', '--receipt-step-id=import', '--receipt-attempt-id=attempt-1']) {
+    assert.match(command, new RegExp(flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});
+
+test('validate-artifact sidecar contract preserves legacy calls and rejects partial arguments', () => {
+  const plugin = readFileSync(path.join(packageRoot, 'static-site-importer.php'), 'utf8');
+  const start = plugin.indexOf('function static_site_importer_cli_materialization_sidecar_contract');
+  const end = plugin.indexOf('\n}\n\n/**', start) + 2;
+  const contract = plugin.slice(start, end);
+  const code = `class WP_Error { public $code; function __construct($code) { $this->code = $code; } } function is_wp_error($value) { return $value instanceof WP_Error; } ${contract} $cases = array(static_site_importer_cli_materialization_sidecar_contract(array()), static_site_importer_cli_materialization_sidecar_contract(array('receipt-sidecar' => '/tmp/sidecar.json', 'receipt-run-id' => 'run', 'receipt-step-id' => 'import', 'receipt-attempt-id' => 'attempt')), static_site_importer_cli_materialization_sidecar_contract(array('receipt-sidecar' => '/tmp/sidecar.json'))); echo json_encode(array($cases[0], $cases[1], is_wp_error($cases[2]) ? $cases[2]->code : 'not-error'));`;
+  const result = spawnSync('php', ['-r', code], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), [false, true, 'static_site_importer_sidecar_contract_partial']);
 });
 
 test('gates visual capture on complete generated SVG font evidence after import', () => {

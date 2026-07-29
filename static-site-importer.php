@@ -251,6 +251,10 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			if ( isset( $assoc_args['theme-archive-ref'] ) ) {
 				$input['theme_archive_ref'] = array( 'artifact_ref' => (string) $assoc_args['theme-archive-ref'] );
 			}
+			$sidecar_contract = static_site_importer_cli_materialization_sidecar_contract( $assoc_args );
+			if ( is_wp_error( $sidecar_contract ) ) {
+				WP_CLI::error( $sidecar_contract->get_error_message(), 1 );
+			}
 
 			$result = Static_Site_Importer_Validation_Runtime::validate_artifact( $input );
 			if ( is_wp_error( $result ) ) {
@@ -271,9 +275,11 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				return;
 			}
 
-			$sidecar_result = static_site_importer_cli_write_materialization_sidecar( $result, $assoc_args );
-			if ( is_wp_error( $sidecar_result ) ) {
-				WP_CLI::error( $sidecar_result->get_error_message(), 1 );
+			if ( true === $sidecar_contract ) {
+				$sidecar_result = static_site_importer_cli_write_materialization_sidecar( $result, $assoc_args );
+				if ( is_wp_error( $sidecar_result ) ) {
+					WP_CLI::error( $sidecar_result->get_error_message(), 1 );
+				}
 			}
 			if ( 'fixture-matrix' === $format ) {
 				$result = Static_Site_Importer_Validation_Runtime::fixture_matrix_result( $result );
@@ -323,6 +329,25 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			WP_CLI::line( $json );
 		}
 	);
+}
+
+/**
+ * A sidecar is an opt-in CLI contract. Legacy validate-artifact callers retain
+ * their prior result and exit behavior; partial receipt identities fail early.
+ *
+ * @param array<string,mixed> $args CLI arguments.
+ * @return bool|WP_Error True when required, false when absent.
+ */
+function static_site_importer_cli_materialization_sidecar_contract( array $args ) {
+	$keys = array( 'receipt-sidecar', 'receipt-run-id', 'receipt-step-id', 'receipt-attempt-id' );
+	$present = array_filter( $keys, static fn( string $key ): bool => array_key_exists( $key, $args ) );
+	if ( empty( $present ) ) {
+		return false;
+	}
+	if ( count( $present ) !== count( $keys ) ) {
+		return new WP_Error( 'static_site_importer_sidecar_contract_partial', 'Materialization sidecar requires --receipt-sidecar, --receipt-run-id, --receipt-step-id, and --receipt-attempt-id together.' );
+	}
+	return true;
 }
 
 /**
