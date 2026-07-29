@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 /**
  * Internal dependencies
  */
-import { MAX_EXTRA_SURFACE_COUNT, createFixtureMatrix, discoverFixtures, inspectFixtureDirectories, normalizeSurfaceCoverageOptions, normalizeVisualAttributionOptions } from '../lib/fixture-matrix.mjs';
+import { MAX_EXTRA_SURFACE_COUNT, createFixtureMatrix, discoverFixtures, inspectFixtureDirectories, normalizeSurfaceCoverageOptions, normalizeVisualAttributionOptions, resolveFixtureSearchRoots } from '../lib/fixture-matrix.mjs';
 
 export const RIG_ID = 'static-site-importer-fixture-matrix';
 export const SOLVED_ONLY_LANE_ID = 'fixtures-solved-only/v1';
@@ -921,10 +921,15 @@ function parseArgs(args) {
 }
 
 function inspectCorpusFixtures(fixtureRoot) {
-  const activeRoot = path.join(fixtureRoot, 'websites');
-  const solvedRoot = path.join(fixtureRoot, 'solved');
-  const activeInspection = inspectFixtureDirectories(fs.existsSync(activeRoot) && fs.statSync(activeRoot).isDirectory() ? activeRoot : fixtureRoot);
-  const solvedInspection = inspectFixtureDirectories(solvedRoot);
+  const resolvedRoot = path.resolve(fixtureRoot);
+  const searchRoots = resolveFixtureSearchRoots(resolvedRoot);
+  const websitesRoot = path.join(resolvedRoot, 'websites');
+  const solvedRoot = path.join(resolvedRoot, 'solved');
+  const activeRoot = searchRoots.includes(websitesRoot) ? websitesRoot : resolvedRoot;
+  const activeInspection = inspectFixtureDirectories(activeRoot, { maxDepth: 2 });
+  const solvedInspection = activeRoot === websitesRoot
+    ? inspectFixtureDirectories(solvedRoot, { maxDepth: 2 })
+    : { root: solvedRoot, selected_ids: [], executable_count: 0, exclusions: [], diagnostics: [] };
   return {
     active: activeInspection.executable_count,
     solved: solvedInspection.executable_count,

@@ -77,6 +77,7 @@ import {
   VISUAL_PARITY_MISMATCH_KIND,
   visualParityCompareStep,
   normalizeVisualAttributionOptions,
+  resolveFixtureSearchRoots,
   wordpressServedPath,
   writeFixtureMatrixArtifacts,
 } from '../lib/fixture-matrix.mjs';
@@ -2761,6 +2762,38 @@ test('fixture discovery rejects symlinked entrypoints and wrapper help explains 
   const help = spawnSync(process.execPath, [path.join(packageRoot, 'tools', 'run-fixture-matrix.mjs'), '--help'], { encoding: 'utf8' });
   assert.equal(help.status, 0, help.stderr);
   assert.match(help.stdout, /Empty selections\s+Execution is refused; --dry-run prints bounded selection diagnostics/);
+});
+
+test('fixture discovery rejects symlinked corpus roots and planning recursively counts nested fixtures', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-corpus-root-selection-'));
+  const externalRoot = path.join(root, 'external-fixtures');
+  const symlinkedCorpus = path.join(root, 'symlinked-corpus');
+  mkdirSync(path.join(externalRoot, 'site'), { recursive: true });
+  writeFileSync(path.join(externalRoot, 'site', 'index.html'), '<h1>External</h1>');
+  mkdirSync(symlinkedCorpus, { recursive: true });
+  symlinkSync(externalRoot, path.join(symlinkedCorpus, 'websites'));
+
+  assert.deepEqual(resolveFixtureSearchRoots(symlinkedCorpus), [symlinkedCorpus]);
+  assert.equal(createFixtureMatrix({ fixture_root: symlinkedCorpus }).count, 0);
+
+  const fixtureRoot = path.join(root, 'fixtures');
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  mkdirSync(staticSiteImporter, { recursive: true });
+  for (let index = 1; index <= CANONICAL_FIXTURE_COUNT; index += 1) {
+    const fixture = path.join(fixtureRoot, 'websites', 'nested', `fixture-${String(index).padStart(2, '0')}`);
+    mkdirSync(fixture, { recursive: true });
+    writeFileSync(path.join(fixture, 'index.html'), '<h1>Nested</h1>');
+  }
+  symlinkSync(externalRoot, path.join(fixtureRoot, 'solved'));
+
+  assert.deepEqual(resolveFixtureSearchRoots(fixtureRoot), [path.join(fixtureRoot, 'websites')]);
+  const plan = buildFixtureMatrixRunPlan({ staticSiteImporter, fixtureRoot });
+  assert.equal(plan.active_fixture_count, CANONICAL_FIXTURE_COUNT);
+  assert.equal(plan.solved_fixture_count, 0);
+  assert.equal(plan.fixture_count_matches_canonical, true);
+  assert.equal(plan.warnings.some((warning) => warning.code === 'canonical_fixture_count_drift'), false);
+  assert.equal(plan.fixture_selection.exclusions.some((row) => row.reason === 'missing_entrypoint'), false);
+  assert.ok(plan.fixture_selection.exclusions.some((row) => row.reason === 'root_symlink'));
 });
 
 test('fixture matrix operator rejects contradictory local and Lab routing', () => {
