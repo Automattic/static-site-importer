@@ -200,6 +200,14 @@ namespace {
 	$legacy_without_submit_seed = Static_Site_Importer_Form_Seeder::seed( $legacy_without_submit );
 	$legacy_without_submit_markup = (string) ( $legacy_without_submit_seed['forms'][0]['block_markup'] ?? '' );
 	$assert( 1 === substr_count( $legacy_without_submit_markup, 'wp:jetpack/button' ) && str_contains( $legacy_without_submit_markup, '"text":"Submit"' ), 'legacy-form-without-submit-keeps-default-provider-button' );
+	$topology_without_submit = $topology_form;
+	array_pop( $topology_without_submit['forms'][0]['controls'] );
+	array_pop( $topology_without_submit['forms'][0]['control_topology']['nodes'] );
+	$validated_topology_without_submit = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $topology_without_submit );
+	$assert( empty( $validated_topology_without_submit['errors'] ), 'topology-without-submit-manifest-validates' );
+	$topology_without_submit_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_topology_without_submit['forms'] ) );
+	$topology_without_submit_markup = (string) ( $topology_without_submit_seed['forms'][0]['block_markup'] ?? '' );
+	$assert( 1 === substr_count( $topology_without_submit_markup, 'wp:jetpack/button' ) && str_contains( $topology_without_submit_markup, '"text":"Submit"' ), 'topology-without-submit-gets-one-default-provider-button' );
 	$invalid_topology = $topology_form;
 	$invalid_topology['forms'][0]['control_topology']['truncated'] = true;
 	$invalid_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $invalid_topology );
