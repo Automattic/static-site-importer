@@ -17,6 +17,7 @@ class Static_Site_Importer_URL_Fetcher {
 	private const MAX_REDIRECTS         = 5;
 	private const DEFAULT_TIMEOUT       = 10;
 	private const DEFAULT_MAX_BYTES     = 5242880;
+	private const MAX_RESPONSE_BYTES    = 10485760;
 	private const HTML_CONTENT_TYPES    = array( 'text/html', 'application/xhtml+xml' );
 	private const REDIRECT_STATUSES     = array( 301, 302, 303, 307, 308 );
 	private const BODY_READ_CHUNK       = 8192;
@@ -32,12 +33,52 @@ class Static_Site_Importer_URL_Fetcher {
 	 * @return array{html_path:string,metadata:array<string,mixed>}|WP_Error
 	 */
 	public static function fetch_to_work_dir( string $url, string $work_dir, array $args = array() ) {
-		$timeout   = max( self::CONNECT_TIMEOUT_FLOOR, (int) ( $args['timeout'] ?? self::DEFAULT_TIMEOUT ) );
-		$max_bytes = max( 1, (int) ( $args['max_bytes'] ?? self::DEFAULT_MAX_BYTES ) );
-		$initial   = self::normalize_url( $url );
-		$current   = $initial;
-		$started   = gmdate( 'c' );
-		$redirects = array();
+		$fetch = self::fetch( $url, $args );
+		if ( is_wp_error( $fetch ) ) {
+			return $fetch;
+		}
+
+		$source_diagnostic = self::html_source_diagnostic( $fetch['body'] );
+		if ( ! empty( $source_diagnostic ) && 'error' === ( $source_diagnostic['severity'] ?? '' ) ) {
+			return new WP_Error(
+				'static_site_importer_url_client_rendered_app',
+				'This URL appears to be a JavaScript-rendered application shell. Static Site Importer can import server-rendered HTML, but this page needs a browser-rendered capture before it can produce WordPress blocks.',
+				array(
+					'status'     => 422,
+					'diagnostic' => $source_diagnostic,
+				)
+			);
+		}
+
+		wp_mkdir_p( $work_dir );
+		$html_path = trailingslashit( $work_dir ) . 'index.html';
+		$written   = file_put_contents( $html_path, $fetch['body'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes fetched static HTML to the importer source fixture.
+		if ( false === $written ) {
+			return new WP_Error( 'static_site_importer_url_write_failed', 'Failed to write fetched HTML to the import work directory.' );
+		}
+
+		return array(
+			'html_path' => $html_path,
+			'metadata'  => $fetch['metadata'],
+		);
+	}
+
+	/**
+	 * Fetch one public resource using the URL intake safety policy.
+	 *
+	 * @param string $url  Public resource URL.
+	 * @param array  $args Fetch args. `content_types` optionally limits accepted MIME types.
+	 * @return array{body:string,metadata:array<string,mixed>}|WP_Error
+	 */
+	public static function fetch( string $url, array $args = array() ) {
+		$timeout              = max( self::CONNECT_TIMEOUT_FLOOR, (int) ( $args['timeout'] ?? self::DEFAULT_TIMEOUT ) );
+		$max_bytes            = min( self::MAX_RESPONSE_BYTES, max( 1, (int) ( $args['max_bytes'] ?? self::DEFAULT_MAX_BYTES ) ) );
+		$has_content_types_arg = isset( $args['content_types'] ) && is_array( $args['content_types'] );
+		$content_types        = $has_content_types_arg ? array_values( array_filter( array_map( static fn ( $value ): string => strtolower( (string) $value ), $args['content_types'] ) ) ) : self::HTML_CONTENT_TYPES;
+		$initial              = self::normalize_url( $url );
+		$current              = $initial;
+		$started              = gmdate( 'c' );
+		$redirects            = array();
 
 		for ( $attempt = 0; $attempt <= self::MAX_REDIRECTS; $attempt++ ) {
 			$validation = self::validate_url( $current );
@@ -80,36 +121,22 @@ class Static_Site_Importer_URL_Fetcher {
 			}
 
 			$content_type = self::first_header( $response['headers'], 'content-type' );
-			if ( ! self::is_html_content_type( $content_type ) ) {
-				return new WP_Error( 'static_site_importer_url_non_html', 'The URL did not return an HTML content type.' );
+			$normalized_content_type = strtolower( trim( explode( ';', $content_type, 2 )[0] ) );
+			$content_type_allowed = $has_content_types_arg ? empty( $content_types ) || in_array( $normalized_content_type, $content_types, true ) : self::is_html_content_type( $content_type );
+			if ( ! $content_type_allowed ) {
+				if ( ! $has_content_types_arg ) {
+					return new WP_Error( 'static_site_importer_url_non_html', 'The URL did not return an HTML content type.' );
+				}
+				return new WP_Error( 'static_site_importer_url_unexpected_content_type', sprintf( 'The URL returned unsupported content type %s.', '' !== $content_type ? $content_type : '(missing)' ) );
 			}
 
 			if ( '' === trim( $response['body'] ) ) {
-				return new WP_Error( 'static_site_importer_url_empty_body', 'The URL returned an empty HTML response.' );
-			}
-
-			$source_diagnostic = self::html_source_diagnostic( $response['body'] );
-			if ( ! empty( $source_diagnostic ) && 'error' === ( $source_diagnostic['severity'] ?? '' ) ) {
-				return new WP_Error(
-					'static_site_importer_url_client_rendered_app',
-					'This URL appears to be a JavaScript-rendered application shell. Static Site Importer can import server-rendered HTML, but this page needs a browser-rendered capture before it can produce WordPress blocks.',
-					array(
-						'status'     => 422,
-						'diagnostic' => $source_diagnostic,
-					)
-				);
-			}
-
-			wp_mkdir_p( $work_dir );
-			$html_path = trailingslashit( $work_dir ) . 'index.html';
-			$written   = file_put_contents( $html_path, $response['body'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes fetched static HTML to the importer source fixture.
-			if ( false === $written ) {
-				return new WP_Error( 'static_site_importer_url_write_failed', 'Failed to write fetched HTML to the import work directory.' );
+				return new WP_Error( 'static_site_importer_url_empty_body', $has_content_types_arg ? 'The URL returned an empty response.' : 'The URL returned an empty HTML response.' );
 			}
 
 			return array(
-				'html_path' => $html_path,
-				'metadata'  => array(
+				'body'     => $response['body'],
+				'metadata' => array(
 					'source_type'     => 'url',
 					'source_url'      => $initial,
 					'final_url'       => $current,

@@ -12,6 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_URL_Fetcher' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-url-fetcher.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_URL_Site_Collector' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-url-site-collector.php';
+}
 
 /**
  * Imports a source URL through a provider that returns a website artifact.
@@ -118,10 +121,15 @@ class Static_Site_Importer_URL_Import_Runtime {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	private static function fetch_public_url_provider( array $request ) {
+		$provider_args = isset( $request['provider_args'] ) && is_array( $request['provider_args'] ) ? $request['provider_args'] : array();
+		if ( ! empty( $provider_args['collect_site'] ) ) {
+			return Static_Site_Importer_URL_Site_Collector::collect( (string) $request['url'], $provider_args );
+		}
+
 		$fetch = Static_Site_Importer_URL_Fetcher::fetch_to_work_dir(
 			(string) $request['url'],
 			(string) $request['work_dir'],
-			isset( $request['provider_args'] ) && is_array( $request['provider_args'] ) ? $request['provider_args'] : array()
+			$provider_args
 		);
 		if ( is_wp_error( $fetch ) ) {
 			return $fetch;

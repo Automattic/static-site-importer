@@ -26,7 +26,7 @@ wp static-site-importer materialize-wordpress-site-plan --plan=/path/to/plan.jso
 
 Static Site Importer is the WordPress materialization layer for static website inputs. It accepts two related shapes:
 
-- Static source imports: an HTML entry file, pasted HTML document, public HTML URL, direct HTML upload, or ZIP source tree.
+- Static source imports: an HTML entry file, pasted HTML document, public HTML URL, bounded public static-site collection, direct HTML upload, or ZIP source tree.
 - Generated website artifacts: a `blocks-engine/php-transformer/site-artifact/v1` bundle emitted by website generation or browser runtimes.
 
 The conversion stack is split by responsibility:
@@ -159,7 +159,11 @@ The optional extension manifest, side module, and safe launch blueprint are publ
 
 URL intake rules:
 
-- Fetches one URL only; this is not a crawler and does not execute JavaScript.
+- Fetches one URL by default and does not execute JavaScript.
+- `provider_args.collect_site=true` or CLI `--collect-site` enables bounded collection. It reads the origin's `/sitemap.xml`, follows same-origin HTML links, collects directly referenced page assets and nested CSS assets, and emits one canonical website artifact.
+- Collection defaults to 20 pages, 200 assets, 50 MiB total, 5 MiB per response, and 100 ms between requests. Limits can be configured with `max_pages`, `max_assets`, `max_total_bytes`, `max_bytes`, and `request_delay_ms` up to the collector's hard caps.
+- Directly referenced scripts are collected by default so conversion starts from the complete source behavior. Set `include_scripts=false` or CLI `--skip-scripts` only when the caller has verified that script behavior is intentionally excluded or replaced.
+- External assets must be directly referenced by fetched HTML or CSS and pass the same public-IP and redirect validation as page URLs.
 - Only `http` and `https` URLs are accepted.
 - Localhost, loopback, link-local, private, and otherwise reserved IP targets are rejected before connecting.
 - Redirect targets are revalidated with the same policy and capped.
@@ -255,6 +259,14 @@ wp static-site-importer import-url https://example.com/ \
   --slug=example-import \
   --keep-source \
   --report=report.json
+
+wp static-site-importer import-url https://example.com/ \
+  --collect-site \
+  --max-pages=20 \
+  --max-assets=100 \
+  --slug=example-site \
+  --activate \
+  --overwrite
 
 # Commerce-bearing import on a host without WooCommerce: skip seeding and continue.
 wp static-site-importer import-theme /path/to/store/index.html \
@@ -452,10 +464,10 @@ This repo is Homeboy-managed:
 ## Current Boundaries And Limitations
 
 - The importer is intentionally static-site/artifact-to-block-theme glue. Blocks Engine PHP transformer owns generic artifact compilation, format conversion, and conversion reports; SSI owns WordPress uploads, import workflows, media, route rewriting, page/product materialization, and theme assembly.
-- The importer currently discovers flat sibling `*.html` files beside the selected entry file and recursive Markdown content documents; it does not crawl arbitrary nested HTML routes.
+- Local source imports discover flat sibling `*.html` files beside the selected entry file and recursive Markdown content documents. Bounded URL collection discovers sitemap and same-origin linked HTML routes but does not execute JavaScript or perform platform-specific API extraction.
 - Admin imports accept pasted HTML, one public URL, a direct `.html` / `.htm` file, or a ZIP with a root `index.html` or exactly one nested `index.html`; CLI imports take a direct HTML entry path or one public URL.
 - MDX, Astro, Eleventy, Hugo, and other runtime/build orchestration is out of scope. Build those projects to static HTML first, or provide plain `.md` / `.markdown` source content alongside the HTML shell.
-- Linked local stylesheets and inline styles are copied into `style.css`; inline scripts are copied into `assets/site.js`. Other asset copying is not a general-purpose crawler yet.
+- Linked local stylesheets and inline styles are copied into `style.css`; inline scripts are copied into `assets/site.js`. Bounded URL collection packages directly referenced HTML/CSS assets, while local source intake does not independently crawl missing assets.
 - Navigation persistence is limited to supported header/footer shapes that can be converted into deterministic `wp_navigation` entities without guessing.
 - External live triage has exercised additional static sites; committed first-party fixtures include `tests/fixtures/wordpress-is-dead/` and `tests/fixtures/mixed-source-site/`.
 

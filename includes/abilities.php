@@ -175,7 +175,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 			'static-site-importer/import-url',
 			array(
 				'label'               => __( 'Import URL', 'static-site-importer' ),
-				'description'         => __( 'Import a source URL through a URL extraction provider and return a Static Site Importer report.', 'static-site-importer' ),
+				'description'         => __( 'Import one public HTML URL or collect a bounded public static site through a URL extraction provider.', 'static-site-importer' ),
 				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
 				'input_schema'        => array(
 					'type'       => 'object',
