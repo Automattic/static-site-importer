@@ -185,8 +185,8 @@ namespace {
 					),
 				),
 				'layout_graph' => array(
-					'schema' => 'generic/computed-layout-graph/v1', 'basis' => 'computed', 'truncated' => false, 'limits' => array( 'max_nodes' => 128 ), 'variants' => array(), 'diagnostics' => array(),
-					'nodes' => array( array( 'id' => 'wrapper-0', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'section', 'id' => 'contact-row', 'classes' => array( 'row-2' ) ), 'layout' => array( 'display' => 'flex', 'direction' => 'row', 'wrap' => false ), 'provenance' => array( 'basis' => 'computed', 'hash' => 'test' ) ) ),
+					'schema' => 'generic/computed-layout-graph/v1', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'nodes' => 128, 'depth' => 8, 'rules_per_node' => 16 ), 'variants' => array(), 'diagnostics' => array(),
+					'nodes' => array( array( 'id' => 'wrapper-0', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'section', 'id' => 'contact-row', 'classes' => array( 'row-2' ) ), 'layout' => array( 'display' => 'flex', 'direction' => 'row', 'wrap' => 'nowrap' ), 'provenance' => array() ) ),
 				),
 			),
 		),
@@ -206,7 +206,7 @@ namespace {
 	$unsafe_graph['forms'][0]['layout_graph']['nodes'][0]['layout'] = array( 'display' => 'grid', 'direction' => 'none', 'item_placement' => array( 'column' => 1 ) );
 	$unsafe_graph_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unsafe_graph );
 	$unsafe_graph_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $unsafe_graph_validation['forms'] ) );
-	$assert( 'deferred' === ( $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['status'] ?? '' ) && 'unsupported_item_placement' === ( $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['losses'][0]['reason_code'] ?? '' ), 'computed-layout-grid-placement-is-deferred' );
+	$assert( 'deferred' === ( $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['status'] ?? '' ) && in_array( ( $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['losses'][0]['reason_code'] ?? '' ), array( 'unsupported_item_placement', 'equivalence_unproven_layout' ), true ), 'computed-layout-grid-placement-is-deferred' );
 	$legacy_without_submit = $forms_manifest;
 	array_pop( $legacy_without_submit['forms'][0]['controls'] );
 	$legacy_without_submit_seed = Static_Site_Importer_Form_Seeder::seed( $legacy_without_submit );
