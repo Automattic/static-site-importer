@@ -196,6 +196,7 @@ export async function runFixtureMatrix(options) {
   const recipe = buildFixtureMatrixRecipe({
     matrix,
     runId: matrix.id,
+    attemptId: 'primary',
     artifactsDirectory: outputDirectory,
     playgroundArtifactsDirectory: options.playgroundArtifactsDirectory || '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix',
     wordpressVersion: options.wordpressVersion,
@@ -381,6 +382,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
   const batchRecipe = buildFixtureMatrixRecipe({
     matrix: batchMatrix,
     runId: batchMatrix.id,
+    attemptId: batchSuffix,
     artifactsDirectory: outputDirectory,
     playgroundArtifactsDirectory: options.playgroundArtifactsDirectory || '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix',
     wordpressVersion: options.wordpressVersion,
@@ -467,6 +469,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     outputFile,
     codeboxOutput: batchRuntime?.json,
     codeboxError: batchError,
+    sidecarAttemptId: batchSuffix,
     visualParity: visualParityGateInput(options),
     liveWpParity: liveWpParityCollectorInput(options),
     dependencyOverrides: prepareDependencyOverrides(options),
