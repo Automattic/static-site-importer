@@ -1241,6 +1241,44 @@ test('fixture lineage rejects same-run evidence from a different step', () => {
   assert.equal(finding.diagnostic_blind_spots, undefined);
 });
 
+test('fixture lineage requires complete matching correlation identities', () => {
+  const cases = [
+    ['matching run', { run_id: 'run-a' }, { run_id: 'run-a' }, true],
+    ['matching run and step', { run_id: 'run-a', step_id: 'step-a' }, { run_id: 'run-a', step_id: 'step-a' }, true],
+    ['matching full identity', { run_id: 'run-a', step_id: 'step-a', diagnostic_id: 'diagnostic-a' }, { run_id: 'run-a', step_id: 'step-a', diagnostic_id: 'diagnostic-a' }, true],
+    ['same run with evidence-only step', { run_id: 'run-a' }, { run_id: 'run-a', step_id: 'step-a' }, false],
+    ['same step with diagnostic-only run', { run_id: 'run-a', step_id: 'step-a' }, { step_id: 'step-a' }, false],
+    ['same run with conflicting step', { run_id: 'run-a', step_id: 'step-a' }, { run_id: 'run-a', step_id: 'step-b' }, false],
+    ['same run and step with conflicting diagnostic', { run_id: 'run-a', step_id: 'step-a', diagnostic_id: 'diagnostic-a' }, { run_id: 'run-a', step_id: 'step-a', diagnostic_id: 'diagnostic-b' }, false],
+    ['absent identities', {}, {}, false],
+  ];
+
+  for (const [name, diagnosticIdentity, evidenceIdentity, expected] of cases) {
+    const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-attribution-identity-'));
+    const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: `attribution-identity-${name}` });
+    const result = collectFixtureMatrixRunResults({
+      matrix,
+      outputDirectory,
+      codeboxOutput: [
+        {
+          fixture_id: 'simple-site',
+          status: 'failed',
+          import_report: verifiedImportReport(),
+          diagnostics: [{ ...diagnosticIdentity, kind: 'recipe_step_failure', attribution_boundary: 'provider', message: 'Provider operation failed.' }],
+        },
+        {
+          fixture_id: 'simple-site',
+          ...evidenceIdentity,
+          provider_adapter: { schema: 'static-site-importer/provider-adapter/v1', status: 'failed', provider: 'correlation-test' },
+        },
+      ],
+    });
+
+    const finding = result.findings.find((item) => item.kind === 'recipe_step_failure');
+    assert.equal(finding.candidate_repo === 'static-site-importer', expected, name);
+  }
+});
+
 test('fixture attribution infers transform ownership for verified editor-invalid diagnostics', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'inferred-transform-attribution-test' });
   const result = normalizeFixtureMatrixResult({
