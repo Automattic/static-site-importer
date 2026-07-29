@@ -1068,19 +1068,19 @@ test('fixture attribution assigns a transform loss only with complete transforme
 
   assert.equal(result.findings[0].candidate_repo, 'blocks-engine');
   assert.equal(result.findings[0].attribution_candidates.find((candidate) => candidate.boundary === 'transform').supported, true);
+  assert.equal(result.findings[0].diagnostic_blind_spots, undefined);
 });
 
 test('fixture attribution assigns adapter loss only with a failed provider result', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'provider-attribution-test' });
   const evidence = verifiedMatrixEvidence();
-  evidence.lineage.provider_adapter = { schema: 'static-site-importer/provider-adapter/v1', status: 'failed', provider: 'test-adapter' };
   const result = normalizeFixtureMatrixResult({
     matrix,
     results: [{
       fixture_id: 'simple-site',
       status: 'failed',
       matrix_evidence: evidence,
-      diagnostics: [{ kind: 'recipe_step_failure', attribution_boundary: 'provider', message: 'Provider adapter dropped the import result.' }],
+      diagnostics: [{ kind: 'recipe_step_failure', attribution_boundary: 'provider', attribution_evidence: { provider_adapter: { schema: 'static-site-importer/provider-adapter/v1', status: 'failed', provider: 'test-adapter' } }, message: 'Provider adapter dropped the import result.' }],
     }],
   });
 
@@ -1091,14 +1091,13 @@ test('fixture attribution assigns adapter loss only with a failed provider resul
 test('fixture attribution keeps capture-only mismatches distinct from transform ownership', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'capture-attribution-test' });
   const evidence = verifiedMatrixEvidence();
-  evidence.lineage.capture = { schema: 'wp-codebox/visual-capture/v1', status: 'failed', source: 'source.png', candidate: 'candidate.png' };
   const result = normalizeFixtureMatrixResult({
     matrix,
     results: [{
       fixture_id: 'simple-site',
       status: 'failed',
       matrix_evidence: evidence,
-      diagnostics: [{ kind: 'visual_parity_mismatch', attribution_boundary: 'capture', message: 'Capture contract mismatched source and candidate screenshots.' }],
+      diagnostics: [{ kind: 'visual_parity_mismatch', attribution_boundary: 'capture', attribution_evidence: { capture: { schema: 'wp-codebox/visual-capture/v1', status: 'failed', source: 'source.png', candidate: 'candidate.png' } }, message: 'Capture contract mismatched source and candidate screenshots.' }],
     }],
   });
 
@@ -1119,7 +1118,7 @@ test('fixture attribution records missing lineage as a blind spot instead of def
   });
 
   assert.equal(result.findings[0].candidate_repo, '');
-  assert.deepEqual(result.findings[0].diagnostic_blind_spots, ['capture_contract', 'materialization_receipt', 'provider_adapter_result', 'transformer_reference', 'wordpress_site_plan']);
+  assert.deepEqual(result.findings[0].diagnostic_blind_spots, ['attribution_boundary']);
   assert.ok(result.summary.diagnostic_blind_spots.some((spot) => spot.kind === 'missing_required_lineage'));
 });
 
@@ -1139,6 +1138,51 @@ test('fixture lineage retains the development transformer override identity', ()
   assert.deepEqual(evidence.lineage.development_override, { package: 'automattic/blocks-engine-php-transformer', reference: 'b'.repeat(40) });
 });
 
+test('fixture lineage does not correlate a retried provider failure to a transform diagnostic', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-attribution-correlation-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'attribution-correlation-test' });
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: [
+      {
+        fixture_id: 'simple-site',
+        run_id: 'current-run',
+        status: 'failed',
+        import_report: verifiedImportReport(),
+        diagnostics: [{ id: 'current-transform', run_id: 'current-run', step_id: 'shared-step', kind: 'missing_output', attribution_boundary: 'transform', message: 'Current transform omitted a source block.' }],
+      },
+      {
+        fixture_id: 'simple-site',
+        run_id: 'prior-run',
+        step_id: 'shared-step',
+        provider_adapter: { schema: 'static-site-importer/provider-adapter/v1', status: 'failed', provider: 'retried-provider' },
+      },
+    ],
+  });
+
+  const finding = result.findings.find((item) => item.kind === 'missing_output');
+  assert.equal(finding.candidate_repo, 'blocks-engine');
+  assert.equal(finding.diagnostic_blind_spots, undefined);
+  assert.equal(finding.attribution_candidates.find((candidate) => candidate.boundary === 'provider').missing.length, 0);
+});
+
+test('fixture attribution infers transform ownership for verified editor-invalid diagnostics', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'inferred-transform-attribution-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      matrix_evidence: verifiedMatrixEvidence(),
+      diagnostics: [{ kind: 'editor_block_invalid', message: 'Editor rejected transformed block markup.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, 'blocks-engine');
+  assert.equal(result.findings[0].attribution_candidates.find((candidate) => candidate.boundary === 'transform').supported, true);
+});
+
 function verifiedMatrixEvidence() {
   return {
     readiness: 'verified',
@@ -1147,6 +1191,16 @@ function verifiedMatrixEvidence() {
     wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
     materialization_receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed' },
     lineage: { artifact: { schema: 'blocks-engine/wordpress-site-plan/v2' } },
+  };
+}
+
+function verifiedImportReport() {
+  return {
+    materialization_receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed' },
+    blocks_engine: {
+      transformer: { package: 'automattic/blocks-engine-php-transformer', version: '1.0.0', reference: 'a'.repeat(40) },
+      wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+    },
   };
 }
 
