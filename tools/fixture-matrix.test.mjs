@@ -1071,7 +1071,7 @@ test('fixture attribution assigns a transform loss only with complete transforme
   assert.equal(result.findings[0].diagnostic_blind_spots, undefined);
 });
 
-test('fixture attribution assigns adapter loss only with a failed provider result', () => {
+test('fixture attribution assigns adapter loss only with correlated failed provider evidence', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'provider-attribution-test' });
   const evidence = verifiedMatrixEvidence();
   const result = normalizeFixtureMatrixResult({
@@ -1080,7 +1080,7 @@ test('fixture attribution assigns adapter loss only with a failed provider resul
       fixture_id: 'simple-site',
       status: 'failed',
       matrix_evidence: evidence,
-      diagnostics: [{ kind: 'recipe_step_failure', attribution_boundary: 'provider', attribution_evidence: { provider_adapter: { schema: 'static-site-importer/provider-adapter/v1', status: 'failed', provider: 'test-adapter' } }, message: 'Provider adapter dropped the import result.' }],
+      diagnostics: [{ kind: 'recipe_step_failure', run_id: 'provider-run', attribution_boundary: 'provider', attribution_evidence: { correlation: { run_id: 'provider-run' }, provider_adapter: { schema: 'static-site-importer/provider-adapter/v1', status: 'failed', provider: 'test-adapter' } }, message: 'Provider adapter dropped the import result.' }],
     }],
   });
 
@@ -1097,12 +1097,42 @@ test('fixture attribution keeps capture-only mismatches distinct from transform 
       fixture_id: 'simple-site',
       status: 'failed',
       matrix_evidence: evidence,
-      diagnostics: [{ kind: 'visual_parity_mismatch', attribution_boundary: 'capture', attribution_evidence: { capture: { schema: 'wp-codebox/visual-capture/v1', status: 'failed', source: 'source.png', candidate: 'candidate.png' } }, message: 'Capture contract mismatched source and candidate screenshots.' }],
+      diagnostics: [{ kind: 'visual_parity_mismatch', run_id: 'capture-run', attribution_boundary: 'capture', attribution_evidence: { correlation: { run_id: 'capture-run' }, capture: { schema: 'wp-codebox/visual-capture/v1', status: 'failed', source: 'source.png', candidate: 'candidate.png' } }, message: 'Capture contract mismatched source and candidate screenshots.' }],
     }],
   });
 
   assert.equal(result.findings[0].candidate_repo, 'static-site-importer');
   assert.equal(result.findings[0].attribution_candidates.find((candidate) => candidate.boundary === 'transform').supported, false);
+});
+
+test('versioned fixture evidence rejects uncorrelated direct provider evidence', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'strict-direct-provider-correlation-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'verified', missing: [] },
+      diagnostics: [{ kind: 'recipe_step_failure', attribution_boundary: 'provider', attribution_evidence: { provider_adapter: { status: 'failed' } }, message: 'Uncorrelated direct provider evidence.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, '');
+  assert.deepEqual(result.findings[0].diagnostic_blind_spots, ['provider_adapter_correlation']);
+});
+
+test('unversioned callers retain explicit provider ownership without correlation evidence', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'legacy-direct-provider-correlation-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      diagnostics: [{ kind: 'recipe_step_failure', attribution_boundary: 'provider', candidate_repo: 'static-site-importer', attribution_evidence: { provider_adapter: { status: 'failed' } }, message: 'Legacy provider ownership.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, 'static-site-importer');
 });
 
 test('fixture attribution records missing lineage as a blind spot instead of defaulting to Blocks Engine', () => {
