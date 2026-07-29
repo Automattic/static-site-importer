@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 /**
  * Internal dependencies
  */
-import { MAX_EXTRA_SURFACE_COUNT, createFixtureMatrix, inspectFixtureDirectories, normalizeSurfaceCoverageOptions, normalizeVisualAttributionOptions } from '../lib/fixture-matrix.mjs';
+import { MAX_EXTRA_SURFACE_COUNT, createFixtureMatrix, discoverFixtures, inspectFixtureDirectories, normalizeSurfaceCoverageOptions, normalizeVisualAttributionOptions } from '../lib/fixture-matrix.mjs';
 
 export const RIG_ID = 'static-site-importer-fixture-matrix';
 export const SOLVED_ONLY_LANE_ID = 'fixtures-solved-only/v1';
@@ -165,7 +165,7 @@ export function buildFixtureMatrixRunPlan(input) {
       max_complexity: options.maxComplexity,
     });
   } catch (error) {
-    if (corpusCounts.inspections.active.exclusions[0]?.reason !== 'root_missing') throw error;
+    if (!['root_missing', 'root_not_directory'].includes(corpusCounts.inspections.active.exclusions[0]?.reason)) throw error;
   }
   const fixtureCount = matrix.count;
   const activeFixtureCount = corpusCounts.active;
@@ -356,7 +356,7 @@ function resolveFixtureSelection({ fixtureRoot, targetFixture, promotionGate, so
   const target = String(targetFixture || '').trim();
   if (solvedOnly) {
     assertSolvedOnlySelectionIsCompatible(input);
-    const solvedFixtureIds = inspectFixtureDirectories(path.join(fixtureRoot, 'solved')).selected_ids;
+    const solvedFixtureIds = discoverExecutableFixtureIds(path.join(fixtureRoot, 'solved'));
     if (!solvedFixtureIds.length) {
       throw new Error(`--solved-only requires at least one valid fixture under ${path.join(fixtureRoot, 'solved')}.`);
     }
@@ -388,10 +388,10 @@ function resolveFixtureSelection({ fixtureRoot, targetFixture, promotionGate, so
   }
 
   const activeRoot = path.join(fixtureRoot, 'websites');
-  if (!inspectFixtureDirectories(activeRoot).selected_ids.includes(target)) {
+  if (!discoverExecutableFixtureIds(activeRoot).includes(target)) {
     throw new Error(`--target-fixture "${target}" was not found under ${activeRoot}.`);
   }
-  const solvedFixtureIds = promotionGate ? inspectFixtureDirectories(path.join(fixtureRoot, 'solved')).selected_ids : [];
+  const solvedFixtureIds = promotionGate ? discoverExecutableFixtureIds(path.join(fixtureRoot, 'solved')) : [];
   return {
     fixtureIds: [...new Set([target, ...solvedFixtureIds])].sort(),
     targetFixture: target,
@@ -418,6 +418,14 @@ function assertSolvedOnlySelectionIsCompatible(input) {
   ].filter(([key]) => input[key] !== undefined && input[key] !== false).map(([, flag]) => flag);
   if (incompatible.length) {
     throw new Error(`--solved-only selects the complete fixtures/solved corpus and cannot be combined with ${incompatible.join(', ')}.`);
+  }
+}
+
+function discoverExecutableFixtureIds(fixtureRoot) {
+  try {
+    return discoverFixtures(fixtureRoot, { maxDepth: 2 }).map((fixture) => fixture.id);
+  } catch {
+    return [];
   }
 }
 
@@ -1041,7 +1049,7 @@ function printSolvedOnlyHelp() {
 }
 
 function printSurfaceCoverageHelp() {
-  process.stdout.write('  --surface-coverage <n>              Capture front page plus up to n secondary HTML surfaces per fixture.\n  --max-extra-surfaces <n>            Cap secondary surfaces when coverage is boolean/object-driven.\n');
+  process.stdout.write('  --surface-coverage <n>              Capture front page plus up to n secondary HTML surfaces per fixture.\n  --max-extra-surfaces <n>            Cap secondary surfaces when coverage is boolean/object-driven.\n  Empty selections                    Execution is refused; --dry-run prints bounded selection diagnostics.\n');
 }
 
 function printDependencyOverlayReferenceHelp() {

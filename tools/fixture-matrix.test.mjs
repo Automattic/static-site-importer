@@ -2706,6 +2706,21 @@ test('fixture selection fails closed for execution and keeps empty dry-run plann
     runFixtureMatrix({ fixtureRoot, outputDirectory: path.join(root, 'executed'), staticSiteImporterPath: staticSiteImporter, tag: 'absent', run: true }),
     /requires at least one executable fixture/,
   );
+
+  const nonDirectoryRoot = path.join(root, 'not-a-directory');
+  writeFileSync(nonDirectoryRoot, 'fixture root file');
+  const nonDirectoryPlan = buildFixtureMatrixRunPlan({ staticSiteImporter, fixtureRoot: nonDirectoryRoot });
+  assert.equal(nonDirectoryPlan.execution_eligible, false);
+  assert.equal(nonDirectoryPlan.fixture_selection.status, 'planning_empty');
+  assert.equal(nonDirectoryPlan.fixture_selection.exclusions[0].reason, 'root_not_directory');
+  const dryRun = spawnSync(process.execPath, [
+    path.join(packageRoot, 'tools', 'run-fixture-matrix.mjs'),
+    '--static-site-importer', staticSiteImporter,
+    '--fixture-root', nonDirectoryRoot,
+    '--dry-run',
+  ], { encoding: 'utf8' });
+  assert.equal(dryRun.status, 0, dryRun.stderr);
+  assert.equal(JSON.parse(dryRun.stdout).fixture_selection.status, 'planning_empty');
 });
 
 test('fixture selection reports one executable fixture and rejects typoed targets', () => {
@@ -2715,11 +2730,15 @@ test('fixture selection reports one executable fixture and rejects typoed target
   mkdirSync(staticSiteImporter, { recursive: true });
   mkdirSync(path.join(fixtureRoot, 'websites', 'valid-one'), { recursive: true });
   writeFileSync(path.join(fixtureRoot, 'websites', 'valid-one', 'index.html'), '<h1>Fixture</h1>');
+  mkdirSync(path.join(fixtureRoot, 'websites', 'nested', 'valid-two'), { recursive: true });
+  writeFileSync(path.join(fixtureRoot, 'websites', 'nested', 'valid-two', 'index.html'), '<h1>Nested fixture</h1>');
 
   const plan = buildFixtureMatrixRunPlan({ staticSiteImporter, fixtureRoot });
   assert.equal(plan.execution_eligible, true);
-  assert.equal(plan.fixture_count, 1);
-  assert.deepEqual(plan.fixture_selection.selected_fixture_ids, ['valid-one']);
+  assert.equal(plan.fixture_count, 2);
+  assert.deepEqual(plan.fixture_selection.selected_fixture_ids, ['nested-valid-two', 'valid-one']);
+  const nestedTargetPlan = buildFixtureMatrixRunPlan({ staticSiteImporter, fixtureRoot, targetFixture: 'nested-valid-two' });
+  assert.deepEqual(nestedTargetPlan.fixture_selection.selected_fixture_ids, ['nested-valid-two']);
   assert.throws(
     () => buildFixtureMatrixRunPlan({ staticSiteImporter, fixtureRoot, targetFixture: 'typo' }),
     /--target-fixture "typo" was not found/,
@@ -2727,6 +2746,21 @@ test('fixture selection reports one executable fixture and rejects typoed target
   const badRootPlan = buildFixtureMatrixRunPlan({ staticSiteImporter, fixtureRoot: path.join(root, 'missing') });
   assert.equal(badRootPlan.execution_eligible, false);
   assert.equal(badRootPlan.fixture_selection.exclusions[0].reason, 'root_missing');
+});
+
+test('fixture discovery rejects symlinked entrypoints and wrapper help explains empty selection behavior', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-symlink-entrypoint-'));
+  const fixtureRoot = path.join(root, 'fixtures');
+  const fixtureDirectory = path.join(fixtureRoot, 'linked-entrypoint');
+  mkdirSync(fixtureDirectory, { recursive: true });
+  writeFileSync(path.join(root, 'source.html'), '<h1>Source</h1>');
+  symlinkSync(path.join(root, 'source.html'), path.join(fixtureDirectory, 'index.html'));
+
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot });
+  assert.equal(matrix.count, 0);
+  const help = spawnSync(process.execPath, [path.join(packageRoot, 'tools', 'run-fixture-matrix.mjs'), '--help'], { encoding: 'utf8' });
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /Empty selections\s+Execution is refused; --dry-run prints bounded selection diagnostics/);
 });
 
 test('fixture matrix operator rejects contradictory local and Lab routing', () => {
