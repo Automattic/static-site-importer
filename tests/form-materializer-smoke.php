@@ -184,10 +184,9 @@ namespace {
 						array( 'id' => 'control-3', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 3 ),
 					),
 				),
-				'computed_layout_graph' => array(
-					'schema' => 'generic/computed-layout-graph/v1', 'truncated' => false,
-					'nodes' => array( array( 'id' => 'row', 'parent' => null, 'order' => 0, 'target' => 'wrapper-0', 'layout' => array( 'display' => 'flex', 'axis' => 'row' ) ) ),
-					'provenance' => array( 'source' => 'synthetic', 'version' => '1', 'hash' => 'test' ),
+				'layout_graph' => array(
+					'schema' => 'generic/computed-layout-graph/v1', 'basis' => 'computed', 'truncated' => false, 'limits' => array( 'max_nodes' => 128 ), 'variants' => array(), 'diagnostics' => array(),
+					'nodes' => array( array( 'id' => 'wrapper-0', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'section', 'id' => 'contact-row', 'classes' => array( 'row-2' ) ), 'layout' => array( 'display' => 'flex', 'direction' => 'row', 'wrap' => false ), 'provenance' => array( 'basis' => 'computed', 'hash' => 'test' ) ) ),
 				),
 			),
 		),
@@ -204,7 +203,7 @@ namespace {
 	$assert( 1 === substr_count( $topology_markup, 'wp:jetpack/button' ), 'topology-submit-control-emits-one-button-in-source-position' );
 	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && 1 === ( $topology_receipt['operation_count'] ?? 0 ) && str_contains( $topology_markup, 'is-layout-flex' ), 'computed-layout-flex-applies-with-bounded-receipt' );
 	$unsafe_graph = $topology_form;
-	$unsafe_graph['forms'][0]['computed_layout_graph']['nodes'][0]['layout'] = array( 'display' => 'grid', 'axis' => 'none', 'placement' => true );
+	$unsafe_graph['forms'][0]['layout_graph']['nodes'][0]['layout'] = array( 'display' => 'grid', 'direction' => 'none', 'item_placement' => array( 'column' => 1 ) );
 	$unsafe_graph_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unsafe_graph );
 	$unsafe_graph_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $unsafe_graph_validation['forms'] ) );
 	$assert( 'deferred' === ( $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['status'] ?? '' ) && 'unsupported_item_placement' === ( $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['losses'][0]['reason_code'] ?? '' ), 'computed-layout-grid-placement-is-deferred' );

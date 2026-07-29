@@ -790,10 +790,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 				$row['control_topology'] = $topology['topology'];
 			}
-			if ( array_key_exists( 'computed_layout_graph', $form ) ) {
-				$graph = self::normalize_computed_layout_graph( $form['computed_layout_graph'] );
-				if ( isset( $graph['error'] ) ) { $errors[] = array( 'path' => $path_prefix . '.computed_layout_graph', 'message' => $graph['error'] ); continue; }
-				$row['computed_layout_graph'] = $graph['graph'];
+			if ( array_key_exists( 'layout_graph', $form ) ) {
+				$graph = self::normalize_computed_layout_graph( $form['layout_graph'] );
+				if ( isset( $graph['error'] ) ) { $errors[] = array( 'path' => $path_prefix . '.layout_graph', 'message' => $graph['error'] ); continue; }
+				$row['layout_graph'] = $graph['graph'];
 			}
 			$form_key = $row['source_path'] . "\n" . $row['selector'];
 			if ( isset( $seen_forms[ $form_key ] ) ) {
@@ -833,17 +833,21 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** @return array{graph?:array<string,mixed>,error?:string} */
 	private static function normalize_computed_layout_graph( mixed $candidate ): array {
-		if ( ! is_array( $candidate ) || 'generic/computed-layout-graph/v1' !== ( $candidate['schema'] ?? null ) || ! is_array( $candidate['nodes'] ?? null ) || ! array_is_list( $candidate['nodes'] ) || count( $candidate['nodes'] ) > 128 ) return array( 'error' => 'computed_layout_graph must be a bounded generic/computed-layout-graph/v1 graph.' );
-		if ( ! empty( $candidate['truncated'] ) ) return array( 'error' => 'computed_layout_graph is truncated.' );
+		if ( ! is_array( $candidate ) || 'generic/computed-layout-graph/v1' !== ( $candidate['schema'] ?? null ) || ! is_bool( $candidate['truncated'] ?? null ) || ! is_array( $candidate['limits'] ?? null ) || ! is_int( $candidate['limits']['max_nodes'] ?? null ) || $candidate['limits']['max_nodes'] < 1 || $candidate['limits']['max_nodes'] > 128 || ! is_array( $candidate['nodes'] ?? null ) || ! array_is_list( $candidate['nodes'] ) || count( $candidate['nodes'] ) > $candidate['limits']['max_nodes'] || ! is_array( $candidate['variants'] ?? null ) || ! is_array( $candidate['diagnostics'] ?? null ) ) return array( 'error' => 'layout_graph must be a bounded canonical generic/computed-layout-graph/v1 graph.' );
+		if ( $candidate['truncated'] ) return array( 'error' => 'layout_graph is truncated.' );
 		$seen = array(); $nodes = array();
 		foreach ( $candidate['nodes'] as $node ) {
-			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^[A-Za-z0-9_-]{1,80}$/D', $node['id'] ) || isset( $seen[$node['id']] ) || ! is_string( $node['target'] ?? null ) || ! preg_match( '/^wrapper-[A-Za-z0-9_-]{1,80}$/D', $node['target'] ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_array( $node['layout'] ?? null ) || ! in_array( $node['layout']['display'] ?? null, array( 'block', 'flex', 'grid', 'columns' ), true ) || ! in_array( $node['layout']['axis'] ?? null, array( 'row', 'column', 'none' ), true ) ) return array( 'error' => 'computed_layout_graph contains an unsupported node or layout fact.' );
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:form|wrapper-[0-9]+|control-[0-9]+)$/D', $node['id'] ) || isset( $seen[$node['id']] ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_array( $node['source'] ?? null ) || ! is_array( $node['layout'] ?? null ) || ! in_array( $node['layout']['display'] ?? null, array( 'block', 'flex', 'grid', 'columns' ), true ) || ! in_array( $node['layout']['direction'] ?? null, array( 'row', 'column', 'none' ), true ) || ! is_array( $node['provenance'] ?? null ) ) return array( 'error' => 'layout_graph contains an unsupported canonical node.' );
 			$parent = $node['parent'] ?? null;
 			if ( null !== $parent && ( ! is_string( $parent ) || ! isset( $seen[$parent] ) ) ) return array( 'error' => 'computed_layout_graph parents must precede children.' );
-			$clean = array( 'id'=>$node['id'], 'parent'=>$parent, 'order'=>$node['order'], 'target'=>$node['target'], 'layout'=>array( 'display'=>$node['layout']['display'], 'axis'=>$node['layout']['axis'], 'placement'=>!empty($node['layout']['placement']), 'reordered'=>!empty($node['layout']['reordered']) ), 'variants'=>isset($node['variants']) && is_array($node['variants']) ? array_values($node['variants']) : array() );
+			$source = $node['source'];
+			if ( ! is_string( $source['tag'] ?? null ) || ! preg_match( '/^[a-z][a-z0-9-]{0,30}$/D', $source['tag'] ) || ( isset($source['id']) && ( !is_string($source['id']) || !preg_match('/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D',$source['id']) ) ) || ( isset($source['classes']) && ( !is_array($source['classes']) || count($source['classes']) > 8 ) ) ) return array( 'error' => 'layout_graph source identity is unsafe.' );
+			$layout = $node['layout'];
+			foreach ( array('columns','rows','gap','wrap','alignment','justify','order','flex','item_placement') as $field ) if ( array_key_exists($field,$layout) && !is_scalar($layout[$field]) && !is_array($layout[$field]) ) return array( 'error'=>'layout_graph layout facts are malformed.' );
+			$clean = array( 'id'=>$node['id'], 'parent'=>$parent, 'order'=>$node['order'], 'source'=>array_intersect_key($source,array_flip(array('tag','id','classes'))), 'layout'=>array_intersect_key($layout,array_flip(array('display','columns','rows','gap','direction','wrap','alignment','justify','order','flex','item_placement'))), 'provenance'=>array_intersect_key($node['provenance'],array_flip(array('basis','hash','confidence'))) );
 			$seen[$node['id']] = true; $nodes[] = $clean;
 		}
-		return array( 'graph' => array( 'schema'=>'generic/computed-layout-graph/v1', 'nodes'=>$nodes, 'truncated'=>false, 'provenance'=>isset($candidate['provenance']) && is_array($candidate['provenance']) ? array_intersect_key($candidate['provenance'], array_flip(array('source','version','hash'))) : array() ) );
+		return array( 'graph' => array( 'schema'=>'generic/computed-layout-graph/v1', 'basis'=>is_string($candidate['basis'] ?? null) ? $candidate['basis'] : '', 'truncated'=>false, 'limits'=>array('max_nodes'=>$candidate['limits']['max_nodes']), 'nodes'=>$nodes, 'variants'=>array_slice($candidate['variants'],0,32), 'diagnostics'=>array_slice($candidate['diagnostics'],0,32) ) );
 	}
 
 	/**

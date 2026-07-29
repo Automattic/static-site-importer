@@ -12,33 +12,33 @@ class Static_Site_Importer_Computed_Layout_Strategy {
 
 	/** @return array{blocks:array<int,array<string,mixed>>,receipt:array<string,mixed>} */
 	public static function apply( array $form, array $blocks ): array {
-		$graph = $form['computed_layout_graph'] ?? null;
-		$receipt = array( 'schema' => self::RECEIPT_SCHEMA, 'status' => 'skipped', 'graph_hash' => '', 'operation_count' => 0, 'loss_count' => 0, 'operations' => array(), 'losses' => array() );
+		$graph = $form['layout_graph'] ?? null;
+		$receipt = array( 'schema' => self::RECEIPT_SCHEMA, 'status' => 'skipped', 'graph_hash' => '', 'operation_count' => 0, 'loss_count' => 0, 'operations_total' => 0, 'losses_total' => 0, 'truncated' => false, 'operations' => array(), 'losses' => array() );
 		if ( ! is_array( $graph ) ) return array( 'blocks' => $blocks, 'receipt' => $receipt );
 		$receipt['graph_hash'] = hash( 'sha256', wp_json_encode( $graph ) );
 		foreach ( $graph['nodes'] as $node ) {
 			$layout = $node['layout'];
-			if ( ! empty( $node['variants'] ) ) {
+			if ( ! empty( $graph['variants'] ) ) {
 				$receipt['losses'][] = array( 'reason_code' => 'responsive_layout_ownership', 'node_hash' => hash( 'sha256', $node['id'] ) );
 				continue;
 			}
-			if ( ! empty( $layout['placement'] ) || ! empty( $layout['reordered'] ) || in_array( $layout['display'], array( 'grid', 'columns' ), true ) ) {
-				$receipt['losses'][] = array( 'reason_code' => ! empty( $layout['placement'] ) ? 'unsupported_item_placement' : 'equivalence_unproven_layout', 'node_hash' => hash( 'sha256', $node['id'] ) );
+			if ( ! empty( $layout['item_placement'] ) || ! empty( $layout['order'] ) || in_array( $layout['display'], array( 'grid', 'columns' ), true ) ) {
+				$receipt['losses'][] = array( 'reason_code' => ! empty( $layout['item_placement'] ) ? 'unsupported_item_placement' : 'equivalence_unproven_layout', 'node_hash' => hash( 'sha256', $node['id'] ) );
 				continue;
 			}
-			if ( 'flex' !== $layout['display'] || ! in_array( $layout['axis'], array( 'row', 'column' ), true ) ) continue;
-			$target = $node['target'];
+			if ( 'flex' !== $layout['display'] || ! in_array( $layout['direction'], array( 'row', 'column' ), true ) || ! preg_match('/^wrapper-[0-9]+$/D',$node['id']) ) continue;
+			$target = $node['id'];
 			$matched = false;
-			$blocks = self::apply_flex( $blocks, $target, $layout['axis'], $matched );
+			$blocks = self::apply_flex( $blocks, $target, $layout['direction'], $matched );
 			if ( ! $matched ) {
 				$receipt['losses'][] = array( 'reason_code' => 'target_mismatch', 'node_hash' => hash( 'sha256', $node['id'] ) );
 				continue;
 			}
-			$receipt['operations'][] = array( 'strategy' => 'core_group_flex', 'target_hash' => hash( 'sha256', $target ), 'axis' => $layout['axis'] );
+			$receipt['operations'][] = array( 'strategy' => 'core_group_flex', 'target_hash' => hash( 'sha256', $target ), 'direction' => $layout['direction'] );
 		}
 		$receipt['status'] = empty( $receipt['operations'] ) ? ( empty( $receipt['losses'] ) ? 'skipped' : 'deferred' ) : 'applied';
-		$receipt['operation_count'] = count( $receipt['operations'] );
-		$receipt['loss_count'] = count( $receipt['losses'] );
+		$receipt['operations_total'] = count( $receipt['operations'] ); $receipt['losses_total'] = count( $receipt['losses'] );
+		$receipt['operation_count'] = min( 32, $receipt['operations_total'] ); $receipt['loss_count'] = min( 32, $receipt['losses_total'] ); $receipt['truncated'] = $receipt['operations_total'] > 32 || $receipt['losses_total'] > 32;
 		$receipt['operations'] = array_slice( $receipt['operations'], 0, 32 );
 		$receipt['losses'] = array_slice( $receipt['losses'], 0, 32 );
 		return array( 'blocks' => $blocks, 'receipt' => $receipt );

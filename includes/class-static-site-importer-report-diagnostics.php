@@ -1139,6 +1139,9 @@ class Static_Site_Importer_Report_Diagnostics {
 			if ( array_key_exists( 'control_topology', $diagnostic ) ) {
 				$manifest_forms[ array_key_last( $manifest_forms ) ]['control_topology'] = $diagnostic['control_topology'];
 			}
+			if ( array_key_exists( 'layout_graph', $diagnostic ) ) {
+				$manifest_forms[ array_key_last( $manifest_forms ) ]['layout_graph'] = $diagnostic['layout_graph'];
+			}
 		}
 
 		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest_generic( $adapter, array( 'forms' => $manifest_forms ) );
@@ -3044,6 +3047,9 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 		if ( isset( $fallback['control_topology'] ) && is_array( $fallback['control_topology'] ) ) {
 			$diagnostic['control_topology'] = $fallback['control_topology'];
+		}
+		if ( isset( $fallback['layout_graph'] ) && is_array( $fallback['layout_graph'] ) ) {
+			$diagnostic['layout_graph'] = $fallback['layout_graph'];
 		}
 		if ( isset( $fallback['control_count'] ) && is_numeric( $fallback['control_count'] ) ) {
 			$diagnostic['control_count'] = (int) $fallback['control_count'];
