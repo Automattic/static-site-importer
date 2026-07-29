@@ -467,6 +467,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     codeboxError: batchError,
     visualParity: visualParityGateInput(options),
     liveWpParity: liveWpParityCollectorInput(options),
+    dependencyOverrides: prepareDependencyOverrides(options),
   });
   const visualCompare = materializeVisualCompareArtifacts({
     result: batchResult,

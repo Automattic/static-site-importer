@@ -1054,6 +1054,102 @@ test('fixture matrix labels reports without runtime provenance and materializati
   assert.equal(result.summary.matrix_evidence_readiness.counts.legacy_evidence_missing, 1);
 });
 
+test('fixture attribution assigns a transform loss only with complete transformer lineage', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'transform-attribution-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      matrix_evidence: verifiedMatrixEvidence(),
+      diagnostics: [{ kind: 'missing_output', attribution_boundary: 'transform', message: 'Transformer omitted a source block.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, 'blocks-engine');
+  assert.equal(result.findings[0].attribution_candidates.find((candidate) => candidate.boundary === 'transform').supported, true);
+});
+
+test('fixture attribution assigns adapter loss only with a failed provider result', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'provider-attribution-test' });
+  const evidence = verifiedMatrixEvidence();
+  evidence.lineage.provider_adapter = { schema: 'static-site-importer/provider-adapter/v1', status: 'failed', provider: 'test-adapter' };
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      matrix_evidence: evidence,
+      diagnostics: [{ kind: 'recipe_step_failure', attribution_boundary: 'provider', message: 'Provider adapter dropped the import result.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, 'static-site-importer');
+  assert.equal(result.findings[0].attribution_candidates.find((candidate) => candidate.boundary === 'provider').supported, true);
+});
+
+test('fixture attribution keeps capture-only mismatches distinct from transform ownership', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'capture-attribution-test' });
+  const evidence = verifiedMatrixEvidence();
+  evidence.lineage.capture = { schema: 'wp-codebox/visual-capture/v1', status: 'failed', source: 'source.png', candidate: 'candidate.png' };
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      matrix_evidence: evidence,
+      diagnostics: [{ kind: 'visual_parity_mismatch', attribution_boundary: 'capture', message: 'Capture contract mismatched source and candidate screenshots.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, 'static-site-importer');
+  assert.equal(result.findings[0].attribution_candidates.find((candidate) => candidate.boundary === 'transform').supported, false);
+});
+
+test('fixture attribution records missing lineage as a blind spot instead of defaulting to Blocks Engine', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'missing-lineage-attribution-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      matrix_evidence: { readiness: 'legacy_evidence_missing', missing: ['transformer_reference', 'wordpress_site_plan', 'materialization_receipt'] },
+      diagnostics: [{ kind: 'visual_parity_mismatch', message: 'Visual mismatch has no lineage.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, '');
+  assert.deepEqual(result.findings[0].diagnostic_blind_spots, ['capture_contract', 'materialization_receipt', 'provider_adapter_result', 'transformer_reference', 'wordpress_site_plan']);
+  assert.ok(result.summary.diagnostic_blind_spots.some((spot) => spot.kind === 'missing_required_lineage'));
+});
+
+test('fixture lineage retains the development transformer override identity', () => {
+  const evidence = collectMatrixEvidence({
+    import_report: {
+      blocks_engine: {
+        transformer: { package: 'automattic/blocks-engine-php-transformer', version: 'dev-main', reference: 'a'.repeat(40) },
+        wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+      },
+      materialization_receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed' },
+    },
+  }, {
+    dependencyOverrides: { blocks_engine_php_transformer: { package: 'automattic/blocks-engine-php-transformer', reference: 'b'.repeat(40) } },
+  });
+
+  assert.deepEqual(evidence.lineage.development_override, { package: 'automattic/blocks-engine-php-transformer', reference: 'b'.repeat(40) });
+});
+
+function verifiedMatrixEvidence() {
+  return {
+    readiness: 'verified',
+    missing: [],
+    transformer: { package: 'automattic/blocks-engine-php-transformer', version: '1.0.0', reference: 'a'.repeat(40) },
+    wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+    materialization_receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed' },
+    lineage: { artifact: { schema: 'blocks-engine/wordpress-site-plan/v2' } },
+  };
+}
+
 test('fixture matrix rejects placeholder transformer provenance', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-matrix-placeholder-provenance-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'placeholder-provenance-test' });
@@ -1760,11 +1856,11 @@ test('splits acceptable and unacceptable pattern rollups for minion fanout', () 
   assert.equal(result.summary.top_acceptable_pattern_families[0].key, 'static_site_import_quality:native_block_conversion:(none)');
   assert.equal(result.summary.top_unacceptable_pattern_families[0].key, 'static_site_import_quality:layout_shift:(none)');
   assert.equal(result.summary.top_unacceptable_pattern_families[0].count, 2);
-  assert.equal(result.summary.unacceptable_candidate_repos[0].candidate_repo, 'blocks-engine');
-  assert.equal(result.summary.unacceptable_candidate_repos[0].count, 2);
+  assert.equal(result.summary.unacceptable_candidate_repos[0].candidate_repo, 'unknown');
+  assert.equal(result.summary.unacceptable_candidate_repos[0].count, 3);
   assert.equal(result.summary.unacceptable_candidate_repos[0].top_pattern_families[0].key, 'static_site_import_quality:layout_shift:(none)');
   assert.equal(result.fanout_groups[0].acceptance, 'unacceptable');
-  assert.equal(result.fanout_groups[0].candidate_repo, 'blocks-engine');
+  assert.equal(result.fanout_groups[0].candidate_repo, 'unknown');
   assert.equal(result.fanout_groups[0].pattern_family, 'static_site_import_quality:layout_shift:(none)');
   assert.equal(result.fanout_groups[0].count, 2);
   assert.notEqual(result.fanout_groups[0].group_key, 'static_site_import_quality');
@@ -4695,7 +4791,7 @@ test('editor-canvas-probe invalid-block warnings become gating editor_block_inva
   assert.equal(finding.kind, 'editor_block_invalid');
   assert.equal(finding.group_key, 'editor_block_invalid');
   assert.equal(finding.repair_bucket, 'editor_block_invalid');
-  assert.equal(finding.candidate_repo, 'blocks-engine');
+  assert.equal(finding.candidate_repo, '');
   assert.equal(finding.loss_class, 'editor_block_invalid');
   assert.equal(finding.loss_acceptance, 'unacceptable');
   assert.equal(finding.selector, '.block-editor-warning');
@@ -5785,7 +5881,7 @@ test('(b) visual-compare mismatch over threshold with gate on becomes a gating u
   assert.ok(finding, 'expected a visual_parity_mismatch finding');
   assert.equal(finding.group_key, 'visual_parity_mismatch');
   assert.equal(finding.repair_bucket, 'visual_parity_mismatch');
-  assert.equal(finding.candidate_repo, 'blocks-engine');
+  assert.equal(finding.candidate_repo, '');
   assert.equal(finding.loss_class, 'visual_parity_mismatch');
   assert.equal(finding.loss_acceptance, 'unacceptable');
   assert.equal(result.summary.unacceptable_finding_count, 1);
