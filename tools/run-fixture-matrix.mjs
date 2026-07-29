@@ -154,17 +154,17 @@ export function buildFixtureMatrixRunPlan(input) {
   let matrix = { fixtures: [], count: 0 };
   if (corpusCounts.inspections.active.exclusions[0]?.reason !== 'root_symlink') {
     try {
-    matrix = createFixtureMatrix({
-      fixture_root: options.fixtureRoot,
-      fixture_ids: options.fixtureIds,
-      fixture_corpus: options.solvedOnly ? 'solved' : undefined,
-      class: options.class,
-      tag: options.tag,
-      capabilities: options.capability || options.capabilities,
-      risk_profile: options.riskProfile,
-      complexity: options.complexity,
-      max_complexity: options.maxComplexity,
-    });
+      matrix = createFixtureMatrix({
+        fixture_root: options.fixtureRoot,
+        fixture_ids: options.fixtureIds,
+        fixture_corpus: options.solvedOnly ? 'solved' : undefined,
+        class: options.class,
+        tag: options.tag,
+        capabilities: options.capability || options.capabilities,
+        risk_profile: options.riskProfile,
+        complexity: options.complexity,
+        max_complexity: options.maxComplexity,
+      });
     } catch (error) {
       if (!['root_missing', 'root_not_directory'].includes(corpusCounts.inspections.active.exclusions[0]?.reason)) throw error;
     }
