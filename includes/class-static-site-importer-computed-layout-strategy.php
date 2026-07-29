@@ -14,7 +14,15 @@ class Static_Site_Importer_Computed_Layout_Strategy {
 	public static function apply( array $form, array $blocks ): array {
 		$graph = $form['layout_graph'] ?? null;
 		$receipt = array( 'schema' => self::RECEIPT_SCHEMA, 'status' => 'skipped', 'graph_hash' => '', 'operation_count' => 0, 'loss_count' => 0, 'operations_total' => 0, 'losses_total' => 0, 'truncated' => false, 'operations' => array(), 'losses' => array() );
-		if ( ! is_array( $graph ) ) return array( 'blocks' => $blocks, 'receipt' => $receipt );
+		foreach ( $form['topology_losses'] ?? array() as $loss ) if ( is_array( $loss ) ) $receipt['losses'][] = $loss;
+		if ( ! is_array( $graph ) ) {
+			$receipt['status'] = empty( $receipt['losses'] ) ? 'skipped' : 'deferred';
+			$receipt['losses_total'] = count( $receipt['losses'] );
+			$receipt['loss_count'] = min( 32, $receipt['losses_total'] );
+			$receipt['truncated'] = $receipt['losses_total'] > 32;
+			$receipt['losses'] = array_slice( $receipt['losses'], 0, 32 );
+			return array( 'blocks' => $blocks, 'receipt' => $receipt );
+		}
 		$receipt['graph_hash'] = hash( 'sha256', wp_json_encode( $graph ) );
 		$variants_by_node = array();
 		foreach ( $graph['variants'] ?? array() as $variant ) if ( is_array( $variant ) && is_string( $variant['node'] ?? null ) ) $variants_by_node[ $variant['node'] ][] = $variant;

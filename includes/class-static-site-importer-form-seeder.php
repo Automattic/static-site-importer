@@ -250,16 +250,18 @@ class Static_Site_Importer_Form_Seeder {
 			);
 		}
 
-		$inner_blocks   = self::topology_inner_blocks( $form, $field_blocks );
-		if ( null === $inner_blocks ) {
+		$topology = self::topology_inner_blocks( $form, $field_blocks, $controls );
+		if ( null === $topology ) {
 			return array(
 				'selector' => $selector, 'source_path' => $source_path, 'provider' => self::PROVIDER_ID,
 				'block_name' => 'jetpack/contact-form', 'status' => 'skipped', 'reason' => 'unsupported_control_topology', 'runtime_mapped' => false,
 			);
 		}
+		$inner_blocks = $topology['blocks'];
 		if ( ! $has_topology || ! $has_source_submit ) {
 			$inner_blocks[] = self::submit_button_block( $submit_text );
 		}
+		$form['topology_losses'] = $topology['losses'];
 		$layout = Static_Site_Importer_Computed_Layout_Strategy::apply( $form, $inner_blocks );
 		$inner_blocks = $layout['blocks'];
 		$form_attrs     = self::contact_form_attributes( $form );
@@ -287,11 +289,12 @@ class Static_Site_Importer_Form_Seeder {
 	 * remain provider-owned; groups only carry source presentation and parentage.
 	 *
 	 * @param array<int,array<string,mixed>> $field_blocks
-	 * @return array<int,array<string,mixed>>|null
+	 * @param array<int,array<string,mixed>> $controls
+	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>}|null
 	 */
-	private static function topology_inner_blocks( array $form, array $field_blocks ): ?array {
+	private static function topology_inner_blocks( array $form, array $field_blocks, array $controls ): ?array {
 		if ( ! isset( $form['control_topology'] ) ) {
-			return array_values( $field_blocks );
+			return array( 'blocks' => array_values( $field_blocks ), 'losses' => array() );
 		}
 		$nodes = $form['control_topology']['nodes'] ?? null;
 		if ( ! is_array( $nodes ) ) {
@@ -309,12 +312,23 @@ class Static_Site_Importer_Form_Seeder {
 			usort( $siblings, static fn ( array $left, array $right ): int => $left['order'] <=> $right['order'] );
 		}
 		unset( $siblings );
-		$build = static function ( string $parent ) use ( &$build, $children, $field_blocks ): array {
+		$losses = array();
+		$build = static function ( string $parent ) use ( &$build, $children, $field_blocks, $controls, &$losses ): array {
 			$blocks = array();
 			foreach ( $children[ $parent ] ?? array() as $node ) {
 				if ( 'control' === ( $node['kind'] ?? null ) ) {
-					if ( isset( $field_blocks[ $node['control'] ?? -1 ] ) ) {
-						$blocks[] = $field_blocks[ $node['control'] ];
+					$control_index = $node['control'] ?? -1;
+					if ( isset( $field_blocks[ $control_index ] ) ) {
+						$blocks[] = $field_blocks[ $control_index ];
+					} elseif ( isset( $controls[ $control_index ] ) ) {
+						$type = strtolower( trim( (string) ( $controls[ $control_index ]['type'] ?? $controls[ $control_index ]['tag'] ?? '' ) ) );
+						$losses[] = array(
+							'dimension'         => 'topology',
+							'reason_code'       => 'unsupported_control_unrepresentable',
+							'node_hash'         => hash( 'sha256', $node['id'] ),
+							'control_index'     => $control_index,
+							'control_type_hash' => hash( 'sha256', $type ),
+						);
 					}
 					continue;
 				}
@@ -326,7 +340,7 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			return $blocks;
 		};
-		return $build( '$root' );
+		return array( 'blocks' => $build( '$root' ), 'losses' => $losses );
 	}
 
 	/**
