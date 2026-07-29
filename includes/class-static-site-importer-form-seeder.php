@@ -204,6 +204,7 @@ class Static_Site_Importer_Form_Seeder {
 		$mapped_types = array();
 		$submit_text  = 'Submit';
 		$skipped      = array();
+		$has_topology = isset( $form['control_topology'] );
 
 		foreach ( $controls as $control_index => $control ) {
 			if ( ! is_array( $control ) ) {
@@ -216,7 +217,9 @@ class Static_Site_Importer_Form_Seeder {
 			if ( 'submit' === $type || ( 'button' === $tag && 'submit' === $type ) ) {
 				$text        = self::control_text( $control );
 				$submit_text = '' !== $text ? $text : $submit_text;
-				$field_blocks[ $control_index ] = self::submit_button_block( $submit_text );
+				if ( $has_topology ) {
+					$field_blocks[ $control_index ] = self::submit_button_block( $submit_text );
+				}
 				continue;
 			}
 
@@ -250,7 +253,7 @@ class Static_Site_Importer_Form_Seeder {
 				'block_name' => 'jetpack/contact-form', 'status' => 'skipped', 'reason' => 'unsupported_control_topology', 'runtime_mapped' => false,
 			);
 		}
-		if ( ! isset( $form['control_topology'] ) ) {
+		if ( ! $has_topology ) {
 			$inner_blocks[] = self::submit_button_block( $submit_text );
 		}
 		$form_attrs     = self::contact_form_attributes( $form );

@@ -144,6 +144,7 @@ namespace {
 	$assert( str_contains( $markup, 'wp:jetpack/field-checkbox' ), 'markup-field-checkbox' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-textarea' ), 'markup-field-textarea' );
 	$assert( str_contains( $markup, 'wp:jetpack/button' ), 'markup-submit-button' );
+	$assert( 1 === substr_count( $markup, 'wp:jetpack/button' ), 'legacy-submit-control-emits-one-button' );
 	$assert( str_contains( $markup, 'hello@example.com' ), 'markup-mailto-recipient' );
 	$assert( str_contains( $markup, '"options":["Sales","Support"]' ), 'markup-select-options' );
 	$assert( str_contains( $markup, '<div class="wp-block-jetpack-contact-form form contact">' ), 'markup-contact-form-wrapper-and-source-classes' );
@@ -193,6 +194,12 @@ namespace {
 	$assert( 3 === substr_count( $topology_markup, 'class="wp-block-group field' ), 'topology-preserves-field-groups' );
 	$assert( str_contains( $topology_markup, 'wp:group {"className":"row-2","anchor":"contact-row","tagName":"section"}' ), 'topology-serializes-gutenberg-group-tag' );
 	$assert( str_contains( $topology_markup, 'First name' ) && str_contains( $topology_markup, 'Email' ) && str_contains( $topology_markup, 'Message' ), 'topology-preserves-labels' );
+	$assert( 1 === substr_count( $topology_markup, 'wp:jetpack/button' ), 'topology-submit-control-emits-one-button-in-source-position' );
+	$legacy_without_submit = $forms_manifest;
+	array_pop( $legacy_without_submit['forms'][0]['controls'] );
+	$legacy_without_submit_seed = Static_Site_Importer_Form_Seeder::seed( $legacy_without_submit );
+	$legacy_without_submit_markup = (string) ( $legacy_without_submit_seed['forms'][0]['block_markup'] ?? '' );
+	$assert( 1 === substr_count( $legacy_without_submit_markup, 'wp:jetpack/button' ) && str_contains( $legacy_without_submit_markup, '"text":"Submit"' ), 'legacy-form-without-submit-keeps-default-provider-button' );
 	$invalid_topology = $topology_form;
 	$invalid_topology['forms'][0]['control_topology']['truncated'] = true;
 	$invalid_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $invalid_topology );
