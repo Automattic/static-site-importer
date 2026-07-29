@@ -3,7 +3,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -2514,6 +2514,7 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   mkdirSync(staticSiteImporter, { recursive: true });
   for (let index = 1; index <= CANONICAL_FIXTURE_COUNT; index += 1) {
     mkdirSync(path.join(canonicalFixtureRoot, `fixture-${String(index).padStart(2, '0')}`), { recursive: true });
+    writeFileSync(path.join(canonicalFixtureRoot, `fixture-${String(index).padStart(2, '0')}`, 'index.html'), '<h1>Fixture</h1>');
   }
   writeFileSync(path.join(canonicalFixtureRoot, 'fixture-01', 'index.html'), '<h1>Target</h1>');
   const solvedFixtureRoot = path.join(corpusRoot, 'solved', 'solved-site');
@@ -2678,6 +2679,54 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   });
   assert.equal(visualGateOptOutPlan.visual_parity.gate, false);
   assert.ok(visualGateOptOutPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE=0'));
+});
+
+test('fixture selection fails closed for execution and keeps empty dry-run planning explicit', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-empty-selection-'));
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  const fixtureRoot = path.join(root, 'fixtures');
+  mkdirSync(staticSiteImporter, { recursive: true });
+  mkdirSync(path.join(fixtureRoot, 'missing-entrypoint'), { recursive: true });
+  mkdirSync(path.join(fixtureRoot, 'metadata-warning'), { recursive: true });
+  writeFileSync(path.join(fixtureRoot, 'metadata-warning', 'index.html'), '<h1>Fixture</h1>');
+  writeFileSync(path.join(fixtureRoot, 'metadata-warning', 'fixture.json'), '{');
+  symlinkSync(path.join(fixtureRoot, 'metadata-warning'), path.join(fixtureRoot, 'linked-fixture'));
+
+  const plan = buildFixtureMatrixRunPlan({ staticSiteImporter, fixtureRoot, tag: 'absent' });
+  assert.equal(plan.execution_eligible, false);
+  assert.equal(plan.fixture_selection.status, 'planning_empty');
+  assert.ok(plan.fixture_selection.exclusions.some((row) => row.reason === 'missing_entrypoint'));
+  assert.ok(plan.fixture_selection.exclusions.some((row) => row.reason === 'symlink'));
+  assert.ok(plan.fixture_selection.exclusions.some((row) => row.reason === 'filter_mismatch'));
+  assert.ok(plan.fixture_selection.diagnostics.some((row) => row.reason === 'malformed_metadata'));
+
+  const planned = await runFixtureMatrix({ fixtureRoot, outputDirectory: path.join(root, 'planned'), staticSiteImporterPath: staticSiteImporter, tag: 'absent', run: false });
+  assert.equal(planned.summary.fixture_count, 0);
+  await assert.rejects(
+    runFixtureMatrix({ fixtureRoot, outputDirectory: path.join(root, 'executed'), staticSiteImporterPath: staticSiteImporter, tag: 'absent', run: true }),
+    /requires at least one executable fixture/,
+  );
+});
+
+test('fixture selection reports one executable fixture and rejects typoed targets', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-one-selection-'));
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  const fixtureRoot = path.join(root, 'fixtures');
+  mkdirSync(staticSiteImporter, { recursive: true });
+  mkdirSync(path.join(fixtureRoot, 'websites', 'valid-one'), { recursive: true });
+  writeFileSync(path.join(fixtureRoot, 'websites', 'valid-one', 'index.html'), '<h1>Fixture</h1>');
+
+  const plan = buildFixtureMatrixRunPlan({ staticSiteImporter, fixtureRoot });
+  assert.equal(plan.execution_eligible, true);
+  assert.equal(plan.fixture_count, 1);
+  assert.deepEqual(plan.fixture_selection.selected_fixture_ids, ['valid-one']);
+  assert.throws(
+    () => buildFixtureMatrixRunPlan({ staticSiteImporter, fixtureRoot, targetFixture: 'typo' }),
+    /--target-fixture "typo" was not found/,
+  );
+  const badRootPlan = buildFixtureMatrixRunPlan({ staticSiteImporter, fixtureRoot: path.join(root, 'missing') });
+  assert.equal(badRootPlan.execution_eligible, false);
+  assert.equal(badRootPlan.fixture_selection.exclusions[0].reason, 'root_missing');
 });
 
 test('fixture matrix operator rejects contradictory local and Lab routing', () => {

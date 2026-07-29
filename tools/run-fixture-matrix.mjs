@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 /**
  * Internal dependencies
  */
-import { MAX_EXTRA_SURFACE_COUNT, normalizeSurfaceCoverageOptions, normalizeVisualAttributionOptions } from '../lib/fixture-matrix.mjs';
+import { MAX_EXTRA_SURFACE_COUNT, createFixtureMatrix, inspectFixtureDirectories, normalizeSurfaceCoverageOptions, normalizeVisualAttributionOptions } from '../lib/fixture-matrix.mjs';
 
 export const RIG_ID = 'static-site-importer-fixture-matrix';
 export const SOLVED_ONLY_LANE_ID = 'fixtures-solved-only/v1';
@@ -56,6 +56,12 @@ async function main() {
 
   if (options.dryRun) {
     process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
+    return;
+  }
+
+  if (!plan.execution_eligible) {
+    process.stderr.write(`${plan.fixture_selection.message}\n`);
+    process.exitCode = 1;
     return;
   }
 
@@ -144,8 +150,24 @@ export function buildFixtureMatrixRunPlan(input) {
     ...(options.complexity ? { SSI_FIXTURE_MATRIX_COMPLEXITY: String(options.complexity) } : {}),
     ...(options.maxComplexity ? { SSI_FIXTURE_MATRIX_MAX_COMPLEXITY: String(options.maxComplexity) } : {}),
   };
-  const corpusCounts = countCorpusFixtureDirectories(options.fixtureRoot);
-  const fixtureCount = options.fixtureIds.length || corpusCounts.total;
+  const corpusCounts = inspectCorpusFixtures(options.fixtureRoot);
+  let matrix = { fixtures: [], count: 0 };
+  try {
+    matrix = createFixtureMatrix({
+      fixture_root: options.fixtureRoot,
+      fixture_ids: options.fixtureIds,
+      fixture_corpus: options.solvedOnly ? 'solved' : undefined,
+      class: options.class,
+      tag: options.tag,
+      capabilities: options.capability || options.capabilities,
+      risk_profile: options.riskProfile,
+      complexity: options.complexity,
+      max_complexity: options.maxComplexity,
+    });
+  } catch (error) {
+    if (corpusCounts.inspections.active.exclusions[0]?.reason !== 'root_missing') throw error;
+  }
+  const fixtureCount = matrix.count;
   const activeFixtureCount = corpusCounts.active;
   const solvedFixtureCount = corpusCounts.solved;
   const warnings = [
@@ -171,9 +193,11 @@ export function buildFixtureMatrixRunPlan(input) {
     fixture_count: fixtureCount,
     active_fixture_count: activeFixtureCount,
     solved_fixture_count: solvedFixtureCount,
-    selected_active_fixture_count: options.selectedActiveFixtureCount,
-    selected_solved_fixture_count: options.selectedSolvedFixtureCount,
+    selected_active_fixture_count: matrix.fixtures.filter((fixture) => fixture.fixture_corpus === 'active').length,
+    selected_solved_fixture_count: matrix.fixtures.filter((fixture) => fixture.fixture_corpus === 'solved').length,
     selected_fixture_count: fixtureCount,
+    execution_eligible: fixtureCount > 0,
+    fixture_selection: fixtureSelectionSummary({ matrix, corpusCounts, options }),
     ...(options.laneIdentity ? { lane_identity: options.laneIdentity } : {}),
     canonical_fixture_count: CANONICAL_FIXTURE_COUNT,
     fixture_count_matches_canonical: activeFixtureCount === CANONICAL_FIXTURE_COUNT,
@@ -332,7 +356,7 @@ function resolveFixtureSelection({ fixtureRoot, targetFixture, promotionGate, so
   const target = String(targetFixture || '').trim();
   if (solvedOnly) {
     assertSolvedOnlySelectionIsCompatible(input);
-    const solvedFixtureIds = fixtureDirectoryNames(path.join(fixtureRoot, 'solved'));
+    const solvedFixtureIds = inspectFixtureDirectories(path.join(fixtureRoot, 'solved')).selected_ids;
     if (!solvedFixtureIds.length) {
       throw new Error(`--solved-only requires at least one valid fixture under ${path.join(fixtureRoot, 'solved')}.`);
     }
@@ -364,10 +388,10 @@ function resolveFixtureSelection({ fixtureRoot, targetFixture, promotionGate, so
   }
 
   const activeRoot = path.join(fixtureRoot, 'websites');
-  if (!fs.existsSync(path.join(activeRoot, target, 'index.html'))) {
+  if (!inspectFixtureDirectories(activeRoot).selected_ids.includes(target)) {
     throw new Error(`--target-fixture "${target}" was not found under ${activeRoot}.`);
   }
-  const solvedFixtureIds = promotionGate ? fixtureDirectoryNames(path.join(fixtureRoot, 'solved')) : [];
+  const solvedFixtureIds = promotionGate ? inspectFixtureDirectories(path.join(fixtureRoot, 'solved')).selected_ids : [];
   return {
     fixtureIds: [...new Set([target, ...solvedFixtureIds])].sort(),
     targetFixture: target,
@@ -394,17 +418,6 @@ function assertSolvedOnlySelectionIsCompatible(input) {
   ].filter(([key]) => input[key] !== undefined && input[key] !== false).map(([, flag]) => flag);
   if (incompatible.length) {
     throw new Error(`--solved-only selects the complete fixtures/solved corpus and cannot be combined with ${incompatible.join(', ')}.`);
-  }
-}
-
-function fixtureDirectoryNames(fixtureRoot) {
-  try {
-    return fs.readdirSync(fixtureRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.') && fs.existsSync(path.join(fixtureRoot, entry.name, 'index.html')))
-      .map((entry) => entry.name)
-      .sort();
-  } catch {
-    return [];
   }
 }
 
@@ -899,31 +912,41 @@ function parseArgs(args) {
   return options;
 }
 
-function countCorpusFixtureDirectories(fixtureRoot) {
+function inspectCorpusFixtures(fixtureRoot) {
   const activeRoot = path.join(fixtureRoot, 'websites');
   const solvedRoot = path.join(fixtureRoot, 'solved');
-  const active = fs.existsSync(activeRoot) && fs.statSync(activeRoot).isDirectory()
-    ? countTopLevelFixtureDirectories(activeRoot)
-    : countTopLevelFixtureDirectories(fixtureRoot);
-  const solved = fs.existsSync(solvedRoot) && fs.statSync(solvedRoot).isDirectory()
-    ? fixtureDirectoryNames(solvedRoot).length
-    : 0;
+  const activeInspection = inspectFixtureDirectories(fs.existsSync(activeRoot) && fs.statSync(activeRoot).isDirectory() ? activeRoot : fixtureRoot);
+  const solvedInspection = inspectFixtureDirectories(solvedRoot);
   return {
-    active,
-    solved,
-    total: active + solved,
-    active_root: fs.existsSync(activeRoot) && fs.statSync(activeRoot).isDirectory() ? activeRoot : fixtureRoot,
+    active: activeInspection.executable_count,
+    solved: solvedInspection.executable_count,
+    total: activeInspection.executable_count + solvedInspection.executable_count,
+    active_root: activeInspection.root,
+    inspections: { active: activeInspection, solved: solvedInspection },
   };
 }
 
-function countTopLevelFixtureDirectories(fixtureRoot) {
-  try {
-    return fs.readdirSync(fixtureRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-      .length;
-  } catch {
-    return 0;
+function fixtureSelectionSummary({ matrix, corpusCounts, options }) {
+  const selectedIds = matrix.fixtures.map((fixture) => fixture.id).sort();
+  const exclusions = Object.values(corpusCounts.inspections)
+    .flatMap((inspection) => inspection.exclusions.map((exclusion) => ({ ...exclusion, root: inspection.root })))
+    .slice(0, 50);
+  const diagnostics = Object.values(corpusCounts.inspections)
+    .flatMap((inspection) => (inspection.diagnostics || []).map((diagnostic) => ({ ...diagnostic, root: inspection.root })))
+    .slice(0, 50);
+  if (matrix.count === 0 && (options.class || options.tag || options.capability || options.capabilities || options.riskProfile || options.complexity || options.maxComplexity || options.fixtureIds.length)) {
+    exclusions.push({ id: '', reason: 'filter_mismatch' });
   }
+  return {
+    status: matrix.count > 0 ? 'executable' : 'planning_empty',
+    selected_fixture_ids: selectedIds.slice(0, 50),
+    selected_fixture_ids_truncated: selectedIds.length > 50,
+    exclusions: exclusions.slice(0, 50),
+    diagnostics,
+    message: matrix.count > 0
+      ? `Selected ${matrix.count} executable fixture${matrix.count === 1 ? '' : 's'} before Homeboy handoff.`
+      : 'Fixture matrix execution requires at least one executable fixture; this is an explicit empty planning result and cannot be handed to Homeboy.',
+  };
 }
 
 function readJson(file) {
@@ -1008,12 +1031,17 @@ function printHelp() {
   process.stdout.write(`Usage: node tools/run-fixture-matrix.mjs --static-site-importer <path> --blocks-engine <path> [options] [-- <bench args>...]\n\nRuns the canonical Static Site Importer fixture matrix through Homeboy/Lab/WP Codebox.\n\nExecution modes:\n  --local                             Passes --placement local to homeboy bench.\n  --runner <id>                       Passes --runner <id> to homeboy bench (implies Lab placement).\n  --lab-only                          Passes --placement lab without selecting a runner.\n  --allow-local-fallback              Passes --placement lab-or-local to homeboy bench.\n  no routing flags                    Passes --placement auto to homeboy bench.\n\nRules:\n  --runner local                      Alias for --local.\n  --local cannot be combined with --runner <remote>, --lab-only, or --allow-local-fallback.\n  --lab-only cannot be combined with --allow-local-fallback.\n\nOptions:\n  --static-site-importer <path>       Static Site Importer checkout/plugin path. Required.\n  --blocks-engine <path>              Blocks Engine checkout. Defaults fixture root and PHP transformer override.\n    --fixture-root <path>               Fixture corpus. Defaults to <blocks-engine>/fixtures, which discovers both fixtures/websites and fixtures/solved.
 \n  --blocks-engine-php-transformer-path <path>\n                                      Override transformer package/repo path. Defaults to --blocks-engine.\n  --mode <development-override|release-proof>\n                                      Labels output; default is development-override when transformer override is used.\n  --run-id <id>                       Stable proof label. Defaults to ssi-matrix-<mode>-<timestamp>.\n  --shared-state <dir>                Shared Homeboy bench state directory.\n  --artifact-root <dir>               Homeboy artifact root.\n  --output <file>                     Structured Homeboy bench output file.\n  --batch-size <n>                    SSI fixture matrix WP Codebox batch size.\n  --concurrency <n>                   Parallel WP Codebox sandbox batches. Defaults to 2, hard-capped at 16.\n  --target-fixture <id>               Run one active fixture for the fast inner loop.\n  --promotion-gate                    Run the target plus every solved fixture, one per batch, and require solved_candidate for all.\n  --wordpress-version <version>       WP Codebox WordPress version.\n  --wp-codebox-bin <path>             WP Codebox CLI path.\n  --allow-stale-override              Proceed even when an override checkout is behind upstream.\n  --allow-local-fallback              Permit selected Lab runner fallback to local execution.\n  --allow-dirty-lab-workspace         Permit reusing/overwriting a dirty Lab workspace.\n  --detach-after-handoff              Return after runner daemon accepts the job.\n  --dry-run                           Print the plan without running Homeboy.\n  --skip-install                      Skip rig install.\n  --skip-sync                         Skip rig sync.\n  --no-editor-validation              Omit editor block validation.\n  --no-visual-parity                  Omit visual parity capture.\n  --no-visual-parity-gate             Capture visual parity without gating.\n  --help                              Show this help.\n`);
   printSolvedOnlyHelp();
+  printSurfaceCoverageHelp();
   printDependencyOverlayReferenceHelp();
   printVisualAttributionHelp();
 }
 
 function printSolvedOnlyHelp() {
   process.stdout.write('  --solved-only                       Run every valid fixtures/solved fixture, one per batch, and require solved_candidate for all.\n');
+}
+
+function printSurfaceCoverageHelp() {
+  process.stdout.write('  --surface-coverage <n>              Capture front page plus up to n secondary HTML surfaces per fixture.\n  --max-extra-surfaces <n>            Cap secondary surfaces when coverage is boolean/object-driven.\n');
 }
 
 function printDependencyOverlayReferenceHelp() {
