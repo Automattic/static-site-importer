@@ -16,17 +16,19 @@ class Static_Site_Importer_Computed_Layout_Strategy {
 		$receipt = array( 'schema' => self::RECEIPT_SCHEMA, 'status' => 'skipped', 'graph_hash' => '', 'operation_count' => 0, 'loss_count' => 0, 'operations_total' => 0, 'losses_total' => 0, 'truncated' => false, 'operations' => array(), 'losses' => array() );
 		if ( ! is_array( $graph ) ) return array( 'blocks' => $blocks, 'receipt' => $receipt );
 		$receipt['graph_hash'] = hash( 'sha256', wp_json_encode( $graph ) );
+		$variants_by_node = array();
+		foreach ( $graph['variants'] ?? array() as $variant ) if ( is_array( $variant ) && is_string( $variant['node'] ?? null ) ) $variants_by_node[ $variant['node'] ][] = $variant;
+		foreach ( self::semantic_wrapper_losses( $form, $blocks ) as $loss ) $receipt['losses'][] = $loss;
 		foreach ( $graph['nodes'] ?? array() as $node ) {
 			if ( ! is_array( $node ) ) continue;
 			$layout = is_array( $node['layout'] ?? null ) ? $node['layout'] : array();
 			$node_hash = hash( 'sha256', (string) ( $node['id'] ?? '' ) );
-			$source_tag = is_string( $node['source']['tag'] ?? null ) ? $node['source']['tag'] : '';
-			if ( self::has_unsupported_serialized_tag( $blocks, (string) ( $node['id'] ?? '' ), $source_tag ) ) $receipt['losses'][] = array( 'dimension' => 'semantic', 'reason_code' => 'unsupported_semantic_wrapper', 'node_hash' => $node_hash );
-			if ( array() === $layout ) {
+			$node_variants = $variants_by_node[ $node['id'] ?? '' ] ?? array();
+			if ( ! empty( $node_variants ) ) {
+				$receipt['losses'][] = array( 'dimension' => 'layout', 'reason_code' => 'responsive_layout_ownership', 'node_hash' => $node_hash, 'variant_count' => count( $node_variants ), 'variant_hash' => hash( 'sha256', wp_json_encode( $node_variants ) ) );
 				continue;
 			}
-			if ( ! empty( $graph['variants'] ) ) {
-				$receipt['losses'][] = array( 'dimension' => 'layout', 'reason_code' => 'responsive_layout_ownership', 'node_hash' => $node_hash );
+			if ( array() === $layout ) {
 				continue;
 			}
 			if ( ! preg_match( '/^wrapper-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) {
@@ -83,12 +85,25 @@ class Static_Site_Importer_Computed_Layout_Strategy {
 		return array( ( 'row' === $direction ) === ( 'align_items' === $fact ) ? 'verticalAlignment' : 'justifyContent', $map[ $value ] );
 	}
 
-	private static function has_unsupported_serialized_tag( array $blocks, string $target, string $source_tag ): bool {
-		foreach ( $blocks as $block ) {
-			if ( $target === ( $block['topologyId'] ?? '' ) ) return $source_tag === ( $block['topologySourceTag'] ?? '' ) && $source_tag !== ( $block['attrs']['tagName'] ?? 'div' );
-			if ( ! empty( $block['innerBlocks'] ) && self::has_unsupported_serialized_tag( $block['innerBlocks'], $target, $source_tag ) ) return true;
+	private static function semantic_wrapper_losses( array $form, array $blocks ): array {
+		$serialized = self::serialized_topology_blocks( $blocks );
+		$losses = array();
+		foreach ( $form['control_topology']['nodes'] ?? array() as $node ) {
+			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || ! is_string( $node['id'] ?? null ) ) continue;
+			$source_tag = $node['tag'] ?? 'div';
+			$block = $serialized[ $node['id'] ] ?? null;
+			if ( ! is_array( $block ) || $source_tag !== ( $block['topologySourceTag'] ?? null ) || $source_tag !== ( $block['attrs']['tagName'] ?? 'div' ) ) $losses[] = array( 'dimension' => 'semantic', 'reason_code' => 'unsupported_semantic_wrapper', 'node_hash' => hash( 'sha256', $node['id'] ) );
 		}
-		return false;
+		return $losses;
+	}
+
+	private static function serialized_topology_blocks( array $blocks ): array {
+		$serialized = array();
+		foreach ( $blocks as $block ) {
+			if ( is_string( $block['topologyId'] ?? null ) ) $serialized[ $block['topologyId'] ] = $block;
+			if ( ! empty( $block['innerBlocks'] ) ) $serialized += self::serialized_topology_blocks( $block['innerBlocks'] );
+		}
+		return $serialized;
 	}
 
 	private static function apply_flex( array $blocks, string $target, array $source, bool &$matched ): array {

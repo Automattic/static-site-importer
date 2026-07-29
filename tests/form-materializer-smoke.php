@@ -50,6 +50,14 @@ namespace {
 		}
 	}
 
+	$wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: '/Users/chubes/Studio/intelligence-chubes4';
+	$parser  = rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-parser.php';
+	$blocks  = rtrim( $wp_root, '/\\' ) . '/wp-includes/blocks.php';
+	if ( is_readable( $parser ) && is_readable( $blocks ) ) {
+		require_once $parser;
+		require_once $blocks;
+	}
+
 	$GLOBALS['ssi_jetpack_form_blocks_available'] = true;
 
 	if ( ! class_exists( 'WP_Block_Type_Registry' ) ) {
@@ -208,6 +216,20 @@ namespace {
 	$assert( str_contains( $topology_markup, 'First name' ) && str_contains( $topology_markup, 'Email' ) && str_contains( $topology_markup, 'Message' ), 'topology-preserves-labels' );
 	$assert( 1 === substr_count( $topology_markup, 'wp:jetpack/button' ), 'topology-submit-control-emits-one-button-in-source-position' );
 	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && 1 === ( $topology_receipt['operation_count'] ?? 0 ) && str_contains( $topology_markup, 'is-layout-flex' ), 'computed-layout-flex-applies-with-bounded-receipt' );
+	if ( function_exists( 'parse_blocks' ) ) {
+		$parsed_markup = parse_blocks( $topology_markup );
+		$parsed_names = array();
+		$walk_parsed_markup = static function ( array $parsed ) use ( &$walk_parsed_markup, &$parsed_names ): void {
+			foreach ( $parsed as $block ) {
+				if ( is_array( $block ) ) {
+					$parsed_names[] = $block['blockName'] ?? null;
+					$walk_parsed_markup( $block['innerBlocks'] ?? array() );
+				}
+			}
+		};
+		$walk_parsed_markup( $parsed_markup );
+		$assert( array( 'jetpack/contact-form', 'core/group', 'core/group', 'jetpack/field-text', 'jetpack/label', 'jetpack/input', 'core/group', 'jetpack/field-email', 'jetpack/label', 'jetpack/input', 'core/group', 'jetpack/field-textarea', 'jetpack/label', 'jetpack/input', 'jetpack/button' ) === $parsed_names, 'wordpress-parse-blocks-preserves-complete-emitted-form-topology', wp_json_encode( $parsed_names ) );
+	}
 	$unsafe_graph = $topology_form;
 	$unsafe_graph['forms'][0]['layout_graph']['nodes'][0]['layout'] = array( 'display' => 'grid', 'direction' => 'none', 'item_placement' => array( 'column' => 1 ) );
 	$unsafe_graph_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unsafe_graph );
@@ -231,15 +253,27 @@ namespace {
 	for ( $receipt_index = 0; $receipt_index < 33; ++$receipt_index ) $receipt_nodes[] = $layout_node( 'control-' . $receipt_index, array( 'display' => 'flex', 'direction' => 'row' ), 'input' );
 	$capped_receipt = Static_Site_Importer_Computed_Layout_Strategy::apply( array( 'layout_graph' => $layout_graph( $receipt_nodes ) ), $layout_blocks )['receipt'];
 	$assert( 32 === $capped_receipt['loss_count'] && 33 === $capped_receipt['losses_total'] && true === $capped_receipt['truncated'], 'computed-layout-receipt-caps-entries-at-32' );
+	$variant_only = $topology_form;
+	$variant_only['forms'][0]['layout_graph']['nodes'] = array( $layout_node( 'wrapper-0', array(), 'section' ) );
+	$variant_only['forms'][0]['layout_graph']['variants'] = array();
+	for ( $variant_index = 0; $variant_index < 256; ++$variant_index ) {
+		$condition = array( 'kind' => 'media', 'query' => '(min-width: ' . $variant_index . 'px)' );
+		$variant_only['forms'][0]['layout_graph']['variants'][] = array( 'node' => 'wrapper-0', 'condition' => $condition, 'layout_patch' => array( 'display' => 'flex' ), 'precedence' => array( 'display' => array( 'source_order' => $variant_index, 'specificity' => 10, 'important' => false ) ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.row-2', 'condition' => $condition, 'properties' => array( 'display' ) ) ) );
+	}
+	$variant_only_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $variant_only );
+	$variant_only_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $variant_only_validation['forms'] ) );
+	$variant_only_receipt = $variant_only_seed['forms'][0]['computed_layout_receipt'] ?? array();
+	$variant_only_loss = $variant_only_receipt['losses'][0] ?? array();
+	$assert( empty( $variant_only_validation['errors'] ) && 256 === count( $variant_only_validation['forms'][0]['layout_graph']['variants'] ?? array() ) && 1 === ( $variant_only_receipt['losses_total'] ?? 0 ) && 'responsive_layout_ownership' === ( $variant_only_loss['reason_code'] ?? '' ) && 256 === ( $variant_only_loss['variant_count'] ?? 0 ) && 64 === strlen( (string) ( $variant_only_loss['variant_hash'] ?? '' ) ), 'computed-layout-variant-only-no-base-layout-retains-256-and-records-one-target-loss' );
 	$semantic_topology = $topology_form;
 	$semantic_topology['forms'][0]['control_topology']['nodes'][0]['tag'] = 'fieldset';
 	$semantic_topology['forms'][0]['control_topology']['nodes'][1]['tag'] = 'label';
-	$semantic_topology['forms'][0]['layout_graph']['nodes'] = array( $layout_node( 'wrapper-0', array(), 'fieldset' ), $layout_node( 'wrapper-1', array(), 'label' ) );
+	$semantic_topology['forms'][0]['layout_graph']['nodes'] = array();
 	$semantic_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $semantic_topology );
 	$semantic_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $semantic_validation['forms'] ) );
 	$semantic_markup = (string) ( $semantic_seed['forms'][0]['block_markup'] ?? '' );
 	$semantic_losses = $semantic_seed['forms'][0]['computed_layout_receipt']['losses'] ?? array();
-	$assert( 2 === count( $semantic_losses ) && 'semantic' === ( $semantic_losses[0]['dimension'] ?? '' ) && ! str_contains( $semantic_markup, '<fieldset' ) && ! str_contains( $semantic_markup, '<label' ), 'computed-layout-receipt-records-actual-unsupported-wrapper-serialization' );
+	$assert( 2 === count( $semantic_losses ) && 'semantic' === ( $semantic_losses[0]['dimension'] ?? '' ) && ! str_contains( $semantic_markup, '<fieldset' ) && ! str_contains( $semantic_markup, '<label' ), 'semantic-wrapper-losses-cover-topology-wrappers-without-layout-graph-nodes' );
 	$legacy_without_submit = $forms_manifest;
 	array_pop( $legacy_without_submit['forms'][0]['controls'] );
 	$legacy_without_submit_seed = Static_Site_Importer_Form_Seeder::seed( $legacy_without_submit );

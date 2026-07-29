@@ -847,7 +847,24 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$clean = array( 'id'=>$node['id'], 'kind'=>$node['kind'], 'parent'=>$parent, 'order'=>$node['order'], 'source'=>array_intersect_key($source,array_flip(array('tag','id','classes'))), 'layout'=>array_intersect_key($layout,array_flip(array('display','columns','rows','gap','row_gap','column_gap','direction','wrap','align_items','align_content','justify_content','align_self','justify_self','order','flex','flex_grow','flex_shrink','flex_basis','column','row','area','item_placement'))), 'provenance'=>array_slice($node['provenance'],0,16) );
 			$seen[$node['id']] = true; $nodes[] = $clean;
 		}
-		return array( 'graph' => array( 'schema'=>'generic/computed-layout-graph/v1', 'basis'=>$candidate['basis'], 'truncated'=>false, 'limits'=>array_intersect_key($candidate['limits'],array_flip(array('nodes','depth','rules_per_node'))), 'nodes'=>$nodes, 'variants'=>array_slice($candidate['variants'],0,32), 'diagnostics'=>array_slice($candidate['diagnostics'],0,32) ) );
+		if ( count( $candidate['variants'] ) > 256 || ! array_is_list( $candidate['variants'] ) ) return array( 'error' => 'layout_graph variants exceed the producer contract bounds.' );
+		$variants = array();
+		foreach ( $candidate['variants'] as $variant ) {
+			if ( ! is_array( $variant ) || ! is_string( $variant['node'] ?? null ) || ! isset( $seen[ $variant['node'] ] ) || ! self::valid_layout_condition( $variant['condition'] ?? null ) || ! is_array( $variant['layout_patch'] ?? null ) || array() === $variant['layout_patch'] || ! is_array( $variant['precedence'] ?? null ) || ! is_array( $variant['provenance'] ?? null ) || count( $variant['provenance'] ) > 16 ) return array( 'error' => 'layout_graph contains an unsupported canonical variant.' );
+			foreach ( $variant['layout_patch'] as $property => $value ) if ( ! in_array( $property, array( 'display', 'columns', 'rows', 'gap', 'row_gap', 'column_gap', 'column', 'row', 'area', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis' ), true ) || ! is_string( $value ) || '' === trim( $value ) || ! isset( $variant['precedence'][ $property ] ) ) return array( 'error' => 'layout_graph variant layout facts are malformed.' );
+			foreach ( $variant['precedence'] as $property => $precedence ) if ( ! isset( $variant['layout_patch'][ $property ] ) || ! is_array( $precedence ) || ! is_int( $precedence['source_order'] ?? null ) || ! is_int( $precedence['specificity'] ?? null ) || ! is_bool( $precedence['important'] ?? null ) ) return array( 'error' => 'layout_graph variant precedence is malformed.' );
+			foreach ( $variant['provenance'] as $fact ) if ( ! is_array( $fact ) || ! is_string( $fact['source_path'] ?? null ) || ! preg_match( '~^(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9._/-]+$~D', $fact['source_path'] ) || ! preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ?? '' ) || ! is_string( $fact['selector'] ?? null ) || '' === trim( $fact['selector'] ) || strlen( $fact['selector'] ) > 1024 || $fact['condition'] !== $variant['condition'] || ! is_array( $fact['properties'] ?? null ) || array() === $fact['properties'] || count( $fact['properties'] ) > 19 || array_filter( $fact['properties'], static fn( $property ): bool => ! is_string( $property ) || ! isset( $variant['layout_patch'][ $property ] ) ) ) return array( 'error' => 'layout_graph variant provenance is malformed.' );
+			$variants[] = $variant;
+		}
+		return array( 'graph' => array( 'schema'=>'generic/computed-layout-graph/v1', 'basis'=>$candidate['basis'], 'truncated'=>false, 'limits'=>array_intersect_key($candidate['limits'],array_flip(array('nodes','depth','rules_per_node'))), 'nodes'=>$nodes, 'variants'=>$variants, 'diagnostics'=>array_slice($candidate['diagnostics'],0,32) ) );
+	}
+
+	private static function valid_layout_condition( mixed $condition, int $depth = 0 ): bool {
+		if ( ! is_array( $condition ) || $depth > 8 ) return false;
+		if ( 'all' === ( $condition['kind'] ?? null ) ) {
+			return is_array( $condition['conditions'] ?? null ) && ! empty( $condition['conditions'] ) && count( $condition['conditions'] ) <= 8 && array_reduce( $condition['conditions'], static fn( bool $valid, $item ): bool => $valid && self::valid_layout_condition( $item, $depth + 1 ), true );
+		}
+		return in_array( $condition['kind'] ?? null, array( 'media', 'container', 'supports' ), true ) && is_string( $condition['query'] ?? null ) && '' !== trim( $condition['query'] ) && strlen( $condition['query'] ) <= 1024;
 	}
 
 	/**
