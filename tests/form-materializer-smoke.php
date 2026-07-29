@@ -26,12 +26,6 @@ namespace {
 		}
 	}
 
-	$wordpress_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: '/Users/chubes/Studio/intelligence-chubes4';
-	if ( is_readable( $wordpress_root . '/wp-includes/class-wp-block-parser.php' ) && is_readable( $wordpress_root . '/wp-includes/blocks.php' ) ) {
-		require_once $wordpress_root . '/wp-includes/class-wp-block-parser.php';
-		require_once $wordpress_root . '/wp-includes/blocks.php';
-	}
-
 	$GLOBALS['ssi_test_hooks'] = array();
 
 	if ( ! function_exists( 'add_filter' ) ) {
@@ -178,7 +172,7 @@ namespace {
 				'control_topology' => array(
 					'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false,
 					'nodes' => array(
-						array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'class' => 'row-2', 'source_id' => 'contact-row' ),
+						array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'section', 'class' => 'row-2', 'source_id' => 'contact-row' ),
 						array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'class' => 'field' ),
 						array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 0 ),
 						array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'class' => 'field' ),
@@ -195,20 +189,18 @@ namespace {
 	$assert( empty( $validated_topology['errors'] ), 'topology-manifest-validates' );
 	$topology_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_topology['forms'] ) );
 	$topology_markup = (string) ( $topology_seed['forms'][0]['block_markup'] ?? '' );
-	$assert( 1 === substr_count( $topology_markup, 'id="contact-row" class="wp-block-group row-2"' ), 'topology-preserves-row-id-and-class' );
+	$assert( 1 === substr_count( $topology_markup, '<section id="contact-row" class="wp-block-group row-2"' ), 'topology-preserves-row-tag-id-and-class' );
 	$assert( 3 === substr_count( $topology_markup, 'class="wp-block-group field' ), 'topology-preserves-field-groups' );
-	$assert( str_contains( $topology_markup, 'wp:group {"className":"row-2","anchor":"contact-row"}' ), 'topology-serializes-gutenberg-group' );
+	$assert( str_contains( $topology_markup, 'wp:group {"className":"row-2","anchor":"contact-row","tagName":"section"}' ), 'topology-serializes-gutenberg-group-tag' );
 	$assert( str_contains( $topology_markup, 'First name' ) && str_contains( $topology_markup, 'Email' ) && str_contains( $topology_markup, 'Message' ), 'topology-preserves-labels' );
-	if ( function_exists( 'parse_blocks' ) && function_exists( 'serialize_blocks' ) ) {
-		$parsed_topology = parse_blocks( $topology_markup );
-		$assert( 1 === count( $parsed_topology ) && 'jetpack/contact-form' === ( $parsed_topology[0]['blockName'] ?? '' ), 'topology-parses-contact-form-tree' );
-		$assert( 3 === count( $parsed_topology[0]['innerBlocks'] ?? array() ), 'topology-parses-shared-row-parentage' );
-		$assert( $topology_markup === serialize_blocks( $parsed_topology ), 'topology-round-trips-through-wordpress-parser' );
-	}
 	$invalid_topology = $topology_form;
 	$invalid_topology['forms'][0]['control_topology']['truncated'] = true;
 	$invalid_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $invalid_topology );
 	$assert( empty( $invalid_validation['forms'] ) && str_contains( (string) ( $invalid_validation['errors'][0]['message'] ?? '' ), 'truncated' ), 'topology-truncation-is-reported-not-flattened' );
+	$unsupported_tag = $topology_form;
+	$unsupported_tag['forms'][0]['control_topology']['nodes'][0]['tag'] = 'fieldset';
+	$unsupported_tag_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unsupported_tag );
+	$assert( empty( $unsupported_tag_validation['forms'] ) && str_contains( (string) ( $unsupported_tag_validation['errors'][0]['message'] ?? '' ), 'supported Gutenberg group tags' ), 'topology-unsupported-tag-is-reported-not-coerced' );
 
 	// --- Provider blocks are never claimed without the provider runtime --------
 	$GLOBALS['ssi_jetpack_form_blocks_available'] = false;

@@ -311,6 +311,7 @@ class Static_Site_Importer_Form_Seeder {
 				$attrs = array();
 				if ( isset( $node['class'] ) ) $attrs['className'] = $node['class'];
 				if ( isset( $node['source_id'] ) ) $attrs['anchor'] = $node['source_id'];
+				if ( isset( $node['tag'] ) ) $attrs['tagName'] = $node['tag'];
 				$blocks[] = array( 'name' => 'core/group', 'attrs' => $attrs, 'innerBlocks' => $build( $node['id'] ), 'wrapper' => 'group' );
 			}
 			return $blocks;
@@ -559,7 +560,8 @@ class Static_Site_Importer_Form_Seeder {
 		} elseif ( 'group' === $wrapper ) {
 			$classes = 'wp-block-group' . ( ! empty( $attrs['className'] ) ? ' ' . $attrs['className'] : '' );
 			$id      = ! empty( $attrs['anchor'] ) ? ' id="' . self::escape_attribute( (string) $attrs['anchor'] ) . '"' : '';
-			$inner_markup = '<div' . $id . ' class="' . self::escape_attribute( $classes ) . '">' . $inner_markup . '</div>';
+			$tag     = ! empty( $attrs['tagName'] ) ? (string) $attrs['tagName'] : 'div';
+			$inner_markup = '<' . $tag . $id . ' class="' . self::escape_attribute( $classes ) . '">' . $inner_markup . '</' . $tag . '>';
 		} elseif ( in_array( $wrapper, array( 'div', 'ul' ), true ) ) {
 			$inner_markup = '<' . $wrapper . '>' . $inner_markup . '</' . $wrapper . '>';
 		}

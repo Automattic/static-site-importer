@@ -518,7 +518,8 @@ class Static_Site_Importer_Theme_Generator {
 				if ( ! empty( $validation['errors'] ) ) {
 					return new WP_Error( 'static_site_importer_runtime_entity_invalid', 'Runtime entity declaration failed SSI provider validation.', array( 'status' => 'rejected', 'declaration_id' => $key, 'errors' => $validation['errors'] ) );
 				}
-				$lifecycle['entities'][ $key ] = array( 'adapter' => $adapter, 'manifest' => $manifest, 'declaration' => $declaration, 'required' => $required );
+				$normalized_manifest = 'shop' === $capability ? array( 'schema_version' => 1, 'products' => $validation['products'] ?? array() ) : array( 'forms' => $validation['forms'] ?? array() );
+				$lifecycle['entities'][ $key ] = array( 'adapter' => $adapter, 'manifest' => $normalized_manifest, 'declaration' => $declaration, 'required' => $required );
 			}
 		}
 		if ( isset( $args['products_manifest'] ) && is_array( $args['products_manifest'] ) && ! empty( $args['products_manifest'] ) ) {

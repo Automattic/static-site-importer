@@ -866,26 +866,32 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( isset( $orders[ $parent_key ][ $node['order'] ] ) ) {
 				return array( 'error' => 'control_topology sibling order must be unique.' );
 			}
-			if ( null !== $parent && $node['depth'] !== $seen_ids[ $parent ]['depth'] + 1 ) {
-				return array( 'error' => 'control_topology node depth must match its parent.' );
+			if ( null === $parent && 0 !== $node['depth'] ) {
+				return array( 'error' => 'control_topology root nodes must have depth zero.' );
+			}
+			if ( null !== $parent && ( 'wrapper' !== $seen_ids[ $parent ]['kind'] || $node['depth'] !== $seen_ids[ $parent ]['depth'] + 1 ) ) {
+				return array( 'error' => 'control_topology node depth and parent must describe a wrapper tree.' );
 			}
 
 			$normalized_node = array( 'id' => $node['id'], 'kind' => $node['kind'], 'parent' => $parent, 'order' => $node['order'], 'depth' => $node['depth'] );
 			if ( 'control' === $node['kind'] ) {
-				if ( ! is_int( $node['control'] ?? null ) || $node['control'] < 0 || $node['control'] >= $control_count || isset( $controls[ $node['control'] ] ) ) {
+				if ( ! str_starts_with( $node['id'], 'control-' ) || ! is_int( $node['control'] ?? null ) || $node['control'] < 0 || $node['control'] >= $control_count || isset( $controls[ $node['control'] ] ) ) {
 					return array( 'error' => 'control_topology control references must be unique flat control indexes.' );
 				}
 				$controls[ $node['control'] ] = true;
 				$normalized_node['control']   = $node['control'];
 			} else {
+				if ( ! str_starts_with( $node['id'], 'wrapper-' ) ) {
+					return array( 'error' => 'control_topology wrapper ids must match their node kind.' );
+				}
 				foreach ( array( 'tag', 'source_id', 'class' ) as $field ) {
 					if ( ! isset( $node[ $field ] ) ) {
 						continue;
 					}
 					$value = $node[ $field ];
-					$valid = is_string( $value ) && ( 'tag' === $field ? in_array( $value, array( 'article', 'aside', 'dd', 'div', 'dl', 'dt', 'fieldset', 'footer', 'header', 'label', 'li', 'main', 'nav', 'ol', 'p', 'section', 'span', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'ul' ), true ) : (bool) preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}(?: [A-Za-z_][A-Za-z0-9_-]{0,79}){0,7}$/D', $value ) );
+					$valid = is_string( $value ) && ( 'tag' === $field ? in_array( $value, array( 'article', 'aside', 'div', 'footer', 'header', 'main', 'nav', 'section' ), true ) : (bool) preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}(?: [A-Za-z_][A-Za-z0-9_-]{0,79}){0,7}$/D', $value ) );
 					if ( ! $valid ) {
-						return array( 'error' => 'control_topology presentation hooks must be bounded safe identifiers.' );
+						return array( 'error' => 'control_topology presentation hooks must be bounded safe identifiers and supported Gutenberg group tags.' );
 					}
 					$normalized_node[ $field ] = $value;
 				}
