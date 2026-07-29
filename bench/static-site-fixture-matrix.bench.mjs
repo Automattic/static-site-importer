@@ -195,6 +195,7 @@ export async function runFixtureMatrix(options) {
   performance.artifact_writing_ms = elapsedMs(artifactWriteStartedAt);
   const recipe = buildFixtureMatrixRecipe({
     matrix,
+    runId: matrix.id,
     artifactsDirectory: outputDirectory,
     playgroundArtifactsDirectory: options.playgroundArtifactsDirectory || '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix',
     wordpressVersion: options.wordpressVersion,
@@ -379,6 +380,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
   });
   const batchRecipe = buildFixtureMatrixRecipe({
     matrix: batchMatrix,
+    runId: batchMatrix.id,
     artifactsDirectory: outputDirectory,
     playgroundArtifactsDirectory: options.playgroundArtifactsDirectory || '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix',
     wordpressVersion: options.wordpressVersion,

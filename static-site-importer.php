@@ -255,6 +255,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			$result = Static_Site_Importer_Validation_Runtime::validate_artifact( $input );
 			if ( is_wp_error( $result ) ) {
 				$error_result = Static_Site_Importer_Validation_Runtime::error_result_from_wp_error( $result, $input );
+				static_site_importer_cli_write_materialization_sidecar( $error_result, $assoc_args );
 				if ( 'fixture-matrix' === $format ) {
 					$error_result = Static_Site_Importer_Validation_Runtime::fixture_matrix_result( $error_result );
 				}
@@ -271,6 +272,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				return;
 			}
 
+			static_site_importer_cli_write_materialization_sidecar( $result, $assoc_args );
 			if ( 'fixture-matrix' === $format ) {
 				$result = Static_Site_Importer_Validation_Runtime::fixture_matrix_result( $result );
 			}
@@ -318,5 +320,75 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 
 			WP_CLI::line( $json );
 		}
+	);
+}
+
+/**
+ * Persist compact matrix evidence before verbose WP-CLI output can be truncated.
+ *
+ * @param array<string,mixed> $result Validation result.
+ * @param array<string,mixed> $args CLI arguments.
+ */
+function static_site_importer_cli_write_materialization_sidecar( array $result, array $args ): void {
+	$path = isset( $args['receipt-sidecar'] ) ? (string) $args['receipt-sidecar'] : '';
+	if ( '' === $path ) {
+		return;
+	}
+	$fixture_id = isset( $result['fixture_id'] ) ? (string) $result['fixture_id'] : ( isset( $args['slug'] ) ? (string) $args['slug'] : '' );
+	$artifact_path = isset( $args['artifact'] ) ? (string) $args['artifact'] : '';
+	$artifact_hash = is_readable( $artifact_path ) ? hash_file( 'sha256', $artifact_path ) : '';
+	$receipt = isset( $result['materialization_receipt'] ) && is_array( $result['materialization_receipt'] ) ? $result['materialization_receipt'] : array();
+	$summary = static_site_importer_cli_materialization_summary( $receipt, $result );
+	$sidecar = array(
+		'schema'          => 'static-site-importer/materialization-runtime-sidecar/v1',
+		'fixture_id'      => $fixture_id,
+		'run_id'          => isset( $args['receipt-run-id'] ) ? (string) $args['receipt-run-id'] : '',
+		'step_id'         => isset( $args['receipt-step-id'] ) ? (string) $args['receipt-step-id'] : '',
+		'artifact_sha256' => $artifact_hash,
+		'provenance'      => array( 'provider' => (string) ( $result['runtime']['provider'] ?? '' ), 'provider_status' => (string) ( $result['runtime']['status'] ?? '' ) ),
+		'receipt'         => $summary,
+	);
+	$sidecar['content_sha256'] = hash( 'sha256', (string) wp_json_encode( $sidecar, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
+	$directory = dirname( $path );
+	if ( ! wp_mkdir_p( $directory ) ) {
+		return;
+	}
+	wp_json_encode( $sidecar, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) && file_put_contents( $path, wp_json_encode( $sidecar, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) . "\n", LOCK_EX ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- CLI writes an explicit operator artifact.
+}
+
+/** @return array<string,mixed> */
+function static_site_importer_cli_materialization_summary( array $receipt, array $result ): array {
+	$completed = isset( $receipt['completed'] ) && is_array( $receipt['completed'] ) ? $receipt['completed'] : array();
+	$operations = isset( $completed['operations'] ) && is_array( $completed['operations'] ) ? $completed['operations'] : array();
+	$diagnostics = isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array();
+	$operation_rows = array();
+	$loss_rows = array();
+	foreach ( array_slice( $operations, 0, 25 ) as $operation ) {
+		if ( is_array( $operation ) ) {
+			$operation_rows[] = array_filter( array(
+				'kind'        => (string) ( $operation['kind'] ?? $operation['type'] ?? $operation['operation'] ?? '' ),
+				'status'      => (string) ( $operation['status'] ?? '' ),
+				'reason_code' => (string) ( $operation['reason_code'] ?? '' ),
+				'hash'        => hash( 'sha256', (string) wp_json_encode( $operation ) ),
+			) );
+		}
+	}
+	foreach ( array_slice( $diagnostics, 0, 25 ) as $diagnostic ) {
+		if ( is_array( $diagnostic ) ) {
+			$loss_rows[] = array_filter( array(
+				'kind'        => (string) ( $diagnostic['kind'] ?? $diagnostic['code'] ?? $diagnostic['type'] ?? '' ),
+				'reason_code' => (string) ( $diagnostic['reason_code'] ?? '' ),
+				'hash'        => hash( 'sha256', (string) wp_json_encode( $diagnostic ) ),
+			) );
+		}
+	}
+	$layout = isset( $receipt['computed_layout'] ) && is_array( $receipt['computed_layout'] ) ? $receipt['computed_layout'] : array();
+	return array(
+		'schema' => (string) ( $receipt['schema'] ?? '' ), 'status' => (string) ( $receipt['status'] ?? '' ), 'plan_hash' => (string) ( $receipt['plan_hash'] ?? '' ),
+		'page_count' => count( $completed['pages'] ?? array() ), 'file_count' => count( $completed['files'] ?? array() ), 'operation_count' => count( $operations ), 'loss_count' => count( $diagnostics ),
+		'provider_totals' => array( 'completed' => ! empty( $result['runtime']['provider'] ) ? 1 : 0 ),
+		'computed_layout_totals' => array_filter( array( 'applied' => isset( $layout['applied'] ) ? (int) $layout['applied'] : null, 'losses' => isset( $layout['losses'] ) ? (int) $layout['losses'] : null, 'operations' => count( array_filter( $operations, static fn( $operation ): bool => is_array( $operation ) && false !== strpos( wp_json_encode( $operation ), 'computed_layout' ) ) ) ), static fn( $value ): bool => null !== $value ),
+		'operation_rows' => $operation_rows, 'loss_rows' => $loss_rows,
+		'truncated' => array( 'operation_rows' => count( $operations ) > 25, 'loss_rows' => count( $diagnostics ) > 25 ),
 	);
 }

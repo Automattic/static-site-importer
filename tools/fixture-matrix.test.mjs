@@ -3,6 +3,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -565,6 +566,8 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   assert.equal(recipe.workflow.steps[0].args[0], 'command=plugin activate static-site-importer/static-site-importer.php');
   assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
   assert.match(recipe.workflow.steps[1].args[0], /--format=fixture-matrix/);
+  assert.match(recipe.workflow.steps[1].args[0], /--receipt-sidecar=\/wordpress\/wp-content\/uploads\/static-site-importer-fixture-matrix\/simple-site\/materialization-receipt\.json/);
+  assert.match(recipe.workflow.steps[1].args[0], /--receipt-run-id=recipe-test --receipt-step-id=import/);
   assert.match(recipe.workflow.steps[1].args[0], /--allow-failure/);
   assert.doesNotMatch(recipe.workflow.steps[1].args[0], /--allow-missing-woocommerce/);
   assert.deepEqual(recipe.inputs.stagedFiles[0], {
@@ -1053,6 +1056,65 @@ test('fixture matrix labels reports without runtime provenance and materializati
   assert.equal(result.summary.matrix_evidence_readiness.status, 'incomplete');
   assert.equal(result.summary.matrix_evidence_readiness.counts.legacy_evidence_missing, 1);
 });
+
+test('materialization sidecars retain bounded evidence after oversized import stdout', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-oversized-output-'));
+  const base = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'sidecar-run' });
+  const matrix = { ...base, fixtures: [{ ...base.fixtures[0] }, { ...base.fixtures[0], id: 'second-site' }] };
+  for (const fixture of matrix.fixtures) {
+    const directory = path.join(outputDirectory, fixture.id);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: fixture.id }));
+    writeMaterializationSidecar({ directory, fixtureId: fixture.id, runId: matrix.id, receipt: boundedSidecarReceipt() });
+  }
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: { executions: matrix.fixtures.map((fixture) => ({ metadata: { fixture_id: fixture.id }, stdout: 'x'.repeat(1024 * 1024 + 1) })) },
+  });
+
+  for (const fixture of result.fixtures) {
+    assert.equal(fixture.matrix_evidence.materialization_sidecar.status, 'verified');
+    assert.equal(fixture.matrix_evidence.materialization_receipt.operation_count, 99);
+    assert.equal(fixture.matrix_evidence.materialization_receipt.page_count, 2);
+    assert.deepEqual(fixture.matrix_evidence.materialization_sidecar.computed_layout_totals, { applied: 7, losses: 2, operations: 9 });
+    assert.deepEqual(fixture.matrix_evidence.materialization_sidecar.provider_totals, { completed: 1 });
+    assert.ok(fixture.artifact_refs.some((ref) => ref.artifact_id === 'materialization-receipt'));
+  }
+});
+
+test('materialization sidecars reject malformed, stale, cross-fixture, and hash-mismatched evidence', () => {
+  const cases = ['missing', 'malformed', 'stale', 'cross_fixture', 'hash_mismatch'];
+  for (const status of cases) {
+    const outputDirectory = mkdtempSync(path.join(tmpdir(), `ssi-sidecar-${status}-`));
+    const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'sidecar-validation-run' });
+    const directory = path.join(outputDirectory, 'simple-site');
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: 'simple-site' }));
+    if (status === 'malformed') writeFileSync(path.join(directory, 'materialization-receipt.json'), '{');
+    if (status === 'stale') writeMaterializationSidecar({ directory, fixtureId: 'simple-site', runId: 'old-run', receipt: boundedSidecarReceipt() });
+    if (status === 'cross_fixture') writeMaterializationSidecar({ directory, fixtureId: 'other-site', runId: matrix.id, receipt: boundedSidecarReceipt() });
+    if (status === 'hash_mismatch') writeMaterializationSidecar({ directory, fixtureId: 'simple-site', runId: matrix.id, receipt: boundedSidecarReceipt(), artifactHash: '0'.repeat(64) });
+    const result = collectFixtureMatrixRunResults({ matrix, outputDirectory });
+    assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, status === 'missing' ? 'missing' : status, status);
+  }
+});
+
+function boundedSidecarReceipt() {
+  return {
+    schema: 'static-site-importer/materialization-receipt/v1', status: 'completed', plan_hash: 'plan-hash', page_count: 2, file_count: 4, operation_count: 99, loss_count: 3,
+    provider_totals: { completed: 1 }, computed_layout_totals: { applied: 7, losses: 2, operations: 9 }, operation_rows: [{ kind: 'computed_layout', status: 'completed', hash: 'a'.repeat(64) }], loss_rows: [{ kind: 'computed_layout_loss', reason_code: 'missing_measurement', hash: 'b'.repeat(64) }], truncated: { operation_rows: true, loss_rows: false },
+  };
+}
+
+function writeMaterializationSidecar({ directory, fixtureId, runId, receipt, artifactHash }) {
+  const artifact = readFileSync(path.join(directory, 'artifact.json'));
+  const sidecar = {
+    schema: 'static-site-importer/materialization-runtime-sidecar/v1', fixture_id: fixtureId, run_id: runId, step_id: 'import', artifact_sha256: artifactHash || createHash('sha256').update(artifact).digest('hex'), provenance: { provider: 'static-site-importer/current-runtime', provider_status: 'completed' }, receipt,
+  };
+  sidecar.content_sha256 = createHash('sha256').update(JSON.stringify(sidecar)).digest('hex');
+  writeFileSync(path.join(directory, 'materialization-receipt.json'), JSON.stringify(sidecar));
+}
 
 test('fixture attribution assigns a transform loss only with complete transformer lineage', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'transform-attribution-test' });
