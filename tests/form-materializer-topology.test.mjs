@@ -21,9 +21,12 @@ globalThis.requestAnimationFrame = ( callback ) => setTimeout( callback, 0 );
 globalThis.cancelAnimationFrame = ( id ) => clearTimeout( id );
 
 const { registerCoreBlocks } = require( '@wordpress/block-library' );
-const { parse, serialize, validateBlock } = require( '@wordpress/blocks' );
+const { parse, serialize, validateBlock, registerBlockType } = require( '@wordpress/blocks' );
 
 registerCoreBlocks();
+for ( const name of [ 'jetpack/contact-form', 'jetpack/field-text', 'jetpack/field-email', 'jetpack/field-textarea', 'jetpack/label', 'jetpack/input', 'jetpack/button' ] ) {
+	registerBlockType( name, { title: name, category: 'widgets', attributes: {}, save: () => null } );
+}
 
 test( 'nested shared-row topology materializes through the PHP provider adapter', () => {
 	const output = execFileSync( 'php', [ 'tests/form-materializer-smoke.php' ], {
@@ -35,17 +38,22 @@ test( 'nested shared-row topology materializes through the PHP provider adapter'
 } );
 
 test( 'core Group preserves supported wrapper tags in parsed editor-valid topology', () => {
-	const markup = '<!-- wp:group {"className":"row-2","anchor":"contact-row","tagName":"section"} -->\n<section id="contact-row" class="wp-block-group row-2">\n<!-- wp:group {"className":"field"} -->\n<div class="wp-block-group field">\n<!-- wp:paragraph --><p>First name</p><!-- /wp:paragraph -->\n</div>\n<!-- /wp:group -->\n</section>\n<!-- /wp:group -->';
+	const output = execFileSync( 'php', [ 'tests/form-materializer-smoke.php', '--emit-topology-markup' ], {
+		cwd: process.cwd(),
+		encoding: 'utf8',
+	} );
+	const { markup } = JSON.parse( output );
 	const blocks = parse( markup );
 
+	const group = blocks[ 0 ].innerBlocks[ 0 ];
 	assert.equal( blocks.length, 1 );
-	assert.equal( blocks[ 0 ].name, 'core/group' );
-	assert.equal( blocks[ 0 ].attributes.tagName, 'section' );
-	assert.equal( blocks[ 0 ].innerBlocks[ 0 ].attributes.className, 'field' );
-	for ( const block of [ blocks[ 0 ], ...blocks[ 0 ].innerBlocks, ...blocks[ 0 ].innerBlocks[ 0 ].innerBlocks ] ) {
+	assert.equal( group.name, 'core/group' );
+	assert.equal( group.attributes.tagName, 'section' );
+	assert.equal( group.innerBlocks[ 0 ].attributes.className, 'field' );
+	for ( const block of [ group, ...group.innerBlocks ] ) {
 		assert.equal( validateBlock( block )[ 0 ], true, `${ block.name } is editor-valid` );
 	}
-	const roundTrip = parse( serialize( blocks ) );
+	const roundTrip = parse( serialize( [ group ] ) );
 	assert.equal( roundTrip[ 0 ].attributes.tagName, 'section' );
-	assert.equal( roundTrip[ 0 ].innerBlocks[ 0 ].innerBlocks[ 0 ].name, 'core/paragraph' );
+	assert.equal( roundTrip[ 0 ].innerBlocks[ 0 ].name, 'core/group' );
 } );
