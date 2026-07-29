@@ -18,7 +18,6 @@ if (process.env.PLAYGROUND_BLUEPRINT_URL) {
   launch.searchParams.set('blueprint-url', process.env.PLAYGROUND_BLUEPRINT_URL);
 }
 const manifestUrl = launch.searchParams.get('php-extension');
-assert.ok(manifestUrl, 'README launch URL must provide a PHP extension manifest');
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
@@ -28,15 +27,17 @@ page.on('pageerror', (error) => diagnostics.push(`pageerror: ${error.message}`))
 page.on('requestfailed', (request) => diagnostics.push(`requestfailed: ${request.url()} (${request.failure()?.errorText})`));
 
 try {
-  // This is deliberately a browser fetch from Playground's origin: Node fetch
-  // cannot detect the CORS regression that broke the launch link.
-  await page.goto('https://playground.wordpress.net/', { waitUntil: 'domcontentloaded' });
-  const manifest = await page.evaluate(async (url) => {
-    const response = await fetch(url);
-    return { ok: response.ok, manifest: await response.json() };
-  }, manifestUrl);
-  assert.equal(manifest.ok, true, 'Playground must be able to CORS-fetch the extension manifest');
-  assert.equal(manifest.manifest.name, 'zstd');
+  if (manifestUrl) {
+    // This is deliberately a browser fetch from Playground's origin: Node fetch
+    // cannot detect the CORS regression that broke the extension launch.
+    await page.goto('https://playground.wordpress.net/', { waitUntil: 'domcontentloaded' });
+    const manifest = await page.evaluate(async (url) => {
+      const response = await fetch(url);
+      return { ok: response.ok, manifest: await response.json() };
+    }, manifestUrl);
+    assert.equal(manifest.ok, true, 'Playground must be able to CORS-fetch the extension manifest');
+    assert.equal(manifest.manifest.name, 'zstd');
+  }
 
   await page.goto(launch.toString(), { waitUntil: 'domcontentloaded', timeout: 120_000 });
   let wordpress;
@@ -52,13 +53,13 @@ try {
   if (!wordpress.url().includes('/import/')) await wordpress.waitForURL(/\/import\//, { timeout: 120_000 });
   await wordpress.locator('.ssi-importer').waitFor({ state: 'visible', timeout: 120_000 });
 
-  const zstdMarker = await wordpress.evaluate(async () => {
-    const response = await fetch('/wp-content/ssi-playground-zstd-loaded.txt');
-    return response.ok ? response.text() : null;
-  });
-  assert.equal(zstdMarker, 'zstd', 'the running Playground PHP must have loaded zstd');
+  const figmaAvailable = await wordpress.locator('.ssi-importer').getAttribute('data-static-site-importer-figma-available');
+  const figmaButton = wordpress.locator('[data-static-site-importer-upload-figma]');
+  assert.equal(figmaAvailable, manifestUrl ? '1' : '0', 'Figma availability must match the optional zstd runtime capability');
+  assert.equal(await figmaButton.isDisabled(), !manifestUrl, 'Figma control must fail open without zstd');
 
   if (figFixture) {
+    assert.ok(manifestUrl, 'Figma fixture verification requires a PHP extension manifest');
     const importer = wordpress.locator('.ssi-importer');
     const restUrl = await importer.getAttribute('data-static-site-importer-figma-rest-url');
     assert.ok(restUrl, 'Figma importer must expose its REST endpoint');

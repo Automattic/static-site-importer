@@ -14,18 +14,17 @@ from that tag and publishes these immutable files:
 
 The versioned blueprint installs `static-site-importer.zip` from the same GitHub
 Release tag. `docs/playground/blueprint.json` is a release template: the
-workflow replaces `{{RELEASE_TAG}}` while publishing it. The
-`playground/extensions/latest/` and `playground/latest/`
-locations are convenience copies updated only after the immutable tag files are
-published. README uses those convenience URLs; reproducible consumers use the
-tagged URLs. This avoids combining a mutable `main` blueprint with released
-plugin or extension assets.
+workflow replaces `{{RELEASE_TAG}}` while publishing it. README uses the safe
+`playground/latest/blueprint.json` convenience URL without loading an optional
+side module. Reproducible consumers use the tagged blueprint URL.
 
 GitHub Pages is configured once at the repository level to publish the
 `gh-pages` branch root. The workflow verifies that target before building,
-retains previous tagged directories, and verifies the immutable launch in a real
-browser before advancing either `latest` alias. It then waits for those aliases
-to deploy and verifies the exact README launch URL. A failed publication can be
+retains previous tagged directories, and validates successful HTTP responses
+before treating Pages as ready. It advances and browser-verifies the safe
+blueprint alias independently. The optional extension is then verified in a real
+browser before `playground/extensions/latest/` advances. A failed extension
+verification therefore cannot take down the README demo. Publication can be
 resumed for an existing tag through `workflow_dispatch`; publication commits are
 idempotent. The workflow never creates or edits a release. Homeboy remains the sole
 release owner.

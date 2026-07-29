@@ -5,12 +5,14 @@
  * Run from the repository root:
  * php tests/figma-zstd-decoder.php native
  * php -n tests/figma-zstd-decoder.php command
+ * php -n tests/figma-zstd-decoder.php unavailable
+ * php -n -d disable_functions=proc_open tests/figma-zstd-decoder.php disabled
  *
  * @package StaticSiteImporter
  */
 
-if ( 2 !== $argc || ! in_array( $argv[1], array( 'native', 'command' ), true ) ) {
-	fwrite( STDERR, "Usage: php tests/figma-zstd-decoder.php <native|command>\n" );
+if ( 2 !== $argc || ! in_array( $argv[1], array( 'native', 'command', 'unavailable', 'disabled' ), true ) ) {
+	fwrite( STDERR, "Usage: php tests/figma-zstd-decoder.php <native|command|unavailable|disabled>\n" );
 	exit( 2 );
 }
 
@@ -39,10 +41,25 @@ if ( 'native' === $argv[1] ) {
 	}
 
 	putenv( 'STATIC_SITE_IMPORTER_FIGMA_ZSTD_COMMAND=/definitely-not-a-zstd-command' );
-} else {
+} elseif ( in_array( $argv[1], array( 'command', 'disabled' ), true ) ) {
 	$command = tempnam( sys_get_temp_dir(), 'ssi-zstd-command-' );
 	if ( false === $command ) {
 		fwrite( STDERR, "Could not create zstd command fixture.\n" );
+		exit( 1 );
+	}
+	file_put_contents(
+		$command,
+		'#!' . PHP_BINARY . "\n<?php\n"
+		. '$input = stream_get_contents( STDIN );' . "\n"
+		. '$probe = base64_decode( \'KLUv/QRYcQAAc3NpLXpzdGQtcHJvYmVUFxFH\', true );' . "\n"
+		. 'fwrite( STDOUT, $input === $probe ? \'ssi-zstd-probe\' : $input );' . "\n"
+	);
+	chmod( $command, 0700 );
+	putenv( 'STATIC_SITE_IMPORTER_FIGMA_ZSTD_COMMAND=' . $command );
+} else {
+	$command = tempnam( sys_get_temp_dir(), 'ssi-not-zstd-command-' );
+	if ( false === $command ) {
+		fwrite( STDERR, "Could not create invalid zstd command fixture.\n" );
 		exit( 1 );
 	}
 	file_put_contents( $command, "#!/bin/sh\ncat\n" );
@@ -56,13 +73,26 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-figma-im
 Static_Site_Importer_Figma_Import::register_default_zstd_decoder();
 $decoder = apply_filters( 'blocks_engine_figma_transformer_zstd_decoder', null );
 
-if ( 'native' === $argv[1] ) {
+if ( in_array( $argv[1], array( 'unavailable', 'disabled' ), true ) ) {
+	try {
+		if ( Static_Site_Importer_Figma_Import::zstd_decoder_available() ) {
+			fwrite( STDERR, "Unavailable zstd command was advertised as available.\n" );
+			exit( 1 );
+		}
+	} finally {
+		unlink( $command );
+	}
+} elseif ( 'native' === $argv[1] ) {
 	if ( ! is_callable( $decoder ) || ( ! extension_loaded( 'zstd' ) && 'native:compressed' !== $decoder( 'compressed' ) ) ) {
 		fwrite( STDERR, "Native zstd decoder was not preferred.\n" );
 		exit( 1 );
 	}
 } else {
 	try {
+		if ( ! Static_Site_Importer_Figma_Import::zstd_decoder_available() ) {
+			fwrite( STDERR, "Working zstd command was not advertised as available.\n" );
+			exit( 1 );
+		}
 		$result = is_callable( $decoder ) ? $decoder( 'compressed', array() ) : null;
 	} finally {
 		unlink( $command );

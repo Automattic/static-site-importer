@@ -263,6 +263,11 @@
 	};
 
 	const submitFigmaFile = async function ( root, file ) {
+		if ( root.getAttribute( 'data-static-site-importer-figma-available' ) !== '1' ) {
+			showStatus( root, 'Figma import requires zstd support in this runtime.' );
+			return;
+		}
+
 		const restUrl = root.getAttribute( 'data-static-site-importer-figma-rest-url' );
 		const nonce = root.getAttribute( 'data-static-site-importer-nonce' );
 		const isCurrentSiteImport = root.getAttribute( 'data-static-site-importer-apply-to-current-site' ) === '1';

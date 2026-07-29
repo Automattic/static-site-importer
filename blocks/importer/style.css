@@ -166,6 +166,17 @@
 	background: var(--ssi-importer-accent-hover);
 }
 
+.ssi-importer__upload-button:disabled {
+	cursor: not-allowed;
+	opacity: 0.5;
+}
+
+.ssi-importer__capability-notice {
+	margin: 0.65rem 0 0;
+	color: var(--ssi-importer-fg-muted);
+	font-size: 0.875rem;
+}
+
 .ssi-importer__field summary {
 	cursor: pointer;
 }

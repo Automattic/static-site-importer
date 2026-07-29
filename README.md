@@ -2,7 +2,7 @@
 
 Import a static site or generated website artifact into WordPress pages and a companion block theme.
 
-[![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?php=8.5&php-extension=https%3A%2F%2Fautomattic.github.io%2Fstatic-site-importer%2Fplayground%2Fextensions%2Flatest%2Fstatic-site-importer-zstd-php8.5-jspi.manifest.json&blueprint-url=https%3A%2F%2Fautomattic.github.io%2Fstatic-site-importer%2Fplayground%2Flatest%2Fblueprint.json)
+[![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?php=8.5&blueprint-url=https%3A%2F%2Fautomattic.github.io%2Fstatic-site-importer%2Fplayground%2Flatest%2Fblueprint.json)
 
 Static Site Importer is a WordPress plugin. It requires the [Blocks Engine PHP transformer](https://github.com/Automattic/blocks-engine/tree/trunk/php-transformer) Composer package and calls that package's canonical helper functions for generic artifact compilation and format conversion.
 
@@ -151,11 +151,11 @@ add_filter(
 
 Open Static Site Importer in a disposable WordPress Playground site:
 
-[![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?php=8.5&php-extension=https%3A%2F%2Fautomattic.github.io%2Fstatic-site-importer%2Fplayground%2Fextensions%2Flatest%2Fstatic-site-importer-zstd-php8.5-jspi.manifest.json&blueprint-url=https%3A%2F%2Fautomattic.github.io%2Fstatic-site-importer%2Fplayground%2Flatest%2Fblueprint.json)
+[![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?php=8.5&blueprint-url=https%3A%2F%2Fautomattic.github.io%2Fstatic-site-importer%2Fplayground%2Flatest%2Fblueprint.json)
 
-The blueprint installs and activates the packaged Static Site Importer release, logs the visitor in, and opens `/import/` with the `static-site-importer/importer` block configured to generate a WordPress website. Playground loads the PHP 8.5 JSPI `zstd` side module before PHP starts, so the existing Figma upload flow can decode zstd-compressed `.fig` canvas chunks. Testers can upload site files, choose a folder, upload a ZIP, paste HTML, or upload a Figma file.
+The blueprint installs and activates the packaged Static Site Importer release, logs the visitor in, and opens `/import/` with the `static-site-importer/importer` block configured to generate a WordPress website. The canonical demo boots without optional PHP side modules, so testers can always upload site files, choose a folder, upload a ZIP, or paste HTML. Figma upload is enabled only when the active runtime provides a zstd decoder; otherwise the importer explains that the capability is unavailable while keeping every other source type usable.
 
-The extension manifest, side module, and launch blueprint are published to the repository's GitHub Pages site. Each release gets an immutable versioned directory; `latest` is a convenience alias updated only after that version is published. This keeps the release plugin, blueprint, manifest, and module on one release contract while GitHub Pages supplies the CORS headers required by Playground. They are produced from pinned `php-ext-zstd` and vendored `libzstd` source by the release workflow; no unpublished branch, localhost URL, PECL installation, or host `zstd` executable is used.
+The optional extension manifest, side module, and safe launch blueprint are published to the repository's GitHub Pages site. Each release gets immutable versioned assets. The safe `playground/latest/blueprint.json` alias advances and is browser-verified independently; optional extension aliases advance only after their own runtime proof passes. This keeps an experimental side module from taking down the canonical demo while GitHub Pages supplies the CORS headers required by Playground. The extension is produced from pinned `php-ext-zstd` and vendored `libzstd` source by the release workflow; no unpublished branch, localhost URL, PECL installation, or host `zstd` executable is used.
 
 URL intake rules:
 

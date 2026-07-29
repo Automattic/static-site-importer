@@ -14,6 +14,25 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Static_Site_Importer_Figma_Import {
 	/**
+	 * Whether this runtime can decode zstd-compressed Figma chunks.
+	 */
+	public static function zstd_decoder_available(): bool {
+		$command   = self::zstd_command();
+		$available = function_exists( 'zstd_uncompress' )
+			|| ( class_exists( '\\Automattic\\BlocksEngine\\FigmaTransformer\\Compression\\ZstdCommandDecoder' ) && self::zstd_command_decodes_probe( $command ) );
+
+		/**
+		 * Filters whether direct .fig intake is available in this runtime.
+		 *
+		 * Hosts that register a custom transformer decoder may advertise that
+		 * capability here without requiring the native extension or command adapter.
+		 *
+		 * @param bool $available Whether a zstd decoder is available.
+		 */
+		return (bool) apply_filters( 'static_site_importer_figma_zstd_available', $available );
+	}
+
+	/**
 	 * Register the default Zstandard decoder for .fig uploads.
 	 */
 	public static function register_default_zstd_decoder(): void {
@@ -388,6 +407,9 @@ class Static_Site_Importer_Figma_Import {
 		if ( ! function_exists( 'blocks_engine_figma_transformer_transform_file' ) ) {
 			return new WP_Error( 'static_site_importer_figma_transformer_unavailable', 'Blocks Engine Figma transformer is not available.', array( 'status' => 501 ) );
 		}
+		if ( ! self::zstd_decoder_available() ) {
+			return new WP_Error( 'static_site_importer_figma_zstd_unavailable', 'Figma file import requires zstd support in this runtime.', array( 'status' => 501 ) );
+		}
 
 		if ( ! preg_match( '/\.fig$/i', $name ) ) {
 			return new WP_Error( 'static_site_importer_figma_file_type_invalid', 'Figma file uploads must use a .fig file.', array( 'status' => 400 ) );
@@ -698,7 +720,7 @@ class Static_Site_Importer_Figma_Import {
 		}
 
 		if ( '' !== $configured ) {
-			return array( $configured, '-dc' );
+			return is_executable( $configured ) ? array( $configured, '-dc' ) : array();
 		}
 
 		foreach ( array( '/opt/homebrew/bin/zstd', '/usr/local/bin/zstd', '/usr/bin/zstd' ) as $candidate ) {
@@ -708,6 +730,40 @@ class Static_Site_Importer_Figma_Import {
 		}
 
 		return array();
+	}
+
+	/**
+	 * Prove a command can decode a bounded known zstd frame before advertising it.
+	 *
+	 * @param array<int,string> $command Command argv.
+	 */
+	private static function zstd_command_decodes_probe( array $command ): bool {
+		if ( empty( $command ) || ! function_exists( 'proc_open' ) ) {
+			return false;
+		}
+
+		static $results = array();
+		$key = md5( serialize( $command ) );
+		if ( array_key_exists( $key, $results ) ) {
+			return $results[ $key ];
+		}
+
+		$compressed = base64_decode( 'KLUv/QRYcQAAc3NpLXpzdGQtcHJvYmVUFxFH', true );
+		if ( ! is_string( $compressed ) ) {
+			$results[ $key ] = false;
+			return false;
+		}
+
+		try {
+			$decoder = new \Automattic\BlocksEngine\FigmaTransformer\Compression\ZstdCommandDecoder( $command );
+			$result  = $decoder( $compressed, array( 'max_decoded_bytes' => 64 ) );
+		} catch ( \Throwable ) {
+			$results[ $key ] = false;
+			return false;
+		}
+
+		$results[ $key ] = 'ssi-zstd-probe' === ( $result['data'] ?? null );
+		return $results[ $key ];
 	}
 
 	/**

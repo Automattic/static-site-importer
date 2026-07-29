@@ -427,6 +427,13 @@ if ( is_readable( $figma_transformer_bootstrap ) ) {
 }
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-figma-import.php';
 Static_Site_Importer_Figma_Import::register_default_zstd_decoder();
+$GLOBALS['ssi_figma_zstd_available'] = true;
+add_filter(
+	'static_site_importer_figma_zstd_available',
+	static function (): bool {
+		return (bool) $GLOBALS['ssi_figma_zstd_available'];
+	}
+);
 require_once dirname( __DIR__ ) . '/includes/abilities.php';
 require_once dirname( __DIR__ ) . '/includes/rest.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-document.php';
@@ -450,6 +457,14 @@ $zstd_command_output = array();
 $zstd_command_status = 0;
 exec( escapeshellarg( PHP_BINARY ) . ' -n ' . $zstd_decoder_test . ' command 2>&1', $zstd_command_output, $zstd_command_status );
 $assert( 0 === $zstd_command_status, 'figma-zstd-decoder-falls-back-to-command', implode( "\n", $zstd_command_output ) );
+$zstd_unavailable_output = array();
+$zstd_unavailable_status = 0;
+exec( escapeshellarg( PHP_BINARY ) . ' -n ' . $zstd_decoder_test . ' unavailable 2>&1', $zstd_unavailable_output, $zstd_unavailable_status );
+$assert( 0 === $zstd_unavailable_status, 'figma-zstd-decoder-rejects-invalid-command', implode( "\n", $zstd_unavailable_output ) );
+$zstd_disabled_output = array();
+$zstd_disabled_status = 0;
+exec( escapeshellarg( PHP_BINARY ) . ' -n -d disable_functions=proc_open ' . $zstd_decoder_test . ' disabled 2>&1', $zstd_disabled_output, $zstd_disabled_status );
+$assert( 0 === $zstd_disabled_status, 'figma-zstd-decoder-fails-closed-without-proc-open', implode( "\n", $zstd_disabled_output ) );
 
 $rest_source = file_get_contents( dirname( __DIR__ ) . '/includes/rest.php' );
 $assert( is_string( $rest_source ), 'rest-source-readable' );
@@ -487,6 +502,7 @@ $html = static_site_importer_render_block(
 $assert( str_contains( $html, 'data-static-site-importer' ), 'render-has-root-hook' );
 $assert( str_contains( $html, 'data-static-site-importer-rest-url="https://example.test/wp-json/static-site-importer/v1/imports"' ), 'render-exposes-import-rest-route' );
 $assert( str_contains( $html, 'data-static-site-importer-figma-rest-url="https://example.test/wp-json/static-site-importer/v1/import-figma-file"' ), 'render-exposes-figma-file-rest-route' );
+$assert( str_contains( $html, 'data-static-site-importer-figma-available="1"' ), 'render-advertises-available-figma-capability' );
 $assert( str_contains( $html, 'data-static-site-importer-provider="privateprovider"' ), 'render-sanitizes-provider' );
 $assert( str_contains( $html, 'data-static-site-importer-apply-to-current-site="1"' ), 'render-exposes-current-site-apply-flag' );
 $assert( str_contains( $html, 'data-static-site-importer-open-in-playground="0"' ), 'render-exposes-open-in-playground-flag' );
@@ -532,6 +548,14 @@ $assert( str_contains( $playground_html, 'data-static-site-importer-apply-to-cur
 $assert( str_contains( $playground_html, 'data-static-site-importer-open-in-playground="1"' ), 'render-can-target-playground-with-generate-label' );
 $assert( str_contains( $playground_html, 'Generate WordPress Website' ), 'render-playground-button-generates-wordpress-website' );
 $assert( ! str_contains( $playground_html, 'Import to this site' ), 'render-playground-button-does-not-say-import-to-this-site' );
+
+$GLOBALS['ssi_figma_zstd_available'] = false;
+$safe_playground_html                = static_site_importer_render_block( array( 'openInPlayground' => true ) );
+$assert( str_contains( $safe_playground_html, 'data-static-site-importer-figma-available="0"' ), 'render-advertises-unavailable-figma-capability' );
+$assert( str_contains( $safe_playground_html, 'data-static-site-importer-upload-figma disabled aria-disabled="true"' ), 'render-disables-figma-without-zstd' );
+$assert( str_contains( $safe_playground_html, 'data-static-site-importer-figma-unavailable' ), 'render-explains-unavailable-figma-capability' );
+$assert( str_contains( $safe_playground_html, 'Other source types remain available.' ), 'render-keeps-safe-import-paths-actionable' );
+$GLOBALS['ssi_figma_zstd_available'] = true;
 
 /*
  * Theming seam: the block ships a host-overridable `--ssi-importer-*` custom
@@ -632,6 +656,7 @@ $assert( str_contains( $view_js, 'input.click()' ), 'view-opens-selected-hidden-
 $assert( str_contains( $view_js, 'webkitGetAsEntry' ), 'view-supports-dropped-directory-entries' );
 $assert( str_contains( $view_js, 'archive: await buildArchive( uploadInputs, root )' ), 'view-sends-zip-from-combined-upload-as-archive-payload' );
 $assert( str_contains( $view_js, "formData.append( 'figma_file', file )" ), 'view-sends-figma-file-as-multipart-upload' );
+$assert( str_contains( $view_js, "data-static-site-importer-figma-available' ) !== '1'" ), 'view-guards-figma-submit-by-runtime-capability' );
 $assert( ! str_contains( $view_js, 'buildFigmaFile' ), 'view-does-not-build-figma-file-payload' );
 $assert( str_contains( $view_js, '/\\.zip$/i' ), 'view-excludes-zip-files-from-generic-static-upload' );
 $assert( str_contains( $view_js, 'data-static-site-importer-source-figma-file' ), 'view-reads-separate-figma-file-input' );
@@ -1001,6 +1026,11 @@ if ( ! is_dir( $staged_figma_root ) ) {
 }
 $staged_figma_path = $staged_figma_root . '/design.fig';
 file_put_contents( $staged_figma_path, 'not-a-zip' );
+$GLOBALS['ssi_figma_zstd_available'] = false;
+$unavailable_figma_artifact          = Static_Site_Importer_Figma_Import::website_artifact_from_figma_upload( $staged_figma_path, 'design.fig', array() );
+$assert( 'static_site_importer_figma_zstd_unavailable' === ( is_wp_error( $unavailable_figma_artifact ) ? $unavailable_figma_artifact->get_error_code() : '' ), 'figma-upload-fails-explicitly-without-zstd' );
+$assert( 501 === ( is_wp_error( $unavailable_figma_artifact ) ? ( $unavailable_figma_artifact->get_error_data()['status'] ?? 0 ) : 0 ), 'figma-upload-unavailable-status-is-actionable' );
+$GLOBALS['ssi_figma_zstd_available'] = true;
 $staged_figma_artifact = Static_Site_Importer_Figma_Import::website_artifact_from_input(
 	array(
 		'source' => array(
@@ -1153,8 +1183,9 @@ $assert( str_contains( $blueprint_code, '"applyToCurrentSite":false' ), 'playgro
 $assert( str_contains( $blueprint_code, '"openInPlayground":true' ), 'playground-blueprint-targets-open-in-playground' );
 $assert( ! str_contains( $blueprint_code, 'generateInCurrentRuntime' ), 'playground-blueprint-does-not-reference-current-runtime-generation' );
 $assert( str_contains( $blueprint_code, 'static_site_importer_protected_pages' ), 'playground-blueprint-protects-import-page' );
-$plugin_step = $blueprint['steps'][1] ?? array();
-$assert( 'https://github.com/Automattic/static-site-importer/releases/latest/download/static-site-importer.zip' === ( $plugin_step['pluginData']['url'] ?? '' ), 'playground-blueprint-installs-packaged-release' );
+$plugin_steps = array_values( array_filter( $blueprint['steps'] ?? array(), static fn( array $step ): bool => 'installPlugin' === ( $step['step'] ?? '' ) ) );
+$plugin_step  = $plugin_steps[0] ?? array();
+$assert( 'https://github.com/Automattic/static-site-importer/releases/download/{{RELEASE_TAG}}/static-site-importer.zip' === ( $plugin_step['pluginData']['url'] ?? '' ), 'playground-blueprint-installs-same-release-package' );
 
 $GLOBALS['ssi_test_options']['static_site_importer_protected_pages'] = array( 'import', 'tools/settings', '42' );
 $assert( Static_Site_Importer_Page_Materializer::is_protected_page( new WP_Post( 7, 'import' ) ), 'protected-page-matches-slug' );
