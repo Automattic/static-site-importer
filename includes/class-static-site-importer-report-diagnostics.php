@@ -1082,10 +1082,10 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * Materialize preserved <form> runtime islands through the configured provider.
 	 *
 	 * Collects preserved form findings, runs them through the form-capability
-	 * adapter, and stamps the runtime-mapped signal plus mapped-block evidence onto
-	 * each finding that a real provider could map. The form_seeding report records
-	 * provider, dependency availability, and per-form mapping outcomes. Forms with
-	 * no mappable controls keep no signal and stay an unacceptable parity loss.
+	 * adapter, and stamps mapped-block evidence onto each finding that a real
+	 * provider could map. Receipt losses remain attached to both the finding and
+	 * form_seeding report; an unaccepted semantic or control loss keeps the finding
+	 * gated even when provider execution itself succeeds.
 	 *
 	 * When page contents are supplied, the seeded contact-form markup is grafted
 	 * into the matching page's post_content in place of the finding's readable
@@ -1151,6 +1151,8 @@ class Static_Site_Importer_Report_Diagnostics {
 		$seeding['form_count']    = count( $manifest_forms );
 		$seeding['mapped_count']  = 0;
 		$seeding['grafted_count'] = 0;
+		$seeding['receipt_losses'] = array();
+		$seeding['unaccepted_receipt_loss_count'] = 0;
 		$seeding['waived']        = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? 'allow_missing_jetpack' ) ] );
 		if ( ! empty( $validation['errors'] ) ) {
 			$seeding['validation_errors'] = $validation['errors'];
@@ -1163,7 +1165,6 @@ class Static_Site_Importer_Report_Diagnostics {
 				continue;
 			}
 
-			++$seeding['mapped_count'];
 			$selector = isset( $row['selector'] ) && is_scalar( $row['selector'] ) ? (string) $row['selector'] : '';
 			$source_path = isset( $row['source_path'] ) && is_scalar( $row['source_path'] ) ? (string) $row['source_path'] : '';
 			$index    = self::form_finding_index_for_selector( $report['diagnostics'], $pending, $selector, $source_path );
@@ -1172,6 +1173,15 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 
 			$report['diagnostics'][ $index ] = self::mark_form_finding_mapped( $report['diagnostics'][ $index ], $row, $seeding['provider'] );
+			$receipt_losses = isset( $report['diagnostics'][ $index ]['form_receipt_losses'] ) && is_array( $report['diagnostics'][ $index ]['form_receipt_losses'] ) ? $report['diagnostics'][ $index ]['form_receipt_losses'] : array();
+			foreach ( $receipt_losses as $loss ) {
+				$seeding['receipt_losses'][] = array( 'selector' => $selector, 'source_path' => $source_path, 'loss' => $loss );
+			}
+			if ( ! empty( $report['diagnostics'][ $index ]['form_receipt_unaccepted_losses'] ) ) {
+				$seeding['unaccepted_receipt_loss_count'] += count( $report['diagnostics'][ $index ]['form_receipt_unaccepted_losses'] );
+			} else {
+				++$seeding['mapped_count'];
+			}
 			$report['diagnostics'][ $index ] = self::add_form_graft_source_path( $report['diagnostics'][ $index ], $report );
 
 			$generated_document_owns_graft = ! self::is_generated_core_html_form_diagnostic( $report['diagnostics'][ $index ] )
@@ -1441,17 +1451,48 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<string,mixed>
 	 */
 	private static function mark_form_finding_mapped( array $diagnostic, array $row, string $provider ): array {
-		$diagnostic['runtime_mapped']  = true;
+		$receipt_losses = isset( $row['computed_layout_receipt']['losses'] ) && is_array( $row['computed_layout_receipt']['losses'] ) ? $row['computed_layout_receipt']['losses'] : array();
+		$unaccepted_losses = array_values( array_filter( $receipt_losses, static fn( $loss ): bool => is_array( $loss ) && self::form_receipt_loss_requires_gate( $loss ) && ! self::form_receipt_loss_accepted( $loss, $diagnostic, $row ) ) );
+		$diagnostic['provider_mapped'] = true;
+		$diagnostic['runtime_mapped']  = empty( $unaccepted_losses );
 		$diagnostic['runtime_carried'] = ! empty( $row['runtime_carried'] );
 		$diagnostic['mapped_provider'] = isset( $row['provider'] ) && is_scalar( $row['provider'] ) && '' !== (string) $row['provider'] ? (string) $row['provider'] : $provider;
-		$diagnostic['acceptability']   = 'acceptable_preservation';
 		$diagnostic['block_name']      = isset( $row['block_name'] ) && is_scalar( $row['block_name'] ) ? (string) $row['block_name'] : 'jetpack/contact-form';
+		if ( ! empty( $receipt_losses ) ) {
+			$diagnostic['form_receipt_losses'] = $receipt_losses;
+		}
+		if ( empty( $unaccepted_losses ) ) {
+			$diagnostic['acceptability'] = 'acceptable_preservation';
+		} else {
+			$diagnostic['form_receipt_unaccepted_losses'] = $unaccepted_losses;
+			$diagnostic['loss_class'] = Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS;
+			$diagnostic['diagnostic_class'] = Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS;
+			$diagnostic['acceptability'] = 'unacceptable_imported_output_defect';
+			$diagnostic['reason_code'] = 'form_receipt_loss_unaccepted';
+		}
 
 		if ( isset( $row['block_markup'] ) && is_scalar( $row['block_markup'] ) ) {
 			$diagnostic['emitted_block_preview'] = self::diagnostic_excerpt( (string) $row['block_markup'] );
 		}
 
 		return $diagnostic;
+	}
+
+	/**
+	 * Allow an owning policy to explicitly accept a receipt loss.
+	 *
+	 * @param array<string,mixed> $loss Receipt loss.
+	 * @param array<string,mixed> $diagnostic Finding being mapped.
+	 * @param array<string,mixed> $row Provider result.
+	 */
+	private static function form_receipt_loss_accepted( array $loss, array $diagnostic, array $row ): bool {
+		return true === apply_filters( 'static_site_importer_form_receipt_loss_accepted', false, $loss, $diagnostic, $row );
+	}
+
+	/** @param array<string,mixed> $loss Receipt loss. */
+	private static function form_receipt_loss_requires_gate( array $loss ): bool {
+		return 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' )
+			|| in_array( $loss['dimension'] ?? '', array( 'semantic', 'topology' ), true );
 	}
 
 	/**
@@ -3843,8 +3884,11 @@ class Static_Site_Importer_Report_Diagnostics {
 			'context',
 			'diagnostic_code',
 			'runtime_mapped',
+			'provider_mapped',
 			'runtime_carried',
 			'mapped_provider',
+			'form_receipt_losses',
+			'form_receipt_unaccepted_losses',
 		);
 
 		$compact = array();

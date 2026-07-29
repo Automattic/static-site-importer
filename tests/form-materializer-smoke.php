@@ -242,6 +242,15 @@ namespace {
 	$unknown_layout_key['forms'][0]['layout_graph']['nodes'][0]['layout'] = array( 'display' => 'flex', 'direction' => 'row', 'justify' => 'center' );
 	$unknown_layout_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unknown_layout_key );
 	$assert( empty( $unknown_layout_validation['forms'] ) && str_contains( (string) ( $unknown_layout_validation['errors'][0]['message'] ?? '' ), 'producer-supported keys' ), 'computed-layout-rejects-justify-alias-at-runtime-boundary' );
+	$responsive_flex = $topology_form;
+	$responsive_condition = array( 'kind' => 'media', 'query' => '(min-width: 48rem)' );
+	$responsive_flex['forms'][0]['layout_graph']['variants'] = array( array( 'node' => 'wrapper-0', 'condition' => $responsive_condition, 'layout_patch' => array( 'direction' => 'column', 'wrap' => 'wrap' ), 'precedence' => array( 'flex-direction' => array( 'source_order' => 4, 'specificity' => 10, 'important' => false ), 'flex-wrap' => array( 'source_order' => 4, 'specificity' => 10, 'important' => false ) ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'b', 64 ), 'selector' => '.row-2', 'condition' => $responsive_condition, 'properties' => array( 'flex-direction', 'flex-wrap' ) ) ) ) );
+	$responsive_flex_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $responsive_flex );
+	$assert( empty( $responsive_flex_validation['errors'] ) && array( 'flex-direction', 'flex-wrap' ) === array_keys( $responsive_flex_validation['forms'][0]['layout_graph']['variants'][0]['precedence'] ?? array() ), 'computed-layout-accepts-responsive-flex-css-provenance-property-names' );
+	$unknown_variant_key = $responsive_flex;
+	$unknown_variant_key['forms'][0]['layout_graph']['variants'][0]['precedence']['unknown-property'] = array( 'source_order' => 4, 'specificity' => 10, 'important' => false );
+	$unknown_variant_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unknown_variant_key );
+	$assert( empty( $unknown_variant_validation['forms'] ) && str_contains( (string) ( $unknown_variant_validation['errors'][0]['message'] ?? '' ), 'precedence' ), 'computed-layout-rejects-unknown-producer-precedence-property' );
 
 	// --- Computed layout maps only complete core/group flex facts --------------
 	$layout_blocks = array( array( 'name' => 'core/group', 'attrs' => array(), 'innerBlocks' => array(), 'topologyId' => 'wrapper-0' ) );
@@ -407,6 +416,21 @@ namespace {
 	$assert( 'acceptable_preservation' === ( $mapped['acceptability'] ?? '' ), 'finding-acceptable-preservation' );
 	$assert( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND === Static_Site_Importer_Diagnostic_Loss_Classes::classify( $mapped ), 'finding-stays-preserved-runtime-island' );
 	$assert( empty( $unmapped['runtime_mapped'] ), 'unmappable-form-stays-unsignaled' );
+
+	// --- Mixed controls preserve provider work but gate unaccepted receipt loss --
+	$mixed_control_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
+	$mixed_control_report['diagnostics'][] = array(
+		'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_form_fallback', 'loss_class' => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+		'source_path' => 'website/index.html', 'selector' => 'form.upload', 'tag' => 'form',
+		'controls' => array( array( 'tag' => 'input', 'type' => 'text', 'label' => 'Name' ), array( 'tag' => 'input', 'type' => 'file', 'label' => 'Attachment' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ),
+		'control_topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false, 'nodes' => array( array( 'id' => 'control-0', 'kind' => 'control', 'parent' => null, 'order' => 0, 'depth' => 0, 'control' => 0 ), array( 'id' => 'control-1', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 1 ), array( 'id' => 'control-2', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 2 ) ) ),
+	);
+	$mixed_control_seeding = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $mixed_control_report, array() );
+	$mixed_control_finding = $mixed_control_report['diagnostics'][0];
+	$matrix_diagnostics = ( new ReflectionMethod( 'Static_Site_Importer_Report_Diagnostics', 'compact_import_report_diagnostics' ) )->invoke( null, array( $mixed_control_finding ) );
+	$assert( true === ( $mixed_control_finding['provider_mapped'] ?? false ) && false === ( $mixed_control_finding['runtime_mapped'] ?? true ) && 'unacceptable_imported_output_defect' === ( $mixed_control_finding['acceptability'] ?? '' ), 'mixed-file-control-provider-mapping-does-not-resolve-unaccepted-loss' );
+	$assert( 'unsupported_control_unrepresentable' === ( $mixed_control_finding['form_receipt_unaccepted_losses'][0]['reason_code'] ?? '' ) && 1 === ( $mixed_control_seeding['unaccepted_receipt_loss_count'] ?? 0 ) && 1 === count( $mixed_control_seeding['receipt_losses'] ?? array() ), 'mixed-file-control-receipt-loss-reaches-seeding-report' );
+	$assert( 'unsupported_control_unrepresentable' === ( $matrix_diagnostics[0]['form_receipt_unaccepted_losses'][0]['reason_code'] ?? '' ), 'mixed-file-control-receipt-loss-reaches-matrix-intake' );
 
 	// --- Graft bridges source HTML paths to generated post_content keys ---------
 	$mapped_source_report                                                       = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );

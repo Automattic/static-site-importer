@@ -228,7 +228,7 @@ $topology_form = array(
 	'selector' => 'form.contact', 'source_path' => 'index.html', 'form' => array( 'class' => 'contact' ),
 	'controls' => array( array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'label' => 'Name' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ),
 	'control_topology' => array(
-		'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false, 'untrusted' => 'discard-me',
+		'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false,
 		'nodes' => array(
 			array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'section', 'class' => 'row-2', 'source_id' => 'contact-row' ),
 			array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'control' => 0 ),
@@ -243,7 +243,14 @@ $runtime_form_plan['runtime_declarations'] = array(
 );
 $runtime_form_lifecycle = $prepare_lifecycle->invoke( null, $runtime_form_plan, array() );
 $runtime_form_manifest = $runtime_form_lifecycle['entities'][ $form_declaration_id ]['manifest']['forms'][0] ?? array();
-$assert( 'section' === ( $runtime_form_manifest['control_topology']['nodes'][0]['tag'] ?? '' ) && ! isset( $runtime_form_manifest['control_topology']['untrusted'] ), 'runtime declarations retain only normalized validated form topology' );
+$assert( 'section' === ( $runtime_form_manifest['control_topology']['nodes'][0]['tag'] ?? '' ), 'runtime declarations retain validated form topology' );
+
+$unknown_topology_form = $topology_form;
+$unknown_topology_form['control_topology']['untrusted'] = 'reject-me';
+$unknown_topology_plan = $runtime_form_plan;
+$unknown_topology_plan['runtime_declarations'][1]['payload']['entities'] = array( $unknown_topology_form );
+$unknown_topology_lifecycle = $prepare_lifecycle->invoke( null, $unknown_topology_plan, array() );
+$assert( is_wp_error( $unknown_topology_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $unknown_topology_lifecycle->get_error_code(), 'unknown runtime topology keys are rejected before provider traversal' );
 
 $self_referential_form = $topology_form;
 $self_referential_form['control_topology']['nodes'][0]['parent'] = 'wrapper-0';
