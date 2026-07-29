@@ -74,6 +74,7 @@ namespace {
 
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-computed-layout-strategy.php';
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-layout-overlay.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-loss-classes.php';
@@ -162,8 +163,8 @@ namespace {
 	$assert( 1 === substr_count( $markup, 'wp:jetpack/button' ), 'legacy-submit-control-emits-one-button' );
 	$assert( str_contains( $markup, 'hello@example.com' ), 'markup-mailto-recipient' );
 	$assert( str_contains( $markup, '"options":["Sales","Support"]' ), 'markup-select-options' );
-	$assert( str_contains( $markup, '<div class="wp-block-jetpack-contact-form form contact">' ), 'markup-contact-form-wrapper-and-source-classes' );
-	$assert( str_contains( $markup, '<!-- wp:jetpack/field-text {"required":true,"id":"contact-name"} -->' ), 'markup-field-wrapper-open' );
+	$assert( 1 === preg_match( '/<div class="wp-block-jetpack-contact-form form contact ssi-form-[a-f0-9]{12}">/', $markup ), 'markup-contact-form-wrapper-and-source-classes' );
+	$assert( 1 === preg_match( '/<!-- wp:jetpack\/field-text \{"required":true,"id":"contact-name","className":"ssi-node-[a-f0-9]{12}"\} -->/', $markup ), 'markup-field-wrapper-open' );
 	$assert( str_contains( $markup, '<div><!-- wp:jetpack/label {"label":"Your name","requiredText":"*"} /-->' ), 'markup-field-label-child' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/input {"type":"text"} /--></div>' ), 'markup-field-input-child-and-wrapper-close' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/input {"type":"dropdown"} /-->' ), 'markup-select-input-child' );
@@ -210,12 +211,27 @@ namespace {
 	$topology_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_topology['forms'] ) );
 	$topology_markup = (string) ( $topology_seed['forms'][0]['block_markup'] ?? '' );
 	$topology_receipt = $topology_seed['forms'][0]['computed_layout_receipt'] ?? array();
-	$assert( 1 === substr_count( $topology_markup, '<section id="contact-row" class="wp-block-group row-2 is-layout-flex"' ), 'topology-preserves-row-tag-id-and-class' );
+	$assert( 1 === preg_match( '/<section id="contact-row" class="wp-block-group row-2 ssi-node-[a-f0-9]{12} is-layout-flex"/', $topology_markup ), 'topology-preserves-row-tag-id-and-class' );
 	$assert( 3 === substr_count( $topology_markup, 'class="wp-block-group field' ), 'topology-preserves-field-groups' );
-	$assert( str_contains( $topology_markup, 'wp:group {"className":"row-2","anchor":"contact-row","tagName":"section","layout":{"type":"flex","orientation":"horizontal","flexWrap":"nowrap"}}' ), 'topology-serializes-gutenberg-group-tag' );
+	$assert( 1 === preg_match( '/wp:group \{"className":"row-2 ssi-node-[a-f0-9]{12}","anchor":"contact-row","tagName":"section","layout":\{"type":"flex","orientation":"horizontal","flexWrap":"nowrap"\}\}/', $topology_markup ), 'topology-serializes-gutenberg-group-tag' );
 	$assert( str_contains( $topology_markup, 'First name' ) && str_contains( $topology_markup, 'Email' ) && str_contains( $topology_markup, 'Message' ), 'topology-preserves-labels' );
 	$assert( 1 === substr_count( $topology_markup, 'wp:jetpack/button' ), 'topology-submit-control-emits-one-button-in-source-position' );
-	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && 1 === ( $topology_receipt['operation_count'] ?? 0 ) && str_contains( $topology_markup, 'is-layout-flex' ), 'computed-layout-flex-applies-with-bounded-receipt' );
+	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && 2 === ( $topology_receipt['operation_count'] ?? 0 ) && str_contains( $topology_markup, 'is-layout-flex' ) && 'provider_selector_transposition' === ( $topology_receipt['operations'][1]['strategy'] ?? '' ), 'computed-layout-flex-applies-with-bounded-receipt' );
+	$topology_seed_repeat = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_topology['forms'] ) );
+	$assert( $topology_markup === (string) ( $topology_seed_repeat['forms'][0]['block_markup'] ?? '' ), 'provider-layout-classes-are-stable-for-identical-source-form' );
+	$provider_map = $topology_seed['forms'][0]['provider_layout_target_map'] ?? array();
+	$assert( 'generic/provider-layout-target-map/v1' === ( $provider_map['schema'] ?? '' ) && str_contains( (string) ( $provider_map['targets'][0]['selector'] ?? '' ), '.ssi-form-' ) && ! str_contains( (string) ( $provider_map['targets'][0]['selector'] ?? '' ), 'row-2' ), 'provider-layout-map-keeps-source-classes-out-of-selectors' );
+	$root_graph = $layout_graph( array( $layout_node( 'form', array( 'display' => 'flex', 'direction' => 'row', 'gap' => '1rem' ), 'form' ) ) );
+	$root_map = array( 'schema' => 'generic/provider-layout-target-map/v1', 'provider' => 'jetpack', 'scope' => '.ssi-form-123456789abc', 'targets' => array( array( 'node' => 'form', 'selector' => '.ssi-form-123456789abc > form.jetpack-contact-form__form', 'capabilities' => array( 'container_layout', 'direct_child_layout', 'responsive_layout' ) ) ) );
+	$root_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $root_graph, $root_map );
+	$assert( str_contains( $root_overlay['css'], '.ssi-form-123456789abc > form.jetpack-contact-form__form{display:flex;flex-direction:row;gap:1rem}' ) && 'provider_selector_transposition' === ( $root_overlay['operations'][0]['strategy'] ?? '' ), 'provider-layout-root-targets-native-jetpack-form' );
+	$unsafe_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $layout_graph( array( $layout_node( 'form', array( 'display' => 'url(https://example.test/x)' ), 'form' ) ) ), $root_map );
+	$assert( '' === $unsafe_overlay['css'] && 'unsafe_layout_value' === ( $unsafe_overlay['losses'][0]['reason_code'] ?? '' ), 'provider-layout-overlay-rejects-unsafe-values' );
+	$bad_map = $root_map; $bad_map['targets'][0]['selector'] = 'body .anything';
+	$assert( isset( Static_Site_Importer_Provider_Layout_Overlay::validate_map( $bad_map, $root_graph )['error'] ), 'provider-layout-overlay-rejects-arbitrary-selectors' );
+	$responsive_root = $root_graph;
+	$responsive_root['variants'] = array( array( 'node' => 'form', 'condition' => array( 'kind' => 'media', 'query' => '(min-width: 48rem)' ), 'layout_patch' => array( 'direction' => 'column' ) ) );
+	$assert( str_contains( Static_Site_Importer_Provider_Layout_Overlay::compile( $responsive_root, $root_map )['css'], '@media (min-width: 48rem)' ), 'provider-layout-overlay-supports-bounded-media-condition' );
 	if ( function_exists( 'parse_blocks' ) ) {
 		$parsed_markup = parse_blocks( $topology_markup );
 		$parsed_names = array();
@@ -234,7 +250,8 @@ namespace {
 	$unsafe_graph['forms'][0]['layout_graph']['nodes'][0]['layout'] = array( 'display' => 'grid', 'direction' => 'none', 'item_placement' => array( 'column' => 1 ) );
 	$unsafe_graph_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unsafe_graph );
 	$unsafe_graph_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $unsafe_graph_validation['forms'] ) );
-	$assert( 'deferred' === ( $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['status'] ?? '' ) && in_array( ( $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['losses'][0]['reason_code'] ?? '' ), array( 'unsupported_item_placement', 'equivalence_unproven_layout' ), true ), 'computed-layout-grid-placement-is-deferred' );
+	$unsafe_losses = $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['losses'] ?? array();
+	$assert( 'applied' === ( $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['status'] ?? '' ) && in_array( 'unsupported_item_placement', array_column( $unsafe_losses, 'reason_code' ), true ) && in_array( 'unsafe_layout_value', array_column( $unsafe_losses, 'reason_code' ), true ), 'computed-layout-grid-placement-is-deferred' );
 	$unknown_layout_key = $topology_form;
 	$unknown_layout_key['forms'][0]['layout_graph']['nodes'][0]['layout']['alignment'] = 'center';
 	$unknown_layout_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unknown_layout_key );

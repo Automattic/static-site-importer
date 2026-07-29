@@ -29,14 +29,23 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		string $theme_name,
 		string $css,
 		array $assets,
-		array $visual_repair_styles
+		array $visual_repair_styles,
+		array $provider_layout_overlays = array()
 	): array {
 		$css = self::rewrite_css_asset_urls( $css, $assets );
+		$provider_layout_css = self::provider_layout_overlay_css( $provider_layout_overlays );
 
 		return array(
-			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $css, $visual_repair_styles ),
-			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $css, $visual_repair_styles ),
+			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $css . $provider_layout_css, $visual_repair_styles ),
+			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $css . $provider_layout_css, $visual_repair_styles ),
 		);
+	}
+
+	/** Return deterministic, content-addressed provider layout overlays once each. */
+	private static function provider_layout_overlay_css( array $overlays ): string {
+		$overlays = array_values( array_unique( array_filter( array_map( 'strval', $overlays ), static fn( string $css ): bool => str_starts_with( $css, '/* Static Site Importer provider layout overlay: ' ) ) ) );
+		sort( $overlays, SORT_STRING );
+		return empty( $overlays ) ? '' : "\n" . implode( "\n", $overlays );
 	}
 
 	/**

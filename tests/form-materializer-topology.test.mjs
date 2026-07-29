@@ -59,9 +59,9 @@ test( 'core Group preserves every PHP-generated wrapper at all supported depths 
 	assert.equal( blocks.length, 1 );
 	assert.equal( group.name, 'core/group' );
 	assert.equal( group.attributes.tagName, 'section' );
-	assert.equal( group.innerBlocks[ 0 ].attributes.className, 'field' );
-	assert.ok( markup.includes( '<!-- wp:group {"className":"row-2","anchor":"contact-row","tagName":"section","layout":{"type":"flex","orientation":"horizontal","flexWrap":"nowrap"}} -->\n<section id="contact-row" class="wp-block-group row-2 is-layout-flex">' ) );
-	assert.ok( markup.includes( '<!-- /wp:group -->\n<!-- wp:group {"className":"field standalone"} -->' ) );
+	assert.match( group.innerBlocks[ 0 ].attributes.className, /^field ssi-node-[a-f0-9]{12}$/ );
+	assert.match( markup, /<!-- wp:group \{"className":"row-2 ssi-node-[a-f0-9]{12}","anchor":"contact-row","tagName":"section","layout":\{"type":"flex","orientation":"horizontal","flexWrap":"nowrap"\}\} -->\n<section id="contact-row" class="wp-block-group row-2 ssi-node-[a-f0-9]{12} is-layout-flex">/ );
+	assert.match( markup, /<!-- \/wp:group -->\n<!-- wp:group \{"className":"field standalone ssi-node-[a-f0-9]{12}"\} -->/ );
 	assert.deepEqual( warnings, [], 'core block parsing emitted no warnings' );
 	const validateGeneratedGroups = ( generatedBlocks ) => {
 		for ( const block of generatedBlocks ) {

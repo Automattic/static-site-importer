@@ -10,6 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 require_once __DIR__ . '/class-static-site-importer-computed-layout-strategy.php';
+require_once __DIR__ . '/class-static-site-importer-provider-layout-overlay.php';
 
 /**
  * Turns preserved <form> fallback metadata into working Jetpack Form blocks.
@@ -202,6 +203,7 @@ class Static_Site_Importer_Form_Seeder {
 		$selector    = isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '';
 		$source_path = isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '';
 
+		$scope        = self::layout_scope( $form );
 		$field_blocks = array();
 		$mapped_types = array();
 		$submit_text  = 'Submit';
@@ -222,7 +224,7 @@ class Static_Site_Importer_Form_Seeder {
 				$submit_text = '' !== $text ? $text : $submit_text;
 				$has_source_submit = true;
 				if ( $has_topology ) {
-					$field_blocks[ $control_index ] = self::submit_button_block( $submit_text );
+					$field_blocks[ $control_index ] = self::submit_button_block( $submit_text, self::layout_node_class( $scope, 'control-' . $control_index ) );
 				}
 				continue;
 			}
@@ -233,6 +235,7 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 
+			$field_block['attrs']['className'] = self::layout_node_class( $scope, 'control-' . $control_index );
 			$field_blocks[ $control_index ] = $field_block;
 			$mapped_types[] = $field_block['name'];
 		}
@@ -259,12 +262,24 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$inner_blocks = $topology['blocks'];
 		if ( ! $has_topology || ! $has_source_submit ) {
-			$inner_blocks[] = self::submit_button_block( $submit_text );
+			$inner_blocks[] = self::submit_button_block( $submit_text, self::layout_node_class( $scope, 'control-submit' ) );
 		}
 		$form['topology_losses'] = $topology['losses'];
 		$layout = Static_Site_Importer_Computed_Layout_Strategy::apply( $form, $inner_blocks );
 		$inner_blocks = $layout['blocks'];
-		$form_attrs     = self::contact_form_attributes( $form );
+		$form_attrs     = self::contact_form_attributes( $form, $scope );
+		$target_map     = self::provider_layout_target_map( $form, $scope );
+		$overlay        = Static_Site_Importer_Provider_Layout_Overlay::compile( is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array( 'nodes' => array(), 'variants' => array() ), $target_map );
+		foreach ( $overlay['operations'] as $operation ) $layout['receipt']['operations'][] = $operation;
+		foreach ( $overlay['losses'] as $loss ) $layout['receipt']['losses'][] = $loss;
+		$layout['receipt']['operations_total'] = count( $layout['receipt']['operations'] );
+		$layout['receipt']['losses_total'] = count( $layout['receipt']['losses'] );
+		$layout['receipt']['operation_count'] = min( 32, $layout['receipt']['operations_total'] );
+		$layout['receipt']['loss_count'] = min( 32, $layout['receipt']['losses_total'] );
+		$layout['receipt']['truncated'] = $layout['receipt']['operations_total'] > 32 || $layout['receipt']['losses_total'] > 32;
+		$layout['receipt']['operations'] = array_slice( $layout['receipt']['operations'], 0, 32 );
+		$layout['receipt']['losses'] = array_slice( $layout['receipt']['losses'], 0, 32 );
+		$layout['receipt']['status'] = empty( $layout['receipt']['operations'] ) ? ( empty( $layout['receipt']['losses'] ) ? 'skipped' : 'deferred' ) : 'applied';
 		$markup         = self::serialize_block( 'jetpack/contact-form', $form_attrs, $inner_blocks );
 
 		return array(
@@ -281,6 +296,8 @@ class Static_Site_Importer_Form_Seeder {
 			'runtime_carried' => $available,
 			'block_markup'    => $markup,
 			'computed_layout_receipt' => $layout['receipt'],
+			'provider_layout_target_map' => $target_map,
+			'provider_layout_overlay_css' => $overlay['css'],
 		);
 	}
 
@@ -313,7 +330,7 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		unset( $siblings );
 		$losses = array();
-		$build = static function ( string $parent ) use ( &$build, $children, $field_blocks, $controls, &$losses ): array {
+		$build = static function ( string $parent ) use ( &$build, $children, $field_blocks, $controls, $form, &$losses ): array {
 			$blocks = array();
 			foreach ( $children[ $parent ] ?? array() as $node ) {
 				if ( 'control' === ( $node['kind'] ?? null ) ) {
@@ -333,7 +350,8 @@ class Static_Site_Importer_Form_Seeder {
 					continue;
 				}
 				$attrs = array();
-				if ( isset( $node['class'] ) ) $attrs['className'] = $node['class'];
+				$generated_class = self::layout_node_class( self::layout_scope( $form ), $node['id'] );
+				$attrs['className'] = trim( (string) ( $node['class'] ?? '' ) . ' ' . $generated_class );
 				if ( isset( $node['source_id'] ) ) $attrs['anchor'] = $node['source_id'];
 				if ( isset( $node['tag'] ) && in_array( $node['tag'], array( 'article', 'aside', 'div', 'footer', 'header', 'main', 'nav', 'section' ), true ) ) $attrs['tagName'] = $node['tag'];
 				$blocks[] = array( 'name' => 'core/group', 'attrs' => $attrs, 'innerBlocks' => $build( $node['id'] ), 'wrapper' => 'group', 'topologyId' => $node['id'], 'topologySourceTag' => $node['tag'] ?? 'div' );
@@ -453,8 +471,8 @@ class Static_Site_Importer_Form_Seeder {
 	 * @param string $text Submit button label.
 	 * @return array<string, mixed>
 	 */
-	private static function submit_button_block( string $text ): array {
-		return array(
+	private static function submit_button_block( string $text, string $class_name = '' ): array {
+		$block = array(
 			'name'  => 'jetpack/button',
 			'attrs' => array(
 				'element' => 'button',
@@ -465,6 +483,8 @@ class Static_Site_Importer_Form_Seeder {
 				),
 			),
 		);
+		if ( '' !== $class_name ) $block['attrs']['className'] = $class_name;
+		return $block;
 	}
 
 	/**
@@ -473,15 +493,13 @@ class Static_Site_Importer_Form_Seeder {
 	 * @param array<string, mixed> $form Validated form row.
 	 * @return array<string, mixed>
 	 */
-	private static function contact_form_attributes( array $form ): array {
+	private static function contact_form_attributes( array $form, string $scope = '' ): array {
 		$attrs    = array();
 		$metadata = isset( $form['form'] ) && is_array( $form['form'] ) ? $form['form'] : array();
 		$action   = isset( $metadata['action'] ) && is_scalar( $metadata['action'] ) ? trim( (string) $metadata['action'] ) : '';
 		$class    = isset( $metadata['class'] ) && is_scalar( $metadata['class'] ) ? trim( (string) $metadata['class'] ) : '';
 
-		if ( '' !== $class ) {
-			$attrs['className'] = $class;
-		}
+		$attrs['className'] = trim( $class . ' ' . $scope );
 
 		if ( '' !== $action && 0 === stripos( $action, 'mailto:' ) ) {
 			$recipient = trim( substr( $action, 7 ) );
@@ -492,6 +510,25 @@ class Static_Site_Importer_Form_Seeder {
 		}
 
 		return $attrs;
+	}
+
+	/** Stable generated classes are provider hooks, never source presentation hooks. */
+	private static function layout_scope( array $form ): string {
+		return 'ssi-form-' . substr( hash( 'sha256', (string) ( $form['source_path'] ?? '' ) . "\n" . (string) ( $form['selector'] ?? '' ) ), 0, 12 );
+	}
+	private static function layout_node_class( string $scope, string $node ): string {
+		return 'ssi-node-' . substr( hash( 'sha256', $scope . "\n" . $node ), 0, 12 );
+	}
+	private static function provider_layout_target_map( array $form, string $scope ): array {
+		$selector_scope = '.' . $scope;
+		$targets = array();
+		foreach ( $form['layout_graph']['nodes'] ?? array() as $node ) {
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) continue;
+			$id = $node['id'];
+			$selector = 'form' === $id ? $selector_scope . ' > form.jetpack-contact-form__form' : $selector_scope . ' .' . self::layout_node_class( $scope, $id );
+			$targets[] = array( 'node' => $id, 'selector' => $selector, 'capabilities' => array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' ) );
+		}
+		return array( 'schema' => Static_Site_Importer_Provider_Layout_Overlay::MAP_SCHEMA, 'provider' => self::PROVIDER_ID, 'scope' => $selector_scope, 'targets' => $targets );
 	}
 
 	/**
