@@ -1112,7 +1112,7 @@ test('fixture attribution records missing lineage as a blind spot instead of def
     results: [{
       fixture_id: 'simple-site',
       status: 'failed',
-      matrix_evidence: { readiness: 'legacy_evidence_missing', missing: ['transformer_reference', 'wordpress_site_plan', 'materialization_receipt'] },
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'legacy_evidence_missing', missing: ['transformer_reference', 'wordpress_site_plan', 'materialization_receipt'] },
       diagnostics: [{ kind: 'visual_parity_mismatch', message: 'Visual mismatch has no lineage.' }],
     }],
   });
@@ -1120,6 +1120,51 @@ test('fixture attribution records missing lineage as a blind spot instead of def
   assert.equal(result.findings[0].candidate_repo, '');
   assert.deepEqual(result.findings[0].diagnostic_blind_spots, ['attribution_boundary']);
   assert.ok(result.summary.diagnostic_blind_spots.some((spot) => spot.kind === 'missing_required_lineage'));
+});
+
+test('materialization attribution reports missing transformer provenance as a boundary blind spot', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'materialization-lineage-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'legacy_evidence_missing', missing: ['transformer_package', 'transformer_version', 'transformer_reference'] },
+      diagnostics: [{ kind: 'missing_asset', attribution_boundary: 'materialization', candidate_repo: 'static-site-importer', message: 'Materialization omitted a stylesheet.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, '');
+  assert.deepEqual(result.findings[0].diagnostic_blind_spots, ['transformer_package', 'transformer_reference', 'transformer_version']);
+});
+
+test('unversioned fixture results retain caller-supplied ownership when attribution evidence is absent', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'legacy-owner-compatibility-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      diagnostics: [{ kind: 'layout_shift', candidate_repo: 'blocks-engine', message: 'Legacy caller ownership.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, 'blocks-engine');
+});
+
+test('versioned fixture evidence replaces an unproven caller-supplied owner', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'strict-owner-compatibility-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'legacy_evidence_missing', missing: ['transformer_reference'] },
+      diagnostics: [{ kind: 'layout_shift', candidate_repo: 'blocks-engine', message: 'Strict contract lacks ownership evidence.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, '');
 });
 
 test('fixture lineage retains the development transformer override identity', () => {
@@ -1165,6 +1210,35 @@ test('fixture lineage does not correlate a retried provider failure to a transfo
   assert.equal(finding.candidate_repo, 'blocks-engine');
   assert.equal(finding.diagnostic_blind_spots, undefined);
   assert.equal(finding.attribution_candidates.find((candidate) => candidate.boundary === 'provider').missing.length, 0);
+});
+
+test('fixture lineage rejects same-run evidence from a different step', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-attribution-step-correlation-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'attribution-step-correlation-test' });
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: [
+      {
+        fixture_id: 'simple-site',
+        run_id: 'shared-run',
+        step_id: 'transform-step',
+        status: 'failed',
+        import_report: verifiedImportReport(),
+        diagnostics: [{ id: 'transform-diagnostic', run_id: 'shared-run', step_id: 'transform-step', kind: 'missing_output', attribution_boundary: 'transform', message: 'Transform failed.' }],
+      },
+      {
+        fixture_id: 'simple-site',
+        run_id: 'shared-run',
+        step_id: 'provider-step',
+        provider_adapter: { schema: 'static-site-importer/provider-adapter/v1', status: 'failed', provider: 'other-step-provider' },
+      },
+    ],
+  });
+
+  const finding = result.findings.find((item) => item.kind === 'missing_output');
+  assert.equal(finding.candidate_repo, 'blocks-engine');
+  assert.equal(finding.diagnostic_blind_spots, undefined);
 });
 
 test('fixture attribution infers transform ownership for verified editor-invalid diagnostics', () => {
@@ -1910,11 +1984,11 @@ test('splits acceptable and unacceptable pattern rollups for minion fanout', () 
   assert.equal(result.summary.top_acceptable_pattern_families[0].key, 'static_site_import_quality:native_block_conversion:(none)');
   assert.equal(result.summary.top_unacceptable_pattern_families[0].key, 'static_site_import_quality:layout_shift:(none)');
   assert.equal(result.summary.top_unacceptable_pattern_families[0].count, 2);
-  assert.equal(result.summary.unacceptable_candidate_repos[0].candidate_repo, 'unknown');
-  assert.equal(result.summary.unacceptable_candidate_repos[0].count, 3);
+  assert.equal(result.summary.unacceptable_candidate_repos[0].candidate_repo, 'blocks-engine');
+  assert.equal(result.summary.unacceptable_candidate_repos[0].count, 2);
   assert.equal(result.summary.unacceptable_candidate_repos[0].top_pattern_families[0].key, 'static_site_import_quality:layout_shift:(none)');
   assert.equal(result.fanout_groups[0].acceptance, 'unacceptable');
-  assert.equal(result.fanout_groups[0].candidate_repo, 'unknown');
+  assert.equal(result.fanout_groups[0].candidate_repo, 'blocks-engine');
   assert.equal(result.fanout_groups[0].pattern_family, 'static_site_import_quality:layout_shift:(none)');
   assert.equal(result.fanout_groups[0].count, 2);
   assert.notEqual(result.fanout_groups[0].group_key, 'static_site_import_quality');
