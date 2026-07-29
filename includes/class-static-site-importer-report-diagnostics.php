@@ -1492,6 +1492,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/** @param array<string,mixed> $loss Receipt loss. */
 	private static function form_receipt_loss_requires_gate( array $loss ): bool {
 		return 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' )
+			|| 'unsupported_control_attribute' === ( $loss['reason_code'] ?? '' )
 			|| in_array( $loss['dimension'] ?? '', array( 'semantic', 'topology' ), true )
 			|| in_array( $loss['reason_code'] ?? '', array( 'provider_structure_mismatch', 'direct_child_relationship_unrepresentable' ), true );
 	}

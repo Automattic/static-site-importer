@@ -457,6 +457,9 @@ class Static_Site_Importer_Form_Seeder {
 		}
 
 		if ( ! in_array( $lookup, array( 'checkbox', 'radio' ), true ) ) {
+			if ( self::provider_supports_input_attribute( $lookup, 'step' ) && isset( $control['step'] ) && is_scalar( $control['step'] ) && '' !== trim( (string) $control['step'] ) ) {
+				$input_attrs['step'] = trim( (string) $control['step'] );
+			}
 			$inner_blocks[] = array(
 				'name'  => 'jetpack/input',
 				'attrs' => $input_attrs,
@@ -465,7 +468,10 @@ class Static_Site_Importer_Form_Seeder {
 
 		$losses = array();
 		if ( 'number' === $lookup ) {
-			foreach ( array( 'min', 'max' ) as $attribute ) {
+			foreach ( array( 'min', 'max', 'step' ) as $attribute ) {
+				if ( self::provider_supports_input_attribute( $lookup, $attribute ) ) {
+					continue;
+				}
 				if ( isset( $control[ $attribute ] ) && is_scalar( $control[ $attribute ] ) && '' !== trim( (string) $control[ $attribute ] ) ) {
 					$losses[] = array( 'dimension' => 'control', 'reason_code' => 'unsupported_control_attribute', 'attribute' => $attribute, 'control_type_hash' => hash( 'sha256', $type ) );
 				}
@@ -478,6 +484,11 @@ class Static_Site_Importer_Form_Seeder {
 			'wrapper'     => 'div',
 			'losses'      => $losses,
 		);
+	}
+
+	/** Return whether the selected Jetpack input block can carry a source attribute. */
+	private static function provider_supports_input_attribute( string $lookup, string $attribute ): bool {
+		return 'number' === $lookup && 'step' === $attribute;
 	}
 
 	/**

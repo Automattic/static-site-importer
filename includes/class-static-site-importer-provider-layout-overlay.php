@@ -87,7 +87,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		$declarations = array();
 		foreach ( $layout as $fact => $value ) {
 			if ( ! isset( $map[ $fact ] ) || ! self::safe_value( $fact, $value ) ) { $losses[] = self::loss( 'unsafe_layout_value', $node ); continue; }
-			if ( in_array( $fact, array( 'column', 'row', 'area', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'align_self', 'justify_self' ), true ) && ! in_array( 'item_layout', $capabilities, true ) ) { $losses[] = self::loss( 'direct_child_relationship_unrepresentable', $node ); continue; }
+			if ( in_array( $fact, array( 'column', 'row', 'area', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'align_self', 'justify_self' ), true ) && ( ! in_array( 'item_layout', $capabilities, true ) || ! in_array( 'direct_child_layout', $capabilities, true ) ) ) { $losses[] = self::loss( 'direct_child_relationship_unrepresentable', $node ); continue; }
 			if ( ! in_array( $fact, array( 'column', 'row', 'area', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'align_self', 'justify_self' ), true ) && ! in_array( 'container_layout', $capabilities, true ) ) { $losses[] = self::loss( 'provider_structure_mismatch', $node ); continue; }
 			$declarations[] = $map[ $fact ] . ':' . $value;
 		}
