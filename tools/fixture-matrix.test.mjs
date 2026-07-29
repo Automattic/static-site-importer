@@ -2796,6 +2796,37 @@ test('fixture discovery rejects symlinked corpus roots and planning recursively 
   assert.ok(plan.fixture_selection.exclusions.some((row) => row.reason === 'root_symlink'));
 });
 
+test('top-level symlink fixture roots stay planning-empty and never stage an external corpus', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-top-level-symlink-root-'));
+  const externalRoot = path.join(root, 'external-fixtures');
+  const fixtureRoot = path.join(root, 'fixture-root');
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  const outputDirectory = path.join(root, 'artifacts');
+  mkdirSync(path.join(externalRoot, 'external-site'), { recursive: true });
+  mkdirSync(staticSiteImporter, { recursive: true });
+  writeFileSync(path.join(externalRoot, 'external-site', 'index.html'), '<h1>External</h1>');
+  symlinkSync(externalRoot, fixtureRoot);
+
+  const plan = buildFixtureMatrixRunPlan({ staticSiteImporter, fixtureRoot });
+  assert.equal(plan.execution_eligible, false);
+  assert.equal(plan.fixture_selection.status, 'planning_empty');
+  assert.equal(plan.fixture_selection.exclusions[0].reason, 'root_symlink');
+  const dryRun = spawnSync(process.execPath, [path.join(packageRoot, 'tools', 'run-fixture-matrix.mjs'), '--static-site-importer', staticSiteImporter, '--fixture-root', fixtureRoot, '--dry-run'], { encoding: 'utf8' });
+  assert.equal(dryRun.status, 0, dryRun.stderr);
+  assert.equal(JSON.parse(dryRun.stdout).fixture_selection.exclusions[0].reason, 'root_symlink');
+  const execution = spawnSync(process.execPath, [path.join(packageRoot, 'tools', 'run-fixture-matrix.mjs'), '--static-site-importer', staticSiteImporter, '--fixture-root', fixtureRoot, '--skip-install', '--skip-sync'], { encoding: 'utf8' });
+  assert.equal(execution.status, 1);
+  assert.match(execution.stderr, /requires at least one executable fixture/);
+
+  const planned = await runFixtureMatrix({ fixtureRoot, outputDirectory, staticSiteImporterPath: staticSiteImporter, run: false });
+  assert.equal(planned.summary.fixture_count, 0);
+  assert.equal(existsSync(path.join(outputDirectory, 'external-site', 'artifact.json')), false);
+  await assert.rejects(
+    runFixtureMatrix({ fixtureRoot, outputDirectory, staticSiteImporterPath: staticSiteImporter, run: true }),
+    /requires at least one executable fixture/,
+  );
+});
+
 test('fixture matrix operator rejects contradictory local and Lab routing', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-routing-conflict-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');

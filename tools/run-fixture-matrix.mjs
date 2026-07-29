@@ -152,7 +152,8 @@ export function buildFixtureMatrixRunPlan(input) {
   };
   const corpusCounts = inspectCorpusFixtures(options.fixtureRoot);
   let matrix = { fixtures: [], count: 0 };
-  try {
+  if (corpusCounts.inspections.active.exclusions[0]?.reason !== 'root_symlink') {
+    try {
     matrix = createFixtureMatrix({
       fixture_root: options.fixtureRoot,
       fixture_ids: options.fixtureIds,
@@ -164,8 +165,9 @@ export function buildFixtureMatrixRunPlan(input) {
       complexity: options.complexity,
       max_complexity: options.maxComplexity,
     });
-  } catch (error) {
-    if (!['root_missing', 'root_not_directory'].includes(corpusCounts.inspections.active.exclusions[0]?.reason)) throw error;
+    } catch (error) {
+      if (!['root_missing', 'root_not_directory'].includes(corpusCounts.inspections.active.exclusions[0]?.reason)) throw error;
+    }
   }
   const fixtureCount = matrix.count;
   const activeFixtureCount = corpusCounts.active;
