@@ -20,6 +20,18 @@ namespace {
 		}
 	}
 
+	if ( ! function_exists( 'wp_json_encode' ) ) {
+		function wp_json_encode( $value, int $flags = 0, int $depth = 512 ) {
+			return json_encode( $value, $flags, $depth );
+		}
+	}
+
+	$wordpress_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: '/Users/chubes/Studio/intelligence-chubes4';
+	if ( is_readable( $wordpress_root . '/wp-includes/class-wp-block-parser.php' ) && is_readable( $wordpress_root . '/wp-includes/blocks.php' ) ) {
+		require_once $wordpress_root . '/wp-includes/class-wp-block-parser.php';
+		require_once $wordpress_root . '/wp-includes/blocks.php';
+	}
+
 	$GLOBALS['ssi_test_hooks'] = array();
 
 	if ( ! function_exists( 'add_filter' ) ) {
@@ -151,6 +163,53 @@ namespace {
 	$assert( str_contains( $markup, '<ul><!-- wp:jetpack/option {"label":"In person"} /-->' ), 'markup-radio-option-wrapper' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/option {"label":"Send me updates","isStandalone":true} /-->' ), 'markup-checkbox-option-child' );
 
+	// --- Generic topology preserves nested rows and source presentation hooks --
+	$topology_form = array(
+		'forms' => array(
+			array(
+				'selector' => 'form.contact',
+				'form' => array( 'class' => 'form contact' ),
+				'controls' => array(
+					array( 'tag' => 'input', 'type' => 'text', 'name' => 'first', 'label' => 'First name' ),
+					array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ),
+					array( 'tag' => 'textarea', 'type' => 'textarea', 'name' => 'message', 'label' => 'Message' ),
+					array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+				),
+				'control_topology' => array(
+					'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false,
+					'nodes' => array(
+						array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'class' => 'row-2', 'source_id' => 'contact-row' ),
+						array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'class' => 'field' ),
+						array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 0 ),
+						array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'class' => 'field' ),
+						array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => 0, 'depth' => 2, 'control' => 1 ),
+						array( 'id' => 'wrapper-3', 'kind' => 'wrapper', 'parent' => null, 'order' => 1, 'depth' => 0, 'class' => 'field standalone' ),
+						array( 'id' => 'control-2', 'kind' => 'control', 'parent' => 'wrapper-3', 'order' => 0, 'depth' => 1, 'control' => 2 ),
+						array( 'id' => 'control-3', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 3 ),
+					),
+				),
+			),
+		),
+	);
+	$validated_topology = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $topology_form );
+	$assert( empty( $validated_topology['errors'] ), 'topology-manifest-validates' );
+	$topology_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_topology['forms'] ) );
+	$topology_markup = (string) ( $topology_seed['forms'][0]['block_markup'] ?? '' );
+	$assert( 1 === substr_count( $topology_markup, 'id="contact-row" class="wp-block-group row-2"' ), 'topology-preserves-row-id-and-class' );
+	$assert( 3 === substr_count( $topology_markup, 'class="wp-block-group field' ), 'topology-preserves-field-groups' );
+	$assert( str_contains( $topology_markup, 'wp:group {"className":"row-2","anchor":"contact-row"}' ), 'topology-serializes-gutenberg-group' );
+	$assert( str_contains( $topology_markup, 'First name' ) && str_contains( $topology_markup, 'Email' ) && str_contains( $topology_markup, 'Message' ), 'topology-preserves-labels' );
+	if ( function_exists( 'parse_blocks' ) && function_exists( 'serialize_blocks' ) ) {
+		$parsed_topology = parse_blocks( $topology_markup );
+		$assert( 1 === count( $parsed_topology ) && 'jetpack/contact-form' === ( $parsed_topology[0]['blockName'] ?? '' ), 'topology-parses-contact-form-tree' );
+		$assert( 3 === count( $parsed_topology[0]['innerBlocks'] ?? array() ), 'topology-parses-shared-row-parentage' );
+		$assert( $topology_markup === serialize_blocks( $parsed_topology ), 'topology-round-trips-through-wordpress-parser' );
+	}
+	$invalid_topology = $topology_form;
+	$invalid_topology['forms'][0]['control_topology']['truncated'] = true;
+	$invalid_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $invalid_topology );
+	$assert( empty( $invalid_validation['forms'] ) && str_contains( (string) ( $invalid_validation['errors'][0]['message'] ?? '' ), 'truncated' ), 'topology-truncation-is-reported-not-flattened' );
+
 	// --- Provider blocks are never claimed without the provider runtime --------
 	$GLOBALS['ssi_jetpack_form_blocks_available'] = false;
 	$unavailable_seed                              = Static_Site_Importer_Form_Seeder::seed( $forms_manifest );
@@ -175,6 +234,7 @@ namespace {
 			'controls'        => array(
 				array( 'tag' => 'input', 'type' => 'email', 'label' => 'Email' ),
 			),
+			'control_topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'nodes' => array(), 'truncated' => false ),
 			'control_count'   => 1,
 		)
 	);
@@ -182,6 +242,7 @@ namespace {
 	$assert( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND === ( $enriched['loss_class'] ?? '' ), 'enrich-loss-class-preserved-runtime-island' );
 	$assert( isset( $enriched['form']['action'] ) && 'mailto:hello@example.com' === $enriched['form']['action'], 'enrich-carries-form-metadata' );
 	$assert( isset( $enriched['controls'][0]['type'] ) && 'email' === $enriched['controls'][0]['type'], 'enrich-carries-controls' );
+	$assert( 'generic/form-control-topology/v1' === ( $enriched['control_topology']['schema'] ?? '' ), 'enrich-carries-control-topology' );
 	$assert( 'form' === ( $enriched['tag'] ?? '' ), 'enrich-tag-form' );
 	$assert( Static_Site_Importer_Report_Diagnostics::has_materializable_form_findings( array( 'diagnostics' => array( $enriched ) ) ), 'form-finding-requires-provider-dependency' );
 	$assert( ! Static_Site_Importer_Report_Diagnostics::has_materializable_form_findings( array( 'diagnostics' => array( array( 'diagnostic_code' => 'html_product_grid_fallback' ) ) ) ), 'non-form-finding-does-not-require-provider-dependency' );

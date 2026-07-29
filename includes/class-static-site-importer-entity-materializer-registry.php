@@ -782,6 +782,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'form'        => isset( $form['form'] ) && is_array( $form['form'] ) ? $form['form'] : array(),
 				'controls'    => $controls,
 			);
+			if ( array_key_exists( 'control_topology', $form ) ) {
+				$topology = self::normalize_form_control_topology( $form['control_topology'], count( $controls ) );
+				if ( isset( $topology['error'] ) ) {
+					$errors[] = array( 'path' => $path_prefix . '.control_topology', 'message' => $topology['error'] );
+					continue;
+				}
+				$row['control_topology'] = $topology['topology'];
+			}
 			$form_key = $row['source_path'] . "\n" . $row['selector'];
 			if ( isset( $seen_forms[ $form_key ] ) ) {
 				$errors[] = array( 'path' => $path_prefix, 'message' => 'source_path and selector must identify one unique form.' );
@@ -816,6 +824,81 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'forms'  => $forms,
 			'errors' => $errors,
 		);
+	}
+
+	/**
+	 * Normalize the bounded generic form-control topology without applying any
+	 * provider semantics. A truncated or incomplete tree cannot preserve source
+	 * parentage, so it is reported instead of falling back to a flat form.
+	 *
+	 * @return array{topology?:array<string,mixed>,error?:string}
+	 */
+	private static function normalize_form_control_topology( mixed $candidate, int $control_count ): array {
+		if ( ! is_array( $candidate ) || 'generic/form-control-topology/v1' !== ( $candidate['schema'] ?? null ) ) {
+			return array( 'error' => 'control_topology must use generic/form-control-topology/v1.' );
+		}
+		$max_depth = $candidate['max_depth'] ?? null;
+		$max_nodes = $candidate['max_nodes'] ?? null;
+		$nodes     = $candidate['nodes'] ?? null;
+		if ( ! is_int( $max_depth ) || $max_depth < 0 || $max_depth > 8 || ! is_int( $max_nodes ) || $max_nodes < 1 || $max_nodes > 128 || ! is_array( $nodes ) || ! array_is_list( $nodes ) || count( $nodes ) > $max_nodes ) {
+			return array( 'error' => 'control_topology exceeds the supported generic bounds.' );
+		}
+		if ( true === ( $candidate['truncated'] ?? false ) ) {
+			return array( 'error' => 'control_topology is truncated and cannot preserve source control parentage.' );
+		}
+		if ( ! isset( $candidate['truncated'] ) || ! is_bool( $candidate['truncated'] ) ) {
+			return array( 'error' => 'control_topology.truncated must be a boolean.' );
+		}
+
+		$normalized = array();
+		$seen_ids   = array();
+		$controls   = array();
+		$orders     = array();
+		foreach ( $nodes as $index => $node ) {
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:wrapper|control)-[A-Za-z0-9_-]{1,80}$/D', $node['id'] ) || isset( $seen_ids[ $node['id'] ] ) || ! in_array( $node['kind'] ?? null, array( 'wrapper', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_int( $node['depth'] ?? null ) || $node['depth'] < 0 || $node['depth'] > $max_depth ) {
+				return array( 'error' => 'control_topology contains an unsupported node.' );
+			}
+			$parent = $node['parent'] ?? null;
+			if ( null !== $parent && ( ! is_string( $parent ) || ! isset( $seen_ids[ $parent ] ) ) ) {
+				return array( 'error' => 'control_topology nodes must reference an earlier parent.' );
+			}
+			$parent_key = null === $parent ? '$root' : $parent;
+			if ( isset( $orders[ $parent_key ][ $node['order'] ] ) ) {
+				return array( 'error' => 'control_topology sibling order must be unique.' );
+			}
+			if ( null !== $parent && $node['depth'] !== $seen_ids[ $parent ]['depth'] + 1 ) {
+				return array( 'error' => 'control_topology node depth must match its parent.' );
+			}
+
+			$normalized_node = array( 'id' => $node['id'], 'kind' => $node['kind'], 'parent' => $parent, 'order' => $node['order'], 'depth' => $node['depth'] );
+			if ( 'control' === $node['kind'] ) {
+				if ( ! is_int( $node['control'] ?? null ) || $node['control'] < 0 || $node['control'] >= $control_count || isset( $controls[ $node['control'] ] ) ) {
+					return array( 'error' => 'control_topology control references must be unique flat control indexes.' );
+				}
+				$controls[ $node['control'] ] = true;
+				$normalized_node['control']   = $node['control'];
+			} else {
+				foreach ( array( 'tag', 'source_id', 'class' ) as $field ) {
+					if ( ! isset( $node[ $field ] ) ) {
+						continue;
+					}
+					$value = $node[ $field ];
+					$valid = is_string( $value ) && ( 'tag' === $field ? in_array( $value, array( 'article', 'aside', 'dd', 'div', 'dl', 'dt', 'fieldset', 'footer', 'header', 'label', 'li', 'main', 'nav', 'ol', 'p', 'section', 'span', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'ul' ), true ) : (bool) preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}(?: [A-Za-z_][A-Za-z0-9_-]{0,79}){0,7}$/D', $value ) );
+					if ( ! $valid ) {
+						return array( 'error' => 'control_topology presentation hooks must be bounded safe identifiers.' );
+					}
+					$normalized_node[ $field ] = $value;
+				}
+			}
+			$seen_ids[ $node['id'] ]                  = $normalized_node;
+			$orders[ $parent_key ][ $node['order'] ] = true;
+			$normalized[]                             = $normalized_node;
+		}
+		if ( count( $controls ) !== $control_count ) {
+			return array( 'error' => 'control_topology must preserve every flat control exactly once.' );
+		}
+
+		return array( 'topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => $max_depth, 'max_nodes' => $max_nodes, 'nodes' => $normalized, 'truncated' => false ) );
 	}
 
 	/** @return array<string,mixed>|null */

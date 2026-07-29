@@ -205,7 +205,7 @@ class Static_Site_Importer_Form_Seeder {
 		$submit_text  = 'Submit';
 		$skipped      = array();
 
-		foreach ( $controls as $control ) {
+		foreach ( $controls as $control_index => $control ) {
 			if ( ! is_array( $control ) ) {
 				continue;
 			}
@@ -216,6 +216,7 @@ class Static_Site_Importer_Form_Seeder {
 			if ( 'submit' === $type || ( 'button' === $tag && 'submit' === $type ) ) {
 				$text        = self::control_text( $control );
 				$submit_text = '' !== $text ? $text : $submit_text;
+				$field_blocks[ $control_index ] = self::submit_button_block( $submit_text );
 				continue;
 			}
 
@@ -225,7 +226,7 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 
-			$field_blocks[] = $field_block;
+			$field_blocks[ $control_index ] = $field_block;
 			$mapped_types[] = $field_block['name'];
 		}
 
@@ -242,8 +243,16 @@ class Static_Site_Importer_Form_Seeder {
 			);
 		}
 
-		$inner_blocks   = $field_blocks;
-		$inner_blocks[] = self::submit_button_block( $submit_text );
+		$inner_blocks   = self::topology_inner_blocks( $form, $field_blocks );
+		if ( null === $inner_blocks ) {
+			return array(
+				'selector' => $selector, 'source_path' => $source_path, 'provider' => self::PROVIDER_ID,
+				'block_name' => 'jetpack/contact-form', 'status' => 'skipped', 'reason' => 'unsupported_control_topology', 'runtime_mapped' => false,
+			);
+		}
+		if ( ! isset( $form['control_topology'] ) ) {
+			$inner_blocks[] = self::submit_button_block( $submit_text );
+		}
 		$form_attrs     = self::contact_form_attributes( $form );
 		$markup         = self::serialize_block( 'jetpack/contact-form', $form_attrs, $inner_blocks );
 
@@ -253,7 +262,7 @@ class Static_Site_Importer_Form_Seeder {
 			'provider'        => self::PROVIDER_ID,
 			'block_name'      => 'jetpack/contact-form',
 			'status'          => 'mapped',
-			'field_count'     => count( $field_blocks ),
+			'field_count'     => count( $mapped_types ),
 			'field_blocks'    => $mapped_types,
 			'skipped_types'   => array_values( array_unique( array_filter( $skipped ) ) ),
 			'submit_text'     => $submit_text,
@@ -261,6 +270,52 @@ class Static_Site_Importer_Form_Seeder {
 			'runtime_carried' => $available,
 			'block_markup'    => $markup,
 		);
+	}
+
+	/**
+	 * Map the validated generic tree to Gutenberg layout blocks. Jetpack fields
+	 * remain provider-owned; groups only carry source presentation and parentage.
+	 *
+	 * @param array<int,array<string,mixed>> $field_blocks
+	 * @return array<int,array<string,mixed>>|null
+	 */
+	private static function topology_inner_blocks( array $form, array $field_blocks ): ?array {
+		if ( ! isset( $form['control_topology'] ) ) {
+			return array_values( $field_blocks );
+		}
+		$nodes = $form['control_topology']['nodes'] ?? null;
+		if ( ! is_array( $nodes ) ) {
+			return null;
+		}
+		$children = array( '$root' => array() );
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) {
+				return null;
+			}
+			$parent = isset( $node['parent'] ) && is_string( $node['parent'] ) ? $node['parent'] : '$root';
+			$children[ $parent ][] = $node;
+		}
+		foreach ( $children as &$siblings ) {
+			usort( $siblings, static fn ( array $left, array $right ): int => $left['order'] <=> $right['order'] );
+		}
+		unset( $siblings );
+		$build = static function ( string $parent ) use ( &$build, $children, $field_blocks ): array {
+			$blocks = array();
+			foreach ( $children[ $parent ] ?? array() as $node ) {
+				if ( 'control' === ( $node['kind'] ?? null ) ) {
+					if ( isset( $field_blocks[ $node['control'] ?? -1 ] ) ) {
+						$blocks[] = $field_blocks[ $node['control'] ];
+					}
+					continue;
+				}
+				$attrs = array();
+				if ( isset( $node['class'] ) ) $attrs['className'] = $node['class'];
+				if ( isset( $node['source_id'] ) ) $attrs['anchor'] = $node['source_id'];
+				$blocks[] = array( 'name' => 'core/group', 'attrs' => $attrs, 'innerBlocks' => $build( $node['id'] ), 'wrapper' => 'group' );
+			}
+			return $blocks;
+		};
+		return $build( '$root' );
 	}
 
 	/**
@@ -468,6 +523,7 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return string
 	 */
 	private static function serialize_block( string $name, array $attrs, array $inner_blocks = array(), string $wrapper = '' ): string {
+		$comment_name = str_starts_with( $name, 'core/' ) ? substr( $name, 5 ) : $name;
 		$attr_json = '';
 		if ( ! empty( $attrs ) ) {
 			$encoded = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs ) : json_encode( $attrs ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode
@@ -477,7 +533,7 @@ class Static_Site_Importer_Form_Seeder {
 		}
 
 		if ( empty( $inner_blocks ) ) {
-			return '<!-- wp:' . $name . $attr_json . ' /-->';
+			return '<!-- wp:' . $comment_name . $attr_json . ' /-->';
 		}
 
 		$inner = array();
@@ -500,11 +556,15 @@ class Static_Site_Importer_Form_Seeder {
 				$classes .= ' ' . trim( (string) $attrs['className'] );
 			}
 			$inner_markup = '<div class="' . self::escape_attribute( $classes ) . '">' . $inner_markup . '</div>';
+		} elseif ( 'group' === $wrapper ) {
+			$classes = 'wp-block-group' . ( ! empty( $attrs['className'] ) ? ' ' . $attrs['className'] : '' );
+			$id      = ! empty( $attrs['anchor'] ) ? ' id="' . self::escape_attribute( (string) $attrs['anchor'] ) . '"' : '';
+			$inner_markup = '<div' . $id . ' class="' . self::escape_attribute( $classes ) . '">' . $inner_markup . '</div>';
 		} elseif ( in_array( $wrapper, array( 'div', 'ul' ), true ) ) {
 			$inner_markup = '<' . $wrapper . '>' . $inner_markup . '</' . $wrapper . '>';
 		}
 
-		return '<!-- wp:' . $name . $attr_json . ' -->' . "\n" . $inner_markup . "\n" . '<!-- /wp:' . $name . ' -->';
+		return '<!-- wp:' . $comment_name . $attr_json . ' -->' . "\n" . $inner_markup . "\n" . '<!-- /wp:' . $comment_name . ' -->';
 	}
 
 	/**
