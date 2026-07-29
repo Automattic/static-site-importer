@@ -65,6 +65,7 @@ namespace {
 	}
 
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-computed-layout-strategy.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-loss-classes.php';
@@ -183,6 +184,11 @@ namespace {
 						array( 'id' => 'control-3', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 3 ),
 					),
 				),
+				'computed_layout_graph' => array(
+					'schema' => 'generic/computed-layout-graph/v1', 'truncated' => false,
+					'nodes' => array( array( 'id' => 'row', 'parent' => null, 'order' => 0, 'target' => 'wrapper-0', 'layout' => array( 'display' => 'flex', 'axis' => 'row' ) ) ),
+					'provenance' => array( 'source' => 'synthetic', 'version' => '1', 'hash' => 'test' ),
+				),
 			),
 		),
 	);
@@ -190,11 +196,18 @@ namespace {
 	$assert( empty( $validated_topology['errors'] ), 'topology-manifest-validates' );
 	$topology_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_topology['forms'] ) );
 	$topology_markup = (string) ( $topology_seed['forms'][0]['block_markup'] ?? '' );
-	$assert( 1 === substr_count( $topology_markup, '<section id="contact-row" class="wp-block-group row-2"' ), 'topology-preserves-row-tag-id-and-class' );
+	$topology_receipt = $topology_seed['forms'][0]['computed_layout_receipt'] ?? array();
+	$assert( 1 === substr_count( $topology_markup, '<section id="contact-row" class="wp-block-group row-2 is-layout-flex"' ), 'topology-preserves-row-tag-id-and-class' );
 	$assert( 3 === substr_count( $topology_markup, 'class="wp-block-group field' ), 'topology-preserves-field-groups' );
-	$assert( str_contains( $topology_markup, 'wp:group {"className":"row-2","anchor":"contact-row","tagName":"section"}' ), 'topology-serializes-gutenberg-group-tag' );
+	$assert( str_contains( $topology_markup, 'wp:group {"className":"row-2","anchor":"contact-row","tagName":"section","layout":{"type":"flex","orientation":"horizontal","flexWrap":"nowrap"}}' ), 'topology-serializes-gutenberg-group-tag' );
 	$assert( str_contains( $topology_markup, 'First name' ) && str_contains( $topology_markup, 'Email' ) && str_contains( $topology_markup, 'Message' ), 'topology-preserves-labels' );
 	$assert( 1 === substr_count( $topology_markup, 'wp:jetpack/button' ), 'topology-submit-control-emits-one-button-in-source-position' );
+	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && 1 === ( $topology_receipt['operation_count'] ?? 0 ) && str_contains( $topology_markup, 'is-layout-flex' ), 'computed-layout-flex-applies-with-bounded-receipt' );
+	$unsafe_graph = $topology_form;
+	$unsafe_graph['forms'][0]['computed_layout_graph']['nodes'][0]['layout'] = array( 'display' => 'grid', 'axis' => 'none', 'placement' => true );
+	$unsafe_graph_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unsafe_graph );
+	$unsafe_graph_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $unsafe_graph_validation['forms'] ) );
+	$assert( 'deferred' === ( $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['status'] ?? '' ) && 'unsupported_item_placement' === ( $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['losses'][0]['reason_code'] ?? '' ), 'computed-layout-grid-placement-is-deferred' );
 	$legacy_without_submit = $forms_manifest;
 	array_pop( $legacy_without_submit['forms'][0]['controls'] );
 	$legacy_without_submit_seed = Static_Site_Importer_Form_Seeder::seed( $legacy_without_submit );

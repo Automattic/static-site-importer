@@ -9,6 +9,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+require_once __DIR__ . '/class-static-site-importer-computed-layout-strategy.php';
+
 /**
  * Turns preserved <form> fallback metadata into working Jetpack Form blocks.
  *
@@ -258,6 +260,8 @@ class Static_Site_Importer_Form_Seeder {
 		if ( ! $has_topology || ! $has_source_submit ) {
 			$inner_blocks[] = self::submit_button_block( $submit_text );
 		}
+		$layout = Static_Site_Importer_Computed_Layout_Strategy::apply( $form, $inner_blocks );
+		$inner_blocks = $layout['blocks'];
 		$form_attrs     = self::contact_form_attributes( $form );
 		$markup         = self::serialize_block( 'jetpack/contact-form', $form_attrs, $inner_blocks );
 
@@ -274,6 +278,7 @@ class Static_Site_Importer_Form_Seeder {
 			'runtime_mapped'  => true,
 			'runtime_carried' => $available,
 			'block_markup'    => $markup,
+			'computed_layout_receipt' => $layout['receipt'],
 		);
 	}
 
@@ -317,7 +322,7 @@ class Static_Site_Importer_Form_Seeder {
 				if ( isset( $node['class'] ) ) $attrs['className'] = $node['class'];
 				if ( isset( $node['source_id'] ) ) $attrs['anchor'] = $node['source_id'];
 				if ( isset( $node['tag'] ) ) $attrs['tagName'] = $node['tag'];
-				$blocks[] = array( 'name' => 'core/group', 'attrs' => $attrs, 'innerBlocks' => $build( $node['id'] ), 'wrapper' => 'group' );
+				$blocks[] = array( 'name' => 'core/group', 'attrs' => $attrs, 'innerBlocks' => $build( $node['id'] ), 'wrapper' => 'group', 'topologyId' => $node['id'] );
 			}
 			return $blocks;
 		};
@@ -564,6 +569,7 @@ class Static_Site_Importer_Form_Seeder {
 			$inner_markup = '<div class="' . self::escape_attribute( $classes ) . '">' . $inner_markup . '</div>';
 		} elseif ( 'group' === $wrapper ) {
 			$classes = 'wp-block-group' . ( ! empty( $attrs['className'] ) ? ' ' . $attrs['className'] : '' );
+			if ( 'flex' === ( $attrs['layout']['type'] ?? '' ) ) $classes .= ' is-layout-flex';
 			$id      = ! empty( $attrs['anchor'] ) ? ' id="' . self::escape_attribute( (string) $attrs['anchor'] ) . '"' : '';
 			$tag     = ! empty( $attrs['tagName'] ) ? (string) $attrs['tagName'] : 'div';
 			$inner_markup = '<' . $tag . $id . ' class="' . self::escape_attribute( $classes ) . '">' . $inner_markup . '</' . $tag . '>';

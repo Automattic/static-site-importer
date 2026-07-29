@@ -790,6 +790,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 				$row['control_topology'] = $topology['topology'];
 			}
+			if ( array_key_exists( 'computed_layout_graph', $form ) ) {
+				$graph = self::normalize_computed_layout_graph( $form['computed_layout_graph'] );
+				if ( isset( $graph['error'] ) ) { $errors[] = array( 'path' => $path_prefix . '.computed_layout_graph', 'message' => $graph['error'] ); continue; }
+				$row['computed_layout_graph'] = $graph['graph'];
+			}
 			$form_key = $row['source_path'] . "\n" . $row['selector'];
 			if ( isset( $seen_forms[ $form_key ] ) ) {
 				$errors[] = array( 'path' => $path_prefix, 'message' => 'source_path and selector must identify one unique form.' );
@@ -824,6 +829,21 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'forms'  => $forms,
 			'errors' => $errors,
 		);
+	}
+
+	/** @return array{graph?:array<string,mixed>,error?:string} */
+	private static function normalize_computed_layout_graph( mixed $candidate ): array {
+		if ( ! is_array( $candidate ) || 'generic/computed-layout-graph/v1' !== ( $candidate['schema'] ?? null ) || ! is_array( $candidate['nodes'] ?? null ) || ! array_is_list( $candidate['nodes'] ) || count( $candidate['nodes'] ) > 128 ) return array( 'error' => 'computed_layout_graph must be a bounded generic/computed-layout-graph/v1 graph.' );
+		if ( ! empty( $candidate['truncated'] ) ) return array( 'error' => 'computed_layout_graph is truncated.' );
+		$seen = array(); $nodes = array();
+		foreach ( $candidate['nodes'] as $node ) {
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^[A-Za-z0-9_-]{1,80}$/D', $node['id'] ) || isset( $seen[$node['id']] ) || ! is_string( $node['target'] ?? null ) || ! preg_match( '/^wrapper-[A-Za-z0-9_-]{1,80}$/D', $node['target'] ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_array( $node['layout'] ?? null ) || ! in_array( $node['layout']['display'] ?? null, array( 'block', 'flex', 'grid', 'columns' ), true ) || ! in_array( $node['layout']['axis'] ?? null, array( 'row', 'column', 'none' ), true ) ) return array( 'error' => 'computed_layout_graph contains an unsupported node or layout fact.' );
+			$parent = $node['parent'] ?? null;
+			if ( null !== $parent && ( ! is_string( $parent ) || ! isset( $seen[$parent] ) ) ) return array( 'error' => 'computed_layout_graph parents must precede children.' );
+			$clean = array( 'id'=>$node['id'], 'parent'=>$parent, 'order'=>$node['order'], 'target'=>$node['target'], 'layout'=>array( 'display'=>$node['layout']['display'], 'axis'=>$node['layout']['axis'], 'placement'=>!empty($node['layout']['placement']), 'reordered'=>!empty($node['layout']['reordered']) ), 'variants'=>isset($node['variants']) && is_array($node['variants']) ? array_values($node['variants']) : array() );
+			$seen[$node['id']] = true; $nodes[] = $clean;
+		}
+		return array( 'graph' => array( 'schema'=>'generic/computed-layout-graph/v1', 'nodes'=>$nodes, 'truncated'=>false, 'provenance'=>isset($candidate['provenance']) && is_array($candidate['provenance']) ? array_intersect_key($candidate['provenance'], array_flip(array('source','version','hash'))) : array() ) );
 	}
 
 	/**
