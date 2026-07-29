@@ -913,7 +913,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						continue;
 					}
 					$value = $node[ $field ];
-					$valid = is_string( $value ) && ( 'tag' === $field ? in_array( $value, array( 'article', 'aside', 'div', 'footer', 'header', 'main', 'nav', 'section' ), true ) : (bool) preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}(?: [A-Za-z_][A-Za-z0-9_-]{0,79}){0,7}$/D', $value ) );
+					$valid = is_string( $value ) && ( 'tag' === $field ? in_array( $value, array( 'article', 'aside', 'dd', 'div', 'dl', 'dt', 'fieldset', 'footer', 'header', 'label', 'li', 'main', 'nav', 'ol', 'p', 'section', 'span', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'ul' ), true ) : (bool) preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}(?: [A-Za-z_][A-Za-z0-9_-]{0,79}){0,7}$/D', $value ) );
 					if ( ! $valid ) {
 						return array( 'error' => 'control_topology presentation hooks must be bounded safe identifiers and supported Gutenberg group tags.' );
 					}

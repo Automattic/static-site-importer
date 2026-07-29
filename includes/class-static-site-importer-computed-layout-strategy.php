@@ -17,24 +17,36 @@ class Static_Site_Importer_Computed_Layout_Strategy {
 		if ( ! is_array( $graph ) ) return array( 'blocks' => $blocks, 'receipt' => $receipt );
 		$receipt['graph_hash'] = hash( 'sha256', wp_json_encode( $graph ) );
 		foreach ( $graph['nodes'] as $node ) {
-			$layout = $node['layout'];
+			$layout = is_array( $node['layout'] ?? null ) ? $node['layout'] : array();
+			$node_hash = hash( 'sha256', (string) ( $node['id'] ?? '' ) );
+			$source_tag = $node['source']['tag'] ?? '';
+			if ( ! in_array( $source_tag, array( 'article', 'aside', 'button', 'div', 'footer', 'header', 'input', 'main', 'nav', 'section', 'select', 'textarea' ), true ) ) {
+				$receipt['losses'][] = array( 'reason_code' => 'unsupported_semantic_wrapper', 'node_hash' => $node_hash );
+			}
+			if ( array() === $layout ) {
+				$receipt['operations'][] = array( 'strategy' => 'structural_noop', 'target_hash' => $node_hash );
+				continue;
+			}
 			if ( ! empty( $graph['variants'] ) ) {
-				$receipt['losses'][] = array( 'reason_code' => 'responsive_layout_ownership', 'node_hash' => hash( 'sha256', $node['id'] ) );
+				$receipt['losses'][] = array( 'reason_code' => 'responsive_layout_ownership', 'node_hash' => $node_hash );
 				continue;
 			}
 			if ( ! empty( $layout['item_placement'] ) || ! empty( $layout['order'] ) || in_array( $layout['display'], array( 'grid', 'columns' ), true ) ) {
-				$receipt['losses'][] = array( 'reason_code' => ! empty( $layout['item_placement'] ) ? 'unsupported_item_placement' : 'equivalence_unproven_layout', 'node_hash' => hash( 'sha256', $node['id'] ) );
+				$receipt['losses'][] = array( 'reason_code' => ! empty( $layout['item_placement'] ) ? 'unsupported_item_placement' : 'equivalence_unproven_layout', 'node_hash' => $node_hash );
 				continue;
 			}
-			if ( 'flex' !== $layout['display'] || ! in_array( $layout['direction'], array( 'row', 'column' ), true ) || ! preg_match('/^wrapper-[0-9]+$/D',$node['id']) ) continue;
+			if ( 'flex' !== ( $layout['display'] ?? '' ) || ! in_array( $layout['direction'] ?? '', array( 'row', 'column' ), true ) || ! preg_match('/^wrapper-[0-9]+$/D',(string)($node['id'] ?? '')) ) {
+				$receipt['losses'][] = array( 'reason_code' => 'layout_target_unrepresentable', 'node_hash' => $node_hash );
+				continue;
+			}
 			$target = $node['id'];
 			$matched = false;
 			$blocks = self::apply_flex( $blocks, $target, $layout['direction'], $matched );
 			if ( ! $matched ) {
-				$receipt['losses'][] = array( 'reason_code' => 'target_mismatch', 'node_hash' => hash( 'sha256', $node['id'] ) );
+				$receipt['losses'][] = array( 'reason_code' => 'target_mismatch', 'node_hash' => $node_hash );
 				continue;
 			}
-			$receipt['operations'][] = array( 'strategy' => 'core_group_flex', 'target_hash' => hash( 'sha256', $target ), 'direction' => $layout['direction'] );
+			$receipt['operations'][] = array( 'strategy' => 'core_group_flex_equivalent', 'target_hash' => hash( 'sha256', $target ), 'direction' => $layout['direction'] );
 		}
 		$receipt['status'] = empty( $receipt['operations'] ) ? ( empty( $receipt['losses'] ) ? 'skipped' : 'deferred' ) : 'applied';
 		$receipt['operations_total'] = count( $receipt['operations'] ); $receipt['losses_total'] = count( $receipt['losses'] );

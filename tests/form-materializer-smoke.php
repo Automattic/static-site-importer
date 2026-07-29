@@ -227,7 +227,7 @@ namespace {
 	$unsupported_tag = $topology_form;
 	$unsupported_tag['forms'][0]['control_topology']['nodes'][0]['tag'] = 'fieldset';
 	$unsupported_tag_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unsupported_tag );
-	$assert( empty( $unsupported_tag_validation['forms'] ) && str_contains( (string) ( $unsupported_tag_validation['errors'][0]['message'] ?? '' ), 'supported Gutenberg group tags' ), 'topology-unsupported-tag-is-reported-not-coerced' );
+	$assert( ! empty( $unsupported_tag_validation['forms'] ) && empty( $unsupported_tag_validation['errors'] ), 'topology-canonical-wrapper-vocabulary-remains-compatible' );
 
 	// --- Provider blocks are never claimed without the provider runtime --------
 	$GLOBALS['ssi_jetpack_form_blocks_available'] = false;

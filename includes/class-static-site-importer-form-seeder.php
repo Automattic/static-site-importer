@@ -321,7 +321,7 @@ class Static_Site_Importer_Form_Seeder {
 				$attrs = array();
 				if ( isset( $node['class'] ) ) $attrs['className'] = $node['class'];
 				if ( isset( $node['source_id'] ) ) $attrs['anchor'] = $node['source_id'];
-				if ( isset( $node['tag'] ) ) $attrs['tagName'] = $node['tag'];
+				if ( isset( $node['tag'] ) && in_array( $node['tag'], array( 'article', 'aside', 'div', 'footer', 'header', 'main', 'nav', 'section' ), true ) ) $attrs['tagName'] = $node['tag'];
 				$blocks[] = array( 'name' => 'core/group', 'attrs' => $attrs, 'innerBlocks' => $build( $node['id'] ), 'wrapper' => 'group', 'topologyId' => $node['id'] );
 			}
 			return $blocks;
