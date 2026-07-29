@@ -28,20 +28,20 @@ test( 'manifest publishes a PHP 8.5 JSPI zstd artifact through the CORS-capable 
 	} ] );
 } );
 
-test( 'Playground starts PHP 8.5 and both README launch links load zstd before boot', async () => {
+test( 'Playground starts PHP 8.5 and both README launch links boot without an optional extension', async () => {
 	const [ blueprint, readme ] = await Promise.all( [
 		readFile( path.join( root, 'docs/playground/blueprint.json' ), 'utf8' ),
 		readFile( path.join( root, 'README.md' ), 'utf8' ),
 	] );
 	const parsedBlueprint = JSON.parse( blueprint );
 	assert.equal( parsedBlueprint.preferredVersions.php, '8.5' );
-	assert.ok( parsedBlueprint.steps.some( ( step ) => step.step === 'runPHP' && step.code.includes( "extension_loaded( 'zstd' )" ) && step.code.includes( 'ssi-playground-zstd-loaded.txt' ) ) );
+	assert.ok( ! parsedBlueprint.steps.some( ( step ) => step.step === 'runPHP' && step.code.includes( "extension_loaded( 'zstd' )" ) ) );
 	const links = [ ...readme.matchAll( /\]\((https:\/\/playground\.wordpress\.net\/\?[^)]+)\)/g ) ].map( ( match ) => match[ 1 ] );
 	assert.equal( links.length, 2 );
 	for ( const link of links ) {
 		const url = new URL( link );
 		assert.equal( url.searchParams.get( 'php' ), '8.5' );
-		assert.equal( url.searchParams.get( 'php-extension' ), manifestUrl );
+		assert.equal( url.searchParams.get( 'php-extension' ), null );
 		assert.equal( url.searchParams.get( 'blueprint-url' ), 'https://automattic.github.io/static-site-importer/playground/latest/blueprint.json' );
 	}
 } );
@@ -58,16 +58,20 @@ test( 'release publication keeps immutable assets and blueprints separate from t
 	assert.match( workflow, /playground\/extensions\/latest/ );
 	assert.match( workflow, /releases\/download\/\$\{tag\}/ );
 	assert.match( workflow, /access-control-allow-origin/ );
-	assert.match( workflow, /git -C "\$pages_dir" add \.nojekyll playground/ );
+	assert.match( workflow, /git -C "\$pages_dir" add \.nojekyll "playground\/\$RELEASE_TAG\.blueprint\.json"/ );
 	assert.match( workflow, /git -C "\$pages_dir" diff --cached --quiet/ );
 	assert.doesNotMatch( workflow, /gh release upload/ );
 	assert.ok(
-		workflow.indexOf( 'Verify the immutable Playground launch end to end' ) < workflow.indexOf( 'Advance the verified latest aliases' ),
-		'latest aliases must advance only after the immutable browser verification',
+		workflow.indexOf( 'Verify the immutable safe Playground launch' ) < workflow.indexOf( 'Advance the safe README blueprint alias' ),
+		'the mutable README alias must advance only after immutable browser verification',
 	);
 	assert.ok(
-		workflow.indexOf( 'Wait for the latest Pages aliases' ) < workflow.indexOf( 'Verify the exact README Playground launch' ),
-		'the published README URL must be verified after latest deploys',
+		workflow.indexOf( 'Verify the exact README Playground launch' ) < workflow.indexOf( 'Verify the optional zstd Playground launch end to end' ),
+		'the safe README launch must be independent of optional extension verification',
+	);
+	assert.ok(
+		workflow.indexOf( 'Verify the optional zstd Playground launch end to end' ) < workflow.indexOf( 'Advance the verified extension aliases' ),
+		'extension aliases must advance only after their browser verification',
 	);
 	assert.match( publication, /\{\{RELEASE_TAG\}\}/ );
 	assert.match( publication, /Homeboy remains the sole\s+release owner/ );
