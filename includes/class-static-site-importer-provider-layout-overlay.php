@@ -9,6 +9,8 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 class Static_Site_Importer_Provider_Layout_Overlay {
 	public const MAP_SCHEMA = 'generic/provider-layout-target-map/v1';
+	public const OVERLAY_SCHEMA = 'static-site-importer/provider-layout-overlay/v1';
+	private const MAX_OVERLAY_BYTES = 16384;
 
 	/** @return array{map?:array<string,mixed>,error?:string} */
 	public static function validate_map( mixed $map, array $graph ): array {
@@ -23,10 +25,10 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		return array( 'map' => array( 'schema' => self::MAP_SCHEMA, 'provider' => $map['provider'], 'scope' => $map['scope'], 'targets' => $targets ) );
 	}
 
-	/** @return array{css:string,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>} */
+	/** @return array{overlay:array<string,mixed>,css:string,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>} */
 	public static function compile( array $graph, mixed $map ): array {
 		$validated = self::validate_map( $map, $graph );
-		if ( isset( $validated['error'] ) ) return array( 'css' => '', 'operations' => array(), 'losses' => array( array( 'dimension' => 'layout', 'reason_code' => 'provider_structure_mismatch', 'map_error' => $validated['error'] ) ) );
+		if ( isset( $validated['error'] ) ) return array( 'overlay' => array(), 'css' => '', 'operations' => array(), 'losses' => array( array( 'dimension' => 'layout', 'reason_code' => 'provider_structure_mismatch', 'map_error' => $validated['error'] ) ) );
 		$targets = array(); foreach ( $validated['map']['targets'] as $target ) $targets[ $target['node'] ] = $target;
 		$rules = array(); $operations = array(); $losses = array();
 		foreach ( $graph['nodes'] ?? array() as $node ) {
@@ -44,7 +46,34 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			if ( ! empty( $declarations ) ) { $rules[] = '@media ' . $variant['condition']['query'] . '{' . $target['selector'] . '{' . implode( ';', $declarations ) . '}}'; $operations[] = array( 'dimension' => 'layout', 'strategy' => 'provider_selector_transposition', 'node_hash' => hash( 'sha256', $id ), 'target_hash' => hash( 'sha256', $target['selector'] ), 'responsive' => true ); }
 		}
 		$css = empty( $rules ) ? '' : '/* Static Site Importer provider layout overlay: ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $rules ) ) ) . "\n";
-		return array( 'css' => $css, 'operations' => $operations, 'losses' => $losses );
+		$overlay = '' === $css ? array() : array( 'schema' => self::OVERLAY_SCHEMA, 'css' => $css, 'sha256' => hash( 'sha256', $css ), 'bytes' => strlen( $css ) );
+		return array( 'overlay' => $overlay, 'css' => $css, 'operations' => $operations, 'losses' => $losses );
+	}
+
+	/** Validate a compiler-produced overlay before it is admitted to a stylesheet. */
+	public static function validate_overlay( mixed $overlay ): ?array {
+		if ( ! is_array( $overlay ) || array_keys( $overlay ) !== array( 'schema', 'css', 'sha256', 'bytes' ) || self::OVERLAY_SCHEMA !== ( $overlay['schema'] ?? null ) || ! is_string( $overlay['css'] ?? null ) || ! is_string( $overlay['sha256'] ?? null ) || ! is_int( $overlay['bytes'] ?? null ) ) return null;
+		$css = $overlay['css'];
+		if ( '' === $css || strlen( $css ) !== $overlay['bytes'] || $overlay['bytes'] > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $overlay['sha256'] ) || ! hash_equals( $overlay['sha256'], hash( 'sha256', $css ) ) ) return null;
+		if ( ! preg_match( '/^\/\* Static Site Importer provider layout overlay: [a-f0-9]{12} \*\/\n/', $css, $header ) ) return null;
+		$body = substr( $css, strlen( $header[0] ) );
+		if ( ! str_ends_with( $body, "\n" ) || str_contains( $body, 'url(' ) || str_contains( $body, '@import' ) || str_contains( $body, '!important' ) ) return null;
+		foreach ( array_filter( explode( "\n", trim( $body ) ) ) as $rule ) {
+			if ( ! self::safe_compiled_rule( $rule ) ) return null;
+		}
+		return $overlay;
+	}
+
+	private static function safe_compiled_rule( string $rule ): bool {
+		if ( preg_match( '/^@media (\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\))\{(.+)\}$/D', $rule, $matches ) ) {
+			return self::safe_compiled_rule( $matches[2] );
+		}
+		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}))\{([^{}]+)\}$/D', $rule, $matches ) ) return false;
+		$allowed = array( 'display', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area' );
+		foreach ( explode( ';', $matches[2] ) as $declaration ) {
+			if ( ! preg_match( '/^([a-z-]+):(.+)$/D', $declaration, $parts ) || ! in_array( $parts[1], $allowed, true ) || ! self::safe_value( str_replace( array( 'grid-template-columns', 'grid-template-rows', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area' ), array( 'columns', 'rows', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'flex_grow', 'flex_shrink', 'flex_basis', 'column', 'row', 'area' ), $parts[1] ), $parts[2] ) ) return false;
+		}
+		return true;
 	}
 
 	private static function safe_selector( string $selector, string $scope ): bool {

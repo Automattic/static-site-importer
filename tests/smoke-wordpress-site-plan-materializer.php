@@ -132,6 +132,17 @@ $assert( count( $plan['pages'] ) === count( $unbound_provenance ) && count( $pla
 $assert( 'blocks-engine/wordpress-site-plan-resolver' === ( $unbound_provenance[0]['stages'][0]['stage'] ?? '' ) && hash( 'sha256', $receipt['plan']['pages'][0]['resolved_block_markup'] ) === ( $unbound_provenance[0]['stages'][0]['output']['sha256'] ?? '' ), 'ordinary page provenance records the resolver output hash' );
 $assert( false === ( $receipt['completed']['block_provenance_truncated'] ?? true ) && ! str_contains( (string) wp_json_encode( $unbound_provenance ), (string) $receipt['plan']['pages'][0]['resolved_block_markup'] ), 'provenance uses structural evidence without raw page markup' );
 
+$overlay_css = "/* Static Site Importer provider layout overlay: abcdef123456 */\n.ssi-form-123456789abc > form.jetpack-contact-form__form{display:flex;gap:1rem}\n";
+$overlay = array( 'schema' => Static_Site_Importer_Provider_Layout_Overlay::OVERLAY_SCHEMA, 'css' => $overlay_css, 'sha256' => hash( 'sha256', $overlay_css ), 'bytes' => strlen( $overlay_css ) );
+$overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'provider-overlay-plan', 'provider_layout_overlays' => array( $overlay, $overlay ) ) );
+$overlay_root = $GLOBALS['ssi_plan_root'] . '/provider-overlay-plan';
+$assert( 'completed' === $overlay_receipt['status'] && 'completed' === ( $overlay_receipt['completed']['provider_layout_overlays']['status'] ?? '' ), 'provider layout receipt is applied only after stylesheet writes complete' );
+$assert( str_contains( (string) file_get_contents( $overlay_root . '/style.css' ), 'provider layout overlay: abcdef123456' ) && str_contains( (string) file_get_contents( $overlay_root . '/assets/css/editor-style.css' ), 'provider layout overlay: abcdef123456' ), 'generated frontend and editor stylesheets contain the deduplicated provider overlay' );
+$forged_overlay = $overlay;
+$forged_overlay['css'] = "/* Static Site Importer provider layout overlay: abcdef123456 */\nbody{background:url(https://example.test/x)}\n";
+$forged_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'forged-provider-overlay-plan', 'provider_layout_overlays' => array( $forged_overlay ) ) );
+$assert( 'partial' === $forged_receipt['status'] && 'provider_layout_overlay_rejected' === ( $forged_receipt['diagnostics'][0]['reason_code'] ?? '' ) && 'not_requested' === ( $forged_receipt['completed']['provider_layout_overlays']['status'] ?? '' ), 'rejected provider overlay never receives an applied receipt claim' );
+
 $font_result = ( new ArtifactCompiler() )->compile(
 	array(
 		'entrypoint' => 'index.html',

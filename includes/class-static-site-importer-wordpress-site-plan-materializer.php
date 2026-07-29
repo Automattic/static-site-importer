@@ -8,6 +8,8 @@
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver;
 
+require_once __DIR__ . '/class-static-site-importer-stylesheet-materializer.php';
+
 final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	public const RECEIPT_SCHEMA = 'static-site-importer/materialization-receipt/v1';
 	private const RECONCILIATION_META_KEY = '_static_site_importer_reconciliation_identity';
@@ -140,6 +142,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				return self::failed_receipt( $state, $result->get_error_code() );
 			}
 			$state['applied']['files'][] = $result;
+		}
+		$provider_layout_overlays = isset( $args['provider_layout_overlays'] ) && is_array( $args['provider_layout_overlays'] ) ? $args['provider_layout_overlays'] : array();
+		if ( ! empty( $provider_layout_overlays ) ) {
+			$provider_layout_materialization = self::apply_provider_layout_overlays( $state, $provider_layout_overlays );
+			if ( is_wp_error( $provider_layout_materialization ) ) {
+				return self::failed_receipt( $state, $provider_layout_materialization->get_error_code() );
+			}
+			$state['applied']['provider_layout_overlays'] = $provider_layout_materialization;
 		}
 		$publications = self::verify_asset_publications( $state );
 		if ( is_wp_error( $publications ) ) {
@@ -350,6 +360,39 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			return new WP_Error( 'theme_write_failed' );
 		}
 		return array( 'target_path' => $write['target_path'], 'hash' => self::file_hash( $path ), 'payload_hash' => $write['payload_hash'] ?? hash( 'sha256', $data ), 'reconciliation_identity' => $write['reconciliation_identity'] ?? hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ) );
+	}
+
+	/** Persist admitted provider overlay CSS into every generated frontend/editor stylesheet. */
+	private static function apply_provider_layout_overlays( array &$state, array $overlays ) {
+		$admitted = array_filter( $overlays, static fn( $overlay ): bool => null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $overlay ) );
+		if ( empty( $admitted ) ) return new WP_Error( 'provider_layout_overlay_rejected' );
+		$stylesheets = array();
+		$source_css = '';
+		foreach ( $state['resolved']['writes'] as $write ) {
+			$target = (string) ( $write['target_path'] ?? '' );
+			if ( ! str_ends_with( $target, '.css' ) ) continue;
+			$path = $state['theme_dir'] . '/' . $target;
+			$content = is_readable( $path ) ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the just-persisted generated stylesheet.
+			if ( false === $content ) return new WP_Error( 'provider_layout_stylesheet_read_failed' );
+			if ( '' === $source_css ) $source_css = $content;
+			if ( preg_match( '#(?:^|/)style\.css$|(?:^|/)editor-style\.css$#', $target ) ) $stylesheets[ $path ] = $content;
+		}
+		if ( '' === $source_css ) return new WP_Error( 'provider_layout_stylesheet_missing' );
+		$has_frontend = isset( $stylesheets[ $state['theme_dir'] . '/style.css' ] );
+		$has_editor = isset( $stylesheets[ $state['theme_dir'] . '/assets/css/editor-style.css' ] );
+		$writes = $has_frontend && $has_editor
+			? Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], '', '', array(), array(), $admitted, $stylesheets )
+			: Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], (string) $state['theme']['slug'], $source_css, array(), array(), $admitted );
+		if ( empty( $writes ) || ( $has_frontend && $has_editor && $stylesheets === $writes ) ) return new WP_Error( 'provider_layout_overlay_rejected' );
+		$reports = array();
+		foreach ( $writes as $path => $content ) {
+			$target = ltrim( substr( $path, strlen( trailingslashit( $state['theme_dir'] ) ) ), '/' );
+			$result = self::write_file( $state['theme_dir'], array( 'target_path' => $target, 'source_path' => $target, 'payload' => array( 'encoding' => 'utf8', 'data' => $content ) ) );
+			if ( is_wp_error( $result ) ) return $result;
+			$reports[] = $result;
+			foreach ( $state['applied']['files'] as $index => $file ) if ( $target === ( $file['target_path'] ?? null ) ) $state['applied']['files'][ $index ] = $result;
+		}
+		return array( 'status' => 'completed', 'files' => $reports );
 	}
 
 	/** @param array<string,mixed> $state @param array{writes:array<int,array<string,string>>,diagnostics:array<int,array<string,string>>} $overlay */
@@ -576,6 +619,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'operations' => $state['applied']['operations'],
 				'runtime_declarations' => $state['applied']['runtime_declarations'] ?? array( 'asset_publications' => array() ),
 				'font_materialization' => $state['applied']['font_materialization'] ?? array( 'status' => 'not_requested', 'files' => array(), 'diagnostics' => array() ),
+				'provider_layout_overlays' => $state['applied']['provider_layout_overlays'] ?? array( 'status' => 'not_requested', 'files' => array() ),
 				'materialized_pages' => $materialized_pages,
 				'block_provenance' => $block_provenance,
 				'block_provenance_count' => $block_provenance_count,

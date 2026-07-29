@@ -208,6 +208,7 @@ class Static_Site_Importer_Form_Seeder {
 		$mapped_types = array();
 		$submit_text  = 'Submit';
 		$skipped      = array();
+		$control_attribute_losses = array();
 		$has_topology = isset( $form['control_topology'] );
 		$has_source_submit = false;
 
@@ -234,6 +235,10 @@ class Static_Site_Importer_Form_Seeder {
 				$skipped[] = '' !== $type ? $type : $tag;
 				continue;
 			}
+			foreach ( $field_block['losses'] ?? array() as $loss ) {
+				$control_attribute_losses[] = $loss + array( 'control_index' => $control_index );
+			}
+			unset( $field_block['losses'] );
 
 			$field_block['attrs']['className'] = self::layout_node_class( $scope, 'control-' . $control_index );
 			$field_blocks[ $control_index ] = $field_block;
@@ -266,6 +271,7 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$form['topology_losses'] = $topology['losses'];
 		$layout = Static_Site_Importer_Computed_Layout_Strategy::apply( $form, $inner_blocks );
+		foreach ( $control_attribute_losses as $loss ) $layout['receipt']['losses'][] = $loss;
 		$inner_blocks = $layout['blocks'];
 		$form_attrs     = self::contact_form_attributes( $form, $scope );
 		$target_map     = self::provider_layout_target_map( $form, $scope );
@@ -297,7 +303,7 @@ class Static_Site_Importer_Form_Seeder {
 			'block_markup'    => $markup,
 			'computed_layout_receipt' => $layout['receipt'],
 			'provider_layout_target_map' => $target_map,
-			'provider_layout_overlay_css' => $overlay['css'],
+			'provider_layout_overlay_css' => $overlay['overlay'],
 		);
 	}
 
@@ -457,11 +463,20 @@ class Static_Site_Importer_Form_Seeder {
 			);
 		}
 
+		$losses = array();
+		if ( 'number' === $lookup ) {
+			foreach ( array( 'min', 'max' ) as $attribute ) {
+				if ( isset( $control[ $attribute ] ) && is_scalar( $control[ $attribute ] ) && '' !== trim( (string) $control[ $attribute ] ) ) {
+					$losses[] = array( 'dimension' => 'control', 'reason_code' => 'unsupported_control_attribute', 'attribute' => $attribute, 'control_type_hash' => hash( 'sha256', $type ) );
+				}
+			}
+		}
 		return array(
 			'name'        => $map[ $lookup ],
 			'attrs'       => $attrs,
 			'innerBlocks' => $inner_blocks,
 			'wrapper'     => 'div',
+			'losses'      => $losses,
 		);
 	}
 
@@ -526,7 +541,10 @@ class Static_Site_Importer_Form_Seeder {
 			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) continue;
 			$id = $node['id'];
 			$selector = 'form' === $id ? $selector_scope . ' > form.jetpack-contact-form__form' : $selector_scope . ' .' . self::layout_node_class( $scope, $id );
-			$targets[] = array( 'node' => $id, 'selector' => $selector, 'capabilities' => array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' ) );
+			// Jetpack's contact-form root includes hidden and error nodes, so it cannot
+			// promise source direct-child relationships. Generated node hooks can.
+			$capabilities = 'form' === $id ? array( 'container_layout', 'responsive_layout' ) : array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' );
+			$targets[] = array( 'node' => $id, 'selector' => $selector, 'capabilities' => $capabilities );
 		}
 		return array( 'schema' => Static_Site_Importer_Provider_Layout_Overlay::MAP_SCHEMA, 'provider' => self::PROVIDER_ID, 'scope' => $selector_scope, 'targets' => $targets );
 	}
@@ -538,9 +556,10 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return string
 	 */
 	private static function control_text( array $control ): string {
-		foreach ( array( 'label', 'value', 'placeholder', 'name' ) as $key ) {
+		foreach ( array( 'text', 'label', 'value', 'placeholder', 'name' ) as $key ) {
 			if ( isset( $control[ $key ] ) && is_scalar( $control[ $key ] ) && '' !== trim( (string) $control[ $key ] ) ) {
-				return trim( (string) $control[ $key ] );
+				$text = trim( function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( (string) $control[ $key ] ) : strip_tags( (string) $control[ $key ] ) );
+				return substr( $text, 0, 200 );
 			}
 		}
 
