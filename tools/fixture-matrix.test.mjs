@@ -21,6 +21,7 @@ import runFixtureMatrixBench, {
   FIXTURE_MATRIX_PROGRESS_SCHEMA,
   fixtureMatrixBatchRunSummary,
   mapWithConcurrency,
+  materializeMaterializationSidecars,
   materializeVisualCompareArtifacts,
   materializeEditorCanvasArtifacts,
   optionsFromEnv,
@@ -566,8 +567,9 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   assert.equal(recipe.workflow.steps[0].args[0], 'command=plugin activate static-site-importer/static-site-importer.php');
   assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
   assert.match(recipe.workflow.steps[1].args[0], /--format=fixture-matrix/);
-  assert.match(recipe.workflow.steps[1].args[0], /--receipt-sidecar=\/wordpress\/wp-content\/uploads\/static-site-importer-fixture-matrix\/simple-site\/materialization-receipt--primary\.json/);
-  assert.match(recipe.workflow.steps[1].args[0], /--receipt-run-id=recipe-test --receipt-step-id=import --receipt-attempt-id=primary/);
+  assert.match(recipe.workflow.steps[1].args[0], /--receipt-sidecar=\/wordpress\/wp-content\/uploads\/static-site-importer-fixture-matrix\/simple-site\/materialization-receipt--[A-Za-z0-9-]+\.json/);
+  assert.match(recipe.workflow.steps[1].args[0], /--receipt-run-id=recipe-test-[A-Za-z0-9-]+ --receipt-step-id=import --receipt-attempt-id=[A-Za-z0-9-]+/);
+  assert.equal(recipe.artifacts.typed[0].path, recipe.workflow.steps[1].args[0].match(/--receipt-sidecar=([^ ]+)/)?.[1]);
   assert.match(recipe.workflow.steps[1].args[0], /--allow-failure/);
   assert.doesNotMatch(recipe.workflow.steps[1].args[0], /--allow-missing-woocommerce/);
   assert.deepEqual(recipe.inputs.stagedFiles[0], {
@@ -1115,6 +1117,35 @@ test('materialization sidecars isolate concurrent attempts for the same fixture'
   assert.equal(second.fixtures[0].matrix_evidence.materialization_receipt.operation_count, 2);
 });
 
+test('typed WP Codebox sidecar export materializes into the host intake path', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-host-output-'));
+  const codeboxArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-codebox-artifacts-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'sidecar-export-run' });
+  const fixtureDirectory = path.join(outputDirectory, 'simple-site');
+  const guestDirectory = path.join(codeboxArtifactsDirectory, 'runtime-123', 'files', 'runtime-evidence', 'typed-artifacts', 'guest-simple-site');
+  mkdirSync(fixtureDirectory, { recursive: true });
+  mkdirSync(guestDirectory, { recursive: true });
+  const artifact = JSON.stringify({ fixture: 'simple-site' });
+  writeFileSync(path.join(fixtureDirectory, 'artifact.json'), artifact);
+  writeFileSync(path.join(guestDirectory, 'artifact.json'), artifact);
+  writeMaterializationSidecar({ directory: guestDirectory, fixtureId: 'simple-site', runId: matrix.id, attemptId: 'batch-001', receipt: boundedSidecarReceipt(), fileName: 'exported-sidecar.json' });
+
+  const exports = materializeMaterializationSidecars({ fixtures: matrix.fixtures, outputDirectory, codeboxArtifactsDirectory, attemptId: 'batch-001' });
+  const expected = path.join(fixtureDirectory, 'materialization-receipt--batch-001.json');
+  assert.deepEqual(exports.map((entry) => entry.fixture_id), ['simple-site']);
+  assert.equal(existsSync(expected), true);
+  const result = collectFixtureMatrixRunResults({ matrix, outputDirectory, sidecarAttemptId: 'batch-001' });
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, 'verified');
+});
+
+test('direct recipe builders generate distinct run and attempt identities', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'direct-recipe' });
+  const first = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi' });
+  const second = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi' });
+  assert.notEqual(first.workflow.steps[1].args[0], second.workflow.steps[1].args[0]);
+  assert.notEqual(first.artifacts.typed[0].path, second.artifacts.typed[0].path);
+});
+
 test('materialization sidecars reject partial, oversized, and semantically invalid content', () => {
   const invalid = [
     ['partial', (sidecar) => '{'],
@@ -1149,7 +1180,7 @@ function boundedSidecarReceipt() {
 function writeMaterializationSidecar({ directory, fixtureId, runId, receipt, artifactHash, attemptId = 'primary', fileName }) {
   const artifact = readFileSync(path.join(directory, 'artifact.json'));
   const sidecar = {
-    schema: 'static-site-importer/materialization-runtime-sidecar/v1', fixture_id: fixtureId, run_id: runId, step_id: 'import', attempt_id: attemptId, artifact_sha256: artifactHash || createHash('sha256').update(artifact).digest('hex'), provenance: { provider: 'static-site-importer/current-runtime', provider_status: 'completed' }, receipt,
+    schema: 'static-site-importer/materialization-runtime-sidecar/v1', fixture_id: fixtureId, run_id: runId, step_id: 'import', attempt_id: attemptId, artifact_sha256: artifactHash || createHash('sha256').update(artifact).digest('hex'), provenance: { provider: 'static-site-importer/current-runtime', provider_status: 'completed' }, durability: { file_fsync: 'available', directory_fsync: 'attempted' }, receipt,
   };
   sidecar.content_sha256 = createHash('sha256').update(JSON.stringify(sidecar)).digest('hex');
   writeFileSync(path.join(directory, fileName || `materialization-receipt--${attemptId}.json`), JSON.stringify(sidecar));
@@ -7392,8 +7423,9 @@ test('live-WP parity toggle adds the capture step + invokes the collector when O
 
   // RECIPE: OFF is byte-identical to the same recipe with no live-WP input, and
   // emits no capture-html step. ON appends exactly one capture-html step.
-  const recipeBaseline = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi' });
-  const recipeOff = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi', liveWpParity: false });
+  const invocation = { runId: 'live-wp-toggle-run', attemptId: 'live-wp-toggle-attempt' };
+  const recipeBaseline = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi', ...invocation });
+  const recipeOff = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi', liveWpParity: false, ...invocation });
   assert.deepEqual(recipeOff, recipeBaseline, 'liveWpParity:false leaves the recipe byte-identical to today');
   assert.equal(recipeOff.workflow.steps.some((step) => step.command === 'wordpress.capture-html'), false);
   const recipeOn = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi', liveWpParity: true });
