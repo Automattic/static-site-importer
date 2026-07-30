@@ -18,6 +18,7 @@ import {
   classifyVisualDiffRegions,
   collectFixtureMatrixRunResults,
   createFixtureMatrix,
+  inspectFixtureDirectories,
   normalizeFixtureMatrixResult,
   writeFixtureMatrixArtifacts,
   writeFixtureMatrixResultArtifacts,
@@ -158,8 +159,8 @@ export async function runFixtureMatrix(options) {
   const fixtureRoot = path.resolve(intake?.fixture_root || options.fixtureRoot || path.join(packageRoot, 'tests', 'fixtures', 'fixture-matrix'));
   const staticSiteImporterPath = options.staticSiteImporterPath || process.env.HOMEBOY_STATIC_SITE_IMPORTER_PATH || process.cwd();
   const dependencyOverrides = prepareDependencyOverrides(options);
-  validateHydratedComposerDependencies(packageRoot);
-  const matrix = createFixtureMatrix({
+  const fixtureInspection = inspectFixtureDirectories(fixtureRoot, { maxDepth: options.maxDepth });
+  const matrixInput = {
     id: options.id || `static-site-importer-fixture-matrix-${Date.now()}`,
     fixture_root: fixtureRoot,
     entrypoint: options.entrypoint || 'index.html',
@@ -174,7 +175,14 @@ export async function runFixtureMatrix(options) {
     max_complexity: options.maxComplexity || options.max_complexity,
     fixture_ids: options.fixtureIds,
     fixture_corpus: options.fixtureCorpus,
-  });
+  };
+  const matrix = fixtureInspection.exclusions[0]?.reason === 'root_symlink'
+    ? createFixtureMatrix({ ...matrixInput, fixtures: [] })
+    : createFixtureMatrix(matrixInput);
+  if (options.run && matrix.count === 0) {
+    throw new Error(`Fixture matrix execution requires at least one executable fixture under ${fixtureRoot}. Inspect the fixture root, entrypoint, and lane filters before retrying.`);
+  }
+  validateHydratedComposerDependencies(packageRoot);
   const progress = createFixtureMatrixProgress(matrix, options);
   progress.emit('matrix', 'started');
   const artifactWriteStartedAt = nowMs();
