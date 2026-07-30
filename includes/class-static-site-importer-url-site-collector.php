@@ -5,6 +5,10 @@
  * @package StaticSiteImporter
  */
 
+if ( ! class_exists( 'Static_Site_Importer_Source_Normalizer' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-source-normalizer.php';
+}
+
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
@@ -44,16 +48,17 @@ class Static_Site_Importer_URL_Site_Collector {
 		$fetch_args = array_intersect_key( $args, array_flip( array( 'timeout' ) ) );
 		$fetch_args['max_bytes'] = min( self::MAX_RESPONSE_BYTES, $max_total_bytes, max( 1, (int) ( $args['max_bytes'] ?? 5242880 ) ) );
 
-		$page_queue  = array( $entry_url );
-		$asset_queue = array();
-		$queued_pages = array( self::page_key( $entry_url ) => true );
-		$queued_assets = array();
-		$resources   = array();
-		$failures    = array();
-		$diagnostics = array();
-		$aliases      = array();
-		$total_bytes = 0;
-		$truncated   = array();
+		$page_queue       = array( $entry_url );
+		$asset_queue      = array();
+		$queued_pages     = array( self::page_key( $entry_url ) => true );
+		$queued_assets    = array();
+		$resources        = array();
+		$failures         = array();
+		$diagnostics      = array();
+		$source_exclusions = array();
+		$aliases           = array();
+		$total_bytes       = 0;
+		$truncated         = array();
 		$entry_resource_url = $entry_url;
 		$site_url           = $entry_url;
 
@@ -93,8 +98,12 @@ class Static_Site_Importer_URL_Site_Collector {
 				continue;
 			}
 
-			$body  = (string) $response['body'];
-			$bytes = strlen( $body );
+			$body              = (string) $response['body'];
+			$normalized        = Static_Site_Importer_Source_Normalizer::normalize_html( $body, $final_url, $args );
+			$body              = $normalized['html'];
+			$source_exclusions = array_merge( $source_exclusions, $normalized['exclusions'] );
+			$diagnostics       = array_merge( $diagnostics, $normalized['diagnostics'] );
+			$bytes             = strlen( $body );
 			if ( $total_bytes + $bytes > $max_total_bytes ) {
 				$truncated['bytes'] = true;
 				break;
@@ -238,13 +247,14 @@ class Static_Site_Importer_URL_Site_Collector {
 				'source_url'  => $entry_url,
 				'final_url'   => $site_url,
 				'collection'  => array(
-					'pages'       => self::resource_count( $resources, 'html' ),
-					'assets'      => self::resource_count( $resources, 'asset' ),
-					'bytes'       => $total_bytes,
-					'failures'    => $failures,
-					'diagnostics' => $diagnostics,
-					'truncated'   => array_keys( $truncated ),
-					'sitemap_urls' => count( $sitemap_urls ),
+					'pages'             => self::resource_count( $resources, 'html' ),
+					'assets'            => self::resource_count( $resources, 'asset' ),
+					'bytes'             => $total_bytes,
+					'failures'          => $failures,
+					'diagnostics'       => $diagnostics,
+					'source_exclusions' => $source_exclusions,
+					'truncated'         => array_keys( $truncated ),
+					'sitemap_urls'      => count( $sitemap_urls ),
 				),
 			),
 		);

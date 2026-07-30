@@ -163,6 +163,8 @@ URL intake rules:
 - `provider_args.collect_site=true` or CLI `--collect-site` enables bounded collection. It reads the origin's `/sitemap.xml`, follows same-origin HTML links, collects directly referenced page assets and nested CSS assets, and emits one canonical website artifact.
 - Collection defaults to 20 pages, 200 assets, 50 MiB total, 5 MiB per response, and 100 ms between requests. Limits can be configured with `max_pages`, `max_assets`, `max_total_bytes`, `max_bytes`, and `request_delay_ms` up to the collector's hard caps.
 - Directly referenced scripts are collected by default so conversion starts from the complete source behavior. Set `include_scripts=false` or CLI `--skip-scripts` only when the caller has verified that script behavior is intentionally excluded or replaced.
+- Registered source-exclusion rules remove non-authored platform chrome before asset discovery and compilation. Each removal records selector, provider, reason, and before/after hashes under `source_metadata.collection.source_exclusions`; set `exclude_platform_chrome=false` to preserve the raw source.
+- Extensions can add or replace source-exclusion rules with the `static_site_importer_source_exclusion_rules` filter. Rules use stable ID selectors and reason-coded categories so removals remain explicit and auditable.
 - External assets must be directly referenced by fetched HTML or CSS and pass the same public-IP and redirect validation as page URLs.
 - Only `http` and `https` URLs are accepted.
 - Localhost, loopback, link-local, private, and otherwise reserved IP targets are rejected before connecting.

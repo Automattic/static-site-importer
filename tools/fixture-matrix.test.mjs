@@ -5498,7 +5498,7 @@ test('default visual-parity source-url follows nested fixture entrypoint', () =>
   );
 });
 
-test('stageFixtureSource copies the raw fixture source into the served source/ subdir', () => {
+test('stageFixtureSource copies the normalized fixture source into the served source/ subdir', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-parity-stage-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-parity-stage-test' });
   const written = writeFixtureMatrixArtifacts({ outputDirectory, matrix });
@@ -5520,6 +5520,25 @@ test('stageFixtureSource copies the raw fixture source into the served source/ s
   assert.equal(written.metadata.source_staging.status, 'staged');
   assert.ok(written.metadata.artifact_bytes.staged_source > 0);
   assert.ok(Number.isFinite(written.metadata.performance.artifact_writing_ms));
+});
+
+test('platform attribution is excluded from both import artifacts and visual baselines', () => {
+  const fixtureDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-platform-chrome-source-'));
+  const sourceDirectory = path.join(fixtureDirectory, 'fixture');
+  mkdirSync(sourceDirectory, { recursive: true });
+  writeFileSync(path.join(sourceDirectory, 'index.html'), '<main><h1>Authored page</h1></main><div id="weebly-footer-signup-container-v3"><a href="https://www.weebly.com/signup"><div>Powered by Weebly</div></a></div>');
+
+  const fixture = { id: 'Platform Chrome', directory: sourceDirectory };
+  const artifact = buildFixtureArtifact(fixture);
+  const artifactHtml = Buffer.from(artifact.files[0].content_base64, 'base64').toString('utf8');
+  assert.doesNotMatch(artifactHtml, /weebly-footer-signup-container-v3/);
+  assert.equal(artifact.source_metadata.source_exclusions[0].reason_code, 'platform_attribution_removed');
+  assert.match(artifact.source_metadata.source_exclusions[0].removed_sha256, /^[a-f0-9]{64}$/);
+
+  stageFixtureSource(fixture, fixtureDirectory);
+  const stagedHtml = readFileSync(path.join(fixtureDirectory, 'source', 'index.html'), 'utf8');
+  assert.match(stagedHtml, /Authored page/);
+  assert.doesNotMatch(stagedHtml, /weebly-footer-signup-container-v3/);
 });
 
 test('staged visual source uses the generated self-contained font stylesheet', () => {

@@ -15,6 +15,9 @@ if ( ! class_exists( 'Static_Site_Importer_URL_Fetcher' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_URL_Site_Collector' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-url-site-collector.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Source_Normalizer' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-source-normalizer.php';
+}
 
 /**
  * Imports a source URL through a provider that returns a website artifact.
@@ -139,6 +142,11 @@ class Static_Site_Importer_URL_Import_Runtime {
 		if ( false === $html ) {
 			return new WP_Error( 'static_site_importer_url_artifact_read_failed', 'Failed to read fetched URL HTML.' );
 		}
+		$normalized                    = Static_Site_Importer_Source_Normalizer::normalize_html( $html, (string) $request['url'], $provider_args );
+		$html                          = $normalized['html'];
+		$metadata                      = $fetch['metadata'];
+		$metadata['source_exclusions'] = $normalized['exclusions'];
+		$metadata['diagnostics']       = array_merge( is_array( $metadata['diagnostics'] ?? null ) ? $metadata['diagnostics'] : array(), $normalized['diagnostics'] );
 
 		return array(
 			'provider'        => 'public-url-fetcher',
@@ -151,7 +159,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 					),
 				),
 			),
-			'source_metadata' => $fetch['metadata'],
+			'source_metadata' => $metadata,
 		);
 	}
 

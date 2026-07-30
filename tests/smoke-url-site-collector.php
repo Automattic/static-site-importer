@@ -51,7 +51,7 @@ $responses = array(
 	),
 	'https://example.test/' => array(
 		'content_type' => 'text/html; charset=utf-8',
-		'body'         => '<!doctype html><html><head><link rel="canonical" href="/"><link rel="stylesheet" href="/files/main.css?v=1"><script src="/platform-runtime.js"></script></head><body style="background-image:url(/uploads/hero.jpg)"><nav><a href="/services.html">Services</a></nav><img src="/uploads/logo.png" srcset="/uploads/logo.png 1x, /uploads/logo-2x.png 2x"><main><h1>Home</h1></main></body></html>',
+		'body'         => '<!doctype html><html><head><link rel="canonical" href="/"><link rel="stylesheet" href="/files/main.css?v=1"><script src="/platform-runtime.js"></script></head><body style="background-image:url(/uploads/hero.jpg)"><nav><a href="/services.html">Services</a></nav><img src="/uploads/logo.png" srcset="/uploads/logo.png 1x, /uploads/logo-2x.png 2x"><main><h1>Home</h1></main><div id="weebly-footer-signup-container-v3"><a href="https://www.weebly.com/signup"><div><img src="https://cdn.example.test/platform-badge.png">Powered by Weebly</div></a></div></body></html>',
 	),
 	'https://example.test/services.html' => array(
 		'content_type' => 'text/html',
@@ -135,6 +135,10 @@ $assert( isset( $files['website/uploads/logo.png']['content_base64'] ), 'binary-
 $assert( ! in_array( 'https://example.test/index.html', array_column( $requests, 'url' ), true ), 'root-index-not-fetched-twice' );
 $assert( in_array( 'https://example.test/platform-runtime.js', array_column( $requests, 'url' ), true ), 'remote-scripts-collected-by-default' );
 $assert( isset( $files['website/platform-runtime.js']['content'] ), 'script-payload-packaged' );
+$assert( ! str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'weebly-footer-signup-container-v3' ), 'platform-attribution-removed-before-packaging' );
+$assert( ! in_array( 'https://cdn.example.test/platform-badge.png', array_column( $requests, 'url' ), true ), 'excluded-platform-assets-not-collected' );
+$source_exclusions = $result['source_metadata']['collection']['source_exclusions'] ?? array();
+$assert( 1 === count( $source_exclusions ) && 'platform_attribution_removed' === ( $source_exclusions[0]['reason_code'] ?? '' ) && 64 === strlen( (string) ( $source_exclusions[0]['removed_sha256'] ?? '' ) ), 'platform-attribution-removal-retains-receipt' );
 $assert( 10485760 >= max( array_map( static fn ( array $request ): int => (int) ( $request['args']['max_bytes'] ?? 0 ), $requests ) ), 'configured-response-limit-hard-clamped' );
 
 $compiled         = blocks_engine_php_transformer_compile_artifact( $result['artifact'] );
