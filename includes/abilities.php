@@ -148,6 +148,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'allow_missing_woocommerce'    => array( 'type' => 'boolean' ),
 						'allow_missing_jetpack'        => array( 'type' => 'boolean' ),
 						'materialize_dependencies'     => array( 'type' => 'boolean' ),
+						'require_proven_dynamic_client_assets' => array( 'type' => 'boolean' ),
 						'seed_entities'                => array( 'type' => 'boolean' ),
 						'products_manifest'            => array( 'type' => 'object' ),
 						'commerce_context'             => array( 'type' => 'object' ),
@@ -193,6 +194,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 						'fail_on_quality'              => array( 'type' => 'boolean' ),
 						'allow_missing_woocommerce'    => array( 'type' => 'boolean' ),
 						'allow_missing_jetpack'        => array( 'type' => 'boolean' ),
+						'require_proven_dynamic_client_assets' => array( 'type' => 'boolean' ),
 						'report'                       => array( 'type' => 'string' ),
 						'write_theme_report_artifacts' => array( 'type' => 'boolean' ),
 						'asset_materialization_policy' => array(

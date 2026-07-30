@@ -72,7 +72,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$theme_uri = trailingslashit( get_theme_root_uri() ) . $slug;
 			try {
 				// Resolver proof is canonical semantics, not an inference from copied files.
-				$resolved = ( new WordPressSitePlanResolver() )->resolve( $plan, array( 'theme_uri' => $theme_uri, 'require_proven_dynamic_client_assets' => true, 'runtime_capabilities' => array( 'asset_materialization' ) ) );
+				$resolved = ( new WordPressSitePlanResolver() )->resolve( $plan, array( 'theme_uri' => $theme_uri, 'require_proven_dynamic_client_assets' => $args['require_proven_dynamic_client_assets'] ?? true, 'runtime_capabilities' => array( 'asset_materialization' ) ) );
 			} catch ( InvalidArgumentException $error ) {
 				throw new InvalidArgumentException( $error->getMessage(), 0, $error );
 			}

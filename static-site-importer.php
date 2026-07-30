@@ -268,6 +268,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'overwrite'                 => ! isset( $assoc_args['no-overwrite'] ),
 				'fail_on_quality'           => isset( $assoc_args['fail-on-quality'] ),
 				'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
+				'require_proven_dynamic_client_assets' => ! isset( $assoc_args['allow-unproven-dynamic-client-assets'] ),
 			);
 			$output = isset( $assoc_args['output'] ) ? (string) $assoc_args['output'] : '';
 			if ( isset( $assoc_args['artifact-dir'] ) ) {

@@ -3,7 +3,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -560,6 +560,29 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
     target: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/artifact.json',
   });
   assert.deepEqual(recipe.inputs.mounts, []);
+});
+
+test('fixture manifests explicitly opt into unproven dynamic client assets', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-dynamic-client-assets-'));
+  try {
+    const fixture = path.join(root, 'websites', 'runtime-site');
+    mkdirSync(fixture, { recursive: true });
+    writeFileSync(path.join(fixture, 'index.html'), '<main>Runtime site</main>');
+    writeFileSync(path.join(fixture, 'fixture.json'), JSON.stringify({
+      fixture_class: 'marketing/static',
+      allow_unproven_dynamic_client_assets: true,
+    }));
+    const matrix = createFixtureMatrix({ fixture_root: root });
+    const recipe = buildFixtureMatrixRecipe({
+      matrix,
+      artifactsDirectory: '/tmp/artifacts',
+      playgroundArtifactsDirectory: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix',
+      staticSiteImporterPath: '/tmp/static-site-importer',
+    });
+    assert.match(recipe.workflow.steps[1].args[0], /--allow-unproven-dynamic-client-assets/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('gates visual capture on complete generated SVG font evidence after import', () => {

@@ -339,6 +339,9 @@ $assert( 'WordPress site plan cannot prove dynamic client asset references.' ===
 $assert( $dynamic_before_posts === $GLOBALS['ssi_plan_posts'] && $dynamic_before_meta === $GLOBALS['ssi_plan_meta'] && $dynamic_before_options === $GLOBALS['ssi_plan_options'], 'materialization rejects external dynamic scripts before page or option mutation' );
 $assert( ! is_dir( $GLOBALS['ssi_plan_root'] . '/external-dynamic-plan' ), 'materialization rejects external dynamic scripts before file mutation' );
 
+$dynamic_allowed = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $external_dynamic_plan, array( 'slug' => 'allowed-external-dynamic-plan', 'require_proven_dynamic_client_assets' => false ) );
+$assert( 'completed' === $dynamic_allowed['status'], 'explicit policy can preserve unproven dynamic client scripts' );
+
 $dynamic_artifact = $artifact;
 $dynamic_artifact['files']['index.html'] .= '<script src="assets/site.js"></script>';
 $dynamic_artifact['files']['assets/site.js'] = 'window.sitePlan = true;';
