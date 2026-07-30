@@ -3,6 +3,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -20,6 +21,7 @@ import runFixtureMatrixBench, {
   FIXTURE_MATRIX_PROGRESS_SCHEMA,
   fixtureMatrixBatchRunSummary,
   mapWithConcurrency,
+  materializeMaterializationSidecars,
   materializeVisualCompareArtifacts,
   materializeEditorCanvasArtifacts,
   optionsFromEnv,
@@ -111,6 +113,18 @@ test('matrix evidence fails closed when the materialization receipt is absent', 
   const evidence = collectMatrixEvidence({ import_report: { blocks_engine: { transformer: { package: 'package', version: '1.0.0', reference: 'a'.repeat(40) }, wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2', assets: [] } } } });
   assert.equal(evidence.readiness, 'legacy_evidence_missing');
   assert.ok(evidence.missing.includes('materialization_receipt'));
+});
+
+test('legacy validation payloads without a receipt contract remain consumable', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-legacy-no-sidecar-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'legacy-no-sidecar' });
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: { fixture_id: 'simple-site', status: 'passed', success: true, import_report: { blocks_engine: { available: true } } },
+  });
+  assert.equal(result.fixtures[0].status, 'passed');
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, 'missing');
 });
 
 test('matrix evidence consumes the bounded fixture diagnostic contract', () => {
@@ -565,6 +579,9 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   assert.equal(recipe.workflow.steps[0].args[0], 'command=plugin activate static-site-importer/static-site-importer.php');
   assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
   assert.match(recipe.workflow.steps[1].args[0], /--format=fixture-matrix/);
+  assert.match(recipe.workflow.steps[1].args[0], /--receipt-sidecar=\/wordpress\/wp-content\/uploads\/static-site-importer-fixture-matrix\/simple-site\/materialization-receipt--[A-Za-z0-9-]+\.json/);
+  assert.match(recipe.workflow.steps[1].args[0], /--receipt-run-id=recipe-test-[A-Za-z0-9-]+ --receipt-step-id=import --receipt-attempt-id=[A-Za-z0-9-]+/);
+  assert.equal(recipe.artifacts.typed[0].path, recipe.workflow.steps[1].args[0].match(/--receipt-sidecar=([^ ]+)/)?.[1]);
   assert.match(recipe.workflow.steps[1].args[0], /--allow-failure/);
   assert.doesNotMatch(recipe.workflow.steps[1].args[0], /--allow-missing-woocommerce/);
   assert.deepEqual(recipe.inputs.stagedFiles[0], {
@@ -572,6 +589,26 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
     target: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/artifact.json',
   });
   assert.deepEqual(recipe.inputs.mounts, []);
+});
+
+test('matrix import recipes declare the complete required sidecar contract', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'complete-sidecar-contract' });
+  const recipe = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi', runId: 'run-1', attemptId: 'attempt-1' });
+  const command = recipe.workflow.steps[1].args[0];
+  for (const flag of ['--receipt-sidecar=', '--receipt-run-id=run-1', '--receipt-step-id=import', '--receipt-attempt-id=attempt-1']) {
+    assert.match(command, new RegExp(flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});
+
+test('validate-artifact sidecar contract preserves legacy calls and rejects partial arguments', () => {
+  const plugin = readFileSync(path.join(packageRoot, 'static-site-importer.php'), 'utf8');
+  const start = plugin.indexOf('function static_site_importer_cli_materialization_sidecar_contract');
+  const end = plugin.indexOf('\n}\n\n/**', start) + 2;
+  const contract = plugin.slice(start, end);
+  const code = `class WP_Error { public $code; function __construct($code) { $this->code = $code; } } function is_wp_error($value) { return $value instanceof WP_Error; } ${contract} $cases = array(static_site_importer_cli_materialization_sidecar_contract(array()), static_site_importer_cli_materialization_sidecar_contract(array('receipt-sidecar' => '/tmp/sidecar.json', 'receipt-run-id' => 'run', 'receipt-step-id' => 'import', 'receipt-attempt-id' => 'attempt')), static_site_importer_cli_materialization_sidecar_contract(array('receipt-sidecar' => '/tmp/sidecar.json'))); echo json_encode(array($cases[0], $cases[1], is_wp_error($cases[2]) ? $cases[2]->code : 'not-error'));`;
+  const result = spawnSync('php', ['-r', code], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), [false, true, 'static_site_importer_sidecar_contract_partial']);
 });
 
 test('gates visual capture on complete generated SVG font evidence after import', () => {
@@ -1053,6 +1090,425 @@ test('fixture matrix labels reports without runtime provenance and materializati
   assert.equal(result.summary.matrix_evidence_readiness.status, 'incomplete');
   assert.equal(result.summary.matrix_evidence_readiness.counts.legacy_evidence_missing, 1);
 });
+
+test('materialization sidecars retain bounded evidence after oversized import stdout', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-oversized-output-'));
+  const base = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'sidecar-run' });
+  const matrix = { ...base, fixtures: [{ ...base.fixtures[0] }, { ...base.fixtures[0], id: 'second-site' }] };
+  for (const fixture of matrix.fixtures) {
+    const directory = path.join(outputDirectory, fixture.id);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: fixture.id }));
+    writeMaterializationSidecar({ directory, fixtureId: fixture.id, runId: matrix.id, receipt: boundedSidecarReceipt() });
+  }
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: { executions: matrix.fixtures.map((fixture) => ({ metadata: { fixture_id: fixture.id }, stdout: 'x'.repeat(1024 * 1024 + 1) })) },
+  });
+
+  for (const fixture of result.fixtures) {
+    assert.equal(fixture.matrix_evidence.materialization_sidecar.status, 'verified');
+    assert.equal(fixture.matrix_evidence.materialization_receipt.operation_count, 99);
+    assert.equal(fixture.matrix_evidence.materialization_receipt.page_count, 2);
+    assert.deepEqual(fixture.matrix_evidence.materialization_sidecar.computed_layout_totals, { applied: 7, losses: 2, operations: 9 });
+    assert.deepEqual(fixture.matrix_evidence.materialization_sidecar.provider_totals, { completed: 1 });
+    assert.ok(fixture.artifact_refs.some((ref) => ref.artifact_id === 'materialization-receipt--primary'));
+  }
+});
+
+test('materialization sidecars reject malformed, stale, cross-fixture, and hash-mismatched evidence', () => {
+  const cases = ['missing', 'malformed', 'stale', 'cross_fixture', 'hash_mismatch'];
+  for (const status of cases) {
+    const outputDirectory = mkdtempSync(path.join(tmpdir(), `ssi-sidecar-${status}-`));
+    const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'sidecar-validation-run' });
+    const directory = path.join(outputDirectory, 'simple-site');
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: 'simple-site' }));
+    if (status === 'malformed') writeFileSync(path.join(directory, 'materialization-receipt--primary.json'), '{');
+    if (status === 'stale') writeMaterializationSidecar({ directory, fixtureId: 'simple-site', runId: 'old-run', receipt: boundedSidecarReceipt() });
+    if (status === 'cross_fixture') writeMaterializationSidecar({ directory, fixtureId: 'other-site', runId: matrix.id, receipt: boundedSidecarReceipt() });
+    if (status === 'hash_mismatch') writeMaterializationSidecar({ directory, fixtureId: 'simple-site', runId: matrix.id, receipt: boundedSidecarReceipt(), artifactHash: '0'.repeat(64) });
+    const result = collectFixtureMatrixRunResults({ matrix, outputDirectory });
+    assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, status === 'missing' ? 'missing' : status, status);
+  }
+});
+
+test('materialization sidecars isolate concurrent attempts for the same fixture', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-concurrent-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'sidecar-concurrent-run' });
+  const directory = path.join(outputDirectory, 'simple-site');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: 'simple-site' }));
+  writeMaterializationSidecar({ directory, fixtureId: 'simple-site', runId: matrix.id, attemptId: 'attempt-a', receipt: { ...boundedSidecarReceipt(), operation_count: 1 } });
+  writeMaterializationSidecar({ directory, fixtureId: 'simple-site', runId: matrix.id, attemptId: 'attempt-b', receipt: { ...boundedSidecarReceipt(), operation_count: 2 } });
+
+  const first = collectFixtureMatrixRunResults({ matrix, outputDirectory, sidecarAttemptId: 'attempt-a' });
+  const second = collectFixtureMatrixRunResults({ matrix, outputDirectory, sidecarAttemptId: 'attempt-b' });
+  assert.equal(first.fixtures[0].matrix_evidence.materialization_receipt.operation_count, 1);
+  assert.equal(second.fixtures[0].matrix_evidence.materialization_receipt.operation_count, 2);
+});
+
+test('typed WP Codebox sidecar export materializes into the host intake path', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-host-output-'));
+  const codeboxArtifactsDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-codebox-artifacts-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'sidecar-export-run' });
+  const fixtureDirectory = path.join(outputDirectory, 'simple-site');
+  const guestDirectory = path.join(codeboxArtifactsDirectory, 'runtime-123', 'files', 'runtime-evidence', 'typed-artifacts', 'guest-simple-site');
+  mkdirSync(fixtureDirectory, { recursive: true });
+  mkdirSync(guestDirectory, { recursive: true });
+  const artifact = JSON.stringify({ fixture: 'simple-site' });
+  writeFileSync(path.join(fixtureDirectory, 'artifact.json'), artifact);
+  writeFileSync(path.join(guestDirectory, 'artifact.json'), artifact);
+  writeMaterializationSidecar({ directory: guestDirectory, fixtureId: 'simple-site', runId: matrix.id, attemptId: 'batch-001', receipt: boundedSidecarReceipt(), fileName: 'exported-sidecar.json' });
+
+  const exports = materializeMaterializationSidecars({ fixtures: matrix.fixtures, outputDirectory, codeboxArtifactsDirectory, attemptId: 'batch-001' });
+  const expected = path.join(fixtureDirectory, 'materialization-receipt--batch-001.json');
+  assert.deepEqual(exports.map((entry) => entry.fixture_id), ['simple-site']);
+  assert.equal(existsSync(expected), true);
+  const result = collectFixtureMatrixRunResults({ matrix, outputDirectory, sidecarAttemptId: 'batch-001' });
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, 'verified');
+});
+
+test('direct recipe builders generate distinct run and attempt identities', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'direct-recipe' });
+  const first = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi' });
+  const second = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi' });
+  assert.notEqual(first.workflow.steps[1].args[0], second.workflow.steps[1].args[0]);
+  assert.notEqual(first.artifacts.typed[0].path, second.artifacts.typed[0].path);
+});
+
+test('materialization sidecars reject partial, oversized, and semantically invalid content', () => {
+  const invalid = [
+    ['partial', (sidecar) => '{'],
+    ['oversized', (sidecar) => JSON.stringify({ ...sidecar, padding: 'x'.repeat(32 * 1024) })],
+    ['wrong-sidecar-schema', (sidecar) => JSON.stringify({ ...sidecar, schema: 'wrong/v1' })],
+    ['wrong-receipt-schema', (sidecar) => JSON.stringify({ ...sidecar, receipt: { ...sidecar.receipt, schema: 'wrong/v1' } })],
+    ['wrong-receipt-status', (sidecar) => JSON.stringify({ ...sidecar, receipt: { ...sidecar.receipt, status: 'partial' } })],
+    ['raw-string', (sidecar) => JSON.stringify({ ...sidecar, receipt: { ...sidecar.receipt, operation_rows: [{ kind: '<script>\nraw</script>', hash: 'a'.repeat(64) }] } })],
+  ];
+  for (const [name, encode] of invalid) {
+    const outputDirectory = mkdtempSync(path.join(tmpdir(), `ssi-sidecar-invalid-${name}-`));
+    const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'sidecar-invalid-run' });
+    const directory = path.join(outputDirectory, 'simple-site');
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: 'simple-site' }));
+    writeMaterializationSidecar({ directory, fixtureId: 'simple-site', runId: matrix.id, receipt: boundedSidecarReceipt() });
+    const sidecarPath = path.join(directory, 'materialization-receipt--primary.json');
+    const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf8'));
+    writeFileSync(sidecarPath, encode(sidecar));
+    const result = collectFixtureMatrixRunResults({ matrix, outputDirectory });
+    assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, 'malformed', name);
+  }
+});
+
+function boundedSidecarReceipt() {
+  return {
+    schema: 'static-site-importer/materialization-receipt/v1', status: 'completed', plan_hash: 'a'.repeat(64), page_count: 2, file_count: 4, operation_count: 99, loss_count: 3,
+    provider_totals: { completed: 1 }, computed_layout_totals: { applied: 7, losses: 2, operations: 9 }, operation_rows: [{ kind: 'computed_layout', status: 'completed', hash: 'a'.repeat(64) }], loss_rows: [{ kind: 'computed_layout_loss', reason_code: 'missing_measurement', hash: 'b'.repeat(64) }], truncated: { operation_rows: true, loss_rows: false },
+  };
+}
+
+function writeMaterializationSidecar({ directory, fixtureId, runId, receipt, artifactHash, attemptId = 'primary', fileName }) {
+  const artifact = readFileSync(path.join(directory, 'artifact.json'));
+  const sidecar = {
+    schema: 'static-site-importer/materialization-runtime-sidecar/v1', fixture_id: fixtureId, run_id: runId, step_id: 'import', attempt_id: attemptId, artifact_sha256: artifactHash || createHash('sha256').update(artifact).digest('hex'), provenance: { provider: 'static-site-importer/current-runtime', provider_status: 'completed' }, durability: { file_fsync: 'available', directory_fsync: 'attempted' }, receipt,
+  };
+  sidecar.content_sha256 = createHash('sha256').update(JSON.stringify(sidecar)).digest('hex');
+  writeFileSync(path.join(directory, fileName || `materialization-receipt--${attemptId}.json`), JSON.stringify(sidecar));
+}
+
+test('fixture attribution assigns a transform loss only with complete transformer lineage', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'transform-attribution-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      matrix_evidence: verifiedMatrixEvidence(),
+      diagnostics: [{ kind: 'missing_output', attribution_boundary: 'transform', message: 'Transformer omitted a source block.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, 'blocks-engine');
+  assert.equal(result.findings[0].attribution_candidates.find((candidate) => candidate.boundary === 'transform').supported, true);
+  assert.equal(result.findings[0].diagnostic_blind_spots, undefined);
+});
+
+test('fixture attribution assigns adapter loss only with correlated failed provider evidence', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'provider-attribution-test' });
+  const evidence = verifiedMatrixEvidence();
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      matrix_evidence: evidence,
+      diagnostics: [{ kind: 'recipe_step_failure', run_id: 'provider-run', attribution_boundary: 'provider', attribution_evidence: { correlation: { run_id: 'provider-run' }, provider_adapter: { schema: 'static-site-importer/provider-adapter/v1', status: 'failed', provider: 'test-adapter' } }, message: 'Provider adapter dropped the import result.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, 'static-site-importer');
+  assert.equal(result.findings[0].attribution_candidates.find((candidate) => candidate.boundary === 'provider').supported, true);
+});
+
+test('fixture attribution keeps capture-only mismatches distinct from transform ownership', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'capture-attribution-test' });
+  const evidence = verifiedMatrixEvidence();
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      matrix_evidence: evidence,
+      diagnostics: [{ kind: 'visual_parity_mismatch', run_id: 'capture-run', attribution_boundary: 'capture', attribution_evidence: { correlation: { run_id: 'capture-run' }, capture: { schema: 'wp-codebox/visual-capture/v1', status: 'failed', source: 'source.png', candidate: 'candidate.png' } }, message: 'Capture contract mismatched source and candidate screenshots.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, 'static-site-importer');
+  assert.equal(result.findings[0].attribution_candidates.find((candidate) => candidate.boundary === 'transform').supported, false);
+});
+
+test('versioned fixture evidence rejects uncorrelated direct provider evidence', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'strict-direct-provider-correlation-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'verified', missing: [] },
+      diagnostics: [{ kind: 'recipe_step_failure', attribution_boundary: 'provider', attribution_evidence: { provider_adapter: { status: 'failed' } }, message: 'Uncorrelated direct provider evidence.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, '');
+  assert.deepEqual(result.findings[0].diagnostic_blind_spots, ['provider_adapter_correlation']);
+});
+
+test('unversioned callers retain explicit provider ownership without correlation evidence', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'legacy-direct-provider-correlation-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      diagnostics: [{ kind: 'recipe_step_failure', attribution_boundary: 'provider', candidate_repo: 'static-site-importer', attribution_evidence: { provider_adapter: { status: 'failed' } }, message: 'Legacy provider ownership.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, 'static-site-importer');
+});
+
+test('fixture attribution records missing lineage as a blind spot instead of defaulting to Blocks Engine', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'missing-lineage-attribution-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'legacy_evidence_missing', missing: ['transformer_reference', 'wordpress_site_plan', 'materialization_receipt'] },
+      diagnostics: [{ kind: 'visual_parity_mismatch', message: 'Visual mismatch has no lineage.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, '');
+  assert.deepEqual(result.findings[0].diagnostic_blind_spots, ['attribution_boundary']);
+  assert.ok(result.summary.diagnostic_blind_spots.some((spot) => spot.kind === 'missing_required_lineage'));
+});
+
+test('materialization attribution reports missing transformer provenance as a boundary blind spot', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'materialization-lineage-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'legacy_evidence_missing', missing: ['transformer_package', 'transformer_version', 'transformer_reference'] },
+      diagnostics: [{ kind: 'missing_asset', attribution_boundary: 'materialization', candidate_repo: 'static-site-importer', message: 'Materialization omitted a stylesheet.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, '');
+  assert.deepEqual(result.findings[0].diagnostic_blind_spots, ['transformer_package', 'transformer_reference', 'transformer_version']);
+});
+
+test('unversioned fixture results retain caller-supplied ownership when attribution evidence is absent', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'legacy-owner-compatibility-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      diagnostics: [{ kind: 'layout_shift', candidate_repo: 'blocks-engine', message: 'Legacy caller ownership.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, 'blocks-engine');
+});
+
+test('versioned fixture evidence replaces an unproven caller-supplied owner', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'strict-owner-compatibility-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'legacy_evidence_missing', missing: ['transformer_reference'] },
+      diagnostics: [{ kind: 'layout_shift', candidate_repo: 'blocks-engine', message: 'Strict contract lacks ownership evidence.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, '');
+});
+
+test('fixture lineage retains the development transformer override identity', () => {
+  const evidence = collectMatrixEvidence({
+    import_report: {
+      blocks_engine: {
+        transformer: { package: 'automattic/blocks-engine-php-transformer', version: 'dev-main', reference: 'a'.repeat(40) },
+        wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+      },
+      materialization_receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed' },
+    },
+  }, {
+    dependencyOverrides: { blocks_engine_php_transformer: { package: 'automattic/blocks-engine-php-transformer', reference: 'b'.repeat(40) } },
+  });
+
+  assert.deepEqual(evidence.lineage.development_override, { package: 'automattic/blocks-engine-php-transformer', reference: 'b'.repeat(40) });
+});
+
+test('fixture lineage does not correlate a retried provider failure to a transform diagnostic', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-attribution-correlation-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'attribution-correlation-test' });
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: [
+      {
+        fixture_id: 'simple-site',
+        run_id: 'current-run',
+        status: 'failed',
+        import_report: verifiedImportReport(),
+        diagnostics: [{ id: 'current-transform', run_id: 'current-run', step_id: 'shared-step', kind: 'missing_output', attribution_boundary: 'transform', message: 'Current transform omitted a source block.' }],
+      },
+      {
+        fixture_id: 'simple-site',
+        run_id: 'prior-run',
+        step_id: 'shared-step',
+        provider_adapter: { schema: 'static-site-importer/provider-adapter/v1', status: 'failed', provider: 'retried-provider' },
+      },
+    ],
+  });
+
+  const finding = result.findings.find((item) => item.kind === 'missing_output');
+  assert.equal(finding.candidate_repo, 'blocks-engine');
+  assert.equal(finding.diagnostic_blind_spots, undefined);
+  assert.equal(finding.attribution_candidates.find((candidate) => candidate.boundary === 'provider').missing.length, 0);
+});
+
+test('fixture lineage rejects same-run evidence from a different step', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-attribution-step-correlation-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'attribution-step-correlation-test' });
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: [
+      {
+        fixture_id: 'simple-site',
+        run_id: 'shared-run',
+        step_id: 'transform-step',
+        status: 'failed',
+        import_report: verifiedImportReport(),
+        diagnostics: [{ id: 'transform-diagnostic', run_id: 'shared-run', step_id: 'transform-step', kind: 'missing_output', attribution_boundary: 'transform', message: 'Transform failed.' }],
+      },
+      {
+        fixture_id: 'simple-site',
+        run_id: 'shared-run',
+        step_id: 'provider-step',
+        provider_adapter: { schema: 'static-site-importer/provider-adapter/v1', status: 'failed', provider: 'other-step-provider' },
+      },
+    ],
+  });
+
+  const finding = result.findings.find((item) => item.kind === 'missing_output');
+  assert.equal(finding.candidate_repo, 'blocks-engine');
+  assert.equal(finding.diagnostic_blind_spots, undefined);
+});
+
+test('fixture lineage requires complete matching correlation identities', () => {
+  const cases = [
+    ['matching run', { run_id: 'run-a' }, { run_id: 'run-a' }, true],
+    ['matching run and step', { run_id: 'run-a', step_id: 'step-a' }, { run_id: 'run-a', step_id: 'step-a' }, true],
+    ['matching full identity', { run_id: 'run-a', step_id: 'step-a', diagnostic_id: 'diagnostic-a' }, { run_id: 'run-a', step_id: 'step-a', diagnostic_id: 'diagnostic-a' }, true],
+    ['same run with evidence-only step', { run_id: 'run-a' }, { run_id: 'run-a', step_id: 'step-a' }, false],
+    ['same step with diagnostic-only run', { run_id: 'run-a', step_id: 'step-a' }, { step_id: 'step-a' }, false],
+    ['same run with conflicting step', { run_id: 'run-a', step_id: 'step-a' }, { run_id: 'run-a', step_id: 'step-b' }, false],
+    ['same run and step with conflicting diagnostic', { run_id: 'run-a', step_id: 'step-a', diagnostic_id: 'diagnostic-a' }, { run_id: 'run-a', step_id: 'step-a', diagnostic_id: 'diagnostic-b' }, false],
+    ['absent identities', {}, {}, false],
+  ];
+
+  for (const [name, diagnosticIdentity, evidenceIdentity, expected] of cases) {
+    const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-attribution-identity-'));
+    const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: `attribution-identity-${name}` });
+    const result = collectFixtureMatrixRunResults({
+      matrix,
+      outputDirectory,
+      codeboxOutput: [
+        {
+          fixture_id: 'simple-site',
+          status: 'failed',
+          import_report: verifiedImportReport(),
+          diagnostics: [{ ...diagnosticIdentity, kind: 'recipe_step_failure', attribution_boundary: 'provider', message: 'Provider operation failed.' }],
+        },
+        {
+          fixture_id: 'simple-site',
+          ...evidenceIdentity,
+          provider_adapter: { schema: 'static-site-importer/provider-adapter/v1', status: 'failed', provider: 'correlation-test' },
+        },
+      ],
+    });
+
+    const finding = result.findings.find((item) => item.kind === 'recipe_step_failure');
+    assert.equal(finding.candidate_repo === 'static-site-importer', expected, name);
+  }
+});
+
+test('fixture attribution infers transform ownership for verified editor-invalid diagnostics', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'inferred-transform-attribution-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'failed',
+      matrix_evidence: verifiedMatrixEvidence(),
+      diagnostics: [{ kind: 'editor_block_invalid', message: 'Editor rejected transformed block markup.' }],
+    }],
+  });
+
+  assert.equal(result.findings[0].candidate_repo, 'blocks-engine');
+  assert.equal(result.findings[0].attribution_candidates.find((candidate) => candidate.boundary === 'transform').supported, true);
+});
+
+function verifiedMatrixEvidence() {
+  return {
+    readiness: 'verified',
+    missing: [],
+    transformer: { package: 'automattic/blocks-engine-php-transformer', version: '1.0.0', reference: 'a'.repeat(40) },
+    wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+    materialization_receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed' },
+    lineage: { artifact: { schema: 'blocks-engine/wordpress-site-plan/v2' } },
+  };
+}
+
+function verifiedImportReport() {
+  return {
+    materialization_receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed' },
+    blocks_engine: {
+      transformer: { package: 'automattic/blocks-engine-php-transformer', version: '1.0.0', reference: 'a'.repeat(40) },
+      wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+    },
+  };
+}
 
 test('fixture matrix rejects placeholder transformer provenance', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-matrix-placeholder-provenance-'));
@@ -4695,7 +5151,7 @@ test('editor-canvas-probe invalid-block warnings become gating editor_block_inva
   assert.equal(finding.kind, 'editor_block_invalid');
   assert.equal(finding.group_key, 'editor_block_invalid');
   assert.equal(finding.repair_bucket, 'editor_block_invalid');
-  assert.equal(finding.candidate_repo, 'blocks-engine');
+  assert.equal(finding.candidate_repo, '');
   assert.equal(finding.loss_class, 'editor_block_invalid');
   assert.equal(finding.loss_acceptance, 'unacceptable');
   assert.equal(finding.selector, '.block-editor-warning');
@@ -5785,7 +6241,7 @@ test('(b) visual-compare mismatch over threshold with gate on becomes a gating u
   assert.ok(finding, 'expected a visual_parity_mismatch finding');
   assert.equal(finding.group_key, 'visual_parity_mismatch');
   assert.equal(finding.repair_bucket, 'visual_parity_mismatch');
-  assert.equal(finding.candidate_repo, 'blocks-engine');
+  assert.equal(finding.candidate_repo, '');
   assert.equal(finding.loss_class, 'visual_parity_mismatch');
   assert.equal(finding.loss_acceptance, 'unacceptable');
   assert.equal(result.summary.unacceptable_finding_count, 1);
@@ -6999,8 +7455,9 @@ test('live-WP parity toggle adds the capture step + invokes the collector when O
 
   // RECIPE: OFF is byte-identical to the same recipe with no live-WP input, and
   // emits no capture-html step. ON appends exactly one capture-html step.
-  const recipeBaseline = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi' });
-  const recipeOff = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi', liveWpParity: false });
+  const invocation = { runId: 'live-wp-toggle-run', attemptId: 'live-wp-toggle-attempt' };
+  const recipeBaseline = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi', ...invocation });
+  const recipeOff = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi', liveWpParity: false, ...invocation });
   assert.deepEqual(recipeOff, recipeBaseline, 'liveWpParity:false leaves the recipe byte-identical to today');
   assert.equal(recipeOff.workflow.steps.some((step) => step.command === 'wordpress.capture-html'), false);
   const recipeOn = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi', liveWpParity: true });
