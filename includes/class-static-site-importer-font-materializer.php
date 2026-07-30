@@ -35,13 +35,20 @@ final class Static_Site_Importer_Font_Materializer {
 		if ( is_wp_error( $writes ) ) {
 			return $writes;
 		}
-		if ( ! empty( $producer_faces ) ) {
-			$materialized = self::materialize_producer_faces( $producer_faces, $diagnostics );
-			if ( is_wp_error( $materialized ) ) {
-				return $materialized;
+		if ( isset( $producer_faces['faces'] ) ) {
+			if ( empty( $producer_faces['faces'] ) ) {
+				if ( ! empty( $diagnostics ) ) {
+					return array( 'writes' => array(), 'diagnostics' => $diagnostics, 'faces' => array(), 'required_faces' => array() );
+				}
+				$producer_faces = array();
+			} else {
+				$materialized = self::materialize_producer_faces( $producer_faces, $diagnostics );
+				if ( is_wp_error( $materialized ) ) {
+					return $materialized;
+				}
+				$writes = array_merge( $writes, $materialized['writes'] );
+				return self::with_runtime_registration( $writes, $resolved_plan, $materialized['required_faces'], $diagnostics, $materialized['faces'] );
 			}
-			$writes = array_merge( $writes, $materialized['writes'] );
-			return self::with_runtime_registration( $writes, $resolved_plan, $materialized['required_faces'], $diagnostics, $materialized['faces'] );
 		}
 		if ( 'google_fonts' !== (string) ( $plan['provider'] ?? '' ) ) {
 			return array( 'writes' => $writes, 'diagnostics' => $diagnostics );
@@ -82,14 +89,16 @@ final class Static_Site_Importer_Font_Materializer {
 		}
 		$required = 'required' === (string) ( $contract['browser_readiness']['state'] ?? '' );
 		foreach ( $contract['diagnostics'] ?? array() as $diagnostic ) {
-			if ( $required && is_array( $diagnostic ) && '' !== (string) ( $diagnostic['code'] ?? '' ) ) {
+			if ( is_array( $diagnostic ) && '' !== (string) ( $diagnostic['code'] ?? '' ) ) {
 				$diagnostics[] = self::diagnostic( 'producer_' . (string) $diagnostic['code'] );
-				return new WP_Error( 'static_site_importer_font_materialization_producer_diagnostic', '', $diagnostics );
+				if ( $required ) {
+					return new WP_Error( 'static_site_importer_font_materialization_producer_diagnostic', '', $diagnostics );
+				}
 			}
 		}
 		$faces = $contract['faces'] ?? array();
 		if ( ! is_array( $faces ) || empty( $faces ) ) {
-			return array();
+			return array( 'faces' => array(), 'imports' => array(), 'receipts' => array() );
 		}
 		$imports = array();
 		foreach ( $contract['imports'] ?? array() as $import ) {

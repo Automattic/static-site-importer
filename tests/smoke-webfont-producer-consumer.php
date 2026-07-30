@@ -13,8 +13,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class WP_Error {
 	private string $code;
-	public function __construct( string $code ) { $this->code = $code; }
+	private mixed $data;
+	public function __construct( string $code, string $message = '', mixed $data = null ) { $this->code = $code; $this->data = $data; }
 	public function get_error_code(): string { return $this->code; }
+	public function get_error_data(): mixed { return $this->data; }
 }
 function is_wp_error( $value ): bool { return $value instanceof WP_Error; }
 function wp_parse_url( string $url ) { return parse_url( $url ); }
@@ -102,5 +104,19 @@ $diagnostic_plan = $producer_plan;
 $diagnostic_plan['webfont_contract']['diagnostics'] = array( array( 'code' => 'webfont_import_unresolved' ) );
 $diagnostic_failure = Static_Site_Importer_Font_Materializer::prepare_overlay( $diagnostic_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
 $assert( is_wp_error( $diagnostic_failure ) && 'static_site_importer_font_materialization_producer_diagnostic' === $diagnostic_failure->get_error_code(), 'required producer diagnostics gate materialization before writes' );
+
+$local_plan = $producer_plan;
+$local_plan['webfont_contract'] = array(
+	'schema' => 'blocks-engine/webfont-materialization/v1',
+	'imports' => array(),
+	'faces' => array(),
+	'receipts' => array(),
+	'browser_readiness' => array( 'state' => 'not_required', 'required_receipt_ids' => array() ),
+	'diagnostics' => array( array( 'code' => 'webfont_import_unsupported_provider' ) ),
+);
+$request_count = count( $GLOBALS['ssi_webfont_requests'] );
+$local_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $local_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
+$assert( ! is_wp_error( $local_overlay ) && array() === $local_overlay['writes'] && $request_count === count( $GLOBALS['ssi_webfont_requests'] ), 'an authoritative local-font contract never falls back to synthesized Google requests' );
+$assert( 'producer_webfont_import_unsupported_provider' === ( $local_overlay['diagnostics'][0]['reason'] ?? '' ), 'non-required local-font producer diagnostics survive the handoff without blocking import' );
 
 echo "Webfont producer-consumer smoke passed.\n";

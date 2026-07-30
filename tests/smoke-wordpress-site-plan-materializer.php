@@ -28,8 +28,10 @@ mkdir( $GLOBALS['ssi_plan_root'], 0777, true );
 
 class WP_Error {
 	private string $code;
-	public function __construct( string $code ) { $this->code = $code; }
+	private mixed $data;
+	public function __construct( string $code, string $message = '', mixed $data = null ) { $this->code = $code; $this->data = $data; }
 	public function get_error_code(): string { return $this->code; }
+	public function get_error_data(): mixed { return $this->data; }
 }
 class WP_Post {
 	public int $ID;
@@ -193,6 +195,7 @@ $invalid_typed_plan = $typed_font_plan;
 $invalid_typed_plan['webfont_contract']['imports'][0]['source']['expected_digest'] = 'sha256:' . str_repeat( '0', 64 );
 $invalid_typed_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $font_plan, array( 'slug' => 'invalid-typed-font-site-plan', 'font_materialization' => $invalid_typed_plan ) );
 $assert( 'partial' === $invalid_typed_receipt['status'] && 'static_site_importer_font_materialization_producer_stylesheet_failed' === ( $invalid_typed_receipt['errors'][0]['code'] ?? '' ), 'required producer source digest mismatch fails explicitly before theme activation' );
+$assert( 'producer_stylesheet_digest_mismatch' === ( $invalid_typed_receipt['diagnostics'][1]['reason_code'] ?? '' ), 'font materialization receipts retain the producer failure reason instead of only the generic error code' );
 
 $font_without_svg_result = ( new ArtifactCompiler() )->compile(
 	array(

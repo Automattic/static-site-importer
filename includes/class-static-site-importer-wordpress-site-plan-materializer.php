@@ -109,7 +109,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$state['resolved']
 		);
 		if ( is_wp_error( $font_overlay ) ) {
-			return self::failed_receipt( $state, $font_overlay->get_error_code() );
+			return self::failed_receipt_from_error( $state, $font_overlay );
 		}
 
 		foreach ( $state['ordered_pages'] as $page ) {
@@ -530,6 +530,24 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	/** @param array<string,mixed> $state */
 	private static function failed_receipt( array $state, string $reason ): array {
 		$state['diagnostics'][] = array( 'reason_code' => $reason );
+		return self::receipt( 'partial', $state );
+	}
+
+	/** @param array<string,mixed> $state */
+	private static function failed_receipt_from_error( array $state, WP_Error $error ): array {
+		$state['diagnostics'][] = array( 'reason_code' => $error->get_error_code() );
+		$data = $error->get_error_data();
+		if ( is_array( $data ) ) {
+			foreach ( $data as $diagnostic ) {
+				if ( ! is_array( $diagnostic ) ) {
+					continue;
+				}
+				$reason = (string) ( $diagnostic['reason_code'] ?? $diagnostic['reason'] ?? $diagnostic['code'] ?? '' );
+				if ( '' !== $reason ) {
+					$state['diagnostics'][] = array_merge( $diagnostic, array( 'reason_code' => $reason ) );
+				}
+			}
+		}
 		return self::receipt( 'partial', $state );
 	}
 
