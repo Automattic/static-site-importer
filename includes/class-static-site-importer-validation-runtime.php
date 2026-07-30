@@ -48,6 +48,7 @@ class Static_Site_Importer_Validation_Runtime {
 			'fixture_id'          => isset( $result['fixture_id'] ) && is_scalar( $result['fixture_id'] ) ? (string) $result['fixture_id'] : '',
 			'status'              => isset( $result['status'] ) && is_scalar( $result['status'] ) ? (string) $result['status'] : '',
 			'success'             => ! empty( $result['success'] ),
+			'quality'             => array( 'pass' => ! empty( $result['success'] ) ),
 			'diagnostics'         => $diagnostics,
 			'fixture_diagnostics' => $fixture_diagnostics,
 			'artifacts'           => isset( $result['artifacts'] ) && is_array( $result['artifacts'] ) ? $result['artifacts'] : array(),

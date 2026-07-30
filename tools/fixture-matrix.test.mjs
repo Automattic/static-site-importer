@@ -81,6 +81,7 @@ import {
   writeFixtureMatrixArtifacts,
 } from '../lib/fixture-matrix.mjs';
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
+import { collectQualityMetrics } from '../lib/fixture-matrix/collectors/quality-metrics.mjs';
 import { runWpCodeboxRecipe, wpCodeboxBin } from './wp-codebox/recipe.mjs';
 
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -152,6 +153,15 @@ test('block composition uses nested runtime quality metrics and diagnostic fallb
     fixture_diagnostics: { quality_counts: { core_html_block_count: 0, freeform_block_count: 0 } },
   });
   assert.deepEqual(composition, { block_total: 318, native_block_count: 318, core_html_block_count: 0, block_type_counts: null, source: 'quality_counts' });
+});
+
+test('bounded runtime quality retains the promotion gate pass signal', () => {
+  const quality = collectQualityMetrics({
+    quality: { pass: true },
+    fixture_diagnostics: { quality_counts: { block_count: 318, fallback_count: 0 } },
+  });
+  assert.equal(quality.pass, true);
+  assert.equal(quality.block_count, 318);
 });
 
 test('Homeboy component assigns runtime and dependency capabilities to WordPress', () => {

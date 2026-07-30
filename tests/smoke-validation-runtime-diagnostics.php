@@ -169,6 +169,7 @@ $assert( 1 === ( $result['fixture_diagnostics']['materialization_receipt']['page
 $matrix_result = Static_Site_Importer_Validation_Runtime::fixture_matrix_result( $result );
 $assert( Static_Site_Importer_Validation_Runtime::FIXTURE_MATRIX_RESULT_SCHEMA === ( $matrix_result['schema'] ?? '' ), 'fixture-matrix-schema' );
 $assert( ! isset( $matrix_result['import_report'] ), 'fixture-matrix-omits-full-import-report' );
+$assert( false === ( $matrix_result['quality']['pass'] ?? true ), 'fixture-matrix-keeps-quality-pass' );
 $assert( 1 === count( $matrix_result['diagnostics'] ?? array() ), 'fixture-matrix-keeps-actionable-diagnostics' );
 $assert( ! isset( $matrix_result['fixture_diagnostics']['diagnostics'] ), 'fixture-matrix-does-not-duplicate-diagnostics' );
 $assert( 5 === ( $matrix_result['fixture_diagnostics']['quality_counts']['block_count'] ?? 0 ), 'fixture-matrix-derives-block-count' );
