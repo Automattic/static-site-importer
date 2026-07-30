@@ -15,6 +15,45 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Static_Site_Importer_Validation_Runtime {
 
 	public const RESULT_SCHEMA = 'static-site-importer/import-validation-result/v1';
+	public const FIXTURE_MATRIX_RESULT_SCHEMA = 'static-site-importer/fixture-matrix-validation-result/v1';
+
+	/**
+	 * Project the full validation result into the bounded fixture-matrix contract.
+	 *
+	 * The full import report can exceed runtime command-capture limits. Matrix
+	 * consumers need actionable diagnostics and attribution evidence, not the raw
+	 * materialized documents carried by that report.
+	 *
+	 * @param array<string,mixed> $result Full validation result.
+	 * @return array<string,mixed>
+	 */
+	public static function fixture_matrix_result( array $result ): array {
+		$fixture_diagnostics = isset( $result['fixture_diagnostics'] ) && is_array( $result['fixture_diagnostics'] )
+			? $result['fixture_diagnostics']
+			: Static_Site_Importer_Diagnostic_Contract::build( $result );
+
+		$diagnostics = isset( $fixture_diagnostics['diagnostics'] ) && is_array( $fixture_diagnostics['diagnostics'] )
+			? $fixture_diagnostics['diagnostics']
+			: array();
+		unset(
+			$fixture_diagnostics['diagnostics'],
+			$fixture_diagnostics['runtime_dependency_target_gaps'],
+			$fixture_diagnostics['asset_diagnostics'],
+			$fixture_diagnostics['svg_diagnostics'],
+			$fixture_diagnostics['button_style_loss_hints']
+		);
+
+		return array(
+			'schema'              => self::FIXTURE_MATRIX_RESULT_SCHEMA,
+			'fixture_id'          => isset( $result['fixture_id'] ) && is_scalar( $result['fixture_id'] ) ? (string) $result['fixture_id'] : '',
+			'status'              => isset( $result['status'] ) && is_scalar( $result['status'] ) ? (string) $result['status'] : '',
+			'success'             => ! empty( $result['success'] ),
+			'quality'             => array( 'pass' => ! empty( $result['success'] ) ),
+			'diagnostics'         => $diagnostics,
+			'fixture_diagnostics' => $fixture_diagnostics,
+			'artifacts'           => isset( $result['artifacts'] ) && is_array( $result['artifacts'] ) ? $result['artifacts'] : array(),
+		);
+	}
 
 	/**
 	 * Validate a website artifact in the current runtime.

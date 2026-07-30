@@ -216,6 +216,10 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 		static function ( array $args, array $assoc_args ): void {
 			unset( $args );
 			$halt_on_failure = ! isset( $assoc_args['allow-failure'] ) && false !== ( $assoc_args['error-on-fail'] ?? true ) && ! isset( $assoc_args['no-error-on-fail'] );
+			$format          = isset( $assoc_args['format'] ) ? (string) $assoc_args['format'] : 'full';
+			if ( ! in_array( $format, array( 'full', 'fixture-matrix' ), true ) ) {
+				WP_CLI::error( 'The --format value must be full or fixture-matrix.' );
+			}
 
 			$input  = array(
 				'slug'                      => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
@@ -251,6 +255,9 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			$result = Static_Site_Importer_Validation_Runtime::validate_artifact( $input );
 			if ( is_wp_error( $result ) ) {
 				$error_result = Static_Site_Importer_Validation_Runtime::error_result_from_wp_error( $result, $input );
+				if ( 'fixture-matrix' === $format ) {
+					$error_result = Static_Site_Importer_Validation_Runtime::fixture_matrix_result( $error_result );
+				}
 				$json         = wp_json_encode( $error_result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 				if ( false === $json ) {
 					WP_CLI::error( $result->get_error_message() );
@@ -264,6 +271,9 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				return;
 			}
 
+			if ( 'fixture-matrix' === $format ) {
+				$result = Static_Site_Importer_Validation_Runtime::fixture_matrix_result( $result );
+			}
 			$json = wp_json_encode( $result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 			if ( false === $json ) {
 				WP_CLI::error( 'Failed to encode validation result.' );

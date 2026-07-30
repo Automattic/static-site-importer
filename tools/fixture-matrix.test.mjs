@@ -81,6 +81,7 @@ import {
   writeFixtureMatrixArtifacts,
 } from '../lib/fixture-matrix.mjs';
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
+import { collectQualityMetrics } from '../lib/fixture-matrix/collectors/quality-metrics.mjs';
 import { runWpCodeboxRecipe, wpCodeboxBin } from './wp-codebox/recipe.mjs';
 
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -152,6 +153,15 @@ test('block composition uses nested runtime quality metrics and diagnostic fallb
     fixture_diagnostics: { quality_counts: { core_html_block_count: 0, freeform_block_count: 0 } },
   });
   assert.deepEqual(composition, { block_total: 318, native_block_count: 318, core_html_block_count: 0, block_type_counts: null, source: 'quality_counts' });
+});
+
+test('bounded runtime quality retains the promotion gate pass signal', () => {
+  const quality = collectQualityMetrics({
+    quality: { pass: true },
+    fixture_diagnostics: { quality_counts: { block_count: 318, fallback_count: 0 } },
+  });
+  assert.equal(quality.pass, true);
+  assert.equal(quality.block_count, 318);
 });
 
 test('Homeboy component assigns runtime and dependency capabilities to WordPress', () => {
@@ -553,6 +563,7 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   assert.equal(recipe.workflow.steps[0].command, 'wordpress.wp-cli');
   assert.equal(recipe.workflow.steps[0].args[0], 'command=plugin activate static-site-importer/static-site-importer.php');
   assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
+  assert.match(recipe.workflow.steps[1].args[0], /--format=fixture-matrix/);
   assert.match(recipe.workflow.steps[1].args[0], /--allow-failure/);
   assert.doesNotMatch(recipe.workflow.steps[1].args[0], /--allow-missing-woocommerce/);
   assert.deepEqual(recipe.inputs.stagedFiles[0], {
@@ -4654,6 +4665,26 @@ test('collectEditorValidation reads the editor-validate-blocks shape into headli
   assert.equal(metrics.valid_blocks, 3);
   assert.equal(metrics.invalid_blocks, 0);
   assert.equal(collectEditorValidation({ unrelated: true }), null);
+});
+
+test('collectEditorValidation derives cross-surface totals from authoritative block results', () => {
+  const metrics = collectEditorValidation({
+    validation_method: 'wp.blocks.validateBlock',
+    validation_provider: 'wordpress-block-editor',
+    total_blocks: 1,
+    valid_blocks: 1,
+    invalid_blocks: 0,
+    results: [
+      { name: 'core/separator', isValid: false, issues: ['Invalid separator'] },
+      { name: 'core/heading', isValid: true, issues: [] },
+      { name: 'core/column', isValid: false, issues: ['Invalid column'] },
+      { name: 'core/paragraph', isValid: true, issues: [] },
+    ],
+  });
+
+  assert.equal(metrics.total_blocks, 4);
+  assert.equal(metrics.valid_blocks, 2);
+  assert.equal(metrics.invalid_blocks, 2);
 });
 
 test('editor-validate-blocks all-valid output reports a 1.0 valid-block rate with zero invalid and no findings', () => {

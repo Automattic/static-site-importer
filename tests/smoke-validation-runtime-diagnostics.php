@@ -89,8 +89,13 @@ file_put_contents(
 	json_encode(
 		array(
 			'quality'       => array(
-				'block_count'                    => 12,
 				'semantic_parity_failure_count' => 1,
+			),
+			'generated_theme' => array(
+				'block_documents' => array(
+					array( 'content' => '<!-- wp:group --><!-- wp:paragraph --><p>One</p><!-- /wp:paragraph --><!-- wp:html --><div>Fallback</div><!-- /wp:html --><!-- /wp:group -->' ),
+					array( 'block_count' => 2, 'core_html_block_count' => 0, 'freeform_block_count' => 1 ),
+				),
 			),
 			'blocks_engine' => array(
 				'transformer'         => array(
@@ -160,6 +165,19 @@ $assert( 1 === ( $result['fixture_diagnostics']['blocks_engine']['wordpress_site
 $assert( ! isset( $result['fixture_diagnostics']['blocks_engine']['wordpress_site_plan']['assets'][0]['content_base64'] ), 'site-plan-asset-payload-omitted' );
 $assert( 'completed' === ( $result['fixture_diagnostics']['materialization_receipt']['status'] ?? '' ), 'materialization-receipt-status-preserved' );
 $assert( 1 === ( $result['fixture_diagnostics']['materialization_receipt']['page_count'] ?? 0 ), 'materialization-receipt-counts-preserved' );
+
+$matrix_result = Static_Site_Importer_Validation_Runtime::fixture_matrix_result( $result );
+$assert( Static_Site_Importer_Validation_Runtime::FIXTURE_MATRIX_RESULT_SCHEMA === ( $matrix_result['schema'] ?? '' ), 'fixture-matrix-schema' );
+$assert( ! isset( $matrix_result['import_report'] ), 'fixture-matrix-omits-full-import-report' );
+$assert( false === ( $matrix_result['quality']['pass'] ?? true ), 'fixture-matrix-keeps-quality-pass' );
+$assert( 1 === count( $matrix_result['diagnostics'] ?? array() ), 'fixture-matrix-keeps-actionable-diagnostics' );
+$assert( ! isset( $matrix_result['fixture_diagnostics']['diagnostics'] ), 'fixture-matrix-does-not-duplicate-diagnostics' );
+$assert( 5 === ( $matrix_result['fixture_diagnostics']['quality_counts']['block_count'] ?? 0 ), 'fixture-matrix-derives-block-count' );
+$assert( 1 === ( $matrix_result['fixture_diagnostics']['quality_counts']['core_html_block_count'] ?? 0 ), 'fixture-matrix-derives-core-html-count' );
+$assert( 1 === ( $matrix_result['fixture_diagnostics']['quality_counts']['freeform_block_count'] ?? 0 ), 'fixture-matrix-derives-freeform-count' );
+$assert( str_repeat( 'a', 40 ) === ( $matrix_result['fixture_diagnostics']['blocks_engine']['transformer']['reference'] ?? '' ), 'fixture-matrix-keeps-transformer-reference' );
+$assert( 'blocks-engine/wordpress-site-plan/v2' === ( $matrix_result['fixture_diagnostics']['blocks_engine']['wordpress_site_plan']['schema'] ?? '' ), 'fixture-matrix-keeps-site-plan' );
+$assert( 'completed' === ( $matrix_result['fixture_diagnostics']['materialization_receipt']['status'] ?? '' ), 'fixture-matrix-keeps-materialization-receipt' );
 
 $default_artifact_dir = $artifact_dir . '/default-materialization';
 $default_result       = Static_Site_Importer_Validation_Runtime::validate_artifact(
