@@ -147,7 +147,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		$font_materialization = self::apply_font_overlay( $state, $font_overlay );
 		if ( is_wp_error( $font_materialization ) ) {
-			return self::failed_receipt( $state, $font_materialization->get_error_code() );
+			return self::failed_receipt_from_error( $state, $font_materialization );
 		}
 		$state['applied']['font_materialization'] = $font_materialization;
 

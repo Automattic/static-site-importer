@@ -567,6 +567,31 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Materialization failures retain their specific receipt diagnostics.
+	 */
+	public function test_validation_error_result_preserves_materialization_receipt(): void {
+		$error = new WP_Error(
+			'static_site_importer_font_materialization_failed',
+			'Font materialization failed.',
+			array(
+				'schema'      => 'static-site-importer/materialization-receipt/v1',
+				'status'      => 'partial',
+				'diagnostics' => array(
+					array(
+						'type'        => 'font_materialization_failed',
+						'reason_code' => 'google_fonts_stylesheet_request_failed',
+					),
+				),
+			)
+		);
+
+		$result = Static_Site_Importer_Validation_Runtime::error_result_from_wp_error( $error );
+
+		$this->assertSame( 'partial', $result['fixture_diagnostics']['materialization_receipt']['status'] ?? '' );
+		$this->assertSame( 'google_fonts_stylesheet_request_failed', $result['diagnostics'][1]['reason_code'] ?? '' );
+	}
+
+	/**
 	 * Assert that a report value does not expose local filesystem paths.
 	 *
 	 * @param mixed $value Report value.
