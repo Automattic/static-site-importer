@@ -111,7 +111,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 	 */
 	private static function diagnostic_rows_from_result( array $result ): array {
 		$rows = array();
-		foreach ( array( $result['diagnostics'] ?? array(), $result['artifact_diagnostics']['diagnostics'] ?? array(), $result['import_validation_result']['diagnostics'] ?? array() ) as $candidate ) {
+		foreach ( array( $result['diagnostics'] ?? array(), $result['artifact_diagnostics']['diagnostics'] ?? array(), $result['import_validation_result']['diagnostics'] ?? array(), $result['materialization_receipt']['diagnostics'] ?? array() ) as $candidate ) {
 			if ( is_array( $candidate ) ) {
 				$rows = array_merge( $rows, self::normalize_diagnostic_rows( $candidate ) );
 			}

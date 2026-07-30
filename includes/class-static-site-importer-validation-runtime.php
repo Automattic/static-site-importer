@@ -71,13 +71,15 @@ class Static_Site_Importer_Validation_Runtime {
 	 * @return array<string,mixed>
 	 */
 	public static function error_result_from_wp_error( WP_Error $error, array $input = array() ): array {
-		$slug                          = isset( $input['slug'] ) ? sanitize_title( (string) $input['slug'] ) : '';
-		$result                        = array(
-			'success'       => false,
-			'schema'        => self::RESULT_SCHEMA,
-			'status'        => 'failed',
-			'fixture_id'    => $slug,
-			'request'       => array(
+		$slug       = isset( $input['slug'] ) ? sanitize_title( (string) $input['slug'] ) : '';
+		$error_data = $error->get_error_data();
+		$receipt    = is_array( $error_data ) && 'static-site-importer/materialization-receipt/v1' === ( $error_data['schema'] ?? '' ) ? $error_data : array();
+		$result = array(
+			'success'                 => false,
+			'schema'                  => self::RESULT_SCHEMA,
+			'status'                  => 'failed',
+			'fixture_id'              => $slug,
+			'request'                 => array(
 				'import_args' => array_filter(
 					array(
 						'slug' => $slug,
@@ -85,11 +87,11 @@ class Static_Site_Importer_Validation_Runtime {
 					)
 				),
 			),
-			'summary'       => array(
+			'summary'                 => array(
 				'quality_pass' => false,
 				'error_code'   => $error->get_error_code(),
 			),
-			'diagnostics'   => array(
+			'diagnostics'             => array(
 				array(
 					'type'        => 'validation_error',
 					'severity'    => 'error',
@@ -100,8 +102,9 @@ class Static_Site_Importer_Validation_Runtime {
 					'owner'       => 'static-site-importer',
 				),
 			),
-			'artifacts'     => array(),
-			'import_report' => array(),
+			'materialization_receipt' => $receipt,
+			'artifacts'               => array(),
+			'import_report'           => array(),
 		);
 		$result['fixture_diagnostics'] = Static_Site_Importer_Diagnostic_Contract::build( $result );
 		$result['diagnostics']         = isset( $result['fixture_diagnostics']['diagnostics'] ) && is_array( $result['fixture_diagnostics']['diagnostics'] ) ? $result['fixture_diagnostics']['diagnostics'] : array();
