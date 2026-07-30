@@ -37,7 +37,7 @@ final class Static_Site_Importer_Font_Materializer {
 		}
 		if ( isset( $producer_faces['faces'] ) ) {
 			if ( empty( $producer_faces['faces'] ) ) {
-				if ( ! empty( $diagnostics ) ) {
+				if ( ! empty( $diagnostics ) || ! self::resolved_plan_has_google_stylesheet( $resolved_plan ) ) {
 					return array( 'writes' => array(), 'diagnostics' => $diagnostics, 'faces' => array(), 'required_faces' => array() );
 				}
 				$producer_faces = array();
@@ -602,6 +602,23 @@ final class Static_Site_Importer_Font_Materializer {
 	private static function is_google_stylesheet_url( string $url ): bool {
 		$parts = wp_parse_url( $url );
 		return is_array( $parts ) && 'https' === strtolower( (string) ( $parts['scheme'] ?? '' ) ) && 'fonts.googleapis.com' === strtolower( (string) ( $parts['host'] ?? '' ) ) && ( ! isset( $parts['port'] ) || 443 === (int) $parts['port'] ) && ! isset( $parts['user'] ) && ! isset( $parts['pass'] ) && in_array( (string) ( $parts['path'] ?? '' ), array( '/css', '/css2' ), true );
+	}
+
+	private static function resolved_plan_has_google_stylesheet( array $resolved_plan ): bool {
+		foreach ( $resolved_plan['pages'] ?? array() as $page ) {
+			$links = is_array( $page ) && is_array( $page['document_metadata']['links'] ?? null ) ? $page['document_metadata']['links'] : array();
+			foreach ( $links as $link ) {
+				if ( ! is_array( $link ) ) {
+					continue;
+				}
+				foreach ( array( 'resolved_url', 'url', 'href' ) as $field ) {
+					if ( is_string( $link[ $field ] ?? null ) && self::is_google_stylesheet_url( $link[ $field ] ) ) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
 	}
 
 	/** @return array{type:string,source:string,reason:string} */
