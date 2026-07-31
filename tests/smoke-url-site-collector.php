@@ -160,9 +160,25 @@ $complete_result = Static_Site_Importer_URL_Site_Collector::collect(
 	),
 	$fetcher
 );
-$assert( is_wp_error( $complete_result ) && 'static_site_importer_site_collection_truncated' === $complete_result->get_error_code(), 'complete-collection-rejects-truncation' );
+$assert( is_wp_error( $complete_result ) && 'static_site_importer_site_collection_incomplete' === $complete_result->get_error_code(), 'complete-collection-rejects-truncation' );
 $complete_error_data = is_wp_error( $complete_result ) ? $complete_result->get_error_data() : array();
 $assert( array( 'pages' ) === ( $complete_error_data['collection']['truncated'] ?? null ) && 1 === ( $complete_error_data['limits']['max_pages'] ?? null ), 'complete-collection-reports-reached-limits' );
+
+$incomplete_responses = $responses;
+unset( $incomplete_responses['https://example.test/uploads/logo.png'] );
+$incomplete_fetcher = static function ( string $url, array $args ) use ( $incomplete_responses ) {
+	unset( $args );
+	if ( ! isset( $incomplete_responses[ $url ] ) ) {
+		return new WP_Error( 'missing_fixture', 'No response fixture for ' . $url );
+	}
+	$response = $incomplete_responses[ $url ];
+	return array(
+		'body'     => $response['body'],
+		'metadata' => array( 'content_type' => $response['content_type'], 'source_url' => $url, 'final_url' => $url ),
+	);
+};
+$incomplete_result = Static_Site_Importer_URL_Site_Collector::collect( 'https://example.test/', array( 'max_pages' => 10, 'max_assets' => 20, 'request_delay_ms' => 0, 'require_complete_collection' => true ), $incomplete_fetcher );
+$assert( is_wp_error( $incomplete_result ) && 'missing_fixture' === ( $incomplete_result->get_error_data()['collection']['failures'][0]['code'] ?? null ), 'complete-collection-rejects-fetch-failures' );
 
 $redirect_responses = array(
 	'https://redirect.test/sitemap.xml' => array( 'content_type' => 'application/xml', 'body' => '<urlset><url><loc>https://redirect.test/</loc></url><url><loc>https://redirect.test/go</loc></url></urlset>' ),

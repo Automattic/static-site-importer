@@ -206,15 +206,16 @@ class Static_Site_Importer_URL_Site_Collector {
 			self::delay( $request_delay );
 		}
 
-		if ( ! empty( $truncated ) && ! empty( $args['require_complete_collection'] ) ) {
+		if ( ( ! empty( $truncated ) || ! empty( $failures ) ) && ! empty( $args['require_complete_collection'] ) ) {
 			return new WP_Error(
-				'static_site_importer_site_collection_truncated',
-				'The public site exceeds the configured collection limits.',
+				'static_site_importer_site_collection_incomplete',
+				'The public site could not be collected completely.',
 				array(
 					'collection' => array(
-						'pages'    => self::resource_count( $resources, 'html' ),
-						'assets'   => self::resource_count( $resources, 'asset' ),
-						'bytes'    => $total_bytes,
+						'pages'     => self::resource_count( $resources, 'html' ),
+						'assets'    => self::resource_count( $resources, 'asset' ),
+						'bytes'     => $total_bytes,
+						'failures'  => $failures,
 						'truncated' => array_keys( $truncated ),
 					),
 					'limits'     => array(
