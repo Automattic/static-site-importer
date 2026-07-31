@@ -578,6 +578,7 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   assert.equal(recipe.workflow.steps[0].command, 'wordpress.wp-cli');
   assert.equal(recipe.workflow.steps[0].args[0], 'command=plugin activate static-site-importer/static-site-importer.php');
   assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
+  assert.equal(recipe.workflow.steps[1].timeoutMs, 5 * 60 * 1000);
   assert.match(recipe.workflow.steps[1].args[0], /--format=fixture-matrix/);
   assert.match(recipe.workflow.steps[1].args[0], /--receipt-sidecar=\/wordpress\/wp-content\/uploads\/static-site-importer-fixture-matrix\/simple-site\/materialization-receipt--[A-Za-z0-9-]+\.json/);
   assert.match(recipe.workflow.steps[1].args[0], /--receipt-run-id=recipe-test-[A-Za-z0-9-]+ --receipt-step-id=import --receipt-attempt-id=[A-Za-z0-9-]+/);
