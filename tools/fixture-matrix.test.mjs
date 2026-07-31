@@ -82,9 +82,11 @@ import {
   resolveFixtureSearchRoots,
   wordpressServedPath,
   writeFixtureMatrixArtifacts,
+  writeFixtureMatrixResultArtifacts,
 } from '../lib/fixture-matrix.mjs';
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
 import { collectQualityMetrics } from '../lib/fixture-matrix/collectors/quality-metrics.mjs';
+import { collectSurfaceRecords } from '../lib/fixture-matrix/collectors/run-intake.mjs';
 import { runWpCodeboxRecipe, wpCodeboxBin } from './wp-codebox/recipe.mjs';
 
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -6363,6 +6365,81 @@ test('visual-compare artifacts collected from fixture files gate the matrix when
   assert.ok(capturedFinding, 'expected the mismatch to still be captured');
   assert.equal(capturedFinding.loss_acceptance, 'acceptable');
   assert.equal(captured.fixtures[0].status, 'passed');
+});
+
+test('surface lineage persists reviewer-facing visual refs and explicit absent-attribution blind spots', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-surface-lineage-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'surface-lineage-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'passed',
+      surface_records: [{
+          surface_id: 'front-page', source_url: 'https://source.test/', candidate_url: 'https://candidate.test/', post_id: 42, post_type: 'page', post_slug: 'home',
+          artifact_refs: [{ artifact_id: 'editor-state', kind: 'editor-canvas', path: 'files/browser/editor/state.json' }],
+      }],
+      artifact_refs: [{ artifact_id: 'materialization-receipt--primary', kind: 'materialization-sidecar', path: 'materialization-receipt--primary.json' }],
+      matrix_evidence: { materialization_receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed' } },
+      visual_parity_comparisons: [{
+        surface_id: 'front-page',
+        source_url: 'https://source.test/',
+        candidate_url: 'https://candidate.test/',
+        visual_parity_artifacts: { artifacts: {
+          source_screenshot: { kind: 'source_screenshot', ref: { path: 'files/browser/source.png' } },
+          imported_screenshot: { kind: 'imported_screenshot', ref: { path: 'files/browser/candidate.png' } },
+          diff_screenshot: { kind: 'diff_screenshot', ref: { path: 'files/browser/diff.png' } },
+        } },
+      }],
+    }],
+  });
+
+  writeFixtureMatrixResultArtifacts({ outputDirectory, matrix, result });
+  const surface = JSON.parse(readFileSync(path.join(outputDirectory, 'simple-site', 'surface-lineage--front-page-d365228668b8.json'), 'utf8'));
+  assert.equal(surface.surface_id, 'simple-site:front-page');
+  assert.equal(surface.surface.source_url, 'https://source.test/');
+  assert.equal(surface.surface.candidate_url, 'https://candidate.test/');
+  assert.equal(surface.imported_post.id, '42');
+  assert.deepEqual(surface.artifacts.map((ref) => ref.path).sort(), ['files/browser/candidate.png', 'files/browser/diff.png', 'files/browser/editor/state.json', 'files/browser/source.png']);
+  assert.deepEqual(surface.blind_spots.map((spot) => spot.kind), ['dom_attribution_absent', 'css_selector_attribution_absent']);
+  const persisted = JSON.parse(readFileSync(path.join(outputDirectory, 'static-site-fixture-matrix-result.json'), 'utf8'));
+  assert.ok(persisted.fixtures[0].artifact_refs.some((ref) => ref.artifact_id === 'surface-lineage--front-page-d365228668b8'));
+});
+
+test('surface lineage slugs hostile route IDs without changing their logical identity', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-hostile-surface-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'hostile-surface-test' });
+  const hostileId = '../../editor?surface=<script>';
+  const result = normalizeFixtureMatrixResult({ matrix, results: [{
+    fixture_id: 'simple-site', status: 'passed',
+    surface_records: [{ surface_id: hostileId, role: 'visual', source_url: 'https://source.test/', artifact_refs: [{ artifact_id: 'diff', path: 'diff.png' }] }],
+  }] });
+  writeFixtureMatrixResultArtifacts({ outputDirectory, matrix, result });
+  const bundle = result.fixtures[0].surface_lineage.find((surface) => surface.surface.id === hostileId);
+  const ref = result.fixtures[0].artifact_refs.find((item) => item.artifact_id === `surface-lineage--${bundle.surface.artifact_slug}`);
+  assert.match(bundle.surface.artifact_slug, /^[a-z0-9-]+-[a-f0-9]{12}$/);
+  assert.equal(ref.path.includes(hostileId), false);
+  assert.equal(path.dirname(ref.path), path.join(outputDirectory, 'simple-site'));
+  assert.equal(existsSync(ref.path), true);
+});
+
+test('surface records ignore unrelated import payloads and prefer editor identity over visual capture', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'surface-record-selection-test' });
+  const records = collectSurfaceRecords([
+    { fixture_id: 'simple-site', command: 'wordpress.wp-cli', post_id: 'wrong-import-post', target: 'wrong-import-target' },
+    { fixture_id: 'simple-site', command: 'wordpress.visual-compare', metadata: { surface_id: 'front-page', source_url: 'https://source.test/', candidate_url: 'https://candidate.test/', post_id: 'visual-post' } },
+    { fixture_id: 'simple-site', command: 'wordpress.editor-validate-blocks', metadata: { surface_id: 'front-page', post_id: 'editor-post', post_type: 'page', post_slug: 'home', target: '/wp-admin/post.php?post=editor-post' } },
+  ]);
+  assert.equal(records.length, 2);
+  assert.deepEqual(records.map((record) => record.role), ['visual', 'editor']);
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{ fixture_id: 'simple-site', status: 'passed', surface_records: records }],
+  });
+  const surface = result.fixtures[0].surface_lineage[0];
+  assert.equal(surface.imported_post.id, 'editor-post');
+  assert.equal(surface.imported_post.editor_target, '/wp-admin/post.php?post=editor-post');
+  assert.equal(surface.surface.source_url, 'https://source.test/');
 });
 
 test('visual evidence report infers viewport evidence from visual-compare metrics', () => {
