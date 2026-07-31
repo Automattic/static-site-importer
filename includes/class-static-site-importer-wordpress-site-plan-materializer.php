@@ -141,15 +141,19 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			$state['applied']['files'][] = $result;
 		}
-		$publications = self::verify_asset_publications( $state );
-		if ( is_wp_error( $publications ) ) {
-			return self::failed_receipt( $state, $publications->get_error_code() );
-		}
 		$font_materialization = self::apply_font_overlay( $state, $font_overlay );
 		if ( is_wp_error( $font_materialization ) ) {
 			return self::failed_receipt_from_error( $state, $font_materialization );
 		}
 		$state['applied']['font_materialization'] = $font_materialization;
+		$svg_receipts = self::verify_svg_font_materialization( $state );
+		if ( is_wp_error( $svg_receipts ) ) {
+			return self::failed_receipt( $state, $svg_receipts->get_error_code() );
+		}
+		$publications = self::verify_asset_publications( $state );
+		if ( is_wp_error( $publications ) ) {
+			return self::failed_receipt( $state, $publications->get_error_code() );
+		}
 
 		if ( ! empty( $args['activate'] ) ) {
 			foreach ( $state['resolved']['operations'] as $operation ) {
@@ -357,6 +361,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$reports = array();
 		foreach ( $overlay['writes'] as $write ) {
 			$target = (string) ( $write['target_path'] ?? '' );
+			if ( str_ends_with( strtolower( $target ), '.svg' ) && ! self::valid_svg_font_receipt( $overlay['svg_receipts'] ?? array(), $state['resolved']['writes'], $write ) ) {
+				return new WP_Error( 'static_site_importer_font_materialization_svg_receipt_invalid' );
+			}
 			if ( ! self::safe_destination( $state['theme_dir'], $target ) ) {
 				return new WP_Error( 'static_site_importer_font_materialization_destination_invalid' );
 			}
@@ -387,7 +394,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				$state['applied']['files'][] = $result;
 			}
 		}
-		return array( 'status' => 'completed', 'files' => $reports, 'diagnostics' => $overlay['diagnostics'], 'faces' => $overlay['faces'] ?? array(), 'required_faces' => $overlay['required_faces'] ?? array() );
+		return array( 'status' => 'completed', 'files' => $reports, 'diagnostics' => $overlay['diagnostics'], 'faces' => $overlay['faces'] ?? array(), 'required_faces' => $overlay['required_faces'] ?? array(), 'svg_receipts' => $overlay['svg_receipts'] ?? array(), 'svg_consumers' => $overlay['svg_consumers'] ?? array() );
 	}
 
 	/** Verify every canonical asset publication against its resolved write and references. */
@@ -418,9 +425,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				}
 			}
 			$applied = is_array( $write ) ? ( $files[ $write['reconciliation_identity'] ] ?? null ) : null;
+			$svg_receipt = self::svg_receipt_for_write( $state['applied']['font_materialization']['svg_receipts'] ?? array(), $write );
 			$valid = is_array( $write ) && is_array( $applied )
-				&& $declaration['expected_content_hash'] === ( $write['canonical_payload_hash'] ?? $write['payload_hash'] )
-				&& $write['payload_hash'] === $applied['hash'];
+				&& ( is_array( $svg_receipt )
+					? self::valid_svg_font_receipt_binding( $svg_receipt, $write ) && $svg_receipt['output_sha256'] === $applied['hash']
+					: $declaration['expected_content_hash'] === ( $write['canonical_payload_hash'] ?? $write['payload_hash'] ) && $write['payload_hash'] === $applied['hash'] );
 			foreach ( $references[ $id ] ?? array() as $reference ) {
 				$target = $writes[ $reference['write_reconciliation_identity'] ] ?? null;
 				$target_path = is_array( $target ) ? $state['theme_dir'] . '/' . $target['target_path'] : '';
@@ -446,6 +455,90 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 		}
 		return true;
+	}
+
+	private static function svg_receipt_for_write( array $receipts, mixed $write ): ?array {
+		if ( ! is_array( $write ) ) return null;
+		foreach ( $receipts as $receipt ) {
+			if ( is_array( $receipt ) && ( $write['target_path'] ?? null ) === ( $receipt['target_path'] ?? null ) && ( $write['reconciliation_identity'] ?? null ) === ( $receipt['write_reconciliation_identity'] ?? null ) ) return $receipt;
+		}
+		return null;
+	}
+
+	/** Verify required SVG receipts even when no asset-publication declaration exists. */
+	private static function verify_svg_font_materialization( array $state ) {
+		$receipts = $state['applied']['font_materialization']['svg_receipts'] ?? array();
+		$consumers = $state['applied']['font_materialization']['svg_consumers'] ?? array();
+		$files = $state['applied']['font_materialization']['files'] ?? array();
+		$seen = array();
+		foreach ( $receipts as $receipt ) {
+			if ( ! is_array( $receipt ) ) {
+				return new WP_Error( 'static_site_importer_font_materialization_svg_receipt_invalid' );
+			}
+			$write = null;
+			foreach ( $state['resolved']['writes'] as $candidate ) {
+				if ( is_array( $candidate ) && ( $receipt['write_reconciliation_identity'] ?? null ) === ( $candidate['reconciliation_identity'] ?? null ) ) {
+					$write = $candidate;
+					break;
+				}
+			}
+			if ( ! self::valid_svg_font_receipt_binding( $receipt, $write ?? array() ) || isset( $seen[ $receipt['consumer_id'] ?? '' ] ) ) {
+				return new WP_Error( 'static_site_importer_font_materialization_svg_receipt_invalid' );
+			}
+			$seen[ $receipt['consumer_id'] ] = true;
+			$path = $state['theme_dir'] . '/' . $receipt['target_path'];
+			$file = array_values( array_filter( $files, static fn( mixed $row ): bool => is_array( $row ) && ( $receipt['target_path'] ?? null ) === ( $row['target_path'] ?? null ) ) )[0] ?? null;
+			if ( ! is_array( $file ) || ! is_file( $path ) || $receipt['output_sha256'] !== self::file_hash( $path ) || $receipt['output_sha256'] !== ( $file['hash'] ?? null ) ) {
+				return new WP_Error( 'static_site_importer_font_materialization_svg_receipt_invalid' );
+			}
+		}
+		$required_ids = array();
+		foreach ( $consumers as $consumer ) if ( is_array( $consumer ) && true === ( $consumer['required'] ?? null ) && is_string( $consumer['id'] ?? null ) ) $required_ids[] = $consumer['id'];
+		sort( $required_ids, SORT_STRING );
+		$receipt_ids = array_keys( $seen );
+		sort( $receipt_ids, SORT_STRING );
+		if ( $required_ids !== $receipt_ids ) {
+			return new WP_Error( 'static_site_importer_font_materialization_svg_receipt_invalid' );
+		}
+		foreach ( $files as $file ) {
+			if ( is_array( $file ) && str_ends_with( strtolower( (string) ( $file['target_path'] ?? '' ) ), '.svg' ) && ! self::svg_receipt_for_target( $receipts, $file['target_path'] ?? '' ) ) {
+				return new WP_Error( 'static_site_importer_font_materialization_svg_receipt_invalid' );
+			}
+		}
+		return true;
+	}
+
+	private static function svg_receipt_for_target( array $receipts, string $target ): bool {
+		foreach ( $receipts as $receipt ) if ( is_array( $receipt ) && $target === ( $receipt['target_path'] ?? null ) ) return true;
+		return false;
+	}
+
+	private static function valid_svg_font_receipt_binding( array $receipt, array $write ): bool {
+		return 'static-site-importer/svg-font-materialization-receipt/v1' === ( $receipt['schema'] ?? null )
+			&& ( $write['target_path'] ?? null ) === ( $receipt['target_path'] ?? null )
+			&& ( $write['reconciliation_identity'] ?? null ) === ( $receipt['write_reconciliation_identity'] ?? null )
+			&& hash( 'sha256', self::payload_data( $write ) ) === ( $receipt['input_sha256'] ?? null )
+			&& preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['output_sha256'] ?? '' ) )
+			&& true === ( $receipt['required'] ?? null )
+			&& ! empty( $receipt['face_ids'] ) && is_array( $receipt['observed_font_sha256'] ?? null ) && ! empty( $receipt['observed_font_sha256'] );
+	}
+
+	/** Validate the only permitted post-canonical SVG mutation. */
+	private static function valid_svg_font_receipt( array $receipts, array $canonical_writes, array $overlay_write ): bool {
+		$target = $overlay_write['target_path'] ?? null;
+		$content = (string) ( $overlay_write['content'] ?? '' );
+		foreach ( $receipts as $receipt ) {
+			if ( ! is_array( $receipt ) || 'static-site-importer/svg-font-materialization-receipt/v1' !== ( $receipt['schema'] ?? null ) || true !== ( $receipt['required'] ?? null ) || $target !== ( $receipt['target_path'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['input_sha256'] ?? '' ) ) || ! preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['output_sha256'] ?? '' ) ) || ! is_array( $receipt['face_ids'] ?? null ) || empty( $receipt['face_ids'] ) || ! is_array( $receipt['receipt_ids'] ?? null ) || count( $receipt['face_ids'] ) !== count( $receipt['receipt_ids'] ) || ! is_array( $receipt['observed_font_sha256'] ?? null ) || empty( $receipt['observed_font_sha256'] ) ) continue;
+			foreach ( $canonical_writes as $canonical ) {
+				if ( ( $receipt['write_reconciliation_identity'] ?? null ) === ( $canonical['reconciliation_identity'] ?? null ) && $target === ( $canonical['target_path'] ?? null ) && hash( 'sha256', self::payload_data( $canonical ) ) === $receipt['input_sha256'] && hash( 'sha256', $content ) === $receipt['output_sha256'] && str_contains( $content, 'data:font/' ) ) return true;
+			}
+		}
+		return false;
+	}
+
+	private static function payload_data( array $write ): string {
+		$data = $write['payload']['data'] ?? '';
+		return 'base64' === ( $write['payload']['encoding'] ?? null ) && is_string( $data ) ? (string) base64_decode( $data, true ) : (string) $data;
 	}
 
 	/** @param array<string,mixed> $operation @param array<string,int> $page_ids */
