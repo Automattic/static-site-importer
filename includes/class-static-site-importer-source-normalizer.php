@@ -20,8 +20,21 @@ final class Static_Site_Importer_Source_Normalizer {
 	 * @return array{html:string,exclusions:array<int,array<string,string>>,diagnostics:array<int,array<string,string>>}
 	 */
 	public static function normalize_html( string $html, string $source_url, array $args = array() ): array {
+		$cloudflare_email_links = 0;
+		$html                   = self::normalize_cloudflare_email_links( $html, $cloudflare_email_links );
+		$diagnostics            = array();
+		if ( $cloudflare_email_links > 0 ) {
+			$diagnostics[] = array(
+				'type'        => 'source_normalization',
+				'severity'    => 'info',
+				'reason_code' => 'cloudflare_email_link_decoded',
+				'source_path' => $source_url,
+				'count'       => (string) $cloudflare_email_links,
+			);
+		}
+
 		if ( array_key_exists( 'exclude_platform_chrome', $args ) && ! $args['exclude_platform_chrome'] ) {
-			return array( 'html' => $html, 'exclusions' => array(), 'diagnostics' => array() );
+			return array( 'html' => $html, 'exclusions' => array(), 'diagnostics' => $diagnostics );
 		}
 
 		$rules = self::rules();
@@ -34,7 +47,6 @@ final class Static_Site_Importer_Source_Normalizer {
 
 		$original    = $html;
 		$exclusions  = array();
-		$diagnostics = array();
 		foreach ( $rules as $rule ) {
 			if ( ! is_array( $rule ) || ! str_starts_with( (string) ( $rule['selector'] ?? '' ), '#' ) ) {
 				continue;
@@ -74,6 +86,29 @@ final class Static_Site_Importer_Source_Normalizer {
 		unset( $exclusion );
 
 		return array( 'html' => $html, 'exclusions' => $exclusions, 'diagnostics' => $diagnostics );
+	}
+
+	private static function normalize_cloudflare_email_links( string $html, int &$count ): string {
+		return (string) preg_replace_callback(
+			'~\bhref\s*=\s*(["\'])(?:https?://[^/"\']+)?/cdn-cgi/l/email-protection#([a-f0-9]+)\1~i',
+			static function ( array $match ) use ( &$count ): string {
+				$bytes = hex2bin( $match[2] );
+				if ( false === $bytes || strlen( $bytes ) < 2 ) {
+					return $match[0];
+				}
+				$key   = ord( $bytes[0] );
+				$email = '';
+				for ( $index = 1, $length = strlen( $bytes ); $index < $length; ++$index ) {
+					$email .= chr( ord( $bytes[ $index ] ) ^ $key );
+				}
+				if ( false === filter_var( $email, FILTER_VALIDATE_EMAIL ) ) {
+					return $match[0];
+				}
+				++$count;
+				return 'href=' . $match[1] . 'mailto:' . htmlspecialchars( $email, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) . $match[1];
+			},
+			$html
+		);
 	}
 
 	/** @return array<int,array<string,string>> */
