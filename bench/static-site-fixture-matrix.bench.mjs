@@ -18,6 +18,7 @@ import {
   classifyVisualDiffRegions,
   collectFixtureMatrixRunResults,
   createFixtureMatrix,
+  inspectFixtureDirectories,
   normalizeFixtureMatrixResult,
   writeFixtureMatrixArtifacts,
   writeFixtureMatrixResultArtifacts,
@@ -158,8 +159,8 @@ export async function runFixtureMatrix(options) {
   const fixtureRoot = path.resolve(intake?.fixture_root || options.fixtureRoot || path.join(packageRoot, 'tests', 'fixtures', 'fixture-matrix'));
   const staticSiteImporterPath = options.staticSiteImporterPath || process.env.HOMEBOY_STATIC_SITE_IMPORTER_PATH || process.cwd();
   const dependencyOverrides = prepareDependencyOverrides(options);
-  validateHydratedComposerDependencies(packageRoot);
-  const matrix = createFixtureMatrix({
+  const fixtureInspection = inspectFixtureDirectories(fixtureRoot, { maxDepth: options.maxDepth });
+  const matrixInput = {
     id: options.id || `static-site-importer-fixture-matrix-${Date.now()}`,
     fixture_root: fixtureRoot,
     entrypoint: options.entrypoint || 'index.html',
@@ -174,7 +175,14 @@ export async function runFixtureMatrix(options) {
     max_complexity: options.maxComplexity || options.max_complexity,
     fixture_ids: options.fixtureIds,
     fixture_corpus: options.fixtureCorpus,
-  });
+  };
+  const matrix = fixtureInspection.exclusions[0]?.reason === 'root_symlink'
+    ? createFixtureMatrix({ ...matrixInput, fixtures: [] })
+    : createFixtureMatrix(matrixInput);
+  if (options.run && matrix.count === 0) {
+    throw new Error(`Fixture matrix execution requires at least one executable fixture under ${fixtureRoot}. Inspect the fixture root, entrypoint, and lane filters before retrying.`);
+  }
+  validateHydratedComposerDependencies(packageRoot);
   const progress = createFixtureMatrixProgress(matrix, options);
   progress.emit('matrix', 'started');
   const artifactWriteStartedAt = nowMs();
@@ -187,6 +195,8 @@ export async function runFixtureMatrix(options) {
   performance.artifact_writing_ms = elapsedMs(artifactWriteStartedAt);
   const recipe = buildFixtureMatrixRecipe({
     matrix,
+    runId: matrix.id,
+    attemptId: `plan-${matrix.id}`,
     artifactsDirectory: outputDirectory,
     playgroundArtifactsDirectory: options.playgroundArtifactsDirectory || '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix',
     wordpressVersion: options.wordpressVersion,
@@ -371,6 +381,8 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
   });
   const batchRecipe = buildFixtureMatrixRecipe({
     matrix: batchMatrix,
+    runId: batchMatrix.id,
+    attemptId: batchSuffix,
     artifactsDirectory: outputDirectory,
     playgroundArtifactsDirectory: options.playgroundArtifactsDirectory || '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix',
     wordpressVersion: options.wordpressVersion,
@@ -451,14 +463,17 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       batch_output: fileBytes(outputFile),
     },
   });
+  materializeMaterializationSidecars({ fixtures, outputDirectory, codeboxArtifactsDirectory, attemptId: batchSuffix });
   const batchResult = collectFixtureMatrixRunResults({
     matrix: batchMatrix,
     outputDirectory,
     outputFile,
     codeboxOutput: batchRuntime?.json,
     codeboxError: batchError,
+    sidecarAttemptId: batchSuffix,
     visualParity: visualParityGateInput(options),
     liveWpParity: liveWpParityCollectorInput(options),
+    dependencyOverrides: prepareDependencyOverrides(options),
   });
   const visualCompare = materializeVisualCompareArtifacts({
     result: batchResult,
@@ -550,6 +565,45 @@ function createFixtureMatrixProgress(matrix, options) {
 
 function batchInactivityTimeoutMs(options) {
   return positiveInteger(options.batchInactivityTimeoutMs || options.batch_inactivity_timeout_ms, DEFAULT_RECIPE_INACTIVITY_TIMEOUT_MS);
+}
+
+// Declared typed artifacts leave the guest filesystem through WP Codebox's
+// --artifacts tree. Materialize only an identity-matching export into the
+// fixture directory consumed by run intake.
+export function materializeMaterializationSidecars({ fixtures = [], outputDirectory, codeboxArtifactsDirectory, attemptId }) {
+  const root = path.resolve(codeboxArtifactsDirectory || '');
+  const output = path.resolve(outputDirectory || '');
+  if (!root || !output || !fs.existsSync(root)) return [];
+  const exported = new Map();
+  for (const filePath of runtimeArtifactFiles(root)) {
+    if (filePath.endsWith('.json') && fs.statSync(filePath).size <= 32 * 1024) {
+      try {
+        const sidecar = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        if (sidecar?.schema === 'static-site-importer/materialization-runtime-sidecar/v1' && sidecar.attempt_id === attemptId && typeof sidecar.fixture_id === 'string') {
+          exported.set(sidecar.fixture_id, filePath);
+        }
+      } catch {
+        // Declared artifact output can include unrelated or partial JSON files.
+      }
+    }
+  }
+  for (const fixture of fixtures) {
+    const source = exported.get(fixture.id);
+    if (!source) continue;
+    const target = path.join(output, fixture.id, `materialization-receipt--${attemptId}.json`);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(source, target);
+  }
+  return [...exported.entries()].map(([fixture_id, source]) => ({ fixture_id, source }));
+}
+
+function runtimeArtifactFiles(directory, files = []) {
+  for (const entry of safeReadDirectory(directory)) {
+    const filePath = path.join(directory, entry.name);
+    if (entry.isDirectory()) runtimeArtifactFiles(filePath, files);
+    if (entry.isFile()) files.push(filePath);
+  }
+  return files;
 }
 
 export function materializeEditorCanvasArtifacts(input = {}) {

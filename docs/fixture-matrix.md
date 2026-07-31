@@ -689,10 +689,11 @@ Notes:
   (`<ssi>/static-site-importer.php`). If the checkout/worktree was removed (e.g.
   by workspace hygiene), the bench fails with `rig.pipeline_failed` on the
   `check` step — recreate the checkout before running.
-- Fixture roots must contain real fixture subdirectories. Symlinked fixture dirs
-  are skipped by discovery (`Dirent.isDirectory()` is false for symlinks), so the
-  matrix silently finds zero fixtures and the gate falsely "passes" with
-  `fixture_count: 0`. Copy fixtures in rather than symlinking.
+- Fixture roots must contain real fixture subdirectories with `index.html`.
+   Symlinked fixture directories are excluded. Execution and promotion lanes fail
+   closed when selection is empty; `--dry-run` instead prints an explicit
+   `planning_empty` fixture-selection report with bounded exclusion reasons and
+   selected IDs. Copy fixtures in rather than symlinking.
 
 ## Editor-Quality Metrics
 
