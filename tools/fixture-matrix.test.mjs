@@ -2907,7 +2907,7 @@ test('materializes generated artifact roots into matrix-compatible fixtures', ()
   writeFileSync(path.join(sourceRoot, 'static-sites', 'alpha', 'index.html'), '<h1>Alpha</h1>');
   writeFileSync(path.join(sourceRoot, 'static-sites', 'alpha', 'assets', 'style.css'), 'body { color: black; }');
   mkdirSync(path.join(sourceRoot, 'artifact-candidate'), { recursive: true });
-  writeFileSync(path.join(sourceRoot, 'artifact-candidate', 'artifact.json'), JSON.stringify({
+  writeFileSync(path.join(sourceRoot, 'artifact-candidate', 'site-artifact.json'), JSON.stringify({
     schema: 'blocks-engine/php-transformer/site-artifact/v1',
     metadata: { site: 'Beta Site' },
     files: [
