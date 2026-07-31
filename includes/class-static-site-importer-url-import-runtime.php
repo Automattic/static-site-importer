@@ -187,6 +187,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 			'fail_on_quality'              => ! empty( $input['fail_on_quality'] ),
 			'allow_missing_woocommerce'    => ! empty( $input['allow_missing_woocommerce'] ),
 			'materialize_dependencies'     => array_key_exists( 'materialize_dependencies', $input ) ? (bool) $input['materialize_dependencies'] : true,
+			'require_proven_dynamic_client_assets' => array_key_exists( 'require_proven_dynamic_client_assets', $input ) ? (bool) $input['require_proven_dynamic_client_assets'] : true,
 			'report'                       => isset( $input['report'] ) ? (string) $input['report'] : '',
 			'asset_materialization_policy' => isset( $input['asset_materialization_policy'] ) ? (string) $input['asset_materialization_policy'] : '',
 			'asset_map'                    => isset( $input['asset_map'] ) && is_array( $input['asset_map'] ) ? $input['asset_map'] : array(),
