@@ -21,9 +21,9 @@ class Static_Site_Importer_URL_Site_Collector {
 	private const DEFAULT_MAX_PAGES       = 20;
 	private const DEFAULT_MAX_ASSETS      = 200;
 	private const DEFAULT_MAX_TOTAL_BYTES = 52428800;
-	private const MAX_PAGES               = 100;
-	private const MAX_ASSETS              = 500;
-	private const MAX_TOTAL_BYTES         = 104857600;
+	private const MAX_PAGES               = 250;
+	private const MAX_ASSETS              = 2000;
+	private const MAX_TOTAL_BYTES         = 268435456;
 	private const MAX_RESPONSE_BYTES      = 10485760;
 
 	/**
@@ -204,6 +204,26 @@ class Static_Site_Importer_URL_Site_Collector {
 			}
 
 			self::delay( $request_delay );
+		}
+
+		if ( ! empty( $truncated ) && ! empty( $args['require_complete_collection'] ) ) {
+			return new WP_Error(
+				'static_site_importer_site_collection_truncated',
+				'The public site exceeds the configured collection limits.',
+				array(
+					'collection' => array(
+						'pages'    => self::resource_count( $resources, 'html' ),
+						'assets'   => self::resource_count( $resources, 'asset' ),
+						'bytes'    => $total_bytes,
+						'truncated' => array_keys( $truncated ),
+					),
+					'limits'     => array(
+						'max_pages'       => $max_pages,
+						'max_assets'      => $max_assets,
+						'max_total_bytes' => $max_total_bytes,
+					),
+				)
+			);
 		}
 
 		$paths           = self::artifact_paths( $resources, $site_url );

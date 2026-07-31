@@ -149,6 +149,21 @@ $assert( array() === $site_diagnostics, 'collected-artifact-is-self-contained', 
 $assert( 4 === count( $routes ), 'collected-artifact-produces-four-routes', json_encode( $routes ) ?: '' );
 $assert( '/' === ( $routes['website/index.html'] ?? null ) && '/services' === ( $routes['website/services.html'] ?? null ), 'collected-routes-preserve-source-paths' );
 
+$complete_result = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://example.test/',
+	array(
+		'max_pages'                  => 1,
+		'max_assets'                 => 20,
+		'max_bytes'                  => PHP_INT_MAX,
+		'request_delay_ms'           => 0,
+		'require_complete_collection' => true,
+	),
+	$fetcher
+);
+$assert( is_wp_error( $complete_result ) && 'static_site_importer_site_collection_truncated' === $complete_result->get_error_code(), 'complete-collection-rejects-truncation' );
+$complete_error_data = is_wp_error( $complete_result ) ? $complete_result->get_error_data() : array();
+$assert( array( 'pages' ) === ( $complete_error_data['collection']['truncated'] ?? null ) && 1 === ( $complete_error_data['limits']['max_pages'] ?? null ), 'complete-collection-reports-reached-limits' );
+
 $redirect_responses = array(
 	'https://redirect.test/sitemap.xml' => array( 'content_type' => 'application/xml', 'body' => '<urlset><url><loc>https://redirect.test/</loc></url><url><loc>https://redirect.test/go</loc></url></urlset>' ),
 	'https://redirect.test/' => array( 'content_type' => 'text/html', 'body' => '<base href=/static/><link rel=stylesheet href=style.css><main><h1>Home</h1><a href=/go>Docs</a><img src=/hero.png></main>' ),
