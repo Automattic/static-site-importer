@@ -2910,6 +2910,7 @@ test('materializes generated artifact roots into matrix-compatible fixtures', ()
   writeFileSync(path.join(sourceRoot, 'artifact-candidate', 'site-artifact.json'), JSON.stringify({
     schema: 'blocks-engine/php-transformer/site-artifact/v1',
     metadata: { site: 'Beta Site' },
+    compiler_limits: { max_files: 25, max_file_bytes: 10485760, max_total_bytes: 335544320 },
     files: [
       { path: 'website/index.html', content: '<h1>Beta</h1>' },
       { path: 'website/assets/style.css', content: 'body { color: blue; }' },
@@ -2923,6 +2924,9 @@ test('materializes generated artifact roots into matrix-compatible fixtures', ()
   assert.deepEqual(matrix.fixtures.map((fixture) => fixture.id), ['alpha', 'beta-site']);
   assert.equal(readFileSync(path.join(fixtureOutput, 'alpha', 'index.html'), 'utf8'), '<h1>Alpha</h1>');
   assert.equal(readFileSync(path.join(fixtureOutput, 'beta-site', 'index.html'), 'utf8'), '<h1>Beta</h1>');
+  const betaArtifact = buildFixtureArtifact(matrix.fixtures.find((fixture) => fixture.id === 'beta-site'));
+  assert.deepEqual(betaArtifact.compiler_limits, { max_files: 25, max_file_bytes: 10485760, max_total_bytes: 335544320 });
+  assert.equal(betaArtifact.files.some((file) => file.path.includes('generated-artifact-metadata')), false);
 });
 
 test('resolves Blocks Engine PHP transformer override paths', () => {
