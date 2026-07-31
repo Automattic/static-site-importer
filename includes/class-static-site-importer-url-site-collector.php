@@ -259,9 +259,14 @@ class Static_Site_Importer_URL_Site_Collector {
 		return array(
 			'provider'        => 'public-static-site-collector',
 			'artifact'        => array(
-				'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
-				'entrypoint' => $paths[ $entry_resource_url ],
-				'files'      => $files,
+				'schema'          => 'blocks-engine/php-transformer/site-artifact/v1',
+				'entrypoint'      => $paths[ $entry_resource_url ],
+				'compiler_limits' => array(
+					'max_files'       => min( 5000, $max_assets + ( 5 * $max_pages ) ),
+					'max_file_bytes'  => $fetch_args['max_bytes'],
+					'max_total_bytes' => min( 335544320, $max_total_bytes + min( 67108864, $max_total_bytes ) ),
+				),
+				'files'           => $files,
 			),
 			'source_metadata' => array(
 				'source_type' => 'url',

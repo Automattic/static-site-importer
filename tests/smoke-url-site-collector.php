@@ -115,6 +115,7 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 $assert( ! is_wp_error( $result ), 'collection-succeeds', is_wp_error( $result ) ? $result->get_error_message() : '' );
 $assert( 'public-static-site-collector' === ( $result['provider'] ?? '' ), 'provider-recorded' );
 $assert( 'website/index.html' === ( $result['artifact']['entrypoint'] ?? '' ), 'root-entrypoint' );
+$assert( array( 'max_files' => 70, 'max_file_bytes' => 10485760, 'max_total_bytes' => 104857600 ) === ( $result['artifact']['compiler_limits'] ?? null ), 'collector-declares-bounded-compiler-limits' );
 $assert( 4 === ( $result['source_metadata']['collection']['pages'] ?? 0 ), 'sitemap-index-alias-deduplicated' );
 $assert( 9 === ( $result['source_metadata']['collection']['assets'] ?? 0 ), 'html-css-and-script-assets-collected' );
 $assert( array() === ( $result['source_metadata']['collection']['failures'] ?? null ), 'no-collection-failures' );
