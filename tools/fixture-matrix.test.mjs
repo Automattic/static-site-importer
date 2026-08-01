@@ -623,10 +623,10 @@ test('runtime presentation evidence persists, merges, and reaches the Blocks Eng
     phase: 'runtime-presentation-evidence-merge',
     artifact_root: '/tmp/artifacts',
     input_artifact: 'simple-site/runtime-presentation-evidence.json',
-    artifact: 'simple-site/artifact.json',
+    artifact: 'simple-site/artifact-with-runtime-presentation-evidence.json',
     evidence_schema: RUNTIME_PRESENTATION_EVIDENCE_SCHEMA,
   });
-  assert.match(recipe.workflow.steps[importIndex].args[0], /--artifact=\/tmp\/artifacts\/simple-site\/artifact\.json/);
+  assert.match(recipe.workflow.steps[importIndex].args[0], /--artifact=\/tmp\/artifacts\/simple-site\/artifact-with-runtime-presentation-evidence\.json/);
 
   const playgroundRecipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', playgroundArtifactsDirectory: '/wordpress/wp-content/uploads/artifacts', staticSiteImporterPath: '/tmp/static-site-importer', runtimePresentationEvidence: true });
   const playgroundProbe = playgroundRecipe.workflow.steps.find((step) => step.metadata?.phase === 'runtime-presentation-evidence');
@@ -636,7 +636,7 @@ test('runtime presentation evidence persists, merges, and reaches the Blocks Eng
   assert.ok(playgroundProbe.args.includes('output-runtime-path=/wordpress/wp-content/uploads/artifacts/simple-site/runtime-presentation-evidence.json'));
   assert.equal(playgroundProbe.metadata.output_runtime_path, '/wordpress/wp-content/uploads/artifacts/simple-site/runtime-presentation-evidence.json');
   assert.equal(playgroundMerge.metadata.artifact_root, '/wordpress/wp-content/uploads/artifacts');
-  assert.match(playgroundImport.args[0], /--artifact=\/wordpress\/wp-content\/uploads\/artifacts\/simple-site\/artifact\.json/);
+  assert.match(playgroundImport.args[0], /--artifact=\/wordpress\/wp-content\/uploads\/artifacts\/simple-site\/artifact-with-runtime-presentation-evidence\.json/);
 });
 
 test('runtime presentation evidence intake preserves a typed envelope and diagnoses an unmerged probe', () => {

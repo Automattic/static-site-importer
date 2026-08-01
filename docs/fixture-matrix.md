@@ -640,9 +640,10 @@ recipes also declare the exact
 `output-runtime-path=/wordpress/.../<id>/runtime-presentation-evidence.json`
 needed by the following `wordpress.wp-cli` step. That step verifies the typed
 Blocks Engine envelope, confines both paths to the same fixture directory under
-the declared runtime artifact root, and atomically merges it as
-`runtime_presentation_evidence` in `<id>/artifact.json`. Only then does
-`validate-artifact` compile the artifact. A missing output, malformed envelope,
+the declared runtime artifact root, and atomically writes a sibling
+`<id>/artifact-with-runtime-presentation-evidence.json` containing the
+`runtime_presentation_evidence` field. Only then does `validate-artifact`
+compile that derived artifact. A missing output, malformed envelope,
 unavailable root, or boundary violation emits a structured
 `runtime_presentation_evidence_unavailable` diagnostic and fails before
 compilation rather than compiling without the requested input.
