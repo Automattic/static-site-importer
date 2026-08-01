@@ -50,6 +50,7 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-si
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-document.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-source-page.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-fetcher.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-artifact-run.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-source-normalizer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-site-collector.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-import-runtime.php';

@@ -8,6 +8,9 @@
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
+if ( ! class_exists( 'Static_Site_Importer_Artifact_Run_Workspace' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-artifact-run.php';
+}
 
 /**
  * Converts Figma import requests into website artifacts and imports them.
@@ -352,18 +355,21 @@ class Static_Site_Importer_Figma_Import {
 			return new WP_Error( 'static_site_importer_figma_file_content_invalid', 'Uploaded .fig content could not be decoded.', array( 'status' => 400 ) );
 		}
 
-		$tmp = tempnam( sys_get_temp_dir(), 'ssi-fig-' );
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Transformer requires a local file path for .fig archive inspection.
-		if ( false === $tmp || false === file_put_contents( $tmp, $content ) ) {
+		$retention = ! empty( $input['retain_workspace'] ) ? array( 'on_success' => 'retain', 'on_failure' => 'retain', 'expires_at' => gmdate( 'c', time() + 604800 ) ) : array( 'on_success' => 'purge_on_success' );
+		$workspace = new Static_Site_Importer_Artifact_Run_Workspace( sys_get_temp_dir(), 'fig-' . bin2hex( random_bytes( 8 ) ), $retention );
+		$tmp = $workspace->publish_raw( 'input.fig', $content );
+		if ( is_wp_error( $tmp ) ) {
 			return new WP_Error( 'static_site_importer_figma_file_tempfile_failed', 'Uploaded .fig file could not be staged for transformation.', array( 'status' => 500 ) );
 		}
 
 		try {
-			return self::website_artifact_from_figma_file_path( $tmp, $name, $input );
-		} finally {
-			if ( file_exists( $tmp ) ) {
-				wp_delete_file( $tmp );
+			$result = self::website_artifact_from_figma_file_path( $tmp, $name, $input );
+			if ( ! is_wp_error( $result ) && ! empty( $input['retain_workspace'] ) ) {
+				$result['provenance']['artifact_workspace'] = array( 'path' => $workspace->directory(), 'expires_at' => $workspace->retention()['expires_at'] ?? null, 'cleanup' => $workspace->cleanup( 'failure' ) );
 			}
+			return $result;
+		} finally {
+			if ( empty( $input['retain_workspace'] ) ) { $workspace->cleanup( 'success' ); }
 		}
 	}
 
