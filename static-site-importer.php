@@ -47,6 +47,7 @@ foreach ( $static_site_importer_figma_transformers as $static_site_importer_figm
 }
 
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-site-identity.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-website-artifact-import-input.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-document.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-source-page.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-fetcher.php';
@@ -217,6 +218,10 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 		static function ( array $args, array $assoc_args ): void {
 			unset( $args );
 			$halt_on_failure = ! isset( $assoc_args['allow-failure'] ) && false !== ( $assoc_args['error-on-fail'] ?? true ) && ! isset( $assoc_args['no-error-on-fail'] );
+			$format          = isset( $assoc_args['format'] ) ? (string) $assoc_args['format'] : 'full';
+			if ( ! in_array( $format, array( 'full', 'fixture-matrix' ), true ) ) {
+				WP_CLI::error( 'The --format value must be full or fixture-matrix.' );
+			}
 
 			$input  = array(
 				'slug'                      => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
@@ -248,10 +253,17 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			if ( isset( $assoc_args['theme-archive-ref'] ) ) {
 				$input['theme_archive_ref'] = array( 'artifact_ref' => (string) $assoc_args['theme-archive-ref'] );
 			}
+			$sidecar_contract = static_site_importer_cli_materialization_sidecar_contract( $assoc_args );
+			if ( is_wp_error( $sidecar_contract ) ) {
+				WP_CLI::error( $sidecar_contract->get_error_message(), 1 );
+			}
 
 			$result = Static_Site_Importer_Validation_Runtime::validate_artifact( $input );
 			if ( is_wp_error( $result ) ) {
 				$error_result = Static_Site_Importer_Validation_Runtime::error_result_from_wp_error( $result, $input );
+				if ( 'fixture-matrix' === $format ) {
+					$error_result = Static_Site_Importer_Validation_Runtime::fixture_matrix_result( $error_result );
+				}
 				$json         = wp_json_encode( $error_result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 				if ( false === $json ) {
 					WP_CLI::error( $result->get_error_message() );
@@ -265,6 +277,15 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				return;
 			}
 
+			if ( true === $sidecar_contract ) {
+				$sidecar_result = static_site_importer_cli_write_materialization_sidecar( $result, $assoc_args );
+				if ( is_wp_error( $sidecar_result ) ) {
+					WP_CLI::error( $sidecar_result->get_error_message(), 1 );
+				}
+			}
+			if ( 'fixture-matrix' === $format ) {
+				$result = Static_Site_Importer_Validation_Runtime::fixture_matrix_result( $result );
+			}
 			$json = wp_json_encode( $result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 			if ( false === $json ) {
 				WP_CLI::error( 'Failed to encode validation result.' );
@@ -310,4 +331,158 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			WP_CLI::line( $json );
 		}
 	);
+}
+
+/**
+ * A sidecar is an opt-in CLI contract. Legacy validate-artifact callers retain
+ * their prior result and exit behavior; partial receipt identities fail early.
+ *
+ * @param array<string,mixed> $args CLI arguments.
+ * @return bool|WP_Error True when required, false when absent.
+ */
+function static_site_importer_cli_materialization_sidecar_contract( array $args ) {
+	$keys = array( 'receipt-sidecar', 'receipt-run-id', 'receipt-step-id', 'receipt-attempt-id' );
+	$present = array_filter( $keys, static fn( string $key ): bool => array_key_exists( $key, $args ) );
+	if ( empty( $present ) ) {
+		return false;
+	}
+	if ( count( $present ) !== count( $keys ) ) {
+		return new WP_Error( 'static_site_importer_sidecar_contract_partial', 'Materialization sidecar requires --receipt-sidecar, --receipt-run-id, --receipt-step-id, and --receipt-attempt-id together.' );
+	}
+	return true;
+}
+
+/**
+ * Persist compact matrix evidence before verbose WP-CLI output can be truncated.
+ *
+ * @param array<string,mixed> $result Validation result.
+ * @param array<string,mixed> $args CLI arguments.
+ */
+function static_site_importer_cli_write_materialization_sidecar( array $result, array $args ) {
+	$path = isset( $args['receipt-sidecar'] ) ? (string) $args['receipt-sidecar'] : '';
+	$fixture_id = isset( $result['fixture_id'] ) ? (string) $result['fixture_id'] : ( isset( $args['slug'] ) ? (string) $args['slug'] : '' );
+	$run_id = isset( $args['receipt-run-id'] ) ? (string) $args['receipt-run-id'] : '';
+	$step_id = isset( $args['receipt-step-id'] ) ? (string) $args['receipt-step-id'] : '';
+	$attempt_id = isset( $args['receipt-attempt-id'] ) ? (string) $args['receipt-attempt-id'] : '';
+	if ( '' === $path || ! static_site_importer_cli_sidecar_token( $fixture_id, 80 ) || ! static_site_importer_cli_sidecar_token( $run_id, 160 ) || 'import' !== $step_id || ! static_site_importer_cli_sidecar_token( $attempt_id, 80 ) ) {
+		return new WP_Error( 'static_site_importer_sidecar_identity_invalid', 'Required materialization sidecar identity is missing or invalid.' );
+	}
+	$artifact_path = isset( $args['artifact'] ) ? (string) $args['artifact'] : '';
+	$artifact_hash = is_readable( $artifact_path ) ? hash_file( 'sha256', $artifact_path ) : '';
+	if ( ! is_string( $artifact_hash ) || ! preg_match( '/^[a-f0-9]{64}$/', $artifact_hash ) ) {
+		return new WP_Error( 'static_site_importer_sidecar_artifact_hash_missing', 'Required materialization sidecar artifact hash could not be calculated.' );
+	}
+	$receipt = isset( $result['materialization_receipt'] ) && is_array( $result['materialization_receipt'] ) ? $result['materialization_receipt'] : array();
+	if ( 'static-site-importer/materialization-receipt/v1' !== ( $receipt['schema'] ?? '' ) || 'completed' !== ( $receipt['status'] ?? '' ) || ! isset( $receipt['plan_hash'] ) || ! is_string( $receipt['plan_hash'] ) || ! preg_match( '/^(?:sha256:)?[a-f0-9]{64}$/', $receipt['plan_hash'] ) ) {
+		return new WP_Error( 'static_site_importer_sidecar_receipt_invalid', 'Required materialization sidecar receipt is incomplete or invalid.' );
+	}
+	$completed = isset( $receipt['completed'] ) && is_array( $receipt['completed'] ) ? $receipt['completed'] : array();
+	if ( ! isset( $completed['pages'], $completed['files'] ) || ! is_array( $completed['pages'] ) || ! is_array( $completed['files'] ) ) {
+		return new WP_Error( 'static_site_importer_sidecar_receipt_shape_invalid', 'Required materialization sidecar receipt pages and files must be arrays.' );
+	}
+	$summary = static_site_importer_cli_materialization_summary( $receipt, $result );
+	$sidecar = array(
+		'schema'          => 'static-site-importer/materialization-runtime-sidecar/v1',
+		'fixture_id'      => $fixture_id,
+		'run_id'          => $run_id,
+		'step_id'         => $step_id,
+		'attempt_id'      => $attempt_id,
+		'artifact_sha256' => $artifact_hash,
+		'provenance'      => array( 'provider' => (string) ( $result['runtime']['provider'] ?? '' ), 'provider_status' => (string) ( $result['runtime']['status'] ?? '' ) ),
+		'durability'      => array( 'file_fsync' => function_exists( 'fsync' ) ? 'available' : 'unavailable', 'directory_fsync' => function_exists( 'fsync' ) ? 'attempted' : 'unavailable' ),
+		'receipt'         => $summary,
+	);
+	$sidecar['content_sha256'] = hash( 'sha256', (string) wp_json_encode( $sidecar, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
+	$json = wp_json_encode( $sidecar, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+	if ( false === $json || strlen( $json ) > 32768 ) {
+		return new WP_Error( 'static_site_importer_sidecar_too_large', 'Required materialization sidecar exceeds its 32 KiB bound.' );
+	}
+	$directory = dirname( $path );
+	if ( ! wp_mkdir_p( $directory ) ) {
+		return new WP_Error( 'static_site_importer_sidecar_directory_failed', 'Required materialization sidecar directory could not be created.' );
+	}
+	$temp = tempnam( $directory, '.ssi-sidecar-' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_tempnam -- same-directory temporary file is required for atomic rename.
+	if ( false === $temp ) {
+		return new WP_Error( 'static_site_importer_sidecar_temp_failed', 'Required materialization sidecar temporary file could not be created.' );
+	}
+	$handle = fopen( $temp, 'wb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- explicit CLI artifact publication.
+	try {
+		$bytes = strlen( $json ) + 1;
+		if ( false === $handle || $bytes !== fwrite( $handle, $json . "\n" ) || ! fflush( $handle ) || ( function_exists( 'fsync' ) && ! fsync( $handle ) ) || ! fclose( $handle ) || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite,WordPress.WP.AlternativeFunctions.file_system_operations_fclose,WordPress.WP.AlternativeFunctions.rename_rename -- atomic same-directory publication.
+			if ( is_resource( $handle ) ) {
+				fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- cleanup after failed atomic publish.
+			}
+			return new WP_Error( 'static_site_importer_sidecar_persist_failed', 'Required materialization sidecar could not be atomically persisted.' );
+		}
+		static_site_importer_cli_fsync_directory( $directory );
+	} finally {
+		if ( file_exists( $temp ) ) {
+			unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- removes only this bounded temporary sidecar.
+		}
+	}
+	return true;
+}
+
+function static_site_importer_cli_fsync_directory( string $directory ): void {
+	if ( ! function_exists( 'fsync' ) ) {
+		return;
+	}
+	$handle = @fopen( $directory, 'r' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- best-effort directory durability on supported platforms.
+	if ( false !== $handle ) {
+		@fsync( $handle ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- unsupported directory fsync remains non-fatal.
+		fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- closes the best-effort directory handle.
+	}
+}
+
+/** @return array<string,mixed> */
+function static_site_importer_cli_materialization_summary( array $receipt, array $result ): array {
+	$completed = isset( $receipt['completed'] ) && is_array( $receipt['completed'] ) ? $receipt['completed'] : array();
+	$operations = isset( $completed['operations'] ) && is_array( $completed['operations'] ) ? $completed['operations'] : array();
+	$diagnostics = isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array();
+	$operation_rows = array();
+	$loss_rows = array();
+	foreach ( array_slice( $operations, 0, 25 ) as $operation ) {
+		if ( is_array( $operation ) ) {
+			$row = array_filter( array(
+				'kind'        => static_site_importer_cli_sidecar_token_value( $operation['kind'] ?? $operation['type'] ?? $operation['operation'] ?? '', 80 ),
+				'status'      => static_site_importer_cli_sidecar_token_value( $operation['status'] ?? '', 40 ),
+				'reason_code' => static_site_importer_cli_sidecar_token_value( $operation['reason_code'] ?? '', 80 ),
+				'hash'        => hash( 'sha256', (string) wp_json_encode( $operation ) ),
+			) );
+			if ( ! empty( $row['kind'] ) ) {
+				$operation_rows[] = $row;
+			}
+		}
+	}
+	foreach ( array_slice( $diagnostics, 0, 25 ) as $diagnostic ) {
+		if ( is_array( $diagnostic ) ) {
+			$row = array_filter( array(
+				'kind'        => static_site_importer_cli_sidecar_token_value( $diagnostic['kind'] ?? $diagnostic['code'] ?? $diagnostic['type'] ?? '', 80 ),
+				'reason_code' => static_site_importer_cli_sidecar_token_value( $diagnostic['reason_code'] ?? '', 80 ),
+				'hash'        => hash( 'sha256', (string) wp_json_encode( $diagnostic ) ),
+			) );
+			if ( ! empty( $row['kind'] ) ) {
+				$loss_rows[] = $row;
+			}
+		}
+	}
+	$layout = isset( $receipt['computed_layout'] ) && is_array( $receipt['computed_layout'] ) ? $receipt['computed_layout'] : array();
+	$plan_hash = isset( $receipt['plan_hash'] ) && is_string( $receipt['plan_hash'] ) && preg_match( '/^(?:sha256:)?[a-f0-9]{64}$/', $receipt['plan_hash'] ) ? $receipt['plan_hash'] : '';
+	return array(
+		'schema' => 'static-site-importer/materialization-receipt/v1', 'status' => 'completed', 'plan_hash' => $plan_hash,
+		'page_count' => min( 10000000, count( $completed['pages'] ?? array() ) ), 'file_count' => min( 10000000, count( $completed['files'] ?? array() ) ), 'operation_count' => min( 10000000, count( $operations ) ), 'loss_count' => min( 10000000, count( $diagnostics ) ),
+		'provider_totals' => array( 'completed' => ! empty( $result['runtime']['provider'] ) ? 1 : 0 ),
+		'computed_layout_totals' => array_filter( array( 'applied' => isset( $layout['applied'] ) ? (int) $layout['applied'] : null, 'losses' => isset( $layout['losses'] ) ? (int) $layout['losses'] : null, 'operations' => count( array_filter( $operations, static fn( $operation ): bool => is_array( $operation ) && false !== strpos( wp_json_encode( $operation ), 'computed_layout' ) ) ) ), static fn( $value ): bool => null !== $value ),
+		'operation_rows' => $operation_rows, 'loss_rows' => $loss_rows,
+		'truncated' => array( 'operation_rows' => count( $operations ) > 25, 'loss_rows' => count( $diagnostics ) > 25 ),
+	);
+}
+
+function static_site_importer_cli_sidecar_token( $value, int $maximum ): bool {
+	return is_string( $value ) && 0 < strlen( $value ) && $maximum >= strlen( $value ) && 1 === preg_match( '/^[A-Za-z0-9][A-Za-z0-9._:\/-]*$/', $value );
+}
+
+function static_site_importer_cli_sidecar_token_value( $value, int $maximum ): string {
+	$value = is_scalar( $value ) ? (string) $value : '';
+	return static_site_importer_cli_sidecar_token( $value, $maximum ) ? $value : '';
 }

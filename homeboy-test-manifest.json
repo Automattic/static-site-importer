@@ -1,8 +1,35 @@
 {
   "schema": "homeboy/test-manifest/v1",
   "tests": {
-    "tests/form-materializer-smoke.php": {
-      "environment": "standalone-php"
-    }
+    "tests/form-materializer-smoke.php": { "environment": "standalone-php" },
+    "tests/smoke-ability-error-report-summary.php": { "environment": "standalone-php" },
+    "tests/smoke-ability-import-success-diagnostics.php": { "environment": "standalone-php" },
+    "tests/smoke-ability-registration-idempotent.php": { "environment": "standalone-php" },
+    "tests/smoke-companion-plugin-js.php": { "environment": "standalone-php" },
+    "tests/smoke-companion-plugin.php": { "environment": "standalone-php" },
+    "tests/smoke-contact-layout-transformer.php": { "environment": "standalone-php" },
+    "tests/smoke-diagnostic-loss-classes.php": { "environment": "standalone-php" },
+    "tests/smoke-entity-materializer-registry.php": { "environment": "standalone-php" },
+    "tests/smoke-export-theme-ability.php": { "environment": "standalone-php" },
+    "tests/smoke-import-diagnostic-contract.php": { "environment": "standalone-php" },
+    "tests/smoke-import-disposition.php": { "environment": "standalone-php" },
+    "tests/smoke-import-permission-filter.php": { "environment": "standalone-php" },
+    "tests/smoke-importer-block.php": { "environment": "standalone-php" },
+    "tests/smoke-inline-svg-materialization.php": { "environment": "standalone-php" },
+    "tests/smoke-materialized-block-content-validation.php": { "environment": "standalone-php" },
+    "tests/smoke-playground-import-primitive.php": { "environment": "standalone-php" },
+    "tests/smoke-product-handoff-contract.php": { "environment": "standalone-php" },
+    "tests/smoke-product-materializer.php": { "environment": "standalone-php" },
+    "tests/smoke-provider-presentation.php": { "environment": "standalone-php" },
+    "tests/smoke-safe-html-fallback-reducer.php": { "environment": "standalone-php" },
+    "tests/smoke-site-identity.php": { "environment": "standalone-php" },
+    "tests/smoke-template-chrome-dedupe.php": { "environment": "standalone-php" },
+    "tests/smoke-template-part-shell-dedupe.php": { "environment": "standalone-php" },
+    "tests/smoke-url-import-runtime.php": { "environment": "standalone-php" },
+    "tests/smoke-validation-runtime-diagnostics.php": { "environment": "standalone-php" },
+    "tests/smoke-visual-repair-css.php": { "environment": "standalone-php" },
+    "tests/smoke-webfont-producer-consumer.php": { "environment": "standalone-php" },
+    "tests/smoke-website-artifact-import-input.php": { "environment": "standalone-php" },
+    "tests/smoke-wordpress-site-plan-materializer.php": { "environment": "standalone-php" }
   }
 }

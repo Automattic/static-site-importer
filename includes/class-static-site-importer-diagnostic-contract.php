@@ -111,7 +111,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 	 */
 	private static function diagnostic_rows_from_result( array $result ): array {
 		$rows = array();
-		foreach ( array( $result['diagnostics'] ?? array(), $result['artifact_diagnostics']['diagnostics'] ?? array(), $result['import_validation_result']['diagnostics'] ?? array() ) as $candidate ) {
+		foreach ( array( $result['diagnostics'] ?? array(), $result['artifact_diagnostics']['diagnostics'] ?? array(), $result['import_validation_result']['diagnostics'] ?? array(), $result['materialization_receipt']['diagnostics'] ?? array() ) as $candidate ) {
 			if ( is_array( $candidate ) ) {
 				$rows = array_merge( $rows, self::normalize_diagnostic_rows( $candidate ) );
 			}
@@ -276,11 +276,91 @@ class Static_Site_Importer_Diagnostic_Contract {
 	 */
 	private static function quality_counts( array $import_report, array $summary ): array {
 		$quality = isset( $import_report['quality'] ) && is_array( $import_report['quality'] ) ? $import_report['quality'] : $summary;
-		$keys    = array( 'fallback_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count' );
+		$keys    = array( 'block_count', 'fallback_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count' );
 
 		$counts = array();
 		foreach ( $keys as $key ) {
 			$counts[ $key ] = isset( $quality[ $key ] ) && is_numeric( $quality[ $key ] ) ? (int) $quality[ $key ] : 0;
+		}
+		if ( $counts['block_count'] <= 0 ) {
+			$document_counts = self::block_document_quality_counts( $import_report );
+			if ( $document_counts['block_count'] > 0 ) {
+				$counts = array_merge( $counts, $document_counts );
+			}
+		}
+
+		return $counts;
+	}
+
+	/**
+	 * Derive bounded composition counts when a report carries documents but no aggregate.
+	 *
+	 * @param array<string,mixed> $import_report Import report.
+	 * @return array<string,int>
+	 */
+	private static function block_document_quality_counts( array $import_report ): array {
+		$materialized = isset( $import_report['materialized_content']['block_documents'] ) && is_array( $import_report['materialized_content']['block_documents'] )
+			? $import_report['materialized_content']['block_documents']
+			: array();
+		$documents    = ! empty( $materialized )
+			? $materialized
+			: ( isset( $import_report['generated_theme']['block_documents'] ) && is_array( $import_report['generated_theme']['block_documents'] ) ? $import_report['generated_theme']['block_documents'] : array() );
+		$counts       = array(
+			'block_count'           => 0,
+			'core_html_block_count' => 0,
+			'freeform_block_count'  => 0,
+		);
+
+		foreach ( $documents as $document ) {
+			if ( ! is_array( $document ) ) {
+				continue;
+			}
+			$document_count = isset( $document['block_count'] ) && is_numeric( $document['block_count'] ) ? (int) $document['block_count'] : 0;
+			if ( $document_count > 0 ) {
+				$counts['block_count']           += $document_count;
+				$counts['core_html_block_count'] += isset( $document['core_html_block_count'] ) && is_numeric( $document['core_html_block_count'] ) ? (int) $document['core_html_block_count'] : 0;
+				$counts['freeform_block_count']  += isset( $document['freeform_block_count'] ) && is_numeric( $document['freeform_block_count'] ) ? (int) $document['freeform_block_count'] : 0;
+				continue;
+			}
+
+			foreach ( array( 'content', 'post_content', 'block_markup', 'serialized_blocks' ) as $field ) {
+				if ( isset( $document[ $field ] ) && is_string( $document[ $field ] ) && '' !== trim( $document[ $field ] ) ) {
+					$parsed = self::serialized_block_quality_counts( $document[ $field ] );
+					foreach ( $counts as $key => $value ) {
+						$counts[ $key ] = $value + $parsed[ $key ];
+					}
+					break;
+				}
+			}
+		}
+
+		return $counts;
+	}
+
+	/**
+	 * Count named Gutenberg block comments without retaining serialized content.
+	 *
+	 * @param string $content Serialized block document.
+	 * @return array<string,int>
+	 */
+	private static function serialized_block_quality_counts( string $content ): array {
+		$counts = array(
+			'block_count'           => 0,
+			'core_html_block_count' => 0,
+			'freeform_block_count'  => 0,
+		);
+		if ( ! preg_match_all( '/<!--\s+wp:([a-z][a-z0-9-]*(?:\/[a-z][a-z0-9-]*)?)/i', $content, $matches ) ) {
+			return $counts;
+		}
+
+		foreach ( $matches[1] as $name ) {
+			$normalized = strtolower( (string) $name );
+			++$counts['block_count'];
+			if ( 'html' === $normalized || 'core/html' === $normalized ) {
+				++$counts['core_html_block_count'];
+			} elseif ( 'freeform' === $normalized || 'core/freeform' === $normalized ) {
+				++$counts['freeform_block_count'];
+			}
 		}
 
 		return $counts;

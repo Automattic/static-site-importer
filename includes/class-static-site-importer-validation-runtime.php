@@ -9,12 +9,55 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Website_Artifact_Import_Input' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-website-artifact-import-input.php';
+}
+
 /**
  * Runs SSI import validation in the current WordPress runtime.
  */
 class Static_Site_Importer_Validation_Runtime {
 
 	public const RESULT_SCHEMA = 'static-site-importer/import-validation-result/v1';
+	public const FIXTURE_MATRIX_RESULT_SCHEMA = 'static-site-importer/fixture-matrix-validation-result/v1';
+
+	/**
+	 * Project the full validation result into the bounded fixture-matrix contract.
+	 *
+	 * The full import report can exceed runtime command-capture limits. Matrix
+	 * consumers need actionable diagnostics and attribution evidence, not the raw
+	 * materialized documents carried by that report.
+	 *
+	 * @param array<string,mixed> $result Full validation result.
+	 * @return array<string,mixed>
+	 */
+	public static function fixture_matrix_result( array $result ): array {
+		$fixture_diagnostics = isset( $result['fixture_diagnostics'] ) && is_array( $result['fixture_diagnostics'] )
+			? $result['fixture_diagnostics']
+			: Static_Site_Importer_Diagnostic_Contract::build( $result );
+
+		$diagnostics = isset( $fixture_diagnostics['diagnostics'] ) && is_array( $fixture_diagnostics['diagnostics'] )
+			? $fixture_diagnostics['diagnostics']
+			: array();
+		unset(
+			$fixture_diagnostics['diagnostics'],
+			$fixture_diagnostics['runtime_dependency_target_gaps'],
+			$fixture_diagnostics['asset_diagnostics'],
+			$fixture_diagnostics['svg_diagnostics'],
+			$fixture_diagnostics['button_style_loss_hints']
+		);
+
+		return array(
+			'schema'              => self::FIXTURE_MATRIX_RESULT_SCHEMA,
+			'fixture_id'          => isset( $result['fixture_id'] ) && is_scalar( $result['fixture_id'] ) ? (string) $result['fixture_id'] : '',
+			'status'              => isset( $result['status'] ) && is_scalar( $result['status'] ) ? (string) $result['status'] : '',
+			'success'             => ! empty( $result['success'] ),
+			'quality'             => array( 'pass' => ! empty( $result['success'] ) ),
+			'diagnostics'         => $diagnostics,
+			'fixture_diagnostics' => $fixture_diagnostics,
+			'artifacts'           => isset( $result['artifacts'] ) && is_array( $result['artifacts'] ) ? $result['artifacts'] : array(),
+		);
+	}
 
 	/**
 	 * Validate a website artifact in the current runtime.
@@ -38,21 +81,20 @@ class Static_Site_Importer_Validation_Runtime {
 			return $artifact_dir;
 		}
 
-		$report_path = trailingslashit( $artifact_dir ) . 'import-report.json';
-		$import_args = array(
-			'slug'                      => $slug,
-			'name'                      => isset( $input['name'] ) ? sanitize_text_field( (string) $input['name'] ) : $slug,
-			'activate'                  => array_key_exists( 'activate', $input ) ? (bool) $input['activate'] : true,
-			'overwrite'                 => array_key_exists( 'overwrite', $input ) ? (bool) $input['overwrite'] : true,
-			'materialize_dependencies'  => array_key_exists( 'materialize_dependencies', $input ) ? (bool) $input['materialize_dependencies'] : true,
-			'fail_on_quality'           => ! empty( $input['fail_on_quality'] ),
-			'allow_missing_woocommerce' => ! empty( $input['allow_missing_woocommerce'] ),
-			'allow_missing_jetpack'     => ! empty( $input['allow_missing_jetpack'] ),
-			'report'                    => $report_path,
-			'source_metadata'           => array_merge(
-				isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array(),
-				array( 'validation_provider' => 'static-site-importer/current-runtime' )
-			),
+		$input['slug']            = $slug;
+		$input['name']            = isset( $input['name'] ) ? sanitize_text_field( (string) $input['name'] ) : $slug;
+		$input['report']          = trailingslashit( $artifact_dir ) . 'import-report.json';
+		$input['source_metadata'] = array_merge(
+			isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array(),
+			array( 'validation_provider' => 'static-site-importer/current-runtime' )
+		);
+		$import_args = Static_Site_Importer_Website_Artifact_Import_Input::normalize(
+			$input,
+			array(
+				'activate'                 => true,
+				'overwrite'                => true,
+				'materialize_dependencies' => true,
+			)
 		);
 
 		$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
@@ -71,13 +113,15 @@ class Static_Site_Importer_Validation_Runtime {
 	 * @return array<string,mixed>
 	 */
 	public static function error_result_from_wp_error( WP_Error $error, array $input = array() ): array {
-		$slug                          = isset( $input['slug'] ) ? sanitize_title( (string) $input['slug'] ) : '';
-		$result                        = array(
-			'success'       => false,
-			'schema'        => self::RESULT_SCHEMA,
-			'status'        => 'failed',
-			'fixture_id'    => $slug,
-			'request'       => array(
+		$slug       = isset( $input['slug'] ) ? sanitize_title( (string) $input['slug'] ) : '';
+		$error_data = $error->get_error_data();
+		$receipt    = is_array( $error_data ) && 'static-site-importer/materialization-receipt/v1' === ( $error_data['schema'] ?? '' ) ? $error_data : array();
+		$result = array(
+			'success'                 => false,
+			'schema'                  => self::RESULT_SCHEMA,
+			'status'                  => 'failed',
+			'fixture_id'              => $slug,
+			'request'                 => array(
 				'import_args' => array_filter(
 					array(
 						'slug' => $slug,
@@ -85,11 +129,11 @@ class Static_Site_Importer_Validation_Runtime {
 					)
 				),
 			),
-			'summary'       => array(
+			'summary'                 => array(
 				'quality_pass' => false,
 				'error_code'   => $error->get_error_code(),
 			),
-			'diagnostics'   => array(
+			'diagnostics'             => array(
 				array(
 					'type'        => 'validation_error',
 					'severity'    => 'error',
@@ -100,8 +144,9 @@ class Static_Site_Importer_Validation_Runtime {
 					'owner'       => 'static-site-importer',
 				),
 			),
-			'artifacts'     => array(),
-			'import_report' => array(),
+			'materialization_receipt' => $receipt,
+			'artifacts'               => array(),
+			'import_report'           => array(),
 		);
 		$result['fixture_diagnostics'] = Static_Site_Importer_Diagnostic_Contract::build( $result );
 		$result['diagnostics']         = isset( $result['fixture_diagnostics']['diagnostics'] ) && is_array( $result['fixture_diagnostics']['diagnostics'] ) ? $result['fixture_diagnostics']['diagnostics'] : array();
