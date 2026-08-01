@@ -286,8 +286,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				'mime_type' => $resource['content_type'],
 			);
 			if ( 'html' === $resource['kind'] ) {
-				$route_path = (string) ( parse_url( $resource_url, PHP_URL_PATH ) ?? '/' );
-				$file['metadata'] = array( 'route_path' => '/' . ltrim( $route_path, '/' ) );
+				$file['metadata'] = array( 'route_path' => self::canonical_route_path( $resource_url ) );
 			}
 			if ( self::is_text( $resource['content_type'], $path ) ) {
 				$file['content'] = $body;
@@ -752,6 +751,26 @@ class Static_Site_Importer_URL_Site_Collector {
 		}
 		$normalized = '/' . implode( '/', $segments );
 		return str_ends_with( $path, '/' ) && '/' !== $normalized ? $normalized . '/' : $normalized;
+	}
+
+	private static function canonical_route_path( string $url ): string {
+		$path     = (string) ( parse_url( $url, PHP_URL_PATH ) ?? '/' );
+		$segments = array_values( array_filter( explode( '/', trim( $path, '/' ) ), static fn ( string $segment ): bool => '' !== $segment ) );
+		$last     = array_key_last( $segments );
+		$slugs    = array();
+		foreach ( $segments as $index => $segment ) {
+			$decoded = urldecode( $segment );
+			if ( $index === $last ) {
+				$decoded = (string) preg_replace( '/\.html?$/i', '', $decoded );
+			}
+			$slug = function_exists( 'sanitize_title' )
+				? sanitize_title( $decoded )
+				: trim( strtolower( (string) preg_replace( '/[^a-z0-9]+/i', '-', $decoded ) ), '-' );
+			if ( '' !== $slug ) {
+				$slugs[] = $slug;
+			}
+		}
+		return array() === $slugs ? '/' : '/' . implode( '/', $slugs );
 	}
 
 	private static function origin( string $url ): string {

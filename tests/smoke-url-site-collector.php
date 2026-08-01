@@ -128,7 +128,7 @@ foreach ( $result['artifact']['files'] ?? array() as $file ) {
 	$files[ $file['path'] ?? '' ] = $file;
 }
 $assert( isset( $files['website/services.html'], $files['website/team.html'], $files['website/contact.html'] ), 'all-pages-packaged' );
-$assert( '/' === ( $files['website/index.html']['metadata']['route_path'] ?? null ) && '/services.html' === ( $files['website/services.html']['metadata']['route_path'] ?? null ), 'html-files-declare-canonical-source-routes' );
+$assert( '/' === ( $files['website/index.html']['metadata']['route_path'] ?? null ) && '/services' === ( $files['website/services.html']['metadata']['route_path'] ?? null ), 'html-files-declare-canonical-source-routes' );
 $assert( isset( $files['website/files/main-a798de8e.css'] ), 'query-addressed-stylesheet-packaged' );
 $assert( isset( $files['website/_external/cdn.example.test/font.woff2'] ), 'external-font-packaged' );
 $assert( isset( $files['website/_external/cdn.example.test/team.webp'] ), 'external-image-packaged' );
@@ -176,6 +176,14 @@ $routes           = array_column( $site_plan['routes'] ?? array(), 'target_path'
 $assert( array() === $site_diagnostics, 'collected-artifact-is-self-contained', json_encode( $site_diagnostics ) ?: '' );
 $assert( 4 === count( $routes ), 'collected-artifact-produces-four-routes', json_encode( $routes ) ?: '' );
 $assert( '/' === ( $routes['website/index.html'] ?? null ) && '/services' === ( $routes['website/services.html'] ?? null ), 'collected-routes-preserve-source-paths' );
+
+$encoded_route = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://example.test/news/category/Americana%2FCountry+Artist',
+	array( 'max_pages' => 1, 'max_assets' => 0, 'max_bytes' => PHP_INT_MAX, 'request_delay_ms' => 0, '_route_set' => array( 'https://example.test/news/category/Americana%2FCountry+Artist' ) ),
+	static fn ( string $url, array $args ): array => array( 'body' => '<main>Category</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) )
+);
+$encoded_file = $encoded_route['artifact']['files'][0] ?? array();
+$assert( '/news/category/americana-country-artist' === ( $encoded_file['metadata']['route_path'] ?? null ), 'encoded-source-route-is-canonicalized' );
 
 $complete_result = Static_Site_Importer_URL_Site_Collector::collect(
 	'https://example.test/',
