@@ -157,6 +157,14 @@ The blueprint installs and activates the packaged Static Site Importer release, 
 
 The optional extension manifest, side module, and safe launch blueprint are published to the repository's GitHub Pages site. Each release gets immutable versioned assets. The safe `playground/latest/blueprint.json` alias advances and is browser-verified independently; optional extension aliases advance only after their own runtime proof passes. This keeps an experimental side module from taking down the canonical demo while GitHub Pages supplies the CORS headers required by Playground. The extension is produced from pinned `php-ext-zstd` and vendored `libzstd` source by the release workflow; no unpublished branch, localhost URL, PECL installation, or host `zstd` executable is used.
 
+### Direct Playground Previews
+
+`POST /wp-json/static-site-importer/v1/imports` builds a website artifact from `source` (`url`, `html`, `files`, `archive`, or `artifact`). It opens a disposable Playground by default; set `apply_to_current_site: true` to import into the installed WordPress site instead.
+
+The default response has `mode: "playground"`, `provider: "static-site-importer/direct-playground-blueprint"`, and `preview.url`. `preview.url` and `preview.playground.blueprint_url` are direct `https://playground.wordpress.net/#...` URLs; `preview.playground.preview_url` is `/` and `preview.playground.ref` identifies the generated blueprint.
+
+PHP consumers can build the same blueprint with `static_site_importer_playground_import_steps()` or `static_site_importer_playground_import_blueprint()`, and create a direct preview response with `static_site_importer_build_playground_preview()`. For normalized website artifacts, call `static_site_importer_import_website_artifact_with_disposition()`; consumers can claim that flow through the `static_site_importer_import_disposition` filter, or return `null` to use the built-in non-destructive Playground preview.
+
 URL intake rules:
 
 - Fetches one URL only; this is not a crawler and does not execute JavaScript.
@@ -326,35 +334,19 @@ The handoff path is:
 
 Blocks Engine does not know about Codebox. Products that need sandbox validation request it after SSI materializes WordPress.
 
-### Codebox validation product path
+### Current-runtime validation
 
-`static-site-importer/validate-in-codebox` is the SSI product path for validating an import inside a disposable WP Codebox runtime. It accepts either a Blocks Engine website artifact (`artifact`) or durable refs to generated import output (`generated_theme_ref` / `theme_archive_ref`) and builds a `static-site-importer/codebox-validation-request/v1` envelope.
+`static-site-importer/validate-artifact` validates a Blocks Engine website artifact in the current WordPress runtime and returns `static-site-importer/import-validation-result/v1` importer diagnostics. The ability accepts `artifact` plus normal import options; it is exposed through the Abilities REST API when that API is available.
 
-The runtime provider hook is `static_site_importer_codebox_validation_result`. WP Codebox/Homeboy integrations should import the supplied artifact or generated theme output in a disposable runtime, run SSI import validation, run generated-theme block validation, collect browser/render evidence, and return `static-site-importer/codebox-validation-result/v1` with reviewer-facing artifact refs.
-
-Required artifact metadata lives under `artifacts` using `static-site-importer/codebox-validation-artifacts/v1`:
-
-- `generated_theme` or `theme_archive`
-- `import_report`
-- `block_validation_result`
-- `browser_render_evidence`
-- `screenshots[]` when available
-- `diffs[]` when available
-
-Reviewer-facing artifact fields should use durable refs or URLs. Host-local paths and `localhost` URLs are stripped from artifact refs; local paths may appear only under `operator_notes` for the machine operator.
-
-SSI-owned import reports use `static-site-importer/artifact-diagnostics/v1` for fallback artifact diagnostics. WP Codebox providers that expose a public Codebox diagnostics contract should map SSI diagnostics at the Codebox boundary instead of requiring SSI output to emit `wp-codebox/*` schemas.
-
-CLI entrypoint:
+The matching CLI command reads an artifact JSON object, imports it with activation, overwrite, and dependency materialization enabled by default, and writes the result to stdout or `--output`:
 
 ```bash
-wp static-site-importer validate-in-codebox \
+wp static-site-importer validate-artifact \
   --artifact=/path/to/website-artifact.json \
   --slug=example-import \
-  --name="Example Import"
+  --name="Example Import" \
+  --output=/path/to/validation-result.json
 ```
-
-Current upstream gap: SSI defines the product contract and dispatch hook, but a WP Codebox/Homeboy provider still needs to register `static_site_importer_codebox_validation_result` to execute the disposable runtime and return durable screenshot/diff/browser evidence refs. Until that provider is present, the ability returns a structured `blocked` result documenting the missing provider shape instead of faking validation evidence.
 
 ## Validation
 
@@ -385,6 +377,10 @@ STATIC_SITE_IMPORTER_WP_CLI="wp" npm run test:validation
 npm run test:validation -- --skip-import /path/to/wp-content/themes/wordpress-is-dead
 npm run test:validation -- --json
 ```
+
+### Test Inventory
+
+`test-manifest.json` is the canonical repository-wide test inventory. It classifies every executable test as standalone PHP, WordPress runtime, Node, browser/WP Codebox, or operator-only acceptance. Explicit `command` values are arrays of executable and argument strings. `npm test` runs the fast standalone PHP and Node projection; it reports the environment-heavy lanes as skipped. `npm run test:all` is the complete CI/reviewer command and runs configured runtime lanes while reporting operator-only acceptance commands explicitly. `npm run test:inventory` verifies that every executable test is declared once and that `homeboy-test-manifest.json` remains the deterministic standalone-PHP projection used by Homeboy.
 
 ### PHP Smokes
 

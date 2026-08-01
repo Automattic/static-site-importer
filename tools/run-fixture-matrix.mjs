@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 /**
  * Internal dependencies
  */
-import { MAX_EXTRA_SURFACE_COUNT, createFixtureMatrix, discoverFixtures, inspectFixtureDirectories, normalizeSurfaceCoverageOptions, normalizeVisualAttributionOptions, resolveFixtureSearchRoots } from '../lib/fixture-matrix.mjs';
+import { FIXTURE_MATRIX_RUN_FIELDS, MAX_EXTRA_SURFACE_COUNT, createFixtureMatrix, discoverFixtures, fixtureMatrixHomeboySettings, inspectFixtureDirectories, normalizeFixtureMatrixRunConfig, normalizeSurfaceCoverageOptions, normalizeVisualAttributionOptions, resolveFixtureSearchRoots } from '../lib/fixture-matrix.mjs';
 
 export const RIG_ID = 'static-site-importer-fixture-matrix';
 export const SOLVED_ONLY_LANE_ID = 'fixtures-solved-only/v1';
@@ -99,57 +99,10 @@ export function buildFixtureMatrixRunPlan(input) {
   const options = normalizeOptions(input);
   const codeFreshness = buildCodeFreshness(options, options.gitRunner || defaultGitRunner);
   const transformerReference = options.dependencyOverlayReferences ? resolveTransformerReference(codeFreshness) : '';
-  const settings = {
-    SSI_FIXTURE_MATRIX_FIXTURE_ROOT: options.fixtureRoot,
-    SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PATH: options.staticSiteImporter,
-    SSI_FIXTURE_MATRIX_RUN: '1',
-    ...(options.fixtureIds.length ? { SSI_FIXTURE_MATRIX_FIXTURE_IDS: options.fixtureIds.join(',') } : {}),
-    ...(options.solvedOnly ? { SSI_FIXTURE_MATRIX_FIXTURE_CORPUS: 'solved' } : {}),
-    ...(options.requireSolvedCandidate ? { SSI_FIXTURE_MATRIX_REQUIRE_SOLVED_CANDIDATE: '1' } : {}),
-    ...(options.blocksEnginePhpTransformerPath
-      ? { SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH: options.blocksEnginePhpTransformerPath }
-      : {}),
-    ...(transformerReference
-      ? { SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_REFERENCE: transformerReference }
-      : {}),
-    ...(options.batchSize ? { SSI_FIXTURE_MATRIX_BATCH_SIZE: String(options.batchSize) } : {}),
-    ...(options.concurrency ? { SSI_FIXTURE_MATRIX_CONCURRENCY: String(options.concurrency) } : {}),
-    ...(options.batchInactivityTimeoutMs ? { SSI_FIXTURE_MATRIX_BATCH_INACTIVITY_TIMEOUT_MS: String(options.batchInactivityTimeoutMs) } : {}),
-    ...(options.wordpressVersion ? { SSI_FIXTURE_MATRIX_WORDPRESS_VERSION: options.wordpressVersion } : {}),
-    ...(options.wpCodeboxBin ? { SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN: options.wpCodeboxBin } : {}),
-    ...(options.surfaceCoverage !== undefined ? { SSI_FIXTURE_MATRIX_SURFACE_COVERAGE: String(options.surfaceCoverage) } : {}),
-    ...(options.maxExtraSurfaces ? { SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES: String(options.maxExtraSurfaces) } : {}),
-    ...(options.editorValidation === false ? { SSI_FIXTURE_MATRIX_EDITOR_VALIDATION: '0' } : {}),
-    ...(options.visualParity === false ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY: '0' } : {}),
-    ...(options.visualParityGate === false ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE: '0' } : { SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE: '1' }),
-    ...(options.pixelThreshold !== undefined ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD: String(options.pixelThreshold) } : {}),
-    ...(options.visualParityAlignment === false ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_ALIGNMENT: '0' } : {}),
-    ...(options.visualParityMaxVerticalShift !== undefined ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_VERTICAL_SHIFT: String(options.visualParityMaxVerticalShift) } : {}),
-    ...(options.visualParityMaxHorizontalShift !== undefined ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_HORIZONTAL_SHIFT: String(options.visualParityMaxHorizontalShift) } : {}),
-    ...(options.visualParityOffsetTolerance !== undefined ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_OFFSET_TOLERANCE: String(options.visualParityOffsetTolerance) } : {}),
-    ...(options.visualParityPixelmatchThreshold !== undefined ? { SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD: String(options.visualParityPixelmatchThreshold) } : {}),
-    ...(options.maxExplanationElements ? { SSI_FIXTURE_MATRIX_MAX_EXPLANATION_ELEMENTS: String(options.maxExplanationElements) } : {}),
-    ...(options.maxExplanationCandidates ? { SSI_FIXTURE_MATRIX_MAX_EXPLANATION_CANDIDATES: String(options.maxExplanationCandidates) } : {}),
-    ...(options.explainSelectors.length ? { SSI_FIXTURE_MATRIX_EXPLAIN_SELECTORS: options.explainSelectors.join(',') } : {}),
-    ...(options.surfaceCoverage ? { SSI_FIXTURE_MATRIX_SURFACE_COVERAGE: String(options.surfaceCoverage) } : {}),
-    ...(options.maxExtraSurfaces ? { SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES: String(options.maxExtraSurfaces) } : {}),
-    // Opt-in live-WP parity capture (off by default). When set, the bench appends
-    // the deterministic `wordpress.capture-html` step per fixture and runs the
-    // blocks-engine live-wp-parity comparator host-side. Absent => byte-identical
-    // to today (no setting emitted, render-free static gate stays primary).
-    ...(options.liveWpParity ? { SSI_FIXTURE_MATRIX_LIVE_WP_PARITY: '1' } : {}),
-    ...(options.minNativeRate ? { SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE: String(options.minNativeRate) } : {}),
-    // Lane/tag selection driven by the per-fixture manifest classification: run a
-    // single class lane (e.g. marketing/static) and/or only fixtures carrying a
-    // given manifest tag.
-    ...(options.class ? { SSI_FIXTURE_MATRIX_CLASS: String(options.class) } : {}),
-    ...(options.tag ? { SSI_FIXTURE_MATRIX_TAG: String(options.tag) } : {}),
-    ...(options.capability ? { SSI_FIXTURE_MATRIX_CAPABILITY: String(options.capability) } : {}),
-    ...(options.capabilities ? { SSI_FIXTURE_MATRIX_CAPABILITIES: String(options.capabilities) } : {}),
-    ...(options.riskProfile ? { SSI_FIXTURE_MATRIX_RISK_PROFILE: String(options.riskProfile) } : {}),
-    ...(options.complexity ? { SSI_FIXTURE_MATRIX_COMPLEXITY: String(options.complexity) } : {}),
-    ...(options.maxComplexity ? { SSI_FIXTURE_MATRIX_MAX_COMPLEXITY: String(options.maxComplexity) } : {}),
-  };
+  const settings = fixtureMatrixHomeboySettings({
+    ...options.runConfig,
+    blocksEnginePhpTransformerReference: transformerReference || options.runConfig.blocksEnginePhpTransformerReference,
+  });
   const corpusCounts = inspectCorpusFixtures(options.fixtureRoot);
   let matrix = { fixtures: [], count: 0 };
   if (corpusCounts.inspections.active.exclusions[0]?.reason !== 'root_symlink') {
@@ -323,6 +276,20 @@ function normalizeOptions(input) {
     artifactRoot = path.join(tempRoot, 'artifacts');
   }
 
+  const batchSize = input.batchSize || (selection.isolatedBatches ? 1 : input.batchSize);
+  const runConfig = normalizeFixtureMatrixRunConfig(Object.fromEntries(Object.keys(FIXTURE_MATRIX_RUN_FIELDS).map((key) => [key, ({
+    ...input,
+    fixtureRoot,
+    staticSiteImporterPath: path.resolve(input.staticSiteImporter),
+    fixtureIds: selection.fixtureIds,
+    fixtureCorpus: selection.solvedOnly ? 'solved' : undefined,
+    requireSolvedCandidate: selection.requireSolvedCandidate,
+    blocksEnginePhpTransformerPath,
+    fixtureClass: input.class,
+    batchSize,
+    run: true,
+  })[key]])));
+
   return {
     ...input,
     ...executionTarget,
@@ -340,7 +307,7 @@ function normalizeOptions(input) {
     requireSolvedCandidate: selection.requireSolvedCandidate,
     selectedActiveFixtureCount: selection.selectedActiveFixtureCount,
     selectedSolvedFixtureCount: selection.selectedSolvedFixtureCount,
-    batchSize: input.batchSize || (selection.isolatedBatches ? 1 : input.batchSize),
+    batchSize,
     blocksEngine,
     blocksEnginePhpTransformerPath,
     passthrough: Array.isArray(input.passthrough) ? input.passthrough : [],
@@ -350,6 +317,7 @@ function normalizeOptions(input) {
     sharedStateExplicit,
     artifactRootExplicit,
     homeboyBin: input.homeboyBin || process.env.HOMEBOY_BIN || 'homeboy',
+    runConfig,
     ...normalizeVisualAttributionOptions(input),
   };
 }
