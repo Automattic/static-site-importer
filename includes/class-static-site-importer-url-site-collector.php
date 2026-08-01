@@ -25,6 +25,8 @@ class Static_Site_Importer_URL_Site_Collector {
 	private const MAX_ASSETS              = 2000;
 	private const MAX_TOTAL_BYTES         = 268435456;
 	private const MAX_RESPONSE_BYTES      = 10485760;
+	private const MAX_SITEMAP_DOCUMENTS   = 100;
+	private const MAX_DISCOVERED_ROUTES   = 5000;
 
 	/**
 	 * Collect a public static site.
@@ -45,6 +47,18 @@ class Static_Site_Importer_URL_Site_Collector {
 		$max_total_bytes = min( self::MAX_TOTAL_BYTES, max( 1, (int) ( $args['max_total_bytes'] ?? self::DEFAULT_MAX_TOTAL_BYTES ) ) );
 		$request_delay   = min( 2000, max( 0, (int) ( $args['request_delay_ms'] ?? 100 ) ) );
 		$fetcher    = $fetcher ?? static fn ( string $resource_url, array $fetch_args ) => Static_Site_Importer_URL_Fetcher::fetch( $resource_url, $fetch_args );
+		$fetch_attempts = min( 3, max( 1, (int) ( $args['fetch_attempts'] ?? 2 ) ) );
+		$fetch_resource = $fetcher;
+		$fetcher = static function ( string $resource_url, array $fetch_args ) use ( $fetch_resource, $fetch_attempts ) {
+			$response = null;
+			for ( $attempt = 0; $attempt < $fetch_attempts; $attempt++ ) {
+				$response = $fetch_resource( $resource_url, $fetch_args );
+				if ( ! is_wp_error( $response ) ) {
+					return $response;
+				}
+			}
+			return $response;
+		};
 		$fetch_args = array_intersect_key( $args, array_flip( array( 'timeout' ) ) );
 		$fetch_args['max_bytes'] = min( self::MAX_RESPONSE_BYTES, $max_total_bytes, max( 1, (int) ( $args['max_bytes'] ?? 5242880 ) ) );
 
@@ -62,7 +76,10 @@ class Static_Site_Importer_URL_Site_Collector {
 		$entry_resource_url = $entry_url;
 		$site_url           = $entry_url;
 
-		$sitemap_urls = self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
+		$sitemap_urls = isset( $args['_route_set'] ) && is_array( $args['_route_set'] ) ? array_values( $args['_route_set'] ) : self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
+		if ( is_wp_error( $sitemap_urls ) ) {
+			return $sitemap_urls;
+		}
 		foreach ( $sitemap_urls as $page_url ) {
 			if ( count( $page_queue ) >= $max_pages ) {
 				$truncated['pages'] = true;
@@ -129,7 +146,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			);
 
 			$document_base_url = self::html_base_url( $body, $final_url );
-			foreach ( self::html_page_urls( $body, $document_base_url, $site_url ) as $discovered_url ) {
+			foreach ( isset( $args['_route_set'] ) ? array() : self::html_page_urls( $body, $document_base_url, $site_url ) as $discovered_url ) {
 				$page_key = self::page_key( $discovered_url );
 				if ( isset( $queued_pages[ $page_key ] ) ) {
 					continue;
@@ -239,7 +256,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			$path = $paths[ $resource_url ];
 			$body = (string) $resource['body'];
 			if ( 'html' === $resource['kind'] ) {
-				$body = self::rewrite_html( $body, self::html_base_url( $body, $resource_url ), $path, $reference_paths, $aliases );
+				$body = self::rewrite_html( $body, self::html_base_url( $body, $resource_url ), $path, $reference_paths, $aliases, $site_url );
 			} elseif ( 'text/css' === $resource['content_type'] || str_ends_with( strtolower( $path ), '.css' ) ) {
 				$body = self::rewrite_css( $body, $resource_url, $path, $reference_paths );
 			}
@@ -286,28 +303,102 @@ class Static_Site_Importer_URL_Site_Collector {
 		);
 	}
 
+	/**
+	 * Discover all same-origin page routes declared by a sitemap index or urlset.
+	 *
+	 * @return array<int,string>|WP_Error
+	 */
+	public static function discover_routes( string $url, array $args = array(), ?callable $fetcher = null ) {
+		$entry_url = self::canonical_url( Static_Site_Importer_URL_Fetcher::normalize_url( $url ) );
+		if ( '' === $entry_url ) {
+			return new WP_Error( 'static_site_importer_site_collection_invalid_url', 'Enter a valid public site URL.' );
+		}
+		$fetcher = $fetcher ?? static fn ( string $resource_url, array $fetch_args ) => Static_Site_Importer_URL_Fetcher::fetch( $resource_url, $fetch_args );
+		$fetch_attempts = min( 3, max( 1, (int) ( $args['fetch_attempts'] ?? 2 ) ) );
+		$fetch_resource = $fetcher;
+		$fetcher = static function ( string $resource_url, array $fetch_args ) use ( $fetch_resource, $fetch_attempts ) {
+			for ( $attempt = 0; $attempt < $fetch_attempts; $attempt++ ) {
+				$response = $fetch_resource( $resource_url, $fetch_args );
+				if ( ! is_wp_error( $response ) ) { return $response; }
+			}
+			return $response;
+		};
+		$fetch_args = array_intersect_key( $args, array_flip( array( 'timeout' ) ) );
+		$fetch_args['max_bytes'] = min( 10485760, max( 1, (int) ( $args['max_bytes'] ?? 5242880 ) ) );
+		$routes = self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
+		if ( is_wp_error( $routes ) ) {
+			return $routes;
+		}
+		if ( ! empty( $routes ) ) {
+			return $routes;
+		}
+		// Public sites frequently omit or block sitemap.xml. Crawl HTML links from
+		// the entrypoint so batch mode still has a bounded useful route set.
+		$queue = array( $entry_url );
+		$seen = array();
+		while ( $queue ) {
+			$current = array_shift( $queue );
+			$key = self::page_key( $current );
+			if ( isset( $seen[ $key ] ) ) { continue; }
+			$response = $fetcher( $current, array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ) );
+			if ( is_wp_error( $response ) || '' === trim( (string) ( $response['body'] ?? '' ) ) ) { continue; }
+			$seen[ $key ] = $current;
+			$final = self::response_url( $response, $current );
+			foreach ( self::html_page_urls( (string) $response['body'], self::html_base_url( (string) $response['body'], $final ), $entry_url ) as $next ) {
+				if ( ! isset( $seen[ self::page_key( $next ) ] ) && count( $seen ) + count( $queue ) >= self::MAX_DISCOVERED_ROUTES ) {
+					return new WP_Error( 'static_site_importer_discovery_incomplete', 'HTML link discovery exceeded its route limit.', array( 'truncated_dimension' => 'routes', 'limit' => self::MAX_DISCOVERED_ROUTES, 'discovered' => count( $seen ), 'queued' => count( $queue ) ) );
+				}
+				if ( ! isset( $seen[ self::page_key( $next ) ] ) ) { $queue[] = $next; }
+			}
+		}
+		return array_values( $seen );
+	}
+
+	/** @return array<string,int> */
+	public static function discovery_limits(): array {
+		return array( 'max_sitemap_documents' => self::MAX_SITEMAP_DOCUMENTS, 'max_discovered_routes' => self::MAX_DISCOVERED_ROUTES, 'max_sitemap_document_bytes' => 1048576 );
+	}
+
 	/** @return array<int,string> */
-	private static function sitemap_urls( string $entry_url, callable $fetcher, array $fetch_args ): array {
+	private static function sitemap_urls( string $entry_url, callable $fetcher, array $fetch_args ) {
 		$parts = parse_url( $entry_url );
 		if ( ! is_array( $parts ) || empty( $parts['scheme'] ) || empty( $parts['host'] ) ) {
 			return array();
 		}
 		$origin      = self::origin( $entry_url );
 		$sitemap_url = $origin . '/sitemap.xml';
-		$response    = $fetcher( $sitemap_url, array_merge( $fetch_args, array( 'max_bytes' => min( 1048576, (int) ( $fetch_args['max_bytes'] ?? 1048576 ) ), 'content_types' => array( 'application/xml', 'text/xml', 'text/plain', 'application/rss+xml' ) ) ) );
-		if ( is_wp_error( $response ) ) {
-			return array();
-		}
-
-		preg_match_all( '#<loc\b[^>]*>(.*?)</loc>#is', (string) $response['body'], $matches );
+		$queue = array( $sitemap_url );
+		$seen = array();
 		$urls = array();
-		foreach ( $matches[1] ?? array() as $location ) {
-			$resolved = self::resolve_url( html_entity_decode( strip_tags( (string) $location ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ), $sitemap_url );
-			if ( '' !== $resolved && self::same_origin( $resolved, $entry_url ) && self::is_page_url( $resolved ) ) {
-				$urls[] = $resolved;
+		while ( $queue ) {
+			$current = array_shift( $queue );
+			if ( isset( $seen[ $current ] ) ) {
+				continue;
+			}
+			$seen[ $current ] = true;
+			$response = $fetcher( $current, array_merge( $fetch_args, array( 'max_bytes' => min( 1048576, (int) ( $fetch_args['max_bytes'] ?? 1048576 ) ), 'content_types' => array( 'application/xml', 'text/xml', 'text/plain', 'application/rss+xml' ) ) ) );
+			if ( is_wp_error( $response ) ) {
+				continue;
+			}
+			preg_match_all( '#<loc\b[^>]*>(.*?)</loc>#is', (string) $response['body'], $matches );
+			foreach ( $matches[1] ?? array() as $location ) {
+				$resolved = self::resolve_url( html_entity_decode( strip_tags( (string) $location ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ), $current );
+				if ( '' === $resolved || ! self::same_origin( $resolved, $entry_url ) ) {
+					continue;
+				}
+				if ( str_ends_with( strtolower( (string) parse_url( $resolved, PHP_URL_PATH ) ), '.xml' ) ) {
+					if ( ! isset( $seen[ $resolved ] ) && count( $seen ) + count( $queue ) >= self::MAX_SITEMAP_DOCUMENTS ) {
+						return new WP_Error( 'static_site_importer_discovery_incomplete', 'Sitemap discovery exceeded its document limit.', array( 'truncated_dimension' => 'sitemap_documents', 'limit' => self::MAX_SITEMAP_DOCUMENTS, 'discovered' => count( $seen ), 'queued' => count( $queue ) ) );
+					}
+					$queue[] = $resolved;
+				} elseif ( self::is_page_url( $resolved ) ) {
+					if ( count( $urls ) >= self::MAX_DISCOVERED_ROUTES ) {
+						return new WP_Error( 'static_site_importer_discovery_incomplete', 'Sitemap discovery exceeded its route limit.', array( 'truncated_dimension' => 'routes', 'limit' => self::MAX_DISCOVERED_ROUTES, 'discovered' => count( $urls ) ) );
+					}
+					$urls[] = $resolved;
+				}
 			}
 		}
-
 		return array_values( array_unique( $urls ) );
 	}
 
@@ -425,10 +516,10 @@ class Static_Site_Importer_URL_Site_Collector {
 	}
 
 	/** @param array<string,string> $paths */
-	private static function rewrite_html( string $html, string $base_url, string $source_path, array $paths, array $aliases ): string {
+	private static function rewrite_html( string $html, string $base_url, string $source_path, array $paths, array $aliases, string $site_url ): string {
 		$html = preg_replace_callback(
 			'#\b(src|href|poster)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))#is',
-			static function ( array $match ) use ( $base_url, $source_path, $paths, $aliases ): string {
+			static function ( array $match ) use ( $base_url, $source_path, $paths, $aliases, $site_url ): string {
 				$value = self::matched_attribute_value( $match );
 				$url   = self::resolve_url( $value, $base_url );
 				if ( isset( $paths[ $url ] ) && preg_match( '/\.html?$/i', $paths[ $url ] ) ) {
@@ -437,7 +528,10 @@ class Static_Site_Importer_URL_Site_Collector {
 					}
 					return $match[0];
 				}
-				return isset( $paths[ $url ] ) ? $match[1] . '="' . self::relative_path( $source_path, $paths[ $url ] ) . '"' : $match[0];
+				if ( isset( $paths[ $url ] ) ) {
+					return $match[1] . '="' . self::relative_path( $source_path, $paths[ $url ] ) . '"';
+				}
+				return '' !== $url && self::same_origin( $url, $site_url ) && self::is_page_url( $url ) ? $match[1] . '="' . self::route_url( $url, $value ) . '"' : $match[0];
 			},
 			$html
 		);

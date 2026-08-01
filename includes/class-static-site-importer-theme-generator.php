@@ -367,6 +367,23 @@ class Static_Site_Importer_Theme_Generator {
 				'provenance_meta_key'       => ! empty( $match['protected'] ) ? '' : '_static_site_importer_provenance',
 			);
 		}
+		if ( ! empty( $args['batch_import'] ) ) {
+			$previous = self::read_source_of_truth_manifest( $theme['dir'] . '/static-site-importer-manifest.json' );
+			if ( is_array( $previous['desired'] ?? null ) ) {
+				foreach ( array( 'pages', 'files', 'assets' ) as $kind ) {
+					$keys = array();
+					foreach ( $manifest['desired'][ $kind ] as $item ) {
+						$keys[ (string) ( $item['source_path'] ?? $item['path'] ?? $item['theme_path'] ?? '' ) ] = true;
+					}
+					foreach ( $previous['desired'][ $kind ] ?? array() as $item ) {
+						$key = (string) ( $item['source_path'] ?? $item['path'] ?? $item['theme_path'] ?? '' );
+						if ( '' !== $key && ! isset( $keys[ $key ] ) ) {
+							$manifest['desired'][ $kind ][] = $item;
+						}
+					}
+				}
+			}
+		}
 		$manifest['existing_matches'] = $receipt['existing_matches'] ?? array( 'pages' => array() );
 		$cleanup = self::cleanup_stale_generated_theme_files( $theme['dir'], $manifest, $args );
 		if ( is_wp_error( $cleanup ) ) {
@@ -429,6 +446,15 @@ class Static_Site_Importer_Theme_Generator {
 			),
 			'materialization_receipt'  => $receipt,
 		);
+	}
+
+	/** @return array<string,mixed> */
+	private static function read_source_of_truth_manifest( string $path ): array {
+		if ( ! is_file( $path ) ) {
+			return array();
+		}
+		$manifest = json_decode( (string) file_get_contents( $path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the prior importer-owned source-of-truth manifest for a resumable batch.
+		return is_array( $manifest ) && 'static-site-importer/source-of-truth-manifest/v1' === ( $manifest['schema'] ?? '' ) ? $manifest : array();
 	}
 
 	/** Retain source diagnostics unless a persisted provider replacement explicitly covers them. */
@@ -749,7 +775,13 @@ class Static_Site_Importer_Theme_Generator {
 	/** @param array<string,mixed> $payload */
 	private static function write_plan_projection( string $path, array $payload ): void {
 		$json = wp_json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
-		if ( false === $json || false === file_put_contents( $path, $json . "\n" ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes preflighted public import artifacts.
+		$data = false === $json ? false : $json . "\n";
+		$temp = is_string( $data ) ? tempnam( dirname( $path ), '.ssi-projection-' ) : false;
+		$written = is_string( $data ) && false !== $temp ? file_put_contents( $temp, $data ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Atomically writes preflighted public import artifacts.
+		if ( false === $data || false === $temp || strlen( $data ) !== $written || ! rename( $temp, $path ) ) {
+			if ( is_string( $temp ) && file_exists( $temp ) ) {
+				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed atomic projection temporary file.
+			}
 			throw new RuntimeException( 'Failed to write a preflighted import artifact.' );
 		}
 	}

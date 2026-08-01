@@ -68,11 +68,12 @@ function update_option( string $key, $value ): void { $GLOBALS['ssi_plan_options
 function switch_theme( string $slug ): void { $GLOBALS['ssi_plan_options']['stylesheet'] = $slug; }
 function sanitize_text_field( string $value ): string { return $value; }
 function update_post_meta( int $id, string $key, string $value ): void { $GLOBALS['ssi_plan_meta'][ $id ][ $key ] = $value; }
+function get_post_meta( int $id, string $key, bool $single = true ): string { return (string) ( $GLOBALS['ssi_plan_meta'][ $id ][ $key ] ?? '' ); }
 function get_posts( array $args ): array {
 	foreach ( $GLOBALS['ssi_plan_meta'] as $id => $meta ) {
-		if ( ( $meta[ $args['meta_key'] ] ?? null ) === $args['meta_value'] ) { return array( new WP_Post( $id ) ); }
+		if ( isset( $meta[ $args['meta_key'] ] ) && ( ! isset( $args['meta_value'] ) || $meta[ $args['meta_key'] ] === $args['meta_value'] ) ) { $matches[] = new WP_Post( $id ); }
 	}
-	return array();
+	return $matches ?? array();
 }
 function get_page_by_path( string $slug, $output, string $type ) {
 	foreach ( $GLOBALS['ssi_plan_posts'] as $id => $post ) { if ( $post['post_name'] === $slug ) { return new WP_Post( $id ); } }
@@ -451,5 +452,22 @@ $GLOBALS['ssi_plan_fail_after'] = 1;
 $partial = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'partial-plan' ) );
 $assert( 'partial' === $partial['status'], 'runtime mutation failure returns partial receipt' );
 $assert( 'simulated_post_failure' === $partial['diagnostics'][0]['reason_code'], 'partial receipt keeps mutation failure identity' );
+
+$GLOBALS['ssi_plan_posts']      = array();
+$GLOBALS['ssi_plan_meta']       = array();
+$GLOBALS['ssi_plan_fail_after'] = 0;
+$parent_plan = ( new ArtifactCompiler() )->compile( array( 'entrypoint' => 'website/index.html', 'files' => array( 'website/index.html' => '<main>Home</main>', 'website/about/index.html' => '<main>About</main>' ) ) )->toArray()['source_reports']['wordpress_site_plan'];
+$child_plan = ( new ArtifactCompiler() )->compile( array( 'entrypoint' => 'website/index.html', 'files' => array( 'website/index.html' => '<main>Home</main>', 'website/about/team/index.html' => '<main>Team</main>' ) ) )->toArray()['source_reports']['wordpress_site_plan'];
+$parent_batch = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $parent_plan, array( 'slug' => 'batch-parent-plan', 'import_run_id' => 'batch-parent-run' ) );
+file_put_contents( $GLOBALS['ssi_plan_root'] . '/batch-parent-plan/static-site-importer-manifest.json', json_encode( array( 'import_run_id' => 'batch-parent-run' ) ) );
+$child_batch = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $child_plan, array( 'slug' => 'batch-parent-plan', 'import_run_id' => 'batch-parent-run', 'preserve_existing_theme_bootstrap' => true, 'overwrite' => true ) );
+$about_id = (int) ( $parent_batch['completed']['pages']['website/about/index.html'] ?? 0 );
+$team_id = (int) ( $child_batch['completed']['pages']['website/about/team/index.html'] ?? 0 );
+$assert( 'completed' === $child_batch['status'] && $about_id > 0 && $about_id === (int) ( $GLOBALS['ssi_plan_posts'][ $team_id ]['post_parent'] ?? 0 ), 'later batch resolves an existing parent only through matching run provenance' );
+$parent_order = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'parent_ordered_pages' );
+$GLOBALS['ssi_plan_posts'][999] = array( 'post_name' => 'external-parent' );
+$GLOBALS['ssi_plan_meta'][999]['_static_site_importer_provenance'] = json_encode( array( 'import_run_id' => 'batch-parent-run', 'source_path' => 'website/external/index.html' ) );
+$descendant_only = $parent_order->invoke( null, array( array( 'source_path' => 'website/external/child/index.html', 'parent_source_path' => 'website/external/index.html' ) ), 'batch-parent-run' );
+$assert( is_array( $descendant_only ) && 1 === count( $descendant_only ) && 'website/external/child/index.html' === ( $descendant_only[0]['source_path'] ?? '' ), 'external provenance parent satisfies ordering without being emitted as a page' );
 
 echo "WordPress site plan materializer smoke passed.\n";

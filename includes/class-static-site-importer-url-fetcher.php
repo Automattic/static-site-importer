@@ -130,7 +130,9 @@ class Static_Site_Importer_URL_Fetcher {
 				return new WP_Error( 'static_site_importer_url_unexpected_content_type', sprintf( 'The URL returned unsupported content type %s.', '' !== $content_type ? $content_type : '(missing)' ) );
 			}
 
-			if ( '' === trim( $response['body'] ) ) {
+			// An explicit empty accepted-type list is used for optional binary/text assets.
+			// HTML and explicitly requested HTML responses must still contain a document.
+			if ( '' === trim( $response['body'] ) && ( ! $has_content_types_arg || ! empty( $content_types ) ) ) {
 				return new WP_Error( 'static_site_importer_url_empty_body', $has_content_types_arg ? 'The URL returned an empty response.' : 'The URL returned an empty HTML response.' );
 			}
 
