@@ -51,6 +51,7 @@ if ( ! class_exists( 'WP_Error' ) ) {
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-document.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-site-identity.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-font-materializer.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-source-page.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-font-materializer.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-page-materializer.php';

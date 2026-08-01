@@ -372,7 +372,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$pages_by_route      = array();
 		$state['page_ids']   = array();
 		$state['source_ids'] = array();
-		foreach ( $state['resolved']['pages'] as $page ) {
+		foreach ( $state['resolved']['pages'] as &$page ) {
 			if ( ! isset( $page['resolved_block_markup'] ) || ! is_string( $page['resolved_block_markup'] ) || '' === trim( $page['resolved_block_markup'] ) ) {
 				throw new InvalidArgumentException( 'page_missing_final_block_markup' );
 			}
@@ -381,21 +381,30 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				throw new InvalidArgumentException( 'duplicate_page_route' );
 			}
 			$pages_by_route[ $route ] = true;
-			$existing                 = self::reconciled_post( $page['reconciliation_identity'] );
+
+			// The materializer is the consumer boundary: it trusts the type and
+			// date the producer declared on the plan row and only falls back to
+			// consumer-side detection when the compiler left the row undecided
+			// ('page', its default). Classification runs once here so the
+			// existing-match, conflict, and materialize paths read one value.
+			$classification                            = Static_Site_Importer_Document_Type_Classifier::classify( $page );
+			$page['post_type']                         = $classification['post_type'];
+			$page['metadata']['detected_date']         = $classification['date'];
+			$page['metadata']['classification_signal'] = $classification['signal'];
+			$existing = self::reconciled_post( $page['reconciliation_identity'] );
 			if ( $existing ) {
 				$page = self::plan_existing_page( $state, $page, $existing, 'reconciliation_identity_match' );
-				$state['resolved']['pages'][ array_search( $page['source_path'], array_column( $state['resolved']['pages'], 'source_path' ), true ) ] = $page;
 				continue;
 			}
-			$conflict = '' === trim( $route, '/' ) ? null : get_page_by_path( trim( $route, '/' ), OBJECT, 'page' );
+			$conflict = '' === trim( $route, '/' ) ? null : get_page_by_path( trim( $route, '/' ), OBJECT, $page['post_type'] );
 			if ( $conflict && ! $overwrite && ! self::post_belongs_to_run( $conflict, $import_run_id ) ) {
 				throw new InvalidArgumentException( 'post_conflict' );
 			}
 			if ( $conflict ) {
 				$page = self::plan_existing_page( $state, $page, $conflict, 'canonical_route_match' );
-				$state['resolved']['pages'][ array_search( $page['source_path'], array_column( $state['resolved']['pages'], 'source_path' ), true ) ] = $page;
 			}
 		}
+		unset( $page );
 		$state['ordered_pages'] = self::parent_ordered_pages( $state['resolved']['pages'], $import_run_id );
 		if ( null === $state['ordered_pages'] ) {
 			throw new InvalidArgumentException( 'invalid_page_parent_identity' );
@@ -430,23 +439,47 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** @param array<string,mixed> $page @param array<string,int> $source_ids */
 	private static function materialize_page( array $page, array $source_ids, string $import_run_id = '' ) {
-		$parent = '' === $page['parent_source_path'] ? 0 : ( $source_ids[ $page['parent_source_path'] ] ?? self::existing_source_page_id( $page['parent_source_path'], $import_run_id ) );
-		if ( $parent <= 0 && '' !== $page['parent_source_path'] ) {
-			return new WP_Error( 'missing_parent_page', 'The parent route has not been materialized by this import run.', array(
-				'source_path'        => $page['source_path'],
-				'parent_source_path' => $page['parent_source_path'],
-			) );
+		$post_type = sanitize_key( (string) ( $page['post_type'] ?? 'page' ) );
+		if ( ! self::is_valid_post_type( $post_type ) ) {
+			$post_type = 'page';
+		}
+		// Pages keep the plan's canonical route ancestry as post_parent. Posts
+		// must not: their permalink comes from the site post permalink structure,
+		// so carrying the synthetic page ancestor would materialize them at the
+		// wrong URL (get_permalink would still resolve, but to a page-shaped
+		// path, not the plan route).
+		// Pages keep the plan's canonical route ancestry as post_parent, resolved
+		// from this run's source ids or a previously materialized run (batch
+		// re-imports). Posts must not carry the synthetic page ancestor: their
+		// permalink comes from the site post permalink structure.
+		if ( 'page' === $post_type ) {
+			$parent = '' === $page['parent_source_path'] ? 0 : ( $source_ids[ $page['parent_source_path'] ] ?? self::existing_source_page_id( $page['parent_source_path'], $import_run_id ) );
+			if ( $parent <= 0 && '' !== $page['parent_source_path'] ) {
+				return new WP_Error( 'missing_parent_page', 'The parent route has not been materialized by this import run.', array(
+					'source_path'        => $page['source_path'],
+					'parent_source_path' => $page['parent_source_path'],
+				) );
+			}
+		} else {
+			$parent = 0;
 		}
 		$post = array(
 			'ID'           => (int) ( $page['planned_existing_id'] ?? 0 ),
-			'post_type'    => 'page',
+			'post_type'    => $post_type,
 			'post_status'  => 'publish',
 			'post_title'   => (string) $page['title'],
 			'post_name'    => (string) $page['slug'],
 			'post_parent'  => $parent,
 			'post_content' => wp_slash( (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ) ),
 		);
-		$id   = wp_insert_post( $post, true );
+		if ( ! empty( $page['metadata']['detected_date'] ) ) {
+			// The classifier emits UTC. post_date_gmt stores that absolute value;
+			// wp_insert_post derives the site-local post_date from it using the
+			// configured timezone, so writing it here would double-shift display
+			// on non-UTC sites. Only dated documents set the date at all.
+			$post['post_date_gmt'] = (string) $page['metadata']['detected_date'];
+		}
+		$id = wp_insert_post( $post, true );
 		if ( is_wp_error( $id ) ) {
 			return $id;
 		}
@@ -905,15 +938,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	}
 
 	private static function reconciled_post( string $identity ) {
-		$posts = get_posts(
-			array(
-				'post_type'   => 'page',
-				'post_status' => 'any',
-				'meta_key'    => self::RECONCILIATION_META_KEY,
-				'meta_value'  => $identity,
-				'numberposts' => 1,
-			)
-		);
+		// The reconciliation meta key is unique per document, so no post_type
+		// filter is needed; 'any' covers posts, pages, and custom import types.
+		$posts = get_posts( array( 'post_type' => 'any', 'post_status' => 'any', 'meta_key' => self::RECONCILIATION_META_KEY, 'meta_value' => $identity, 'numberposts' => 1 ) );
 		return isset( $posts[0] ) ? $posts[0] : null;
 	}
 
@@ -940,6 +967,23 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			return false; }
 		$provenance = json_decode( (string) get_post_meta( $post->ID, '_static_site_importer_provenance', true ), true );
 		return is_array( $provenance ) && ( $provenance['import_run_id'] ?? '' ) === $import_run_id;
+	}
+
+	/**
+	 * Whether a post type is registered on the runtime import target.
+	 *
+	 * Mirrors Static_Site_Importer_Page_Materializer::page_post_type(): any
+	 * registered type is valid; internal types without an object (revision,
+	 * nav_menu_item, wp_template_part) fall back to 'page'.
+	 *
+	 * @param string $post_type Post type name.
+	 * @return bool
+	 */
+	private static function is_valid_post_type( string $post_type ): bool {
+		if ( function_exists( 'get_post_type_object' ) ) {
+			return get_post_type_object( $post_type ) instanceof WP_Post_Type;
+		}
+		return in_array( $post_type, array( 'page', 'post' ), true );
 	}
 
 	/** @param array<int,array<string,mixed>> $pages */

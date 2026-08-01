@@ -28,6 +28,7 @@ file_put_contents( $theme_dir . '/import-report.json', '{"status":"completed","s
 
 $GLOBALS['ssi_export_theme_root'] = $theme_root;
 $GLOBALS['ssi_export_format_conversion_calls'] = array();
+$GLOBALS['ssi_export_posts_first'] = false;
 
 function blocks_engine_php_transformer_convert_format( string $content, string $from, string $to, array $options = array() ): array {
 	$GLOBALS['ssi_export_format_conversion_calls'][] = array( $from, $to, $options );
@@ -141,14 +142,49 @@ if ( ! function_exists( 'get_option' ) ) {
 
 if ( ! function_exists( 'get_posts' ) ) {
 	function get_posts( array $args ): array {
-		return array(
+		$types = (array) ( $args['post_type'] ?? array() );
+		$docs  = array(
 			(object) array(
 				'ID'           => 42,
+				'post_type'    => 'page',
 				'post_name'    => 'home',
 				'post_title'   => 'Edited Home',
 				'post_content' => '<!-- wp:paragraph --><p>Edited Playground content</p><!-- /wp:paragraph -->',
 			),
+			(object) array(
+				'ID'           => 44,
+				'post_type'    => 'page',
+				'post_name'    => 'about',
+				'post_title'   => 'About Page',
+				'post_content' => '<!-- wp:paragraph --><p>Edited About page</p><!-- /wp:paragraph -->',
+			),
 		);
+		// The exporter must enumerate imported posts as well as pages; a query
+		// that includes 'post' returns the dated blog entries too. The colliding
+		// page/post pair shares post_name 'about' to prove same-slug entries get
+		// distinct artifact paths.
+		if ( in_array( 'post', $types, true ) ) {
+			$posts = array(
+				(object) array(
+					'ID'           => 43,
+					'post_type'    => 'post',
+					'post_name'    => 'hello',
+					'post_title'   => 'Hello Post',
+					'post_content' => '<!-- wp:paragraph --><p>Edited Post content</p><!-- /wp:paragraph -->',
+				),
+				(object) array(
+					'ID'           => 45,
+					'post_type'    => 'post',
+					'post_name'    => 'about',
+					'post_title'   => 'About Post',
+					'post_content' => '<!-- wp:paragraph --><p>Edited About post</p><!-- /wp:paragraph -->',
+				),
+			);
+			// Route allocation must be order-independent: flip the query order
+			// so the same-slug post is processed before its page.
+			$docs = $GLOBALS['ssi_export_posts_first'] ? array_merge( $posts, $docs ) : array_merge( $docs, $posts );
+		}
+		return $docs;
 	}
 }
 
@@ -227,7 +263,7 @@ $assert( 'website' === ( $artifact['artifact_type'] ?? '' ), 'artifact-type' );
 $assert( 1 === ( $artifact['version'] ?? 0 ), 'artifact-version' );
 $assert( 'website' === ( $artifact['root'] ?? '' ), 'artifact-root' );
 $assert( 'website/index.html' === ( $artifact['entrypoint'] ?? '' ), 'entrypoint' );
-$assert( 6 === count( $artifact['files'] ?? array() ), 'exports-entrypoint-assets-and-metadata' );
+$assert( 9 === count( $artifact['files'] ?? array() ), 'exports-entrypoint-posts-assets-and-metadata' );
 $assert( 'website/style.css' === ( $artifact['files'][0]['path'] ?? '' ), 'stylesheet-exported' );
 $assert( 'website/index.html' === ( $artifact['files'][1]['path'] ?? '' ), 'entrypoint-exported' );
 $assert( 'text/html' === ( $artifact['files'][1]['mime_type'] ?? '' ), 'entrypoint-mime' );
@@ -246,6 +282,12 @@ $assert( 'base64' === ( $files_by_path['website/assets/logo.png']['encoding'] ??
 $assert( 'image/png' === ( $files_by_path['website/assets/logo.png']['mime_type'] ?? '' ), 'binary-mime' );
 $assert( 'report' === ( $files_by_path['website/import-report.json']['role'] ?? '' ), 'report-role' );
 $assert( 'source-document' === ( $files_by_path['website/source-documents.json']['role'] ?? '' ), 'source-document-role' );
+$assert( isset( $files_by_path['website/hello/index.html'] ), 'imported-post-survives-export' );
+$assert( str_contains( (string) ( $files_by_path['website/hello/index.html']['content'] ?? '' ), 'Edited Post content' ), 'imported-post-content-exported' );
+$assert( isset( $files_by_path['website/about/index.html'] ), 'page-keeps-clean-path' );
+$assert( isset( $files_by_path['website/post/about/index.html'] ), 'same-slug-post-namespaced-under-post' );
+$assert( 2 === ( $artifact['report']['page_count'] ?? 0 ), 'report-page-count-is-pages-only' );
+$assert( 2 === ( $artifact['report']['post_count'] ?? 0 ), 'report-post-count-reported-separately' );
 $assert( 'completed' === ( $artifact['report']['status'] ?? '' ), 'report-completed' );
 $assert( 'passed' === ( $artifact['validation']['status'] ?? '' ), 'validation-passed' );
 $assert( 'passed' === ( $artifact['import']['status'] ?? '' ), 'import-status-passed' );
@@ -274,6 +316,28 @@ $export_format_conversion_calls = array_filter(
 );
 $assert( count( $export_format_conversion_calls ) >= 4, 'format-conversion-called-for-block-to-html' );
 $assert( function_exists( 'blocks_engine_php_transformer_convert_format' ), 'export-routes-through-blocks-engine-format-bridge' );
+
+// Route allocation must not depend on query order: re-export with the shared
+// slug post processed before its page and assert the same artifact layout.
+$GLOBALS['ssi_export_posts_first'] = true;
+$flipped = static_site_importer_ability_export_theme(
+	array(
+		'theme_slug'      => 'fixture-theme',
+		'root'            => 'website',
+		'entrypoint'      => 'website/index.html',
+		'include_pages'   => true,
+		'source_metadata' => array( 'source' => 'smoke' ),
+	)
+);
+$assert( true === ( $flipped['success'] ?? false ), 'flipped-order-export-succeeds' );
+$flipped_files = array();
+foreach ( ( $flipped['website_artifact']['files'] ?? array() ) as $file ) {
+	$flipped_files[ $file['path'] ?? '' ] = true;
+}
+$assert( isset( $flipped_files['website/about/index.html'] ), 'flipped-order-page-keeps-clean-path' );
+$assert( isset( $flipped_files['website/post/about/index.html'] ), 'flipped-order-same-slug-post-namespaced' );
+$assert( isset( $flipped_files['website/hello/index.html'] ), 'flipped-order-noncolliding-post-exported' );
+$assert( count( $flipped_files ) === count( $files_by_path ), 'flipped-order-file-count-stable' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
