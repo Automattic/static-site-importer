@@ -85,6 +85,7 @@ import {
   RUNTIME_PRESENTATION_EVIDENCE_SCHEMA,
   RUNTIME_PRESENTATION_EVIDENCE_UNAVAILABLE,
   collectRuntimePresentationEvidence,
+  runtimePresentationEvidenceProbeStep,
 } from '../lib/fixture-matrix.mjs';
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
 import { collectQualityMetrics } from '../lib/fixture-matrix/collectors/quality-metrics.mjs';
@@ -637,6 +638,21 @@ test('runtime presentation evidence persists, merges, and reaches the Blocks Eng
   assert.equal(playgroundProbe.metadata.output_runtime_path, '/wordpress/wp-content/uploads/artifacts/simple-site/runtime-presentation-evidence.json');
   assert.equal(playgroundMerge.metadata.artifact_root, '/wordpress/wp-content/uploads/artifacts');
   assert.match(playgroundImport.args[0], /--artifact=\/wordpress\/wp-content\/uploads\/artifacts\/simple-site\/artifact-with-runtime-presentation-evidence\.json/);
+});
+
+test('runtime presentation evidence canonicalizes staged URLs and hashes decoded asset bytes', () => {
+  const bytes = Buffer.from('animated image bytes');
+  const expectedHash = createHash('sha256').update(bytes).digest('hex');
+  const probe = runtimePresentationEvidenceProbeStep({
+    fixture: { id: 'media-site', entrypoint: 'pages/team.html' },
+    sourceUrl: '/wp-content/uploads/fixtures/media-site/source/pages/team.html',
+    artifact: { files: [{ path: 'website/images/team.gif', type: 'image/gif', content_base64: bytes.toString('base64') }] },
+  });
+  const script = probe.args.find((arg) => arg.startsWith('script='));
+  assert.match(script, new RegExp(expectedHash));
+  assert.match(script, /sourceRoot=new URL\("\/wp-content\/uploads\/fixtures\/media-site\/source\/"/);
+  assert.match(script, /pathname\.slice\(sourceRoot\.length\)/);
+  assert.match(script, /source_path:'pages\/team\.html'/);
 });
 
 test('runtime presentation evidence intake preserves a typed envelope and diagnoses an unmerged probe', () => {
