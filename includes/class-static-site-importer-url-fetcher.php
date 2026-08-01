@@ -117,7 +117,7 @@ class Static_Site_Importer_URL_Fetcher {
 			}
 
 			if ( $status < 200 || $status >= 300 ) {
-				return new WP_Error( 'static_site_importer_url_http_status', sprintf( 'The URL returned HTTP status %d.', $status ) );
+				return new WP_Error( 'static_site_importer_url_http_status', sprintf( 'The URL returned HTTP status %d.', $status ), array( 'status' => $status ) );
 			}
 
 			$content_type = self::first_header( $response['headers'], 'content-type' );

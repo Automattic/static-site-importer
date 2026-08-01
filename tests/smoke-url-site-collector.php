@@ -119,6 +119,9 @@ $assert( array( 'max_files' => 70, 'max_file_bytes' => 10485760, 'max_total_byte
 $assert( 4 === ( $result['source_metadata']['collection']['pages'] ?? 0 ), 'sitemap-index-alias-deduplicated' );
 $assert( 9 === ( $result['source_metadata']['collection']['assets'] ?? 0 ), 'html-css-and-script-assets-collected' );
 $assert( array() === ( $result['source_metadata']['collection']['failures'] ?? null ), 'no-collection-failures' );
+$snapshot = $result['source_metadata']['snapshot'] ?? array();
+$assert( 'static-site-importer/url-snapshot/v1' === ( $snapshot['schema'] ?? '' ) && 64 === strlen( (string) ( $snapshot['sha256'] ?? '' ) ), 'snapshot-hash-recorded' );
+$assert( count( $result['artifact']['files'] ?? array() ) === count( $snapshot['files'] ?? array() ) && array() === array_filter( $snapshot['files'] ?? array(), static fn ( array $file ): bool => 64 !== strlen( (string) ( $file['sha256'] ?? '' ) ) ), 'snapshot-records-every-file-hash' );
 
 $files = array();
 foreach ( $result['artifact']['files'] ?? array() as $file ) {
@@ -143,6 +146,26 @@ $assert( ! in_array( 'https://cdn.example.test/platform-badge.png', array_column
 $source_exclusions = $result['source_metadata']['collection']['source_exclusions'] ?? array();
 $assert( 1 === count( $source_exclusions ) && 'platform_attribution_removed' === ( $source_exclusions[0]['reason_code'] ?? '' ) && 64 === strlen( (string) ( $source_exclusions[0]['removed_sha256'] ?? '' ) ), 'platform-attribution-removal-retains-receipt' );
 $assert( 10485760 >= max( array_map( static fn ( array $request ): int => (int) ( $request['args']['max_bytes'] ?? 0 ), $requests ) ), 'configured-response-limit-hard-clamped' );
+$artifact_paths = array_column( $result['artifact']['files'] ?? array(), 'path' );
+$sorted_paths   = $artifact_paths;
+sort( $sorted_paths, SORT_STRING );
+$assert( $sorted_paths === $artifact_paths, 'artifact-file-order-is-canonical' );
+
+$shuffled_responses = $responses;
+$shuffled_responses['https://example.test/sitemap.xml']['body'] = '<?xml version="1.0"?><urlset><url><loc>https://example.test/team.html</loc></url><url><loc>https://example.test/contact.html</loc></url><url><loc>https://example.test/services.html</loc></url><url><loc>https://example.test/index.html</loc></url></urlset>';
+$shuffled = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://example.test/',
+	array( 'max_pages' => 10, 'max_assets' => 20, 'max_bytes' => PHP_INT_MAX, 'request_delay_ms' => 0 ),
+	static function ( string $url, array $args ) use ( $shuffled_responses ) {
+		unset( $args );
+		if ( ! isset( $shuffled_responses[ $url ] ) ) {
+			return new WP_Error( 'missing_fixture', $url );
+		}
+		$response = $shuffled_responses[ $url ];
+		return array( 'body' => $response['body'], 'metadata' => array( 'content_type' => $response['content_type'], 'final_url' => $url ) );
+	}
+);
+$assert( ! is_wp_error( $shuffled ) && ( $snapshot['sha256'] ?? '' ) === ( $shuffled['source_metadata']['snapshot']['sha256'] ?? null ), 'snapshot-hash-independent-of-discovery-order' );
 
 $compiled         = blocks_engine_php_transformer_compile_artifact( $result['artifact'] );
 $site_plan        = $compiled['source_reports']['wordpress_site_plan'] ?? array();

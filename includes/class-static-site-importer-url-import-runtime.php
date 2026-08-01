@@ -149,6 +149,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 	private static function fetch_public_url_provider( array $request ) {
 		$provider_args = isset( $request['provider_args'] ) && is_array( $request['provider_args'] ) ? $request['provider_args'] : array();
 		if ( ! empty( $provider_args['collect_site'] ) ) {
+			$provider_args['require_complete_collection'] = true;
 			return Static_Site_Importer_URL_Site_Collector::collect( (string) $request['url'], $provider_args );
 		}
 

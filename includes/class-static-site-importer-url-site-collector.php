@@ -57,6 +57,12 @@ class Static_Site_Importer_URL_Site_Collector {
 					return $response;
 				}
 			}
+			$data = is_wp_error( $response ) && is_array( $response->get_error_data() ) ? $response->get_error_data() : array();
+			if ( ! empty( $data['_static_site_importer_cache_aware'] ) ) {
+				unset( $data['_static_site_importer_cache_aware'] );
+				$response = new WP_Error( $response->get_error_code(), $response->get_error_message(), $data ?: null );
+				$fetch_resource( $resource_url, $fetch_args + array( '_static_site_importer_cache_failure' => $response ) );
+			}
 			return $response;
 		};
 		$fetch_args = array_intersect_key( $args, array_flip( array( 'timeout' ) ) );
@@ -97,6 +103,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		while ( $page_queue && count( array_filter( $resources, static fn ( array $resource ): bool => 'html' === $resource['kind'] ) ) < $max_pages ) {
 			$page_url = array_shift( $page_queue );
 			$response = $fetcher( $page_url, array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ) );
+			self::delay_after_fetch( $response, $request_delay, $args );
 			if ( is_wp_error( $response ) ) {
 				if ( $page_url === $entry_url ) {
 					return $response;
@@ -175,12 +182,12 @@ class Static_Site_Importer_URL_Site_Collector {
 				$asset_queue[]                 = $asset_url;
 			}
 
-			self::delay( $request_delay );
 		}
 
 		while ( $asset_queue && self::resource_count( $resources, 'asset' ) < $max_assets ) {
 			$asset_url = array_shift( $asset_queue );
 			$response  = $fetcher( $asset_url, array_merge( $fetch_args, array( 'content_types' => array() ) ) );
+			self::delay_after_fetch( $response, $request_delay, $args );
 			if ( is_wp_error( $response ) ) {
 				if ( $preserve_assets ) { $external_assets[ $asset_url ] = $response->get_error_code(); continue; }
 				$failures[] = self::failure( $asset_url, $response, 'asset' );
@@ -226,7 +233,6 @@ class Static_Site_Importer_URL_Site_Collector {
 				}
 			}
 
-			self::delay( $request_delay );
 		}
 
 		if ( ( ! empty( $truncated ) || ! empty( $failures ) ) && ! empty( $args['require_complete_collection'] ) ) {
@@ -250,6 +256,9 @@ class Static_Site_Importer_URL_Site_Collector {
 			);
 		}
 
+		ksort( $resources, SORT_STRING );
+		ksort( $aliases, SORT_STRING );
+		ksort( $external_assets, SORT_STRING );
 		$paths           = self::artifact_paths( $resources, $site_url );
 		$reference_paths = $paths;
 		foreach ( $aliases as $requested_url => $final_url ) {
@@ -257,7 +266,8 @@ class Static_Site_Importer_URL_Site_Collector {
 				$reference_paths[ $requested_url ] = $paths[ $final_url ];
 			}
 		}
-		$files = array();
+		$files          = array();
+		$snapshot_files = array();
 		foreach ( $resources as $resource_url => $resource ) {
 			$path = $paths[ $resource_url ];
 			$body = (string) $resource['body'];
@@ -277,24 +287,42 @@ class Static_Site_Importer_URL_Site_Collector {
 				$file['content_base64'] = base64_encode( $body ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes binary artifact payload bytes.
 			}
 			$files[] = $file;
+			$snapshot_files[] = array(
+				'path'       => $path,
+				'source_url' => $resource_url,
+				'mime_type'  => $resource['content_type'],
+				'bytes'      => strlen( $body ),
+				'sha256'     => hash( 'sha256', $body ),
+			);
 		}
+		usort( $files, static fn ( array $left, array $right ): int => strcmp( (string) $left['path'], (string) $right['path'] ) );
+		usort( $snapshot_files, static fn ( array $left, array $right ): int => strcmp( (string) $left['path'], (string) $right['path'] ) );
+		$compiler_limits = array(
+			'max_files'       => min( 5000, $max_assets + ( 5 * $max_pages ) ),
+			'max_file_bytes'  => $fetch_args['max_bytes'],
+			'max_total_bytes' => min( 335544320, $max_total_bytes + min( 67108864, $max_total_bytes ) ),
+		);
+		$snapshot = array(
+			'schema'     => 'static-site-importer/url-snapshot/v1',
+			'entrypoint' => $paths[ $entry_resource_url ],
+			'files'      => $snapshot_files,
+		);
+		$snapshot['sha256'] = hash( 'sha256', (string) json_encode( array( 'entrypoint' => $snapshot['entrypoint'], 'compiler_limits' => $compiler_limits, 'files' => $snapshot_files ), JSON_UNESCAPED_SLASHES ) );
 
 		return array(
 			'provider'        => 'public-static-site-collector',
 			'artifact'        => array(
 				'schema'          => 'blocks-engine/php-transformer/site-artifact/v1',
 				'entrypoint'      => $paths[ $entry_resource_url ],
-				'compiler_limits' => array(
-					'max_files'       => min( 5000, $max_assets + ( 5 * $max_pages ) ),
-					'max_file_bytes'  => $fetch_args['max_bytes'],
-					'max_total_bytes' => min( 335544320, $max_total_bytes + min( 67108864, $max_total_bytes ) ),
-				),
+				'compiler_limits' => $compiler_limits,
+				'metadata'        => array( 'snapshot' => $snapshot ),
 				'files'           => $files,
 			),
 			'source_metadata' => array(
 				'source_type' => 'url',
 				'source_url'  => $entry_url,
 				'final_url'   => $site_url,
+				'snapshot'    => $snapshot,
 				'collection'  => array(
 					'pages'             => self::resource_count( $resources, 'html' ),
 					'assets'            => self::resource_count( $resources, 'asset' ),
@@ -327,6 +355,12 @@ class Static_Site_Importer_URL_Site_Collector {
 			for ( $attempt = 0; $attempt < $fetch_attempts; $attempt++ ) {
 				$response = $fetch_resource( $resource_url, $fetch_args );
 				if ( ! is_wp_error( $response ) ) { return $response; }
+			}
+			$data = is_wp_error( $response ) && is_array( $response->get_error_data() ) ? $response->get_error_data() : array();
+			if ( ! empty( $data['_static_site_importer_cache_aware'] ) ) {
+				unset( $data['_static_site_importer_cache_aware'] );
+				$response = new WP_Error( $response->get_error_code(), $response->get_error_message(), $data ?: null );
+				$fetch_resource( $resource_url, $fetch_args + array( '_static_site_importer_cache_failure' => $response ) );
 			}
 			return $response;
 		};
@@ -482,6 +516,7 @@ class Static_Site_Importer_URL_Site_Collector {
 
 	/** @param array<string,array<string,string>> $resources @return array<string,string> */
 	private static function artifact_paths( array $resources, string $entry_url ): array {
+		ksort( $resources, SORT_STRING );
 		$paths = array();
 		$used  = array();
 		foreach ( $resources as $resource_url => $resource ) {
@@ -741,6 +776,18 @@ class Static_Site_Importer_URL_Site_Collector {
 			'code'    => $error->get_error_code(),
 			'message' => $error->get_error_message(),
 		);
+	}
+
+	private static function delay_after_fetch( $response, int $milliseconds, array $args ): void {
+		if ( is_array( $response ) && ! empty( $response['metadata']['_static_site_importer_cache_hit'] ) ) {
+			unset( $response['metadata']['_static_site_importer_cache_hit'] );
+			return;
+		}
+		if ( isset( $args['_static_site_importer_delay_callback'] ) && is_callable( $args['_static_site_importer_delay_callback'] ) ) {
+			call_user_func( $args['_static_site_importer_delay_callback'] );
+			return;
+		}
+		self::delay( $milliseconds );
 	}
 
 	private static function delay( int $milliseconds ): void {
