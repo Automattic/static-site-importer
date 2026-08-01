@@ -10,56 +10,70 @@ const args = new Set(process.argv.slice(2))
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
 const environments = new Set(["standalone-php", "wordpress-runtime", "node", "browser-wp-codebox", "operator-only"])
 
-validateManifest()
-if (args.has("--check")) process.exit(0)
-
-const selectedEnvironments = args.has("--all")
-  ? environments
-  : new Set(["standalone-php", "node"])
-const selected = manifest.tests.filter((test) => selectedEnvironments.has(test.environment))
-const results = { passed: [], failed: [], skipped: [] }
-
-for (const test of selected) {
-  if (test.environment === "operator-only") {
-    results.skipped.push(`${test.path} (operator-only acceptance: ${commandFor(test).join(" ")})`)
-    continue
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  try {
+    run()
+  } catch (error) {
+    console.error(error.message)
+    process.exitCode = 1
   }
-  if (test.environment === "wordpress-runtime" && !process.env.STATIC_SITE_IMPORTER_WP_CLI) {
-    results.skipped.push(`${test.path} (set STATIC_SITE_IMPORTER_WP_CLI to run WordPress runtime tests)`)
-    continue
-  }
-  if (test.environment === "browser-wp-codebox" && !process.env.STATIC_SITE_IMPORTER_THEME_DIR) {
-    results.skipped.push(`${test.path} (set STATIC_SITE_IMPORTER_THEME_DIR after a WP Codebox or WordPress import)`)
-    continue
-  }
-
-  const command = commandFor(test)
-  const result = spawnSync(command[0], command.slice(1), { cwd: root, stdio: "inherit", env: process.env })
-  if (result.status === 0) results.passed.push(test.path)
-  else results.failed.push(test.path)
 }
 
-for (const environment of environments) {
-  const count = manifest.tests.filter((test) => test.environment === environment).length
-  const selectedCount = selected.filter((test) => test.environment === environment).length
-  console.log(`${environment}: ${selectedCount ? `selected ${selectedCount}` : `skipped ${count}`}`)
-}
-console.log(`passed: ${results.passed.length}; failed: ${results.failed.length}; intentionally skipped: ${results.skipped.length}`)
-for (const skipped of results.skipped) console.log(`SKIP ${skipped}`)
-process.exit(results.failed.length ? 1 : 0)
+function run() {
+  validateManifest()
+  if (args.has("--check")) return
 
-function commandFor(test) {
-  if (test.command) return test.command.split(" ")
+  const selectedEnvironments = args.has("--all")
+    ? environments
+    : new Set(["standalone-php", "node"])
+  const selected = manifest.tests.filter((test) => selectedEnvironments.has(test.environment))
+  const results = { passed: [], failed: [], skipped: [] }
+
+  for (const test of selected) {
+    if (test.environment === "operator-only") {
+      results.skipped.push(`${test.path} (operator-only acceptance: ${commandFor(test).join(" ")})`)
+      continue
+    }
+    if (test.environment === "wordpress-runtime" && !process.env.STATIC_SITE_IMPORTER_WP_CLI) {
+      results.skipped.push(`${test.path} (set STATIC_SITE_IMPORTER_WP_CLI to run WordPress runtime tests)`)
+      continue
+    }
+    if (test.environment === "browser-wp-codebox" && !process.env.STATIC_SITE_IMPORTER_THEME_DIR) {
+      results.skipped.push(`${test.path} (set STATIC_SITE_IMPORTER_THEME_DIR after a WP Codebox or WordPress import)`)
+      continue
+    }
+
+    const command = commandFor(test)
+    const result = spawnSync(command[0], command.slice(1), { cwd: root, stdio: "inherit", env: process.env })
+    if (result.status === 0) results.passed.push(test.path)
+    else results.failed.push(test.path)
+  }
+
+  for (const environment of environments) {
+    const count = manifest.tests.filter((test) => test.environment === environment).length
+    const selectedCount = selected.filter((test) => test.environment === environment).length
+    console.log(`${environment}: ${selectedCount ? `selected ${selectedCount}` : `skipped ${count}`}`)
+  }
+  console.log(`passed: ${results.passed.length}; failed: ${results.failed.length}; intentionally skipped: ${results.skipped.length}`)
+  for (const skipped of results.skipped) console.log(`SKIP ${skipped}`)
+  if (results.failed.length) process.exitCode = 1
+}
+
+export function commandFor(test) {
+  if (test.command) return test.command
   if (test.environment === "standalone-php") return ["php", test.path]
   if (test.environment === "node") return ["node", "--test", test.path]
   if (test.environment === "wordpress-runtime") return [...process.env.STATIC_SITE_IMPORTER_WP_CLI.split(" "), "eval-file", test.path]
   return ["node", test.path]
 }
 
-function validateManifest() {
-  if (manifest.schema !== "static-site-importer/test-manifest/v1") fail("unexpected manifest schema")
+export function validateManifest(candidate = manifest) {
+  if (candidate.schema !== "static-site-importer/test-manifest/v1") fail("unexpected manifest schema")
   const declared = new Set()
-  for (const test of manifest.tests) {
+  for (const test of candidate.tests) {
+    if ("command" in test && (!Array.isArray(test.command) || !test.command.length || test.command.some((argument) => typeof argument !== "string" || !argument.trim()))) {
+      fail(`command for ${test.path} must be a non-empty array of non-empty strings`)
+    }
     if (!environments.has(test.environment)) fail(`unknown environment for ${test.path}: ${test.environment}`)
     if (declared.has(test.path)) fail(`test is declared more than once: ${test.path}`)
     if (!existsSync(resolve(root, test.path))) fail(`declared test does not exist: ${test.path}`)
@@ -69,13 +83,13 @@ function validateManifest() {
   const executable = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "--", "tests", "tools"], { cwd: root, encoding: "utf8" })
     .trim().split("\n").filter(Boolean)
     .filter(isExecutableTest)
-  const exclusions = Object.keys(manifest.exclusions || {})
+  const exclusions = Object.keys(candidate.exclusions || {})
   for (const path of executable) {
     if (!declared.has(path) && !exclusions.some((pattern) => matches(pattern, path))) fail(`undeclared executable test: ${path}`)
   }
 
   const homeboy = JSON.parse(readFileSync(homeboyPath, "utf8"))
-  const projected = Object.fromEntries(manifest.tests
+  const projected = Object.fromEntries(candidate.tests
     .filter((test) => test.environment === "standalone-php")
     .map((test) => [test.path, { environment: test.environment }]))
   if (JSON.stringify(homeboy.tests) !== JSON.stringify(projected)) fail("homeboy-test-manifest.json is not the standalone PHP projection of test-manifest.json")
@@ -90,6 +104,5 @@ function matches(pattern, path) {
 }
 
 function fail(message) {
-  console.error(`Test manifest error: ${message}`)
-  process.exit(1)
+  throw new Error(`Test manifest error: ${message}`)
 }
