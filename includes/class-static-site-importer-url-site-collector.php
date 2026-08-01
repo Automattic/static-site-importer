@@ -104,6 +104,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			$page_url = array_shift( $page_queue );
 			$response = $fetcher( $page_url, array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ) );
 			self::delay_after_fetch( $response, $request_delay, $args );
+			$response = self::without_cache_marker( $response );
 			if ( is_wp_error( $response ) ) {
 				if ( $page_url === $entry_url ) {
 					return $response;
@@ -188,6 +189,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			$asset_url = array_shift( $asset_queue );
 			$response  = $fetcher( $asset_url, array_merge( $fetch_args, array( 'content_types' => array() ) ) );
 			self::delay_after_fetch( $response, $request_delay, $args );
+			$response = self::without_cache_marker( $response );
 			if ( is_wp_error( $response ) ) {
 				if ( $preserve_assets ) { $external_assets[ $asset_url ] = $response->get_error_code(); continue; }
 				$failures[] = self::failure( $asset_url, $response, 'asset' );
@@ -779,6 +781,10 @@ class Static_Site_Importer_URL_Site_Collector {
 	}
 
 	private static function delay_after_fetch( $response, int $milliseconds, array $args ): void {
+		$error_data = is_wp_error( $response ) ? $response->get_error_data() : null;
+		if ( is_array( $error_data ) && ! empty( $error_data['_static_site_importer_negative_cache_hit'] ) ) {
+			return;
+		}
 		if ( is_array( $response ) && ! empty( $response['metadata']['_static_site_importer_cache_hit'] ) ) {
 			unset( $response['metadata']['_static_site_importer_cache_hit'] );
 			return;
@@ -788,6 +794,18 @@ class Static_Site_Importer_URL_Site_Collector {
 			return;
 		}
 		self::delay( $milliseconds );
+	}
+
+	private static function without_cache_marker( $response ) {
+		if ( ! is_wp_error( $response ) ) {
+			return $response;
+		}
+		$data = is_array( $response->get_error_data() ) ? $response->get_error_data() : array();
+		if ( empty( $data['_static_site_importer_negative_cache_hit'] ) ) {
+			return $response;
+		}
+		unset( $data['_static_site_importer_negative_cache_hit'] );
+		return new WP_Error( $response->get_error_code(), $response->get_error_message(), $data ?: null );
 	}
 
 	private static function delay( int $milliseconds ): void {
