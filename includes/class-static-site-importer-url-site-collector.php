@@ -285,6 +285,10 @@ class Static_Site_Importer_URL_Site_Collector {
 				'path'      => $path,
 				'mime_type' => $resource['content_type'],
 			);
+			if ( 'html' === $resource['kind'] ) {
+				$route_path = (string) ( parse_url( $resource_url, PHP_URL_PATH ) ?? '/' );
+				$file['metadata'] = array( 'route_path' => '/' . ltrim( $route_path, '/' ) );
+			}
 			if ( self::is_text( $resource['content_type'], $path ) ) {
 				$file['content'] = $body;
 			} else {

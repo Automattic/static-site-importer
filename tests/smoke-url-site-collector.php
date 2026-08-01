@@ -128,6 +128,7 @@ foreach ( $result['artifact']['files'] ?? array() as $file ) {
 	$files[ $file['path'] ?? '' ] = $file;
 }
 $assert( isset( $files['website/services.html'], $files['website/team.html'], $files['website/contact.html'] ), 'all-pages-packaged' );
+$assert( '/' === ( $files['website/index.html']['metadata']['route_path'] ?? null ) && '/services.html' === ( $files['website/services.html']['metadata']['route_path'] ?? null ), 'html-files-declare-canonical-source-routes' );
 $assert( isset( $files['website/files/main-a798de8e.css'] ), 'query-addressed-stylesheet-packaged' );
 $assert( isset( $files['website/_external/cdn.example.test/font.woff2'] ), 'external-font-packaged' );
 $assert( isset( $files['website/_external/cdn.example.test/team.webp'] ), 'external-image-packaged' );
