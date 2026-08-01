@@ -403,6 +403,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     ...surfaceCoverageRecipeInput(options),
     ...visualParityRecipeInput(options),
     ...liveWpParityRecipeInput(options),
+    ...runtimePresentationEvidenceRecipeInput(options),
   });
   const batchRecipeFile = path.join(outputDirectory, `wp-codebox-static-site-fixture-matrix-batch-${batchSuffix}.json`);
   const outputFile = path.join(outputDirectory, `wp-codebox-output-batch-${batchSuffix}.json`);

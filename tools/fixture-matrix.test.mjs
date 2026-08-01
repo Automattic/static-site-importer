@@ -3995,12 +3995,16 @@ test('runFixtureMatrix surface coverage reaches executed batch recipes', async (
       batchSize: 1,
       concurrency: 1,
       surfaceCoverage: 2,
+      runtimePresentationEvidence: true,
     });
 
     assert.equal(runtimeError, null);
     const batchRecipe = JSON.parse(readFileSync(summary.runtime.batches[0].recipe_file, 'utf8'));
     const editorOpenSteps = batchRecipe.workflow.steps.filter((step) => step.command === 'wordpress.editor-open');
     const visualSteps = batchRecipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare');
+    const probeIndex = batchRecipe.workflow.steps.findIndex((step) => step.metadata?.phase === 'runtime-presentation-evidence');
+    const mergeIndex = batchRecipe.workflow.steps.findIndex((step) => step.metadata?.phase === 'runtime-presentation-evidence-merge');
+    const importIndex = batchRecipe.workflow.steps.findIndex((step) => step.metadata?.phase === 'import');
     assert.equal(editorOpenSteps.length, 3);
     assert.equal(visualSteps.length, 3);
     assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
@@ -4008,6 +4012,9 @@ test('runFixtureMatrix surface coverage reaches executed batch recipes', async (
     assert.ok(editorOpenSteps[2].args.includes('post-slug=merch'));
     assert.equal(visualCompareMatrixComparison(visualSteps[1]).candidateUrl, '/contact/');
     assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
+    assert.ok(probeIndex >= 0);
+    assert.ok(mergeIndex > probeIndex);
+    assert.ok(importIndex > mergeIndex);
   } finally {
     restoreConcurrencyEnv(snapshot);
   }
