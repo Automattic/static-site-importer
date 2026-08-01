@@ -11,6 +11,9 @@ final class Static_Site_Importer_URL_Batch_Import {
 		$args = is_array( $request['provider_args'] ?? null ) ? $request['provider_args'] : array();
 		$batch_pages = (int) ( $args['batch_pages'] ?? 0 );
 		if ( $batch_pages < 1 ) { return new WP_Error( 'static_site_importer_invalid_batch_pages', 'batch_pages must be a positive integer.' ); }
+		// These are bounded per-batch collection guards, never whole-site limits.
+		if ( ! array_key_exists( 'max_assets', $args ) ) { $args['max_assets'] = 2000; }
+		if ( ! array_key_exists( 'max_total_bytes', $args ) ) { $args['max_total_bytes'] = 268435456; }
 		$work_dir = (string) ( $request['work_dir'] ?? '' );
 		if ( '' === $work_dir || ! wp_mkdir_p( $work_dir ) ) { return new WP_Error( 'static_site_importer_batch_work_dir_unavailable', 'The batch import work directory is unavailable.' ); }
 		$url = (string) $request['url'];
@@ -28,7 +31,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( empty( $routes ) ) { $routes = array( $url ); }
 			$manifest = array(
 				'schema' => 'static-site-importer/url-site-batch-run/v1', 'version' => self::VERSION,
-				'source' => array( 'url' => $url, 'identity' => $identity ), 'contract' => $contract, 'discovery_limits' => Static_Site_Importer_URL_Site_Collector::discovery_limits(),
+				'source' => array( 'url' => $url, 'identity' => $identity ), 'contract' => $contract, 'discovery_limits' => Static_Site_Importer_URL_Site_Collector::discovery_limits(), 'per_batch_limits' => array( 'max_pages' => min( self::MAX_BATCH_PAGES, $batch_pages ), 'max_assets' => min( 2000, max( 0, (int) $args['max_assets'] ), ), 'max_total_bytes' => min( 268435456, max( 1, (int) $args['max_total_bytes'] ), ), 'max_response_bytes' => 10485760 ),
 				'total_routes' => count( $routes ), 'routes' => $routes, 'batch_pages' => min( self::MAX_BATCH_PAGES, $batch_pages ),
 				'batches' => array(), 'failures' => array(), 'diagnostics' => array(), 'state' => 'running',
 			);
@@ -49,7 +52,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( empty( $runtime ) ) {
 				$collect_args = $args;
 				$collect_args['_route_set'] = array_values( array_unique( array_merge( array( $url ), $routes ) ) );
-				$collect_args['max_pages'] = count( $collect_args['_route_set'] );
+				$collect_args['max_pages'] = min( self::MAX_BATCH_PAGES + 1, count( $collect_args['_route_set'] ) + 1 );
 				$collect_args['require_complete_collection'] = true;
 				$runtime = Static_Site_Importer_URL_Site_Collector::collect( $url, $collect_args, $fetcher );
 				if ( is_wp_error( $runtime ) ) { return self::failed( $manifest_path, $manifest, $index, $runtime ); }
@@ -87,7 +90,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 	}
 	private static function result_evidence( array $result ): array { return array( 'theme_slug' => $result['theme_slug'] ?? '', 'terminal_batch_report_path' => $result['report_path'] ?? '', 'quality' => $result['quality'] ?? ( $result['import_report_summary']['quality_pass'] ?? null ) ); }
 	private static function evidence( array $manifest, string $path, array $results ): array {
-		return array( 'status' => 'completed', 'run_manifest' => $path, 'total_routes' => $manifest['total_routes'], 'completed_routes' => array_sum( array_column( $manifest['batches'], 'completed_routes' ) ), 'total_batches' => count( $manifest['batches'] ), 'completed_batches' => count( array_filter( $manifest['batches'], static fn( array $batch ): bool => 'completed' === $batch['state'] ) ), 'failures' => $manifest['failures'], 'diagnostics' => $manifest['diagnostics'], 'batch_quality' => array_column( $results, 'quality' ), 'terminal_batch_report_path' => $results ? ( $results[ array_key_last( $results ) ]['report_path'] ?? '' ) : '' );
+		return array( 'status' => 'completed', 'run_manifest' => $path, 'per_batch_limits' => $manifest['per_batch_limits'] ?? array(), 'total_routes' => $manifest['total_routes'], 'completed_routes' => array_sum( array_column( $manifest['batches'], 'completed_routes' ) ), 'total_batches' => count( $manifest['batches'] ), 'completed_batches' => count( array_filter( $manifest['batches'], static fn( array $batch ): bool => 'completed' === $batch['state'] ) ), 'failures' => $manifest['failures'], 'diagnostics' => $manifest['diagnostics'], 'batch_quality' => array_column( $results, 'quality' ), 'terminal_batch_report_path' => $results ? ( $results[ array_key_last( $results ) ]['report_path'] ?? '' ) : '' );
 	}
 	private static function aggregate_result( array $manifest, string $path, array $results, array $terminal ): array {
 		$evidence = self::evidence( $manifest, $path, $results );
