@@ -595,30 +595,57 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   assert.deepEqual(recipe.inputs.mounts, []);
 });
 
-test('runtime presentation evidence is opt-in, precedes compilation, and has a replayable Codebox probe', () => {
+test('runtime presentation evidence persists, merges, and reaches the Blocks Engine compilation input in order', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'runtime-presentation-evidence' });
   const defaultRecipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', staticSiteImporterPath: '/tmp/static-site-importer' });
   assert.equal(defaultRecipe.workflow.steps.some((step) => step.metadata?.phase === 'runtime-presentation-evidence'), false);
 
   const recipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', staticSiteImporterPath: '/tmp/static-site-importer', runtimePresentationEvidence: true });
   const probeIndex = recipe.workflow.steps.findIndex((step) => step.metadata?.phase === 'runtime-presentation-evidence');
+  const mergeIndex = recipe.workflow.steps.findIndex((step) => step.metadata?.phase === 'runtime-presentation-evidence-merge');
   const importIndex = recipe.workflow.steps.findIndex((step) => /static-site-importer validate-artifact/.test(step.args?.[0] || ''));
   const probe = recipe.workflow.steps[probeIndex];
-  assert.ok(probeIndex >= 0 && probeIndex < importIndex);
+  const merge = recipe.workflow.steps[mergeIndex];
+  assert.ok(probeIndex >= 0 && probeIndex < mergeIndex && mergeIndex < importIndex);
   assert.equal(probe.command, 'wordpress.browser-probe');
   assert.ok(probe.args.includes('wait-for=networkidle'));
+  assert.ok(probe.args.includes('output-artifact=simple-site/runtime-presentation-evidence.json'));
   assert.match(probe.args.find((arg) => arg.startsWith('script=')), new RegExp(RUNTIME_PRESENTATION_EVIDENCE_SCHEMA));
   assert.match(probe.args.find((arg) => arg.startsWith('script=')), /asset_hash/);
+  assert.equal(merge.command, 'wordpress.wp-cli');
+  assert.equal(merge.allowFailure, undefined, 'missing or invalid probe output must stop compilation');
+  assert.deepEqual(merge.metadata, {
+    fixture_id: 'simple-site',
+    fixture_path: matrix.fixtures[0].fixture_path,
+    phase: 'runtime-presentation-evidence-merge',
+    artifact_root: '/tmp/artifacts',
+    input_artifact: 'simple-site/runtime-presentation-evidence.json',
+    artifact: 'simple-site/artifact.json',
+    evidence_schema: RUNTIME_PRESENTATION_EVIDENCE_SCHEMA,
+  });
+  assert.match(recipe.workflow.steps[importIndex].args[0], /--artifact=\/tmp\/artifacts\/simple-site\/artifact\.json/);
+
+  const playgroundRecipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', playgroundArtifactsDirectory: '/wordpress/wp-content/uploads/artifacts', staticSiteImporterPath: '/tmp/static-site-importer', runtimePresentationEvidence: true });
+  const playgroundProbe = playgroundRecipe.workflow.steps.find((step) => step.metadata?.phase === 'runtime-presentation-evidence');
+  const playgroundMerge = playgroundRecipe.workflow.steps.find((step) => step.metadata?.phase === 'runtime-presentation-evidence-merge');
+  const playgroundImport = playgroundRecipe.workflow.steps.find((step) => /static-site-importer validate-artifact/.test(step.args?.[0] || ''));
+  assert.ok(playgroundProbe.args.includes('output-artifact=simple-site/runtime-presentation-evidence.json'));
+  assert.equal(playgroundMerge.metadata.artifact_root, '/wordpress/wp-content/uploads/artifacts');
+  assert.match(playgroundImport.args[0], /--artifact=\/wordpress\/wp-content\/uploads\/artifacts\/simple-site\/artifact\.json/);
 });
 
-test('runtime presentation evidence intake preserves a typed envelope and diagnoses the missing Codebox persistence primitive', () => {
+test('runtime presentation evidence intake preserves a typed envelope and diagnoses an unmerged probe', () => {
   const unavailable = collectRuntimePresentationEvidence([{ command: 'wordpress.browser-probe', metadata: { phase: 'runtime-presentation-evidence' } }]);
   assert.equal(unavailable.evidence, null);
   assert.equal(unavailable.diagnostics[0].kind, RUNTIME_PRESENTATION_EVIDENCE_UNAVAILABLE);
-  assert.match(unavailable.diagnostics[0].required_wp_codebox_primitive, /caller-selected artifact path/);
+  assert.match(unavailable.diagnostics[0].message, /not merged into artifact\.json/);
 
   const envelope = { schema: RUNTIME_PRESENTATION_EVIDENCE_SCHEMA, provenance: { browser: { name: 'Chromium', version: '126' }, viewport: { width: 1280, height: 1600, device_scale_factor: 1 }, lifecycle: { phase: 'network-idle' } }, observations: [] };
-  assert.deepEqual(collectRuntimePresentationEvidence([envelope]), { evidence: envelope, diagnostics: [] });
+  assert.deepEqual(collectRuntimePresentationEvidence([{ runtime_presentation_evidence: envelope }]), { evidence: envelope, diagnostics: [] });
+  assert.deepEqual(collectRuntimePresentationEvidence([{ runtime_presentation_evidence: { status: 'invalid', diagnostic: { kind: RUNTIME_PRESENTATION_EVIDENCE_UNAVAILABLE, code: 'invalid_runtime_presentation_evidence', message: 'Invalid envelope.' } } }]), {
+    evidence: null,
+    diagnostics: [{ severity: 'warning', loss_class: 'runtime_evidence_unavailable', kind: RUNTIME_PRESENTATION_EVIDENCE_UNAVAILABLE, code: 'invalid_runtime_presentation_evidence', message: 'Invalid envelope.' }],
+  });
 });
 
 test('fixture manifests explicitly opt into unproven dynamic client assets', () => {

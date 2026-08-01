@@ -619,7 +619,7 @@ optional animated-media policy to every front and secondary surface comparison.
 
 `SSI_FIXTURE_MATRIX_RUNTIME_PRESENTATION_EVIDENCE=1` (or
 `--runtime-presentation-evidence true`) adds an opt-in `wordpress.browser-probe`
-before `static-site-importer validate-artifact`. The probe waits for explicit
+and deterministic merge step before `static-site-importer validate-artifact`. The probe waits for explicit
 `networkidle` readiness and requests only the Blocks Engine v1 media observation
 shape: Chromium/version, viewport/DPR, source path and stable selector, normalized
 asset hash, intrinsic/rendered dimensions, transform matrix/origin, and nearest
@@ -634,12 +634,17 @@ node bench/static-site-fixture-matrix.bench.mjs --run \
   --static-site-importer-path /Users/chubes/Developer/static-site-importer@feat-796-runtime-media-evidence
 ```
 
-The current WP Codebox public contract cannot write the evaluated typed envelope
-to a caller-selected artifact path for a following recipe step to merge into
-`artifact.json`. SSI therefore records
-`runtime_presentation_evidence_unavailable` rather than claiming compiler input.
-The required WP Codebox primitive is: a recipe browser command that writes its
-typed page-evaluation result to a caller-selected artifact path.
+For fixture `<id>`, the probe uses WP Codebox's
+`output-artifact=<id>/runtime-presentation-evidence.json` contract. This is a
+relative path beneath the declared recipe artifact root, so it works when that
+root is host-mounted or Playground-staged. The following `wordpress.wp-cli`
+step verifies the typed Blocks Engine envelope, confines both paths to the same
+fixture directory under that root, and atomically merges it as
+`runtime_presentation_evidence` in `<id>/artifact.json`. Only then does
+`validate-artifact` compile the artifact. A missing output, malformed envelope,
+unavailable root, or boundary violation emits a structured
+`runtime_presentation_evidence_unavailable` diagnostic and fails before
+compilation rather than compiling without the requested input.
 
 The wrapper has three execution modes. Use `--dry-run` with any mode to inspect
 the composed Homeboy commands before running the matrix.
