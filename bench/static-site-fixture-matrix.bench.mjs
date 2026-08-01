@@ -22,6 +22,7 @@ import {
   normalizeFixtureMatrixResult,
   writeFixtureMatrixArtifacts,
   writeFixtureMatrixResultArtifacts,
+  normalizeAnimatedMediaPolicy,
   normalizeVisualAttributionOptions,
 } from '../lib/fixture-matrix.mjs';
 
@@ -146,6 +147,8 @@ function elapsedMs(startedAt) {
 }
 
 export async function runFixtureMatrix(options) {
+  // Fail before materializing artifacts or starting a WP Codebox recipe.
+  const animatedMedia = normalizeAnimatedMediaPolicy(options.animatedMedia);
   const performance = {};
   const outputDirectory = path.resolve(options.outputDirectory || path.join(process.cwd(), 'artifacts', 'static-site-importer-fixture-matrix'));
   const intake = options.artifactRoot
@@ -324,6 +327,7 @@ export async function runFixtureMatrix(options) {
       source_staging: written.metadata?.source_staging,
       surface_coverage: recipe.metadata?.surface_coverage,
       runtime_cost_warnings: recipe.metadata?.runtime_cost_warnings || [],
+      animated_media: animatedMedia || 'allow',
       visual_attribution: normalizeVisualAttributionOptions(options),
     },
     ...(runtime?.childCommandFailures?.length ? { child_command_failures: runtime.childCommandFailures } : {}),
@@ -1525,6 +1529,7 @@ export function optionsFromEnv(env = process.env) {
     visualParityGate: !isFalsy(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE ?? true),
     visualParityFullPage: optionalBoolean(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE),
     visualParityBlockExternalRequests: optionalBoolean(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS),
+    animatedMedia: benchEnv.SSI_FIXTURE_MATRIX_ANIMATED_MEDIA ?? env.SSI_FIXTURE_MATRIX_ANIMATED_MEDIA,
     // Opt-in live-WP parity capture + comparison. Off by default; mirrors the
     // visual-parity-gate truthy env mapping. When on, the recipe appends the
     // capture-html step and the result collector runs the live-wp-parity comparator.
@@ -1577,6 +1582,7 @@ function visualParityRecipeInput(options) {
     visualParityFullPage: options.visualParityFullPage,
     visualParityWaitFor: options.visualParityWaitFor,
     visualParityDurationMs: options.visualParityDurationMs,
+    animatedMedia: options.animatedMedia,
     ...normalizeVisualAttributionOptions(options),
   };
 }
@@ -1721,7 +1727,9 @@ Options:
   --no-editor-validation            Skip browser editor block validation.
   --no-visual-parity                Skip wordpress.visual-compare recipe steps. Same as SSI_FIXTURE_MATRIX_VISUAL_PARITY=0.
   --visual-parity-block-external-requests <bool>
-                                      Keep visual comparison offline when true (default). Same as SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS.
+                                       Keep visual comparison offline when true (default). Same as SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS.
+  --animated-media <allow|first-frame>
+                                       Animated image capture policy. Same as SSI_FIXTURE_MATRIX_ANIMATED_MEDIA.
   --run                             Execute WP Codebox recipes. Omit locally to only materialize artifacts.
 `);
 }

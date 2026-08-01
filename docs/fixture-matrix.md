@@ -584,6 +584,11 @@ comparison as `maxExplanationElements`, `maxExplanationCandidates`, and
 `explainSelectors`. Leaving them unset preserves WP Codebox's defaults and the
 existing recipe JSON.
 
+For deterministic animated-image capture, pass `--animated-media first-frame` or
+set `SSI_FIXTURE_MATRIX_ANIMATED_MEDIA=first-frame`. The supported policies are
+`allow` (the WP Codebox default) and `first-frame`; the selected effective policy
+is recorded as `metadata.animated_media` in `cli-run.json`.
+
 Source/candidate wiring (verified by real local recipe-runs): the
 `wordpress.visual-compare` step renders and pixel-diffs locally in WP Codebox
 against the real two pages. `writeFixtureMatrixArtifacts` stages each fixture's
@@ -605,13 +610,8 @@ full-page, but SSI previously overrode it with `full-page=false`, which limited
 the evidence to the requested viewport and missed below-the-fold regressions. Use
 `visualParityFullPage: false` only for an explicitly bounded exploratory run.
 
-Known wp-codebox gap: `wordpress.visual-compare` supports wait strategy, fixed
-duration, viewport, full-page, threshold, and artifact namespacing through
-`matrix-json`, but it does not currently expose a first-class reduced-motion /
-animation-freeze / injected-style option, and the `blockExternalRequests` field
-SSI carries is not consumed by wp-codebox's visual-compare matrix adapter. SSI's
-deterministic CSS setup is the current harness-level contract until wp-codebox
-offers native capture-freeze controls.
+WP Codebox supports `animatedMedia` through `matrix-json`; SSI forwards the
+optional animated-media policy to every front and secondary surface comparison.
 
 ## Running the Matrix
 

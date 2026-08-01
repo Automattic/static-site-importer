@@ -3876,6 +3876,7 @@ test('CLI surface coverage reaches bench recipe browser evidence steps', () => {
     '--static-site-importer-path', staticSiteImporter,
     '--max-depth', '1',
     '--surface-coverage', '2',
+    '--animated-media', 'first-frame',
   ], {
     encoding: 'utf8',
     env: {
@@ -3897,6 +3898,25 @@ test('CLI surface coverage reaches bench recipe browser evidence steps', () => {
   assert.ok(editorOpenSteps[1].args.includes('post-slug=contact'));
   assert.ok(editorOpenSteps[2].args.includes('post-slug=merch'));
   assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
+  for (const visualStep of visualSteps) {
+    assert.equal(visualCompareMatrixComparison(visualStep).animatedMedia, 'first-frame');
+  }
+  const summary = JSON.parse(readFileSync(path.join(outputDirectory, 'cli-run.json'), 'utf8'));
+  assert.equal(summary.metadata.animated_media, 'first-frame');
+});
+
+test('CLI rejects an unsupported animated media policy before recipe generation', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-animated-media-invalid-cli-'));
+  const outputDirectory = path.join(root, 'artifacts');
+  const result = spawnSync(process.execPath, [
+    path.join(packageRoot, 'bench', 'static-site-fixture-matrix.bench.mjs'),
+    '--output-directory', outputDirectory,
+    '--animated-media', 'frame-2',
+  ], { encoding: 'utf8' });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /animated-media must be allow or first-frame/);
+  assert.equal(existsSync(path.join(outputDirectory, 'wp-codebox-static-site-fixture-matrix-recipe.json')), false);
 });
 
 test('runFixtureMatrix surface coverage reaches executed batch recipes', async () => {
@@ -6005,6 +6025,7 @@ test('visual attribution options reach every fixture matrix comparison', () => {
     maxExplanationElements: 500,
     maxExplanationCandidates: 600,
     explainSelectors: '.hero, #footer',
+    animatedMedia: 'first-frame',
   });
   const comparisons = recipe.workflow.steps
     .filter((step) => step.command === 'wordpress.visual-compare')
@@ -6014,6 +6035,7 @@ test('visual attribution options reach every fixture matrix comparison', () => {
     assert.equal(comparison.maxExplanationElements, 500);
     assert.equal(comparison.maxExplanationCandidates, 600);
     assert.deepEqual(comparison.explainSelectors, ['.hero', '#footer']);
+    assert.equal(comparison.animatedMedia, 'first-frame');
   }
 });
 
@@ -6038,6 +6060,14 @@ test('fixture matrix maps the portable transformer reference setting', () => {
 test('fixture matrix maps visual parity external request isolation', () => {
   assert.equal(optionsFromEnv({ SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS: '0' }).visualParityBlockExternalRequests, false);
   assert.equal(optionsFromEnv({ SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS: '1' }).visualParityBlockExternalRequests, true);
+});
+
+test('fixture matrix maps and validates the animated media capture policy', () => {
+  assert.equal(optionsFromEnv({ SSI_FIXTURE_MATRIX_ANIMATED_MEDIA: 'first-frame' }).animatedMedia, 'first-frame');
+  assert.throws(
+    () => visualParityCompareStep({ fixture: { id: 'animated' }, animatedMedia: 'frame-2' }),
+    /animated-media must be allow or first-frame/,
+  );
 });
 
 test('fixture matrix operator plan exposes and forwards visual attribution settings', () => {
