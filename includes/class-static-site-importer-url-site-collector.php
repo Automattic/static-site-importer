@@ -80,7 +80,9 @@ class Static_Site_Importer_URL_Site_Collector {
 		$total_bytes       = 0;
 		$truncated         = array();
 		$external_assets   = array();
-		$preserve_assets   = 'preserve_external' === ( $args['asset_failure_policy'] ?? '' );
+		$asset_failure_policy  = $args['asset_failure_policy'] ?? '';
+		$preserve_failed_assets = in_array( $asset_failure_policy, array( 'preserve_external', 'preserve_failed_external_assets' ), true );
+		$preserve_asset_limits  = 'preserve_external' === $asset_failure_policy;
 		$entry_resource_url = $entry_url;
 		$site_url           = $entry_url;
 
@@ -175,7 +177,7 @@ class Static_Site_Importer_URL_Site_Collector {
 					continue;
 				}
 				if ( count( $asset_queue ) + self::resource_count( $resources, 'asset' ) >= $max_assets ) {
-					if ( $preserve_assets ) { $external_assets[ $asset_url ] = 'asset_limit'; continue; }
+					if ( $preserve_asset_limits ) { $external_assets[ $asset_url ] = 'asset_limit'; continue; }
 					$truncated['assets'] = true;
 					break;
 				}
@@ -191,7 +193,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			self::delay_after_fetch( $response, $request_delay, $args );
 			$response = self::without_cache_marker( $response );
 			if ( is_wp_error( $response ) ) {
-				if ( $preserve_assets ) { $external_assets[ $asset_url ] = $response->get_error_code(); continue; }
+				if ( $preserve_failed_assets ) { $external_assets[ $asset_url ] = $response->get_error_code(); continue; }
 				$failures[] = self::failure( $asset_url, $response, 'asset' );
 				continue;
 			}
@@ -207,7 +209,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			$body  = (string) $response['body'];
 			$bytes = strlen( $body );
 			if ( $total_bytes + $bytes > $max_total_bytes ) {
-				if ( $preserve_assets ) { $external_assets[ $asset_url ] = 'byte_limit'; continue; }
+				if ( $preserve_asset_limits ) { $external_assets[ $asset_url ] = 'byte_limit'; continue; }
 				$truncated['bytes'] = true;
 				break;
 			}
@@ -226,7 +228,7 @@ class Static_Site_Importer_URL_Site_Collector {
 						continue;
 					}
 					if ( count( $asset_queue ) + self::resource_count( $resources, 'asset' ) >= $max_assets ) {
-						if ( $preserve_assets ) { $external_assets[ $nested_url ] = 'asset_limit'; continue; }
+						if ( $preserve_asset_limits ) { $external_assets[ $nested_url ] = 'asset_limit'; continue; }
 						$truncated['assets'] = true;
 						break;
 					}
