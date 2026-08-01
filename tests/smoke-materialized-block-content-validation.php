@@ -92,11 +92,9 @@ require_once $parser;
 require_once $blocks;
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-document.php';
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-source-page.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-product-handoff-contract.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-page-materializer.php';
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-block-document-reporter.php';
 
 $failures   = array();
 $assertions = 0;
@@ -107,54 +105,32 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 	}
 };
 
-$page = Static_Site_Importer_Source_Page::from_wordpress_document_artifact(
+$theme_dir = '/tmp/generated-theme';
+$report    = Static_Site_Importer_Report_Diagnostics::new_conversion_report( '/tmp/source/index.html' );
+Static_Site_Importer_Block_Document_Reporter::analyze_generated_theme_block_documents(
 	array(
-		'source_path'  => 'index.html',
-		'slug'         => 'home',
-		'post_type'    => 'page',
-		'title'        => 'Home',
-		'block_markup' => '<!-- wp:paragraph --><p>Hello</p><!-- /wp:paragraph -->',
-	)
+		$theme_dir . '/patterns/page-home.php' => "<?php\n/**\n * Title: Home\n */\n?>\n<!-- wp:paragraph --><p>Hello</p><!-- /wp:paragraph -->",
+	),
+	$theme_dir,
+	$report
 );
-if ( $page instanceof WP_Error ) {
-	fwrite( STDERR, $page->get_error_message() . "\n" );
-	exit( 1 );
-}
+$generated = $report['generated_theme']['block_documents'][0] ?? array();
 
-$reflection      = new ReflectionClass( Static_Site_Importer_Theme_Generator::class );
-$report_property = $reflection->getProperty( 'conversion_report' );
-$report_property->setValue( null, Static_Site_Importer_Report_Diagnostics::new_conversion_report( '/tmp/source/index.html' ) );
+$assert( 'patterns/page-home.php' === ( $generated['path'] ?? '' ), 'generated-document-path' );
+$assert( true === ( $generated['validation_available'] ?? false ), 'validation-available' );
+$assert( 'wordpress_parse_blocks_serialize_blocks' === ( $generated['validation_method'] ?? '' ), 'validation-method' );
+$assert( 1 === ( $generated['block_count'] ?? 0 ), 'block-count' );
+$assert( 0 === ( $generated['invalid_block_count'] ?? -1 ), 'valid-content-has-no-invalid-blocks' );
+$assert( array() === ( $report['materialized_content']['block_documents'] ?? null ), 'generated-analysis-does-not-report-materialized-post-content' );
 
-$analyze = $reflection->getMethod( 'analyze_imported_page_content_documents' );
-$analyze->invoke(
-	null,
-	array( 'index.html' => $page ),
-	array( 'index.html' => '<!-- wp:paragraph --><p>Hello</p><!-- /wp:paragraph -->' )
+$invalid_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( '/tmp/source/index.html' );
+Static_Site_Importer_Block_Document_Reporter::analyze_generated_theme_block_documents(
+	array(
+		$theme_dir . '/templates/home.html' => '<p>Loose unparsed HTML</p>',
+	),
+	$theme_dir,
+	$invalid_report
 );
-
-$report       = $report_property->getValue();
-$materialized = $report['materialized_content']['block_documents'][0] ?? array();
-$generated    = $report['generated_theme']['block_documents'][0] ?? array();
-
-$assert( 'posts/page-home.post_content' === ( $materialized['path'] ?? '' ), 'materialized-path' );
-$assert( 'materialized_post_content' === ( $materialized['target'] ?? '' ), 'materialized-target' );
-$assert( 'index.html' === ( $materialized['source_path'] ?? '' ), 'source-path' );
-$assert( 'home' === ( $materialized['slug'] ?? '' ), 'slug' );
-$assert( 'page' === ( $materialized['post_type'] ?? '' ), 'post-type' );
-$assert( true === ( $materialized['validation_available'] ?? false ), 'validation-available' );
-$assert( 'wordpress_parse_blocks_serialize_blocks' === ( $materialized['validation_method'] ?? '' ), 'validation-method' );
-$assert( 1 === ( $materialized['block_count'] ?? 0 ), 'block-count' );
-$assert( 0 === ( $materialized['invalid_block_count'] ?? -1 ), 'valid-content-has-no-invalid-blocks' );
-$assert( $materialized === $generated, 'legacy-generated-theme-bucket-preserved' );
-
-$report_property->setValue( null, Static_Site_Importer_Report_Diagnostics::new_conversion_report( '/tmp/source/index.html' ) );
-$analyze->invoke(
-	null,
-	array( 'index.html' => $page ),
-	array( 'index.html' => '<p>Loose unparsed HTML</p>' )
-);
-
-$invalid_report      = $report_property->getValue();
 $invalid_diagnostic = array();
 foreach ( $invalid_report['diagnostics'] ?? array() as $diagnostic ) {
 	if ( is_array( $diagnostic ) && 'invalid_block_document' === ( $diagnostic['type'] ?? '' ) ) {
@@ -164,20 +140,21 @@ foreach ( $invalid_report['diagnostics'] ?? array() as $diagnostic ) {
 }
 
 $assert( 'invalid_block_document' === ( $invalid_diagnostic['type'] ?? '' ), 'invalid-document-diagnostic-type' );
-$assert( 'posts/page-home.post_content' === ( $invalid_diagnostic['source'] ?? '' ), 'invalid-document-source' );
+$assert( 'templates/home.html' === ( $invalid_diagnostic['source'] ?? '' ), 'invalid-document-source' );
 $assert( 'unparsed_html' === ( $invalid_diagnostic['block_name'] ?? '' ), 'invalid-document-block-name' );
 $assert( '0' === ( $invalid_diagnostic['block_path'] ?? '' ), 'invalid-document-block-path' );
 $assert( 'innerHTML' === ( $invalid_diagnostic['attribute_path'] ?? '' ), 'invalid-document-attribute-path' );
 $assert( '' !== ( $invalid_diagnostic['validation_message'] ?? '' ), 'invalid-document-validation-message' );
 $assert( '' !== ( $invalid_diagnostic['parser_validation_message'] ?? '' ), 'invalid-document-parser-validation-message' );
 
-$report_property->setValue( null, Static_Site_Importer_Report_Diagnostics::new_conversion_report( '/tmp/source/index.html' ) );
-$analyze->invoke(
-	null,
-	array( 'index.html' => $page ),
-	array( 'index.html' => '<!-- wp:navigation-link {"label":"Home","url":"http:\\/\\/localhost:8881\\/","kind":"custom"} /-->' )
+$slash_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( '/tmp/source/index.html' );
+Static_Site_Importer_Block_Document_Reporter::analyze_generated_theme_block_documents(
+	array(
+		$theme_dir . '/templates/home.html' => '<!-- wp:navigation-link {"label":"Home","url":"http:\\/\\/localhost:8881\\/","kind":"custom"} /-->',
+	),
+	$theme_dir,
+	$slash_report
 );
-$slash_report = $report_property->getValue();
 $assert( 0 === ( $slash_report['quality']['invalid_block_count'] ?? -1 ), 'escaped-url-slashes-are-not-invalid-blocks' );
 
 $form_html    = '<form class="newsletter" action="#" method="post"><input type="email" name="email" required><button type="submit">Subscribe</button></form>';

@@ -38,18 +38,19 @@
     { "path": "tests/smoke-import-source-of-truth-manifest.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-static-interactive-artifact.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-website-artifact-document-metadata.php", "environment": "wordpress-runtime" },
-    { "path": "tests/StaticSiteImporterFallbackDiagnosticsTest.php", "environment": "wordpress-runtime", "command": "phpunit tests/StaticSiteImporterFallbackDiagnosticsTest.php" },
+    { "path": "tests/StaticSiteImporterFallbackDiagnosticsTest.php", "environment": "wordpress-runtime", "command": ["phpunit", "tests/StaticSiteImporterFallbackDiagnosticsTest.php"] },
     { "path": "tests/form-materializer-topology.test.mjs", "environment": "node" },
     { "path": "tools/fig-intent-parity-report.test.mjs", "environment": "node" },
     { "path": "tools/fixture-matrix.test.mjs", "environment": "node" },
     { "path": "tools/php-wasm-zstd.test.mjs", "environment": "node" },
     { "path": "tools/promote-solved-fixture.test.mjs", "environment": "node" },
+    { "path": "tools/run-test-manifest.test.mjs", "environment": "node" },
     { "path": "tools/run-fig-fixture-e2e.test.mjs", "environment": "node" },
     { "path": "tools/runtime-package-manifest.test.mjs", "environment": "node" },
     { "path": "tools/verify-solved-site-promotion.test.mjs", "environment": "node" },
     { "path": "tests/smoke-generated-theme-block-validation.cjs", "environment": "browser-wp-codebox" },
-    { "path": "tests/run-validation-harness.cjs", "environment": "operator-only", "command": "node tests/run-validation-harness.cjs" },
-    { "path": "tools/run-fixture-matrix.mjs", "environment": "operator-only", "command": "node tools/run-fixture-matrix.mjs" },
-    { "path": "tools/fig-acceptance-provider.mjs", "environment": "operator-only", "command": "node tools/fig-acceptance-provider.mjs" }
+    { "path": "tests/run-validation-harness.cjs", "environment": "operator-only", "command": ["node", "tests/run-validation-harness.cjs"] },
+    { "path": "tools/run-fixture-matrix.mjs", "environment": "operator-only", "command": ["node", "tools/run-fixture-matrix.mjs"] },
+    { "path": "tools/fig-acceptance-provider.mjs", "environment": "operator-only", "command": ["node", "tools/fig-acceptance-provider.mjs"] }
   ]
 }
