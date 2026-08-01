@@ -27,7 +27,7 @@ final class Static_Site_Importer_Font_Materializer {
 		}
 
 		$diagnostics = array();
-		$producer_faces = self::producer_faces( $plan, $diagnostics );
+		$producer_faces = self::producer_faces( $plan, $resolved_plan, $diagnostics );
 		if ( is_wp_error( $producer_faces ) ) {
 			return $producer_faces;
 		}
@@ -47,7 +47,11 @@ final class Static_Site_Importer_Font_Materializer {
 					return $materialized;
 				}
 				$writes = array_merge( $writes, $materialized['writes'] );
-				return self::with_runtime_registration( $writes, $resolved_plan, $materialized['required_faces'], $diagnostics, $materialized['faces'] );
+				$svg = self::materialize_svg_consumers( $producer_faces['svg_consumers'], $materialized, $diagnostics );
+				if ( is_wp_error( $svg ) ) {
+					return $svg;
+				}
+				return self::with_runtime_registration( array_merge( $writes, $svg['writes'] ), $resolved_plan, $materialized['required_faces'], $diagnostics, $materialized['faces'], $svg['receipts'], $producer_faces['svg_consumers'] );
 			}
 		}
 		if ( 'google_fonts' !== (string) ( $plan['provider'] ?? '' ) ) {
@@ -73,12 +77,11 @@ final class Static_Site_Importer_Font_Materializer {
 				$svg_write['source_path']
 			);
 		}
-
 		return self::with_runtime_registration( $writes, $resolved_plan, array(), $diagnostics );
 	}
 
 	/** @return array{faces:array<int,array<string,mixed>>,imports:array<string,array<string,mixed>>,receipts:array<string,string>}|WP_Error */
-	private static function producer_faces( array $plan, array &$diagnostics ) {
+	private static function producer_faces( array $plan, array $resolved_plan, array &$diagnostics ) {
 		$contract = $plan['webfont_contract'] ?? array();
 		if ( ! is_array( $contract ) || empty( $contract ) ) {
 			return array(); // Old producer: retain the legacy Google CSS path below.
@@ -135,7 +138,56 @@ final class Static_Site_Importer_Font_Materializer {
 			$face['import_ref'] = $face['import_id'];
 			$normalized[] = $face;
 		}
-		return array( 'faces' => $normalized, 'imports' => $imports, 'receipts' => $receipts );
+		$svg_consumers = self::svg_consumers( $contract, $normalized, $receipts, $resolved_plan, $diagnostics );
+		if ( is_wp_error( $svg_consumers ) ) {
+			return $svg_consumers;
+		}
+		return array( 'faces' => $normalized, 'imports' => $imports, 'receipts' => $receipts, 'svg_consumers' => $svg_consumers );
+	}
+
+	/** @return array<int,array<string,mixed>>|WP_Error */
+	private static function svg_consumers( array $contract, array $faces, array $receipts, array $resolved_plan, array &$diagnostics ) {
+		$consumers = $contract['svg_consumers'] ?? array();
+		if ( ! is_array( $consumers ) || ! array_is_list( $consumers ) ) {
+			$diagnostics[] = self::diagnostic( 'producer_svg_consumers_invalid' );
+			return new WP_Error( 'static_site_importer_font_materialization_svg_consumer_invalid', '', $diagnostics );
+		}
+		$faces = array_column( $faces, null, 'id' );
+		$ids = array();
+		foreach ( $consumers as $consumer_index => $consumer ) {
+			if ( ! is_array( $consumer ) ) {
+				$diagnostics[] = self::diagnostic( 'producer_svg_consumer_invalid' );
+				return new WP_Error( 'static_site_importer_font_materialization_svg_consumer_invalid', '', $diagnostics );
+			}
+			$face_ids = is_array( $consumer['face_ids'] ?? null ) ? $consumer['face_ids'] : array();
+			$receipt_ids = is_array( $consumer['receipt_ids'] ?? null ) ? $consumer['receipt_ids'] : array();
+			$matching_writes = array_values( array_filter( $resolved_plan['writes'] ?? array(), static fn( mixed $write ): bool => is_array( $write ) && ( $consumer['source_path'] ?? null ) === ( $write['source_path'] ?? null ) && self::write_payload_hash( $write ) === ( $consumer['pre_transform_payload_hash'] ?? null ) ) );
+			$write = $matching_writes[0] ?? null;
+			$matching_assets = array_values( array_filter( $resolved_plan['assets'] ?? array(), static fn( mixed $asset ): bool => is_array( $write ) && is_array( $asset ) && ( $consumer['source_path'] ?? null ) === ( $asset['source_path'] ?? null ) && ( $write['target_path'] ?? null ) === ( $asset['target_path'] ?? null ) && ( ! isset( $asset['content_hash'] ) || ( $consumer['pre_transform_payload_hash'] ?? null ) === $asset['content_hash'] ) ) );
+			$expected_id = 'svg-webfont-consumer-' . substr( hash( 'sha256', (string) ( $consumer['source_path'] ?? '' ) . "\n" . (string) ( $consumer['write_path'] ?? '' ) . "\n" . (string) ( $consumer['pre_transform_payload_hash'] ?? '' ) . "\n" . implode( "\n", $face_ids ) ), 0, 20 );
+			$sorted_faces = $face_ids;
+			sort( $sorted_faces, SORT_STRING );
+			if ( array( 'id', 'source_path', 'write_path', 'pre_transform_payload_hash', 'face_ids', 'receipt_ids', 'required' ) !== array_keys( $consumer ) || ! is_string( $consumer['id'] ?? null ) || $expected_id !== $consumer['id'] || isset( $ids[ $consumer['id'] ] ) || true !== ( $consumer['required'] ?? null ) || ! is_string( $consumer['source_path'] ?? null ) || ! is_string( $consumer['write_path'] ?? null ) || '' === self::safe_path( $consumer['write_path'] ) || 1 !== count( $matching_writes ) || ! is_array( $write ) || $consumer['source_path'] !== ( $write['source_path'] ?? null ) || ! str_ends_with( strtolower( $consumer['write_path'] ), '.svg' ) || ! self::valid_sha256( $consumer['pre_transform_payload_hash'] ?? null ) || ! hash_equals( $consumer['pre_transform_payload_hash'], self::write_payload_hash( $write ) ) || ( ! empty( $resolved_plan['assets'] ) && 1 !== count( $matching_assets ) ) || ! array_is_list( $face_ids ) || empty( $face_ids ) || $face_ids !== array_values( array_unique( $face_ids ) ) || $face_ids !== $sorted_faces || ! array_is_list( $receipt_ids ) || $receipt_ids !== array_values( array_unique( $receipt_ids ) ) || count( $face_ids ) !== count( $receipt_ids ) ) {
+				$diagnostics[] = self::diagnostic( 'producer_svg_consumer_invalid' );
+				return new WP_Error( 'static_site_importer_font_materialization_svg_consumer_invalid', '', $diagnostics );
+			}
+			foreach ( $face_ids as $index => $face_id ) {
+				if ( ! is_string( $face_id ) || ! isset( $faces[ $face_id ] ) || ! is_string( $receipt_ids[ $index ] ?? null ) || ( $receipts[ $face_id ] ?? null ) !== $receipt_ids[ $index ] ) {
+					$diagnostics[] = self::diagnostic( 'producer_svg_consumer_face_invalid' );
+					return new WP_Error( 'static_site_importer_font_materialization_svg_consumer_invalid', '', $diagnostics );
+				}
+			}
+			$consumer['write'] = $write;
+			$ids[ $consumer['id'] ] = true;
+			$consumers[ $consumer_index ] = $consumer;
+		}
+		$sorted = $consumers;
+		usort( $sorted, static fn( array $left, array $right ): int => strcmp( $left['id'], $right['id'] ) );
+		if ( $sorted !== $consumers ) {
+			$diagnostics[] = self::diagnostic( 'producer_svg_consumers_not_canonical' );
+			return new WP_Error( 'static_site_importer_font_materialization_svg_consumer_invalid', '', $diagnostics );
+		}
+		return $consumers;
 	}
 
 	private static function valid_weight( mixed $weight ): bool {
@@ -154,6 +206,7 @@ final class Static_Site_Importer_Font_Materializer {
 		$writes = array();
 		$css = array();
 		$materialized_faces = array();
+		$svg_faces = array();
 		$required_faces = array();
 		$total = 0;
 		$stylesheet_cache = array();
@@ -178,6 +231,7 @@ final class Static_Site_Importer_Font_Materializer {
 			$assets = array();
 			foreach ( $blocks as $block ) {
 				$rewritten = $block;
+				$svg_rewritten = $block;
 				foreach ( self::font_urls( $block ) as $source_url ) {
 					if ( ! isset( $asset_cache[ $source_url ] ) ) {
 						$asset = self::download_font_asset( $source_url, $total, $diagnostics, (string) ( $face['expected_sha256'] ?? '' ) );
@@ -191,16 +245,51 @@ final class Static_Site_Importer_Font_Materializer {
 						return new WP_Error( 'static_site_importer_font_materialization_producer_font_digest_mismatch', '', $diagnostics );
 					}
 					$rewritten = str_replace( $source_url, '../fonts/' . basename( $asset['target_path'] ), $rewritten );
+					$svg_rewritten = str_replace( $source_url, 'data:font/' . $asset['format'] . ';base64,' . base64_encode( $asset['payload'] ), $svg_rewritten );
 					$assets[] = $asset + array( 'source_url' => $source_url );
 				}
 				$css[ hash( 'sha256', $rewritten ) ] = $rewritten;
+				$svg_faces[ $face['id'] ][ hash( 'sha256', $svg_rewritten ) ] = $svg_rewritten;
 			}
 			$receipt_face = array( 'face_id' => $face['id'], 'import_id' => $face['import_ref'], 'receipt_id' => $producer['receipts'][ $face['id'] ], 'family' => $face['family'], 'style' => $face['style'], 'weight' => $face['weight'], 'axes' => $face['axes'], 'unicode_ranges' => $face['unicode_ranges'], 'import_observed_digest' => $stylesheet_cache[ $url ]['observed_digest'], 'status' => 'materialized', 'assets' => array_values( array_unique( $assets, SORT_REGULAR ) ) );
 			$materialized_faces[] = $receipt_face;
 			$required_faces[] = $receipt_face;
 		}
 		$writes['assets/css/embedded-fonts.css'] = self::write( 'assets/css/embedded-fonts.css', implode( "\n", $css ) . "\n", 'theme.font_materialization' );
-		return array( 'writes' => array_values( $writes ), 'faces' => $materialized_faces, 'required_faces' => $required_faces );
+		return array( 'writes' => array_values( $writes ), 'faces' => $materialized_faces, 'required_faces' => $required_faces, 'svg_faces' => $svg_faces );
+	}
+
+	/** @return array{writes:array<int,array<string,string>>,receipts:array<int,array<string,mixed>>}|WP_Error */
+	private static function materialize_svg_consumers( array $consumers, array $materialized, array &$diagnostics ) {
+		$writes = array();
+		$receipts = array();
+		foreach ( $consumers as $consumer ) {
+			$faces = array();
+			$digests = array();
+			foreach ( $consumer['face_ids'] as $face_id ) {
+				$face_css = $materialized['svg_faces'][ $face_id ] ?? array();
+				if ( empty( $face_css ) ) {
+					$diagnostics[] = self::diagnostic( 'producer_svg_consumer_face_unmaterialized' );
+					return new WP_Error( 'static_site_importer_font_materialization_svg_consumer_failed', '', $diagnostics );
+				}
+				$faces = array_merge( $faces, array_values( $face_css ) );
+				$face = array_values( array_filter( $materialized['faces'], static fn( array $row ): bool => $face_id === $row['face_id'] ) )[0] ?? array();
+				foreach ( $face['assets'] ?? array() as $asset ) $digests[] = $asset['observed_sha256'];
+			}
+			$input = self::payload_content( $consumer['write'] );
+			if ( null === $input ) {
+				$diagnostics[] = self::diagnostic( 'producer_svg_consumer_write_missing' );
+				return new WP_Error( 'static_site_importer_font_materialization_svg_consumer_failed', '', $diagnostics );
+			}
+			$output = self::embed_svg_font_faces( $input, implode( "\n", array_values( array_unique( $faces ) ) ) );
+			if ( $output === $input || ! str_contains( $output, 'data:font/' ) ) {
+				$diagnostics[] = self::diagnostic( 'producer_svg_consumer_embedding_failed' );
+				return new WP_Error( 'static_site_importer_font_materialization_svg_consumer_failed', '', $diagnostics );
+			}
+			$writes[] = self::write( $consumer['write']['target_path'], $output, $consumer['source_path'] );
+			$receipts[] = array( 'schema' => 'static-site-importer/svg-font-materialization-receipt/v1', 'consumer_id' => $consumer['id'], 'target_path' => $consumer['write']['target_path'], 'write_reconciliation_identity' => $consumer['write']['reconciliation_identity'], 'input_sha256' => $consumer['pre_transform_payload_hash'], 'output_sha256' => hash( 'sha256', $output ), 'face_ids' => $consumer['face_ids'], 'receipt_ids' => $consumer['receipt_ids'], 'required' => $consumer['required'], 'observed_font_sha256' => array_values( array_unique( $digests ) ) );
+		}
+		return array( 'writes' => $writes, 'receipts' => $receipts );
 	}
 
 	private static function expected_digest_matches( string $expected, string $payload ): bool {
@@ -267,7 +356,7 @@ final class Static_Site_Importer_Font_Materializer {
 	}
 
 	/** @param array<int,array<string,mixed>> $writes @param array<int,array<string,mixed>> $required_faces @param array<int,array<string,string>> $diagnostics */
-	private static function with_runtime_registration( array $writes, array $resolved_plan, array $required_faces, array $diagnostics, array $faces = array() ) {
+	private static function with_runtime_registration( array $writes, array $resolved_plan, array $required_faces, array $diagnostics, array $faces = array(), array $svg_receipts = array(), array $svg_consumers = array() ) {
 		$bootstrap = self::canonical_write_content( $resolved_plan['writes'] ?? array(), 'functions.php' );
 		if ( null === $bootstrap ) {
 			return new WP_Error( 'static_site_importer_font_materialization_bootstrap_target_missing' );
@@ -282,7 +371,7 @@ final class Static_Site_Importer_Font_Materializer {
 		if ( ! empty( $required_faces ) ) {
 			$writes[] = self::write( 'assets/js/font-readiness.js', self::readiness_script( $required_faces ), 'theme.font_materialization' );
 		}
-		return array( 'writes' => $writes, 'diagnostics' => $diagnostics, 'faces' => $faces, 'required_faces' => $required_faces );
+		return array( 'writes' => $writes, 'diagnostics' => $diagnostics, 'faces' => $faces, 'required_faces' => $required_faces, 'svg_receipts' => $svg_receipts, 'svg_consumers' => $svg_consumers );
 	}
 
 	/** @param array<int,array<string,mixed>> $faces */
@@ -573,6 +662,15 @@ final class Static_Site_Importer_Font_Materializer {
 			}
 		}
 		return null;
+	}
+
+	private static function write_payload_hash( array $write ): string {
+		$content = self::payload_content( $write );
+		return null === $content ? '' : hash( 'sha256', $content );
+	}
+
+	private static function valid_sha256( mixed $hash ): bool {
+		return is_string( $hash ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $hash );
 	}
 
 	private static function payload_content( mixed $write ): ?string {
