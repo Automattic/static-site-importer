@@ -12,6 +12,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	public const RECEIPT_SCHEMA = 'static-site-importer/materialization-receipt/v1';
 	private const RECONCILIATION_META_KEY = '_static_site_importer_reconciliation_identity';
 	private const BLOCK_PROVENANCE_LIMIT = 50;
+	private const CONTENT_MATERIALIZATION_POLICY = array(
+		'schema'       => 'static-site-importer/content-materialization-policy/v1',
+		'literal_text' => 'preserve',
+		'smilies'      => 'disabled',
+	);
 
 	/**
 	 * Materialize a fully canonical v2 plan. Compilation and plan validation belong to Blocks Engine.
@@ -43,7 +48,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'plan'        => $plan,
 			'plan_hash'   => self::hash( $plan ),
 			'diagnostics' => array(),
-			'applied'     => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'runtime_declarations' => array( 'asset_publications' => array(), 'entity_bindings' => array() ) ),
+			'applied'     => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'content_materialization_policy' => self::CONTENT_MATERIALIZATION_POLICY, 'runtime_declarations' => array( 'asset_publications' => array(), 'entity_bindings' => array() ) ),
 			'skipped'     => array(),
 			'existing_matches' => array( 'pages' => array() ),
 			'report_destinations' => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
@@ -115,6 +120,16 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) ) {
 				continue;
+			}
+			$materialized_markup = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] );
+			$preserved_markup    = self::preserve_literal_smilies( $materialized_markup );
+			if ( $materialized_markup !== $preserved_markup ) {
+				$page['pre_literal_text_policy_block_markup'] = $materialized_markup;
+				$page['materialized_block_markup']            = $preserved_markup;
+				$page_index = array_search( $page['source_path'], array_column( $state['resolved']['pages'], 'source_path' ), true );
+				if ( false !== $page_index ) {
+					$state['resolved']['pages'][ $page_index ] = $page;
+				}
 			}
 			$post = self::materialize_page( $page, $state['source_ids'] );
 			if ( is_wp_error( $post ) ) {
@@ -255,6 +270,42 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		update_post_meta( (int) $id, self::RECONCILIATION_META_KEY, $page['reconciliation_identity'] );
 		return (int) $id;
+	}
+
+	/** Preserve static text from WordPress's display-time smilie conversion. */
+	private static function preserve_literal_smilies( string $markup ): string {
+		global $wp_smiliessearch;
+
+		if ( empty( $wp_smiliessearch ) ) {
+			return $markup;
+		}
+
+		$segments = preg_split( '/(<[^>]*>)/U', $markup, -1, PREG_SPLIT_DELIM_CAPTURE );
+		if ( false === $segments ) {
+			return $markup;
+		}
+
+		$ignored_tag = '';
+		foreach ( $segments as &$segment ) {
+			if ( '' === $ignored_tag && preg_match( '/^<(code|pre|style|script|textarea)[^>]*>/', $segment, $matches ) ) {
+				$ignored_tag = $matches[1];
+			}
+			if ( '' === $ignored_tag && '' !== $segment && '<' !== $segment[0] ) {
+				$segment = preg_replace_callback(
+					$wp_smiliessearch,
+					static function ( array $matches ): string {
+						return implode( '', array_map( static fn( string $character ): string => '&#' . ord( $character ) . ';', str_split( $matches[0] ) ) );
+					},
+					$segment
+				) ?? $segment;
+			}
+			if ( '' !== $ignored_tag && '</' . $ignored_tag . '>' === $segment ) {
+				$ignored_tag = '';
+			}
+		}
+		unset( $segment );
+
+		return implode( '', $segments );
 	}
 
 	/** Apply exact provider bindings to the resolved projection while retaining canonical plan markup. */
@@ -573,6 +624,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( isset( $page['materialized_block_markup'] ) ) {
 				unset( $page['materialized_block_markup'] );
 			}
+			if ( isset( $page['pre_literal_text_policy_block_markup'] ) ) {
+				unset( $page['pre_literal_text_policy_block_markup'] );
+			}
 		}
 		unset( $page );
 		$errors = array();
@@ -594,6 +648,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'operations' => $state['applied']['operations'],
 				'runtime_declarations' => $state['applied']['runtime_declarations'] ?? array( 'asset_publications' => array() ),
 				'font_materialization' => $state['applied']['font_materialization'] ?? array( 'status' => 'not_requested', 'files' => array(), 'diagnostics' => array() ),
+				'content_materialization_policy' => $state['applied']['content_materialization_policy'],
 				'materialized_pages' => $materialized_pages,
 				'block_provenance' => $block_provenance,
 				'block_provenance_count' => $block_provenance_count,
@@ -621,13 +676,21 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	private static function block_provenance( array $page, string $materialized_markup ): array {
 		$resolved_markup = (string) ( $page['resolved_block_markup'] ?? '' );
 		$resolved_evidence = self::bounded_block_markup_evidence( $resolved_markup );
+		$pre_policy_markup = (string) ( $page['pre_literal_text_policy_block_markup'] ?? $materialized_markup );
 		$stages = array(
 			array( 'stage' => 'blocks-engine/wordpress-site-plan-resolver', 'output' => $resolved_evidence ),
 		);
-		if ( $resolved_markup !== $materialized_markup ) {
+		if ( $resolved_markup !== $pre_policy_markup ) {
 			$stages[] = array(
 				'stage' => 'static-site-importer/runtime-entity-bindings',
 				'input_sha256' => $resolved_evidence['sha256'],
+				'output' => self::bounded_block_markup_evidence( $pre_policy_markup ),
+			);
+		}
+		if ( $pre_policy_markup !== $materialized_markup ) {
+			$stages[] = array(
+				'stage' => 'static-site-importer/content-materialization-policy',
+				'input_sha256' => hash( 'sha256', $pre_policy_markup ),
 				'output' => self::bounded_block_markup_evidence( $materialized_markup ),
 			);
 		}
