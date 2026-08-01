@@ -264,6 +264,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		ksort( $aliases, SORT_STRING );
 		ksort( $external_assets, SORT_STRING );
 		$paths           = self::artifact_paths( $resources, $site_url );
+		$route_paths     = self::route_paths( $resources );
 		$reference_paths = $paths;
 		foreach ( $aliases as $requested_url => $final_url ) {
 			if ( isset( $paths[ $final_url ] ) ) {
@@ -286,7 +287,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				'mime_type' => $resource['content_type'],
 			);
 			if ( 'html' === $resource['kind'] ) {
-				$file['metadata'] = array( 'route_path' => self::canonical_route_path( $resource_url ) );
+				$file['metadata'] = array( 'route_path' => $route_paths[ $resource_url ] );
 			}
 			if ( self::is_text( $resource['content_type'], $path ) ) {
 				$file['content'] = $body;
@@ -548,6 +549,25 @@ class Static_Site_Importer_URL_Site_Collector {
 				$extension = pathinfo( $path, PATHINFO_EXTENSION );
 				$suffix    = '-' . substr( hash( 'sha256', $resource_url ), 0, 10 );
 				$path      = '' !== $extension ? substr( $path, 0, -1 - strlen( $extension ) ) . $suffix . '.' . $extension : $path . $suffix;
+			}
+			$used[ $path ]          = true;
+			$paths[ $resource_url ] = $path;
+		}
+		return $paths;
+	}
+
+	/** @param array<string,array<string,string>> $resources @return array<string,string> */
+	private static function route_paths( array $resources ): array {
+		ksort( $resources, SORT_STRING );
+		$paths = array();
+		$used  = array();
+		foreach ( $resources as $resource_url => $resource ) {
+			if ( 'html' !== $resource['kind'] ) {
+				continue;
+			}
+			$path = self::canonical_route_path( $resource_url );
+			if ( isset( $used[ $path ] ) ) {
+				$path = rtrim( $path, '/' ) . '-' . substr( hash( 'sha256', $resource_url ), 0, 10 );
 			}
 			$used[ $path ]          = true;
 			$paths[ $resource_url ] = $path;

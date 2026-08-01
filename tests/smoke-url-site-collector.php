@@ -185,6 +185,20 @@ $encoded_route = Static_Site_Importer_URL_Site_Collector::collect(
 $encoded_file = $encoded_route['artifact']['files'][0] ?? array();
 $assert( '/news/category/americana-country-artist' === ( $encoded_file['metadata']['route_path'] ?? null ), 'encoded-source-route-is-canonicalized' );
 
+$colliding_urls = array( 'https://example.test/news/tag/inc-+richlyn+marketing', 'https://example.test/news/tag/inc-richlyn+marketing' );
+$colliding_routes = Static_Site_Importer_URL_Site_Collector::collect(
+	$colliding_urls[0],
+	array( 'max_pages' => 2, 'max_assets' => 0, 'max_bytes' => PHP_INT_MAX, 'request_delay_ms' => 0, '_route_set' => $colliding_urls ),
+	static fn ( string $url, array $args ): array => array( 'body' => '<main><h1>Tag</h1><p>Server-rendered tag archive.</p></main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) )
+);
+$colliding_files = is_wp_error( $colliding_routes ) ? array() : array_filter( $colliding_routes['artifact']['files'], static fn ( array $file ): bool => 'text/html' === ( $file['mime_type'] ?? '' ) );
+$colliding_paths = array_column( $colliding_files, 'metadata' );
+$colliding_paths = array_column( $colliding_paths, 'route_path' );
+$colliding_compiled = is_wp_error( $colliding_routes ) ? array() : blocks_engine_php_transformer_compile_artifact( $colliding_routes['artifact'] );
+$colliding_diagnostics = $colliding_compiled['source_reports']['wordpress_site_plan_diagnostics'] ?? array();
+$route_collision_diagnostics = array_filter( $colliding_diagnostics, static fn ( array $diagnostic ): bool => str_contains( (string) ( $diagnostic['message'] ?? '' ), 'colliding page routes' ) );
+$assert( 2 === count( array_unique( $colliding_paths ) ) && array() === $route_collision_diagnostics, 'canonical-route-collisions-receive-stable-distinct-routes', json_encode( array( 'routes' => $colliding_paths, 'diagnostics' => $colliding_diagnostics ) ) ?: '' );
+
 $complete_result = Static_Site_Importer_URL_Site_Collector::collect(
 	'https://example.test/',
 	array(
