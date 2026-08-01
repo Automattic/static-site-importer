@@ -634,12 +634,13 @@ node bench/static-site-fixture-matrix.bench.mjs --run \
   --static-site-importer-path /Users/chubes/Developer/static-site-importer@feat-796-runtime-media-evidence
 ```
 
-For fixture `<id>`, the probe uses WP Codebox's
-`output-artifact=<id>/runtime-presentation-evidence.json` contract. This is a
-relative path beneath the declared recipe artifact root, so it works when that
-root is host-mounted or Playground-staged. The following `wordpress.wp-cli`
-step verifies the typed Blocks Engine envelope, confines both paths to the same
-fixture directory under that root, and atomically merges it as
+For fixture `<id>`, the probe retains reviewer evidence with WP Codebox's
+`output-artifact=<id>/runtime-presentation-evidence.json` contract. Playground
+recipes also declare the exact
+`output-runtime-path=/wordpress/.../<id>/runtime-presentation-evidence.json`
+needed by the following `wordpress.wp-cli` step. That step verifies the typed
+Blocks Engine envelope, confines both paths to the same fixture directory under
+the declared runtime artifact root, and atomically merges it as
 `runtime_presentation_evidence` in `<id>/artifact.json`. Only then does
 `validate-artifact` compile the artifact. A missing output, malformed envelope,
 unavailable root, or boundary violation emits a structured

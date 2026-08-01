@@ -633,6 +633,8 @@ test('runtime presentation evidence persists, merges, and reaches the Blocks Eng
   const playgroundMerge = playgroundRecipe.workflow.steps.find((step) => step.metadata?.phase === 'runtime-presentation-evidence-merge');
   const playgroundImport = playgroundRecipe.workflow.steps.find((step) => /static-site-importer validate-artifact/.test(step.args?.[0] || ''));
   assert.ok(playgroundProbe.args.includes('output-artifact=simple-site/runtime-presentation-evidence.json'));
+  assert.ok(playgroundProbe.args.includes('output-runtime-path=/wordpress/wp-content/uploads/artifacts/simple-site/runtime-presentation-evidence.json'));
+  assert.equal(playgroundProbe.metadata.output_runtime_path, '/wordpress/wp-content/uploads/artifacts/simple-site/runtime-presentation-evidence.json');
   assert.equal(playgroundMerge.metadata.artifact_root, '/wordpress/wp-content/uploads/artifacts');
   assert.match(playgroundImport.args[0], /--artifact=\/wordpress\/wp-content\/uploads\/artifacts\/simple-site\/artifact\.json/);
 });
