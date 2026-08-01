@@ -2745,6 +2745,10 @@ test('editor canvas artifacts are persisted in the matrix artifact root and refs
   assert.equal(fixture.editor_open.files.editorState, statePath);
   assert.equal(fixture.surfaces[0].editor_open.files.screenshot, screenshotPath);
   assert.deepEqual(fixture.artifact_refs.map((ref) => ref.path), [screenshotPath, statePath]);
+  assert.deepEqual(fixture.artifact_refs.map((ref) => ref.artifact_id), [
+    'editor_canvas_simple-site_editor-open-screenshot',
+    'editor_canvas_simple-site_editor-open-editorState',
+  ]);
   assert.deepEqual(result.artifacts, {
     'editor_canvas_simple-site_editor-open-screenshot': { path: screenshotPath },
     'editor_canvas_simple-site_editor-open-editorState': { path: statePath },
@@ -6595,9 +6599,11 @@ test('visual-compare sidecars are normalized and retained under the bench artifa
   assert.equal(readFileSync(path.join(outputDirectory, 'visual-compare', 'simple-site', 'source.png'), 'utf8'), 'fake source.png');
   assert.equal(fixture.visual_parity_artifacts.owner, 'bench_artifact_root');
   assert.equal(fixture.visual_parity_artifacts.artifacts.source_screenshot.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'source.png'));
+  assert.equal(fixture.visual_parity_artifacts.artifacts.source_screenshot.ref.artifact_id, 'visual_compare_simple-site_source');
   assert.equal(fixture.visual_parity_artifacts.artifacts.imported_screenshot.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'candidate.png'));
   assert.equal(fixture.visual_parity_artifacts.artifacts.diff_screenshot.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'diff.png'));
-  assert.equal(fixture.diagnostics[0].artifact_refs.find((ref) => ref.artifact_id === 'diff_screenshot').path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'diff.png'));
+  assert.equal(fixture.visual_parity_artifacts.artifacts.diff_screenshot.ref.artifact_id, 'visual_compare_simple-site_diff');
+  assert.equal(fixture.diagnostics[0].artifact_refs.find((ref) => ref.artifact_id === 'visual_compare_simple-site_diff').path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'diff.png'));
   assert.equal(fixture.diagnostics[1].artifact_refs[0].path, path.join(outputDirectory, 'visual-compare', 'simple-site--contact', 'candidate.png'));
   assert.equal(fixture.visual_parity_artifacts.artifacts.visual_diff.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'visual-diff.json'));
   assert.equal(fixture.visual_parity_artifacts.artifacts.source_dom_snapshot.ref.path, path.join(outputDirectory, 'visual-compare', 'simple-site', 'source-dom-snapshot.json'));

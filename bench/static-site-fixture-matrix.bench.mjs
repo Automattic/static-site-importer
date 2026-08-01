@@ -95,6 +95,7 @@ export default async function runFixtureMatrixBench(context = {}) {
       visual_parity_evidence_report: { path: path.join(summary.output_directory, 'visual-parity-evidence-report.json') },
       visual_parity_evidence_report_markdown: { path: path.join(summary.output_directory, 'visual-parity-evidence-report.md') },
       visual_diff_classification: { path: path.join(summary.output_directory, 'visual-diff-classification.json') },
+      surface_lineage_bundles: { path: path.join(summary.output_directory, 'surface-lineage-bundles.json') },
       gutenberg_incompatibility_registry: { path: path.join(summary.output_directory, 'gutenberg-incompatibility-registry.json') },
       gutenberg_incompatibility_registry_report: { path: path.join(summary.output_directory, 'gutenberg-incompatibility-registry.md') },
       ...(summary.visual_parity_artifacts || {}),
@@ -637,9 +638,10 @@ function materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, cod
     const persistedPath = path.join(outputDirectory, 'editor-canvas', fixtureId, path.basename(ref.path));
     fs.mkdirSync(path.dirname(persistedPath), { recursive: true });
     fs.copyFileSync(sourcePath, persistedPath);
-    rewrites.set(ref.path, persistedPath);
     const artifactId = String(ref.artifact_id || ref.id || path.basename(ref.path, path.extname(ref.path))).replace(/[^a-z0-9_.-]+/gi, '-');
-    artifacts[`editor_canvas_${fixtureId}_${artifactId}`] = { path: persistedPath };
+    const exportedArtifactId = `editor_canvas_${fixtureId}_${artifactId}`;
+    rewrites.set(ref.path, { path: persistedPath, artifact_id: exportedArtifactId });
+    artifacts[exportedArtifactId] = { path: persistedPath };
   }
   if (rewrites.size === 0) {
     return fixture;
@@ -663,9 +665,9 @@ function rewriteEditorEvidencePaths(value, rewrites) {
     return value;
   }
   const files = value.files && typeof value.files === 'object'
-    ? Object.fromEntries(Object.entries(value.files).map(([key, filePath]) => [key, rewrites.get(filePath) || filePath]))
+    ? Object.fromEntries(Object.entries(value.files).map(([key, filePath]) => [key, rewritePath(filePath, rewrites)]))
     : undefined;
-  return { ...value, ...(files ? { files } : {}), ...(value.screenshot ? { screenshot: rewrites.get(value.screenshot) || value.screenshot } : {}) };
+  return { ...value, ...(files ? { files } : {}), ...(value.screenshot ? { screenshot: rewritePath(value.screenshot, rewrites) } : {}) };
 }
 
 export function materializeVisualCompareArtifacts(input = {}) {
@@ -737,14 +739,15 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
     const persistedPath = path.join(outputDirectory, 'visual-compare', fixtureId, fileStem.includes('.') ? fileStem : `${fileStem}.png`);
     fs.mkdirSync(path.dirname(persistedPath), { recursive: true });
     fs.copyFileSync(sourcePath, persistedPath);
-    rewrites.set(refPath, persistedPath);
+    const exportedArtifactId = `visual_compare_${artifactKey(fixtureId)}_${fileStem}`;
+    rewrites.set(refPath, { path: persistedPath, artifact_id: exportedArtifactId });
     updatedSlots[slotName] = {
       ...slots[slotName],
       status: 'captured',
       kind: slotName,
-      ref: artifactRef(slotName, persistedPath, 'visual-parity'),
+      ref: artifactRef(exportedArtifactId, persistedPath, 'visual-parity'),
     };
-    artifacts[`visual_compare_${artifactKey(fixtureId)}_${fileStem}`] = { path: persistedPath };
+    artifacts[exportedArtifactId] = { path: persistedPath };
   }
 
   const comparisonRefPaths = new Set(arrayValue(fixture.visual_parity_comparisons).flatMap((comparison) => Object.values(
@@ -764,8 +767,9 @@ function materializeFixtureVisualCompareArtifacts({ fixture, outputDirectory, co
       const persistedPath = path.join(outputDirectory, 'visual-compare', comparisonName, fileName);
       fs.mkdirSync(path.dirname(persistedPath), { recursive: true });
       fs.copyFileSync(sourcePath, persistedPath);
-      rewrites.set(ref.path, persistedPath);
-      artifacts[`visual_compare_${artifactKey(comparisonName)}_${artifactKey(fileName)}`] = { path: persistedPath };
+      const exportedArtifactId = `visual_compare_${artifactKey(comparisonName)}_${artifactKey(fileName)}`;
+      rewrites.set(ref.path, { path: persistedPath, artifact_id: exportedArtifactId });
+      artifacts[exportedArtifactId] = { path: persistedPath };
     }
   }
 
@@ -876,8 +880,8 @@ function materializeSecondaryVisualCompareArtifacts({ comparison, fixtureId, out
     const persistedPath = path.join(outputDirectory, 'visual-compare', fixtureId, surfaceId, fileStem.includes('.') ? fileStem : `${fileStem}.png`);
     fs.mkdirSync(path.dirname(persistedPath), { recursive: true });
     fs.copyFileSync(sourcePath, persistedPath);
-    rewrites.set(refPath, persistedPath);
     const artifactId = `visual_compare_${artifactKey(fixtureId)}_${surfaceId}_${fileStem}`;
+    rewrites.set(refPath, { path: persistedPath, artifact_id: artifactId });
     updatedSlots[slotName] = {
       ...slots[slotName],
       status: 'captured',
@@ -904,8 +908,13 @@ function rewriteVisualEvidencePaths(value, rewrites) {
   }
   return Object.fromEntries(Object.entries(value).map(([key, entry]) => [
     key,
-    typeof entry === 'string' && rewrites.has(entry) ? rewrites.get(entry) : rewriteVisualEvidencePaths(entry, rewrites),
+    typeof entry === 'string' && rewrites.has(entry) ? rewritePath(entry, rewrites) : rewriteVisualEvidencePaths(entry, rewrites),
   ]));
+}
+
+function rewritePath(value, rewrites) {
+  const rewrite = rewrites.get(value);
+  return typeof rewrite === 'string' ? rewrite : rewrite?.path || value;
 }
 
 function materializeVisualAttribution({ fixture, fixtureId, outputDirectory, slots, normalizer, loader, homeboyExtensionPath }) {
@@ -1131,7 +1140,12 @@ function rewriteArtifactRefs(refs, rewrites, unavailablePaths = new Set()) {
   return Array.isArray(refs)
     ? refs
       .filter((ref) => !unavailablePaths.has(ref?.path))
-      .map((ref) => rewrites.has(ref?.path) ? { ...ref, path: rewrites.get(ref.path) } : ref)
+      .map((ref) => {
+        const rewrite = rewrites.get(ref?.path);
+        if (!rewrite) return ref;
+        if (typeof rewrite === 'string') return { ...ref, path: rewrite };
+        return { ...ref, path: rewrite.path, ...(rewrite.artifact_id ? { artifact_id: rewrite.artifact_id } : {}) };
+      })
     : refs;
 }
 
