@@ -73,6 +73,8 @@ class Static_Site_Importer_URL_Site_Collector {
 		$aliases           = array();
 		$total_bytes       = 0;
 		$truncated         = array();
+		$external_assets   = array();
+		$preserve_assets   = 'preserve_external' === ( $args['asset_failure_policy'] ?? '' );
 		$entry_resource_url = $entry_url;
 		$site_url           = $entry_url;
 
@@ -99,7 +101,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				if ( $page_url === $entry_url ) {
 					return $response;
 				}
-				$failures[] = self::failure( $page_url, $response );
+				$failures[] = self::failure( $page_url, $response, 'html' );
 				continue;
 			}
 
@@ -165,6 +167,7 @@ class Static_Site_Importer_URL_Site_Collector {
 					continue;
 				}
 				if ( count( $asset_queue ) + self::resource_count( $resources, 'asset' ) >= $max_assets ) {
+					if ( $preserve_assets ) { $external_assets[ $asset_url ] = 'asset_limit'; continue; }
 					$truncated['assets'] = true;
 					break;
 				}
@@ -179,7 +182,8 @@ class Static_Site_Importer_URL_Site_Collector {
 			$asset_url = array_shift( $asset_queue );
 			$response  = $fetcher( $asset_url, array_merge( $fetch_args, array( 'content_types' => array() ) ) );
 			if ( is_wp_error( $response ) ) {
-				$failures[] = self::failure( $asset_url, $response );
+				if ( $preserve_assets ) { $external_assets[ $asset_url ] = $response->get_error_code(); continue; }
+				$failures[] = self::failure( $asset_url, $response, 'asset' );
 				continue;
 			}
 
@@ -194,6 +198,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			$body  = (string) $response['body'];
 			$bytes = strlen( $body );
 			if ( $total_bytes + $bytes > $max_total_bytes ) {
+				if ( $preserve_assets ) { $external_assets[ $asset_url ] = 'byte_limit'; continue; }
 				$truncated['bytes'] = true;
 				break;
 			}
@@ -212,6 +217,7 @@ class Static_Site_Importer_URL_Site_Collector {
 						continue;
 					}
 					if ( count( $asset_queue ) + self::resource_count( $resources, 'asset' ) >= $max_assets ) {
+						if ( $preserve_assets ) { $external_assets[ $nested_url ] = 'asset_limit'; continue; }
 						$truncated['assets'] = true;
 						break;
 					}
@@ -256,9 +262,9 @@ class Static_Site_Importer_URL_Site_Collector {
 			$path = $paths[ $resource_url ];
 			$body = (string) $resource['body'];
 			if ( 'html' === $resource['kind'] ) {
-				$body = self::rewrite_html( $body, self::html_base_url( $body, $resource_url ), $path, $reference_paths, $aliases, $site_url );
+				$body = self::rewrite_html( $body, self::html_base_url( $body, $resource_url ), $path, $reference_paths, $aliases, $site_url, $external_assets );
 			} elseif ( 'text/css' === $resource['content_type'] || str_ends_with( strtolower( $path ), '.css' ) ) {
-				$body = self::rewrite_css( $body, $resource_url, $path, $reference_paths );
+				$body = self::rewrite_css( $body, $resource_url, $path, $reference_paths, $external_assets );
 			}
 
 			$file = array(
@@ -298,6 +304,7 @@ class Static_Site_Importer_URL_Site_Collector {
 					'source_exclusions' => $source_exclusions,
 					'truncated'         => array_keys( $truncated ),
 					'sitemap_urls'      => count( $sitemap_urls ),
+					'external_asset_retained' => array( 'count' => count( $external_assets ), 'samples' => array_slice( array_map( static fn( string $url, string $reason ): array => array( 'url' => $url, 'reason' => $reason ), array_keys( $external_assets ), $external_assets ), 0, 50 ) ),
 				),
 			),
 		);
@@ -516,10 +523,10 @@ class Static_Site_Importer_URL_Site_Collector {
 	}
 
 	/** @param array<string,string> $paths */
-	private static function rewrite_html( string $html, string $base_url, string $source_path, array $paths, array $aliases, string $site_url ): string {
+	private static function rewrite_html( string $html, string $base_url, string $source_path, array $paths, array $aliases, string $site_url, array $external_assets = array() ): string {
 		$html = preg_replace_callback(
 			'#\b(src|href|poster)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))#is',
-			static function ( array $match ) use ( $base_url, $source_path, $paths, $aliases, $site_url ): string {
+			static function ( array $match ) use ( $base_url, $source_path, $paths, $aliases, $site_url, $external_assets ): string {
 				$value = self::matched_attribute_value( $match );
 				$url   = self::resolve_url( $value, $base_url );
 				if ( isset( $paths[ $url ] ) && preg_match( '/\.html?$/i', $paths[ $url ] ) ) {
@@ -531,46 +538,49 @@ class Static_Site_Importer_URL_Site_Collector {
 				if ( isset( $paths[ $url ] ) ) {
 					return $match[1] . '="' . self::relative_path( $source_path, $paths[ $url ] ) . '"';
 				}
+				if ( isset( $external_assets[ $url ] ) ) { return $match[1] . '="' . self::external_asset_url( $url, $value ) . '"'; }
 				return '' !== $url && self::same_origin( $url, $site_url ) && self::is_page_url( $url ) ? $match[1] . '="' . self::route_url( $url, $value ) . '"' : $match[0];
 			},
 			$html
 		);
 		$html = preg_replace_callback(
 			'#\bsrcset\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))#is',
-			static function ( array $match ) use ( $base_url, $source_path, $paths ): string {
+			static function ( array $match ) use ( $base_url, $source_path, $paths, $external_assets ): string {
 				$candidates = array();
 				foreach ( explode( ',', self::matched_attribute_value( $match, 1 ) ) as $candidate ) {
 					$parts = preg_split( '/\s+/', trim( $candidate ), 2 );
 					$url   = self::resolve_url( $parts[0] ?? '', $base_url );
-					$ref   = isset( $paths[ $url ] ) ? self::relative_path( $source_path, $paths[ $url ] ) : ( $parts[0] ?? '' );
+					$ref   = isset( $paths[ $url ] ) ? self::relative_path( $source_path, $paths[ $url ] ) : ( isset( $external_assets[ $url ] ) ? self::external_asset_url( $url, (string) ( $parts[0] ?? '' ) ) : ( $parts[0] ?? '' ) );
 					$candidates[] = trim( $ref . ' ' . ( $parts[1] ?? '' ) );
 				}
 				return 'srcset="' . implode( ', ', $candidates ) . '"';
 			},
 			(string) $html
 		);
-		return self::rewrite_css( (string) $html, $base_url, $source_path, $paths );
+		return self::rewrite_css( (string) $html, $base_url, $source_path, $paths, $external_assets );
 	}
 
 	/** @param array<string,string> $paths */
-	private static function rewrite_css( string $css, string $base_url, string $source_path, array $paths ): string {
+	private static function rewrite_css( string $css, string $base_url, string $source_path, array $paths, array $external_assets = array() ): string {
 		$css = (string) preg_replace_callback(
 			'#url\(\s*(["\']?)(.*?)\1\s*\)#is',
-			static function ( array $match ) use ( $base_url, $source_path, $paths ): string {
+			static function ( array $match ) use ( $base_url, $source_path, $paths, $external_assets ): string {
 				$url = self::resolve_url( $match[2], $base_url );
-				return isset( $paths[ $url ] ) ? 'url(' . $match[1] . self::relative_path( $source_path, $paths[ $url ] ) . $match[1] . ')' : $match[0];
+				return isset( $paths[ $url ] ) ? 'url(' . $match[1] . self::relative_path( $source_path, $paths[ $url ] ) . $match[1] . ')' : ( isset( $external_assets[ $url ] ) ? 'url(' . $match[1] . self::external_asset_url( $url, $match[2] ) . $match[1] . ')' : $match[0] );
 			},
 			$css
 		);
 		return (string) preg_replace_callback(
 			'#@import\s+(["\'])(.*?)\1#is',
-			static function ( array $match ) use ( $base_url, $source_path, $paths ): string {
+			static function ( array $match ) use ( $base_url, $source_path, $paths, $external_assets ): string {
 				$url = self::resolve_url( $match[2], $base_url );
-				return isset( $paths[ $url ] ) ? '@import ' . $match[1] . self::relative_path( $source_path, $paths[ $url ] ) . $match[1] : $match[0];
+				return isset( $paths[ $url ] ) ? '@import ' . $match[1] . self::relative_path( $source_path, $paths[ $url ] ) . $match[1] : ( isset( $external_assets[ $url ] ) ? '@import ' . $match[1] . self::external_asset_url( $url, $match[2] ) . $match[1] : $match[0] );
 			},
 			$css
 		);
 	}
+
+	private static function external_asset_url( string $url, string $reference ): string { $fragment = parse_url( html_entity_decode( $reference, ENT_QUOTES | ENT_HTML5, 'UTF-8' ), PHP_URL_FRAGMENT ); return $url . ( is_string( $fragment ) && '' !== $fragment ? '#' . $fragment : '' ); }
 
 	private static function response_url( array $response, string $requested_url ): string {
 		$final_url = self::canonical_url( (string) ( $response['metadata']['final_url'] ?? '' ) );
@@ -724,9 +734,10 @@ class Static_Site_Importer_URL_Site_Collector {
 	}
 
 	/** @return array<string,string> */
-	private static function failure( string $url, WP_Error $error ): array {
+	private static function failure( string $url, WP_Error $error, string $kind = 'asset' ): array {
 		return array(
 			'url'     => $url,
+			'kind'    => $kind,
 			'code'    => $error->get_error_code(),
 			'message' => $error->get_error_message(),
 		);
