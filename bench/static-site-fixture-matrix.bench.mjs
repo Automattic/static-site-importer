@@ -96,6 +96,7 @@ export default async function runFixtureMatrixBench(context = {}) {
       visual_parity_evidence_report_markdown: { path: path.join(summary.output_directory, 'visual-parity-evidence-report.md') },
       visual_diff_classification: { path: path.join(summary.output_directory, 'visual-diff-classification.json') },
       surface_lineage_bundles: { path: path.join(summary.output_directory, 'surface-lineage-bundles.json') },
+      ...(summary.surface_lineage_artifacts || {}),
       gutenberg_incompatibility_registry: { path: path.join(summary.output_directory, 'gutenberg-incompatibility-registry.json') },
       gutenberg_incompatibility_registry_report: { path: path.join(summary.output_directory, 'gutenberg-incompatibility-registry.md') },
       ...(summary.visual_parity_artifacts || {}),
@@ -226,6 +227,7 @@ export async function runFixtureMatrix(options) {
   let collectedResult = written.result;
   let visualParityArtifacts = {};
   let editorCanvasArtifacts = {};
+  let surfaceLineageArtifacts = collectSurfaceLineageArtifacts(collectedResult);
   if (options.run) {
     const batchSize = positiveInteger(options.batchSize, DEFAULT_BATCH_SIZE);
     const concurrency = boundedConcurrency(options.concurrency, DEFAULT_BATCH_CONCURRENCY, MAX_BATCH_CONCURRENCY);
@@ -282,6 +284,7 @@ export async function runFixtureMatrix(options) {
     };
     const resultArtifactRewriteStartedAt = nowMs();
     writeFixtureMatrixResultArtifacts({ outputDirectory, matrix, result: collectedResult });
+    surfaceLineageArtifacts = collectSurfaceLineageArtifacts(collectedResult);
     performance.result_artifact_writing_ms = elapsedMs(resultArtifactRewriteStartedAt);
   }
 
@@ -315,7 +318,7 @@ export async function runFixtureMatrix(options) {
     output_directory: outputDirectory,
     recipe_file: recipeFile,
     replay,
-    artifact_refs: written.artifact_refs,
+    artifact_refs: [...written.artifact_refs, ...Object.entries(surfaceLineageArtifacts).map(([artifact_id, artifact]) => ({ artifact_id, kind: 'surface-lineage', path: artifact.path }))],
     metadata: {
       execution_requested: Boolean(options.run),
       execution_status: collectedResult.summary.execution_status,
@@ -331,6 +334,7 @@ export async function runFixtureMatrix(options) {
     result_file: path.join(outputDirectory, 'static-site-fixture-matrix-result.json'),
     visual_parity_artifacts: visualParityArtifacts,
     editor_canvas_artifacts: editorCanvasArtifacts,
+    surface_lineage_artifacts: surfaceLineageArtifacts,
     result_summary: collectedResult.summary,
     runtime: runtime ? runtimeSummary(runtime, runtimeError) : null,
   };
@@ -342,6 +346,12 @@ export async function runFixtureMatrix(options) {
   writeJsonArtifact(path.join(outputDirectory, 'cli-run.json'), summary);
   progress.emit('matrix', runtimeError ? 'failed' : 'completed');
   return { summary, runtimeError, runtime };
+}
+
+function collectSurfaceLineageArtifacts(result) {
+  return Object.fromEntries(arrayValue(result?.fixtures).flatMap((fixture) => arrayValue(fixture.artifact_refs)
+    .filter((ref) => ref?.kind === 'surface-lineage' && ref.artifact_id && ref.path)
+    .map((ref) => [ref.artifact_id, { path: ref.path }])));
 }
 
 function executionEvidenceMetadata(executionRequested) {
