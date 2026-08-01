@@ -84,6 +84,7 @@ import {
   fixtureMatrixHomeboySettings,
   fixtureMatrixRecipeInput,
   fixtureMatrixRunConfigFromEnv,
+  FIXTURE_MATRIX_RUN_FIELDS,
   normalizeFixtureMatrixRunConfig,
   resolveFixtureSearchRoots,
   wordpressServedPath,
@@ -3161,44 +3162,55 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   assert.ok(visualGateOptOutPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE=0'));
 });
 
-test('fixture matrix run configuration round-trips settings into bench recipes and gates', () => {
-  const config = normalizeFixtureMatrixRunConfig({
-    fixtureRoot: '/fixtures',
-    staticSiteImporterPath: '/static-site-importer',
-    run: true,
-    fixtureIds: 'one,two',
-    batchSize: '3',
-    concurrency: '4',
-    surfaceCoverage: '2',
-    maxExtraSurfaces: '2',
-    editorValidation: false,
-    visualParity: true,
-    visualParityGate: false,
-    pixelThreshold: '0.15',
-    minNativeRate: '0.9',
-  });
+test('fixture matrix run configuration covers every declared environment, bench, recipe, and gate projection', () => {
+  const input = Object.fromEntries(Object.entries(FIXTURE_MATRIX_RUN_FIELDS).map(([key, field]) => [key, fixtureMatrixRunConfigTestValue(key, field)]));
+  const config = normalizeFixtureMatrixRunConfig(input);
   const settings = fixtureMatrixHomeboySettings(config);
-  const bench = fixtureMatrixBenchOptions(fixtureMatrixRunConfigFromEnv({ HOMEBOY_SETTINGS_JSON: JSON.stringify({ bench_env: settings }) }));
+  const directEnv = Object.fromEntries(Object.entries(FIXTURE_MATRIX_RUN_FIELDS).map(([key, field]) => [field.env, fixtureMatrixRunConfigFallbackValue(key, field)]));
+  const fromSettings = fixtureMatrixRunConfigFromEnv({
+    ...directEnv,
+    HOMEBOY_SETTINGS_JSON: JSON.stringify({ bench_env: settings }),
+  });
+  const bench = fixtureMatrixBenchOptions(fromSettings);
 
-  assert.deepEqual(bench.fixtureIds, 'one,two');
-  assert.equal(bench.concurrency, 4);
-  assert.deepEqual(fixtureMatrixRecipeInput(bench), {
-    surfaceCoverage: 2,
-    maxExtraSurfaces: 2,
-    editorValidation: false,
-    visualParity: true,
-    pixelThreshold: 0.15,
-    maxExplanationElements: undefined,
-    maxExplanationCandidates: undefined,
-    explainSelectors: [],
-    liveWpParity: undefined,
-  });
-  assert.deepEqual(fixtureMatrixGateConfig(bench), {
-    visualParity: { threshold: 0.15, gate: false, alignment: undefined, maxVerticalShift: undefined, maxHorizontalShift: undefined, offsetTolerance: undefined, pixelmatchThreshold: undefined },
-    editorQuality: { minNativeRate: 0.9 },
-  });
+  assert.deepEqual(fromSettings, config, 'Homeboy bench settings override direct environment values for every declared field');
+  assert.deepEqual(bench, { ...config, fixtureIds: config.fixtureIds.join(',') }, 'every normalized field reaches the bench');
+  assert.deepEqual(fixtureMatrixRecipeInput(config), fixtureMatrixExpectedProjection(config, 'recipe'));
+  assert.deepEqual(fixtureMatrixGateConfig(config), fixtureMatrixExpectedProjection(config, 'gate'));
+  for (const [key, field] of Object.entries(FIXTURE_MATRIX_RUN_FIELDS)) {
+    assert.ok(Object.hasOwn(field, 'projections'), `${key} must explicitly declare its projection contract`);
+  }
   assert.throws(() => normalizeFixtureMatrixRunConfig({ fixtureRoot: '/fixtures', unknown: true }), /Unknown fixture matrix run configuration/);
 });
+
+function fixtureMatrixRunConfigTestValue(key, field) {
+  if (field.boolean) return key === 'editorValidation' || key === 'visualParityGate' ? 'false' : 'true';
+  if (field.list) return [`${key}-one`, ` ${key}-two `, `${key}-one`];
+  if (field.string) return `/${key}`;
+  if (field.integer) return String(field.integer.min === 0 ? 2 : 3);
+  return '1.5';
+}
+
+function fixtureMatrixRunConfigFallbackValue(key, field) {
+  if (field.boolean) return 'false';
+  if (field.list) return `${key}-fallback`;
+  if (field.string) return `/fallback-${key}`;
+  if (field.integer) return String(field.integer.min === 0 ? 1 : 2);
+  return '2.5';
+}
+
+function fixtureMatrixExpectedProjection(config, projection) {
+  const output = {};
+  for (const [key, field] of Object.entries(FIXTURE_MATRIX_RUN_FIELDS)) {
+    const target = field.projections?.[projection];
+    if (!target) continue;
+    const segments = target.split('.');
+    const leaf = segments.pop();
+    const parent = segments.reduce((value, segment) => (value[segment] ||= {}), output);
+    parent[leaf] = config[key];
+  }
+  return output;
+}
 
 test('fixture selection fails closed for execution and keeps empty dry-run planning explicit', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-empty-selection-'));
