@@ -76,6 +76,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			} catch ( InvalidArgumentException $error ) {
 				throw new InvalidArgumentException( $error->getMessage(), 0, $error );
 			}
+			$state['base_resolved'] = $resolved;
+			$state['base_resolved_hash'] = self::hash( $resolved );
 			$state['resolved'] = $resolved;
 			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'] );
 			$state['theme_dir'] = $theme_dir;
@@ -91,6 +93,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		$state['status'] = 'prepared';
 		$state['args']   = $args;
+		$state['preparation'] = array( 'canonical_validations' => 1, 'plan_resolutions' => 1, 'destination_preflights' => 1, 'immutable_projection_reused' => false );
 		return $state;
 	}
 
@@ -99,7 +102,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( 'prepared' !== ( $prepared['status'] ?? '' ) || ! isset( $prepared['plan'] ) || ! is_array( $prepared['plan'] ) ) {
 			return self::receipt( 'rejected', array( 'plan' => array(), 'plan_hash' => '', 'diagnostics' => array( array( 'reason_code' => 'invalid_prepared_state' ) ), 'applied' => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'runtime_declarations' => array( 'asset_publications' => array(), 'entity_bindings' => array() ) ), 'skipped' => array(), 'existing_matches' => array( 'pages' => array() ) ) );
 		}
-		$state = self::prepare( $prepared['plan'], isset( $prepared['args'] ) && is_array( $prepared['args'] ) ? $prepared['args'] : array() );
+		$state = self::refresh_prepared_destination( $prepared );
 		if ( 'prepared' !== ( $state['status'] ?? '' ) ) {
 			return $state['receipt'];
 		}
@@ -182,6 +185,65 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 
 		return self::receipt( 'completed', $state );
+	}
+
+	/**
+	 * Recheck mutable destinations without repeating canonical validation and resolution.
+	 *
+	 * @param array<string,mixed> $prepared Previously validated immutable projection.
+	 * @return array<string,mixed>
+	 */
+	private static function refresh_prepared_destination( array $prepared ): array {
+		$plan = $prepared['plan'] ?? null;
+		$base_resolved = $prepared['base_resolved'] ?? null;
+		$args = isset( $prepared['args'] ) && is_array( $prepared['args'] ) ? $prepared['args'] : array();
+		if ( ! is_array( $plan ) || ! is_array( $base_resolved ) || self::hash( $plan ) !== ( $prepared['plan_hash'] ?? '' ) || self::hash( $base_resolved ) !== ( $prepared['base_resolved_hash'] ?? '' ) ) {
+			return array( 'status' => 'rejected', 'receipt' => self::receipt( 'rejected', array( 'plan' => is_array( $plan ) ? $plan : array(), 'plan_hash' => '', 'diagnostics' => array( array( 'reason_code' => 'prepared_projection_changed' ) ), 'applied' => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'runtime_declarations' => array( 'asset_publications' => array(), 'entity_bindings' => array() ) ), 'skipped' => array(), 'existing_matches' => array( 'pages' => array() ) ) ) );
+		}
+
+		$slug = sanitize_key( (string) ( $args['slug'] ?? '' ) );
+		$theme_root = get_theme_root();
+		$theme_uri = trailingslashit( get_theme_root_uri() ) . $slug;
+		$theme_dir = is_string( $theme_root ) ? trailingslashit( $theme_root ) . $slug : '';
+		$state = array(
+			'plan' => $plan,
+			'plan_hash' => $prepared['plan_hash'],
+			'base_resolved' => $base_resolved,
+			'base_resolved_hash' => $prepared['base_resolved_hash'],
+			'resolved' => $base_resolved,
+			'diagnostics' => array(),
+			'applied' => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'runtime_declarations' => array( 'asset_publications' => array(), 'entity_bindings' => array() ) ),
+			'skipped' => array(),
+			'existing_matches' => array( 'pages' => array() ),
+			'report_destinations' => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
+			'theme_dir' => $theme_dir,
+			'theme' => array( 'slug' => $slug, 'dir' => $theme_dir, 'uri' => $theme_uri ),
+			'args' => $args,
+			'preparation' => array( 'canonical_validations' => 1, 'plan_resolutions' => 1, 'destination_preflights' => 2, 'immutable_projection_reused' => true ),
+		);
+
+		try {
+			if ( '' === $slug ) {
+				throw new InvalidArgumentException( 'invalid_theme_slug' );
+			}
+			if ( ! is_string( $theme_root ) || ! is_dir( $theme_root ) || ! is_writable( $theme_root ) ) {
+				throw new InvalidArgumentException( 'theme_destination_not_ready' );
+			}
+			if ( is_link( $theme_dir ) || ( file_exists( $theme_dir ) && ! is_dir( $theme_dir ) ) ) {
+				throw new InvalidArgumentException( 'unsafe_theme_destination' );
+			}
+			if ( $theme_dir !== ( $prepared['theme']['dir'] ?? null ) || $theme_uri !== ( $prepared['theme']['uri'] ?? null ) ) {
+				throw new InvalidArgumentException( 'prepared_destination_changed' );
+			}
+			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'] );
+			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
+		} catch ( InvalidArgumentException $error ) {
+			$state['diagnostics'][] = array( 'reason_code' => $error->getMessage() );
+			return array( 'status' => 'rejected', 'receipt' => self::receipt( 'rejected', $state ) );
+		}
+
+		$state['status'] = 'prepared';
+		return $state;
 	}
 
 	/** @param array<string,mixed> $state */
@@ -673,6 +735,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'operations'                => $state['applied']['operations'],
 			'skipped_targets'           => $state['skipped'],
 			'existing_matches'          => $state['existing_matches'],
+			'preparation'               => $state['preparation'] ?? array(),
 			'diagnostics'               => $state['diagnostics'],
 			'errors'                    => $errors,
 		);

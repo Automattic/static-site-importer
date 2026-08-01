@@ -334,6 +334,7 @@ $assert( str_contains( file_get_contents( $publication_file ), 'https://example.
 $GLOBALS['ssi_plan_options'] = array( 'show_on_front' => 'posts', 'page_on_front' => 0, 'blogname' => 'Before' );
 $preview = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan', 'overwrite' => true ) );
 $assert( 'completed' === $preview['status'], 'preview materialization completes' );
+$assert( array( 'canonical_validations' => 1, 'plan_resolutions' => 1, 'destination_preflights' => 2, 'immutable_projection_reused' => true ) === ( $preview['preparation'] ?? array() ), 'materialization reuses one immutable projection while repeating destination preflight' );
 $assert( 'posts' === $GLOBALS['ssi_plan_options']['show_on_front'] && ! isset( $GLOBALS['ssi_plan_options']['stylesheet'] ), 'activate=false preserves runtime options' );
 $activated = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan', 'overwrite' => true, 'activate' => true, 'site_title' => 'Activated Plan' ) );
 $assert( 'site-plan' === $GLOBALS['ssi_plan_options']['stylesheet'] && 'page' === $GLOBALS['ssi_plan_options']['show_on_front'] && 'Activated Plan' === $GLOBALS['ssi_plan_options']['blogname'], 'activate=true applies theme title and reading policy' );
@@ -350,6 +351,17 @@ $rejected = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( 
 $assert( 'rejected' === $rejected['status'], 'invalid plan is rejected' );
 $assert( $before_posts === count( $GLOBALS['ssi_plan_posts'] ), 'invalid plan creates no posts' );
 $assert( $before_files === count( glob( $GLOBALS['ssi_plan_root'] . '/reject/**/*' ) ?: array() ), 'invalid plan writes no files' );
+
+$tampered_prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare( $plan, array( 'slug' => 'tampered-prepared', 'overwrite' => true ) );
+$tampered_prepared['base_resolved']['pages'][0]['resolved_block_markup'] .= '<p>tampered</p>';
+$tampered_result = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $tampered_prepared );
+$assert( 'rejected' === $tampered_result['status'] && 'prepared_projection_changed' === ( $tampered_result['diagnostics'][0]['reason_code'] ?? '' ), 'changed immutable prepared projections are rejected before mutation' );
+
+$destination_prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare( $plan, array( 'slug' => 'changed-prepared-destination', 'overwrite' => true ) );
+symlink( sys_get_temp_dir(), $GLOBALS['ssi_plan_root'] . '/changed-prepared-destination' );
+$destination_changed = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $destination_prepared );
+unlink( $GLOBALS['ssi_plan_root'] . '/changed-prepared-destination' );
+$assert( 'rejected' === $destination_changed['status'] && 'unsafe_theme_destination' === ( $destination_changed['diagnostics'][0]['reason_code'] ?? '' ), 'mutable destination safety is rechecked immediately before writes' );
 
 $unsafe = $GLOBALS['ssi_plan_root'] . '/unsafe';
 mkdir( $unsafe, 0777, true );
