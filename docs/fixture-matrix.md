@@ -615,6 +615,32 @@ optional animated-media policy to every front and secondary surface comparison.
 
 ## Running the Matrix
 
+## Runtime Media Presentation Evidence
+
+`SSI_FIXTURE_MATRIX_RUNTIME_PRESENTATION_EVIDENCE=1` (or
+`--runtime-presentation-evidence true`) adds an opt-in `wordpress.browser-probe`
+before `static-site-importer validate-artifact`. The probe waits for explicit
+`networkidle` readiness and requests only the Blocks Engine v1 media observation
+shape: Chromium/version, viewport/DPR, source path and stable selector, normalized
+asset hash, intrinsic/rendered dimensions, transform matrix/origin, and nearest
+clipping bounds. Default static intake does not add this step or alter artifacts.
+
+Replay for mrfoxtalbot:
+
+```sh
+SSI_FIXTURE_MATRIX_RUNTIME_PRESENTATION_EVIDENCE=1 \
+node bench/static-site-fixture-matrix.bench.mjs --run \
+  --fixture-ids mrfoxtalbot --fixture-root <fixtures> \
+  --static-site-importer-path /Users/chubes/Developer/static-site-importer@feat-796-runtime-media-evidence
+```
+
+The current WP Codebox public contract cannot write the evaluated typed envelope
+to a caller-selected artifact path for a following recipe step to merge into
+`artifact.json`. SSI therefore records
+`runtime_presentation_evidence_unavailable` rather than claiming compiler input.
+The required WP Codebox primitive is: a recipe browser command that writes its
+typed page-evaluation result to a caller-selected artifact path.
+
 The wrapper has three execution modes. Use `--dry-run` with any mode to inspect
 the composed Homeboy commands before running the matrix.
 

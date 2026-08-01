@@ -82,6 +82,9 @@ import {
   resolveFixtureSearchRoots,
   wordpressServedPath,
   writeFixtureMatrixArtifacts,
+  RUNTIME_PRESENTATION_EVIDENCE_SCHEMA,
+  RUNTIME_PRESENTATION_EVIDENCE_UNAVAILABLE,
+  collectRuntimePresentationEvidence,
 } from '../lib/fixture-matrix.mjs';
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
 import { collectQualityMetrics } from '../lib/fixture-matrix/collectors/quality-metrics.mjs';
@@ -590,6 +593,32 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
     target: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/artifact.json',
   });
   assert.deepEqual(recipe.inputs.mounts, []);
+});
+
+test('runtime presentation evidence is opt-in, precedes compilation, and has a replayable Codebox probe', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'runtime-presentation-evidence' });
+  const defaultRecipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', staticSiteImporterPath: '/tmp/static-site-importer' });
+  assert.equal(defaultRecipe.workflow.steps.some((step) => step.metadata?.phase === 'runtime-presentation-evidence'), false);
+
+  const recipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', staticSiteImporterPath: '/tmp/static-site-importer', runtimePresentationEvidence: true });
+  const probeIndex = recipe.workflow.steps.findIndex((step) => step.metadata?.phase === 'runtime-presentation-evidence');
+  const importIndex = recipe.workflow.steps.findIndex((step) => /static-site-importer validate-artifact/.test(step.args?.[0] || ''));
+  const probe = recipe.workflow.steps[probeIndex];
+  assert.ok(probeIndex >= 0 && probeIndex < importIndex);
+  assert.equal(probe.command, 'wordpress.browser-probe');
+  assert.ok(probe.args.includes('wait-for=networkidle'));
+  assert.match(probe.args.find((arg) => arg.startsWith('script=')), new RegExp(RUNTIME_PRESENTATION_EVIDENCE_SCHEMA));
+  assert.match(probe.args.find((arg) => arg.startsWith('script=')), /asset_hash/);
+});
+
+test('runtime presentation evidence intake preserves a typed envelope and diagnoses the missing Codebox persistence primitive', () => {
+  const unavailable = collectRuntimePresentationEvidence([{ command: 'wordpress.browser-probe', metadata: { phase: 'runtime-presentation-evidence' } }]);
+  assert.equal(unavailable.evidence, null);
+  assert.equal(unavailable.diagnostics[0].kind, RUNTIME_PRESENTATION_EVIDENCE_UNAVAILABLE);
+  assert.match(unavailable.diagnostics[0].required_wp_codebox_primitive, /caller-selected artifact path/);
+
+  const envelope = { schema: RUNTIME_PRESENTATION_EVIDENCE_SCHEMA, provenance: { browser: { name: 'Chromium', version: '126' }, viewport: { width: 1280, height: 1600, device_scale_factor: 1 }, lifecycle: { phase: 'network-idle' } }, observations: [] };
+  assert.deepEqual(collectRuntimePresentationEvidence([envelope]), { evidence: envelope, diagnostics: [] });
 });
 
 test('fixture manifests explicitly opt into unproven dynamic client assets', () => {

@@ -194,6 +194,7 @@ export async function runFixtureMatrix(options) {
     matrix,
     ...visualParityRecipeInput(options),
     ...liveWpParityRecipeInput(options),
+    ...runtimePresentationEvidenceRecipeInput(options),
   });
   performance.artifact_writing_ms = elapsedMs(artifactWriteStartedAt);
   const recipe = buildFixtureMatrixRecipe({
@@ -214,6 +215,7 @@ export async function runFixtureMatrix(options) {
     ...surfaceCoverageRecipeInput(options),
     ...visualParityRecipeInput(options),
     ...liveWpParityRecipeInput(options),
+    ...runtimePresentationEvidenceRecipeInput(options),
   });
   const recipeFile = path.join(outputDirectory, 'wp-codebox-static-site-fixture-matrix-recipe.json');
   writeJsonArtifact(recipeFile, recipe);
@@ -1534,6 +1536,7 @@ export function optionsFromEnv(env = process.env) {
     // visual-parity-gate truthy env mapping. When on, the recipe appends the
     // capture-html step and the result collector runs the live-wp-parity comparator.
     liveWpParity: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_LIVE_WP_PARITY) || isTruthy(env.SSI_FIXTURE_MATRIX_LIVE_WP_PARITY),
+    runtimePresentationEvidence: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_RUNTIME_PRESENTATION_EVIDENCE) || isTruthy(env.SSI_FIXTURE_MATRIX_RUNTIME_PRESENTATION_EVIDENCE),
     pixelThreshold: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD,
     visualParityAlignment: optionalBoolean(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_ALIGNMENT ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_ALIGNMENT),
     visualParityMaxVerticalShift: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_VERTICAL_SHIFT || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_VERTICAL_SHIFT,
@@ -1607,6 +1610,10 @@ function liveWpParityRecipeInput(options) {
   return {
     liveWpParity: options.liveWpParity === true,
   };
+}
+
+function runtimePresentationEvidenceRecipeInput(options) {
+  return { runtimePresentationEvidence: isTruthy(options.runtimePresentationEvidence) };
 }
 
 // Live-WP parity result-collector option. Off by default. When on, supplies the
