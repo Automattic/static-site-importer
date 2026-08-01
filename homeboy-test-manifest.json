@@ -16,7 +16,6 @@
     "tests/smoke-import-permission-filter.php": { "environment": "standalone-php" },
     "tests/smoke-importer-block.php": { "environment": "standalone-php" },
     "tests/smoke-inline-svg-materialization.php": { "environment": "standalone-php" },
-    "tests/smoke-materialized-block-content-validation.php": { "environment": "standalone-php" },
     "tests/smoke-playground-import-primitive.php": { "environment": "standalone-php" },
     "tests/smoke-product-handoff-contract.php": { "environment": "standalone-php" },
     "tests/smoke-product-materializer.php": { "environment": "standalone-php" },

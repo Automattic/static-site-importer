@@ -35,6 +35,12 @@ $GLOBALS['ssi_upload_dir']       = sys_get_temp_dir() . '/ssi-smoke-uploads-' . 
 
 defined( 'WEEK_IN_SECONDS' ) || define( 'WEEK_IN_SECONDS', 7 * 24 * 60 * 60 );
 
+if ( ! function_exists( 'wp_generate_uuid4' ) ) {
+	function wp_generate_uuid4(): string {
+		return '00000000-0000-4000-8000-000000000000';
+	}
+}
+
 if ( ! function_exists( 'register_block_type' ) ) {
 	function register_block_type( string $path, array $args = array() ): bool {
 		$GLOBALS['ssi_registered_block'] = array(
