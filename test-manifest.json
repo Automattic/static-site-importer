@@ -36,6 +36,7 @@
     { "path": "tests/smoke-website-artifact-import-input.php", "environment": "standalone-php" },
     { "path": "tests/smoke-wordpress-site-plan-materializer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-source-of-truth-manifest.php", "environment": "wordpress-runtime" },
+    { "path": "tests/smoke-rest-import-normalization.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-static-interactive-artifact.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-website-artifact-document-metadata.php", "environment": "wordpress-runtime" },
     { "path": "tests/StaticSiteImporterFallbackDiagnosticsTest.php", "environment": "wordpress-runtime", "command": ["phpunit", "tests/StaticSiteImporterFallbackDiagnosticsTest.php"] },
