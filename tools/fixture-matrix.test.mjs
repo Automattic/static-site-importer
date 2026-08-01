@@ -6407,7 +6407,27 @@ test('surface lineage persists reviewer-facing visual refs and explicit absent-a
   assert.deepEqual(surface.artifacts.map((ref) => ref.path).sort(), ['files/browser/candidate.png', 'files/browser/diff.png', 'files/browser/editor/state.json', 'files/browser/source.png']);
   assert.deepEqual(surface.blind_spots.map((spot) => spot.kind), ['dom_attribution_absent', 'css_selector_attribution_absent']);
   const persisted = JSON.parse(readFileSync(path.join(outputDirectory, 'static-site-fixture-matrix-result.json'), 'utf8'));
-  assert.ok(persisted.fixtures[0].artifact_refs.some((ref) => ref.artifact_id === 'surface-lineage--front-page-d365228668b8'));
+  assert.ok(persisted.fixtures[0].artifact_refs.some((ref) => ref.kind === 'surface-lineage' && ref.artifact_id.startsWith('surface_lineage_simple-site-') && ref.artifact_id.endsWith('_front-page-d365228668b8')));
+});
+
+test('surface lineage artifact refs are fixture-scoped for globally resolvable export', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-surface-lineage-refs-'));
+  const baseMatrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'surface-lineage-ref-test' });
+  const fixture = baseMatrix.fixtures[0];
+  const matrix = {
+    ...baseMatrix,
+    fixtures: [fixture, { ...fixture, id: '89-static-site-importer-architecture' }],
+    count: 2,
+  };
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: matrix.fixtures.map((entry) => ({ fixture_id: entry.id, status: 'passed' })),
+  });
+
+  writeFixtureMatrixResultArtifacts({ outputDirectory, matrix, result });
+  const refs = result.fixtures.slice(0, 2).flatMap((fixture) => fixture.artifact_refs.filter((ref) => ref.kind === 'surface-lineage'));
+  assert.equal(new Set(refs.map((ref) => ref.artifact_id)).size, refs.length);
+  assert.ok(refs.every((ref) => existsSync(ref.path)));
 });
 
 test('surface lineage slugs hostile route IDs without changing their logical identity', () => {
@@ -6420,7 +6440,7 @@ test('surface lineage slugs hostile route IDs without changing their logical ide
   }] });
   writeFixtureMatrixResultArtifacts({ outputDirectory, matrix, result });
   const bundle = result.fixtures[0].surface_lineage.find((surface) => surface.surface.id === hostileId);
-  const ref = result.fixtures[0].artifact_refs.find((item) => item.artifact_id === `surface-lineage--${bundle.surface.artifact_slug}`);
+  const ref = result.fixtures[0].artifact_refs.find((item) => item.kind === 'surface-lineage' && item.path.endsWith(`surface-lineage--${bundle.surface.artifact_slug}.json`));
   assert.match(bundle.surface.artifact_slug, /^[a-z0-9-]+-[a-f0-9]{12}$/);
   assert.equal(ref.path.includes(hostileId), false);
   assert.equal(path.dirname(ref.path), path.join(outputDirectory, 'simple-site'));
