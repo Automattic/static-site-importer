@@ -19,7 +19,10 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		'slug'                         => array( 'type' => 'string' ),
 		'name'                         => array( 'type' => 'string' ),
 		'site_title'                   => array( 'type' => 'string' ),
-		'stale_page_action'            => array( 'type' => 'string', 'enum' => array( 'report_only', 'draft' ) ),
+		'stale_page_action'            => array(
+			'type' => 'string',
+			'enum' => array( 'report_only', 'draft' ),
+		),
 		'activate'                     => array( 'type' => 'boolean' ),
 		'overwrite'                    => array( 'type' => 'boolean' ),
 		'fail_on_quality'              => array( 'type' => 'boolean' ),
@@ -31,7 +34,10 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		'commerce_context'             => array( 'type' => 'object' ),
 		'report'                       => array( 'type' => 'string' ),
 		'write_theme_report_artifacts' => array( 'type' => 'boolean' ),
-		'asset_materialization_policy' => array( 'type' => 'string', 'enum' => array( 'copy_to_theme', 'use_map' ) ),
+		'asset_materialization_policy' => array(
+			'type' => 'string',
+			'enum' => array( 'copy_to_theme', 'use_map' ),
+		),
 		'asset_map'                    => array( 'type' => 'object' ),
 		'compiler_options'             => array( 'type' => 'object' ),
 		'source_metadata'              => array( 'type' => 'object' ),

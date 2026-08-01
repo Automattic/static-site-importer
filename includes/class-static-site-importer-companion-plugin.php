@@ -78,7 +78,14 @@ class Static_Site_Importer_Companion_Plugin {
 					return new WP_Error( 'static_site_importer_companion_plugin_block_json_name_invalid', sprintf( 'Block %s must declare a valid WordPress block name.', $name ) );
 				}
 				if ( str_starts_with( $declared_name, 'core/' ) ) {
-					return new WP_Error( 'static_site_importer_companion_plugin_block_json_name_reserved', sprintf( 'Block %s cannot declare the reserved WordPress core block name %s.', $name, $declared_name ), array( 'block' => $name, 'block_name' => $declared_name ) );
+					return new WP_Error(
+						'static_site_importer_companion_plugin_block_json_name_reserved',
+						sprintf( 'Block %s cannot declare the reserved WordPress core block name %s.', $name, $declared_name ),
+						array(
+							'block'      => $name,
+							'block_name' => $declared_name,
+						)
+					);
 				}
 			}
 			$effective_name = '' !== $declared_name ? $declared_name : $namespace . '/' . $name;
@@ -86,7 +93,7 @@ class Static_Site_Importer_Companion_Plugin {
 				return new WP_Error( 'static_site_importer_companion_plugin_block_json_name_invalid', sprintf( 'Block %s resolves to a duplicate WordPress block name.', $name ) );
 			}
 			$block_names[ $effective_name ] = true;
-			$assets = $block['assets'] ?? array();
+			$assets                         = $block['assets'] ?? array();
 			if ( ! is_array( $assets ) || array_is_list( $assets ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_assets_invalid', sprintf( 'Block %s assets must be an object.', $name ) );
 			}
@@ -148,8 +155,8 @@ class Static_Site_Importer_Companion_Plugin {
 			);
 		}
 
-		$mu_plugin       = ! empty( $payload['mu_plugin'] );
-		$site_name       = self::site_name( $payload, $site_slug );
+		$mu_plugin = ! empty( $payload['mu_plugin'] );
+		$site_name = self::site_name( $payload, $site_slug );
 
 		$files       = array();
 		$block_names = array();
@@ -181,18 +188,18 @@ class Static_Site_Importer_Companion_Plugin {
 		);
 
 		$descriptor = array(
-			'schema'         => self::PAYLOAD_SCHEMA,
-			'slug'           => $plugin_slug,
-			'namespace'      => $block_namespace,
-			'site_slug'      => $site_slug,
-			'plugin_file'    => $main_file,
-			'mu_plugin'      => $mu_plugin,
-			'block_names'    => $block_names,
+			'schema'          => self::PAYLOAD_SCHEMA,
+			'slug'            => $plugin_slug,
+			'namespace'       => $block_namespace,
+			'site_slug'       => $site_slug,
+			'plugin_file'     => $main_file,
+			'mu_plugin'       => $mu_plugin,
+			'block_names'     => $block_names,
 			// Handles of preserved island scripts the plugin carries + enqueues
 			// scoped. Exposed so the gate/diagnostics can account for preserved
 			// island JS as companion-plugin-carried (theme-independent) rather
 			// than theme-coupled.
-			'island_handles' => array_map(
+			'island_handles'  => array_map(
 				static fn ( array $island ): string => (string) $island['handle'],
 				$preserved
 			),
@@ -205,8 +212,8 @@ class Static_Site_Importer_Companion_Plugin {
 				),
 				$preserved
 			),
-			'loader_file'    => '',
-			'files'          => $files,
+			'loader_file'     => '',
+			'files'           => $files,
 		);
 
 		if ( $mu_plugin ) {
@@ -343,7 +350,7 @@ class Static_Site_Importer_Companion_Plugin {
 
 		$declared_name = is_string( $block['block_json']['name'] ?? null ) ? $block['block_json']['name'] : '';
 		$block_name    = preg_match( '/^[a-z0-9-]+\/[a-z0-9-]+$/', $declared_name ) ? $declared_name : $block_namespace . '/' . $name;
-		$args           = self::block_args( $block, $block_name );
+		$args          = self::block_args( $block, $block_name );
 		if ( is_wp_error( $args ) ) {
 			return $args;
 		}
@@ -368,12 +375,12 @@ class Static_Site_Importer_Companion_Plugin {
 		}
 		$metadata = isset( $block['block_json'] ) && is_array( $block['block_json'] ) && ! array_is_list( $block['block_json'] );
 		if ( $metadata ) {
-			$block_json           = $block['block_json'];
-			$block_json['name']   = $block_name;
+			$block_json         = $block['block_json'];
+			$block_json['name'] = $block_name;
 			if ( $has_render ) {
 				$block_json['render'] = 'file:./render.php';
 			}
-			$json                 = wp_json_encode( $block_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+			$json = wp_json_encode( $block_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 			if ( false === $json ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_block_json_invalid', sprintf( 'Block %s block_json could not be encoded.', $block_name ) );
 			}
@@ -384,9 +391,9 @@ class Static_Site_Importer_Companion_Plugin {
 			'block_name' => $block_name,
 			'dir'        => $name,
 			'spec'       => array(
-				'name' => $block_name,
-				'dir'  => $name,
-				'args' => $args,
+				'name'     => $block_name,
+				'dir'      => $name,
+				'args'     => $args,
 				'metadata' => $metadata,
 			),
 			'files'      => $files,

@@ -443,10 +443,14 @@ class Static_Site_Importer_Figma_Import {
 			return new WP_Error( 'static_site_importer_figma_transform_failed', 'Blocks Engine Figma transformer returned an invalid result.', array( 'status' => 500 ) );
 		}
 		if ( isset( $transform['status'] ) && 'failed' === (string) $transform['status'] ) {
-			return new WP_Error( 'static_site_importer_figma_transform_failed', 'Blocks Engine Figma transformer failed.', array(
-				'status'    => 500,
-				'transform' => $transform,
-			) );
+			return new WP_Error(
+				'static_site_importer_figma_transform_failed',
+				'Blocks Engine Figma transformer failed.',
+				array(
+					'status'    => 500,
+					'transform' => $transform,
+				)
+			);
 		}
 
 		$files = self::normalize_files( isset( $transform['files'] ) && is_array( $transform['files'] ) ? $transform['files'] : array(), 'website/' );
@@ -747,7 +751,7 @@ class Static_Site_Importer_Figma_Import {
 		}
 
 		static $results = array();
-		$key = md5( serialize( $command ) );
+		$key            = md5( serialize( $command ) );
 		if ( array_key_exists( $key, $results ) ) {
 			return $results[ $key ];
 		}

@@ -17,11 +17,11 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	/**
 	 * Build stylesheet writes for a generated block theme.
 	 *
-	 * @param string                  $theme_dir            Theme directory.
-	 * @param string                  $theme_name           Theme name.
-	 * @param string                  $css                  Source CSS.
+	 * @param string                            $theme_dir            Theme directory.
+	 * @param string                            $theme_name           Theme name.
+	 * @param string                            $css                  Source CSS.
 	 * @param array<string,array<string,mixed>> $assets Materialized asset map.
-	 * @param array<string,array<int,string>> $visual_repair_styles Visual repair CSS content by target.
+	 * @param array<string,array<int,string>>   $visual_repair_styles Visual repair CSS content by target.
 	 * @return array<string,string> Absolute stylesheet write paths mapped to file contents.
 	 */
 	public static function stylesheet_writes(

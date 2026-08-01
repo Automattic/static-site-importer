@@ -59,9 +59,3 @@ parameters:
 			identifier: argument.type
 			count: 1
 			path: includes/class-static-site-importer-page-materializer.php
-
-		-
-			message: '#.*#'
-			identifier: argument.type
-			count: 2
-			path: includes/class-static-site-importer-transformer-adapter.php
