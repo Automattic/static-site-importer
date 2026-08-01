@@ -24,6 +24,7 @@ $GLOBALS['ssi_plan_meta']       = array();
 $GLOBALS['ssi_plan_options']    = array( 'show_on_front' => 'posts', 'page_on_front' => 0, 'blogname' => 'Before' );
 $GLOBALS['ssi_plan_fail_after'] = 0;
 $GLOBALS['ssi_plan_font_requests'] = array();
+$GLOBALS['wp_smiliessearch']       = '/(?<!\\S):\\)(?=\\s|$)/';
 mkdir( $GLOBALS['ssi_plan_root'], 0777, true );
 
 class WP_Error {
@@ -140,6 +141,30 @@ $unbound_provenance = $receipt['completed']['block_provenance'] ?? array();
 $assert( count( $plan['pages'] ) === count( $unbound_provenance ) && count( $plan['pages'] ) === ( $receipt['completed']['block_provenance_count'] ?? 0 ), 'ordinary resolved pages receive receipt provenance without runtime bindings' );
 $assert( 'blocks-engine/wordpress-site-plan-resolver' === ( $unbound_provenance[0]['stages'][0]['stage'] ?? '' ) && hash( 'sha256', $receipt['plan']['pages'][0]['resolved_block_markup'] ) === ( $unbound_provenance[0]['stages'][0]['output']['sha256'] ?? '' ), 'ordinary page provenance records the resolver output hash' );
 $assert( false === ( $receipt['completed']['block_provenance_truncated'] ?? true ) && ! str_contains( (string) wp_json_encode( $unbound_provenance ), (string) $receipt['plan']['pages'][0]['resolved_block_markup'] ), 'provenance uses structural evidence without raw page markup' );
+
+$smilie_plan = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array( 'index.html' => '<main><h1>Imported heading :)</h1></main>' ),
+	)
+)->toArray()['source_reports']['wordpress_site_plan'];
+$smilie_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $smilie_plan, array( 'slug' => 'smilie-plan' ) );
+$smilie_post_id = (int) ( $smilie_receipt['completed']['pages']['index.html'] ?? 0 );
+$smilie_markup  = (string) ( $GLOBALS['ssi_plan_posts'][ $smilie_post_id ]['post_content'] ?? '' );
+$smilie_requests = 0;
+$smilie_frontend = preg_replace_callback(
+	$GLOBALS['wp_smiliessearch'],
+	static function () use ( &$smilie_requests ): string {
+		++$smilie_requests;
+		return '<img src="https://s.w.org/images/core/emoji/15.1.0/svg/1f642.svg" class="wp-smiley" />';
+	},
+	$smilie_markup
+);
+$assert( 'completed' === $smilie_receipt['status'] && str_contains( $smilie_markup, '&#58;&#41;' ), 'literal smiley source is encoded before the WordPress page write' );
+$assert( 0 === $smilie_requests && false === str_contains( (string) $smilie_frontend, 's.w.org' ) && str_contains( html_entity_decode( (string) $smilie_frontend, ENT_QUOTES | ENT_HTML5 ), 'Imported heading :)' ), 'materialized literal smiley renders as text without an external emoji request' );
+$assert( array( 'schema' => 'static-site-importer/content-materialization-policy/v1', 'literal_text' => 'preserve', 'smilies' => 'disabled' ) === ( $smilie_receipt['completed']['content_materialization_policy'] ?? null ), 'receipt records the SSI-owned literal-text materialization policy' );
+$smilie_provenance = $smilie_receipt['completed']['block_provenance'][0]['stages'] ?? array();
+$assert( 'static-site-importer/content-materialization-policy' === ( $smilie_provenance[1]['stage'] ?? '' ) && ( $smilie_receipt['completed']['materialized_pages']['index.html']['content_hash'] ?? '' ) === ( $smilie_provenance[1]['output']['sha256'] ?? '' ), 'receipt provenance records the policy-owned post-content transform' );
 
 $font_result = ( new ArtifactCompiler() )->compile(
 	array(
