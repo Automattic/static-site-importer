@@ -105,7 +105,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	/** @param array<string,mixed> $prepared @return array<string,mixed> */
 	public static function materialize_prepared( array $prepared ): array {
 		if ( 'prepared' !== ( $prepared['status'] ?? '' ) || ! isset( $prepared['plan'] ) || ! is_array( $prepared['plan'] ) ) {
-			return self::receipt( 'rejected', array( 'plan' => array(), 'plan_hash' => '', 'diagnostics' => array( array( 'reason_code' => 'invalid_prepared_state' ) ), 'applied' => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'runtime_declarations' => array( 'asset_publications' => array(), 'entity_bindings' => array() ) ), 'skipped' => array(), 'existing_matches' => array( 'pages' => array() ) ) );
+			return self::receipt( 'rejected', array( 'plan' => array(), 'plan_hash' => '', 'diagnostics' => array( array( 'reason_code' => 'invalid_prepared_state' ) ), 'applied' => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'content_materialization_policy' => self::CONTENT_MATERIALIZATION_POLICY, 'runtime_declarations' => array( 'asset_publications' => array(), 'entity_bindings' => array() ) ), 'skipped' => array(), 'existing_matches' => array( 'pages' => array() ) ) );
 		}
 		$state = self::refresh_prepared_destination( $prepared );
 		if ( 'prepared' !== ( $state['status'] ?? '' ) ) {
@@ -213,7 +213,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$base_resolved = $prepared['base_resolved'] ?? null;
 		$args = isset( $prepared['args'] ) && is_array( $prepared['args'] ) ? $prepared['args'] : array();
 		if ( ! is_array( $plan ) || ! is_array( $base_resolved ) || self::hash( $plan ) !== ( $prepared['plan_hash'] ?? '' ) || self::hash( $base_resolved ) !== ( $prepared['base_resolved_hash'] ?? '' ) ) {
-			return array( 'status' => 'rejected', 'receipt' => self::receipt( 'rejected', array( 'plan' => is_array( $plan ) ? $plan : array(), 'plan_hash' => '', 'diagnostics' => array( array( 'reason_code' => 'prepared_projection_changed' ) ), 'applied' => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'runtime_declarations' => array( 'asset_publications' => array(), 'entity_bindings' => array() ) ), 'skipped' => array(), 'existing_matches' => array( 'pages' => array() ) ) ) );
+			return array( 'status' => 'rejected', 'receipt' => self::receipt( 'rejected', array( 'plan' => is_array( $plan ) ? $plan : array(), 'plan_hash' => '', 'diagnostics' => array( array( 'reason_code' => 'prepared_projection_changed' ) ), 'applied' => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'content_materialization_policy' => self::CONTENT_MATERIALIZATION_POLICY, 'runtime_declarations' => array( 'asset_publications' => array(), 'entity_bindings' => array() ) ), 'skipped' => array(), 'existing_matches' => array( 'pages' => array() ) ) ) );
 		}
 
 		$slug = sanitize_key( (string) ( $args['slug'] ?? '' ) );
@@ -227,7 +227,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'base_resolved_hash' => $prepared['base_resolved_hash'],
 			'resolved' => $base_resolved,
 			'diagnostics' => array(),
-			'applied' => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'runtime_declarations' => array( 'asset_publications' => array(), 'entity_bindings' => array() ) ),
+			'applied' => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'content_materialization_policy' => self::CONTENT_MATERIALIZATION_POLICY, 'runtime_declarations' => array( 'asset_publications' => array(), 'entity_bindings' => array() ) ),
 			'skipped' => array(),
 			'existing_matches' => array( 'pages' => array() ),
 			'report_destinations' => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
