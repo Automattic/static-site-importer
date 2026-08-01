@@ -493,7 +493,23 @@ class Static_Site_Importer_URL_Site_Collector {
 				}
 			}
 		}
-		return array_values( array_unique( array_merge( $urls, self::css_asset_urls( $html, $base_url ) ) ) );
+		return array_values( array_unique( array_merge( $urls, self::html_css_asset_urls( $html, $base_url ) ) ) );
+	}
+
+	/** @return array<int,string> */
+	private static function html_css_asset_urls( string $html, string $base_url ): array {
+		$css = array();
+		preg_match_all( '#<style\b[^>]*>(.*?)</style>#is', $html, $style_blocks );
+		$css = array_merge( $css, $style_blocks[1] ?? array() );
+		preg_match_all( '#<[^>]+\bstyle\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))#is', $html, $style_attributes, PREG_SET_ORDER );
+		foreach ( $style_attributes as $attribute ) {
+			$css[] = self::matched_attribute_value( $attribute, 1 );
+		}
+		$urls = array();
+		foreach ( $css as $source ) {
+			$urls = array_merge( $urls, self::css_asset_urls( (string) $source, $base_url ) );
+		}
+		return array_values( array_unique( $urls ) );
 	}
 
 	/** @return array<int,string> */

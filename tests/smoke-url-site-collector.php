@@ -51,7 +51,7 @@ $responses = array(
 	),
 	'https://example.test/' => array(
 		'content_type' => 'text/html; charset=utf-8',
-		'body'         => '<!doctype html><html><head><link rel="canonical" href="/"><link rel="stylesheet" href="/files/main.css?v=1"><script src="/platform-runtime.js"></script></head><body style="background-image:url(/uploads/hero.jpg)"><nav><a href="/services.html">Services</a><a href="/cdn-cgi/l/email-protection#127352703c717d">Email</a></nav><img src="/uploads/logo.png" srcset="/uploads/logo.png 1x, /uploads/logo-2x.png 2x"><main><h1>Home</h1></main><div id="weebly-footer-signup-container-v3"><a href="https://www.weebly.com/signup"><div><img src="https://cdn.example.test/platform-badge.png">Powered by Weebly</div></a></div></body></html>',
+		'body'         => '<!doctype html><html><head><link rel="canonical" href="/"><link rel="stylesheet" href="/files/main.css?v=1"><script src="/platform-runtime.js"></script></head><body style="background-image:url(/uploads/hero.jpg)"><nav><a href="/services.html">Services</a><a href="/cdn-cgi/l/email-protection#127352703c717d">Email</a></nav><img src="/uploads/logo.png" srcset="/uploads/logo.png 1x, /uploads/logo-2x.png 2x"><main><h1>Home</h1></main><script>URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)]));</script><div id="weebly-footer-signup-container-v3"><a href="https://www.weebly.com/signup"><div><img src="https://cdn.example.test/platform-badge.png">Powered by Weebly</div></a></div></body></html>',
 	),
 	'https://example.test/services.html' => array(
 		'content_type' => 'text/html',
@@ -137,6 +137,7 @@ $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' 
 $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'url(uploads/hero.jpg)' ), 'inline-background-rewritten' );
 $assert( isset( $files['website/uploads/logo.png']['content_base64'] ), 'binary-assets-base64-encoded' );
 $assert( ! in_array( 'https://example.test/index.html', array_column( $requests, 'url' ), true ), 'root-index-not-fetched-twice' );
+$assert( array() === array_filter( array_column( $requests, 'url' ), static fn ( string $url ): bool => str_contains( $url, 'new Blob' ) ), 'inline-javascript-url-functions-are-not-css-assets' );
 $assert( in_array( 'https://example.test/platform-runtime.js', array_column( $requests, 'url' ), true ), 'remote-scripts-collected-by-default' );
 $assert( isset( $files['website/platform-runtime.js']['content'] ), 'script-payload-packaged' );
 $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'href="mailto:a@b.co"' ), 'cloudflare-email-link-decoded' );
