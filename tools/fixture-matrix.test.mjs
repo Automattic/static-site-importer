@@ -610,7 +610,10 @@ test('runtime presentation evidence persists, merges, and reaches the Blocks Eng
   assert.equal(probe.command, 'wordpress.browser-probe');
   assert.ok(probe.args.includes('wait-for=networkidle'));
   assert.ok(probe.args.includes('output-artifact=simple-site/runtime-presentation-evidence.json'));
-  assert.match(probe.args.find((arg) => arg.startsWith('script=')), new RegExp(RUNTIME_PRESENTATION_EVIDENCE_SCHEMA));
+  const scriptArg = probe.args.find((arg) => arg.startsWith('script='));
+  assert.match(scriptArg, /^script=const assets=/);
+  assert.match(scriptArg, /; return \{schema:/);
+  assert.match(scriptArg, new RegExp(RUNTIME_PRESENTATION_EVIDENCE_SCHEMA));
   assert.match(probe.args.find((arg) => arg.startsWith('script=')), /asset_hash/);
   assert.equal(merge.command, 'wordpress.wp-cli');
   assert.equal(merge.allowFailure, undefined, 'missing or invalid probe output must stop compilation');
