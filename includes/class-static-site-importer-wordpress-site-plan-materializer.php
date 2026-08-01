@@ -141,6 +141,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			$state['applied']['files'][] = $result;
 		}
+		$publications = self::verify_asset_publications( $state );
+		if ( is_wp_error( $publications ) ) {
+			return self::failed_receipt( $state, $publications->get_error_code() );
+		}
 		$font_materialization = self::apply_font_overlay( $state, $font_overlay );
 		if ( is_wp_error( $font_materialization ) ) {
 			return self::failed_receipt_from_error( $state, $font_materialization );
@@ -150,9 +154,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( is_wp_error( $svg_receipts ) ) {
 			return self::failed_receipt( $state, $svg_receipts->get_error_code() );
 		}
-		$publications = self::verify_asset_publications( $state );
-		if ( is_wp_error( $publications ) ) {
-			return self::failed_receipt( $state, $publications->get_error_code() );
+		if ( ! empty( $font_materialization['svg_receipts'] ) ) {
+			$publications = self::verify_asset_publications( $state );
+			if ( is_wp_error( $publications ) ) {
+				return self::failed_receipt( $state, $publications->get_error_code() );
+			}
 		}
 
 		if ( ! empty( $args['activate'] ) ) {
@@ -361,7 +367,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$reports = array();
 		foreach ( $overlay['writes'] as $write ) {
 			$target = (string) ( $write['target_path'] ?? '' );
-			if ( str_ends_with( strtolower( $target ), '.svg' ) && ! self::valid_svg_font_receipt( $overlay['svg_receipts'] ?? array(), $state['resolved']['writes'], $write ) ) {
+			if ( str_ends_with( strtolower( $target ), '.svg' ) && ! empty( $overlay['svg_consumers'] ) && ! self::valid_svg_font_receipt( $overlay['svg_receipts'] ?? array(), $state['resolved']['writes'], $write ) ) {
 				return new WP_Error( 'static_site_importer_font_materialization_svg_receipt_invalid' );
 			}
 			if ( ! self::safe_destination( $state['theme_dir'], $target ) ) {
@@ -500,9 +506,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( $required_ids !== $receipt_ids ) {
 			return new WP_Error( 'static_site_importer_font_materialization_svg_receipt_invalid' );
 		}
-		foreach ( $files as $file ) {
-			if ( is_array( $file ) && str_ends_with( strtolower( (string) ( $file['target_path'] ?? '' ) ), '.svg' ) && ! self::svg_receipt_for_target( $receipts, $file['target_path'] ?? '' ) ) {
-				return new WP_Error( 'static_site_importer_font_materialization_svg_receipt_invalid' );
+		if ( ! empty( $consumers ) ) {
+			foreach ( $files as $file ) {
+				if ( is_array( $file ) && str_ends_with( strtolower( (string) ( $file['target_path'] ?? '' ) ), '.svg' ) && ! self::svg_receipt_for_target( $receipts, $file['target_path'] ?? '' ) ) {
+					return new WP_Error( 'static_site_importer_font_materialization_svg_receipt_invalid' );
+				}
 			}
 		}
 		return true;

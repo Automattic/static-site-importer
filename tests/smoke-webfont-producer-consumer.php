@@ -136,8 +136,19 @@ $assert( 0 === $harness_status && '' === $harness_error && is_array( $harness_re
 
 $legacy_consumer_plan = $producer_plan;
 unset( $legacy_consumer_plan['webfont_contract'] );
-$legacy_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $legacy_consumer_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
-$assert( ! is_wp_error( $legacy_overlay ) && ! empty( $legacy_overlay['writes'] ), 'new producer remains consumable by the legacy Google-font fallback when face records are ignored' );
+$legacy_consumer_plan['provider'] = 'google_fonts';
+$legacy_consumer_plan['fonts'] = array( array( 'family' => 'Inter', 'weights' => array( 100, 200, 300, 400, 500, 600, 700, 800, 900 ) ) );
+$legacy_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay(
+	$legacy_consumer_plan,
+	array(
+		'writes' => array(
+			array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ),
+			array( 'target_path' => 'assets/materialized-svg/legacy.svg', 'source_path' => 'assets/legacy.svg', 'payload' => array( 'encoding' => 'utf8', 'data' => '<svg xmlns="http://www.w3.org/2000/svg"><text font-family="Inter">Legacy</text></svg>' ) ),
+		),
+	)
+);
+$legacy_svg = (string) ( array_values( array_filter( $legacy_overlay['writes'] ?? array(), static fn( array $write ): bool => 'assets/materialized-svg/legacy.svg' === $write['target_path'] ) )[0]['content'] ?? '' );
+$assert( ! is_wp_error( $legacy_overlay ) && str_contains( $legacy_svg, 'data:font/woff2;base64,' ), 'legacy producers retain self-contained SVG font embedding when typed consumers are unavailable' );
 $diagnostic_plan = $producer_plan;
 $diagnostic_plan['webfont_contract']['diagnostics'] = array( array( 'code' => 'webfont_import_unresolved' ) );
 $diagnostic_failure = Static_Site_Importer_Font_Materializer::prepare_overlay( $diagnostic_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );

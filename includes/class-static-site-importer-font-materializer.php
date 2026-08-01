@@ -59,6 +59,7 @@ final class Static_Site_Importer_Font_Materializer {
 		}
 
 		$families = self::font_families( $plan['fonts'] ?? array() );
+		$svg_writes = self::matching_svg_writes( $resolved_plan['writes'] ?? array(), $families );
 		if ( empty( $families ) ) {
 			return array( 'writes' => $writes, 'diagnostics' => $diagnostics );
 		}
@@ -69,6 +70,13 @@ final class Static_Site_Importer_Font_Materializer {
 		}
 
 		$writes[] = self::write( 'assets/css/embedded-fonts.css', trim( $font_faces ) . "\n", 'theme.font_materialization' );
+		foreach ( $svg_writes as $svg_write ) {
+			$writes[] = self::write(
+				$svg_write['target_path'],
+				self::embed_svg_font_faces( $svg_write['content'], $font_faces ),
+				$svg_write['source_path']
+			);
+		}
 		return self::with_runtime_registration( $writes, $resolved_plan, array(), $diagnostics );
 	}
 

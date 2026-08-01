@@ -159,7 +159,7 @@ $assert( file_exists( $font_root . '/assets/css/fonts.css' ), 'declared font sty
 $assert( str_contains( (string) file_get_contents( $font_root . '/assets/css/embedded-fonts.css' ), 'data:font/woff2;base64,' ), 'self-contained font stylesheet is materialized' );
 $assert( str_contains( (string) file_get_contents( $font_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-embedded-fonts'" ), 'generated theme loads self-contained font stylesheet' );
 $font_svg_files = array_values( array_filter( $font_receipt['completed']['font_materialization']['files'] ?? array(), static fn( array $file ): bool => str_ends_with( (string) ( $file['target_path'] ?? '' ), '.svg' ) ) );
-$assert( array() === $font_svg_files, 'legacy font plans without declared SVG consumers preserve generated SVG bytes' );
+$assert( ! empty( $font_svg_files ) && array() === array_filter( $font_svg_files, static fn( array $file ): bool => ! str_contains( (string) file_get_contents( $font_root . '/' . $file['target_path'] ), 'data:font/woff2;base64,' ) ), 'legacy font plans retain self-contained generated SVGs when typed consumers are unavailable' );
 $assert( 2 === count( $GLOBALS['ssi_plan_font_requests'] ), 'font materialization fetches one declared stylesheet and one unique payload' );
 $assert( Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><text style="font-family:\'Example Font\', serif">Label</text></svg>', array( 'Example Font' ) ), 'SVG style declarations match quoted families within fallback lists' );
 $assert( Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><text font-family="serif, Example Font">Label</text></svg>', array( 'example font' ) ), 'SVG presentation attributes normalize case and fallback-list position' );
