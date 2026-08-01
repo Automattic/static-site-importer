@@ -23,9 +23,14 @@ import {
   writeFixtureMatrixArtifacts,
   writeFixtureMatrixResultArtifacts,
   normalizeVisualAttributionOptions,
+  FIXTURE_MATRIX_RUN_FIELDS,
+  fixtureMatrixBenchOptions,
+  fixtureMatrixGateConfig,
+  fixtureMatrixRecipeInput,
+  fixtureMatrixRunConfigFromEnv,
+  normalizeFixtureMatrixRunConfig,
 } from '../lib/fixture-matrix.mjs';
 
-const DEFAULT_BATCH_SIZE = 10;
 // Each batch provisions its own WP Codebox sandbox, so batches are independent
 // and safe to fan out in parallel. A single live sandbox costs ~3.3GB host RSS,
 // but RSS grows superlinearly when several overlap (a measured `--concurrency 4`
@@ -148,6 +153,8 @@ function elapsedMs(startedAt) {
 }
 
 export async function runFixtureMatrix(options) {
+  const runConfig = normalizeFixtureMatrixRunConfig(Object.fromEntries(Object.keys(FIXTURE_MATRIX_RUN_FIELDS).map((key) => [key, options[key]])));
+  options = { ...options, ...fixtureMatrixBenchOptions(runConfig) };
   const performance = {};
   const outputDirectory = path.resolve(options.outputDirectory || path.join(process.cwd(), 'artifacts', 'static-site-importer-fixture-matrix'));
   const intake = options.artifactRoot
@@ -207,10 +214,7 @@ export async function runFixtureMatrix(options) {
     staticSiteImporterSlug: options.staticSiteImporterSlug,
     dependencyOverrides,
     svgFontEvidence: true,
-    surfaceCoverage: options.surfaceCoverage,
-    maxExtraSurfaces: options.maxExtraSurfaces,
-    ...editorValidationRecipeInput(options),
-    ...surfaceCoverageRecipeInput(options),
+    ...fixtureMatrixRecipeInput(runConfig),
     ...visualParityRecipeInput(options),
     ...liveWpParityRecipeInput(options),
   });
@@ -229,8 +233,8 @@ export async function runFixtureMatrix(options) {
   let editorCanvasArtifacts = {};
   let surfaceLineageArtifacts = collectSurfaceLineageArtifacts(collectedResult);
   if (options.run) {
-    const batchSize = positiveInteger(options.batchSize, DEFAULT_BATCH_SIZE);
-    const concurrency = boundedConcurrency(options.concurrency, DEFAULT_BATCH_CONCURRENCY, MAX_BATCH_CONCURRENCY);
+    const batchSize = options.batchSize;
+    const concurrency = options.concurrency;
     const batches = chunk(matrix.fixtures, batchSize);
     // Each batch spins up its own isolated WP Codebox sandbox, so batches can run
     // concurrently. `mapWithConcurrency` bounds how many sandboxes are live at
@@ -271,7 +275,7 @@ export async function runFixtureMatrix(options) {
       matrix,
       results: attributeChildCommandFailures(batchResults.flatMap((result) => result.fixtures), childCommandFailures),
       // Editor-quality scoring is always on; the native-rate gate is opt-in.
-      editorQuality: editorQualityGateInput(options),
+      editorQuality: fixtureMatrixGateConfig(runConfig).editorQuality,
       requireSolvedCandidate: options.requireSolvedCandidate,
     });
     performance.result_assembly_ms = elapsedMs(resultAssemblyStartedAt);
@@ -402,10 +406,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     staticSiteImporterSlug: options.staticSiteImporterSlug,
     dependencyOverrides: prepareDependencyOverrides(options),
     svgFontEvidence: true,
-    surfaceCoverage: options.surfaceCoverage,
-    maxExtraSurfaces: options.maxExtraSurfaces,
-    ...editorValidationRecipeInput(options),
-    ...surfaceCoverageRecipeInput(options),
+    ...fixtureMatrixRecipeInput(normalizeFixtureMatrixRunConfig(Object.fromEntries(Object.keys(FIXTURE_MATRIX_RUN_FIELDS).map((key) => [key, options[key]])))),
     ...visualParityRecipeInput(options),
     ...liveWpParityRecipeInput(options),
   });
@@ -482,7 +483,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     codeboxOutput: batchRuntime?.json,
     codeboxError: batchError,
     sidecarAttemptId: batchSuffix,
-    visualParity: visualParityGateInput(options),
+    visualParity: fixtureMatrixGateConfig(normalizeFixtureMatrixRunConfig(Object.fromEntries(Object.keys(FIXTURE_MATRIX_RUN_FIELDS).map((key) => [key, options[key]])))).visualParity,
     liveWpParity: liveWpParityCollectorInput(options),
     dependencyOverrides: prepareDependencyOverrides(options),
   });
@@ -1518,75 +1519,21 @@ function parseArgs(args) {
 
 export function optionsFromEnv(env = process.env) {
   const benchEnv = settingsBenchEnv(env);
+  const config = fixtureMatrixRunConfigFromEnv(env);
   return {
-    fixtureRoot: benchEnv.SSI_FIXTURE_MATRIX_FIXTURE_ROOT || env.SSI_FIXTURE_MATRIX_FIXTURE_ROOT,
+    ...fixtureMatrixBenchOptions(config),
     outputDirectory: benchEnv.SSI_FIXTURE_MATRIX_OUTPUT_DIRECTORY || env.SSI_FIXTURE_MATRIX_OUTPUT_DIRECTORY || env.HOMEBOY_BENCH_ARTIFACTS_DIR,
-    staticSiteImporterPath: benchEnv.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PATH || env.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PATH,
     staticSiteImporterSlug: benchEnv.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_SLUG || env.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_SLUG,
     staticSiteImporterPlugin: benchEnv.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PLUGIN || env.SSI_FIXTURE_MATRIX_STATIC_SITE_IMPORTER_PLUGIN,
     entrypoint: benchEnv.SSI_FIXTURE_MATRIX_ENTRYPOINT || env.SSI_FIXTURE_MATRIX_ENTRYPOINT,
     maxDepth: benchEnv.SSI_FIXTURE_MATRIX_MAX_DEPTH || env.SSI_FIXTURE_MATRIX_MAX_DEPTH,
-    surfaceCoverage: benchEnv.SSI_FIXTURE_MATRIX_SURFACE_COVERAGE || env.SSI_FIXTURE_MATRIX_SURFACE_COVERAGE,
-    maxExtraSurfaces: benchEnv.SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES || env.SSI_FIXTURE_MATRIX_MAX_EXTRA_SURFACES,
-    // Lane selection from authored manifest taxonomy.
-    fixtureClass: benchEnv.SSI_FIXTURE_MATRIX_CLASS || env.SSI_FIXTURE_MATRIX_CLASS,
-    tag: benchEnv.SSI_FIXTURE_MATRIX_TAG || env.SSI_FIXTURE_MATRIX_TAG,
-    capabilities: benchEnv.SSI_FIXTURE_MATRIX_CAPABILITY || env.SSI_FIXTURE_MATRIX_CAPABILITY || benchEnv.SSI_FIXTURE_MATRIX_CAPABILITIES || env.SSI_FIXTURE_MATRIX_CAPABILITIES,
-    riskProfile: benchEnv.SSI_FIXTURE_MATRIX_RISK_PROFILE || env.SSI_FIXTURE_MATRIX_RISK_PROFILE,
-    complexity: benchEnv.SSI_FIXTURE_MATRIX_COMPLEXITY || env.SSI_FIXTURE_MATRIX_COMPLEXITY,
-    maxComplexity: benchEnv.SSI_FIXTURE_MATRIX_MAX_COMPLEXITY || env.SSI_FIXTURE_MATRIX_MAX_COMPLEXITY,
     artifactRoot: benchEnv.SSI_FIXTURE_MATRIX_ARTIFACT_ROOT || env.SSI_FIXTURE_MATRIX_ARTIFACT_ROOT,
-    blocksEnginePhpTransformerPath: benchEnv.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH || env.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_PATH,
-    blocksEnginePhpTransformerReference: benchEnv.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_REFERENCE || env.SSI_FIXTURE_MATRIX_BLOCKS_ENGINE_PHP_TRANSFORMER_REFERENCE,
-    wordpressVersion: benchEnv.SSI_FIXTURE_MATRIX_WORDPRESS_VERSION || env.SSI_FIXTURE_MATRIX_WORDPRESS_VERSION,
-    batchSize: benchEnv.SSI_FIXTURE_MATRIX_BATCH_SIZE || env.SSI_FIXTURE_MATRIX_BATCH_SIZE,
-    concurrency: benchEnv.SSI_FIXTURE_MATRIX_CONCURRENCY || env.SSI_FIXTURE_MATRIX_CONCURRENCY,
-    batchInactivityTimeoutMs: benchEnv.SSI_FIXTURE_MATRIX_BATCH_INACTIVITY_TIMEOUT_MS || env.SSI_FIXTURE_MATRIX_BATCH_INACTIVITY_TIMEOUT_MS,
-    run: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_RUN) || isTruthy(env.SSI_FIXTURE_MATRIX_RUN),
-    wpCodeboxBin: benchEnv.SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN || env.SSI_FIXTURE_MATRIX_WP_CODEBOX_BIN,
-    editorValidation: !isFalsy(benchEnv.SSI_FIXTURE_MATRIX_EDITOR_VALIDATION ?? env.SSI_FIXTURE_MATRIX_EDITOR_VALIDATION),
-    visualParity: !isFalsy(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY),
-    visualParityGate: !isFalsy(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE ?? true),
     visualParityFullPage: optionalBoolean(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE),
     visualParityBlockExternalRequests: optionalBoolean(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS),
-    // Opt-in live-WP parity capture + comparison. Off by default; mirrors the
-    // visual-parity-gate truthy env mapping. When on, the recipe appends the
-    // capture-html step and the result collector runs the live-wp-parity comparator.
-    liveWpParity: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_LIVE_WP_PARITY) || isTruthy(env.SSI_FIXTURE_MATRIX_LIVE_WP_PARITY),
-    pixelThreshold: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXEL_THRESHOLD,
-    visualParityAlignment: optionalBoolean(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_ALIGNMENT ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_ALIGNMENT),
-    visualParityMaxVerticalShift: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_VERTICAL_SHIFT || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_VERTICAL_SHIFT,
-    visualParityMaxHorizontalShift: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_HORIZONTAL_SHIFT || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_MAX_HORIZONTAL_SHIFT,
-    visualParityOffsetTolerance: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_OFFSET_TOLERANCE || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_OFFSET_TOLERANCE,
-    visualParityPixelmatchThreshold: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_PIXELMATCH_THRESHOLD,
     visualParityCandidateUrl: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_CANDIDATE_URL || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_CANDIDATE_URL,
     visualParitySourceBaseUrl: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL,
     visualParityWaitFor: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_WAIT_FOR || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_WAIT_FOR,
     visualParityDurationMs: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_DURATION_MS || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_DURATION_MS,
-    maxExplanationElements: benchEnv.SSI_FIXTURE_MATRIX_MAX_EXPLANATION_ELEMENTS || env.SSI_FIXTURE_MATRIX_MAX_EXPLANATION_ELEMENTS,
-    maxExplanationCandidates: benchEnv.SSI_FIXTURE_MATRIX_MAX_EXPLANATION_CANDIDATES || env.SSI_FIXTURE_MATRIX_MAX_EXPLANATION_CANDIDATES,
-    explainSelectors: benchEnv.SSI_FIXTURE_MATRIX_EXPLAIN_SELECTORS || env.SSI_FIXTURE_MATRIX_EXPLAIN_SELECTORS,
-    minNativeRate: benchEnv.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE || env.SSI_FIXTURE_MATRIX_MIN_NATIVE_RATE,
-    fixtureIds: benchEnv.SSI_FIXTURE_MATRIX_FIXTURE_IDS || env.SSI_FIXTURE_MATRIX_FIXTURE_IDS,
-    fixtureCorpus: benchEnv.SSI_FIXTURE_MATRIX_FIXTURE_CORPUS || env.SSI_FIXTURE_MATRIX_FIXTURE_CORPUS,
-    requireSolvedCandidate: isTruthy(benchEnv.SSI_FIXTURE_MATRIX_REQUIRE_SOLVED_CANDIDATE) || isTruthy(env.SSI_FIXTURE_MATRIX_REQUIRE_SOLVED_CANDIDATE),
-  };
-}
-
-// Editor-validation recipe option. The wordpress.editor-validate-blocks step
-// launches a browser per imported site and is the slowest per-fixture step, so
-// --no-editor-validation (SSI_FIXTURE_MATRIX_EDITOR_VALIDATION=0) skips it while
-// leaving native-rate/loss-classes/findings intact. Enabled by default.
-function editorValidationRecipeInput(options) {
-  return {
-    editorValidation: options.editorValidation !== false,
-  };
-}
-
-function surfaceCoverageRecipeInput(options) {
-  return {
-    surfaceCoverage: options.surfaceCoverage,
-    maxExtraSurfaces: options.maxExtraSurfaces,
   };
 }
 
@@ -1602,18 +1549,6 @@ function visualParityRecipeInput(options) {
     visualParityWaitFor: options.visualParityWaitFor,
     visualParityDurationMs: options.visualParityDurationMs,
     ...normalizeVisualAttributionOptions(options),
-  };
-}
-
-function visualParityGateInput(options) {
-  return {
-    threshold: options.pixelThreshold,
-    gate: options.visualParityGate !== false,
-    alignment: options.visualParityAlignment,
-    maxVerticalShift: options.visualParityMaxVerticalShift,
-    maxHorizontalShift: options.visualParityMaxHorizontalShift,
-    offsetTolerance: options.visualParityOffsetTolerance,
-    pixelmatchThreshold: options.visualParityPixelmatchThreshold,
   };
 }
 
@@ -1643,14 +1578,6 @@ function liveWpParityCollectorInput(options) {
   };
 }
 
-// Editor-quality gate options for the result collector. Scoring always runs;
-// `minNativeRate` defaults to absent (off) so gating is opt-in.
-function editorQualityGateInput(options) {
-  return {
-    minNativeRate: options.minNativeRate,
-  };
-}
-
 function settingsBenchEnv(env = process.env) {
   try {
     const settings = JSON.parse(env.HOMEBOY_SETTINGS_JSON || '{}');
@@ -1660,10 +1587,6 @@ function settingsBenchEnv(env = process.env) {
   } catch {
     return {};
   }
-}
-
-function isTruthy(value) {
-  return value === true || value === '1' || value === 'true';
 }
 
 function isFalsy(value) {

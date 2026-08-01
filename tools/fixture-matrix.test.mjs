@@ -79,6 +79,12 @@ import {
   VISUAL_PARITY_MISMATCH_KIND,
   visualParityCompareStep,
   normalizeVisualAttributionOptions,
+  fixtureMatrixBenchOptions,
+  fixtureMatrixGateConfig,
+  fixtureMatrixHomeboySettings,
+  fixtureMatrixRecipeInput,
+  fixtureMatrixRunConfigFromEnv,
+  normalizeFixtureMatrixRunConfig,
   resolveFixtureSearchRoots,
   wordpressServedPath,
   writeFixtureMatrixArtifacts,
@@ -3155,6 +3161,45 @@ test('builds one-command canonical Blocks Engine fixture matrix plan', () => {
   assert.ok(visualGateOptOutPlan.steps.at(-1).args.includes('bench_env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_GATE=0'));
 });
 
+test('fixture matrix run configuration round-trips settings into bench recipes and gates', () => {
+  const config = normalizeFixtureMatrixRunConfig({
+    fixtureRoot: '/fixtures',
+    staticSiteImporterPath: '/static-site-importer',
+    run: true,
+    fixtureIds: 'one,two',
+    batchSize: '3',
+    concurrency: '4',
+    surfaceCoverage: '2',
+    maxExtraSurfaces: '2',
+    editorValidation: false,
+    visualParity: true,
+    visualParityGate: false,
+    pixelThreshold: '0.15',
+    minNativeRate: '0.9',
+  });
+  const settings = fixtureMatrixHomeboySettings(config);
+  const bench = fixtureMatrixBenchOptions(fixtureMatrixRunConfigFromEnv({ HOMEBOY_SETTINGS_JSON: JSON.stringify({ bench_env: settings }) }));
+
+  assert.deepEqual(bench.fixtureIds, 'one,two');
+  assert.equal(bench.concurrency, 4);
+  assert.deepEqual(fixtureMatrixRecipeInput(bench), {
+    surfaceCoverage: 2,
+    maxExtraSurfaces: 2,
+    editorValidation: false,
+    visualParity: true,
+    pixelThreshold: 0.15,
+    maxExplanationElements: undefined,
+    maxExplanationCandidates: undefined,
+    explainSelectors: [],
+    liveWpParity: undefined,
+  });
+  assert.deepEqual(fixtureMatrixGateConfig(bench), {
+    visualParity: { threshold: 0.15, gate: false, alignment: undefined, maxVerticalShift: undefined, maxHorizontalShift: undefined, offsetTolerance: undefined, pixelmatchThreshold: undefined },
+    editorQuality: { minNativeRate: 0.9 },
+  });
+  assert.throws(() => normalizeFixtureMatrixRunConfig({ fixtureRoot: '/fixtures', unknown: true }), /Unknown fixture matrix run configuration/);
+});
+
 test('fixture selection fails closed for execution and keeps empty dry-run planning explicit', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-empty-selection-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
@@ -6001,9 +6046,9 @@ test('fixture matrix maps visual attribution environment settings', () => {
     SSI_FIXTURE_MATRIX_MAX_EXPLANATION_CANDIDATES: '600',
     SSI_FIXTURE_MATRIX_EXPLAIN_SELECTORS: '.hero, #footer',
   });
-  assert.equal(options.maxExplanationElements, '500');
-  assert.equal(options.maxExplanationCandidates, '600');
-  assert.equal(options.explainSelectors, '.hero, #footer');
+  assert.equal(options.maxExplanationElements, 500);
+  assert.equal(options.maxExplanationCandidates, 600);
+  assert.deepEqual(options.explainSelectors, ['.hero', '#footer']);
 });
 
 test('fixture matrix maps the portable transformer reference setting', () => {
