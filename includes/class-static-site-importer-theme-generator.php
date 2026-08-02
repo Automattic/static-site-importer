@@ -755,7 +755,12 @@ class Static_Site_Importer_Theme_Generator {
 					);
 				}
 				$normalized_manifest = 'shop' === $capability ? array( 'schema_version' => 1, 'products' => $validation['products'] ?? array() ) : array( 'forms' => $validation['forms'] ?? array() );
-				$lifecycle['entities'][ $key ] = array( 'adapter' => $adapter, 'manifest' => $normalized_manifest, 'declaration' => $declaration, 'required' => $required );
+				$lifecycle['entities'][ $key ] = array(
+					'adapter'     => $adapter,
+					'manifest'    => $normalized_manifest,
+					'declaration' => $declaration,
+					'required'    => $required,
+				);
 			}
 		}
 		if ( isset( $args['products_manifest'] ) && is_array( $args['products_manifest'] ) && ! empty( $args['products_manifest'] ) ) {
@@ -845,7 +850,15 @@ class Static_Site_Importer_Theme_Generator {
 			}
 			$reports[ $id ] = ! empty( $args['materialize_dependencies'] ) ? Static_Site_Importer_Entity_Materializer_Registry::materialize_plugin_dependencies( $adapter ) : array( 'status' => 'available' );
 			if ( ! Static_Site_Importer_Entity_Materializer_Registry::dependencies_available( $adapter ) && ! empty( $prepared['required'] ) ) {
-				return new WP_Error( 'static_site_importer_required_runtime_dependency_missing', 'SSI could not prepare a required runtime dependency.', array( 'status' => 'partial', 'completed_declaration_ids' => array_keys( $reports ), 'dependency_reports' => $reports ) );
+				return new WP_Error(
+					'static_site_importer_required_runtime_dependency_missing',
+					'SSI could not prepare a required runtime dependency.',
+					array(
+						'status'                    => 'partial',
+						'completed_declaration_ids' => array_keys( $reports ),
+						'dependency_reports'        => $reports,
+					)
+				);
 			}
 		}
 		return $reports;
