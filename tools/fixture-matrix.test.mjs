@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -598,6 +598,29 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
     target: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/artifact.json',
   });
   assert.deepEqual(recipe.inputs.mounts, []);
+});
+
+test('fixture manifests explicitly opt into unproven dynamic client assets', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-dynamic-client-assets-'));
+  try {
+    const fixture = path.join(root, 'websites', 'runtime-site');
+    mkdirSync(fixture, { recursive: true });
+    writeFileSync(path.join(fixture, 'index.html'), '<main>Runtime site</main>');
+    writeFileSync(path.join(fixture, 'fixture.json'), JSON.stringify({
+      fixture_class: 'marketing/static',
+      allow_unproven_dynamic_client_assets: true,
+    }));
+    const matrix = createFixtureMatrix({ fixture_root: root });
+    const recipe = buildFixtureMatrixRecipe({
+      matrix,
+      artifactsDirectory: '/tmp/artifacts',
+      playgroundArtifactsDirectory: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix',
+      staticSiteImporterPath: '/tmp/static-site-importer',
+    });
+    assert.match(recipe.workflow.steps[1].args[0], /--allow-unproven-dynamic-client-assets/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('matrix import recipes declare the complete required sidecar contract', () => {
@@ -2896,9 +2919,10 @@ test('materializes generated artifact roots into matrix-compatible fixtures', ()
   writeFileSync(path.join(sourceRoot, 'static-sites', 'alpha', 'index.html'), '<h1>Alpha</h1>');
   writeFileSync(path.join(sourceRoot, 'static-sites', 'alpha', 'assets', 'style.css'), 'body { color: black; }');
   mkdirSync(path.join(sourceRoot, 'artifact-candidate'), { recursive: true });
-  writeFileSync(path.join(sourceRoot, 'artifact-candidate', 'artifact.json'), JSON.stringify({
+  writeFileSync(path.join(sourceRoot, 'artifact-candidate', 'site-artifact.json'), JSON.stringify({
     schema: 'blocks-engine/php-transformer/site-artifact/v1',
     metadata: { site: 'Beta Site' },
+    compiler_limits: { max_files: 25, max_file_bytes: 10485760, max_total_bytes: 335544320 },
     files: [
       { path: 'website/index.html', content: '<h1>Beta</h1>' },
       { path: 'website/assets/style.css', content: 'body { color: blue; }' },
@@ -2912,6 +2936,9 @@ test('materializes generated artifact roots into matrix-compatible fixtures', ()
   assert.deepEqual(matrix.fixtures.map((fixture) => fixture.id), ['alpha', 'beta-site']);
   assert.equal(readFileSync(path.join(fixtureOutput, 'alpha', 'index.html'), 'utf8'), '<h1>Alpha</h1>');
   assert.equal(readFileSync(path.join(fixtureOutput, 'beta-site', 'index.html'), 'utf8'), '<h1>Beta</h1>');
+  const betaArtifact = buildFixtureArtifact(matrix.fixtures.find((fixture) => fixture.id === 'beta-site'));
+  assert.deepEqual(betaArtifact.compiler_limits, { max_files: 25, max_file_bytes: 10485760, max_total_bytes: 335544320 });
+  assert.equal(betaArtifact.files.some((file) => file.path.includes('generated-artifact-metadata')), false);
 });
 
 test('resolves Blocks Engine PHP transformer override paths', () => {
@@ -6172,7 +6199,7 @@ test('default visual-parity source-url follows nested fixture entrypoint', () =>
   );
 });
 
-test('stageFixtureSource copies the raw fixture source into the served source/ subdir', () => {
+test('stageFixtureSource copies the normalized fixture source into the served source/ subdir', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-parity-stage-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-parity-stage-test' });
   const written = writeFixtureMatrixArtifacts({ outputDirectory, matrix });
@@ -6194,6 +6221,25 @@ test('stageFixtureSource copies the raw fixture source into the served source/ s
   assert.equal(written.metadata.source_staging.status, 'staged');
   assert.ok(written.metadata.artifact_bytes.staged_source > 0);
   assert.ok(Number.isFinite(written.metadata.performance.artifact_writing_ms));
+});
+
+test('platform attribution is excluded from both import artifacts and visual baselines', () => {
+  const fixtureDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-platform-chrome-source-'));
+  const sourceDirectory = path.join(fixtureDirectory, 'fixture');
+  mkdirSync(sourceDirectory, { recursive: true });
+  writeFileSync(path.join(sourceDirectory, 'index.html'), '<main><h1>Authored page</h1></main><div id="weebly-footer-signup-container-v3"><a href="https://www.weebly.com/signup"><div>Powered by Weebly</div></a></div>');
+
+  const fixture = { id: 'Platform Chrome', directory: sourceDirectory };
+  const artifact = buildFixtureArtifact(fixture);
+  const artifactHtml = Buffer.from(artifact.files[0].content_base64, 'base64').toString('utf8');
+  assert.doesNotMatch(artifactHtml, /weebly-footer-signup-container-v3/);
+  assert.equal(artifact.source_metadata.source_exclusions[0].reason_code, 'platform_attribution_removed');
+  assert.match(artifact.source_metadata.source_exclusions[0].removed_sha256, /^[a-f0-9]{64}$/);
+
+  stageFixtureSource(fixture, fixtureDirectory);
+  const stagedHtml = readFileSync(path.join(fixtureDirectory, 'source', 'index.html'), 'utf8');
+  assert.match(stagedHtml, /Authored page/);
+  assert.doesNotMatch(stagedHtml, /weebly-footer-signup-container-v3/);
 });
 
 test('staged visual source uses the generated self-contained font stylesheet', () => {

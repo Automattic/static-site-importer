@@ -94,6 +94,7 @@ class Static_Site_Importer_Validation_Runtime {
 				'activate'                 => true,
 				'overwrite'                => true,
 				'materialize_dependencies' => true,
+				'require_proven_dynamic_client_assets' => true,
 			)
 		);
 

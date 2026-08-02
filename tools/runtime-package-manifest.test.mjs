@@ -18,6 +18,7 @@ test("website artifact import profile is complete and capability scoped", async 
   assert.ok(profile)
   assert.deepEqual(profile.abilities, [
     "static-site-importer/import-website-artifact",
+    "static-site-importer/import-url",
     "static-site-importer/materialize-wordpress-site-plan",
     "static-site-importer/validate-artifact",
     "static-site-importer/get-runtime-package-manifest",

@@ -51,6 +51,9 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-we
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-document.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-source-page.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-fetcher.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-artifact-run.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-source-normalizer.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-site-collector.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-import-runtime.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-companion-plugin.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-plugin-materializer.php';
@@ -213,6 +216,50 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 	);
 
 	WP_CLI::add_command(
+		'static-site-importer import-url',
+		static function ( array $args, array $assoc_args ): void {
+			$url = isset( $args[0] ) ? (string) $args[0] : '';
+			if ( '' === trim( $url ) ) {
+				WP_CLI::error( 'Provide a public source URL.' );
+			}
+
+			$provider_args = array();
+			if ( isset( $assoc_args['collect-site'] ) ) {
+				$provider_args['collect_site'] = true;
+			}
+			if ( isset( $assoc_args['skip-scripts'] ) ) {
+				$provider_args['include_scripts'] = false;
+			}
+			foreach ( array( 'batch-pages', 'max-pages', 'max-assets', 'max-total-bytes', 'request-delay-ms', 'timeout', 'max-bytes' ) as $key ) {
+				if ( isset( $assoc_args[ $key ] ) ) {
+					$provider_args[ str_replace( '-', '_', $key ) ] = (int) $assoc_args[ $key ];
+				}
+			}
+
+			$input  = array(
+				'url'                       => $url,
+				'provider_args'             => $provider_args,
+				'slug'                      => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
+				'name'                      => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
+				'site_title'                => isset( $assoc_args['site-title'] ) ? (string) $assoc_args['site-title'] : '',
+				'activate'                  => isset( $assoc_args['activate'] ),
+				'overwrite'                 => isset( $assoc_args['overwrite'] ),
+				'fail_on_quality'           => isset( $assoc_args['fail-on-quality'] ),
+				'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
+				'report'                    => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
+				'work_dir'                  => isset( $assoc_args['work-dir'] ) ? (string) $assoc_args['work-dir'] : '',
+			);
+			$result = static_site_importer_ability_import_url( $input );
+			if ( empty( $result['success'] ) ) {
+				$error = isset( $result['error'] ) && is_array( $result['error'] ) ? $result['error'] : array();
+				WP_CLI::error( (string) ( $error['message'] ?? 'Static site URL import failed.' ) );
+			}
+
+			WP_CLI::success( sprintf( 'Imported %s.', (string) ( $result['result']['theme_slug'] ?? $input['slug'] ) ) );
+		}
+	);
+
+	WP_CLI::add_command(
 		'static-site-importer validate-artifact',
 		static function ( array $args, array $assoc_args ): void {
 			unset( $args );
@@ -229,6 +276,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'overwrite'                 => ! isset( $assoc_args['no-overwrite'] ),
 				'fail_on_quality'           => isset( $assoc_args['fail-on-quality'] ),
 				'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
+				'require_proven_dynamic_client_assets' => ! isset( $assoc_args['allow-unproven-dynamic-client-assets'] ),
 			);
 			$output = isset( $assoc_args['output'] ) ? (string) $assoc_args['output'] : '';
 			if ( isset( $assoc_args['artifact-dir'] ) ) {

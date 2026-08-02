@@ -26,6 +26,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		'allow_missing_woocommerce'    => array( 'type' => 'boolean' ),
 		'allow_missing_jetpack'        => array( 'type' => 'boolean' ),
 		'materialize_dependencies'     => array( 'type' => 'boolean' ),
+		'require_proven_dynamic_client_assets' => array( 'type' => 'boolean' ),
 		'seed_entities'                => array( 'type' => 'boolean' ),
 		'products_manifest'            => array( 'type' => 'object' ),
 		'commerce_context'             => array( 'type' => 'object' ),
@@ -58,6 +59,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 				'allow_missing_woocommerce'    => false,
 				'allow_missing_jetpack'        => false,
 				'materialize_dependencies'     => true,
+				'require_proven_dynamic_client_assets' => true,
 				'seed_entities'                => false,
 				'products_manifest'            => array(),
 				'commerce_context'             => array(),
@@ -81,7 +83,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		foreach ( array( 'slug', 'name', 'site_title', 'stale_page_action', 'report', 'asset_materialization_policy' ) as $field ) {
 			$values[ $field ] = is_scalar( $values[ $field ] ) ? (string) $values[ $field ] : '';
 		}
-		foreach ( array( 'activate', 'overwrite', 'fail_on_quality', 'allow_missing_woocommerce', 'allow_missing_jetpack', 'materialize_dependencies', 'seed_entities', 'write_theme_report_artifacts' ) as $field ) {
+		foreach ( array( 'activate', 'overwrite', 'fail_on_quality', 'allow_missing_woocommerce', 'allow_missing_jetpack', 'materialize_dependencies', 'require_proven_dynamic_client_assets', 'seed_entities', 'write_theme_report_artifacts' ) as $field ) {
 			$values[ $field ] = (bool) $values[ $field ];
 		}
 		foreach ( array( 'products_manifest', 'commerce_context', 'asset_map', 'compiler_options', 'source_metadata', 'validation_artifacts' ) as $field ) {
