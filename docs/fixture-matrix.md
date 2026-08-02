@@ -618,8 +618,8 @@ optional animated-media policy to every front and secondary surface comparison.
 ## Runtime Media Presentation Evidence
 
 `SSI_FIXTURE_MATRIX_RUNTIME_PRESENTATION_EVIDENCE=1` (or
-`--runtime-presentation-evidence true`) adds an opt-in `wordpress.browser-probe`
-and deterministic merge step before `static-site-importer validate-artifact`. The probe waits for explicit
+`--runtime-presentation-evidence true`) adds opt-in `wordpress.browser-probe`
+steps and one deterministic merge step before `static-site-importer validate-artifact`. The probe waits for explicit
 `networkidle` readiness and requests only the Blocks Engine v1 media observation
 shape: Chromium/version, viewport/DPR, source path and stable selector, normalized
 asset hash, intrinsic/rendered dimensions, transform matrix/origin, and nearest
@@ -634,17 +634,26 @@ node bench/static-site-fixture-matrix.bench.mjs --run \
   --static-site-importer-path /Users/chubes/Developer/static-site-importer@feat-796-runtime-media-evidence
 ```
 
-For fixture `<id>`, the probe retains reviewer evidence with WP Codebox's
-`output-artifact=<id>/runtime-presentation-evidence.json` contract. Playground
-recipes also declare the exact
-`output-runtime-path=/wordpress/.../<id>/runtime-presentation-evidence.json`
-needed by the following `wordpress.wp-cli` step. That step verifies the typed
-Blocks Engine envelope, confines both paths to the same fixture directory under
-the declared runtime artifact root, and atomically writes a sibling
+For fixture `<id>`, every selected surface is probed before the single merge:
+the front page uses
+`output-artifact=<id>/runtime-presentation-evidence.json`, and each secondary
+surface uses `output-artifact=<id>/runtime-presentation-evidence--<surface-id>.json`.
+Playground recipes declare the matching fixture- and surface-scoped
+`output-runtime-path=/wordpress/.../<id>/runtime-presentation-evidence[--<surface-id>].json`.
+Each observation records that surface's HTML entry path, such as `team.html`,
+as `element.source_path`.
+
+The merge confines every evidence path to the fixture directory under the
+declared runtime artifact root and accepts only typed Blocks Engine envelopes.
+It requires identical browser, viewport, and lifecycle provenance across every
+envelope; rejects duplicate `(source_path, selector)` observations; and fails
+explicitly if the aggregate exceeds Blocks Engine's 100-observation limit. It
+then atomically writes a sibling
 `<id>/artifact-with-runtime-presentation-evidence.json` containing the
 `runtime_presentation_evidence` field. Only then does `validate-artifact`
 compile that derived artifact. A missing output, malformed envelope,
-unavailable root, or boundary violation emits a structured
+provenance mismatch, duplicate observation, aggregate limit, unavailable root,
+or boundary violation emits a structured
 `runtime_presentation_evidence_unavailable` diagnostic and fails before
 compilation rather than compiling without the requested input.
 
