@@ -241,6 +241,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 
 		if ( ! empty( $args['activate'] ) ) {
+			$front_page = self::ensure_static_front_page( $state );
+			if ( is_wp_error( $front_page ) ) {
+				return self::failed_receipt( $state, $front_page->get_error_code() );
+			}
+			if ( is_array( $front_page ) ) {
+				$state['applied']['operations'][] = $front_page;
+			}
 			foreach ( $state['resolved']['operations'] as $operation ) {
 				if ( 'create_page' === $operation['kind'] ) {
 					continue;
@@ -263,6 +270,29 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 
 		return self::receipt( 'completed', $state );
+	}
+
+	/**
+	 * Canonical plans may omit a site-reading operation when the source root is
+	 * implicit. An activated static-site import still needs that root page as the
+	 * front page for editor and browser contracts.
+	 */
+	private static function ensure_static_front_page( array $state ) {
+		foreach ( $state['resolved']['operations'] as $operation ) {
+			if ( 'site_reading' === ( $operation['kind'] ?? '' ) ) {
+				return null;
+			}
+		}
+		foreach ( $state['resolved']['pages'] as $page ) {
+			$route = (string) ( $page['route']['path'] ?? '' );
+			$id = $state['page_ids'][ $page['reconciliation_identity'] ?? '' ] ?? 0;
+			if ( $id > 0 && ( '' === trim( $route, '/' ) ) ) {
+				update_option( 'show_on_front', 'page' );
+				update_option( 'page_on_front', $id );
+				return array( 'kind' => 'site_reading', 'reconciliation_identity' => $page['reconciliation_identity'], 'inferred' => true );
+			}
+		}
+		return new WP_Error( 'static_site_importer_front_page_missing' );
 	}
 
 	/** Append only validated overlays to the generated frontend and editor CSS. */
