@@ -212,10 +212,10 @@ class Static_Site_Importer_Companion_Plugin {
 			),
 			'runtime_scripts' => array_map(
 				static fn ( array $island ): array => array(
-					'handle'      => (string) $island['handle'],
-					'block'       => (string) $island['block'],
-					'selector'    => (string) $island['selector'],
-					'source_path' => (string) $island['source_path'],
+					'handle'          => (string) $island['handle'],
+					'block'           => (string) $island['block'],
+					'selector'        => (string) $island['selector'],
+					'source_path'     => (string) $island['source_path'],
 					'superseded_unit' => (string) ( $island['superseded_unit'] ?? '' ),
 				),
 				$preserved
@@ -561,13 +561,13 @@ class Static_Site_Importer_Companion_Plugin {
 			}
 
 			++$index;
-			$handle_raw   = isset( $entry['handle'] ) && is_scalar( $entry['handle'] ) ? self::sanitize_slug( (string) $entry['handle'] ) : '';
-			$handle       = '' !== $handle_raw ? $handle_raw : $block_namespace . '-island-' . $index;
-			$relative_raw = isset( $entry['src'] ) && is_scalar( $entry['src'] ) ? self::sanitize_relative_path( (string) $entry['src'] ) : '';
-			$relative     = '' !== $relative_raw ? $relative_raw : 'islands/' . $handle . '.js';
-			$block        = isset( $entry['block'] ) && is_scalar( $entry['block'] ) ? (string) $entry['block'] : '';
-			$selector     = isset( $entry['selector'] ) && is_scalar( $entry['selector'] ) ? (string) $entry['selector'] : '';
-			$source_path  = isset( $entry['source_path'] ) && is_scalar( $entry['source_path'] ) ? (string) $entry['source_path'] : '';
+			$handle_raw      = isset( $entry['handle'] ) && is_scalar( $entry['handle'] ) ? self::sanitize_slug( (string) $entry['handle'] ) : '';
+			$handle          = '' !== $handle_raw ? $handle_raw : $block_namespace . '-island-' . $index;
+			$relative_raw    = isset( $entry['src'] ) && is_scalar( $entry['src'] ) ? self::sanitize_relative_path( (string) $entry['src'] ) : '';
+			$relative        = '' !== $relative_raw ? $relative_raw : 'islands/' . $handle . '.js';
+			$block           = isset( $entry['block'] ) && is_scalar( $entry['block'] ) ? (string) $entry['block'] : '';
+			$selector        = isset( $entry['selector'] ) && is_scalar( $entry['selector'] ) ? (string) $entry['selector'] : '';
+			$source_path     = isset( $entry['source_path'] ) && is_scalar( $entry['source_path'] ) ? (string) $entry['source_path'] : '';
 			$superseded_unit = isset( $entry['superseded_unit'] ) && is_scalar( $entry['superseded_unit'] ) ? (string) $entry['superseded_unit'] : '';
 
 			$islands[] = array(
@@ -594,7 +594,7 @@ class Static_Site_Importer_Companion_Plugin {
 	 */
 	private static function runtime_effects( array $payload ): array {
 		$effects = isset( $payload['runtime_effects'] ) && is_array( $payload['runtime_effects'] ) ? $payload['runtime_effects'] : array();
-		$units = array();
+		$units   = array();
 		foreach ( $effects['units'] ?? array() as $unit ) {
 			if ( is_array( $unit ) && isset( $unit['id'] ) && is_scalar( $unit['id'] ) ) {
 				$units[ (string) $unit['id'] ] = $unit;
@@ -719,7 +719,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\t\t\tif ( ! isset( \$GLOBALS['static_site_importer_companion_block_owners'] ) || ! is_array( \$GLOBALS['static_site_importer_companion_block_owners'] ) ) {";
 		$lines[] = "\t\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'] = array();";
 		$lines[] = "\t\t\t}";
-		$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'][ (string) \$spec['name'] ] = array( 'plugin_file' => %s, 'plugin_path' => __FILE__ );", var_export( $plugin_file, true ) );
+		$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'][ (string) \$spec['name'] ] = array( 'plugin_file' => '%s', 'plugin_path' => __FILE__ );", self::php_single_quote( $plugin_file ) );
 		$lines[] = "\t\t}";
 		$lines[] = "\t}";
 		$lines[] = '}';
@@ -763,7 +763,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\tif ( ! function_exists( 'wp_enqueue_script' ) ) {";
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
-		$lines[] = sprintf( "\tif ( function_exists( 'get_option' ) && %s !== (string) get_option( 'static_site_importer_active_companion_plugin', '' ) ) {", var_export( $plugin_file, true ) );
+		$lines[] = sprintf( "\tif ( function_exists( 'get_option' ) && '%s' !== (string) get_option( 'static_site_importer_active_companion_plugin', '' ) ) {", self::php_single_quote( $plugin_file ) );
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
 		$lines[] = sprintf( "\tforeach ( %s_islands() as \$island ) {", $fn_prefix );
@@ -895,8 +895,14 @@ class Static_Site_Importer_Companion_Plugin {
 		}
 
 		if ( is_float( $value ) ) {
-			// var_export keeps a parseable float literal (e.g. trailing .0).
-			return var_export( $value, true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Generating a deterministic PHP literal for the scaffolded plugin file.
+			if ( is_nan( $value ) ) {
+				return 'NAN';
+			}
+			if ( is_infinite( $value ) ) {
+				return $value > 0 ? 'INF' : '-INF';
+			}
+
+			return (string) wp_json_encode( $value, JSON_PRESERVE_ZERO_FRACTION );
 		}
 
 		return "'" . self::php_single_quote( (string) $value ) . "'";
