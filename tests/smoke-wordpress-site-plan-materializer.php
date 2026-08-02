@@ -160,8 +160,7 @@ $assert( file_exists( $font_root . '/assets/css/fonts.css' ), 'declared font sty
 $assert( str_contains( (string) file_get_contents( $font_root . '/assets/css/embedded-fonts.css' ), 'data:font/woff2;base64,' ), 'self-contained font stylesheet is materialized' );
 $assert( str_contains( (string) file_get_contents( $font_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-embedded-fonts'" ), 'generated theme loads self-contained font stylesheet' );
 $font_svg_files = array_values( array_filter( $font_receipt['completed']['font_materialization']['files'] ?? array(), static fn( array $file ): bool => str_ends_with( (string) ( $file['target_path'] ?? '' ), '.svg' ) ) );
-$assert( 1 === count( $font_svg_files ), 'matching generated SVG receives a font overlay' );
-$assert( str_contains( (string) file_get_contents( $font_root . '/' . $font_svg_files[0]['target_path'] ), 'data:font/woff2;base64,' ), 'generated SVG embeds the declared font payload' );
+$assert( ! empty( $font_svg_files ) && array() === array_filter( $font_svg_files, static fn( array $file ): bool => ! str_contains( (string) file_get_contents( $font_root . '/' . $file['target_path'] ), 'data:font/woff2;base64,' ) ), 'legacy font plans retain self-contained generated SVGs when typed consumers are unavailable' );
 $assert( 2 === count( $GLOBALS['ssi_plan_font_requests'] ), 'font materialization fetches one declared stylesheet and one unique payload' );
 $assert( Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><text style="font-family:\'Example Font\', serif">Label</text></svg>', array( 'Example Font' ) ), 'SVG style declarations match quoted families within fallback lists' );
 $assert( Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><text font-family="serif, Example Font">Label</text></svg>', array( 'example font' ) ), 'SVG presentation attributes normalize case and fallback-list position' );
@@ -183,6 +182,23 @@ $typed_font_plan = array(
 		'diagnostics' => array(),
 	),
 );
+$typed_svg_writes = array_values( array_filter( $font_plan['writes'], static fn( array $write ): bool => str_ends_with( (string) $write['target_path'], '.svg' ) ) );
+$typed_svg_write = $typed_svg_writes[0] ?? array();
+$typed_svg_hash = hash( 'sha256', $typed_svg_write['payload']['data'] );
+$typed_svg_face_ids = array( 'webfont-face-inter-400' );
+$typed_svg_source_path = $typed_svg_write['source_path'];
+$typed_svg_write_path = $typed_svg_write['target_path'];
+$typed_font_plan['webfont_contract']['svg_consumers'] = array(
+	array(
+		'id'                         => 'svg-webfont-consumer-' . substr( hash( 'sha256', $typed_svg_source_path . "\n" . $typed_svg_write_path . "\n" . $typed_svg_hash . "\n" . implode( "\n", $typed_svg_face_ids ) ), 0, 20 ),
+		'source_path'                => $typed_svg_source_path,
+		'write_path'                 => $typed_svg_write_path,
+		'pre_transform_payload_hash' => $typed_svg_hash,
+		'face_ids'                   => $typed_svg_face_ids,
+		'receipt_ids'                => array( 'webfont-receipt-inter-400' ),
+		'required'                   => true,
+	),
+);
 $typed_font_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $font_plan, array( 'slug' => 'typed-font-site-plan', 'font_materialization' => $typed_font_plan ) );
 $typed_font_root = $GLOBALS['ssi_plan_root'] . '/typed-font-site-plan';
 $typed_faces = $typed_font_receipt['completed']['font_materialization']['required_faces'] ?? array();
@@ -192,6 +208,8 @@ $typed_css = (string) file_get_contents( $typed_font_root . '/assets/css/embedde
 $assert( str_contains( $typed_css, 'font-weight:100 900' ) && str_contains( $typed_css, 'font-stretch:75% 125%' ) && str_contains( $typed_css, 'unicode-range:U+0000-00FF' ) && ! str_contains( $typed_css, 'fonts.example.test' ), 'producer font faces preserve all declared axes and unicode ranges while rewriting only local sources' );
 $typed_readiness = (string) file_get_contents( $typed_font_root . '/assets/js/font-readiness.js' );
 $assert( str_contains( $typed_readiness, 'document.fonts.load' ) && str_contains( $typed_readiness, 'SSI glyph evidence') && str_contains( $typed_readiness, 'status:"missing"' ), 'required typed faces install a glyph-based document.fonts readiness probe with retained missing evidence' );
+$typed_svg_receipts = $typed_font_receipt['completed']['font_materialization']['svg_receipts'] ?? array();
+$assert( 1 === count( $typed_svg_receipts ) && hash( 'sha256', file_get_contents( $typed_font_root . '/' . $typed_svg_write['target_path'] ) ) === ( $typed_svg_receipts[0]['output_sha256'] ?? '' ) && str_contains( (string) file_get_contents( $typed_font_root . '/' . $typed_svg_write['target_path'] ), 'data:font/woff2;base64,' ), 'final write verification accepts the declared SVG change only through its hash-bound materialization receipt' );
 $invalid_typed_plan = $typed_font_plan;
 $invalid_typed_plan['webfont_contract']['imports'][0]['source']['expected_digest'] = 'sha256:' . str_repeat( '0', 64 );
 $invalid_typed_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $font_plan, array( 'slug' => 'invalid-typed-font-site-plan', 'font_materialization' => $invalid_typed_plan ) );
