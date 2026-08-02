@@ -124,7 +124,13 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
 				'input_schema'        => array(
 					'type'       => 'object',
-					'properties' => array( 'plan' => array( 'type' => 'object' ), 'slug' => array( 'type' => 'string' ), 'activate' => array( 'type' => 'boolean' ), 'site_title' => array( 'type' => 'string' ), 'overwrite' => array( 'type' => 'boolean' ) ),
+					'properties' => array(
+						'plan'       => array( 'type' => 'object' ),
+						'slug'       => array( 'type' => 'string' ),
+						'activate'   => array( 'type' => 'boolean' ),
+						'site_title' => array( 'type' => 'string' ),
+						'overwrite'  => array( 'type' => 'boolean' ),
+					),
 					'required'   => array( 'plan', 'slug' ),
 				),
 				'output_schema'       => array( 'type' => 'object' ),
@@ -162,10 +168,10 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 					'type'       => 'object',
 					'properties' => array_merge(
 						array(
-							'url'                          => array( 'type' => 'string' ),
-							'provider'                     => array( 'type' => 'string' ),
-							'provider_args'                => array( 'type' => 'object' ),
-							'work_dir'                     => array( 'type' => 'string' ),
+							'url'           => array( 'type' => 'string' ),
+							'provider'      => array( 'type' => 'string' ),
+							'provider_args' => array( 'type' => 'object' ),
+							'work_dir'      => array( 'type' => 'string' ),
 						),
 						$import_properties
 					),
@@ -188,14 +194,14 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 					'type'       => 'object',
 					'properties' => array_merge(
 						array(
-						'artifact_bundle'           => array( 'type' => 'object' ),
-						'figma'                     => array( 'type' => 'object' ),
-						'scenegraph'                => array( 'type' => 'object' ),
-						'source'                    => array( 'type' => 'object' ),
-						'goal'                      => array( 'type' => 'string' ),
-						'transform_options'         => array( 'type' => 'object' ),
-						'validation'                => array( 'type' => 'object' ),
-						'frame_id'                  => array( 'type' => 'string' ),
+							'artifact_bundle'   => array( 'type' => 'object' ),
+							'figma'             => array( 'type' => 'object' ),
+							'scenegraph'        => array( 'type' => 'object' ),
+							'source'            => array( 'type' => 'object' ),
+							'goal'              => array( 'type' => 'string' ),
+							'transform_options' => array( 'type' => 'object' ),
+							'validation'        => array( 'type' => 'object' ),
+							'frame_id'          => array( 'type' => 'string' ),
 						),
 						$import_properties
 					),
@@ -215,11 +221,14 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
 				'input_schema'        => array(
 					'type'       => 'object',
-					'properties' => array_merge( array(
-						'artifact'                     => array( 'type' => 'object' ),
-						'generated_theme_ref'          => array( 'type' => 'object' ),
-						'theme_archive_ref'            => array( 'type' => 'object' ),
-					), $import_properties ),
+					'properties' => array_merge(
+						array(
+							'artifact'            => array( 'type' => 'object' ),
+							'generated_theme_ref' => array( 'type' => 'object' ),
+							'theme_archive_ref'   => array( 'type' => 'object' ),
+						),
+						$import_properties
+					),
 				),
 				'output_schema'       => array( 'type' => 'object' ),
 				'execute_callback'    => 'static_site_importer_ability_validate_artifact',

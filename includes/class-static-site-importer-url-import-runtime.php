@@ -42,8 +42,8 @@ class Static_Site_Importer_URL_Import_Runtime {
 		if ( '' === $url ) {
 			return new WP_Error( 'static_site_importer_missing_url', 'The url input is required.' );
 		}
-		$input['url'] = $url;
-		$request = self::provider_request( $url, $input );
+		$input['url']    = $url;
+		$request         = self::provider_request( $url, $input );
 		$provider_output = self::provider_output( $request );
 		if ( is_wp_error( $provider_output ) ) {
 			return $provider_output;

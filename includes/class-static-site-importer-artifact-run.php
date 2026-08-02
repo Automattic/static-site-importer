@@ -1,75 +1,389 @@
 <?php
 /** Generic, resumable artifact run storage primitives. @package StaticSiteImporter */
-if ( ! defined( 'ABSPATH' ) ) { exit; }
+if ( ! defined( 'ABSPATH' ) ) {
+	exit; }
 
 final class Static_Site_Importer_Artifact_Run_Workspace {
-	private string $root; private string $directory; private array $record;
+	private string $root;
+	private string $directory;
+	private array $record;
 	public function __construct( string $root, string $purpose, array $retention = array() ) {
 		$root = rtrim( $root, '/\\' );
-		if ( '' === $root || is_link( $root ) || false === ( $resolved = realpath( $root ) ) || ! is_dir( $resolved ) ) { throw new RuntimeException( 'Artifact workspace root must be an existing non-symlink directory.' ); }
-		$this->root = $resolved; $token = preg_replace( '/[^A-Za-z0-9_-]/', '-', $purpose ); $this->directory = $this->root . '/.ssi-artifact-run-' . $token;
-		if ( is_link( $this->directory ) ) { throw new RuntimeException( 'Artifact workspace directory cannot be a symlink.' ); }
-		if ( ! is_dir( $this->directory ) && ! mkdir( $this->directory, 0700 ) ) { throw new RuntimeException( 'Artifact workspace could not be created.' ); }
-		$existing = $this->read_raw( 'workspace.json' ); $record = is_string( $existing ) ? json_decode( $existing, true ) : null;
-		$this->record = is_array( $record ) ? $record : array( 'schema' => 'static-site-importer/artifact-workspace/v1', 'purpose' => $token, 'created_at' => gmdate( 'c' ), 'retention' => $retention );
-		if ( ! is_array( $record ) && is_wp_error( $this->publish_json( 'workspace.json', $this->record ) ) ) { throw new RuntimeException( 'Artifact workspace ownership record could not be published.' ); }
+		if ( '' === $root || is_link( $root ) || false === ( $resolved = realpath( $root ) ) || ! is_dir( $resolved ) ) {
+			throw new RuntimeException( 'Artifact workspace root must be an existing non-symlink directory.' ); }
+		$this->root      = $resolved;
+		$token           = preg_replace( '/[^A-Za-z0-9_-]/', '-', $purpose );
+		$this->directory = $this->root . '/.ssi-artifact-run-' . $token;
+		if ( is_link( $this->directory ) ) {
+			throw new RuntimeException( 'Artifact workspace directory cannot be a symlink.' ); }
+		if ( ! is_dir( $this->directory ) && ! mkdir( $this->directory, 0700 ) ) {
+			throw new RuntimeException( 'Artifact workspace could not be created.' ); }
+		$existing     = $this->read_raw( 'workspace.json' );
+		$record       = is_string( $existing ) ? json_decode( $existing, true ) : null;
+		$this->record = is_array( $record ) ? $record : array(
+			'schema'     => 'static-site-importer/artifact-workspace/v1',
+			'purpose'    => $token,
+			'created_at' => gmdate( 'c' ),
+			'retention'  => $retention,
+		);
+		if ( ! is_array( $record ) && is_wp_error( $this->publish_json( 'workspace.json', $this->record ) ) ) {
+			throw new RuntimeException( 'Artifact workspace ownership record could not be published.' ); }
 	}
 	public function path( string $relative ): string|WP_Error {
-		if ( '' === $relative || str_contains( $relative, '\\' ) || str_starts_with( $relative, '/' ) || preg_match( '#(^|/)\.{1,2}(/|$)#', $relative ) ) { return new WP_Error( 'static_site_importer_artifact_workspace_path_invalid', 'Workspace paths must be safe relative paths.' ); }
-		$parts = explode( '/', $relative ); $current = $this->directory; foreach ( array_slice( $parts, 0, -1 ) as $part ) { $current .= '/' . $part; if ( is_link( $current ) ) { return new WP_Error( 'static_site_importer_artifact_workspace_symlink', 'Workspace paths cannot traverse symlinks.' ); } }
+		if ( '' === $relative || str_contains( $relative, '\\' ) || str_starts_with( $relative, '/' ) || preg_match( '#(^|/)\.{1,2}(/|$)#', $relative ) ) {
+			return new WP_Error( 'static_site_importer_artifact_workspace_path_invalid', 'Workspace paths must be safe relative paths.' ); }
+		$parts   = explode( '/', $relative );
+		$current = $this->directory;
+		foreach ( array_slice( $parts, 0, -1 ) as $part ) {
+			$current .= '/' . $part;
+			if ( is_link( $current ) ) {
+				return new WP_Error( 'static_site_importer_artifact_workspace_symlink', 'Workspace paths cannot traverse symlinks.' ); }
+		}
 		return $this->directory . '/' . $relative;
 	}
 	public function publish_raw( string $relative, string $bytes ) {
-		$path = $this->path( $relative ); if ( is_wp_error( $path ) ) { return $path; } $parent = dirname( $path );
-		if ( ! is_dir( $parent ) && ! mkdir( $parent, 0700, true ) ) { return new WP_Error( 'static_site_importer_artifact_workspace_unavailable', 'Workspace directory is unavailable.' ); }
-		if ( is_link( $parent ) || ! str_starts_with( (string) realpath( $parent ) . '/', $this->directory . '/' ) ) { return new WP_Error( 'static_site_importer_artifact_workspace_symlink', 'Workspace writes must remain in owned directories.' ); }
-		$temp = tempnam( $parent, '.ssi-artifact-' ); if ( false === $temp || strlen( $bytes ) !== file_put_contents( $temp, $bytes ) || ! rename( $temp, $path ) ) { if ( is_string( $temp ) && is_file( $temp ) ) { unlink( $temp ); } return new WP_Error( 'static_site_importer_artifact_workspace_write_failed', 'Unable to atomically publish workspace data.', array( 'path' => $path ) ); } return $path;
+		$path = $this->path( $relative );
+		if ( is_wp_error( $path ) ) {
+			return $path;
+		} $parent = dirname( $path );
+		if ( ! is_dir( $parent ) && ! mkdir( $parent, 0700, true ) ) {
+			return new WP_Error( 'static_site_importer_artifact_workspace_unavailable', 'Workspace directory is unavailable.' ); }
+		if ( is_link( $parent ) || ! str_starts_with( (string) realpath( $parent ) . '/', $this->directory . '/' ) ) {
+			return new WP_Error( 'static_site_importer_artifact_workspace_symlink', 'Workspace writes must remain in owned directories.' ); }
+		$temp = tempnam( $parent, '.ssi-artifact-' );
+		if ( false === $temp || strlen( $bytes ) !== file_put_contents( $temp, $bytes ) || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Atomically publishes importer-owned workspace data.
+			if ( is_string( $temp ) && is_file( $temp ) ) {
+				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed importer-owned temporary file.
+			} return new WP_Error( 'static_site_importer_artifact_workspace_write_failed', 'Unable to atomically publish workspace data.', array( 'path' => $path ) );
+		} return $path;
 	}
-	public function publish_json( string $relative, array $data ) { $json = wp_json_encode( $data, JSON_PRETTY_PRINT ); return is_string( $json ) ? $this->publish_raw( $relative, $json ) : new WP_Error( 'static_site_importer_artifact_workspace_json_invalid', 'Workspace JSON could not be encoded.' ); }
-	public function read_raw( string $relative ): ?string { $path = $this->path( $relative ); return is_string( $path ) && ! is_link( $path ) && is_file( $path ) ? file_get_contents( $path ) : null; } // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads owned bytes.
-	public function delete( string $relative ): bool { $path = $this->path( $relative ); return is_string( $path ) && ! is_link( $path ) && is_file( $path ) ? unlink( $path ) : false; }
-	public function directory(): string { return $this->directory; } public function retention(): array { return $this->record['retention'] ?? array(); }
-	public function is_expired(): bool { $expires = $this->retention()['expires_at'] ?? ''; return is_string( $expires ) && '' !== $expires && strtotime( $expires ) <= time(); }
-	public function purge_expired(): array { return $this->is_expired() ? $this->purge() : array( 'status' => 'retained', 'workspace' => $this->directory, 'reason' => 'not_expired', 'deleted' => array() ); }
-	public function cleanup( string $outcome ): array { $policy = $this->retention()[ 'on_' . $outcome ] ?? 'retain'; return 'purge_on_success' === $policy || 'purge' === $policy ? $this->purge() : array( 'status' => 'retained', 'workspace' => $this->directory, 'expires_at' => $this->retention()['expires_at'] ?? null, 'deleted' => array() ); }
+	public function publish_json( string $relative, array $data ) { $json = wp_json_encode( $data, JSON_PRETTY_PRINT );
+		return is_string( $json ) ? $this->publish_raw( $relative, $json ) : new WP_Error( 'static_site_importer_artifact_workspace_json_invalid', 'Workspace JSON could not be encoded.' ); }
+	public function read_raw( string $relative ): ?string { $path = $this->path( $relative );
+		return is_string( $path ) && ! is_link( $path ) && is_file( $path ) ? file_get_contents( $path ) : null; } // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads owned bytes.
+	public function delete( string $relative ): bool { $path = $this->path( $relative );
+		return is_string( $path ) && ! is_link( $path ) && is_file( $path ) ? unlink( $path ) : false; }
+	public function directory(): string { return $this->directory;
+	} public function retention(): array { return $this->record['retention'] ?? array(); }
+	public function is_expired(): bool { $expires = $this->retention()['expires_at'] ?? '';
+		return is_string( $expires ) && '' !== $expires && strtotime( $expires ) <= time(); }
+	public function purge_expired(): array { return $this->is_expired() ? $this->purge() : array(
+		'status'    => 'retained',
+		'workspace' => $this->directory,
+		'reason'    => 'not_expired',
+		'deleted'   => array(),
+	); }
+	public function cleanup( string $outcome ): array { $policy = $this->retention()[ 'on_' . $outcome ] ?? 'retain';
+		return 'purge_on_success' === $policy || 'purge' === $policy ? $this->purge() : array(
+			'status'     => 'retained',
+			'workspace'  => $this->directory,
+			'expires_at' => $this->retention()['expires_at'] ?? null,
+			'deleted'    => array(),
+		); }
 	public function purge(): array {
-		$removed=array();$skipped=array();$failed=array();if(is_link($this->directory)||!is_dir($this->directory)){return array('status'=>'failed','workspace'=>$this->directory,'removed'=>$removed,'skipped'=>array($this->directory),'failed'=>$failed);}$iterator=new RecursiveIteratorIterator(new RecursiveDirectoryIterator($this->directory,FilesystemIterator::SKIP_DOTS),RecursiveIteratorIterator::CHILD_FIRST);foreach($iterator as $item){$path=$item->getPathname();if(is_link($path)){$skipped[]=$path;continue;}$ok=$item->isDir()?@rmdir($path):@unlink($path);if($ok){$removed[]=$path;}else{$failed[]=$path;}}if(!@rmdir($this->directory)){$failed[]=$this->directory;}$status=empty($failed)&&empty($skipped)?'purged':(empty($removed)?'failed':'partial');return array('status'=>$status,'workspace'=>$this->directory,'removed'=>$removed,'skipped'=>$skipped,'failed'=>$failed);
+		$removed = array();
+		$skipped = array();
+		$failed  = array();
+		if ( is_link($this->directory) || ! is_dir($this->directory) ) {
+			return array(
+				'status'    => 'failed',
+				'workspace' => $this->directory,
+				'removed'   => $removed,
+				'skipped'   => array( $this->directory ),
+				'failed'    => $failed,
+			);
+		}$iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($this->directory, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+		foreach ( $iterator as $item ) {
+			$path = $item->getPathname();
+			if ( is_link($path) ) {
+				$skipped[] = $path;
+				continue;
+			}$ok = $item->isDir() ? @rmdir($path) : @unlink( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Purges importer-owned workspace files.
+			if ( $ok ) {
+				$removed[] = $path;
+			} else {
+				$failed[] = $path;
+			}
+		}if ( ! @rmdir($this->directory) ) {
+			$failed[] = $this->directory;
+		}$status = empty($failed) && empty($skipped) ? 'purged' : ( empty($removed) ? 'failed' : 'partial' );
+		return array(
+			'status'    => $status,
+			'workspace' => $this->directory,
+			'removed'   => $removed,
+			'skipped'   => $skipped,
+			'failed'    => $failed,
+		);
 	}
-	public static function purge_expired_in( string $parent ): array { if(is_link($parent)||false===($parent=realpath($parent))){return array();}$receipts=array();foreach(glob($parent.'/.ssi-artifact-run-*')?:array()as$path){if(is_link($path)||!is_dir($path)){continue;}$raw=@file_get_contents($path.'/workspace.json');$record=is_string($raw)?json_decode($raw,true):null;$expires=is_array($record)?($record['retention']['expires_at']??''):'';if(is_string($expires)&&''!==$expires&&strtotime($expires)<=time()){$workspace=new self($parent,substr(basename($path),strlen('.ssi-artifact-run-')));$receipts[]=$workspace->purge();}}return $receipts; }
+	public static function purge_expired_in( string $parent ): array { if ( is_link($parent) || false === ( $parent = realpath($parent) ) ) {
+			return array();
+	}$receipts = array();
+	foreach ( glob($parent . '/.ssi-artifact-run-*') ?: array()as$path ) {
+		if ( is_link($path) || ! is_dir($path) ) {
+			continue;
+		}$raw    = @file_get_contents( $path . '/workspace.json' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads importer-owned workspace metadata.
+		$record  = is_string($raw) ? json_decode($raw, true) : null;
+		$expires = is_array($record) ? ( $record['retention']['expires_at'] ?? '' ) : '';
+		if ( is_string($expires) && '' !== $expires && strtotime($expires) <= time() ) {
+			$workspace  = new self($parent, substr(basename($path), strlen('.ssi-artifact-run-')));
+			$receipts[] = $workspace->purge();
+		}
+	}return $receipts; }
 }
 
 final class Static_Site_Importer_Artifact_Run_Manifest {
-	private string $path; private string $identity; private array $contract; private array $data = array();
-	public function __construct( string $path, string $identity, string $schema, array $contract ) { $this->path=$path; $this->identity=$identity; $this->contract=$contract; $this->data=array( 'schema'=>$schema, 'version'=>1, 'source'=>array( 'identity'=>$identity ), 'contract'=>$contract, 'state'=>'running', 'diagnostics'=>array() ); }
-	public function load() { if(!is_file($this->path)){return array();}$raw=file_get_contents($this->path);$data=is_string($raw)?json_decode($raw,true):null; if(!is_array($data)||empty($data['source']['identity'])){return new WP_Error('static_site_importer_batch_manifest_invalid','The batch run manifest is invalid.');}if($this->identity!==$data['source']['identity']||($data['contract']??null)!==$this->contract){return new WP_Error('static_site_importer_batch_contract_mismatch','The existing batch run targets a different import contract.',array('run_manifest'=>$this->path));}$this->data=$data;return $data; } // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads public checkpoint.
-	public function save( array $data ) { $this->data=$data;$temp=tempnam(dirname($this->path),'.ssi-manifest-');$json=wp_json_encode($data,JSON_PRETTY_PRINT);if(false===$temp||!is_string($json)||strlen($json)!==file_put_contents($temp,$json)||!rename($temp,$this->path)){if(is_string($temp)&&is_file($temp)){unlink($temp);}return new WP_Error('static_site_importer_batch_checkpoint_write_failed','Unable to atomically write run state.',array('path'=>$this->path));}return true; }
-	public function replay(): ?array{return 'completed'===($this->data['state']??'')&&is_array($this->data['final_result']??null)?$this->data['final_result']:null;}
-	public function path(): string{return $this->path;}
+	private string $path;
+	private string $identity;
+	private array $contract;
+	private array $data = array();
+	public function __construct( string $path, string $identity, string $schema, array $contract ) { $this->path = $path;
+		$this->identity = $identity;
+		$this->contract = $contract;
+		$this->data     = array(
+			'schema'      => $schema,
+			'version'     => 1,
+			'source'      => array( 'identity' => $identity ),
+			'contract'    => $contract,
+			'state'       => 'running',
+			'diagnostics' => array(),
+		); }
+	public function load() { if ( ! is_file($this->path) ) {
+			return array();
+	}$raw = file_get_contents($this->path);
+	$data = is_string($raw) ? json_decode($raw, true) : null;
+	if ( ! is_array($data) || empty($data['source']['identity']) ) {
+		return new WP_Error('static_site_importer_batch_manifest_invalid', 'The batch run manifest is invalid.');
+	}if ( $this->identity !== $data['source']['identity'] || ( $data['contract'] ?? null ) !== $this->contract ) {
+		return new WP_Error('static_site_importer_batch_contract_mismatch', 'The existing batch run targets a different import contract.', array( 'run_manifest' => $this->path ));
+	}$this->data = $data;
+	return $data; } // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads public checkpoint.
+	public function save( array $data ) { $this->data = $data;
+		$temp = tempnam(dirname($this->path), '.ssi-manifest-');
+		$json = wp_json_encode($data, JSON_PRETTY_PRINT);
+		if ( false === $temp || ! is_string($json) || strlen($json) !== file_put_contents($temp, $json) || ! rename($temp, $this->path) ) {
+			if ( is_string($temp) && is_file($temp) ) {
+				unlink($temp);
+			}return new WP_Error('static_site_importer_batch_checkpoint_write_failed', 'Unable to atomically write run state.', array( 'path' => $this->path ));
+		}return true; }
+	public function replay(): ?array {return 'completed' === ( $this->data['state'] ?? '' ) && is_array($this->data['final_result'] ?? null) ? $this->data['final_result'] : null;}
+	public function path(): string {return $this->path;}
 }
 
 final class Static_Site_Importer_Artifact_Byte_Cache {
-	private Static_Site_Importer_Artifact_Run_Workspace $workspace; private string $namespace; private int $max_entries; private int $max_bytes; private ?int $entry_count=null; private ?int $used_bytes=null; private $reject_when=null; private array $counts=array('hits'=>0,'misses'=>0,'bytes_read'=>0,'bytes_written'=>0,'corrupt_entries'=>0,'bypassed'=>0,'negative_hits'=>0,'negative_writes'=>0,'negative_expired'=>0,'network_requests_avoided'=>0); private array $adopted=array();
-	public function __construct( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $namespace, int $max_entries=25000, int $max_bytes=4294967296 ){$this->workspace=$workspace;$this->namespace=preg_replace('/[^A-Za-z0-9_-]/','-',$namespace);$this->max_entries=$max_entries;$this->max_bytes=$max_bytes;}
-	private function name(string $key):string{return 'cache/'.$this->namespace.'/'.(preg_match('/^[a-f0-9]{64}$/',$key)?$key:hash('sha256',$key)).'.entry';}
-	public function get(string $key):?array{$name=$this->name($key);$raw=$this->workspace->read_raw($name);if(!is_string($raw)){return null;}$line=strpos($raw,"\n");$meta=false===$line?null:json_decode(substr($raw,0,$line),true);$bytes=false===$line?false:substr($raw,$line+1);if(!is_array($meta)||!is_string($bytes)||strlen($bytes)!==(int)($meta['bytes']??-1)||hash('sha256',$bytes)!==($meta['sha256']??'')||!is_array($meta['value']??null)){$this->counts['corrupt_entries']++;if($this->workspace->delete($name)){$this->removed(strlen($raw));}return null;}if($this->rejected($bytes,$meta['value'])){if($this->workspace->delete($name)){$this->removed(strlen($raw));}return null;}$this->counts['bytes_read']+=strlen($raw);return array('bytes'=>$bytes,'value'=>$meta['value']);}
-	public function get_failure(string $key,int $now):?array{$name=$this->name($key);$raw=$this->workspace->read_raw($name);if(!is_string($raw)){return null;}$meta=json_decode($raw,true);if(!is_array($meta)||'failure'!==($meta['type']??'')||!is_array($meta['error']??null))return null;if(isset($meta['retry_after'])&&(int)$meta['retry_after']<=$now){$this->counts['negative_expired']++;if($this->workspace->delete($name)){$this->removed(strlen($raw));}return null;}$this->counts['negative_hits']++;$this->counts['network_requests_avoided']++;$error=$meta['error'];$error['data']=is_array($error['data']??null)?$error['data']:array();$error['data']['_static_site_importer_negative_cache_hit']=true;return $error;}
-	public function put_failure(string $key,array $error,?int $retry_after=null):void{$raw=wp_json_encode(array('type'=>'failure','error'=>$error,'retry_after'=>$retry_after));if(!is_string($raw)){return;}$name=$this->name($key);$previous=$this->admit($name,strlen($raw));if(false===$previous){$this->counts['bypassed']++;return;}if(!is_wp_error($this->workspace->publish_raw($name,$raw))){$this->stored($previous,strlen($raw));$this->counts['negative_writes']++;$this->counts['bytes_written']+=strlen($raw);}}
-	public function put(string $key,string $bytes,array $value):void{if($this->rejected($bytes,$value)){return;}$meta=wp_json_encode(array('bytes'=>strlen($bytes),'sha256'=>hash('sha256',$bytes),'value'=>$value));$raw=is_string($meta)?$meta."\n".$bytes:false;if(!is_string($raw)){$this->counts['bypassed']++;return;}$name=$this->name($key);$previous=$this->admit($name,strlen($raw));if(false===$previous){$this->counts['bypassed']++;return;}if(!is_wp_error($this->workspace->publish_raw($name,$raw))){$this->stored($previous,strlen($raw));$this->counts['bytes_written']+=strlen($raw);}}
-	public function reject_when(callable $predicate):void{$this->reject_when=$predicate;}
-	private function rejected(string $bytes,array $value):bool{return is_callable($this->reject_when)&&(bool)call_user_func($this->reject_when,$bytes,$value);}
-	private function admit(string $name,int $bytes):int|false{$this->occupancy();$path=$this->workspace->path($name);$previous=is_string($path)&&is_file($path)?(int)filesize($path):0;$entries=(int)$this->entry_count+(0===$previous?1:0);$used=(int)$this->used_bytes-$previous+$bytes;return $entries>$this->max_entries||$used>$this->max_bytes?false:$previous;}
-	private function stored(int $previous,int $bytes):void{$this->entry_count=(int)$this->entry_count+(0===$previous?1:0);$this->used_bytes=(int)$this->used_bytes-$previous+$bytes;}
-	private function removed(int $bytes):void{if(null!==$this->entry_count&&null!==$this->used_bytes){$this->entry_count=max(0,$this->entry_count-1);$this->used_bytes=max(0,$this->used_bytes-$bytes);}}
-	private function occupancy():void{if(null!==$this->entry_count&&null!==$this->used_bytes){return;}$dir=$this->workspace->directory().'/cache/'.$this->namespace;$files=glob($dir.'/*.entry')?:array();$this->entry_count=count($files);$this->used_bytes=array_sum(array_map('filesize',$files));}
-	public function adopt_legacy(string $directory):void{if(is_link($directory)||!is_dir($directory)){return;}foreach(glob(rtrim($directory,'/').'/*.entry')?:array() as $path){if(is_link($path)){continue;}$raw=file_get_contents($path);$line=is_string($raw)?strpos($raw,"\n"):false;$meta=false===$line?null:json_decode(substr((string)$raw,0,$line),true);$bytes=false===$line?false:substr((string)$raw,$line+1);$value=is_array($meta)?($meta['metadata']??$meta['value']??null):null;if(is_array($meta)&&is_string($bytes)&&strlen($bytes)===(int)($meta['bytes']??-1)&&hash('sha256',$bytes)===($meta['sha256']??'')&&is_array($value)){$key=basename($path,'.entry');$this->put($key,$bytes,$value);$verified=$this->get($key);if(is_array($verified)&&$verified['bytes']===$bytes&&$verified['value']===$value){$this->adopted[$directory][]=$path;}}}}
-	public function cleanup_adopted(): array {$removed=array();$failed=array();foreach($this->adopted as $directory=>$paths){foreach($paths as $path){if(!is_link($path)&&is_file($path)&&@unlink($path)){$removed[]=$path;}elseif(is_file($path)){$failed[]=$path;}}if(!is_link($directory)&&is_dir($directory)&&!(glob($directory.'/*')?:array())){@rmdir($directory);}}return array('removed'=>$removed,'failed'=>$failed);}
-	public function hit():void{$this->counts['hits']++;}public function miss():void{$this->counts['misses']++;}public function network_avoided():void{$this->counts['network_requests_avoided']++;}public function evidence():array{return $this->counts;}public function consume():array{$delta=$this->counts;foreach($this->counts as $key=>$value){$this->counts[$key]=0;}return $delta;}
+	private Static_Site_Importer_Artifact_Run_Workspace $workspace;
+	private string $namespace;
+	private int $max_entries;
+	private int $max_bytes;
+	private ?int $entry_count = null;
+	private ?int $used_bytes  = null;
+	private $reject_when      = null;
+	private array $counts     = array(
+		'hits'                     => 0,
+		'misses'                   => 0,
+		'bytes_read'               => 0,
+		'bytes_written'            => 0,
+		'corrupt_entries'          => 0,
+		'bypassed'                 => 0,
+		'negative_hits'            => 0,
+		'negative_writes'          => 0,
+		'negative_expired'         => 0,
+		'network_requests_avoided' => 0,
+	);
+	private array $adopted    = array();
+	public function __construct( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $namespace, int $max_entries=25000, int $max_bytes=4294967296 ) {$this->workspace = $workspace;
+		$this->namespace   = preg_replace('/[^A-Za-z0-9_-]/', '-', $namespace);
+		$this->max_entries = $max_entries;
+		$this->max_bytes   = $max_bytes;}
+	private function name(string $key): string {return 'cache/' . $this->namespace . '/' . ( preg_match('/^[a-f0-9]{64}$/', $key) ? $key : hash('sha256', $key) ) . '.entry';}
+	public function get(string $key): ?array {$name = $this->name($key);
+		$raw                                        = $this->workspace->read_raw($name);
+		if ( ! is_string($raw) ) {
+			return null;
+		}$line = strpos($raw, "\n");
+		$meta  = false === $line ? null : json_decode(substr($raw, 0, $line), true);
+		$bytes = false === $line ? false : substr($raw, $line + 1);
+		if ( ! is_array($meta) || ! is_string($bytes) || strlen($bytes) !== (int) ( $meta['bytes'] ?? -1 ) || hash('sha256', $bytes) !== ( $meta['sha256'] ?? '' ) || ! is_array($meta['value'] ?? null) ) {
+			++$this->counts['corrupt_entries'];
+			if ( $this->workspace->delete($name) ) {
+				$this->removed(strlen($raw));
+			}return null;
+		}if ( $this->rejected($bytes, $meta['value']) ) {
+			if ( $this->workspace->delete($name) ) {
+				$this->removed(strlen($raw));
+			}return null;
+		}$this->counts['bytes_read'] += strlen($raw);
+		return array(
+			'bytes' => $bytes,
+			'value' => $meta['value'],
+		);}
+	public function get_failure(string $key,int $now): ?array {$name = $this->name($key);
+		$raw = $this->workspace->read_raw($name);
+		if ( ! is_string($raw) ) {
+			return null;
+		}$meta = json_decode($raw, true);
+		if ( ! is_array($meta) || 'failure' !== ( $meta['type'] ?? '' ) || ! is_array($meta['error'] ?? null) ) {
+			return null;
+		}if ( isset($meta['retry_after']) && (int) $meta['retry_after'] <= $now ) {
+			++$this->counts['negative_expired'];
+			if ( $this->workspace->delete($name) ) {
+				$this->removed(strlen($raw));
+			}return null;
+		}++$this->counts['negative_hits'];
+		++$this->counts['network_requests_avoided'];
+		$error         = $meta['error'];
+		$error['data'] = is_array($error['data'] ?? null) ? $error['data'] : array();
+		$error['data']['_static_site_importer_negative_cache_hit'] = true;
+		return $error;}
+	public function put_failure(string $key,array $error,?int $retry_after=null): void {$raw = wp_json_encode(array(
+		'type'        => 'failure',
+		'error'       => $error,
+		'retry_after' => $retry_after,
+	));
+		if ( ! is_string($raw) ) {
+			return;
+		}$name    = $this->name($key);
+		$previous = $this->admit($name, strlen($raw));
+		if ( false === $previous ) {
+			++$this->counts['bypassed'];
+			return;
+		}if ( ! is_wp_error($this->workspace->publish_raw($name, $raw)) ) {
+			$this->stored($previous, strlen($raw));
+			++$this->counts['negative_writes'];
+			$this->counts['bytes_written'] += strlen($raw);}}
+	public function put(string $key,string $bytes,array $value): void {if ( $this->rejected($bytes, $value) ) {
+			return;
+	}$meta   = wp_json_encode(array(
+		'bytes'  => strlen($bytes),
+		'sha256' => hash('sha256', $bytes),
+		'value'  => $value,
+	));
+		$raw = is_string($meta) ? $meta . "\n" . $bytes : false;
+		if ( ! is_string($raw) ) {
+			++$this->counts['bypassed'];
+			return;
+		}$name    = $this->name($key);
+		$previous = $this->admit($name, strlen($raw));
+		if ( false === $previous ) {
+			++$this->counts['bypassed'];
+			return;
+		}if ( ! is_wp_error($this->workspace->publish_raw($name, $raw)) ) {
+			$this->stored($previous, strlen($raw));
+			$this->counts['bytes_written'] += strlen($raw);}}
+	public function reject_when(callable $predicate): void {$this->reject_when = $predicate;}
+	private function rejected(string $bytes,array $value): bool {return is_callable($this->reject_when) && (bool) call_user_func($this->reject_when, $bytes, $value);}
+	private function admit(string $name,int $bytes): int|false {$this->occupancy();
+		$path     = $this->workspace->path($name);
+		$previous = is_string($path) && is_file($path) ? (int) filesize($path) : 0;
+		$entries  = (int) $this->entry_count + ( 0 === $previous ? 1 : 0 );
+		$used     = (int) $this->used_bytes - $previous + $bytes;
+		return $entries > $this->max_entries || $used > $this->max_bytes ? false : $previous;}
+	private function stored(int $previous,int $bytes): void {$this->entry_count = (int) $this->entry_count + ( 0 === $previous ? 1 : 0 );
+		$this->used_bytes = (int) $this->used_bytes - $previous + $bytes;}
+	private function removed(int $bytes): void {if ( null !== $this->entry_count && null !== $this->used_bytes ) {
+			$this->entry_count = max(0, $this->entry_count - 1);
+			$this->used_bytes  = max(0, $this->used_bytes - $bytes);}}
+	private function occupancy(): void {if ( null !== $this->entry_count && null !== $this->used_bytes ) {
+			return;
+	}$dir              = $this->workspace->directory() . '/cache/' . $this->namespace;
+	$files             = glob($dir . '/*.entry') ?: array();
+	$this->entry_count = count($files);
+	$this->used_bytes  = array_sum(array_map('filesize', $files));}
+	public function adopt_legacy(string $directory): void {if ( is_link($directory) || ! is_dir($directory) ) {
+			return;
+	}foreach ( glob(rtrim($directory, '/') . '/*.entry') ?: array() as $path ) {
+		if ( is_link($path) ) {
+			continue;
+		}$raw  = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads an importer-owned legacy cache entry.
+		$line  = is_string($raw) ? strpos($raw, "\n") : false;
+		$meta  = false === $line ? null : json_decode(substr( (string) $raw, 0, $line), true);
+		$bytes = false === $line ? false : substr( (string) $raw, $line + 1);
+		$value = is_array($meta) ? ( $meta['metadata'] ?? $meta['value'] ?? null ) : null;
+		if ( is_array($meta) && is_string($bytes) && strlen($bytes) === (int) ( $meta['bytes'] ?? -1 ) && hash('sha256', $bytes) === ( $meta['sha256'] ?? '' ) && is_array($value) ) {
+			$key = basename($path, '.entry');
+			$this->put($key, $bytes, $value);
+			$verified = $this->get($key);
+			if ( is_array($verified) && $verified['bytes'] === $bytes && $verified['value'] === $value ) {
+				$this->adopted[ $directory ][] = $path;}
+		}
+	}}
+	public function cleanup_adopted(): array {$removed = array();
+		$failed                                        = array();
+		foreach ( $this->adopted as $directory => $paths ) {
+			foreach ( $paths as $path ) {
+				if ( ! is_link($path) && is_file($path) && @unlink( $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a verified importer-owned legacy cache entry.
+					$removed[] = $path;
+				} elseif ( is_file($path) ) {
+					$failed[] = $path;
+				}
+			}if ( ! is_link($directory) && is_dir($directory) && ! ( glob($directory . '/*') ?: array() ) ) {
+				@rmdir($directory);
+			}
+		}return array(
+			'removed' => $removed,
+			'failed'  => $failed,
+		);}
+	public function hit(): void {++$this->counts['hits'];
+	}public function miss(): void {++$this->counts['misses'];
+	}public function network_avoided(): void {++$this->counts['network_requests_avoided'];
+	}public function evidence(): array {return $this->counts;
+	}public function consume(): array {$delta = $this->counts;
+		foreach ( $this->counts as $key => $value ) {
+			$this->counts[ $key ] = 0;
+		}return $delta;}
 }
 
 final class Static_Site_Importer_Artifact_Batch_Cursor {
-	private static function id(array $units):string{return 'batch-'.substr(hash('sha256',(string)json_encode(array_values($units))),0,16);}
-	public static function create(array $units,int $size):array{$rows=array();foreach(array_chunk(array_values($units),$size)as $index=>$chunk){$rows[]=array('index'=>$index,'batch_id'=>self::id($chunk),'units'=>$chunk,'state'=>'pending','completed_units'=>0);}return $rows;}
-	public static function hydrate(array $rows,string $units='route_indexes',string $completed='completed_routes'):array{foreach($rows as $index=>&$row){$values=array_values($row[$units]??array());$row=array('index'=>$index,'batch_id'=>$row['batch_id']??self::id($values),'units'=>$values,'state'=>$row['state']??'pending','completed_units'=>(int)($row[$completed]??0),'result'=>$row['result']??null,'split_from'=>$row['split_from']??null,'effective_batch_size'=>$row['effective_batch_size']??null);}unset($row);return $rows;}
-	public static function next(array $rows):?int{foreach($rows as $index=>$row){if('completed'!==($row['state']??'')){return $index;}}return null;}public static function complete(array $rows,int $index):array{$rows[$index]['state']='completed';$rows[$index]['completed_units']=count($rows[$index]['units']??array());return $rows;}public static function fail(array $rows,int $index):array{$rows[$index]['state']='failed';return $rows;}
-	public static function split(array $rows,int $index):array{$row=$rows[$index];$units=$row['units']??array();$middle=(int)ceil(count($units)/2);$children=array(array('units'=>array_slice($units,0,$middle)),array('units'=>array_slice($units,$middle)));foreach($children as &$child){$child+=array('batch_id'=>self::id($child['units']),'state'=>'pending','completed_units'=>0,'split_from'=>$row['batch_id']??self::id($units),'effective_batch_size'=>count($child['units']));}unset($child);array_splice($rows,$index,1,$children);foreach($rows as $position=>&$row){$row['index']=$position;}unset($row);return $rows;}
+	private static function id(array $units): string {return 'batch-' . substr(hash('sha256', (string) json_encode(array_values($units))), 0, 16);}
+	public static function create(array $units,int $size): array {$rows = array();
+		foreach ( array_chunk(array_values($units), $size)as $index => $chunk ) {
+			$rows[] = array(
+				'index'           => $index,
+				'batch_id'        => self::id($chunk),
+				'units'           => $chunk,
+				'state'           => 'pending',
+				'completed_units' => 0,
+			);
+		}return $rows;}
+	public static function hydrate(array $rows,string $units='route_indexes',string $completed='completed_routes'): array {foreach ( $rows as $index => &$row ) {
+			$values = array_values($row[ $units ] ?? array());
+			$row    = array(
+				'index'                => $index,
+				'batch_id'             => $row['batch_id'] ?? self::id($values),
+				'units'                => $values,
+				'state'                => $row['state'] ?? 'pending',
+				'completed_units'      => (int) ( $row[ $completed ] ?? 0 ),
+				'result'               => $row['result'] ?? null,
+				'split_from'           => $row['split_from'] ?? null,
+				'effective_batch_size' => $row['effective_batch_size'] ?? null,
+			);
+	}unset($row);
+	return $rows;}
+	public static function next(array $rows): ?int {foreach ( $rows as $index => $row ) {
+			if ( 'completed' !== ( $row['state'] ?? '' ) ) {
+				return $index;
+			}
+	}return null;
+	}public static function complete(array $rows,int $index): array {$rows[ $index ]['state'] = 'completed';
+		$rows[ $index ]['completed_units'] = count($rows[ $index ]['units'] ?? array());
+		return $rows;
+	}public static function fail(array $rows,int $index): array {$rows[ $index ]['state'] = 'failed';
+		return $rows;}
+	public static function split(array $rows,int $index): array {$row = $rows[ $index ];
+		$units    = $row['units'] ?? array();
+		$middle   = (int) ceil(count($units) / 2);
+		$children = array( array( 'units' => array_slice($units, 0, $middle) ), array( 'units' => array_slice($units, $middle) ) );
+		foreach ( $children as &$child ) {
+			$child += array(
+				'batch_id'             => self::id($child['units']),
+				'state'                => 'pending',
+				'completed_units'      => 0,
+				'split_from'           => $row['batch_id'] ?? self::id($units),
+				'effective_batch_size' => count($child['units']),
+			);
+		}unset($child);
+		array_splice($rows, $index, 1, $children);
+		foreach ( $rows as $position => &$row ) {
+			$row['index'] = $position;
+		}unset($row);
+		return $rows;}
 }

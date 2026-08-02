@@ -52,8 +52,8 @@ class Static_Site_Importer_Block_Document_Reporter {
 			$report['quality'][ $metric ] = 0;
 		}
 
-		$diagnostics = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
-		$report['diagnostics'] = array_values(
+		$diagnostics                                       = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
+		$report['diagnostics']                             = array_values(
 			array_filter(
 				$diagnostics,
 				static function ( $diagnostic ): bool {
