@@ -122,6 +122,13 @@ class Static_Site_Importer_Companion_Plugin {
 				return new WP_Error( 'static_site_importer_companion_plugin_asset_path_invalid', 'Companion-plugin preserved script has an unsafe asset path.' );
 			}
 		}
+		$effects = self::runtime_effects( $payload );
+		foreach ( $effects['retained_modules'] as $module ) {
+			$unit = $effects['units'][ $module['unit_id'] ] ?? array();
+			if ( 'independently_suppressible' !== ( $unit['status'] ?? '' ) || ! hash_equals( (string) ( $unit['source']['hash'] ?? '' ), hash( 'sha256', (string) $module['content'] ) ) ) {
+				return new WP_Error( 'static_site_importer_runtime_effect_invalid', 'Retained runtime modules must map to hash-verified independently suppressible units.' );
+			}
+		}
 		return true;
 	}
 
@@ -209,6 +216,7 @@ class Static_Site_Importer_Companion_Plugin {
 					'block'       => (string) $island['block'],
 					'selector'    => (string) $island['selector'],
 					'source_path' => (string) $island['source_path'],
+					'superseded_unit' => (string) ( $island['superseded_unit'] ?? '' ),
 				),
 				$preserved
 			),
@@ -529,6 +537,17 @@ class Static_Site_Importer_Companion_Plugin {
 	 */
 	private static function preserved_js( array $payload, string $block_namespace ): array {
 		$entries = isset( $payload['preserved_js'] ) && is_array( $payload['preserved_js'] ) ? $payload['preserved_js'] : array();
+		$effects = self::runtime_effects( $payload );
+		foreach ( $effects['retained_modules'] as $module ) {
+			$entries[] = array(
+				'handle'          => 'runtime-unit-' . $module['unit_id'],
+				'content'         => $module['content'],
+				'block'            => $module['block'],
+				'selector'         => $module['selector'],
+				'source_path'      => $module['source_path'],
+				'superseded_unit'  => $module['unit_id'],
+			);
+		}
 		$islands = array();
 		$index   = 0;
 
@@ -549,6 +568,7 @@ class Static_Site_Importer_Companion_Plugin {
 			$block        = isset( $entry['block'] ) && is_scalar( $entry['block'] ) ? (string) $entry['block'] : '';
 			$selector     = isset( $entry['selector'] ) && is_scalar( $entry['selector'] ) ? (string) $entry['selector'] : '';
 			$source_path  = isset( $entry['source_path'] ) && is_scalar( $entry['source_path'] ) ? (string) $entry['source_path'] : '';
+			$superseded_unit = isset( $entry['superseded_unit'] ) && is_scalar( $entry['superseded_unit'] ) ? (string) $entry['superseded_unit'] : '';
 
 			$islands[] = array(
 				'handle'       => $handle,
@@ -559,10 +579,40 @@ class Static_Site_Importer_Companion_Plugin {
 				'block'        => $block,
 				'selector'     => $selector,
 				'source_path'  => $source_path,
+				'superseded_unit' => $superseded_unit,
 			);
 		}
 
 		return $islands;
+	}
+
+	/**
+	 * Normalize the generic Blocks Engine AST ownership contract. Malformed
+	 * contracts yield no retained assets; validate_payload() rejects them.
+	 *
+	 * @return array{units:array<string,array<string,mixed>>,retained_modules:array<int,array<string,string>>}
+	 */
+	private static function runtime_effects( array $payload ): array {
+		$effects = isset( $payload['runtime_effects'] ) && is_array( $payload['runtime_effects'] ) ? $payload['runtime_effects'] : array();
+		$units = array();
+		foreach ( $effects['units'] ?? array() as $unit ) {
+			if ( is_array( $unit ) && isset( $unit['id'] ) && is_scalar( $unit['id'] ) ) {
+				$units[ (string) $unit['id'] ] = $unit;
+			}
+		}
+		$modules = array();
+		foreach ( $effects['retained_modules'] ?? array() as $module ) {
+			if ( ! is_array( $module ) || ! isset( $module['unit_id'], $module['content'] ) || ! is_scalar( $module['unit_id'] ) || ! is_scalar( $module['content'] ) ) {
+				continue;
+			}
+			$modules[] = array(
+				'unit_id' => (string) $module['unit_id'], 'content' => (string) $module['content'],
+				'block' => isset( $module['block'] ) && is_scalar( $module['block'] ) ? (string) $module['block'] : '',
+				'selector' => isset( $module['selector'] ) && is_scalar( $module['selector'] ) ? (string) $module['selector'] : '',
+				'source_path' => isset( $module['source_path'] ) && is_scalar( $module['source_path'] ) ? (string) $module['source_path'] : '',
+			);
+		}
+		return array( 'units' => $units, 'retained_modules' => $modules );
 	}
 
 	/**
