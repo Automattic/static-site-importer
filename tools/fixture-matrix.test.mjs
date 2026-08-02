@@ -653,6 +653,8 @@ test('runtime presentation evidence canonicalizes staged URLs and hashes decoded
   assert.match(script, /sourceRoot=new URL\("\/wp-content\/uploads\/fixtures\/media-site\/source\/"/);
   assert.match(script, /pathname\.slice\(sourceRoot\.length\)/);
   assert.match(script, /source_path:'pages\/team\.html'/);
+  assert.match(script, /HeadlessChrome\|Chrome/);
+  assert.doesNotMatch(script, /version:navigator\.userAgent/);
 });
 
 test('runtime presentation evidence intake preserves a typed envelope and diagnoses an unmerged probe', () => {
