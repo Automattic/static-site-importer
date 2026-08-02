@@ -25,7 +25,7 @@ const { getBlockType, parse, serialize, validateBlock } = require( '@wordpress/b
 
 registerCoreBlocks();
 
-test( 'nested shared-row topology materializes through the PHP provider adapter', () => {
+test( 'shared-row topology materializes through the PHP provider adapter', () => {
 	const output = execFileSync( 'php', [ 'tests/form-materializer-smoke.php' ], {
 		cwd: process.cwd(),
 		encoding: 'utf8',
@@ -34,7 +34,7 @@ test( 'nested shared-row topology materializes through the PHP provider adapter'
 	assert.match( output, /PASS form-materializer-smoke\.php \(\d+ assertions\)/ );
 } );
 
-test( 'core Group preserves every PHP-generated wrapper at all supported depths without validation warnings', () => {
+test( 'provider-constrained topology emits direct fields and an editor-valid core submit', () => {
 	const output = execFileSync( 'php', [ 'tests/form-materializer-smoke.php', '--emit-topology-markup' ], {
 		cwd: process.cwd(),
 		encoding: 'utf8',
@@ -46,43 +46,32 @@ test( 'core Group preserves every PHP-generated wrapper at all supported depths 
 	console.warn = ( ...args ) => warnings.push( args.join( ' ' ) );
 	console.error = ( ...args ) => warnings.push( args.join( ' ' ) );
 	let blocks;
-	let depthBlocks;
 	try {
 		blocks = parse( markup );
-		depthBlocks = parse( depthMarkup );
 	} finally {
 		console.warn = originalWarn;
 		console.error = originalError;
 	}
 
-	const group = blocks[ 0 ].innerBlocks[ 0 ];
 	assert.equal( blocks.length, 1 );
-	assert.equal( group.name, 'core/group' );
-	assert.equal( group.attributes.tagName, 'section' );
-	assert.match( group.innerBlocks[ 0 ].attributes.className, /^field ssi-node-[a-f0-9]{12}$/ );
-	assert.match( markup, /<!-- wp:group \{"className":"row-2 ssi-node-[a-f0-9]{12}","anchor":"contact-row","tagName":"section","layout":\{"type":"flex","orientation":"horizontal","flexWrap":"nowrap"\}\} -->\n<section id="contact-row" class="wp-block-group row-2 ssi-node-[a-f0-9]{12} is-layout-flex">/ );
-	assert.match( markup, /<!-- \/wp:group -->\n<!-- wp:group \{"className":"field standalone ssi-node-[a-f0-9]{12}"\} -->/ );
+	assert.doesNotMatch( markup, /<!-- wp:group/ );
+	assert.equal( ( markup.match( /"width":50/g ) || [] ).length, 2 );
+	assert.match( markup, /<!-- wp:jetpack\/field-text [^>]+ \/-->\n<!-- wp:jetpack\/field-email [^>]+ \/-->\n<!-- wp:jetpack\/field-textarea [^>]+ \/-->\n<!-- wp:button / );
+	assert.match( markup, /<button type="submit" class="wp-block-button__link wp-element-button">Send<\/button>/ );
+	assert.doesNotMatch( depthMarkup, /<!-- wp:group/ );
+	assert.match( depthMarkup, /wp:jetpack\/field-text/ );
 	assert.deepEqual( warnings, [], 'core block parsing emitted no warnings' );
-	const validateGeneratedGroups = ( generatedBlocks ) => {
+	const coreButtons = [];
+	const collectCoreButtons = ( generatedBlocks ) => {
 		for ( const block of generatedBlocks ) {
-			if ( block.name === 'core/group' ) {
-				assert.equal( validateBlock( block )[ 0 ], true, `core/group at generated depth is editor-valid` );
-			}
-			validateGeneratedGroups( block.innerBlocks );
+			if ( block.name === 'core/button' ) coreButtons.push( block );
+			collectCoreButtons( block.innerBlocks );
 		}
 	};
-	validateGeneratedGroups( blocks );
-	validateGeneratedGroups( depthBlocks );
-	let depth = 0;
-	let nested = depthBlocks[ 0 ].innerBlocks[ 0 ];
-	while ( nested?.name === 'core/group' ) {
-		depth++;
-		nested = nested.innerBlocks[ 0 ];
-	}
-	assert.equal( depth, 8, 'PHP materializes the maximum supported wrapper depth' );
-	const roundTrip = parse( serialize( [ group ] ) );
-	assert.equal( roundTrip[ 0 ].attributes.tagName, 'section' );
-	assert.equal( roundTrip[ 0 ].innerBlocks[ 0 ].name, 'core/group' );
+	collectCoreButtons( blocks );
+	assert.equal( coreButtons.length, 1 );
+	assert.equal( validateBlock( coreButtons[ 0 ] )[ 0 ], true );
+	assert.match( serialize( coreButtons ), /form-button-submit is-submit/ );
 } );
 
 test( 'Jetpack provider definitions are explicitly unavailable to this core-only validation', () => {

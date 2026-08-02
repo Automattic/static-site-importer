@@ -59,6 +59,23 @@ namespace {
 	}
 
 	$GLOBALS['ssi_jetpack_form_blocks_available'] = true;
+	$GLOBALS['ssi_jetpack_registered_form_blocks'] = array(
+		'jetpack/contact-form',
+		'jetpack/field-checkbox',
+		'jetpack/field-checkbox-multiple',
+		'jetpack/field-date',
+		'jetpack/field-email',
+		'jetpack/field-number',
+		'jetpack/field-radio',
+		'jetpack/field-select',
+		'jetpack/field-telephone',
+		'jetpack/field-text',
+		'jetpack/field-textarea',
+		'jetpack/field-url',
+	);
+	if ( ! class_exists( 'Grunion_Contact_Form' ) ) {
+		class Grunion_Contact_Form {}
+	}
 
 	if ( ! class_exists( 'WP_Block_Type_Registry' ) ) {
 		class WP_Block_Type_Registry {
@@ -67,7 +84,7 @@ namespace {
 			}
 
 			public function is_registered( string $name ): bool {
-				return ! empty( $GLOBALS['ssi_jetpack_form_blocks_available'] ) && in_array( $name, array( 'jetpack/contact-form', 'jetpack/field-text' ), true );
+				return ! empty( $GLOBALS['ssi_jetpack_form_blocks_available'] ) && in_array( $name, $GLOBALS['ssi_jetpack_registered_form_blocks'] ?? array(), true );
 			}
 		}
 	}
@@ -109,6 +126,10 @@ namespace {
 	$assert( 'jetpack_contact_form' === ( $form_adapter['id'] ?? '' ), 'form-adapter-resolves-jetpack' );
 	$assert( 'form' === ( $form_adapter['capability'] ?? '' ), 'form-adapter-capability' );
 	$assert( 'allow_missing_jetpack' === ( $form_adapter['waiver_arg'] ?? '' ), 'form-adapter-waiver' );
+	$all_jetpack_blocks = $GLOBALS['ssi_jetpack_registered_form_blocks'];
+	$GLOBALS['ssi_jetpack_registered_form_blocks'] = array( 'jetpack/contact-form', 'jetpack/field-text' );
+	$assert( ! Static_Site_Importer_Form_Seeder::jetpack_forms_available(), 'partial-provider-block-registration-is-unavailable' );
+	$GLOBALS['ssi_jetpack_registered_form_blocks'] = $all_jetpack_blocks;
 
 	// --- Woo path unaffected -------------------------------------------------
 	$product_adapter = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
@@ -153,26 +174,27 @@ namespace {
 	$assert( str_contains( $markup, 'wp:jetpack/contact-form' ), 'markup-contact-form' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-text' ), 'markup-field-text' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-email' ), 'markup-field-email' );
-	$assert( ! str_contains( $markup, 'wp:jetpack/field-telephone' ), 'markup-avoids-unstable-field-telephone-template' );
+	$assert( str_contains( $markup, 'wp:jetpack/field-telephone' ), 'markup-preserves-telephone-field-semantics' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-number' ), 'markup-field-number' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-select' ), 'markup-field-select' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-radio' ), 'markup-field-radio' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-checkbox' ), 'markup-field-checkbox' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-textarea' ), 'markup-field-textarea' );
-	$assert( str_contains( $markup, 'wp:jetpack/button' ), 'markup-submit-button' );
-	$assert( 1 === substr_count( $markup, 'wp:jetpack/button' ), 'legacy-submit-control-emits-one-button' );
+	$assert( str_contains( $markup, 'wp:button' ) && ! str_contains( $markup, 'wp:jetpack/button' ), 'markup-canonical-core-submit-button' );
+	$assert( 1 === substr_count( $markup, '<!-- wp:button ' ) && str_contains( $markup, '<button type="submit" class="wp-block-button__link wp-element-button">Send message</button>' ), 'source-submit-control-emits-one-canonical-button' );
 	$assert( str_contains( $markup, 'hello@example.com' ), 'markup-mailto-recipient' );
 	$assert( str_contains( $markup, '"options":["Sales","Support"]' ), 'markup-select-options' );
 	$assert( 1 === preg_match( '/<div class="wp-block-jetpack-contact-form form contact ssi-form-[a-f0-9]{12}">/', $markup ), 'markup-contact-form-wrapper-and-source-classes' );
-	$assert( 1 === preg_match( '/<!-- wp:jetpack\/field-text \{"required":true,"id":"contact-name","className":"ssi-node-[a-f0-9]{12}"\} -->/', $markup ), 'markup-field-wrapper-open' );
-	$assert( str_contains( $markup, '<div><!-- wp:jetpack/label {"label":"Your name","requiredText":"*"} /-->' ), 'markup-field-label-child' );
-	$assert( str_contains( $markup, '<!-- wp:jetpack/input {"type":"text"} /--></div>' ), 'markup-field-input-child-and-wrapper-close' );
-	$assert( str_contains( $markup, '<!-- wp:jetpack/input {"type":"dropdown"} /-->' ), 'markup-select-input-child' );
-	$assert( str_contains( $markup, '<!-- wp:jetpack/input {"type":"textarea"} /-->' ), 'markup-textarea-input-child' );
-	$assert( str_contains( $markup, '<!-- wp:jetpack/input {"type":"tel"} /-->' ), 'markup-telephone-input-child' );
-	$assert( str_contains( $markup, '<!-- wp:jetpack/options {"type":"radio"} -->' ), 'markup-radio-options-child' );
-	$assert( str_contains( $markup, '<ul><!-- wp:jetpack/option {"label":"In person"} /-->' ), 'markup-radio-option-wrapper' );
-	$assert( str_contains( $markup, '<!-- wp:jetpack/option {"label":"Send me updates","isStandalone":true} /-->' ), 'markup-checkbox-option-child' );
+	$assert( 1 === preg_match( '/<!-- wp:jetpack\/field-text \{"label":"Your name","required":true,"id":"contact-name","className":"ssi-node-[a-f0-9]{12}"\} \/-->/', $markup ), 'markup-field-self-closing-with-provider-attributes' );
+	$assert( str_contains( $markup, '<!-- wp:jetpack/field-select {"label":"Topic","options":["Sales","Support"]' ), 'markup-select-options-on-field' );
+	$assert( str_contains( $markup, '<!-- wp:jetpack/field-radio {"label":"In person","options":["In person","Online"]' ), 'markup-radio-options-on-field' );
+	$assert( str_contains( $markup, '<!-- wp:jetpack/field-checkbox {"label":"Send me updates"' ), 'markup-checkbox-label-on-field' );
+	$assert( ! str_contains( $markup, 'wp:jetpack/label' ) && ! str_contains( $markup, 'wp:jetpack/input' ) && ! str_contains( $markup, 'wp:jetpack/options' ), 'markup-avoids-noncanonical-field-children' );
+	$checkbox_group = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.preferences', 'controls' => array( array( 'tag' => 'input', 'type' => 'checkbox', 'name' => 'topics', 'label' => 'Topics', 'options' => array( 'Art', 'Events' ) ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Save' ) ) ) ) ) );
+	$assert( str_contains( (string) ( $checkbox_group['forms'][0]['block_markup'] ?? '' ), '<!-- wp:jetpack/field-checkbox-multiple {"label":"Topics","options":["Art","Events"]' ), 'checkbox-group-uses-provider-multiple-field' );
+	$escaped_label = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.escaped', 'controls' => array( array( 'tag' => 'input', 'type' => 'text', 'name' => 'unsafe', 'label' => 'A --> B & <C>' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ) ) ) ) );
+	$escaped_label_markup = (string) ( $escaped_label['forms'][0]['block_markup'] ?? '' );
+	$assert( str_contains( $escaped_label_markup, 'A \u002d\u002d\u003e B \u0026' ) && ! str_contains( $escaped_label_markup, 'A --> B' ), 'field-attributes-cannot-break-out-of-block-comments', $escaped_label_markup );
 
 	// --- Generic topology preserves nested rows and source presentation hooks --
 	$topology_form = array(
@@ -189,7 +211,7 @@ namespace {
 				'control_topology' => array(
 					'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false,
 					'nodes' => array(
-						array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'section', 'class' => 'row-2', 'source_id' => 'contact-row' ),
+						array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div', 'class' => 'row-2', 'source_id' => 'contact-row' ),
 						array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'class' => 'field' ),
 						array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 0 ),
 						array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'class' => 'field' ),
@@ -201,7 +223,7 @@ namespace {
 				),
 				'layout_graph' => array(
 					'schema' => 'generic/computed-layout-graph/v1', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'nodes' => 128, 'depth' => 8, 'rules_per_node' => 16 ), 'variants' => array(), 'diagnostics' => array(),
-					'nodes' => array( array( 'id' => 'wrapper-0', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'section', 'id' => 'contact-row', 'classes' => array( 'row-2' ) ), 'layout' => array( 'display' => 'flex', 'direction' => 'row', 'wrap' => 'nowrap' ), 'provenance' => array() ) ),
+					'nodes' => array( array( 'id' => 'wrapper-0', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'div', 'id' => 'contact-row', 'classes' => array( 'row-2' ) ), 'layout' => array( 'display' => 'grid', 'columns' => 'repeat(2, 1fr)', 'gap' => '1rem' ), 'provenance' => array() ) ),
 				),
 			),
 		),
@@ -211,16 +233,28 @@ namespace {
 	$topology_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_topology['forms'] ) );
 	$topology_markup = (string) ( $topology_seed['forms'][0]['block_markup'] ?? '' );
 	$topology_receipt = $topology_seed['forms'][0]['computed_layout_receipt'] ?? array();
-	$assert( 1 === preg_match( '/<section id="contact-row" class="wp-block-group row-2 ssi-node-[a-f0-9]{12} is-layout-flex"/', $topology_markup ), 'topology-preserves-row-tag-id-and-class' );
-	$assert( 3 === substr_count( $topology_markup, 'class="wp-block-group field' ), 'topology-preserves-field-groups' );
-	$assert( 1 === preg_match( '/wp:group \{"className":"row-2 ssi-node-[a-f0-9]{12}","anchor":"contact-row","tagName":"section","layout":\{"type":"flex","orientation":"horizontal","flexWrap":"nowrap"\}\}/', $topology_markup ), 'topology-serializes-gutenberg-group-tag' );
+	$assert( ! str_contains( $topology_markup, 'wp:group' ), 'topology-avoids-unsupported-provider-wrapper-blocks' );
+	$assert( 2 === substr_count( $topology_markup, '"width":50' ), 'topology-maps-proven-equal-grid-to-field-widths' );
 	$assert( str_contains( $topology_markup, 'First name' ) && str_contains( $topology_markup, 'Email' ) && str_contains( $topology_markup, 'Message' ), 'topology-preserves-labels' );
-	$assert( 1 === substr_count( $topology_markup, 'wp:jetpack/button' ), 'topology-submit-control-emits-one-button-in-source-position' );
-	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && 2 === ( $topology_receipt['operation_count'] ?? 0 ) && str_contains( $topology_markup, 'is-layout-flex' ) && 'provider_selector_transposition' === ( $topology_receipt['operations'][1]['strategy'] ?? '' ), 'computed-layout-flex-applies-with-bounded-receipt' );
+	$assert( 1 === substr_count( $topology_markup, '<!-- wp:button ' ), 'topology-submit-control-emits-one-core-button-in-source-position' );
+	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && 4 === ( $topology_receipt['operation_count'] ?? 0 ) && 'provider_equal_width_fields' === ( $topology_receipt['operations'][3]['strategy'] ?? '' ), 'computed-layout-equal-grid-applies-with-bounded-receipt' );
 	$topology_seed_repeat = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_topology['forms'] ) );
 	$assert( $topology_markup === (string) ( $topology_seed_repeat['forms'][0]['block_markup'] ?? '' ), 'provider-layout-classes-are-stable-for-identical-source-form' );
 	$provider_map = $topology_seed['forms'][0]['provider_layout_target_map'] ?? array();
-	$assert( 'generic/provider-layout-target-map/v1' === ( $provider_map['schema'] ?? '' ) && str_contains( (string) ( $provider_map['targets'][0]['selector'] ?? '' ), '.ssi-form-' ) && ! str_contains( (string) ( $provider_map['targets'][0]['selector'] ?? '' ), 'row-2' ), 'provider-layout-map-keeps-source-classes-out-of-selectors' );
+	$assert( 'generic/provider-layout-target-map/v1' === ( $provider_map['schema'] ?? '' ) && array() === ( $provider_map['targets'] ?? null ), 'provider-layout-map-omits-flattened-wrapper-targets' );
+	$class_owned_form = $validated_topology['forms'][0];
+	$class_owned_form['layout_graph']['nodes'][] = array( 'id' => 'wrapper-1', 'kind' => 'container', 'parent' => 'wrapper-0', 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array( 'field' ) ), 'layout' => array( 'display' => 'flex', 'direction' => 'column' ), 'provenance' => array( array( 'selector' => '.field' ) ) );
+	$class_owned_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $class_owned_form ) ) );
+	$class_owned_losses = $class_owned_seed['forms'][0]['computed_layout_receipt']['losses'] ?? array();
+	$assert( ! in_array( 'provider_wrapper_layout_unrepresentable', array_column( $class_owned_losses, 'reason_code' ), true ) && str_contains( (string) ( $class_owned_seed['forms'][0]['block_markup'] ?? '' ), 'field ssi-node-' ), 'class-owned-single-field-layout-projects-with-its-author-style-hook' );
+	$unproven_class_form = $class_owned_form;
+	$unproven_class_form['layout_graph']['nodes'][1]['provenance'] = array();
+	$unproven_class_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $unproven_class_form ) ) );
+	$assert( in_array( 'provider_wrapper_layout_unrepresentable', array_column( $unproven_class_seed['forms'][0]['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ), true ), 'class-projection-alone-does-not-claim-layout-equivalence' );
+	$structural_selector_form = $class_owned_form;
+	$structural_selector_form['layout_graph']['nodes'][1]['provenance'][0]['selector'] = '.row-2 > .field';
+	$structural_selector_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $structural_selector_form ) ) );
+	$assert( in_array( 'provider_wrapper_layout_unrepresentable', array_column( $structural_selector_seed['forms'][0]['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ), true ), 'ancestor-dependent-class-selector-does-not-survive-wrapper-flattening' );
 	$root_graph = $layout_graph( array( $layout_node( 'form', array( 'display' => 'flex', 'direction' => 'row', 'gap' => '1rem' ), 'form' ) ) );
 	$root_map = array( 'schema' => 'generic/provider-layout-target-map/v1', 'provider' => 'jetpack', 'scope' => '.ssi-form-123456789abc', 'targets' => array( array( 'node' => 'form', 'selector' => '.ssi-form-123456789abc > form.jetpack-contact-form__form', 'capabilities' => array( 'container_layout', 'responsive_layout' ) ) ) );
 	$root_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $root_graph, $root_map );
@@ -243,8 +277,8 @@ namespace {
 	$assert( '' === $item_without_direct_child['css'] && array( 'direct_child_relationship_unrepresentable', 'direct_child_relationship_unrepresentable' ) === array_column( $item_without_direct_child['losses'], 'reason_code' ), 'provider-layout-does-not-accept-inert-item-layout-capability' );
 	$booking = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.booking', 'controls' => array( array( 'tag' => 'input', 'type' => 'number', 'name' => 'guests', 'label' => 'Guests', 'min' => '1', 'max' => '8', 'step' => '0.5' ), array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Request booking' ) ) ) ) ) );
 	$booking_row = $booking['forms'][0] ?? array();
-	$assert( 'Request booking' === ( $booking_row['submit_text'] ?? '' ) && str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '"text":"Request booking"' ), 'canonical-control-text-preserves-request-booking-submit-label' );
-	$assert( str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '"type":"number","step":"0.5"' ) && array( 'min', 'max' ) === array_column( $booking_row['computed_layout_receipt']['losses'] ?? array(), 'attribute' ), 'number-source-attributes-preserve-supported-step-and-report-min-max-losses' );
+	$assert( 'Request booking' === ( $booking_row['submit_text'] ?? '' ) && str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '>Request booking</button>' ), 'canonical-control-text-preserves-request-booking-submit-label' );
+	$assert( str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '"label":"Guests","step":"0.5"' ) && array( 'min', 'max' ) === array_column( $booking_row['computed_layout_receipt']['losses'] ?? array(), 'attribute' ), 'number-source-attributes-preserve-supported-step-and-report-min-max-losses' );
 	$number_control_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
 	$number_control_report['diagnostics'][] = array(
 		'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_form_fallback', 'loss_class' => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
@@ -268,14 +302,14 @@ namespace {
 			}
 		};
 		$walk_parsed_markup( $parsed_markup );
-		$assert( array( 'jetpack/contact-form', 'core/group', 'core/group', 'jetpack/field-text', 'jetpack/label', 'jetpack/input', 'core/group', 'jetpack/field-email', 'jetpack/label', 'jetpack/input', 'core/group', 'jetpack/field-textarea', 'jetpack/label', 'jetpack/input', 'jetpack/button' ) === $parsed_names, 'wordpress-parse-blocks-preserves-complete-emitted-form-topology', wp_json_encode( $parsed_names ) );
+		$assert( array( 'jetpack/contact-form', 'jetpack/field-text', 'jetpack/field-email', 'jetpack/field-textarea', 'core/button' ) === $parsed_names, 'wordpress-parse-blocks-preserves-canonical-provider-grammar', wp_json_encode( $parsed_names ) );
 	}
 	$unsafe_graph = $topology_form;
 	$unsafe_graph['forms'][0]['layout_graph']['nodes'][0]['layout'] = array( 'display' => 'grid', 'direction' => 'none', 'item_placement' => array( 'column' => 1 ) );
 	$unsafe_graph_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unsafe_graph );
 	$unsafe_graph_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $unsafe_graph_validation['forms'] ) );
 	$unsafe_losses = $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['losses'] ?? array();
-	$assert( 'applied' === ( $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['status'] ?? '' ) && in_array( 'unsupported_item_placement', array_column( $unsafe_losses, 'reason_code' ), true ) && in_array( 'unsafe_layout_value', array_column( $unsafe_losses, 'reason_code' ), true ), 'computed-layout-grid-placement-is-deferred' );
+	$assert( 'applied' === ( $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['status'] ?? '' ) && array( 'provider_wrapper_layout_unrepresentable', 'unsupported_item_placement' ) === array_column( $unsafe_losses, 'reason_code' ), 'computed-layout-grid-placement-is-gated-despite-represented-field-wrappers', wp_json_encode( $unsafe_graph_seed['forms'][0]['computed_layout_receipt'] ?? array() ) );
 	$unknown_layout_key = $topology_form;
 	$unknown_layout_key['forms'][0]['layout_graph']['nodes'][0]['layout']['alignment'] = 'center';
 	$unknown_layout_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unknown_layout_key );
@@ -310,6 +344,17 @@ namespace {
 	for ( $receipt_index = 0; $receipt_index < 33; ++$receipt_index ) $receipt_nodes[] = $layout_node( 'control-' . $receipt_index, array( 'display' => 'flex', 'direction' => 'row' ), 'input' );
 	$capped_receipt = Static_Site_Importer_Computed_Layout_Strategy::apply( array( 'layout_graph' => $layout_graph( $receipt_nodes ) ), $layout_blocks )['receipt'];
 	$assert( 32 === $capped_receipt['loss_count'] && 33 === $capped_receipt['losses_total'] && true === $capped_receipt['truncated'], 'computed-layout-receipt-caps-entries-at-32' );
+	$gate_losses = array_fill( 0, 33, array( 'dimension' => 'topology', 'reason_code' => 'provider_wrapper_layout_unrepresentable' ) );
+	$gate_overflow_receipt = Static_Site_Importer_Computed_Layout_Strategy::apply( array( 'topology_losses' => $gate_losses ), array() )['receipt'];
+	$assert( 1 === ( $gate_overflow_receipt['gate_required_loss_overflow_count'] ?? 0 ) && 64 === strlen( (string) ( $gate_overflow_receipt['gate_required_loss_overflow_hash'] ?? '' ) ), 'computed-layout-records-gate-required-overflow-before-seeder-appends' );
+	$overflow_nodes = array();
+	for ( $receipt_index = 0; $receipt_index < 33; ++$receipt_index ) $overflow_nodes[] = $layout_node( 'wrapper-' . $receipt_index, array( 'display' => 'flex', 'direction' => 'row' ) );
+	$overflow_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.overflow', 'controls' => array( array( 'tag' => 'input', 'type' => 'number', 'label' => 'Guests', 'min' => '1' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ), 'layout_graph' => $layout_graph( $overflow_nodes ) ) ) ) );
+	$overflow_receipt = $overflow_seed['forms'][0]['computed_layout_receipt'] ?? array();
+	$assert( 34 === ( $overflow_receipt['losses_total'] ?? 0 ) && 32 === count( $overflow_receipt['losses'] ?? array() ) && true === ( $overflow_receipt['truncated'] ?? false ) && 1 === ( $overflow_receipt['gate_required_loss_overflow_count'] ?? 0 ) && 64 === strlen( (string) ( $overflow_receipt['gate_required_loss_overflow_hash'] ?? '' ) ) && in_array( 'unsupported_control_attribute', array_column( $overflow_receipt['losses'] ?? array(), 'reason_code' ), true ), 'seeder-retains-gate-required-loss-while-preserving-overflow-totals', wp_json_encode( $overflow_receipt ) );
+	$mark_form_finding = new ReflectionMethod( 'Static_Site_Importer_Report_Diagnostics', 'mark_form_finding_mapped' );
+	$overflow_finding = $mark_form_finding->invoke( null, array(), $overflow_seed['forms'][0], 'jetpack' );
+	$assert( false === ( $overflow_finding['runtime_mapped'] ?? true ) && 'form_receipt_gate_loss_overflow' === ( $overflow_finding['form_receipt_unaccepted_losses'][1]['reason_code'] ?? '' ), 'gate-required-receipt-overflow-fails-runtime-acceptance', wp_json_encode( $overflow_finding ) );
 	$variant_only = $topology_form;
 	$variant_only['forms'][0]['layout_graph']['nodes'] = array( $layout_node( 'wrapper-0', array(), 'section' ) );
 	$variant_only['forms'][0]['layout_graph']['variants'] = array();
@@ -321,7 +366,7 @@ namespace {
 	$variant_only_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $variant_only_validation['forms'] ) );
 	$variant_only_receipt = $variant_only_seed['forms'][0]['computed_layout_receipt'] ?? array();
 	$variant_only_loss = $variant_only_receipt['losses'][0] ?? array();
-	$assert( empty( $variant_only_validation['errors'] ) && 256 === count( $variant_only_validation['forms'][0]['layout_graph']['variants'] ?? array() ) && 1 === ( $variant_only_receipt['losses_total'] ?? 0 ) && 'responsive_layout_ownership' === ( $variant_only_loss['reason_code'] ?? '' ) && 256 === ( $variant_only_loss['variant_count'] ?? 0 ) && 64 === strlen( (string) ( $variant_only_loss['variant_hash'] ?? '' ) ), 'computed-layout-variant-only-no-base-layout-retains-256-and-records-one-target-loss' );
+	$assert( empty( $variant_only_validation['errors'] ) && 256 === count( $variant_only_validation['forms'][0]['layout_graph']['variants'] ?? array() ) && 2 === ( $variant_only_receipt['losses_total'] ?? 0 ) && 'provider_wrapper_layout_unrepresentable' === ( $variant_only_loss['reason_code'] ?? '' ) && 'responsive_layout_ownership' === ( $variant_only_receipt['losses'][1]['reason_code'] ?? '' ) && 256 === ( $variant_only_receipt['losses'][1]['variant_count'] ?? 0 ) && 64 === strlen( (string) ( $variant_only_receipt['losses'][1]['variant_hash'] ?? '' ) ), 'computed-layout-variant-only-retains-bounded-provider-and-responsive-losses', wp_json_encode( $variant_only_receipt ) );
 	$semantic_topology = $topology_form;
 	$semantic_topology['forms'][0]['control_topology']['nodes'][0]['tag'] = 'fieldset';
 	$semantic_topology['forms'][0]['control_topology']['nodes'][1]['tag'] = 'label';
@@ -335,7 +380,7 @@ namespace {
 	array_pop( $legacy_without_submit['forms'][0]['controls'] );
 	$legacy_without_submit_seed = Static_Site_Importer_Form_Seeder::seed( $legacy_without_submit );
 	$legacy_without_submit_markup = (string) ( $legacy_without_submit_seed['forms'][0]['block_markup'] ?? '' );
-	$assert( 1 === substr_count( $legacy_without_submit_markup, 'wp:jetpack/button' ) && str_contains( $legacy_without_submit_markup, '"text":"Submit"' ), 'legacy-form-without-submit-keeps-default-provider-button' );
+	$assert( 1 === substr_count( $legacy_without_submit_markup, '<!-- wp:button ' ) && str_contains( $legacy_without_submit_markup, '>Submit</button>' ), 'legacy-form-without-submit-keeps-default-provider-button' );
 	$topology_without_submit = $topology_form;
 	array_pop( $topology_without_submit['forms'][0]['controls'] );
 	array_pop( $topology_without_submit['forms'][0]['control_topology']['nodes'] );
@@ -343,7 +388,7 @@ namespace {
 	$assert( empty( $validated_topology_without_submit['errors'] ), 'topology-without-submit-manifest-validates' );
 	$topology_without_submit_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_topology_without_submit['forms'] ) );
 	$topology_without_submit_markup = (string) ( $topology_without_submit_seed['forms'][0]['block_markup'] ?? '' );
-	$assert( 1 === substr_count( $topology_without_submit_markup, 'wp:jetpack/button' ) && str_contains( $topology_without_submit_markup, '"text":"Submit"' ), 'topology-without-submit-gets-one-default-provider-button' );
+	$assert( 1 === substr_count( $topology_without_submit_markup, '<!-- wp:button ' ) && str_contains( $topology_without_submit_markup, '>Submit</button>' ), 'topology-without-submit-gets-one-default-provider-button' );
 	$invalid_topology = $topology_form;
 	$invalid_topology['forms'][0]['control_topology']['truncated'] = true;
 	$invalid_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $invalid_topology );
@@ -357,7 +402,8 @@ namespace {
 	$unsupported_control_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unsupported_control );
 	$unsupported_control_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $unsupported_control_validation['forms'] ) );
 	$unsupported_control_row = $unsupported_control_seed['forms'][0] ?? array();
-	$unsupported_control_loss = $unsupported_control_row['computed_layout_receipt']['losses'][0] ?? array();
+	$unsupported_control_losses = array_values( array_filter( $unsupported_control_row['computed_layout_receipt']['losses'] ?? array(), static fn ( $loss ): bool => 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' ) ) );
+	$unsupported_control_loss = $unsupported_control_losses[0] ?? array();
 	$unsupported_control_markup = (string) ( $unsupported_control_row['block_markup'] ?? '' );
 	$assert( empty( $unsupported_control_validation['errors'] ) && array( 'file' ) === ( $unsupported_control_row['skipped_types'] ?? array() ), 'unsupported-file-control-keeps-provider-skipped-type-diagnostic' );
 	$assert( 'topology' === ( $unsupported_control_loss['dimension'] ?? '' ) && 'unsupported_control_unrepresentable' === ( $unsupported_control_loss['reason_code'] ?? '' ) && 1 === ( $unsupported_control_loss['control_index'] ?? null ) && hash( 'sha256', 'file' ) === ( $unsupported_control_loss['control_type_hash'] ?? '' ) && 64 === strlen( (string) ( $unsupported_control_loss['node_hash'] ?? '' ) ), 'unsupported-file-control-records-node-addressable-topology-loss' );
@@ -376,7 +422,7 @@ namespace {
 	$deep_topology_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $deep_topology );
 	$deep_topology_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $deep_topology_validation['forms'] ) );
 	$deep_topology_markup = (string) ( $deep_topology_seed['forms'][0]['block_markup'] ?? '' );
-	$assert( empty( $deep_topology_validation['errors'] ) && 8 === substr_count( $deep_topology_markup, '<!-- wp:group ' ), 'topology-materializes-eight-wrapper-depth' );
+	$assert( empty( $deep_topology_validation['errors'] ) && ! str_contains( $deep_topology_markup, '<!-- wp:group ' ) && str_contains( $deep_topology_markup, 'First name' ), 'deep-topology-flattens-without-losing-provider-fields' );
 
 	// --- Provider blocks are never claimed without the provider runtime --------
 	$GLOBALS['ssi_jetpack_form_blocks_available'] = false;
@@ -626,7 +672,7 @@ namespace {
 		$assert( str_contains( $single_grafted, 'wp:jetpack/field-text' ), 'graft-content-has-field-text' );
 		$assert( str_contains( $single_grafted, 'wp:jetpack/field-email' ), 'graft-content-has-field-email' );
 		$assert( str_contains( $single_grafted, 'wp:jetpack/field-textarea' ), 'graft-content-has-field-textarea' );
-		$assert( str_contains( $single_grafted, 'wp:jetpack/button' ), 'graft-content-has-submit-button' );
+		$assert( str_contains( $single_grafted, '<!-- wp:button ' ) && ! str_contains( $single_grafted, 'wp:jetpack/button' ), 'graft-content-has-canonical-submit-button' );
 		$assert( ! str_contains( $single_grafted, 'Your name (required)' ), 'graft-content-drops-paragraph-fallback' );
 		$assert( str_contains( $single_grafted, 'Contact' ), 'graft-content-preserves-surrounding-content' );
 		$assert( ! str_contains( $single_grafted, '<!-- wp:html' ), 'graft-content-has-no-core-html-island' );

@@ -1453,6 +1453,15 @@ class Static_Site_Importer_Report_Diagnostics {
 	private static function mark_form_finding_mapped( array $diagnostic, array $row, string $provider ): array {
 		$receipt_losses = isset( $row['computed_layout_receipt']['losses'] ) && is_array( $row['computed_layout_receipt']['losses'] ) ? $row['computed_layout_receipt']['losses'] : array();
 		$unaccepted_losses = array_values( array_filter( $receipt_losses, static fn( $loss ): bool => is_array( $loss ) && self::form_receipt_loss_requires_gate( $loss ) && ! self::form_receipt_loss_accepted( $loss, $diagnostic, $row ) ) );
+		$gate_overflow_count = (int) ( $row['computed_layout_receipt']['gate_required_loss_overflow_count'] ?? 0 );
+		if ( $gate_overflow_count > 0 ) {
+			$unaccepted_losses[] = array(
+				'dimension'    => 'topology',
+				'reason_code' => 'form_receipt_gate_loss_overflow',
+				'loss_count'   => $gate_overflow_count,
+				'loss_hash'    => (string) ( $row['computed_layout_receipt']['gate_required_loss_overflow_hash'] ?? '' ),
+			);
+		}
 		$diagnostic['provider_mapped'] = true;
 		$diagnostic['runtime_mapped']  = empty( $unaccepted_losses );
 		$diagnostic['runtime_carried'] = ! empty( $row['runtime_carried'] );

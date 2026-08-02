@@ -40,14 +40,13 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return array<string,string>
 	 */
 	private static function field_block_map(): array {
-		// field-telephone rewrites its valid input child to an editor-invalid phone-input block.
 		return array(
 			'text'     => 'jetpack/field-text',
 			'search'   => 'jetpack/field-text',
 			'password' => 'jetpack/field-text',
 			'number'   => 'jetpack/field-number',
 			'email'    => 'jetpack/field-email',
-			'tel'      => 'jetpack/field-text',
+			'tel'      => 'jetpack/field-telephone',
 			'url'      => 'jetpack/field-url',
 			'date'     => 'jetpack/field-date',
 			'textarea' => 'jetpack/field-textarea',
@@ -55,6 +54,11 @@ class Static_Site_Importer_Form_Seeder {
 			'checkbox' => 'jetpack/field-checkbox',
 			'radio'    => 'jetpack/field-radio',
 		);
+	}
+
+	/** Return every Jetpack block type the adapter can emit. */
+	private static function required_provider_blocks(): array {
+		return array_values( array_unique( array_merge( array( 'jetpack/contact-form', 'jetpack/field-checkbox-multiple' ), array_values( self::field_block_map() ) ) ) );
 	}
 
 	/**
@@ -151,26 +155,29 @@ class Static_Site_Importer_Form_Seeder {
 	/**
 	 * Return the specific Jetpack Forms APIs present in the current runtime.
 	 *
-	 * @return array<string,bool>
+	 * @return array<string,mixed>
 	 */
 	public static function jetpack_forms_availability_details(): array {
 		$contact_form_class = class_exists( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form' );
 		$legacy_class       = class_exists( 'Grunion_Contact_Form' ) || class_exists( 'Contact_Form' );
-		$contact_form_block = false;
-		$field_text_block   = false;
+		$registered_blocks = array_fill_keys( self::required_provider_blocks(), false );
 
 		if ( class_exists( 'WP_Block_Type_Registry' ) ) {
-			$registry           = WP_Block_Type_Registry::get_instance();
-			$contact_form_block = $registry->is_registered( 'jetpack/contact-form' );
-			$field_text_block   = $registry->is_registered( 'jetpack/field-text' );
+			$registry = WP_Block_Type_Registry::get_instance();
+			foreach ( array_keys( $registered_blocks ) as $block_name ) {
+				$registered_blocks[ $block_name ] = $registry->is_registered( $block_name );
+			}
 		}
+		$contact_form_block = $registered_blocks['jetpack/contact-form'];
+		$field_text_block   = $registered_blocks['jetpack/field-text'];
 
 		return array(
-			'available'          => ( $contact_form_class || $legacy_class || ( $contact_form_block && $field_text_block ) ),
+			'available'          => ( $contact_form_class || $legacy_class ) && ! in_array( false, $registered_blocks, true ),
 			'contact_form_class' => $contact_form_class,
 			'legacy_class'       => $legacy_class,
 			'contact_form_block' => $contact_form_block,
 			'field_text_block'   => $field_text_block,
+			'registered_blocks'  => $registered_blocks,
 		);
 	}
 
@@ -270,22 +277,30 @@ class Static_Site_Importer_Form_Seeder {
 			$inner_blocks[] = self::submit_button_block( $submit_text, self::layout_node_class( $scope, 'control-submit' ) );
 		}
 		$form['topology_losses'] = $topology['losses'];
-		$layout = Static_Site_Importer_Computed_Layout_Strategy::apply( $form, $inner_blocks );
-		foreach ( $control_attribute_losses as $loss ) $layout['receipt']['losses'][] = $loss;
+		$provider_graph = is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array( 'nodes' => array(), 'variants' => array() );
+		if ( ! empty( $topology['represented_layout_nodes'] ) ) {
+			$represented = array_fill_keys( $topology['represented_layout_nodes'], true );
+			$provider_graph['nodes'] = array_values( array_filter( $provider_graph['nodes'] ?? array(), static fn ( $node ): bool => ! is_array( $node ) || ! isset( $represented[ $node['id'] ?? '' ] ) ) );
+			$provider_graph['variants'] = array_values( array_filter( $provider_graph['variants'] ?? array(), static fn ( $variant ): bool => ! is_array( $variant ) || ! isset( $represented[ $variant['node'] ?? '' ] ) ) );
+		}
+		$layout_form = $form;
+		$layout_form['layout_graph'] = $provider_graph;
+		$layout = Static_Site_Importer_Computed_Layout_Strategy::apply( $layout_form, $inner_blocks );
+		self::append_receipt_entries( $layout['receipt'], 'operations', $topology['operations'] );
+		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
 		$inner_blocks = $layout['blocks'];
 		$form_attrs     = self::contact_form_attributes( $form, $scope );
-		$target_map     = self::provider_layout_target_map( $form, $scope );
-		$overlay        = Static_Site_Importer_Provider_Layout_Overlay::compile( is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array( 'nodes' => array(), 'variants' => array() ), $target_map );
-		foreach ( $overlay['operations'] as $operation ) $layout['receipt']['operations'][] = $operation;
-		foreach ( $overlay['losses'] as $loss ) $layout['receipt']['losses'][] = $loss;
-		$layout['receipt']['operations_total'] = count( $layout['receipt']['operations'] );
-		$layout['receipt']['losses_total'] = count( $layout['receipt']['losses'] );
-		$layout['receipt']['operation_count'] = min( 32, $layout['receipt']['operations_total'] );
-		$layout['receipt']['loss_count'] = min( 32, $layout['receipt']['losses_total'] );
-		$layout['receipt']['truncated'] = $layout['receipt']['operations_total'] > 32 || $layout['receipt']['losses_total'] > 32;
-		$layout['receipt']['operations'] = array_slice( $layout['receipt']['operations'], 0, 32 );
-		$layout['receipt']['losses'] = array_slice( $layout['receipt']['losses'], 0, 32 );
-		$layout['receipt']['status'] = empty( $layout['receipt']['operations'] ) ? ( empty( $layout['receipt']['losses'] ) ? 'skipped' : 'deferred' ) : 'applied';
+		$overlay_graph  = $provider_graph;
+		$overlay_graph['nodes'] = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
+		$overlay_nodes = array_fill_keys( array_map( static fn ( array $node ): string => (string) $node['id'], $overlay_graph['nodes'] ), true );
+		$overlay_graph['variants'] = array_values( array_filter( $overlay_graph['variants'] ?? array(), static fn ( $variant ): bool => is_array( $variant ) && isset( $overlay_nodes[ $variant['node'] ?? '' ] ) ) );
+		$overlay_form = $form;
+		$overlay_form['layout_graph'] = $overlay_graph;
+		$target_map     = self::provider_layout_target_map( $overlay_form, $scope );
+		$overlay        = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map );
+		self::append_receipt_entries( $layout['receipt'], 'operations', $overlay['operations'] );
+		self::append_receipt_entries( $layout['receipt'], 'losses', $overlay['losses'] );
+		$layout['receipt']['status'] = $layout['receipt']['operations_total'] > 0 ? 'applied' : ( $layout['receipt']['losses_total'] > 0 ? 'deferred' : 'skipped' );
 		$markup         = self::serialize_block( 'jetpack/contact-form', $form_attrs, $inner_blocks );
 
 		return array(
@@ -308,16 +323,17 @@ class Static_Site_Importer_Form_Seeder {
 	}
 
 	/**
-	 * Map the validated generic tree to Gutenberg layout blocks. Jetpack fields
-	 * remain provider-owned; groups only carry source presentation and parentage.
+	 * Flatten the validated generic tree into Jetpack's constrained direct-child
+	 * grammar. Equal two- and four-column grids map to provider field widths;
+	 * other wrapper semantics/layout remain explicit receipt losses.
 	 *
 	 * @param array<int,array<string,mixed>> $field_blocks
 	 * @param array<int,array<string,mixed>> $controls
-	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>}|null
+	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>}|null
 	 */
 	private static function topology_inner_blocks( array $form, array $field_blocks, array $controls ): ?array {
 		if ( ! isset( $form['control_topology'] ) ) {
-			return array( 'blocks' => array_values( $field_blocks ), 'losses' => array() );
+			return array( 'blocks' => array_values( $field_blocks ), 'losses' => array(), 'operations' => array(), 'represented_layout_nodes' => array() );
 		}
 		$nodes = $form['control_topology']['nodes'] ?? null;
 		if ( ! is_array( $nodes ) ) {
@@ -336,7 +352,86 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		unset( $siblings );
 		$losses = array();
-		$build = static function ( string $parent ) use ( &$build, $children, $field_blocks, $controls, $form, &$losses ): array {
+		$operations = array();
+		$represented_layout_nodes = array();
+		$layout_by_node = array();
+		$layout_nodes_by_id = array();
+		$variants_by_node = array();
+		foreach ( $form['layout_graph']['nodes'] ?? array() as $layout_node ) {
+			if ( is_array( $layout_node ) && is_string( $layout_node['id'] ?? null ) ) {
+				$layout_by_node[ $layout_node['id'] ] = is_array( $layout_node['layout'] ?? null ) ? $layout_node['layout'] : array();
+				$layout_nodes_by_id[ $layout_node['id'] ] = $layout_node;
+			}
+		}
+		foreach ( $form['layout_graph']['variants'] ?? array() as $variant ) {
+			if ( is_array( $variant ) && is_string( $variant['node'] ?? null ) ) $variants_by_node[ $variant['node'] ] = true;
+		}
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || ! is_string( $node['id'] ?? null ) ) continue;
+			$direct_children = $children[ $node['id'] ] ?? array();
+			if ( 1 !== count( $direct_children ) || 'control' !== ( $direct_children[0]['kind'] ?? null ) ) continue;
+			$control_index = $direct_children[0]['control'] ?? null;
+			$source_class = trim( (string) ( $node['class'] ?? '' ) );
+			if ( ! is_int( $control_index ) || '' === $source_class || ! isset( $field_blocks[ $control_index ] ) || 'core/button' === ( $field_blocks[ $control_index ]['name'] ?? '' ) ) continue;
+			$generated_class = self::layout_node_class( self::layout_scope( $form ), $node['id'] );
+			$field_blocks[ $control_index ]['attrs']['className'] = trim( (string) ( $field_blocks[ $control_index ]['attrs']['className'] ?? '' ) . ' ' . $source_class . ' ' . $generated_class );
+			$operations[] = array( 'dimension' => 'topology', 'strategy' => 'provider_field_wrapper_class_projection', 'target_hash' => hash( 'sha256', $node['id'] ) );
+			$layout = $layout_by_node[ $node['id'] ] ?? array();
+			$provenance = $layout_nodes_by_id[ $node['id'] ]['provenance'] ?? array();
+			$class_tokens = preg_split( '/\s+/', $source_class ) ?: array();
+			$class_owned = ! empty( $layout ) && ! empty( $provenance );
+			foreach ( $provenance as $provenance_row ) {
+				$selector = is_array( $provenance_row ) && is_string( $provenance_row['selector'] ?? null ) ? $provenance_row['selector'] : '';
+				$matches_class = false;
+				if ( preg_match( '/^(?:[a-z][a-z0-9-]*)?(?:\.[a-zA-Z][a-zA-Z0-9_-]*)+$/D', $selector ) ) {
+					foreach ( $class_tokens as $class_token ) {
+						if ( '' !== $class_token && preg_match( '/\.' . preg_quote( $class_token, '/' ) . '(?![a-zA-Z0-9_-])/', $selector ) ) {
+							$matches_class = true;
+							break;
+						}
+					}
+				}
+				if ( ! $matches_class ) {
+					$class_owned = false;
+					break;
+				}
+			}
+			if ( $class_owned ) $represented_layout_nodes[] = $node['id'];
+		}
+		$collect_controls = static function ( array $node ) use ( &$collect_controls, $children ): array {
+			if ( 'control' === ( $node['kind'] ?? null ) ) return is_int( $node['control'] ?? null ) ? array( $node['control'] ) : array();
+			$controls = array();
+			foreach ( $children[ $node['id'] ?? '' ] ?? array() as $child ) $controls = array_merge( $controls, $collect_controls( $child ) );
+			return $controls;
+		};
+		foreach ( $children as $parent => $siblings ) {
+			if ( '$root' === $parent || ! isset( $layout_by_node[ $parent ] ) || isset( $variants_by_node[ $parent ] ) || ! in_array( count( $siblings ), array( 2, 4 ), true ) ) continue;
+			$layout = $layout_by_node[ $parent ];
+			if ( array_intersect( array_keys( $layout ), array( 'item_placement', 'column', 'row', 'area' ) ) ) continue;
+			$columns = preg_replace( '/\s+/', '', (string) ( $layout['columns'] ?? '' ) );
+			$count = count( $siblings );
+			$equal_grid = 'grid' === ( $layout['display'] ?? null ) && ( 'repeat(' . $count . ',1fr)' === $columns || str_repeat( '1fr', $count ) === $columns );
+			if ( ! $equal_grid ) continue;
+			$indexes = array();
+			foreach ( $siblings as $sibling ) {
+				$branch_controls = $collect_controls( $sibling );
+				if ( 1 !== count( $branch_controls ) || ! isset( $field_blocks[ $branch_controls[0] ] ) || 'core/button' === ( $field_blocks[ $branch_controls[0] ]['name'] ?? '' ) ) {
+					$indexes = array();
+					break;
+				}
+				$indexes[] = $branch_controls[0];
+			}
+			if ( empty( $indexes ) ) continue;
+			foreach ( $indexes as $control_index ) $field_blocks[ $control_index ]['attrs']['width'] = 100 / $count;
+			$represented_layout_nodes[] = $parent;
+			$operations[] = array( 'dimension' => 'layout', 'strategy' => 'provider_equal_width_fields', 'target_hash' => hash( 'sha256', $parent ), 'width' => 100 / $count );
+		}
+		$represented = array_fill_keys( $represented_layout_nodes, true );
+		foreach ( $layout_by_node as $node_id => $layout ) {
+			if ( ! preg_match( '/^wrapper-[0-9]+$/D', $node_id ) || isset( $represented[ $node_id ] ) || ( empty( $layout ) && ! isset( $variants_by_node[ $node_id ] ) ) ) continue;
+			$losses[] = array( 'dimension' => 'topology', 'reason_code' => 'provider_wrapper_layout_unrepresentable', 'node_hash' => hash( 'sha256', $node_id ) );
+		}
+		$build = static function ( string $parent ) use ( &$build, $children, $field_blocks, $controls, &$losses ): array {
 			$blocks = array();
 			foreach ( $children[ $parent ] ?? array() as $node ) {
 				if ( 'control' === ( $node['kind'] ?? null ) ) {
@@ -355,16 +450,11 @@ class Static_Site_Importer_Form_Seeder {
 					}
 					continue;
 				}
-				$attrs = array();
-				$generated_class = self::layout_node_class( self::layout_scope( $form ), $node['id'] );
-				$attrs['className'] = trim( (string) ( $node['class'] ?? '' ) . ' ' . $generated_class );
-				if ( isset( $node['source_id'] ) ) $attrs['anchor'] = $node['source_id'];
-				if ( isset( $node['tag'] ) && in_array( $node['tag'], array( 'article', 'aside', 'div', 'footer', 'header', 'main', 'nav', 'section' ), true ) ) $attrs['tagName'] = $node['tag'];
-				$blocks[] = array( 'name' => 'core/group', 'attrs' => $attrs, 'innerBlocks' => $build( $node['id'] ), 'wrapper' => 'group', 'topologyId' => $node['id'], 'topologySourceTag' => $node['tag'] ?? 'div' );
+				$blocks = array_merge( $blocks, $build( $node['id'] ) );
 			}
 			return $blocks;
 		};
-		return array( 'blocks' => $build( '$root' ), 'losses' => $losses );
+		return array( 'blocks' => $build( '$root' ), 'losses' => $losses, 'operations' => $operations, 'represented_layout_nodes' => $represented_layout_nodes );
 	}
 
 	/**
@@ -389,6 +479,7 @@ class Static_Site_Importer_Form_Seeder {
 
 		$attrs = array();
 		$label = self::control_text( $control );
+		$attrs['label'] = $label;
 		if ( ! empty( $control['required'] ) ) {
 			$attrs['required'] = true;
 		}
@@ -405,65 +496,12 @@ class Static_Site_Importer_Form_Seeder {
 			}
 		}
 
-		$inner_blocks = array();
-		if ( 'checkbox' === $lookup ) {
-			$inner_blocks[] = array(
-				'name'  => 'jetpack/option',
-				'attrs' => array(
-					'label'        => $label,
-					'isStandalone' => true,
-				),
-			);
-		} elseif ( '' !== $label ) {
-			$label_attrs = array( 'label' => $label );
-			if ( ! empty( $control['required'] ) ) {
-				$label_attrs['requiredText'] = '*';
-			}
-			$inner_blocks[] = array(
-				'name'  => 'jetpack/label',
-				'attrs' => $label_attrs,
-			);
-		}
-		if ( 'radio' === $lookup ) {
-			$options = $attrs['options'] ?? array();
-			if ( empty( $options ) && '' !== $label ) {
-				$options = array( $label );
-			}
-			$option_blocks = array();
-			foreach ( $options as $option ) {
-				$option_blocks[] = array(
-					'name'  => 'jetpack/option',
-					'attrs' => array( 'label' => $option ),
-				);
-			}
-			$inner_blocks[] = array(
-				'name'        => 'jetpack/options',
-				'attrs'       => array( 'type' => 'radio' ),
-				'innerBlocks' => $option_blocks,
-				'wrapper'     => 'ul',
-			);
-		}
-
-		$input_attrs = array();
 		if ( '' !== $placeholder ) {
-			$input_attrs['placeholder'] = $placeholder;
-		}
-		if ( 'textarea' === $lookup ) {
-			$input_attrs['type'] = 'textarea';
-		} elseif ( 'select' === $lookup ) {
-			$input_attrs['type'] = 'dropdown';
-		} elseif ( ! in_array( $lookup, array( 'checkbox', 'radio' ), true ) ) {
-			$input_attrs['type'] = $type;
+			$attrs['placeholder'] = $placeholder;
 		}
 
-		if ( ! in_array( $lookup, array( 'checkbox', 'radio' ), true ) ) {
-			if ( self::provider_supports_input_attribute( $lookup, 'step' ) && isset( $control['step'] ) && is_scalar( $control['step'] ) && '' !== trim( (string) $control['step'] ) ) {
-				$input_attrs['step'] = trim( (string) $control['step'] );
-			}
-			$inner_blocks[] = array(
-				'name'  => 'jetpack/input',
-				'attrs' => $input_attrs,
-			);
+		if ( self::provider_supports_input_attribute( $lookup, 'step' ) && isset( $control['step'] ) && is_scalar( $control['step'] ) && '' !== trim( (string) $control['step'] ) ) {
+			$attrs['step'] = trim( (string) $control['step'] );
 		}
 
 		$losses = array();
@@ -477,18 +515,46 @@ class Static_Site_Importer_Form_Seeder {
 				}
 			}
 		}
+		$block_name = 'checkbox' === $lookup && ! empty( $attrs['options'] ) ? 'jetpack/field-checkbox-multiple' : $map[ $lookup ];
 		return array(
-			'name'        => $map[ $lookup ],
-			'attrs'       => $attrs,
-			'innerBlocks' => $inner_blocks,
-			'wrapper'     => 'div',
-			'losses'      => $losses,
+			'name'   => $block_name,
+			'attrs'  => $attrs,
+			'losses' => $losses,
 		);
 	}
 
 	/** Return whether the selected Jetpack input block can carry a source attribute. */
 	private static function provider_supports_input_attribute( string $lookup, string $attribute ): bool {
 		return 'number' === $lookup && 'step' === $attribute;
+	}
+
+	/** Append bounded receipt entries without discarding pre-existing overflow totals. */
+	private static function append_receipt_entries( array &$receipt, string $key, array $entries ): void {
+		$total_key = 'operations' === $key ? 'operations_total' : 'losses_total';
+		$count_key = 'operations' === $key ? 'operation_count' : 'loss_count';
+		$receipt[ $key ] = isset( $receipt[ $key ] ) && is_array( $receipt[ $key ] ) ? $receipt[ $key ] : array();
+		$receipt[ $total_key ] = isset( $receipt[ $total_key ] ) ? (int) $receipt[ $total_key ] : count( $receipt[ $key ] );
+		foreach ( $entries as $entry ) {
+			if ( ! is_array( $entry ) ) continue;
+			++$receipt[ $total_key ];
+			if ( count( $receipt[ $key ] ) < 32 ) {
+				$receipt[ $key ][] = $entry;
+			} elseif ( 'losses' === $key && self::receipt_loss_requires_gate( $entry ) ) {
+				$receipt['gate_required_loss_overflow_count'] = (int) ( $receipt['gate_required_loss_overflow_count'] ?? 0 ) + 1;
+				$receipt['gate_required_loss_overflow_hash'] = hash( 'sha256', (string) ( $receipt['gate_required_loss_overflow_hash'] ?? '' ) . wp_json_encode( $entry ) );
+				if ( ! array_filter( $receipt[ $key ], array( self::class, 'receipt_loss_requires_gate' ) ) ) $receipt[ $key ][31] = $entry;
+			}
+		}
+		$receipt[ $count_key ] = min( 32, $receipt[ $total_key ] );
+		$receipt['truncated'] = ! empty( $receipt['truncated'] ) || (int) ( $receipt['operations_total'] ?? 0 ) > 32 || (int) ( $receipt['losses_total'] ?? 0 ) > 32;
+	}
+
+	/** Keep the bounded receipt aligned with the form finding acceptance gate. */
+	private static function receipt_loss_requires_gate( array $loss ): bool {
+		return 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' )
+			|| 'unsupported_control_attribute' === ( $loss['reason_code'] ?? '' )
+			|| in_array( $loss['dimension'] ?? '', array( 'semantic', 'topology' ), true )
+			|| in_array( $loss['reason_code'] ?? '', array( 'provider_structure_mismatch', 'direct_child_relationship_unrepresentable' ), true );
 	}
 
 	/**
@@ -498,19 +564,21 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return array<string, mixed>
 	 */
 	private static function submit_button_block( string $text, string $class_name = '' ): array {
-		$block = array(
-			'name'  => 'jetpack/button',
+		$class_name = trim( 'form-button-submit is-submit ' . $class_name );
+		return array(
+			'name'  => 'core/button',
 			'attrs' => array(
-				'element' => 'button',
-				'text'    => '' !== trim( $text ) ? trim( $text ) : 'Submit',
+				'tagName' => 'button',
+				'type'    => 'submit',
 				'lock'    => array(
 					'remove' => true,
-					'move'   => false,
 				),
+				'className' => $class_name,
+				'metadata'  => array( 'name' => 'Submit button' ),
 			),
+			'content' => '' !== trim( $text ) ? trim( $text ) : 'Submit',
+			'wrapper' => 'submit',
 		);
-		if ( '' !== $class_name ) $block['attrs']['className'] = $class_name;
-		return $block;
 	}
 
 	/**
@@ -551,6 +619,7 @@ class Static_Site_Importer_Form_Seeder {
 		foreach ( $form['layout_graph']['nodes'] ?? array() as $node ) {
 			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) continue;
 			$id = $node['id'];
+			if ( 'form' !== $id && ! preg_match( '/^control-[0-9]+$/D', $id ) ) continue;
 			$selector = 'form' === $id ? $selector_scope . ' > form.jetpack-contact-form__form' : $selector_scope . ' .' . self::layout_node_class( $scope, $id );
 			// Jetpack's contact-form root includes hidden and error nodes, so it cannot
 			// promise source direct-child relationships. Generated node hooks can.
@@ -614,17 +683,18 @@ class Static_Site_Importer_Form_Seeder {
 	 * @param string                          $wrapper     Persisted inner-block wrapper element.
 	 * @return string
 	 */
-	private static function serialize_block( string $name, array $attrs, array $inner_blocks = array(), string $wrapper = '' ): string {
+	private static function serialize_block( string $name, array $attrs, array $inner_blocks = array(), string $wrapper = '', string $content = '' ): string {
 		$comment_name = str_starts_with( $name, 'core/' ) ? substr( $name, 5 ) : $name;
 		$attr_json = '';
 		if ( ! empty( $attrs ) ) {
 			$encoded = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs ) : json_encode( $attrs ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode
 			if ( is_string( $encoded ) && '[]' !== $encoded ) {
+				$encoded = str_replace( array( '--', '<', '>', '&', '\\"' ), array( '\u002d\u002d', '\u003c', '\u003e', '\u0026', '\u0022' ), $encoded );
 				$attr_json = ' ' . $encoded;
 			}
 		}
 
-		if ( empty( $inner_blocks ) ) {
+		if ( empty( $inner_blocks ) && 'submit' !== $wrapper ) {
 			return '<!-- wp:' . $comment_name . $attr_json . ' /-->';
 		}
 
@@ -637,7 +707,8 @@ class Static_Site_Importer_Form_Seeder {
 				(string) $block['name'],
 				isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array(),
 				isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array(),
-				isset( $block['wrapper'] ) && is_string( $block['wrapper'] ) ? $block['wrapper'] : ''
+				isset( $block['wrapper'] ) && is_string( $block['wrapper'] ) ? $block['wrapper'] : '',
+				isset( $block['content'] ) && is_string( $block['content'] ) ? $block['content'] : ''
 			);
 		}
 
@@ -648,6 +719,9 @@ class Static_Site_Importer_Form_Seeder {
 				$classes .= ' ' . trim( (string) $attrs['className'] );
 			}
 			$inner_markup = '<div class="' . self::escape_attribute( $classes ) . '">' . $inner_markup . '</div>';
+		} elseif ( 'submit' === $wrapper ) {
+			$classes = trim( 'wp-block-button ' . (string) ( $attrs['className'] ?? '' ) );
+			$inner_markup = '<div class="' . self::escape_attribute( $classes ) . '"><button type="submit" class="wp-block-button__link wp-element-button">' . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</button></div>';
 		} elseif ( 'group' === $wrapper ) {
 			$classes = 'wp-block-group' . ( ! empty( $attrs['className'] ) ? ' ' . $attrs['className'] : '' );
 			if ( 'flex' === ( $attrs['layout']['type'] ?? '' ) ) $classes .= ' is-layout-flex';

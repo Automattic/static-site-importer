@@ -17,11 +17,7 @@ class Static_Site_Importer_Computed_Layout_Strategy {
 		foreach ( $form['topology_losses'] ?? array() as $loss ) if ( is_array( $loss ) ) $receipt['losses'][] = $loss;
 		if ( ! is_array( $graph ) ) {
 			$receipt['status'] = empty( $receipt['losses'] ) ? 'skipped' : 'deferred';
-			$receipt['losses_total'] = count( $receipt['losses'] );
-			$receipt['loss_count'] = min( 32, $receipt['losses_total'] );
-			$receipt['truncated'] = $receipt['losses_total'] > 32;
-			$receipt['losses'] = array_slice( $receipt['losses'], 0, 32 );
-			return array( 'blocks' => $blocks, 'receipt' => $receipt );
+			return array( 'blocks' => $blocks, 'receipt' => self::bound_receipt( $receipt ) );
 		}
 		$receipt['graph_hash'] = hash( 'sha256', wp_json_encode( $graph ) );
 		$variants_by_node = array();
@@ -58,11 +54,30 @@ class Static_Site_Importer_Computed_Layout_Strategy {
 			$receipt['operations'][] = array( 'dimension' => 'layout', 'strategy' => 'core_group_flex_equivalent', 'target_hash' => hash( 'sha256', $target ), 'direction' => $layout['direction'] );
 		}
 		$receipt['status'] = empty( $receipt['operations'] ) ? ( empty( $receipt['losses'] ) ? 'skipped' : 'deferred' ) : 'applied';
-		$receipt['operations_total'] = count( $receipt['operations'] ); $receipt['losses_total'] = count( $receipt['losses'] );
-		$receipt['operation_count'] = min( 32, $receipt['operations_total'] ); $receipt['loss_count'] = min( 32, $receipt['losses_total'] ); $receipt['truncated'] = $receipt['operations_total'] > 32 || $receipt['losses_total'] > 32;
+		return array( 'blocks' => $blocks, 'receipt' => self::bound_receipt( $receipt ) );
+	}
+
+	private static function bound_receipt( array $receipt ): array {
+		$receipt['operations_total'] = count( $receipt['operations'] );
+		$receipt['losses_total'] = count( $receipt['losses'] );
+		$gate_overflow = array_values( array_filter( array_slice( $receipt['losses'], 32 ), array( self::class, 'receipt_loss_requires_gate' ) ) );
+		if ( ! empty( $gate_overflow ) ) {
+			$receipt['gate_required_loss_overflow_count'] = count( $gate_overflow );
+			$receipt['gate_required_loss_overflow_hash'] = hash( 'sha256', wp_json_encode( $gate_overflow ) );
+		}
+		$receipt['operation_count'] = min( 32, $receipt['operations_total'] );
+		$receipt['loss_count'] = min( 32, $receipt['losses_total'] );
+		$receipt['truncated'] = $receipt['operations_total'] > 32 || $receipt['losses_total'] > 32;
 		$receipt['operations'] = array_slice( $receipt['operations'], 0, 32 );
 		$receipt['losses'] = array_slice( $receipt['losses'], 0, 32 );
-		return array( 'blocks' => $blocks, 'receipt' => $receipt );
+		return $receipt;
+	}
+
+	private static function receipt_loss_requires_gate( array $loss ): bool {
+		return 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' )
+			|| 'unsupported_control_attribute' === ( $loss['reason_code'] ?? '' )
+			|| in_array( $loss['dimension'] ?? '', array( 'semantic', 'topology' ), true )
+			|| in_array( $loss['reason_code'] ?? '', array( 'provider_structure_mismatch', 'direct_child_relationship_unrepresentable' ), true );
 	}
 
 	private static function flex_loss( array $layout ): ?string {
@@ -99,6 +114,7 @@ class Static_Site_Importer_Computed_Layout_Strategy {
 		foreach ( $form['control_topology']['nodes'] ?? array() as $node ) {
 			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || ! is_string( $node['id'] ?? null ) ) continue;
 			$source_tag = $node['tag'] ?? 'div';
+			if ( 'div' === $source_tag ) continue;
 			$block = $serialized[ $node['id'] ] ?? null;
 			if ( ! is_array( $block ) || $source_tag !== ( $block['topologySourceTag'] ?? null ) || $source_tag !== ( $block['attrs']['tagName'] ?? 'div' ) ) $losses[] = array( 'dimension' => 'semantic', 'reason_code' => 'unsupported_semantic_wrapper', 'node_hash' => hash( 'sha256', $node['id'] ) );
 		}
