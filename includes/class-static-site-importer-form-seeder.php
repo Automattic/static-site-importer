@@ -9,6 +9,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+require_once __DIR__ . '/class-static-site-importer-provider-layout-overlay.php';
+
 /**
  * Turns preserved <form> fallback metadata into working Jetpack Form blocks.
  *
@@ -145,6 +147,25 @@ class Static_Site_Importer_Form_Seeder {
 		return ! empty( $availability['available'] );
 	}
 
+	/** Activate and register Jetpack Forms after the plugin dependency is active. */
+	public static function prepare_jetpack_forms_runtime() {
+		if ( ! class_exists( 'Jetpack' ) || ! class_exists( 'Automattic\\Jetpack\\Modules' ) ) {
+			return new WP_Error( 'static_site_importer_jetpack_forms_runtime_missing' );
+		}
+		$modules = new Automattic\Jetpack\Modules();
+		if ( ! $modules->is_active( 'contact-form' ) && method_exists( 'Jetpack', 'activate_module' ) ) {
+			Jetpack::activate_module( 'contact-form', false, false );
+		}
+		$block = 'Automattic\\Jetpack\\Extensions\\Contact_Form\\Contact_Form_Block';
+		if ( class_exists( $block ) && method_exists( $block, 'register_block' ) ) {
+			$block::register_block();
+			if ( method_exists( $block, 'register_child_blocks' ) ) {
+				$block::register_child_blocks();
+			}
+		}
+		return self::jetpack_forms_available() ? true : new WP_Error( 'static_site_importer_jetpack_forms_blocks_missing' );
+	}
+
 	/**
 	 * Return the specific Jetpack Forms APIs present in the current runtime.
 	 *
@@ -200,12 +221,13 @@ class Static_Site_Importer_Form_Seeder {
 		$selector    = isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '';
 		$source_path = isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '';
 
+		$scope        = self::layout_scope( $form );
 		$field_blocks = array();
 		$mapped_types = array();
 		$submit_text  = 'Submit';
 		$skipped      = array();
 
-		foreach ( $controls as $control ) {
+		foreach ( $controls as $control_index => $control ) {
 			if ( ! is_array( $control ) ) {
 				continue;
 			}
@@ -225,7 +247,8 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 
-			$field_blocks[] = $field_block;
+			$field_block['attrs']['className'] = self::layout_node_class( $scope, 'control-' . $control_index );
+			$field_blocks[ $control_index ] = $field_block;
 			$mapped_types[] = $field_block['name'];
 		}
 
@@ -242,9 +265,18 @@ class Static_Site_Importer_Form_Seeder {
 			);
 		}
 
-		$inner_blocks   = $field_blocks;
-		$inner_blocks[] = self::submit_button_block( $submit_text );
-		$form_attrs     = self::contact_form_attributes( $form );
+		$topology = self::topology_blocks( $form, $field_blocks, $controls, $scope );
+		if ( null === $topology ) {
+			return array( 'selector' => $selector, 'source_path' => $source_path, 'provider' => self::PROVIDER_ID, 'block_name' => 'jetpack/contact-form', 'status' => 'skipped', 'reason' => 'unsupported_control_topology', 'runtime_mapped' => false );
+		}
+		$inner_blocks = $topology['blocks'];
+		if ( ! $topology['has_submit'] ) {
+			$inner_blocks[] = self::submit_button_block( $submit_text, self::layout_node_class( $scope, 'control-submit' ) );
+		}
+		$target_map = self::provider_layout_target_map( $form, $scope );
+		$overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array( 'nodes' => array() ), $target_map );
+		$receipt = array( 'schema' => 'static-site-importer/computed-layout-receipt/v1', 'status' => empty( $overlay['operations'] ) ? ( empty( $overlay['losses'] ) ? 'skipped' : 'deferred' ) : 'applied', 'operation_count' => count( $overlay['operations'] ), 'loss_count' => count( $overlay['losses'] ), 'operations' => $overlay['operations'], 'losses' => $overlay['losses'] );
+		$form_attrs     = self::contact_form_attributes( $form, $scope );
 		$markup         = self::serialize_block( 'jetpack/contact-form', $form_attrs, $inner_blocks );
 
 		return array(
@@ -260,7 +292,48 @@ class Static_Site_Importer_Form_Seeder {
 			'runtime_mapped'  => true,
 			'runtime_carried' => $available,
 			'block_markup'    => $markup,
+			'computed_layout_receipt' => $receipt,
+			'provider_layout_target_map' => $target_map,
+			'provider_layout_overlay_css' => $overlay['overlay'],
 		);
+	}
+
+	/** @return array{blocks:array<int,array<string,mixed>>,has_submit:bool}|null */
+	private static function topology_blocks( array $form, array $field_blocks, array $controls, string $scope ): ?array {
+		if ( ! isset( $form['control_topology'] ) ) {
+			return array( 'blocks' => array_values( $field_blocks ), 'has_submit' => false );
+		}
+		$nodes = $form['control_topology']['nodes'] ?? null;
+		if ( ! is_array( $nodes ) ) {
+			return null;
+		}
+		$wrappers = array();
+		foreach ( $nodes as $node ) {
+			if ( is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ) {
+				$wrappers[ $node['id'] ] = $node;
+			}
+		}
+		$blocks = array();
+		$has_submit = false;
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) || 'control' !== ( $node['kind'] ?? null ) || ! is_int( $node['control'] ?? null ) || ! isset( $field_blocks[ $node['control'] ] ) ) {
+				continue;
+			}
+			$block = $field_blocks[ $node['control'] ];
+			$classes = array( self::layout_node_class( $scope, (string) $node['id'] ) );
+			$parent = $node['parent'] ?? null;
+			if ( is_string( $parent ) && isset( $wrappers[ $parent ] ) ) {
+				$classes[] = self::layout_node_class( $scope, $parent );
+				if ( ! empty( $wrappers[ $parent ]['class'] ) ) {
+					$classes[] = (string) $wrappers[ $parent ]['class'];
+				}
+			}
+			$block['attrs']['className'] = trim( (string) ( $block['attrs']['className'] ?? '' ) . ' ' . implode( ' ', $classes ) );
+			$blocks[] = $block;
+			$control = $controls[ $node['control'] ] ?? array();
+			$has_submit = $has_submit || ( is_array( $control ) && 'submit' === (string) ( $control['type'] ?? '' ) );
+		}
+		return count( $blocks ) === count( $field_blocks ) ? array( 'blocks' => $blocks, 'has_submit' => $has_submit ) : null;
 	}
 
 	/**
@@ -373,12 +446,13 @@ class Static_Site_Importer_Form_Seeder {
 	 * @param string $text Submit button label.
 	 * @return array<string, mixed>
 	 */
-	private static function submit_button_block( string $text ): array {
+	private static function submit_button_block( string $text, string $class_name = '' ): array {
 		return array(
 			'name'  => 'jetpack/button',
 			'attrs' => array(
 				'element' => 'button',
 				'text'    => '' !== trim( $text ) ? trim( $text ) : 'Submit',
+				'className' => $class_name,
 				'lock'    => array(
 					'remove' => true,
 					'move'   => false,
@@ -393,15 +467,13 @@ class Static_Site_Importer_Form_Seeder {
 	 * @param array<string, mixed> $form Validated form row.
 	 * @return array<string, mixed>
 	 */
-	private static function contact_form_attributes( array $form ): array {
+	private static function contact_form_attributes( array $form, string $scope = '' ): array {
 		$attrs    = array();
 		$metadata = isset( $form['form'] ) && is_array( $form['form'] ) ? $form['form'] : array();
 		$action   = isset( $metadata['action'] ) && is_scalar( $metadata['action'] ) ? trim( (string) $metadata['action'] ) : '';
 		$class    = isset( $metadata['class'] ) && is_scalar( $metadata['class'] ) ? trim( (string) $metadata['class'] ) : '';
 
-		if ( '' !== $class ) {
-			$attrs['className'] = $class;
-		}
+		$attrs['className'] = trim( $class . ' ' . $scope );
 
 		if ( '' !== $action && 0 === stripos( $action, 'mailto:' ) ) {
 			$recipient = trim( substr( $action, 7 ) );
@@ -412,6 +484,31 @@ class Static_Site_Importer_Form_Seeder {
 		}
 
 		return $attrs;
+	}
+
+	private static function layout_scope( array $form ): string {
+		return 'ssi-form-' . substr( hash( 'sha256', (string) ( $form['source_path'] ?? '' ) . "\n" . (string) ( $form['selector'] ?? '' ) ), 0, 12 );
+	}
+
+	private static function layout_node_class( string $scope, string $node ): string {
+		return 'ssi-node-' . substr( hash( 'sha256', $scope . "\n" . $node ), 0, 12 );
+	}
+
+	/** @return array<string,mixed> */
+	private static function provider_layout_target_map( array $form, string $scope ): array {
+		$targets = array();
+		foreach ( $form['layout_graph']['nodes'] ?? array() as $node ) {
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) {
+				continue;
+			}
+			$id = $node['id'];
+			if ( 'form' === $id ) {
+				$targets[] = array( 'node' => $id, 'selector' => '.' . $scope . ' > form.jetpack-contact-form__form', 'capabilities' => array( 'container_layout' ) );
+			} elseif ( preg_match( '/^(?:control|wrapper)-[0-9]+$/D', $id ) ) {
+				$targets[] = array( 'node' => $id, 'selector' => '.' . $scope . ' .' . self::layout_node_class( $scope, $id ), 'capabilities' => array( 'container_layout', 'direct_child_layout', 'item_layout' ) );
+			}
+		}
+		return array( 'schema' => Static_Site_Importer_Provider_Layout_Overlay::MAP_SCHEMA, 'provider' => self::PROVIDER_ID, 'scope' => '.' . $scope, 'targets' => $targets );
 	}
 
 	/**

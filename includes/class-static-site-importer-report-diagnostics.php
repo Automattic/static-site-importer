@@ -1136,6 +1136,12 @@ class Static_Site_Importer_Report_Diagnostics {
 				'form'        => $form,
 				'controls'    => $controls,
 			);
+			if ( isset( $diagnostic['control_topology'] ) ) {
+				$manifest_forms[ array_key_last( $manifest_forms ) ]['control_topology'] = $diagnostic['control_topology'];
+			}
+			if ( isset( $diagnostic['layout_graph'] ) ) {
+				$manifest_forms[ array_key_last( $manifest_forms ) ]['layout_graph'] = $diagnostic['layout_graph'];
+			}
 		}
 
 		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest_generic( $adapter, array( 'forms' => $manifest_forms ) );
@@ -1435,14 +1441,23 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<string,mixed>
 	 */
 	private static function mark_form_finding_mapped( array $diagnostic, array $row, string $provider ): array {
-		$diagnostic['runtime_mapped']  = true;
+		$receipt_losses = isset( $row['computed_layout_receipt']['losses'] ) && is_array( $row['computed_layout_receipt']['losses'] ) ? $row['computed_layout_receipt']['losses'] : array();
+		$unaccepted = array_values( array_filter( $receipt_losses, static fn( $loss ): bool => is_array( $loss ) && in_array( $loss['reason_code'] ?? '', array( 'provider_structure_mismatch', 'direct_child_relationship_unrepresentable', 'unsafe_layout_value' ), true ) ) );
+		$diagnostic['runtime_mapped']  = empty( $unaccepted );
 		$diagnostic['runtime_carried'] = ! empty( $row['runtime_carried'] );
 		$diagnostic['mapped_provider'] = isset( $row['provider'] ) && is_scalar( $row['provider'] ) && '' !== (string) $row['provider'] ? (string) $row['provider'] : $provider;
-		$diagnostic['acceptability']   = 'acceptable_preservation';
+		$diagnostic['acceptability']   = empty( $unaccepted ) ? 'acceptable_preservation' : 'unacceptable_imported_output_defect';
 		$diagnostic['block_name']      = isset( $row['block_name'] ) && is_scalar( $row['block_name'] ) ? (string) $row['block_name'] : 'jetpack/contact-form';
 
 		if ( isset( $row['block_markup'] ) && is_scalar( $row['block_markup'] ) ) {
 			$diagnostic['emitted_block_preview'] = self::diagnostic_excerpt( (string) $row['block_markup'] );
+		}
+		if ( ! empty( $receipt_losses ) ) {
+			$diagnostic['form_receipt_losses'] = $receipt_losses;
+		}
+		if ( ! empty( $unaccepted ) ) {
+			$diagnostic['form_receipt_unaccepted_losses'] = $unaccepted;
+			$diagnostic['reason_code'] = 'form_receipt_loss_unaccepted';
 		}
 
 		return $diagnostic;

@@ -284,6 +284,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				(string) ( $dependency['plugin_file'] ?? '' ),
 				$dependency['availability_callback'] ?? null
 			);
+			$prepare = $dependency['preparation_callback'] ?? null;
+			if ( 'completed' === ( $reports[ $slug ]['status'] ?? '' ) && is_callable( $prepare ) ) {
+				$prepared = call_user_func( $prepare );
+				if ( function_exists( 'is_wp_error' ) && is_wp_error( $prepared ) ) {
+					$reports[ $slug ]['status'] = 'failed';
+					$reports[ $slug ]['reason'] = $prepared->get_error_code();
+				}
+			}
 		}
 
 		foreach ( self::companion_dependencies( $adapter ) as $dependency ) {
@@ -519,6 +527,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						'slug'                  => 'jetpack',
 						'plugin_file'           => 'jetpack/jetpack.php',
 						'availability_callback' => array( 'Static_Site_Importer_Form_Seeder', 'jetpack_forms_available' ),
+						'preparation_callback'  => array( 'Static_Site_Importer_Form_Seeder', 'prepare_jetpack_forms_runtime' ),
 						'missing_apis'          => array( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form', 'jetpack/contact-form', 'jetpack/field-text' ),
 					),
 				),
@@ -791,6 +800,22 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'form'        => isset( $form['form'] ) && is_array( $form['form'] ) ? $form['form'] : array(),
 				'controls'    => $controls,
 			);
+			if ( array_key_exists( 'control_topology', $form ) ) {
+				$topology = self::normalize_form_control_topology( $form['control_topology'], count( $controls ) );
+				if ( isset( $topology['error'] ) ) {
+					$errors[] = array( 'path' => $path_prefix . '.control_topology', 'message' => $topology['error'] );
+					continue;
+				}
+				$row['control_topology'] = $topology['topology'];
+			}
+			if ( array_key_exists( 'layout_graph', $form ) ) {
+				$graph = self::normalize_form_layout_graph( $form['layout_graph'] );
+				if ( isset( $graph['error'] ) ) {
+					$errors[] = array( 'path' => $path_prefix . '.layout_graph', 'message' => $graph['error'] );
+					continue;
+				}
+				$row['layout_graph'] = $graph['graph'];
+			}
 			$form_key = $row['source_path'] . "\n" . $row['selector'];
 			if ( isset( $seen_forms[ $form_key ] ) ) {
 				$errors[] = array(
@@ -834,6 +859,69 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'forms'  => $forms,
 			'errors' => $errors,
 		);
+	}
+
+	/** @return array{topology?:array<string,mixed>,error?:string} */
+	private static function normalize_form_control_topology( mixed $candidate, int $control_count ): array {
+		if ( ! is_array( $candidate ) || 'generic/form-control-topology/v1' !== ( $candidate['schema'] ?? null ) || true === ( $candidate['truncated'] ?? false ) || ! is_int( $candidate['max_depth'] ?? null ) || ! is_int( $candidate['max_nodes'] ?? null ) || ! is_array( $candidate['nodes'] ?? null ) || ! array_is_list( $candidate['nodes'] ) || count( $candidate['nodes'] ) > $candidate['max_nodes'] || $candidate['max_depth'] < 0 || $candidate['max_depth'] > 8 || $candidate['max_nodes'] < 1 || $candidate['max_nodes'] > 128 ) {
+			return array( 'error' => 'control_topology must be a complete bounded generic/form-control-topology/v1 tree.' );
+		}
+		$seen = array();
+		$controls = array();
+		$orders = array();
+		$nodes = array();
+		foreach ( $candidate['nodes'] as $node ) {
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:wrapper|control)-[0-9]+$/D', $node['id'] ) || isset( $seen[ $node['id'] ] ) || ! in_array( $node['kind'] ?? null, array( 'wrapper', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || ! is_int( $node['depth'] ?? null ) || $node['order'] < 0 || $node['depth'] < 0 || $node['depth'] > $candidate['max_depth'] ) {
+				return array( 'error' => 'control_topology contains an invalid node.' );
+			}
+			$parent = $node['parent'] ?? null;
+			if ( null !== $parent && ( ! is_string( $parent ) || ! isset( $seen[ $parent ] ) || 'wrapper' !== $seen[ $parent ]['kind'] || $node['depth'] !== $seen[ $parent ]['depth'] + 1 ) ) {
+				return array( 'error' => 'control_topology parentage must be an ordered wrapper tree.' );
+			}
+			$key = $parent ?? '$root';
+			if ( isset( $orders[ $key ][ $node['order'] ] ) || ( null === $parent && 0 !== $node['depth'] ) ) {
+				return array( 'error' => 'control_topology sibling order or depth is invalid.' );
+			}
+			$clean = array( 'id' => $node['id'], 'kind' => $node['kind'], 'parent' => $parent, 'order' => $node['order'], 'depth' => $node['depth'] );
+			if ( 'control' === $node['kind'] ) {
+				if ( ! is_int( $node['control'] ?? null ) || $node['control'] < 0 || $node['control'] >= $control_count || isset( $controls[ $node['control'] ] ) ) {
+					return array( 'error' => 'control_topology control references must preserve every source control once.' );
+				}
+				$clean['control'] = $node['control'];
+				$controls[ $node['control'] ] = true;
+			} else {
+				foreach ( array( 'tag', 'class', 'source_id' ) as $field ) {
+					if ( isset( $node[ $field ] ) && ( ! is_string( $node[ $field ] ) || ! preg_match( '/^[A-Za-z][A-Za-z0-9 _-]{0,159}$/D', $node[ $field ] ) ) ) {
+						return array( 'error' => 'control_topology wrapper hooks must be bounded identifiers.' );
+					}
+					if ( isset( $node[ $field ] ) ) {
+						$clean[ $field ] = $node[ $field ];
+					}
+				}
+			}
+			$seen[ $node['id'] ] = $clean;
+			$orders[ $key ][ $node['order'] ] = true;
+			$nodes[] = $clean;
+		}
+		return count( $controls ) === $control_count ? array( 'topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => $candidate['max_depth'], 'max_nodes' => $candidate['max_nodes'], 'truncated' => false, 'nodes' => $nodes ) ) : array( 'error' => 'control_topology must preserve every source control once.' );
+	}
+
+	/** @return array{graph?:array<string,mixed>,error?:string} */
+	private static function normalize_form_layout_graph( mixed $candidate ): array {
+		if ( ! is_array( $candidate ) || 'generic/computed-layout-graph/v1' !== ( $candidate['schema'] ?? null ) || 'source_css_cascade' !== ( $candidate['basis'] ?? null ) || true === ( $candidate['truncated'] ?? false ) || ! is_array( $candidate['nodes'] ?? null ) || ! array_is_list( $candidate['nodes'] ) || count( $candidate['nodes'] ) > 128 || ! is_array( $candidate['variants'] ?? null ) || ! empty( $candidate['variants'] ) ) {
+			return array( 'error' => 'layout_graph must be a complete bounded generic/computed-layout-graph/v1 graph.' );
+		}
+		$allowed = array( 'display', 'columns', 'rows', 'gap', 'row_gap', 'column_gap', 'direction', 'wrap', 'column', 'row', 'area' );
+		$nodes = array();
+		$seen = array();
+		foreach ( $candidate['nodes'] as $node ) {
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:form|wrapper-[0-9]+|control-[0-9]+)$/D', $node['id'] ) || isset( $seen[ $node['id'] ] ) || ! is_array( $node['layout'] ?? null ) || array_diff( array_keys( $node['layout'] ), $allowed ) || array_filter( $node['layout'], static fn( $value ): bool => ! is_scalar( $value ) ) ) {
+				return array( 'error' => 'layout_graph contains unsupported layout facts.' );
+			}
+			$seen[ $node['id'] ] = true;
+			$nodes[] = array( 'id' => $node['id'], 'layout' => $node['layout'] );
+		}
+		return array( 'graph' => array( 'schema' => 'generic/computed-layout-graph/v1', 'basis' => 'source_css_cascade', 'truncated' => false, 'nodes' => $nodes, 'variants' => array() ) );
 	}
 
 	/** @return array<string,mixed>|null */

@@ -205,6 +205,7 @@ class Static_Site_Importer_Theme_Generator {
 			);
 		}
 		$prepared['args']['runtime_entity_bindings'] = $bindings;
+		$prepared['args']['provider_layout_overlays'] = self::provider_layout_overlays( $entities );
 		$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared );
 		$receipt['completed']['companion_plugin'] = $companion_materialization;
 		$receipt['extensions']['gutenberg_gaps'] = self::project_gutenberg_gaps( $gutenberg_gaps, (string) ( $companion_materialization['status'] ?? 'not_materialized' ) );
@@ -225,6 +226,19 @@ class Static_Site_Importer_Theme_Generator {
 			);
 			return new WP_Error( 'static_site_importer_projection_write_failed', 'Website materialization completed partially because a public projection could not be written.', $receipt );
 		}
+	}
+
+	/** @return array<int,array<string,mixed>> */
+	private static function provider_layout_overlays( array $reports ): array {
+		$overlays = array();
+		foreach ( $reports as $report ) {
+			foreach ( is_array( $report['forms'] ?? null ) ? $report['forms'] : array() as $form ) {
+				if ( is_array( $form['provider_layout_overlay_css'] ?? null ) ) {
+					$overlays[] = $form['provider_layout_overlay_css'];
+				}
+			}
+		}
+		return $overlays;
 	}
 
 	/** Project compiler gap rows into stable materialization diagnostics. */
