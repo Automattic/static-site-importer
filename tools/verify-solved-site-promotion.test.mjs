@@ -28,7 +28,7 @@ function fixture() {
     }],
   };
   const registry = { schema: 'static-site-importer/gutenberg-incompatibility-registry/v1', fixture_decisions: [{ fixture_id: 'solved', acceptance_status: 'solved_candidate' }] };
-  const runtime = { nodeVersion: '20.19.4', phpVersion: '8.1.29', wordpressVersion: '7.0.2', homeboyVersion: 'v0.298.1', homeboySha256: '3'.repeat(64), homeboyExtensionsRef: '4'.repeat(40), wpCodeboxVersion: 'v0.12.29', wpCodeboxSha256: '5'.repeat(64), staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA };
+  const runtime = { nodeVersion: '20.19.4', phpVersion: '8.1.29', wordpressVersion: '7.0.2', homeboyVersion: 'v0.298.1', homeboySha256: '3'.repeat(64), homeboyExtensionsRef: '4'.repeat(40), wpCodeboxVersion: 'v0.18.4', wpCodeboxSha256: '5'.repeat(64), staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA };
   const paths = { matrix: path.join(root, 'matrix.json'), registry: path.join(root, 'registry.json'), runtime: path.join(root, 'runtime.json') };
   write(paths.matrix, matrix); write(paths.registry, registry); write(paths.runtime, runtime);
   return { root, matrix, registry, runtime, paths, options: { matrixResult: paths.matrix, registry: paths.registry, runtimeInputs: paths.runtime, artifactRoot: root, staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA, fixtureTreeSha: '6'.repeat(40), solvedFixtureCount: 1, runUrl: 'https://github.com/Automattic/static-site-importer/actions/runs/123', artifactUrl: 'https://github.com/Automattic/static-site-importer/actions/runs/123#artifacts', output: path.join(root, 'receipt.json'), manifestOutput: path.join(root, 'manifest.json') } };
@@ -41,6 +41,14 @@ test('issues an accepted immutable promotion receipt', () => {
   assert.equal(receipt.candidate.blocks_engine_sha, BE_SHA);
   assert.equal(receipt.corpus.selected_fixture_count, 1);
   assert.ok(receipt.evidence.artifacts.every((row) => /^[a-f0-9]{64}$/.test(row.sha256)));
+});
+
+test('pins the published WP Codebox workspace asset and checksum together', () => {
+  const workflow = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion.yml'), 'utf8');
+  assert.match(workflow, /WP_CODEBOX_VERSION: v0\.18\.4/);
+  assert.match(workflow, /WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0\.18\.4\.tgz/);
+  assert.match(workflow, /WP_CODEBOX_SHA256: 56d8f887a7b5109aa83927fd1cee5ec665af63cb72a35dba2df70f84b7ac47eb/);
+  assert.match(workflow, /releases\/download\/\$\{WP_CODEBOX_VERSION\}\/\$\{WP_CODEBOX_WORKSPACE_ASSET\}/);
 });
 
 test('resolves uniquely named durable copies of transient runtime evidence', () => {

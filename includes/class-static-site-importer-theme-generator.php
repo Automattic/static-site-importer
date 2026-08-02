@@ -89,8 +89,9 @@ class Static_Site_Importer_Theme_Generator {
 			$args['source_artifact_reference'] = self::source_artifact_reference_from_artifact( $artifact, $args );
 		}
 
-		$compiler_options = isset( $args['compiler_options'] ) && is_array( $args['compiler_options'] ) ? $args['compiler_options'] : array();
-		$compiled = ( new $compiler_class() )->compile( $artifact, array_merge( array( 'include_conversion_report' => true ), $compiler_options ) )->toArray();
+		// compiler_options stays accepted on the public args for backward
+		// compatibility; the tagged transformer ignores it at this boundary.
+		$compiled = ( new $compiler_class() )->compile( $artifact )->toArray();
 		if ( ! is_array( $compiled ) ) {
 			return new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid result.' );
 		}
@@ -117,7 +118,14 @@ class Static_Site_Importer_Theme_Generator {
 		$materialization_plan = isset( $compiled['source_reports']['materialization_plan'] ) && is_array( $compiled['source_reports']['materialization_plan'] ) ? $compiled['source_reports']['materialization_plan'] : array();
 		$args['font_materialization'] = isset( $materialization_plan['theme']['font_materialization'] ) && is_array( $materialization_plan['theme']['font_materialization'] ) ? $materialization_plan['theme']['font_materialization'] : array();
 		if ( ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) ) {
-			return new WP_Error( 'static_site_importer_quality_gate_failed', 'Website artifact did not pass the canonical plan quality gate.', array( 'quality' => $plan['quality'] ?? array(), 'diagnostics' => $plan['diagnostics'] ?? array() ) );
+			return new WP_Error(
+				'static_site_importer_quality_gate_failed',
+				'Website artifact did not pass the canonical plan quality gate.',
+				array(
+					'quality'     => $plan['quality'] ?? array(),
+					'diagnostics' => $plan['diagnostics'] ?? array(),
+				)
+			);
 		}
 		$lifecycle = self::prepare_wordpress_site_plan_lifecycle( $plan, $args );
 		if ( is_wp_error( $lifecycle ) ) {
@@ -145,10 +153,16 @@ class Static_Site_Importer_Theme_Generator {
 		if ( is_wp_error( $binding_preflight ) ) {
 			return $binding_preflight;
 		}
-		$companion_materialization = array( 'status' => 'skipped', 'reason' => 'companion_plugin_payload_absent' );
+		$companion_materialization = array(
+			'status' => 'skipped',
+			'reason' => 'companion_plugin_payload_absent',
+		);
 		if ( null !== $companion_payload ) {
 			if ( array_key_exists( 'materialize_dependencies', $args ) && false === (bool) $args['materialize_dependencies'] ) {
-				$companion_materialization = array( 'status' => 'skipped', 'reason' => 'dependency_materialization_disabled' );
+				$companion_materialization = array(
+					'status' => 'skipped',
+					'reason' => 'dependency_materialization_disabled',
+				);
 			} else {
 				$dependency                 = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $companion_payload );
 				$companion_materialization = Static_Site_Importer_Entity_Materializer_Registry::materialize_companion_dependency( $dependency );
@@ -166,11 +180,29 @@ class Static_Site_Importer_Theme_Generator {
 		$entities      = $entity_result['reports'];
 		if ( null !== $entity_result['error'] ) {
 			$error = $entity_result['error'];
-			return new WP_Error( $error['code'], $error['message'], array( 'status' => 'partial', 'runtime_lifecycle' => $lifecycle, 'dependencies' => $dependencies, 'entities' => $entities ) );
+			return new WP_Error(
+				$error['code'],
+				$error['message'],
+				array(
+					'status'            => 'partial',
+					'runtime_lifecycle' => $lifecycle,
+					'dependencies'      => $dependencies,
+					'entities'          => $entities,
+				)
+			);
 		}
 		$bindings = self::runtime_entity_bindings( $lifecycle, $entities );
 		if ( is_wp_error( $bindings ) ) {
-			return new WP_Error( $bindings->get_error_code(), $bindings->get_error_message(), array( 'status' => 'partial', 'runtime_lifecycle' => $lifecycle, 'dependencies' => $dependencies, 'entities' => $entities ) );
+			return new WP_Error(
+				$bindings->get_error_code(),
+				$bindings->get_error_message(),
+				array(
+					'status'            => 'partial',
+					'runtime_lifecycle' => $lifecycle,
+					'dependencies'      => $dependencies,
+					'entities'          => $entities,
+				)
+			);
 		}
 		$prepared['args']['runtime_entity_bindings'] = $bindings;
 		$prepared['args']['provider_layout_overlays'] = self::provider_layout_overlays_from_entity_reports( $entities );
@@ -188,7 +220,10 @@ class Static_Site_Importer_Theme_Generator {
 			return self::public_result_from_wordpress_site_plan_receipt( $receipt, $args, $lifecycle, $dependencies, $entities );
 		} catch ( Throwable $error ) {
 			$receipt['status'] = 'partial';
-			$receipt['errors'][] = array( 'code' => 'static_site_importer_projection_write_failed', 'message' => $error->getMessage() );
+			$receipt['errors'][] = array(
+				'code'    => 'static_site_importer_projection_write_failed',
+				'message' => $error->getMessage(),
+			);
 			return new WP_Error( 'static_site_importer_projection_write_failed', 'Website materialization completed partially because a public projection could not be written.', $receipt );
 		}
 	}
@@ -249,7 +284,13 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		$adapter    = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
-		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest_generic( $adapter, array( 'schema_version' => 1, 'products' => $products ) );
+		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest_generic(
+			$adapter,
+			array(
+				'schema_version' => 1,
+				'products'       => $products,
+			)
+		);
 		if ( ! empty( $validation['errors'] ) || empty( $validation['products'] ) ) {
 			return $plan;
 		}
@@ -274,7 +315,10 @@ class Static_Site_Importer_Theme_Generator {
 			'kind'                    => 'entity_collection',
 			'type'                    => 'products',
 			'source_path'             => $source_path,
-			'payload'                 => array( 'schema' => 'generic/products/v1', 'entities' => $validation['products'] ),
+			'payload'                 => array(
+				'schema'   => 'generic/products/v1',
+				'entities' => $validation['products'],
+			),
 			'reconciliation_identity' => hash( 'sha256', $identity . "\nentities" ),
 		);
 		$plan['runtime_declarations'] = $declarations;
@@ -292,69 +336,145 @@ class Static_Site_Importer_Theme_Generator {
 		$plan        = $receipt['plan'];
 		$theme        = $receipt['theme'];
 		$diagnostics  = self::diagnostics_after_completed_entity_bindings( isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array(), $receipt );
+		if ( isset( $args['compiler_options'] ) && is_array( $args['compiler_options'] ) && ! empty( $args['compiler_options'] ) ) {
+			$diagnostics[] = array(
+				'code'    => 'static_site_importer_compiler_options_ignored',
+				'type'    => 'static-site-importer',
+				'message' => 'The compiler_options import argument is accepted for backward compatibility but is no longer honored because the Blocks Engine compiler ignores it at the artifact compile boundary.',
+			);
+		}
 		$quality      = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
-		$entity_lifecycle = array( 'status' => $lifecycle['status'] ?? 'not_requested', 'entities' => $entities, 'dependencies' => $dependencies );
+		$entity_lifecycle = array(
+			'status'       => $lifecycle['status'] ?? 'not_requested',
+			'entities'     => $entities,
+			'dependencies' => $dependencies,
+		);
 		$diagnostics = array_merge( $diagnostics, $lifecycle['diagnostics'] ?? array() );
 		$gutenberg_gaps = isset( $receipt['extensions']['gutenberg_gaps'] ) && is_array( $receipt['extensions']['gutenberg_gaps'] ) ? $receipt['extensions']['gutenberg_gaps'] : array();
 		$diagnostics = array_merge( $diagnostics, $gutenberg_gaps );
 		$report       = array(
-			'schema'         => 'static-site-importer/import-report/v1',
-			'import_run_id'  => self::import_run_id( $args ),
-			'blocks_engine'  => array(
+			'schema'                           => 'static-site-importer/import-report/v1',
+			'import_run_id'                    => self::import_run_id( $args ),
+			'blocks_engine'                    => array(
 				'transformer'         => self::transformer_provenance(),
 				'wordpress_site_plan' => $plan,
 				'gutenberg_gaps'      => $gutenberg_gaps,
 			),
-			'quality'        => $quality,
-			'diagnostics'    => $diagnostics,
-			'entity_lifecycle' => $entity_lifecycle,
-			'companion_plugin_materialization' => $receipt['completed']['companion_plugin'] ?? array( 'status' => 'skipped', 'reason' => 'companion_plugin_payload_absent' ),
-			'generated_theme' => array(
+			'quality'                          => $quality,
+			'diagnostics'                      => $diagnostics,
+			'entity_lifecycle'                 => $entity_lifecycle,
+			'companion_plugin_materialization' => $receipt['completed']['companion_plugin'] ?? array(
+				'status' => 'skipped',
+				'reason' => 'companion_plugin_payload_absent',
+			),
+			'generated_theme'                  => array(
 				'wordpress_site_plan' => $plan,
 				'document_metadata'   => self::document_metadata_from_plan_receipt( $plan ),
-				'template_parts'      => array_map( static fn( array $part ): array => array( 'path' => 'parts/' . $part['slug'] . '.html', 'content' => $part['resolved_block_markup'] ), $plan['template_parts'] ),
-				'block_documents'     => array_map( static function ( array $page ) use ( $receipt ): array {
-					$materialized = $receipt['completed']['materialized_pages'][ $page['source_path'] ]['block_markup'] ?? $page['resolved_block_markup'];
-					$document = array( 'path' => 'posts/page-' . ( ! empty( $page['entrypoint'] ) ? 'home' : $page['slug'] ) . '.post_content', 'content' => $materialized );
-					if ( isset( $page['core_html_block_count'] ) ) {
-						$document['core_html_block_count'] = $page['core_html_block_count'];
-					}
-					return $document;
-				}, $plan['pages'] ),
+				'template_parts'      => array_map(
+					static fn( array $part ): array => array(
+						'path'    => 'parts/' . $part['slug'] . '.html',
+						'content' => $part['resolved_block_markup'],
+					),
+					$plan['template_parts']
+				),
+				'block_documents'     => array_map(
+					static function ( array $page ) use ( $receipt ): array {
+						$materialized = $receipt['completed']['materialized_pages'][ $page['source_path'] ]['block_markup'] ?? $page['resolved_block_markup'];
+						$document = array(
+							'path'    => 'posts/page-' . ( ! empty( $page['entrypoint'] ) ? 'home' : $page['slug'] ) . '.post_content',
+							'content' => $materialized,
+						);
+						if ( isset( $page['core_html_block_count'] ) ) {
+							$document['core_html_block_count'] = $page['core_html_block_count'];
+						}
+						return $document;
+					},
+					$plan['pages']
+				),
 			),
-			'source_documents' => array(
+			'source_documents'                 => array(
 				'source'                       => 'blocks_engine',
 				'blocks_engine_document_count' => count( $plan['pages'] ),
-				'blocks_engine_documents'      => array_map( static fn( array $page ): array => array( 'source_path' => $page['source_path'], 'slug' => ! empty( $page['entrypoint'] ) ? 'home' : $page['slug'], 'permalink' => ! empty( $page['entrypoint'] ) ? '/' : '/' . $page['slug'] . '/' ), $plan['pages'] ),
-				'counts_by_format'             => array( 'html' => count( $plan['pages'] ), 'markdown' => 0, 'mdx' => 0 ),
+				'blocks_engine_documents'      => array_map(
+					static fn( array $page ): array => array(
+						'source_path' => $page['source_path'],
+						'slug'        => ! empty( $page['entrypoint'] ) ? 'home' : $page['slug'],
+						'permalink'   => ! empty( $page['entrypoint'] ) ? '/' : '/' . $page['slug'] . '/',
+					),
+					$plan['pages']
+				),
+				'counts_by_format'             => array(
+					'html'     => count( $plan['pages'] ),
+					'markdown' => 0,
+					'mdx'      => 0,
+				),
 			),
 		);
 		$report['source_artifact'] = array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ) );
 		$artifact = array_merge(
 			isset( $args['source_artifact_reference'] ) && is_array( $args['source_artifact_reference'] ) ? $args['source_artifact_reference'] : array(),
-			array_filter( array( 'schema' => $plan['source']['schema'] ?? null, 'source_hash' => $plan['source']['source_hash'] ?? null, 'entry_path' => $plan['source']['entry_path'] ?? null ) )
+			array_filter(
+				array(
+					'schema'      => $plan['source']['schema'] ?? null,
+					'source_hash' => $plan['source']['source_hash'] ?? null,
+					'entry_path'  => $plan['source']['entry_path'] ?? null,
+				)
+			)
 		);
 		$artifact['hash'] = (string) ( $args['artifact_hash'] ?? $artifact['hash'] ?? $plan['source']['source_hash'] );
-		$desired_files = array_map( static fn( array $write ): array => array( 'path' => $write['target_path'], 'kind' => $write['kind'] ), $plan['writes'] );
+		$desired_files = array_map(
+			static fn( array $write ): array => array(
+				'path' => $write['target_path'],
+				'kind' => $write['kind'],
+			),
+			$plan['writes']
+		);
 		$desired_file_paths = array_fill_keys( array_column( $desired_files, 'path' ), true );
-		$desired_assets = array_map( static fn( array $asset ): array => array( 'source_path' => $asset['source_path'], 'theme_path' => $asset['target_path'] ), $plan['assets'] );
+		$desired_assets = array_map(
+			static fn( array $asset ): array => array(
+				'source_path' => $asset['source_path'],
+				'theme_path'  => $asset['target_path'],
+			),
+			$plan['assets']
+		);
 		foreach ( $receipt['completed']['font_materialization']['files'] ?? array() as $file ) {
 			$path = is_array( $file ) && is_scalar( $file['target_path'] ?? null ) ? (string) $file['target_path'] : '';
 			if ( '' === $path || isset( $desired_file_paths[ $path ] ) ) {
 				continue;
 			}
 			$desired_file_paths[ $path ] = true;
-			$desired_files[] = array( 'path' => $path, 'kind' => 'font_materialization' );
-			$desired_assets[] = array( 'source_path' => (string) ( $file['source_path'] ?? 'theme.font_materialization' ), 'theme_path' => $path );
+			$desired_files[] = array(
+				'path' => $path,
+				'kind' => 'font_materialization',
+			);
+			$desired_assets[] = array(
+				'source_path' => (string) ( $file['source_path'] ?? 'theme.font_materialization' ),
+				'theme_path'  => $path,
+			);
 		}
 		$manifest = array(
-			'schema'        => 'static-site-importer/source-of-truth-manifest/v1',
-			'version'       => 1,
-			'import_run_id' => $report['import_run_id'],
-			'artifact'      => array_merge( $artifact, array( 'provenance' => $plan['source']['provenance'] ) ),
-			'manifest_path' => 'static-site-importer-manifest.json',
-			'generated_theme' => array( 'slug' => $theme['slug'], 'dir' => $theme['dir'] ),
-			'desired'       => array( 'pages' => array(), 'files' => array_merge( $desired_files, array( array( 'path' => 'static-site-importer-manifest.json', 'kind' => 'ssi_manifest' ) ) ), 'assets' => $desired_assets ),
+			'schema'          => 'static-site-importer/source-of-truth-manifest/v1',
+			'version'         => 1,
+			'import_run_id'   => $report['import_run_id'],
+			'artifact'        => array_merge( $artifact, array( 'provenance' => $plan['source']['provenance'] ) ),
+			'manifest_path'   => 'static-site-importer-manifest.json',
+			'generated_theme' => array(
+				'slug' => $theme['slug'],
+				'dir'  => $theme['dir'],
+			),
+			'desired'         => array(
+				'pages'  => array(),
+				'files'  => array_merge(
+					$desired_files,
+					array(
+						array(
+							'path' => 'static-site-importer-manifest.json',
+							'kind' => 'ssi_manifest',
+						),
+					)
+				),
+				'assets' => $desired_assets,
+			),
 		);
 		foreach ( $plan['pages'] as $page ) {
 			$source_path = $page['source_path'];
@@ -367,17 +487,34 @@ class Static_Site_Importer_Theme_Generator {
 				}
 			}
 			$manifest['desired']['pages'][] = array(
-				'source_path'               => $source_path,
-				'materialized_post_id'      => $id,
-				'reconciliation_identity'   => $page['reconciliation_identity'],
-				'content_hash'              => $receipt['completed']['materialized_pages'][ $source_path ]['content_hash'] ?? $page['content_hash'],
-				'route'                     => $page['route']['path'],
-				'permalink'                 => $match['permalink'] ?? $page['route']['path'],
-				'slug'                      => $page['slug'],
-				'post_type'                 => $page['post_type'],
-				'protected'                 => ! empty( $match['protected'] ),
-				'provenance_meta_key'       => ! empty( $match['protected'] ) ? '' : '_static_site_importer_provenance',
+				'source_path'             => $source_path,
+				'materialized_post_id'    => $id,
+				'reconciliation_identity' => $page['reconciliation_identity'],
+				'content_hash'            => $receipt['completed']['materialized_pages'][ $source_path ]['content_hash'] ?? $page['content_hash'],
+				'route'                   => $page['route']['path'],
+				'permalink'               => $match['permalink'] ?? $page['route']['path'],
+				'slug'                    => $page['slug'],
+				'post_type'               => $page['post_type'],
+				'protected'               => ! empty( $match['protected'] ),
+				'provenance_meta_key'     => ! empty( $match['protected'] ) ? '' : '_static_site_importer_provenance',
 			);
+		}
+		if ( ! empty( $args['batch_import'] ) ) {
+			$previous = self::read_source_of_truth_manifest( $theme['dir'] . '/static-site-importer-manifest.json' );
+			if ( is_array( $previous['desired'] ?? null ) ) {
+				foreach ( array( 'pages', 'files', 'assets' ) as $kind ) {
+					$keys = array();
+					foreach ( $manifest['desired'][ $kind ] as $item ) {
+						$keys[ (string) ( $item['source_path'] ?? $item['path'] ?? $item['theme_path'] ?? '' ) ] = true;
+					}
+					foreach ( $previous['desired'][ $kind ] ?? array() as $item ) {
+						$key = (string) ( $item['source_path'] ?? $item['path'] ?? $item['theme_path'] ?? '' );
+						if ( '' !== $key && ! isset( $keys[ $key ] ) ) {
+							$manifest['desired'][ $kind ][] = $item;
+						}
+					}
+				}
+			}
 		}
 		$manifest['existing_matches'] = $receipt['existing_matches'] ?? array( 'pages' => array() );
 		$cleanup = self::cleanup_stale_generated_theme_files( $theme['dir'], $manifest, $args );
@@ -386,10 +523,33 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$manifest['cleanup'] = $cleanup;
 		$report['source_of_truth'] = $manifest;
-		$visual_parity = array( 'schema' => 'static-site-importer/visual-parity-artifacts/v1', 'status' => 'pending', 'owner' => 'codebox_runtime', 'artifacts' => array( 'import_report' => array( 'status' => 'captured', 'ref' => array( 'artifact_name' => 'import-report.json' ) ), 'source_screenshot' => array( 'status' => 'pending' ), 'visual_diff' => array( 'capture_state' => 'not_captured' ) ) );
+		$visual_parity = array(
+			'schema'    => 'static-site-importer/visual-parity-artifacts/v1',
+			'status'    => 'pending',
+			'owner'     => 'codebox_runtime',
+			'artifacts' => array(
+				'import_report'     => array(
+					'status' => 'captured',
+					'ref'    => array( 'artifact_name' => 'import-report.json' ),
+				),
+				'source_screenshot' => array( 'status' => 'pending' ),
+				'visual_diff'       => array( 'capture_state' => 'not_captured' ),
+			),
+		);
 		$report['visual_parity_artifacts'] = $visual_parity;
-		$validation = array( 'schema' => 'blocks-engine/import-validation-result/v1', 'artifact_type' => 'ImportValidationResult', 'status' => ! empty( $quality['pass'] ) ? 'passed' : 'failed', 'diagnostics' => $diagnostics, 'quality' => $quality, 'visual_parity_artifacts' => $visual_parity );
-		$findings   = array( 'schema' => 'blocks-engine/finding-packets/v1', 'artifact_type' => 'FindingPacketSet', 'findings' => $diagnostics );
+		$validation = array(
+			'schema'                  => 'blocks-engine/import-validation-result/v1',
+			'artifact_type'           => 'ImportValidationResult',
+			'status'                  => ! empty( $quality['pass'] ) ? 'passed' : 'failed',
+			'diagnostics'             => $diagnostics,
+			'quality'                 => $quality,
+			'visual_parity_artifacts' => $visual_parity,
+		);
+		$findings   = array(
+			'schema'        => 'blocks-engine/finding-packets/v1',
+			'artifact_type' => 'FindingPacketSet',
+			'findings'      => $diagnostics,
+		);
 		$theme_dir  = $theme['dir'];
 		$manifest_path = $theme_dir . '/static-site-importer-manifest.json';
 		self::write_plan_projection( $manifest_path, $manifest );
@@ -417,30 +577,54 @@ class Static_Site_Importer_Theme_Generator {
 			self::write_plan_projection( $external_finding_packets_path, $findings );
 		}
 		return array(
-			'theme_slug'               => $theme['slug'],
-			'theme_name'               => isset( $args['name'] ) ? (string) $args['name'] : $theme['slug'],
-			'theme_dir'                => $theme['dir'],
-			'report_path'              => $report_path,
-			'validation_result_path'   => $validation_path,
-			'finding_packets_path'     => $findings_path,
-			'external_report_path'     => $external_report_path,
+			'theme_slug'                      => $theme['slug'],
+			'theme_name'                      => isset( $args['name'] ) ? (string) $args['name'] : $theme['slug'],
+			'theme_dir'                       => $theme['dir'],
+			'report_path'                     => $report_path,
+			'validation_result_path'          => $validation_path,
+			'finding_packets_path'            => $findings_path,
+			'external_report_path'            => $external_report_path,
 			'external_validation_result_path' => $external_validation_result_path,
-			'external_finding_packets_path' => $external_finding_packets_path,
-			'manifest_path'            => $manifest_path,
-			'pages'                    => $receipt['completed']['pages'],
-			'import_report'            => $report,
-			'import_report_summary'    => array( 'status' => $receipt['status'], 'diagnostic_count' => count( $diagnostics ) ),
-			'import_validation_result' => $validation,
-			'finding_packets'          => $findings,
-			'quality'                  => $quality,
-			'source_of_truth'          => $manifest,
-			'progress_events'          => array(
-				array( 'schema' => 'wp-codebox/live-progress-event/v1', 'phase' => 'ssi.materialization.completed', 'progress' => array( 'percent' => 100 ) ),
-				array( 'schema' => 'wp-codebox/live-progress-event/v1', 'phase' => 'ssi.reporting.completed', 'progress' => array( 'percent' => 100 ) ),
-				array( 'schema' => 'wp-codebox/live-progress-event/v1', 'phase' => 'ssi.saved.completed', 'progress' => array( 'percent' => 100 ) ),
+			'external_finding_packets_path'   => $external_finding_packets_path,
+			'manifest_path'                   => $manifest_path,
+			'pages'                           => $receipt['completed']['pages'],
+			'import_report'                   => $report,
+			'import_report_summary'           => array(
+				'status'           => $receipt['status'],
+				'diagnostic_count' => count( $diagnostics ),
 			),
-			'materialization_receipt'  => $receipt,
+			'import_validation_result'        => $validation,
+			'finding_packets'                 => $findings,
+			'quality'                         => $quality,
+			'source_of_truth'                 => $manifest,
+			'progress_events'                 => array(
+				array(
+					'schema'   => 'wp-codebox/live-progress-event/v1',
+					'phase'    => 'ssi.materialization.completed',
+					'progress' => array( 'percent' => 100 ),
+				),
+				array(
+					'schema'   => 'wp-codebox/live-progress-event/v1',
+					'phase'    => 'ssi.reporting.completed',
+					'progress' => array( 'percent' => 100 ),
+				),
+				array(
+					'schema'   => 'wp-codebox/live-progress-event/v1',
+					'phase'    => 'ssi.saved.completed',
+					'progress' => array( 'percent' => 100 ),
+				),
+			),
+			'materialization_receipt'         => $receipt,
 		);
+	}
+
+	/** @return array<string,mixed> */
+	private static function read_source_of_truth_manifest( string $path ): array {
+		if ( ! is_file( $path ) ) {
+			return array();
+		}
+		$manifest = json_decode( (string) file_get_contents( $path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the prior importer-owned source-of-truth manifest for a resumable batch.
+		return is_array( $manifest ) && 'static-site-importer/source-of-truth-manifest/v1' === ( $manifest['schema'] ?? '' ) ? $manifest : array();
 	}
 
 	/** Retain source diagnostics unless a persisted provider replacement explicitly covers them. */
@@ -472,12 +656,13 @@ class Static_Site_Importer_Theme_Generator {
 
 		if ( class_exists( $class ) && $class::isInstalled( $package ) ) {
 			try {
-				$version = (string) ( $class::getPrettyVersion( $package ) ?: $version );
+				$pretty_version = $class::getPrettyVersion( $package );
+				$version        = (string) ( '' !== $pretty_version ? $pretty_version : $version );
 				if ( method_exists( $class, 'getReference' ) ) {
-					$reference = (string) ( $class::getReference( $package ) ?: $reference );
+					$reference_value = $class::getReference( $package );
+					$reference       = (string) ( '' !== $reference_value ? $reference_value : $reference );
 				}
-			} catch ( Throwable ) {
-				// Missing Composer metadata remains absent so downstream evidence is incomplete.
+			} catch ( Throwable ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- Missing Composer metadata stays absent so downstream evidence stays incomplete.
 			}
 		}
 
@@ -494,7 +679,12 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	private static function prepare_wordpress_site_plan_lifecycle( array $plan, array $args ) {
-		$lifecycle = array( 'status' => 'not_requested', 'dependencies' => array(), 'entities' => array(), 'diagnostics' => array() );
+		$lifecycle = array(
+			'status'       => 'not_requested',
+			'dependencies' => array(),
+			'entities'     => array(),
+			'diagnostics'  => array(),
+		);
 		$declarations = isset( $plan['runtime_declarations'] ) && is_array( $plan['runtime_declarations'] ) ? $plan['runtime_declarations'] : array();
 		foreach ( $declarations as $declaration ) {
 			if ( ! is_array( $declaration ) ) {
@@ -510,25 +700,59 @@ class Static_Site_Importer_Theme_Generator {
 			$required = self::runtime_declaration_is_required( $declaration, $declarations );
 			if ( '' === $capability ) {
 				if ( $required ) {
-					return new WP_Error( 'static_site_importer_unsupported_required_runtime_declaration', 'SSI cannot materialize required runtime declaration: ' . $name . '.', array( 'status' => 'rejected', 'declaration_id' => $key ) );
+					return new WP_Error(
+						'static_site_importer_unsupported_required_runtime_declaration',
+						'SSI cannot materialize required runtime declaration: ' . $name . '.',
+						array(
+							'status'         => 'rejected',
+							'declaration_id' => $key,
+						)
+					);
 				}
-				$lifecycle['diagnostics'][] = array( 'code' => 'unsupported_optional_runtime_declaration', 'severity' => 'warning', 'reconciliation_identity' => $key, 'message' => 'SSI has no configured adapter for optional declaration ' . $name . '.' );
+				$lifecycle['diagnostics'][] = array(
+					'code'                    => 'unsupported_optional_runtime_declaration',
+					'severity'                => 'warning',
+					'reconciliation_identity' => $key,
+					'message'                 => 'SSI has no configured adapter for optional declaration ' . $name . '.',
+				);
 				continue;
 			}
 			$adapter = Static_Site_Importer_Entity_Materializer_Registry::adapter_for_capability( $capability );
 			if ( empty( $adapter ) ) {
-				return new WP_Error( 'static_site_importer_runtime_provider_unavailable', 'SSI has no configured provider for runtime capability: ' . $capability . '.', array( 'status' => 'rejected', 'declaration_id' => $key ) );
+				return new WP_Error(
+					'static_site_importer_runtime_provider_unavailable',
+					'SSI has no configured provider for runtime capability: ' . $capability . '.',
+					array(
+						'status'         => 'rejected',
+						'declaration_id' => $key,
+					)
+				);
 			}
 			if ( 'dependency' === $kind ) {
-				$lifecycle['dependencies'][ $key ] = array( 'adapter' => $adapter, 'declaration' => $declaration, 'required' => $required );
+				$lifecycle['dependencies'][ $key ] = array(
+					'adapter'     => $adapter,
+					'declaration' => $declaration,
+					'required'    => $required,
+				);
 				continue;
 			}
 			if ( 'entity_collection' === $kind ) {
 				$entities = isset( $declaration['payload']['entities'] ) && is_array( $declaration['payload']['entities'] ) ? $declaration['payload']['entities'] : array();
-				$manifest = 'shop' === $capability ? array( 'schema_version' => 1, 'products' => $entities ) : array( 'forms' => $entities );
+				$manifest = 'shop' === $capability ? array(
+					'schema_version' => 1,
+					'products'       => $entities,
+				) : array( 'forms' => $entities );
 				$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest_generic( $adapter, $manifest );
 				if ( ! empty( $validation['errors'] ) ) {
-					return new WP_Error( 'static_site_importer_runtime_entity_invalid', 'Runtime entity declaration failed SSI provider validation.', array( 'status' => 'rejected', 'declaration_id' => $key, 'errors' => $validation['errors'] ) );
+					return new WP_Error(
+						'static_site_importer_runtime_entity_invalid',
+						'Runtime entity declaration failed SSI provider validation.',
+						array(
+							'status'         => 'rejected',
+							'declaration_id' => $key,
+							'errors'         => $validation['errors'],
+						)
+					);
 				}
 				$normalized_manifest = 'shop' === $capability ? array( 'schema_version' => 1, 'products' => $validation['products'] ?? array() ) : array( 'forms' => $validation['forms'] ?? array() );
 				$lifecycle['entities'][ $key ] = array( 'adapter' => $adapter, 'manifest' => $normalized_manifest, 'declaration' => $declaration, 'required' => $required );
@@ -538,10 +762,30 @@ class Static_Site_Importer_Theme_Generator {
 			$adapter = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
 			$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest_generic( $adapter, $args['products_manifest'] );
 			if ( ! empty( $validation['errors'] ) ) {
-				return new WP_Error( 'static_site_importer_products_manifest_invalid', 'Caller products_manifest failed SSI provider validation.', array( 'status' => 'rejected', 'errors' => $validation['errors'] ) );
+				return new WP_Error(
+					'static_site_importer_products_manifest_invalid',
+					'Caller products_manifest failed SSI provider validation.',
+					array(
+						'status' => 'rejected',
+						'errors' => $validation['errors'],
+					)
+				);
 			}
-			$lifecycle['dependencies']['caller_override'] = array( 'adapter' => $adapter, 'declaration' => array( 'reconciliation_identity' => 'caller_override', 'kind' => 'dependency' ) );
-			$lifecycle['entities']['caller_override'] = array( 'adapter' => $adapter, 'manifest' => $args['products_manifest'], 'declaration' => array( 'reconciliation_identity' => 'caller_override', 'kind' => 'entity_collection' ) );
+			$lifecycle['dependencies']['caller_override'] = array(
+				'adapter'     => $adapter,
+				'declaration' => array(
+					'reconciliation_identity' => 'caller_override',
+					'kind'                    => 'dependency',
+				),
+			);
+			$lifecycle['entities']['caller_override'] = array(
+				'adapter'     => $adapter,
+				'manifest'    => $args['products_manifest'],
+				'declaration' => array(
+					'reconciliation_identity' => 'caller_override',
+					'kind'                    => 'entity_collection',
+				),
+			);
 			$lifecycle['status'] = 'caller_override';
 		} elseif ( ! empty( $lifecycle['dependencies'] ) || ! empty( $lifecycle['entities'] ) ) {
 			$lifecycle['status'] = 'runtime_declarations';
@@ -583,11 +827,21 @@ class Static_Site_Importer_Theme_Generator {
 			$adapter = $prepared['adapter'];
 			$waived = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? '' ) ] );
 			if ( $waived ) {
-				$reports[ $id ] = array( 'status' => 'waived', 'provider' => $adapter['provider'] ?? '' );
+				$reports[ $id ] = array(
+					'status'   => 'waived',
+					'provider' => $adapter['provider'] ?? '',
+				);
 				continue;
 			}
 			if ( empty( $args['materialize_dependencies'] ) && ! Static_Site_Importer_Entity_Materializer_Registry::dependencies_available( $adapter ) && ! empty( $prepared['required'] ) ) {
-				return new WP_Error( 'static_site_importer_required_runtime_dependency_missing', 'A required runtime dependency is unavailable and dependency materialization is disabled.', array( 'status' => 'rejected', 'declaration_id' => $id ) );
+				return new WP_Error(
+					'static_site_importer_required_runtime_dependency_missing',
+					'A required runtime dependency is unavailable and dependency materialization is disabled.',
+					array(
+						'status'         => 'rejected',
+						'declaration_id' => $id,
+					)
+				);
 			}
 			$reports[ $id ] = ! empty( $args['materialize_dependencies'] ) ? Static_Site_Importer_Entity_Materializer_Registry::materialize_plugin_dependencies( $adapter ) : array( 'status' => 'available' );
 			if ( ! Static_Site_Importer_Entity_Materializer_Registry::dependencies_available( $adapter ) && ! empty( $prepared['required'] ) ) {
@@ -602,18 +856,33 @@ class Static_Site_Importer_Theme_Generator {
 		$reports = array();
 		$required = array_filter( $lifecycle['entities'], static fn( array $prepared ): bool => ! empty( $prepared['required'] ) );
 		if ( empty( $args['seed_entities'] ) && empty( $required ) ) {
-			return array( 'reports' => $reports, 'error' => null );
+			return array(
+				'reports' => $reports,
+				'error'   => null,
+			);
 		}
 		foreach ( $lifecycle['entities'] as $id => $prepared ) {
 			$adapter = $prepared['adapter'];
 			if ( ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? '' ) ] ) ) {
-				$reports[ $id ] = array( 'status' => 'waived', 'provider' => $adapter['provider'] ?? '' );
+				$reports[ $id ] = array(
+					'status'   => 'waived',
+					'provider' => $adapter['provider'] ?? '',
+				);
 				continue;
 			}
 			$report = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, $prepared['manifest'] );
 			if ( is_wp_error( $report ) ) {
-				$reports[ $id ] = array( 'status' => 'error', 'reason' => $report->get_error_code() );
-				return array( 'reports' => $reports, 'error' => array( 'code' => (string) $report->get_error_code(), 'message' => $report->get_error_message() ) );
+				$reports[ $id ] = array(
+					'status' => 'error',
+					'reason' => $report->get_error_code(),
+				);
+				return array(
+					'reports' => $reports,
+					'error'   => array(
+						'code'    => (string) $report->get_error_code(),
+						'message' => $report->get_error_message(),
+					),
+				);
 			}
 			$reports[ $id ] = $report;
 			$counts = isset( $report['counts'] ) && is_array( $report['counts'] ) ? $report['counts'] : array();
@@ -622,10 +891,19 @@ class Static_Site_Importer_Theme_Generator {
 			if ( in_array( $report['status'] ?? '', array( 'failed', 'error' ), true ) || ! empty( $counts['failed'] ) || ! empty( $counts['error'] ) || ( ! empty( $prepared['required'] ) && $completed < $expected ) ) {
 				$code = isset( $report['code'] ) && is_scalar( $report['code'] ) ? (string) $report['code'] : 'static_site_importer_entity_materialization_failed';
 				$message = isset( $report['error'] ) && is_scalar( $report['error'] ) ? (string) $report['error'] : ( isset( $report['reason'] ) && is_scalar( $report['reason'] ) && '' !== (string) $report['reason'] ? (string) $report['reason'] : 'Runtime entity materialization failed for declaration: ' . $id . '.' );
-				return array( 'reports' => $reports, 'error' => array( 'code' => $code, 'message' => $message ) );
+				return array(
+					'reports' => $reports,
+					'error'   => array(
+						'code'    => $code,
+						'message' => $message,
+					),
+				);
 			}
 		}
-		return array( 'reports' => $reports, 'error' => null );
+		return array(
+			'reports' => $reports,
+			'error'   => null,
+		);
 	}
 
 	/** Build exact provider-owned block replacements without consulting diagnostics. */
@@ -660,18 +938,25 @@ class Static_Site_Importer_Theme_Generator {
 				$result = $results[ $key ] ?? array();
 				$replacement = Static_Site_Importer_Entity_Materializer_Registry::binding_block_markup( $prepared['adapter'], $entity, $result );
 				if ( '' === $replacement ) {
-					return new WP_Error( 'static_site_importer_runtime_binding_unresolved', 'A required provider entity did not produce binding block markup.', array( 'declaration_id' => $declaration_id, 'entity_key' => $key ) );
+					return new WP_Error(
+						'static_site_importer_runtime_binding_unresolved',
+						'A required provider entity did not produce binding block markup.',
+						array(
+							'declaration_id' => $declaration_id,
+							'entity_key'     => $key,
+						)
+					);
 				}
 				foreach ( $entity_bindings as $binding ) {
 					$bindings[] = array(
-						'schema'                   => 'static-site-importer/runtime-entity-binding/v1',
-						'source_path'              => $binding['source_path'],
-						'search_block_markup'      => $binding['search_block_markup'],
-						'replacement_block_markup' => $replacement,
-						'occurrence'               => $binding['occurrence'],
-						'role'                     => $binding['role'],
-						'declaration_id'           => $declaration_id,
-						'reconciliation_identity'  => hash( 'sha256', "static-site-importer/runtime-entity-binding/v1\n{$declaration_id}\n{$binding['source_path']}\n{$binding['occurrence']}\n" . hash( 'sha256', $binding['search_block_markup'] ) ),
+						'schema'                       => 'static-site-importer/runtime-entity-binding/v1',
+						'source_path'                  => $binding['source_path'],
+						'search_block_markup'          => $binding['search_block_markup'],
+						'replacement_block_markup'     => $replacement,
+						'occurrence'                   => $binding['occurrence'],
+						'role'                         => $binding['role'],
+						'declaration_id'               => $declaration_id,
+						'reconciliation_identity'      => hash( 'sha256', "static-site-importer/runtime-entity-binding/v1\n{$declaration_id}\n{$binding['source_path']}\n{$binding['occurrence']}\n" . hash( 'sha256', $binding['search_block_markup'] ) ),
 						'superseded_runtime_selectors' => $binding['superseded_runtime_selectors'] ?? array(),
 					);
 				}
@@ -705,16 +990,37 @@ class Static_Site_Importer_Theme_Generator {
 					}
 					$claim = $binding['source_path'] . "\n" . hash( 'sha256', $binding['search_block_markup'] ) . "\n" . $binding['occurrence'];
 					if ( isset( $claims[ $claim ] ) ) {
-						return new WP_Error( 'static_site_importer_runtime_binding_claim_conflict', 'Two provider entities claim the same canonical source-page binding occurrence.', array( 'status' => 'rejected', 'declaration_id' => $declaration_id ) );
+						return new WP_Error(
+							'static_site_importer_runtime_binding_claim_conflict',
+							'Two provider entities claim the same canonical source-page binding occurrence.',
+							array(
+								'status'         => 'rejected',
+								'declaration_id' => $declaration_id,
+							)
+						);
 					}
 					$claims[ $claim ] = true;
 					$page = $pages[ $binding['source_path'] ] ?? array();
 					if ( ! empty( $page['skip_materialization'] ) ) {
-						return new WP_Error( 'static_site_importer_runtime_binding_target_protected', 'A provider binding targets a protected page that cannot be materialized.', array( 'status' => 'rejected', 'declaration_id' => $declaration_id ) );
+						return new WP_Error(
+							'static_site_importer_runtime_binding_target_protected',
+							'A provider binding targets a protected page that cannot be materialized.',
+							array(
+								'status'         => 'rejected',
+								'declaration_id' => $declaration_id,
+							)
+						);
 					}
 					$matches = substr_count( (string) ( $page['resolved_block_markup'] ?? '' ), (string) $binding['search_block_markup'] );
 					if ( $matches < (int) $binding['occurrence'] ) {
-						return new WP_Error( 'static_site_importer_runtime_binding_cardinality_mismatch', 'A canonical provider binding does not have its declared source-page occurrence.', array( 'status' => 'rejected', 'declaration_id' => $declaration_id ) );
+						return new WP_Error(
+							'static_site_importer_runtime_binding_cardinality_mismatch',
+							'A canonical provider binding does not have its declared source-page occurrence.',
+							array(
+								'status'         => 'rejected',
+								'declaration_id' => $declaration_id,
+							)
+						);
 					}
 					$content = (string) $page['resolved_block_markup'];
 					$position = 0;
@@ -727,10 +1033,20 @@ class Static_Site_Importer_Theme_Generator {
 					$end = $position + strlen( $binding['search_block_markup'] );
 					foreach ( $ranges[ $binding['source_path'] ] ?? array() as $range ) {
 						if ( $position < $range['end'] && $end > $range['start'] ) {
-							return new WP_Error( 'static_site_importer_runtime_binding_claim_conflict', 'Provider entity bindings claim overlapping canonical source-page ranges.', array( 'status' => 'rejected', 'declaration_id' => $declaration_id ) );
+							return new WP_Error(
+								'static_site_importer_runtime_binding_claim_conflict',
+								'Provider entity bindings claim overlapping canonical source-page ranges.',
+								array(
+									'status'         => 'rejected',
+									'declaration_id' => $declaration_id,
+								)
+							);
 						}
 					}
-					$ranges[ $binding['source_path'] ][] = array( 'start' => $position, 'end' => $end );
+					$ranges[ $binding['source_path'] ][] = array(
+						'start' => $position,
+						'end'   => $end,
+					);
 				}
 			}
 		}
@@ -742,7 +1058,10 @@ class Static_Site_Importer_Theme_Generator {
 		foreach ( $plan['pages'] as $page ) {
 			if ( ! empty( $page['entrypoint'] ) && isset( $page['document_metadata'] ) && is_array( $page['document_metadata'] ) ) {
 				$metadata = array_merge( array( 'schema' => 'static-site-importer/document-metadata/v1' ), $page['document_metadata'] );
-				foreach ( array( 'links' => 'href', 'scripts' => 'src' ) as $kind => $field ) {
+				foreach ( array(
+					'links'   => 'href',
+					'scripts' => 'src',
+				) as $kind => $field ) {
 					if ( ! isset( $metadata[ $kind ] ) || ! is_array( $metadata[ $kind ] ) ) {
 						continue;
 					}
@@ -762,7 +1081,13 @@ class Static_Site_Importer_Theme_Generator {
 	/** @param array<string,mixed> $payload */
 	private static function write_plan_projection( string $path, array $payload ): void {
 		$json = wp_json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
-		if ( false === $json || false === file_put_contents( $path, $json . "\n" ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes preflighted public import artifacts.
+		$data = false === $json ? false : $json . "\n";
+		$temp = is_string( $data ) ? tempnam( dirname( $path ), '.ssi-projection-' ) : false;
+		$written = is_string( $data ) && false !== $temp ? file_put_contents( $temp, $data ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Atomically writes preflighted public import artifacts.
+		if ( false === $data || false === $temp || strlen( $data ) !== $written || ! rename( $temp, $path ) ) {
+			if ( is_string( $temp ) && file_exists( $temp ) ) {
+				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed atomic projection temporary file.
+			}
 			throw new RuntimeException( 'Failed to write a preflighted import artifact.' );
 		}
 	}
@@ -777,13 +1102,13 @@ class Static_Site_Importer_Theme_Generator {
 	/**
 	 * Build the canonical progress timeline returned to host chat/Codebox callers.
 	 *
-	 * @param string              $import_run_id Import run id.
-	 * @param string              $theme_slug    Theme slug.
-	 * @param array<string,int>   $page_ids      Materialized page IDs.
+	 * @param string               $import_run_id Import run id.
+	 * @param string               $theme_slug    Theme slug.
+	 * @param array<string,int>    $page_ids      Materialized page IDs.
 	 * @param array<string,string> $writes        Theme file writes.
 	 * @param array<string,mixed>  $quality       Quality summary.
 	 * @param array<string,mixed>  $validation    Validation result.
-	 * @param string              $report_path   External report path.
+	 * @param string               $report_path   External report path.
 	 * @return array<int,array<string,mixed>>
 	 */
 	private static function import_progress_events( string $import_run_id, string $theme_slug, array $page_ids, array $writes, array $quality, array $validation, string $report_path ): array {
@@ -1368,16 +1693,18 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		$allowed = array_fill_keys( array_map( 'strval', $include_pages ), true );
-		return self::order_front_page_first( array_values(
-			array_filter(
-				$pages,
-				static function ( $page ) use ( $allowed ): bool {
-					$page_id   = isset( $page->ID ) ? (string) $page->ID : '';
-					$page_slug = isset( $page->post_name ) ? (string) $page->post_name : '';
-					return isset( $allowed[ $page_id ] ) || isset( $allowed[ $page_slug ] );
-				}
+		return self::order_front_page_first(
+			array_values(
+				array_filter(
+					$pages,
+					static function ( $page ) use ( $allowed ): bool {
+						$page_id   = isset( $page->ID ) ? (string) $page->ID : '';
+						$page_slug = isset( $page->post_name ) ? (string) $page->post_name : '';
+						return isset( $allowed[ $page_id ] ) || isset( $allowed[ $page_slug ] );
+					}
+				)
 			)
-		) );
+		);
 	}
 
 	/**
@@ -1522,10 +1849,10 @@ class Static_Site_Importer_Theme_Generator {
 	/**
 	 * Build a full static HTML document.
 	 *
-	 * @param string                    $page_html       Converted page body HTML.
+	 * @param string                            $page_html       Converted page body HTML.
 	 * @param array{before:string,after:string} $chrome          Converted theme chrome.
-	 * @param string                    $title           Document title.
-	 * @param bool                      $include_styles  Whether to link exported CSS.
+	 * @param string                            $title           Document title.
+	 * @param bool                              $include_styles  Whether to link exported CSS.
 	 * @return string
 	 */
 	private static function export_html_document( string $page_html, array $chrome, string $title, bool $include_styles ): string {
@@ -1575,12 +1902,12 @@ class Static_Site_Importer_Theme_Generator {
 	/**
 	 * Build the website artifact envelope consumed by Blocks Engine.
 	 *
-	 * @param string              $theme_slug      Theme slug.
-	 * @param string              $root            Artifact root.
-	 * @param string              $entrypoint      Entrypoint path.
+	 * @param string                         $theme_slug      Theme slug.
+	 * @param string                         $root            Artifact root.
+	 * @param string                         $entrypoint      Entrypoint path.
 	 * @param array<int,array<string,mixed>> $files Exported files.
-	 * @param array<string,mixed> $report          Export report.
-	 * @param array<string,mixed> $source_metadata Source metadata.
+	 * @param array<string,mixed>            $report          Export report.
+	 * @param array<string,mixed>            $source_metadata Source metadata.
 	 * @return array<string,mixed>
 	 */
 	private static function export_website_artifact( string $theme_slug, string $root, string $entrypoint, array $files, array $report, array $source_metadata ): array {
@@ -1646,8 +1973,8 @@ class Static_Site_Importer_Theme_Generator {
 	/**
 	 * Export browser assets that can be replayed with the website artifact.
 	 *
-	 * @param string                    $theme_dir   Theme directory.
-	 * @param string                    $root        Artifact root.
+	 * @param string                         $theme_dir   Theme directory.
+	 * @param string                         $root        Artifact root.
 	 * @param array<int,array<string,mixed>> $diagnostics Export diagnostics.
 	 * @return array<int,array<string,mixed>>
 	 */
@@ -1922,7 +2249,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * Check whether a file path exists in the export set.
 	 *
 	 * @param array<int,array<string,mixed>> $files Exported files.
-	 * @param string                        $path  Artifact path.
+	 * @param string                         $path  Artifact path.
 	 * @return bool
 	 */
 	private static function export_has_file( array $files, string $path ): bool {
@@ -2078,15 +2405,15 @@ class Static_Site_Importer_Theme_Generator {
 	/**
 	 * Build the source-of-truth manifest embedded in reports and written to disk.
 	 *
-	 * @param string                       $import_run_id Import run id.
-	 * @param array<string,mixed>          $artifact      Source artifact reference.
-	 * @param string                       $theme_dir     Theme directory.
-	 * @param string                       $theme_slug    Theme slug.
+	 * @param string                            $import_run_id Import run id.
+	 * @param array<string,mixed>               $artifact      Source artifact reference.
+	 * @param string                            $theme_dir     Theme directory.
+	 * @param string                            $theme_slug    Theme slug.
 	 * @param array<string,array<string,mixed>> $page_targets Page target rows.
-	 * @param array<string,int>            $page_ids      Page IDs keyed by source path.
-	 * @param array<string,string>         $permalinks    Permalinks keyed by source path.
-	 * @param array<string,string>         $writes        Theme writes.
-	 * @param array<string,mixed>          $materialized  Materialized asset summary.
+	 * @param array<string,int>                 $page_ids      Page IDs keyed by source path.
+	 * @param array<string,string>              $permalinks    Permalinks keyed by source path.
+	 * @param array<string,string>              $writes        Theme writes.
+	 * @param array<string,mixed>               $materialized  Materialized asset summary.
 	 * @return array<string,mixed>
 	 */
 	private static function source_of_truth_manifest( string $import_run_id, array $artifact, string $theme_dir, string $theme_slug, array $page_targets, array $page_ids, array $permalinks, array $writes, array $materialized, bool $write_theme_report_artifacts = false ): array {
@@ -2373,9 +2700,9 @@ class Static_Site_Importer_Theme_Generator {
 	/**
 	 * Restore decorative blocks inside matching generated group blocks.
 	 *
-	 * @param array<int, array<string, mixed>>              $blocks  Parsed blocks.
+	 * @param array<int, array<string, mixed>>               $blocks  Parsed blocks.
 	 * @param array<string, array<int, array<string,mixed>>> $restore Blocks keyed by parent class.
-	 * @param bool                                          $changed Whether any block changed.
+	 * @param bool                                           $changed Whether any block changed.
 	 * @return void
 	 */
 	private static function restore_dropped_empty_decorative_groups_in_tree( array &$blocks, array $restore, bool &$changed ): void {
@@ -2408,7 +2735,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * Add innerContent placeholders for restored leading inner blocks.
 	 *
 	 * @param array<int, mixed> $inner_content Existing innerContent.
-	 * @param int              $count         Number of leading blocks to insert.
+	 * @param int               $count         Number of leading blocks to insert.
 	 * @return array<int, mixed>
 	 */
 	private static function prepend_inner_content_placeholders( array $inner_content, int $count ): array {
@@ -2446,7 +2773,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * Convert raw HTML islands made only of decorative empty divs into native groups.
 	 *
 	 * @param array<int, array<string, mixed>> $blocks  Parsed blocks.
-	 * @param bool                            $changed Whether any block changed.
+	 * @param bool                             $changed Whether any block changed.
 	 * @return void
 	 */
 	private static function normalize_decorative_html_blocks_in_tree( array &$blocks, bool &$changed, int &$normalized_html_blocks ): void {
@@ -2614,7 +2941,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * Recursively mark empty decorative group blocks.
 	 *
 	 * @param array<int, array<string, mixed>> $blocks  Parsed blocks.
-	 * @param bool                            $changed Whether any block changed.
+	 * @param bool                             $changed Whether any block changed.
 	 * @return void
 	 */
 	private static function mark_empty_decorative_group_blocks_in_tree( array &$blocks, bool &$changed ): void {
@@ -2719,10 +3046,10 @@ class Static_Site_Importer_Theme_Generator {
 	/**
 	 * Record source document materialization details.
 	 *
-	 * @param array<int,mixed>                                   $documents  Document artifacts.
+	 * @param array<int,mixed>                                $documents  Document artifacts.
 	 * @param array<string, Static_Site_Importer_Source_Page> $pages      Imported pages/posts.
-	 * @param array<string,int>                                $page_ids   Imported post IDs keyed by source path.
-	 * @param array<string,string>                             $permalinks Imported permalinks keyed by source path.
+	 * @param array<string,int>                               $page_ids   Imported post IDs keyed by source path.
+	 * @param array<string,string>                            $permalinks Imported permalinks keyed by source path.
 	 * @return void
 	 */
 	private static function record_source_documents_summary( array $documents, array $pages, array $page_ids, array $permalinks ): void {
@@ -3086,8 +3413,8 @@ class Static_Site_Importer_Theme_Generator {
 	 * each finding's readable fallback, so `write_page_contents()` persists the
 	 * working form rather than the dead fallback.
 	 *
-	 * @param array<string, mixed>   $args          Import args.
-	 * @param array<string, string>  $page_contents Materialized page post_content keyed by source filename, mutated in place.
+	 * @param array<string, mixed>  $args          Import args.
+	 * @param array<string, string> $page_contents Materialized page post_content keyed by source filename, mutated in place.
 	 * @return void
 	 */
 	private static function record_form_materialization( array $args, array &$page_contents ): void {

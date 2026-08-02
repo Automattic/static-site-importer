@@ -258,7 +258,15 @@ class Static_Site_Importer_Plugin_Materializer {
 				$registered = (bool) apply_filters( 'ssi_companion_plugin_block_name_collision', $registered, $block_name, $registry );
 			}
 			if ( $registered && ! self::current_companion_owns_registered_block( $block_name, $descriptor ) ) {
-				return new WP_Error( 'static_site_importer_companion_plugin_block_name_collision', sprintf( 'Generated companion block name %s is already registered.', $block_name ), array( 'block_name' => $block_name, 'status' => 'rejected', 'reason_code' => 'runtime_block_name_collision' ) );
+				return new WP_Error(
+					'static_site_importer_companion_plugin_block_name_collision',
+					sprintf( 'Generated companion block name %s is already registered.', $block_name ),
+					array(
+						'block_name'  => $block_name,
+						'status'      => 'rejected',
+						'reason_code' => 'runtime_block_name_collision',
+					)
+				);
 			}
 		}
 
@@ -457,7 +465,13 @@ class Static_Site_Importer_Plugin_Materializer {
 			'data'    => $error->get_error_data(),
 		);
 		if ( is_array( $report['error']['data'] ) && isset( $report['error']['data']['reason_code'] ) ) {
-			$report['diagnostics'][] = array_merge( $report['error']['data'], array( 'code' => $report['error']['code'], 'message' => $report['error']['message'] ) );
+			$report['diagnostics'][] = array_merge(
+				$report['error']['data'],
+				array(
+					'code'    => $report['error']['code'],
+					'message' => $report['error']['message'],
+				)
+			);
 		}
 
 		return $report;

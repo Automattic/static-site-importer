@@ -51,6 +51,9 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-we
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-document.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-source-page.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-fetcher.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-artifact-run.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-source-normalizer.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-site-collector.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-import-runtime.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-companion-plugin.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-plugin-materializer.php';
@@ -135,7 +138,11 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				WP_CLI::error( 'Provide --plan=<canonical-plan.json> and --slug=<theme-slug>.' );
 			}
 			$receipt = static_site_importer_ability_materialize_wordpress_site_plan(
-				array( 'plan' => $plan, 'slug' => (string) $assoc_args['slug'], 'overwrite' => isset( $assoc_args['overwrite'] ) )
+				array(
+					'plan'      => $plan,
+					'slug'      => (string) $assoc_args['slug'],
+					'overwrite' => isset( $assoc_args['overwrite'] ),
+				)
 			);
 			WP_CLI::line( (string) wp_json_encode( $receipt, JSON_UNESCAPED_SLASHES ) );
 			if ( 'completed' !== $receipt['status'] ) {
@@ -214,6 +221,50 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 	);
 
 	WP_CLI::add_command(
+		'static-site-importer import-url',
+		static function ( array $args, array $assoc_args ): void {
+			$url = isset( $args[0] ) ? (string) $args[0] : '';
+			if ( '' === trim( $url ) ) {
+				WP_CLI::error( 'Provide a public source URL.' );
+			}
+
+			$provider_args = array();
+			if ( isset( $assoc_args['collect-site'] ) ) {
+				$provider_args['collect_site'] = true;
+			}
+			if ( isset( $assoc_args['skip-scripts'] ) ) {
+				$provider_args['include_scripts'] = false;
+			}
+			foreach ( array( 'batch-pages', 'max-pages', 'max-assets', 'max-total-bytes', 'request-delay-ms', 'timeout', 'max-bytes' ) as $key ) {
+				if ( isset( $assoc_args[ $key ] ) ) {
+					$provider_args[ str_replace( '-', '_', $key ) ] = (int) $assoc_args[ $key ];
+				}
+			}
+
+			$input  = array(
+				'url'                       => $url,
+				'provider_args'             => $provider_args,
+				'slug'                      => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
+				'name'                      => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
+				'site_title'                => isset( $assoc_args['site-title'] ) ? (string) $assoc_args['site-title'] : '',
+				'activate'                  => isset( $assoc_args['activate'] ),
+				'overwrite'                 => isset( $assoc_args['overwrite'] ),
+				'fail_on_quality'           => isset( $assoc_args['fail-on-quality'] ),
+				'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
+				'report'                    => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
+				'work_dir'                  => isset( $assoc_args['work-dir'] ) ? (string) $assoc_args['work-dir'] : '',
+			);
+			$result = static_site_importer_ability_import_url( $input );
+			if ( empty( $result['success'] ) ) {
+				$error = isset( $result['error'] ) && is_array( $result['error'] ) ? $result['error'] : array();
+				WP_CLI::error( (string) ( $error['message'] ?? 'Static site URL import failed.' ) );
+			}
+
+			WP_CLI::success( sprintf( 'Imported %s.', (string) ( $result['result']['theme_slug'] ?? $input['slug'] ) ) );
+		}
+	);
+
+	WP_CLI::add_command(
 		'static-site-importer validate-artifact',
 		static function ( array $args, array $assoc_args ): void {
 			unset( $args );
@@ -224,12 +275,13 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			}
 
 			$input  = array(
-				'slug'                      => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
-				'name'                      => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
-				'activate'                  => ! isset( $assoc_args['no-activate'] ),
-				'overwrite'                 => ! isset( $assoc_args['no-overwrite'] ),
-				'fail_on_quality'           => isset( $assoc_args['fail-on-quality'] ),
-				'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
+				'slug'                                 => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
+				'name'                                 => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
+				'activate'                             => ! isset( $assoc_args['no-activate'] ),
+				'overwrite'                            => ! isset( $assoc_args['no-overwrite'] ),
+				'fail_on_quality'                      => isset( $assoc_args['fail-on-quality'] ),
+				'allow_missing_woocommerce'            => isset( $assoc_args['allow-missing-woocommerce'] ),
+				'require_proven_dynamic_client_assets' => ! isset( $assoc_args['allow-unproven-dynamic-client-assets'] ),
 			);
 			$output = isset( $assoc_args['output'] ) ? (string) $assoc_args['output'] : '';
 			if ( isset( $assoc_args['artifact-dir'] ) ) {
@@ -264,7 +316,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				if ( 'fixture-matrix' === $format ) {
 					$error_result = Static_Site_Importer_Validation_Runtime::fixture_matrix_result( $error_result );
 				}
-				$json         = wp_json_encode( $error_result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+				$json = wp_json_encode( $error_result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 				if ( false === $json ) {
 					WP_CLI::error( $result->get_error_message() );
 				}
@@ -341,7 +393,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
  * @return bool|WP_Error True when required, false when absent.
  */
 function static_site_importer_cli_materialization_sidecar_contract( array $args ) {
-	$keys = array( 'receipt-sidecar', 'receipt-run-id', 'receipt-step-id', 'receipt-attempt-id' );
+	$keys    = array( 'receipt-sidecar', 'receipt-run-id', 'receipt-step-id', 'receipt-attempt-id' );
 	$present = array_filter( $keys, static fn( string $key ): bool => array_key_exists( $key, $args ) );
 	if ( empty( $present ) ) {
 		return false;
@@ -359,10 +411,10 @@ function static_site_importer_cli_materialization_sidecar_contract( array $args 
  * @param array<string,mixed> $args CLI arguments.
  */
 function static_site_importer_cli_write_materialization_sidecar( array $result, array $args ) {
-	$path = isset( $args['receipt-sidecar'] ) ? (string) $args['receipt-sidecar'] : '';
+	$path       = isset( $args['receipt-sidecar'] ) ? (string) $args['receipt-sidecar'] : '';
 	$fixture_id = isset( $result['fixture_id'] ) ? (string) $result['fixture_id'] : ( isset( $args['slug'] ) ? (string) $args['slug'] : '' );
-	$run_id = isset( $args['receipt-run-id'] ) ? (string) $args['receipt-run-id'] : '';
-	$step_id = isset( $args['receipt-step-id'] ) ? (string) $args['receipt-step-id'] : '';
+	$run_id     = isset( $args['receipt-run-id'] ) ? (string) $args['receipt-run-id'] : '';
+	$step_id    = isset( $args['receipt-step-id'] ) ? (string) $args['receipt-step-id'] : '';
 	$attempt_id = isset( $args['receipt-attempt-id'] ) ? (string) $args['receipt-attempt-id'] : '';
 	if ( '' === $path || ! static_site_importer_cli_sidecar_token( $fixture_id, 80 ) || ! static_site_importer_cli_sidecar_token( $run_id, 160 ) || 'import' !== $step_id || ! static_site_importer_cli_sidecar_token( $attempt_id, 80 ) ) {
 		return new WP_Error( 'static_site_importer_sidecar_identity_invalid', 'Required materialization sidecar identity is missing or invalid.' );
@@ -380,20 +432,26 @@ function static_site_importer_cli_write_materialization_sidecar( array $result, 
 	if ( ! isset( $completed['pages'], $completed['files'] ) || ! is_array( $completed['pages'] ) || ! is_array( $completed['files'] ) ) {
 		return new WP_Error( 'static_site_importer_sidecar_receipt_shape_invalid', 'Required materialization sidecar receipt pages and files must be arrays.' );
 	}
-	$summary = static_site_importer_cli_materialization_summary( $receipt, $result );
-	$sidecar = array(
+	$summary                   = static_site_importer_cli_materialization_summary( $receipt, $result );
+	$sidecar                   = array(
 		'schema'          => 'static-site-importer/materialization-runtime-sidecar/v1',
 		'fixture_id'      => $fixture_id,
 		'run_id'          => $run_id,
 		'step_id'         => $step_id,
 		'attempt_id'      => $attempt_id,
 		'artifact_sha256' => $artifact_hash,
-		'provenance'      => array( 'provider' => (string) ( $result['runtime']['provider'] ?? '' ), 'provider_status' => (string) ( $result['runtime']['status'] ?? '' ) ),
-		'durability'      => array( 'file_fsync' => function_exists( 'fsync' ) ? 'available' : 'unavailable', 'directory_fsync' => function_exists( 'fsync' ) ? 'attempted' : 'unavailable' ),
+		'provenance'      => array(
+			'provider'        => (string) ( $result['runtime']['provider'] ?? '' ),
+			'provider_status' => (string) ( $result['runtime']['status'] ?? '' ),
+		),
+		'durability'      => array(
+			'file_fsync'      => function_exists( 'fsync' ) ? 'available' : 'unavailable',
+			'directory_fsync' => function_exists( 'fsync' ) ? 'attempted' : 'unavailable',
+		),
 		'receipt'         => $summary,
 	);
 	$sidecar['content_sha256'] = hash( 'sha256', (string) wp_json_encode( $sidecar, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
-	$json = wp_json_encode( $sidecar, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+	$json                      = wp_json_encode( $sidecar, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
 	if ( false === $json || strlen( $json ) > 32768 ) {
 		return new WP_Error( 'static_site_importer_sidecar_too_large', 'Required materialization sidecar exceeds its 32 KiB bound.' );
 	}
@@ -436,19 +494,21 @@ function static_site_importer_cli_fsync_directory( string $directory ): void {
 
 /** @return array<string,mixed> */
 function static_site_importer_cli_materialization_summary( array $receipt, array $result ): array {
-	$completed = isset( $receipt['completed'] ) && is_array( $receipt['completed'] ) ? $receipt['completed'] : array();
-	$operations = isset( $completed['operations'] ) && is_array( $completed['operations'] ) ? $completed['operations'] : array();
-	$diagnostics = isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array();
+	$completed      = isset( $receipt['completed'] ) && is_array( $receipt['completed'] ) ? $receipt['completed'] : array();
+	$operations     = isset( $completed['operations'] ) && is_array( $completed['operations'] ) ? $completed['operations'] : array();
+	$diagnostics    = isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array();
 	$operation_rows = array();
-	$loss_rows = array();
+	$loss_rows      = array();
 	foreach ( array_slice( $operations, 0, 25 ) as $operation ) {
 		if ( is_array( $operation ) ) {
-			$row = array_filter( array(
-				'kind'        => static_site_importer_cli_sidecar_token_value( $operation['kind'] ?? $operation['type'] ?? $operation['operation'] ?? '', 80 ),
-				'status'      => static_site_importer_cli_sidecar_token_value( $operation['status'] ?? '', 40 ),
-				'reason_code' => static_site_importer_cli_sidecar_token_value( $operation['reason_code'] ?? '', 80 ),
-				'hash'        => hash( 'sha256', (string) wp_json_encode( $operation ) ),
-			) );
+			$row = array_filter(
+				array(
+					'kind'        => static_site_importer_cli_sidecar_token_value( $operation['kind'] ?? $operation['type'] ?? $operation['operation'] ?? '', 80 ),
+					'status'      => static_site_importer_cli_sidecar_token_value( $operation['status'] ?? '', 40 ),
+					'reason_code' => static_site_importer_cli_sidecar_token_value( $operation['reason_code'] ?? '', 80 ),
+					'hash'        => hash( 'sha256', (string) wp_json_encode( $operation ) ),
+				)
+			);
 			if ( ! empty( $row['kind'] ) ) {
 				$operation_rows[] = $row;
 			}
@@ -456,25 +516,43 @@ function static_site_importer_cli_materialization_summary( array $receipt, array
 	}
 	foreach ( array_slice( $diagnostics, 0, 25 ) as $diagnostic ) {
 		if ( is_array( $diagnostic ) ) {
-			$row = array_filter( array(
-				'kind'        => static_site_importer_cli_sidecar_token_value( $diagnostic['kind'] ?? $diagnostic['code'] ?? $diagnostic['type'] ?? '', 80 ),
-				'reason_code' => static_site_importer_cli_sidecar_token_value( $diagnostic['reason_code'] ?? '', 80 ),
-				'hash'        => hash( 'sha256', (string) wp_json_encode( $diagnostic ) ),
-			) );
+			$row = array_filter(
+				array(
+					'kind'        => static_site_importer_cli_sidecar_token_value( $diagnostic['kind'] ?? $diagnostic['code'] ?? $diagnostic['type'] ?? '', 80 ),
+					'reason_code' => static_site_importer_cli_sidecar_token_value( $diagnostic['reason_code'] ?? '', 80 ),
+					'hash'        => hash( 'sha256', (string) wp_json_encode( $diagnostic ) ),
+				)
+			);
 			if ( ! empty( $row['kind'] ) ) {
 				$loss_rows[] = $row;
 			}
 		}
 	}
-	$layout = isset( $receipt['computed_layout'] ) && is_array( $receipt['computed_layout'] ) ? $receipt['computed_layout'] : array();
+	$layout    = isset( $receipt['computed_layout'] ) && is_array( $receipt['computed_layout'] ) ? $receipt['computed_layout'] : array();
 	$plan_hash = isset( $receipt['plan_hash'] ) && is_string( $receipt['plan_hash'] ) && preg_match( '/^(?:sha256:)?[a-f0-9]{64}$/', $receipt['plan_hash'] ) ? $receipt['plan_hash'] : '';
 	return array(
-		'schema' => 'static-site-importer/materialization-receipt/v1', 'status' => 'completed', 'plan_hash' => $plan_hash,
-		'page_count' => min( 10000000, count( $completed['pages'] ?? array() ) ), 'file_count' => min( 10000000, count( $completed['files'] ?? array() ) ), 'operation_count' => min( 10000000, count( $operations ) ), 'loss_count' => min( 10000000, count( $diagnostics ) ),
-		'provider_totals' => array( 'completed' => ! empty( $result['runtime']['provider'] ) ? 1 : 0 ),
-		'computed_layout_totals' => array_filter( array( 'applied' => isset( $layout['applied'] ) ? (int) $layout['applied'] : null, 'losses' => isset( $layout['losses'] ) ? (int) $layout['losses'] : null, 'operations' => count( array_filter( $operations, static fn( $operation ): bool => is_array( $operation ) && false !== strpos( wp_json_encode( $operation ), 'computed_layout' ) ) ) ), static fn( $value ): bool => null !== $value ),
-		'operation_rows' => $operation_rows, 'loss_rows' => $loss_rows,
-		'truncated' => array( 'operation_rows' => count( $operations ) > 25, 'loss_rows' => count( $diagnostics ) > 25 ),
+		'schema'                 => 'static-site-importer/materialization-receipt/v1',
+		'status'                 => 'completed',
+		'plan_hash'              => $plan_hash,
+		'page_count'             => min( 10000000, count( $completed['pages'] ?? array() ) ),
+		'file_count'             => min( 10000000, count( $completed['files'] ?? array() ) ),
+		'operation_count'        => min( 10000000, count( $operations ) ),
+		'loss_count'             => min( 10000000, count( $diagnostics ) ),
+		'provider_totals'        => array( 'completed' => ! empty( $result['runtime']['provider'] ) ? 1 : 0 ),
+		'computed_layout_totals' => array_filter(
+			array(
+				'applied'    => isset( $layout['applied'] ) ? (int) $layout['applied'] : null,
+				'losses'     => isset( $layout['losses'] ) ? (int) $layout['losses'] : null,
+				'operations' => count( array_filter( $operations, static fn( $operation ): bool => is_array( $operation ) && false !== strpos( wp_json_encode( $operation ), 'computed_layout' ) ) ),
+			),
+			static fn( $value ): bool => null !== $value
+		),
+		'operation_rows'         => $operation_rows,
+		'loss_rows'              => $loss_rows,
+		'truncated'              => array(
+			'operation_rows' => count( $operations ) > 25,
+			'loss_rows'      => count( $diagnostics ) > 25,
+		),
 	);
 }
 

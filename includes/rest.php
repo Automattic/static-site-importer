@@ -900,7 +900,7 @@ function static_site_importer_rest_source_runtime( array $source, array $input =
  *
  * @param array<int,array<string,mixed>> $files Artifact files.
  * @return true|WP_Error
-	 */
+ */
 function static_site_importer_rest_validate_static_html_sources( array $files ) {
 	foreach ( $files as $file ) {
 		$path = isset( $file['path'] ) ? (string) $file['path'] : '';
