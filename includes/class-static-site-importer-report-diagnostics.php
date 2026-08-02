@@ -522,10 +522,10 @@ class Static_Site_Importer_Report_Diagnostics {
 		$source = 'companion_plugins.dependencies.' . $slug;
 
 		if ( ! empty( $row['active'] ) ) {
-			$island_handles = isset( $row['island_handles'] ) && is_array( $row['island_handles'] ) ? $row['island_handles'] : array();
+			$island_handles  = isset( $row['island_handles'] ) && is_array( $row['island_handles'] ) ? $row['island_handles'] : array();
 			$runtime_scripts = isset( $row['runtime_scripts'] ) && is_array( $row['runtime_scripts'] ) ? $row['runtime_scripts'] : array();
 			self::mark_companion_script_fallbacks_materialized( $report, $runtime_scripts, $slug );
-			$present        = array(
+			$present = array(
 				'code'           => 'companion_plugin_present',
 				'severity'       => 'info',
 				'source'         => $source,
@@ -736,7 +736,7 @@ class Static_Site_Importer_Report_Diagnostics {
 					'status' => empty( $ref ) ? 'pending' : 'captured',
 					'kind'   => (string) $slot['kind'],
 				),
-					empty( $ref )
+				empty( $ref )
 					? array(
 						'capture_state' => 'not_captured',
 						'reason'        => (string) $slot['reason'],
@@ -1094,8 +1094,8 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * source page, and never matches visible copy. Findings that cannot be anchored
 	 * leave the fallback in place and record a structured graft diagnostic.
 	 *
-	 * @param array<string,mixed> $report         Import report (mutated in place).
-	 * @param array<string,mixed> $args           Import args.
+	 * @param array<string,mixed>  $report         Import report (mutated in place).
+	 * @param array<string,mixed>  $args           Import args.
 	 * @param array<string,string> $page_contents Materialized page post_content keyed by source filename, mutated in place when a finding is grafted.
 	 * @return array<string,mixed> The recorded form_seeding report.
 	 */
@@ -1120,13 +1120,13 @@ class Static_Site_Importer_Report_Diagnostics {
 
 		$manifest_forms = array();
 		foreach ( $indexes as $index ) {
-			$diagnostic       = $report['diagnostics'][ $index ];
-			$controls         = isset( $diagnostic['controls'] ) && is_array( $diagnostic['controls'] ) ? $diagnostic['controls'] : array();
-			$form             = isset( $diagnostic['form'] ) && is_array( $diagnostic['form'] ) ? $diagnostic['form'] : array();
+			$diagnostic = $report['diagnostics'][ $index ];
+			$controls   = isset( $diagnostic['controls'] ) && is_array( $diagnostic['controls'] ) ? $diagnostic['controls'] : array();
+			$form       = isset( $diagnostic['form'] ) && is_array( $diagnostic['form'] ) ? $diagnostic['form'] : array();
 			if ( empty( $controls ) && self::is_generated_core_html_form_diagnostic( $diagnostic ) ) {
-				$extracted = self::extract_form_manifest_from_diagnostic( $diagnostic );
-				$controls  = isset( $extracted['controls'] ) && is_array( $extracted['controls'] ) ? $extracted['controls'] : array();
-				$form      = isset( $extracted['form'] ) && is_array( $extracted['form'] ) ? $extracted['form'] : $form;
+				$extracted                                   = self::extract_form_manifest_from_diagnostic( $diagnostic );
+				$controls                                    = isset( $extracted['controls'] ) && is_array( $extracted['controls'] ) ? $extracted['controls'] : array();
+				$form                                        = isset( $extracted['form'] ) && is_array( $extracted['form'] ) ? $extracted['form'] : $form;
 				$report['diagnostics'][ $index ]['controls'] = $controls;
 				$report['diagnostics'][ $index ]['form']     = $form;
 			}
@@ -1158,9 +1158,9 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 
 			++$seeding['mapped_count'];
-			$selector = isset( $row['selector'] ) && is_scalar( $row['selector'] ) ? (string) $row['selector'] : '';
+			$selector    = isset( $row['selector'] ) && is_scalar( $row['selector'] ) ? (string) $row['selector'] : '';
 			$source_path = isset( $row['source_path'] ) && is_scalar( $row['source_path'] ) ? (string) $row['source_path'] : '';
-			$index    = self::form_finding_index_for_selector( $report['diagnostics'], $pending, $selector, $source_path );
+			$index       = self::form_finding_index_for_selector( $report['diagnostics'], $pending, $selector, $source_path );
 			if ( null === $index ) {
 				continue;
 			}
@@ -1253,8 +1253,8 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * Named controls provide stable identity when generated URLs and Figma instance
 	 * classes differ from the source document.
 	 *
-	 * @param array<string,mixed>              $finding    Source form finding.
-	 * @param array<int,array<string,mixed>>    $diagnostics Import diagnostics.
+	 * @param array<string,mixed>            $finding    Source form finding.
+	 * @param array<int,array<string,mixed>> $diagnostics Import diagnostics.
 	 * @return bool
 	 */
 	private static function has_matching_generated_form_diagnostic( array $finding, array $diagnostics ): bool {
@@ -1326,7 +1326,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			);
 		}
 
-		$doc = new DOMDocument();
+		$doc      = new DOMDocument();
 		$previous = libxml_use_internal_errors( true );
 		$doc->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
 		libxml_clear_errors();
@@ -1406,7 +1406,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	private static function form_finding_index_for_selector( array $diagnostics, array $pending, string $selector, string $source_path = '' ): ?int {
 		if ( '' !== $selector && '' !== $source_path ) {
 			foreach ( $pending as $index ) {
-				$diagnostic = $diagnostics[ $index ] ?? array();
+				$diagnostic        = $diagnostics[ $index ] ?? array();
 				$diagnostic_source = self::first_scalar( is_array( $diagnostic ) ? $diagnostic : array(), array( 'source_path', 'source' ) );
 				if ( (string) ( $diagnostic['selector'] ?? '' ) === $selector && self::form_source_paths_match( $source_path, $diagnostic_source ) ) {
 					return $index;
@@ -1963,7 +1963,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 
 			if ( ! empty( $page_contents ) ) {
-				$graft = self::graft_product_add_to_cart_shortcodes_into_page_contents( $report['diagnostics'][ $index ], $seeded_products_by_slug, $page_contents );
+				$graft                           = self::graft_product_add_to_cart_shortcodes_into_page_contents( $report['diagnostics'][ $index ], $seeded_products_by_slug, $page_contents );
 				$report['diagnostics'][ $index ] = $graft['finding'];
 				if ( $graft['grafted'] ) {
 					++$seeding['shortcode_grafted_count'];
@@ -2110,8 +2110,8 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Replace one serialized core/buttons add-to-cart control per product.
 	 *
-	 * @param string                    $region   Serialized fallback block region.
-	 * @param array<int,array{id:int}>  $products Eligible seeded products in card order.
+	 * @param string                   $region   Serialized fallback block region.
+	 * @param array<int,array{id:int}> $products Eligible seeded products in card order.
 	 * @return string|null
 	 */
 	private static function replace_plain_cart_button_blocks_with_shortcodes( string $region, array $products ): ?string {
@@ -2133,8 +2133,8 @@ class Static_Site_Importer_Report_Diagnostics {
 		$rewritten = '';
 		$cursor    = 0;
 		foreach ( $cart_controls as $index => $control_match ) {
-			$block    = (string) $control_match[0];
-			$position = (int) $control_match[1];
+			$block      = (string) $control_match[0];
+			$position   = (int) $control_match[1];
 			$rewritten .= substr( $region, $cursor, $position - $cursor );
 			$rewritten .= self::add_to_cart_shortcode_block( (int) $products[ $index ]['id'] );
 			$cursor     = $position + strlen( $block );
@@ -3151,9 +3151,9 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private static function compact_native_report_rows( array $rows ): array {
-		$fields  = array( 'type', 'kind', 'code', 'diagnostic_code', 'severity', 'source', 'source_path', 'path', 'script_path', 'selector', 'container_selector', 'target_selector', 'target', 'dom_target', 'tag', 'tag_name', 'element', 'block_name', 'block_path', 'attribute_path', 'reason', 'reason_code', 'message', 'excerpt', 'source_html_preview', 'emitted_block_preview', 'html_excerpt', 'handle', 'src', 'role', 'discovered', 'materialized', 'enqueued', 'telemetry', 'vendor', 'expected', 'observed', 'label', 'source_label', 'generated_label', 'url', 'source_url', 'generated_url', 'landmark', 'runtime_requirement', 'preservation_status', 'disposition', 'js_handling', 'recoverability', 'actionability', 'suggested_repair_class', 'suggested_primitive', 'materialization_hint', 'control_count', 'product_count' );
+		$fields       = array( 'type', 'kind', 'code', 'diagnostic_code', 'severity', 'source', 'source_path', 'path', 'script_path', 'selector', 'container_selector', 'target_selector', 'target', 'dom_target', 'tag', 'tag_name', 'element', 'block_name', 'block_path', 'attribute_path', 'reason', 'reason_code', 'message', 'excerpt', 'source_html_preview', 'emitted_block_preview', 'html_excerpt', 'handle', 'src', 'role', 'discovered', 'materialized', 'enqueued', 'telemetry', 'vendor', 'expected', 'observed', 'label', 'source_label', 'generated_label', 'url', 'source_url', 'generated_url', 'landmark', 'runtime_requirement', 'preservation_status', 'disposition', 'js_handling', 'recoverability', 'actionability', 'suggested_repair_class', 'suggested_primitive', 'materialization_hint', 'control_count', 'product_count' );
 		$array_fields = array( 'materialization_target', 'form', 'controls', 'products', 'readable_blocks' );
-		$compact = array();
+		$compact      = array();
 		foreach ( array_slice( $rows, 0, 50 ) as $row ) {
 			if ( ! is_array( $row ) ) {
 				continue;

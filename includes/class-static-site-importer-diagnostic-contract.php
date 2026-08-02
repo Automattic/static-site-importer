@@ -18,8 +18,8 @@ if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
  */
 class Static_Site_Importer_Diagnostic_Contract {
 
-	public const IMPORT_DIAGNOSTICS_SCHEMA = 'static-site-importer/import-diagnostics/v1';
-	private const BLOCK_PROVENANCE_LIMIT = 50;
+	public const IMPORT_DIAGNOSTICS_SCHEMA     = 'static-site-importer/import-diagnostics/v1';
+	private const BLOCK_PROVENANCE_LIMIT       = 50;
 	private const BLOCK_PROVENANCE_STAGE_LIMIT = 2;
 
 	/**
@@ -78,7 +78,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 	/** Extract compiler Gutenberg gaps with their materialization outcome. */
 	private static function gutenberg_gap_diagnostics( array $import_report ): array {
 		$blocks_engine = isset( $import_report['blocks_engine'] ) && is_array( $import_report['blocks_engine'] ) ? $import_report['blocks_engine'] : array();
-		$gaps = isset( $blocks_engine['gutenberg_gaps'] ) && is_array( $blocks_engine['gutenberg_gaps'] ) ? $blocks_engine['gutenberg_gaps'] : array();
+		$gaps          = isset( $blocks_engine['gutenberg_gaps'] ) && is_array( $blocks_engine['gutenberg_gaps'] ) ? $blocks_engine['gutenberg_gaps'] : array();
 		foreach ( $gaps as $index => $gap ) {
 			if ( is_array( $gap ) && ! isset( $gap['type'] ) && ! isset( $gap['code'] ) ) {
 				$gaps[ $index ]['type'] = 'gutenberg_gap';
@@ -383,7 +383,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 		}
 		$plan = isset( $blocks_engine['wordpress_site_plan'] ) && is_array( $blocks_engine['wordpress_site_plan'] ) ? $blocks_engine['wordpress_site_plan'] : array();
 		if ( ! empty( $plan ) ) {
-			$assets = isset( $plan['assets'] ) && is_array( $plan['assets'] ) ? $plan['assets'] : array();
+			$assets                         = isset( $plan['assets'] ) && is_array( $plan['assets'] ) ? $plan['assets'] : array();
 			$summary['wordpress_site_plan'] = array(
 				'schema'      => isset( $plan['schema'] ) && is_scalar( $plan['schema'] ) ? (string) $plan['schema'] : '',
 				'asset_count' => count( $assets ),
@@ -416,15 +416,15 @@ class Static_Site_Importer_Diagnostic_Contract {
 		$completed = isset( $receipt['completed'] ) && is_array( $receipt['completed'] ) ? $receipt['completed'] : array();
 
 		return array(
-			'schema'            => isset( $receipt['schema'] ) && is_scalar( $receipt['schema'] ) ? (string) $receipt['schema'] : '',
-			'status'            => isset( $receipt['status'] ) && is_scalar( $receipt['status'] ) ? (string) $receipt['status'] : '',
-			'plan_hash'         => isset( $receipt['plan_hash'] ) && is_scalar( $receipt['plan_hash'] ) ? (string) $receipt['plan_hash'] : '',
-			'page_count'        => isset( $completed['pages'] ) && is_array( $completed['pages'] ) ? count( $completed['pages'] ) : 0,
-			'file_count'        => isset( $completed['files'] ) && is_array( $completed['files'] ) ? count( $completed['files'] ) : 0,
-			'operation_count'   => isset( $completed['operations'] ) && is_array( $completed['operations'] ) ? count( $completed['operations'] ) : 0,
-			'declaration_count' => isset( $completed['declaration_ids'] ) && is_array( $completed['declaration_ids'] ) ? count( $completed['declaration_ids'] ) : 0,
-			'block_provenance'  => self::block_provenance_summary( isset( $completed['block_provenance'] ) && is_array( $completed['block_provenance'] ) ? $completed['block_provenance'] : array() ),
-			'block_provenance_count' => isset( $completed['block_provenance_count'] ) ? (int) $completed['block_provenance_count'] : 0,
+			'schema'                     => isset( $receipt['schema'] ) && is_scalar( $receipt['schema'] ) ? (string) $receipt['schema'] : '',
+			'status'                     => isset( $receipt['status'] ) && is_scalar( $receipt['status'] ) ? (string) $receipt['status'] : '',
+			'plan_hash'                  => isset( $receipt['plan_hash'] ) && is_scalar( $receipt['plan_hash'] ) ? (string) $receipt['plan_hash'] : '',
+			'page_count'                 => isset( $completed['pages'] ) && is_array( $completed['pages'] ) ? count( $completed['pages'] ) : 0,
+			'file_count'                 => isset( $completed['files'] ) && is_array( $completed['files'] ) ? count( $completed['files'] ) : 0,
+			'operation_count'            => isset( $completed['operations'] ) && is_array( $completed['operations'] ) ? count( $completed['operations'] ) : 0,
+			'declaration_count'          => isset( $completed['declaration_ids'] ) && is_array( $completed['declaration_ids'] ) ? count( $completed['declaration_ids'] ) : 0,
+			'block_provenance'           => self::block_provenance_summary( isset( $completed['block_provenance'] ) && is_array( $completed['block_provenance'] ) ? $completed['block_provenance'] : array() ),
+			'block_provenance_count'     => isset( $completed['block_provenance_count'] ) ? (int) $completed['block_provenance_count'] : 0,
 			'block_provenance_truncated' => ! empty( $completed['block_provenance_truncated'] ),
 		);
 	}
@@ -477,7 +477,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 			}
 
 			$entry = array();
-			$name = isset( $stage['stage'] ) ? self::bounded_provenance_string( $stage['stage'], 1024 ) : '';
+			$name  = isset( $stage['stage'] ) ? self::bounded_provenance_string( $stage['stage'], 1024 ) : '';
 			if ( '' !== $name ) {
 				$entry['stage'] = $name;
 			}

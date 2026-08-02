@@ -1,39 +1,414 @@
 <?php
 /** Resumable bounded URL site import. @package StaticSiteImporter */
-if ( ! defined( 'ABSPATH' ) ) { exit; }
-if ( ! class_exists( 'Static_Site_Importer_Artifact_Run_Workspace' ) ) { require_once __DIR__ . '/class-static-site-importer-artifact-run.php'; }
+if ( ! defined( 'ABSPATH' ) ) {
+	exit; }
+if ( ! class_exists( 'Static_Site_Importer_Artifact_Run_Workspace' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-artifact-run.php'; }
 final class Static_Site_Importer_URL_Batch_Import {
-	private const VERSION = 2; private const MAX_BATCH_PAGES = 100;
+	private const VERSION         = 2;
+	private const MAX_BATCH_PAGES = 100;
 	public static function import( array $request, array $input, ?callable $fetcher = null, ?callable $importer = null ) {
-		$args=is_array($request['provider_args']??null)?$request['provider_args']:array();$batch_pages=(int)($args['batch_pages']??0);if($batch_pages<1){return new WP_Error('static_site_importer_invalid_batch_pages','batch_pages must be a positive integer.');}if(!array_key_exists('max_assets',$args)){$args['max_assets']=2000;}if(!array_key_exists('max_total_bytes',$args)){$args['max_total_bytes']=268435456;}$work_dir=(string)($request['work_dir']??'');if(''===$work_dir||!wp_mkdir_p($work_dir)){return new WP_Error('static_site_importer_batch_work_dir_unavailable','The batch import work directory is unavailable.');}
-		$url=(string)$request['url'];$manifest_path=trailingslashit($work_dir).'url-site-batch-manifest-'.hash('sha256',self::VERSION."\n".$url).'.json';$requested=self::contract($url,$input,$args,$batch_pages);$existing=self::existing_manifest($manifest_path);$contract=$existing&&self::canonical($existing['contract'])===self::canonical($requested)?$existing['contract']:$requested;$identity=$existing&&self::canonical($existing['contract'])===self::canonical($requested)?$existing['identity']:hash('sha256',wp_json_encode($contract));
-		try{$workspace=new Static_Site_Importer_Artifact_Run_Workspace($work_dir,'url-'.$identity,array('on_success'=>'purge_on_success','on_failure'=>'retain','expires_at'=>gmdate('c',time()+604800)));}catch(RuntimeException $error){return new WP_Error('static_site_importer_batch_work_dir_unavailable',$error->getMessage());}
-		if($workspace->is_expired()){$cleanup=$workspace->purge();$expired=$manifest_path??(trailingslashit($work_dir).'url-site-batch-manifest-'.hash('sha256',self::VERSION."\n".$url).'.json');$archive=$expired.'.expired-'.gmdate('YmdHis');$archived=is_file($expired)&&!is_link($expired)?@rename($expired,$archive):false;return new WP_Error('static_site_importer_batch_run_expired','The retained URL batch run expired and must be restarted.',array('cleanup'=>$cleanup,'expired_manifest'=>$expired,'archived_manifest'=>$archived?$archive:null,'restart_required'=>true));}$cache=new Static_Site_Importer_Artifact_Byte_Cache($workspace,'http-response');$cache->reject_when(static function(string $bytes,array $metadata):bool{$type=strtolower((string)($metadata['content_type']??''));return (str_starts_with($type,'text/html')||str_starts_with($type,'application/xhtml+xml'))&&'error'===(Static_Site_Importer_URL_Fetcher::html_source_diagnostic($bytes)['severity']??'');});$cache->adopt_legacy(trailingslashit($work_dir).'url-response-cache-'.$identity);$cache->adopt_legacy($workspace->directory().'/responses');
-		$source_fetcher=$fetcher;$fetcher=self::cached_fetcher($cache,$source_fetcher);$run_manifest=new Static_Site_Importer_Artifact_Run_Manifest($manifest_path,$identity,'static-site-importer/url-site-batch-run/v1',$contract);$manifest=$run_manifest->load();if(is_wp_error($manifest)){return $manifest;}if(!empty($manifest)){$manifest['fetch_cache']=self::cache_counters($manifest['fetch_cache']??array());}
-		if(empty($manifest)){$routes=Static_Site_Importer_URL_Site_Collector::discover_routes($url,$args,$fetcher);if(is_wp_error($routes)){return $routes;}$routes=self::ordered_routes($url,$routes);if(empty($routes)){$routes=array($url);}$cursor=Static_Site_Importer_Artifact_Batch_Cursor::create(array_keys($routes),min(self::MAX_BATCH_PAGES,$batch_pages));$manifest=array('schema'=>'static-site-importer/url-site-batch-run/v1','version'=>self::VERSION,'source'=>array('url'=>$url,'identity'=>$identity),'contract'=>$contract,'discovery_limits'=>Static_Site_Importer_URL_Site_Collector::discovery_limits(),'per_batch_limits'=>array('max_pages'=>min(self::MAX_BATCH_PAGES,$batch_pages),'max_assets'=>min(2000,max(0,(int)$args['max_assets'])),'max_total_bytes'=>min(268435456,max(1,(int)$args['max_total_bytes'])),'max_response_bytes'=>10485760),'total_routes'=>count($routes),'routes'=>$routes,'batch_pages'=>min(self::MAX_BATCH_PAGES,$batch_pages),'batches'=>self::legacy_batches($cursor),'failures'=>array(),'diagnostics'=>array(),'external_asset_retained'=>array('count'=>0,'samples'=>array()),'fetch_cache'=>$cache->consume(),'state'=>'running');if(is_wp_error($run_manifest->save($manifest))){return $run_manifest->save($manifest);}}
-		if('completed'===($manifest['state']??'')&&is_array($manifest['final_result']??null)){$manifest['final_result']['url_batch_run']['fetch_cache']=$manifest['fetch_cache'];$cache->cleanup_adopted();return $manifest['final_result'];}$importer=$importer??static fn(array $artifact,array $import_args)=>Static_Site_Importer_Theme_Generator::import_website_artifact($artifact,$import_args);$cursor=Static_Site_Importer_Artifact_Batch_Cursor::hydrate($manifest['batches']);
-		while(null!==($index=Static_Site_Importer_Artifact_Batch_Cursor::next($cursor))){$batch=$cursor[$index];$routes=array_values(array_intersect_key($manifest['routes'],array_flip($batch['units'])));$batch_entry=in_array($url,$routes,true)?$url:($routes[0]??$url);$cache_name='batches/'.$batch['batch_id'].'.json';$old_cache=trailingslashit($work_dir).'url-site-batch-cache-'.$identity.'-'.$index.'.json';$raw=self::retained_runtime($workspace,$cache_name,'batches/'.$index.'.json',$old_cache,$routes);$runtime=is_string($raw)?(json_decode($raw,true)?:array()):array();
-			if(empty($runtime)){$collect_args=$args;$collect_args['_route_set']=array_values(array_unique($routes));$collect_args['max_pages']=min(self::MAX_BATCH_PAGES+1,count($collect_args['_route_set'])+1);$collect_args['require_complete_collection']=true;$collect_args['asset_failure_policy']=count($routes)>1?'preserve_failed_external_assets':'preserve_external';$runtime=Static_Site_Importer_URL_Site_Collector::collect($batch_entry,$collect_args,$fetcher);if(is_wp_error($runtime)){if(count($routes)>1&&self::splittable_collection_error($runtime)){$cursor=Static_Site_Importer_Artifact_Batch_Cursor::split($cursor,$index);$manifest['batches']=self::legacy_batches($cursor);self::checkpoint_cache($manifest,$cache);$manifest['diagnostics'][]=array('code'=>'batch_subdivided','parent_batch'=>$batch['batch_id'],'children'=>array_column(array_slice($cursor,$index,2),'batch_id'));$run_manifest->save($manifest);return self::import($request,$input,$source_fetcher,$importer);}return self::failed($run_manifest,$workspace,$manifest,$cursor,$index,$runtime,$cache);}$write=$workspace->publish_json($cache_name,$runtime);if(is_wp_error($write)){return self::failed($run_manifest,$workspace,$manifest,$cursor,$index,$write,$cache);}}
-			$manifest['external_asset_retained']=self::merge_external_assets($manifest['external_asset_retained']??array(),$runtime['source_metadata']['collection']['external_asset_retained']??array(),$index);self::checkpoint_cache($manifest,$cache);$manifest['batches']=self::legacy_batches($cursor);if(is_wp_error($run_manifest->save($manifest))){return $run_manifest->save($manifest);}$import_args=Static_Site_Importer_URL_Import_Runtime::batch_import_args($input,$runtime);$import_args['activate']=$index===array_key_last($cursor)&&!empty($input['activate']);$import_args['batch_import']=true;$import_args['preserve_existing_theme_bootstrap']=$index>0;$import_args['import_run_id']=$identity;$result=$importer($runtime['artifact'],$import_args);if(is_wp_error($result)){return self::failed($run_manifest,$workspace,$manifest,$cursor,$index,$result,$cache);}$cursor=Static_Site_Importer_Artifact_Batch_Cursor::complete($cursor,$index);$cursor[$index]['result']=self::result_evidence($result,$runtime);$manifest['batches']=self::legacy_batches($cursor);$manifest['diagnostics']=array_slice(array_merge($manifest['diagnostics'],$result['import_validation_result']['diagnostics']??array()),-100);if(is_wp_error($run_manifest->save($manifest))){return $run_manifest->save($manifest);}$workspace->delete($cache_name);if(is_file($old_cache)){unlink($old_cache);}$final=$result;unset($result,$runtime,$raw);}
-		$manifest['batches']=self::legacy_batches($cursor);$aggregate=self::aggregate_result($manifest,$manifest_path,$final??array());$manifest['state']='completed';$manifest['completed_at']=gmdate('c');self::checkpoint_cache($manifest,$cache);$legacy_cleanup=$cache->cleanup_adopted();$aggregate['url_batch_run']['cleanup']=$workspace->cleanup('success');$aggregate['url_batch_run']['legacy_cache_cleanup']=$legacy_cleanup;$manifest['final_result']=$aggregate;if(is_wp_error($run_manifest->save($manifest))){return $run_manifest->save($manifest);}return $aggregate;
+		$args        = is_array($request['provider_args'] ?? null) ? $request['provider_args'] : array();
+		$batch_pages = (int) ( $args['batch_pages'] ?? 0 );
+		if ( $batch_pages < 1 ) {
+			return new WP_Error('static_site_importer_invalid_batch_pages', 'batch_pages must be a positive integer.');
+		}if ( ! array_key_exists('max_assets', $args) ) {
+			$args['max_assets'] = 2000;
+		}if ( ! array_key_exists('max_total_bytes', $args) ) {
+			$args['max_total_bytes'] = 268435456;
+		}$work_dir = (string) ( $request['work_dir'] ?? '' );
+		if ( '' === $work_dir || ! wp_mkdir_p($work_dir) ) {
+			return new WP_Error('static_site_importer_batch_work_dir_unavailable', 'The batch import work directory is unavailable.');}
+		$url           = (string) $request['url'];
+		$manifest_path = trailingslashit($work_dir) . 'url-site-batch-manifest-' . hash('sha256', self::VERSION . "\n" . $url) . '.json';
+		$requested     = self::contract($url, $input, $args, $batch_pages);
+		$existing      = self::existing_manifest($manifest_path);
+		$contract      = $existing && self::canonical($existing['contract']) === self::canonical($requested) ? $existing['contract'] : $requested;
+		$identity      = $existing && self::canonical($existing['contract']) === self::canonical($requested) ? $existing['identity'] : hash('sha256', wp_json_encode($contract));
+		try {
+			$workspace = new Static_Site_Importer_Artifact_Run_Workspace($work_dir, 'url-' . $identity, array(
+				'on_success' => 'purge_on_success',
+				'on_failure' => 'retain',
+				'expires_at' => gmdate('c', time() + 604800),
+			));
+		} catch ( RuntimeException $error ) {
+			return new WP_Error('static_site_importer_batch_work_dir_unavailable', $error->getMessage());}
+		if ( $workspace->is_expired() ) {
+			$cleanup  = $workspace->purge();
+			$expired  = $manifest_path ?? ( trailingslashit($work_dir) . 'url-site-batch-manifest-' . hash('sha256', self::VERSION . "\n" . $url) . '.json' );
+			$archive  = $expired . '.expired-' . gmdate('YmdHis');
+			$archived = is_file($expired) && ! is_link($expired) ? @rename($expired, $archive) : false;
+			return new WP_Error('static_site_importer_batch_run_expired', 'The retained URL batch run expired and must be restarted.', array(
+				'cleanup'           => $cleanup,
+				'expired_manifest'  => $expired,
+				'archived_manifest' => $archived ? $archive : null,
+				'restart_required'  => true,
+			));
+		}$cache = new Static_Site_Importer_Artifact_Byte_Cache($workspace, 'http-response');
+		$cache->reject_when(static function(string $bytes,array $metadata): bool{$type = strtolower( (string) ( $metadata['content_type'] ?? '' ));
+			return ( str_starts_with($type, 'text/html') || str_starts_with($type, 'application/xhtml+xml') ) && 'error' === ( Static_Site_Importer_URL_Fetcher::html_source_diagnostic($bytes)['severity'] ?? '' );
+		});
+		$cache->adopt_legacy(trailingslashit($work_dir) . 'url-response-cache-' . $identity);
+		$cache->adopt_legacy($workspace->directory() . '/responses');
+		$source_fetcher = $fetcher;
+		$fetcher        = self::cached_fetcher($cache, $source_fetcher);
+		$run_manifest   = new Static_Site_Importer_Artifact_Run_Manifest($manifest_path, $identity, 'static-site-importer/url-site-batch-run/v1', $contract);
+		$manifest       = $run_manifest->load();
+		if ( is_wp_error($manifest) ) {
+			return $manifest;
+		}if ( ! empty($manifest) ) {
+			$manifest['fetch_cache'] = self::cache_counters($manifest['fetch_cache'] ?? array());}
+		if ( empty($manifest) ) {
+			$routes = Static_Site_Importer_URL_Site_Collector::discover_routes($url, $args, $fetcher);
+			if ( is_wp_error($routes) ) {
+				return $routes;
+			}$routes = self::ordered_routes($url, $routes);
+			if ( empty($routes) ) {
+				$routes = array( $url );
+			}$cursor  = Static_Site_Importer_Artifact_Batch_Cursor::create(array_keys($routes), min(self::MAX_BATCH_PAGES, $batch_pages));
+			$manifest = array(
+				'schema'                  => 'static-site-importer/url-site-batch-run/v1',
+				'version'                 => self::VERSION,
+				'source'                  => array(
+					'url'      => $url,
+					'identity' => $identity,
+				),
+				'contract'                => $contract,
+				'discovery_limits'        => Static_Site_Importer_URL_Site_Collector::discovery_limits(),
+				'per_batch_limits'        => array(
+					'max_pages'          => min(self::MAX_BATCH_PAGES, $batch_pages),
+					'max_assets'         => min(2000, max(0, (int) $args['max_assets'])),
+					'max_total_bytes'    => min(268435456, max(1, (int) $args['max_total_bytes'])),
+					'max_response_bytes' => 10485760,
+				),
+				'total_routes'            => count($routes),
+				'routes'                  => $routes,
+				'batch_pages'             => min(self::MAX_BATCH_PAGES, $batch_pages),
+				'batches'                 => self::legacy_batches($cursor),
+				'failures'                => array(),
+				'diagnostics'             => array(),
+				'external_asset_retained' => array(
+					'count'   => 0,
+					'samples' => array(),
+				),
+				'fetch_cache'             => $cache->consume(),
+				'state'                   => 'running',
+			);
+			if ( is_wp_error($run_manifest->save($manifest)) ) {
+				return $run_manifest->save($manifest);}
+		}
+		if ( 'completed' === ( $manifest['state'] ?? '' ) && is_array($manifest['final_result'] ?? null) ) {
+			$manifest['final_result']['url_batch_run']['fetch_cache'] = $manifest['fetch_cache'];
+			$cache->cleanup_adopted();
+			return $manifest['final_result'];
+		}$importer = $importer ?? static fn(array $artifact,array $import_args)=>Static_Site_Importer_Theme_Generator::import_website_artifact($artifact, $import_args);
+		$cursor    = Static_Site_Importer_Artifact_Batch_Cursor::hydrate($manifest['batches']);
+		while ( null !== ( $index = Static_Site_Importer_Artifact_Batch_Cursor::next($cursor) ) ) {
+			$batch       = $cursor[ $index ];
+			$routes      = array_values(array_intersect_key($manifest['routes'], array_flip($batch['units'])));
+			$batch_entry = in_array($url, $routes, true) ? $url : ( $routes[0] ?? $url );
+			$cache_name  = 'batches/' . $batch['batch_id'] . '.json';
+			$old_cache   = trailingslashit($work_dir) . 'url-site-batch-cache-' . $identity . '-' . $index . '.json';
+			$raw         = self::retained_runtime($workspace, $cache_name, 'batches/' . $index . '.json', $old_cache, $routes);
+			$runtime     = is_string($raw) ? ( json_decode($raw, true) ?: array() ) : array();
+			if ( empty($runtime) ) {
+				$collect_args                                = $args;
+				$collect_args['_route_set']                  = array_values(array_unique($routes));
+				$collect_args['max_pages']                   = min(self::MAX_BATCH_PAGES + 1, count($collect_args['_route_set']) + 1);
+				$collect_args['require_complete_collection'] = true;
+				$collect_args['asset_failure_policy']        = count($routes) > 1 ? 'preserve_failed_external_assets' : 'preserve_external';
+				$runtime                                     = Static_Site_Importer_URL_Site_Collector::collect($batch_entry, $collect_args, $fetcher);
+				if ( is_wp_error($runtime) ) {
+					if ( count($routes) > 1 && self::splittable_collection_error($runtime) ) {
+						$cursor                          = Static_Site_Importer_Artifact_Batch_Cursor::split($cursor, $index);
+									$manifest['batches'] = self::legacy_batches($cursor);
+									self::checkpoint_cache($manifest, $cache);
+									$manifest['diagnostics'][] = array(
+										'code'         => 'batch_subdivided',
+										'parent_batch' => $batch['batch_id'],
+										'children'     => array_column(array_slice($cursor, $index, 2), 'batch_id'),
+									);
+									$run_manifest->save($manifest);
+									return self::import($request, $input, $source_fetcher, $importer);
+					}return self::failed($run_manifest, $workspace, $manifest, $cursor, $index, $runtime, $cache);
+				}$write = $workspace->publish_json($cache_name, $runtime);
+				if ( is_wp_error($write) ) {
+					return self::failed($run_manifest, $workspace, $manifest, $cursor, $index, $write, $cache);}
+			}
+			$manifest['external_asset_retained'] = self::merge_external_assets($manifest['external_asset_retained'] ?? array(), $runtime['source_metadata']['collection']['external_asset_retained'] ?? array(), $index);
+			self::checkpoint_cache($manifest, $cache);
+			$manifest['batches'] = self::legacy_batches($cursor);
+			if ( is_wp_error($run_manifest->save($manifest)) ) {
+				return $run_manifest->save($manifest);
+			}$import_args                                     = Static_Site_Importer_URL_Import_Runtime::batch_import_args($input, $runtime);
+			$import_args['activate']                          = $index === array_key_last($cursor) && ! empty($input['activate']);
+			$import_args['batch_import']                      = true;
+			$import_args['preserve_existing_theme_bootstrap'] = $index > 0;
+			$import_args['import_run_id']                     = $identity;
+			$result = $importer($runtime['artifact'], $import_args);
+			if ( is_wp_error($result) ) {
+				return self::failed($run_manifest, $workspace, $manifest, $cursor, $index, $result, $cache);
+			}$cursor                    = Static_Site_Importer_Artifact_Batch_Cursor::complete($cursor, $index);
+			$cursor[ $index ]['result'] = self::result_evidence($result, $runtime);
+			$manifest['batches']        = self::legacy_batches($cursor);
+			$manifest['diagnostics']    = array_slice(array_merge($manifest['diagnostics'], $result['import_validation_result']['diagnostics'] ?? array()), -100);
+			if ( is_wp_error($run_manifest->save($manifest)) ) {
+				return $run_manifest->save($manifest);
+			}$workspace->delete($cache_name);
+			if ( is_file($old_cache) ) {
+				unlink($old_cache);
+			}$final = $result;
+			unset($result, $runtime, $raw);}
+		$manifest['batches']      = self::legacy_batches($cursor);
+		$aggregate                = self::aggregate_result($manifest, $manifest_path, $final ?? array());
+		$manifest['state']        = 'completed';
+		$manifest['completed_at'] = gmdate('c');
+		self::checkpoint_cache($manifest, $cache);
+		$legacy_cleanup                                     = $cache->cleanup_adopted();
+		$aggregate['url_batch_run']['cleanup']              = $workspace->cleanup('success');
+		$aggregate['url_batch_run']['legacy_cache_cleanup'] = $legacy_cleanup;
+		$manifest['final_result']                           = $aggregate;
+		if ( is_wp_error($run_manifest->save($manifest)) ) {
+			return $run_manifest->save($manifest);
+		}return $aggregate;
 	}
-	private static function cached_fetcher(Static_Site_Importer_Artifact_Byte_Cache $cache,?callable $fetcher):callable{$fetcher=$fetcher??static fn(string $url,array $args)=>Static_Site_Importer_URL_Fetcher::fetch($url,$args);return static function(string $url,array $args)use($cache,$fetcher){$types=isset($args['content_types'])&&is_array($args['content_types'])?array_values($args['content_types']):null;if(is_array($types)){sort($types);}$key=hash('sha256',$url."\n".wp_json_encode(array('max_bytes'=>$args['max_bytes']??null,'content_types'=>$types,'timeout'=>$args['timeout']??null)));$now=isset($args['_static_site_importer_negative_cache_now'])&&is_callable($args['_static_site_importer_negative_cache_now'])?(int)call_user_func($args['_static_site_importer_negative_cache_now']):time();if(isset($args['_static_site_importer_cache_failure'])&&$args['_static_site_importer_cache_failure'] instanceof WP_Error){$error=$args['_static_site_importer_cache_failure'];if(self::cacheable_failure($error)){$data=$error->get_error_data();$transient=self::transient_failure($error);$cache->put_failure($key,array('code'=>$error->get_error_code(),'message'=>$error->get_error_message(),'data'=>$data),$transient?$now+30:null);}return $error;}$failure=$cache->get_failure($key,$now);if(is_array($failure)){return new WP_Error((string)$failure['code'],(string)$failure['message'],$failure['data']??null);}$cached=$cache->get($key);if(is_array($cached)){$cache->hit();$cache->network_avoided();return array('body'=>$cached['bytes'],'metadata'=>$cached['value']+array('_static_site_importer_cache_hit'=>true));}$cache->miss();$response=$fetcher($url,$args);if(is_wp_error($response)){$data=is_array($response->get_error_data())?$response->get_error_data():array();$data['_static_site_importer_cache_aware']=true;return new WP_Error($response->get_error_code(),$response->get_error_message(),$data);}if(is_array($response)&&is_string($response['body']??null)&&is_array($response['metadata']??null)){$cache->put($key,$response['body'],$response['metadata']);}return $response;};}
-	private static function cacheable_failure(WP_Error $error):bool{$code=$error->get_error_code();if(str_contains($code,'invalid')||str_contains($code,'private')||str_contains($code,'credential')||str_contains($code,'scheme')){return false;}$status=is_array($error->get_error_data())?(int)($error->get_error_data()['status']??0):0;return self::transient_failure($error)||in_array($code,array('static_site_importer_url_unexpected_content_type','static_site_importer_url_empty_body','static_site_importer_url_too_large'),true)||('static_site_importer_url_http_status'===$code&&in_array($status,array(404,410),true));}
-	private static function transient_failure(WP_Error $error):bool{$code=strtolower($error->get_error_code());return str_contains($code,'timeout')||str_contains($code,'connect')||str_contains($code,'tls')||str_contains($code,'dns');}
-	private static function legacy_batches(array $cursor):array{return array_map(static fn(array $row):array=>array_filter(array('index'=>$row['index'],'batch_id'=>$row['batch_id'],'route_indexes'=>$row['units'],'state'=>$row['state'],'completed_routes'=>$row['completed_units'],'result'=>$row['result']??null,'split_from'=>$row['split_from']??null,'effective_batch_size'=>$row['effective_batch_size']??null),static fn($value):bool=>null!==$value),$cursor);}
-	private static function failed(Static_Site_Importer_Artifact_Run_Manifest $run_manifest,Static_Site_Importer_Artifact_Run_Workspace $workspace,array $manifest,array $cursor,int $index,WP_Error $error,Static_Site_Importer_Artifact_Byte_Cache $cache):WP_Error{$cursor=Static_Site_Importer_Artifact_Batch_Cursor::fail($cursor,$index);$manifest['state']='failed';$manifest['batches']=self::legacy_batches($cursor);self::checkpoint_cache($manifest,$cache);$manifest['failures'][]=array('batch'=>$index,'code'=>$error->get_error_code(),'message'=>$error->get_error_message(),'at'=>gmdate('c'));$write=$run_manifest->save($manifest);$data=array_merge(is_array($error->get_error_data())?$error->get_error_data():array(),array('run_manifest'=>$run_manifest->path(),'run'=>$manifest,'cleanup'=>$workspace->cleanup('failure')));if(is_wp_error($write)){$data['checkpoint_error']=array('code'=>$write->get_error_code(),'message'=>$write->get_error_message());}return new WP_Error($error->get_error_code(),$error->get_error_message(),$data);}
-	private static function checkpoint_cache(array &$manifest,Static_Site_Importer_Artifact_Byte_Cache $cache):void{foreach($cache->consume()as$key=>$delta){$manifest['fetch_cache'][$key]=(int)($manifest['fetch_cache'][$key]??0)+(int)$delta;}}
-	private static function cache_counters(array $counters):array{foreach(array('hits','misses','bytes_read','bytes_written','corrupt_entries','bypassed','negative_hits','negative_writes','negative_expired','network_requests_avoided')as$key){$counters[$key]=(int)($counters[$key]??0);}return $counters;}
-	private static function retained_runtime(Static_Site_Importer_Artifact_Run_Workspace $workspace,string $stable,string $numeric,string $legacy,array $routes):?string{$raw=$workspace->read_raw($stable);if(is_string($raw)&&self::owns_runtime($raw,$routes)){return $raw;}if(is_string($raw)){$workspace->delete($stable);}foreach(array($numeric,$legacy)as$source){$candidate='batches/'===substr($source,0,8)?$workspace->read_raw($source):(is_file($source)?file_get_contents($source):null);if(!is_string($candidate)||!self::owns_runtime($candidate,$routes)){continue;}$published=$workspace->publish_raw($stable,$candidate);if(is_wp_error($published)||$workspace->read_raw($stable)!==$candidate){continue;}if($source===$numeric){$workspace->delete($numeric);}elseif(is_file($source)){unlink($source);}return $candidate;}return null;}
-	private static function owns_runtime(string $raw,array $routes):bool{$runtime=json_decode($raw,true);$files=$runtime['source_metadata']['snapshot']['files']??null;if(!is_array($files)){return false;}$actual=array();foreach($files as$file){if('text/html'===strtolower((string)($file['mime_type']??''))&&is_string($file['source_url']??null)){$actual[]=self::page_key($file['source_url']);}}$explicit=array();foreach($runtime['artifact']['files']??array()as$file){if('text/html'!==strtolower((string)($file['mime_type']??''))){continue;}$route=(string)($file['metadata']['route_path']??'');if(''!==$route&&isset($explicit[$route])){return false;}$explicit[$route]=true;}$expected=array_map(array(self::class,'page_key'),$routes);sort($actual);sort($expected);return $actual===array_values(array_unique($expected));}
-	private static function page_key(string $url):string{$parts=parse_url($url);if(!is_array($parts)||empty($parts['host']))return '';$path=rtrim((string)($parts['path']??'/'),'/');if(''===$path||'/index.html'===$path||'/index.htm'===$path)$path='/';return strtolower((string)($parts['scheme']??'https')).'://'.strtolower((string)$parts['host']).$path.(isset($parts['query'])?'?'.$parts['query']:'');}
-	private static function existing_manifest(string $path):?array{if(!is_file($path)||is_link($path))return null;$data=json_decode((string)file_get_contents($path),true);return is_array($data)&&is_array($data['contract']??null)&&is_string($data['source']['identity']??null)?array('contract'=>$data['contract'],'identity'=>$data['source']['identity']):null;}
-	private static function ordered_routes(string $entry,array $routes):array{$routes[]=$entry;$routes=array_values(array_unique(array_filter($routes,'is_string')));usort($routes,static fn(string $a,string $b):int=>substr_count(trim((string)parse_url($a,PHP_URL_PATH),'/'),'/')<=>substr_count(trim((string)parse_url($b,PHP_URL_PATH),'/'),'/')?:strcmp($a,$b));return $routes;}
-	private static function splittable_collection_error(WP_Error $error):bool{$data=$error->get_error_data();if('static_site_importer_site_collection_incomplete'!==$error->get_error_code()||!is_array($data)){return false;}if(array_intersect($data['collection']['truncated']??array(),array('assets','bytes'))){return true;}foreach($data['collection']['failures']??array()as$failure){if('asset'===($failure['kind']??'')){return true;}}return false;}
-	private static function result_evidence(array $result,array $runtime):array{return array('theme_slug'=>$result['theme_slug']??'','snapshot_sha256'=>$runtime['source_metadata']['snapshot']['sha256']??'','plan_hash'=>$result['materialization_receipt']['plan_hash']??'','terminal_batch_report_path'=>$result['report_path']??'','quality'=>self::quality_evidence($result['quality']??($result['import_report_summary']['quality_pass']??null)));}
-	private static function quality_evidence(mixed $quality):mixed{if(!is_array($quality)){return is_bool($quality)?array('pass'=>$quality):null;}return array_filter(array('pass'=>isset($quality['pass'])?(bool)$quality['pass']:null,'status'=>isset($quality['status'])?(string)$quality['status']:null,'metrics'=>is_array($quality['metrics']??null)?$quality['metrics']:array(),'fallback_count'=>is_array($quality['fallbacks']??null)?count($quality['fallbacks']):(int)($quality['fallback_count']??0)),static fn($value):bool=>null!==$value);}
-	private static function merge_external_assets(array $aggregate,array $current,int $batch):array{$samples=$aggregate['samples']??array();$seen=array_column($samples,'url');foreach($current['samples']??array()as$sample){$url=(string)($sample['url']??'');if(''===$url||count($samples)>=50||in_array($url,$seen,true)){continue;}$sample['batch']=$batch;$samples[]=$sample;$seen[]=$url;}return array('count'=>(int)($aggregate['count']??0)+(int)($current['count']??0),'samples'=>$samples);}
-	private static function aggregate_result(array $manifest,string $path,array $terminal):array{$batch_quality=array_values(array_filter(array_map(static fn(array $batch):mixed=>self::quality_evidence($batch['result']['quality']??null),$manifest['batches']),static fn($quality):bool=>null!==$quality));$evidence=array('status'=>'completed','run_manifest'=>$path,'fetch_cache'=>$manifest['fetch_cache']??array(),'per_batch_limits'=>$manifest['per_batch_limits']??array(),'total_routes'=>$manifest['total_routes'],'completed_routes'=>array_sum(array_column($manifest['batches'],'completed_routes')),'total_batches'=>count($manifest['batches']),'completed_batches'=>count(array_filter($manifest['batches'],static fn(array $batch):bool=>'completed'===$batch['state'])),'failures'=>$manifest['failures'],'diagnostics'=>$manifest['diagnostics'],'external_asset_retained'=>$manifest['external_asset_retained']??array(),'batch_quality'=>$batch_quality,'terminal_batch_report_path'=>$terminal['report_path']??'');return array('success'=>true,'theme_slug'=>$terminal['theme_slug']??'','theme_name'=>$terminal['theme_name']??'','import_report_summary'=>array('status'=>'completed','scope'=>'url_site_batch_run','total_routes'=>$evidence['total_routes'],'completed_routes'=>$evidence['completed_routes'],'total_batches'=>$evidence['total_batches'],'completed_batches'=>$evidence['completed_batches']),'url_batch_run'=>$evidence,'batch_materialization'=>$manifest['batches'],'terminal_batch_result'=>$terminal);}
-	private static function contract(string $url,array $input,array $args,int $batch_pages):array{foreach(array_keys($args)as$key){if(str_starts_with((string)$key,'_static_site_importer_')){unset($args[$key]);}}return self::canonical(array('version'=>self::VERSION,'url'=>$url,'slug'=>(string)($input['slug']??''),'name'=>(string)($input['name']??''),'site_title'=>(string)($input['site_title']??''),'activate'=>!empty($input['activate']),'overwrite'=>!empty($input['overwrite']),'report'=>(string)($input['report']??''),'asset_failure_policy'=>'preserve_external_for_single_route_batch','batch_pages'=>min(self::MAX_BATCH_PAGES,$batch_pages),'provider_args'=>$args,'compiler_options'=>$input['compiler_options']??array()));}
-	private static function canonical(array $value):array{foreach($value as &$item){if(is_array($item)){$item=self::canonical($item);}}unset($item);if(!array_is_list($value)){ksort($value,SORT_STRING);}return $value;}
+	private static function cached_fetcher(Static_Site_Importer_Artifact_Byte_Cache $cache,?callable $fetcher): callable {$fetcher = $fetcher ?? static fn(string $url,array $args)=>Static_Site_Importer_URL_Fetcher::fetch($url, $args);
+		return static function(string $url,array $args)use($cache,$fetcher){$types = isset($args['content_types']) && is_array($args['content_types']) ? array_values($args['content_types']) : null;
+			if ( is_array($types) ) {
+				sort($types);
+			}$key = hash('sha256', $url . "\n" . wp_json_encode(array(
+				'max_bytes'     => $args['max_bytes'] ?? null,
+				'content_types' => $types,
+				'timeout'       => $args['timeout'] ?? null,
+			)));
+			$now  = isset($args['_static_site_importer_negative_cache_now']) && is_callable($args['_static_site_importer_negative_cache_now']) ? (int) call_user_func($args['_static_site_importer_negative_cache_now']) : time();
+			if ( isset($args['_static_site_importer_cache_failure']) && $args['_static_site_importer_cache_failure'] instanceof WP_Error ) {
+				$error = $args['_static_site_importer_cache_failure'];
+				if ( self::cacheable_failure($error) ) {
+					$data      = $error->get_error_data();
+					$transient = self::transient_failure($error);
+					$cache->put_failure($key, array(
+						'code'    => $error->get_error_code(),
+						'message' => $error->get_error_message(),
+						'data'    => $data,
+					), $transient ? $now + 30 : null);
+				}return $error;
+			}$failure = $cache->get_failure($key, $now);
+			if ( is_array($failure) ) {
+				return new WP_Error( (string) $failure['code'], (string) $failure['message'], $failure['data'] ?? null);
+			}$cached = $cache->get($key);
+			if ( is_array($cached) ) {
+				$cache->hit();
+				$cache->network_avoided();
+				return array(
+					'body'     => $cached['bytes'],
+					'metadata' => $cached['value'] + array( '_static_site_importer_cache_hit' => true ),
+				);
+			}$cache->miss();
+			$response = $fetcher($url, $args);
+			if ( is_wp_error($response) ) {
+				$data                                      = is_array($response->get_error_data()) ? $response->get_error_data() : array();
+				$data['_static_site_importer_cache_aware'] = true;
+				return new WP_Error($response->get_error_code(), $response->get_error_message(), $data);
+			}if ( is_array($response) && is_string($response['body'] ?? null) && is_array($response['metadata'] ?? null) ) {
+				$cache->put($key, $response['body'], $response['metadata']);
+			}return $response;
+		};}
+	private static function cacheable_failure(WP_Error $error): bool {$code = $error->get_error_code();
+		if ( str_contains($code, 'invalid') || str_contains($code, 'private') || str_contains($code, 'credential') || str_contains($code, 'scheme') ) {
+			return false;
+		}$status = is_array($error->get_error_data()) ? (int) ( $error->get_error_data()['status'] ?? 0 ) : 0;
+		return self::transient_failure($error) || in_array($code, array( 'static_site_importer_url_unexpected_content_type', 'static_site_importer_url_empty_body', 'static_site_importer_url_too_large' ), true) || ( 'static_site_importer_url_http_status' === $code && in_array($status, array( 404, 410 ), true) );}
+	private static function transient_failure(WP_Error $error): bool {$code = strtolower($error->get_error_code());
+		return str_contains($code, 'timeout') || str_contains($code, 'connect') || str_contains($code, 'tls') || str_contains($code, 'dns');}
+	private static function legacy_batches(array $cursor): array {return array_map(static fn(array $row): array=>array_filter(array(
+		'index'                => $row['index'],
+		'batch_id'             => $row['batch_id'],
+		'route_indexes'        => $row['units'],
+		'state'                => $row['state'],
+		'completed_routes'     => $row['completed_units'],
+		'result'               => $row['result'] ?? null,
+		'split_from'           => $row['split_from'] ?? null,
+		'effective_batch_size' => $row['effective_batch_size'] ?? null,
+	), static fn($value): bool=>null !== $value), $cursor);}
+	private static function failed(Static_Site_Importer_Artifact_Run_Manifest $run_manifest,Static_Site_Importer_Artifact_Run_Workspace $workspace,array $manifest,array $cursor,int $index,WP_Error $error,Static_Site_Importer_Artifact_Byte_Cache $cache): WP_Error {$cursor = Static_Site_Importer_Artifact_Batch_Cursor::fail($cursor, $index);
+		$manifest['state']   = 'failed';
+		$manifest['batches'] = self::legacy_batches($cursor);
+		self::checkpoint_cache($manifest, $cache);
+		$manifest['failures'][] = array(
+			'batch'   => $index,
+			'code'    => $error->get_error_code(),
+			'message' => $error->get_error_message(),
+			'at'      => gmdate('c'),
+		);
+		$write                  = $run_manifest->save($manifest);
+		$data                   = array_merge(is_array($error->get_error_data()) ? $error->get_error_data() : array(), array(
+			'run_manifest' => $run_manifest->path(),
+			'run'          => $manifest,
+			'cleanup'      => $workspace->cleanup('failure'),
+		));
+		if ( is_wp_error($write) ) {
+			$data['checkpoint_error'] = array(
+				'code'    => $write->get_error_code(),
+				'message' => $write->get_error_message(),
+			);
+		}return new WP_Error($error->get_error_code(), $error->get_error_message(), $data);}
+	private static function checkpoint_cache(array &$manifest,Static_Site_Importer_Artifact_Byte_Cache $cache): void {foreach ( $cache->consume()as$key => $delta ) {
+			$manifest['fetch_cache'][ $key ] = (int) ( $manifest['fetch_cache'][ $key ] ?? 0 ) + (int) $delta;}}
+	private static function cache_counters(array $counters): array {foreach ( array( 'hits', 'misses', 'bytes_read', 'bytes_written', 'corrupt_entries', 'bypassed', 'negative_hits', 'negative_writes', 'negative_expired', 'network_requests_avoided' )as$key ) {
+			$counters[ $key ] = (int) ( $counters[ $key ] ?? 0 );
+	}return $counters;}
+	private static function retained_runtime(Static_Site_Importer_Artifact_Run_Workspace $workspace,string $stable,string $numeric,string $legacy,array $routes): ?string {$raw = $workspace->read_raw($stable);
+		if ( is_string($raw) && self::owns_runtime($raw, $routes) ) {
+			return $raw;
+		}if ( is_string($raw) ) {
+			$workspace->delete($stable);
+		}foreach ( array( $numeric, $legacy )as$source ) {
+			$candidate = 'batches/' === substr($source, 0, 8) ? $workspace->read_raw($source) : ( is_file($source) ? file_get_contents($source) : null );
+			if ( ! is_string($candidate) || ! self::owns_runtime($candidate, $routes) ) {
+				continue;
+			}$published = $workspace->publish_raw($stable, $candidate);
+			if ( is_wp_error($published) || $workspace->read_raw($stable) !== $candidate ) {
+				continue;
+			}if ( $source === $numeric ) {
+				$workspace->delete($numeric);
+			} elseif ( is_file($source) ) {
+				unlink($source);
+			}return $candidate;
+		}return null;}
+	private static function owns_runtime(string $raw,array $routes): bool {$runtime = json_decode($raw, true);
+		$files = $runtime['source_metadata']['snapshot']['files'] ?? null;
+		if ( ! is_array($files) ) {
+			return false;
+		}$actual = array();
+		foreach ( $files as$file ) {
+			if ( 'text/html' === strtolower( (string) ( $file['mime_type'] ?? '' )) && is_string($file['source_url'] ?? null) ) {
+				$actual[] = self::page_key($file['source_url']);
+			}
+		}$explicit = array();
+		foreach ( $runtime['artifact']['files'] ?? array()as$file ) {
+			if ( 'text/html' !== strtolower( (string) ( $file['mime_type'] ?? '' )) ) {
+				continue;
+			}$route = (string) ( $file['metadata']['route_path'] ?? '' );
+			if ( '' !== $route && isset($explicit[ $route ]) ) {
+				return false;
+			}$explicit[ $route ] = true;
+		}$expected = array_map(array( self::class, 'page_key' ), $routes);
+		sort($actual);
+		sort($expected);
+		return $actual === array_values(array_unique($expected));}
+	private static function page_key(string $url): string {$parts = parse_url($url);
+		if ( ! is_array($parts) || empty($parts['host']) ) {
+			return '';
+		}$path = rtrim( (string) ( $parts['path'] ?? '/' ), '/');
+		if ( '' === $path || '/index.html' === $path || '/index.htm' === $path ) {
+			$path = '/';
+		}return strtolower( (string) ( $parts['scheme'] ?? 'https' )) . '://' . strtolower( (string) $parts['host']) . $path . ( isset($parts['query']) ? '?' . $parts['query'] : '' );}
+	private static function existing_manifest(string $path): ?array {if ( ! is_file($path) || is_link($path) ) {
+			return null;
+	}$data = json_decode( (string) file_get_contents($path), true);
+	return is_array($data) && is_array($data['contract'] ?? null) && is_string($data['source']['identity'] ?? null) ? array(
+		'contract' => $data['contract'],
+		'identity' => $data['source']['identity'],
+	) : null;}
+	private static function ordered_routes(string $entry,array $routes): array {$routes[] = $entry;
+		$routes = array_values(array_unique(array_filter($routes, 'is_string')));
+		usort($routes, static fn(string $a,string $b): int=>substr_count(trim( (string) parse_url($a, PHP_URL_PATH), '/'), '/') <=> substr_count(trim( (string) parse_url($b, PHP_URL_PATH), '/'), '/') ?: strcmp($a, $b));
+		return $routes;}
+	private static function splittable_collection_error(WP_Error $error): bool {$data = $error->get_error_data();
+		if ( 'static_site_importer_site_collection_incomplete' !== $error->get_error_code() || ! is_array($data) ) {
+			return false;
+		}if ( array_intersect($data['collection']['truncated'] ?? array(), array( 'assets', 'bytes' )) ) {
+			return true;
+		}foreach ( $data['collection']['failures'] ?? array()as$failure ) {
+			if ( 'asset' === ( $failure['kind'] ?? '' ) ) {
+				return true;
+			}
+		}return false;}
+	private static function result_evidence(array $result,array $runtime): array {return array(
+		'theme_slug'                 => $result['theme_slug'] ?? '',
+		'snapshot_sha256'            => $runtime['source_metadata']['snapshot']['sha256'] ?? '',
+		'plan_hash'                  => $result['materialization_receipt']['plan_hash'] ?? '',
+		'terminal_batch_report_path' => $result['report_path'] ?? '',
+		'quality'                    => self::quality_evidence($result['quality'] ?? ( $result['import_report_summary']['quality_pass'] ?? null )),
+	);}
+	private static function quality_evidence(mixed $quality): mixed {if ( ! is_array($quality) ) {
+			return is_bool($quality) ? array( 'pass' => $quality ) : null;
+	}return array_filter(array(
+		'pass'           => isset($quality['pass']) ? (bool) $quality['pass'] : null,
+		'status'         => isset($quality['status']) ? (string) $quality['status'] : null,
+		'metrics'        => is_array($quality['metrics'] ?? null) ? $quality['metrics'] : array(),
+		'fallback_count' => is_array($quality['fallbacks'] ?? null) ? count($quality['fallbacks']) : (int) ( $quality['fallback_count'] ?? 0 ),
+	), static fn($value): bool=>null !== $value);}
+	private static function merge_external_assets(array $aggregate,array $current,int $batch): array {$samples = $aggregate['samples'] ?? array();
+		$seen = array_column($samples, 'url');
+		foreach ( $current['samples'] ?? array()as$sample ) {
+			$url = (string) ( $sample['url'] ?? '' );
+			if ( '' === $url || count($samples) >= 50 || in_array($url, $seen, true) ) {
+				continue;
+			}$sample['batch'] = $batch;
+			$samples[]        = $sample;
+			$seen[]           = $url;
+		}return array(
+			'count'   => (int) ( $aggregate['count'] ?? 0 ) + (int) ( $current['count'] ?? 0 ),
+			'samples' => $samples,
+		);}
+	private static function aggregate_result(array $manifest,string $path,array $terminal): array {$batch_quality = array_values(array_filter(array_map(static fn(array $batch): mixed=>self::quality_evidence($batch['result']['quality'] ?? null), $manifest['batches']), static fn($quality): bool=>null !== $quality));
+		$evidence = array(
+			'status'                     => 'completed',
+			'run_manifest'               => $path,
+			'fetch_cache'                => $manifest['fetch_cache'] ?? array(),
+			'per_batch_limits'           => $manifest['per_batch_limits'] ?? array(),
+			'total_routes'               => $manifest['total_routes'],
+			'completed_routes'           => array_sum(array_column($manifest['batches'], 'completed_routes')),
+			'total_batches'              => count($manifest['batches']),
+			'completed_batches'          => count(array_filter($manifest['batches'], static fn(array $batch): bool=>'completed' === $batch['state'])),
+			'failures'                   => $manifest['failures'],
+			'diagnostics'                => $manifest['diagnostics'],
+			'external_asset_retained'    => $manifest['external_asset_retained'] ?? array(),
+			'batch_quality'              => $batch_quality,
+			'terminal_batch_report_path' => $terminal['report_path'] ?? '',
+		);
+		return array(
+			'success'               => true,
+			'theme_slug'            => $terminal['theme_slug'] ?? '',
+			'theme_name'            => $terminal['theme_name'] ?? '',
+			'import_report_summary' => array(
+				'status'            => 'completed',
+				'scope'             => 'url_site_batch_run',
+				'total_routes'      => $evidence['total_routes'],
+				'completed_routes'  => $evidence['completed_routes'],
+				'total_batches'     => $evidence['total_batches'],
+				'completed_batches' => $evidence['completed_batches'],
+			),
+			'url_batch_run'         => $evidence,
+			'batch_materialization' => $manifest['batches'],
+			'terminal_batch_result' => $terminal,
+		);}
+	private static function contract(string $url,array $input,array $args,int $batch_pages): array {foreach ( array_keys($args)as$key ) {
+			if ( str_starts_with( (string) $key, '_static_site_importer_') ) {
+				unset($args[ $key ]);
+			}
+	}return self::canonical(array(
+		'version'              => self::VERSION,
+		'url'                  => $url,
+		'slug'                 => (string) ( $input['slug'] ?? '' ),
+		'name'                 => (string) ( $input['name'] ?? '' ),
+		'site_title'           => (string) ( $input['site_title'] ?? '' ),
+		'activate'             => ! empty($input['activate']),
+		'overwrite'            => ! empty($input['overwrite']),
+		'report'               => (string) ( $input['report'] ?? '' ),
+		'asset_failure_policy' => 'preserve_external_for_single_route_batch',
+		'batch_pages'          => min(self::MAX_BATCH_PAGES, $batch_pages),
+		'provider_args'        => $args,
+		'compiler_options'     => $input['compiler_options'] ?? array(),
+	));}
+	private static function canonical(array $value): array {foreach ( $value as &$item ) {
+			if ( is_array($item) ) {
+				$item = self::canonical($item);
+			}
+	}unset($item);
+	if ( ! array_is_list($value) ) {
+		ksort($value, SORT_STRING);
+	}return $value;}
 }

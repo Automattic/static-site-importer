@@ -102,20 +102,20 @@ class Static_Site_Importer_Page_Materializer {
 	 *
 	 * @param array<string, Static_Site_Importer_Source_Page> $pages               Pages.
 	 * @param string                                          $theme_slug          Theme slug.
-	 * @param array<string,array<string,mixed>>                 $assets              Materialized assets keyed by source path.
-	 * @param array<string,string>                              $permalinks          Imported page permalinks keyed by source path.
-	 * @param array<string,string>                              $template_part_writes Generated header/footer template part writes keyed by path.
-	 * @param array<string,bool>                                $options             Page materialization options.
+	 * @param array<string,array<string,mixed>>               $assets              Materialized assets keyed by source path.
+	 * @param array<string,string>                            $permalinks          Imported page permalinks keyed by source path.
+	 * @param array<string,string>                            $template_part_writes Generated header/footer template part writes keyed by path.
+	 * @param array<string,bool>                              $options             Page materialization options.
 	 * @return array{patterns:array<string,string>,files:array<string,string>,asset_writes:array<string,string>,contents:array<string,string>,diagnostics:array<int,array<string,mixed>>}
 	 */
 	public static function page_artifacts( array $pages, string $theme_slug, array $assets = array(), array $permalinks = array(), array $template_part_writes = array(), array $options = array() ): array {
-		$patterns     = array();
-		$files        = array();
-		$contents     = array();
-		$asset_writes = array();
-		$diagnostics  = array();
-		$strip_header = ! empty( $options['strip_template_header'] );
-		$strip_footer = ! empty( $options['strip_template_footer'] );
+		$patterns       = array();
+		$files          = array();
+		$contents       = array();
+		$asset_writes   = array();
+		$diagnostics    = array();
+		$strip_header   = ! empty( $options['strip_template_header'] );
+		$strip_footer   = ! empty( $options['strip_template_footer'] );
 		$svg_font_faces = isset( $options['svg_font_faces'] ) && is_string( $options['svg_font_faces'] ) ? $options['svg_font_faces'] : '';
 
 		foreach ( $pages as $filename => $page ) {
@@ -184,9 +184,9 @@ class Static_Site_Importer_Page_Materializer {
 	/**
 	 * Remove global shell blocks from page content after they are hoisted into theme parts.
 	 *
-	 * @param string                        $content              Serialized page block markup.
-	 * @param array<string,string>          $template_part_writes Generated header/footer template part writes keyed by path.
-	 * @param string                        $source_path          Source page path for diagnostics.
+	 * @param string                         $content              Serialized page block markup.
+	 * @param array<string,string>           $template_part_writes Generated header/footer template part writes keyed by path.
+	 * @param string                         $source_path          Source page path for diagnostics.
 	 * @param array<int,array<string,mixed>> $diagnostics          Diagnostics, passed by reference.
 	 * @return string
 	 */
@@ -200,26 +200,27 @@ class Static_Site_Importer_Page_Materializer {
 			return $content;
 		}
 
-		$header_parts = self::template_part_write_sequences( $template_part_writes, 'header' );
-		$footer_parts = self::template_part_write_sequences( $template_part_writes, 'footer' );
-		$header_start = null;
-		$footer_start = null;
-		$header_count = 0;
-		$footer_count = 0;
-		$header_reason = '';
-		$matched_header_part = '';
-		$matched_footer_part = '';
+		$header_parts           = self::template_part_write_sequences( $template_part_writes, 'header' );
+		$footer_parts           = self::template_part_write_sequences( $template_part_writes, 'footer' );
+		$header_start           = null;
+		$footer_start           = null;
+		$header_count           = 0;
+		$footer_count           = 0;
+		$header_reason          = '';
+		$matched_header_part    = '';
+		$matched_footer_part    = '';
 		$header_candidate_start = 0;
-		while ( $header_candidate_start < count( $top_level ) && self::is_accessibility_prelude_block( $top_level[ $header_candidate_start ] ) ) {
-			$header_candidate_start++;
+		$top_level_count        = count( $top_level );
+		while ( $header_candidate_start < $top_level_count && self::is_accessibility_prelude_block( $top_level[ $header_candidate_start ] ) ) {
+			++$header_candidate_start;
 		}
 
 		foreach ( $header_parts as $part ) {
 			$part_blocks = $part['blocks'];
 			$count       = count( $part_blocks );
 			if ( $count > 0 && $header_candidate_start <= count( $top_level ) - $count && self::block_sequence_matches( array_slice( $top_level, $header_candidate_start, $count ), $part_blocks ) ) {
-				$header_start         = $header_candidate_start;
-				$header_count         = $count;
+				$header_start        = $header_candidate_start;
+				$header_count        = $count;
 				$matched_header_part = $part['path'];
 				break;
 			}
@@ -238,9 +239,9 @@ class Static_Site_Importer_Page_Materializer {
 					continue;
 				}
 
-				$header_start         = $header_candidate_start;
-				$header_count         = 1;
-				$header_reason        = 'semantic_header_identity_and_navigation_match';
+				$header_start        = $header_candidate_start;
+				$header_count        = 1;
+				$header_reason       = 'semantic_header_identity_and_navigation_match';
 				$matched_header_part = $part['path'];
 				break;
 			}
@@ -248,11 +249,11 @@ class Static_Site_Importer_Page_Materializer {
 
 		foreach ( $footer_parts as $part ) {
 			$part_blocks = $part['blocks'];
-			$count = count( $part_blocks );
-			$start = count( $top_level ) - $count;
+			$count       = count( $part_blocks );
+			$start       = count( $top_level ) - $count;
 			if ( $count > 0 && ( null === $header_start || $header_start + $header_count <= $start ) && self::block_sequence_matches( array_slice( $top_level, -$count ), $part_blocks ) ) {
-				$footer_start = $start;
-				$footer_count = $count;
+				$footer_start        = $start;
+				$footer_count        = $count;
 				$matched_footer_part = $part['path'];
 				break;
 			}
@@ -262,12 +263,18 @@ class Static_Site_Importer_Page_Materializer {
 			return $content;
 		}
 
-		$removals     = array();
+		$removals = array();
 		if ( null !== $header_start ) {
-			$removals[] = array( 'start' => $top_level[ $header_start ]['start'], 'end' => $top_level[ $header_start + $header_count - 1 ]['end'] );
+			$removals[] = array(
+				'start' => $top_level[ $header_start ]['start'],
+				'end'   => $top_level[ $header_start + $header_count - 1 ]['end'],
+			);
 		}
 		if ( null !== $footer_start ) {
-			$removals[] = array( 'start' => $top_level[ $footer_start ]['start'], 'end' => $top_level[ $footer_start + $footer_count - 1 ]['end'] );
+			$removals[] = array(
+				'start' => $top_level[ $footer_start ]['start'],
+				'end'   => $top_level[ $footer_start + $footer_count - 1 ]['end'],
+			);
 		}
 
 		$deduped = $content;
@@ -407,9 +414,10 @@ class Static_Site_Importer_Page_Materializer {
 			return '';
 		}
 
-		$classes = array_values(
+		$class_parts = preg_split( '/\s+/', strtolower( html_entity_decode( $class_matches[2], ENT_QUOTES | ENT_HTML5 ) ) );
+		$classes     = array_values(
 			array_filter(
-				preg_split( '/\s+/', strtolower( html_entity_decode( $class_matches[2], ENT_QUOTES | ENT_HTML5 ) ) ) ?: array(),
+				false !== $class_parts ? $class_parts : array(),
 				static fn( string $class ): bool => '' !== $class && ! str_starts_with( $class, 'wp-' ) && ! str_starts_with( $class, 'is-layout-' ) && ! str_starts_with( $class, 'has-' ) && ! str_starts_with( $class, 'blocks-engine-' )
 			)
 		);
@@ -592,10 +600,10 @@ class Static_Site_Importer_Page_Materializer {
 	/**
 	 * Remove page-level chrome blocks when the generated theme owns template parts.
 	 *
-	 * @param string                       $markup       Serialized block markup.
-	 * @param bool                         $strip_header Whether to strip a leading header block.
-	 * @param bool                         $strip_footer Whether to strip a trailing footer block.
-	 * @param string                       $source_path  Source path for diagnostics.
+	 * @param string                         $markup       Serialized block markup.
+	 * @param bool                           $strip_header Whether to strip a leading header block.
+	 * @param bool                           $strip_footer Whether to strip a trailing footer block.
+	 * @param string                         $source_path  Source path for diagnostics.
 	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics, passed by reference.
 	 * @return string Updated serialized block markup.
 	 */
@@ -750,14 +758,13 @@ class Static_Site_Importer_Page_Materializer {
 
 	/**
 	 * Promote safe SVG-only core/html blocks to materialized theme SVG assets.
-
 	 *
-	 * @param string                           $markup       Serialized block markup.
-	 * @param string                           $theme_slug   Generated theme slug.
-	 * @param string                           $page_slug    Page slug for stable asset names.
-	 * @param array<string,string>             $asset_writes Theme-relative SVG writes, passed by reference.
-	 * @param array<int,array<string,mixed>>    $diagnostics  Diagnostics, passed by reference.
-	 * @param string                            $svg_font_faces Self-contained font CSS for matching SVG text.
+	 * @param string                         $markup       Serialized block markup.
+	 * @param string                         $theme_slug   Generated theme slug.
+	 * @param string                         $page_slug    Page slug for stable asset names.
+	 * @param array<string,string>           $asset_writes Theme-relative SVG writes, passed by reference.
+	 * @param array<int,array<string,mixed>> $diagnostics  Diagnostics, passed by reference.
+	 * @param string                         $svg_font_faces Self-contained font CSS for matching SVG text.
 	 * @return string Updated serialized block markup.
 	 */
 	private static function promote_inline_svg_html_blocks( string $markup, string $theme_slug, string $page_slug, array &$asset_writes, array &$diagnostics, string $svg_font_faces = '' ): string {
@@ -776,12 +783,12 @@ class Static_Site_Importer_Page_Materializer {
 				}
 				$svg = self::embed_svg_font_faces( $svg, $svg_font_faces );
 
-				$hash          = substr( sha1( $svg ), 0, 12 );
-				$asset_path    = 'assets/materialized/inline-svg/' . sanitize_title( $page_slug ) . '-' . $hash . '.svg';
+				$hash                        = substr( sha1( $svg ), 0, 12 );
+				$asset_path                  = 'assets/materialized/inline-svg/' . sanitize_title( $page_slug ) . '-' . $hash . '.svg';
 				$asset_writes[ $asset_path ] = $svg . "\n";
-				$url           = trailingslashit( get_theme_root_uri( sanitize_key( $theme_slug ) ) ) . sanitize_key( $theme_slug ) . '/' . $asset_path;
-				$alt           = self::svg_accessible_label( $svg );
-				$block_attrs   = array_filter(
+				$url                         = trailingslashit( get_theme_root_uri( sanitize_key( $theme_slug ) ) ) . sanitize_key( $theme_slug ) . '/' . $asset_path;
+				$alt                         = self::svg_accessible_label( $svg );
+				$block_attrs                 = array_filter(
 					array(
 						'url'       => esc_url_raw( $url ),
 						'alt'       => $alt,
@@ -789,15 +796,15 @@ class Static_Site_Importer_Page_Materializer {
 					),
 					static fn( $value ): bool => '' !== $value
 				);
-				$attrs_json    = wp_json_encode( $block_attrs, JSON_UNESCAPED_SLASHES );
-				$alt_attribute = '' !== $alt ? ' alt="' . esc_attr( $alt ) . '"' : ' alt=""';
+				$attrs_json                  = wp_json_encode( $block_attrs, JSON_UNESCAPED_SLASHES );
+				$alt_attribute               = '' !== $alt ? ' alt="' . esc_attr( $alt ) . '"' : ' alt=""';
 
 				$diagnostics[] = array(
-					'type'        => 'inline_svg_materialized',
-					'source'      => 'static-site-importer/page-materializer',
-					'asset_path'  => $asset_path,
-					'block_name'  => 'core/image',
-					'message'     => 'Safe inline SVG core/html block was materialized as a theme SVG asset and core/image block.',
+					'type'       => 'inline_svg_materialized',
+					'source'     => 'static-site-importer/page-materializer',
+					'asset_path' => $asset_path,
+					'block_name' => 'core/image',
+					'message'    => 'Safe inline SVG core/html block was materialized as a theme SVG asset and core/image block.',
 				);
 
 				return '<!-- wp:image ' . ( false !== $attrs_json ? $attrs_json : '{}' ) . ' --><figure class="wp-block-image blocks-engine-inline-svg"><img src="' . esc_url( $url ) . '"' . $alt_attribute . '/></figure><!-- /wp:image -->';
@@ -808,7 +815,7 @@ class Static_Site_Importer_Page_Materializer {
 
 	private static function embed_svg_font_faces( string $svg, string $font_faces ): string {
 		preg_match_all( '/font-family\s*:\s*(["\']?)([^;"\']+)\1\s*;/i', $font_faces, $matches );
-		$families = array_values( array_unique( array_map( 'trim', $matches[2] ?? array() ) ) );
+		$families    = array_values( array_unique( array_map( 'trim', $matches[2] ?? array() ) ) );
 		$uses_family = Static_Site_Importer_Font_Materializer::svg_uses_font_family( $svg, $families );
 		if ( '' === $font_faces || ! str_contains( $svg, '<text' ) || ! $uses_family || ! preg_match( '/<svg\b[^>]*>/i', $svg, $match, PREG_OFFSET_CAPTURE ) ) {
 			return $svg;
@@ -891,8 +898,8 @@ class Static_Site_Importer_Page_Materializer {
 	 *
 	 * @param array<string, Static_Site_Importer_Source_Page> $pages          Pages.
 	 * @param array<string,int>                               $page_ids       Page IDs keyed by filename.
-	 * @param array<string,array<string,mixed>>                $page_targets   Target rows keyed by filename.
-	 * @param array<string,mixed>                              $manifest       Source-of-truth manifest.
+	 * @param array<string,array<string,mixed>>               $page_targets   Target rows keyed by filename.
+	 * @param array<string,mixed>                             $manifest       Source-of-truth manifest.
 	 * @return true|WP_Error
 	 */
 	public static function record_page_provenance( array $pages, array $page_ids, array $page_targets, array $manifest ) {
@@ -1078,7 +1085,7 @@ class Static_Site_Importer_Page_Materializer {
 	 * Prepare one source page body for WordPress writes.
 	 *
 	 * @param Static_Site_Importer_Source_Page $page        Source page.
-	 * @param array<int,array<string,mixed>>    $diagnostics Diagnostics, passed by reference.
+	 * @param array<int,array<string,mixed>>   $diagnostics Diagnostics, passed by reference.
 	 * @return string
 	 */
 	private static function source_page_content_blocks( Static_Site_Importer_Source_Page $page, array &$diagnostics ): string {
@@ -1125,10 +1132,10 @@ class Static_Site_Importer_Page_Materializer {
 	/**
 	 * Convert raw HTML document content to serialized block markup.
 	 *
-	 * @param string                       $body        HTML body markup.
-	 * @param string                       $source_path Source path for diagnostics.
+	 * @param string                         $body        HTML body markup.
+	 * @param string                         $source_path Source path for diagnostics.
 	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics, passed by reference.
-	 * @param array<string,mixed>          $options     Transformer options.
+	 * @param array<string,mixed>            $options     Transformer options.
 	 * @param array<int,array<string,mixed>> $assets    Generated transformer assets, passed by reference.
 	 */
 	public static function html_to_blocks( string $body, string $source_path, array &$diagnostics, array $options = array(), array &$assets = array() ): string {
@@ -1948,10 +1955,10 @@ class Static_Site_Importer_Page_Materializer {
 	/**
 	 * Rewrite source-relative asset URLs to generated-theme asset URLs.
 	 *
-	 * @param string                              $markup Serialized block markup.
-	 * @param array<string,array<string,mixed>>   $assets Materialized assets keyed by source path.
-	 * @param string                              $source_path Source page path for resolving page-relative URLs.
-	 * @param array<string,string>                $permalinks Imported page permalinks keyed by source path.
+	 * @param string                            $markup Serialized block markup.
+	 * @param array<string,array<string,mixed>> $assets Materialized assets keyed by source path.
+	 * @param string                            $source_path Source page path for resolving page-relative URLs.
+	 * @param array<string,string>              $permalinks Imported page permalinks keyed by source path.
 	 * @return string Updated markup.
 	 */
 	public static function rewrite_materialized_asset_references( string $markup, array $assets, string $source_path = '', array $permalinks = array() ): string {

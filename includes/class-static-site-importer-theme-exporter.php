@@ -199,16 +199,18 @@ class Static_Site_Importer_Theme_Exporter {
 		}
 
 		$allowed = array_fill_keys( array_map( 'strval', $include_pages ), true );
-		return self::order_front_page_first( array_values(
-			array_filter(
-				$pages,
-				static function ( $page ) use ( $allowed ): bool {
-					$page_id   = (string) $page->ID;
-					$page_slug = (string) $page->post_name;
-					return isset( $allowed[ $page_id ] ) || isset( $allowed[ $page_slug ] );
-				}
+		return self::order_front_page_first(
+			array_values(
+				array_filter(
+					$pages,
+					static function ( $page ) use ( $allowed ): bool {
+						$page_id   = (string) $page->ID;
+						$page_slug = (string) $page->post_name;
+						return isset( $allowed[ $page_id ] ) || isset( $allowed[ $page_slug ] );
+					}
+				)
 			)
-		) );
+		);
 	}
 
 	/**
@@ -353,10 +355,10 @@ class Static_Site_Importer_Theme_Exporter {
 	/**
 	 * Build a full static HTML document.
 	 *
-	 * @param string                    $page_html       Converted page body HTML.
+	 * @param string                            $page_html       Converted page body HTML.
 	 * @param array{before:string,after:string} $chrome          Converted theme chrome.
-	 * @param string                    $title           Document title.
-	 * @param bool                      $include_styles  Whether to link exported CSS.
+	 * @param string                            $title           Document title.
+	 * @param bool                              $include_styles  Whether to link exported CSS.
 	 * @return string
 	 */
 	private static function export_html_document( string $page_html, array $chrome, string $title, bool $include_styles ): string {
@@ -406,12 +408,12 @@ class Static_Site_Importer_Theme_Exporter {
 	/**
 	 * Build the website artifact envelope consumed by Blocks Engine.
 	 *
-	 * @param string              $theme_slug      Theme slug.
-	 * @param string              $root            Artifact root.
-	 * @param string              $entrypoint      Entrypoint path.
+	 * @param string                         $theme_slug      Theme slug.
+	 * @param string                         $root            Artifact root.
+	 * @param string                         $entrypoint      Entrypoint path.
 	 * @param array<int,array<string,mixed>> $files Exported files.
-	 * @param array<string,mixed> $report          Export report.
-	 * @param array<string,mixed> $source_metadata Source metadata.
+	 * @param array<string,mixed>            $report          Export report.
+	 * @param array<string,mixed>            $source_metadata Source metadata.
 	 * @return array<string,mixed>
 	 */
 	private static function export_website_artifact( string $theme_slug, string $root, string $entrypoint, array $files, array $report, array $source_metadata ): array {
@@ -477,8 +479,8 @@ class Static_Site_Importer_Theme_Exporter {
 	/**
 	 * Export browser assets that can be replayed with the website artifact.
 	 *
-	 * @param string                    $theme_dir   Theme directory.
-	 * @param string                    $root        Artifact root.
+	 * @param string                         $theme_dir   Theme directory.
+	 * @param string                         $root        Artifact root.
 	 * @param array<int,array<string,mixed>> $diagnostics Export diagnostics.
 	 * @return array<int,array<string,mixed>>
 	 */
@@ -779,7 +781,7 @@ class Static_Site_Importer_Theme_Exporter {
 	 * Check whether a file path exists in the export set.
 	 *
 	 * @param array<int,array<string,mixed>> $files Exported files.
-	 * @param string                        $path  Artifact path.
+	 * @param string                         $path  Artifact path.
 	 * @return bool
 	 */
 	private static function export_has_file( array $files, string $path ): bool {
