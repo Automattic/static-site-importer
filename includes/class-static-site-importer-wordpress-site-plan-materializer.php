@@ -215,6 +215,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			$state['applied']['files'][] = $result;
 		}
+		$overlay_result = self::apply_provider_layout_overlays( $state, $args['provider_layout_overlays'] ?? array() );
+		if ( is_wp_error( $overlay_result ) ) {
+			return self::failed_receipt( $state, $overlay_result->get_error_code() );
+		}
+		$state['applied']['provider_layout_overlays'] = $overlay_result;
 		$publications = self::verify_asset_publications( $state );
 		if ( is_wp_error( $publications ) ) {
 			return self::failed_receipt( $state, $publications->get_error_code() );
@@ -236,6 +241,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 
 		if ( ! empty( $args['activate'] ) ) {
+			$front_page = self::ensure_static_front_page( $state );
+			if ( is_wp_error( $front_page ) ) {
+				return self::failed_receipt( $state, $front_page->get_error_code() );
+			}
+			if ( is_array( $front_page ) ) {
+				$state['applied']['operations'][] = $front_page;
+			}
 			foreach ( $state['resolved']['operations'] as $operation ) {
 				if ( 'create_page' === $operation['kind'] ) {
 					continue;
@@ -258,6 +270,66 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 
 		return self::receipt( 'completed', $state );
+	}
+
+	/**
+	 * Canonical plans may omit a site-reading operation when the source root is
+	 * implicit. An activated static-site import still needs that root page as the
+	 * front page for editor and browser contracts.
+	 */
+	private static function ensure_static_front_page( array $state ) {
+		foreach ( $state['resolved']['operations'] as $operation ) {
+			if ( 'site_reading' === ( $operation['kind'] ?? '' ) ) {
+				return null;
+			}
+		}
+		$candidate = null;
+		foreach ( $state['resolved']['pages'] as $page ) {
+			if ( null === $candidate ) {
+				$candidate = $page;
+			}
+			$route = (string) ( $page['route']['path'] ?? '' );
+			$id = $state['page_ids'][ $page['reconciliation_identity'] ?? '' ] ?? 0;
+			if ( $id > 0 && ( '' === trim( $route, '/' ) ) ) {
+				$candidate = $page;
+				break;
+			}
+		}
+		$id = $state['page_ids'][ $candidate['reconciliation_identity'] ?? '' ] ?? 0;
+		if ( $id > 0 ) {
+			update_option( 'show_on_front', 'page' );
+			update_option( 'page_on_front', $id );
+			return array( 'kind' => 'site_reading', 'reconciliation_identity' => $candidate['reconciliation_identity'], 'inferred' => true );
+		}
+		return new WP_Error( 'static_site_importer_front_page_missing' );
+	}
+
+	/** Append only validated overlays to the generated frontend and editor CSS. */
+	private static function apply_provider_layout_overlays( array &$state, mixed $overlays ) {
+		if ( ! is_array( $overlays ) || empty( $overlays ) ) {
+			return array( 'status' => 'not_requested', 'files' => array() );
+		}
+		$css = array();
+		foreach ( $overlays as $overlay ) {
+			if ( ! Static_Site_Importer_Provider_Layout_Overlay::valid_overlay( $overlay ) ) {
+				return new WP_Error( 'provider_layout_overlay_rejected' );
+			}
+			$css[] = $overlay['css'];
+		}
+		$files = array();
+		foreach ( array( 'style.css', 'assets/css/editor-style.css' ) as $target ) {
+			$path = $state['theme_dir'] . '/' . $target;
+			$content = is_readable( $path ) ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- reads the generated stylesheet just written above.
+			if ( false === $content ) {
+				return new WP_Error( 'provider_layout_stylesheet_missing' );
+			}
+			$result = self::write_file( $state['theme_dir'], array( 'target_path' => $target, 'source_path' => $target, 'payload' => array( 'encoding' => 'utf8', 'data' => rtrim( $content ) . "\n" . implode( "\n", $css ) ) ) );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			$files[] = $result;
+		}
+		return array( 'status' => 'completed', 'files' => $files );
 	}
 
 	/**

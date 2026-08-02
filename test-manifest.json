@@ -6,6 +6,7 @@
   },
   "tests": [
     { "path": "tests/form-materializer-smoke.php", "environment": "standalone-php" },
+    { "path": "tests/form-materializer-topology.test.mjs", "environment": "node" },
     { "path": "tests/smoke-ability-error-report-summary.php", "environment": "standalone-php" },
     { "path": "tests/smoke-ability-import-success-diagnostics.php", "environment": "standalone-php" },
     { "path": "tests/smoke-ability-registration-idempotent.php", "environment": "standalone-php" },

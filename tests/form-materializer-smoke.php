@@ -140,8 +140,8 @@ namespace {
 	$assert( str_contains( $markup, 'wp:jetpack/button' ), 'markup-submit-button' );
 	$assert( str_contains( $markup, 'hello@example.com' ), 'markup-mailto-recipient' );
 	$assert( str_contains( $markup, '"options":["Sales","Support"]' ), 'markup-select-options' );
-	$assert( str_contains( $markup, '<div class="wp-block-jetpack-contact-form form contact">' ), 'markup-contact-form-wrapper-and-source-classes' );
-	$assert( str_contains( $markup, '<!-- wp:jetpack/field-text {"required":true,"id":"contact-name"} -->' ), 'markup-field-wrapper-open' );
+	$assert( 1 === preg_match( '/<div class="wp-block-jetpack-contact-form form contact ssi-form-[a-f0-9]{12}">/', $markup ), 'markup-contact-form-wrapper-and-source-classes' );
+	$assert( 1 === preg_match( '/<!-- wp:jetpack\/field-text \{"required":true,"id":"contact-name","className":"ssi-node-[a-f0-9]{12}"\} -->/', $markup ), 'markup-field-wrapper-open' );
 	$assert( str_contains( $markup, '<div><!-- wp:jetpack/label {"label":"Your name","requiredText":"*"} /-->' ), 'markup-field-label-child' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/input {"type":"text"} /--></div>' ), 'markup-field-input-child-and-wrapper-close' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/input {"type":"dropdown"} /-->' ), 'markup-select-input-child' );
@@ -150,6 +150,47 @@ namespace {
 	$assert( str_contains( $markup, '<!-- wp:jetpack/options {"type":"radio"} -->' ), 'markup-radio-options-child' );
 	$assert( str_contains( $markup, '<ul><!-- wp:jetpack/option {"label":"In person"} /-->' ), 'markup-radio-option-wrapper' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/option {"label":"Send me updates","isStandalone":true} /-->' ), 'markup-checkbox-option-child' );
+
+	// The generic topology is source-order only. Layout is projected onto provider
+	// wrappers through the validated map rather than inventing fixture selectors.
+	$topology_manifest = array(
+		'forms' => array(
+			array(
+				'selector' => 'form.request',
+				'form' => array( 'class' => 'request-form' ),
+				'controls' => array(
+					array( 'tag' => 'input', 'type' => 'text', 'label' => 'First name' ),
+					array( 'tag' => 'input', 'type' => 'email', 'label' => 'Email' ),
+					array( 'tag' => 'textarea', 'type' => 'textarea', 'label' => 'Message' ),
+					array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send request' ),
+				),
+				'control_topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => 4, 'max_nodes' => 8, 'truncated' => false, 'nodes' => array(
+					array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'class' => 'field' ),
+					array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'control' => 0 ),
+					array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => null, 'order' => 1, 'depth' => 0, 'class' => 'field' ),
+					array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 1, 'control' => 1 ),
+					array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => null, 'order' => 2, 'depth' => 0, 'class' => 'field' ),
+					array( 'id' => 'control-2', 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => 0, 'depth' => 1, 'control' => 2 ),
+					array( 'id' => 'control-3', 'kind' => 'control', 'parent' => null, 'order' => 3, 'depth' => 0, 'control' => 3 ),
+				) ),
+				'layout_graph' => array( 'schema' => 'generic/computed-layout-graph/v1', 'basis' => 'source_css_cascade', 'truncated' => false, 'nodes' => array(
+					array( 'id' => 'form', 'layout' => array( 'display' => 'grid', 'columns' => 'repeat(2, 1fr)', 'gap' => '1rem' ) ),
+					array( 'id' => 'control-2', 'layout' => array( 'column' => 'span 2' ) ),
+					array( 'id' => 'control-3', 'layout' => array( 'column' => 'span 2' ) ),
+				), 'variants' => array() ),
+			)
+		)
+	);
+	$topology_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $topology_manifest );
+	$topology_seed = Static_Site_Importer_Form_Seeder::seed( $topology_validated );
+	$topology_row = $topology_seed['forms'][0] ?? array();
+	$topology_css = (string) ( $topology_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( empty( $topology_validated['errors'] ) && 3 === ( $topology_row['field_count'] ?? 0 ), 'topology-manifest-validates-and-preserves-control-order' );
+	$assert( str_contains( $topology_css, '> form.jetpack-contact-form__form{display:grid;grid-template-columns:repeat(2, 1fr);gap:1rem}' ) && 2 === substr_count( $topology_css, 'grid-column:span 2' ), 'topology-projects-grid-root-and-full-span-provider-wrappers' );
+	$assert( 'applied' === ( $topology_row['computed_layout_receipt']['status'] ?? '' ) && 3 === ( $topology_row['computed_layout_receipt']['operation_count'] ?? 0 ), 'topology-records-provider-transposition-receipt' );
+	$invalid_topology = $topology_manifest;
+	$invalid_topology['forms'][0]['control_topology']['truncated'] = true;
+	$assert( empty( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $invalid_topology )['forms'] ), 'topology-truncation-fails-closed' );
 
 	// --- Provider blocks are never claimed without the provider runtime --------
 	$GLOBALS['ssi_jetpack_form_blocks_available'] = false;
