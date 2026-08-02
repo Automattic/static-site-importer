@@ -98,7 +98,7 @@ class Static_Site_Importer_Companion_Plugin {
 				return new WP_Error( 'static_site_importer_companion_plugin_assets_invalid', sprintf( 'Block %s assets must be an object.', $name ) );
 			}
 			foreach ( $assets as $path => $content ) {
-				if ( ! is_string( $path ) || $path !== self::sanitize_relative_path( $path ) || ! is_scalar( $content ) ) {
+				if ( ! is_string( $path ) || self::sanitize_relative_path( $path ) !== $path || ! is_scalar( $content ) ) {
 					return new WP_Error( 'static_site_importer_companion_plugin_asset_path_invalid', sprintf( 'Block %s has an unsafe asset path.', $name ) );
 				}
 			}
@@ -118,7 +118,7 @@ class Static_Site_Importer_Companion_Plugin {
 				continue;
 			}
 			$src = is_string( $entry['src'] ) ? $entry['src'] : '';
-			if ( $src !== self::sanitize_relative_path( $src ) ) {
+			if ( self::sanitize_relative_path( $src ) !== $src ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_asset_path_invalid', 'Companion-plugin preserved script has an unsafe asset path.' );
 			}
 		}
@@ -542,10 +542,10 @@ class Static_Site_Importer_Companion_Plugin {
 			$entries[] = array(
 				'handle'          => 'runtime-unit-' . $module['unit_id'],
 				'content'         => $module['content'],
-				'block'            => $module['block'],
-				'selector'         => $module['selector'],
-				'source_path'      => $module['source_path'],
-				'superseded_unit'  => $module['unit_id'],
+				'block'           => $module['block'],
+				'selector'        => $module['selector'],
+				'source_path'     => $module['source_path'],
+				'superseded_unit' => $module['unit_id'],
 			);
 		}
 		$islands = array();
@@ -571,14 +571,14 @@ class Static_Site_Importer_Companion_Plugin {
 			$superseded_unit = isset( $entry['superseded_unit'] ) && is_scalar( $entry['superseded_unit'] ) ? (string) $entry['superseded_unit'] : '';
 
 			$islands[] = array(
-				'handle'       => $handle,
-				'relative_src' => $relative,
-				'content'      => $content,
+				'handle'          => $handle,
+				'relative_src'    => $relative,
+				'content'         => $content,
 				// Scope: enqueue only when this block renders. Empty block means
 				// the island is unscoped, but slice 1 only emits scoped islands.
-				'block'        => $block,
-				'selector'     => $selector,
-				'source_path'  => $source_path,
+				'block'           => $block,
+				'selector'        => $selector,
+				'source_path'     => $source_path,
 				'superseded_unit' => $superseded_unit,
 			);
 		}
@@ -606,13 +606,17 @@ class Static_Site_Importer_Companion_Plugin {
 				continue;
 			}
 			$modules[] = array(
-				'unit_id' => (string) $module['unit_id'], 'content' => (string) $module['content'],
-				'block' => isset( $module['block'] ) && is_scalar( $module['block'] ) ? (string) $module['block'] : '',
-				'selector' => isset( $module['selector'] ) && is_scalar( $module['selector'] ) ? (string) $module['selector'] : '',
+				'unit_id'     => (string) $module['unit_id'],
+				'content'     => (string) $module['content'],
+				'block'       => isset( $module['block'] ) && is_scalar( $module['block'] ) ? (string) $module['block'] : '',
+				'selector'    => isset( $module['selector'] ) && is_scalar( $module['selector'] ) ? (string) $module['selector'] : '',
 				'source_path' => isset( $module['source_path'] ) && is_scalar( $module['source_path'] ) ? (string) $module['source_path'] : '',
 			);
 		}
-		return array( 'units' => $units, 'retained_modules' => $modules );
+		return array(
+			'units'            => $units,
+			'retained_modules' => $modules,
+		);
 	}
 
 	/**
