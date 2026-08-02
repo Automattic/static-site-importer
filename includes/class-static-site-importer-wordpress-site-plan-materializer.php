@@ -283,14 +283,23 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				return null;
 			}
 		}
+		$candidate = null;
 		foreach ( $state['resolved']['pages'] as $page ) {
+			if ( null === $candidate ) {
+				$candidate = $page;
+			}
 			$route = (string) ( $page['route']['path'] ?? '' );
 			$id = $state['page_ids'][ $page['reconciliation_identity'] ?? '' ] ?? 0;
 			if ( $id > 0 && ( '' === trim( $route, '/' ) ) ) {
-				update_option( 'show_on_front', 'page' );
-				update_option( 'page_on_front', $id );
-				return array( 'kind' => 'site_reading', 'reconciliation_identity' => $page['reconciliation_identity'], 'inferred' => true );
+				$candidate = $page;
+				break;
 			}
+		}
+		$id = $state['page_ids'][ $candidate['reconciliation_identity'] ?? '' ] ?? 0;
+		if ( $id > 0 ) {
+			update_option( 'show_on_front', 'page' );
+			update_option( 'page_on_front', $id );
+			return array( 'kind' => 'site_reading', 'reconciliation_identity' => $candidate['reconciliation_identity'], 'inferred' => true );
 		}
 		return new WP_Error( 'static_site_importer_front_page_missing' );
 	}
