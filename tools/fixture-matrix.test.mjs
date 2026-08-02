@@ -725,6 +725,8 @@ test('runtime presentation evidence binds staged URLs to artifact paths and payl
   assert.match(script, /sourceRoot=new URL\("\/wp-content\/uploads\/fixtures\/media-site\/source\/"/);
   assert.match(script, /pathname\.slice\(sourceRoot\.length\)/);
   assert.match(script, /source_path:'website\/pages\/team\.html'/);
+  assert.match(script, /n===document\.body\)return ''/);
+  assert.match(script, /return prefix\?prefix\+' > '\+part:part/);
   assert.match(script, /nth-of-type\('\+\(s\.indexOf\(n\)\+1\)\+'/);
   assert.doesNotMatch(script, /nth-of-type\('\+s\.indexOf\(n\)\+1\+'/);
   assert.match(script, /HeadlessChrome\|Chrome/);
