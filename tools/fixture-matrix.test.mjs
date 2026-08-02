@@ -677,7 +677,7 @@ test('runtime presentation evidence probes every selected surface before one agg
     ]);
     const merge = recipe.workflow.steps[mergeIndex];
     assert.deepEqual(merge.metadata.input_artifacts, probes.map((step) => step.metadata.output_artifact));
-    assert.match(probes[1].args.find((arg) => arg.startsWith('script=')), /source_path:'team\.html'/);
+    assert.match(probes[1].args.find((arg) => arg.startsWith('script=')), /source_path:'website\/team\.html'/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -691,8 +691,8 @@ test('runtime presentation evidence merge retains a Team-like secondary image ob
     const provenance = { browser: { name: 'Chromium', version: '126' }, viewport: { width: 1280, height: 1600, device_scale_factor: 1 }, lifecycle: { phase: 'network-idle' } };
     const envelope = (sourcePath, selector) => ({ schema: RUNTIME_PRESENTATION_EVIDENCE_SCHEMA, provenance, observations: [{ element: { source_path: sourcePath, selector }, asset_hash: 'a'.repeat(64), intrinsic: { width: 100, height: 100 }, rendered: { width: 50, height: 50 }, transform: { matrix: [1, 0, 0, 1, 0, 0], origin: { x: 0, y: 0 } }, clip: { x: 0, y: 0, width: 50, height: 50 } }] });
     writeFileSync(path.join(fixture, 'artifact.json'), JSON.stringify({ schema: 'fixture-artifact' }));
-    writeFileSync(path.join(fixture, 'runtime-presentation-evidence.json'), JSON.stringify(envelope('index.html', 'html > body:nth-of-type(1) > img:nth-of-type(1)')));
-    writeFileSync(path.join(fixture, 'runtime-presentation-evidence--team.json'), JSON.stringify(envelope('team.html', 'html > body:nth-of-type(1) > img:nth-of-type(1)')));
+    writeFileSync(path.join(fixture, 'runtime-presentation-evidence.json'), JSON.stringify(envelope('website/index.html', 'html > body:nth-of-type(1) > img:nth-of-type(1)')));
+    writeFileSync(path.join(fixture, 'runtime-presentation-evidence--team.json'), JSON.stringify(envelope('website/team.html', 'html > body:nth-of-type(1) > img:nth-of-type(1)')));
     const step = runtimePresentationEvidenceMergeStep({
       fixture: { id: 'team-site' },
       artifactRoot: root,
@@ -705,25 +705,26 @@ test('runtime presentation evidence merge retains a Team-like secondary image ob
     const result = spawnSync('php', ['-r', `class WP_CLI { public static function line($value) { echo $value; } public static function error($message) { exit(1); } } function wp_json_encode($value, $flags = 0) { return json_encode($value, $flags); } ${code}`], { encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     const merged = JSON.parse(readFileSync(path.join(fixture, 'artifact-with-runtime-presentation-evidence.json'), 'utf8'));
-    assert.deepEqual(merged.runtime_presentation_evidence.observations.map((observation) => observation.element.source_path), ['index.html', 'team.html']);
+    assert.deepEqual(merged.runtime_presentation_evidence.observations.map((observation) => observation.element.source_path), ['website/index.html', 'website/team.html']);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('runtime presentation evidence canonicalizes staged URLs and hashes decoded asset bytes', () => {
+test('runtime presentation evidence binds staged URLs to artifact paths and payload hashes', () => {
   const bytes = Buffer.from('animated image bytes');
-  const expectedHash = createHash('sha256').update(bytes).digest('hex');
+  const contentBase64 = bytes.toString('base64');
+  const expectedHash = createHash('sha256').update(contentBase64).digest('hex');
   const probe = runtimePresentationEvidenceProbeStep({
     fixture: { id: 'media-site', entrypoint: 'pages/team.html' },
     sourceUrl: '/wp-content/uploads/fixtures/media-site/source/pages/team.html',
-    artifact: { files: [{ path: 'website/images/team.gif', type: 'image/gif', content_base64: bytes.toString('base64') }] },
+    artifact: { files: [{ path: 'website/images/team.gif', type: 'image/gif', content_base64: contentBase64 }] },
   });
   const script = probe.args.find((arg) => arg.startsWith('script='));
   assert.match(script, new RegExp(expectedHash));
   assert.match(script, /sourceRoot=new URL\("\/wp-content\/uploads\/fixtures\/media-site\/source\/"/);
   assert.match(script, /pathname\.slice\(sourceRoot\.length\)/);
-  assert.match(script, /source_path:'pages\/team\.html'/);
+  assert.match(script, /source_path:'website\/pages\/team\.html'/);
   assert.match(script, /HeadlessChrome\|Chrome/);
   assert.doesNotMatch(script, /version:navigator\.userAgent/);
 });
