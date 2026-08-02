@@ -58,7 +58,7 @@ class Static_Site_Importer_Form_Seeder {
 
 	/** Return every Jetpack block type the adapter can emit. */
 	private static function required_provider_blocks(): array {
-		return array_values( array_unique( array_merge( array( 'jetpack/contact-form', 'jetpack/field-checkbox-multiple' ), array_values( self::field_block_map() ) ) ) );
+		return array_values( array_unique( array_merge( array( 'jetpack/contact-form', 'jetpack/field-checkbox-multiple', 'jetpack/input', 'jetpack/label', 'jetpack/option', 'jetpack/options', 'jetpack/phone-input' ), array_values( self::field_block_map() ) ) ) );
 	}
 
 	/**
@@ -150,6 +150,52 @@ class Static_Site_Importer_Form_Seeder {
 	public static function jetpack_forms_available(): bool {
 		$availability = self::jetpack_forms_availability_details();
 		return ! empty( $availability['available'] );
+	}
+
+	/** Activate Jetpack's Forms module and register its server-side block types. */
+	public static function prepare_jetpack_forms_runtime() {
+		if ( ! class_exists( 'Jetpack' ) ) {
+			return new WP_Error( 'static_site_importer_jetpack_class_missing', 'Jetpack activated without exposing its runtime class.' );
+		}
+		$modules_class = 'Automattic\\Jetpack\\Modules';
+		if ( ! class_exists( $modules_class ) ) {
+			return new WP_Error( 'static_site_importer_jetpack_modules_api_missing', 'Jetpack activated without exposing its modules API.' );
+		}
+		$modules = new $modules_class();
+		$status_class = 'Automattic\\Jetpack\\Status';
+		$cache_class  = 'Automattic\\Jetpack\\Status\\Cache';
+		if (
+			method_exists( 'Jetpack', 'is_connection_ready' )
+			&& ! Jetpack::is_connection_ready()
+			&& class_exists( $status_class )
+			&& ! ( new $status_class() )->is_offline_mode()
+		) {
+			update_option( 'jetpack_offline_mode', true, false );
+			if ( class_exists( $cache_class ) && method_exists( $cache_class, 'clear' ) ) {
+				$cache_class::clear();
+			}
+		}
+		if ( ! $modules->is_active( 'contact-form' ) ) {
+			Jetpack::activate_module( 'contact-form', false, false );
+		}
+		if ( ! $modules->is_active( 'contact-form' ) ) {
+			return new WP_Error(
+				'static_site_importer_jetpack_forms_module_inactive',
+				'Jetpack did not activate its contact-form module.',
+				array( 'module_active' => false, 'availability' => self::jetpack_forms_availability_details() )
+			);
+		}
+
+		$block_class = 'Automattic\\Jetpack\\Extensions\\Contact_Form\\Contact_Form_Block';
+		if ( class_exists( $block_class ) && method_exists( $block_class, 'register_block' ) && method_exists( $block_class, 'register_child_blocks' ) ) {
+			$block_class::register_block();
+			$block_class::register_child_blocks();
+		}
+
+		$availability = self::jetpack_forms_availability_details();
+		return ! empty( $availability['available'] )
+			? true
+			: new WP_Error( 'static_site_importer_jetpack_forms_blocks_missing', 'Jetpack Forms activated without registering every required provider block.', array( 'module_active' => true, 'availability' => $availability ) );
 	}
 
 	/**
@@ -479,13 +525,15 @@ class Static_Site_Importer_Form_Seeder {
 
 		$attrs = array();
 		$label = self::control_text( $control );
-		$attrs['label'] = $label;
 		if ( ! empty( $control['required'] ) ) {
 			$attrs['required'] = true;
 		}
 		$id = isset( $control['id'] ) && is_scalar( $control['id'] ) ? trim( (string) $control['id'] ) : '';
 		if ( '' !== $id ) {
 			$attrs['id'] = $id;
+		}
+		if ( 'tel' === $lookup ) {
+			$attrs['showCountrySelector'] = false;
 		}
 		$placeholder = isset( $control['placeholder'] ) && is_scalar( $control['placeholder'] ) ? trim( (string) $control['placeholder'] ) : '';
 
@@ -496,12 +544,43 @@ class Static_Site_Importer_Form_Seeder {
 			}
 		}
 
-		if ( '' !== $placeholder ) {
-			$attrs['placeholder'] = $placeholder;
+		$inner_blocks = array();
+		if ( 'checkbox' === $lookup && empty( $attrs['options'] ) ) {
+			$inner_blocks[] = array(
+				'name'  => 'jetpack/option',
+				'attrs' => array( 'label' => $label, 'isStandalone' => true ),
+			);
+		} elseif ( '' !== $label ) {
+			$inner_blocks[] = array( 'name' => 'jetpack/label', 'attrs' => array( 'label' => $label ) );
 		}
 
-		if ( self::provider_supports_input_attribute( $lookup, 'step' ) && isset( $control['step'] ) && is_scalar( $control['step'] ) && '' !== trim( (string) $control['step'] ) ) {
-			$attrs['step'] = trim( (string) $control['step'] );
+		if ( in_array( $lookup, array( 'radio', 'checkbox' ), true ) && ! empty( $attrs['options'] ) ) {
+			$option_blocks = array();
+			foreach ( $attrs['options'] as $option ) {
+				$option_blocks[] = array( 'name' => 'jetpack/option', 'attrs' => array( 'label' => $option ) );
+			}
+			$inner_blocks[] = array(
+				'name'        => 'jetpack/options',
+				'attrs'       => array( 'type' => 'radio' === $lookup ? 'radio' : 'checkbox' ),
+				'innerBlocks' => $option_blocks,
+				'wrapper'     => 'ul',
+			);
+		} elseif ( ! in_array( $lookup, array( 'checkbox', 'radio' ), true ) ) {
+			$input_attrs = array(
+				'style' => array( 'border' => array( 'style' => 'solid' ) ),
+			);
+			if ( '' !== $placeholder ) {
+				$input_attrs['placeholder'] = $placeholder;
+			}
+			if ( 'textarea' === $lookup ) {
+				$input_attrs['type'] = 'textarea';
+			} elseif ( 'select' === $lookup ) {
+				$input_attrs['type'] = 'dropdown';
+			}
+			if ( self::provider_supports_input_attribute( $lookup, 'step' ) && isset( $control['step'] ) && is_scalar( $control['step'] ) && '' !== trim( (string) $control['step'] ) ) {
+				$input_attrs['step'] = trim( (string) $control['step'] );
+			}
+			$inner_blocks[] = array( 'name' => 'tel' === $lookup ? 'jetpack/phone-input' : 'jetpack/input', 'attrs' => $input_attrs );
 		}
 
 		$losses = array();
@@ -517,9 +596,11 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$block_name = 'checkbox' === $lookup && ! empty( $attrs['options'] ) ? 'jetpack/field-checkbox-multiple' : $map[ $lookup ];
 		return array(
-			'name'   => $block_name,
-			'attrs'  => $attrs,
-			'losses' => $losses,
+			'name'        => $block_name,
+			'attrs'       => $attrs,
+			'innerBlocks' => $inner_blocks,
+			'wrapper'     => 'div',
+			'losses'      => $losses,
 		);
 	}
 

@@ -282,7 +282,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$reports[ $slug ] = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
 				$slug,
 				(string) ( $dependency['plugin_file'] ?? '' ),
-				$dependency['availability_callback'] ?? null
+				$dependency['availability_callback'] ?? null,
+				$dependency['preparation_callback'] ?? null
 			);
 		}
 
@@ -519,6 +520,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						'slug'                  => 'jetpack',
 						'plugin_file'           => 'jetpack/jetpack.php',
 						'availability_callback' => array( 'Static_Site_Importer_Form_Seeder', 'jetpack_forms_available' ),
+						'preparation_callback'  => array( 'Static_Site_Importer_Form_Seeder', 'prepare_jetpack_forms_runtime' ),
 						'missing_apis'          => array( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form', 'jetpack/contact-form', 'jetpack/field-text' ),
 					),
 				),

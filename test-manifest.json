@@ -22,6 +22,7 @@
     { "path": "tests/smoke-inline-svg-materialization.php", "environment": "standalone-php" },
     { "path": "tests/smoke-materialized-block-content-validation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-playground-import-primitive.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-plugin-materializer-lifecycle.php", "environment": "standalone-php" },
     { "path": "tests/smoke-product-handoff-contract.php", "environment": "standalone-php" },
     { "path": "tests/smoke-product-materializer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-provider-presentation.php", "environment": "standalone-php" },

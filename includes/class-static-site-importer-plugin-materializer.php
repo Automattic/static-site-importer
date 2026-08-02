@@ -23,12 +23,14 @@ class Static_Site_Importer_Plugin_Materializer {
 	 * @param string        $slug               WordPress.org plugin slug.
 	 * @param string        $plugin_file        Plugin basename, e.g. woocommerce/woocommerce.php.
 	 * @param callable|null $availability_check Optional callback that returns true when plugin APIs are available.
+	 * @param callable|null $preparation_callback Optional callback that enables the required plugin capability.
 	 * @return array<string, mixed>
 	 */
 	public static function ensure_wp_org_plugin(
 		string $slug,
 		string $plugin_file,
-		?callable $availability_check = null
+		?callable $availability_check = null,
+		?callable $preparation_callback = null
 	): array {
 		$report = self::new_report( $slug, $plugin_file );
 
@@ -60,10 +62,40 @@ class Static_Site_Importer_Plugin_Materializer {
 
 		if ( function_exists( 'is_plugin_active' ) && is_plugin_active( $plugin_file ) ) {
 			$report['active'] = true;
+			$preparation      = self::prepare_plugin_runtime( $slug, $preparation_callback );
+			if ( is_wp_error( $preparation ) ) {
+				return self::failed_report( $report, $preparation );
+			}
 		} else {
-			$activate = activate_plugin( $plugin_file );
+			$lifecycle = self::prepare_activation_lifecycle_replay();
+			try {
+				$activate = activate_plugin( $plugin_file );
+			} catch ( Throwable $error ) {
+				self::restore_activation_lifecycle_actions( $lifecycle );
+				return self::failed_report(
+					$report,
+					new WP_Error( 'static_site_importer_plugin_activation_failed', sprintf( 'Plugin %s activation failed: %s', $slug, $error->getMessage() ) )
+				);
+			}
 			if ( is_wp_error( $activate ) ) {
+				self::restore_activation_lifecycle_actions( $lifecycle );
 				return self::failed_report( $report, $activate );
+			}
+			$preparation = self::prepare_plugin_runtime( $slug, $preparation_callback );
+			if ( is_wp_error( $preparation ) ) {
+				self::restore_activation_lifecycle_actions( $lifecycle );
+				return self::failed_report( $report, $preparation );
+			}
+			try {
+				$report['lifecycle_replay'] = self::complete_activation_lifecycle_replay( $lifecycle );
+			} catch ( Throwable $error ) {
+				return self::failed_report(
+					$report,
+					new WP_Error(
+						'static_site_importer_plugin_lifecycle_replay_failed',
+						sprintf( 'Plugin %s activated but its WordPress lifecycle callbacks failed: %s', $slug, $error->getMessage() )
+					)
+				);
 			}
 
 			$report['active']    = true;
@@ -84,6 +116,25 @@ class Static_Site_Importer_Plugin_Materializer {
 			? 'installed_activated'
 			: 'activated';
 		return $report;
+	}
+
+	/** @return true|WP_Error */
+	private static function prepare_plugin_runtime( string $slug, ?callable $preparation_callback ) {
+		if ( null === $preparation_callback ) {
+			return true;
+		}
+		try {
+			$result = call_user_func( $preparation_callback );
+		} catch ( Throwable $error ) {
+			return new WP_Error( 'static_site_importer_plugin_runtime_preparation_failed', sprintf( 'Plugin %s runtime preparation failed: %s', $slug, $error->getMessage() ) );
+		}
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		return true === $result
+			? true
+			: new WP_Error( 'static_site_importer_plugin_runtime_preparation_failed', sprintf( 'Plugin %s could not enable its required runtime capability.', $slug ) );
 	}
 
 	/**
@@ -410,6 +461,134 @@ class Static_Site_Importer_Plugin_Materializer {
 		}
 
 		return $report;
+	}
+
+	/**
+	 * Reopen completed lifecycle hooks while a dependency plugin is activated.
+	 *
+	 * Plugins activated during an import miss the normal request's plugins_loaded,
+	 * init, and wp_loaded windows. Snapshotting existing callbacks lets SSI replay
+	 * only callbacks introduced by the dependency, without rerunning WordPress or
+	 * other active plugins.
+	 *
+	 * @return array<string,array{callbacks:array<string,bool>,did_action:int}>
+	 */
+	private static function prepare_activation_lifecycle_replay(): array {
+		global $wp_actions;
+
+		$state = array();
+		foreach ( array( 'plugins_loaded', 'init', 'wp_loaded' ) as $hook_name ) {
+			$count = function_exists( 'did_action' ) ? (int) did_action( $hook_name ) : 0;
+			$state[ $hook_name ] = array(
+				'callbacks'  => self::snapshot_hook_callbacks( $hook_name ),
+				'did_action' => $count,
+			);
+			if ( $count > 0 ) {
+				if ( ! is_array( $wp_actions ) ) {
+					$wp_actions = array();
+				}
+				$wp_actions[ $hook_name ] = 0;
+			}
+		}
+
+		return $state;
+	}
+
+	/** @return array<string,int> Replayed callback counts keyed by lifecycle hook. */
+	private static function complete_activation_lifecycle_replay( array $state ): array {
+		$replayed = array();
+		try {
+			foreach ( $state as $hook_name => $hook_state ) {
+				if ( (int) ( $hook_state['did_action'] ?? 0 ) <= 0 ) {
+					continue;
+				}
+				$callbacks = self::defer_new_hook_callbacks(
+					(string) $hook_name,
+					is_array( $hook_state['callbacks'] ?? null ) ? $hook_state['callbacks'] : array()
+				);
+				self::run_deferred_hook_callbacks( (string) $hook_name, $callbacks );
+				$replayed[ (string) $hook_name ] = count( $callbacks );
+			}
+		} finally {
+			self::restore_activation_lifecycle_actions( $state );
+		}
+
+		return $replayed;
+	}
+
+	/** @return array<string,bool> */
+	private static function snapshot_hook_callbacks( string $hook_name ): array {
+		global $wp_filter;
+
+		$snapshot = array();
+		if ( ! isset( $wp_filter[ $hook_name ]->callbacks ) || ! is_array( $wp_filter[ $hook_name ]->callbacks ) ) {
+			return $snapshot;
+		}
+		foreach ( $wp_filter[ $hook_name ]->callbacks as $priority => $callbacks ) {
+			foreach ( array_keys( $callbacks ) as $callback_id ) {
+				$snapshot[ $priority . ':' . $callback_id ] = true;
+			}
+		}
+
+		return $snapshot;
+	}
+
+	/** @return array<int,array{priority:int,callback:array<string,mixed>}> */
+	private static function defer_new_hook_callbacks( string $hook_name, array $before ): array {
+		global $wp_filter;
+
+		$deferred = array();
+		if ( ! isset( $wp_filter[ $hook_name ]->callbacks ) || ! is_array( $wp_filter[ $hook_name ]->callbacks ) ) {
+			return $deferred;
+		}
+		$callbacks_by_priority = $wp_filter[ $hook_name ]->callbacks;
+		foreach ( $callbacks_by_priority as $priority => $callbacks ) {
+			foreach ( $callbacks as $callback_id => $callback ) {
+				if ( isset( $before[ $priority . ':' . $callback_id ] ) || ! isset( $callback['function'] ) ) {
+					continue;
+				}
+				if ( remove_action( $hook_name, $callback['function'], (int) $priority ) ) {
+					$deferred[] = array( 'priority' => (int) $priority, 'callback' => $callback );
+				}
+			}
+		}
+		usort( $deferred, static fn ( array $left, array $right ): int => $left['priority'] <=> $right['priority'] );
+
+		return $deferred;
+	}
+
+	private static function run_deferred_hook_callbacks( string $hook_name, array $deferred ): void {
+		global $wp_current_filter;
+
+		if ( ! is_array( $wp_current_filter ) ) {
+			$wp_current_filter = array();
+		}
+		$wp_current_filter[] = $hook_name;
+		try {
+			foreach ( $deferred as $entry ) {
+				$callback = $entry['callback'] ?? null;
+				if ( ! is_array( $callback ) || ! isset( $callback['function'] ) ) {
+					continue;
+				}
+				call_user_func( $callback['function'] );
+			}
+		} finally {
+			array_pop( $wp_current_filter );
+		}
+	}
+
+	private static function restore_activation_lifecycle_actions( array $state ): void {
+		global $wp_actions;
+
+		if ( ! is_array( $wp_actions ) ) {
+			$wp_actions = array();
+		}
+		foreach ( $state as $hook_name => $hook_state ) {
+			$count = (int) ( $hook_state['did_action'] ?? 0 );
+			if ( $count > 0 ) {
+				$wp_actions[ (string) $hook_name ] = max( $count, (int) ( $wp_actions[ $hook_name ] ?? 0 ) );
+			}
+		}
 	}
 
 	/**

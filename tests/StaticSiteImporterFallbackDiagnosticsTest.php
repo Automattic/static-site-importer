@@ -567,6 +567,29 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Dependency failures retain bounded provider preparation evidence.
+	 */
+	public function test_validation_error_result_preserves_dependency_report(): void {
+		$error = new WP_Error(
+			'static_site_importer_required_runtime_dependency_missing',
+			'SSI could not prepare a required runtime dependency.',
+			array(
+				'dependency_reports' => array(
+					'form' => array(
+						'jetpack' => array( 'status' => 'failed', 'error' => array( 'code' => 'provider_unavailable' ) ),
+					),
+				),
+			)
+		);
+
+		$result = Static_Site_Importer_Validation_Runtime::error_result_from_wp_error( $error );
+		$observed = $result['diagnostics'][0]['observed_output'] ?? '';
+
+		$this->assertStringContainsString( 'provider_unavailable', $observed );
+		$this->assertLessThanOrEqual( 4000, strlen( $observed ) );
+	}
+
+	/**
 	 * Materialization failures retain their specific receipt diagnostics.
 	 */
 	public function test_validation_error_result_preserves_materialization_receipt(): void {

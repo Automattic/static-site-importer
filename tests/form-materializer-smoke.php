@@ -45,8 +45,15 @@ namespace {
 
 	if ( ! function_exists( 'get_option' ) ) {
 		function get_option( $name, $default = false ) {
-			unset( $name );
-			return $default;
+			return $GLOBALS['ssi_test_options'][ $name ] ?? $default;
+		}
+	}
+
+	if ( ! function_exists( 'update_option' ) ) {
+		function update_option( $name, $value, $autoload = null ): bool {
+			unset( $autoload );
+			$GLOBALS['ssi_test_options'][ $name ] = $value;
+			return true;
 		}
 	}
 
@@ -72,9 +79,64 @@ namespace {
 		'jetpack/field-text',
 		'jetpack/field-textarea',
 		'jetpack/field-url',
+		'jetpack/input',
+		'jetpack/label',
+		'jetpack/option',
+		'jetpack/options',
+		'jetpack/phone-input',
 	);
+	$GLOBALS['ssi_test_required_jetpack_form_blocks'] = $GLOBALS['ssi_jetpack_registered_form_blocks'];
 	if ( ! class_exists( 'Grunion_Contact_Form' ) ) {
 		class Grunion_Contact_Form {}
+	}
+	if ( ! class_exists( 'Jetpack' ) ) {
+		class Jetpack {
+			public static bool $connection_ready = false;
+
+			public static function is_connection_ready(): bool {
+				return self::$connection_ready;
+			}
+
+			public static function activate_module( string $module, bool $exit = true, bool $redirect = true ): bool {
+				unset( $exit, $redirect );
+				$GLOBALS['ssi_test_jetpack_active_modules'][] = $module;
+				return true;
+			}
+		}
+	}
+	if ( ! class_exists( 'SSI_Test_Jetpack_Modules' ) ) {
+		class SSI_Test_Jetpack_Modules {
+			public function is_active( string $module ): bool {
+				return in_array( $module, $GLOBALS['ssi_test_jetpack_active_modules'] ?? array(), true );
+			}
+		}
+		class_alias( 'SSI_Test_Jetpack_Modules', 'Automattic\\Jetpack\\Modules' );
+	}
+	if ( ! class_exists( 'SSI_Test_Jetpack_Status' ) ) {
+		class SSI_Test_Jetpack_Status {
+			public function is_offline_mode(): bool {
+				return (bool) get_option( 'jetpack_offline_mode', false );
+			}
+		}
+		class_alias( 'SSI_Test_Jetpack_Status', 'Automattic\\Jetpack\\Status' );
+	}
+	if ( ! class_exists( 'SSI_Test_Jetpack_Status_Cache' ) ) {
+		class SSI_Test_Jetpack_Status_Cache {
+			public static function clear(): void {}
+		}
+		class_alias( 'SSI_Test_Jetpack_Status_Cache', 'Automattic\\Jetpack\\Status\\Cache' );
+	}
+	if ( ! class_exists( 'SSI_Test_Contact_Form_Block' ) ) {
+		class SSI_Test_Contact_Form_Block {
+			public static function register_block(): void {
+				$GLOBALS['ssi_jetpack_registered_form_blocks'][] = 'jetpack/contact-form';
+			}
+
+			public static function register_child_blocks(): void {
+				$GLOBALS['ssi_jetpack_registered_form_blocks'] = $GLOBALS['ssi_test_required_jetpack_form_blocks'];
+			}
+		}
+		class_alias( 'SSI_Test_Contact_Form_Block', 'Automattic\\Jetpack\\Extensions\\Contact_Form\\Contact_Form_Block' );
 	}
 
 	if ( ! class_exists( 'WP_Block_Type_Registry' ) ) {
@@ -126,10 +188,23 @@ namespace {
 	$assert( 'jetpack_contact_form' === ( $form_adapter['id'] ?? '' ), 'form-adapter-resolves-jetpack' );
 	$assert( 'form' === ( $form_adapter['capability'] ?? '' ), 'form-adapter-capability' );
 	$assert( 'allow_missing_jetpack' === ( $form_adapter['waiver_arg'] ?? '' ), 'form-adapter-waiver' );
+	$assert( is_callable( $form_adapter['dependencies'][0]['preparation_callback'] ?? null ), 'form-adapter-prepares-provider-runtime' );
 	$all_jetpack_blocks = $GLOBALS['ssi_jetpack_registered_form_blocks'];
 	$GLOBALS['ssi_jetpack_registered_form_blocks'] = array( 'jetpack/contact-form', 'jetpack/field-text' );
 	$assert( ! Static_Site_Importer_Form_Seeder::jetpack_forms_available(), 'partial-provider-block-registration-is-unavailable' );
 	$GLOBALS['ssi_jetpack_registered_form_blocks'] = $all_jetpack_blocks;
+	$GLOBALS['ssi_test_options']                    = array();
+	$GLOBALS['ssi_test_jetpack_active_modules']     = array();
+	Jetpack::$connection_ready                      = false;
+	$assert( true === Static_Site_Importer_Form_Seeder::prepare_jetpack_forms_runtime(), 'disconnected-provider-runtime-prepared' );
+	$assert( true === get_option( 'jetpack_offline_mode' ), 'disconnected-provider-persists-offline-mode' );
+	$assert( in_array( 'contact-form', $GLOBALS['ssi_test_jetpack_active_modules'], true ), 'disconnected-provider-activates-forms' );
+
+	$GLOBALS['ssi_test_options']                = array();
+	$GLOBALS['ssi_test_jetpack_active_modules'] = array();
+	Jetpack::$connection_ready                  = true;
+	$assert( true === Static_Site_Importer_Form_Seeder::prepare_jetpack_forms_runtime(), 'connected-provider-runtime-prepared' );
+	$assert( false === get_option( 'jetpack_offline_mode', false ), 'connected-provider-preserves-online-mode' );
 
 	// --- Woo path unaffected -------------------------------------------------
 	$product_adapter = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
@@ -175,6 +250,7 @@ namespace {
 	$assert( str_contains( $markup, 'wp:jetpack/field-text' ), 'markup-field-text' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-email' ), 'markup-field-email' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-telephone' ), 'markup-preserves-telephone-field-semantics' );
+	$assert( str_contains( $markup, 'wp:jetpack/field-telephone {"showCountrySelector":false' ) && str_contains( $markup, 'wp:jetpack/phone-input' ) && ! str_contains( $markup, '"type":"tel"' ), 'markup-telephone-uses-canonical-phone-input' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-number' ), 'markup-field-number' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-select' ), 'markup-field-select' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-radio' ), 'markup-field-radio' );
@@ -185,13 +261,14 @@ namespace {
 	$assert( str_contains( $markup, 'hello@example.com' ), 'markup-mailto-recipient' );
 	$assert( str_contains( $markup, '"options":["Sales","Support"]' ), 'markup-select-options' );
 	$assert( 1 === preg_match( '/<div class="wp-block-jetpack-contact-form form contact ssi-form-[a-f0-9]{12}">/', $markup ), 'markup-contact-form-wrapper-and-source-classes' );
-	$assert( 1 === preg_match( '/<!-- wp:jetpack\/field-text \{"label":"Your name","required":true,"id":"contact-name","className":"ssi-node-[a-f0-9]{12}"\} \/-->/', $markup ), 'markup-field-self-closing-with-provider-attributes' );
-	$assert( str_contains( $markup, '<!-- wp:jetpack/field-select {"label":"Topic","options":["Sales","Support"]' ), 'markup-select-options-on-field' );
-	$assert( str_contains( $markup, '<!-- wp:jetpack/field-radio {"label":"In person","options":["In person","Online"]' ), 'markup-radio-options-on-field' );
-	$assert( str_contains( $markup, '<!-- wp:jetpack/field-checkbox {"label":"Send me updates"' ), 'markup-checkbox-label-on-field' );
-	$assert( ! str_contains( $markup, 'wp:jetpack/label' ) && ! str_contains( $markup, 'wp:jetpack/input' ) && ! str_contains( $markup, 'wp:jetpack/options' ), 'markup-avoids-noncanonical-field-children' );
+	$assert( 1 === preg_match( '/<!-- wp:jetpack\/field-text \{"required":true,"id":"contact-name","className":"ssi-node-[a-f0-9]{12}"\} -->/', $markup ), 'markup-field-wrapper-with-provider-attributes' );
+	$assert( str_contains( $markup, '<!-- wp:jetpack/label {"label":"Your name"} /-->' ) && str_contains( $markup, '<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}}} /-->' ), 'markup-field-canonical-label-and-input-children' );
+	$assert( str_contains( $markup, '<!-- wp:jetpack/field-select {"options":["Sales","Support"]' ) && str_contains( $markup, '<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"type":"dropdown"} /-->' ), 'markup-select-options-and-dropdown-input' );
+	$assert( str_contains( $markup, '<!-- wp:jetpack/field-radio {"options":["In person","Online"]' ) && str_contains( $markup, '<!-- wp:jetpack/options {"type":"radio"} -->' ), 'markup-radio-options-on-field-and-child-list' );
+	$assert( str_contains( $markup, '<!-- wp:jetpack/field-checkbox ' ) && str_contains( $markup, '<!-- wp:jetpack/option {"label":"Send me updates","isStandalone":true} /-->' ), 'markup-checkbox-uses-standalone-option-child' );
 	$checkbox_group = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.preferences', 'controls' => array( array( 'tag' => 'input', 'type' => 'checkbox', 'name' => 'topics', 'label' => 'Topics', 'options' => array( 'Art', 'Events' ) ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Save' ) ) ) ) ) );
-	$assert( str_contains( (string) ( $checkbox_group['forms'][0]['block_markup'] ?? '' ), '<!-- wp:jetpack/field-checkbox-multiple {"label":"Topics","options":["Art","Events"]' ), 'checkbox-group-uses-provider-multiple-field' );
+	$checkbox_group_markup = (string) ( $checkbox_group['forms'][0]['block_markup'] ?? '' );
+	$assert( str_contains( $checkbox_group_markup, '<!-- wp:jetpack/field-checkbox-multiple {"options":["Art","Events"]' ) && str_contains( $checkbox_group_markup, '<!-- wp:jetpack/options {"type":"checkbox"} -->' ), 'checkbox-group-uses-provider-multiple-field' );
 	$escaped_label = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.escaped', 'controls' => array( array( 'tag' => 'input', 'type' => 'text', 'name' => 'unsafe', 'label' => 'A --> B & <C>' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ) ) ) ) );
 	$escaped_label_markup = (string) ( $escaped_label['forms'][0]['block_markup'] ?? '' );
 	$assert( str_contains( $escaped_label_markup, 'A \u002d\u002d\u003e B \u0026' ) && ! str_contains( $escaped_label_markup, 'A --> B' ), 'field-attributes-cannot-break-out-of-block-comments', $escaped_label_markup );
@@ -278,7 +355,7 @@ namespace {
 	$booking = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.booking', 'controls' => array( array( 'tag' => 'input', 'type' => 'number', 'name' => 'guests', 'label' => 'Guests', 'min' => '1', 'max' => '8', 'step' => '0.5' ), array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Request booking' ) ) ) ) ) );
 	$booking_row = $booking['forms'][0] ?? array();
 	$assert( 'Request booking' === ( $booking_row['submit_text'] ?? '' ) && str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '>Request booking</button>' ), 'canonical-control-text-preserves-request-booking-submit-label' );
-	$assert( str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '"label":"Guests","step":"0.5"' ) && array( 'min', 'max' ) === array_column( $booking_row['computed_layout_receipt']['losses'] ?? array(), 'attribute' ), 'number-source-attributes-preserve-supported-step-and-report-min-max-losses' );
+	$assert( str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '"label":"Guests"' ) && str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '"step":"0.5"' ) && array( 'min', 'max' ) === array_column( $booking_row['computed_layout_receipt']['losses'] ?? array(), 'attribute' ), 'number-source-attributes-preserve-supported-step-and-report-min-max-losses' );
 	$number_control_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
 	$number_control_report['diagnostics'][] = array(
 		'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_form_fallback', 'loss_class' => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
@@ -302,7 +379,7 @@ namespace {
 			}
 		};
 		$walk_parsed_markup( $parsed_markup );
-		$assert( array( 'jetpack/contact-form', 'jetpack/field-text', 'jetpack/field-email', 'jetpack/field-textarea', 'core/button' ) === $parsed_names, 'wordpress-parse-blocks-preserves-canonical-provider-grammar', wp_json_encode( $parsed_names ) );
+		$assert( array( 'jetpack/contact-form', 'jetpack/field-text', 'jetpack/label', 'jetpack/input', 'jetpack/field-email', 'jetpack/label', 'jetpack/input', 'jetpack/field-textarea', 'jetpack/label', 'jetpack/input', 'core/button' ) === $parsed_names, 'wordpress-parse-blocks-preserves-canonical-provider-grammar', wp_json_encode( $parsed_names ) );
 	}
 	$unsafe_graph = $topology_form;
 	$unsafe_graph['forms'][0]['layout_graph']['nodes'][0]['layout'] = array( 'display' => 'grid', 'direction' => 'none', 'item_placement' => array( 'column' => 1 ) );

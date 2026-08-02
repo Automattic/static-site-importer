@@ -34,7 +34,7 @@ test( 'shared-row topology materializes through the PHP provider adapter', () =>
 	assert.match( output, /PASS form-materializer-smoke\.php \(\d+ assertions\)/ );
 } );
 
-test( 'provider-constrained topology emits direct fields and an editor-valid core submit', () => {
+test( 'provider-constrained topology emits nested fields and an editor-valid core submit', () => {
 	const output = execFileSync( 'php', [ 'tests/form-materializer-smoke.php', '--emit-topology-markup' ], {
 		cwd: process.cwd(),
 		encoding: 'utf8',
@@ -56,7 +56,9 @@ test( 'provider-constrained topology emits direct fields and an editor-valid cor
 	assert.equal( blocks.length, 1 );
 	assert.doesNotMatch( markup, /<!-- wp:group/ );
 	assert.equal( ( markup.match( /"width":50/g ) || [] ).length, 2 );
-	assert.match( markup, /<!-- wp:jetpack\/field-text [^>]+ \/-->\n<!-- wp:jetpack\/field-email [^>]+ \/-->\n<!-- wp:jetpack\/field-textarea [^>]+ \/-->\n<!-- wp:button / );
+	assert.match( markup, /<!-- wp:jetpack\/field-text [^>]+ -->\n<div><!-- wp:jetpack\/label [^>]+ \/-->\n<!-- wp:jetpack\/input [^>]+ \/--><\/div>\n<!-- \/wp:jetpack\/field-text -->/ );
+	assert.match( markup, /<!-- wp:jetpack\/field-email [^>]+ -->\n<div><!-- wp:jetpack\/label [^>]+ \/-->\n<!-- wp:jetpack\/input [^>]+ \/--><\/div>\n<!-- \/wp:jetpack\/field-email -->/ );
+	assert.match( markup, /<!-- wp:jetpack\/field-textarea [^>]+ -->\n<div><!-- wp:jetpack\/label [^>]+ \/-->\n<!-- wp:jetpack\/input [^>]*"type":"textarea"[^>]* \/--><\/div>\n<!-- \/wp:jetpack\/field-textarea -->\n<!-- wp:button / );
 	assert.match( markup, /<button type="submit" class="wp-block-button__link wp-element-button">Send<\/button>/ );
 	assert.doesNotMatch( depthMarkup, /<!-- wp:group/ );
 	assert.match( depthMarkup, /wp:jetpack\/field-text/ );

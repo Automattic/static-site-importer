@@ -1546,6 +1546,7 @@ function visualParityRecipeInput(options) {
     visualParityCandidateUrl: options.visualParityCandidateUrl,
     visualParitySourceBaseUrl: options.visualParitySourceBaseUrl,
     visualParityFullPage: options.visualParityFullPage,
+    visualParityBlockExternalRequests: options.visualParityBlockExternalRequests,
     visualParityWaitFor: options.visualParityWaitFor,
     visualParityDurationMs: options.visualParityDurationMs,
     ...normalizeVisualAttributionOptions(options),

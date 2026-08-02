@@ -591,7 +591,7 @@ class Static_Site_Importer_Theme_Generator {
 			}
 			$reports[ $id ] = ! empty( $args['materialize_dependencies'] ) ? Static_Site_Importer_Entity_Materializer_Registry::materialize_plugin_dependencies( $adapter ) : array( 'status' => 'available' );
 			if ( ! Static_Site_Importer_Entity_Materializer_Registry::dependencies_available( $adapter ) && ! empty( $prepared['required'] ) ) {
-				return new WP_Error( 'static_site_importer_required_runtime_dependency_missing', 'SSI could not prepare a required runtime dependency.', array( 'status' => 'partial', 'completed_declaration_ids' => array_keys( $reports ) ) );
+				return new WP_Error( 'static_site_importer_required_runtime_dependency_missing', 'SSI could not prepare a required runtime dependency.', array( 'status' => 'partial', 'completed_declaration_ids' => array_keys( $reports ), 'dependency_reports' => $reports ) );
 			}
 		}
 		return $reports;

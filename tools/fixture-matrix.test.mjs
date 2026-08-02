@@ -6075,6 +6075,19 @@ test('fixture matrix maps visual parity external request isolation', () => {
   assert.equal(optionsFromEnv({ SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS: '1' }).visualParityBlockExternalRequests, true);
 });
 
+test('fixture matrix forwards visual parity external request isolation to recipes', async () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-external-requests-'));
+  await runFixtureMatrix({
+    fixtureRoot,
+    outputDirectory,
+    staticSiteImporterPath: packageRoot,
+    visualParityBlockExternalRequests: false,
+  });
+  const recipe = JSON.parse(readFileSync(path.join(outputDirectory, 'wp-codebox-static-site-fixture-matrix-recipe.json'), 'utf8'));
+  const visualStep = recipe.workflow.steps.find((step) => step.command === 'wordpress.visual-compare');
+  assert.equal(visualCompareMatrixComparison(visualStep).blockExternalRequests, false);
+});
+
 test('fixture matrix operator plan exposes and forwards visual attribution settings', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-visual-attribution-plan-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
@@ -6200,12 +6213,18 @@ test('staged visual source uses the generated self-contained font stylesheet', (
   const fixtureDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-parity-font-source-'));
   const sourceDirectory = path.join(fixtureDirectory, 'fixture');
   mkdirSync(sourceDirectory, { recursive: true });
-  writeFileSync(path.join(sourceDirectory, 'index.html'), '<html><head><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Example" rel="stylesheet"></head><body>Example</body></html>');
+  writeFileSync(path.join(sourceDirectory, 'index.html'), '<html><head><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Example" rel="stylesheet"><style>@import url("https://fonts.googleapis.com/css2?family=Inline");</style><link rel="stylesheet" href="style.css"></head><body>Example</body></html>');
+  writeFileSync(path.join(sourceDirectory, 'style.css'), '@import url("https://fonts.googleapis.com/css2?family=External:wght@400;700&display=swap");\nbody { font-family: External, sans-serif; }');
 
   stageFixtureSource({ id: 'Font Fixture', directory: sourceDirectory }, fixtureDirectory);
   const html = readFileSync(path.join(fixtureDirectory, 'source', 'index.html'), 'utf8');
+  const css = readFileSync(path.join(fixtureDirectory, 'source', 'style.css'), 'utf8');
   assert.match(html, /href="\/wp-content\/themes\/font-fixture\/assets\/css\/embedded-fonts\.css"/);
   assert.doesNotMatch(html, /href="https:\/\/fonts\.googleapis\.com\/css2/);
+  assert.match(html, /@import url\("\/wp-content\/themes\/font-fixture\/assets\/css\/embedded-fonts\.css"\)/);
+  assert.doesNotMatch(html, /https:\/\/fonts\.googleapis\.com\/(?:css|css2)\?/);
+  assert.match(css, /@import url\("\/wp-content\/themes\/font-fixture\/assets\/css\/embedded-fonts\.css"\)/);
+  assert.doesNotMatch(css, /https:\/\/fonts\.googleapis\.com\/(?:css|css2)\?/);
   assert.match(html, /fetch\("\/wp-content\/themes\/font-fixture\/assets\/css\/embedded-fonts\.css"\)/);
 });
 
