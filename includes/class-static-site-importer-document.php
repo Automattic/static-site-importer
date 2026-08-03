@@ -681,8 +681,8 @@ class Static_Site_Importer_Document {
 	/**
 	 * Describe the extracted header selection for the import report.
 	 *
-	 * @param ?DOMElement $header Selected header element.
-	 * @param ?DOMElement $nav    Selected nav element.
+	 * @param ?DOMElement  $header Selected header element.
+	 * @param ?DOMElement  $nav    Selected nav element.
 	 * @param DOMElement[] $effective_children Ordered list of effective siblings.
 	 * @return array<string,mixed>
 	 */

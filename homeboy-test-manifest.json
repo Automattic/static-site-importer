@@ -18,6 +18,7 @@
     "tests/smoke-inline-svg-materialization.php": { "environment": "standalone-php" },
     "tests/smoke-materialized-block-content-validation.php": { "environment": "standalone-php" },
     "tests/smoke-playground-import-primitive.php": { "environment": "standalone-php" },
+    "tests/smoke-plugin-materializer-lifecycle.php": { "environment": "standalone-php" },
     "tests/smoke-product-handoff-contract.php": { "environment": "standalone-php" },
     "tests/smoke-product-materializer.php": { "environment": "standalone-php" },
     "tests/smoke-provider-presentation.php": { "environment": "standalone-php" },
@@ -30,6 +31,10 @@
     "tests/smoke-visual-repair-css.php": { "environment": "standalone-php" },
     "tests/smoke-webfont-producer-consumer.php": { "environment": "standalone-php" },
     "tests/smoke-website-artifact-import-input.php": { "environment": "standalone-php" },
-    "tests/smoke-wordpress-site-plan-materializer.php": { "environment": "standalone-php" }
+    "tests/smoke-wordpress-site-plan-materializer.php": { "environment": "standalone-php" },
+    "tests/smoke-artifact-run-primitives.php": { "environment": "standalone-php" },
+    "tests/smoke-figma-workspace-lifecycle.php": { "environment": "standalone-php" },
+    "tests/smoke-url-batch-import.php": { "environment": "standalone-php" },
+    "tests/smoke-url-site-collector.php": { "environment": "standalone-php" }
   }
 }

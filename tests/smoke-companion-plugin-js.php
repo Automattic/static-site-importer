@@ -100,6 +100,25 @@ $payload     = array(
 			'source_path' => 'index.html',
 		),
 	),
+	'runtime_effects' => array(
+		'units' => array(
+			array(
+				'id' => 'effect_carousel',
+				'status' => 'independently_suppressible',
+				'source' => array( 'hash' => hash( 'sha256', 'document.querySelector(".carousel").classList.add("active");' ) ),
+			),
+			array( 'id' => 'effect_shared', 'status' => 'shared_or_unsplittable', 'source' => array( 'hash' => hash( 'sha256', 'shared' ) ) ),
+		),
+		'retained_modules' => array(
+			array(
+				'unit_id' => 'effect_carousel',
+				'content' => 'document.querySelector(".carousel").classList.add("active");',
+				'block' => 'ssi-example-site/custom-hero',
+				'selector' => '.carousel',
+				'source_path' => 'js/site.js',
+			),
+		),
+	),
 );
 
 // 1. Companion plugin consumes preserved_js: scoped enqueue + island file +
@@ -108,7 +127,7 @@ $descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $payload );
 $assert( is_array( $descriptor ), 'scaffold-returns-descriptor', is_array( $descriptor ) ? '' : 'WP_Error returned' );
 
 if ( is_array( $descriptor ) ) {
-	$assert( array( 'hero-island' ) === ( $descriptor['island_handles'] ?? null ), 'descriptor-exposes-island-handles' );
+	$assert( array( 'hero-island', 'runtime-unit-effect-carousel' ) === ( $descriptor['island_handles'] ?? null ), 'descriptor-exposes-island-handles' );
 	$assert( 'script:nth-of-type(1)' === ( $descriptor['runtime_scripts'][0]['selector'] ?? '' ), 'descriptor-exposes-runtime-selector' );
 
 	$files = $descriptor['files'];
@@ -122,9 +141,14 @@ if ( is_array( $descriptor ) ) {
 		static fn ( string $content, string $path ): bool => str_contains( $path, '/islands/' ) && str_ends_with( $path, '.js' ),
 		ARRAY_FILTER_USE_BOTH
 	);
-	$assert( 1 === count( $island_files ), 'companion-emits-one-island-js-file' );
+	$assert( 2 === count( $island_files ), 'companion-emits-retained-island-js-files' );
 	$assert( in_array( $island_body, array_values( $island_files ), true ), 'companion-island-file-carries-js-body' );
+	$assert( 'effect_carousel' === ( $descriptor['runtime_scripts'][1]['superseded_unit'] ?? '' ), 'descriptor-records-superseded-runtime-unit' );
 }
+
+$unsafe_effect = $payload;
+$unsafe_effect['runtime_effects']['retained_modules'][0]['unit_id'] = 'effect_shared';
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $unsafe_effect ) ), 'shared-runtime-unit-fails-closed' );
 
 $script_only = $payload;
 $script_only['blocks'] = array();
@@ -148,7 +172,7 @@ if ( ! function_exists( 'is_plugin_active' ) ) {
 
 $dependency = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $payload );
 $row        = Static_Site_Importer_Entity_Materializer_Registry::companion_dependency_row( $dependency, false );
-$assert( array( 'hero-island' ) === ( $row['island_handles'] ?? null ), 'dependency-row-carries-island-handles' );
+$assert( array( 'hero-island', 'runtime-unit-effect-carousel' ) === ( $row['island_handles'] ?? null ), 'dependency-row-carries-island-handles' );
 
 // Active companion: present diagnostic flags JS as runtime-carried theme-independently.
 $GLOBALS['ssi_companion_js_active'] = true;
@@ -165,7 +189,7 @@ $report['diagnostics'][] = array(
 Static_Site_Importer_Report_Diagnostics::record_companion_plugin_dependency( $report, $dependency, false );
 $present = array_values( array_filter( $report['diagnostics'] ?? array(), static fn ( array $d ): bool => 'companion_plugin_present' === ( $d['code'] ?? '' ) ) );
 $assert( 1 === count( $present ), 'present-diagnostic-emitted-when-active' );
-$assert( array( 'hero-island' ) === ( $present[0]['island_handles'] ?? null ), 'present-diagnostic-carries-island-handles' );
+$assert( array( 'hero-island', 'runtime-unit-effect-carousel' ) === ( $present[0]['island_handles'] ?? null ), 'present-diagnostic-carries-island-handles' );
 $assert( true === ( $present[0]['runtime_carried'] ?? false ), 'present-diagnostic-flags-runtime-carried' );
 $materialized = array_values( array_filter( $report['diagnostics'] ?? array(), static fn ( array $d ): bool => 'runtime_script_materialized' === ( $d['code'] ?? '' ) ) );
 $assert( 1 === count( $materialized ), 'companion-materialization-resolves-script-fallback' );
@@ -183,7 +207,7 @@ Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $report, array
 $unresolved = array_filter( $report['diagnostics'], static fn ( array $d ): bool => 'html_script_fallback' === ( $d['code'] ?? '' ) );
 $assert( empty( $unresolved ), 'finalization-reconciles-late-script-fallback-rows' );
 $stored = $report['companion_plugins']['dependencies']['ssi-example-site']['island_handles'] ?? null;
-$assert( array( 'hero-island' ) === $stored, 'report-stores-companion-island-handles' );
+$assert( array( 'hero-island', 'runtime-unit-effect-carousel' ) === $stored, 'report-stores-companion-island-handles' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );

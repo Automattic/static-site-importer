@@ -12,6 +12,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_URL_Fetcher' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-url-fetcher.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_URL_Site_Collector' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-url-site-collector.php';
+}
+if ( ! class_exists( 'Static_Site_Importer_Source_Normalizer' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-source-normalizer.php';
+}
+if ( ! class_exists( 'Static_Site_Importer_URL_Batch_Import' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-url-batch-import.php';
+}
 
 if ( ! class_exists( 'Static_Site_Importer_Website_Artifact_Import_Input' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-website-artifact-import-input.php';
@@ -29,9 +38,28 @@ class Static_Site_Importer_URL_Import_Runtime {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public static function import_url( array $input ) {
-		$runtime = self::website_artifact_from_url( $input );
+		$url = isset( $input['url'] ) ? Static_Site_Importer_URL_Fetcher::normalize_url( (string) $input['url'] ) : '';
+		if ( '' === $url ) {
+			return new WP_Error( 'static_site_importer_missing_url', 'The url input is required.' );
+		}
+		$input['url']    = $url;
+		$request         = self::provider_request( $url, $input );
+		$provider_output = self::provider_output( $request );
+		if ( is_wp_error( $provider_output ) ) {
+			return $provider_output;
+		}
+		if ( is_array( $provider_output ) ) {
+			$runtime = $provider_output;
+		} elseif ( ! empty( $request['provider_args']['collect_site'] ) && array_key_exists( 'batch_pages', $request['provider_args'] ) ) {
+			return Static_Site_Importer_URL_Batch_Import::import( $request, $input );
+		} else {
+			$runtime = self::fetch_public_url_provider( $request );
+		}
 		if ( is_wp_error( $runtime ) ) {
 			return $runtime;
+		}
+		if ( empty( $runtime['artifact'] ) || ! is_array( $runtime['artifact'] ) ) {
+			return new WP_Error( 'static_site_importer_url_provider_missing_artifact', 'The URL import provider did not return a website artifact.' );
 		}
 
 		$args = self::import_args( $input, $runtime );
@@ -79,7 +107,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 			'url'             => $url,
 			'provider'        => isset( $input['provider'] ) ? (string) $input['provider'] : '',
 			'provider_args'   => isset( $input['provider_args'] ) && is_array( $input['provider_args'] ) ? $input['provider_args'] : array(),
-			'work_dir'        => isset( $input['work_dir'] ) ? (string) $input['work_dir'] : self::default_work_dir(),
+			'work_dir'        => ! empty( $input['work_dir'] ) ? (string) $input['work_dir'] : self::default_work_dir(),
 			'source_metadata' => isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array(),
 		);
 	}
@@ -94,6 +122,15 @@ class Static_Site_Importer_URL_Import_Runtime {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	private static function resolve_provider( array $request ) {
+		$provider_output = self::provider_output( $request );
+		if ( is_wp_error( $provider_output ) || is_array( $provider_output ) ) {
+			return $provider_output;
+		}
+		return self::fetch_public_url_provider( $request );
+	}
+
+	/** @return null|array<string,mixed>|WP_Error */
+	private static function provider_output( array $request ) {
 		/**
 		 * Filters URL import provider output before the built-in public URL fetcher runs.
 		 *
@@ -104,15 +141,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 		 * @param null|array<string,mixed>|WP_Error $provider_output Provider output.
 		 * @param array<string,mixed>               $request         Provider request.
 		 */
-		$provider_output = apply_filters( 'static_site_importer_url_import_provider', null, $request );
-		if ( is_wp_error( $provider_output ) ) {
-			return $provider_output;
-		}
-		if ( is_array( $provider_output ) ) {
-			return $provider_output;
-		}
-
-		return self::fetch_public_url_provider( $request );
+		return apply_filters( 'static_site_importer_url_import_provider', null, $request );
 	}
 
 	/**
@@ -122,10 +151,16 @@ class Static_Site_Importer_URL_Import_Runtime {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	private static function fetch_public_url_provider( array $request ) {
+		$provider_args = isset( $request['provider_args'] ) && is_array( $request['provider_args'] ) ? $request['provider_args'] : array();
+		if ( ! empty( $provider_args['collect_site'] ) ) {
+			$provider_args['require_complete_collection'] = true;
+			return Static_Site_Importer_URL_Site_Collector::collect( (string) $request['url'], $provider_args );
+		}
+
 		$fetch = Static_Site_Importer_URL_Fetcher::fetch_to_work_dir(
 			(string) $request['url'],
 			(string) $request['work_dir'],
-			isset( $request['provider_args'] ) && is_array( $request['provider_args'] ) ? $request['provider_args'] : array()
+			$provider_args
 		);
 		if ( is_wp_error( $fetch ) ) {
 			return $fetch;
@@ -135,6 +170,11 @@ class Static_Site_Importer_URL_Import_Runtime {
 		if ( false === $html ) {
 			return new WP_Error( 'static_site_importer_url_artifact_read_failed', 'Failed to read fetched URL HTML.' );
 		}
+		$normalized                    = Static_Site_Importer_Source_Normalizer::normalize_html( $html, (string) $request['url'], $provider_args );
+		$html                          = $normalized['html'];
+		$metadata                      = $fetch['metadata'];
+		$metadata['source_exclusions'] = $normalized['exclusions'];
+		$metadata['diagnostics']       = array_merge( is_array( $metadata['diagnostics'] ?? null ) ? $metadata['diagnostics'] : array(), $normalized['diagnostics'] );
 
 		return array(
 			'provider'        => 'public-url-fetcher',
@@ -147,7 +187,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 					),
 				),
 			),
-			'source_metadata' => $fetch['metadata'],
+			'source_metadata' => $metadata,
 		);
 	}
 
@@ -168,6 +208,11 @@ class Static_Site_Importer_URL_Import_Runtime {
 		$input['source_metadata'] = $source_metadata;
 
 		return Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
+	}
+
+	/** @return array<string,mixed> */
+	public static function batch_import_args( array $input, array $runtime ): array {
+		return self::import_args( $input, $runtime );
 	}
 
 	/**

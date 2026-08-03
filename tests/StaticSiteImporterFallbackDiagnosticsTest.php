@@ -567,6 +567,29 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Dependency failures retain bounded provider preparation evidence.
+	 */
+	public function test_validation_error_result_preserves_dependency_report(): void {
+		$error = new WP_Error(
+			'static_site_importer_required_runtime_dependency_missing',
+			'SSI could not prepare a required runtime dependency.',
+			array(
+				'dependency_reports' => array(
+					'form' => array(
+						'jetpack' => array( 'status' => 'failed', 'error' => array( 'code' => 'provider_unavailable' ) ),
+					),
+				),
+			)
+		);
+
+		$result = Static_Site_Importer_Validation_Runtime::error_result_from_wp_error( $error );
+		$observed = $result['diagnostics'][0]['observed_output'] ?? '';
+
+		$this->assertStringContainsString( 'provider_unavailable', $observed );
+		$this->assertLessThanOrEqual( 4000, strlen( $observed ) );
+	}
+
+	/**
 	 * Materialization failures retain their specific receipt diagnostics.
 	 */
 	public function test_validation_error_result_preserves_materialization_receipt(): void {
@@ -616,23 +639,15 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 	 * Generated core/html findings identify the generated document and block path.
 	 */
 	public function test_generated_core_html_diagnostic_includes_actionable_routing_metadata(): void {
-		$reflection = new ReflectionClass( Static_Site_Importer_Theme_Generator::class );
-
-		$report_property = $reflection->getProperty( 'conversion_report' );
-		$report_property->setAccessible( true );
-		$report_property->setValue( null, Static_Site_Importer_Report_Diagnostics::new_conversion_report( '/tmp/source/index.html' ) );
-
-		$analyze = $reflection->getMethod( 'analyze_generated_theme_block_documents' );
-		$analyze->setAccessible( true );
-		$analyze->invoke(
-			null,
+		$report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( '/tmp/source/index.html' );
+		Static_Site_Importer_Block_Document_Reporter::analyze_generated_theme_block_documents(
 			array(
 				'/tmp/generated/templates/front-page.html' => '<!-- wp:html --><aside class="widget-card"><iframe src="https://example.com/widget"></iframe></aside><!-- /wp:html -->',
 			),
-			'/tmp/generated'
+			'/tmp/generated',
+			$report
 		);
 
-		$report      = $report_property->getValue();
 		$this->assertSame( 'static-site-importer/import-report/v1', $report['schema'] ?? '' );
 		$diagnostics = array_values(
 			array_filter(
@@ -656,23 +671,15 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 	 * Generated freeform findings normalize to repair-loop diagnostic fields.
 	 */
 	public function test_generated_freeform_diagnostic_includes_machine_actionable_shape(): void {
-		$reflection = new ReflectionClass( Static_Site_Importer_Theme_Generator::class );
-
-		$report_property = $reflection->getProperty( 'conversion_report' );
-		$report_property->setAccessible( true );
-		$report_property->setValue( null, Static_Site_Importer_Report_Diagnostics::new_conversion_report( '/tmp/source/index.html' ) );
-
-		$analyze = $reflection->getMethod( 'analyze_generated_theme_block_documents' );
-		$analyze->setAccessible( true );
-		$analyze->invoke(
-			null,
+		$report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( '/tmp/source/index.html' );
+		Static_Site_Importer_Block_Document_Reporter::analyze_generated_theme_block_documents(
 			array(
 				'/tmp/generated/templates/page.html' => '<!-- wp:freeform --><div class="unsupported-widget"><marquee>Sale</marquee></div><!-- /wp:freeform -->',
 			),
-			'/tmp/generated'
+			'/tmp/generated',
+			$report
 		);
 
-		$report      = $report_property->getValue();
 		Static_Site_Importer_Report_Diagnostics::finalize_report( $report, array() );
 		$diagnostics = array_values(
 			array_filter(

@@ -26,7 +26,7 @@ wp static-site-importer materialize-wordpress-site-plan --plan=/path/to/plan.jso
 
 Static Site Importer is the WordPress materialization layer for static website inputs. It accepts two related shapes:
 
-- Static source imports: an HTML entry file, pasted HTML document, public HTML URL, direct HTML upload, or ZIP source tree.
+- Static source imports: an HTML entry file, pasted HTML document, public HTML URL, bounded public static-site collection, direct HTML upload, or ZIP source tree.
 - Generated website artifacts: a `blocks-engine/php-transformer/site-artifact/v1` bundle emitted by website generation or browser runtimes.
 
 The conversion stack is split by responsibility:
@@ -157,9 +157,23 @@ The blueprint installs and activates the packaged Static Site Importer release, 
 
 The optional extension manifest, side module, and safe launch blueprint are published to the repository's GitHub Pages site. Each release gets immutable versioned assets. The safe `playground/latest/blueprint.json` alias advances and is browser-verified independently; optional extension aliases advance only after their own runtime proof passes. This keeps an experimental side module from taking down the canonical demo while GitHub Pages supplies the CORS headers required by Playground. The extension is produced from pinned `php-ext-zstd` and vendored `libzstd` source by the release workflow; no unpublished branch, localhost URL, PECL installation, or host `zstd` executable is used.
 
+### Direct Playground Previews
+
+`POST /wp-json/static-site-importer/v1/imports` builds a website artifact from `source` (`url`, `html`, `files`, `archive`, or `artifact`). It opens a disposable Playground by default; set `apply_to_current_site: true` to import into the installed WordPress site instead.
+
+The default response has `mode: "playground"`, `provider: "static-site-importer/direct-playground-blueprint"`, and `preview.url`. `preview.url` and `preview.playground.blueprint_url` are direct `https://playground.wordpress.net/#...` URLs; `preview.playground.preview_url` is `/` and `preview.playground.ref` identifies the generated blueprint.
+
+PHP consumers can build the same blueprint with `static_site_importer_playground_import_steps()` or `static_site_importer_playground_import_blueprint()`, and create a direct preview response with `static_site_importer_build_playground_preview()`. For normalized website artifacts, call `static_site_importer_import_website_artifact_with_disposition()`; consumers can claim that flow through the `static_site_importer_import_disposition` filter, or return `null` to use the built-in non-destructive Playground preview.
+
 URL intake rules:
 
-- Fetches one URL only; this is not a crawler and does not execute JavaScript.
+- Fetches one URL by default and does not execute JavaScript.
+- `provider_args.collect_site=true` or CLI `--collect-site` enables bounded collection. It reads the origin's `/sitemap.xml`, follows same-origin HTML links, collects directly referenced page assets and nested CSS assets, and emits one canonical website artifact.
+- Collection defaults to 20 pages, 200 assets, 50 MiB total, 5 MiB per response, and 100 ms between requests. Limits can be configured with `max_pages`, `max_assets`, `max_total_bytes`, `max_bytes`, and `request_delay_ms` up to the collector's hard caps.
+- Directly referenced scripts are collected by default so conversion starts from the complete source behavior. Set `include_scripts=false` or CLI `--skip-scripts` only when the caller has verified that script behavior is intentionally excluded or replaced.
+- Registered source-exclusion rules remove non-authored platform chrome before asset discovery and compilation. Each removal records selector, provider, reason, and before/after hashes under `source_metadata.collection.source_exclusions`; set `exclude_platform_chrome=false` to preserve the raw source.
+- Extensions can add or replace source-exclusion rules with the `static_site_importer_source_exclusion_rules` filter. Rules use stable ID selectors and reason-coded categories so removals remain explicit and auditable.
+- External assets must be directly referenced by fetched HTML or CSS and pass the same public-IP and redirect validation as page URLs.
 - Only `http` and `https` URLs are accepted.
 - Localhost, loopback, link-local, private, and otherwise reserved IP targets are rejected before connecting.
 - Redirect targets are revalidated with the same policy and capped.
@@ -256,6 +270,14 @@ wp static-site-importer import-url https://example.com/ \
   --keep-source \
   --report=report.json
 
+wp static-site-importer import-url https://example.com/ \
+  --collect-site \
+  --max-pages=20 \
+  --max-assets=100 \
+  --slug=example-site \
+  --activate \
+  --overwrite
+
 # Commerce-bearing import on a host without WooCommerce: skip seeding and continue.
 wp static-site-importer import-theme /path/to/store/index.html \
   --slug=store-no-woo \
@@ -326,35 +348,19 @@ The handoff path is:
 
 Blocks Engine does not know about Codebox. Products that need sandbox validation request it after SSI materializes WordPress.
 
-### Codebox validation product path
+### Current-runtime validation
 
-`static-site-importer/validate-in-codebox` is the SSI product path for validating an import inside a disposable WP Codebox runtime. It accepts either a Blocks Engine website artifact (`artifact`) or durable refs to generated import output (`generated_theme_ref` / `theme_archive_ref`) and builds a `static-site-importer/codebox-validation-request/v1` envelope.
+`static-site-importer/validate-artifact` validates a Blocks Engine website artifact in the current WordPress runtime and returns `static-site-importer/import-validation-result/v1` importer diagnostics. The ability accepts `artifact` plus normal import options; it is exposed through the Abilities REST API when that API is available.
 
-The runtime provider hook is `static_site_importer_codebox_validation_result`. WP Codebox/Homeboy integrations should import the supplied artifact or generated theme output in a disposable runtime, run SSI import validation, run generated-theme block validation, collect browser/render evidence, and return `static-site-importer/codebox-validation-result/v1` with reviewer-facing artifact refs.
-
-Required artifact metadata lives under `artifacts` using `static-site-importer/codebox-validation-artifacts/v1`:
-
-- `generated_theme` or `theme_archive`
-- `import_report`
-- `block_validation_result`
-- `browser_render_evidence`
-- `screenshots[]` when available
-- `diffs[]` when available
-
-Reviewer-facing artifact fields should use durable refs or URLs. Host-local paths and `localhost` URLs are stripped from artifact refs; local paths may appear only under `operator_notes` for the machine operator.
-
-SSI-owned import reports use `static-site-importer/artifact-diagnostics/v1` for fallback artifact diagnostics. WP Codebox providers that expose a public Codebox diagnostics contract should map SSI diagnostics at the Codebox boundary instead of requiring SSI output to emit `wp-codebox/*` schemas.
-
-CLI entrypoint:
+The matching CLI command reads an artifact JSON object, imports it with activation, overwrite, and dependency materialization enabled by default, and writes the result to stdout or `--output`:
 
 ```bash
-wp static-site-importer validate-in-codebox \
+wp static-site-importer validate-artifact \
   --artifact=/path/to/website-artifact.json \
   --slug=example-import \
-  --name="Example Import"
+  --name="Example Import" \
+  --output=/path/to/validation-result.json
 ```
-
-Current upstream gap: SSI defines the product contract and dispatch hook, but a WP Codebox/Homeboy provider still needs to register `static_site_importer_codebox_validation_result` to execute the disposable runtime and return durable screenshot/diff/browser evidence refs. Until that provider is present, the ability returns a structured `blocked` result documenting the missing provider shape instead of faking validation evidence.
 
 ## Validation
 
@@ -388,7 +394,7 @@ npm run test:validation -- --json
 
 ### Test Inventory
 
-`test-manifest.json` is the canonical repository-wide test inventory. It classifies every executable test as standalone PHP, WordPress runtime, Node, browser/WP Codebox, or operator-only acceptance. `npm test` runs the fast standalone PHP and Node projection; it reports the environment-heavy lanes as skipped. `npm run test:all` is the complete CI/reviewer command and runs configured runtime lanes while reporting operator-only acceptance commands explicitly. `npm run test:inventory` verifies that every executable test is declared once and that `homeboy-test-manifest.json` remains the deterministic standalone-PHP projection used by Homeboy.
+`test-manifest.json` is the canonical repository-wide test inventory. It classifies every executable test as standalone PHP, WordPress runtime, Node, browser/WP Codebox, or operator-only acceptance. Explicit `command` values are arrays of executable and argument strings. `npm test` runs the fast standalone PHP and Node projection; it reports the environment-heavy lanes as skipped. `npm run test:all` is the complete CI/reviewer command and runs configured runtime lanes while reporting operator-only acceptance commands explicitly. `npm run test:inventory` verifies that every executable test is declared once and that `homeboy-test-manifest.json` remains the deterministic standalone-PHP projection used by Homeboy.
 
 ### PHP Smokes
 
@@ -456,10 +462,10 @@ This repo is Homeboy-managed:
 ## Current Boundaries And Limitations
 
 - The importer is intentionally static-site/artifact-to-block-theme glue. Blocks Engine PHP transformer owns generic artifact compilation, format conversion, and conversion reports; SSI owns WordPress uploads, import workflows, media, route rewriting, page/product materialization, and theme assembly.
-- The importer currently discovers flat sibling `*.html` files beside the selected entry file and recursive Markdown content documents; it does not crawl arbitrary nested HTML routes.
+- Local source imports discover flat sibling `*.html` files beside the selected entry file and recursive Markdown content documents. Bounded URL collection discovers sitemap and same-origin linked HTML routes but does not execute JavaScript or perform platform-specific API extraction.
 - Admin imports accept pasted HTML, one public URL, a direct `.html` / `.htm` file, or a ZIP with a root `index.html` or exactly one nested `index.html`; CLI imports take a direct HTML entry path or one public URL.
 - MDX, Astro, Eleventy, Hugo, and other runtime/build orchestration is out of scope. Build those projects to static HTML first, or provide plain `.md` / `.markdown` source content alongside the HTML shell.
-- Linked local stylesheets and inline styles are copied into `style.css`; inline scripts are copied into `assets/site.js`. Other asset copying is not a general-purpose crawler yet.
+- Linked local stylesheets and inline styles are copied into `style.css`; inline scripts are copied into `assets/site.js`. Bounded URL collection packages directly referenced HTML/CSS assets, while local source intake does not independently crawl missing assets.
 - Navigation persistence is limited to supported header/footer shapes that can be converted into deterministic `wp_navigation` entities without guessing.
 - External live triage has exercised additional static sites; committed first-party fixtures include `tests/fixtures/wordpress-is-dead/` and `tests/fixtures/mixed-source-site/`.
 

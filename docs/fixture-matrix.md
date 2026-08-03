@@ -584,6 +584,11 @@ comparison as `maxExplanationElements`, `maxExplanationCandidates`, and
 `explainSelectors`. Leaving them unset preserves WP Codebox's defaults and the
 existing recipe JSON.
 
+For deterministic animated-image capture, pass `--animated-media first-frame` or
+set `SSI_FIXTURE_MATRIX_ANIMATED_MEDIA=first-frame`. The supported policies are
+`allow` (the WP Codebox default) and `first-frame`; the selected effective policy
+is recorded as `metadata.animated_media` in `cli-run.json`.
+
 Source/candidate wiring (verified by real local recipe-runs): the
 `wordpress.visual-compare` step renders and pixel-diffs locally in WP Codebox
 against the real two pages. `writeFixtureMatrixArtifacts` stages each fixture's
@@ -605,15 +610,52 @@ full-page, but SSI previously overrode it with `full-page=false`, which limited
 the evidence to the requested viewport and missed below-the-fold regressions. Use
 `visualParityFullPage: false` only for an explicitly bounded exploratory run.
 
-Known wp-codebox gap: `wordpress.visual-compare` supports wait strategy, fixed
-duration, viewport, full-page, threshold, and artifact namespacing through
-`matrix-json`, but it does not currently expose a first-class reduced-motion /
-animation-freeze / injected-style option, and the `blockExternalRequests` field
-SSI carries is not consumed by wp-codebox's visual-compare matrix adapter. SSI's
-deterministic CSS setup is the current harness-level contract until wp-codebox
-offers native capture-freeze controls.
+WP Codebox supports `animatedMedia` through `matrix-json`; SSI forwards the
+optional animated-media policy to every front and secondary surface comparison.
 
 ## Running the Matrix
+
+## Runtime Media Presentation Evidence
+
+`SSI_FIXTURE_MATRIX_RUNTIME_PRESENTATION_EVIDENCE=1` (or
+`--runtime-presentation-evidence true`) adds opt-in `wordpress.browser-probe`
+steps and one deterministic merge step before `static-site-importer validate-artifact`. The probe waits for explicit
+`networkidle` readiness and requests only the Blocks Engine v1 media observation
+shape: Chromium/version, viewport/DPR, source path and stable selector, normalized
+asset hash, intrinsic/rendered dimensions, transform matrix/origin, and nearest
+clipping bounds. Default static intake does not add this step or alter artifacts.
+
+Replay for mrfoxtalbot:
+
+```sh
+SSI_FIXTURE_MATRIX_RUNTIME_PRESENTATION_EVIDENCE=1 \
+node bench/static-site-fixture-matrix.bench.mjs --run \
+  --fixture-ids mrfoxtalbot --fixture-root <fixtures> \
+  --static-site-importer-path /Users/chubes/Developer/static-site-importer@feat-796-runtime-media-evidence
+```
+
+For fixture `<id>`, every selected surface is probed before the single merge:
+the front page uses
+`output-artifact=<id>/runtime-presentation-evidence.json`, and each secondary
+surface uses `output-artifact=<id>/runtime-presentation-evidence--<surface-id>.json`.
+Playground recipes declare the matching fixture- and surface-scoped
+`output-runtime-path=/wordpress/.../<id>/runtime-presentation-evidence[--<surface-id>].json`.
+Each observation records that surface's HTML entry path, such as `team.html`,
+as `element.source_path`.
+
+The merge confines every evidence path to the fixture directory under the
+declared runtime artifact root and accepts only typed Blocks Engine envelopes.
+It requires identical browser, viewport, and lifecycle provenance across every
+envelope; rejects duplicate `(source_path, selector)` observations; and fails
+explicitly if the aggregate exceeds Blocks Engine's 100-observation limit. It
+then atomically writes a sibling
+`<id>/artifact-with-runtime-presentation-evidence.json` containing the
+`runtime_presentation_evidence` field. Only then does `validate-artifact`
+compile that derived artifact. A missing output, malformed envelope,
+provenance mismatch, duplicate observation, aggregate limit, unavailable root,
+or boundary violation emits a structured
+`runtime_presentation_evidence_unavailable` diagnostic and fails before
+compilation rather than compiling without the requested input.
 
 The wrapper has three execution modes. Use `--dry-run` with any mode to inspect
 the composed Homeboy commands before running the matrix.
