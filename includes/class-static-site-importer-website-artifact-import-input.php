@@ -25,6 +25,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		),
 		'activate'                             => array( 'type' => 'boolean' ),
 		'overwrite'                            => array( 'type' => 'boolean' ),
+		'disable_smilies'                      => array( 'type' => 'boolean' ),
 		'fail_on_quality'                      => array( 'type' => 'boolean' ),
 		'allow_missing_woocommerce'            => array( 'type' => 'boolean' ),
 		'allow_missing_jetpack'                => array( 'type' => 'boolean' ),
@@ -61,6 +62,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 				'stale_page_action'                    => '',
 				'activate'                             => false,
 				'overwrite'                            => false,
+				'disable_smilies'                      => true,
 				'fail_on_quality'                      => false,
 				'allow_missing_woocommerce'            => false,
 				'allow_missing_jetpack'                => false,
@@ -89,7 +91,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		foreach ( array( 'slug', 'name', 'site_title', 'stale_page_action', 'report', 'asset_materialization_policy' ) as $field ) {
 			$values[ $field ] = is_scalar( $values[ $field ] ) ? (string) $values[ $field ] : '';
 		}
-		foreach ( array( 'activate', 'overwrite', 'fail_on_quality', 'allow_missing_woocommerce', 'allow_missing_jetpack', 'materialize_dependencies', 'require_proven_dynamic_client_assets', 'seed_entities', 'write_theme_report_artifacts' ) as $field ) {
+		foreach ( array( 'activate', 'overwrite', 'disable_smilies', 'fail_on_quality', 'allow_missing_woocommerce', 'allow_missing_jetpack', 'materialize_dependencies', 'require_proven_dynamic_client_assets', 'seed_entities', 'write_theme_report_artifacts' ) as $field ) {
 			$values[ $field ] = (bool) $values[ $field ];
 		}
 		foreach ( array( 'products_manifest', 'commerce_context', 'asset_map', 'compiler_options', 'source_metadata', 'validation_artifacts' ) as $field ) {
