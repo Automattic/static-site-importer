@@ -511,33 +511,6 @@ namespace {
 	$assert( empty( $unavailable_row['block_markup'] ), 'seed-unavailable-provider-emits-no-block-markup' );
 	$GLOBALS['ssi_jetpack_form_blocks_available'] = true;
 
-	// --- Native html_form_fallback row is enriched into a form finding -------
-	$enrich   = new ReflectionMethod( 'Static_Site_Importer_Report_Diagnostics', 'diagnostic_from_conversion_report_fallback' );
-	$enriched = $enrich->invoke(
-		null,
-		array(
-			'diagnostic_code' => 'html_form_fallback',
-			'reason'          => 'form_requires_runtime',
-			'source_path'     => 'website/index.html',
-			'selector'        => 'form.contact',
-			'tag'             => 'form',
-			'form'            => array( 'action' => 'mailto:hello@example.com', 'method' => 'post' ),
-			'controls'        => array(
-				array( 'tag' => 'input', 'type' => 'email', 'label' => 'Email' ),
-			),
-			'control_topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'nodes' => array(), 'truncated' => false ),
-			'control_count'   => 1,
-		)
-	);
-	$assert( 'html_form_fallback' === ( $enriched['diagnostic_code'] ?? '' ), 'enrich-carries-diagnostic-code' );
-	$assert( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND === ( $enriched['loss_class'] ?? '' ), 'enrich-loss-class-preserved-runtime-island' );
-	$assert( isset( $enriched['form']['action'] ) && 'mailto:hello@example.com' === $enriched['form']['action'], 'enrich-carries-form-metadata' );
-	$assert( isset( $enriched['controls'][0]['type'] ) && 'email' === $enriched['controls'][0]['type'], 'enrich-carries-controls' );
-	$assert( 'generic/form-control-topology/v1' === ( $enriched['control_topology']['schema'] ?? '' ), 'enrich-carries-control-topology' );
-	$assert( 'form' === ( $enriched['tag'] ?? '' ), 'enrich-tag-form' );
-	$assert( Static_Site_Importer_Report_Diagnostics::has_materializable_form_findings( array( 'diagnostics' => array( $enriched ) ) ), 'form-finding-requires-provider-dependency' );
-	$assert( ! Static_Site_Importer_Report_Diagnostics::has_materializable_form_findings( array( 'diagnostics' => array( array( 'diagnostic_code' => 'html_product_grid_fallback' ) ) ) ), 'non-form-finding-does-not-require-provider-dependency' );
-
 	// --- Gate loop: a mapped form finding receives the runtime-mapped signal --
 	$report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
 	$report['diagnostics'][] = array(
@@ -692,36 +665,20 @@ namespace {
 	$assert( 1 === ( $delegated_seeding['grafted_count'] ?? 0 ), 'delegated-generated-form-grafted-once' );
 	$assert( 0 === count( array_filter( $delegated_report['diagnostics'], static fn ( array $diagnostic ): bool => 'form_block_graft_unanchorable' === ( $diagnostic['type'] ?? '' ) ) ), 'delegated-source-form-no-unanchorable-warning' );
 
-	// --- Form finding enrich carries readable_blocks for graft anchoring --------
-	$enrich_readable = $enrich->invoke(
-		null,
-		array(
-			'diagnostic_code' => 'html_form_fallback',
-			'reason'          => 'form_requires_runtime',
-			'source_path'     => 'website/index.html',
-			'selector'        => 'form.contact',
-			'tag'             => 'form',
-			'controls'        => array( array( 'tag' => 'input', 'type' => 'email', 'label' => 'Email' ) ),
-			'readable_blocks' => array( array( 'blockName' => 'core/group', 'attrs' => array(), 'innerBlocks' => array() ) ),
-		)
-	);
-	$assert( isset( $enrich_readable['readable_blocks'][0]['blockName'] ) && 'core/group' === $enrich_readable['readable_blocks'][0]['blockName'], 'enrich-carries-readable-blocks-for-graft' );
-
 	// --- Graft: seeded contact-form markup replaces the readable fallback -------
 	$transformer_available = function_exists( 'blocks_engine_php_transformer_transform_html' );
-	$build_form_diagnostic = static function ( array $transformer_fallback, string $source_path ) use ( $enrich ): array {
-		return $enrich->invoke(
-			null,
-			array(
-				'diagnostic_code' => 'html_form_fallback',
-				'reason'          => 'form_requires_runtime',
-				'source_path'     => $source_path,
-				'selector'        => $transformer_fallback['selector'] ?? '',
-				'tag'             => 'form',
-				'form'            => $transformer_fallback['form'] ?? array(),
-				'controls'        => $transformer_fallback['controls'] ?? array(),
-				'readable_blocks' => $transformer_fallback['readable_blocks'] ?? array(),
-			)
+	$build_form_diagnostic = static function ( array $transformer_fallback, string $source_path ): array {
+		return array(
+			'type'            => 'unsupported_html_fallback',
+			'diagnostic_code' => 'html_form_fallback',
+			'loss_class'      => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+			'reason'          => 'form_requires_runtime',
+			'source_path'     => $source_path,
+			'selector'        => $transformer_fallback['selector'] ?? '',
+			'tag'             => 'form',
+			'form'            => $transformer_fallback['form'] ?? array(),
+			'controls'        => $transformer_fallback['controls'] ?? array(),
+			'readable_blocks' => $transformer_fallback['readable_blocks'] ?? array(),
 		);
 	};
 

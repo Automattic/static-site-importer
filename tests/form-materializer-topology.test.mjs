@@ -34,6 +34,37 @@ test( 'shared-row topology materializes through the PHP provider adapter', () =>
 	assert.match( output, /PASS form-materializer-smoke\.php \(\d+ assertions\)/ );
 } );
 
+test( 'Jetpack runtime preparation tolerates optional APIs missing from older versions', () => {
+	const code = String.raw`
+namespace Automattic\Jetpack {
+	class Modules {
+		public function is_active( $module ) { return true; }
+	}
+}
+namespace {
+	define( 'ABSPATH', getcwd() . '/' );
+	class WP_Error {
+		public function __construct( public $code, public $message = '', public $data = null ) {}
+	}
+	class Jetpack {
+		public static function activate_module( $module, $silent, $redirect ) {}
+	}
+	function update_option( $name, $value, $autoload = null ) {}
+	require 'includes/class-static-site-importer-form-seeder.php';
+	$result = Static_Site_Importer_Form_Seeder::prepare_jetpack_forms_runtime();
+	if ( ! ( $result instanceof WP_Error ) ) {
+		exit( 1 );
+	}
+	echo $result->code;
+}`;
+	const output = execFileSync( 'php', [ '-r', code ], {
+		cwd: process.cwd(),
+		encoding: 'utf8',
+	} );
+
+	assert.equal( output, 'static_site_importer_jetpack_forms_blocks_missing' );
+} );
+
 test( 'provider-constrained topology emits nested fields and an editor-valid core submit', () => {
 	const output = execFileSync( 'php', [ 'tests/form-materializer-smoke.php', '--emit-topology-markup' ], {
 		cwd: process.cwd(),

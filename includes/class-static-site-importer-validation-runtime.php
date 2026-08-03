@@ -132,7 +132,7 @@ class Static_Site_Importer_Validation_Runtime {
 				$diagnostic['observed_output'] = substr( $encoded, 0, 4000 );
 			}
 		}
-		$result = array(
+		$result                        = array(
 			'success'                 => false,
 			'schema'                  => self::RESULT_SCHEMA,
 			'status'                  => 'failed',

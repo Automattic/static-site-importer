@@ -282,7 +282,7 @@ class Static_Site_Importer_Plugin_Materializer {
 	 */
 	private static function current_companion_owns_registered_block( string $block_name, array $descriptor ): bool {
 		$plugin_file = isset( $descriptor['plugin_file'] ) && is_string( $descriptor['plugin_file'] ) ? $descriptor['plugin_file'] : '';
-		if ( '' === $plugin_file || ! function_exists( 'get_option' ) || $plugin_file !== (string) get_option( self::ACTIVE_COMPANION_OPTION, '' ) ) {
+		if ( '' === $plugin_file || ! function_exists( 'get_option' ) || (string) get_option( self::ACTIVE_COMPANION_OPTION, '' ) !== $plugin_file ) {
 			return false;
 		}
 		if ( empty( $descriptor['mu_plugin'] ) && ( ! function_exists( 'is_plugin_active' ) || ! is_plugin_active( $plugin_file ) ) ) {
@@ -294,8 +294,8 @@ class Static_Site_Importer_Plugin_Materializer {
 		$base   = ! empty( $descriptor['mu_plugin'] ) ? ( defined( 'WPMU_PLUGIN_DIR' ) ? (string) WPMU_PLUGIN_DIR : '' ) : ( defined( 'WP_PLUGIN_DIR' ) ? (string) WP_PLUGIN_DIR : '' );
 		$path   = '' === $base ? '' : rtrim( str_replace( '\\', '/', $base ), '/' ) . '/' . $plugin_file;
 
-		return $plugin_file === (string) ( $owner['plugin_file'] ?? '' )
-			&& $path === str_replace( '\\', '/', (string) ( $owner['plugin_path'] ?? '' ) );
+		return (string) ( $owner['plugin_file'] ?? '' ) === $plugin_file
+			&& str_replace( '\\', '/', (string) ( $owner['plugin_path'] ?? '' ) ) === $path;
 	}
 
 	/**
@@ -492,15 +492,17 @@ class Static_Site_Importer_Plugin_Materializer {
 
 		$state = array();
 		foreach ( array( 'plugins_loaded', 'init', 'wp_loaded' ) as $hook_name ) {
-			$count = function_exists( 'did_action' ) ? (int) did_action( $hook_name ) : 0;
+			$count               = function_exists( 'did_action' ) ? (int) did_action( $hook_name ) : 0;
 			$state[ $hook_name ] = array(
 				'callbacks'  => self::snapshot_hook_callbacks( $hook_name ),
 				'did_action' => $count,
 			);
 			if ( $count > 0 ) {
 				if ( ! is_array( $wp_actions ) ) {
+					// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Resets the lifecycle action counter while replaying newly registered callbacks.
 					$wp_actions = array();
 				}
+				// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Resets this lifecycle action counter before callback replay.
 				$wp_actions[ $hook_name ] = 0;
 			}
 		}
@@ -562,7 +564,10 @@ class Static_Site_Importer_Plugin_Materializer {
 					continue;
 				}
 				if ( remove_action( $hook_name, $callback['function'], (int) $priority ) ) {
-					$deferred[] = array( 'priority' => (int) $priority, 'callback' => $callback );
+					$deferred[] = array(
+						'priority' => (int) $priority,
+						'callback' => $callback,
+					);
 				}
 			}
 		}
@@ -575,8 +580,10 @@ class Static_Site_Importer_Plugin_Materializer {
 		global $wp_current_filter;
 
 		if ( ! is_array( $wp_current_filter ) ) {
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Initializes WordPress's current-hook stack for direct callback replay.
 			$wp_current_filter = array();
 		}
+		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Pushes the replayed hook onto WordPress's current-hook stack.
 		$wp_current_filter[] = $hook_name;
 		try {
 			foreach ( $deferred as $entry ) {
@@ -595,11 +602,13 @@ class Static_Site_Importer_Plugin_Materializer {
 		global $wp_actions;
 
 		if ( ! is_array( $wp_actions ) ) {
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Initializes lifecycle action counters before restoring the replay state.
 			$wp_actions = array();
 		}
 		foreach ( $state as $hook_name => $hook_state ) {
 			$count = (int) ( $hook_state['did_action'] ?? 0 );
 			if ( $count > 0 ) {
+				// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the original lifecycle action count after callback replay.
 				$wp_actions[ (string) $hook_name ] = max( $count, (int) ( $wp_actions[ $hook_name ] ?? 0 ) );
 			}
 		}

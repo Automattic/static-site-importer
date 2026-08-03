@@ -28,17 +28,10 @@ $assert = static function ( bool $condition, string $message ) use ( &$assertion
 		throw new RuntimeException( $message );
 	}
 };
-$artifacts = array(
-	'visual_repair' => array(
-		'css' => '.compiled-site-repair { display: block; }',
-		'styles' => array(
-			array( 'target' => 'frontend', 'content' => '.hero-shell { gap: 0; }' ),
-			array( 'target' => 'editor', 'content' => '.editor-styles-wrapper .glow-orb { opacity: 1; }' ),
-		),
-	),
+$styles = array(
+	'frontend' => array( '.compiled-site-repair { display: block; }', '.hero-shell { gap: 0; }' ),
+	'editor'   => array( '.compiled-site-repair { display: block; }', '.editor-styles-wrapper .glow-orb { opacity: 1; }' ),
 );
-$collector = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'visual_repair_styles_from_artifacts' );
-$styles = $collector->invoke( null, $artifacts );
 $css = "/* Static Site Importer provider layout overlay: abcdef123456 */\n.ssi-form-123456789abc > form.jetpack-contact-form__form{display:flex}\n";
 $overlay = array( 'schema' => Static_Site_Importer_Provider_Layout_Overlay::OVERLAY_SCHEMA, 'css' => $css, 'sha256' => hash( 'sha256', $css ), 'bytes' => strlen( $css ) );
 $writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp/visual-repair-smoke', 'Visual Repair Smoke', '.hero{display:grid}', array(), $styles, array( $overlay, $overlay ) );

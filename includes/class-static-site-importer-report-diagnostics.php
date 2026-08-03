@@ -1125,8 +1125,8 @@ class Static_Site_Importer_Report_Diagnostics {
 			$form       = isset( $diagnostic['form'] ) && is_array( $diagnostic['form'] ) ? $diagnostic['form'] : array();
 			if ( empty( $controls ) && self::is_generated_core_html_form_diagnostic( $diagnostic ) ) {
 				$extracted                                   = self::extract_form_manifest_from_diagnostic( $diagnostic );
-				$controls                                    = isset( $extracted['controls'] ) && is_array( $extracted['controls'] ) ? $extracted['controls'] : array();
-				$form                                        = isset( $extracted['form'] ) && is_array( $extracted['form'] ) ? $extracted['form'] : $form;
+				$controls                                    = $extracted['controls'];
+				$form                                        = $extracted['form'];
 				$report['diagnostics'][ $index ]['controls'] = $controls;
 				$report['diagnostics'][ $index ]['form']     = $form;
 			}
@@ -1146,14 +1146,26 @@ class Static_Site_Importer_Report_Diagnostics {
 
 		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest_generic( $adapter, array( 'forms' => $manifest_forms ) );
 		$seeding    = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, array( 'forms' => isset( $validation['forms'] ) && is_array( $validation['forms'] ) ? $validation['forms'] : array() ) );
+		if ( $seeding instanceof WP_Error ) {
+			$error   = $seeding;
+			$seeding = Static_Site_Importer_Entity_Materializer_Registry::new_entity_report( $adapter );
+			$seeding['status'] = 'error';
+			$seeding['reason'] = 'materialization_failed';
+			$seeding['errors'] = array(
+				array(
+					'code'    => $error->get_error_code(),
+					'message' => $error->get_error_message(),
+				),
+			);
+		}
 
-		$seeding['provider']      = Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'form' );
-		$seeding['form_count']    = count( $manifest_forms );
-		$seeding['mapped_count']  = 0;
-		$seeding['grafted_count'] = 0;
-		$seeding['receipt_losses'] = array();
+		$seeding['provider']                      = Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'form' );
+		$seeding['form_count']                    = count( $manifest_forms );
+		$seeding['mapped_count']                  = 0;
+		$seeding['grafted_count']                 = 0;
+		$seeding['receipt_losses']                = array();
 		$seeding['unaccepted_receipt_loss_count'] = 0;
-		$seeding['waived']        = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? 'allow_missing_jetpack' ) ] );
+		$seeding['waived']                        = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? 'allow_missing_jetpack' ) ] );
 		if ( ! empty( $validation['errors'] ) ) {
 			$seeding['validation_errors'] = $validation['errors'];
 		}
@@ -1165,7 +1177,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				continue;
 			}
 
-			$selector = isset( $row['selector'] ) && is_scalar( $row['selector'] ) ? (string) $row['selector'] : '';
+			$selector    = isset( $row['selector'] ) && is_scalar( $row['selector'] ) ? (string) $row['selector'] : '';
 			$source_path = isset( $row['source_path'] ) && is_scalar( $row['source_path'] ) ? (string) $row['source_path'] : '';
 			$index       = self::form_finding_index_for_selector( $report['diagnostics'], $pending, $selector, $source_path );
 			if ( null === $index ) {
@@ -1173,9 +1185,13 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 
 			$report['diagnostics'][ $index ] = self::mark_form_finding_mapped( $report['diagnostics'][ $index ], $row, $seeding['provider'] );
-			$receipt_losses = isset( $report['diagnostics'][ $index ]['form_receipt_losses'] ) && is_array( $report['diagnostics'][ $index ]['form_receipt_losses'] ) ? $report['diagnostics'][ $index ]['form_receipt_losses'] : array();
+			$receipt_losses                  = isset( $report['diagnostics'][ $index ]['form_receipt_losses'] ) && is_array( $report['diagnostics'][ $index ]['form_receipt_losses'] ) ? $report['diagnostics'][ $index ]['form_receipt_losses'] : array();
 			foreach ( $receipt_losses as $loss ) {
-				$seeding['receipt_losses'][] = array( 'selector' => $selector, 'source_path' => $source_path, 'loss' => $loss );
+				$seeding['receipt_losses'][] = array(
+					'selector'    => $selector,
+					'source_path' => $source_path,
+					'loss'        => $loss,
+				);
 			}
 			if ( ! empty( $report['diagnostics'][ $index ]['form_receipt_unaccepted_losses'] ) ) {
 				$seeding['unaccepted_receipt_loss_count'] += count( $report['diagnostics'][ $index ]['form_receipt_unaccepted_losses'] );
@@ -1280,10 +1296,10 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		foreach ( $diagnostics as $diagnostic ) {
-			if ( ! is_array( $diagnostic ) || ! self::is_generated_core_html_form_diagnostic( $diagnostic ) ) {
+			if ( ! self::is_generated_core_html_form_diagnostic( $diagnostic ) ) {
 				continue;
 			}
-			if ( $identity === self::named_form_control_identity( $diagnostic ) ) {
+			if ( self::named_form_control_identity( $diagnostic ) === $identity ) {
 				return true;
 			}
 		}
@@ -1349,7 +1365,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		libxml_use_internal_errors( $previous );
 
 		$form_node = $doc->getElementsByTagName( 'form' )->item( 0 );
-		if ( ! $form_node instanceof DOMElement ) {
+		if ( null === $form_node ) {
 			return array(
 				'form'     => array(),
 				'controls' => array(),
@@ -1367,10 +1383,6 @@ class Static_Site_Importer_Report_Diagnostics {
 		$controls = array();
 		foreach ( array( 'input', 'textarea', 'select', 'button' ) as $tag_name ) {
 			foreach ( $form_node->getElementsByTagName( $tag_name ) as $control_node ) {
-				if ( ! $control_node instanceof DOMElement ) {
-					continue;
-				}
-
 				$control = array(
 					'tag'  => strtolower( $control_node->tagName ),
 					'type' => strtolower( trim( $control_node->getAttribute( 'type' ) ) ),
@@ -1423,7 +1435,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		if ( '' !== $selector && '' !== $source_path ) {
 			foreach ( $pending as $index ) {
 				$diagnostic        = $diagnostics[ $index ] ?? array();
-				$diagnostic_source = self::first_scalar( is_array( $diagnostic ) ? $diagnostic : array(), array( 'source_path', 'source' ) );
+				$diagnostic_source = self::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
 				if ( (string) ( $diagnostic['selector'] ?? '' ) === $selector && self::form_source_paths_match( $source_path, $diagnostic_source ) ) {
 					return $index;
 				}
@@ -1451,15 +1463,15 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<string,mixed>
 	 */
 	private static function mark_form_finding_mapped( array $diagnostic, array $row, string $provider ): array {
-		$receipt_losses = isset( $row['computed_layout_receipt']['losses'] ) && is_array( $row['computed_layout_receipt']['losses'] ) ? $row['computed_layout_receipt']['losses'] : array();
-		$unaccepted_losses = array_values( array_filter( $receipt_losses, static fn( $loss ): bool => is_array( $loss ) && self::form_receipt_loss_requires_gate( $loss ) && ! self::form_receipt_loss_accepted( $loss, $diagnostic, $row ) ) );
+		$receipt_losses      = isset( $row['computed_layout_receipt']['losses'] ) && is_array( $row['computed_layout_receipt']['losses'] ) ? $row['computed_layout_receipt']['losses'] : array();
+		$unaccepted_losses   = array_values( array_filter( $receipt_losses, static fn( $loss ): bool => is_array( $loss ) && self::form_receipt_loss_requires_gate( $loss ) && ! self::form_receipt_loss_accepted( $loss, $diagnostic, $row ) ) );
 		$gate_overflow_count = (int) ( $row['computed_layout_receipt']['gate_required_loss_overflow_count'] ?? 0 );
 		if ( $gate_overflow_count > 0 ) {
 			$unaccepted_losses[] = array(
-				'dimension'    => 'topology',
+				'dimension'   => 'topology',
 				'reason_code' => 'form_receipt_gate_loss_overflow',
-				'loss_count'   => $gate_overflow_count,
-				'loss_hash'    => (string) ( $row['computed_layout_receipt']['gate_required_loss_overflow_hash'] ?? '' ),
+				'loss_count'  => $gate_overflow_count,
+				'loss_hash'   => (string) ( $row['computed_layout_receipt']['gate_required_loss_overflow_hash'] ?? '' ),
 			);
 		}
 		$diagnostic['provider_mapped'] = true;
@@ -1474,10 +1486,10 @@ class Static_Site_Importer_Report_Diagnostics {
 			$diagnostic['acceptability'] = 'acceptable_preservation';
 		} else {
 			$diagnostic['form_receipt_unaccepted_losses'] = $unaccepted_losses;
-			$diagnostic['loss_class'] = Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS;
-			$diagnostic['diagnostic_class'] = Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS;
-			$diagnostic['acceptability'] = 'unacceptable_imported_output_defect';
-			$diagnostic['reason_code'] = 'form_receipt_loss_unaccepted';
+			$diagnostic['loss_class']                     = Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS;
+			$diagnostic['diagnostic_class']               = Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS;
+			$diagnostic['acceptability']                  = 'unacceptable_imported_output_defect';
+			$diagnostic['reason_code']                    = 'form_receipt_loss_unaccepted';
 		}
 
 		if ( isset( $row['block_markup'] ) && is_scalar( $row['block_markup'] ) ) {
@@ -1984,6 +1996,18 @@ class Static_Site_Importer_Report_Diagnostics {
 		$validated  = $validation['products'];
 
 		$seeding = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, array( 'products' => $validated ) );
+		if ( $seeding instanceof WP_Error ) {
+			$error   = $seeding;
+			$seeding = Static_Site_Importer_Entity_Materializer_Registry::new_entity_report( $adapter );
+			$seeding['status'] = 'error';
+			$seeding['reason'] = 'materialization_failed';
+			$seeding['errors'] = array(
+				array(
+					'code'    => $error->get_error_code(),
+					'message' => $error->get_error_message(),
+				),
+			);
+		}
 
 		$seeding['provider']      = Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'shop' );
 		$seeding['finding_count'] = count( $indexes );
@@ -2179,7 +2203,7 @@ class Static_Site_Importer_Report_Diagnostics {
 
 		$cart_controls = array_values(
 			array_filter(
-				$matches[0] ?? array(),
+				$matches[0],
 				static fn( array $control_match ): bool => 1 === preg_match( '/\b(?:add\s+to\s+cart|buy\s+now|purchase|order\s+now)\b/i', wp_strip_all_tags( (string) $control_match[0] ) )
 			)
 		);
@@ -2472,230 +2496,6 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
-	 * Preserve optional Blocks Engine conversion-report fields for import-report consumers.
-	 *
-	 * @param array<string,mixed> $conversion_report Native conversion report.
-	 * @return array<string,mixed>
-	 */
-	private static function conversion_report_payload( array $conversion_report ): array {
-		$diagnostics            = self::array_values_if_list( $conversion_report['diagnostics'] ?? array() );
-		$fallbacks              = self::conversion_report_fallback_rows( $conversion_report );
-		$interaction_candidates = self::array_values_if_list( $conversion_report['interaction_candidates'] ?? array() );
-
-		$payload = array(
-			'schema'                      => isset( $conversion_report['schema'] ) && is_scalar( $conversion_report['schema'] ) ? (string) $conversion_report['schema'] : 'blocks-engine/php-transformer/conversion-report/v1',
-			'status'                      => isset( $conversion_report['status'] ) && is_scalar( $conversion_report['status'] ) ? (string) $conversion_report['status'] : '',
-			'diagnostic_count'            => count( $diagnostics ),
-			'fallback_count'              => count( $fallbacks ),
-			'interaction_candidate_count' => count( $interaction_candidates ),
-		);
-
-		foreach ( array( 'asset_reference_count', 'presentation_gap_count' ) as $count_field ) {
-			if ( isset( $conversion_report[ $count_field ] ) && is_numeric( $conversion_report[ $count_field ] ) ) {
-				$payload[ $count_field ] = (int) $conversion_report[ $count_field ];
-			}
-		}
-
-		foreach ( array( 'source_selector_summaries', 'block_type_counts', 'asset_references', 'presentation_gaps', 'page_metrics' ) as $field ) {
-			if ( isset( $conversion_report[ $field ] ) && is_array( $conversion_report[ $field ] ) ) {
-				$payload[ $field ] = self::compact_native_report_value( $conversion_report[ $field ] );
-			}
-		}
-
-		if ( ! empty( $diagnostics ) ) {
-			$payload['diagnostics'] = self::compact_native_report_rows( $diagnostics );
-		}
-		if ( ! empty( $fallbacks ) ) {
-			$payload['fallbacks']            = self::compact_native_report_rows( $fallbacks );
-			$payload['fallback_diagnostics'] = self::compact_native_report_rows( $fallbacks );
-		}
-		if ( ! empty( $interaction_candidates ) ) {
-			$payload['interaction_candidates'] = self::compact_native_report_rows( $interaction_candidates );
-		}
-
-		return $payload;
-	}
-
-	/**
-	 * Locate an optional Blocks Engine semantic parity report in known result slots.
-	 *
-	 * @param array<string,mixed> $compiled Compiler result envelope.
-	 * @return array<string,mixed>
-	 */
-	private static function blocks_engine_semantic_parity_report( array $compiled ): array {
-		$candidates = array(
-			$compiled['semantic_parity'] ?? null,
-			$compiled['semantic_parity_report'] ?? null,
-			$compiled['reports']['semantic_parity'] ?? null,
-			$compiled['artifacts']['semantic_parity'] ?? null,
-			$compiled['artifacts']['semantic_parity_report'] ?? null,
-		);
-
-		foreach ( $candidates as $candidate ) {
-			if ( is_array( $candidate ) && ! empty( $candidate ) ) {
-				return $candidate;
-			}
-		}
-
-		return array();
-	}
-
-	/**
-	 * Preserve the semantic parity report in a compact, stable SSI report key.
-	 *
-	 * @param array<string,mixed> $semantic_parity Native Blocks Engine semantic parity report.
-	 * @return array<string,mixed>
-	 */
-	private static function semantic_parity_report_payload( array $semantic_parity ): array {
-		$findings = self::semantic_parity_findings( $semantic_parity );
-		$summary  = isset( $semantic_parity['summary'] ) && is_array( $semantic_parity['summary'] ) ? $semantic_parity['summary'] : array();
-
-		return array_filter(
-			array(
-				'schema'        => isset( $semantic_parity['schema'] ) && is_scalar( $semantic_parity['schema'] ) ? (string) $semantic_parity['schema'] : Static_Site_Importer_Product_Handoff_Contract::BLOCKS_ENGINE_SEMANTIC_PARITY_SCHEMA,
-				'status'        => isset( $semantic_parity['status'] ) && is_scalar( $semantic_parity['status'] ) ? (string) $semantic_parity['status'] : ( empty( $findings ) ? 'passed' : 'reported' ),
-				'finding_count' => count( $findings ),
-				'summary'       => self::compact_native_report_value( $summary ),
-				'findings'      => self::compact_native_report_rows( $findings ),
-				'counts'        => isset( $semantic_parity['counts'] ) && is_array( $semantic_parity['counts'] ) ? self::compact_native_report_value( $semantic_parity['counts'] ) : array(),
-				'coverage'      => isset( $semantic_parity['coverage'] ) && is_array( $semantic_parity['coverage'] ) ? self::compact_native_report_value( $semantic_parity['coverage'] ) : array(),
-			),
-			static fn ( mixed $value ): bool => array() !== $value
-		);
-	}
-
-	/**
-	 * Reflect semantic parity findings in SSI diagnostics and quality gates.
-	 *
-	 * @param array<string,mixed> $report          Import report.
-	 * @param array<string,mixed> $semantic_parity Native Blocks Engine semantic parity report.
-	 * @return void
-	 */
-	private static function record_semantic_parity_quality_metadata( array &$report, array $semantic_parity ): void {
-		$findings = self::semantic_parity_findings( $semantic_parity );
-		$report['quality']['semantic_parity_failure_count'] = (int) ( $report['quality']['semantic_parity_failure_count'] ?? 0 ) + count( $findings );
-
-		$report['semantic_fidelity'] = array_merge(
-			isset( $report['semantic_fidelity'] ) && is_array( $report['semantic_fidelity'] ) ? $report['semantic_fidelity'] : array(),
-			array(
-				'status'        => empty( $findings ) ? 'passed' : 'reported',
-				'gate_owner'    => 'blocks-engine/php-transformer',
-				'finding_count' => count( $findings ),
-				'summary'       => self::semantic_parity_summary_counts( $findings ),
-			)
-		);
-
-		foreach ( $findings as $finding ) {
-			if ( ! is_array( $finding ) ) {
-				continue;
-			}
-
-			$diagnostic = self::diagnostic_from_semantic_parity_finding( $finding );
-			if ( ! empty( $diagnostic ) ) {
-				$report['diagnostics'][] = $diagnostic;
-			}
-		}
-	}
-
-	/**
-	 * Return canonical semantic parity findings from current and expected report keys.
-	 *
-	 * @param array<string,mixed> $semantic_parity Native Blocks Engine semantic parity report.
-	 * @return array<int,mixed>
-	 */
-	private static function semantic_parity_findings( array $semantic_parity ): array {
-		foreach ( array( 'findings', 'failures', 'mismatches', 'diagnostics' ) as $key ) {
-			$rows = self::array_values_if_list( $semantic_parity[ $key ] ?? array() );
-			if ( ! empty( $rows ) ) {
-				return $rows;
-			}
-		}
-
-		return array();
-	}
-
-	/**
-	 * Build summary counts for semantic parity findings.
-	 *
-	 * @param array<int,mixed> $findings Semantic parity findings.
-	 * @return array<string,int>
-	 */
-	private static function semantic_parity_summary_counts( array $findings ): array {
-		$summary = array(
-			'total'      => 0,
-			'navigation' => 0,
-			'landmark'   => 0,
-		);
-
-		foreach ( $findings as $finding ) {
-			if ( ! is_array( $finding ) ) {
-				continue;
-			}
-
-			++$summary['total'];
-			$type = self::semantic_parity_diagnostic_type( $finding );
-			if ( str_contains( $type, 'navigation' ) ) {
-				++$summary['navigation'];
-			}
-			if ( str_contains( $type, 'landmark' ) ) {
-				++$summary['landmark'];
-			}
-		}
-
-		return $summary;
-	}
-
-	/**
-	 * Normalize a semantic parity finding into SSI's diagnostic shape.
-	 *
-	 * @param array<string,mixed> $finding Native semantic parity finding.
-	 * @return array<string,mixed>
-	 */
-	private static function diagnostic_from_semantic_parity_finding( array $finding ): array {
-		$type   = self::semantic_parity_diagnostic_type( $finding );
-		$source = self::first_scalar( $finding, array( 'source_path', 'source', 'path', 'route' ) );
-		$reason = self::first_scalar( $finding, array( 'reason_code', 'reason', 'code', 'kind', 'type' ) );
-
-		$diagnostic = array(
-			'type'      => $type,
-			'source'    => $source,
-			'reason'    => '' !== $reason ? $reason : $type,
-			'engine'    => 'blocks-engine/php-transformer',
-			'stage'     => 'semantic_parity',
-			'converter' => 'blocks-engine/php-transformer',
-		);
-
-		foreach ( array( 'source_path', 'selector', 'message', 'excerpt', 'source_html_preview', 'html_excerpt', 'expected', 'observed', 'label', 'source_label', 'generated_label', 'url', 'source_url', 'generated_url', 'landmark', 'role', 'block_name', 'block_path' ) as $field ) {
-			if ( isset( $finding[ $field ] ) && is_scalar( $finding[ $field ] ) && '' !== trim( (string) $finding[ $field ] ) ) {
-				$diagnostic[ $field ] = (string) $finding[ $field ];
-			}
-		}
-
-		return $diagnostic;
-	}
-
-	/**
-	 * Map Blocks Engine semantic finding kinds to SSI diagnostic types.
-	 *
-	 * @param array<string,mixed> $finding Native semantic parity finding.
-	 * @return string
-	 */
-	private static function semantic_parity_diagnostic_type( array $finding ): string {
-		$value = sanitize_key( self::first_scalar( $finding, array( 'type', 'kind', 'reason_code', 'reason', 'code' ) ) );
-		if ( str_contains( $value, 'nav' ) && str_contains( $value, 'missing' ) ) {
-			return 'semantic_parity_navigation_missing';
-		}
-		if ( str_contains( $value, 'nav' ) && ( str_contains( $value, 'mismatch' ) || str_contains( $value, 'label' ) || str_contains( $value, 'url' ) ) ) {
-			return 'semantic_parity_navigation_mismatch';
-		}
-		if ( str_contains( $value, 'header' ) || str_contains( $value, 'footer' ) || str_contains( $value, 'main' ) || str_contains( $value, 'landmark' ) ) {
-			return 'semantic_parity_landmark_missing';
-		}
-
-		return 'semantic_parity_failure';
-	}
-
-	/**
 	 * Compact semantic parity metrics for import-report summaries.
 	 *
 	 * @param array<string,mixed> $report Full import report.
@@ -2719,43 +2519,6 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
-	 * Reflect optional native conversion-report quality metadata without changing import behavior.
-	 *
-	 * @param array<string,mixed> $report            Import report.
-	 * @param array<string,mixed> $conversion_report Native conversion report.
-	 * @return void
-	 */
-	private static function record_conversion_report_quality_metadata( array &$report, array $conversion_report ): void {
-		$fallbacks              = self::conversion_report_fallback_rows( $conversion_report );
-		$interaction_candidates = self::array_values_if_list( $conversion_report['interaction_candidates'] ?? array() );
-
-		$report['quality']['interaction_candidate_count'] = (int) ( $report['quality']['interaction_candidate_count'] ?? 0 ) + count( $interaction_candidates );
-		$report['quality']['fallback_count']              = (int) ( $report['quality']['fallback_count'] ?? 0 ) + count( $fallbacks );
-
-		foreach ( $fallbacks as $fallback ) {
-			if ( ! is_array( $fallback ) ) {
-				continue;
-			}
-
-			$diagnostic = self::diagnostic_from_conversion_report_fallback( $fallback );
-			if ( ! empty( $diagnostic ) ) {
-				$report['diagnostics'][] = $diagnostic;
-			}
-		}
-
-		foreach ( $interaction_candidates as $candidate ) {
-			if ( ! is_array( $candidate ) ) {
-				continue;
-			}
-
-			$diagnostic = self::diagnostic_from_interaction_candidate( $candidate );
-			if ( ! empty( $diagnostic ) ) {
-				$report['diagnostics'][] = $diagnostic;
-			}
-		}
-	}
-
-	/**
 	 * Resolve script fallback diagnostics after the generated companion plugin is active.
 	 *
 	 * @param array<string,mixed>            $report          Import report.
@@ -2766,9 +2529,6 @@ class Static_Site_Importer_Report_Diagnostics {
 	private static function mark_companion_script_fallbacks_materialized( array &$report, array $runtime_scripts, string $slug ): void {
 		$selectors = array();
 		foreach ( $runtime_scripts as $script ) {
-			if ( ! is_array( $script ) ) {
-				continue;
-			}
 			$selector = self::first_scalar( $script, array( 'selector' ) );
 			if ( '' !== $selector ) {
 				$selectors[ $selector ] = true;
@@ -2837,442 +2597,6 @@ class Static_Site_Importer_Report_Diagnostics {
 			$runtime_scripts = isset( $dependency['runtime_scripts'] ) && is_array( $dependency['runtime_scripts'] ) ? $dependency['runtime_scripts'] : array();
 			self::mark_companion_script_fallbacks_materialized( $report, $runtime_scripts, (string) $slug );
 		}
-	}
-
-	/**
-	 * Preserve optional Blocks Engine runtime dependency parity evidence compactly.
-	 *
-	 * @param array<string,mixed> $runtime_dependency_parity Native runtime dependency parity report.
-	 * @return array<string,mixed>
-	 */
-	private static function runtime_dependency_parity_payload( array $runtime_dependency_parity ): array {
-		$scripts  = self::runtime_dependency_parity_scripts( $runtime_dependency_parity );
-		$findings = self::runtime_dependency_parity_findings( $runtime_dependency_parity );
-
-		$payload = array(
-			'schema'                              => isset( $runtime_dependency_parity['schema'] ) && is_scalar( $runtime_dependency_parity['schema'] ) ? (string) $runtime_dependency_parity['schema'] : 'blocks-engine/runtime-dependency-parity/v1',
-			'status'                              => isset( $runtime_dependency_parity['status'] ) && is_scalar( $runtime_dependency_parity['status'] ) ? (string) $runtime_dependency_parity['status'] : '',
-			'script_count'                        => count( $scripts ),
-			'finding_count'                       => count( $findings ),
-			'missing_dom_target_count'            => count( array_filter( $findings, static fn ( array $finding ): bool => 'runtime_dependency_missing_dom_target' === ( $finding['type'] ?? '' ) ) ),
-			'unsupported_element_reference_count' => count( array_filter( $findings, static fn ( array $finding ): bool => 'runtime_dependency_unsupported_element_reference' === ( $finding['type'] ?? '' ) ) ),
-			'vendor_telemetry_script_count'       => count( array_filter( $findings, static fn ( array $finding ): bool => 'runtime_dependency_vendor_telemetry_script' === ( $finding['type'] ?? '' ) ) ),
-		);
-
-		if ( ! empty( $scripts ) ) {
-			$payload['scripts'] = self::compact_native_report_rows( $scripts );
-		}
-		if ( ! empty( $findings ) ) {
-			$payload['findings'] = self::compact_native_report_rows( $findings );
-		}
-
-		return $payload;
-	}
-
-	/**
-	 * Reflect runtime dependency parity findings into report quality metadata.
-	 *
-	 * @param array<string,mixed> $report                    Import report.
-	 * @param array<string,mixed> $runtime_dependency_parity Native runtime dependency parity report.
-	 * @return void
-	 */
-	private static function record_runtime_dependency_parity_quality_metadata( array &$report, array $runtime_dependency_parity ): void {
-		$issue_count = 0;
-		foreach ( self::runtime_dependency_parity_findings( $runtime_dependency_parity ) as $finding ) {
-			$diagnostic = self::diagnostic_from_runtime_dependency_parity_finding( $finding );
-			if ( empty( $diagnostic ) ) {
-				continue;
-			}
-
-			if ( 'runtime_dependency_vendor_telemetry_script' !== ( $diagnostic['type'] ?? '' ) ) {
-				++$issue_count;
-			}
-			$report['diagnostics'][] = $diagnostic;
-		}
-
-		$report['quality']['runtime_dependency_parity_issue_count'] = (int) ( $report['quality']['runtime_dependency_parity_issue_count'] ?? 0 ) + $issue_count;
-	}
-
-	/**
-	 * Return script rows from plausible runtime dependency parity fields.
-	 *
-	 * @param array<string,mixed> $runtime_dependency_parity Native runtime dependency parity report.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function runtime_dependency_parity_scripts( array $runtime_dependency_parity ): array {
-		foreach ( array( 'scripts', 'script_assets', 'assets' ) as $field ) {
-			$rows = self::array_values_if_list( $runtime_dependency_parity[ $field ] ?? array() );
-			if ( ! empty( $rows ) ) {
-				return array_values( array_filter( $rows, 'is_array' ) );
-			}
-		}
-
-		return array();
-	}
-
-	/**
-	 * Return normalized finding rows from plausible runtime dependency parity fields.
-	 *
-	 * @param array<string,mixed> $runtime_dependency_parity Native runtime dependency parity report.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function runtime_dependency_parity_findings( array $runtime_dependency_parity ): array {
-		$findings = array();
-		foreach ( self::array_values_if_list( $runtime_dependency_parity['findings'] ?? array() ) as $finding ) {
-			if ( is_array( $finding ) ) {
-				$findings[] = self::normalize_runtime_dependency_parity_finding( $finding );
-			}
-		}
-
-		foreach ( self::array_values_if_list( $runtime_dependency_parity['missing_dom_targets'] ?? array() ) as $target ) {
-			if ( is_array( $target ) ) {
-				$findings[] = self::normalize_runtime_dependency_parity_finding( array_merge( array( 'type' => 'missing_dom_target' ), $target ) );
-			}
-		}
-
-		foreach ( self::array_values_if_list( $runtime_dependency_parity['unsupported_elements'] ?? array() ) as $element ) {
-			if ( is_array( $element ) ) {
-				$findings[] = self::normalize_runtime_dependency_parity_finding( array_merge( array( 'type' => 'unsupported_element_reference' ), $element ) );
-			}
-		}
-
-		foreach ( self::array_values_if_list( $runtime_dependency_parity['vendor_telemetry_scripts'] ?? array() ) as $script ) {
-			if ( is_array( $script ) ) {
-				$findings[] = self::normalize_runtime_dependency_parity_finding( array_merge( array( 'type' => 'vendor_telemetry_script' ), $script ) );
-			}
-		}
-
-		return $findings;
-	}
-
-	/**
-	 * Normalize one runtime dependency parity row into SSI diagnostic-compatible fields.
-	 *
-	 * @param array<string,mixed> $finding Runtime dependency parity finding row.
-	 * @return array<string,mixed>
-	 */
-	private static function normalize_runtime_dependency_parity_finding( array $finding ): array {
-		$type = self::first_scalar( $finding, array( 'type', 'kind', 'code' ) );
-		$type = sanitize_key( $type );
-		if ( str_contains( $type, 'missing' ) && ( str_contains( $type, 'target' ) || str_contains( $type, 'dom' ) || str_contains( $type, 'selector' ) ) ) {
-			$type = 'runtime_dependency_missing_dom_target';
-		} elseif ( str_contains( $type, 'unsupported' ) && ( str_contains( $type, 'element' ) || str_contains( $type, 'dom' ) ) ) {
-			$type = 'runtime_dependency_unsupported_element_reference';
-		} elseif ( str_contains( $type, 'telemetry' ) || ! empty( $finding['telemetry'] ) ) {
-			$type = 'runtime_dependency_vendor_telemetry_script';
-		} elseif ( ! str_starts_with( $type, 'runtime_dependency_' ) ) {
-			$type = 'runtime_dependency_parity_issue';
-		}
-
-		$finding['type'] = $type;
-		return $finding;
-	}
-
-	/**
-	 * Normalize runtime dependency parity rows into SSI diagnostics.
-	 *
-	 * @param array<string,mixed> $finding Normalized runtime dependency parity finding row.
-	 * @return array<string,mixed>
-	 */
-	private static function diagnostic_from_runtime_dependency_parity_finding( array $finding ): array {
-		$type        = isset( $finding['type'] ) && is_scalar( $finding['type'] ) ? (string) $finding['type'] : 'runtime_dependency_parity_issue';
-		$source      = self::first_scalar( $finding, array( 'source_path', 'source', 'document_path', 'path' ) );
-		$script_path = self::first_scalar( $finding, array( 'script_path', 'script', 'asset_path', 'asset' ) );
-		$selector    = self::first_scalar( $finding, array( 'selector', 'target_selector', 'target', 'dom_target' ) );
-
-		if ( '' === $source && '' === $script_path && '' === $selector ) {
-			return array();
-		}
-
-		$diagnostic = array(
-			'type'        => $type,
-			'source'      => '' !== $source ? $source : $script_path,
-			'reason'      => self::first_scalar( $finding, array( 'reason_code', 'reason', 'message' ) ),
-			'engine'      => 'blocks-engine/php-transformer',
-			'stage'       => 'runtime_dependency_parity',
-			'converter'   => 'blocks-engine/php-transformer',
-			'severity'    => 'runtime_dependency_vendor_telemetry_script' === $type ? 'notice' : 'warning',
-			'script_path' => $script_path,
-		);
-
-		if ( '' !== $selector ) {
-			$diagnostic['selector'] = $selector;
-		}
-		if ( '' === $diagnostic['reason'] ) {
-			$diagnostic['reason'] = $type;
-		}
-
-		foreach ( array( 'source_path', 'message', 'excerpt', 'source_html_preview', 'html_excerpt', 'tag_name', 'element', 'handle', 'src' ) as $field ) {
-			if ( isset( $finding[ $field ] ) && is_scalar( $finding[ $field ] ) && '' !== trim( (string) $finding[ $field ] ) ) {
-				$diagnostic[ $field ] = (string) $finding[ $field ];
-			}
-		}
-
-		return $diagnostic;
-	}
-
-	/**
-	 * Return fallback rows from old and canonical Blocks Engine conversion-report fields.
-	 *
-	 * @param array<string,mixed> $conversion_report Native conversion report.
-	 * @return array<int,mixed>
-	 */
-	private static function conversion_report_fallback_rows( array $conversion_report ): array {
-		$fallbacks = self::array_values_if_list( $conversion_report['fallbacks'] ?? array() );
-		if ( ! empty( $fallbacks ) ) {
-			return $fallbacks;
-		}
-
-		return self::array_values_if_list( $conversion_report['fallback_diagnostics'] ?? array() );
-	}
-
-	/**
-	 * Normalize a native fallback row into SSI's diagnostic shape when useful fields exist.
-	 *
-	 * @param array<string,mixed> $fallback Native fallback row.
-	 * @return array<string,mixed>
-	 */
-	private static function diagnostic_from_conversion_report_fallback( array $fallback ): array {
-		$source = self::first_scalar( $fallback, array( 'source_path', 'source', 'path' ) );
-		$reason = self::first_scalar( $fallback, array( 'reason_code', 'reason', 'code' ) );
-		if ( '' === $source && '' === $reason ) {
-			return array();
-		}
-
-		$diagnostic = array(
-			'type'      => 'unsupported_html_fallback',
-			'source'    => $source,
-			'reason'    => '' !== $reason ? $reason : 'native_conversion_report_fallback',
-			'engine'    => 'blocks-engine/php-transformer',
-			'stage'     => 'block_conversion',
-			'converter' => 'blocks-engine/php-transformer',
-		);
-
-		foreach ( array( 'source_path', 'selector', 'tag_name', 'block_name', 'block_path', 'message', 'excerpt', 'source_html_preview', 'emitted_block_preview', 'html_excerpt' ) as $field ) {
-			if ( isset( $fallback[ $field ] ) && is_scalar( $fallback[ $field ] ) && '' !== trim( (string) $fallback[ $field ] ) ) {
-				$diagnostic[ $field ] = (string) $fallback[ $field ];
-			}
-		}
-
-		$diagnostic_code = self::first_scalar( $fallback, array( 'diagnostic_code' ) );
-		if ( 'html_form_fallback' === $diagnostic_code ) {
-			$diagnostic = self::enrich_form_fallback_diagnostic( $diagnostic, $fallback, $diagnostic_code );
-		}
-
-		// The product-grid fallback may carry its code under `kind` (Blocks Engine
-		// product-grid contract) or `diagnostic_code` (normalized fallbacks).
-		$kind = self::first_scalar( $fallback, array( 'kind' ) );
-		if ( 'html_product_grid_fallback' === $diagnostic_code || 'html_product_grid_fallback' === $kind ) {
-			$diagnostic = self::enrich_product_grid_fallback_diagnostic( $diagnostic, $fallback );
-		}
-
-		return $diagnostic;
-	}
-
-	/**
-	 * Carry preserved <form> runtime island metadata onto its SSI diagnostic.
-	 *
-	 * Keeps the native diagnostic_code, classifies the finding as a preserved
-	 * runtime island, and forwards the form attributes and source control list so
-	 * the configured form provider can materialize it and close the gate loop.
-	 *
-	 * @param array<string,mixed> $diagnostic      Base diagnostic.
-	 * @param array<string,mixed> $fallback        Native fallback row.
-	 * @param string              $diagnostic_code Native diagnostic code.
-	 * @return array<string,mixed>
-	 */
-	private static function enrich_form_fallback_diagnostic( array $diagnostic, array $fallback, string $diagnostic_code ): array {
-		$diagnostic['diagnostic_code']     = $diagnostic_code;
-		$diagnostic['loss_class']          = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
-		$diagnostic['diagnostic_class']    = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
-		$diagnostic['tag']                 = 'form';
-		$diagnostic['tag_name']            = isset( $diagnostic['tag_name'] ) && '' !== $diagnostic['tag_name'] ? $diagnostic['tag_name'] : 'form';
-		$diagnostic['element']             = 'form';
-		$diagnostic['suggested_primitive'] = 'form';
-		$diagnostic['runtime_requirement'] = self::first_scalar( $fallback, array( 'runtime_requirement' ) );
-
-		if ( isset( $fallback['form'] ) && is_array( $fallback['form'] ) ) {
-			$diagnostic['form'] = $fallback['form'];
-		}
-		if ( isset( $fallback['controls'] ) && is_array( $fallback['controls'] ) ) {
-			$diagnostic['controls'] = array_values( array_filter( $fallback['controls'], 'is_array' ) );
-		}
-		if ( isset( $fallback['control_topology'] ) && is_array( $fallback['control_topology'] ) ) {
-			$diagnostic['control_topology'] = $fallback['control_topology'];
-		}
-		if ( isset( $fallback['layout_graph'] ) && is_array( $fallback['layout_graph'] ) ) {
-			$diagnostic['layout_graph'] = $fallback['layout_graph'];
-		}
-		if ( isset( $fallback['control_count'] ) && is_numeric( $fallback['control_count'] ) ) {
-			$diagnostic['control_count'] = (int) $fallback['control_count'];
-		}
-		self::carry_materialization_metadata( $diagnostic, $fallback );
-
-		// Carry the transformer's readable fallback block tree so the form graft
-		// can anchor the seeded contact-form markup to the exact fallback region
-		// the finding represents inside the page's post_content (the finding's own
-		// structural identity), instead of guessing by matching visible copy.
-		if ( isset( $fallback['readable_blocks'] ) && is_array( $fallback['readable_blocks'] ) ) {
-			$diagnostic['readable_blocks'] = array_values( array_filter( $fallback['readable_blocks'], 'is_array' ) );
-		}
-
-		return $diagnostic;
-	}
-
-	/**
-	 * Carry preserved product-grid metadata onto its SSI diagnostic.
-	 *
-	 * Mirrors the form-fallback enrichment: keeps a stable diagnostic_code,
-	 * classifies the finding as a preserved runtime island, and forwards the
-	 * container selector plus the detected product list so the configured shop
-	 * provider can materialize the products and close the gate loop.
-	 *
-	 * @param array<string,mixed> $diagnostic Base diagnostic.
-	 * @param array<string,mixed> $fallback   Native fallback row.
-	 * @return array<string,mixed>
-	 */
-	private static function enrich_product_grid_fallback_diagnostic( array $diagnostic, array $fallback ): array {
-		$diagnostic['diagnostic_code']     = 'html_product_grid_fallback';
-		$diagnostic['loss_class']          = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
-		$diagnostic['diagnostic_class']    = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
-		$diagnostic['tag']                 = 'product-grid';
-		$diagnostic['element']             = 'product-grid';
-		$diagnostic['suggested_primitive'] = 'product';
-
-		$container = self::first_scalar( $fallback, array( 'container_selector', 'selector' ) );
-		if ( '' !== $container ) {
-			$diagnostic['container_selector'] = $container;
-			if ( empty( $diagnostic['selector'] ) ) {
-				$diagnostic['selector'] = $container;
-			}
-		}
-
-		if ( isset( $fallback['products'] ) && is_array( $fallback['products'] ) ) {
-			$products                    = array_values( array_filter( $fallback['products'], 'is_array' ) );
-			$diagnostic['products']      = $products;
-			$diagnostic['product_count'] = count( $products );
-		}
-		self::carry_materialization_metadata( $diagnostic, $fallback );
-
-		return $diagnostic;
-	}
-
-	/**
-	 * Preserve provider materialization metadata on normalized SSI findings.
-	 *
-	 * @param array<string,mixed> $diagnostic Normalized diagnostic, mutated in place.
-	 * @param array<string,mixed> $fallback   Native Blocks Engine fallback row.
-	 * @return void
-	 */
-	private static function carry_materialization_metadata( array &$diagnostic, array $fallback ): void {
-		foreach ( array( 'materialization_target', 'form', 'controls', 'products' ) as $field ) {
-			if ( isset( $fallback[ $field ] ) && is_array( $fallback[ $field ] ) ) {
-				$diagnostic[ $field ] = $fallback[ $field ];
-			}
-		}
-
-		foreach ( array( 'materialization_hint', 'recoverability', 'actionability', 'suggested_repair_class', 'runtime_requirement' ) as $field ) {
-			if ( isset( $fallback[ $field ] ) && is_scalar( $fallback[ $field ] ) && '' !== trim( (string) $fallback[ $field ] ) ) {
-				$diagnostic[ $field ] = (string) $fallback[ $field ];
-			}
-		}
-	}
-
-	/**
-	 * Normalize a native interaction candidate into a report-only diagnostic.
-	 *
-	 * @param array<string,mixed> $candidate Native interaction candidate row.
-	 * @return array<string,mixed>
-	 */
-	private static function diagnostic_from_interaction_candidate( array $candidate ): array {
-		$source = self::first_scalar( $candidate, array( 'source_path', 'source', 'path' ) );
-		if ( '' === $source && '' === self::first_scalar( $candidate, array( 'selector', 'kind', 'type' ) ) ) {
-			return array();
-		}
-
-		$diagnostic = array(
-			'type'      => 'interaction_candidate',
-			'source'    => $source,
-			'reason'    => 'native_conversion_report_interaction_candidate',
-			'engine'    => 'blocks-engine/php-transformer',
-			'stage'     => 'interaction_detection',
-			'converter' => 'blocks-engine/php-transformer',
-		);
-
-		foreach ( array( 'source_path', 'selector', 'tag_name', 'message', 'excerpt', 'source_html_preview', 'html_excerpt', 'kind' ) as $field ) {
-			if ( isset( $candidate[ $field ] ) && is_scalar( $candidate[ $field ] ) && '' !== trim( (string) $candidate[ $field ] ) ) {
-				$diagnostic[ $field ] = (string) $candidate[ $field ];
-			}
-		}
-
-		return $diagnostic;
-	}
-
-	/**
-	 * Compact native report rows while preserving scalar diagnostic metadata.
-	 *
-	 * @param array<int,mixed> $rows Native report rows.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function compact_native_report_rows( array $rows ): array {
-		$fields       = array( 'type', 'kind', 'code', 'diagnostic_code', 'severity', 'source', 'source_path', 'path', 'script_path', 'selector', 'container_selector', 'target_selector', 'target', 'dom_target', 'tag', 'tag_name', 'element', 'block_name', 'block_path', 'attribute_path', 'reason', 'reason_code', 'message', 'excerpt', 'source_html_preview', 'emitted_block_preview', 'html_excerpt', 'handle', 'src', 'role', 'discovered', 'materialized', 'enqueued', 'telemetry', 'vendor', 'expected', 'observed', 'label', 'source_label', 'generated_label', 'url', 'source_url', 'generated_url', 'landmark', 'runtime_requirement', 'preservation_status', 'disposition', 'js_handling', 'recoverability', 'actionability', 'suggested_repair_class', 'suggested_primitive', 'materialization_hint', 'control_count', 'product_count' );
-		$array_fields = array( 'materialization_target', 'form', 'controls', 'products', 'readable_blocks' );
-		$compact      = array();
-		foreach ( array_slice( $rows, 0, 50 ) as $row ) {
-			if ( ! is_array( $row ) ) {
-				continue;
-			}
-
-			$entry = array();
-			foreach ( $fields as $field ) {
-				if ( isset( $row[ $field ] ) && is_scalar( $row[ $field ] ) && '' !== trim( (string) $row[ $field ] ) ) {
-					$entry[ $field ] = is_bool( $row[ $field ] ) || is_numeric( $row[ $field ] ) ? $row[ $field ] : (string) $row[ $field ];
-				}
-			}
-			foreach ( $array_fields as $field ) {
-				if ( isset( $row[ $field ] ) && is_array( $row[ $field ] ) && ! empty( $row[ $field ] ) ) {
-					$entry[ $field ] = self::compact_native_report_value( $row[ $field ] );
-				}
-			}
-
-			if ( ! empty( $entry ) ) {
-				$compact[] = $entry;
-			}
-		}
-
-		return $compact;
-	}
-
-	/**
-	 * Compact nested native report values while preserving scalar metrics.
-	 *
-	 * @param mixed $value Native report value.
-	 * @return mixed
-	 */
-	private static function compact_native_report_value( mixed $value ): mixed {
-		if ( ! is_array( $value ) ) {
-			return is_scalar( $value ) || null === $value ? $value : null;
-		}
-
-		$compact = array();
-		foreach ( array_slice( $value, 0, 50, true ) as $key => $item ) {
-			$compacted = self::compact_native_report_value( $item );
-			if ( null !== $compacted ) {
-				$compact[ $key ] = $compacted;
-			}
-		}
-
-		return $compact;
-	}
-
-	/**
-	 * Return array values only for list-like report rows.
-	 *
-	 * @param mixed $value Candidate list.
-	 * @return array<int,mixed>
-	 */
-	private static function array_values_if_list( mixed $value ): array {
-		return is_array( $value ) ? array_values( $value ) : array();
 	}
 
 	/**

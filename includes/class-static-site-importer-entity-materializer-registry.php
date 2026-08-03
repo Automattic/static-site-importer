@@ -787,7 +787,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				continue;
 			}
 
-			$row      = array(
+			$row = array(
 				'selector'    => isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '',
 				'source_path' => isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '',
 				'form'        => isset( $form['form'] ) && is_array( $form['form'] ) ? $form['form'] : array(),
@@ -796,14 +796,36 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( array_key_exists( 'control_topology', $form ) ) {
 				$topology = self::normalize_form_control_topology( $form['control_topology'], count( $controls ) );
 				if ( isset( $topology['error'] ) ) {
-					$errors[] = array( 'path' => $path_prefix . '.control_topology', 'message' => $topology['error'] );
+					$errors[] = array(
+						'path'    => $path_prefix . '.control_topology',
+						'message' => $topology['error'],
+					);
+					continue;
+				}
+				if ( ! array_key_exists( 'topology', $topology ) ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.control_topology',
+						'message' => 'Control topology normalization did not produce a topology.',
+					);
 					continue;
 				}
 				$row['control_topology'] = $topology['topology'];
 			}
 			if ( array_key_exists( 'layout_graph', $form ) ) {
 				$graph = self::normalize_computed_layout_graph( $form['layout_graph'] );
-				if ( isset( $graph['error'] ) ) { $errors[] = array( 'path' => $path_prefix . '.layout_graph', 'message' => $graph['error'] ); continue; }
+				if ( isset( $graph['error'] ) ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.layout_graph',
+						'message' => $graph['error'],
+					);
+					continue; }
+				if ( ! array_key_exists( 'graph', $graph ) ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.layout_graph',
+						'message' => 'Computed layout normalization did not produce a graph.',
+					);
+					continue;
+				}
 				$row['layout_graph'] = $graph['graph'];
 			}
 			$form_key = $row['source_path'] . "\n" . $row['selector'];
@@ -853,36 +875,90 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** @return array{graph?:array<string,mixed>,error?:string} */
 	private static function normalize_computed_layout_graph( mixed $candidate ): array {
-		if ( ! is_array( $candidate ) || 'generic/computed-layout-graph/v1' !== ( $candidate['schema'] ?? null ) || 'source_css_cascade' !== ( $candidate['basis'] ?? null ) || ! is_bool( $candidate['truncated'] ?? null ) || ! is_array( $candidate['limits'] ?? null ) || ! is_int( $candidate['limits']['nodes'] ?? null ) || ! is_int( $candidate['limits']['depth'] ?? null ) || ! is_int( $candidate['limits']['rules_per_node'] ?? null ) || $candidate['limits']['nodes'] < 1 || $candidate['limits']['nodes'] > 128 || $candidate['limits']['depth'] < 0 || $candidate['limits']['depth'] > 8 || $candidate['limits']['rules_per_node'] < 1 || $candidate['limits']['rules_per_node'] > 16 || ! is_array( $candidate['nodes'] ?? null ) || ! array_is_list( $candidate['nodes'] ) || count( $candidate['nodes'] ) > $candidate['limits']['nodes'] || ! is_array( $candidate['variants'] ?? null ) || ! is_array( $candidate['diagnostics'] ?? null ) ) return array( 'error' => 'layout_graph must be a bounded canonical generic/computed-layout-graph/v1 graph.' );
-		if ( ! self::has_only_keys( $candidate, array( 'schema', 'basis', 'truncated', 'limits', 'nodes', 'variants', 'diagnostics' ) ) || ! self::has_only_keys( $candidate['limits'], array( 'nodes', 'depth', 'rules_per_node' ) ) ) return array( 'error' => 'layout_graph contains unknown canonical keys.' );
-		if ( $candidate['truncated'] ) return array( 'error' => 'layout_graph is truncated.' );
-		$seen = array(); $nodes = array();
-		foreach ( $candidate['nodes'] as $node ) {
-			if ( ! is_array( $node ) || ! self::has_only_keys( $node, array( 'id', 'kind', 'parent', 'order', 'source', 'layout', 'provenance' ) ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:form|wrapper-[0-9]+|control-[0-9]+)$/D', $node['id'] ) || isset( $seen[$node['id']] ) || ! in_array( $node['kind'] ?? null, array( 'container', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_array( $node['source'] ?? null ) || ! is_array( $node['layout'] ?? null ) || ! is_array( $node['provenance'] ?? null ) ) return array( 'error' => 'layout_graph contains an unsupported canonical node.' );
-			$parent = $node['parent'] ?? null;
-			if ( null !== $parent && ( ! is_string( $parent ) || ! isset( $seen[$parent] ) ) ) return array( 'error' => 'computed_layout_graph parents must precede children.' );
-			$source = $node['source'];
-			if ( ! self::has_only_keys( $source, array( 'tag', 'id', 'classes' ) ) || ! is_string( $source['tag'] ?? null ) || ! preg_match( '/^[a-z][a-z0-9-]{0,30}$/D', $source['tag'] ) || ( isset($source['id']) && null !== $source['id'] && ( !is_string($source['id']) || !preg_match('/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D',$source['id']) ) ) || !is_array($source['classes'] ?? null) || count($source['classes']) > 8 ) return array( 'error' => 'layout_graph source identity is unsafe.' );
-			$layout = $node['layout'];
-			$layout_keys = array( 'display', 'columns', 'rows', 'gap', 'row_gap', 'column_gap', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'column', 'row', 'area', 'item_placement' );
-			foreach ( $layout as $field => $value ) if ( ! in_array( $field, $layout_keys, true ) || ( ! is_scalar( $value ) && ! is_array( $value ) ) ) return array( 'error'=>'layout_graph layout facts must use only producer-supported keys.' );
-			$clean = array( 'id'=>$node['id'], 'kind'=>$node['kind'], 'parent'=>$parent, 'order'=>$node['order'], 'source'=>array_intersect_key($source,array_flip(array('tag','id','classes'))), 'layout'=>array_intersect_key($layout,array_flip($layout_keys)), 'provenance'=>array_slice($node['provenance'],0,16) );
-			$seen[$node['id']] = true; $nodes[] = $clean;
+		if ( ! is_array( $candidate ) || 'generic/computed-layout-graph/v1' !== ( $candidate['schema'] ?? null ) || 'source_css_cascade' !== ( $candidate['basis'] ?? null ) || ! is_bool( $candidate['truncated'] ?? null ) || ! is_array( $candidate['limits'] ?? null ) || ! is_int( $candidate['limits']['nodes'] ?? null ) || ! is_int( $candidate['limits']['depth'] ?? null ) || ! is_int( $candidate['limits']['rules_per_node'] ?? null ) || $candidate['limits']['nodes'] < 1 || $candidate['limits']['nodes'] > 128 || $candidate['limits']['depth'] < 0 || $candidate['limits']['depth'] > 8 || $candidate['limits']['rules_per_node'] < 1 || $candidate['limits']['rules_per_node'] > 16 || ! is_array( $candidate['nodes'] ?? null ) || ! array_is_list( $candidate['nodes'] ) || count( $candidate['nodes'] ) > $candidate['limits']['nodes'] || ! is_array( $candidate['variants'] ?? null ) || ! is_array( $candidate['diagnostics'] ?? null ) ) {
+			return array( 'error' => 'layout_graph must be a bounded canonical generic/computed-layout-graph/v1 graph.' );
 		}
-		if ( count( $candidate['variants'] ) > 256 || ! array_is_list( $candidate['variants'] ) ) return array( 'error' => 'layout_graph variants exceed the producer contract bounds.' );
+		if ( ! self::has_only_keys( $candidate, array( 'schema', 'basis', 'truncated', 'limits', 'nodes', 'variants', 'diagnostics' ) ) || ! self::has_only_keys( $candidate['limits'], array( 'nodes', 'depth', 'rules_per_node' ) ) ) {
+			return array( 'error' => 'layout_graph contains unknown canonical keys.' );
+		}
+		if ( $candidate['truncated'] ) {
+			return array( 'error' => 'layout_graph is truncated.' );
+		}
+		$seen  = array();
+		$nodes = array();
+		foreach ( $candidate['nodes'] as $node ) {
+			if ( ! is_array( $node ) || ! self::has_only_keys( $node, array( 'id', 'kind', 'parent', 'order', 'source', 'layout', 'provenance' ) ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:form|wrapper-[0-9]+|control-[0-9]+)$/D', $node['id'] ) || isset( $seen[ $node['id'] ] ) || ! in_array( $node['kind'] ?? null, array( 'container', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_array( $node['source'] ?? null ) || ! is_array( $node['layout'] ?? null ) || ! is_array( $node['provenance'] ?? null ) ) {
+				return array( 'error' => 'layout_graph contains an unsupported canonical node.' );
+			}
+			$parent = $node['parent'] ?? null;
+			if ( null !== $parent && ( ! is_string( $parent ) || ! isset( $seen[ $parent ] ) ) ) {
+				return array( 'error' => 'computed_layout_graph parents must precede children.' );
+			}
+			$source = $node['source'];
+			if ( ! self::has_only_keys( $source, array( 'tag', 'id', 'classes' ) ) || ! is_string( $source['tag'] ?? null ) || ! preg_match( '/^[a-z][a-z0-9-]{0,30}$/D', $source['tag'] ) || ( isset($source['id']) && ( ! is_string($source['id']) || ! preg_match('/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $source['id']) ) ) || ! is_array($source['classes'] ?? null) || count($source['classes']) > 8 ) {
+				return array( 'error' => 'layout_graph source identity is unsafe.' );
+			}
+			$layout      = $node['layout'];
+			$layout_keys = array( 'display', 'columns', 'rows', 'gap', 'row_gap', 'column_gap', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'column', 'row', 'area', 'item_placement' );
+			foreach ( $layout as $field => $value ) {
+				if ( ! in_array( $field, $layout_keys, true ) || ( ! is_scalar( $value ) && ! is_array( $value ) ) ) {
+					return array( 'error' => 'layout_graph layout facts must use only producer-supported keys.' );
+				}
+			}
+			$clean               = array(
+				'id'         => $node['id'],
+				'kind'       => $node['kind'],
+				'parent'     => $parent,
+				'order'      => $node['order'],
+				'source'     => array_intersect_key($source, array_flip(array( 'tag', 'id', 'classes' ))),
+				'layout'     => array_intersect_key($layout, array_flip($layout_keys)),
+				'provenance' => array_slice($node['provenance'], 0, 16),
+			);
+			$seen[ $node['id'] ] = true;
+			$nodes[]             = $clean;
+		}
+		if ( count( $candidate['variants'] ) > 256 || ! array_is_list( $candidate['variants'] ) ) {
+			return array( 'error' => 'layout_graph variants exceed the producer contract bounds.' );
+		}
 		$variants = array();
 		foreach ( $candidate['variants'] as $variant ) {
-			if ( ! is_array( $variant ) || ! self::has_only_keys( $variant, array( 'node', 'condition', 'layout_patch', 'precedence', 'provenance' ) ) || ! is_string( $variant['node'] ?? null ) || ! isset( $seen[ $variant['node'] ] ) || ! self::valid_layout_condition( $variant['condition'] ?? null ) || ! is_array( $variant['layout_patch'] ?? null ) || array() === $variant['layout_patch'] || ! is_array( $variant['precedence'] ?? null ) || ! is_array( $variant['provenance'] ?? null ) || count( $variant['provenance'] ) > 16 ) return array( 'error' => 'layout_graph contains an unsupported canonical variant.' );
-			foreach ( $variant['layout_patch'] as $property => $value ) if ( ! isset( self::layout_property_map()[ $property ] ) || ! is_string( $value ) || '' === trim( $value ) || ! isset( $variant['precedence'][ self::layout_property_map()[ $property ] ] ) ) return array( 'error' => 'layout_graph variant layout facts are malformed.' );
-			foreach ( $variant['precedence'] as $property => $precedence ) if ( ! isset( self::layout_producer_property_map()[ $property ] ) || ! isset( $variant['layout_patch'][ self::layout_producer_property_map()[ $property ] ] ) || ! is_array( $precedence ) || ! self::has_only_keys( $precedence, array( 'source_order', 'specificity', 'important' ) ) || ! is_int( $precedence['source_order'] ?? null ) || ! is_int( $precedence['specificity'] ?? null ) || ! is_bool( $precedence['important'] ?? null ) ) return array( 'error' => 'layout_graph variant precedence is malformed.' );
-			foreach ( $variant['provenance'] as $fact ) if ( ! is_array( $fact ) || ! self::has_only_keys( $fact, array( 'source_path', 'source_sha256', 'selector', 'condition', 'properties' ) ) || ! is_string( $fact['source_path'] ?? null ) || ! preg_match( '~^(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9._/-]+$~D', $fact['source_path'] ) || ! preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ?? '' ) || ! is_string( $fact['selector'] ?? null ) || '' === trim( $fact['selector'] ) || strlen( $fact['selector'] ) > 1024 || $fact['condition'] !== $variant['condition'] || ! is_array( $fact['properties'] ?? null ) || array() === $fact['properties'] || count( $fact['properties'] ) > 19 || array_filter( $fact['properties'], static fn( $property ): bool => ! is_string( $property ) || ! isset( self::layout_producer_property_map()[ $property ] ) || ! isset( $variant['layout_patch'][ self::layout_producer_property_map()[ $property ] ] ) ) ) return array( 'error' => 'layout_graph variant provenance is malformed.' );
+			if ( ! is_array( $variant ) || ! self::has_only_keys( $variant, array( 'node', 'condition', 'layout_patch', 'precedence', 'provenance' ) ) || ! is_string( $variant['node'] ?? null ) || ! isset( $seen[ $variant['node'] ] ) || ! self::valid_layout_condition( $variant['condition'] ?? null ) || ! is_array( $variant['layout_patch'] ?? null ) || array() === $variant['layout_patch'] || ! is_array( $variant['precedence'] ?? null ) || ! is_array( $variant['provenance'] ?? null ) || count( $variant['provenance'] ) > 16 ) {
+				return array( 'error' => 'layout_graph contains an unsupported canonical variant.' );
+			}
+			foreach ( $variant['layout_patch'] as $property => $value ) {
+				if ( ! isset( self::layout_property_map()[ $property ] ) || ! is_string( $value ) || '' === trim( $value ) || ! isset( $variant['precedence'][ self::layout_property_map()[ $property ] ] ) ) {
+					return array( 'error' => 'layout_graph variant layout facts are malformed.' );
+				}
+			}
+			foreach ( $variant['precedence'] as $property => $precedence ) {
+				if ( ! isset( self::layout_producer_property_map()[ $property ] ) || ! isset( $variant['layout_patch'][ self::layout_producer_property_map()[ $property ] ] ) || ! is_array( $precedence ) || ! self::has_only_keys( $precedence, array( 'source_order', 'specificity', 'important' ) ) || ! is_int( $precedence['source_order'] ?? null ) || ! is_int( $precedence['specificity'] ?? null ) || ! is_bool( $precedence['important'] ?? null ) ) {
+					return array( 'error' => 'layout_graph variant precedence is malformed.' );
+				}
+			}
+			foreach ( $variant['provenance'] as $fact ) {
+				if ( ! is_array( $fact ) || ! self::has_only_keys( $fact, array( 'source_path', 'source_sha256', 'selector', 'condition', 'properties' ) ) || ! is_string( $fact['source_path'] ?? null ) || ! preg_match( '~^(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9._/-]+$~D', $fact['source_path'] ) || ! preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ?? '' ) || ! is_string( $fact['selector'] ?? null ) || '' === trim( $fact['selector'] ) || strlen( $fact['selector'] ) > 1024 || $fact['condition'] !== $variant['condition'] || ! is_array( $fact['properties'] ?? null ) || array() === $fact['properties'] || count( $fact['properties'] ) > 19 || array_filter( $fact['properties'], static fn( $property ): bool => ! is_string( $property ) || ! isset( self::layout_producer_property_map()[ $property ] ) || ! isset( $variant['layout_patch'][ self::layout_producer_property_map()[ $property ] ] ) ) ) {
+					return array( 'error' => 'layout_graph variant provenance is malformed.' );
+				}
+			}
 			$variants[] = $variant;
 		}
-		return array( 'graph' => array( 'schema'=>'generic/computed-layout-graph/v1', 'basis'=>$candidate['basis'], 'truncated'=>false, 'limits'=>array_intersect_key($candidate['limits'],array_flip(array('nodes','depth','rules_per_node'))), 'nodes'=>$nodes, 'variants'=>$variants, 'diagnostics'=>array_slice($candidate['diagnostics'],0,32) ) );
+		return array(
+			'graph' => array(
+				'schema'      => 'generic/computed-layout-graph/v1',
+				'basis'       => $candidate['basis'],
+				'truncated'   => false,
+				'limits'      => array_intersect_key($candidate['limits'], array_flip(array( 'nodes', 'depth', 'rules_per_node' ))),
+				'nodes'       => $nodes,
+				'variants'    => $variants,
+				'diagnostics' => array_slice($candidate['diagnostics'], 0, 32),
+			),
+		);
 	}
 
 	private static function valid_layout_condition( mixed $condition, int $depth = 0 ): bool {
-		if ( ! is_array( $condition ) || $depth > 8 ) return false;
+		if ( ! is_array( $condition ) || $depth > 8 ) {
+			return false;
+		}
 		if ( 'all' === ( $condition['kind'] ?? null ) ) {
 			return self::has_only_keys( $condition, array( 'kind', 'conditions' ) ) && is_array( $condition['conditions'] ?? null ) && ! empty( $condition['conditions'] ) && count( $condition['conditions'] ) <= 8 && array_reduce( $condition['conditions'], static fn( bool $valid, $item ): bool => $valid && self::valid_layout_condition( $item, $depth + 1 ), true );
 		}
@@ -921,7 +997,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$controls   = array();
 		$orders     = array();
 		foreach ( $nodes as $index => $node ) {
-			if ( ! is_array( $node ) || ! self::has_only_keys( $node, 'wrapper' === ( $node['kind'] ?? null ) ? array( 'id', 'kind', 'parent', 'order', 'depth', 'tag', 'source_id', 'class' ) : array( 'id', 'kind', 'parent', 'order', 'depth', 'control' ) ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:wrapper|control)-[A-Za-z0-9_-]{1,80}$/D', $node['id'] ) || isset( $seen_ids[ $node['id'] ] ) || ! in_array( $node['kind'] ?? null, array( 'wrapper', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_int( $node['depth'] ?? null ) || $node['depth'] < 0 || $node['depth'] > $max_depth ) {
+			if ( ! is_array( $node ) || ! self::has_only_keys( $node, ( $node['kind'] ?? null ) === 'wrapper' ? array( 'id', 'kind', 'parent', 'order', 'depth', 'tag', 'source_id', 'class' ) : array( 'id', 'kind', 'parent', 'order', 'depth', 'control' ) ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:wrapper|control)-[A-Za-z0-9_-]{1,80}$/D', $node['id'] ) || isset( $seen_ids[ $node['id'] ] ) || ! in_array( $node['kind'] ?? null, array( 'wrapper', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_int( $node['depth'] ?? null ) || $node['depth'] < 0 || $node['depth'] > $max_depth ) {
 				return array( 'error' => 'control_topology contains an unsupported node.' );
 			}
 			$parent = $node['parent'] ?? null;
@@ -939,7 +1015,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				return array( 'error' => 'control_topology node depth and parent must describe a wrapper tree.' );
 			}
 
-			$normalized_node = array( 'id' => $node['id'], 'kind' => $node['kind'], 'parent' => $parent, 'order' => $node['order'], 'depth' => $node['depth'] );
+			$normalized_node = array(
+				'id'     => $node['id'],
+				'kind'   => $node['kind'],
+				'parent' => $parent,
+				'order'  => $node['order'],
+				'depth'  => $node['depth'],
+			);
 			if ( 'control' === $node['kind'] ) {
 				if ( ! str_starts_with( $node['id'], 'control-' ) || ! is_int( $node['control'] ?? null ) || $node['control'] < 0 || $node['control'] >= $control_count || isset( $controls[ $node['control'] ] ) ) {
 					return array( 'error' => 'control_topology control references must be unique flat control indexes.' );
@@ -962,20 +1044,50 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					$normalized_node[ $field ] = $value;
 				}
 			}
-			$seen_ids[ $node['id'] ]                  = $normalized_node;
+			$seen_ids[ $node['id'] ]                 = $normalized_node;
 			$orders[ $parent_key ][ $node['order'] ] = true;
-			$normalized[]                             = $normalized_node;
+			$normalized[]                            = $normalized_node;
 		}
 		if ( count( $controls ) !== $control_count ) {
 			return array( 'error' => 'control_topology must preserve every flat control exactly once.' );
 		}
 
-		return array( 'topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => $max_depth, 'max_nodes' => $max_nodes, 'nodes' => $normalized, 'truncated' => false ) );
+		return array(
+			'topology' => array(
+				'schema'    => 'generic/form-control-topology/v1',
+				'max_depth' => $max_depth,
+				'max_nodes' => $max_nodes,
+				'nodes'     => $normalized,
+				'truncated' => false,
+			),
+		);
 	}
 
 	/** @return array<string,string> */
 	private static function layout_property_map(): array {
-		return array( 'display' => 'display', 'columns' => 'grid-template-columns', 'rows' => 'grid-template-rows', 'gap' => 'gap', 'row_gap' => 'row-gap', 'column_gap' => 'column-gap', 'column' => 'grid-column', 'row' => 'grid-row', 'area' => 'grid-area', 'direction' => 'flex-direction', 'wrap' => 'flex-wrap', 'align_items' => 'align-items', 'align_content' => 'align-content', 'justify_content' => 'justify-content', 'align_self' => 'align-self', 'justify_self' => 'justify-self', 'order' => 'order', 'flex' => 'flex', 'flex_grow' => 'flex-grow', 'flex_shrink' => 'flex-shrink', 'flex_basis' => 'flex-basis' );
+		return array(
+			'display'         => 'display',
+			'columns'         => 'grid-template-columns',
+			'rows'            => 'grid-template-rows',
+			'gap'             => 'gap',
+			'row_gap'         => 'row-gap',
+			'column_gap'      => 'column-gap',
+			'column'          => 'grid-column',
+			'row'             => 'grid-row',
+			'area'            => 'grid-area',
+			'direction'       => 'flex-direction',
+			'wrap'            => 'flex-wrap',
+			'align_items'     => 'align-items',
+			'align_content'   => 'align-content',
+			'justify_content' => 'justify-content',
+			'align_self'      => 'align-self',
+			'justify_self'    => 'justify-self',
+			'order'           => 'order',
+			'flex'            => 'flex',
+			'flex_grow'       => 'flex-grow',
+			'flex_shrink'     => 'flex-shrink',
+			'flex_basis'      => 'flex-basis',
+		);
 	}
 
 	/** @return array<string,string> */
