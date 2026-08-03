@@ -77,7 +77,11 @@ final class Static_Site_Importer_Document_Type_Classifier {
 	 * @return array{post_type:string,date:?string,signal:string}
 	 */
 	private static function result( string $post_type, ?string $date, string $signal ): array {
-		return array( 'post_type' => $post_type, 'date' => $date, 'signal' => $signal );
+		return array(
+			'post_type' => $post_type,
+			'date'      => $date,
+			'signal'    => $signal,
+		);
 	}
 
 	/**

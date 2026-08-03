@@ -1581,7 +1581,11 @@ class Static_Site_Importer_Theme_Generator {
 				}
 				$path                = $is_front ? $entrypoint : self::export_page_artifact_path( $page, $root );
 				$used_paths[ $path ] = true;
-				$planned[]           = array( 'page' => $page, 'path' => $path, 'is_front' => $is_front );
+				$planned[]           = array(
+					'page'     => $page,
+					'path'     => $path,
+					'is_front' => $is_front,
+				);
 			}
 			foreach ( $pages as $page ) {
 				if ( 'post' !== ( $page->post_type ?? '' ) || ( isset( $page->ID ) && (int) $page->ID === $front_planned_id ) ) {
@@ -1593,7 +1597,11 @@ class Static_Site_Importer_Theme_Generator {
 					$path = self::export_artifact_path( $root . '/post/' . ( isset( $page->post_name ) ? sanitize_title( (string) $page->post_name ) : (string) ( isset( $page->ID ) ? (int) $page->ID : 0 ) ) . '/index.html', $root . '/post/page/index.html' );
 				}
 				$used_paths[ $path ] = true;
-				$planned[]           = array( 'page' => $page, 'path' => $path, 'is_front' => false );
+				$planned[]           = array(
+					'page'     => $page,
+					'path'     => $path,
+					'is_front' => false,
+				);
 			}
 			foreach ( $planned as $plan ) {
 				$page     = $plan['page'];

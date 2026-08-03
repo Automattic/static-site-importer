@@ -83,7 +83,11 @@ class Static_Site_Importer_Theme_Exporter {
 				}
 				$path                = $is_front ? $entrypoint : self::export_page_artifact_path( $page, $root );
 				$used_paths[ $path ] = true;
-				$planned[]           = array( 'page' => $page, 'path' => $path, 'is_front' => $is_front );
+				$planned[]           = array(
+					'page'     => $page,
+					'path'     => $path,
+					'is_front' => $is_front,
+				);
 			}
 			foreach ( $pages as $page ) {
 				if ( 'post' !== ( $page->post_type ?? '' ) || ( isset( $page->ID ) && (int) $page->ID === $front_planned_id ) ) {
@@ -95,14 +99,18 @@ class Static_Site_Importer_Theme_Exporter {
 					$path = self::export_artifact_path( $root . '/post/' . ( isset( $page->post_name ) ? sanitize_title( (string) $page->post_name ) : (string) ( isset( $page->ID ) ? (int) $page->ID : 0 ) ) . '/index.html', $root . '/post/page/index.html' );
 				}
 				$used_paths[ $path ] = true;
-				$planned[]           = array( 'page' => $page, 'path' => $path, 'is_front' => false );
+				$planned[]           = array(
+					'page'     => $page,
+					'path'     => $path,
+					'is_front' => false,
+				);
 			}
 			foreach ( $planned as $plan ) {
-				$page     = $plan['page'];
-				$path     = $plan['path'];
-				$is_front = $plan['is_front'];
-				$page_id  = isset( $page->ID ) ? (int) $page->ID : 0;
-				$template = $is_front ? 'front-page' : 'page';
+				$page      = $plan['page'];
+				$path      = $plan['path'];
+				$is_front  = $plan['is_front'];
+				$page_id   = isset( $page->ID ) ? (int) $page->ID : 0;
+				$template  = $is_front ? 'front-page' : 'page';
 				$page_html = self::blocks_to_html( isset( $page->post_content ) ? (string) $page->post_content : '' );
 
 				$files[] = self::export_file_entry(

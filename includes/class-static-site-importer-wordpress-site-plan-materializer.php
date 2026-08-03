@@ -391,7 +391,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$page['post_type']                         = $classification['post_type'];
 			$page['metadata']['detected_date']         = $classification['date'];
 			$page['metadata']['classification_signal'] = $classification['signal'];
-			$existing = self::reconciled_post( $page['reconciliation_identity'] );
+			$existing                                  = self::reconciled_post( $page['reconciliation_identity'] );
 			if ( $existing ) {
 				$page = self::plan_existing_page( $state, $page, $existing, 'reconciliation_identity_match' );
 				continue;
@@ -936,7 +936,15 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	private static function reconciled_post( string $identity ) {
 		// The reconciliation meta key is unique per document, so no post_type
 		// filter is needed; 'any' covers posts, pages, and custom import types.
-		$posts = get_posts( array( 'post_type' => 'any', 'post_status' => 'any', 'meta_key' => self::RECONCILIATION_META_KEY, 'meta_value' => $identity, 'numberposts' => 1 ) );
+		$posts = get_posts(
+			array(
+				'post_type'   => 'any',
+				'post_status' => 'any',
+				'meta_key'    => self::RECONCILIATION_META_KEY,
+				'meta_value'  => $identity,
+				'numberposts' => 1,
+			)
+		);
 		return isset( $posts[0] ) ? $posts[0] : null;
 	}
 
