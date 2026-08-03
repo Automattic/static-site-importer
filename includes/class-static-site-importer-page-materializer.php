@@ -105,7 +105,7 @@ class Static_Site_Importer_Page_Materializer {
 	 * @param array<string,array<string,mixed>>               $assets              Materialized assets keyed by source path.
 	 * @param array<string,string>                            $permalinks          Imported page permalinks keyed by source path.
 	 * @param array<string,string>                            $template_part_writes Generated header/footer template part writes keyed by path.
-	 * @param array<string,bool>                              $options             Page materialization options.
+	 * @param array{strip_template_header?:bool,strip_template_footer?:bool,svg_font_faces?:mixed} $options Page materialization options.
 	 * @return array{patterns:array<string,string>,files:array<string,string>,asset_writes:array<string,string>,contents:array<string,string>,diagnostics:array<int,array<string,mixed>>}
 	 */
 	public static function page_artifacts( array $pages, string $theme_slug, array $assets = array(), array $permalinks = array(), array $template_part_writes = array(), array $options = array() ): array {
@@ -169,14 +169,14 @@ class Static_Site_Importer_Page_Materializer {
 	public static function svg_font_usage_markup( array $pages, int $limit = 262144 ): string {
 		$markup = '';
 		foreach ( $pages as $page ) {
-			if ( ! $page instanceof Static_Site_Importer_Source_Page || 'blocks' !== $page->body_format() || ! str_contains( $page->body(), '<svg' ) ) {
+			if ( 'blocks' !== $page->body_format() || ! str_contains( $page->body(), '<svg' ) ) {
 				continue;
 			}
 			if ( ! preg_match_all( '/<!-- wp:html(?:\s+(\{.*?\}))? -->(.*?)<!-- \/wp:html -->/s', $page->body(), $blocks, PREG_SET_ORDER ) ) {
 				continue;
 			}
 			foreach ( $blocks as $block ) {
-				$attrs = isset( $block[1] ) && '' !== trim( (string) $block[1] ) ? json_decode( (string) $block[1], true ) : array();
+				$attrs = '' !== trim( $block[1] ) ? json_decode( $block[1], true ) : array();
 				$html  = isset( $attrs['content'] ) && is_scalar( $attrs['content'] ) ? (string) $attrs['content'] : (string) $block[2];
 				$svg   = self::safe_inline_svg( html_entity_decode( trim( $html ), ENT_QUOTES | ENT_HTML5 ) );
 				if ( '' === $svg || ! str_contains( $svg, '<text' ) || strlen( $svg ) > $limit - strlen( $markup ) ) {
@@ -492,8 +492,8 @@ class Static_Site_Importer_Page_Materializer {
 		$path  = is_array( $parts ) ? (string) ( $parts['path'] ?? '' ) : $url;
 
 		// Relative HTML routes may be coerced into hostnames before materialization.
-		if ( '' === $path && is_array( $parts ) && preg_match( '/\.html?$/i', (string) ( $parts['host'] ?? '' ) ) ) {
-			$path = (string) $parts['host'];
+		if ( '' === $path && is_array( $parts ) && isset( $parts['host'] ) && preg_match( '/\.html?$/i', $parts['host'] ) ) {
+			$path = $parts['host'];
 		}
 
 		$path = preg_replace( '#/+#', '/', str_replace( '\\', '/', $path ) ) ?? $path;
@@ -583,7 +583,7 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		foreach ( $part_blocks as $index => $part_block ) {
-			if ( ( $page_blocks[ $index ]['normalized'] ?? '' ) !== ( $part_block['normalized'] ?? '' ) ) {
+			if ( ( $page_blocks[ $index ]['normalized'] ?? '' ) !== $part_block['normalized'] ) {
 				return false;
 			}
 		}
@@ -620,7 +620,7 @@ class Static_Site_Importer_Page_Materializer {
 			return $markup;
 		}
 
-		$blocks  = parse_blocks( $markup );
+		$blocks  = array_values( parse_blocks( $markup ) );
 		$changed = false;
 
 		if ( $strip_header ) {
@@ -767,7 +767,7 @@ class Static_Site_Importer_Page_Materializer {
 		return preg_replace_callback(
 			'/<!-- wp:html(?:\s+(\{.*?\}))? -->(.*?)<!-- \/wp:html -->/s',
 			static function ( array $matches ) use ( $theme_slug, $page_slug, &$asset_writes, &$diagnostics, $svg_font_faces ): string {
-				$attrs = isset( $matches[1] ) && '' !== trim( (string) $matches[1] ) ? json_decode( (string) $matches[1], true ) : array();
+				$attrs = '' !== trim( $matches[1] ) ? json_decode( $matches[1], true ) : array();
 				$html  = isset( $attrs['content'] ) && is_scalar( $attrs['content'] ) ? (string) $attrs['content'] : (string) $matches[2];
 				$svg   = self::safe_inline_svg( html_entity_decode( trim( $html ), ENT_QUOTES | ENT_HTML5 ) );
 				if ( '' === $svg ) {
@@ -814,7 +814,7 @@ class Static_Site_Importer_Page_Materializer {
 	 */
 	private static function embed_svg_font_faces( string $svg, string $font_faces ): string {
 		preg_match_all( '/font-family\s*:\s*(["\']?)([^;"\']+)\1\s*;/i', $font_faces, $matches );
-		$families    = array_values( array_unique( array_map( 'trim', $matches[2] ?? array() ) ) );
+		$families    = array_values( array_unique( array_map( 'trim', $matches[2] ) ) );
 		$uses_family = Static_Site_Importer_Font_Materializer::svg_uses_font_family( $svg, $families );
 		if ( '' === $font_faces || ! str_contains( $svg, '<text' ) || ! $uses_family || ! preg_match( '/<svg\b[^>]*>/i', $svg, $match, PREG_OFFSET_CAPTURE ) ) {
 			return $svg;
@@ -1135,7 +1135,7 @@ class Static_Site_Importer_Page_Materializer {
 	 * @param string                         $source_path Source path for diagnostics.
 	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics, passed by reference.
 	 * @param array<string,mixed>            $options     Transformer options.
-	 * @param array<int,array<string,mixed>> $assets  Generated transformer assets, passed by reference.
+	 * @param array<int,array<mixed>>         $assets  Generated transformer assets, passed by reference.
 	 */
 	public static function html_to_blocks( string $body, string $source_path, array &$diagnostics, array $options = array(), array &$assets = array() ): string {
 		if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
@@ -1149,7 +1149,6 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		$result = blocks_engine_php_transformer_convert_format( $body, 'html', 'blocks', $options );
-		$result = is_array( $result ) ? $result : array();
 		foreach ( isset( $result['assets'] ) && is_array( $result['assets'] ) ? $result['assets'] : array() as $asset ) {
 			if ( is_array( $asset ) ) {
 				$assets[] = $asset;
@@ -1189,7 +1188,7 @@ class Static_Site_Importer_Page_Materializer {
 			return $markup;
 		}
 
-		return self::serialize_blocks_with_reduced_fallbacks( parse_blocks( $markup ) );
+		return self::serialize_blocks_with_reduced_fallbacks( array_values( parse_blocks( $markup ) ) );
 	}
 
 	/**
@@ -1201,10 +1200,6 @@ class Static_Site_Importer_Page_Materializer {
 	private static function serialize_blocks_with_reduced_fallbacks( array $blocks ): string {
 		$output = '';
 		foreach ( $blocks as $block ) {
-			if ( ! is_array( $block ) ) {
-				continue;
-			}
-
 			$name = isset( $block['blockName'] ) && is_string( $block['blockName'] ) ? $block['blockName'] : '';
 			if ( in_array( $name, array( 'core/html', 'core/freeform' ), true ) ) {
 				$output .= self::fallback_html_to_native_blocks( self::fallback_block_html( $block ), $name );
@@ -1241,7 +1236,7 @@ class Static_Site_Importer_Page_Materializer {
 		$index = 0;
 		foreach ( isset( $block['innerContent'] ) && is_array( $block['innerContent'] ) ? $block['innerContent'] : array() as $chunk ) {
 			if ( null === $chunk ) {
-				$body .= isset( $inner_blocks[ $index ] ) && is_array( $inner_blocks[ $index ] ) ? self::serialize_blocks_with_reduced_fallbacks( array( $inner_blocks[ $index ] ) ) : '';
+				$body .= isset( $inner_blocks[ $index ] ) ? self::serialize_blocks_with_reduced_fallbacks( array( $inner_blocks[ $index ] ) ) : '';
 				++$index;
 				continue;
 
@@ -1308,7 +1303,11 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		$xpath = new DOMXPath( $dom );
-		$root  = $xpath->query( '//*[@data-ssi-fragment-root="1"]' )->item( 0 );
+		$roots = $xpath->query( '//*[@data-ssi-fragment-root="1"]' );
+		if ( false === $roots ) {
+			return null;
+		}
+		$root = $roots->item( 0 );
 		if ( ! $root instanceof DOMElement ) {
 			return null;
 		}
@@ -1809,9 +1808,6 @@ class Static_Site_Importer_Page_Materializer {
 		$search_input = null;
 		$button_text  = '';
 		foreach ( $inputs as $input ) {
-			if ( ! $input instanceof DOMElement ) {
-				continue;
-			}
 			$type = strtolower( trim( $input->getAttribute( 'type' ) ) );
 			$name = strtolower( trim( $input->getAttribute( 'name' ) ) );
 			if ( in_array( $type, array( '', 'search', 'text' ), true ) && in_array( $name, array( '', 's', 'search', 'q' ), true ) ) {
@@ -1828,9 +1824,6 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		foreach ( iterator_to_array( $element->getElementsByTagName( 'button' ) ) as $button ) {
-			if ( ! $button instanceof DOMElement ) {
-				continue;
-			}
 			$content = self::safe_inline_html( $button );
 			if ( null === $content ) {
 				return null;
@@ -2089,7 +2082,7 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		foreach ( iterator_to_array( $element->attributes ) as $attribute ) {
-			if ( $attribute instanceof DOMAttr && preg_match( '/^data-(?:dir|cart|quantity|qty|product|product-id)$/', strtolower( $attribute->name ) ) ) {
+			if ( preg_match( '/^data-(?:dir|cart|quantity|qty|product|product-id)$/', strtolower( $attribute->name ) ) ) {
 				return true;
 			}
 		}
