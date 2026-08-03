@@ -23,6 +23,7 @@ foreach (
 		'esc_html'            => static fn( string $value ): string => htmlspecialchars( $value, ENT_QUOTES ),
 		'sanitize_text_field' => static fn( string $value ): string => trim( preg_replace( '/\s+/', ' ', wp_strip_all_tags( $value ) ) ?? '' ),
 		'wp_strip_all_tags'   => static fn( string $value ): string => strip_tags( $value ),
+		'wp_parse_url'        => static fn( string $url ): array|false => parse_url( $url ),
 		'sanitize_key'        => static fn( string $value ): string => strtolower( preg_replace( '/[^a-zA-Z0-9_\-]/', '', $value ) ?? '' ),
 		'sanitize_title'      => static fn( string $value ): string => trim( strtolower( preg_replace( '/[^a-z0-9]+/i', '-', $value ) ?? '' ), '-' ),
 	) as $function => $implementation
@@ -41,6 +42,7 @@ $ssi_inline_svg_stubs = array(
 	'esc_html'            => static fn( string $value ): string => htmlspecialchars( $value, ENT_QUOTES ),
 	'sanitize_text_field' => static fn( string $value ): string => trim( preg_replace( '/\s+/', ' ', strip_tags( $value ) ) ?? '' ),
 	'wp_strip_all_tags'   => static fn( string $value ): string => strip_tags( $value ),
+	'wp_parse_url'        => static fn( string $url ): array|false => parse_url( $url ),
 	'sanitize_key'        => static fn( string $value ): string => strtolower( preg_replace( '/[^a-zA-Z0-9_\-]/', '', $value ) ?? '' ),
 	'sanitize_title'      => static fn( string $value ): string => trim( strtolower( preg_replace( '/[^a-z0-9]+/i', '-', $value ) ?? '' ), '-' ),
 );
