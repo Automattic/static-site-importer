@@ -492,8 +492,8 @@ class Static_Site_Importer_Page_Materializer {
 		$path  = is_array( $parts ) ? (string) ( $parts['path'] ?? '' ) : $url;
 
 		// Relative HTML routes may be coerced into hostnames before materialization.
-		if ( '' === $path && is_array( $parts ) && isset( $parts['host'] ) && preg_match( '/\.html?$/i', $parts['host'] ) ) {
-			$path = $parts['host'];
+		if ( '' === $path && is_array( $parts ) && isset( $parts['host'] ) && preg_match( '/\.html?$/i', (string) $parts['host'] ) ) {
+			$path = (string) $parts['host'];
 		}
 
 		$path = preg_replace( '#/+#', '/', str_replace( '\\', '/', $path ) ) ?? $path;
