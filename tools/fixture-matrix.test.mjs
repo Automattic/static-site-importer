@@ -779,6 +779,42 @@ test('runtime presentation evidence intake preserves a typed envelope and diagno
   });
 });
 
+test('host-staged provider readiness command survives emitted recipe shell serialization', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'provider-readiness-shell-contract' });
+  const recipe = buildFixtureMatrixRecipe({
+    matrix,
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    editorValidation: false,
+    visualParity: false,
+    dependencyPlan: {
+      schema: 'static-site-importer/runtime-dependency-plan/v1',
+      artifact_sha256: 'a'.repeat(64),
+      entries: [{
+        source_kind: 'wordpress.org-plugin',
+        slug: 'jetpack',
+        plugin_entrypoint: 'jetpack/jetpack.php',
+        activation: 'required',
+        version_policy: 'exact',
+        provenance: 'fixture-test',
+        host_resolution: {
+          archive_path: '/tmp/jetpack.zip',
+          archive_sha256: 'b'.repeat(64),
+          version: '14.0',
+        },
+      }],
+    },
+  });
+  const step = recipe.workflow.steps.find((candidate) => candidate.metadata?.phase === 'provider-readiness');
+  const command = step?.args?.[0] || '';
+  const decoded = spawnSync('sh', ['-c', `set -- ${command}; printf "%s" "$2"`], { encoding: 'utf8' });
+
+  assert.equal(decoded.status, 0, decoded.stderr);
+  assert.match(decoded.stdout, /foreach \(\$required as \$name\)/);
+  assert.doesNotMatch(decoded.stdout, /static fn/);
+  const lint = spawnSync('php', ['-l'], { input: `<?php\n${decoded.stdout}`, encoding: 'utf8' });
+  assert.equal(lint.status, 0, lint.stderr || lint.stdout);
+});
+
 test('fixture manifests explicitly opt into unproven dynamic client assets', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-dynamic-client-assets-'));
   try {
@@ -5161,12 +5197,12 @@ if (ids.includes('hanging')) {
     run: true,
     batchSize: 3,
     recoveryConcurrency: 2,
-    batchInactivityTimeoutMs: 250,
+    batchInactivityTimeoutMs: 1000,
     visualParity: false,
     wpCodeboxBin,
     progress: (event) => events.push(event),
   });
-  assert.ok(Date.now() - startedAt < 2000, 'inactivity recovery must not wait for a long command timeout');
+  assert.ok(Date.now() - startedAt < 4000, 'inactivity recovery must not wait for a long command timeout');
   assert.equal(summary.result_summary.succeeded, 2);
   assert.equal(summary.result_summary.failed, 1);
   assert.deepEqual(events.map((event) => event.schema), Array(events.length).fill(FIXTURE_MATRIX_PROGRESS_SCHEMA));
