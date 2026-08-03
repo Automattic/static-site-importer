@@ -39,6 +39,24 @@ if ( ! function_exists( 'sanitize_file_name' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_parse_url' ) ) {
+	function wp_parse_url( string $url, int $component = -1 ) {
+		return parse_url( $url, $component );
+	}
+}
+
+if ( ! function_exists( 'wp_json_encode' ) ) {
+	function wp_json_encode( mixed $value, int $flags = 0, int $depth = 512 ) {
+		return json_encode( $value, $flags, $depth );
+	}
+}
+
+if ( ! function_exists( 'wp_strip_all_tags' ) ) {
+	function wp_strip_all_tags( string $string, bool $remove_breaks = false ): string {
+		return strip_tags( $string );
+	}
+}
+
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-fetcher.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-site-collector.php';
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
