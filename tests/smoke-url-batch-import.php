@@ -7,6 +7,8 @@ function sanitize_file_name( string $name ): string { return trim( (string) preg
 function trailingslashit( string $path ): string { return rtrim( $path, '/' ) . '/'; }
 function wp_mkdir_p( string $path ): bool { return is_dir( $path ) || mkdir( $path, 0777, true ); }
 function wp_json_encode( $value, int $options = 0 ) { return json_encode( $value, $options ); }
+function wp_parse_url( string $url, int $component = -1 ) { return parse_url( $url, $component ); }
+function wp_strip_all_tags( string $text ): string { return strip_tags( $text ); }
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-fetcher.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-site-collector.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-import-runtime.php';
