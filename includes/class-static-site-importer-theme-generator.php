@@ -68,9 +68,9 @@ class Static_Site_Importer_Theme_Generator {
 			$args['source_artifact_reference'] = self::source_artifact_reference_from_artifact( $artifact, $args );
 		}
 
-		// compiler_options stays accepted on the public args for backward
-		// compatibility; the tagged transformer ignores it at this boundary.
-		$compiled = ( new $compiler_class() )->compile( $artifact )->toArray();
+		// A URL batch run composes this canonical compiler result before the one
+		// serialized WordPress mutation. Direct callers retain whole-artifact compilation.
+		$compiled = isset( $args['compiled_artifact_result'] ) && is_array( $args['compiled_artifact_result'] ) ? $args['compiled_artifact_result'] : ( new $compiler_class() )->compile( $artifact )->toArray();
 		if ( ! is_array( $compiled ) ) {
 			return new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid result.' );
 		}
