@@ -199,6 +199,7 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$prepared['args']['runtime_entity_bindings']    = $bindings;
 		$prepared['args']['provider_layout_overlays']   = $page_ready ? array() : self::provider_layout_overlays_from_entity_reports( $entities );
+		$prepared['args']['font_materialization']       = $page_ready ? array() : $prepared['args']['font_materialization'];
 		$prepared['args']['activate']                   = $page_ready ? false : ! empty( $prepared['args']['activate'] );
 		$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared );
 		$receipt['completed']['companion_plugin'] = $companion_materialization;
