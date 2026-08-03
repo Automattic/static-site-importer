@@ -779,8 +779,16 @@ test('runtime presentation evidence intake preserves a typed envelope and diagno
   });
 });
 
-test('host-staged provider readiness command survives emitted recipe shell serialization', () => {
-  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'provider-readiness-shell-contract' });
+test('emits provider readiness only for fixture plans that declare requirements', () => {
+  const matrix = {
+    id: 'provider-readiness-shell-contract',
+    fixtures: ['15-saas', '87-travel-tours', '89-static-site-importer-architecture'].map((id) => ({
+      id,
+      label: id,
+      directory: `/fixtures/${id}`,
+      entrypoint: 'index.html',
+    })),
+  };
   const recipe = buildFixtureMatrixRecipe({
     matrix,
     staticSiteImporterPath: '/tmp/static-site-importer',
@@ -795,7 +803,13 @@ test('host-staged provider readiness command survives emitted recipe shell seria
         plugin_entrypoint: 'jetpack/jetpack.php',
         activation: 'required',
         version_policy: 'exact',
-        provenance: 'fixture-test',
+        provenance: { provider: 'jetpack' },
+        fixture_ids: ['87-travel-tours'],
+        provider_readiness: {
+          required_block_types: ['jetpack/contact-form', 'jetpack/field-email'],
+          required_classes: ['Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form'],
+          preparation_callback: ['Static_Site_Importer_Form_Seeder', 'prepare_jetpack_forms_runtime'],
+        },
         host_resolution: {
           archive_path: '/tmp/jetpack.zip',
           archive_sha256: 'b'.repeat(64),
@@ -805,13 +819,24 @@ test('host-staged provider readiness command survives emitted recipe shell seria
     },
   });
   const step = recipe.workflow.steps.find((candidate) => candidate.metadata?.phase === 'provider-readiness');
+  const readinessFixtures = recipe.workflow.steps
+    .filter((candidate) => candidate.metadata?.phase === 'provider-readiness')
+    .map((candidate) => candidate.metadata.fixture_id);
   const command = step?.args?.[0] || '';
   const decoded = spawnSync('sh', ['-c', `set -- ${command}; printf "%s" "$2"`], { encoding: 'utf8' });
 
+  assert.deepEqual(readinessFixtures, ['87-travel-tours']);
+  assert.equal(recipe.workflow.steps.some((candidate) => candidate.metadata?.fixture_id === '15-saas' && candidate.metadata?.phase === 'provider-readiness'), false);
+  assert.equal(recipe.workflow.steps.some((candidate) => candidate.metadata?.fixture_id === '89-static-site-importer-architecture' && candidate.metadata?.phase === 'provider-readiness'), false);
   assert.equal(decoded.status, 0, decoded.stderr);
-  assert.match(decoded.stdout, /foreach \(\$required as \$name\)/);
-  assert.doesNotMatch(decoded.stdout, /static fn/);
-  const lint = spawnSync('php', ['-l'], { input: `<?php\n${decoded.stdout}`, encoding: 'utf8' });
+  assert.doesNotMatch(command, /\$missing_blocks/);
+  const transportedCode = Buffer.from(decoded.stdout.match(/base64_decode\('([^']+)'\)/)?.[1] || '', 'base64').toString('utf8');
+  assert.match(transportedCode, /array_push\(\$missing_blocks, \$name\)/);
+  assert.doesNotMatch(transportedCode, /\$missing_blocks\[\]/);
+  const encodedRequirements = [...transportedCode.matchAll(/base64_decode\('([^']+)'\)/g)].map((match) => match[1]);
+  assert.deepEqual(JSON.parse(Buffer.from(encodedRequirements[0], 'base64').toString('utf8')), ['jetpack/contact-form', 'jetpack/field-email']);
+  assert.deepEqual(JSON.parse(Buffer.from(encodedRequirements[2], 'base64').toString('utf8')), [['Static_Site_Importer_Form_Seeder', 'prepare_jetpack_forms_runtime']]);
+  const lint = spawnSync('php', ['-l'], { input: `<?php\n${transportedCode}`, encoding: 'utf8' });
   assert.equal(lint.status, 0, lint.stderr || lint.stdout);
 });
 

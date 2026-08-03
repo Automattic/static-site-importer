@@ -340,6 +340,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 							'entity_type' => (string) ( $adapter['entity_type'] ?? '' ),
 							'declaration_ids' => array(),
 						),
+						'provider_readiness' => array_merge(
+							$dependency['provider_readiness'] ?? array(),
+							array( 'preparation_callback' => $dependency['preparation_callback'] ?? null )
+						),
 					);
 				}
 				$entries[ $key ]['provenance']['declaration_ids'][] = (string) $declaration_id;
@@ -575,7 +579,27 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						'plugin_file'           => 'jetpack/jetpack.php',
 						'availability_callback' => array( 'Static_Site_Importer_Form_Seeder', 'jetpack_forms_available' ),
 						'preparation_callback'  => array( 'Static_Site_Importer_Form_Seeder', 'prepare_jetpack_forms_runtime' ),
-						'missing_apis'          => array( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form', 'jetpack/contact-form', 'jetpack/field-text' ),
+						'provider_readiness'   => array(
+							'required_block_types' => Static_Site_Importer_Form_Seeder::required_block_types(),
+							'required_classes'     => array( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form' ),
+						),
+						'missing_apis'          => array(
+							'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form',
+							'jetpack/contact-form',
+							'jetpack/field-text',
+							'jetpack/field-number',
+							'jetpack/field-email',
+							'jetpack/field-url',
+							'jetpack/field-date',
+							'jetpack/field-textarea',
+							'jetpack/field-select',
+							'jetpack/field-checkbox',
+							'jetpack/field-radio',
+							'jetpack/label',
+							'jetpack/input',
+							'jetpack/options',
+							'jetpack/option',
+						),
 					),
 				),
 			),

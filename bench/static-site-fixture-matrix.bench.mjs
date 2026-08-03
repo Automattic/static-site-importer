@@ -638,7 +638,17 @@ async function discoverFixtureDependencyPlan({ fixtures, outputDirectory, static
     plans.push(plan);
   }
   const entries = new Map();
-  for (const plan of plans) for (const entry of plan.entries) entries.set(`${entry.source_kind}:${entry.slug}:${entry.plugin_entrypoint}`, entry);
+  for (let index = 0; index < plans.length; index += 1) {
+    const fixtureId = fixtures[index].id;
+    for (const entry of plans[index].entries) {
+      const key = `${entry.source_kind}:${entry.slug}:${entry.plugin_entrypoint}`;
+      const existing = entries.get(key);
+      entries.set(key, {
+        ...(existing || entry),
+        fixture_ids: [...new Set([...(existing?.fixture_ids || []), fixtureId])].sort(),
+      });
+    }
+  }
   return { schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: plans.map((plan) => plan.artifact_sha256).sort().join(','), entries: [...entries.values()] };
 }
 

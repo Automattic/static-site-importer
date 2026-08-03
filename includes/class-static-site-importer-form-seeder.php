@@ -56,8 +56,8 @@ class Static_Site_Importer_Form_Seeder {
 		);
 	}
 
-	/** Return every Jetpack block type the adapter can emit. */
-	private static function required_provider_blocks(): array {
+	/** @return array<int,string> Every Jetpack block type the adapter can emit. */
+	public static function required_block_types(): array {
 		return array_values( array_unique( array_merge( array( 'jetpack/contact-form', 'jetpack/field-checkbox-multiple', 'jetpack/input', 'jetpack/label', 'jetpack/option', 'jetpack/options', 'jetpack/phone-input' ), array_values( self::field_block_map() ) ) ) );
 	}
 
@@ -222,7 +222,7 @@ class Static_Site_Importer_Form_Seeder {
 	public static function jetpack_forms_availability_details(): array {
 		$contact_form_class = class_exists( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form' );
 		$legacy_class       = class_exists( 'Grunion_Contact_Form' ) || class_exists( 'Contact_Form' );
-		$registered_blocks  = array_fill_keys( self::required_provider_blocks(), false );
+		$registered_blocks  = array_fill_keys( self::required_block_types(), false );
 
 		if ( class_exists( 'WP_Block_Type_Registry' ) ) {
 			$registry = WP_Block_Type_Registry::get_instance();
