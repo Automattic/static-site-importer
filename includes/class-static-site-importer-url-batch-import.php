@@ -220,8 +220,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 					}
 					$cursor[ $index ]['state']  = 'page_ready';
 					$cursor[ $index ]['result'] = self::result_evidence( $ready_result, $ready_runtime );
-					$batch                   = $cursor[ $index ];
-					$manifest['batches']     = self::legacy_batches( $cursor );
+					$batch                      = $cursor[ $index ];
+					$manifest['batches']        = self::legacy_batches( $cursor );
 					self::checkpoint_cache( $manifest, $cache );
 					$write = $run_manifest->save( $manifest );
 					if ( is_wp_error( $write ) ) {
