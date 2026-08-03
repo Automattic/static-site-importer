@@ -83,6 +83,8 @@ class Static_Site_Importer_URL_Site_Collector {
 		$asset_failure_policy   = $args['asset_failure_policy'] ?? '';
 		$preserve_failed_assets = in_array( $asset_failure_policy, array( 'preserve_external', 'preserve_failed_external_assets' ), true );
 		$preserve_asset_limits  = 'preserve_external' === $asset_failure_policy;
+		$script_policy          = self::script_policy( $args );
+		$script_exclusions      = array();
 		$entry_resource_url     = $entry_url;
 		$site_url               = $entry_url;
 
@@ -130,15 +132,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			$body              = (string) $response['body'];
 			$normalized        = Static_Site_Importer_Source_Normalizer::normalize_html( $body, $final_url, $args );
 			$body              = $normalized['html'];
-			$source_exclusions = array_merge( $source_exclusions, $normalized['exclusions'] );
-			$diagnostics       = array_merge( $diagnostics, $normalized['diagnostics'] );
-			$bytes             = strlen( $body );
-			if ( $total_bytes + $bytes > $max_total_bytes ) {
-				$truncated['bytes'] = true;
-				break;
-			}
-
-			$diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $body );
+			$diagnostic        = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $body );
 			if ( ! empty( $diagnostic ) && 'error' === ( $diagnostic['severity'] ?? '' ) ) {
 				$error = new WP_Error( 'static_site_importer_url_client_rendered_app', (string) $diagnostic['message'], array( 'diagnostic' => $diagnostic ) );
 				if ( $page_url === $entry_url ) {
@@ -149,6 +143,17 @@ class Static_Site_Importer_URL_Site_Collector {
 				$diagnostic['disposition'] = 'collected_static_html';
 				$diagnostics[]             = $diagnostic;
 			}
+			$document_base_url = self::html_base_url( $body, $final_url );
+			$scripts           = self::apply_script_policy( $body, $document_base_url, $script_policy );
+			$body              = $scripts['html'];
+			$source_exclusions = array_merge( $source_exclusions, $normalized['exclusions'] );
+			$script_exclusions = array_merge( $script_exclusions, $scripts['exclusions'] );
+			$diagnostics       = array_merge( $diagnostics, $normalized['diagnostics'] );
+			$bytes             = strlen( $body );
+			if ( $total_bytes + $bytes > $max_total_bytes ) {
+				$truncated['bytes'] = true;
+				break;
+			}
 
 			$total_bytes            += $bytes;
 			$resources[ $final_url ] = array(
@@ -157,7 +162,6 @@ class Static_Site_Importer_URL_Site_Collector {
 				'content_type' => self::content_type( $response, 'text/html' ),
 			);
 
-			$document_base_url = self::html_base_url( $body, $final_url );
 			foreach ( isset( $args['_route_set'] ) ? array() : self::html_page_urls( $body, $document_base_url, $site_url ) as $discovered_url ) {
 				$page_key = self::page_key( $discovered_url );
 				if ( isset( $queued_pages[ $page_key ] ) ) {
@@ -171,8 +175,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				$page_queue[]              = $discovered_url;
 			}
 
-			$include_scripts = ! array_key_exists( 'include_scripts', $args ) || (bool) $args['include_scripts'];
-			foreach ( self::html_asset_urls( $body, $document_base_url, $include_scripts ) as $asset_url ) {
+			foreach ( self::html_asset_urls( $body, $document_base_url, $scripts['asset_urls'] ) as $asset_url ) {
 				if ( isset( $queued_assets[ $asset_url ] ) || isset( $resources[ $asset_url ] ) ) {
 					continue;
 				}
@@ -269,6 +272,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		ksort( $resources, SORT_STRING );
 		ksort( $aliases, SORT_STRING );
 		ksort( $external_assets, SORT_STRING );
+		usort( $script_exclusions, static fn ( array $left, array $right ): int => strcmp( implode( '|', $left ), implode( '|', $right ) ) );
 		$paths           = self::artifact_paths( $resources, $site_url );
 		$route_paths     = self::route_paths( $resources );
 		$reference_paths = $paths;
@@ -348,6 +352,11 @@ class Static_Site_Importer_URL_Site_Collector {
 					'failures'                => $failures,
 					'diagnostics'             => $diagnostics,
 					'source_exclusions'       => $source_exclusions,
+					'script_policy'           => array(
+						'name'             => $script_policy,
+						'excluded_count'   => count( $script_exclusions ),
+						'excluded_scripts' => $script_exclusions,
+					),
 					'truncated'               => array_keys( $truncated ),
 					'sitemap_urls'            => count( $sitemap_urls ),
 					'external_asset_retained' => array(
@@ -505,13 +514,12 @@ class Static_Site_Importer_URL_Site_Collector {
 	}
 
 	/** @return array<int,string> */
-	private static function html_asset_urls( string $html, string $base_url, bool $include_scripts ): array {
+	private static function html_asset_urls( string $html, string $base_url, array $script_urls = array() ): array {
 		$urls        = array();
 		$source_urls = array_merge(
 			self::tag_attribute_values( $html, 'img|source|video|audio', 'src' ),
 			self::tag_attribute_values( $html, 'video', 'poster' )
 		);
-		$script_urls = $include_scripts ? self::tag_attribute_values( $html, 'script', 'src' ) : array();
 		$link_urls   = array();
 		preg_match_all( '#<link\b[^>]*>#is', $html, $link_matches );
 		foreach ( $link_matches[0] ?? array() as $link_tag ) {
@@ -541,6 +549,67 @@ class Static_Site_Importer_URL_Site_Collector {
 			}
 		}
 		return array_values( array_unique( array_merge( $urls, self::html_css_asset_urls( $html, $base_url ) ) ) );
+	}
+
+	/** Resolve the explicit script retention contract for public HTML collection. */
+	private static function script_policy( array $args ): string {
+		if ( array_key_exists( 'include_scripts', $args ) ) {
+			return ! empty( $args['include_scripts'] ) ? 'full' : 'none';
+		}
+		$policy = isset( $args['script_policy'] ) ? (string) $args['script_policy'] : 'static';
+		return in_array( $policy, array( 'static', 'full', 'none' ), true ) ? $policy : 'static';
+	}
+
+	/**
+	 * Omit scripts from the frozen server-rendered document unless a caller supplies
+	 * the full runtime-preservation contract.
+	 *
+	 * Full retention remains an explicit compatibility mode for callers that supply
+	 * their own runtime-preservation contract.
+	 *
+	 * @return array{html:string,asset_urls:array<int,string>,exclusions:array<int,array<string,string>>}
+	 */
+	private static function apply_script_policy( string $html, string $base_url, string $policy ): array {
+		$asset_urls = array();
+		$exclusions = array();
+		$html       = (string) preg_replace_callback(
+			'#<script\b([^>]*)>(.*?)</script\s*>#is',
+			static function ( array $match ) use ( $base_url, $policy, &$asset_urls, &$exclusions ): string {
+				$tag       = '<script' . $match[1] . '>';
+				$source    = self::tag_attribute_value( $tag, 'src' );
+				$type      = strtolower( trim( (string) self::tag_attribute_value( $tag, 'type' ) ) );
+				$kind      = null === $source ? 'inline' : 'external';
+				$is_data   = in_array( $type, array( 'application/json', 'application/ld+json', 'application/manifest+json' ), true );
+				$keep      = 'full' === $policy;
+				if ( $keep ) {
+					if ( 'external' === $kind ) {
+						$url = self::resolve_url( (string) $source, $base_url );
+						if ( '' !== $url ) {
+							$asset_urls[] = $url;
+						}
+					}
+					return $match[0];
+				}
+
+				$exclusion = array(
+					'kind'        => $kind,
+					'reason_code' => 'none' === $policy ? 'script_omitted_by_caller_policy' : ( $is_data ? 'data_script_omitted_from_static_artifact' : 'script_omitted_without_runtime_declaration' ),
+					'sha256'      => hash( 'sha256', $match[0] ),
+					'type'        => '' !== $type ? $type : 'classic',
+				);
+				if ( 'external' === $kind ) {
+					$exclusion['url'] = self::resolve_url( (string) $source, $base_url );
+				}
+				$exclusions[] = $exclusion;
+				return '';
+			},
+			$html
+		);
+		return array(
+			'html'       => $html,
+			'asset_urls' => array_values( array_unique( $asset_urls ) ),
+			'exclusions' => $exclusions,
+		);
 	}
 
 	/** @return array<int,string> */
