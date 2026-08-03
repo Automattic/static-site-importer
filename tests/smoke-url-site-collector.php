@@ -199,7 +199,55 @@ $scheduled = Static_Site_Importer_URL_Site_Collector::collect(
 	}
 );
 $assert( ! is_wp_error( $scheduled ) && 3 === count( $schedule_calls ) && array() === $schedule_delays, 'successful-uncached-fetches-have-no-default-pacing' );
-$assert( array( 'same_origin_concurrency' => 1, 'cross_origin_concurrency' => 1, 'retry_delay_ms' => 0 ) === ( $scheduled['source_metadata']['collection']['fetch_scheduling'] ?? null ), 'blocking-transport-scheduling-limits-are-explicit' );
+$assert( array( 'same_origin_concurrency' => 2, 'cross_origin_concurrency' => 4, 'retry_delay_ms' => 0 ) === ( $scheduled['source_metadata']['collection']['fetch_scheduling'] ?? null ), 'concurrent-transport-scheduling-limits-are-explicit' );
+
+$concurrent_routes = array( 'http://1.1.1.1/', 'http://1.1.1.1/slow/', 'http://8.8.8.8/fast/', 'http://8.8.8.8/middle/' );
+$concurrent_active = array();
+$concurrent_origins = array();
+$concurrent_max_active = 0;
+$concurrent_max_origin = 0;
+$concurrent_starts = array();
+$concurrent_transport = array(
+	'start' => static function ( array $target, array $options ) use ( &$concurrent_active, &$concurrent_origins, &$concurrent_max_active, &$concurrent_max_origin, &$concurrent_starts ) {
+		unset( $options );
+		$origin = $target['scheme'] . '://' . $target['host'] . ':' . $target['port'];
+		$delay = array( '/' => 80000, '/slow/' => 60000, '/fast/' => 20000, '/middle/' => 40000 )[ $target['path'] ];
+		$concurrent_active[] = $target['path'];
+		$concurrent_origins[ $origin ] = ( $concurrent_origins[ $origin ] ?? 0 ) + 1;
+		$concurrent_max_active = max( $concurrent_max_active, count( $concurrent_active ) );
+		$concurrent_max_origin = max( $concurrent_max_origin, $concurrent_origins[ $origin ] );
+		$concurrent_starts[] = $target['path'];
+		return (object) array( 'target' => $target, 'origin' => $origin, 'due' => microtime( true ) + ( $delay / 1000000 ) );
+	},
+	'poll' => static function ( object $handle ) use ( &$concurrent_active, &$concurrent_origins ) {
+		if ( microtime( true ) < $handle->due ) {
+			return null;
+		}
+		$concurrent_active = array_values( array_filter( $concurrent_active, static fn ( string $path ): bool => $path !== $handle->target['path'] ) );
+		--$concurrent_origins[ $handle->origin ];
+		return array( 'status_code' => 200, 'headers' => array( 'content-type' => array( 'text/html' ) ), 'body' => '<main>' . $handle->target['path'] . '</main>' );
+	},
+);
+$concurrent_started = microtime( true );
+$concurrent_result = Static_Site_Importer_URL_Site_Collector::collect(
+	$concurrent_routes[0],
+	array( 'max_pages' => 4, 'max_assets' => 0, 'fetch_attempts' => 1, '_route_set' => $concurrent_routes, '_static_site_importer_fetch_many_transport' => $concurrent_transport )
+);
+$concurrent_elapsed = microtime( true ) - $concurrent_started;
+$serial_started = microtime( true );
+$serial_result = Static_Site_Importer_URL_Site_Collector::collect(
+	$concurrent_routes[0],
+	array( 'max_pages' => 4, 'max_assets' => 0, 'fetch_attempts' => 1, '_route_set' => $concurrent_routes ),
+	static function ( string $url, array $args ): array {
+		unset( $args );
+		usleep( array( '/' => 80000, '/slow/' => 60000, '/fast/' => 20000, '/middle/' => 40000 )[ (string) wp_parse_url( $url, PHP_URL_PATH ) ] );
+		return array( 'body' => '<main>' . wp_parse_url( $url, PHP_URL_PATH ) . '</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
+	}
+);
+$serial_elapsed = microtime( true ) - $serial_started;
+$assert( ! is_wp_error( $concurrent_result ) && 4 === $concurrent_max_active && 2 === $concurrent_max_origin && array( '/', '/slow/', '/fast/', '/middle/' ) === $concurrent_starts, 'collector-fetch-many-bounds-global-and-per-origin-admission' );
+$assert( ! is_wp_error( $concurrent_result ) && ! is_wp_error( $serial_result ) && ( $concurrent_result['source_metadata']['snapshot']['sha256'] ?? '' ) === ( $serial_result['source_metadata']['snapshot']['sha256'] ?? '' ) && ( $concurrent_result['source_metadata']['collection']['diagnostics'] ?? null ) === ( $serial_result['source_metadata']['collection']['diagnostics'] ?? null ), 'out-of-order-completions-preserve-serial-artifact-hash-and-diagnostics' );
+$assert( $concurrent_elapsed < $serial_elapsed * 0.7, 'bounded-concurrent-collection-materially-reduces-wall-clock-delay', sprintf( 'concurrent=%.3fs serial=%.3fs', $concurrent_elapsed, $serial_elapsed ) );
 
 $retry_now = 0.0;
 $retry_calls = 0;
