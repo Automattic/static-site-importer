@@ -36,7 +36,7 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 			'verified'   => true,
 			'created_at' => gmdate( 'c' ),
 		);
-		$stored = $this->workspace->publish_json( 'shared-resource-plan.json', $plan );
+		$stored    = $this->workspace->publish_json( 'shared-resource-plan.json', $plan );
 		if ( is_wp_error( $stored ) ) {
 			return $stored;
 		}
@@ -49,15 +49,27 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 		$existing = $this->load();
 		if ( ! is_array( $existing ) ) {
 			$plan = $this->establish( $artifact );
-			return array( 'digest' => is_array( $plan ) ? $plan['digest'] : '', 'changed' => false, 'plan' => $plan );
+			return array(
+				'digest'  => is_array( $plan ) ? $plan['digest'] : '',
+				'changed' => false,
+				'plan'    => $plan,
+			);
 		}
 		$current = self::resources( $artifact, array_column( $existing['resources'], 'path' ) );
 		$digest  = self::digest( $current );
 		if ( hash_equals( $existing['digest'], $digest ) ) {
-			return array( 'digest' => $digest, 'changed' => false, 'plan' => $existing );
+			return array(
+				'digest'  => $digest,
+				'changed' => false,
+				'plan'    => $existing,
+			);
 		}
 		$plan = $this->establish( $artifact, array_column( $existing['resources'], 'path' ) );
-		return array( 'digest' => is_array( $plan ) ? $plan['digest'] : '', 'changed' => true, 'plan' => $plan );
+		return array(
+			'digest'  => is_array( $plan ) ? $plan['digest'] : '',
+			'changed' => true,
+			'plan'    => $plan,
+		);
 	}
 
 	/** @return array<int,array<string,mixed>> */
@@ -71,13 +83,22 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 			if ( '' === $path || ( null !== $paths && ! in_array( $path, $paths, true ) ) ) {
 				continue;
 			}
-			$resources[] = array_filter( array( 'path' => $path, 'mime_type' => (string) ( $file['mime_type'] ?? '' ), 'content' => $file['content'] ?? null, 'content_base64' => $file['content_base64'] ?? null ), static fn( $value ): bool => null !== $value );
+			$resources[] = array_filter(
+				array(
+					'path'           => $path,
+					'mime_type'      => (string) ( $file['mime_type'] ?? '' ),
+					'content'        => $file['content'] ?? null,
+					'content_base64' => $file['content_base64'] ?? null,
+				),
+				static fn( $value ): bool => null !== $value
+			);
 		}
 		usort( $resources, static fn( array $left, array $right ): int => strcmp( $left['path'], $right['path'] ) );
 		return $resources;
 	}
 
 	private static function digest( array $resources ): string {
-		return hash( 'sha256', wp_json_encode( $resources, JSON_UNESCAPED_SLASHES ) );
+		$json = wp_json_encode( $resources, JSON_UNESCAPED_SLASHES );
+		return hash( 'sha256', false === $json ? '' : $json );
 	}
 }
