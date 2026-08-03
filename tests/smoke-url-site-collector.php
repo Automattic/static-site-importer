@@ -39,6 +39,24 @@ if ( ! function_exists( 'sanitize_file_name' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_parse_url' ) ) {
+	function wp_parse_url( string $url, int $component = -1 ) {
+		return parse_url( $url, $component );
+	}
+}
+
+if ( ! function_exists( 'wp_json_encode' ) ) {
+	function wp_json_encode( mixed $value, int $options = 0 ) {
+		return json_encode( $value, $options );
+	}
+}
+
+if ( ! function_exists( 'wp_strip_all_tags' ) ) {
+	function wp_strip_all_tags( string $text ): string {
+		return strip_tags( $text );
+	}
+}
+
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-fetcher.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-site-collector.php';
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
@@ -168,6 +186,47 @@ $shuffled = Static_Site_Importer_URL_Site_Collector::collect(
 	}
 );
 $assert( ! is_wp_error( $shuffled ) && ( $snapshot['sha256'] ?? '' ) === ( $shuffled['source_metadata']['snapshot']['sha256'] ?? null ), 'snapshot-hash-independent-of-discovery-order' );
+
+$schedule_calls = array();
+$schedule_delays = array();
+$scheduled = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://schedule.test/',
+	array( 'max_pages' => 3, 'max_assets' => 0, '_route_set' => array( 'https://schedule.test/', 'https://schedule.test/a/', 'https://schedule.test/b/' ), '_static_site_importer_delay_callback' => static function ( int $milliseconds ) use ( &$schedule_delays ): void { $schedule_delays[] = $milliseconds; } ),
+	static function ( string $url, array $args ) use ( &$schedule_calls ): array {
+		unset( $args );
+		$schedule_calls[] = $url;
+		return array( 'body' => '<main>' . $url . '</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
+	}
+);
+$assert( ! is_wp_error( $scheduled ) && 3 === count( $schedule_calls ) && array() === $schedule_delays, 'successful-uncached-fetches-have-no-default-pacing' );
+$assert( array( 'same_origin_concurrency' => 1, 'cross_origin_concurrency' => 1, 'retry_delay_ms' => 0 ) === ( $scheduled['source_metadata']['collection']['fetch_scheduling'] ?? null ), 'blocking-transport-scheduling-limits-are-explicit' );
+
+$retry_now = 0.0;
+$retry_calls = 0;
+$retry_delays = array();
+$retried = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://retry.test/',
+	array( 'max_pages' => 1, 'max_assets' => 0, '_route_set' => array( 'https://retry.test/' ), 'fetch_attempts' => 2, 'request_delay_ms' => 125, '_static_site_importer_scheduler_clock' => static function () use ( &$retry_now ): float { return $retry_now; }, '_static_site_importer_delay_callback' => static function ( int $milliseconds ) use ( &$retry_now, &$retry_delays ): void { $retry_delays[] = $milliseconds; $retry_now += $milliseconds / 1000; } ),
+	static function ( string $url, array $args ) use ( &$retry_calls ) {
+		unset( $url, $args );
+		$retry_calls++;
+		return 1 === $retry_calls ? new WP_Error( 'temporary_failure', 'Retry me.' ) : array( 'body' => '<main>Recovered</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => 'https://retry.test/' ) );
+	}
+);
+$assert( ! is_wp_error( $retried ) && 2 === $retry_calls && array( 125 ) === $retry_delays, 'retry-pacing-is-per-origin-and-deterministic' );
+
+$cache_calls = 0;
+$cache_delays = array();
+$cached = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://cache-schedule.test/',
+	array( 'max_pages' => 1, 'max_assets' => 0, '_route_set' => array( 'https://cache-schedule.test/' ), 'request_delay_ms' => 125, '_static_site_importer_delay_callback' => static function ( int $milliseconds ) use ( &$cache_delays ): void { $cache_delays[] = $milliseconds; } ),
+	static function ( string $url, array $args ) use ( &$cache_calls ): array {
+		unset( $args );
+		$cache_calls++;
+		return array( 'body' => '<main>Cached</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url, '_static_site_importer_cache_hit' => true ) );
+	}
+);
+$assert( ! is_wp_error( $cached ) && 1 === $cache_calls && array() === $cache_delays, 'cache-hits-never-consume-pacing-budget' );
 
 $compiled         = blocks_engine_php_transformer_compile_artifact( $result['artifact'] );
 $site_plan        = $compiled['source_reports']['wordpress_site_plan'] ?? array();
