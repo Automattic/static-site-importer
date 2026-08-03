@@ -261,6 +261,16 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'kind'       => 'activate_theme',
 				'theme_slug' => $state['theme']['slug'],
 			);
+			if ( ! isset( $args['disable_smilies'] ) || false !== (bool) $args['disable_smilies'] ) {
+				// update_option( 'use_smilies', false ) returns false both on failure and
+				// when the stored value is already false, so the existing value is the oracle.
+				if ( false !== get_option( 'use_smilies', false ) ) {
+					if ( false === update_option( 'use_smilies', false ) ) {
+						return self::failed_receipt( $state, 'disable_smilies_not_applied' );
+					}
+				}
+				$state['applied']['runtime_policy']['disable_smilies'] = true;
+			}
 			if ( '' !== trim( (string) ( $args['site_title'] ?? '' ) ) ) {
 				update_option( 'blogname', sanitize_text_field( (string) $args['site_title'] ) );
 				$state['applied']['operations'][] = array( 'kind' => 'site_title' );
@@ -1098,6 +1108,12 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'provider_layout_overlays'   => $state['applied']['provider_layout_overlays'] ?? array(
 					'status' => 'not_requested',
 					'files'  => array(),
+				),
+				'runtime_policy'             => array(
+					'disable_smilies' => array(
+						'requested' => isset( $state['args']['disable_smilies'] ) ? (bool) $state['args']['disable_smilies'] : true,
+						'applied'   => isset( $state['applied']['runtime_policy']['disable_smilies'] ) && true === $state['applied']['runtime_policy']['disable_smilies'],
+					),
 				),
 				'materialized_pages'         => $materialized_pages,
 				'block_provenance'           => $block_provenance,

@@ -139,9 +139,10 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			}
 			$receipt = static_site_importer_ability_materialize_wordpress_site_plan(
 				array(
-					'plan'      => $plan,
-					'slug'      => (string) $assoc_args['slug'],
-					'overwrite' => isset( $assoc_args['overwrite'] ),
+					'plan'            => $plan,
+					'slug'            => (string) $assoc_args['slug'],
+					'overwrite'       => isset( $assoc_args['overwrite'] ),
+					'disable_smilies' => ! isset( $assoc_args['no-disable-smilies'] ),
 				)
 			);
 			WP_CLI::line( (string) wp_json_encode( $receipt, JSON_UNESCAPED_SLASHES ) );
@@ -203,6 +204,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'name'                         => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
 				'activate'                     => isset( $assoc_args['activate'] ),
 				'overwrite'                    => isset( $assoc_args['overwrite'] ),
+				'disable_smilies'              => ! isset( $assoc_args['no-disable-smilies'] ),
 				'fail_on_quality'              => isset( $assoc_args['fail-on-quality'] ),
 				'allow_missing_woocommerce'    => isset( $assoc_args['allow-missing-woocommerce'] ),
 				'materialize_dependencies'     => ! isset( $assoc_args['skip-dependency-materialization'] ),
@@ -252,6 +254,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'site_title'                => isset( $assoc_args['site-title'] ) ? (string) $assoc_args['site-title'] : '',
 				'activate'                  => isset( $assoc_args['activate'] ),
 				'overwrite'                 => isset( $assoc_args['overwrite'] ),
+				'disable_smilies'           => ! isset( $assoc_args['no-disable-smilies'] ),
 				'fail_on_quality'           => isset( $assoc_args['fail-on-quality'] ),
 				'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
 				'report'                    => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
