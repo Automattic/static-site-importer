@@ -56,8 +56,7 @@ class Static_Site_Importer_Figma_Import {
 
 				if ( function_exists( 'zstd_uncompress' ) ) {
 					return static function ( string $compressed ): string {
-						$uncompressed = zstd_uncompress( $compressed );
-						return is_string( $uncompressed ) ? $uncompressed : '';
+						return (string) zstd_uncompress( $compressed );
 					};
 				}
 
@@ -766,13 +765,13 @@ class Static_Site_Importer_Figma_Import {
 		}
 
 		static $results = array();
-		$key            = md5( serialize( $command ) );
+		$key            = hash( 'sha256', implode( "\0", $command ) );
 		if ( array_key_exists( $key, $results ) ) {
 			return $results[ $key ];
 		}
 
-		$compressed = base64_decode( 'KLUv/QRYcQAAc3NpLXpzdGQtcHJvYmVUFxFH', true );
-		if ( ! is_string( $compressed ) ) {
+		$compressed = hex2bin( '28b52ffd04587100007373692d7a7374642d70726f626554171147' );
+		if ( false === $compressed ) {
 			$results[ $key ] = false;
 			return false;
 		}

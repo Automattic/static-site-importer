@@ -7,12 +7,15 @@ function sanitize_file_name( string $name ): string { return trim( (string) preg
 function trailingslashit( string $path ): string { return rtrim( $path, '/' ) . '/'; }
 function wp_mkdir_p( string $path ): bool { return is_dir( $path ) || mkdir( $path, 0777, true ); }
 function wp_json_encode( $value, int $options = 0 ) { return json_encode( $value, $options ); }
+function wp_delete_file( string $path ): bool { return false; }
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 function wp_parse_url( string $url, int $component = -1 ) { return parse_url( $url, $component ); }
 function wp_strip_all_tags( string $text ): string { return strip_tags( $text ); }
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-fetcher.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-site-collector.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-import-runtime.php';
+
+$legacy_path = tempnam( sys_get_temp_dir(), 'ssi-legacy-' ); $delete_legacy_file = new ReflectionMethod( Static_Site_Importer_URL_Batch_Import::class, 'delete_legacy_file' ); if ( ! $delete_legacy_file->invoke( null, $legacy_path ) || is_file( $legacy_path ) ) { throw new RuntimeException( 'legacy cache cleanup must unlink its verified exact path without wp_delete_file filters' ); }
 
 $responses = array(
 	'https://batch.test/sitemap.xml' => array( 'application/xml', '<sitemapindex><sitemap><loc>https://batch.test/one.xml</loc></sitemap><sitemap><loc>https://batch.test/two.xml</loc></sitemap></sitemapindex>' ),
