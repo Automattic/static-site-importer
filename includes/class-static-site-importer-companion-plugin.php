@@ -78,7 +78,14 @@ class Static_Site_Importer_Companion_Plugin {
 					return new WP_Error( 'static_site_importer_companion_plugin_block_json_name_invalid', sprintf( 'Block %s must declare a valid WordPress block name.', $name ) );
 				}
 				if ( str_starts_with( $declared_name, 'core/' ) ) {
-					return new WP_Error( 'static_site_importer_companion_plugin_block_json_name_reserved', sprintf( 'Block %s cannot declare the reserved WordPress core block name %s.', $name, $declared_name ), array( 'block' => $name, 'block_name' => $declared_name ) );
+					return new WP_Error(
+						'static_site_importer_companion_plugin_block_json_name_reserved',
+						sprintf( 'Block %s cannot declare the reserved WordPress core block name %s.', $name, $declared_name ),
+						array(
+							'block'      => $name,
+							'block_name' => $declared_name,
+						)
+					);
 				}
 			}
 			$effective_name = '' !== $declared_name ? $declared_name : $namespace . '/' . $name;
@@ -86,12 +93,12 @@ class Static_Site_Importer_Companion_Plugin {
 				return new WP_Error( 'static_site_importer_companion_plugin_block_json_name_invalid', sprintf( 'Block %s resolves to a duplicate WordPress block name.', $name ) );
 			}
 			$block_names[ $effective_name ] = true;
-			$assets = $block['assets'] ?? array();
+			$assets                         = $block['assets'] ?? array();
 			if ( ! is_array( $assets ) || array_is_list( $assets ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_assets_invalid', sprintf( 'Block %s assets must be an object.', $name ) );
 			}
 			foreach ( $assets as $path => $content ) {
-				if ( ! is_string( $path ) || $path !== self::sanitize_relative_path( $path ) || ! is_scalar( $content ) ) {
+				if ( ! is_string( $path ) || self::sanitize_relative_path( $path ) !== $path || ! is_scalar( $content ) ) {
 					return new WP_Error( 'static_site_importer_companion_plugin_asset_path_invalid', sprintf( 'Block %s has an unsafe asset path.', $name ) );
 				}
 			}
@@ -111,8 +118,15 @@ class Static_Site_Importer_Companion_Plugin {
 				continue;
 			}
 			$src = is_string( $entry['src'] ) ? $entry['src'] : '';
-			if ( $src !== self::sanitize_relative_path( $src ) ) {
+			if ( self::sanitize_relative_path( $src ) !== $src ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_asset_path_invalid', 'Companion-plugin preserved script has an unsafe asset path.' );
+			}
+		}
+		$effects = self::runtime_effects( $payload );
+		foreach ( $effects['retained_modules'] as $module ) {
+			$unit = $effects['units'][ $module['unit_id'] ] ?? array();
+			if ( 'independently_suppressible' !== ( $unit['status'] ?? '' ) || ! hash_equals( (string) ( $unit['source']['hash'] ?? '' ), hash( 'sha256', (string) $module['content'] ) ) ) {
+				return new WP_Error( 'static_site_importer_runtime_effect_invalid', 'Retained runtime modules must map to hash-verified independently suppressible units.' );
 			}
 		}
 		return true;
@@ -148,8 +162,8 @@ class Static_Site_Importer_Companion_Plugin {
 			);
 		}
 
-		$mu_plugin       = ! empty( $payload['mu_plugin'] );
-		$site_name       = self::site_name( $payload, $site_slug );
+		$mu_plugin = ! empty( $payload['mu_plugin'] );
+		$site_name = self::site_name( $payload, $site_slug );
 
 		$files       = array();
 		$block_names = array();
@@ -181,32 +195,33 @@ class Static_Site_Importer_Companion_Plugin {
 		);
 
 		$descriptor = array(
-			'schema'         => self::PAYLOAD_SCHEMA,
-			'slug'           => $plugin_slug,
-			'namespace'      => $block_namespace,
-			'site_slug'      => $site_slug,
-			'plugin_file'    => $main_file,
-			'mu_plugin'      => $mu_plugin,
-			'block_names'    => $block_names,
+			'schema'          => self::PAYLOAD_SCHEMA,
+			'slug'            => $plugin_slug,
+			'namespace'       => $block_namespace,
+			'site_slug'       => $site_slug,
+			'plugin_file'     => $main_file,
+			'mu_plugin'       => $mu_plugin,
+			'block_names'     => $block_names,
 			// Handles of preserved island scripts the plugin carries + enqueues
 			// scoped. Exposed so the gate/diagnostics can account for preserved
 			// island JS as companion-plugin-carried (theme-independent) rather
 			// than theme-coupled.
-			'island_handles' => array_map(
+			'island_handles'  => array_map(
 				static fn ( array $island ): string => (string) $island['handle'],
 				$preserved
 			),
 			'runtime_scripts' => array_map(
 				static fn ( array $island ): array => array(
-					'handle'      => (string) $island['handle'],
-					'block'       => (string) $island['block'],
-					'selector'    => (string) $island['selector'],
-					'source_path' => (string) $island['source_path'],
+					'handle'          => (string) $island['handle'],
+					'block'           => (string) $island['block'],
+					'selector'        => (string) $island['selector'],
+					'source_path'     => (string) $island['source_path'],
+					'superseded_unit' => (string) ( $island['superseded_unit'] ?? '' ),
 				),
 				$preserved
 			),
-			'loader_file'    => '',
-			'files'          => $files,
+			'loader_file'     => '',
+			'files'           => $files,
 		);
 
 		if ( $mu_plugin ) {
@@ -343,7 +358,7 @@ class Static_Site_Importer_Companion_Plugin {
 
 		$declared_name = is_string( $block['block_json']['name'] ?? null ) ? $block['block_json']['name'] : '';
 		$block_name    = preg_match( '/^[a-z0-9-]+\/[a-z0-9-]+$/', $declared_name ) ? $declared_name : $block_namespace . '/' . $name;
-		$args           = self::block_args( $block, $block_name );
+		$args          = self::block_args( $block, $block_name );
 		if ( is_wp_error( $args ) ) {
 			return $args;
 		}
@@ -368,12 +383,12 @@ class Static_Site_Importer_Companion_Plugin {
 		}
 		$metadata = isset( $block['block_json'] ) && is_array( $block['block_json'] ) && ! array_is_list( $block['block_json'] );
 		if ( $metadata ) {
-			$block_json           = $block['block_json'];
-			$block_json['name']   = $block_name;
+			$block_json         = $block['block_json'];
+			$block_json['name'] = $block_name;
 			if ( $has_render ) {
 				$block_json['render'] = 'file:./render.php';
 			}
-			$json                 = wp_json_encode( $block_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+			$json = wp_json_encode( $block_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 			if ( false === $json ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_block_json_invalid', sprintf( 'Block %s block_json could not be encoded.', $block_name ) );
 			}
@@ -384,9 +399,9 @@ class Static_Site_Importer_Companion_Plugin {
 			'block_name' => $block_name,
 			'dir'        => $name,
 			'spec'       => array(
-				'name' => $block_name,
-				'dir'  => $name,
-				'args' => $args,
+				'name'     => $block_name,
+				'dir'      => $name,
+				'args'     => $args,
 				'metadata' => $metadata,
 			),
 			'files'      => $files,
@@ -522,6 +537,17 @@ class Static_Site_Importer_Companion_Plugin {
 	 */
 	private static function preserved_js( array $payload, string $block_namespace ): array {
 		$entries = isset( $payload['preserved_js'] ) && is_array( $payload['preserved_js'] ) ? $payload['preserved_js'] : array();
+		$effects = self::runtime_effects( $payload );
+		foreach ( $effects['retained_modules'] as $module ) {
+			$entries[] = array(
+				'handle'          => 'runtime-unit-' . $module['unit_id'],
+				'content'         => $module['content'],
+				'block'           => $module['block'],
+				'selector'        => $module['selector'],
+				'source_path'     => $module['source_path'],
+				'superseded_unit' => $module['unit_id'],
+			);
+		}
 		$islands = array();
 		$index   = 0;
 
@@ -535,27 +561,62 @@ class Static_Site_Importer_Companion_Plugin {
 			}
 
 			++$index;
-			$handle_raw   = isset( $entry['handle'] ) && is_scalar( $entry['handle'] ) ? self::sanitize_slug( (string) $entry['handle'] ) : '';
-			$handle       = '' !== $handle_raw ? $handle_raw : $block_namespace . '-island-' . $index;
-			$relative_raw = isset( $entry['src'] ) && is_scalar( $entry['src'] ) ? self::sanitize_relative_path( (string) $entry['src'] ) : '';
-			$relative     = '' !== $relative_raw ? $relative_raw : 'islands/' . $handle . '.js';
-			$block        = isset( $entry['block'] ) && is_scalar( $entry['block'] ) ? (string) $entry['block'] : '';
-			$selector     = isset( $entry['selector'] ) && is_scalar( $entry['selector'] ) ? (string) $entry['selector'] : '';
-			$source_path  = isset( $entry['source_path'] ) && is_scalar( $entry['source_path'] ) ? (string) $entry['source_path'] : '';
+			$handle_raw      = isset( $entry['handle'] ) && is_scalar( $entry['handle'] ) ? self::sanitize_slug( (string) $entry['handle'] ) : '';
+			$handle          = '' !== $handle_raw ? $handle_raw : $block_namespace . '-island-' . $index;
+			$relative_raw    = isset( $entry['src'] ) && is_scalar( $entry['src'] ) ? self::sanitize_relative_path( (string) $entry['src'] ) : '';
+			$relative        = '' !== $relative_raw ? $relative_raw : 'islands/' . $handle . '.js';
+			$block           = isset( $entry['block'] ) && is_scalar( $entry['block'] ) ? (string) $entry['block'] : '';
+			$selector        = isset( $entry['selector'] ) && is_scalar( $entry['selector'] ) ? (string) $entry['selector'] : '';
+			$source_path     = isset( $entry['source_path'] ) && is_scalar( $entry['source_path'] ) ? (string) $entry['source_path'] : '';
+			$superseded_unit = isset( $entry['superseded_unit'] ) && is_scalar( $entry['superseded_unit'] ) ? (string) $entry['superseded_unit'] : '';
 
 			$islands[] = array(
-				'handle'       => $handle,
-				'relative_src' => $relative,
-				'content'      => $content,
+				'handle'          => $handle,
+				'relative_src'    => $relative,
+				'content'         => $content,
 				// Scope: enqueue only when this block renders. Empty block means
 				// the island is unscoped, but slice 1 only emits scoped islands.
-				'block'        => $block,
-				'selector'     => $selector,
-				'source_path'  => $source_path,
+				'block'           => $block,
+				'selector'        => $selector,
+				'source_path'     => $source_path,
+				'superseded_unit' => $superseded_unit,
 			);
 		}
 
 		return $islands;
+	}
+
+	/**
+	 * Normalize the generic Blocks Engine AST ownership contract. Malformed
+	 * contracts yield no retained assets; validate_payload() rejects them.
+	 *
+	 * @return array{units:array<string,array<string,mixed>>,retained_modules:array<int,array<string,string>>}
+	 */
+	private static function runtime_effects( array $payload ): array {
+		$effects = isset( $payload['runtime_effects'] ) && is_array( $payload['runtime_effects'] ) ? $payload['runtime_effects'] : array();
+		$units   = array();
+		foreach ( $effects['units'] ?? array() as $unit ) {
+			if ( is_array( $unit ) && isset( $unit['id'] ) && is_scalar( $unit['id'] ) ) {
+				$units[ (string) $unit['id'] ] = $unit;
+			}
+		}
+		$modules = array();
+		foreach ( $effects['retained_modules'] ?? array() as $module ) {
+			if ( ! is_array( $module ) || ! isset( $module['unit_id'], $module['content'] ) || ! is_scalar( $module['unit_id'] ) || ! is_scalar( $module['content'] ) ) {
+				continue;
+			}
+			$modules[] = array(
+				'unit_id'     => (string) $module['unit_id'],
+				'content'     => (string) $module['content'],
+				'block'       => isset( $module['block'] ) && is_scalar( $module['block'] ) ? (string) $module['block'] : '',
+				'selector'    => isset( $module['selector'] ) && is_scalar( $module['selector'] ) ? (string) $module['selector'] : '',
+				'source_path' => isset( $module['source_path'] ) && is_scalar( $module['source_path'] ) ? (string) $module['source_path'] : '',
+			);
+		}
+		return array(
+			'units'            => $units,
+			'retained_modules' => $modules,
+		);
 	}
 
 	/**
@@ -658,7 +719,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\t\t\tif ( ! isset( \$GLOBALS['static_site_importer_companion_block_owners'] ) || ! is_array( \$GLOBALS['static_site_importer_companion_block_owners'] ) ) {";
 		$lines[] = "\t\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'] = array();";
 		$lines[] = "\t\t\t}";
-		$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'][ (string) \$spec['name'] ] = array( 'plugin_file' => %s, 'plugin_path' => __FILE__ );", var_export( $plugin_file, true ) );
+		$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'][ (string) \$spec['name'] ] = array( 'plugin_file' => '%s', 'plugin_path' => __FILE__ );", self::php_single_quote( $plugin_file ) );
 		$lines[] = "\t\t}";
 		$lines[] = "\t}";
 		$lines[] = '}';
@@ -702,7 +763,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\tif ( ! function_exists( 'wp_enqueue_script' ) ) {";
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
-		$lines[] = sprintf( "\tif ( function_exists( 'get_option' ) && %s !== (string) get_option( 'static_site_importer_active_companion_plugin', '' ) ) {", var_export( $plugin_file, true ) );
+		$lines[] = sprintf( "\tif ( function_exists( 'get_option' ) && '%s' !== (string) get_option( 'static_site_importer_active_companion_plugin', '' ) ) {", self::php_single_quote( $plugin_file ) );
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
 		$lines[] = sprintf( "\tforeach ( %s_islands() as \$island ) {", $fn_prefix );
@@ -834,8 +895,14 @@ class Static_Site_Importer_Companion_Plugin {
 		}
 
 		if ( is_float( $value ) ) {
-			// var_export keeps a parseable float literal (e.g. trailing .0).
-			return var_export( $value, true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Generating a deterministic PHP literal for the scaffolded plugin file.
+			if ( is_nan( $value ) ) {
+				return 'NAN';
+			}
+			if ( is_infinite( $value ) ) {
+				return $value > 0 ? 'INF' : '-INF';
+			}
+
+			return (string) wp_json_encode( $value, JSON_PRESERVE_ZERO_FRACTION );
 		}
 
 		return "'" . self::php_single_quote( (string) $value ) . "'";

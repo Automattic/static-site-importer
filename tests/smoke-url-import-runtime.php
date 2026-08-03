@@ -201,6 +201,8 @@ $assert( 'browser_rendered_capture_required' === ( $client_shell_diagnostic['rep
 
 $server_rendered_diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( '<!doctype html><html><head><title>Server</title></head><body><main><h1>Server rendered</h1><p>' . str_repeat( 'Useful page content. ', 80 ) . '</p></main><script src="/tracking.js"></script></body></html>' );
 $assert( array() === $server_rendered_diagnostic, 'server-rendered-html-not-flagged-as-client-shell' );
+$framework_server_rendered_html = '<!doctype html><html><head>' . str_repeat( '<script src="/framework.js"></script>', 42 ) . str_repeat( ' ', 100000 ) . '</head><body><main><article><h1>Billboard</h1><p>' . str_repeat( 'Server content. ', 50 ) . '</p></article></main></body></html>';
+$assert( array() === Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $framework_server_rendered_html ), 'framework-heavy-server-html-not-flagged-as-client-shell' );
 
 $ability = static_site_importer_ability_import_url(
 	array(

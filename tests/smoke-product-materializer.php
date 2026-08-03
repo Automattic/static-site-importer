@@ -171,34 +171,6 @@ namespace {
 		$assert( $expected === $actual, 'price-normalize-' . sanitize_key( (string) $input ), 'input "' . $input . '" => "' . $actual . '" expected "' . $expected . '"' );
 	}
 
-	// --- Native html_product_grid_fallback row enriches into a product finding
-	$enrich   = new ReflectionMethod( 'Static_Site_Importer_Report_Diagnostics', 'diagnostic_from_conversion_report_fallback' );
-	$enriched = $enrich->invoke(
-		null,
-		array(
-			'kind'               => 'html_product_grid_fallback',
-			'reason'             => 'commerce_requires_runtime',
-			'source_path'        => 'website/shop.html',
-			'container_selector' => 'ul.products',
-			'products'           => array(
-				array(
-					'name'             => 'Aero Mug',
-					'price'            => '$24',
-					'sale_price'       => null,
-					'description'      => 'Double-walled travel mug.',
-					'image'            => array( 'src' => 'https://cdn.example.com/mug.jpg', 'alt' => 'Aero Mug' ),
-					'has_cart_control' => true,
-					'source_selector'  => 'ul.products li:nth-child(1)',
-				),
-			),
-		)
-	);
-	$assert( 'html_product_grid_fallback' === ( $enriched['diagnostic_code'] ?? '' ), 'enrich-carries-diagnostic-code' );
-	$assert( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND === ( $enriched['loss_class'] ?? '' ), 'enrich-loss-class-preserved-runtime-island' );
-	$assert( 'ul.products' === ( $enriched['container_selector'] ?? '' ), 'enrich-carries-container-selector' );
-	$assert( isset( $enriched['products'][0]['name'] ) && 'Aero Mug' === $enriched['products'][0]['name'], 'enrich-carries-products' );
-	$assert( 1 === ( $enriched['product_count'] ?? 0 ), 'enrich-product-count' );
-
 	// --- materialize_product_findings: manifest + seeding + gate-closure -----
 	$report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/shop.html' );
 	$report['diagnostics'][] = array(

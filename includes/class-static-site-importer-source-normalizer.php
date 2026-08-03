@@ -34,7 +34,11 @@ final class Static_Site_Importer_Source_Normalizer {
 		}
 
 		if ( array_key_exists( 'exclude_platform_chrome', $args ) && ! $args['exclude_platform_chrome'] ) {
-			return array( 'html' => $html, 'exclusions' => array(), 'diagnostics' => $diagnostics );
+			return array(
+				'html'        => $html,
+				'exclusions'  => array(),
+				'diagnostics' => $diagnostics,
+			);
 		}
 
 		$rules = self::rules();
@@ -45,8 +49,8 @@ final class Static_Site_Importer_Source_Normalizer {
 			$rules = array();
 		}
 
-		$original    = $html;
-		$exclusions  = array();
+		$original   = $html;
+		$exclusions = array();
 		foreach ( $rules as $rule ) {
 			if ( ! is_array( $rule ) || ! str_starts_with( (string) ( $rule['selector'] ?? '' ), '#' ) ) {
 				continue;
@@ -56,8 +60,8 @@ final class Static_Site_Importer_Source_Normalizer {
 			if ( null === $removed ) {
 				continue;
 			}
-			$html = $removed['html'];
-			$receipt = array(
+			$html          = $removed['html'];
+			$receipt       = array(
 				'schema'         => 'static-site-importer/source-exclusion/v1',
 				'action'         => 'removed',
 				'category'       => (string) ( $rule['category'] ?? 'source_chrome' ),
@@ -68,7 +72,7 @@ final class Static_Site_Importer_Source_Normalizer {
 				'reason_code'    => (string) ( $rule['reason_code'] ?? 'source_chrome_removed' ),
 				'removed_sha256' => hash( 'sha256', $removed['element'] ),
 			);
-			$exclusions[] = $receipt;
+			$exclusions[]  = $receipt;
 			$diagnostics[] = array(
 				'type'        => 'source_exclusion',
 				'severity'    => 'info',
@@ -85,7 +89,11 @@ final class Static_Site_Importer_Source_Normalizer {
 		}
 		unset( $exclusion );
 
-		return array( 'html' => $html, 'exclusions' => $exclusions, 'diagnostics' => $diagnostics );
+		return array(
+			'html'        => $html,
+			'exclusions'  => $exclusions,
+			'diagnostics' => $diagnostics,
+		);
 	}
 
 	private static function normalize_cloudflare_email_links( string $html, int &$count ): string {
@@ -146,7 +154,10 @@ final class Static_Site_Importer_Source_Normalizer {
 			if ( 0 === $depth ) {
 				$length  = (int) $match[1] + strlen( $token );
 				$element = substr( $remainder, 0, $length );
-				return array( 'html' => substr_replace( $html, '', $start, $length ), 'element' => $element );
+				return array(
+					'html'    => substr_replace( $html, '', $start, $length ),
+					'element' => $element,
+				);
 			}
 		}
 		return null;

@@ -71,14 +71,14 @@ class Static_Site_Importer_URL_Fetcher {
 	 * @return array{body:string,metadata:array<string,mixed>}|WP_Error
 	 */
 	public static function fetch( string $url, array $args = array() ) {
-		$timeout              = max( self::CONNECT_TIMEOUT_FLOOR, (int) ( $args['timeout'] ?? self::DEFAULT_TIMEOUT ) );
-		$max_bytes            = min( self::MAX_RESPONSE_BYTES, max( 1, (int) ( $args['max_bytes'] ?? self::DEFAULT_MAX_BYTES ) ) );
+		$timeout               = max( self::CONNECT_TIMEOUT_FLOOR, (int) ( $args['timeout'] ?? self::DEFAULT_TIMEOUT ) );
+		$max_bytes             = min( self::MAX_RESPONSE_BYTES, max( 1, (int) ( $args['max_bytes'] ?? self::DEFAULT_MAX_BYTES ) ) );
 		$has_content_types_arg = isset( $args['content_types'] ) && is_array( $args['content_types'] );
-		$content_types        = $has_content_types_arg ? array_values( array_filter( array_map( static fn ( $value ): string => strtolower( (string) $value ), $args['content_types'] ) ) ) : self::HTML_CONTENT_TYPES;
-		$initial              = self::normalize_url( $url );
-		$current              = $initial;
-		$started              = gmdate( 'c' );
-		$redirects            = array();
+		$content_types         = $has_content_types_arg ? array_values( array_filter( array_map( static fn ( $value ): string => strtolower( (string) $value ), $args['content_types'] ) ) ) : self::HTML_CONTENT_TYPES;
+		$initial               = self::normalize_url( $url );
+		$current               = $initial;
+		$started               = gmdate( 'c' );
+		$redirects             = array();
 
 		for ( $attempt = 0; $attempt <= self::MAX_REDIRECTS; $attempt++ ) {
 			$validation = self::validate_url( $current );
@@ -120,9 +120,9 @@ class Static_Site_Importer_URL_Fetcher {
 				return new WP_Error( 'static_site_importer_url_http_status', sprintf( 'The URL returned HTTP status %d.', $status ), array( 'status' => $status ) );
 			}
 
-			$content_type = self::first_header( $response['headers'], 'content-type' );
+			$content_type            = self::first_header( $response['headers'], 'content-type' );
 			$normalized_content_type = strtolower( trim( explode( ';', $content_type, 2 )[0] ) );
-			$content_type_allowed = $has_content_types_arg ? empty( $content_types ) || in_array( $normalized_content_type, $content_types, true ) : self::is_html_content_type( $content_type );
+			$content_type_allowed    = $has_content_types_arg ? empty( $content_types ) || in_array( $normalized_content_type, $content_types, true ) : self::is_html_content_type( $content_type );
 			if ( ! $content_type_allowed ) {
 				if ( ! $has_content_types_arg ) {
 					return new WP_Error( 'static_site_importer_url_non_html', 'The URL did not return an HTML content type.' );
@@ -181,19 +181,20 @@ class Static_Site_Importer_URL_Fetcher {
 	 * @return array<string,mixed>
 	 */
 	public static function html_source_diagnostic( string $html ): array {
-		$markup_bytes = strlen( $html );
-		$script_count = preg_match_all( '#<script\b#i', $html );
-		$app_shell    = preg_match( '#\bid=(?:"|\')(?:root|app|__next|gatsby-focus-wrapper|mount)(?:"|\')#i', $html );
-		$text_html    = preg_replace( '#<script\b[^>]*>.*?</script>#is', ' ', $html );
-		$text_html    = preg_replace( '#<style\b[^>]*>.*?</style>#is', ' ', (string) $text_html );
-		$text_html    = preg_replace( '#<template\b[^>]*>.*?</template>#is', ' ', (string) $text_html );
+		$markup_bytes     = strlen( $html );
+		$script_count     = preg_match_all( '#<script\b#i', $html );
+		$app_shell        = preg_match( '#\bid=(?:"|\')(?:root|app|__next|gatsby-focus-wrapper|mount)(?:"|\')#i', $html );
+		$text_html        = preg_replace( '#<script\b[^>]*>.*?</script>#is', ' ', $html );
+		$text_html        = preg_replace( '#<style\b[^>]*>.*?</style>#is', ' ', (string) $text_html );
+		$text_html        = preg_replace( '#<template\b[^>]*>.*?</template>#is', ' ', (string) $text_html );
+		$content_elements = preg_match_all( '#<(?:main|article|h[1-6]|p)\b#i', (string) $text_html );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- Fallback only for non-WordPress smoke tests; WordPress runtimes use wp_strip_all_tags().
 		$stripped   = function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( (string) $text_html ) : strip_tags( (string) $text_html );
 		$text       = html_entity_decode( trim( preg_replace( '/\s+/', ' ', $stripped ) ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 		$text_chars = strlen( $text );
 		$text_ratio = $markup_bytes > 0 ? $text_chars / $markup_bytes : 0;
 
-		if ( ( $script_count >= 20 && $text_chars < 1000 && $text_ratio < 0.02 ) || ( $script_count >= 3 && $text_chars < 200 && $app_shell ) ) {
+		if ( ( $script_count >= 20 && $text_chars < 1000 && $text_ratio < 0.02 && 0 === $content_elements ) || ( $script_count >= 3 && $text_chars < 200 && $app_shell ) ) {
 			return array(
 				'type'          => 'client_rendered_app_shell',
 				'severity'      => 'error',

@@ -22,6 +22,10 @@ if ( ! class_exists( 'Static_Site_Importer_URL_Batch_Import' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-url-batch-import.php';
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Website_Artifact_Import_Input' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-website-artifact-import-input.php';
+}
+
 /**
  * Imports a source URL through a provider that returns a website artifact.
  */
@@ -38,8 +42,8 @@ class Static_Site_Importer_URL_Import_Runtime {
 		if ( '' === $url ) {
 			return new WP_Error( 'static_site_importer_missing_url', 'The url input is required.' );
 		}
-		$input['url'] = $url;
-		$request = self::provider_request( $url, $input );
+		$input['url']    = $url;
+		$request         = self::provider_request( $url, $input );
 		$provider_output = self::provider_output( $request );
 		if ( is_wp_error( $provider_output ) ) {
 			return $provider_output;
@@ -201,26 +205,9 @@ class Static_Site_Importer_URL_Import_Runtime {
 		}
 		$source_metadata['url_import_provider'] = isset( $runtime['provider'] ) ? (string) $runtime['provider'] : 'public-url-fetcher';
 
-		$args = array(
-			'slug'                         => isset( $input['slug'] ) ? (string) $input['slug'] : '',
-			'name'                         => isset( $input['name'] ) ? (string) $input['name'] : '',
-			'site_title'                   => isset( $input['site_title'] ) ? (string) $input['site_title'] : '',
-			'stale_page_action'            => isset( $input['stale_page_action'] ) ? (string) $input['stale_page_action'] : '',
-			'activate'                     => ! empty( $input['activate'] ),
-			'overwrite'                    => ! empty( $input['overwrite'] ),
-			'fail_on_quality'              => ! empty( $input['fail_on_quality'] ),
-			'allow_missing_woocommerce'    => ! empty( $input['allow_missing_woocommerce'] ),
-			'materialize_dependencies'     => array_key_exists( 'materialize_dependencies', $input ) ? (bool) $input['materialize_dependencies'] : true,
-			'require_proven_dynamic_client_assets' => array_key_exists( 'require_proven_dynamic_client_assets', $input ) ? (bool) $input['require_proven_dynamic_client_assets'] : true,
-			'report'                       => isset( $input['report'] ) ? (string) $input['report'] : '',
-			'asset_materialization_policy' => isset( $input['asset_materialization_policy'] ) ? (string) $input['asset_materialization_policy'] : '',
-			'asset_map'                    => isset( $input['asset_map'] ) && is_array( $input['asset_map'] ) ? $input['asset_map'] : array(),
-			'compiler_options'             => isset( $input['compiler_options'] ) && is_array( $input['compiler_options'] ) ? $input['compiler_options'] : array(),
-			'source_metadata'              => $source_metadata,
-			'validation_artifacts'         => isset( $input['validation_artifacts'] ) && is_array( $input['validation_artifacts'] ) ? $input['validation_artifacts'] : array(),
-		);
+		$input['source_metadata'] = $source_metadata;
 
-		return $args;
+		return Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
 	}
 
 	/** @return array<string,mixed> */

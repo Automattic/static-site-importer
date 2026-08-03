@@ -9,12 +9,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Website_Artifact_Import_Input' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-website-artifact-import-input.php';
+}
+
 /**
  * Runs SSI import validation in the current WordPress runtime.
  */
 class Static_Site_Importer_Validation_Runtime {
 
-	public const RESULT_SCHEMA = 'static-site-importer/import-validation-result/v1';
+	public const RESULT_SCHEMA                = 'static-site-importer/import-validation-result/v1';
 	public const FIXTURE_MATRIX_RESULT_SCHEMA = 'static-site-importer/fixture-matrix-validation-result/v1';
 
 	/**
@@ -77,22 +81,21 @@ class Static_Site_Importer_Validation_Runtime {
 			return $artifact_dir;
 		}
 
-		$report_path = trailingslashit( $artifact_dir ) . 'import-report.json';
-		$import_args = array(
-			'slug'                      => $slug,
-			'name'                      => isset( $input['name'] ) ? sanitize_text_field( (string) $input['name'] ) : $slug,
-			'activate'                  => array_key_exists( 'activate', $input ) ? (bool) $input['activate'] : true,
-			'overwrite'                 => array_key_exists( 'overwrite', $input ) ? (bool) $input['overwrite'] : true,
-			'materialize_dependencies'  => array_key_exists( 'materialize_dependencies', $input ) ? (bool) $input['materialize_dependencies'] : true,
-			'require_proven_dynamic_client_assets' => array_key_exists( 'require_proven_dynamic_client_assets', $input ) ? (bool) $input['require_proven_dynamic_client_assets'] : true,
-			'fail_on_quality'           => ! empty( $input['fail_on_quality'] ),
-			'allow_missing_woocommerce' => ! empty( $input['allow_missing_woocommerce'] ),
-			'allow_missing_jetpack'     => ! empty( $input['allow_missing_jetpack'] ),
-			'report'                    => $report_path,
-			'source_metadata'           => array_merge(
-				isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array(),
-				array( 'validation_provider' => 'static-site-importer/current-runtime' )
-			),
+		$input['slug']            = $slug;
+		$input['name']            = isset( $input['name'] ) ? sanitize_text_field( (string) $input['name'] ) : $slug;
+		$input['report']          = trailingslashit( $artifact_dir ) . 'import-report.json';
+		$input['source_metadata'] = array_merge(
+			isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array(),
+			array( 'validation_provider' => 'static-site-importer/current-runtime' )
+		);
+		$import_args              = Static_Site_Importer_Website_Artifact_Import_Input::normalize(
+			$input,
+			array(
+				'activate'                             => true,
+				'overwrite'                            => true,
+				'materialize_dependencies'             => true,
+				'require_proven_dynamic_client_assets' => true,
+			)
 		);
 
 		$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
@@ -114,7 +117,22 @@ class Static_Site_Importer_Validation_Runtime {
 		$slug       = isset( $input['slug'] ) ? sanitize_title( (string) $input['slug'] ) : '';
 		$error_data = $error->get_error_data();
 		$receipt    = is_array( $error_data ) && 'static-site-importer/materialization-receipt/v1' === ( $error_data['schema'] ?? '' ) ? $error_data : array();
-		$result = array(
+		$diagnostic = array(
+			'type'        => 'validation_error',
+			'severity'    => 'error',
+			'code'        => $error->get_error_code(),
+			'reason_code' => $error->get_error_code(),
+			'message'     => $error->get_error_message(),
+			'stage'       => 'validation',
+			'owner'       => 'static-site-importer',
+		);
+		if ( is_array( $error_data ) && isset( $error_data['dependency_reports'] ) && is_array( $error_data['dependency_reports'] ) ) {
+			$encoded = wp_json_encode( array( 'dependency_reports' => $error_data['dependency_reports'] ) );
+			if ( is_string( $encoded ) ) {
+				$diagnostic['observed_output'] = substr( $encoded, 0, 4000 );
+			}
+		}
+		$result                        = array(
 			'success'                 => false,
 			'schema'                  => self::RESULT_SCHEMA,
 			'status'                  => 'failed',
@@ -131,17 +149,7 @@ class Static_Site_Importer_Validation_Runtime {
 				'quality_pass' => false,
 				'error_code'   => $error->get_error_code(),
 			),
-			'diagnostics'             => array(
-				array(
-					'type'        => 'validation_error',
-					'severity'    => 'error',
-					'code'        => $error->get_error_code(),
-					'reason_code' => $error->get_error_code(),
-					'message'     => $error->get_error_message(),
-					'stage'       => 'validation',
-					'owner'       => 'static-site-importer',
-				),
-			),
+			'diagnostics'             => array( $diagnostic ),
 			'materialization_receipt' => $receipt,
 			'artifacts'               => array(),
 			'import_report'           => array(),
@@ -173,25 +181,25 @@ class Static_Site_Importer_Validation_Runtime {
 		}
 
 		$result                        = array(
-			'success'       => $quality_pass,
-			'schema'        => self::RESULT_SCHEMA,
-			'status'        => $quality_pass ? 'passed' : 'failed',
-			'fixture_id'    => (string) ( $import_args['slug'] ?? '' ),
-			'request'       => array( 'import_args' => $import_args ),
-			'runtime'       => array(
+			'success'                 => $quality_pass,
+			'schema'                  => self::RESULT_SCHEMA,
+			'status'                  => $quality_pass ? 'passed' : 'failed',
+			'fixture_id'              => (string) ( $import_args['slug'] ?? '' ),
+			'request'                 => array( 'import_args' => $import_args ),
+			'runtime'                 => array(
 				'provider'     => 'static-site-importer/current-runtime',
 				'status'       => 'completed',
 				'artifact_dir' => basename( $artifact_dir ),
 			),
-			'summary'       => array(
+			'summary'                 => array(
 				'quality_pass'     => $quality_pass,
 				'import_report'    => is_readable( $report_path ) ? 'captured' : 'missing',
 				'block_validation' => is_readable( $validation_result_path ) ? 'captured' : 'missing',
 				'theme_slug'       => (string) ( $import_result['theme_slug'] ?? '' ),
 			),
-			'import_report'            => $import_report,
+			'import_report'           => $import_report,
 			'materialization_receipt' => isset( $import_result['materialization_receipt'] ) && is_array( $import_result['materialization_receipt'] ) ? $import_result['materialization_receipt'] : array(),
-			'artifacts'                 => array(
+			'artifacts'               => array(
 				'generated_theme'         => array(
 					'artifact_ref' => (string) ( $import_result['theme_slug'] ?? '' ),
 					'kind'         => 'wordpress-theme-directory',

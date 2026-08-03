@@ -41,8 +41,9 @@ jobs:
       HOMEBOY_VERSION: v0.298.1
       HOMEBOY_SHA256: 543a1eb7348a9dcde3bee671dbbeaabb9486781d350792bed8a77424fdad60d5
       HOMEBOY_EXTENSIONS_REF: 615fe3632d0cd30e9a70d5aea82be80460d733d5
-      WP_CODEBOX_VERSION: v0.15.0
-      WP_CODEBOX_SHA256: 7e23817be1599a24cdaddc83cdf64e28f4b6feb1e7e8827ab1de5347f6aa7879
+      WP_CODEBOX_VERSION: v0.18.4
+      WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0.18.4.tgz
+      WP_CODEBOX_SHA256: 56d8f887a7b5109aa83927fd1cee5ec665af63cb72a35dba2df70f84b7ac47eb
       WORDPRESS_VERSION: ${{ inputs.wordpress-version }}
 
     steps:
@@ -132,7 +133,7 @@ jobs:
       - name: Install pinned WP Codebox
         run: |
           mkdir -p "$RUNNER_TEMP/wp-codebox"
-          curl --fail --location --retry 3 --retry-all-errors --output "$RUNNER_TEMP/wp-codebox/workspace.tgz" "https://github.com/Automattic/wp-codebox/releases/download/${WP_CODEBOX_VERSION}/02-wp-codebox-workspace-${WP_CODEBOX_VERSION#v}.tgz"
+          curl --fail --location --retry 3 --retry-all-errors --output "$RUNNER_TEMP/wp-codebox/workspace.tgz" "https://github.com/Automattic/wp-codebox/releases/download/${WP_CODEBOX_VERSION}/${WP_CODEBOX_WORKSPACE_ASSET}"
           echo "${WP_CODEBOX_SHA256}  $RUNNER_TEMP/wp-codebox/workspace.tgz" | sha256sum --check --status
           npm install --global --prefix "$RUNNER_TEMP/wp-codebox" "$RUNNER_TEMP/wp-codebox/workspace.tgz"
           node "$RUNNER_TEMP/wp-codebox/lib/node_modules/wp-codebox-workspace/node_modules/playwright/cli.js" install --with-deps chromium

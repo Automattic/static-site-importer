@@ -32,7 +32,7 @@ jobs:
 
       - uses: Extra-Chill/homeboy-action@31e95050206332c4ebd36894387c980c99443ecf  # v2.8.15
         with:
-          commands: review test
+          commands: review lint,test
           args: --extension wordpress
           php-version: ${{ matrix.php-version }}
           node-version: '24'

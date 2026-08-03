@@ -45,7 +45,7 @@ class Static_Site_Importer_Artifact_Diagnostics_Adapter {
 	/**
 	 * Call the public WP Codebox normalizer when the runtime exposes one.
 	 *
-	 * @param mixed                $input   Normalizer input.
+	 * @param mixed               $input   Normalizer input.
 	 * @param array<string,mixed> $options Normalizer options.
 	 * @return array<string,mixed>|null
 	 */

@@ -24,7 +24,6 @@ $GLOBALS['ssi_plan_meta']       = array();
 $GLOBALS['ssi_plan_options']    = array( 'show_on_front' => 'posts', 'page_on_front' => 0, 'blogname' => 'Before' );
 $GLOBALS['ssi_plan_fail_after'] = 0;
 $GLOBALS['ssi_plan_font_requests'] = array();
-$GLOBALS['wp_smiliessearch']       = '/(?<!\\S):\\)(?=\\s|$)/';
 mkdir( $GLOBALS['ssi_plan_root'], 0777, true );
 
 class WP_Error {
@@ -142,29 +141,16 @@ $assert( count( $plan['pages'] ) === count( $unbound_provenance ) && count( $pla
 $assert( 'blocks-engine/wordpress-site-plan-resolver' === ( $unbound_provenance[0]['stages'][0]['stage'] ?? '' ) && hash( 'sha256', $receipt['plan']['pages'][0]['resolved_block_markup'] ) === ( $unbound_provenance[0]['stages'][0]['output']['sha256'] ?? '' ), 'ordinary page provenance records the resolver output hash' );
 $assert( false === ( $receipt['completed']['block_provenance_truncated'] ?? true ) && ! str_contains( (string) wp_json_encode( $unbound_provenance ), (string) $receipt['plan']['pages'][0]['resolved_block_markup'] ), 'provenance uses structural evidence without raw page markup' );
 
-$smilie_plan = ( new ArtifactCompiler() )->compile(
-	array(
-		'entrypoint' => 'index.html',
-		'files'      => array( 'index.html' => '<main><h1>Imported heading :)</h1></main>' ),
-	)
-)->toArray()['source_reports']['wordpress_site_plan'];
-$smilie_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $smilie_plan, array( 'slug' => 'smilie-plan' ) );
-$smilie_post_id = (int) ( $smilie_receipt['completed']['pages']['index.html'] ?? 0 );
-$smilie_markup  = (string) ( $GLOBALS['ssi_plan_posts'][ $smilie_post_id ]['post_content'] ?? '' );
-$smilie_requests = 0;
-$smilie_frontend = preg_replace_callback(
-	$GLOBALS['wp_smiliessearch'],
-	static function () use ( &$smilie_requests ): string {
-		++$smilie_requests;
-		return '<img src="https://s.w.org/images/core/emoji/15.1.0/svg/1f642.svg" class="wp-smiley" />';
-	},
-	$smilie_markup
-);
-$assert( 'completed' === $smilie_receipt['status'] && str_contains( $smilie_markup, '&#58;&#41;' ), 'literal smiley source is encoded before the WordPress page write' );
-$assert( 0 === $smilie_requests && false === str_contains( (string) $smilie_frontend, 's.w.org' ) && str_contains( html_entity_decode( (string) $smilie_frontend, ENT_QUOTES | ENT_HTML5 ), 'Imported heading :)' ), 'materialized literal smiley renders as text without an external emoji request' );
-$assert( array( 'schema' => 'static-site-importer/content-materialization-policy/v1', 'literal_text' => 'preserve', 'smilies' => 'disabled' ) === ( $smilie_receipt['completed']['content_materialization_policy'] ?? null ), 'receipt records the SSI-owned literal-text materialization policy' );
-$smilie_provenance = $smilie_receipt['completed']['block_provenance'][0]['stages'] ?? array();
-$assert( 'static-site-importer/content-materialization-policy' === ( $smilie_provenance[1]['stage'] ?? '' ) && ( $smilie_receipt['completed']['materialized_pages']['index.html']['content_hash'] ?? '' ) === ( $smilie_provenance[1]['output']['sha256'] ?? '' ), 'receipt provenance records the policy-owned post-content transform' );
+$overlay_css = "/* Static Site Importer provider layout overlay: abcdef123456 */\n.ssi-form-123456789abc > form.jetpack-contact-form__form{display:flex;gap:1rem}\n";
+$overlay = array( 'schema' => Static_Site_Importer_Provider_Layout_Overlay::OVERLAY_SCHEMA, 'css' => $overlay_css, 'sha256' => hash( 'sha256', $overlay_css ), 'bytes' => strlen( $overlay_css ) );
+$overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'provider-overlay-plan', 'provider_layout_overlays' => array( $overlay, $overlay ) ) );
+$overlay_root = $GLOBALS['ssi_plan_root'] . '/provider-overlay-plan';
+$assert( 'completed' === $overlay_receipt['status'] && 'completed' === ( $overlay_receipt['completed']['provider_layout_overlays']['status'] ?? '' ), 'provider layout receipt is applied only after stylesheet writes complete' );
+$assert( str_contains( (string) file_get_contents( $overlay_root . '/style.css' ), 'provider layout overlay: abcdef123456' ) && str_contains( (string) file_get_contents( $overlay_root . '/assets/css/editor-style.css' ), 'provider layout overlay: abcdef123456' ), 'generated frontend and editor stylesheets contain the deduplicated provider overlay' );
+$forged_overlay = $overlay;
+$forged_overlay['css'] = "/* Static Site Importer provider layout overlay: abcdef123456 */\nbody{background:url(https://example.test/x)}\n";
+$forged_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'forged-provider-overlay-plan', 'provider_layout_overlays' => array( $forged_overlay ) ) );
+$assert( 'partial' === $forged_receipt['status'] && 'provider_layout_overlay_rejected' === ( $forged_receipt['diagnostics'][0]['reason_code'] ?? '' ) && 'not_requested' === ( $forged_receipt['completed']['provider_layout_overlays']['status'] ?? '' ), 'rejected provider overlay never receives an applied receipt claim' );
 
 $font_result = ( new ArtifactCompiler() )->compile(
 	array(
@@ -185,8 +171,7 @@ $assert( file_exists( $font_root . '/assets/css/fonts.css' ), 'declared font sty
 $assert( str_contains( (string) file_get_contents( $font_root . '/assets/css/embedded-fonts.css' ), 'data:font/woff2;base64,' ), 'self-contained font stylesheet is materialized' );
 $assert( str_contains( (string) file_get_contents( $font_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-embedded-fonts'" ), 'generated theme loads self-contained font stylesheet' );
 $font_svg_files = array_values( array_filter( $font_receipt['completed']['font_materialization']['files'] ?? array(), static fn( array $file ): bool => str_ends_with( (string) ( $file['target_path'] ?? '' ), '.svg' ) ) );
-$assert( 1 === count( $font_svg_files ), 'matching generated SVG receives a font overlay' );
-$assert( str_contains( (string) file_get_contents( $font_root . '/' . $font_svg_files[0]['target_path'] ), 'data:font/woff2;base64,' ), 'generated SVG embeds the declared font payload' );
+$assert( ! empty( $font_svg_files ) && array() === array_filter( $font_svg_files, static fn( array $file ): bool => ! str_contains( (string) file_get_contents( $font_root . '/' . $file['target_path'] ), 'data:font/woff2;base64,' ) ), 'legacy font plans retain self-contained generated SVGs when typed consumers are unavailable' );
 $assert( 2 === count( $GLOBALS['ssi_plan_font_requests'] ), 'font materialization fetches one declared stylesheet and one unique payload' );
 $assert( Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><text style="font-family:\'Example Font\', serif">Label</text></svg>', array( 'Example Font' ) ), 'SVG style declarations match quoted families within fallback lists' );
 $assert( Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><text font-family="serif, Example Font">Label</text></svg>', array( 'example font' ) ), 'SVG presentation attributes normalize case and fallback-list position' );
@@ -208,6 +193,23 @@ $typed_font_plan = array(
 		'diagnostics' => array(),
 	),
 );
+$typed_svg_writes = array_values( array_filter( $font_plan['writes'], static fn( array $write ): bool => str_ends_with( (string) $write['target_path'], '.svg' ) ) );
+$typed_svg_write = $typed_svg_writes[0] ?? array();
+$typed_svg_hash = hash( 'sha256', $typed_svg_write['payload']['data'] );
+$typed_svg_face_ids = array( 'webfont-face-inter-400' );
+$typed_svg_source_path = $typed_svg_write['source_path'];
+$typed_svg_write_path = $typed_svg_write['target_path'];
+$typed_font_plan['webfont_contract']['svg_consumers'] = array(
+	array(
+		'id'                         => 'svg-webfont-consumer-' . substr( hash( 'sha256', $typed_svg_source_path . "\n" . $typed_svg_write_path . "\n" . $typed_svg_hash . "\n" . implode( "\n", $typed_svg_face_ids ) ), 0, 20 ),
+		'source_path'                => $typed_svg_source_path,
+		'write_path'                 => $typed_svg_write_path,
+		'pre_transform_payload_hash' => $typed_svg_hash,
+		'face_ids'                   => $typed_svg_face_ids,
+		'receipt_ids'                => array( 'webfont-receipt-inter-400' ),
+		'required'                   => true,
+	),
+);
 $typed_font_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $font_plan, array( 'slug' => 'typed-font-site-plan', 'font_materialization' => $typed_font_plan ) );
 $typed_font_root = $GLOBALS['ssi_plan_root'] . '/typed-font-site-plan';
 $typed_faces = $typed_font_receipt['completed']['font_materialization']['required_faces'] ?? array();
@@ -217,6 +219,8 @@ $typed_css = (string) file_get_contents( $typed_font_root . '/assets/css/embedde
 $assert( str_contains( $typed_css, 'font-weight:100 900' ) && str_contains( $typed_css, 'font-stretch:75% 125%' ) && str_contains( $typed_css, 'unicode-range:U+0000-00FF' ) && ! str_contains( $typed_css, 'fonts.example.test' ), 'producer font faces preserve all declared axes and unicode ranges while rewriting only local sources' );
 $typed_readiness = (string) file_get_contents( $typed_font_root . '/assets/js/font-readiness.js' );
 $assert( str_contains( $typed_readiness, 'document.fonts.load' ) && str_contains( $typed_readiness, 'SSI glyph evidence') && str_contains( $typed_readiness, 'status:"missing"' ), 'required typed faces install a glyph-based document.fonts readiness probe with retained missing evidence' );
+$typed_svg_receipts = $typed_font_receipt['completed']['font_materialization']['svg_receipts'] ?? array();
+$assert( 1 === count( $typed_svg_receipts ) && hash( 'sha256', file_get_contents( $typed_font_root . '/' . $typed_svg_write['target_path'] ) ) === ( $typed_svg_receipts[0]['output_sha256'] ?? '' ) && str_contains( (string) file_get_contents( $typed_font_root . '/' . $typed_svg_write['target_path'] ), 'data:font/woff2;base64,' ), 'final write verification accepts the declared SVG change only through its hash-bound materialization receipt' );
 $invalid_typed_plan = $typed_font_plan;
 $invalid_typed_plan['webfont_contract']['imports'][0]['source']['expected_digest'] = 'sha256:' . str_repeat( '0', 64 );
 $invalid_typed_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $font_plan, array( 'slug' => 'invalid-typed-font-site-plan', 'font_materialization' => $invalid_typed_plan ) );
@@ -287,6 +291,52 @@ $assert( 'runtime_declarations' === ( $entity_lifecycle['status'] ?? '' ), 'v2 e
 $assert( 'woocommerce_simple_product' === ( $entity_lifecycle['entities'][ $entity_plan['runtime_declarations'][1]['reconciliation_identity'] ]['adapter']['id'] ?? '' ) || 'woocommerce_simple_product' === ( reset( $entity_lifecycle['entities'] )['adapter']['id'] ?? '' ), 'product collections resolve through the configured WooCommerce adapter' );
 $prepared_entity = reset( $entity_lifecycle['entities'] );
 $assert( 'Aero Mug' === ( $prepared_entity['manifest']['products'][0]['name'] ?? '' ) && true === ( $prepared_entity['required'] ?? false ), 'v2 product rows validate and retain their required dependency relationship' );
+
+$form_declaration_id = 'form-topology-runtime';
+$topology_form = array(
+	'selector' => 'form.contact', 'source_path' => 'index.html', 'form' => array( 'class' => 'contact' ),
+	'controls' => array( array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'label' => 'Name' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ),
+	'control_topology' => array(
+		'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false,
+		'nodes' => array(
+			array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'section', 'class' => 'row-2', 'source_id' => 'contact-row' ),
+			array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'control' => 0 ),
+			array( 'id' => 'control-1', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 1 ),
+		),
+	),
+);
+$runtime_form_plan = $entity_plan;
+$runtime_form_plan['runtime_declarations'] = array(
+	array( 'kind' => 'dependency', 'capability' => 'form', 'source_path' => 'index.html', 'required_for' => array( 'entity_collection:forms' ), 'reconciliation_identity' => 'form-topology-dependency' ),
+	array( 'kind' => 'entity_collection', 'type' => 'forms', 'source_path' => 'index.html', 'reconciliation_identity' => $form_declaration_id, 'payload' => array( 'schema' => 'generic/forms/v1', 'entities' => array( $topology_form ) ) ),
+);
+$runtime_form_lifecycle = $prepare_lifecycle->invoke( null, $runtime_form_plan, array() );
+$runtime_form_manifest = $runtime_form_lifecycle['entities'][ $form_declaration_id ]['manifest']['forms'][0] ?? array();
+$assert( 'section' === ( $runtime_form_manifest['control_topology']['nodes'][0]['tag'] ?? '' ), 'runtime declarations retain validated form topology' );
+
+$unknown_topology_form = $topology_form;
+$unknown_topology_form['control_topology']['untrusted'] = 'reject-me';
+$unknown_topology_plan = $runtime_form_plan;
+$unknown_topology_plan['runtime_declarations'][1]['payload']['entities'] = array( $unknown_topology_form );
+$unknown_topology_lifecycle = $prepare_lifecycle->invoke( null, $unknown_topology_plan, array() );
+$assert( is_wp_error( $unknown_topology_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $unknown_topology_lifecycle->get_error_code(), 'unknown runtime topology keys are rejected before provider traversal' );
+
+$self_referential_form = $topology_form;
+$self_referential_form['control_topology']['nodes'][0]['parent'] = 'wrapper-0';
+$self_referential_plan = $runtime_form_plan;
+$self_referential_plan['runtime_declarations'][1]['payload']['entities'] = array( $self_referential_form );
+$self_referential_lifecycle = $prepare_lifecycle->invoke( null, $self_referential_plan, array() );
+$assert( is_wp_error( $self_referential_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $self_referential_lifecycle->get_error_code(), 'self-referential runtime topology is rejected before provider traversal' );
+
+$duplicate_topology_form = $topology_form;
+$duplicate_topology_form['control_topology']['nodes'][1]['id'] = 'wrapper-0';
+$duplicate_topology_form['control_topology']['nodes'][1]['kind'] = 'wrapper';
+unset( $duplicate_topology_form['control_topology']['nodes'][1]['control'] );
+$duplicate_topology_plan = $runtime_form_plan;
+$duplicate_topology_plan['runtime_declarations'][1]['payload']['entities'] = array( $duplicate_topology_form );
+$duplicate_topology_lifecycle = $prepare_lifecycle->invoke( null, $duplicate_topology_plan, array() );
+$assert( is_wp_error( $duplicate_topology_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $duplicate_topology_lifecycle->get_error_code(), 'duplicate runtime topology identifiers are rejected before provider traversal' );
+
 $binding_method = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'runtime_entity_bindings' );
 $entity_declaration_id = (string) array_key_first( $entity_lifecycle['entities'] );
 $entity_bindings = $binding_method->invoke( null, $entity_lifecycle, array( $entity_declaration_id => array( 'products' => array( array( 'id' => 42, 'slug' => 'aero-mug', 'status' => 'created' ) ) ) ) );

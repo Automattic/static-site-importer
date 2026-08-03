@@ -5,7 +5,9 @@
     "fig-intent-parity": "node tools/fig-intent-parity-report.mjs",
     "fig-fixture-e2e": "node tools/run-fig-fixture-e2e.mjs",
     "fig-acceptance-provider": "node tools/fig-acceptance-provider.mjs",
-    "test": "npm run test:runtime-package && npm run test:companion-plugin && npm run test:site-plan-materializer && npm run test:webfont-producer-consumer && npm run test:fixture-matrix && npm run test:solved-site-promotion && npm run test:fig-fixture-e2e && npm run test:promote-solved-fixture && npm run test:php-wasm-zstd",
+    "test": "node tools/run-test-manifest.mjs",
+    "test:all": "node tools/run-test-manifest.mjs --all",
+    "test:inventory": "node tools/run-test-manifest.mjs --check",
     "test:runtime-package": "node --test tools/runtime-package-manifest.test.mjs && php tests/smoke-ability-registration-idempotent.php",
     "test:companion-plugin": "php tests/smoke-companion-plugin.php && php tests/smoke-companion-plugin-js.php",
     "test:site-plan-materializer": "php tests/smoke-wordpress-site-plan-materializer.php",
@@ -18,7 +20,8 @@
     "test:playground-launch": "node tools/verify-playground-launch.mjs",
     "build:php-wasm-zstd": "bash tools/build-php-wasm-zstd.sh",
     "test:js-block-validation": "node tests/smoke-generated-theme-block-validation.cjs",
-    "test:validation": "node tests/run-validation-harness.cjs"
+    "test:validation": "node tests/run-validation-harness.cjs",
+    "test:form-materializer-topology": "node --test tests/form-materializer-topology.test.mjs"
   },
   "devDependencies": {
     "@wordpress/block-library": "^9.45.0",
