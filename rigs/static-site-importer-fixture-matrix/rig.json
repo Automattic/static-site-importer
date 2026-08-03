@@ -27,6 +27,7 @@
         "capabilities": [
           "wordpress.editor-open",
           "wordpress.editor-validate-blocks",
+          "wordpress.browser-probe",
           "wordpress.visual-compare"
         ],
         "remediation": "Use a runner with a WP Codebox binary from HOMEBOY_WP_CODEBOX_BIN that supports fixture-matrix browser validation and visual comparison commands."

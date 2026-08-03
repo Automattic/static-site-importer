@@ -89,6 +89,11 @@ import {
   resolveFixtureSearchRoots,
   wordpressServedPath,
   writeFixtureMatrixArtifacts,
+  RUNTIME_PRESENTATION_EVIDENCE_SCHEMA,
+  RUNTIME_PRESENTATION_EVIDENCE_UNAVAILABLE,
+  collectRuntimePresentationEvidence,
+  runtimePresentationEvidenceMergeStep,
+  runtimePresentationEvidenceProbeStep,
   writeFixtureMatrixResultArtifacts,
 } from '../lib/fixture-matrix.mjs';
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
@@ -598,6 +603,157 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
     target: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/artifact.json',
   });
   assert.deepEqual(recipe.inputs.mounts, []);
+});
+
+test('runtime presentation evidence persists, merges, and reaches the Blocks Engine compilation input in order', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'runtime-presentation-evidence' });
+  const defaultRecipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', staticSiteImporterPath: '/tmp/static-site-importer' });
+  assert.equal(defaultRecipe.workflow.steps.some((step) => step.metadata?.phase === 'runtime-presentation-evidence'), false);
+
+  const recipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', staticSiteImporterPath: '/tmp/static-site-importer', runtimePresentationEvidence: true });
+  const probeIndex = recipe.workflow.steps.findIndex((step) => step.metadata?.phase === 'runtime-presentation-evidence');
+  const mergeIndex = recipe.workflow.steps.findIndex((step) => step.metadata?.phase === 'runtime-presentation-evidence-merge');
+  const importIndex = recipe.workflow.steps.findIndex((step) => /static-site-importer validate-artifact/.test(step.args?.[0] || ''));
+  const probe = recipe.workflow.steps[probeIndex];
+  const merge = recipe.workflow.steps[mergeIndex];
+  assert.ok(probeIndex >= 0 && probeIndex < mergeIndex && mergeIndex < importIndex);
+  assert.equal(probe.command, 'wordpress.browser-probe');
+  assert.ok(probe.args.includes('wait-for=networkidle'));
+  assert.ok(probe.args.includes('output-artifact=simple-site/runtime-presentation-evidence.json'));
+  const scriptArg = probe.args.find((arg) => arg.startsWith('script='));
+  assert.match(scriptArg, /^script=const assets=/);
+  assert.match(scriptArg, /; return \{schema:/);
+  assert.match(scriptArg, new RegExp(RUNTIME_PRESENTATION_EVIDENCE_SCHEMA));
+  assert.match(probe.args.find((arg) => arg.startsWith('script=')), /asset_hash/);
+  assert.equal(merge.command, 'wordpress.wp-cli');
+  assert.equal(merge.allowFailure, undefined, 'missing or invalid probe output must stop compilation');
+  assert.deepEqual(merge.metadata, {
+    fixture_id: 'simple-site',
+    fixture_path: matrix.fixtures[0].fixture_path,
+    phase: 'runtime-presentation-evidence-merge',
+    artifact_root: '/tmp/artifacts',
+    input_artifacts: ['simple-site/runtime-presentation-evidence.json'],
+    artifact: 'simple-site/artifact-with-runtime-presentation-evidence.json',
+    evidence_schema: RUNTIME_PRESENTATION_EVIDENCE_SCHEMA,
+  });
+  assert.match(recipe.workflow.steps[importIndex].args[0], /--artifact=\/tmp\/artifacts\/simple-site\/artifact-with-runtime-presentation-evidence\.json/);
+
+  const playgroundRecipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', playgroundArtifactsDirectory: '/wordpress/wp-content/uploads/artifacts', staticSiteImporterPath: '/tmp/static-site-importer', runtimePresentationEvidence: true });
+  const playgroundProbe = playgroundRecipe.workflow.steps.find((step) => step.metadata?.phase === 'runtime-presentation-evidence');
+  const playgroundMerge = playgroundRecipe.workflow.steps.find((step) => step.metadata?.phase === 'runtime-presentation-evidence-merge');
+  const playgroundImport = playgroundRecipe.workflow.steps.find((step) => /static-site-importer validate-artifact/.test(step.args?.[0] || ''));
+  assert.ok(playgroundProbe.args.includes('output-artifact=simple-site/runtime-presentation-evidence.json'));
+  assert.ok(playgroundProbe.args.includes('output-runtime-path=/wordpress/wp-content/uploads/artifacts/simple-site/runtime-presentation-evidence.json'));
+  assert.equal(playgroundProbe.metadata.output_runtime_path, '/wordpress/wp-content/uploads/artifacts/simple-site/runtime-presentation-evidence.json');
+  assert.equal(playgroundMerge.metadata.artifact_root, '/wordpress/wp-content/uploads/artifacts');
+  assert.match(playgroundImport.args[0], /--artifact=\/wordpress\/wp-content\/uploads\/artifacts\/simple-site\/artifact-with-runtime-presentation-evidence\.json/);
+});
+
+test('runtime presentation evidence probes every selected surface before one aggregate merge and import', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-runtime-evidence-surfaces-'));
+  try {
+    const fixture = path.join(root, 'team-site');
+    mkdirSync(path.join(fixture, 'images'), { recursive: true });
+    writeFileSync(path.join(fixture, 'fixture.json'), JSON.stringify({ fixture_class: 'marketing/static' }));
+    writeFileSync(path.join(fixture, 'index.html'), '<img src="images/home.png">');
+    writeFileSync(path.join(fixture, 'team.html'), '<img src="images/team.png">');
+    writeFileSync(path.join(fixture, 'images', 'home.png'), 'home');
+    writeFileSync(path.join(fixture, 'images', 'team.png'), 'team');
+    const matrix = createFixtureMatrix({ fixture_root: root });
+    const recipe = buildFixtureMatrixRecipe({
+      matrix,
+      artifactsDirectory: '/tmp/artifacts',
+      playgroundArtifactsDirectory: '/wordpress/wp-content/uploads/artifacts',
+      staticSiteImporterPath: '/tmp/static-site-importer',
+      runtimePresentationEvidence: true,
+      surfaceCoverage: 1,
+    });
+    const probes = recipe.workflow.steps.filter((step) => step.metadata?.phase === 'runtime-presentation-evidence');
+    const mergeIndex = recipe.workflow.steps.findIndex((step) => step.metadata?.phase === 'runtime-presentation-evidence-merge');
+    const importIndex = recipe.workflow.steps.findIndex((step) => /static-site-importer validate-artifact/.test(step.args?.[0] || ''));
+    assert.deepEqual(probes.map((step) => step.metadata.surface_id), ['front-page', 'team']);
+    assert.deepEqual(probes.map((step) => step.metadata.source_path), ['index.html', 'team.html']);
+    assert.ok(probes.every((step) => recipe.workflow.steps.indexOf(step) < mergeIndex));
+    assert.ok(mergeIndex < importIndex);
+    assert.deepEqual(probes.map((step) => step.metadata.output_artifact), [
+      'team-site/runtime-presentation-evidence.json',
+      'team-site/runtime-presentation-evidence--team.json',
+    ]);
+    assert.deepEqual(probes.map((step) => step.metadata.output_runtime_path), [
+      '/wordpress/wp-content/uploads/artifacts/team-site/runtime-presentation-evidence.json',
+      '/wordpress/wp-content/uploads/artifacts/team-site/runtime-presentation-evidence--team.json',
+    ]);
+    const merge = recipe.workflow.steps[mergeIndex];
+    assert.deepEqual(merge.metadata.input_artifacts, probes.map((step) => step.metadata.output_artifact));
+    assert.match(probes[1].args.find((arg) => arg.startsWith('script=')), /source_path:'website\/team\.html'/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runtime presentation evidence merge retains a Team-like secondary image observation', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-runtime-evidence-merge-'));
+  try {
+    const fixture = path.join(root, 'team-site');
+    mkdirSync(fixture, { recursive: true });
+    const provenance = { browser: { name: 'Chromium', version: '126' }, viewport: { width: 1280, height: 1600, device_scale_factor: 1 }, lifecycle: { phase: 'network-idle' } };
+    const envelope = (sourcePath, selector) => ({ schema: RUNTIME_PRESENTATION_EVIDENCE_SCHEMA, provenance, observations: [{ element: { source_path: sourcePath, selector }, asset_hash: 'a'.repeat(64), intrinsic: { width: 100, height: 100 }, rendered: { width: 50, height: 50 }, transform: { matrix: [1, 0, 0, 1, 0, 0], origin: { x: 0, y: 0 } }, clip: { x: 0, y: 0, width: 50, height: 50 } }] });
+    writeFileSync(path.join(fixture, 'artifact.json'), JSON.stringify({ schema: 'fixture-artifact' }));
+    writeFileSync(path.join(fixture, 'runtime-presentation-evidence.json'), JSON.stringify(envelope('website/index.html', 'html > body:nth-of-type(1) > img:nth-of-type(1)')));
+    writeFileSync(path.join(fixture, 'runtime-presentation-evidence--team.json'), JSON.stringify(envelope('website/team.html', 'html > body:nth-of-type(1) > img:nth-of-type(1)')));
+    const step = runtimePresentationEvidenceMergeStep({
+      fixture: { id: 'team-site' },
+      artifactRoot: root,
+      outputArtifacts: ['team-site/runtime-presentation-evidence.json', 'team-site/runtime-presentation-evidence--team.json'],
+    });
+    const code = [...step.args[0].matchAll(/([A-Za-z0-9+/=]{100,})/g)]
+      .map((match) => Buffer.from(match[1], 'base64').toString('utf8'))
+      .find((candidate) => candidate.startsWith('$config ='));
+    assert.ok(code, 'merge step must contain executable PHP');
+    const result = spawnSync('php', ['-r', `class WP_CLI { public static function line($value) { echo $value; } public static function error($message) { exit(1); } } function wp_json_encode($value, $flags = 0) { return json_encode($value, $flags); } ${code}`], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    const merged = JSON.parse(readFileSync(path.join(fixture, 'artifact-with-runtime-presentation-evidence.json'), 'utf8'));
+    assert.deepEqual(merged.runtime_presentation_evidence.observations.map((observation) => observation.element.source_path), ['website/index.html', 'website/team.html']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runtime presentation evidence binds staged URLs to artifact paths and payload hashes', () => {
+  const bytes = Buffer.from('animated image bytes');
+  const contentBase64 = bytes.toString('base64');
+  const expectedHash = createHash('sha256').update(contentBase64).digest('hex');
+  const probe = runtimePresentationEvidenceProbeStep({
+    fixture: { id: 'media-site', entrypoint: 'pages/team.html' },
+    sourceUrl: '/wp-content/uploads/fixtures/media-site/source/pages/team.html',
+    artifact: { files: [{ path: 'website/images/team.gif', type: 'image/gif', content_base64: contentBase64 }] },
+  });
+  const script = probe.args.find((arg) => arg.startsWith('script='));
+  assert.match(script, new RegExp(expectedHash));
+  assert.match(script, /sourceRoot=new URL\("\/wp-content\/uploads\/fixtures\/media-site\/source\/"/);
+  assert.match(script, /pathname\.slice\(sourceRoot\.length\)/);
+  assert.match(script, /source_path:'website\/pages\/team\.html'/);
+  assert.match(script, /n===document\.body\)return ''/);
+  assert.match(script, /return prefix\?prefix\+' > '\+part:part/);
+  assert.match(script, /rendered:\{x:r\.x,y:r\.y,width:r\.width,height:r\.height\}/);
+  assert.match(script, /nth-of-type\('\+\(s\.indexOf\(n\)\+1\)\+'/);
+  assert.doesNotMatch(script, /nth-of-type\('\+s\.indexOf\(n\)\+1\+'/);
+  assert.match(script, /HeadlessChrome\|Chrome/);
+  assert.doesNotMatch(script, /version:navigator\.userAgent/);
+});
+
+test('runtime presentation evidence intake preserves a typed envelope and diagnoses an unmerged probe', () => {
+  const unavailable = collectRuntimePresentationEvidence([{ command: 'wordpress.browser-probe', metadata: { phase: 'runtime-presentation-evidence' } }]);
+  assert.equal(unavailable.evidence, null);
+  assert.equal(unavailable.diagnostics[0].kind, RUNTIME_PRESENTATION_EVIDENCE_UNAVAILABLE);
+  assert.match(unavailable.diagnostics[0].message, /not merged into artifact\.json/);
+
+  const envelope = { schema: RUNTIME_PRESENTATION_EVIDENCE_SCHEMA, provenance: { browser: { name: 'Chromium', version: '126' }, viewport: { width: 1280, height: 1600, device_scale_factor: 1 }, lifecycle: { phase: 'network-idle' } }, observations: [] };
+  assert.deepEqual(collectRuntimePresentationEvidence([{ runtime_presentation_evidence: envelope }]), { evidence: envelope, diagnostics: [] });
+  assert.deepEqual(collectRuntimePresentationEvidence([{ runtime_presentation_evidence: { status: 'invalid', diagnostic: { kind: RUNTIME_PRESENTATION_EVIDENCE_UNAVAILABLE, code: 'invalid_runtime_presentation_evidence', message: 'Invalid envelope.' } } }]), {
+    evidence: null,
+    diagnostics: [{ severity: 'warning', loss_class: 'runtime_evidence_unavailable', kind: RUNTIME_PRESENTATION_EVIDENCE_UNAVAILABLE, code: 'invalid_runtime_presentation_evidence', message: 'Invalid envelope.' }],
+  });
 });
 
 test('fixture manifests explicitly opt into unproven dynamic client assets', () => {
@@ -3960,6 +4116,7 @@ test('CLI surface coverage reaches bench recipe browser evidence steps', () => {
     '--static-site-importer-path', staticSiteImporter,
     '--max-depth', '1',
     '--surface-coverage', '2',
+    '--animated-media', 'first-frame',
   ], {
     encoding: 'utf8',
     env: {
@@ -3981,6 +4138,25 @@ test('CLI surface coverage reaches bench recipe browser evidence steps', () => {
   assert.ok(editorOpenSteps[1].args.includes('post-slug=contact'));
   assert.ok(editorOpenSteps[2].args.includes('post-slug=merch'));
   assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
+  for (const visualStep of visualSteps) {
+    assert.equal(visualCompareMatrixComparison(visualStep).animatedMedia, 'first-frame');
+  }
+  const summary = JSON.parse(readFileSync(path.join(outputDirectory, 'cli-run.json'), 'utf8'));
+  assert.equal(summary.metadata.animated_media, 'first-frame');
+});
+
+test('CLI rejects an unsupported animated media policy before recipe generation', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-animated-media-invalid-cli-'));
+  const outputDirectory = path.join(root, 'artifacts');
+  const result = spawnSync(process.execPath, [
+    path.join(packageRoot, 'bench', 'static-site-fixture-matrix.bench.mjs'),
+    '--output-directory', outputDirectory,
+    '--animated-media', 'frame-2',
+  ], { encoding: 'utf8' });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /animated-media must be allow or first-frame/);
+  assert.equal(existsSync(path.join(outputDirectory, 'wp-codebox-static-site-fixture-matrix-recipe.json')), false);
 });
 
 test('runFixtureMatrix surface coverage reaches executed batch recipes', async () => {
@@ -4003,12 +4179,16 @@ test('runFixtureMatrix surface coverage reaches executed batch recipes', async (
       batchSize: 1,
       concurrency: 1,
       surfaceCoverage: 2,
+      runtimePresentationEvidence: true,
     });
 
     assert.equal(runtimeError, null);
     const batchRecipe = JSON.parse(readFileSync(summary.runtime.batches[0].recipe_file, 'utf8'));
     const editorOpenSteps = batchRecipe.workflow.steps.filter((step) => step.command === 'wordpress.editor-open');
     const visualSteps = batchRecipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare');
+    const probeIndex = batchRecipe.workflow.steps.findIndex((step) => step.metadata?.phase === 'runtime-presentation-evidence');
+    const mergeIndex = batchRecipe.workflow.steps.findIndex((step) => step.metadata?.phase === 'runtime-presentation-evidence-merge');
+    const importIndex = batchRecipe.workflow.steps.findIndex((step) => step.metadata?.phase === 'import');
     assert.equal(editorOpenSteps.length, 3);
     assert.equal(visualSteps.length, 3);
     assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
@@ -4016,6 +4196,9 @@ test('runFixtureMatrix surface coverage reaches executed batch recipes', async (
     assert.ok(editorOpenSteps[2].args.includes('post-slug=merch'));
     assert.equal(visualCompareMatrixComparison(visualSteps[1]).candidateUrl, '/contact/');
     assert.equal(visualCompareMatrixComparison(visualSteps[2]).candidateUrl, '/merch/');
+    assert.ok(probeIndex >= 0);
+    assert.ok(mergeIndex > probeIndex);
+    assert.ok(importIndex > mergeIndex);
   } finally {
     restoreConcurrencyEnv(snapshot);
   }
@@ -6089,6 +6272,7 @@ test('visual attribution options reach every fixture matrix comparison', () => {
     maxExplanationElements: 500,
     maxExplanationCandidates: 600,
     explainSelectors: '.hero, #footer',
+    animatedMedia: 'first-frame',
   });
   const comparisons = recipe.workflow.steps
     .filter((step) => step.command === 'wordpress.visual-compare')
@@ -6098,6 +6282,7 @@ test('visual attribution options reach every fixture matrix comparison', () => {
     assert.equal(comparison.maxExplanationElements, 500);
     assert.equal(comparison.maxExplanationCandidates, 600);
     assert.deepEqual(comparison.explainSelectors, ['.hero', '#footer']);
+    assert.equal(comparison.animatedMedia, 'first-frame');
   }
 });
 
@@ -6122,6 +6307,14 @@ test('fixture matrix maps the portable transformer reference setting', () => {
 test('fixture matrix maps visual parity external request isolation', () => {
   assert.equal(optionsFromEnv({ SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS: '0' }).visualParityBlockExternalRequests, false);
   assert.equal(optionsFromEnv({ SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS: '1' }).visualParityBlockExternalRequests, true);
+});
+
+test('fixture matrix maps and validates the animated media capture policy', () => {
+  assert.equal(optionsFromEnv({ SSI_FIXTURE_MATRIX_ANIMATED_MEDIA: 'first-frame' }).animatedMedia, 'first-frame');
+  assert.throws(
+    () => visualParityCompareStep({ fixture: { id: 'animated' }, animatedMedia: 'frame-2' }),
+    /animated-media must be allow or first-frame/,
+  );
 });
 
 test('fixture matrix forwards visual parity external request isolation to recipes', async () => {
@@ -6346,7 +6539,7 @@ test('writeFixtureMatrixArtifacts skips raw source staging when visual evidence 
   assert.ok(existsSync(path.join(outputDirectory, 'simple-site', 'artifact.json')), 'artifact.json should still be written');
   assert.equal(existsSync(path.join(outputDirectory, 'simple-site', 'source', 'index.html')), false);
   assert.equal(written.metadata.source_staging.status, 'skipped');
-  assert.equal(written.metadata.source_staging.reason, 'visual_and_live_wp_parity_disabled');
+  assert.equal(written.metadata.source_staging.reason, 'visual_live_wp_and_runtime_presentation_evidence_disabled');
   assert.equal(written.metadata.artifact_bytes.staged_source, 0);
   assert.ok(written.metadata.artifact_bytes.fixture_artifacts > 0);
   assert.ok(written.metadata.artifact_bytes.total >= written.metadata.artifact_bytes.fixture_artifacts);
@@ -6357,6 +6550,16 @@ test('writeFixtureMatrixArtifacts preserves source staging for live-WP parity ev
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-live-wp-source-stage-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'live-wp-source-stage-test' });
   const written = writeFixtureMatrixArtifacts({ outputDirectory, matrix, visualParity: false, liveWpParity: true });
+
+  assert.ok(existsSync(path.join(outputDirectory, 'simple-site', 'source', 'index.html')));
+  assert.equal(written.metadata.source_staging.status, 'staged');
+  assert.ok(written.metadata.artifact_bytes.staged_source > 0);
+});
+
+test('writeFixtureMatrixArtifacts preserves source staging for runtime presentation evidence', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-runtime-evidence-source-stage-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'runtime-evidence-source-stage-test' });
+  const written = writeFixtureMatrixArtifacts({ outputDirectory, matrix, visualParity: false, runtimePresentationEvidence: true });
 
   assert.ok(existsSync(path.join(outputDirectory, 'simple-site', 'source', 'index.html')));
   assert.equal(written.metadata.source_staging.status, 'staged');

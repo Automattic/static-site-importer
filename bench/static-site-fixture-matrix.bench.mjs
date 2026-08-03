@@ -22,6 +22,7 @@ import {
   normalizeFixtureMatrixResult,
   writeFixtureMatrixArtifacts,
   writeFixtureMatrixResultArtifacts,
+  normalizeAnimatedMediaPolicy,
   normalizeVisualAttributionOptions,
   FIXTURE_MATRIX_RUN_FIELDS,
   fixtureMatrixBenchOptions,
@@ -155,6 +156,8 @@ function elapsedMs(startedAt) {
 export async function runFixtureMatrix(options) {
   const runConfig = normalizeFixtureMatrixRunConfig(Object.fromEntries(Object.keys(FIXTURE_MATRIX_RUN_FIELDS).map((key) => [key, options[key]])));
   options = { ...options, ...fixtureMatrixBenchOptions(runConfig) };
+  // Fail before materializing artifacts or starting a WP Codebox recipe.
+  const animatedMedia = normalizeAnimatedMediaPolicy(options.animatedMedia);
   const performance = {};
   const outputDirectory = path.resolve(options.outputDirectory || path.join(process.cwd(), 'artifacts', 'static-site-importer-fixture-matrix'));
   const intake = options.artifactRoot
@@ -200,6 +203,7 @@ export async function runFixtureMatrix(options) {
     matrix,
     ...visualParityRecipeInput(options),
     ...liveWpParityRecipeInput(options),
+    ...runtimePresentationEvidenceRecipeInput(options),
   });
   performance.artifact_writing_ms = elapsedMs(artifactWriteStartedAt);
   const recipe = buildFixtureMatrixRecipe({
@@ -217,6 +221,7 @@ export async function runFixtureMatrix(options) {
     ...fixtureMatrixRecipeInput(runConfig),
     ...visualParityRecipeInput(options),
     ...liveWpParityRecipeInput(options),
+    ...runtimePresentationEvidenceRecipeInput(options),
   });
   const recipeFile = path.join(outputDirectory, 'wp-codebox-static-site-fixture-matrix-recipe.json');
   writeJsonArtifact(recipeFile, recipe);
@@ -332,6 +337,7 @@ export async function runFixtureMatrix(options) {
       source_staging: written.metadata?.source_staging,
       surface_coverage: recipe.metadata?.surface_coverage,
       runtime_cost_warnings: recipe.metadata?.runtime_cost_warnings || [],
+      animated_media: animatedMedia || 'allow',
       visual_attribution: normalizeVisualAttributionOptions(options),
     },
     ...(runtime?.childCommandFailures?.length ? { child_command_failures: runtime.childCommandFailures } : {}),
@@ -409,6 +415,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     ...fixtureMatrixRecipeInput(normalizeFixtureMatrixRunConfig(Object.fromEntries(Object.keys(FIXTURE_MATRIX_RUN_FIELDS).map((key) => [key, options[key]])))),
     ...visualParityRecipeInput(options),
     ...liveWpParityRecipeInput(options),
+    ...runtimePresentationEvidenceRecipeInput(options),
   });
   const batchRecipeFile = path.join(outputDirectory, `wp-codebox-static-site-fixture-matrix-batch-${batchSuffix}.json`);
   const outputFile = path.join(outputDirectory, `wp-codebox-output-batch-${batchSuffix}.json`);
@@ -1530,6 +1537,8 @@ export function optionsFromEnv(env = process.env) {
     artifactRoot: benchEnv.SSI_FIXTURE_MATRIX_ARTIFACT_ROOT || env.SSI_FIXTURE_MATRIX_ARTIFACT_ROOT,
     visualParityFullPage: optionalBoolean(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_FULL_PAGE),
     visualParityBlockExternalRequests: optionalBoolean(benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS ?? env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS),
+    animatedMedia: benchEnv.SSI_FIXTURE_MATRIX_ANIMATED_MEDIA ?? env.SSI_FIXTURE_MATRIX_ANIMATED_MEDIA,
+    runtimePresentationEvidence: optionalBoolean(benchEnv.SSI_FIXTURE_MATRIX_RUNTIME_PRESENTATION_EVIDENCE ?? env.SSI_FIXTURE_MATRIX_RUNTIME_PRESENTATION_EVIDENCE) === true,
     visualParityCandidateUrl: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_CANDIDATE_URL || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_CANDIDATE_URL,
     visualParitySourceBaseUrl: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_SOURCE_BASE_URL,
     visualParityWaitFor: benchEnv.SSI_FIXTURE_MATRIX_VISUAL_PARITY_WAIT_FOR || env.SSI_FIXTURE_MATRIX_VISUAL_PARITY_WAIT_FOR,
@@ -1549,6 +1558,7 @@ function visualParityRecipeInput(options) {
     visualParityBlockExternalRequests: options.visualParityBlockExternalRequests,
     visualParityWaitFor: options.visualParityWaitFor,
     visualParityDurationMs: options.visualParityDurationMs,
+    animatedMedia: options.animatedMedia,
     ...normalizeVisualAttributionOptions(options),
   };
 }
@@ -1561,6 +1571,10 @@ function liveWpParityRecipeInput(options) {
   return {
     liveWpParity: options.liveWpParity === true,
   };
+}
+
+function runtimePresentationEvidenceRecipeInput(options) {
+  return { runtimePresentationEvidence: options.runtimePresentationEvidence === true };
 }
 
 // Live-WP parity result-collector option. Off by default. When on, supplies the
@@ -1669,7 +1683,9 @@ Options:
   --no-editor-validation            Skip browser editor block validation.
   --no-visual-parity                Skip wordpress.visual-compare recipe steps. Same as SSI_FIXTURE_MATRIX_VISUAL_PARITY=0.
   --visual-parity-block-external-requests <bool>
-                                      Keep visual comparison offline when true (default). Same as SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS.
+                                       Keep visual comparison offline when true (default). Same as SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS.
+  --animated-media <allow|first-frame>
+                                       Animated image capture policy. Same as SSI_FIXTURE_MATRIX_ANIMATED_MEDIA.
   --run                             Execute WP Codebox recipes. Omit locally to only materialize artifacts.
 `);
 }
