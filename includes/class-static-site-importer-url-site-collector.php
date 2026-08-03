@@ -18,15 +18,17 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Static_Site_Importer_URL_Site_Collector {
 
-	private const DEFAULT_MAX_PAGES       = 20;
-	private const DEFAULT_MAX_ASSETS      = 200;
-	private const DEFAULT_MAX_TOTAL_BYTES = 52428800;
-	private const MAX_PAGES               = 250;
-	private const MAX_ASSETS              = 2000;
-	private const MAX_TOTAL_BYTES         = 268435456;
-	private const MAX_RESPONSE_BYTES      = 10485760;
-	private const MAX_SITEMAP_DOCUMENTS   = 100;
-	private const MAX_DISCOVERED_ROUTES   = 5000;
+	private const DEFAULT_MAX_PAGES        = 20;
+	private const DEFAULT_MAX_ASSETS       = 200;
+	private const DEFAULT_MAX_TOTAL_BYTES  = 52428800;
+	private const MAX_PAGES                = 250;
+	private const MAX_ASSETS               = 2000;
+	private const MAX_TOTAL_BYTES          = 268435456;
+	private const MAX_RESPONSE_BYTES       = 10485760;
+	private const MAX_SITEMAP_DOCUMENTS    = 100;
+	private const MAX_DISCOVERED_ROUTES    = 5000;
+	private const SAME_ORIGIN_CONCURRENCY  = 2;
+	private const CROSS_ORIGIN_CONCURRENCY = 4;
 
 	/**
 	 * Collect a public static site.
@@ -45,26 +47,9 @@ class Static_Site_Importer_URL_Site_Collector {
 		$max_pages               = min( self::MAX_PAGES, max( 1, (int) ( $args['max_pages'] ?? self::DEFAULT_MAX_PAGES ) ) );
 		$max_assets              = min( self::MAX_ASSETS, max( 0, (int) ( $args['max_assets'] ?? self::DEFAULT_MAX_ASSETS ) ) );
 		$max_total_bytes         = min( self::MAX_TOTAL_BYTES, max( 1, (int) ( $args['max_total_bytes'] ?? self::DEFAULT_MAX_TOTAL_BYTES ) ) );
-		$request_delay           = min( 2000, max( 0, (int) ( $args['request_delay_ms'] ?? 100 ) ) );
+		$use_many_fetcher        = null === $fetcher;
 		$fetcher                 = $fetcher ?? static fn ( string $resource_url, array $fetch_args ) => Static_Site_Importer_URL_Fetcher::fetch( $resource_url, $fetch_args );
-		$fetch_attempts          = min( 3, max( 1, (int) ( $args['fetch_attempts'] ?? 2 ) ) );
-		$fetch_resource          = $fetcher;
-		$fetcher                 = static function ( string $resource_url, array $fetch_args ) use ( $fetch_resource, $fetch_attempts ) {
-			$response = null;
-			for ( $attempt = 0; $attempt < $fetch_attempts; $attempt++ ) {
-				$response = $fetch_resource( $resource_url, $fetch_args );
-				if ( ! is_wp_error( $response ) ) {
-					return $response;
-				}
-			}
-			$data = is_wp_error( $response ) && is_array( $response->get_error_data() ) ? $response->get_error_data() : array();
-			if ( ! empty( $data['_static_site_importer_cache_aware'] ) ) {
-				unset( $data['_static_site_importer_cache_aware'] );
-				$response = new WP_Error( $response->get_error_code(), $response->get_error_message(), $data ?: null );
-				$fetch_resource( $resource_url, $fetch_args + array( '_static_site_importer_cache_failure' => $response ) );
-			}
-			return $response;
-		};
+		$fetcher                 = self::scheduled_fetcher( $fetcher, $args );
 		$fetch_args              = array_intersect_key( $args, array_flip( array( 'timeout' ) ) );
 		$fetch_args['max_bytes'] = min( self::MAX_RESPONSE_BYTES, $max_total_bytes, max( 1, (int) ( $args['max_bytes'] ?? 5242880 ) ) );
 
@@ -91,10 +76,16 @@ class Static_Site_Importer_URL_Site_Collector {
 			$preserve_failed_assets = true;
 			$preserve_asset_limits  = true;
 		}
+		$script_policy          = self::script_policy( $args );
+		$script_exclusions      = array();
 		$entry_resource_url     = $entry_url;
 		$site_url               = $entry_url;
 
-		$sitemap_urls = isset( $args['_route_set'] ) && is_array( $args['_route_set'] ) ? array_values( $args['_route_set'] ) : self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
+		if ( isset( $args['_route_set'] ) && is_array( $args['_route_set'] ) ) {
+			$sitemap_urls = array_values( $args['_route_set'] );
+		} else {
+			$sitemap_urls = self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
+		}
 		if ( is_wp_error( $sitemap_urls ) ) {
 			return $sitemap_urls;
 		}
@@ -110,10 +101,10 @@ class Static_Site_Importer_URL_Site_Collector {
 			}
 		}
 
-		while ( $page_queue && count( array_filter( $resources, static fn ( array $resource ): bool => 'html' === $resource['kind'] ) ) < $max_pages ) {
+		$page_fetcher = self::prefetched_fetcher( array_slice( $page_queue, 0, $max_pages ), array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ), $fetcher, $use_many_fetcher, $args );
+		while ( $page_queue && self::resource_count( $resources, 'html' ) < $max_pages ) {
 			$page_url = array_shift( $page_queue );
-			$response = $fetcher( $page_url, array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ) );
-			self::delay_after_fetch( $response, $request_delay, $args );
+			$response = $page_fetcher( $page_url, array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ) );
 			$response = self::without_cache_marker( $response );
 			if ( is_wp_error( $response ) ) {
 				if ( $page_url === $entry_url ) {
@@ -135,17 +126,9 @@ class Static_Site_Importer_URL_Site_Collector {
 				continue;
 			}
 
-			$body              = (string) $response['body'];
-			$normalized        = Static_Site_Importer_Source_Normalizer::normalize_html( $body, $final_url, $args );
-			$body              = $normalized['html'];
-			$source_exclusions = array_merge( $source_exclusions, $normalized['exclusions'] );
-			$diagnostics       = array_merge( $diagnostics, $normalized['diagnostics'] );
-			$bytes             = strlen( $body );
-			if ( $total_bytes + $bytes > $max_total_bytes ) {
-				$truncated['bytes'] = true;
-				break;
-			}
-
+			$body       = (string) $response['body'];
+			$normalized = Static_Site_Importer_Source_Normalizer::normalize_html( $body, $final_url, $args );
+			$body       = $normalized['html'];
 			$diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $body );
 			if ( ! empty( $diagnostic ) && 'error' === ( $diagnostic['severity'] ?? '' ) ) {
 				$error = new WP_Error( 'static_site_importer_url_client_rendered_app', (string) $diagnostic['message'], array( 'diagnostic' => $diagnostic ) );
@@ -157,6 +140,17 @@ class Static_Site_Importer_URL_Site_Collector {
 				$diagnostic['disposition'] = 'collected_static_html';
 				$diagnostics[]             = $diagnostic;
 			}
+			$document_base_url = self::html_base_url( $body, $final_url );
+			$scripts           = self::apply_script_policy( $body, $document_base_url, $script_policy );
+			$body              = $scripts['html'];
+			$source_exclusions = array_merge( $source_exclusions, $normalized['exclusions'] );
+			$script_exclusions = array_merge( $script_exclusions, $scripts['exclusions'] );
+			$diagnostics       = array_merge( $diagnostics, $normalized['diagnostics'] );
+			$bytes             = strlen( $body );
+			if ( $total_bytes + $bytes > $max_total_bytes ) {
+				$truncated['bytes'] = true;
+				break;
+			}
 
 			$total_bytes            += $bytes;
 			$resources[ $final_url ] = array(
@@ -165,7 +159,6 @@ class Static_Site_Importer_URL_Site_Collector {
 				'content_type' => self::content_type( $response, 'text/html' ),
 			);
 
-			$document_base_url = self::html_base_url( $body, $final_url );
 			foreach ( isset( $args['_route_set'] ) ? array() : self::html_page_urls( $body, $document_base_url, $site_url ) as $discovered_url ) {
 				$page_key = self::page_key( $discovered_url );
 				if ( isset( $queued_pages[ $page_key ] ) ) {
@@ -179,11 +172,10 @@ class Static_Site_Importer_URL_Site_Collector {
 				$page_queue[]              = $discovered_url;
 			}
 
-			$include_scripts = ! array_key_exists( 'include_scripts', $args ) || (bool) $args['include_scripts'];
 			foreach ( self::critical_html_asset_urls( $body, $document_base_url ) as $asset_url ) {
 				$critical_assets[ $asset_url ] = true;
 			}
-			foreach ( self::html_asset_urls( $body, $document_base_url, $include_scripts ) as $asset_url ) {
+			foreach ( self::html_asset_urls( $body, $document_base_url, $scripts['asset_urls'] ) as $asset_url ) {
 				if ( isset( $queued_assets[ $asset_url ] ) || isset( $resources[ $asset_url ] ) ) {
 					continue;
 				}
@@ -203,12 +195,12 @@ class Static_Site_Importer_URL_Site_Collector {
 			}
 		}
 
+		$asset_fetcher = self::prefetched_fetcher( array_slice( $asset_queue, 0, $max_assets ), array_merge( $fetch_args, array( 'content_types' => array() ) ), $fetcher, $use_many_fetcher, $args );
 		while ( $asset_queue && self::resource_count( $resources, 'asset' ) < $max_assets ) {
 			$asset_url = array_shift( $asset_queue );
 			$critical  = $page_ready && isset( $critical_assets[ $asset_url ] );
-			$response  = $fetcher( $asset_url, array_merge( $fetch_args, array( 'content_types' => array() ) ) );
-			self::delay_after_fetch( $response, $request_delay, $args );
-			$response = self::without_cache_marker( $response );
+			$response  = $asset_fetcher( $asset_url, array_merge( $fetch_args, array( 'content_types' => array() ) ) );
+			$response  = self::without_cache_marker( $response );
 			if ( is_wp_error( $response ) ) {
 				if ( 'static_site_importer_invocation_deadline_exceeded' === $response->get_error_code() ) {
 					return $response;
@@ -246,7 +238,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				'content_type' => $content_type,
 			);
 
-			if ( 'text/css' === $content_type || str_ends_with( strtolower( (string) parse_url( $final_url, PHP_URL_PATH ) ), '.css' ) ) {
+			if ( 'text/css' === $content_type || str_ends_with( strtolower( (string) wp_parse_url( $final_url, PHP_URL_PATH ) ), '.css' ) ) {
 				foreach ( self::css_asset_urls( $body, $final_url ) as $nested_url ) {
 					if ( isset( $queued_assets[ $nested_url ] ) || isset( $resources[ $nested_url ] ) ) {
 						continue;
@@ -289,6 +281,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		ksort( $resources, SORT_STRING );
 		ksort( $aliases, SORT_STRING );
 		ksort( $external_assets, SORT_STRING );
+		usort( $script_exclusions, static fn ( array $left, array $right ): int => strcmp( implode( '|', $left ), implode( '|', $right ) ) );
 		$paths           = self::artifact_paths( $resources, $site_url );
 		$route_paths     = self::route_paths( $resources );
 		$reference_paths = $paths;
@@ -341,7 +334,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			'entrypoint' => $paths[ $entry_resource_url ],
 			'files'      => $snapshot_files,
 		);
-		$snapshot['sha256'] = hash( 'sha256', (string) json_encode( array(
+		$snapshot['sha256'] = hash( 'sha256', (string) wp_json_encode( array(
 			'entrypoint'      => $snapshot['entrypoint'],
 			'compiler_limits' => $compiler_limits,
 			'files'           => $snapshot_files,
@@ -368,14 +361,17 @@ class Static_Site_Importer_URL_Site_Collector {
 					'failures'                => $failures,
 					'diagnostics'             => $diagnostics,
 					'source_exclusions'       => $source_exclusions,
+					'script_policy'           => array(
+						'name'             => $script_policy,
+						'excluded_count'   => count( $script_exclusions ),
+						'excluded_scripts' => $script_exclusions,
+					),
 					'truncated'               => array_keys( $truncated ),
 					'sitemap_urls'            => count( $sitemap_urls ),
+					'fetch_scheduling'        => self::scheduling_limits( $args ),
 					'external_asset_retained' => array(
 						'count'   => count( $external_assets ),
-						'samples' => array_slice( array_map( static fn( string $url, string $reason ): array => array(
-							'url'    => $url,
-							'reason' => $reason,
-						), array_keys( $external_assets ), $external_assets ), 0, 50 ),
+						'samples' => self::external_asset_samples( $external_assets ),
 					),
 					'readiness'                => array(
 						'mode'            => $page_ready ? 'page_ready' : 'complete_snapshot',
@@ -399,22 +395,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			return new WP_Error( 'static_site_importer_site_collection_invalid_url', 'Enter a valid public site URL.' );
 		}
 		$fetcher                 = $fetcher ?? static fn ( string $resource_url, array $fetch_args ) => Static_Site_Importer_URL_Fetcher::fetch( $resource_url, $fetch_args );
-		$fetch_attempts          = min( 3, max( 1, (int) ( $args['fetch_attempts'] ?? 2 ) ) );
-		$fetch_resource          = $fetcher;
-		$fetcher                 = static function ( string $resource_url, array $fetch_args ) use ( $fetch_resource, $fetch_attempts ) {
-			for ( $attempt = 0; $attempt < $fetch_attempts; $attempt++ ) {
-				$response = $fetch_resource( $resource_url, $fetch_args );
-				if ( ! is_wp_error( $response ) ) {
-					return $response; }
-			}
-			$data = is_wp_error( $response ) && is_array( $response->get_error_data() ) ? $response->get_error_data() : array();
-			if ( ! empty( $data['_static_site_importer_cache_aware'] ) ) {
-				unset( $data['_static_site_importer_cache_aware'] );
-				$response = new WP_Error( $response->get_error_code(), $response->get_error_message(), $data ?: null );
-				$fetch_resource( $resource_url, $fetch_args + array( '_static_site_importer_cache_failure' => $response ) );
-			}
-			return $response;
-		};
+		$fetcher                 = self::scheduled_fetcher( $fetcher, $args );
 		$fetch_args              = array_intersect_key( $args, array_flip( array( 'timeout' ) ) );
 		$fetch_args['max_bytes'] = min( 10485760, max( 1, (int) ( $args['max_bytes'] ?? 5242880 ) ) );
 		$routes                  = self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
@@ -463,9 +444,9 @@ class Static_Site_Importer_URL_Site_Collector {
 		);
 	}
 
-	/** @return array<int,string> */
+	/** @return array<int,string>|WP_Error */
 	private static function sitemap_urls( string $entry_url, callable $fetcher, array $fetch_args ) {
-		$parts = parse_url( $entry_url );
+		$parts = wp_parse_url( $entry_url );
 		if ( ! is_array( $parts ) || empty( $parts['scheme'] ) || empty( $parts['host'] ) ) {
 			return array();
 		}
@@ -488,12 +469,12 @@ class Static_Site_Importer_URL_Site_Collector {
 				continue;
 			}
 			preg_match_all( '#<loc\b[^>]*>(.*?)</loc>#is', (string) $response['body'], $matches );
-			foreach ( $matches[1] ?? array() as $location ) {
-				$resolved = self::resolve_url( html_entity_decode( strip_tags( (string) $location ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ), $current );
+			foreach ( $matches[1] as $location ) {
+				$resolved = self::resolve_url( html_entity_decode( wp_strip_all_tags( (string) $location ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ), $current );
 				if ( '' === $resolved || ! self::same_origin( $resolved, $entry_url ) ) {
 					continue;
 				}
-				if ( str_ends_with( strtolower( (string) parse_url( $resolved, PHP_URL_PATH ) ), '.xml' ) ) {
+				if ( str_ends_with( strtolower( (string) wp_parse_url( $resolved, PHP_URL_PATH ) ), '.xml' ) ) {
 					if ( ! isset( $seen[ $resolved ] ) && count( $seen ) + count( $queue ) >= self::MAX_SITEMAP_DOCUMENTS ) {
 						return new WP_Error( 'static_site_importer_discovery_incomplete', 'Sitemap discovery exceeded its document limit.', array(
 							'truncated_dimension' => 'sitemap_documents',
@@ -531,23 +512,22 @@ class Static_Site_Importer_URL_Site_Collector {
 	}
 
 	/** @return array<int,string> */
-	private static function html_asset_urls( string $html, string $base_url, bool $include_scripts ): array {
+	private static function html_asset_urls( string $html, string $base_url, array $script_urls = array() ): array {
 		$urls        = array();
 		$source_urls = array_merge(
 			self::tag_attribute_values( $html, 'img|source|video|audio', 'src' ),
 			self::tag_attribute_values( $html, 'video', 'poster' )
 		);
-		$script_urls = $include_scripts ? self::tag_attribute_values( $html, 'script', 'src' ) : array();
 		$link_urls   = array();
 		preg_match_all( '#<link\b[^>]*>#is', $html, $link_matches );
-		foreach ( $link_matches[0] ?? array() as $link_tag ) {
+		foreach ( $link_matches[0] as $link_tag ) {
 			$relation = self::tag_attribute_value( $link_tag, 'rel' );
 			$href     = self::tag_attribute_value( $link_tag, 'href' );
 			if ( null === $relation || null === $href ) {
 				continue;
 			}
 			$relations = preg_split( '/\s+/', strtolower( trim( $relation ) ) );
-			if ( array_intersect( $relations ?: array(), array( 'stylesheet', 'icon', 'preload', 'modulepreload' ) ) ) {
+			if ( false !== $relations && array_intersect( $relations, array( 'stylesheet', 'icon', 'preload', 'modulepreload' ) ) ) {
 				$link_urls[] = $href;
 			}
 		}
@@ -569,11 +549,72 @@ class Static_Site_Importer_URL_Site_Collector {
 		return array_values( array_unique( array_merge( $urls, self::html_css_asset_urls( $html, $base_url ) ) ) );
 	}
 
+	/** Resolve the explicit script retention contract for public HTML collection. */
+	private static function script_policy( array $args ): string {
+		if ( array_key_exists( 'include_scripts', $args ) ) {
+			return ! empty( $args['include_scripts'] ) ? 'full' : 'none';
+		}
+		$policy = isset( $args['script_policy'] ) ? (string) $args['script_policy'] : 'static';
+		return in_array( $policy, array( 'static', 'full', 'none' ), true ) ? $policy : 'static';
+	}
+
+	/**
+	 * Omit scripts from the frozen server-rendered document unless a caller supplies
+	 * the full runtime-preservation contract.
+	 *
+	 * Full retention remains an explicit compatibility mode for callers that supply
+	 * their own runtime-preservation contract.
+	 *
+	 * @return array{html:string,asset_urls:array<int,string>,exclusions:array<int,array<string,string>>}
+	 */
+	private static function apply_script_policy( string $html, string $base_url, string $policy ): array {
+		$asset_urls = array();
+		$exclusions = array();
+		$html       = (string) preg_replace_callback(
+			'#<script\b([^>]*)>(.*?)</script\s*>#is',
+			static function ( array $matches ) use ( $base_url, $policy, &$asset_urls, &$exclusions ): string {
+				$tag     = '<script' . $matches[1] . '>';
+				$source  = self::tag_attribute_value( $tag, 'src' );
+				$type    = strtolower( trim( (string) self::tag_attribute_value( $tag, 'type' ) ) );
+				$kind    = null === $source ? 'inline' : 'external';
+				$is_data = in_array( $type, array( 'application/json', 'application/ld+json', 'application/manifest+json' ), true );
+				$keep    = 'full' === $policy;
+				if ( $keep ) {
+					if ( 'external' === $kind ) {
+						$url = self::resolve_url( (string) $source, $base_url );
+						if ( '' !== $url ) {
+							$asset_urls[] = $url;
+						}
+					}
+					return $matches[0];
+				}
+
+				$exclusion = array(
+					'kind'        => $kind,
+					'reason_code' => 'none' === $policy ? 'script_omitted_by_caller_policy' : ( $is_data ? 'data_script_omitted_from_static_artifact' : 'script_omitted_without_runtime_declaration' ),
+					'sha256'      => hash( 'sha256', $matches[0] ),
+					'type'        => '' !== $type ? $type : 'classic',
+				);
+				if ( 'external' === $kind ) {
+					$exclusion['url'] = self::resolve_url( (string) $source, $base_url );
+				}
+				$exclusions[] = $exclusion;
+				return '';
+			},
+			$html
+		);
+		return array(
+			'html'       => $html,
+			'asset_urls' => array_values( array_unique( $asset_urls ) ),
+			'exclusions' => $exclusions,
+		);
+	}
+
 	/** @return array<int,string> */
 	private static function critical_html_asset_urls( string $html, string $base_url ): array {
 		$urls = array();
 		preg_match_all( '#<link\b[^>]*>#is', $html, $matches );
-		foreach ( $matches[0] ?? array() as $tag ) {
+		foreach ( $matches[0] as $tag ) {
 			$relation = strtolower( (string) self::tag_attribute_value( $tag, 'rel' ) );
 			$href     = self::tag_attribute_value( $tag, 'href' );
 			$as       = strtolower( (string) self::tag_attribute_value( $tag, 'as' ) );
@@ -592,7 +633,7 @@ class Static_Site_Importer_URL_Site_Collector {
 	private static function html_css_asset_urls( string $html, string $base_url ): array {
 		$css = array();
 		preg_match_all( '#<style\b[^>]*>(.*?)</style>#is', $html, $style_blocks );
-		$css = array_merge( $css, $style_blocks[1] ?? array() );
+		$css = array_merge( $css, $style_blocks[1] );
 		preg_match_all( '#<[^>]+\bstyle\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))#is', $html, $style_attributes, PREG_SET_ORDER );
 		foreach ( $style_attributes as $attribute ) {
 			$css[] = self::matched_attribute_value( $attribute, 1 );
@@ -608,14 +649,14 @@ class Static_Site_Importer_URL_Site_Collector {
 	private static function css_asset_urls( string $css, string $base_url ): array {
 		preg_match_all( '#url\(\s*(["\']?)(.*?)\1\s*\)#is', $css, $matches );
 		$urls = array();
-		foreach ( $matches[2] ?? array() as $reference ) {
+		foreach ( $matches[2] as $reference ) {
 			$url = self::resolve_url( (string) $reference, $base_url );
 			if ( '' !== $url ) {
 				$urls[] = $url;
 			}
 		}
 		preg_match_all( '#@import\s+(["\'])(.*?)\1#is', $css, $import_matches );
-		foreach ( $import_matches[2] ?? array() as $reference ) {
+		foreach ( $import_matches[2] as $reference ) {
 			$url = self::resolve_url( (string) $reference, $base_url );
 			if ( '' !== $url ) {
 				$urls[] = $url;
@@ -662,9 +703,9 @@ class Static_Site_Importer_URL_Site_Collector {
 	}
 
 	private static function artifact_path( string $url, bool $html, string $entry_url ): string {
-		$parts = parse_url( $url );
+		$parts = wp_parse_url( $url );
 		$path  = isset( $parts['path'] ) ? rawurldecode( (string) $parts['path'] ) : '/';
-		$path  = implode( '/', array_map( static fn ( string $segment ): string => sanitize_file_name( $segment ), array_filter( explode( '/', trim( $path, '/' ) ), 'strlen' ) ) );
+		$path  = implode( '/', array_map( static fn ( string $segment ): string => sanitize_file_name( $segment ), array_filter( explode( '/', trim( $path, '/' ) ), static fn ( string $segment ): bool => '' !== $segment ) ) );
 		if ( ! self::same_origin( $url, $entry_url ) ) {
 			$host = sanitize_file_name( strtolower( (string) ( $parts['host'] ?? 'external' ) ) );
 			$path = '_external/' . $host . '/' . $path;
@@ -690,29 +731,29 @@ class Static_Site_Importer_URL_Site_Collector {
 	private static function rewrite_html( string $html, string $base_url, string $source_path, array $paths, array $aliases, string $site_url, array $external_assets = array() ): string {
 		$html = preg_replace_callback(
 			'#\b(src|href|poster)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))#is',
-			static function ( array $match ) use ( $base_url, $source_path, $paths, $aliases, $site_url, $external_assets ): string {
-				$value = self::matched_attribute_value( $match );
+			static function ( array $matches ) use ( $base_url, $source_path, $paths, $aliases, $site_url, $external_assets ): string {
+				$value = self::matched_attribute_value( $matches );
 				$url   = self::resolve_url( $value, $base_url );
 				if ( isset( $paths[ $url ] ) && preg_match( '/\.html?$/i', $paths[ $url ] ) ) {
 					if ( isset( $aliases[ $url ] ) ) {
-						return $match[1] . '="' . self::route_url( $aliases[ $url ], $value ) . '"';
+						return $matches[1] . '="' . self::route_url( $aliases[ $url ], $value ) . '"';
 					}
-					return $match[0];
+					return $matches[0];
 				}
 				if ( isset( $paths[ $url ] ) ) {
-					return $match[1] . '="' . self::relative_path( $source_path, $paths[ $url ] ) . '"';
+					return $matches[1] . '="' . self::relative_path( $source_path, $paths[ $url ] ) . '"';
 				}
 				if ( isset( $external_assets[ $url ] ) ) {
-					return $match[1] . '="' . self::external_asset_url( $url, $value ) . '"'; }
-				return '' !== $url && self::same_origin( $url, $site_url ) && self::is_page_url( $url ) ? $match[1] . '="' . self::route_url( $url, $value ) . '"' : $match[0];
+					return $matches[1] . '="' . self::external_asset_url( $url, $value ) . '"'; }
+				return '' !== $url && self::same_origin( $url, $site_url ) && self::is_page_url( $url ) ? $matches[1] . '="' . self::route_url( $url, $value ) . '"' : $matches[0];
 			},
 			$html
 		);
 		$html = preg_replace_callback(
 			'#\bsrcset\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))#is',
-			static function ( array $match ) use ( $base_url, $source_path, $paths, $external_assets ): string {
+			static function ( array $matches ) use ( $base_url, $source_path, $paths, $external_assets ): string {
 				$candidates = array();
-				foreach ( explode( ',', self::matched_attribute_value( $match, 1 ) ) as $candidate ) {
+				foreach ( explode( ',', self::matched_attribute_value( $matches, 1 ) ) as $candidate ) {
 					$parts        = preg_split( '/\s+/', trim( $candidate ), 2 );
 					$url          = self::resolve_url( $parts[0] ?? '', $base_url );
 					$ref          = isset( $paths[ $url ] ) ? self::relative_path( $source_path, $paths[ $url ] ) : ( isset( $external_assets[ $url ] ) ? self::external_asset_url( $url, (string) ( $parts[0] ?? '' ) ) : ( $parts[0] ?? '' ) );
@@ -729,23 +770,23 @@ class Static_Site_Importer_URL_Site_Collector {
 	private static function rewrite_css( string $css, string $base_url, string $source_path, array $paths, array $external_assets = array() ): string {
 		$css = (string) preg_replace_callback(
 			'#url\(\s*(["\']?)(.*?)\1\s*\)#is',
-			static function ( array $match ) use ( $base_url, $source_path, $paths, $external_assets ): string {
-				$url = self::resolve_url( $match[2], $base_url );
-				return isset( $paths[ $url ] ) ? 'url(' . $match[1] . self::relative_path( $source_path, $paths[ $url ] ) . $match[1] . ')' : ( isset( $external_assets[ $url ] ) ? 'url(' . $match[1] . self::external_asset_url( $url, $match[2] ) . $match[1] . ')' : $match[0] );
+			static function ( array $matches ) use ( $base_url, $source_path, $paths, $external_assets ): string {
+				$url = self::resolve_url( $matches[2], $base_url );
+				return isset( $paths[ $url ] ) ? 'url(' . $matches[1] . self::relative_path( $source_path, $paths[ $url ] ) . $matches[1] . ')' : ( isset( $external_assets[ $url ] ) ? 'url(' . $matches[1] . self::external_asset_url( $url, $matches[2] ) . $matches[1] . ')' : $matches[0] );
 			},
 			$css
 		);
 		return (string) preg_replace_callback(
 			'#@import\s+(["\'])(.*?)\1#is',
-			static function ( array $match ) use ( $base_url, $source_path, $paths, $external_assets ): string {
-				$url = self::resolve_url( $match[2], $base_url );
-				return isset( $paths[ $url ] ) ? '@import ' . $match[1] . self::relative_path( $source_path, $paths[ $url ] ) . $match[1] : ( isset( $external_assets[ $url ] ) ? '@import ' . $match[1] . self::external_asset_url( $url, $match[2] ) . $match[1] : $match[0] );
+			static function ( array $matches ) use ( $base_url, $source_path, $paths, $external_assets ): string {
+				$url = self::resolve_url( $matches[2], $base_url );
+				return isset( $paths[ $url ] ) ? '@import ' . $matches[1] . self::relative_path( $source_path, $paths[ $url ] ) . $matches[1] : ( isset( $external_assets[ $url ] ) ? '@import ' . $matches[1] . self::external_asset_url( $url, $matches[2] ) . $matches[1] : $matches[0] );
 			},
 			$css
 		);
 	}
 
-	private static function external_asset_url( string $url, string $reference ): string { $fragment = parse_url( html_entity_decode( $reference, ENT_QUOTES | ENT_HTML5, 'UTF-8' ), PHP_URL_FRAGMENT );
+	private static function external_asset_url( string $url, string $reference ): string { $fragment = wp_parse_url( html_entity_decode( $reference, ENT_QUOTES | ENT_HTML5, 'UTF-8' ), PHP_URL_FRAGMENT );
 		return $url . ( is_string( $fragment ) && '' !== $fragment ? '#' . $fragment : '' ); }
 
 	private static function response_url( array $response, string $requested_url ): string {
@@ -754,8 +795,8 @@ class Static_Site_Importer_URL_Site_Collector {
 	}
 
 	private static function html_base_url( string $html, string $document_url ): string {
-		preg_match( '#<base\b[^>]*>#is', $html, $match );
-		$base = isset( $match[0] ) ? self::tag_attribute_value( $match[0], 'href' ) : null;
+		preg_match( '#<base\b[^>]*>#is', $html, $matches );
+		$base = isset( $matches[0] ) ? self::tag_attribute_value( $matches[0], 'href' ) : null;
 		if ( null === $base ) {
 			return $document_url;
 		}
@@ -784,8 +825,8 @@ class Static_Site_Importer_URL_Site_Collector {
 		return self::matched_attribute_value( $match, 1 );
 	}
 
-	private static function matched_attribute_value( array $match, int $offset = 2 ): string {
-		foreach ( array_slice( $match, $offset, 3 ) as $value ) {
+	private static function matched_attribute_value( array $matches, int $offset = 2 ): string {
+		foreach ( array_slice( $matches, $offset, 3 ) as $value ) {
 			if ( '' !== (string) $value ) {
 				return (string) $value;
 			}
@@ -794,10 +835,10 @@ class Static_Site_Importer_URL_Site_Collector {
 	}
 
 	private static function route_url( string $url, string $original_reference ): string {
-		$parts    = parse_url( $url );
+		$parts    = wp_parse_url( $url );
 		$route    = (string) ( $parts['path'] ?? '/' );
 		$route   .= isset( $parts['query'] ) ? '?' . $parts['query'] : '';
-		$fragment = parse_url( html_entity_decode( $original_reference, ENT_QUOTES | ENT_HTML5, 'UTF-8' ), PHP_URL_FRAGMENT );
+		$fragment = wp_parse_url( html_entity_decode( $original_reference, ENT_QUOTES | ENT_HTML5, 'UTF-8' ), PHP_URL_FRAGMENT );
 		return $route . ( is_string( $fragment ) && '' !== $fragment ? '#' . $fragment : '' );
 	}
 
@@ -808,7 +849,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			array_shift( $from_segments );
 			array_shift( $to_segments );
 		}
-		return str_repeat( '../', count( array_filter( $from_segments, 'strlen' ) ) ) . implode( '/', $to_segments );
+		return str_repeat( '../', count( array_filter( $from_segments, static fn ( string $segment ): bool => '' !== $segment ) ) ) . implode( '/', $to_segments );
 	}
 
 	private static function resolve_url( string $reference, string $base_url ): string {
@@ -819,7 +860,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		if ( preg_match( '#^https?://#i', $reference ) ) {
 			return self::canonical_url( $reference );
 		}
-		$base = parse_url( $base_url );
+		$base = wp_parse_url( $base_url );
 		if ( ! is_array( $base ) || empty( $base['scheme'] ) || empty( $base['host'] ) ) {
 			return '';
 		}
@@ -835,14 +876,14 @@ class Static_Site_Importer_URL_Site_Collector {
 	}
 
 	private static function canonical_url( string $url ): string {
-		$parts = parse_url( trim( $url ) );
+		$parts = wp_parse_url( trim( $url ) );
 		if ( ! is_array( $parts ) || ! in_array( strtolower( (string) ( $parts['scheme'] ?? '' ) ), array( 'http', 'https' ), true ) || empty( $parts['host'] ) ) {
 			return '';
 		}
 		$path  = self::normalize_path( (string) ( $parts['path'] ?? '/' ) );
 		$port  = isset( $parts['port'] ) ? ':' . (int) $parts['port'] : '';
 		$query = isset( $parts['query'] ) && '' !== $parts['query'] ? '?' . $parts['query'] : '';
-		return strtolower( (string) $parts['scheme'] ) . '://' . strtolower( (string) $parts['host'] ) . $port . $path . $query;
+		return strtolower( (string) ( $parts['scheme'] ?? '' ) ) . '://' . strtolower( (string) $parts['host'] ) . $port . $path . $query;
 	}
 
 	private static function normalize_path( string $path ): string {
@@ -862,7 +903,7 @@ class Static_Site_Importer_URL_Site_Collector {
 	}
 
 	private static function canonical_route_path( string $url ): string {
-		$path     = (string) ( parse_url( $url, PHP_URL_PATH ) ?? '/' );
+		$path     = (string) ( wp_parse_url( $url, PHP_URL_PATH ) ?? '/' );
 		$segments = array_values( array_filter( explode( '/', trim( $path, '/' ) ), static fn ( string $segment ): bool => '' !== $segment ) );
 		$last     = array_key_last( $segments );
 		$slugs    = array();
@@ -882,7 +923,10 @@ class Static_Site_Importer_URL_Site_Collector {
 	}
 
 	private static function origin( string $url ): string {
-		$parts = parse_url( $url );
+		$parts = wp_parse_url( $url );
+		if ( ! is_array( $parts ) || empty( $parts['scheme'] ) || empty( $parts['host'] ) ) {
+			return '';
+		}
 		return strtolower( (string) $parts['scheme'] ) . '://' . strtolower( (string) $parts['host'] ) . ( isset( $parts['port'] ) ? ':' . (int) $parts['port'] : '' );
 	}
 
@@ -891,13 +935,13 @@ class Static_Site_Importer_URL_Site_Collector {
 	}
 
 	private static function is_page_url( string $url ): bool {
-		$path      = strtolower( (string) parse_url( $url, PHP_URL_PATH ) );
+		$path      = strtolower( (string) wp_parse_url( $url, PHP_URL_PATH ) );
 		$extension = pathinfo( $path, PATHINFO_EXTENSION );
 		return '' === $extension || in_array( $extension, array( 'html', 'htm', 'php', 'asp', 'aspx' ), true );
 	}
 
 	private static function page_key( string $url ): string {
-		$parts = parse_url( $url );
+		$parts = wp_parse_url( $url );
 		$path  = strtolower( rtrim( (string) ( $parts['path'] ?? '/' ), '/' ) );
 		if ( '' === $path || '/index.html' === $path || '/index.htm' === $path ) {
 			$path = '/';
@@ -907,7 +951,7 @@ class Static_Site_Importer_URL_Site_Collector {
 
 	/** @param array<string,array<string,string>> $resources */
 	private static function resource_count( array $resources, string $kind ): int {
-		return count( array_filter( $resources, static fn ( array $resource ): bool => $kind === $resource['kind'] ) );
+		return count( array_filter( $resources, static fn ( array $collected_resource ): bool => $kind === $collected_resource['kind'] ) );
 	}
 
 	private static function content_type( array $response, string $fallback ): string {
@@ -919,7 +963,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		return str_starts_with( $content_type, 'text/' ) || in_array( $content_type, array( 'application/javascript', 'application/json', 'application/xml', 'image/svg+xml' ), true ) || (bool) preg_match( '/\.(?:css|js|json|xml|svg)$/i', $path );
 	}
 
-	/** @return array<string,string> */
+	/** @return array<string,int|string> */
 	private static function failure( string $url, WP_Error $error, string $kind = 'asset' ): array {
 		return array(
 			'url'     => $url,
@@ -929,20 +973,108 @@ class Static_Site_Importer_URL_Site_Collector {
 		);
 	}
 
-	private static function delay_after_fetch( $response, int $milliseconds, array $args ): void {
-		$error_data = is_wp_error( $response ) ? $response->get_error_data() : null;
-		if ( is_array( $error_data ) && ! empty( $error_data['_static_site_importer_negative_cache_hit'] ) ) {
-			return;
+	/** @param array<string,int|string> $external_assets @return array<int,array{url:string,reason:string}> */
+	private static function external_asset_samples( array $external_assets ): array {
+		$samples = array();
+		foreach ( $external_assets as $url => $reason ) {
+			$samples[] = array(
+				'url'    => $url,
+				'reason' => (string) $reason,
+			);
+			if ( 50 === count( $samples ) ) {
+				break;
+			}
 		}
-		if ( is_array( $response ) && ! empty( $response['metadata']['_static_site_importer_cache_hit'] ) ) {
-			unset( $response['metadata']['_static_site_importer_cache_hit'] );
-			return;
+		return $samples;
+	}
+
+	/** @return callable */
+	private static function prefetched_fetcher( array $urls, array $fetch_args, callable $fetcher, bool $use_many_fetcher, array $args ): callable {
+		if ( ! $use_many_fetcher || ! $urls ) {
+			return $fetcher;
 		}
-		if ( isset( $args['_static_site_importer_delay_callback'] ) && is_callable( $args['_static_site_importer_delay_callback'] ) ) {
-			call_user_func( $args['_static_site_importer_delay_callback'] );
-			return;
+		$responses = self::fetch_batch( $urls, $fetch_args, $args );
+		return static fn ( string $url, array $request_args ) => $responses[ $url ] ?? $fetcher( $url, $request_args );
+	}
+
+	/** @return array<string,array|WP_Error> */
+	private static function fetch_batch( array $urls, array $fetch_args, array $args ): array {
+		$attempts  = min( 3, max( 1, (int) ( $args['fetch_attempts'] ?? 2 ) ) );
+		$delay     = min( 2000, max( 0, (int) ( $args['request_delay_ms'] ?? 0 ) ) );
+		$pending   = array_values( $urls );
+		$responses = array();
+		for ( $attempt = 0; $pending && $attempt < $attempts; $attempt++ ) {
+			$requests = array();
+			foreach ( $pending as $url ) {
+				$requests[ $url ] = array(
+					'url'  => $url,
+					'args' => $fetch_args,
+				);
+			}
+			$many_args = array(
+				'concurrency'            => self::CROSS_ORIGIN_CONCURRENCY,
+				'per_origin_concurrency' => self::SAME_ORIGIN_CONCURRENCY,
+			);
+			if ( isset( $args['_static_site_importer_fetch_deadline'] ) ) {
+				$many_args['deadline'] = (float) $args['_static_site_importer_fetch_deadline'];
+			}
+			if ( isset( $args['_static_site_importer_fetch_clock'] ) && is_callable( $args['_static_site_importer_fetch_clock'] ) ) {
+				$many_args['clock'] = $args['_static_site_importer_fetch_clock'];
+			}
+			if ( isset( $args['_static_site_importer_fetch_many_transport'] ) && is_array( $args['_static_site_importer_fetch_many_transport'] ) ) {
+				$many_args['transport'] = $args['_static_site_importer_fetch_many_transport'];
+			}
+			$batch   = Static_Site_Importer_URL_Fetcher::fetch_many( $requests, $many_args );
+			$pending = array();
+			foreach ( $batch as $url => $response ) {
+				$responses[ $url ] = $response;
+				if ( is_wp_error( $response ) && $attempt + 1 < $attempts ) {
+					self::delay( $delay, $args );
+					$pending[] = $url;
+				}
+			}
 		}
-		self::delay( $milliseconds );
+		return $responses;
+	}
+
+	/** @return callable */
+	private static function scheduled_fetcher( callable $fetch_resource, array $args ): callable {
+		$fetch_attempts = min( 3, max( 1, (int) ( $args['fetch_attempts'] ?? 2 ) ) );
+		$retry_delay    = min( 2000, max( 0, (int) ( $args['request_delay_ms'] ?? 0 ) ) );
+		$clock          = isset( $args['_static_site_importer_scheduler_clock'] ) && is_callable( $args['_static_site_importer_scheduler_clock'] ) ? $args['_static_site_importer_scheduler_clock'] : static fn (): float => microtime( true );
+		return static function ( string $resource_url, array $fetch_args ) use ( $fetch_resource, $fetch_attempts, $retry_delay, $clock, $args ) {
+			$response     = null;
+			$next_allowed = array();
+			$origin       = self::origin( $resource_url );
+			for ( $attempt = 0; $attempt < $fetch_attempts; $attempt++ ) {
+				$wait = max( 0, ( $next_allowed[ $origin ] ?? 0 ) - (float) call_user_func( $clock ) );
+				if ( $wait > 0 ) {
+					self::delay( (int) ceil( $wait * 1000 ), $args );
+				}
+				$response = $fetch_resource( $resource_url, $fetch_args );
+				if ( ! is_wp_error( $response ) ) {
+					return $response;
+				}
+				// Successful and cached responses are immediately eligible; only a retry is paced.
+				$next_allowed[ $origin ] = (float) call_user_func( $clock ) + ( $retry_delay / 1000 );
+			}
+			$data = is_array( $response->get_error_data() ) ? $response->get_error_data() : array();
+			if ( ! empty( $data['_static_site_importer_cache_aware'] ) ) {
+				unset( $data['_static_site_importer_cache_aware'] );
+				$response = new WP_Error( $response->get_error_code(), $response->get_error_message(), ! empty( $data ) ? $data : null );
+				$fetch_resource( $resource_url, $fetch_args + array( '_static_site_importer_cache_failure' => $response ) );
+			}
+			return $response;
+		};
+	}
+
+	/** @return array<string,int> */
+	private static function scheduling_limits( array $args ): array {
+		return array(
+			'same_origin_concurrency'  => self::SAME_ORIGIN_CONCURRENCY,
+			'cross_origin_concurrency' => self::CROSS_ORIGIN_CONCURRENCY,
+			'retry_delay_ms'           => min( 2000, max( 0, (int) ( $args['request_delay_ms'] ?? 0 ) ) ),
+		);
 	}
 
 	private static function without_cache_marker( $response ) {
@@ -954,11 +1086,15 @@ class Static_Site_Importer_URL_Site_Collector {
 			return $response;
 		}
 		unset( $data['_static_site_importer_negative_cache_hit'] );
-		return new WP_Error( $response->get_error_code(), $response->get_error_message(), $data ?: null );
+		return new WP_Error( $response->get_error_code(), $response->get_error_message(), ! empty( $data ) ? $data : null );
 	}
 
-	private static function delay( int $milliseconds ): void {
+	private static function delay( int $milliseconds, array $args = array() ): void {
 		if ( $milliseconds > 0 ) {
+			if ( isset( $args['_static_site_importer_delay_callback'] ) && is_callable( $args['_static_site_importer_delay_callback'] ) ) {
+				call_user_func( $args['_static_site_importer_delay_callback'], $milliseconds );
+				return;
+			}
 			usleep( $milliseconds * 1000 );
 		}
 	}

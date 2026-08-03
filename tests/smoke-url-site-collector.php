@@ -39,6 +39,24 @@ if ( ! function_exists( 'sanitize_file_name' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_parse_url' ) ) {
+	function wp_parse_url( string $url, int $component = -1 ) {
+		return parse_url( $url, $component );
+	}
+}
+
+if ( ! function_exists( 'wp_json_encode' ) ) {
+	function wp_json_encode( mixed $value, int $flags = 0, int $depth = 512 ) {
+		return json_encode( $value, $flags, $depth );
+	}
+}
+
+if ( ! function_exists( 'wp_strip_all_tags' ) ) {
+	function wp_strip_all_tags( string $string, bool $remove_breaks = false ): string {
+		return strip_tags( $string );
+	}
+}
+
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-fetcher.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-site-collector.php';
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
@@ -117,7 +135,7 @@ $assert( 'public-static-site-collector' === ( $result['provider'] ?? '' ), 'prov
 $assert( 'website/index.html' === ( $result['artifact']['entrypoint'] ?? '' ), 'root-entrypoint' );
 $assert( array( 'max_files' => 70, 'max_file_bytes' => 10485760, 'max_total_bytes' => 104857600 ) === ( $result['artifact']['compiler_limits'] ?? null ), 'collector-declares-bounded-compiler-limits' );
 $assert( 4 === ( $result['source_metadata']['collection']['pages'] ?? 0 ), 'sitemap-index-alias-deduplicated' );
-$assert( 9 === ( $result['source_metadata']['collection']['assets'] ?? 0 ), 'html-css-and-script-assets-collected' );
+$assert( 8 === ( $result['source_metadata']['collection']['assets'] ?? 0 ), 'static-policy-collects-frozen-rendering-assets' );
 $assert( array() === ( $result['source_metadata']['collection']['failures'] ?? null ), 'no-collection-failures' );
 $snapshot = $result['source_metadata']['snapshot'] ?? array();
 $assert( 'static-site-importer/url-snapshot/v1' === ( $snapshot['schema'] ?? '' ) && 64 === strlen( (string) ( $snapshot['sha256'] ?? '' ) ), 'snapshot-hash-recorded' );
@@ -139,8 +157,8 @@ $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' 
 $assert( isset( $files['website/uploads/logo.png']['content_base64'] ), 'binary-assets-base64-encoded' );
 $assert( ! in_array( 'https://example.test/index.html', array_column( $requests, 'url' ), true ), 'root-index-not-fetched-twice' );
 $assert( array() === array_filter( array_column( $requests, 'url' ), static fn ( string $url ): bool => str_contains( $url, 'new Blob' ) ), 'inline-javascript-url-functions-are-not-css-assets' );
-$assert( in_array( 'https://example.test/platform-runtime.js', array_column( $requests, 'url' ), true ), 'remote-scripts-collected-by-default' );
-$assert( isset( $files['website/platform-runtime.js']['content'] ), 'script-payload-packaged' );
+$assert( ! in_array( 'https://example.test/platform-runtime.js', array_column( $requests, 'url' ), true ), 'runtime-scripts-are-not-fetched-by-default' );
+$assert( ! isset( $files['website/platform-runtime.js'] ) && ! str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'platform-runtime.js' ), 'runtime-script-markup-and-payload-are-omitted' );
 $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'href="mailto:a@b.co"' ), 'cloudflare-email-link-decoded' );
 $assert( ! in_array( 'https://example.test/cdn-cgi/l/email-protection', array_column( $requests, 'url' ), true ), 'cloudflare-email-action-not-crawled-as-page' );
 $assert( ! str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'weebly-footer-signup-container-v3' ), 'platform-attribution-removed-before-packaging' );
@@ -169,6 +187,95 @@ $shuffled = Static_Site_Importer_URL_Site_Collector::collect(
 );
 $assert( ! is_wp_error( $shuffled ) && ( $snapshot['sha256'] ?? '' ) === ( $shuffled['source_metadata']['snapshot']['sha256'] ?? null ), 'snapshot-hash-independent-of-discovery-order' );
 
+$schedule_calls = array();
+$schedule_delays = array();
+$scheduled = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://schedule.test/',
+	array( 'max_pages' => 3, 'max_assets' => 0, '_route_set' => array( 'https://schedule.test/', 'https://schedule.test/a/', 'https://schedule.test/b/' ), '_static_site_importer_delay_callback' => static function ( int $milliseconds ) use ( &$schedule_delays ): void { $schedule_delays[] = $milliseconds; } ),
+	static function ( string $url, array $args ) use ( &$schedule_calls ): array {
+		unset( $args );
+		$schedule_calls[] = $url;
+		return array( 'body' => '<main>' . $url . '</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
+	}
+);
+$assert( ! is_wp_error( $scheduled ) && 3 === count( $schedule_calls ) && array() === $schedule_delays, 'successful-uncached-fetches-have-no-default-pacing' );
+$assert( array( 'same_origin_concurrency' => 2, 'cross_origin_concurrency' => 4, 'retry_delay_ms' => 0 ) === ( $scheduled['source_metadata']['collection']['fetch_scheduling'] ?? null ), 'concurrent-transport-scheduling-limits-are-explicit' );
+
+$concurrent_routes = array( 'http://1.1.1.1/', 'http://1.1.1.1/slow/', 'http://8.8.8.8/fast/', 'http://8.8.8.8/middle/' );
+$concurrent_active = array();
+$concurrent_origins = array();
+$concurrent_max_active = 0;
+$concurrent_max_origin = 0;
+$concurrent_starts = array();
+$concurrent_transport = array(
+	'start' => static function ( array $target, array $options ) use ( &$concurrent_active, &$concurrent_origins, &$concurrent_max_active, &$concurrent_max_origin, &$concurrent_starts ) {
+		unset( $options );
+		$origin = $target['scheme'] . '://' . $target['host'] . ':' . $target['port'];
+		$delay = array( '/' => 80000, '/slow/' => 60000, '/fast/' => 20000, '/middle/' => 40000 )[ $target['path'] ];
+		$concurrent_active[] = $target['path'];
+		$concurrent_origins[ $origin ] = ( $concurrent_origins[ $origin ] ?? 0 ) + 1;
+		$concurrent_max_active = max( $concurrent_max_active, count( $concurrent_active ) );
+		$concurrent_max_origin = max( $concurrent_max_origin, $concurrent_origins[ $origin ] );
+		$concurrent_starts[] = $target['path'];
+		return (object) array( 'target' => $target, 'origin' => $origin, 'due' => microtime( true ) + ( $delay / 1000000 ) );
+	},
+	'poll' => static function ( object $handle ) use ( &$concurrent_active, &$concurrent_origins ) {
+		if ( microtime( true ) < $handle->due ) {
+			return null;
+		}
+		$concurrent_active = array_values( array_filter( $concurrent_active, static fn ( string $path ): bool => $path !== $handle->target['path'] ) );
+		--$concurrent_origins[ $handle->origin ];
+		return array( 'status_code' => 200, 'headers' => array( 'content-type' => array( 'text/html' ) ), 'body' => '<main>' . $handle->target['path'] . '</main>' );
+	},
+);
+$concurrent_started = microtime( true );
+$concurrent_result = Static_Site_Importer_URL_Site_Collector::collect(
+	$concurrent_routes[0],
+	array( 'max_pages' => 4, 'max_assets' => 0, 'fetch_attempts' => 1, '_route_set' => $concurrent_routes, '_static_site_importer_fetch_many_transport' => $concurrent_transport )
+);
+$concurrent_elapsed = microtime( true ) - $concurrent_started;
+$serial_started = microtime( true );
+$serial_result = Static_Site_Importer_URL_Site_Collector::collect(
+	$concurrent_routes[0],
+	array( 'max_pages' => 4, 'max_assets' => 0, 'fetch_attempts' => 1, '_route_set' => $concurrent_routes ),
+	static function ( string $url, array $args ): array {
+		unset( $args );
+		usleep( array( '/' => 80000, '/slow/' => 60000, '/fast/' => 20000, '/middle/' => 40000 )[ (string) wp_parse_url( $url, PHP_URL_PATH ) ] );
+		return array( 'body' => '<main>' . wp_parse_url( $url, PHP_URL_PATH ) . '</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
+	}
+);
+$serial_elapsed = microtime( true ) - $serial_started;
+$assert( ! is_wp_error( $concurrent_result ) && 4 === $concurrent_max_active && 2 === $concurrent_max_origin && array( '/', '/slow/', '/fast/', '/middle/' ) === $concurrent_starts, 'collector-fetch-many-bounds-global-and-per-origin-admission' );
+$assert( ! is_wp_error( $concurrent_result ) && ! is_wp_error( $serial_result ) && ( $concurrent_result['source_metadata']['snapshot']['sha256'] ?? '' ) === ( $serial_result['source_metadata']['snapshot']['sha256'] ?? '' ) && ( $concurrent_result['source_metadata']['collection']['diagnostics'] ?? null ) === ( $serial_result['source_metadata']['collection']['diagnostics'] ?? null ), 'out-of-order-completions-preserve-serial-artifact-hash-and-diagnostics' );
+$assert( $concurrent_elapsed < $serial_elapsed * 0.7, 'bounded-concurrent-collection-materially-reduces-wall-clock-delay', sprintf( 'concurrent=%.3fs serial=%.3fs', $concurrent_elapsed, $serial_elapsed ) );
+
+$retry_now = 0.0;
+$retry_calls = 0;
+$retry_delays = array();
+$retried = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://retry.test/',
+	array( 'max_pages' => 1, 'max_assets' => 0, '_route_set' => array( 'https://retry.test/' ), 'fetch_attempts' => 2, 'request_delay_ms' => 125, '_static_site_importer_scheduler_clock' => static function () use ( &$retry_now ): float { return $retry_now; }, '_static_site_importer_delay_callback' => static function ( int $milliseconds ) use ( &$retry_now, &$retry_delays ): void { $retry_delays[] = $milliseconds; $retry_now += $milliseconds / 1000; } ),
+	static function ( string $url, array $args ) use ( &$retry_calls ) {
+		unset( $url, $args );
+		$retry_calls++;
+		return 1 === $retry_calls ? new WP_Error( 'temporary_failure', 'Retry me.' ) : array( 'body' => '<main>Recovered</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => 'https://retry.test/' ) );
+	}
+);
+$assert( ! is_wp_error( $retried ) && 2 === $retry_calls && array( 125 ) === $retry_delays, 'retry-pacing-is-per-origin-and-deterministic' );
+
+$cache_calls = 0;
+$cache_delays = array();
+$cached = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://cache-schedule.test/',
+	array( 'max_pages' => 1, 'max_assets' => 0, '_route_set' => array( 'https://cache-schedule.test/' ), 'request_delay_ms' => 125, '_static_site_importer_delay_callback' => static function ( int $milliseconds ) use ( &$cache_delays ): void { $cache_delays[] = $milliseconds; } ),
+	static function ( string $url, array $args ) use ( &$cache_calls ): array {
+		unset( $args );
+		$cache_calls++;
+		return array( 'body' => '<main>Cached</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url, '_static_site_importer_cache_hit' => true ) );
+	}
+);
+$assert( ! is_wp_error( $cached ) && 1 === $cache_calls && array() === $cache_delays, 'cache-hits-never-consume-pacing-budget' );
+
 $compiled         = blocks_engine_php_transformer_compile_artifact( $result['artifact'] );
 $site_plan        = $compiled['source_reports']['wordpress_site_plan'] ?? array();
 $site_diagnostics = $compiled['source_reports']['wordpress_site_plan_diagnostics'] ?? array();
@@ -176,6 +283,40 @@ $routes           = array_column( $site_plan['routes'] ?? array(), 'target_path'
 $assert( array() === $site_diagnostics, 'collected-artifact-is-self-contained', json_encode( $site_diagnostics ) ?: '' );
 $assert( 4 === count( $routes ), 'collected-artifact-produces-four-routes', json_encode( $routes ) ?: '' );
 $assert( '/' === ( $routes['website/index.html'] ?? null ) && '/services' === ( $routes['website/services.html'] ?? null ), 'collected-routes-preserve-source-paths' );
+
+$policy_responses = array(
+	'https://policy.test/sitemap.xml' => array( 'content_type' => 'application/xml', 'body' => '<urlset><url><loc>https://policy.test/</loc></url></urlset>' ),
+	'https://policy.test/' => array( 'content_type' => 'text/html', 'body' => '<!doctype html><html><head><link rel="stylesheet" href="/site.css"><script src="/bootstrap.js"></script><script type="module" src="/chunks/app.js"></script><script>window.hydrate=true;</script><script type="application/ld+json">{"@type":"Organization","name":"Frozen"}</script></head><body><main><h1>Frozen page</h1><p>Server-rendered content.</p><img src="/hero.png" alt="Hero"></main></body></html>' ),
+	'https://policy.test/site.css' => array( 'content_type' => 'text/css', 'body' => '.hero{color:#123}' ),
+	'https://policy.test/hero.png' => array( 'content_type' => 'image/png', 'body' => str_repeat( 'i', 80 ) ),
+	'https://policy.test/bootstrap.js' => array( 'content_type' => 'application/javascript', 'body' => str_repeat( 'b', 4000 ) ),
+	'https://policy.test/chunks/app.js' => array( 'content_type' => 'application/javascript', 'body' => str_repeat( 'c', 6000 ) ),
+);
+$policy_requests = array();
+$policy_fetcher = static function ( string $url, array $args ) use ( $policy_responses, &$policy_requests ) {
+	unset( $args );
+	$policy_requests[] = $url;
+	if ( ! isset( $policy_responses[ $url ] ) ) {
+		return new WP_Error( 'missing_policy_fixture', $url );
+	}
+	$response = $policy_responses[ $url ];
+	return array( 'body' => $response['body'], 'metadata' => array( 'content_type' => $response['content_type'], 'final_url' => $url ) );
+};
+$static_policy = Static_Site_Importer_URL_Site_Collector::collect( 'https://policy.test/', array( 'request_delay_ms' => 0, 'require_complete_collection' => true ), $policy_fetcher );
+$full_policy = Static_Site_Importer_URL_Site_Collector::collect( 'https://policy.test/', array( 'request_delay_ms' => 0, 'require_complete_collection' => true, 'include_scripts' => true ), $policy_fetcher );
+$static_files = is_wp_error( $static_policy ) ? array() : array_column( $static_policy['artifact']['files'], null, 'path' );
+$static_html = (string) ( $static_files['website/index.html']['content'] ?? '' );
+$static_compiled = is_wp_error( $static_policy ) ? array() : blocks_engine_php_transformer_compile_artifact( $static_policy['artifact'] );
+$static_plan = $static_compiled['source_reports']['wordpress_site_plan'] ?? array();
+$exclusions = $static_policy['source_metadata']['collection']['script_policy']['excluded_scripts'] ?? array();
+$reason_codes = array_column( $exclusions, 'reason_code' );
+sort( $reason_codes, SORT_STRING );
+$assert( ! is_wp_error( $static_policy ) && ! is_wp_error( $full_policy ), 'script-policy-fixture-collects-completely' );
+$assert( 2 === ( $static_policy['source_metadata']['collection']['assets'] ?? 0 ) && 4 === ( $full_policy['source_metadata']['collection']['assets'] ?? 0 ) && 2 === count( array_filter( $policy_requests, static fn ( string $url ): bool => in_array( $url, array( 'https://policy.test/bootstrap.js', 'https://policy.test/chunks/app.js' ), true ) ) ) && 10000 < ( $full_policy['source_metadata']['collection']['bytes'] ?? 0 ) - ( $static_policy['source_metadata']['collection']['bytes'] ?? 0 ), 'static-policy-reduces-script-requests-and-bytes' );
+$assert( str_contains( $static_html, '<h1>Frozen page</h1>' ) && str_contains( $static_html, 'site.css' ) && str_contains( $static_html, 'hero.png' ) && ! str_contains( $static_html, 'bootstrap.js' ) && ! str_contains( $static_html, 'window.hydrate' ) && ! str_contains( $static_html, 'application/ld+json' ), 'static-policy-preserves-frozen-content-and-visual-contract' );
+$assert( 'proven' === ( $static_plan['reference_semantics']['dynamic_client_assets']['status'] ?? null ) && array() === ( $static_compiled['source_reports']['wordpress_site_plan_diagnostics'] ?? array() ), 'static-policy-artifact-is-accepted-without-runtime-regression', json_encode( array( $static_plan['reference_semantics'] ?? array(), $static_compiled['source_reports']['wordpress_site_plan_diagnostics'] ?? array() ) ) ?: '' );
+$assert( 'static' === ( $static_policy['source_metadata']['collection']['script_policy']['name'] ?? null ) && 4 === count( $exclusions ) && array( 'data_script_omitted_from_static_artifact', 'script_omitted_without_runtime_declaration', 'script_omitted_without_runtime_declaration', 'script_omitted_without_runtime_declaration' ) === $reason_codes && 64 === strlen( (string) ( $exclusions[0]['sha256'] ?? '' ) ), 'static-policy-records-deterministic-reason-coded-provenance' );
+$assert( in_array( 'https://policy.test/bootstrap.js', $policy_requests, true ) && in_array( 'https://policy.test/chunks/app.js', $policy_requests, true ), 'explicit-full-retention-preserves-current-script-collection-behavior' );
 
 $encoded_route = Static_Site_Importer_URL_Site_Collector::collect(
 	'https://example.test/news/category/Americana%2FCountry+Artist',

@@ -435,6 +435,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       recipeFile: batchRecipeFile,
       artifactsDir: codeboxArtifactsDirectory,
       outputFile,
+      cwd: outputDirectory,
       wpCodeboxBin: options.wpCodeboxBin,
       inactivityTimeoutMs: batchInactivityTimeoutMs(options),
       onInactivity: ({ timeout_ms }) => {
