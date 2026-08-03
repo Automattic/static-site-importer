@@ -594,15 +594,10 @@ async function discoverFixtureDependencyPlan({ fixtures, outputDirectory, static
     const discovery = await runWpCodeboxRecipe({ recipeFile, artifactsDir, outputFile, wpCodeboxBin: options.wpCodeboxBin, inactivityTimeoutMs: batchInactivityTimeoutMs(options) });
     const plan = findDependencyPlan(artifactsDir);
     if (!plan) throw new Error(`Dependency discovery did not persist a valid plan for fixture ${fixture.id}.`);
-    const resolved = discovery.json?.preparedExtraPlugins;
-    if (!Array.isArray(resolved)) throw new Error(`Dependency discovery did not return generic host package receipts for fixture ${fixture.id}.`);
-    plan.entries = plan.entries.map((entry) => {
-      const receipt = resolved.find((candidate) => candidate?.slug === entry.slug && candidate?.pluginFile === entry.plugin_entrypoint);
-      if (!receipt || receipt.activationStatus !== 'activated' || !/^[a-f0-9]{64}$/i.test(receipt?.provenance?.digest?.sha256 || '')) {
-        throw new Error(`Dependency discovery host receipt is incomplete for ${entry.slug}.`);
-      }
-      return { ...entry, host_resolution: { runtime_id: discovery.json?.runtime?.id || '', archive_sha256: receipt.provenance.digest.sha256, resolved_url: receipt.provenance.resolvedUrl || '', activation_status: receipt.activationStatus } };
-    });
+    // Discovery only mounts SSI. Provider packages are resolved and activated by
+    // the final recipe's extra_plugins setup, before its workflow begins; asking
+    // this runtime for a provider receipt would incorrectly require Jetpack/Woo
+    // to be installed during planning.
     plans.push(plan);
   }
   const entries = new Map();
