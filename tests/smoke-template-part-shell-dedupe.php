@@ -43,12 +43,6 @@ if ( ! function_exists( 'wp_strip_all_tags' ) ) {
 	}
 }
 
-if ( ! function_exists( 'wp_parse_url' ) ) {
-	function wp_parse_url( string $url, int $component = -1 ) {
-		return parse_url( $url, $component );
-	}
-}
-
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-document.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-source-page.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-page-materializer.php';

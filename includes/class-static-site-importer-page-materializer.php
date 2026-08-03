@@ -162,14 +162,14 @@ class Static_Site_Importer_Page_Materializer {
 	/**
 	 * Return bounded safe inline SVG candidates that page materialization can promote.
 	 *
-	 * @param array<string, Static_Site_Importer_Source_Page> $pages Source pages.
+	 * @param array<string,mixed> $pages Source pages.
 	 * @param int                                             $limit Maximum candidate bytes.
 	 * @return string
 	 */
 	public static function svg_font_usage_markup( array $pages, int $limit = 262144 ): string {
 		$markup = '';
 		foreach ( $pages as $page ) {
-			if ( 'blocks' !== $page->body_format() || ! str_contains( $page->body(), '<svg' ) ) {
+			if ( ! $page instanceof Static_Site_Importer_Source_Page || 'blocks' !== $page->body_format() || ! str_contains( $page->body(), '<svg' ) ) {
 				continue;
 			}
 			if ( ! preg_match_all( '/<!-- wp:html(?:\s+(\{.*?\}))? -->(.*?)<!-- \/wp:html -->/s', $page->body(), $blocks, PREG_SET_ORDER ) ) {
@@ -488,7 +488,7 @@ class Static_Site_Importer_Page_Materializer {
 	private static function navigation_link_semantics( string $label, string $url ): string {
 		$label = strtolower( trim( preg_replace( '/\s+/', ' ', html_entity_decode( $label, ENT_QUOTES | ENT_HTML5 ) ) ?? $label ) );
 		$url   = trim( html_entity_decode( $url, ENT_QUOTES | ENT_HTML5 ) );
-		$parts = wp_parse_url( $url );
+		$parts = self::url_parts( $url );
 		$path  = is_array( $parts ) ? (string) ( $parts['path'] ?? '' ) : $url;
 
 		// Relative HTML routes may be coerced into hostnames before materialization.
@@ -512,6 +512,21 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		return $label . '@' . strtolower( $path );
+	}
+
+	/**
+	 * Parse URLs when the materializer is used outside a loaded WordPress runtime.
+	 *
+	 * @param string $url URL to parse.
+	 * @return array<string,int|string>|false
+	 */
+	private static function url_parts( string $url ) {
+		if ( function_exists( 'wp_parse_url' ) ) {
+			return wp_parse_url( $url );
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Standalone materializer use runs without WordPress URL helpers.
+		return parse_url( $url );
 	}
 
 	/**
