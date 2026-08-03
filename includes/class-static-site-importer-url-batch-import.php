@@ -1,12 +1,17 @@
 <?php
+
 /** Resumable bounded URL site import. @package StaticSiteImporter */
 if ( ! defined( 'ABSPATH' ) ) {
-	exit; }
+	exit;
+}
 if ( ! class_exists( 'Static_Site_Importer_Artifact_Run_Workspace' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-artifact-run.php'; }
+	require_once __DIR__ . '/class-static-site-importer-artifact-run.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Shared_Resource_Plan' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-shared-resource-plan.php'; }
+	require_once __DIR__ . '/class-static-site-importer-shared-resource-plan.php';
+}
 final class Static_Site_Importer_URL_Batch_Import {
+
 	private const VERSION         = 2;
 	private const MAX_BATCH_PAGES = 100;
 	public static function import( array $request, array $input, ?callable $fetcher = null, ?callable $importer = null ) {
@@ -20,7 +25,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( $max_effective_batches < 1 ) {
 				return new WP_Error( 'static_site_importer_invalid_max_effective_batches_per_invocation', 'max_effective_batches_per_invocation must be a positive integer.' );
 			}
-		}$clock                 = is_callable( $args['_static_site_importer_clock'] ?? null ) ? $args['_static_site_importer_clock'] : static fn(): float=>microtime( true );
+		}$clock                 = is_callable( $args['_static_site_importer_clock'] ?? null ) ? $args['_static_site_importer_clock'] : static fn (): float => microtime( true );
 		$deadline               = null;
 		$max_invocation_seconds = null;
 		if ( array_key_exists( 'max_invocation_seconds', $args ) ) {
@@ -35,14 +40,18 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$args['max_total_bytes'] = 268435456;
 		}$work_dir = (string) ( $request['work_dir'] ?? '' );
 		if ( '' === $work_dir || ! wp_mkdir_p( $work_dir ) ) {
-			return new WP_Error( 'static_site_importer_batch_work_dir_unavailable', 'The batch import work directory is unavailable.' );}
-		$url                 = (string) $request['url'];
-		$manifest_path       = trailingslashit( $work_dir ) . 'url-site-batch-manifest-' . hash( 'sha256', self::VERSION . "\n" . $url ) . '.json';
-		$requested           = self::contract( $url, $input, $args, $batch_pages );
-		$existing            = self::existing_manifest( $manifest_path );
-		$contract            = $existing && self::canonical( $existing['contract'] ) === self::canonical( $requested ) ? $existing['contract'] : $requested;
-		$serialized_contract = wp_json_encode( $contract );
-		$identity            = $existing && self::canonical( $existing['contract'] ) === self::canonical( $requested ) ? $existing['identity'] : hash( 'sha256', false === $serialized_contract ? '' : $serialized_contract );
+			return new WP_Error( 'static_site_importer_batch_work_dir_unavailable', 'The batch import work directory is unavailable.' );
+		}
+		$url           = (string) $request['url'];
+		$manifest_path = trailingslashit( $work_dir ) . 'url-site-batch-manifest-' . hash( 'sha256', self::VERSION . "\n" . $url ) . '.json';
+		$requested     = self::contract( $url, $input, $args, $batch_pages );
+		$existing      = self::existing_manifest( $manifest_path );
+		$contract      = $existing && self::canonical( $existing['contract'] ) === self::canonical( $requested ) ? $existing['contract'] : $requested;
+		$contract_json = wp_json_encode( $contract );
+		if ( false === $contract_json ) {
+			return new WP_Error( 'static_site_importer_batch_contract_encode_failed', 'The URL batch import contract could not be encoded.' );
+		}
+		$identity = $existing && self::canonical( $existing['contract'] ) === self::canonical( $requested ) ? $existing['identity'] : hash( 'sha256', $contract_json );
 		try {
 			$workspace = new Static_Site_Importer_Artifact_Run_Workspace(
 				$work_dir,
@@ -54,13 +63,14 @@ final class Static_Site_Importer_URL_Batch_Import {
 				)
 			);
 		} catch ( RuntimeException $error ) {
-			return new WP_Error( 'static_site_importer_batch_work_dir_unavailable', $error->getMessage() );}
+			return new WP_Error( 'static_site_importer_batch_work_dir_unavailable', $error->getMessage() );
+		}
 		if ( $workspace->is_expired() ) {
 			$cleanup = $workspace->purge();
 			$expired = $manifest_path;
 			$archive = $expired . '.expired-' . gmdate( 'YmdHis' );
-			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.rename_rename -- Preserve atomic archival behavior for the local run manifest.
-			$archived = is_file( $expired ) && ! is_link( $expired ) ? @rename( $expired, $archive ) : false;
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Archives an importer-owned manifest after workspace expiry.
+			$archived = is_file( $expired ) && ! is_link( $expired ) ? rename( $expired, $archive ) : false;
 			return new WP_Error(
 				'static_site_importer_batch_run_expired',
 				'The retained URL batch run expired and must be restarted.',
@@ -80,7 +90,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 		);
 		$cache->adopt_legacy( trailingslashit( $work_dir ) . 'url-response-cache-' . $identity );
 		$cache->adopt_legacy( $workspace->directory() . '/responses' );
-		$source_fetcher = $fetcher ?? static fn( string $resource_url, array $fetch_args )=>Static_Site_Importer_URL_Fetcher::fetch( $resource_url, $fetch_args );
+		$source_fetcher = $fetcher ?? static fn ( string $resource_url, array $fetch_args ) => Static_Site_Importer_URL_Fetcher::fetch( $resource_url, $fetch_args );
 		if ( null !== $deadline ) {
 			$source         = $source_fetcher;
 			$source_fetcher = static function ( string $resource_url, array $fetch_args ) use ( $source, $clock, $deadline ) {
@@ -95,7 +105,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 		if ( is_wp_error( $manifest ) ) {
 			return $manifest;
 		}if ( ! empty( $manifest ) ) {
-			$manifest['fetch_cache'] = self::cache_counters( $manifest['fetch_cache'] ?? array() );}
+			$manifest['fetch_cache'] = self::cache_counters( $manifest['fetch_cache'] ?? array() );
+		}
 		if ( empty( $manifest ) ) {
 			$routes = Static_Site_Importer_URL_Site_Collector::discover_routes( $url, $args, $fetcher );
 			if ( is_wp_error( $routes ) ) {
@@ -133,13 +144,14 @@ final class Static_Site_Importer_URL_Batch_Import {
 				'state'                   => 'running',
 			);
 			if ( is_wp_error( $run_manifest->save( $manifest ) ) ) {
-				return $run_manifest->save( $manifest );}
+				return $run_manifest->save( $manifest );
+			}
 		}
 		if ( 'completed' === ( $manifest['state'] ?? '' ) && is_array( $manifest['final_result'] ?? null ) ) {
 			$manifest['final_result']['url_batch_run']['fetch_cache'] = $manifest['fetch_cache'];
 			$cache->cleanup_adopted();
 			return $manifest['final_result'];
-		}$importer         = $importer ?? static fn( array $artifact, array $import_args )=>Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
+		}$importer         = $importer ?? static fn ( array $artifact, array $import_args ) => Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
 		$shared_plan       = new Static_Site_Importer_Shared_Resource_Plan( $workspace );
 		$cursor            = Static_Site_Importer_Artifact_Batch_Cursor::hydrate( $manifest['batches'] );
 		$effective_batches = 0;
@@ -161,8 +173,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$cache_name  = 'batches/' . $batch['batch_id'] . '.json';
 			$old_cache   = trailingslashit( $work_dir ) . 'url-site-batch-cache-' . $identity . '-' . $index . '.json';
 			$raw         = self::retained_runtime( $workspace, $cache_name, 'batches/' . $index . '.json', $old_cache, $routes );
-			// phpcs:ignore Universal.Operators.DisallowShortTernary.Found -- Invalid retained JSON must continue to hydrate as an empty runtime.
-			$runtime = is_string( $raw ) ? ( json_decode( $raw, true ) ?: array() ) : array();
+			$decoded     = is_string( $raw ) ? json_decode( $raw, true ) : null;
+			$runtime     = is_array( $decoded ) ? $decoded : array();
 			if ( empty( $runtime ) ) {
 				$collect_args                                = $args;
 				$collect_args['_route_set']                  = array_values( array_unique( $routes ) );
@@ -180,26 +192,27 @@ final class Static_Site_Importer_URL_Batch_Import {
 						}return self::continuation_result( $manifest, $manifest_path, $index, $effective_batches, $max_effective_batches, $max_invocation_seconds, 'deadline_exhausted' );
 					}
 					if ( count( $routes ) > 1 && self::splittable_collection_error( $runtime ) ) {
-						$cursor                          = Static_Site_Importer_Artifact_Batch_Cursor::split( $cursor, $index );
-									$manifest['batches'] = self::legacy_batches( $cursor );
-									self::checkpoint_cache( $manifest, $cache );
-									$manifest['diagnostics'][] = array(
-										'code'         => 'batch_subdivided',
-										'parent_batch' => $batch['batch_id'],
-										'children'     => array_column( array_slice( $cursor, $index, 2 ), 'batch_id' ),
-									);
-									$write                     = $run_manifest->save( $manifest );
-									if ( is_wp_error( $write ) ) {
-										return $write;
-									}
-									if ( null !== $max_effective_batches ) {
-										return self::continuation_result( $manifest, $manifest_path, $index, $effective_batches, $max_effective_batches, $max_invocation_seconds, 'batch_subdivided' );
-									}
-									continue;
+						$cursor              = Static_Site_Importer_Artifact_Batch_Cursor::split( $cursor, $index );
+						$manifest['batches'] = self::legacy_batches( $cursor );
+						self::checkpoint_cache( $manifest, $cache );
+						$manifest['diagnostics'][] = array(
+							'code'         => 'batch_subdivided',
+							'parent_batch' => $batch['batch_id'],
+							'children'     => array_column( array_slice( $cursor, $index, 2 ), 'batch_id' ),
+						);
+						$write                     = $run_manifest->save( $manifest );
+						if ( is_wp_error( $write ) ) {
+							return $write;
+						}
+						if ( null !== $max_effective_batches ) {
+							return self::continuation_result( $manifest, $manifest_path, $index, $effective_batches, $max_effective_batches, $max_invocation_seconds, 'batch_subdivided' );
+						}
+						continue;
 					}return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $runtime, $cache );
 				}$write = $workspace->publish_json( $cache_name, $runtime );
 				if ( is_wp_error( $write ) ) {
-					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $write, $cache );}
+					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $write, $cache );
+				}
 			}
 			$shared_started = microtime( true );
 			$shared         = $shared_plan->reconcile( $runtime['artifact'] );
@@ -254,7 +267,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$import_args                                      = Static_Site_Importer_URL_Import_Runtime::batch_import_args( $input, $runtime );
 			$import_args['activate']                          = array_key_last( $cursor ) === $index && ! empty( $input['activate'] );
 			$import_args['batch_import']                      = true;
-			$import_args['preserve_existing_theme_bootstrap'] = 0 < $index;
+			$import_args['preserve_existing_theme_bootstrap'] = $index > 0;
 			$import_args['import_run_id']                     = $identity;
 			$import_args['compiled_artifact_result']          = $compiled_staged;
 			$result = $importer( $runtime['artifact'], $import_args );
@@ -268,11 +281,11 @@ final class Static_Site_Importer_URL_Batch_Import {
 				return $run_manifest->save( $manifest );
 			}// Keep verified prepared input until terminal cleanup for interruption recovery.
 			if ( is_file( $old_cache ) ) {
-				// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- The retained local cache is outside the WordPress filesystem abstraction.
-				unlink( $old_cache );
+				self::delete_legacy_file( $old_cache );
 			}++$effective_batches;
 			$final = $result;
-			unset( $result, $runtime, $raw );}
+			unset( $result, $runtime, $raw );
+		}
 		$manifest['batches']      = self::legacy_batches( $cursor );
 		$aggregate                = self::aggregate_result( $manifest, $manifest_path, $final ?? array() );
 		$manifest['state']        = 'completed';
@@ -338,7 +351,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 		}
 	}
 	private static function cached_fetcher( Static_Site_Importer_Artifact_Byte_Cache $cache, ?callable $fetcher ): callable {
-		$fetcher = $fetcher ?? static fn( string $url, array $args )=>Static_Site_Importer_URL_Fetcher::fetch( $url, $args );
+		$fetcher = $fetcher ?? static fn ( string $url, array $args ) => Static_Site_Importer_URL_Fetcher::fetch( $url, $args );
 		return static function ( string $url, array $args ) use ( $cache, $fetcher ) {
 			$types = isset( $args['content_types'] ) && is_array( $args['content_types'] ) ? array_values( $args['content_types'] ) : null;
 			if ( is_array( $types ) ) {
@@ -389,19 +402,22 @@ final class Static_Site_Importer_URL_Batch_Import {
 			}if ( is_array( $response ) && is_string( $response['body'] ?? null ) && is_array( $response['metadata'] ?? null ) ) {
 				$cache->put( $key, $response['body'], $response['metadata'] );
 			}return $response;
-		};}
+		};
+	}
 	private static function cacheable_failure( WP_Error $error ): bool {
 		$code = (string) $error->get_error_code();
 		if ( str_contains( $code, 'invalid' ) || str_contains( $code, 'private' ) || str_contains( $code, 'credential' ) || str_contains( $code, 'scheme' ) ) {
 			return false;
 		}$status = is_array( $error->get_error_data() ) ? (int) ( $error->get_error_data()['status'] ?? 0 ) : 0;
-		return self::transient_failure( $error ) || in_array( $code, array( 'static_site_importer_url_unexpected_content_type', 'static_site_importer_url_empty_body', 'static_site_importer_url_too_large' ), true ) || ( 'static_site_importer_url_http_status' === $code && in_array( $status, array( 404, 410 ), true ) );}
+		return self::transient_failure( $error ) || in_array( $code, array( 'static_site_importer_url_unexpected_content_type', 'static_site_importer_url_empty_body', 'static_site_importer_url_too_large' ), true ) || ( 'static_site_importer_url_http_status' === $code && in_array( $status, array( 404, 410 ), true ) );
+	}
 	private static function transient_failure( WP_Error $error ): bool {
 		$code = strtolower( (string) $error->get_error_code() );
-		return str_contains( $code, 'timeout' ) || str_contains( $code, 'connect' ) || str_contains( $code, 'tls' ) || str_contains( $code, 'dns' );}
+		return str_contains( $code, 'timeout' ) || str_contains( $code, 'connect' ) || str_contains( $code, 'tls' ) || str_contains( $code, 'dns' );
+	}
 	private static function legacy_batches( array $cursor ): array {
 		return array_map(
-			static fn( array $row ): array=>array_filter(
+			static fn ( array $row ): array => array_filter(
 				array(
 					'index'                => $row['index'],
 					'batch_id'             => $row['batch_id'],
@@ -412,10 +428,11 @@ final class Static_Site_Importer_URL_Batch_Import {
 					'split_from'           => $row['split_from'] ?? null,
 					'effective_batch_size' => $row['effective_batch_size'] ?? null,
 				),
-				static fn( $value ): bool=>null !== $value
+				static fn ( $value ): bool => null !== $value
 			),
 			$cursor
-		);}
+		);
+	}
 	private static function failed( Static_Site_Importer_Artifact_Run_Manifest $run_manifest, Static_Site_Importer_Artifact_Run_Workspace $workspace, array $manifest, array $cursor, int $index, WP_Error $error, Static_Site_Importer_Artifact_Byte_Cache $cache ): WP_Error {
 		$cursor              = Static_Site_Importer_Artifact_Batch_Cursor::fail( $cursor, $index );
 		$manifest['state']   = 'failed';
@@ -441,52 +458,64 @@ final class Static_Site_Importer_URL_Batch_Import {
 				'code'    => $write->get_error_code(),
 				'message' => $write->get_error_message(),
 			);
-		}return new WP_Error( $error->get_error_code(), $error->get_error_message(), $data );}
+		}return new WP_Error( $error->get_error_code(), $error->get_error_message(), $data );
+	}
 	private static function checkpoint_cache( array &$manifest, Static_Site_Importer_Artifact_Byte_Cache $cache ): void {
-		foreach ( $cache->consume()as$key => $delta ) {
-			$manifest['fetch_cache'][ $key ] = (int) ( $manifest['fetch_cache'][ $key ] ?? 0 ) + (int) $delta;}}
+		foreach ( $cache->consume() as $key => $delta ) {
+			$manifest['fetch_cache'][ $key ] = (int) ( $manifest['fetch_cache'][ $key ] ?? 0 ) + (int) $delta;
+		}
+	}
 	private static function cache_counters( array $counters ): array {
-		foreach ( array( 'hits', 'misses', 'bytes_read', 'bytes_written', 'corrupt_entries', 'bypassed', 'negative_hits', 'negative_writes', 'negative_expired', 'network_requests_avoided' )as$key ) {
+		foreach ( array( 'hits', 'misses', 'bytes_read', 'bytes_written', 'corrupt_entries', 'bypassed', 'negative_hits', 'negative_writes', 'negative_expired', 'network_requests_avoided' ) as $key ) {
 			$counters[ $key ] = (int) ( $counters[ $key ] ?? 0 );
-		}return $counters;}
-	private static function retained_runtime( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $stable, string $numeric_cache, string $legacy, array $routes ): ?string {
+		}return $counters;
+	}
+	private static function retained_runtime( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $stable, string $indexed, string $legacy, array $routes ): ?string {
 		$raw = $workspace->read_raw( $stable );
 		if ( is_string( $raw ) && self::owns_runtime( $raw, $routes ) ) {
 			return $raw;
 		}if ( is_string( $raw ) ) {
 			$workspace->delete( $stable );
-		}foreach ( array( $numeric_cache, $legacy )as$source ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Read a local legacy cache file, never a remote URL.
-			$candidate = 'batches/' === substr( $source, 0, 8 ) ? $workspace->read_raw( $source ) : ( is_file( $source ) ? file_get_contents( $source ) : null );
+		}foreach ( array( $indexed, $legacy ) as $source ) {
+			if ( 'batches/' === substr( $source, 0, 8 ) ) {
+				$candidate = $workspace->read_raw( $source );
+			} elseif ( is_file( $source ) ) {
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads an importer-owned legacy batch artifact.
+				$candidate = file_get_contents( $source );
+			} else {
+				$candidate = null;
+			}
 			if ( ! is_string( $candidate ) || ! self::owns_runtime( $candidate, $routes ) ) {
 				continue;
 			}$published = $workspace->publish_raw( $stable, $candidate );
 			if ( is_wp_error( $published ) || $workspace->read_raw( $stable ) !== $candidate ) {
 				continue;
-			}if ( $source === $numeric_cache ) {
-				$workspace->delete( $numeric_cache );
+			}if ( $source === $indexed ) {
+				$workspace->delete( $indexed );
 			} elseif ( is_file( $source ) ) {
-				// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Delete a local legacy cache after it has been atomically adopted.
-				unlink( $source );
+				self::delete_legacy_file( $source );
 			}return $candidate;
-		}return null;}
+		}return null;
+	}
 	private static function invalidate_prepared_batches( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $cursor, int $from ): void {
 		foreach ( $cursor as $index => $batch ) {
 			if ( $index >= $from && 'completed' !== ( $batch['state'] ?? '' ) ) {
-				$workspace->delete( 'batches/' . $batch['batch_id'] . '.json' ); }
-		}}
+				$workspace->delete( 'batches/' . $batch['batch_id'] . '.json' );
+			}
+		}
+	}
 	private static function owns_runtime( string $raw, array $routes ): bool {
 		$runtime = json_decode( $raw, true );
 		$files   = $runtime['source_metadata']['snapshot']['files'] ?? null;
 		if ( ! is_array( $files ) ) {
 			return false;
 		}$actual = array();
-		foreach ( $files as$file ) {
+		foreach ( $files as $file ) {
 			if ( 'text/html' === strtolower( (string) ( $file['mime_type'] ?? '' ) ) && is_string( $file['source_url'] ?? null ) ) {
 				$actual[] = self::page_key( $file['source_url'] );
 			}
 		}$explicit = array();
-		foreach ( $runtime['artifact']['files'] ?? array()as$file ) {
+		foreach ( $runtime['artifact']['files'] ?? array() as $file ) {
 			if ( 'text/html' !== strtolower( (string) ( $file['mime_type'] ?? '' ) ) ) {
 				continue;
 			}$route = (string) ( $file['metadata']['route_path'] ?? '' );
@@ -496,49 +525,63 @@ final class Static_Site_Importer_URL_Batch_Import {
 		}$expected = array_map( array( self::class, 'page_key' ), $routes );
 		sort( $actual );
 		sort( $expected );
-		return array_values( array_unique( $expected ) ) === $actual;}
+		return array_values( array_unique( $expected ) ) === $actual;
+	}
 	private static function page_key( string $url ): string {
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Keep stable URL normalization for standalone import runs.
-		$parts = parse_url( $url );
+		$parts = self::url_parts( $url );
 		if ( ! is_array( $parts ) || empty( $parts['host'] ) ) {
 			return '';
 		}$path = rtrim( (string) ( $parts['path'] ?? '/' ), '/' );
 		if ( '' === $path || '/index.html' === $path || '/index.htm' === $path ) {
 			$path = '/';
-		}return strtolower( (string) ( $parts['scheme'] ?? 'https' ) ) . '://' . strtolower( (string) $parts['host'] ) . $path . ( isset( $parts['query'] ) ? '?' . $parts['query'] : '' );}
+		}return strtolower( (string) ( $parts['scheme'] ?? 'https' ) ) . '://' . strtolower( (string) $parts['host'] ) . $path . ( isset( $parts['query'] ) ? '?' . $parts['query'] : '' );
+	}
 	private static function existing_manifest( string $path ): ?array {
 		if ( ! is_file( $path ) || is_link( $path ) ) {
 			return null;
 		}
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Read the local run manifest, never a remote URL.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads an importer-owned URL batch manifest.
 		$data = json_decode( (string) file_get_contents( $path ), true );
 		return is_array( $data ) && is_array( $data['contract'] ?? null ) && is_string( $data['source']['identity'] ?? null ) ? array(
 			'contract' => $data['contract'],
 			'identity' => $data['source']['identity'],
-		) : null;}
+		) : null;
+	}
 	private static function ordered_routes( string $entry, array $routes ): array {
 		$routes[] = $entry;
 		$routes   = array_values( array_unique( array_filter( $routes, 'is_string' ) ) );
 		usort(
 			$routes,
 			static function ( string $a, string $b ): int {
-				// phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Keep stable URL normalization for standalone import runs.
-				$path_depth = substr_count( trim( (string) parse_url( $a, PHP_URL_PATH ), '/' ), '/' ) <=> substr_count( trim( (string) parse_url( $b, PHP_URL_PATH ), '/' ), '/' );
-				return 0 !== $path_depth ? $path_depth : strcmp( $a, $b );
+				$depth_comparison = substr_count( trim( (string) self::url_parts( $a, PHP_URL_PATH ), '/' ), '/' ) <=> substr_count( trim( (string) self::url_parts( $b, PHP_URL_PATH ), '/' ), '/' );
+				return 0 !== $depth_comparison ? $depth_comparison : strcmp( $a, $b );
 			}
 		);
-		return $routes;}
+		return $routes;
+	}
+	private static function delete_legacy_file( string $path ): bool {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Deletes this verified importer-owned legacy cache path exactly; wp_delete_file filters could redirect it.
+		return unlink( $path );
+	}
+	private static function url_parts( string $url, int $component = -1 ) {
+		if ( function_exists( 'wp_parse_url' ) ) {
+			return -1 === $component ? wp_parse_url( $url ) : wp_parse_url( $url, $component );
+		}
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Standalone smoke tests run without WordPress URL helpers.
+		return -1 === $component ? parse_url( $url ) : parse_url( $url, $component );
+	}
 	private static function splittable_collection_error( WP_Error $error ): bool {
 		$data = $error->get_error_data();
 		if ( 'static_site_importer_site_collection_incomplete' !== $error->get_error_code() || ! is_array( $data ) ) {
 			return false;
 		}if ( array_intersect( $data['collection']['truncated'] ?? array(), array( 'assets', 'bytes' ) ) ) {
 			return true;
-		}foreach ( $data['collection']['failures'] ?? array()as$failure ) {
+		}foreach ( $data['collection']['failures'] ?? array() as $failure ) {
 			if ( 'asset' === ( $failure['kind'] ?? '' ) ) {
 				return true;
 			}
-		}return false;}
+		}return false;
+	}
 	private static function deadline_error( WP_Error $error ): bool {
 		if ( 'static_site_importer_invocation_deadline_exceeded' === $error->get_error_code() ) {
 			return true;
@@ -547,9 +590,11 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( 'static_site_importer_invocation_deadline_exceeded' === ( $failure['code'] ?? '' ) ) {
 				return true;
 			}
-		}return false;}
+		}return false;
+	}
 	private static function deadline_reached( float $deadline, callable $clock ): bool {
-		return (float) call_user_func( $clock ) >= $deadline;}
+		return (float) call_user_func( $clock ) >= $deadline;
+	}
 	private static function result_evidence( array $result, array $runtime ): array {
 		return array(
 			'theme_slug'                 => $result['theme_slug'] ?? '',
@@ -557,7 +602,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 			'plan_hash'                  => $result['materialization_receipt']['plan_hash'] ?? '',
 			'terminal_batch_report_path' => $result['report_path'] ?? '',
 			'quality'                    => self::quality_evidence( $result['quality'] ?? ( $result['import_report_summary']['quality_pass'] ?? null ) ),
-		);}
+		);
+	}
 	private static function quality_evidence( mixed $quality ): mixed {
 		if ( ! is_array( $quality ) ) {
 			return is_bool( $quality ) ? array( 'pass' => $quality ) : null;
@@ -568,12 +614,13 @@ final class Static_Site_Importer_URL_Batch_Import {
 				'metrics'        => is_array( $quality['metrics'] ?? null ) ? $quality['metrics'] : array(),
 				'fallback_count' => is_array( $quality['fallbacks'] ?? null ) ? count( $quality['fallbacks'] ) : (int) ( $quality['fallback_count'] ?? 0 ),
 			),
-			static fn( $value ): bool=>null !== $value
-		);}
+			static fn ( $value ): bool => null !== $value
+		);
+	}
 	private static function merge_external_assets( array $aggregate, array $current, int $batch ): array {
 		$samples = $aggregate['samples'] ?? array();
 		$seen    = array_column( $samples, 'url' );
-		foreach ( $current['samples'] ?? array()as$sample ) {
+		foreach ( $current['samples'] ?? array() as $sample ) {
 			$url = (string) ( $sample['url'] ?? '' );
 			if ( '' === $url || count( $samples ) >= 50 || in_array( $url, $seen, true ) ) {
 				continue;
@@ -583,9 +630,10 @@ final class Static_Site_Importer_URL_Batch_Import {
 		}return array(
 			'count'   => (int) ( $aggregate['count'] ?? 0 ) + (int) ( $current['count'] ?? 0 ),
 			'samples' => $samples,
-		);}
+		);
+	}
 	private static function aggregate_result( array $manifest, string $path, array $terminal ): array {
-		$batch_quality = array_values( array_filter( array_map( static fn( array $batch ): mixed=>self::quality_evidence( $batch['result']['quality'] ?? null ), $manifest['batches'] ), static fn( $quality ): bool=>null !== $quality ) );
+		$batch_quality = array_values( array_filter( array_map( static fn ( array $batch ): mixed => self::quality_evidence( $batch['result']['quality'] ?? null ), $manifest['batches'] ), static fn ( $quality ): bool => null !== $quality ) );
 		$evidence      = array(
 			'status'                     => 'completed',
 			'run_manifest'               => $path,
@@ -594,7 +642,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			'total_routes'               => $manifest['total_routes'],
 			'completed_routes'           => array_sum( array_column( $manifest['batches'], 'completed_routes' ) ),
 			'total_batches'              => count( $manifest['batches'] ),
-			'completed_batches'          => count( array_filter( $manifest['batches'], static fn( array $batch ): bool=>'completed' === $batch['state'] ) ),
+			'completed_batches'          => count( array_filter( $manifest['batches'], static fn ( array $batch ): bool => 'completed' === $batch['state'] ) ),
 			'failures'                   => $manifest['failures'],
 			'diagnostics'                => $manifest['diagnostics'],
 			'external_asset_retained'    => $manifest['external_asset_retained'] ?? array(),
@@ -619,7 +667,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 			'url_batch_run'         => $evidence,
 			'batch_materialization' => $manifest['batches'],
 			'terminal_batch_result' => $terminal,
-		);}
+		);
+	}
 	private static function continuation_result( array $manifest, string $path, int $index, int $effective_batches, ?int $max_effective_batches = null, ?float $max_invocation_seconds = null, string $reason = 'effective_batch_limit' ): array {
 		$next              = $manifest['batches'][ $index ] ?? array();
 		$next_work         = array_filter(
@@ -629,9 +678,9 @@ final class Static_Site_Importer_URL_Batch_Import {
 				'route_indexes'        => $next['route_indexes'] ?? array(),
 				'effective_batch_size' => $next['effective_batch_size'] ?? null,
 			),
-			static fn( $value ): bool=>null !== $value
+			static fn ( $value ): bool => null !== $value
 		);
-		$completed_batches = count( array_filter( $manifest['batches'], static fn( array $batch ): bool=>'completed' === $batch['state'] ) );
+		$completed_batches = count( array_filter( $manifest['batches'], static fn ( array $batch ): bool => 'completed' === $batch['state'] ) );
 		$completed_routes  = array_sum( array_column( $manifest['batches'], 'completed_routes' ) );
 		return array(
 			'success'               => true,
@@ -661,9 +710,10 @@ final class Static_Site_Importer_URL_Batch_Import {
 				'next_work'                            => $next_work,
 			),
 			'batch_materialization' => $manifest['batches'],
-		);}
+		);
+	}
 	private static function contract( string $url, array $input, array $args, int $batch_pages ): array {
-		foreach ( array_keys( $args )as$key ) {
+		foreach ( array_keys( $args ) as $key ) {
 			if ( str_starts_with( (string) $key, '_static_site_importer_' ) ) {
 				unset( $args[ $key ] );
 			}
@@ -682,7 +732,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 				'provider_args'        => $args,
 				'compiler_options'     => $input['compiler_options'] ?? array(),
 			)
-		);}
+		);
+	}
 	private static function canonical( array $value ): array {
 		foreach ( $value as &$item ) {
 			if ( is_array( $item ) ) {
@@ -691,5 +742,6 @@ final class Static_Site_Importer_URL_Batch_Import {
 		}unset( $item );
 		if ( ! array_is_list( $value ) ) {
 			ksort( $value, SORT_STRING );
-		}return $value;}
+		}return $value;
+	}
 }
