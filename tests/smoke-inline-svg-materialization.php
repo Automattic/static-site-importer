@@ -23,6 +23,7 @@ foreach (
 		'esc_html'            => static fn( string $value ): string => htmlspecialchars( $value, ENT_QUOTES ),
 		'sanitize_text_field' => static fn( string $value ): string => trim( preg_replace( '/\s+/', ' ', wp_strip_all_tags( $value ) ) ?? '' ),
 		'wp_strip_all_tags'   => static fn( string $value ): string => strip_tags( $value ),
+		'wp_parse_url'        => static fn( string $url ): array|false => parse_url( $url ),
 		'sanitize_key'        => static fn( string $value ): string => strtolower( preg_replace( '/[^a-zA-Z0-9_\-]/', '', $value ) ?? '' ),
 		'sanitize_title'      => static fn( string $value ): string => trim( strtolower( preg_replace( '/[^a-z0-9]+/i', '-', $value ) ?? '' ), '-' ),
 	) as $function => $implementation
@@ -41,6 +42,7 @@ $ssi_inline_svg_stubs = array(
 	'esc_html'            => static fn( string $value ): string => htmlspecialchars( $value, ENT_QUOTES ),
 	'sanitize_text_field' => static fn( string $value ): string => trim( preg_replace( '/\s+/', ' ', strip_tags( $value ) ) ?? '' ),
 	'wp_strip_all_tags'   => static fn( string $value ): string => strip_tags( $value ),
+	'wp_parse_url'        => static fn( string $url ): array|false => parse_url( $url ),
 	'sanitize_key'        => static fn( string $value ): string => strtolower( preg_replace( '/[^a-zA-Z0-9_\-]/', '', $value ) ?? '' ),
 	'sanitize_title'      => static fn( string $value ): string => trim( strtolower( preg_replace( '/[^a-z0-9]+/i', '-', $value ) ?? '' ), '-' ),
 );
@@ -80,6 +82,20 @@ $page     = Static_Site_Importer_Source_Page::from_wordpress_document_artifact(
 
 $artifacts = Static_Site_Importer_Page_Materializer::page_artifacts( array( 'index.html' => $page ), 'inline-svg-theme' );
 $output    = $artifacts['contents']['index.html'] ?? '';
+$font_svg  = '<svg xmlns="http://www.w3.org/2000/svg"><text font-family="Example">Text</text></svg>';
+$font_page = Static_Site_Importer_Source_Page::from_wordpress_document_artifact(
+	array(
+		'source_path'  => 'font.svg.html',
+		'title'        => 'Font SVG',
+		'block_markup' => '<!-- wp:html -->' . $font_svg . '<!-- /wp:html -->',
+	)
+);
+$font_usage = Static_Site_Importer_Page_Materializer::svg_font_usage_markup(
+	array(
+		'invalid'       => 'not a source page',
+		'font-svg.html' => $font_page,
+	)
+);
 
 $assert( str_contains( $output, '<!-- wp:image ' ), 'safe-svg-promoted-to-image' );
 $assert( str_contains( $output, 'blocks-engine-inline-svg' ), 'promoted-image-class' );
@@ -87,6 +103,7 @@ $assert( 1 === count( $artifacts['asset_writes'] ?? array() ), 'one-svg-asset-wr
 $assert( str_contains( array_key_first( $artifacts['asset_writes'] ?? array() ) ?? '', 'assets/materialized/inline-svg/home-' ), 'stable-svg-asset-path' );
 $assert( str_contains( $output, 'onload=' ), 'unsafe-svg-remains-html' );
 $assert( 1 === substr_count( $output, '<!-- wp:html' ), 'only-unsafe-html-remains' );
+$assert( $font_svg === $font_usage, 'svg-font-usage-skips-non-page-entries' );
 
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );

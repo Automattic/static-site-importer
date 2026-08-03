@@ -489,14 +489,18 @@ class Static_Site_Importer_Diagnostic_Contract {
 					}
 				}
 			}
-			$output = isset( $stage['output'] ) && is_array( $stage['output'] ) ? $stage['output'] : array();
+			$output         = isset( $stage['output'] ) && is_array( $stage['output'] ) ? $stage['output'] : array();
+			$output_summary = array();
 			foreach ( array( 'sha256', 'bytes', 'count' ) as $field ) {
 				if ( isset( $output[ $field ] ) && is_scalar( $output[ $field ] ) ) {
 					$value = 'sha256' === $field ? self::bounded_provenance_string( $output[ $field ], 128 ) : (int) $output[ $field ];
 					if ( '' !== $value ) {
-						$entry['output'][ $field ] = $value;
+						$output_summary[ $field ] = $value;
 					}
 				}
+			}
+			if ( ! empty( $output_summary ) ) {
+				$entry['output'] = $output_summary;
 			}
 			if ( ! empty( $entry ) ) {
 				$summary[] = $entry;

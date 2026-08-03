@@ -106,6 +106,7 @@ $input = array(
 	'stale_page_action'            => 'draft',
 	'activate'                     => true,
 	'overwrite'                    => true,
+	'disable_smilies'              => true,
 	'fail_on_quality'              => true,
 	'allow_missing_woocommerce'    => true,
 		'allow_missing_jetpack'        => true,
@@ -123,6 +124,12 @@ $input = array(
 	'validation_artifacts'         => array( 'visual_diff' => array( 'path' => '/tmp/diff.png' ) ),
 );
 $direct = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
+
+// disable_smilies (issue #780) defaults on so ordinary imports keep literal text.
+$default_input = Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'slug' => 'default-theme' ) );
+$assert( true === $default_input['disable_smilies'], 'disable-smilies-defaults-true' );
+$assert( true === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'disable_smilies' => '1' ) )['disable_smilies'], 'disable-smilies-coerces-true-string' );
+$assert( false === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'disable_smilies' => '0' ) )['disable_smilies'], 'disable-smilies-coerces-false-string' );
 
 static_site_importer_ability_import_website_artifact( array_merge( $input, array( 'artifact' => array( 'schema' => 'test/artifact/v1' ) ) ) );
 $direct_entrypoint = Static_Site_Importer_Theme_Generator::$last_args;

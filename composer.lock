@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "4d3b4b92a59449a975fc33ed967f5a76",
+    "content-hash": "ca00ed1e044fd3cbe9fb9eb9da141192",
     "packages": [
         {
             "name": "automattic/blocks-engine-figma-transformer",
@@ -43,16 +43,16 @@
         },
         {
             "name": "automattic/blocks-engine-php-transformer",
-            "version": "0.4.10",
+            "version": "0.4.11-dev",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Automattic/blocks-engine.git",
-                "reference": "f332f05d39f9f3461dd9e027350633a1c28985ed"
+                "reference": "59fb67556237bed001b11e9272cbeb81a240d2ba"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://github.com/Automattic/blocks-engine/archive/refs/tags/php-transformer-v0.4.10.zip",
-                "reference": "f332f05d39f9f3461dd9e027350633a1c28985ed"
+                "url": "https://github.com/Automattic/blocks-engine/archive/59fb67556237bed001b11e9272cbeb81a240d2ba.zip",
+                "reference": "59fb67556237bed001b11e9272cbeb81a240d2ba"
             },
             "require": {
                 "league/commonmark": "^2.5",
@@ -68,7 +68,7 @@
             "license": [
                 "GPL-3.0-or-later"
             ],
-            "description": "PHP primitives for transforming HTML, Markdown, and website artifacts into WordPress block outputs."
+            "description": "Temporary Blocks Engine PR 801 reference; replace with the released php-transformer package version."
         },
         {
             "name": "dflydev/dot-access-data",
@@ -147,16 +147,16 @@
         },
         {
             "name": "league/commonmark",
-            "version": "2.8.3",
+            "version": "2.9.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/thephpleague/commonmark.git",
-                "reference": "1902f60f984235023acbe03db6ad614a37b3c3e7"
+                "reference": "5703d83ba3da3b2e356a5fedc848ed6d8ffb6529"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/thephpleague/commonmark/zipball/1902f60f984235023acbe03db6ad614a37b3c3e7",
-                "reference": "1902f60f984235023acbe03db6ad614a37b3c3e7",
+                "url": "https://api.github.com/repos/thephpleague/commonmark/zipball/5703d83ba3da3b2e356a5fedc848ed6d8ffb6529",
+                "reference": "5703d83ba3da3b2e356a5fedc848ed6d8ffb6529",
                 "shasum": ""
             },
             "require": {
@@ -193,7 +193,7 @@
             "type": "library",
             "extra": {
                 "branch-alias": {
-                    "dev-main": "2.9-dev"
+                    "dev-main": "2.10-dev"
                 }
             },
             "autoload": {
@@ -250,7 +250,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-07-12T15:29:16+00:00"
+            "time": "2026-08-03T13:42:31+00:00"
         },
         {
             "name": "league/config",
@@ -790,7 +790,9 @@
     "packages-dev": [],
     "aliases": [],
     "minimum-stability": "dev",
-    "stability-flags": {},
+    "stability-flags": {
+        "automattic/blocks-engine-php-transformer": 20
+    },
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {

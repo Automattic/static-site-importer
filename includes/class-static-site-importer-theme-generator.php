@@ -68,9 +68,9 @@ class Static_Site_Importer_Theme_Generator {
 			$args['source_artifact_reference'] = self::source_artifact_reference_from_artifact( $artifact, $args );
 		}
 
-		// compiler_options stays accepted on the public args for backward
-		// compatibility; the tagged transformer ignores it at this boundary.
-		$compiled = ( new $compiler_class() )->compile( $artifact )->toArray();
+		// A URL batch run composes this canonical compiler result before the one
+		// serialized WordPress mutation. Direct callers retain whole-artifact compilation.
+		$compiled = isset( $args['compiled_artifact_result'] ) && is_array( $args['compiled_artifact_result'] ) ? $args['compiled_artifact_result'] : ( new $compiler_class() )->compile( $artifact )->toArray();
 		if ( ! is_array( $compiled ) ) {
 			return new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid result.' );
 		}
@@ -132,15 +132,26 @@ class Static_Site_Importer_Theme_Generator {
 		if ( is_wp_error( $binding_preflight ) ) {
 			return $binding_preflight;
 		}
+		$page_ready = ! empty( $args['page_ready_checkpoint'] );
+		if ( $page_ready && self::page_ready_requires_final_hydration( $lifecycle, $args ) ) {
+			return new WP_Error(
+				'static_site_importer_page_ready_runtime_bindings_deferred',
+				'Page-ready materialization requires runtime entity bindings and must wait for complete-snapshot hydration.',
+				array(
+					'status'                => 'deferred',
+					'materialization_scope' => 'page_ready',
+				)
+			);
+		}
 		$companion_materialization = array(
 			'status' => 'skipped',
 			'reason' => 'companion_plugin_payload_absent',
 		);
 		if ( null !== $companion_payload ) {
-			if ( array_key_exists( 'materialize_dependencies', $args ) && false === (bool) $args['materialize_dependencies'] ) {
+			if ( $page_ready || ( array_key_exists( 'materialize_dependencies', $args ) && false === (bool) $args['materialize_dependencies'] ) ) {
 				$companion_materialization = array(
 					'status' => 'skipped',
-					'reason' => 'dependency_materialization_disabled',
+					'reason' => $page_ready ? 'page_ready_scope' : 'dependency_materialization_disabled',
 				);
 			} else {
 				$dependency                 = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $companion_payload );
@@ -151,11 +162,14 @@ class Static_Site_Importer_Theme_Generator {
 				}
 			}
 		}
-		$dependencies = self::materialize_prepared_dependencies( $lifecycle, $args );
+		$dependencies = $page_ready ? array() : self::materialize_prepared_dependencies( $lifecycle, $args );
 		if ( is_wp_error( $dependencies ) ) {
 			return $dependencies;
 		}
-		$entity_result = self::materialize_prepared_entities( $lifecycle, $args );
+		$entity_result = $page_ready ? array(
+			'reports' => array(),
+			'error'   => null,
+		) : self::materialize_prepared_entities( $lifecycle, $args );
 		$entities      = $entity_result['reports'];
 		if ( null !== $entity_result['error'] ) {
 			$error = $entity_result['error'];
@@ -170,7 +184,7 @@ class Static_Site_Importer_Theme_Generator {
 				)
 			);
 		}
-		$bindings = self::runtime_entity_bindings( $lifecycle, $entities );
+		$bindings = $page_ready ? array() : self::runtime_entity_bindings( $lifecycle, $entities );
 		if ( is_wp_error( $bindings ) ) {
 			return new WP_Error(
 				$bindings->get_error_code(),
@@ -183,8 +197,10 @@ class Static_Site_Importer_Theme_Generator {
 				)
 			);
 		}
-		$prepared['args']['runtime_entity_bindings'] = $bindings;
-		$prepared['args']['provider_layout_overlays'] = self::provider_layout_overlays_from_entity_reports( $entities );
+		$prepared['args']['runtime_entity_bindings']    = $bindings;
+		$prepared['args']['provider_layout_overlays']   = $page_ready ? array() : self::provider_layout_overlays_from_entity_reports( $entities );
+		$prepared['args']['font_materialization']       = $page_ready ? array() : $prepared['args']['font_materialization'];
+		$prepared['args']['activate']                   = $page_ready ? false : ! empty( $prepared['args']['activate'] );
 		$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared );
 		$receipt['completed']['companion_plugin'] = $companion_materialization;
 		$receipt['extensions']['gutenberg_gaps'] = self::project_gutenberg_gaps( $gutenberg_gaps, (string) ( $companion_materialization['status'] ?? 'not_materialized' ) );
@@ -807,6 +823,28 @@ class Static_Site_Importer_Theme_Generator {
 			return 'form';
 		}
 		return '';
+	}
+
+	/**
+	 * Runtime bindings change page markup with provider-owned identities, so the
+	 * page-ready checkpoint cannot safely materialize their static fallback.
+	 */
+	private static function page_ready_requires_final_hydration( array $lifecycle, array $args ): bool {
+		foreach ( $lifecycle['entities'] as $prepared ) {
+			$waiver_arg = (string) ( $prepared['adapter']['waiver_arg'] ?? '' );
+			if ( '' !== $waiver_arg && ! empty( $args[ $waiver_arg ] ) ) {
+				continue;
+			}
+			$manifest = isset( $prepared['manifest'] ) && is_array( $prepared['manifest'] ) ? $prepared['manifest'] : array();
+			$entities = isset( $manifest['products'] ) && is_array( $manifest['products'] ) ? $manifest['products'] : ( isset( $manifest['forms'] ) && is_array( $manifest['forms'] ) ? $manifest['forms'] : array() );
+			foreach ( $entities as $entity ) {
+				if ( is_array( $entity ) && ! empty( $entity['bindings'] ) ) {
+					return true;
+				}
+			}
+		}
+
+		return false;
 	}
 
 	/** @return array<string,mixed>|WP_Error */

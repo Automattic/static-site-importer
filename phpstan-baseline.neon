@@ -53,9 +53,3 @@ parameters:
 			identifier: booleanAnd.alwaysTrue
 			count: 1
 			path: includes/class-static-site-importer-theme-generator.php
-
-		-
-			message: '#.*#'
-			identifier: argument.type
-			count: 1
-			path: includes/class-static-site-importer-page-materializer.php
