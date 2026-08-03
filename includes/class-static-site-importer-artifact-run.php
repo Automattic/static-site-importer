@@ -600,6 +600,7 @@ final class Static_Site_Importer_Artifact_Batch_Cursor {
 				'result'               => $row['result'] ?? null,
 				'split_from'           => $row['split_from'] ?? null,
 				'effective_batch_size' => $row['effective_batch_size'] ?? null,
+				'page_ready_deferred'  => ! empty( $row['page_ready_deferred'] ),
 			);
 		}
 		unset( $row );
