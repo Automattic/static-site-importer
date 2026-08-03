@@ -206,6 +206,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( is_wp_error( $shared['plan'] ) ) {
 				return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $shared['plan'], $cache );
 			}
+			$runtime['shared_plan_digest'] = $shared['digest'];
 			if ( ! empty( $shared['changed'] ) ) {
 				self::invalidate_prepared_batches( $workspace, $cursor, $index );
 				$workspace->delete( 'staged-compiler-shared.json' );
