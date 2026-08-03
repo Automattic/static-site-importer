@@ -110,6 +110,21 @@ class Static_Site_Importer_Theme_Generator {
 		if ( is_wp_error( $lifecycle ) ) {
 			return $lifecycle;
 		}
+		if ( 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
+			$dependencies = self::materialize_prepared_dependencies( $lifecycle, $args );
+			if ( is_wp_error( $dependencies ) ) {
+				return $dependencies;
+			}
+			return array(
+				'status' => 'dependencies_prepared',
+				'runtime_lifecycle' => $lifecycle,
+				'dependencies' => $dependencies,
+				'fresh_runtime' => array( 'request_id' => self::runtime_request_id() ),
+			);
+		}
+		if ( 'resume' === ( $args['runtime_lifecycle_phase'] ?? '' ) && (string) ( $args['runtime_lifecycle_request_id'] ?? '' ) === self::runtime_request_id() ) {
+			return new WP_Error( 'static_site_importer_fresh_runtime_required', 'Provider validation must resume in a fresh WordPress request after dependency preparation.' );
+		}
 
 		$theme_dir = trailingslashit( get_theme_root() ) . $args['slug'];
 		$report_destinations = array( $theme_dir . '/static-site-importer-manifest.json' );
@@ -714,7 +729,8 @@ class Static_Site_Importer_Theme_Generator {
 				);
 				continue;
 			}
-			$adapter = Static_Site_Importer_Entity_Materializer_Registry::adapter_for_capability( $capability );
+			$adapter_key = (string) ( $declaration['adapter_key'] ?? $declaration['payload']['adapter_key'] ?? '' );
+			$adapter = '' === $adapter_key ? Static_Site_Importer_Entity_Materializer_Registry::adapter_for_capability( $capability ) : Static_Site_Importer_Entity_Materializer_Registry::adapter( $adapter_key );
 			if ( empty( $adapter ) ) {
 				return new WP_Error(
 					'static_site_importer_runtime_provider_unavailable',
@@ -724,6 +740,9 @@ class Static_Site_Importer_Theme_Generator {
 						'declaration_id' => $key,
 					)
 				);
+			}
+			if ( $capability !== (string) ( $adapter['capability'] ?? '' ) ) {
+				return new WP_Error( 'static_site_importer_runtime_adapter_invalid', 'Runtime declaration adapter does not support its declared capability.', array( 'status' => 'rejected', 'declaration_id' => $key ) );
 			}
 			if ( 'dependency' === $kind ) {
 				$lifecycle['dependencies'][ $key ] = array(
@@ -739,7 +758,7 @@ class Static_Site_Importer_Theme_Generator {
 					'schema_version' => 1,
 					'products'       => $entities,
 				) : array( 'forms' => $entities );
-				$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest_generic( $adapter, $manifest );
+				$validation = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? array( 'errors' => array() ) : Static_Site_Importer_Entity_Materializer_Registry::validate_manifest_generic( $adapter, $manifest );
 				if ( ! empty( $validation['errors'] ) ) {
 					return new WP_Error(
 						'static_site_importer_runtime_entity_invalid',
@@ -761,6 +780,9 @@ class Static_Site_Importer_Theme_Generator {
 					'declaration' => $declaration,
 					'required'    => $required,
 				);
+				if ( ! isset( $lifecycle['dependencies'][ $key ] ) ) {
+					$lifecycle['dependencies'][ $key ] = array( 'adapter' => $adapter, 'declaration' => $declaration, 'required' => $required );
+				}
 			}
 		}
 		if ( isset( $args['products_manifest'] ) && is_array( $args['products_manifest'] ) && ! empty( $args['products_manifest'] ) ) {
@@ -796,6 +818,11 @@ class Static_Site_Importer_Theme_Generator {
 			$lifecycle['status'] = 'runtime_declarations';
 		}
 		return $lifecycle;
+	}
+
+	/** A CLI process id is sufficient to reject same-request phase resumes. */
+	private static function runtime_request_id(): string {
+		return (string) ( function_exists( 'getmypid' ) ? getmypid() : spl_object_id( new stdClass() ) );
 	}
 
 	private static function runtime_declaration_is_required( array $declaration, array $declarations ): bool {

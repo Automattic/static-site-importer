@@ -591,13 +591,13 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   });
   assert.equal(recipe.workflow.steps[0].command, 'wordpress.wp-cli');
   assert.equal(recipe.workflow.steps[0].args[0], 'command=plugin activate static-site-importer/static-site-importer.php');
-  assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
-  assert.match(recipe.workflow.steps[1].args[0], /--format=fixture-matrix/);
-  assert.match(recipe.workflow.steps[1].args[0], /--receipt-sidecar=\/wordpress\/wp-content\/uploads\/static-site-importer-fixture-matrix\/simple-site\/materialization-receipt--[A-Za-z0-9-]+\.json/);
-  assert.match(recipe.workflow.steps[1].args[0], /--receipt-run-id=recipe-test-[A-Za-z0-9-]+ --receipt-step-id=import --receipt-attempt-id=[A-Za-z0-9-]+/);
-  assert.equal(recipe.artifacts.typed[0].path, recipe.workflow.steps[1].args[0].match(/--receipt-sidecar=([^ ]+)/)?.[1]);
-  assert.match(recipe.workflow.steps[1].args[0], /--allow-failure/);
-  assert.doesNotMatch(recipe.workflow.steps[1].args[0], /--allow-missing-woocommerce/);
+  assert.match(recipe.workflow.steps[1].args[0], /static-site-importer prepare-artifact-dependencies/);
+  assert.match(recipe.workflow.steps[2].args[0], /static-site-importer validate-artifact/);
+  assert.match(recipe.workflow.steps[2].args[0], /--lifecycle-receipt=/);
+  assert.match(recipe.workflow.steps[2].args[0], /--format=fixture-matrix/);
+  assert.match(recipe.workflow.steps[2].args[0], /--receipt-sidecar=\/wordpress\/wp-content\/uploads\/static-site-importer-fixture-matrix\/simple-site\/materialization-receipt--[A-Za-z0-9-]+\.json/);
+  assert.equal(recipe.artifacts.typed[0].path, recipe.workflow.steps[2].args[0].match(/--receipt-sidecar=([^ ]+)/)?.[1]);
+  assert.match(recipe.workflow.steps[2].args[0], /--allow-failure/);
   assert.deepEqual(recipe.inputs.stagedFiles[0], {
     source: '/tmp/artifacts/simple-site/artifact.json',
     target: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/artifact.json',
@@ -796,7 +796,7 @@ test('fixture manifests explicitly opt into unproven dynamic client assets', () 
       playgroundArtifactsDirectory: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix',
       staticSiteImporterPath: '/tmp/static-site-importer',
     });
-    assert.match(recipe.workflow.steps[1].args[0], /--allow-unproven-dynamic-client-assets/);
+    assert.match(recipe.workflow.steps[2].args[0], /--allow-unproven-dynamic-client-assets/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -805,7 +805,7 @@ test('fixture manifests explicitly opt into unproven dynamic client assets', () 
 test('matrix import recipes declare the complete required sidecar contract', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'complete-sidecar-contract' });
   const recipe = buildFixtureMatrixRecipe({ matrix, staticSiteImporterPath: '/tmp/ssi', runId: 'run-1', attemptId: 'attempt-1' });
-  const command = recipe.workflow.steps[1].args[0];
+  const command = recipe.workflow.steps[2].args[0];
   for (const flag of ['--receipt-sidecar=', '--receipt-run-id=run-1', '--receipt-step-id=import', '--receipt-attempt-id=attempt-1']) {
     assert.match(command, new RegExp(flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
@@ -892,10 +892,46 @@ test('fixture capability metadata does not alter provider setup or execution', (
   const fixtureSteps = (id) => recipe.workflow.steps.filter((step) => step.metadata?.fixture_id === id);
 
   const plainSteps = fixtureSteps('plain-site');
-  assert.deepEqual(plainSteps.map((step) => step.command), ['wordpress.wp-cli', 'wordpress.wp-cli']);
+  assert.deepEqual(plainSteps.map((step) => step.command), ['wordpress.wp-cli', 'wordpress.wp-cli', 'wordpress.wp-cli']);
   assert.deepEqual(fixtureSteps('shop-site').map((step) => step.command), plainSteps.map((step) => step.command));
   assert.deepEqual(fixtureSteps('shop-forms-site').map((step) => step.command), plainSteps.map((step) => step.command));
   assert.equal(recipe.workflow.steps.some((step) => ['wordpress.plugin-setup', 'wordpress.run-php'].includes(step.command)), false);
+  assert.deepEqual(recipe.metadata.provider_dependency_setup, []);
+});
+
+test('recipe delegates dependency preparation to SSI without host plugin setup', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-provider-recipe-'));
+  try {
+    const fixture = path.join(root, 'form-site');
+    const artifacts = path.join(root, 'artifacts');
+    mkdirSync(fixture, { recursive: true });
+    mkdirSync(path.join(artifacts, 'form-site'), { recursive: true });
+    writeFileSync(path.join(fixture, 'index.html'), '<main>Form</main>');
+    writeFileSync(path.join(artifacts, 'form-site', 'artifact.json'), JSON.stringify({ runtime_declarations: [{ kind: 'entity_collection', type: 'forms', adapter_key: 'jetpack_contact_form' }] }));
+    const matrix = createFixtureMatrix({ fixture_root: root });
+    const recipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: artifacts, staticSiteImporterPath: '/tmp/static-site-importer', editorValidation: false, visualParity: false });
+    assert.equal(recipe.workflow.steps.some((step) => step.command === 'wordpress.plugin-setup'), false);
+    assert.match(recipe.workflow.steps.find((step) => step.metadata?.fixture_id === 'form-site').args[0], /prepare-artifact-dependencies/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('fixture recipes leave adapter validation to SSI', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-unknown-provider-recipe-'));
+  try {
+    const fixture = path.join(root, 'unknown-site');
+    const artifacts = path.join(root, 'artifacts');
+    mkdirSync(fixture, { recursive: true });
+    mkdirSync(path.join(artifacts, 'unknown-site'), { recursive: true });
+    writeFileSync(path.join(fixture, 'index.html'), '<main>Unknown</main>');
+    writeFileSync(path.join(artifacts, 'unknown-site', 'artifact.json'), JSON.stringify({ runtime_declarations: [{ kind: 'entity_collection', type: 'forms', adapter_key: 'unknown-provider' }] }));
+    const matrix = createFixtureMatrix({ fixture_root: root });
+    const recipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: artifacts, staticSiteImporterPath: '/tmp/static-site-importer' });
+    assert.equal(recipe.workflow.steps.some((step) => step.command === 'wordpress.plugin-setup'), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('fixture-matrix rig requires env-backed WP Codebox editor and visual capabilities', () => {
@@ -5345,18 +5381,20 @@ test('recipe runs editor-validate-blocks against imported content after each imp
     staticSiteImporterPath: '/tmp/static-site-importer',
   });
 
-  // [activate, validate, visual-font-setup, suppress-onboarding, editor-open, editor-validate-blocks]
+  // [activate, prepare, validate, visual-font-setup, suppress-onboarding, editor-open, editor-validate-blocks]
   assert.equal(recipe.workflow.steps[1].command, 'wordpress.wp-cli');
-  assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
-  assert.equal(recipe.workflow.steps[3].command, 'wordpress.wp-cli');
-  assert.equal(recipe.workflow.steps[3].metadata.phase, 'editor-preflight');
-  assert.match(recipe.workflow.steps[3].args[0], /woocommerce_onboarding_profile/);
-  const editorOpenStep = recipe.workflow.steps[4];
+  assert.match(recipe.workflow.steps[1].args[0], /prepare-artifact-dependencies/);
+  assert.equal(recipe.workflow.steps[2].command, 'wordpress.wp-cli');
+  assert.match(recipe.workflow.steps[2].args[0], /static-site-importer validate-artifact/);
+  assert.equal(recipe.workflow.steps[4].command, 'wordpress.wp-cli');
+  assert.equal(recipe.workflow.steps[4].metadata.phase, 'editor-preflight');
+  assert.match(recipe.workflow.steps[4].args[0], /woocommerce_onboarding_profile/);
+  const editorOpenStep = recipe.workflow.steps[5];
   assert.equal(editorOpenStep.command, 'wordpress.editor-open');
   assert.ok(editorOpenStep.args.includes('target=front-page'));
   assert.ok(editorOpenStep.args.includes('capture=screenshot,editor-state,editor-validity'));
   assert.ok(editorOpenStep.args.includes('artifact-prefix=files/browser/editor-open/simple-site'));
-  const editorStep = recipe.workflow.steps[5];
+  const editorStep = recipe.workflow.steps[6];
   assert.equal(editorStep.command, EDITOR_VALIDATE_BLOCKS_COMMAND);
   assert.equal(editorStep.command, 'wordpress.editor-validate-blocks');
   assert.equal(editorStep.args.some((arg) => arg.includes('post-new.php')), false);
@@ -6329,12 +6367,12 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
     pixelThreshold: 0.05,
   });
 
-  // [activate, validate, visual-font-setup, suppress-onboarding, editor-open, editor-validation, visual-setup, visual-compare]
-  const visualSetupStep = recipe.workflow.steps[6];
+  // [activate, prepare, validate, visual-font-setup, suppress-onboarding, editor-open, editor-validation, visual-setup, visual-compare]
+  const visualSetupStep = recipe.workflow.steps[7];
   assert.equal(visualSetupStep.command, 'wordpress.wp-cli');
   assert.equal(visualSetupStep.metadata.phase, 'visual-setup');
   assert.match(visualSetupStep.args[0], /wp_update_custom_css_post/);
-  const visualStep = recipe.workflow.steps[7];
+  const visualStep = recipe.workflow.steps[8];
   assert.equal(visualStep.command, 'wordpress.visual-compare');
   const comparison = visualCompareMatrixComparison(visualStep);
   assert.equal(comparison.sourceUrl, 'file:///tmp/artifacts/simple-site/source/index.html');

@@ -97,6 +97,12 @@ class Static_Site_Importer_Validation_Runtime {
 				'require_proven_dynamic_client_assets' => true,
 			)
 		);
+		if ( isset( $input['runtime_lifecycle_phase'] ) ) {
+			$import_args['runtime_lifecycle_phase'] = (string) $input['runtime_lifecycle_phase'];
+		}
+		if ( isset( $input['runtime_lifecycle_request_id'] ) ) {
+			$import_args['runtime_lifecycle_request_id'] = (string) $input['runtime_lifecycle_request_id'];
+		}
 
 		$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
 		if ( is_wp_error( $result ) ) {
@@ -104,6 +110,34 @@ class Static_Site_Importer_Validation_Runtime {
 		}
 
 		return self::result_from_import( $result, $artifact_dir, $import_args );
+	}
+
+	/** Prepare plugin dependencies in this request; callers resume validation in another request. */
+	public static function prepare_artifact_dependencies( array $input ) {
+		$input['runtime_lifecycle_phase'] = 'prepare';
+		$input['materialize_dependencies'] = true;
+		$artifact = isset( $input['artifact'] ) && is_array( $input['artifact'] ) ? $input['artifact'] : array();
+		if ( empty( $artifact ) ) {
+			return new WP_Error( 'static_site_importer_validation_artifact_missing', 'Dependency preparation requires an artifact JSON object.' );
+		}
+		$slug = isset( $input['slug'] ) ? sanitize_title( (string) $input['slug'] ) : 'static-site-importer-validation';
+		$input['slug'] = '' === $slug ? 'static-site-importer-validation' : $slug;
+		$input['name'] = isset( $input['name'] ) ? sanitize_text_field( (string) $input['name'] ) : $input['slug'];
+		$import_args = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input, array( 'activate' => true, 'overwrite' => true, 'materialize_dependencies' => true ) );
+		$import_args['runtime_lifecycle_phase'] = 'prepare';
+		$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+		return array(
+			'schema' => 'static-site-importer/runtime-lifecycle-receipt/v1',
+			'status' => (string) ( $result['status'] ?? 'failed' ),
+			'artifact_sha256' => hash( 'sha256', wp_json_encode( $artifact ) ?: '' ),
+			'slug' => $input['slug'],
+			'fresh_runtime' => $result['fresh_runtime'] ?? array(),
+			'dependencies' => $result['dependencies'] ?? array(),
+			'runtime_lifecycle' => $result['runtime_lifecycle'] ?? array(),
+		);
 	}
 
 	/**

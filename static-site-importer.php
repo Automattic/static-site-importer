@@ -258,6 +258,29 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 	);
 
 	WP_CLI::add_command(
+		'static-site-importer prepare-artifact-dependencies',
+		static function ( array $args, array $assoc_args ): void {
+			unset( $args );
+			$input = static_site_importer_cli_artifact_input( $assoc_args );
+			if ( is_wp_error( $input ) ) {
+				WP_CLI::error( $input->get_error_message() );
+			}
+			$result = Static_Site_Importer_Validation_Runtime::prepare_artifact_dependencies( $input );
+			if ( is_wp_error( $result ) ) {
+				WP_CLI::error( $result->get_error_message() );
+			}
+			$json = wp_json_encode( $result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+			if ( false === $json ) {
+				WP_CLI::error( 'Failed to encode dependency preparation receipt.' );
+			}
+			if ( empty( $assoc_args['receipt'] ) || false === file_put_contents( (string) $assoc_args['receipt'], $json . "\n" ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- CLI writes its explicit lifecycle handoff receipt.
+				WP_CLI::error( 'Dependency preparation requires a writable --receipt path.' );
+			}
+			WP_CLI::line( $json );
+		}
+	);
+
+	WP_CLI::add_command(
 		'static-site-importer validate-artifact',
 		static function ( array $args, array $assoc_args ): void {
 			unset( $args );
@@ -289,6 +312,16 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				}
 
 				$input['artifact'] = $artifact;
+			}
+			if ( isset( $assoc_args['lifecycle-receipt'] ) ) {
+				$receipt_json = file_get_contents( (string) $assoc_args['lifecycle-receipt'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads its explicit lifecycle handoff receipt.
+				$receipt = json_decode( false === $receipt_json ? '' : $receipt_json, true );
+				$artifact_hash = isset( $input['artifact'] ) ? hash( 'sha256', wp_json_encode( $input['artifact'] ) ?: '' ) : '';
+				if ( ! is_array( $receipt ) || 'static-site-importer/runtime-lifecycle-receipt/v1' !== ( $receipt['schema'] ?? '' ) || 'dependencies_prepared' !== ( $receipt['status'] ?? '' ) || $artifact_hash !== ( $receipt['artifact_sha256'] ?? '' ) ) {
+					WP_CLI::error( 'The --lifecycle-receipt must be a completed receipt for this exact artifact.' );
+				}
+				$input['runtime_lifecycle_phase'] = 'resume';
+				$input['runtime_lifecycle_request_id'] = (string) ( $receipt['fresh_runtime']['request_id'] ?? '' );
 			}
 
 			if ( isset( $assoc_args['generated-theme-ref'] ) ) {
@@ -381,6 +414,25 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 
 			WP_CLI::line( $json );
 		}
+	);
+}
+
+/** Build the common artifact input for lifecycle commands without provider setup. */
+function static_site_importer_cli_artifact_input( array $assoc_args ) {
+	if ( empty( $assoc_args['artifact'] ) ) {
+		return new WP_Error( 'static_site_importer_cli_artifact_missing', 'Provide an artifact JSON file with --artifact.' );
+	}
+	$artifact_json = file_get_contents( (string) $assoc_args['artifact'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads an operator-provided artifact file.
+	$artifact = json_decode( false === $artifact_json ? '' : $artifact_json, true );
+	if ( ! is_array( $artifact ) ) {
+		return new WP_Error( 'static_site_importer_cli_artifact_invalid', 'The --artifact file must contain a JSON object.' );
+	}
+	return array(
+		'artifact' => $artifact,
+		'slug' => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
+		'name' => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
+		'activate' => ! isset( $assoc_args['no-activate'] ),
+		'overwrite' => ! isset( $assoc_args['no-overwrite'] ),
 	);
 }
 

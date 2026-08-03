@@ -38,6 +38,7 @@ class Static_Site_Importer_Plugin_Materializer {
 			$report['status']    = 'already_available';
 			$report['installed'] = true;
 			$report['active']    = true;
+			self::record_installed_provenance( $report );
 			return $report;
 		}
 
@@ -115,6 +116,7 @@ class Static_Site_Importer_Plugin_Materializer {
 		$report['status'] = in_array( 'installed', $report['actions'], true )
 			? 'installed_activated'
 			: 'activated';
+		self::record_installed_provenance( $report );
 		return $report;
 	}
 
@@ -447,6 +449,25 @@ class Static_Site_Importer_Plugin_Materializer {
 			'active'      => false,
 			'actions'     => array(),
 			'error'       => '',
+			'provenance'  => array(
+				'source'  => 'wordpress.org',
+				'version' => '',
+				'sha256'  => '',
+			),
+		);
+	}
+
+	/** Record the exact activated plugin entrypoint instead of inferring a package version. */
+	private static function record_installed_provenance( array &$report ): void {
+		$file = trailingslashit( WP_PLUGIN_DIR ) . (string) $report['plugin_file'];
+		if ( ! is_readable( $file ) ) {
+			return;
+		}
+		$headers = function_exists( 'get_plugin_data' ) ? get_plugin_data( $file, false, false ) : array();
+		$report['provenance'] = array(
+			'source'  => 'wordpress.org',
+			'version' => is_array( $headers ) ? (string) ( $headers['Version'] ?? '' ) : '',
+			'sha256'  => hash_file( 'sha256', $file ) ?: '',
 		);
 	}
 
