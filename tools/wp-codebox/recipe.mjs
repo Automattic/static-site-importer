@@ -62,6 +62,7 @@ export async function runWpCodeboxRecipe(options = {}) {
   }
 
   const result = spawnSync(base.command, args, {
+    cwd: options.cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     maxBuffer: WP_CODEBOX_RECIPE_MAX_BUFFER,
@@ -92,7 +93,7 @@ function recipeRunArgs(base, options, { output }) {
 }
 
 async function runWpCodeboxRecipeStdoutFallback(base, options) {
-  const result = await spawnRecipeToOutputFile(base.command, recipeRunArgs(base, options, { output: false }), options.outputFile);
+  const result = await spawnRecipeToOutputFile(base.command, recipeRunArgs(base, options, { output: false }), options);
   const output = readTextFile(options.outputFile);
   const parsed = parseJsonText(output);
   if (result.status !== 0) {
@@ -133,7 +134,7 @@ function spawnRecipeWithTails(command, args, options = {}) {
   return new Promise((resolve) => {
     const stdout = new RingTextBuffer(WP_CODEBOX_RECIPE_TAIL_BYTES);
     const stderr = new RingTextBuffer(WP_CODEBOX_RECIPE_TAIL_BYTES);
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, args, { cwd: options.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     let spawnError = null;
     const inactivityTimeoutMs = positiveInteger(options.inactivityTimeoutMs, DEFAULT_RECIPE_INACTIVITY_TIMEOUT_MS);
     let inactivityTimedOut = false;
@@ -174,12 +175,12 @@ function spawnRecipeWithTails(command, args, options = {}) {
   });
 }
 
-function spawnRecipeToOutputFile(command, args, outputFile) {
+function spawnRecipeToOutputFile(command, args, options) {
   return new Promise((resolve) => {
     const stdout = new RingTextBuffer(WP_CODEBOX_RECIPE_TAIL_BYTES);
     const stderr = new RingTextBuffer(WP_CODEBOX_RECIPE_TAIL_BYTES);
-    const output = fs.createWriteStream(outputFile, { encoding: 'utf8' });
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const output = fs.createWriteStream(options.outputFile, { encoding: 'utf8' });
+    const child = spawn(command, args, { cwd: options.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     let spawnError = null;
 
     child.stdout?.on('data', (chunk) => {
