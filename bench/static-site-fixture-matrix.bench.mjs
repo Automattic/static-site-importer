@@ -5,6 +5,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
@@ -409,6 +410,9 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
   const dependencyPlan = options.hostDependencyOrchestration
     ? await discoverFixtureDependencyPlan({ fixtures, outputDirectory, staticSiteImporterPath, options, batchSuffix })
     : undefined;
+  const resolvedDependencyPlan = dependencyPlan
+    ? await resolveHostDependencyPlan(dependencyPlan, path.join(outputDirectory, 'dependency-cache'))
+    : undefined;
   const batchRecipe = buildFixtureMatrixRecipe({
     matrix: batchMatrix,
     runId: batchMatrix.id,
@@ -419,7 +423,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     staticSiteImporterPath,
     staticSiteImporterPlugin: options.staticSiteImporterPlugin,
     staticSiteImporterSlug: options.staticSiteImporterSlug,
-    dependencyPlan,
+    dependencyPlan: resolvedDependencyPlan,
     dependencyOverrides: prepareDependencyOverrides(options),
     svgFontEvidence: true,
     ...fixtureMatrixRecipeInput(normalizeFixtureMatrixRunConfig(Object.fromEntries(Object.keys(FIXTURE_MATRIX_RUN_FIELDS).map((key) => [key, options[key]])))),
@@ -565,6 +569,39 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     error: recoveryErrors[0] || null,
     childCommandFailures: recoveryOutcomes.flatMap((outcome) => outcome.childCommandFailures || []),
   };
+}
+
+export async function resolveHostDependencyPlan(plan, cacheDirectory, fetcher = fetch) {
+  const entries = [];
+  for (const entry of plan.entries) {
+    if (entry.source_kind !== 'wordpress.org-plugin' || !/^[a-z0-9][a-z0-9-_]*$/i.test(entry.slug || '')) throw new Error('Host dependency resolver received an invalid plugin declaration.');
+    const infoUrl = new URL('https://api.wordpress.org/plugins/info/1.2/');
+    infoUrl.searchParams.set('action', 'plugin_information');
+    infoUrl.searchParams.set('request[slug]', entry.slug);
+    const infoResponse = await fetcher(infoUrl, { redirect: 'error' });
+    if (!infoResponse.ok || !/^application\/json\b/i.test(infoResponse.headers.get('content-type') || '')) throw new Error(`WordPress.org plugin info failed for ${entry.slug}.`);
+    const info = await infoResponse.json();
+    const version = String(info?.version || '');
+    const source = String(info?.download_link || '');
+    const url = new URL(source);
+    if (!/^https:$/.test(url.protocol) || url.hostname !== 'downloads.wordpress.org' || !version || !/^\d[0-9A-Za-z._+-]*$/.test(version)) throw new Error(`WordPress.org plugin info returned an invalid immutable package for ${entry.slug}.`);
+    const cacheKey = `${entry.slug}-${version}`;
+    const cachePath = path.join(cacheDirectory, cacheKey, 'package.zip');
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    let bytes;
+    if (fs.existsSync(cachePath)) bytes = fs.readFileSync(cachePath);
+    else {
+      const download = await fetcher(url, { redirect: 'error' });
+      const contentLength = Number(download.headers.get('content-length') || 0);
+      if (!download.ok || !/^application\/(zip|octet-stream)\b/i.test(download.headers.get('content-type') || '') || (contentLength && contentLength > 100 * 1024 * 1024)) throw new Error(`WordPress.org package download failed policy validation for ${entry.slug}.`);
+      bytes = Buffer.from(await download.arrayBuffer());
+      if (!bytes.length || bytes.length > 100 * 1024 * 1024) throw new Error(`WordPress.org package exceeds host size policy for ${entry.slug}.`);
+      fs.writeFileSync(cachePath, bytes);
+    }
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    entries.push({ ...entry, host_resolution: { schema: 'static-site-importer/host-package-resolution/v1', slug: entry.slug, version, source_url: url.toString(), archive_sha256: sha256, archive_path: cachePath } });
+  }
+  return { ...plan, entries };
 }
 
 async function discoverFixtureDependencyPlan({ fixtures, outputDirectory, staticSiteImporterPath, options, batchSuffix }) {
