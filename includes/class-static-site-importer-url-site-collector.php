@@ -69,10 +69,18 @@ class Static_Site_Importer_URL_Site_Collector {
 		$asset_failure_policy   = $args['asset_failure_policy'] ?? '';
 		$preserve_failed_assets = in_array( $asset_failure_policy, array( 'preserve_external', 'preserve_failed_external_assets' ), true );
 		$preserve_asset_limits  = 'preserve_external' === $asset_failure_policy;
-		$script_policy          = self::script_policy( $args );
-		$script_exclusions      = array();
-		$entry_resource_url     = $entry_url;
-		$site_url               = $entry_url;
+		$page_ready             = 'page_ready' === ( $args['hydration_mode'] ?? '' );
+		$critical_assets        = array();
+		if ( $page_ready ) {
+			// A ready checkpoint may retain optional resources externally, but never a
+			// stylesheet or font dependency needed to render the collected page.
+			$preserve_failed_assets = true;
+			$preserve_asset_limits  = true;
+		}
+		$script_policy      = self::script_policy( $args );
+		$script_exclusions  = array();
+		$entry_resource_url = $entry_url;
+		$site_url           = $entry_url;
 
 		$sitemap_urls = isset( $args['_route_set'] ) && is_array( $args['_route_set'] ) ? array_values( $args['_route_set'] ) : self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
 		if ( is_wp_error( $sitemap_urls ) ) {
@@ -161,8 +169,15 @@ class Static_Site_Importer_URL_Site_Collector {
 				$page_queue[]              = $discovered_url;
 			}
 
+			foreach ( self::critical_html_asset_urls( $body, $document_base_url ) as $asset_url ) {
+				$critical_assets[ $asset_url ] = true;
+			}
 			foreach ( self::html_asset_urls( $body, $document_base_url, $scripts['asset_urls'] ) as $asset_url ) {
 				if ( isset( $queued_assets[ $asset_url ] ) || isset( $resources[ $asset_url ] ) ) {
+					continue;
+				}
+				if ( $page_ready && ! isset( $critical_assets[ $asset_url ] ) ) {
+					$external_assets[ $asset_url ] = 'optional_pending';
 					continue;
 				}
 				if ( count( $asset_queue ) + self::resource_count( $resources, 'asset' ) >= $max_assets ) {
@@ -181,10 +196,14 @@ class Static_Site_Importer_URL_Site_Collector {
 		$asset_fetcher = self::prefetched_fetcher( array_slice( $asset_queue, 0, $max_assets ), array_merge( $fetch_args, array( 'content_types' => array() ) ), $fetcher, $use_many_fetcher, $args );
 		while ( $asset_queue && self::resource_count( $resources, 'asset' ) < $max_assets ) {
 			$asset_url = array_shift( $asset_queue );
+			$critical  = $page_ready && isset( $critical_assets[ $asset_url ] );
 			$response  = $asset_fetcher( $asset_url, array_merge( $fetch_args, array( 'content_types' => array() ) ) );
 			$response  = self::without_cache_marker( $response );
 			if ( is_wp_error( $response ) ) {
-				if ( $preserve_failed_assets ) {
+				if ( 'static_site_importer_invocation_deadline_exceeded' === $response->get_error_code() ) {
+					return $response;
+				}
+				if ( $preserve_failed_assets && ! $critical ) {
 					$external_assets[ $asset_url ] = $response->get_error_code();
 					continue;
 				}
@@ -203,7 +222,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			$body  = (string) $response['body'];
 			$bytes = strlen( $body );
 			if ( $total_bytes + $bytes > $max_total_bytes ) {
-				if ( $preserve_asset_limits ) {
+				if ( $preserve_asset_limits && ! $critical ) {
 					$external_assets[ $asset_url ] = 'byte_limit';
 					continue;
 				}
@@ -224,6 +243,7 @@ class Static_Site_Importer_URL_Site_Collector {
 					if ( isset( $queued_assets[ $nested_url ] ) || isset( $resources[ $nested_url ] ) ) {
 						continue;
 					}
+					$critical_assets[ $nested_url ] = true;
 					if ( count( $asset_queue ) + self::resource_count( $resources, 'asset' ) >= $max_assets ) {
 						if ( $preserve_asset_limits ) {
 							$external_assets[ $nested_url ] = 'asset_limit';
@@ -370,6 +390,12 @@ class Static_Site_Importer_URL_Site_Collector {
 							0,
 							50
 						),
+					),
+					'readiness'               => array(
+						'mode'            => $page_ready ? 'page_ready' : 'complete_snapshot',
+						'html'            => 'complete',
+						'critical_assets' => 'complete',
+						'optional_assets' => $page_ready && in_array( 'optional_pending', $external_assets, true ) ? 'pending' : 'complete',
 					),
 				),
 			),
@@ -621,6 +647,25 @@ class Static_Site_Importer_URL_Site_Collector {
 			'asset_urls' => array_values( array_unique( $asset_urls ) ),
 			'exclusions' => $exclusions,
 		);
+	}
+
+	/** @return array<int,string> */
+	private static function critical_html_asset_urls( string $html, string $base_url ): array {
+		$urls = array();
+		preg_match_all( '#<link\b[^>]*>#is', $html, $matches );
+		foreach ( $matches[0] as $tag ) {
+			$relation = strtolower( (string) self::tag_attribute_value( $tag, 'rel' ) );
+			$href     = self::tag_attribute_value( $tag, 'href' );
+			$as       = strtolower( (string) self::tag_attribute_value( $tag, 'as' ) );
+			if ( null === $href || ( ! str_contains( $relation, 'stylesheet' ) && ( ! str_contains( $relation, 'preload' ) || ! in_array( $as, array( 'style', 'font' ), true ) ) ) ) {
+				continue;
+			}
+			$url = self::resolve_url( $href, $base_url );
+			if ( '' !== $url ) {
+				$urls[] = $url;
+			}
+		}
+		return array_values( array_unique( $urls ) );
 	}
 
 	/** @return array<int,string> */
