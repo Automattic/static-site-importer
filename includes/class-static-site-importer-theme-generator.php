@@ -898,6 +898,14 @@ class Static_Site_Importer_Theme_Generator {
 				);
 			}
 			$reports[ $id ] = ! empty( $args['materialize_dependencies'] ) ? Static_Site_Importer_Entity_Materializer_Registry::materialize_plugin_dependencies( $adapter ) : array( 'status' => 'available' );
+			foreach ( $reports[ $id ] as $plugin_report ) {
+				if ( is_array( $plugin_report ) && 'failed' === ( $plugin_report['status'] ?? '' ) ) {
+					return new WP_Error( 'static_site_importer_required_runtime_dependency_failed', 'SSI could not install or activate a required runtime dependency.', array( 'status' => 'partial', 'declaration_id' => $id, 'dependency' => $plugin_report ) );
+				}
+			}
+			if ( 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
+				continue;
+			}
 			if ( ! Static_Site_Importer_Entity_Materializer_Registry::dependencies_available( $adapter ) && ! empty( $prepared['required'] ) ) {
 				return new WP_Error(
 					'static_site_importer_required_runtime_dependency_missing',

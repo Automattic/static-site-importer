@@ -103,19 +103,14 @@ class Static_Site_Importer_Plugin_Materializer {
 			$report['actions'][] = 'activated';
 		}
 
-		if ( ! self::available( $availability_check ) ) {
-			return self::failed_report(
-				$report,
-				new WP_Error(
-					'static_site_importer_plugin_apis_missing',
-					sprintf( 'Plugin %s was installed/activated but expected APIs are still unavailable.', $slug )
-				)
-			);
-		}
-
 		$report['status'] = in_array( 'installed', $report['actions'], true )
 			? 'installed_activated'
 			: 'activated';
+		// Activation changes the persistent plugin list, not this request's loaded
+		// block registry. Resume validation proves provider APIs after a new process.
+		if ( ! self::available( $availability_check ) ) {
+			$report['status'] = 'activated_pending_fresh_runtime';
+		}
 		self::record_installed_provenance( $report );
 		return $report;
 	}
@@ -684,6 +679,17 @@ class Static_Site_Importer_Plugin_Materializer {
 	 * @return true|WP_Error
 	 */
 	private static function install_wp_org_plugin( string $slug ) {
+		if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
+			try {
+				$result = WP_CLI::runcommand( 'plugin install ' . escapeshellarg( $slug ), array( 'return' => true, 'exit_on_error' => false ) );
+				if ( 0 === $result || null === $result || true === $result ) {
+					return true;
+				}
+				return new WP_Error( 'static_site_importer_plugin_install_failed', sprintf( 'WP-CLI could not install plugin %s.', $slug ) );
+			} catch ( Throwable $error ) {
+				return new WP_Error( 'static_site_importer_plugin_install_failed', $error->getMessage() );
+			}
+		}
 		$api = plugins_api(
 			'plugin_information',
 			array(
