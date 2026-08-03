@@ -50,7 +50,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 
 	/** @return array{overlay:array<string,mixed>,css:string,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>} */
 	public static function compile( array $graph, mixed $map ): array {
-		$validated = self::validate_map( $map, $graph );
+		$validated     = self::validate_map( $map, $graph );
 		$validated_map = $validated['map'] ?? null;
 		if ( isset( $validated['error'] ) || ! is_array( $validated_map ) || ! isset( $validated_map['targets'] ) || ! is_array( $validated_map['targets'] ) ) {
 			return array(

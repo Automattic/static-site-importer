@@ -75,7 +75,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				throw new InvalidArgumentException( 'invalid_theme_slug' );
 			}
 			$theme_root = get_theme_root();
-			if ( ! is_dir( $theme_root ) || ! is_writable( $theme_root ) ) {
+			if ( ! is_dir( $theme_root ) || ! is_writable( $theme_root ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- Validates the native theme destination before atomic local writes.
 				throw new InvalidArgumentException( 'theme_destination_not_ready' );
 			}
 			$theme_dir = trailingslashit( $theme_root ) . $slug;
@@ -344,7 +344,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( '' === $slug ) {
 				throw new InvalidArgumentException( 'invalid_theme_slug' );
 			}
-			if ( ! is_dir( $theme_root ) || ! is_writable( $theme_root ) ) {
+			if ( ! is_dir( $theme_root ) || ! is_writable( $theme_root ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- Revalidates the prepared native theme destination before mutation.
 				throw new InvalidArgumentException( 'theme_destination_not_ready' );
 			}
 			if ( is_link( $theme_dir ) || ( file_exists( $theme_dir ) && ! is_dir( $theme_dir ) ) ) {
@@ -422,7 +422,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			while ( '' !== $parent && ! file_exists( $parent ) ) {
 				$parent = dirname( $parent );
 			}
-			if ( ! is_string( $path ) || '' === $path || is_link( $path ) || ( file_exists( $path ) && ! is_writable( $path ) ) || '' === $parent || is_link( $parent ) || ! is_dir( $parent ) || ! is_writable( $parent ) ) {
+			if ( ! is_string( $path ) || '' === $path || is_link( $path ) || ( file_exists( $path ) && ! is_writable( $path ) ) || '' === $parent || is_link( $parent ) || ! is_dir( $parent ) || ! is_writable( $parent ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- Preflights native report destinations used by atomic local writes.
 				throw new InvalidArgumentException( 'report_destination_not_ready' );
 			}
 		}
@@ -548,9 +548,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( ! is_dir( dirname( $path ) ) && ! wp_mkdir_p( dirname( $path ) ) ) {
 			return new WP_Error( 'theme_directory_create_failed' );
 		}
-		$data = 'base64' === $write['payload']['encoding'] ? base64_decode( $write['payload']['data'], true ) : $write['payload']['data'];
+		$data = 'base64' === $write['payload']['encoding'] ? base64_decode( $write['payload']['data'], true ) : $write['payload']['data']; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes declared canonical artifact payload bytes.
 		$temp = tempnam( dirname( $path ), '.ssi-plan-' );
-		if ( false === $data || false === $temp || false === file_put_contents( $temp, $data ) || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Atomically materializes the canonical declared theme write.
+		if ( false === $data || false === $temp || false === file_put_contents( $temp, $data ) || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents,WordPress.WP.AlternativeFunctions.rename_rename -- Atomically materializes the canonical declared theme write.
 			if ( is_string( $temp ) && file_exists( $temp ) ) {
 				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed temporary materialization file.
 			}
@@ -566,7 +566,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** Merge a validated later-batch bootstrap as an idempotent PHP include. */
 	private static function merge_batch_bootstrap( string $theme_dir, array $write ) {
-		$bootstrap = 'base64' === $write['payload']['encoding'] ? base64_decode( $write['payload']['data'], true ) : $write['payload']['data'];
+		$bootstrap = 'base64' === $write['payload']['encoding'] ? base64_decode( $write['payload']['data'], true ) : $write['payload']['data']; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes a declared canonical bootstrap payload.
 		if ( false === $bootstrap || ! is_string( $bootstrap ) || ! str_starts_with( ltrim( $bootstrap ), '<?php' ) ) {
 			return new WP_Error( 'theme_bootstrap_merge_invalid' );
 		}
@@ -607,9 +607,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return array(
 			'target_path'             => $write['target_path'],
 			'hash'                    => self::file_hash( $functions ),
-			'payload_hash'            => hash( 'sha256', (string) file_get_contents( $functions ) ),
+			'payload_hash'            => hash( 'sha256', (string) file_get_contents( $functions ) ), // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reports the merged importer-owned bootstrap payload.
 			'reconciliation_identity' => $write['reconciliation_identity'] ?? hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ),
-		); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reports the merged bootstrap payload.
+		);
 	}
 
 	/** Persist admitted provider overlay CSS into every generated frontend/editor stylesheet. */
@@ -695,7 +695,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 						'encoding' => (string) ( $write['encoding'] ?? 'utf8' ),
 						'data'     => (string) ( $write['content'] ?? '' ),
 					),
-					'payload_hash'            => 'base64' === ( $write['encoding'] ?? 'utf8' ) ? hash( 'sha256', (string) base64_decode( (string) ( $write['content'] ?? '' ), true ) ) : hash( 'sha256', (string) ( $write['content'] ?? '' ) ),
+					'payload_hash'            => 'base64' === ( $write['encoding'] ?? 'utf8' ) ? hash( 'sha256', (string) base64_decode( (string) ( $write['content'] ?? '' ), true ) ) : hash( 'sha256', (string) ( $write['content'] ?? '' ) ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Hashes decoded declared font payload bytes.
 					'reconciliation_identity' => hash( 'sha256', "font-materialization\n" . $target ),
 				)
 			);
@@ -886,7 +886,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	private static function payload_data( array $write ): string {
 		$data = $write['payload']['data'] ?? '';
-		return 'base64' === ( $write['payload']['encoding'] ?? null ) && is_string( $data ) ? (string) base64_decode( $data, true ) : (string) $data;
+		return 'base64' === ( $write['payload']['encoding'] ?? null ) && is_string( $data ) ? (string) base64_decode( $data, true ) : (string) $data; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes declared canonical payload bytes for receipt validation.
 	}
 
 	/** @param array<string,mixed> $operation @param array<string,int> $page_ids */
@@ -1000,7 +1000,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				continue;
 			}
 			$current .= '/' . $segment;
-			if ( is_link( $current ) || ( file_exists( $current ) && ! is_dir( $current ) ) || ( is_dir( $current ) && ! is_writable( $current ) ) ) {
+			if ( is_link( $current ) || ( file_exists( $current ) && ! is_dir( $current ) ) || ( is_dir( $current ) && ! is_writable( $current ) ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- Rejects unsafe native path segments before atomic local writes.
 				return false;
 			}
 		}
@@ -1009,7 +1009,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** @param array<string,mixed> $write */
 	private static function payload_hash( array $write ): string {
-		$data = 'base64' === $write['payload']['encoding'] ? base64_decode( $write['payload']['data'], true ) : $write['payload']['data'];
+		$data = 'base64' === $write['payload']['encoding'] ? base64_decode( $write['payload']['data'], true ) : $write['payload']['data']; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes declared canonical payload bytes before hashing.
 		return is_string( $data ) ? hash( 'sha256', $data ) : '';
 	}
 

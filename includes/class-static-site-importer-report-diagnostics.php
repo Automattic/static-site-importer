@@ -1147,8 +1147,8 @@ class Static_Site_Importer_Report_Diagnostics {
 		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest_generic( $adapter, array( 'forms' => $manifest_forms ) );
 		$seeding    = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, array( 'forms' => isset( $validation['forms'] ) && is_array( $validation['forms'] ) ? $validation['forms'] : array() ) );
 		if ( $seeding instanceof WP_Error ) {
-			$error   = $seeding;
-			$seeding = Static_Site_Importer_Entity_Materializer_Registry::new_entity_report( $adapter );
+			$error             = $seeding;
+			$seeding           = Static_Site_Importer_Entity_Materializer_Registry::new_entity_report( $adapter );
 			$seeding['status'] = 'error';
 			$seeding['reason'] = 'materialization_failed';
 			$seeding['errors'] = array(
@@ -1997,8 +1997,8 @@ class Static_Site_Importer_Report_Diagnostics {
 
 		$seeding = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, array( 'products' => $validated ) );
 		if ( $seeding instanceof WP_Error ) {
-			$error   = $seeding;
-			$seeding = Static_Site_Importer_Entity_Materializer_Registry::new_entity_report( $adapter );
+			$error             = $seeding;
+			$seeding           = Static_Site_Importer_Entity_Materializer_Registry::new_entity_report( $adapter );
 			$seeding['status'] = 'error';
 			$seeding['reason'] = 'materialization_failed';
 			$seeding['errors'] = array(

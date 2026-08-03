@@ -1092,7 +1092,7 @@ class Static_Site_Importer_Theme_Generator {
 		$data = false === $json ? false : $json . "\n";
 		$temp = is_string( $data ) ? tempnam( dirname( $path ), '.ssi-projection-' ) : false;
 		$written = is_string( $data ) && false !== $temp ? file_put_contents( $temp, $data ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Atomically writes preflighted public import artifacts.
-		if ( false === $data || false === $temp || strlen( $data ) !== $written || ! rename( $temp, $path ) ) {
+		if ( false === $data || false === $temp || strlen( $data ) !== $written || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Same-directory rename atomically publishes the preflighted artifact.
 			if ( is_string( $temp ) && file_exists( $temp ) ) {
 				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed atomic projection temporary file.
 			}

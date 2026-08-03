@@ -548,9 +548,9 @@ class Static_Site_Importer_Form_Seeder {
 				'node_hash'   => hash( 'sha256', $node_id ),
 			);
 		}
-		$build = static function ( string $parent ) use ( &$build, $children, $field_blocks, $controls, &$losses ): array {
+		$build = static function ( string $parent_node ) use ( &$build, $children, $field_blocks, $controls, &$losses ): array {
 			$blocks = array();
-			foreach ( $children[ $parent ] ?? array() as $node ) {
+			foreach ( $children[ $parent_node ] ?? array() as $node ) {
 				if ( 'control' === ( $node['kind'] ?? null ) ) {
 					$control_index = $node['control'] ?? -1;
 					if ( isset( $field_blocks[ $control_index ] ) ) {
@@ -829,7 +829,7 @@ class Static_Site_Importer_Form_Seeder {
 	private static function control_text( array $control ): string {
 		foreach ( array( 'text', 'label', 'value', 'placeholder', 'name' ) as $key ) {
 			if ( isset( $control[ $key ] ) && is_scalar( $control[ $key ] ) && '' !== trim( (string) $control[ $key ] ) ) {
-				$text = trim( function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( (string) $control[ $key ] ) : strip_tags( (string) $control[ $key ] ) );
+				$text = trim( function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( (string) $control[ $key ] ) : strip_tags( (string) $control[ $key ] ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- Fallback only for runtime-free smoke tests.
 				return substr( $text, 0, 200 );
 			}
 		}
