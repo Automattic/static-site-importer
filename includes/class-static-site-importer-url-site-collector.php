@@ -18,18 +18,17 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Static_Site_Importer_URL_Site_Collector {
 
-	private const DEFAULT_MAX_PAGES       = 20;
-	private const DEFAULT_MAX_ASSETS      = 200;
-	private const DEFAULT_MAX_TOTAL_BYTES = 52428800;
-	private const MAX_PAGES               = 250;
-	private const MAX_ASSETS              = 2000;
-	private const MAX_TOTAL_BYTES         = 268435456;
-	private const MAX_RESPONSE_BYTES      = 10485760;
-	private const MAX_SITEMAP_DOCUMENTS   = 100;
-	private const MAX_DISCOVERED_ROUTES   = 5000;
-	// The hardened socket transport is blocking, so one PHP invocation can safely admit one request at a time.
-	private const SAME_ORIGIN_CONCURRENCY  = 1;
-	private const CROSS_ORIGIN_CONCURRENCY = 1;
+	private const DEFAULT_MAX_PAGES        = 20;
+	private const DEFAULT_MAX_ASSETS       = 200;
+	private const DEFAULT_MAX_TOTAL_BYTES  = 52428800;
+	private const MAX_PAGES                = 250;
+	private const MAX_ASSETS               = 2000;
+	private const MAX_TOTAL_BYTES          = 268435456;
+	private const MAX_RESPONSE_BYTES       = 10485760;
+	private const MAX_SITEMAP_DOCUMENTS    = 100;
+	private const MAX_DISCOVERED_ROUTES    = 5000;
+	private const SAME_ORIGIN_CONCURRENCY  = 2;
+	private const CROSS_ORIGIN_CONCURRENCY = 4;
 
 	/**
 	 * Collect a public static site.
@@ -48,6 +47,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		$max_pages               = min( self::MAX_PAGES, max( 1, (int) ( $args['max_pages'] ?? self::DEFAULT_MAX_PAGES ) ) );
 		$max_assets              = min( self::MAX_ASSETS, max( 0, (int) ( $args['max_assets'] ?? self::DEFAULT_MAX_ASSETS ) ) );
 		$max_total_bytes         = min( self::MAX_TOTAL_BYTES, max( 1, (int) ( $args['max_total_bytes'] ?? self::DEFAULT_MAX_TOTAL_BYTES ) ) );
+		$use_many_fetcher        = null === $fetcher;
 		$fetcher                 = $fetcher ?? static fn ( string $resource_url, array $fetch_args ) => Static_Site_Importer_URL_Fetcher::fetch( $resource_url, $fetch_args );
 		$fetcher                 = self::scheduled_fetcher( $fetcher, $args );
 		$fetch_args              = array_intersect_key( $args, array_flip( array( 'timeout' ) ) );
@@ -91,9 +91,10 @@ class Static_Site_Importer_URL_Site_Collector {
 			}
 		}
 
+		$page_fetcher = self::prefetched_fetcher( array_slice( $page_queue, 0, $max_pages ), array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ), $fetcher, $use_many_fetcher, $args );
 		while ( $page_queue && self::resource_count( $resources, 'html' ) < $max_pages ) {
 			$page_url = array_shift( $page_queue );
-			$response = $fetcher( $page_url, array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ) );
+			$response = $page_fetcher( $page_url, array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ) );
 			$response = self::without_cache_marker( $response );
 			if ( is_wp_error( $response ) ) {
 				if ( $page_url === $entry_url ) {
@@ -176,9 +177,10 @@ class Static_Site_Importer_URL_Site_Collector {
 			}
 		}
 
+		$asset_fetcher = self::prefetched_fetcher( array_slice( $asset_queue, 0, $max_assets ), array_merge( $fetch_args, array( 'content_types' => array() ) ), $fetcher, $use_many_fetcher, $args );
 		while ( $asset_queue && self::resource_count( $resources, 'asset' ) < $max_assets ) {
 			$asset_url = array_shift( $asset_queue );
-			$response  = $fetcher( $asset_url, array_merge( $fetch_args, array( 'content_types' => array() ) ) );
+			$response  = $asset_fetcher( $asset_url, array_merge( $fetch_args, array( 'content_types' => array() ) ) );
 			$response  = self::without_cache_marker( $response );
 			if ( is_wp_error( $response ) ) {
 				if ( $preserve_failed_assets ) {
@@ -870,6 +872,55 @@ class Static_Site_Importer_URL_Site_Collector {
 			}
 		}
 		return $samples;
+	}
+
+	/** @return callable */
+	private static function prefetched_fetcher( array $urls, array $fetch_args, callable $fetcher, bool $use_many_fetcher, array $args ): callable {
+		if ( ! $use_many_fetcher || ! $urls ) {
+			return $fetcher;
+		}
+		$responses = self::fetch_batch( $urls, $fetch_args, $args );
+		return static fn ( string $url, array $request_args ) => $responses[ $url ] ?? $fetcher( $url, $request_args );
+	}
+
+	/** @return array<string,array|WP_Error> */
+	private static function fetch_batch( array $urls, array $fetch_args, array $args ): array {
+		$attempts  = min( 3, max( 1, (int) ( $args['fetch_attempts'] ?? 2 ) ) );
+		$delay     = min( 2000, max( 0, (int) ( $args['request_delay_ms'] ?? 0 ) ) );
+		$pending   = array_values( $urls );
+		$responses = array();
+		for ( $attempt = 0; $pending && $attempt < $attempts; $attempt++ ) {
+			$requests = array();
+			foreach ( $pending as $url ) {
+				$requests[ $url ] = array(
+					'url'  => $url,
+					'args' => $fetch_args,
+				);
+			}
+			$many_args = array(
+				'concurrency'            => self::CROSS_ORIGIN_CONCURRENCY,
+				'per_origin_concurrency' => self::SAME_ORIGIN_CONCURRENCY,
+			);
+			if ( isset( $args['_static_site_importer_fetch_deadline'] ) ) {
+				$many_args['deadline'] = (float) $args['_static_site_importer_fetch_deadline'];
+			}
+			if ( isset( $args['_static_site_importer_fetch_clock'] ) && is_callable( $args['_static_site_importer_fetch_clock'] ) ) {
+				$many_args['clock'] = $args['_static_site_importer_fetch_clock'];
+			}
+			if ( isset( $args['_static_site_importer_fetch_many_transport'] ) && is_array( $args['_static_site_importer_fetch_many_transport'] ) ) {
+				$many_args['transport'] = $args['_static_site_importer_fetch_many_transport'];
+			}
+			$batch   = Static_Site_Importer_URL_Fetcher::fetch_many( $requests, $many_args );
+			$pending = array();
+			foreach ( $batch as $url => $response ) {
+				$responses[ $url ] = $response;
+				if ( is_wp_error( $response ) && $attempt + 1 < $attempts ) {
+					self::delay( $delay, $args );
+					$pending[] = $url;
+				}
+			}
+		}
+		return $responses;
 	}
 
 	/** @return callable */
