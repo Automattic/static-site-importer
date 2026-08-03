@@ -581,7 +581,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						'preparation_callback'  => array( 'Static_Site_Importer_Form_Seeder', 'prepare_jetpack_forms_runtime' ),
 						'provider_readiness'   => array(
 							'required_block_types' => Static_Site_Importer_Form_Seeder::required_block_types(),
-							'required_classes'     => array( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form' ),
+							'required_classes'     => Static_Site_Importer_Form_Seeder::required_runtime_apis(),
 						),
 						'missing_apis'          => array(
 							'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form',

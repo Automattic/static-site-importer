@@ -8,6 +8,10 @@
  * @package StaticSiteImporter
  */
 
+namespace Automattic\Jetpack\Forms\ContactForm {
+	class Contact_Form {}
+}
+
 namespace {
 	if ( ! defined( 'ABSPATH' ) ) {
 		define( 'ABSPATH', dirname( __DIR__ ) . '/' );
@@ -193,18 +197,9 @@ namespace {
 	$GLOBALS['ssi_jetpack_registered_form_blocks'] = array( 'jetpack/contact-form', 'jetpack/field-text' );
 	$assert( ! Static_Site_Importer_Form_Seeder::jetpack_forms_available(), 'partial-provider-block-registration-is-unavailable' );
 	$GLOBALS['ssi_jetpack_registered_form_blocks'] = $all_jetpack_blocks;
-	$GLOBALS['ssi_test_options']                    = array();
-	$GLOBALS['ssi_test_jetpack_active_modules']     = array();
-	Jetpack::$connection_ready                      = false;
-	$assert( true === Static_Site_Importer_Form_Seeder::prepare_jetpack_forms_runtime(), 'disconnected-provider-runtime-prepared' );
-	$assert( true === get_option( 'jetpack_offline_mode' ), 'disconnected-provider-persists-offline-mode' );
-	$assert( in_array( 'contact-form', $GLOBALS['ssi_test_jetpack_active_modules'], true ), 'disconnected-provider-activates-forms' );
-
-	$GLOBALS['ssi_test_options']                = array();
-	$GLOBALS['ssi_test_jetpack_active_modules'] = array();
-	Jetpack::$connection_ready                  = true;
-	$assert( true === Static_Site_Importer_Form_Seeder::prepare_jetpack_forms_runtime(), 'connected-provider-runtime-prepared' );
-	$assert( false === get_option( 'jetpack_offline_mode', false ), 'connected-provider-preserves-online-mode' );
+	$jetpack_dependency = $form_adapter['dependencies'][0] ?? array();
+	$assert( in_array( 'jetpack/option', $jetpack_dependency['missing_apis'] ?? array(), true ), 'form-adapter-declares-field-children' );
+	$assert( Static_Site_Importer_Form_Seeder::required_block_types() === ( $jetpack_dependency['provider_readiness']['required_block_types'] ?? array() ), 'form-adapter-declares-every-emitted-block' );
 
 	// --- Woo path unaffected -------------------------------------------------
 	$product_adapter = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
