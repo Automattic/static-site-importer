@@ -8,7 +8,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, sy
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
 
 /**
@@ -5017,18 +5017,18 @@ test('recipe runs editor-validate-blocks against imported content after each imp
     staticSiteImporterPath: '/tmp/static-site-importer',
   });
 
-  // [activate, validate(simple-site), suppress-onboarding(simple-site), editor-open(simple-site), editor-validate-blocks(simple-site)]
+  // [activate, validate, visual-font-setup, suppress-onboarding, editor-open, editor-validate-blocks]
   assert.equal(recipe.workflow.steps[1].command, 'wordpress.wp-cli');
   assert.match(recipe.workflow.steps[1].args[0], /static-site-importer validate-artifact/);
-  assert.equal(recipe.workflow.steps[2].command, 'wordpress.wp-cli');
-  assert.equal(recipe.workflow.steps[2].metadata.phase, 'editor-preflight');
-  assert.match(recipe.workflow.steps[2].args[0], /woocommerce_onboarding_profile/);
-  const editorOpenStep = recipe.workflow.steps[3];
+  assert.equal(recipe.workflow.steps[3].command, 'wordpress.wp-cli');
+  assert.equal(recipe.workflow.steps[3].metadata.phase, 'editor-preflight');
+  assert.match(recipe.workflow.steps[3].args[0], /woocommerce_onboarding_profile/);
+  const editorOpenStep = recipe.workflow.steps[4];
   assert.equal(editorOpenStep.command, 'wordpress.editor-open');
   assert.ok(editorOpenStep.args.includes('target=front-page'));
   assert.ok(editorOpenStep.args.includes('capture=screenshot,editor-state,editor-validity'));
   assert.ok(editorOpenStep.args.includes('artifact-prefix=files/browser/editor-open/simple-site'));
-  const editorStep = recipe.workflow.steps[4];
+  const editorStep = recipe.workflow.steps[5];
   assert.equal(editorStep.command, EDITOR_VALIDATE_BLOCKS_COMMAND);
   assert.equal(editorStep.command, 'wordpress.editor-validate-blocks');
   assert.equal(editorStep.args.some((arg) => arg.includes('post-new.php')), false);
@@ -6001,12 +6001,12 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
     pixelThreshold: 0.05,
   });
 
-  // [activate, validate(simple-site), suppress-onboarding(simple-site), editor-open(simple-site), editor-validation(simple-site), visual-setup(simple-site), visual-compare(simple-site)]
-  const visualSetupStep = recipe.workflow.steps[5];
+  // [activate, validate, visual-font-setup, suppress-onboarding, editor-open, editor-validation, visual-setup, visual-compare]
+  const visualSetupStep = recipe.workflow.steps[6];
   assert.equal(visualSetupStep.command, 'wordpress.wp-cli');
   assert.equal(visualSetupStep.metadata.phase, 'visual-setup');
   assert.match(visualSetupStep.args[0], /wp_update_custom_css_post/);
-  const visualStep = recipe.workflow.steps[6];
+  const visualStep = recipe.workflow.steps[7];
   assert.equal(visualStep.command, 'wordpress.visual-compare');
   const comparison = visualCompareMatrixComparison(visualStep);
   assert.equal(comparison.sourceUrl, 'file:///tmp/artifacts/simple-site/source/index.html');
@@ -6122,6 +6122,19 @@ test('fixture matrix maps the portable transformer reference setting', () => {
 test('fixture matrix maps visual parity external request isolation', () => {
   assert.equal(optionsFromEnv({ SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS: '0' }).visualParityBlockExternalRequests, false);
   assert.equal(optionsFromEnv({ SSI_FIXTURE_MATRIX_VISUAL_PARITY_BLOCK_EXTERNAL_REQUESTS: '1' }).visualParityBlockExternalRequests, true);
+});
+
+test('fixture matrix forwards visual parity external request isolation to recipes', async () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-external-requests-'));
+  await runFixtureMatrix({
+    fixtureRoot,
+    outputDirectory,
+    staticSiteImporterPath: packageRoot,
+    visualParityBlockExternalRequests: false,
+  });
+  const recipe = JSON.parse(readFileSync(path.join(outputDirectory, 'wp-codebox-static-site-fixture-matrix-recipe.json'), 'utf8'));
+  const visualStep = recipe.workflow.steps.find((step) => step.command === 'wordpress.visual-compare');
+  assert.equal(visualCompareMatrixComparison(visualStep).blockExternalRequests, false);
 });
 
 test('fixture matrix operator plan exposes and forwards visual attribution settings', () => {
@@ -6264,17 +6277,51 @@ test('platform attribution is excluded from both import artifacts and visual bas
   assert.doesNotMatch(stagedHtml, /weebly-footer-signup-container-v3/);
 });
 
-test('staged visual source uses the generated self-contained font stylesheet', () => {
+test('staged visual source uses the runtime-materialized local font stylesheet', () => {
   const fixtureDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-visual-parity-font-source-'));
   const sourceDirectory = path.join(fixtureDirectory, 'fixture');
   mkdirSync(sourceDirectory, { recursive: true });
-  writeFileSync(path.join(sourceDirectory, 'index.html'), '<html><head><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Example" rel="stylesheet"></head><body>Example</body></html>');
+  mkdirSync(path.join(sourceDirectory, 'css'), { recursive: true });
+  writeFileSync(path.join(sourceDirectory, 'index.html'), '<html><head><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Example" rel="stylesheet"><style>@import url("https://fonts.googleapis.com/css2?family=Inline");</style><link rel="stylesheet" href="css/style.css"></head><body>Example</body></html>');
+  writeFileSync(path.join(sourceDirectory, 'css', 'style.css'), '@import url("https://fonts.googleapis.com/css2?family=External:wght@400;700&display=swap");\nbody { font-family: External, sans-serif; }');
 
   stageFixtureSource({ id: 'Font Fixture', directory: sourceDirectory }, fixtureDirectory);
   const html = readFileSync(path.join(fixtureDirectory, 'source', 'index.html'), 'utf8');
-  assert.match(html, /href="\/wp-content\/themes\/font-fixture\/assets\/css\/embedded-fonts\.css"/);
+  const css = readFileSync(path.join(fixtureDirectory, 'source', 'css', 'style.css'), 'utf8');
+  assert.doesNotMatch(html, /rel="preconnect"/);
+  assert.match(html, /href="\.\/assets\/css\/embedded-fonts\.css"/);
   assert.doesNotMatch(html, /href="https:\/\/fonts\.googleapis\.com\/css2/);
-  assert.match(html, /fetch\("\/wp-content\/themes\/font-fixture\/assets\/css\/embedded-fonts\.css"\)/);
+  assert.match(html, /@import url\("\.\/assets\/css\/embedded-fonts\.css"\)/);
+  assert.doesNotMatch(html, /https:\/\/fonts\.googleapis\.com\/(?:css|css2)\?/);
+  assert.match(css, /@import url\("\.\.\/assets\/css\/embedded-fonts\.css"\)/);
+  assert.doesNotMatch(css, /https:\/\/fonts\.googleapis\.com\/(?:css|css2)\?/);
+  assert.match(html, /fetch\("\.\/assets\/css\/embedded-fonts\.css"\)/);
+  assert.equal(new URL('./assets/css/embedded-fonts.css', pathToFileURL(path.join(fixtureDirectory, 'source', 'index.html'))).pathname, path.join(fixtureDirectory, 'source', 'assets', 'css', 'embedded-fonts.css'));
+  assert.equal(new URL('../assets/css/embedded-fonts.css', pathToFileURL(path.join(fixtureDirectory, 'source', 'css', 'style.css'))).pathname, path.join(fixtureDirectory, 'source', 'assets', 'css', 'embedded-fonts.css'));
+});
+
+test('visual parity stages candidate materialized font assets for the local source capture', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'visual-font-source-stage' });
+  const recipe = buildFixtureMatrixRecipe({
+    matrix,
+    artifactsDirectory: '/artifacts',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    editorValidation: false,
+  });
+  const step = recipe.workflow.steps.find((candidate) => candidate.metadata?.source_relationship === 'copied-from-generated-theme-font-assets');
+  const command = step?.args?.[0] || '';
+  const encoded = command.match(/([A-Za-z0-9+/=]{100,})/)?.[1] || '';
+  const code = Buffer.from(encoded, 'base64').toString('utf8');
+
+  assert.equal(step?.command, 'wordpress.wp-cli');
+  assert.equal(step?.metadata?.source_relationship, 'copied-from-generated-theme-font-assets');
+  assert.doesNotMatch(command, /\$(?:source_root|source_assets|theme_assets|stylesheet|font)\b/);
+  assert.match(code, /get_stylesheet_directory\(\).*embedded-fonts\.css/s);
+  assert.match(code, /\$source_root = "\/artifacts\/simple-site\/source"/);
+  assert.match(code, /\$source_assets = \$source_root.*\/assets/s);
+  assert.match(code, /\$source_assets.*\/fonts/s);
+  const lint = spawnSync('php', ['-l'], { input: `<?php\n${code}`, encoding: 'utf8' });
+  assert.equal(lint.status, 0, lint.stderr || lint.stdout);
 });
 
 test('fixture recipe stages source files into the WordPress runtime', () => {

@@ -20,7 +20,8 @@
     "test:playground-launch": "node tools/verify-playground-launch.mjs",
     "build:php-wasm-zstd": "bash tools/build-php-wasm-zstd.sh",
     "test:js-block-validation": "node tests/smoke-generated-theme-block-validation.cjs",
-    "test:validation": "node tests/run-validation-harness.cjs"
+    "test:validation": "node tests/run-validation-harness.cjs",
+    "test:form-materializer-topology": "node --test tests/form-materializer-topology.test.mjs"
   },
   "devDependencies": {
     "@wordpress/block-library": "^9.45.0",

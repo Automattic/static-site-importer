@@ -9,6 +9,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+require_once __DIR__ . '/class-static-site-importer-provider-layout-overlay.php';
+
 /**
  * Builds generated theme stylesheet write payloads.
  */
@@ -29,14 +31,40 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		string $theme_name,
 		string $css,
 		array $assets,
-		array $visual_repair_styles
+		array $visual_repair_styles,
+		array $provider_layout_overlays = array(),
+		?array $existing_stylesheets = null
 	): array {
+		$provider_layout_css = self::provider_layout_overlay_css( $provider_layout_overlays );
+		if ( null !== $existing_stylesheets ) {
+			$writes = array();
+			foreach ( $existing_stylesheets as $path => $content ) {
+				if ( is_string( $path ) && is_string( $content ) ) {
+					$writes[ $path ] = $content . $provider_layout_css;
+				}
+			}
+			return $writes;
+		}
 		$css = self::rewrite_css_asset_urls( $css, $assets );
 
 		return array(
-			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $css, $visual_repair_styles ),
-			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $css, $visual_repair_styles ),
+			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $css . $provider_layout_css, $visual_repair_styles ),
+			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $css . $provider_layout_css, $visual_repair_styles ),
 		);
+	}
+
+	/** Return deterministic, content-addressed provider layout overlays once each. */
+	private static function provider_layout_overlay_css( array $overlays ): string {
+		$css = array();
+		foreach ( $overlays as $overlay ) {
+			$validated = Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $overlay );
+			if ( null !== $validated ) {
+				$css[] = $validated['css'];
+			}
+		}
+		$css = array_values( array_unique( $css ) );
+		sort( $css, SORT_STRING );
+		return empty( $css ) ? '' : "\n" . implode( "\n", $css );
 	}
 
 	/**

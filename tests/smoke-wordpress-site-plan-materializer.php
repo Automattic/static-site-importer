@@ -141,6 +141,17 @@ $assert( count( $plan['pages'] ) === count( $unbound_provenance ) && count( $pla
 $assert( 'blocks-engine/wordpress-site-plan-resolver' === ( $unbound_provenance[0]['stages'][0]['stage'] ?? '' ) && hash( 'sha256', $receipt['plan']['pages'][0]['resolved_block_markup'] ) === ( $unbound_provenance[0]['stages'][0]['output']['sha256'] ?? '' ), 'ordinary page provenance records the resolver output hash' );
 $assert( false === ( $receipt['completed']['block_provenance_truncated'] ?? true ) && ! str_contains( (string) wp_json_encode( $unbound_provenance ), (string) $receipt['plan']['pages'][0]['resolved_block_markup'] ), 'provenance uses structural evidence without raw page markup' );
 
+$overlay_css = "/* Static Site Importer provider layout overlay: abcdef123456 */\n.ssi-form-123456789abc > form.jetpack-contact-form__form{display:flex;gap:1rem}\n";
+$overlay = array( 'schema' => Static_Site_Importer_Provider_Layout_Overlay::OVERLAY_SCHEMA, 'css' => $overlay_css, 'sha256' => hash( 'sha256', $overlay_css ), 'bytes' => strlen( $overlay_css ) );
+$overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'provider-overlay-plan', 'provider_layout_overlays' => array( $overlay, $overlay ) ) );
+$overlay_root = $GLOBALS['ssi_plan_root'] . '/provider-overlay-plan';
+$assert( 'completed' === $overlay_receipt['status'] && 'completed' === ( $overlay_receipt['completed']['provider_layout_overlays']['status'] ?? '' ), 'provider layout receipt is applied only after stylesheet writes complete' );
+$assert( str_contains( (string) file_get_contents( $overlay_root . '/style.css' ), 'provider layout overlay: abcdef123456' ) && str_contains( (string) file_get_contents( $overlay_root . '/assets/css/editor-style.css' ), 'provider layout overlay: abcdef123456' ), 'generated frontend and editor stylesheets contain the deduplicated provider overlay' );
+$forged_overlay = $overlay;
+$forged_overlay['css'] = "/* Static Site Importer provider layout overlay: abcdef123456 */\nbody{background:url(https://example.test/x)}\n";
+$forged_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'forged-provider-overlay-plan', 'provider_layout_overlays' => array( $forged_overlay ) ) );
+$assert( 'partial' === $forged_receipt['status'] && 'provider_layout_overlay_rejected' === ( $forged_receipt['diagnostics'][0]['reason_code'] ?? '' ) && 'not_requested' === ( $forged_receipt['completed']['provider_layout_overlays']['status'] ?? '' ), 'rejected provider overlay never receives an applied receipt claim' );
+
 $font_result = ( new ArtifactCompiler() )->compile(
 	array(
 		'entrypoint' => 'index.html',
@@ -280,6 +291,52 @@ $assert( 'runtime_declarations' === ( $entity_lifecycle['status'] ?? '' ), 'v2 e
 $assert( 'woocommerce_simple_product' === ( $entity_lifecycle['entities'][ $entity_plan['runtime_declarations'][1]['reconciliation_identity'] ]['adapter']['id'] ?? '' ) || 'woocommerce_simple_product' === ( reset( $entity_lifecycle['entities'] )['adapter']['id'] ?? '' ), 'product collections resolve through the configured WooCommerce adapter' );
 $prepared_entity = reset( $entity_lifecycle['entities'] );
 $assert( 'Aero Mug' === ( $prepared_entity['manifest']['products'][0]['name'] ?? '' ) && true === ( $prepared_entity['required'] ?? false ), 'v2 product rows validate and retain their required dependency relationship' );
+
+$form_declaration_id = 'form-topology-runtime';
+$topology_form = array(
+	'selector' => 'form.contact', 'source_path' => 'index.html', 'form' => array( 'class' => 'contact' ),
+	'controls' => array( array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'label' => 'Name' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ),
+	'control_topology' => array(
+		'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false,
+		'nodes' => array(
+			array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'section', 'class' => 'row-2', 'source_id' => 'contact-row' ),
+			array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'control' => 0 ),
+			array( 'id' => 'control-1', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 1 ),
+		),
+	),
+);
+$runtime_form_plan = $entity_plan;
+$runtime_form_plan['runtime_declarations'] = array(
+	array( 'kind' => 'dependency', 'capability' => 'form', 'source_path' => 'index.html', 'required_for' => array( 'entity_collection:forms' ), 'reconciliation_identity' => 'form-topology-dependency' ),
+	array( 'kind' => 'entity_collection', 'type' => 'forms', 'source_path' => 'index.html', 'reconciliation_identity' => $form_declaration_id, 'payload' => array( 'schema' => 'generic/forms/v1', 'entities' => array( $topology_form ) ) ),
+);
+$runtime_form_lifecycle = $prepare_lifecycle->invoke( null, $runtime_form_plan, array() );
+$runtime_form_manifest = $runtime_form_lifecycle['entities'][ $form_declaration_id ]['manifest']['forms'][0] ?? array();
+$assert( 'section' === ( $runtime_form_manifest['control_topology']['nodes'][0]['tag'] ?? '' ), 'runtime declarations retain validated form topology' );
+
+$unknown_topology_form = $topology_form;
+$unknown_topology_form['control_topology']['untrusted'] = 'reject-me';
+$unknown_topology_plan = $runtime_form_plan;
+$unknown_topology_plan['runtime_declarations'][1]['payload']['entities'] = array( $unknown_topology_form );
+$unknown_topology_lifecycle = $prepare_lifecycle->invoke( null, $unknown_topology_plan, array() );
+$assert( is_wp_error( $unknown_topology_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $unknown_topology_lifecycle->get_error_code(), 'unknown runtime topology keys are rejected before provider traversal' );
+
+$self_referential_form = $topology_form;
+$self_referential_form['control_topology']['nodes'][0]['parent'] = 'wrapper-0';
+$self_referential_plan = $runtime_form_plan;
+$self_referential_plan['runtime_declarations'][1]['payload']['entities'] = array( $self_referential_form );
+$self_referential_lifecycle = $prepare_lifecycle->invoke( null, $self_referential_plan, array() );
+$assert( is_wp_error( $self_referential_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $self_referential_lifecycle->get_error_code(), 'self-referential runtime topology is rejected before provider traversal' );
+
+$duplicate_topology_form = $topology_form;
+$duplicate_topology_form['control_topology']['nodes'][1]['id'] = 'wrapper-0';
+$duplicate_topology_form['control_topology']['nodes'][1]['kind'] = 'wrapper';
+unset( $duplicate_topology_form['control_topology']['nodes'][1]['control'] );
+$duplicate_topology_plan = $runtime_form_plan;
+$duplicate_topology_plan['runtime_declarations'][1]['payload']['entities'] = array( $duplicate_topology_form );
+$duplicate_topology_lifecycle = $prepare_lifecycle->invoke( null, $duplicate_topology_plan, array() );
+$assert( is_wp_error( $duplicate_topology_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $duplicate_topology_lifecycle->get_error_code(), 'duplicate runtime topology identifiers are rejected before provider traversal' );
+
 $binding_method = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'runtime_entity_bindings' );
 $entity_declaration_id = (string) array_key_first( $entity_lifecycle['entities'] );
 $entity_bindings = $binding_method->invoke( null, $entity_lifecycle, array( $entity_declaration_id => array( 'products' => array( array( 'id' => 42, 'slug' => 'aero-mug', 'status' => 'created' ) ) ) ) );

@@ -114,9 +114,24 @@ class Static_Site_Importer_Validation_Runtime {
 	 * @return array<string,mixed>
 	 */
 	public static function error_result_from_wp_error( WP_Error $error, array $input = array() ): array {
-		$slug                          = isset( $input['slug'] ) ? sanitize_title( (string) $input['slug'] ) : '';
-		$error_data                    = $error->get_error_data();
-		$receipt                       = is_array( $error_data ) && 'static-site-importer/materialization-receipt/v1' === ( $error_data['schema'] ?? '' ) ? $error_data : array();
+		$slug       = isset( $input['slug'] ) ? sanitize_title( (string) $input['slug'] ) : '';
+		$error_data = $error->get_error_data();
+		$receipt    = is_array( $error_data ) && 'static-site-importer/materialization-receipt/v1' === ( $error_data['schema'] ?? '' ) ? $error_data : array();
+		$diagnostic = array(
+			'type'        => 'validation_error',
+			'severity'    => 'error',
+			'code'        => $error->get_error_code(),
+			'reason_code' => $error->get_error_code(),
+			'message'     => $error->get_error_message(),
+			'stage'       => 'validation',
+			'owner'       => 'static-site-importer',
+		);
+		if ( is_array( $error_data ) && isset( $error_data['dependency_reports'] ) && is_array( $error_data['dependency_reports'] ) ) {
+			$encoded = wp_json_encode( array( 'dependency_reports' => $error_data['dependency_reports'] ) );
+			if ( is_string( $encoded ) ) {
+				$diagnostic['observed_output'] = substr( $encoded, 0, 4000 );
+			}
+		}
 		$result                        = array(
 			'success'                 => false,
 			'schema'                  => self::RESULT_SCHEMA,
@@ -134,17 +149,7 @@ class Static_Site_Importer_Validation_Runtime {
 				'quality_pass' => false,
 				'error_code'   => $error->get_error_code(),
 			),
-			'diagnostics'             => array(
-				array(
-					'type'        => 'validation_error',
-					'severity'    => 'error',
-					'code'        => $error->get_error_code(),
-					'reason_code' => $error->get_error_code(),
-					'message'     => $error->get_error_message(),
-					'stage'       => 'validation',
-					'owner'       => 'static-site-importer',
-				),
-			),
+			'diagnostics'             => array( $diagnostic ),
 			'materialization_receipt' => $receipt,
 			'artifacts'               => array(),
 			'import_report'           => array(),
