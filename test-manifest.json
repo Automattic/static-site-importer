@@ -42,6 +42,7 @@
     { "path": "tests/smoke-figma-workspace-lifecycle.php", "environment": "standalone-php" },
     { "path": "tests/smoke-url-batch-import.php", "environment": "standalone-php" },
     { "path": "tests/smoke-url-site-collector.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-plan-post-classification.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-import-source-of-truth-manifest.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-rest-import-normalization.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-static-interactive-artifact.php", "environment": "wordpress-runtime" },

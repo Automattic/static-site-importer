@@ -84,7 +84,9 @@ function get_posts( array $args ): array {
 	return $matches ?? array();
 }
 function get_page_by_path( string $slug, $output, string $type ) {
-	foreach ( $GLOBALS['ssi_plan_posts'] as $id => $post ) { if ( $post['post_name'] === $slug ) { return new WP_Post( $id ); } }
+	foreach ( $GLOBALS['ssi_plan_posts'] as $id => $post ) {
+		if ( $post['post_name'] === $slug && $post['post_type'] === $type ) { return new WP_Post( $id ); }
+	}
 	return null;
 }
 function wp_insert_post( array $post, bool $wp_error ) {
@@ -93,8 +95,17 @@ function wp_insert_post( array $post, bool $wp_error ) {
 	$GLOBALS['ssi_plan_posts'][ $id ] = $post;
 	return $id;
 }
+class WP_Post_Type {
+	public string $name;
+	public bool $public;
+	public function __construct( string $name, bool $public = true ) { $this->name = $name; $this->public = $public; }
+}
+function get_post_type_object( string $post_type ): ?object {
+	return in_array( $post_type, array( 'page', 'post' ), true ) ? new WP_Post_Type( $post_type ) : null;
+}
 
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-font-materializer.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-document-type-classifier.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
@@ -570,6 +581,125 @@ $assert( 'completed' === $nested_index_receipt['status'] && 3 === count( array_u
 $assert( 'index' === ( $GLOBALS['ssi_plan_posts'][ $home_id ]['post_name'] ?? null ) && 0 === ( $GLOBALS['ssi_plan_posts'][ $home_id ]['post_parent'] ?? null ), 'wrapper entrypoint preserves its root page identity' );
 $assert( 'about' === ( $GLOBALS['ssi_plan_posts'][ $about_id ]['post_name'] ?? null ) && 0 === ( $GLOBALS['ssi_plan_posts'][ $about_id ]['post_parent'] ?? null ), 'nested index page slug matches its top-level canonical route' );
 $assert( 'team' === ( $GLOBALS['ssi_plan_posts'][ $team_id ]['post_name'] ?? null ) && $about_id === ( $GLOBALS['ssi_plan_posts'][ $team_id ]['post_parent'] ?? null ), 'deeper nested index page preserves canonical slug and WordPress parent identity' );
+
+$GLOBALS['ssi_plan_posts'] = array();
+$GLOBALS['ssi_plan_meta']  = array();
+$classify_artifact = array(
+	'entrypoint' => 'index.html',
+	'files'      => array(
+		'index.html'                => '<main><h1>Home</h1></main>',
+		'blog/hello.html'           => '<html><head><meta property="article:published_time" content="2024-03-12T10:00:00Z"></head><body><main><h1>Hello</h1></main></body></html>',
+		'2024/03/dated-post.html'   => '<main><h1>Dated by URL</h1></main>',
+		'blog/about-the-blog.html'  => '<main><h1>About the blog</h1></main>',
+	),
+);
+$classify_plan    = ( new ArtifactCompiler() )->compile( $classify_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$classify_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $classify_plan, array( 'slug' => 'classify-plan' ) );
+$classify_ids     = $classify_receipt['completed']['pages'] ?? array();
+$home_id          = (int) ( $classify_ids['index.html'] ?? 0 );
+$post_id          = (int) ( $classify_ids['blog/hello.html'] ?? 0 );
+$url_dated_id     = (int) ( $classify_ids['2024/03/dated-post.html'] ?? 0 );
+$blog_about_id    = (int) ( $classify_ids['blog/about-the-blog.html'] ?? 0 );
+$assert( 'page' === ( $GLOBALS['ssi_plan_posts'][ $home_id ]['post_type'] ?? null ), 'undated entrypoint stays a page by default' );
+$assert( 'post' === ( $GLOBALS['ssi_plan_posts'][ $post_id ]['post_type'] ?? null ) && '2024-03-12 10:00:00' === ( $GLOBALS['ssi_plan_posts'][ $post_id ]['post_date_gmt'] ?? null ), 'dated article meta classifies a document as a post with its publish date stored as GMT' );
+$assert( 'post' === ( $GLOBALS['ssi_plan_posts'][ $url_dated_id ]['post_type'] ?? null ), 'hierarchical YYYY/MM route classifies a document as a post' );
+$assert( 'page' === ( $GLOBALS['ssi_plan_posts'][ $blog_about_id ]['post_type'] ?? null ), 'a post-like URL without date evidence stays a page' );
+$assert( 0 === ( $GLOBALS['ssi_plan_posts'][ $post_id ]['post_parent'] ?? -1 ), 'a dated post does not inherit the synthetic page ancestor as post_parent' );
+
+// Re-import the same plan without resetting the post store: reconciliation
+// must reuse existing rows and keep both count and post types stable.
+$classify_repeat = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $classify_plan, array( 'slug' => 'classify-plan' ) );
+$assert( 'completed' === $classify_repeat['status'] && count( $classify_ids ) === count( $classify_repeat['completed']['pages'] ?? array() ), 'classification re-import completes with the same page count' );
+foreach ( array( 'index.html', 'blog/hello.html', '2024/03/dated-post.html', 'blog/about-the-blog.html' ) as $real_source ) {
+	$id = (int) ( $classify_ids[ $real_source ] ?? 0 );
+	$expected_type = in_array( $real_source, array( 'blog/hello.html', '2024/03/dated-post.html' ), true ) ? 'post' : 'page';
+	$repeat_id = (int) ( $classify_repeat['completed']['pages'][ $real_source ] ?? 0 );
+	// Synthetic compiler route pages are recreated on re-import; only the
+	// real source documents must reuse the same post id.
+	$assert( $id === $repeat_id && $expected_type === ( $GLOBALS['ssi_plan_posts'][ $id ]['post_type'] ?? null ), 'classification re-import reuses real document post ids with stable post types' );
+}
+
+// The classifier emits UTC, so a non-UTC PHP timezone must not shift the
+// value written to post_date_gmt. Run the same dated meta through a non-UTC
+// timezone and restore it before the next scenario.
+$previous_tz = date_default_timezone_get();
+date_default_timezone_set( 'America/New_York' );
+$tz_artifact = array(
+	'entrypoint' => 'index.html',
+	'files'      => array(
+		'index.html'        => '<main><h1>Home</h1></main>',
+		'essays/dated.html' => '<html><head><meta property="article:published_time" content="2024-03-12T10:00:00Z"></head><body><main><h1>Dated</h1></main></body></html>',
+	),
+);
+$tz_plan    = ( new ArtifactCompiler() )->compile( $tz_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$tz_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $tz_plan, array( 'slug' => 'tz-plan' ) );
+$tz_id      = (int) ( ( $tz_receipt['completed']['pages'] ?? array() )['essays/dated.html'] ?? 0 );
+// post_date is site-local and wp_insert_post derives it from post_date_gmt;
+// the standalone stub stores the array verbatim, so only the UTC storage value
+// is asserted here. The runtime smoke covers the local-time derivation.
+$assert( '2024-03-12 10:00:00' === ( $GLOBALS['ssi_plan_posts'][ $tz_id ]['post_date_gmt'] ?? null ), 'non-UTC timezone does not shift the detected publish date stored as GMT' );
+date_default_timezone_set( $previous_tz );
+
+// A page first imported undated, then re-imported with a date signal: the
+// reconciliation identity is stable across post types, so the existing row is
+// reused and reclassified as a post rather than duplicated.
+$GLOBALS['ssi_plan_posts'] = array();
+$GLOBALS['ssi_plan_meta']  = array();
+$reclassify_artifact = array(
+	'entrypoint' => 'index.html',
+	'files'      => array(
+		'index.html' => '<main><h1>Home</h1></main>',
+		'notes/post.html' => '<main><h1>Essay</h1></main>',
+	),
+);
+$reclassify_plan = ( new ArtifactCompiler() )->compile( $reclassify_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$reclassify_first = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $reclassify_plan, array( 'slug' => 'reclassify-plan' ) );
+$first_id = (int) ( ( $reclassify_first['completed']['pages'] ?? array() )['notes/post.html'] ?? 0 );
+$assert( 'page' === ( $GLOBALS['ssi_plan_posts'][ $first_id ]['post_type'] ?? null ), 'undated document imports as a page before reclassification' );
+$reclassify_plan['pages'] = array_map(
+	static function ( array $page ): array {
+		if ( 'notes/post.html' === $page['source_path'] ) {
+			// The plan validator requires each meta row order to match its index.
+			$page['document_metadata']['meta'][] = array( 'order' => count( $page['document_metadata']['meta'] ), 'placement' => 'head', 'property' => 'article:published_time', 'content' => '2024-06-01T08:00:00Z' );
+		}
+		return $page;
+	},
+	$reclassify_plan['pages']
+);
+$reclassify_second = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $reclassify_plan, array( 'slug' => 'reclassify-plan' ) );
+$second_id = (int) ( ( $reclassify_second['completed']['pages'] ?? array() )['notes/post.html'] ?? 0 );
+$assert( $first_id === $second_id && 'post' === ( $GLOBALS['ssi_plan_posts'][ $second_id ]['post_type'] ?? null ) && '2024-06-01 08:00:00' === ( $GLOBALS['ssi_plan_posts'][ $second_id ]['post_date_gmt'] ?? null ), 'page-to-post reclassification reuses the existing post and updates its type and date' );
+
+$GLOBALS['ssi_plan_posts'] = array();
+$GLOBALS['ssi_plan_meta']  = array();
+$parented_artifact = array(
+	'entrypoint' => 'index.html',
+	'files'      => array(
+		'index.html'            => '<main><h1>Home</h1></main>',
+		'about/index.html'      => '<main><h1>About</h1></main>',
+		'about/blog/index.html' => '<html><head><meta property="article:published_time" content="2024-01-05T08:00:00Z"></head><body><main><h1>Blog</h1></main></body></html>',
+	),
+);
+$parented_plan    = ( new ArtifactCompiler() )->compile( $parented_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$parented_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $parented_plan, array( 'slug' => 'parented-plan' ) );
+$parented_ids     = $parented_receipt['completed']['pages'] ?? array();
+$parented_blog_id = (int) ( $parented_ids['about/blog/index.html'] ?? 0 );
+$assert( 'post' === ( $GLOBALS['ssi_plan_posts'][ $parented_blog_id ]['post_type'] ?? null ), 'a dated article nested under a page hierarchy still classifies as a post' );
+
+$GLOBALS['ssi_plan_posts'] = array();
+$GLOBALS['ssi_plan_meta']  = array();
+$explicit_artifact = array(
+	'entrypoint' => 'index.html',
+	'files'      => array(
+		'index.html'       => '<main><h1>Home</h1></main>',
+		'notes/ideas.md'   => "---\ntitle: Ideas\ntype: post\n---\n\n# Ideas\nBody",
+	),
+);
+$explicit_plan    = ( new ArtifactCompiler() )->compile( $explicit_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$explicit_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $explicit_plan, array( 'slug' => 'explicit-plan' ) );
+$explicit_ids     = $explicit_receipt['completed']['pages'] ?? array();
+$ideas_id         = (int) ( $explicit_ids['notes/ideas.md'] ?? 0 );
+$assert( 'post' === ( $GLOBALS['ssi_plan_posts'][ $ideas_id ]['post_type'] ?? null ), 'explicit markdown frontmatter post_type overrides signal-free detection' );
 
 $GLOBALS['ssi_plan_posts']      = array();
 $GLOBALS['ssi_plan_meta']       = array();

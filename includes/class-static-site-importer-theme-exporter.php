@@ -47,7 +47,8 @@ class Static_Site_Importer_Theme_Exporter {
 			$files[] = $stylesheet;
 		}
 
-		$pages = self::export_pages( $include_pages );
+		$pages      = self::export_pages( $include_pages );
+		$post_count = 0;
 		if ( empty( $pages ) ) {
 			$diagnostics[] = array(
 				'level'   => 'warning',
@@ -63,10 +64,52 @@ class Static_Site_Importer_Theme_Exporter {
 		} else {
 			$front_page_id = self::export_front_page_id();
 			$first         = true;
+			$planned       = array();
+			$used_paths    = array();
+			// Reserve every page route before assigning post routes so shared
+			// slugs resolve identically regardless of get_posts() ordering: pages
+			// keep the clean /root/<slug>/ path and a colliding post moves under
+			// /root/post/<slug>/. WP guarantees unique slugs only within a type.
+			$front_planned_id = 0;
 			foreach ( $pages as $page ) {
+				$page_id  = isset( $page->ID ) ? (int) $page->ID : 0;
+				$is_front = $first || ( $front_page_id > 0 && $page_id === $front_page_id );
+				$first    = false;
+				if ( 'post' === ( $page->post_type ?? '' ) && ! $is_front ) {
+					continue;
+				}
+				if ( $is_front ) {
+					$front_planned_id = $page_id;
+				}
+				$path                = $is_front ? $entrypoint : self::export_page_artifact_path( $page, $root );
+				$used_paths[ $path ] = true;
+				$planned[]           = array(
+					'page'     => $page,
+					'path'     => $path,
+					'is_front' => $is_front,
+				);
+			}
+			foreach ( $pages as $page ) {
+				if ( 'post' !== ( $page->post_type ?? '' ) || ( isset( $page->ID ) && (int) $page->ID === $front_planned_id ) ) {
+					continue;
+				}
+				++$post_count;
+				$path = self::export_page_artifact_path( $page, $root );
+				if ( isset( $used_paths[ $path ] ) ) {
+					$path = self::export_artifact_path( $root . '/post/' . ( isset( $page->post_name ) ? sanitize_title( (string) $page->post_name ) : (string) ( isset( $page->ID ) ? (int) $page->ID : 0 ) ) . '/index.html', $root . '/post/page/index.html' );
+				}
+				$used_paths[ $path ] = true;
+				$planned[]           = array(
+					'page'     => $page,
+					'path'     => $path,
+					'is_front' => false,
+				);
+			}
+			foreach ( $planned as $plan ) {
+				$page      = $plan['page'];
+				$path      = $plan['path'];
+				$is_front  = $plan['is_front'];
 				$page_id   = isset( $page->ID ) ? (int) $page->ID : 0;
-				$is_front  = $first || ( $front_page_id > 0 && $page_id === $front_page_id );
-				$path      = $is_front ? $entrypoint : self::export_page_artifact_path( $page, $root );
 				$template  = $is_front ? 'front-page' : 'page';
 				$page_html = self::blocks_to_html( isset( $page->post_content ) ? (string) $page->post_content : '' );
 
@@ -80,8 +123,6 @@ class Static_Site_Importer_Theme_Exporter {
 						'post_name' => isset( $page->post_name ) ? (string) $page->post_name : '',
 					)
 				);
-
-				$first = false;
 			}
 		}
 
@@ -124,7 +165,8 @@ class Static_Site_Importer_Theme_Exporter {
 			'root'            => $root,
 			'entrypoint'      => $entrypoint,
 			'file_count'      => count( $files ),
-			'page_count'      => count( $pages ),
+			'page_count'      => count( $pages ) - $post_count, // pages keep the page_count contract; posts are reported separately
+			'post_count'      => $post_count,
 			'source_metadata' => $source_metadata,
 			'diagnostics'     => $diagnostics,
 		);
@@ -187,7 +229,7 @@ class Static_Site_Importer_Theme_Exporter {
 
 		$pages = get_posts(
 			array(
-				'post_type'      => 'page',
+				'post_type'      => array( 'page', 'post' ),
 				'post_status'    => 'publish',
 				'posts_per_page' => -1,
 				'orderby'        => 'menu_order title',
@@ -261,7 +303,7 @@ class Static_Site_Importer_Theme_Exporter {
 
 		$pages = get_posts(
 			array(
-				'post_type'      => 'page',
+				'post_type'      => array( 'page', 'post' ),
 				'post_status'    => 'publish',
 				'posts_per_page' => 1,
 				'orderby'        => 'menu_order title',
