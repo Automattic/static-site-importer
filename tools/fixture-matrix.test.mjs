@@ -1149,6 +1149,28 @@ test('materialization sidecars retain bounded evidence after oversized import st
   }
 });
 
+test('failure sidecars retain the bounded import result and front-page option observation', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-failed-import-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'failed-import-evidence' });
+  const directory = path.join(outputDirectory, 'simple-site');
+  mkdirSync(directory, { recursive: true });
+  const artifact = JSON.stringify({ fixture: 'simple-site' });
+  writeFileSync(path.join(directory, 'artifact.json'), artifact);
+  const sidecar = {
+    schema: 'static-site-importer/materialization-runtime-sidecar/v1', fixture_id: 'simple-site', run_id: matrix.id, step_id: 'import', attempt_id: 'primary', artifact_sha256: createHash('sha256').update(artifact).digest('hex'), provenance: { provider: 'static-site-importer/current-runtime', provider_status: 'failed' }, durability: { file_fsync: 'available', directory_fsync: 'attempted' },
+    receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'failed', page_count: 0, file_count: 0, operation_count: 0, loss_count: 1, failure_code: 'artifact_invalid' },
+    command_result: { status: 'failed', success: false, error_code: 'artifact_invalid', error_hash: 'a'.repeat(64) },
+    front_page_options: { show_on_front: 'posts', page_on_front: 0 },
+  };
+  sidecar.content_sha256 = createHash('sha256').update(JSON.stringify(sidecar)).digest('hex');
+  writeFileSync(path.join(directory, 'materialization-receipt--primary.json'), JSON.stringify(sidecar));
+  const result = collectFixtureMatrixRunResults({ matrix, outputDirectory });
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, 'verified');
+  assert.deepEqual(result.fixtures[0].matrix_evidence.import_command, { status: 'failed', success: false, error_code: 'artifact_invalid', error_hash: 'a'.repeat(64) });
+  assert.deepEqual(result.fixtures[0].matrix_evidence.front_page_options, { show_on_front: 'posts', page_on_front: 0 });
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_receipt.status, 'failed');
+});
+
 test('materialization sidecars reject malformed, stale, cross-fixture, and hash-mismatched evidence', () => {
   const cases = ['missing', 'malformed', 'stale', 'cross_fixture', 'hash_mismatch'];
   for (const status of cases) {
