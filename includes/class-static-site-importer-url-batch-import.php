@@ -12,6 +12,21 @@ final class Static_Site_Importer_URL_Batch_Import {
 		$batch_pages = (int) ( $args['batch_pages'] ?? 0 );
 		if ( $batch_pages < 1 ) {
 			return new WP_Error('static_site_importer_invalid_batch_pages', 'batch_pages must be a positive integer.');
+		}$max_effective_batches = null;
+		if ( array_key_exists('max_effective_batches_per_invocation', $args) ) {
+			$max_effective_batches = (int) $args['max_effective_batches_per_invocation'];
+			if ( $max_effective_batches < 1 ) {
+				return new WP_Error('static_site_importer_invalid_max_effective_batches_per_invocation', 'max_effective_batches_per_invocation must be a positive integer.');
+			}
+		}$clock = is_callable($args['_static_site_importer_clock'] ?? null) ? $args['_static_site_importer_clock'] : static fn(): float=>microtime(true);
+		$deadline = null;
+		$max_invocation_seconds = null;
+		if ( array_key_exists('max_invocation_seconds', $args) ) {
+			$max_invocation_seconds = (float) $args['max_invocation_seconds'];
+			if ( $max_invocation_seconds <= 0 ) {
+				return new WP_Error('static_site_importer_invalid_max_invocation_seconds', 'max_invocation_seconds must be a positive number.');
+			}
+			$deadline = (float) call_user_func($clock) + $max_invocation_seconds;
 		}if ( ! array_key_exists('max_assets', $args) ) {
 			$args['max_assets'] = 2000;
 		}if ( ! array_key_exists('max_total_bytes', $args) ) {
@@ -50,7 +65,15 @@ final class Static_Site_Importer_URL_Batch_Import {
 		});
 		$cache->adopt_legacy(trailingslashit($work_dir) . 'url-response-cache-' . $identity);
 		$cache->adopt_legacy($workspace->directory() . '/responses');
-		$source_fetcher = $fetcher;
+		$source_fetcher = $fetcher ?? static fn(string $resource_url,array $fetch_args)=>Static_Site_Importer_URL_Fetcher::fetch($resource_url, $fetch_args);
+		if ( null !== $deadline ) {
+			$source = $source_fetcher;
+			$source_fetcher = static function(string $resource_url,array $fetch_args)use($source,$clock,$deadline) {
+				if ( self::deadline_reached($deadline, $clock) ) {
+					return new WP_Error('static_site_importer_invocation_deadline_exceeded', 'The URL batch invocation deadline was reached before starting a network fetch.');
+				}return $source($resource_url, $fetch_args);
+			};
+		}
 		$fetcher        = self::cached_fetcher($cache, $source_fetcher);
 		$run_manifest   = new Static_Site_Importer_Artifact_Run_Manifest($manifest_path, $identity, 'static-site-importer/url-site-batch-run/v1', $contract);
 		$manifest       = $run_manifest->load();
@@ -103,7 +126,15 @@ final class Static_Site_Importer_URL_Batch_Import {
 			return $manifest['final_result'];
 		}$importer = $importer ?? static fn(array $artifact,array $import_args)=>Static_Site_Importer_Theme_Generator::import_website_artifact($artifact, $import_args);
 		$cursor    = Static_Site_Importer_Artifact_Batch_Cursor::hydrate($manifest['batches']);
+		$effective_batches = 0;
 		while ( null !== ( $index = Static_Site_Importer_Artifact_Batch_Cursor::next($cursor) ) ) {
+			if ( null !== $max_effective_batches && $effective_batches >= $max_effective_batches ) {
+				$manifest['batches'] = self::legacy_batches($cursor);
+				self::checkpoint_cache($manifest, $cache);
+				if ( is_wp_error($run_manifest->save($manifest)) ) {
+					return $run_manifest->save($manifest);
+				}return self::continuation_result($manifest, $manifest_path, $index, $effective_batches, $max_effective_batches);
+			}
 			$batch       = $cursor[ $index ];
 			$routes      = array_values(array_intersect_key($manifest['routes'], array_flip($batch['units'])));
 			$batch_entry = in_array($url, $routes, true) ? $url : ( $routes[0] ?? $url );
@@ -119,6 +150,14 @@ final class Static_Site_Importer_URL_Batch_Import {
 				$collect_args['asset_failure_policy']        = count($routes) > 1 ? 'preserve_failed_external_assets' : 'preserve_external';
 				$runtime                                     = Static_Site_Importer_URL_Site_Collector::collect($batch_entry, $collect_args, $fetcher);
 				if ( is_wp_error($runtime) ) {
+					if ( self::deadline_error($runtime) ) {
+						$manifest['batches'] = self::legacy_batches($cursor);
+						self::checkpoint_cache($manifest, $cache);
+						$write = $run_manifest->save($manifest);
+						if ( is_wp_error($write) ) {
+							return $write;
+						}return self::continuation_result($manifest, $manifest_path, $index, $effective_batches, $max_effective_batches, $max_invocation_seconds, 'deadline_exhausted');
+					}
 					if ( count($routes) > 1 && self::splittable_collection_error($runtime) ) {
 						$cursor                          = Static_Site_Importer_Artifact_Batch_Cursor::split($cursor, $index);
 									$manifest['batches'] = self::legacy_batches($cursor);
@@ -128,8 +167,14 @@ final class Static_Site_Importer_URL_Batch_Import {
 										'parent_batch' => $batch['batch_id'],
 										'children'     => array_column(array_slice($cursor, $index, 2), 'batch_id'),
 									);
-									$run_manifest->save($manifest);
-									return self::import($request, $input, $source_fetcher, $importer);
+									$write = $run_manifest->save($manifest);
+									if ( is_wp_error($write) ) {
+										return $write;
+									}
+									if ( null !== $max_effective_batches ) {
+										return self::continuation_result($manifest, $manifest_path, $index, $effective_batches, $max_effective_batches, $max_invocation_seconds, 'batch_subdivided');
+									}
+									continue;
 					}return self::failed($run_manifest, $workspace, $manifest, $cursor, $index, $runtime, $cache);
 				}$write = $workspace->publish_json($cache_name, $runtime);
 				if ( is_wp_error($write) ) {
@@ -140,6 +185,12 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$manifest['batches'] = self::legacy_batches($cursor);
 			if ( is_wp_error($run_manifest->save($manifest)) ) {
 				return $run_manifest->save($manifest);
+			}if ( null !== $deadline && self::deadline_reached($deadline, $clock) ) {
+				self::checkpoint_cache($manifest, $cache);
+				$write = $run_manifest->save($manifest);
+				if ( is_wp_error($write) ) {
+					return $write;
+				}return self::continuation_result($manifest, $manifest_path, $index, $effective_batches, $max_effective_batches, $max_invocation_seconds, 'deadline_exhausted');
 			}$import_args                                     = Static_Site_Importer_URL_Import_Runtime::batch_import_args($input, $runtime);
 			$import_args['activate']                          = $index === array_key_last($cursor) && ! empty($input['activate']);
 			$import_args['batch_import']                      = true;
@@ -157,7 +208,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 			}$workspace->delete($cache_name);
 			if ( is_file($old_cache) ) {
 				unlink($old_cache);
-			}$final = $result;
+			}$effective_batches++;
+			$final = $result;
 			unset($result, $runtime, $raw);}
 		$manifest['batches']      = self::legacy_batches($cursor);
 		$aggregate                = self::aggregate_result($manifest, $manifest_path, $final ?? array());
@@ -325,6 +377,15 @@ final class Static_Site_Importer_URL_Batch_Import {
 				return true;
 			}
 		}return false;}
+	private static function deadline_error(WP_Error $error): bool {if ( 'static_site_importer_invocation_deadline_exceeded' === $error->get_error_code() ) {
+			return true;
+		}$data = $error->get_error_data();
+		foreach ( is_array($data) ? ( $data['collection']['failures'] ?? array() ) : array() as $failure ) {
+			if ( 'static_site_importer_invocation_deadline_exceeded' === ( $failure['code'] ?? '' ) ) {
+				return true;
+			}
+		}return false;}
+	private static function deadline_reached(float $deadline,callable $clock): bool {return (float) call_user_func($clock) >= $deadline;}
 	private static function result_evidence(array $result,array $runtime): array {return array(
 		'theme_slug'                 => $result['theme_slug'] ?? '',
 		'snapshot_sha256'            => $runtime['source_metadata']['snapshot']['sha256'] ?? '',
@@ -384,6 +445,44 @@ final class Static_Site_Importer_URL_Batch_Import {
 			'url_batch_run'         => $evidence,
 			'batch_materialization' => $manifest['batches'],
 			'terminal_batch_result' => $terminal,
+		);}
+	private static function continuation_result(array $manifest,string $path,int $index,int $effective_batches,?int $max_effective_batches = null,?float $max_invocation_seconds = null,string $reason = 'effective_batch_limit'): array {$next = $manifest['batches'][ $index ] ?? array();
+		$next_work = array_filter(array(
+			'index'                => $next['index'] ?? $index,
+			'batch_id'             => $next['batch_id'] ?? '',
+			'route_indexes'        => $next['route_indexes'] ?? array(),
+			'effective_batch_size' => $next['effective_batch_size'] ?? null,
+		), static fn($value): bool=>null !== $value);
+		$completed_batches = count(array_filter($manifest['batches'], static fn(array $batch): bool=>'completed' === $batch['state']));
+		$completed_routes  = array_sum(array_column($manifest['batches'], 'completed_routes'));
+		return array(
+			'success'               => true,
+			'continuation'          => true,
+			'continuation_reason'   => $reason,
+			'import_report_summary' => array(
+				'status'            => 'continuing',
+				'scope'             => 'url_site_batch_run',
+				'total_routes'      => $manifest['total_routes'],
+				'completed_routes'  => $completed_routes,
+				'total_batches'     => count($manifest['batches']),
+				'completed_batches' => $completed_batches,
+			),
+			'url_batch_run'         => array(
+				'status'                              => 'continuing',
+				'run_manifest'                        => $path,
+				'fetch_cache'                         => $manifest['fetch_cache'] ?? array(),
+				'per_batch_limits'                    => $manifest['per_batch_limits'] ?? array(),
+				'total_routes'                        => $manifest['total_routes'],
+				'completed_routes'                    => $completed_routes,
+				'total_batches'                       => count($manifest['batches']),
+				'completed_batches'                   => $completed_batches,
+				'effective_batches_processed'         => $effective_batches,
+				'max_effective_batches_per_invocation' => $max_effective_batches,
+				'max_invocation_seconds'              => $max_invocation_seconds,
+				'continuation_reason'                 => $reason,
+				'next_work'                           => $next_work,
+			),
+			'batch_materialization' => $manifest['batches'],
 		);}
 	private static function contract(string $url,array $input,array $args,int $batch_pages): array {foreach ( array_keys($args)as$key ) {
 			if ( str_starts_with( (string) $key, '_static_site_importer_') ) {
