@@ -742,6 +742,29 @@ test('runtime presentation evidence binds staged URLs to artifact paths and payl
   assert.doesNotMatch(script, /version:navigator\.userAgent/);
 });
 
+test('runtime presentation evidence binds images with generic MIME but excludes unrelated binary files', () => {
+  const gifBytes = Buffer.from('animated image bytes');
+  const avifBytes = Buffer.from('avif payload');
+  const zipBytes = Buffer.from('binary payload');
+  const gifHash = createHash('sha256').update(gifBytes.toString('base64')).digest('hex');
+  const avifHash = createHash('sha256').update(avifBytes.toString('base64')).digest('hex');
+  const probe = runtimePresentationEvidenceProbeStep({
+    fixture: { id: 'media-site', entrypoint: 'pages/team.html' },
+    sourceUrl: '/wp-content/uploads/fixtures/media-site/source/pages/team.html',
+    artifact: {
+      files: [
+        { path: 'website/images/team.gif', type: 'application/octet-stream', content_base64: gifBytes.toString('base64') },
+        { path: 'website/images/team.avif', type: 'image/avif', content_base64: avifBytes.toString('base64') },
+        { path: 'website/downloads/archive.zip', type: 'application/octet-stream', content_base64: zipBytes.toString('base64') },
+      ],
+    },
+  });
+  const script = probe.args.find((arg) => arg.startsWith('script='));
+  assert.match(script, new RegExp(`images/team\\.gif":\\"${gifHash}\\"`));
+  assert.match(script, new RegExp(`images/team\\.avif":\\"${avifHash}\\"`));
+  assert.doesNotMatch(script, /downloads\/archive\.zip/);
+});
+
 test('runtime presentation evidence intake preserves a typed envelope and diagnoses an unmerged probe', () => {
   const unavailable = collectRuntimePresentationEvidence([{ command: 'wordpress.browser-probe', metadata: { phase: 'runtime-presentation-evidence' } }]);
   assert.equal(unavailable.evidence, null);
