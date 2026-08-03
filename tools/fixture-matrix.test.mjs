@@ -6309,13 +6309,19 @@ test('visual parity stages candidate materialized font assets for the local sour
     editorValidation: false,
   });
   const step = recipe.workflow.steps.find((candidate) => candidate.metadata?.source_relationship === 'copied-from-generated-theme-font-assets');
+  const command = step?.args?.[0] || '';
+  const encoded = command.match(/([A-Za-z0-9+/=]{100,})/)?.[1] || '';
+  const code = Buffer.from(encoded, 'base64').toString('utf8');
 
   assert.equal(step?.command, 'wordpress.wp-cli');
   assert.equal(step?.metadata?.source_relationship, 'copied-from-generated-theme-font-assets');
-  assert.match(step?.args?.[0] || '', /get_stylesheet_directory\(\).*embedded-fonts\.css/s);
-  assert.match(step?.args?.[0] || '', /\$source_root = "\/artifacts\/simple-site\/source"/);
-  assert.match(step?.args?.[0] || '', /\$source_assets = \$source_root.*\/assets/s);
-  assert.match(step?.args?.[0] || '', /\$source_assets.*\/fonts/s);
+  assert.doesNotMatch(command, /\$(?:source_root|source_assets|theme_assets|stylesheet|font)\b/);
+  assert.match(code, /get_stylesheet_directory\(\).*embedded-fonts\.css/s);
+  assert.match(code, /\$source_root = "\/artifacts\/simple-site\/source"/);
+  assert.match(code, /\$source_assets = \$source_root.*\/assets/s);
+  assert.match(code, /\$source_assets.*\/fonts/s);
+  const lint = spawnSync('php', ['-l'], { input: `<?php\n${code}`, encoding: 'utf8' });
+  assert.equal(lint.status, 0, lint.stderr || lint.stdout);
 });
 
 test('fixture recipe stages source files into the WordPress runtime', () => {
