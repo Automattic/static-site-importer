@@ -235,6 +235,9 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			if ( isset( $assoc_args['skip-scripts'] ) ) {
 				$provider_args['include_scripts'] = false;
 			}
+			if ( isset( $assoc_args['retain-scripts'] ) ) {
+				$provider_args['include_scripts'] = true;
+			}
 			foreach ( array( 'batch-pages', 'max-pages', 'max-assets', 'max-total-bytes', 'request-delay-ms', 'timeout', 'max-bytes' ) as $key ) {
 				if ( isset( $assoc_args[ $key ] ) ) {
 					$provider_args[ str_replace( '-', '_', $key ) ] = (int) $assoc_args[ $key ];
