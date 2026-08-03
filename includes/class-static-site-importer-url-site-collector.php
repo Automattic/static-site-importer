@@ -28,6 +28,9 @@ class Static_Site_Importer_URL_Site_Collector {
 	private const MAX_RESPONSE_BYTES      = 10485760;
 	private const MAX_SITEMAP_DOCUMENTS   = 100;
 	private const MAX_DISCOVERED_ROUTES   = 5000;
+	// The hardened socket transport is blocking, so one PHP invocation can safely admit one request at a time.
+	private const SAME_ORIGIN_CONCURRENCY  = 1;
+	private const CROSS_ORIGIN_CONCURRENCY = 1;
 
 	/**
 	 * Collect a public static site.
@@ -46,26 +49,8 @@ class Static_Site_Importer_URL_Site_Collector {
 		$max_pages               = min( self::MAX_PAGES, max( 1, (int) ( $args['max_pages'] ?? self::DEFAULT_MAX_PAGES ) ) );
 		$max_assets              = min( self::MAX_ASSETS, max( 0, (int) ( $args['max_assets'] ?? self::DEFAULT_MAX_ASSETS ) ) );
 		$max_total_bytes         = min( self::MAX_TOTAL_BYTES, max( 1, (int) ( $args['max_total_bytes'] ?? self::DEFAULT_MAX_TOTAL_BYTES ) ) );
-		$request_delay           = min( 2000, max( 0, (int) ( $args['request_delay_ms'] ?? 100 ) ) );
 		$fetcher                 = $fetcher ?? static fn ( string $resource_url, array $fetch_args ) => Static_Site_Importer_URL_Fetcher::fetch( $resource_url, $fetch_args );
-		$fetch_attempts          = min( 3, max( 1, (int) ( $args['fetch_attempts'] ?? 2 ) ) );
-		$fetch_resource          = $fetcher;
-		$fetcher                 = static function ( string $resource_url, array $fetch_args ) use ( $fetch_resource, $fetch_attempts ) {
-			$response = null;
-			for ( $attempt = 0; $attempt < $fetch_attempts; $attempt++ ) {
-				$response = $fetch_resource( $resource_url, $fetch_args );
-				if ( ! is_wp_error( $response ) ) {
-					return $response;
-				}
-			}
-			$data = is_array( $response->get_error_data() ) ? $response->get_error_data() : array();
-			if ( ! empty( $data['_static_site_importer_cache_aware'] ) ) {
-				unset( $data['_static_site_importer_cache_aware'] );
-				$response = new WP_Error( $response->get_error_code(), $response->get_error_message(), $data ? $data : null );
-				$fetch_resource( $resource_url, $fetch_args + array( '_static_site_importer_cache_failure' => $response ) );
-			}
-			return $response;
-		};
+		$fetcher                 = self::scheduled_fetcher( $fetcher, $args );
 		$fetch_args              = array_intersect_key( $args, array_flip( array( 'timeout' ) ) );
 		$fetch_args['max_bytes'] = min( self::MAX_RESPONSE_BYTES, $max_total_bytes, max( 1, (int) ( $args['max_bytes'] ?? 5242880 ) ) );
 
@@ -106,7 +91,6 @@ class Static_Site_Importer_URL_Site_Collector {
 		while ( $page_queue && self::resource_count( $resources, 'html' ) < $max_pages ) {
 			$page_url = array_shift( $page_queue );
 			$response = $fetcher( $page_url, array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ) );
-			self::delay_after_fetch( $response, $request_delay, $args );
 			$response = self::without_cache_marker( $response );
 			if ( is_wp_error( $response ) ) {
 				if ( $page_url === $entry_url ) {
@@ -193,8 +177,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		while ( $asset_queue && self::resource_count( $resources, 'asset' ) < $max_assets ) {
 			$asset_url = array_shift( $asset_queue );
 			$response  = $fetcher( $asset_url, array_merge( $fetch_args, array( 'content_types' => array() ) ) );
-			self::delay_after_fetch( $response, $request_delay, $args );
-			$response = self::without_cache_marker( $response );
+			$response  = self::without_cache_marker( $response );
 			if ( is_wp_error( $response ) ) {
 				if ( $preserve_failed_assets ) {
 					$external_assets[ $asset_url ] = $response->get_error_code();
@@ -361,6 +344,7 @@ class Static_Site_Importer_URL_Site_Collector {
 					'source_exclusions'       => $source_exclusions,
 					'truncated'               => array_keys( $truncated ),
 					'sitemap_urls'            => count( $sitemap_urls ),
+					'fetch_scheduling'        => self::scheduling_limits( $args ),
 					'external_asset_retained' => array(
 						'count'   => count( $external_assets ),
 						'samples' => array_slice(
@@ -392,23 +376,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			return new WP_Error( 'static_site_importer_site_collection_invalid_url', 'Enter a valid public site URL.' );
 		}
 		$fetcher                 = $fetcher ?? static fn ( string $resource_url, array $fetch_args ) => Static_Site_Importer_URL_Fetcher::fetch( $resource_url, $fetch_args );
-		$fetch_attempts          = min( 3, max( 1, (int) ( $args['fetch_attempts'] ?? 2 ) ) );
-		$fetch_resource          = $fetcher;
-		$fetcher                 = static function ( string $resource_url, array $fetch_args ) use ( $fetch_resource, $fetch_attempts ) {
-			for ( $attempt = 0; $attempt < $fetch_attempts; $attempt++ ) {
-				$response = $fetch_resource( $resource_url, $fetch_args );
-				if ( ! is_wp_error( $response ) ) {
-					return $response;
-				}
-			}
-			$data = is_array( $response->get_error_data() ) ? $response->get_error_data() : array();
-			if ( ! empty( $data['_static_site_importer_cache_aware'] ) ) {
-				unset( $data['_static_site_importer_cache_aware'] );
-				$response = new WP_Error( $response->get_error_code(), $response->get_error_message(), $data ? $data : null );
-				$fetch_resource( $resource_url, $fetch_args + array( '_static_site_importer_cache_failure' => $response ) );
-			}
-			return $response;
-		};
+		$fetcher                 = self::scheduled_fetcher( $fetcher, $args );
 		$fetch_args              = array_intersect_key( $args, array_flip( array( 'timeout' ) ) );
 		$fetch_args['max_bytes'] = min( 10485760, max( 1, (int) ( $args['max_bytes'] ?? 5242880 ) ) );
 		$routes                  = self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
@@ -954,22 +922,6 @@ class Static_Site_Importer_URL_Site_Collector {
 		);
 	}
 
-	private static function delay_after_fetch( $response, int $milliseconds, array $args ): void {
-		$error_data = is_wp_error( $response ) ? $response->get_error_data() : null;
-		if ( is_array( $error_data ) && ! empty( $error_data['_static_site_importer_negative_cache_hit'] ) ) {
-			return;
-		}
-		if ( is_array( $response ) && ! empty( $response['metadata']['_static_site_importer_cache_hit'] ) ) {
-			unset( $response['metadata']['_static_site_importer_cache_hit'] );
-			return;
-		}
-		if ( isset( $args['_static_site_importer_delay_callback'] ) && is_callable( $args['_static_site_importer_delay_callback'] ) ) {
-			call_user_func( $args['_static_site_importer_delay_callback'] );
-			return;
-		}
-		self::delay( $milliseconds );
-	}
-
 	private static function without_cache_marker( $response ) {
 		if ( ! is_wp_error( $response ) ) {
 			return $response;
@@ -979,11 +931,55 @@ class Static_Site_Importer_URL_Site_Collector {
 			return $response;
 		}
 		unset( $data['_static_site_importer_negative_cache_hit'] );
-		return new WP_Error( $response->get_error_code(), $response->get_error_message(), $data ? $data : null );
+		return new WP_Error( $response->get_error_code(), $response->get_error_message(), ! empty( $data ) ? $data : null );
 	}
 
-	private static function delay( int $milliseconds ): void {
+	/** @return callable */
+	private static function scheduled_fetcher( callable $fetch_resource, array $args ): callable {
+		$fetch_attempts = min( 3, max( 1, (int) ( $args['fetch_attempts'] ?? 2 ) ) );
+		$retry_delay    = min( 2000, max( 0, (int) ( $args['request_delay_ms'] ?? 0 ) ) );
+		$clock          = isset( $args['_static_site_importer_scheduler_clock'] ) && is_callable( $args['_static_site_importer_scheduler_clock'] ) ? $args['_static_site_importer_scheduler_clock'] : static fn (): float => microtime( true );
+		return static function ( string $resource_url, array $fetch_args ) use ( $fetch_resource, $fetch_attempts, $retry_delay, $clock, $args ) {
+			$response     = null;
+			$next_allowed = array();
+			$origin       = self::origin( $resource_url );
+			for ( $attempt = 0; $attempt < $fetch_attempts; $attempt++ ) {
+				$wait = max( 0, ( $next_allowed[ $origin ] ?? 0 ) - (float) call_user_func( $clock ) );
+				if ( $wait > 0 ) {
+					self::delay( (int) ceil( $wait * 1000 ), $args );
+				}
+				$response = $fetch_resource( $resource_url, $fetch_args );
+				if ( ! is_wp_error( $response ) ) {
+					return $response;
+				}
+				// Successful and cached responses are immediately eligible; only a retry is paced.
+				$next_allowed[ $origin ] = (float) call_user_func( $clock ) + ( $retry_delay / 1000 );
+			}
+			$data = is_array( $response->get_error_data() ) ? $response->get_error_data() : array();
+			if ( ! empty( $data['_static_site_importer_cache_aware'] ) ) {
+				unset( $data['_static_site_importer_cache_aware'] );
+				$response = new WP_Error( $response->get_error_code(), $response->get_error_message(), ! empty( $data ) ? $data : null );
+				$fetch_resource( $resource_url, $fetch_args + array( '_static_site_importer_cache_failure' => $response ) );
+			}
+			return $response;
+		};
+	}
+
+	/** @return array<string,int> */
+	private static function scheduling_limits( array $args ): array {
+		return array(
+			'same_origin_concurrency'  => self::SAME_ORIGIN_CONCURRENCY,
+			'cross_origin_concurrency' => self::CROSS_ORIGIN_CONCURRENCY,
+			'retry_delay_ms'           => min( 2000, max( 0, (int) ( $args['request_delay_ms'] ?? 0 ) ) ),
+		);
+	}
+
+	private static function delay( int $milliseconds, array $args = array() ): void {
 		if ( $milliseconds > 0 ) {
+			if ( isset( $args['_static_site_importer_delay_callback'] ) && is_callable( $args['_static_site_importer_delay_callback'] ) ) {
+				call_user_func( $args['_static_site_importer_delay_callback'], $milliseconds );
+				return;
+			}
 			usleep( $milliseconds * 1000 );
 		}
 	}

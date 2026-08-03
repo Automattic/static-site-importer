@@ -7,6 +7,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Artifact_Run_Workspace' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-artifact-run.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Shared_Resource_Plan' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-shared-resource-plan.php';
+}
 final class Static_Site_Importer_URL_Batch_Import {
 
 	private const VERSION         = 2;
@@ -149,6 +152,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$cache->cleanup_adopted();
 			return $manifest['final_result'];
 		}$importer         = $importer ?? static fn ( array $artifact, array $import_args ) => Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
+		$shared_plan       = new Static_Site_Importer_Shared_Resource_Plan( $workspace );
 		$cursor            = Static_Site_Importer_Artifact_Batch_Cursor::hydrate( $manifest['batches'] );
 		$effective_batches = 0;
 		while ( true ) {
@@ -210,7 +214,32 @@ final class Static_Site_Importer_URL_Batch_Import {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $write, $cache );
 				}
 			}
-			$manifest['external_asset_retained'] = self::merge_external_assets( $manifest['external_asset_retained'] ?? array(), $runtime['source_metadata']['collection']['external_asset_retained'] ?? array(), $index );
+			$shared_started = microtime( true );
+			$shared         = $shared_plan->reconcile( $runtime['artifact'] );
+			if ( is_wp_error( $shared['plan'] ) ) {
+				return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $shared['plan'], $cache );
+			}
+			$runtime['shared_plan_digest'] = $shared['digest'];
+			$prepared_write                = $workspace->publish_json( $cache_name, $runtime );
+			if ( is_wp_error( $prepared_write ) ) {
+				return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $prepared_write, $cache );
+			}
+			if ( ! empty( $shared['changed'] ) ) {
+				self::invalidate_prepared_batches( $workspace, $cursor, $index );
+				$manifest['diagnostics'][] = array(
+					'code'               => 'shared_resource_plan_changed',
+					'shared_plan_digest' => $shared['digest'],
+				);
+			}
+			$manifest['shared_resource_plan']                          = array(
+				'schema'   => 'static-site-importer/shared-resource-plan/v1',
+				'digest'   => $shared['digest'],
+				'verified' => true,
+			);
+			$manifest['stage_timing']['shared_plan_seconds']           = (float) ( $manifest['stage_timing']['shared_plan_seconds'] ?? 0 ) + microtime( true ) - $shared_started;
+			$manifest['stage_counters']['shared_plan_reconciliations'] = (int) ( $manifest['stage_counters']['shared_plan_reconciliations'] ?? 0 ) + 1;
+			$manifest['stage_counters']['shared_plan_invalidations']   = (int) ( $manifest['stage_counters']['shared_plan_invalidations'] ?? 0 ) + ( ! empty( $shared['changed'] ) ? 1 : 0 );
+			$manifest['external_asset_retained']                       = self::merge_external_assets( $manifest['external_asset_retained'] ?? array(), $runtime['source_metadata']['collection']['external_asset_retained'] ?? array(), $index );
 			self::checkpoint_cache( $manifest, $cache );
 			$manifest['batches'] = self::legacy_batches( $cursor );
 			if ( is_wp_error( $run_manifest->save( $manifest ) ) ) {
@@ -235,7 +264,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$manifest['diagnostics']    = array_slice( array_merge( $manifest['diagnostics'], $result['import_validation_result']['diagnostics'] ?? array() ), -100 );
 			if ( is_wp_error( $run_manifest->save( $manifest ) ) ) {
 				return $run_manifest->save( $manifest );
-			}$workspace->delete( $cache_name );
+			}// Keep verified prepared input until terminal cleanup for interruption recovery.
 			if ( is_file( $old_cache ) ) {
 				self::delete_legacy_file( $old_cache );
 			}++$effective_batches;
@@ -402,6 +431,13 @@ final class Static_Site_Importer_URL_Batch_Import {
 			}return $candidate;
 		}return null;
 	}
+	private static function invalidate_prepared_batches( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $cursor, int $from ): void {
+		foreach ( $cursor as $index => $batch ) {
+			if ( $index >= $from && 'completed' !== ( $batch['state'] ?? '' ) ) {
+				$workspace->delete( 'batches/' . $batch['batch_id'] . '.json' );
+			}
+		}
+	}
 	private static function owns_runtime( string $raw, array $routes ): bool {
 		$runtime = json_decode( $raw, true );
 		$files   = $runtime['source_metadata']['snapshot']['files'] ?? null;
@@ -544,6 +580,9 @@ final class Static_Site_Importer_URL_Batch_Import {
 			'failures'                   => $manifest['failures'],
 			'diagnostics'                => $manifest['diagnostics'],
 			'external_asset_retained'    => $manifest['external_asset_retained'] ?? array(),
+			'shared_resource_plan'       => $manifest['shared_resource_plan'] ?? array(),
+			'stage_timing'               => $manifest['stage_timing'] ?? array(),
+			'stage_counters'             => $manifest['stage_counters'] ?? array(),
 			'batch_quality'              => $batch_quality,
 			'terminal_batch_report_path' => $terminal['report_path'] ?? '',
 		);
