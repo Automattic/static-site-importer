@@ -61,6 +61,8 @@ $plan     = $compiler->compile(
 			'index.html'             => '<main><h1>Home</h1></main>',
 			'blog/hello.html'        => '<html><head><meta property="article:published_time" content="2024-03-12T10:00:00Z"></head><body><main><h1>Hello</h1></main></body></html>',
 			'2024/03/dated-post.html' => '<main><h1>Dated by URL</h1></main>',
+			'notes/index.html'       => '<main><h1>Notes</h1></main>',
+			'notes/essay.html'       => '<html><head><meta property="article:published_time" content="2024-05-20T09:30:00Z"></head><body><main><h1>Essay</h1></main></body></html>',
 		),
 	)
 )->toArray()['source_reports']['wordpress_site_plan'];
@@ -95,6 +97,7 @@ try {
 		$page_id  = (int) ( $pages['index.html'] ?? 0 );
 		$post_id  = (int) ( $pages['blog/hello.html'] ?? 0 );
 		$dated_id = (int) ( $pages['2024/03/dated-post.html'] ?? 0 );
+		$notes_id = (int) ( $pages['notes/essay.html'] ?? 0 );
 
 		$post = $post_id ? get_post( $post_id ) : null;
 		$assert( $post instanceof WP_Post && 'post' === $post->post_type, 'dated-document-classifies-as-post' );
@@ -109,6 +112,17 @@ try {
 		$page = $page_id ? get_post( $page_id ) : null;
 		$assert( $page instanceof WP_Post && 'page' === $page->post_type, 'undated-entrypoint-stays-page' );
 
+		// A dated post nested under a page wrapper still classifies as a post
+		// and stays parentless, while the wrapper imports as a page. The real
+		// get_page_by_path conflict check must find the nested post route, not
+		// fall back to a page-shaped lookup (see #789 review).
+		$notes   = $notes_id ? get_post( $notes_id ) : null;
+		$wrapper = (int) ( $pages['notes/index.html'] ?? 0 );
+		$wrap    = $wrapper ? get_post( $wrapper ) : null;
+		$assert( $notes instanceof WP_Post && 'post' === $notes->post_type, 'nested-document-classifies-as-post' );
+		$assert( $notes instanceof WP_Post && 0 === (int) $notes->post_parent, 'nested-post-has-no-page-parent' );
+		$assert( $wrap instanceof WP_Post && 'page' === $wrap->post_type, 'wrapper-imports-as-page' );
+
 		// Reconciliation identity is unique per document, so a re-import reuses
 		// the same real post across the classifier's page -> post boundary.
 		$reet_result = $materialize( $plan, $slug, $prior );
@@ -116,7 +130,9 @@ try {
 		$assert( 'completed' === $reet_status, 're-import-completes', (string) ( $reet_result['status'] ?? 'missing-status' ) );
 		$reet_pages = $reet_result['pages'] ?? $reet_result['completed']['pages'] ?? array();
 		$reet_post_id = (int) ( $reet_pages['blog/hello.html'] ?? 0 );
+		$reet_notes_id = (int) ( $reet_pages['notes/essay.html'] ?? 0 );
 		$assert( $reet_post_id === $post_id, 're-import-reuses-existing-post-id' );
+		$assert( $reet_notes_id === $notes_id, 're-import-reuses-existing-nested-post-id' );
 	}
 } finally {
 	// Clean up only the rows this smoke created, on every exit path.

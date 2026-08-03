@@ -443,15 +443,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( ! self::is_valid_post_type( $post_type ) ) {
 			$post_type = 'page';
 		}
-		// Pages keep the plan's canonical route ancestry as post_parent. Posts
-		// must not: their permalink comes from the site post permalink structure,
-		// so carrying the synthetic page ancestor would materialize them at the
-		// wrong URL (get_permalink would still resolve, but to a page-shaped
-		// path, not the plan route).
 		// Pages keep the plan's canonical route ancestry as post_parent, resolved
 		// from this run's source ids or a previously materialized run (batch
 		// re-imports). Posts must not carry the synthetic page ancestor: their
-		// permalink comes from the site post permalink structure.
+		// permalink comes from the site post permalink structure, so carrying it
+		// would materialize them at a page-shaped path, not the plan route.
 		if ( 'page' === $post_type ) {
 			$parent = '' === $page['parent_source_path'] ? 0 : ( $source_ids[ $page['parent_source_path'] ] ?? self::existing_source_page_id( $page['parent_source_path'], $import_run_id ) );
 			if ( $parent <= 0 && '' !== $page['parent_source_path'] ) {
