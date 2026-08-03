@@ -258,6 +258,29 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 	);
 
 	WP_CLI::add_command(
+		'static-site-importer plan-artifact-dependencies',
+		static function ( array $args, array $assoc_args ): void {
+			unset( $args );
+			$input = static_site_importer_cli_artifact_input( $assoc_args );
+			if ( is_wp_error( $input ) ) {
+				WP_CLI::error( $input->get_error_message() );
+			}
+			$result = Static_Site_Importer_Validation_Runtime::plan_artifact_dependencies( $input );
+			if ( is_wp_error( $result ) ) {
+				WP_CLI::error( $result->get_error_message() );
+			}
+			$json = wp_json_encode( $result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+			if ( false === $json ) {
+				WP_CLI::error( 'Failed to encode dependency plan.' );
+			}
+			if ( ! empty( $assoc_args['output'] ) && false === file_put_contents( (string) $assoc_args['output'], $json . "\n" ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- CLI writes an explicit host handoff artifact.
+				WP_CLI::error( 'Failed to write dependency plan output.' );
+			}
+			WP_CLI::line( $json );
+		}
+	);
+
+	WP_CLI::add_command(
 		'static-site-importer prepare-artifact-dependencies',
 		static function ( array $args, array $assoc_args ): void {
 			unset( $args );
@@ -299,6 +322,9 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'allow_missing_woocommerce'            => isset( $assoc_args['allow-missing-woocommerce'] ),
 				'require_proven_dynamic_client_assets' => ! isset( $assoc_args['allow-unproven-dynamic-client-assets'] ),
 			);
+			if ( isset( $assoc_args['host-staged-dependencies'] ) ) {
+				$input['materialize_dependencies'] = false;
+			}
 			$output = isset( $assoc_args['output'] ) ? (string) $assoc_args['output'] : '';
 			if ( isset( $assoc_args['artifact-dir'] ) ) {
 				$input['artifact_dir'] = (string) $assoc_args['artifact-dir'];

@@ -140,6 +140,21 @@ class Static_Site_Importer_Validation_Runtime {
 		);
 	}
 
+	/** Build a registry-derived dependency plan without installing packages. */
+	public static function plan_artifact_dependencies( array $input ) {
+		$artifact = isset( $input['artifact'] ) && is_array( $input['artifact'] ) ? $input['artifact'] : array();
+		if ( empty( $artifact ) ) {
+			return new WP_Error( 'static_site_importer_validation_artifact_missing', 'Dependency planning requires an artifact JSON object.' );
+		}
+		$input['runtime_lifecycle_phase'] = 'plan';
+		$input['materialize_dependencies'] = false;
+		$input['slug'] = sanitize_title( (string) ( $input['slug'] ?? 'static-site-importer-validation' ) ) ?: 'static-site-importer-validation';
+		$input['name'] = isset( $input['name'] ) ? sanitize_text_field( (string) $input['name'] ) : $input['slug'];
+		$args = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input, array( 'activate' => true, 'overwrite' => true, 'materialize_dependencies' => false ) );
+		$args['runtime_lifecycle_phase'] = 'plan';
+		return Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $args );
+	}
+
 	/**
 	 * Convert a WP_Error into the validation result shape.
 	 *

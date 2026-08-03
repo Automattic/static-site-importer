@@ -300,6 +300,60 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	}
 
 	/**
+	 * Project prepared runtime declarations to transport-neutral package artifacts.
+	 *
+	 * This is deliberately a registry projection: callers do not map providers to
+	 * packages. A host runtime may resolve these entries before a network-denied
+	 * WordPress process starts.
+	 *
+	 * @param array<string,mixed> $lifecycle Prepared runtime lifecycle.
+	 * @param string              $artifact_sha256 Canonical artifact digest.
+	 * @return array<string,mixed>
+	 */
+	public static function dependency_plan( array $lifecycle, string $artifact_sha256 ): array {
+		$entries = array();
+		foreach ( $lifecycle['dependencies'] ?? array() as $declaration_id => $prepared ) {
+			if ( ! is_array( $prepared ) || empty( $prepared['required'] ) || ! isset( $prepared['adapter'] ) || ! is_array( $prepared['adapter'] ) ) {
+				continue;
+			}
+			$adapter = $prepared['adapter'];
+			foreach ( self::plugin_dependencies( $adapter ) as $dependency ) {
+				$slug = (string) ( $dependency['slug'] ?? '' );
+				$plugin_file = (string) ( $dependency['plugin_file'] ?? '' );
+				if ( '' === $slug || '' === $plugin_file ) {
+					continue;
+				}
+				$key = 'wp-org:' . $slug;
+				if ( ! isset( $entries[ $key ] ) ) {
+					$entries[ $key ] = array(
+						'source_kind' => 'wordpress.org-plugin',
+						'package' => $slug,
+						'slug' => $slug,
+						'version_policy' => 'wordpress.org-latest-stable',
+						'reference_policy' => 'resolver-recorded-immutable-package-digest',
+						'plugin_entrypoint' => $plugin_file,
+						'activation' => 'required',
+						'integrity' => array( 'entrypoint_sha256' => '', 'provenance' => 'registry-declared' ),
+						'provenance' => array(
+							'adapter_id' => (string) ( $adapter['id'] ?? '' ),
+							'provider' => (string) ( $adapter['provider'] ?? '' ),
+							'entity_type' => (string) ( $adapter['entity_type'] ?? '' ),
+							'declaration_ids' => array(),
+						),
+					);
+				}
+				$entries[ $key ]['provenance']['declaration_ids'][] = (string) $declaration_id;
+			}
+		}
+		ksort( $entries, SORT_STRING );
+		return array(
+			'schema' => 'static-site-importer/runtime-dependency-plan/v1',
+			'artifact_sha256' => $artifact_sha256,
+			'entries' => array_values( $entries ),
+		);
+	}
+
+	/**
 	 * Build a generated companion-plugin dependency definition from a payload.
 	 *
 	 * Companion plugins are per-site and generated at import time, so they are not

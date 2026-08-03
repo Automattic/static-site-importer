@@ -110,6 +110,12 @@ class Static_Site_Importer_Theme_Generator {
 		if ( is_wp_error( $lifecycle ) ) {
 			return $lifecycle;
 		}
+		if ( 'plan' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
+			return Static_Site_Importer_Entity_Materializer_Registry::dependency_plan(
+				$lifecycle,
+				hash( 'sha256', wp_json_encode( $artifact ) ?: '' )
+			);
+		}
 		if ( 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
 			$dependencies = self::materialize_prepared_dependencies( $lifecycle, $args );
 			if ( is_wp_error( $dependencies ) ) {

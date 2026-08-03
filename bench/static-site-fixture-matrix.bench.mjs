@@ -403,6 +403,12 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     entrypoint: matrix.entrypoint,
     fixtures,
   });
+  // Discovery is deliberately a separate, short-lived Codebox runtime. It only
+  // asks SSI for its registry-derived plan; package resolution happens on the
+  // host while assembling the following fresh import runtime.
+  const dependencyPlan = options.hostDependencyOrchestration
+    ? await discoverFixtureDependencyPlan({ fixtures, outputDirectory, staticSiteImporterPath, options, batchSuffix })
+    : undefined;
   const batchRecipe = buildFixtureMatrixRecipe({
     matrix: batchMatrix,
     runId: batchMatrix.id,
@@ -413,6 +419,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     staticSiteImporterPath,
     staticSiteImporterPlugin: options.staticSiteImporterPlugin,
     staticSiteImporterSlug: options.staticSiteImporterSlug,
+    dependencyPlan,
     dependencyOverrides: prepareDependencyOverrides(options),
     svgFontEvidence: true,
     ...fixtureMatrixRecipeInput(normalizeFixtureMatrixRunConfig(Object.fromEntries(Object.keys(FIXTURE_MATRIX_RUN_FIELDS).map((key) => [key, options[key]])))),
@@ -558,6 +565,66 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     error: recoveryErrors[0] || null,
     childCommandFailures: recoveryOutcomes.flatMap((outcome) => outcome.childCommandFailures || []),
   };
+}
+
+async function discoverFixtureDependencyPlan({ fixtures, outputDirectory, staticSiteImporterPath, options, batchSuffix }) {
+  const plans = [];
+  for (const fixture of fixtures) {
+    const fixtureDirectory = path.join(outputDirectory, fixture.id);
+    const runtimeDirectory = `/wordpress/wp-content/uploads/static-site-importer-fixture-matrix/${fixture.id}`;
+    const planName = `dependency-plan-${batchSuffix}.json`;
+    const artifactsDir = path.join(outputDirectory, 'dependency-discovery', `${batchSuffix}-${fixture.id}`);
+    const recipeFile = path.join(artifactsDir, 'recipe.json');
+    const outputFile = path.join(artifactsDir, 'output.json');
+    fs.mkdirSync(artifactsDir, { recursive: true });
+    const recipe = {
+      schema: 'wp-codebox/workspace-recipe/v1',
+      runtime: { wp: options.wordpressVersion || 'latest', blueprint: {} },
+      inputs: {
+        stagedFiles: [{ source: path.join(fixtureDirectory, 'artifact.json'), target: path.join(runtimeDirectory, 'artifact.json') }],
+        extra_plugins: [{ source: staticSiteImporterPath, slug: options.staticSiteImporterSlug || 'static-site-importer', activate: true }],
+      },
+      workflow: { steps: [
+        { command: 'wordpress.wp-cli', args: [`command=plugin activate ${(options.staticSiteImporterPlugin || 'static-site-importer/static-site-importer.php')}`] },
+        { command: 'wordpress.wp-cli', args: [`command=static-site-importer plan-artifact-dependencies --artifact=${path.join(runtimeDirectory, 'artifact.json')} --slug=${fixture.id} --name=${JSON.stringify(fixture.label)} --output=${path.join(runtimeDirectory, planName)}`] },
+      ] },
+      artifacts: { directory: artifactsDir, typed: [{ name: 'dependency-plan', type: 'static-site-importer/runtime-dependency-plan', path: path.join(runtimeDirectory, planName), required: true, parseJson: true, contentType: 'application/json', payloadSchema: 'static-site-importer/runtime-dependency-plan/v1' }] },
+    };
+    writeJsonArtifact(recipeFile, recipe);
+    const discovery = await runWpCodeboxRecipe({ recipeFile, artifactsDir, outputFile, wpCodeboxBin: options.wpCodeboxBin, inactivityTimeoutMs: batchInactivityTimeoutMs(options) });
+    const plan = findDependencyPlan(artifactsDir);
+    if (!plan) throw new Error(`Dependency discovery did not persist a valid plan for fixture ${fixture.id}.`);
+    const resolved = discovery.json?.preparedExtraPlugins;
+    if (!Array.isArray(resolved)) throw new Error(`Dependency discovery did not return generic host package receipts for fixture ${fixture.id}.`);
+    plan.entries = plan.entries.map((entry) => {
+      const receipt = resolved.find((candidate) => candidate?.slug === entry.slug && candidate?.pluginFile === entry.plugin_entrypoint);
+      if (!receipt || receipt.activationStatus !== 'activated' || !/^[a-f0-9]{64}$/i.test(receipt?.provenance?.digest?.sha256 || '')) {
+        throw new Error(`Dependency discovery host receipt is incomplete for ${entry.slug}.`);
+      }
+      return { ...entry, host_resolution: { runtime_id: discovery.json?.runtime?.id || '', archive_sha256: receipt.provenance.digest.sha256, resolved_url: receipt.provenance.resolvedUrl || '', activation_status: receipt.activationStatus } };
+    });
+    plans.push(plan);
+  }
+  const entries = new Map();
+  for (const plan of plans) for (const entry of plan.entries) entries.set(`${entry.source_kind}:${entry.slug}:${entry.plugin_entrypoint}`, entry);
+  return { schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: plans.map((plan) => plan.artifact_sha256).sort().join(','), entries: [...entries.values()] };
+}
+
+function findDependencyPlan(directory) {
+  const visit = (current) => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const child = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        const found = visit(child);
+        if (found) return found;
+      } else if (entry.isFile() && entry.name.endsWith('.json')) {
+        const parsed = parseJsonText(fs.readFileSync(child, 'utf8'));
+        if (parsed?.schema === 'static-site-importer/runtime-dependency-plan/v1' && Array.isArray(parsed.entries)) return parsed;
+      }
+    }
+    return null;
+  };
+  return visit(directory);
 }
 
 function createFixtureMatrixProgress(matrix, options) {
