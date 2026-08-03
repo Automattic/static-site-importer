@@ -9,20 +9,24 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+require_once __DIR__ . '/class-static-site-importer-url-fetcher-native-handle.php';
+
 /**
  * Fetches one public HTML URL into an importer work directory.
  */
 class Static_Site_Importer_URL_Fetcher {
 
-	private const MAX_REDIRECTS         = 5;
-	private const DEFAULT_TIMEOUT       = 10;
-	private const DEFAULT_MAX_BYTES     = 5242880;
-	private const MAX_RESPONSE_BYTES    = 10485760;
-	private const HTML_CONTENT_TYPES    = array( 'text/html', 'application/xhtml+xml' );
-	private const REDIRECT_STATUSES     = array( 301, 302, 303, 307, 308 );
-	private const BODY_READ_CHUNK       = 8192;
-	private const HEADER_MAX_BYTES      = 65536;
-	private const CONNECT_TIMEOUT_FLOOR = 1;
+	private const MAX_REDIRECTS              = 5;
+	private const DEFAULT_TIMEOUT            = 10;
+	private const DEFAULT_MAX_BYTES          = 5242880;
+	private const MAX_RESPONSE_BYTES         = 10485760;
+	private const HTML_CONTENT_TYPES         = array( 'text/html', 'application/xhtml+xml' );
+	private const REDIRECT_STATUSES          = array( 301, 302, 303, 307, 308 );
+	private const BODY_READ_CHUNK            = 8192;
+	private const HEADER_MAX_BYTES           = 65536;
+	private const CONNECT_TIMEOUT_FLOOR      = 1;
+	private const DEFAULT_CONCURRENCY        = 4;
+	private const DEFAULT_ORIGIN_CONCURRENCY = 2;
 
 	/**
 	 * Fetch a public HTML URL and write it as index.html.
@@ -153,6 +157,330 @@ class Static_Site_Importer_URL_Fetcher {
 		}
 
 		return new WP_Error( 'static_site_importer_url_redirect_limit', 'The URL exceeded the redirect limit.' );
+	}
+
+	/**
+	 * Fetch bounded public resources concurrently without changing result order.
+	 *
+	 * Requests are keyed by caller identity. Each value is a URL string or an
+	 * array with `url` and optional per-request `args`. The optional transport is
+	 * deliberately a small start/poll/cancel driver so tests can control progress
+	 * without ever bypassing URL validation or response policy.
+	 *
+	 * @param array<string,string|array{url:string,args?:array}> $requests Requests keyed by identity.
+	 * @param array $args Transport arguments: concurrency, per_origin_concurrency, deadline, clock, transport.
+	 * @return array<string,array{body:string,metadata:array<string,mixed>}|WP_Error>
+	 */
+	public static function fetch_many( array $requests, array $args = array() ): array {
+		$global_limit = max( 1, (int) ( $args['concurrency'] ?? self::DEFAULT_CONCURRENCY ) );
+		$origin_limit = max( 1, (int) ( $args['per_origin_concurrency'] ?? self::DEFAULT_ORIGIN_CONCURRENCY ) );
+		$clock        = isset( $args['clock'] ) && is_callable( $args['clock'] ) ? $args['clock'] : static fn(): float => microtime( true );
+		$deadline     = isset( $args['deadline'] ) ? (float) $args['deadline'] : null;
+		$driver       = isset( $args['transport'] ) && is_array( $args['transport'] ) ? $args['transport'] : null;
+		$pending      = array();
+		$active       = array();
+		$origins      = array();
+		$results      = array();
+
+		foreach ( $requests as $key => $request ) {
+			$identity   = (string) $key;
+			$url        = is_array( $request ) ? (string) $request['url'] : (string) $request;
+			$fetch_args = is_array( $request ) ? (array) ( $request['args'] ?? array() ) : array();
+			$validation = self::validate_url( $url );
+			if ( is_wp_error( $validation ) ) {
+				$results[ $identity ] = $validation;
+				continue;
+			}
+			$pending[] = array(
+				'key'       => $identity,
+				'initial'   => $validation['url'],
+				'current'   => $validation['url'],
+				'target'    => $validation,
+				'args'      => $fetch_args,
+				'started'   => gmdate( 'c' ),
+				'redirects' => array(),
+				'attempt'   => 0,
+			);
+		}
+
+		while ( $pending || $active ) {
+			if ( null !== $deadline && $clock() >= $deadline ) {
+				foreach ( $active as $state ) {
+					self::cancel_transport( $driver, $state['handle'], 'deadline_exhausted' );
+					$results[ $state['key'] ] = new WP_Error( 'static_site_importer_url_deadline_exhausted', 'The URL request deadline was exhausted.' );
+				}
+				foreach ( $pending as $state ) {
+					$results[ $state['key'] ] = new WP_Error( 'static_site_importer_url_deadline_exhausted', 'The URL request deadline was exhausted.' );
+				}
+				break;
+			}
+
+			$started = false;
+			foreach ( $pending as $index => $state ) {
+				$origin = self::origin_key( $state['target'] );
+				if ( count( $active ) >= $global_limit || ( $origins[ $origin ] ?? 0 ) >= $origin_limit ) {
+					continue;
+				}
+				unset( $pending[ $index ] );
+				$state['handle']    = self::start_transport( $driver, $state['target'], self::request_options( $state['args'] ) );
+				$active[]           = $state;
+				$origins[ $origin ] = ( $origins[ $origin ] ?? 0 ) + 1;
+				$started            = true;
+			}
+			$pending = array_values( $pending );
+
+			foreach ( $active as $index => $state ) {
+				$response = self::poll_transport( $driver, $state['handle'] );
+				if ( null === $response ) {
+					continue;
+				}
+				unset( $active[ $index ] );
+				$origin = self::origin_key( $state['target'] );
+				--$origins[ $origin ];
+				if ( is_wp_error( $response ) ) {
+					$results[ $state['key'] ] = $response;
+					continue;
+				}
+				$outcome = self::finish_many_response( $state, $response );
+				if ( isset( $outcome['pending'] ) ) {
+					$pending[] = $outcome['pending'];
+				} else {
+					$results[ $state['key'] ] = $outcome['result'];
+				}
+			}
+			$active = array_values( $active );
+			if ( ! $started && $active ) {
+				usleep( 1000 );
+			}
+		}
+
+		// Preserve caller identity order rather than completion order.
+		$ordered = array();
+		foreach ( $requests as $key => $_request ) {
+			$ordered[ (string) $key ] = $results[ (string) $key ] ?? new WP_Error( 'static_site_importer_url_cancelled', 'The URL request was cancelled.' );
+		}
+		/** @var array<string,array{body:string,metadata:array<string,mixed>}|WP_Error> $ordered */
+		return $ordered;
+	}
+
+	/** @return array{timeout:int,max_bytes:int,has_content_types_arg:bool,content_types:array<int,string>} */
+	private static function request_options( array $args ): array {
+		$has_content_types_arg = isset( $args['content_types'] ) && is_array( $args['content_types'] );
+		return array(
+			'timeout'               => max( self::CONNECT_TIMEOUT_FLOOR, (int) ( $args['timeout'] ?? self::DEFAULT_TIMEOUT ) ),
+			'max_bytes'             => min( self::MAX_RESPONSE_BYTES, max( 1, (int) ( $args['max_bytes'] ?? self::DEFAULT_MAX_BYTES ) ) ),
+			'has_content_types_arg' => $has_content_types_arg,
+			'content_types'         => $has_content_types_arg ? array_values( array_filter( array_map( static fn( $value ): string => strtolower( (string) $value ), $args['content_types'] ) ) ) : self::HTML_CONTENT_TYPES,
+		);
+	}
+
+	/** @return array{result:array|WP_Error}|array{pending:array} */
+	private static function finish_many_response( array $state, array $response ): array {
+		$status  = (int) ( $response['status_code'] ?? 0 );
+		$headers = is_array( $response['headers'] ?? null ) ? $response['headers'] : array();
+		$body    = (string) ( $response['body'] ?? '' );
+		$options = self::request_options( $state['args'] );
+		if ( strlen( $body ) > $options['max_bytes'] ) {
+			return array( 'result' => new WP_Error( 'static_site_importer_url_too_large', 'The URL response exceeded the maximum allowed size.' ) );
+		}
+		if ( in_array( $status, self::REDIRECT_STATUSES, true ) ) {
+			$location = self::first_header( $headers, 'location' );
+			if ( '' === $location ) {
+				return array( 'result' => new WP_Error( 'static_site_importer_url_redirect_missing_location', 'The URL returned a redirect without a Location header.' ) );
+			}
+			if ( $state['attempt'] >= self::MAX_REDIRECTS ) {
+				return array( 'result' => new WP_Error( 'static_site_importer_url_redirect_limit', 'The URL exceeded the redirect limit.' ) );
+			}
+			$next   = self::resolve_redirect_url( $state['current'], $location );
+			$target = is_wp_error( $next ) ? $next : self::validate_url( $next );
+			if ( is_wp_error( $target ) ) {
+				return array( 'result' => $target );
+			}
+			$state['redirects'][] = array(
+				'from'        => $state['current'],
+				'to'          => $target['url'],
+				'status_code' => $status,
+			);
+			$state['current']     = $target['url'];
+			$state['target']      = $target;
+			++$state['attempt'];
+			unset( $state['handle'] );
+			return array( 'pending' => $state );
+		}
+		if ( $status < 200 || $status >= 300 ) {
+			return array( 'result' => new WP_Error( 'static_site_importer_url_http_status', sprintf( 'The URL returned HTTP status %d.', $status ), array( 'status' => $status ) ) );
+		}
+		$content_type            = self::first_header( $headers, 'content-type' );
+		$normalized_content_type = strtolower( trim( explode( ';', $content_type, 2 )[0] ) );
+		$allowed                 = $options['has_content_types_arg'] ? ( empty( $options['content_types'] ) || in_array( $normalized_content_type, $options['content_types'], true ) ) : self::is_html_content_type( $content_type );
+		if ( ! $allowed ) {
+			return array( 'result' => new WP_Error( $options['has_content_types_arg'] ? 'static_site_importer_url_unexpected_content_type' : 'static_site_importer_url_non_html', $options['has_content_types_arg'] ? sprintf( 'The URL returned unsupported content type %s.', '' !== $content_type ? $content_type : '(missing)' ) : 'The URL did not return an HTML content type.' ) );
+		}
+		if ( '' === trim( $body ) && ( ! $options['has_content_types_arg'] || ! empty( $options['content_types'] ) ) ) {
+			return array( 'result' => new WP_Error( 'static_site_importer_url_empty_body', $options['has_content_types_arg'] ? 'The URL returned an empty response.' : 'The URL returned an empty HTML response.' ) );
+		}
+		return array(
+			'result' => array(
+				'body'     => $body,
+				'metadata' => array(
+					'source_type'     => 'url',
+					'source_url'      => $state['initial'],
+					'final_url'       => $state['current'],
+					'status_code'     => $status,
+					'content_type'    => $content_type,
+					'fetch_started'   => $state['started'],
+					'fetch_completed' => gmdate( 'c' ),
+					'bytes'           => strlen( $body ),
+					'redirects'       => $state['redirects'],
+				),
+			),
+		);
+	}
+
+	private static function origin_key( array $target ): string {
+		return $target['scheme'] . '://' . $target['host'] . ':' . $target['port'];
+	}
+
+	private static function start_transport( ?array $driver, array $target, array $options ) {
+		if ( $driver && isset( $driver['start'] ) && is_callable( $driver['start'] ) ) {
+			return $driver['start']( $target, $options );
+		}
+		return self::native_start( $target, $options );
+	}
+
+	private static function poll_transport( ?array $driver, $handle ) {
+		if ( $driver && isset( $driver['poll'] ) && is_callable( $driver['poll'] ) ) {
+			return $driver['poll']( $handle );
+		}
+		return self::native_poll( $handle );
+	}
+
+	private static function cancel_transport( ?array $driver, $handle, string $reason ): void {
+		if ( $driver && isset( $driver['cancel'] ) && is_callable( $driver['cancel'] ) ) {
+			$driver['cancel']( $handle, $reason );
+			return;
+		}
+		if ( is_object( $handle ) && isset( $handle->socket ) && is_resource( $handle->socket ) ) {
+			fclose( $handle->socket ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes a validated public HTTP socket.
+		}
+	}
+
+	/** Start a nonblocking, IP-pinned HTTP/1.1 connection. */
+	private static function native_start( array $target, array $options ): Static_Site_Importer_URL_Fetcher_Native_Handle {
+		$ip               = $target['ips'][0];
+		$remote           = sprintf( 'tcp://%s:%d', str_contains( $ip, ':' ) ? '[' . $ip . ']' : $ip, $target['port'] );
+		$context          = stream_context_create( array(
+			'ssl' => array(
+				'SNI_enabled'      => true,
+				'peer_name'        => $target['host'],
+				'verify_peer'      => true,
+				'verify_peer_name' => true,
+			),
+		) );
+		$errno            = 0;
+		$errstr           = '';
+		$socket           = @stream_socket_client( $remote, $errno, $errstr, $options['timeout'], STREAM_CLIENT_CONNECT | STREAM_CLIENT_ASYNC_CONNECT, $context ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Nonblocking connection failure is returned through $errno/$errstr.
+		$handle           = new Static_Site_Importer_URL_Fetcher_Native_Handle();
+		$handle->socket   = $socket;
+		$handle->target   = $target;
+		$handle->options  = $options;
+		$handle->started  = microtime( true );
+		$handle->outbound = '';
+		$handle->raw      = '';
+		$handle->crypto   = 'https' !== $target['scheme'];
+		$handle->error    = '';
+		$handle->ip_index = 0;
+		if ( false === $socket ) {
+			$handle->error = sprintf( 'Could not connect to %s: %s', $target['host'], $errstr );
+			return $handle;
+		}
+		stream_set_blocking( $socket, false );
+		$host             = $target['host'] . ( ( 'https' === $target['scheme'] ? 443 : 80 ) === $target['port'] ? '' : ':' . $target['port'] );
+		$handle->outbound = 'GET ' . $target['path'] . " HTTP/1.1\r\nHost: " . $host . "\r\nUser-Agent: StaticSiteImporter/1.0\r\nAccept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.1\r\nConnection: close\r\n\r\n";
+		return $handle;
+	}
+
+	/** Poll a nonblocking connection. Null means it remains in flight. */
+	private static function native_poll( Static_Site_Importer_URL_Fetcher_Native_Handle $handle ) {
+		if ( '' !== $handle->error ) {
+			if ( self::native_retry( $handle ) ) {
+				return null;
+			}
+			return new WP_Error( 'static_site_importer_url_connect_failed', $handle->error );
+		}
+		if ( microtime( true ) - $handle->started >= $handle->options['timeout'] ) {
+			if ( self::native_retry( $handle ) ) {
+				return null;
+			}
+			return new WP_Error( 'static_site_importer_url_timeout', 'The URL request timed out.' );
+		}
+		if ( ! $handle->crypto ) {
+			$crypto = @stream_socket_enable_crypto( $handle->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- TLS failures are returned as a reason-coded URL error.
+			if ( false === $crypto ) {
+				if ( self::native_retry( $handle ) ) {
+					return null;
+				}
+				return new WP_Error( 'static_site_importer_url_tls_failed', 'Could not establish a verified TLS connection to the URL.' );
+			}
+			if ( 0 === $crypto ) {
+				return null;
+			}
+			$handle->crypto = true;
+		}
+		if ( '' !== $handle->outbound ) {
+			$written = @fwrite( $handle->socket, $handle->outbound ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Writes an HTTP request to a validated public socket.
+			if ( false === $written ) {
+				if ( self::native_retry( $handle ) ) {
+					return null;
+				}
+				return new WP_Error( 'static_site_importer_url_connect_failed', 'Could not write the URL request.' );
+			}
+			$handle->outbound = (string) substr( $handle->outbound, $written );
+			return null;
+		}
+		while ( ! feof( $handle->socket ) ) {
+			$chunk = @fread( $handle->socket, self::BODY_READ_CHUNK ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.file_system_operations_fread -- Nonblocking reads return no bytes until the validated socket is ready.
+			if ( false === $chunk || '' === $chunk ) {
+				break;
+			}
+			$handle->raw .= $chunk;
+			if ( strlen( $handle->raw ) > $handle->options['max_bytes'] + self::HEADER_MAX_BYTES ) {
+				self::cancel_transport( null, $handle, 'too_large' );
+				return new WP_Error( 'static_site_importer_url_too_large', 'The URL response exceeded the maximum allowed size.' );
+			}
+		}
+		if ( ! feof( $handle->socket ) ) {
+			return null;
+		}
+		self::cancel_transport( null, $handle, 'completed' );
+		$separator = strpos( $handle->raw, "\r\n\r\n" );
+		if ( false === $separator ) {
+			return new WP_Error( 'static_site_importer_url_malformed_response', 'The URL returned a malformed HTTP response.' );
+		}
+		$body = substr( $handle->raw, $separator + 4 );
+		if ( strlen( $body ) > $handle->options['max_bytes'] ) {
+			return new WP_Error( 'static_site_importer_url_too_large', 'The URL response exceeded the maximum allowed size.' );
+		}
+		return self::parse_response( substr( $handle->raw, 0, $separator ), $body );
+	}
+
+	/** Retry another already validated DNS address without re-resolving the hostname. */
+	private static function native_retry( Static_Site_Importer_URL_Fetcher_Native_Handle $handle ): bool {
+		self::cancel_transport( null, $handle, 'retry_ip' );
+		$next_ip = $handle->ip_index + 1;
+		if ( ! isset( $handle->target['ips'][ $next_ip ] ) ) {
+			return false;
+		}
+		$target                = $handle->target;
+		$connect_target        = $target;
+		$connect_target['ips'] = array_slice( $target['ips'], $next_ip );
+		$next                  = self::native_start( $connect_target, $handle->options );
+		foreach ( get_object_vars( $next ) as $name => $value ) {
+			$handle->$name = $value;
+		}
+		$handle->target   = $target;
+		$handle->ip_index = $next_ip;
+		return true;
 	}
 
 	/**

@@ -31,6 +31,7 @@
     { "path": "tests/smoke-template-chrome-dedupe.php", "environment": "standalone-php" },
     { "path": "tests/smoke-template-part-shell-dedupe.php", "environment": "standalone-php" },
     { "path": "tests/smoke-url-import-runtime.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-url-concurrent-fetcher.php", "environment": "standalone-php" },
     { "path": "tests/smoke-validation-runtime-diagnostics.php", "environment": "standalone-php" },
     { "path": "tests/smoke-visual-repair-css.php", "environment": "standalone-php" },
     { "path": "tests/smoke-webfont-producer-consumer.php", "environment": "standalone-php" },
