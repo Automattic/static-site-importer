@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -3843,7 +3843,10 @@ test('fixture matrix records generic child command failures for failed WP Codebo
   writeFileSync(helperPath, `
 function wpCodeboxBin() { return '/tmp/wp-codebox'; }
 function wpCodeboxCommand(bin) { return { command: bin, args: [] }; }
-async function runWpCodeboxRecipe() {
+async function runWpCodeboxRecipe(options) {
+  if (options.cwd !== require('node:path').dirname(options.outputFile)) {
+    throw new Error('recipe-run did not receive the matrix output directory as cwd');
+  }
   const error = new Error('recipe-run failed');
   error.code = 17;
   error.signal = 'SIGKILL';
@@ -3961,7 +3964,7 @@ const outputIndex = process.argv.indexOf('--output');
 const outputFile = outputIndex >= 0 ? process.argv[outputIndex + 1] : '';
 const fixtureId = process.env.SSI_TEST_FAKE_WP_CODEBOX_FIXTURE_ID || 'large-output-fixture';
 if (outputFile) {
-  writeFileSync(outputFile, JSON.stringify({ results: [{ fixture_id: fixtureId, status: 'succeeded' }] }));
+  writeFileSync(outputFile, JSON.stringify({ cwd: process.cwd(), results: [{ fixture_id: fixtureId, status: 'succeeded' }] }));
 }
 const chunk = 'stdout chunk '.padEnd(1024 * 1024, 'x');
 for (let index = 0; index < 12; index += 1) {
@@ -3983,9 +3986,9 @@ for (let index = 0; index < 12; index += 1) {
   assert.equal(runtimeError, null);
   assert.equal(summary.result_summary.succeeded, 1);
   assert.equal(summary.child_command_failures?.length || 0, 0);
-  assert.deepEqual(JSON.parse(readFileSync(path.join(outputDirectory, 'wp-codebox-output-batch-001.json'), 'utf8')), {
-    results: [{ fixture_id: fixtureId, status: 'succeeded' }],
-  });
+  const childOutput = JSON.parse(readFileSync(path.join(outputDirectory, 'wp-codebox-output-batch-001.json'), 'utf8'));
+  assert.equal(realpathSync(childOutput.cwd), realpathSync(outputDirectory));
+  assert.deepEqual(childOutput.results, [{ fixture_id: fixtureId, status: 'succeeded' }]);
 });
 
 test('WP Codebox recipe runner falls back when the CLI rejects recipe-run --output', async () => {
