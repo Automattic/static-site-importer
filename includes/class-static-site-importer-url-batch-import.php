@@ -458,10 +458,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 		return $routes;
 	}
 	private static function delete_legacy_file( string $path ): bool {
-		if ( function_exists( 'wp_delete_file' ) ) {
-			return wp_delete_file( $path );
-		}
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Standalone smoke tests run without WordPress filesystem helpers.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Deletes this verified importer-owned legacy cache path exactly; wp_delete_file filters could redirect it.
 		return unlink( $path );
 	}
 	private static function url_parts( string $url, int $component = -1 ) {

@@ -164,14 +164,14 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 				continue;
 			}
 
-			$ok = $item->isDir() ? rmdir( $path ) : unlink( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir, WordPress.WP.AlternativeFunctions.unlink_unlink -- Purges verified importer-owned workspace descendants.
+			$ok = self::remove_path( $path, $item->isDir() );
 			if ( $ok ) {
 				$removed[] = $path;
 			} else {
 				$failed[] = $path;
 			}
 		}
-		if ( ! empty( $failed ) || ! empty( $skipped ) || ! rmdir( $this->directory ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Removes the verified importer-owned workspace root when its descendants were removed.
+		if ( ! empty( $failed ) || ! empty( $skipped ) || ! self::remove_path( $this->directory, true ) ) {
 			$failed[] = $this->directory;
 		}
 
@@ -203,7 +203,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 			if ( is_link( $path ) || ! is_dir( $path ) ) {
 				continue;
 			}
-			$raw     = file_get_contents( $path . '/workspace.json' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads importer-owned workspace metadata.
+			$raw     = self::read_file( $path . '/workspace.json' );
 			$record  = is_string( $raw ) ? json_decode( $raw, true ) : null;
 			$expires = is_array( $record ) ? ( $record['retention']['expires_at'] ?? '' ) : '';
 			if ( is_string( $expires ) && '' !== $expires && strtotime( $expires ) <= time() ) {
@@ -213,6 +213,36 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		}
 
 		return $receipts;
+	}
+
+	private static function remove_path( string $path, bool $directory ): bool {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir, WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a verified importer-owned workspace path after capturing expected race and permission warnings.
+		return (bool) self::filesystem_operation( static fn () => $directory ? rmdir( $path ) : unlink( $path ) );
+	}
+
+	private static function read_file( string $path ): ?string {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads importer-owned workspace metadata while treating concurrent removal as absent.
+		$bytes = self::filesystem_operation( static fn () => file_get_contents( $path ) );
+		return is_string( $bytes ) ? $bytes : null;
+	}
+
+	private static function filesystem_operation( callable $operation ): mixed {
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_set_error_handler -- Limits expected filesystem warnings to this one cleanup operation so callers receive structured receipts.
+		set_error_handler(
+			static function ( int $severity ): bool {
+				if ( E_WARNING !== $severity ) {
+					return false;
+				}
+				throw new ErrorException();
+			}
+		);
+		try {
+			return $operation();
+		} catch ( ErrorException $error ) {
+			return false;
+		} finally {
+			restore_error_handler();
+		}
 	}
 }
 
