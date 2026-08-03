@@ -6288,6 +6288,7 @@ test('staged visual source uses the runtime-materialized local font stylesheet',
   stageFixtureSource({ id: 'Font Fixture', directory: sourceDirectory }, fixtureDirectory);
   const html = readFileSync(path.join(fixtureDirectory, 'source', 'index.html'), 'utf8');
   const css = readFileSync(path.join(fixtureDirectory, 'source', 'css', 'style.css'), 'utf8');
+  assert.doesNotMatch(html, /rel="preconnect"/);
   assert.match(html, /href="\.\/assets\/css\/embedded-fonts\.css"/);
   assert.doesNotMatch(html, /href="https:\/\/fonts\.googleapis\.com\/css2/);
   assert.match(html, /@import url\("\.\/assets\/css\/embedded-fonts\.css"\)/);
