@@ -38,6 +38,7 @@
     { "path": "tests/smoke-website-artifact-import-input.php", "environment": "standalone-php" },
     { "path": "tests/smoke-wordpress-site-plan-materializer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-artifact-run-primitives.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-shared-resource-plan.php", "environment": "standalone-php" },
     { "path": "tests/smoke-figma-workspace-lifecycle.php", "environment": "standalone-php" },
     { "path": "tests/smoke-url-batch-import.php", "environment": "standalone-php" },
     { "path": "tests/smoke-url-site-collector.php", "environment": "standalone-php" },
