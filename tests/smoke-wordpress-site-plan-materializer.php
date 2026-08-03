@@ -64,7 +64,14 @@ function wp_safe_remote_get( string $url, array $args ) {
 }
 function wp_remote_retrieve_response_code( $response ): int { return (int) ( $response['response']['code'] ?? 0 ); }
 function wp_remote_retrieve_body( $response ): string { return (string) ( $response['body'] ?? '' ); }
-function update_option( string $key, $value ): bool { $GLOBALS['ssi_plan_options'][ $key ] = $value; return true; }
+function get_option( string $key, mixed $default = false ): mixed { return $GLOBALS['ssi_plan_options'][ $key ] ?? $default; }
+function update_option( string $key, $value ): bool {
+	if ( array_key_exists( $key, $GLOBALS['ssi_plan_options'] ) && $GLOBALS['ssi_plan_options'][ $key ] === $value ) {
+		return false; // Core semantics: unchanged value writes no row and returns false.
+	}
+	$GLOBALS['ssi_plan_options'][ $key ] = $value;
+	return true;
+}
 function switch_theme( string $slug ): void { $GLOBALS['ssi_plan_options']['stylesheet'] = $slug; }
 function convert_smilies( string $content, string $which = 'content' ): string { return ( $GLOBALS['ssi_plan_options']['use_smilies'] ?? true ) ? 'smilied-' . $which : $content; }
 function sanitize_text_field( string $value ): string { return $value; }
@@ -437,6 +444,13 @@ $GLOBALS['ssi_plan_options'] = array( 'show_on_front' => 'posts', 'page_on_front
 $activated_off = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan', 'overwrite' => true, 'activate' => true, 'disable_smilies' => false, 'site_title' => 'Activated Off' ) );
 $assert( true === $GLOBALS['ssi_plan_options']['use_smilies'], 'activate-with-disable-smilies-false-keeps-smilies' );
 $assert( false === ( $activated_off['completed']['runtime_policy']['disable_smilies']['requested'] ?? null ) && false === ( $activated_off['completed']['runtime_policy']['disable_smilies']['applied'] ?? null ), 'disable-smilies-false-not-applied-on-activate' );
+
+// Repeated activating import: use_smilies already false, update_option returns false (unchanged value).
+$GLOBALS['ssi_plan_options']['use_smilies'] = false;
+$receipt_repeat_policy = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan', 'overwrite' => true, 'activate' => true, 'site_title' => 'Repeat Policy' ) );
+$assert( 'completed' === $receipt_repeat_policy['status'], 'repeated-activating-import-completes' );
+$assert( true === ( $receipt_repeat_policy['completed']['runtime_policy']['disable_smilies']['requested'] ?? null ) && true === ( $receipt_repeat_policy['completed']['runtime_policy']['disable_smilies']['applied'] ?? null ), 'repeated-activating-import-records-requested-and-applied' );
+$assert( false === $GLOBALS['ssi_plan_options']['use_smilies'], 'repeated-activating-import-keeps-use-smilies-false' );
 
 $repeat = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan' ) );
 $assert( 'completed' === $repeat['status'], 'reconciliation repeat completes' );

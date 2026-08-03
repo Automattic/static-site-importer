@@ -262,8 +262,12 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'theme_slug' => $state['theme']['slug'],
 			);
 			if ( ! isset( $args['disable_smilies'] ) || false !== (bool) $args['disable_smilies'] ) {
-				if ( false === update_option( 'use_smilies', false ) ) {
-					return self::failed_receipt( $state, 'disable_smilies_not_applied' );
+				// update_option( 'use_smilies', false ) returns false both on failure and
+				// when the stored value is already false, so the existing value is the oracle.
+				if ( false !== get_option( 'use_smilies', false ) ) {
+					if ( false === update_option( 'use_smilies', false ) ) {
+						return self::failed_receipt( $state, 'disable_smilies_not_applied' );
+					}
 				}
 				$state['applied']['runtime_policy']['disable_smilies'] = true;
 			}
