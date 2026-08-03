@@ -167,9 +167,9 @@ final class Static_Site_Importer_URL_Batch_Import {
 					return $run_manifest->save( $manifest );
 				}return self::continuation_result( $manifest, $manifest_path, $index, $effective_batches, $max_effective_batches );
 			}
-			$batch       = $cursor[ $index ];
-			$routes      = array_values( array_intersect_key( $manifest['routes'], array_flip( $batch['units'] ) ) );
-			$batch_entry = in_array( $url, $routes, true ) ? $url : ( $routes[0] ?? $url );
+			$batch            = $cursor[ $index ];
+			$routes           = array_values( array_intersect_key( $manifest['routes'], array_flip( $batch['units'] ) ) );
+			$batch_entry      = in_array( $url, $routes, true ) ? $url : ( $routes[0] ?? $url );
 			$cache_name       = 'batches/' . $batch['batch_id'] . '.json';
 			$ready_cache_name = 'batches/' . $batch['batch_id'] . '.page-ready.json';
 			$old_cache        = trailingslashit( $work_dir ) . 'url-site-batch-cache-' . $identity . '-' . $index . '.json';
@@ -208,7 +208,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, new WP_Error( 'static_site_importer_page_ready_checkpoint_mismatch', 'The immutable page-ready checkpoint no longer matches its persisted receipt.' ), $cache );
 				}
 				if ( 'page_ready' !== $batch['state'] && 'pending' === ( $ready_runtime['source_metadata']['collection']['readiness']['optional_assets'] ?? '' ) ) {
-					$ready_import_args                                     = Static_Site_Importer_URL_Import_Runtime::batch_import_args( $input, $ready_runtime );
+					$ready_import_args                                      = Static_Site_Importer_URL_Import_Runtime::batch_import_args( $input, $ready_runtime );
 					$ready_import_args['activate']                          = false;
 					$ready_import_args['batch_import']                      = true;
 					$ready_import_args['preserve_existing_theme_bootstrap'] = $index > 0;
@@ -218,10 +218,10 @@ final class Static_Site_Importer_URL_Batch_Import {
 					if ( is_wp_error( $ready_result ) ) {
 						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $ready_result, $cache );
 					}
-					$cursor[ $index ]['state'] = 'page_ready';
+					$cursor[ $index ]['state']  = 'page_ready';
 					$cursor[ $index ]['result'] = self::result_evidence( $ready_result, $ready_runtime );
-					$batch = $cursor[ $index ];
-					$manifest['batches'] = self::legacy_batches( $cursor );
+					$batch                   = $cursor[ $index ];
+					$manifest['batches']     = self::legacy_batches( $cursor );
 					self::checkpoint_cache( $manifest, $cache );
 					$write = $run_manifest->save( $manifest );
 					if ( is_wp_error( $write ) ) {
@@ -229,9 +229,9 @@ final class Static_Site_Importer_URL_Batch_Import {
 					}
 				}
 			}
-			$raw         = self::retained_runtime( $workspace, $cache_name, 'batches/' . $index . '.json', $old_cache, $routes );
-			$decoded     = is_string( $raw ) ? json_decode( $raw, true ) : null;
-			$runtime     = is_array( $decoded ) ? $decoded : array();
+			$raw     = self::retained_runtime( $workspace, $cache_name, 'batches/' . $index . '.json', $old_cache, $routes );
+			$decoded = is_string( $raw ) ? json_decode( $raw, true ) : null;
+			$runtime = is_array( $decoded ) ? $decoded : array();
 			if ( empty( $runtime ) ) {
 				$collect_args                                = $args;
 				$collect_args['_route_set']                  = array_values( array_unique( $routes ) );

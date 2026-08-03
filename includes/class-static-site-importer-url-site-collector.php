@@ -77,10 +77,10 @@ class Static_Site_Importer_URL_Site_Collector {
 			$preserve_failed_assets = true;
 			$preserve_asset_limits  = true;
 		}
-		$script_policy          = self::script_policy( $args );
-		$script_exclusions      = array();
-		$entry_resource_url     = $entry_url;
-		$site_url               = $entry_url;
+		$script_policy      = self::script_policy( $args );
+		$script_exclusions  = array();
+		$entry_resource_url = $entry_url;
+		$site_url           = $entry_url;
 
 		$sitemap_urls = isset( $args['_route_set'] ) && is_array( $args['_route_set'] ) ? array_values( $args['_route_set'] ) : self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
 		if ( is_wp_error( $sitemap_urls ) ) {
@@ -391,7 +391,7 @@ class Static_Site_Importer_URL_Site_Collector {
 							50
 						),
 					),
-					'readiness'                => array(
+					'readiness'               => array(
 						'mode'            => $page_ready ? 'page_ready' : 'complete_snapshot',
 						'html'            => 'complete',
 						'critical_assets' => 'complete',
