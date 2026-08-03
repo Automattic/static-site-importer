@@ -99,10 +99,10 @@ final class Static_Site_Importer_Source_Normalizer {
 	private static function normalize_cloudflare_email_links( string $html, int &$count ): string {
 		return (string) preg_replace_callback(
 			'~\bhref\s*=\s*(["\'])(?:https?://[^/"\']+)?/cdn-cgi/l/email-protection#([a-f0-9]+)\1~i',
-			static function ( array $match ) use ( &$count ): string {
-				$bytes = hex2bin( $match[2] );
+			static function ( array $matches ) use ( &$count ): string {
+				$bytes = hex2bin( $matches[2] );
 				if ( false === $bytes || strlen( $bytes ) < 2 ) {
-					return $match[0];
+					return $matches[0];
 				}
 				$key   = ord( $bytes[0] );
 				$email = '';
@@ -110,10 +110,10 @@ final class Static_Site_Importer_Source_Normalizer {
 					$email .= chr( ord( $bytes[ $index ] ) ^ $key );
 				}
 				if ( false === filter_var( $email, FILTER_VALIDATE_EMAIL ) ) {
-					return $match[0];
+					return $matches[0];
 				}
 				++$count;
-				return 'href=' . $match[1] . 'mailto:' . htmlspecialchars( $email, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) . $match[1];
+				return 'href=' . $matches[1] . 'mailto:' . htmlspecialchars( $email, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) . $matches[1];
 			},
 			$html
 		);
