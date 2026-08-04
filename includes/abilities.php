@@ -163,16 +163,14 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 			'static-site-importer/import-url',
 			array(
 				'label'               => __( 'Import URL', 'static-site-importer' ),
-				'description'         => __( 'Import one public HTML URL or collect a bounded public static site through a URL extraction provider.', 'static-site-importer' ),
+				'description'         => __( 'Import a public static site from a URL. The importer manages bounded resumable collection; pass import_id to continue a prior run.', 'static-site-importer' ),
 				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
 				'input_schema'        => array(
 					'type'       => 'object',
 					'properties' => array_merge(
 						array(
-							'url'           => array( 'type' => 'string' ),
-							'provider'      => array( 'type' => 'string' ),
-							'provider_args' => array( 'type' => 'object' ),
-							'work_dir'      => array( 'type' => 'string' ),
+							'url'       => array( 'type' => 'string' ),
+							'import_id' => array( 'type' => 'string' ),
 						),
 						$import_properties
 					),
@@ -372,6 +370,10 @@ if ( ! function_exists( 'static_site_importer_ability_import_url' ) ) {
 			'success'               => true,
 			'result'                => $result,
 			'import_report_summary' => isset( $result['import_report_summary'] ) && is_array( $result['import_report_summary'] ) ? $result['import_report_summary'] : array(),
+			'import_id'             => isset( $result['import_id'] ) ? (string) $result['import_id'] : '',
+			'continuation'          => ! empty( $result['continuation'] ),
+			'continuation_reason'   => isset( $result['continuation_reason'] ) ? (string) $result['continuation_reason'] : '',
+			'url_batch_run'         => isset( $result['url_batch_run'] ) && is_array( $result['url_batch_run'] ) ? $result['url_batch_run'] : array(),
 		);
 	}
 }

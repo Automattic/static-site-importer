@@ -167,10 +167,10 @@ PHP consumers can build the same blueprint with `static_site_importer_playground
 
 URL intake rules:
 
-- Fetches one URL by default and does not execute JavaScript.
-- `provider_args.collect_site=true` or CLI `--collect-site` enables bounded collection. It reads the origin's `/sitemap.xml`, follows same-origin HTML links, collects directly referenced page assets and nested CSS assets, and emits one canonical website artifact.
-- Collection defaults to 20 pages, 200 assets, 50 MiB total, 5 MiB per response, and 100 ms between requests. Limits can be configured with `max_pages`, `max_assets`, `max_total_bytes`, `max_bytes`, and `request_delay_ms` up to the collector's hard caps.
-- URL collection defaults to the frozen static artifact policy: executable and data scripts are omitted with reason-coded provenance because the server-rendered output does not require them. Select `include_scripts=true` or CLI `--retain-scripts` for full legacy script retention when the caller provides the runtime-preservation contract; use `include_scripts=false` or `--skip-scripts` to explicitly omit every script.
+- Every built-in URL import collects the bounded site through the resumable batch engine. It reads the origin's `/sitemap.xml`, follows same-origin HTML links, and collects directly referenced page assets and nested CSS assets.
+- SSI owns collection, batch, deadline, asset, byte, pacing, and script-policy defaults. Hosts can adjust this policy with the `static_site_importer_url_batch_import_args` filter.
+- The first `static-site-importer/import-url` call returns an opaque `import_id`. To continue a pending run, call the same ability with the normalized URL and import intent plus that ID. SSI resolves the server-owned workspace and validates the URL, import options, and current user; no filesystem path is accepted or returned.
+- URL collection uses the frozen static artifact policy: executable and data scripts are omitted with reason-coded provenance because the server-rendered output does not require them.
 - Registered source-exclusion rules remove non-authored platform chrome before asset discovery and compilation. Each removal records selector, provider, reason, and before/after hashes under `source_metadata.collection.source_exclusions`; set `exclude_platform_chrome=false` to preserve the raw source.
 - Extensions can add or replace source-exclusion rules with the `static_site_importer_source_exclusion_rules` filter. Rules use stable ID selectors and reason-coded categories so removals remain explicit and auditable.
 - External assets must be directly referenced by fetched HTML or CSS and pass the same public-IP and redirect validation as page URLs.
@@ -271,9 +271,6 @@ wp static-site-importer import-url https://example.com/ \
   --report=report.json
 
 wp static-site-importer import-url https://example.com/ \
-  --collect-site \
-  --max-pages=20 \
-  --max-assets=100 \
   --slug=example-site \
   --activate \
   --overwrite

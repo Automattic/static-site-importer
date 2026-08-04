@@ -231,25 +231,8 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				WP_CLI::error( 'Provide a public source URL.' );
 			}
 
-			$provider_args = array();
-			if ( isset( $assoc_args['collect-site'] ) ) {
-				$provider_args['collect_site'] = true;
-			}
-			if ( isset( $assoc_args['skip-scripts'] ) ) {
-				$provider_args['include_scripts'] = false;
-			}
-			if ( isset( $assoc_args['retain-scripts'] ) ) {
-				$provider_args['include_scripts'] = true;
-			}
-			foreach ( array( 'batch-pages', 'max-pages', 'max-assets', 'max-total-bytes', 'request-delay-ms', 'timeout', 'max-bytes' ) as $key ) {
-				if ( isset( $assoc_args[ $key ] ) ) {
-					$provider_args[ str_replace( '-', '_', $key ) ] = (int) $assoc_args[ $key ];
-				}
-			}
-
 			$input  = array(
 				'url'                       => $url,
-				'provider_args'             => $provider_args,
 				'slug'                      => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
 				'name'                      => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
 				'site_title'                => isset( $assoc_args['site-title'] ) ? (string) $assoc_args['site-title'] : '',
@@ -259,9 +242,12 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'fail_on_quality'           => isset( $assoc_args['fail-on-quality'] ),
 				'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
 				'report'                    => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
-				'work_dir'                  => isset( $assoc_args['work-dir'] ) ? (string) $assoc_args['work-dir'] : '',
 			);
 			$result = static_site_importer_ability_import_url( $input );
+			while ( ! empty( $result['success'] ) && ! empty( $result['continuation'] ) ) {
+				$input['import_id'] = (string) ( $result['import_id'] ?? '' );
+				$result             = static_site_importer_ability_import_url( $input );
+			}
 			if ( empty( $result['success'] ) ) {
 				$error = isset( $result['error'] ) && is_array( $result['error'] ) ? $result['error'] : array();
 				WP_CLI::error( (string) ( $error['message'] ?? 'Static site URL import failed.' ) );
