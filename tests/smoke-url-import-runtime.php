@@ -185,7 +185,7 @@ $provider_result = Static_Site_Importer_URL_Import_Runtime::import_url( array( '
 $assert( ! is_wp_error( $provider_result ) && 'private-provider-request' === ( $provider_result['theme_slug'] ?? '' ) && empty( $provider_result['url_batch_run'] ), 'external-provider-keeps-normal-artifact-import-contract' );
 
 $policy = Static_Site_Importer_URL_Import_Runtime::url_import_policy();
-$assert( 20 === $policy['pages_per_invocation'], 'policy-default-pages-per-invocation' );
+$assert( 5 === $policy['pages_per_invocation'], 'policy-default-pages-per-invocation' );
 $assert( 1000 === $policy['total_pages'], 'policy-default-total-pages-scales-beyond-one-invocation' );
 add_filter(
 	'static_site_importer_url_import_policy',
@@ -193,7 +193,7 @@ add_filter(
 );
 $policy = Static_Site_Importer_URL_Import_Runtime::url_import_policy();
 $assert( 2500 === $policy['total_pages'], 'policy-allows-raised-total-page-limit' );
-$assert( 20 === $policy['pages_per_invocation'] && ! isset( $policy['unknown'] ), 'policy-normalizes-types-and-whitelists-fields' );
+$assert( 5 === $policy['pages_per_invocation'] && ! isset( $policy['unknown'] ), 'policy-normalizes-types-and-whitelists-fields' );
 
 $client_shell_html = '<!doctype html><html><head><title>App</title>' . str_repeat( '<script src="/app.js"></script>', 25 ) . '</head><body><div id="root"></div></body></html>' . str_repeat( ' ', 120000 );
 $client_shell_diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $client_shell_html );

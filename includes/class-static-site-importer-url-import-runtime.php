@@ -218,7 +218,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 	/** @return array<string,mixed> */
 	public static function url_import_policy(): array {
 		$defaults = array(
-			'pages_per_invocation'              => 20,
+			'pages_per_invocation'              => 5,
 			'batches_per_invocation'            => 1,
 			'invocation_seconds'                 => 20.0,
 			'total_pages'                        => 1000,
@@ -252,7 +252,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 
 	/** @param array<string,mixed> $policy @return array<string,mixed> */
 	private static function normalize_url_import_policy( array $policy ): array {
-		$defaults = array( 'pages_per_invocation' => 20, 'batches_per_invocation' => 1, 'invocation_seconds' => 20.0, 'total_pages' => 1000, 'total_assets' => 2000, 'total_bytes' => 268435456, 'resource_bytes' => 5242880, 'fetch_timeout_seconds' => 10.0, 'request_delay_milliseconds' => 100, 'include_scripts' => false );
+		$defaults = array( 'pages_per_invocation' => 5, 'batches_per_invocation' => 1, 'invocation_seconds' => 20.0, 'total_pages' => 1000, 'total_assets' => 2000, 'total_bytes' => 268435456, 'resource_bytes' => 5242880, 'fetch_timeout_seconds' => 10.0, 'request_delay_milliseconds' => 100, 'include_scripts' => false );
 		$integers = array( 'pages_per_invocation', 'batches_per_invocation', 'total_pages', 'total_assets', 'total_bytes', 'resource_bytes', 'request_delay_milliseconds' );
 		foreach ( $integers as $key ) {
 			if ( isset( $policy[ $key ] ) && is_int( $policy[ $key ] ) && $policy[ $key ] >= ( 'request_delay_milliseconds' === $key ? 0 : 1 ) ) {
