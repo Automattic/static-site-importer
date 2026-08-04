@@ -458,11 +458,12 @@ class Static_Site_Importer_Plugin_Materializer {
 		if ( ! is_readable( $file ) ) {
 			return;
 		}
-		$headers = function_exists( 'get_plugin_data' ) ? get_plugin_data( $file, false, false ) : array();
+		$headers              = function_exists( 'get_plugin_data' ) ? get_plugin_data( $file, false, false ) : array();
+		$sha256               = hash_file( 'sha256', $file );
 		$report['provenance'] = array(
 			'source'  => 'wordpress.org',
-			'version' => is_array( $headers ) ? (string) ( $headers['Version'] ?? '' ) : '',
-			'sha256'  => hash_file( 'sha256', $file ) ?: '',
+			'version' => (string) ( $headers['Version'] ?? '' ),
+			'sha256'  => false !== $sha256 ? $sha256 : '',
 		);
 	}
 
@@ -681,7 +682,13 @@ class Static_Site_Importer_Plugin_Materializer {
 	private static function install_wp_org_plugin( string $slug ) {
 		if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			try {
-				$result = WP_CLI::runcommand( 'plugin install ' . escapeshellarg( $slug ), array( 'return' => true, 'exit_on_error' => false ) );
+				$result = WP_CLI::runcommand(
+					'plugin install ' . escapeshellarg( $slug ),
+					array(
+						'return'        => true,
+						'exit_on_error' => false,
+					)
+				);
 				if ( 0 === $result || null === $result || true === $result ) {
 					return true;
 				}

@@ -318,7 +318,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			$adapter = $prepared['adapter'];
 			foreach ( self::plugin_dependencies( $adapter ) as $dependency ) {
-				$slug = (string) ( $dependency['slug'] ?? '' );
+				$slug        = (string) ( $dependency['slug'] ?? '' );
 				$plugin_file = (string) ( $dependency['plugin_file'] ?? '' );
 				if ( '' === $slug || '' === $plugin_file ) {
 					continue;
@@ -326,18 +326,21 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				$key = 'wp-org:' . $slug;
 				if ( ! isset( $entries[ $key ] ) ) {
 					$entries[ $key ] = array(
-						'source_kind' => 'wordpress.org-plugin',
-						'package' => $slug,
-						'slug' => $slug,
-						'version_policy' => 'wordpress.org-latest-stable',
-						'reference_policy' => 'resolver-recorded-immutable-package-digest',
-						'plugin_entrypoint' => $plugin_file,
-						'activation' => 'required',
-						'integrity' => array( 'entrypoint_sha256' => '', 'provenance' => 'registry-declared' ),
-						'provenance' => array(
-							'adapter_id' => (string) ( $adapter['id'] ?? '' ),
-							'provider' => (string) ( $adapter['provider'] ?? '' ),
-							'entity_type' => (string) ( $adapter['entity_type'] ?? '' ),
+						'source_kind'        => 'wordpress.org-plugin',
+						'package'            => $slug,
+						'slug'               => $slug,
+						'version_policy'     => 'wordpress.org-latest-stable',
+						'reference_policy'   => 'resolver-recorded-immutable-package-digest',
+						'plugin_entrypoint'  => $plugin_file,
+						'activation'         => 'required',
+						'integrity'          => array(
+							'entrypoint_sha256' => '',
+							'provenance'        => 'registry-declared',
+						),
+						'provenance'         => array(
+							'adapter_id'      => (string) ( $adapter['id'] ?? '' ),
+							'provider'        => (string) ( $adapter['provider'] ?? '' ),
+							'entity_type'     => (string) ( $adapter['entity_type'] ?? '' ),
 							'declaration_ids' => array(),
 						),
 						'provider_readiness' => array_merge(
@@ -351,9 +354,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 		ksort( $entries, SORT_STRING );
 		return array(
-			'schema' => 'static-site-importer/runtime-dependency-plan/v1',
+			'schema'          => 'static-site-importer/runtime-dependency-plan/v1',
 			'artifact_sha256' => $artifact_sha256,
-			'entries' => array_values( $entries ),
+			'entries'         => array_values( $entries ),
 		);
 	}
 
@@ -579,7 +582,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						'plugin_file'           => 'jetpack/jetpack.php',
 						'availability_callback' => array( 'Static_Site_Importer_Form_Seeder', 'jetpack_forms_available' ),
 						'preparation_callback'  => array( 'Static_Site_Importer_Form_Seeder', 'prepare_jetpack_forms_runtime' ),
-						'provider_readiness'   => array(
+						'provider_readiness'    => array(
 							'required_block_types' => Static_Site_Importer_Form_Seeder::required_block_types(),
 							'required_classes'     => Static_Site_Importer_Form_Seeder::required_runtime_apis(),
 						),

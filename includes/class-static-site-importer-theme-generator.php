@@ -111,9 +111,10 @@ class Static_Site_Importer_Theme_Generator {
 			return $lifecycle;
 		}
 		if ( 'plan' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
+			$encoded_artifact = wp_json_encode( $artifact );
 			return Static_Site_Importer_Entity_Materializer_Registry::dependency_plan(
 				$lifecycle,
-				hash( 'sha256', wp_json_encode( $artifact ) ?: '' )
+				hash( 'sha256', false !== $encoded_artifact ? $encoded_artifact : '' )
 			);
 		}
 		if ( 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
@@ -122,10 +123,10 @@ class Static_Site_Importer_Theme_Generator {
 				return $dependencies;
 			}
 			return array(
-				'status' => 'dependencies_prepared',
+				'status'            => 'dependencies_prepared',
 				'runtime_lifecycle' => $lifecycle,
-				'dependencies' => $dependencies,
-				'fresh_runtime' => array( 'request_id' => self::runtime_request_id() ),
+				'dependencies'      => $dependencies,
+				'fresh_runtime'     => array( 'request_id' => self::runtime_request_id() ),
 			);
 		}
 		if ( 'resume' === ( $args['runtime_lifecycle_phase'] ?? '' ) && (string) ( $args['runtime_lifecycle_request_id'] ?? '' ) === self::runtime_request_id() ) {
@@ -747,8 +748,15 @@ class Static_Site_Importer_Theme_Generator {
 					)
 				);
 			}
-			if ( $capability !== (string) ( $adapter['capability'] ?? '' ) ) {
-				return new WP_Error( 'static_site_importer_runtime_adapter_invalid', 'Runtime declaration adapter does not support its declared capability.', array( 'status' => 'rejected', 'declaration_id' => $key ) );
+			if ( (string) ( $adapter['capability'] ?? '' ) !== $capability ) {
+				return new WP_Error(
+					'static_site_importer_runtime_adapter_invalid',
+					'Runtime declaration adapter does not support its declared capability.',
+					array(
+						'status'         => 'rejected',
+						'declaration_id' => $key,
+					)
+				);
 			}
 			if ( 'dependency' === $kind ) {
 				$lifecycle['dependencies'][ $key ] = array(
@@ -787,7 +795,11 @@ class Static_Site_Importer_Theme_Generator {
 					'required'    => $required,
 				);
 				if ( ! isset( $lifecycle['dependencies'][ $key ] ) ) {
-					$lifecycle['dependencies'][ $key ] = array( 'adapter' => $adapter, 'declaration' => $declaration, 'required' => $required );
+					$lifecycle['dependencies'][ $key ] = array(
+						'adapter'     => $adapter,
+						'declaration' => $declaration,
+						'required'    => $required,
+					);
 				}
 			}
 		}
@@ -906,7 +918,15 @@ class Static_Site_Importer_Theme_Generator {
 			$reports[ $id ] = ! empty( $args['materialize_dependencies'] ) ? Static_Site_Importer_Entity_Materializer_Registry::materialize_plugin_dependencies( $adapter ) : array( 'status' => 'available' );
 			foreach ( $reports[ $id ] as $plugin_report ) {
 				if ( is_array( $plugin_report ) && 'failed' === ( $plugin_report['status'] ?? '' ) ) {
-					return new WP_Error( 'static_site_importer_required_runtime_dependency_failed', 'SSI could not install or activate a required runtime dependency.', array( 'status' => 'partial', 'declaration_id' => $id, 'dependency' => $plugin_report ) );
+					return new WP_Error(
+						'static_site_importer_required_runtime_dependency_failed',
+						'SSI could not install or activate a required runtime dependency.',
+						array(
+							'status'         => 'partial',
+							'declaration_id' => $id,
+							'dependency'     => $plugin_report,
+						)
+					);
 				}
 			}
 			if ( 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
