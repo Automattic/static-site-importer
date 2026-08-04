@@ -572,7 +572,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				continue;
 			}
 			$relations = preg_split( '/\s+/', strtolower( trim( $relation ) ) );
-			if ( array_intersect( $relations ? $relations : array(), array( 'stylesheet', 'icon', 'apple-touch-icon', 'apple-touch-icon-precomposed', 'mask-icon', 'preload', 'modulepreload' ) ) ) {
+			if ( array_intersect( $relations ? $relations : array(), array( 'stylesheet', 'icon', 'apple-touch-icon', 'apple-touch-icon-precomposed', 'apple-touch-startup-image', 'mask-icon', 'manifest', 'preload', 'modulepreload' ) ) ) {
 				$link_urls[] = $href;
 			}
 		}

@@ -24,6 +24,8 @@ $GLOBALS['ssi_plan_meta']       = array();
 $GLOBALS['ssi_plan_options']    = array( 'show_on_front' => 'posts', 'page_on_front' => 0, 'blogname' => 'Before', 'use_smilies' => true );
 $GLOBALS['ssi_plan_fail_after'] = 0;
 $GLOBALS['ssi_plan_font_requests'] = array();
+$GLOBALS['ssi_plan_hooks']       = array();
+$GLOBALS['ssi_plan_has_site_icon'] = false;
 mkdir( $GLOBALS['ssi_plan_root'], 0777, true );
 
 class WP_Error {
@@ -75,6 +77,11 @@ function update_option( string $key, $value ): bool {
 function switch_theme( string $slug ): void { $GLOBALS['ssi_plan_options']['stylesheet'] = $slug; }
 function convert_smilies( string $content, string $which = 'content' ): string { return ( $GLOBALS['ssi_plan_options']['use_smilies'] ?? true ) ? 'smilied-' . $which : $content; }
 function sanitize_text_field( string $value ): string { return $value; }
+function add_action( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void { $GLOBALS['ssi_plan_hooks'][ $hook ][ $priority ][] = $callback; }
+function add_filter( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void { $GLOBALS['ssi_plan_hooks'][ $hook ][ $priority ][] = $callback; }
+function esc_url( string $value ): string { return str_starts_with( $value, 'https://' ) ? $value : ''; }
+function esc_attr( string $value ): string { return htmlspecialchars( $value, ENT_QUOTES, 'UTF-8' ); }
+function has_site_icon(): bool { return $GLOBALS['ssi_plan_has_site_icon']; }
 function update_post_meta( int $id, string $key, string $value ): void { $GLOBALS['ssi_plan_meta'][ $id ][ $key ] = $value; }
 function get_post_meta( int $id, string $key, bool $single = true ): string { return (string) ( $GLOBALS['ssi_plan_meta'][ $id ][ $key ] ?? '' ); }
 function get_posts( array $args ): array {
@@ -125,10 +132,11 @@ $assert( false === strpos( (string) $theme_generator_source, 'function import_co
 $artifact = array(
 	'entrypoint' => 'index.html',
 	'files'      => array(
-		'index.html'       => '<html><head><link rel="stylesheet" href="/assets/site.css"></head><body><header><p>Header</p></header><main><img src="assets/logo.svg"><h1>Home</h1></main></body></html>',
-		'about.html'       => '<main><h1>About</h1></main>',
-		'assets/logo.svg'  => '<svg xmlns="http://www.w3.org/2000/svg"/>',
-		'assets/site.css'  => 'main { background: url(assets/logo.svg); }',
+		'index.html'           => '<html><head><link rel="stylesheet" href="/assets/site.css"><link rel="apple-touch-icon" sizes="180x180" href="assets/touch-icon.png"></head><body><header><p>Header</p></header><main><img src="assets/logo.svg"><h1>Home</h1></main></body></html>',
+		'about.html'           => '<main><h1>About</h1></main>',
+		'assets/logo.svg'      => '<svg xmlns="http://www.w3.org/2000/svg"/>',
+		'assets/touch-icon.png' => 'touch-icon-payload',
+		'assets/site.css'      => 'main { background: url(assets/logo.svg); }',
 	),
 );
 $result = ( new ArtifactCompiler() )->compile( $artifact )->toArray();
@@ -154,6 +162,21 @@ $assert( file_exists( $GLOBALS['ssi_plan_root'] . '/site-plan/templates/front-pa
 $assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-plan/assets/assets/site.css' ), 'https://example.test/wp-content/themes/site-plan/assets/assets/logo.svg' ), 'root-relative stylesheet references resolve to declared theme assets' );
 $assert( 'posts' === $GLOBALS['ssi_plan_options']['show_on_front'], 'plan-only materialization does not change reading settings by default' );
 $assert( $receipt['plan']['pages'][0]['document_metadata']['links'][0]['resolved_url'] === 'https://example.test/wp-content/themes/site-plan/assets/assets/site.css', 'resolved metadata retains the declared stylesheet destination' );
+$bootstrap = (string) file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-plan/functions.php' );
+$assert( str_contains( $bootstrap, "add_action( 'wp_head'" ) && str_contains( $bootstrap, 'apple-touch-icon' ) && str_contains( $bootstrap, 'assets/assets/touch-icon.png' ) && str_contains( $bootstrap, 'has_site_icon()' ), 'entrypoint site metadata is emitted through a native-override-aware theme head hook' );
+require $GLOBALS['ssi_plan_root'] . '/site-plan/functions.php';
+$head_callback = $GLOBALS['ssi_plan_hooks']['wp_head'][1][0] ?? null;
+$assert( is_callable( $head_callback ), 'generated bootstrap registers a callable WordPress head hook' );
+ob_start();
+$head_callback();
+$head = (string) ob_get_clean();
+$assert( str_contains( $head, '<link rel="apple-touch-icon" href="https://example.test/wp-content/themes/site-plan/assets/assets/touch-icon.png" sizes="180x180">' ), 'generated head callback emits the resolved touch icon declaration' );
+$GLOBALS['ssi_plan_has_site_icon'] = true;
+ob_start();
+$head_callback();
+$native_icon_head = (string) ob_get_clean();
+$assert( ! str_contains( $native_icon_head, 'apple-touch-icon' ), 'native WordPress Site Icon overrides the imported icon declaration' );
+$GLOBALS['ssi_plan_has_site_icon'] = false;
 $assert( array() === $receipt['completed']['runtime_declarations']['asset_publications'], 'plans without publication declarations retain an explicit empty receipt collection' );
 $unbound_provenance = $receipt['completed']['block_provenance'] ?? array();
 $assert( count( $plan['pages'] ) === count( $unbound_provenance ) && count( $plan['pages'] ) === ( $receipt['completed']['block_provenance_count'] ?? 0 ), 'ordinary resolved pages receive receipt provenance without runtime bindings' );

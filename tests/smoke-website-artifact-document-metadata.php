@@ -46,7 +46,7 @@ $result = Static_Site_Importer_Theme_Generator::import_website_artifact(
 		'files'  => array(
 			array(
 				'path'    => 'index.html',
-				'content' => '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ember & Rye</title><meta name="description" content="Wood-fired bakery"><link rel="stylesheet" href="/assets/site.css"></head><body><header class="site-header"><a href="/">Ember & Rye</a></header><main><section class="hero"><h1>Fire, flour, patience.</h1><p>Small-batch loaves.</p><div class="contact-actions"><a class="btn btn-ghost" href="/contact">Visit us</a></div><div class="hours-table"><div><span>Tue</span><strong>4–10pm</strong></div></div><figure><img class="rounded-photo reveal" src="assets/logo.svg" alt="Bakery mark"></figure><div class="glow-orb"></div></section></main><script src="assets/js/main.js" defer></script></body></html>',
+				'content' => '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ember & Rye</title><meta name="description" content="Wood-fired bakery"><link rel="stylesheet" href="/assets/site.css"><link rel="apple-touch-icon" sizes="180x180" href="assets/touch-icon.png"></head><body><header class="site-header"><a href="/">Ember & Rye</a></header><main><section class="hero"><h1>Fire, flour, patience.</h1><p>Small-batch loaves.</p><div class="contact-actions"><a class="btn btn-ghost" href="/contact">Visit us</a></div><div class="hours-table"><div><span>Tue</span><strong>4–10pm</strong></div></div><figure><img class="rounded-photo reveal" src="assets/logo.svg" alt="Bakery mark"></figure><div class="glow-orb"></div></section></main><script src="assets/js/main.js" defer></script></body></html>',
 			),
 			array(
 				'path'    => 'assets/site.css',
@@ -55,6 +55,10 @@ $result = Static_Site_Importer_Theme_Generator::import_website_artifact(
 			array(
 				'path'    => 'assets/logo.svg',
 				'content' => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="5" fill="#c94f2d"/></svg>',
+			),
+			array(
+				'path'           => 'assets/touch-icon.png',
+				'content_base64' => base64_encode( 'touch-icon-payload' ),
 			),
 			array(
 				'path'    => 'assets/js/main.js',
@@ -165,11 +169,13 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( 'utf-8' === ( $metadata['meta'][0]['charset'] ?? '' ), 'charset-meta-is-preserved-in-metadata' );
 	$assert( 'viewport' === ( $metadata['meta'][1]['name'] ?? '' ), 'viewport-meta-is-preserved-in-metadata' );
 	$assert( str_ends_with( (string) ( $metadata['links'][0]['href'] ?? '' ), 'assets/assets/site.css' ), 'stylesheet-link-is-resolved-to-the-declared-theme-asset' );
+	$assert( str_ends_with( (string) ( $metadata['links'][1]['href'] ?? '' ), 'assets/assets/touch-icon.png' ), 'touch-icon-link-is-resolved-to-the-declared-theme-asset' );
 	$assert( str_ends_with( (string) ( $scripts[0]['src'] ?? '' ), 'assets/assets/js/main.js' ), 'script-src-is-resolved-to-the-declared-theme-asset' );
 	$assert( 'body' === ( $scripts[0]['placement'] ?? '' ), 'script-placement-is-preserved-in-document-metadata' );
 	$assert( true === ( $scripts[0]['defer'] ?? false ), 'script-defer-is-preserved-in-document-metadata' );
 	$bootstrap = $read( $theme_dir . '/functions.php' );
 	$assert( str_contains( $bootstrap, "get_theme_file_uri( 'assets/assets/site.css' )" ), 'theme-bootstrap-enqueues-the-canonical-stylesheet', $bootstrap );
+	$assert( str_contains( $bootstrap, "add_action( 'wp_head'" ) && str_contains( $bootstrap, 'apple-touch-icon' ) && str_contains( $bootstrap, 'assets/assets/touch-icon.png' ), 'theme-bootstrap-emits-the-resolved-touch-icon', $bootstrap );
 }
 
 $missing_template_parts_result = Static_Site_Importer_Theme_Generator::import_website_artifact(
