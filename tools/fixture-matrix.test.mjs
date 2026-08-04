@@ -3573,7 +3573,7 @@ test('fixture selection fails closed for execution and keeps empty dry-run plann
   assert.equal(planned.summary.fixture_count, 0);
   await assert.rejects(
     runFixtureMatrix({ fixtureRoot, outputDirectory: path.join(root, 'executed'), staticSiteImporterPath: staticSiteImporter, tag: 'absent', run: true }),
-    /requires at least one executable fixture/,
+    /requires a complete eligible fixture inventory/,
   );
 
   const nonDirectoryRoot = path.join(root, 'not-a-directory');
@@ -3708,7 +3708,7 @@ test('top-level symlink fixture roots stay planning-empty and never stage an ext
   assert.equal(existsSync(path.join(outputDirectory, 'external-site', 'artifact.json')), false);
   await assert.rejects(
     runFixtureMatrix({ fixtureRoot, outputDirectory, staticSiteImporterPath: staticSiteImporter, run: true }),
-    /requires at least one executable fixture/,
+    /requires a complete eligible fixture inventory/,
   );
 });
 
