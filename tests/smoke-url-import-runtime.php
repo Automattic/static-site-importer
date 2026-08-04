@@ -181,8 +181,8 @@ $assert( 'external-caller' === ( Static_Site_Importer_Theme_Generator::$last_arg
 $assert( 'private' === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata']['visibility'] ?? '' ), 'provider-metadata-merged' );
 $assert( 'test-private-runtime' === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata']['url_import_provider'] ?? '' ), 'provider-recorded' );
 
-$batch_provider_result = Static_Site_Importer_URL_Import_Runtime::import_url( array( 'url' => 'private.example.test/', 'slug' => 'private-batch-request', 'provider_args' => array( 'collect_site' => true, 'batch_pages' => 2 ) ) );
-$assert( ! is_wp_error( $batch_provider_result ) && 'private-batch-request' === ( $batch_provider_result['theme_slug'] ?? '' ) && empty( $batch_provider_result['url_batch_run'] ), 'external-provider-keeps-normal-import-contract-for-batch-request' );
+$provider_result = Static_Site_Importer_URL_Import_Runtime::import_url( array( 'url' => 'private.example.test/', 'slug' => 'private-provider-request' ) );
+$assert( ! is_wp_error( $provider_result ) && 'private-provider-request' === ( $provider_result['theme_slug'] ?? '' ) && empty( $provider_result['url_batch_run'] ), 'external-provider-keeps-normal-artifact-import-contract' );
 
 $runtime_artifact = Static_Site_Importer_URL_Import_Runtime::website_artifact_from_url(
 	array(

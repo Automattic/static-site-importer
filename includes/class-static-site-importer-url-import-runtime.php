@@ -43,6 +43,9 @@ class Static_Site_Importer_URL_Import_Runtime {
 			return new WP_Error( 'static_site_importer_missing_url', 'The url input is required.' );
 		}
 		$input['url']    = $url;
+		if ( ! empty( $input['import_id'] ) ) {
+			return self::continue_batch_import( $url, $input );
+		}
 		$request         = self::provider_request( $url, $input );
 		$provider_output = self::provider_output( $request );
 		if ( is_wp_error( $provider_output ) ) {
@@ -50,10 +53,8 @@ class Static_Site_Importer_URL_Import_Runtime {
 		}
 		if ( is_array( $provider_output ) ) {
 			$runtime = $provider_output;
-		} elseif ( ! empty( $request['provider_args']['collect_site'] ) && array_key_exists( 'batch_pages', $request['provider_args'] ) ) {
-			return Static_Site_Importer_URL_Batch_Import::import( $request, $input );
 		} else {
-			$runtime = self::fetch_public_url_provider( $request );
+			return self::start_batch_import( $url, $input );
 		}
 		if ( is_wp_error( $runtime ) ) {
 			return $runtime;
@@ -107,7 +108,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 			'url'             => $url,
 			'provider'        => isset( $input['provider'] ) ? (string) $input['provider'] : '',
 			'provider_args'   => isset( $input['provider_args'] ) && is_array( $input['provider_args'] ) ? $input['provider_args'] : array(),
-			'work_dir'        => ! empty( $input['work_dir'] ) ? (string) $input['work_dir'] : self::default_work_dir(),
+			'work_dir'        => self::default_work_dir(),
 			'source_metadata' => isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array(),
 		);
 	}
@@ -213,6 +214,127 @@ class Static_Site_Importer_URL_Import_Runtime {
 	/** @return array<string,mixed> */
 	public static function batch_import_args( array $input, array $runtime ): array {
 		return self::import_args( $input, $runtime );
+	}
+
+	/** @return array<string,mixed>|WP_Error */
+	private static function start_batch_import( string $url, array $input ) {
+		$identity = bin2hex( random_bytes( 32 ) );
+		$contract = self::batch_contract( $url, $input );
+		$registry = self::run_registry_path( $identity );
+		$record   = array(
+			'schema'    => 'static-site-importer/url-import-run/v1',
+			'identity'  => $identity,
+			'contract'  => $contract,
+			'workspace' => self::run_workspace( $identity ),
+		);
+		if ( ! wp_mkdir_p( dirname( $registry ) ) || false === file_put_contents( $registry, wp_json_encode( $record ) ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes an importer-owned opaque run registry.
+			return new WP_Error( 'static_site_importer_url_import_run_unavailable', 'The URL import run workspace is unavailable.' );
+		}
+
+		return self::run_batch_import( $record, $input );
+	}
+
+	/** @return array<string,mixed>|WP_Error */
+	private static function continue_batch_import( string $url, array $input ) {
+		$identity = (string) $input['import_id'];
+		if ( ! preg_match( '/^[a-f0-9]{64}$/', $identity ) ) {
+			return new WP_Error( 'static_site_importer_invalid_url_import_id', 'The import_id is invalid.' );
+		}
+		$registry = self::run_registry_path( $identity );
+		$raw      = is_file( $registry ) ? file_get_contents( $registry ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads an importer-owned opaque run registry.
+		$record   = is_string( $raw ) ? json_decode( $raw, true ) : null;
+		if ( ! is_array( $record ) || 'static-site-importer/url-import-run/v1' !== ( $record['schema'] ?? '' ) || $identity !== ( $record['identity'] ?? '' ) || self::run_workspace( $identity ) !== ( $record['workspace'] ?? '' ) ) {
+			return new WP_Error( 'static_site_importer_url_import_run_not_found', 'The URL import run was not found.' );
+		}
+		if ( self::canonical( self::batch_contract( $url, $input ) ) !== self::canonical( $record['contract'] ?? array() ) ) {
+			return new WP_Error( 'static_site_importer_url_import_run_mismatch', 'The URL import identity does not match this URL, import options, or user.' );
+		}
+
+		return self::run_batch_import( $record, $input );
+	}
+
+	/** @param array<string,mixed> $record @return array<string,mixed>|WP_Error */
+	private static function run_batch_import( array $record, array $input ) {
+		$request = self::provider_request( (string) $record['contract']['url'], $input );
+		$request['work_dir']      = (string) $record['workspace'];
+		$request['provider_args'] = self::batch_args();
+		$fetcher = apply_filters( 'static_site_importer_url_batch_import_fetcher', null, $request, $input );
+		$importer = apply_filters( 'static_site_importer_url_batch_importer', null, $request, $input );
+		$result = Static_Site_Importer_URL_Batch_Import::import( $request, $input, is_callable( $fetcher ) ? $fetcher : null, is_callable( $importer ) ? $importer : null );
+		if ( is_wp_error( $result ) ) {
+			$data = $result->get_error_data();
+			if ( is_array( $data ) ) {
+				unset( $data['expired_manifest'], $data['archived_manifest'], $data['cleanup'] );
+			}
+			return new WP_Error( $result->get_error_code(), $result->get_error_message(), $data );
+		}
+		$result['import_id'] = (string) $record['identity'];
+		if ( isset( $result['url_batch_run'] ) && is_array( $result['url_batch_run'] ) ) {
+			unset( $result['url_batch_run']['run_manifest'] );
+			unset( $result['url_batch_run']['cleanup'], $result['url_batch_run']['legacy_cache_cleanup'] );
+			$result['url_batch_run']['import_id'] = (string) $record['identity'];
+		}
+
+		return $result;
+	}
+
+	/** @return array<string,mixed> */
+	private static function batch_contract( string $url, array $input ): array {
+		$options = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
+		return self::canonical(
+			array(
+				'url'     => $url,
+				'options' => $options,
+				'user_id' => function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0,
+			)
+		);
+	}
+
+	/** @return array<string,mixed> */
+	private static function batch_args(): array {
+		$args = array(
+			'collect_site'                       => true,
+			'batch_pages'                        => 20,
+			'max_effective_batches_per_invocation' => 1,
+			'max_invocation_seconds'              => 20,
+			'max_pages'                           => 20,
+			'max_assets'                          => 2000,
+			'max_total_bytes'                     => 268435456,
+			'max_bytes'                           => 5242880,
+			'timeout'                             => 10,
+			'request_delay_ms'                    => 100,
+			'include_scripts'                     => false,
+		);
+		/** @param array<string,mixed> $args Server-owned URL batch policy. */
+		return apply_filters( 'static_site_importer_url_batch_import_args', $args );
+	}
+
+	private static function run_registry_path( string $identity ): string {
+		return trailingslashit( self::url_import_root() ) . 'runs/' . $identity . '.json';
+	}
+
+	private static function run_workspace( string $identity ): string {
+		return trailingslashit( self::url_import_root() ) . 'workspaces/' . $identity;
+	}
+
+	private static function url_import_root(): string {
+		$upload_dir = function_exists( 'wp_upload_dir' ) ? wp_upload_dir() : array();
+		$base_dir   = isset( $upload_dir['basedir'] ) ? (string) $upload_dir['basedir'] : sys_get_temp_dir();
+		return trailingslashit( $base_dir ) . 'static-site-importer/url-imports';
+	}
+
+	/** @param array<string,mixed> $value @return array<string,mixed> */
+	private static function canonical( array $value ): array {
+		foreach ( $value as &$item ) {
+			if ( is_array( $item ) ) {
+				$item = self::canonical( $item );
+			}
+		}
+		unset( $item );
+		if ( ! array_is_list( $value ) ) {
+			ksort( $value, SORT_STRING );
+		}
+		return $value;
 	}
 
 	/**

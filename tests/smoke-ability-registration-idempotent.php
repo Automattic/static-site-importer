@@ -72,6 +72,9 @@ foreach ( array( 'static-site-importer/import-website-artifact', 'static-site-im
 	assert( 'string' === $properties['site_title']['type'] );
 	assert( array( 'report_only', 'draft' ) === $properties['stale_page_action']['enum'] );
 }
+$url_properties = $GLOBALS['ssi_abilities']['static-site-importer/import-url']['input_schema']['properties'];
+assert( isset( $url_properties['import_id'] ) );
+assert( ! isset( $url_properties['provider'] ) && ! isset( $url_properties['provider_args'] ) && ! isset( $url_properties['work_dir'] ) );
 $manifest_result = static_site_importer_ability_get_runtime_package_manifest();
 assert( true === $manifest_result['success'] );
 assert( 'static-site-importer/runtime-package-manifest/v1' === $manifest_result['manifest']['schema'] );
