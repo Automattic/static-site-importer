@@ -397,12 +397,13 @@ class Static_Site_Importer_Theme_Generator {
 		$diagnostics = array_merge( $diagnostics, $lifecycle['diagnostics'] ?? array() );
 		$gutenberg_gaps = isset( $receipt['extensions']['gutenberg_gaps'] ) && is_array( $receipt['extensions']['gutenberg_gaps'] ) ? $receipt['extensions']['gutenberg_gaps'] : array();
 		$diagnostics = array_merge( $diagnostics, $gutenberg_gaps );
+		$report_plan = self::reportable_wordpress_site_plan( $plan );
 		$report       = array(
 			'schema'                           => 'static-site-importer/import-report/v1',
 			'import_run_id'                    => self::import_run_id( $args ),
 			'blocks_engine'                    => array(
 				'transformer'         => self::transformer_provenance(),
-				'wordpress_site_plan' => $plan,
+				'wordpress_site_plan' => $report_plan,
 				'gutenberg_gaps'      => $gutenberg_gaps,
 			),
 			'quality'                          => $quality,
@@ -413,7 +414,7 @@ class Static_Site_Importer_Theme_Generator {
 				'reason' => 'companion_plugin_payload_absent',
 			),
 			'generated_theme'                  => array(
-				'wordpress_site_plan' => $plan,
+				'wordpress_site_plan' => $report_plan,
 				'document_metadata'   => self::document_metadata_from_plan_receipt( $plan ),
 				'template_parts'      => array_map(
 					static fn( array $part ): array => array(
@@ -1209,6 +1210,24 @@ class Static_Site_Importer_Theme_Generator {
 			}
 		}
 		return array( 'schema' => 'static-site-importer/document-metadata/v1' );
+	}
+
+	/** @param array<string,mixed> $plan @return array<string,mixed> */
+	private static function reportable_wordpress_site_plan( array $plan ): array {
+		foreach ( $plan['assets'] ?? array() as &$asset ) {
+			if ( is_array( $asset ) ) {
+				unset( $asset['content'], $asset['content_base64'] );
+			}
+		}
+		unset( $asset );
+		foreach ( $plan['writes'] ?? array() as &$write ) {
+			if ( is_array( $write['payload'] ?? null ) ) {
+				unset( $write['payload']['data'] );
+			}
+			unset( $write['canonical_payload'] );
+		}
+		unset( $write );
+		return $plan;
 	}
 
 	/** @param array<string,mixed> $payload */
