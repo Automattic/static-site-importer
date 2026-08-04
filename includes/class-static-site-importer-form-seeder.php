@@ -23,6 +23,9 @@ require_once __DIR__ . '/class-static-site-importer-provider-layout-overlay.php'
  */
 class Static_Site_Importer_Form_Seeder {
 
+	/** Whether this process has explicitly completed the late Jetpack Forms init. */
+	private static bool $jetpack_forms_initialized = false;
+
 	/** Return the provider block emitted for one mapped form binding. */
 	public static function binding_block_markup( array $entity, array $result ): string {
 		unset( $entity );
@@ -56,9 +59,14 @@ class Static_Site_Importer_Form_Seeder {
 		);
 	}
 
-	/** Return every Jetpack block type the adapter can emit. */
-	private static function required_provider_blocks(): array {
+	/** @return array<int,string> Every Jetpack block type the adapter can emit. */
+	public static function required_block_types(): array {
 		return array_values( array_unique( array_merge( array( 'jetpack/contact-form', 'jetpack/field-checkbox-multiple', 'jetpack/input', 'jetpack/label', 'jetpack/option', 'jetpack/options', 'jetpack/phone-input' ), array_values( self::field_block_map() ) ) ) );
+	}
+
+	/** @return array<int,string> Provider APIs required by the declared adapter. */
+	public static function required_runtime_apis(): array {
+		return array( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form' );
 	}
 
 	/**
@@ -152,66 +160,59 @@ class Static_Site_Importer_Form_Seeder {
 		return ! empty( $availability['available'] );
 	}
 
-	/** Activate Jetpack's Forms module and register its server-side block types. */
+	/** Activate and prepare Jetpack Forms through its canonical module lifecycle. */
 	public static function prepare_jetpack_forms_runtime() {
-		if ( ! class_exists( 'Jetpack' ) ) {
-			return new WP_Error( 'static_site_importer_jetpack_class_missing', 'Jetpack activated without exposing its runtime class.' );
-		}
-		$modules_class = 'Automattic\\Jetpack\\Modules';
-		if ( ! class_exists( $modules_class ) ) {
-			return new WP_Error( 'static_site_importer_jetpack_modules_api_missing', 'Jetpack activated without exposing its modules API.' );
-		}
-		$modules                   = new $modules_class();
-		$status_class              = 'Automattic\\Jetpack\\Status';
-		$cache_class               = 'Automattic\\Jetpack\\Status\\Cache';
-		$connection_ready_callback = self::optional_static_callback( 'Jetpack', 'is_connection_ready' );
-		if (
-			null !== $connection_ready_callback
-			&& ! $connection_ready_callback()
-			&& class_exists( $status_class )
-			&& ! ( new $status_class() )->is_offline_mode()
-		) {
-			update_option( 'jetpack_offline_mode', true, false );
-			$cache_clear_callback = self::optional_static_callback( $cache_class, 'clear' );
-			if ( null !== $cache_clear_callback ) {
-				$cache_clear_callback();
-			}
-		}
-		if ( ! $modules->is_active( 'contact-form' ) ) {
-			Jetpack::activate_module( 'contact-form', false, false );
-		}
-		if ( ! $modules->is_active( 'contact-form' ) ) {
-			return new WP_Error(
-				'static_site_importer_jetpack_forms_module_inactive',
-				'Jetpack did not activate its contact-form module.',
-				array(
-					'module_active' => false,
-					'availability'  => self::jetpack_forms_availability_details(),
-				)
-			);
+		if ( ! class_exists( 'Jetpack' ) || ! class_exists( 'Automattic\\Jetpack\\Modules' ) ) {
+			return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_runtime_missing', array( 'Jetpack', 'Automattic\\Jetpack\\Modules' ) );
 		}
 
-		$block_class                    = 'Automattic\\Jetpack\\Extensions\\Contact_Form\\Contact_Form_Block';
-		$register_block_callback        = self::optional_static_callback( $block_class, 'register_block' );
-		$register_child_blocks_callback = self::optional_static_callback( $block_class, 'register_child_blocks' );
-		if ( null !== $register_block_callback && null !== $register_child_blocks_callback ) {
-			$register_block_callback();
-			$register_child_blocks_callback();
+		$modules = new Automattic\Jetpack\Modules();
+		if ( ! $modules->is_active( 'contact-form' ) ) {
+			$activated = Jetpack::activate_module( 'contact-form', false, false );
+			if ( false === $activated ) {
+				return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_activation_failed', array( 'contact-form' ) );
+			}
+		}
+
+		$loader = 'Automattic\\Jetpack\\Forms\\Jetpack_Forms';
+		if ( ! class_exists( $loader ) ) {
+			return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_loader_missing', array( $loader . '::load_contact_form' ) );
+		}
+		$loader::load_contact_form();
+
+		$initializer = 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form_Plugin';
+		if ( function_exists( 'did_action' ) && did_action( 'init' ) && ! self::$jetpack_forms_initialized ) {
+			if ( ! class_exists( $initializer ) ) {
+				return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_init_missing', array( $initializer . '::init' ) );
+			}
+			$initializer::init();
+			self::$jetpack_forms_initialized = true;
 		}
 
 		$availability = self::jetpack_forms_availability_details();
-		return ! empty( $availability['available'] )
-			? true
-			: new WP_Error( 'static_site_importer_jetpack_forms_blocks_missing', 'Jetpack Forms activated without registering every required provider block.', array(
-				'module_active' => true,
-				'availability'  => $availability,
-			) );
+		if ( ! empty( $availability['available'] ) ) {
+			return true;
+		}
+
+		return self::jetpack_forms_runtime_error(
+			'static_site_importer_jetpack_forms_blocks_missing',
+			array_keys( array_filter( $availability['required_blocks'], static fn ( bool $registered ): bool => ! $registered ) ),
+			$availability
+		);
 	}
 
-	/** Resolve an optional provider API without coupling analysis to one installed version. */
-	private static function optional_static_callback( string $class_name, string $method_name ): ?callable {
-		$callback = array( $class_name, $method_name );
-		return is_callable( $callback ) ? $callback : null;
+	/** Build a bounded provider-readiness error. */
+	private static function jetpack_forms_runtime_error( string $code, array $missing, array $details = array() ): WP_Error {
+		return new WP_Error(
+			$code,
+			'Jetpack Forms provider runtime is not ready.',
+			array_filter(
+				array(
+					'missing' => array_slice( array_values( $missing ), 0, 20 ),
+					'details' => $details,
+				)
+			)
+		);
 	}
 
 	/**
@@ -220,9 +221,13 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return array<string,mixed>
 	 */
 	public static function jetpack_forms_availability_details(): array {
-		$contact_form_class = class_exists( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form' );
+		$required_apis = array();
+		foreach ( self::required_runtime_apis() as $api ) {
+			$required_apis[ $api ] = class_exists( $api );
+		}
+		$contact_form_class = ! empty( $required_apis['Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form'] );
 		$legacy_class       = class_exists( 'Grunion_Contact_Form' ) || class_exists( 'Contact_Form' );
-		$registered_blocks  = array_fill_keys( self::required_provider_blocks(), false );
+		$registered_blocks  = array_fill_keys( self::required_block_types(), false );
 
 		if ( class_exists( 'WP_Block_Type_Registry' ) ) {
 			$registry = WP_Block_Type_Registry::get_instance();
@@ -230,15 +235,19 @@ class Static_Site_Importer_Form_Seeder {
 				$registered_blocks[ $block_name ] = $registry->is_registered( $block_name );
 			}
 		}
-		$contact_form_block = $registered_blocks['jetpack/contact-form'];
-		$field_text_block   = $registered_blocks['jetpack/field-text'];
+		$contact_form_block        = $registered_blocks['jetpack/contact-form'];
+		$field_text_block          = $registered_blocks['jetpack/field-text'];
+		$required_blocks_available = ! empty( $registered_blocks ) && ! in_array( false, $registered_blocks, true );
+		$required_apis_available   = ! empty( $required_apis ) && ! in_array( false, $required_apis, true );
 
 		return array(
-			'available'          => ( $contact_form_class || $legacy_class ) && ! in_array( false, $registered_blocks, true ),
+			'available'          => $required_apis_available && $contact_form_block && $required_blocks_available,
 			'contact_form_class' => $contact_form_class,
 			'legacy_class'       => $legacy_class,
 			'contact_form_block' => $contact_form_block,
 			'field_text_block'   => $field_text_block,
+			'required_apis'      => $required_apis,
+			'required_blocks'    => $registered_blocks,
 			'registered_blocks'  => $registered_blocks,
 		);
 	}
