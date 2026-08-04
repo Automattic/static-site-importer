@@ -1214,19 +1214,23 @@ class Static_Site_Importer_Theme_Generator {
 
 	/** @param array<string,mixed> $plan @return array<string,mixed> */
 	private static function reportable_wordpress_site_plan( array $plan ): array {
-		foreach ( $plan['assets'] ?? array() as &$asset ) {
-			if ( is_array( $asset ) ) {
-				unset( $asset['content'], $asset['content_base64'] );
+		if ( isset( $plan['assets'] ) && is_array( $plan['assets'] ) ) {
+			foreach ( $plan['assets'] as &$asset ) {
+				if ( is_array( $asset ) ) {
+					unset( $asset['content'], $asset['content_base64'] );
+				}
 			}
+			unset( $asset );
 		}
-		unset( $asset );
-		foreach ( $plan['writes'] ?? array() as &$write ) {
-			if ( is_array( $write['payload'] ?? null ) ) {
-				unset( $write['payload']['data'] );
+		if ( isset( $plan['writes'] ) && is_array( $plan['writes'] ) ) {
+			foreach ( $plan['writes'] as &$write ) {
+				if ( is_array( $write['payload'] ?? null ) ) {
+					unset( $write['payload']['data'] );
+				}
+				unset( $write['canonical_payload'] );
 			}
-			unset( $write['canonical_payload'] );
+			unset( $write );
 		}
-		unset( $write );
 		return $plan;
 	}
 
