@@ -3573,7 +3573,7 @@ test('fixture selection fails closed for execution and keeps empty dry-run plann
   assert.equal(planned.summary.fixture_count, 0);
   await assert.rejects(
     runFixtureMatrix({ fixtureRoot, outputDirectory: path.join(root, 'executed'), staticSiteImporterPath: staticSiteImporter, tag: 'absent', run: true }),
-    /requires at least one executable fixture/,
+    /requires a complete eligible fixture inventory/,
   );
 
   const nonDirectoryRoot = path.join(root, 'not-a-directory');
@@ -3590,6 +3590,24 @@ test('fixture selection fails closed for execution and keeps empty dry-run plann
   ], { encoding: 'utf8' });
   assert.equal(dryRun.status, 0, dryRun.stderr);
   assert.equal(JSON.parse(dryRun.stdout).fixture_selection.status, 'planning_empty');
+});
+
+test('missing and top-level symlink roots retain planning-empty selection semantics', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-invalid-root-planning-'));
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  const externalRoot = path.join(root, 'external-fixtures');
+  const symlinkRoot = path.join(root, 'symlinked-fixtures');
+  mkdirSync(staticSiteImporter, { recursive: true });
+  mkdirSync(path.join(externalRoot, 'site'), { recursive: true });
+  writeFileSync(path.join(externalRoot, 'site', 'index.html'), '<h1>External</h1>');
+  symlinkSync(externalRoot, symlinkRoot);
+
+  for (const [fixtureRoot, reason] of [[path.join(root, 'missing-fixtures'), 'root_missing'], [symlinkRoot, 'root_symlink']]) {
+    const plan = buildFixtureMatrixRunPlan({ staticSiteImporter, fixtureRoot });
+    assert.equal(plan.execution_eligible, false);
+    assert.equal(plan.fixture_selection.status, 'planning_empty');
+    assert.equal(plan.fixture_selection.exclusions[0].reason, reason);
+  }
 });
 
 test('fixture selection reports one executable fixture and rejects typoed targets', () => {
@@ -3690,7 +3708,7 @@ test('top-level symlink fixture roots stay planning-empty and never stage an ext
   assert.equal(existsSync(path.join(outputDirectory, 'external-site', 'artifact.json')), false);
   await assert.rejects(
     runFixtureMatrix({ fixtureRoot, outputDirectory, staticSiteImporterPath: staticSiteImporter, run: true }),
-    /requires at least one executable fixture/,
+    /requires a complete eligible fixture inventory/,
   );
 });
 
