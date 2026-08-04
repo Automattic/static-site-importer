@@ -42,9 +42,9 @@ surface and supplies all SSI policy from this package.
 - `static-site-fixture-matrix-result.json`: normalized fixture results.
 - `summary.json`: aggregate pass/fail/finding counts plus the matrix coverage
   inventory used for the run.
-- `finding-packets.json`: versioned envelope containing grouped diagnostics for
-  repair fanout and the same coverage inventory. Consumers should read its
-  `findings` array; the comparison utility also accepts legacy array artifacts.
+- `finding-packets.json`: legacy top-level diagnostic array for repair fanout.
+- `fixture-coverage.json`: additive coverage inventory; `summary.json` and
+  `cli-run.json` also retain this inventory for compatibility.
 - `cli-run.json`: command summary and runtime metadata.
 
 ## Diagnostic Interpretation

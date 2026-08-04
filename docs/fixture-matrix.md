@@ -85,10 +85,13 @@ The inventory separates `active` (`fixtures/websites`) and `solved`
 selected automatically without editing SSI. Execution fails closed for malformed
 metadata, duplicate stable IDs, or an unfiltered eligible fixture omitted from a
 matrix. Intentional lane filtering records `filter_mismatch` instead.
+Stable IDs are globally unique across active and solved corpora: a collision is
+rejected before lane selection and includes corpus, root, and fixture-path
+attribution so it cannot overwrite shared artifact or result paths.
 
-`summary.json` and `finding-packets.json` include the exact coverage inventory;
-the latter is an envelope with a `findings` array, which existing finding-packet
-comparison tooling accepts alongside legacy array artifacts.
+`summary.json`, `cli-run.json`, and the additive `fixture-coverage.json` include
+the exact coverage inventory. `finding-packets.json` remains its legacy top-level
+array shape for existing repair-fanout consumers.
 
 ## Three-Fig Fixture E2E
 

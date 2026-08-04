@@ -313,9 +313,13 @@ function normalizeOptions(input) {
 
 function resolveFixtureSelection({ fixtureRoot, targetFixture, promotionGate, solvedOnly, input }) {
   const target = String(targetFixture || '').trim();
+  const fixtures = discoverFixtures(fixtureRoot, { maxDepth: 2 });
+  const coverage = createFixtureMatrix({ fixture_root: fixtureRoot }).fixture_coverage;
+  assertFixtureCoverageAllowsSelection(coverage);
+  const activeFixtureIds = fixtures.filter((fixture) => fixture.fixture_corpus === 'active').map((fixture) => fixture.id);
+  const solvedFixtureIds = fixtures.filter((fixture) => fixture.fixture_corpus === 'solved').map((fixture) => fixture.id);
   if (solvedOnly) {
     assertSolvedOnlySelectionIsCompatible(input);
-    const solvedFixtureIds = discoverExecutableFixtureIds(path.join(fixtureRoot, 'solved'));
     if (!solvedFixtureIds.length) {
       throw new Error(`--solved-only requires at least one valid fixture under ${path.join(fixtureRoot, 'solved')}.`);
     }
@@ -347,12 +351,11 @@ function resolveFixtureSelection({ fixtureRoot, targetFixture, promotionGate, so
   }
 
   const activeRoot = path.join(fixtureRoot, 'websites');
-  if (!discoverExecutableFixtureIds(activeRoot).includes(target)) {
+  if (!activeFixtureIds.includes(target)) {
     throw new Error(`--target-fixture "${target}" was not found under ${activeRoot}.`);
   }
-  const solvedFixtureIds = promotionGate ? discoverExecutableFixtureIds(path.join(fixtureRoot, 'solved')) : [];
   return {
-    fixtureIds: [...new Set([target, ...solvedFixtureIds])].sort(),
+    fixtureIds: promotionGate ? [target, ...solvedFixtureIds].sort() : [target],
     targetFixture: target,
     promotionGate: Boolean(promotionGate),
     solvedOnly: false,
@@ -361,6 +364,17 @@ function resolveFixtureSelection({ fixtureRoot, targetFixture, promotionGate, so
     selectedActiveFixtureCount: 1,
     selectedSolvedFixtureCount: solvedFixtureIds.length,
   };
+}
+
+function assertFixtureCoverageAllowsSelection(coverage) {
+  const duplicates = [coverage?.active?.duplicates || [], coverage?.solved?.duplicates || []].flat();
+  if (duplicates.length === 0) {
+    return;
+  }
+  const rows = duplicates
+    .map((row) => `${row.id} (${row.corpus}; root=${row.root}; path=${row.path})`)
+    .sort();
+  throw new Error(`Fixture coverage has duplicate stable IDs and cannot select a lane: ${rows.join(', ')}.`);
 }
 
 function assertSolvedOnlySelectionIsCompatible(input) {
@@ -377,14 +391,6 @@ function assertSolvedOnlySelectionIsCompatible(input) {
   ].filter(([key]) => input[key] !== undefined && input[key] !== false).map(([, flag]) => flag);
   if (incompatible.length) {
     throw new Error(`--solved-only selects the complete fixtures/solved corpus and cannot be combined with ${incompatible.join(', ')}.`);
-  }
-}
-
-function discoverExecutableFixtureIds(fixtureRoot) {
-  try {
-    return discoverFixtures(fixtureRoot, { maxDepth: 2 }).map((fixture) => fixture.id);
-  } catch {
-    return [];
   }
 }
 

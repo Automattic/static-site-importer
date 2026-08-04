@@ -2141,7 +2141,7 @@ test('keeps manifest-less fixtures unknown and fails coverage for malformed meta
   assert.equal(matrix.manifest_coverage.gate.status, 'warning');
   assert.equal(matrix.manifest_coverage.unknown_fixture_class_count, 1);
   assert.equal(matrix.fixture_coverage.gate.status, 'failed');
-  assert.deepEqual(matrix.fixture_coverage.active.malformed, [
+  assert.deepEqual(matrix.fixture_coverage.active.malformed.map(({ id, reason }) => ({ id, reason })), [
     { id: 'bad-class', reason: 'metadata_invalid_class' },
     { id: 'broken-json', reason: 'malformed_metadata' },
   ]);
@@ -3436,7 +3436,7 @@ test('fixture coverage inventory derives additions, omissions, metadata failures
   writeFixture('broken', '{');
   matrix = createFixtureMatrix({ fixture_root: fixtureRoot });
   assert.equal(matrix.fixture_coverage.gate.status, 'failed');
-  assert.deepEqual(matrix.fixture_coverage.active.malformed, [{ id: 'broken', reason: 'malformed_metadata' }]);
+  assert.deepEqual(matrix.fixture_coverage.active.malformed.map(({ id, reason }) => ({ id, reason })), [{ id: 'broken', reason: 'malformed_metadata' }]);
 
   writeFixture('nested/duplicate');
   writeFixture('nested-duplicate');
@@ -3466,15 +3466,59 @@ test('fixture coverage evidence keeps solved-only and promotion selection separa
   assert.deepEqual(promotion.fixture_coverage.solved.selected, [{ id: 'solved-site', reason: 'selected' }]);
 });
 
+test('active and solved corpora cannot share a stable fixture ID', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-cross-corpus-duplicate-'));
+  const fixtureRoot = path.join(root, 'fixtures');
+  const staticSiteImporter = path.join(root, 'static-site-importer');
+  for (const corpus of ['websites', 'solved']) {
+    const directory = path.join(fixtureRoot, corpus, 'shared-site');
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, 'index.html'), '<h1>Fixture</h1>');
+    writeFileSync(path.join(directory, 'fixture.json'), JSON.stringify({ fixture_class: 'marketing/static' }));
+  }
+  mkdirSync(staticSiteImporter, { recursive: true });
+
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot });
+  assert.equal(matrix.count, 0, 'cross-corpus duplicates never reach artifact/result construction');
+  for (const inventory of [matrix.fixture_coverage.active, matrix.fixture_coverage.solved]) {
+    assert.deepEqual(inventory.duplicates.map((row) => ({ id: row.id, reason: row.reason, corpus: row.corpus, root: row.root, path: row.path })), [{
+      id: 'shared-site',
+      reason: 'duplicate_id',
+      corpus: inventory.corpus,
+      root: path.join(fixtureRoot, inventory.corpus === 'active' ? 'websites' : 'solved'),
+      path: path.join(fixtureRoot, inventory.corpus === 'active' ? 'websites' : 'solved', 'shared-site'),
+    }]);
+  }
+  assert.throws(
+    () => buildFixtureMatrixRunPlan({ staticSiteImporter, fixtureRoot, targetFixture: 'shared-site', promotionGate: true }),
+    /duplicate stable IDs.*shared-site.*\(active; root=.*\(solved; root=/s,
+  );
+
+  const outputDirectory = path.join(root, 'artifacts');
+  writeFixtureMatrixArtifacts({ outputDirectory, matrix });
+  assert.equal(existsSync(path.join(outputDirectory, 'shared-site', 'artifact.json')), false);
+  assert.equal(existsSync(path.join(outputDirectory, 'shared-site', 'surface-lineage--front-page.json')), false);
+});
+
+test('the committed SSI fixture corpus has a deterministic coverage inventory', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot });
+  assert.deepEqual(matrix.fixture_coverage.active.eligible_fixture_ids, ['simple-site']);
+  assert.deepEqual(matrix.fixture_coverage.solved.eligible_fixture_ids, []);
+  assert.equal(matrix.fixture_coverage.gate.status, 'passed');
+});
+
 test('result evidence writes the derived coverage into summary and finding packets', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-derived-fixture-evidence-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot });
   writeFixtureMatrixResultArtifacts({ outputDirectory, matrix });
   const summary = JSON.parse(readFileSync(path.join(outputDirectory, 'summary.json'), 'utf8'));
   const packets = JSON.parse(readFileSync(path.join(outputDirectory, 'finding-packets.json'), 'utf8'));
+  const coverage = JSON.parse(readFileSync(path.join(outputDirectory, 'fixture-coverage.json'), 'utf8'));
   assert.deepEqual(summary.fixture_coverage, matrix.fixture_coverage);
-  assert.deepEqual(packets.fixture_coverage, matrix.fixture_coverage);
-  assert.equal(packets.findings.length, summary.finding_count);
+  assert.ok(Array.isArray(packets), 'legacy finding-packet consumers receive the original top-level array');
+  assert.equal(packets.length, summary.finding_count);
+  assert.equal(compareFindingPackets({ base: packets, candidate: packets }).totals.base, packets.length);
+  assert.deepEqual(coverage, matrix.fixture_coverage);
 });
 
 function fixtureMatrixRunConfigTestValue(key, field) {
@@ -3699,12 +3743,10 @@ test('--solved-only selects exactly the valid solved fixture corpus', () => {
   const fixtureRoot = path.join(root, 'fixtures');
   mkdirSync(staticSiteImporter, { recursive: true });
   mkdirSync(path.join(fixtureRoot, 'websites', 'active-site'), { recursive: true });
-  mkdirSync(path.join(fixtureRoot, 'websites', 'solved-a'), { recursive: true });
   mkdirSync(path.join(fixtureRoot, 'solved', 'solved-b'), { recursive: true });
   mkdirSync(path.join(fixtureRoot, 'solved', 'solved-a'), { recursive: true });
   mkdirSync(path.join(fixtureRoot, 'solved', 'incomplete'), { recursive: true });
   writeFileSync(path.join(fixtureRoot, 'websites', 'active-site', 'index.html'), '<h1>Active</h1>');
-  writeFileSync(path.join(fixtureRoot, 'websites', 'solved-a', 'index.html'), '<h1>Active collision</h1>');
   writeFileSync(path.join(fixtureRoot, 'solved', 'solved-a', 'index.html'), '<h1>Solved A</h1>');
   writeFileSync(path.join(fixtureRoot, 'solved', 'solved-b', 'index.html'), '<h1>Solved B</h1>');
 
