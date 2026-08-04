@@ -502,11 +502,16 @@ function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 
 	$source = isset( $params['source'] ) && is_array( $params['source'] ) ? $params['source'] : array();
 	$input  = static_site_importer_rest_import_args( $params );
-	if ( isset( $params['provider'] ) ) {
-		$input['provider'] = sanitize_key( (string) $params['provider'] );
+	if ( static_site_importer_rest_is_url_only_source( $source ) && isset( $params['import_id'] ) && is_scalar( $params['import_id'] ) ) {
+		$input['import_id'] = (string) $params['import_id'];
 	}
-	if ( isset( $params['provider_args'] ) && is_array( $params['provider_args'] ) ) {
-		$input['provider_args'] = $params['provider_args'];
+	if ( ! static_site_importer_rest_is_url_only_source( $source ) ) {
+		if ( isset( $params['provider'] ) ) {
+			$input['provider'] = sanitize_key( (string) $params['provider'] );
+		}
+		if ( isset( $params['provider_args'] ) && is_array( $params['provider_args'] ) ) {
+			$input['provider_args'] = $params['provider_args'];
+		}
 	}
 	$mode = static_site_importer_rest_import_mode( $params );
 
@@ -565,6 +570,13 @@ function static_site_importer_rest_should_apply_to_current_site( array $params )
 function static_site_importer_rest_open_in_playground( array $source, array $input ) {
 	$input['activate']  = true;
 	$input['overwrite'] = true;
+	if ( static_site_importer_rest_is_url_only_source( $source ) ) {
+		return new WP_Error(
+			'static_site_importer_url_playground_requires_disposable_target',
+			__( 'URL preview requires a disposable WordPress target running the Static Site Importer import-url ability.', 'static-site-importer' ),
+			array( 'status' => 422, 'ability' => 'static-site-importer/import-url' )
+		);
+	}
 
 	$runtime = static_site_importer_rest_source_runtime( $source, $input );
 	if ( is_wp_error( $runtime ) ) {
@@ -705,6 +717,14 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
 		return $result;
 	};
 
+	if ( static_site_importer_rest_is_url_only_source( $source ) ) {
+		$input['url'] = Static_Site_Importer_URL_Fetcher::normalize_url( (string) $source['url'] );
+		if ( isset( $input['import_id'] ) && '' === (string) $input['import_id'] ) {
+			unset( $input['import_id'] );
+		}
+		return static_site_importer_execute_import_ability( 'static-site-importer/import-url', $input, 'static_site_importer_ability_import_url' );
+	}
+
 	$runtime = static_site_importer_rest_source_runtime( $source, $input );
 	if ( is_wp_error( $runtime ) ) {
 		return $runtime;
@@ -805,24 +825,6 @@ function static_site_importer_source_runtime( array $source, array $input = arra
 			'artifact'        => $artifact,
 			'source_metadata' => array(),
 			'provider'        => 'figma-file',
-		);
-	}
-
-	if ( static_site_importer_rest_is_url_only_source( $source ) ) {
-		$url_input        = $input;
-		$url_input['url'] = (string) $source['url'];
-		$runtime          = Static_Site_Importer_URL_Import_Runtime::website_artifact_from_url( $url_input );
-		if ( is_wp_error( $runtime ) ) {
-			return $runtime;
-		}
-
-		$source_metadata                = isset( $runtime['source_metadata'] ) && is_array( $runtime['source_metadata'] ) ? $runtime['source_metadata'] : array();
-		$source_metadata['source_type'] = isset( $source_metadata['source_type'] ) ? (string) $source_metadata['source_type'] : 'url';
-
-		return array(
-			'artifact'        => $runtime['artifact'],
-			'source_metadata' => $source_metadata,
-			'provider'        => isset( $runtime['provider'] ) ? (string) $runtime['provider'] : 'public-url-fetcher',
 		);
 	}
 

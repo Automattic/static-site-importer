@@ -352,21 +352,32 @@
 			try {
 				const restUrl = root.getAttribute( 'data-static-site-importer-rest-url' );
 				const nonce = root.getAttribute( 'data-static-site-importer-nonce' );
-				const response = await fetch( restUrl, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						'X-WP-Nonce': nonce,
-					},
-					body: JSON.stringify( {
-						provider,
-						source,
-						apply_to_current_site: isCurrentSiteImport,
-						activate: isCurrentSiteImport,
-						overwrite: isCurrentSiteImport,
-					} ),
-				} );
-				const report = await response.json();
+				const isUrlOnly = Boolean( source.url && ! source.html && ! source.files.length && ! source.archive );
+				const intent = {
+					source,
+					apply_to_current_site: isCurrentSiteImport,
+					activate: isCurrentSiteImport,
+					overwrite: isCurrentSiteImport,
+				};
+				if ( ! isUrlOnly && provider ) {
+					intent.provider = provider;
+				}
+				let importId = '';
+				let response;
+				let report;
+				do {
+					const request = importId ? Object.assign( {}, intent, { import_id: importId } ) : intent;
+					response = await fetch( restUrl, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							'X-WP-Nonce': nonce,
+						},
+						body: JSON.stringify( request ),
+					} );
+					report = await response.json();
+					importId = isUrlOnly && response.ok && report.success && report.continuation ? report.import_id || '' : '';
+				} while ( importId );
 				setReport( root, report );
 				if ( response.ok && isCurrentSiteImport && report.success ) {
 					showStatus( root, 'Import complete.' );

@@ -170,6 +170,23 @@ URL intake rules:
 - Every built-in URL import collects the bounded site through the resumable batch engine. It reads the origin's `/sitemap.xml`, follows same-origin HTML links, and collects directly referenced page assets and nested CSS assets.
 - SSI owns collection, batch, deadline, asset, byte, pacing, and script-policy defaults. Hosts can adjust this policy with the `static_site_importer_url_batch_import_args` filter.
 - `static-site-importer/import` accepts `{ source: { type: "url", url, import_id? }, operation }`. The first URL apply returns an opaque `import_id`; continuation supplies that ID in the same source envelope. SSI resolves the server-owned workspace and validates the URL, import options, and current user; no filesystem path is accepted or returned.
+
+URL collection limits are server policy, not public import input. Consumers can configure the whitelisted policy through `static_site_importer_url_import_policy`:
+
+```php
+add_filter(
+	'static_site_importer_url_import_policy',
+	static function ( array $policy ): array {
+		$policy['pages_per_invocation'] = 20;
+		$policy['invocation_seconds']    = 20;
+		$policy['total_pages']           = 5000;
+
+		return $policy;
+	}
+);
+```
+
+The complete policy also includes `batches_per_invocation`, `total_assets`, `total_bytes`, `resource_bytes`, `fetch_timeout_seconds`, `request_delay_milliseconds`, and `include_scripts`. SSI ignores unknown keys, normalizes supported values, and snapshots the resolved policy when an import starts so every continuation uses the same limits. CLI and REST callers cannot override this policy.
 - URL collection uses the frozen static artifact policy: executable and data scripts are omitted with reason-coded provenance because the server-rendered output does not require them.
 - Registered source-exclusion rules remove non-authored platform chrome before asset discovery and compilation. Each removal records selector, provider, reason, and before/after hashes under `source_metadata.collection.source_exclusions`; set `exclude_platform_chrome=false` to preserve the raw source.
 - Extensions can add or replace source-exclusion rules with the `static_site_importer_source_exclusion_rules` filter. Rules use stable ID selectors and reason-coded categories so removals remain explicit and auditable.
