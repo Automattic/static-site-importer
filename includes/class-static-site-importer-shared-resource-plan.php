@@ -29,6 +29,11 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 	/** @return array<string,mixed>|WP_Error */
 	public function establish( array $artifact, ?array $paths = null ): array|WP_Error {
 		$resources = self::resources( $artifact, $paths );
+		return $this->store( $resources );
+	}
+
+	/** @param array<int,array<string,mixed>> $resources @return array<string,mixed>|WP_Error */
+	private function store( array $resources ): array|WP_Error {
 		$plan      = array(
 			'schema'     => self::SCHEMA,
 			'digest'     => self::digest( $resources ),
@@ -55,7 +60,12 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 				'plan'    => $plan,
 			);
 		}
-		$current = self::resources( $artifact, array_column( $existing['resources'], 'path' ) );
+		$resources = array_column( $existing['resources'], null, 'path' );
+		foreach ( self::resources( $artifact ) as $resource ) {
+			$resources[ $resource['path'] ] = $resource;
+		}
+		$current = array_values( $resources );
+		usort( $current, static fn( array $left, array $right ): int => strcmp( $left['path'], $right['path'] ) );
 		$digest  = self::digest( $current );
 		if ( hash_equals( $existing['digest'], $digest ) ) {
 			return array(
@@ -64,7 +74,7 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 				'plan'    => $existing,
 			);
 		}
-		$plan = $this->establish( $artifact, array_column( $existing['resources'], 'path' ) );
+		$plan = $this->store( $current );
 		return array(
 			'digest'  => is_array( $plan ) ? $plan['digest'] : '',
 			'changed' => true,

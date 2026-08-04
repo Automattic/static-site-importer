@@ -301,7 +301,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 					'shared_plan_digest' => $shared['digest'],
 				);
 			}
-			$staged = self::prepare_staged_plans( $workspace, $runtime['artifact'], $shared['digest'] );
+			$staged = self::prepare_staged_plans( $workspace, $runtime['artifact'], $shared['plan'] );
 			if ( is_wp_error( $staged ) ) {
 				return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $staged, $cache );
 			}
@@ -395,11 +395,20 @@ final class Static_Site_Importer_URL_Batch_Import {
 	 * Persist the Blocks Engine staged envelopes. The shared envelope is created
 	 * once per retained resource digest; page envelopes remain batch-local.
 	 */
-	private static function prepare_staged_plans( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $artifact, string $resource_digest ): array|WP_Error {
+	private static function prepare_staged_plans( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $artifact, array $resource_plan ): array|WP_Error {
 		$compiler = self::staged_compiler();
 		if ( is_wp_error( $compiler ) ) {
 			return $compiler;
 		}
+		$resource_digest = (string) ( $resource_plan['digest'] ?? '' );
+		$shared_artifact = $artifact;
+		$files           = array_column( is_array( $resource_plan['resources'] ?? null ) ? $resource_plan['resources'] : array(), null, 'path' );
+		foreach ( $artifact['files'] ?? array() as $file ) {
+			if ( is_array( $file ) && '' !== (string) ( $file['path'] ?? '' ) ) {
+				$files[ $file['path'] ] = $file;
+			}
+		}
+		$shared_artifact['files'] = array_values( $files );
 		$stored          = $workspace->read_raw( 'staged-compiler-shared.json' );
 		$stored          = is_string( $stored ) ? json_decode( $stored, true ) : null;
 		$shared_prepared = ! is_array( $stored ) || ( $stored['resource_digest'] ?? null ) !== $resource_digest || ! is_array( $stored['plan'] ?? null );
@@ -409,7 +418,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( ! is_callable( $prepare_shared ) || ! is_callable( $prepare_page ) ) {
 				return new WP_Error( 'static_site_importer_missing_transformer_capability', 'The Blocks Engine php-transformer does not support staged URL batch plans.' );
 			}
-			$shared = $shared_prepared ? call_user_func( $prepare_shared, $artifact ) : $stored['plan'];
+			$shared = $shared_prepared ? call_user_func( $prepare_shared, $shared_artifact ) : $stored['plan'];
 			if ( $shared_prepared ) {
 				$write = $workspace->publish_json(
 					'staged-compiler-shared.json',

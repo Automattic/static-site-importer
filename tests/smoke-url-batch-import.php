@@ -33,10 +33,13 @@ $responses = array(
 	'https://batch.test/sitemap.xml' => array( 'application/xml', '<sitemapindex><sitemap><loc>https://batch.test/one.xml</loc></sitemap><sitemap><loc>https://batch.test/two.xml</loc></sitemap></sitemapindex>' ),
 	'https://batch.test/one.xml' => array( 'application/xml', '<urlset><url><loc>https://batch.test/</loc></url><url><loc>https://batch.test/about/</loc></url></urlset>' ),
 	'https://batch.test/two.xml' => array( 'application/xml', '<urlset><url><loc>https://batch.test/about/team/</loc></url></urlset>' ),
-	'https://batch.test/' => array( 'text/html', '<main><a href="/about/">About</a><link rel="stylesheet" href="/empty.css"></main>' ),
-	'https://batch.test/about/' => array( 'text/html', '<main><a href="/about/team/">Team</a></main>' ),
-	'https://batch.test/about/team/' => array( 'text/html', '<main>Team</main>' ),
+	'https://batch.test/' => array( 'text/html', '<main><a href="/about/">About</a><link rel="stylesheet" href="/empty.css"><img src="/root.png"></main>' ),
+	'https://batch.test/about/' => array( 'text/html', '<main><a href="/about/team/">Team</a><img src="/about.png"></main>' ),
+	'https://batch.test/about/team/' => array( 'text/html', '<main>Team<img src="/team.png"></main>' ),
 	'https://batch.test/empty.css' => array( 'text/css', '' ),
+	'https://batch.test/root.png' => array( 'image/png', 'root' ),
+	'https://batch.test/about.png' => array( 'image/png', 'about' ),
+	'https://batch.test/team.png' => array( 'image/png', 'team' ),
 );
 $requests = array();
 $transient_failures = array();
@@ -64,7 +67,7 @@ if ( 'failed' !== ( $manifest['state'] ?? '' ) || 'completed' !== ( $manifest['b
 if ( ! preg_match( '/^batch-[a-f0-9]{16}$/', (string) ( $manifest['batches'][0]['batch_id'] ?? '' ) ) || 64 !== strlen( (string) ( $manifest['batches'][0]['result']['snapshot_sha256'] ?? '' ) ) ) { throw new RuntimeException( 'checkpointed batches must retain stable identities and source snapshot evidence' ); }
 $legacy_cache = $work_dir . '/url-response-cache-' . $manifest['source']['identity']; wp_mkdir_p( $legacy_cache ); foreach ( glob( $work_dir . '/.ssi-artifact-run-url-' . $manifest['source']['identity'] . '/cache/http-response/*.entry' ) ?: array() as $entry ) { copy( $entry, $legacy_cache . '/' . basename( $entry ) ); } $legacy_workspace = new Static_Site_Importer_Artifact_Run_Workspace( $work_dir, 'url-' . $manifest['source']['identity'] ); $legacy_workspace->purge();
 $resumed = Static_Site_Importer_URL_Batch_Import::import( $request, $input, $fetcher, static fn( array $artifact, array $args ) => array( 'theme_slug' => 'batch-site', 'artifact' => $artifact, 'args' => $args, 'quality' => array( 'pass' => true, 'status' => 'success', 'metrics' => array( 'fallback_count' => 0 ), 'fallbacks' => array() ), 'import_report_summary' => array( 'status' => 'completed' ) ) );
-if ( is_wp_error( $resumed ) || true !== ( $resumed['terminal_batch_result']['args']['activate'] ?? false ) || isset( $resumed['pages'] ) || 2 !== ( $resumed['url_batch_run']['completed_batches'] ?? 0 ) || 3 !== ( $resumed['import_report_summary']['completed_routes'] ?? 0 ) ) { throw new RuntimeException( 'aggregate results must retain terminal output explicitly without misrepresenting it as whole-site output' ); }
+if ( is_wp_error( $resumed ) || true !== ( $resumed['terminal_batch_result']['args']['activate'] ?? false ) || isset( $resumed['pages'] ) || 2 !== ( $resumed['url_batch_run']['completed_batches'] ?? 0 ) || 3 !== ( $resumed['import_report_summary']['completed_routes'] ?? 0 ) || 3 !== ( $resumed['url_batch_run']['stage_counters']['compiler_shared_prepares'] ?? 0 ) || 1 !== ( $resumed['url_batch_run']['stage_counters']['shared_plan_invalidations'] ?? 0 ) ) { throw new RuntimeException( 'aggregate results must retain terminal output and refresh the shared compiler plan when later page assets appear: ' . wp_json_encode( $resumed['url_batch_run']['stage_counters'] ?? array() ) ); }
 $batch_quality = $resumed['url_batch_run']['batch_quality'] ?? array();
 if ( 2 !== count( $batch_quality ) || 1 !== ( $batch_quality[0]['fallback_count'] ?? -1 ) || isset( $batch_quality[0]['fallbacks'] ) || true !== ( $batch_quality[0]['pass'] ?? null ) || true !== ( $batch_quality[1]['pass'] ?? null ) ) { throw new RuntimeException( 'resumed aggregates must derive bounded quality evidence for every completed batch without retaining fallback payloads' ); }
 $first_files = array_column( $artifacts[0]['artifact']['files'], null, 'path' );
