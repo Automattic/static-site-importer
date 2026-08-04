@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "ca00ed1e044fd3cbe9fb9eb9da141192",
+    "content-hash": "bf96a24a7de0b7dbb284240386cc9fbd",
     "packages": [
         {
             "name": "automattic/blocks-engine-figma-transformer",
@@ -43,16 +43,16 @@
         },
         {
             "name": "automattic/blocks-engine-php-transformer",
-            "version": "0.4.11-dev",
+            "version": "0.4.11",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Automattic/blocks-engine.git",
-                "reference": "59fb67556237bed001b11e9272cbeb81a240d2ba"
+                "reference": "c97c53b14d6c14faadc780be0fbc0e7e4010c2a0"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://github.com/Automattic/blocks-engine/archive/59fb67556237bed001b11e9272cbeb81a240d2ba.zip",
-                "reference": "59fb67556237bed001b11e9272cbeb81a240d2ba"
+                "url": "https://github.com/Automattic/blocks-engine/archive/refs/tags/php-transformer-v0.4.11.zip",
+                "reference": "c97c53b14d6c14faadc780be0fbc0e7e4010c2a0"
             },
             "require": {
                 "league/commonmark": "^2.5",
@@ -68,7 +68,7 @@
             "license": [
                 "GPL-3.0-or-later"
             ],
-            "description": "Temporary Blocks Engine PR 801 reference; replace with the released php-transformer package version."
+            "description": "PHP primitives for transforming HTML, Markdown, and website artifacts into WordPress block outputs."
         },
         {
             "name": "dflydev/dot-access-data",
@@ -790,9 +790,7 @@
     "packages-dev": [],
     "aliases": [],
     "minimum-stability": "dev",
-    "stability-flags": {
-        "automattic/blocks-engine-php-transformer": 20
-    },
+    "stability-flags": {},
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
