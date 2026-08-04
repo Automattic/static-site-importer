@@ -377,7 +377,7 @@ $critical_asset_fetcher = static function ( string $url ) {
 	}
 	if ( 'https://critical.test/' === $url ) {
 		return array(
-			'body'     => '<!doctype html><html><head><link rel="apple-touch-icon" href="/touch-icon.png"><link rel="stylesheet" href="https://fonts.example.test/site.css"><link rel="stylesheet" href="/site.css"></head><body><main>Critical assets</main></body></html>',
+			'body'     => '<!doctype html><html><head><link rel="apple-touch-icon" href="/touch-icon.png"><link rel="stylesheet" href="https://fonts.example.test/site.css"><link rel="stylesheet" href="/site.css"></head><body><main><a href="/linked-image.jpg">Critical assets</a></main></body></html>',
 			'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ),
 		);
 	}
@@ -394,8 +394,9 @@ $external_critical = Static_Site_Importer_URL_Site_Collector::collect(
 	}
 );
 $external_files = is_wp_error( $external_critical ) ? array() : array_column( $external_critical['artifact']['files'], null, 'path' );
-$assert( ! is_wp_error( $external_critical ) && 2 === ( $external_critical['source_metadata']['collection']['external_asset_retained']['count'] ?? 0 ) && str_contains( (string) ( $external_files['website/index.html']['content'] ?? '' ), 'https://fonts.example.test/site.css' ), 'failed-cross-origin-critical-asset-remains-external' );
+$assert( ! is_wp_error( $external_critical ) && 3 === ( $external_critical['source_metadata']['collection']['external_asset_retained']['count'] ?? 0 ) && str_contains( (string) ( $external_files['website/index.html']['content'] ?? '' ), 'https://fonts.example.test/site.css' ), 'failed-cross-origin-critical-asset-remains-external' );
 $assert( str_contains( (string) ( $external_files['website/index.html']['content'] ?? '' ), 'href="https://critical.test/touch-icon.png"' ), 'optional-touch-icon-remains-resolvable-in-page-ready-artifact' );
+$assert( str_contains( (string) ( $external_files['website/index.html']['content'] ?? '' ), 'href="https://critical.test/linked-image.jpg"' ), 'non-page-anchor-remains-resolvable-in-page-ready-artifact' );
 
 $same_origin_critical = Static_Site_Importer_URL_Site_Collector::collect(
 	'https://critical.test/',

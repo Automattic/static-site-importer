@@ -553,6 +553,12 @@ class Static_Site_Importer_URL_Site_Collector {
 	/** @return array<int,string> */
 	private static function html_asset_urls( string $html, string $base_url, array $script_urls = array() ): array {
 		$urls        = array();
+		foreach ( self::tag_attribute_values( $html, 'a', 'href' ) as $reference ) {
+			$url = self::resolve_url( (string) $reference, $base_url );
+			if ( '' !== $url && ! self::is_page_url( $url ) ) {
+				$urls[] = $url;
+			}
+		}
 		$source_urls = array_merge(
 			self::tag_attribute_values( $html, 'img|source|video|audio', 'src' ),
 			self::tag_attribute_values( $html, 'video', 'poster' )
