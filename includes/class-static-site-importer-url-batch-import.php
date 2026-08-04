@@ -14,6 +14,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 
 	private const VERSION         = 2;
 	private const MAX_BATCH_PAGES = 100;
+	private const MAX_RETAINED_RUNTIME_BYTES = 8388608;
 	public static function import( array $request, array $input, ?callable $fetcher = null, ?callable $importer = null ) {
 		$args        = is_array( $request['provider_args'] ?? null ) ? $request['provider_args'] : array();
 		$batch_pages = (int) ( $args['batch_pages'] ?? 0 );
@@ -199,7 +200,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 						}
 						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $ready_runtime, $cache );
 					}
-					$write = $workspace->publish_json( $ready_cache_name, $ready_runtime );
+					$write = self::persist_runtime( $workspace, $ready_cache_name, $ready_runtime );
 					if ( is_wp_error( $write ) ) {
 						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $write, $cache );
 					}
@@ -282,7 +283,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 						}
 						continue;
 					}return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $runtime, $cache );
-				}$write = $workspace->publish_json( $cache_name, $runtime );
+				}$write = self::persist_runtime( $workspace, $cache_name, $runtime );
 				if ( is_wp_error( $write ) ) {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $write, $cache );
 				}
@@ -306,13 +307,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 				return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $staged, $cache );
 			}
 			$runtime['shared_plan_digest'] = $shared['digest'];
-			$runtime['staged_page_plans']  = $staged['page_plans'];
-			$prepared_write                = $workspace->publish_json( $cache_name, $runtime );
-			if ( is_wp_error( $prepared_write ) ) {
-				return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $prepared_write, $cache );
-			}
 			$manifest['shared_resource_plan']                          = array(
-				'schema'   => 'static-site-importer/shared-resource-plan/v1',
+				'schema'   => 'static-site-importer/shared-resource-plan/v2',
 				'digest'   => $shared['digest'],
 				'verified' => true,
 			);
@@ -402,7 +398,11 @@ final class Static_Site_Importer_URL_Batch_Import {
 		}
 		$resource_digest = (string) ( $resource_plan['digest'] ?? '' );
 		$shared_artifact = $artifact;
-		$files           = array_column( is_array( $resource_plan['resources'] ?? null ) ? $resource_plan['resources'] : array(), null, 'path' );
+		$hydrated        = ( new Static_Site_Importer_Shared_Resource_Plan( $workspace ) )->hydrate( $resource_plan );
+		if ( is_wp_error( $hydrated ) ) {
+			return $hydrated;
+		}
+		$files           = array_column( $hydrated, null, 'path' );
 		$shared_paths    = array_fill_keys( array_keys( $files ), true );
 		foreach ( $artifact['files'] ?? array() as &$file ) {
 			if ( is_array( $file ) && isset( $shared_paths[ (string) ( $file['path'] ?? '' ) ] ) ) {
@@ -424,7 +424,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				return new WP_Error( 'static_site_importer_missing_transformer_capability', 'The Blocks Engine php-transformer does not support staged URL batch plans.' );
 			}
 			$shared = $shared_prepared ? call_user_func( $prepare_shared, $shared_artifact ) : $stored['plan'];
-			if ( $shared_prepared ) {
+			if ( $shared_prepared && self::retained_resource_bytes( $resource_plan ) <= self::MAX_RETAINED_RUNTIME_BYTES ) {
 				$write = $workspace->publish_json(
 					'staged-compiler-shared.json',
 					array(
@@ -451,6 +451,21 @@ final class Static_Site_Importer_URL_Batch_Import {
 		} catch ( Throwable $error ) {
 			return new WP_Error( 'static_site_importer_staged_compile_failed', $error->getMessage() );
 		}
+	}
+	private static function persist_runtime( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $relative, array $runtime ): string|WP_Error|null {
+		$bytes = (int) ( $runtime['source_metadata']['collection']['bytes'] ?? 0 );
+		return $bytes <= self::MAX_RETAINED_RUNTIME_BYTES ? $workspace->publish_json( $relative, $runtime ) : null;
+	}
+	private static function retained_resource_bytes( array $plan ): int {
+		$total = 0;
+		foreach ( $plan['resources'] ?? array() as $resource ) {
+			$bytes = (int) ( $resource['payload_bytes'] ?? 0 );
+			if ( $bytes < 0 || $total > self::MAX_RETAINED_RUNTIME_BYTES - $bytes ) {
+				return self::MAX_RETAINED_RUNTIME_BYTES + 1;
+			}
+			$total += $bytes;
+		}
+		return $total;
 	}
 	private static function compose_staged_plans( array $staged ): array|WP_Error {
 		$compiler = self::staged_compiler();
