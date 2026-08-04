@@ -203,7 +203,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				if ( 'static_site_importer_invocation_deadline_exceeded' === $response->get_error_code() ) {
 					return $response;
 				}
-				if ( $preserve_failed_assets && ! $critical ) {
+				if ( $preserve_failed_assets && ( ! $critical || ! self::same_origin( $asset_url, $site_url ) ) ) {
 					$external_assets[ $asset_url ] = $response->get_error_code();
 					continue;
 				}
@@ -222,7 +222,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			$body  = (string) $response['body'];
 			$bytes = strlen( $body );
 			if ( $total_bytes + $bytes > $max_total_bytes ) {
-				if ( $preserve_asset_limits && ! $critical ) {
+				if ( $preserve_asset_limits && ( ! $critical || ! self::same_origin( $asset_url, $site_url ) ) ) {
 					$external_assets[ $asset_url ] = 'byte_limit';
 					continue;
 				}

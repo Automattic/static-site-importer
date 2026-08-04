@@ -371,6 +371,38 @@ $incomplete_fetcher = static function ( string $url, array $args ) use ( $incomp
 $incomplete_result = Static_Site_Importer_URL_Site_Collector::collect( 'https://example.test/', array( 'max_pages' => 10, 'max_assets' => 20, 'request_delay_ms' => 0, 'require_complete_collection' => true ), $incomplete_fetcher );
 $assert( is_wp_error( $incomplete_result ) && 'missing_fixture' === ( $incomplete_result->get_error_data()['collection']['failures'][0]['code'] ?? null ), 'complete-collection-rejects-fetch-failures' );
 
+$critical_asset_fetcher = static function ( string $url ) {
+	if ( 'https://critical.test/sitemap.xml' === $url ) {
+		return new WP_Error( 'missing_sitemap', 'No sitemap.' );
+	}
+	if ( 'https://critical.test/' === $url ) {
+		return array(
+			'body'     => '<!doctype html><html><head><link rel="stylesheet" href="https://fonts.example.test/site.css"><link rel="stylesheet" href="/site.css"></head><body><main>Critical assets</main></body></html>',
+			'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ),
+		);
+	}
+	return new WP_Error( 'critical_asset_failed', 'The critical stylesheet failed.' );
+};
+$external_critical = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://critical.test/',
+	array( 'max_pages' => 2, 'max_assets' => 20, 'request_delay_ms' => 0, 'require_complete_collection' => true, 'asset_failure_policy' => 'preserve_failed_external_assets', 'hydration_mode' => 'page_ready', '_route_set' => array( 'https://critical.test/' ) ),
+	static function ( string $url, array $args ) use ( $critical_asset_fetcher ) {
+		if ( 'https://critical.test/site.css' === $url ) {
+			return array( 'body' => 'body{color:#000}', 'metadata' => array( 'content_type' => 'text/css', 'final_url' => $url ) );
+		}
+		return $critical_asset_fetcher( $url, $args );
+	}
+);
+$external_files = is_wp_error( $external_critical ) ? array() : array_column( $external_critical['artifact']['files'], null, 'path' );
+$assert( ! is_wp_error( $external_critical ) && 1 === ( $external_critical['source_metadata']['collection']['external_asset_retained']['count'] ?? 0 ) && str_contains( (string) ( $external_files['website/index.html']['content'] ?? '' ), 'https://fonts.example.test/site.css' ), 'failed-cross-origin-critical-asset-remains-external' );
+
+$same_origin_critical = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://critical.test/',
+	array( 'max_pages' => 2, 'max_assets' => 20, 'request_delay_ms' => 0, 'require_complete_collection' => true, 'asset_failure_policy' => 'preserve_failed_external_assets', 'hydration_mode' => 'page_ready', '_route_set' => array( 'https://critical.test/' ) ),
+	$critical_asset_fetcher
+);
+$assert( is_wp_error( $same_origin_critical ) && 'critical_asset_failed' === ( $same_origin_critical->get_error_data()['collection']['failures'][0]['code'] ?? '' ), 'failed-same-origin-critical-asset-remains-fatal', is_wp_error( $same_origin_critical ) ? ( wp_json_encode( $same_origin_critical->get_error_data() ) ?: '' ) : wp_json_encode( $same_origin_critical ) );
+
 $redirect_responses = array(
 	'https://redirect.test/sitemap.xml' => array( 'content_type' => 'application/xml', 'body' => '<urlset><url><loc>https://redirect.test/</loc></url><url><loc>https://redirect.test/go</loc></url></urlset>' ),
 	'https://redirect.test/' => array( 'content_type' => 'text/html', 'body' => '<base href=/static/><link rel=stylesheet href=style.css><main><h1>Home</h1><a href=/go>Docs</a><img src=/hero.png></main>' ),
