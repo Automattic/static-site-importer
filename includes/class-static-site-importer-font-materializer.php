@@ -969,7 +969,9 @@ final class Static_Site_Importer_Font_Materializer {
 		if ( ! is_array( $parts ) || ! in_array( $scheme, array( 'http', 'https' ), true ) || 'fonts.googleapis.com' !== strtolower( (string) ( $parts['host'] ?? '' ) ) || ( null !== $port && ( ( 'http' === $scheme && 80 !== $port ) || ( 'https' === $scheme && 443 !== $port ) ) ) || isset( $parts['user'] ) || isset( $parts['pass'] ) || ! in_array( (string) ( $parts['path'] ?? '' ), array( '/css', '/css2' ), true ) ) {
 			return null;
 		}
-		return 'https://fonts.googleapis.com' . (string) $parts['path'] . ( isset( $parts['query'] ) && '' !== $parts['query'] ? '?' . $parts['query'] : '' );
+		$query = isset( $parts['query'] ) ? (string) $parts['query'] : '';
+		$query = (string) preg_replace( '/(\bfamily=[^&?]+)\?[0-9]+(?=&|$)/i', '$1', $query );
+		return 'https://fonts.googleapis.com' . (string) $parts['path'] . ( '' !== $query ? '?' . $query : '' );
 	}
 
 	private static function resolved_plan_has_google_stylesheet( array $resolved_plan ): bool {
