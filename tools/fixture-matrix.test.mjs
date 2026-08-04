@@ -833,6 +833,9 @@ test('emits provider readiness only for fixture plans that declare requirements'
   const transportedCode = Buffer.from(decoded.stdout.match(/base64_decode\('([^']+)'\)/)?.[1] || '', 'base64').toString('utf8');
   assert.match(transportedCode, /array_push\(\$missing_blocks, \$name\)/);
   assert.doesNotMatch(transportedCode, /\$missing_blocks\[\]/);
+  assert.match(transportedCode, /get_error_code\(\)/);
+  assert.match(transportedCode, /'result'=>'wp_error'/);
+  assert.match(transportedCode, /array_slice\(array_values\(\$error_data\['missing'\]\), 0, 20\)/);
   const encodedRequirements = [...transportedCode.matchAll(/base64_decode\('([^']+)'\)/g)].map((match) => match[1]);
   assert.deepEqual(JSON.parse(Buffer.from(encodedRequirements[0], 'base64').toString('utf8')), ['jetpack/contact-form', 'jetpack/field-email']);
   assert.deepEqual(JSON.parse(Buffer.from(encodedRequirements[2], 'base64').toString('utf8')), [['Static_Site_Importer_Form_Seeder', 'prepare_jetpack_forms_runtime']]);
