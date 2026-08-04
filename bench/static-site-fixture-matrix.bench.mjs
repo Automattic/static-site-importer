@@ -98,6 +98,7 @@ export default async function runFixtureMatrixBench(context = {}) {
       result: { path: summary.result_file },
       summary: { path: path.join(summary.output_directory, 'summary.json') },
       finding_packets: { path: path.join(summary.output_directory, 'finding-packets.json') },
+      fixture_coverage: { path: path.join(summary.output_directory, 'fixture-coverage.json') },
       visual_parity_evidence_report: { path: path.join(summary.output_directory, 'visual-parity-evidence-report.json') },
       visual_parity_evidence_report_markdown: { path: path.join(summary.output_directory, 'visual-parity-evidence-report.md') },
       visual_diff_classification: { path: path.join(summary.output_directory, 'visual-diff-classification.json') },
@@ -191,8 +192,8 @@ export async function runFixtureMatrix(options) {
   const matrix = fixtureInspection.exclusions[0]?.reason === 'root_symlink'
     ? createFixtureMatrix({ ...matrixInput, fixtures: [] })
     : createFixtureMatrix(matrixInput);
-  if (options.run && matrix.count === 0) {
-    throw new Error(`Fixture matrix execution requires at least one executable fixture under ${fixtureRoot}. Inspect the fixture root, entrypoint, and lane filters before retrying.`);
+  if (options.run && (matrix.count === 0 || matrix.fixture_coverage?.gate?.status === 'failed')) {
+    throw new Error(`Fixture matrix execution requires a complete eligible fixture inventory under ${fixtureRoot}. Inspect the fixture root, entrypoint, metadata, duplicate IDs, and lane filters before retrying.`);
   }
   validateHydratedComposerDependencies(packageRoot);
   const progress = createFixtureMatrixProgress(matrix, options);
@@ -306,6 +307,7 @@ export async function runFixtureMatrix(options) {
     result: fileBytes(path.join(outputDirectory, 'static-site-fixture-matrix-result.json')),
     summary: fileBytes(path.join(outputDirectory, 'summary.json')),
     finding_packets: fileBytes(path.join(outputDirectory, 'finding-packets.json')),
+    fixture_coverage: fileBytes(path.join(outputDirectory, 'fixture-coverage.json')),
     visual_parity_evidence_report: fileBytes(path.join(outputDirectory, 'visual-parity-evidence-report.json')),
     visual_parity_evidence_report_markdown: fileBytes(path.join(outputDirectory, 'visual-parity-evidence-report.md')),
     visual_diff_classification: fileBytes(path.join(outputDirectory, 'visual-diff-classification.json')),
@@ -346,6 +348,7 @@ export async function runFixtureMatrix(options) {
     editor_canvas_artifacts: editorCanvasArtifacts,
     surface_lineage_artifacts: surfaceLineageArtifacts,
     result_summary: collectedResult.summary,
+    fixture_coverage: collectedResult.summary.fixture_coverage || matrix.fixture_coverage || null,
     runtime: runtime ? runtimeSummary(runtime, runtimeError) : null,
   };
   const cliRunBaseTotal = summary.metadata.artifact_bytes.total;
@@ -1474,6 +1477,7 @@ function batchArtifactRefs({ outputDirectory, batchSuffix, batchRecipeFile, outp
     result: path.join(outputDirectory, 'static-site-fixture-matrix-result.json'),
     summary: path.join(outputDirectory, 'summary.json'),
     finding_packets: path.join(outputDirectory, 'finding-packets.json'),
+    fixture_coverage: path.join(outputDirectory, 'fixture-coverage.json'),
     visual_diff_classification: path.join(outputDirectory, 'visual-diff-classification.json'),
     batch_recipe: path.join(outputDirectory, `wp-codebox-static-site-fixture-matrix-batch-${batchSuffix}.json`),
     batch_output: path.join(outputDirectory, `wp-codebox-output-batch-${batchSuffix}.json`),
