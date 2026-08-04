@@ -67,6 +67,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		$truncated              = array();
 		$external_assets        = array();
 		$asset_owners           = array();
+		$shared_assets          = array();
 		$asset_failure_policy   = $args['asset_failure_policy'] ?? '';
 		$preserve_failed_assets = in_array( $asset_failure_policy, array( 'preserve_external', 'preserve_failed_external_assets' ), true );
 		$preserve_asset_limits  = 'preserve_external' === $asset_failure_policy;
@@ -173,6 +174,9 @@ class Static_Site_Importer_URL_Site_Collector {
 			foreach ( self::critical_html_asset_urls( $body, $document_base_url ) as $asset_url ) {
 				$critical_assets[ $asset_url ] = true;
 			}
+			foreach ( self::html_style_asset_urls( $body, $document_base_url ) as $asset_url ) {
+				$shared_assets[ $asset_url ] = true;
+			}
 			foreach ( self::html_asset_urls( $body, $document_base_url, $scripts['asset_urls'] ) as $asset_url ) {
 				$asset_owners[ $asset_url ][ $final_url ] = true;
 				if ( isset( $queued_assets[ $asset_url ] ) || isset( $resources[ $asset_url ] ) ) {
@@ -216,6 +220,9 @@ class Static_Site_Importer_URL_Site_Collector {
 			$final_url = self::response_url( $response, $asset_url );
 			if ( $final_url !== $asset_url ) {
 				$aliases[ $asset_url ] = $final_url;
+				if ( isset( $shared_assets[ $asset_url ] ) ) {
+					$shared_assets[ $final_url ] = true;
+				}
 				foreach ( array_keys( $asset_owners[ $asset_url ] ?? array() ) as $owner_url ) {
 					$asset_owners[ $final_url ][ $owner_url ] = true;
 				}
@@ -245,6 +252,9 @@ class Static_Site_Importer_URL_Site_Collector {
 
 			if ( 'text/css' === $content_type || str_ends_with( strtolower( (string) self::url_parts( $final_url, PHP_URL_PATH ) ), '.css' ) ) {
 				foreach ( self::css_asset_urls( $body, $final_url ) as $nested_url ) {
+					if ( isset( $shared_assets[ $final_url ] ) || isset( $shared_assets[ $asset_url ] ) ) {
+						$shared_assets[ $nested_url ] = true;
+					}
 					foreach ( array_keys( $asset_owners[ $final_url ] ?? $asset_owners[ $asset_url ] ?? array() ) as $owner_url ) {
 						$asset_owners[ $nested_url ][ $owner_url ] = true;
 					}
@@ -318,15 +328,15 @@ class Static_Site_Importer_URL_Site_Collector {
 				$file['metadata'] = array( 'route_path' => $route_paths[ $resource_url ] );
 			} else {
 				$owners = array_keys( $asset_owners[ $resource_url ] ?? array() );
-				if ( 1 === count( $owners ) && isset( $paths[ $owners[0] ] ) ) {
+				if ( isset( $shared_assets[ $resource_url ] ) || count( $owners ) > 1 ) {
+					$file['metadata'] = array( 'compilation' => array( 'scope' => 'shared' ) );
+				} elseif ( 1 === count( $owners ) && isset( $paths[ $owners[0] ] ) ) {
 					$file['metadata'] = array(
 						'compilation' => array(
 							'scope' => 'page',
 							'id'    => $paths[ $owners[0] ],
 						),
 					);
-				} elseif ( count( $owners ) > 1 ) {
-					$file['metadata'] = array( 'compilation' => array( 'scope' => 'shared' ) );
 				}
 			}
 			if ( self::is_text( $resource['content_type'], $path ) ) {
@@ -706,6 +716,16 @@ class Static_Site_Importer_URL_Site_Collector {
 		$urls = array();
 		foreach ( $css as $source ) {
 			$urls = array_merge( $urls, self::css_asset_urls( (string) $source, $base_url ) );
+		}
+		return array_values( array_unique( $urls ) );
+	}
+
+	/** @return array<int,string> */
+	private static function html_style_asset_urls( string $html, string $base_url ): array {
+		preg_match_all( '#<style\b[^>]*>(.*?)</style>#is', $html, $style_blocks );
+		$urls = array();
+		foreach ( $style_blocks[1] as $css ) {
+			$urls = array_merge( $urls, self::css_asset_urls( (string) $css, $base_url ) );
 		}
 		return array_values( array_unique( $urls ) );
 	}

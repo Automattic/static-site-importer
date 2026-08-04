@@ -77,7 +77,7 @@ $responses = array(
 	),
 	'https://example.test/team.html' => array(
 		'content_type' => 'text/html',
-		'body'         => '<!doctype html><html><body><main><h1>Team</h1><img src="https://cdn.example.test/team.webp"></main></body></html>',
+		'body'         => '<!doctype html><html><head><style>.team{background:url("https://cdn.example.test/team-style.webp")}</style></head><body><main><h1>Team</h1><img src="https://cdn.example.test/team.webp"></main></body></html>',
 	),
 	'https://example.test/contact.html' => array(
 		'content_type' => 'text/html',
@@ -94,6 +94,7 @@ $responses = array(
 	'https://example.test/uploads/logo-2x.png' => array( 'content_type' => 'image/png', 'body' => "\x89PNGlogo2" ),
 	'https://example.test/uploads/pattern.svg' => array( 'content_type' => 'image/svg+xml', 'body' => '<svg xmlns="http://www.w3.org/2000/svg"></svg>' ),
 	'https://cdn.example.test/team.webp' => array( 'content_type' => 'image/webp', 'body' => 'webp-team' ),
+	'https://cdn.example.test/team-style.webp' => array( 'content_type' => 'image/webp', 'body' => 'webp-team-style' ),
 	'https://cdn.example.test/font.woff2' => array( 'content_type' => 'font/woff2', 'body' => 'woff2-font' ),
 );
 
@@ -135,7 +136,7 @@ $assert( 'public-static-site-collector' === ( $result['provider'] ?? '' ), 'prov
 $assert( 'website/index.html' === ( $result['artifact']['entrypoint'] ?? '' ), 'root-entrypoint' );
 $assert( array( 'max_files' => 70, 'max_file_bytes' => 10485760, 'max_total_bytes' => 104857600 ) === ( $result['artifact']['compiler_limits'] ?? null ), 'collector-declares-bounded-compiler-limits' );
 $assert( 4 === ( $result['source_metadata']['collection']['pages'] ?? 0 ), 'sitemap-index-alias-deduplicated' );
-$assert( 8 === ( $result['source_metadata']['collection']['assets'] ?? 0 ), 'static-policy-collects-frozen-rendering-assets' );
+$assert( 9 === ( $result['source_metadata']['collection']['assets'] ?? 0 ), 'static-policy-collects-frozen-rendering-assets' );
 $assert( array() === ( $result['source_metadata']['collection']['failures'] ?? null ), 'no-collection-failures' );
 $snapshot = $result['source_metadata']['snapshot'] ?? array();
 $assert( 'static-site-importer/url-snapshot/v1' === ( $snapshot['schema'] ?? '' ) && 64 === strlen( (string) ( $snapshot['sha256'] ?? '' ) ), 'snapshot-hash-recorded' );
@@ -151,7 +152,7 @@ $assert( isset( $files['website/files/main-a798de8e.css'] ), 'query-addressed-st
 $assert( isset( $files['website/_external/cdn.example.test/font.woff2'] ), 'external-font-packaged' );
 $assert( isset( $files['website/_external/cdn.example.test/team.webp'] ), 'external-image-packaged' );
 $assert( isset( $files['website/files/components.css'] ), 'quoted-css-import-packaged' );
-$assert( array( 'scope' => 'shared' ) === ( $files['website/files/main-a798de8e.css']['metadata']['compilation'] ?? null ) && array( 'scope' => 'shared' ) === ( $files['website/_external/cdn.example.test/font.woff2']['metadata']['compilation'] ?? null ) && array( 'scope' => 'page', 'id' => 'website/team.html' ) === ( $files['website/_external/cdn.example.test/team.webp']['metadata']['compilation'] ?? null ), 'assets-declare-reference-derived-compilation-ownership' );
+$assert( array( 'scope' => 'shared' ) === ( $files['website/files/main-a798de8e.css']['metadata']['compilation'] ?? null ) && array( 'scope' => 'shared' ) === ( $files['website/_external/cdn.example.test/font.woff2']['metadata']['compilation'] ?? null ) && array( 'scope' => 'shared' ) === ( $files['website/_external/cdn.example.test/team-style.webp']['metadata']['compilation'] ?? null ) && array( 'scope' => 'page', 'id' => 'website/team.html' ) === ( $files['website/_external/cdn.example.test/team.webp']['metadata']['compilation'] ?? null ), 'assets-declare-reference-derived-compilation-ownership' );
 $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'href="/services.html"' ), 'page-link-preserved-for-route-rewriting' );
 $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'src="uploads/logo.png"' ), 'image-link-rewritten' );
 $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'url(uploads/hero.jpg)' ), 'inline-background-rewritten' );
