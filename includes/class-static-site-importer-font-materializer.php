@@ -179,13 +179,14 @@ final class Static_Site_Importer_Font_Materializer {
 			if ( 'declared' !== $state ) {
 				continue;
 			}
-			if ( ! self::is_google_stylesheet_url( $source['url'] ) ) {
+			$href = self::normalize_google_stylesheet_url( $source['url'] );
+			if ( null === $href ) {
 				$diagnostics[] = self::diagnostic( 'producer_import_invalid' );
 				return new WP_Error( 'static_site_importer_font_materialization_producer_import_invalid', '', $diagnostics );
 			}
 			$imports[ $id ] = array(
 				'id'              => $id,
-				'href'            => $source['url'],
+				'href'            => $href,
 				'expected_digest' => $source['expected_digest'] ?? null,
 			);
 		}
@@ -954,8 +955,21 @@ final class Static_Site_Importer_Font_Materializer {
 	}
 
 	private static function is_google_stylesheet_url( string $url ): bool {
-		$parts = wp_parse_url( $url );
-		return is_array( $parts ) && 'https' === strtolower( (string) ( $parts['scheme'] ?? '' ) ) && 'fonts.googleapis.com' === strtolower( (string) ( $parts['host'] ?? '' ) ) && ( ! isset( $parts['port'] ) || 443 === (int) $parts['port'] ) && ! isset( $parts['user'] ) && ! isset( $parts['pass'] ) && in_array( (string) ( $parts['path'] ?? '' ), array( '/css', '/css2' ), true );
+		return null !== self::normalize_google_stylesheet_url( $url );
+	}
+
+	private static function normalize_google_stylesheet_url( string $url ): ?string {
+		$url = html_entity_decode( trim( $url ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		if ( str_starts_with( $url, '//' ) ) {
+			$url = 'https:' . $url;
+		}
+		$parts  = wp_parse_url( $url );
+		$scheme = is_array( $parts ) ? strtolower( (string) ( $parts['scheme'] ?? '' ) ) : '';
+		$port   = is_array( $parts ) && isset( $parts['port'] ) ? (int) $parts['port'] : null;
+		if ( ! is_array( $parts ) || ! in_array( $scheme, array( 'http', 'https' ), true ) || 'fonts.googleapis.com' !== strtolower( (string) ( $parts['host'] ?? '' ) ) || ( null !== $port && ( ( 'http' === $scheme && 80 !== $port ) || ( 'https' === $scheme && 443 !== $port ) ) ) || isset( $parts['user'] ) || isset( $parts['pass'] ) || ! in_array( (string) ( $parts['path'] ?? '' ), array( '/css', '/css2' ), true ) ) {
+			return null;
+		}
+		return 'https://fonts.googleapis.com' . (string) $parts['path'] . ( isset( $parts['query'] ) && '' !== $parts['query'] ? '?' . $parts['query'] : '' );
 	}
 
 	private static function resolved_plan_has_google_stylesheet( array $resolved_plan ): bool {

@@ -78,6 +78,11 @@ $mixed_plan['webfont_contract']['imports'][] = array(
 $mixed_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $mixed_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
 $assert( ! is_wp_error( $mixed_overlay ) && array_column( $contract['faces'], 'id' ) === array_column( $mixed_overlay['faces'], 'face_id' ), 'unsupported imports coexist with independently declared materializable faces' );
 
+$protocol_relative_plan = $producer_plan;
+$protocol_relative_plan['webfont_contract']['imports'][0]['source']['url'] = preg_replace( '#^https:#', '', $protocol_relative_plan['webfont_contract']['imports'][0]['source']['url'] );
+$protocol_relative_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $protocol_relative_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
+$assert( ! is_wp_error( $protocol_relative_overlay ), 'protocol-relative Google font imports normalize to the portable HTTPS source' );
+
 $svg = '<svg xmlns="http://www.w3.org/2000/svg"><text font-family="Inter">Fixture 37</text></svg>';
 $svg_source_path = 'assets/materialized-svg/fixture-37.svg';
 $svg_write_path = 'assets/materialized-svg/fixture-37.svg';
