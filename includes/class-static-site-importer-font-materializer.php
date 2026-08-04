@@ -165,15 +165,26 @@ final class Static_Site_Importer_Font_Materializer {
 				'svg_consumers' => array(),
 			);
 		}
-		$imports = array();
+		$imports    = array();
+		$import_ids = array();
 		foreach ( $contract['imports'] ?? array() as $import ) {
 			$source = is_array( $import ) && is_array( $import['source'] ?? null ) ? $import['source'] : array();
-			if ( ! is_array( $import ) || 'declared' !== ( $import['state'] ?? '' ) || ! is_string( $import['id'] ?? null ) || 'css' !== ( $source['format'] ?? '' ) || ! is_string( $source['url'] ?? null ) || ! self::is_google_stylesheet_url( $source['url'] ) ) {
+			$state  = is_array( $import ) ? (string) ( $import['state'] ?? '' ) : '';
+			$id     = is_array( $import ) ? (string) ( $import['id'] ?? '' ) : '';
+			if ( ! is_array( $import ) || '' === $id || isset( $import_ids[ $id ] ) || ! in_array( $state, array( 'declared', 'unresolved', 'unsupported' ), true ) || 'css' !== ( $source['format'] ?? '' ) || ! is_string( $source['url'] ?? null ) ) {
 				$diagnostics[] = self::diagnostic( 'producer_import_invalid' );
 				return new WP_Error( 'static_site_importer_font_materialization_producer_import_invalid', '', $diagnostics );
 			}
-			$imports[ $import['id'] ] = array(
-				'id'              => $import['id'],
+			$import_ids[ $id ] = true;
+			if ( 'declared' !== $state ) {
+				continue;
+			}
+			if ( ! self::is_google_stylesheet_url( $source['url'] ) ) {
+				$diagnostics[] = self::diagnostic( 'producer_import_invalid' );
+				return new WP_Error( 'static_site_importer_font_materialization_producer_import_invalid', '', $diagnostics );
+			}
+			$imports[ $id ] = array(
+				'id'              => $id,
 				'href'            => $source['url'],
 				'expected_digest' => $source['expected_digest'] ?? null,
 			);
