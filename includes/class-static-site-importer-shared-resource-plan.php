@@ -89,6 +89,9 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 			if ( ! is_array( $file ) || 'text/html' === strtolower( (string) ( $file['mime_type'] ?? '' ) ) ) {
 				continue;
 			}
+			if ( 'page' === ( $file['metadata']['compilation']['scope'] ?? null ) ) {
+				continue;
+			}
 			$path = (string) ( $file['path'] ?? '' );
 			if ( '' === $path || ( null !== $paths && ! in_array( $path, $paths, true ) ) ) {
 				continue;

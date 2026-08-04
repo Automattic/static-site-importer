@@ -403,11 +403,16 @@ final class Static_Site_Importer_URL_Batch_Import {
 		$resource_digest = (string) ( $resource_plan['digest'] ?? '' );
 		$shared_artifact = $artifact;
 		$files           = array_column( is_array( $resource_plan['resources'] ?? null ) ? $resource_plan['resources'] : array(), null, 'path' );
-		foreach ( $artifact['files'] ?? array() as $file ) {
+		$shared_paths    = array_fill_keys( array_keys( $files ), true );
+		foreach ( $artifact['files'] ?? array() as &$file ) {
+			if ( is_array( $file ) && isset( $shared_paths[ (string) ( $file['path'] ?? '' ) ] ) ) {
+				$file['metadata']['compilation'] = array( 'scope' => 'shared' );
+			}
 			if ( is_array( $file ) && '' !== (string) ( $file['path'] ?? '' ) ) {
 				$files[ $file['path'] ] = $file;
 			}
 		}
+		unset( $file );
 		$shared_artifact['files'] = array_values( $files );
 		$stored          = $workspace->read_raw( 'staged-compiler-shared.json' );
 		$stored          = is_string( $stored ) ? json_decode( $stored, true ) : null;

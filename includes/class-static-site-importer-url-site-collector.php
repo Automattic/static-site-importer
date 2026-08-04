@@ -66,6 +66,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		$total_bytes            = 0;
 		$truncated              = array();
 		$external_assets        = array();
+		$asset_owners           = array();
 		$asset_failure_policy   = $args['asset_failure_policy'] ?? '';
 		$preserve_failed_assets = in_array( $asset_failure_policy, array( 'preserve_external', 'preserve_failed_external_assets' ), true );
 		$preserve_asset_limits  = 'preserve_external' === $asset_failure_policy;
@@ -173,6 +174,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				$critical_assets[ $asset_url ] = true;
 			}
 			foreach ( self::html_asset_urls( $body, $document_base_url, $scripts['asset_urls'] ) as $asset_url ) {
+				$asset_owners[ $asset_url ][ $final_url ] = true;
 				if ( isset( $queued_assets[ $asset_url ] ) || isset( $resources[ $asset_url ] ) ) {
 					continue;
 				}
@@ -214,6 +216,9 @@ class Static_Site_Importer_URL_Site_Collector {
 			$final_url = self::response_url( $response, $asset_url );
 			if ( $final_url !== $asset_url ) {
 				$aliases[ $asset_url ] = $final_url;
+				foreach ( array_keys( $asset_owners[ $asset_url ] ?? array() ) as $owner_url ) {
+					$asset_owners[ $final_url ][ $owner_url ] = true;
+				}
 			}
 			if ( isset( $resources[ $final_url ] ) ) {
 				continue;
@@ -240,6 +245,9 @@ class Static_Site_Importer_URL_Site_Collector {
 
 			if ( 'text/css' === $content_type || str_ends_with( strtolower( (string) self::url_parts( $final_url, PHP_URL_PATH ) ), '.css' ) ) {
 				foreach ( self::css_asset_urls( $body, $final_url ) as $nested_url ) {
+					foreach ( array_keys( $asset_owners[ $final_url ] ?? $asset_owners[ $asset_url ] ?? array() ) as $owner_url ) {
+						$asset_owners[ $nested_url ][ $owner_url ] = true;
+					}
 					if ( isset( $queued_assets[ $nested_url ] ) || isset( $resources[ $nested_url ] ) ) {
 						continue;
 					}
@@ -308,6 +316,18 @@ class Static_Site_Importer_URL_Site_Collector {
 			);
 			if ( 'html' === $resource['kind'] ) {
 				$file['metadata'] = array( 'route_path' => $route_paths[ $resource_url ] );
+			} else {
+				$owners = array_keys( $asset_owners[ $resource_url ] ?? array() );
+				if ( 1 === count( $owners ) && isset( $paths[ $owners[0] ] ) ) {
+					$file['metadata'] = array(
+						'compilation' => array(
+							'scope' => 'page',
+							'id'    => $paths[ $owners[0] ],
+						),
+					);
+				} elseif ( count( $owners ) > 1 ) {
+					$file['metadata'] = array( 'compilation' => array( 'scope' => 'shared' ) );
+				}
 			}
 			if ( self::is_text( $resource['content_type'], $path ) ) {
 				$file['content'] = $body;

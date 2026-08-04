@@ -73,7 +73,7 @@ $responses = array(
 	),
 	'https://example.test/services.html' => array(
 		'content_type' => 'text/html',
-		'body'         => '<!doctype html><html><body><a href="team.html">Team</a><main><h1>Services</h1></main></body></html>',
+		'body'         => '<!doctype html><html><head><link rel="stylesheet" href="/files/main.css?v=1"></head><body><a href="team.html">Team</a><main><h1>Services</h1></main></body></html>',
 	),
 	'https://example.test/team.html' => array(
 		'content_type' => 'text/html',
@@ -151,6 +151,7 @@ $assert( isset( $files['website/files/main-a798de8e.css'] ), 'query-addressed-st
 $assert( isset( $files['website/_external/cdn.example.test/font.woff2'] ), 'external-font-packaged' );
 $assert( isset( $files['website/_external/cdn.example.test/team.webp'] ), 'external-image-packaged' );
 $assert( isset( $files['website/files/components.css'] ), 'quoted-css-import-packaged' );
+$assert( array( 'scope' => 'shared' ) === ( $files['website/files/main-a798de8e.css']['metadata']['compilation'] ?? null ) && array( 'scope' => 'shared' ) === ( $files['website/_external/cdn.example.test/font.woff2']['metadata']['compilation'] ?? null ) && array( 'scope' => 'page', 'id' => 'website/team.html' ) === ( $files['website/_external/cdn.example.test/team.webp']['metadata']['compilation'] ?? null ), 'assets-declare-reference-derived-compilation-ownership' );
 $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'href="/services.html"' ), 'page-link-preserved-for-route-rewriting' );
 $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'src="uploads/logo.png"' ), 'image-link-rewritten' );
 $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'url(uploads/hero.jpg)' ), 'inline-background-rewritten' );
