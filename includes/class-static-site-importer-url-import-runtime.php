@@ -42,7 +42,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 		if ( '' === $url ) {
 			return new WP_Error( 'static_site_importer_missing_url', 'The url input is required.' );
 		}
-		$input['url']    = $url;
+		$input['url'] = $url;
 		if ( ! empty( $input['import_id'] ) ) {
 			return self::continue_batch_import( $url, $input );
 		}
@@ -55,9 +55,6 @@ class Static_Site_Importer_URL_Import_Runtime {
 			$runtime = $provider_output;
 		} else {
 			return self::start_batch_import( $url, $input );
-		}
-		if ( is_wp_error( $runtime ) ) {
-			return $runtime;
 		}
 		if ( empty( $runtime['artifact'] ) || ! is_array( $runtime['artifact'] ) ) {
 			return new WP_Error( 'static_site_importer_url_provider_missing_artifact', 'The URL import provider did not return a website artifact.' );
@@ -243,7 +240,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 		$registry = self::run_registry_path( $identity );
 		$raw      = is_file( $registry ) ? file_get_contents( $registry ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads an importer-owned opaque run registry.
 		$record   = is_string( $raw ) ? json_decode( $raw, true ) : null;
-		if ( ! is_array( $record ) || 'static-site-importer/url-import-run/v1' !== ( $record['schema'] ?? '' ) || $identity !== ( $record['identity'] ?? '' ) || self::run_workspace( $identity ) !== ( $record['workspace'] ?? '' ) ) {
+		if ( ! is_array( $record ) || 'static-site-importer/url-import-run/v1' !== ( $record['schema'] ?? '' ) || ( $record['identity'] ?? '' ) !== $identity || self::run_workspace( $identity ) !== ( $record['workspace'] ?? '' ) ) {
 			return new WP_Error( 'static_site_importer_url_import_run_not_found', 'The URL import run was not found.' );
 		}
 		if ( self::canonical( self::batch_contract( $url, $input ) ) !== self::canonical( $record['contract'] ?? array() ) ) {
@@ -255,12 +252,12 @@ class Static_Site_Importer_URL_Import_Runtime {
 
 	/** @param array<string,mixed> $record @return array<string,mixed>|WP_Error */
 	private static function run_batch_import( array $record, array $input ) {
-		$request = self::provider_request( (string) $record['contract']['url'], $input );
+		$request                  = self::provider_request( (string) $record['contract']['url'], $input );
 		$request['work_dir']      = (string) $record['workspace'];
 		$request['provider_args'] = self::batch_args();
-		$fetcher = apply_filters( 'static_site_importer_url_batch_import_fetcher', null, $request, $input );
-		$importer = apply_filters( 'static_site_importer_url_batch_importer', null, $request, $input );
-		$result = Static_Site_Importer_URL_Batch_Import::import( $request, $input, is_callable( $fetcher ) ? $fetcher : null, is_callable( $importer ) ? $importer : null );
+		$fetcher                  = apply_filters( 'static_site_importer_url_batch_import_fetcher', null, $request, $input );
+		$importer                 = apply_filters( 'static_site_importer_url_batch_importer', null, $request, $input );
+		$result                   = Static_Site_Importer_URL_Batch_Import::import( $request, $input, is_callable( $fetcher ) ? $fetcher : null, is_callable( $importer ) ? $importer : null );
 		if ( is_wp_error( $result ) ) {
 			$data = $result->get_error_data();
 			if ( is_array( $data ) ) {
@@ -293,17 +290,17 @@ class Static_Site_Importer_URL_Import_Runtime {
 	/** @return array<string,mixed> */
 	private static function batch_args(): array {
 		$args = array(
-			'collect_site'                       => true,
-			'batch_pages'                        => 20,
+			'collect_site'                         => true,
+			'batch_pages'                          => 20,
 			'max_effective_batches_per_invocation' => 1,
-			'max_invocation_seconds'              => 20,
-			'max_pages'                           => 20,
-			'max_assets'                          => 2000,
-			'max_total_bytes'                     => 268435456,
-			'max_bytes'                           => 5242880,
-			'timeout'                             => 10,
-			'request_delay_ms'                    => 100,
-			'include_scripts'                     => false,
+			'max_invocation_seconds'               => 20,
+			'max_pages'                            => 20,
+			'max_assets'                           => 2000,
+			'max_total_bytes'                      => 268435456,
+			'max_bytes'                            => 5242880,
+			'timeout'                              => 10,
+			'request_delay_ms'                     => 100,
+			'include_scripts'                      => false,
 		);
 		/** @param array<string,mixed> $args Server-owned URL batch policy. */
 		return apply_filters( 'static_site_importer_url_batch_import_args', $args );
@@ -323,7 +320,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 		return trailingslashit( $base_dir ) . 'static-site-importer/url-imports';
 	}
 
-	/** @param array<string,mixed> $value @return array<string,mixed> */
+	/** @param array<array-key,mixed> $value @return array<array-key,mixed> */
 	private static function canonical( array $value ): array {
 		foreach ( $value as &$item ) {
 			if ( is_array( $item ) ) {
