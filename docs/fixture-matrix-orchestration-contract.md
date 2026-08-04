@@ -30,7 +30,9 @@ surface and supplies all SSI policy from this package.
 
 ## SSI-Owned Artifacts
 
-- `matrix.json`: discovered fixture matrix.
+- `matrix.json`: discovered fixture matrix, including the deterministic active and
+  solved coverage inventory (`selected`, `skipped`, `malformed`, and `duplicates`
+  by stable fixture ID).
 - `intake`: optional `cli-run.json` summary section describing generated
   artifact roots materialized into matrix-compatible fixtures.
 - `<fixture-id>/artifact.json`: Blocks Engine site artifact input for SSI.
@@ -38,8 +40,11 @@ surface and supplies all SSI policy from this package.
 - `wp-codebox-static-site-fixture-matrix-batch-NNN.json`: batch recipes when
   `--run` is used.
 - `static-site-fixture-matrix-result.json`: normalized fixture results.
-- `summary.json`: aggregate pass/fail/finding counts.
-- `finding-packets.json`: grouped diagnostics for repair fanout.
+- `summary.json`: aggregate pass/fail/finding counts plus the matrix coverage
+  inventory used for the run.
+- `finding-packets.json`: versioned envelope containing grouped diagnostics for
+  repair fanout and the same coverage inventory. Consumers should read its
+  `findings` array; the comparison utility also accepts legacy array artifacts.
 - `cli-run.json`: command summary and runtime metadata.
 
 ## Diagnostic Interpretation

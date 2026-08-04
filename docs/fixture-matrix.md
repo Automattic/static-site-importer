@@ -40,8 +40,7 @@ either the Blocks Engine repo root or the `php-transformer/` package directory.
 ## Canonical Blocks Engine Matrix
 
 Use the operator wrapper for the release-free development loop against the
-canonical Blocks Engine fixture corpus (`blocks-engine/fixtures/websites`, 72
-top-level fixtures):
+canonical Blocks Engine fixture corpus (`blocks-engine/fixtures/websites`):
 
 ```bash
 node tools/run-fixture-matrix.mjs \
@@ -70,6 +69,26 @@ to point at a different repo/package, or run a final release/bump proof with
 The fixture matrix is a deterministic transformer feedback gate, not a
 performance benchmark. The rig and wrapper run a single Homeboy bench iteration
 by default; use repeated runs only for explicitly separate performance work.
+
+### Derived Fixture Coverage
+
+The matrix has no maintained fixture-count policy. `index.html` in a real
+fixture directory is the generic executable-fixture rule; an optional
+`fixture.json` must be valid JSON object metadata and, when it declares
+`fixture_class` or `class`, must use a canonical class value. Discovery,
+operator preflight, and bench validation consume the same
+`static-site-importer/fixture-matrix-coverage/v1` inventory.
+
+The inventory separates `active` (`fixtures/websites`) and `solved`
+(`fixtures/solved`) corpora. Each records stable IDs plus `selected`, `skipped`,
+`malformed`, and `duplicates` rows with reasons. A valid fixture addition is
+selected automatically without editing SSI. Execution fails closed for malformed
+metadata, duplicate stable IDs, or an unfiltered eligible fixture omitted from a
+matrix. Intentional lane filtering records `filter_mismatch` instead.
+
+`summary.json` and `finding-packets.json` include the exact coverage inventory;
+the latter is an envelope with a `findings` array, which existing finding-packet
+comparison tooling accepts alongside legacy array artifacts.
 
 ## Three-Fig Fixture E2E
 
@@ -407,7 +426,7 @@ node tools/run-fixture-matrix.mjs \
 ```
 
 `--solved-only` selects all and only valid fixture directories (those containing
-`index.html`) under `fixtures/solved/`. It rejects an empty solved corpus, forces
+`index.html` and valid optional manifest metadata) under `fixtures/solved/`. It rejects an empty solved corpus, forces
 the existing `solved_candidate` acceptance gate, and defaults to one isolated WP
 Codebox batch per fixture. Editor validation and gated exact visual parity remain
 required; `--no-editor-validation`, `--no-visual-parity`, and
@@ -415,7 +434,7 @@ required; `--no-editor-validation`, `--no-visual-parity`, and
 target, promotion, or manifest selection flags because the lane must cover the
 complete solved corpus. The replayable plan and operator summary identify this
 lane as `fixtures-solved-only/v1` and include active, solved, and selected corpus
-counts so CI artifacts prove the exact selection.
+counts plus the full coverage inventory so CI artifacts prove the exact selection.
 
 ```bash
 node tools/promote-solved-fixture.mjs \
@@ -732,10 +751,10 @@ Notes:
   by workspace hygiene), the bench fails with `rig.pipeline_failed` on the
   `check` step — recreate the checkout before running.
 - Fixture roots must contain real fixture subdirectories with `index.html`.
-   Symlinked fixture directories are excluded. Execution and promotion lanes fail
-   closed when selection is empty; `--dry-run` instead prints an explicit
-   `planning_empty` fixture-selection report with bounded exclusion reasons and
-   selected IDs. Copy fixtures in rather than symlinking.
+    Symlinked fixture directories are excluded. Execution and promotion lanes fail
+    closed when selection is empty or coverage reports malformed/duplicate/omitted
+    fixtures; `--dry-run` instead prints the active and solved inventory with
+    bounded reasons and selected IDs. Copy fixtures in rather than symlinking.
 
 ## Editor-Quality Metrics
 

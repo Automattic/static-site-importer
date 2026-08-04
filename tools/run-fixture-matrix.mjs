@@ -15,15 +15,6 @@ import { FIXTURE_MATRIX_RUN_FIELDS, MAX_EXTRA_SURFACE_COUNT, createFixtureMatrix
 
 export const RIG_ID = 'static-site-importer-fixture-matrix';
 export const SOLVED_ONLY_LANE_ID = 'fixtures-solved-only/v1';
-// Expected top-level fixture directory count in the canonical corpus
-// (`blocks-engine/fixtures/websites`). This is an intentional drift guard, not a
-// derived value: the corpus lives in a different repo, so deriving the canonical
-// number from whatever happens to be on disk would make the check tautological
-// (always "matches") and defeat its purpose. Bump this deliberately when the
-// corpus grows/shrinks. Source of truth:
-//   git -C blocks-engine ls-tree -d --name-only origin/trunk:fixtures/websites | wc -l
-// Last verified against origin/trunk @ 8ad42fd = 72 directories.
-export const CANONICAL_FIXTURE_COUNT = 72;
 
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -128,7 +119,6 @@ export function buildFixtureMatrixRunPlan(input) {
   const warnings = [
     ...buildWarnings(options),
     ...buildSurfaceCoverageWarnings(options, fixtureCount),
-    ...buildCanonicalDriftWarnings(activeFixtureCount, corpusCounts.active_root),
     ...buildFreshnessWarnings(codeFreshness, options),
   ];
 
@@ -151,11 +141,10 @@ export function buildFixtureMatrixRunPlan(input) {
     selected_active_fixture_count: matrix.fixtures.filter((fixture) => fixture.fixture_corpus === 'active').length,
     selected_solved_fixture_count: matrix.fixtures.filter((fixture) => fixture.fixture_corpus === 'solved').length,
     selected_fixture_count: fixtureCount,
-    execution_eligible: fixtureCount > 0,
+    fixture_coverage: matrix.fixture_coverage || null,
+    execution_eligible: fixtureCount > 0 && matrix.fixture_coverage?.gate?.status !== 'failed',
     fixture_selection: fixtureSelectionSummary({ matrix, corpusCounts, options }),
     ...(options.laneIdentity ? { lane_identity: options.laneIdentity } : {}),
-    canonical_fixture_count: CANONICAL_FIXTURE_COUNT,
-    fixture_count_matches_canonical: activeFixtureCount === CANONICAL_FIXTURE_COUNT,
     lane_filter: laneFilterSummary(options),
     output_file: options.output,
     temp_root: options.tempRoot,
@@ -493,21 +482,6 @@ function isMacLocalTempPath(value) {
   return /^\/(?:private\/)?var\/folders\//.test(String(value || ''));
 }
 
-// Surface corpus pin drift instead of letting `fixture_count_matches_canonical`
-// be a silently-ignored boolean. A discovered count below the pin means fixtures
-// went missing (or the wrong root was passed); above the pin means the corpus
-// grew and CANONICAL_FIXTURE_COUNT needs an intentional bump. The pin applies
-// to the active corpus (`fixtures/websites`), not the solved regression corpus.
-function buildCanonicalDriftWarnings(activeFixtureCount, activeRoot) {
-  if (activeFixtureCount === CANONICAL_FIXTURE_COUNT) {
-    return [];
-  }
-  return [{
-    code: 'canonical_fixture_count_drift',
-    message: `Discovered ${activeFixtureCount} top-level fixture director${activeFixtureCount === 1 ? 'y' : 'ies'} in ${activeRoot}, but CANONICAL_FIXTURE_COUNT is ${CANONICAL_FIXTURE_COUNT}. ${activeFixtureCount > CANONICAL_FIXTURE_COUNT ? 'The corpus grew; bump CANONICAL_FIXTURE_COUNT after confirming the new fixtures are intended.' : 'Fixtures are missing or the wrong root was passed; restore the corpus or correct --fixture-root.'}`,
-  }];
-}
-
 function surfaceCoveragePlanSummary(options, fixtureCount) {
   const config = normalizeSurfaceCoverageOptions(options);
   return {
@@ -837,6 +811,7 @@ export function summarizeRun(plan, { status } = {}) {
     top_pattern_families: normalizeSummaryRows(resultSummary.top_pattern_families),
     fixture_exemplars: normalizeSummaryRows(resultSummary.fixture_exemplars),
     diagnostic_blind_spots: normalizeSummaryRows(resultSummary.diagnostic_blind_spots),
+    fixture_coverage: resultSummary.fixture_coverage || plan.fixture_coverage || null,
     run_refs: buildRunRefs(findFirstKey(output, 'run_id') || plan.run_id, plan.homeboy_bin),
     artifact_urls: collectArtifactUrls(artifacts),
     output_file: plan.output_file,
@@ -926,8 +901,11 @@ function fixtureSelectionSummary({ matrix, corpusCounts, options }) {
     selected_fixture_ids_truncated: selectedIds.length > 50,
     exclusions: exclusions.slice(0, 50),
     diagnostics,
+    fixture_coverage: matrix.fixture_coverage || null,
     message: matrix.count > 0
-      ? `Selected ${matrix.count} executable fixture${matrix.count === 1 ? '' : 's'} before Homeboy handoff.`
+      ? matrix.fixture_coverage?.gate?.status === 'failed'
+        ? 'Fixture coverage validation failed; resolve malformed, duplicate, or omitted fixtures before Homeboy handoff.'
+        : `Selected ${matrix.count} executable fixture${matrix.count === 1 ? '' : 's'} before Homeboy handoff.`
       : 'Fixture matrix execution requires at least one executable fixture; this is an explicit empty planning result and cannot be handed to Homeboy.',
   };
 }

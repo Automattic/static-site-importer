@@ -191,8 +191,8 @@ export async function runFixtureMatrix(options) {
   const matrix = fixtureInspection.exclusions[0]?.reason === 'root_symlink'
     ? createFixtureMatrix({ ...matrixInput, fixtures: [] })
     : createFixtureMatrix(matrixInput);
-  if (options.run && matrix.count === 0) {
-    throw new Error(`Fixture matrix execution requires at least one executable fixture under ${fixtureRoot}. Inspect the fixture root, entrypoint, and lane filters before retrying.`);
+  if (options.run && (matrix.count === 0 || matrix.fixture_coverage?.gate?.status === 'failed')) {
+    throw new Error(`Fixture matrix execution requires a complete eligible fixture inventory under ${fixtureRoot}. Inspect the fixture root, entrypoint, metadata, duplicate IDs, and lane filters before retrying.`);
   }
   validateHydratedComposerDependencies(packageRoot);
   const progress = createFixtureMatrixProgress(matrix, options);
@@ -346,6 +346,7 @@ export async function runFixtureMatrix(options) {
     editor_canvas_artifacts: editorCanvasArtifacts,
     surface_lineage_artifacts: surfaceLineageArtifacts,
     result_summary: collectedResult.summary,
+    fixture_coverage: collectedResult.summary.fixture_coverage || matrix.fixture_coverage || null,
     runtime: runtime ? runtimeSummary(runtime, runtimeError) : null,
   };
   const cliRunBaseTotal = summary.metadata.artifact_bytes.total;
