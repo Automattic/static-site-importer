@@ -84,6 +84,10 @@ $protocol_relative_overlay = Static_Site_Importer_Font_Materializer::prepare_ove
 $assert( ! is_wp_error( $protocol_relative_overlay ), 'protocol-relative Google font imports normalize to the portable HTTPS source' );
 $normalize_google_url = new ReflectionMethod( Static_Site_Importer_Font_Materializer::class, 'normalize_google_stylesheet_url' );
 $assert( 'https://fonts.googleapis.com/css?family=Fjalla+One' === $normalize_google_url->invoke( null, '//fonts.googleapis.com/css?family=Fjalla+One?1473722252' ), 'legacy cache busters embedded in Google family values are removed' );
+$legacy_family_plan = $producer_plan;
+$legacy_family_plan['webfont_contract']['faces'][0]['family'] .= '?1473722252';
+$legacy_family_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $legacy_family_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
+$assert( ! is_wp_error( $legacy_family_overlay ) && 'Inter' === ( $legacy_family_overlay['faces'][0]['family'] ?? '' ), 'legacy cache busters are removed from typed face families before stylesheet matching' );
 
 $svg = '<svg xmlns="http://www.w3.org/2000/svg"><text font-family="Inter">Fixture 37</text></svg>';
 $svg_source_path = 'assets/materialized-svg/fixture-37.svg';

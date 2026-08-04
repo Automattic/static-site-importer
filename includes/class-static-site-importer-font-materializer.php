@@ -206,7 +206,7 @@ final class Static_Site_Importer_Font_Materializer {
 				$diagnostics[] = self::diagnostic( 'producer_face_or_receipt_invalid' );
 				return new WP_Error( 'static_site_importer_font_materialization_producer_face_invalid', '', $diagnostics );
 			}
-			$family = trim( (string) ( $face['family'] ?? '' ) );
+			$family = (string) preg_replace( '/\?[0-9]+$/', '', trim( (string) ( $face['family'] ?? '' ) ) );
 			$style  = (string) ( $face['style'] ?? 'normal' );
 			if ( '' === $family || ! in_array( $style, array( 'normal', 'italic' ), true ) || ! self::valid_weight( $face['weight'] ?? null ) || ! self::valid_axes( $face['axes'] ) ) {
 				$diagnostics[] = self::diagnostic( 'producer_face_invalid' );
