@@ -683,7 +683,7 @@ $assert( is_array( $playground_blueprint ), 'rest-playground-open-blueprint-deco
 $playground_blueprint_code = wp_json_encode( $playground_blueprint );
 $playground_plugin_step    = $playground_blueprint['steps'][1] ?? array();
 $assert( 'https://github.com/Automattic/static-site-importer/releases/latest/download/static-site-importer.zip' === ( $playground_plugin_step['pluginData']['url'] ?? '' ), 'rest-playground-open-blueprint-installs-release-zip' );
-$assert( str_contains( (string) $playground_blueprint_code, 'static_site_importer_ability_import_website_artifact' ), 'rest-playground-open-blueprint-runs-import-ability' );
+$assert( str_contains( (string) $playground_blueprint_code, 'static_site_importer_ability_import' ), 'rest-playground-open-blueprint-runs-import-ability' );
 $assert( str_contains( (string) $playground_blueprint_code, "'activate' => true" ), 'rest-playground-open-blueprint-activates-generated-site' );
 $assert( str_contains( (string) $playground_blueprint_code, "'overwrite' => true" ), 'rest-playground-open-blueprint-overwrites-generated-site' );
 // Sourceless HTML (no <title>, no URL) still falls back to the generic identity constant.
@@ -1101,7 +1101,7 @@ $assert( preg_match( '/^[a-f0-9]{64}$/', $figma_blueprint_ref ) === 1, 'figma-pr
 $figma_blueprint_response = json_decode( rawurldecode( (string) ( $figma_open_url_parts['fragment'] ?? '' ) ), true );
 $assert( is_array( $figma_blueprint_response ), 'figma-blueprint-hydrates' );
 $figma_blueprint_code = wp_json_encode( $figma_blueprint_response );
-$assert( str_contains( (string) $figma_blueprint_code, 'static_site_importer_ability_import_website_artifact' ), 'figma-blueprint-invokes-ssi-import-function' );
+$assert( str_contains( (string) $figma_blueprint_code, 'static_site_importer_ability_import' ), 'figma-blueprint-invokes-ssi-import-function' );
 $assert( str_contains( (string) $figma_blueprint_code, 'website/index.html' ) || str_contains( (string) $figma_blueprint_code, 'website\/index.html' ), 'figma-artifact-entrypoint-normalized' );
 $assert( str_contains( (string) $figma_blueprint_code, 'website/assets/styles.css' ) || str_contains( (string) $figma_blueprint_code, 'website\/assets\/styles.css' ), 'figma-artifact-file-path-normalized' );
 $assert( str_contains( (string) $figma_blueprint_code, "'activate' => true" ), 'figma-preview-defaults-to-activate-in-playground' );

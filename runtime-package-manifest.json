@@ -6,8 +6,7 @@
     "website-artifact-import": {
       "description": "WordPress runtime files required to validate, compile, and materialize website artifacts as block themes.",
       "abilities": [
-        "static-site-importer/import-website-artifact",
-        "static-site-importer/import-url",
+        "static-site-importer/import",
         "static-site-importer/materialize-wordpress-site-plan",
         "static-site-importer/validate-artifact",
         "static-site-importer/get-runtime-package-manifest"

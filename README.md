@@ -169,7 +169,7 @@ URL intake rules:
 
 - Every built-in URL import collects the bounded site through the resumable batch engine. It reads the origin's `/sitemap.xml`, follows same-origin HTML links, and collects directly referenced page assets and nested CSS assets.
 - SSI owns collection, batch, deadline, asset, byte, pacing, and script-policy defaults. Hosts can adjust this policy with the `static_site_importer_url_batch_import_args` filter.
-- The first `static-site-importer/import-url` call returns an opaque `import_id`. To continue a pending run, call the same ability with the normalized URL and import intent plus that ID. SSI resolves the server-owned workspace and validates the URL, import options, and current user; no filesystem path is accepted or returned.
+- `static-site-importer/import` accepts `{ source: { type: "url", url, import_id? }, operation }`. The first URL apply returns an opaque `import_id`; continuation supplies that ID in the same source envelope. SSI resolves the server-owned workspace and validates the URL, import options, and current user; no filesystem path is accepted or returned.
 - URL collection uses the frozen static artifact policy: executable and data scripts are omitted with reason-coded provenance because the server-rendered output does not require them.
 - Registered source-exclusion rules remove non-authored platform chrome before asset discovery and compilation. Each removal records selector, provider, reason, and before/after hashes under `source_metadata.collection.source_exclusions`; set `exclude_platform_chrome=false` to preserve the raw source.
 - Extensions can add or replace source-exclusion rules with the `static_site_importer_source_exclusion_rules` filter. Rules use stable ID selectors and reason-coded categories so removals remain explicit and auditable.
@@ -251,6 +251,8 @@ Pass `--allow-missing-woocommerce` (CLI) or `'allow_missing_woocommerce' => true
 This materializer is intentionally generic: WooCommerce is the first plugin-backed entity path, and the same pattern should be used for bbPress forums/topics, Jetpack-backed features, and other popular WordPress.org plugins. The source artifact declares or implies plugin-backed intent; SSI materializes the plugin in PHP; then a plugin-specific seeder creates native WordPress/plugin entities and records diagnostics.
 
 ## CLI Usage
+
+The canonical ability uses `source.type` (`artifact`, `url`, or `upload`) and `operation` (`plan` or `apply`). Artifact planning returns the canonical WordPress site plan, diagnostics, quality evidence, and source provenance without writing to the destination. Upload sources contain an opaque `upload_ref` resolved only by the server-side `static_site_importer_resolve_upload_reference` filter; callers never provide filesystem paths.
 
 ```bash
 wp static-site-importer import-theme /path/to/site/index.html \

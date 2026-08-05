@@ -40,6 +40,7 @@ namespace {
 	}
 
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 
 	$failures   = array();
