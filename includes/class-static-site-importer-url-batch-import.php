@@ -246,6 +246,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 						}
 					}
 				}
+				unset( $ready_result, $ready_runtime );
 			}
 			$runtime = self::retained_runtime( $workspace, $cache_name, 'batches/' . $index . '.json', $old_cache, $routes, $manifest['checkpoint_diagnostics'] ) ?? array();
 			if ( empty( $runtime ) ) {
@@ -368,8 +369,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 				self::delete_legacy_file( $old_cache );
 			}
 			++$effective_batches;
-			$final = $result;
-			unset( $result, $runtime, $raw );
+			$final = self::terminal_result_evidence( $result );
+			unset( $result, $runtime, $raw, $compiled_staged, $import_args, $staged, $shared );
 		}
 		if ( 'plan' === (string) ( $input['operation'] ?? 'apply' ) ) {
 			$final = self::compose_complete_plan( $workspace, $cursor );
@@ -987,26 +988,28 @@ final class Static_Site_Importer_URL_Batch_Import {
 		return (float) call_user_func( $clock ) >= $deadline;
 	}
 	private static function result_evidence( array $result, array $runtime ): array {
+		$report_path = '' !== (string) ( $result['external_report_path'] ?? '' ) ? (string) $result['external_report_path'] : (string) ( $result['report_path'] ?? '' );
 		return array(
 			'theme_slug'                 => $result['theme_slug'] ?? '',
 			'snapshot_sha256'            => $runtime['source_metadata']['snapshot']['sha256'] ?? '',
 			'plan_hash'                  => $result['materialization_receipt']['plan_hash'] ?? '',
-			'terminal_batch_report_path' => $result['external_report_path'] ?? $result['report_path'] ?? '',
+			'terminal_batch_report_path' => $report_path,
 			'quality'                    => self::quality_evidence( $result['quality'] ?? ( $result['import_report_summary']['quality_pass'] ?? null ) ),
 		);
 	}
 	private static function terminal_result_evidence( array $result ): array {
 		$evidence = array( 'schema' => 'static-site-importer/terminal-batch-result/v1' );
+		$report_path = '' !== (string) ( $result['external_report_path'] ?? '' ) ? (string) $result['external_report_path'] : (string) ( $result['report_path'] ?? '' );
 		foreach ( $result as $key => $value ) {
 			if ( is_string( $key ) && ( is_scalar( $value ) || null === $value ) ) {
 				$evidence[ $key ] = $value;
 			}
 		}
-		$evidence['report_path']           = $result['external_report_path'] ?? $result['report_path'] ?? '';
+		$evidence['report_path']           = $report_path;
 		$evidence['import_report_summary'] = is_array( $result['import_report_summary'] ?? null ) ? $result['import_report_summary'] : array();
 		$evidence['quality']               = self::quality_evidence( $result['quality'] ?? ( $result['import_report_summary']['quality_pass'] ?? null ) );
-		$evidence['plan_hash']             = $result['materialization_receipt']['plan_hash'] ?? '';
-		$evidence['page_count']            = is_array( $result['pages'] ?? null ) ? count( $result['pages'] ) : 0;
+		$evidence['plan_hash']             = $result['plan_hash'] ?? $result['materialization_receipt']['plan_hash'] ?? '';
+		$evidence['page_count']            = isset( $result['page_count'] ) ? (int) $result['page_count'] : ( is_array( $result['pages'] ?? null ) ? count( $result['pages'] ) : 0 );
 		return $evidence;
 	}
 	private static function quality_evidence( mixed $quality ): mixed {
