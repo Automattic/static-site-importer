@@ -872,18 +872,19 @@ class Static_Site_Importer_URL_Site_Collector {
 	private static function rewrite_html( string $html, string $base_url, string $source_path, array $paths, array $aliases, string $site_url, array $external_assets = array() ): string {
 		$html = preg_replace_callback(
 			'#<link\b[^>]*>#is',
-			static function ( array $matches ) use ( $base_url, $paths ): string {
+			static function ( array $matches ) use ( $base_url, $paths, $aliases ): string {
 				$tag       = $matches[0];
 				$relations = preg_split( '/\s+/', strtolower( trim( (string) self::tag_attribute_value( $tag, 'rel' ) ) ) );
 				$href      = self::tag_attribute_value( $tag, 'href' );
 				if ( null === $href || ! array_intersect( $relations ? $relations : array(), array( 'stylesheet', 'icon', 'apple-touch-icon', 'apple-touch-icon-precomposed', 'apple-touch-startup-image', 'mask-icon', 'manifest', 'preload', 'modulepreload' ) ) ) {
 					return $tag;
 				}
-				$url = self::resolve_url( $href, $base_url );
-				if ( ! isset( $paths[ $url ] ) || ! preg_match( '/\.html?$/i', $paths[ $url ] ) ) {
+				$url    = self::resolve_url( $href, $base_url );
+				$target = $aliases[ $url ] ?? $url;
+				if ( ! isset( $paths[ $target ] ) || ! preg_match( '/\.html?$/i', $paths[ $target ] ) ) {
 					return $tag;
 				}
-				$external = self::external_asset_url( $url, $href );
+				$external = self::external_asset_url( $target, $href );
 				return (string) preg_replace_callback( '#\bhref\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)#i', static fn(): string => 'href="' . $external . '"', $tag, 1 );
 			},
 			$html
