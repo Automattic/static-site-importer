@@ -78,10 +78,10 @@ final class Static_Site_Importer_Font_Materializer {
 		}
 
 		$font_faces = self::resolve_google_font_faces( $plan, $families, $diagnostics );
-		if ( is_array( $font_faces ) && isset( $font_faces['state'] ) && 'preserved' === $font_faces['state'] ) {
-			$preserved_url  = (string) ( $font_faces['url'] ?? '' );
-			$fallback_url   = self::is_google_stylesheet_url( $preserved_url ) ? $preserved_url : '';
-			$imports        = array();
+		if ( 'preserved' === $font_faces['state'] ) {
+			$preserved_url = (string) $font_faces['url'];
+			$fallback_url  = self::is_google_stylesheet_url( $preserved_url ) ? $preserved_url : '';
+			$imports       = array();
 			foreach ( $plan['stylesheets'] ?? array() as $stylesheet ) {
 				$content = is_array( $stylesheet ) && is_scalar( $stylesheet['content'] ?? null ) ? (string) $stylesheet['content'] : '';
 				if ( preg_match_all( '/@import\s+(?:url\()?\s*["\']?([^"\'\s\)]+)["\']?\s*\)?/i', $content, $matches ) ) {
@@ -103,10 +103,10 @@ final class Static_Site_Importer_Font_Materializer {
 			if ( empty( $css_lines ) && '' !== $fallback_url ) {
 				$css_lines[] = '@import "' . addcslashes( $fallback_url, "\"\\\n" ) . '";';
 			}
-			$css_body = empty( $css_lines ) ? '' : trim( implode( "\n", $css_lines ) ) . "\n";
+			$css_body     = empty( $css_lines ) ? '' : trim( implode( "\n", $css_lines ) ) . "\n";
 			$outer_detail = array(
-				'reason'         => (string) ( $font_faces['reason'] ?? '' ),
-				'observed_bytes' => (int) ( $font_faces['observed_bytes'] ?? 0 ),
+				'reason'         => (string) $font_faces['reason'],
+				'observed_bytes' => (int) $font_faces['observed_bytes'],
 				'url'            => $preserved_url,
 			);
 			if ( 'google_fonts_payloads_partial_preserved' === $outer_detail['reason'] ) {
@@ -122,10 +122,8 @@ final class Static_Site_Importer_Font_Materializer {
 			$writes[] = self::write( 'assets/css/embedded-fonts.css', $css_body, 'theme.font_materialization' );
 			return self::with_runtime_registration( $writes, $resolved_plan, array(), $diagnostics );
 		}
-		if ( is_array( $font_faces ) && isset( $font_faces['state'] ) && 'embedded' === $font_faces['state'] ) {
-			$embedded_css = (string) ( $font_faces['css'] ?? '' );
-		} else {
-			$embedded_css = is_string( $font_faces ) ? $font_faces : '';
+		if ( 'embedded' === $font_faces['state'] ) {
+			$embedded_css = (string) $font_faces['css'];
 		}
 		if ( '' === trim( $embedded_css ) ) {
 			return new WP_Error( 'static_site_importer_font_materialization_failed', '', $diagnostics );
@@ -581,7 +579,8 @@ final class Static_Site_Importer_Font_Materializer {
 	}
 
 	/** @param array<int,string> $families @param array<int,array<string,string>> $diagnostics
-	 *  @return array{state:'embedded',css:string}|array{state:'preserved',reason:string,observed_bytes:int,url:string}
+	 *  @return array{state:'embedded',css:string}
+	 *          | array{state:'preserved',reason:string,observed_bytes:int,url:string,aggregate_bytes?:int}
 	 */
 	private static function resolve_google_font_faces( array $plan, array $families, array &$diagnostics ): array {
 		$imports = array();
@@ -594,12 +593,22 @@ final class Static_Site_Importer_Font_Materializer {
 		$imports = array_values( array_unique( $imports ) );
 		if ( empty( $imports ) ) {
 			$diagnostics[] = self::diagnostic( 'stylesheet_import_missing' );
-			return array( 'state' => 'preserved', 'reason' => 'stylesheet_import_missing', 'observed_bytes' => 0, 'url' => '' );
+			return array(
+				'state'          => 'preserved',
+				'reason'         => 'stylesheet_import_missing',
+				'observed_bytes' => 0,
+				'url'            => '',
+			);
 		}
 		foreach ( $imports as $import ) {
 			if ( ! self::is_google_stylesheet_url( $import ) ) {
 				$diagnostics[] = self::diagnostic( 'untrusted_stylesheet_url' );
-				return array( 'state' => 'preserved', 'reason' => 'untrusted_stylesheet_url', 'observed_bytes' => 0, 'url' => (string) $import );
+				return array(
+					'state'          => 'preserved',
+					'reason'         => 'untrusted_stylesheet_url',
+					'observed_bytes' => 0,
+					'url'            => (string) $import,
+				);
 			}
 		}
 
@@ -610,34 +619,73 @@ final class Static_Site_Importer_Font_Materializer {
 			$response = self::request( $import, self::CSS_LIMIT );
 			$css      = is_wp_error( $response ) ? '' : (string) wp_remote_retrieve_body( $response );
 			if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) || '' === $css ) {
-				$diagnostics[] = self::diagnostic_with_detail( 'stylesheet_fetch_failed', array( 'url' => $import, 'observed_bytes' => strlen( $css ), 'limit_bytes' => self::CSS_LIMIT ) );
-				return array( 'state' => 'preserved', 'reason' => 'stylesheet_fetch_failed', 'observed_bytes' => strlen( $css ), 'url' => $import );
+				$diagnostics[] = self::diagnostic_with_detail(
+					'stylesheet_fetch_failed',
+					array(
+						'url'            => $import,
+						'observed_bytes' => strlen( $css ),
+						'limit_bytes'    => self::CSS_LIMIT,
+					)
+				);
+				return array(
+					'state'          => 'preserved',
+					'reason'         => 'stylesheet_fetch_failed',
+					'observed_bytes' => strlen( $css ),
+					'url'            => $import,
+				);
 			}
 			if ( strlen( $css ) > self::CSS_LIMIT ) {
-				$diagnostics[] = self::diagnostic_with_detail( 'google_fonts_stylesheet_preserved_due_to_size', array( 'url' => $import, 'observed_bytes' => strlen( $css ), 'limit_bytes' => self::CSS_LIMIT ) );
-				return array( 'state' => 'preserved', 'reason' => 'google_fonts_stylesheet_preserved_due_to_size', 'observed_bytes' => strlen( $css ), 'url' => $import );
+				$diagnostics[] = self::diagnostic_with_detail(
+					'google_fonts_stylesheet_preserved_due_to_size',
+					array(
+						'url'            => $import,
+						'observed_bytes' => strlen( $css ),
+						'limit_bytes'    => self::CSS_LIMIT,
+					)
+				);
+				return array(
+					'state'          => 'preserved',
+					'reason'         => 'google_fonts_stylesheet_preserved_due_to_size',
+					'observed_bytes' => strlen( $css ),
+					'url'            => $import,
+				);
 			}
 			$embedded = self::embed_font_sources( $css, $families, $font_payloads, $font_payload_bytes, $diagnostics );
-			if ( is_array( $embedded ) && isset( $embedded['state'] ) && 'preserved' === $embedded['state'] ) {
-				if ( '' === (string) ( $embedded['url'] ?? '' ) ) {
+			if ( 'preserved' === $embedded['state'] ) {
+				if ( '' === (string) $embedded['url'] ) {
 					$embedded['url'] = $import;
 				}
 				return $embedded;
 			}
-			$faces[] = is_array( $embedded ) ? (string) ( $embedded['css'] ?? '' ) : (string) $embedded;
+			$faces[] = (string) $embedded['css'];
 		}
-		return array( 'state' => 'embedded', 'css' => implode( "\n", $faces ) );
+		return array(
+			'state' => 'embedded',
+			'css'   => implode( "\n", $faces ),
+		);
 	}
 
 	/** @param array<int,string> $families @param array<string,string> $payloads @param array<int,array<string,string>> $diagnostics
-	 *  @return array{state:'embedded',css:string}|array{state:'preserved',reason:string,observed_bytes:int,url:string}
+	 *  @return array{state:'embedded',css:string}
+	 *          | array{state:'preserved',reason:string,observed_bytes:int,url:string,aggregate_bytes?:int}
 	 */
 	private static function embed_font_sources( string $css, array $families, array &$payloads, int &$payload_bytes, array &$diagnostics ): array {
 		if ( ! preg_match_all( '/@font-face\s*\{([^{}]*)\}/is', $css, $faces ) ) {
-			$diagnostics[] = self::diagnostic_with_detail( 'stylesheet_font_faces_missing', array( 'observed_bytes' => strlen( $css ), 'limit_bytes' => self::CSS_LIMIT ) );
-			return array( 'state' => 'preserved', 'reason' => 'stylesheet_font_faces_missing', 'observed_bytes' => strlen( $css ), 'url' => '' );
+			$diagnostics[] = self::diagnostic_with_detail(
+				'stylesheet_font_faces_missing',
+				array(
+					'observed_bytes' => strlen( $css ),
+					'limit_bytes'    => self::CSS_LIMIT,
+				)
+			);
+			return array(
+				'state'          => 'preserved',
+				'reason'         => 'stylesheet_font_faces_missing',
+				'observed_bytes' => strlen( $css ),
+				'url'            => '',
+			);
 		}
-		$embedded          = array();
+		$embedded           = array();
 		$current_source_url = '';
 		foreach ( $faces[0] as $index => $face ) {
 			$current_source_url = '';
@@ -646,28 +694,64 @@ final class Static_Site_Importer_Font_Materializer {
 			}
 			if ( str_contains( $face, '<' ) || ! preg_match_all( '/url\(\s*(["\']?)([^"\'\s\)]+)\1\s*\)/i', $face, $urls ) ) {
 				$diagnostics[] = self::diagnostic( 'untrusted_font_url' );
-				return array( 'state' => 'preserved', 'reason' => 'untrusted_font_url', 'observed_bytes' => 0, 'url' => $current_source_url );
+				return array(
+					'state'          => 'preserved',
+					'reason'         => 'untrusted_font_url',
+					'observed_bytes' => 0,
+					'url'            => $current_source_url,
+				);
 			}
 			$rewritten = $face;
 			foreach ( array_unique( $urls[2] ) as $url ) {
 				$current_source_url = $url;
-				$parts = wp_parse_url( $url );
-				$path  = is_array( $parts ) ? strtolower( (string) ( $parts['path'] ?? '' ) ) : '';
+				$parts              = wp_parse_url( $url );
+				$path               = is_array( $parts ) ? strtolower( (string) ( $parts['path'] ?? '' ) ) : '';
 				if ( ! is_array( $parts ) || 'https' !== strtolower( (string) ( $parts['scheme'] ?? '' ) ) || 'fonts.gstatic.com' !== strtolower( (string) ( $parts['host'] ?? '' ) ) || ( isset( $parts['port'] ) && 443 !== (int) $parts['port'] ) || isset( $parts['user'] ) || isset( $parts['pass'] ) || ! preg_match( '/\.woff2?$/', $path ) ) {
 					$diagnostics[] = self::diagnostic( 'untrusted_font_url' );
-					return array( 'state' => 'preserved', 'reason' => 'untrusted_font_url', 'observed_bytes' => 0, 'url' => $url );
+					return array(
+						'state'          => 'preserved',
+						'reason'         => 'untrusted_font_url',
+						'observed_bytes' => 0,
+						'url'            => $url,
+					);
 				}
 				if ( ! isset( $payloads[ $url ] ) ) {
 					$response = self::request( $url, self::FONT_LIMIT );
 					$payload  = is_wp_error( $response ) ? '' : (string) wp_remote_retrieve_body( $response );
 					$observed = strlen( $payload );
 					if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) || '' === $payload || $observed > self::FONT_LIMIT ) {
-						$diagnostics[] = self::diagnostic_with_detail( 'font_payload_fetch_failed', array( 'url' => $url, 'observed_bytes' => $observed, 'limit_bytes' => self::FONT_LIMIT ) );
-						return array( 'state' => 'preserved', 'reason' => 'font_payload_fetch_failed', 'observed_bytes' => $observed, 'url' => $url );
+						$diagnostics[] = self::diagnostic_with_detail(
+							'font_payload_fetch_failed',
+							array(
+								'url'            => $url,
+								'observed_bytes' => $observed,
+								'limit_bytes'    => self::FONT_LIMIT,
+							)
+						);
+						return array(
+							'state'          => 'preserved',
+							'reason'         => 'font_payload_fetch_failed',
+							'observed_bytes' => $observed,
+							'url'            => $url,
+						);
 					}
 					if ( self::TOTAL_FONT_LIMIT < $payload_bytes + $observed ) {
-						$diagnostics[] = self::diagnostic_with_detail( 'google_fonts_payloads_partial_preserved', array( 'url' => $url, 'observed_bytes' => $observed, 'aggregate_bytes' => $payload_bytes, 'limit_bytes' => self::TOTAL_FONT_LIMIT ) );
-						return array( 'state' => 'preserved', 'reason' => 'google_fonts_payloads_partial_preserved', 'observed_bytes' => $observed, 'aggregate_bytes' => $payload_bytes, 'url' => $url );
+						$diagnostics[] = self::diagnostic_with_detail(
+							'google_fonts_payloads_partial_preserved',
+							array(
+								'url'             => $url,
+								'observed_bytes'  => $observed,
+								'aggregate_bytes' => $payload_bytes,
+								'limit_bytes'     => self::TOTAL_FONT_LIMIT,
+							)
+						);
+						return array(
+							'state'           => 'preserved',
+							'reason'          => 'google_fonts_payloads_partial_preserved',
+							'observed_bytes'  => $observed,
+							'aggregate_bytes' => $payload_bytes,
+							'url'             => $url,
+						);
 					}
 					$payloads[ $url ] = $payload;
 					$payload_bytes   += $observed;
@@ -680,7 +764,10 @@ final class Static_Site_Importer_Font_Materializer {
 		if ( empty( $embedded ) ) {
 			$diagnostics[] = self::diagnostic( 'matching_font_faces_missing' );
 		}
-		return array( 'state' => 'embedded', 'css' => implode( "\n", $embedded ) );
+		return array(
+			'state' => 'embedded',
+			'css'   => implode( "\n", $embedded ),
+		);
 	}
 
 	private static function request( string $url, int $limit ) {

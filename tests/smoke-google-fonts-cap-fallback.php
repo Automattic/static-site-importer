@@ -56,7 +56,7 @@ $google_url_legacy = 'https://fonts.googleapis.com/css?family=Inter:wght@400;700
 $functions_php     = array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) );
 
 // Case 1: Google CSS body > 256 KiB -> preserved stylesheet with @import.
-$GLOBALS['ssi_cap_response'] = function ( string $url ) use ( $google_url ): array {
+$GLOBALS['ssi_cap_response'] = function ( string $url ) use ( $google_url ) {
 	if ( $url === $google_url ) {
 		$body = "@font-face { font-family: 'Noto Sans JP'; src: url(https://fonts.gstatic.com/s/noto/jp.woff2) format('woff2'); }\n";
 		$body = str_repeat( $body, 8000 );
@@ -97,7 +97,7 @@ $woff2_url_b   = 'https://fonts.gstatic.com/s/noto/arabic-regular.woff2';
 $woff2_url_c   = 'https://fonts.gstatic.com/s/noto/arabic-700.woff2';
 $css_body_small = "@font-face { font-family: 'Noto Sans JP'; src: url(" . $woff2_url_a . ") format('woff2'); }\n@font-face { font-family: 'Noto Naskh Arabic'; src: url(" . $woff2_url_b . ") format('woff2'); font-weight: 400; }\n@font-face { font-family: 'Noto Naskh Arabic'; src: url(" . $woff2_url_c . ") format('woff2'); font-weight: 700; }\n";
 $one_five_mib   = intdiv( 3 * 1024 * 1024, 2 );
-$GLOBALS['ssi_cap_response'] = function ( string $url ) use ( $google_url, $css_body_small, $woff2_url_a, $woff2_url_b, $woff2_url_c, $one_five_mib ): array {
+$GLOBALS['ssi_cap_response'] = function ( string $url ) use ( $google_url, $css_body_small, $woff2_url_a, $woff2_url_b, $woff2_url_c, $one_five_mib ) {
 	if ( $url === $google_url ) {
 		return array( 'response' => array( 'code' => 200 ), 'body' => $css_body_small );
 	}
@@ -138,7 +138,7 @@ $assert( 4194304 === ( $preserved_big[0]['details']['limit_bytes'] ?? 0 ), 'case
 $assert( isset( $preserved_big[0]['details']['aggregate_bytes'] ), 'case 2: aggregate_bytes is reported' );
 
 // Case 3: producer path not regressed. Use the existing smoke's stubbed google_fonts response to keep this file standalone.
-$GLOBALS['ssi_cap_response']  = function ( string $url ): array {
+$GLOBALS['ssi_cap_response']  = function ( string $url ) {
 	if ( str_starts_with( $url, 'https://fonts.googleapis.com/css2?family=Inter:' ) ) {
 		return array( 'response' => array( 'code' => 200 ), 'body' => "@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-stretch:75% 125%;src:url(https://fonts.gstatic.com/s/inter/v1/inter-latin.woff2) format('woff2');unicode-range:U+0000-00FF}" );
 	}
@@ -166,7 +166,7 @@ $producer_diagnostic_failure = Static_Site_Importer_Font_Materializer::prepare_o
 $assert( is_wp_error( $producer_diagnostic_failure ) && 'static_site_importer_font_materialization_producer_diagnostic' === $producer_diagnostic_failure->get_error_code(), 'case 3: required producer diagnostics still gate materialization' );
 
 // Case 4: empty plan + empty stylesheets is preserved as preserved (no import URL to import) but a WP_Error is surfaced because no @import can be written.
-$GLOBALS['ssi_cap_response'] = function (): array { return new WP_Error( 'unexpected_request' ); };
+$GLOBALS['ssi_cap_response'] = function () { return new WP_Error( 'unexpected_request' ); };
 $plan_no_imports = array(
 	'schema'      => 'blocks-engine/php-transformer/font-materialization-plan/v1',
 	'provider'    => 'google_fonts',
@@ -179,7 +179,7 @@ $no_imports_diagnostics = $overlay_no_imports->get_error_data();
 $assert( is_array( $no_imports_diagnostics ) && count( array_filter( $no_imports_diagnostics, static fn( array $row ): bool => ( $row['reason'] ?? '' ) === 'stylesheet_import_missing' ) ) >= 1, 'case 4: surfaces the stylesheet_import_missing reason before failing closed' );
 
 // Case 5: legacy v1 css path (fontfamily=...) -- same preservation contract.
-$GLOBALS['ssi_cap_response'] = function ( string $url ) use ( $google_url_legacy ): array {
+$GLOBALS['ssi_cap_response'] = function ( string $url ) use ( $google_url_legacy ) {
 	if ( $url === $google_url_legacy ) {
 		return array( 'response' => array( 'code' => 200 ), 'body' => str_repeat( '@font-face { font-family: "Inter"; src: url(https://fonts.gstatic.com/legacy.woff2); }' . "\n", 7000 ) );
 	}
