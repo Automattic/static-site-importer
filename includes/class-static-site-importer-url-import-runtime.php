@@ -65,35 +65,6 @@ class Static_Site_Importer_URL_Import_Runtime {
 	}
 
 	/**
-	 * Resolve a URL into a website artifact without importing it.
-	 *
-	 * @param array<string,mixed> $input Ability-style input.
-	 * @return array<string,mixed>|WP_Error Runtime output containing artifact/source_metadata/provider.
-	 */
-	public static function website_artifact_from_url( array $input ) {
-		$url = isset( $input['url'] ) ? Static_Site_Importer_URL_Fetcher::normalize_url( (string) $input['url'] ) : '';
-		if ( '' === $url ) {
-			return new WP_Error( 'static_site_importer_missing_url', 'The url input is required.' );
-		}
-
-		$input['url'] = $url;
-		$request      = self::provider_request( $url, $input );
-		$runtime      = self::resolve_provider( $request );
-		if ( is_wp_error( $runtime ) ) {
-			return $runtime;
-		}
-
-		$artifact = isset( $runtime['artifact'] ) && is_array( $runtime['artifact'] ) ? $runtime['artifact'] : array();
-		if ( empty( $artifact ) ) {
-			return new WP_Error( 'static_site_importer_url_provider_missing_artifact', 'The URL import provider did not return a website artifact.' );
-		}
-
-		$runtime['artifact'] = $artifact;
-
-		return $runtime;
-	}
-
-	/**
 	 * Build a provider request envelope.
 	 *
 	 * @param string              $url   Source URL.
@@ -111,20 +82,26 @@ class Static_Site_Importer_URL_Import_Runtime {
 	}
 
 	/**
-	 * Resolve the provider output.
+	 * Resolve the provider output through the filter hook.
 	 *
-	 * Providers return an array with an `artifact` key containing a website
-	 * artifact, plus optional `source_metadata` and `provider` fields.
+	 * The built-in `fetch_public_url_provider` one-shot collector was removed in
+	 * favor of the resumable `import-url` ability (issue #837). Hosted/private
+	 * runtimes that need a non-ability URL collector should hook
+	 * {@see 'static_site_importer_url_import_provider'} and return an artifact.
 	 *
 	 * @param array<string,mixed> $request Provider request envelope.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	private static function resolve_provider( array $request ) {
+	private static function resolve_provider_output( array $request ) {
 		$provider_output = self::provider_output( $request );
 		if ( is_wp_error( $provider_output ) || is_array( $provider_output ) ) {
 			return $provider_output;
 		}
-		return self::fetch_public_url_provider( $request );
+
+		return new WP_Error(
+			'static_site_importer_url_provider_missing',
+			__( 'No URL import provider returned an artifact. The resumable import-url ability is the only built-in URL collection path; register a custom provider on the static_site_importer_url_import_provider filter to override.', 'static-site-importer' )
+		);
 	}
 
 	/** @return null|array<string,mixed>|WP_Error */
@@ -140,53 +117,6 @@ class Static_Site_Importer_URL_Import_Runtime {
 		 * @param array<string,mixed>               $request         Provider request.
 		 */
 		return apply_filters( 'static_site_importer_url_import_provider', null, $request );
-	}
-
-	/**
-	 * Built-in generic public URL provider.
-	 *
-	 * @param array<string,mixed> $request Provider request envelope.
-	 * @return array<string,mixed>|WP_Error
-	 */
-	private static function fetch_public_url_provider( array $request ) {
-		$provider_args = isset( $request['provider_args'] ) && is_array( $request['provider_args'] ) ? $request['provider_args'] : array();
-		if ( ! empty( $provider_args['collect_site'] ) ) {
-			$provider_args['require_complete_collection'] = true;
-			return Static_Site_Importer_URL_Site_Collector::collect( (string) $request['url'], $provider_args );
-		}
-
-		$fetch = Static_Site_Importer_URL_Fetcher::fetch_to_work_dir(
-			(string) $request['url'],
-			(string) $request['work_dir'],
-			$provider_args
-		);
-		if ( is_wp_error( $fetch ) ) {
-			return $fetch;
-		}
-
-		$html = file_get_contents( $fetch['html_path'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the importer-owned fetched HTML artifact.
-		if ( false === $html ) {
-			return new WP_Error( 'static_site_importer_url_artifact_read_failed', 'Failed to read fetched URL HTML.' );
-		}
-		$normalized                    = Static_Site_Importer_Source_Normalizer::normalize_html( $html, (string) $request['url'], $provider_args );
-		$html                          = $normalized['html'];
-		$metadata                      = $fetch['metadata'];
-		$metadata['source_exclusions'] = $normalized['exclusions'];
-		$metadata['diagnostics']       = array_merge( is_array( $metadata['diagnostics'] ?? null ) ? $metadata['diagnostics'] : array(), $normalized['diagnostics'] );
-
-		return array(
-			'provider'        => 'public-url-fetcher',
-			'artifact'        => array(
-				'schema' => 'blocks-engine/php-transformer/site-artifact/v1',
-				'files'  => array(
-					array(
-						'path'    => 'website/index.html',
-						'content' => $html,
-					),
-				),
-			),
-			'source_metadata' => $metadata,
-		);
 	}
 
 	/**
