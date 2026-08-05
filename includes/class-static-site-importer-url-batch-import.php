@@ -831,12 +831,12 @@ final class Static_Site_Importer_URL_Batch_Import {
 	}
 	private static function page_key( string $url ): string {
 		$parts = self::url_parts( $url );
-		if ( ! is_array( $parts ) || empty( $parts['host'] ) ) {
+		if ( ! is_array( $parts ) ) {
 			return '';
 		}$path = rtrim( (string) ( $parts['path'] ?? '/' ), '/' );
 		if ( '' === $path || '/index.html' === $path || '/index.htm' === $path ) {
 			$path = '/';
-		}return strtolower( (string) ( $parts['scheme'] ?? 'https' ) ) . '://' . strtolower( (string) $parts['host'] ) . $path . ( isset( $parts['query'] ) ? '?' . $parts['query'] : '' );
+		}return $path . ( isset( $parts['query'] ) ? '?' . $parts['query'] : '' );
 	}
 	private static function existing_manifest( string $path ): ?array {
 		if ( ! is_file( $path ) || is_link( $path ) ) {
