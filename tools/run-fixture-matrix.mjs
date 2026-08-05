@@ -15,6 +15,7 @@ import { FIXTURE_MATRIX_RUN_FIELDS, MAX_EXTRA_SURFACE_COUNT, createFixtureMatrix
 
 export const RIG_ID = 'static-site-importer-fixture-matrix';
 export const SOLVED_ONLY_LANE_ID = 'fixtures-solved-only/v1';
+export const FIXTURE_MATRIX_PHASE_PLAN_SCHEMA = 'static-site-importer/fixture-matrix-phase-plan/v1';
 
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -122,6 +123,7 @@ export function buildFixtureMatrixRunPlan(input) {
     ...buildFreshnessWarnings(codeFreshness, options),
   ];
 
+  const steps = buildSteps(options, settings);
   return {
     schema: 'static-site-importer/fixture-matrix-operator-run/v1',
     mode: options.mode,
@@ -195,7 +197,17 @@ export function buildFixtureMatrixRunPlan(input) {
         },
       }
       : {},
-    steps: buildSteps(options, settings),
+    phase_plan: {
+      schema: FIXTURE_MATRIX_PHASE_PLAN_SCHEMA,
+      phases: steps.map(({ phase, placement, resolved_placement, reason, retry_command }) => ({
+        phase,
+        placement,
+        resolved_placement,
+        reason,
+        retry_command,
+      })),
+    },
+    steps,
   };
 }
 
@@ -680,18 +692,26 @@ function gitText(cwd, args, gitRunner) {
 function buildSteps(options, settings) {
   const steps = [];
   if (!options.skipInstall) {
-    steps.push({
+    steps.push(createPhaseStep({
+      phase: 'controller-setup',
+      placement: 'auto',
+      resolvedPlacement: 'controller-local',
+      reason: 'Rig source installation remains on the controller and does not inherit fixture workload routing.',
       label: `Refresh installed SSI fixture matrix rig (${options.executionTarget})`,
       command: options.homeboyBin,
       args: ['rig', 'install', packageRoot, '--id', RIG_ID, '--reinstall'],
-    });
+    }));
   }
   if (!options.skipSync) {
-    steps.push({
+    steps.push(createPhaseStep({
+      phase: 'controller-setup',
+      placement: 'auto',
+      resolvedPlacement: 'controller-local',
+      reason: 'Rig component synchronization remains on the controller and does not inherit fixture workload routing.',
       label: `Sync/materialize rig components (${options.executionTarget})`,
       command: options.homeboyBin,
       args: ['rig', 'sync', RIG_ID],
-    });
+    }));
   }
 
   const benchArgs = [
@@ -716,13 +736,37 @@ function buildSteps(options, settings) {
   if (options.passthrough.length > 0) {
     routedBenchArgs.push('--', ...options.passthrough);
   }
-  steps.push({
+  steps.push(createPhaseStep({
+    phase: 'fixture-workload',
+    placement: options.placement,
+    resolvedPlacement: workloadResolvedPlacement(options),
+    reason: 'Fixture execution owns the requested Homeboy placement and runner.',
     label: `Run SSI fixture matrix bench through Homeboy/Lab/WP Codebox (${options.executionTarget})`,
     command: options.homeboyBin,
     args: routedBenchArgs,
-  });
+  }));
 
   return steps;
+}
+
+function createPhaseStep({ phase, placement, resolvedPlacement, reason, label, command, args }) {
+  const step = {
+    phase,
+    placement,
+    resolved_placement: resolvedPlacement,
+    reason,
+    label,
+    command,
+    args,
+  };
+  return { ...step, retry_command: shellCommand(step) };
+}
+
+function workloadResolvedPlacement(options) {
+  if (options.runner) {
+    return `lab:${options.runner}`;
+  }
+  return options.placement;
 }
 
 function withBenchRouting(args, options) {
@@ -745,8 +789,14 @@ function withBenchRouting(args, options) {
 function runCommand(step) {
   const status = runStep(step);
   if (status !== 0) {
-    throw new Error(`${step.label} failed with exit ${status}`);
+    throw new Error(phaseFailureDiagnostic(step, status));
   }
+}
+
+export function phaseFailureDiagnostic(step, status) {
+  const phase = step.phase || 'unknown';
+  const retry = step.retry_command || shellCommand(step);
+  return `${step.label} failed with exit ${status} during ${phase}. Retry: ${retry}`;
 }
 
 // Run a step and return its exit status without throwing, so callers can decide
@@ -763,7 +813,10 @@ function runStep(step) {
 // On crash, preserve the historical throw/error behavior.
 export function summarizeBenchRun({ plan, benchStatus, benchLabel = 'bench step' }) {
   if (benchStatus !== 0 && !benchProducedResult(plan.output_file)) {
-    throw new Error(`${benchLabel} failed with exit ${benchStatus}`);
+    const benchStep = plan.steps?.at(-1);
+    throw new Error(benchStep
+      ? phaseFailureDiagnostic(benchStep, benchStatus)
+      : `${benchLabel} failed with exit ${benchStatus}`);
   }
   const gateFailed = benchStatus !== 0;
   return {
