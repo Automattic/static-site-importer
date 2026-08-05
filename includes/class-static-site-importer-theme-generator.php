@@ -414,7 +414,6 @@ class Static_Site_Importer_Theme_Generator {
 				'reason' => 'companion_plugin_payload_absent',
 			),
 			'generated_theme'                  => array(
-				'wordpress_site_plan' => $report_plan,
 				'document_metadata'   => self::document_metadata_from_plan_receipt( $plan ),
 				'template_parts'      => array_map(
 					static fn( array $part ): array => array(
