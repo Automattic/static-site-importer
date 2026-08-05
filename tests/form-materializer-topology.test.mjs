@@ -34,7 +34,7 @@ test( 'shared-row topology materializes through the PHP provider adapter', () =>
 	assert.match( output, /PASS form-materializer-smoke\.php \(\d+ assertions\)/ );
 } );
 
-test( 'Jetpack runtime preparation tolerates optional APIs missing from older versions', () => {
+test( 'Jetpack runtime preparation reports the missing canonical forms loader', () => {
 	const code = String.raw`
 namespace Automattic\Jetpack {
 	class Modules {
@@ -62,7 +62,7 @@ namespace {
 		encoding: 'utf8',
 	} );
 
-	assert.equal( output, 'static_site_importer_jetpack_forms_blocks_missing' );
+	assert.equal( output, 'static_site_importer_jetpack_forms_loader_missing' );
 } );
 
 test( 'provider-constrained topology emits nested fields and an editor-valid core submit', () => {

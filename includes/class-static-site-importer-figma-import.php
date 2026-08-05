@@ -368,7 +368,8 @@ class Static_Site_Importer_Figma_Import {
 			'on_failure' => 'retain',
 			'expires_at' => gmdate( 'c', time() + 604800 ),
 		) : array( 'on_success' => 'purge_on_success' );
-		$workspace = new Static_Site_Importer_Artifact_Run_Workspace( sys_get_temp_dir(), 'fig-' . bin2hex( random_bytes( 8 ) ), $retention );
+		$temp_root = realpath( sys_get_temp_dir() );
+		$workspace = new Static_Site_Importer_Artifact_Run_Workspace( false !== $temp_root ? $temp_root : sys_get_temp_dir(), 'fig-' . bin2hex( random_bytes( 8 ) ), $retention );
 		$tmp       = $workspace->publish_raw( 'input.fig', $content );
 		if ( is_wp_error( $tmp ) ) {
 			return new WP_Error( 'static_site_importer_figma_file_tempfile_failed', 'Uploaded .fig file could not be staged for transformation.', array( 'status' => 500 ) );
