@@ -122,9 +122,7 @@ final class Static_Site_Importer_Font_Materializer {
 			$writes[] = self::write( 'assets/css/embedded-fonts.css', $css_body, 'theme.font_materialization' );
 			return self::with_runtime_registration( $writes, $resolved_plan, array(), $diagnostics );
 		}
-		if ( 'embedded' === $font_faces['state'] ) {
-			$embedded_css = (string) $font_faces['css'];
-		}
+		$embedded_css = (string) $font_faces['css'];
 		if ( '' === trim( $embedded_css ) ) {
 			return new WP_Error( 'static_site_importer_font_materialization_failed', '', $diagnostics );
 		}
