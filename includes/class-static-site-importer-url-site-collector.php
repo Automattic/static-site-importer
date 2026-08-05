@@ -83,20 +83,55 @@ class Static_Site_Importer_URL_Site_Collector {
 		$script_exclusions  = array();
 		$entry_resource_url = $entry_url;
 		$site_url           = $entry_url;
-
-		$sitemap_urls = isset( $args['_route_set'] ) && is_array( $args['_route_set'] ) ? array_values( $args['_route_set'] ) : self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
-		if ( is_wp_error( $sitemap_urls ) ) {
-			return $sitemap_urls;
+		$sitemap_urls       = array();
+		$resumed             = false;
+		$state               = is_array( $args['_collection_state'] ?? null ) ? $args['_collection_state'] : array();
+		if ( 'static-site-importer/partial-collection/v1' === ( $state['schema'] ?? '' ) ) {
+			$page_queue        = is_array( $state['page_queue'] ?? null ) ? $state['page_queue'] : $page_queue;
+			$asset_queue       = is_array( $state['asset_queue'] ?? null ) ? $state['asset_queue'] : $asset_queue;
+			$queued_pages      = is_array( $state['queued_pages'] ?? null ) ? $state['queued_pages'] : $queued_pages;
+			$queued_assets     = is_array( $state['queued_assets'] ?? null ) ? $state['queued_assets'] : $queued_assets;
+			$resources         = is_array( $state['resources'] ?? null ) ? $state['resources'] : $resources;
+			$failures          = is_array( $state['failures'] ?? null ) ? $state['failures'] : $failures;
+			$diagnostics       = is_array( $state['diagnostics'] ?? null ) ? $state['diagnostics'] : $diagnostics;
+			$source_exclusions = is_array( $state['source_exclusions'] ?? null ) ? $state['source_exclusions'] : $source_exclusions;
+			$aliases           = is_array( $state['aliases'] ?? null ) ? $state['aliases'] : $aliases;
+			$total_bytes       = (int) ( $state['total_bytes'] ?? $total_bytes );
+			$truncated         = is_array( $state['truncated'] ?? null ) ? $state['truncated'] : $truncated;
+			$external_assets   = is_array( $state['external_assets'] ?? null ) ? $state['external_assets'] : $external_assets;
+			$asset_owners      = is_array( $state['asset_owners'] ?? null ) ? $state['asset_owners'] : $asset_owners;
+			$shared_assets     = is_array( $state['shared_assets'] ?? null ) ? $state['shared_assets'] : $shared_assets;
+			$critical_assets   = is_array( $state['critical_assets'] ?? null ) ? $state['critical_assets'] : $critical_assets;
+			$script_exclusions = is_array( $state['script_exclusions'] ?? null ) ? $state['script_exclusions'] : $script_exclusions;
+			$entry_resource_url = (string) ( $state['entry_resource_url'] ?? $entry_resource_url );
+			$site_url          = (string) ( $state['site_url'] ?? $site_url );
+			$sitemap_urls      = is_array( $state['sitemap_urls'] ?? null ) ? $state['sitemap_urls'] : $sitemap_urls;
+			$resumed           = true;
 		}
-		foreach ( $sitemap_urls as $page_url ) {
-			if ( count( $page_queue ) >= $max_pages ) {
-				$truncated['pages'] = true;
-				break;
+		$checkpoint = is_callable( $args['_collection_checkpoint'] ?? null ) ? $args['_collection_checkpoint'] : null;
+		$checkpoint_state = static function () use ( $checkpoint, &$page_queue, &$asset_queue, &$queued_pages, &$queued_assets, &$resources, &$failures, &$diagnostics, &$source_exclusions, &$aliases, &$total_bytes, &$truncated, &$external_assets, &$asset_owners, &$shared_assets, &$critical_assets, &$script_exclusions, &$entry_resource_url, &$site_url, &$sitemap_urls ): ?WP_Error {
+			if ( null === $checkpoint ) {
+				return null;
 			}
-			$page_key = self::page_key( $page_url );
-			if ( ! isset( $queued_pages[ $page_key ] ) ) {
-				$queued_pages[ $page_key ] = true;
-				$page_queue[]              = $page_url;
+			$result = call_user_func( $checkpoint, array( 'schema' => 'static-site-importer/partial-collection/v1', 'page_queue' => $page_queue, 'asset_queue' => $asset_queue, 'queued_pages' => $queued_pages, 'queued_assets' => $queued_assets, 'resources' => $resources, 'failures' => $failures, 'diagnostics' => $diagnostics, 'source_exclusions' => $source_exclusions, 'aliases' => $aliases, 'total_bytes' => $total_bytes, 'truncated' => $truncated, 'external_assets' => $external_assets, 'asset_owners' => $asset_owners, 'shared_assets' => $shared_assets, 'critical_assets' => $critical_assets, 'script_exclusions' => $script_exclusions, 'entry_resource_url' => $entry_resource_url, 'site_url' => $site_url, 'sitemap_urls' => $sitemap_urls ) );
+			return is_wp_error( $result ) ? $result : null;
+		};
+
+		if ( ! $resumed ) {
+			$sitemap_urls = isset( $args['_route_set'] ) && is_array( $args['_route_set'] ) ? array_values( $args['_route_set'] ) : self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
+			if ( is_wp_error( $sitemap_urls ) ) {
+				return $sitemap_urls;
+			}
+			foreach ( $sitemap_urls as $page_url ) {
+				if ( count( $page_queue ) >= $max_pages ) {
+					$truncated['pages'] = true;
+					break;
+				}
+				$page_key = self::page_key( $page_url );
+				if ( ! isset( $queued_pages[ $page_key ] ) ) {
+					$queued_pages[ $page_key ] = true;
+					$page_queue[]              = $page_url;
+				}
 			}
 		}
 
@@ -106,6 +141,14 @@ class Static_Site_Importer_URL_Site_Collector {
 			$response = $page_fetcher( $page_url, array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ) );
 			$response = self::without_cache_marker( $response );
 			if ( is_wp_error( $response ) ) {
+				if ( 'static_site_importer_invocation_deadline_exceeded' === $response->get_error_code() ) {
+					array_unshift( $page_queue, $page_url );
+					$write = $checkpoint_state();
+					if ( is_wp_error( $write ) ) {
+						return $write;
+					}
+					return $response;
+				}
 				if ( $page_url === $entry_url ) {
 					return $response;
 				}
@@ -207,6 +250,11 @@ class Static_Site_Importer_URL_Site_Collector {
 			$response  = self::without_cache_marker( $response );
 			if ( is_wp_error( $response ) ) {
 				if ( 'static_site_importer_invocation_deadline_exceeded' === $response->get_error_code() ) {
+					array_unshift( $asset_queue, $asset_url );
+					$write = $checkpoint_state();
+					if ( is_wp_error( $write ) ) {
+						return $write;
+					}
 					return $response;
 				}
 				if ( $preserve_failed_assets && ( ! $critical || ! self::same_origin( $asset_url, $site_url ) ) ) {

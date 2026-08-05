@@ -183,6 +183,10 @@ final class Static_Site_Importer_URL_Batch_Import {
 					$ready_args['require_complete_collection'] = true;
 					$ready_args['asset_failure_policy']        = count( $routes ) > 1 ? 'preserve_failed_external_assets' : 'preserve_external';
 					$ready_args['hydration_mode']              = 'page_ready';
+					$ready_args                                = self::with_collection_checkpoint( $workspace, $ready_args, 'collection-state/' . $batch['batch_id'] . '.page-ready.json', $routes, 'page_ready' );
+					if ( is_wp_error( $ready_args ) ) {
+						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $ready_args, $cache );
+					}
 					$ready_runtime                             = Static_Site_Importer_URL_Site_Collector::collect( $batch_entry, $ready_args, $fetcher );
 					if ( is_wp_error( $ready_runtime ) ) {
 						if ( self::deadline_error( $ready_runtime ) ) {
@@ -200,6 +204,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 					if ( is_wp_error( $write ) ) {
 						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $write, $cache );
 					}
+					$workspace->delete( 'collection-state/' . $batch['batch_id'] . '.page-ready.json' );
 				}
 				if ( 'page_ready' === $batch['state'] && ( $batch['result']['snapshot_sha256'] ?? '' ) !== ( $ready_runtime['source_metadata']['snapshot']['sha256'] ?? '' ) ) {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, new WP_Error( 'static_site_importer_page_ready_checkpoint_mismatch', 'The immutable page-ready checkpoint no longer matches its persisted receipt.' ), $cache );
@@ -249,6 +254,10 @@ final class Static_Site_Importer_URL_Batch_Import {
 				$collect_args['max_pages']                   = min( self::MAX_BATCH_PAGES + 1, count( $collect_args['_route_set'] ) + 1 );
 				$collect_args['require_complete_collection'] = true;
 				$collect_args['asset_failure_policy']        = count( $routes ) > 1 ? 'preserve_failed_external_assets' : 'preserve_external';
+				$collect_args                                = self::with_collection_checkpoint( $workspace, $collect_args, 'collection-state/' . $batch['batch_id'] . '.complete.json', $routes, 'complete' );
+				if ( is_wp_error( $collect_args ) ) {
+					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $collect_args, $cache );
+				}
 				$runtime                                     = Static_Site_Importer_URL_Site_Collector::collect( $batch_entry, $collect_args, $fetcher );
 				if ( is_wp_error( $runtime ) ) {
 					if ( self::deadline_error( $runtime ) ) {
@@ -281,6 +290,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				if ( is_wp_error( $write ) ) {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $write, $cache );
 				}
+				$workspace->delete( 'collection-state/' . $batch['batch_id'] . '.complete.json' );
 			}
 			$shared_started = microtime( true );
 			$shared         = $shared_plan->reconcile( $runtime['artifact'] );
@@ -486,6 +496,25 @@ final class Static_Site_Importer_URL_Batch_Import {
 	}
 	/** @return array<mixed>|WP_Error */
 	private static function externalize_staged_plan_payloads( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $value ): array|WP_Error {
+		if ( is_array( $value['resources'] ?? null ) ) {
+			foreach ( $value['resources'] as &$resource ) {
+				if ( ! is_array( $resource ) || ! is_string( $resource['body'] ?? null ) ) {
+					continue;
+				}
+				$payload = $resource['body'];
+				$hash    = hash( 'sha256', $payload );
+				$ref     = 'collection-payloads/' . $hash . '.payload';
+				if ( $workspace->read_raw( $ref ) !== $payload ) {
+					$stored = $workspace->publish_raw( $ref, $payload );
+					if ( is_wp_error( $stored ) ) {
+						return $stored;
+					}
+				}
+				unset( $resource['body'] );
+				$resource['checkpoint_payload'] = array( 'bytes' => strlen( $payload ), 'sha256' => $hash, 'ref' => $ref );
+			}
+			unset( $resource );
+		}
 		if ( is_array( $value['artifact']['files'] ?? null ) ) {
 			foreach ( $value['artifact']['files'] as &$file ) {
 				if ( ! is_array( $file ) ) {
@@ -524,6 +553,21 @@ final class Static_Site_Importer_URL_Batch_Import {
 	}
 	/** @return array<mixed>|WP_Error */
 	private static function hydrate_staged_plan_payloads( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $value ): array|WP_Error {
+		if ( is_array( $value['resources'] ?? null ) ) {
+			foreach ( $value['resources'] as &$resource ) {
+				$payload = is_array( $resource['checkpoint_payload'] ?? null ) ? $resource['checkpoint_payload'] : null;
+				if ( null === $payload ) {
+					continue;
+				}
+				$bytes = $workspace->read_raw( (string) ( $payload['ref'] ?? '' ) );
+				if ( ! is_string( $bytes ) || strlen( $bytes ) !== (int) ( $payload['bytes'] ?? -1 ) || ! hash_equals( (string) ( $payload['sha256'] ?? '' ), hash( 'sha256', $bytes ) ) ) {
+					return new WP_Error( 'static_site_importer_collection_checkpoint_payload_invalid', 'A partial collection checkpoint payload could not be verified.' );
+				}
+				$resource['body'] = $bytes;
+				unset( $resource['checkpoint_payload'] );
+			}
+			unset( $resource );
+		}
 		if ( is_array( $value['artifact']['files'] ?? null ) ) {
 			foreach ( $value['artifact']['files'] as &$file ) {
 				$payload = is_array( $file['checkpoint_payload'] ?? null ) ? $file['checkpoint_payload'] : null;
@@ -551,6 +595,27 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$value[ $key ] = $hydrated;
 		}
 		return $value;
+	}
+	private static function with_collection_checkpoint( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $args, string $path, array $routes, string $mode ): array|WP_Error {
+		$identity = array(
+			'kind'        => 'partial_collection',
+			'mode'        => $mode,
+			'routes_hash' => hash( 'sha256', (string) wp_json_encode( array_values( $routes ), JSON_UNESCAPED_SLASHES ) ),
+		);
+		$state = self::load_payload_checkpoint( $workspace, $path, $identity );
+		if ( is_wp_error( $state ) ) {
+			return $state;
+		}
+		if ( is_array( $state ) ) {
+			$args['_collection_state'] = $state;
+		}
+		$args['_collection_checkpoint'] = static function ( ?array $next ) use ( $workspace, $path, $identity ): bool|string|WP_Error {
+			if ( null === $next ) {
+				return $workspace->delete( $path );
+			}
+			return self::store_payload_checkpoint( $workspace, $path, $next, $identity );
+		};
+		return $args;
 	}
 	private static function persist_runtime( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $relative, array $runtime ): string|WP_Error {
 		return self::store_payload_checkpoint( $workspace, $relative, $runtime, array( 'kind' => 'collected_runtime' ) );
