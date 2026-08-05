@@ -31,8 +31,8 @@ $legacy_path = tempnam( sys_get_temp_dir(), 'ssi-legacy-' ); $delete_legacy_file
 $checkpoint_workspace = new Static_Site_Importer_Artifact_Run_Workspace( sys_get_temp_dir(), 'staged-checkpoint-' . bin2hex( random_bytes( 4 ) ) );
 $checkpoint_payload = str_repeat( 'checkpoint-payload-', 600000 );
 $checkpoint_plan = array( 'schema' => 'test-plan/v1', 'artifact' => array( 'files' => array( array( 'path' => 'large.bin', 'content' => $checkpoint_payload ) ) ) );
-$store_checkpoint = new ReflectionMethod( Static_Site_Importer_URL_Batch_Import::class, 'store_staged_plan_checkpoint' );
-$load_checkpoint = new ReflectionMethod( Static_Site_Importer_URL_Batch_Import::class, 'load_staged_plan_checkpoint' );
+$store_checkpoint = new ReflectionMethod( Static_Site_Importer_URL_Batch_Import::class, 'store_payload_checkpoint' );
+$load_checkpoint = new ReflectionMethod( Static_Site_Importer_URL_Batch_Import::class, 'load_payload_checkpoint' );
 $checkpoint_identity = array( 'resource_digest' => hash( 'sha256', 'resources' ) );
 $checkpoint_write = $store_checkpoint->invoke( null, $checkpoint_workspace, 'staged.json', $checkpoint_plan, $checkpoint_identity );
 $checkpoint_raw = $checkpoint_workspace->read_raw( 'staged.json' );
@@ -40,6 +40,12 @@ $checkpoint_loaded = $load_checkpoint->invoke( null, $checkpoint_workspace, 'sta
 if ( is_wp_error( $checkpoint_write ) || ! is_string( $checkpoint_raw ) || 100000 < strlen( $checkpoint_raw ) || str_contains( $checkpoint_raw, $checkpoint_payload ) || $checkpoint_plan !== $checkpoint_loaded ) { throw new RuntimeException( 'oversized staged compiler plans must round-trip through bounded verified payload checkpoints' ); }
 $corrupt_checkpoint = json_decode( $checkpoint_raw, true ); $corrupt_checkpoint['plan']['artifact']['files'][0]['path'] = 'altered.bin'; $checkpoint_workspace->publish_json( 'staged.json', $corrupt_checkpoint );
 if ( ! is_wp_error( $load_checkpoint->invoke( null, $checkpoint_workspace, 'staged.json', $checkpoint_identity ) ) ) { throw new RuntimeException( 'staged compiler checkpoint manifests must reject altered inline plan metadata' ); }
+$runtime_checkpoint = array( 'artifact' => array( 'files' => array( array( 'path' => 'website/index.html', 'mime_type' => 'text/html', 'content' => '<main>Runtime</main>' ), array( 'path' => 'website/large.bin', 'mime_type' => 'application/octet-stream', 'content' => $checkpoint_payload ) ) ), 'source_metadata' => array( 'snapshot' => array( 'files' => array( array( 'mime_type' => 'text/html', 'source_url' => 'https://runtime-checkpoint.test/' ) ) ), 'collection' => array( 'bytes' => strlen( $checkpoint_payload ) ) ) );
+$persist_runtime = new ReflectionMethod( Static_Site_Importer_URL_Batch_Import::class, 'persist_runtime' ); $retained_runtime = new ReflectionMethod( Static_Site_Importer_URL_Batch_Import::class, 'retained_runtime' );
+$runtime_write = $persist_runtime->invoke( null, $checkpoint_workspace, 'batches/oversized.json', $runtime_checkpoint ); $runtime_raw = $checkpoint_workspace->read_raw( 'batches/oversized.json' ); $runtime_loaded = $retained_runtime->invoke( null, $checkpoint_workspace, 'batches/oversized.json', 'batches/oversized.json', 'batches/oversized.json', array( 'https://runtime-checkpoint.test/' ) );
+if ( is_wp_error( $runtime_write ) || ! is_string( $runtime_raw ) || 100000 < strlen( $runtime_raw ) || $runtime_checkpoint !== $runtime_loaded ) { throw new RuntimeException( 'oversized collected runtimes must resume from bounded payload checkpoints' ); }
+$raw_runtime = $runtime_checkpoint; $raw_runtime['artifact']['files'][1]['content'] = 'legacy'; $checkpoint_workspace->publish_json( 'batches/raw.json', $raw_runtime ); $raw_runtime_loaded = $retained_runtime->invoke( null, $checkpoint_workspace, 'batches/raw.json', 'batches/raw.json', 'batches/raw.json', array( 'https://runtime-checkpoint.test/' ) ); $migrated_runtime_raw = $checkpoint_workspace->read_raw( 'batches/raw.json' );
+if ( $raw_runtime !== $raw_runtime_loaded || 'static-site-importer/artifact-payload-checkpoint/v1' !== ( json_decode( (string) $migrated_runtime_raw, true )['schema'] ?? '' ) ) { throw new RuntimeException( 'legacy raw collected-runtime checkpoints must migrate when resumed' ); }
 $checkpoint_workspace->purge();
 
 $responses = array(
