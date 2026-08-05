@@ -92,7 +92,17 @@ class Static_Site_Importer_Figma_Import {
 		if ( ! empty( $validation_artifacts ) ) {
 			$import_input['validation_artifacts'] = $validation_artifacts;
 		}
-		$result                 = static_site_importer_ability_import( array_merge( $import_input, array( 'source' => array( 'type' => 'artifact', 'artifact' => $artifact ) ) ) );
+		$result                 = static_site_importer_ability_import(
+			array_merge(
+				$import_input,
+				array(
+					'source' => array(
+						'type'     => 'artifact',
+						'artifact' => $artifact,
+					),
+				)
+			)
+		);
 		$figma_transform_report = self::figma_transform_report_from_metadata( isset( $import_input['source_metadata'] ) && is_array( $import_input['source_metadata'] ) ? $import_input['source_metadata'] : array() );
 		if ( ! empty( $figma_transform_report ) ) {
 			$result['figma_transform_report'] = $figma_transform_report;

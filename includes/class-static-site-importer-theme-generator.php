@@ -48,7 +48,14 @@ class Static_Site_Importer_Theme_Generator {
 		$materialization_plan = $compiled_import['materialization_plan'];
 		$args['font_materialization'] = isset( $materialization_plan['theme']['font_materialization'] ) && is_array( $materialization_plan['theme']['font_materialization'] ) ? $materialization_plan['theme']['font_materialization'] : array();
 		if ( ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) ) {
-			return new WP_Error( 'static_site_importer_quality_gate_failed', 'Website artifact did not pass the canonical plan quality gate.', array( 'quality' => $plan['quality'] ?? array(), 'diagnostics' => $plan['diagnostics'] ?? array() ) );
+			return new WP_Error(
+				'static_site_importer_quality_gate_failed',
+				'Website artifact did not pass the canonical plan quality gate.',
+				array(
+					'quality'     => $plan['quality'] ?? array(),
+					'diagnostics' => $plan['diagnostics'] ?? array(),
+				)
+			);
 		}
 		$lifecycle = self::prepare_wordpress_site_plan_lifecycle( $plan, $args );
 		if ( is_wp_error( $lifecycle ) ) {

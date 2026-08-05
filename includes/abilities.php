@@ -151,12 +151,18 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 					'type'       => 'object',
 					'properties' => array_merge(
 						array(
-							'operation' => array( 'type' => 'string', 'enum' => array( 'plan', 'apply' ) ),
+							'operation' => array(
+								'type' => 'string',
+								'enum' => array( 'plan', 'apply' ),
+							),
 							'plan'      => array( 'type' => 'object' ),
 							'source'    => array(
 								'type'       => 'object',
 								'properties' => array(
-									'type'       => array( 'type' => 'string', 'enum' => array( 'artifact', 'url', 'upload' ) ),
+									'type'       => array(
+										'type' => 'string',
+										'enum' => array( 'artifact', 'url', 'upload' ),
+									),
 									'artifact'   => array( 'type' => 'object' ),
 									'url'        => array( 'type' => 'string' ),
 									'import_id'  => array( 'type' => 'string' ),
@@ -395,7 +401,7 @@ if ( ! function_exists( 'static_site_importer_ability_export_theme' ) ) {
 if ( ! function_exists( 'static_site_importer_ability_import' ) ) {
 	/** Canonical plan-first import dispatcher. */
 	function static_site_importer_ability_import( array $input ): array {
-		$source = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
+		$source    = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
 		$type      = (string) ( $source['type'] ?? '' );
 		$operation = (string) ( $input['operation'] ?? 'apply' );
 		if ( ! in_array( $operation, array( 'plan', 'apply' ), true ) ) {
@@ -525,9 +531,9 @@ if ( ! function_exists( 'static_site_importer_ability_import_url_operation' ) ) 
 					'type'       => 'url',
 					'identity'   => hash( 'sha256', (string) wp_json_encode( $terminal['plan'] ) ),
 					'provenance' => array(
-						'url'            => (string) ( $source['url'] ?? '' ),
-						'import_id'      => (string) ( $result['import_id'] ?? '' ),
-						'url_batch_run'  => $continuation['url_batch_run'],
+						'url'           => (string) ( $source['url'] ?? '' ),
+						'import_id'     => (string) ( $result['import_id'] ?? '' ),
+						'url_batch_run' => $continuation['url_batch_run'],
 					),
 				),
 			)
@@ -538,7 +544,7 @@ if ( ! function_exists( 'static_site_importer_ability_import_url_operation' ) ) 
 if ( ! function_exists( 'static_site_importer_ability_apply_approved_plan' ) ) {
 	/** @param array<string,mixed> $input @return array<string,mixed> */
 	function static_site_importer_ability_apply_approved_plan( array $input ): array {
-		$plan = $input['plan'];
+		$plan    = $input['plan'];
 		$receipt = static_site_importer_ability_materialize_wordpress_site_plan( $input );
 		$success = 'completed' === ( $receipt['status'] ?? '' );
 
@@ -547,7 +553,10 @@ if ( ! function_exists( 'static_site_importer_ability_apply_approved_plan' ) ) {
 			'operation' => 'apply',
 			'plan'      => $plan,
 			'result'    => $receipt,
-			'error'     => $success ? null : ( $receipt['errors'][0] ?? array( 'code' => 'static_site_importer_materialization_failed', 'message' => 'The approved plan could not be materialized.' ) ),
+			'error'     => $success ? null : ( $receipt['errors'][0] ?? array(
+				'code'    => 'static_site_importer_materialization_failed',
+				'message' => 'The approved plan could not be materialized.',
+			) ),
 		);
 	}
 }

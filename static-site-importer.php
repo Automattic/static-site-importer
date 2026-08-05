@@ -213,7 +213,17 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'asset_materialization_policy' => isset( $assoc_args['asset-materialization-policy'] ) ? (string) $assoc_args['asset-materialization-policy'] : '',
 			);
 
-			$result = static_site_importer_ability_import( array_merge( $input, array( 'source' => array( 'type' => 'artifact', 'artifact' => $input['artifact'] ) ) ) );
+			$result = static_site_importer_ability_import(
+				array_merge(
+					$input,
+					array(
+						'source' => array(
+							'type'     => 'artifact',
+							'artifact' => $input['artifact'],
+						),
+					)
+				)
+			);
 			if ( empty( $result['success'] ) ) {
 				$error = isset( $result['error'] ) && is_array( $result['error'] ) ? $result['error'] : array();
 				WP_CLI::error( (string) ( $error['message'] ?? 'Static site import failed.' ) );
@@ -232,7 +242,10 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			}
 
 			$input  = array(
-				'source'                    => array( 'type' => 'url', 'url' => $url ),
+				'source'                    => array(
+					'type' => 'url',
+					'url'  => $url,
+				),
 				'slug'                      => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
 				'name'                      => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
 				'site_title'                => isset( $assoc_args['site-title'] ) ? (string) $assoc_args['site-title'] : '',
@@ -246,7 +259,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			$result = static_site_importer_ability_import( $input );
 			while ( ! empty( $result['success'] ) && ! empty( $result['continuation'] ) ) {
 				$input['source']['import_id'] = (string) ( $result['import_id'] ?? '' );
-				$result = static_site_importer_ability_import( $input );
+				$result                       = static_site_importer_ability_import( $input );
 			}
 			if ( empty( $result['success'] ) ) {
 				$error = isset( $result['error'] ) && is_array( $result['error'] ) ? $result['error'] : array();

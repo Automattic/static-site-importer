@@ -170,7 +170,19 @@ function static_site_importer_rest_import_figma_file( WP_REST_Request $request )
 	if ( static_site_importer_rest_should_apply_to_current_site( $request->get_params() ) ) {
 		$input['activate']  = ! empty( $request->get_param( 'activate' ) );
 		$input['overwrite'] = ! empty( $request->get_param( 'overwrite' ) );
-		$result             = static_site_importer_rest_execute_import_ability( 'static-site-importer/import', array_merge( $input, array( 'source' => array( 'type' => 'artifact', 'artifact' => $artifact ) ) ), 'static_site_importer_ability_import' );
+		$result             = static_site_importer_rest_execute_import_ability(
+			'static-site-importer/import',
+			array_merge(
+				$input,
+				array(
+					'source' => array(
+						'type'     => 'artifact',
+						'artifact' => $artifact,
+					),
+				)
+			),
+			'static_site_importer_ability_import'
+		);
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
@@ -572,7 +584,10 @@ function static_site_importer_rest_open_in_playground( array $source, array $inp
 	}
 	$input['source_metadata'] = $source_metadata;
 	$input['artifact']        = $artifact;
-	$input['source']          = array( 'type' => 'artifact', 'artifact' => $artifact );
+	$input['source']          = array(
+		'type'     => 'artifact',
+		'artifact' => $artifact,
+	);
 
 	$identity = Static_Site_Importer_Site_Identity::resolve(
 		array(
@@ -709,7 +724,10 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
 		$source_metadata['url_import_provider'] = (string) $runtime['provider'];
 	}
 	$input['source_metadata'] = $source_metadata;
-	$input['source']          = array( 'type' => 'artifact', 'artifact' => $runtime['artifact'] );
+	$input['source']          = array(
+		'type'     => 'artifact',
+		'artifact' => $runtime['artifact'],
+	);
 
 	return $decorate_current_site_preview( static_site_importer_rest_execute_import_ability( 'static-site-importer/import', $input, 'static_site_importer_ability_import' ) );
 }

@@ -355,16 +355,18 @@ final class Static_Site_Importer_URL_Batch_Import {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $result, $cache );
 				}
 			}
-			$cursor                    = Static_Site_Importer_Artifact_Batch_Cursor::complete( $cursor, $index );
+			$cursor                     = Static_Site_Importer_Artifact_Batch_Cursor::complete( $cursor, $index );
 			$cursor[ $index ]['result'] = self::result_evidence( $result, $runtime );
 			$manifest['batches']        = self::legacy_batches( $cursor );
 			$manifest['diagnostics']    = array_slice( array_merge( $manifest['diagnostics'], $result['import_validation_result']['diagnostics'] ?? array() ), -100 );
 			if ( is_wp_error( $run_manifest->save( $manifest ) ) ) {
 				return $run_manifest->save( $manifest );
-			}// Keep verified prepared input until terminal cleanup for interruption recovery.
+			}
+			// Keep verified prepared input until terminal cleanup for interruption recovery.
 			if ( is_file( $old_cache ) ) {
 				self::delete_legacy_file( $old_cache );
-			}++$effective_batches;
+			}
+			++$effective_batches;
 			$final = $result;
 			unset( $result, $runtime, $raw );
 		}
@@ -386,7 +388,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 		$manifest['final_result']                           = $aggregate;
 		if ( is_wp_error( $run_manifest->save( $manifest ) ) ) {
 			return $run_manifest->save( $manifest );
-		}return $aggregate;
+		}
+		return $aggregate;
 	}
 	/**
 	 * Persist the Blocks Engine staged envelopes. The shared envelope is created
@@ -463,7 +466,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	private static function compose_complete_plan( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $cursor ): array|WP_Error {
-		$shared_raw  = $workspace->read_raw( 'staged-compiler-shared.json' );
+		$shared_raw   = $workspace->read_raw( 'staged-compiler-shared.json' );
 		$shared_state = is_string( $shared_raw ) ? json_decode( $shared_raw, true ) : null;
 		$shared_plan  = is_array( $shared_state ) && is_array( $shared_state['plan'] ?? null ) ? $shared_state['plan'] : null;
 		if ( ! is_array( $shared_plan ) ) {
@@ -506,7 +509,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			'quality'                  => is_array( $plan['quality'] ?? null ) ? $plan['quality'] : array(),
 			'diagnostics'              => is_array( $plan['diagnostics'] ?? null ) ? $plan['diagnostics'] : array(),
 			'provenance'               => array(
-				'snapshot_identity' => hash( 'sha256', wp_json_encode( $snapshots ) ),
+				'snapshot_identity' => hash( 'sha256', (string) wp_json_encode( $snapshots ) ),
 				'snapshots'         => $snapshots,
 			),
 		);
