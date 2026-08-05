@@ -991,9 +991,23 @@ final class Static_Site_Importer_URL_Batch_Import {
 			'theme_slug'                 => $result['theme_slug'] ?? '',
 			'snapshot_sha256'            => $runtime['source_metadata']['snapshot']['sha256'] ?? '',
 			'plan_hash'                  => $result['materialization_receipt']['plan_hash'] ?? '',
-			'terminal_batch_report_path' => $result['report_path'] ?? '',
+			'terminal_batch_report_path' => $result['external_report_path'] ?? $result['report_path'] ?? '',
 			'quality'                    => self::quality_evidence( $result['quality'] ?? ( $result['import_report_summary']['quality_pass'] ?? null ) ),
 		);
+	}
+	private static function terminal_result_evidence( array $result ): array {
+		$evidence = array( 'schema' => 'static-site-importer/terminal-batch-result/v1' );
+		foreach ( $result as $key => $value ) {
+			if ( is_string( $key ) && ( is_scalar( $value ) || null === $value ) ) {
+				$evidence[ $key ] = $value;
+			}
+		}
+		$evidence['report_path']           = $result['external_report_path'] ?? $result['report_path'] ?? '';
+		$evidence['import_report_summary'] = is_array( $result['import_report_summary'] ?? null ) ? $result['import_report_summary'] : array();
+		$evidence['quality']               = self::quality_evidence( $result['quality'] ?? ( $result['import_report_summary']['quality_pass'] ?? null ) );
+		$evidence['plan_hash']             = $result['materialization_receipt']['plan_hash'] ?? '';
+		$evidence['page_count']            = is_array( $result['pages'] ?? null ) ? count( $result['pages'] ) : 0;
+		return $evidence;
 	}
 	private static function quality_evidence( mixed $quality ): mixed {
 		if ( ! is_array( $quality ) ) {
@@ -1057,7 +1071,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			),
 			'url_batch_run'         => $evidence,
 			'batch_materialization' => $manifest['batches'],
-			'terminal_batch_result' => $terminal,
+			'terminal_batch_result' => self::terminal_result_evidence( $terminal ),
 		);
 	}
 	private static function continuation_result( array $manifest, string $path, int $index, int $effective_batches, ?int $max_effective_batches = null, ?float $max_invocation_seconds = null, string $reason = 'effective_batch_limit' ): array {
