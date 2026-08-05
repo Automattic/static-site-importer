@@ -455,13 +455,18 @@ final class Static_Site_Importer_URL_Batch_Import {
 		if ( is_wp_error( $externalized ) ) {
 			return $externalized;
 		}
+		$plan_json = wp_json_encode( $externalized, JSON_UNESCAPED_SLASHES );
+		$normalized = is_string( $plan_json ) ? json_decode( $plan_json, true ) : null;
+		if ( ! is_array( $normalized ) ) {
+			return new WP_Error( 'static_site_importer_payload_checkpoint_invalid', 'An artifact payload checkpoint could not be serialized.' );
+		}
 		return $workspace->publish_json(
 			$path,
 			array(
 				'schema'      => 'static-site-importer/artifact-payload-checkpoint/v1',
 				'identity'    => $identity,
-				'plan_sha256' => hash( 'sha256', (string) wp_json_encode( $externalized, JSON_UNESCAPED_SLASHES ) ),
-				'plan'        => $externalized,
+				'plan_sha256' => hash( 'sha256', (string) wp_json_encode( $normalized, JSON_UNESCAPED_SLASHES ) ),
+				'plan'        => $normalized,
 			)
 		);
 	}
