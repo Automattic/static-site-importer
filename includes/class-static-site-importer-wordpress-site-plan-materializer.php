@@ -1337,6 +1337,110 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** @param array<string,mixed> $plan */
 	private static function hash( array $plan ): string {
-		return hash( 'sha256', (string) wp_json_encode( $plan, JSON_UNESCAPED_SLASHES ) );
+		$context = hash_init( 'sha256' );
+		self::update_json_hash( $context, $plan );
+		return hash_final( $context );
+	}
+
+	/** @param resource $context */
+	private static function update_json_hash( $context, mixed $value, int $depth = 0 ): void {
+		if ( $depth > 512 || is_resource( $value ) || is_object( $value ) ) {
+			throw new RuntimeException( 'The WordPress Site Plan contains an unsupported JSON value.' );
+		}
+		if ( is_string( $value ) ) {
+			self::update_json_string_hash( $context, $value );
+			return;
+		}
+		if ( ! is_array( $value ) ) {
+			$encoded = wp_json_encode( $value, JSON_UNESCAPED_SLASHES );
+			if ( false === $encoded ) {
+				throw new RuntimeException( 'The WordPress Site Plan contains an invalid JSON scalar.' );
+			}
+			hash_update( $context, $encoded );
+			return;
+		}
+
+		$list = array_is_list( $value );
+		hash_update( $context, $list ? '[' : '{' );
+		$index = 0;
+		foreach ( $value as $key => $item ) {
+			if ( 0 < $index++ ) {
+				hash_update( $context, ',' );
+			}
+			if ( ! $list ) {
+				self::update_json_string_hash( $context, (string) $key );
+				hash_update( $context, ':' );
+			}
+			self::update_json_hash( $context, $item, $depth + 1 );
+		}
+		hash_update( $context, $list ? ']' : '}' );
+	}
+
+	/** @param resource $context */
+	private static function update_json_string_hash( $context, string $value ): void {
+		hash_update( $context, '"' );
+		$length  = strlen( $value );
+		$start   = 0;
+		$escapes = array( 8 => '\\b', 9 => '\\t', 10 => '\\n', 12 => '\\f', 13 => '\\r', 34 => '\\"', 92 => '\\\\' );
+		for ( $index = 0; $index < $length; ++$index ) {
+			$byte = ord( $value[ $index ] );
+			if ( $byte < 32 || isset( $escapes[ $byte ] ) || $byte >= 128 ) {
+				if ( $index > $start ) {
+					hash_update( $context, substr( $value, $start, $index - $start ) );
+				}
+				if ( $byte < 128 ) {
+					hash_update( $context, $escapes[ $byte ] ?? sprintf( '\\u%04x', $byte ) );
+				} else {
+					$bytes     = 0;
+					$codepoint = self::json_codepoint( $value, $index, $bytes );
+					if ( $codepoint <= 0xffff ) {
+						hash_update( $context, sprintf( '\\u%04x', $codepoint ) );
+					} else {
+						$codepoint -= 0x10000;
+						hash_update( $context, sprintf( '\\u%04x\\u%04x', 0xd800 + ( $codepoint >> 10 ), 0xdc00 + ( $codepoint & 0x3ff ) ) );
+					}
+					$index += $bytes - 1;
+				}
+				$start = $index + 1;
+			} elseif ( $index - $start >= 8191 ) {
+				hash_update( $context, substr( $value, $start, $index - $start + 1 ) );
+				$start = $index + 1;
+			}
+		}
+		if ( $length > $start ) {
+			hash_update( $context, substr( $value, $start ) );
+		}
+		hash_update( $context, '"' );
+	}
+
+	private static function json_codepoint( string $value, int $index, int &$bytes ): int {
+		$lead = ord( $value[ $index ] );
+		if ( $lead >= 0xc2 && $lead <= 0xdf ) {
+			$bytes = 2;
+			$codepoint = $lead & 0x1f;
+		} elseif ( $lead >= 0xe0 && $lead <= 0xef ) {
+			$bytes = 3;
+			$codepoint = $lead & 0x0f;
+		} elseif ( $lead >= 0xf0 && $lead <= 0xf4 ) {
+			$bytes = 4;
+			$codepoint = $lead & 0x07;
+		} else {
+			throw new RuntimeException( 'The WordPress Site Plan contains invalid UTF-8.' );
+		}
+		if ( $index + $bytes > strlen( $value ) ) {
+			throw new RuntimeException( 'The WordPress Site Plan contains truncated UTF-8.' );
+		}
+		for ( $offset = 1; $offset < $bytes; ++$offset ) {
+			$continuation = ord( $value[ $index + $offset ] );
+			if ( $continuation < 0x80 || $continuation > 0xbf ) {
+				throw new RuntimeException( 'The WordPress Site Plan contains invalid UTF-8.' );
+			}
+			$codepoint = ( $codepoint << 6 ) | ( $continuation & 0x3f );
+		}
+		$minimum = array( 2 => 0x80, 3 => 0x800, 4 => 0x10000 );
+		if ( $codepoint < $minimum[ $bytes ] || $codepoint > 0x10ffff || ( $codepoint >= 0xd800 && $codepoint <= 0xdfff ) ) {
+			throw new RuntimeException( 'The WordPress Site Plan contains invalid UTF-8.' );
+		}
+		return $codepoint;
 	}
 }

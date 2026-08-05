@@ -205,6 +205,9 @@ $font_result = ( new ArtifactCompiler() )->compile(
 $font_plan = $font_result['source_reports']['wordpress_site_plan'];
 $font_materialization = $font_result['source_reports']['materialization_plan']['theme']['font_materialization'];
 $font_plan_hash = hash( 'sha256', (string) wp_json_encode( $font_plan, JSON_UNESCAPED_SLASHES ) );
+$hash_plan = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'hash' );
+$hash_fixture = array( 'ordered' => array( 'z' => "slash/control\n", 'a' => json_decode( '"\\u00e9\\ud83d\\ude00\\u2028"' ) ), 'list' => array( true, null, 1.25 ) );
+$assert( hash( 'sha256', (string) wp_json_encode( $hash_fixture, JSON_UNESCAPED_SLASHES ) ) === $hash_plan->invoke( null, $hash_fixture ), 'streamed plan hash preserves WordPress JSON bytes and insertion order' );
 $font_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $font_plan, array( 'slug' => 'font-site-plan', 'font_materialization' => $font_materialization ) );
 $font_root = $GLOBALS['ssi_plan_root'] . '/font-site-plan';
 $assert( 'completed' === $font_receipt['status'], 'canonical font materialization completes' );
