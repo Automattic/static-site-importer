@@ -155,6 +155,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 		$shared_plan       = new Static_Site_Importer_Shared_Resource_Plan( $workspace );
 		$cursor            = Static_Site_Importer_Artifact_Batch_Cursor::hydrate( $manifest['batches'] );
 		$effective_batches = 0;
+		$manifest['checkpoint_diagnostics'] = is_array( $manifest['checkpoint_diagnostics'] ?? null ) ? $manifest['checkpoint_diagnostics'] : array();
 		while ( true ) {
 			$index = Static_Site_Importer_Artifact_Batch_Cursor::next( $cursor );
 			if ( null === $index ) {
@@ -174,7 +175,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$ready_cache_name = 'batches/' . $batch['batch_id'] . '.page-ready.json';
 			$old_cache        = trailingslashit( $work_dir ) . 'url-site-batch-cache-' . $identity . '-' . $index . '.json';
 			if ( null !== $deadline ) {
-				$ready_runtime = self::retained_runtime( $workspace, $ready_cache_name, $ready_cache_name, $ready_cache_name, $routes ) ?? array();
+				$ready_runtime = self::retained_runtime( $workspace, $ready_cache_name, $ready_cache_name, $ready_cache_name, $routes, $manifest['checkpoint_diagnostics'] ) ?? array();
 				if ( empty( $ready_runtime ) ) {
 					$ready_args                                = $args;
 					$ready_args['_route_set']                  = array_values( array_unique( $routes ) );
@@ -241,7 +242,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 					}
 				}
 			}
-			$runtime = self::retained_runtime( $workspace, $cache_name, 'batches/' . $index . '.json', $old_cache, $routes ) ?? array();
+			$runtime = self::retained_runtime( $workspace, $cache_name, 'batches/' . $index . '.json', $old_cache, $routes, $manifest['checkpoint_diagnostics'] ) ?? array();
 			if ( empty( $runtime ) ) {
 				$collect_args                                = $args;
 				$collect_args['_route_set']                  = array_values( array_unique( $routes ) );
@@ -288,7 +289,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 			}
 			$runtime['shared_plan_digest'] = $shared['digest'];
 			if ( ! empty( $shared['changed'] ) ) {
-				self::invalidate_prepared_batches( $workspace, $cursor, $index );
+				$invalidated = self::invalidate_prepared_batches( $workspace, $cursor, $index );
+				$manifest['checkpoint_diagnostics']['shared_plan_runtime_invalidations'] = (int) ( $manifest['checkpoint_diagnostics']['shared_plan_runtime_invalidations'] ?? 0 ) + $invalidated;
 				$workspace->delete( 'staged-compiler-shared.json' );
 				$manifest['diagnostics'][] = array(
 					'code'               => 'shared_resource_plan_changed',
@@ -758,15 +760,23 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$counters[ $key ] = (int) ( $counters[ $key ] ?? 0 );
 		}return $counters;
 	}
-	private static function retained_runtime( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $stable, string $indexed, string $legacy, array $routes ): ?array {
+	private static function retained_runtime( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $stable, string $indexed, string $legacy, array $routes, array &$diagnostics = array() ): ?array {
+		$diagnostics['lookups'] = (int) ( $diagnostics['lookups'] ?? 0 ) + 1;
 		foreach ( array_values( array_unique( array( $stable, $indexed, $legacy ) ) ) as $source ) {
 			$workspace_source = 'batches/' === substr( $source, 0, 8 );
 			$raw_workspace_runtime = false;
 			if ( $workspace_source ) {
 				$raw     = $workspace->read_raw( $source );
+				if ( ! is_string( $raw ) ) {
+					$diagnostics['missing'] = (int) ( $diagnostics['missing'] ?? 0 ) + 1;
+				}
 				$decoded = is_string( $raw ) ? json_decode( $raw, true ) : null;
 				if ( 'static-site-importer/artifact-payload-checkpoint/v1' === ( $decoded['schema'] ?? '' ) ) {
 					$candidate = self::load_payload_checkpoint( $workspace, $source, array( 'kind' => 'collected_runtime' ) );
+					if ( is_wp_error( $candidate ) ) {
+						$diagnostics['verification_failures'] = (int) ( $diagnostics['verification_failures'] ?? 0 ) + 1;
+						$diagnostics['last_verification_error'] = $candidate->get_error_code();
+					}
 					$candidate = is_array( $candidate ) ? $candidate : null;
 				} else {
 					$candidate = is_array( $decoded ) ? $decoded : null;
@@ -779,6 +789,9 @@ final class Static_Site_Importer_URL_Batch_Import {
 				$candidate = null;
 			}
 			if ( ! is_array( $candidate ) || ! self::owns_runtime( $candidate, $routes ) ) {
+				if ( is_array( $candidate ) ) {
+					$diagnostics['ownership_mismatches'] = (int) ( $diagnostics['ownership_mismatches'] ?? 0 ) + 1;
+				}
 				if ( $source === $stable && $workspace_source ) {
 					$workspace->delete( $stable );
 				}
@@ -794,18 +807,22 @@ final class Static_Site_Importer_URL_Batch_Import {
 				} elseif ( is_file( $source ) ) {
 					self::delete_legacy_file( $source );
 				}
+				$diagnostics['migrations'] = (int) ( $diagnostics['migrations'] ?? 0 ) + 1;
 			}
+			$diagnostics['hits'] = (int) ( $diagnostics['hits'] ?? 0 ) + 1;
 			return $candidate;
 		}
 		return null;
 	}
-	private static function invalidate_prepared_batches( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $cursor, int $from ): void {
+	private static function invalidate_prepared_batches( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $cursor, int $from ): int {
+		$invalidated = 0;
 		foreach ( $cursor as $index => $batch ) {
 			if ( $index >= $from && 'completed' !== ( $batch['state'] ?? '' ) ) {
-				$workspace->delete( 'batches/' . $batch['batch_id'] . '.json' );
+				$invalidated += $workspace->delete( 'batches/' . $batch['batch_id'] . '.json' ) ? 1 : 0;
 				$workspace->delete( 'staged-compiler-pages/' . $batch['batch_id'] . '.json' );
 			}
 		}
+		return $invalidated;
 	}
 	private static function owns_runtime( array $runtime, array $routes ): bool {
 		$files   = $runtime['source_metadata']['snapshot']['files'] ?? null;
@@ -1012,6 +1029,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				'max_invocation_seconds'               => $max_invocation_seconds,
 				'continuation_reason'                  => $reason,
 				'next_work'                            => $next_work,
+				'checkpoint_diagnostics'                => $manifest['checkpoint_diagnostics'] ?? array(),
 			),
 			'batch_materialization' => $manifest['batches'],
 		);
