@@ -214,6 +214,20 @@ if ( ! function_exists( 'do_action' ) ) {
 	function do_action( string $hook_name, ...$args ): void {}
 }
 
+if ( ! function_exists( 'static_site_importer_source_runtime' ) ) {
+	function static_site_importer_source_runtime( array $source ): array {
+		return array(
+			'artifact'        => array(
+				'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
+				'entrypoint' => (string) ( $source['entrypoint'] ?? '' ),
+				'files'      => isset( $source['files'] ) && is_array( $source['files'] ) ? $source['files'] : array(),
+			),
+			'source_metadata' => array(),
+			'provider'        => 'test',
+		);
+	}
+}
+
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-exporter.php';
 require_once dirname( __DIR__ ) . '/includes/abilities.php';
 
@@ -298,7 +312,7 @@ $assert( 'smoke' === ( $artifact['report']['source_metadata']['source'] ?? '' ),
 $assert( 'completed' === ( $artifact['report']['import_report']['status'] ?? '' ), 'import-report-preserved' );
 $import_result = static_site_importer_ability_import(
 	array(
-		'source' => array( 'type' => 'artifact', 'artifact' => $artifact ),
+		'source' => static_site_importer_ability_files_source( $artifact ),
 		'slug'     => 'fixture-theme',
 		'name'     => 'Fixture Theme',
 		'site_title' => 'Fixture Site',

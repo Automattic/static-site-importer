@@ -216,12 +216,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			$result = static_site_importer_ability_import(
 				array_merge(
 					$input,
-					array(
-						'source' => array(
-							'type'     => 'artifact',
-							'artifact' => $input['artifact'],
-						),
-					)
+					array( 'source' => static_site_importer_ability_files_source( $input['artifact'] ) )
 				)
 			);
 			if ( empty( $result['success'] ) ) {

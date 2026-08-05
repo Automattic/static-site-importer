@@ -95,12 +95,7 @@ class Static_Site_Importer_Figma_Import {
 		$result                 = static_site_importer_ability_import(
 			array_merge(
 				$import_input,
-				array(
-					'source' => array(
-						'type'     => 'artifact',
-						'artifact' => $artifact,
-					),
-				)
+				array( 'source' => static_site_importer_ability_files_source( $artifact ) )
 			)
 		);
 		$figma_transform_report = self::figma_transform_report_from_metadata( isset( $import_input['source_metadata'] ) && is_array( $import_input['source_metadata'] ) ? $import_input['source_metadata'] : array() );

@@ -145,7 +145,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 			'static-site-importer/import',
 			array(
 				'label'               => __( 'Import Static Site', 'static-site-importer' ),
-				'description'         => __( 'Plan or apply an artifact, public URL, or server-owned upload through one canonical import contract.', 'static-site-importer' ),
+				'description'         => __( 'Plan or apply pasted HTML, website files, a ZIP archive, or a public URL through one canonical import contract.', 'static-site-importer' ),
 				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
 				'input_schema'        => array(
 					'type'       => 'object',
@@ -161,12 +161,19 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 								'properties' => array(
 									'type'       => array(
 										'type' => 'string',
-										'enum' => array( 'artifact', 'url', 'upload' ),
+										'enum' => array( 'html', 'files', 'zip', 'url' ),
 									),
-									'artifact'   => array( 'type' => 'object' ),
+									'html'       => array( 'type' => 'string' ),
+									'files'      => array(
+										'type'  => 'array',
+										'items' => array( 'type' => 'object' ),
+									),
+									'zip'        => array( 'type' => 'object' ),
 									'url'        => array( 'type' => 'string' ),
+									'entrypoint' => array( 'type' => 'string' ),
+									'metadata'   => array( 'type' => 'object' ),
 									'import_id'  => array( 'type' => 'string' ),
-									'upload_ref' => array( 'type' => 'string' ),
+									'ref'        => array( 'type' => 'string' ),
 								),
 								'required'   => array( 'type' ),
 							),
@@ -405,15 +412,35 @@ if ( ! function_exists( 'static_site_importer_ability_import' ) ) {
 		$type      = (string) ( $source['type'] ?? '' );
 		$operation = (string) ( $input['operation'] ?? 'apply' );
 		if ( ! in_array( $operation, array( 'plan', 'apply' ), true ) ) {
-			return static_site_importer_ability_error( 'static_site_importer_invalid_import_source', 'source.type and operation must name a supported import contract.' );
+			return static_site_importer_ability_error( 'static_site_importer_invalid_import_operation', 'operation must be plan or apply.' );
 		}
 
 		if ( 'apply' === $operation && isset( $input['plan'] ) && is_array( $input['plan'] ) ) {
 			return static_site_importer_ability_apply_approved_plan( $input );
 		}
 
-		if ( ! in_array( $type, array( 'artifact', 'url', 'upload' ), true ) ) {
-			return static_site_importer_ability_error( 'static_site_importer_invalid_import_source', 'source.type and operation must name a supported import contract.' );
+		if ( ! in_array( $type, array( 'html', 'files', 'zip', 'url' ), true ) ) {
+			return static_site_importer_ability_error( 'static_site_importer_invalid_import_source', 'source.type must be html, files, zip, or url.' );
+		}
+
+		$provenance = array( 'type' => $type );
+		$reference  = (string) ( $source['ref'] ?? '' );
+		if ( '' !== $reference ) {
+			$resolved = apply_filters( 'static_site_importer_resolve_source_reference', null, $reference, $type, $input );
+			if ( ! is_array( $resolved ) ) {
+				return static_site_importer_ability_error( 'static_site_importer_source_reference_unresolved', 'The opaque source reference was not resolved by a server-owned resolver.' );
+			}
+
+			$resolved_source = isset( $resolved['source'] ) && is_array( $resolved['source'] ) ? $resolved['source'] : $resolved;
+			if ( isset( $resolved_source['type'] ) && $type !== (string) $resolved_source['type'] ) {
+				return static_site_importer_ability_error( 'static_site_importer_source_reference_type_mismatch', 'The resolved source type does not match the requested source type.' );
+			}
+			$source     = array_merge( $source, $resolved_source, array( 'type' => $type ) );
+			$provenance = array_merge(
+				$provenance,
+				array( 'ref' => $reference ),
+				isset( $resolved['provenance'] ) && is_array( $resolved['provenance'] ) ? $resolved['provenance'] : array()
+			);
 		}
 
 		if ( 'url' === $type ) {
@@ -424,25 +451,36 @@ if ( ! function_exists( 'static_site_importer_ability_import' ) ) {
 			return static_site_importer_ability_import_url_operation( $input, $source );
 		}
 
-		$artifact   = 'artifact' === $type && is_array( $source['artifact'] ?? null ) ? $source['artifact'] : array();
-		$provenance = array( 'type' => $type );
-		if ( 'upload' === $type ) {
-			$reference = (string) ( $source['upload_ref'] ?? '' );
-			if ( '' === $reference ) {
-				return static_site_importer_ability_error( 'static_site_importer_missing_upload_reference', 'The upload source requires an opaque upload_ref.' );
-			}
-
-			$resolved = apply_filters( 'static_site_importer_resolve_upload_reference', null, $reference, $input );
-			if ( ! is_array( $resolved ) || ! is_array( $resolved['artifact'] ?? null ) ) {
-				return static_site_importer_ability_error( 'static_site_importer_upload_reference_unresolved', 'The upload reference was not resolved by a server-owned upload resolver.' );
-			}
-
-			$artifact   = $resolved['artifact'];
-			$provenance = array_merge( $provenance, array( 'upload_ref' => $reference ), is_array( $resolved['provenance'] ?? null ) ? $resolved['provenance'] : array() );
+		$runtime_source = array(
+			'entrypoint' => (string) ( $source['entrypoint'] ?? '' ),
+			'metadata'   => isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array(),
+		);
+		if ( 'html' === $type ) {
+			$runtime_source['html'] = (string) ( $source['html'] ?? '' );
+		} elseif ( 'files' === $type ) {
+			$runtime_source['files'] = isset( $source['files'] ) && is_array( $source['files'] ) ? $source['files'] : array();
+		} else {
+			$runtime_source['archive'] = isset( $source['zip'] ) && is_array( $source['zip'] ) ? $source['zip'] : array();
 		}
+
+		if ( ! function_exists( 'static_site_importer_source_runtime' ) ) {
+			return static_site_importer_ability_error( 'static_site_importer_source_normalizer_unavailable', 'The canonical source normalizer is unavailable.' );
+		}
+		$runtime = static_site_importer_source_runtime( $runtime_source, $input );
+		if ( is_wp_error( $runtime ) ) {
+			return static_site_importer_ability_error( (string) $runtime->get_error_code(), $runtime->get_error_message(), $runtime->get_error_data() );
+		}
+		$artifact = $runtime['artifact'];
 		if ( empty( $artifact ) ) {
-			return static_site_importer_ability_error( 'static_site_importer_missing_website_artifact', 'The source did not resolve to a website artifact.' );
+			return static_site_importer_ability_error( 'static_site_importer_missing_website_artifact', 'The source did not normalize to a website artifact.' );
 		}
+		$provenance = array_merge(
+			$provenance,
+			array(
+				'provider'        => $runtime['provider'],
+				'source_metadata' => $runtime['source_metadata'],
+			)
+		);
 
 		$args = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
 		if ( 'plan' === $operation ) {
@@ -456,6 +494,21 @@ if ( ! function_exists( 'static_site_importer_ability_import' ) ) {
 		}
 
 		return static_site_importer_ability_import_success( $result, $input );
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_ability_files_source' ) ) {
+	/** Convert an internal website artifact to the public files source shape. */
+	function static_site_importer_ability_files_source( array $artifact ): array {
+		$metadata = $artifact;
+		unset( $metadata['schema'], $metadata['entrypoint'], $metadata['files'] );
+
+		return array(
+			'type'       => 'files',
+			'entrypoint' => (string) ( $artifact['entrypoint'] ?? '' ),
+			'files'      => isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? $artifact['files'] : array(),
+			'metadata'   => $metadata,
+		);
 	}
 }
 

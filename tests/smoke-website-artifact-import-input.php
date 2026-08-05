@@ -83,6 +83,20 @@ if ( ! class_exists( 'Static_Site_Importer_Theme_Generator' ) ) {
 	}
 }
 
+if ( ! function_exists( 'static_site_importer_source_runtime' ) ) {
+	function static_site_importer_source_runtime( array $source ): array {
+		return array(
+			'artifact'        => array(
+				'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
+				'entrypoint' => (string) ( $source['entrypoint'] ?? '' ),
+				'files'      => isset( $source['files'] ) && is_array( $source['files'] ) ? $source['files'] : array(),
+			),
+			'source_metadata' => array(),
+			'provider'        => 'test',
+		);
+	}
+}
+
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-website-artifact-import-input.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-import-runtime.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-figma-import.php';
@@ -131,7 +145,7 @@ $assert( true === $default_input['disable_smilies'], 'disable-smilies-defaults-t
 $assert( true === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'disable_smilies' => '1' ) )['disable_smilies'], 'disable-smilies-coerces-true-string' );
 $assert( false === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'disable_smilies' => '0' ) )['disable_smilies'], 'disable-smilies-coerces-false-string' );
 
-static_site_importer_ability_import( array_merge( $input, array( 'source' => array( 'type' => 'artifact', 'artifact' => array( 'schema' => 'test/artifact/v1' ) ) ) ) );
+static_site_importer_ability_import( array_merge( $input, array( 'source' => array( 'type' => 'files', 'files' => array() ) ) ) );
 $direct_entrypoint = Static_Site_Importer_Theme_Generator::$last_args;
 
 foreach ( array_keys( Static_Site_Importer_Website_Artifact_Import_Input::SCHEMA_PROPERTIES ) as $field ) {

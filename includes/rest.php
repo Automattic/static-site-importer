@@ -174,12 +174,7 @@ function static_site_importer_rest_import_figma_file( WP_REST_Request $request )
 			'static-site-importer/import',
 			array_merge(
 				$input,
-				array(
-					'source' => array(
-						'type'     => 'artifact',
-						'artifact' => $artifact,
-					),
-				)
+				array( 'source' => static_site_importer_ability_files_source( $artifact ) )
 			),
 			'static_site_importer_ability_import'
 		);
@@ -584,10 +579,7 @@ function static_site_importer_rest_open_in_playground( array $source, array $inp
 	}
 	$input['source_metadata'] = $source_metadata;
 	$input['artifact']        = $artifact;
-	$input['source']          = array(
-		'type'     => 'artifact',
-		'artifact' => $artifact,
-	);
+	$input['source']          = static_site_importer_ability_files_source( $artifact );
 
 	$identity = Static_Site_Importer_Site_Identity::resolve(
 		array(
@@ -724,10 +716,7 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
 		$source_metadata['url_import_provider'] = (string) $runtime['provider'];
 	}
 	$input['source_metadata'] = $source_metadata;
-	$input['source']          = array(
-		'type'     => 'artifact',
-		'artifact' => $runtime['artifact'],
-	);
+	$input['source']          = static_site_importer_ability_files_source( $runtime['artifact'] );
 
 	return $decorate_current_site_preview( static_site_importer_rest_execute_import_ability( 'static-site-importer/import', $input, 'static_site_importer_ability_import' ) );
 }
@@ -782,7 +771,7 @@ function static_site_importer_rest_import_args( array $params ): array {
  * @return array<string,mixed>|WP_Error
  */
 function static_site_importer_rest_source_artifact( array $source ) {
-	$runtime = static_site_importer_rest_source_runtime( $source );
+	$runtime = static_site_importer_source_runtime( $source );
 	if ( is_wp_error( $runtime ) ) {
 		return $runtime;
 	}
@@ -797,7 +786,7 @@ function static_site_importer_rest_source_artifact( array $source ) {
  * @param array<string,mixed> $input  Import input carrying optional provider args.
  * @return array{artifact:array<string,mixed>,source_metadata:array<string,mixed>,provider:string}|WP_Error
  */
-function static_site_importer_rest_source_runtime( array $source, array $input = array() ) {
+function static_site_importer_source_runtime( array $source, array $input = array() ) {
 	if ( isset( $source['artifact'] ) && is_array( $source['artifact'] ) ) {
 		return array(
 			'artifact'        => $source['artifact'],
@@ -903,15 +892,36 @@ function static_site_importer_rest_source_runtime( array $source, array $input =
 		return $source_quality;
 	}
 
+	$entrypoint = isset( $source['entrypoint'] ) ? static_site_importer_rest_artifact_path( (string) $source['entrypoint'] ) : '';
+	if ( '' === $entrypoint || ! in_array( $entrypoint, array_column( $files, 'path' ), true ) ) {
+		$entrypoint = static_site_importer_rest_entrypoint( $files );
+	}
+
+	$metadata = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
+
 	return array(
-		'artifact'        => array(
-			'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
-			'entrypoint' => static_site_importer_rest_entrypoint( $files ),
-			'files'      => $files,
+		'artifact'        => array_merge(
+			$metadata,
+			array(
+				'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
+				'entrypoint' => $entrypoint,
+				'files'      => $files,
+			)
 		),
 		'source_metadata' => array(),
 		'provider'        => 'rest-source',
 	);
+}
+
+/**
+ * Backward-compatible REST wrapper around the canonical source normalizer.
+ *
+ * @param array<string,mixed> $source Source payload.
+ * @param array<string,mixed> $input  Import input.
+ * @return array{artifact:array<string,mixed>,source_metadata:array<string,mixed>,provider:string}|WP_Error
+ */
+function static_site_importer_rest_source_runtime( array $source, array $input = array() ) {
+	return static_site_importer_source_runtime( $source, $input );
 }
 
 /**

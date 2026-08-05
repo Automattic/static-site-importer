@@ -73,7 +73,7 @@ foreach ( array( 'static-site-importer/import', 'static-site-importer/import-fig
 }
 $import_properties = $GLOBALS['ssi_abilities']['static-site-importer/import']['input_schema']['properties'];
 assert( array( 'plan', 'apply' ) === $import_properties['operation']['enum'] );
-assert( array( 'artifact', 'url', 'upload' ) === $import_properties['source']['properties']['type']['enum'] );
+assert( array( 'html', 'files', 'zip', 'url' ) === $import_properties['source']['properties']['type']['enum'] );
 assert( ! isset( $GLOBALS['ssi_abilities']['static-site-importer/import-url'] ) && ! isset( $GLOBALS['ssi_abilities']['static-site-importer/import-website-artifact'] ) );
 $manifest_result = static_site_importer_ability_get_runtime_package_manifest();
 assert( true === $manifest_result['success'] );
