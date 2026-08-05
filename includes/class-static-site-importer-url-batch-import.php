@@ -141,6 +141,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 					'samples' => array(),
 				),
 				'fetch_cache'             => $cache->consume(),
+				'page_ready_materialized' => false,
 				'state'                   => 'running',
 			);
 			if ( is_wp_error( $run_manifest->save( $manifest ) ) ) {
@@ -209,7 +210,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				if ( 'page_ready' === $batch['state'] && ( $batch['result']['snapshot_sha256'] ?? '' ) !== ( $ready_runtime['source_metadata']['snapshot']['sha256'] ?? '' ) ) {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, new WP_Error( 'static_site_importer_page_ready_checkpoint_mismatch', 'The immutable page-ready checkpoint no longer matches its persisted receipt.' ), $cache );
 				}
-				if ( 'page_ready' !== $batch['state'] && empty( $batch['page_ready_deferred'] ) && 'pending' === ( $ready_runtime['source_metadata']['collection']['readiness']['optional_assets'] ?? '' ) ) {
+				if ( 'page_ready' !== $batch['state'] && empty( $batch['page_ready_deferred'] ) && empty( $manifest['page_ready_materialized'] ) && 'pending' === ( $ready_runtime['source_metadata']['collection']['readiness']['optional_assets'] ?? '' ) ) {
 					$ready_import_args                                      = Static_Site_Importer_URL_Import_Runtime::batch_import_args( $input, $ready_runtime );
 					$ready_import_args['activate']                          = false;
 					$ready_import_args['batch_import']                      = true;
@@ -237,6 +238,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 					} else {
 						$cursor[ $index ]['state']  = 'page_ready';
 						$cursor[ $index ]['result'] = self::result_evidence( $ready_result, $ready_runtime );
+						$manifest['page_ready_materialized'] = true;
 						$batch                      = $cursor[ $index ];
 						$manifest['batches']        = self::legacy_batches( $cursor );
 						self::checkpoint_cache( $manifest, $cache );
