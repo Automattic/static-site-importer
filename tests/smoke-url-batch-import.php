@@ -28,6 +28,19 @@ class Static_Site_Importer_Theme_Generator {
 require_once dirname( __DIR__ ) . '/includes/abilities.php';
 
 $legacy_path = tempnam( sys_get_temp_dir(), 'ssi-legacy-' ); $delete_legacy_file = new ReflectionMethod( Static_Site_Importer_URL_Batch_Import::class, 'delete_legacy_file' ); if ( ! $delete_legacy_file->invoke( null, $legacy_path ) || is_file( $legacy_path ) ) { throw new RuntimeException( 'legacy cache cleanup must unlink its verified exact path without wp_delete_file filters' ); }
+$checkpoint_workspace = new Static_Site_Importer_Artifact_Run_Workspace( sys_get_temp_dir(), 'staged-checkpoint-' . bin2hex( random_bytes( 4 ) ) );
+$checkpoint_payload = str_repeat( 'checkpoint-payload-', 600000 );
+$checkpoint_plan = array( 'schema' => 'test-plan/v1', 'artifact' => array( 'files' => array( array( 'path' => 'large.bin', 'content' => $checkpoint_payload ) ) ) );
+$store_checkpoint = new ReflectionMethod( Static_Site_Importer_URL_Batch_Import::class, 'store_staged_plan_checkpoint' );
+$load_checkpoint = new ReflectionMethod( Static_Site_Importer_URL_Batch_Import::class, 'load_staged_plan_checkpoint' );
+$checkpoint_identity = array( 'resource_digest' => hash( 'sha256', 'resources' ) );
+$checkpoint_write = $store_checkpoint->invoke( null, $checkpoint_workspace, 'staged.json', $checkpoint_plan, $checkpoint_identity );
+$checkpoint_raw = $checkpoint_workspace->read_raw( 'staged.json' );
+$checkpoint_loaded = $load_checkpoint->invoke( null, $checkpoint_workspace, 'staged.json', $checkpoint_identity );
+if ( is_wp_error( $checkpoint_write ) || ! is_string( $checkpoint_raw ) || 100000 < strlen( $checkpoint_raw ) || str_contains( $checkpoint_raw, $checkpoint_payload ) || $checkpoint_plan !== $checkpoint_loaded ) { throw new RuntimeException( 'oversized staged compiler plans must round-trip through bounded verified payload checkpoints' ); }
+$corrupt_checkpoint = json_decode( $checkpoint_raw, true ); $corrupt_checkpoint['plan']['artifact']['files'][0]['path'] = 'altered.bin'; $checkpoint_workspace->publish_json( 'staged.json', $corrupt_checkpoint );
+if ( ! is_wp_error( $load_checkpoint->invoke( null, $checkpoint_workspace, 'staged.json', $checkpoint_identity ) ) ) { throw new RuntimeException( 'staged compiler checkpoint manifests must reject altered inline plan metadata' ); }
+$checkpoint_workspace->purge();
 
 $responses = array(
 	'https://batch.test/sitemap.xml' => array( 'application/xml', '<sitemapindex><sitemap><loc>https://batch.test/one.xml</loc></sitemap><sitemap><loc>https://batch.test/two.xml</loc></sitemap></sitemapindex>' ),
@@ -61,7 +74,7 @@ $importer = static function ( array $artifact, array $args ) use ( &$artifacts, 
 	return array( 'theme_slug' => 'batch-site', 'quality' => array( 'pass' => true, 'status' => 'success_with_warnings', 'metrics' => array( 'fallback_count' => 1 ), 'fallbacks' => array( array( 'html' => str_repeat( 'x', 1024 ) ) ) ), 'import_report_summary' => array( 'status' => 'completed' ) );
 };
 $first = Static_Site_Importer_URL_Batch_Import::import( $request, $input, $fetcher, $importer );
-if ( ! is_wp_error( $first ) || 'injected_batch_failure' !== $first->get_error_code() ) { throw new RuntimeException( 'injected batch failure must retain a resumable run' ); }
+if ( ! is_wp_error( $first ) || 'injected_batch_failure' !== $first->get_error_code() ) { throw new RuntimeException( 'injected batch failure must retain a resumable run: ' . ( is_wp_error( $first ) ? $first->get_error_code() . ' ' . $first->get_error_message() : wp_json_encode( $first ) ) ); }
 $manifest_path = $first->get_error_data()['run_manifest'] ?? '';
 $manifest = json_decode( (string) file_get_contents( $manifest_path ), true );
 if ( 'failed' !== ( $manifest['state'] ?? '' ) || 'completed' !== ( $manifest['batches'][0]['state'] ?? '' ) || 3 !== ( $manifest['total_routes'] ?? 0 ) ) { throw new RuntimeException( 'manifest must checkpoint discovery and completed batches' ); }
@@ -112,7 +125,7 @@ $pre_import_first = Static_Site_Importer_URL_Batch_Import::import( $pre_import_r
 if ( is_wp_error( $pre_import_first ) || 'deadline_exhausted' !== ( $pre_import_first['continuation_reason'] ?? '' ) || 0 !== $pre_import_calls || 1 !== $pre_import_fetches ) { throw new RuntimeException( 'a completed collection must yield before artifact import when its deadline is exhausted' ); }
 $pre_import_now = 0;
 $pre_import_final = Static_Site_Importer_URL_Batch_Import::import( $pre_import_request, array(), $pre_import_fetcher, static function () use ( &$pre_import_calls ) { $pre_import_calls++; return array( 'theme_slug' => 'pre-import-deadline', 'import_report_summary' => array( 'status' => 'completed' ) ); } );
-if ( is_wp_error( $pre_import_final ) || 'completed' !== ( $pre_import_final['url_batch_run']['status'] ?? '' ) || 1 !== $pre_import_calls || 1 !== $pre_import_fetches ) { throw new RuntimeException( 'pre-import deadline continuations must retain their collected runtime for the next invocation' ); }
+if ( is_wp_error( $pre_import_final ) || 'completed' !== ( $pre_import_final['url_batch_run']['status'] ?? '' ) || 1 !== $pre_import_calls || 1 !== $pre_import_fetches || 1 !== ( $pre_import_final['url_batch_run']['stage_counters']['compiler_shared_prepares'] ?? 0 ) || 1 !== ( $pre_import_final['url_batch_run']['stage_counters']['compiler_page_prepares'] ?? 0 ) ) { throw new RuntimeException( 'pre-import deadline continuations must retain collected runtime and prepared compiler plans for the next invocation' ); }
 $page_first_now = 0; $page_first_imports = array(); $page_first_fetches = array();
 $page_first_request = array( 'url' => 'https://page-first.test/', 'work_dir' => sys_get_temp_dir() . '/ssi-page-first-' . bin2hex( random_bytes( 4 ) ), 'provider_args' => array( 'collect_site' => true, 'batch_pages' => 1, 'max_invocation_seconds' => 1, '_static_site_importer_clock' => static function () use ( &$page_first_now ) { return $page_first_now; }, 'request_delay_ms' => 0 ) );
 $page_first_fetcher = static function ( string $url, array $args ) use ( &$page_first_now, &$page_first_fetches ) { $page_first_fetches[] = $url; if ( 'https://page-first.test/sitemap.xml' === $url ) { return array( 'body' => '<urlset><url><loc>https://page-first.test/</loc></url></urlset>', 'metadata' => array( 'content_type' => 'application/xml', 'final_url' => $url ) ); } if ( 'https://page-first.test/' === $url ) { $page_first_now = 2; return array( 'body' => '<main><img src="/optional.png"></main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) ); } return array( 'body' => 'optional', 'metadata' => array( 'content_type' => 'image/png', 'final_url' => $url ) ); };

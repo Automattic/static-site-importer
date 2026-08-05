@@ -302,7 +302,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 					'shared_plan_digest' => $shared['digest'],
 				);
 			}
-			$staged = self::prepare_staged_plans( $workspace, $runtime['artifact'], $shared['plan'] );
+			$staged = self::prepare_staged_plans( $workspace, $runtime['artifact'], $shared['plan'], $batch['batch_id'], (string) ( $runtime['source_metadata']['snapshot']['sha256'] ?? '' ) );
 			if ( is_wp_error( $staged ) ) {
 				return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $staged, $cache );
 			}
@@ -316,7 +316,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$manifest['stage_counters']['shared_plan_reconciliations'] = (int) ( $manifest['stage_counters']['shared_plan_reconciliations'] ?? 0 ) + 1;
 			$manifest['stage_counters']['shared_plan_invalidations']   = (int) ( $manifest['stage_counters']['shared_plan_invalidations'] ?? 0 ) + ( ! empty( $shared['changed'] ) ? 1 : 0 );
 			$manifest['stage_counters']['compiler_shared_prepares']    = (int) ( $manifest['stage_counters']['compiler_shared_prepares'] ?? 0 ) + ( $staged['shared_prepared'] ? 1 : 0 );
-			$manifest['stage_counters']['compiler_page_prepares']      = (int) ( $manifest['stage_counters']['compiler_page_prepares'] ?? 0 ) + count( $staged['page_plans'] );
+			$manifest['stage_counters']['compiler_page_prepares']      = (int) ( $manifest['stage_counters']['compiler_page_prepares'] ?? 0 ) + $staged['page_prepared'];
 			$manifest['external_asset_retained']                       = self::merge_external_assets( $manifest['external_asset_retained'] ?? array(), $runtime['source_metadata']['collection']['external_asset_retained'] ?? array(), $index );
 			self::checkpoint_cache( $manifest, $cache );
 			$manifest['batches'] = self::legacy_batches( $cursor );
@@ -391,7 +391,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 	 * Persist the Blocks Engine staged envelopes. The shared envelope is created
 	 * once per retained resource digest; page envelopes remain batch-local.
 	 */
-	private static function prepare_staged_plans( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $artifact, array $resource_plan ): array|WP_Error {
+	private static function prepare_staged_plans( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $artifact, array $resource_plan, string $batch_id, string $snapshot_sha256 ): array|WP_Error {
 		$compiler = self::staged_compiler();
 		if ( is_wp_error( $compiler ) ) {
 			return $compiler;
@@ -414,58 +414,147 @@ final class Static_Site_Importer_URL_Batch_Import {
 		}
 		unset( $file );
 		$shared_artifact['files'] = array_values( $files );
-		$stored          = $workspace->read_raw( 'staged-compiler-shared.json' );
-		$stored          = is_string( $stored ) ? json_decode( $stored, true ) : null;
-		$shared_prepared = ! is_array( $stored ) || ( $stored['resource_digest'] ?? null ) !== $resource_digest || ! is_array( $stored['plan'] ?? null );
+		$stored          = self::load_staged_plan_checkpoint( $workspace, 'staged-compiler-shared.json', array( 'resource_digest' => $resource_digest ) );
+		$shared_prepared = is_wp_error( $stored ) || ! is_array( $stored );
 		try {
 			$prepare_shared = array( $compiler, 'prepareShared' );
 			$prepare_page   = array( $compiler, 'preparePage' );
 			if ( ! is_callable( $prepare_shared ) || ! is_callable( $prepare_page ) ) {
 				return new WP_Error( 'static_site_importer_missing_transformer_capability', 'The Blocks Engine php-transformer does not support staged URL batch plans.' );
 			}
-			$shared = $shared_prepared ? call_user_func( $prepare_shared, $shared_artifact ) : $stored['plan'];
-			if ( $shared_prepared && self::retained_resource_bytes( $resource_plan ) <= self::MAX_RETAINED_RUNTIME_BYTES ) {
-				$write = $workspace->publish_json(
-					'staged-compiler-shared.json',
-					array(
-						'resource_digest' => $resource_digest,
-						'plan'            => $shared,
-					)
-				);
+			$shared = $shared_prepared ? call_user_func( $prepare_shared, $shared_artifact ) : $stored;
+			if ( $shared_prepared ) {
+				$write = self::store_staged_plan_checkpoint( $workspace, 'staged-compiler-shared.json', $shared, array( 'resource_digest' => $resource_digest ) );
 				if ( is_wp_error( $write ) ) {
 					return $write;
 				}
 			}
-			$page_plans = array();
-			foreach ( $artifact['files'] ?? array() as $file ) {
-				if ( ! is_array( $file ) || 'text/html' !== strtolower( (string) ( $file['mime_type'] ?? '' ) ) || '' === (string) ( $file['path'] ?? '' ) ) {
-					continue;
+			$page_checkpoint = 'staged-compiler-pages/' . $batch_id . '.json';
+			$page_plans      = self::load_staged_plan_checkpoint( $workspace, $page_checkpoint, array( 'resource_digest' => $resource_digest, 'snapshot_sha256' => $snapshot_sha256 ) );
+			$page_prepared   = 0;
+			if ( is_wp_error( $page_plans ) || ! is_array( $page_plans ) ) {
+				$page_plans = array();
+				foreach ( $artifact['files'] ?? array() as $file ) {
+					if ( ! is_array( $file ) || 'text/html' !== strtolower( (string) ( $file['mime_type'] ?? '' ) ) || '' === (string) ( $file['path'] ?? '' ) ) {
+						continue;
+					}
+					$page_plans[] = call_user_func( $prepare_page, $artifact, $shared, (string) $file['path'] );
 				}
-				$page_plans[] = call_user_func( $prepare_page, $artifact, $shared, (string) $file['path'] );
+				$page_prepared = count( $page_plans );
+				$write         = self::store_staged_plan_checkpoint( $workspace, $page_checkpoint, $page_plans, array( 'resource_digest' => $resource_digest, 'snapshot_sha256' => $snapshot_sha256 ) );
+				if ( is_wp_error( $write ) ) {
+					return $write;
+				}
 			}
 			return array(
 				'shared_plan'     => $shared,
 				'page_plans'      => $page_plans,
 				'shared_prepared' => $shared_prepared,
+				'page_prepared'   => $page_prepared,
 			);
 		} catch ( Throwable $error ) {
 			return new WP_Error( 'static_site_importer_staged_compile_failed', $error->getMessage() );
 		}
 	}
+	/** @param array<string,string> $identity */
+	private static function store_staged_plan_checkpoint( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $path, array $plan, array $identity ): string|WP_Error {
+		$externalized = self::externalize_staged_plan_payloads( $workspace, $plan );
+		if ( is_wp_error( $externalized ) ) {
+			return $externalized;
+		}
+		return $workspace->publish_json(
+			$path,
+			array(
+				'schema'      => 'static-site-importer/staged-plan-checkpoint/v1',
+				'identity'    => $identity,
+				'plan_sha256' => hash( 'sha256', (string) wp_json_encode( $externalized, JSON_UNESCAPED_SLASHES ) ),
+				'plan'        => $externalized,
+			)
+		);
+	}
+	/** @param array<string,string> $identity @return array<mixed>|WP_Error|null */
+	private static function load_staged_plan_checkpoint( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $path, array $identity ): array|WP_Error|null {
+		$raw        = $workspace->read_raw( $path );
+		$checkpoint = is_string( $raw ) ? json_decode( $raw, true ) : null;
+		if ( ! is_array( $checkpoint ) || 'static-site-importer/staged-plan-checkpoint/v1' !== ( $checkpoint['schema'] ?? '' ) || $identity !== ( $checkpoint['identity'] ?? null ) || ! is_array( $checkpoint['plan'] ?? null ) ) {
+			return null;
+		}
+		if ( ! hash_equals( (string) ( $checkpoint['plan_sha256'] ?? '' ), hash( 'sha256', (string) wp_json_encode( $checkpoint['plan'], JSON_UNESCAPED_SLASHES ) ) ) ) {
+			return new WP_Error( 'static_site_importer_staged_plan_checkpoint_invalid', 'A staged compiler checkpoint manifest could not be verified.' );
+		}
+		return self::hydrate_staged_plan_payloads( $workspace, $checkpoint['plan'] );
+	}
+	/** @return array<mixed>|WP_Error */
+	private static function externalize_staged_plan_payloads( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $value ): array|WP_Error {
+		if ( is_array( $value['artifact']['files'] ?? null ) ) {
+			foreach ( $value['artifact']['files'] as &$file ) {
+				if ( ! is_array( $file ) ) {
+					continue;
+				}
+				$encoding = is_string( $file['content_base64'] ?? null ) ? 'content_base64' : ( is_string( $file['content'] ?? null ) ? 'content' : '' );
+				if ( '' === $encoding ) {
+					continue;
+				}
+				$payload = (string) $file[ $encoding ];
+				$hash    = hash( 'sha256', $payload );
+				$ref     = 'staged-compiler-payloads/' . $hash . '.payload';
+				if ( $workspace->read_raw( $ref ) !== $payload ) {
+					$stored = $workspace->publish_raw( $ref, $payload );
+					if ( is_wp_error( $stored ) ) {
+						return $stored;
+					}
+				}
+				unset( $file[ $encoding ] );
+				$file['checkpoint_payload'] = array( 'encoding' => $encoding, 'bytes' => strlen( $payload ), 'sha256' => $hash, 'ref' => $ref );
+			}
+			unset( $file );
+			return $value;
+		}
+		foreach ( $value as $key => $item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+			$externalized = self::externalize_staged_plan_payloads( $workspace, $item );
+			if ( is_wp_error( $externalized ) ) {
+				return $externalized;
+			}
+			$value[ $key ] = $externalized;
+		}
+		return $value;
+	}
+	/** @return array<mixed>|WP_Error */
+	private static function hydrate_staged_plan_payloads( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $value ): array|WP_Error {
+		if ( is_array( $value['artifact']['files'] ?? null ) ) {
+			foreach ( $value['artifact']['files'] as &$file ) {
+				$payload = is_array( $file['checkpoint_payload'] ?? null ) ? $file['checkpoint_payload'] : null;
+				if ( null === $payload ) {
+					continue;
+				}
+				$bytes = $workspace->read_raw( (string) ( $payload['ref'] ?? '' ) );
+				if ( ! is_string( $bytes ) || strlen( $bytes ) !== (int) ( $payload['bytes'] ?? -1 ) || ! hash_equals( (string) ( $payload['sha256'] ?? '' ), hash( 'sha256', $bytes ) ) || ! in_array( $payload['encoding'] ?? '', array( 'content', 'content_base64' ), true ) ) {
+					return new WP_Error( 'static_site_importer_staged_plan_payload_invalid', 'A staged compiler checkpoint payload could not be verified.' );
+				}
+				$file[ $payload['encoding'] ] = $bytes;
+				unset( $file['checkpoint_payload'] );
+			}
+			unset( $file );
+			return $value;
+		}
+		foreach ( $value as $key => $item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+			$hydrated = self::hydrate_staged_plan_payloads( $workspace, $item );
+			if ( is_wp_error( $hydrated ) ) {
+				return $hydrated;
+			}
+			$value[ $key ] = $hydrated;
+		}
+		return $value;
+	}
 	private static function persist_runtime( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $relative, array $runtime ): string|WP_Error|null {
 		$bytes = (int) ( $runtime['source_metadata']['collection']['bytes'] ?? 0 );
 		return $bytes <= self::MAX_RETAINED_RUNTIME_BYTES ? $workspace->publish_json( $relative, $runtime ) : null;
-	}
-	private static function retained_resource_bytes( array $plan ): int {
-		$total = 0;
-		foreach ( $plan['resources'] ?? array() as $resource ) {
-			$bytes = (int) ( $resource['payload_bytes'] ?? 0 );
-			if ( $bytes < 0 || $total > self::MAX_RETAINED_RUNTIME_BYTES - $bytes ) {
-				return self::MAX_RETAINED_RUNTIME_BYTES + 1;
-			}
-			$total += $bytes;
-		}
-		return $total;
 	}
 	private static function compose_staged_plans( array $staged ): array|WP_Error {
 		$compiler = self::staged_compiler();
@@ -703,6 +792,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 		foreach ( $cursor as $index => $batch ) {
 			if ( $index >= $from && 'completed' !== ( $batch['state'] ?? '' ) ) {
 				$workspace->delete( 'batches/' . $batch['batch_id'] . '.json' );
+				$workspace->delete( 'staged-compiler-pages/' . $batch['batch_id'] . '.json' );
 			}
 		}
 	}
