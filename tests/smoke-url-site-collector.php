@@ -131,8 +131,9 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 	}
 };
 $rewrite_html = new ReflectionMethod( Static_Site_Importer_URL_Site_Collector::class, 'rewrite_html' );
-$invalid_icon = $rewrite_html->invoke( null, '<link rel="apple-touch-icon" href="/404.html">', 'https://example.test/page/', 'website/page/index.html', array( 'https://www.example.test/404.html' => 'website/_external/www.example.test/404.html' ), array( 'https://example.test/404.html' => 'https://www.example.test/404.html' ), 'https://example.test/', array() );
+$invalid_icon = $rewrite_html->invoke( null, '<link rel="apple-touch-icon" href="/404.html"><link rel="icon" href="images/missing.png">', 'https://example.test/page/', 'website/page/index.html', array( 'https://www.example.test/404.html' => 'website/_external/www.example.test/404.html' ), array( 'https://example.test/404.html' => 'https://www.example.test/404.html' ), 'https://example.test/', array() );
 $assert( str_contains( $invalid_icon, 'href="https://www.example.test/404.html"' ), 'redirected-html-backed-link-assets-retain-explicit-source-url' );
+$assert( str_contains( $invalid_icon, 'href="https://example.test/page/images/missing.png"' ), 'uncollected-link-assets-retain-explicit-source-url' );
 
 $assert( ! is_wp_error( $result ), 'collection-succeeds', is_wp_error( $result ) ? $result->get_error_message() : '' );
 $assert( 'public-static-site-collector' === ( $result['provider'] ?? '' ), 'provider-recorded' );

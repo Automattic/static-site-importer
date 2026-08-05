@@ -881,7 +881,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				}
 				$url    = self::resolve_url( $href, $base_url );
 				$target = $aliases[ $url ] ?? $url;
-				if ( ! isset( $paths[ $target ] ) || ! preg_match( '/\.html?$/i', $paths[ $target ] ) ) {
+				if ( '' === $target || ( isset( $paths[ $target ] ) && ! preg_match( '/\.html?$/i', $paths[ $target ] ) ) ) {
 					return $tag;
 				}
 				$external = self::external_asset_url( $target, $href );
