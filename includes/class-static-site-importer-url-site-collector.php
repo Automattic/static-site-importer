@@ -109,6 +109,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			$resumed           = true;
 		}
 		$checkpoint = is_callable( $args['_collection_checkpoint'] ?? null ) ? $args['_collection_checkpoint'] : null;
+		$payload_reader = is_callable( $args['_collection_payload_reader'] ?? null ) ? $args['_collection_payload_reader'] : null;
 		$checkpoint_state = static function () use ( $checkpoint, &$page_queue, &$asset_queue, &$queued_pages, &$queued_assets, &$resources, &$failures, &$diagnostics, &$source_exclusions, &$aliases, &$total_bytes, &$truncated, &$external_assets, &$asset_owners, &$shared_assets, &$critical_assets, &$script_exclusions, &$entry_resource_url, &$site_url, &$sitemap_urls ): ?WP_Error {
 			if ( null === $checkpoint ) {
 				return null;
@@ -361,7 +362,14 @@ class Static_Site_Importer_URL_Site_Collector {
 		$snapshot_files = array();
 		foreach ( $resources as $resource_url => $resource ) {
 			$path = $paths[ $resource_url ];
-			$body = (string) $resource['body'];
+			$body = $resource['body'] ?? null;
+			if ( ! is_string( $body ) && is_array( $resource['checkpoint_payload'] ?? null ) && null !== $payload_reader ) {
+				$body = call_user_func( $payload_reader, $resource['checkpoint_payload'] );
+				if ( is_wp_error( $body ) ) {
+					return $body;
+				}
+			}
+			$body = (string) $body;
 			if ( 'html' === $resource['kind'] ) {
 				$body = self::rewrite_html( $body, self::html_base_url( $body, $resource_url ), $path, $reference_paths, $aliases, $site_url, $external_assets );
 			} elseif ( 'text/css' === $resource['content_type'] || str_ends_with( strtolower( $path ), '.css' ) ) {

@@ -483,7 +483,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 		);
 	}
 	/** @param array<string,string> $identity @return array<mixed>|WP_Error|null */
-	private static function load_payload_checkpoint( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $path, array $identity ): array|WP_Error|null {
+	private static function load_payload_checkpoint( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $path, array $identity, bool $hydrate = true ): array|WP_Error|null {
 		$raw        = $workspace->read_raw( $path );
 		$checkpoint = is_string( $raw ) ? json_decode( $raw, true ) : null;
 		if ( ! is_array( $checkpoint ) || 'static-site-importer/artifact-payload-checkpoint/v1' !== ( $checkpoint['schema'] ?? '' ) || $identity !== ( $checkpoint['identity'] ?? null ) || ! is_array( $checkpoint['plan'] ?? null ) ) {
@@ -492,7 +492,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 		if ( ! hash_equals( (string) ( $checkpoint['plan_sha256'] ?? '' ), hash( 'sha256', (string) wp_json_encode( $checkpoint['plan'], JSON_UNESCAPED_SLASHES ) ) ) ) {
 			return new WP_Error( 'static_site_importer_staged_plan_checkpoint_invalid', 'A staged compiler checkpoint manifest could not be verified.' );
 		}
-		return self::hydrate_staged_plan_payloads( $workspace, $checkpoint['plan'] );
+		return $hydrate ? self::hydrate_staged_plan_payloads( $workspace, $checkpoint['plan'] ) : $checkpoint['plan'];
 	}
 	/** @return array<mixed>|WP_Error */
 	private static function externalize_staged_plan_payloads( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $value ): array|WP_Error {
@@ -602,7 +602,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			'mode'        => $mode,
 			'routes_hash' => hash( 'sha256', (string) wp_json_encode( array_values( $routes ), JSON_UNESCAPED_SLASHES ) ),
 		);
-		$state = self::load_payload_checkpoint( $workspace, $path, $identity );
+		$state = self::load_payload_checkpoint( $workspace, $path, $identity, false );
 		if ( is_wp_error( $state ) ) {
 			return $state;
 		}
@@ -614,6 +614,13 @@ final class Static_Site_Importer_URL_Batch_Import {
 				return $workspace->delete( $path );
 			}
 			return self::store_payload_checkpoint( $workspace, $path, $next, $identity );
+		};
+		$args['_collection_payload_reader'] = static function ( array $payload ) use ( $workspace ): string|WP_Error {
+			$bytes = $workspace->read_raw( (string) ( $payload['ref'] ?? '' ) );
+			if ( ! is_string( $bytes ) || strlen( $bytes ) !== (int) ( $payload['bytes'] ?? -1 ) || ! hash_equals( (string) ( $payload['sha256'] ?? '' ), hash( 'sha256', $bytes ) ) ) {
+				return new WP_Error( 'static_site_importer_collection_checkpoint_payload_invalid', 'A partial collection checkpoint payload could not be verified.' );
+			}
+			return $bytes;
 		};
 		return $args;
 	}
