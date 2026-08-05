@@ -152,7 +152,7 @@ foreach ( $no_install_steps as $step ) {
 }
 
 $assert(
-	false !== strpos( $run_php_code, 'static_site_importer_ability_import_website_artifact' ),
+	false !== strpos( $run_php_code, 'static_site_importer_ability_import' ),
 	'runphp-entrypoint',
 	'runPHP code calls the import website artifact ability'
 );

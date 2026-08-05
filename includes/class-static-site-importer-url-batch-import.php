@@ -332,21 +332,30 @@ final class Static_Site_Importer_URL_Batch_Import {
 				if ( is_wp_error( $write ) ) {
 					return $write;
 				}return self::continuation_result( $manifest, $manifest_path, $index, $effective_batches, $max_effective_batches, $max_invocation_seconds, 'deadline_exhausted' );
-			}$compiled_staged = self::compose_staged_plans( $staged );
-			if ( is_wp_error( $compiled_staged ) ) {
-				return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $compiled_staged, $cache );
 			}
-			$manifest['stage_counters']['compiler_compositions'] = (int) ( $manifest['stage_counters']['compiler_compositions'] ?? 0 ) + 1;
-			$import_args                                      = Static_Site_Importer_URL_Import_Runtime::batch_import_args( $input, $runtime );
-			$import_args['activate']                          = array_key_last( $cursor ) === $index && ! empty( $input['activate'] );
-			$import_args['batch_import']                      = true;
-			$import_args['preserve_existing_theme_bootstrap'] = $index > 0;
-			$import_args['import_run_id']                     = $identity;
-			$import_args['compiled_artifact_result']          = $compiled_staged;
-			$result = $importer( $runtime['artifact'], $import_args );
-			if ( is_wp_error( $result ) ) {
-				return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $result, $cache );
-			}$cursor                    = Static_Site_Importer_Artifact_Batch_Cursor::complete( $cursor, $index );
+			if ( 'plan' === (string) ( $input['operation'] ?? 'apply' ) ) {
+				$result = array(
+					'quality'     => array(),
+					'diagnostics' => array(),
+				);
+			} else {
+				$compiled_staged = self::compose_staged_plans( $staged );
+				if ( is_wp_error( $compiled_staged ) ) {
+					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $compiled_staged, $cache );
+				}
+				$manifest['stage_counters']['compiler_compositions'] = (int) ( $manifest['stage_counters']['compiler_compositions'] ?? 0 ) + 1;
+				$import_args                                      = Static_Site_Importer_URL_Import_Runtime::batch_import_args( $input, $runtime );
+				$import_args['activate']                          = array_key_last( $cursor ) === $index && ! empty( $input['activate'] );
+				$import_args['batch_import']                      = true;
+				$import_args['preserve_existing_theme_bootstrap'] = $index > 0;
+				$import_args['import_run_id']                     = $identity;
+				$import_args['compiled_artifact_result']          = $compiled_staged;
+				$result = $importer( $runtime['artifact'], $import_args );
+				if ( is_wp_error( $result ) ) {
+					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $result, $cache );
+				}
+			}
+			$cursor                    = Static_Site_Importer_Artifact_Batch_Cursor::complete( $cursor, $index );
 			$cursor[ $index ]['result'] = self::result_evidence( $result, $runtime );
 			$manifest['batches']        = self::legacy_batches( $cursor );
 			$manifest['diagnostics']    = array_slice( array_merge( $manifest['diagnostics'], $result['import_validation_result']['diagnostics'] ?? array() ), -100 );
@@ -358,6 +367,13 @@ final class Static_Site_Importer_URL_Batch_Import {
 			}++$effective_batches;
 			$final = $result;
 			unset( $result, $runtime, $raw );
+		}
+		if ( 'plan' === (string) ( $input['operation'] ?? 'apply' ) ) {
+			$final = self::compose_complete_plan( $workspace, $cursor );
+			if ( is_wp_error( $final ) ) {
+				return $final;
+			}
+			$manifest['stage_counters']['compiler_compositions'] = (int) ( $manifest['stage_counters']['compiler_compositions'] ?? 0 ) + 1;
 		}
 		$manifest['batches']      = self::legacy_batches( $cursor );
 		$aggregate                = self::aggregate_result( $manifest, $manifest_path, $final ?? array() );
@@ -438,6 +454,64 @@ final class Static_Site_Importer_URL_Batch_Import {
 			return new WP_Error( 'static_site_importer_staged_compose_failed', $error->getMessage() );
 		}
 	}
+
+	/**
+	 * Compose every frozen batch page plan once after terminal URL acquisition.
+	 *
+	 * @param Static_Site_Importer_Artifact_Run_Workspace $workspace Frozen batch workspace.
+	 * @param array<int,array<string,mixed>>               $cursor    Completed batch cursor.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private static function compose_complete_plan( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $cursor ): array|WP_Error {
+		$shared_raw  = $workspace->read_raw( 'staged-compiler-shared.json' );
+		$shared_state = is_string( $shared_raw ) ? json_decode( $shared_raw, true ) : null;
+		$shared_plan  = is_array( $shared_state ) && is_array( $shared_state['plan'] ?? null ) ? $shared_state['plan'] : null;
+		if ( ! is_array( $shared_plan ) ) {
+			return new WP_Error( 'static_site_importer_url_plan_shared_missing', 'The frozen URL run has no shared compiler plan.' );
+		}
+
+		$page_plans = array();
+		$snapshots  = array();
+		foreach ( $cursor as $batch ) {
+			$batch_id = (string) ( $batch['batch_id'] ?? '' );
+			$raw      = '' !== $batch_id ? $workspace->read_raw( 'batches/' . $batch_id . '.json' ) : null;
+			$runtime  = is_string( $raw ) ? json_decode( $raw, true ) : null;
+			if ( ! is_array( $runtime ) || ! is_array( $runtime['staged_page_plans'] ?? null ) ) {
+				return new WP_Error( 'static_site_importer_url_plan_batch_missing', 'The frozen URL run has an incomplete staged batch.' );
+			}
+			$page_plans = array_merge( $page_plans, $runtime['staged_page_plans'] );
+			$snapshot   = $runtime['source_metadata']['snapshot']['sha256'] ?? null;
+			if ( is_string( $snapshot ) && '' !== $snapshot ) {
+				$snapshots[] = $snapshot;
+			}
+		}
+
+		$compiled = self::compose_staged_plans(
+			array(
+				'shared_plan' => $shared_plan,
+				'page_plans'  => $page_plans,
+			)
+		);
+		if ( is_wp_error( $compiled ) ) {
+			return $compiled;
+		}
+		$plan = $compiled['source_reports']['wordpress_site_plan'] ?? null;
+		if ( ! is_array( $plan ) ) {
+			return new WP_Error( 'static_site_importer_url_plan_missing', 'The frozen URL run did not compose a canonical WordPress site plan.' );
+		}
+
+		return array(
+			'compiled_artifact_result' => $compiled,
+			'plan'                     => $plan,
+			'quality'                  => is_array( $plan['quality'] ?? null ) ? $plan['quality'] : array(),
+			'diagnostics'              => is_array( $plan['diagnostics'] ?? null ) ? $plan['diagnostics'] : array(),
+			'provenance'               => array(
+				'snapshot_identity' => hash( 'sha256', wp_json_encode( $snapshots ) ),
+				'snapshots'         => $snapshots,
+			),
+		);
+	}
+
 	private static function staged_compiler(): mixed {
 		$compiler_class = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactCompiler';
 		if ( ! class_exists( $compiler_class ) ) {

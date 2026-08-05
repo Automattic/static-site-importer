@@ -296,9 +296,9 @@ $assert( 'smoke' === ( $artifact['provenance']['source_metadata']['source'] ?? '
 $assert( 'website/import-report.json' === ( $artifact['reports'][0]['path'] ?? '' ), 'report-ref' );
 $assert( 'smoke' === ( $artifact['report']['source_metadata']['source'] ?? '' ), 'source-metadata-preserved' );
 $assert( 'completed' === ( $artifact['report']['import_report']['status'] ?? '' ), 'import-report-preserved' );
-$import_result = static_site_importer_ability_import_website_artifact(
+$import_result = static_site_importer_ability_import(
 	array(
-		'artifact' => $artifact,
+		'source' => array( 'type' => 'artifact', 'artifact' => $artifact ),
 		'slug'     => 'fixture-theme',
 		'name'     => 'Fixture Theme',
 		'site_title' => 'Fixture Site',

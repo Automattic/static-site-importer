@@ -170,7 +170,7 @@ function static_site_importer_rest_import_figma_file( WP_REST_Request $request )
 	if ( static_site_importer_rest_should_apply_to_current_site( $request->get_params() ) ) {
 		$input['activate']  = ! empty( $request->get_param( 'activate' ) );
 		$input['overwrite'] = ! empty( $request->get_param( 'overwrite' ) );
-		$result             = static_site_importer_rest_execute_import_ability( 'static-site-importer/import-website-artifact', $input, 'static_site_importer_ability_import_website_artifact' );
+		$result             = static_site_importer_rest_execute_import_ability( 'static-site-importer/import', array_merge( $input, array( 'source' => array( 'type' => 'artifact', 'artifact' => $artifact ) ) ), 'static_site_importer_ability_import' );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
@@ -253,7 +253,7 @@ function static_site_importer_rest_create_playground_open( array $artifact, arra
  * The returned steps are:
  * - login
  * - installPlugin (SSI from GitHub releases) — omitted when $options['install'] is false
- * - runPHP — runs static_site_importer_ability_import_website_artifact( $input )
+ * - runPHP — runs static_site_importer_ability_import( $input )
  *
  * Pass `'install' => false` for hosts/runtimes where SSI is already present
  * (for example, shipped as a mu-plugin in a sandbox runtime) so the blueprint
@@ -271,11 +271,11 @@ function static_site_importer_playground_import_steps( array $input, array $opti
 	$import_code   = '<?php
 require_once "/wordpress/wp-load.php";
 
-if ( ! function_exists( "static_site_importer_ability_import_website_artifact" ) ) {
+if ( ! function_exists( "static_site_importer_ability_import" ) ) {
 	throw new RuntimeException( "Static Site Importer import function is unavailable." );
 }
 $input = ' . $input_literal . ';
-$result = static_site_importer_ability_import_website_artifact( $input );
+$result = static_site_importer_ability_import( $input );
 
 if ( ! is_array( $result ) || empty( $result["success"] ) ) {
 	throw new RuntimeException( "Static Site Importer Playground import failed: " . wp_json_encode( $result ) );
@@ -572,6 +572,7 @@ function static_site_importer_rest_open_in_playground( array $source, array $inp
 	}
 	$input['source_metadata'] = $source_metadata;
 	$input['artifact']        = $artifact;
+	$input['source']          = array( 'type' => 'artifact', 'artifact' => $artifact );
 
 	$identity = Static_Site_Importer_Site_Identity::resolve(
 		array(
@@ -708,9 +709,9 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
 		$source_metadata['url_import_provider'] = (string) $runtime['provider'];
 	}
 	$input['source_metadata'] = $source_metadata;
-	$input['artifact']        = $runtime['artifact'];
+	$input['source']          = array( 'type' => 'artifact', 'artifact' => $runtime['artifact'] );
 
-	return $decorate_current_site_preview( static_site_importer_rest_execute_import_ability( 'static-site-importer/import-website-artifact', $input, 'static_site_importer_ability_import_website_artifact' ) );
+	return $decorate_current_site_preview( static_site_importer_rest_execute_import_ability( 'static-site-importer/import', $input, 'static_site_importer_ability_import' ) );
 }
 
 /**

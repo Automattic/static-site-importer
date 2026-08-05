@@ -6,6 +6,7 @@
     "tests/smoke-ability-error-report-summary.php": { "environment": "standalone-php" },
     "tests/smoke-ability-import-success-diagnostics.php": { "environment": "standalone-php" },
     "tests/smoke-ability-registration-idempotent.php": { "environment": "standalone-php" },
+    "tests/smoke-canonical-import-ability.php": { "environment": "standalone-php" },
     "tests/smoke-companion-plugin-js.php": { "environment": "standalone-php" },
     "tests/smoke-companion-plugin.php": { "environment": "standalone-php" },
     "tests/smoke-contact-layout-transformer.php": { "environment": "standalone-php" },

@@ -204,15 +204,7 @@ $assert( array() === $server_rendered_diagnostic, 'server-rendered-html-not-flag
 $framework_server_rendered_html = '<!doctype html><html><head>' . str_repeat( '<script src="/framework.js"></script>', 42 ) . str_repeat( ' ', 100000 ) . '</head><body><main><article><h1>Billboard</h1><p>' . str_repeat( 'Server content. ', 50 ) . '</p></article></main></body></html>';
 $assert( array() === Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $framework_server_rendered_html ), 'framework-heavy-server-html-not-flagged-as-client-shell' );
 
-$ability = static_site_importer_ability_import_url(
-	array(
-		'url' => 'https://private.example.test/',
-		'slug' => 'ability-import',
-	)
-);
-
-$assert( true === ( $ability['success'] ?? false ), 'ability-succeeds' );
-$assert( 'completed' === ( $ability['import_report_summary']['status'] ?? '' ), 'ability-returns-report-summary' );
+$assert( function_exists( 'static_site_importer_ability_import' ), 'canonical-url-ability-is-available' );
 
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( PHP_EOL, $failures ) . PHP_EOL );

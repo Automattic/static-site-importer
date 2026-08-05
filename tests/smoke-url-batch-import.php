@@ -23,6 +23,8 @@ function wp_strip_all_tags( string $text ): string { return strip_tags( $text );
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-fetcher.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-site-collector.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-import-runtime.php';
+class Static_Site_Importer_Theme_Generator {
+}
 require_once dirname( __DIR__ ) . '/includes/abilities.php';
 
 $legacy_path = tempnam( sys_get_temp_dir(), 'ssi-legacy-' ); $delete_legacy_file = new ReflectionMethod( Static_Site_Importer_URL_Batch_Import::class, 'delete_legacy_file' ); if ( ! $delete_legacy_file->invoke( null, $legacy_path ) || is_file( $legacy_path ) ) { throw new RuntimeException( 'legacy cache cleanup must unlink its verified exact path without wp_delete_file filters' ); }
@@ -238,6 +240,26 @@ $GLOBALS['ssi_test_user_id'] = 2; $changed_user = Static_Site_Importer_URL_Impor
 if ( ! is_wp_error( Static_Site_Importer_URL_Import_Runtime::import_url( $changed_url ) ) || ! is_wp_error( Static_Site_Importer_URL_Import_Runtime::import_url( $changed_options ) ) || ! is_wp_error( $changed_user ) ) { throw new RuntimeException( 'opaque identities must reject URL, import-option, and user changes' ); }
 $runtime_one = Static_Site_Importer_URL_Import_Runtime::import_url( array( 'url' => 'https://runtime-one.test/', 'slug' => 'runtime-one' ) );
 $runtime_replay = Static_Site_Importer_URL_Import_Runtime::import_url( array( 'url' => 'https://runtime.test/', 'slug' => 'runtime', 'activate' => true, 'import_id' => $runtime_first['import_id'] ) );
-$ability_replay = static_site_importer_ability_import_url( array( 'url' => 'https://runtime.test/', 'slug' => 'runtime', 'activate' => true, 'import_id' => $runtime_first['import_id'] ) );
-if ( is_wp_error( $runtime_one ) || 'completed' !== ( $runtime_one['url_batch_run']['status'] ?? '' ) || empty( $runtime_one['import_id'] ) || is_wp_error( $runtime_replay ) || 'completed' !== ( $runtime_replay['url_batch_run']['status'] ?? '' ) || $runtime_first['import_id'] !== ( $ability_replay['import_id'] ?? '' ) || 'completed' !== ( $ability_replay['import_report_summary']['status'] ?? '' ) || 'completed' !== ( $ability_replay['url_batch_run']['status'] ?? '' ) ) { throw new RuntimeException( 'single-route imports, completed-run replays, and ability envelopes must preserve the opaque batch contract' ); }
+$ability_replay = static_site_importer_ability_import( array( 'source' => array( 'type' => 'url', 'url' => 'https://runtime.test/', 'import_id' => $runtime_first['import_id'] ), 'slug' => 'runtime', 'activate' => true ) );
+if ( is_wp_error( $runtime_one ) || 'completed' !== ( $runtime_one['url_batch_run']['status'] ?? '' ) || empty( $runtime_one['import_id'] ) || is_wp_error( $runtime_replay ) || 'completed' !== ( $runtime_replay['url_batch_run']['status'] ?? '' ) || 'static_site_importer_url_apply_requires_plan' !== ( $ability_replay['error']['code'] ?? '' ) ) { throw new RuntimeException( 'legacy URL runs retain their opaque batch contract while the canonical ability requires an approved plan for apply' ); }
+add_filter( 'static_site_importer_url_batch_import_fetcher', static function ( $fetcher, array $request ) {
+	if ( 'https://runtime-plan.test/' !== ( $request['url'] ?? '' ) ) {
+		return $fetcher;
+	}
+
+	return static function ( string $url ): array {
+		if ( 'https://runtime-plan.test/sitemap.xml' === $url ) {
+			return array( 'body' => '<urlset><url><loc>https://runtime-plan.test/</loc></url><url><loc>https://runtime-plan.test/about/</loc></url></urlset>', 'metadata' => array( 'content_type' => 'application/xml', 'final_url' => $url ) );
+		}
+
+		return array( 'body' => '<main>' . $url . '</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
+	};
+} );
+$writes_before_url_plan = count( $runtime_imports );
+$url_plan_first = static_site_importer_ability_import( array( 'operation' => 'plan', 'source' => array( 'type' => 'url', 'url' => 'https://runtime-plan.test/' ), 'slug' => 'runtime-plan' ) );
+$url_plan_final = static_site_importer_ability_import( array( 'operation' => 'plan', 'source' => array( 'type' => 'url', 'url' => 'https://runtime-plan.test/', 'import_id' => $url_plan_first['import_id'] ?? '' ), 'slug' => 'runtime-plan' ) );
+$url_plan_pages = $url_plan_final['plan']['pages'] ?? array();
+$url_plan_paths = array_map( static fn( array $page ): string => (string) ( $page['path'] ?? $page['slug'] ?? '' ), $url_plan_pages );
+$operation_mismatch = Static_Site_Importer_URL_Import_Runtime::run_operation( array( 'operation' => 'apply', 'source' => array( 'type' => 'url' ), 'url' => 'https://runtime-plan.test/', 'import_id' => $url_plan_first['import_id'] ?? '', 'slug' => 'runtime-plan' ) );
+if ( empty( $url_plan_first['continuation'] ) || empty( $url_plan_first['import_id'] ) || ! empty( $url_plan_first['plan'] ) || empty( $url_plan_final['plan'] ) || 'completed' !== ( $url_plan_final['url_batch_run']['status'] ?? '' ) || 2 !== count( $url_plan_pages ) || empty( $url_plan_paths[0] ) || empty( $url_plan_paths[1] ) || $writes_before_url_plan !== count( $runtime_imports ) || ! is_wp_error( $operation_mismatch ) || 'static_site_importer_url_import_run_mismatch' !== $operation_mismatch->get_error_code() ) { throw new RuntimeException( 'URL planning must compose every frozen batch into one plan without importer writes and bind continuation to operation intent' ); }
 echo "URL batch import smoke passed.\n";

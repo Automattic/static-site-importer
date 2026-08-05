@@ -36,6 +36,49 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public static function import_website_artifact( array $artifact, array $args = array() ) {
+		$compiled_import = self::compile_website_artifact( $artifact, $args );
+		if ( is_wp_error( $compiled_import ) ) {
+			return $compiled_import;
+		}
+		$artifact             = $compiled_import['artifact'];
+		$args                 = $compiled_import['args'];
+		$plan                 = $compiled_import['plan'];
+		$gutenberg_gaps       = $compiled_import['gutenberg_gaps'];
+		$companion_payload    = $compiled_import['companion_payload'];
+		$materialization_plan = $compiled_import['materialization_plan'];
+		$args['font_materialization'] = isset( $materialization_plan['theme']['font_materialization'] ) && is_array( $materialization_plan['theme']['font_materialization'] ) ? $materialization_plan['theme']['font_materialization'] : array();
+		if ( ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) ) {
+			return new WP_Error( 'static_site_importer_quality_gate_failed', 'Website artifact did not pass the canonical plan quality gate.', array( 'quality' => $plan['quality'] ?? array(), 'diagnostics' => $plan['diagnostics'] ?? array() ) );
+		}
+		$lifecycle = self::prepare_wordpress_site_plan_lifecycle( $plan, $args );
+		if ( is_wp_error( $lifecycle ) ) {
+			return $lifecycle;
+		}
+		if ( 'plan' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
+			$encoded_artifact = wp_json_encode( $artifact );
+			return Static_Site_Importer_Entity_Materializer_Registry::dependency_plan( $lifecycle, hash( 'sha256', false !== $encoded_artifact ? $encoded_artifact : '' ) );
+		}
+		if ( 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
+			$dependencies = self::materialize_prepared_dependencies( $lifecycle, $args );
+			if ( is_wp_error( $dependencies ) ) {
+				return $dependencies;
+			}
+			return array(
+				'status'            => 'dependencies_prepared',
+				'runtime_lifecycle' => $lifecycle,
+				'dependencies'      => $dependencies,
+				'fresh_runtime'     => array( 'request_id' => self::runtime_request_id() ),
+			);
+		}
+		if ( 'resume' === ( $args['runtime_lifecycle_phase'] ?? '' ) && (string) ( $args['runtime_lifecycle_request_id'] ?? '' ) === self::runtime_request_id() ) {
+			return new WP_Error( 'static_site_importer_fresh_runtime_required', 'Provider validation must resume in a fresh WordPress request after dependency preparation.' );
+		}
+
+		return self::materialize_compiled_website_artifact( $artifact, $args, $plan, $gutenberg_gaps, $companion_payload, $lifecycle );
+	}
+
+	/** Compile an artifact into its immutable canonical WordPress site plan. */
+	public static function compile_website_artifact( array $artifact, array $args = array() ) {
 		$compiler_class = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactCompiler';
 		if ( ! class_exists( $compiler_class ) ) {
 			return new WP_Error( 'static_site_importer_missing_transformer', 'Blocks Engine php-transformer is required to import a website artifact.' );
@@ -95,43 +138,19 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$plan = self::bridge_product_grid_findings_to_runtime_declarations( $plan );
 		$materialization_plan = isset( $compiled['source_reports']['materialization_plan'] ) && is_array( $compiled['source_reports']['materialization_plan'] ) ? $compiled['source_reports']['materialization_plan'] : array();
-		$args['font_materialization'] = isset( $materialization_plan['theme']['font_materialization'] ) && is_array( $materialization_plan['theme']['font_materialization'] ) ? $materialization_plan['theme']['font_materialization'] : array();
-		if ( ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) ) {
-			return new WP_Error(
-				'static_site_importer_quality_gate_failed',
-				'Website artifact did not pass the canonical plan quality gate.',
-				array(
-					'quality'     => $plan['quality'] ?? array(),
-					'diagnostics' => $plan['diagnostics'] ?? array(),
-				)
-			);
-		}
-		$lifecycle = self::prepare_wordpress_site_plan_lifecycle( $plan, $args );
-		if ( is_wp_error( $lifecycle ) ) {
-			return $lifecycle;
-		}
-		if ( 'plan' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
-			$encoded_artifact = wp_json_encode( $artifact );
-			return Static_Site_Importer_Entity_Materializer_Registry::dependency_plan(
-				$lifecycle,
-				hash( 'sha256', false !== $encoded_artifact ? $encoded_artifact : '' )
-			);
-		}
-		if ( 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
-			$dependencies = self::materialize_prepared_dependencies( $lifecycle, $args );
-			if ( is_wp_error( $dependencies ) ) {
-				return $dependencies;
-			}
-			return array(
-				'status'            => 'dependencies_prepared',
-				'runtime_lifecycle' => $lifecycle,
-				'dependencies'      => $dependencies,
-				'fresh_runtime'     => array( 'request_id' => self::runtime_request_id() ),
-			);
-		}
-		if ( 'resume' === ( $args['runtime_lifecycle_phase'] ?? '' ) && (string) ( $args['runtime_lifecycle_request_id'] ?? '' ) === self::runtime_request_id() ) {
-			return new WP_Error( 'static_site_importer_fresh_runtime_required', 'Provider validation must resume in a fresh WordPress request after dependency preparation.' );
-		}
+		return array(
+			'artifact'             => $artifact,
+			'args'                 => $args,
+			'compiled'             => $compiled,
+			'plan'                 => $plan,
+			'gutenberg_gaps'       => $gutenberg_gaps,
+			'companion_payload'    => $companion_payload,
+			'materialization_plan' => $materialization_plan,
+		);
+	}
+
+	/** Materialize a previously compiled canonical plan through the existing write path. */
+	private static function materialize_compiled_website_artifact( array $artifact, array $args, array $plan, array $gutenberg_gaps, $companion_payload, array $lifecycle ) {
 
 		$theme_dir = trailingslashit( get_theme_root() ) . $args['slug'];
 		$report_destinations = array( $theme_dir . '/static-site-importer-manifest.json' );
