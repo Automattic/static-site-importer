@@ -130,6 +130,9 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 		$failures[] = 'FAIL [' . $label . ']' . ( '' !== $detail ? ': ' . $detail : '' );
 	}
 };
+$rewrite_html = new ReflectionMethod( Static_Site_Importer_URL_Site_Collector::class, 'rewrite_html' );
+$invalid_icon = $rewrite_html->invoke( null, '<link rel="apple-touch-icon" href="/404.html">', 'https://example.test/page/', 'website/page/index.html', array( 'https://example.test/404.html' => 'website/404.html' ), array(), 'https://example.test/', array() );
+$assert( str_contains( $invalid_icon, 'href="https://example.test/404.html"' ), 'html-backed-link-assets-retain-explicit-source-url' );
 
 $assert( ! is_wp_error( $result ), 'collection-succeeds', is_wp_error( $result ) ? $result->get_error_message() : '' );
 $assert( 'public-static-site-collector' === ( $result['provider'] ?? '' ), 'provider-recorded' );

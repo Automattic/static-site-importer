@@ -871,6 +871,24 @@ class Static_Site_Importer_URL_Site_Collector {
 	/** @param array<string,string> $paths */
 	private static function rewrite_html( string $html, string $base_url, string $source_path, array $paths, array $aliases, string $site_url, array $external_assets = array() ): string {
 		$html = preg_replace_callback(
+			'#<link\b[^>]*>#is',
+			static function ( array $matches ) use ( $base_url, $paths ): string {
+				$tag       = $matches[0];
+				$relations = preg_split( '/\s+/', strtolower( trim( (string) self::tag_attribute_value( $tag, 'rel' ) ) ) );
+				$href      = self::tag_attribute_value( $tag, 'href' );
+				if ( null === $href || ! array_intersect( $relations ? $relations : array(), array( 'stylesheet', 'icon', 'apple-touch-icon', 'apple-touch-icon-precomposed', 'apple-touch-startup-image', 'mask-icon', 'manifest', 'preload', 'modulepreload' ) ) ) {
+					return $tag;
+				}
+				$url = self::resolve_url( $href, $base_url );
+				if ( ! isset( $paths[ $url ] ) || ! preg_match( '/\.html?$/i', $paths[ $url ] ) ) {
+					return $tag;
+				}
+				$external = self::external_asset_url( $url, $href );
+				return (string) preg_replace_callback( '#\bhref\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)#i', static fn(): string => 'href="' . $external . '"', $tag, 1 );
+			},
+			$html
+		);
+		$html = preg_replace_callback(
 			'#\b(src|href|poster)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))#is',
 			static function ( array $matches ) use ( $base_url, $source_path, $paths, $aliases, $site_url, $external_assets ): string {
 				$value = self::matched_attribute_value( $matches );
