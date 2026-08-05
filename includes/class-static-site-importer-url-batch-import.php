@@ -442,11 +442,18 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$page_prepared   = 0;
 			if ( is_wp_error( $page_plans ) || ! is_array( $page_plans ) ) {
 				$page_plans = array();
+				$page_ids   = array();
 				foreach ( $artifact['files'] ?? array() as $file ) {
 					if ( ! is_array( $file ) || 'text/html' !== strtolower( (string) ( $file['mime_type'] ?? '' ) ) || '' === (string) ( $file['path'] ?? '' ) ) {
 						continue;
 					}
-					$page_plans[] = call_user_func( $prepare_page, $artifact, $shared, (string) $file['path'] );
+					$compilation = is_array( $file['metadata']['compilation'] ?? null ) ? $file['metadata']['compilation'] : array();
+					$page_id     = 'page' === ( $compilation['scope'] ?? null ) && is_string( $compilation['id'] ?? null ) && '' !== $compilation['id'] ? $compilation['id'] : (string) $file['path'];
+					if ( isset( $page_ids[ $page_id ] ) ) {
+						continue;
+					}
+					$page_ids[ $page_id ] = true;
+					$page_plans[]          = call_user_func( $prepare_page, $artifact, $shared, $page_id );
 				}
 				$page_prepared = count( $page_plans );
 				$write         = self::store_payload_checkpoint( $workspace, $page_checkpoint, $page_plans, array( 'resource_digest' => $resource_digest, 'snapshot_sha256' => $snapshot_sha256 ) );

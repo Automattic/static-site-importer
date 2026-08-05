@@ -49,6 +49,10 @@ $raw_runtime = $runtime_checkpoint; $raw_runtime['artifact']['files'][1]['conten
 if ( $raw_runtime !== $raw_runtime_loaded || 'static-site-importer/artifact-payload-checkpoint/v1' !== ( json_decode( (string) $migrated_runtime_raw, true )['schema'] ?? '' ) ) { throw new RuntimeException( 'legacy raw collected-runtime checkpoints must migrate when resumed' ); }
 $redirected_runtime = $runtime_checkpoint_normalized; $redirected_runtime['source_metadata']['snapshot']['files'][0]['source_url'] = 'https://www.runtime-checkpoint.test/'; $persist_runtime->invoke( null, $checkpoint_workspace, 'batches/redirected.json', $redirected_runtime ); $redirected_loaded = $retained_runtime->invoke( null, $checkpoint_workspace, 'batches/redirected.json', 'batches/redirected.json', 'batches/redirected.json', array( 'http://runtime-checkpoint.test/' ) );
 if ( $redirected_runtime !== $redirected_loaded ) { throw new RuntimeException( 'retained runtime ownership must survive canonical origin redirects for the same route set' ); }
+$owned_artifact = array( 'entrypoint' => 'website/index.html', 'files' => array( array( 'path' => 'website/index.html', 'mime_type' => 'text/html', 'content' => '<main>Owned</main>', 'metadata' => array( 'compilation' => array( 'scope' => 'page', 'id' => 'route:home' ) ) ) ) );
+$owned_resource_plan = ( new Static_Site_Importer_Shared_Resource_Plan( $checkpoint_workspace ) )->establish( $owned_artifact );
+$prepare_staged = new ReflectionMethod( Static_Site_Importer_URL_Batch_Import::class, 'prepare_staged_plans' ); $owned_staged = is_wp_error( $owned_resource_plan ) ? $owned_resource_plan : $prepare_staged->invoke( null, $checkpoint_workspace, $owned_artifact, $owned_resource_plan, 'batch-owned-page', hash( 'sha256', 'owned-page' ) );
+if ( is_wp_error( $owned_staged ) || 'route:home' !== ( $owned_staged['page_plans'][0]['page_id'] ?? '' ) ) { throw new RuntimeException( 'staged URL compilation must prepare declared page ownership ids instead of assuming file paths' ); }
 $checkpoint_workspace->purge();
 
 $responses = array(
