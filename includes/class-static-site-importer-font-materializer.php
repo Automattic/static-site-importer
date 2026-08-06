@@ -971,7 +971,7 @@ final class Static_Site_Importer_Font_Materializer {
 		}
 		$query = isset( $parts['query'] ) ? (string) $parts['query'] : '';
 		$query = (string) preg_replace( '/(\bfamily=[^&?]+)\?[0-9]+(?=&|$)/i', '$1', $query );
-		return 'https://fonts.googleapis.com' . (string) $parts['path'] . ( '' !== $query ? '?' . $query : '' );
+		return 'https://fonts.googleapis.com' . (string) ( $parts['path'] ?? '' ) . ( '' !== $query ? '?' . $query : '' );
 	}
 
 	private static function resolved_plan_has_google_stylesheet( array $resolved_plan ): bool {

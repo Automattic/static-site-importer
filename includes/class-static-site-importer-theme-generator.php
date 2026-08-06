@@ -414,15 +414,15 @@ class Static_Site_Importer_Theme_Generator {
 				'reason' => 'companion_plugin_payload_absent',
 			),
 			'generated_theme'                  => array(
-				'document_metadata'   => self::document_metadata_from_plan_receipt( $plan ),
-				'template_parts'      => array_map(
+				'document_metadata' => self::document_metadata_from_plan_receipt( $plan ),
+				'template_parts'    => array_map(
 					static fn( array $part ): array => array(
 						'path'    => 'parts/' . $part['slug'] . '.html',
 						'content' => $part['resolved_block_markup'],
 					),
 					$plan['template_parts']
 				),
-				'block_documents'     => array_map(
+				'block_documents'   => array_map(
 					static function ( array $page ) use ( $receipt ): array {
 						$materialized = $receipt['completed']['materialized_pages'][ $page['source_path'] ]['block_markup'] ?? $page['resolved_block_markup'];
 						$document = array(

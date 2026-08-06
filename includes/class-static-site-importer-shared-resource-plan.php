@@ -37,14 +37,14 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 
 	/** @param array<int,array<string,mixed>> $resources @return array<string,mixed>|WP_Error */
 	private function store( array $resources ): array|WP_Error {
-		$plan      = array(
+		$plan   = array(
 			'schema'     => self::SCHEMA,
 			'digest'     => self::digest( $resources ),
 			'resources'  => $resources,
 			'verified'   => true,
 			'created_at' => gmdate( 'c' ),
 		);
-		$stored    = $this->workspace->publish_json( 'shared-resource-plan.json', $plan );
+		$stored = $this->workspace->publish_json( 'shared-resource-plan.json', $plan );
 		if ( is_wp_error( $stored ) ) {
 			return $stored;
 		}
@@ -64,16 +64,20 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 			);
 		}
 		$resources = array_column( $existing['resources'], null, 'path' );
-		$incoming = $this->externalize( self::resources( $artifact ) );
+		$incoming  = $this->externalize( self::resources( $artifact ) );
 		if ( is_wp_error( $incoming ) ) {
-			return array( 'digest' => '', 'changed' => false, 'plan' => $incoming );
+			return array(
+				'digest'  => '',
+				'changed' => false,
+				'plan'    => $incoming,
+			);
 		}
 		foreach ( $incoming as $resource ) {
 			$resources[ $resource['path'] ] = $resource;
 		}
 		$current = array_values( $resources );
 		usort( $current, static fn( array $left, array $right ): int => strcmp( $left['path'], $right['path'] ) );
-		$digest  = self::digest( $current );
+		$digest = self::digest( $current );
 		if ( hash_equals( $existing['digest'], $digest ) ) {
 			return array(
 				'digest'  => $digest,

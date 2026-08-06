@@ -142,20 +142,20 @@ class Static_Site_Importer_URL_Import_Runtime {
 
 	/** @return array<string,mixed>|WP_Error */
 	private static function start_batch_import( string $url, array $input ) {
-		$identity = bin2hex( random_bytes( 32 ) );
-		$contract = self::batch_contract( $url, $input );
-		$registry = self::run_registry_path( $identity );
-		$policy   = self::url_import_policy();
+		$identity      = bin2hex( random_bytes( 32 ) );
+		$contract      = self::batch_contract( $url, $input );
+		$registry      = self::run_registry_path( $identity );
+		$policy        = self::url_import_policy();
 		$provider_args = apply_filters( 'static_site_importer_url_batch_import_args', self::batch_args( $policy ) );
 		if ( ! is_array( $provider_args ) ) {
 			$provider_args = self::batch_args( $policy );
 		}
-		$record   = array(
-			'schema'    => 'static-site-importer/url-import-run/v1',
-			'identity'  => $identity,
-			'contract'  => $contract,
-			'workspace' => self::run_workspace( $identity ),
-			'policy'    => $policy,
+		$record = array(
+			'schema'        => 'static-site-importer/url-import-run/v1',
+			'identity'      => $identity,
+			'contract'      => $contract,
+			'workspace'     => self::run_workspace( $identity ),
+			'policy'        => $policy,
 			'provider_args' => $provider_args,
 		);
 		if ( ! wp_mkdir_p( dirname( $registry ) ) || false === file_put_contents( $registry, wp_json_encode( $record ) ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes an importer-owned opaque run registry.
@@ -174,7 +174,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 		$registry = self::run_registry_path( $identity );
 		$raw      = is_file( $registry ) ? file_get_contents( $registry ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads an importer-owned opaque run registry.
 		$record   = is_string( $raw ) ? json_decode( $raw, true ) : null;
-		if ( ! is_array( $record ) || 'static-site-importer/url-import-run/v1' !== ( $record['schema'] ?? '' ) || $identity !== ( $record['identity'] ?? '' ) || self::run_workspace( $identity ) !== ( $record['workspace'] ?? '' ) || ! self::is_url_import_policy( $record['policy'] ?? null ) || ! is_array( $record['provider_args'] ?? null ) ) {
+		if ( ! is_array( $record ) || 'static-site-importer/url-import-run/v1' !== ( $record['schema'] ?? '' ) || ( $record['identity'] ?? '' ) !== $identity || self::run_workspace( $identity ) !== ( $record['workspace'] ?? '' ) || ! self::is_url_import_policy( $record['policy'] ?? null ) || ! is_array( $record['provider_args'] ?? null ) ) {
 			return new WP_Error( 'static_site_importer_url_import_run_not_found', 'The URL import run was not found.' );
 		}
 		if ( self::canonical( self::batch_contract( $url, $input ) ) !== self::canonical( $record['contract'] ?? array() ) ) {
@@ -248,16 +248,16 @@ class Static_Site_Importer_URL_Import_Runtime {
 	/** @return array<string,mixed> */
 	public static function url_import_policy(): array {
 		$defaults = array(
-			'pages_per_invocation'              => 5,
-			'batches_per_invocation'            => 1,
-			'invocation_seconds'                 => 20.0,
-			'total_pages'                        => 1000,
-			'total_assets'                       => 2000,
-			'total_bytes'                        => 268435456,
-			'resource_bytes'                     => 5242880,
-			'fetch_timeout_seconds'              => 10.0,
-			'request_delay_milliseconds'         => 100,
-			'include_scripts'                    => false,
+			'pages_per_invocation'       => 5,
+			'batches_per_invocation'     => 1,
+			'invocation_seconds'         => 20.0,
+			'total_pages'                => 1000,
+			'total_assets'               => 2000,
+			'total_bytes'                => 268435456,
+			'resource_bytes'             => 5242880,
+			'fetch_timeout_seconds'      => 10.0,
+			'request_delay_milliseconds' => 100,
+			'include_scripts'            => false,
 		);
 		$filtered = apply_filters( 'static_site_importer_url_import_policy', $defaults );
 		return self::normalize_url_import_policy( is_array( $filtered ) ? $filtered : array() );
@@ -266,23 +266,34 @@ class Static_Site_Importer_URL_Import_Runtime {
 	/** @param array<string,mixed> $policy @return array<string,mixed> */
 	private static function batch_args( array $policy ): array {
 		return array(
-			'collect_site'                       => true,
-			'batch_pages'                        => $policy['pages_per_invocation'],
+			'collect_site'                         => true,
+			'batch_pages'                          => $policy['pages_per_invocation'],
 			'max_effective_batches_per_invocation' => $policy['batches_per_invocation'],
-			'max_invocation_seconds'              => $policy['invocation_seconds'],
-			'max_pages'                           => $policy['total_pages'],
-			'max_assets'                          => $policy['total_assets'],
-			'max_total_bytes'                     => $policy['total_bytes'],
-			'max_bytes'                           => $policy['resource_bytes'],
-			'timeout'                             => $policy['fetch_timeout_seconds'],
-			'request_delay_ms'                    => $policy['request_delay_milliseconds'],
-			'include_scripts'                     => $policy['include_scripts'],
+			'max_invocation_seconds'               => $policy['invocation_seconds'],
+			'max_pages'                            => $policy['total_pages'],
+			'max_assets'                           => $policy['total_assets'],
+			'max_total_bytes'                      => $policy['total_bytes'],
+			'max_bytes'                            => $policy['resource_bytes'],
+			'timeout'                              => $policy['fetch_timeout_seconds'],
+			'request_delay_ms'                     => $policy['request_delay_milliseconds'],
+			'include_scripts'                      => $policy['include_scripts'],
 		);
 	}
 
 	/** @param array<string,mixed> $policy @return array<string,mixed> */
 	private static function normalize_url_import_policy( array $policy ): array {
-		$defaults = array( 'pages_per_invocation' => 5, 'batches_per_invocation' => 1, 'invocation_seconds' => 20.0, 'total_pages' => 1000, 'total_assets' => 2000, 'total_bytes' => 268435456, 'resource_bytes' => 5242880, 'fetch_timeout_seconds' => 10.0, 'request_delay_milliseconds' => 100, 'include_scripts' => false );
+		$defaults = array(
+			'pages_per_invocation'       => 5,
+			'batches_per_invocation'     => 1,
+			'invocation_seconds'         => 20.0,
+			'total_pages'                => 1000,
+			'total_assets'               => 2000,
+			'total_bytes'                => 268435456,
+			'resource_bytes'             => 5242880,
+			'fetch_timeout_seconds'      => 10.0,
+			'request_delay_milliseconds' => 100,
+			'include_scripts'            => false,
+		);
 		$integers = array( 'pages_per_invocation', 'batches_per_invocation', 'total_pages', 'total_assets', 'total_bytes', 'resource_bytes', 'request_delay_milliseconds' );
 		foreach ( $integers as $key ) {
 			if ( isset( $policy[ $key ] ) && is_int( $policy[ $key ] ) && $policy[ $key ] >= ( 'request_delay_milliseconds' === $key ? 0 : 1 ) ) {
@@ -314,7 +325,8 @@ class Static_Site_Importer_URL_Import_Runtime {
 				return false;
 			}
 		}
-		return is_bool( $policy['include_scripts'] ) && self::normalize_url_import_policy( $policy ) == $policy;
+		// Numeric policy values intentionally compare by value after normalization.
+		return is_bool( $policy['include_scripts'] ) && self::normalize_url_import_policy( $policy ) == $policy; // phpcs:ignore Universal.Operators.StrictComparisons.LooseEqual
 	}
 
 	private static function run_registry_path( string $identity ): string {

@@ -585,7 +585,7 @@ function static_site_importer_rest_open_in_playground( array $source, array $inp
 	$input['activate']  = true;
 	$input['overwrite'] = true;
 	if ( static_site_importer_rest_is_url_only_source( $source ) ) {
-		$input['source'] = array(
+		$input['source']    = array(
 			'type' => 'url',
 			'url'  => Static_Site_Importer_URL_Fetcher::normalize_url( (string) ( $source['url'] ?? '' ) ),
 		);
@@ -835,6 +835,7 @@ function static_site_importer_rest_source_artifact( array $source ) {
  * @return array{artifact:array<string,mixed>,source_metadata:array<string,mixed>,provider:string}|WP_Error
  */
 function static_site_importer_source_runtime( array $source, array $input = array() ) {
+	unset( $input );
 	if ( isset( $source['artifact'] ) && is_array( $source['artifact'] ) ) {
 		return array(
 			'artifact'        => $source['artifact'],

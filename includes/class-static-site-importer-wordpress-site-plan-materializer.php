@@ -234,7 +234,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			return self::failed_receipt_from_error( $state, $font_materialization );
 		}
 		$state['applied']['font_materialization'] = $font_materialization;
-		$document_metadata = self::apply_document_metadata_bootstrap( $state );
+		$document_metadata                        = self::apply_document_metadata_bootstrap( $state );
 		if ( is_wp_error( $document_metadata ) ) {
 			return self::failed_receipt( $state, $document_metadata->get_error_code() );
 		}
@@ -386,7 +386,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	private static function apply_document_metadata_bootstrap( array &$state ) {
 		$links = self::site_head_links( $state['resolved']['pages'] ?? array() );
 		if ( empty( $links ) ) {
-			return array( 'status' => 'not_requested', 'links' => 0 );
+			return array(
+				'status' => 'not_requested',
+				'links'  => 0,
+			);
 		}
 
 		$path    = $state['theme_dir'] . '/functions.php';
@@ -402,7 +405,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'source_path'             => 'static-site-importer/document-metadata/functions.php',
 				'reconciliation_identity' => hash( 'sha256', "document-metadata\nfunctions.php" ),
 				'payload_hash'            => hash( 'sha256', $content ),
-				'payload'                 => array( 'encoding' => 'utf8', 'data' => $content ),
+				'payload'                 => array(
+					'encoding' => 'utf8',
+					'data'     => $content,
+				),
 			)
 		);
 		if ( is_wp_error( $result ) ) {
@@ -419,7 +425,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( ! $replaced ) {
 			$state['applied']['files'][] = $result;
 		}
-		return array( 'status' => 'completed', 'links' => count( $links ), 'file' => $result );
+		return array(
+			'status' => 'completed',
+			'links'  => count( $links ),
+			'file'   => $result,
+		);
 	}
 
 	/** @param array<int,array<string,string>> $links */
@@ -427,16 +437,17 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$begin = '// Static Site Importer document metadata:begin';
 		$end   = '// Static Site Importer document metadata:end';
 		$code  = "{$begin}\nadd_action( 'wp_head', static function (): void {\n";
-		$code .= '    $links = ' . var_export( $links, true ) . ";\n";
-		$code .= "    foreach ( \$links as \$link ) {\n";
-		$code .= "        if ( in_array( \$link['rel'], array( 'icon', 'apple-touch-icon', 'apple-touch-icon-precomposed' ), true ) && function_exists( 'has_site_icon' ) && has_site_icon() ) continue;\n";
-		$code .= "        \$href = esc_url( \$link['href'] );\n";
-		$code .= "        if ( '' === \$href ) continue;\n";
-		$code .= "        echo '<link rel=\"' . esc_attr( \$link['rel'] ) . '\" href=\"' . \$href . '\"';\n";
-		$code .= "        foreach ( array( 'type', 'media', 'crossorigin', 'integrity', 'referrerpolicy', 'as', 'fetchpriority', 'sizes' ) as \$attribute ) if ( isset( \$link[ \$attribute ] ) && '' !== \$link[ \$attribute ] ) echo ' ' . \$attribute . '=\"' . esc_attr( \$link[ \$attribute ] ) . '\"';\n";
-		$code .= "        echo \">\\n\";\n";
-		$code .= "    }\n";
-		$code .= "}, 1 );\n{$end}";
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Generates a deterministic PHP array literal for the imported theme.
+		$code   .= '    $links = ' . var_export( $links, true ) . ";\n";
+		$code   .= "    foreach ( \$links as \$link ) {\n";
+		$code   .= "        if ( in_array( \$link['rel'], array( 'icon', 'apple-touch-icon', 'apple-touch-icon-precomposed' ), true ) && function_exists( 'has_site_icon' ) && has_site_icon() ) continue;\n";
+		$code   .= "        \$href = esc_url( \$link['href'] );\n";
+		$code   .= "        if ( '' === \$href ) continue;\n";
+		$code   .= "        echo '<link rel=\"' . esc_attr( \$link['rel'] ) . '\" href=\"' . \$href . '\"';\n";
+		$code   .= "        foreach ( array( 'type', 'media', 'crossorigin', 'integrity', 'referrerpolicy', 'as', 'fetchpriority', 'sizes' ) as \$attribute ) if ( isset( \$link[ \$attribute ] ) && '' !== \$link[ \$attribute ] ) echo ' ' . \$attribute . '=\"' . esc_attr( \$link[ \$attribute ] ) . '\"';\n";
+		$code   .= "        echo \">\\n\";\n";
+		$code   .= "    }\n";
+		$code   .= "}, 1 );\n{$end}";
 		$pattern = '/\n?' . preg_quote( $begin, '/' ) . '.*?' . preg_quote( $end, '/' ) . '/s';
 		return preg_match( $pattern, $current ) ? (string) preg_replace( $pattern, "\n" . $code, $current, 1 ) : rtrim( $current ) . "\n\n" . $code . "\n";
 	}
@@ -457,7 +468,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				if ( 'head' !== ( $declaration['placement'] ?? '' ) || ! in_array( $rel, $relations, true ) || ! is_array( $parts ) || ! in_array( strtolower( (string) ( $parts['scheme'] ?? '' ) ), array( 'http', 'https' ), true ) || '' === (string) ( $parts['host'] ?? '' ) ) {
 					continue;
 				}
-				$link = array( 'rel' => $rel, 'href' => $url );
+				$link = array(
+					'rel'  => $rel,
+					'href' => $url,
+				);
 				foreach ( $attributes as $attribute ) {
 					if ( isset( $declaration[ $attribute ] ) && is_scalar( $declaration[ $attribute ] ) && '' !== (string) $declaration[ $attribute ] ) {
 						$link[ $attribute ] = (string) $declaration[ $attribute ];
@@ -1260,7 +1274,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					'files'       => array(),
 					'diagnostics' => array(),
 				),
-				'document_metadata'           => $state['applied']['document_metadata'] ?? array(
+				'document_metadata'          => $state['applied']['document_metadata'] ?? array(
 					'status' => 'not_requested',
 					'links'  => 0,
 				),
@@ -1342,8 +1356,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return hash_final( $context );
 	}
 
-	/** @param resource $context */
-	private static function update_json_hash( $context, mixed $value, int $depth = 0 ): void {
+	private static function update_json_hash( HashContext $context, mixed $value, int $depth = 0 ): void {
 		if ( $depth > 512 || is_resource( $value ) || is_object( $value ) ) {
 			throw new RuntimeException( 'The WordPress Site Plan contains an unsupported JSON value.' );
 		}
@@ -1376,12 +1389,19 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		hash_update( $context, $list ? ']' : '}' );
 	}
 
-	/** @param resource $context */
-	private static function update_json_string_hash( $context, string $value ): void {
+	private static function update_json_string_hash( HashContext $context, string $value ): void {
 		hash_update( $context, '"' );
 		$length  = strlen( $value );
 		$start   = 0;
-		$escapes = array( 8 => '\\b', 9 => '\\t', 10 => '\\n', 12 => '\\f', 13 => '\\r', 34 => '\\"', 92 => '\\\\' );
+		$escapes = array(
+			8  => '\\b',
+			9  => '\\t',
+			10 => '\\n',
+			12 => '\\f',
+			13 => '\\r',
+			34 => '\\"',
+			92 => '\\\\',
+		);
 		for ( $index = 0; $index < $length; ++$index ) {
 			$byte = ord( $value[ $index ] );
 			if ( $byte < 32 || isset( $escapes[ $byte ] ) || $byte >= 128 ) {
@@ -1416,13 +1436,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	private static function json_codepoint( string $value, int $index, int &$bytes ): int {
 		$lead = ord( $value[ $index ] );
 		if ( $lead >= 0xc2 && $lead <= 0xdf ) {
-			$bytes = 2;
+			$bytes     = 2;
 			$codepoint = $lead & 0x1f;
 		} elseif ( $lead >= 0xe0 && $lead <= 0xef ) {
-			$bytes = 3;
+			$bytes     = 3;
 			$codepoint = $lead & 0x0f;
 		} elseif ( $lead >= 0xf0 && $lead <= 0xf4 ) {
-			$bytes = 4;
+			$bytes     = 4;
 			$codepoint = $lead & 0x07;
 		} else {
 			throw new RuntimeException( 'The WordPress Site Plan contains invalid UTF-8.' );
@@ -1437,7 +1457,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			$codepoint = ( $codepoint << 6 ) | ( $continuation & 0x3f );
 		}
-		$minimum = array( 2 => 0x80, 3 => 0x800, 4 => 0x10000 );
+		$minimum = array(
+			2 => 0x80,
+			3 => 0x800,
+			4 => 0x10000,
+		);
 		if ( $codepoint < $minimum[ $bytes ] || $codepoint > 0x10ffff || ( $codepoint >= 0xd800 && $codepoint <= 0xdfff ) ) {
 			throw new RuntimeException( 'The WordPress Site Plan contains invalid UTF-8.' );
 		}

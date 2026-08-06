@@ -84,37 +84,58 @@ class Static_Site_Importer_URL_Site_Collector {
 		$entry_resource_url = $entry_url;
 		$site_url           = $entry_url;
 		$sitemap_urls       = array();
-		$resumed             = false;
-		$state               = is_array( $args['_collection_state'] ?? null ) ? $args['_collection_state'] : array();
+		$resumed            = false;
+		$state              = is_array( $args['_collection_state'] ?? null ) ? $args['_collection_state'] : array();
 		if ( 'static-site-importer/partial-collection/v1' === ( $state['schema'] ?? '' ) ) {
-			$page_queue        = is_array( $state['page_queue'] ?? null ) ? $state['page_queue'] : $page_queue;
-			$asset_queue       = is_array( $state['asset_queue'] ?? null ) ? $state['asset_queue'] : $asset_queue;
-			$queued_pages      = is_array( $state['queued_pages'] ?? null ) ? $state['queued_pages'] : $queued_pages;
-			$queued_assets     = is_array( $state['queued_assets'] ?? null ) ? $state['queued_assets'] : $queued_assets;
-			$resources         = is_array( $state['resources'] ?? null ) ? $state['resources'] : $resources;
-			$failures          = is_array( $state['failures'] ?? null ) ? $state['failures'] : $failures;
-			$diagnostics       = is_array( $state['diagnostics'] ?? null ) ? $state['diagnostics'] : $diagnostics;
-			$source_exclusions = is_array( $state['source_exclusions'] ?? null ) ? $state['source_exclusions'] : $source_exclusions;
-			$aliases           = is_array( $state['aliases'] ?? null ) ? $state['aliases'] : $aliases;
-			$total_bytes       = (int) ( $state['total_bytes'] ?? $total_bytes );
-			$truncated         = is_array( $state['truncated'] ?? null ) ? $state['truncated'] : $truncated;
-			$external_assets   = is_array( $state['external_assets'] ?? null ) ? $state['external_assets'] : $external_assets;
-			$asset_owners      = is_array( $state['asset_owners'] ?? null ) ? $state['asset_owners'] : $asset_owners;
-			$shared_assets     = is_array( $state['shared_assets'] ?? null ) ? $state['shared_assets'] : $shared_assets;
-			$critical_assets   = is_array( $state['critical_assets'] ?? null ) ? $state['critical_assets'] : $critical_assets;
-			$script_exclusions = is_array( $state['script_exclusions'] ?? null ) ? $state['script_exclusions'] : $script_exclusions;
+			$page_queue         = is_array( $state['page_queue'] ?? null ) ? $state['page_queue'] : $page_queue;
+			$asset_queue        = is_array( $state['asset_queue'] ?? null ) ? $state['asset_queue'] : $asset_queue;
+			$queued_pages       = is_array( $state['queued_pages'] ?? null ) ? $state['queued_pages'] : $queued_pages;
+			$queued_assets      = is_array( $state['queued_assets'] ?? null ) ? $state['queued_assets'] : $queued_assets;
+			$resources          = is_array( $state['resources'] ?? null ) ? $state['resources'] : $resources;
+			$failures           = is_array( $state['failures'] ?? null ) ? $state['failures'] : $failures;
+			$diagnostics        = is_array( $state['diagnostics'] ?? null ) ? $state['diagnostics'] : $diagnostics;
+			$source_exclusions  = is_array( $state['source_exclusions'] ?? null ) ? $state['source_exclusions'] : $source_exclusions;
+			$aliases            = is_array( $state['aliases'] ?? null ) ? $state['aliases'] : $aliases;
+			$total_bytes        = (int) ( $state['total_bytes'] ?? $total_bytes );
+			$truncated          = is_array( $state['truncated'] ?? null ) ? $state['truncated'] : $truncated;
+			$external_assets    = is_array( $state['external_assets'] ?? null ) ? $state['external_assets'] : $external_assets;
+			$asset_owners       = is_array( $state['asset_owners'] ?? null ) ? $state['asset_owners'] : $asset_owners;
+			$shared_assets      = is_array( $state['shared_assets'] ?? null ) ? $state['shared_assets'] : $shared_assets;
+			$critical_assets    = is_array( $state['critical_assets'] ?? null ) ? $state['critical_assets'] : $critical_assets;
+			$script_exclusions  = is_array( $state['script_exclusions'] ?? null ) ? $state['script_exclusions'] : $script_exclusions;
 			$entry_resource_url = (string) ( $state['entry_resource_url'] ?? $entry_resource_url );
-			$site_url          = (string) ( $state['site_url'] ?? $site_url );
-			$sitemap_urls      = is_array( $state['sitemap_urls'] ?? null ) ? $state['sitemap_urls'] : $sitemap_urls;
-			$resumed           = true;
+			$site_url           = (string) ( $state['site_url'] ?? $site_url );
+			$sitemap_urls       = is_array( $state['sitemap_urls'] ?? null ) ? $state['sitemap_urls'] : $sitemap_urls;
+			$resumed            = true;
 		}
-		$checkpoint = is_callable( $args['_collection_checkpoint'] ?? null ) ? $args['_collection_checkpoint'] : null;
-		$payload_reader = is_callable( $args['_collection_payload_reader'] ?? null ) ? $args['_collection_payload_reader'] : null;
+		$checkpoint       = is_callable( $args['_collection_checkpoint'] ?? null ) ? $args['_collection_checkpoint'] : null;
+		$payload_reader   = is_callable( $args['_collection_payload_reader'] ?? null ) ? $args['_collection_payload_reader'] : null;
 		$checkpoint_state = static function () use ( $checkpoint, &$page_queue, &$asset_queue, &$queued_pages, &$queued_assets, &$resources, &$failures, &$diagnostics, &$source_exclusions, &$aliases, &$total_bytes, &$truncated, &$external_assets, &$asset_owners, &$shared_assets, &$critical_assets, &$script_exclusions, &$entry_resource_url, &$site_url, &$sitemap_urls ): ?WP_Error {
 			if ( null === $checkpoint ) {
 				return null;
 			}
-			$result = call_user_func( $checkpoint, array( 'schema' => 'static-site-importer/partial-collection/v1', 'page_queue' => $page_queue, 'asset_queue' => $asset_queue, 'queued_pages' => $queued_pages, 'queued_assets' => $queued_assets, 'resources' => $resources, 'failures' => $failures, 'diagnostics' => $diagnostics, 'source_exclusions' => $source_exclusions, 'aliases' => $aliases, 'total_bytes' => $total_bytes, 'truncated' => $truncated, 'external_assets' => $external_assets, 'asset_owners' => $asset_owners, 'shared_assets' => $shared_assets, 'critical_assets' => $critical_assets, 'script_exclusions' => $script_exclusions, 'entry_resource_url' => $entry_resource_url, 'site_url' => $site_url, 'sitemap_urls' => $sitemap_urls ) );
+			$result = call_user_func( $checkpoint, array(
+				'schema'             => 'static-site-importer/partial-collection/v1',
+				'page_queue'         => $page_queue,
+				'asset_queue'        => $asset_queue,
+				'queued_pages'       => $queued_pages,
+				'queued_assets'      => $queued_assets,
+				'resources'          => $resources,
+				'failures'           => $failures,
+				'diagnostics'        => $diagnostics,
+				'source_exclusions'  => $source_exclusions,
+				'aliases'            => $aliases,
+				'total_bytes'        => $total_bytes,
+				'truncated'          => $truncated,
+				'external_assets'    => $external_assets,
+				'asset_owners'       => $asset_owners,
+				'shared_assets'      => $shared_assets,
+				'critical_assets'    => $critical_assets,
+				'script_exclusions'  => $script_exclusions,
+				'entry_resource_url' => $entry_resource_url,
+				'site_url'           => $site_url,
+				'sitemap_urls'       => $sitemap_urls,
+			) );
 			return is_wp_error( $result ) ? $result : null;
 		};
 
@@ -643,7 +664,7 @@ class Static_Site_Importer_URL_Site_Collector {
 
 	/** @return array<int,string> */
 	private static function html_asset_urls( string $html, string $base_url, array $script_urls = array() ): array {
-		$urls        = array();
+		$urls = array();
 		foreach ( self::tag_attribute_values( $html, 'a', 'href' ) as $reference ) {
 			$url = self::resolve_url( (string) $reference, $base_url );
 			if ( '' !== $url && ! self::is_page_url( $url ) ) {

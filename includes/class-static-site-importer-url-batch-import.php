@@ -152,10 +152,11 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$manifest['final_result']['url_batch_run']['fetch_cache'] = $manifest['fetch_cache'];
 			$cache->cleanup_adopted();
 			return $manifest['final_result'];
-		}$importer         = $importer ?? static fn ( array $artifact, array $import_args ) => Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
-		$shared_plan       = new Static_Site_Importer_Shared_Resource_Plan( $workspace );
-		$cursor            = Static_Site_Importer_Artifact_Batch_Cursor::hydrate( $manifest['batches'] );
-		$effective_batches = 0;
+		}
+		$importer                           = $importer ?? static fn ( array $artifact, array $import_args ) => Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
+		$shared_plan                        = new Static_Site_Importer_Shared_Resource_Plan( $workspace );
+		$cursor                             = Static_Site_Importer_Artifact_Batch_Cursor::hydrate( $manifest['batches'] );
+		$effective_batches                  = 0;
 		$manifest['checkpoint_diagnostics'] = is_array( $manifest['checkpoint_diagnostics'] ?? null ) ? $manifest['checkpoint_diagnostics'] : array();
 		while ( true ) {
 			$index = Static_Site_Importer_Artifact_Batch_Cursor::next( $cursor );
@@ -188,7 +189,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 					if ( is_wp_error( $ready_args ) ) {
 						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $ready_args, $cache );
 					}
-					$ready_runtime                             = Static_Site_Importer_URL_Site_Collector::collect( $batch_entry, $ready_args, $fetcher );
+					$ready_runtime = Static_Site_Importer_URL_Site_Collector::collect( $batch_entry, $ready_args, $fetcher );
 					if ( is_wp_error( $ready_runtime ) ) {
 						if ( self::deadline_error( $ready_runtime ) ) {
 							$manifest['batches'] = self::legacy_batches( $cursor );
@@ -236,11 +237,11 @@ final class Static_Site_Importer_URL_Batch_Import {
 							return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $ready_result, $cache );
 						}
 					} else {
-						$cursor[ $index ]['state']  = 'page_ready';
-						$cursor[ $index ]['result'] = self::result_evidence( $ready_result, $ready_runtime );
+						$cursor[ $index ]['state']           = 'page_ready';
+						$cursor[ $index ]['result']          = self::result_evidence( $ready_result, $ready_runtime );
 						$manifest['page_ready_materialized'] = true;
-						$batch                      = $cursor[ $index ];
-						$manifest['batches']        = self::legacy_batches( $cursor );
+						$batch                               = $cursor[ $index ];
+						$manifest['batches']                 = self::legacy_batches( $cursor );
 						self::checkpoint_cache( $manifest, $cache );
 						$write = $run_manifest->save( $manifest );
 						if ( is_wp_error( $write ) ) {
@@ -261,7 +262,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				if ( is_wp_error( $collect_args ) ) {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $collect_args, $cache );
 				}
-				$runtime                                     = Static_Site_Importer_URL_Site_Collector::collect( $batch_entry, $collect_args, $fetcher );
+				$runtime = Static_Site_Importer_URL_Site_Collector::collect( $batch_entry, $collect_args, $fetcher );
 				if ( is_wp_error( $runtime ) ) {
 					if ( self::deadline_error( $runtime ) ) {
 						$manifest['batches'] = self::legacy_batches( $cursor );
@@ -380,7 +381,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			}
 			++$effective_batches;
 			$final = self::terminal_result_evidence( $result );
-			unset( $result, $runtime, $raw, $compiled_staged, $import_args, $staged, $shared );
+			unset( $result, $runtime, $import_args, $staged, $shared );
 		}
 		if ( 'plan' === (string) ( $input['operation'] ?? 'apply' ) ) {
 			$final = self::compose_complete_plan( $workspace, $cursor );
@@ -418,8 +419,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 		if ( is_wp_error( $hydrated ) ) {
 			return $hydrated;
 		}
-		$files           = array_column( $hydrated, null, 'path' );
-		$shared_paths    = array_fill_keys( array_keys( $files ), true );
+		$files             = array_column( $hydrated, null, 'path' );
+		$shared_paths      = array_fill_keys( array_keys( $files ), true );
 		$artifact['files'] = is_array( $artifact['files'] ?? null ) ? $artifact['files'] : array();
 		foreach ( $artifact['files'] as &$file ) {
 			if ( is_array( $file ) && isset( $shared_paths[ (string) ( $file['path'] ?? '' ) ] ) ) {
@@ -431,8 +432,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 		}
 		unset( $file );
 		$shared_artifact['files'] = array_values( $files );
-		$stored          = self::load_payload_checkpoint( $workspace, 'staged-compiler-shared.json', array( 'resource_digest' => $resource_digest ) );
-		$shared_prepared = is_wp_error( $stored ) || ! is_array( $stored );
+		$stored                   = self::load_payload_checkpoint( $workspace, 'staged-compiler-shared.json', array( 'resource_digest' => $resource_digest ) );
+		$shared_prepared          = is_wp_error( $stored ) || ! is_array( $stored );
 		try {
 			$prepare_shared = array( $compiler, 'prepareShared' );
 			$prepare_page   = array( $compiler, 'preparePage' );
@@ -447,12 +448,15 @@ final class Static_Site_Importer_URL_Batch_Import {
 				}
 			}
 			$page_checkpoint = 'staged-compiler-pages/' . $batch_id . '.json';
-			$page_plans      = self::load_payload_checkpoint( $workspace, $page_checkpoint, array( 'resource_digest' => $resource_digest, 'snapshot_sha256' => $snapshot_sha256 ) );
+			$page_plans      = self::load_payload_checkpoint( $workspace, $page_checkpoint, array(
+				'resource_digest' => $resource_digest,
+				'snapshot_sha256' => $snapshot_sha256,
+			) );
 			$page_prepared   = 0;
 			if ( is_wp_error( $page_plans ) || ! is_array( $page_plans ) ) {
 				$page_plans = array();
 				$page_ids   = array();
-				foreach ( $artifact['files'] ?? array() as $file ) {
+				foreach ( $artifact['files'] as $file ) {
 					if ( ! is_array( $file ) || 'text/html' !== strtolower( (string) ( $file['mime_type'] ?? '' ) ) || '' === (string) ( $file['path'] ?? '' ) ) {
 						continue;
 					}
@@ -462,10 +466,13 @@ final class Static_Site_Importer_URL_Batch_Import {
 						continue;
 					}
 					$page_ids[ $page_id ] = true;
-					$page_plans[]          = call_user_func( $prepare_page, $artifact, $shared, $page_id );
+					$page_plans[]         = call_user_func( $prepare_page, $artifact, $shared, $page_id );
 				}
 				$page_prepared = count( $page_plans );
-				$write         = self::store_payload_checkpoint( $workspace, $page_checkpoint, $page_plans, array( 'resource_digest' => $resource_digest, 'snapshot_sha256' => $snapshot_sha256 ) );
+				$write         = self::store_payload_checkpoint( $workspace, $page_checkpoint, $page_plans, array(
+					'resource_digest' => $resource_digest,
+					'snapshot_sha256' => $snapshot_sha256,
+				) );
 				if ( is_wp_error( $write ) ) {
 					return $write;
 				}
@@ -486,7 +493,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 		if ( is_wp_error( $externalized ) ) {
 			return $externalized;
 		}
-		$plan_json = wp_json_encode( $externalized, JSON_UNESCAPED_SLASHES );
+		$plan_json  = wp_json_encode( $externalized, JSON_UNESCAPED_SLASHES );
 		$normalized = is_string( $plan_json ) ? json_decode( $plan_json, true ) : null;
 		if ( ! is_array( $normalized ) ) {
 			return new WP_Error( 'static_site_importer_payload_checkpoint_invalid', 'An artifact payload checkpoint could not be serialized.' );
@@ -505,7 +512,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 	private static function load_payload_checkpoint( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $path, array $identity, bool $hydrate = true ): array|WP_Error|null {
 		$raw        = $workspace->read_raw( $path );
 		$checkpoint = is_string( $raw ) ? json_decode( $raw, true ) : null;
-		if ( ! is_array( $checkpoint ) || 'static-site-importer/artifact-payload-checkpoint/v1' !== ( $checkpoint['schema'] ?? '' ) || $identity !== ( $checkpoint['identity'] ?? null ) || ! is_array( $checkpoint['plan'] ?? null ) ) {
+		if ( ! is_array( $checkpoint ) || 'static-site-importer/artifact-payload-checkpoint/v1' !== ( $checkpoint['schema'] ?? '' ) || ( $checkpoint['identity'] ?? null ) !== $identity || ! is_array( $checkpoint['plan'] ?? null ) ) {
 			return null;
 		}
 		if ( ! hash_equals( (string) ( $checkpoint['plan_sha256'] ?? '' ), hash( 'sha256', (string) wp_json_encode( $checkpoint['plan'], JSON_UNESCAPED_SLASHES ) ) ) ) {
@@ -523,14 +530,18 @@ final class Static_Site_Importer_URL_Batch_Import {
 				$payload = $resource['body'];
 				$hash    = hash( 'sha256', $payload );
 				$ref     = 'collection-payloads/' . $hash . '.payload';
-				if ( $workspace->read_raw( $ref ) !== $payload ) {
+				if ( $payload !== $workspace->read_raw( $ref ) ) {
 					$stored = $workspace->publish_raw( $ref, $payload );
 					if ( is_wp_error( $stored ) ) {
 						return $stored;
 					}
 				}
 				unset( $resource['body'] );
-				$resource['checkpoint_payload'] = array( 'bytes' => strlen( $payload ), 'sha256' => $hash, 'ref' => $ref );
+				$resource['checkpoint_payload'] = array(
+					'bytes'  => strlen( $payload ),
+					'sha256' => $hash,
+					'ref'    => $ref,
+				);
 			}
 			unset( $resource );
 		}
@@ -553,7 +564,12 @@ final class Static_Site_Importer_URL_Batch_Import {
 					}
 				}
 				unset( $file[ $encoding ] );
-				$file['checkpoint_payload'] = array( 'encoding' => $encoding, 'bytes' => strlen( $payload ), 'sha256' => $hash, 'ref' => $ref );
+				$file['checkpoint_payload'] = array(
+					'encoding' => $encoding,
+					'bytes'    => strlen( $payload ),
+					'sha256'   => $hash,
+					'ref'      => $ref,
+				);
 			}
 			unset( $file );
 			return $value;
@@ -621,14 +637,14 @@ final class Static_Site_Importer_URL_Batch_Import {
 			'mode'        => $mode,
 			'routes_hash' => hash( 'sha256', (string) wp_json_encode( array_values( $routes ), JSON_UNESCAPED_SLASHES ) ),
 		);
-		$state = self::load_payload_checkpoint( $workspace, $path, $identity, false );
+		$state    = self::load_payload_checkpoint( $workspace, $path, $identity, false );
 		if ( is_wp_error( $state ) ) {
 			return $state;
 		}
 		if ( is_array( $state ) ) {
 			$args['_collection_state'] = $state;
 		}
-		$args['_collection_checkpoint'] = static function ( ?array $next ) use ( $workspace, $path, $identity ): bool|string|WP_Error {
+		$args['_collection_checkpoint']     = static function ( ?array $next ) use ( $workspace, $path, $identity ): bool|string|WP_Error {
 			if ( null === $next ) {
 				return $workspace->delete( $path );
 			}
@@ -853,10 +869,10 @@ final class Static_Site_Importer_URL_Batch_Import {
 	private static function retained_runtime( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $stable, string $indexed, string $legacy, array $routes, array &$diagnostics = array() ): ?array {
 		$diagnostics['lookups'] = (int) ( $diagnostics['lookups'] ?? 0 ) + 1;
 		foreach ( array_values( array_unique( array( $stable, $indexed, $legacy ) ) ) as $source ) {
-			$workspace_source = 'batches/' === substr( $source, 0, 8 );
+			$workspace_source      = 'batches/' === substr( $source, 0, 8 );
 			$raw_workspace_runtime = false;
 			if ( $workspace_source ) {
-				$raw     = $workspace->read_raw( $source );
+				$raw = $workspace->read_raw( $source );
 				if ( ! is_string( $raw ) ) {
 					$diagnostics['missing'] = (int) ( $diagnostics['missing'] ?? 0 ) + 1;
 				}
@@ -864,12 +880,12 @@ final class Static_Site_Importer_URL_Batch_Import {
 				if ( 'static-site-importer/artifact-payload-checkpoint/v1' === ( $decoded['schema'] ?? '' ) ) {
 					$candidate = self::load_payload_checkpoint( $workspace, $source, array( 'kind' => 'collected_runtime' ) );
 					if ( is_wp_error( $candidate ) ) {
-						$diagnostics['verification_failures'] = (int) ( $diagnostics['verification_failures'] ?? 0 ) + 1;
+						$diagnostics['verification_failures']   = (int) ( $diagnostics['verification_failures'] ?? 0 ) + 1;
 						$diagnostics['last_verification_error'] = $candidate->get_error_code();
 					}
 					$candidate = is_array( $candidate ) ? $candidate : null;
 				} else {
-					$candidate = is_array( $decoded ) ? $decoded : null;
+					$candidate             = is_array( $decoded ) ? $decoded : null;
 					$raw_workspace_runtime = is_array( $candidate );
 				}
 			} elseif ( is_file( $source ) ) {
@@ -915,7 +931,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 		return $invalidated;
 	}
 	private static function owns_runtime( array $runtime, array $routes ): bool {
-		$files   = $runtime['source_metadata']['snapshot']['files'] ?? null;
+		$files = $runtime['source_metadata']['snapshot']['files'] ?? null;
 		if ( ! is_array( $files ) ) {
 			return false;
 		}$actual = array();
@@ -1018,7 +1034,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 		);
 	}
 	private static function terminal_result_evidence( array $result ): array {
-		$evidence = array( 'schema' => 'static-site-importer/terminal-batch-result/v1' );
+		$evidence    = array( 'schema' => 'static-site-importer/terminal-batch-result/v1' );
 		$report_path = '' !== (string) ( $result['external_report_path'] ?? '' ) ? (string) $result['external_report_path'] : (string) ( $result['report_path'] ?? '' );
 		foreach ( $result as $key => $value ) {
 			if ( is_string( $key ) && ( is_scalar( $value ) || null === $value ) ) {
@@ -1061,12 +1077,12 @@ final class Static_Site_Importer_URL_Batch_Import {
 		);
 	}
 	private static function aggregate_result( array $manifest, string $path, array $terminal ): array {
-		$batch_quality = array_values( array_filter( array_map( static fn ( array $batch ): mixed => self::quality_evidence( $batch['result']['quality'] ?? null ), $manifest['batches'] ), static fn ( $quality ): bool => null !== $quality ) );
+		$batch_quality   = array_values( array_filter( array_map( static fn ( array $batch ): mixed => self::quality_evidence( $batch['result']['quality'] ?? null ), $manifest['batches'] ), static fn ( $quality ): bool => null !== $quality ) );
 		$terminal_result = self::terminal_result_evidence( $terminal );
 		if ( is_array( $terminal['plan'] ?? null ) ) {
 			$terminal_result['plan'] = $terminal['plan'];
 		}
-		$evidence      = array(
+		$evidence = array(
 			'status'                     => 'completed',
 			'run_manifest'               => $path,
 			'fetch_cache'                => $manifest['fetch_cache'] ?? array(),
@@ -1142,7 +1158,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				'max_invocation_seconds'               => $max_invocation_seconds,
 				'continuation_reason'                  => $reason,
 				'next_work'                            => $next_work,
-				'checkpoint_diagnostics'                => $manifest['checkpoint_diagnostics'] ?? array(),
+				'checkpoint_diagnostics'               => $manifest['checkpoint_diagnostics'] ?? array(),
 			),
 			'batch_materialization' => $manifest['batches'],
 		);
