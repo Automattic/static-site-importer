@@ -439,6 +439,14 @@ complete solved corpus. The replayable plan and operator summary identify this
 lane as `fixtures-solved-only/v1` and include active, solved, and selected corpus
 counts plus the full coverage inventory so CI artifacts prove the exact selection.
 
+The solved-candidate gate also proves persisted Gutenberg editability. After
+visual parity capture, it inserts a fixture-specific paragraph through
+`wordpress.editor-actions`, saves with `core/editor.savePost`, reloads the editor,
+and captures the reloaded state. A required runtime assertion verifies the marker
+in the persisted front-page `post_content`, then `wp.blocks.validateBlock` runs
+again against the post-save document. Any action, persistence, reload, or
+post-save block-validity failure fails the fixture.
+
 ```bash
 node tools/promote-solved-fixture.mjs \
   --fixture-id <id> \
@@ -488,16 +496,9 @@ After each fixture's import step, `buildFixtureMatrixRecipe` appends a
 `invalid_blocks`. This reuses the existing wp-codebox editor-validation command
 rather than rebuilding a validator.
 
-Live-wiring gap (verified by a real local recipe-run): the matrix currently
-passes only a bare `post-type=<type>` target. wp-codebox's
-`editorOpenTargetFromArgs` resolves a bare `post-type` to an EMPTY
-`post-new.php?post_type=<type>` editor, so the pass validates `total_blocks: 0`
-and proves nothing about the imported markup. To assert real imported-output
-block validity the step must receive a concrete target — most robustly the
-imported `post-id` surfaced out of the in-sandbox `validate-artifact` step (or
-an inline `content` snapshot of the imported post_content). See
-`lib/fixture-matrix/steps/editor-validation-step.mjs` for the target priority
-order and the remaining enablement.
+The default `front-page` target resolves at runtime to the imported
+`page_on_front`, so validation exercises real imported content even though its
+post ID is not known while the recipe is generated.
 
 `collectEditorValidationDiagnostics` reads the probe's `selectorSummary`
 (invalid-warning matches) — and, when present, per-block `isValid`/`validateBlock`
