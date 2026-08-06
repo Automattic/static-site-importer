@@ -15,6 +15,10 @@ if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-content-policy.php';
+}
+
 if ( ! class_exists( 'Static_Site_Importer_Block_Document_Reporter' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-block-document-reporter.php';
 }
@@ -86,6 +90,10 @@ class Static_Site_Importer_Theme_Generator {
 
 	/** Compile an artifact into its immutable canonical WordPress site plan. */
 	public static function compile_website_artifact( array $artifact, array $args = array() ) {
+		$source_policy = Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
+		if ( is_wp_error( $source_policy ) ) {
+			return $source_policy;
+		}
 		$compiler_class = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactCompiler';
 		if ( ! class_exists( $compiler_class ) ) {
 			return new WP_Error( 'static_site_importer_missing_transformer', 'Blocks Engine php-transformer is required to import a website artifact.' );
