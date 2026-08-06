@@ -24,11 +24,11 @@
     "test:form-materializer-topology": "node --test tests/form-materializer-topology.test.mjs"
   },
   "devDependencies": {
-    "@wordpress/block-library": "^9.45.0",
-    "@wordpress/blocks": "^15.18.0",
-    "@wordpress/element": "^6.45.0",
-    "jsdom": "^29.1.0",
-    "playwright": "^1.56.1"
+    "@wordpress/block-library": "^10.3.0",
+    "@wordpress/blocks": "^15.25.0",
+    "@wordpress/element": "^8.4.0",
+    "jsdom": "^30.0.1",
+    "playwright": "^1.62.1"
   },
   "dependencies": {
     "pixelmatch": "^7.2.0",
