@@ -81,29 +81,6 @@ class Static_Site_Importer_URL_Import_Runtime {
 		);
 	}
 
-	/**
-	 * Resolve the provider output through the filter hook.
-	 *
-	 * The built-in `fetch_public_url_provider` one-shot collector was removed in
-	 * favor of the resumable `import-url` ability (issue #837). Hosted/private
-	 * runtimes that need a non-ability URL collector should hook
-	 * {@see 'static_site_importer_url_import_provider'} and return an artifact.
-	 *
-	 * @param array<string,mixed> $request Provider request envelope.
-	 * @return array<string,mixed>|WP_Error
-	 */
-	private static function resolve_provider_output( array $request ) {
-		$provider_output = self::provider_output( $request );
-		if ( is_wp_error( $provider_output ) || is_array( $provider_output ) ) {
-			return $provider_output;
-		}
-
-		return new WP_Error(
-			'static_site_importer_url_provider_missing',
-			__( 'No URL import provider returned an artifact. The resumable import-url ability is the only built-in URL collection path; register a custom provider on the static_site_importer_url_import_provider filter to override.', 'static-site-importer' )
-		);
-	}
-
 	/** @return null|array<string,mixed>|WP_Error */
 	private static function provider_output( array $request ) {
 		/**
