@@ -412,7 +412,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 		}
 		$files           = array_column( $hydrated, null, 'path' );
 		$shared_paths    = array_fill_keys( array_keys( $files ), true );
-		foreach ( $artifact['files'] ?? array() as &$file ) {
+		$artifact['files'] = is_array( $artifact['files'] ?? null ) ? $artifact['files'] : array();
+		foreach ( $artifact['files'] as &$file ) {
 			if ( is_array( $file ) && isset( $shared_paths[ (string) ( $file['path'] ?? '' ) ] ) ) {
 				$file['metadata']['compilation'] = array( 'scope' => 'shared' );
 			}
