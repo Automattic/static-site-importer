@@ -1008,6 +1008,7 @@ test('fixture-matrix rig requires env-backed WP Codebox editor and visual capabi
   assert.equal(tool.command, 'wp-codebox');
   assert.deepEqual(tool.env, ['HOMEBOY_WP_CODEBOX_BIN']);
   assert.ok(tool.capabilities.includes('wordpress.editor-open'));
+  assert.ok(tool.capabilities.includes('wordpress.editor-actions'));
   assert.ok(tool.capabilities.includes('wordpress.editor-validate-blocks'));
   assert.ok(tool.capabilities.includes('wordpress.visual-compare'));
 });
@@ -5505,6 +5506,28 @@ test('recipe runs editor-validate-blocks against imported content after each imp
   assert.ok(editorStep.args.includes('target=front-page'));
   assert.equal(editorStep.args.some((arg) => arg.startsWith('capture=')), false);
   assert.equal(editorStep.allowFailure, true);
+  assert.equal(recipe.workflow.steps.some((step) => step.command === 'wordpress.editor-actions'), false);
+
+  const solvedCandidateRecipe = buildFixtureMatrixRecipe({
+    matrix,
+    artifactsDirectory: '/tmp/artifacts',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    requireSolvedCandidate: true,
+  });
+  const persistenceStep = solvedCandidateRecipe.workflow.steps.find((step) => step.metadata?.phase === 'editor-persistence');
+  assert.equal(persistenceStep.command, 'wordpress.editor-actions');
+  assert.ok(persistenceStep.args.includes('target=front-page'));
+  assert.ok(persistenceStep.args.some((arg) => arg.includes('"kind":"savePost"') && arg.includes('ssi-solved-editability-simple-site')));
+  assert.ok(persistenceStep.args.some((arg) => arg.includes('"kind":"reload"')));
+  assert.ok(persistenceStep.args.some((arg) => arg.includes('"kind":"inspectState"')));
+  const persistenceVerifyStep = solvedCandidateRecipe.workflow.steps.find((step) => step.metadata?.phase === 'editor-persistence-verify');
+  assert.equal(persistenceVerifyStep.command, 'wordpress.wp-cli');
+  assert.match(persistenceVerifyStep.args[0], /command=eval/);
+  const persistenceValidationStep = solvedCandidateRecipe.workflow.steps.find((step) => step.metadata?.phase === 'editor-persistence-validation');
+  assert.equal(persistenceValidationStep.command, EDITOR_VALIDATE_BLOCKS_COMMAND);
+  assert.equal(persistenceValidationStep.allowFailure, false);
+  assert.ok(persistenceValidationStep.args.includes('target=front-page'));
+  assert.equal(solvedCandidateRecipe.workflow.steps.filter((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND).length, 1);
 
   const disabled = buildFixtureMatrixRecipe({
     matrix,
