@@ -1,7 +1,7 @@
 <?php
 /**
- * Smoke test: private/loopback URLs are rejected through the import-url ability
- * boundary with the same SSRF error codes the URL fetcher uses directly.
+ * Smoke test: private/loopback URLs are rejected through the unified import
+ * ability with the same SSRF error codes the URL fetcher uses directly.
  *
  * Run inside a WordPress site:
  * wp eval-file tests/smoke-rest-url-import-private-ip.php
@@ -31,10 +31,11 @@ add_filter( 'static_site_importer_can_manage_imports', '__return_true' );
 
 $ability_stub = new class {
 	public function execute( array $input ) {
-		if ( 'https://127.0.0.1/' === ( $input['url'] ?? '' ) ) {
+		$url = isset( $input['source']['url'] ) ? (string) $input['source']['url'] : '';
+		if ( 'https://127.0.0.1/' === $url ) {
 			return new WP_Error( 'static_site_importer_url_private_ip', 'The URL resolves to a private, loopback, link-local, or otherwise reserved IP address.' );
 		}
-		if ( 'https://localhost/' === ( $input['url'] ?? '' ) ) {
+		if ( 'https://localhost/' === $url ) {
 			return new WP_Error( 'static_site_importer_url_host', 'The URL host is not allowed.' );
 		}
 		return array( 'success' => true, 'continuation' => false );
@@ -44,7 +45,7 @@ $ability_stub = new class {
 add_filter(
 	'wp_get_ability',
 	static function ( $ability, $name ) use ( $ability_stub ) {
-		if ( 'static-site-importer/import-url' === $name ) {
+		if ( 'static-site-importer/import' === $name ) {
 			return $ability_stub;
 		}
 		return $ability;

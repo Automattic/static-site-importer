@@ -32,6 +32,29 @@ if ( ! class_exists( 'Static_Site_Importer_Website_Artifact_Import_Input' ) ) {
 class Static_Site_Importer_URL_Import_Runtime {
 
 	/**
+	 * Acquire a URL through the opaque resumable batch run for canonical imports.
+	 *
+	 * Unlike import_url(), this never accepts a provider-built shortcut: every
+	 * canonical request has the same bounded, identity-bound continuation path.
+	 *
+	 * @param array<string,mixed> $input Canonical ability input.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public static function run_operation( array $input ) {
+		$url = isset( $input['url'] ) ? Static_Site_Importer_URL_Fetcher::normalize_url( (string) $input['url'] ) : '';
+		if ( '' === $url ) {
+			return new WP_Error( 'static_site_importer_missing_url', 'The url input is required.' );
+		}
+
+		$input['url'] = $url;
+		if ( ! empty( $input['import_id'] ) ) {
+			return self::continue_batch_import( $url, $input );
+		}
+
+		return self::start_batch_import( $url, $input );
+	}
+
+	/**
 	 * Import a URL and return the normal Static Site Importer result/report envelope.
 	 *
 	 * @param array<string,mixed> $input Ability-style input.
@@ -187,9 +210,11 @@ class Static_Site_Importer_URL_Import_Runtime {
 		$options = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
 		return self::canonical(
 			array(
-				'url'     => $url,
-				'options' => $options,
-				'user_id' => function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0,
+				'url'       => $url,
+				'operation' => (string) ( $input['operation'] ?? 'apply' ),
+				'intent'    => (string) ( $input['source']['type'] ?? 'url' ),
+				'options'   => $options,
+				'user_id'   => function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0,
 			)
 		);
 	}

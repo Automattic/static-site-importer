@@ -3,6 +3,11 @@
  * Smoke test: continuation envelope is bound to a single import_id, and a
  * mismatched URL on a continuation POST fails the identity contract.
  *
+ * The unified `static-site-importer/import` ability dispatches URL sources
+ * to `import_url_operation()`. The REST router threads the source URL and
+ * the optional import_id through the unified ability, which is responsible
+ * for the identity-binding rejection.
+ *
  * Run inside a WordPress site:
  * wp eval-file tests/smoke-rest-url-import-continuation.php
  *
@@ -42,7 +47,7 @@ $ability_stub = new class {
 add_filter(
 	'wp_get_ability',
 	static function ( $ability, $name ) use ( $ability_stub ) {
-		if ( 'static-site-importer/import-url' === $name ) {
+		if ( 'static-site-importer/import' === $name ) {
 			return $ability_stub;
 		}
 		return $ability;
@@ -78,6 +83,8 @@ $body     = $response->get_data();
 $assert( 200 === $response->get_status(), 'continuation-first-status' );
 $assert( true === ( $body['continuation'] ?? false ), 'continuation-first-flag' );
 $assert( 'bound-1' === ( $body['import_id'] ?? '' ), 'continuation-first-import-id' );
+$assert( 'https://example.test/site' === ( $ability_stub->last_input['source']['url'] ?? '' ), 'continuation-first-ability-url' );
+$assert( 'url' === ( $ability_stub->last_input['source']['type'] ?? '' ), 'continuation-first-ability-type' );
 
 $ability_stub->next_result = array(
 	'success'               => true,
@@ -107,14 +114,14 @@ $body     = $response->get_data();
 $assert( 200 === $response->get_status(), 'continuation-second-status' );
 $assert( false === ( $body['continuation'] ?? true ), 'continuation-second-terminal' );
 $assert( 'bound-site' === ( $body['terminal_batch_result']['theme_slug'] ?? '' ), 'continuation-second-terminal-batch' );
-$assert( 'bound-1' === ( $ability_stub->last_input['import_id'] ?? '' ), 'continuation-second-input-import-id' );
-$assert( 'https://example.test/site' === ( $ability_stub->last_input['url'] ?? '' ), 'continuation-second-input-url' );
+$assert( 'bound-1' === ( $ability_stub->last_input['source']['import_id'] ?? '' ), 'continuation-second-input-import-id' );
+$assert( 'https://example.test/site' === ( $ability_stub->last_input['source']['url'] ?? '' ), 'continuation-second-input-url' );
 
 // Identity binding: a continuation POST that carries a mismatched URL must
 // not silently rebind the ability's import_id. The ability is responsible
 // for the rejection; we exercise it by returning a WP_Error from the stub
-// the way `import_url` does for a mismatched URL, and assert the REST
-// surface propagates the error envelope.
+// the way `import_url_operation` does for a mismatched URL, and assert the
+// REST surface propagates the error envelope.
 $ability_stub->next_result = new WP_Error(
 	'static_site_importer_invalid_url_import_id',
 	'The import_id is invalid for the supplied URL.',

@@ -683,7 +683,7 @@ $assert( is_array( $playground_blueprint ), 'rest-playground-open-blueprint-deco
 $playground_blueprint_code = wp_json_encode( $playground_blueprint );
 $playground_plugin_step    = $playground_blueprint['steps'][1] ?? array();
 $assert( 'https://github.com/Automattic/static-site-importer/releases/latest/download/static-site-importer.zip' === ( $playground_plugin_step['pluginData']['url'] ?? '' ), 'rest-playground-open-blueprint-installs-release-zip' );
-$assert( str_contains( (string) $playground_blueprint_code, 'static_site_importer_ability_import_website_artifact' ), 'rest-playground-open-blueprint-runs-import-ability' );
+$assert( str_contains( (string) $playground_blueprint_code, 'static_site_importer_ability_import' ), 'rest-playground-open-blueprint-runs-import-ability' );
 $assert( str_contains( (string) $playground_blueprint_code, "'activate' => true" ), 'rest-playground-open-blueprint-activates-generated-site' );
 $assert( str_contains( (string) $playground_blueprint_code, "'overwrite' => true" ), 'rest-playground-open-blueprint-overwrites-generated-site' );
 // Sourceless HTML (no <title>, no URL) still falls back to the generic identity constant.
@@ -699,7 +699,7 @@ $GLOBALS['ssi_url_ability_id']     = 'stub-id';
 
 if ( ! function_exists( 'wp_get_ability' ) ) {
 	function wp_get_ability( string $name ): ?object {
-		if ( 'static-site-importer/import-url' !== $name ) {
+		if ( 'static-site-importer/import' !== $name ) {
 			return null;
 		}
 		return new class {
@@ -742,15 +742,11 @@ if ( is_wp_error( $url_playground_response ) ) {
 	$url_playground_response = array();
 }
 $assert( true === ( $url_playground_response['success'] ?? null ), 'rest-playground-url-only-succeeds' );
-$assert( 'unavailable' === ( $url_playground_response['preview']['status'] ?? '' ), 'rest-playground-url-only-preview-unavailable' );
-$assert( 'static-site-importer/url-playground-requirement/v1' === ( $url_playground_response['preview']['requires_ability_capable_target']['schema'] ?? '' ), 'rest-playground-url-only-requires-ability-schema' );
-$assert( 'static-site-importer/import-url' === ( $url_playground_response['preview']['requires_ability_capable_target']['ability'] ?? '' ), 'rest-playground-url-only-requires-ability-name' );
-$assert( 'facebook.com' === ( $url_playground_response['preview']['requires_ability_capable_target']['url'] ?? '' ), 'rest-playground-url-only-requires-ability-url' );
-$assert( 'playground-stub-id' === ( $url_playground_response['preview']['requires_ability_capable_target']['import_id'] ?? '' ), 'rest-playground-url-only-requires-ability-import-id' );
-$assert( ! isset( $url_playground_response['preview']['playground'] ), 'rest-playground-url-only-no-blueprint' );
+$assert( 'static-site-importer/import' === ( $url_playground_response['requires_ability_capable_target']['ability'] ?? '' ), 'rest-playground-url-only-requires-ability-name' );
+$assert( 'facebook.com' === ( $url_playground_response['requires_ability_capable_target']['url'] ?? '' ), 'rest-playground-url-only-requires-ability-url' );
+$assert( 'playground-stub-id' === ( $url_playground_response['requires_ability_capable_target']['import_id'] ?? '' ), 'rest-playground-url-only-requires-ability-import-id' );
 $assert( 0 === count( $GLOBALS['ssi_url_ability_inputs'] ), 'rest-playground-url-only-ability-not-invoked' );
 $assert( 'ability_capable_target_required' === ( $url_playground_response['continuation_reason'] ?? '' ), 'rest-playground-url-only-continuation-reason' );
-$assert( 'pending_disposable_target' === ( $url_playground_response['url_batch_run']['status'] ?? '' ), 'rest-playground-url-only-url-batch-run-pending' );
 $assert( array() === Static_Site_Importer_Theme_Generator::$last_args, 'rest-playground-url-only-does-not-import-current-site' );
 
 Static_Site_Importer_Theme_Generator::$last_args = array();
@@ -775,7 +771,8 @@ $assert( true === ( $current_site_url_response['success'] ?? null ), 'rest-curre
 $assert( true === ( $current_site_url_response['continuation'] ?? null ), 'rest-current-site-url-only-returns-continuation' );
 $assert( 'current-site-stub-id' === ( $current_site_url_response['import_id'] ?? '' ), 'rest-current-site-url-only-returns-import-id' );
 $assert( 1 === count( $GLOBALS['ssi_url_ability_inputs'] ), 'rest-current-site-url-only-ability-invoked-once' );
-$assert( 'facebook.com' === ( $GLOBALS['ssi_url_ability_inputs'][0]['url'] ?? '' ), 'rest-current-site-url-only-ability-receives-source-url' );
+$assert( 'facebook.com' === ( $GLOBALS['ssi_url_ability_inputs'][0]['source']['url'] ?? '' ), 'rest-current-site-url-only-ability-receives-source-url' );
+$assert( 'url' === ( $GLOBALS['ssi_url_ability_inputs'][0]['source']['type'] ?? '' ), 'rest-current-site-url-only-ability-receives-source-type' );
 $assert( array() === Static_Site_Importer_Theme_Generator::$last_args, 'rest-current-site-url-only-does-not-materialize-locally' );
 
 $client_shell_html = '<!doctype html><html><head><title>Client App</title>' . str_repeat( '<script src="/bundle.js"></script>', 25 ) . '</head><body><div id="root"></div></body></html>' . str_repeat( ' ', 120000 );
@@ -1110,7 +1107,7 @@ $assert( preg_match( '/^[a-f0-9]{64}$/', $figma_blueprint_ref ) === 1, 'figma-pr
 $figma_blueprint_response = json_decode( rawurldecode( (string) ( $figma_open_url_parts['fragment'] ?? '' ) ), true );
 $assert( is_array( $figma_blueprint_response ), 'figma-blueprint-hydrates' );
 $figma_blueprint_code = wp_json_encode( $figma_blueprint_response );
-$assert( str_contains( (string) $figma_blueprint_code, 'static_site_importer_ability_import_website_artifact' ), 'figma-blueprint-invokes-ssi-import-function' );
+$assert( str_contains( (string) $figma_blueprint_code, 'static_site_importer_ability_import' ), 'figma-blueprint-invokes-ssi-import-function' );
 $assert( str_contains( (string) $figma_blueprint_code, 'website/index.html' ) || str_contains( (string) $figma_blueprint_code, 'website\/index.html' ), 'figma-artifact-entrypoint-normalized' );
 $assert( str_contains( (string) $figma_blueprint_code, 'website/assets/styles.css' ) || str_contains( (string) $figma_blueprint_code, 'website\/assets\/styles.css' ), 'figma-artifact-file-path-normalized' );
 $assert( str_contains( (string) $figma_blueprint_code, "'activate' => true" ), 'figma-preview-defaults-to-activate-in-playground' );

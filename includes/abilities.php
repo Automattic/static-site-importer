@@ -142,43 +142,48 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 		);
 
 		static_site_importer_register_ability_once(
-			'static-site-importer/import-website-artifact',
+			'static-site-importer/import',
 			array(
-				'label'               => __( 'Import Website Artifact', 'static-site-importer' ),
-				'description'         => __( 'Compile a website artifact bundle through the Blocks Engine transformer and import it as a WordPress block theme.', 'static-site-importer' ),
-				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
-				'input_schema'        => array(
-					'type'       => 'object',
-					'properties' => array_merge( array( 'artifact' => array( 'type' => 'object' ) ), $import_properties ),
-					'required'   => array( 'artifact' ),
-				),
-				'output_schema'       => array( 'type' => 'object' ),
-				'execute_callback'    => 'static_site_importer_ability_import_website_artifact',
-				'permission_callback' => 'static_site_importer_ability_permission_callback',
-				'meta'                => array( 'show_in_rest' => true ),
-			)
-		);
-
-		static_site_importer_register_ability_once(
-			'static-site-importer/import-url',
-			array(
-				'label'               => __( 'Import URL', 'static-site-importer' ),
-				'description'         => __( 'Import a public static site from a URL. The importer manages bounded resumable collection; pass import_id to continue a prior run.', 'static-site-importer' ),
+				'label'               => __( 'Import Static Site', 'static-site-importer' ),
+				'description'         => __( 'Plan or apply pasted HTML, website files, a ZIP archive, or a public URL through one canonical import contract.', 'static-site-importer' ),
 				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
 				'input_schema'        => array(
 					'type'       => 'object',
 					'properties' => array_merge(
 						array(
-							'url'       => array( 'type' => 'string' ),
-							'import_id' => array( 'type' => 'string' ),
+							'operation' => array(
+								'type' => 'string',
+								'enum' => array( 'plan', 'apply' ),
+							),
+							'plan'      => array( 'type' => 'object' ),
+							'source'    => array(
+								'type'       => 'object',
+								'properties' => array(
+									'type'       => array(
+										'type' => 'string',
+										'enum' => array( 'html', 'files', 'zip', 'url' ),
+									),
+									'html'       => array( 'type' => 'string' ),
+									'files'      => array(
+										'type'  => 'array',
+										'items' => array( 'type' => 'object' ),
+									),
+									'zip'        => array( 'type' => 'object' ),
+									'url'        => array( 'type' => 'string' ),
+									'entrypoint' => array( 'type' => 'string' ),
+									'metadata'   => array( 'type' => 'object' ),
+									'import_id'  => array( 'type' => 'string' ),
+									'ref'        => array( 'type' => 'string' ),
+								),
+								'required'   => array( 'type' ),
+							),
 						),
 						$import_properties
 					),
-					'required'   => array( 'url' ),
 				),
 				'output_schema'       => array( 'type' => 'object' ),
-				'execute_callback'    => 'static_site_importer_ability_import_url',
-				'permission_callback' => 'static_site_importer_ability_permission_callback',
+				'execute_callback'    => 'static_site_importer_ability_import',
+				'permission_callback' => 'static_site_importer_ability_import_permission_callback',
 				'meta'                => array( 'show_in_rest' => true ),
 			)
 		);
@@ -319,6 +324,24 @@ if ( ! function_exists( 'static_site_importer_ability_permission_callback' ) ) {
 	}
 }
 
+if ( ! function_exists( 'static_site_importer_ability_import_permission_callback' ) ) {
+	/** Permission callback that distinguishes read-only compilation from apply. */
+	function static_site_importer_ability_import_permission_callback( array $input = array() ): bool {
+		if ( defined( 'WP_CLI' ) ) {
+			return true;
+		}
+
+		$planning = 'plan' === (string) ( $input['operation'] ?? 'apply' );
+		$allowed  = ! function_exists( 'current_user_can' ) || current_user_can( $planning ? 'edit_posts' : 'switch_themes' );
+
+		return (bool) apply_filters(
+			$planning ? 'static_site_importer_can_plan_imports' : 'static_site_importer_can_manage_imports',
+			$allowed,
+			$input
+		);
+	}
+}
+
 if ( ! function_exists( 'static_site_importer_ability_validate_artifact' ) ) {
 	/**
 	 * Ability callback for importer-owned validation.
@@ -352,31 +375,6 @@ if ( ! function_exists( 'static_site_importer_ability_import_figma' ) ) {
 	}
 }
 
-if ( ! function_exists( 'static_site_importer_ability_import_url' ) ) {
-	/**
-	 * Ability callback for URL imports.
-	 *
-	 * @param array<string, mixed> $input Ability input.
-	 * @return array<string, mixed>
-	 */
-	function static_site_importer_ability_import_url( array $input ): array {
-		$result = Static_Site_Importer_URL_Import_Runtime::import_url( $input );
-		if ( is_wp_error( $result ) ) {
-			/** @var WP_Error $result */
-			return static_site_importer_ability_error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
-		}
-
-		return array(
-			'success'               => true,
-			'result'                => $result,
-			'import_report_summary' => isset( $result['import_report_summary'] ) && is_array( $result['import_report_summary'] ) ? $result['import_report_summary'] : array(),
-			'import_id'             => isset( $result['import_id'] ) ? (string) $result['import_id'] : '',
-			'continuation'          => ! empty( $result['continuation'] ),
-			'continuation_reason'   => isset( $result['continuation_reason'] ) ? (string) $result['continuation_reason'] : '',
-			'url_batch_run'         => isset( $result['url_batch_run'] ) && is_array( $result['url_batch_run'] ) ? $result['url_batch_run'] : array(),
-		);
-	}
-}
 
 if ( ! function_exists( 'static_site_importer_ability_export_theme' ) ) {
 	/**
@@ -407,20 +405,87 @@ if ( ! function_exists( 'static_site_importer_ability_export_theme' ) ) {
 	}
 }
 
-if ( ! function_exists( 'static_site_importer_ability_import_website_artifact' ) ) {
-	/**
-	 * Ability callback for website artifact imports.
-	 *
-	 * @param array<string, mixed> $input Ability input.
-	 * @return array<string, mixed>
-	 */
-	function static_site_importer_ability_import_website_artifact( array $input ): array {
-		$artifact = isset( $input['artifact'] ) && is_array( $input['artifact'] ) ? $input['artifact'] : array();
-		if ( empty( $artifact ) ) {
-			return static_site_importer_ability_error( 'static_site_importer_missing_website_artifact', 'The artifact input is required.' );
+if ( ! function_exists( 'static_site_importer_ability_import' ) ) {
+	/** Canonical plan-first import dispatcher. */
+	function static_site_importer_ability_import( array $input ): array {
+		$source    = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
+		$type      = (string) ( $source['type'] ?? '' );
+		$operation = (string) ( $input['operation'] ?? 'apply' );
+		if ( ! in_array( $operation, array( 'plan', 'apply' ), true ) ) {
+			return static_site_importer_ability_error( 'static_site_importer_invalid_import_operation', 'operation must be plan or apply.' );
 		}
 
+		if ( 'apply' === $operation && isset( $input['plan'] ) && is_array( $input['plan'] ) ) {
+			return static_site_importer_ability_apply_approved_plan( $input );
+		}
+
+		if ( ! in_array( $type, array( 'html', 'files', 'zip', 'url' ), true ) ) {
+			return static_site_importer_ability_error( 'static_site_importer_invalid_import_source', 'source.type must be html, files, zip, or url.' );
+		}
+
+		$provenance = array( 'type' => $type );
+		$reference  = (string) ( $source['ref'] ?? '' );
+		if ( '' !== $reference ) {
+			$resolved = apply_filters( 'static_site_importer_resolve_source_reference', null, $reference, $type, $input );
+			if ( ! is_array( $resolved ) ) {
+				return static_site_importer_ability_error( 'static_site_importer_source_reference_unresolved', 'The opaque source reference was not resolved by a server-owned resolver.' );
+			}
+
+			$resolved_source = isset( $resolved['source'] ) && is_array( $resolved['source'] ) ? $resolved['source'] : $resolved;
+			if ( isset( $resolved_source['type'] ) && $type !== (string) $resolved_source['type'] ) {
+				return static_site_importer_ability_error( 'static_site_importer_source_reference_type_mismatch', 'The resolved source type does not match the requested source type.' );
+			}
+			$source     = array_merge( $source, $resolved_source, array( 'type' => $type ) );
+			$provenance = array_merge(
+				$provenance,
+				array( 'ref' => $reference ),
+				isset( $resolved['provenance'] ) && is_array( $resolved['provenance'] ) ? $resolved['provenance'] : array()
+			);
+		}
+
+		if ( 'url' === $type ) {
+			if ( 'apply' === $operation ) {
+				return static_site_importer_ability_error( 'static_site_importer_url_apply_requires_plan', 'Apply a completed URL import by supplying its approved canonical plan.' );
+			}
+
+			return static_site_importer_ability_import_url_operation( $input, $source );
+		}
+
+		$runtime_source = array(
+			'entrypoint' => (string) ( $source['entrypoint'] ?? '' ),
+			'metadata'   => isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array(),
+		);
+		if ( 'html' === $type ) {
+			$runtime_source['html'] = (string) ( $source['html'] ?? '' );
+		} elseif ( 'files' === $type ) {
+			$runtime_source['files'] = isset( $source['files'] ) && is_array( $source['files'] ) ? $source['files'] : array();
+		} else {
+			$runtime_source['archive'] = isset( $source['zip'] ) && is_array( $source['zip'] ) ? $source['zip'] : array();
+		}
+
+		if ( ! function_exists( 'static_site_importer_source_runtime' ) ) {
+			return static_site_importer_ability_error( 'static_site_importer_source_normalizer_unavailable', 'The canonical source normalizer is unavailable.' );
+		}
+		$runtime = static_site_importer_source_runtime( $runtime_source, $input );
+		if ( is_wp_error( $runtime ) ) {
+			return static_site_importer_ability_error( (string) $runtime->get_error_code(), $runtime->get_error_message(), $runtime->get_error_data() );
+		}
+		$artifact = $runtime['artifact'];
+		if ( empty( $artifact ) ) {
+			return static_site_importer_ability_error( 'static_site_importer_missing_website_artifact', 'The source did not normalize to a website artifact.' );
+		}
+		$provenance = array_merge(
+			$provenance,
+			array(
+				'provider'        => $runtime['provider'],
+				'source_metadata' => $runtime['source_metadata'],
+			)
+		);
+
 		$args = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
+		if ( 'plan' === $operation ) {
+			return static_site_importer_ability_plan_artifact( $artifact, $args, $type, $provenance );
+		}
 
 		$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $args );
 		if ( is_wp_error( $result ) ) {
@@ -429,6 +494,123 @@ if ( ! function_exists( 'static_site_importer_ability_import_website_artifact' )
 		}
 
 		return static_site_importer_ability_import_success( $result, $input );
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_ability_files_source' ) ) {
+	/** Convert an internal website artifact to the public files source shape. */
+	function static_site_importer_ability_files_source( array $artifact ): array {
+		$metadata = $artifact;
+		unset( $metadata['schema'], $metadata['entrypoint'], $metadata['files'] );
+
+		return array(
+			'type'       => 'files',
+			'entrypoint' => (string) ( $artifact['entrypoint'] ?? '' ),
+			'files'      => isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? $artifact['files'] : array(),
+			'metadata'   => $metadata,
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_ability_plan_artifact' ) ) {
+	/** @return array<string,mixed> */
+	function static_site_importer_ability_plan_artifact( array $artifact, array $args, string $type, array $provenance ): array {
+		$compiled = Static_Site_Importer_Theme_Generator::compile_website_artifact( $artifact, $args );
+		if ( is_wp_error( $compiled ) ) {
+			return static_site_importer_ability_error( (string) $compiled->get_error_code(), $compiled->get_error_message(), $compiled->get_error_data() );
+		}
+
+		return array(
+			'success'     => true,
+			'operation'   => 'plan',
+			'plan'        => $compiled['plan'],
+			'diagnostics' => $compiled['plan']['diagnostics'] ?? array(),
+			'quality'     => $compiled['plan']['quality'] ?? array(),
+			'source'      => array(
+				'type'       => $type,
+				'identity'   => hash( 'sha256', (string) wp_json_encode( $artifact ) ),
+				'provenance' => $provenance,
+			),
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_ability_import_url_operation' ) ) {
+	/** @param array<string,mixed> $input @param array<string,mixed> $source @return array<string,mixed> */
+	function static_site_importer_ability_import_url_operation( array $input, array $source ): array {
+		$url_input = array_merge(
+			$input,
+			array(
+				'url'       => (string) ( $source['url'] ?? '' ),
+				'import_id' => (string) ( $source['import_id'] ?? '' ),
+			)
+		);
+		$result    = Static_Site_Importer_URL_Import_Runtime::run_operation( $url_input );
+		if ( is_wp_error( $result ) ) {
+			return static_site_importer_ability_error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
+		}
+
+		$continuation = array(
+			'success'               => true,
+			'operation'             => (string) ( $input['operation'] ?? 'apply' ),
+			'import_id'             => (string) ( $result['import_id'] ?? '' ),
+			'continuation'          => ! empty( $result['continuation'] ),
+			'continuation_reason'   => (string) ( $result['continuation_reason'] ?? '' ),
+			'import_report_summary' => is_array( $result['import_report_summary'] ?? null ) ? $result['import_report_summary'] : array(),
+			'url_batch_run'         => is_array( $result['url_batch_run'] ?? null ) ? $result['url_batch_run'] : array(),
+		);
+		if ( ! empty( $result['continuation'] ) ) {
+			return $continuation;
+		}
+
+		$terminal = is_array( $result['terminal_batch_result'] ?? null ) ? $result['terminal_batch_result'] : array();
+		if ( 'plan' !== ( $input['operation'] ?? 'apply' ) ) {
+			return array_merge( static_site_importer_ability_import_success( $result, $input ), $continuation );
+		}
+		if ( ! is_array( $terminal['plan'] ?? null ) ) {
+			return static_site_importer_ability_error( 'static_site_importer_url_plan_missing', 'The completed URL acquisition did not produce a canonical plan.' );
+		}
+
+		return array_merge(
+			$continuation,
+			array(
+				'plan'        => $terminal['plan'],
+				'diagnostics' => array_merge(
+					is_array( $continuation['url_batch_run']['diagnostics'] ?? null ) ? $continuation['url_batch_run']['diagnostics'] : array(),
+					is_array( $terminal['diagnostics'] ?? null ) ? $terminal['diagnostics'] : array()
+				),
+				'quality'     => is_array( $terminal['quality'] ?? null ) ? $terminal['quality'] : array(),
+				'source'      => array(
+					'type'       => 'url',
+					'identity'   => hash( 'sha256', (string) wp_json_encode( $terminal['plan'] ) ),
+					'provenance' => array(
+						'url'           => (string) ( $source['url'] ?? '' ),
+						'import_id'     => (string) ( $result['import_id'] ?? '' ),
+						'url_batch_run' => $continuation['url_batch_run'],
+					),
+				),
+			)
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_ability_apply_approved_plan' ) ) {
+	/** @param array<string,mixed> $input @return array<string,mixed> */
+	function static_site_importer_ability_apply_approved_plan( array $input ): array {
+		$plan    = $input['plan'];
+		$receipt = static_site_importer_ability_materialize_wordpress_site_plan( $input );
+		$success = 'completed' === ( $receipt['status'] ?? '' );
+
+		return array(
+			'success'   => $success,
+			'operation' => 'apply',
+			'plan'      => $plan,
+			'result'    => $receipt,
+			'error'     => $success ? null : ( $receipt['errors'][0] ?? array(
+				'code'    => 'static_site_importer_materialization_failed',
+				'message' => 'The approved plan could not be materialized.',
+			) ),
+		);
 	}
 }
 
@@ -457,7 +639,9 @@ if ( ! function_exists( 'static_site_importer_ability_import_success' ) ) {
 		 * @param array<string,mixed> $result   The raw import result.
 		 * @param array<string,mixed> $input    The original ability input.
 		 */
-		do_action( 'static_site_importer_import_completed', $contract, $result, $input );
+		if ( function_exists( 'do_action' ) ) {
+			do_action( 'static_site_importer_import_completed', $contract, $result, $input );
+		}
 
 		return array(
 			'success'             => true,

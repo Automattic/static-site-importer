@@ -1,6 +1,12 @@
 <?php
 /**
- * Smoke test: POST /imports with a source.url routes through the import-url ability.
+ * Smoke test: POST /imports with a source.url routes through the unified import ability.
+ *
+ * The unified `static-site-importer/import` ability dispatches on
+ * `source.type`; URL sources go through `import_url_operation()`. This test
+ * drives the full REST stack and verifies the router threads `type=url` and
+ * the source URL into the unified ability, then unwraps the result envelope
+ * into the REST response shape.
  *
  * Run inside a WordPress site:
  * wp eval-file tests/smoke-rest-url-import-via-ability.php
@@ -43,7 +49,7 @@ $ability_stub = new class {
 add_filter(
 	'wp_get_ability',
 	static function ( $ability, $name ) use ( $ability_stub ) {
-		if ( 'static-site-importer/import-url' === $name ) {
+		if ( 'static-site-importer/import' === $name ) {
 			return $ability_stub;
 		}
 		return $ability;
@@ -68,10 +74,10 @@ $request->set_header( 'content-type', 'application/json' );
 $request->set_body(
 	wp_json_encode(
 		array(
-			'source'               => array( 'url' => 'https://example.test/start' ),
+			'source'                => array( 'url' => 'https://example.test/start' ),
 			'apply_to_current_site' => true,
-			'activate'             => true,
-			'overwrite'            => true,
+			'activate'              => true,
+			'overwrite'             => true,
 		)
 	)
 );
@@ -85,7 +91,8 @@ $assert( true === ( $body['continuation'] ?? false ), 'rest-response-continuatio
 $assert( 'rest-id-1' === ( $body['import_id'] ?? '' ), 'rest-response-import-id' );
 $assert( 'continuing' === ( $body['url_batch_run']['status'] ?? '' ), 'rest-response-url-batch-run-status' );
 $assert( 3 === ( $body['url_batch_run']['total_batches'] ?? 0 ), 'rest-response-url-batch-run-total' );
-$assert( 'https://example.test/start' === ( $ability_stub->last_input['url'] ?? '' ), 'ability-receives-source-url' );
+$assert( 'https://example.test/start' === ( $ability_stub->last_input['source']['url'] ?? '' ), 'ability-receives-source-url' );
+$assert( 'url' === ( $ability_stub->last_input['source']['type'] ?? '' ), 'ability-source-type-is-url' );
 $assert( ! isset( $ability_stub->last_input['provider'] ), 'no-provider-arg-forwarded' );
 $assert( ! isset( $ability_stub->last_input['provider_args'] ), 'no-provider-args-arg-forwarded' );
 $assert( ! isset( $ability_stub->last_input['work_dir'] ), 'no-work-dir-arg-forwarded' );
@@ -107,7 +114,7 @@ $request->set_header( 'content-type', 'application/json' );
 $request->set_body(
 	wp_json_encode(
 		array(
-			'source'               => array( 'url' => 'https://example.test/done' ),
+			'source'                => array( 'url' => 'https://example.test/done' ),
 			'apply_to_current_site' => true,
 		)
 	)
@@ -138,10 +145,8 @@ $response = rest_get_server()->dispatch( $request );
 $body     = $response->get_data();
 
 $assert( 200 === $response->get_status(), 'rest-playground-status' );
-$assert( 'unavailable' === ( $body['preview']['status'] ?? '' ), 'rest-playground-unavailable' );
-$assert( 'static-site-importer/url-playground-requirement/v1' === ( $body['preview']['requires_ability_capable_target']['schema'] ?? '' ), 'rest-playground-requirement-schema' );
-$assert( 'static-site-importer/import-url' === ( $body['preview']['requires_ability_capable_target']['ability'] ?? '' ), 'rest-playground-requirement-ability' );
-$assert( 'pending_disposable_target' === ( $body['url_batch_run']['status'] ?? '' ), 'rest-playground-url-batch-run-pending' );
+$assert( 'static-site-importer/import' === ( $body['requires_ability_capable_target']['ability'] ?? '' ), 'rest-playground-requirement-ability' );
+$assert( 'ability_capable_target_required' === ( $body['continuation_reason'] ?? '' ), 'rest-playground-continuation-reason' );
 $assert( isset( $ability_stub->last_input['sentinel'] ), 'rest-playground-does-not-invoke-ability' );
 
 if ( ! empty( $failures ) ) {

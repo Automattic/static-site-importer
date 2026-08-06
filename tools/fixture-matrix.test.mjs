@@ -33,6 +33,8 @@ import runFixtureMatrixBench, {
 import {
   buildCodeFreshness,
   buildFixtureMatrixRunPlan,
+  FIXTURE_MATRIX_PHASE_PLAN_SCHEMA,
+  phaseFailureDiagnostic,
   SOLVED_ONLY_LANE_ID,
   resolvePathFreshness,
   summarizeBenchRun,
@@ -3892,7 +3894,7 @@ test('--solved-only selects exactly the valid solved fixture corpus', () => {
   assert.ok(matrix.fixtures.every((fixture) => fixture.fixture_corpus === 'solved'));
 });
 
-test('fixture matrix operator composes typed placement only for the bench step', () => {
+test('fixture matrix deterministic dry-run phase plans route setup locally and workload by mode', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-routing-plan-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
   const fixtureRoot = path.join(root, 'fixtures');
@@ -3908,6 +3910,19 @@ test('fixture matrix operator composes typed placement only for the bench step',
     ['rig', 'install', path.dirname(path.dirname(fileURLToPath(import.meta.url))), '--id', 'static-site-importer-fixture-matrix', '--reinstall'],
     ['rig', 'sync', 'static-site-importer-fixture-matrix'],
   ]);
+  assert.deepEqual(setupPlan.phase_plan, {
+    schema: FIXTURE_MATRIX_PHASE_PLAN_SCHEMA,
+    phases: setupPlan.steps.map(({ phase, placement, resolved_placement, reason, retry_command }) => ({
+      phase,
+      placement,
+      resolved_placement,
+      reason,
+      retry_command,
+    })),
+  });
+  assert.ok(setupPlan.steps.slice(0, -1).every((step) => step.phase === 'controller-setup' && step.placement === 'auto' && step.resolved_placement === 'controller-local'));
+  assert.equal(setupPlan.steps.at(-1).phase, 'fixture-workload');
+  assert.equal(setupPlan.steps.at(-1).resolved_placement, 'lab:homeboy-lab');
 
   const labPlan = buildFixtureMatrixRunPlan({
     runner: 'homeboy-lab',
@@ -3998,6 +4013,20 @@ test('fixture matrix operator composes typed placement only for the bench step',
   });
   assert.equal(autoPlan.execution_target, 'auto');
   assert.deepEqual(autoPlan.steps.at(-1).args.slice(-2), ['--placement', 'auto']);
+  assert.equal(autoPlan.steps.at(-1).resolved_placement, 'auto');
+});
+
+test('fixture matrix phase retries identify setup ownership and the exact command', () => {
+  const setup = {
+    phase: 'controller-setup',
+    label: 'Sync/materialize rig components (lab:homeboy-lab)',
+    command: 'homeboy',
+    args: ['rig', 'sync', 'static-site-importer-fixture-matrix'],
+  };
+  assert.equal(
+    phaseFailureDiagnostic(setup, 17),
+    'Sync/materialize rig components (lab:homeboy-lab) failed with exit 17 during controller-setup. Retry: homeboy rig sync static-site-importer-fixture-matrix',
+  );
 });
 
 test('fixture matrix operator projects exact Homeboy arguments for every routing mode', () => {
@@ -4802,11 +4831,21 @@ test('summarizeBenchRun still throws when a non-zero bench produced no parseable
   // No output file at all -> genuine crash, keep throwing.
   assert.throws(
     () => summarizeBenchRun({
-      plan: { mode: 'development-override', run_id: 'planned-run', output_file: missingOutput },
+      plan: {
+        mode: 'development-override',
+        run_id: 'planned-run',
+        output_file: missingOutput,
+        steps: [{
+          phase: 'fixture-workload',
+          label: 'Run SSI fixture matrix bench',
+          command: 'homeboy',
+          args: ['bench', '--rig', 'static-site-importer-fixture-matrix'],
+        }],
+      },
       benchStatus: 1,
       benchLabel: 'Run SSI fixture matrix bench',
     }),
-    /Run SSI fixture matrix bench failed with exit 1/,
+    /Run SSI fixture matrix bench failed with exit 1 during fixture-workload\. Retry: homeboy bench --rig static-site-importer-fixture-matrix/,
   );
 
   // Output exists but is unparseable / carries no result payload -> still a crash.
