@@ -28,6 +28,11 @@ jobs:
 
       - uses: Extra-Chill/homeboy-action@31e95050206332c4ebd36894387c980c99443ecf  # v2.8.15
         with:
+          # Pin homeboy core to 0.330.0: core 0.331.0+ (PR #11553) validates
+          # the `test.failures` sidecar as a JSON array, but the wordpress
+          # extension's wp-codebox adapter still emits an object sidecar.
+          # Remove this pin once the extension ships an array sidecar.
+          version: 0.330.0
           commands: review lint
           args: --extension wordpress
           php-version: '8.2'
@@ -49,6 +54,8 @@ jobs:
 
       - uses: Extra-Chill/homeboy-action@31e95050206332c4ebd36894387c980c99443ecf  # v2.8.15
         with:
+          # Pin homeboy core to 0.330.0: see lint step for the rationale.
+          version: 0.330.0
           commands: review test
           args: --extension wordpress
           php-version: ${{ matrix.php-version }}
