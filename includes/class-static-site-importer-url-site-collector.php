@@ -588,21 +588,15 @@ class Static_Site_Importer_URL_Site_Collector {
 		return array_values( array_unique( array_merge( $urls, self::html_css_asset_urls( $html, $base_url ) ) ) );
 	}
 
-	/** Resolve the explicit script retention contract for public HTML collection. */
+	/** Resolve the isolated, provenance-bound script retention contract for public HTML collection. */
 	private static function script_policy( array $args ): string {
-		if ( array_key_exists( 'include_scripts', $args ) ) {
-			return ! empty( $args['include_scripts'] ) ? 'full' : 'none';
-		}
-		$policy = isset( $args['script_policy'] ) ? (string) $args['script_policy'] : 'static';
-		return in_array( $policy, array( 'static', 'full', 'none' ), true ) ? $policy : 'static';
+		$policy = isset( $args['script_policy'] ) ? (string) $args['script_policy'] : 'inert';
+		return 'isolated_preview' === $policy && ! empty( $args['client_script_isolated'] ) && ! empty( $args['client_script_provenance'] ) ? 'isolated_preview' : 'inert';
 	}
 
 	/**
 	 * Omit scripts from the frozen server-rendered document unless a caller supplies
-	 * the full runtime-preservation contract.
-	 *
-	 * Full retention remains an explicit compatibility mode for callers that supply
-	 * their own runtime-preservation contract.
+	 * the isolated-preview policy and explicit source provenance.
 	 *
 	 * @return array{html:string,asset_urls:array<int,string>,exclusions:array<int,array<string,string>>}
 	 */
@@ -617,7 +611,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				$type    = strtolower( trim( (string) self::tag_attribute_value( $tag, 'type' ) ) );
 				$kind    = null === $source ? 'inline' : 'external';
 				$is_data = in_array( $type, array( 'application/json', 'application/ld+json', 'application/manifest+json' ), true );
-				$keep    = 'full' === $policy;
+				$keep    = 'isolated_preview' === $policy;
 				if ( $keep ) {
 					if ( 'external' === $kind ) {
 						$url = self::resolve_url( (string) $source, $base_url );
@@ -630,7 +624,7 @@ class Static_Site_Importer_URL_Site_Collector {
 
 				$exclusion = array(
 					'kind'        => $kind,
-					'reason_code' => 'none' === $policy ? 'script_omitted_by_caller_policy' : ( $is_data ? 'data_script_omitted_from_static_artifact' : 'script_omitted_without_runtime_declaration' ),
+					'reason_code' => $is_data ? 'data_script_quarantined_by_inert_policy' : 'script_dropped_by_inert_policy',
 					'sha256'      => hash( 'sha256', $matches[0] ),
 					'type'        => '' !== $type ? $type : 'classic',
 				);

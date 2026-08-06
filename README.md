@@ -28,6 +28,12 @@ For an isolated runtime matrix, invoke the ability with `plan`, `slug`, and opti
 wp static-site-importer materialize-wordpress-site-plan --plan=/path/to/plan.json --slug=generated-site
 ```
 
+## Client Script Policy
+
+Every artifact is passed through `client_script_policy` before Blocks Engine compilation and WordPress materialization. The default is `inert`: SSI removes executable inline, local, remote, module, telemetry, and `data:` script markup, removes bundled JavaScript assets, and records each disposition in `import_report.client_script_policy`. JSON data scripts are quarantined in the report and are not emitted into the generated site.
+
+`isolated_preview` is the sole preservation opt-in. It requires an explicit `client_script_provenance` object with a non-empty `ref` and a runtime isolation assertion. It is intended only for an isolated disposable preview runtime. Preserved scripts remain `untrusted_imported_code`; artifact carriage, local paths, and source type never establish trust. Current-site REST imports forcibly use `inert`. Existing `include_scripts` URL collection callers no longer preserve scripts; callers must request `script_policy: isolated_preview`, supply provenance, and run only in an isolated preview environment.
+
 ## Architecture Stack
 
 Static Site Importer is the WordPress materialization layer for static website inputs. It accepts two related shapes:

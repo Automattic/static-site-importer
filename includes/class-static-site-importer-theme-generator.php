@@ -26,6 +26,9 @@ if ( ! class_exists( 'Static_Site_Importer_Block_Document_Reporter' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Report_Diagnostics' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-report-diagnostics.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-client-script-policy.php';
+}
 
 /**
  * Generates a block theme from a static HTML document.
@@ -94,6 +97,9 @@ class Static_Site_Importer_Theme_Generator {
 		if ( is_wp_error( $source_policy ) ) {
 			return $source_policy;
 		}
+		$script_policy                       = Static_Site_Importer_Client_Script_Policy::apply( $artifact, $args );
+		$artifact                            = $script_policy['artifact'];
+		$args['client_script_policy_report'] = $script_policy['report'];
 		$compiler_class = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactCompiler';
 		if ( ! class_exists( $compiler_class ) ) {
 			return new WP_Error( 'static_site_importer_missing_transformer', 'Blocks Engine php-transformer is required to import a website artifact.' );
@@ -414,6 +420,7 @@ class Static_Site_Importer_Theme_Generator {
 				'gutenberg_gaps'      => $gutenberg_gaps,
 			),
 			'quality'                          => $quality,
+			'client_script_policy'             => $args['client_script_policy_report'] ?? array(),
 			'diagnostics'                      => $diagnostics,
 			'entity_lifecycle'                 => $entity_lifecycle,
 			'companion_plugin_materialization' => $receipt['completed']['companion_plugin'] ?? array(
