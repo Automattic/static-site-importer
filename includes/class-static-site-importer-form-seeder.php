@@ -167,31 +167,30 @@ class Static_Site_Importer_Form_Seeder {
 			return true;
 		}
 
-		$lifecycle_apis = array(
-			'Jetpack::is_module_active'       => class_exists( 'Jetpack' ) && method_exists( 'Jetpack', 'is_module_active' ),
-			'Jetpack::activate_default_modules' => class_exists( 'Jetpack' ) && method_exists( 'Jetpack', 'activate_default_modules' ),
-			'WP_Block_Type_Registry::get_instance' => class_exists( 'WP_Block_Type_Registry' ) && method_exists( 'WP_Block_Type_Registry', 'get_instance' ),
+		$lifecycle_apis         = array(
+			'Jetpack::is_module_active'         => self::runtime_static_method_exists( 'Jetpack', 'is_module_active' ),
+			'Jetpack::activate_default_modules' => self::runtime_static_method_exists( 'Jetpack', 'activate_default_modules' ),
 		);
 		$missing_lifecycle_apis = array_keys( array_filter( $lifecycle_apis, static fn ( bool $available ): bool => ! $available ) );
 		if ( ! empty( $missing_lifecycle_apis ) ) {
 			return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_lifecycle_missing', $missing_lifecycle_apis );
 		}
 
-		if ( ! Jetpack::is_module_active( 'contact-form' ) ) {
+		if ( ! self::invoke_runtime_static_method( 'Jetpack', 'is_module_active', array( 'contact-form' ) ) ) {
 			// Jetpack uses this inverted range to activate only explicitly supplied defaults.
-			Jetpack::activate_default_modules( 999, 1, array( 'contact-form' ), false, false );
-			if ( ! Jetpack::is_module_active( 'contact-form' ) ) {
+			self::invoke_runtime_static_method( 'Jetpack', 'activate_default_modules', array( 999, 1, array( 'contact-form' ), false, false ) );
+			if ( ! self::invoke_runtime_static_method( 'Jetpack', 'is_module_active', array( 'contact-form' ) ) ) {
 				return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_activation_failed', array( 'contact-form' ) );
 			}
 		}
 
 		$loader = 'Automattic\\Jetpack\\Forms\\Jetpack_Forms';
-		if ( ! class_exists( $loader ) || ! method_exists( $loader, 'load_contact_form' ) ) {
+		if ( ! self::runtime_static_method_exists( $loader, 'load_contact_form' ) ) {
 			return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_loader_missing', array( $loader . '::load_contact_form' ) );
 		}
 
 		$initializer = 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form_Plugin';
-		if ( ! class_exists( $initializer ) || ! method_exists( $initializer, 'init' ) ) {
+		if ( ! self::runtime_static_method_exists( $initializer, 'init' ) ) {
 			return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_init_missing', array( $initializer . '::init' ) );
 		}
 
@@ -200,7 +199,7 @@ class Static_Site_Importer_Form_Seeder {
 			|| false !== has_action( 'init', $initializer . '::init' )
 		);
 		if ( ! $init_callback_loaded ) {
-			$loader::load_contact_form();
+			self::invoke_runtime_static_method( $loader, 'load_contact_form' );
 		}
 
 		if ( ! function_exists( 'did_action' ) || ! did_action( 'init' ) ) {
@@ -208,7 +207,7 @@ class Static_Site_Importer_Form_Seeder {
 		}
 
 		if ( ! self::$jetpack_forms_initialized ) {
-			$initializer::init();
+			self::invoke_runtime_static_method( $initializer, 'init' );
 			self::$jetpack_forms_initialized = true;
 		}
 
@@ -222,6 +221,20 @@ class Static_Site_Importer_Form_Seeder {
 			array_keys( array_filter( $availability['required_blocks'], static fn ( bool $registered ): bool => ! $registered ) ),
 			$availability
 		);
+	}
+
+	/** Check an extension-owned static API without binding analysis to that extension's stubs. */
+	private static function runtime_static_method_exists( string $class_name, string $method ): bool {
+		return class_exists( $class_name ) && method_exists( $class_name, $method );
+	}
+
+	/**
+	 * Invoke an extension-owned static API after runtime_static_method_exists() succeeds.
+	 *
+	 * @phpstan-impure
+	 */
+	private static function invoke_runtime_static_method( string $class_name, string $method, array $args = array() ) {
+		return ( new ReflectionMethod( $class_name, $method ) )->invokeArgs( null, $args );
 	}
 
 	/** Build a bounded provider-readiness error. */
