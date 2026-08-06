@@ -3510,6 +3510,8 @@ test('fixture matrix run configuration covers every declared environment, bench,
     assert.ok(Object.hasOwn(field, 'projections'), `${key} must explicitly declare its projection contract`);
   }
   assert.throws(() => normalizeFixtureMatrixRunConfig({ fixtureRoot: '/fixtures', unknown: true }), /Unknown fixture matrix run configuration/);
+  assert.throws(() => normalizeFixtureMatrixRunConfig({ hostDependencyOrchestration: false }), /Unknown fixture matrix run configuration/);
+  assert.equal(Object.values(FIXTURE_MATRIX_RUN_FIELDS).some((field) => field.env === 'SSI_FIXTURE_MATRIX_HOST_DEPENDENCY_ORCHESTRATION'), false);
 });
 
 test('fixture coverage inventory derives additions, omissions, metadata failures, and duplicate IDs', () => {
@@ -4122,6 +4124,12 @@ test('fixture matrix records generic child command failures for failed WP Codebo
 function wpCodeboxBin() { return '/tmp/wp-codebox'; }
 function wpCodeboxCommand(bin) { return { command: bin, args: [] }; }
 async function runWpCodeboxRecipe(options) {
+  const recipe = require('node:fs').readFileSync(options.recipeFile, 'utf8');
+  if (recipe.includes('plan-artifact-dependencies')) {
+    require('node:fs').mkdirSync(options.artifactsDir, { recursive: true });
+    require('node:fs').writeFileSync(require('node:path').join(options.artifactsDir, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
+    return { exitCode: 0, outputFile: options.outputFile, json: {} };
+  }
   if (options.cwd !== require('node:path').dirname(options.outputFile)) {
     throw new Error('recipe-run did not receive the matrix output directory as cwd');
   }
@@ -4237,10 +4245,19 @@ test('WP Codebox recipe runner streams oversized child output and reads result J
   mkdirSync(path.join(largeOutputFixtureRoot, fixtureId), { recursive: true });
   writeFileSync(path.join(largeOutputFixtureRoot, fixtureId, 'index.html'), '<h1>Large output fixture</h1>');
   writeFileSync(fakeCodeboxBin, `#!/usr/bin/env node
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 const outputIndex = process.argv.indexOf('--output');
 const outputFile = outputIndex >= 0 ? process.argv[outputIndex + 1] : '';
 const fixtureId = process.env.SSI_TEST_FAKE_WP_CODEBOX_FIXTURE_ID || 'large-output-fixture';
+const recipeFile = process.argv[process.argv.indexOf('--recipe') + 1];
+if (readFileSync(recipeFile, 'utf8').includes('plan-artifact-dependencies')) {
+  const artifacts = process.argv[process.argv.indexOf('--artifacts') + 1];
+  mkdirSync(artifacts, { recursive: true });
+  writeFileSync(join(artifacts, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
+  if (outputFile) writeFileSync(outputFile, '{}');
+  process.exit(0);
+}
 if (outputFile) {
   writeFileSync(outputFile, JSON.stringify({ cwd: process.cwd(), results: [{ fixture_id: fixtureId, status: 'succeeded' }] }));
 }
@@ -4963,6 +4980,12 @@ function wpCodeboxBin() { return '/tmp/wp-codebox'; }
 function wpCodeboxCommand(bin) { return { command: bin, args: [] }; }
 
 async function runWpCodeboxRecipe(options = {}) {
+  const recipe = fs.readFileSync(options.recipeFile, 'utf8');
+  if (recipe.includes('plan-artifact-dependencies')) {
+    fs.mkdirSync(options.artifactsDir, { recursive: true });
+    fs.writeFileSync(require('node:path').join(options.artifactsDir, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
+    return { exitCode: 0, outputFile: options.outputFile, json: {} };
+  }
   const batchNumber = batchNumberFromOutput(options.outputFile);
   inFlight += 1;
   peakInFlight = Math.max(peakInFlight, inFlight);
@@ -5191,6 +5214,12 @@ function fixtureIds(recipeFile) {
 function wpCodeboxBin() { return '/tmp/wp-codebox'; }
 function wpCodeboxCommand(bin) { return { command: bin, args: [] }; }
 async function runWpCodeboxRecipe(options) {
+  const recipe = fs.readFileSync(options.recipeFile, 'utf8');
+  if (recipe.includes('plan-artifact-dependencies')) {
+    fs.mkdirSync(options.artifactsDir, { recursive: true });
+    fs.writeFileSync(require('node:path').join(options.artifactsDir, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
+    return { exitCode: 0, outputFile: options.outputFile, json: {} };
+  }
   const ids = fixtureIds(options.recipeFile);
   if (ids.includes('hanging')) {
     const error = new Error('fixture hanging exceeded its deadline');
@@ -5245,6 +5274,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const recipePath = process.argv[process.argv.indexOf('--recipe') + 1];
 const recipe = fs.readFileSync(recipePath, 'utf8');
+if (recipe.includes('plan-artifact-dependencies')) {
+  const artifacts = process.argv[process.argv.indexOf('--artifacts') + 1];
+  const output = process.argv[process.argv.indexOf('--output') + 1];
+  fs.mkdirSync(artifacts, { recursive: true });
+  fs.writeFileSync(path.join(artifacts, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
+  fs.writeFileSync(output, '{}');
+  process.exit(0);
+}
 const recovery = path.basename(recipePath).match(/-recovery-(.+)\\.json$/);
 const ids = recovery ? [recovery[1]] : [...new Set(recipe.split('--slug=').slice(1).map((part) => part.split(' ')[0]))];
 if (ids.includes('hanging')) {
