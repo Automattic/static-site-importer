@@ -738,8 +738,11 @@ $url_playground_response = static_site_importer_rest_create_import(
 		)
 	)
 );
-$assert( is_wp_error( $url_playground_response ), 'rest-playground-url-only-requires-disposable-target' );
-$assert( 'static_site_importer_url_playground_requires_disposable_target' === $url_playground_response->get_error_code(), 'rest-playground-url-only-does-not-collect-artifact' );
+$assert( ! is_wp_error( $url_playground_response ) && str_starts_with( $url_playground_response['preview']['url'] ?? '', 'https://playground.wordpress.net/#' ), 'rest-playground-url-only-opens-disposable-target' );
+$url_playground_blueprint_json = rawurldecode( substr( (string) ( $url_playground_response['preview']['playground']['blueprint_url'] ?? '' ), strlen( 'https://playground.wordpress.net/#' ) ) );
+$url_playground_blueprint      = json_decode( $url_playground_blueprint_json, true );
+$url_playground_code           = (string) ( $url_playground_blueprint['steps'][2]['code'] ?? '' );
+$assert( str_contains( $url_playground_code, "'url' => 'https://facebook.com" ) && str_contains( $url_playground_code, '$result["continuation"]' ) && str_contains( $url_playground_code, '$input["plan"]'), 'rest-playground-url-only-plans-resumes-and-applies-in-disposable-target' );
 $assert( array() === $GLOBALS['ssi_last_url_provider_request'], 'rest-playground-url-only-does-not-call-provider-or-collector' );
 $assert( array() === Static_Site_Importer_Theme_Generator::$last_args, 'rest-playground-url-only-does-not-import-current-site' );
 
@@ -755,8 +758,8 @@ $current_site_url_response = static_site_importer_rest_create_import(
 	)
 );
 $assert( ! is_wp_error( $current_site_url_response ), 'rest-current-site-url-only-does-not-error', is_wp_error( $current_site_url_response ) ? $current_site_url_response->get_error_code() . ': ' . $current_site_url_response->get_error_message() : '' );
-$assert( 'https://facebook.com' === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata']['source_url'] ?? '' ), 'rest-current-site-url-only-normalizes-bare-host' );
-$assert( '' === ( $GLOBALS['ssi_last_url_provider_request']['provider'] ?? '' ) && array() === ( $GLOBALS['ssi_last_url_provider_request']['provider_args'] ?? null ), 'rest-current-site-url-only-ignores-public-provider-input' );
+$assert( 'static_site_importer_url_client_rendered_app' === ( $current_site_url_response['error']['code'] ?? '' ), 'rest-current-site-url-only-uses-canonical-collector' );
+$assert( array() === $GLOBALS['ssi_last_url_provider_request'], 'rest-current-site-url-only-ignores-provider-shortcuts' );
 
 $client_shell_html = '<!doctype html><html><head><title>Client App</title>' . str_repeat( '<script src="/bundle.js"></script>', 25 ) . '</head><body><div id="root"></div></body></html>' . str_repeat( ' ', 120000 );
 $pasted_shell_response = static_site_importer_rest_create_import(

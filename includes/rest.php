@@ -282,7 +282,21 @@ if ( ! function_exists( "static_site_importer_ability_import" ) ) {
 	throw new RuntimeException( "Static Site Importer import function is unavailable." );
 }
 $input = ' . $input_literal . ';
+$requested_operation = (string) ( $input["operation"] ?? "apply" );
+if ( "url" === (string) ( $input["source"]["type"] ?? "" ) && "apply" === $requested_operation ) {
+	$input["operation"] = "plan";
+}
 $result = static_site_importer_ability_import( $input );
+while ( is_array( $result ) && ! empty( $result["success"] ) && ! empty( $result["continuation"] ) ) {
+	$input["source"]["import_id"] = (string) ( $result["import_id"] ?? "" );
+	$result = static_site_importer_ability_import( $input );
+}
+
+if ( "apply" === $requested_operation && "plan" === (string) ( $input["operation"] ?? "" ) && is_array( $result["plan"] ?? null ) ) {
+	$input["operation"] = "apply";
+	$input["plan"] = $result["plan"];
+	$result = static_site_importer_ability_import( $input );
+}
 
 if ( ! is_array( $result ) || empty( $result["success"] ) ) {
 	throw new RuntimeException( "Static Site Importer Playground import failed: " . wp_json_encode( $result ) );
@@ -571,11 +585,13 @@ function static_site_importer_rest_open_in_playground( array $source, array $inp
 	$input['activate']  = true;
 	$input['overwrite'] = true;
 	if ( static_site_importer_rest_is_url_only_source( $source ) ) {
-		return new WP_Error(
-			'static_site_importer_url_playground_requires_disposable_target',
-			__( 'URL preview requires a disposable WordPress target running the Static Site Importer import-url ability.', 'static-site-importer' ),
-			array( 'status' => 422, 'ability' => 'static-site-importer/import-url' )
+		$input['source'] = array(
+			'type' => 'url',
+			'url'  => Static_Site_Importer_URL_Fetcher::normalize_url( (string) ( $source['url'] ?? '' ) ),
 		);
+		$input['operation'] = 'apply';
+
+		return static_site_importer_rest_create_playground_open( array(), $input, 'url' );
 	}
 
 	$runtime = static_site_importer_rest_source_runtime( $source, $input );
@@ -718,11 +734,23 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
 	};
 
 	if ( static_site_importer_rest_is_url_only_source( $source ) ) {
-		$input['url'] = Static_Site_Importer_URL_Fetcher::normalize_url( (string) $source['url'] );
-		if ( isset( $input['import_id'] ) && '' === (string) $input['import_id'] ) {
-			unset( $input['import_id'] );
+		$input['source'] = array(
+			'type' => 'url',
+			'url'  => Static_Site_Importer_URL_Fetcher::normalize_url( (string) $source['url'] ),
+		);
+		if ( isset( $input['import_id'] ) && '' !== (string) $input['import_id'] ) {
+			$input['source']['import_id'] = (string) $input['import_id'];
 		}
-		return static_site_importer_execute_import_ability( 'static-site-importer/import-url', $input, 'static_site_importer_ability_import_url' );
+		unset( $input['import_id'] );
+		$input['operation'] = 'plan';
+		$result             = static_site_importer_rest_execute_import_ability( 'static-site-importer/import', $input, 'static_site_importer_ability_import' );
+		if ( is_array( $result ) && ! empty( $result['success'] ) && empty( $result['continuation'] ) && is_array( $result['plan'] ?? null ) ) {
+			$input['operation'] = 'apply';
+			$input['plan']      = $result['plan'];
+			$result             = static_site_importer_rest_execute_import_ability( 'static-site-importer/import', $input, 'static_site_importer_ability_import' );
+		}
+
+		return $decorate_current_site_preview( $result );
 	}
 
 	$runtime = static_site_importer_rest_source_runtime( $source, $input );

@@ -268,16 +268,28 @@ if ( is_wp_error( $negative_result ) || is_wp_error( $negative_resume ) || 2 !==
 $runtime_imports = array();
 $runtime_policy_total_pages = 1000;
 $runtime_policy_seen = array();
+$runtime_legacy_attempts = 7;
 add_filter( 'static_site_importer_url_import_policy', static function ( array $policy ) use ( &$runtime_policy_total_pages ): array { $policy['pages_per_invocation'] = 1; $policy['batches_per_invocation'] = 1; $policy['total_pages'] = $runtime_policy_total_pages; $policy['request_delay_milliseconds'] = 0; return $policy; } );
+add_filter( 'static_site_importer_url_batch_import_args', static function ( array $args ) use ( &$runtime_legacy_attempts ): array { $args['fetch_attempts'] = $runtime_legacy_attempts; return $args; } );
 add_filter( 'static_site_importer_url_batch_import_fetcher', static fn() => static function ( string $url, array $args ) use ( &$runtime_policy_seen ): array { $runtime_policy_seen[] = $args['max_pages'] ?? null; if ( 'https://runtime.test/sitemap.xml' === $url ) { return array( 'body' => '<urlset><url><loc>https://runtime.test/</loc></url><url><loc>https://runtime.test/about/</loc></url></urlset>', 'metadata' => array( 'content_type' => 'application/xml', 'final_url' => $url ) ); } if ( 'https://runtime-one.test/sitemap.xml' === $url ) { return array( 'body' => '<urlset><url><loc>https://runtime-one.test/</loc></url></urlset>', 'metadata' => array( 'content_type' => 'application/xml', 'final_url' => $url ) ); } return array( 'body' => '<main>' . $url . '</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) ); } );
 add_filter( 'static_site_importer_url_batch_importer', static function () use ( &$runtime_imports ) { return static function ( array $artifact, array $args ) use ( &$runtime_imports ): array { $runtime_imports[] = $args; return array( 'theme_slug' => 'runtime', 'import_report_summary' => array( 'status' => 'completed' ) ); }; } );
 $runtime_input = array( 'url' => 'https://runtime.test/', 'slug' => 'runtime', 'activate' => true );
 $runtime_first = Static_Site_Importer_URL_Import_Runtime::import_url( $runtime_input );
 if ( is_wp_error( $runtime_first ) || empty( $runtime_first['continuation'] ) || ! preg_match( '/^[a-f0-9]{64}$/', (string) ( $runtime_first['import_id'] ?? '' ) ) || isset( $runtime_first['url_batch_run']['run_manifest'] ) || 1 !== ( $runtime_first['url_batch_run']['completed_routes'] ?? 0 ) ) { throw new RuntimeException( 'public URL imports must use opaque, path-free resumable batch runs without caller mode flags' ); }
+$runtime_registry_path = sys_get_temp_dir() . '/ssi-url-runtime/static-site-importer/url-imports/runs/' . $runtime_first['import_id'] . '.json';
+$runtime_registry = json_decode( (string) file_get_contents( $runtime_registry_path ), true );
+if ( 7 !== ( $runtime_registry['provider_args']['fetch_attempts'] ?? null ) ) { throw new RuntimeException( 'legacy URL batch provider arguments must be snapshotted into the opaque run registry' ); }
 $runtime_input['import_id'] = $runtime_first['import_id'];
+$runtime_lock_path = sys_get_temp_dir() . '/ssi-url-runtime/static-site-importer/url-imports/workspaces/' . $runtime_first['import_id'] . '/continuation.lock';
+$runtime_lock = fopen( $runtime_lock_path, 'c' );
+if ( false === $runtime_lock || ! flock( $runtime_lock, LOCK_EX | LOCK_NB ) ) { throw new RuntimeException( 'test must acquire the opaque run continuation lease' ); }
+$runtime_concurrent = Static_Site_Importer_URL_Import_Runtime::import_url( $runtime_input );
+flock( $runtime_lock, LOCK_UN ); fclose( $runtime_lock );
+if ( ! is_wp_error( $runtime_concurrent ) || 'static_site_importer_url_import_in_progress' !== $runtime_concurrent->get_error_code() || 409 !== ( $runtime_concurrent->get_error_data()['status'] ?? null ) ) { throw new RuntimeException( 'concurrent continuations must fail before duplicate WordPress mutations' ); }
 $runtime_policy_total_pages = 2;
+$runtime_legacy_attempts = 2;
 $runtime_second = Static_Site_Importer_URL_Import_Runtime::import_url( $runtime_input );
-if ( is_wp_error( $runtime_second ) || 'completed' !== ( $runtime_second['url_batch_run']['status'] ?? '' ) || $runtime_first['import_id'] !== ( $runtime_second['import_id'] ?? '' ) || 2 !== count( $runtime_imports ) || true !== ( $runtime_imports[1]['activate'] ?? false ) || in_array( 2, $runtime_policy_seen, true ) ) { throw new RuntimeException( 'opaque continuation must preserve its server-owned policy despite later filter changes' ); }
+if ( is_wp_error( $runtime_second ) || 'completed' !== ( $runtime_second['url_batch_run']['status'] ?? '' ) || $runtime_first['import_id'] !== ( $runtime_second['import_id'] ?? '' ) || 2 !== count( $runtime_imports ) || true !== ( $runtime_imports[1]['activate'] ?? false ) || in_array( 2, $runtime_policy_seen, true ) || 7 !== ( $runtime_registry['provider_args']['fetch_attempts'] ?? null ) ) { throw new RuntimeException( 'opaque continuation must preserve its server-owned policy and legacy provider args despite later filter changes' ); }
 $changed_url = $runtime_input; $changed_url['url'] = 'https://other.test/';
 $changed_options = $runtime_input; $changed_options['activate'] = false;
 $GLOBALS['ssi_test_user_id'] = 2; $changed_user = Static_Site_Importer_URL_Import_Runtime::import_url( $runtime_input ); $GLOBALS['ssi_test_user_id'] = 1;

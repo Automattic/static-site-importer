@@ -315,6 +315,13 @@ final class Static_Site_Importer_URL_Batch_Import {
 				return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $staged, $cache );
 			}
 			$runtime['shared_plan_digest'] = $shared['digest'];
+			if ( 'plan' === (string) ( $input['operation'] ?? 'apply' ) ) {
+				$runtime['staged_page_plans'] = $staged['page_plans'];
+				$write                        = self::persist_runtime( $workspace, $cache_name, $runtime );
+				if ( is_wp_error( $write ) ) {
+					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $write, $cache );
+				}
+			}
 			$manifest['shared_resource_plan']                          = array(
 				'schema'   => 'static-site-importer/shared-resource-plan/v2',
 				'digest'   => $shared['digest'],
@@ -678,8 +685,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 		$snapshots  = array();
 		foreach ( $cursor as $batch ) {
 			$batch_id = (string) ( $batch['batch_id'] ?? '' );
-			$raw      = '' !== $batch_id ? $workspace->read_raw( 'batches/' . $batch_id . '.json' ) : null;
-			$runtime  = is_string( $raw ) ? json_decode( $raw, true ) : null;
+			$runtime  = '' !== $batch_id ? self::load_payload_checkpoint( $workspace, 'batches/' . $batch_id . '.json', array( 'kind' => 'collected_runtime' ) ) : null;
 			if ( ! is_array( $runtime ) || ! is_array( $runtime['staged_page_plans'] ?? null ) ) {
 				return new WP_Error( 'static_site_importer_url_plan_batch_missing', 'The frozen URL run has an incomplete staged batch.' );
 			}
@@ -1056,6 +1062,10 @@ final class Static_Site_Importer_URL_Batch_Import {
 	}
 	private static function aggregate_result( array $manifest, string $path, array $terminal ): array {
 		$batch_quality = array_values( array_filter( array_map( static fn ( array $batch ): mixed => self::quality_evidence( $batch['result']['quality'] ?? null ), $manifest['batches'] ), static fn ( $quality ): bool => null !== $quality ) );
+		$terminal_result = self::terminal_result_evidence( $terminal );
+		if ( is_array( $terminal['plan'] ?? null ) ) {
+			$terminal_result['plan'] = $terminal['plan'];
+		}
 		$evidence      = array(
 			'status'                     => 'completed',
 			'run_manifest'               => $path,
@@ -1088,7 +1098,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			),
 			'url_batch_run'         => $evidence,
 			'batch_materialization' => $manifest['batches'],
-			'terminal_batch_result' => self::terminal_result_evidence( $terminal ),
+			'terminal_batch_result' => $terminal_result,
 		);
 	}
 	private static function continuation_result( array $manifest, string $path, int $index, int $effective_batches, ?int $max_effective_batches = null, ?float $max_invocation_seconds = null, string $reason = 'effective_batch_limit' ): array {

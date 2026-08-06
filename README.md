@@ -168,7 +168,7 @@ PHP consumers can build the same blueprint with `static_site_importer_playground
 URL intake rules:
 
 - Every built-in URL import collects the bounded site through the resumable batch engine. It reads the origin's `/sitemap.xml`, follows same-origin HTML links, and collects directly referenced page assets and nested CSS assets.
-- SSI owns collection, batch, deadline, asset, byte, pacing, and script-policy defaults. Hosts can adjust this policy with the `static_site_importer_url_batch_import_args` filter.
+- SSI owns collection, batch, deadline, asset, byte, pacing, and script-policy defaults. Hosts can configure normalized policy with `static_site_importer_url_import_policy`; the existing `static_site_importer_url_batch_import_args` filter remains available for provider-specific arguments. Both are snapshotted when a run starts.
 - `static-site-importer/import` accepts `{ source: { type: "url", url, import_id? }, operation }`. The first URL apply returns an opaque `import_id`; continuation supplies that ID in the same source envelope. SSI resolves the server-owned workspace and validates the URL, import options, and current user; no filesystem path is accepted or returned.
 
 URL collection limits are server policy, not public import input. Consumers can configure the whitelisted policy through `static_site_importer_url_import_policy`:

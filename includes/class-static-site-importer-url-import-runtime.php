@@ -12,6 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_URL_Fetcher' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-url-fetcher.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_URL_Site_Collector' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-url-site-collector.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_URL_Batch_Import' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-url-batch-import.php';
 }
@@ -143,12 +146,17 @@ class Static_Site_Importer_URL_Import_Runtime {
 		$contract = self::batch_contract( $url, $input );
 		$registry = self::run_registry_path( $identity );
 		$policy   = self::url_import_policy();
+		$provider_args = apply_filters( 'static_site_importer_url_batch_import_args', self::batch_args( $policy ) );
+		if ( ! is_array( $provider_args ) ) {
+			$provider_args = self::batch_args( $policy );
+		}
 		$record   = array(
 			'schema'    => 'static-site-importer/url-import-run/v1',
 			'identity'  => $identity,
 			'contract'  => $contract,
 			'workspace' => self::run_workspace( $identity ),
 			'policy'    => $policy,
+			'provider_args' => $provider_args,
 		);
 		if ( ! wp_mkdir_p( dirname( $registry ) ) || false === file_put_contents( $registry, wp_json_encode( $record ) ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes an importer-owned opaque run registry.
 			return new WP_Error( 'static_site_importer_url_import_run_unavailable', 'The URL import run workspace is unavailable.' );
@@ -166,7 +174,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 		$registry = self::run_registry_path( $identity );
 		$raw      = is_file( $registry ) ? file_get_contents( $registry ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads an importer-owned opaque run registry.
 		$record   = is_string( $raw ) ? json_decode( $raw, true ) : null;
-		if ( ! is_array( $record ) || 'static-site-importer/url-import-run/v1' !== ( $record['schema'] ?? '' ) || $identity !== ( $record['identity'] ?? '' ) || self::run_workspace( $identity ) !== ( $record['workspace'] ?? '' ) || ! self::is_url_import_policy( $record['policy'] ?? null ) ) {
+		if ( ! is_array( $record ) || 'static-site-importer/url-import-run/v1' !== ( $record['schema'] ?? '' ) || $identity !== ( $record['identity'] ?? '' ) || self::run_workspace( $identity ) !== ( $record['workspace'] ?? '' ) || ! self::is_url_import_policy( $record['policy'] ?? null ) || ! is_array( $record['provider_args'] ?? null ) ) {
 			return new WP_Error( 'static_site_importer_url_import_run_not_found', 'The URL import run was not found.' );
 		}
 		if ( self::canonical( self::batch_contract( $url, $input ) ) !== self::canonical( $record['contract'] ?? array() ) ) {
@@ -178,9 +186,31 @@ class Static_Site_Importer_URL_Import_Runtime {
 
 	/** @param array<string,mixed> $record @return array<string,mixed>|WP_Error */
 	private static function run_batch_import( array $record, array $input ) {
+		$workspace = (string) $record['workspace'];
+		if ( ! wp_mkdir_p( $workspace ) ) {
+			return new WP_Error( 'static_site_importer_url_import_run_unavailable', 'The URL import run workspace is unavailable.' );
+		}
+		$lock = fopen( trailingslashit( $workspace ) . 'continuation.lock', 'c' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Holds an importer-owned per-run process lease.
+		if ( false === $lock || ! flock( $lock, LOCK_EX | LOCK_NB ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_flock -- Serializes mutations for one opaque import run.
+			if ( is_resource( $lock ) ) {
+				fclose( $lock ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Releases an importer-owned process lease handle.
+			}
+			return new WP_Error( 'static_site_importer_url_import_in_progress', 'Another continuation is already processing this URL import.', array( 'status' => 409 ) );
+		}
+
+		try {
+			return self::run_batch_import_locked( $record, $input );
+		} finally {
+			flock( $lock, LOCK_UN ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_flock -- Releases an importer-owned per-run process lease.
+			fclose( $lock ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Releases an importer-owned process lease handle.
+		}
+	}
+
+	/** @param array<string,mixed> $record @return array<string,mixed>|WP_Error */
+	private static function run_batch_import_locked( array $record, array $input ) {
 		$request                  = self::provider_request( (string) $record['contract']['url'], $input );
 		$request['work_dir']      = (string) $record['workspace'];
-		$request['provider_args'] = self::batch_args( $record['policy'] );
+		$request['provider_args'] = $record['provider_args'];
 		$fetcher                  = apply_filters( 'static_site_importer_url_batch_import_fetcher', null, $request, $input );
 		$importer                 = apply_filters( 'static_site_importer_url_batch_importer', null, $request, $input );
 		$result                   = Static_Site_Importer_URL_Batch_Import::import( $request, $input, is_callable( $fetcher ) ? $fetcher : null, is_callable( $importer ) ? $importer : null );
