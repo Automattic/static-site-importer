@@ -151,15 +151,12 @@ class Static_Site_Importer_Plugin_Materializer {
 		array $payload,
 		?callable $availability_check = null
 	): array {
-		// Canonical compiler payloads are validated before deriving an install plan
-		// or touching the filesystem. Schema-less callers retain the legacy
-		// PHP-only scaffold compatibility path.
-		if ( array_key_exists( 'schema', $payload ) ) {
-			$validation = Static_Site_Importer_Companion_Plugin::validate_payload( $payload );
-			if ( is_wp_error( $validation ) ) {
-				$report = self::new_generated_report( '', '' );
-				return self::failed_report( $report, $validation );
-			}
+		// All compiler output is untrusted until the complete canonical payload has
+		// passed the content-only boundary. Schema-less PHP scaffold input is gone.
+		$validation = Static_Site_Importer_Companion_Plugin::validate_payload( $payload );
+		if ( is_wp_error( $validation ) ) {
+			$report = self::new_generated_report( '', '' );
+			return self::failed_report( $report, $validation );
 		}
 		$descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $payload );
 		if ( is_wp_error( $descriptor ) ) {

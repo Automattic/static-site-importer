@@ -13,6 +13,10 @@ if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-content-policy.php';
+}
+
 if ( ! class_exists( 'Static_Site_Importer_URL_Import_Runtime' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-url-import-runtime.php';
 }
@@ -899,15 +903,21 @@ function static_site_importer_source_runtime( array $source, array $input = arra
 
 	$metadata = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
 
-	return array(
-		'artifact'        => array_merge(
+	$artifact = array_merge(
 			$metadata,
 			array(
 				'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
 				'entrypoint' => $entrypoint,
 				'files'      => $files,
 			)
-		),
+		);
+	$source_policy = Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
+	if ( is_wp_error( $source_policy ) ) {
+		return $source_policy;
+	}
+
+	return array(
+		'artifact'        => $artifact,
 		'source_metadata' => array(),
 		'provider'        => 'rest-source',
 	);
@@ -1041,6 +1051,14 @@ function static_site_importer_rest_archive_files( array $archive ) {
 
 		if ( ! static_site_importer_rest_should_include_artifact_file( $path ) ) {
 			continue;
+		}
+
+		if ( ! Static_Site_Importer_Content_Policy::is_static_path( $path ) ) {
+			$zip->close();
+			if ( file_exists( $tmp ) ) {
+				wp_delete_file( $tmp );
+			}
+			return new WP_Error( 'static_site_importer_executable_source_rejected', __( 'ZIP archives may contain static content only.', 'static-site-importer' ), array( 'status' => 400, 'path' => $path ) );
 		}
 
 		$file_content = $zip->getFromIndex( $i );
