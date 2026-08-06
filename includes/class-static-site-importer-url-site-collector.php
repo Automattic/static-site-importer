@@ -66,6 +66,8 @@ class Static_Site_Importer_URL_Site_Collector {
 		$total_bytes            = 0;
 		$truncated              = array();
 		$external_assets        = array();
+		$asset_owners           = array();
+		$shared_assets          = array();
 		$asset_failure_policy   = $args['asset_failure_policy'] ?? '';
 		$preserve_failed_assets = in_array( $asset_failure_policy, array( 'preserve_external', 'preserve_failed_external_assets' ), true );
 		$preserve_asset_limits  = 'preserve_external' === $asset_failure_policy;
@@ -81,20 +83,77 @@ class Static_Site_Importer_URL_Site_Collector {
 		$script_exclusions  = array();
 		$entry_resource_url = $entry_url;
 		$site_url           = $entry_url;
-
-		$sitemap_urls = isset( $args['_route_set'] ) && is_array( $args['_route_set'] ) ? array_values( $args['_route_set'] ) : self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
-		if ( is_wp_error( $sitemap_urls ) ) {
-			return $sitemap_urls;
+		$sitemap_urls       = array();
+		$resumed            = false;
+		$state              = is_array( $args['_collection_state'] ?? null ) ? $args['_collection_state'] : array();
+		if ( 'static-site-importer/partial-collection/v1' === ( $state['schema'] ?? '' ) ) {
+			$page_queue         = is_array( $state['page_queue'] ?? null ) ? $state['page_queue'] : $page_queue;
+			$asset_queue        = is_array( $state['asset_queue'] ?? null ) ? $state['asset_queue'] : $asset_queue;
+			$queued_pages       = is_array( $state['queued_pages'] ?? null ) ? $state['queued_pages'] : $queued_pages;
+			$queued_assets      = is_array( $state['queued_assets'] ?? null ) ? $state['queued_assets'] : $queued_assets;
+			$resources          = is_array( $state['resources'] ?? null ) ? $state['resources'] : $resources;
+			$failures           = is_array( $state['failures'] ?? null ) ? $state['failures'] : $failures;
+			$diagnostics        = is_array( $state['diagnostics'] ?? null ) ? $state['diagnostics'] : $diagnostics;
+			$source_exclusions  = is_array( $state['source_exclusions'] ?? null ) ? $state['source_exclusions'] : $source_exclusions;
+			$aliases            = is_array( $state['aliases'] ?? null ) ? $state['aliases'] : $aliases;
+			$total_bytes        = (int) ( $state['total_bytes'] ?? $total_bytes );
+			$truncated          = is_array( $state['truncated'] ?? null ) ? $state['truncated'] : $truncated;
+			$external_assets    = is_array( $state['external_assets'] ?? null ) ? $state['external_assets'] : $external_assets;
+			$asset_owners       = is_array( $state['asset_owners'] ?? null ) ? $state['asset_owners'] : $asset_owners;
+			$shared_assets      = is_array( $state['shared_assets'] ?? null ) ? $state['shared_assets'] : $shared_assets;
+			$critical_assets    = is_array( $state['critical_assets'] ?? null ) ? $state['critical_assets'] : $critical_assets;
+			$script_exclusions  = is_array( $state['script_exclusions'] ?? null ) ? $state['script_exclusions'] : $script_exclusions;
+			$entry_resource_url = (string) ( $state['entry_resource_url'] ?? $entry_resource_url );
+			$site_url           = (string) ( $state['site_url'] ?? $site_url );
+			$sitemap_urls       = is_array( $state['sitemap_urls'] ?? null ) ? $state['sitemap_urls'] : $sitemap_urls;
+			$resumed            = true;
 		}
-		foreach ( $sitemap_urls as $page_url ) {
-			if ( count( $page_queue ) >= $max_pages ) {
-				$truncated['pages'] = true;
-				break;
+		$checkpoint       = is_callable( $args['_collection_checkpoint'] ?? null ) ? $args['_collection_checkpoint'] : null;
+		$payload_reader   = is_callable( $args['_collection_payload_reader'] ?? null ) ? $args['_collection_payload_reader'] : null;
+		$checkpoint_state = static function () use ( $checkpoint, &$page_queue, &$asset_queue, &$queued_pages, &$queued_assets, &$resources, &$failures, &$diagnostics, &$source_exclusions, &$aliases, &$total_bytes, &$truncated, &$external_assets, &$asset_owners, &$shared_assets, &$critical_assets, &$script_exclusions, &$entry_resource_url, &$site_url, &$sitemap_urls ): ?WP_Error {
+			if ( null === $checkpoint ) {
+				return null;
 			}
-			$page_key = self::page_key( $page_url );
-			if ( ! isset( $queued_pages[ $page_key ] ) ) {
-				$queued_pages[ $page_key ] = true;
-				$page_queue[]              = $page_url;
+			$result = call_user_func( $checkpoint, array(
+				'schema'             => 'static-site-importer/partial-collection/v1',
+				'page_queue'         => $page_queue,
+				'asset_queue'        => $asset_queue,
+				'queued_pages'       => $queued_pages,
+				'queued_assets'      => $queued_assets,
+				'resources'          => $resources,
+				'failures'           => $failures,
+				'diagnostics'        => $diagnostics,
+				'source_exclusions'  => $source_exclusions,
+				'aliases'            => $aliases,
+				'total_bytes'        => $total_bytes,
+				'truncated'          => $truncated,
+				'external_assets'    => $external_assets,
+				'asset_owners'       => $asset_owners,
+				'shared_assets'      => $shared_assets,
+				'critical_assets'    => $critical_assets,
+				'script_exclusions'  => $script_exclusions,
+				'entry_resource_url' => $entry_resource_url,
+				'site_url'           => $site_url,
+				'sitemap_urls'       => $sitemap_urls,
+			) );
+			return is_wp_error( $result ) ? $result : null;
+		};
+
+		if ( ! $resumed ) {
+			$sitemap_urls = isset( $args['_route_set'] ) && is_array( $args['_route_set'] ) ? array_values( $args['_route_set'] ) : self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
+			if ( is_wp_error( $sitemap_urls ) ) {
+				return $sitemap_urls;
+			}
+			foreach ( $sitemap_urls as $page_url ) {
+				if ( count( $page_queue ) >= $max_pages ) {
+					$truncated['pages'] = true;
+					break;
+				}
+				$page_key = self::page_key( $page_url );
+				if ( ! isset( $queued_pages[ $page_key ] ) ) {
+					$queued_pages[ $page_key ] = true;
+					$page_queue[]              = $page_url;
+				}
 			}
 		}
 
@@ -104,6 +163,14 @@ class Static_Site_Importer_URL_Site_Collector {
 			$response = $page_fetcher( $page_url, array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ) );
 			$response = self::without_cache_marker( $response );
 			if ( is_wp_error( $response ) ) {
+				if ( 'static_site_importer_invocation_deadline_exceeded' === $response->get_error_code() ) {
+					array_unshift( $page_queue, $page_url );
+					$write = $checkpoint_state();
+					if ( is_wp_error( $write ) ) {
+						return $write;
+					}
+					return $response;
+				}
 				if ( $page_url === $entry_url ) {
 					return $response;
 				}
@@ -172,7 +239,11 @@ class Static_Site_Importer_URL_Site_Collector {
 			foreach ( self::critical_html_asset_urls( $body, $document_base_url ) as $asset_url ) {
 				$critical_assets[ $asset_url ] = true;
 			}
+			foreach ( self::html_style_asset_urls( $body, $document_base_url ) as $asset_url ) {
+				$shared_assets[ $asset_url ] = true;
+			}
 			foreach ( self::html_asset_urls( $body, $document_base_url, $scripts['asset_urls'] ) as $asset_url ) {
+				$asset_owners[ $asset_url ][ $final_url ] = true;
 				if ( isset( $queued_assets[ $asset_url ] ) || isset( $resources[ $asset_url ] ) ) {
 					continue;
 				}
@@ -201,9 +272,14 @@ class Static_Site_Importer_URL_Site_Collector {
 			$response  = self::without_cache_marker( $response );
 			if ( is_wp_error( $response ) ) {
 				if ( 'static_site_importer_invocation_deadline_exceeded' === $response->get_error_code() ) {
+					array_unshift( $asset_queue, $asset_url );
+					$write = $checkpoint_state();
+					if ( is_wp_error( $write ) ) {
+						return $write;
+					}
 					return $response;
 				}
-				if ( $preserve_failed_assets && ! $critical ) {
+				if ( $preserve_failed_assets && ( ! $critical || ! self::same_origin( $asset_url, $site_url ) ) ) {
 					$external_assets[ $asset_url ] = $response->get_error_code();
 					continue;
 				}
@@ -214,15 +290,27 @@ class Static_Site_Importer_URL_Site_Collector {
 			$final_url = self::response_url( $response, $asset_url );
 			if ( $final_url !== $asset_url ) {
 				$aliases[ $asset_url ] = $final_url;
+				if ( isset( $shared_assets[ $asset_url ] ) ) {
+					$shared_assets[ $final_url ] = true;
+				}
+				foreach ( array_keys( $asset_owners[ $asset_url ] ?? array() ) as $owner_url ) {
+					$asset_owners[ $final_url ][ $owner_url ] = true;
+				}
 			}
 			if ( isset( $resources[ $final_url ] ) ) {
+				continue;
+			}
+			$content_type = self::content_type( $response, 'application/octet-stream' );
+			if ( in_array( $content_type, array( 'text/html', 'application/xhtml+xml' ), true ) ) {
+				$external_assets[ $asset_url ] = 'unexpected_html';
+				$external_assets[ $final_url ] = 'unexpected_html';
 				continue;
 			}
 
 			$body  = (string) $response['body'];
 			$bytes = strlen( $body );
 			if ( $total_bytes + $bytes > $max_total_bytes ) {
-				if ( $preserve_asset_limits && ! $critical ) {
+				if ( $preserve_asset_limits && ( ! $critical || ! self::same_origin( $asset_url, $site_url ) ) ) {
 					$external_assets[ $asset_url ] = 'byte_limit';
 					continue;
 				}
@@ -230,7 +318,6 @@ class Static_Site_Importer_URL_Site_Collector {
 				break;
 			}
 
-			$content_type            = self::content_type( $response, 'application/octet-stream' );
 			$total_bytes            += $bytes;
 			$resources[ $final_url ] = array(
 				'kind'         => 'asset',
@@ -240,6 +327,12 @@ class Static_Site_Importer_URL_Site_Collector {
 
 			if ( 'text/css' === $content_type || str_ends_with( strtolower( (string) self::url_parts( $final_url, PHP_URL_PATH ) ), '.css' ) ) {
 				foreach ( self::css_asset_urls( $body, $final_url ) as $nested_url ) {
+					if ( isset( $shared_assets[ $final_url ] ) || isset( $shared_assets[ $asset_url ] ) ) {
+						$shared_assets[ $nested_url ] = true;
+					}
+					foreach ( array_keys( $asset_owners[ $final_url ] ?? $asset_owners[ $asset_url ] ?? array() ) as $owner_url ) {
+						$asset_owners[ $nested_url ][ $owner_url ] = true;
+					}
 					if ( isset( $queued_assets[ $nested_url ] ) || isset( $resources[ $nested_url ] ) ) {
 						continue;
 					}
@@ -295,7 +388,14 @@ class Static_Site_Importer_URL_Site_Collector {
 		$snapshot_files = array();
 		foreach ( $resources as $resource_url => $resource ) {
 			$path = $paths[ $resource_url ];
-			$body = (string) $resource['body'];
+			$body = $resource['body'] ?? null;
+			if ( ! is_string( $body ) && is_array( $resource['checkpoint_payload'] ?? null ) && null !== $payload_reader ) {
+				$body = call_user_func( $payload_reader, $resource['checkpoint_payload'] );
+				if ( is_wp_error( $body ) ) {
+					return $body;
+				}
+			}
+			$body = (string) $body;
 			if ( 'html' === $resource['kind'] ) {
 				$body = self::rewrite_html( $body, self::html_base_url( $body, $resource_url ), $path, $reference_paths, $aliases, $site_url, $external_assets );
 			} elseif ( 'text/css' === $resource['content_type'] || str_ends_with( strtolower( $path ), '.css' ) ) {
@@ -308,6 +408,18 @@ class Static_Site_Importer_URL_Site_Collector {
 			);
 			if ( 'html' === $resource['kind'] ) {
 				$file['metadata'] = array( 'route_path' => $route_paths[ $resource_url ] );
+			} else {
+				$owners = array_keys( $asset_owners[ $resource_url ] ?? array() );
+				if ( isset( $shared_assets[ $resource_url ] ) || count( $owners ) > 1 ) {
+					$file['metadata'] = array( 'compilation' => array( 'scope' => 'shared' ) );
+				} elseif ( 1 === count( $owners ) && isset( $paths[ $owners[0] ] ) ) {
+					$file['metadata'] = array(
+						'compilation' => array(
+							'scope' => 'page',
+							'id'    => $paths[ $owners[0] ],
+						),
+					);
+				}
 			}
 			if ( self::is_text( $resource['content_type'], $path ) ) {
 				$file['content'] = $body;
@@ -552,7 +664,13 @@ class Static_Site_Importer_URL_Site_Collector {
 
 	/** @return array<int,string> */
 	private static function html_asset_urls( string $html, string $base_url, array $script_urls = array() ): array {
-		$urls        = array();
+		$urls = array();
+		foreach ( self::tag_attribute_values( $html, 'a', 'href' ) as $reference ) {
+			$url = self::resolve_url( (string) $reference, $base_url );
+			if ( '' !== $url && ! self::is_page_url( $url ) ) {
+				$urls[] = $url;
+			}
+		}
 		$source_urls = array_merge(
 			self::tag_attribute_values( $html, 'img|source|video|audio', 'src' ),
 			self::tag_attribute_values( $html, 'video', 'poster' )
@@ -566,7 +684,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				continue;
 			}
 			$relations = preg_split( '/\s+/', strtolower( trim( $relation ) ) );
-			if ( array_intersect( $relations ? $relations : array(), array( 'stylesheet', 'icon', 'preload', 'modulepreload' ) ) ) {
+			if ( array_intersect( $relations ? $relations : array(), array( 'stylesheet', 'icon', 'apple-touch-icon', 'apple-touch-icon-precomposed', 'apple-touch-startup-image', 'mask-icon', 'manifest', 'preload', 'modulepreload' ) ) ) {
 				$link_urls[] = $href;
 			}
 		}
@@ -685,6 +803,16 @@ class Static_Site_Importer_URL_Site_Collector {
 	}
 
 	/** @return array<int,string> */
+	private static function html_style_asset_urls( string $html, string $base_url ): array {
+		preg_match_all( '#<style\b[^>]*>(.*?)</style>#is', $html, $style_blocks );
+		$urls = array();
+		foreach ( $style_blocks[1] as $css ) {
+			$urls = array_merge( $urls, self::css_asset_urls( (string) $css, $base_url ) );
+		}
+		return array_values( array_unique( $urls ) );
+	}
+
+	/** @return array<int,string> */
 	private static function css_asset_urls( string $css, string $base_url ): array {
 		preg_match_all( '#url\(\s*(["\']?)(.*?)\1\s*\)#is', $css, $matches );
 		$urls = array();
@@ -768,6 +896,25 @@ class Static_Site_Importer_URL_Site_Collector {
 
 	/** @param array<string,string> $paths */
 	private static function rewrite_html( string $html, string $base_url, string $source_path, array $paths, array $aliases, string $site_url, array $external_assets = array() ): string {
+		$html = preg_replace_callback(
+			'#<link\b[^>]*>#is',
+			static function ( array $matches ) use ( $base_url, $source_path, $paths, $aliases ): string {
+				$tag       = $matches[0];
+				$relations = preg_split( '/\s+/', strtolower( trim( (string) self::tag_attribute_value( $tag, 'rel' ) ) ) );
+				$href      = self::tag_attribute_value( $tag, 'href' );
+				if ( null === $href || ! array_intersect( $relations ? $relations : array(), array( 'stylesheet', 'icon', 'apple-touch-icon', 'apple-touch-icon-precomposed', 'apple-touch-startup-image', 'mask-icon', 'manifest', 'preload', 'modulepreload' ) ) ) {
+					return $tag;
+				}
+				$url    = self::resolve_url( $href, $base_url );
+				$target = $aliases[ $url ] ?? $url;
+				if ( '' === $target ) {
+					return $tag;
+				}
+				$reference = isset( $paths[ $target ] ) && ! preg_match( '/\.html?$/i', $paths[ $target ] ) ? self::relative_path( $source_path, $paths[ $target ] ) : self::external_asset_url( $target, $href );
+				return (string) preg_replace_callback( '#\bhref\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)#i', static fn(): string => 'href="' . $reference . '"', $tag, 1 );
+			},
+			$html
+		);
 		$html = preg_replace_callback(
 			'#\b(src|href|poster)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))#is',
 			static function ( array $matches ) use ( $base_url, $source_path, $paths, $aliases, $site_url, $external_assets ): string {

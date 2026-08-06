@@ -66,6 +66,29 @@ $assert( array_column( $contract['faces'], 'id' ) === array_column( $overlay['fa
 $assert( str_contains( $readiness, 'static-site-importer-font-readiness' ) && str_contains( $readiness, 'receipt_id' ) && str_contains( $readiness, 'status:"missing"' ), 'browser readiness serializes loaded or missing records with producer receipt IDs into the captured DOM' );
 $assert( hash( 'sha256', 'fixture-37-inter-variable-font' ) === ( $overlay['required_faces'][0]['assets'][0]['observed_sha256'] ?? '' ), 'materialization receipt retains the observed payload digest for each producer face' );
 
+$mixed_plan = $producer_plan;
+$mixed_plan['webfont_contract']['imports'][] = array(
+	'id'          => 'webfont-import-unsupported-fixture',
+	'provider'    => 'unsupported',
+	'state'       => 'unsupported',
+	'source'      => array( 'url' => 'https://fonts.example.test/site.css', 'format' => 'css', 'expected_digest' => null, 'observed_digest' => null ),
+	'provenance'  => array(),
+	'diagnostics' => array(),
+);
+$mixed_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $mixed_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
+$assert( ! is_wp_error( $mixed_overlay ) && array_column( $contract['faces'], 'id' ) === array_column( $mixed_overlay['faces'], 'face_id' ), 'unsupported imports coexist with independently declared materializable faces' );
+
+$protocol_relative_plan = $producer_plan;
+$protocol_relative_plan['webfont_contract']['imports'][0]['source']['url'] = preg_replace( '#^https:#', '', $protocol_relative_plan['webfont_contract']['imports'][0]['source']['url'] );
+$protocol_relative_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $protocol_relative_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
+$assert( ! is_wp_error( $protocol_relative_overlay ), 'protocol-relative Google font imports normalize to the portable HTTPS source' );
+$normalize_google_url = new ReflectionMethod( Static_Site_Importer_Font_Materializer::class, 'normalize_google_stylesheet_url' );
+$assert( 'https://fonts.googleapis.com/css?family=Fjalla+One' === $normalize_google_url->invoke( null, '//fonts.googleapis.com/css?family=Fjalla+One?1473722252' ), 'legacy cache busters embedded in Google family values are removed' );
+$legacy_family_plan = $producer_plan;
+$legacy_family_plan['webfont_contract']['faces'][0]['family'] .= '?1473722252';
+$legacy_family_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $legacy_family_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
+$assert( ! is_wp_error( $legacy_family_overlay ) && 'Inter' === ( $legacy_family_overlay['faces'][0]['family'] ?? '' ), 'legacy cache busters are removed from typed face families before stylesheet matching' );
+
 $svg = '<svg xmlns="http://www.w3.org/2000/svg"><text font-family="Inter">Fixture 37</text></svg>';
 $svg_source_path = 'assets/materialized-svg/fixture-37.svg';
 $svg_write_path = 'assets/materialized-svg/fixture-37.svg';

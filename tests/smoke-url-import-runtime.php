@@ -184,15 +184,16 @@ $assert( 'test-private-runtime' === ( Static_Site_Importer_Theme_Generator::$las
 $provider_result = Static_Site_Importer_URL_Import_Runtime::import_url( array( 'url' => 'private.example.test/', 'slug' => 'private-provider-request' ) );
 $assert( ! is_wp_error( $provider_result ) && 'private-provider-request' === ( $provider_result['theme_slug'] ?? '' ) && empty( $provider_result['url_batch_run'] ), 'external-provider-keeps-normal-artifact-import-contract' );
 
-$runtime_artifact = Static_Site_Importer_URL_Import_Runtime::website_artifact_from_url(
-	array(
-		'url' => 'facebook.com',
-	)
+$policy = Static_Site_Importer_URL_Import_Runtime::url_import_policy();
+$assert( 5 === $policy['pages_per_invocation'], 'policy-default-pages-per-invocation' );
+$assert( 1000 === $policy['total_pages'], 'policy-default-total-pages-scales-beyond-one-invocation' );
+add_filter(
+	'static_site_importer_url_import_policy',
+	static fn( array $value ): array => array_merge( $value, array( 'total_pages' => 2500, 'pages_per_invocation' => '200', 'unknown' => 'ignored' ) )
 );
-
-$assert( ! is_wp_error( $runtime_artifact ), 'runtime-artifact-succeeds-for-bare-host' );
-$assert( 'website/index.html' === ( $runtime_artifact['artifact']['files'][0]['path'] ?? '' ), 'runtime-artifact-returns-website-file' );
-$assert( 'https://facebook.com' === ( $runtime_artifact['source_metadata']['source_url'] ?? '' ), 'runtime-artifact-normalizes-bare-host-url' );
+$policy = Static_Site_Importer_URL_Import_Runtime::url_import_policy();
+$assert( 2500 === $policy['total_pages'], 'policy-allows-raised-total-page-limit' );
+$assert( 5 === $policy['pages_per_invocation'] && ! isset( $policy['unknown'] ), 'policy-normalizes-types-and-whitelists-fields' );
 
 $client_shell_html = '<!doctype html><html><head><title>App</title>' . str_repeat( '<script src="/app.js"></script>', 25 ) . '</head><body><div id="root"></div></body></html>' . str_repeat( ' ', 120000 );
 $client_shell_diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $client_shell_html );

@@ -9,7 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Prepared batches can only be reused when they name this verified digest.
  */
 final class Static_Site_Importer_Shared_Resource_Plan {
-	private const SCHEMA = 'static-site-importer/shared-resource-plan/v1';
+	private const SCHEMA = 'static-site-importer/shared-resource-plan/v2';
 	private Static_Site_Importer_Artifact_Run_Workspace $workspace;
 
 	public function __construct( Static_Site_Importer_Artifact_Run_Workspace $workspace ) {
@@ -28,15 +28,23 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 
 	/** @return array<string,mixed>|WP_Error */
 	public function establish( array $artifact, ?array $paths = null ): array|WP_Error {
-		$resources = self::resources( $artifact, $paths );
-		$plan      = array(
+		$resources = $this->externalize( self::resources( $artifact, $paths ) );
+		if ( is_wp_error( $resources ) ) {
+			return $resources;
+		}
+		return $this->store( $resources );
+	}
+
+	/** @param array<int,array<string,mixed>> $resources @return array<string,mixed>|WP_Error */
+	private function store( array $resources ): array|WP_Error {
+		$plan   = array(
 			'schema'     => self::SCHEMA,
 			'digest'     => self::digest( $resources ),
 			'resources'  => $resources,
 			'verified'   => true,
 			'created_at' => gmdate( 'c' ),
 		);
-		$stored    = $this->workspace->publish_json( 'shared-resource-plan.json', $plan );
+		$stored = $this->workspace->publish_json( 'shared-resource-plan.json', $plan );
 		if ( is_wp_error( $stored ) ) {
 			return $stored;
 		}
@@ -55,8 +63,21 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 				'plan'    => $plan,
 			);
 		}
-		$current = self::resources( $artifact, array_column( $existing['resources'], 'path' ) );
-		$digest  = self::digest( $current );
+		$resources = array_column( $existing['resources'], null, 'path' );
+		$incoming  = $this->externalize( self::resources( $artifact ) );
+		if ( is_wp_error( $incoming ) ) {
+			return array(
+				'digest'  => '',
+				'changed' => false,
+				'plan'    => $incoming,
+			);
+		}
+		foreach ( $incoming as $resource ) {
+			$resources[ $resource['path'] ] = $resource;
+		}
+		$current = array_values( $resources );
+		usort( $current, static fn( array $left, array $right ): int => strcmp( $left['path'], $right['path'] ) );
+		$digest = self::digest( $current );
 		if ( hash_equals( $existing['digest'], $digest ) ) {
 			return array(
 				'digest'  => $digest,
@@ -64,7 +85,7 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 				'plan'    => $existing,
 			);
 		}
-		$plan = $this->establish( $artifact, array_column( $existing['resources'], 'path' ) );
+		$plan = $this->store( $current );
 		return array(
 			'digest'  => is_array( $plan ) ? $plan['digest'] : '',
 			'changed' => true,
@@ -72,11 +93,61 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 		);
 	}
 
+	/** @return array<int,array<string,mixed>>|WP_Error */
+	public function hydrate( array $plan ): array|WP_Error {
+		$resources = array();
+		foreach ( $plan['resources'] ?? array() as $resource ) {
+			$payload = $this->workspace->read_raw( (string) ( $resource['payload_ref'] ?? '' ) );
+			if ( ! is_string( $payload ) || ! hash_equals( (string) ( $resource['payload_sha256'] ?? '' ), hash( 'sha256', $payload ) ) ) {
+				return new WP_Error( 'static_site_importer_shared_payload_verification_failed', 'A retained shared resource payload could not be verified.' );
+			}
+			$encoding = (string) ( $resource['payload_encoding'] ?? '' );
+			if ( ! in_array( $encoding, array( 'content', 'content_base64' ), true ) ) {
+				return new WP_Error( 'static_site_importer_shared_payload_encoding_invalid', 'A retained shared resource payload has an invalid encoding.' );
+			}
+			$resources[] = array(
+				'path'      => (string) $resource['path'],
+				'mime_type' => (string) $resource['mime_type'],
+				$encoding   => $payload,
+			);
+		}
+		return $resources;
+	}
+
+	/** @param array<int,array<string,mixed>> $resources @return array<int,array<string,mixed>>|WP_Error */
+	private function externalize( array $resources ): array|WP_Error {
+		$descriptors = array();
+		foreach ( $resources as $resource ) {
+			$encoding = array_key_exists( 'content_base64', $resource ) ? 'content_base64' : 'content';
+			$payload  = (string) ( $resource[ $encoding ] ?? '' );
+			$hash     = hash( 'sha256', $payload );
+			$ref      = 'shared-resources/' . $hash . '.payload';
+			if ( $this->workspace->read_raw( $ref ) !== $payload ) {
+				$stored = $this->workspace->publish_raw( $ref, $payload );
+				if ( is_wp_error( $stored ) ) {
+					return $stored;
+				}
+			}
+			$descriptors[] = array(
+				'path'             => (string) $resource['path'],
+				'mime_type'        => (string) $resource['mime_type'],
+				'payload_encoding' => $encoding,
+				'payload_bytes'    => strlen( $payload ),
+				'payload_sha256'   => $hash,
+				'payload_ref'      => $ref,
+			);
+		}
+		return $descriptors;
+	}
+
 	/** @return array<int,array<string,mixed>> */
 	private static function resources( array $artifact, ?array $paths = null ): array {
 		$resources = array();
 		foreach ( $artifact['files'] ?? array() as $file ) {
 			if ( ! is_array( $file ) || 'text/html' === strtolower( (string) ( $file['mime_type'] ?? '' ) ) ) {
+				continue;
+			}
+			if ( 'page' === ( $file['metadata']['compilation']['scope'] ?? null ) ) {
 				continue;
 			}
 			$path = (string) ( $file['path'] ?? '' );

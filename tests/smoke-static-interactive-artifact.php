@@ -106,8 +106,11 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( 'blocks-engine/wordpress-site-plan/v2' === ( $plan['schema'] ?? '' ), 'canonical-plan-recorded' );
 	$assert( '' !== (string) ( $provenance['package'] ?? '' ) && '' !== (string) ( $provenance['version'] ?? '' ) && '' !== (string) ( $provenance['reference'] ?? '' ), 'transformer-provenance-is-complete' );
 	$assert( ! isset( $report['blocks_engine']['compiled_site'] ) && ! isset( $report['blocks_engine']['materialization_plan'] ), 'report-has-no-legacy-projections' );
+	$assert( ! isset( $report['generated_theme']['wordpress_site_plan'] ), 'canonical-plan-is-not-duplicated-in-generated-theme-report' );
 	$assert( isset( $report['quality']['pass'] ) && is_array( $validation['diagnostics'] ?? null ) && isset( $validation['quality'] ), 'quality-and-validation-are-public-siblings' );
 	$assert( is_array( $plan['diagnostics'] ?? null ), 'canonical-plan-diagnostics-are-recorded' );
+	$assert( array() !== array_filter( $receipt['plan']['writes'] ?? array(), static fn( array $write ): bool => isset( $write['payload']['data'] ) ), 'materialization-receipt-retains-write-payloads' );
+	$assert( array() === array_filter( $plan['assets'] ?? array(), static fn( array $asset ): bool => isset( $asset['content'] ) || isset( $asset['content_base64'] ) ) && array() === array_filter( $plan['writes'] ?? array(), static fn( array $write ): bool => isset( $write['payload']['data'] ) || isset( $write['canonical_payload'] ) ), 'canonical-plan-report-omits-materialization-payloads' );
 	$assert( 2 <= count( $plan['template_parts'] ?? array() ), 'canonical-plan-extracts-shared-chrome' );
 	$assert( ! str_contains( $content, 'Kitchen Home' ) && ! str_contains( $content, 'Kitchen Footer' ), 'page-markup-does-not-duplicate-shared-chrome' );
 	$assert( 'static-site-importer/document-metadata/v1' === ( $metadata['schema'] ?? '' ), 'document-metadata-recorded' );

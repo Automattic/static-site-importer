@@ -165,16 +165,28 @@ final class Static_Site_Importer_Font_Materializer {
 				'svg_consumers' => array(),
 			);
 		}
-		$imports = array();
+		$imports    = array();
+		$import_ids = array();
 		foreach ( $contract['imports'] ?? array() as $import ) {
 			$source = is_array( $import ) && is_array( $import['source'] ?? null ) ? $import['source'] : array();
-			if ( ! is_array( $import ) || 'declared' !== ( $import['state'] ?? '' ) || ! is_string( $import['id'] ?? null ) || 'css' !== ( $source['format'] ?? '' ) || ! is_string( $source['url'] ?? null ) || ! self::is_google_stylesheet_url( $source['url'] ) ) {
+			$state  = is_array( $import ) ? (string) ( $import['state'] ?? '' ) : '';
+			$id     = is_array( $import ) ? (string) ( $import['id'] ?? '' ) : '';
+			if ( ! is_array( $import ) || '' === $id || isset( $import_ids[ $id ] ) || ! in_array( $state, array( 'declared', 'unresolved', 'unsupported' ), true ) || 'css' !== ( $source['format'] ?? '' ) || ! is_string( $source['url'] ?? null ) ) {
 				$diagnostics[] = self::diagnostic( 'producer_import_invalid' );
 				return new WP_Error( 'static_site_importer_font_materialization_producer_import_invalid', '', $diagnostics );
 			}
-			$imports[ $import['id'] ] = array(
-				'id'              => $import['id'],
-				'href'            => $source['url'],
+			$import_ids[ $id ] = true;
+			if ( 'declared' !== $state ) {
+				continue;
+			}
+			$href = self::normalize_google_stylesheet_url( $source['url'] );
+			if ( null === $href ) {
+				$diagnostics[] = self::diagnostic( 'producer_import_invalid' );
+				return new WP_Error( 'static_site_importer_font_materialization_producer_import_invalid', '', $diagnostics );
+			}
+			$imports[ $id ] = array(
+				'id'              => $id,
+				'href'            => $href,
 				'expected_digest' => $source['expected_digest'] ?? null,
 			);
 		}
@@ -194,7 +206,7 @@ final class Static_Site_Importer_Font_Materializer {
 				$diagnostics[] = self::diagnostic( 'producer_face_or_receipt_invalid' );
 				return new WP_Error( 'static_site_importer_font_materialization_producer_face_invalid', '', $diagnostics );
 			}
-			$family = trim( (string) ( $face['family'] ?? '' ) );
+			$family = (string) preg_replace( '/\?[0-9]+$/', '', trim( (string) ( $face['family'] ?? '' ) ) );
 			$style  = (string) ( $face['style'] ?? 'normal' );
 			if ( '' === $family || ! in_array( $style, array( 'normal', 'italic' ), true ) || ! self::valid_weight( $face['weight'] ?? null ) || ! self::valid_axes( $face['axes'] ) ) {
 				$diagnostics[] = self::diagnostic( 'producer_face_invalid' );
@@ -943,8 +955,23 @@ final class Static_Site_Importer_Font_Materializer {
 	}
 
 	private static function is_google_stylesheet_url( string $url ): bool {
-		$parts = wp_parse_url( $url );
-		return is_array( $parts ) && 'https' === strtolower( (string) ( $parts['scheme'] ?? '' ) ) && 'fonts.googleapis.com' === strtolower( (string) ( $parts['host'] ?? '' ) ) && ( ! isset( $parts['port'] ) || 443 === (int) $parts['port'] ) && ! isset( $parts['user'] ) && ! isset( $parts['pass'] ) && in_array( (string) ( $parts['path'] ?? '' ), array( '/css', '/css2' ), true );
+		return null !== self::normalize_google_stylesheet_url( $url );
+	}
+
+	private static function normalize_google_stylesheet_url( string $url ): ?string {
+		$url = html_entity_decode( trim( $url ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		if ( str_starts_with( $url, '//' ) ) {
+			$url = 'https:' . $url;
+		}
+		$parts  = wp_parse_url( $url );
+		$scheme = is_array( $parts ) ? strtolower( (string) ( $parts['scheme'] ?? '' ) ) : '';
+		$port   = is_array( $parts ) && isset( $parts['port'] ) ? (int) $parts['port'] : null;
+		if ( ! is_array( $parts ) || ! in_array( $scheme, array( 'http', 'https' ), true ) || 'fonts.googleapis.com' !== strtolower( (string) ( $parts['host'] ?? '' ) ) || ( null !== $port && ( ( 'http' === $scheme && 80 !== $port ) || ( 'https' === $scheme && 443 !== $port ) ) ) || isset( $parts['user'] ) || isset( $parts['pass'] ) || ! in_array( (string) ( $parts['path'] ?? '' ), array( '/css', '/css2' ), true ) ) {
+			return null;
+		}
+		$query = isset( $parts['query'] ) ? (string) $parts['query'] : '';
+		$query = (string) preg_replace( '/(\bfamily=[^&?]+)\?[0-9]+(?=&|$)/i', '$1', $query );
+		return 'https://fonts.googleapis.com' . (string) ( $parts['path'] ?? '' ) . ( '' !== $query ? '?' . $query : '' );
 	}
 
 	private static function resolved_plan_has_google_stylesheet( array $resolved_plan ): bool {

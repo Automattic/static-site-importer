@@ -376,6 +376,35 @@ if ( ! function_exists( 'static_site_importer_ability_import_figma' ) ) {
 }
 
 
+if ( ! function_exists( 'static_site_importer_execute_import_ability' ) ) {
+	/**
+	 * Execute an SSI import through its registered ability.
+	 *
+	 * The fallback keeps transport adapters usable on WordPress versions that do
+	 * not expose the Abilities API while preserving the same ability callback.
+	 *
+	 * @param string              $ability_name      Ability name.
+	 * @param array<string,mixed> $input             Ability input.
+	 * @param callable-string     $fallback_callback Local ability callback.
+	 * @param bool                $prefer_fallback   Whether to use the callback first.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	function static_site_importer_execute_import_ability( string $ability_name, array $input, string $fallback_callback, bool $prefer_fallback = false ) {
+		if ( $prefer_fallback ) {
+			return call_user_func( $fallback_callback, $input );
+		}
+
+		if ( function_exists( 'wp_get_ability' ) ) {
+			$ability = wp_get_ability( $ability_name );
+			if ( is_object( $ability ) ) {
+				return $ability->execute( $input );
+			}
+		}
+
+		return call_user_func( $fallback_callback, $input );
+	}
+}
+
 if ( ! function_exists( 'static_site_importer_ability_export_theme' ) ) {
 	/**
 	 * Ability callback for website artifact exports.

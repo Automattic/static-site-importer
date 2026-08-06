@@ -738,21 +738,12 @@ $url_playground_response = static_site_importer_rest_create_import(
 		)
 	)
 );
-$assert( ! is_wp_error( $url_playground_response ), 'rest-playground-url-only-does-not-error', is_wp_error( $url_playground_response ) ? $url_playground_response->get_error_code() . ': ' . $url_playground_response->get_error_message() : '' );
-if ( is_wp_error( $url_playground_response ) ) {
-	$url_playground_response = array();
-}
-$assert( true === ( $url_playground_response['success'] ?? null ), 'rest-playground-url-only-succeeds' );
-$assert( 'https://facebook.com' === ( $GLOBALS['ssi_last_url_provider_request']['url'] ?? '' ), 'rest-playground-url-only-normalizes-bare-host' );
-$assert( 'test-provider' === ( $GLOBALS['ssi_last_url_provider_request']['provider'] ?? '' ), 'rest-playground-url-only-preserves-provider-request' );
-$assert( 'playground-provider-arg' === ( $GLOBALS['ssi_last_url_provider_request']['provider_args']['token'] ?? '' ), 'rest-playground-url-only-preserves-provider-args' );
+$assert( ! is_wp_error( $url_playground_response ) && str_starts_with( $url_playground_response['preview']['url'] ?? '', 'https://playground.wordpress.net/#' ), 'rest-playground-url-only-opens-disposable-target' );
 $url_playground_blueprint_json = rawurldecode( substr( (string) ( $url_playground_response['preview']['playground']['blueprint_url'] ?? '' ), strlen( 'https://playground.wordpress.net/#' ) ) );
 $url_playground_blueprint      = json_decode( $url_playground_blueprint_json, true );
-$url_playground_import_code    = is_array( $url_playground_blueprint ) ? (string) ( $url_playground_blueprint['steps'][2]['code'] ?? '' ) : '';
-$assert( str_contains( $url_playground_blueprint_json, 'Facebook Fixture' ), 'rest-playground-url-only-blueprint-contains-fetched-artifact' );
-$assert( str_contains( $url_playground_import_code, "'source_url' => 'https://facebook.com'" ), 'rest-playground-url-only-blueprint-preserves-source-url' );
-$assert( str_contains( $url_playground_import_code, "'provider_token' => 'playground-provider-arg'" ), 'rest-playground-url-only-blueprint-preserves-provider-arg-metadata' );
-$assert( str_contains( $url_playground_import_code, "'url_import_provider' => 'test-url-playground-provider'" ), 'rest-playground-url-only-blueprint-preserves-provider' );
+$url_playground_code           = (string) ( $url_playground_blueprint['steps'][2]['code'] ?? '' );
+$assert( str_contains( $url_playground_code, "'url' => 'https://facebook.com" ) && str_contains( $url_playground_code, '$result["continuation"]' ) && str_contains( $url_playground_code, '$input["plan"]'), 'rest-playground-url-only-plans-resumes-and-applies-in-disposable-target' );
+$assert( array() === $GLOBALS['ssi_last_url_provider_request'], 'rest-playground-url-only-does-not-call-provider-or-collector' );
 $assert( array() === Static_Site_Importer_Theme_Generator::$last_args, 'rest-playground-url-only-does-not-import-current-site' );
 
 Static_Site_Importer_Theme_Generator::$last_args = array();
@@ -767,7 +758,8 @@ $current_site_url_response = static_site_importer_rest_create_import(
 	)
 );
 $assert( ! is_wp_error( $current_site_url_response ), 'rest-current-site-url-only-does-not-error', is_wp_error( $current_site_url_response ) ? $current_site_url_response->get_error_code() . ': ' . $current_site_url_response->get_error_message() : '' );
-$assert( 'https://facebook.com' === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata']['source_url'] ?? '' ), 'rest-current-site-url-only-normalizes-bare-host' );
+$assert( 'static_site_importer_url_client_rendered_app' === ( $current_site_url_response['error']['code'] ?? '' ), 'rest-current-site-url-only-uses-canonical-collector' );
+$assert( array() === $GLOBALS['ssi_last_url_provider_request'], 'rest-current-site-url-only-ignores-provider-shortcuts' );
 
 $client_shell_html = '<!doctype html><html><head><title>Client App</title>' . str_repeat( '<script src="/bundle.js"></script>', 25 ) . '</head><body><div id="root"></div></body></html>' . str_repeat( ' ', 120000 );
 $pasted_shell_response = static_site_importer_rest_create_import(

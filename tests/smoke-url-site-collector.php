@@ -73,11 +73,11 @@ $responses = array(
 	),
 	'https://example.test/services.html' => array(
 		'content_type' => 'text/html',
-		'body'         => '<!doctype html><html><body><a href="team.html">Team</a><main><h1>Services</h1></main></body></html>',
+		'body'         => '<!doctype html><html><head><link rel="stylesheet" href="/files/main.css?v=1"></head><body><a href="team.html">Team</a><main><h1>Services</h1></main></body></html>',
 	),
 	'https://example.test/team.html' => array(
 		'content_type' => 'text/html',
-		'body'         => '<!doctype html><html><body><main><h1>Team</h1><img src="https://cdn.example.test/team.webp"></main></body></html>',
+		'body'         => '<!doctype html><html><head><style>.team{background:url("https://cdn.example.test/team-style.webp")}</style></head><body><main><h1>Team</h1><img src="https://cdn.example.test/team.webp"></main></body></html>',
 	),
 	'https://example.test/contact.html' => array(
 		'content_type' => 'text/html',
@@ -94,6 +94,7 @@ $responses = array(
 	'https://example.test/uploads/logo-2x.png' => array( 'content_type' => 'image/png', 'body' => "\x89PNGlogo2" ),
 	'https://example.test/uploads/pattern.svg' => array( 'content_type' => 'image/svg+xml', 'body' => '<svg xmlns="http://www.w3.org/2000/svg"></svg>' ),
 	'https://cdn.example.test/team.webp' => array( 'content_type' => 'image/webp', 'body' => 'webp-team' ),
+	'https://cdn.example.test/team-style.webp' => array( 'content_type' => 'image/webp', 'body' => 'webp-team-style' ),
 	'https://cdn.example.test/font.woff2' => array( 'content_type' => 'font/woff2', 'body' => 'woff2-font' ),
 );
 
@@ -129,13 +130,35 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 		$failures[] = 'FAIL [' . $label . ']' . ( '' !== $detail ? ': ' . $detail : '' );
 	}
 };
+$rewrite_html = new ReflectionMethod( Static_Site_Importer_URL_Site_Collector::class, 'rewrite_html' );
+$invalid_icon = $rewrite_html->invoke( null, '<link rel="apple-touch-icon" href="/404.html"><link rel="icon" href="images/missing.png">', 'https://example.test/page/', 'website/page/index.html', array( 'https://www.example.test/404.html' => 'website/_external/www.example.test/404.html' ), array( 'https://example.test/404.html' => 'https://www.example.test/404.html' ), 'https://example.test/', array() );
+$assert( str_contains( $invalid_icon, 'href="https://www.example.test/404.html"' ), 'redirected-html-backed-link-assets-retain-explicit-source-url' );
+$assert( str_contains( $invalid_icon, 'href="https://example.test/page/images/missing.png"' ), 'uncollected-link-assets-retain-explicit-source-url' );
+$redirected_icon = $rewrite_html->invoke( null, '<link rel="apple-touch-icon" href="images/logo.jpg">', 'https://www.example.test/404.html', 'website/_external/www.example.test/404.html', array( 'https://cdn.example.test/logo.jpg' => 'website/images/logo.jpg' ), array( 'https://www.example.test/images/logo.jpg' => 'https://cdn.example.test/logo.jpg' ), 'https://example.test/', array() );
+$assert( str_contains( $redirected_icon, 'href="../../images/logo.jpg"' ), 'redirected-collected-link-assets-use-portable-paths' );
+$html_asset = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://html-asset.test/',
+	array( 'require_complete_collection' => true, 'request_delay_ms' => 0 ),
+	static function ( string $url, array $args ) {
+		if ( 'https://html-asset.test/sitemap.xml' === $url ) {
+			return new WP_Error( 'no_sitemap', '' );
+		}
+		if ( 'https://html-asset.test/' === $url ) {
+			return array( 'body' => '<link rel="apple-touch-icon" href="/icon.png"><main>Home</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
+		}
+		return array( 'body' => '<link rel="stylesheet" href="files/main_style.css?1554397758"><main>Not found</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => 'https://www.html-asset.test/404.html' ) );
+	}
+);
+$html_asset_files = array_column( $html_asset['artifact']['files'] ?? array(), null, 'path' );
+$assert( ! is_wp_error( $html_asset ) && ! isset( $html_asset_files['website/_external/www.html-asset.test/404.html'] ), 'redirected-html-asset-payload-is-not-packaged' );
+$assert( str_contains( (string) ( $html_asset_files['website/index.html']['content'] ?? '' ), 'href="https://www.html-asset.test/404.html"' ), 'redirected-html-asset-retains-explicit-final-url' );
 
 $assert( ! is_wp_error( $result ), 'collection-succeeds', is_wp_error( $result ) ? $result->get_error_message() : '' );
 $assert( 'public-static-site-collector' === ( $result['provider'] ?? '' ), 'provider-recorded' );
 $assert( 'website/index.html' === ( $result['artifact']['entrypoint'] ?? '' ), 'root-entrypoint' );
 $assert( array( 'max_files' => 70, 'max_file_bytes' => 10485760, 'max_total_bytes' => 104857600 ) === ( $result['artifact']['compiler_limits'] ?? null ), 'collector-declares-bounded-compiler-limits' );
 $assert( 4 === ( $result['source_metadata']['collection']['pages'] ?? 0 ), 'sitemap-index-alias-deduplicated' );
-$assert( 8 === ( $result['source_metadata']['collection']['assets'] ?? 0 ), 'static-policy-collects-frozen-rendering-assets' );
+$assert( 9 === ( $result['source_metadata']['collection']['assets'] ?? 0 ), 'static-policy-collects-frozen-rendering-assets' );
 $assert( array() === ( $result['source_metadata']['collection']['failures'] ?? null ), 'no-collection-failures' );
 $snapshot = $result['source_metadata']['snapshot'] ?? array();
 $assert( 'static-site-importer/url-snapshot/v1' === ( $snapshot['schema'] ?? '' ) && 64 === strlen( (string) ( $snapshot['sha256'] ?? '' ) ), 'snapshot-hash-recorded' );
@@ -151,6 +174,7 @@ $assert( isset( $files['website/files/main-a798de8e.css'] ), 'query-addressed-st
 $assert( isset( $files['website/_external/cdn.example.test/font.woff2'] ), 'external-font-packaged' );
 $assert( isset( $files['website/_external/cdn.example.test/team.webp'] ), 'external-image-packaged' );
 $assert( isset( $files['website/files/components.css'] ), 'quoted-css-import-packaged' );
+$assert( array( 'scope' => 'shared' ) === ( $files['website/files/main-a798de8e.css']['metadata']['compilation'] ?? null ) && array( 'scope' => 'shared' ) === ( $files['website/_external/cdn.example.test/font.woff2']['metadata']['compilation'] ?? null ) && array( 'scope' => 'shared' ) === ( $files['website/_external/cdn.example.test/team-style.webp']['metadata']['compilation'] ?? null ) && array( 'scope' => 'page', 'id' => 'website/team.html' ) === ( $files['website/_external/cdn.example.test/team.webp']['metadata']['compilation'] ?? null ), 'assets-declare-reference-derived-compilation-ownership' );
 $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'href="/services.html"' ), 'page-link-preserved-for-route-rewriting' );
 $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'src="uploads/logo.png"' ), 'image-link-rewritten' );
 $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'url(uploads/hero.jpg)' ), 'inline-background-rewritten' );
@@ -370,6 +394,40 @@ $incomplete_fetcher = static function ( string $url, array $args ) use ( $incomp
 };
 $incomplete_result = Static_Site_Importer_URL_Site_Collector::collect( 'https://example.test/', array( 'max_pages' => 10, 'max_assets' => 20, 'request_delay_ms' => 0, 'require_complete_collection' => true ), $incomplete_fetcher );
 $assert( is_wp_error( $incomplete_result ) && 'missing_fixture' === ( $incomplete_result->get_error_data()['collection']['failures'][0]['code'] ?? null ), 'complete-collection-rejects-fetch-failures' );
+
+$critical_asset_fetcher = static function ( string $url ) {
+	if ( 'https://critical.test/sitemap.xml' === $url ) {
+		return new WP_Error( 'missing_sitemap', 'No sitemap.' );
+	}
+	if ( 'https://critical.test/' === $url ) {
+		return array(
+			'body'     => '<!doctype html><html><head><link rel="apple-touch-icon" href="/touch-icon.png"><link rel="stylesheet" href="https://fonts.example.test/site.css"><link rel="stylesheet" href="/site.css"></head><body><main><a href="/linked-image.jpg">Critical assets</a></main></body></html>',
+			'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ),
+		);
+	}
+	return new WP_Error( 'critical_asset_failed', 'The critical stylesheet failed.' );
+};
+$external_critical = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://critical.test/',
+	array( 'max_pages' => 2, 'max_assets' => 20, 'request_delay_ms' => 0, 'require_complete_collection' => true, 'asset_failure_policy' => 'preserve_failed_external_assets', 'hydration_mode' => 'page_ready', '_route_set' => array( 'https://critical.test/' ) ),
+	static function ( string $url, array $args ) use ( $critical_asset_fetcher ) {
+		if ( 'https://critical.test/site.css' === $url ) {
+			return array( 'body' => 'body{color:#000}', 'metadata' => array( 'content_type' => 'text/css', 'final_url' => $url ) );
+		}
+		return $critical_asset_fetcher( $url, $args );
+	}
+);
+$external_files = is_wp_error( $external_critical ) ? array() : array_column( $external_critical['artifact']['files'], null, 'path' );
+$assert( ! is_wp_error( $external_critical ) && 3 === ( $external_critical['source_metadata']['collection']['external_asset_retained']['count'] ?? 0 ) && str_contains( (string) ( $external_files['website/index.html']['content'] ?? '' ), 'https://fonts.example.test/site.css' ), 'failed-cross-origin-critical-asset-remains-external' );
+$assert( str_contains( (string) ( $external_files['website/index.html']['content'] ?? '' ), 'href="https://critical.test/touch-icon.png"' ), 'optional-touch-icon-remains-resolvable-in-page-ready-artifact' );
+$assert( str_contains( (string) ( $external_files['website/index.html']['content'] ?? '' ), 'href="https://critical.test/linked-image.jpg"' ), 'non-page-anchor-remains-resolvable-in-page-ready-artifact' );
+
+$same_origin_critical = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://critical.test/',
+	array( 'max_pages' => 2, 'max_assets' => 20, 'request_delay_ms' => 0, 'require_complete_collection' => true, 'asset_failure_policy' => 'preserve_failed_external_assets', 'hydration_mode' => 'page_ready', '_route_set' => array( 'https://critical.test/' ) ),
+	$critical_asset_fetcher
+);
+$assert( is_wp_error( $same_origin_critical ) && 'critical_asset_failed' === ( $same_origin_critical->get_error_data()['collection']['failures'][0]['code'] ?? '' ), 'failed-same-origin-critical-asset-remains-fatal', is_wp_error( $same_origin_critical ) ? ( wp_json_encode( $same_origin_critical->get_error_data() ) ?: '' ) : wp_json_encode( $same_origin_critical ) );
 
 $redirect_responses = array(
 	'https://redirect.test/sitemap.xml' => array( 'content_type' => 'application/xml', 'body' => '<urlset><url><loc>https://redirect.test/</loc></url><url><loc>https://redirect.test/go</loc></url></urlset>' ),
