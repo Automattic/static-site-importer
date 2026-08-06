@@ -5527,6 +5527,7 @@ test('recipe runs editor-validate-blocks against imported content after each imp
   assert.equal(persistenceValidationStep.command, EDITOR_VALIDATE_BLOCKS_COMMAND);
   assert.equal(persistenceValidationStep.allowFailure, false);
   assert.ok(persistenceValidationStep.args.includes('target=front-page'));
+  assert.equal(solvedCandidateRecipe.workflow.steps.filter((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND).length, 1);
 
   const disabled = buildFixtureMatrixRecipe({
     matrix,
