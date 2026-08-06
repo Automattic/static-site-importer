@@ -16,6 +16,7 @@
     "tests/smoke-import-diagnostic-contract.php": { "environment": "standalone-php" },
     "tests/smoke-import-disposition.php": { "environment": "standalone-php" },
     "tests/smoke-import-permission-filter.php": { "environment": "standalone-php" },
+    "tests/smoke-current-site-capabilities.php": { "environment": "standalone-php" },
     "tests/smoke-importer-block.php": { "environment": "standalone-php" },
     "tests/smoke-inline-svg-materialization.php": { "environment": "standalone-php" },
     "tests/smoke-materialized-block-content-validation.php": { "environment": "standalone-php" },

@@ -98,7 +98,15 @@ function wp_insert_post( array $post, bool $wp_error ) {
 class WP_Post_Type {
 	public string $name;
 	public bool $public;
-	public function __construct( string $name, bool $public = true ) { $this->name = $name; $this->public = $public; }
+	public object $cap;
+	public function __construct( string $name, bool $public = true ) {
+		$this->name = $name;
+		$this->public = $public;
+		$this->cap = (object) array(
+			'create_posts'  => 'page' === $name ? 'edit_pages' : 'edit_posts',
+			'publish_posts' => 'page' === $name ? 'publish_pages' : 'publish_posts',
+		);
+	}
 }
 function get_post_type_object( string $post_type ): ?object {
 	return in_array( $post_type, array( 'page', 'post' ), true ) ? new WP_Post_Type( $post_type ) : null;
