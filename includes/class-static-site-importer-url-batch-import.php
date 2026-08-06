@@ -953,7 +953,10 @@ final class Static_Site_Importer_URL_Batch_Import {
 		$routes   = array_values( array_unique( array_filter( $routes, 'is_string' ) ) );
 		usort(
 			$routes,
-			static function ( string $a, string $b ): int {
+			static function ( string $a, string $b ) use ( $entry ): int {
+				if ( $a === $entry || $b === $entry ) {
+					return $a === $entry ? 1 : -1;
+				}
 				$depth_comparison = substr_count( trim( (string) self::url_parts( $a, PHP_URL_PATH ), '/' ), '/' ) <=> substr_count( trim( (string) self::url_parts( $b, PHP_URL_PATH ), '/' ), '/' );
 				return 0 !== $depth_comparison ? $depth_comparison : strcmp( $a, $b );
 			}
