@@ -279,6 +279,12 @@ class Static_Site_Importer_URL_Site_Collector {
 			if ( isset( $resources[ $final_url ] ) ) {
 				continue;
 			}
+			$content_type = self::content_type( $response, 'application/octet-stream' );
+			if ( in_array( $content_type, array( 'text/html', 'application/xhtml+xml' ), true ) ) {
+				$external_assets[ $asset_url ] = 'unexpected_html';
+				$external_assets[ $final_url ] = 'unexpected_html';
+				continue;
+			}
 
 			$body  = (string) $response['body'];
 			$bytes = strlen( $body );
@@ -291,7 +297,6 @@ class Static_Site_Importer_URL_Site_Collector {
 				break;
 			}
 
-			$content_type            = self::content_type( $response, 'application/octet-stream' );
 			$total_bytes            += $bytes;
 			$resources[ $final_url ] = array(
 				'kind'         => 'asset',

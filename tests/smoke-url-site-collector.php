@@ -136,6 +136,22 @@ $assert( str_contains( $invalid_icon, 'href="https://www.example.test/404.html"'
 $assert( str_contains( $invalid_icon, 'href="https://example.test/page/images/missing.png"' ), 'uncollected-link-assets-retain-explicit-source-url' );
 $redirected_icon = $rewrite_html->invoke( null, '<link rel="apple-touch-icon" href="images/logo.jpg">', 'https://www.example.test/404.html', 'website/_external/www.example.test/404.html', array( 'https://cdn.example.test/logo.jpg' => 'website/images/logo.jpg' ), array( 'https://www.example.test/images/logo.jpg' => 'https://cdn.example.test/logo.jpg' ), 'https://example.test/', array() );
 $assert( str_contains( $redirected_icon, 'href="../../images/logo.jpg"' ), 'redirected-collected-link-assets-use-portable-paths' );
+$html_asset = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://html-asset.test/',
+	array( 'require_complete_collection' => true, 'request_delay_ms' => 0 ),
+	static function ( string $url, array $args ) {
+		if ( 'https://html-asset.test/sitemap.xml' === $url ) {
+			return new WP_Error( 'no_sitemap', '' );
+		}
+		if ( 'https://html-asset.test/' === $url ) {
+			return array( 'body' => '<link rel="apple-touch-icon" href="/icon.png"><main>Home</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
+		}
+		return array( 'body' => '<link rel="stylesheet" href="files/main_style.css?1554397758"><main>Not found</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => 'https://www.html-asset.test/404.html' ) );
+	}
+);
+$html_asset_files = array_column( $html_asset['artifact']['files'] ?? array(), null, 'path' );
+$assert( ! is_wp_error( $html_asset ) && ! isset( $html_asset_files['website/_external/www.html-asset.test/404.html'] ), 'redirected-html-asset-payload-is-not-packaged' );
+$assert( str_contains( (string) ( $html_asset_files['website/index.html']['content'] ?? '' ), 'href="https://www.html-asset.test/404.html"' ), 'redirected-html-asset-retains-explicit-final-url' );
 
 $assert( ! is_wp_error( $result ), 'collection-succeeds', is_wp_error( $result ) ? $result->get_error_message() : '' );
 $assert( 'public-static-site-collector' === ( $result['provider'] ?? '' ), 'provider-recorded' );
