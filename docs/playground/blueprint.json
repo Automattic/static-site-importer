@@ -13,10 +13,22 @@
       "step": "login"
     },
     {
-      "step": "installPlugin",
-      "pluginData": {
+      "step": "writeFile",
+      "path": "/tmp/static-site-importer-{{PACKAGE_SHA256}}.zip",
+      "data": {
         "resource": "url",
         "url": "https://github.com/Automattic/static-site-importer/releases/download/{{RELEASE_TAG}}/static-site-importer.zip"
+      }
+    },
+    {
+      "step": "runPHP",
+      "code": "<?php if ( ! hash_equals( '{{PACKAGE_SHA256}}', hash_file( 'sha256', '/tmp/static-site-importer-{{PACKAGE_SHA256}}.zip' ) ) ) { throw new RuntimeException( 'Static Site Importer package integrity verification failed.' ); } ?>"
+    },
+    {
+      "step": "installPlugin",
+      "pluginData": {
+        "resource": "vfs",
+        "path": "/tmp/static-site-importer-{{PACKAGE_SHA256}}.zip"
       },
       "options": {
         "activate": true,
