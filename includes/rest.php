@@ -563,7 +563,7 @@ function static_site_importer_rest_open_in_playground( array $source, array $inp
 	$input['activate']  = true;
 	$input['overwrite'] = true;
 
-	$runtime = static_site_importer_rest_source_runtime( $source, $input );
+	$runtime = static_site_importer_rest_source_runtime( $source );
 	if ( is_wp_error( $runtime ) ) {
 		return $runtime;
 	}
@@ -701,7 +701,7 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
 		return $result;
 	};
 
-	$runtime = static_site_importer_rest_source_runtime( $source, $input );
+	$runtime = static_site_importer_rest_source_runtime( $source );
 	if ( is_wp_error( $runtime ) ) {
 		return $runtime;
 	}
@@ -728,6 +728,7 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
  */
 function static_site_importer_rest_execute_import_ability( string $ability_name, array $input, string $fallback_callback, bool $prefer_fallback = false ) {
 	if ( $prefer_fallback ) {
+		// @phpstan-ignore-next-line argument.type — $fallback_callback is a function name string resolved by call_user_func at runtime.
 		return call_user_func( $fallback_callback, $input );
 	}
 
@@ -740,6 +741,7 @@ function static_site_importer_rest_execute_import_ability( string $ability_name,
 		}
 	}
 
+	// @phpstan-ignore-next-line argument.type — $fallback_callback is a function name string resolved by call_user_func at runtime.
 	return call_user_func( $fallback_callback, $input );
 }
 
@@ -782,7 +784,6 @@ function static_site_importer_rest_route_url_import( array $source, array $input
 		)
 	);
 
-	// @phpstan-ignore-next-line argument.type — the fallback callback is a function name string resolved by call_user_func at runtime.
 	$result = static_site_importer_rest_execute_import_ability(
 		'static-site-importer/import-url',
 		$ability_in,
@@ -794,11 +795,11 @@ function static_site_importer_rest_route_url_import( array $source, array $input
 
 	if ( ! empty( $result['continuation'] ) ) {
 		return array(
-			'success'             => true,
-			'continuation'        => true,
-			'continuation_reason' => isset( $result['continuation_reason'] ) ? (string) $result['continuation_reason'] : '',
-			'import_id'           => isset( $result['import_id'] ) ? (string) $result['import_id'] : '',
-			'url_batch_run'       => isset( $result['url_batch_run'] ) && is_array( $result['url_batch_run'] ) ? $result['url_batch_run'] : array(),
+			'success'               => true,
+			'continuation'          => true,
+			'continuation_reason'   => isset( $result['continuation_reason'] ) ? (string) $result['continuation_reason'] : '',
+			'import_id'             => isset( $result['import_id'] ) ? (string) $result['import_id'] : '',
+			'url_batch_run'         => isset( $result['url_batch_run'] ) && is_array( $result['url_batch_run'] ) ? $result['url_batch_run'] : array(),
 			'import_report_summary' => isset( $result['import_report_summary'] ) && is_array( $result['import_report_summary'] ) ? $result['import_report_summary'] : array(),
 		);
 	}
@@ -808,9 +809,9 @@ function static_site_importer_rest_route_url_import( array $source, array $input
 	// branch above is where the preview/requires_ability_capable_target
 	// envelope is constructed.
 	return array(
-		'success'             => true,
-		'import_id'           => isset( $result['import_id'] ) ? (string) $result['import_id'] : '',
-		'result'              => isset( $result['result'] ) && is_array( $result['result'] ) ? $result['result'] : array(),
+		'success'               => true,
+		'import_id'             => isset( $result['import_id'] ) ? (string) $result['import_id'] : '',
+		'result'                => isset( $result['result'] ) && is_array( $result['result'] ) ? $result['result'] : array(),
 		'import_report_summary' => isset( $result['import_report_summary'] ) && is_array( $result['import_report_summary'] ) ? $result['import_report_summary'] : array(),
 		'terminal_batch_result' => isset( $result['url_batch_run']['terminal_batch_result'] ) && is_array( $result['url_batch_run']['terminal_batch_result'] )
 			? $result['url_batch_run']['terminal_batch_result']
@@ -851,14 +852,14 @@ function static_site_importer_rest_url_playground_unavailable( string $url, stri
 		),
 		'input'                 => $input,
 		'preview'               => array(
-			'status'      => 'unavailable',
-			'url'         => $url,
-			'message'     => __( 'URL preview needs a disposable WordPress target that exposes the static-site-importer/import-url ability. The reference client must run the import inside its own ability-capable environment.', 'static-site-importer' ),
-			'requires_ability_capable_target' => array(
-				'schema'     => 'static-site-importer/url-playground-requirement/v1',
-				'ability'    => 'static-site-importer/import-url',
-				'url'        => $url,
-				'import_id'  => $placeholder_id,
+			'status'                             => 'unavailable',
+			'url'                                => $url,
+			'message'                            => __( 'URL preview needs a disposable WordPress target that exposes the static-site-importer/import-url ability. The reference client must run the import inside its own ability-capable environment.', 'static-site-importer' ),
+			'requires_ability_capable_target'   => array(
+				'schema'       => 'static-site-importer/url-playground-requirement/v1',
+				'ability'      => 'static-site-importer/import-url',
+				'url'          => $url,
+				'import_id'    => $placeholder_id,
 				'instructions' => __( 'Inside a disposable WordPress instance, register the Static Site Importer plugin and POST to /wp-json/static-site-importer/v1/imports with the same source.url and import_id, looping on the continuation envelope until terminal.', 'static-site-importer' ),
 			),
 		),
@@ -901,10 +902,9 @@ function static_site_importer_rest_source_artifact( array $source ) {
  * Convert REST source input into the normalized website artifact runtime envelope.
  *
  * @param array<string,mixed> $source Source payload.
- * @param array<string,mixed> $input  Import input carrying optional provider args.
  * @return array{artifact:array<string,mixed>,source_metadata:array<string,mixed>,provider:string}|WP_Error
  */
-function static_site_importer_rest_source_runtime( array $source, array $input = array() ) {
+function static_site_importer_rest_source_runtime( array $source ) {
 	if ( isset( $source['artifact'] ) && is_array( $source['artifact'] ) ) {
 		return array(
 			'artifact'        => $source['artifact'],
