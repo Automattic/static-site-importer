@@ -722,7 +722,7 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
  *
  * @param string              $ability_name      Ability name.
  * @param array<string,mixed> $input             Ability input.
- * @param callable-string     $fallback_callback Local callback for non-Abilities test/runtime contexts.
+ * @param string              $fallback_callback Local callback (function name) for non-Abilities test/runtime contexts.
  * @param bool                $prefer_fallback   Whether to call the local callback before wp_get_ability().
  * @return array<string,mixed>|WP_Error
  */
@@ -782,6 +782,7 @@ function static_site_importer_rest_route_url_import( array $source, array $input
 		)
 	);
 
+	// @phpstan-ignore-next-line argument.type — the fallback callback is a function name string resolved by call_user_func at runtime.
 	$result = static_site_importer_rest_execute_import_ability(
 		'static-site-importer/import-url',
 		$ability_in,
