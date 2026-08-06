@@ -407,12 +407,8 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
   // Discovery is deliberately a separate, short-lived Codebox runtime. It only
   // asks SSI for its registry-derived plan; package resolution happens on the
   // host while assembling the following fresh import runtime.
-  const dependencyPlan = options.hostDependencyOrchestration
-    ? await discoverFixtureDependencyPlan({ fixtures, outputDirectory, staticSiteImporterPath, options, batchSuffix })
-    : undefined;
-  const resolvedDependencyPlan = dependencyPlan
-    ? await resolveHostDependencyPlan(dependencyPlan, path.join(outputDirectory, 'dependency-cache'))
-    : undefined;
+  const dependencyPlan = await discoverFixtureDependencyPlan({ fixtures, outputDirectory, staticSiteImporterPath, options, batchSuffix });
+  const resolvedDependencyPlan = await resolveHostDependencyPlan(dependencyPlan, path.join(outputDirectory, 'dependency-cache'));
   const batchRecipe = buildFixtureMatrixRecipe({
     matrix: batchMatrix,
     runId: batchMatrix.id,
