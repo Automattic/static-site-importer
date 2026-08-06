@@ -872,7 +872,7 @@ class Static_Site_Importer_URL_Site_Collector {
 	private static function rewrite_html( string $html, string $base_url, string $source_path, array $paths, array $aliases, string $site_url, array $external_assets = array() ): string {
 		$html = preg_replace_callback(
 			'#<link\b[^>]*>#is',
-			static function ( array $matches ) use ( $base_url, $paths, $aliases ): string {
+			static function ( array $matches ) use ( $base_url, $source_path, $paths, $aliases ): string {
 				$tag       = $matches[0];
 				$relations = preg_split( '/\s+/', strtolower( trim( (string) self::tag_attribute_value( $tag, 'rel' ) ) ) );
 				$href      = self::tag_attribute_value( $tag, 'href' );
@@ -881,11 +881,11 @@ class Static_Site_Importer_URL_Site_Collector {
 				}
 				$url    = self::resolve_url( $href, $base_url );
 				$target = $aliases[ $url ] ?? $url;
-				if ( '' === $target || ( isset( $paths[ $target ] ) && ! preg_match( '/\.html?$/i', $paths[ $target ] ) ) ) {
+				if ( '' === $target ) {
 					return $tag;
 				}
-				$external = self::external_asset_url( $target, $href );
-				return (string) preg_replace_callback( '#\bhref\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)#i', static fn(): string => 'href="' . $external . '"', $tag, 1 );
+				$reference = isset( $paths[ $target ] ) && ! preg_match( '/\.html?$/i', $paths[ $target ] ) ? self::relative_path( $source_path, $paths[ $target ] ) : self::external_asset_url( $target, $href );
+				return (string) preg_replace_callback( '#\bhref\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)#i', static fn(): string => 'href="' . $reference . '"', $tag, 1 );
 			},
 			$html
 		);
