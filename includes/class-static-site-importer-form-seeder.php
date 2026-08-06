@@ -37,6 +37,31 @@ class Static_Site_Importer_Form_Seeder {
 	 */
 	public const PROVIDER_ID = 'jetpack';
 
+	/** Register the provider bootstrap needed on every WordPress request. */
+	public static function register_runtime_bootstrap(): void {
+		if ( function_exists( 'add_action' ) ) {
+			add_action( 'jetpack_loaded', array( __CLASS__, 'bootstrap_jetpack_forms_runtime' ) );
+		}
+	}
+
+	/**
+	 * Load Forms after Jetpack's autoloader is ready and before WordPress init.
+	 *
+	 * Jetpack 16 skips its normal after_setup_theme module loader for disconnected
+	 * sites. Its persisted contact-form module flag therefore needs this adapter
+	 * bootstrap on later frontend requests as well as during import preparation.
+	 */
+	public static function bootstrap_jetpack_forms_runtime(): void {
+		if ( ! self::runtime_static_method_exists( 'Jetpack', 'is_module_active' ) || ! self::invoke_runtime_static_method( 'Jetpack', 'is_module_active', array( 'contact-form' ) ) ) {
+			return;
+		}
+
+		$loader = 'Automattic\\Jetpack\\Forms\\Jetpack_Forms';
+		if ( self::runtime_static_method_exists( $loader, 'load_contact_form' ) ) {
+			self::invoke_runtime_static_method( $loader, 'load_contact_form' );
+		}
+	}
+
 	/**
 	 * Map a source control type to a Jetpack field block name.
 	 *
