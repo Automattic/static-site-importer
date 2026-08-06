@@ -81,10 +81,12 @@ class Static_Site_Importer_Theme_Generator {
 				'status'            => 'dependencies_prepared',
 				'runtime_lifecycle' => $lifecycle,
 				'dependencies'      => $dependencies,
-				'fresh_runtime'     => array( 'request_id' => self::runtime_request_id() ),
+				'fresh_runtime'     => array( 'request_id' => (string) ( $args['runtime_lifecycle_invocation_id'] ?? '' ) ),
 			);
 		}
-		if ( 'resume' === ( $args['runtime_lifecycle_phase'] ?? '' ) && (string) ( $args['runtime_lifecycle_request_id'] ?? '' ) === self::runtime_request_id() ) {
+		$prepared_invocation = (string) ( $args['runtime_lifecycle_request_id'] ?? '' );
+		$current_invocation  = (string) ( $args['runtime_lifecycle_invocation_id'] ?? '' );
+		if ( 'resume' === ( $args['runtime_lifecycle_phase'] ?? '' ) && '' !== $prepared_invocation && $prepared_invocation === $current_invocation ) {
 			return new WP_Error( 'static_site_importer_fresh_runtime_required', 'Provider validation must resume in a fresh WordPress request after dependency preparation.' );
 		}
 
@@ -885,11 +887,6 @@ class Static_Site_Importer_Theme_Generator {
 			$lifecycle['status'] = 'runtime_declarations';
 		}
 		return $lifecycle;
-	}
-
-	/** A CLI process id is sufficient to reject same-request phase resumes. */
-	private static function runtime_request_id(): string {
-		return (string) ( function_exists( 'getmypid' ) ? getmypid() : spl_object_id( new stdClass() ) );
 	}
 
 	private static function runtime_declaration_is_required( array $declaration, array $declarations ): bool {
