@@ -56,7 +56,7 @@ test( 'release publication keeps immutable assets and blueprints separate from t
 	assert.match( workflow, /PHP_WASM_ZSTD_ASSET_BASE_URL: https:\/\/automattic\.github\.io\/static-site-importer\/playground\/extensions\/\$\{\{ env\.RELEASE_TAG \}\}/ );
 	assert.match( workflow, /playground\/extensions\/\$RELEASE_TAG/ );
 	assert.match( workflow, /playground\/extensions\/latest/ );
-	assert.match( workflow, /releases\/download\/\$\{tag\}/ );
+	assert.match( workflow, /releases\/download\/\$RELEASE_TAG/ );
 	assert.match( workflow, /access-control-allow-origin/ );
 	assert.match( workflow, /git -C "\$pages_dir" add \.nojekyll "playground\/\$RELEASE_TAG\.blueprint\.json"/ );
 	assert.match( workflow, /git -C "\$pages_dir" diff --cached --quiet/ );
