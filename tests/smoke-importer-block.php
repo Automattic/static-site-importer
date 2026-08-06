@@ -1189,6 +1189,49 @@ if ( class_exists( 'ZipArchive' ) ) {
 	$paths = array_column( $artifact['files'] ?? array(), 'path' );
 	$assert( in_array( 'website/site/index.html', $paths, true ), 'rest-zip-extracts-normalized-entry' );
 	$assert( in_array( 'website/escape.html', $paths, true ), 'rest-zip-strips-traversal-entry' );
+
+	$assert_archive_limit = static function ( string $label, array $limits, array $entries, string $expected_code ) use ( $assert ): void {
+		$zip_path = tempnam( sys_get_temp_dir(), 'ssi-limit-' );
+		$zip      = new ZipArchive();
+		$zip->open( $zip_path, ZipArchive::OVERWRITE );
+		foreach ( $entries as $path => $content ) {
+			$zip->addFromString( $path, $content );
+		}
+		$zip->close();
+
+		$GLOBALS['ssi_filters']['static_site_importer_archive_limits'] = array(
+			static function ( array $configured_limits ) use ( $limits ): array {
+				return array_merge( $configured_limits, $limits );
+			},
+		);
+		$result = static_site_importer_rest_archive_files(
+			array(
+				'name'           => 'adversarial.zip',
+				'content_base64' => base64_encode( file_get_contents( $zip_path ) ),
+			)
+		);
+		unset( $GLOBALS['ssi_filters']['static_site_importer_archive_limits'] );
+		@unlink( $zip_path );
+
+		$assert( is_wp_error( $result ) && $expected_code === $result->get_error_code(), $label . '-rejects-before-materialization', is_wp_error( $result ) ? $result->get_error_code() : 'archive was materialized' );
+		$assert( is_wp_error( $result ) && $expected_code === ( $result->get_error_data()['diagnostic']['code'] ?? '' ), $label . '-returns-stable-diagnostic' );
+	};
+
+	$assert_archive_limit( 'rest-zip-encoded-size', array( 'max_encoded_bytes' => 1 ), array( 'index.html' => '<main>bounded</main>' ), 'static_site_importer_archive_encoded_bytes_exceeded' );
+	$assert_archive_limit( 'rest-zip-decoded-size', array( 'max_encoded_bytes' => 1024 * 1024, 'max_decoded_bytes' => 1 ), array( 'index.html' => '<main>bounded</main>' ), 'static_site_importer_archive_decoded_bytes_exceeded' );
+	$assert_archive_limit( 'rest-zip-entry-count', array( 'max_entries' => 1 ), array( 'index.html' => '<main>one</main>', 'about.html' => '<main>two</main>' ), 'static_site_importer_archive_entry_count_exceeded' );
+	$assert_archive_limit( 'rest-zip-entry-size', array( 'max_entry_uncompressed_bytes' => 16 ), array( 'index.html' => str_repeat( 'a', 32 ) ), 'static_site_importer_archive_entry_uncompressed_bytes_exceeded' );
+	$assert_archive_limit( 'rest-zip-aggregate-size', array( 'max_entry_uncompressed_bytes' => 1024, 'max_total_uncompressed_bytes' => 32 ), array( 'index.html' => str_repeat( 'a', 20 ), 'about.html' => str_repeat( 'b', 20 ) ), 'static_site_importer_archive_total_uncompressed_bytes_exceeded' );
+	$assert_archive_limit( 'rest-zip-compression-ratio', array( 'max_entry_uncompressed_bytes' => 4096, 'max_compression_ratio' => 2 ), array( 'index.html' => str_repeat( 'a', 2048 ) ), 'static_site_importer_archive_compression_ratio_exceeded' );
+	$GLOBALS['ssi_filters']['static_site_importer_archive_limits'] = array(
+		static function ( array $limits ): array {
+			$limits['max_encoded_bytes'] = PHP_INT_MAX;
+			return $limits;
+		},
+	);
+	$hard_limited = static_site_importer_rest_archive_limits();
+	unset( $GLOBALS['ssi_filters']['static_site_importer_archive_limits'] );
+	$assert( 52428800 >= $hard_limited['max_encoded_bytes'], 'rest-zip-filter-cannot-exceed-encoded-hard-ceiling' );
 }
 
 $artifact = static_site_importer_rest_source_artifact(
