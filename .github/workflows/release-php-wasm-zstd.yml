@@ -51,6 +51,8 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Publish the immutable safe blueprint
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           pages_dir="$RUNNER_TEMP/static-site-importer-pages"
           if git fetch origin gh-pages; then
@@ -62,14 +64,27 @@ jobs:
           fi
           touch "$pages_dir/.nojekyll"
           mkdir -p "$pages_dir/playground"
+          package_digest="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.assets[] | select(.name == "static-site-importer.zip") | .digest')"
+          package_sha256="${package_digest#sha256:}"
+          if ! printf '%s' "$package_sha256" | grep -Eq '^[a-f0-9]{64}$'; then
+            echo "Release asset static-site-importer.zip must expose a SHA-256 digest." >&2
+            exit 1
+          fi
           # shellcheck disable=SC2016
           node -e '
             const fs = require("node:fs");
-            const [source, output, tag] = process.argv.slice(1);
+            const [source, output, tag, digest] = process.argv.slice(1);
             const blueprint = JSON.parse(fs.readFileSync(source, "utf8"));
-            blueprint.steps.find((step) => step.step === "installPlugin").pluginData.url = `https://github.com/Automattic/static-site-importer/releases/download/${tag}/static-site-importer.zip`;
+            const replace = (value) => value.replaceAll("{{RELEASE_TAG}}", tag).replaceAll("{{PACKAGE_SHA256}}", digest);
+            for (const step of blueprint.steps) {
+              if (step.data?.url) step.data.url = replace(step.data.url);
+              if (step.pluginData?.url) step.pluginData.url = replace(step.pluginData.url);
+              if (step.pluginData?.path) step.pluginData.path = replace(step.pluginData.path);
+              if (step.path) step.path = replace(step.path);
+              if (step.code) step.code = replace(step.code);
+            }
             fs.writeFileSync(output, JSON.stringify(blueprint, null, 2) + "\n");
-          ' docs/playground/blueprint.json "$pages_dir/playground/$RELEASE_TAG.blueprint.json" "$RELEASE_TAG"
+          ' docs/playground/blueprint.json "$pages_dir/playground/$RELEASE_TAG.blueprint.json" "$RELEASE_TAG" "$package_sha256"
           git -C "$pages_dir" add .nojekyll "playground/$RELEASE_TAG.blueprint.json"
           if ! git -C "$pages_dir" diff --cached --quiet; then
             git -C "$pages_dir" -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Publish safe Playground blueprint for $RELEASE_TAG"
@@ -85,8 +100,10 @@ jobs:
               process.stdin.on("data", (chunk) => body += chunk);
               process.stdin.on("end", () => {
                 const blueprint = JSON.parse(body);
+                const download = blueprint.steps.find((step) => step.step === "writeFile");
                 const plugin = blueprint.steps.find((step) => step.step === "installPlugin");
-                if (plugin?.pluginData?.url !== process.env.EXPECTED_PLUGIN_URL) process.exit(1);
+                const check = blueprint.steps.find((step) => step.step === "runPHP" && step.code.includes("hash_file"));
+                if (download?.data?.url !== process.env.EXPECTED_PLUGIN_URL || plugin?.pluginData?.resource !== "vfs" || !check) process.exit(1);
               });
             '; then exit 0; fi
             echo "Waiting for immutable safe blueprint ($attempt/30)"
@@ -130,8 +147,10 @@ jobs:
               process.stdin.on("data", (chunk) => body += chunk);
               process.stdin.on("end", () => {
                 const blueprint = JSON.parse(body);
+                const download = blueprint.steps.find((step) => step.step === "writeFile");
                 const plugin = blueprint.steps.find((step) => step.step === "installPlugin");
-                if (plugin?.pluginData?.url !== process.env.EXPECTED_PLUGIN_URL) process.exit(1);
+                const check = blueprint.steps.find((step) => step.step === "runPHP" && step.code.includes("hash_file"));
+                if (download?.data?.url !== process.env.EXPECTED_PLUGIN_URL || plugin?.pluginData?.resource !== "vfs" || !check) process.exit(1);
               });
             '; then exit 0; fi
             echo "Waiting for safe README blueprint alias ($attempt/30)"

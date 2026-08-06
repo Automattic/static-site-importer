@@ -55,6 +55,24 @@ if ( ! function_exists( 'wp_json_encode' ) ) {
 	}
 }
 
+if ( ! class_exists( 'WP_Error' ) ) {
+	class WP_Error {
+		public function __construct( public string $code = '', public string $message = '', public array $data = array() ) {}
+	}
+}
+
+if ( ! function_exists( 'is_wp_error' ) ) {
+	function is_wp_error( $thing ): bool {
+		return $thing instanceof WP_Error;
+	}
+}
+
+if ( ! function_exists( 'apply_filters' ) ) {
+	function apply_filters( string $hook, $value ) {
+		return 'static_site_importer_playground_package' === $hook ? ( $GLOBALS['static_site_importer_test_playground_package'] ?? $value ) : $value;
+	}
+}
+
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/rest.php';
 
 /**
@@ -100,9 +118,15 @@ $input = array(
 		),
 	),
 );
+$package = array(
+	'url'     => 'https://github.com/Automattic/static-site-importer/releases/download/1.4.0/static-site-importer.zip',
+	'version' => '1.4.0',
+	'sha256'  => str_repeat( 'a', 64 ),
+);
+$GLOBALS['static_site_importer_test_playground_package'] = $package;
 
 // --- Case 1: default steps include installPlugin + runPHP (+ login). ---
-$default_steps = static_site_importer_playground_import_steps( $input );
+$default_steps = static_site_importer_playground_import_steps( $input, array( 'package' => $package ) );
 $default_names = $step_names( $default_steps );
 
 $assert( is_array( $default_steps ), 'default-array', 'default steps is an array' );
@@ -116,6 +140,12 @@ $assert(
 	'default-install',
 	'default steps include installPlugin'
 );
+$assert( in_array( 'writeFile', $default_names, true ), 'default-download', 'default steps download the package before installation' );
+$assert( 2 === count( array_keys( $default_names, 'runPHP', true ) ), 'default-integrity-check', 'default steps verify the package digest before importing' );
+$install_step = $default_steps[ array_search( 'installPlugin', $default_names, true ) ];
+$assert( 'vfs' === ( $install_step['pluginData']['resource'] ?? '' ), 'default-vfs-install', 'installPlugin consumes the verified VFS package' );
+$integrity_step = $default_steps[ array_search( 'runPHP', $default_names, true ) ];
+$assert( false !== strpos( $integrity_step['code'] ?? '', "hash_equals( '" . $package['sha256'] . "', hash_file" ), 'digest-mismatch-fails', 'a downloaded archive with a mismatched digest throws before installPlugin executes' );
 $assert(
 	in_array( 'runPHP', $default_names, true ),
 	'default-runphp',
@@ -168,19 +198,32 @@ $assert(
 );
 
 // --- Case 4: blueprint primitive matches the legacy REST blueprint (delegation parity). ---
-$primitive_blueprint = static_site_importer_playground_import_blueprint( $input );
+$primitive_blueprint = static_site_importer_playground_import_blueprint( $input, array( 'package' => $package ) );
 $legacy_blueprint    = static_site_importer_rest_playground_blueprint( $input );
 
 $assert(
 	$primitive_blueprint === $legacy_blueprint,
 	'delegation-parity',
-	'public blueprint is byte-identical to the legacy REST blueprint'
+	'public blueprint is deterministic for an explicit package selection'
 );
 $assert(
 	isset( $primitive_blueprint['steps'] ) && $primitive_blueprint['steps'] === $default_steps,
 	'blueprint-steps-parity',
 	'public blueprint embeds the public default steps'
 );
+
+// --- Case 5: mutable aliases and invalid digest declarations fail closed. ---
+$mutable = static_site_importer_playground_import_steps( $input, array( 'package' => array_merge( $package, array( 'url' => 'https://github.com/Automattic/static-site-importer/releases/latest/download/static-site-importer.zip' ) ) ) );
+$assert( is_wp_error( $mutable ) && 'static_site_importer_playground_package_mutable' === $mutable->code, 'mutable-rejected', 'latest release aliases cannot become preview defaults' );
+$invalid_digest = static_site_importer_playground_import_steps( $input, array( 'package' => array_merge( $package, array( 'sha256' => 'not-a-digest' ) ) ) );
+$assert( is_wp_error( $invalid_digest ) && 'static_site_importer_playground_package_invalid' === $invalid_digest->code, 'digest-rejected', 'malformed integrity declarations fail closed' );
+$content_addressed = static_site_importer_playground_import_steps( $input, array( 'package' => array( 'url' => 'https://packages.example.test/ssi/' . str_repeat( 'b', 64 ) . '/static-site-importer.zip', 'version' => 'wpbuild-20260806', 'digest' => 'sha256:' . str_repeat( 'b', 64 ) ) ) );
+$assert( ! is_wp_error( $content_addressed ), 'content-addressed-accepted', 'WordPress Build content-addressed packages remain supported' );
+$development = static_site_importer_playground_import_steps( $input, array( 'package' => array_merge( $package, array( 'url' => 'http://127.0.0.1:8080/static-site-importer.zip', 'development' => true ) ) ) );
+$assert( ! is_wp_error( $development ), 'development-override-accepted', 'an explicit development package override remains available' );
+$GLOBALS['static_site_importer_test_playground_package'] = null;
+$missing = static_site_importer_playground_import_steps( $input );
+$assert( is_wp_error( $missing ) && 'static_site_importer_playground_package_missing' === $missing->code, 'production-default-rejected', 'a mutable or unspecified production package is never emitted' );
 
 // --- Report. ---
 if ( empty( $failures ) ) {
