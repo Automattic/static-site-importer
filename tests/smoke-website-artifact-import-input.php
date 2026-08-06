@@ -136,6 +136,9 @@ $input = array(
 	'compiler_options'             => array( 'include_conversion_report' => false ),
 	'source_metadata'              => array( 'request_id' => 'contract-1' ),
 	'validation_artifacts'         => array( 'visual_diff' => array( 'path' => '/tmp/diff.png' ) ),
+	'client_script_policy'         => 'isolated_preview',
+	'client_script_provenance'     => array( 'ref' => 'contract:preview' ),
+	'client_script_isolated'       => true,
 );
 $direct = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
 

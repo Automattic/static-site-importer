@@ -565,6 +565,8 @@ function static_site_importer_rest_should_apply_to_current_site( array $params )
 function static_site_importer_rest_open_in_playground( array $source, array $input ) {
 	$input['activate']  = true;
 	$input['overwrite'] = true;
+	// This request is serialized into a disposable Playground runtime, never this site.
+	$input['client_script_isolated'] = true;
 
 	$runtime = static_site_importer_rest_source_runtime( $source, $input );
 	if ( is_wp_error( $runtime ) ) {
@@ -688,6 +690,10 @@ function static_site_importer_build_playground_preview( array $artifact, array $
  * @return array<string,mixed>|WP_Error
  */
 function static_site_importer_rest_apply_to_current_site( array $source, array $input ) {
+	// Current-site materialization is always inert even when a request carries preview options.
+	$input['client_script_policy']   = 'inert';
+	$input['client_script_isolated'] = false;
+	$input['client_script_provenance'] = array();
 	$decorate_current_site_preview = static function ( $result ) {
 		if ( ! is_array( $result ) ) {
 			return $result;

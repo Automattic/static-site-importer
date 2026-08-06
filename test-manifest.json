@@ -12,6 +12,7 @@
     { "path": "tests/smoke-ability-import-success-diagnostics.php", "environment": "standalone-php" },
     { "path": "tests/smoke-ability-registration-idempotent.php", "environment": "standalone-php" },
     { "path": "tests/smoke-canonical-import-ability.php", "environment": "standalone-php" },
+	{ "path": "tests/smoke-client-script-policy.php", "environment": "standalone-php" },
     { "path": "tests/smoke-companion-plugin-js.php", "environment": "standalone-php" },
     { "path": "tests/smoke-companion-plugin.php", "environment": "standalone-php" },
     { "path": "tests/smoke-contact-layout-transformer.php", "environment": "standalone-php" },
