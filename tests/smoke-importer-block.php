@@ -660,6 +660,14 @@ $assert( 'https://example.test/' === ( $apply_response['preview']['url'] ?? '' )
 
 Static_Site_Importer_Theme_Generator::$last_artifact = array();
 Static_Site_Importer_Theme_Generator::$last_args     = array();
+add_filter(
+	'static_site_importer_playground_package',
+	static fn() => array(
+		'url'     => 'https://github.com/Automattic/static-site-importer/releases/download/v1.2.3/static-site-importer.zip',
+		'version' => 'v1.2.3',
+		'sha256'  => str_repeat( 'a', 64 ),
+	)
+);
 $playground_response = static_site_importer_rest_create_import(
 	new WP_REST_Request(
 		array(
@@ -681,8 +689,14 @@ $playground_blueprint_json = rawurldecode( substr( (string) ( $playground_respon
 $playground_blueprint      = json_decode( $playground_blueprint_json, true );
 $assert( is_array( $playground_blueprint ), 'rest-playground-open-blueprint-decodes' );
 $playground_blueprint_code = wp_json_encode( $playground_blueprint );
-$playground_plugin_step    = $playground_blueprint['steps'][1] ?? array();
-$assert( 'https://github.com/Automattic/static-site-importer/releases/latest/download/static-site-importer.zip' === ( $playground_plugin_step['pluginData']['url'] ?? '' ), 'rest-playground-open-blueprint-installs-release-zip' );
+$playground_download_steps = array_values( array_filter( $playground_blueprint['steps'] ?? array(), static fn( array $step ): bool => 'writeFile' === ( $step['step'] ?? '' ) ) );
+$playground_plugin_steps   = array_values( array_filter( $playground_blueprint['steps'] ?? array(), static fn( array $step ): bool => 'installPlugin' === ( $step['step'] ?? '' ) ) );
+$playground_download_step  = $playground_download_steps[0] ?? array();
+$playground_plugin_step    = $playground_plugin_steps[0] ?? array();
+$assert( 'https://github.com/Automattic/static-site-importer/releases/download/v1.2.3/static-site-importer.zip' === ( $playground_download_step['data']['url'] ?? '' ), 'rest-playground-open-blueprint-downloads-pinned-release-zip' );
+$assert( 'vfs' === ( $playground_plugin_step['pluginData']['resource'] ?? '' ), 'rest-playground-open-blueprint-installs-verified-vfs-package' );
+$assert( ( $playground_download_step['path'] ?? null ) === ( $playground_plugin_step['pluginData']['path'] ?? null ), 'rest-playground-open-blueprint-installs-downloaded-package' );
+$assert( str_contains( (string) $playground_blueprint_code, str_repeat( 'a', 64 ) ), 'rest-playground-open-blueprint-verifies-package-digest' );
 $assert( str_contains( (string) $playground_blueprint_code, 'static_site_importer_ability_import' ), 'rest-playground-open-blueprint-runs-import-ability' );
 $assert( str_contains( (string) $playground_blueprint_code, "'activate' => true" ), 'rest-playground-open-blueprint-activates-generated-site' );
 $assert( str_contains( (string) $playground_blueprint_code, "'overwrite' => true" ), 'rest-playground-open-blueprint-overwrites-generated-site' );
@@ -1011,9 +1025,14 @@ $assert( str_contains( $blueprint_code, '"applyToCurrentSite":false' ), 'playgro
 $assert( str_contains( $blueprint_code, '"openInPlayground":true' ), 'playground-blueprint-targets-open-in-playground' );
 $assert( ! str_contains( $blueprint_code, 'generateInCurrentRuntime' ), 'playground-blueprint-does-not-reference-current-runtime-generation' );
 $assert( str_contains( $blueprint_code, 'static_site_importer_protected_pages' ), 'playground-blueprint-protects-import-page' );
-$plugin_steps = array_values( array_filter( $blueprint['steps'] ?? array(), static fn( array $step ): bool => 'installPlugin' === ( $step['step'] ?? '' ) ) );
-$plugin_step  = $plugin_steps[0] ?? array();
-$assert( 'https://github.com/Automattic/static-site-importer/releases/download/{{RELEASE_TAG}}/static-site-importer.zip' === ( $plugin_step['pluginData']['url'] ?? '' ), 'playground-blueprint-installs-same-release-package' );
+$download_steps = array_values( array_filter( $blueprint['steps'] ?? array(), static fn( array $step ): bool => 'writeFile' === ( $step['step'] ?? '' ) ) );
+$plugin_steps   = array_values( array_filter( $blueprint['steps'] ?? array(), static fn( array $step ): bool => 'installPlugin' === ( $step['step'] ?? '' ) ) );
+$download_step  = $download_steps[0] ?? array();
+$plugin_step    = $plugin_steps[0] ?? array();
+$assert( 'https://github.com/Automattic/static-site-importer/releases/download/{{RELEASE_TAG}}/static-site-importer.zip' === ( $download_step['data']['url'] ?? '' ), 'playground-blueprint-downloads-same-release-package' );
+$assert( 'vfs' === ( $plugin_step['pluginData']['resource'] ?? '' ), 'playground-blueprint-installs-verified-vfs-package' );
+$assert( ( $download_step['path'] ?? null ) === ( $plugin_step['pluginData']['path'] ?? null ), 'playground-blueprint-installs-downloaded-package' );
+$assert( str_contains( $blueprint_code, '{{PACKAGE_SHA256}}' ), 'playground-blueprint-verifies-release-package' );
 
 $GLOBALS['ssi_test_options']['static_site_importer_protected_pages'] = array( 'import', 'tools/settings', '42' );
 $assert( Static_Site_Importer_Page_Materializer::is_protected_page( new WP_Post( 7, 'import' ) ), 'protected-page-matches-slug' );
@@ -1195,6 +1214,49 @@ if ( class_exists( 'ZipArchive' ) ) {
 	$paths = array_column( $artifact['files'] ?? array(), 'path' );
 	$assert( in_array( 'website/site/index.html', $paths, true ), 'rest-zip-extracts-normalized-entry' );
 	$assert( in_array( 'website/escape.html', $paths, true ), 'rest-zip-strips-traversal-entry' );
+
+	$assert_archive_limit = static function ( string $label, array $limits, array $entries, string $expected_code ) use ( $assert ): void {
+		$zip_path = tempnam( sys_get_temp_dir(), 'ssi-limit-' );
+		$zip      = new ZipArchive();
+		$zip->open( $zip_path, ZipArchive::OVERWRITE );
+		foreach ( $entries as $path => $content ) {
+			$zip->addFromString( $path, $content );
+		}
+		$zip->close();
+
+		$GLOBALS['ssi_filters']['static_site_importer_archive_limits'] = array(
+			static function ( array $configured_limits ) use ( $limits ): array {
+				return array_merge( $configured_limits, $limits );
+			},
+		);
+		$result = static_site_importer_rest_archive_files(
+			array(
+				'name'           => 'adversarial.zip',
+				'content_base64' => base64_encode( file_get_contents( $zip_path ) ),
+			)
+		);
+		unset( $GLOBALS['ssi_filters']['static_site_importer_archive_limits'] );
+		@unlink( $zip_path );
+
+		$assert( is_wp_error( $result ) && $expected_code === $result->get_error_code(), $label . '-rejects-before-materialization', is_wp_error( $result ) ? $result->get_error_code() : 'archive was materialized' );
+		$assert( is_wp_error( $result ) && $expected_code === ( $result->get_error_data()['diagnostic']['code'] ?? '' ), $label . '-returns-stable-diagnostic' );
+	};
+
+	$assert_archive_limit( 'rest-zip-encoded-size', array( 'max_encoded_bytes' => 1 ), array( 'index.html' => '<main>bounded</main>' ), 'static_site_importer_archive_encoded_bytes_exceeded' );
+	$assert_archive_limit( 'rest-zip-decoded-size', array( 'max_encoded_bytes' => 1024 * 1024, 'max_decoded_bytes' => 1 ), array( 'index.html' => '<main>bounded</main>' ), 'static_site_importer_archive_decoded_bytes_exceeded' );
+	$assert_archive_limit( 'rest-zip-entry-count', array( 'max_entries' => 1 ), array( 'index.html' => '<main>one</main>', 'about.html' => '<main>two</main>' ), 'static_site_importer_archive_entry_count_exceeded' );
+	$assert_archive_limit( 'rest-zip-entry-size', array( 'max_entry_uncompressed_bytes' => 16 ), array( 'index.html' => str_repeat( 'a', 32 ) ), 'static_site_importer_archive_entry_uncompressed_bytes_exceeded' );
+	$assert_archive_limit( 'rest-zip-aggregate-size', array( 'max_entry_uncompressed_bytes' => 1024, 'max_total_uncompressed_bytes' => 32 ), array( 'index.html' => str_repeat( 'a', 20 ), 'about.html' => str_repeat( 'b', 20 ) ), 'static_site_importer_archive_total_uncompressed_bytes_exceeded' );
+	$assert_archive_limit( 'rest-zip-compression-ratio', array( 'max_entry_uncompressed_bytes' => 4096, 'max_compression_ratio' => 2 ), array( 'index.html' => str_repeat( 'a', 2048 ) ), 'static_site_importer_archive_compression_ratio_exceeded' );
+	$GLOBALS['ssi_filters']['static_site_importer_archive_limits'] = array(
+		static function ( array $limits ): array {
+			$limits['max_encoded_bytes'] = PHP_INT_MAX;
+			return $limits;
+		},
+	);
+	$hard_limited = static_site_importer_rest_archive_limits();
+	unset( $GLOBALS['ssi_filters']['static_site_importer_archive_limits'] );
+	$assert( 52428800 >= $hard_limited['max_encoded_bytes'], 'rest-zip-filter-cannot-exceed-encoded-hard-ceiling' );
 }
 
 $artifact = static_site_importer_rest_source_artifact(

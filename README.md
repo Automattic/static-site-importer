@@ -12,6 +12,12 @@ Static Site Importer is a WordPress plugin. It requires the [Blocks Engine PHP t
 
 The initial `website-artifact-import` profile provides the artifact import, validation, WordPress site-plan materialization, and manifest-inspection abilities. It includes SSI's WordPress/PHP runtime and the Blocks Engine PHP transformer dependency while excluding Figma, tests, tools, docs, Node dependencies, and other development-only trees. The same immutable contract is available from `static-site-importer/get-runtime-package-manifest` for runtime discovery.
 
+## Playground package integrity
+
+Generated Playground previews accept an SSI package only when it declares `url`, `version`, and a SHA-256 `sha256` (or `digest`) value. Production selection accepts either the exact GitHub release asset URL for that version or a content-addressed URL containing the declared digest. Playground downloads the archive to its virtual filesystem, verifies its SHA-256 before `installPlugin`, and records the version, digest, and URL in the preview request provenance.
+
+Hosts provide the package through the `static_site_importer_playground_package` filter or the public blueprint primitive's explicit `package` option. A bundled runtime passes `install => false`; this remains the WordPress Build content-addressed package flow and never downloads a second SSI archive. Development-only package URLs require an explicit `development => true` selection and still require a valid digest. Mutable aliases such as `releases/latest` are rejected.
+
 ## Canonical Site Plans
 
 `static-site-importer/materialize-wordpress-site-plan` is the generic plan-only boundary for a `blocks-engine/wordpress-site-plan/v2` produced by Blocks Engine 0.4.4. SSI calls the package's canonical validator and resolver, then owns WordPress/filesystem preflight, materialization, reconciliation, and the `static-site-importer/materialization-receipt/v1` response. It accepts no source HTML or transformer result envelope.
@@ -21,6 +27,12 @@ For an isolated runtime matrix, invoke the ability with `plan`, `slug`, and opti
 ```bash
 wp static-site-importer materialize-wordpress-site-plan --plan=/path/to/plan.json --slug=generated-site
 ```
+
+## Client Script Policy
+
+Every artifact is passed through `client_script_policy` before Blocks Engine compilation and WordPress materialization. The default is `inert`: SSI removes executable inline, local, remote, module, telemetry, and `data:` script markup, removes bundled JavaScript assets, and records each disposition in `import_report.client_script_policy`. JSON data scripts are quarantined in the report and are not emitted into the generated site.
+
+`isolated_preview` is the sole preservation opt-in. It requires an explicit `client_script_provenance` object with a non-empty `ref` and a runtime isolation assertion. It is intended only for an isolated disposable preview runtime. Preserved scripts remain `untrusted_imported_code`; artifact carriage, local paths, and source type never establish trust. Current-site REST imports forcibly use `inert`. Existing `include_scripts` URL collection callers no longer preserve scripts; callers must request `script_policy: isolated_preview`, supply provenance, and run only in an isolated preview environment.
 
 ## Architecture Stack
 
@@ -33,6 +45,10 @@ The conversion stack is split by responsibility:
 
 - **Static Site Importer** owns WordPress intake, safety checks, page/theme creation, asset placement, import reports, quality gates, and block-theme materialization.
 - **Blocks Engine PHP transformer** owns the generic `ArtifactCompiler`, its diagnostics, and the `source_reports.wordpress_site_plan` v2 output. SSI materializes that plan into WordPress and returns the receipt and import report.
+
+## Content-Only Security Boundary
+
+All HTML, folders, ZIPs, URLs, and website artifact objects are untrusted static content. SSI accepts only explicit static asset extensions and rejects server-side source markers before compilation. Compiler-produced companion payloads are independently revalidated before any generated plugin file is written or activated. Companion block renders accept static HTML only; SSI emits its own fixed PHP wrapper to output that markup, so source PHP cannot be preserved or executed. Existing payloads that relied on PHP render templates or PHP companion assets must migrate their behavior to blocks, data bindings, or client-side JavaScript.
 
 When a generated artifact contains full-document HTML, Static Site Importer routes document metadata, head content, styles, scripts, and page body fragments to the right WordPress destinations before calling the conversion stack. A `core/html` block in imported page content is therefore a materialization/conversion quality issue to fix in this stack, not a product-layer workaround to hide upstream.
 

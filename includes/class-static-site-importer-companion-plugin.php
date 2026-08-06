@@ -30,6 +30,10 @@ if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-content-policy.php';
+}
+
 /**
  * Scaffolds a one-per-site companion plugin from a generated block payload.
  */
@@ -94,13 +98,16 @@ class Static_Site_Importer_Companion_Plugin {
 			}
 			$block_names[ $effective_name ] = true;
 			$assets                         = $block['assets'] ?? array();
-			if ( ! is_array( $assets ) || array_is_list( $assets ) ) {
+			if ( ! is_array( $assets ) || ( ! empty( $assets ) && array_is_list( $assets ) ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_assets_invalid', sprintf( 'Block %s assets must be an object.', $name ) );
 			}
 			foreach ( $assets as $path => $content ) {
-				if ( ! is_string( $path ) || self::sanitize_relative_path( $path ) !== $path || ! is_scalar( $content ) ) {
+				if ( ! is_string( $path ) || self::sanitize_relative_path( $path ) !== $path || ! Static_Site_Importer_Content_Policy::is_companion_asset_path( $path ) || ! is_scalar( $content ) || Static_Site_Importer_Content_Policy::contains_server_code( (string) $content ) ) {
 					return new WP_Error( 'static_site_importer_companion_plugin_asset_path_invalid', sprintf( 'Block %s has an unsafe asset path.', $name ) );
 				}
+			}
+			if ( isset( $block['render'] ) && is_scalar( $block['render'] ) && Static_Site_Importer_Content_Policy::contains_server_code( (string) $block['render'] ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_render_invalid', sprintf( 'Block %s render markup must be static HTML.', $name ) );
 			}
 			$metadata = $block['block_json'];
 			if ( isset( $block['render'] ) && is_scalar( $block['render'] ) ) {
@@ -143,6 +150,10 @@ class Static_Site_Importer_Companion_Plugin {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public static function scaffold( array $payload ) {
+		$validation = self::validate_payload( $payload );
+		if ( is_wp_error( $validation ) ) {
+			return $validation;
+		}
 		$site_slug = self::site_slug( $payload );
 		if ( '' === $site_slug ) {
 			return new WP_Error(
@@ -924,11 +935,9 @@ class Static_Site_Importer_Companion_Plugin {
 			return "<?php\n/**\n * Generated companion block render (server-rendered dynamic block).\n *\n * @package StaticSiteImporterCompanion\n *\n * @var array<string,mixed> \$attributes Block attributes.\n * @var string              \$content    Inner block content.\n * @var WP_Block            \$block      Block instance.\n */\n\necho \$content; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Inner block content is already sanitized by WordPress.\n";
 		}
 
-		if ( str_starts_with( $trimmed, '<?php' ) || str_starts_with( $trimmed, '<?=' ) ) {
-			return $render;
-		}
-
-		return "<?php\n/**\n * Generated companion block render (server-rendered dynamic block).\n *\n * @package StaticSiteImporterCompanion\n *\n * @var array<string,mixed> \$attributes Block attributes.\n * @var string              \$content    Inner block content.\n * @var WP_Block            \$block      Block instance.\n */\n?>\n" . $render;
+		// Static source markup is data, never executable template source. The only
+		// PHP in this file is SSI-generated code that emits an escaped literal.
+		return "<?php\n/** Generated companion block render. */\n\necho '" . self::php_single_quote( $render ) . "'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static source markup was validated before compilation.\n";
 	}
 
 	/**

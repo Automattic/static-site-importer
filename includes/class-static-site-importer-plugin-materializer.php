@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Current_Site_Capabilities' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-current-site-capabilities.php';
+}
+
 /**
  * Installs and activates declared WordPress.org plugins before entity seeding.
  */
@@ -49,9 +53,14 @@ class Static_Site_Importer_Plugin_Materializer {
 			return self::failed_report( $report, $deps );
 		}
 
-		if ( file_exists( trailingslashit( WP_PLUGIN_DIR ) . $plugin_file ) ) {
+		$needs_install = ! file_exists( trailingslashit( WP_PLUGIN_DIR ) . $plugin_file );
+		if ( ! $needs_install ) {
 			$report['installed'] = true;
 		} else {
+			$capabilities = Static_Site_Importer_Current_Site_Capabilities::check_plugin_install( true );
+			if ( is_wp_error( $capabilities ) ) {
+				return self::failed_report( $report, $capabilities );
+			}
 			$install = self::install_wp_org_plugin( $slug );
 			if ( is_wp_error( $install ) ) {
 				return self::failed_report( $report, $install );
@@ -68,6 +77,10 @@ class Static_Site_Importer_Plugin_Materializer {
 				return self::failed_report( $report, $preparation );
 			}
 		} else {
+			$capabilities = Static_Site_Importer_Current_Site_Capabilities::check_plugin_install( true, false );
+			if ( is_wp_error( $capabilities ) ) {
+				return self::failed_report( $report, $capabilities );
+			}
 			$lifecycle = self::prepare_activation_lifecycle_replay();
 			try {
 				$activate = activate_plugin( $plugin_file );
@@ -151,15 +164,12 @@ class Static_Site_Importer_Plugin_Materializer {
 		array $payload,
 		?callable $availability_check = null
 	): array {
-		// Canonical compiler payloads are validated before deriving an install plan
-		// or touching the filesystem. Schema-less callers retain the legacy
-		// PHP-only scaffold compatibility path.
-		if ( array_key_exists( 'schema', $payload ) ) {
-			$validation = Static_Site_Importer_Companion_Plugin::validate_payload( $payload );
-			if ( is_wp_error( $validation ) ) {
-				$report = self::new_generated_report( '', '' );
-				return self::failed_report( $report, $validation );
-			}
+		// All compiler output is untrusted until the complete canonical payload has
+		// passed the content-only boundary. Schema-less PHP scaffold input is gone.
+		$validation = Static_Site_Importer_Companion_Plugin::validate_payload( $payload );
+		if ( is_wp_error( $validation ) ) {
+			$report = self::new_generated_report( '', '' );
+			return self::failed_report( $report, $validation );
 		}
 		$descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $payload );
 		if ( is_wp_error( $descriptor ) ) {
@@ -185,6 +195,10 @@ class Static_Site_Importer_Plugin_Materializer {
 		$already_available = self::available( $availability_check );
 
 		$report['attempted'] = true;
+		$capabilities       = Static_Site_Importer_Current_Site_Capabilities::check_plugin_install( (bool) $plan['activate'] );
+		if ( is_wp_error( $capabilities ) ) {
+			return self::failed_report( $report, $capabilities );
+		}
 
 		$written = self::write_generated_files( $plan );
 		if ( is_wp_error( $written ) ) {

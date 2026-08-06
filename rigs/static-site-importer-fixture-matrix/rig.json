@@ -26,6 +26,7 @@
         "env": ["HOMEBOY_WP_CODEBOX_BIN"],
         "capabilities": [
           "wordpress.editor-open",
+          "wordpress.editor-actions",
           "wordpress.editor-validate-blocks",
           "wordpress.browser-probe",
           "wordpress.visual-compare"

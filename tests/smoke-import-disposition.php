@@ -86,7 +86,26 @@ if ( ! function_exists( 'wp_json_encode' ) ) {
 	}
 }
 
+if ( ! class_exists( 'WP_Error' ) ) {
+	class WP_Error {}
+}
+
+if ( ! function_exists( 'is_wp_error' ) ) {
+	function is_wp_error( $value ): bool {
+		return $value instanceof WP_Error;
+	}
+}
+
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/rest.php';
+
+add_filter(
+	'static_site_importer_playground_package',
+	static fn() => array(
+		'url'     => 'https://github.com/Automattic/static-site-importer/releases/download/v1.2.3/static-site-importer.zip',
+		'version' => 'v1.2.3',
+		'sha256'  => str_repeat( 'a', 64 ),
+	)
+);
 
 $assert(
 	function_exists( 'static_site_importer_import_website_artifact_with_disposition' ),

@@ -13,6 +13,10 @@ if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-content-policy.php';
+}
+
 if ( ! class_exists( 'Static_Site_Importer_URL_Import_Runtime' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-url-import-runtime.php';
 }
@@ -206,7 +210,14 @@ function static_site_importer_rest_import_figma_file( WP_REST_Request $request )
  * @return array<string,mixed>|WP_Error
  */
 function static_site_importer_rest_create_playground_open( array $artifact, array $input, string $source = 'upload' ) {
-	$blueprint      = static_site_importer_rest_playground_blueprint( $input );
+	$package        = static_site_importer_playground_package();
+	if ( is_wp_error( $package ) ) {
+		return $package;
+	}
+	$blueprint      = static_site_importer_playground_import_blueprint( $input, array( 'package' => $package ) );
+	if ( is_wp_error( $blueprint ) ) {
+		return $blueprint;
+	}
 	$blueprint_json = wp_json_encode( $blueprint );
 	if ( ! is_string( $blueprint_json ) ) {
 		return new WP_Error( 'static_site_importer_playground_blueprint_encode_failed', __( 'Could not encode the Playground preview blueprint.', 'static-site-importer' ), array( 'status' => 500 ) );
@@ -237,6 +248,7 @@ function static_site_importer_rest_create_playground_open( array $artifact, arra
 			'blueprint' => array(
 				'ref' => $ref,
 			),
+			'package'   => static_site_importer_playground_package_provenance( $package ),
 		),
 	);
 
@@ -259,7 +271,8 @@ function static_site_importer_rest_create_playground_open( array $artifact, arra
  *
  * The returned steps are:
  * - login
- * - installPlugin (SSI from GitHub releases) — omitted when $options['install'] is false
+ * - writeFile + runPHP checksum verification + installPlugin (SSI package) —
+ *   omitted when $options['install'] is false
  * - runPHP — runs static_site_importer_ability_import( $input )
  *
  * Pass `'install' => false` for hosts/runtimes where SSI is already present
@@ -267,11 +280,15 @@ function static_site_importer_rest_create_playground_open( array $artifact, arra
  * skips the GitHub release install step and imports against the bundled plugin.
  *
  * @param array<string,mixed> $input   Import ability input.
- * @param array<string,mixed> $options Optional. { install: bool (default true) }.
- * @return array<int,array<string,mixed>>
+ * @param array<string,mixed> $options Optional. { install: bool (default true), package: array }.
+ * @return array<int,array<string,mixed>>|WP_Error
  */
-function static_site_importer_playground_import_steps( array $input, array $options = array() ): array {
+function static_site_importer_playground_import_steps( array $input, array $options = array() ) {
 	$install = ! array_key_exists( 'install', $options ) || ! empty( $options['install'] );
+	$package = $install ? static_site_importer_playground_package( $options ) : null;
+	if ( is_wp_error( $package ) ) {
+		return $package;
+	}
 
 	// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Generates self-contained Playground import code.
 	$input_literal = var_export( $input, true );
@@ -298,11 +315,24 @@ update_option( "static_site_importer_playground_preview_result", $result, false 
 	);
 
 	if ( $install ) {
+		$package_path = '/tmp/static-site-importer-' . substr( $package['sha256'], 0, 16 ) . '.zip';
+		$steps[] = array(
+			'step' => 'writeFile',
+			'path' => $package_path,
+			'data' => array(
+				'resource' => 'url',
+				'url'      => $package['url'],
+			),
+		);
+		$steps[] = array(
+			'step' => 'runPHP',
+			'code' => '<?php if ( ! hash_equals( ' . var_export( $package['sha256'], true ) . ', hash_file( "sha256", ' . var_export( $package_path, true ) . ' ) ) ) { throw new RuntimeException( "Static Site Importer package integrity verification failed." ); } ?>',
+		);
 		$steps[] = array(
 			'step'       => 'installPlugin',
 			'pluginData' => array(
-				'resource' => 'url',
-				'url'      => 'https://github.com/Automattic/static-site-importer/releases/latest/download/static-site-importer.zip',
+				'resource' => 'vfs',
+				'path'     => $package_path,
 			),
 			'options'    => array(
 				'activate'         => true,
@@ -328,10 +358,15 @@ update_option( "static_site_importer_playground_preview_result", $result, false 
  * {@see static_site_importer_rest_playground_blueprint()} returns today.
  *
  * @param array<string,mixed> $input   Import ability input.
- * @param array<string,mixed> $options Optional. { install: bool (default true) }.
- * @return array<string,mixed>
+ * @param array<string,mixed> $options Optional. { install: bool (default true), package: array }.
+ * @return array<string,mixed>|WP_Error
  */
-function static_site_importer_playground_import_blueprint( array $input, array $options = array() ): array {
+function static_site_importer_playground_import_blueprint( array $input, array $options = array() ) {
+	$steps = static_site_importer_playground_import_steps( $input, $options );
+	if ( is_wp_error( $steps ) ) {
+		return $steps;
+	}
+
 	return array(
 		'$schema'           => 'https://playground.wordpress.net/blueprint-schema.json',
 		'landingPage'       => '/',
@@ -342,7 +377,7 @@ function static_site_importer_playground_import_blueprint( array $input, array $
 		'features'          => array(
 			'networking' => true,
 		),
-		'steps'             => static_site_importer_playground_import_steps( $input, $options ),
+		'steps'             => $steps,
 	);
 }
 
@@ -351,13 +386,67 @@ function static_site_importer_playground_import_blueprint( array $input, array $
  *
  * Thin REST-internal wrapper retained for backward compatibility. Delegates to
  * the public {@see static_site_importer_playground_import_blueprint()} primitive
- * with the install step enabled so the public /import preview URL is unchanged.
+ * with the install step enabled.
  *
  * @param array<string,mixed> $input Import ability input.
- * @return array<string,mixed>
+ * @return array<string,mixed>|WP_Error
  */
-function static_site_importer_rest_playground_blueprint( array $input ): array {
+function static_site_importer_rest_playground_blueprint( array $input ) {
 	return static_site_importer_playground_import_blueprint( $input );
+}
+
+/**
+ * Select an integrity-verified package for a generated Playground preview.
+ *
+ * A production package must either be a GitHub release asset pinned to its
+ * version or a URL whose path embeds the declared SHA-256. Hosts that bundle
+ * SSI (including WordPress Build) retain the install=false path and never
+ * download a second package.
+ *
+ * @param array<string,mixed> $options Blueprint options.
+ * @return array{url:string,version:string,sha256:string}|WP_Error
+ */
+function static_site_importer_playground_package( array $options = array() ) {
+	$package = isset( $options['package'] ) && is_array( $options['package'] ) ? $options['package'] : null;
+	if ( null === $package && function_exists( 'apply_filters' ) ) {
+		$package = apply_filters( 'static_site_importer_playground_package', null, $options );
+	}
+	if ( ! is_array( $package ) ) {
+		return new WP_Error( 'static_site_importer_playground_package_missing', __( 'A pinned, integrity-verified Static Site Importer package is required for Playground previews.', 'static-site-importer' ), array( 'status' => 503 ) );
+	}
+
+	$url     = isset( $package['url'] ) ? (string) $package['url'] : '';
+	$version = isset( $package['version'] ) ? (string) $package['version'] : '';
+	$sha256  = strtolower( preg_replace( '/^sha256:/i', '', (string) ( $package['sha256'] ?? $package['digest'] ?? '' ) ) );
+	$is_development = ! empty( $package['development'] );
+	if ( '' === $url || '' === $version || ! preg_match( '/^[a-f0-9]{64}$/', $sha256 ) || ! filter_var( $url, FILTER_VALIDATE_URL ) ) {
+		return new WP_Error( 'static_site_importer_playground_package_invalid', __( 'The Static Site Importer Playground package must provide a URL, version, and SHA-256 digest.', 'static-site-importer' ), array( 'status' => 500 ) );
+	}
+
+	$release_asset = 'https://github.com/Automattic/static-site-importer/releases/download/' . rawurlencode( $version ) . '/static-site-importer.zip';
+	$content_addressed = false !== strpos( strtolower( (string) parse_url( $url, PHP_URL_PATH ) ), $sha256 );
+	if ( ! $is_development && $url !== $release_asset && ! $content_addressed ) {
+		return new WP_Error( 'static_site_importer_playground_package_mutable', __( 'Static Site Importer Playground previews require a version-pinned release asset or content-addressed package URL.', 'static-site-importer' ), array( 'status' => 500 ) );
+	}
+
+	return array(
+		'url'     => $url,
+		'version' => $version,
+		'sha256'  => $sha256,
+	);
+}
+
+/**
+ * Return package provenance for the current REST preview response.
+ *
+ * @return array<string,string>
+ */
+function static_site_importer_playground_package_provenance( array $package ): array {
+	return array(
+		'version' => $package['version'],
+		'sha256'  => $package['sha256'],
+		'url'     => $package['url'],
+	);
 }
 
 /**
@@ -574,6 +663,8 @@ function static_site_importer_rest_should_apply_to_current_site( array $params )
 function static_site_importer_rest_open_in_playground( array $source, array $input ) {
 	$input['activate']  = true;
 	$input['overwrite'] = true;
+	// This request is serialized into a disposable Playground runtime, never this site.
+	$input['client_script_isolated'] = true;
 
 	$runtime = static_site_importer_rest_source_runtime( $source, $input );
 	if ( is_wp_error( $runtime ) ) {
@@ -697,6 +788,10 @@ function static_site_importer_build_playground_preview( array $artifact, array $
  * @return array<string,mixed>|WP_Error
  */
 function static_site_importer_rest_apply_to_current_site( array $source, array $input ) {
+	// Current-site materialization is always inert even when a request carries preview options.
+	$input['client_script_policy']   = 'inert';
+	$input['client_script_isolated'] = false;
+	$input['client_script_provenance'] = array();
 	$decorate_current_site_preview = static function ( $result ) {
 		if ( ! is_array( $result ) ) {
 			return $result;
@@ -1002,15 +1097,21 @@ function static_site_importer_source_runtime( array $source, array $input = arra
 
 	$metadata = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
 
-	return array(
-		'artifact'        => array_merge(
+	$artifact = array_merge(
 			$metadata,
 			array(
 				'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
 				'entrypoint' => $entrypoint,
 				'files'      => $files,
 			)
-		),
+		);
+	$source_policy = Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
+	if ( is_wp_error( $source_policy ) ) {
+		return $source_policy;
+	}
+
+	return array(
+		'artifact'        => $artifact,
 		'source_metadata' => array(),
 		'provider'        => 'rest-source',
 	);
@@ -1110,8 +1211,19 @@ function static_site_importer_rest_archive_files( array $archive ) {
 		return new WP_Error( 'static_site_importer_zip_unavailable', __( 'ZIP archive extraction is unavailable on this server.', 'static-site-importer' ), array( 'status' => 500 ) );
 	}
 
-	// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes uploaded ZIP archive payload content.
-	$content = isset( $archive['content_base64'] ) ? base64_decode( (string) $archive['content_base64'], true ) : false;
+	$encoded_content = isset( $archive['content_base64'] ) ? (string) $archive['content_base64'] : '';
+	$limits          = static_site_importer_rest_archive_limits();
+	if ( strlen( $encoded_content ) > $limits['max_encoded_bytes'] ) {
+		return static_site_importer_rest_archive_limit_error( 'encoded_bytes_exceeded' );
+	}
+
+	// This upper bound is calculated without allocating the decoded archive.
+	if ( intdiv( strlen( $encoded_content ) + 3, 4 ) * 3 > $limits['max_decoded_bytes'] ) {
+		return static_site_importer_rest_archive_limit_error( 'decoded_bytes_exceeded' );
+	}
+
+	// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes uploaded ZIP archive payload content after its encoded and decoded sizes are bounded.
+	$content = base64_decode( $encoded_content, true );
 	if ( false === $content ) {
 		return new WP_Error( 'static_site_importer_invalid_archive_content', __( 'Uploaded ZIP archive content could not be decoded.', 'static-site-importer' ), array( 'status' => 400 ) );
 	}
@@ -1130,6 +1242,43 @@ function static_site_importer_rest_archive_files( array $archive ) {
 		return new WP_Error( 'static_site_importer_archive_open_failed', __( 'Uploaded ZIP archive could not be opened.', 'static-site-importer' ), array( 'status' => 400 ) );
 	}
 
+	if ( $zip->numFiles > $limits['max_entries'] ) {
+		$zip->close();
+		wp_delete_file( $tmp );
+		return static_site_importer_rest_archive_limit_error( 'entry_count_exceeded' );
+	}
+
+	$total_uncompressed_bytes = 0;
+	for ( $i = 0; $i < $zip->numFiles; $i++ ) {
+		$stat = $zip->statIndex( $i );
+		if ( ! is_array( $stat ) || $stat['size'] < 0 || $stat['comp_size'] < 0 ) {
+			$zip->close();
+			wp_delete_file( $tmp );
+			return new WP_Error( 'static_site_importer_archive_metadata_invalid', __( 'A ZIP archive entry has invalid metadata.', 'static-site-importer' ), array( 'status' => 400 ) );
+		}
+
+		$entry_uncompressed_bytes = (int) $stat['size'];
+		$entry_compressed_bytes   = (int) $stat['comp_size'];
+		if ( $entry_uncompressed_bytes > $limits['max_entry_uncompressed_bytes'] ) {
+			$zip->close();
+			wp_delete_file( $tmp );
+			return static_site_importer_rest_archive_limit_error( 'entry_uncompressed_bytes_exceeded' );
+		}
+
+		$total_uncompressed_bytes += $entry_uncompressed_bytes;
+		if ( $total_uncompressed_bytes > $limits['max_total_uncompressed_bytes'] ) {
+			$zip->close();
+			wp_delete_file( $tmp );
+			return static_site_importer_rest_archive_limit_error( 'total_uncompressed_bytes_exceeded' );
+		}
+
+		if ( 0 === $entry_compressed_bytes ? $entry_uncompressed_bytes > 0 : $entry_uncompressed_bytes / $entry_compressed_bytes > $limits['max_compression_ratio'] ) {
+			$zip->close();
+			wp_delete_file( $tmp );
+			return static_site_importer_rest_archive_limit_error( 'compression_ratio_exceeded' );
+		}
+	}
+
 	$files = array();
 	for ( $i = 0; $i < $zip->numFiles; $i++ ) {
 		$entry = $zip->getNameIndex( $i );
@@ -1144,6 +1293,14 @@ function static_site_importer_rest_archive_files( array $archive ) {
 
 		if ( ! static_site_importer_rest_should_include_artifact_file( $path ) ) {
 			continue;
+		}
+
+		if ( ! Static_Site_Importer_Content_Policy::is_static_path( $path ) ) {
+			$zip->close();
+			if ( file_exists( $tmp ) ) {
+				wp_delete_file( $tmp );
+			}
+			return new WP_Error( 'static_site_importer_executable_source_rejected', __( 'ZIP archives may contain static content only.', 'static-site-importer' ), array( 'status' => 400, 'path' => $path ) );
 		}
 
 		$file_content = $zip->getFromIndex( $i );
@@ -1168,6 +1325,58 @@ function static_site_importer_rest_archive_files( array $archive ) {
 	}
 
 	return $files;
+}
+
+/**
+ * Return bounded ZIP intake limits.
+ *
+ * @return array<string,int>
+ */
+function static_site_importer_rest_archive_limits(): array {
+	$hard_limits = array(
+		'max_encoded_bytes'            => 52428800,
+		'max_decoded_bytes'            => 39321600,
+		'max_entries'                  => 5000,
+		'max_entry_uncompressed_bytes' => 26214400,
+		'max_total_uncompressed_bytes' => 104857600,
+		'max_compression_ratio'        => 200,
+	);
+	$defaults    = array(
+		'max_encoded_bytes'            => 26214400,
+		'max_decoded_bytes'            => 19660800,
+		'max_entries'                  => 1000,
+		'max_entry_uncompressed_bytes' => 10485760,
+		'max_total_uncompressed_bytes' => 52428800,
+		'max_compression_ratio'        => 100,
+	);
+	$limits      = apply_filters( 'static_site_importer_archive_limits', $defaults );
+	$limits      = is_array( $limits ) ? $limits : $defaults;
+
+	foreach ( $hard_limits as $key => $maximum ) {
+		$candidate      = isset( $limits[ $key ] ) ? (int) $limits[ $key ] : $defaults[ $key ];
+		$limits[ $key ] = min( $maximum, max( 1, $candidate ) );
+	}
+
+	return $limits;
+}
+
+/**
+ * Build a stable archive-policy error without exposing archive contents.
+ *
+ * @param string $reason Policy reason code.
+ * @return WP_Error
+ */
+function static_site_importer_rest_archive_limit_error( string $reason ): WP_Error {
+	$code = 'static_site_importer_archive_' . $reason;
+
+	return new WP_Error(
+		$code,
+		__( 'The ZIP archive exceeds the configured safety limit.', 'static-site-importer' ),
+		array(
+			'status'     => 400,
+			'diagnostic' => array( 'code' => $code ),
+		)
+	);
 }
 
 /**
