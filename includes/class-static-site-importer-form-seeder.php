@@ -162,30 +162,52 @@ class Static_Site_Importer_Form_Seeder {
 
 	/** Activate and prepare Jetpack Forms through its canonical module lifecycle. */
 	public static function prepare_jetpack_forms_runtime() {
-		if ( ! class_exists( 'Jetpack' ) || ! class_exists( 'Automattic\\Jetpack\\Modules' ) ) {
-			return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_runtime_missing', array( 'Jetpack', 'Automattic\\Jetpack\\Modules' ) );
+		$availability = self::jetpack_forms_availability_details();
+		if ( ! empty( $availability['available'] ) ) {
+			return true;
 		}
 
-		$modules = new Automattic\Jetpack\Modules();
-		if ( ! $modules->is_active( 'contact-form' ) ) {
-			$activated = Jetpack::activate_module( 'contact-form', false, false );
-			if ( false === $activated ) {
+		$lifecycle_apis         = array(
+			'Jetpack::is_module_active'         => self::runtime_static_method_exists( 'Jetpack', 'is_module_active' ),
+			'Jetpack::activate_default_modules' => self::runtime_static_method_exists( 'Jetpack', 'activate_default_modules' ),
+		);
+		$missing_lifecycle_apis = array_keys( array_filter( $lifecycle_apis, static fn ( bool $available ): bool => ! $available ) );
+		if ( ! empty( $missing_lifecycle_apis ) ) {
+			return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_lifecycle_missing', $missing_lifecycle_apis );
+		}
+
+		if ( ! self::invoke_runtime_static_method( 'Jetpack', 'is_module_active', array( 'contact-form' ) ) ) {
+			// Jetpack uses this inverted range to activate only explicitly supplied defaults.
+			self::invoke_runtime_static_method( 'Jetpack', 'activate_default_modules', array( 999, 1, array( 'contact-form' ), false, false ) );
+			if ( ! self::invoke_runtime_static_method( 'Jetpack', 'is_module_active', array( 'contact-form' ) ) ) {
 				return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_activation_failed', array( 'contact-form' ) );
 			}
 		}
 
 		$loader = 'Automattic\\Jetpack\\Forms\\Jetpack_Forms';
-		if ( ! class_exists( $loader ) ) {
+		if ( ! self::runtime_static_method_exists( $loader, 'load_contact_form' ) ) {
 			return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_loader_missing', array( $loader . '::load_contact_form' ) );
 		}
-		$loader::load_contact_form();
 
 		$initializer = 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form_Plugin';
-		if ( function_exists( 'did_action' ) && did_action( 'init' ) && ! self::$jetpack_forms_initialized ) {
-			if ( ! class_exists( $initializer ) ) {
-				return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_init_missing', array( $initializer . '::init' ) );
-			}
-			$initializer::init();
+		if ( ! self::runtime_static_method_exists( $initializer, 'init' ) ) {
+			return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_init_missing', array( $initializer . '::init' ) );
+		}
+
+		$init_callback_loaded = function_exists( 'has_action' ) && (
+			false !== has_action( 'init', '\\' . $initializer . '::init' )
+			|| false !== has_action( 'init', $initializer . '::init' )
+		);
+		if ( ! $init_callback_loaded ) {
+			self::invoke_runtime_static_method( $loader, 'load_contact_form' );
+		}
+
+		if ( ! function_exists( 'did_action' ) || ! did_action( 'init' ) ) {
+			return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_init_pending', array( 'init' ) );
+		}
+
+		if ( ! self::$jetpack_forms_initialized ) {
+			self::invoke_runtime_static_method( $initializer, 'init' );
 			self::$jetpack_forms_initialized = true;
 		}
 
@@ -199,6 +221,20 @@ class Static_Site_Importer_Form_Seeder {
 			array_keys( array_filter( $availability['required_blocks'], static fn ( bool $registered ): bool => ! $registered ) ),
 			$availability
 		);
+	}
+
+	/** Check an extension-owned static API without binding analysis to that extension's stubs. */
+	private static function runtime_static_method_exists( string $class_name, string $method ): bool {
+		return class_exists( $class_name ) && method_exists( $class_name, $method );
+	}
+
+	/**
+	 * Invoke an extension-owned static API after runtime_static_method_exists() succeeds.
+	 *
+	 * @phpstan-impure
+	 */
+	private static function invoke_runtime_static_method( string $class_name, string $method, array $args = array() ) {
+		return ( new ReflectionMethod( $class_name, $method ) )->invokeArgs( null, $args );
 	}
 
 	/** Build a bounded provider-readiness error. */
