@@ -58,7 +58,7 @@ When a generated artifact contains full-document HTML, Static Site Importer rout
 - Composer dependencies installed with `composer install`.
 - Node dependencies installed only when running the JavaScript block-validation smoke tests.
 
-SSI requires `automattic/blocks-engine-php-transformer:^0.4.3`. Until the package is published on Packagist, `composer.json` includes an explicit package repository for the `php-transformer-v0.4.3` tag with autoloading rooted at the Blocks Engine monorepo archive's `php-transformer/src/` directory. Remove that repository override once Packagist serves the package metadata.
+SSI requires `automattic/blocks-engine-php-transformer:^0.4.11`. Until the package is published on Packagist, `composer.json` includes an explicit package repository for the `php-transformer-v0.4.11` tag with autoloading rooted at the Blocks Engine monorepo archive's `php-transformer/src/` directory. Remove that repository override once Packagist serves the package metadata.
 
 At runtime, SSI loads the transformer package from `vendor/` and calls `blocks_engine_php_transformer_compile_artifact()` and `blocks_engine_php_transformer_convert_format()` directly.
 
