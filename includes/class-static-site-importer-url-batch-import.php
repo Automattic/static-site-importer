@@ -354,6 +354,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				$import_args['preserve_existing_theme_bootstrap'] = $index > 0;
 				$import_args['import_run_id']                     = $identity;
 				$import_args['compiled_artifact_result']          = $compiled_staged;
+				unset( $compiled_staged, $staged, $shared );
 				$result = $importer( $runtime['artifact'], $import_args );
 				if ( is_wp_error( $result ) ) {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $result, $cache );
