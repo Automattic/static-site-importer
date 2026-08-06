@@ -57,6 +57,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'skipped'             => array(),
 			'existing_matches'    => array( 'pages' => array() ),
 			'report_destinations' => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
+			'external_report_destinations' => isset( $args['external_report_destinations'] ) && is_array( $args['external_report_destinations'] ) ? $args['external_report_destinations'] : array(),
 		);
 
 		try {
@@ -335,6 +336,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'skipped'             => array(),
 			'existing_matches'    => array( 'pages' => array() ),
 			'report_destinations' => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
+			'external_report_destinations' => isset( $args['external_report_destinations'] ) && is_array( $args['external_report_destinations'] ) ? $args['external_report_destinations'] : array(),
 			'theme_dir'           => $theme_dir,
 			'theme'               => array(
 				'slug' => $slug,
@@ -445,6 +447,33 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				throw new InvalidArgumentException( 'report_destination_not_ready' );
 			}
 		}
+		foreach ( $state['external_report_destinations'] ?? array() as $path ) {
+			if ( ! self::safe_external_report_destination( $path ) ) {
+				throw new InvalidArgumentException( 'report_destination_not_ready' );
+			}
+		}
+	}
+
+	/**
+	 * External report output is a CLI-only operator seam. Every artifact must be
+	 * a new file directly beneath one existing, physical directory.
+	 */
+	public static function safe_external_report_destination( $path ): bool {
+		if ( ! is_string( $path ) || '' === $path || str_contains( str_replace( '\\', '/', $path ), '/../' ) || str_starts_with( str_replace( '\\', '/', $path ), '../' ) || str_ends_with( str_replace( '\\', '/', $path ), '/..' ) || str_contains( str_replace( '\\', '/', $path ), '/./' ) ) {
+			return false;
+		}
+		$parent = dirname( $path );
+		if ( ! is_dir( $parent ) || is_link( $path ) || file_exists( $path ) || is_link( $parent ) || ! is_writable( $parent ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- Preflights explicit CLI report destinations before atomic local writes.
+			return false;
+		}
+		while ( DIRECTORY_SEPARATOR !== $parent && '.' !== $parent ) {
+			if ( is_link( $parent ) ) {
+				return false;
+			}
+			$parent = dirname( $parent );
+		}
+
+		return true;
 	}
 
 	/** @param array<string,mixed> $page @param array<string,int> $source_ids */

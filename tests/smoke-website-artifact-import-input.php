@@ -24,6 +24,12 @@ if ( ! function_exists( 'sanitize_title' ) ) {
 	}
 }
 
+if ( ! function_exists( 'sanitize_key' ) ) {
+	function sanitize_key( $value ) {
+		return strtolower( preg_replace( '/[^a-z0-9_\-]/', '', (string) $value ) );
+	}
+}
+
 if ( ! function_exists( 'trailingslashit' ) ) {
 	function trailingslashit( $value ) {
 		return rtrim( (string) $value, '/\\' ) . '/';
@@ -129,7 +135,6 @@ $input = array(
 		'seed_entities'                => true,
 	'products_manifest'            => array( 'products' => array() ),
 	'commerce_context'             => array( 'currency' => 'USD' ),
-	'report'                       => '/tmp/report.json',
 	'write_theme_report_artifacts' => true,
 	'asset_materialization_policy' => 'use_map',
 	'asset_map'                    => array( 'logo.svg' => 'https://example.test/logo.svg' ),
@@ -153,6 +158,14 @@ foreach ( array_keys( Static_Site_Importer_Website_Artifact_Import_Input::SCHEMA
 	$assert( $input[ $field ] === $direct[ $field ], 'normalizer-forwards-' . $field );
 	$assert( $direct[ $field ] === $direct_entrypoint[ $field ], 'direct-equivalent-' . $field );
 }
+$assert( ! isset( Static_Site_Importer_Website_Artifact_Import_Input::SCHEMA_PROPERTIES['report'] ), 'remote-schema-omits-report-destination' );
+$assert( ! array_key_exists( 'report', Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'report' => '/tmp/report.json' ) ) ), 'remote-normalizer-rejects-report-destination' );
+$rejected_report = static_site_importer_ability_import( array( 'report' => '/tmp/report.json', 'source' => array( 'type' => 'files', 'files' => array() ) ) );
+$assert( 'static_site_importer_report_destination_forbidden' === ( $rejected_report['error']['code'] ?? '' ), 'ability-rejects-report-destination' );
+$cli_report = sys_get_temp_dir() . '/ssi-cli-report-' . uniqid( '', true ) . '.json';
+$cli_result = static_site_importer_cli_import( array_merge( $input, array( 'report' => $cli_report, 'source' => array( 'type' => 'files', 'files' => array() ) ) ) );
+$assert( ! empty( $cli_result['success'] ), 'cli-report-output-seam-succeeds' );
+$assert( $cli_report === ( Static_Site_Importer_Theme_Generator::$last_args['report'] ?? '' ), 'cli-report-output-seam-forwards-only-internally' );
 
 $url_method = new ReflectionMethod( Static_Site_Importer_URL_Import_Runtime::class, 'import_args' );
 $url = $url_method->invoke( null, $input, array( 'provider' => 'contract-provider', 'source_metadata' => array( 'provider_id' => 'source-1' ) ) );
@@ -178,7 +191,7 @@ $artifact_dir = sys_get_temp_dir() . '/ssi-import-input-' . uniqid( '', true );
 $validation   = Static_Site_Importer_Validation_Runtime::validate_artifact( array_merge( $input, array( 'artifact' => $artifact, 'artifact_dir' => $artifact_dir ) ) );
 $validation_args = Static_Site_Importer_Theme_Generator::$last_args;
 foreach ( array_keys( Static_Site_Importer_Website_Artifact_Import_Input::SCHEMA_PROPERTIES ) as $field ) {
-	if ( ! in_array( $field, array( 'report', 'source_metadata' ), true ) ) {
+	if ( 'source_metadata' !== $field ) {
 		$assert( $direct[ $field ] === $validation_args[ $field ], 'validation-equivalent-' . $field );
 	}
 }

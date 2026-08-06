@@ -213,7 +213,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'asset_materialization_policy' => isset( $assoc_args['asset-materialization-policy'] ) ? (string) $assoc_args['asset-materialization-policy'] : '',
 			);
 
-			$result = static_site_importer_ability_import(
+			$result = static_site_importer_cli_import(
 				array_merge(
 					$input,
 					array( 'source' => static_site_importer_ability_files_source( $input['artifact'] ) )
@@ -251,10 +251,10 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
 				'report'                    => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
 			);
-			$result = static_site_importer_ability_import( $input );
+			$result = static_site_importer_cli_import( $input );
 			while ( ! empty( $result['success'] ) && ! empty( $result['continuation'] ) ) {
 				$input['source']['import_id'] = (string) ( $result['import_id'] ?? '' );
-				$result                       = static_site_importer_ability_import( $input );
+				$result                       = static_site_importer_cli_import( $input );
 			}
 			if ( empty( $result['success'] ) ) {
 				$error = isset( $result['error'] ) && is_array( $result['error'] ) ? $result['error'] : array();

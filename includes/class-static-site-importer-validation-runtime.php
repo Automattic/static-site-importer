@@ -95,6 +95,7 @@ class Static_Site_Importer_Validation_Runtime {
 				'overwrite'                            => true,
 				'materialize_dependencies'             => true,
 				'require_proven_dynamic_client_assets' => true,
+				'report'                               => (string) $input['report'],
 			)
 		);
 		if ( isset( $input['runtime_lifecycle_phase'] ) ) {
