@@ -15,6 +15,10 @@ if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-content-policy.php';
+}
+
 if ( ! class_exists( 'Static_Site_Importer_Block_Document_Reporter' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-block-document-reporter.php';
 }
@@ -89,8 +93,12 @@ class Static_Site_Importer_Theme_Generator {
 
 	/** Compile an artifact into its immutable canonical WordPress site plan. */
 	public static function compile_website_artifact( array $artifact, array $args = array() ) {
-		$script_policy = Static_Site_Importer_Client_Script_Policy::apply( $artifact, $args );
-		$artifact      = $script_policy['artifact'];
+		$source_policy = Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
+		if ( is_wp_error( $source_policy ) ) {
+			return $source_policy;
+		}
+		$script_policy                       = Static_Site_Importer_Client_Script_Policy::apply( $artifact, $args );
+		$artifact                            = $script_policy['artifact'];
 		$args['client_script_policy_report'] = $script_policy['report'];
 		$compiler_class = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactCompiler';
 		if ( ! class_exists( $compiler_class ) ) {

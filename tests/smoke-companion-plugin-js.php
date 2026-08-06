@@ -83,12 +83,12 @@ $payload     = array(
 	'site_name'    => 'Example Site',
 	'blocks'       => array(
 		array(
-			'name'       => 'Custom Hero',
+			'name'       => 'custom-hero',
 			'block_json' => array(
 				'title'    => 'Custom Hero',
 				'category' => 'design',
 			),
-			'render'     => '<div class="ssi-hero"><?php echo esc_html( $attributes["heading"] ?? "" ); ?></div>',
+			'render'     => '<div class="ssi-hero">Example hero</div>',
 		),
 	),
 	'preserved_js' => array(

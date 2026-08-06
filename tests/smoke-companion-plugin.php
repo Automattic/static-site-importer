@@ -176,6 +176,7 @@ if ( ! function_exists( 'update_option' ) ) {
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-product-handoff-contract.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diagnostics-adapter.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-companion-plugin.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-plugin-materializer.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
@@ -236,9 +237,9 @@ $payload = array(
 				'viewScript'   => array( 'file:./view.js' ),
 				'viewScriptModule' => array( 'file:./view-module.js' ),
 				'viewStyle'       => array( 'file:./view.css' ),
-				'variations'      => 'file:./variations.php',
+				'variations'      => 'file:./variations.json',
 			),
-			'render'     => '<div class="ssi-hero"><?php echo esc_html( $attributes["heading"] ?? "" ); ?></div>',
+			'render'     => '<div class="ssi-hero">Example hero</div>',
 			'assets'     => array(
 				'editor.js'  => 'window.SSIEditor = true;',
 				'script.js'  => 'window.SSIScript = true;',
@@ -247,7 +248,7 @@ $payload = array(
 				'view.js'    => 'window.SSIView = true;',
 				'view-module.js' => 'export const SSIView = true;',
 				'view.css' => '.ssi-hero { display: block; }',
-				'variations.php' => '<?php return array();',
+				'variations.json' => '[]',
 			),
 		),
 	),
@@ -269,7 +270,7 @@ $missing_render['blocks'][0]['render'] = null;
 $missing_render['blocks'][0]['block_json']['render'] = 'file:./render.php';
 $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $missing_render ) ), 'supplied-render-file-requires-declared-asset' );
 $missing_variations = $payload;
-unset( $missing_variations['blocks'][0]['assets']['variations.php'] );
+unset( $missing_variations['blocks'][0]['assets']['variations.json'] );
 $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $missing_variations ) ), 'variations-file-reference-requires-declared-asset' );
 $generated_render = $payload;
 $generated_render['blocks'][0]['block_json']['render'] = 'file:./missing-upstream-render.php';
@@ -287,6 +288,14 @@ $assert( is_wp_error( $invalid_result ), 'invalid-payload-rejected-before-materi
 $invalid_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $invalid_payload );
 $assert( 'failed' === ( $invalid_report['status'] ?? '' ), 'invalid-payload-prevents-file-mutations' );
 $assert( ! file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/escape.js' ), 'invalid-payload-writes-no-unsafe-file' );
+$php_asset = $payload;
+$php_asset['blocks'][0]['assets']['exploit.php'] = '<?php touch( "/tmp/owned" );';
+$php_asset_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $php_asset );
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $php_asset ) ), 'php-companion-asset-rejected' );
+$assert( 'failed' === ( $php_asset_report['status'] ?? '' ) && empty( $GLOBALS['ssi_companion_activated'] ), 'php-companion-asset-cannot-reach-activation-sink' );
+$php_render = $payload;
+$php_render['blocks'][0]['render'] = '<?php system( "id" );';
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $php_render ) ), 'php-render-template-rejected' );
 
 // 1. Scaffolder emits a valid plugin file set.
 $descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $payload );
@@ -321,12 +330,13 @@ if ( is_array( $descriptor ) ) {
 	$assert( str_contains( $block_json, '"editorScript": "file:./editor.js"' ), 'metadata-block-json-declares-editor-script' );
 	$assert( str_contains( $block_json, '"viewScript"' ) && str_contains( $block_json, '"file:./view.js"' ), 'metadata-block-json-declares-view-script' );
 	$assert( str_contains( $block_json, '"viewScriptModule"' ) && str_contains( $block_json, '"viewStyle"' ) && str_contains( $block_json, '"script"' ), 'metadata-block-json-retains-all-core-metadata-fields' );
-	$assert( isset( $files['ssi-example-site/blocks/custom-hero/editor.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/script.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/style.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/editor.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view-module.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/variations.php'] ), 'metadata-block-assets-emitted' );
+	$assert( isset( $files['ssi-example-site/blocks/custom-hero/editor.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/script.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/style.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/editor.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view-module.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/variations.json'] ), 'metadata-block-assets-emitted' );
 
 	// The render.php is the server-rendered template the render_callback runs.
 	$render = $files['ssi-example-site/blocks/custom-hero/render.php'] ?? '';
 	$assert( '' !== $render, 'render-php-emitted' );
 	$assert( str_starts_with( ltrim( $render ), '<?php' ), 'render-php-opens-with-php-tag' );
+	$assert( str_contains( $render, "echo '<div class=\"ssi-hero\">Example hero</div>';" ) && ! str_contains( $render, 'system(' ), 'render-php-emits-static-source-markup-only' );
 
 	// Preserved island JS (#496) is separate carried JS and still rides along.
 	$island_files = array_filter( array_keys( $files ), static fn ( string $path ): bool => str_contains( $path, '/islands/' ) && str_ends_with( $path, '.js' ) );
@@ -365,7 +375,7 @@ $render_variants = Static_Site_Importer_Companion_Plugin::scaffold(
 		),
 	)
 );
-$assert( is_array( $render_variants ), 'render-variants-scaffold-returns-descriptor', is_array( $render_variants ) ? '' : 'WP_Error returned' );
+$assert( is_array( $render_variants ), 'render-variants-scaffold-returns-descriptor', is_array( $render_variants ) ? '' : $render_variants->get_error_code() );
 
 if ( is_array( $render_variants ) ) {
 	$variant_files = $render_variants['files'];

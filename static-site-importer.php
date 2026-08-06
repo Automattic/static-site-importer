@@ -54,6 +54,7 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-so
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-fetcher.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-artifact-run.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-source-normalizer.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-content-policy.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-site-collector.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-import-runtime.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-companion-plugin.php';
@@ -74,6 +75,7 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-va
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-report-diagnostics.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-font-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-document-type-classifier.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-current-site-capabilities.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-figma-import.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-exporter.php';
