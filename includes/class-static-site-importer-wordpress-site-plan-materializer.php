@@ -9,6 +9,9 @@ use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver;
 
 require_once __DIR__ . '/class-static-site-importer-stylesheet-materializer.php';
+if ( ! class_exists( 'Static_Site_Importer_Current_Site_Capabilities' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-current-site-capabilities.php';
+}
 
 final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	public const RECEIPT_SCHEMA           = 'static-site-importer/materialization-receipt/v1';
@@ -152,6 +155,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$state = self::refresh_prepared_destination( $prepared );
 		if ( 'prepared' !== ( $state['status'] ?? '' ) ) {
 			return $state['receipt'];
+		}
+		$capabilities = Static_Site_Importer_Current_Site_Capabilities::check_plan( $state );
+		if ( is_wp_error( $capabilities ) ) {
+			return self::failed_receipt_from_error( $state, $capabilities );
 		}
 		$args         = $state['args'];
 		$font_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay(

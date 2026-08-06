@@ -37,9 +37,6 @@ test( 'shared-row topology materializes through the PHP provider adapter', () =>
 test( 'Jetpack runtime preparation reports the missing canonical forms loader', () => {
 	const code = String.raw`
 namespace Automattic\Jetpack {
-	class Modules {
-		public function is_active( $module ) { return true; }
-	}
 }
 namespace {
 	define( 'ABSPATH', getcwd() . '/' );
@@ -47,7 +44,12 @@ namespace {
 		public function __construct( public $code, public $message = '', public $data = null ) {}
 	}
 	class Jetpack {
-		public static function activate_module( $module, $silent, $redirect ) {}
+		public static function is_module_active( $module ) { return true; }
+		public static function activate_default_modules( $min, $max, $modules, $network, $reactivate ) {}
+	}
+	class WP_Block_Type_Registry {
+		public static function get_instance() { return new self(); }
+		public function is_registered( $name ) { return false; }
 	}
 	function update_option( $name, $value, $autoload = null ) {}
 	require 'includes/class-static-site-importer-form-seeder.php';
