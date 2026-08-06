@@ -1108,8 +1108,19 @@ function static_site_importer_rest_archive_files( array $archive ) {
 		return new WP_Error( 'static_site_importer_zip_unavailable', __( 'ZIP archive extraction is unavailable on this server.', 'static-site-importer' ), array( 'status' => 500 ) );
 	}
 
-	// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes uploaded ZIP archive payload content.
-	$content = isset( $archive['content_base64'] ) ? base64_decode( (string) $archive['content_base64'], true ) : false;
+	$encoded_content = isset( $archive['content_base64'] ) ? (string) $archive['content_base64'] : '';
+	$limits          = static_site_importer_rest_archive_limits();
+	if ( strlen( $encoded_content ) > $limits['max_encoded_bytes'] ) {
+		return static_site_importer_rest_archive_limit_error( 'encoded_bytes_exceeded' );
+	}
+
+	// This upper bound is calculated without allocating the decoded archive.
+	if ( intdiv( strlen( $encoded_content ) + 3, 4 ) * 3 > $limits['max_decoded_bytes'] ) {
+		return static_site_importer_rest_archive_limit_error( 'decoded_bytes_exceeded' );
+	}
+
+	// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes uploaded ZIP archive payload content after its encoded and decoded sizes are bounded.
+	$content = base64_decode( $encoded_content, true );
 	if ( false === $content ) {
 		return new WP_Error( 'static_site_importer_invalid_archive_content', __( 'Uploaded ZIP archive content could not be decoded.', 'static-site-importer' ), array( 'status' => 400 ) );
 	}
@@ -1126,6 +1137,43 @@ function static_site_importer_rest_archive_files( array $archive ) {
 			wp_delete_file( $tmp );
 		}
 		return new WP_Error( 'static_site_importer_archive_open_failed', __( 'Uploaded ZIP archive could not be opened.', 'static-site-importer' ), array( 'status' => 400 ) );
+	}
+
+	if ( $zip->numFiles > $limits['max_entries'] ) {
+		$zip->close();
+		wp_delete_file( $tmp );
+		return static_site_importer_rest_archive_limit_error( 'entry_count_exceeded' );
+	}
+
+	$total_uncompressed_bytes = 0;
+	for ( $i = 0; $i < $zip->numFiles; $i++ ) {
+		$stat = $zip->statIndex( $i );
+		if ( ! is_array( $stat ) || $stat['size'] < 0 || $stat['comp_size'] < 0 ) {
+			$zip->close();
+			wp_delete_file( $tmp );
+			return new WP_Error( 'static_site_importer_archive_metadata_invalid', __( 'A ZIP archive entry has invalid metadata.', 'static-site-importer' ), array( 'status' => 400 ) );
+		}
+
+		$entry_uncompressed_bytes = (int) $stat['size'];
+		$entry_compressed_bytes   = (int) $stat['comp_size'];
+		if ( $entry_uncompressed_bytes > $limits['max_entry_uncompressed_bytes'] ) {
+			$zip->close();
+			wp_delete_file( $tmp );
+			return static_site_importer_rest_archive_limit_error( 'entry_uncompressed_bytes_exceeded' );
+		}
+
+		$total_uncompressed_bytes += $entry_uncompressed_bytes;
+		if ( $total_uncompressed_bytes > $limits['max_total_uncompressed_bytes'] ) {
+			$zip->close();
+			wp_delete_file( $tmp );
+			return static_site_importer_rest_archive_limit_error( 'total_uncompressed_bytes_exceeded' );
+		}
+
+		if ( 0 === $entry_compressed_bytes ? $entry_uncompressed_bytes > 0 : $entry_uncompressed_bytes / $entry_compressed_bytes > $limits['max_compression_ratio'] ) {
+			$zip->close();
+			wp_delete_file( $tmp );
+			return static_site_importer_rest_archive_limit_error( 'compression_ratio_exceeded' );
+		}
 	}
 
 	$files = array();
@@ -1174,6 +1222,58 @@ function static_site_importer_rest_archive_files( array $archive ) {
 	}
 
 	return $files;
+}
+
+/**
+ * Return bounded ZIP intake limits.
+ *
+ * @return array<string,int>
+ */
+function static_site_importer_rest_archive_limits(): array {
+	$hard_limits = array(
+		'max_encoded_bytes'            => 52428800,
+		'max_decoded_bytes'            => 39321600,
+		'max_entries'                  => 5000,
+		'max_entry_uncompressed_bytes' => 26214400,
+		'max_total_uncompressed_bytes' => 104857600,
+		'max_compression_ratio'        => 200,
+	);
+	$defaults    = array(
+		'max_encoded_bytes'            => 26214400,
+		'max_decoded_bytes'            => 19660800,
+		'max_entries'                  => 1000,
+		'max_entry_uncompressed_bytes' => 10485760,
+		'max_total_uncompressed_bytes' => 52428800,
+		'max_compression_ratio'        => 100,
+	);
+	$limits      = apply_filters( 'static_site_importer_archive_limits', $defaults );
+	$limits      = is_array( $limits ) ? $limits : $defaults;
+
+	foreach ( $hard_limits as $key => $maximum ) {
+		$candidate      = isset( $limits[ $key ] ) ? (int) $limits[ $key ] : $defaults[ $key ];
+		$limits[ $key ] = min( $maximum, max( 1, $candidate ) );
+	}
+
+	return $limits;
+}
+
+/**
+ * Build a stable archive-policy error without exposing archive contents.
+ *
+ * @param string $reason Policy reason code.
+ * @return WP_Error
+ */
+function static_site_importer_rest_archive_limit_error( string $reason ): WP_Error {
+	$code = 'static_site_importer_archive_' . $reason;
+
+	return new WP_Error(
+		$code,
+		__( 'The ZIP archive exceeds the configured safety limit.', 'static-site-importer' ),
+		array(
+			'status'     => 400,
+			'diagnostic' => array( 'code' => $code ),
+		)
+	);
 }
 
 /**
