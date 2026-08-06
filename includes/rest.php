@@ -1047,7 +1047,7 @@ function static_site_importer_rest_archive_files( array $archive ) {
 	$total_uncompressed_bytes = 0;
 	for ( $i = 0; $i < $zip->numFiles; $i++ ) {
 		$stat = $zip->statIndex( $i );
-		if ( ! is_array( $stat ) || ! isset( $stat['size'], $stat['comp_size'] ) || $stat['size'] < 0 || $stat['comp_size'] < 0 ) {
+		if ( ! is_array( $stat ) || $stat['size'] < 0 || $stat['comp_size'] < 0 ) {
 			$zip->close();
 			wp_delete_file( $tmp );
 			return new WP_Error( 'static_site_importer_archive_metadata_invalid', __( 'A ZIP archive entry has invalid metadata.', 'static-site-importer' ), array( 'status' => 400 ) );
@@ -1122,26 +1122,26 @@ function static_site_importer_rest_archive_files( array $archive ) {
  */
 function static_site_importer_rest_archive_limits(): array {
 	$hard_limits = array(
-		'max_encoded_bytes'              => 52428800,
-		'max_decoded_bytes'              => 39321600,
-		'max_entries'                    => 5000,
-		'max_entry_uncompressed_bytes'   => 26214400,
-		'max_total_uncompressed_bytes'   => 104857600,
-		'max_compression_ratio'          => 200,
+		'max_encoded_bytes'            => 52428800,
+		'max_decoded_bytes'            => 39321600,
+		'max_entries'                  => 5000,
+		'max_entry_uncompressed_bytes' => 26214400,
+		'max_total_uncompressed_bytes' => 104857600,
+		'max_compression_ratio'        => 200,
 	);
 	$defaults    = array(
-		'max_encoded_bytes'              => 26214400,
-		'max_decoded_bytes'              => 19660800,
-		'max_entries'                    => 1000,
-		'max_entry_uncompressed_bytes'   => 10485760,
-		'max_total_uncompressed_bytes'   => 52428800,
-		'max_compression_ratio'          => 100,
+		'max_encoded_bytes'            => 26214400,
+		'max_decoded_bytes'            => 19660800,
+		'max_entries'                  => 1000,
+		'max_entry_uncompressed_bytes' => 10485760,
+		'max_total_uncompressed_bytes' => 52428800,
+		'max_compression_ratio'        => 100,
 	);
 	$limits      = apply_filters( 'static_site_importer_archive_limits', $defaults );
 	$limits      = is_array( $limits ) ? $limits : $defaults;
 
 	foreach ( $hard_limits as $key => $maximum ) {
-		$candidate       = isset( $limits[ $key ] ) ? (int) $limits[ $key ] : $defaults[ $key ];
+		$candidate      = isset( $limits[ $key ] ) ? (int) $limits[ $key ] : $defaults[ $key ];
 		$limits[ $key ] = min( $maximum, max( 1, $candidate ) );
 	}
 
@@ -1157,7 +1157,14 @@ function static_site_importer_rest_archive_limits(): array {
 function static_site_importer_rest_archive_limit_error( string $reason ): WP_Error {
 	$code = 'static_site_importer_archive_' . $reason;
 
-	return new WP_Error( $code, __( 'The ZIP archive exceeds the configured safety limit.', 'static-site-importer' ), array( 'status' => 400, 'diagnostic' => array( 'code' => $code ) ) );
+	return new WP_Error(
+		$code,
+		__( 'The ZIP archive exceeds the configured safety limit.', 'static-site-importer' ),
+		array(
+			'status'     => 400,
+			'diagnostic' => array( 'code' => $code ),
+		)
+	);
 }
 
 /**
