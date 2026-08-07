@@ -195,7 +195,7 @@ class Static_Site_Importer_Plugin_Materializer {
 		$already_available = self::available( $availability_check );
 
 		$report['attempted'] = true;
-		$capabilities       = Static_Site_Importer_Current_Site_Capabilities::check_plugin_install( (bool) $plan['activate'] );
+		$capabilities        = Static_Site_Importer_Current_Site_Capabilities::check_plugin_install( (bool) $plan['activate'] );
 		if ( is_wp_error( $capabilities ) ) {
 			return self::failed_report( $report, $capabilities );
 		}

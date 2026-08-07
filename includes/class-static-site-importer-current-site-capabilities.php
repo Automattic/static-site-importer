@@ -10,8 +10,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Static_Site_Importer_Current_Site_Capabilities {
-	/** @return true|WP_Error */
-	public static function check_plan( array $state ): true|WP_Error {
+	/** @return bool|WP_Error */
+	public static function check_plan( array $state ): bool|WP_Error {
 		if ( self::is_cli() ) {
 			return true;
 		}
@@ -32,15 +32,18 @@ final class Static_Site_Importer_Current_Site_Capabilities {
 			}
 			$existing_id = (int) ( $page['planned_existing_id'] ?? 0 );
 			if ( $existing_id > 0 ) {
-				$required[] = array( 'capability' => 'edit_post', 'args' => array( $existing_id ) );
+				$required[] = array(
+					'capability' => 'edit_post',
+					'args'       => array( $existing_id ),
+				);
 				continue;
 			}
 			$type = function_exists( 'get_post_type_object' ) ? get_post_type_object( (string) ( $page['post_type'] ?? 'page' ) ) : null;
 			if ( ! $type ) {
 				return new WP_Error( 'static_site_importer_capability_plan_invalid', 'The materialization plan has an unknown post type.' );
 			}
-			$cap = $type->cap ?? null;
-			if ( ! is_object( $cap ) || ! isset( $cap->create_posts, $cap->publish_posts ) ) {
+			$cap = $type->cap;
+			if ( ! isset( $cap->create_posts, $cap->publish_posts ) ) {
 				return new WP_Error( 'static_site_importer_capability_plan_invalid', 'The materialization plan has incomplete post type capabilities.' );
 			}
 			$required[] = array( 'capability' => (string) $cap->create_posts );
@@ -58,8 +61,8 @@ final class Static_Site_Importer_Current_Site_Capabilities {
 		return self::check( $required );
 	}
 
-	/** @return true|WP_Error */
-	public static function check_plugin_install( bool $activate, bool $install = true ): true|WP_Error {
+	/** @return bool|WP_Error */
+	public static function check_plugin_install( bool $activate, bool $install = true ): bool|WP_Error {
 		if ( self::is_cli() ) {
 			return true;
 		}
@@ -73,8 +76,8 @@ final class Static_Site_Importer_Current_Site_Capabilities {
 		return self::check( $required );
 	}
 
-	/** @param array<int,array{capability:string,args?:array<int,mixed>}> $required @return true|WP_Error */
-	private static function check( array $required ): true|WP_Error {
+	/** @param array<int,array{capability:string,args?:array<int,mixed>}> $required @return bool|WP_Error */
+	private static function check( array $required ): bool|WP_Error {
 		if ( ! function_exists( 'current_user_can' ) ) {
 			return true;
 		}

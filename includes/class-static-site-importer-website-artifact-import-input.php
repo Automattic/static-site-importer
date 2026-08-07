@@ -34,7 +34,6 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		'seed_entities'                        => array( 'type' => 'boolean' ),
 		'products_manifest'                    => array( 'type' => 'object' ),
 		'commerce_context'                     => array( 'type' => 'object' ),
-		'report'                               => array( 'type' => 'string' ),
 		'write_theme_report_artifacts'         => array( 'type' => 'boolean' ),
 		'asset_materialization_policy'         => array(
 			'type' => 'string',
@@ -44,7 +43,10 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		'compiler_options'                     => array( 'type' => 'object' ),
 		'source_metadata'                      => array( 'type' => 'object' ),
 		'validation_artifacts'                 => array( 'type' => 'object' ),
-		'client_script_policy'                 => array( 'type' => 'string', 'enum' => array( 'inert', 'isolated_preview' ) ),
+		'client_script_policy'                 => array(
+			'type' => 'string',
+			'enum' => array( 'inert', 'isolated_preview' ),
+		),
 		'client_script_provenance'             => array( 'type' => 'object' ),
 		'client_script_isolated'               => array( 'type' => 'boolean' ),
 	);
@@ -74,7 +76,6 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 				'seed_entities'                        => false,
 				'products_manifest'                    => array(),
 				'commerce_context'                     => array(),
-				'report'                               => '',
 				'write_theme_report_artifacts'         => false,
 				'asset_materialization_policy'         => '',
 				'asset_map'                            => array(),
@@ -94,7 +95,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 			}
 		}
 
-		foreach ( array( 'slug', 'name', 'site_title', 'stale_page_action', 'report', 'asset_materialization_policy', 'client_script_policy' ) as $field ) {
+		foreach ( array( 'slug', 'name', 'site_title', 'stale_page_action', 'asset_materialization_policy', 'client_script_policy' ) as $field ) {
 			$values[ $field ] = is_scalar( $values[ $field ] ) ? (string) $values[ $field ] : '';
 		}
 		foreach ( array( 'activate', 'overwrite', 'disable_smilies', 'fail_on_quality', 'allow_missing_woocommerce', 'allow_missing_jetpack', 'materialize_dependencies', 'require_proven_dynamic_client_assets', 'seed_entities', 'write_theme_report_artifacts', 'client_script_isolated' ) as $field ) {
