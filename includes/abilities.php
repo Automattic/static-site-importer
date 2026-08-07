@@ -408,6 +408,9 @@ if ( ! function_exists( 'static_site_importer_ability_export_theme' ) ) {
 if ( ! function_exists( 'static_site_importer_ability_import' ) ) {
 	/** Canonical plan-first import dispatcher. */
 	function static_site_importer_ability_import( array $input ): array {
+		if ( array_key_exists( 'report', $input ) ) {
+			return static_site_importer_ability_error( 'static_site_importer_report_destination_forbidden', 'Report destinations are owned by the importer and are not accepted through Abilities.' );
+		}
 		$source    = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
 		$type      = (string) ( $source['type'] ?? '' );
 		$operation = (string) ( $input['operation'] ?? 'apply' );
@@ -483,6 +486,9 @@ if ( ! function_exists( 'static_site_importer_ability_import' ) ) {
 		);
 
 		$args = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
+		if ( isset( $GLOBALS['_static_site_importer_cli_report_destination'] ) ) {
+			$args['report'] = (string) $GLOBALS['_static_site_importer_cli_report_destination'];
+		}
 		if ( 'plan' === $operation ) {
 			return static_site_importer_ability_plan_artifact( $artifact, $args, $type, $provenance );
 		}
@@ -494,6 +500,26 @@ if ( ! function_exists( 'static_site_importer_ability_import' ) ) {
 		}
 
 		return static_site_importer_ability_import_success( $result, $input );
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_import' ) ) {
+	/** Run an import with the explicit, local WP-CLI report output seam. */
+	function static_site_importer_cli_import( array $input ): array {
+		$report = isset( $input['report'] ) ? (string) $input['report'] : '';
+		unset( $input['report'] );
+		$source = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
+		if ( 'url' === ( $source['type'] ?? '' ) ) {
+			$input['report'] = $report;
+			return static_site_importer_ability_import_url_operation( $input, $source );
+		}
+
+		$GLOBALS['_static_site_importer_cli_report_destination'] = $report;
+		try {
+			return static_site_importer_ability_import( $input );
+		} finally {
+			unset( $GLOBALS['_static_site_importer_cli_report_destination'] );
+		}
 	}
 }
 
