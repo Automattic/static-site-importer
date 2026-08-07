@@ -62,10 +62,11 @@ class Static_Site_Importer_Validation_Runtime {
 	/**
 	 * Validate a website artifact in the current runtime.
 	 *
-	 * @param array<string,mixed> $input Validation input.
+	 * @param array<string,mixed> $input         Validation input.
+	 * @param string              $invocation_id Server-owned identity for this invocation.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	public static function validate_artifact( array $input ) {
+	public static function validate_artifact( array $input, string $invocation_id = '' ) {
 		$artifact = isset( $input['artifact'] ) && is_array( $input['artifact'] ) ? $input['artifact'] : array();
 		if ( empty( $artifact ) ) {
 			return new WP_Error( 'static_site_importer_validation_artifact_missing', 'Validation requires an artifact JSON object.' );
@@ -104,6 +105,7 @@ class Static_Site_Importer_Validation_Runtime {
 		if ( isset( $input['runtime_lifecycle_request_id'] ) ) {
 			$import_args['runtime_lifecycle_request_id'] = (string) $input['runtime_lifecycle_request_id'];
 		}
+		$import_args['runtime_lifecycle_invocation_id'] = self::invocation_id( $invocation_id );
 
 		$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
 		if ( is_wp_error( $result ) ) {
@@ -113,8 +115,14 @@ class Static_Site_Importer_Validation_Runtime {
 		return self::result_from_import( $result, $artifact_dir, $import_args );
 	}
 
-	/** Prepare plugin dependencies in this request; callers resume validation in another request. */
-	public static function prepare_artifact_dependencies( array $input ) {
+	/**
+	 * Prepare plugin dependencies in this request; callers resume validation in another request.
+	 *
+	 * @param array<string,mixed> $input         Validation input.
+	 * @param string              $invocation_id Server-owned identity for this invocation.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public static function prepare_artifact_dependencies( array $input, string $invocation_id = '' ) {
 		$input['runtime_lifecycle_phase']  = 'prepare';
 		$input['materialize_dependencies'] = true;
 		$artifact                          = isset( $input['artifact'] ) && is_array( $input['artifact'] ) ? $input['artifact'] : array();
@@ -133,7 +141,8 @@ class Static_Site_Importer_Validation_Runtime {
 			)
 		);
 		$import_args['runtime_lifecycle_phase'] = 'prepare';
-		$result                                 = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
+		$import_args['runtime_lifecycle_invocation_id'] = self::invocation_id( $invocation_id );
+		$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
@@ -147,6 +156,11 @@ class Static_Site_Importer_Validation_Runtime {
 			'dependencies'      => $result['dependencies'] ?? array(),
 			'runtime_lifecycle' => $result['runtime_lifecycle'] ?? array(),
 		);
+	}
+
+	/** Resolve the server-owned identity for one validation invocation. */
+	private static function invocation_id( string $invocation_id ): string {
+		return '' !== $invocation_id ? $invocation_id : wp_generate_uuid4();
 	}
 
 	/** Build a registry-derived dependency plan without installing packages. */
