@@ -30,6 +30,7 @@ import {
   fixtureMatrixGateConfig,
   fixtureMatrixRecipeInput,
   fixtureMatrixRunConfigFromEnv,
+  normalizeFixtureMatrixDependencyOverlays,
   normalizeFixtureMatrixRunConfig,
 } from '../lib/fixture-matrix.mjs';
 
@@ -256,6 +257,7 @@ export async function runFixtureMatrix(options) {
       outputDirectory,
       staticSiteImporterPath,
       options,
+      dependencyOverrides,
       progress,
     }));
     performance.batch_execution_ms = elapsedMs(batchExecutionStartedAt);
@@ -393,7 +395,7 @@ function executionEvidenceMetadata(executionRequested) {
 // per-fixture artifact subdirectories, all keyed by the unique batch suffix), so
 // many of these can run concurrently without colliding. Returns a stable outcome
 // the caller folds back together in batch order.
-export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outputDirectory, staticSiteImporterPath, options, recovery = false, progress }) {
+export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outputDirectory, staticSiteImporterPath, options, dependencyOverrides = prepareDependencyOverrides(options), recovery = false, progress }) {
   const batchNumber = batchIndex + 1;
   const batchSuffix = recovery
     ? `${String(batchNumber).padStart(3, '0')}-recovery-${fixtures[0].id}`
@@ -407,7 +409,13 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
   // Discovery is deliberately a separate, short-lived Codebox runtime. It only
   // asks SSI for its registry-derived plan; package resolution happens on the
   // host while assembling the following fresh import runtime.
-  const dependencyPlan = await discoverFixtureDependencyPlan({ fixtures, outputDirectory, staticSiteImporterPath, options, batchSuffix });
+  const dependencyOverlays = normalizeFixtureMatrixDependencyOverlays({
+    staticSiteImporterPath,
+    staticSiteImporterPlugin: options.staticSiteImporterPlugin,
+    staticSiteImporterSlug: options.staticSiteImporterSlug,
+    dependencyOverrides,
+  });
+  const dependencyPlan = await discoverFixtureDependencyPlan({ fixtures, outputDirectory, staticSiteImporterPath, options, dependencyOverlays, batchSuffix });
   const resolvedDependencyPlan = await resolveHostDependencyPlan(dependencyPlan, path.join(outputDirectory, 'dependency-cache'));
   const batchRecipe = buildFixtureMatrixRecipe({
     matrix: batchMatrix,
@@ -420,7 +428,8 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     staticSiteImporterPlugin: options.staticSiteImporterPlugin,
     staticSiteImporterSlug: options.staticSiteImporterSlug,
     dependencyPlan: resolvedDependencyPlan,
-    dependencyOverrides: prepareDependencyOverrides(options),
+    dependencyOverrides,
+    dependencyOverlays,
     svgFontEvidence: true,
     ...fixtureMatrixRecipeInput(normalizeFixtureMatrixRunConfig(Object.fromEntries(Object.keys(FIXTURE_MATRIX_RUN_FIELDS).map((key) => [key, options[key]])))),
     ...visualParityRecipeInput(options),
@@ -503,7 +512,8 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     sidecarAttemptId: batchSuffix,
     visualParity: fixtureMatrixGateConfig(normalizeFixtureMatrixRunConfig(Object.fromEntries(Object.keys(FIXTURE_MATRIX_RUN_FIELDS).map((key) => [key, options[key]])))).visualParity,
     liveWpParity: liveWpParityCollectorInput(options),
-    dependencyOverrides: prepareDependencyOverrides(options),
+    dependencyOverrides,
+    dependencyOverlays: batchRecipe.inputs.dependency_overlays || [],
   });
   const visualCompare = materializeVisualCompareArtifacts({
     result: batchResult,
@@ -547,6 +557,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       outputDirectory,
       staticSiteImporterPath,
       options,
+      dependencyOverrides,
       recovery: true,
       progress,
     }));
@@ -600,7 +611,7 @@ export async function resolveHostDependencyPlan(plan, cacheDirectory, fetcher = 
   return { ...plan, entries };
 }
 
-async function discoverFixtureDependencyPlan({ fixtures, outputDirectory, staticSiteImporterPath, options, batchSuffix }) {
+async function discoverFixtureDependencyPlan({ fixtures, outputDirectory, staticSiteImporterPath, options, dependencyOverlays = [], batchSuffix }) {
   const plans = [];
   for (const fixture of fixtures) {
     const fixtureDirectory = path.join(outputDirectory, fixture.id);
@@ -616,6 +627,7 @@ async function discoverFixtureDependencyPlan({ fixtures, outputDirectory, static
       inputs: {
         stagedFiles: [{ source: path.join(fixtureDirectory, 'artifact.json'), target: path.join(runtimeDirectory, 'artifact.json') }],
         extra_plugins: [{ source: staticSiteImporterPath, slug: options.staticSiteImporterSlug || 'static-site-importer', activate: true }],
+        ...(dependencyOverlays.length ? { dependency_overlays: dependencyOverlays } : {}),
       },
       workflow: { steps: [
         { command: 'wordpress.wp-cli', args: [`command=plugin activate ${(options.staticSiteImporterPlugin || 'static-site-importer/static-site-importer.php')}`] },
@@ -627,10 +639,10 @@ async function discoverFixtureDependencyPlan({ fixtures, outputDirectory, static
     const discovery = await runWpCodeboxRecipe({ recipeFile, artifactsDir, outputFile, wpCodeboxBin: options.wpCodeboxBin, inactivityTimeoutMs: batchInactivityTimeoutMs(options) });
     const plan = findDependencyPlan(artifactsDir);
     if (!plan) throw new Error(`Dependency discovery did not persist a valid plan for fixture ${fixture.id}.`);
-    // Discovery only mounts SSI. Provider packages are resolved and activated by
-    // the final recipe's extra_plugins setup, before its workflow begins; asking
-    // this runtime for a provider receipt would incorrectly require Jetpack/Woo
-    // to be installed during planning.
+    // Discovery only mounts SSI and its declared transformer overlays. Provider
+    // packages are resolved and activated by the final recipe's extra_plugins
+    // setup, before its workflow begins; asking this runtime for a provider
+    // receipt would incorrectly require Jetpack/Woo during planning.
     plans.push(plan);
   }
   const entries = new Map();
