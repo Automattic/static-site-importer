@@ -9,7 +9,7 @@ namespace {
 	$case = $argv[1] ?? '';
 	if ( '' === $case ) {
 		$failures = array();
-		foreach ( array( 'supported-late', 'already-active-late', 'init-pending', 'activation-failed', 'missing-lifecycle', 'missing-loader', 'missing-init', 'partial-blocks' ) as $child_case ) {
+		foreach ( array( 'supported-late', 'already-active-late', 'fresh-frontend', 'init-pending', 'activation-failed', 'missing-lifecycle', 'missing-loader', 'missing-init', 'partial-blocks' ) as $child_case ) {
 			$command = escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( __FILE__ ) . ' ' . escapeshellarg( $child_case );
 			exec( $command, $output, $status );
 			if ( 0 !== $status ) {
@@ -38,19 +38,25 @@ namespace {
 	}
 	function is_wp_error( $value ): bool { return $value instanceof WP_Error; }
 	function did_action( string $hook ): int { return 'init' === $hook ? $GLOBALS['ssi_init_actions'] : 0; }
-	function add_action( string $hook, $callback ): void { $GLOBALS['ssi_hooks'][ $hook ][] = $callback; }
+	function add_action( string $hook, $callback, int $priority = 10 ): void { $GLOBALS['ssi_hooks'][ $hook ][ $priority ][] = $callback; }
 	function has_action( string $hook, $callback = false ) {
-		foreach ( $GLOBALS['ssi_hooks'][ $hook ] ?? array() as $registered ) {
-			if ( $registered === $callback || ltrim( (string) $registered, '\\' ) === ltrim( (string) $callback, '\\' ) ) {
-				return 9;
+		foreach ( $GLOBALS['ssi_hooks'][ $hook ] ?? array() as $priority => $callbacks ) {
+			foreach ( $callbacks as $registered ) {
+				if ( $registered === $callback || ltrim( (string) $registered, '\\' ) === ltrim( (string) $callback, '\\' ) ) {
+					return $priority;
+				}
 			}
 		}
 		return false;
 	}
-	function ssi_run_init(): void {
-		$GLOBALS['ssi_init_actions'] = 1;
-		foreach ( $GLOBALS['ssi_hooks']['init'] ?? array() as $callback ) {
-			call_user_func( $callback );
+	function ssi_run_hook( string $hook ): void {
+		if ( 'init' === $hook ) {
+			$GLOBALS['ssi_init_actions'] = 1;
+		}
+		foreach ( $GLOBALS['ssi_hooks'][ $hook ] ?? array() as $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				call_user_func( $callback );
+			}
 		}
 	}
 
@@ -124,8 +130,14 @@ namespace {
 	if ( 'already-active-late' === $case ) {
 		Jetpack::$contact_form_active = true;
 	}
+	if ( 'fresh-frontend' === $case ) {
+		Jetpack::$contact_form_active = true;
+		Static_Site_Importer_Form_Seeder::register_runtime_bootstrap();
+		ssi_run_hook( 'jetpack_loaded' );
+		ssi_run_hook( 'init' );
+	}
 
-	$result = Static_Site_Importer_Form_Seeder::prepare_jetpack_forms_runtime();
+	$result = 'fresh-frontend' === $case ? Static_Site_Importer_Form_Seeder::jetpack_forms_available() : Static_Site_Importer_Form_Seeder::prepare_jetpack_forms_runtime();
 	$assert = static function ( bool $condition, string $message ): void {
 		if ( ! $condition ) {
 			echo 'FAIL ' . $message . "\n";
@@ -146,9 +158,15 @@ namespace {
 		$assert( 0 === Jetpack::$default_activations, 'active module is not reactivated' );
 		$assert( 1 === \Automattic\Jetpack\Forms\Jetpack_Forms::$loads, 'missing package hook is installed once' );
 	}
+	if ( 'fresh-frontend' === $case ) {
+		$assert( true === $result, 'fresh frontend request registers the persisted Forms runtime' );
+		$assert( 0 === Jetpack::$default_activations, 'fresh frontend request does not reactivate the persisted module' );
+		$assert( 1 === \Automattic\Jetpack\Forms\Jetpack_Forms::$loads, 'fresh frontend request loads Forms through Jetpack lifecycle' );
+		$assert( 1 === \Automattic\Jetpack\Forms\ContactForm\Contact_Form_Plugin::$initializations, 'fresh frontend request initializes dynamic field rendering' );
+	}
 	if ( 'init-pending' === $case ) {
 		$assert( is_wp_error( $result ) && 'static_site_importer_jetpack_forms_init_pending' === $result->get_error_code(), 'pre-init preparation is bounded' );
-		ssi_run_init();
+		ssi_run_hook( 'init' );
 		$assert( true === Static_Site_Importer_Form_Seeder::prepare_jetpack_forms_runtime(), 'normal init hook completes readiness' );
 		$assert( 1 === Jetpack::$default_activations && 1 === \Automattic\Jetpack\Forms\Jetpack_Forms::$loads, 'init completion does not replay lifecycle work' );
 	}
