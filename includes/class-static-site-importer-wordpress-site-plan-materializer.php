@@ -45,10 +45,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	 */
 	public static function prepare( array $plan, array $args = array() ): array {
 		$state = array(
-			'plan'                => $plan,
-			'plan_hash'           => self::hash( $plan ),
-			'diagnostics'         => array(),
-			'applied'             => array(
+			'plan'                         => $plan,
+			'plan_hash'                    => self::hash( $plan ),
+			'diagnostics'                  => array(),
+			'applied'                      => array(
 				'posts'                => array(),
 				'files'                => array(),
 				'operations'           => array(),
@@ -57,9 +57,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					'entity_bindings'    => array(),
 				),
 			),
-			'skipped'             => array(),
-			'existing_matches'    => array( 'pages' => array() ),
-			'report_destinations' => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
+			'skipped'                      => array(),
+			'existing_matches'             => array( 'pages' => array() ),
+			'report_destinations'          => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
 			'external_report_destinations' => isset( $args['external_report_destinations'] ) && is_array( $args['external_report_destinations'] ) ? $args['external_report_destinations'] : array(),
 		);
 
@@ -325,13 +325,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$theme_uri  = trailingslashit( get_theme_root_uri() ) . $slug;
 		$theme_dir  = trailingslashit( $theme_root ) . $slug;
 		$state      = array(
-			'plan'                => $plan,
-			'plan_hash'           => $prepared['plan_hash'],
-			'base_resolved'       => $base_resolved,
-			'base_resolved_hash'  => $prepared['base_resolved_hash'],
-			'resolved'            => $base_resolved,
-			'diagnostics'         => array(),
-			'applied'             => array(
+			'plan'                         => $plan,
+			'plan_hash'                    => $prepared['plan_hash'],
+			'base_resolved'                => $base_resolved,
+			'base_resolved_hash'           => $prepared['base_resolved_hash'],
+			'resolved'                     => $base_resolved,
+			'diagnostics'                  => array(),
+			'applied'                      => array(
 				'posts'                => array(),
 				'files'                => array(),
 				'operations'           => array(),
@@ -340,18 +340,18 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					'entity_bindings'    => array(),
 				),
 			),
-			'skipped'             => array(),
-			'existing_matches'    => array( 'pages' => array() ),
-			'report_destinations' => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
+			'skipped'                      => array(),
+			'existing_matches'             => array( 'pages' => array() ),
+			'report_destinations'          => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
 			'external_report_destinations' => isset( $args['external_report_destinations'] ) && is_array( $args['external_report_destinations'] ) ? $args['external_report_destinations'] : array(),
-			'theme_dir'           => $theme_dir,
-			'theme'               => array(
+			'theme_dir'                    => $theme_dir,
+			'theme'                        => array(
 				'slug' => $slug,
 				'dir'  => $theme_dir,
 				'uri'  => $theme_uri,
 			),
-			'args'                => $args,
-			'preparation'         => array(
+			'args'                         => $args,
+			'preparation'                  => array(
 				'canonical_validations'       => 1,
 				'plan_resolutions'            => 1,
 				'destination_preflights'      => 2,

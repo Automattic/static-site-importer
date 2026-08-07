@@ -43,7 +43,10 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		'compiler_options'                     => array( 'type' => 'object' ),
 		'source_metadata'                      => array( 'type' => 'object' ),
 		'validation_artifacts'                 => array( 'type' => 'object' ),
-		'client_script_policy'                 => array( 'type' => 'string', 'enum' => array( 'inert', 'isolated_preview' ) ),
+		'client_script_policy'                 => array(
+			'type' => 'string',
+			'enum' => array( 'inert', 'isolated_preview' ),
+		),
 		'client_script_provenance'             => array( 'type' => 'object' ),
 		'client_script_isolated'               => array( 'type' => 'boolean' ),
 	);

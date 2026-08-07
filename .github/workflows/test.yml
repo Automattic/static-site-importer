@@ -26,7 +26,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: Extra-Chill/homeboy-action@31e95050206332c4ebd36894387c980c99443ecf  # v2.8.15
+      - uses: Extra-Chill/homeboy-action@5e7ee62f19455be58d6b05a16333ceb389eb385c  # v2.11.10
         with:
           commands: review lint
           args: --extension wordpress
@@ -47,7 +47,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: Extra-Chill/homeboy-action@31e95050206332c4ebd36894387c980c99443ecf  # v2.8.15
+      - uses: Extra-Chill/homeboy-action@5e7ee62f19455be58d6b05a16333ceb389eb385c  # v2.11.10
         with:
           commands: review test
           args: --extension wordpress

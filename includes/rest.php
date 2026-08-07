@@ -210,11 +210,11 @@ function static_site_importer_rest_import_figma_file( WP_REST_Request $request )
  * @return array<string,mixed>|WP_Error
  */
 function static_site_importer_rest_create_playground_open( array $artifact, array $input, string $source = 'upload' ) {
-	$package        = static_site_importer_playground_package();
+	$package = static_site_importer_playground_package();
 	if ( is_wp_error( $package ) ) {
 		return $package;
 	}
-	$blueprint      = static_site_importer_playground_import_blueprint( $input, array( 'package' => $package ) );
+	$blueprint = static_site_importer_playground_import_blueprint( $input, array( 'package' => $package ) );
 	if ( is_wp_error( $blueprint ) ) {
 		return $blueprint;
 	}
@@ -316,7 +316,7 @@ update_option( "static_site_importer_playground_preview_result", $result, false 
 
 	if ( $install ) {
 		$package_path = '/tmp/static-site-importer-' . substr( $package['sha256'], 0, 16 ) . '.zip';
-		$steps[] = array(
+		$steps[]      = array(
 			'step' => 'writeFile',
 			'path' => $package_path,
 			'data' => array(
@@ -324,11 +324,12 @@ update_option( "static_site_importer_playground_preview_result", $result, false 
 				'url'      => $package['url'],
 			),
 		);
-		$steps[] = array(
+		$steps[]      = array(
 			'step' => 'runPHP',
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Produces immutable PHP string literals for the Playground blueprint.
 			'code' => '<?php if ( ! hash_equals( ' . var_export( $package['sha256'], true ) . ', hash_file( "sha256", ' . var_export( $package_path, true ) . ' ) ) ) { throw new RuntimeException( "Static Site Importer package integrity verification failed." ); } ?>',
 		);
-		$steps[] = array(
+		$steps[]      = array(
 			'step'       => 'installPlugin',
 			'pluginData' => array(
 				'resource' => 'vfs',
@@ -415,16 +416,18 @@ function static_site_importer_playground_package( array $options = array() ) {
 		return new WP_Error( 'static_site_importer_playground_package_missing', __( 'A pinned, integrity-verified Static Site Importer package is required for Playground previews.', 'static-site-importer' ), array( 'status' => 503 ) );
 	}
 
-	$url     = isset( $package['url'] ) ? (string) $package['url'] : '';
-	$version = isset( $package['version'] ) ? (string) $package['version'] : '';
-	$sha256  = strtolower( preg_replace( '/^sha256:/i', '', (string) ( $package['sha256'] ?? $package['digest'] ?? '' ) ) );
+	$url            = isset( $package['url'] ) ? (string) $package['url'] : '';
+	$version        = isset( $package['version'] ) ? (string) $package['version'] : '';
+	$sha256         = strtolower( preg_replace( '/^sha256:/i', '', (string) ( $package['sha256'] ?? $package['digest'] ?? '' ) ) );
 	$is_development = ! empty( $package['development'] );
 	if ( '' === $url || '' === $version || ! preg_match( '/^[a-f0-9]{64}$/', $sha256 ) || ! filter_var( $url, FILTER_VALIDATE_URL ) ) {
 		return new WP_Error( 'static_site_importer_playground_package_invalid', __( 'The Static Site Importer Playground package must provide a URL, version, and SHA-256 digest.', 'static-site-importer' ), array( 'status' => 500 ) );
 	}
 
 	$release_asset = 'https://github.com/Automattic/static-site-importer/releases/download/' . rawurlencode( $version ) . '/static-site-importer.zip';
-	$content_addressed = false !== strpos( strtolower( (string) parse_url( $url, PHP_URL_PATH ) ), $sha256 );
+	// phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- The standalone smoke harness does not load WordPress.
+	$url_path          = function_exists( 'wp_parse_url' ) ? wp_parse_url( $url, PHP_URL_PATH ) : parse_url( $url, PHP_URL_PATH );
+	$content_addressed = false !== strpos( strtolower( (string) $url_path ), $sha256 );
 	if ( ! $is_development && $url !== $release_asset && ! $content_addressed ) {
 		return new WP_Error( 'static_site_importer_playground_package_mutable', __( 'Static Site Importer Playground previews require a version-pinned release asset or content-addressed package URL.', 'static-site-importer' ), array( 'status' => 500 ) );
 	}
@@ -780,10 +783,10 @@ function static_site_importer_build_playground_preview( array $artifact, array $
  */
 function static_site_importer_rest_apply_to_current_site( array $source, array $input ) {
 	// Current-site materialization is always inert even when a request carries preview options.
-	$input['client_script_policy']   = 'inert';
-	$input['client_script_isolated'] = false;
+	$input['client_script_policy']     = 'inert';
+	$input['client_script_isolated']   = false;
 	$input['client_script_provenance'] = array();
-	$decorate_current_site_preview = static function ( $result ) {
+	$decorate_current_site_preview     = static function ( $result ) {
 		if ( ! is_array( $result ) ) {
 			return $result;
 		}
@@ -994,14 +997,14 @@ function static_site_importer_source_runtime( array $source, array $input = arra
 
 	$metadata = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
 
-	$artifact = array_merge(
-			$metadata,
-			array(
-				'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
-				'entrypoint' => $entrypoint,
-				'files'      => $files,
-			)
-		);
+	$artifact      = array_merge(
+		$metadata,
+		array(
+			'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
+			'entrypoint' => $entrypoint,
+			'files'      => $files,
+		)
+	);
 	$source_policy = Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
 	if ( is_wp_error( $source_policy ) ) {
 		return $source_policy;
@@ -1197,7 +1200,14 @@ function static_site_importer_rest_archive_files( array $archive ) {
 			if ( file_exists( $tmp ) ) {
 				wp_delete_file( $tmp );
 			}
-			return new WP_Error( 'static_site_importer_executable_source_rejected', __( 'ZIP archives may contain static content only.', 'static-site-importer' ), array( 'status' => 400, 'path' => $path ) );
+			return new WP_Error(
+				'static_site_importer_executable_source_rejected',
+				__( 'ZIP archives may contain static content only.', 'static-site-importer' ),
+				array(
+					'status' => 400,
+					'path'   => $path,
+				)
+			);
 		}
 
 		$file_content = $zip->getFromIndex( $i );
