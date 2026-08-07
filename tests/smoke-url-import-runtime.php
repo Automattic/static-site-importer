@@ -184,15 +184,7 @@ $assert( 'test-private-runtime' === ( Static_Site_Importer_Theme_Generator::$las
 $provider_result = Static_Site_Importer_URL_Import_Runtime::import_url( array( 'url' => 'private.example.test/', 'slug' => 'private-provider-request' ) );
 $assert( ! is_wp_error( $provider_result ) && 'private-provider-request' === ( $provider_result['theme_slug'] ?? '' ) && empty( $provider_result['url_batch_run'] ), 'external-provider-keeps-normal-artifact-import-contract' );
 
-$runtime_artifact = Static_Site_Importer_URL_Import_Runtime::website_artifact_from_url(
-	array(
-		'url' => 'facebook.com',
-	)
-);
-
-$assert( ! is_wp_error( $runtime_artifact ), 'runtime-artifact-succeeds-for-bare-host' );
-$assert( 'website/index.html' === ( $runtime_artifact['artifact']['files'][0]['path'] ?? '' ), 'runtime-artifact-returns-website-file' );
-$assert( 'https://facebook.com' === ( $runtime_artifact['source_metadata']['source_url'] ?? '' ), 'runtime-artifact-normalizes-bare-host-url' );
+$assert( ! method_exists( 'Static_Site_Importer_URL_Import_Runtime', 'website_artifact_from_url' ), 'website-artifact-from-url-removed' );
 
 $client_shell_html = '<!doctype html><html><head><title>App</title>' . str_repeat( '<script src="/app.js"></script>', 25 ) . '</head><body><div id="root"></div></body></html>' . str_repeat( ' ', 120000 );
 $client_shell_diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $client_shell_html );
