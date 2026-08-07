@@ -3910,8 +3910,8 @@ test('fixture matrix deterministic dry-run phase plans route setup locally and w
     fixtureRoot,
   });
   assert.deepEqual(setupPlan.steps.slice(0, -1).map((step) => step.args), [
-    ['rig', 'install', path.dirname(path.dirname(fileURLToPath(import.meta.url))), '--id', 'static-site-importer-fixture-matrix', '--reinstall'],
-    ['rig', 'sync', 'static-site-importer-fixture-matrix'],
+    ['--placement', 'local', 'rig', 'install', path.dirname(path.dirname(fileURLToPath(import.meta.url))), '--id', 'static-site-importer-fixture-matrix', '--reinstall'],
+    ['--placement', 'local', 'rig', 'sync', 'static-site-importer-fixture-matrix'],
   ]);
   assert.deepEqual(setupPlan.phase_plan, {
     schema: FIXTURE_MATRIX_PHASE_PLAN_SCHEMA,
@@ -3924,6 +3924,7 @@ test('fixture matrix deterministic dry-run phase plans route setup locally and w
     })),
   });
   assert.ok(setupPlan.steps.slice(0, -1).every((step) => step.phase === 'controller-setup' && step.placement === 'auto' && step.resolved_placement === 'controller-local'));
+  assert.ok(setupPlan.steps.slice(0, -1).every((step) => step.args[0] === '--placement' && step.args[1] === 'local'));
   assert.equal(setupPlan.steps.at(-1).phase, 'fixture-workload');
   assert.equal(setupPlan.steps.at(-1).resolved_placement, 'lab:homeboy-lab');
 
