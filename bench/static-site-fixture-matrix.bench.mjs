@@ -415,60 +415,43 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     staticSiteImporterSlug: options.staticSiteImporterSlug,
     dependencyOverrides,
   });
-  const dependencyPlan = await discoverFixtureDependencyPlan({ fixtures, outputDirectory, staticSiteImporterPath, options, dependencyOverlays, batchSuffix });
-  const resolvedDependencyPlan = await resolveHostDependencyPlan(dependencyPlan, path.join(outputDirectory, 'dependency-cache'));
-  const batchRecipe = buildFixtureMatrixRecipe({
-    matrix: batchMatrix,
-    runId: batchMatrix.id,
-    attemptId: batchSuffix,
-    artifactsDirectory: outputDirectory,
-    playgroundArtifactsDirectory: options.playgroundArtifactsDirectory || '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix',
-    wordpressVersion: options.wordpressVersion,
-    staticSiteImporterPath,
-    staticSiteImporterPlugin: options.staticSiteImporterPlugin,
-    staticSiteImporterSlug: options.staticSiteImporterSlug,
-    dependencyPlan: resolvedDependencyPlan,
-    dependencyOverrides,
-    dependencyOverlays,
-    svgFontEvidence: true,
-    ...fixtureMatrixRecipeInput(normalizeFixtureMatrixRunConfig(Object.fromEntries(Object.keys(FIXTURE_MATRIX_RUN_FIELDS).map((key) => [key, options[key]])))),
-    ...visualParityRecipeInput(options),
-    ...liveWpParityRecipeInput(options),
-    ...runtimePresentationEvidenceRecipeInput(options),
-  });
   const batchRecipeFile = path.join(outputDirectory, `wp-codebox-static-site-fixture-matrix-batch-${batchSuffix}.json`);
   const outputFile = path.join(outputDirectory, `wp-codebox-output-batch-${batchSuffix}.json`);
   const codeboxArtifactsDirectory = batchCodeboxArtifactsDirectory(outputDirectory, batchSuffix);
   const artifactRefs = batchArtifactRefs({ outputDirectory, batchSuffix, batchRecipeFile, outputFile, codeboxArtifactsDirectory });
-  writeJsonArtifact(batchRecipeFile, batchRecipe);
-  progress?.emit(recovery ? 'recovery' : 'batch', 'started', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery });
-  progress?.emit('fixture', 'started', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery });
 
-  let batchRuntime = null;
+  let dependencyPlan = null;
+  let resolvedDependencyPlan = null;
+  let batchRecipe = null;
   let batchError = null;
   let childCommandFailure = null;
-  let childRecipeRunMs = 0;
-  const childRecipeRunStartedAt = nowMs();
+
   try {
-    batchRuntime = await runWpCodeboxRecipe({
-      recipeFile: batchRecipeFile,
-      artifactsDir: codeboxArtifactsDirectory,
-      outputFile,
-      cwd: outputDirectory,
-      wpCodeboxBin: options.wpCodeboxBin,
-      inactivityTimeoutMs: batchInactivityTimeoutMs(options),
-      onInactivity: ({ timeout_ms }) => {
-        progress?.emit('batch', 'timeout', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery, timeout_ms });
-        if (recovery) progress?.emit('fixture', 'timeout', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery, timeout_ms });
-      },
+    dependencyPlan = await discoverFixtureDependencyPlan({ fixtures, outputDirectory, staticSiteImporterPath, options, dependencyOverlays, batchSuffix });
+    resolvedDependencyPlan = await resolveHostDependencyPlan(dependencyPlan, path.join(outputDirectory, 'dependency-cache'));
+    batchRecipe = buildFixtureMatrixRecipe({
+      matrix: batchMatrix,
+      runId: batchMatrix.id,
+      attemptId: batchSuffix,
+      artifactsDirectory: outputDirectory,
+      playgroundArtifactsDirectory: options.playgroundArtifactsDirectory || '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix',
+      wordpressVersion: options.wordpressVersion,
+      staticSiteImporterPath,
+      staticSiteImporterPlugin: options.staticSiteImporterPlugin,
+      staticSiteImporterSlug: options.staticSiteImporterSlug,
+      dependencyPlan: resolvedDependencyPlan,
+      dependencyOverrides,
+      dependencyOverlays,
+      svgFontEvidence: true,
+      ...fixtureMatrixRecipeInput(normalizeFixtureMatrixRunConfig(Object.fromEntries(Object.keys(FIXTURE_MATRIX_RUN_FIELDS).map((key) => [key, options[key]])))),
+      ...visualParityRecipeInput(options),
+      ...liveWpParityRecipeInput(options),
+      ...runtimePresentationEvidenceRecipeInput(options),
     });
+    writeJsonArtifact(batchRecipeFile, batchRecipe);
   } catch (error) {
+    const failureStage = !dependencyPlan ? 'dependency_discovery' : !resolvedDependencyPlan ? 'dependency_resolution' : 'recipe_build';
     batchError = error;
-    batchRuntime = {
-      exitCode: error?.code ?? 1,
-      outputFile,
-      json: parseJsonText(error?.stdout),
-    };
     childCommandFailure = buildWpCodeboxChildCommandFailure({
       error,
       fixtures,
@@ -480,9 +463,54 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       artifactsDir: codeboxArtifactsDirectory,
       wpCodeboxBin: options.wpCodeboxBin,
       artifactRefs,
+      failureStage,
     });
-  } finally {
-    childRecipeRunMs = elapsedMs(childRecipeRunStartedAt);
+  }
+
+  progress?.emit(recovery ? 'recovery' : 'batch', batchError ? 'failed' : 'started', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery, ...(batchError ? { failure_stage: childCommandFailure?.failure_stage } : {}) });
+  if (!batchError) {
+    progress?.emit('fixture', 'started', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery });
+  }
+
+  let batchRuntime = null;
+  let childRecipeRunMs = 0;
+  const childRecipeRunStartedAt = nowMs();
+  if (!batchError) {
+    try {
+      batchRuntime = await runWpCodeboxRecipe({
+        recipeFile: batchRecipeFile,
+        artifactsDir: codeboxArtifactsDirectory,
+        outputFile,
+        cwd: outputDirectory,
+        wpCodeboxBin: options.wpCodeboxBin,
+        inactivityTimeoutMs: batchInactivityTimeoutMs(options),
+        onInactivity: ({ timeout_ms }) => {
+          progress?.emit('batch', 'timeout', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery, timeout_ms });
+          if (recovery) progress?.emit('fixture', 'timeout', { fixture_id: fixtures[0]?.id || '', batch: batchNumber, recovery, timeout_ms });
+        },
+      });
+    } catch (error) {
+      batchError = error;
+      batchRuntime = {
+        exitCode: error?.code ?? 1,
+        outputFile,
+        json: parseJsonText(error?.stdout),
+      };
+      childCommandFailure = buildWpCodeboxChildCommandFailure({
+        error,
+        fixtures,
+        batchNumber,
+        batchSuffix,
+        batchId: `batch-${String(batchNumber).padStart(3, '0')}`,
+        batchRecipeFile,
+        outputFile,
+        artifactsDir: codeboxArtifactsDirectory,
+        wpCodeboxBin: options.wpCodeboxBin,
+        artifactRefs,
+      });
+    } finally {
+      childRecipeRunMs = elapsedMs(childRecipeRunStartedAt);
+    }
   }
 
   const batchRun = fixtureMatrixBatchRunSummary({
@@ -494,6 +522,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     codeboxArtifactsDirectory,
     batchRuntime,
     batchError,
+    exitCode: childCommandFailure?.exit_status,
     performance: {
       child_recipe_run_ms: childRecipeRunMs,
     },
@@ -513,7 +542,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     visualParity: fixtureMatrixGateConfig(normalizeFixtureMatrixRunConfig(Object.fromEntries(Object.keys(FIXTURE_MATRIX_RUN_FIELDS).map((key) => [key, options[key]])))).visualParity,
     liveWpParity: liveWpParityCollectorInput(options),
     dependencyOverrides,
-    dependencyOverlays: batchRecipe.inputs.dependency_overlays || [],
+    dependencyOverlays: batchRecipe?.inputs?.dependency_overlays || [],
   });
   const visualCompare = materializeVisualCompareArtifacts({
     result: batchResult,
@@ -544,6 +573,20 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       editorCanvasArtifacts: editorCanvas.artifacts,
       error: batchError,
       childCommandFailures: childCommandFailure ? [childCommandFailure] : [],
+    };
+  }
+
+  // Dependency discovery, host resolution, and recipe build failures are
+  // planning failures, not sandbox corruption. Re-running each fixture
+  // individually would fail identically — return the typed failure directly.
+  if (childCommandFailure?.failure_stage && childCommandFailure.failure_stage !== 'recipe_run') {
+    return {
+      batchRun,
+      batchResult: editorCanvas.result,
+      visualParityArtifacts: visualCompare.artifacts,
+      editorCanvasArtifacts: editorCanvas.artifacts,
+      error: batchError,
+      childCommandFailures: [childCommandFailure],
     };
   }
 
@@ -1411,7 +1454,7 @@ export function fixtureMatrixBatchRunSummary(input = {}) {
     recipe_file: input.batchRecipeFile || '',
     output_file: input.outputFile || '',
     codebox_artifacts_directory: input.codeboxArtifactsDirectory || '',
-    exit_code: batchRuntime?.exitCode ?? 0,
+    exit_code: batchRuntime?.exitCode ?? input.exitCode ?? 0,
     error: batchError ? batchError.message : '',
     stderr_tail: batchError ? textTail(batchError.stderr) : '',
     stdout_tail: batchError ? textTail(batchError.stdout) : '',
@@ -1447,17 +1490,18 @@ function runtimeSummary(runtime, runtimeError) {
   };
 }
 
-function buildWpCodeboxChildCommandFailure({ error, fixtures, batchNumber, batchSuffix, batchId, batchRecipeFile, outputFile, artifactsDir, wpCodeboxBin: bin, artifactRefs }) {
-  const command = wpCodeboxRecipeRunCommand({ recipeFile: batchRecipeFile, artifactsDir, outputFile, wpCodeboxBin: bin });
+function buildWpCodeboxChildCommandFailure({ error, fixtures, batchNumber, batchSuffix, batchId, batchRecipeFile, outputFile, artifactsDir, wpCodeboxBin: bin, artifactRefs, failureStage = 'recipe_run' }) {
+  const isRecipeRun = failureStage === 'recipe_run';
+  const command = isRecipeRun ? wpCodeboxRecipeRunCommand({ recipeFile: batchRecipeFile, artifactsDir, outputFile, wpCodeboxBin: bin }) : null;
   return {
     schema: 'homeboy/child-command-failure/v1',
     kind: 'child_command_failed',
-    label: `WP Codebox recipe-run batch ${batchSuffix}`,
+    label: isRecipeRun ? `WP Codebox recipe-run batch ${batchSuffix}` : `Dependency ${failureStage} batch ${batchSuffix}`,
     batch: batchNumber,
     batch_id: batchId || `batch-${batchSuffix}`,
     fixture_ids: normalizeFixtureIds(fixtures),
-    command: command.command,
-    command_argv: command.argv,
+    ...(command ? { command: command.command } : {}),
+    ...(command ? { command_argv: command.argv } : {}),
     exit_status: exitStatus(error),
     error_code: error?.code,
     error_signal: error?.signal,
@@ -1466,9 +1510,10 @@ function buildWpCodeboxChildCommandFailure({ error, fixtures, batchNumber, batch
     recipe_file: batchRecipeFile,
     output_file: outputFile,
     artifacts_directory: artifactsDir,
-    replay_command: wpCodeboxReplayCommand({ recipeFile: batchRecipeFile, artifactsDir, wpCodeboxBin: bin }),
+    ...(isRecipeRun ? { replay_command: wpCodeboxReplayCommand({ recipeFile: batchRecipeFile, artifactsDir, wpCodeboxBin: bin }) } : {}),
     artifact_refs: artifactRefs,
-    message: error?.message || 'WP Codebox recipe-run failed',
+    failure_stage: failureStage,
+    message: error?.message || (isRecipeRun ? 'WP Codebox recipe-run failed' : `Dependency ${failureStage} failed`),
   };
 }
 
