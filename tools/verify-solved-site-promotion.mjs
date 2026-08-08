@@ -19,7 +19,8 @@ export function verifySolvedSitePromotion(input) {
   assertSha(options.staticSiteImporterSha, 'Static Site Importer candidate SHA');
   assertSha(options.blocksEngineSha, 'Blocks Engine candidate SHA');
   assertSha(options.fixtureTreeSha, 'Fixture tree SHA');
-  assert(Number(options.solvedFixtureCount) > 0, 'Solved fixture corpus must be non-empty.');
+  assert(Number(options.solvedFixtureCount) === options.solvedFixtureIds.length,
+    `--solved-fixture-count must equal the number of --solved-fixture-ids (${options.solvedFixtureIds.length}).`);
   assert(matrix.summary?.execution_status === 'requested', 'Matrix execution was not requested.');
   assert(matrix.summary?.generation_status === 'succeeded', 'Matrix generation did not succeed.');
   assert(Array.isArray(matrix.fixtures) && matrix.fixtures.length > 0, 'Selected fixture corpus must be non-empty.');
@@ -28,8 +29,26 @@ export function verifySolvedSitePromotion(input) {
   assert(matrix.summary?.solved_candidate_gate?.enabled === true, 'Solved-candidate gate must be enabled.');
   assert(matrix.summary?.solved_candidate_gate?.failed_fixture_count === 0, 'Solved-candidate gate reported failures.');
 
+  for (const fixture of matrix.fixtures) {
+    assert(fixture.fixture_corpus === 'solved', `${fixture.fixture_id}: matrix fixture must belong to the solved corpus.`);
+  }
+  const matrixFixtureIds = matrix.fixtures.map((fixture) => String(fixture.fixture_id)).sort();
+  assert(JSON.stringify(matrixFixtureIds) === JSON.stringify(options.solvedFixtureIds),
+    `Matrix must cover the complete canonical solved corpus: expected [${options.solvedFixtureIds.join(',')}] got [${matrixFixtureIds.join(',')}]`);
+
+  assert(matrix.matrix_id, 'Matrix result is missing matrix_id.');
+  assert(registry.matrix_id === matrix.matrix_id, 'Registry matrix_id must match the matrix result matrix_id.');
+  assert(registry.generated_from?.result_schema === matrix.schema, 'Registry generated_from.result_schema must match the matrix schema.');
+  assert(Number(registry.generated_from?.fixture_count) === matrix.fixtures.length, 'Registry generated_from.fixture_count must match the matrix fixture count.');
+
   validateRuntime(runtime, options);
   const decisions = new Map((registry.fixture_decisions || []).map((row) => [row.fixture_id, row]));
+  const registrySolvedIds = (registry.fixture_decisions || [])
+    .filter((row) => row.fixture_corpus === 'solved')
+    .map((row) => String(row.fixture_id))
+    .sort();
+  assert(JSON.stringify(registrySolvedIds) === JSON.stringify(options.solvedFixtureIds),
+    `Registry must carry a solved fixture decision for every canonical solved fixture id: expected [${options.solvedFixtureIds.join(',')}] got [${registrySolvedIds.join(',')}]`);
   const requiredFiles = [options.matrixResult, options.registry];
   for (const fixture of matrix.fixtures) {
     verifyFixture(fixture, decisions.get(fixture.fixture_id), options, requiredFiles);
@@ -55,9 +74,9 @@ export function verifySolvedSitePromotion(input) {
     },
     corpus: {
       fixture_root_tree_sha: options.fixtureTreeSha,
-      solved_fixture_count: Number(options.solvedFixtureCount),
-      selected_fixture_ids: matrix.fixtures.map((fixture) => fixture.fixture_id).sort(),
-      selected_fixture_count: matrix.fixtures.length,
+      solved_fixture_count: options.solvedFixtureIds.length,
+      selected_fixture_ids: options.solvedFixtureIds,
+      selected_fixture_count: options.solvedFixtureIds.length,
     },
     gates: {
       matrix: 'passed',
@@ -86,19 +105,29 @@ function verifyFixture(fixture, decision, options, requiredFiles) {
   const quality = fixture.quality_metrics || {};
   assert(quality.pass === true, `${id}: quality gate did not pass.`);
   for (const key of ['fallback_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count']) {
-    assert(Number(quality[key] || 0) === 0, `${id}: ${key} must be zero.`);
+    assertFiniteMetric(quality, key, id);
+    assert(Number(quality[key]) === 0, `${id}: ${key} must be zero.`);
   }
   const composition = fixture.block_composition || {};
+  assertFiniteMetric(composition, 'block_total', id);
   assert(Number(composition.block_total) > 0, `${id}: imported block count must be nonzero.`);
+  assertFiniteMetric(composition, 'native_block_count', id);
   assert(Number(composition.native_block_count) === Number(composition.block_total), `${id}: every imported block must be native.`);
-  assert(Number(composition.core_html_block_count || 0) === 0, `${id}: core/html blocks are forbidden.`);
+  assertFiniteMetric(composition, 'core_html_block_count', id);
+  assert(Number(composition.core_html_block_count) === 0, `${id}: core/html blocks are forbidden.`);
   const editor = fixture.editor_validation || {};
   assert(editor.validation_method === 'wp.blocks.validateBlock', `${id}: editor validation must use wp.blocks.validateBlock.`);
+  assertFiniteMetric(editor, 'total_blocks', id);
+  assertFiniteMetric(editor, 'valid_blocks', id);
+  assertFiniteMetric(editor, 'invalid_blocks', id);
   assert(Number(editor.total_blocks) > 0 && editor.valid_blocks === editor.total_blocks && Number(editor.invalid_blocks) === 0, `${id}: editor validation is incomplete or invalid.`);
   assert(fixture.editor_canvas?.status === 'captured', `${id}: editor canvas evidence is missing.`);
   addRequiredFile(requiredFiles, fixture.editor_canvas?.screenshot, `${id}: editor screenshot`, options.artifactRoot);
   const visual = fixture.visual_parity_artifacts || {};
-  assert(Number(visual.metrics?.mismatch_ratio) === 0 && Number(visual.metrics?.mismatch_pixels) === 0, `${id}: visual mismatch must be exactly zero.`);
+  const visualMetrics = visual.metrics || {};
+  assertFiniteMetric(visualMetrics, 'mismatch_ratio', id);
+  assertFiniteMetric(visualMetrics, 'mismatch_pixels', id);
+  assert(Number(visualMetrics.mismatch_ratio) === 0 && Number(visualMetrics.mismatch_pixels) === 0, `${id}: visual mismatch must be exactly zero.`);
   for (const slot of ['source_screenshot', 'imported_screenshot', 'diff_screenshot', 'visual_diff']) {
     const artifact = visual.artifacts?.[slot];
     assert(artifact?.status === 'captured', `${id}: ${slot} evidence is missing.`);
@@ -108,7 +137,9 @@ function verifyFixture(fixture, decision, options, requiredFiles) {
   assert(evidence.readiness === 'verified' && (evidence.missing || []).length === 0, `${id}: runtime evidence is incomplete.`);
   assert(evidence.materialization_receipt?.status === 'completed' && evidence.materialization_receipt?.plan_hash, `${id}: completed materialization receipt is missing.`);
   assert(evidence.transformer?.package_reference === options.blocksEngineSha, `${id}: transformer provenance does not match the Blocks Engine candidate.`);
-  assert(Number(fixture.editor_quality?.native_conversion_rate) === 1, `${id}: native conversion rate must equal 1.`);
+  const editorQuality = fixture.editor_quality || {};
+  assertFiniteMetric(editorQuality, 'native_conversion_rate', id);
+  assert(Number(editorQuality.native_conversion_rate) === 1, `${id}: native conversion rate must equal 1.`);
 }
 
 function validateRuntime(runtime, options) {
@@ -167,9 +198,16 @@ function filesBelow(directory) {
 
 function normalizeOptions(input) {
   const options = { ...input };
-  for (const key of ['matrixResult', 'registry', 'runtimeInputs', 'artifactRoot', 'staticSiteImporterSha', 'blocksEngineSha', 'fixtureTreeSha', 'solvedFixtureCount', 'runUrl', 'artifactUrl', 'output', 'manifestOutput']) {
+  for (const key of ['matrixResult', 'registry', 'runtimeInputs', 'artifactRoot', 'staticSiteImporterSha', 'blocksEngineSha', 'fixtureTreeSha', 'solvedFixtureCount', 'solvedFixtureIds', 'runUrl', 'artifactUrl', 'output', 'manifestOutput']) {
     assert(options[key] !== undefined && options[key] !== '', `--${kebab(key)} is required.`);
   }
+  options.solvedFixtureIds = String(options.solvedFixtureIds)
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  assert(options.solvedFixtureIds.length > 0, '--solved-fixture-ids must list at least one canonical solved fixture.');
+  assert(new Set(options.solvedFixtureIds).size === options.solvedFixtureIds.length, '--solved-fixture-ids must be unique.');
+  options.solvedFixtureIds.sort();
   options.artifactRoot = path.resolve(options.artifactRoot);
   options.output = path.resolve(options.output);
   options.manifestOutput = path.resolve(options.manifestOutput);
@@ -194,12 +232,19 @@ function readJson(file, label) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { throw new Error(`Could not read ${label}: ${file}`); }
 }
 function assertSha(value, label) { assert(/^[a-f0-9]{40}$/.test(String(value || '')), `${label} must be a full commit SHA.`); }
+function assertFiniteMetric(object, key, fixtureId) {
+  assert(Object.prototype.hasOwnProperty.call(object, key), `${fixtureId}: ${key} must be present.`);
+  const value = object[key];
+  const validNumber = typeof value === 'number' && Number.isFinite(value);
+  const validNumericString = typeof value === 'string' && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value) && Number.isFinite(Number(value));
+  assert(validNumber || validNumericString, `${fixtureId}: ${key} must be a finite number.`);
+}
 function assert(condition, message) { if (!condition) throw new Error(message); }
 function camel(value) { return value.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase()); }
 function kebab(value) { return value.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`); }
 
 function printHelp() {
-  process.stdout.write('Usage: node tools/verify-solved-site-promotion.mjs --matrix-result <file> --registry <file> --runtime-inputs <file> --artifact-root <dir> --static-site-importer-sha <sha> --blocks-engine-sha <sha> --fixture-tree-sha <sha> --solved-fixture-count <n> --run-url <url> --artifact-url <url> --output <file> --manifest-output <file>\n');
+  process.stdout.write('Usage: node tools/verify-solved-site-promotion.mjs --matrix-result <file> --registry <file> --runtime-inputs <file> --artifact-root <dir> --static-site-importer-sha <sha> --blocks-engine-sha <sha> --fixture-tree-sha <sha> --solved-fixture-count <n> --solved-fixture-ids <id1,id2,...> --run-url <url> --artifact-url <url> --output <file> --manifest-output <file>\n');
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

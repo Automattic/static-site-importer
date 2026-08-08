@@ -14,3 +14,11 @@ The receipt is emitted only when:
 - reviewer-facing references resolve to the GitHub Actions run and artifact list.
 
 SSI owns this decision and its schema. Homeboy may consume the receipt for generic finalization after validating the candidate and artifact identity chain; it does not reinterpret solved-site policy.
+
+## Downstream build status
+
+Receipt status `accepted` records the solved-site promotion decision. It does not deploy or mark a downstream site as built. Downstream finalization owns setting `status:built` after validating this receipt and the candidate identity chain. Finalization must not reinterpret solved-site policy or replace this receipt with a separate acceptance decision.
+
+## Required branch-protection check
+
+The `solved-site-promotion` job must be configured as a required status check on the protected target branch before any post-acceptance push or downstream `status:built` transition. This workflow cannot enforce branch protection itself. Receipt validity depends on repository branch protection requiring this check for the relevant candidate ref.

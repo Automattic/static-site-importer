@@ -14,6 +14,7 @@ on:
       - 'composer.lock'
       - 'package.json'
       - 'package-lock.json'
+      - 'docs/contracts/**'
   workflow_dispatch:
 
 permissions:
