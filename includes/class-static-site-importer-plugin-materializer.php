@@ -210,6 +210,10 @@ class Static_Site_Importer_Plugin_Materializer {
 		if ( false === $plan['activate'] ) {
 			// mu-plugins are always active; no activation call is required.
 			$plugin_file = (string) $descriptor['plugin_file'];
+			$registered  = self::register_generated_blocks( $descriptor, $plan );
+			if ( is_wp_error( $registered ) ) {
+				return self::failed_report( $report, $registered );
+			}
 			self::replace_active_generated_companion( $plugin_file, $report );
 			if ( function_exists( 'update_option' ) ) {
 				update_option( self::ACTIVE_COMPANION_OPTION, $plugin_file, false );
@@ -247,6 +251,10 @@ class Static_Site_Importer_Plugin_Materializer {
 				)
 			);
 		}
+		$registered = self::register_generated_blocks( $descriptor, $plan );
+		if ( is_wp_error( $registered ) ) {
+			return self::failed_report( $report, $registered );
+		}
 		self::replace_active_generated_companion( $plugin_file, $report );
 		if ( function_exists( 'update_option' ) ) {
 			update_option( self::ACTIVE_COMPANION_OPTION, $plugin_file, false );
@@ -254,6 +262,53 @@ class Static_Site_Importer_Plugin_Materializer {
 
 		$report['status'] = $already_available ? 'refreshed' : 'installed_activated';
 		return $report;
+	}
+
+	/**
+	 * Register a newly materialized companion in this request.
+	 *
+	 * WordPress activation sandbox-loads a plugin after `init` has usually run.
+	 * Generated companions register their metadata blocks on `init`, so invoke that
+	 * exact callback now and verify every emitted block is available to the editor.
+	 *
+	 * @param array<string,mixed> $descriptor Generated companion descriptor.
+	 * @param array<string,mixed> $plan       Generated companion install plan.
+	 * @return true|WP_Error
+	 */
+	private static function register_generated_blocks( array $descriptor, array $plan ) {
+		$slug        = isset( $descriptor['slug'] ) && is_string( $descriptor['slug'] ) ? $descriptor['slug'] : '';
+		$plugin_file = isset( $descriptor['plugin_file'] ) && is_string( $descriptor['plugin_file'] ) ? $descriptor['plugin_file'] : '';
+		$base_dir    = isset( $plan['base_dir'] ) && is_string( $plan['base_dir'] ) ? $plan['base_dir'] : '';
+		$callback    = str_replace( '-', '_', $slug ) . '_register_blocks';
+		$path        = '' === $base_dir || '' === $plugin_file ? '' : rtrim( $base_dir, '/\\' ) . '/' . $plugin_file;
+
+		if ( '' === $slug || '' === $path || ! is_readable( $path ) ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_registration_unavailable', 'Generated companion block registration file is unavailable.' );
+		}
+		if ( ! function_exists( $callback ) ) {
+			require_once $path;
+		}
+		if ( ! is_callable( $callback ) ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_registration_unavailable', sprintf( 'Generated companion %s does not expose its block registration callback.', $slug ) );
+		}
+
+		call_user_func( $callback );
+		$registry = class_exists( 'WP_Block_Type_Registry' ) ? WP_Block_Type_Registry::get_instance() : null;
+		$missing  = array();
+		foreach ( $descriptor['block_names'] ?? array() as $block_name ) {
+			if ( ! is_string( $block_name ) || '' === $block_name || ! $registry || ! $registry->is_registered( $block_name ) ) {
+				$missing[] = $block_name;
+			}
+		}
+		if ( ! empty( $missing ) ) {
+			return new WP_Error(
+				'static_site_importer_companion_plugin_registration_incomplete',
+				'Generated companion blocks were not registered before editor use.',
+				array( 'missing_block_names' => $missing )
+			);
+		}
+
+		return true;
 	}
 
 	/** Preflight registered block names before generated files are written. */
