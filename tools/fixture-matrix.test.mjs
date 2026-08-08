@@ -1423,6 +1423,7 @@ test('materialization sidecars retain bounded evidence after oversized import st
 
   for (const fixture of result.fixtures) {
     assert.equal(fixture.matrix_evidence.materialization_sidecar.status, 'verified');
+    assert.equal(fixture.status, 'passed');
     assert.equal(fixture.matrix_evidence.materialization_receipt.operation_count, 99);
     assert.equal(fixture.matrix_evidence.materialization_receipt.page_count, 2);
     assert.deepEqual(fixture.matrix_evidence.materialization_sidecar.computed_layout_totals, { applied: 7, losses: 2, operations: 9 });
@@ -1431,7 +1432,7 @@ test('materialization sidecars retain bounded evidence after oversized import st
   }
 });
 
-test('failure sidecars retain the bounded import result and front-page option observation', () => {
+test('failed sidecars retain the bounded terminal import result and front-page option observation', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-failed-import-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'failed-import-evidence' });
   const directory = path.join(outputDirectory, 'simple-site');
@@ -1447,10 +1448,63 @@ test('failure sidecars retain the bounded import result and front-page option ob
   sidecar.content_sha256 = createHash('sha256').update(JSON.stringify(sidecar)).digest('hex');
   writeFileSync(path.join(directory, 'materialization-receipt--primary.json'), JSON.stringify(sidecar));
   const result = collectFixtureMatrixRunResults({ matrix, outputDirectory });
+  assert.equal(result.fixtures[0].status, 'failed');
+  assert.equal(result.summary.failed, 1);
   assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, 'verified');
   assert.deepEqual(result.fixtures[0].matrix_evidence.import_command, { status: 'failed', success: false, error_code: 'artifact_invalid', error_hash: 'a'.repeat(64) });
   assert.deepEqual(result.fixtures[0].matrix_evidence.front_page_options, { show_on_front: 'posts', page_on_front: 0 });
   assert.equal(result.fixtures[0].matrix_evidence.materialization_receipt.status, 'failed');
+});
+
+test('pending runtime sidecars preserve resumable validation without materialization claims', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-pending-runtime-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'pending-runtime-evidence' });
+  const directory = path.join(outputDirectory, 'simple-site');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: 'simple-site' }));
+  writeMaterializationSidecar({
+    directory,
+    fixtureId: 'simple-site',
+    runId: matrix.id,
+    providerStatus: 'pending_runtime',
+    commandResult: { status: 'pending_runtime', success: false, error_code: '', error_hash: 'a'.repeat(64) },
+    receipt: {
+      schema: 'static-site-importer/materialization-receipt/v1',
+      status: 'pending_runtime',
+      reason_code: 'companion_plugin_init_pending',
+      message: '',
+    },
+  });
+
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: {
+      fixture_id: 'simple-site',
+      status: 'pending_runtime',
+      success: false,
+      reason_code: 'companion_plugin_init_pending',
+      message: 'A fresh WordPress runtime must resume companion block registration.',
+      runtime: { status: 'resume_required' },
+    },
+  });
+  const fixture = result.fixtures[0];
+  assert.equal(fixture.status, 'pending_runtime');
+  assert.equal(fixture.raw_status, 'pending_runtime');
+  assert.equal(fixture.success, false);
+  assert.equal(fixture.runtime.status, 'resume_required');
+  assert.equal(fixture.quality_gate.status, 'pending_runtime');
+  assert.equal(result.summary.failed, 0);
+  assert.equal(result.summary.pending_runtime, 1);
+  assert.equal(fixture.matrix_evidence.materialization_sidecar.status, 'verified');
+  assert.deepEqual(fixture.matrix_evidence.materialization_receipt, {
+    schema: 'static-site-importer/materialization-receipt/v1',
+    status: 'pending_runtime',
+    reason_code: 'companion_plugin_init_pending',
+  });
+  assert.equal(Object.hasOwn(fixture.artifacts, 'generated_theme'), false);
+  assert.ok(fixture.diagnostics.some((diagnostic) => diagnostic.kind === 'runtime_resume_required' && diagnostic.reason_code === 'companion_plugin_init_pending'));
+  assert.ok(result.findings.some((finding) => finding.kind === 'runtime_resume_required' && finding.reason_code === 'companion_plugin_init_pending'));
 });
 
 test('materialization sidecars reject malformed, stale, cross-fixture, and hash-mismatched evidence', () => {
@@ -1545,11 +1599,12 @@ function boundedSidecarReceipt() {
   };
 }
 
-function writeMaterializationSidecar({ directory, fixtureId, runId, receipt, artifactHash, attemptId = 'primary', fileName }) {
+function writeMaterializationSidecar({ directory, fixtureId, runId, receipt, artifactHash, attemptId = 'primary', fileName, providerStatus = 'completed', commandResult }) {
   const artifact = readFileSync(path.join(directory, 'artifact.json'));
   const sidecar = {
-    schema: 'static-site-importer/materialization-runtime-sidecar/v1', fixture_id: fixtureId, run_id: runId, step_id: 'import', attempt_id: attemptId, artifact_sha256: artifactHash || createHash('sha256').update(artifact).digest('hex'), provenance: { provider: 'static-site-importer/current-runtime', provider_status: 'completed' }, durability: { file_fsync: 'available', directory_fsync: 'attempted' }, receipt,
+    schema: 'static-site-importer/materialization-runtime-sidecar/v1', fixture_id: fixtureId, run_id: runId, step_id: 'import', attempt_id: attemptId, artifact_sha256: artifactHash || createHash('sha256').update(artifact).digest('hex'), provenance: { provider: 'static-site-importer/current-runtime', provider_status: providerStatus }, durability: { file_fsync: 'available', directory_fsync: 'attempted' }, receipt,
   };
+  if (commandResult) sidecar.command_result = commandResult;
   sidecar.content_sha256 = createHash('sha256').update(JSON.stringify(sidecar)).digest('hex');
   writeFileSync(path.join(directory, fileName || `materialization-receipt--${attemptId}.json`), JSON.stringify(sidecar));
 }
