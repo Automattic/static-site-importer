@@ -156,6 +156,7 @@ class Static_Site_Importer_Client_Script_Policy {
 			return (string) $file['content'];
 		}
 		if ( isset( $file['content_base64'] ) && is_scalar( $file['content_base64'] ) ) {
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes declared artifact content before applying the script policy.
 			$decoded = base64_decode( (string) $file['content_base64'], true );
 			return false === $decoded ? '' : $decoded;
 		}
@@ -164,6 +165,7 @@ class Static_Site_Importer_Client_Script_Policy {
 
 	private static function with_file_content( array $file, string $content ): array {
 		if ( array_key_exists( 'content_base64', $file ) && ! array_key_exists( 'content', $file ) ) {
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Restores filtered declared artifact content to its original representation.
 			$file['content_base64'] = base64_encode( $content );
 			return $file;
 		}
