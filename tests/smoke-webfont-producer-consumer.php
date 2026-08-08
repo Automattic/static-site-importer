@@ -171,4 +171,15 @@ $local_plan['webfont_contract']['diagnostics'] = array();
 $local_overlay_without_diagnostics = Static_Site_Importer_Font_Materializer::prepare_overlay( $local_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
 $assert( ! is_wp_error( $local_overlay_without_diagnostics ) && array() === $local_overlay_without_diagnostics['writes'] && $request_count === count( $GLOBALS['ssi_webfont_requests'] ), 'an authoritative zero-face contract without diagnostics still suppresses legacy Google requests' );
 
+$italic_axis_plan = $producer_plan;
+$italic_axis_plan['webfont_contract']['faces'][0]['axes']['ital'] = array( 'kind' => 'static', 'value' => 0 );
+$italic_axis_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $italic_axis_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
+$assert( ! is_wp_error( $italic_axis_overlay ), 'declared italic producer faces accept the canonical ital=0 axis value: ' . ( is_wp_error( $italic_axis_overlay ) ? $italic_axis_overlay->get_error_code() : '' ) );
+
+$malformed_face_plan = $producer_plan;
+$malformed_face_plan['webfont_contract']['faces'][0]['family'] = '';
+$malformed_face_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $malformed_face_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
+$malformed_face_diagnostic = is_wp_error( $malformed_face_overlay ) ? $malformed_face_overlay->get_error_data()[0] ?? array() : array();
+$assert( is_wp_error( $malformed_face_overlay ) && 'static_site_importer_font_materialization_producer_face_invalid' === $malformed_face_overlay->get_error_code() && 'producer_face_invalid' === ( $malformed_face_diagnostic['reason'] ?? '' ) && array( 'family' ) === ( $malformed_face_diagnostic['details']['invalid_fields'] ?? null ) && is_int( $malformed_face_diagnostic['details']['face_index'] ?? null ) && is_string( $malformed_face_diagnostic['details']['face_id'] ?? null ), 'malformed declared producer faces fail closed with the rejected face identity and fields' );
+
 echo "Webfont producer-consumer smoke passed.\n";
