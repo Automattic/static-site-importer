@@ -516,7 +516,9 @@ function static_site_importer_cli_write_materialization_sidecar( array $result, 
 	$receipt                   = isset( $result['materialization_receipt'] ) && is_array( $result['materialization_receipt'] ) ? $result['materialization_receipt'] : array();
 	$completed                 = isset( $receipt['completed'] ) && is_array( $receipt['completed'] ) ? $receipt['completed'] : array();
 	$is_completed              = 'static-site-importer/materialization-receipt/v1' === ( $receipt['schema'] ?? '' ) && 'completed' === ( $receipt['status'] ?? '' ) && isset( $receipt['plan_hash'] ) && is_string( $receipt['plan_hash'] ) && preg_match( '/^(?:sha256:)?[a-f0-9]{64}$/', $receipt['plan_hash'] ) && isset( $completed['pages'], $completed['files'] ) && is_array( $completed['pages'] ) && is_array( $completed['files'] );
-	$summary                   = $is_completed ? static_site_importer_cli_materialization_summary( $receipt, $result ) : static_site_importer_cli_failed_materialization_summary( $result );
+	$is_pending_runtime        = 'pending_runtime' === ( $result['status'] ?? '' );
+	$summary                   = $is_completed ? static_site_importer_cli_materialization_summary( $receipt, $result ) : ( $is_pending_runtime ? static_site_importer_cli_pending_materialization_summary( $result ) : static_site_importer_cli_failed_materialization_summary( $result ) );
+	$command_status            = $is_completed ? 'completed' : ( $is_pending_runtime ? 'pending_runtime' : 'failed' );
 	$sidecar                   = array(
 		'schema'             => 'static-site-importer/materialization-runtime-sidecar/v1',
 		'fixture_id'         => $fixture_id,
@@ -526,7 +528,7 @@ function static_site_importer_cli_write_materialization_sidecar( array $result, 
 		'artifact_sha256'    => $artifact_hash,
 		'provenance'         => array(
 			'provider'        => (string) ( $result['runtime']['provider'] ?? 'static-site-importer/current-runtime' ),
-			'provider_status' => $is_completed ? 'completed' : 'failed',
+			'provider_status' => $command_status,
 		),
 		'durability'         => array(
 			'file_fsync'      => function_exists( 'fsync' ) ? 'available' : 'unavailable',
@@ -534,9 +536,9 @@ function static_site_importer_cli_write_materialization_sidecar( array $result, 
 		),
 		'receipt'            => $summary,
 		'command_result'     => array(
-			'status'     => $is_completed ? 'completed' : 'failed',
+			'status'     => $command_status,
 			'success'    => $is_completed,
-			'error_code' => $is_completed ? '' : static_site_importer_cli_sidecar_token_value( $result['error']['code'] ?? $result['code'] ?? 'import_failed', 80 ),
+			'error_code' => $is_completed || $is_pending_runtime ? '' : static_site_importer_cli_sidecar_token_value( $result['error']['code'] ?? $result['code'] ?? 'import_failed', 80 ),
 			'error_hash' => hash( 'sha256', (string) wp_json_encode( $result, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) ),
 		),
 		'front_page_options' => array(
@@ -586,6 +588,16 @@ function static_site_importer_cli_failed_materialization_summary( array $result 
 		'operation_count' => 0,
 		'loss_count'      => 1,
 		'failure_code'    => $error_code ? $error_code : 'import_failed',
+	);
+}
+
+/** @return array<string,mixed> */
+function static_site_importer_cli_pending_materialization_summary( array $result ): array {
+	return array(
+		'schema'      => 'static-site-importer/materialization-receipt/v1',
+		'status'      => 'pending_runtime',
+		'reason_code' => static_site_importer_cli_sidecar_token_value( $result['reason_code'] ?? 'runtime_resume_required', 80 ),
+		'message'     => static_site_importer_cli_sidecar_token_value( $result['message'] ?? 'Validation requires a fresh WordPress runtime before materialization can resume.', 240 ),
 	);
 }
 

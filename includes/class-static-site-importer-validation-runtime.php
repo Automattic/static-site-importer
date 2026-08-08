@@ -241,41 +241,52 @@ class Static_Site_Importer_Validation_Runtime {
 		$finding_packets_path   = (string) ( $import_result['external_finding_packets_path'] ?? $import_result['finding_packets_path'] ?? '' );
 		$quality                = isset( $import_result['quality'] ) && is_array( $import_result['quality'] ) ? $import_result['quality'] : array();
 		$quality_pass           = ! empty( $quality['pass'] );
+		$pending_runtime        = 'pending_runtime' === ( $import_result['status'] ?? '' );
+		$import_diagnostics     = isset( $import_result['diagnostics'] ) && is_array( $import_result['diagnostics'] ) ? $import_result['diagnostics'] : array();
 		$import_report          = self::read_json_object_file( $report_path );
 		if ( empty( $import_report ) && isset( $import_result['import_report'] ) && is_array( $import_result['import_report'] ) ) {
 			$import_report = $import_result['import_report'];
 		}
 
 		$result                        = array(
-			'success'                 => $quality_pass,
+			'success'                 => $pending_runtime ? false : $quality_pass,
 			'schema'                  => self::RESULT_SCHEMA,
-			'status'                  => $quality_pass ? 'passed' : 'failed',
+			'status'                  => $pending_runtime ? 'pending_runtime' : ( $quality_pass ? 'passed' : 'failed' ),
 			'fixture_id'              => (string) ( $import_args['slug'] ?? '' ),
 			'request'                 => array( 'import_args' => $import_args ),
 			'runtime'                 => array(
 				'provider'     => 'static-site-importer/current-runtime',
-				'status'       => 'completed',
+				'status'       => $pending_runtime ? 'resume_required' : 'completed',
 				'artifact_dir' => basename( $artifact_dir ),
 			),
 			'summary'                 => array(
-				'quality_pass'     => $quality_pass,
+				'quality_pass'     => $pending_runtime ? false : $quality_pass,
 				'import_report'    => is_readable( $report_path ) ? 'captured' : 'missing',
 				'block_validation' => is_readable( $validation_result_path ) ? 'captured' : 'missing',
 				'theme_slug'       => (string) ( $import_result['theme_slug'] ?? '' ),
 			),
 			'import_report'           => $import_report,
 			'materialization_receipt' => isset( $import_result['materialization_receipt'] ) && is_array( $import_result['materialization_receipt'] ) ? $import_result['materialization_receipt'] : array(),
+			'diagnostics'             => $import_diagnostics,
 			'artifacts'               => array(
-				'generated_theme'         => array(
-					'artifact_ref' => (string) ( $import_result['theme_slug'] ?? '' ),
-					'kind'         => 'wordpress-theme-directory',
-					'status'       => 'materialized',
-				),
 				'import_report'           => self::local_file_artifact_ref( $report_path, 'static-site-importer/import-report' ),
 				'block_validation_result' => self::local_file_artifact_ref( $validation_result_path, 'static-site-importer/import-validation-result' ),
 				'finding_packets'         => self::local_file_artifact_ref( $finding_packets_path, 'static-site-importer/finding-packets' ),
 			),
 		);
+		if ( ! $pending_runtime ) {
+			$result['artifacts']['generated_theme'] = array(
+				'artifact_ref' => (string) ( $import_result['theme_slug'] ?? '' ),
+				'kind'         => 'wordpress-theme-directory',
+				'status'       => 'materialized',
+			);
+		} else {
+			$result['reason_code']       = (string) ( $import_result['reason_code'] ?? 'runtime_resume_required' );
+			$result['message']           = (string) ( $import_result['message'] ?? 'Validation requires a fresh WordPress runtime before materialization can resume.' );
+			$result['runtime_lifecycle'] = isset( $import_result['runtime_lifecycle'] ) && is_array( $import_result['runtime_lifecycle'] ) ? $import_result['runtime_lifecycle'] : array();
+			$result['dependencies']      = isset( $import_result['dependencies'] ) && is_array( $import_result['dependencies'] ) ? $import_result['dependencies'] : array();
+			$result['artifacts']         = array_filter( $result['artifacts'] );
+		}
 		$result['fixture_diagnostics'] = Static_Site_Importer_Diagnostic_Contract::build( $result );
 		$result['diagnostics']         = isset( $result['fixture_diagnostics']['diagnostics'] ) && is_array( $result['fixture_diagnostics']['diagnostics'] ) ? $result['fixture_diagnostics']['diagnostics'] : array();
 		$result['diagnostic_summary']  = isset( $result['fixture_diagnostics']['diagnostic_summary'] ) && is_array( $result['fixture_diagnostics']['diagnostic_summary'] ) ? $result['fixture_diagnostics']['diagnostic_summary'] : array();

@@ -165,6 +165,8 @@ $assert( 1 === ( $result['fixture_diagnostics']['blocks_engine']['wordpress_site
 $assert( ! isset( $result['fixture_diagnostics']['blocks_engine']['wordpress_site_plan']['assets'][0]['content_base64'] ), 'site-plan-asset-payload-omitted' );
 $assert( 'completed' === ( $result['fixture_diagnostics']['materialization_receipt']['status'] ?? '' ), 'materialization-receipt-status-preserved' );
 $assert( 1 === ( $result['fixture_diagnostics']['materialization_receipt']['page_count'] ?? 0 ), 'materialization-receipt-counts-preserved' );
+$assert( 'failed' === ( $result['status'] ?? '' ) && 'completed' === ( $result['runtime']['status'] ?? '' ), 'terminal-failure-statuses-remain-compatible' );
+$assert( 'materialized' === ( $result['artifacts']['generated_theme']['status'] ?? '' ), 'terminal-failure-retains-materialized-theme-artifact' );
 
 $matrix_result = Static_Site_Importer_Validation_Runtime::fixture_matrix_result( $result );
 $assert( Static_Site_Importer_Validation_Runtime::FIXTURE_MATRIX_RESULT_SCHEMA === ( $matrix_result['schema'] ?? '' ), 'fixture-matrix-schema' );
@@ -201,6 +203,44 @@ $override_result       = Static_Site_Importer_Validation_Runtime::validate_artif
 );
 $assert( false === ( Static_Site_Importer_Theme_Generator::$last_args['materialize_dependencies'] ?? null ), 'validation-honors-disabled-dependency-materialization' );
 $assert( false === ( $override_result['request']['import_args']['materialize_dependencies'] ?? null ), 'validation-result-records-disabled-dependency-materialization' );
+
+$success_result = $method->invoke(
+	null,
+	array(
+		'quality'    => array( 'pass' => true ),
+		'theme_slug' => 'ssi-success-theme',
+	),
+	$artifact_dir,
+	array( 'slug' => 'fixture-success' )
+);
+$assert( true === ( $success_result['success'] ?? false ) && 'passed' === ( $success_result['status'] ?? '' ) && 'completed' === ( $success_result['runtime']['status'] ?? '' ), 'completed-success-statuses-remain-compatible' );
+$assert( 'materialized' === ( $success_result['artifacts']['generated_theme']['status'] ?? '' ), 'completed-success-retains-materialized-theme-artifact' );
+
+$pending_result = $method->invoke(
+	null,
+	array(
+		'status'      => 'pending_runtime',
+		'reason_code' => 'companion_plugin_init_pending',
+		'message'     => 'Generated companion blocks are queued for WordPress init. Resume after init before editor-dependent materialization.',
+		'diagnostics' => array(
+			array(
+				'code'        => 'static_site_importer_companion_plugin_init_pending',
+				'reason_code' => 'init_not_started',
+				'message'     => 'Generated companion blocks are not registered until the queued WordPress init callback runs.',
+			),
+		),
+		'runtime_lifecycle' => array( 'status' => 'prepared' ),
+		'dependencies'      => array( 'companion' => array( 'status' => 'installed_pending_init' ) ),
+	),
+	$artifact_dir,
+	array( 'slug' => 'fixture-pending' )
+);
+$assert( false === ( $pending_result['success'] ?? true ) && 'pending_runtime' === ( $pending_result['status'] ?? '' ) && 'resume_required' === ( $pending_result['runtime']['status'] ?? '' ), 'pending-runtime-is-resumable-not-terminal' );
+$assert( 'companion_plugin_init_pending' === ( $pending_result['reason_code'] ?? '' ) && 'prepared' === ( $pending_result['runtime_lifecycle']['status'] ?? '' ), 'pending-runtime-preserves-resume-context' );
+$assert( 'static_site_importer_companion_plugin_init_pending' === ( $pending_result['diagnostics'][0]['code'] ?? '' ) && 'init_not_started' === ( $pending_result['diagnostics'][0]['reason_code'] ?? '' ), 'pending-runtime-preserves-actionable-diagnostics' );
+$assert( ! isset( $pending_result['artifacts']['generated_theme'] ) && ! in_array( 'materialized', array_column( $pending_result['artifacts'], 'status' ), true ), 'pending-runtime-emits-no-materialized-artifacts' );
+$pending_matrix_result = Static_Site_Importer_Validation_Runtime::fixture_matrix_result( $pending_result );
+$assert( 'pending_runtime' === ( $pending_matrix_result['status'] ?? '' ) && false === ( $pending_matrix_result['success'] ?? true ), 'fixture-matrix-preserves-pending-validation-status' );
 
 unlink( $report_path );
 rmdir( $default_artifact_dir );
