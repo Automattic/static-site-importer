@@ -5009,6 +5009,24 @@ async function runWpCodeboxRecipe(options = {}) {
     fs.writeFileSync(capturedRecipes, JSON.stringify(captured));
   }
   if (recipe.includes('plan-artifact-dependencies')) {
+    // Parse batch number from the discovery artifacts path (e.g. .../discovery/001-fixture-01/).
+    const discoveryMatch = String(options.recipeFile).match(/discovery\\/(\\d{3})/);
+    const discoveryBatch = discoveryMatch ? Number(discoveryMatch[1]) : 0;
+    inFlight += 1;
+    peakInFlight = Math.max(peakInFlight, inFlight);
+    recordPeak();
+    const unit = Number(process.env.SSI_TEST_RECIPE_UNIT_MS || '15');
+    const delay = discoveryBatch * unit;
+    await new Promise((resolve) => setTimeout(resolve, Math.max(1, delay)));
+    inFlight -= 1;
+    const throwDiscoveryBatch = Number(process.env.SSI_TEST_RECIPE_DISCOVERY_THROW_BATCH || '0');
+    if (throwDiscoveryBatch && throwDiscoveryBatch === discoveryBatch) {
+      const error = new Error('discovery failed for batch ' + discoveryBatch);
+      error.code = 19;
+      error.stdout = '';
+      error.stderr = 'discovery boom';
+      throw error;
+    }
     fs.mkdirSync(options.artifactsDir, { recursive: true });
     fs.writeFileSync(require('node:path').join(options.artifactsDir, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
     return { exitCode: 0, outputFile: options.outputFile, json: {} };
@@ -5076,6 +5094,7 @@ const CONCURRENCY_ENV_KEYS = [
   'SSI_TEST_RECIPE_BATCH_COUNT',
   'SSI_TEST_RECIPE_UNIT_MS',
   'SSI_TEST_RECIPE_THROW_BATCH',
+  'SSI_TEST_RECIPE_DISCOVERY_THROW_BATCH',
   'SSI_TEST_RECIPE_CAPTURE_FILE',
 ];
 
@@ -5258,6 +5277,49 @@ test('runFixtureMatrix isolates a throwing batch so sibling batches still comple
 
     // All four batches still ran; the three non-throwing siblings succeeded,
     // proving one batch's failure did not sink the others.
+    assert.equal(summary.runtime.batches.length, 4);
+    assert.equal(summary.result_summary.succeeded, 3);
+    assert.equal(summary.result_summary.failed, 1);
+  } finally {
+    restoreConcurrencyEnv(snapshot);
+  }
+});
+
+test('runFixtureMatrix isolates a dependency-discovery failure so sibling batches still complete', async () => {
+  const snapshot = snapshotConcurrencyEnv();
+  const workspace = setupConcurrencyWorkspace('ssi-discovery-isolation-', 4);
+  process.env.HOMEBOY_WP_CODEBOX_RECIPE_HELPER = workspace.helperPath;
+  process.env.SSI_TEST_RECIPE_BATCH_COUNT = '4';
+  process.env.SSI_TEST_RECIPE_UNIT_MS = '5';
+  process.env.SSI_TEST_RECIPE_DISCOVERY_THROW_BATCH = '2';
+
+  try {
+    const { summary, runtimeError } = await runFixtureMatrix({
+      id: 'discovery-isolation-matrix',
+      fixtureRoot: workspace.fixtureRoot,
+      outputDirectory: workspace.outputDirectory,
+      staticSiteImporterPath: workspace.staticSiteImporter,
+      run: true,
+      batchSize: 1,
+      concurrency: 4,
+      visualParity: false,
+    });
+
+    // The discovery failure surfaces as the runtime error + exit code, but the
+    // run still produced a full summary rather than rejecting.
+    assert.ok(runtimeError);
+    assert.match(runtimeError.message, /discovery failed/);
+    assert.equal(summary.runtime.exit_code, 19);
+
+    // Exactly one child-command failure with the correct stage.
+    const failures = summary.runtime.child_command_failures;
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0].batch_id, 'batch-002');
+    assert.equal(failures[0].failure_stage, 'dependency_discovery');
+    assert.equal(failures[0].exit_status, 19);
+
+    // All four batches still ran; the three non-throwing siblings succeeded,
+    // proving one batch's discovery failure did not sink the others.
     assert.equal(summary.runtime.batches.length, 4);
     assert.equal(summary.result_summary.succeeded, 3);
     assert.equal(summary.result_summary.failed, 1);
