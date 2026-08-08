@@ -32,7 +32,6 @@ jobs:
           args: --extension wordpress
           php-version: '8.2'
           node-version: '24'
-          autofix: 'false'
 
   homeboy-test:
     name: Homeboy Test (PHP ${{ matrix.php-version }})
@@ -53,4 +52,3 @@ jobs:
           args: --extension wordpress
           php-version: ${{ matrix.php-version }}
           node-version: '24'
-          autofix: 'false'
