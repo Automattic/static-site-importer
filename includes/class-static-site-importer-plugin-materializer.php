@@ -214,6 +214,7 @@ class Static_Site_Importer_Plugin_Materializer {
 			if ( is_wp_error( $registered ) ) {
 				return self::failed_report( $report, $registered );
 			}
+			$report['registration'] = $registered;
 			self::replace_active_generated_companion( $plugin_file, $report );
 			if ( function_exists( 'update_option' ) ) {
 				update_option( self::ACTIVE_COMPANION_OPTION, $plugin_file, false );
@@ -255,6 +256,7 @@ class Static_Site_Importer_Plugin_Materializer {
 		if ( is_wp_error( $registered ) ) {
 			return self::failed_report( $report, $registered );
 		}
+		$report['registration'] = $registered;
 		self::replace_active_generated_companion( $plugin_file, $report );
 		if ( function_exists( 'update_option' ) ) {
 			update_option( self::ACTIVE_COMPANION_OPTION, $plugin_file, false );
@@ -267,13 +269,13 @@ class Static_Site_Importer_Plugin_Materializer {
 	/**
 	 * Register a newly materialized companion in this request.
 	 *
-	 * WordPress activation sandbox-loads a plugin after `init` has usually run.
-	 * Generated companions register their metadata blocks on `init`, so invoke that
-	 * exact callback now and verify every emitted block is available to the editor.
+	 * Generated companions retain their normal `init` registration. A late
+	 * activation may run the callback directly, but a pre-init activation remains
+	 * queued and reports that editor readiness is still pending.
 	 *
 	 * @param array<string,mixed> $descriptor Generated companion descriptor.
 	 * @param array<string,mixed> $plan       Generated companion install plan.
-	 * @return true|WP_Error
+	 * @return array<string,mixed>|WP_Error
 	 */
 	private static function register_generated_blocks( array $descriptor, array $plan ) {
 		$slug        = isset( $descriptor['slug'] ) && is_string( $descriptor['slug'] ) ? $descriptor['slug'] : '';
@@ -291,12 +293,26 @@ class Static_Site_Importer_Plugin_Materializer {
 		if ( ! is_callable( $callback ) ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_registration_unavailable', sprintf( 'Generated companion %s does not expose its block registration callback.', $slug ) );
 		}
+		$init_started = ( function_exists( 'did_action' ) && did_action( 'init' ) > 0 ) || ( function_exists( 'doing_action' ) && doing_action( 'init' ) );
+		if ( ! $init_started ) {
+			return array(
+				'status'      => 'pending_init',
+				'reason_code' => 'init_not_started',
+			);
+		}
 
-		call_user_func( $callback );
+		$callback_result = call_user_func( $callback );
+		$status          = is_array( $callback_result ) ? (string) ( $callback_result['status'] ?? '' ) : '';
+		if ( 'fresh_runtime_required' === $status ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_fresh_runtime_required', 'Generated companion revision changed after its blocks were registered. Start a fresh WordPress runtime before editor validation.', array( 'reason_code' => 'changed_revision_in_loaded_runtime' ) );
+		}
+		if ( 'foreign_collision' === $status ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_block_name_collision', 'Generated companion block names are owned by another registration.', array( 'reason_code' => 'runtime_block_name_collision' ) );
+		}
 		$registry = class_exists( 'WP_Block_Type_Registry' ) ? WP_Block_Type_Registry::get_instance() : null;
 		$missing  = array();
 		foreach ( $descriptor['block_names'] ?? array() as $block_name ) {
-			if ( ! is_string( $block_name ) || '' === $block_name || ! $registry || ! $registry->is_registered( $block_name ) ) {
+			if ( ! is_string( $block_name ) || '' === $block_name || ! $registry || ! $registry->is_registered( $block_name ) || ! self::registered_block_owned_by_descriptor( $block_name, $descriptor ) ) {
 				$missing[] = $block_name;
 			}
 		}
@@ -308,7 +324,7 @@ class Static_Site_Importer_Plugin_Materializer {
 			);
 		}
 
-		return true;
+		return array( 'status' => 'registered' );
 	}
 
 	/** Preflight registered block names before generated files are written. */
@@ -322,6 +338,13 @@ class Static_Site_Importer_Plugin_Materializer {
 			if ( function_exists( 'apply_filters' ) ) {
 				/** Filters runtime registry collision detection for generated companion blocks. */
 				$registered = (bool) apply_filters( 'ssi_companion_plugin_block_name_collision', $registered, $block_name, $registry );
+			}
+			if ( $registered && self::same_companion_path_different_revision( $block_name, $descriptor ) ) {
+				return new WP_Error(
+					'static_site_importer_companion_plugin_fresh_runtime_required',
+					'Generated companion revision changed after its blocks were registered. Start a fresh WordPress runtime before editor validation.',
+					array( 'block_name' => $block_name, 'reason_code' => 'changed_revision_in_loaded_runtime' )
+				);
 			}
 			if ( $registered && ! self::current_companion_owns_registered_block( $block_name, $descriptor ) ) {
 				return new WP_Error(
@@ -342,9 +365,8 @@ class Static_Site_Importer_Plugin_Materializer {
 	/**
 	 * Whether an existing block registration belongs to this active generated companion.
 	 *
-	 * The generated plugin records its exact plugin file and runtime path when it
-	 * registers a block. Both must match the pending descriptor; a matching block
-	 * name or namespace alone never establishes ownership.
+	 * A matching name or namespace never establishes ownership: the active
+	 * companion's file, path, and generated revision must all match.
 	 */
 	private static function current_companion_owns_registered_block( string $block_name, array $descriptor ): bool {
 		$plugin_file = isset( $descriptor['plugin_file'] ) && is_string( $descriptor['plugin_file'] ) ? $descriptor['plugin_file'] : '';
@@ -355,13 +377,41 @@ class Static_Site_Importer_Plugin_Materializer {
 			return false;
 		}
 
+		return self::registered_block_owned_by_descriptor( $block_name, $descriptor );
+	}
+
+	/** Verify the WordPress registry entry is paired with the exact generated owner. */
+	private static function registered_block_owned_by_descriptor( string $block_name, array $descriptor ): bool {
+		$plugin_file = isset( $descriptor['plugin_file'] ) && is_string( $descriptor['plugin_file'] ) ? $descriptor['plugin_file'] : '';
+		$revision    = isset( $descriptor['revision'] ) && is_string( $descriptor['revision'] ) ? $descriptor['revision'] : '';
+		$owners      = $GLOBALS['static_site_importer_companion_block_owners'] ?? array();
+		$owner       = is_array( $owners ) && isset( $owners[ $block_name ] ) && is_array( $owners[ $block_name ] ) ? $owners[ $block_name ] : array();
+		$base        = ! empty( $descriptor['mu_plugin'] ) ? ( defined( 'WPMU_PLUGIN_DIR' ) ? (string) WPMU_PLUGIN_DIR : '' ) : ( defined( 'WP_PLUGIN_DIR' ) ? (string) WP_PLUGIN_DIR : '' );
+		$path        = '' === $base ? '' : rtrim( str_replace( '\\', '/', $base ), '/' ) . '/' . $plugin_file;
+
+		return '' !== $plugin_file && '' !== $revision
+			&& (string) ( $owner['plugin_file'] ?? '' ) === $plugin_file
+			&& self::normalized_path( (string) ( $owner['plugin_path'] ?? '' ) ) === self::normalized_path( $path )
+			&& hash_equals( $revision, (string) ( $owner['revision'] ?? '' ) );
+	}
+
+	/** Detect an edited generated plugin whose old revision is already loaded. */
+	private static function same_companion_path_different_revision( string $block_name, array $descriptor ): bool {
 		$owners = $GLOBALS['static_site_importer_companion_block_owners'] ?? array();
 		$owner  = is_array( $owners ) && isset( $owners[ $block_name ] ) && is_array( $owners[ $block_name ] ) ? $owners[ $block_name ] : array();
-		$base   = ! empty( $descriptor['mu_plugin'] ) ? ( defined( 'WPMU_PLUGIN_DIR' ) ? (string) WPMU_PLUGIN_DIR : '' ) : ( defined( 'WP_PLUGIN_DIR' ) ? (string) WP_PLUGIN_DIR : '' );
-		$path   = '' === $base ? '' : rtrim( str_replace( '\\', '/', $base ), '/' ) . '/' . $plugin_file;
+		if ( self::registered_block_owned_by_descriptor( $block_name, $descriptor ) ) {
+			return false;
+		}
+		$plugin_file = (string) ( $descriptor['plugin_file'] ?? '' );
+		$base        = ! empty( $descriptor['mu_plugin'] ) ? ( defined( 'WPMU_PLUGIN_DIR' ) ? (string) WPMU_PLUGIN_DIR : '' ) : ( defined( 'WP_PLUGIN_DIR' ) ? (string) WP_PLUGIN_DIR : '' );
+		$path        = '' === $base ? '' : rtrim( str_replace( '\\', '/', $base ), '/' ) . '/' . $plugin_file;
 
-		return (string) ( $owner['plugin_file'] ?? '' ) === $plugin_file
-			&& str_replace( '\\', '/', (string) ( $owner['plugin_path'] ?? '' ) ) === $path;
+		return '' !== $plugin_file && (string) ( $owner['plugin_file'] ?? '' ) === $plugin_file && self::normalized_path( (string) ( $owner['plugin_path'] ?? '' ) ) === self::normalized_path( $path );
+	}
+
+	private static function normalized_path( string $path ): string {
+		$resolved = realpath( $path );
+		return str_replace( '\\', '/', false === $resolved ? $path : $resolved );
 	}
 
 	/**

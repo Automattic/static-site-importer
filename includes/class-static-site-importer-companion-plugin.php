@@ -198,9 +198,10 @@ class Static_Site_Importer_Companion_Plugin {
 		}
 
 		$main_file = $plugin_slug . '/' . $plugin_slug . '.php';
+		$revision  = self::revision( $files );
 		$files     = array_merge(
 			array(
-				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_specs, $preserved, $main_file ),
+				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_specs, $preserved, $main_file, $revision ),
 			),
 			$files
 		);
@@ -211,6 +212,7 @@ class Static_Site_Importer_Companion_Plugin {
 			'namespace'       => $block_namespace,
 			'site_slug'       => $site_slug,
 			'plugin_file'     => $main_file,
+			'revision'        => $revision,
 			'mu_plugin'       => $mu_plugin,
 			'block_names'     => $block_names,
 			// Handles of preserved island scripts the plugin carries + enqueues
@@ -647,7 +649,8 @@ class Static_Site_Importer_Companion_Plugin {
 		string $site_name,
 		array $block_specs,
 		array $preserved,
-		string $plugin_file
+		string $plugin_file,
+		string $revision
 	): string {
 		$header_name  = sprintf( 'SSI Companion: %s', $site_name );
 		$fn_prefix    = str_replace( '-', '_', $plugin_slug );
@@ -716,23 +719,37 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = ' */';
 		$lines[] = sprintf( 'function %s_register_blocks() {', $fn_prefix );
 		$lines[] = "\tif ( ! function_exists( 'register_block_type' ) ) {";
-		$lines[] = "\t\treturn;";
+		$lines[] = "\t\treturn array( 'status' => 'registration_unavailable' );";
 		$lines[] = "\t}";
+		$lines[] = "\t\$registry = class_exists( 'WP_Block_Type_Registry' ) ? WP_Block_Type_Registry::get_instance() : null;";
+		$lines[] = "\t\$outcome  = 'registered';";
+		$lines[] = "\t\$plugin_path = realpath( __FILE__ ) ?: __FILE__;";
 		$lines[] = '';
 		$lines[] = sprintf( "\tforeach ( %s_block_specs() as \$spec ) {", $fn_prefix );
+		$lines[] = "\t\t\$name  = (string) \$spec['name'];";
+		$lines[] = "\t\t\$owners = isset( \$GLOBALS['static_site_importer_companion_block_owners'] ) && is_array( \$GLOBALS['static_site_importer_companion_block_owners'] ) ? \$GLOBALS['static_site_importer_companion_block_owners'] : array();";
+		$lines[] = "\t\t\$owner  = isset( \$owners[ \$name ] ) && is_array( \$owners[ \$name ] ) ? \$owners[ \$name ] : array();";
+		$lines[] = "\t\tif ( \$registry && \$registry->is_registered( \$name ) ) {";
+		$lines[] = sprintf( "\t\t\tif ( '%s' === (string) ( \$owner['plugin_file'] ?? '' ) && \$plugin_path === (string) ( \$owner['plugin_path'] ?? '' ) && '%s' === (string) ( \$owner['revision'] ?? '' ) ) {", self::php_single_quote( $plugin_file ), self::php_single_quote( $revision ) );
+		$lines[] = "\t\t\t\tcontinue;";
+		$lines[] = "\t\t\t}";
+		$lines[] = sprintf( "\t\t\t\$outcome = ( '%s' === (string) ( \$owner['plugin_file'] ?? '' ) && \$plugin_path === (string) ( \$owner['plugin_path'] ?? '' ) ) ? 'fresh_runtime_required' : 'foreign_collision';", self::php_single_quote( $plugin_file ) );
+		$lines[] = "\t\t\tcontinue;";
+		$lines[] = "\t\t}";
 		$lines[] = sprintf( "\t\t\$registered = ! empty( \$spec['metadata'] ) ? register_block_type( %s_DIR . 'blocks/' . (string) \$spec['dir'] ) : null;", $const_prefix );
 		$lines[] = "\t\tif ( empty( \$spec['metadata'] ) ) {";
 		$lines[] = "\t\t\t\$args                    = isset( \$spec['args'] ) && is_array( \$spec['args'] ) ? \$spec['args'] : array();";
 		$lines[] = sprintf( "\t\t\t\$args['render_callback'] = %s_render_callback( (string) \$spec['dir'] );", $fn_prefix );
 		$lines[] = "\t\t\t\$registered              = register_block_type( (string) \$spec['name'], \$args );";
 		$lines[] = "\t\t}";
-		$lines[] = "\t\tif ( \$registered instanceof WP_Block_Type && (string) \$spec['name'] === \$registered->name ) {";
+		$lines[] = "\t\tif ( \$registered instanceof WP_Block_Type && \$name === \$registered->name ) {";
 		$lines[] = "\t\t\tif ( ! isset( \$GLOBALS['static_site_importer_companion_block_owners'] ) || ! is_array( \$GLOBALS['static_site_importer_companion_block_owners'] ) ) {";
 		$lines[] = "\t\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'] = array();";
 		$lines[] = "\t\t\t}";
-		$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'][ (string) \$spec['name'] ] = array( 'plugin_file' => '%s', 'plugin_path' => __FILE__ );", self::php_single_quote( $plugin_file ) );
+		$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'][ \$name ] = array( 'plugin_file' => '%s', 'plugin_path' => \$plugin_path, 'revision' => '%s' );", self::php_single_quote( $plugin_file ), self::php_single_quote( $revision ) );
 		$lines[] = "\t\t}";
 		$lines[] = "\t}";
+		$lines[] = "\treturn array( 'status' => \$outcome );";
 		$lines[] = '}';
 		$lines[] = sprintf( "add_action( 'init', '%s_register_blocks' );", $fn_prefix );
 		$lines[] = '';
@@ -788,6 +805,11 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = '';
 
 		return implode( "\n", $lines );
+	}
+
+	/** @param array<string,string> $files Generated block and island file contents. */
+	private static function revision( array $files ): string {
+		return hash( 'sha256', (string) wp_json_encode( $files ) );
 	}
 
 	/**

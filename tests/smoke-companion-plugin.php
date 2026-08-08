@@ -30,6 +30,8 @@ $GLOBALS['ssi_companion_deactivated'] = array();
 $GLOBALS['ssi_companion_options']     = array();
 $GLOBALS['static_site_importer_companion_block_owners'] = array();
 $GLOBALS['ssi_companion_actions']     = array();
+$GLOBALS['ssi_companion_init_actions'] = 1;
+$GLOBALS['ssi_companion_init_running'] = false;
 
 if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_Error {
@@ -60,6 +62,10 @@ if ( ! class_exists( 'WP_Block_Type_Registry' ) ) {
 
 		public function is_registered( string $name ): bool {
 			return in_array( $name, self::$registered, true );
+		}
+
+		public function get_registered( string $name ): ?WP_Block_Type {
+			return $this->is_registered( $name ) ? new WP_Block_Type( $name ) : null;
 		}
 	}
 }
@@ -123,6 +129,18 @@ if ( ! function_exists( 'add_action' ) ) {
 
 if ( ! function_exists( 'add_filter' ) ) {
 	function add_filter( string $hook, callable|string $callback ): void {}
+}
+
+if ( ! function_exists( 'did_action' ) ) {
+	function did_action( string $hook ): int {
+		return 'init' === $hook ? (int) $GLOBALS['ssi_companion_init_actions'] : 0;
+	}
+}
+
+if ( ! function_exists( 'doing_action' ) ) {
+	function doing_action( string $hook ): bool {
+		return 'init' === $hook && (bool) $GLOBALS['ssi_companion_init_running'];
+	}
 }
 
 if ( ! function_exists( 'register_block_type' ) ) {
@@ -315,7 +333,8 @@ if ( is_array( $descriptor ) ) {
 	$assert( str_contains( $main, 'wp_enqueue_script' ), 'main-file-enqueues-island-js' );
 
 	$assert( str_contains( $main, "register_block_type( SSI_EXAMPLE_SITE_DIR . 'blocks/' . (string) \$spec['dir'] )" ), 'main-file-registers-metadata-block-directory' );
-	$assert( str_contains( $main, "\$registered instanceof WP_Block_Type" ) && str_contains( $main, "static_site_importer_companion_block_owners" ) && str_contains( $main, "'plugin_file' => 'ssi-example-site/ssi-example-site.php'" ), 'main-file-records-owner-only-after-matching-registration' );
+	$assert( str_contains( $main, "\$registered instanceof WP_Block_Type" ) && str_contains( $main, "static_site_importer_companion_block_owners" ) && str_contains( $main, "'plugin_file' => 'ssi-example-site/ssi-example-site.php'" ) && str_contains( $main, "'revision' =>" ), 'main-file-records-revisioned-owner-only-after-matching-registration', $main );
+	$assert( str_contains( $main, "'fresh_runtime_required'" ) && str_contains( $main, "'foreign_collision'" ), 'main-file-fails-closed-for-stale-or-foreign-registrations' );
 	$assert( str_contains( $main, "register_block_type( (string) \$spec['name'], \$args )" ), 'main-file-retains-php-only-fallback-registration' );
 	$assert( str_contains( $main, "'api_version' => 3" ), 'main-file-declares-api-version' );
 	$assert( str_contains( $main, "'name' => 'example/custom-hero'" ), 'main-file-carries-declared-block-name' );
@@ -438,13 +457,41 @@ $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/rend
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/block.json' ), 'install-emits-block-json' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/editor.js' ), 'install-emits-declared-editor-asset' );
 $assert( in_array( 'example/custom-hero', WP_Block_Type_Registry::$registered, true ), 'install-registers-generated-block-before-editor-use' );
-$assert( isset( $GLOBALS['static_site_importer_companion_block_owners']['example/custom-hero'] ), 'install-records-generated-block-owner-before-editor-use' );
+$owner = $GLOBALS['static_site_importer_companion_block_owners']['example/custom-hero'] ?? array();
+$assert( is_array( $owner ) && 'ssi-example-site/ssi-example-site.php' === ( $owner['plugin_file'] ?? '' ) && ( $descriptor['revision'] ?? '' ) === ( $owner['revision'] ?? '' ), 'install-records-exact-generated-owner-and-revision-before-editor-use' );
 $written_main = file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) ? (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) : '';
 $assert( str_contains( $written_main, 'register_block_type' ), 'written-main-file-registers-blocks' );
+$assert( 'registered' === ( ssi_example_site_register_blocks()['status'] ?? '' ), 'same-companion-revision-callback-is-idempotent' );
+
+$changed_revision = $payload;
+$changed_revision['blocks'][0]['render'] = '<div class="ssi-hero">Changed revision</div>';
+$changed_revision_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $changed_revision, static fn (): bool => true );
+$assert( 'failed' === ( $changed_revision_report['status'] ?? '' ) && 'static_site_importer_companion_plugin_fresh_runtime_required' === ( $changed_revision_report['error']['code'] ?? '' ), 'changed-revision-in-loaded-runtime-requires-fresh-process' );
 
 // A foreign registration that wins before generated plugin init must never be
 // marked as companion-owned, so a later materialization still fails closed.
 WP_Block_Type_Registry::$registered[] = 'example/custom-hero';
+$GLOBALS['static_site_importer_companion_block_owners'] = array();
+
+// Before init, the callback remains queued and editor readiness is explicitly
+// pending instead of registering into an incomplete WordPress lifecycle.
+$GLOBALS['static_site_importer_companion_block_owners'] = array();
+WP_Block_Type_Registry::$registered = array();
+$GLOBALS['ssi_companion_init_actions'] = 0;
+$before_init_payload = array_merge( $payload, array( 'site_slug' => 'before-init' ) );
+$before_init_report  = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $before_init_payload );
+$assert( 'pending_init' === ( $before_init_report['registration']['status'] ?? '' ) && 'init_not_started' === ( $before_init_report['registration']['reason_code'] ?? '' ), 'before-init-keeps-registration-queued-with-explicit-readiness' );
+$assert( ! in_array( 'example/custom-hero', WP_Block_Type_Registry::$registered, true ) && ! empty( $GLOBALS['ssi_companion_actions']['init'] ), 'before-init-does-not-directly-register-or-unhook-init' );
+$GLOBALS['ssi_companion_init_actions'] = 1;
+
+// During init the materializer can invoke the generated callback directly.
+$GLOBALS['ssi_companion_init_actions'] = 0;
+$GLOBALS['ssi_companion_init_running'] = true;
+$during_init_payload = array_merge( $payload, array( 'site_slug' => 'during-init' ) );
+$during_init_report  = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $during_init_payload );
+$assert( 'registered' === ( $during_init_report['registration']['status'] ?? '' ), 'during-init-direct-registration-is-ready' );
+$GLOBALS['ssi_companion_init_actions'] = 1;
+$GLOBALS['ssi_companion_init_running'] = false;
 $GLOBALS['static_site_importer_companion_block_owners'] = array();
 ssi_example_site_register_blocks();
 $assert( ! isset( $GLOBALS['static_site_importer_companion_block_owners']['example/custom-hero'] ), 'foreign-registration-before-generated-init-records-no-owner' );
@@ -455,10 +502,13 @@ $GLOBALS['ssi_companion_actions'] = array();
 
 // Existing active generated companions are refreshed from the current payload;
 // stale files from an older SSI build must not bypass scaffold normalization.
+$GLOBALS['ssi_companion_options'][ Static_Site_Importer_Plugin_Materializer::ACTIVE_COMPANION_OPTION ] = 'ssi-example-site/ssi-example-site.php';
+$GLOBALS['ssi_companion_active'][] = 'ssi-example-site/ssi-example-site.php';
 file_put_contents( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php', "<?php\nreturn array( 'type' => 'content' );\n" );
 $GLOBALS['static_site_importer_companion_block_owners']['example/custom-hero'] = array(
 	'plugin_file' => 'ssi-example-site/ssi-example-site.php',
-	'plugin_path' => WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php',
+	'plugin_path' => (string) realpath( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ),
+	'revision'    => $descriptor['revision'],
 );
 WP_Block_Type_Registry::$registered[] = 'example/custom-hero';
 $refresh_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload, static fn (): bool => true );
@@ -478,11 +528,13 @@ WP_Block_Type_Registry::$registered = array();
 $GLOBALS['static_site_importer_companion_block_owners'] = array();
 
 // mu-plugin install writes the root loader and needs no activation call.
-$mu_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( array_merge( $payload, array( 'mu_plugin' => true ) ) );
+$mu_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( array_merge( $payload, array( 'site_slug' => 'mu-example-site', 'mu_plugin' => true ) ) );
 $assert( 'installed_activated' === ( $mu_report['status'] ?? '' ), 'mu-install-status', (string) ( $mu_report['status'] ?? '' ) );
 $assert( true === ( $mu_report['mu_plugin'] ?? false ), 'mu-install-reports-mu-plugin' );
 $assert( ! in_array( 'activated', $mu_report['actions'] ?? array(), true ), 'mu-install-skips-activation' );
-$assert( file_exists( WPMU_PLUGIN_DIR . '/ssi-example-site.php' ), 'mu-install-writes-root-loader' );
+$assert( file_exists( WPMU_PLUGIN_DIR . '/ssi-mu-example-site.php' ), 'mu-install-writes-root-loader' );
+$GLOBALS['ssi_companion_options'][ Static_Site_Importer_Plugin_Materializer::ACTIVE_COMPANION_OPTION ] = 'ssi-example-site/ssi-example-site.php';
+$GLOBALS['ssi_companion_active'][] = 'ssi-example-site/ssi-example-site.php';
 
 // 4. Declared-dependency wiring: distinct generated/companion dependency entry.
 $dependency = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $payload );
@@ -536,14 +588,14 @@ $control_payload = array_merge(
 		'site_slug' => 'editor-controls',
 		'blocks'    => array(
 			array(
-				'name'       => 'form-select',
-				'block_json' => array( 'name' => 'blocks-engine/form-select', 'title' => 'Form Select', 'editorScript' => 'file:./editor.js' ),
+				'name'       => 'authored-select',
+				'block_json' => array( 'name' => 'blocks-engine/authored-select', 'title' => 'Authored Select', 'editorScript' => 'file:./editor.js' ),
 				'render'     => '<select><option>One</option></select>',
 				'assets'     => array( 'editor.js' => 'window.SSIFormSelect = true;' ),
 			),
 			array(
-				'name'       => 'form-input',
-				'block_json' => array( 'name' => 'blocks-engine/form-input', 'title' => 'Form Input', 'editorScript' => 'file:./editor.js' ),
+				'name'       => 'authored-input',
+				'block_json' => array( 'name' => 'blocks-engine/authored-input', 'title' => 'Authored Input', 'editorScript' => 'file:./editor.js' ),
 				'render'     => '<input type="text">',
 				'assets'     => array( 'editor.js' => 'window.SSIFormInput = true;' ),
 			),
@@ -552,8 +604,8 @@ $control_payload = array_merge(
 );
 $control_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $control_payload );
 $assert( 'installed_activated' === ( $control_report['status'] ?? '' ), 'control-companion-materializes' );
-$assert( in_array( 'blocks-engine/form-select', WP_Block_Type_Registry::$registered, true ), 'form-select-registers-before-editor-use' );
-$assert( in_array( 'blocks-engine/form-input', WP_Block_Type_Registry::$registered, true ), 'form-input-registers-before-editor-use' );
+$assert( in_array( 'blocks-engine/authored-select', WP_Block_Type_Registry::$registered, true ), 'authored-select-registers-before-editor-use' );
+$assert( in_array( 'blocks-engine/authored-input', WP_Block_Type_Registry::$registered, true ), 'authored-input-registers-before-editor-use' );
 
 // Cleanup generated fixtures.
 $cleanup = static function ( string $dir ) use ( &$cleanup ): void {
