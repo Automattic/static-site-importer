@@ -220,7 +220,7 @@ class Static_Site_Importer_Plugin_Materializer {
 				update_option( self::ACTIVE_COMPANION_OPTION, $plugin_file, false );
 			}
 			$report['active'] = true;
-			$report['status'] = 'installed_activated';
+			$report['status'] = self::generated_plugin_status( $already_available, $registered );
 			return $report;
 		}
 
@@ -262,8 +262,25 @@ class Static_Site_Importer_Plugin_Materializer {
 			update_option( self::ACTIVE_COMPANION_OPTION, $plugin_file, false );
 		}
 
-		$report['status'] = $already_available ? 'refreshed' : 'installed_activated';
+		$report['status'] = self::generated_plugin_status( $already_available, $registered );
 		return $report;
+	}
+
+	/**
+	 * Report activation separately from block-registry readiness.
+	 *
+	 * A companion activated before init is correctly active on disk, but its
+	 * editor blocks are not available until WordPress runs the queued callback.
+	 *
+	 * @param bool                $already_available Whether this was a refresh.
+	 * @param array<string,mixed> $registration      Block-registration receipt.
+	 */
+	private static function generated_plugin_status( bool $already_available, array $registration ): string {
+		if ( 'pending_init' === ( $registration['status'] ?? '' ) ) {
+			return $already_available ? 'refreshed_pending_init' : 'installed_pending_init';
+		}
+
+		return $already_available ? 'refreshed' : 'installed_activated';
 	}
 
 	/**

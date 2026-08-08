@@ -77,6 +77,10 @@ class Static_Site_Importer_Theme_Generator {
 			if ( is_wp_error( $dependencies ) ) {
 				return $dependencies;
 			}
+			$pending = self::pending_runtime_dependency_report( $dependencies );
+			if ( null !== $pending ) {
+				return self::pending_runtime_result( $pending, $lifecycle, $dependencies );
+			}
 			return array(
 				'status'            => 'dependencies_prepared',
 				'runtime_lifecycle' => $lifecycle,
@@ -226,11 +230,18 @@ class Static_Site_Importer_Theme_Generator {
 					$error = $companion_materialization['error'] ?? array();
 					return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_companion_plugin_materialization_failed' ), (string) ( $error['message'] ?? 'Companion-plugin materialization failed.' ), $companion_materialization );
 				}
+				if ( self::is_pending_runtime_report( $companion_materialization ) ) {
+					return self::pending_runtime_result( $companion_materialization, $lifecycle );
+				}
 			}
 		}
 		$dependencies = $page_ready ? array() : self::materialize_prepared_dependencies( $lifecycle, $args );
 		if ( is_wp_error( $dependencies ) ) {
 			return $dependencies;
+		}
+		$pending_dependency = self::pending_runtime_dependency_report( $dependencies );
+		if ( null !== $pending_dependency ) {
+			return self::pending_runtime_result( $pending_dependency, $lifecycle, $dependencies );
 		}
 		$entity_result = $page_ready ? array(
 			'reports' => array(),
@@ -1052,6 +1063,62 @@ class Static_Site_Importer_Theme_Generator {
 			}
 		}
 		return $reports;
+	}
+
+	/** @param array<string,mixed> $report */
+	private static function is_pending_runtime_report( array $report ): bool {
+		return in_array( $report['status'] ?? '', array( 'installed_pending_init', 'refreshed_pending_init' ), true );
+	}
+
+	/**
+	 * Find a dependency that is active on disk but cannot yet serve editor blocks.
+	 *
+	 * @param array<string,mixed> $reports
+	 * @return array<string,mixed>|null
+	 */
+	private static function pending_runtime_dependency_report( array $reports ): ?array {
+		foreach ( $reports as $report ) {
+			if ( ! is_array( $report ) ) {
+				continue;
+			}
+			if ( self::is_pending_runtime_report( $report ) ) {
+				return $report;
+			}
+			$nested = self::pending_runtime_dependency_report( $report );
+			if ( null !== $nested ) {
+				return $nested;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Stop before editor-dependent materialization without representing a normal
+	 * runtime lifecycle boundary as an installation failure.
+	 *
+	 * @param array<string,mixed> $companion
+	 * @param array<string,mixed> $lifecycle
+	 * @param array<string,mixed> $dependencies
+	 * @return array<string,mixed>
+	 */
+	private static function pending_runtime_result( array $companion, array $lifecycle, array $dependencies = array() ): array {
+		$registration = isset( $companion['registration'] ) && is_array( $companion['registration'] ) ? $companion['registration'] : array();
+		return array(
+			'status'                            => 'pending_runtime',
+			'reason_code'                       => 'companion_plugin_init_pending',
+			'message'                           => 'Generated companion blocks are queued for WordPress init. Resume after init before editor-dependent materialization.',
+			'diagnostics'                       => array(
+				array(
+					'code'        => 'static_site_importer_companion_plugin_init_pending',
+					'reason_code' => (string) ( $registration['reason_code'] ?? 'init_not_started' ),
+					'message'     => 'Generated companion blocks are not registered until the queued WordPress init callback runs.',
+				),
+			),
+			'companion_plugin_materialization' => $companion,
+			'runtime_lifecycle'                 => $lifecycle,
+			'dependencies'                      => $dependencies,
+		);
 	}
 
 	/** @return array{reports:array<string,mixed>,error:?array{code:string,message:string}} */

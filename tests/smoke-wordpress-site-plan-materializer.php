@@ -154,6 +154,13 @@ $gap_contract = Static_Site_Importer_Diagnostic_Contract::build( array( 'success
 $gap_diagnostics = array_values( array_filter( $gap_contract['diagnostics'] ?? array(), static fn( array $diagnostic ): bool => 'gap-plan-contract' === ( $diagnostic['id'] ?? '' ) ) );
 $assert( 'installed_activated' === ( $gap_diagnostics[0]['materialization_status'] ?? '' ) && array( 'file:./view.js' ) === ( $gap_diagnostics[0]['references'] ?? array() ), 'gutenberg-gap-diagnostics-retain-materialization-status-and-references' );
 
+// A pre-init companion is active but not editor-ready. Theme generation returns
+// this as a resumable non-error result and does not continue into materialization.
+$pending_runtime_result = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'pending_runtime_result' );
+$pending_runtime = $pending_runtime_result->invoke( null, array( 'status' => 'installed_pending_init', 'registration' => array( 'status' => 'pending_init', 'reason_code' => 'init_not_started' ) ), array( 'status' => 'prepared' ), array( 'forms' => array() ) );
+$assert( 'pending_runtime' === ( $pending_runtime['status'] ?? '' ) && 'companion_plugin_init_pending' === ( $pending_runtime['reason_code'] ?? '' ) && 'installed_pending_init' === ( $pending_runtime['companion_plugin_materialization']['status'] ?? '' ), 'theme-generation-propagates-pending-companion-without-success-status' );
+$assert( 'init_not_started' === ( $pending_runtime['diagnostics'][0]['reason_code'] ?? '' ) && ! isset( $pending_runtime['generated_theme'] ), 'theme-generation-pending-result-is-actionable-and-stops-editor-continuation' );
+
 $receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan' ) );
 $assert( 'completed' === $receipt['status'], 'valid plan completes' );
 $assert( 'static-site-importer/materialization-receipt/v1' === $receipt['schema'], 'receipt schema is stable' );

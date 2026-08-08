@@ -32,6 +32,7 @@ $GLOBALS['static_site_importer_companion_block_owners'] = array();
 $GLOBALS['ssi_companion_actions']     = array();
 $GLOBALS['ssi_companion_init_actions'] = 1;
 $GLOBALS['ssi_companion_init_running'] = false;
+$GLOBALS['ssi_companion_registration_attempts'] = 0;
 
 if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_Error {
@@ -145,6 +146,7 @@ if ( ! function_exists( 'doing_action' ) ) {
 
 if ( ! function_exists( 'register_block_type' ) ) {
 	function register_block_type( string $block, array $args = array() ): WP_Block_Type|false {
+		++$GLOBALS['ssi_companion_registration_attempts'];
 		$name = isset( $args['name'] ) ? (string) $args['name'] : '';
 		if ( '' === $name && is_file( $block . '/block.json' ) ) {
 			$metadata = json_decode( (string) file_get_contents( $block . '/block.json' ), true );
@@ -480,11 +482,25 @@ WP_Block_Type_Registry::$registered = array();
 $GLOBALS['ssi_companion_init_actions'] = 0;
 $before_init_payload = array_merge( $payload, array( 'site_slug' => 'before-init' ) );
 $before_init_report  = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $before_init_payload );
-$assert( 'pending_init' === ( $before_init_report['registration']['status'] ?? '' ) && 'init_not_started' === ( $before_init_report['registration']['reason_code'] ?? '' ), 'before-init-keeps-registration-queued-with-explicit-readiness' );
+$assert( 'installed_pending_init' === ( $before_init_report['status'] ?? '' ) && 'pending_init' === ( $before_init_report['registration']['status'] ?? '' ) && 'init_not_started' === ( $before_init_report['registration']['reason_code'] ?? '' ), 'before-init-surfaces-top-level-pending-runtime-readiness' );
 $assert( ! in_array( 'example/custom-hero', WP_Block_Type_Registry::$registered, true ) && ! empty( $GLOBALS['ssi_companion_actions']['init'] ), 'before-init-does-not-directly-register-or-unhook-init' );
+$before_init_refresh = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $before_init_payload, static fn (): bool => true );
+$assert( 'refreshed_pending_init' === ( $before_init_refresh['status'] ?? '' ) && 'pending_init' === ( $before_init_refresh['registration']['status'] ?? '' ), 'pre-init-refresh-surfaces-top-level-pending-runtime-readiness' );
+$before_init_callback = $GLOBALS['ssi_companion_actions']['init'][ count( $GLOBALS['ssi_companion_actions']['init'] ) - 1 ] ?? null;
+$assert( is_callable( $before_init_callback ), 'before-init-captures-generated-init-callback' );
+$GLOBALS['ssi_companion_registration_attempts'] = 0;
+if ( is_callable( $before_init_callback ) ) {
+	call_user_func( $before_init_callback );
+	call_user_func( $before_init_callback );
+}
+$assert( 1 === $GLOBALS['ssi_companion_registration_attempts'] && in_array( 'example/custom-hero', WP_Block_Type_Registry::$registered, true ), 'queued-init-callback-registers-exactly-once' );
 $GLOBALS['ssi_companion_init_actions'] = 1;
+$after_init_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $before_init_payload, static fn (): bool => true );
+$assert( 'refreshed' === ( $after_init_report['status'] ?? '' ) && 'registered' === ( $after_init_report['registration']['status'] ?? '' ), 'post-init-refresh-transitions-to-verifiable-readiness' );
 
 // During init the materializer can invoke the generated callback directly.
+$GLOBALS['static_site_importer_companion_block_owners'] = array();
+WP_Block_Type_Registry::$registered = array();
 $GLOBALS['ssi_companion_init_actions'] = 0;
 $GLOBALS['ssi_companion_init_running'] = true;
 $during_init_payload = array_merge( $payload, array( 'site_slug' => 'during-init' ) );
