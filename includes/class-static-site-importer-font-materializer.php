@@ -189,15 +189,29 @@ final class Static_Site_Importer_Font_Materializer {
 			return new WP_Error( 'static_site_importer_font_materialization_producer_receipts_invalid', '', $diagnostics );
 		}
 		$normalized = array();
-		foreach ( $faces as $face ) {
+		foreach ( $faces as $face_index => $face ) {
 			if ( ! is_array( $face ) || 'declared' !== ( $face['state'] ?? '' ) || ! is_string( $face['id'] ?? null ) || ! isset( $imports[ $face['import_id'] ?? '' ] ) || ! isset( $receipts[ $face['id'] ] ) || ( $face['receipt_id'] ?? null ) !== $receipts[ $face['id'] ] || ! is_array( $face['axes'] ?? null ) || ! is_array( $face['unicode_ranges'] ?? null ) ) {
-				$diagnostics[] = self::diagnostic( 'producer_face_or_receipt_invalid' );
+				$diagnostics[] = self::diagnostic_with_detail(
+					'producer_face_or_receipt_invalid',
+					array(
+						'face_index'     => $face_index,
+						'face_id'        => is_array( $face ) && is_string( $face['id'] ?? null ) ? $face['id'] : null,
+						'invalid_fields' => self::invalid_producer_face_fields( $face, $imports, $receipts ),
+					)
+				);
 				return new WP_Error( 'static_site_importer_font_materialization_producer_face_invalid', '', $diagnostics );
 			}
 			$family = trim( (string) ( $face['family'] ?? '' ) );
 			$style  = (string) ( $face['style'] ?? 'normal' );
 			if ( '' === $family || ! in_array( $style, array( 'normal', 'italic' ), true ) || ! self::valid_weight( $face['weight'] ?? null ) || ! self::valid_axes( $face['axes'] ) ) {
-				$diagnostics[] = self::diagnostic( 'producer_face_invalid' );
+				$diagnostics[] = self::diagnostic_with_detail(
+					'producer_face_invalid',
+					array(
+						'face_index'     => $face_index,
+						'face_id'        => $face['id'],
+						'invalid_fields' => self::invalid_producer_face_value_fields( $face ),
+					)
+				);
 				return new WP_Error( 'static_site_importer_font_materialization_producer_face_invalid', '', $diagnostics );
 			}
 			$face['family']     = $family;
@@ -267,11 +281,63 @@ final class Static_Site_Importer_Font_Materializer {
 
 	private static function valid_axes( array $axes ): bool {
 		foreach ( $axes as $axis => $value ) {
-			if ( ! is_string( $axis ) || ! preg_match( '/^[A-Za-z0-9]{4}$/', $axis ) || ! self::valid_weight( $value ) ) {
+			if ( ! is_string( $axis ) || ! preg_match( '/^[A-Za-z0-9]{4}$/', $axis ) || ! self::valid_axis( $axis, $value ) ) {
 				return false;
 			}
 		}
 		return true;
+	}
+
+	private static function valid_axis( string $axis, mixed $value ): bool {
+		if ( 'ital' === $axis && is_array( $value ) && 'static' === ( $value['kind'] ?? '' ) && is_int( $value['value'] ?? null ) ) {
+			return in_array( $value['value'], array( 0, 1 ), true );
+		}
+		return self::valid_weight( $value );
+	}
+
+	/** @param array<string,array<string,mixed>> $imports @param array<string,string> $receipts @return array<int,string> */
+	private static function invalid_producer_face_fields( mixed $face, array $imports, array $receipts ): array {
+		if ( ! is_array( $face ) ) {
+			return array( 'face' );
+		}
+		$invalid = array();
+		if ( 'declared' !== ( $face['state'] ?? '' ) ) {
+			$invalid[] = 'state';
+		}
+		if ( ! is_string( $face['id'] ?? null ) ) {
+			$invalid[] = 'id';
+		}
+		if ( ! isset( $imports[ $face['import_id'] ?? '' ] ) ) {
+			$invalid[] = 'import_id';
+		}
+		if ( ! isset( $receipts[ $face['id'] ?? '' ] ) || ( $face['receipt_id'] ?? null ) !== ( $receipts[ $face['id'] ?? '' ] ?? null ) ) {
+			$invalid[] = 'receipt_id';
+		}
+		if ( ! is_array( $face['axes'] ?? null ) ) {
+			$invalid[] = 'axes';
+		}
+		if ( ! is_array( $face['unicode_ranges'] ?? null ) ) {
+			$invalid[] = 'unicode_ranges';
+		}
+		return $invalid;
+	}
+
+	/** @param array<string,mixed> $face @return array<int,string> */
+	private static function invalid_producer_face_value_fields( array $face ): array {
+		$invalid = array();
+		if ( '' === trim( (string) ( $face['family'] ?? '' ) ) ) {
+			$invalid[] = 'family';
+		}
+		if ( ! in_array( (string) ( $face['style'] ?? 'normal' ), array( 'normal', 'italic' ), true ) ) {
+			$invalid[] = 'style';
+		}
+		if ( ! self::valid_weight( $face['weight'] ?? null ) ) {
+			$invalid[] = 'weight';
+		}
+		if ( ! self::valid_axes( $face['axes'] ?? array() ) ) {
+			$invalid[] = 'axes';
+		}
+		return $invalid;
 	}
 
 	/** @param array{faces:array<int,array<string,mixed>>,imports:array<string,array<string,mixed>>,receipts:array<string,string>} $producer @param array<int,array<string,string>> $diagnostics */

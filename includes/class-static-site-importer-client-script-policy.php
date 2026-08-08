@@ -44,7 +44,10 @@ class Static_Site_Importer_Client_Script_Policy {
 				}
 			}
 			if ( self::is_html_file( $file ) ) {
-				$file['content'] = self::filter_html( (string) ( $file['content'] ?? '' ), $path, $preserve, $report );
+				$content = self::filter_html( self::file_content( $file ), $path, $preserve, $report );
+				if ( ! $preserve ) {
+					$file = self::with_file_content( $file, $content );
+				}
 			}
 			$filtered[] = $file;
 		}
@@ -144,8 +147,31 @@ class Static_Site_Importer_Client_Script_Policy {
 			'path'   => $path,
 			'class'  => 'local',
 			'type'   => 'asset',
-			'sha256' => hash( 'sha256', (string) ( $file['content'] ?? '' ) ),
+			'sha256' => hash( 'sha256', self::file_content( $file ) ),
 		);
+	}
+
+	private static function file_content( array $file ): string {
+		if ( isset( $file['content'] ) && is_scalar( $file['content'] ) ) {
+			return (string) $file['content'];
+		}
+		if ( isset( $file['content_base64'] ) && is_scalar( $file['content_base64'] ) ) {
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes declared artifact content before applying the script policy.
+			$decoded = base64_decode( (string) $file['content_base64'], true );
+			return false === $decoded ? '' : $decoded;
+		}
+		return '';
+	}
+
+	private static function with_file_content( array $file, string $content ): array {
+		if ( array_key_exists( 'content_base64', $file ) && ! array_key_exists( 'content', $file ) ) {
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Restores filtered declared artifact content to its original representation.
+			$file['content_base64'] = base64_encode( $content );
+			return $file;
+		}
+		$file['content'] = $content;
+		unset( $file['content_base64'] );
+		return $file;
 	}
 
 	private static function record( array &$report, string $disposition, array $row ): void {
