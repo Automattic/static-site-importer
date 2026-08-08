@@ -13,6 +13,7 @@ function fixture() {
   for (const file of ['editor.png', 'source.png', 'candidate.png', 'diff.png', 'visual-diff.json']) fs.writeFileSync(path.join(root, file), file);
   const matrix = {
     schema: 'static-site-importer/fixture-matrix-result/v1',
+    matrix_id: 'solved-matrix',
     summary: { generation_status: 'succeeded', execution_status: 'requested', fixture_count: 1, failed: 0, not_run: 0, solved_candidate_gate: { enabled: true, failed_fixture_count: 0 } },
     fixtures: [{
       fixture_id: 'solved', status: 'passed', success: true,
@@ -27,11 +28,17 @@ function fixture() {
       editor_quality: { native_conversion_rate: 1 },
     }],
   };
-  const registry = { schema: 'static-site-importer/gutenberg-incompatibility-registry/v1', fixture_decisions: [{ fixture_id: 'solved', acceptance_status: 'solved_candidate' }] };
+  matrix.fixtures[0].fixture_corpus = 'solved';
+  const registry = {
+    schema: 'static-site-importer/gutenberg-incompatibility-registry/v1',
+    matrix_id: matrix.matrix_id,
+    generated_from: { result_schema: matrix.schema, fixture_count: matrix.fixtures.length },
+    fixture_decisions: [{ fixture_id: 'solved', fixture_corpus: 'solved', acceptance_status: 'solved_candidate' }],
+  };
   const runtime = { nodeVersion: '20.19.4', phpVersion: '8.1.29', wordpressVersion: '7.0.2', homeboyVersion: 'v0.298.1', homeboySha256: '3'.repeat(64), homeboyExtensionsRef: '4'.repeat(40), wpCodeboxVersion: 'v0.18.4', wpCodeboxSha256: '5'.repeat(64), staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA };
   const paths = { matrix: path.join(root, 'matrix.json'), registry: path.join(root, 'registry.json'), runtime: path.join(root, 'runtime.json') };
   write(paths.matrix, matrix); write(paths.registry, registry); write(paths.runtime, runtime);
-  return { root, matrix, registry, runtime, paths, options: { matrixResult: paths.matrix, registry: paths.registry, runtimeInputs: paths.runtime, artifactRoot: root, staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA, fixtureTreeSha: '6'.repeat(40), solvedFixtureCount: 1, runUrl: 'https://github.com/Automattic/static-site-importer/actions/runs/123', artifactUrl: 'https://github.com/Automattic/static-site-importer/actions/runs/123#artifacts', output: path.join(root, 'receipt.json'), manifestOutput: path.join(root, 'manifest.json') } };
+  return { root, matrix, registry, runtime, paths, options: { matrixResult: paths.matrix, registry: paths.registry, runtimeInputs: paths.runtime, artifactRoot: root, staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA, fixtureTreeSha: '6'.repeat(40), solvedFixtureCount: 1, solvedFixtureIds: 'solved', runUrl: 'https://github.com/Automattic/static-site-importer/actions/runs/123', artifactUrl: 'https://github.com/Automattic/static-site-importer/actions/runs/123#artifacts', output: path.join(root, 'receipt.json'), manifestOutput: path.join(root, 'manifest.json') } };
 }
 
 test('issues an accepted immutable promotion receipt', () => {
@@ -85,6 +92,23 @@ for (const [name, mutate, pattern] of [
   ['transformer mismatch', (input) => { input.matrix.fixtures[0].matrix_evidence.transformer.package_reference = '7'.repeat(40); }, /provenance/],
   ['unpinned runtime', (input) => { input.runtime.wordpressVersion = 'latest'; }, /pinned/],
   ['missing evidence file', (input) => { fs.unlinkSync(path.join(input.root, 'diff.png')); }, /missing/],
+  ['missing quality metric', (input) => { delete input.matrix.fixtures[0].quality_metrics.core_html_block_count; }, /present/],
+  ['null quality metric', (input) => { input.matrix.fixtures[0].quality_metrics.core_html_block_count = null; }, /finite number/],
+  ['boolean quality metric', (input) => { input.matrix.fixtures[0].quality_metrics.core_html_block_count = false; }, /finite number/],
+  ['empty quality metric', (input) => { input.matrix.fixtures[0].quality_metrics.core_html_block_count = ''; }, /finite number/],
+  ['wrong matrix corpus', (input) => { input.matrix.fixtures[0].fixture_corpus = 'active'; }, /solved corpus/],
+  ['null block total', (input) => { input.matrix.fixtures[0].block_composition.block_total = null; }, /finite number/],
+  ['boolean native block count', (input) => { input.matrix.fixtures[0].block_composition.native_block_count = true; }, /finite number/],
+  ['array total blocks', (input) => { input.matrix.fixtures[0].editor_validation.total_blocks = []; }, /finite number/],
+  ['whitespace total blocks', (input) => { input.matrix.fixtures[0].editor_validation.total_blocks = '  '; }, /finite number/],
+  ['null valid blocks', (input) => { input.matrix.fixtures[0].editor_validation.valid_blocks = null; }, /finite number/],
+  ['boolean native conversion rate', (input) => { input.matrix.fixtures[0].editor_quality.native_conversion_rate = true; }, /finite number/],
+  ['partial canonical corpus', (input) => { input.options.solvedFixtureIds = 'solved,other'; input.options.solvedFixtureCount = 2; }, /complete canonical solved corpus/],
+  ['duplicate canonical ids', (input) => { input.options.solvedFixtureIds = 'solved,solved'; }, /unique/],
+  ['registry matrix mismatch', (input) => { input.registry.matrix_id = 'other-matrix'; }, /matrix_id/],
+  ['registry source schema mismatch', (input) => { input.registry.generated_from.result_schema = 'other/schema'; }, /result_schema/],
+  ['registry fixture count mismatch', (input) => { input.registry.generated_from.fixture_count = 2; }, /fixture_count/],
+  ['registry solved decision missing', (input) => { input.registry.fixture_decisions[0].fixture_corpus = 'active'; }, /solved fixture decision/],
 ]) {
   test(`fails closed for ${name}`, () => {
     const input = fixture(); mutate(input); write(input.paths.matrix, input.matrix); write(input.paths.registry, input.registry); write(input.paths.runtime, input.runtime);

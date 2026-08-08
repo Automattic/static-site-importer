@@ -69,6 +69,11 @@ jobs:
           ref: ${{ inputs.blocks-engine-sha }}
           path: blocks-engine
 
+      - name: Setup pinned Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Initialize immutable run evidence
         env:
           STATIC_SITE_IMPORTER_SHA: ${{ inputs.static-site-importer-sha }}
@@ -79,20 +84,16 @@ jobs:
           ARTIFACT_ROOT="$RUN_DIR/evidence"
           mkdir -p "$ARTIFACT_ROOT" "$RUN_DIR/homeboy-shared-state"
           FIXTURE_TREE_SHA=$(git -C blocks-engine rev-parse "${BLOCKS_ENGINE_SHA}:fixtures/solved")
-          SOLVED_FIXTURE_COUNT=$(find blocks-engine/fixtures/solved -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
-          test "$SOLVED_FIXTURE_COUNT" -gt 0
+          SOLVED_FIXTURE_IDS=$(node static-site-importer/tools/list-solved-fixture-ids.mjs "$GITHUB_WORKSPACE/blocks-engine/fixtures")
+          SOLVED_FIXTURE_COUNT=$(printf '%s' "$SOLVED_FIXTURE_IDS" | awk -F, '{print NF}')
           {
             echo "RUN_ID=$RUN_ID"
             echo "RUN_DIR=$RUN_DIR"
             echo "ARTIFACT_ROOT=$ARTIFACT_ROOT"
             echo "FIXTURE_TREE_SHA=$FIXTURE_TREE_SHA"
             echo "SOLVED_FIXTURE_COUNT=$SOLVED_FIXTURE_COUNT"
+            echo "SOLVED_FIXTURE_IDS=$SOLVED_FIXTURE_IDS"
           } >> "$GITHUB_ENV"
-
-      - name: Setup pinned Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
 
       - name: Setup pinned PHP
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
@@ -193,6 +194,7 @@ jobs:
             --blocks-engine-sha "$BLOCKS_ENGINE_SHA" \
             --fixture-tree-sha "$FIXTURE_TREE_SHA" \
             --solved-fixture-count "$SOLVED_FIXTURE_COUNT" \
+            --solved-fixture-ids "$SOLVED_FIXTURE_IDS" \
             --run-url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             --artifact-url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}#artifacts" \
             --output "$ARTIFACT_ROOT/solved-site-promotion-receipt.json" \
