@@ -85,7 +85,7 @@ jobs:
           mkdir -p "$ARTIFACT_ROOT" "$RUN_DIR/homeboy-shared-state"
           FIXTURE_TREE_SHA=$(git -C blocks-engine rev-parse "${BLOCKS_ENGINE_SHA}:fixtures/solved")
           SOLVED_FIXTURE_IDS=$(node static-site-importer/tools/list-solved-fixture-ids.mjs "$GITHUB_WORKSPACE/blocks-engine/fixtures")
-          SOLVED_FIXTURE_COUNT=$(printf '%s' "$SOLVED_FIXTURE_IDS" | tr ',' '\n' | wc -l | tr -d ' ')
+          SOLVED_FIXTURE_COUNT=$(printf '%s' "$SOLVED_FIXTURE_IDS" | awk -F, '{print NF}')
           {
             echo "RUN_ID=$RUN_ID"
             echo "RUN_DIR=$RUN_DIR"
