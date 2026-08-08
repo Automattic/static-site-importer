@@ -195,6 +195,7 @@ class Static_Site_Importer_Theme_Generator {
 			$error   = $receipt['errors'][0] ?? array();
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan destination preflight failed.' ), $receipt );
 		}
+		$lifecycle = self::with_resolved_runtime_binding_manifests( $lifecycle, $prepared['resolved'] ?? array() );
 		$binding_preflight = self::preflight_runtime_entity_binding_anchors( $prepared['resolved'] ?? array(), $lifecycle, $args );
 		if ( is_wp_error( $binding_preflight ) ) {
 			return $binding_preflight;
@@ -886,6 +887,63 @@ class Static_Site_Importer_Theme_Generator {
 		} elseif ( ! empty( $lifecycle['dependencies'] ) || ! empty( $lifecycle['entities'] ) ) {
 			$lifecycle['status'] = 'runtime_declarations';
 		}
+		return $lifecycle;
+	}
+
+	/**
+	 * Project provider binding anchors through the same resolver output that writes pages.
+	 *
+	 * Canonical declarations remain in the lifecycle for audit and dependency planning.
+	 * Only their destination-dependent binding markup is replaced when the resolver
+	 * provides a declaration with the same reconciliation identity.
+	 *
+	 * @param array<string,mixed> $lifecycle Prepared canonical lifecycle.
+	 * @param array<string,mixed> $resolved Resolved WordPress site plan.
+	 * @return array<string,mixed>
+	 */
+	private static function with_resolved_runtime_binding_manifests( array $lifecycle, array $resolved ): array {
+		$declarations = isset( $resolved['runtime_declarations'] ) && is_array( $resolved['runtime_declarations'] ) ? $resolved['runtime_declarations'] : array();
+		if ( empty( $declarations ) ) {
+			return $lifecycle;
+		}
+
+		$resolved_entities = array();
+		foreach ( $declarations as $declaration ) {
+			$id = is_array( $declaration ) ? (string) ( $declaration['reconciliation_identity'] ?? '' ) : '';
+			if ( '' !== $id && 'entity_collection' === ( $declaration['kind'] ?? '' ) && isset( $declaration['payload']['entities'] ) && is_array( $declaration['payload']['entities'] ) ) {
+				$resolved_entities[ $id ] = $declaration['payload']['entities'];
+			}
+		}
+
+		foreach ( $lifecycle['entities'] as $id => &$prepared ) {
+			$entities = $resolved_entities[ $id ] ?? null;
+			if ( ! is_array( $entities ) || ! isset( $prepared['manifest'] ) || ! is_array( $prepared['manifest'] ) ) {
+				continue;
+			}
+			$key = isset( $prepared['manifest']['products'] ) ? 'products' : 'forms';
+			$canonical_entities = isset( $prepared['manifest'][ $key ] ) && is_array( $prepared['manifest'][ $key ] ) ? $prepared['manifest'][ $key ] : array();
+			$resolved_by_key = array();
+			foreach ( $entities as $entity ) {
+				if ( ! is_array( $entity ) ) {
+					continue;
+				}
+				$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
+				if ( '' !== $entity_key ) {
+					$resolved_by_key[ $entity_key ] = $entity;
+				}
+			}
+			foreach ( $canonical_entities as $index => $entity ) {
+				if ( ! is_array( $entity ) ) {
+					continue;
+				}
+				$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
+				if ( isset( $resolved_by_key[ $entity_key ]['bindings'] ) && is_array( $resolved_by_key[ $entity_key ]['bindings'] ) ) {
+					$prepared['manifest'][ $key ][ $index ]['bindings'] = $resolved_by_key[ $entity_key ]['bindings'];
+				}
+			}
+		}
+		unset( $prepared );
+
 		return $lifecycle;
 	}
 
