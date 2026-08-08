@@ -55,6 +55,28 @@ $preview_html = (string) ( $preview['artifact']['files'][0]['content'] ?? '' );
 $assert( 'isolated_preview' === $preview['report']['policy'] && 'untrusted_imported_code' === $preview['report']['trust'] && 'upload:sha256:abc123' === $preview['report']['provenance'], 'isolated-policy-requires-and-records-provenance' );
 $assert( str_contains( $preview_html, 'window.inline=true' ) && 9 === count( $preview['report']['preserved'] ) && empty( $preview['report']['dropped'] ) && empty( $preview['report']['quarantined'] ), 'isolated-preview-preserves-scripts-without-granting-trust' );
 
+$base64_html     = '<main>Base64 content</main><script src="js/main.js"></script>';
+$base64_script   = 'window.base64Script=true;';
+$base64_artifact = array(
+	'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
+	'entrypoint' => 'website/index.html',
+	'files'      => array(
+		array( 'path' => 'website/index.html', 'mime_type' => 'text/html', 'content_base64' => base64_encode( $base64_html ) ),
+		array( 'path' => 'website/js/main.js', 'mime_type' => 'application/javascript', 'content_base64' => base64_encode( $base64_script ) ),
+	),
+);
+$base64_inert    = Static_Site_Importer_Client_Script_Policy::apply( $base64_artifact, array() );
+$base64_files    = array_column( $base64_inert['artifact']['files'], null, 'path' );
+$base64_dropped  = array_column( $base64_inert['report']['dropped'], null, 'path' );
+$base64_filtered = base64_decode( (string) ( $base64_files['website/index.html']['content_base64'] ?? '' ), true );
+
+$assert( is_string( $base64_filtered ) && str_contains( $base64_filtered, 'Base64 content' ) && ! str_contains( $base64_filtered, '<script' ) && ! isset( $base64_files['website/index.html']['content'] ), 'inert-filters-base64-html-in-place' );
+$assert( ! isset( $base64_files['website/js/main.js'] ), 'inert-removes-base64-script-assets' );
+$assert( hash( 'sha256', $base64_script ) === ( $base64_dropped['website/js/main.js']['sha256'] ?? '' ), 'base64-script-report-hashes-decoded-bytes' );
+
+$base64_preview = Static_Site_Importer_Client_Script_Policy::apply( $base64_artifact, array( 'client_script_policy' => 'isolated_preview', 'client_script_isolated' => true, 'client_script_provenance' => 'fixture:base64' ) );
+$assert( $base64_artifact['files'] === $base64_preview['artifact']['files'], 'isolated-preview-preserves-base64-artifact-bytes' );
+
 if ( $failures ) {
 	fwrite( STDERR, implode( PHP_EOL, $failures ) . PHP_EOL );
 	exit( 1 );
