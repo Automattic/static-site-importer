@@ -597,7 +597,7 @@ function static_site_importer_cli_pending_materialization_summary( array $result
 		'schema'      => 'static-site-importer/materialization-receipt/v1',
 		'status'      => 'pending_runtime',
 		'reason_code' => static_site_importer_cli_sidecar_token_value( $result['reason_code'] ?? 'runtime_resume_required', 80 ),
-		'message'     => static_site_importer_cli_sidecar_token_value( $result['message'] ?? 'Validation requires a fresh WordPress runtime before materialization can resume.', 240 ),
+		'message'     => static_site_importer_cli_sidecar_message_value( $result['message'] ?? 'Validation requires a fresh WordPress runtime before materialization can resume.', 240 ),
 	);
 }
 
@@ -683,4 +683,19 @@ function static_site_importer_cli_sidecar_token( $value, int $maximum ): bool {
 function static_site_importer_cli_sidecar_token_value( $value, int $maximum ): string {
 	$value = is_scalar( $value ) ? (string) $value : '';
 	return static_site_importer_cli_sidecar_token( $value, $maximum ) ? $value : '';
+}
+
+/**
+ * Preserve an actionable receipt message as bounded JSON-safe free text.
+ *
+ * @param mixed $value Candidate message.
+ * @param int   $maximum Maximum serialized byte length.
+ */
+function static_site_importer_cli_sidecar_message_value( $value, int $maximum ): string {
+	$value = is_scalar( $value ) ? (string) $value : '';
+	$value = wp_check_invalid_utf8( $value, true );
+	$value = preg_replace( '/[\x00-\x1F\x7F]/', ' ', $value );
+	$value = is_string( $value ) ? trim( preg_replace( '/[ \t]+/', ' ', $value ) ) : '';
+	$value = substr( $value, 0, max( 0, $maximum ) );
+	return wp_check_invalid_utf8( $value, true );
 }

@@ -17,6 +17,7 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	public const NATIVE_CONVERSION            = 'native_conversion';
 	public const EDITABLE_APPROXIMATION       = 'editable_approximation';
 	public const PRESERVED_RUNTIME_ISLAND     = 'preserved_runtime_island';
+	public const RUNTIME_RESUME_REQUIRED      = 'runtime_resume_required';
 	public const UNSUPPORTED_LOSS             = 'unsupported_loss';
 	public const IMPORTER_MATERIALIZATION_BUG = 'importer_materialization_bug';
 
@@ -41,6 +42,10 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 		$element    = self::scalar( $diagnostic, array( 'element', 'tag_name', 'tag' ) );
 		$selector   = self::scalar( $diagnostic, array( 'selector', 'target_selector', 'runtime_target_selector' ) );
 		$haystack   = strtolower( implode( ' ', array( $type, $category, $repair, $reason, $stage, $block_name, $element, $selector ) ) );
+
+		if ( self::contains_any( $haystack, array( 'runtime_resume_required', 'runtime_resume', 'resume_required' ) ) ) {
+			return self::RUNTIME_RESUME_REQUIRED;
+		}
 
 		if (
 			self::contains_any(
@@ -137,6 +142,7 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 			self::NATIVE_CONVERSION,
 			self::EDITABLE_APPROXIMATION,
 			self::PRESERVED_RUNTIME_ISLAND,
+			self::RUNTIME_RESUME_REQUIRED,
 			self::UNSUPPORTED_LOSS,
 			self::IMPORTER_MATERIALIZATION_BUG,
 		);

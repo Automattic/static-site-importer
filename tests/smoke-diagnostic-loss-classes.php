@@ -53,6 +53,12 @@ $fixtures = array(
 		),
 		'expected'   => 'preserved_runtime_island',
 	),
+	'resume-required' => array(
+		'diagnostic' => array(
+			'kind' => 'runtime_resume_required',
+		),
+		'expected'   => 'runtime_resume_required',
+	),
 	'preserved-dom-markup' => array(
 		'diagnostic' => array(
 			'type'   => 'dom',
@@ -93,6 +99,7 @@ $counts = Static_Site_Importer_Diagnostic_Loss_Classes::counts( array_column( $f
 $assert( 1 === ( $counts['native_conversion'] ?? 0 ), 'counts-native' );
 $assert( 2 === ( $counts['editable_approximation'] ?? 0 ), 'counts-editable' );
 $assert( 2 === ( $counts['preserved_runtime_island'] ?? 0 ), 'counts-runtime' );
+$assert( 1 === ( $counts['runtime_resume_required'] ?? 0 ), 'counts-resume-required' );
 $assert( 1 === ( $counts['unsupported_loss'] ?? 0 ), 'counts-unsupported' );
 $assert( 1 === ( $counts['importer_materialization_bug'] ?? 0 ), 'counts-importer' );
 

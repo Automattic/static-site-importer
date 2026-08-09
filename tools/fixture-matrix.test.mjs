@@ -888,6 +888,16 @@ test('validate-artifact sidecar contract preserves legacy calls and rejects part
   assert.deepEqual(JSON.parse(result.stdout), [false, true, 'static_site_importer_sidecar_contract_partial']);
 });
 
+test('pending sidecar messages preserve bounded actionable JSON-safe text', () => {
+  const plugin = readFileSync(path.join(packageRoot, 'static-site-importer.php'), 'utf8');
+  const start = plugin.indexOf('function static_site_importer_cli_sidecar_message_value');
+  const helper = plugin.slice(start);
+  const code = `function wp_check_invalid_utf8($value, $strip) { return $value; } ${helper} $message = static_site_importer_cli_sidecar_message_value("Resume after\tcompanion\x01 initialization", 240); $bounded = static_site_importer_cli_sidecar_message_value(str_repeat('x', 300), 240); echo json_encode(array($message, strlen($bounded)));`;
+  const result = spawnSync('php', ['-r', code], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), ['Resume after companion initialization', 240]);
+});
+
 test('gates visual capture on complete generated SVG font evidence after import', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'svg-font-evidence-recipe-test' });
   const recipe = buildFixtureMatrixRecipe({
@@ -1456,6 +1466,55 @@ test('failed sidecars retain the bounded terminal import result and front-page o
   assert.equal(result.fixtures[0].matrix_evidence.materialization_receipt.status, 'failed');
 });
 
+test('legacy failed sidecars without command results remain failed', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-legacy-failed-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'legacy-failed-sidecar' });
+  const directory = path.join(outputDirectory, 'simple-site');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: 'simple-site' }));
+  writeMaterializationSidecar({
+    directory,
+    fixtureId: 'simple-site',
+    runId: matrix.id,
+    providerStatus: 'failed',
+    receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'failed', page_count: 0, file_count: 0, operation_count: 0, loss_count: 1, failure_code: 'import_failed' },
+  });
+
+  const result = collectFixtureMatrixRunResults({ matrix, outputDirectory });
+  assert.equal(result.fixtures[0].status, 'failed');
+  assert.equal(result.summary.failed, 1);
+  assert.equal(result.summary.succeeded, 0);
+});
+
+test('materialization sidecars reject contradictory terminal status provenance', () => {
+  for (const [name, providerStatus, receiptStatus, commandStatus] of [
+    ['provenance-receipt', 'completed', 'failed', undefined],
+    ['receipt-command', 'failed', 'failed', 'completed'],
+    ['pending-command', 'pending_runtime', 'pending_runtime', 'failed'],
+  ]) {
+    const outputDirectory = mkdtempSync(path.join(tmpdir(), `ssi-sidecar-contradictory-${name}-`));
+    const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: `contradictory-${name}` });
+    const directory = path.join(outputDirectory, 'simple-site');
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: 'simple-site' }));
+    const receipt = receiptStatus === 'pending_runtime'
+      ? { schema: 'static-site-importer/materialization-receipt/v1', status: receiptStatus, reason_code: 'runtime_resume_required', message: 'Resume after runtime initialization.' }
+      : receiptStatus === 'failed'
+        ? { schema: 'static-site-importer/materialization-receipt/v1', status: receiptStatus, page_count: 0, file_count: 0, operation_count: 0, loss_count: 1, failure_code: 'import_failed' }
+        : boundedSidecarReceipt();
+    writeMaterializationSidecar({
+      directory,
+      fixtureId: 'simple-site',
+      runId: matrix.id,
+      providerStatus,
+      receipt,
+      commandResult: commandStatus === undefined ? undefined : { status: commandStatus, success: commandStatus === 'completed', error_code: commandStatus === 'failed' ? 'import_failed' : '', error_hash: 'a'.repeat(64) },
+    });
+    const result = collectFixtureMatrixRunResults({ matrix, outputDirectory });
+    assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, 'malformed', name);
+  }
+});
+
 test('pending runtime sidecars preserve resumable validation without materialization claims', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-pending-runtime-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'pending-runtime-evidence' });
@@ -1505,6 +1564,36 @@ test('pending runtime sidecars preserve resumable validation without materializa
   assert.equal(Object.hasOwn(fixture.artifacts, 'generated_theme'), false);
   assert.ok(fixture.diagnostics.some((diagnostic) => diagnostic.kind === 'runtime_resume_required' && diagnostic.reason_code === 'companion_plugin_init_pending'));
   assert.ok(result.findings.some((finding) => finding.kind === 'runtime_resume_required' && finding.reason_code === 'companion_plugin_init_pending'));
+  const finding = result.findings.find((candidate) => candidate.kind === 'runtime_resume_required');
+  assert.equal(finding.loss_class, 'runtime_resume_required');
+  assert.equal(finding.repair_bucket, 'runtime_resume_required');
+  assert.equal(finding.candidate_repo, 'static-site-importer');
+});
+
+test('pending runtime counts remain in every aggregate projection', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-pending-runtime-rollups-'));
+  for (const [id, fixture] of Object.entries({
+    pending: { fixture_class: 'marketing/static', capabilities: ['hero'], risk_profile: 'medium' },
+    passed: { fixture_class: 'marketing/static', capabilities: ['hero'], risk_profile: 'medium' },
+  })) {
+    const directory = path.join(root, id);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, 'index.html'), `<main>${id}</main>`);
+    writeFileSync(path.join(directory, 'fixture.json'), JSON.stringify(fixture));
+  }
+  const matrix = createFixtureMatrix({ fixture_root: root, id: 'pending-runtime-rollups' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [
+      { fixture_id: 'pending', status: 'pending_runtime' },
+      { fixture_id: 'passed', status: 'passed' },
+    ],
+  });
+  assert.equal(result.summary.pending_runtime, 1);
+  assert.equal(result.summary.classes['marketing/static'].pending_runtime, 1);
+  assert.equal(result.summary.quality_budgets['marketing/static'].pending_runtime, 1);
+  assert.equal(result.summary.capabilities.hero.pending_runtime, 1);
+  assert.equal(result.summary.risk_profiles.medium.pending_runtime, 1);
 });
 
 test('materialization sidecars reject malformed, stale, cross-fixture, and hash-mismatched evidence', () => {
