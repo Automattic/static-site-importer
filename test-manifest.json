@@ -35,6 +35,7 @@
     { "path": "tests/smoke-provider-presentation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-safe-html-fallback-reducer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-site-identity.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-svg-artwork.php", "environment": "standalone-php" },
     { "path": "tests/smoke-template-chrome-dedupe.php", "environment": "standalone-php" },
     { "path": "tests/smoke-template-part-shell-dedupe.php", "environment": "standalone-php" },
     { "path": "tests/smoke-url-import-runtime.php", "environment": "standalone-php" },

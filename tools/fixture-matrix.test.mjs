@@ -501,6 +501,44 @@ test('gutenberg incompatibility registry attributes nested svg to the outer fall
   assert.equal(byKey['inline-svg-filter-gradient'].fixtures[0], 'coffee');
 });
 
+test('gutenberg incompatibility registry promotes two inline-svg fixtures to a custom block candidate', () => {
+  const registry = buildGutenbergIncompatibilityRegistry({
+    matrix_id: 'inline-svg-fixture-promotion',
+    fixtures: [
+      { fixture_id: 'inline-svg-filter-gradient-site' },
+      { fixture_id: 'inline-svg-mask-symbol-site' },
+    ],
+    findings: [
+      {
+        fixture_id: 'inline-svg-filter-gradient-site',
+        kind: 'unsupported_html_fallback',
+        observed_block_name: 'core/html',
+        reason_code: 'html_inline_svg_fallback',
+        pattern_family: 'inline_svg',
+        selector: '.brand-mark',
+        source_snippet: '<svg><defs><linearGradient id="g"></linearGradient><filter id="f"><feGaussianBlur stdDeviation="2"/></filter><clipPath id="c"><rect width="60" height="60"/></clipPath></defs></svg>',
+      },
+      {
+        fixture_id: 'inline-svg-mask-symbol-site',
+        kind: 'unsupported_html_fallback',
+        observed_block_name: 'core/html',
+        reason_code: 'html_inline_svg_fallback',
+        pattern_family: 'inline_svg',
+        selector: '.badge',
+        source_snippet: '<svg><defs><mask id="m"><rect width="100" height="100" fill="white"/><circle cx="50" cy="50" r="25" fill="black"/></mask><symbol id="dot" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></symbol></defs></svg>',
+      },
+    ],
+  });
+  const byKey = Object.fromEntries(registry.patterns.map((row) => [row.pattern_key, row]));
+
+  assert.equal(byKey['inline-svg-filter-gradient'].fixture_count, 2);
+  assert.equal(byKey['inline-svg-filter-gradient'].classification, 'custom-block-candidate');
+  assert.deepEqual(byKey['inline-svg-filter-gradient'].fixtures, [
+    'inline-svg-filter-gradient-site',
+    'inline-svg-mask-symbol-site',
+  ]);
+});
+
 test('gutenberg incompatibility registry ranks tracked custom-block candidates before visual-only evidence', () => {
   const registry = buildGutenbergIncompatibilityRegistry({
     matrix_id: 'tracked-candidate-ranking',

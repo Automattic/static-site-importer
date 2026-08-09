@@ -1,0 +1,11 @@
+{
+  "fixture_class": "marketing/static",
+  "tags": ["svg", "static", "inline-graphics"],
+  "capabilities": ["static-html", "local-css", "inline-svg-defs"],
+  "risk_profile": "low",
+  "complexity": 1,
+  "quality_budgets": {
+    "max_unacceptable_findings": 0,
+    "visual_mismatch_ratio": 0.1
+  }
+}

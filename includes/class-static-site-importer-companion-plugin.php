@@ -109,13 +109,25 @@ class Static_Site_Importer_Companion_Plugin {
 			if ( isset( $block['render'] ) && is_scalar( $block['render'] ) && Static_Site_Importer_Content_Policy::contains_server_code( (string) $block['render'] ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_render_invalid', sprintf( 'Block %s render markup must be static HTML.', $name ) );
 			}
+			$render_kind = isset( $block['render_kind'] ) && is_string( $block['render_kind'] ) ? (string) $block['render_kind'] : '';
+			if ( '' !== $render_kind && ! in_array( $render_kind, self::$trusted_render_kinds, true ) ) {
+				return new WP_Error(
+					'static_site_importer_companion_plugin_render_kind_invalid',
+					sprintf( 'Block %s declares an unsupported render_kind %s.', $name, $render_kind )
+				);
+			}
+			$kind_validation = self::validate_render_kind( $render_kind, $block['block_json'] );
+			if ( is_wp_error( $kind_validation ) ) {
+				return $kind_validation;
+			}
 			$metadata = $block['block_json'];
-			if ( isset( $block['render'] ) && is_scalar( $block['render'] ) ) {
+			if ( ( isset( $block['render'] ) && is_scalar( $block['render'] ) ) || '' !== $render_kind ) {
 				$metadata['render'] = 'file:./render.php';
 			}
 			$references = self::metadata_file_references( $metadata );
+			$has_render_source = ( isset( $block['render'] ) && is_scalar( $block['render'] ) ) || '' !== $render_kind;
 			foreach ( $references as $path ) {
-				if ( ! array_key_exists( $path, $assets ) && ! ( 'render.php' === $path && isset( $block['render'] ) && is_scalar( $block['render'] ) ) ) {
+				if ( ! array_key_exists( $path, $assets ) && ! ( 'render.php' === $path && $has_render_source ) ) {
 					return new WP_Error( 'static_site_importer_companion_plugin_metadata_asset_missing', sprintf( 'Block %s metadata references undeclared asset %s.', $name, $path ) );
 				}
 			}
@@ -376,9 +388,10 @@ class Static_Site_Importer_Companion_Plugin {
 
 		$has_render = isset( $block['render'] ) && is_scalar( $block['render'] );
 		$render     = $has_render ? (string) $block['render'] : '';
+		$render_kind = isset( $block['render_kind'] ) && is_string( $block['render_kind'] ) ? (string) $block['render_kind'] : '';
 		$files      = array();
-		if ( $has_render ) {
-			$files['render.php'] = self::normalize_render( $render );
+		if ( $has_render || '' !== $render_kind ) {
+			$files['render.php'] = self::normalize_render( $render, $render_kind );
 		}
 
 		// Carried static assets (e.g. block stylesheets or a hand-written
@@ -396,7 +409,7 @@ class Static_Site_Importer_Companion_Plugin {
 		if ( $metadata ) {
 			$block_json         = $block['block_json'];
 			$block_json['name'] = $block_name;
-			if ( $has_render ) {
+			if ( $has_render || '' !== $render_kind ) {
 				$block_json['render'] = 'file:./render.php';
 			}
 			$json = wp_json_encode( $block_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
@@ -920,17 +933,41 @@ class Static_Site_Importer_Companion_Plugin {
 	}
 
 	/**
+	 * Block render kinds the scaffolder can emit from a trusted fixed
+	 * template. Each kind generates a known render.php that does not
+	 * embed producer-supplied source. Scalar `render` payloads still take
+	 * the static literal path.
+	 *
+	 * @var string[]
+	 */
+	private static $trusted_render_kinds = array(
+		'svg-artwork',
+	);
+
+	/**
 	 * Build a render.php template that the dynamic block's render_callback runs.
 	 *
 	 * The closure exposes $attributes, $content, and $block, so a render.php that
 	 * echoes from those variables works exactly like a block.json `render` file.
 	 * An empty payload falls back to passing inner content through unchanged.
+	 * A `render_kind` payload bypasses the static literal path and emits a
+	 * trusted SSI-generated render template.
 	 *
-	 * @param string $render Render markup or PHP from the payload.
+	 * @param string              $render      Render markup or PHP from the payload.
+	 * @param string              $render_kind Optional trusted renderer kind.
 	 * @return string
 	 */
-	private static function normalize_render( string $render ): string {
+	private static function normalize_render( string $render, string $render_kind = '' ): string {
 		$trimmed = ltrim( $render );
+		if ( '' !== $render_kind ) {
+			if ( 'svg-artwork' === $render_kind ) {
+				return self::svg_artwork_render_template();
+			}
+			// Unknown render_kind should never reach this path; validate_payload
+			// rejects it. The fallback below mirrors the empty-render path so a
+			// future bug never produces executable producer source.
+			return self::svg_artwork_render_template( true );
+		}
 		if ( '' === $trimmed ) {
 			return "<?php\n/**\n * Generated companion block render (server-rendered dynamic block).\n *\n * @package StaticSiteImporterCompanion\n *\n * @var array<string,mixed> \$attributes Block attributes.\n * @var string              \$content    Inner block content.\n * @var WP_Block            \$block      Block instance.\n */\n\necho \$content; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Inner block content is already sanitized by WordPress.\n";
 		}
@@ -938,6 +975,107 @@ class Static_Site_Importer_Companion_Plugin {
 		// Static source markup is data, never executable template source. The only
 		// PHP in this file is SSI-generated code that emits an escaped literal.
 		return "<?php\n/** Generated companion block render. */\n\necho '" . self::php_single_quote( $render ) . "'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static source markup was validated before compilation.\n";
+	}
+
+	/**
+	 * Build the trusted render.php template for the svg-artwork render kind.
+	 *
+	 * The template reads typed attributes, sanitizes the inline SVG, and
+	 * outputs the wrapper. It contains no producer-supplied source: every
+	 * string literal comes from the SSI generator.
+	 *
+	 * @param bool $fallback True to emit a no-op template (defensive).
+	 * @return string
+	 */
+	private static function svg_artwork_render_template( bool $fallback = false ): string {
+		if ( $fallback ) {
+			return "<?php\n/** Generated companion block render (svg-artwork fallback). */\n\nreturn '';\n";
+		}
+
+		return <<<'PHP'
+<?php
+/**
+ * Generated companion block render (svg-artwork trusted renderer).
+ *
+ * @package StaticSiteImporterCompanion
+ *
+ * @var array<string,mixed> $attributes Block attributes.
+ * @var string              $content    Inner block content.
+ * @var WP_Block            $block      Block instance.
+ */
+
+if ( ! class_exists( 'Static_Site_Importer_Svg_Artwork' ) ) {
+	return '';
+}
+
+$svg_raw             = isset( $attributes['svg'] ) && is_string( $attributes['svg'] ) ? $attributes['svg'] : '';
+$typed_view_box      = isset( $attributes['viewBox'] ) && is_string( $attributes['viewBox'] ) ? $attributes['viewBox'] : '';
+$typed_title         = isset( $attributes['title'] ) && is_string( $attributes['title'] ) ? $attributes['title'] : '';
+$typed_description   = isset( $attributes['description'] ) && is_string( $attributes['description'] ) ? $attributes['description'] : '';
+$typed_aspect        = isset( $attributes['preserveAspectRatio'] ) && is_string( $attributes['preserveAspectRatio'] ) ? $attributes['preserveAspectRatio'] : '';
+
+$svg_sanitized = Static_Site_Importer_Svg_Artwork::sanitize( $svg_raw );
+if ( '' === $svg_sanitized ) {
+	return '';
+}
+
+$view_box = Static_Site_Importer_Svg_Artwork::view_box( $svg_sanitized, $typed_view_box );
+$aspect   = Static_Site_Importer_Svg_Artwork::preserve_aspect_ratio( $svg_sanitized, $typed_aspect );
+$aria     = Static_Site_Importer_Svg_Artwork::accessibility_attributes( $typed_title, $typed_description );
+
+$wrapper_args = array_merge( $aria['attrs'], array( 'class' => 'wp-block-ssi-svg-artwork' ) );
+$wrapper      = function_exists( 'get_block_wrapper_attributes' )
+	? get_block_wrapper_attributes( $wrapper_args )
+	: 'class="wp-block-ssi-svg-artwork"';
+
+if ( '' !== $view_box ) {
+	$svg_sanitized = preg_replace( '/\sviewBox\s*=\s*"[^"]*"/i', '', $svg_sanitized, 1 );
+	$svg_sanitized = preg_replace( '/\spreserveAspectRatio\s*=\s*"[^"]*"/i', '', $svg_sanitized, 1 );
+	$svg_sanitized = preg_replace( '/<svg\b([^>]*)>/', '<svg$1 viewBox="' . esc_attr( $view_box ) . '">', $svg_sanitized, 1 );
+}
+if ( '' !== $aspect ) {
+	$svg_sanitized = preg_replace( '/\spreserveAspectRatio\s*=\s*"[^"]*"/i', '', $svg_sanitized, 1 );
+	$svg_sanitized = preg_replace( '/<svg\b([^>]*)>/', '<svg$1 preserveAspectRatio="' . esc_attr( $aspect ) . '">', $svg_sanitized, 1 );
+}
+
+if ( isset( $aria['ids']['title'] ) ) {
+	$svg_sanitized = preg_replace( '/<title\b([^>]*)>/', '<title$1 id="' . esc_attr( $aria['ids']['title'] ) . '">', $svg_sanitized, 1 );
+}
+if ( isset( $aria['ids']['description'] ) ) {
+	$svg_sanitized = preg_replace( '/<desc\b([^>]*)>/', '<desc$1 id="' . esc_attr( $aria['ids']['description'] ) . '">', $svg_sanitized, 1 );
+}
+
+echo '<figure ' . $wrapper . '>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Wrapper attributes come from WordPress core.
+echo $svg_sanitized; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- SVG was sanitized by Static_Site_Importer_Svg_Artwork::sanitize().
+echo '</figure>';
+PHP;
+	}
+
+	/**
+	 * Validate that a render_kind, when present, is supported and that
+	 * the block declares the required attribute schema for that kind.
+	 *
+	 * @param string              $render_kind Renderer kind.
+	 * @param array<string,mixed> $block_json  Declared block.json.
+	 * @return true|WP_Error
+	 */
+	private static function validate_render_kind( string $render_kind, array $block_json ) {
+		if ( 'svg-artwork' === $render_kind ) {
+			$attributes = isset( $block_json['attributes'] ) && is_array( $block_json['attributes'] ) ? $block_json['attributes'] : array();
+			if ( ! isset( $attributes['svg'] ) || ! is_array( $attributes['svg'] ) ) {
+				return new WP_Error(
+					'static_site_importer_companion_plugin_render_kind_invalid',
+					'Blocks with render_kind=svg-artwork must declare an svg string attribute schema.'
+				);
+			}
+			if ( ( $attributes['svg']['type'] ?? '' ) !== 'string' ) {
+				return new WP_Error(
+					'static_site_importer_companion_plugin_render_kind_invalid',
+					'Blocks with render_kind=svg-artwork must declare svg as a string attribute.'
+				);
+			}
+		}
+		return true;
 	}
 
 	/**

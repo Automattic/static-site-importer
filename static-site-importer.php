@@ -58,6 +58,7 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-co
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-site-collector.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-import-runtime.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-companion-plugin.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-svg-artwork.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-plugin-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-entity-materializer-registry.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-asset-reporter.php';

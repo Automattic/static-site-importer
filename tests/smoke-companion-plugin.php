@@ -423,6 +423,64 @@ if ( is_array( $descriptor ) ) {
 	$assert( is_array( $mu_plan ) && false === $mu_plan['activate'], 'install-plan-mu-no-activation' );
 }
 
+// svg-artwork render_kind: validates, preserves canonical name, emits a
+// trusted render.php that does not embed producer-supplied source.
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-svg-artwork.php';
+$svg_payload = array(
+	'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+	'site_slug' => 'svg-fixture-site',
+	'site_name' => 'SVG Fixture',
+	'blocks'    => array(
+		array(
+			'name'        => 'svg-artwork',
+			'render_kind' => 'svg-artwork',
+			'block_json'  => array(
+				'name'        => 'ssi/svg-artwork',
+				'title'       => 'SVG Artwork',
+				'category'    => 'media',
+				'description' => 'Editable inline SVG artwork whose DOM graph cannot be represented by core/image.',
+				'attributes'  => array(
+					'svg'                  => array( 'type' => 'string', 'default' => '' ),
+					'viewBox'              => array( 'type' => 'string', 'default' => '' ),
+					'title'                => array( 'type' => 'string', 'default' => '' ),
+					'description'          => array( 'type' => 'string', 'default' => '' ),
+					'preserveAspectRatio'  => array( 'type' => 'string', 'default' => '' ),
+					'sourceSelector'       => array( 'type' => 'string', 'default' => '' ),
+				),
+				'supports'    => array( 'html' => false ),
+			),
+		),
+	),
+);
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $svg_payload ), 'svg-artwork-payload-validates' );
+
+$missing_svg_attr = $svg_payload;
+unset( $missing_svg_attr['blocks'][0]['block_json']['attributes']['svg'] );
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $missing_svg_attr ) ), 'svg-artwork-requires-svg-attribute' );
+
+$non_string_svg = $svg_payload;
+$non_string_svg['blocks'][0]['block_json']['attributes']['svg']['type'] = 'object';
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $non_string_svg ) ), 'svg-artwork-svg-attribute-must-be-string' );
+
+$unknown_kind = $svg_payload;
+$unknown_kind['blocks'][0]['render_kind'] = 'totally-bogus';
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $unknown_kind ) ), 'unknown-render-kind-rejected' );
+
+$svg_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $svg_payload );
+$assert( is_array( $svg_descriptor ), 'svg-artwork-scaffold-returns-descriptor' );
+if ( is_array( $svg_descriptor ) ) {
+	$svg_files       = $svg_descriptor['files'];
+	$svg_render      = $svg_files['ssi-svg-fixture-site/blocks/svg-artwork/render.php'] ?? '';
+	$svg_block_json  = $svg_files['ssi-svg-fixture-site/blocks/svg-artwork/block.json'] ?? '';
+	$assert( array( 'ssi/svg-artwork' ) === $svg_descriptor['block_names'], 'svg-artwork-canonical-name-preserved' );
+	$assert( '' !== $svg_render, 'svg-artwork-render-php-emitted' );
+	$assert( str_contains( $svg_render, 'Static_Site_Importer_Svg_Artwork::sanitize' ), 'svg-artwork-render-uses-trusted-sanitizer' );
+	$assert( str_contains( $svg_render, 'get_block_wrapper_attributes' ), 'svg-artwork-render-emits-wrapper-attributes' );
+	$assert( ! str_contains( $svg_render, "php_single_quote" ), 'svg-artwork-render-is-not-static-literal' );
+	$assert( str_contains( $svg_block_json, '"name": "ssi/svg-artwork"' ), 'svg-artwork-block-json-records-canonical-name' );
+	$assert( str_contains( $svg_block_json, '"render": "file:./render.php"' ), 'svg-artwork-block-json-records-render-target' );
+}
+
 // 3. Full install/activate path writes the file set and activates it.
 $report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload );
 $assert( 'installed_activated' === ( $report['status'] ?? '' ), 'install-status-installed-activated', (string) ( $report['status'] ?? '' ) );
