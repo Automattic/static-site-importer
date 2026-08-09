@@ -355,11 +355,14 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				$receipt          = json_decode( false === $receipt_json ? '' : $receipt_json, true );
 				$encoded_artifact = isset( $input['artifact'] ) ? wp_json_encode( $input['artifact'] ) : false;
 				$artifact_hash    = false !== $encoded_artifact ? hash( 'sha256', $encoded_artifact ) : '';
-				if ( ! is_array( $receipt ) || 'static-site-importer/runtime-lifecycle-receipt/v1' !== ( $receipt['schema'] ?? '' ) || 'dependencies_prepared' !== ( $receipt['status'] ?? '' ) || ( $receipt['artifact_sha256'] ?? '' ) !== $artifact_hash ) {
-					WP_CLI::error( 'The --lifecycle-receipt must be a completed receipt for this exact artifact.' );
+				if ( ! is_array( $receipt ) || 'static-site-importer/runtime-lifecycle-receipt/v1' !== ( $receipt['schema'] ?? '' ) || ! in_array( $receipt['status'] ?? '', array( 'dependencies_prepared', 'pending_runtime', 'failed' ), true ) || ( $receipt['artifact_sha256'] ?? '' ) !== $artifact_hash ) {
+					WP_CLI::error( 'The --lifecycle-receipt must be a valid dependency-preparation receipt for this exact artifact.' );
 				}
-				$input['runtime_lifecycle_phase']      = 'resume';
-				$input['runtime_lifecycle_request_id'] = (string) ( $receipt['fresh_runtime']['request_id'] ?? '' );
+				$input['runtime_lifecycle_receipt'] = $receipt;
+				if ( 'dependencies_prepared' === $receipt['status'] ) {
+					$input['runtime_lifecycle_phase']      = 'resume';
+					$input['runtime_lifecycle_request_id'] = (string) ( $receipt['fresh_runtime']['request_id'] ?? '' );
+				}
 			}
 
 			if ( isset( $assoc_args['generated-theme-ref'] ) ) {
@@ -415,7 +418,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			}
 
 			static_site_importer_cli_write_validation_output( $json, $output );
-			if ( $halt_on_failure && empty( $result['success'] ) ) {
+			if ( $halt_on_failure && empty( $result['success'] ) && 'pending_runtime' !== ( $result['status'] ?? '' ) ) {
 				WP_CLI::halt( 1 );
 			}
 		}

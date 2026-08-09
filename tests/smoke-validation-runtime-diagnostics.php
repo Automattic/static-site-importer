@@ -47,6 +47,12 @@ if ( ! function_exists( 'wp_mkdir_p' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_json_encode' ) ) {
+	function wp_json_encode( $value, $flags = 0 ) {
+		return json_encode( $value, $flags );
+	}
+}
+
 if ( ! function_exists( 'is_wp_error' ) ) {
 	function is_wp_error( $value ) {
 		return false;
@@ -56,8 +62,10 @@ if ( ! function_exists( 'is_wp_error' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Theme_Generator' ) ) {
 	class Static_Site_Importer_Theme_Generator {
 		public static array $last_args = array();
+		public static int $import_calls = 0;
 
 		public static function import_website_artifact( array $artifact, array $args = array() ): array {
+			++self::$import_calls;
 			self::$last_args = $args;
 
 			return array(
@@ -242,9 +250,65 @@ $assert( ! isset( $pending_result['artifacts']['generated_theme'] ) && ! in_arra
 $pending_matrix_result = Static_Site_Importer_Validation_Runtime::fixture_matrix_result( $pending_result );
 $assert( 'pending_runtime' === ( $pending_matrix_result['status'] ?? '' ) && false === ( $pending_matrix_result['success'] ?? true ), 'fixture-matrix-preserves-pending-validation-status' );
 
+$lifecycle_artifact = array( 'schema' => 'test/website-artifact/v1' );
+$lifecycle_hash     = hash( 'sha256', wp_json_encode( $lifecycle_artifact ) );
+$calls_before_pending = Static_Site_Importer_Theme_Generator::$import_calls;
+$lifecycle_pending = Static_Site_Importer_Validation_Runtime::validate_artifact(
+	array(
+		'artifact'                  => $lifecycle_artifact,
+		'artifact_dir'              => $artifact_dir . '/lifecycle-pending',
+		'slug'                      => 'lifecycle-pending',
+		'runtime_lifecycle_receipt' => array(
+			'schema'          => 'static-site-importer/runtime-lifecycle-receipt/v1',
+			'status'          => 'pending_runtime',
+			'artifact_sha256' => $lifecycle_hash,
+			'reason_code'     => 'companion_plugin_init_pending',
+			'dependencies'    => array( 'companion' => array( 'status' => 'installed_pending_init' ) ),
+		),
+	)
+);
+$assert( 'pending_runtime' === ( $lifecycle_pending['status'] ?? '' ) && false === ( $lifecycle_pending['success'] ?? true ) && 'resume_required' === ( $lifecycle_pending['runtime']['status'] ?? '' ), 'lifecycle-pending-receipt-is-propagated-as-resumable-result' );
+$assert( $calls_before_pending === Static_Site_Importer_Theme_Generator::$import_calls && ! isset( $lifecycle_pending['artifacts']['generated_theme'] ), 'lifecycle-pending-receipt-does-not-attempt-validation-or-claim-artifacts' );
+
+$calls_before_failed = Static_Site_Importer_Theme_Generator::$import_calls;
+$lifecycle_failed = Static_Site_Importer_Validation_Runtime::validate_artifact(
+	array(
+		'artifact'                  => $lifecycle_artifact,
+		'artifact_dir'              => $artifact_dir . '/lifecycle-failed',
+		'slug'                      => 'lifecycle-failed',
+		'runtime_lifecycle_receipt' => array(
+			'schema'          => 'static-site-importer/runtime-lifecycle-receipt/v1',
+			'status'          => 'failed',
+			'artifact_sha256' => $lifecycle_hash,
+			'reason_code'     => 'dependency_preparation_failed',
+		),
+	)
+);
+$assert( 'failed' === ( $lifecycle_failed['status'] ?? '' ) && false === ( $lifecycle_failed['success'] ?? true ) && 'dependency_preparation_failed' === ( $lifecycle_failed['reason_code'] ?? '' ), 'lifecycle-failed-receipt-remains-terminal' );
+$assert( $calls_before_failed === Static_Site_Importer_Theme_Generator::$import_calls && ! isset( $lifecycle_failed['artifacts']['generated_theme'] ), 'lifecycle-failed-receipt-does-not-attempt-validation-or-claim-artifacts' );
+
+$calls_before_prepared = Static_Site_Importer_Theme_Generator::$import_calls;
+$lifecycle_prepared = Static_Site_Importer_Validation_Runtime::validate_artifact(
+	array(
+		'artifact'                  => $lifecycle_artifact,
+		'artifact_dir'              => $artifact_dir . '/lifecycle-prepared',
+		'slug'                      => 'lifecycle-prepared',
+		'runtime_lifecycle_receipt' => array(
+			'schema'          => 'static-site-importer/runtime-lifecycle-receipt/v1',
+			'status'          => 'dependencies_prepared',
+			'artifact_sha256' => $lifecycle_hash,
+			'fresh_runtime'   => array( 'request_id' => 'previous-runtime' ),
+		),
+	)
+);
+$assert( 'passed' === ( $lifecycle_prepared['status'] ?? '' ) && true === ( $lifecycle_prepared['success'] ?? false ) && $calls_before_prepared + 1 === Static_Site_Importer_Theme_Generator::$import_calls, 'lifecycle-prepared-receipt-continues-normal-validation' );
+
 unlink( $report_path );
 rmdir( $default_artifact_dir );
 rmdir( $override_artifact_dir );
+rmdir( $artifact_dir . '/lifecycle-pending' );
+rmdir( $artifact_dir . '/lifecycle-failed' );
+rmdir( $artifact_dir . '/lifecycle-prepared' );
 rmdir( $artifact_dir );
 
 if ( $failures ) {

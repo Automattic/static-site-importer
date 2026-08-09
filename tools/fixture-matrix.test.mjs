@@ -583,6 +583,7 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
     artifactsDirectory: '/tmp/artifacts',
     playgroundArtifactsDirectory: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix',
     staticSiteImporterPath: '/tmp/static-site-importer',
+    attemptId: 'primary',
   });
 
   assert.equal(recipe.schema, 'wp-codebox/workspace-recipe/v1');
@@ -605,6 +606,29 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
     target: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/artifact.json',
   });
   assert.deepEqual(recipe.inputs.mounts, []);
+});
+
+test('recipe lifecycle handoff documents each receipt branch without fabricating terminal evidence', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'recipe-lifecycle-branches' });
+  const recipe = buildFixtureMatrixRecipe({
+    matrix,
+    artifactsDirectory: '/tmp/artifacts',
+    playgroundArtifactsDirectory: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    attemptId: 'primary',
+  });
+  const importStep = recipe.workflow.steps.find((step) => step.metadata?.phase === 'import');
+
+  assert.deepEqual(importStep.metadata.lifecycle_receipt, {
+    path: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/dependency-receipt--primary.json',
+    branches: {
+      dependencies_prepared: 'resume_validation',
+      pending_runtime: 'propagate_pending',
+      failed: 'terminal',
+    },
+  });
+  assert.match(importStep.args[0], /--allow-failure/, 'the recipe captures failed and pending result JSON/sidecar evidence');
+  assert.equal(recipe.artifacts.typed[0].required, false, 'pending and terminal receipts never claim a completed materialization artifact');
 });
 
 test('runtime presentation evidence persists, merges, and reaches the Blocks Engine compilation input in order', () => {

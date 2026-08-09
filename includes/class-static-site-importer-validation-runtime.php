@@ -104,6 +104,34 @@ class Static_Site_Importer_Validation_Runtime {
 		if ( isset( $input['runtime_lifecycle_request_id'] ) ) {
 			$import_args['runtime_lifecycle_request_id'] = (string) $input['runtime_lifecycle_request_id'];
 		}
+		$lifecycle_receipt = isset( $input['runtime_lifecycle_receipt'] ) && is_array( $input['runtime_lifecycle_receipt'] ) ? $input['runtime_lifecycle_receipt'] : array();
+		if ( 'pending_runtime' === ( $lifecycle_receipt['status'] ?? '' ) ) {
+			return self::result_from_import(
+				array(
+					'status'            => 'pending_runtime',
+					'reason_code'       => (string) ( $lifecycle_receipt['reason_code'] ?? 'runtime_resume_required' ),
+					'message'           => (string) ( $lifecycle_receipt['message'] ?? 'Validation requires a fresh WordPress runtime before materialization can resume.' ),
+					'runtime_lifecycle' => isset( $lifecycle_receipt['runtime_lifecycle'] ) && is_array( $lifecycle_receipt['runtime_lifecycle'] ) ? $lifecycle_receipt['runtime_lifecycle'] : array(),
+					'dependencies'      => isset( $lifecycle_receipt['dependencies'] ) && is_array( $lifecycle_receipt['dependencies'] ) ? $lifecycle_receipt['dependencies'] : array(),
+				),
+				$artifact_dir,
+				$import_args
+			);
+		}
+		if ( 'failed' === ( $lifecycle_receipt['status'] ?? '' ) ) {
+			return self::result_from_import(
+				array(
+					'status'                     => 'failed',
+					'runtime_lifecycle_terminal' => true,
+					'reason_code'                => (string) ( $lifecycle_receipt['reason_code'] ?? 'dependency_preparation_failed' ),
+					'message'                    => (string) ( $lifecycle_receipt['message'] ?? 'Dependency preparation failed before validation could begin.' ),
+					'runtime_lifecycle'          => isset( $lifecycle_receipt['runtime_lifecycle'] ) && is_array( $lifecycle_receipt['runtime_lifecycle'] ) ? $lifecycle_receipt['runtime_lifecycle'] : array(),
+					'dependencies'               => isset( $lifecycle_receipt['dependencies'] ) && is_array( $lifecycle_receipt['dependencies'] ) ? $lifecycle_receipt['dependencies'] : array(),
+				),
+				$artifact_dir,
+				$import_args
+			);
+		}
 
 		$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
 		if ( is_wp_error( $result ) ) {
@@ -242,6 +270,7 @@ class Static_Site_Importer_Validation_Runtime {
 		$quality                = isset( $import_result['quality'] ) && is_array( $import_result['quality'] ) ? $import_result['quality'] : array();
 		$quality_pass           = ! empty( $quality['pass'] );
 		$pending_runtime        = 'pending_runtime' === ( $import_result['status'] ?? '' );
+		$lifecycle_terminal     = ! empty( $import_result['runtime_lifecycle_terminal'] );
 		$import_diagnostics     = isset( $import_result['diagnostics'] ) && is_array( $import_result['diagnostics'] ) ? $import_result['diagnostics'] : array();
 		$import_report          = self::read_json_object_file( $report_path );
 		if ( empty( $import_report ) && isset( $import_result['import_report'] ) && is_array( $import_result['import_report'] ) ) {
@@ -274,15 +303,15 @@ class Static_Site_Importer_Validation_Runtime {
 				'finding_packets'         => self::local_file_artifact_ref( $finding_packets_path, 'static-site-importer/finding-packets' ),
 			),
 		);
-		if ( ! $pending_runtime ) {
+		if ( ! $pending_runtime && ! $lifecycle_terminal ) {
 			$result['artifacts']['generated_theme'] = array(
 				'artifact_ref' => (string) ( $import_result['theme_slug'] ?? '' ),
 				'kind'         => 'wordpress-theme-directory',
 				'status'       => 'materialized',
 			);
 		} else {
-			$result['reason_code']       = (string) ( $import_result['reason_code'] ?? 'runtime_resume_required' );
-			$result['message']           = (string) ( $import_result['message'] ?? 'Validation requires a fresh WordPress runtime before materialization can resume.' );
+			$result['reason_code']       = (string) ( $import_result['reason_code'] ?? ( $pending_runtime ? 'runtime_resume_required' : 'dependency_preparation_failed' ) );
+			$result['message']           = (string) ( $import_result['message'] ?? ( $pending_runtime ? 'Validation requires a fresh WordPress runtime before materialization can resume.' : 'Dependency preparation failed before validation could begin.' ) );
 			$result['runtime_lifecycle'] = isset( $import_result['runtime_lifecycle'] ) && is_array( $import_result['runtime_lifecycle'] ) ? $import_result['runtime_lifecycle'] : array();
 			$result['dependencies']      = isset( $import_result['dependencies'] ) && is_array( $import_result['dependencies'] ) ? $import_result['dependencies'] : array();
 			$result['artifacts']         = array_filter( $result['artifacts'] );
