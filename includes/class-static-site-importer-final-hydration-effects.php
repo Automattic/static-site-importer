@@ -32,7 +32,17 @@ final class Static_Site_Importer_Final_Hydration_Effects {
 	 * @return string
 	 */
 	public static function identity( string $run_id, string $batch_id, string $snapshot_hash, string $plan_hash ): string {
-		return hash( 'sha256', wp_json_encode( array( 'run_id' => $run_id, 'batch_id' => $batch_id, 'snapshot_sha256' => $snapshot_hash, 'plan_hash' => $plan_hash ) ) );
+		return hash(
+			'sha256',
+			(string) wp_json_encode(
+				array(
+					'run_id'          => $run_id,
+					'batch_id'        => $batch_id,
+					'snapshot_sha256' => $snapshot_hash,
+					'plan_hash'       => $plan_hash,
+				)
+			)
+		);
 	}
 
 	/**
@@ -64,11 +74,20 @@ final class Static_Site_Importer_Final_Hydration_Effects {
 			'batch_id'        => $batch_id,
 			'snapshot_sha256' => $snapshot_hash,
 			'plan_hash'       => $plan_hash,
-			'adapter'         => array( 'id' => 'url-importer', 'contract_version' => 1 ),
-			'identity'        => array( 'algorithm' => 'sha256', 'value' => $receipt_id ),
+			'adapter'         => array(
+				'id'               => 'url-importer',
+				'contract_version' => 1,
+			),
+			'identity'        => array(
+				'algorithm' => 'sha256',
+				'value'     => $receipt_id,
+			),
 			'state'           => 'effect_started',
 			'effect'          => array( 'started_at' => gmdate( 'c' ) ),
-			'recovery'        => array( 'attempt' => 0, 'retryable' => false ),
+			'recovery'        => array(
+				'attempt'   => 0,
+				'retryable' => false,
+			),
 			'diagnostics'     => array(),
 		);
 		return $this->save( $receipt_id, $receipt );
@@ -101,7 +120,7 @@ final class Static_Site_Importer_Final_Hydration_Effects {
 		if ( ! is_array( $receipt ) ) {
 			return $receipt;
 		}
-		$receipt['state']                    = 'failed';
+		$receipt['state']                   = 'failed';
 		$receipt['recovery']['retryable']   = true;
 		$receipt['recovery']['reason_code'] = $error->get_error_code();
 		return $this->save( $receipt_id, $receipt );
@@ -119,7 +138,7 @@ final class Static_Site_Importer_Final_Hydration_Effects {
 			return null;
 		}
 		$data = json_decode( $raw, true );
-		if ( ! is_array( $data ) || self::SCHEMA !== ( $data['schema'] ?? '' ) || self::VERSION !== (int) ( $data['version'] ?? 0 ) || $receipt_id !== ( $data['receipt_id'] ?? '' ) ) {
+		if ( ! is_array( $data ) || self::SCHEMA !== ( $data['schema'] ?? '' ) || self::VERSION !== (int) ( $data['version'] ?? 0 ) || ( $data['receipt_id'] ?? '' ) !== $receipt_id ) {
 			return new WP_Error( 'static_site_importer_final_effect_receipt_unsupported', 'Final hydration effect receipt contract is unsupported.' );
 		}
 		return $data;
