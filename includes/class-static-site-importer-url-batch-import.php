@@ -353,9 +353,10 @@ final class Static_Site_Importer_URL_Batch_Import {
 				$import_args['preserve_existing_theme_bootstrap'] = $index > 0;
 				$import_args['import_run_id']                     = $identity;
 				$import_args['compiled_artifact_result']          = $compiled_staged;
-				$receipt_id                                       = Static_Site_Importer_Final_Hydration_Effects::identity( $identity, (string) ( $batch['batch_id'] ?? $index ), (string) ( $runtime['source_metadata']['snapshot']['sha256'] ?? '' ), hash( 'sha256', (string) wp_json_encode( $compiled_staged ) ) );
-				$effect_receipts                                  = new Static_Site_Importer_Final_Hydration_Effects( $workspace );
-				$receipt                                          = $effect_receipts->begin( $receipt_id, $identity, (string) ( $batch['batch_id'] ?? $index ), (string) ( $runtime['source_metadata']['snapshot']['sha256'] ?? '' ), hash( 'sha256', (string) wp_json_encode( $compiled_staged ) ) );
+
+				$receipt_id      = Static_Site_Importer_Final_Hydration_Effects::identity( $identity, (string) ( $batch['batch_id'] ?? $index ), (string) ( $runtime['source_metadata']['snapshot']['sha256'] ?? '' ), hash( 'sha256', (string) wp_json_encode( $compiled_staged ) ) );
+				$effect_receipts = new Static_Site_Importer_Final_Hydration_Effects( $workspace );
+				$receipt         = $effect_receipts->begin( $receipt_id, $identity, (string) ( $batch['batch_id'] ?? $index ), (string) ( $runtime['source_metadata']['snapshot']['sha256'] ?? '' ), hash( 'sha256', (string) wp_json_encode( $compiled_staged ) ) );
 				if ( is_wp_error( $receipt ) ) {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $receipt, $cache );
 				}
