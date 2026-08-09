@@ -18,6 +18,7 @@
     { "path": "tests/smoke-companion-plugin.php", "environment": "standalone-php" },
     { "path": "tests/smoke-contact-layout-transformer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-diagnostic-loss-classes.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-empty-js-populated-container.php", "environment": "standalone-php" },
     { "path": "tests/smoke-entity-materializer-registry.php", "environment": "standalone-php" },
     { "path": "tests/smoke-external-report-destinations.php", "environment": "standalone-php" },
     { "path": "tests/smoke-export-theme-ability.php", "environment": "standalone-php" },

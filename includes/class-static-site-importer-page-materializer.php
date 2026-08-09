@@ -1114,6 +1114,10 @@ class Static_Site_Importer_Page_Materializer {
 				return '';
 			}
 
+			foreach ( self::find_empty_js_populated_containers( $body ) as $container ) {
+				$diagnostics[] = self::empty_js_populated_container_diagnostic( $container, $source_path );
+			}
+
 			$blocks = self::html_to_blocks( $body, $source_path, $diagnostics );
 			if ( '' !== trim( $blocks ) ) {
 				return $blocks;
@@ -1141,6 +1145,145 @@ class Static_Site_Importer_Page_Materializer {
 		}
 
 		return '';
+	}
+
+	/**
+	 * Find empty container elements that appear to be client-side rendered.
+	 *
+	 * An element is only flagged when it is empty AND shows a strong signal that
+	 * JavaScript is expected to populate it: a non-internal data-* attribute, or
+	 * an app-shell id paired with a content-naming id/class. Deliberately
+	 * conservative so bare layout grids and spacer divs are never reported.
+	 *
+	 * @param string $html Raw HTML body markup.
+	 * @return array<int,array<string,mixed>> Detected containers.
+	 */
+	private static function find_empty_js_populated_containers( string $html ): array {
+		$previous = libxml_use_internal_errors( true );
+		$dom      = new DOMDocument( '1.0', 'UTF-8' );
+		$loaded   = $dom->loadHTML( '<!doctype html><html><body>' . $html . '</body></html>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		if ( ! $loaded ) {
+			return array();
+		}
+
+		$xpath = new DOMXPath( $dom );
+		$nodes = $xpath->query( '//*[self::div or self::section or self::main or self::article or self::ul or self::ol]' );
+		if ( false === $nodes ) {
+			return array();
+		}
+
+		$found = array();
+		foreach ( $nodes as $node ) {
+			if ( ! $node instanceof DOMElement || ! self::element_is_empty( $node ) ) {
+				continue;
+			}
+
+			$id        = strtolower( trim( (string) $node->getAttribute( 'id' ) ) );
+			$classes   = strtolower( trim( (string) $node->getAttribute( 'class' ) ) );
+			$data      = self::non_internal_data_attributes( $node );
+			$app_shell = (bool) preg_match( '#\b(?:root|app|__next|gatsby|mount)\b#', $id );
+			$content   = (bool) preg_match( '#(?:grid|products?|product-list|listing|featured|catalog|items?|shelf|collection)#', $id . ' ' . $classes );
+
+			if ( empty( $data ) && ! ( $app_shell && $content ) ) {
+				continue;
+			}
+
+			$found[] = array(
+				// phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM exposes tagName as a native property.
+				'tag_name' => strtolower( (string) $node->tagName ),
+				'id'       => trim( (string) $node->getAttribute( 'id' ) ),
+				'class'    => trim( (string) $node->getAttribute( 'class' ) ),
+				'selector' => self::container_selector( $node, $id ),
+			);
+		}
+
+		return $found;
+	}
+
+	/**
+	 * Whether a DOM element has no meaningful element or text children.
+	 *
+	 * Comments and whitespace-only text nodes are ignored.
+	 *
+	 * @param DOMElement $node Element node.
+	 * @return bool True when the element is empty.
+	 */
+	private static function element_is_empty( DOMElement $node ): bool {
+		// phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM exposes childNodes as a native property.
+		foreach ( iterator_to_array( $node->childNodes ) as $child ) {
+			if ( $child instanceof DOMText ) {
+				// phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM exposes textContent as a native property.
+				if ( '' !== trim( (string) $child->textContent ) ) {
+					return false;
+				}
+				continue;
+			}
+			if ( ! $child instanceof DOMComment && ! $child instanceof DOMProcessingInstruction ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Names of non-internal data-* attributes on an element.
+	 *
+	 * @param DOMElement $node Element node.
+	 * @return array<int,string> Data attribute names, SSI-internal ones excluded.
+	 */
+	private static function non_internal_data_attributes( DOMElement $node ): array {
+		$names = array();
+		foreach ( $node->attributes as $attribute ) {
+			$name = strtolower( (string) $attribute->name );
+			if ( str_starts_with( $name, 'data-' ) && ! str_starts_with( $name, 'data-ssi-' ) ) {
+				$names[] = $name;
+			}
+		}
+
+		return $names;
+	}
+
+	/**
+	 * Build a short selector for a detected container.
+	 *
+	 * @param DOMElement $node Element node.
+	 * @param string     $id   Lowercased id attribute.
+	 * @return string Selector string.
+	 */
+	private static function container_selector( DOMElement $node, string $id ): string {
+		// phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM exposes tagName as a native property.
+		$tag = strtolower( (string) $node->tagName );
+		return '' !== $id ? $tag . '#' . $id : $tag;
+	}
+
+	/**
+	 * Build a diagnostic row for an empty client-side rendered container.
+	 *
+	 * @param array<string,mixed> $container   Detected container row.
+	 * @param string              $source_path Source path.
+	 * @return array<string,mixed> Diagnostic row.
+	 */
+	private static function empty_js_populated_container_diagnostic( array $container, string $source_path ): array {
+		$tag = $container['tag_name'];
+
+		return array(
+			'type'        => 'empty_js_populated_container',
+			'source'      => 'source-html/static-scan',
+			'source_path' => $source_path,
+			'format'      => 'html',
+			'selector'    => $container['selector'],
+			'tag_name'    => $tag,
+			'id'          => $container['id'],
+			'class'       => $container['class'],
+			'element'     => $tag,
+			'severity'    => 'info',
+			'category'    => 'unsupported_source',
+			'loss_class'  => 'unsupported_loss',
+			'message'     => 'Empty container appears to be populated by client-side JavaScript, so its intended content is absent from the server-rendered HTML.',
+		);
 	}
 
 	/**

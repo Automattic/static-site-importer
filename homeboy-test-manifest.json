@@ -13,6 +13,7 @@
     "tests/smoke-companion-plugin.php": { "environment": "standalone-php" },
     "tests/smoke-contact-layout-transformer.php": { "environment": "standalone-php" },
     "tests/smoke-diagnostic-loss-classes.php": { "environment": "standalone-php" },
+    "tests/smoke-empty-js-populated-container.php": { "environment": "standalone-php" },
     "tests/smoke-entity-materializer-registry.php": { "environment": "standalone-php" },
     "tests/smoke-external-report-destinations.php": { "environment": "standalone-php" },
     "tests/smoke-export-theme-ability.php": { "environment": "standalone-php" },
