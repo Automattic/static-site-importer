@@ -65,6 +65,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-ip-classifier.php',
 	'class-static-site-importer-url-fetcher.php',
 	'class-static-site-importer-artifact-run.php',
+	'class-static-site-importer-final-hydration-effects.php',
 	'class-static-site-importer-source-normalizer.php',
 	'class-static-site-importer-portable-source-manifest.php',
 	'class-static-site-importer-content-policy.php',

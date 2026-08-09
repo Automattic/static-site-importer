@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "static-site-importer/final-hydration-effect-receipt/v1",
+  "title": "Static Site Importer final hydration effect receipt",
+  "type": "object",
+  "required": ["schema", "version", "receipt_id", "run_id", "batch_id", "snapshot_sha256", "plan_hash", "identity", "state"],
+  "properties": {
+    "schema": { "const": "static-site-importer/final-hydration-effect-receipt/v1" },
+    "version": { "const": 1 },
+    "receipt_id": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "batch_id": { "type": "string", "minLength": 1 },
+    "snapshot_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "plan_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "adapter": { "type": "object" },
+    "identity": {
+      "type": "object",
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "value": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      },
+      "additionalProperties": true
+    },
+    "state": { "enum": ["effect_started", "verified", "failed", "unsupported", "needs_manual_recovery"] },
+    "effect": { "type": "object" },
+    "recovery": { "type": "object" },
+    "diagnostics": { "type": "array" }
+  },
+  "additionalProperties": true
+}

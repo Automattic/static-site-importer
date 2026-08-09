@@ -65,6 +65,7 @@
     { "path": "tests/smoke-wordpress-site-plan-materializer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-product-seeder-rollback.php", "environment": "standalone-php" },
     { "path": "tests/smoke-artifact-run-primitives.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-final-hydration-effects.php", "environment": "standalone-php" },
     { "path": "tests/smoke-shared-resource-plan.php", "environment": "standalone-php" },
     { "path": "tests/smoke-figma-workspace-lifecycle.php", "environment": "standalone-php" },
     { "path": "tests/smoke-url-batch-import.php", "environment": "standalone-php" },

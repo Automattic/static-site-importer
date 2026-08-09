@@ -7,6 +7,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Artifact_Run_Workspace' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-artifact-run.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Final_Hydration_Effects' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-final-hydration-effects.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Shared_Resource_Plan' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-shared-resource-plan.php';
 }
@@ -493,9 +496,24 @@ final class Static_Site_Importer_URL_Batch_Import {
 				$import_args['_static_site_importer_precompiled_source'] = null !== $payload_reader;
 				// This reader is invocation-local workspace access, never plan state.
 				$import_args['_static_site_importer_payload_reader'] = $payload_reader;
-				$result = $importer( $runtime['artifact'], $import_args );
-				if ( is_wp_error( $result ) ) {
-					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $result, $cache );
+				$receipt_id      = Static_Site_Importer_Final_Hydration_Effects::identity( $identity, (string) ( $batch['batch_id'] ?? $index ), (string) ( $runtime['source_metadata']['snapshot']['sha256'] ?? '' ), hash( 'sha256', (string) wp_json_encode( $compiled_staged ) ) );
+				$effect_receipts = new Static_Site_Importer_Final_Hydration_Effects( $workspace );
+				$receipt         = $effect_receipts->begin( $receipt_id, $identity, (string) ( $batch['batch_id'] ?? $index ), (string) ( $runtime['source_metadata']['snapshot']['sha256'] ?? '' ), hash( 'sha256', (string) wp_json_encode( $compiled_staged ) ) );
+				if ( is_wp_error( $receipt ) ) {
+					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $receipt, $cache );
+				}
+				if ( 'verified' === ( $receipt['state'] ?? '' ) && is_array( $receipt['effect']['result'] ?? null ) ) {
+					$result = $receipt['effect']['result'];
+				} else {
+					$result = $importer( $runtime['artifact'], $import_args );
+					if ( is_wp_error( $result ) ) {
+						$effect_receipts->fail( $receipt_id, $result );
+						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $result, $cache );
+					}
+					$receipt = $effect_receipts->complete( $receipt_id, $result );
+					if ( is_wp_error( $receipt ) ) {
+						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $receipt, $cache );
+					}
 				}
 			}
 			$cursor                     = Static_Site_Importer_Artifact_Batch_Cursor::complete( $cursor, $index );
