@@ -699,7 +699,7 @@ function buildSteps(options, settings) {
       reason: 'Rig source installation remains on the controller and does not inherit fixture workload routing.',
       label: `Refresh installed SSI fixture matrix rig (${options.executionTarget})`,
       command: options.homeboyBin,
-      args: ['rig', 'install', packageRoot, '--id', RIG_ID, '--reinstall'],
+      args: ['--placement', 'local', 'rig', 'install', packageRoot, '--id', RIG_ID, '--reinstall'],
     }));
   }
   if (!options.skipSync) {
@@ -710,7 +710,7 @@ function buildSteps(options, settings) {
       reason: 'Rig component synchronization remains on the controller and does not inherit fixture workload routing.',
       label: `Sync/materialize rig components (${options.executionTarget})`,
       command: options.homeboyBin,
-      args: ['rig', 'sync', RIG_ID],
+      args: ['--placement', 'local', 'rig', 'sync', RIG_ID],
     }));
   }
 

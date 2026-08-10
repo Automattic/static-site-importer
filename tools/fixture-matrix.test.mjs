@@ -1713,6 +1713,26 @@ test('fixture lineage retains the development transformer override identity', ()
   assert.deepEqual(evidence.lineage.development_override, { package: 'automattic/blocks-engine-php-transformer', reference: 'b'.repeat(40) });
 });
 
+test('fixture lineage only claims a transformer candidate declared by the effective recipe', () => {
+  const reference = 'b'.repeat(40);
+  const payload = {
+    import_report: {
+      blocks_engine: {
+        transformer: { package: 'automattic/blocks-engine-php-transformer', version: 'dev-main', reference },
+        wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2' },
+      },
+      materialization_receipt: { schema: 'static-site-importer/materialization-receipt/v1', status: 'completed' },
+    },
+  };
+  const dependencyOverrides = { blocks_engine_php_transformer: { package: 'automattic/blocks-engine-php-transformer', reference } };
+
+  assert.equal(collectMatrixEvidence(payload, { dependencyOverrides, dependencyOverlays: [] }).lineage.development_override, undefined);
+  assert.deepEqual(collectMatrixEvidence(payload, {
+    dependencyOverrides,
+    dependencyOverlays: [{ kind: 'composer-package', package: 'automattic/blocks-engine-php-transformer', consumer: 'static-site-importer', source: '/candidate', reference }],
+  }).lineage.development_override, { package: 'automattic/blocks-engine-php-transformer', reference });
+});
+
 test('fixture lineage does not correlate a retried provider failure to a transform diagnostic', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-attribution-correlation-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'attribution-correlation-test' });
@@ -3910,8 +3930,8 @@ test('fixture matrix deterministic dry-run phase plans route setup locally and w
     fixtureRoot,
   });
   assert.deepEqual(setupPlan.steps.slice(0, -1).map((step) => step.args), [
-    ['rig', 'install', path.dirname(path.dirname(fileURLToPath(import.meta.url))), '--id', 'static-site-importer-fixture-matrix', '--reinstall'],
-    ['rig', 'sync', 'static-site-importer-fixture-matrix'],
+    ['--placement', 'local', 'rig', 'install', path.dirname(path.dirname(fileURLToPath(import.meta.url))), '--id', 'static-site-importer-fixture-matrix', '--reinstall'],
+    ['--placement', 'local', 'rig', 'sync', 'static-site-importer-fixture-matrix'],
   ]);
   assert.deepEqual(setupPlan.phase_plan, {
     schema: FIXTURE_MATRIX_PHASE_PLAN_SCHEMA,
@@ -3924,6 +3944,7 @@ test('fixture matrix deterministic dry-run phase plans route setup locally and w
     })),
   });
   assert.ok(setupPlan.steps.slice(0, -1).every((step) => step.phase === 'controller-setup' && step.placement === 'auto' && step.resolved_placement === 'controller-local'));
+  assert.ok(setupPlan.steps.slice(0, -1).every((step) => step.args[0] === '--placement' && step.args[1] === 'local'));
   assert.equal(setupPlan.steps.at(-1).phase, 'fixture-workload');
   assert.equal(setupPlan.steps.at(-1).resolved_placement, 'lab:homeboy-lab');
 
@@ -4981,7 +5002,31 @@ function wpCodeboxCommand(bin) { return { command: bin, args: [] }; }
 
 async function runWpCodeboxRecipe(options = {}) {
   const recipe = fs.readFileSync(options.recipeFile, 'utf8');
+  const capturedRecipes = process.env.SSI_TEST_RECIPE_CAPTURE_FILE;
+  if (capturedRecipes) {
+    const captured = fs.existsSync(capturedRecipes) ? JSON.parse(fs.readFileSync(capturedRecipes, 'utf8')) : [];
+    captured.push(JSON.parse(recipe));
+    fs.writeFileSync(capturedRecipes, JSON.stringify(captured));
+  }
   if (recipe.includes('plan-artifact-dependencies')) {
+    // Parse batch number from the discovery artifacts path (e.g. .../discovery/001-fixture-01/).
+    const discoveryMatch = String(options.recipeFile).match(/discovery\\/(\\d{3})/);
+    const discoveryBatch = discoveryMatch ? Number(discoveryMatch[1]) : 0;
+    inFlight += 1;
+    peakInFlight = Math.max(peakInFlight, inFlight);
+    recordPeak();
+    const unit = Number(process.env.SSI_TEST_RECIPE_UNIT_MS || '15');
+    const delay = discoveryBatch * unit;
+    await new Promise((resolve) => setTimeout(resolve, Math.max(1, delay)));
+    inFlight -= 1;
+    const throwDiscoveryBatch = Number(process.env.SSI_TEST_RECIPE_DISCOVERY_THROW_BATCH || '0');
+    if (throwDiscoveryBatch && throwDiscoveryBatch === discoveryBatch) {
+      const error = new Error('discovery failed for batch ' + discoveryBatch);
+      error.code = 19;
+      error.stdout = '';
+      error.stderr = 'discovery boom';
+      throw error;
+    }
     fs.mkdirSync(options.artifactsDir, { recursive: true });
     fs.writeFileSync(require('node:path').join(options.artifactsDir, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
     return { exitCode: 0, outputFile: options.outputFile, json: {} };
@@ -5049,6 +5094,8 @@ const CONCURRENCY_ENV_KEYS = [
   'SSI_TEST_RECIPE_BATCH_COUNT',
   'SSI_TEST_RECIPE_UNIT_MS',
   'SSI_TEST_RECIPE_THROW_BATCH',
+  'SSI_TEST_RECIPE_DISCOVERY_THROW_BATCH',
+  'SSI_TEST_RECIPE_CAPTURE_FILE',
 ];
 
 function snapshotConcurrencyEnv() {
@@ -5097,6 +5144,50 @@ test('runFixtureMatrix caps WP Codebox batches in flight at the configured concu
     // reached the cap (proves real parallelism, not accidental serialization).
     assert.ok(stats.peak_in_flight <= 2, `peak ${stats.peak_in_flight} exceeded concurrency 2`);
     assert.equal(stats.peak_in_flight, 2);
+  } finally {
+    restoreConcurrencyEnv(snapshot);
+  }
+});
+
+test('runFixtureMatrix uses the same candidate transformer overlay for dependency discovery and final import', async () => {
+  const snapshot = snapshotConcurrencyEnv();
+  const workspace = setupConcurrencyWorkspace('ssi-discovery-overlay-', 1);
+  const transformerPath = path.join(workspace.root, 'blocks-engine', 'php-transformer');
+  const reference = 'c'.repeat(40);
+  const captureFile = path.join(workspace.root, 'recipes.json');
+  mkdirSync(transformerPath, { recursive: true });
+  writeFileSync(path.join(transformerPath, 'composer.json'), JSON.stringify({ name: 'automattic/blocks-engine-php-transformer' }));
+  process.env.HOMEBOY_WP_CODEBOX_RECIPE_HELPER = workspace.helperPath;
+  process.env.SSI_TEST_RECIPE_CAPTURE_FILE = captureFile;
+
+  try {
+    const { summary, runtimeError } = await runFixtureMatrix({
+      id: 'discovery-overlay-matrix',
+      fixtureRoot: workspace.fixtureRoot,
+      outputDirectory: workspace.outputDirectory,
+      staticSiteImporterPath: workspace.staticSiteImporter,
+      blocksEnginePhpTransformerPath: transformerPath,
+      blocksEnginePhpTransformerReference: reference,
+      run: true,
+      batchSize: 1,
+      concurrency: 1,
+      visualParity: false,
+    });
+
+    assert.equal(runtimeError, null);
+    const recipes = JSON.parse(readFileSync(captureFile, 'utf8'));
+    const discoveryRecipe = recipes.find((recipe) => recipe.workflow.steps.some((step) => step.args?.some((arg) => arg.includes('plan-artifact-dependencies'))));
+    const importRecipe = JSON.parse(readFileSync(summary.runtime.batches[0].recipe_file, 'utf8'));
+    const expectedOverlay = {
+      kind: 'composer-package',
+      package: 'automattic/blocks-engine-php-transformer',
+      consumer: 'static-site-importer',
+      source: transformerPath,
+      reference,
+    };
+
+    assert.deepEqual(discoveryRecipe.inputs.dependency_overlays, [expectedOverlay]);
+    assert.deepEqual(importRecipe.inputs.dependency_overlays, [expectedOverlay]);
   } finally {
     restoreConcurrencyEnv(snapshot);
   }
@@ -5186,6 +5277,49 @@ test('runFixtureMatrix isolates a throwing batch so sibling batches still comple
 
     // All four batches still ran; the three non-throwing siblings succeeded,
     // proving one batch's failure did not sink the others.
+    assert.equal(summary.runtime.batches.length, 4);
+    assert.equal(summary.result_summary.succeeded, 3);
+    assert.equal(summary.result_summary.failed, 1);
+  } finally {
+    restoreConcurrencyEnv(snapshot);
+  }
+});
+
+test('runFixtureMatrix isolates a dependency-discovery failure so sibling batches still complete', async () => {
+  const snapshot = snapshotConcurrencyEnv();
+  const workspace = setupConcurrencyWorkspace('ssi-discovery-isolation-', 4);
+  process.env.HOMEBOY_WP_CODEBOX_RECIPE_HELPER = workspace.helperPath;
+  process.env.SSI_TEST_RECIPE_BATCH_COUNT = '4';
+  process.env.SSI_TEST_RECIPE_UNIT_MS = '5';
+  process.env.SSI_TEST_RECIPE_DISCOVERY_THROW_BATCH = '2';
+
+  try {
+    const { summary, runtimeError } = await runFixtureMatrix({
+      id: 'discovery-isolation-matrix',
+      fixtureRoot: workspace.fixtureRoot,
+      outputDirectory: workspace.outputDirectory,
+      staticSiteImporterPath: workspace.staticSiteImporter,
+      run: true,
+      batchSize: 1,
+      concurrency: 4,
+      visualParity: false,
+    });
+
+    // The discovery failure surfaces as the runtime error + exit code, but the
+    // run still produced a full summary rather than rejecting.
+    assert.ok(runtimeError);
+    assert.match(runtimeError.message, /discovery failed/);
+    assert.equal(summary.runtime.exit_code, 19);
+
+    // Exactly one child-command failure with the correct stage.
+    const failures = summary.runtime.child_command_failures;
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0].batch_id, 'batch-002');
+    assert.equal(failures[0].failure_stage, 'dependency_discovery');
+    assert.equal(failures[0].exit_status, 19);
+
+    // All four batches still ran; the three non-throwing siblings succeeded,
+    // proving one batch's discovery failure did not sink the others.
     assert.equal(summary.runtime.batches.length, 4);
     assert.equal(summary.result_summary.succeeded, 3);
     assert.equal(summary.result_summary.failed, 1);

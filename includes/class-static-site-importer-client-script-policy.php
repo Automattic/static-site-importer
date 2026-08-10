@@ -21,11 +21,11 @@ class Static_Site_Importer_Client_Script_Policy {
 		$provenance = self::provenance( $args );
 		$preserve   = 'isolated_preview' === $policy && ! empty( $args['client_script_isolated'] ) && '' !== $provenance;
 		$report     = array(
-			'schema'     => 'static-site-importer/client-script-policy-report/v1',
-			'policy'     => $preserve ? 'isolated_preview' : 'inert',
-			'trust'      => 'untrusted_imported_code',
-			'provenance' => $preserve ? $provenance : '',
-			'dropped'    => array(),
+			'schema'      => 'static-site-importer/client-script-policy-report/v1',
+			'policy'      => $preserve ? 'isolated_preview' : 'inert',
+			'trust'       => 'untrusted_imported_code',
+			'provenance'  => $preserve ? $provenance : '',
+			'dropped'     => array(),
 			'quarantined' => array(),
 			'preserved'   => array(),
 		);
@@ -50,7 +50,10 @@ class Static_Site_Importer_Client_Script_Policy {
 		}
 
 		$artifact['files'] = $filtered;
-		return array( 'artifact' => $artifact, 'report' => $report );
+		return array(
+			'artifact' => $artifact,
+			'report'   => $report,
+		);
 	}
 
 	private static function policy_name( array $args ): string {
@@ -111,7 +114,13 @@ class Static_Site_Importer_Client_Script_Policy {
 		if ( ! preg_match( '/\s' . preg_quote( $name, '/' ) . '\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))/i', $attributes, $matches ) ) {
 			return null;
 		}
-		return '' !== (string) ( $matches[1] ?? '' ) ? $matches[1] : ( '' !== (string) ( $matches[2] ?? '' ) ? $matches[2] : (string) ( $matches[3] ?? '' ) );
+		if ( '' !== $matches[1] ) {
+			return $matches[1];
+		}
+		if ( isset( $matches[2] ) && '' !== $matches[2] ) {
+			return $matches[2];
+		}
+		return isset( $matches[3] ) ? $matches[3] : '';
 	}
 
 	private static function script_class( ?string $source, string $type, string $content ): string {

@@ -26,7 +26,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: Extra-Chill/homeboy-action@31e95050206332c4ebd36894387c980c99443ecf  # v2.8.15
+      - uses: Extra-Chill/homeboy-action@5e7ee62f19455be58d6b05a16333ceb389eb385c  # v2.11.10
         with:
           # Pin homeboy core to 0.330.0: core 0.331.0+ (PR #11553) validates
           # the `test.failures` sidecar as a JSON array, but the wordpress
@@ -37,7 +37,6 @@ jobs:
           args: --extension wordpress
           php-version: '8.2'
           node-version: '24'
-          autofix: 'false'
 
   homeboy-test:
     name: Homeboy Test (PHP ${{ matrix.php-version }})
@@ -52,7 +51,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: Extra-Chill/homeboy-action@31e95050206332c4ebd36894387c980c99443ecf  # v2.8.15
+      - uses: Extra-Chill/homeboy-action@5e7ee62f19455be58d6b05a16333ceb389eb385c  # v2.11.10
         with:
           # Pin homeboy core to 0.330.0: see lint step for the rationale.
           version: 0.330.0
@@ -60,4 +59,3 @@ jobs:
           args: --extension wordpress
           php-version: ${{ matrix.php-version }}
           node-version: '24'
-          autofix: 'false'

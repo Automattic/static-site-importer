@@ -178,12 +178,15 @@ class Static_Site_Importer_Theme_Generator {
 		if ( ! empty( $args['write_theme_report_artifacts'] ) ) {
 			$report_destinations = array_merge( $report_destinations, array( $theme_dir . '/import-report.json', $theme_dir . '/import-validation-result.json', $theme_dir . '/finding-packets.json' ) );
 		}
+		$external_report_destinations = array();
 		if ( ! empty( $args['report'] ) ) {
-			$report_destinations[] = (string) $args['report'];
-			$report_destinations[] = trailingslashit( dirname( (string) $args['report'] ) ) . 'import-validation-result.json';
-			$report_destinations[] = trailingslashit( dirname( (string) $args['report'] ) ) . 'finding-packets.json';
+			$external_report_destinations[] = (string) $args['report'];
+			$external_report_destinations[] = trailingslashit( dirname( (string) $args['report'] ) ) . 'import-validation-result.json';
+			$external_report_destinations[] = trailingslashit( dirname( (string) $args['report'] ) ) . 'finding-packets.json';
+			$report_destinations = array_merge( $report_destinations, $external_report_destinations );
 		}
 		$args['report_destinations'] = $report_destinations;
+		$args['external_report_destinations'] = $external_report_destinations;
 		$prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare( $plan, $args );
 		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
 			$receipt = isset( $prepared['receipt'] ) && is_array( $prepared['receipt'] ) ? $prepared['receipt'] : array();
@@ -632,6 +635,11 @@ class Static_Site_Importer_Theme_Generator {
 			$external_dir = dirname( $external_report_path );
 			$external_validation_result_path = trailingslashit( $external_dir ) . 'import-validation-result.json';
 			$external_finding_packets_path = trailingslashit( $external_dir ) . 'finding-packets.json';
+			foreach ( array( $external_report_path, $external_validation_result_path, $external_finding_packets_path ) as $path ) {
+				if ( ! Static_Site_Importer_WordPress_Site_Plan_Materializer::safe_external_report_destination( $path ) ) {
+					throw new RuntimeException( 'External report destination changed after preflight.' );
+				}
+			}
 			self::write_plan_projection( $external_report_path, $report );
 			self::write_plan_projection( $external_validation_result_path, $validation );
 			self::write_plan_projection( $external_finding_packets_path, $findings );

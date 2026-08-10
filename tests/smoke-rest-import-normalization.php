@@ -40,7 +40,6 @@ $options = array(
 	'seed_entities'                => true,
 	'products_manifest'            => array( 'products' => array( array( 'sku' => 'rest-product' ) ) ),
 	'commerce_context'             => array( 'currency' => 'USD' ),
-	'report'                       => 'rest-report',
 	'write_theme_report_artifacts' => true,
 	'asset_materialization_policy' => 'use_map',
 	'asset_map'                    => array( 'logo.svg' => 'https://example.test/logo.svg' ),
@@ -95,6 +94,10 @@ $assert( 'rest-import' === ( $captured['input']['slug'] ?? '' ), 'slug-is-rest-s
 $assert( 'REST Import' === ( $captured['input']['name'] ?? '' ), 'name-is-rest-sanitized' );
 $assert( 'rest-normalization-smoke' === ( $captured['input']['source_metadata']['request_id'] ?? '' ), 'caller-source-metadata-is-preserved' );
 $assert( 'static_site_importer_block' === ( $captured['input']['source_metadata']['source'] ?? '' ), 'rest-source-metadata-is-applied' );
+$assert( ! array_key_exists( 'report', $captured['input'] ?? array() ), 'rest-rejects-report-destination' );
+
+$rejected_report_params = static_site_importer_rest_import_args( array( 'report' => '/tmp/report.json' ) );
+$assert( ! array_key_exists( 'report', $rejected_report_params ), 'rest-schema-rejects-report-destination' );
 
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
