@@ -392,10 +392,19 @@
 						report = await response.json();
 					}
 				}
+				if ( isUrlOnly && response.ok && report.continuation === true && ! report.error ) {
+					report = Object.assign( {}, report, {
+						success: false,
+						error: {
+							code: 'static_site_importer_continuation_limit_reached',
+							message: 'URL import did not reach terminal completion after 64 continuation requests.',
+						},
+					} );
+				}
 
 				setReport( root, report );
 
-				if ( ! response.ok ) {
+				if ( ! response.ok || report.error ) {
 					showStatus( root, ( report.error && report.error.message ) ? report.error.message : 'Import request failed.' );
 				} else if ( isCurrentSiteImport && report.success ) {
 					showStatus( root, 'Import complete.' );

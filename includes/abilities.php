@@ -469,7 +469,7 @@ if ( ! function_exists( 'static_site_importer_ability_import' ) ) {
 		if ( ! function_exists( 'static_site_importer_source_runtime' ) ) {
 			return static_site_importer_ability_error( 'static_site_importer_source_normalizer_unavailable', 'The canonical source normalizer is unavailable.' );
 		}
-		$runtime = static_site_importer_source_runtime( $runtime_source, $input );
+		$runtime = static_site_importer_source_runtime( $runtime_source );
 		if ( is_wp_error( $runtime ) ) {
 			return static_site_importer_ability_error( (string) $runtime->get_error_code(), $runtime->get_error_message(), $runtime->get_error_data() );
 		}

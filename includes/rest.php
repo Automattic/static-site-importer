@@ -442,6 +442,7 @@ function static_site_importer_playground_package( array $options = array() ) {
 /**
  * Return package provenance for the current REST preview response.
  *
+ * @param array<string,string> $package Package metadata.
  * @return array<string,string>
  */
 function static_site_importer_playground_package_provenance( array $package ): array {
@@ -586,7 +587,6 @@ function static_site_importer_rest_manage_permission() {
  * @return WP_REST_Response|WP_Error
  */
 function static_site_importer_rest_create_import( WP_REST_Request $request ) {
-	/** @var mixed $params */
 	$params = $request->get_json_params();
 	if ( ! is_array( $params ) ) {
 		$params = $request->get_params();
@@ -833,7 +833,7 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
  *
  * @param string              $ability_name      Ability name.
  * @param array<string,mixed> $input             Ability input.
- * @param callable-string     $fallback_callback Local callback for non-Abilities test/runtime contexts.
+ * @param string              $fallback_callback Local callback for non-Abilities test/runtime contexts.
  * @param bool                $prefer_fallback   Whether to call the local callback before wp_get_ability().
  * @return array<string,mixed>|WP_Error
  */
@@ -943,11 +943,11 @@ function static_site_importer_rest_route_url_import( array $source, array $input
 function static_site_importer_rest_url_playground_unavailable( string $url, string $import_id, array $input ) {
 	$placeholder_id = '' !== $import_id ? $import_id : ( function_exists( 'wp_generate_uuid4' ) ? wp_generate_uuid4() : '' );
 	return array(
-		'success'               => true,
-		'continuation'          => true,
-		'continuation_reason'   => 'ability_capable_target_required',
-		'import_id'             => $placeholder_id,
-		'url'                   => $url,
+		'success'                         => true,
+		'continuation'                    => true,
+		'continuation_reason'             => 'ability_capable_target_required',
+		'import_id'                       => $placeholder_id,
+		'url'                             => $url,
 		'requires_ability_capable_target' => array(
 			'ability'    => 'static-site-importer/import',
 			'url'        => $url,
@@ -994,10 +994,9 @@ function static_site_importer_rest_source_artifact( array $source ) {
  * Convert REST source input into the normalized website artifact runtime envelope.
  *
  * @param array<string,mixed> $source Source payload.
- * @param array<string,mixed> $input  Import input carrying optional provider args.
  * @return array{artifact:array<string,mixed>,source_metadata:array<string,mixed>,provider:string}|WP_Error
  */
-function static_site_importer_source_runtime( array $source, array $input = array() ) {
+function static_site_importer_source_runtime( array $source ) {
 	if ( isset( $source['artifact'] ) && is_array( $source['artifact'] ) ) {
 		return array(
 			'artifact'        => $source['artifact'],
@@ -1128,7 +1127,9 @@ function static_site_importer_source_runtime( array $source, array $input = arra
  * @return array{artifact:array<string,mixed>,source_metadata:array<string,mixed>,provider:string}|WP_Error
  */
 function static_site_importer_rest_source_runtime( array $source, array $input = array() ) {
-	return static_site_importer_source_runtime( $source, $input );
+	unset( $input ); // Retained for compatibility with callers using the former provider-args parameter.
+
+	return static_site_importer_source_runtime( $source );
 }
 
 /**

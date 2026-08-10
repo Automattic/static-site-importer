@@ -620,6 +620,8 @@ $assert( str_contains( $view_js, 'overwrite: isCurrentSiteImport' ), 'view-overw
 $assert( ! str_contains( $view_js, 'about:blank' ), 'view-does-not-open-window-before-preview-url-is-ready' );
 $assert( ! str_contains( $view_js, 'openPendingPreviewWindow' ), 'view-has-no-pending-preview-window-helper' );
 $assert( str_contains( $view_js, 'openPreview( report )' ), 'view-opens-preview-only-after-report-is-ready' );
+$assert( str_contains( $view_js, 'static_site_importer_continuation_limit_reached' ), 'view-reports-nonterminal-continuation-limit' );
+$assert( str_contains( $view_js, '! response.ok || report.error' ), 'view-does-not-report-continuation-errors-as-complete' );
 $assert( str_contains( $view_js, 'playground.blueprint_url || preview.url' ), 'view-opens-playground-blueprint-for-generated-site' );
 $generic_preview_message = implode( ' ', array( 'no', 'preview', 'provider', 'is', 'configured' ) );
 $assert( ! str_contains( $view_js, $generic_preview_message ), 'view-does-not-reference-generic-preview-message' );
