@@ -104,6 +104,78 @@ $chrome_markup = implode(
 	)
 );
 
+$nav_group_markup = implode(
+	'',
+	array(
+		'<!-- wp:group {"tagName":"nav","className":"site-nav"} --><nav class="wp-block-group site-nav"><!-- wp:navigation-link {"label":"Product","url":"#product"} /--></nav><!-- /wp:group -->',
+		'<!-- wp:group {"className":"hero"} --><div class="wp-block-group hero"><!-- wp:heading {"level":1} --><h1 class="wp-block-heading">Every launch.</h1><!-- /wp:heading --></div><!-- /wp:group -->',
+	)
+);
+
+$nav_group_page = Static_Site_Importer_Source_Page::from_materialization_plan_page(
+	array(
+		'source_path'  => 'nav-lead.html',
+		'title'        => 'Nav Lead',
+		'slug'         => 'nav-lead',
+		'block_markup' => $nav_group_markup,
+	)
+);
+
+$assert( ! is_wp_error( $nav_group_page ), 'nav-group-page-created', is_wp_error( $nav_group_page ) ? $nav_group_page->get_error_message() : '' );
+
+if ( ! is_wp_error( $nav_group_page ) ) {
+	$nav_without_template_parts = Static_Site_Importer_Page_Materializer::page_artifacts( array( 'nav-lead.html' => $nav_group_page ), 'relay-atlas' );
+	$assert( str_contains( $nav_without_template_parts['contents']['nav-lead.html'], 'tagName":"nav' ), 'keeps-leading-nav-group-without-template-part' );
+
+	$nav_with_template_parts = Static_Site_Importer_Page_Materializer::page_artifacts(
+		array( 'nav-lead.html' => $nav_group_page ),
+		'relay-atlas',
+		array(),
+		array(),
+		array(),
+		array(
+			'strip_template_header' => true,
+			'strip_template_footer' => true,
+		)
+	);
+
+	$nav_content = $nav_with_template_parts['contents']['nav-lead.html'];
+	$assert( ! str_contains( $nav_content, 'tagName":"nav' ), 'strips-leading-nav-group-when-template-part-exists' );
+	$assert( str_contains( $nav_content, 'Every launch.' ), 'keeps-page-body-content-after-nav-strip' );
+}
+
+$non_leading_nav_markup = implode(
+	'',
+	array(
+		'<!-- wp:group {"className":"hero"} --><div class="wp-block-group hero"><!-- wp:group {"tagName":"nav","className":"local-nav"} --><nav class="wp-block-group local-nav"><!-- wp:navigation-link {"label":"Section","url":"#section"} /--></nav><!-- /wp:group --><!-- wp:heading {"level":1} --><h1 class="wp-block-heading">Local nav.</h1><!-- /wp:heading --></div><!-- /wp:group -->',
+	)
+);
+
+$non_leading_nav_page = Static_Site_Importer_Source_Page::from_materialization_plan_page(
+	array(
+		'source_path'  => 'nav-local.html',
+		'title'        => 'Nav Local',
+		'slug'         => 'nav-local',
+		'block_markup' => $non_leading_nav_markup,
+	)
+);
+
+$assert( ! is_wp_error( $non_leading_nav_page ), 'non-leading-nav-page-created', is_wp_error( $non_leading_nav_page ) ? $non_leading_nav_page->get_error_message() : '' );
+
+if ( ! is_wp_error( $non_leading_nav_page ) ) {
+	$non_leading_stripped = Static_Site_Importer_Page_Materializer::page_artifacts(
+		array( 'nav-local.html' => $non_leading_nav_page ),
+		'relay-atlas',
+		array(),
+		array(),
+		array(),
+		array(
+			'strip_template_header' => true,
+		)
+	);
+	$assert( str_contains( $non_leading_stripped['contents']['nav-local.html'], 'tagName":"nav' ), 'keeps-non-leading-nav-group-as-page-content' );
+}
+
 $page = Static_Site_Importer_Source_Page::from_materialization_plan_page(
 	array(
 		'source_path'  => 'index.html',
