@@ -203,8 +203,19 @@ class Static_Site_Importer_URL_Site_Collector {
 				if ( 'static_site_importer_invocation_deadline_exceeded' === $response->get_error_code() ) {
 					return $response;
 				}
-				if ( $preserve_failed_assets && ! $critical ) {
-					$external_assets[ $asset_url ] = $response->get_error_code();
+				$source_status = self::source_broken_asset_status( $response );
+				$source_broken = 0 !== $source_status;
+				if ( $preserve_failed_assets && ( ! $critical || $source_broken ) ) {
+					$external_assets[ $asset_url ] = $source_broken ? 'source_http_' . $source_status : $response->get_error_code();
+					if ( $source_broken ) {
+						$diagnostics[] = array(
+							'code'     => 'source_broken_asset_reference',
+							'severity' => 'warning',
+							'url'      => $asset_url,
+							'status'   => $source_status,
+							'critical' => $critical,
+						);
+					}
 					continue;
 				}
 				$failures[] = self::failure( $asset_url, $response, 'asset' );
@@ -400,6 +411,12 @@ class Static_Site_Importer_URL_Site_Collector {
 				),
 			),
 		);
+	}
+
+	private static function source_broken_asset_status( WP_Error $error ): int {
+		$data   = $error->get_error_data();
+		$status = is_array( $data ) ? (int) ( $data['status'] ?? 0 ) : 0;
+		return 'static_site_importer_url_http_status' === $error->get_error_code() && in_array( $status, array( 404, 410 ), true ) ? $status : 0;
 	}
 
 	/**

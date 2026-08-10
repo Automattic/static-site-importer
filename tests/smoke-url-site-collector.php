@@ -371,6 +371,36 @@ $incomplete_fetcher = static function ( string $url, array $args ) use ( $incomp
 $incomplete_result = Static_Site_Importer_URL_Site_Collector::collect( 'https://example.test/', array( 'max_pages' => 10, 'max_assets' => 20, 'request_delay_ms' => 0, 'require_complete_collection' => true ), $incomplete_fetcher );
 $assert( is_wp_error( $incomplete_result ) && 'missing_fixture' === ( $incomplete_result->get_error_data()['collection']['failures'][0]['code'] ?? null ), 'complete-collection-rejects-fetch-failures' );
 
+$source_broken_fetcher = static function ( string $url, array $args ) {
+	unset( $args );
+	if ( 'https://source-broken.test/' === $url ) {
+		return array( 'body' => '<link rel="stylesheet" href="/style.css"><main>Ready</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
+	}
+	if ( 'https://source-broken.test/style.css' === $url ) {
+		return array( 'body' => '@font-face{src:url(/missing.woff2)}', 'metadata' => array( 'content_type' => 'text/css', 'final_url' => $url ) );
+	}
+	return new WP_Error( 'static_site_importer_url_http_status', 'The URL returned HTTP status 404.', array( 'status' => 404 ) );
+};
+$source_broken_result = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://source-broken.test/',
+	array( '_route_set' => array( 'https://source-broken.test/' ), 'asset_failure_policy' => 'preserve_failed_external_assets', 'hydration_mode' => 'page_ready', 'max_pages' => 2, 'max_assets' => 10, 'request_delay_ms' => 0, 'require_complete_collection' => true ),
+	$source_broken_fetcher
+);
+$source_broken_collection = is_wp_error( $source_broken_result ) ? array() : $source_broken_result['source_metadata']['collection'];
+$source_broken_diagnostics = array_values( array_filter( $source_broken_collection['diagnostics'] ?? array(), static fn ( array $diagnostic ): bool => 'source_broken_asset_reference' === ( $diagnostic['code'] ?? '' ) ) );
+$source_broken_detail = wp_json_encode( is_wp_error( $source_broken_result ) ? array( 'code' => $source_broken_result->get_error_code(), 'data' => $source_broken_result->get_error_data() ) : $source_broken_collection );
+$assert( ! is_wp_error( $source_broken_result ) && 1 === ( $source_broken_collection['external_asset_retained']['count'] ?? 0 ), 'source-broken-critical-assets-are-retained', $source_broken_detail );
+$assert( 'source_http_404' === ( $source_broken_collection['external_asset_retained']['samples'][0]['reason'] ?? '' ) && true === ( $source_broken_diagnostics[0]['critical'] ?? false ), 'source-broken-critical-assets-record-provenance', $source_broken_detail );
+
+$critical_timeout_result = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://source-broken.test/',
+	array( '_route_set' => array( 'https://source-broken.test/' ), 'asset_failure_policy' => 'preserve_failed_external_assets', 'hydration_mode' => 'page_ready', 'max_pages' => 2, 'max_assets' => 10, 'request_delay_ms' => 0, 'require_complete_collection' => true ),
+	static function ( string $url, array $args ) use ( $source_broken_fetcher ) {
+		return 'https://source-broken.test/missing.woff2' === $url ? new WP_Error( 'asset_timeout', 'Timed out.' ) : $source_broken_fetcher( $url, $args );
+	}
+);
+$assert( is_wp_error( $critical_timeout_result ) && 'asset_timeout' === ( $critical_timeout_result->get_error_data()['collection']['failures'][0]['code'] ?? '' ), 'critical-asset-timeouts-remain-terminal' );
+
 $redirect_responses = array(
 	'https://redirect.test/sitemap.xml' => array( 'content_type' => 'application/xml', 'body' => '<urlset><url><loc>https://redirect.test/</loc></url><url><loc>https://redirect.test/go</loc></url></urlset>' ),
 	'https://redirect.test/' => array( 'content_type' => 'text/html', 'body' => '<base href=/static/><link rel=stylesheet href=style.css><main><h1>Home</h1><a href=/go>Docs</a><img src=/hero.png></main>' ),
