@@ -7265,6 +7265,63 @@ test('surface lineage persists reviewer-facing visual refs and explicit absent-a
   assert.ok(persisted.fixtures[0].artifact_refs.some((ref) => ref.kind === 'surface-lineage' && ref.artifact_id.startsWith('surface_lineage_simple-site-') && ref.artifact_id.endsWith('_front-page-d365228668b8')));
 });
 
+test('surface lineage v2 joins explicit cross-stage identities and preserves typed lane distinctions', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'surface-lineage-contract-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'passed',
+      surface_records: [
+        { surface_id: 'front-page', role: 'editor', post_id: '42', post_type: 'page', post_slug: 'home', status: 'completed' },
+        { surface_id: 'disabled-preview', role: 'editor', post_id: '42', status: 'disabled' },
+      ],
+      matrix_evidence: {
+        materialization_receipt: { status: 'completed', plan_hash: 'plan-abc' },
+        materialization_sidecar: {
+          status: 'verified', matrix_run_id: 'matrix-run-7', attempt_id: 'attempt-2', source_artifact_sha256: 'a'.repeat(64),
+          documents: [{ post_id: '42', post_type: 'page', post_slug: 'home', serialized_content_sha256: 'b'.repeat(64) }],
+        },
+      },
+      visual_parity_comparisons: [
+        { surface_id: 'front-page', visual_parity_artifacts: { artifacts: { diff_screenshot: { kind: 'diff', ref: { path: 'diff.png' } } } } },
+        { surface_id: 'missing-preview' },
+      ],
+    }],
+  });
+  const bySurface = new Map(result.fixtures[0].surface_lineage.map((row) => [row.surface.id, row]));
+  const frontPage = bySurface.get('front-page');
+  assert.equal(frontPage.schema, 'static-site-importer/fixture-surface-lineage/v2');
+  assert.deepEqual(frontPage.lineage, { matrix_run_id: 'matrix-run-7', attempt_id: 'attempt-2', fixture_id: 'simple-site', surface_id: 'front-page', source_artifact_sha256: 'a'.repeat(64), plan_hash: 'plan-abc' });
+  assert.deepEqual(frontPage.materialized_document, { status: 'available', post_id: '42', post_type: 'page', post_slug: 'home', serialized_content_sha256: 'b'.repeat(64) });
+  assert.equal(frontPage.lanes.transform.status, 'available');
+  assert.equal(frontPage.lanes.materialization.status, 'available');
+  assert.equal(frontPage.lanes.editor.status, 'available');
+  assert.equal(frontPage.lanes.visual.status, 'available');
+  assert.equal(bySurface.get('disabled-preview').lanes.editor.status, 'disabled');
+  assert.equal(bySurface.get('missing-preview').lanes.visual.status, 'missing');
+
+  const unavailable = normalizeFixtureMatrixResult({ matrix, results: [{ fixture_id: 'simple-site', status: 'failed', matrix_evidence: { materialization_receipt: { status: 'failed' }, materialization_sidecar: { status: 'missing' } } }] }).fixtures[0].surface_lineage[0];
+  assert.equal(unavailable.lanes.transform.status, 'unavailable');
+  assert.equal(unavailable.lanes.materialization.status, 'missing');
+  assert.equal(unavailable.lanes.editor.status, 'unavailable');
+  assert.equal(unavailable.lanes.visual.status, 'unavailable');
+  assert.equal(unavailable.materialized_document.status, 'missing');
+
+  const failed = normalizeFixtureMatrixResult({ matrix, results: [{ fixture_id: 'simple-site', status: 'failed', matrix_evidence: { materialization_receipt: { status: 'failed' }, materialization_sidecar: { status: 'verified' } } }] }).fixtures[0].surface_lineage[0];
+  assert.equal(failed.lanes.materialization.status, 'failed');
+  assert.equal(failed.materialized_document.status, 'failed');
+});
+
+test('surface lineage v2 retains deterministic visual truncation counters', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'surface-lineage-truncation-test' });
+  const refs = Array.from({ length: 30 }, (_, index) => ({ artifact_id: `visual-${String(29 - index).padStart(2, '0')}`, kind: 'visual', path: `visual/${29 - index}.png` }));
+  const result = normalizeFixtureMatrixResult({ matrix, results: [{ fixture_id: 'simple-site', status: 'passed', surface_records: [{ surface_id: 'front-page', role: 'visual', artifact_refs: refs }] }] });
+  const visualData = result.fixtures[0].surface_lineage[0].visual_data;
+  assert.deepEqual(visualData.truncation, { retained_count: 25, truncated_count: 5 });
+  assert.deepEqual(visualData.refs.map((ref) => ref.artifact_id), [...visualData.refs].map((ref) => ref.artifact_id).sort());
+});
+
 test('surface lineage artifact refs are fixture-scoped for globally resolvable export', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-surface-lineage-refs-'));
   const baseMatrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'surface-lineage-ref-test' });

@@ -517,8 +517,12 @@ function static_site_importer_cli_write_materialization_sidecar( array $result, 
 	$completed                 = isset( $receipt['completed'] ) && is_array( $receipt['completed'] ) ? $receipt['completed'] : array();
 	$is_completed              = 'static-site-importer/materialization-receipt/v1' === ( $receipt['schema'] ?? '' ) && 'completed' === ( $receipt['status'] ?? '' ) && isset( $receipt['plan_hash'] ) && is_string( $receipt['plan_hash'] ) && preg_match( '/^(?:sha256:)?[a-f0-9]{64}$/', $receipt['plan_hash'] ) && isset( $completed['pages'], $completed['files'] ) && is_array( $completed['pages'] ) && is_array( $completed['files'] );
 	$summary                   = $is_completed ? static_site_importer_cli_materialization_summary( $receipt, $result ) : static_site_importer_cli_failed_materialization_summary( $result );
+	$documents                 = $is_completed ? static_site_importer_cli_materialized_documents( $completed['pages'] ) : array(
+		'rows'      => array(),
+		'truncated' => false,
+	);
 	$sidecar                   = array(
-		'schema'             => 'static-site-importer/materialization-runtime-sidecar/v1',
+		'schema'             => 'static-site-importer/materialization-runtime-sidecar/v2',
 		'fixture_id'         => $fixture_id,
 		'run_id'             => $run_id,
 		'step_id'            => $step_id,
@@ -543,6 +547,8 @@ function static_site_importer_cli_write_materialization_sidecar( array $result, 
 			'show_on_front' => static_site_importer_cli_sidecar_token_value( get_option( 'show_on_front' ), 20 ),
 			'page_on_front' => min( 10000000, max( 0, (int) get_option( 'page_on_front' ) ) ),
 		),
+		'documents'           => $documents['rows'],
+		'documents_truncated' => $documents['truncated'],
 	);
 	$sidecar['content_sha256'] = hash( 'sha256', (string) wp_json_encode( $sidecar, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
 	$json                      = wp_json_encode( $sidecar, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
@@ -573,6 +579,34 @@ function static_site_importer_cli_write_materialization_sidecar( array $result, 
 		}
 	}
 	return true;
+}
+
+/**
+ * Project materialized posts to bounded content identities for matrix joins.
+ *
+ * @param array<string,mixed> $pages Materialization receipt source-path to post-id map.
+ * @return array{rows:array<int,array<string,mixed>>,truncated:bool}
+ */
+function static_site_importer_cli_materialized_documents( array $pages ): array {
+	$rows      = array();
+	$max_rows  = 25;
+	foreach ( $pages as $post_id ) {
+		$post = get_post( (int) $post_id );
+		if ( ! $post instanceof WP_Post ) {
+			continue;
+		}
+		if ( count( $rows ) >= $max_rows ) {
+			return array( 'rows' => $rows, 'truncated' => true );
+		}
+		$rows[] = array(
+			'post_id'                   => (string) $post->ID,
+			'post_type'                 => (string) $post->post_type,
+			'post_slug'                 => (string) $post->post_name,
+			'serialized_content_sha256' => hash( 'sha256', (string) $post->post_content ),
+		);
+	}
+
+	return array( 'rows' => $rows, 'truncated' => false );
 }
 
 /** @return array<string,mixed> */
