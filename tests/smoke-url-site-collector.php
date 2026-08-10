@@ -401,6 +401,22 @@ $critical_timeout_result = Static_Site_Importer_URL_Site_Collector::collect(
 );
 $assert( is_wp_error( $critical_timeout_result ) && 'asset_timeout' === ( $critical_timeout_result->get_error_data()['collection']['failures'][0]['code'] ?? '' ), 'critical-asset-timeouts-remain-terminal' );
 
+$uncollected_page_result = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://uncollected.test/',
+	array( '_route_set' => array( 'https://uncollected.test/', 'https://uncollected.test/about.html' ), 'max_pages' => 3, 'max_assets' => 0, 'request_delay_ms' => 0 ),
+	static function ( string $url, array $args ) {
+		unset( $args );
+		$body = 'https://uncollected.test/' === $url ? '<a href="about.html">About</a><a href="missing.html">Missing</a>' : '<main>About</main>';
+		return array( 'body' => $body, 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
+	}
+);
+$uncollected_files = is_wp_error( $uncollected_page_result ) ? array() : array_column( $uncollected_page_result['artifact']['files'], null, 'path' );
+$uncollected_html = (string) ( $uncollected_files['website/index.html']['content'] ?? '' );
+$uncollected_metadata = is_wp_error( $uncollected_page_result ) ? array() : $uncollected_page_result['source_metadata']['collection']['external_page_retained'];
+$assert( str_contains( $uncollected_html, 'href="about.html"' ), 'collected-page-links-remain-route-rewritable' );
+$assert( str_contains( $uncollected_html, 'href="https://uncollected.test/missing.html"' ), 'uncollected-page-links-remain-external' );
+$assert( 1 === ( $uncollected_metadata['count'] ?? 0 ) && 'uncollected_page' === ( $uncollected_metadata['samples'][0]['reason'] ?? '' ), 'uncollected-page-links-record-provenance' );
+
 $redirect_responses = array(
 	'https://redirect.test/sitemap.xml' => array( 'content_type' => 'application/xml', 'body' => '<urlset><url><loc>https://redirect.test/</loc></url><url><loc>https://redirect.test/go</loc></url></urlset>' ),
 	'https://redirect.test/' => array( 'content_type' => 'text/html', 'body' => '<base href=/static/><link rel=stylesheet href=style.css><main><h1>Home</h1><a href=/go>Docs</a><img src=/hero.png></main>' ),

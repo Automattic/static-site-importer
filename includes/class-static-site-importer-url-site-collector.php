@@ -66,6 +66,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		$total_bytes            = 0;
 		$truncated              = array();
 		$external_assets        = array();
+		$external_pages         = array();
 		$asset_failure_policy   = $args['asset_failure_policy'] ?? '';
 		$preserve_failed_assets = in_array( $asset_failure_policy, array( 'preserve_external', 'preserve_failed_external_assets' ), true );
 		$preserve_asset_limits  = 'preserve_external' === $asset_failure_policy;
@@ -293,6 +294,12 @@ class Static_Site_Importer_URL_Site_Collector {
 		ksort( $resources, SORT_STRING );
 		ksort( $aliases, SORT_STRING );
 		ksort( $external_assets, SORT_STRING );
+		$known_pages = array_fill_keys( isset( $args['_known_route_set'] ) && is_array( $args['_known_route_set'] ) ? $args['_known_route_set'] : array(), true );
+		foreach ( $resources as $resource_url => $resource ) {
+			if ( 'html' === $resource['kind'] ) {
+				$known_pages[ $resource_url ] = true;
+			}
+		}
 		usort( $script_exclusions, static fn ( array $left, array $right ): int => strcmp( implode( '|', $left ), implode( '|', $right ) ) );
 		$paths           = self::artifact_paths( $resources, $site_url );
 		$route_paths     = self::route_paths( $resources );
@@ -308,7 +315,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			$path = $paths[ $resource_url ];
 			$body = (string) $resource['body'];
 			if ( 'html' === $resource['kind'] ) {
-				$body = self::rewrite_html( $body, self::html_base_url( $body, $resource_url ), $path, $reference_paths, $aliases, $site_url, $external_assets );
+				$body = self::rewrite_html( $body, self::html_base_url( $body, $resource_url ), $path, $reference_paths, $aliases, $site_url, $external_assets, $external_pages, $known_pages );
 			} elseif ( 'text/css' === $resource['content_type'] || str_ends_with( strtolower( $path ), '.css' ) ) {
 				$body = self::rewrite_css( $body, $resource_url, $path, $reference_paths, $external_assets );
 			}
@@ -397,6 +404,20 @@ class Static_Site_Importer_URL_Site_Collector {
 								),
 								array_keys( $external_assets ),
 								$external_assets
+							),
+							0,
+							50
+						),
+					),
+					'external_page_retained'  => array(
+						'count'   => count( $external_pages ),
+						'samples' => array_slice(
+							array_map(
+								static fn ( string $url ): array => array(
+									'url'    => $url,
+									'reason' => 'uncollected_page',
+								),
+								array_keys( $external_pages )
 							),
 							0,
 							50
@@ -778,10 +799,10 @@ class Static_Site_Importer_URL_Site_Collector {
 	}
 
 	/** @param array<string,string> $paths */
-	private static function rewrite_html( string $html, string $base_url, string $source_path, array $paths, array $aliases, string $site_url, array $external_assets = array() ): string {
+	private static function rewrite_html( string $html, string $base_url, string $source_path, array $paths, array $aliases, string $site_url, array $external_assets = array(), array &$external_pages = array(), array $known_pages = array() ): string {
 		$html = preg_replace_callback(
 			'#\b(src|href|poster)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))#is',
-			static function ( array $matches ) use ( $base_url, $source_path, $paths, $aliases, $site_url, $external_assets ): string {
+			static function ( array $matches ) use ( $base_url, $source_path, $paths, $aliases, $site_url, $external_assets, &$external_pages, $known_pages ): string {
 				$value = self::matched_attribute_value( $matches );
 				$url   = self::resolve_url( $value, $base_url );
 				if ( isset( $paths[ $url ] ) && preg_match( '/\.html?$/i', $paths[ $url ] ) ) {
@@ -796,7 +817,14 @@ class Static_Site_Importer_URL_Site_Collector {
 				if ( isset( $external_assets[ $url ] ) ) {
 					return $matches[1] . '="' . self::external_asset_url( $url, $value ) . '"';
 				}
-				return '' !== $url && self::same_origin( $url, $site_url ) && self::is_page_url( $url ) ? $matches[1] . '="' . self::route_url( $url, $value ) . '"' : $matches[0];
+				if ( '' !== $url && self::same_origin( $url, $site_url ) && self::is_page_url( $url ) ) {
+					if ( isset( $known_pages[ $url ] ) ) {
+						return $matches[1] . '="' . self::route_url( $url, $value ) . '"';
+					}
+					$external_pages[ $url ] = true;
+					return $matches[1] . '="' . htmlspecialchars( $url, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) . '"';
+				}
+				return $matches[0];
 			},
 			$html
 		);
