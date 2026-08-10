@@ -57,8 +57,12 @@ $assert( 1 === count( $found ), 'flag-app-shell-plus-content-name', print_r( $pa
 // An app-shell id alone is not enough to claim JS population.
 $assert( array() === $detect( '<div id="__next"></div>' ), 'ignore-app-shell-id-alone' );
 
-// A content-naming id/class without a data-* hook is not enough either.
-$assert( array() === $detect( '<div id="featuredGrid" class="wp-block-group grid"></div>' ), 'ignore-content-name-without-data-hook' );
+// The exact ticket reproduction combines a content name and collection shape.
+$found = $detect( '<div id="featuredGrid" class="wp-block-group grid"></div>' );
+$assert( 1 === count( $found ), 'flag-ticket-featured-grid', print_r( $page_selector_of( $found ), true ) );
+
+// A single content name without a data-* hook is not enough.
+$assert( array() === $detect( '<div id="products" class="wp-block-group"></div>' ), 'ignore-content-name-without-data-hook' );
 
 // Legitimate empty spacer and layout divs must never be reported.
 $assert( array() === $detect( '<div class="spacer"></div>' ), 'ignore-spacer' );

@@ -1151,9 +1151,10 @@ class Static_Site_Importer_Page_Materializer {
 	 * Find empty container elements that appear to be client-side rendered.
 	 *
 	 * An element is only flagged when it is empty AND shows a strong signal that
-	 * JavaScript is expected to populate it: a non-internal data-* attribute, or
-	 * an app-shell id paired with a content-naming id/class. Deliberately
-	 * conservative so bare layout grids and spacer divs are never reported.
+	 * JavaScript is expected to populate it: a non-internal data-* attribute, an
+	 * app-shell id paired with a content-naming id/class, or a content collection
+	 * id such as featuredGrid. Deliberately conservative so bare layout grids and
+	 * spacer divs are never reported.
 	 *
 	 * @param string $html Raw HTML body markup.
 	 * @return array<int,array<string,mixed>> Detected containers.
@@ -1185,8 +1186,9 @@ class Static_Site_Importer_Page_Materializer {
 			$data      = self::non_internal_data_attributes( $node );
 			$app_shell = (bool) preg_match( '#\b(?:root|app|__next|gatsby|mount)\b#', $id );
 			$content   = (bool) preg_match( '#(?:grid|products?|product-list|listing|featured|catalog|items?|shelf|collection)#', $id . ' ' . $classes );
+			$mount_id  = (bool) preg_match( '#^(?:featured|products?|catalog|items?|collection)[-_]?(?:grid|list|listing|shelf)$#', $id );
 
-			if ( empty( $data ) && ! ( $app_shell && $content ) ) {
+			if ( empty( $data ) && ! ( $app_shell && $content ) && ! $mount_id ) {
 				continue;
 			}
 
