@@ -588,6 +588,7 @@ function static_site_importer_rest_manage_permission() {
  */
 function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 	$params = $request->get_json_params();
+	/** @var array<string,mixed>|null $params WordPress returns null when no JSON body was parsed. */
 	if ( ! is_array( $params ) ) {
 		$params = $request->get_params();
 	}
@@ -833,7 +834,7 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
  *
  * @param string              $ability_name      Ability name.
  * @param array<string,mixed> $input             Ability input.
- * @param string              $fallback_callback Local callback for non-Abilities test/runtime contexts.
+ * @param callable-string     $fallback_callback Local callback for non-Abilities test/runtime contexts.
  * @param bool                $prefer_fallback   Whether to call the local callback before wp_get_ability().
  * @return array<string,mixed>|WP_Error
  */
