@@ -754,7 +754,7 @@ class Static_Site_Importer_Page_Materializer {
 			return true;
 		}
 
-		if ( 'header' === $part && 'core/navigation' === $name ) {
+		if ( 'header' === $part && ( 'core/navigation' === $name || 'nav' === $tag ) ) {
 			return true;
 		}
 
