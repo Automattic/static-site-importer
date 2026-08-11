@@ -182,6 +182,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				if ( empty( $ready_runtime ) ) {
 					$ready_args                                = $args;
 					$ready_args['_route_set']                  = array_values( array_unique( $routes ) );
+					$ready_args['_known_route_set']            = $manifest['routes'];
 					$ready_args['max_pages']                   = min( self::MAX_BATCH_PAGES + 1, count( $ready_args['_route_set'] ) + 1 );
 					$ready_args['require_complete_collection'] = true;
 					$ready_args['asset_failure_policy']        = count( $routes ) > 1 ? 'preserve_failed_external_assets' : 'preserve_external';
@@ -251,6 +252,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( empty( $runtime ) ) {
 				$collect_args                                = $args;
 				$collect_args['_route_set']                  = array_values( array_unique( $routes ) );
+				$collect_args['_known_route_set']            = $manifest['routes'];
 				$collect_args['max_pages']                   = min( self::MAX_BATCH_PAGES + 1, count( $collect_args['_route_set'] ) + 1 );
 				$collect_args['require_complete_collection'] = true;
 				$collect_args['asset_failure_policy']        = count( $routes ) > 1 ? 'preserve_failed_external_assets' : 'preserve_external';
