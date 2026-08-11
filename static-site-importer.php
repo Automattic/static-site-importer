@@ -603,7 +603,7 @@ function static_site_importer_cli_materialized_documents( array $pages ): array 
 			continue;
 		}
 		$permalink = get_permalink( $post );
-		$route     = is_string( $permalink ) ? (string) wp_parse_url( $permalink, PHP_URL_PATH ) : '';
+		$route     = (string) wp_parse_url( (string) $permalink, PHP_URL_PATH );
 		$rows[]    = array(
 			'source_path'               => (string) $source_path,
 			'route'                     => $route,
