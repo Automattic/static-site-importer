@@ -289,46 +289,50 @@ final class Static_Site_Importer_URL_Batch_Import {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $write, $cache );
 				}
 			}
-			$shared_started = microtime( true );
-			$shared         = $shared_plan->reconcile( $runtime['artifact'] );
-			if ( is_wp_error( $shared['plan'] ) ) {
-				return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $shared['plan'], $cache );
-			}
-			$runtime['shared_plan_digest'] = $shared['digest'];
-			if ( ! empty( $shared['changed'] ) ) {
-				self::invalidate_prepared_batches( $workspace, $cursor, $index );
-				$workspace->delete( 'staged-compiler-shared.json' );
-				$manifest['diagnostics'][] = array(
-					'code'               => 'shared_resource_plan_changed',
-					'shared_plan_digest' => $shared['digest'],
+			$staged = self::retained_staged_plans( $workspace, $runtime );
+			if ( null === $staged ) {
+				$shared_started = microtime( true );
+				$shared         = $shared_plan->reconcile( $runtime['artifact'] );
+				if ( is_wp_error( $shared['plan'] ) ) {
+					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $shared['plan'], $cache );
+				}
+				$runtime['shared_plan_digest'] = $shared['digest'];
+				if ( ! empty( $shared['changed'] ) ) {
+					self::invalidate_prepared_batches( $workspace, $cursor, $index );
+					$workspace->delete( 'staged-compiler-shared.json' );
+					$manifest['diagnostics'][] = array(
+						'code'               => 'shared_resource_plan_changed',
+						'shared_plan_digest' => $shared['digest'],
+					);
+				}
+				$staged = self::prepare_staged_plans( $workspace, $runtime['artifact'], $shared['digest'] );
+				if ( is_wp_error( $staged ) ) {
+					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $staged, $cache );
+				}
+				$runtime['shared_plan_digest'] = $shared['digest'];
+				$runtime['staged_page_plans']  = $staged['page_plans'];
+				$prepared_write                = $workspace->publish_json( $cache_name, $runtime );
+				if ( is_wp_error( $prepared_write ) ) {
+					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $prepared_write, $cache );
+				}
+				$manifest['shared_resource_plan']                          = array(
+					'schema'   => 'static-site-importer/shared-resource-plan/v1',
+					'digest'   => $shared['digest'],
+					'verified' => true,
 				);
+				$manifest['stage_timing']['shared_plan_seconds']           = (float) ( $manifest['stage_timing']['shared_plan_seconds'] ?? 0 ) + microtime( true ) - $shared_started;
+				$manifest['stage_counters']['shared_plan_reconciliations'] = (int) ( $manifest['stage_counters']['shared_plan_reconciliations'] ?? 0 ) + 1;
+				$manifest['stage_counters']['shared_plan_invalidations']   = (int) ( $manifest['stage_counters']['shared_plan_invalidations'] ?? 0 ) + ( ! empty( $shared['changed'] ) ? 1 : 0 );
+				$manifest['stage_counters']['compiler_shared_prepares']    = (int) ( $manifest['stage_counters']['compiler_shared_prepares'] ?? 0 ) + ( $staged['shared_prepared'] ? 1 : 0 );
+				$manifest['stage_counters']['compiler_page_prepares']      = (int) ( $manifest['stage_counters']['compiler_page_prepares'] ?? 0 ) + count( $staged['page_plans'] );
+				$manifest['external_asset_retained']                       = self::merge_external_assets( $manifest['external_asset_retained'] ?? array(), $runtime['source_metadata']['collection']['external_asset_retained'] ?? array(), $index );
+				self::checkpoint_cache( $manifest, $cache );
+				$manifest['batches'] = self::legacy_batches( $cursor );
+				if ( is_wp_error( $run_manifest->save( $manifest ) ) ) {
+					return $run_manifest->save( $manifest );
+				}
 			}
-			$staged = self::prepare_staged_plans( $workspace, $runtime['artifact'], $shared['digest'] );
-			if ( is_wp_error( $staged ) ) {
-				return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $staged, $cache );
-			}
-			$runtime['shared_plan_digest'] = $shared['digest'];
-			$runtime['staged_page_plans']  = $staged['page_plans'];
-			$prepared_write                = $workspace->publish_json( $cache_name, $runtime );
-			if ( is_wp_error( $prepared_write ) ) {
-				return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $prepared_write, $cache );
-			}
-			$manifest['shared_resource_plan']                          = array(
-				'schema'   => 'static-site-importer/shared-resource-plan/v1',
-				'digest'   => $shared['digest'],
-				'verified' => true,
-			);
-			$manifest['stage_timing']['shared_plan_seconds']           = (float) ( $manifest['stage_timing']['shared_plan_seconds'] ?? 0 ) + microtime( true ) - $shared_started;
-			$manifest['stage_counters']['shared_plan_reconciliations'] = (int) ( $manifest['stage_counters']['shared_plan_reconciliations'] ?? 0 ) + 1;
-			$manifest['stage_counters']['shared_plan_invalidations']   = (int) ( $manifest['stage_counters']['shared_plan_invalidations'] ?? 0 ) + ( ! empty( $shared['changed'] ) ? 1 : 0 );
-			$manifest['stage_counters']['compiler_shared_prepares']    = (int) ( $manifest['stage_counters']['compiler_shared_prepares'] ?? 0 ) + ( $staged['shared_prepared'] ? 1 : 0 );
-			$manifest['stage_counters']['compiler_page_prepares']      = (int) ( $manifest['stage_counters']['compiler_page_prepares'] ?? 0 ) + count( $staged['page_plans'] );
-			$manifest['external_asset_retained']                       = self::merge_external_assets( $manifest['external_asset_retained'] ?? array(), $runtime['source_metadata']['collection']['external_asset_retained'] ?? array(), $index );
-			self::checkpoint_cache( $manifest, $cache );
-			$manifest['batches'] = self::legacy_batches( $cursor );
-			if ( is_wp_error( $run_manifest->save( $manifest ) ) ) {
-				return $run_manifest->save( $manifest );
-			}if ( null !== $deadline && self::deadline_reached( $deadline, $clock ) ) {
+			if ( null !== $deadline && self::deadline_reached( $deadline, $clock ) ) {
 				self::checkpoint_cache( $manifest, $cache );
 				$write = $run_manifest->save( $manifest );
 				if ( is_wp_error( $write ) ) {
@@ -439,6 +443,23 @@ final class Static_Site_Importer_URL_Batch_Import {
 		} catch ( Throwable $error ) {
 			return new WP_Error( 'static_site_importer_staged_compile_failed', $error->getMessage() );
 		}
+	}
+	private static function retained_staged_plans( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $runtime ): ?array {
+		$digest     = $runtime['shared_plan_digest'] ?? null;
+		$page_plans = $runtime['staged_page_plans'] ?? null;
+		if ( ! is_string( $digest ) || '' === $digest || ! is_array( $page_plans ) ) {
+			return null;
+		}
+		$shared_raw   = $workspace->read_raw( 'staged-compiler-shared.json' );
+		$shared_state = is_string( $shared_raw ) ? json_decode( $shared_raw, true ) : null;
+		if ( ! is_array( $shared_state ) || ( $shared_state['resource_digest'] ?? null ) !== $digest || ! is_array( $shared_state['plan'] ?? null ) ) {
+			return null;
+		}
+		return array(
+			'shared_plan'     => $shared_state['plan'],
+			'page_plans'      => $page_plans,
+			'shared_prepared' => false,
+		);
 	}
 	private static function compose_staged_plans( array $staged ): array|WP_Error {
 		$compiler = self::staged_compiler();
@@ -697,7 +718,19 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( '' !== $route && isset( $explicit[ $route ] ) ) {
 				return false;
 			}$explicit[ $route ] = true;
-		}$expected = array_map( array( self::class, 'page_key' ), $routes );
+		}$page_aliases = array();
+		foreach ( is_array( $runtime['source_metadata']['collection']['page_aliases'] ?? null ) ? $runtime['source_metadata']['collection']['page_aliases'] : array() as $requested => $final ) {
+			if ( is_string( $requested ) && is_string( $final ) ) {
+				$page_aliases[ self::page_key( $requested ) ] = self::page_key( $final );
+			}
+		}
+		$expected = array_map(
+			static function ( string $route ) use ( $page_aliases ): string {
+				$key = self::page_key( $route );
+				return $page_aliases[ $key ] ?? $key;
+			},
+			$routes
+		);
 		sort( $actual );
 		sort( $expected );
 		return array_values( array_unique( $expected ) ) === $actual;

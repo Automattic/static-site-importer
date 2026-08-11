@@ -300,6 +300,10 @@ class Static_Site_Importer_URL_Site_Collector {
 				$known_pages[ $resource_url ] = true;
 			}
 		}
+		$page_aliases = array_filter(
+			$aliases,
+			static fn ( string $final_url ): bool => 'html' === ( $resources[ $final_url ]['kind'] ?? '' )
+		);
 		usort( $script_exclusions, static fn ( array $left, array $right ): int => strcmp( implode( '|', $left ), implode( '|', $right ) ) );
 		$paths           = self::artifact_paths( $resources, $site_url );
 		$route_paths     = self::route_paths( $resources );
@@ -393,6 +397,7 @@ class Static_Site_Importer_URL_Site_Collector {
 					),
 					'truncated'               => array_keys( $truncated ),
 					'sitemap_urls'            => count( $sitemap_urls ),
+					'page_aliases'            => $page_aliases,
 					'fetch_scheduling'        => self::scheduling_limits( $args ),
 					'external_asset_retained' => array(
 						'count'   => count( $external_assets ),
