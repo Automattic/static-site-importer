@@ -762,7 +762,7 @@ export function materializeMaterializationSidecars({ fixtures = [], outputDirect
     if (filePath.endsWith('.json') && fs.statSync(filePath).size <= 32 * 1024) {
       try {
         const sidecar = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        if (sidecar?.schema === 'static-site-importer/materialization-runtime-sidecar/v1' && sidecar.attempt_id === attemptId && typeof sidecar.fixture_id === 'string') {
+        if (['static-site-importer/materialization-runtime-sidecar/v1', 'static-site-importer/materialization-runtime-sidecar/v2'].includes(sidecar?.schema) && sidecar.attempt_id === attemptId && typeof sidecar.fixture_id === 'string') {
           exported.set(sidecar.fixture_id, filePath);
         }
       } catch {

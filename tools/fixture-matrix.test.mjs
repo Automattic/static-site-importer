@@ -599,6 +599,7 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   assert.match(recipe.workflow.steps[2].args[0], /--format=fixture-matrix/);
   assert.match(recipe.workflow.steps[2].args[0], /--receipt-sidecar=\/wordpress\/wp-content\/uploads\/static-site-importer-fixture-matrix\/simple-site\/materialization-receipt--[A-Za-z0-9-]+\.json/);
   assert.equal(recipe.artifacts.typed[0].path, recipe.workflow.steps[2].args[0].match(/--receipt-sidecar=([^ ]+)/)?.[1]);
+  assert.equal(recipe.artifacts.typed[0].payloadSchema, 'static-site-importer/materialization-runtime-sidecar/v2');
   assert.match(recipe.workflow.steps[2].args[0], /--allow-failure/);
   assert.deepEqual(recipe.inputs.stagedFiles[0], {
     source: '/tmp/artifacts/simple-site/artifact.json',
@@ -1496,14 +1497,49 @@ test('typed WP Codebox sidecar export materializes into the host intake path', (
   const artifact = JSON.stringify({ fixture: 'simple-site' });
   writeFileSync(path.join(fixtureDirectory, 'artifact.json'), artifact);
   writeFileSync(path.join(guestDirectory, 'artifact.json'), artifact);
-  writeMaterializationSidecar({ directory: guestDirectory, fixtureId: 'simple-site', runId: matrix.id, attemptId: 'batch-001', receipt: boundedSidecarReceipt(), fileName: 'exported-sidecar.json' });
+  const documents = [{ post_id: '42', post_type: 'page', post_slug: 'home', serialized_content_sha256: 'c'.repeat(64) }];
+  writeMaterializationSidecar({ directory: guestDirectory, fixtureId: 'simple-site', runId: matrix.id, attemptId: 'batch-001', receipt: boundedSidecarReceipt(), fileName: 'exported-sidecar.json', schema: 'static-site-importer/materialization-runtime-sidecar/v2', documents, documentsTruncated: false, documentsTotal: 1 });
 
   const exports = materializeMaterializationSidecars({ fixtures: matrix.fixtures, outputDirectory, codeboxArtifactsDirectory, attemptId: 'batch-001' });
   const expected = path.join(fixtureDirectory, 'materialization-receipt--batch-001.json');
   assert.deepEqual(exports.map((entry) => entry.fixture_id), ['simple-site']);
   assert.equal(existsSync(expected), true);
-  const result = collectFixtureMatrixRunResults({ matrix, outputDirectory, sidecarAttemptId: 'batch-001' });
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    sidecarAttemptId: 'batch-001',
+    codeboxOutput: { fixture_id: 'simple-site', surface_id: 'front-page', command: 'wordpress.editor-open', status: 'completed', post_id: '42', post_type: 'page', post_slug: 'home' },
+  });
   assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, 'verified');
+  assert.deepEqual(result.fixtures[0].matrix_evidence.materialization_sidecar.documents, documents);
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.documents_total, 1);
+  assert.deepEqual(result.fixtures[0].surface_lineage.find((surface) => surface.surface.id === 'front-page').materialized_document, { status: 'available', post_id: '42', post_type: 'page', post_slug: 'home', serialized_content_sha256: 'c'.repeat(64) });
+});
+
+test('v1 sidecars remain compatible while truncated v2 documents make absent identities indeterminate', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-v1-v2-lineage-'));
+  const base = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'sidecar-v1-v2-lineage' });
+  const matrix = { ...base, fixtures: [{ ...base.fixtures[0] }, { ...base.fixtures[0], id: 'truncated-site' }, { ...base.fixtures[0], id: 'missing-site' }] };
+  for (const fixture of matrix.fixtures) {
+    const directory = path.join(outputDirectory, fixture.id);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: fixture.id }));
+  }
+  writeMaterializationSidecar({ directory: path.join(outputDirectory, 'simple-site'), fixtureId: 'simple-site', runId: matrix.id, receipt: boundedSidecarReceipt() });
+  writeMaterializationSidecar({ directory: path.join(outputDirectory, 'truncated-site'), fixtureId: 'truncated-site', runId: matrix.id, receipt: boundedSidecarReceipt(), schema: 'static-site-importer/materialization-runtime-sidecar/v2', documents: [{ post_id: '1', post_type: 'page', post_slug: 'first', serialized_content_sha256: 'd'.repeat(64) }], documentsTruncated: true, documentsTotal: 26 });
+  writeMaterializationSidecar({ directory: path.join(outputDirectory, 'missing-site'), fixtureId: 'missing-site', runId: matrix.id, receipt: boundedSidecarReceipt(), schema: 'static-site-importer/materialization-runtime-sidecar/v2', documents: [], documentsTruncated: false, documentsTotal: 0 });
+
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: { executions: matrix.fixtures.map((fixture) => ({ fixture_id: fixture.id, surface_id: 'front-page', command: 'wordpress.editor-open', status: fixture.id === 'missing-site' ? 'disabled' : 'completed', post_id: fixture.id === 'simple-site' ? '1' : '42' })) },
+  });
+  const byFixture = new Map(result.fixtures.map((fixture) => [fixture.fixture_id, fixture]));
+  assert.equal(byFixture.get('simple-site').matrix_evidence.materialization_sidecar.schema, 'static-site-importer/materialization-runtime-sidecar/v1');
+  assert.equal(byFixture.get('truncated-site').matrix_evidence.materialization_sidecar.documents_truncated, true);
+  assert.deepEqual(byFixture.get('truncated-site').surface_lineage.find((surface) => surface.surface.id === 'front-page').materialized_document, { status: 'indeterminate', post_id: '42', truncated: true, documents_total: 26 });
+  assert.deepEqual(byFixture.get('missing-site').surface_lineage.find((surface) => surface.surface.id === 'front-page').materialized_document, { status: 'missing', post_id: '42' });
+  assert.equal(byFixture.get('missing-site').surface_lineage.find((surface) => surface.surface.id === 'front-page').lanes.editor.status, 'disabled');
 });
 
 test('direct recipe builders generate distinct run and attempt identities', () => {
@@ -1545,11 +1581,16 @@ function boundedSidecarReceipt() {
   };
 }
 
-function writeMaterializationSidecar({ directory, fixtureId, runId, receipt, artifactHash, attemptId = 'primary', fileName }) {
+function writeMaterializationSidecar({ directory, fixtureId, runId, receipt, artifactHash, attemptId = 'primary', fileName, schema = 'static-site-importer/materialization-runtime-sidecar/v1', documents, documentsTruncated, documentsTotal }) {
   const artifact = readFileSync(path.join(directory, 'artifact.json'));
   const sidecar = {
-    schema: 'static-site-importer/materialization-runtime-sidecar/v1', fixture_id: fixtureId, run_id: runId, step_id: 'import', attempt_id: attemptId, artifact_sha256: artifactHash || createHash('sha256').update(artifact).digest('hex'), provenance: { provider: 'static-site-importer/current-runtime', provider_status: 'completed' }, durability: { file_fsync: 'available', directory_fsync: 'attempted' }, receipt,
+    schema, fixture_id: fixtureId, run_id: runId, step_id: 'import', attempt_id: attemptId, artifact_sha256: artifactHash || createHash('sha256').update(artifact).digest('hex'), provenance: { provider: 'static-site-importer/current-runtime', provider_status: 'completed' }, durability: { file_fsync: 'available', directory_fsync: 'attempted' }, receipt,
   };
+  if (schema === 'static-site-importer/materialization-runtime-sidecar/v2') {
+    sidecar.documents = documents || [];
+    sidecar.documents_truncated = Boolean(documentsTruncated);
+    sidecar.documents_total = documentsTotal ?? sidecar.documents.length;
+  }
   sidecar.content_sha256 = createHash('sha256').update(JSON.stringify(sidecar)).digest('hex');
   writeFileSync(path.join(directory, fileName || `materialization-receipt--${attemptId}.json`), JSON.stringify(sidecar));
 }
@@ -7278,6 +7319,63 @@ test('surface lineage persists reviewer-facing visual refs and explicit absent-a
   assert.deepEqual(surface.blind_spots.map((spot) => spot.kind), ['dom_attribution_absent', 'css_selector_attribution_absent']);
   const persisted = JSON.parse(readFileSync(path.join(outputDirectory, 'static-site-fixture-matrix-result.json'), 'utf8'));
   assert.ok(persisted.fixtures[0].artifact_refs.some((ref) => ref.kind === 'surface-lineage' && ref.artifact_id.startsWith('surface_lineage_simple-site-') && ref.artifact_id.endsWith('_front-page-d365228668b8')));
+});
+
+test('surface lineage v2 joins explicit cross-stage identities and preserves typed lane distinctions', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'surface-lineage-contract-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{
+      fixture_id: 'simple-site',
+      status: 'passed',
+      surface_records: [
+        { surface_id: 'front-page', role: 'editor', post_id: '42', post_type: 'page', post_slug: 'home', status: 'completed' },
+        { surface_id: 'disabled-preview', role: 'editor', post_id: '42', status: 'disabled' },
+      ],
+      matrix_evidence: {
+        materialization_receipt: { status: 'completed', plan_hash: 'plan-abc' },
+        materialization_sidecar: {
+          status: 'verified', matrix_run_id: 'matrix-run-7', attempt_id: 'attempt-2', source_artifact_sha256: 'a'.repeat(64),
+          documents: [{ post_id: '42', post_type: 'page', post_slug: 'home', serialized_content_sha256: 'b'.repeat(64) }],
+        },
+      },
+      visual_parity_comparisons: [
+        { surface_id: 'front-page', visual_parity_artifacts: { artifacts: { diff_screenshot: { kind: 'diff', ref: { path: 'diff.png' } } } } },
+        { surface_id: 'missing-preview' },
+      ],
+    }],
+  });
+  const bySurface = new Map(result.fixtures[0].surface_lineage.map((row) => [row.surface.id, row]));
+  const frontPage = bySurface.get('front-page');
+  assert.equal(frontPage.schema, 'static-site-importer/fixture-surface-lineage/v2');
+  assert.deepEqual(frontPage.lineage, { matrix_run_id: 'matrix-run-7', attempt_id: 'attempt-2', fixture_id: 'simple-site', surface_id: 'front-page', source_artifact_sha256: 'a'.repeat(64), plan_hash: 'plan-abc' });
+  assert.deepEqual(frontPage.materialized_document, { status: 'available', post_id: '42', post_type: 'page', post_slug: 'home', serialized_content_sha256: 'b'.repeat(64) });
+  assert.equal(frontPage.lanes.transform.status, 'available');
+  assert.equal(frontPage.lanes.materialization.status, 'available');
+  assert.equal(frontPage.lanes.editor.status, 'available');
+  assert.equal(frontPage.lanes.visual.status, 'available');
+  assert.equal(bySurface.get('disabled-preview').lanes.editor.status, 'disabled');
+  assert.equal(bySurface.get('missing-preview').lanes.visual.status, 'missing');
+
+  const unavailable = normalizeFixtureMatrixResult({ matrix, results: [{ fixture_id: 'simple-site', status: 'failed', matrix_evidence: { materialization_receipt: { status: 'failed' }, materialization_sidecar: { status: 'missing' } } }] }).fixtures[0].surface_lineage[0];
+  assert.equal(unavailable.lanes.transform.status, 'unavailable');
+  assert.equal(unavailable.lanes.materialization.status, 'missing');
+  assert.equal(unavailable.lanes.editor.status, 'unavailable');
+  assert.equal(unavailable.lanes.visual.status, 'unavailable');
+  assert.equal(unavailable.materialized_document.status, 'missing');
+
+  const failed = normalizeFixtureMatrixResult({ matrix, results: [{ fixture_id: 'simple-site', status: 'failed', matrix_evidence: { materialization_receipt: { status: 'failed' }, materialization_sidecar: { status: 'verified' } } }] }).fixtures[0].surface_lineage[0];
+  assert.equal(failed.lanes.materialization.status, 'failed');
+  assert.equal(failed.materialized_document.status, 'failed');
+});
+
+test('surface lineage v2 retains deterministic visual truncation counters', () => {
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'surface-lineage-truncation-test' });
+  const refs = Array.from({ length: 30 }, (_, index) => ({ artifact_id: `visual-${String(29 - index).padStart(2, '0')}`, kind: 'visual', path: `visual/${29 - index}.png` }));
+  const result = normalizeFixtureMatrixResult({ matrix, results: [{ fixture_id: 'simple-site', status: 'passed', surface_records: [{ surface_id: 'front-page', role: 'visual', artifact_refs: refs }] }] });
+  const visualData = result.fixtures[0].surface_lineage[0].visual_data;
+  assert.deepEqual(visualData.truncation, { retained_count: 25, truncated_count: 5 });
+  assert.deepEqual(visualData.refs.map((ref) => ref.artifact_id), [...visualData.refs].map((ref) => ref.artifact_id).sort());
 });
 
 test('surface lineage artifact refs are fixture-scoped for globally resolvable export', () => {
