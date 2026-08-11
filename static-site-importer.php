@@ -584,7 +584,7 @@ function static_site_importer_cli_write_materialization_sidecar( array $result, 
 }
 
 /**
- * Project materialized posts to bounded content identities for matrix joins.
+ * Project materialized posts to bounded source, route, and content identities for matrix joins.
  *
  * @param array<string,mixed> $pages Materialization receipt source-path to post-id map.
  * @return array{rows:array<int,array<string,mixed>>,truncated:bool,total:int}
@@ -593,7 +593,7 @@ function static_site_importer_cli_materialized_documents( array $pages ): array 
 	$rows     = array();
 	$max_rows = 25;
 	$total    = 0;
-	foreach ( $pages as $post_id ) {
+	foreach ( $pages as $source_path => $post_id ) {
 		$post = get_post( (int) $post_id );
 		if ( ! $post instanceof WP_Post ) {
 			continue;
@@ -602,7 +602,11 @@ function static_site_importer_cli_materialized_documents( array $pages ): array 
 		if ( count( $rows ) >= $max_rows ) {
 			continue;
 		}
-		$rows[] = array(
+		$permalink = get_permalink( $post );
+		$route     = is_string( $permalink ) ? (string) wp_parse_url( $permalink, PHP_URL_PATH ) : '';
+		$rows[]    = array(
+			'source_path'               => (string) $source_path,
+			'route'                     => $route,
 			'post_id'                   => (string) $post->ID,
 			'post_type'                 => (string) $post->post_type,
 			'post_slug'                 => (string) $post->post_name,

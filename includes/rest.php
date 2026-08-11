@@ -442,6 +442,7 @@ function static_site_importer_playground_package( array $options = array() ) {
 /**
  * Return package provenance for the current REST preview response.
  *
+ * @param array<string,string> $package Package metadata.
  * @return array<string,string>
  */
 function static_site_importer_playground_package_provenance( array $package ): array {
@@ -586,8 +587,8 @@ function static_site_importer_rest_manage_permission() {
  * @return WP_REST_Response|WP_Error
  */
 function static_site_importer_rest_create_import( WP_REST_Request $request ) {
-	/** @var mixed $params */
 	$params = $request->get_json_params();
+	/** @var array<string,mixed>|null $params WordPress returns null when no JSON body was parsed. */
 	if ( ! is_array( $params ) ) {
 		$params = $request->get_params();
 	}
@@ -601,6 +602,15 @@ function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 		$input['provider_args'] = $params['provider_args'];
 	}
 	$mode = static_site_importer_rest_import_mode( $params );
+
+	if ( static_site_importer_rest_is_url_only_source( $source ) ) {
+		$url_result = static_site_importer_rest_route_url_import( $source, $input, $mode );
+		if ( is_wp_error( $url_result ) ) {
+			return $url_result;
+		}
+
+		return rest_ensure_response( $url_result );
+	}
 
 	if ( 'playground' === $mode ) {
 		$result = static_site_importer_rest_open_in_playground( $source, $input );
@@ -846,6 +856,110 @@ function static_site_importer_rest_execute_import_ability( string $ability_name,
 }
 
 /**
+ * Route a URL-only REST import through the canonical unified import ability.
+ *
+ * The unified `static-site-importer/import` ability dispatches on `type`; setting
+ * `type=url` routes to {@see static_site_importer_ability_import_url_operation()}.
+ * This helper shapes the input the ability expects and unwraps the result
+ * envelope into the REST response shape.
+ *
+ * - current_site: terminal envelope is the import result.
+ * - playground: short-circuits to a structured `requires_ability_capable_target`
+ *   requirement (the shipped server never invokes the URL ability for previews).
+ *
+ * @param array<string,mixed> $source Source payload (expected to contain `url`).
+ * @param array<string,mixed> $input  Normalized import args.
+ * @param string              $mode   Resolved mode ('current_site'|'playground').
+ * @return array<string,mixed>|WP_Error
+ */
+function static_site_importer_rest_route_url_import( array $source, array $input, string $mode ) {
+	$url       = isset( $source['url'] ) ? (string) $source['url'] : '';
+	$import_id = isset( $source['import_id'] ) ? (string) $source['import_id'] : ( isset( $input['import_id'] ) ? (string) $input['import_id'] : '' );
+
+	if ( 'playground' === $mode ) {
+		return static_site_importer_rest_url_playground_unavailable( $url, $import_id, $input );
+	}
+
+	$ability_in = array_merge(
+		$input,
+		array(
+			'source' => array_merge(
+				isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array(),
+				array(
+					'type'      => 'url',
+					'url'       => $url,
+					'import_id' => $import_id,
+				)
+			),
+		)
+	);
+
+	$result = static_site_importer_rest_execute_import_ability(
+		'static-site-importer/import',
+		$ability_in,
+		'static_site_importer_ability_import'
+	);
+	if ( is_wp_error( $result ) ) {
+		return $result;
+	}
+
+	if ( ! empty( $result['continuation'] ) ) {
+		return array(
+			'success'               => true,
+			'continuation'          => true,
+			'continuation_reason'   => isset( $result['continuation_reason'] ) ? (string) $result['continuation_reason'] : '',
+			'import_id'             => isset( $result['import_id'] ) ? (string) $result['import_id'] : '',
+			'url_batch_run'         => isset( $result['url_batch_run'] ) && is_array( $result['url_batch_run'] ) ? $result['url_batch_run'] : array(),
+			'import_report_summary' => isset( $result['import_report_summary'] ) && is_array( $result['import_report_summary'] ) ? $result['import_report_summary'] : array(),
+		);
+	}
+
+	return array(
+		'success'               => true,
+		'import_id'             => isset( $result['import_id'] ) ? (string) $result['import_id'] : '',
+		'result'                => isset( $result['result'] ) && is_array( $result['result'] ) ? $result['result'] : array(),
+		'import_report_summary' => isset( $result['import_report_summary'] ) && is_array( $result['import_report_summary'] ) ? $result['import_report_summary'] : array(),
+		'terminal_batch_result' => isset( $result['url_batch_run']['terminal_batch_result'] ) && is_array( $result['url_batch_run']['terminal_batch_result'] )
+			? $result['url_batch_run']['terminal_batch_result']
+			: array(),
+	);
+}
+
+/**
+ * Build the structured "disposable ability-capable target required" envelope.
+ *
+ * The PlayGround preview path never invokes the URL ability on the shipped
+ * server (the caller will run the import inside its own disposable target).
+ * This envelope hands the caller the URL plus a placeholder `import_id` they
+ * must carry into that target and a structured requirement describing the
+ * ability they need to invoke there.
+ *
+ * @param string              $url       Source URL.
+ * @param string              $import_id Opaque import_id (placeholder until
+ *                                       the disposable target mints its own).
+ * @param array<string,mixed> $input     Normalized import args (forwarded for
+ *                                       the disposable target to repeat).
+ * @return array<string,mixed>
+ */
+function static_site_importer_rest_url_playground_unavailable( string $url, string $import_id, array $input ) {
+	$placeholder_id = '' !== $import_id ? $import_id : ( function_exists( 'wp_generate_uuid4' ) ? wp_generate_uuid4() : '' );
+	return array(
+		'success'                         => true,
+		'continuation'                    => true,
+		'continuation_reason'             => 'ability_capable_target_required',
+		'import_id'                       => $placeholder_id,
+		'url'                             => $url,
+		'requires_ability_capable_target' => array(
+			'ability'    => 'static-site-importer/import',
+			'url'        => $url,
+			'import_id'  => $placeholder_id,
+			'message'    => __( 'URL preview needs a disposable WordPress target that exposes the static-site-importer/import ability. The reference client must run the import inside its own ability-capable environment.', 'static-site-importer' ),
+			'normalized' => $input,
+		),
+	);
+}
+
+/**
  * Build import args from REST input.
  *
  * @param array<string,mixed> $params Request params.
@@ -881,10 +995,9 @@ function static_site_importer_rest_source_artifact( array $source ) {
  * Convert REST source input into the normalized website artifact runtime envelope.
  *
  * @param array<string,mixed> $source Source payload.
- * @param array<string,mixed> $input  Import input carrying optional provider args.
  * @return array{artifact:array<string,mixed>,source_metadata:array<string,mixed>,provider:string}|WP_Error
  */
-function static_site_importer_source_runtime( array $source, array $input = array() ) {
+function static_site_importer_source_runtime( array $source ) {
 	if ( isset( $source['artifact'] ) && is_array( $source['artifact'] ) ) {
 		return array(
 			'artifact'        => $source['artifact'],
@@ -907,20 +1020,10 @@ function static_site_importer_source_runtime( array $source, array $input = arra
 	}
 
 	if ( static_site_importer_rest_is_url_only_source( $source ) ) {
-		$url_input        = $input;
-		$url_input['url'] = (string) $source['url'];
-		$runtime          = Static_Site_Importer_URL_Import_Runtime::website_artifact_from_url( $url_input );
-		if ( is_wp_error( $runtime ) ) {
-			return $runtime;
-		}
-
-		$source_metadata                = isset( $runtime['source_metadata'] ) && is_array( $runtime['source_metadata'] ) ? $runtime['source_metadata'] : array();
-		$source_metadata['source_type'] = isset( $source_metadata['source_type'] ) ? (string) $source_metadata['source_type'] : 'url';
-
-		return array(
-			'artifact'        => $runtime['artifact'],
-			'source_metadata' => $source_metadata,
-			'provider'        => isset( $runtime['provider'] ) ? (string) $runtime['provider'] : 'public-url-fetcher',
+		return new WP_Error(
+			'static_site_importer_url_source_routed_separately',
+			__( 'URL sources are routed through the static-site-importer/import ability and must be handled by the unified import path before reaching this dispatcher.', 'static-site-importer' ),
+			array( 'status' => 500 )
 		);
 	}
 
@@ -1025,7 +1128,9 @@ function static_site_importer_source_runtime( array $source, array $input = arra
  * @return array{artifact:array<string,mixed>,source_metadata:array<string,mixed>,provider:string}|WP_Error
  */
 function static_site_importer_rest_source_runtime( array $source, array $input = array() ) {
-	return static_site_importer_source_runtime( $source, $input );
+	unset( $input ); // Retained for compatibility with callers using the former provider-args parameter.
+
+	return static_site_importer_source_runtime( $source );
 }
 
 /**

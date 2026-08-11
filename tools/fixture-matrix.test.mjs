@@ -959,7 +959,7 @@ test('fixture capability metadata does not alter provider setup or execution', (
   const fixtureSteps = (id) => recipe.workflow.steps.filter((step) => step.metadata?.fixture_id === id);
 
   const plainSteps = fixtureSteps('plain-site');
-  assert.deepEqual(plainSteps.map((step) => step.command), ['wordpress.wp-cli', 'wordpress.wp-cli', 'wordpress.wp-cli']);
+  assert.deepEqual(plainSteps.map((step) => step.command), ['wordpress.wp-cli', 'wordpress.wp-cli', 'wordpress.wp-cli', 'wordpress.wp-cli']);
   assert.deepEqual(fixtureSteps('shop-site').map((step) => step.command), plainSteps.map((step) => step.command));
   assert.deepEqual(fixtureSteps('shop-forms-site').map((step) => step.command), plainSteps.map((step) => step.command));
   assert.equal(recipe.workflow.steps.some((step) => ['wordpress.plugin-setup', 'wordpress.run-php'].includes(step.command)), false);
@@ -5697,7 +5697,7 @@ test('recipe runs editor-validate-blocks against imported content after each imp
     staticSiteImporterPath: '/tmp/static-site-importer',
   });
 
-  // [activate, prepare, validate, visual-font-setup, suppress-onboarding, editor-open, editor-validate-blocks]
+  // [activate, prepare, validate, visual-font-setup, suppress-onboarding, identity, editor-open, editor-validate-blocks]
   assert.equal(recipe.workflow.steps[1].command, 'wordpress.wp-cli');
   assert.match(recipe.workflow.steps[1].args[0], /prepare-artifact-dependencies/);
   assert.equal(recipe.workflow.steps[2].command, 'wordpress.wp-cli');
@@ -5705,12 +5705,15 @@ test('recipe runs editor-validate-blocks against imported content after each imp
   assert.equal(recipe.workflow.steps[4].command, 'wordpress.wp-cli');
   assert.equal(recipe.workflow.steps[4].metadata.phase, 'editor-preflight');
   assert.match(recipe.workflow.steps[4].args[0], /woocommerce_onboarding_profile/);
-  const editorOpenStep = recipe.workflow.steps[5];
+  const identityStep = recipe.workflow.steps[5];
+  assert.equal(identityStep.command, 'wordpress.wp-cli');
+  assert.equal(identityStep.metadata.phase, 'materialized-surface-identity');
+  const editorOpenStep = recipe.workflow.steps[6];
   assert.equal(editorOpenStep.command, 'wordpress.editor-open');
   assert.ok(editorOpenStep.args.includes('target=front-page'));
   assert.ok(editorOpenStep.args.includes('capture=screenshot,editor-state,editor-validity'));
   assert.ok(editorOpenStep.args.includes('artifact-prefix=files/browser/editor-open/simple-site'));
-  const editorStep = recipe.workflow.steps[6];
+  const editorStep = recipe.workflow.steps[7];
   assert.equal(editorStep.command, EDITOR_VALIDATE_BLOCKS_COMMAND);
   assert.equal(editorStep.command, 'wordpress.editor-validate-blocks');
   assert.equal(editorStep.args.some((arg) => arg.includes('post-new.php')), false);
@@ -5759,6 +5762,7 @@ test('fixture matrix browser surfaces default to front page and opt into bounded
   writeFileSync(path.join(fixtureDirectory, 'index.html'), '<main>Home</main>');
   writeFileSync(path.join(fixtureDirectory, 'about.html'), '<main>About flat</main>');
   writeFileSync(path.join(fixtureDirectory, 'about', 'index.html'), '<main>About nested</main>');
+  writeFileSync(path.join(fixtureDirectory, 'about', 'team.html'), '<main>Team</main>');
   writeFileSync(path.join(fixtureDirectory, 'contact.html'), '<main><form><input name="email"></form></main>');
   writeFileSync(path.join(fixtureDirectory, 'faculty.html'), '<main>Faculty</main>');
   writeFileSync(path.join(fixtureDirectory, 'merch', 'index.html'), '<main><button>Add to cart</button></main>');
@@ -5769,7 +5773,7 @@ test('fixture matrix browser surfaces default to front page and opt into bounded
   const matrix = { ...discoveredMatrix, fixtures: discoveredMatrix.fixtures.filter((fixture) => fixture.id === 'artist'), count: 1 };
   assert.deepEqual(selectFixtureSurfaces(matrix.fixtures[0]).map((surface) => surface.id), ['front-page']);
   assert.deepEqual(selectFixtureSurfaces(matrix.fixtures[0], { surfaceCoverage: { maxExtraSurfaces: 1 } }).map((surface) => surface.id), ['front-page', 'about']);
-  assert.deepEqual(selectFixtureSurfaces(matrix.fixtures[0], { surfaceCoverage: 7 }).map((surface) => surface.id), ['front-page', 'about', 'about--2', 'contact', 'faculty', 'merch', 'news', 'programs']);
+  assert.deepEqual(selectFixtureSurfaces(matrix.fixtures[0], { surfaceCoverage: 8 }).map((surface) => surface.id), ['front-page', 'about', 'about--2', 'about-team', 'contact', 'faculty', 'merch', 'news', 'programs']);
   assert.equal(normalizeSurfaceCoverageOptions({ surfaceCoverage: 99 }).extraSurfaceCount, MAX_EXTRA_SURFACE_COUNT);
 
   const defaultRecipe = buildFixtureMatrixRecipe({
@@ -5784,15 +5788,17 @@ test('fixture matrix browser surfaces default to front page and opt into bounded
     matrix,
     artifactsDirectory: '/tmp/artifacts',
     staticSiteImporterPath: '/tmp/static-site-importer',
-    surfaceCoverage: { maxExtraSurfaces: 2 },
+    surfaceCoverage: { maxExtraSurfaces: 3 },
   });
   const editorOpenSteps = multiSurfaceRecipe.workflow.steps.filter((step) => step.command === 'wordpress.editor-open');
   const editorValidationSteps = multiSurfaceRecipe.workflow.steps.filter((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND);
+  const identitySteps = multiSurfaceRecipe.workflow.steps.filter((step) => step.metadata?.phase === 'materialized-surface-identity');
   const visualSteps = multiSurfaceRecipe.workflow.steps.filter((step) => step.command === 'wordpress.visual-compare');
 
-  assert.equal(editorOpenSteps.length, 3);
-  assert.equal(editorValidationSteps.length, 3);
-  assert.equal(visualSteps.length, 3);
+  assert.equal(editorOpenSteps.length, 4);
+  assert.equal(editorValidationSteps.length, 4);
+  assert.equal(identitySteps.length, 4);
+  assert.equal(visualSteps.length, 4);
   assert.ok(editorOpenSteps[0].args.includes('artifact-prefix=files/browser/editor-open/artist'));
   assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
   assert.ok(editorOpenSteps[1].args.includes('post-slug=about'));
@@ -5805,6 +5811,13 @@ test('fixture matrix browser surfaces default to front page and opt into bounded
   assert.ok(editorValidationSteps[1].args.includes('post-slug=about'));
   assert.equal(editorValidationSteps[1].args.some((arg) => arg.startsWith('url=')), false);
 
+  assert.ok(editorOpenSteps[3].args.includes('post-slug=about/team'));
+  assert.equal(editorOpenSteps[3].metadata.route, '/about/team/');
+  assert.equal(editorOpenSteps[3].metadata.source_entry, 'about/team.html');
+  assert.ok(editorValidationSteps[3].args.includes('post-slug=about/team'));
+  assert.equal(identitySteps[3].metadata.post_slug, 'about/team');
+  assert.equal(identitySteps[3].metadata.route, '/about/team/');
+
   const aboutComparison = visualCompareMatrixComparison(visualSteps[1]);
   assert.equal(aboutComparison.name, 'artist--about');
   assert.equal(aboutComparison.sourceUrl, 'file:///tmp/artifacts/artist/source/about.html');
@@ -5813,8 +5826,10 @@ test('fixture matrix browser surfaces default to front page and opt into bounded
   assert.equal(nestedAboutComparison.name, 'artist--about--2');
   assert.equal(nestedAboutComparison.sourceUrl, 'file:///tmp/artifacts/artist/source/about/index.html');
   assert.equal(nestedAboutComparison.candidateUrl, '/about/');
-  assert.equal(multiSurfaceRecipe.metadata.surface_coverage.extra_surfaces_per_fixture, 2);
-  assert.equal(multiSurfaceRecipe.metadata.surface_coverage.total_surface_count, 3);
+  const teamComparison = visualCompareMatrixComparison(visualSteps[3]);
+  assert.equal(teamComparison.candidateUrl, '/about/team/');
+  assert.equal(multiSurfaceRecipe.metadata.surface_coverage.extra_surfaces_per_fixture, 3);
+  assert.equal(multiSurfaceRecipe.metadata.surface_coverage.total_surface_count, 4);
   assert.equal(multiSurfaceRecipe.metadata.runtime_cost_warnings[0].code, 'surface_coverage_runtime_cost');
 });
 
@@ -6705,12 +6720,12 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
     pixelThreshold: 0.05,
   });
 
-  // [activate, prepare, validate, visual-font-setup, suppress-onboarding, editor-open, editor-validation, visual-setup, visual-compare]
-  const visualSetupStep = recipe.workflow.steps[7];
+  // [activate, prepare, validate, visual-font-setup, suppress-onboarding, identity, editor-open, editor-validation, visual-setup, visual-compare]
+  const visualSetupStep = recipe.workflow.steps[8];
   assert.equal(visualSetupStep.command, 'wordpress.wp-cli');
   assert.equal(visualSetupStep.metadata.phase, 'visual-setup');
   assert.match(visualSetupStep.args[0], /wp_update_custom_css_post/);
-  const visualStep = recipe.workflow.steps[8];
+  const visualStep = recipe.workflow.steps[9];
   assert.equal(visualStep.command, 'wordpress.visual-compare');
   const comparison = visualCompareMatrixComparison(visualStep);
   assert.equal(comparison.sourceUrl, 'file:///tmp/artifacts/simple-site/source/index.html');

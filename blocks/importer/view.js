@@ -333,8 +333,10 @@
 			const uploadInputs = root.querySelectorAll( '[data-static-site-importer-source-files], [data-static-site-importer-source-directory]' );
 			const provider = root.getAttribute( 'data-static-site-importer-provider' ) || '';
 			const isCurrentSiteImport = root.getAttribute( 'data-static-site-importer-apply-to-current-site' ) === '1';
+			const initialUrl = form ? form.getAttribute( 'data-static-site-importer-default-url' ) || '' : '';
+			const isUrlOnly = '' !== initialUrl && ! html.value && 0 === uploadInputs.length;
 			const source = {
-				url: form ? form.getAttribute( 'data-static-site-importer-default-url' ) || '' : '',
+				url: initialUrl,
 				html: html ? html.value : '',
 				files: await buildFiles( uploadInputs, root ),
 				archive: await buildArchive( uploadInputs, root ),
@@ -352,34 +354,68 @@
 			try {
 				const restUrl = root.getAttribute( 'data-static-site-importer-rest-url' );
 				const nonce = root.getAttribute( 'data-static-site-importer-nonce' );
-				const response = await fetch( restUrl, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						'X-WP-Nonce': nonce,
-					},
-					body: JSON.stringify( {
-						provider,
-						source,
+				const postImport = async function ( importSource, importId ) {
+					const body = {
+						source: importSource,
 						apply_to_current_site: isCurrentSiteImport,
 						activate: isCurrentSiteImport,
 						overwrite: isCurrentSiteImport,
-					} ),
-				} );
-				const report = await response.json();
+					};
+					if ( importId ) {
+						body.source = Object.assign( {}, importSource, { import_id: importId } );
+					}
+					if ( ! isUrlOnly && '' !== provider ) {
+						body.provider = provider;
+					}
+					return fetch( restUrl, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							'X-WP-Nonce': nonce,
+						},
+						body: JSON.stringify( body ),
+					} );
+				};
+
+				let response = await postImport( source, '' );
+				let report = await response.json();
+
+				if ( isUrlOnly && response.ok && report.continuation === true ) {
+					const maxContinuations = 64;
+					let steps = 0;
+					while ( response.ok && report.continuation === true && ! report.error && steps < maxContinuations ) {
+						steps++;
+						const nextUrl = report.url || source.url;
+						const nextImportId = report.import_id || '';
+						showStatus( root, 'Continuing URL import (' + steps + ')...' );
+						response = await postImport( { url: nextUrl }, nextImportId );
+						report = await response.json();
+					}
+				}
+				if ( isUrlOnly && response.ok && report.continuation === true && ! report.error ) {
+					report = Object.assign( {}, report, {
+						success: false,
+						error: {
+							code: 'static_site_importer_continuation_limit_reached',
+							message: 'URL import did not reach terminal completion after 64 continuation requests.',
+						},
+					} );
+				}
+
 				setReport( root, report );
-				if ( response.ok && isCurrentSiteImport && report.success ) {
+
+				if ( ! response.ok || report.error ) {
+					showStatus( root, ( report.error && report.error.message ) ? report.error.message : 'Import request failed.' );
+				} else if ( isCurrentSiteImport && report.success ) {
 					showStatus( root, 'Import complete.' );
-				} else if ( response.ok && report.success && previewUrl( report ) ) {
+				} else if ( report.success && previewUrl( report ) ) {
 					openPreview( report );
 					showStatus( root, 'WordPress Playground opened.' );
-				} else if ( response.ok && previewUrl( report ) ) {
-					openPreview( report );
-					showStatus( root, 'Preview opened.' );
-				} else if ( response.ok && report.preview && report.preview.status === 'unavailable' ) {
-					showStatus( root, report.preview.message || 'Preview unavailable: WP Codebox did not return a preview URL or Playground blueprint URL.' );
+				} else if ( report.success && report.preview && 'unavailable' === report.preview.status ) {
+					const requirement = report.preview.requires_ability_capable_target;
+					showStatus( root, requirement ? ( report.preview.message || 'URL preview needs a disposable WordPress target that exposes the import-url ability.' ) : ( report.preview.message || 'Preview unavailable: WP Codebox did not return a preview URL or Playground blueprint URL.' ) );
 				} else {
-					showStatus( root, response.ok && report.success ? 'Preview request complete.' : 'Preview request failed.' );
+					showStatus( root, report.success ? 'Preview request complete.' : 'Preview request failed.' );
 				}
 			} catch ( error ) {
 				setReport( root, { success: false, error: { message: error.message } } );
