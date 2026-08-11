@@ -55,7 +55,7 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 				'plan'    => $plan,
 			);
 		}
-		$current = self::resources( $artifact, array_column( $existing['resources'], 'path' ) );
+		$current = self::resources( $artifact );
 		$digest  = self::digest( $current );
 		if ( hash_equals( $existing['digest'], $digest ) ) {
 			return array(
@@ -64,7 +64,7 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 				'plan'    => $existing,
 			);
 		}
-		$plan = $this->establish( $artifact, array_column( $existing['resources'], 'path' ) );
+		$plan = $this->establish( $artifact );
 		return array(
 			'digest'  => is_array( $plan ) ? $plan['digest'] : '',
 			'changed' => true,

@@ -266,4 +266,35 @@ $url_plan_pages = $url_plan_final['plan']['pages'] ?? array();
 $url_plan_paths = array_map( static fn( array $page ): string => (string) ( $page['path'] ?? $page['slug'] ?? '' ), $url_plan_pages );
 $operation_mismatch = Static_Site_Importer_URL_Import_Runtime::run_operation( array( 'operation' => 'apply', 'source' => array( 'type' => 'url' ), 'url' => 'https://runtime-plan.test/', 'import_id' => $url_plan_first['import_id'] ?? '', 'slug' => 'runtime-plan' ) );
 if ( empty( $url_plan_first['continuation'] ) || empty( $url_plan_first['import_id'] ) || ! empty( $url_plan_first['plan'] ) || empty( $url_plan_final['plan'] ) || 'completed' !== ( $url_plan_final['url_batch_run']['status'] ?? '' ) || 2 !== count( $url_plan_pages ) || empty( $url_plan_paths[0] ) || empty( $url_plan_paths[1] ) || $writes_before_url_plan !== count( $runtime_imports ) || ! is_wp_error( $operation_mismatch ) || 'static_site_importer_url_import_run_mismatch' !== $operation_mismatch->get_error_code() ) { throw new RuntimeException( 'URL planning must compose every frozen batch into one plan without importer writes and bind continuation to operation intent' ); }
+
+// shared-change.test — plan-mode cross-batch shared digest change (issue #901)
+add_filter( 'static_site_importer_url_batch_import_fetcher', static function ( $fetcher, array $request ) {
+	if ( 'https://shared-change.test/' !== ( $request['url'] ?? '' ) ) {
+		return $fetcher;
+	}
+	return static function ( string $url ): array {
+		if ( 'https://shared-change.test/sitemap.xml' === $url ) {
+			return array( 'body' => '<urlset><url><loc>https://shared-change.test/</loc></url><url><loc>https://shared-change.test/page2/</loc></url></urlset>', 'metadata' => array( 'content_type' => 'application/xml', 'final_url' => $url ) );
+		}
+		if ( 'https://shared-change.test/' === $url ) {
+			return array( 'body' => '<main>page1<link rel="stylesheet" href="/theme-a.css"></main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
+		}
+		if ( 'https://shared-change.test/page2/' === $url ) {
+			return array( 'body' => '<main>page2<link rel="stylesheet" href="/theme-a.css"><link rel="stylesheet" href="/theme-b.css"></main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
+		}
+		if ( 'https://shared-change.test/theme-a.css' === $url ) {
+			return array( 'body' => 'body{color:red}', 'metadata' => array( 'content_type' => 'text/css', 'final_url' => $url ) );
+		}
+		if ( 'https://shared-change.test/theme-b.css' === $url ) {
+			return array( 'body' => 'h1{font-size:2em}', 'metadata' => array( 'content_type' => 'text/css', 'final_url' => $url ) );
+		}
+		return new WP_Error( 'not_found', 'not found' );
+	};
+} );
+$writes_before_shared = count( $runtime_imports );
+$shared_first         = static_site_importer_ability_import( array( 'operation' => 'plan', 'source' => array( 'type' => 'url', 'url' => 'https://shared-change.test/' ), 'slug' => 'shared-change' ) );
+$shared_final         = static_site_importer_ability_import( array( 'operation' => 'plan', 'source' => array( 'type' => 'url', 'url' => 'https://shared-change.test/', 'import_id' => $shared_first['import_id'] ?? '' ), 'slug' => 'shared-change' ) );
+$shared_pages         = $shared_final['plan']['pages'] ?? array();
+$shared_paths         = array_map( static fn( array $p ): string => (string) ( $p['path'] ?? $p['slug'] ?? '' ), $shared_pages );
+if ( empty( $shared_first['continuation'] ) || empty( $shared_first['import_id'] ) || ! empty( $shared_first['plan'] ) || empty( $shared_final['plan'] ) || 'completed' !== ( $shared_final['url_batch_run']['status'] ?? '' ) || 2 !== count( $shared_pages ) || empty( $shared_paths[0] ) || empty( $shared_paths[1] ) || $writes_before_shared !== count( $runtime_imports ) ) { throw new RuntimeException( 'shared plan change across batches must re-prepare stale page plans in compose_complete_plan and succeed without importer writes' ); }
 echo "URL batch import smoke passed.\n";
