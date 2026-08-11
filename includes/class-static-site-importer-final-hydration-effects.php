@@ -46,14 +46,24 @@ final class Static_Site_Importer_Final_Hydration_Effects {
 			return $existing;
 		}
 		if ( is_array( $existing ) ) {
-			if ( in_array( $existing['state'] ?? '', array( 'effect_started', 'effect_applied' ), true ) ) {
+			$state = $existing['state'] ?? '';
+			if ( 'effect_started' === $state ) {
+				$existing['state']                 = 'needs_manual_recovery';
+				$existing['recovery']['retryable'] = false;
+				$recovery                         = $this->save( $receipt_id, $existing );
+				if ( is_wp_error( $recovery ) ) {
+					return $recovery;
+				}
 				return new WP_Error(
 					'static_site_importer_final_effect_needs_recovery',
 					'Final hydration effect may have completed before the process stopped and needs adapter verification before retry.',
 					$existing
 				);
 			}
-			return $existing;
+			if ( in_array( $state, array( 'verified', 'failed' ), true ) ) {
+				return $existing;
+			}
+			return new WP_Error( 'static_site_importer_final_effect_unsupported_state', 'Final hydration effect receipt state is unsupported.', $existing );
 		}
 
 		$receipt = array(
@@ -119,7 +129,22 @@ final class Static_Site_Importer_Final_Hydration_Effects {
 			return null;
 		}
 		$data = json_decode( $raw, true );
-		if ( ! is_array( $data ) || self::SCHEMA !== ( $data['schema'] ?? '' ) || self::VERSION !== (int) ( $data['version'] ?? 0 ) || $receipt_id !== ( $data['receipt_id'] ?? '' ) ) {
+		$hash = static function ( string $value ): bool {
+			return 64 === strlen( $value ) && (bool) preg_match( '/^[a-f0-9]{64}$/', $value );
+		};
+		$identity = is_array( $data['identity'] ?? null ) ? $data['identity'] : array();
+		$valid    = is_array( $data )
+			&& self::SCHEMA === ( $data['schema'] ?? '' )
+			&& self::VERSION === (int) ( $data['version'] ?? 0 )
+			&& ( $data['receipt_id'] ?? '' ) === $receipt_id
+			&& ! empty( $data['run_id'] )
+			&& ! empty( $data['batch_id'] )
+			&& $hash( (string) ( $data['snapshot_sha256'] ?? '' ) )
+			&& $hash( (string) ( $data['plan_hash'] ?? '' ) )
+			&& ( $identity['algorithm'] ?? '' ) === 'sha256'
+			&& ( $identity['value'] ?? '' ) === $receipt_id
+			&& self::identity( (string) $data['run_id'], (string) $data['batch_id'], (string) $data['snapshot_sha256'], (string) $data['plan_hash'] ) === $receipt_id;
+		if ( ! $valid ) {
 			return new WP_Error( 'static_site_importer_final_effect_receipt_unsupported', 'Final hydration effect receipt contract is unsupported.' );
 		}
 		return $data;
