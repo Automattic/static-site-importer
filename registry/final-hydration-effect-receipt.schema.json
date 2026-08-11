@@ -3,7 +3,7 @@
   "$id": "static-site-importer/final-hydration-effect-receipt/v1",
   "title": "Static Site Importer final hydration effect receipt",
   "type": "object",
-  "required": ["schema", "version", "receipt_id", "run_id", "batch_id", "snapshot_sha256", "plan_hash", "identity", "state"],
+  "required": ["schema", "version", "receipt_id", "run_id", "batch_id", "snapshot_sha256", "plan_hash", "adapter", "identity", "state"],
   "properties": {
     "schema": { "const": "static-site-importer/final-hydration-effect-receipt/v1" },
     "version": { "const": 1 },
@@ -12,7 +12,16 @@
     "batch_id": { "type": "string", "minLength": 1 },
     "snapshot_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "plan_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-    "adapter": { "type": "object" },
+    "adapter": {
+      "type": "object",
+      "required": ["id", "contract_version", "implementation_version", "capabilities"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "contract_version": { "type": "integer", "minimum": 1 },
+        "implementation_version": { "type": "string", "minLength": 1 },
+        "capabilities": { "type": "array", "items": { "type": "string" } }
+      }
+    },
     "identity": {
       "type": "object",
       "required": ["algorithm", "value"],
