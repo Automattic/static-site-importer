@@ -2,7 +2,7 @@
 
 Schema: `static-site-importer/final-hydration-effect-receipt/v1`.
 
-SSI writes one receipt before and after each final hydration importer effect. Receipt identity is SHA-256 over run identity, batch identity, source snapshot hash, and compiled plan hash. Identity exists before provider mutation and never uses a provider-generated ID.
+SSI writes one receipt before and after each final hydration importer effect. Receipt identity is SHA-256 over run identity, batch identity, source snapshot hash, compiled plan hash, and adapter descriptor. Identity exists before provider mutation and never uses a provider-generated ID.
 
 Receipt states:
 

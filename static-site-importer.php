@@ -53,6 +53,8 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-do
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-source-page.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-fetcher.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-artifact-run.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-final-hydration-adapter.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-callable-final-hydration-adapter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-final-hydration-effects.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-source-normalizer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-content-policy.php';
