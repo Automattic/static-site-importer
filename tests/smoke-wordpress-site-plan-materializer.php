@@ -319,6 +319,28 @@ $assert( 'woocommerce_simple_product' === ( $entity_lifecycle['entities'][ $enti
 $prepared_entity = reset( $entity_lifecycle['entities'] );
 $assert( 'Aero Mug' === ( $prepared_entity['manifest']['products'][0]['name'] ?? '' ) && true === ( $prepared_entity['required'] ?? false ), 'v2 product rows validate and retain their required dependency relationship' );
 
+// Provider declarations keep portable asset tokens, while resolver output carries
+// destination-specific URLs. Binding preflight must use the latter without
+// mutating the canonical declaration retained by the lifecycle.
+$token_anchor = '<!-- wp:buttons --><div><img src="{{wordpress-site-plan:asset:hero}}"></div><!-- /wp:buttons -->';
+$resolved_anchor = '<!-- wp:buttons --><div><img src="https://example.test/wp-content/themes/entity-plan/assets/hero.svg"></div><!-- /wp:buttons -->';
+$token_entity_declaration_id = (string) array_key_first( $entity_lifecycle['entities'] );
+$token_lifecycle = $entity_lifecycle;
+$token_lifecycle['entities'][ $token_entity_declaration_id ]['manifest']['products'][0]['bindings'][0]['search_block_markup'] = $token_anchor;
+$resolved_declaration = $entity_plan['runtime_declarations'][1];
+$resolved_declaration['payload']['entities'][0]['bindings'][0]['search_block_markup'] = $resolved_anchor;
+$resolved_binding_plan = array(
+	'pages' => array( array( 'source_path' => 'index.html', 'resolved_block_markup' => '<main>' . $resolved_anchor . '</main>' ) ),
+	'runtime_declarations' => array( $resolved_declaration ),
+);
+$resolve_binding_manifests = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'with_resolved_runtime_binding_manifests' );
+$preflight_bindings = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'preflight_runtime_entity_binding_anchors' );
+$assert( is_wp_error( $preflight_bindings->invoke( null, $resolved_binding_plan, $token_lifecycle, array() ) ), 'canonical token anchors fail against destination-specific resolved page URLs before projection' );
+$resolved_lifecycle = $resolve_binding_manifests->invoke( null, $token_lifecycle, $resolved_binding_plan );
+$assert( $token_anchor === ( $token_lifecycle['entities'][ $token_entity_declaration_id ]['manifest']['products'][0]['bindings'][0]['search_block_markup'] ?? '' ) && $resolved_anchor === ( $resolved_lifecycle['entities'][ $token_entity_declaration_id ]['manifest']['products'][0]['bindings'][0]['search_block_markup'] ?? '' ), 'resolved binding projection changes only lifecycle binding anchors and preserves canonical declarations' );
+$assert( true === $preflight_bindings->invoke( null, $resolved_binding_plan, $resolved_lifecycle, array() ), 'resolved provider binding anchors match the exact page markup consumed by materialization' );
+$assert( $token_lifecycle === $resolve_binding_manifests->invoke( null, $token_lifecycle, array( 'pages' => $resolved_binding_plan['pages'] ) ), 'plans without resolved runtime declarations retain canonical lifecycle behavior' );
+
 $form_declaration_id = 'form-topology-runtime';
 $topology_form = array(
 	'selector' => 'form.contact', 'source_path' => 'index.html', 'form' => array( 'class' => 'contact' ),
