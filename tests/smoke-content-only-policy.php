@@ -36,6 +36,8 @@ foreach ( array( 'website/shell.php', 'website/shell.phtml', 'website/shell.jsp'
 }
 $assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/index.html', '<?php system("id");', true ) ) ), 'base64-server-code-rejected' );
 $assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/site.js', '<?php system("id");' ) ) ), 'server-code-marker-in-static-extension-rejected' );
+$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/logo.svg', '<svg><?php system("id");</svg>', true ) ) ), 'textual-svg-server-code-rejected' );
+$assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/photo.jpeg', "\xFF\xD8\xFF\xFE\x00\x07<?php\xFF\xD9", true ) ), 'binary-jpeg-php-tag-bytes-accepted' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
