@@ -369,14 +369,7 @@ class Static_Site_Importer_URL_Fetcher {
 	private static function native_start( array $target, array $options ): Static_Site_Importer_URL_Fetcher_Native_Handle {
 		$ip               = $target['ips'][0];
 		$remote           = sprintf( 'tcp://%s:%d', str_contains( $ip, ':' ) ? '[' . $ip . ']' : $ip, $target['port'] );
-		$context          = stream_context_create( array(
-			'ssl' => array(
-				'SNI_enabled'      => true,
-				'peer_name'        => $target['host'],
-				'verify_peer'      => true,
-				'verify_peer_name' => true,
-			),
-		) );
+		$context          = self::tls_context( $target['host'] );
 		$errno            = 0;
 		$errstr           = '';
 		$socket           = @stream_socket_client( $remote, $errno, $errstr, $options['timeout'], STREAM_CLIENT_CONNECT | STREAM_CLIENT_ASYNC_CONNECT, $context ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Nonblocking connection failure is returned through $errno/$errstr.
@@ -398,6 +391,19 @@ class Static_Site_Importer_URL_Fetcher {
 		$host             = $target['host'] . ( ( 'https' === $target['scheme'] ? 443 : 80 ) === $target['port'] ? '' : ':' . $target['port'] );
 		$handle->outbound = 'GET ' . $target['path'] . " HTTP/1.1\r\nHost: " . $host . "\r\nUser-Agent: StaticSiteImporter/1.0\r\nAccept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.1\r\nConnection: close\r\n\r\n";
 		return $handle;
+	}
+
+	/** Build the verified TLS context used by IP-pinned connections. */
+	private static function tls_context( string $host ) {
+		return stream_context_create( array(
+			'ssl' => array(
+				'SNI_enabled'      => true,
+				'peer_name'        => $host,
+				'verify_peer'      => true,
+				'verify_peer_name' => true,
+				'cafile'           => ABSPATH . WPINC . '/certificates/ca-bundle.crt',
+			),
+		) );
 	}
 
 	/** Poll a nonblocking connection. Null means it remains in flight. */
