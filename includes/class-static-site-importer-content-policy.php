@@ -45,6 +45,9 @@ final class Static_Site_Importer_Content_Policy {
 		'pdf',
 	);
 
+	/** Static formats whose source bytes are inspected for server-side code. */
+	private const TEXTUAL_EXTENSIONS = array( 'html', 'htm', 'css', 'js', 'mjs', 'json', 'map', 'xml', 'txt', 'md', 'markdown', 'svg' );
+
 	/** Assets that a compiler may carry into a generated companion plugin. */
 	private const COMPANION_ASSET_EXTENSIONS = array( 'js', 'mjs', 'css', 'json', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'woff', 'woff2', 'ttf', 'otf', 'eot' );
 
@@ -63,7 +66,7 @@ final class Static_Site_Importer_Content_Policy {
 				return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
 			}
 			$content = self::file_content( $file );
-			if ( null !== $content && self::contains_server_code( $content ) ) {
+			if ( null !== $content && self::is_textual_path( $path ) && self::contains_server_code( $content ) ) {
 				return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s contains server-side code.', $path ), array( 'path' => $path ) );
 			}
 		}
@@ -73,6 +76,11 @@ final class Static_Site_Importer_Content_Policy {
 	public static function is_static_path( string $path ): bool {
 		$extension = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
 		return '' !== $extension && in_array( $extension, self::STATIC_EXTENSIONS, true );
+	}
+
+	public static function is_textual_path( string $path ): bool {
+		$extension = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
+		return '' !== $extension && in_array( $extension, self::TEXTUAL_EXTENSIONS, true );
 	}
 
 	public static function is_companion_asset_path( string $path ): bool {
