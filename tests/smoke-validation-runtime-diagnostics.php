@@ -47,9 +47,38 @@ if ( ! function_exists( 'wp_mkdir_p' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_generate_uuid4' ) ) {
+	function wp_generate_uuid4() {
+		static $sequence = 0;
+		++$sequence;
+
+		return '00000000-0000-4000-8000-' . str_pad( (string) $sequence, 12, '0', STR_PAD_LEFT );
+	}
+}
+
+if ( ! function_exists( 'wp_json_encode' ) ) {
+	function wp_json_encode( $value ) {
+		return json_encode( $value );
+	}
+}
+
+if ( ! class_exists( 'WP_Error' ) ) {
+	class WP_Error {
+		private string $code;
+
+		public function __construct( string $code ) {
+			$this->code = $code;
+		}
+
+		public function get_error_code(): string {
+			return $this->code;
+		}
+	}
+}
+
 if ( ! function_exists( 'is_wp_error' ) ) {
 	function is_wp_error( $value ) {
-		return false;
+		return $value instanceof WP_Error;
 	}
 }
 
@@ -57,8 +86,17 @@ if ( ! class_exists( 'Static_Site_Importer_Theme_Generator' ) ) {
 	class Static_Site_Importer_Theme_Generator {
 		public static array $last_args = array();
 
-		public static function import_website_artifact( array $artifact, array $args = array() ): array {
+		public static function import_website_artifact( array $artifact, array $args = array() ) {
 			self::$last_args = $args;
+			if ( 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
+				return array(
+					'status'        => 'dependencies_prepared',
+					'fresh_runtime' => array( 'request_id' => $args['runtime_lifecycle_invocation_id'] ?? '' ),
+				);
+			}
+			if ( 'resume' === ( $args['runtime_lifecycle_phase'] ?? '' ) && ( $args['runtime_lifecycle_request_id'] ?? '' ) === ( $args['runtime_lifecycle_invocation_id'] ?? '' ) ) {
+				return new WP_Error( 'static_site_importer_fresh_runtime_required' );
+			}
 
 			return array(
 				'quality'    => array( 'pass' => true ),
@@ -202,9 +240,47 @@ $override_result       = Static_Site_Importer_Validation_Runtime::validate_artif
 $assert( false === ( Static_Site_Importer_Theme_Generator::$last_args['materialize_dependencies'] ?? null ), 'validation-honors-disabled-dependency-materialization' );
 $assert( false === ( $override_result['request']['import_args']['materialize_dependencies'] ?? null ), 'validation-result-records-disabled-dependency-materialization' );
 
+$lifecycle_artifact = array( 'schema' => 'test/website-artifact/v1' );
+$prepare_receipt    = Static_Site_Importer_Validation_Runtime::prepare_artifact_dependencies(
+	array(
+		'artifact' => $lifecycle_artifact,
+		'slug'     => 'persistent-worker',
+	)
+);
+$prepared_invocation = (string) ( $prepare_receipt['fresh_runtime']['request_id'] ?? '' );
+$assert( '' !== $prepared_invocation, 'prepare-receipt-carries-invocation' );
+
+$resume_artifact_dir = $artifact_dir . '/persistent-worker-resume';
+$resume_result       = Static_Site_Importer_Validation_Runtime::validate_artifact(
+	array(
+		'artifact'                     => $lifecycle_artifact,
+		'artifact_dir'                 => $resume_artifact_dir,
+		'slug'                         => 'persistent-worker',
+		'runtime_lifecycle_phase'      => 'resume',
+		'runtime_lifecycle_request_id' => $prepare_receipt['fresh_runtime']['request_id'],
+	)
+);
+$assert( ! is_wp_error( $resume_result ), 'distinct-invocation-resume-proceeds-in-one-process' );
+$assert( $prepared_invocation !== ( Static_Site_Importer_Theme_Generator::$last_args['runtime_lifecycle_invocation_id'] ?? '' ), 'separate-runtime-calls-receive-distinct-invocations' );
+
+$same_invocation_artifact_dir = $artifact_dir . '/same-invocation-resume';
+$same_invocation_result       = Static_Site_Importer_Validation_Runtime::validate_artifact(
+	array(
+		'artifact'                     => $lifecycle_artifact,
+		'artifact_dir'                 => $same_invocation_artifact_dir,
+		'slug'                         => 'same-invocation',
+		'runtime_lifecycle_phase'      => 'resume',
+		'runtime_lifecycle_request_id' => $prepare_receipt['fresh_runtime']['request_id'],
+	),
+	$prepared_invocation
+);
+$assert( is_wp_error( $same_invocation_result ) && 'static_site_importer_fresh_runtime_required' === $same_invocation_result->get_error_code(), 'same-invocation-resume-rejected' );
+
 unlink( $report_path );
 rmdir( $default_artifact_dir );
 rmdir( $override_artifact_dir );
+rmdir( $resume_artifact_dir );
+rmdir( $same_invocation_artifact_dir );
 rmdir( $artifact_dir );
 
 if ( $failures ) {
