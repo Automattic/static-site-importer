@@ -177,16 +177,31 @@ $assert( str_contains( (string) file_get_contents( $overlay_root . '/style.css' 
 $resumed_overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'provider-overlay-plan', 'provider_layout_overlays' => array( $overlay ) ) );
 $resumed_overlay_files = $resumed_overlay_receipt['completed']['provider_layout_overlays']['files'] ?? array();
 $assert( 'completed' === $resumed_overlay_receipt['status'] && 'already_satisfied' === ( $resumed_overlay_receipt['completed']['provider_layout_overlays']['status'] ?? '' ) && 2 === count( $resumed_overlay_files ) && array() === array_filter( $resumed_overlay_files, static fn( array $file ): bool => 'already_satisfied' !== ( $file['status'] ?? '' ) ), 'resumed provider overlay reconciles byte-identical stylesheet state with receipt evidence' );
+$overlay_hashes = array(
+	'style.css' => hash_file( 'sha256', $overlay_root . '/style.css' ),
+	'assets/css/editor-style.css' => hash_file( 'sha256', $overlay_root . '/assets/css/editor-style.css' ),
+);
 $conflicting_overlay = $overlay;
 $conflicting_overlay['css'] = str_replace( 'gap:1rem', 'gap:2rem', $overlay['css'] );
 $conflicting_overlay['sha256'] = hash( 'sha256', $conflicting_overlay['css'] );
 $conflicting_overlay['bytes'] = strlen( $conflicting_overlay['css'] );
 $conflicting_overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'provider-overlay-plan', 'provider_layout_overlays' => array( $conflicting_overlay ) ) );
-$assert( 'partial' === $conflicting_overlay_receipt['status'] && 'provider_layout_overlay_rejected' === ( $conflicting_overlay_receipt['diagnostics'][0]['reason_code'] ?? '' ), 'conflicting provider overlay remains rejected on resume' );
+$assert( 'rejected' === $conflicting_overlay_receipt['status'] && 'provider_layout_overlay_rejected' === ( $conflicting_overlay_receipt['diagnostics'][0]['reason_code'] ?? '' ) && $overlay_hashes['style.css'] === hash_file( 'sha256', $overlay_root . '/style.css' ) && $overlay_hashes['assets/css/editor-style.css'] === hash_file( 'sha256', $overlay_root . '/assets/css/editor-style.css' ), 'conflicting provider overlay is rejected before either stylesheet changes' );
 $forged_overlay = $overlay;
 $forged_overlay['css'] = "/* Static Site Importer provider layout overlay: abcdef123456 */\nbody{background:url(https://example.test/x)}\n";
+$forged_root = $GLOBALS['ssi_plan_root'] . '/forged-provider-overlay-plan';
 $forged_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'forged-provider-overlay-plan', 'provider_layout_overlays' => array( $forged_overlay ) ) );
-$assert( 'partial' === $forged_receipt['status'] && 'provider_layout_overlay_rejected' === ( $forged_receipt['diagnostics'][0]['reason_code'] ?? '' ) && 'not_requested' === ( $forged_receipt['completed']['provider_layout_overlays']['status'] ?? '' ), 'rejected provider overlay never receives an applied receipt claim' );
+$assert( 'rejected' === $forged_receipt['status'] && 'provider_layout_overlay_rejected' === ( $forged_receipt['diagnostics'][0]['reason_code'] ?? '' ) && 'not_requested' === ( $forged_receipt['completed']['provider_layout_overlays']['status'] ?? '' ) && ! file_exists( $forged_root ), 'forged provider overlay is rejected before any write claim or file mutation' );
+$conflict_root = $GLOBALS['ssi_plan_root'] . '/canonical-file-conflict';
+mkdir( $conflict_root, 0777, true );
+file_put_contents( $conflict_root . '/theme.json', '{"conflict":true}' );
+$canonical_conflict_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'canonical-file-conflict' ) );
+$assert( 'rejected' === $canonical_conflict_receipt['status'] && 'file_conflict' === ( $canonical_conflict_receipt['diagnostics'][0]['reason_code'] ?? '' ) && '{"conflict":true}' === file_get_contents( $conflict_root . '/theme.json' ), 'unrelated canonical file conflicts remain rejected and unchanged' );
+
+$explicit_styles_root = $GLOBALS['ssi_plan_root'] . '/explicit-canonical-styles';
+$explicit_styles = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'provider_layout_stylesheet_writes' );
+$explicit_styles_writes = $explicit_styles->invoke( null, array( 'theme_dir' => $explicit_styles_root, 'theme' => array( 'slug' => 'explicit-canonical-styles' ), 'resolved' => array( 'writes' => array( array( 'target_path' => 'style.css', 'payload' => array( 'encoding' => 'utf8', 'data' => 'body{color:black}' ) ), array( 'target_path' => 'assets/css/editor-style.css', 'payload' => array( 'encoding' => 'utf8', 'data' => '.editor-styles-wrapper{color:black}' ) ) ) ) ), array( $overlay ) );
+$assert( is_array( $explicit_styles_writes ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'body{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', '.editor-styles-wrapper{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', 'provider layout overlay: abcdef123456' ), 'explicit canonical frontend and editor stylesheet payloads derive independent overlay-composed writes' );
 
 $font_result = ( new ArtifactCompiler() )->compile(
 	array(
