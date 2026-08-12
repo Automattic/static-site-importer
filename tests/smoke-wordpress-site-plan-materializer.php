@@ -174,6 +174,15 @@ $overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materi
 $overlay_root = $GLOBALS['ssi_plan_root'] . '/provider-overlay-plan';
 $assert( 'completed' === $overlay_receipt['status'] && 'completed' === ( $overlay_receipt['completed']['provider_layout_overlays']['status'] ?? '' ), 'provider layout receipt is applied only after stylesheet writes complete' );
 $assert( str_contains( (string) file_get_contents( $overlay_root . '/style.css' ), 'provider layout overlay: abcdef123456' ) && str_contains( (string) file_get_contents( $overlay_root . '/assets/css/editor-style.css' ), 'provider layout overlay: abcdef123456' ), 'generated frontend and editor stylesheets contain the deduplicated provider overlay' );
+$resumed_overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'provider-overlay-plan', 'provider_layout_overlays' => array( $overlay ) ) );
+$resumed_overlay_files = $resumed_overlay_receipt['completed']['provider_layout_overlays']['files'] ?? array();
+$assert( 'completed' === $resumed_overlay_receipt['status'] && 'already_satisfied' === ( $resumed_overlay_receipt['completed']['provider_layout_overlays']['status'] ?? '' ) && 2 === count( $resumed_overlay_files ) && array() === array_filter( $resumed_overlay_files, static fn( array $file ): bool => 'already_satisfied' !== ( $file['status'] ?? '' ) ), 'resumed provider overlay reconciles byte-identical stylesheet state with receipt evidence' );
+$conflicting_overlay = $overlay;
+$conflicting_overlay['css'] = str_replace( 'gap:1rem', 'gap:2rem', $overlay['css'] );
+$conflicting_overlay['sha256'] = hash( 'sha256', $conflicting_overlay['css'] );
+$conflicting_overlay['bytes'] = strlen( $conflicting_overlay['css'] );
+$conflicting_overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'provider-overlay-plan', 'provider_layout_overlays' => array( $conflicting_overlay ) ) );
+$assert( 'partial' === $conflicting_overlay_receipt['status'] && 'provider_layout_overlay_rejected' === ( $conflicting_overlay_receipt['diagnostics'][0]['reason_code'] ?? '' ), 'conflicting provider overlay remains rejected on resume' );
 $forged_overlay = $overlay;
 $forged_overlay['css'] = "/* Static Site Importer provider layout overlay: abcdef123456 */\nbody{background:url(https://example.test/x)}\n";
 $forged_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'forged-provider-overlay-plan', 'provider_layout_overlays' => array( $forged_overlay ) ) );
