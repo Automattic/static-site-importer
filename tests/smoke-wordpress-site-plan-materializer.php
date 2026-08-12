@@ -170,6 +170,9 @@ $assert( false === ( $receipt['completed']['block_provenance_truncated'] ?? true
 
 $overlay_css = "/* Static Site Importer provider layout overlay: abcdef123456 */\n.ssi-form-123456789abc > form.jetpack-contact-form__form{display:flex;gap:1rem}\n";
 $overlay = array( 'schema' => Static_Site_Importer_Provider_Layout_Overlay::OVERLAY_SCHEMA, 'css' => $overlay_css, 'sha256' => hash( 'sha256', $overlay_css ), 'bytes' => strlen( $overlay_css ) );
+$collect_overlays = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'provider_layout_overlays_from_entity_reports' );
+$collected_overlays = $collect_overlays->invoke( null, array( array( 'forms' => array( array( 'provider_layout_overlay_css' => array() ), array( 'provider_layout_overlay_css' => $overlay ), array( 'provider_layout_overlay_css' => array( 'malformed' => true ) ) ) ) ) );
+$assert( array( $overlay, array( 'malformed' => true ) ) === $collected_overlays, 'provider layout collection omits empty absence sentinels without hiding non-empty overlays from strict validation' );
 $overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'provider-overlay-plan', 'provider_layout_overlays' => array( $overlay, $overlay ) ) );
 $overlay_root = $GLOBALS['ssi_plan_root'] . '/provider-overlay-plan';
 $assert( 'completed' === $overlay_receipt['status'] && 'completed' === ( $overlay_receipt['completed']['provider_layout_overlays']['status'] ?? '' ), 'provider layout receipt is applied only after stylesheet writes complete' );
