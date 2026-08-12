@@ -369,14 +369,7 @@ class Static_Site_Importer_URL_Fetcher {
 	private static function native_start( array $target, array $options ): Static_Site_Importer_URL_Fetcher_Native_Handle {
 		$ip               = $target['ips'][0];
 		$remote           = sprintf( 'tcp://%s:%d', str_contains( $ip, ':' ) ? '[' . $ip . ']' : $ip, $target['port'] );
-		$context          = stream_context_create( array(
-			'ssl' => array(
-				'SNI_enabled'      => true,
-				'peer_name'        => $target['host'],
-				'verify_peer'      => true,
-				'verify_peer_name' => true,
-			),
-		) );
+		$context          = self::tls_context( $target['host'] );
 		$errno            = 0;
 		$errstr           = '';
 		$socket           = @stream_socket_client( $remote, $errno, $errstr, $options['timeout'], STREAM_CLIENT_CONNECT | STREAM_CLIENT_ASYNC_CONNECT, $context ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Nonblocking connection failure is returned through $errno/$errstr.
@@ -398,6 +391,19 @@ class Static_Site_Importer_URL_Fetcher {
 		$host             = $target['host'] . ( ( 'https' === $target['scheme'] ? 443 : 80 ) === $target['port'] ? '' : ':' . $target['port'] );
 		$handle->outbound = 'GET ' . $target['path'] . " HTTP/1.1\r\nHost: " . $host . "\r\nUser-Agent: StaticSiteImporter/1.0\r\nAccept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.1\r\nConnection: close\r\n\r\n";
 		return $handle;
+	}
+
+	/** Build the verified TLS context used by IP-pinned connections. */
+	private static function tls_context( string $host ) {
+		return stream_context_create( array(
+			'ssl' => array(
+				'SNI_enabled'      => true,
+				'peer_name'        => $host,
+				'verify_peer'      => true,
+				'verify_peer_name' => true,
+				'cafile'           => ABSPATH . WPINC . '/certificates/ca-bundle.crt',
+			),
+		) );
 	}
 
 	/** Poll a nonblocking connection. Null means it remains in flight. */
@@ -628,21 +634,17 @@ class Static_Site_Importer_URL_Fetcher {
 	 * @return array{status_code:int,headers:array<string,array<int,string>>,body:string}|WP_Error
 	 */
 	private static function request_ip( array $target, string $ip, int $timeout, int $max_bytes ) {
-		$remote = sprintf( 'tcp://%s:%d', str_contains( $ip, ':' ) ? '[' . $ip . ']' : $ip, $target['port'] );
-		$errno  = 0;
-		$errstr = '';
-		$socket = stream_socket_client( $remote, $errno, $errstr, $timeout, STREAM_CLIENT_CONNECT );
+		$remote  = sprintf( 'tcp://%s:%d', str_contains( $ip, ':' ) ? '[' . $ip . ']' : $ip, $target['port'] );
+		$context = self::tls_context( $target['host'] );
+		$errno   = 0;
+		$errstr  = '';
+		$socket  = stream_socket_client( $remote, $errno, $errstr, $timeout, STREAM_CLIENT_CONNECT, $context );
 		if ( false === $socket ) {
 			return new WP_Error( 'static_site_importer_url_connect_failed', sprintf( 'Could not connect to %s: %s', $target['host'], $errstr ) );
 		}
 
 		stream_set_timeout( $socket, $timeout );
 		if ( 'https' === $target['scheme'] ) {
-			stream_context_set_option( $socket, 'ssl', 'SNI_enabled', true );
-			stream_context_set_option( $socket, 'ssl', 'peer_name', $target['host'] );
-			stream_context_set_option( $socket, 'ssl', 'verify_peer', true );
-			stream_context_set_option( $socket, 'ssl', 'verify_peer_name', true );
-
 			if ( ! stream_socket_enable_crypto( $socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT ) ) {
 				fclose( $socket ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes a validated public HTTP socket, not a filesystem handle.
 				return new WP_Error( 'static_site_importer_url_tls_failed', 'Could not establish a verified TLS connection to the URL.' );
