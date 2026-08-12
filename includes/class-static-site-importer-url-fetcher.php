@@ -27,6 +27,37 @@ class Static_Site_Importer_URL_Fetcher {
 	private const CONNECT_TIMEOUT_FLOOR      = 1;
 	private const DEFAULT_CONCURRENCY        = 4;
 	private const DEFAULT_ORIGIN_CONCURRENCY = 2;
+	private const NON_PUBLIC_IP_RANGES       = array(
+		'0.0.0.0/8',
+		'10.0.0.0/8',
+		'100.64.0.0/10',
+		'127.0.0.0/8',
+		'169.254.0.0/16',
+		'172.16.0.0/12',
+		'192.0.0.0/24',
+		'192.0.2.0/24',
+		'192.88.99.0/24',
+		'192.168.0.0/16',
+		'198.18.0.0/15',
+		'198.51.100.0/24',
+		'203.0.113.0/24',
+		'224.0.0.0/4',
+		'240.0.0.0/4',
+		'::/128',
+		'::1/128',
+		'::ffff:0:0/96',
+		'64:ff9b:1::/48',
+		'100::/64',
+		'100:0:0:1::/64',
+		'2001::/23',
+		'2001:db8::/32',
+		'2002::/16',
+		'3fff::/20',
+		'5f00::/16',
+		'fc00::/7',
+		'fe80::/10',
+		'ff00::/8',
+	);
 
 	/**
 	 * Fetch a public HTML URL and write it as index.html.
@@ -804,7 +835,7 @@ class Static_Site_Importer_URL_Fetcher {
 			}
 		}
 
-		$ips = array_values( array_unique( array_filter( $ips, static fn ( string $ip ): bool => (bool) filter_var( $ip, FILTER_VALIDATE_IP ) ) ) );
+		$ips = array_values( array_unique( array_filter( $ips, static fn ( string $ip ): bool => false !== @inet_pton( $ip ) ) ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid provider or DNS values are discarded and fail closed below.
 		if ( ! $ips ) {
 			return new WP_Error( 'static_site_importer_url_dns_failed', 'The URL host could not be resolved.' );
 		}
@@ -819,7 +850,47 @@ class Static_Site_Importer_URL_Fetcher {
 	 * @return bool
 	 */
 	private static function is_public_ip( string $ip ): bool {
-		return (bool) filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE );
+		$packed = @inet_pton( $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid addresses fail closed.
+		if ( false === $packed ) {
+			return false;
+		}
+
+		foreach ( self::NON_PUBLIC_IP_RANGES as $range ) {
+			if ( self::ip_is_in_range( $packed, $range ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Compare a packed IP address with a CIDR range without integer-width assumptions.
+	 *
+	 * @param string $packed Packed address from inet_pton().
+	 * @param string $range  CIDR range.
+	 * @return bool
+	 */
+	private static function ip_is_in_range( string $packed, string $range ): bool {
+		list( $network, $prefix_text ) = explode( '/', $range, 2 );
+		$network_packed                = @inet_pton( $network ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Class-owned ranges are validated by deterministic tests.
+		if ( false === $network_packed || strlen( $packed ) !== strlen( $network_packed ) ) {
+			return false;
+		}
+
+		$prefix     = (int) $prefix_text;
+		$full_bytes = intdiv( $prefix, 8 );
+		if ( 0 < $full_bytes && 0 !== strncmp( $packed, $network_packed, $full_bytes ) ) {
+			return false;
+		}
+
+		$remaining_bits = $prefix % 8;
+		if ( 0 === $remaining_bits ) {
+			return true;
+		}
+
+		$mask = ( 0xff << ( 8 - $remaining_bits ) ) & 0xff;
+		return ( ord( $packed[ $full_bytes ] ) & $mask ) === ( ord( $network_packed[ $full_bytes ] ) & $mask );
 	}
 
 	/**
