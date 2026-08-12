@@ -61,6 +61,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'existing_matches'             => array( 'pages' => array() ),
 			'report_destinations'          => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
 			'external_report_destinations' => isset( $args['external_report_destinations'] ) && is_array( $args['external_report_destinations'] ) ? $args['external_report_destinations'] : array(),
+			'args'                         => $args,
 		);
 
 		try {
@@ -208,6 +209,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 
 		foreach ( $state['resolved']['writes'] as $write ) {
+			$path = $state['theme_dir'] . '/' . $write['target_path'];
+			if ( isset( $state['provider_layout_overlay_writes'][ $path ] ) && is_file( $path ) && self::file_hash( $path ) === hash( 'sha256', $state['provider_layout_overlay_writes'][ $path ] ) ) {
+				$state['applied']['files'][] = self::canonical_file_receipt( $path, $write );
+				continue;
+			}
 			if ( ! empty( $args['preserve_existing_theme_bootstrap'] ) && 'theme_bootstrap' === ( $write['kind'] ?? '' ) && is_file( $state['theme_dir'] . '/' . $write['target_path'] ) ) {
 				$result = self::merge_batch_bootstrap( $state['theme_dir'], $write );
 				if ( is_wp_error( $result ) ) {
@@ -436,12 +442,20 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				throw new InvalidArgumentException( 'unsupported_operation' );
 			}
 		}
+		$overlay_writes = self::provider_layout_stylesheet_writes( $state, $state['args']['provider_layout_overlays'] ?? array() );
+		if ( is_wp_error( $overlay_writes ) ) {
+			throw new InvalidArgumentException( 'provider_layout_overlay_rejected' );
+		}
+		$state['provider_layout_overlay_writes'] = $overlay_writes;
 		foreach ( $state['resolved']['writes'] as $write ) {
 			$path = $state['theme_dir'] . '/' . $write['target_path'];
 			if ( ! self::safe_destination( $state['theme_dir'], $write['target_path'] ) ) {
 				throw new InvalidArgumentException( 'unsafe_destination_path' );
 			}
-			if ( is_dir( $path ) || ( file_exists( $path ) && ! $overwrite && ! self::theme_belongs_to_run( $state['theme_dir'], $import_run_id ) && self::file_hash( $path ) !== self::payload_hash( $write ) ) ) {
+			if ( is_dir( $path ) || ( file_exists( $path ) && ! $overwrite && ! self::theme_belongs_to_run( $state['theme_dir'], $import_run_id ) && self::file_hash( $path ) !== self::payload_hash( $write ) && ( ! isset( $overlay_writes[ $path ] ) || self::file_hash( $path ) !== hash( 'sha256', $overlay_writes[ $path ] ) ) ) ) {
+				if ( isset( $overlay_writes[ $path ] ) ) {
+					throw new InvalidArgumentException( 'provider_layout_overlay_rejected' );
+				}
 				throw new InvalidArgumentException( 'file_conflict' );
 			}
 		}
@@ -620,10 +634,18 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	/** @param array<string,mixed> $write */
 	private static function write_file( string $theme_dir, array $write ) {
 		$path = $theme_dir . '/' . $write['target_path'];
+		$data = 'base64' === $write['payload']['encoding'] ? base64_decode( $write['payload']['data'], true ) : $write['payload']['data']; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes declared canonical artifact payload bytes.
+		if ( is_file( $path ) && is_string( $data ) && self::file_hash( $path ) === hash( 'sha256', $data ) ) {
+			return array(
+				'target_path'             => $write['target_path'],
+				'hash'                    => self::file_hash( $path ),
+				'payload_hash'            => $write['payload_hash'] ?? hash( 'sha256', $data ),
+				'reconciliation_identity' => $write['reconciliation_identity'] ?? hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ),
+			);
+		}
 		if ( ! is_dir( dirname( $path ) ) && ! wp_mkdir_p( dirname( $path ) ) ) {
 			return new WP_Error( 'theme_directory_create_failed' );
 		}
-		$data = 'base64' === $write['payload']['encoding'] ? base64_decode( $write['payload']['data'], true ) : $write['payload']['data']; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes declared canonical artifact payload bytes.
 		$temp = tempnam( dirname( $path ), '.ssi-plan-' );
 		if ( false === $data || false === $temp || false === file_put_contents( $temp, $data ) || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents,WordPress.WP.AlternativeFunctions.rename_rename -- Atomically materializes the canonical declared theme write.
 			if ( is_string( $temp ) && file_exists( $temp ) ) {
@@ -636,6 +658,31 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'hash'                    => self::file_hash( $path ),
 			'payload_hash'            => $write['payload_hash'] ?? hash( 'sha256', $data ),
 			'reconciliation_identity' => $write['reconciliation_identity'] ?? hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ),
+		);
+	}
+
+	/** Report final bytes while retaining the canonical write's reconciliation identity. */
+	private static function canonical_file_receipt( string $path, array $write ): array {
+		return array(
+			'target_path'             => $write['target_path'],
+			'hash'                    => self::file_hash( $path ),
+			'payload_hash'            => $write['payload_hash'] ?? self::payload_hash( $write ),
+			'reconciliation_identity' => $write['reconciliation_identity'] ?? hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ),
+		);
+	}
+
+	/** Include generated stylesheet targets in canonical file receipt projections. */
+	private static function record_overlay_stylesheet_file( array &$files, string $path, string $target, string $content ): void {
+		foreach ( $files as $file ) {
+			if ( ( $file['target_path'] ?? null ) === $target ) {
+				return;
+			}
+		}
+		$files[] = array(
+			'target_path'             => $target,
+			'hash'                    => self::file_hash( $path ),
+			'payload_hash'            => hash( 'sha256', $content ),
+			'reconciliation_identity' => hash( 'sha256', $target . "\n" . $target ),
 		);
 	}
 
@@ -693,39 +740,26 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( empty( $admitted ) ) {
 			return new WP_Error( 'provider_layout_overlay_rejected' );
 		}
-		$stylesheets = array();
-		$source_css  = '';
-		foreach ( $state['resolved']['writes'] as $write ) {
-			$target = (string) ( $write['target_path'] ?? '' );
-			if ( ! str_ends_with( $target, '.css' ) ) {
-				continue;
-			}
-			$path    = $state['theme_dir'] . '/' . $target;
-			$content = is_readable( $path ) ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the just-persisted generated stylesheet.
-			if ( false === $content ) {
-				return new WP_Error( 'provider_layout_stylesheet_read_failed' );
-			}
-			if ( '' === $source_css ) {
-				$source_css = $content;
-			}
-			if ( preg_match( '#(?:^|/)style\.css$|(?:^|/)editor-style\.css$#', $target ) ) {
-				$stylesheets[ $path ] = $content;
-			}
-		}
-		if ( '' === $source_css ) {
-			return new WP_Error( 'provider_layout_stylesheet_missing' );
-		}
-		$has_frontend = isset( $stylesheets[ $state['theme_dir'] . '/style.css' ] );
-		$has_editor   = isset( $stylesheets[ $state['theme_dir'] . '/assets/css/editor-style.css' ] );
-		$writes       = $has_frontend && $has_editor
-			? Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], '', '', array(), array(), $admitted, $stylesheets )
-			: Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], (string) $state['theme']['slug'], $source_css, array(), array(), $admitted );
-		if ( empty( $writes ) || ( $has_frontend && $has_editor && $stylesheets === $writes ) ) {
-			return new WP_Error( 'provider_layout_overlay_rejected' );
+		$writes = self::provider_layout_stylesheet_writes( $state, $admitted );
+		if ( is_wp_error( $writes ) ) {
+			return $writes;
 		}
 		$reports = array();
 		foreach ( $writes as $path => $content ) {
-			$target = ltrim( substr( $path, strlen( trailingslashit( $state['theme_dir'] ) ) ), '/' );
+			$target   = ltrim( substr( $path, strlen( trailingslashit( $state['theme_dir'] ) ) ), '/' );
+			$existing = file_exists( $path ) ? ( is_readable( $path ) ? file_get_contents( $path ) : false ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Verifies an existing generated stylesheet before reconciliation.
+			if ( false === $existing ) {
+				return new WP_Error( 'provider_layout_stylesheet_read_failed' );
+			}
+			if ( $content === $existing ) {
+				$reports[] = array(
+					'target_path' => $target,
+					'hash'        => hash( 'sha256', $content ),
+					'status'      => 'already_satisfied',
+				);
+				self::record_overlay_stylesheet_file( $state['applied']['files'], $path, $target, $content );
+				continue;
+			}
 			$result = self::write_file( $state['theme_dir'], array(
 				'target_path' => $target,
 				'source_path' => $target,
@@ -737,17 +771,49 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( is_wp_error( $result ) ) {
 				return $result;
 			}
-			$reports[] = $result;
+			$result['status'] = 'applied';
+			$reports[]  = $result;
 			foreach ( $state['applied']['files'] as $index => $file ) {
 				if ( ( $file['target_path'] ?? null ) === $target ) {
-					$state['applied']['files'][ $index ] = $result;
+					$state['applied']['files'][ $index ] = self::canonical_file_receipt( $path, $file );
 				}
 			}
+			self::record_overlay_stylesheet_file( $state['applied']['files'], $path, $target, $content );
 		}
 		return array(
-			'status' => 'completed',
+			'status' => array_filter( $reports, static fn( array $report ): bool => 'applied' === ( $report['status'] ?? '' ) ) ? 'completed' : 'already_satisfied',
 			'files'  => $reports,
 		);
+	}
+
+	/** Derive expected overlay-composed stylesheets from their canonical plan payloads. */
+	private static function provider_layout_stylesheet_writes( array $state, array $overlays ) {
+		if ( empty( $overlays ) ) {
+			return array();
+		}
+		foreach ( $overlays as $overlay ) {
+			if ( null === Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $overlay ) ) {
+				return new WP_Error( 'provider_layout_overlay_rejected' );
+			}
+		}
+		$stylesheets = array();
+		$source_css  = '';
+		foreach ( $state['resolved']['writes'] as $write ) {
+			$target = (string) ( $write['target_path'] ?? '' );
+			$css    = self::payload_data( $write );
+			if ( str_ends_with( $target, '.css' ) && '' === $source_css ) {
+				$source_css = $css;
+			}
+			if ( in_array( $target, array( 'style.css', 'assets/css/editor-style.css' ), true ) ) {
+				$stylesheets[ $state['theme_dir'] . '/' . $target ] = $css;
+			}
+		}
+		if ( isset( $stylesheets[ $state['theme_dir'] . '/style.css' ], $stylesheets[ $state['theme_dir'] . '/assets/css/editor-style.css' ] ) ) {
+			return Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], '', '', array(), array(), $overlays, $stylesheets );
+		}
+		return '' === $source_css
+			? new WP_Error( 'provider_layout_stylesheet_missing' )
+			: Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], (string) $state['theme']['slug'], $source_css, array(), array(), $overlays );
 	}
 
 	/** @param array<string,mixed> $state @param array{writes:array<int,array<string,string>>,diagnostics:array<int,array<string,string>>} $overlay */

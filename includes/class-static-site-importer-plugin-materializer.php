@@ -53,7 +53,8 @@ class Static_Site_Importer_Plugin_Materializer {
 			return self::failed_report( $report, $deps );
 		}
 
-		$needs_install = ! file_exists( trailingslashit( WP_PLUGIN_DIR ) . $plugin_file );
+		$plugin_path   = trailingslashit( WP_PLUGIN_DIR ) . $plugin_file;
+		$needs_install = ! self::plugin_entrypoint_exists( $plugin_path );
 		if ( ! $needs_install ) {
 			$report['installed'] = true;
 		} else {
@@ -63,11 +64,17 @@ class Static_Site_Importer_Plugin_Materializer {
 			}
 			$install = self::install_wp_org_plugin( $slug );
 			if ( is_wp_error( $install ) ) {
-				return self::failed_report( $report, $install );
+				// Upgraders can persist the entrypoint before reporting a terminal
+				// failure. The filesystem is the install oracle for a safe retry.
+				if ( ! self::plugin_entrypoint_exists( $plugin_path ) ) {
+					return self::failed_report( $report, $install );
+				}
+				$report['installed'] = true;
+				$report['actions'][] = 'reconciled_installed';
+			} else {
+				$report['installed'] = true;
+				$report['actions'][] = 'installed';
 			}
-
-			$report['installed'] = true;
-			$report['actions'][] = 'installed';
 		}
 
 		if ( function_exists( 'is_plugin_active' ) && is_plugin_active( $plugin_file ) ) {
@@ -86,34 +93,42 @@ class Static_Site_Importer_Plugin_Materializer {
 				$activate = activate_plugin( $plugin_file );
 			} catch ( Throwable $error ) {
 				self::restore_activation_lifecycle_actions( $lifecycle );
-				return self::failed_report(
-					$report,
-					new WP_Error( 'static_site_importer_plugin_activation_failed', sprintf( 'Plugin %s activation failed: %s', $slug, $error->getMessage() ) )
-				);
+				$activate = new WP_Error( 'static_site_importer_plugin_activation_failed', sprintf( 'Plugin %s activation failed: %s', $slug, $error->getMessage() ) );
 			}
 			if ( is_wp_error( $activate ) ) {
 				self::restore_activation_lifecycle_actions( $lifecycle );
-				return self::failed_report( $report, $activate );
-			}
-			$preparation = self::prepare_plugin_runtime( $slug, $preparation_callback );
-			if ( is_wp_error( $preparation ) ) {
-				self::restore_activation_lifecycle_actions( $lifecycle );
-				return self::failed_report( $report, $preparation );
-			}
-			try {
-				$report['lifecycle_replay'] = self::complete_activation_lifecycle_replay( $lifecycle );
-			} catch ( Throwable $error ) {
-				return self::failed_report(
-					$report,
-					new WP_Error(
-						'static_site_importer_plugin_lifecycle_replay_failed',
-						sprintf( 'Plugin %s activated but its WordPress lifecycle callbacks failed: %s', $slug, $error->getMessage() )
-					)
-				);
-			}
+				// activate_plugin() may update active_plugins before an activation
+				// callback fails. Reconcile persistent activation before failing.
+				if ( ! is_plugin_active( $plugin_file ) ) {
+					return self::failed_report( $report, $activate );
+				}
+				$report['active']    = true;
+				$report['actions'][] = 'reconciled_activated';
+				$preparation = self::prepare_plugin_runtime( $slug, $preparation_callback );
+				if ( is_wp_error( $preparation ) ) {
+					return self::failed_report( $report, $preparation );
+				}
+			} else {
+				$preparation = self::prepare_plugin_runtime( $slug, $preparation_callback );
+				if ( is_wp_error( $preparation ) ) {
+					self::restore_activation_lifecycle_actions( $lifecycle );
+					return self::failed_report( $report, $preparation );
+				}
+				try {
+					$report['lifecycle_replay'] = self::complete_activation_lifecycle_replay( $lifecycle );
+				} catch ( Throwable $error ) {
+					return self::failed_report(
+						$report,
+						new WP_Error(
+							'static_site_importer_plugin_lifecycle_replay_failed',
+							sprintf( 'Plugin %s activated but its WordPress lifecycle callbacks failed: %s', $slug, $error->getMessage() )
+						)
+					);
+				}
 
-			$report['active']    = true;
-			$report['actions'][] = 'activated';
+				$report['active']    = true;
+				$report['actions'][] = 'activated';
+			}
 		}
 
 		$report['status'] = in_array( 'installed', $report['actions'], true )
@@ -537,6 +552,12 @@ class Static_Site_Importer_Plugin_Materializer {
 			'version' => (string) ( $headers['Version'] ?? '' ),
 			'sha256'  => false !== $sha256 ? $sha256 : '',
 		);
+	}
+
+	/** Re-read an upgrader-mutated entrypoint instead of reusing pre-install state. */
+	private static function plugin_entrypoint_exists( string $path ): bool {
+		clearstatcache( true, $path );
+		return file_exists( $path );
 	}
 
 	/**
