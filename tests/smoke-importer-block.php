@@ -456,8 +456,10 @@ $assert( str_contains( $html, 'data-static-site-importer-figma-available="1"' ),
 $assert( str_contains( $html, 'data-static-site-importer-provider="privateprovider"' ), 'render-sanitizes-provider' );
 $assert( str_contains( $html, 'data-static-site-importer-apply-to-current-site="1"' ), 'render-exposes-current-site-apply-flag' );
 $assert( str_contains( $html, 'data-static-site-importer-open-in-playground="0"' ), 'render-exposes-open-in-playground-flag' );
-$assert( ! str_contains( $html, 'data-static-site-importer-source-url' ), 'render-omits-url-input-hook' );
+$assert( str_contains( $html, 'data-static-site-importer-source-url' ), 'render-has-url-input-hook' );
+$assert( str_contains( $html, 'Capture a public site' ), 'render-labels-public-site-capture' );
 $assert( str_contains( $html, 'data-static-site-importer-default-url="https://example.com/source"' ), 'render-preserves-default-url-for-programmatic-use' );
+$assert( str_contains( $html, 'value="https://example.com/source"' ), 'render-prefills-visible-url-input' );
 $assert( str_contains( $html, 'data-static-site-importer-source-files' ), 'render-has-file-input-hook' );
 $assert( str_contains( $html, 'Drop website source' ), 'render-has-decoupled-dropzone-label' );
 $assert( str_contains( $html, 'Drag a folder, ZIP, or static site files here.' ), 'render-has-upload-dropzone-copy' );
@@ -597,6 +599,9 @@ $GLOBALS['ssi_filters']['static_site_importer_block_wrapper_attributes'] = array
 $view_js = file_get_contents( dirname( __DIR__ ) . '/blocks/importer/view.js' );
 $assert( is_string( $view_js ), 'view-js-readable' );
 $assert( str_contains( $view_js, 'webkitRelativePath' ), 'view-preserves-directory-relative-paths' );
+$assert( str_contains( $view_js, "root.querySelector( '[data-static-site-importer-source-url]' )" ), 'view-reads-visible-url-input' );
+$assert( str_contains( $view_js, 'url: sourceUrl ? sourceUrl.value' ), 'view-submits-visible-url-value' );
+$assert( str_contains( $view_js, 'const isUrlOnly = Boolean' ), 'view-detects-url-only-source-after-reading-uploads' );
 $assert( str_contains( $view_js, 'data-static-site-importer-source-directory' ), 'view-reads-directory-upload-input' );
 $assert( ! str_contains( $view_js, 'data-static-site-importer-source-type' ), 'view-omits-source-type-dropdown' );
 $assert( str_contains( $view_js, 'data-static-site-importer-upload-files' ), 'view-binds-files-upload-button' );

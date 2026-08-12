@@ -328,26 +328,25 @@
 		}
 
 		submit.addEventListener( 'click', async function () {
-			const form = root.querySelector( '[data-static-site-importer-form]' );
+			const sourceUrl = root.querySelector( '[data-static-site-importer-source-url]' );
 			const html = root.querySelector( '[data-static-site-importer-source-html]' );
 			const uploadInputs = root.querySelectorAll( '[data-static-site-importer-source-files], [data-static-site-importer-source-directory]' );
 			const provider = root.getAttribute( 'data-static-site-importer-provider' ) || '';
 			const isCurrentSiteImport = root.getAttribute( 'data-static-site-importer-apply-to-current-site' ) === '1';
-			const initialUrl = form ? form.getAttribute( 'data-static-site-importer-default-url' ) || '' : '';
-			const isUrlOnly = '' !== initialUrl && ! html.value && 0 === uploadInputs.length;
 			const source = {
-				url: initialUrl,
+				url: sourceUrl ? sourceUrl.value : '',
 				html: html ? html.value : '',
 				files: await buildFiles( uploadInputs, root ),
 				archive: await buildArchive( uploadInputs, root ),
 			};
 
 			if ( ! hasSource( source ) ) {
-				setReport( root, { success: false, error: { message: 'Upload a website or paste HTML to start.' } } );
-				showStatus( root, 'Upload a website or paste HTML to start.' );
+				setReport( root, { success: false, error: { message: 'Enter a public URL, upload a website, or paste HTML to start.' } } );
+				showStatus( root, 'Enter a public URL, upload a website, or paste HTML to start.' );
 				return;
 			}
 
+			const isUrlOnly = Boolean( source.url.trim() && ! source.html.trim() && ! source.files.length && ! source.archive );
 			showStatus( root, isCurrentSiteImport ? 'Importing to this site...' : 'Preparing WordPress preview...' );
 			submit.disabled = true;
 

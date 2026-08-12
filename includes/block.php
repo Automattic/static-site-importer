@@ -33,8 +33,8 @@ function static_site_importer_render_block( array $attributes = array() ): strin
 	$figma_available = Static_Site_Importer_Figma_Import::zstd_decoder_available();
 	$title           = isset( $attributes['title'] ) && '' !== trim( (string) $attributes['title'] ) ? (string) $attributes['title'] : __( 'Bring a site into WordPress.', 'static-site-importer' );
 	$default_intro   = $figma_available
-		? __( 'Upload a static site, ZIP, folder, Figma file, or paste HTML. Static Site Importer will compile it into a block theme.', 'static-site-importer' )
-		: __( 'Upload a static site, ZIP, folder, or paste HTML. Static Site Importer will compile it into a block theme.', 'static-site-importer' );
+		? __( 'Capture a public site, upload a static site, ZIP, folder, or Figma file, or paste HTML. Static Site Importer will compile it into a block theme.', 'static-site-importer' )
+		: __( 'Capture a public site, upload a static site, ZIP, or folder, or paste HTML. Static Site Importer will compile it into a block theme.', 'static-site-importer' );
 	$intro           = isset( $attributes['intro'] ) && '' !== trim( (string) $attributes['intro'] ) ? (string) $attributes['intro'] : $default_intro;
 	$provider        = isset( $attributes['provider'] ) ? sanitize_key( (string) $attributes['provider'] ) : '';
 	$default_url     = isset( $attributes['defaultUrl'] ) ? esc_url_raw( (string) $attributes['defaultUrl'] ) : '';
@@ -95,6 +95,11 @@ function static_site_importer_render_block( array $attributes = array() ): strin
 			<p class="ssi-importer__copy"><?php echo esc_html( $intro ); ?></p>
 
 			<form class="ssi-importer__form" data-static-site-importer-form data-static-site-importer-default-url="<?php echo esc_attr( $default_url ); ?>">
+				<label class="ssi-importer__field">
+					<span class="ssi-importer__label"><?php esc_html_e( 'Capture a public site', 'static-site-importer' ); ?></span>
+					<input type="url" name="ssi_source_url" placeholder="https://example.com" autocomplete="url" value="<?php echo esc_attr( $default_url ); ?>" data-static-site-importer-source-url>
+				</label>
+
 				<fieldset class="ssi-importer__field ssi-importer__dropzone" data-static-site-importer-dropzone>
 					<legend class="ssi-importer__label"><?php esc_html_e( 'Drop website source', 'static-site-importer' ); ?></legend>
 					<p class="ssi-importer__upload-copy"><?php esc_html_e( 'Drag a folder, ZIP, or static site files here.', 'static-site-importer' ); ?></p>

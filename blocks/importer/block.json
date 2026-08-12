@@ -3,7 +3,7 @@
   "name": "static-site-importer/importer",
   "title": "Static Site Importer",
   "category": "widgets",
-  "description": "Import HTML or static site files into a WordPress block theme.",
+  "description": "Capture a public site or import static site files into a WordPress block theme.",
   "textdomain": "static-site-importer",
   "attributes": {
     "title": {
@@ -12,7 +12,7 @@
     },
     "intro": {
       "type": "string",
-      "default": "Upload site files, choose a folder, upload a ZIP, or paste HTML. Static Site Importer will compile it into a block theme."
+      "default": "Capture a public site, upload site files, choose a folder, upload a ZIP, or paste HTML. Static Site Importer will compile it into a block theme."
     },
     "provider": {
       "type": "string",
