@@ -774,9 +774,17 @@ class Static_Site_Importer_URL_Fetcher {
 			return array( $host );
 		}
 
-		$ips = array();
-		if ( function_exists( 'dns_get_record' ) ) {
-			$records = dns_get_record( $host, DNS_A + DNS_AAAA );
+		$provided = function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_url_resolved_ips', null, $host ) : null;
+		if ( is_wp_error( $provided ) ) {
+			return $provided;
+		}
+		if ( null !== $provided && ! is_array( $provided ) ) {
+			return new WP_Error( 'static_site_importer_url_dns_provider_invalid', 'The URL host resolver returned an invalid response.' );
+		}
+
+		$ips = is_array( $provided ) ? $provided : array();
+		if ( null === $provided && function_exists( 'dns_get_record' ) ) {
+			$records = @dns_get_record( $host, DNS_A + DNS_AAAA ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Unsupported runtimes may expose dns_get_record() while warning and returning no records; the fail-closed fallback handles that outcome.
 			if ( is_array( $records ) ) {
 				foreach ( $records as $record ) {
 					if ( isset( $record['ip'] ) ) {
@@ -789,8 +797,8 @@ class Static_Site_Importer_URL_Fetcher {
 			}
 		}
 
-		if ( ! $ips ) {
-			$records = gethostbynamel( $host );
+		if ( null === $provided && ! $ips ) {
+			$records = @gethostbynamel( $host ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- DNS failure is converted to a reason-coded, fail-closed URL error below.
 			if ( is_array( $records ) ) {
 				$ips = $records;
 			}
