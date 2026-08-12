@@ -53,7 +53,8 @@ class Static_Site_Importer_Plugin_Materializer {
 			return self::failed_report( $report, $deps );
 		}
 
-		$needs_install = ! file_exists( trailingslashit( WP_PLUGIN_DIR ) . $plugin_file );
+		$plugin_path   = trailingslashit( WP_PLUGIN_DIR ) . $plugin_file;
+		$needs_install = ! self::plugin_entrypoint_exists( $plugin_path );
 		if ( ! $needs_install ) {
 			$report['installed'] = true;
 		} else {
@@ -65,7 +66,7 @@ class Static_Site_Importer_Plugin_Materializer {
 			if ( is_wp_error( $install ) ) {
 				// Upgraders can persist the entrypoint before reporting a terminal
 				// failure. The filesystem is the install oracle for a safe retry.
-				if ( ! file_exists( trailingslashit( WP_PLUGIN_DIR ) . $plugin_file ) ) {
+				if ( ! self::plugin_entrypoint_exists( $plugin_path ) ) {
 					return self::failed_report( $report, $install );
 				}
 				$report['installed'] = true;
@@ -103,7 +104,7 @@ class Static_Site_Importer_Plugin_Materializer {
 				}
 				$report['active']    = true;
 				$report['actions'][] = 'reconciled_activated';
-				$preparation          = self::prepare_plugin_runtime( $slug, $preparation_callback );
+				$preparation = self::prepare_plugin_runtime( $slug, $preparation_callback );
 				if ( is_wp_error( $preparation ) ) {
 					return self::failed_report( $report, $preparation );
 				}
@@ -551,6 +552,12 @@ class Static_Site_Importer_Plugin_Materializer {
 			'version' => (string) ( $headers['Version'] ?? '' ),
 			'sha256'  => false !== $sha256 ? $sha256 : '',
 		);
+	}
+
+	/** Re-read an upgrader-mutated entrypoint instead of reusing pre-install state. */
+	private static function plugin_entrypoint_exists( string $path ): bool {
+		clearstatcache( true, $path );
+		return file_exists( $path );
 	}
 
 	/**

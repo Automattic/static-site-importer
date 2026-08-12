@@ -674,7 +674,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	/** Include generated stylesheet targets in canonical file receipt projections. */
 	private static function record_overlay_stylesheet_file( array &$files, string $path, string $target, string $content ): void {
 		foreach ( $files as $file ) {
-			if ( $target === ( $file['target_path'] ?? null ) ) {
+			if ( ( $file['target_path'] ?? null ) === $target ) {
 				return;
 			}
 		}
@@ -746,7 +746,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		$reports = array();
 		foreach ( $writes as $path => $content ) {
-			$target = ltrim( substr( $path, strlen( trailingslashit( $state['theme_dir'] ) ) ), '/' );
+			$target   = ltrim( substr( $path, strlen( trailingslashit( $state['theme_dir'] ) ) ), '/' );
 			$existing = file_exists( $path ) ? ( is_readable( $path ) ? file_get_contents( $path ) : false ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Verifies an existing generated stylesheet before reconciliation.
 			if ( false === $existing ) {
 				return new WP_Error( 'provider_layout_stylesheet_read_failed' );
@@ -772,7 +772,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				return $result;
 			}
 			$result['status'] = 'applied';
-			$reports[] = $result;
+			$reports[]  = $result;
 			foreach ( $state['applied']['files'] as $index => $file ) {
 				if ( ( $file['target_path'] ?? null ) === $target ) {
 					$state['applied']['files'][ $index ] = self::canonical_file_receipt( $path, $file );
