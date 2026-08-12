@@ -599,14 +599,18 @@ function static_site_importer_cli_materialized_documents( array $pages ): array 
 		if ( ! $post instanceof WP_Post ) {
 			continue;
 		}
+		$permalink = get_permalink( $post );
+		$source_path = static_site_importer_cli_sidecar_lineage_value( $source_path );
+		$route       = static_site_importer_cli_sidecar_route_value( wp_parse_url( (string) $permalink, PHP_URL_PATH ) );
+		if ( '' === $source_path || '' === $route ) {
+			continue;
+		}
 		++$total;
 		if ( count( $rows ) >= $max_rows ) {
 			continue;
 		}
-		$permalink = get_permalink( $post );
-		$route     = (string) wp_parse_url( (string) $permalink, PHP_URL_PATH );
 		$rows[]    = array(
-			'source_path'               => (string) $source_path,
+			'source_path'               => $source_path,
 			'route'                     => $route,
 			'post_id'                   => (string) $post->ID,
 			'post_type'                 => (string) $post->post_type,
@@ -718,4 +722,23 @@ function static_site_importer_cli_sidecar_token( $value, int $maximum ): bool {
 function static_site_importer_cli_sidecar_token_value( $value, int $maximum ): string {
 	$value = is_scalar( $value ) ? (string) $value : '';
 	return static_site_importer_cli_sidecar_token( $value, $maximum ) ? $value : '';
+}
+
+/**
+ * The matrix sidecar keeps source lineage printable and bounded so its compact
+ * transport can retain it without accepting control characters.
+ *
+ * @param mixed $value Source path from the materialization receipt.
+ */
+function static_site_importer_cli_sidecar_lineage_value( $value ): string {
+	$value = is_string( $value ) ? $value : '';
+	return 0 < strlen( $value ) && 500 >= strlen( $value ) && 1 === preg_match( '/^[\x20-\x7E]+$/', $value ) ? $value : '';
+}
+
+/**
+ * @param mixed $value URL path returned by wp_parse_url().
+ */
+function static_site_importer_cli_sidecar_route_value( $value ): string {
+	$value = static_site_importer_cli_sidecar_lineage_value( $value );
+	return '/' === substr( $value, 0, 1 ) ? $value : '';
 }

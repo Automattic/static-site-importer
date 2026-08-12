@@ -1497,7 +1497,8 @@ test('typed WP Codebox sidecar export materializes into the host intake path', (
   const artifact = JSON.stringify({ fixture: 'simple-site' });
   writeFileSync(path.join(fixtureDirectory, 'artifact.json'), artifact);
   writeFileSync(path.join(guestDirectory, 'artifact.json'), artifact);
-  const documents = [{ post_id: '42', post_type: 'page', post_slug: 'home', serialized_content_sha256: 'c'.repeat(64) }];
+  // This is the complete row emitted by static_site_importer_cli_materialized_documents().
+  const documents = [{ source_path: 'index.html', route: '/', post_id: '42', post_type: 'page', post_slug: 'home', serialized_content_sha256: 'c'.repeat(64) }];
   writeMaterializationSidecar({ directory: guestDirectory, fixtureId: 'simple-site', runId: matrix.id, attemptId: 'batch-001', receipt: boundedSidecarReceipt(), fileName: 'exported-sidecar.json', schema: 'static-site-importer/materialization-runtime-sidecar/v2', documents, documentsTruncated: false, documentsTotal: 1 });
 
   const exports = materializeMaterializationSidecars({ fixtures: matrix.fixtures, outputDirectory, codeboxArtifactsDirectory, attemptId: 'batch-001' });
@@ -1516,7 +1517,7 @@ test('typed WP Codebox sidecar export materializes into the host intake path', (
   assert.deepEqual(result.fixtures[0].surface_lineage.find((surface) => surface.surface.id === 'front-page').materialized_document, { status: 'available', post_id: '42', post_type: 'page', post_slug: 'home', serialized_content_sha256: 'c'.repeat(64) });
 });
 
-test('v1 sidecars remain compatible while truncated v2 documents make absent identities indeterminate', () => {
+test('persisted v1 and four-field v2 sidecars remain compatible while truncated documents make absent identities indeterminate', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-v1-v2-lineage-'));
   const base = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'sidecar-v1-v2-lineage' });
   const matrix = { ...base, fixtures: [{ ...base.fixtures[0] }, { ...base.fixtures[0], id: 'truncated-site' }, { ...base.fixtures[0], id: 'missing-site' }] };
@@ -1540,6 +1541,47 @@ test('v1 sidecars remain compatible while truncated v2 documents make absent ide
   assert.deepEqual(byFixture.get('truncated-site').surface_lineage.find((surface) => surface.surface.id === 'front-page').materialized_document, { status: 'indeterminate', post_id: '42', truncated: true, documents_total: 26 });
   assert.deepEqual(byFixture.get('missing-site').surface_lineage.find((surface) => surface.surface.id === 'front-page').materialized_document, { status: 'missing', post_id: '42' });
   assert.equal(byFixture.get('missing-site').surface_lineage.find((surface) => surface.surface.id === 'front-page').lanes.editor.status, 'disabled');
+});
+
+test('materialization sidecars reject malformed canonical and mixed document rows', () => {
+  const invalidDocuments = [
+    ['empty-source-path', { source_path: '', route: '/', post_id: '42', post_type: 'page', post_slug: 'home', serialized_content_sha256: 'c'.repeat(64) }],
+    ['oversized-source-path', { source_path: `website/${'x'.repeat(493)}`, route: '/', post_id: '42', post_type: 'page', post_slug: 'home', serialized_content_sha256: 'c'.repeat(64) }],
+    ['control-character-route', { source_path: 'index.html', route: '/\n', post_id: '42', post_type: 'page', post_slug: 'home', serialized_content_sha256: 'c'.repeat(64) }],
+    ['relative-route', { source_path: 'index.html', route: 'home', post_id: '42', post_type: 'page', post_slug: 'home', serialized_content_sha256: 'c'.repeat(64) }],
+    ['mixed-row', { source_path: 'index.html', post_id: '42', post_type: 'page', post_slug: 'home', serialized_content_sha256: 'c'.repeat(64) }],
+  ];
+  for (const [name, document] of invalidDocuments) {
+    const outputDirectory = mkdtempSync(path.join(tmpdir(), `ssi-sidecar-invalid-document-${name}-`));
+    const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'sidecar-invalid-document-run' });
+    const directory = path.join(outputDirectory, 'simple-site');
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: 'simple-site' }));
+    writeMaterializationSidecar({ directory, fixtureId: 'simple-site', runId: matrix.id, receipt: boundedSidecarReceipt(), schema: 'static-site-importer/materialization-runtime-sidecar/v2', documents: [document], documentsTruncated: false, documentsTotal: 1 });
+
+    const result = collectFixtureMatrixRunResults({ matrix, outputDirectory });
+    assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, 'malformed', name);
+  }
+});
+
+test('invalid writer-skipped lineage rows do not make a complete sidecar indeterminate', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-skipped-lineage-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'sidecar-skipped-lineage-run' });
+  const directory = path.join(outputDirectory, 'simple-site');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: 'simple-site' }));
+  // The PHP writer excludes an invalid source/route candidate before calculating
+  // documents_total and documents_truncated.
+  writeMaterializationSidecar({ directory, fixtureId: 'simple-site', runId: matrix.id, receipt: boundedSidecarReceipt(), schema: 'static-site-importer/materialization-runtime-sidecar/v2', documents: [], documentsTruncated: false, documentsTotal: 0 });
+
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: { fixture_id: 'simple-site', surface_id: 'front-page', command: 'wordpress.editor-open', status: 'completed', post_id: '42' },
+  });
+  const fixture = result.fixtures[0];
+  assert.equal(fixture.matrix_evidence.materialization_sidecar.status, 'verified');
+  assert.deepEqual(fixture.surface_lineage.find((surface) => surface.surface.id === 'front-page').materialized_document, { status: 'missing', post_id: '42' });
 });
 
 test('direct recipe builders generate distinct run and attempt identities', () => {
