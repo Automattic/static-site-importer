@@ -296,7 +296,7 @@ class Static_Site_Importer_Theme_Generator {
 		$overlays = array();
 		foreach ( $reports as $report ) {
 			foreach ( is_array( $report['forms'] ?? null ) ? $report['forms'] : array() as $form ) {
-				if ( is_array( $form['provider_layout_overlay_css'] ?? null ) ) {
+				if ( is_array( $form['provider_layout_overlay_css'] ?? null ) && ! empty( $form['provider_layout_overlay_css'] ) ) {
 					$overlays[] = $form['provider_layout_overlay_css'];
 				}
 			}
