@@ -13,10 +13,22 @@
       "step": "login"
     },
     {
+      "step": "writeFile",
+      "path": "/tmp/static-site-importer-aa318763157dc1739d717f259c467ffede2b22f97bd367ef2ad088aaf63613e4.zip",
+      "data": {
+        "resource": "url",
+        "url": "https://github.com/Automattic/static-site-importer/releases/download/v1.5.0/static-site-importer.zip"
+      }
+    },
+    {
+      "step": "runPHP",
+      "code": "<?php if ( ! hash_equals( 'aa318763157dc1739d717f259c467ffede2b22f97bd367ef2ad088aaf63613e4', hash_file( 'sha256', '/tmp/static-site-importer-aa318763157dc1739d717f259c467ffede2b22f97bd367ef2ad088aaf63613e4.zip' ) ) ) { throw new RuntimeException( 'Static Site Importer package integrity verification failed.' ); } ?>"
+    },
+    {
       "step": "installPlugin",
       "pluginData": {
-        "resource": "url",
-        "url": "https://github.com/Automattic/static-site-importer/releases/download/v1.4.0/static-site-importer.zip"
+        "resource": "vfs",
+        "path": "/tmp/static-site-importer-aa318763157dc1739d717f259c467ffede2b22f97bd367ef2ad088aaf63613e4.zip"
       },
       "options": {
         "activate": true,
