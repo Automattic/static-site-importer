@@ -150,6 +150,7 @@ if ( ! function_exists( 'activate_plugin' ) ) {
 	function activate_plugin( string $plugin_file ) {
 		$GLOBALS['ssi_companion_active'][]    = $plugin_file;
 		$GLOBALS['ssi_companion_activated'][] = $plugin_file;
+		require_once WP_PLUGIN_DIR . '/' . $plugin_file;
 		return null;
 	}
 }
@@ -436,6 +437,8 @@ $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' )
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/render.php' ), 'install-writes-render-php-to-disk' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/block.json' ), 'install-emits-block-json' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/editor.js' ), 'install-emits-declared-editor-asset' );
+$assert( in_array( 'example/custom-hero', WP_Block_Type_Registry::$registered, true ), 'install-registers-declared-block-before-editor-use' );
+$assert( isset( $GLOBALS['static_site_importer_companion_block_owners']['example/custom-hero'] ), 'install-records-declared-block-owner-before-editor-use' );
 $written_main = file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) ? (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) : '';
 $assert( str_contains( $written_main, 'register_block_type' ), 'written-main-file-registers-blocks' );
 
@@ -443,10 +446,7 @@ $assert( str_contains( $written_main, 'register_block_type' ), 'written-main-fil
 // marked as companion-owned, so a later materialization still fails closed.
 WP_Block_Type_Registry::$registered[] = 'example/custom-hero';
 $GLOBALS['static_site_importer_companion_block_owners'] = array();
-require WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php';
-foreach ( $GLOBALS['ssi_companion_actions']['init'] ?? array() as $callback ) {
-	call_user_func( $callback );
-}
+ssi_example_site_register_blocks();
 $assert( ! isset( $GLOBALS['static_site_importer_companion_block_owners']['example/custom-hero'] ), 'foreign-registration-before-generated-init-records-no-owner' );
 $foreign_init_collision = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload, static fn (): bool => true );
 $assert( 'failed' === ( $foreign_init_collision['status'] ?? '' ) && 'runtime_block_name_collision' === ( $foreign_init_collision['diagnostics'][0]['reason_code'] ?? '' ), 'foreign-registration-before-generated-init-blocks-refresh' );
@@ -522,6 +522,8 @@ $assert( 1 === count( $waived_diag ), 'waived-companion-emits-warning' );
 
 // A new site replaces the previous regular companion so document-global
 // scripts from separate imports cannot execute together.
+$GLOBALS['static_site_importer_companion_block_owners'] = array();
+WP_Block_Type_Registry::$registered                   = array();
 $replacement_payload = array_merge( $payload, array( 'site_slug' => 'replacement-site' ) );
 $replacement_report  = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $replacement_payload );
 $assert( in_array( 'ssi-example-site/ssi-example-site.php', $GLOBALS['ssi_companion_deactivated'], true ), 'replacement-deactivates-previous-companion' );
