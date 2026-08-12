@@ -87,7 +87,7 @@ class Static_Site_Importer_Client_Script_Policy {
 	}
 
 	private static function filter_html( string $html, string $path, bool $preserve, array &$report ): string {
-		return (string) preg_replace_callback(
+		$html = (string) preg_replace_callback(
 			'#<script\b([^>]*)>(.*?)</script\s*>#is',
 			static function ( array $matches ) use ( $path, $preserve, &$report ): string {
 				$attributes = $matches[1];
@@ -108,6 +108,30 @@ class Static_Site_Importer_Client_Script_Policy {
 				}
 				self::record( $report, 'data' === $row['class'] ? 'quarantined' : 'dropped', $row );
 				return '';
+			},
+			$html
+		);
+		return (string) preg_replace_callback(
+			'#<link\b([^>]*)/?>#is',
+			static function ( array $matches ) use ( $path, $preserve, &$report ): string {
+				$attributes = $matches[1];
+				$relation   = strtolower( trim( (string) self::attribute( $attributes, 'rel' ) ) );
+				$as         = strtolower( trim( (string) self::attribute( $attributes, 'as' ) ) );
+				$relations  = preg_split( '/\s+/', $relation );
+				$relations  = false === $relations ? array() : $relations;
+				$script     = in_array( 'modulepreload', $relations, true ) || ( in_array( 'preload', $relations, true ) && 'script' === $as );
+				if ( ! $script ) {
+					return $matches[0];
+				}
+				$row = array(
+					'path'   => $path,
+					'class'  => 'preload',
+					'type'   => 'modulepreload' === $relation ? 'modulepreload' : 'preload',
+					'href'   => (string) self::attribute( $attributes, 'href' ),
+					'sha256' => hash( 'sha256', $matches[0] ),
+				);
+				self::record( $report, $preserve ? 'preserved' : 'dropped', $row );
+				return $preserve ? $matches[0] : '';
 			},
 			$html
 		);
