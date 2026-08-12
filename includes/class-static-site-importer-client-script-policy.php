@@ -117,7 +117,9 @@ class Static_Site_Importer_Client_Script_Policy {
 				$attributes = $matches[1];
 				$relation   = strtolower( trim( (string) self::attribute( $attributes, 'rel' ) ) );
 				$as         = strtolower( trim( (string) self::attribute( $attributes, 'as' ) ) );
-				$script     = in_array( 'modulepreload', preg_split( '/\s+/', $relation ) ?: array(), true ) || ( in_array( 'preload', preg_split( '/\s+/', $relation ) ?: array(), true ) && 'script' === $as );
+				$relations  = preg_split( '/\s+/', $relation );
+				$relations  = false === $relations ? array() : $relations;
+				$script     = in_array( 'modulepreload', $relations, true ) || ( in_array( 'preload', $relations, true ) && 'script' === $as );
 				if ( ! $script ) {
 					return $matches[0];
 				}
