@@ -339,7 +339,6 @@
 				files: await buildFiles( uploadInputs, root ),
 				archive: await buildArchive( uploadInputs, root ),
 			};
-			const isUrlOnly = Boolean( source.url.trim() && ! source.html.trim() && ! source.files.length && ! source.archive );
 
 			if ( ! hasSource( source ) ) {
 				setReport( root, { success: false, error: { message: 'Enter a public URL, upload a website, or paste HTML to start.' } } );
@@ -347,6 +346,7 @@
 				return;
 			}
 
+			const isUrlOnly = Boolean( source.url.trim() && ! source.html.trim() && ! source.files.length && ! source.archive );
 			showStatus( root, isCurrentSiteImport ? 'Importing to this site...' : 'Preparing WordPress preview...' );
 			submit.disabled = true;
 
