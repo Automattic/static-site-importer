@@ -8,7 +8,7 @@
  * @package StaticSiteImporter
  */
 
-$transformer_bootstrap = dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/php-transformer/php-transformer.php';
+$transformer_bootstrap = dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/php-transformer.php';
 require_once $transformer_bootstrap;
 
 $failures   = array();

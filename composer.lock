@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "59cf4126bda235fb3401a506ebabbd3e",
+    "content-hash": "f2f16c79bfad42743aa0e7cbb37bbb10",
     "packages": [
         {
             "name": "automattic/blocks-engine-figma-transformer",
@@ -43,16 +43,16 @@
         },
         {
             "name": "automattic/blocks-engine-php-transformer",
-            "version": "0.4.11",
+            "version": "0.4.16-dev",
             "source": {
                 "type": "git",
-                "url": "https://github.com/Automattic/blocks-engine.git",
-                "reference": "c97c53b14d6c14faadc780be0fbc0e7e4010c2a0"
+                "url": "https://github.com/Automattic/blocks-engine-php-transformer.git",
+                "reference": "f16ca299bf97d28eede5b7cbd7746ff2df1d0349"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://github.com/Automattic/blocks-engine/archive/refs/tags/php-transformer-v0.4.11.zip",
-                "reference": "c97c53b14d6c14faadc780be0fbc0e7e4010c2a0"
+                "url": "https://github.com/Automattic/blocks-engine-php-transformer/archive/f16ca299bf97d28eede5b7cbd7746ff2df1d0349.zip",
+                "reference": "f16ca299bf97d28eede5b7cbd7746ff2df1d0349"
             },
             "require": {
                 "league/commonmark": "^2.5",
@@ -62,7 +62,7 @@
             "type": "library",
             "autoload": {
                 "psr-4": {
-                    "Automattic\\BlocksEngine\\PhpTransformer\\": "php-transformer/src/"
+                    "Automattic\\BlocksEngine\\PhpTransformer\\": "src/"
                 }
             },
             "license": [
@@ -147,16 +147,16 @@
         },
         {
             "name": "league/commonmark",
-            "version": "2.9.0",
+            "version": "2.10.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/thephpleague/commonmark.git",
-                "reference": "5703d83ba3da3b2e356a5fedc848ed6d8ffb6529"
+                "reference": "d2d1aa8b35e072966c89bc0c66cf926e56767dc4"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/thephpleague/commonmark/zipball/5703d83ba3da3b2e356a5fedc848ed6d8ffb6529",
-                "reference": "5703d83ba3da3b2e356a5fedc848ed6d8ffb6529",
+                "url": "https://api.github.com/repos/thephpleague/commonmark/zipball/d2d1aa8b35e072966c89bc0c66cf926e56767dc4",
+                "reference": "d2d1aa8b35e072966c89bc0c66cf926e56767dc4",
                 "shasum": ""
             },
             "require": {
@@ -193,7 +193,7 @@
             "type": "library",
             "extra": {
                 "branch-alias": {
-                    "dev-main": "2.10-dev"
+                    "dev-main": "2.11-dev"
                 }
             },
             "autoload": {
@@ -250,7 +250,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-08-03T13:42:31+00:00"
+            "time": "2026-08-11T16:06:25+00:00"
         },
         {
             "name": "league/config",
@@ -788,7 +788,9 @@
     "packages-dev": [],
     "aliases": [],
     "minimum-stability": "dev",
-    "stability-flags": {},
+    "stability-flags": {
+        "automattic/blocks-engine-php-transformer": 20
+    },
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {

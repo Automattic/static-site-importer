@@ -8,23 +8,23 @@
       "type": "package",
       "package": {
         "name": "automattic/blocks-engine-php-transformer",
-        "version": "0.4.11",
+        "version": "0.4.16-dev",
         "description": "PHP primitives for transforming HTML, Markdown, and website artifacts into WordPress block outputs.",
         "type": "library",
         "license": "GPL-3.0-or-later",
         "source": {
           "type": "git",
-          "url": "https://github.com/Automattic/blocks-engine.git",
-          "reference": "c97c53b14d6c14faadc780be0fbc0e7e4010c2a0"
+          "url": "https://github.com/Automattic/blocks-engine-php-transformer.git",
+          "reference": "f16ca299bf97d28eede5b7cbd7746ff2df1d0349"
         },
         "dist": {
           "type": "zip",
-          "url": "https://github.com/Automattic/blocks-engine/archive/refs/tags/php-transformer-v0.4.11.zip",
-          "reference": "c97c53b14d6c14faadc780be0fbc0e7e4010c2a0"
+          "url": "https://github.com/Automattic/blocks-engine-php-transformer/archive/f16ca299bf97d28eede5b7cbd7746ff2df1d0349.zip",
+          "reference": "f16ca299bf97d28eede5b7cbd7746ff2df1d0349"
         },
         "autoload": {
           "psr-4": {
-            "Automattic\\BlocksEngine\\PhpTransformer\\": "php-transformer/src/"
+            "Automattic\\BlocksEngine\\PhpTransformer\\": "src/"
           }
         },
         "require": {
@@ -73,7 +73,7 @@
   ],
   "require": {
     "automattic/blocks-engine-figma-transformer": "^0.1.3",
-    "automattic/blocks-engine-php-transformer": "^0.4.11",
+    "automattic/blocks-engine-php-transformer": "0.4.16-dev",
     "php": "^8.1"
   },
   "minimum-stability": "dev",
@@ -83,5 +83,8 @@
       "php": "8.1.0"
     },
     "sort-packages": true
+  },
+  "extra": {
+    "static-site-importer-temporary-dependency": "Blocks Engine PHP Transformer mirror commit f16ca299; replace this package reference with the released 0.4.16 version."
   }
 }
