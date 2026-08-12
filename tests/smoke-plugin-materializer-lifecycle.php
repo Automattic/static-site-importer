@@ -31,7 +31,7 @@ $GLOBALS['ssi_runtime_ready'] = false;
 $GLOBALS['ssi_replay_order']  = array();
 $GLOBALS['ssi_existing_runs'] = 0;
 $GLOBALS['ssi_prepared']      = false;
-$GLOBALS['ssi_activation_error_after_state_change'] = false;
+$GLOBALS['ssi_activation_outcome'] = 'success';
 
 function ssi_test_callback_id( callable $callback ): string {
 	if ( is_string( $callback ) ) return $callback;
@@ -55,8 +55,13 @@ function trailingslashit( string $value ): string { return rtrim( $value, '/\\' 
 function is_plugin_active( string $plugin_file ): bool { return $GLOBALS['ssi_plugin_active']; }
 function activate_plugin( string $plugin_file ) {
 	unset( $plugin_file );
-	$GLOBALS['ssi_plugin_active'] = true;
-	if ( $GLOBALS['ssi_activation_error_after_state_change'] ) {
+	if ( 'throw_without_state_change' !== $GLOBALS['ssi_activation_outcome'] ) {
+		$GLOBALS['ssi_plugin_active'] = true;
+	}
+	if ( 'throw_after_state_change' === $GLOBALS['ssi_activation_outcome'] || 'throw_without_state_change' === $GLOBALS['ssi_activation_outcome'] ) {
+		throw new RuntimeException( 'Activation callback threw.' );
+	}
+	if ( 'error_after_state_change' === $GLOBALS['ssi_activation_outcome'] ) {
 		return new WP_Error( 'activation_callback_failed', 'Activation callback failed after persistent activation.' );
 	}
 	add_action(
@@ -104,7 +109,7 @@ $assert( 1 === ( $report['lifecycle_replay']['plugins_loaded'] ?? 0 ), 'plugins-
 $assert( 1 === ( $report['lifecycle_replay']['init'] ?? 0 ), 'init-replay-reported' );
 
 $GLOBALS['ssi_plugin_active'] = false;
-$GLOBALS['ssi_activation_error_after_state_change'] = true;
+$GLOBALS['ssi_activation_outcome'] = 'error_after_state_change';
 $activation_error_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
 	'late-plugin',
 	'late-plugin/late-plugin.php',
@@ -113,6 +118,26 @@ $activation_error_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_o
 );
 $assert( 'activated_pending_fresh_runtime' === ( $activation_error_report['status'] ?? '' ), 'activation-side-effect-reconciled' );
 $assert( true === ( $activation_error_report['active'] ?? false ) && in_array( 'reconciled_activated', $activation_error_report['actions'] ?? array(), true ), 'activation-reconciliation-evidence' );
+
+$GLOBALS['ssi_plugin_active'] = false;
+$GLOBALS['ssi_activation_outcome'] = 'throw_after_state_change';
+$activation_throw_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
+	'late-plugin',
+	'late-plugin/late-plugin.php',
+	static fn (): bool => false,
+	static fn (): bool => true
+);
+$assert( 'activated_pending_fresh_runtime' === ( $activation_throw_report['status'] ?? '' ) && true === ( $activation_throw_report['active'] ?? false ) && in_array( 'reconciled_activated', $activation_throw_report['actions'] ?? array(), true ), 'thrown-activation-side-effect-reconciled' );
+
+$GLOBALS['ssi_plugin_active'] = false;
+$GLOBALS['ssi_activation_outcome'] = 'throw_without_state_change';
+$activation_throw_failure = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
+	'late-plugin',
+	'late-plugin/late-plugin.php',
+	static fn (): bool => false,
+	static fn (): bool => true
+);
+$assert( 'failed' === ( $activation_throw_failure['status'] ?? '' ) && 'static_site_importer_plugin_activation_failed' === ( $activation_throw_failure['error']['code'] ?? '' ), 'genuine-thrown-activation-failure-rejected' );
 
 unlink( WP_PLUGIN_DIR . '/late-plugin/late-plugin.php' );
 rmdir( WP_PLUGIN_DIR . '/late-plugin' );

@@ -92,10 +92,7 @@ class Static_Site_Importer_Plugin_Materializer {
 				$activate = activate_plugin( $plugin_file );
 			} catch ( Throwable $error ) {
 				self::restore_activation_lifecycle_actions( $lifecycle );
-				return self::failed_report(
-					$report,
-					new WP_Error( 'static_site_importer_plugin_activation_failed', sprintf( 'Plugin %s activation failed: %s', $slug, $error->getMessage() ) )
-				);
+				$activate = new WP_Error( 'static_site_importer_plugin_activation_failed', sprintf( 'Plugin %s activation failed: %s', $slug, $error->getMessage() ) );
 			}
 			if ( is_wp_error( $activate ) ) {
 				self::restore_activation_lifecycle_actions( $lifecycle );

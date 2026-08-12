@@ -211,6 +211,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		foreach ( $state['resolved']['writes'] as $write ) {
 			$path = $state['theme_dir'] . '/' . $write['target_path'];
 			if ( isset( $state['provider_layout_overlay_writes'][ $path ] ) && is_file( $path ) && self::file_hash( $path ) === hash( 'sha256', $state['provider_layout_overlay_writes'][ $path ] ) ) {
+				$state['applied']['files'][] = self::canonical_file_receipt( $path, $write );
 				continue;
 			}
 			if ( ! empty( $args['preserve_existing_theme_bootstrap'] ) && 'theme_bootstrap' === ( $write['kind'] ?? '' ) && is_file( $state['theme_dir'] . '/' . $write['target_path'] ) ) {
@@ -660,6 +661,31 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		);
 	}
 
+	/** Report final bytes while retaining the canonical write's reconciliation identity. */
+	private static function canonical_file_receipt( string $path, array $write ): array {
+		return array(
+			'target_path'             => $write['target_path'],
+			'hash'                    => self::file_hash( $path ),
+			'payload_hash'            => $write['payload_hash'] ?? self::payload_hash( $write ),
+			'reconciliation_identity' => $write['reconciliation_identity'] ?? hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ),
+		);
+	}
+
+	/** Include generated stylesheet targets in canonical file receipt projections. */
+	private static function record_overlay_stylesheet_file( array &$files, string $path, string $target, string $content ): void {
+		foreach ( $files as $file ) {
+			if ( $target === ( $file['target_path'] ?? null ) ) {
+				return;
+			}
+		}
+		$files[] = array(
+			'target_path'             => $target,
+			'hash'                    => self::file_hash( $path ),
+			'payload_hash'            => hash( 'sha256', $content ),
+			'reconciliation_identity' => hash( 'sha256', $target . "\n" . $target ),
+		);
+	}
+
 	/** Merge a validated later-batch bootstrap as an idempotent PHP include. */
 	private static function merge_batch_bootstrap( string $theme_dir, array $write ) {
 		$bootstrap = 'base64' === $write['payload']['encoding'] ? base64_decode( $write['payload']['data'], true ) : $write['payload']['data']; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes a declared canonical bootstrap payload.
@@ -731,6 +757,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					'hash'        => hash( 'sha256', $content ),
 					'status'      => 'already_satisfied',
 				);
+				self::record_overlay_stylesheet_file( $state['applied']['files'], $path, $target, $content );
 				continue;
 			}
 			$result = self::write_file( $state['theme_dir'], array(
@@ -748,9 +775,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$reports[] = $result;
 			foreach ( $state['applied']['files'] as $index => $file ) {
 				if ( ( $file['target_path'] ?? null ) === $target ) {
-					$state['applied']['files'][ $index ] = $result;
+					$state['applied']['files'][ $index ] = self::canonical_file_receipt( $path, $file );
 				}
 			}
+			self::record_overlay_stylesheet_file( $state['applied']['files'], $path, $target, $content );
 		}
 		return array(
 			'status' => array_filter( $reports, static fn( array $report ): bool => 'applied' === ( $report['status'] ?? '' ) ) ? 'completed' : 'already_satisfied',
