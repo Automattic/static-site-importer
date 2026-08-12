@@ -29,6 +29,11 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 	/** @return array<string,mixed>|WP_Error */
 	public function establish( array $artifact, ?array $paths = null ): array|WP_Error {
 		$resources = self::resources( $artifact, $paths );
+		return $this->store( $resources );
+	}
+
+	/** @return array<string,mixed>|WP_Error */
+	private function store( array $resources ): array|WP_Error {
 		$plan      = array(
 			'schema'     => self::SCHEMA,
 			'digest'     => self::digest( $resources ),
@@ -55,7 +60,7 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 				'plan'    => $plan,
 			);
 		}
-		$current = self::resources( $artifact );
+		$current = self::merge_resources( $existing['resources'], self::resources( $artifact ) );
 		$digest  = self::digest( $current );
 		if ( hash_equals( $existing['digest'], $digest ) ) {
 			return array(
@@ -64,7 +69,7 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 				'plan'    => $existing,
 			);
 		}
-		$plan = $this->establish( $artifact );
+		$plan = $this->store( $current );
 		return array(
 			'digest'  => is_array( $plan ) ? $plan['digest'] : '',
 			'changed' => true,
@@ -95,6 +100,18 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 		}
 		usort( $resources, static fn( array $left, array $right ): int => strcmp( $left['path'], $right['path'] ) );
 		return $resources;
+	}
+
+	/** @return array<int,array<string,mixed>> */
+	private static function merge_resources( array $existing, array $current ): array {
+		$resources = array();
+		foreach ( array_merge( $existing, $current ) as $resource ) {
+			if ( is_array( $resource ) && '' !== (string) ( $resource['path'] ?? '' ) ) {
+				$resources[ $resource['path'] ] = $resource;
+			}
+		}
+		ksort( $resources, SORT_STRING );
+		return array_values( $resources );
 	}
 
 	private static function digest( array $resources ): string {

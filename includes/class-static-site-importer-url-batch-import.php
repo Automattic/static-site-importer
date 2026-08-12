@@ -521,11 +521,14 @@ final class Static_Site_Importer_URL_Batch_Import {
 			}
 
 			$batch_digest = (string) ( $runtime['shared_plan_digest'] ?? '' );
-			if ( '' === $batch_digest && is_array( $runtime['staged_page_plans'] ) && ! empty( $runtime['staged_page_plans'] ) ) {
+			if ( '' === $batch_digest && ! empty( $runtime['staged_page_plans'] ) ) {
 				$batch_digest = (string) ( $runtime['staged_page_plans'][0]['shared_digest'] ?? '' );
 			}
 
-			if ( '' !== $current_digest && '' !== $batch_digest && ! hash_equals( $current_digest, $batch_digest ) && is_array( $runtime['artifact']['files'] ?? null ) ) {
+			if ( '' !== $current_digest && ! hash_equals( $current_digest, $batch_digest ) ) {
+				if ( ! is_array( $runtime['artifact']['files'] ?? null ) ) {
+					return new WP_Error( 'static_site_importer_url_plan_batch_artifact_missing', 'The frozen URL run cannot reprepare a stale staged batch without its retained artifact.' );
+				}
 				$fresh_plans = array();
 				foreach ( $runtime['artifact']['files'] as $file ) {
 					if ( ! is_array( $file ) || 'text/html' !== strtolower( (string) ( $file['mime_type'] ?? '' ) ) || '' === (string) ( $file['path'] ?? '' ) ) {
