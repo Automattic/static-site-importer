@@ -14,5 +14,8 @@ $first = $plan->reconcile( $artifact( 'body{color:red}', 'first' ) );
 $second = ( new Static_Site_Importer_Shared_Resource_Plan( $workspace ) )->reconcile( $artifact( 'body{color:red}', 'second' ) );
 $changed = $plan->reconcile( $artifact( 'body{color:blue}', 'third' ) );
 if ( is_wp_error( $first['plan'] ) || $first['changed'] || is_wp_error( $second['plan'] ) || $second['changed'] || $first['digest'] !== $second['digest'] || is_wp_error( $changed['plan'] ) || ! $changed['changed'] || $changed['digest'] === $first['digest'] || ! is_file( $workspace->directory() . '/shared-resource-plan.json' ) ) { throw new RuntimeException( 'shared plans must survive restart, ignore page-only changes, and deterministically invalidate changed shared content' ); }
+$expanded = $plan->reconcile( array( 'files' => array( array( 'path' => 'website/extra.css', 'mime_type' => 'text/css', 'content' => 'h1{color:blue}' ) ) ) );
+$preserved = $plan->reconcile( $artifact( 'body{color:blue}', 'fourth' ) );
+if ( is_wp_error( $expanded['plan'] ) || ! $expanded['changed'] || is_wp_error( $preserved['plan'] ) || $preserved['changed'] || 3 !== count( $preserved['plan']['resources'] ?? array() ) ) { throw new RuntimeException( 'shared plans must retain resources discovered only in an earlier batch' ); }
 $workspace->purge(); @rmdir( $root );
 echo "Shared resource plan smoke passed.\n";

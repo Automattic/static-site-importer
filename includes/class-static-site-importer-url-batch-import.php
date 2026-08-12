@@ -496,6 +496,16 @@ final class Static_Site_Importer_URL_Batch_Import {
 			return new WP_Error( 'static_site_importer_url_plan_shared_missing', 'The frozen URL run has no shared compiler plan.' );
 		}
 
+		$current_digest = (string) ( $shared_plan['digest'] ?? '' );
+		$compiler       = self::staged_compiler();
+		if ( is_wp_error( $compiler ) ) {
+			return $compiler;
+		}
+		$prepare_page_callable = array( $compiler, 'preparePage' );
+		if ( ! is_callable( $prepare_page_callable ) ) {
+			return new WP_Error( 'static_site_importer_missing_transformer_capability', 'The Blocks Engine php-transformer does not support staged URL batch plans.' );
+		}
+
 		$page_plans = array();
 		$snapshots  = array();
 		foreach ( $cursor as $batch ) {
@@ -505,10 +515,34 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( ! is_array( $runtime ) || ! is_array( $runtime['staged_page_plans'] ?? null ) ) {
 				return new WP_Error( 'static_site_importer_url_plan_batch_missing', 'The frozen URL run has an incomplete staged batch.' );
 			}
-			$page_plans = array_merge( $page_plans, $runtime['staged_page_plans'] );
-			$snapshot   = $runtime['source_metadata']['snapshot']['sha256'] ?? null;
+			$snapshot = $runtime['source_metadata']['snapshot']['sha256'] ?? null;
 			if ( is_string( $snapshot ) && '' !== $snapshot ) {
 				$snapshots[] = $snapshot;
+			}
+
+			$batch_digest = (string) ( $runtime['shared_plan_digest'] ?? '' );
+			if ( '' === $batch_digest && ! empty( $runtime['staged_page_plans'] ) ) {
+				$batch_digest = (string) ( $runtime['staged_page_plans'][0]['shared_digest'] ?? '' );
+			}
+
+			if ( '' !== $current_digest && ! hash_equals( $current_digest, $batch_digest ) ) {
+				if ( ! is_array( $runtime['artifact']['files'] ?? null ) ) {
+					return new WP_Error( 'static_site_importer_url_plan_batch_artifact_missing', 'The frozen URL run cannot reprepare a stale staged batch without its retained artifact.' );
+				}
+				$fresh_plans = array();
+				foreach ( $runtime['artifact']['files'] as $file ) {
+					if ( ! is_array( $file ) || 'text/html' !== strtolower( (string) ( $file['mime_type'] ?? '' ) ) || '' === (string) ( $file['path'] ?? '' ) ) {
+						continue;
+					}
+					try {
+						$fresh_plans[] = call_user_func( $prepare_page_callable, $runtime['artifact'], $shared_plan, (string) $file['path'] );
+					} catch ( Throwable $error ) {
+						return new WP_Error( 'static_site_importer_staged_reprepare_failed', $error->getMessage() );
+					}
+				}
+				$page_plans = array_merge( $page_plans, $fresh_plans );
+			} else {
+				$page_plans = array_merge( $page_plans, $runtime['staged_page_plans'] );
 			}
 		}
 
