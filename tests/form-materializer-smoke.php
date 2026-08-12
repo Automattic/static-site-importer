@@ -164,7 +164,7 @@ namespace {
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-product-handoff-contract.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 
-	$transformer_bootstrap = dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/php-transformer/php-transformer.php';
+	$transformer_bootstrap = dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/php-transformer.php';
 	if ( is_readable( $transformer_bootstrap ) ) {
 		require_once $transformer_bootstrap;
 	}

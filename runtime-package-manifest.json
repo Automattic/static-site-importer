@@ -38,7 +38,7 @@
         },
         {
           "type": "prefix",
-          "path": "vendor/automattic/blocks-engine-php-transformer/php-transformer/"
+          "path": "vendor/automattic/blocks-engine-php-transformer/"
         },
         {
           "type": "prefix",
@@ -73,7 +73,7 @@
         "includes/class-static-site-importer-wordpress-site-plan-materializer.php",
         "vendor/autoload.php",
         "vendor/composer/autoload_real.php",
-        "vendor/automattic/blocks-engine-php-transformer/php-transformer/php-transformer.php"
+        "vendor/automattic/blocks-engine-php-transformer/php-transformer.php"
       ]
     }
   }
