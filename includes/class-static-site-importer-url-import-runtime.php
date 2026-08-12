@@ -187,7 +187,9 @@ class Static_Site_Importer_URL_Import_Runtime {
 		$request['provider_args'] = self::batch_args();
 		$fetcher                  = apply_filters( 'static_site_importer_url_batch_import_fetcher', null, $request, $input );
 		$importer                 = apply_filters( 'static_site_importer_url_batch_importer', null, $request, $input );
-		$result                   = Static_Site_Importer_URL_Batch_Import::import( $request, $input, is_callable( $fetcher ) ? $fetcher : null, is_callable( $importer ) ? $importer : null );
+		$importer_callback        = is_callable( $importer ) ? $importer : null;
+		$adapter                  = $importer instanceof Static_Site_Importer_Final_Hydration_Adapter ? $importer : null;
+		$result                   = Static_Site_Importer_URL_Batch_Import::import( $request, $input, is_callable( $fetcher ) ? $fetcher : null, $adapter ? null : $importer_callback, $adapter );
 		if ( is_wp_error( $result ) ) {
 			$data = $result->get_error_data();
 			if ( is_array( $data ) ) {
