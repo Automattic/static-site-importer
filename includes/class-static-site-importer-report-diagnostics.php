@@ -415,6 +415,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<string, mixed>
 	 */
 	public static function finalize_quality_report( array &$report, array $args ): array {
+		self::reconcile_provider_materialized_fallbacks( $report );
 		self::mark_active_companion_script_fallbacks_materialized( $report );
 		self::normalize_import_diagnostics( $report );
 
@@ -1215,7 +1216,6 @@ class Static_Site_Importer_Report_Diagnostics {
 					$report['diagnostics'][] = $graft['diagnostic'];
 				}
 			}
-
 			$pending = array_values( array_diff( $pending, array( $index ) ) );
 		}
 
@@ -1497,6 +1497,19 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		return $diagnostic;
+	}
+
+	/** @param array<string,mixed> $fallback */
+	public static function fallback_reconciliation_hash( array $fallback ): string {
+		$source = isset( $fallback['form'] ) || isset( $fallback['controls'] )
+			? wp_json_encode( array( 'form' => $fallback['form'] ?? array(), 'controls' => $fallback['controls'] ?? array() ) )
+			: self::first_scalar( $fallback, array( 'source_html_preview', 'html_excerpt', 'excerpt' ) );
+		return hash( 'sha256', (string) $source );
+	}
+
+	/** @param array<string,mixed> $fallback */
+	public static function fallback_reconciliation_identity( array $fallback ): string {
+		return hash( 'sha256', "static-site-importer/fallback-reconciliation/v1\n" . self::first_scalar( $fallback, array( 'source_path', 'source' ) ) . "\n" . self::first_scalar( $fallback, array( 'selector' ) ) . "\n" . self::fallback_reconciliation_hash( $fallback ) );
 	}
 
 	/**
@@ -2597,6 +2610,104 @@ class Static_Site_Importer_Report_Diagnostics {
 			$runtime_scripts = isset( $dependency['runtime_scripts'] ) && is_array( $dependency['runtime_scripts'] ) ? $dependency['runtime_scripts'] : array();
 			self::mark_companion_script_fallbacks_materialized( $report, $runtime_scripts, (string) $slug );
 		}
+	}
+
+	/**
+	 * Reconcile source form fallbacks against hash-bound provider receipts.
+	 *
+	 * The source finding remains in diagnostics for auditability. Only the final
+	 * quality count excludes a form after a completed receipt proves that exact
+	 * source fallback was replaced by the provider's persisted block markup.
+	 *
+	 * @param array<string,mixed> $report Import report.
+	 * @return void
+	 */
+	public static function reconcile_provider_materialized_fallbacks( array &$report, array $receipts = array() ): void {
+		if ( ! isset( $report['quality'] ) || ! is_array( $report['quality'] ) ) {
+			$report['quality'] = array();
+		}
+		$source_total = max(
+			(int) ( $report['quality']['source_fallback_count'] ?? 0 ),
+			(int) ( $report['quality']['fallback_count'] ?? 0 )
+		);
+		$report['quality']['source_fallback_count'] = $source_total;
+
+		if ( empty( $receipts ) ) {
+			$bindings = $report['materialization_receipt']['completed']['runtime_declarations']['entity_bindings'] ?? array();
+			foreach ( $bindings as $binding ) {
+				if ( ! is_array( $binding ) || 'completed' !== ( $binding['status'] ?? null ) || 'form' !== ( $binding['role'] ?? null ) ) {
+					continue;
+				}
+				$receipts[] = array(
+					'schema'                           => 'static-site-importer/quality-resolution-receipt/v1',
+					'status'                           => 'completed',
+					'fallback_reconciliation_identity' => $binding['fallback_reconciliation_identity'] ?? '',
+					'fallback_hash'                    => $binding['fallback_hash'] ?? '',
+					'binding_reconciliation_identity'  => $binding['reconciliation_identity'] ?? '',
+					'materialized_block_hash'          => $binding['materialized_block_hash'] ?? '',
+					'persisted_fragment_hash'          => $binding['persisted_fragment_hash'] ?? '',
+					'materialized_content_hash'        => $binding['materialized_content_hash'] ?? '',
+					'provider'                         => $binding['provider'] ?? '',
+				);
+			}
+		}
+		$receipts_by_fallback = array();
+		foreach ( $receipts as $receipt ) {
+			if ( ! is_array( $receipt ) || ! is_string( $receipt['fallback_reconciliation_identity'] ?? null ) ) {
+				continue;
+			}
+			$receipts_by_fallback[ $receipt['fallback_reconciliation_identity'] ] = $receipt;
+		}
+		$resolved = 0;
+		$resolutions = array();
+		foreach ( $report['diagnostics'] ?? array() as $index => $diagnostic ) {
+			if ( ! is_array( $diagnostic ) || 'html_form_fallback' !== (string) ( $diagnostic['diagnostic_code'] ?? '' ) ) {
+				continue;
+			}
+			$identity     = self::fallback_reconciliation_identity( $diagnostic );
+			$fallback_hash = self::fallback_reconciliation_hash( $diagnostic );
+			$receipt      = $receipts_by_fallback[ $identity ] ?? array();
+			$source_path  = self::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
+			$page_receipt = $report['materialization_receipt']['completed']['materialized_pages'][ $source_path ] ?? array();
+			$page_hash    = is_array( $page_receipt ) && is_string( $page_receipt['content_hash'] ?? null ) ? $page_receipt['content_hash'] : '';
+			$resolved_by_provider = 'static-site-importer/quality-resolution-receipt/v1' === ( $receipt['schema'] ?? null )
+				&& 'completed' === ( $receipt['status'] ?? null )
+				&& $identity === ( $receipt['fallback_reconciliation_identity'] ?? null )
+				&& $fallback_hash === ( $receipt['fallback_hash'] ?? null )
+				&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['binding_reconciliation_identity'] ?? '' ) )
+				&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['materialized_block_hash'] ?? '' ) )
+				&& ( $receipt['materialized_block_hash'] ?? null ) === ( $receipt['persisted_fragment_hash'] ?? null )
+				&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['materialized_content_hash'] ?? '' ) )
+				&& $page_hash === ( $receipt['materialized_content_hash'] ?? null );
+
+			$diagnostic['fallback_reconciliation_identity'] = $identity;
+			$diagnostic['fallback_hash']                    = $fallback_hash;
+			$diagnostic['fallback_resolution']              = array(
+				'source_state' => 'detected',
+				'state' => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
+				'receipt' => $receipt,
+			);
+			$report['diagnostics'][ $index ]                = $diagnostic;
+			if ( $resolved_by_provider ) {
+				++$resolved;
+			}
+			$resolutions[] = array(
+				'fallback_reconciliation_identity' => $identity,
+				'fallback_hash' => $fallback_hash,
+				'state' => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
+				'receipt' => $receipt,
+			);
+		}
+
+		$report['quality']['fallback_count'] = max( 0, $source_total - $resolved );
+		$report['quality_resolutions']        = array(
+			'schema'                  => 'static-site-importer/quality-resolutions/v1',
+			'source_fallback_count'   => $source_total,
+			'resolved_by_provider'    => $resolved,
+			'unresolved_fallback_count' => max( 0, $source_total - $resolved ),
+			'resolutions'              => $resolutions,
+		);
+		$report['fallback_reconciliation'] = $report['quality_resolutions'];
 	}
 
 	/**

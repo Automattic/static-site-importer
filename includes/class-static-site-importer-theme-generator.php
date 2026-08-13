@@ -477,6 +477,8 @@ class Static_Site_Importer_Theme_Generator {
 			),
 		);
 		$report['source_artifact'] = array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ) );
+		$report['materialization_receipt'] = $receipt;
+		$quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $report, $args );
 		$artifact = array_merge(
 			isset( $args['source_artifact_reference'] ) && is_array( $args['source_artifact_reference'] ) ? $args['source_artifact_reference'] : array(),
 			array_filter(
@@ -1157,6 +1159,10 @@ class Static_Site_Importer_Theme_Generator {
 						'role'                         => $binding['role'],
 						'declaration_id'               => $declaration_id,
 						'reconciliation_identity'      => hash( 'sha256', "static-site-importer/runtime-entity-binding/v1\n{$declaration_id}\n{$binding['source_path']}\n{$binding['occurrence']}\n" . hash( 'sha256', $binding['search_block_markup'] ) ),
+						'fallback_reconciliation_identity' => 'form' === $binding['role'] ? Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $entity ) : '',
+						'fallback_hash'                 => 'form' === $binding['role'] ? Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $entity ) : '',
+						'materialized_block_hash'       => 'form' === $binding['role'] ? hash( 'sha256', $replacement ) : '',
+						'provider'                      => $prepared['adapter']['provider'] ?? '',
 						'superseded_runtime_selectors' => $binding['superseded_runtime_selectors'] ?? array(),
 					);
 				}
