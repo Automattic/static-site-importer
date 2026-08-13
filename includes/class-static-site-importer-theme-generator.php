@@ -1151,19 +1151,19 @@ class Static_Site_Importer_Theme_Generator {
 				}
 				foreach ( $entity_bindings as $binding ) {
 					$bindings[] = array(
-						'schema'                       => 'static-site-importer/runtime-entity-binding/v1',
-						'source_path'                  => $binding['source_path'],
-						'search_block_markup'          => $binding['search_block_markup'],
-						'replacement_block_markup'     => $replacement,
-						'occurrence'                   => $binding['occurrence'],
-						'role'                         => $binding['role'],
-						'declaration_id'               => $declaration_id,
-						'reconciliation_identity'      => hash( 'sha256', "static-site-importer/runtime-entity-binding/v1\n{$declaration_id}\n{$binding['source_path']}\n{$binding['occurrence']}\n" . hash( 'sha256', $binding['search_block_markup'] ) ),
+						'schema'                           => 'static-site-importer/runtime-entity-binding/v1',
+						'source_path'                      => $binding['source_path'],
+						'search_block_markup'              => $binding['search_block_markup'],
+						'replacement_block_markup'         => $replacement,
+						'occurrence'                       => $binding['occurrence'],
+						'role'                             => $binding['role'],
+						'declaration_id'                   => $declaration_id,
+						'reconciliation_identity'          => hash( 'sha256', "static-site-importer/runtime-entity-binding/v1\n{$declaration_id}\n{$binding['source_path']}\n{$binding['occurrence']}\n" . hash( 'sha256', $binding['search_block_markup'] ) ),
 						'fallback_reconciliation_identity' => 'form' === $binding['role'] ? Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $entity ) : '',
-						'fallback_hash'                 => 'form' === $binding['role'] ? Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $entity ) : '',
-						'materialized_block_hash'       => 'form' === $binding['role'] ? hash( 'sha256', $replacement ) : '',
-						'provider'                      => $prepared['adapter']['provider'] ?? '',
-						'superseded_runtime_selectors' => $binding['superseded_runtime_selectors'] ?? array(),
+						'fallback_hash'                    => 'form' === $binding['role'] ? Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $entity ) : '',
+						'materialized_block_hash'          => 'form' === $binding['role'] ? hash( 'sha256', $replacement ) : '',
+						'provider'                         => $prepared['adapter']['provider'] ?? '',
+						'superseded_runtime_selectors'     => $binding['superseded_runtime_selectors'] ?? array(),
 					);
 				}
 			}

@@ -1502,7 +1502,12 @@ class Static_Site_Importer_Report_Diagnostics {
 	/** @param array<string,mixed> $fallback */
 	public static function fallback_reconciliation_hash( array $fallback ): string {
 		$source = isset( $fallback['form'] ) || isset( $fallback['controls'] )
-			? wp_json_encode( array( 'form' => $fallback['form'] ?? array(), 'controls' => $fallback['controls'] ?? array() ) )
+			? wp_json_encode(
+				array(
+					'form'     => $fallback['form'] ?? array(),
+					'controls' => $fallback['controls'] ?? array(),
+				)
+			)
 			: self::first_scalar( $fallback, array( 'source_html_preview', 'html_excerpt', 'excerpt' ) );
 		return hash( 'sha256', (string) $source );
 	}
@@ -2626,7 +2631,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		if ( ! isset( $report['quality'] ) || ! is_array( $report['quality'] ) ) {
 			$report['quality'] = array();
 		}
-		$source_total = max(
+		$source_total                               = max(
 			(int) ( $report['quality']['source_fallback_count'] ?? 0 ),
 			(int) ( $report['quality']['fallback_count'] ?? 0 )
 		);
@@ -2658,34 +2663,34 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 			$receipts_by_fallback[ $receipt['fallback_reconciliation_identity'] ] = $receipt;
 		}
-		$resolved = 0;
+		$resolved    = 0;
 		$resolutions = array();
 		foreach ( $report['diagnostics'] ?? array() as $index => $diagnostic ) {
 			if ( ! is_array( $diagnostic ) || 'html_form_fallback' !== (string) ( $diagnostic['diagnostic_code'] ?? '' ) ) {
 				continue;
 			}
-			$identity     = self::fallback_reconciliation_identity( $diagnostic );
-			$fallback_hash = self::fallback_reconciliation_hash( $diagnostic );
-			$receipt      = $receipts_by_fallback[ $identity ] ?? array();
-			$source_path  = self::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
-			$page_receipt = $report['materialization_receipt']['completed']['materialized_pages'][ $source_path ] ?? array();
-			$page_hash    = is_array( $page_receipt ) && is_string( $page_receipt['content_hash'] ?? null ) ? $page_receipt['content_hash'] : '';
+			$identity             = self::fallback_reconciliation_identity( $diagnostic );
+			$fallback_hash        = self::fallback_reconciliation_hash( $diagnostic );
+			$receipt              = $receipts_by_fallback[ $identity ] ?? array();
+			$source_path          = self::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
+			$page_receipt         = $report['materialization_receipt']['completed']['materialized_pages'][ $source_path ] ?? array();
+			$page_hash            = is_array( $page_receipt ) && is_string( $page_receipt['content_hash'] ?? null ) ? $page_receipt['content_hash'] : '';
 			$resolved_by_provider = 'static-site-importer/quality-resolution-receipt/v1' === ( $receipt['schema'] ?? null )
 				&& 'completed' === ( $receipt['status'] ?? null )
-				&& $identity === ( $receipt['fallback_reconciliation_identity'] ?? null )
-				&& $fallback_hash === ( $receipt['fallback_hash'] ?? null )
+				&& ( $receipt['fallback_reconciliation_identity'] ?? null ) === $identity
+				&& ( $receipt['fallback_hash'] ?? null ) === $fallback_hash
 				&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['binding_reconciliation_identity'] ?? '' ) )
 				&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['materialized_block_hash'] ?? '' ) )
-				&& ( $receipt['materialized_block_hash'] ?? null ) === ( $receipt['persisted_fragment_hash'] ?? null )
+				&& ( $receipt['persisted_fragment_hash'] ?? null ) === ( $receipt['materialized_block_hash'] ?? null )
 				&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['materialized_content_hash'] ?? '' ) )
-				&& $page_hash === ( $receipt['materialized_content_hash'] ?? null );
+				&& ( $receipt['materialized_content_hash'] ?? null ) === $page_hash;
 
 			$diagnostic['fallback_reconciliation_identity'] = $identity;
 			$diagnostic['fallback_hash']                    = $fallback_hash;
 			$diagnostic['fallback_resolution']              = array(
 				'source_state' => 'detected',
-				'state' => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
-				'receipt' => $receipt,
+				'state'        => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
+				'receipt'      => $receipt,
 			);
 			$report['diagnostics'][ $index ]                = $diagnostic;
 			if ( $resolved_by_provider ) {
@@ -2693,21 +2698,21 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 			$resolutions[] = array(
 				'fallback_reconciliation_identity' => $identity,
-				'fallback_hash' => $fallback_hash,
-				'state' => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
-				'receipt' => $receipt,
+				'fallback_hash'                    => $fallback_hash,
+				'state'                            => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
+				'receipt'                          => $receipt,
 			);
 		}
 
 		$report['quality']['fallback_count'] = max( 0, $source_total - $resolved );
-		$report['quality_resolutions']        = array(
-			'schema'                  => 'static-site-importer/quality-resolutions/v1',
-			'source_fallback_count'   => $source_total,
-			'resolved_by_provider'    => $resolved,
+		$report['quality_resolutions']       = array(
+			'schema'                    => 'static-site-importer/quality-resolutions/v1',
+			'source_fallback_count'     => $source_total,
+			'resolved_by_provider'      => $resolved,
 			'unresolved_fallback_count' => max( 0, $source_total - $resolved ),
-			'resolutions'              => $resolutions,
+			'resolutions'               => $resolutions,
 		);
-		$report['fallback_reconciliation'] = $report['quality_resolutions'];
+		$report['fallback_reconciliation']   = $report['quality_resolutions'];
 	}
 
 	/**
