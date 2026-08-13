@@ -75,6 +75,25 @@ class Static_Site_Importer_URL_Fetcher {
 	 * @return array{body:string,metadata:array<string,mixed>}|WP_Error
 	 */
 	public static function fetch( string $url, array $args = array() ) {
+		if ( isset( $args['deadline'] ) ) {
+			$many_args = array( 'deadline' => (float) $args['deadline'] );
+			if ( isset( $args['clock'] ) && is_callable( $args['clock'] ) ) {
+				$many_args['clock'] = $args['clock'];
+			}
+			if ( isset( $args['transport'] ) && is_array( $args['transport'] ) ) {
+				$many_args['transport'] = $args['transport'];
+			}
+			$results = self::fetch_many(
+				array(
+					'fetch' => array(
+						'url'  => $url,
+						'args' => $args,
+					),
+				),
+				$many_args
+			);
+			return $results['fetch'];
+		}
 		$timeout               = max( self::CONNECT_TIMEOUT_FLOOR, (int) ( $args['timeout'] ?? self::DEFAULT_TIMEOUT ) );
 		$max_bytes             = min( self::MAX_RESPONSE_BYTES, max( 1, (int) ( $args['max_bytes'] ?? self::DEFAULT_MAX_BYTES ) ) );
 		$has_content_types_arg = isset( $args['content_types'] ) && is_array( $args['content_types'] );
