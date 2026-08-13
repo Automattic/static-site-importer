@@ -187,6 +187,84 @@ $shuffled = Static_Site_Importer_URL_Site_Collector::collect(
 );
 $assert( ! is_wp_error( $shuffled ) && ( $snapshot['sha256'] ?? '' ) === ( $shuffled['source_metadata']['snapshot']['sha256'] ?? null ), 'snapshot-hash-independent-of-discovery-order' );
 
+$finalization_cursor = null;
+$retained_bodies     = array();
+$retained_loads      = array();
+$finalization_steps  = array();
+$finalization_fetcher = static function ( string $url, array $args ): array {
+	unset( $args );
+	$fixtures = array(
+		'https://finalize.test/'          => array( 'text/html', '<link rel="stylesheet" href="/style.css"><img src="/image.png">' ),
+		'https://finalize.test/style.css' => array( 'text/css', 'body{background:url(/image.png)}' ),
+		'https://finalize.test/image.png' => array( 'image/png', 'image-bytes' ),
+	);
+	return array( 'body' => $fixtures[ $url ][1], 'metadata' => array( 'content_type' => $fixtures[ $url ][0], 'final_url' => $url ) );
+};
+$finalization_args = array(
+	'max_pages'                                    => 1,
+	'max_assets'                                   => 2,
+	'_route_set'                                   => array( 'https://finalize.test/' ),
+	'_static_site_importer_collection_contract'    => 'finalization-test',
+	'_static_site_importer_collection_cursor_load' => static function () use ( &$finalization_cursor ) {
+		return $finalization_cursor;
+	},
+	'_static_site_importer_collection_resource_load' => static function ( array $retained ) use ( &$retained_bodies, &$retained_loads ) {
+		$ref                    = (string) ( $retained['body_ref'] ?? '' );
+		$retained_loads[ $ref ] = ( $retained_loads[ $ref ] ?? 0 ) + 1;
+		$body                   = $retained_bodies[ $ref ] ?? null;
+		return is_string( $body ) && hash_equals( (string) ( $retained['sha256'] ?? '' ), hash( 'sha256', $body ) ) ? $body : null;
+	},
+	'_static_site_importer_collection_cursor_save' => static function ( array $cursor ) use ( &$finalization_cursor, &$retained_bodies ) {
+		foreach ( $cursor['resources'] ?? array() as $url => $resource ) {
+			if ( isset( $resource['body'] ) && is_string( $resource['body'] ) ) {
+				$hash                     = hash( 'sha256', $resource['body'] );
+				$ref                      = 'source/' . $hash;
+				$retained_bodies[ $ref ]  = $resource['body'];
+				unset( $resource['body'] );
+				$resource['body_ref']      = $ref;
+				$resource['sha256']        = $hash;
+				$cursor['resources'][ $url ] = $resource;
+			}
+		}
+		foreach ( $cursor['finalization']['files'] ?? array() as $index => $file ) {
+			if ( isset( $file['body'] ) && is_string( $file['body'] ) ) {
+				$hash                                    = hash( 'sha256', $file['body'] );
+				$ref                                     = 'finalized/' . $hash;
+				$retained_bodies[ $ref ]                 = $file['body'];
+				unset( $file['body'] );
+				$file['body_ref']                         = $ref;
+				$file['sha256']                           = $hash;
+				$cursor['finalization']['files'][ $index ] = $file;
+			}
+		}
+		$finalization_cursor = $cursor;
+		return true;
+	},
+);
+$resumed_finalization = null;
+for ( $attempt = 0; $attempt < 5; ++$attempt ) {
+	$yield_checks = 0;
+	$attempt_args = $finalization_args;
+	$attempt_args['_static_site_importer_collection_should_yield'] = static function () use ( &$yield_checks ): bool {
+		return 1 < ++$yield_checks;
+	};
+	$resumed_finalization = Static_Site_Importer_URL_Site_Collector::collect( 'https://finalize.test/', $attempt_args, $finalization_fetcher );
+	$finalization_steps[] = (int) ( $finalization_cursor['finalization']['next_resource'] ?? 0 );
+	if ( ! is_wp_error( $resumed_finalization ) ) {
+		break;
+	}
+}
+$clean_finalization = Static_Site_Importer_URL_Site_Collector::collect( 'https://finalize.test/', array( 'max_pages' => 1, 'max_assets' => 2, '_route_set' => array( 'https://finalize.test/' ) ), $finalization_fetcher );
+$source_loads = array_filter( $retained_loads, static fn ( int $count, string $ref ): bool => str_starts_with( $ref, 'source/' ), ARRAY_FILTER_USE_BOTH );
+$finalized_refs_verify = array_filter(
+	$finalization_cursor['finalization']['files'] ?? array(),
+	static fn ( array $file ): bool => ! isset( $retained_bodies[ $file['body_ref'] ?? '' ] ) || ! hash_equals( (string) ( $file['sha256'] ?? '' ), hash( 'sha256', $retained_bodies[ $file['body_ref'] ] ) )
+);
+$assert( array( 1, 2, 3, 3 ) === $finalization_steps, 'finalization-cursor-advances-one-resource-per-invocation' );
+$assert( 'static-site-importer/url-collection-cursor/v2' === ( $finalization_cursor['schema'] ?? '' ) && array() === $finalized_refs_verify, 'finalization-cursor-retains-hash-verified-payloads' );
+$assert( 2 === count( $source_loads ) && array() === array_filter( $source_loads, static fn ( int $count ): bool => 1 !== $count ), 'resumed-finalization-does-not-reload-completed-source-resources' );
+$assert( ! is_wp_error( $resumed_finalization ) && ! is_wp_error( $clean_finalization ) && wp_json_encode( $clean_finalization['artifact'] ) === wp_json_encode( $resumed_finalization['artifact'] ), 'resumed-finalization-preserves-clean-artifact-bytes' );
+
 $schedule_calls = array();
 $schedule_delays = array();
 $scheduled = Static_Site_Importer_URL_Site_Collector::collect(

@@ -86,8 +86,10 @@ class Static_Site_Importer_URL_Site_Collector {
 		$cursor_loader      = is_callable( $args['_static_site_importer_collection_cursor_load'] ?? null ) ? $args['_static_site_importer_collection_cursor_load'] : null;
 		$cursor_saver       = is_callable( $args['_static_site_importer_collection_cursor_save'] ?? null ) ? $args['_static_site_importer_collection_cursor_save'] : null;
 		$resource_loader    = is_callable( $args['_static_site_importer_collection_resource_load'] ?? null ) ? $args['_static_site_importer_collection_resource_load'] : null;
+		$should_yield       = is_callable( $args['_static_site_importer_collection_should_yield'] ?? null ) ? $args['_static_site_importer_collection_should_yield'] : null;
 		$cursor             = null !== $cursor_loader ? call_user_func( $cursor_loader ) : null;
-		if ( is_array( $cursor ) && 'static-site-importer/url-collection-cursor/v1' === ( $cursor['schema'] ?? '' ) && hash_equals( $cursor_contract, (string) ( $cursor['contract'] ?? '' ) ) ) {
+		$cursor_schemas     = array( 'static-site-importer/url-collection-cursor/v1', 'static-site-importer/url-collection-cursor/v2' );
+		if ( is_array( $cursor ) && in_array( $cursor['schema'] ?? '', $cursor_schemas, true ) && hash_equals( $cursor_contract, (string) ( $cursor['contract'] ?? '' ) ) ) {
 			$page_queue         = is_array( $cursor['page_queue'] ?? null ) ? $cursor['page_queue'] : array();
 			$asset_queue        = is_array( $cursor['asset_queue'] ?? null ) ? $cursor['asset_queue'] : array();
 			$queued_pages       = is_array( $cursor['queued_pages'] ?? null ) ? $cursor['queued_pages'] : array();
@@ -106,11 +108,13 @@ class Static_Site_Importer_URL_Site_Collector {
 			$entry_resource_url = (string) ( $cursor['entry_resource_url'] ?? $entry_url );
 			$site_url           = (string) ( $cursor['site_url'] ?? $entry_url );
 			$sitemap_urls       = is_array( $cursor['sitemap_urls'] ?? null ) ? $cursor['sitemap_urls'] : array();
+			$finalization       = is_array( $cursor['finalization'] ?? null ) ? $cursor['finalization'] : null;
 		} else {
 			$cursor = null;
 		}
 
 		if ( null === $cursor ) {
+			$finalization = null;
 			$sitemap_urls = isset( $args['_route_set'] ) && is_array( $args['_route_set'] ) ? array_values( $args['_route_set'] ) : self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
 			if ( is_wp_error( $sitemap_urls ) ) {
 				return $sitemap_urls;
@@ -314,21 +318,9 @@ class Static_Site_Importer_URL_Site_Collector {
 				}
 			}
 		}
-		$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $external_pages, $critical_assets, $entry_resource_url, $site_url, $sitemap_urls );
+		$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $external_pages, $critical_assets, $entry_resource_url, $site_url, $sitemap_urls, $finalization );
 		if ( is_wp_error( $checkpoint ) ) {
 			return $checkpoint;
-		}
-		if ( null !== $resource_loader ) {
-			foreach ( $resources as $resource_url => $resource ) {
-				if ( isset( $resource['body'] ) ) {
-					continue;
-				}
-				$body = call_user_func( $resource_loader, $resource );
-				if ( ! is_string( $body ) ) {
-					return new WP_Error( 'static_site_importer_collection_cursor_resource_invalid', 'A retained URL collection resource could not be loaded.' );
-				}
-				$resources[ $resource_url ]['body'] = $body;
-			}
 		}
 
 		if ( ( ! empty( $truncated ) || ! empty( $failures ) ) && ! empty( $args['require_complete_collection'] ) ) {
@@ -374,13 +366,34 @@ class Static_Site_Importer_URL_Site_Collector {
 				$reference_paths[ $requested_url ] = $paths[ $final_url ];
 			}
 		}
-		$files          = array();
-		$snapshot_files = array();
-		foreach ( $resources as $resource_url => $resource ) {
+		$resource_urls = array_keys( $resources );
+		if ( ! is_array( $finalization ) || ( $finalization['resource_urls'] ?? null ) !== $resource_urls ) {
+			$finalization = array(
+				'resource_urls'  => $resource_urls,
+				'next_resource'  => 0,
+				'files'          => array(),
+				'snapshot_files' => array(),
+				'external_pages' => $external_pages,
+			);
+		}
+		$resource_count = count( $resource_urls );
+		while ( $finalization['next_resource'] < $resource_count ) {
+			if ( null !== $should_yield && call_user_func( $should_yield ) ) {
+				$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $finalization['external_pages'], $critical_assets, $entry_resource_url, $site_url, $sitemap_urls, $finalization );
+				return is_wp_error( $checkpoint ) ? $checkpoint : new WP_Error( 'static_site_importer_invocation_deadline_exceeded', 'The URL batch invocation deadline was reached during artifact finalization.' );
+			}
+			$resource_url = $resource_urls[ $finalization['next_resource'] ];
+			$resource     = $resources[ $resource_url ];
+			$body         = $resource['body'] ?? null;
+			if ( ! is_string( $body ) && null !== $resource_loader ) {
+				$body = call_user_func( $resource_loader, $resource );
+			}
+			if ( ! is_string( $body ) ) {
+				return new WP_Error( 'static_site_importer_collection_cursor_resource_invalid', 'A retained URL collection resource could not be loaded.' );
+			}
 			$path = $paths[ $resource_url ];
-			$body = (string) $resource['body'];
 			if ( 'html' === $resource['kind'] ) {
-				$body = self::rewrite_html( $body, self::html_base_url( $body, $resource_url ), $path, $reference_paths, $aliases, $site_url, $external_assets, $external_pages, $known_pages );
+				$body = self::rewrite_html( $body, self::html_base_url( $body, $resource_url ), $path, $reference_paths, $aliases, $site_url, $external_assets, $finalization['external_pages'], $known_pages );
 			} elseif ( 'text/css' === $resource['content_type'] || str_ends_with( strtolower( $path ), '.css' ) ) {
 				$body = self::rewrite_css( $body, $resource_url, $path, $reference_paths, $external_assets );
 			}
@@ -388,24 +401,48 @@ class Static_Site_Importer_URL_Site_Collector {
 			$file = array(
 				'path'      => $path,
 				'mime_type' => $resource['content_type'],
+				'body'      => $body,
+				'is_text'   => self::is_text( $resource['content_type'], $path ),
 			);
 			if ( 'html' === $resource['kind'] ) {
 				$file['metadata'] = array( 'route_path' => $route_paths[ $resource_url ] );
 			}
-			if ( self::is_text( $resource['content_type'], $path ) ) {
-				$file['content'] = $body;
-			} else {
-				$file['content_base64'] = base64_encode( $body ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes binary artifact payload bytes.
-			}
-			$files[]          = $file;
-			$snapshot_files[] = array(
+			$finalization['files'][]          = $file;
+			$finalization['snapshot_files'][] = array(
 				'path'       => $path,
 				'source_url' => $resource_url,
 				'mime_type'  => $resource['content_type'],
 				'bytes'      => strlen( $body ),
 				'sha256'     => hash( 'sha256', $body ),
 			);
+			++$finalization['next_resource'];
+			$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $finalization['external_pages'], $critical_assets, $entry_resource_url, $site_url, $sitemap_urls, $finalization );
+			if ( is_wp_error( $checkpoint ) ) {
+				return $checkpoint;
+			}
 		}
+		if ( null !== $should_yield && call_user_func( $should_yield ) ) {
+			return new WP_Error( 'static_site_importer_invocation_deadline_exceeded', 'The URL batch invocation deadline was reached before artifact assembly.' );
+		}
+		$files = array();
+		foreach ( $finalization['files'] as $retained_file ) {
+			$body = $retained_file['body'] ?? null;
+			if ( ! is_string( $body ) && null !== $resource_loader ) {
+				$body = call_user_func( $resource_loader, $retained_file );
+			}
+			if ( ! is_string( $body ) ) {
+				return new WP_Error( 'static_site_importer_collection_cursor_resource_invalid', 'A finalized URL collection resource could not be loaded.' );
+			}
+			$file = array_intersect_key( $retained_file, array_flip( array( 'path', 'mime_type', 'metadata' ) ) );
+			if ( ! empty( $retained_file['is_text'] ) ) {
+				$file['content'] = $body;
+			} else {
+				$file['content_base64'] = base64_encode( $body ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes binary artifact payload bytes.
+			}
+			$files[] = $file;
+		}
+		$snapshot_files = $finalization['snapshot_files'];
+		$external_pages = $finalization['external_pages'];
 		usort( $files, static fn ( array $left, array $right ): int => strcmp( (string) $left['path'], (string) $right['path'] ) );
 		usort( $snapshot_files, static fn ( array $left, array $right ): int => strcmp( (string) $left['path'], (string) $right['path'] ) );
 		$compiler_limits    = array(
@@ -479,8 +516,8 @@ class Static_Site_Importer_URL_Site_Collector {
 						'count'   => count( $external_pages ),
 						'samples' => array_slice(
 							array_map(
-								static fn ( string $url ): array => array(
-									'url'    => $url,
+								static fn ( int|string $url ): array => array(
+									'url'    => (string) $url,
 									'reason' => 'uncollected_page',
 								),
 								array_keys( $external_pages )
@@ -500,14 +537,14 @@ class Static_Site_Importer_URL_Site_Collector {
 		);
 	}
 
-	private static function checkpoint_collection_cursor( ?callable $saver, string $contract, array $page_queue, array $asset_queue, array $queued_pages, array $queued_assets, array $resources, array $failures, array $diagnostics, array $source_exclusions, array $script_exclusions, array $aliases, int $total_bytes, array $truncated, array $external_assets, array $external_pages, array $critical_assets, string $entry_resource_url, string $site_url, array $sitemap_urls ) {
+	private static function checkpoint_collection_cursor( ?callable $saver, string $contract, array $page_queue, array $asset_queue, array $queued_pages, array $queued_assets, array $resources, array $failures, array $diagnostics, array $source_exclusions, array $script_exclusions, array $aliases, int $total_bytes, array $truncated, array $external_assets, array $external_pages, array $critical_assets, string $entry_resource_url, string $site_url, array $sitemap_urls, ?array $finalization = null ) {
 		if ( null === $saver ) {
 			return true;
 		}
 		return call_user_func(
 			$saver,
 			array(
-				'schema'             => 'static-site-importer/url-collection-cursor/v1',
+				'schema'             => 'static-site-importer/url-collection-cursor/v2',
 				'contract'           => $contract,
 				'page_queue'         => array_values( $page_queue ),
 				'asset_queue'        => array_values( $asset_queue ),
@@ -527,6 +564,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				'entry_resource_url' => $entry_resource_url,
 				'site_url'           => $site_url,
 				'sitemap_urls'       => $sitemap_urls,
+				'finalization'       => $finalization,
 				'updated_at'         => gmdate( 'c' ),
 			)
 		);
