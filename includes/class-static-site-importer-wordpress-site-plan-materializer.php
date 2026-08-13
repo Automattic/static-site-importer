@@ -201,8 +201,16 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			);
 			foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
 				if ( ( $binding_report['source_path'] ?? '' ) === $page['source_path'] ) {
-					$binding_report['status']  = 'completed';
-					$binding_report['post_id'] = $post;
+					$fragment          = (string) ( $binding_report['replacement_block_markup'] ?? '' );
+					$persisted_content = function_exists( 'get_post_field' ) ? get_post_field( 'post_content', $post ) : null;
+					if ( ! is_string( $persisted_content ) || '' === $fragment || ! str_contains( $persisted_content, $fragment ) ) {
+						$binding_report['status'] = 'unresolved';
+						continue;
+					}
+					$binding_report['status']                    = 'completed';
+					$binding_report['post_id']                   = $post;
+					$binding_report['persisted_fragment_hash']   = hash( 'sha256', $fragment );
+					$binding_report['materialized_content_hash'] = hash( 'sha256', $persisted_content );
 				}
 			}
 			unset( $binding_report );
@@ -592,11 +600,17 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$materialized = substr( $content, 0, $position ) . $binding['replacement_block_markup'] . substr( $content, $position + strlen( $binding['search_block_markup'] ) );
 			$plan['pages'][ $index ]['materialized_block_markup'] = $materialized;
 			$reports[ $binding['reconciliation_identity'] ]       = array(
-				'status'                       => 'prepared',
-				'source_path'                  => $binding['source_path'],
-				'role'                         => $binding['role'] ?? '',
-				'declaration_id'               => $binding['declaration_id'] ?? '',
-				'superseded_runtime_selectors' => $selectors,
+				'status'                           => 'prepared',
+				'reconciliation_identity'          => $binding['reconciliation_identity'],
+				'source_path'                      => $binding['source_path'],
+				'role'                             => $binding['role'] ?? '',
+				'declaration_id'                   => $binding['declaration_id'] ?? '',
+				'fallback_reconciliation_identity' => $binding['fallback_reconciliation_identity'] ?? '',
+				'fallback_hash'                    => $binding['fallback_hash'] ?? '',
+				'materialized_block_hash'          => $binding['materialized_block_hash'] ?? '',
+				'replacement_block_markup'         => $binding['replacement_block_markup'],
+				'provider'                         => $binding['provider'] ?? '',
+				'superseded_runtime_selectors'     => $selectors,
 			);
 		}
 		foreach ( $reports as &$report ) {
@@ -772,7 +786,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				return $result;
 			}
 			$result['status'] = 'applied';
-			$reports[]  = $result;
+			$reports[]        = $result;
 			foreach ( $state['applied']['files'] as $index => $file ) {
 				if ( ( $file['target_path'] ?? null ) === $target ) {
 					$state['applied']['files'][ $index ] = self::canonical_file_receipt( $path, $file );

@@ -95,6 +95,7 @@ function wp_insert_post( array $post, bool $wp_error ) {
 	$GLOBALS['ssi_plan_posts'][ $id ] = $post;
 	return $id;
 }
+function get_post_field( string $field, int $id ): string { return stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $id ][ $field ] ?? '' ) ); }
 class WP_Post_Type {
 	public string $name;
 	public bool $public;
@@ -114,6 +115,7 @@ function get_post_type_object( string $post_type ): ?object {
 
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-font-materializer.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-document-type-classifier.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diagnostics-adapter.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
@@ -461,6 +463,62 @@ $assert( str_contains( $duplicate_markup, '[add_to_cart id="42"]' ) && str_conta
 $invalid_binding = array( 'schema' => 'static-site-importer/runtime-entity-binding/v1', 'source_path' => 'index.html', 'search_block_markup' => '<!-- wp:paragraph --><p>Missing</p><!-- /wp:paragraph -->', 'replacement_block_markup' => $binding_replacement, 'occurrence' => 1, 'role' => 'commerce_controls', 'declaration_id' => $entity_declaration_id, 'reconciliation_identity' => hash( 'sha256', 'invalid-binding-test' ) );
 $invalid_binding_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $binding_plan, array( 'slug' => 'invalid-binding-plan', 'runtime_entity_bindings' => array( $invalid_binding ) ) );
 $assert( 'rejected' === $invalid_binding_receipt['status'] && 'runtime_entity_binding_cardinality_mismatch' === ( $invalid_binding_receipt['errors'][0]['code'] ?? '' ), 'missing or ambiguous provider anchors fail before page writes' );
+
+// A form fallback resolves only from the persisted runtime-binding receipt. The
+// quality report never trusts a provider result before the replacement page write.
+$form_fallback = array(
+	'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_form_fallback', 'source_path' => 'index.html', 'selector' => 'form.newsletter',
+	'form' => array( 'class' => 'newsletter' ), 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ) ),
+);
+$form_fallback_identity = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $form_fallback );
+$form_fallback_hash = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $form_fallback );
+$form_binding = array(
+	'schema' => 'static-site-importer/runtime-entity-binding/v1', 'source_path' => 'index.html', 'search_block_markup' => $binding_search,
+	'replacement_block_markup' => '<!-- wp:jetpack/contact-form -->newsletter<!-- /wp:jetpack/contact-form -->', 'occurrence' => 1, 'role' => 'form',
+	'declaration_id' => 'forms', 'reconciliation_identity' => hash( 'sha256', 'form-fallback-binding' ),
+	'fallback_reconciliation_identity' => $form_fallback_identity, 'fallback_hash' => $form_fallback_hash,
+	'materialized_block_hash' => hash( 'sha256', '<!-- wp:jetpack/contact-form -->newsletter<!-- /wp:jetpack/contact-form -->' ), 'provider' => 'jetpack',
+);
+$form_binding_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $binding_plan, array( 'slug' => 'form-fallback-binding-plan', 'runtime_entity_bindings' => array( $form_binding ) ) );
+$form_binding_report = reset( $form_binding_receipt['completed']['runtime_declarations']['entity_bindings'] );
+$form_quality_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
+$form_quality_report['quality']['fallback_count'] = 1;
+$form_quality_report['diagnostics'] = array( $form_fallback );
+$form_quality_report['materialization_receipt'] = $form_binding_receipt;
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $form_quality_report );
+$assert( 'completed' === ( $form_binding_report['status'] ?? '' ) && ( $form_binding_report['materialized_content_hash'] ?? '' ) === hash( 'sha256', $form_binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '' ), 'form quality receipt is emitted after the persisted page replacement' );
+$assert( 0 === ( $form_quality_report['quality']['fallback_count'] ?? -1 ) && 1 === ( $form_quality_report['quality']['source_fallback_count'] ?? 0 ) && 'resolved_by_provider' === ( $form_quality_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'persisted form receipt resolves only its identity-and-hash-bound source fallback' );
+$resolved_form_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $form_quality_report, array( 'fail_on_quality' => true ) );
+$resolved_form_validation = Static_Site_Importer_Report_Diagnostics::import_validation_result( $form_quality_report, $resolved_form_quality );
+$assert( true === ( $resolved_form_quality['pass'] ?? false ) && false === ( $resolved_form_quality['fail_import'] ?? true ) && array() === ( $resolved_form_quality['failure_reasons'] ?? null ) && 'passed' === ( $resolved_form_validation['status'] ?? '' ), 'receipt-resolved form fallback clears derived quality gates and validation status' );
+$other_failure_report = $form_quality_report;
+$other_failure_report['quality']['core_html_block_count'] = 1;
+$other_failure_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $other_failure_report, array( 'fail_on_quality' => true ) );
+$other_failure_validation = Static_Site_Importer_Report_Diagnostics::import_validation_result( $other_failure_report, $other_failure_quality );
+$assert( 0 === ( $other_failure_quality['fallback_count'] ?? -1 ) && false === ( $other_failure_quality['pass'] ?? true ) && true === ( $other_failure_quality['fail_import'] ?? false ) && array( 'core_html_block' ) === ( $other_failure_quality['failure_reasons'] ?? null ) && 'failed' === ( $other_failure_validation['status'] ?? '' ), 'receipt reconciliation preserves unrelated quality failures and validation status' );
+$tampered_fragment_receipt = $form_binding_receipt;
+$tampered_fragment_receipt['completed']['runtime_declarations']['entity_bindings'][ hash( 'sha256', 'form-fallback-binding' ) ]['persisted_fragment_hash'] = hash( 'sha256', 'tampered fragment' );
+$tampered_fragment_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
+$tampered_fragment_report['quality']['fallback_count'] = 1;
+$tampered_fragment_report['diagnostics'] = array( $form_fallback );
+$tampered_fragment_report['materialization_receipt'] = $tampered_fragment_receipt;
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $tampered_fragment_report );
+$assert( 1 === ( $tampered_fragment_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $tampered_fragment_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'tampered persisted fragment digest cannot resolve a fallback' );
+$tampered_content_receipt = $form_binding_receipt;
+$tampered_content_receipt['completed']['runtime_declarations']['entity_bindings'][ hash( 'sha256', 'form-fallback-binding' ) ]['materialized_content_hash'] = hash( 'sha256', 'tampered page' );
+$tampered_content_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
+$tampered_content_report['quality']['fallback_count'] = 1;
+$tampered_content_report['diagnostics'] = array( $form_fallback );
+$tampered_content_report['materialization_receipt'] = $tampered_content_receipt;
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $tampered_content_report );
+$assert( 1 === ( $tampered_content_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $tampered_content_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'tampered persisted page digest cannot resolve a fallback' );
+$resumed_form_binding_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $binding_plan, array( 'slug' => 'form-fallback-binding-plan', 'runtime_entity_bindings' => array( $form_binding ) ) );
+$resumed_form_quality_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
+$resumed_form_quality_report['quality']['fallback_count'] = 1;
+$resumed_form_quality_report['diagnostics'] = array( $form_fallback );
+$resumed_form_quality_report['materialization_receipt'] = $resumed_form_binding_receipt;
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $resumed_form_quality_report );
+$assert( $form_quality_report['quality_resolutions'] === $resumed_form_quality_report['quality_resolutions'], 'form quality resolution receipts remain deterministic on retry' );
 
 $publication_svg = '<svg xmlns="http://www.w3.org/2000/svg"><text style="font-family:Example">Example</text></svg>';
 $publication_css = '@font-face{font-family:Example;src:url(font.woff2)}';
