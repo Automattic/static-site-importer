@@ -197,10 +197,12 @@ class Static_Site_Importer_Companion_Plugin {
 			$files[ $plugin_slug . '/' . $island['relative_src'] ] = $island['content'];
 		}
 
-		$main_file = $plugin_slug . '/' . $plugin_slug . '.php';
+		$inventory_hash        = substr( hash( 'sha256', (string) wp_json_encode( array( $block_specs, $preserved ) ) ), 0, 16 );
+		$registration_callback = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash . '_register_blocks';
+		$main_file             = $plugin_slug . '/' . $plugin_slug . '.php';
 		$files     = array_merge(
 			array(
-				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_specs, $preserved, $main_file ),
+				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_specs, $preserved, $main_file, $inventory_hash ),
 			),
 			$files
 		);
@@ -211,6 +213,7 @@ class Static_Site_Importer_Companion_Plugin {
 			'namespace'       => $block_namespace,
 			'site_slug'       => $site_slug,
 			'plugin_file'     => $main_file,
+			'registration_callback' => $registration_callback,
 			'mu_plugin'       => $mu_plugin,
 			'block_names'     => $block_names,
 			// Handles of preserved island scripts the plugin carries + enqueues
@@ -639,6 +642,7 @@ class Static_Site_Importer_Companion_Plugin {
 	 * @param array<int,array<string,mixed>>  $block_specs     PHP-only block registration specs.
 	 * @param array<int,array<string,string>> $preserved       Preserved island descriptors.
 	 * @param string                          $plugin_file     Generated plugin basename.
+	 * @param string                          $inventory_hash  Deterministic generated inventory hash.
 	 * @return string
 	 */
 	private static function main_plugin_file(
@@ -647,10 +651,11 @@ class Static_Site_Importer_Companion_Plugin {
 		string $site_name,
 		array $block_specs,
 		array $preserved,
-		string $plugin_file
+		string $plugin_file,
+		string $inventory_hash
 	): string {
 		$header_name  = sprintf( 'SSI Companion: %s', $site_name );
-		$fn_prefix    = str_replace( '-', '_', $plugin_slug );
+		$fn_prefix    = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash;
 		$const_prefix = strtoupper( $fn_prefix );
 		$islands_php  = self::export_islands_php( $preserved );
 		$specs_php    = self::export_block_specs_php( $block_specs );

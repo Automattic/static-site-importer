@@ -305,6 +305,7 @@ $assert( is_array( $descriptor ), 'scaffold-returns-descriptor', is_array( $desc
 if ( is_array( $descriptor ) ) {
 	$assert( 'ssi-example-site' === $descriptor['slug'], 'scaffold-namespaces-slug', (string) $descriptor['slug'] );
 	$assert( 'ssi-example-site/ssi-example-site.php' === $descriptor['plugin_file'], 'scaffold-plugin-file-path', (string) $descriptor['plugin_file'] );
+	$assert( 1 === preg_match( '/^ssi_example_site_[a-f0-9]{16}_register_blocks$/', (string) ( $descriptor['registration_callback'] ?? '' ) ), 'scaffold-exposes-deterministic-inventory-callback' );
 	$assert( array( 'example/custom-hero' ) === $descriptor['block_names'], 'scaffold-preserves-declared-canonical-name' );
 	$assert( false === $descriptor['mu_plugin'], 'scaffold-regular-plugin-by-default' );
 
@@ -314,7 +315,7 @@ if ( is_array( $descriptor ) ) {
 	$assert( str_contains( $main, "add_filter( 'render_block'" ), 'main-file-scopes-island-enqueue' );
 	$assert( str_contains( $main, 'wp_enqueue_script' ), 'main-file-enqueues-island-js' );
 
-	$assert( str_contains( $main, "register_block_type( SSI_EXAMPLE_SITE_DIR . 'blocks/' . (string) \$spec['dir'] )" ), 'main-file-registers-metadata-block-directory' );
+	$assert( str_contains( $main, "register_block_type( SSI_EXAMPLE_SITE_" ) && str_contains( $main, "_DIR . 'blocks/' . (string) \$spec['dir'] )" ), 'main-file-registers-metadata-block-directory' );
 	$assert( str_contains( $main, "\$registered instanceof WP_Block_Type" ) && str_contains( $main, "static_site_importer_companion_block_owners" ) && str_contains( $main, "'plugin_file' => 'ssi-example-site/ssi-example-site.php'" ), 'main-file-records-owner-only-after-matching-registration' );
 	$assert( str_contains( $main, "register_block_type( (string) \$spec['name'], \$args )" ), 'main-file-retains-php-only-fallback-registration' );
 	$assert( str_contains( $main, "'api_version' => 3" ), 'main-file-declares-api-version' );
@@ -446,7 +447,7 @@ $assert( str_contains( $written_main, 'register_block_type' ), 'written-main-fil
 // marked as companion-owned, so a later materialization still fails closed.
 WP_Block_Type_Registry::$registered[] = 'example/custom-hero';
 $GLOBALS['static_site_importer_companion_block_owners'] = array();
-ssi_example_site_register_blocks();
+call_user_func( $descriptor['registration_callback'] );
 $assert( ! isset( $GLOBALS['static_site_importer_companion_block_owners']['example/custom-hero'] ), 'foreign-registration-before-generated-init-records-no-owner' );
 $foreign_init_collision = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload, static fn (): bool => true );
 $assert( 'failed' === ( $foreign_init_collision['status'] ?? '' ) && 'runtime_block_name_collision' === ( $foreign_init_collision['diagnostics'][0]['reason_code'] ?? '' ), 'foreign-registration-before-generated-init-blocks-refresh' );
@@ -467,6 +468,22 @@ $assert( 'refreshed' === ( $refresh_report['status'] ?? '' ), 'active-generated-
 $assert( in_array( 'refreshed', $refresh_report['actions'] ?? array(), true ), 'active-generated-plugin-records-refresh-action' );
 $assert( ! str_contains( $refreshed_main, "'type' => 'content'" ), 'active-generated-plugin-overwrites-stale-invalid-schema' );
 $assert( 'refreshed' === ( $refresh_report['status'] ?? '' ), 'active-companion-owned-registration-refreshes-successfully' );
+
+// Later batches may add blocks while the prior generated callback remains loaded.
+$expanded_payload = $payload;
+$expanded_payload['blocks'][] = array(
+	'name'       => 'custom-gallery',
+	'block_json' => array(
+		'name'     => 'example/custom-gallery',
+		'title'    => 'Custom Gallery',
+		'category' => 'design',
+	),
+	'render'     => '<div class="ssi-gallery">Gallery</div>',
+);
+$expanded_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $expanded_payload );
+$expanded_report     = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $expanded_payload, static fn (): bool => true );
+$assert( is_array( $expanded_descriptor ) && $descriptor['registration_callback'] !== $expanded_descriptor['registration_callback'], 'changed-inventory-uses-new-registration-callback' );
+$assert( 'refreshed' === ( $expanded_report['status'] ?? '' ) && in_array( 'example/custom-gallery', WP_Block_Type_Registry::$registered, true ), 'same-request-refresh-registers-new-block-inventory' );
 
 $GLOBALS['static_site_importer_companion_block_owners']['example/custom-hero'] = array(
 	'plugin_file' => 'foreign/foreign.php',

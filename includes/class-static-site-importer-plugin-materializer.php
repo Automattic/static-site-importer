@@ -297,14 +297,14 @@ class Static_Site_Importer_Plugin_Materializer {
 		$slug        = isset( $descriptor['slug'] ) && is_string( $descriptor['slug'] ) ? $descriptor['slug'] : '';
 		$plugin_file = isset( $descriptor['plugin_file'] ) && is_string( $descriptor['plugin_file'] ) ? $descriptor['plugin_file'] : '';
 		$base_dir    = isset( $plan['base_dir'] ) && is_string( $plan['base_dir'] ) ? $plan['base_dir'] : '';
-		$callback    = str_replace( '-', '_', $slug ) . '_register_blocks';
+		$callback    = isset( $descriptor['registration_callback'] ) && is_string( $descriptor['registration_callback'] ) ? $descriptor['registration_callback'] : '';
 		$path        = '' === $base_dir || '' === $plugin_file ? '' : rtrim( $base_dir, '/\\' ) . '/' . $plugin_file;
 
-		if ( '' === $slug || '' === $path || ! is_readable( $path ) ) {
+		if ( '' === $slug || '' === $callback || '' === $path || ! is_readable( $path ) ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_registration_unavailable', 'Generated companion block registration file is unavailable.' );
 		}
 		if ( ! function_exists( $callback ) ) {
-			require_once $path;
+			include $path;
 		}
 		if ( ! is_callable( $callback ) ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_registration_unavailable', sprintf( 'Generated companion %s does not expose its block registration callback.', $slug ) );
