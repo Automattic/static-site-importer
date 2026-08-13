@@ -96,7 +96,14 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$source_fetcher = static function ( string $resource_url, array $fetch_args ) use ( $source, $clock, $deadline ) {
 				if ( self::deadline_reached( $deadline, $clock ) ) {
 					return new WP_Error( 'static_site_importer_invocation_deadline_exceeded', 'The URL batch invocation deadline was reached before starting a network fetch.' );
-				}return $source( $resource_url, $fetch_args );
+				}
+				$fetch_args['deadline'] = $deadline;
+				$fetch_args['clock']    = $clock;
+				$result                 = $source( $resource_url, $fetch_args );
+				if ( is_wp_error( $result ) && 'static_site_importer_url_deadline_exhausted' === $result->get_error_code() ) {
+					return new WP_Error( 'static_site_importer_invocation_deadline_exceeded', 'The URL batch invocation deadline was exhausted during a network fetch.' );
+				}
+				return $result;
 			};
 		}
 		$fetcher      = self::cached_fetcher( $cache, $source_fetcher );
