@@ -130,6 +130,61 @@ $assert( ( $fired[0]['args'][0] ?? null ) === $contract, 'hook-arg-contract' );
 $assert( ( $fired[0]['args'][1] ?? null ) === $result, 'hook-arg-result' );
 $assert( ( $fired[0]['args'][2] ?? null ) === $input, 'hook-arg-input' );
 
+$provider_resolutions = array();
+for ( $index = 1; $index <= 8; ++$index ) {
+	$fallback_identity = hash( 'sha256', 'ability-fallback-' . $index );
+	$fallback_hash     = hash( 'sha256', 'ability-source-' . $index );
+	$provider_resolutions[] = array(
+		'fallback_reconciliation_identity' => $fallback_identity,
+		'fallback_hash'                    => $fallback_hash,
+		'state'                            => 'resolved_by_provider',
+		'receipt'                          => array(
+			'schema'                           => 'static-site-importer/quality-resolution-receipt/v1',
+			'status'                           => 'completed',
+			'fallback_reconciliation_identity' => $fallback_identity,
+			'fallback_hash'                    => $fallback_hash,
+			'binding_reconciliation_identity'  => hash( 'sha256', 'ability-binding-' . $index ),
+			'materialized_block_hash'          => hash( 'sha256', 'ability-block-' . $index ),
+			'materialized_content_hash'        => hash( 'sha256', 'ability-content-' . $index ),
+		),
+	);
+}
+$reconciled_result = array(
+	'theme_slug'   => 'compiler-quality-site',
+	'theme_name'   => 'Compiler Quality Site',
+	'quality'      => array( 'block_count' => 0, 'fallback_count' => 0, 'diagnostic_count' => 0 ),
+	'import_report' => array(
+		'schema'                  => 'static-site-importer/import-report/v1',
+		'quality'                 => array( 'block_count' => 0, 'fallback_count' => 0, 'diagnostic_count' => 0 ),
+		'blocks_engine'           => array(
+			'wordpress_site_plan' => array(
+				'schema'  => 'blocks-engine/wordpress-site-plan/v2',
+				'quality' => array( 'metrics' => array( 'block_count' => 331, 'fallback_count' => 458, 'diagnostic_count' => 537 ) ),
+			),
+		),
+		'quality_resolutions' => array(
+			'schema'                    => 'static-site-importer/quality-resolutions/v1',
+			'source_fallback_count'     => 458,
+			'resolved_by_provider'      => 8,
+			'unresolved_fallback_count' => 450,
+			'resolutions'               => $provider_resolutions,
+		),
+	),
+	'materialization_receipt' => array(
+		'schema' => 'static-site-importer/materialization-receipt/v1',
+		'status' => 'completed',
+	),
+);
+$reconciled_envelope = static_site_importer_ability_import_success( $reconciled_result, array( 'slug' => 'compiler-quality-site' ) );
+$reconciled_contract = $reconciled_envelope['fixture_diagnostics'] ?? array();
+$assert( 331 === ( $reconciled_contract['quality_counts']['block_count'] ?? null ), 'success-envelope-retains-compiler-block-count' );
+$assert( 450 === ( $reconciled_contract['quality_counts']['fallback_count'] ?? null ), 'success-envelope-emits-unresolved-fallback-count' );
+$assert( 8 === ( $reconciled_contract['quality_counts']['materialized']['fallback_count'] ?? null ), 'success-envelope-uses-provider-reconciliation' );
+$assert( 'blocks_engine.wordpress_site_plan.quality' === ( $reconciled_contract['quality_counts']['provenance']['source_detected']['path'] ?? '' ), 'success-envelope-identifies-compiler-provenance' );
+$assert( 'static-site-importer/materialization-receipt/v1' === ( $reconciled_contract['quality_counts']['provenance']['materialized']['receipt'] ?? '' ), 'success-envelope-identifies-materialization-receipt' );
+$assert( false === ( $reconciled_contract['quality_counts']['consistent'] ?? true ), 'success-envelope-flags-contradictory-quality-layers' );
+$assert( 'quality_count_consistency_failure' === ( $reconciled_contract['diagnostics'][0]['type'] ?? '' ), 'success-envelope-emits-consistency-diagnostic' );
+
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );

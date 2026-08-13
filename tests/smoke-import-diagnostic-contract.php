@@ -156,6 +156,135 @@ $assert( '#canvas' === ( $diagnostics['runtime_dependency_target_gaps'][0]['sele
 $assert( 'header nav' === ( $diagnostics['by_repair_bucket']['semantic_parity'][0]['selector'] ?? '' ), 'semantic-selector' );
 $assert( array() === ( $diagnostics['artifact_refs'] ?? null ), 'no-runtime-artifact-requirement' );
 
+$quality_fixture = json_decode( (string) file_get_contents( dirname( __DIR__ ) . '/tests/fixtures/diagnostic-contract/quality-reconciliation.json' ), true );
+$verified_resolutions = array();
+for ( $index = 1; $index <= 8; ++$index ) {
+	$fallback_identity = hash( 'sha256', 'fallback-' . $index );
+	$fallback_hash     = hash( 'sha256', 'source-' . $index );
+	$verified_resolutions[] = array(
+		'fallback_reconciliation_identity' => $fallback_identity,
+		'fallback_hash'                    => $fallback_hash,
+		'state'                            => 'resolved_by_provider',
+		'receipt'                          => array(
+			'schema'                           => 'static-site-importer/quality-resolution-receipt/v1',
+			'status'                           => 'completed',
+			'fallback_reconciliation_identity' => $fallback_identity,
+			'fallback_hash'                    => $fallback_hash,
+			'binding_reconciliation_identity'  => hash( 'sha256', 'binding-' . $index ),
+			'materialized_block_hash'          => hash( 'sha256', 'block-' . $index ),
+			'materialized_content_hash'        => hash( 'sha256', 'content-' . $index ),
+		),
+	);
+}
+$quality_fixture['quality_resolutions_evidence']['resolutions'] = $verified_resolutions;
+$quality_contract = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'import_report' => array(
+			'schema'        => 'static-site-importer/import-report/v1',
+			'quality'       => $quality_fixture['importer_report_evidence']['quality'],
+			'blocks_engine' => array( 'wordpress_site_plan' => $quality_fixture['source_evidence'] ),
+			'quality_resolutions' => $quality_fixture['quality_resolutions_evidence'],
+		),
+		'materialization_receipt' => $quality_fixture['materialization_receipt_evidence'],
+	)
+);
+$expected_unresolved = $quality_fixture['expected_unresolved_quality'];
+$assert( $expected_unresolved['block_count'] === ( $quality_contract['quality_counts']['block_count'] ?? null ), 'quality-reconciliation-retains-compiler-block-count' );
+$assert( $expected_unresolved['fallback_count'] === ( $quality_contract['quality_counts']['fallback_count'] ?? null ), 'quality-reconciliation-subtracts-explicit-resolution' );
+$assert( $expected_unresolved['diagnostic_count'] === ( $quality_contract['quality_counts']['diagnostic_count'] ?? null ), 'quality-reconciliation-retains-compiler-diagnostics' );
+$assert( 458 === ( $quality_contract['quality_counts']['source_detected']['fallback_count'] ?? null ), 'quality-reconciliation-preserves-source-evidence' );
+$assert( 8 === ( $quality_contract['quality_counts']['materialized']['fallback_count'] ?? null ), 'quality-reconciliation-preserves-provider-resolution-evidence' );
+$assert( $expected_unresolved['fallback_count'] === ( $quality_contract['quality_counts']['unresolved']['fallback_count'] ?? null ), 'quality-reconciliation-exposes-unresolved-evidence' );
+$assert( 'blocks_engine.wordpress_site_plan.quality' === ( $quality_contract['quality_counts']['provenance']['source_detected']['path'] ?? '' ), 'quality-reconciliation-identifies-compiler-provenance' );
+$assert( false === ( $quality_contract['quality_counts']['consistent'] ?? true ), 'quality-reconciliation-detects-contradictory-layers' );
+$assert( 'quality_count_consistency_failure' === ( $quality_contract['diagnostics'][0]['type'] ?? '' ), 'quality-reconciliation-emits-gating-diagnostic' );
+
+$absent_quality_contract = Static_Site_Importer_Diagnostic_Contract::build( array( 'import_report' => array( 'blocks_engine' => array( 'wordpress_site_plan' => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2' ) ) ) ) );
+$assert( 0 === ( $absent_quality_contract['quality_counts']['fallback_count'] ?? null ), 'quality-reconciliation-keeps-absent-fields-zero' );
+$assert( array() === ( $absent_quality_contract['quality_counts']['provenance'] ?? null ), 'quality-reconciliation-does-not-invent-absent-provenance' );
+$assert( true === ( $absent_quality_contract['quality_counts']['consistent'] ?? false ), 'quality-reconciliation-keeps-absent-layers-consistent' );
+
+$clean_quality_contract = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'import_report' => array(
+			'quality'       => array( 'block_count' => 2, 'fallback_count' => 0, 'diagnostic_count' => 0 ),
+			'blocks_engine' => array( 'wordpress_site_plan' => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2', 'quality' => array( 'metrics' => array( 'block_count' => 2, 'fallback_count' => 0, 'diagnostic_count' => 0 ) ) ) ),
+		),
+	)
+);
+$assert( 0 === ( $clean_quality_contract['quality_counts']['fallback_count'] ?? null ), 'quality-reconciliation-keeps-clean-fallbacks-zero' );
+$assert( true === ( $clean_quality_contract['quality_counts']['consistent'] ?? false ), 'quality-reconciliation-keeps-clean-layers-consistent' );
+$assert( 0 === ( $clean_quality_contract['diagnostic_summary']['total'] ?? null ), 'quality-reconciliation-does-not-diagnose-clean-layers' );
+
+$importer_only_contract = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'import_report' => array(
+			'schema'              => 'static-site-importer/import-report/v1',
+			'quality'             => array( 'fallback_count' => 450 ),
+			'quality_resolutions' => array(
+				'schema'                    => 'static-site-importer/quality-resolutions/v1',
+				'source_fallback_count'     => 458,
+				'resolved_by_provider'      => 8,
+				'unresolved_fallback_count' => 450,
+				'resolutions'               => $verified_resolutions,
+			),
+		),
+	)
+);
+$assert( 450 === ( $importer_only_contract['quality_counts']['fallback_count'] ?? null ), 'quality-reconciliation-does-not-double-subtract-importer-unresolved-count' );
+$assert( 458 === ( $importer_only_contract['quality_counts']['source_detected']['fallback_count'] ?? null ), 'quality-reconciliation-uses-importer-source-fallback-baseline' );
+$assert( 8 === ( $importer_only_contract['quality_counts']['materialized']['fallback_count'] ?? null ), 'quality-reconciliation-preserves-importer-provider-resolution' );
+$assert( 'quality_resolutions.source_fallback_count' === ( $importer_only_contract['quality_counts']['provenance']['source_detected']['path'] ?? '' ), 'quality-reconciliation-identifies-importer-source-baseline' );
+
+$legacy_importer_only_contract = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'import_report' => array(
+			'schema'                  => 'static-site-importer/import-report/v1',
+			'quality'                 => array( 'fallback_count' => 450 ),
+			'fallback_reconciliation' => array( 'schema' => 'static-site-importer/quality-resolutions/v1', 'resolved_by_provider' => 8 ),
+		),
+	)
+);
+$assert( 450 === ( $legacy_importer_only_contract['quality_counts']['fallback_count'] ?? null ), 'quality-reconciliation-keeps-legacy-importer-quality-as-unresolved' );
+$assert( 0 === ( $legacy_importer_only_contract['quality_counts']['materialized']['fallback_count'] ?? null ), 'quality-reconciliation-does-not-apply-resolution-without-source-baseline' );
+$assert( 'quality' === ( $legacy_importer_only_contract['quality_counts']['provenance']['source_detected']['path'] ?? '' ), 'quality-reconciliation-preserves-legacy-importer-provenance' );
+
+$forged_resolution_contract = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'import_report' => array(
+			'quality'             => array( 'fallback_count' => 0 ),
+			'blocks_engine'       => array( 'wordpress_site_plan' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 458 ) ) ) ),
+			'quality_resolutions' => array_merge( $quality_fixture['quality_resolutions_evidence'], array( 'resolutions' => array() ) ),
+		),
+	)
+);
+$assert( 458 === ( $forged_resolution_contract['quality_counts']['fallback_count'] ?? null ), 'quality-reconciliation-rejects-forged-aggregate-without-receipts' );
+$assert( 0 === ( $forged_resolution_contract['quality_counts']['materialized']['fallback_count'] ?? null ), 'quality-reconciliation-does-not-credit-forged-aggregate' );
+
+$stale_resolution_contract = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'import_report' => array(
+			'quality'             => array( 'fallback_count' => 0 ),
+			'blocks_engine'       => array( 'wordpress_site_plan' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 458 ) ) ) ),
+			'quality_resolutions' => array_merge( $quality_fixture['quality_resolutions_evidence'], array( 'resolutions' => array_slice( $verified_resolutions, 0, 7 ) ) ),
+		),
+	)
+);
+$assert( 458 === ( $stale_resolution_contract['quality_counts']['fallback_count'] ?? null ), 'quality-reconciliation-rejects-stale-aggregate-count-mismatch' );
+
+$mismatched_resolution_entries = $verified_resolutions;
+$mismatched_resolution_entries[0]['receipt']['fallback_hash'] = hash( 'sha256', 'other-source' );
+$mismatched_resolution_contract = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'import_report' => array(
+			'quality'             => array( 'fallback_count' => 0 ),
+			'blocks_engine'       => array( 'wordpress_site_plan' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 458 ) ) ) ),
+			'quality_resolutions' => array_merge( $quality_fixture['quality_resolutions_evidence'], array( 'resolutions' => $mismatched_resolution_entries ) ),
+		),
+	)
+);
+$assert( 458 === ( $mismatched_resolution_contract['quality_counts']['fallback_count'] ?? null ), 'quality-reconciliation-rejects-mismatched-receipt-hash' );
+
 $quality_gate_error = static_site_importer_ability_error(
 	'static_site_importer_quality_gate_failed',
 	'Import failed quality gates; materialization was not completed.',
