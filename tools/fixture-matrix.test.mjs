@@ -97,14 +97,63 @@ import {
   runtimePresentationEvidenceProbeStep,
   writeFixtureMatrixResultArtifacts,
 } from '../lib/fixture-matrix.mjs';
+
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
 import { collectQualityMetrics } from '../lib/fixture-matrix/collectors/quality-metrics.mjs';
-import { collectSurfaceRecords } from '../lib/fixture-matrix/collectors/run-intake.mjs';
+import { collectEditorPresentation, collectSurfaceRecords } from '../lib/fixture-matrix/collectors/run-intake.mjs';
 import { runWpCodeboxRecipe, wpCodeboxBin } from './wp-codebox/recipe.mjs';
+
+const completeEditorPresentation = {
+  schema: 'static-site-importer/editor-presentation-evidence/v1',
+  provider_schema: 'wp-codebox/editor-presentation/v1',
+  iframe_count: 1,
+  expected_identity_count: 1,
+  observed_identity_count: 1,
+  expected_identities: ['a'.repeat(64)],
+  observed_identities: ['a'.repeat(64)],
+  missing_identities: [],
+  coverage_complete: true,
+};
 
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fixtureRoot = path.join(packageRoot, 'tests', 'fixtures', 'fixture-matrix');
 const syntheticFixtureCount = 3;
+
+test('editor presentation intake compares inspected iframe identities with front-page CSS assets', () => {
+  const globalIdentity = 'a'.repeat(64);
+  const frontPageIdentity = 'b'.repeat(64);
+  const otherRouteIdentity = 'c'.repeat(64);
+  assert.deepEqual(collectEditorPresentation({
+    summary: {
+      editorPresentation: {
+        schema: 'wp-codebox/editor-presentation/v1',
+        iframeCount: 1,
+        generatedPresentationIdentities: [frontPageIdentity, globalIdentity, globalIdentity.toUpperCase()],
+      },
+    },
+    import_report: {
+      blocks_engine: {
+        wordpress_site_plan: {
+          assets: [
+            { kind: 'css', content_hash: globalIdentity, scopes: [{ kind: 'global' }] },
+            { kind: 'css', content_hash: frontPageIdentity, scopes: [{ kind: 'page', front_page: true }] },
+            { kind: 'css', content_hash: otherRouteIdentity, scopes: [{ kind: 'page', route_path: 'about' }] },
+          ],
+        },
+      },
+    },
+  }), {
+    schema: 'static-site-importer/editor-presentation-evidence/v1',
+    provider_schema: 'wp-codebox/editor-presentation/v1',
+    iframe_count: 1,
+    expected_identity_count: 2,
+    observed_identity_count: 2,
+    expected_identities: [globalIdentity, frontPageIdentity],
+    observed_identities: [globalIdentity, frontPageIdentity],
+    missing_identities: [],
+    coverage_complete: true,
+  });
+});
 
 test('matrix evidence requires and summarizes the canonical materialization receipt', () => {
   const evidence = collectMatrixEvidence({
@@ -344,6 +393,7 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         fixture_id: 'cv',
         status: 'passed',
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/cv/screenshot.png' }],
+        editor_presentation: completeEditorPresentation,
         visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
         block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
         editor_quality: { editor_validated_block_total: 8, editor_invalid_count: 0, core_html_block_count: 0 },
@@ -352,6 +402,7 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         fixture_id: 'artist',
         status: 'failed',
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/artist/screenshot.png' }],
+        editor_presentation: completeEditorPresentation,
         block_composition: { block_total: 10, native_block_count: 9, core_html_block_count: 1 },
         editor_quality: { editor_validated_block_total: 10, editor_invalid_count: 0, core_html_block_count: 1 },
         visual_diff_regions: [{ dominant_cause: 'position_offset', pixel_count: 2500 }],
@@ -360,6 +411,7 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         fixture_id: 'coffee',
         status: 'failed',
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/coffee/screenshot.png' }],
+        editor_presentation: completeEditorPresentation,
         editor_quality: { editor_validated_block_total: 12, editor_invalid_count: 0, core_html_block_count: 0 },
         visual_diff_regions: [{ dominant_cause: 'font_metric_drift', pixel_count: 900 }],
       },
@@ -367,6 +419,7 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         fixture_id: 'saas',
         status: 'failed',
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/saas/screenshot.png' }],
+        editor_presentation: completeEditorPresentation,
         visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
         editor_quality: { editor_validated_block_total: 6, editor_invalid_count: 1, core_html_block_count: 0 },
       },
@@ -412,12 +465,13 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
 
   assert.equal(decisions.cv.frontend_visual_status, 'passed');
   assert.equal(decisions.cv.editor_canvas_status, 'visible');
+  assert.equal(decisions.cv.editor_presentation_status, 'passed');
   assert.equal(decisions.cv.block_validity_status, 'valid');
   assert.equal(decisions.cv.editor_validity_status, 'valid');
   assert.equal(decisions.cv.native_editability_status, 'native_editable');
   assert.equal(decisions.cv.solved_candidate, true);
   assert.equal(decisions.cv.acceptance_status, 'solved_candidate');
-  assert.equal(decisions.cv.solved_candidate_reason, 'passed frontend visual parity, editor canvas evidence, block validity, and native editability without limitation patterns');
+  assert.equal(decisions.cv.solved_candidate_reason, 'passed frontend visual parity, editor presentation coverage, block validity, and native editability without limitation patterns');
   assert.equal(decisions.artist.native_editability_status, 'custom_block_candidate');
   assert.equal(decisions.artist.frontend_visual_status, 'visual_mismatch');
   assert.equal(decisions.artist.editor_canvas_status, 'visible');
@@ -8890,6 +8944,7 @@ test('solved fixture that stays solved_candidate keeps solved_candidate status',
         fixture_path: '/fixtures/solved/cv',
         status: 'passed',
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/cv/screenshot.png' }],
+        editor_presentation: completeEditorPresentation,
         visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
         block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
         editor_quality: { editor_validated_block_total: 8, editor_invalid_count: 0, core_html_block_count: 0 },
@@ -8917,6 +8972,7 @@ test('solved-candidate gate hard-fails regressions while preserving acceptance e
     fixture_id: fixtureId,
     status: 'passed',
     artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: `files/browser/editor-open/${fixtureId}/screenshot.png` }],
+    editor_presentation: completeEditorPresentation,
     visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
     block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
     editor_validation: { total_blocks: 8, valid_blocks: 8, invalid_blocks: 0, validation_method: 'wp.blocks.validateBlock' },

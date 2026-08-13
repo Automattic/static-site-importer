@@ -129,6 +129,12 @@ function verifyFixture(fixture, decision, options, requiredFiles) {
   assert(Number(editor.total_blocks) > 0 && editor.valid_blocks === editor.total_blocks && Number(editor.invalid_blocks) === 0, `${id}: editor validation is incomplete or invalid.`);
   assert(fixture.editor_canvas?.status === 'captured', `${id}: editor canvas evidence is missing.`);
   addRequiredFile(requiredFiles, fixture.editor_canvas?.screenshot, `${id}: editor screenshot`, options.artifactRoot);
+  const editorPresentation = fixture.editor_presentation || {};
+  assert(editorPresentation.schema === 'static-site-importer/editor-presentation-evidence/v1', `${id}: editor presentation evidence is missing.`);
+  assert(editorPresentation.provider_schema === 'wp-codebox/editor-presentation/v1', `${id}: editor presentation must use WP Codebox iframe evidence.`);
+  assert(Number(editorPresentation.iframe_count) > 0, `${id}: editor presentation did not inspect an iframe.`);
+  assert(Number(editorPresentation.expected_identity_count) > 0, `${id}: editor presentation has no expected generated styles.`);
+  assert(editorPresentation.coverage_complete === true && (editorPresentation.missing_identities || []).length === 0, `${id}: editor presentation stylesheet coverage is incomplete.`);
   const visual = fixture.visual_parity_artifacts || {};
   const visualMetrics = visual.metrics || {};
   assertFiniteMetric(visualMetrics, 'mismatch_ratio', id);

@@ -21,6 +21,7 @@ function fixture() {
       block_composition: { block_total: 4, native_block_count: 4, core_html_block_count: 0 },
       editor_validation: { schema: 'wp-codebox/editor-validate-blocks/v1', validation_method: 'wp.blocks.validateBlock', validation_provider: 'wordpress-block-editor', content_source: 'edited-post-content', block_types_registered: 42, result_count: 4, results_complete: true, total_blocks: 4, valid_blocks: 4, invalid_blocks: 0 },
       editor_canvas: { status: 'captured', screenshot: path.join(root, 'editor.png') },
+      editor_presentation: { schema: 'static-site-importer/editor-presentation-evidence/v1', provider_schema: 'wp-codebox/editor-presentation/v1', iframe_count: 1, expected_identity_count: 1, observed_identity_count: 1, expected_identities: ['a'.repeat(64)], observed_identities: ['a'.repeat(64)], missing_identities: [], coverage_complete: true },
       visual_parity_artifacts: { metrics: { mismatch_ratio: 0, mismatch_pixels: 0 }, artifacts: Object.fromEntries([
         ['source_screenshot', 'source.png'], ['imported_screenshot', 'candidate.png'], ['diff_screenshot', 'diff.png'], ['visual_diff', 'visual-diff.json'],
       ].map(([slot, file]) => [slot, { status: 'captured', ref: { path: path.join(root, file) } }])) },
@@ -90,6 +91,8 @@ for (const [name, mutate, pattern] of [
   ['detached editor content', (input) => { input.matrix.fixtures[0].editor_validation.content_source = 'argument'; }, /loaded post editor content/],
   ['missing registered block types', (input) => { input.matrix.fixtures[0].editor_validation.block_types_registered = 0; }, /registered block types/],
   ['incomplete recursive results', (input) => { input.matrix.fixtures[0].editor_validation.result_count = 3; }, /recursive result/],
+  ['missing editor presentation', (input) => { delete input.matrix.fixtures[0].editor_presentation; }, /editor presentation evidence/],
+  ['incomplete editor stylesheet coverage', (input) => { input.matrix.fixtures[0].editor_presentation.coverage_complete = false; input.matrix.fixtures[0].editor_presentation.missing_identities = ['a'.repeat(64)]; }, /stylesheet coverage/],
   ['visual mismatch', (input) => { input.matrix.fixtures[0].visual_parity_artifacts.metrics.mismatch_pixels = 1; }, /visual mismatch/],
   ['fallback block', (input) => { input.matrix.fixtures[0].quality_metrics.core_html_block_count = 1; }, /core_html_block_count/],
   ['non-native conversion', (input) => { input.matrix.fixtures[0].editor_quality.native_conversion_rate = 0.99; }, /native conversion rate/],
