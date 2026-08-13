@@ -116,10 +116,16 @@ function verifyFixture(fixture, decision, options, requiredFiles) {
   assertFiniteMetric(composition, 'core_html_block_count', id);
   assert(Number(composition.core_html_block_count) === 0, `${id}: core/html blocks are forbidden.`);
   const editor = fixture.editor_validation || {};
+  assert(editor.schema === 'wp-codebox/editor-validate-blocks/v1', `${id}: editor validation must carry the WP Codebox browser artifact schema.`);
   assert(editor.validation_method === 'wp.blocks.validateBlock', `${id}: editor validation must use wp.blocks.validateBlock.`);
+  assert(editor.validation_provider === 'wordpress-block-editor', `${id}: editor validation must use the WordPress block editor provider.`);
+  assert(editor.content_source === 'edited-post-content', `${id}: editor validation must inspect the loaded post editor content.`);
+  assert(Number(editor.block_types_registered) > 0, `${id}: editor validation must load registered block types.`);
   assertFiniteMetric(editor, 'total_blocks', id);
   assertFiniteMetric(editor, 'valid_blocks', id);
   assertFiniteMetric(editor, 'invalid_blocks', id);
+  assertFiniteMetric(editor, 'result_count', id);
+  assert(editor.results_complete === true && Number(editor.result_count) === Number(editor.total_blocks), `${id}: editor validation must include one complete recursive result per block.`);
   assert(Number(editor.total_blocks) > 0 && editor.valid_blocks === editor.total_blocks && Number(editor.invalid_blocks) === 0, `${id}: editor validation is incomplete or invalid.`);
   assert(fixture.editor_canvas?.status === 'captured', `${id}: editor canvas evidence is missing.`);
   addRequiredFile(requiredFiles, fixture.editor_canvas?.screenshot, `${id}: editor screenshot`, options.artifactRoot);

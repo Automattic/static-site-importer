@@ -6123,6 +6123,8 @@ const ALL_VALID_EDITOR_VALIDATE_BLOCKS = {
   schema: 'wp-codebox/editor-validate-blocks/v1',
   validation_method: 'wp.blocks.validateBlock',
   validation_provider: 'wordpress-block-editor',
+  content_source: 'edited-post-content',
+  block_types_registered: 42,
   total_blocks: 3,
   valid_blocks: 3,
   invalid_blocks: 0,
@@ -6137,6 +6139,11 @@ test('collectEditorValidation reads the editor-validate-blocks shape into headli
   const metrics = collectEditorValidation(ALL_VALID_EDITOR_VALIDATE_BLOCKS);
   assert.equal(metrics.validation_method, 'wp.blocks.validateBlock');
   assert.equal(metrics.validation_provider, 'wordpress-block-editor');
+  assert.equal(metrics.schema, 'wp-codebox/editor-validate-blocks/v1');
+  assert.equal(metrics.content_source, 'edited-post-content');
+  assert.equal(metrics.block_types_registered, 42);
+  assert.equal(metrics.result_count, 3);
+  assert.equal(metrics.results_complete, true);
   assert.equal(metrics.total_blocks, 3);
   assert.equal(metrics.valid_blocks, 3);
   assert.equal(metrics.invalid_blocks, 0);

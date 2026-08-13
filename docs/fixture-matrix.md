@@ -496,6 +496,11 @@ After each fixture's import step, `buildFixtureMatrixRecipe` appends a
 `invalid_blocks`. This reuses the existing wp-codebox editor-validation command
 rather than rebuilding a validator.
 
+Solved-site promotion additionally requires the WP Codebox artifact schema,
+`wordpress-block-editor` provider, `edited-post-content` source, a nonzero
+registered block-type count, and one complete recursive result per reported
+block. Counts-only or detached-content validation cannot satisfy promotion.
+
 The default `front-page` target resolves at runtime to the imported
 `page_on_front`, so validation exercises real imported content even though its
 post ID is not known while the recipe is generated.
