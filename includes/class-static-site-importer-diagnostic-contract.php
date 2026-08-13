@@ -277,8 +277,8 @@ class Static_Site_Importer_Diagnostic_Contract {
 	 * @return array<string,mixed>
 	 */
 	private static function quality_counts( array $import_report, array $summary, array $result ): array {
-		$keys = array( 'block_count', 'fallback_count', 'diagnostic_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count' );
-		$compiler_quality = isset( $import_report['blocks_engine']['wordpress_site_plan']['quality'] ) && is_array( $import_report['blocks_engine']['wordpress_site_plan']['quality'] ) ? $import_report['blocks_engine']['wordpress_site_plan']['quality'] : array();
+		$keys                              = array( 'block_count', 'fallback_count', 'diagnostic_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count' );
+		$compiler_quality                  = isset( $import_report['blocks_engine']['wordpress_site_plan']['quality'] ) && is_array( $import_report['blocks_engine']['wordpress_site_plan']['quality'] ) ? $import_report['blocks_engine']['wordpress_site_plan']['quality'] : array();
 		$report_quality   = isset( $import_report['quality'] ) && is_array( $import_report['quality'] ) ? $import_report['quality'] : $summary;
 		$source_counts    = self::quality_metric_values( $compiler_quality, $keys );
 		$report_counts    = self::quality_metric_values( $report_quality, $keys );
@@ -298,14 +298,19 @@ class Static_Site_Importer_Diagnostic_Contract {
 				'metrics' => 'blocks_engine.wordpress_site_plan.quality.metrics',
 			);
 		} elseif ( ! empty( $report_quality ) ) {
-			$provenance['source_detected'] = array( 'owner' => 'static-site-importer', 'path' => 'quality', 'schema' => isset( $import_report['schema'] ) ? (string) $import_report['schema'] : '', 'metrics' => 'quality' );
+			$provenance['source_detected'] = array(
+				'owner'   => 'static-site-importer',
+				'path'    => 'quality',
+				'schema'  => isset( $import_report['schema'] ) ? (string) $import_report['schema'] : '',
+				'metrics' => 'quality',
+			);
 		}
 
-		$receipt = isset( $result['materialization_receipt'] ) && is_array( $result['materialization_receipt'] ) ? $result['materialization_receipt'] : ( isset( $import_report['materialization_receipt'] ) && is_array( $import_report['materialization_receipt'] ) ? $import_report['materialization_receipt'] : array() );
-		$reconciliation = isset( $import_report['quality_resolutions'] ) && is_array( $import_report['quality_resolutions'] )
+		$receipt                        = isset( $result['materialization_receipt'] ) && is_array( $result['materialization_receipt'] ) ? $result['materialization_receipt'] : ( isset( $import_report['materialization_receipt'] ) && is_array( $import_report['materialization_receipt'] ) ? $import_report['materialization_receipt'] : array() );
+		$reconciliation                 = isset( $import_report['quality_resolutions'] ) && is_array( $import_report['quality_resolutions'] )
 			? $import_report['quality_resolutions']
 			: ( isset( $import_report['fallback_reconciliation'] ) && is_array( $import_report['fallback_reconciliation'] ) ? $import_report['fallback_reconciliation'] : array() );
-		$resolved_counts = array();
+		$resolved_counts                = array();
 		$source_fallback_count_available = isset( $reconciliation['source_fallback_count'] ) && is_numeric( $reconciliation['source_fallback_count'] );
 		if ( ! $compiler_fallback_count_available && $source_fallback_count_available ) {
 			$source_counts['fallback_count'] = max( 0, (int) $reconciliation['source_fallback_count'] );
@@ -316,7 +321,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 				'metrics' => 'quality_resolutions',
 			);
 		}
-		$verified_resolutions = self::verified_provider_resolution_count( $reconciliation );
+		$verified_resolutions            = self::verified_provider_resolution_count( $reconciliation );
 		if ( ( $compiler_fallback_count_available || $source_fallback_count_available ) && null !== $verified_resolutions ) {
 			$resolved_counts['fallback_count'] = $verified_resolutions;
 			$provenance['materialized'] = array(
@@ -329,8 +334,8 @@ class Static_Site_Importer_Diagnostic_Contract {
 
 		$counts = array();
 		foreach ( $keys as $key ) {
-			$source = $source_counts[ $key ] ?? 0;
-			$resolved = min( $source, $resolved_counts[ $key ] ?? 0 );
+			$source         = $source_counts[ $key ] ?? 0;
+			$resolved       = min( $source, $resolved_counts[ $key ] ?? 0 );
 			$counts[ $key ] = $source - $resolved;
 		}
 		if ( $counts['block_count'] <= 0 ) {
@@ -371,7 +376,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 				return null;
 			}
 			$receipt = isset( $resolution['receipt'] ) && is_array( $resolution['receipt'] ) ? $resolution['receipt'] : array();
-			if ( 'static-site-importer/quality-resolution-receipt/v1' !== ( $receipt['schema'] ?? null ) || 'completed' !== ( $receipt['status'] ?? null ) || $resolution['fallback_reconciliation_identity'] !== ( $receipt['fallback_reconciliation_identity'] ?? null ) || $resolution['fallback_hash'] !== ( $receipt['fallback_hash'] ?? null ) ) {
+			if ( 'static-site-importer/quality-resolution-receipt/v1' !== ( $receipt['schema'] ?? null ) || 'completed' !== ( $receipt['status'] ?? null ) || ( $receipt['fallback_reconciliation_identity'] ?? null ) !== $resolution['fallback_reconciliation_identity'] || ( $receipt['fallback_hash'] ?? null ) !== $resolution['fallback_hash'] ) {
 				return null;
 			}
 			foreach ( array( 'binding_reconciliation_identity', 'materialized_block_hash', 'materialized_content_hash' ) as $field ) {
@@ -385,7 +390,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 			$identities[ $resolution['fallback_reconciliation_identity'] ] = true;
 		}
 
-		return $resolved === count( $identities ) ? $resolved : null;
+		return count( $identities ) === $resolved ? $resolved : null;
 	}
 
 	/** @return array<string,int> */
@@ -423,7 +428,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 				'owner'       => 'static-site-importer',
 				'message'     => 'Canonical compiler quality counts disagree with the importer report; unresolved counts retain compiler evidence.',
 				'constraints' => 'gating',
-			)
+			),
 		);
 	}
 
