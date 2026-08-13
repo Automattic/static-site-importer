@@ -82,35 +82,74 @@ class Static_Site_Importer_URL_Site_Collector {
 		$script_exclusions  = array();
 		$entry_resource_url = $entry_url;
 		$site_url           = $entry_url;
-
-		$sitemap_urls = isset( $args['_route_set'] ) && is_array( $args['_route_set'] ) ? array_values( $args['_route_set'] ) : self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
-		if ( is_wp_error( $sitemap_urls ) ) {
-			return $sitemap_urls;
+		$cursor_contract    = isset( $args['_static_site_importer_collection_contract'] ) ? (string) $args['_static_site_importer_collection_contract'] : '';
+		$cursor_loader      = is_callable( $args['_static_site_importer_collection_cursor_load'] ?? null ) ? $args['_static_site_importer_collection_cursor_load'] : null;
+		$cursor_saver       = is_callable( $args['_static_site_importer_collection_cursor_save'] ?? null ) ? $args['_static_site_importer_collection_cursor_save'] : null;
+		$resource_loader    = is_callable( $args['_static_site_importer_collection_resource_load'] ?? null ) ? $args['_static_site_importer_collection_resource_load'] : null;
+		$cursor             = null !== $cursor_loader ? call_user_func( $cursor_loader ) : null;
+		if ( is_array( $cursor ) && 'static-site-importer/url-collection-cursor/v1' === ( $cursor['schema'] ?? '' ) && hash_equals( $cursor_contract, (string) ( $cursor['contract'] ?? '' ) ) ) {
+			$page_queue         = is_array( $cursor['page_queue'] ?? null ) ? $cursor['page_queue'] : array();
+			$asset_queue        = is_array( $cursor['asset_queue'] ?? null ) ? $cursor['asset_queue'] : array();
+			$queued_pages       = is_array( $cursor['queued_pages'] ?? null ) ? $cursor['queued_pages'] : array();
+			$queued_assets      = is_array( $cursor['queued_assets'] ?? null ) ? $cursor['queued_assets'] : array();
+			$resources          = is_array( $cursor['resources'] ?? null ) ? $cursor['resources'] : array();
+			$failures           = is_array( $cursor['failures'] ?? null ) ? $cursor['failures'] : array();
+			$diagnostics        = is_array( $cursor['diagnostics'] ?? null ) ? $cursor['diagnostics'] : array();
+			$source_exclusions  = is_array( $cursor['source_exclusions'] ?? null ) ? $cursor['source_exclusions'] : array();
+			$script_exclusions  = is_array( $cursor['script_exclusions'] ?? null ) ? $cursor['script_exclusions'] : array();
+			$aliases            = is_array( $cursor['aliases'] ?? null ) ? $cursor['aliases'] : array();
+			$total_bytes        = (int) ( $cursor['total_bytes'] ?? 0 );
+			$truncated          = is_array( $cursor['truncated'] ?? null ) ? $cursor['truncated'] : array();
+			$external_assets    = is_array( $cursor['external_assets'] ?? null ) ? $cursor['external_assets'] : array();
+			$external_pages     = is_array( $cursor['external_pages'] ?? null ) ? $cursor['external_pages'] : array();
+			$critical_assets    = is_array( $cursor['critical_assets'] ?? null ) ? $cursor['critical_assets'] : array();
+			$entry_resource_url = (string) ( $cursor['entry_resource_url'] ?? $entry_url );
+			$site_url           = (string) ( $cursor['site_url'] ?? $entry_url );
+			$sitemap_urls       = is_array( $cursor['sitemap_urls'] ?? null ) ? $cursor['sitemap_urls'] : array();
+		} else {
+			$cursor = null;
 		}
-		foreach ( $sitemap_urls as $page_url ) {
-			if ( count( $page_queue ) >= $max_pages ) {
-				$truncated['pages'] = true;
-				break;
+
+		if ( null === $cursor ) {
+			$sitemap_urls = isset( $args['_route_set'] ) && is_array( $args['_route_set'] ) ? array_values( $args['_route_set'] ) : self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
+			if ( is_wp_error( $sitemap_urls ) ) {
+				return $sitemap_urls;
 			}
-			$page_key = self::page_key( $page_url );
-			if ( ! isset( $queued_pages[ $page_key ] ) ) {
-				$queued_pages[ $page_key ] = true;
-				$page_queue[]              = $page_url;
+			foreach ( $sitemap_urls as $page_url ) {
+				if ( count( $page_queue ) >= $max_pages ) {
+					$truncated['pages'] = true;
+					break;
+				}
+				$page_key = self::page_key( $page_url );
+				if ( ! isset( $queued_pages[ $page_key ] ) ) {
+					$queued_pages[ $page_key ] = true;
+					$page_queue[]              = $page_url;
+				}
 			}
 		}
 
-		$page_fetcher = self::prefetched_fetcher( array_slice( $page_queue, 0, $max_pages ), array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ), $fetcher, $use_many_fetcher, $args );
+		$use_many_fetcher = $use_many_fetcher && null === $cursor_saver;
+		$page_fetcher     = self::prefetched_fetcher( array_slice( $page_queue, 0, $max_pages ), array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ), $fetcher, $use_many_fetcher, $args );
 		while ( $page_queue && self::resource_count( $resources, 'html' ) < $max_pages ) {
-			$page_url = array_shift( $page_queue );
+			$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $external_pages, $critical_assets, $entry_resource_url, $site_url, $sitemap_urls );
+			if ( is_wp_error( $checkpoint ) ) {
+				return $checkpoint;
+			}
+			$page_url = $page_queue[0];
 			$response = $page_fetcher( $page_url, array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ) );
 			$response = self::without_cache_marker( $response );
 			if ( is_wp_error( $response ) ) {
+				if ( 'static_site_importer_invocation_deadline_exceeded' === $response->get_error_code() ) {
+					return $response;
+				}
+				array_shift( $page_queue );
 				if ( $page_url === $entry_url ) {
 					return $response;
 				}
 				$failures[] = self::failure( $page_url, $response, 'html' );
 				continue;
 			}
+			array_shift( $page_queue );
 
 			$final_url = self::response_url( $response, $page_url );
 			if ( $page_url === $entry_url ) {
@@ -196,7 +235,11 @@ class Static_Site_Importer_URL_Site_Collector {
 
 		$asset_fetcher = self::prefetched_fetcher( array_slice( $asset_queue, 0, $max_assets ), array_merge( $fetch_args, array( 'content_types' => array() ) ), $fetcher, $use_many_fetcher, $args );
 		while ( $asset_queue && self::resource_count( $resources, 'asset' ) < $max_assets ) {
-			$asset_url = array_shift( $asset_queue );
+			$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $external_pages, $critical_assets, $entry_resource_url, $site_url, $sitemap_urls );
+			if ( is_wp_error( $checkpoint ) ) {
+				return $checkpoint;
+			}
+			$asset_url = $asset_queue[0];
 			$critical  = $page_ready && isset( $critical_assets[ $asset_url ] );
 			$response  = $asset_fetcher( $asset_url, array_merge( $fetch_args, array( 'content_types' => array() ) ) );
 			$response  = self::without_cache_marker( $response );
@@ -204,6 +247,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				if ( 'static_site_importer_invocation_deadline_exceeded' === $response->get_error_code() ) {
 					return $response;
 				}
+				array_shift( $asset_queue );
 				$source_status = self::source_broken_asset_status( $response );
 				$source_broken = 0 !== $source_status;
 				if ( $preserve_failed_assets && ( ! $critical || $source_broken ) ) {
@@ -222,6 +266,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				$failures[] = self::failure( $asset_url, $response, 'asset' );
 				continue;
 			}
+			array_shift( $asset_queue );
 
 			$final_url = self::response_url( $response, $asset_url );
 			if ( $final_url !== $asset_url ) {
@@ -267,6 +312,22 @@ class Static_Site_Importer_URL_Site_Collector {
 					$queued_assets[ $nested_url ] = true;
 					$asset_queue[]                = $nested_url;
 				}
+			}
+		}
+		$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $external_pages, $critical_assets, $entry_resource_url, $site_url, $sitemap_urls );
+		if ( is_wp_error( $checkpoint ) ) {
+			return $checkpoint;
+		}
+		if ( null !== $resource_loader ) {
+			foreach ( $resources as $resource_url => $resource ) {
+				if ( isset( $resource['body'] ) ) {
+					continue;
+				}
+				$body = call_user_func( $resource_loader, $resource );
+				if ( ! is_string( $body ) ) {
+					return new WP_Error( 'static_site_importer_collection_cursor_resource_invalid', 'A retained URL collection resource could not be loaded.' );
+				}
+				$resources[ $resource_url ]['body'] = $body;
 			}
 		}
 
@@ -436,6 +497,38 @@ class Static_Site_Importer_URL_Site_Collector {
 					),
 				),
 			),
+		);
+	}
+
+	private static function checkpoint_collection_cursor( ?callable $saver, string $contract, array $page_queue, array $asset_queue, array $queued_pages, array $queued_assets, array $resources, array $failures, array $diagnostics, array $source_exclusions, array $script_exclusions, array $aliases, int $total_bytes, array $truncated, array $external_assets, array $external_pages, array $critical_assets, string $entry_resource_url, string $site_url, array $sitemap_urls ) {
+		if ( null === $saver ) {
+			return true;
+		}
+		return call_user_func(
+			$saver,
+			array(
+				'schema'             => 'static-site-importer/url-collection-cursor/v1',
+				'contract'           => $contract,
+				'page_queue'         => array_values( $page_queue ),
+				'asset_queue'        => array_values( $asset_queue ),
+				'queued_pages'       => $queued_pages,
+				'queued_assets'      => $queued_assets,
+				'resources'          => $resources,
+				'failures'           => $failures,
+				'diagnostics'        => $diagnostics,
+				'source_exclusions'  => $source_exclusions,
+				'script_exclusions'  => $script_exclusions,
+				'aliases'            => $aliases,
+				'total_bytes'        => $total_bytes,
+				'truncated'          => $truncated,
+				'external_assets'    => $external_assets,
+				'external_pages'     => $external_pages,
+				'critical_assets'    => $critical_assets,
+				'entry_resource_url' => $entry_resource_url,
+				'site_url'           => $site_url,
+				'sitemap_urls'       => $sitemap_urls,
+				'updated_at'         => gmdate( 'c' ),
+			)
 		);
 	}
 
