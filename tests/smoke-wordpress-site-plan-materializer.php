@@ -496,6 +496,45 @@ $other_failure_report['quality']['core_html_block_count'] = 1;
 $other_failure_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $other_failure_report, array( 'fail_on_quality' => true ) );
 $other_failure_validation = Static_Site_Importer_Report_Diagnostics::import_validation_result( $other_failure_report, $other_failure_quality );
 $assert( 0 === ( $other_failure_quality['fallback_count'] ?? -1 ) && false === ( $other_failure_quality['pass'] ?? true ) && true === ( $other_failure_quality['fail_import'] ?? false ) && array( 'core_html_block' ) === ( $other_failure_quality['failure_reasons'] ?? null ) && 'failed' === ( $other_failure_validation['status'] ?? '' ), 'receipt reconciliation preserves unrelated quality failures and validation status' );
+// Exercise the production result composition path with the partial compiler
+// quality envelope that website-artifact imports supply.
+$partial_quality_plan                     = $plan;
+$partial_quality_plan['quality']          = array( 'metrics' => array( 'block_count' => 1, 'fallback_count' => 1 ) );
+$partial_quality_plan['diagnostics']      = array( array( 'type' => 'unsupported_html_fallback', 'severity' => 'warning' ) );
+$partial_quality_receipt                  = $receipt;
+$partial_quality_receipt['plan']          = $partial_quality_plan;
+$compose_partial_quality_result           = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'public_result_from_wordpress_site_plan_receipt' );
+$partial_quality_warning_handler          = set_error_handler(
+	static function ( int $severity, string $message, string $file, int $line ): never {
+		throw new RuntimeException( sprintf( 'PHP warning/notice [%d] %s at %s:%d', $severity, $message, $file, $line ) );
+	}
+);
+try {
+	$partial_quality_result = $compose_partial_quality_result->invoke( null, $partial_quality_receipt, array( 'fail_on_quality' => true ) );
+} finally {
+	restore_error_handler();
+}
+$partial_quality          = $partial_quality_result['quality'] ?? array();
+$partial_quality_counters = array(
+	'fallback_count'                        => 1,
+	'content_loss_count'                    => 0,
+	'empty_conversion_count'                => 0,
+	'core_html_block_count'                 => 0,
+	'freeform_block_count'                  => 0,
+	'invalid_block_count'                   => 0,
+	'invalid_block_document_count'          => 0,
+	'unsafe_svg_count'                      => 0,
+	'svg_materialization_failure_count'     => 0,
+	'svg_sprite_reference_failure_count'    => 0,
+	'commerce_dependency_failures'          => 0,
+	'companion_plugin_dependency_failures'  => 0,
+	'interaction_candidate_count'           => 0,
+	'runtime_dependency_parity_issue_count' => 0,
+	'semantic_parity_failure_count'         => 0,
+	'source_fallback_count'                 => 1,
+);
+$assert( $partial_quality_counters === array_intersect_key( $partial_quality, $partial_quality_counters ) && 1 === ( $partial_quality['block_count'] ?? 0 ) && array( 'block_count' => 1, 'fallback_count' => 1 ) === ( $partial_quality['metrics'] ?? null ), 'partial website-artifact result composition preserves supplied metrics and normalizes the complete quality counter schema' );
+$assert( false === ( $partial_quality['pass'] ?? true ) && true === ( $partial_quality['fail_import'] ?? false ) && in_array( 'unsupported_html_fallback', $partial_quality['failure_reasons'] ?? array(), true ), 'partial website-artifact reports retain unresolved compiler fallbacks as strict quality failures' );
 $tampered_fragment_receipt = $form_binding_receipt;
 $tampered_fragment_receipt['completed']['runtime_declarations']['entity_bindings'][ hash( 'sha256', 'form-fallback-binding' ) ]['persisted_fragment_hash'] = hash( 'sha256', 'tampered fragment' );
 $tampered_fragment_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );

@@ -39,6 +39,8 @@ if ( ! function_exists( 'add_action' ) ) {
 }
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diagnostics-adapter.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 require_once dirname( __DIR__ ) . '/includes/abilities.php';
 
 $failures   = array();
@@ -215,6 +217,43 @@ $clean_quality_contract = Static_Site_Importer_Diagnostic_Contract::build(
 $assert( 0 === ( $clean_quality_contract['quality_counts']['fallback_count'] ?? null ), 'quality-reconciliation-keeps-clean-fallbacks-zero' );
 $assert( true === ( $clean_quality_contract['quality_counts']['consistent'] ?? false ), 'quality-reconciliation-keeps-clean-layers-consistent' );
 $assert( 0 === ( $clean_quality_contract['diagnostic_summary']['total'] ?? null ), 'quality-reconciliation-does-not-diagnose-clean-layers' );
+
+$partial_quality_report = array(
+	'blocks_engine' => array( 'wordpress_site_plan' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 2 ) ) ) ),
+	'quality'       => array( 'metrics' => array( 'block_count' => 1 ) ),
+	'diagnostics'   => array( array( 'type' => 'unsupported_html_fallback', 'severity' => 'warning' ) ),
+);
+$partial_quality_warning_handler = set_error_handler(
+	static function ( int $severity, string $message, string $file, int $line ): never {
+		throw new RuntimeException( sprintf( 'PHP warning/notice [%d] %s at %s:%d', $severity, $message, $file, $line ) );
+	}
+);
+try {
+	$partial_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $partial_quality_report, array( 'fail_on_quality' => true ) );
+} finally {
+	restore_error_handler();
+}
+$partial_quality_counters = array(
+	'fallback_count'                        => 2,
+	'content_loss_count'                    => 0,
+	'empty_conversion_count'                => 0,
+	'core_html_block_count'                 => 0,
+	'freeform_block_count'                  => 0,
+	'invalid_block_count'                   => 0,
+	'invalid_block_document_count'          => 0,
+	'unsafe_svg_count'                      => 0,
+	'svg_materialization_failure_count'     => 0,
+	'svg_sprite_reference_failure_count'    => 0,
+	'commerce_dependency_failures'          => 0,
+	'companion_plugin_dependency_failures'  => 0,
+	'interaction_candidate_count'           => 0,
+	'runtime_dependency_parity_issue_count' => 0,
+	'semantic_parity_failure_count'         => 0,
+	'source_fallback_count'                 => 2,
+);
+$assert( 2 === ( $partial_quality['fallback_count'] ?? 0 ), 'quality-finalization-normalizes-partial-compiler-reports' );
+$assert( $partial_quality_counters === array_intersect_key( $partial_quality, $partial_quality_counters ) && 1 === ( $partial_quality['block_count'] ?? 0 ), 'quality-finalization-provides-the-complete-normalized-counter-schema' );
+$assert( false === ( $partial_quality['pass'] ?? true ) && true === ( $partial_quality['fail_import'] ?? false ) && in_array( 'unsupported_html_fallback', $partial_quality['failure_reasons'] ?? array(), true ), 'quality-finalization-turns-compiler-fallback-warning-into-strict-failure' );
 
 $importer_only_contract = Static_Site_Importer_Diagnostic_Contract::build(
 	array(

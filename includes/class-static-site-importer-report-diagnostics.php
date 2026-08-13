@@ -45,25 +45,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				),
 				$source_metadata
 			),
-			'quality'                 => array(
-				'pass'                                  => true,
-				'fallback_count'                        => 0,
-				'content_loss_count'                    => 0,
-				'empty_conversion_count'                => 0,
-				'core_html_block_count'                 => 0,
-				'freeform_block_count'                  => 0,
-				'invalid_block_count'                   => 0,
-				'invalid_block_document_count'          => 0,
-				'unsafe_svg_count'                      => 0,
-				'svg_materialization_failure_count'     => 0,
-				'svg_sprite_reference_failure_count'    => 0,
-				'commerce_dependency_failures'          => 0,
-				'companion_plugin_dependency_failures'  => 0,
-				'interaction_candidate_count'           => 0,
-				'runtime_dependency_parity_issue_count' => 0,
-				'semantic_parity_failure_count'         => 0,
-				'failure_reasons'                       => array(),
-			),
+			'quality'                 => self::quality_defaults(),
 			'source_documents'        => array(
 				'total_count'                => 0,
 				'counts_by_format'           => array(
@@ -415,6 +397,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<string, mixed>
 	 */
 	public static function finalize_quality_report( array &$report, array $args ): array {
+		self::normalize_quality_report( $report );
 		self::reconcile_provider_materialized_fallbacks( $report );
 		self::mark_active_companion_script_fallbacks_materialized( $report );
 		self::normalize_import_diagnostics( $report );
@@ -483,6 +466,60 @@ class Static_Site_Importer_Report_Diagnostics {
 		$report['artifact_diagnostics'] = Static_Site_Importer_Artifact_Diagnostics_Adapter::build_for_import_report( $report );
 
 		return $quality;
+	}
+
+	/**
+	 * Return the canonical quality shape consumed by report finalization.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private static function quality_defaults(): array {
+		return array(
+			'pass'                                  => true,
+			'fallback_count'                        => 0,
+			'content_loss_count'                    => 0,
+			'empty_conversion_count'                => 0,
+			'core_html_block_count'                 => 0,
+			'freeform_block_count'                  => 0,
+			'invalid_block_count'                   => 0,
+			'invalid_block_document_count'          => 0,
+			'unsafe_svg_count'                      => 0,
+			'svg_materialization_failure_count'     => 0,
+			'svg_sprite_reference_failure_count'    => 0,
+			'commerce_dependency_failures'          => 0,
+			'companion_plugin_dependency_failures'  => 0,
+			'interaction_candidate_count'           => 0,
+			'runtime_dependency_parity_issue_count' => 0,
+			'semantic_parity_failure_count'         => 0,
+			'failure_reasons'                       => array(),
+		);
+	}
+
+	/**
+	 * Normalize partial report quality and retain unresolved compiler fallbacks.
+	 *
+	 * Website-artifact composition supplies the compiler's nested metrics rather
+	 * than the complete conversion-report quality shape. Preserve every supplied
+	 * report value while making the quality gate consume its authoritative fallback
+	 * count until a materialization receipt explicitly resolves it.
+	 *
+	 * @param array<string,mixed> $report Import report.
+	 * @return void
+	 */
+	private static function normalize_quality_report( array &$report ): void {
+		$supplied = isset( $report['quality'] ) && is_array( $report['quality'] ) ? $report['quality'] : array();
+		$metrics  = isset( $supplied['metrics'] ) && is_array( $supplied['metrics'] ) ? $supplied['metrics'] : array();
+		$quality  = array_merge( self::quality_defaults(), $metrics, $supplied );
+
+		$plan_quality = isset( $report['blocks_engine']['wordpress_site_plan']['quality'] ) && is_array( $report['blocks_engine']['wordpress_site_plan']['quality'] )
+			? $report['blocks_engine']['wordpress_site_plan']['quality']
+			: array();
+		$plan_metrics = isset( $plan_quality['metrics'] ) && is_array( $plan_quality['metrics'] ) ? $plan_quality['metrics'] : $plan_quality;
+		if ( isset( $plan_metrics['fallback_count'] ) && is_numeric( $plan_metrics['fallback_count'] ) ) {
+			$quality['fallback_count'] = max( (int) $quality['fallback_count'], (int) $plan_metrics['fallback_count'] );
+		}
+
+		$report['quality'] = $quality;
 	}
 
 	/**
