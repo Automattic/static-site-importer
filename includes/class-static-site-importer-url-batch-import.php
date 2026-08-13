@@ -303,6 +303,43 @@ final class Static_Site_Importer_URL_Batch_Import {
 				$collect_args['max_pages']                   = min( self::MAX_BATCH_PAGES + 1, count( $collect_args['_route_set'] ) + 1 );
 				$collect_args['require_complete_collection'] = true;
 				$collect_args['asset_failure_policy']        = count( $routes ) > 1 ? 'preserve_failed_external_assets' : 'preserve_external';
+				$collection_cursor_name                      = 'batches/' . $batch['batch_id'] . '.collection-cursor.json';
+				$collection_contract                         = hash( 'sha256', (string) wp_json_encode( array( 'version' => 1, 'routes' => $routes, 'mode' => 'complete_snapshot' ) ) );
+				$collect_args['_static_site_importer_collection_contract']    = $collection_contract;
+				$collect_args['_static_site_importer_collection_cursor_load'] = static function () use ( $workspace, $collection_cursor_name ) {
+					$raw    = $workspace->read_raw( $collection_cursor_name );
+					$cursor = is_string( $raw ) ? json_decode( $raw, true ) : null;
+					if ( ! is_array( $cursor ) ) {
+						return null;
+					}
+					return $cursor;
+				};
+				$collect_args['_static_site_importer_collection_resource_load'] = static function ( array $resource ) use ( $workspace ) {
+					$body = isset( $resource['body_ref'] ) && is_string( $resource['body_ref'] ) ? $workspace->read_raw( $resource['body_ref'] ) : null;
+					return is_string( $body ) && hash_equals( (string) ( $resource['sha256'] ?? '' ), hash( 'sha256', $body ) ) ? $body : null;
+				};
+				$collect_args['_static_site_importer_collection_cursor_save'] = static function ( array $cursor ) use ( $workspace, $collection_cursor_name ) {
+					foreach ( $cursor['resources'] ?? array() as $url => $resource ) {
+						if ( ! isset( $resource['body'] ) || ! is_string( $resource['body'] ) ) {
+							continue;
+						}
+						$body = isset( $resource['body'] ) && is_string( $resource['body'] ) ? $resource['body'] : '';
+						$hash = hash( 'sha256', $body );
+						$ref  = 'collection-resources/' . $hash . '.bin';
+						$path = $workspace->path( $ref );
+						if ( ! is_string( $path ) || ! is_file( $path ) ) {
+							$write = $workspace->publish_raw( $ref, $body );
+							if ( is_wp_error( $write ) ) {
+								return $write;
+							}
+						}
+						unset( $resource['body'] );
+						$resource['body_ref']       = $ref;
+						$resource['sha256']         = $hash;
+						$cursor['resources'][ $url ] = $resource;
+					}
+					return $workspace->publish_json( $collection_cursor_name, $cursor );
+				};
 				$runtime                                     = Static_Site_Importer_URL_Site_Collector::collect( $batch_entry, $collect_args, $fetcher );
 				if ( is_wp_error( $runtime ) ) {
 					if ( self::deadline_error( $runtime ) ) {
@@ -335,6 +372,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				if ( is_wp_error( $write ) ) {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $write, $cache );
 				}
+				$workspace->delete( $collection_cursor_name );
 			}
 			$staged = self::retained_staged_plans( $workspace, $runtime );
 			if ( null === $staged ) {
