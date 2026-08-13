@@ -445,7 +445,7 @@ class Static_Site_Importer_Theme_Generator {
 				),
 				'block_documents'     => array_map(
 					static function ( array $page ) use ( $receipt ): array {
-						$materialized = $receipt['completed']['materialized_pages'][ $page['source_path'] ]['block_markup'] ?? $page['resolved_block_markup'];
+						$materialized = $receipt['completed']['materialized_pages'][ $page['source_path'] ]['block_markup'] ?? $page['resolved_block_markup'] ?? '';
 						$document = array(
 							'path'    => 'posts/page-' . ( ! empty( $page['entrypoint'] ) ? 'home' : $page['slug'] ) . '.post_content',
 							'content' => $materialized,
