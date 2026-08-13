@@ -918,6 +918,8 @@ function static_site_importer_rest_route_url_import( array $source, array $input
 		'success'               => true,
 		'import_id'             => isset( $result['import_id'] ) ? (string) $result['import_id'] : '',
 		'result'                => isset( $result['result'] ) && is_array( $result['result'] ) ? $result['result'] : array(),
+		'diagnostics'           => isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array(),
+		'fixture_diagnostics'   => isset( $result['fixture_diagnostics'] ) && is_array( $result['fixture_diagnostics'] ) ? $result['fixture_diagnostics'] : array(),
 		'import_report_summary' => isset( $result['import_report_summary'] ) && is_array( $result['import_report_summary'] ) ? $result['import_report_summary'] : array(),
 		'terminal_batch_result' => isset( $result['url_batch_run']['terminal_batch_result'] ) && is_array( $result['url_batch_run']['terminal_batch_result'] )
 			? $result['url_batch_run']['terminal_batch_result']

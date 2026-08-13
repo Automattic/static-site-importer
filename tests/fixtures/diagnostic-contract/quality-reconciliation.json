@@ -1,0 +1,35 @@
+{
+  "source_evidence": {
+    "schema": "blocks-engine/wordpress-site-plan/v2",
+    "quality": {
+      "status": "success_with_warnings",
+      "metrics": {
+        "block_count": 331,
+        "fallback_count": 458,
+        "diagnostic_count": 537
+      }
+    }
+  },
+  "importer_report_evidence": {
+    "quality": {
+      "block_count": 0,
+      "fallback_count": 0,
+      "diagnostic_count": 0
+    }
+  },
+  "quality_resolutions_evidence": {
+    "schema": "static-site-importer/quality-resolutions/v1",
+    "source_fallback_count": 458,
+    "resolved_by_provider": 8,
+    "unresolved_fallback_count": 450
+  },
+  "materialization_receipt_evidence": {
+    "schema": "static-site-importer/materialization-receipt/v1",
+    "status": "completed"
+  },
+  "expected_unresolved_quality": {
+    "block_count": 331,
+    "fallback_count": 450,
+    "diagnostic_count": 537
+  }
+}

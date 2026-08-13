@@ -35,17 +35,18 @@ class Static_Site_Importer_Diagnostic_Contract {
 		$summary       = isset( $result['summary'] ) && is_array( $result['summary'] ) ? $result['summary'] : array();
 		$artifacts     = isset( $result['artifacts'] ) && is_array( $result['artifacts'] ) ? $result['artifacts'] : array();
 
+		$quality_counts = self::quality_counts( $import_report, $summary, $result );
+
 		$diagnostics = array_merge(
 			self::diagnostic_rows_from_result( $result ),
 			self::diagnostic_rows_from_import_report( $import_report ),
 			self::blocks_engine_conversion_diagnostics( $import_report ),
 			self::runtime_dependency_target_gaps( $import_report ),
 			self::semantic_parity_diagnostics( $import_report ),
-			self::gutenberg_gap_diagnostics( $import_report )
+			self::gutenberg_gap_diagnostics( $import_report ),
+			self::quality_count_consistency_diagnostics( $quality_counts )
 		);
 		$diagnostics = self::dedupe_diagnostics( $diagnostics );
-
-		$quality_counts = self::quality_counts( $import_report, $summary );
 
 		return array(
 			'schema'                         => self::IMPORT_DIAGNOSTICS_SCHEMA,
@@ -268,19 +269,69 @@ class Static_Site_Importer_Diagnostic_Contract {
 	}
 
 	/**
-	 * Return quality counts from import report first, then compact summaries.
+	 * Reconcile canonical compiler quality evidence with explicit materialization resolutions.
 	 *
 	 * @param array<string,mixed> $import_report Import report.
 	 * @param array<string,mixed> $summary Provider summary.
-	 * @return array<string,int>
+	 * @param array<string,mixed> $result  Provider result.
+	 * @return array<string,mixed>
 	 */
-	private static function quality_counts( array $import_report, array $summary ): array {
-		$quality = isset( $import_report['quality'] ) && is_array( $import_report['quality'] ) ? $import_report['quality'] : $summary;
-		$keys    = array( 'block_count', 'fallback_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count' );
+	private static function quality_counts( array $import_report, array $summary, array $result ): array {
+		$keys = array( 'block_count', 'fallback_count', 'diagnostic_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count' );
+		$compiler_quality = isset( $import_report['blocks_engine']['wordpress_site_plan']['quality'] ) && is_array( $import_report['blocks_engine']['wordpress_site_plan']['quality'] ) ? $import_report['blocks_engine']['wordpress_site_plan']['quality'] : array();
+		$report_quality   = isset( $import_report['quality'] ) && is_array( $import_report['quality'] ) ? $import_report['quality'] : $summary;
+		$source_counts    = self::quality_metric_values( $compiler_quality, $keys );
+		$report_counts    = self::quality_metric_values( $report_quality, $keys );
+		$compiler_fallback_count_available = isset( $source_counts['fallback_count'] );
+		$provenance       = array();
+
+		foreach ( $keys as $key ) {
+			if ( ! isset( $source_counts[ $key ] ) && isset( $report_counts[ $key ] ) ) {
+				$source_counts[ $key ] = $report_counts[ $key ];
+			}
+		}
+		if ( ! empty( $compiler_quality ) ) {
+			$provenance['source_detected'] = array(
+				'owner'   => 'blocks-engine',
+				'path'    => 'blocks_engine.wordpress_site_plan.quality',
+				'schema'  => isset( $import_report['blocks_engine']['wordpress_site_plan']['schema'] ) ? (string) $import_report['blocks_engine']['wordpress_site_plan']['schema'] : '',
+				'metrics' => 'blocks_engine.wordpress_site_plan.quality.metrics',
+			);
+		} elseif ( ! empty( $report_quality ) ) {
+			$provenance['source_detected'] = array( 'owner' => 'static-site-importer', 'path' => 'quality', 'schema' => isset( $import_report['schema'] ) ? (string) $import_report['schema'] : '', 'metrics' => 'quality' );
+		}
+
+		$receipt = isset( $result['materialization_receipt'] ) && is_array( $result['materialization_receipt'] ) ? $result['materialization_receipt'] : ( isset( $import_report['materialization_receipt'] ) && is_array( $import_report['materialization_receipt'] ) ? $import_report['materialization_receipt'] : array() );
+		$reconciliation = isset( $import_report['quality_resolutions'] ) && is_array( $import_report['quality_resolutions'] )
+			? $import_report['quality_resolutions']
+			: ( isset( $import_report['fallback_reconciliation'] ) && is_array( $import_report['fallback_reconciliation'] ) ? $import_report['fallback_reconciliation'] : array() );
+		$resolved_counts = array();
+		$source_fallback_count_available = isset( $reconciliation['source_fallback_count'] ) && is_numeric( $reconciliation['source_fallback_count'] );
+		if ( ! $compiler_fallback_count_available && $source_fallback_count_available ) {
+			$source_counts['fallback_count'] = max( 0, (int) $reconciliation['source_fallback_count'] );
+			$provenance['source_detected'] = array(
+				'owner'   => 'static-site-importer',
+				'path'    => 'quality_resolutions.source_fallback_count',
+				'schema'  => isset( $reconciliation['schema'] ) ? (string) $reconciliation['schema'] : '',
+				'metrics' => 'quality_resolutions',
+			);
+		}
+		$verified_resolutions = self::verified_provider_resolution_count( $reconciliation );
+		if ( ( $compiler_fallback_count_available || $source_fallback_count_available ) && null !== $verified_resolutions ) {
+			$resolved_counts['fallback_count'] = $verified_resolutions;
+			$provenance['materialized'] = array(
+				'owner'   => 'static-site-importer',
+				'path'    => 'quality_resolutions',
+				'schema'  => isset( $reconciliation['schema'] ) ? (string) $reconciliation['schema'] : '',
+				'receipt' => isset( $receipt['schema'] ) ? (string) $receipt['schema'] : '',
+			);
+		}
 
 		$counts = array();
 		foreach ( $keys as $key ) {
-			$counts[ $key ] = isset( $quality[ $key ] ) && is_numeric( $quality[ $key ] ) ? (int) $quality[ $key ] : 0;
+			$source = $source_counts[ $key ] ?? 0;
+			$resolved = min( $source, $resolved_counts[ $key ] ?? 0 );
+			$counts[ $key ] = $source - $resolved;
 		}
 		if ( $counts['block_count'] <= 0 ) {
 			$document_counts = self::block_document_quality_counts( $import_report );
@@ -289,7 +340,91 @@ class Static_Site_Importer_Diagnostic_Contract {
 			}
 		}
 
+		$counts['source_detected'] = array_merge( array_fill_keys( $keys, 0 ), $source_counts );
+		$counts['materialized']    = array_merge( array_fill_keys( $keys, 0 ), $resolved_counts );
+		$counts['unresolved']      = array_intersect_key( $counts, array_flip( $keys ) );
+		$counts['provenance']      = $provenance;
+		$counts['consistent']      = empty( $compiler_quality ) || empty( $report_quality ) || self::quality_metrics_agree( $source_counts, $report_counts );
+
 		return $counts;
+	}
+
+	/**
+	 * Verify the public shape of #937 resolution evidence without repeating its
+	 * materializer-level page and binding verification.
+	 */
+	private static function verified_provider_resolution_count( array $reconciliation ): ?int {
+		if ( 'static-site-importer/quality-resolutions/v1' !== ( $reconciliation['schema'] ?? null ) || ! isset( $reconciliation['source_fallback_count'], $reconciliation['resolved_by_provider'], $reconciliation['unresolved_fallback_count'], $reconciliation['resolutions'] ) || ! is_numeric( $reconciliation['source_fallback_count'] ) || ! is_numeric( $reconciliation['resolved_by_provider'] ) || ! is_numeric( $reconciliation['unresolved_fallback_count'] ) || ! is_array( $reconciliation['resolutions'] ) ) {
+			return null;
+		}
+
+		$source     = max( 0, (int) $reconciliation['source_fallback_count'] );
+		$resolved   = max( 0, (int) $reconciliation['resolved_by_provider'] );
+		$unresolved = max( 0, (int) $reconciliation['unresolved_fallback_count'] );
+		if ( $source - $resolved !== $unresolved ) {
+			return null;
+		}
+
+		$identities = array();
+		foreach ( $reconciliation['resolutions'] as $resolution ) {
+			if ( ! is_array( $resolution ) || 'resolved_by_provider' !== ( $resolution['state'] ?? null ) || ! is_string( $resolution['fallback_reconciliation_identity'] ?? null ) || ! is_string( $resolution['fallback_hash'] ?? null ) || 1 !== preg_match( '/^[a-f0-9]{64}$/', $resolution['fallback_reconciliation_identity'] ) || 1 !== preg_match( '/^[a-f0-9]{64}$/', $resolution['fallback_hash'] ) ) {
+				return null;
+			}
+			$receipt = isset( $resolution['receipt'] ) && is_array( $resolution['receipt'] ) ? $resolution['receipt'] : array();
+			if ( 'static-site-importer/quality-resolution-receipt/v1' !== ( $receipt['schema'] ?? null ) || 'completed' !== ( $receipt['status'] ?? null ) || $resolution['fallback_reconciliation_identity'] !== ( $receipt['fallback_reconciliation_identity'] ?? null ) || $resolution['fallback_hash'] !== ( $receipt['fallback_hash'] ?? null ) ) {
+				return null;
+			}
+			foreach ( array( 'binding_reconciliation_identity', 'materialized_block_hash', 'materialized_content_hash' ) as $field ) {
+				if ( ! is_string( $receipt[ $field ] ?? null ) || 1 !== preg_match( '/^[a-f0-9]{64}$/', $receipt[ $field ] ) ) {
+					return null;
+				}
+			}
+			if ( isset( $identities[ $resolution['fallback_reconciliation_identity'] ] ) ) {
+				return null;
+			}
+			$identities[ $resolution['fallback_reconciliation_identity'] ] = true;
+		}
+
+		return $resolved === count( $identities ) ? $resolved : null;
+	}
+
+	/** @return array<string,int> */
+	private static function quality_metric_values( array $quality, array $keys ): array {
+		$metrics = isset( $quality['metrics'] ) && is_array( $quality['metrics'] ) ? $quality['metrics'] : $quality;
+		$counts  = array();
+		foreach ( $keys as $key ) {
+			if ( isset( $metrics[ $key ] ) && is_numeric( $metrics[ $key ] ) ) {
+				$counts[ $key ] = max( 0, (int) $metrics[ $key ] );
+			}
+		}
+		return $counts;
+	}
+
+	private static function quality_metrics_agree( array $left, array $right ): bool {
+		foreach ( $left as $key => $value ) {
+			if ( isset( $right[ $key ] ) && $value !== $right[ $key ] ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** @return array<int,array<string,mixed>> */
+	private static function quality_count_consistency_diagnostics( array $quality_counts ): array {
+		if ( ! empty( $quality_counts['consistent'] ) ) {
+			return array();
+		}
+		return array(
+			array(
+				'type'        => 'quality_count_consistency_failure',
+				'severity'    => 'error',
+				'code'        => 'static_site_importer_quality_count_consistency_failure',
+				'stage'       => 'quality_reconciliation',
+				'owner'       => 'static-site-importer',
+				'message'     => 'Canonical compiler quality counts disagree with the importer report; unresolved counts retain compiler evidence.',
+				'constraints' => 'gating',
+			)
+		);
 	}
 
 	/**

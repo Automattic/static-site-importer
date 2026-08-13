@@ -694,6 +694,13 @@ if ( ! function_exists( 'static_site_importer_success_diagnostics_contract' ) ) 
 		$import_validation_result = isset( $result['import_validation_result'] ) && is_array( $result['import_validation_result'] ) ? $result['import_validation_result'] : array();
 		$quality                  = isset( $result['quality'] ) && is_array( $result['quality'] ) ? $result['quality'] : array();
 		$validation_diagnostics   = isset( $import_validation_result['diagnostics'] ) && is_array( $import_validation_result['diagnostics'] ) ? $import_validation_result['diagnostics'] : array();
+		$import_report            = isset( $result['import_report'] ) && is_array( $result['import_report'] ) ? $result['import_report'] : array();
+		if ( empty( $import_report ) ) {
+			$import_report = array(
+				'quality'     => $quality,
+				'diagnostics' => $validation_diagnostics,
+			);
+		}
 
 		$contract_input = array(
 			'success'                  => true,
@@ -701,10 +708,8 @@ if ( ! function_exists( 'static_site_importer_success_diagnostics_contract' ) ) 
 			'slug'                     => isset( $result['theme_slug'] ) ? (string) $result['theme_slug'] : '',
 			'name'                     => isset( $result['theme_name'] ) ? (string) $result['theme_name'] : '',
 			'import_validation_result' => $import_validation_result,
-			'import_report'            => array(
-				'quality'     => $quality,
-				'diagnostics' => $validation_diagnostics,
-			),
+			'import_report'            => $import_report,
+			'materialization_receipt'  => isset( $result['materialization_receipt'] ) && is_array( $result['materialization_receipt'] ) ? $result['materialization_receipt'] : array(),
 		);
 
 		return class_exists( 'Static_Site_Importer_Diagnostic_Contract' ) ? Static_Site_Importer_Diagnostic_Contract::build( $contract_input ) : array( 'diagnostics' => $validation_diagnostics );
