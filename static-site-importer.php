@@ -255,14 +255,17 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
 				'report'                    => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
 			);
-			$result = static_site_importer_cli_import( $input );
-			while ( ! empty( $result['success'] ) && ! empty( $result['continuation'] ) ) {
-				$input['source']['import_id'] = (string) ( $result['import_id'] ?? '' );
-				$result                       = static_site_importer_cli_import( $input );
+			if ( isset( $assoc_args['import-id'] ) ) {
+				$input['source']['import_id'] = (string) $assoc_args['import-id'];
 			}
+			$result = static_site_importer_cli_import( $input );
 			if ( empty( $result['success'] ) ) {
 				$error = isset( $result['error'] ) && is_array( $result['error'] ) ? $result['error'] : array();
 				WP_CLI::error( (string) ( $error['message'] ?? 'Static site URL import failed.' ) );
+			}
+			if ( ! empty( $result['continuation'] ) ) {
+				WP_CLI::line( (string) wp_json_encode( $result, JSON_UNESCAPED_SLASHES ) );
+				return;
 			}
 
 			WP_CLI::success( sprintf( 'Imported %s.', (string) ( $result['result']['theme_slug'] ?? $input['slug'] ) ) );

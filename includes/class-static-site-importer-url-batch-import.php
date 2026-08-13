@@ -108,13 +108,6 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$manifest['fetch_cache'] = self::cache_counters( $manifest['fetch_cache'] ?? array() );
 		}
 		if ( empty( $manifest ) ) {
-			$routes = Static_Site_Importer_URL_Site_Collector::discover_routes( $url, $args, $fetcher );
-			if ( is_wp_error( $routes ) ) {
-				return $routes;
-			}$routes = self::ordered_routes( $url, $routes );
-			if ( empty( $routes ) ) {
-				$routes = array( $url );
-			}$cursor  = Static_Site_Importer_Artifact_Batch_Cursor::create( array_keys( $routes ), min( self::MAX_BATCH_PAGES, $batch_pages ) );
 			$manifest = array(
 				'schema'                  => 'static-site-importer/url-site-batch-run/v1',
 				'version'                 => self::VERSION,
@@ -130,19 +123,62 @@ final class Static_Site_Importer_URL_Batch_Import {
 					'max_total_bytes'    => min( 268435456, max( 1, (int) $args['max_total_bytes'] ) ),
 					'max_response_bytes' => 10485760,
 				),
-				'total_routes'            => count( $routes ),
-				'routes'                  => $routes,
+				'total_routes'            => 0,
+				'routes'                  => array(),
 				'batch_pages'             => min( self::MAX_BATCH_PAGES, $batch_pages ),
-				'batches'                 => self::legacy_batches( $cursor ),
+				'batches'                 => array(),
 				'failures'                => array(),
 				'diagnostics'             => array(),
 				'external_asset_retained' => array(
 					'count'   => 0,
 					'samples' => array(),
 				),
-				'fetch_cache'             => $cache->consume(),
+				'fetch_cache'             => self::cache_counters( array() ),
 				'state'                   => 'running',
+				'phase'                   => 'discovering_routes',
+				'progress'                => array(
+					'phase'      => 'discovering_routes',
+					'updated_at' => gmdate( 'c' ),
+				),
 			);
+			$write = $run_manifest->save( $manifest );
+			if ( is_wp_error( $write ) ) {
+				return $write;
+			}
+		}
+		if ( 'discovering_routes' === ( $manifest['phase'] ?? '' ) ) {
+			$routes = Static_Site_Importer_URL_Site_Collector::discover_routes( $url, $args, $fetcher );
+			if ( is_wp_error( $routes ) ) {
+				self::checkpoint_cache( $manifest, $cache );
+				if ( self::deadline_error( $routes ) ) {
+					$manifest['progress']['updated_at'] = gmdate( 'c' );
+					$write = $run_manifest->save( $manifest );
+					if ( is_wp_error( $write ) ) {
+						return $write;
+					}
+					return self::continuation_result( $manifest, $manifest_path, null, 0, $max_effective_batches, $max_invocation_seconds, 'deadline_exhausted' );
+				}
+				$manifest['failures'][] = array(
+					'phase'   => 'discovering_routes',
+					'code'    => $routes->get_error_code(),
+					'message' => $routes->get_error_message(),
+					'at'      => gmdate( 'c' ),
+				);
+				$run_manifest->save( $manifest );
+				return $routes;
+			}$routes = self::ordered_routes( $url, $routes );
+			if ( empty( $routes ) ) {
+				$routes = array( $url );
+			}$cursor  = Static_Site_Importer_Artifact_Batch_Cursor::create( array_keys( $routes ), min( self::MAX_BATCH_PAGES, $batch_pages ) );
+			$manifest['total_routes'] = count( $routes );
+			$manifest['routes']       = $routes;
+			$manifest['batches']      = self::legacy_batches( $cursor );
+			$manifest['phase']        = 'importing_batches';
+			$manifest['progress']     = array(
+				'phase'      => 'importing_batches',
+				'updated_at' => gmdate( 'c' ),
+			);
+			self::checkpoint_cache( $manifest, $cache );
 			if ( is_wp_error( $run_manifest->save( $manifest ) ) ) {
 				return $run_manifest->save( $manifest );
 			}
@@ -173,6 +209,17 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$cache_name       = 'batches/' . $batch['batch_id'] . '.json';
 			$ready_cache_name = 'batches/' . $batch['batch_id'] . '.page-ready.json';
 			$old_cache        = trailingslashit( $work_dir ) . 'url-site-batch-cache-' . $identity . '-' . $index . '.json';
+			$manifest['progress'] = array(
+				'phase'       => 'collecting_batch',
+				'batch_id'    => $batch['batch_id'],
+				'batch_index' => $index,
+				'route_count' => count( $routes ),
+				'updated_at'  => gmdate( 'c' ),
+			);
+			$write = $run_manifest->save( $manifest );
+			if ( is_wp_error( $write ) ) {
+				return $write;
+			}
 			if ( null !== $deadline ) {
 				$ready_raw     = self::retained_runtime( $workspace, $ready_cache_name, $ready_cache_name, $ready_cache_name, $routes );
 				$ready_runtime = array();
@@ -345,6 +392,12 @@ final class Static_Site_Importer_URL_Batch_Import {
 					'diagnostics' => array(),
 				);
 			} else {
+				$manifest['progress']['phase']      = 'materializing_batch';
+				$manifest['progress']['updated_at'] = gmdate( 'c' );
+				$write = $run_manifest->save( $manifest );
+				if ( is_wp_error( $write ) ) {
+					return $write;
+				}
 				$compiled_staged = self::compose_staged_plans( $staged );
 				if ( is_wp_error( $compiled_staged ) ) {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $compiled_staged, $cache );
@@ -365,6 +418,10 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$cursor[ $index ]['result'] = self::result_evidence( $result, $runtime );
 			$manifest['batches']        = self::legacy_batches( $cursor );
 			$manifest['diagnostics']    = array_slice( array_merge( $manifest['diagnostics'], $result['import_validation_result']['diagnostics'] ?? array() ), -100 );
+			$manifest['progress']       = array(
+				'phase'      => 'importing_batches',
+				'updated_at' => gmdate( 'c' ),
+			);
 			if ( is_wp_error( $run_manifest->save( $manifest ) ) ) {
 				return $run_manifest->save( $manifest );
 			}
@@ -386,6 +443,11 @@ final class Static_Site_Importer_URL_Batch_Import {
 		$manifest['batches']      = self::legacy_batches( $cursor );
 		$aggregate                = self::aggregate_result( $manifest, $manifest_path, $final ?? array() );
 		$manifest['state']        = 'completed';
+		$manifest['phase']        = 'completed';
+		$manifest['progress']     = array(
+			'phase'      => 'completed',
+			'updated_at' => gmdate( 'c' ),
+		);
 		$manifest['completed_at'] = gmdate( 'c' );
 		self::checkpoint_cache( $manifest, $cache );
 		$legacy_cleanup                                     = $cache->cleanup_adopted();
@@ -911,8 +973,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 			'terminal_batch_result' => $terminal,
 		);
 	}
-	private static function continuation_result( array $manifest, string $path, int $index, int $effective_batches, ?int $max_effective_batches = null, ?float $max_invocation_seconds = null, string $reason = 'effective_batch_limit' ): array {
-		$next              = $manifest['batches'][ $index ] ?? array();
+	private static function continuation_result( array $manifest, string $path, ?int $index, int $effective_batches, ?int $max_effective_batches = null, ?float $max_invocation_seconds = null, string $reason = 'effective_batch_limit' ): array {
+		$next              = null !== $index ? ( $manifest['batches'][ $index ] ?? array() ) : array();
 		$next_work         = array_filter(
 			array(
 				'index'                => $next['index'] ?? $index,
@@ -939,6 +1001,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 			),
 			'url_batch_run'         => array(
 				'status'                               => 'continuing',
+				'phase'                                => (string) ( $manifest['progress']['phase'] ?? $manifest['phase'] ?? 'importing_batches' ),
+				'progress'                             => is_array( $manifest['progress'] ?? null ) ? $manifest['progress'] : array(),
 				'run_manifest'                         => $path,
 				'fetch_cache'                          => $manifest['fetch_cache'] ?? array(),
 				'per_batch_limits'                     => $manifest['per_batch_limits'] ?? array(),

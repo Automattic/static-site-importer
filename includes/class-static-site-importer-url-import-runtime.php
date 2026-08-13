@@ -223,7 +223,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 	private static function batch_args(): array {
 		$args = array(
 			'collect_site'                         => true,
-			'batch_pages'                          => 20,
+			'batch_pages'                          => 1,
 			'max_effective_batches_per_invocation' => 1,
 			'max_invocation_seconds'               => 20,
 			'max_pages'                            => 20,
