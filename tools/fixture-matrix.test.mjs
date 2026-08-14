@@ -104,7 +104,7 @@ import { collectEditorPresentation, collectSurfaceRecords } from '../lib/fixture
 import { runWpCodeboxRecipe, wpCodeboxBin } from './wp-codebox/recipe.mjs';
 
 const completeEditorPresentation = {
-  schema: 'static-site-importer/editor-presentation-evidence/v1',
+  schema: 'static-site-importer/editor-presentation-evidence/v2',
   provider_schema: 'wp-codebox/editor-presentation/v1',
   iframe_count: 1,
   expected_identity_count: 1,
@@ -112,7 +112,21 @@ const completeEditorPresentation = {
   expected_identities: ['a'.repeat(64)],
   observed_identities: ['a'.repeat(64)],
   missing_identities: [],
+  expected_identities_complete: true,
   coverage_complete: true,
+};
+
+const completeEditorValidation = {
+  schema: 'wp-codebox/editor-validate-blocks/v1',
+  validation_method: 'wp.blocks.validateBlock',
+  validation_provider: 'wordpress-block-editor',
+  content_source: 'edited-post-content',
+  block_types_registered: 42,
+  result_count: 8,
+  results_complete: true,
+  total_blocks: 8,
+  valid_blocks: 8,
+  invalid_blocks: 0,
 };
 
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -143,7 +157,7 @@ test('editor presentation intake compares inspected iframe identities with front
       },
     },
   }), {
-    schema: 'static-site-importer/editor-presentation-evidence/v1',
+    schema: 'static-site-importer/editor-presentation-evidence/v2',
     provider_schema: 'wp-codebox/editor-presentation/v1',
     iframe_count: 1,
     expected_identity_count: 2,
@@ -151,6 +165,7 @@ test('editor presentation intake compares inspected iframe identities with front
     expected_identities: [globalIdentity, frontPageIdentity],
     observed_identities: [globalIdentity, frontPageIdentity],
     missing_identities: [],
+    expected_identities_complete: true,
     coverage_complete: true,
   });
 });
@@ -163,7 +178,7 @@ test('editor presentation intake uses bounded site-plan hashes when the import r
   }, {
     wordpress_site_plan: { assets: [{ kind: 'css', payload_sha256: identity }] },
   }), {
-    schema: 'static-site-importer/editor-presentation-evidence/v1',
+    schema: 'static-site-importer/editor-presentation-evidence/v2',
     provider_schema: 'wp-codebox/editor-presentation/v1',
     iframe_count: 1,
     expected_identity_count: 1,
@@ -171,8 +186,55 @@ test('editor presentation intake uses bounded site-plan hashes when the import r
     expected_identities: [identity],
     observed_identities: [],
     missing_identities: [identity],
+    expected_identities_complete: true,
     coverage_complete: false,
   });
+});
+
+test('bounded site-plan fallback retains scopes and cannot certify truncated presentation assets', () => {
+  const identity = (index) => index.toString(16).padStart(64, '0');
+  const assets = Array.from({ length: 51 }, (_, index) => ({
+    kind: 'css',
+    path: `assets/${String(index).padStart(2, '0')}.css`,
+    payload_sha256: identity(index),
+    scopes: [{ kind: 'page', ...(index === 0 ? { route_path: 'about' } : index === 1 ? { front_page: true } : { kind: 'global' }) }],
+  }));
+  const evidence = collectMatrixEvidence({
+    import_report: { blocks_engine: { wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2', assets } } },
+  });
+  const observed = evidence.wordpress_site_plan.assets.map((asset) => asset.payload_sha256);
+  const presentation = collectEditorPresentation({
+    summary: { editorPresentation: { schema: 'wp-codebox/editor-presentation/v1', iframeCount: 1, generatedPresentationIdentities: observed } },
+    import_report: { artifact_ref: 'import-report.json' },
+  }, evidence);
+
+  assert.equal(evidence.wordpress_site_plan.assets_truncated, true);
+  assert.deepEqual(evidence.wordpress_site_plan.assets[0].scopes, [{ kind: 'page', route_path: 'about' }]);
+  assert.equal(presentation.expected_identities.includes(identity(0)), false);
+  assert.equal(presentation.expected_identities.includes(identity(1)), true);
+  assert.equal(presentation.expected_identities_complete, false);
+  assert.equal(presentation.coverage_complete, false);
+});
+
+test('declared site-plan asset counts make partial fallback presentation evidence fail closed', () => {
+  const identity = (index) => index.toString(16).padStart(64, '0');
+  const assets = Array.from({ length: 50 }, (_, index) => ({
+    kind: 'css',
+    path: `assets/${String(index).padStart(2, '0')}.css`,
+    payload_sha256: identity(index),
+    scopes: [{ kind: 'global' }],
+  }));
+  const evidence = collectMatrixEvidence({
+    import_report: { blocks_engine: { wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2', asset_count: 51, assets } } },
+  });
+  const presentation = collectEditorPresentation({
+    summary: { editorPresentation: { schema: 'wp-codebox/editor-presentation/v1', iframeCount: 1, generatedPresentationIdentities: assets.map((asset) => asset.payload_sha256) } },
+    import_report: { artifact_ref: 'import-report.json' },
+  }, evidence);
+
+  assert.equal(evidence.wordpress_site_plan.assets_truncated, true);
+  assert.equal(presentation.expected_identities_complete, false);
+  assert.equal(presentation.coverage_complete, false);
 });
 
 test('matrix evidence requires and summarizes the canonical materialization receipt', () => {
@@ -416,6 +478,7 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         editor_presentation: completeEditorPresentation,
         visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
         block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
+        editor_validation: completeEditorValidation,
         editor_quality: { editor_validated_block_total: 8, editor_invalid_count: 0, core_html_block_count: 0 },
       },
       {
@@ -424,6 +487,7 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/artist/screenshot.png' }],
         editor_presentation: completeEditorPresentation,
         block_composition: { block_total: 10, native_block_count: 9, core_html_block_count: 1 },
+        editor_validation: completeEditorValidation,
         editor_quality: { editor_validated_block_total: 10, editor_invalid_count: 0, core_html_block_count: 1 },
         visual_diff_regions: [{ dominant_cause: 'position_offset', pixel_count: 2500 }],
       },
@@ -432,6 +496,7 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         status: 'failed',
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/coffee/screenshot.png' }],
         editor_presentation: completeEditorPresentation,
+        editor_validation: completeEditorValidation,
         editor_quality: { editor_validated_block_total: 12, editor_invalid_count: 0, core_html_block_count: 0 },
         visual_diff_regions: [{ dominant_cause: 'font_metric_drift', pixel_count: 900 }],
       },
@@ -441,6 +506,7 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/saas/screenshot.png' }],
         editor_presentation: completeEditorPresentation,
         visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
+        editor_validation: completeEditorValidation,
         editor_quality: { editor_validated_block_total: 6, editor_invalid_count: 1, core_html_block_count: 0 },
       },
       {
@@ -511,7 +577,7 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
   assert.equal(decisions['runtime-provider'].acceptance_status, 'provider_runtime_blocker');
   assert.equal(decisions['cv-missing-editor-evidence'].frontend_visual_status, 'passed');
   assert.equal(decisions['cv-missing-editor-evidence'].editor_canvas_status, 'not_captured');
-  assert.equal(decisions['cv-missing-editor-evidence'].native_editability_status, 'native_editable');
+  assert.equal(decisions['cv-missing-editor-evidence'].native_editability_status, 'unknown');
   assert.equal(decisions['cv-missing-editor-evidence'].acceptance_status, 'evidence_gap');
   assert.equal(patterns['static-form'].limitation_type, 'real_gutenberg_gap');
   assert.equal(patterns['visual-position_offset'].limitation_type, 'visual_only_style_drift');
@@ -6194,14 +6260,10 @@ test('editor_block_invalid findings collected from fixture artifacts gate the ma
 });
 
 const ALL_VALID_EDITOR_VALIDATE_BLOCKS = {
-  schema: 'wp-codebox/editor-validate-blocks/v1',
-  validation_method: 'wp.blocks.validateBlock',
-  validation_provider: 'wordpress-block-editor',
-  content_source: 'edited-post-content',
-  block_types_registered: 42,
+  ...completeEditorValidation,
+  result_count: 3,
   total_blocks: 3,
   valid_blocks: 3,
-  invalid_blocks: 0,
   results: [
     { name: 'core/heading', isValid: true, issues: [] },
     { name: 'core/paragraph', isValid: true, issues: [] },
@@ -8967,6 +9029,7 @@ test('solved fixture that stays solved_candidate keeps solved_candidate status',
         editor_presentation: completeEditorPresentation,
         visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
         block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
+        editor_validation: completeEditorValidation,
         editor_quality: { editor_validated_block_total: 8, editor_invalid_count: 0, core_html_block_count: 0 },
       },
     ],
@@ -8995,7 +9058,7 @@ test('solved-candidate gate hard-fails regressions while preserving acceptance e
     editor_presentation: completeEditorPresentation,
     visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
     block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
-    editor_validation: { total_blocks: 8, valid_blocks: 8, invalid_blocks: 0, validation_method: 'wp.blocks.validateBlock' },
+    editor_validation: completeEditorValidation,
   });
   const solvedRegression = {
     ...acceptedResult('solved-site'),
@@ -9026,4 +9089,51 @@ test('solved-candidate gate hard-fails regressions while preserving acceptance e
   assert.equal(result.summary.fixture_failure_categories.solved_regression, 1);
   assert.ok(result.summary.gate_failure_reasons.some((reason) => reason.fixture_id === 'solved-site' && reason.category === 'solved_regression'));
   assert.equal(result.gutenberg_incompatibility_registry.fixture_decisions.find((decision) => decision.fixture_id === 'solved-site').acceptance_status, 'solved_regression');
+});
+
+test('solved-candidate registry rejects counts-only editor validation and contradictory presentation summaries', () => {
+  const base = {
+    fixture_id: 'cv',
+    status: 'passed',
+    artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot' }],
+    visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
+    block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
+    editor_validation: completeEditorValidation,
+    editor_presentation: completeEditorPresentation,
+  };
+  const countsOnly = buildGutenbergIncompatibilityRegistry({
+    fixtures: [{ ...base, editor_validation: { total_blocks: 8, valid_blocks: 8, invalid_blocks: 0 } }], findings: [],
+  }).fixture_decisions[0];
+  const contradictoryPresentation = buildGutenbergIncompatibilityRegistry({
+    fixtures: [{ ...base, editor_presentation: { ...completeEditorPresentation, observed_identities: [], observed_identity_count: 0 } }], findings: [],
+  }).fixture_decisions[0];
+
+  assert.equal(countsOnly.acceptance_status, 'evidence_gap');
+  assert.equal(contradictoryPresentation.acceptance_status, 'editor_blocker');
+});
+
+test('solved-candidate registry accepts complete v1 presentation evidence only with complete raw plan provenance', () => {
+  const identity = 'e'.repeat(64);
+  const fixture = {
+    fixture_id: 'legacy',
+    status: 'passed',
+    artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot' }],
+    visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
+    block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
+    editor_validation: completeEditorValidation,
+    editor_presentation: {
+      ...completeEditorPresentation,
+      schema: 'static-site-importer/editor-presentation-evidence/v1',
+      expected_identities: [identity],
+      observed_identities: [identity],
+    },
+    import_report: { blocks_engine: { wordpress_site_plan: { asset_count: 1, assets: [{ kind: 'css', content_hash: identity, scopes: [{ kind: 'global' }] }] } } },
+  };
+  const complete = buildGutenbergIncompatibilityRegistry({ fixtures: [fixture], findings: [] }).fixture_decisions[0];
+  const ambiguous = buildGutenbergIncompatibilityRegistry({
+    fixtures: [{ ...fixture, import_report: { blocks_engine: { wordpress_site_plan: { asset_count: 2, assets: fixture.import_report.blocks_engine.wordpress_site_plan.assets } } } }], findings: [],
+  }).fixture_decisions[0];
+
+  assert.equal(complete.acceptance_status, 'solved_candidate');
+  assert.equal(ambiguous.acceptance_status, 'editor_blocker');
 });

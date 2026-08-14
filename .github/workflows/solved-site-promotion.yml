@@ -21,6 +21,16 @@ on:
         required: false
         default: Automattic/blocks-engine
         type: string
+      wp-codebox-sha:
+        description: Full WP Codebox candidate commit SHA.
+        required: false
+        default: 0b33cbc388cfee6884079125fc06dd132d979cbc
+        type: string
+      wp-codebox-repository:
+        description: Repository containing the WP Codebox candidate SHA.
+        required: false
+        default: Automattic/wp-codebox
+        type: string
       wordpress-version:
         description: Exact WordPress version used by WP Codebox.
         required: false
@@ -41,9 +51,9 @@ jobs:
       HOMEBOY_VERSION: v0.298.1
       HOMEBOY_SHA256: 543a1eb7348a9dcde3bee671dbbeaabb9486781d350792bed8a77424fdad60d5
       HOMEBOY_EXTENSIONS_REF: 615fe3632d0cd30e9a70d5aea82be80460d733d5
-      WP_CODEBOX_VERSION: v0.18.4
-      WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0.18.4.tgz
-      WP_CODEBOX_SHA256: 56d8f887a7b5109aa83927fd1cee5ec665af63cb72a35dba2df70f84b7ac47eb
+      WP_CODEBOX_VERSION: v0.20.0
+      WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0.20.0.tgz
+      WP_CODEBOX_SHA: ${{ inputs.wp-codebox-sha }}
       WORDPRESS_VERSION: ${{ inputs.wordpress-version }}
 
     steps:
@@ -51,9 +61,11 @@ jobs:
         env:
           STATIC_SITE_IMPORTER_SHA: ${{ inputs.static-site-importer-sha }}
           BLOCKS_ENGINE_SHA: ${{ inputs.blocks-engine-sha }}
+          WP_CODEBOX_SHA: ${{ inputs.wp-codebox-sha }}
         run: |
           [[ "$STATIC_SITE_IMPORTER_SHA" =~ ^[a-f0-9]{40}$ ]]
           [[ "$BLOCKS_ENGINE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$WP_CODEBOX_SHA" =~ ^[a-f0-9]{40}$ ]]
 
       - name: Checkout Static Site Importer candidate
         uses: actions/checkout@v4
@@ -68,6 +80,13 @@ jobs:
           repository: ${{ inputs.blocks-engine-repository }}
           ref: ${{ inputs.blocks-engine-sha }}
           path: blocks-engine
+
+      - name: Checkout WP Codebox candidate
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.wp-codebox-repository }}
+          ref: ${{ inputs.wp-codebox-sha }}
+          path: wp-codebox
 
       - name: Setup pinned Node
         uses: actions/setup-node@v4
@@ -132,21 +151,24 @@ jobs:
           echo "HOMEBOY_BIN=$RUNNER_TEMP/homeboy/homeboy" >> "$GITHUB_ENV"
 
       - name: Install pinned WP Codebox
+        working-directory: wp-codebox
         run: |
-          mkdir -p "$RUNNER_TEMP/wp-codebox"
-          curl --fail --location --retry 3 --retry-all-errors --output "$RUNNER_TEMP/wp-codebox/workspace.tgz" "https://github.com/Automattic/wp-codebox/releases/download/${WP_CODEBOX_VERSION}/${WP_CODEBOX_WORKSPACE_ASSET}"
-          echo "${WP_CODEBOX_SHA256}  $RUNNER_TEMP/wp-codebox/workspace.tgz" | sha256sum --check --status
-          npm install --global --prefix "$RUNNER_TEMP/wp-codebox" "$RUNNER_TEMP/wp-codebox/workspace.tgz"
-          node "$RUNNER_TEMP/wp-codebox/lib/node_modules/wp-codebox-workspace/node_modules/playwright/cli.js" install --with-deps chromium
-          "$RUNNER_TEMP/wp-codebox/bin/wp-codebox" commands --json
-          echo "WP_CODEBOX_BIN=$RUNNER_TEMP/wp-codebox/bin/wp-codebox" >> "$GITHUB_ENV"
+          npm ci
+          mkdir -p "$RUNNER_TEMP/wp-codebox-package" "$RUNNER_TEMP/wp-codebox-install"
+          npm pack --pack-destination "$RUNNER_TEMP/wp-codebox-package"
+          WP_CODEBOX_SHA256=$(sha256sum "$RUNNER_TEMP/wp-codebox-package/${WP_CODEBOX_WORKSPACE_ASSET}" | cut -d' ' -f1)
+          echo "WP_CODEBOX_SHA256=$WP_CODEBOX_SHA256" >> "$GITHUB_ENV"
+          npm install --global --prefix "$RUNNER_TEMP/wp-codebox-install" "$RUNNER_TEMP/wp-codebox-package/${WP_CODEBOX_WORKSPACE_ASSET}"
+          node "$RUNNER_TEMP/wp-codebox-install/lib/node_modules/wp-codebox-workspace/node_modules/playwright/cli.js" install --with-deps chromium
+          "$RUNNER_TEMP/wp-codebox-install/bin/wp-codebox" commands --json
+          echo "WP_CODEBOX_BIN=$RUNNER_TEMP/wp-codebox-install/bin/wp-codebox" >> "$GITHUB_ENV"
 
       - name: Record pinned runtime inputs
         env:
           STATIC_SITE_IMPORTER_SHA: ${{ inputs.static-site-importer-sha }}
           BLOCKS_ENGINE_SHA: ${{ inputs.blocks-engine-sha }}
         run: |
-          node -e 'const fs=require("node:fs"); fs.writeFileSync(process.argv[1], JSON.stringify({nodeVersion:process.version.replace(/^v/, ""),phpVersion:process.argv[2],wordpressVersion:process.env.WORDPRESS_VERSION,homeboyVersion:process.env.HOMEBOY_VERSION,homeboySha256:process.env.HOMEBOY_SHA256,homeboyExtensionsRef:process.env.HOMEBOY_EXTENSIONS_REF,wpCodeboxVersion:process.env.WP_CODEBOX_VERSION,wpCodeboxSha256:process.env.WP_CODEBOX_SHA256,staticSiteImporterSha:process.env.STATIC_SITE_IMPORTER_SHA,blocksEngineSha:process.env.BLOCKS_ENGINE_SHA}, null, 2)+"\n")' "$ARTIFACT_ROOT/runtime-inputs.json" "$(php -r 'echo PHP_VERSION;')"
+          node -e 'const fs=require("node:fs"); fs.writeFileSync(process.argv[1], JSON.stringify({nodeVersion:process.version.replace(/^v/, ""),phpVersion:process.argv[2],wordpressVersion:process.env.WORDPRESS_VERSION,homeboyVersion:process.env.HOMEBOY_VERSION,homeboySha256:process.env.HOMEBOY_SHA256,homeboyExtensionsRef:process.env.HOMEBOY_EXTENSIONS_REF,wpCodeboxVersion:process.env.WP_CODEBOX_VERSION,wpCodeboxSha256:process.env.WP_CODEBOX_SHA256,wpCodeboxSha:process.env.WP_CODEBOX_SHA,staticSiteImporterSha:process.env.STATIC_SITE_IMPORTER_SHA,blocksEngineSha:process.env.BLOCKS_ENGINE_SHA}, null, 2)+"\n")' "$ARTIFACT_ROOT/runtime-inputs.json" "$(php -r 'echo PHP_VERSION;')"
 
       - name: Run solved fixture matrix
         working-directory: static-site-importer
@@ -192,6 +214,7 @@ jobs:
             --artifact-root "$ARTIFACT_ROOT" \
             --static-site-importer-sha "$STATIC_SITE_IMPORTER_SHA" \
             --blocks-engine-sha "$BLOCKS_ENGINE_SHA" \
+            --wp-codebox-sha "$WP_CODEBOX_SHA" \
             --fixture-tree-sha "$FIXTURE_TREE_SHA" \
             --solved-fixture-count "$SOLVED_FIXTURE_COUNT" \
             --solved-fixture-ids "$SOLVED_FIXTURE_IDS" \

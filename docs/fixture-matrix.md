@@ -439,6 +439,19 @@ complete solved corpus. The replayable plan and operator summary identify this
 lane as `fixtures-solved-only/v1` and include active, solved, and selected corpus
 counts plus the full coverage inventory so CI artifacts prove the exact selection.
 
+### Editor Presentation Evidence
+
+New matrix runs emit `static-site-importer/editor-presentation-evidence/v2`.
+Its `expected_identities_complete` field records whether the expected global and
+front-page stylesheet identities came from a complete site-plan asset list. A
+declared `asset_count` that differs from supplied assets, an upstream truncation
+marker, or local evidence bounding makes that field false and prevents promotion.
+
+The promotion gate still reads v1 evidence when the fixture retains its raw site
+plan and that plan has a matching declared asset count and reproduces the exact
+expected identity set. A bounded summary or missing/partial plan is ambiguous and
+fails closed; rerun the matrix to produce v2 evidence.
+
 The solved-candidate gate also proves persisted Gutenberg editability. After
 visual parity capture, it inserts a fixture-specific paragraph through
 `wordpress.editor-actions`, saves with `core/editor.savePost`, reloads the editor,
