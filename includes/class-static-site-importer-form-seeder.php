@@ -22,6 +22,8 @@ require_once __DIR__ . '/class-static-site-importer-provider-layout-overlay.php'
  * instead of staying a dead html_form_fallback runtime island.
  */
 class Static_Site_Importer_Form_Seeder {
+	/** Form materialization emits provider block data only; no persistent provider entity exists to undo. */
+	public static function rollback( array $report ): array { unset( $report ); return array( 'status' => 'rolled_back', 'reason' => 'no_persistent_entity' ); }
 
 	/** Whether this process has explicitly completed the late Jetpack Forms init. */
 	private static bool $jetpack_forms_initialized = false;

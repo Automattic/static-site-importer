@@ -287,6 +287,7 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$bindings = $page_ready ? array() : self::runtime_entity_bindings( $lifecycle, $entities );
 		if ( is_wp_error( $bindings ) ) {
+			self::rollback_classic_entities( $lifecycle, $entities, $classic );
 			return new WP_Error(
 				$bindings->get_error_code(),
 				$bindings->get_error_message(),
@@ -302,10 +303,12 @@ class Static_Site_Importer_Theme_Generator {
 		if ( $classic ) {
 			$classic_bindings = self::classic_runtime_entity_bindings( $lifecycle, $entities );
 			if ( is_wp_error( $classic_bindings ) ) {
+				self::rollback_classic_entities( $lifecycle, $entities, true );
 				return new WP_Error( $classic_bindings->get_error_code(), $classic_bindings->get_error_message(), array( 'status' => 'partial', 'runtime_lifecycle' => $lifecycle, 'dependencies' => $dependencies, 'entities' => $entities ) );
 			}
 			$projection = Static_Site_Importer_Classic_Theme_Projection::apply_runtime_bindings( $prepared['args']['classic_theme_projection'], $classic_bindings );
 			if ( is_wp_error( $projection ) ) {
+				self::rollback_classic_entities( $lifecycle, $entities, true );
 				return new WP_Error( $projection->get_error_code(), $projection->get_error_message(), array( 'status' => 'partial', 'runtime_lifecycle' => $lifecycle, 'dependencies' => $dependencies, 'entities' => $entities ) );
 			}
 			$prepared['args']['classic_theme_projection'] = $projection;
@@ -327,18 +330,29 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$receipt['theme_materialization'] = $theme_materialization;
 		if ( 'completed' !== $receipt['status'] ) {
+			self::rollback_classic_entities( $lifecycle, $entities, $classic );
 			$error = $receipt['errors'][0] ?? array();
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan materialization failed.' ), $receipt );
 		}
 		try {
 			return self::public_result_from_wordpress_site_plan_receipt( $receipt, $args, $lifecycle, $dependencies, $entities );
 		} catch ( Throwable $error ) {
+			self::rollback_classic_entities( $lifecycle, $entities, $classic );
 			$receipt['status'] = 'partial';
 			$receipt['errors'][] = array(
 				'code'    => 'static_site_importer_projection_write_failed',
 				'message' => $error->getMessage(),
 			);
 			return new WP_Error( 'static_site_importer_projection_write_failed', 'Website materialization completed partially because a public projection could not be written.', $receipt );
+		}
+	}
+
+	/** Compensate every completed entity declaration before reporting a classic failure. */
+	private static function rollback_classic_entities( array $lifecycle, array $reports, bool $classic ): void {
+		if ( ! $classic ) { return; }
+		foreach ( $lifecycle['entities'] ?? array() as $id => $prepared ) {
+			if ( ! is_array( $prepared ) || ! is_array( $prepared['adapter'] ?? null ) || ! is_array( $reports[ $id ] ?? null ) ) { continue; }
+			Static_Site_Importer_Entity_Materializer_Registry::rollback( $prepared['adapter'], $reports[ $id ] );
 		}
 	}
 

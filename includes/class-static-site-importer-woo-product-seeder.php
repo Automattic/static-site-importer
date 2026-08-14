@@ -65,7 +65,10 @@ class Static_Site_Importer_Woo_Product_Seeder {
 
 		$report['status'] = 'completed';
 
+		$report['rollback'] = array();
 		foreach ( $products as $product ) {
+			$existing = get_page_by_path( sanitize_title( self::string_value( $product, 'slug' ) ), OBJECT, 'product' );
+			if ( $existing instanceof WP_Post ) { $report['rollback'][ (int) $existing->ID ] = array( 'post' => get_post( $existing->ID, ARRAY_A ), 'meta' => get_post_meta( $existing->ID ), 'terms' => wp_get_object_terms( $existing->ID, 'product_cat', array( 'fields' => 'ids' ) ) ); }
 			$row                  = self::seed_product( $product );
 			$report['products'][] = $row;
 
@@ -78,6 +81,12 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		}
 
 		return $report;
+	}
+
+	/** Restore existing product post/meta/category state or delete products created by this receipt. */
+	public static function rollback( array $report ): array {
+		foreach ( $report['products'] ?? array() as $row ) { $id = (int) ( $row['id'] ?? 0 ); if ( $id <= 0 ) { continue; } $before = $report['rollback'][ $id ] ?? null; if ( ! is_array( $before ) ) { wp_delete_post( $id, true ); continue; } wp_update_post( $before['post'] ); foreach ( get_post_meta( $id ) as $key => $_ ) { delete_post_meta( $id, $key ); } foreach ( $before['meta'] as $key => $values ) { foreach ( $values as $value ) { add_post_meta( $id, $key, $value ); } } wp_set_object_terms( $id, $before['terms'], 'product_cat' ); }
+		return array( 'status' => 'rolled_back' );
 	}
 
 	/**
