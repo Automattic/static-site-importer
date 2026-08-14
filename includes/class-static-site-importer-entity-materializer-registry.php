@@ -107,10 +107,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 		}
 
-		// No adapter matched the selected provider; fall back to the first
-		// adapter registered for the capability so a misconfigured provider does
-		// not silently drop materialization.
-		return $capability_adapters[0] ?? array();
+		// A configured provider is an explicit security/transaction boundary.
+		// Never route it to a different adapter implicitly.
+		return array();
 	}
 
 	/**
