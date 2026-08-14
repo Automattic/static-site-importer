@@ -1407,7 +1407,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$id = (int) ( $page['planned_existing_id'] ?? 0 );
 		if ( isset( $state['rollback']['posts'][ $id ] ) ) { return; }
 		if ( $id > 0 && function_exists( 'get_post' ) && ( $post = get_post( $id, ARRAY_A ) ) ) {
-			$state['rollback']['posts'][ $id ] = array( 'existing' => true, 'post' => $post, 'provenance' => get_post_meta( $id, '_static_site_importer_provenance', true ) );
+			$state['rollback']['posts'][ $id ] = array( 'existing' => true, 'post' => $post, 'provenance' => get_post_meta( $id, '_static_site_importer_provenance', true ), 'reconciliation_identity' => get_post_meta( $id, self::RECONCILIATION_META_KEY, true ) );
 			return;
 		}
 		$state['rollback']['posts'][ 'new:' . (string) $page['source_path'] ] = array( 'existing' => false, 'source_path' => (string) $page['source_path'] );
@@ -1431,7 +1431,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		foreach ( $state['applied']['posts'] ?? array() as $applied ) {
 			$id = (int) ( $applied['id'] ?? 0 ); $before = $state['rollback']['posts'][ $id ] ?? null;
 			if ( ! is_array( $before ) || $id <= 0 ) { continue; }
-			if ( ! empty( $before['existing'] ) ) { wp_update_post( $before['post'] ); update_post_meta( $id, '_static_site_importer_provenance', $before['provenance'] ); } elseif ( function_exists( 'wp_delete_post' ) ) { wp_delete_post( $id, true ); }
+			if ( ! empty( $before['existing'] ) ) { wp_update_post( $before['post'] ); update_post_meta( $id, '_static_site_importer_provenance', $before['provenance'] ); update_post_meta( $id, self::RECONCILIATION_META_KEY, $before['reconciliation_identity'] ); } elseif ( function_exists( 'wp_delete_post' ) ) { wp_delete_post( $id, true ); }
 		}
 		$state['applied']['files'] = array(); $state['applied']['posts'] = array();
 		$state['diagnostics'][] = array( 'reason_code' => 'materialization_rolled_back' );

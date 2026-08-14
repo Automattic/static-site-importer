@@ -78,6 +78,7 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 
 	/** Run the same ordered mutation transaction for preflight and final projection. */
 	private static function transaction( array $projection, array $bindings, bool $final ) {
+		foreach ( $bindings as $left_index => $left ) { foreach ( $bindings as $right_index => $right ) { if ( $right_index <= $left_index || ( $left['source_path'] ?? '' ) !== ( $right['source_path'] ?? '' ) ) { continue; } $a = trim( (string) ( $left['selector'] ?? '' ) ); $b = trim( (string) ( $right['selector'] ?? '' ) ); if ( '' !== $a && '' !== $b && ( $a === $b || str_starts_with( $a, $b . ' ') || str_starts_with( $a, $b . '>') || str_starts_with( $b, $a . ' ') || str_starts_with( $b, $a . '>') ) ) { return new WP_Error( 'static_site_importer_classic_html_binding_overlap', 'Classic binding selectors may not claim equivalent or ancestor/descendant source nodes.' ); } } }
 		$documents = array();
 		foreach ( $bindings as $binding ) {
 			$source = (string) ( $binding['source_path'] ?? '' ); $surface = (string) ( $binding['surface'] ?? '' );

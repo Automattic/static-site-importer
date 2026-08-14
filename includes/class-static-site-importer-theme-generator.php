@@ -270,7 +270,7 @@ class Static_Site_Importer_Theme_Generator {
 		$entity_result = $page_ready ? array(
 			'reports' => array(),
 			'error'   => null,
-		) : self::materialize_prepared_entities( $lifecycle, $args );
+		) : self::materialize_prepared_entities( $lifecycle, $args, $classic );
 		$entities      = $entity_result['reports'];
 		if ( null !== $entity_result['error'] ) {
 			$error = $entity_result['error'];
@@ -350,7 +350,8 @@ class Static_Site_Importer_Theme_Generator {
 	/** Compensate every completed entity declaration before reporting a classic failure. */
 	private static function rollback_classic_entities( array $lifecycle, array $reports, bool $classic ): void {
 		if ( ! $classic ) { return; }
-		foreach ( $lifecycle['entities'] ?? array() as $id => $prepared ) {
+		foreach ( array_reverse( array_keys( $lifecycle['entities'] ?? array() ) ) as $id ) {
+			$prepared = $lifecycle['entities'][ $id ];
 			if ( ! is_array( $prepared ) || ! is_array( $prepared['adapter'] ?? null ) || ! is_array( $reports[ $id ] ?? null ) ) { continue; }
 			Static_Site_Importer_Entity_Materializer_Registry::rollback( $prepared['adapter'], $reports[ $id ] );
 		}
@@ -1142,7 +1143,7 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/** @return array{reports:array<string,mixed>,error:?array{code:string,message:string}} */
-	private static function materialize_prepared_entities( array $lifecycle, array $args ): array {
+	private static function materialize_prepared_entities( array $lifecycle, array $args, bool $classic = false ): array {
 		$reports = array();
 		$required = array_filter( $lifecycle['entities'], static fn( array $prepared ): bool => ! empty( $prepared['required'] ) );
 		if ( empty( $args['seed_entities'] ) && empty( $required ) ) {
@@ -1166,6 +1167,7 @@ class Static_Site_Importer_Theme_Generator {
 					'status' => 'error',
 					'reason' => $report->get_error_code(),
 				);
+				self::rollback_classic_entities( $lifecycle, $reports, $classic );
 				return array(
 					'reports' => $reports,
 					'error'   => array(
@@ -1181,6 +1183,7 @@ class Static_Site_Importer_Theme_Generator {
 			if ( in_array( $report['status'] ?? '', array( 'failed', 'error' ), true ) || ! empty( $counts['failed'] ) || ! empty( $counts['error'] ) || ( ! empty( $prepared['required'] ) && $completed < $expected ) ) {
 				$code = isset( $report['code'] ) && is_scalar( $report['code'] ) ? (string) $report['code'] : 'static_site_importer_entity_materialization_failed';
 				$message = isset( $report['error'] ) && is_scalar( $report['error'] ) ? (string) $report['error'] : ( isset( $report['reason'] ) && is_scalar( $report['reason'] ) && '' !== (string) $report['reason'] ? (string) $report['reason'] : 'Runtime entity materialization failed for declaration: ' . $id . '.' );
+				self::rollback_classic_entities( $lifecycle, $reports, $classic );
 				return array(
 					'reports' => $reports,
 					'error'   => array(
