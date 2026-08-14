@@ -271,7 +271,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 * @param array<string,mixed> $adapter Adapter definition.
 	 * @return array<string,array<string,mixed>>
 	 */
-	public static function materialize_plugin_dependencies( array $adapter ): array {
+	public static function materialize_plugin_dependencies( array $adapter, bool $overwrite = false ): array {
 		$reports = array();
 		foreach ( self::plugin_dependencies( $adapter ) as $dependency ) {
 			$slug = (string) ( $dependency['slug'] ?? '' );
@@ -293,7 +293,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				continue;
 			}
 
-			$reports[ $slug ] = self::materialize_companion_dependency( $dependency );
+			$reports[ $slug ] = self::materialize_companion_dependency( $dependency, $overwrite );
 		}
 
 		return $reports;
@@ -420,11 +420,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 * @param array<string,mixed> $dependency Companion dependency definition.
 	 * @return array<string,mixed>
 	 */
-	public static function materialize_companion_dependency( array $dependency ): array {
+	public static function materialize_companion_dependency( array $dependency, bool $overwrite = false ): array {
 		$payload = isset( $dependency['payload'] ) && is_array( $dependency['payload'] ) ? $dependency['payload'] : array();
 		return Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin(
 			$payload,
-			$dependency['availability_callback'] ?? null
+			$dependency['availability_callback'] ?? null,
+			$overwrite
 		);
 	}
 

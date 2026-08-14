@@ -112,7 +112,14 @@ class Static_Site_Importer_Plugin_Materializer {
 				$preparation = self::prepare_plugin_runtime( $slug, $preparation_callback );
 				if ( is_wp_error( $preparation ) ) {
 					self::restore_activation_lifecycle_actions( $lifecycle );
-					return self::failed_report( $report, $preparation );
+					if ( ! is_plugin_active( $plugin_file ) ) {
+						return self::failed_report( $report, $preparation );
+					}
+					$report['active']    = true;
+					$report['actions'][] = 'activated';
+					$report['status']    = 'activated_pending_fresh_runtime';
+					self::record_installed_provenance( $report );
+					return $report;
 				}
 				try {
 					$report['lifecycle_replay'] = self::complete_activation_lifecycle_replay( $lifecycle );
@@ -177,7 +184,8 @@ class Static_Site_Importer_Plugin_Materializer {
 	 */
 	public static function ensure_generated_plugin(
 		array $payload,
-		?callable $availability_check = null
+		?callable $availability_check = null,
+		bool $overwrite = false
 	): array {
 		// All compiler output is untrusted until the complete canonical payload has
 		// passed the content-only boundary. Schema-less PHP scaffold input is gone.
@@ -195,7 +203,7 @@ class Static_Site_Importer_Plugin_Materializer {
 		$report                = self::new_generated_report( (string) $descriptor['slug'], (string) $descriptor['plugin_file'] );
 		$report['mu_plugin']   = (bool) $descriptor['mu_plugin'];
 		$report['block_names'] = $descriptor['block_names'];
-		$collision             = self::generated_block_name_collision( $descriptor['block_names'], $descriptor );
+		$collision             = self::generated_block_name_collision( $descriptor['block_names'], $descriptor, $overwrite );
 		if ( is_wp_error( $collision ) ) {
 			return self::failed_report( $report, $collision );
 		}
@@ -330,7 +338,7 @@ class Static_Site_Importer_Plugin_Materializer {
 	}
 
 	/** Preflight registered block names before generated files are written. */
-	private static function generated_block_name_collision( array $block_names, array $descriptor ) {
+	private static function generated_block_name_collision( array $block_names, array $descriptor, bool $overwrite ) {
 		$registry = class_exists( 'WP_Block_Type_Registry' ) ? WP_Block_Type_Registry::get_instance() : null;
 		foreach ( $block_names as $block_name ) {
 			if ( ! is_string( $block_name ) || '' === $block_name ) {
@@ -341,7 +349,7 @@ class Static_Site_Importer_Plugin_Materializer {
 				/** Filters runtime registry collision detection for generated companion blocks. */
 				$registered = (bool) apply_filters( 'ssi_companion_plugin_block_name_collision', $registered, $block_name, $registry );
 			}
-			if ( $registered && ! self::current_companion_owns_registered_block( $block_name, $descriptor ) ) {
+			if ( $registered && ! self::current_companion_owns_registered_block( $block_name, $descriptor, $overwrite ) ) {
 				return new WP_Error(
 					'static_site_importer_companion_plugin_block_name_collision',
 					sprintf( 'Generated companion block name %s is already registered.', $block_name ),
@@ -362,9 +370,11 @@ class Static_Site_Importer_Plugin_Materializer {
 	 *
 	 * The generated plugin records its exact plugin file and runtime path when it
 	 * registers a block. Both must match the pending descriptor; a matching block
-	 * name or namespace alone never establishes ownership.
+	 * name or namespace alone never establishes ownership. An overwrite may also
+	 * reuse a companion from a prior request when its active entrypoint exactly
+	 * matches the pending deterministic scaffold and no foreign owner is known.
 	 */
-	private static function current_companion_owns_registered_block( string $block_name, array $descriptor ): bool {
+	private static function current_companion_owns_registered_block( string $block_name, array $descriptor, bool $overwrite ): bool {
 		$plugin_file = isset( $descriptor['plugin_file'] ) && is_string( $descriptor['plugin_file'] ) ? $descriptor['plugin_file'] : '';
 		if ( '' === $plugin_file || ! function_exists( 'get_option' ) || (string) get_option( self::ACTIVE_COMPANION_OPTION, '' ) !== $plugin_file ) {
 			return false;
@@ -374,12 +384,28 @@ class Static_Site_Importer_Plugin_Materializer {
 		}
 
 		$owners = $GLOBALS['static_site_importer_companion_block_owners'] ?? array();
-		$owner  = is_array( $owners ) && isset( $owners[ $block_name ] ) && is_array( $owners[ $block_name ] ) ? $owners[ $block_name ] : array();
+		$owner  = is_array( $owners ) && isset( $owners[ $block_name ] ) && is_array( $owners[ $block_name ] ) ? $owners[ $block_name ] : null;
 		$base   = ! empty( $descriptor['mu_plugin'] ) ? ( defined( 'WPMU_PLUGIN_DIR' ) ? (string) WPMU_PLUGIN_DIR : '' ) : ( defined( 'WP_PLUGIN_DIR' ) ? (string) WP_PLUGIN_DIR : '' );
 		$path   = '' === $base ? '' : rtrim( str_replace( '\\', '/', $base ), '/' ) . '/' . $plugin_file;
 
-		return (string) ( $owner['plugin_file'] ?? '' ) === $plugin_file
-			&& str_replace( '\\', '/', (string) ( $owner['plugin_path'] ?? '' ) ) === $path;
+		if ( is_array( $owner ) ) {
+			return (string) ( $owner['plugin_file'] ?? '' ) === $plugin_file
+				&& str_replace( '\\', '/', (string) ( $owner['plugin_path'] ?? '' ) ) === $path;
+		}
+
+		if ( ! $overwrite || '' === $path || ! is_readable( $path ) ) {
+			return false;
+		}
+
+		$files         = isset( $descriptor['files'] ) && is_array( $descriptor['files'] ) ? $descriptor['files'] : array();
+		$expected_main = isset( $files[ $plugin_file ] ) && is_string( $files[ $plugin_file ] ) ? $files[ $plugin_file ] : '';
+		if ( '' === $expected_main ) {
+			return false;
+		}
+
+		// A byte-identical entrypoint proves this is the prior SSI scaffold for the
+		// same destination and payload, rather than a coincidental block namespace.
+		return hash_equals( $expected_main, (string) file_get_contents( $path ) );
 	}
 
 	/**

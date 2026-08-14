@@ -130,6 +130,16 @@ $activation_throw_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_o
 $assert( 'activated_pending_fresh_runtime' === ( $activation_throw_report['status'] ?? '' ) && true === ( $activation_throw_report['active'] ?? false ) && in_array( 'reconciled_activated', $activation_throw_report['actions'] ?? array(), true ), 'thrown-activation-side-effect-reconciled' );
 
 $GLOBALS['ssi_plugin_active'] = false;
+$GLOBALS['ssi_activation_outcome'] = 'success';
+$preparation_pending_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
+	'late-plugin',
+	'late-plugin/late-plugin.php',
+	static fn (): bool => false,
+	static fn () => new WP_Error( 'late_plugin_init_pending', 'Initialization requires a fresh request.' )
+);
+$assert( 'activated_pending_fresh_runtime' === ( $preparation_pending_report['status'] ?? '' ) && true === ( $preparation_pending_report['active'] ?? false ) && in_array( 'activated', $preparation_pending_report['actions'] ?? array(), true ), 'activation-preparation-pending-fresh-runtime' );
+
+$GLOBALS['ssi_plugin_active'] = false;
 $GLOBALS['ssi_activation_outcome'] = 'throw_without_state_change';
 $activation_throw_failure = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
 	'late-plugin',

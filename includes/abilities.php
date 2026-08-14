@@ -486,6 +486,9 @@ if ( ! function_exists( 'static_site_importer_ability_import' ) ) {
 		);
 
 		$args = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
+		if ( '' !== $args['runtime_lifecycle_phase'] ) {
+			$args['runtime_lifecycle_invocation_id'] = wp_generate_uuid4();
+		}
 		if ( isset( $GLOBALS['_static_site_importer_cli_report_destination'] ) ) {
 			$args['report'] = (string) $GLOBALS['_static_site_importer_cli_report_destination'];
 		}

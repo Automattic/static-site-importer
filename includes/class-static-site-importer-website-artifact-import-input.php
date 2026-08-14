@@ -30,6 +30,11 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		'allow_missing_woocommerce'            => array( 'type' => 'boolean' ),
 		'allow_missing_jetpack'                => array( 'type' => 'boolean' ),
 		'materialize_dependencies'             => array( 'type' => 'boolean' ),
+		'runtime_lifecycle_phase'               => array(
+			'type' => 'string',
+			'enum' => array( 'prepare', 'resume' ),
+		),
+		'runtime_lifecycle_request_id'          => array( 'type' => 'string' ),
 		'require_proven_dynamic_client_assets' => array( 'type' => 'boolean' ),
 		'seed_entities'                        => array( 'type' => 'boolean' ),
 		'products_manifest'                    => array( 'type' => 'object' ),
@@ -72,6 +77,8 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 				'allow_missing_woocommerce'            => false,
 				'allow_missing_jetpack'                => false,
 				'materialize_dependencies'             => true,
+				'runtime_lifecycle_phase'               => '',
+				'runtime_lifecycle_request_id'          => '',
 				'require_proven_dynamic_client_assets' => true,
 				'seed_entities'                        => false,
 				'products_manifest'                    => array(),
@@ -95,7 +102,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 			}
 		}
 
-		foreach ( array( 'slug', 'name', 'site_title', 'stale_page_action', 'asset_materialization_policy', 'client_script_policy' ) as $field ) {
+		foreach ( array( 'slug', 'name', 'site_title', 'stale_page_action', 'runtime_lifecycle_phase', 'runtime_lifecycle_request_id', 'asset_materialization_policy', 'client_script_policy' ) as $field ) {
 			$values[ $field ] = is_scalar( $values[ $field ] ) ? (string) $values[ $field ] : '';
 		}
 		foreach ( array( 'activate', 'overwrite', 'disable_smilies', 'fail_on_quality', 'allow_missing_woocommerce', 'allow_missing_jetpack', 'materialize_dependencies', 'require_proven_dynamic_client_assets', 'seed_entities', 'write_theme_report_artifacts', 'client_script_isolated' ) as $field ) {

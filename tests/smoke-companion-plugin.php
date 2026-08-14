@@ -443,6 +443,13 @@ $assert( isset( $GLOBALS['static_site_importer_companion_block_owners']['example
 $written_main = file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) ? (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) : '';
 $assert( str_contains( $written_main, 'register_block_type' ), 'written-main-file-registers-blocks' );
 
+// A second overwrite import starts in a fresh request with the first import's
+// generated block still registered but without its request-local owner record.
+$GLOBALS['static_site_importer_companion_block_owners'] = array();
+$overwrite_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload, static fn (): bool => true, true );
+$assert( 'refreshed' === ( $overwrite_report['status'] ?? '' ), 'same-companion-overwrite-reuses-prior-registered-block' );
+$assert( in_array( 'refreshed', $overwrite_report['actions'] ?? array(), true ), 'same-companion-overwrite-records-refresh-action' );
+
 // A foreign registration that wins before generated plugin init must never be
 // marked as companion-owned, so a later materialization still fails closed.
 WP_Block_Type_Registry::$registered[] = 'example/custom-hero';

@@ -233,7 +233,7 @@ class Static_Site_Importer_Theme_Generator {
 				);
 			} else {
 				$dependency                 = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $companion_payload );
-				$companion_materialization = Static_Site_Importer_Entity_Materializer_Registry::materialize_companion_dependency( $dependency );
+				$companion_materialization = Static_Site_Importer_Entity_Materializer_Registry::materialize_companion_dependency( $dependency, ! empty( $args['overwrite'] ) );
 				if ( 'failed' === ( $companion_materialization['status'] ?? '' ) ) {
 					$error = $companion_materialization['error'] ?? array();
 					return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_companion_plugin_materialization_failed' ), (string) ( $error['message'] ?? 'Companion-plugin materialization failed.' ), $companion_materialization );
@@ -1031,7 +1031,7 @@ class Static_Site_Importer_Theme_Generator {
 					)
 				);
 			}
-			$reports[ $id ] = ! empty( $args['materialize_dependencies'] ) ? Static_Site_Importer_Entity_Materializer_Registry::materialize_plugin_dependencies( $adapter ) : array( 'status' => 'available' );
+			$reports[ $id ] = ! empty( $args['materialize_dependencies'] ) ? Static_Site_Importer_Entity_Materializer_Registry::materialize_plugin_dependencies( $adapter, ! empty( $args['overwrite'] ) ) : array( 'status' => 'available' );
 			foreach ( $reports[ $id ] as $plugin_report ) {
 				if ( is_array( $plugin_report ) && 'failed' === ( $plugin_report['status'] ?? '' ) ) {
 					return new WP_Error(

@@ -7,6 +7,7 @@ $GLOBALS['ssi_can'] = array( 'edit_posts' => true, 'switch_themes' => false );
 $GLOBALS['ssi_runtime_sources'] = array();
 function __( $value ) { return $value; }
 function wp_json_encode( $value ) { return json_encode( $value ); }
+function wp_generate_uuid4() { return '00000000-0000-4000-8000-000000000001'; }
 function do_action() {}
 function doing_action() { return false; }
 function did_action() { return 0; }
@@ -37,8 +38,9 @@ function static_site_importer_source_runtime( $source ) {
 class Static_Site_Importer_Theme_Generator {
 	public static $compiled = 0;
 	public static $applied = 0;
+	public static $last_args = array();
 	public static function compile_website_artifact( $artifact, $args ) { ++self::$compiled; return array( 'artifact' => $artifact, 'args' => $args, 'compiled' => array(), 'plan' => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2', 'quality' => array( 'pass' => true ), 'diagnostics' => array( array( 'code' => 'planned' ) ) ), 'gutenberg_gaps' => array(), 'companion_payload' => null, 'materialization_plan' => array() ); }
-	public static function import_website_artifact( $artifact, $args ) { ++self::$applied; return array( 'quality' => array( 'pass' => true ), 'import_report_summary' => array( 'status' => 'completed' ) ); }
+	public static function import_website_artifact( $artifact, $args ) { ++self::$applied; self::$last_args = $args; return array( 'quality' => array( 'pass' => true ), 'import_report_summary' => array( 'status' => 'completed' ) ); }
 }
 class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	public static $plans = array();
@@ -76,8 +78,10 @@ $url = static_site_importer_ability_import( array( 'operation' => 'plan', 'sourc
 if ( empty( $url['success'] ) || 'blocks-engine/wordpress-site-plan/v2' !== ( $url['plan']['schema'] ?? '' ) ) { throw new RuntimeException( 'URL sources must produce a canonical plan' ); }
 $apply = static_site_importer_ability_import( array( 'source' => array( 'type' => 'files', 'entrypoint' => 'website/index.html', 'files' => $files ) ) );
 if ( empty( $apply['success'] ) || 1 !== Static_Site_Importer_Theme_Generator::$applied ) { throw new RuntimeException( 'apply must delegate to the canonical materializer path' ); }
+$resumed = static_site_importer_ability_import( array( 'runtime_lifecycle_phase' => 'resume', 'runtime_lifecycle_request_id' => 'prepared-request', 'source' => array( 'type' => 'files', 'entrypoint' => 'website/index.html', 'files' => $files ) ) );
+if ( empty( $resumed['success'] ) || 'resume' !== ( Static_Site_Importer_Theme_Generator::$last_args['runtime_lifecycle_phase'] ?? '' ) || 'prepared-request' !== ( Static_Site_Importer_Theme_Generator::$last_args['runtime_lifecycle_request_id'] ?? '' ) || '00000000-0000-4000-8000-000000000001' !== ( Static_Site_Importer_Theme_Generator::$last_args['runtime_lifecycle_invocation_id'] ?? '' ) ) { throw new RuntimeException( 'canonical imports must preserve the lifecycle handoff while assigning a server-owned invocation identity' ); }
 $approved = array( 'schema' => 'blocks-engine/wordpress-site-plan/v2', 'pages' => array() );
 $approved_apply = static_site_importer_ability_import( array( 'operation' => 'apply', 'plan' => $approved, 'slug' => 'approved-plan' ) );
-if ( empty( $approved_apply['success'] ) || $approved !== ( Static_Site_Importer_WordPress_Site_Plan_Materializer::$plans[0]['plan'] ?? null ) || 1 !== Static_Site_Importer_Theme_Generator::$applied ) { throw new RuntimeException( 'approved plan apply must delegate the exact plan without recompiling' ); }
+if ( empty( $approved_apply['success'] ) || $approved !== ( Static_Site_Importer_WordPress_Site_Plan_Materializer::$plans[0]['plan'] ?? null ) || 2 !== Static_Site_Importer_Theme_Generator::$applied ) { throw new RuntimeException( 'approved plan apply must delegate the exact plan without recompiling' ); }
 if ( ! static_site_importer_ability_import_permission_callback( array( 'operation' => 'plan' ) ) || static_site_importer_ability_import_permission_callback( array( 'operation' => 'apply' ) ) ) { throw new RuntimeException( 'plan and apply must use distinct capabilities' ); }
 echo "Canonical import ability smoke passed.\n";
