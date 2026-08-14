@@ -856,7 +856,7 @@ class Static_Site_Importer_Form_Seeder {
 
 	/** Serialize source context as editable core blocks beside the provider form. */
 	private static function context_block_markup( array $form ): string {
-		$context = isset( $form['form']['context_blocks'] ) && is_array( $form['form']['context_blocks'] ) ? $form['form']['context_blocks'] : array();
+		$context = isset( $form['form']['context_before'] ) && is_array( $form['form']['context_before'] ) ? $form['form']['context_before'] : array();
 		$markup  = '';
 		foreach ( $context as $block ) {
 			if ( ! is_array( $block ) || ! is_string( $block['text'] ?? null ) || '' === trim( $block['text'] ) ) {

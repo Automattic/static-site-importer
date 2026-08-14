@@ -632,7 +632,7 @@ namespace {
 
 	// Complete fallback grafts retain authored context and presentation, rather than
 	// rebuilding a form from only its flat control list.
-	$cara_form_html = '<form class="contact-form"><h2>Contact Me</h2><label class="required-note"><span>*</span> Indicates required field</label><div class="name-row"><div class="first"><input aria-required="true" placeholder="First" type="text" name="first"><label>First</label></div><div class="last"><input aria-required="true" placeholder="Last" type="text" name="last"><label>Last</label></div></div><textarea aria-required="true" name="message" style="height:200px"></textarea><input type="submit" value="Submit"><a class="wsite-button"><span class="wsite-button-inner">Submit</span></a></form>';
+	$cara_form_html = '<form class="contact-form"><h2>Contact Me</h2><label class="required-note"><span>*</span> Indicates required field</label><div class="name-row"><div class="first"><input aria-required="true" placeholder="First" type="text" name="first"><label>First</label></div><div class="last"><input aria-required="true" placeholder="Last" type="text" name="last"><label>Last</label></div></div><textarea aria-required="true" name="message" style="height:200px"></textarea><input type="submit" value="Submit" style="position:absolute;left:-9999px"><a class="wsite-button"><span class="wsite-button-inner">Submit</span></a></form>';
 	$cara_report    = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/contact.html' );
 	$cara_report['diagnostics'][] = array(
 		'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_form_fallback', 'loss_class' => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
@@ -662,6 +662,46 @@ namespace {
 	$assert( 2 === substr_count( $cara_grafted, '"width":50' ) && str_contains( $cara_grafted, '"required":true' ), 'graft-preserves-compound-name-widths-and-aria-required-semantics' );
 	$assert( str_contains( $cara_grafted, '"minHeight":"200px"' ), 'graft-preserves-textarea-height' );
 	$assert( str_contains( $cara_grafted, 'wsite-button') && str_contains( $cara_grafted, '>Submit</button>' ), 'graft-preserves-visible-submit-presentation' );
+
+	// Internal full-source payloads are consumed before the public diagnostic preview
+	// and removed before the report is returned. Context order follows source order.
+	$long_form_html = '<form class="long-form">' . str_repeat( '<span>padding</span>', 25 ) . '<h2>First context</h2><label class="required-note">Required note</label><h3>Second context</h3><input name="email" type="email"><button class="native-submit" type="submit">Send</button></form>';
+	$long_report    = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/long.html' );
+	$long_report['diagnostics'][] = array(
+		'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_form_fallback', 'loss_class' => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+		'source_path' => 'website/long.html', 'selector' => 'form.long-form', 'tag' => 'form', 'form_source_html' => $long_form_html, 'source_html_preview' => substr( $long_form_html, 0, 300 ),
+		'form' => array( 'class' => 'long-form' ), 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ),
+	);
+	$long_contents = array( 'website/long.html' => $core_html_block( $long_form_html ) );
+	Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $long_report, array(), $long_contents );
+	$long_grafted = (string) $long_contents['website/long.html'];
+	$assert( strlen( $long_form_html ) > 300 && false === (bool) str_contains( substr( $long_form_html, 0, 300 ), 'First context' ) && str_contains( $long_grafted, 'First context' ), 'graft-uses-full-internal-source-not-public-preview' );
+	$assert( false === isset( $long_report['diagnostics'][0]['form_source_html'] ), 'graft-removes-internal-source-payload-from-public-diagnostic' );
+	$assert( strpos( $long_grafted, 'First context' ) < strpos( $long_grafted, 'Required note' ) && strpos( $long_grafted, 'Required note' ) < strpos( $long_grafted, 'Second context' ), 'graft-preserves-ordered-context-before-provider-form' );
+
+	$adversarial_html = '<form class="adversarial"><a class="wsite-button cancel" href="/">Cancel</a><input name="email" type="email"><button class="native-submit" type="submit">Send</button><a class="wsite-button navigation" href="/next">Continue</a></form>';
+	$adversarial_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/adversarial.html' );
+	$adversarial_report['diagnostics'][] = array(
+		'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_form_fallback', 'loss_class' => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+		'source_path' => 'website/adversarial.html', 'selector' => 'form.adversarial', 'tag' => 'form', 'form_source_html' => $adversarial_html,
+		'form' => array( 'class' => 'adversarial' ), 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ),
+	);
+	$adversarial_contents = array( 'website/adversarial.html' => $core_html_block( $adversarial_html ) );
+	Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $adversarial_report, array(), $adversarial_contents );
+	$adversarial_grafted = (string) $adversarial_contents['website/adversarial.html'];
+	$assert( str_contains( $adversarial_grafted, 'native-submit' ) && ! str_contains( $adversarial_grafted, 'wsite-button' ) && str_contains( $adversarial_grafted, '>Send</button>' ), 'graft-ignores-non-submit-cancel-and-navigation-presentation' );
+
+	$conflict_html = '<form class="conflict"><input name="email" type="email"><input type="submit" value="Send" style="position:absolute;left:-9999px"><a class="wsite-button">Cancel</a></form>';
+	$conflict_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/conflict.html' );
+	$conflict_report['diagnostics'][] = array(
+		'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_form_fallback', 'loss_class' => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+		'source_path' => 'website/conflict.html', 'selector' => 'form.conflict', 'tag' => 'form', 'form_source_html' => $conflict_html,
+		'form' => array( 'class' => 'conflict' ), 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ), array( 'tag' => 'input', 'type' => 'submit', 'value' => 'Send' ) ),
+	);
+	$conflict_contents = array( 'website/conflict.html' => $core_html_block( $conflict_html ) );
+	Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $conflict_report, array(), $conflict_contents );
+	$conflict_grafted = (string) $conflict_contents['website/conflict.html'];
+	$assert( str_contains( $conflict_grafted, '>Send</button>' ) && ! str_contains( $conflict_grafted, 'wsite-button' ) && ! str_contains( $conflict_grafted, '>Cancel</button>' ), 'graft-rejects-conflicting-visible-submit-presentation' );
 
 	// A source fallback delegates to its generated-document finding instead of
 	// reporting a duplicate unanchorable graft after URL/class normalization.
@@ -706,6 +746,7 @@ namespace {
 			'tag'             => 'form',
 			'form'            => $transformer_fallback['form'] ?? array(),
 			'controls'        => $transformer_fallback['controls'] ?? array(),
+			'form_source_html' => $transformer_fallback['html'] ?? '',
 			'readable_blocks' => $transformer_fallback['readable_blocks'] ?? array(),
 		);
 	};
@@ -760,6 +801,7 @@ namespace {
 		$assert( str_contains( $multi_grafted, 'wp:jetpack/field-text' ), 'graft-multi-form-b-field-text' );
 		$assert( ! str_contains( $multi_grafted, 'Send A</a>' ), 'graft-multi-drops-form-a-fallback' );
 		$assert( str_contains( $multi_grafted, 'Contact A' ) && str_contains( $multi_grafted, 'Contact B' ), 'graft-multi-preserves-both-sections' );
+		$assert( 2 === count( $multi_report['diagnostics'] ) && ! isset( $multi_report['diagnostics'][0]['form_source_html'] ) && ! isset( $multi_report['diagnostics'][1]['form_source_html'] ), 'graft-multi-consumes-dedicated-source-payloads-without-public-duplication' );
 	}
 
 	// --- Graft leaves an unanchorable finding's fallback in place --------------

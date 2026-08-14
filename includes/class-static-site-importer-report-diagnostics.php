@@ -246,6 +246,10 @@ class Static_Site_Importer_Report_Diagnostics {
 		if ( isset( $context['path'] ) && is_scalar( $context['path'] ) ) {
 			$entry['block_path'] = (string) $context['path'];
 		}
+		if ( 'form' === strtolower( (string) $entry['tag_name'] ) ) {
+			// Transient materialization input: removed before public report output.
+			$entry['form_source_html'] = $element_html;
+		}
 
 		return $entry;
 	}
@@ -1159,16 +1163,18 @@ class Static_Site_Importer_Report_Diagnostics {
 		$manifest_forms = array();
 		foreach ( $indexes as $index ) {
 			$diagnostic = $report['diagnostics'][ $index ];
+			$source_html = self::take_form_source_html( $diagnostic, $page_contents );
+			unset( $report['diagnostics'][ $index ]['form_source_html'] );
 			$controls   = isset( $diagnostic['controls'] ) && is_array( $diagnostic['controls'] ) ? $diagnostic['controls'] : array();
 			$form       = isset( $diagnostic['form'] ) && is_array( $diagnostic['form'] ) ? $diagnostic['form'] : array();
 			if ( empty( $controls ) && self::is_generated_core_html_form_diagnostic( $diagnostic ) ) {
-				$extracted                                   = self::extract_form_manifest_from_diagnostic( $diagnostic );
+				$extracted                                   = self::form_manifest_from_html( $source_html );
 				$controls                                    = $extracted['controls'];
 				$form                                        = $extracted['form'];
 				$report['diagnostics'][ $index ]['controls'] = $controls;
 				$report['diagnostics'][ $index ]['form']     = $form;
 			}
-			$form = self::preserved_form_presentation( $diagnostic, $form, $controls );
+			$form = self::preserved_form_presentation( $source_html, $form, $controls );
 			$manifest_forms[] = array(
 				'selector'    => isset( $diagnostic['selector'] ) && is_scalar( $diagnostic['selector'] ) ? (string) $diagnostic['selector'] : '',
 				'source_path' => isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : ( isset( $diagnostic['source'] ) && is_scalar( $diagnostic['source'] ) ? (string) $diagnostic['source'] : '' ),
@@ -1268,62 +1274,121 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * replaced, so retain headings, standalone notes, and a visible submit treatment
 	 * before the provider block is serialized.
 	 *
-	 * @param array<string,mixed> $diagnostic Form fallback finding.
+	 * @param string              $html       Complete internal fallback HTML.
 	 * @param array<string,mixed> $form       Extracted form metadata.
 	 * @param array<int,array<string,mixed>> $controls Extracted controls, enriched in place.
 	 * @return array<string,mixed>
 	 */
-	private static function preserved_form_presentation( array $diagnostic, array $form, array &$controls ): array {
-		$html = isset( $diagnostic['html'] ) && is_string( $diagnostic['html'] ) ? $diagnostic['html'] : ( isset( $diagnostic['source_html_preview'] ) && is_string( $diagnostic['source_html_preview'] ) ? $diagnostic['source_html_preview'] : '' );
+	private static function preserved_form_presentation( string $html, array $form, array &$controls ): array {
 		if ( '' === $html ) {
 			return $form;
 		}
 
-		$context = array();
-		if ( preg_match_all( '/<h([1-6])\b[^>]*>(.*?)<\/h\1>/is', $html, $headings, PREG_SET_ORDER ) ) {
-			foreach ( array_slice( $headings, 0, 8 ) as $heading ) {
-				$text = self::form_presentation_text( $heading[2] );
-				if ( '' !== $text ) {
-					$context[] = array( 'type' => 'heading', 'level' => (int) $heading[1], 'text' => $text );
-				}
-			}
+		$doc      = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$doc->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		$form_node = $doc->getElementsByTagName( 'form' )->item( 0 );
+		if ( null === $form_node ) {
+			return $form;
 		}
-		if ( preg_match_all( '/<label\b([^>]*)>(.*?)<\/label>/is', $html, $labels, PREG_SET_ORDER ) ) {
-			foreach ( array_slice( $labels, 0, 16 ) as $label ) {
-				if ( ! preg_match( '/(?:required|note|instruction|help)/i', $label[1] ) || preg_match( '/<(?:input|select|textarea|button)\b/i', $label[2] ) ) {
-					continue;
-				}
-				$text = self::form_presentation_text( $label[2] );
-				if ( '' !== $text && ! in_array( $text, array_column( $context, 'text' ), true ) ) {
-					$context[] = array( 'type' => 'paragraph', 'text' => $text );
-				}
+
+		$context = array();
+		$nodes   = $form_node->getElementsByTagName( '*' );
+		foreach ( $nodes as $node ) {
+			$tag = strtolower( $node->nodeName );
+			if ( in_array( $tag, array( 'input', 'select', 'textarea', 'button' ), true ) ) {
+				break;
+			}
+			$text = self::form_presentation_text( $node->textContent );
+			if ( preg_match( '/^h[1-6]$/', $tag ) && '' !== $text ) {
+				$context[] = array( 'type' => 'heading', 'level' => (int) substr( $tag, 1 ), 'text' => $text );
+			} elseif ( 'label' === $tag && preg_match( '/(?:required|note|instruction|help)/i', $node->getAttribute( 'class' ) ) && '' !== $text ) {
+				$context[] = array( 'type' => 'paragraph', 'text' => $text );
 			}
 		}
 		if ( ! empty( $context ) ) {
-			$form['context_blocks'] = $context;
-		}
-		if ( preg_match_all( '/<textarea\b([^>]*)>/is', $html, $textareas, PREG_SET_ORDER ) ) {
-			$textarea_indexes = array_keys( array_filter( $controls, static fn ( array $control ): bool => 'textarea' === strtolower( (string) ( $control['tag'] ?? '' ) ) ) );
-			foreach ( $textareas as $index => $textarea ) {
-				if ( ! isset( $textarea_indexes[ $index ] ) || ! preg_match( '/\bstyle\s*=\s*(["\'])(.*?)\1/is', $textarea[1], $style ) || ! preg_match( '/(?:^|;)\s*height\s*:\s*([0-9]{1,4}(?:\.[0-9]+)?(?:px|em|rem|vh|vw|%))\s*(?:;|$)/i', $style[2], $height ) ) {
-					continue;
-				}
-				$controls[ $textarea_indexes[ $index ] ]['height'] = $height[1];
-			}
+			$form['context_before'] = $context;
 		}
 
-		if ( preg_match_all( '/<(?:a|button)\b([^>]*)>(.*?)<\/(?:a|button)>/is', $html, $buttons, PREG_SET_ORDER ) ) {
-			foreach ( $buttons as $button ) {
-				$text    = self::form_presentation_text( $button[2] );
-				$classes = self::form_presentation_classes( $button[1] );
-				if ( '' !== $text && ! empty( $classes ) && preg_grep( '/(?:button|submit)/i', $classes ) ) {
-					$form['submit_presentation'] = array( 'text' => $text, 'classes' => $classes );
-					break;
+		$textarea_index = 0;
+		foreach ( $nodes as $node ) {
+			if ( 'textarea' !== strtolower( $node->nodeName ) ) {
+				continue;
+			}
+			while ( isset( $controls[ $textarea_index ] ) && 'textarea' !== strtolower( (string) ( $controls[ $textarea_index ]['tag'] ?? '' ) ) ) {
+				++$textarea_index;
+			}
+			if ( isset( $controls[ $textarea_index ] ) && preg_match( '/(?:^|;)\s*height\s*:\s*([0-9]{1,4}(?:\.[0-9]+)?(?:px|em|rem|vh|vw|%))\s*(?:;|$)/i', $node->getAttribute( 'style' ), $height ) ) {
+				$controls[ $textarea_index ]['height'] = $height[1];
+			}
+			++$textarea_index;
+		}
+
+		foreach ( $nodes as $node ) {
+			if ( ! self::is_submit_control_node( $node ) ) {
+				continue;
+			}
+			$presentation = self::submit_presentation_from_node( $node );
+			$visible_node = self::next_element_sibling( $node );
+			if ( self::submit_control_is_visually_hidden( $node ) && $visible_node instanceof DOMElement && in_array( strtolower( $visible_node->nodeName ), array( 'a', 'button' ), true ) ) {
+				$visible = self::submit_presentation_from_node( $visible_node );
+				if ( '' !== (string) ( $visible['text'] ?? '' ) && (string) ( $visible['text'] ?? '' ) === (string) ( $presentation['text'] ?? '' ) ) {
+					$presentation = $visible;
 				}
 			}
+			if ( '' !== (string) ( $presentation['text'] ?? '' ) ) {
+				$form['submit_presentation'] = $presentation;
+			}
+			break;
 		}
 
 		return $form;
+	}
+
+	/** Read and remove the non-public full fallback payload for form materialization. */
+	private static function take_form_source_html( array $diagnostic, array $page_contents ): string {
+		if ( is_string( $diagnostic['form_source_html'] ?? null ) ) {
+			return $diagnostic['form_source_html'];
+		}
+		if ( is_string( $diagnostic['html'] ?? null ) ) {
+			return $diagnostic['html'];
+		}
+		$source_path = self::first_scalar( $diagnostic, array( 'graft_source_path', 'source_path', 'source' ) );
+		foreach ( self::form_fallback_page_content_keys_for_source( $source_path, $page_contents ) as $key ) {
+			foreach ( self::serialized_core_html_blocks( (string) ( $page_contents[ $key ] ?? '' ) ) as $block ) {
+				if ( self::core_html_form_matches_finding( $block['html'], $diagnostic ) ) {
+					return $block['html'];
+				}
+			}
+		}
+		return '';
+	}
+
+	private static function is_submit_control_node( DOMElement $node ): bool {
+		$tag  = strtolower( $node->nodeName );
+		$type = strtolower( trim( $node->getAttribute( 'type' ) ) );
+		return ( 'input' === $tag && in_array( $type, array( 'submit', 'image' ), true ) ) || ( 'button' === $tag && ( '' === $type || 'submit' === $type ) );
+	}
+
+	/** @return array{text:string,classes:array<int,string>} */
+	private static function submit_presentation_from_node( DOMElement $node ): array {
+		$text = 'input' === strtolower( $node->nodeName ) ? trim( $node->getAttribute( 'value' ) ) : self::form_presentation_text( $node->textContent );
+		return array( 'text' => $text, 'classes' => self::form_presentation_classes( 'class="' . $node->getAttribute( 'class' ) . '"' ) );
+	}
+
+	private static function submit_control_is_visually_hidden( DOMElement $node ): bool {
+		return (bool) preg_match( '/(?:display\s*:\s*none|visibility\s*:\s*hidden|left\s*:\s*-\s*[0-9]+px)/i', $node->getAttribute( 'style' ) );
+	}
+
+	private static function next_element_sibling( DOMElement $node ): ?DOMElement {
+		for ( $sibling = $node->nextSibling; null !== $sibling; $sibling = $sibling->nextSibling ) {
+			if ( $sibling instanceof DOMElement ) {
+				return $sibling;
+			}
+		}
+		return null;
 	}
 
 	/** @return array<int,string> */
@@ -1499,8 +1564,10 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		$controls = array();
-		foreach ( array( 'input', 'textarea', 'select', 'button' ) as $tag_name ) {
-			foreach ( $form_node->getElementsByTagName( $tag_name ) as $control_node ) {
+		foreach ( $form_node->getElementsByTagName( '*' ) as $control_node ) {
+			if ( ! in_array( strtolower( $control_node->tagName ), array( 'input', 'textarea', 'select', 'button' ), true ) ) {
+				continue;
+			}
 				$control = array(
 					'tag'  => strtolower( $control_node->tagName ),
 					'type' => strtolower( trim( $control_node->getAttribute( 'type' ) ) ),
@@ -1530,9 +1597,11 @@ class Static_Site_Importer_Report_Diagnostics {
 				if ( $control_node->hasAttribute( 'required' ) ) {
 					$control['required'] = true;
 				}
+				if ( $control_node->hasAttribute( 'aria-required' ) ) {
+					$control['aria-required'] = $control_node->getAttribute( 'aria-required' );
+				}
 
 				$controls[] = $control;
-			}
 		}
 
 		return array(
