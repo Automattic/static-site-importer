@@ -344,57 +344,9 @@ final class Static_Site_Importer_URL_Batch_Import {
 							$body = isset( $retained['body_ref'] ) && is_string( $retained['body_ref'] ) ? $workspace->read_raw( $retained['body_ref'] ) : null;
 							return is_string( $body ) && hash_equals( (string) ( $retained['sha256'] ?? '' ), hash( 'sha256', $body ) ) ? $body : null;
 						},
-						'_static_site_importer_collection_resource_store' => static function ( string $body ) use ( $workspace ) {
-							$hash  = hash( 'sha256', $body );
-							$ref   = 'collection-finalized/' . $hash . '.bin';
-							$write = $workspace->publish_raw( $ref, $body );
-							return is_wp_error( $write ) ? null : array(
-								'body_ref' => $ref,
-								'sha256'   => $hash,
-								'bytes'    => strlen( $body ),
-							);
-						},
+						'_static_site_importer_collection_resource_store' => static fn ( string $body ) => self::store_collection_payload( $workspace, $body ),
 						'_static_site_importer_collection_should_yield'  => null !== $deadline ? static fn (): bool => self::deadline_reached( $deadline, $clock ) : null,
 						'_static_site_importer_collection_cursor_save'   => static function ( array $cursor ) use ( $workspace, $collection_cursor_name ) {
-							foreach ( $cursor['resources'] ?? array() as $url => $resource ) {
-								if ( ! isset( $resource['body'] ) || ! is_string( $resource['body'] ) ) {
-									continue;
-								}
-								$body = $resource['body'];
-								$hash = hash( 'sha256', $body );
-								$ref  = 'collection-resources/' . $hash . '.bin';
-								$path = $workspace->path( $ref );
-								if ( ! is_string( $path ) || ! is_file( $path ) ) {
-									$write = $workspace->publish_raw( $ref, $body );
-									if ( is_wp_error( $write ) ) {
-										return $write;
-									}
-								}
-								unset( $resource['body'] );
-								$resource['body_ref']        = $ref;
-								$resource['sha256']          = $hash;
-								$cursor['resources'][ $url ] = $resource;
-							}
-							foreach ( $cursor['finalization']['files'] ?? array() as $index => $file ) {
-								if ( ! isset( $file['body'] ) || ! is_string( $file['body'] ) ) {
-									continue;
-								}
-								$body = $file['body'];
-								$hash = hash( 'sha256', $body );
-								$ref  = 'collection-finalized/' . $hash . '.bin';
-								$path = $workspace->path( $ref );
-								if ( ! is_string( $path ) || ! is_file( $path ) ) {
-									$write = $workspace->publish_raw( $ref, $body );
-									if ( is_wp_error( $write ) ) {
-										return $write;
-									}
-								}
-								unset( $file['body'] );
-								$file['body_ref'] = $ref;
-								$file['sha256']   = $hash;
-								$file['bytes']    = strlen( $body );
-								$cursor['finalization']['files'][ $index ] = $file;
-							}
 							return $workspace->publish_json( $collection_cursor_name, $cursor );
 						},
 					)
@@ -706,6 +658,30 @@ final class Static_Site_Importer_URL_Batch_Import {
 				return $bytes;
 			}
 		};
+	}
+
+	/** @return array{body_ref:string,sha256:string,bytes:int}|WP_Error */
+	private static function store_collection_payload( Static_Site_Importer_Artifact_Run_Workspace $workspace, string $body ) {
+		$hash = hash( 'sha256', $body );
+		$ref  = 'collection-payloads/' . $hash . '.bin';
+		$path = $workspace->path( $ref );
+		if ( is_string( $path ) && is_file( $path ) ) {
+			$existing = $workspace->read_raw( $ref );
+			if ( ! is_string( $existing ) || ! hash_equals( $hash, hash( 'sha256', $existing ) ) ) {
+				return new WP_Error( 'static_site_importer_collection_payload_corrupt', 'A retained URL collection payload does not match its content-addressed path.', array( 'ref' => $ref ) );
+			}
+		} else {
+			$write = $workspace->publish_raw( $ref, $body );
+			if ( is_wp_error( $write ) ) {
+				return $write;
+			}
+		}
+
+		return array(
+			'body_ref' => $ref,
+			'sha256'   => $hash,
+			'bytes'    => strlen( $body ),
+		);
 	}
 
 	/**
