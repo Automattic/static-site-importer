@@ -1576,6 +1576,33 @@ test('materialization sidecars retain bounded evidence after oversized import st
   }
 });
 
+test('materialization sidecars survive WP Codebox typed artifact transport', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-typed-artifact-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'typed-sidecar-run' });
+  const directory = path.join(outputDirectory, 'simple-site');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: 'simple-site' }));
+  const sidecar = writeMaterializationSidecar({ directory, fixtureId: 'simple-site', runId: matrix.id, receipt: boundedSidecarReceipt() });
+  rmSync(path.join(directory, 'materialization-receipt--primary.json'));
+
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: {
+      declaredArtifacts: [{
+        schema: 'wp-codebox/recipe-declared-artifact-result/v1',
+        status: 'collected',
+        path: '/wordpress/wp-content/uploads/materialization-receipt--primary.json',
+        parsedJson: sidecar,
+      }],
+    },
+  });
+
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, 'verified');
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_receipt.status, 'completed');
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_receipt.operation_count, 99);
+});
+
 test('failure sidecars retain the bounded import result and front-page option observation', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-failed-import-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'failed-import-evidence' });
@@ -1779,6 +1806,7 @@ function writeMaterializationSidecar({ directory, fixtureId, runId, receipt, art
   }
   sidecar.content_sha256 = createHash('sha256').update(JSON.stringify(sidecar)).digest('hex');
   writeFileSync(path.join(directory, fileName || `materialization-receipt--${attemptId}.json`), JSON.stringify(sidecar));
+  return sidecar;
 }
 
 test('fixture attribution assigns a transform loss only with complete transformer lineage', () => {
