@@ -155,6 +155,26 @@ test('editor presentation intake compares inspected iframe identities with front
   });
 });
 
+test('editor presentation intake uses bounded site-plan hashes when the import report is an artifact ref', () => {
+  const identity = 'd'.repeat(64);
+  assert.deepEqual(collectEditorPresentation({
+    editor_open: { summary: { editorPresentation: { schema: 'wp-codebox/editor-presentation/v1', iframeCount: 1, generatedPresentationIdentities: [] } } },
+    import_report: { artifact_ref: 'import-report.json' },
+  }, {
+    wordpress_site_plan: { assets: [{ kind: 'css', payload_sha256: identity }] },
+  }), {
+    schema: 'static-site-importer/editor-presentation-evidence/v1',
+    provider_schema: 'wp-codebox/editor-presentation/v1',
+    iframe_count: 1,
+    expected_identity_count: 1,
+    observed_identity_count: 0,
+    expected_identities: [identity],
+    observed_identities: [],
+    missing_identities: [identity],
+    coverage_complete: false,
+  });
+});
+
 test('matrix evidence requires and summarizes the canonical materialization receipt', () => {
   const evidence = collectMatrixEvidence({
     import_report: {
