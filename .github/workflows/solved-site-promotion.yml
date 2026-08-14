@@ -34,7 +34,7 @@ on:
       wordpress-version:
         description: Exact WordPress version used by WP Codebox.
         required: false
-        default: '7.0.2'
+        default: '7.0.4'
         type: string
 
 permissions:

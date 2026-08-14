@@ -37,7 +37,7 @@ function fixture() {
     generated_from: { result_schema: matrix.schema, fixture_count: matrix.fixtures.length },
     fixture_decisions: [{ fixture_id: 'solved', fixture_corpus: 'solved', acceptance_status: 'solved_candidate' }],
   };
-  const runtime = { nodeVersion: '20.19.4', phpVersion: '8.1.29', wordpressVersion: '7.0.2', homeboyVersion: 'v0.298.1', homeboySha256: '3'.repeat(64), homeboyExtensionsRef: '4'.repeat(40), wpCodeboxVersion: 'v0.20.0', wpCodeboxSha256: '5'.repeat(64), wpCodeboxSha: WP_CODEBOX_SHA, staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA };
+  const runtime = { nodeVersion: '20.19.4', phpVersion: '8.1.29', wordpressVersion: '7.0.4', homeboyVersion: 'v0.298.1', homeboySha256: '3'.repeat(64), homeboyExtensionsRef: '4'.repeat(40), wpCodeboxVersion: 'v0.20.0', wpCodeboxSha256: '5'.repeat(64), wpCodeboxSha: WP_CODEBOX_SHA, staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA };
   const paths = { matrix: path.join(root, 'matrix.json'), registry: path.join(root, 'registry.json'), runtime: path.join(root, 'runtime.json') };
   write(paths.matrix, matrix); write(paths.registry, registry); write(paths.runtime, runtime);
   return { root, matrix, registry, runtime, paths, options: { matrixResult: paths.matrix, registry: paths.registry, runtimeInputs: paths.runtime, artifactRoot: root, staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA, wpCodeboxSha: WP_CODEBOX_SHA, fixtureTreeSha: '6'.repeat(40), solvedFixtureCount: 1, solvedFixtureIds: 'solved', runUrl: 'https://github.com/Automattic/static-site-importer/actions/runs/123', artifactUrl: 'https://github.com/Automattic/static-site-importer/actions/runs/123#artifacts', output: path.join(root, 'receipt.json'), manifestOutput: path.join(root, 'manifest.json') } };
@@ -72,7 +72,7 @@ test('pins an immutable WP Codebox candidate package and checksum together', () 
   assert.match(workflow, /npm pack --pack-destination/);
   assert.match(workflow, /WP_CODEBOX_SHA256=\$\(sha256sum/);
   assert.match(workflow, /wpCodeboxSha:process\.env\.WP_CODEBOX_SHA/);
-  assert.match(caller, /blocks-engine-sha: c354d8aba1ca6a0233aea0cf40311c3b30b2767e/);
+  assert.match(caller, /blocks-engine-sha: 7858943a9913175993cc75870551c2e1926b4fb0/);
   assert.match(caller, /wp-codebox-sha: 0b33cbc388cfee6884079125fc06dd132d979cbc/);
 });
 
