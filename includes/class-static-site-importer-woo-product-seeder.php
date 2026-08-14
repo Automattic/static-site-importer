@@ -65,11 +65,11 @@ class Static_Site_Importer_Woo_Product_Seeder {
 
 		$report['status'] = 'completed';
 
-		$report['rollback'] = array();
+		$report['rollback'] = array( 'created_terms' => array() );
 		foreach ( $products as $product ) {
 			$existing = get_page_by_path( sanitize_title( self::string_value( $product, 'slug' ) ), OBJECT, 'product' );
 			if ( $existing instanceof WP_Post ) { $report['rollback'][ (int) $existing->ID ] = array( 'post' => get_post( $existing->ID, ARRAY_A ), 'meta' => get_post_meta( $existing->ID ), 'terms' => wp_get_object_terms( $existing->ID, 'product_cat', array( 'fields' => 'ids' ) ) ); }
-			$row                  = self::seed_product( $product );
+			$row                  = self::seed_product( $product, $report['rollback']['created_terms'] );
 			$report['products'][] = $row;
 
 			$status = $row['status'] ?? 'error';
@@ -86,7 +86,8 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	/** Restore existing product post/meta/category state or delete products created by this receipt. */
 	public static function rollback( array $report ): array {
 		foreach ( $report['products'] ?? array() as $row ) { $id = (int) ( $row['id'] ?? 0 ); if ( $id <= 0 ) { continue; } $before = $report['rollback'][ $id ] ?? null; if ( ! is_array( $before ) ) { wp_delete_post( $id, true ); continue; } wp_update_post( $before['post'] ); foreach ( get_post_meta( $id ) as $key => $_ ) { delete_post_meta( $id, $key ); } foreach ( $before['meta'] as $key => $values ) { foreach ( $values as $value ) { add_post_meta( $id, $key, $value ); } } wp_set_object_terms( $id, $before['terms'], 'product_cat' ); }
-		return array( 'status' => 'rolled_back' );
+		$failures = array(); foreach ( array_reverse( array_unique( array_map( 'intval', $report['rollback']['created_terms'] ?? array() ) ) ) as $term_id ) { $term = get_term( $term_id, 'product_cat' ); if ( ! $term || (int) $term->count > 0 ) { continue; } $deleted = wp_delete_term( $term_id, 'product_cat' ); if ( is_wp_error( $deleted ) || false === $deleted ) { $failures[] = $term_id; } }
+		return array( 'status' => empty( $failures ) ? 'rolled_back' : 'partial', 'term_cleanup_failures' => $failures );
 	}
 
 	/**
@@ -144,7 +145,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	 * @param array<string, mixed> $manifest_product Validated product manifest row.
 	 * @return array<string, mixed>
 	 */
-	private static function seed_product( array $manifest_product ): array {
+	private static function seed_product( array $manifest_product, array &$created_terms = array() ): array {
 		$slug = sanitize_title( self::string_value( $manifest_product, 'slug' ) );
 		$name = self::string_value( $manifest_product, 'name' );
 
@@ -199,7 +200,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 				);
 			}
 
-			$category_ids = self::ensure_category_ids( self::category_names( $manifest_product ) );
+			$category_ids = self::ensure_category_ids( self::category_names( $manifest_product ), $created_terms );
 			if ( ! empty( $category_ids ) ) {
 				wp_set_object_terms( $product_id, $category_ids, 'product_cat' );
 			}
@@ -295,7 +296,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	 * @param array<int, string> $category_names Category names.
 	 * @return array<int, int>
 	 */
-	private static function ensure_category_ids( array $category_names ): array {
+	private static function ensure_category_ids( array $category_names, array &$created_terms = array() ): array {
 		$term_ids = array();
 		foreach ( $category_names as $category_name ) {
 			$term = term_exists( $category_name, 'product_cat' );
@@ -303,6 +304,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			/** @phpstan-ignore-next-line identical.alwaysFalse */
 			if ( 0 === $term || null === $term ) {
 				$term = wp_insert_term( $category_name, 'product_cat' );
+				if ( is_array( $term ) && isset( $term['term_id'] ) ) { $created_terms[] = (int) $term['term_id']; }
 			}
 
 			if ( is_wp_error( $term ) ) {
