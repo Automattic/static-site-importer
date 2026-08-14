@@ -133,8 +133,7 @@ function verifyFixture(fixture, decision, options, requiredFiles) {
   addRequiredFile(requiredFiles, fixture.editor_canvas?.screenshot, `${id}: editor screenshot`, options.artifactRoot);
   const editorPresentation = fixture.editor_presentation || {};
   assert(['static-site-importer/editor-presentation-evidence/v1', 'static-site-importer/editor-presentation-evidence/v2'].includes(editorPresentation.schema), `${id}: editor presentation evidence is missing.`);
-  assert(editorPresentation.provider_schema === 'wp-codebox/editor-presentation/v1', `${id}: editor presentation must use WP Codebox iframe evidence.`);
-  assert(Number(editorPresentation.iframe_count) > 0, `${id}: editor presentation did not inspect an iframe.`);
+  assert(editorPresentation.provider_schema === 'wp-codebox/editor-presentation/v1', `${id}: editor presentation must use WP Codebox canvas evidence.`);
   assert(Number(editorPresentation.expected_identity_count) > 0, `${id}: editor presentation has no expected generated styles.`);
   assert(editorPresentationEvidenceComplete(editorPresentation, fixture), `${id}: editor presentation stylesheet coverage is incomplete or contradictory.`);
   const visual = fixture.visual_parity_artifacts || {};

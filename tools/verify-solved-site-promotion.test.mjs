@@ -22,7 +22,7 @@ function fixture() {
       block_composition: { block_total: 4, native_block_count: 4, core_html_block_count: 0 },
       editor_validation: { schema: 'wp-codebox/editor-validate-blocks/v1', validation_method: 'wp.blocks.validateBlock', validation_provider: 'wordpress-block-editor', content_source: 'edited-post-content', block_types_registered: 42, result_count: 4, results_complete: true, total_blocks: 4, valid_blocks: 4, invalid_blocks: 0 },
       editor_canvas: { status: 'captured', screenshot: path.join(root, 'editor.png') },
-      editor_presentation: { schema: 'static-site-importer/editor-presentation-evidence/v2', provider_schema: 'wp-codebox/editor-presentation/v1', iframe_count: 1, expected_identity_count: 1, observed_identity_count: 1, expected_identities: ['a'.repeat(64)], observed_identities: ['a'.repeat(64)], missing_identities: [], expected_identities_complete: true, coverage_complete: true },
+      editor_presentation: { schema: 'static-site-importer/editor-presentation-evidence/v2', provider_schema: 'wp-codebox/editor-presentation/v1', canvas_document_type: 'iframe', iframe_count: 1, expected_identity_count: 1, observed_identity_count: 1, expected_identities: ['a'.repeat(64)], observed_identities: ['a'.repeat(64)], missing_identities: [], expected_identities_complete: true, coverage_complete: true },
       visual_parity_artifacts: { metrics: { mismatch_ratio: 0, mismatch_pixels: 0 }, artifacts: Object.fromEntries([
         ['source_screenshot', 'source.png'], ['imported_screenshot', 'candidate.png'], ['diff_screenshot', 'diff.png'], ['visual_diff', 'visual-diff.json'],
       ].map(([slot, file]) => [slot, { status: 'captured', ref: { path: path.join(root, file) } }])) },
@@ -63,17 +63,26 @@ test('accepts complete v1 presentation evidence with complete raw plan provenanc
   assert.equal(verifySolvedSitePromotion(input.options).status, 'accepted');
 });
 
+test('accepts complete parent-document editor presentation evidence', () => {
+  const input = fixture();
+  input.matrix.fixtures[0].editor_presentation.canvas_document_type = 'parent';
+  input.matrix.fixtures[0].editor_presentation.iframe_count = 0;
+  write(input.paths.matrix, input.matrix);
+
+  assert.equal(verifySolvedSitePromotion(input.options).status, 'accepted');
+});
+
 test('pins an immutable WP Codebox candidate package and checksum together', () => {
   const workflow = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion.yml'), 'utf8');
   const caller = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion-pr.yml'), 'utf8');
-  assert.match(workflow, /default: 1eb5bb0460c4321a7613cebe581f1d37fd8e640f/);
+  assert.match(workflow, /default: 6f12c49111344b54ef62b9dbc1abdfe32a26103f/);
   assert.match(workflow, /WP_CODEBOX_VERSION: v0\.20\.0/);
   assert.match(workflow, /WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0\.20\.0\.tgz/);
   assert.match(workflow, /npm pack --pack-destination/);
   assert.match(workflow, /WP_CODEBOX_SHA256=\$\(sha256sum/);
   assert.match(workflow, /wpCodeboxSha:process\.env\.WP_CODEBOX_SHA/);
   assert.match(caller, /blocks-engine-sha: 7858943a9913175993cc75870551c2e1926b4fb0/);
-  assert.match(caller, /wp-codebox-sha: 1eb5bb0460c4321a7613cebe581f1d37fd8e640f/);
+  assert.match(caller, /wp-codebox-sha: 6f12c49111344b54ef62b9dbc1abdfe32a26103f/);
 });
 
 test('resolves uniquely named durable copies of transient runtime evidence', () => {
@@ -111,6 +120,7 @@ for (const [name, mutate, pattern] of [
   ['missing editor presentation', (input) => { delete input.matrix.fixtures[0].editor_presentation; }, /editor presentation evidence/],
   ['incomplete editor stylesheet coverage', (input) => { input.matrix.fixtures[0].editor_presentation.coverage_complete = false; input.matrix.fixtures[0].editor_presentation.missing_identities = ['a'.repeat(64)]; }, /stylesheet coverage/],
   ['contradictory editor presentation identities', (input) => { input.matrix.fixtures[0].editor_presentation.observed_identities = []; input.matrix.fixtures[0].editor_presentation.observed_identity_count = 0; }, /stylesheet coverage/],
+  ['contradictory parent canvas iframe count', (input) => { input.matrix.fixtures[0].editor_presentation.canvas_document_type = 'parent'; }, /stylesheet coverage/],
   ['visual mismatch', (input) => { input.matrix.fixtures[0].visual_parity_artifacts.metrics.mismatch_pixels = 1; }, /visual mismatch/],
   ['fallback block', (input) => { input.matrix.fixtures[0].quality_metrics.core_html_block_count = 1; }, /core_html_block_count/],
   ['non-native conversion', (input) => { input.matrix.fixtures[0].editor_quality.native_conversion_rate = 0.99; }, /native conversion rate/],
