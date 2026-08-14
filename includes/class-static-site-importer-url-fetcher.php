@@ -241,7 +241,7 @@ class Static_Site_Importer_URL_Fetcher {
 					continue;
 				}
 				unset( $pending[ $index ] );
-				$state['handle']    = self::start_transport( $driver, $state['target'], self::request_options( $state['args'] ) );
+				$state['handle']    = self::start_transport( $driver, $state['target'], self::request_options( $state['args'], $deadline, $clock ) );
 				$active[]           = $state;
 				$origins[ $origin ] = ( $origins[ $origin ] ?? 0 ) + 1;
 				$started            = true;
@@ -282,14 +282,25 @@ class Static_Site_Importer_URL_Fetcher {
 		return $ordered;
 	}
 
-	/** @return array{timeout:int,max_bytes:int,has_content_types_arg:bool,content_types:array<int,string>} */
-	private static function request_options( array $args ): array {
+	/** @return array{timeout:float,max_bytes:int,has_content_types_arg:bool,content_types:array<int,string>,deadline:?float,clock:?callable,deadline_limited:bool} */
+	private static function request_options( array $args, ?float $deadline = null, ?callable $clock = null ): array {
 		$has_content_types_arg = isset( $args['content_types'] ) && is_array( $args['content_types'] );
+		$requested_timeout     = max( self::CONNECT_TIMEOUT_FLOOR, (int) ( $args['timeout'] ?? self::DEFAULT_TIMEOUT ) );
+		$timeout               = $requested_timeout;
+		$deadline_limited      = false;
+		if ( null !== $deadline && null !== $clock ) {
+			$remaining        = $deadline - $clock();
+			$deadline_limited = $remaining < $requested_timeout;
+			$timeout          = max( 0.001, min( $timeout, $remaining ) );
+		}
 		return array(
-			'timeout'               => max( self::CONNECT_TIMEOUT_FLOOR, (int) ( $args['timeout'] ?? self::DEFAULT_TIMEOUT ) ),
+			'timeout'               => $timeout,
 			'max_bytes'             => min( self::MAX_RESPONSE_BYTES, max( 1, (int) ( $args['max_bytes'] ?? self::DEFAULT_MAX_BYTES ) ) ),
 			'has_content_types_arg' => $has_content_types_arg,
 			'content_types'         => $has_content_types_arg ? array_values( array_filter( array_map( static fn( $value ): string => strtolower( (string) $value ), $args['content_types'] ) ) ) : self::HTML_CONTENT_TYPES,
+			'deadline'              => $deadline,
+			'clock'                 => $clock,
+			'deadline_limited'      => $deadline_limited,
 		);
 	}
 
@@ -379,13 +390,28 @@ class Static_Site_Importer_URL_Fetcher {
 			$driver['cancel']( $handle, $reason );
 			return;
 		}
+		if ( $handle instanceof Static_Site_Importer_URL_Fetcher_Native_Handle && null !== $handle->multi && null !== $handle->curl ) {
+			curl_multi_remove_handle( $handle->multi, $handle->curl );
+			curl_multi_close( $handle->multi );
+			$handle->curl  = null;
+			$handle->multi = null;
+			return;
+		}
 		if ( is_object( $handle ) && isset( $handle->socket ) && is_resource( $handle->socket ) ) {
 			fclose( $handle->socket ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes a validated public HTTP socket.
 		}
 	}
 
-	/** Start a nonblocking, IP-pinned HTTP/1.1 connection. */
+	/** Start an IP-pinned native request, preferring curl_multi for bounded TLS progress. */
 	private static function native_start( array $target, array $options ): Static_Site_Importer_URL_Fetcher_Native_Handle {
+		if ( function_exists( 'curl_multi_init' ) ) {
+			return self::native_curl_start( $target, $options );
+		}
+		return self::native_stream_start( $target, $options );
+	}
+
+	/** Start the no-curl nonblocking stream fallback. */
+	private static function native_stream_start( array $target, array $options ): Static_Site_Importer_URL_Fetcher_Native_Handle {
 		$ip               = $target['ips'][0];
 		$remote           = sprintf( 'tcp://%s:%d', str_contains( $ip, ':' ) ? '[' . $ip . ']' : $ip, $target['port'] );
 		$context          = self::tls_context( $target['host'] );
@@ -412,6 +438,65 @@ class Static_Site_Importer_URL_Fetcher {
 		return $handle;
 	}
 
+	/** Start a curl request pinned to one already validated IP without changing Host or SNI. */
+	private static function native_curl_start( array $target, array $options ): Static_Site_Importer_URL_Fetcher_Native_Handle {
+		$handle                  = new Static_Site_Importer_URL_Fetcher_Native_Handle();
+		$handle->target          = $target;
+		$handle->options         = $options;
+		$handle->started         = microtime( true );
+		$handle->ip_index        = 0;
+		$handle->multi           = curl_multi_init();
+		$handle->curl            = curl_init();
+		$ip                      = $target['ips'][0];
+		$host                    = $target['host'];
+		$host_header             = $host . ( ( 'https' === $target['scheme'] ? 443 : 80 ) === $target['port'] ? '' : ':' . $target['port'] );
+		$resolved_ip             = str_contains( $ip, ':' ) ? '[' . $ip . ']' : $ip;
+		$timeout_ms              = max( 1, (int) ceil( $options['timeout'] * 1000 ) );
+		$url_host                = str_contains( $host, ':' ) ? '[' . $host . ']' : $host;
+		$url                     = $target['scheme'] . '://' . $url_host . ( ( 'https' === $target['scheme'] ? 443 : 80 ) === $target['port'] ? '' : ':' . $target['port'] ) . $target['path'];
+
+		$curl_options = array(
+			CURLOPT_URL                    => $url,
+			CURLOPT_HTTPGET                => true,
+			CURLOPT_PROXY                  => '',
+			CURLOPT_NOPROXY                => '*',
+			CURLOPT_FOLLOWLOCATION         => false,
+			CURLOPT_MAXREDIRS              => 0,
+			CURLOPT_HTTP_TRANSFER_DECODING => false,
+			CURLOPT_CONNECTTIMEOUT_MS      => $timeout_ms,
+			CURLOPT_TIMEOUT_MS             => $timeout_ms,
+			CURLOPT_SSL_VERIFYPEER         => true,
+			CURLOPT_SSL_VERIFYHOST         => 2,
+			CURLOPT_HTTPHEADER             => array( 'Host: ' . $host_header, 'User-Agent: StaticSiteImporter/1.0', 'Accept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.1', 'Connection: close' ),
+			CURLOPT_HEADERFUNCTION         => static function( $curl, string $data ) use ( $handle ): int {
+				if ( strlen( $handle->response_headers ) + strlen( $data ) > self::HEADER_MAX_BYTES ) {
+					$handle->limit_error = 'headers';
+					return 0;
+				}
+				$handle->response_headers .= $data;
+				return strlen( $data );
+			},
+			CURLOPT_WRITEFUNCTION          => static function( $curl, string $data ) use ( $handle ): int {
+				if ( strlen( $handle->body ) + strlen( $data ) > $handle->options['max_bytes'] ) {
+					$handle->limit_error = 'body';
+					return 0;
+				}
+				$handle->body .= $data;
+				return strlen( $data );
+			},
+		);
+		if ( false === filter_var( $host, FILTER_VALIDATE_IP ) ) {
+			$curl_options[ CURLOPT_RESOLVE ] = array( $host . ':' . $target['port'] . ':' . $resolved_ip );
+		}
+		$ca_bundle    = ABSPATH . WPINC . '/certificates/ca-bundle.crt';
+		if ( is_readable( $ca_bundle ) ) {
+			$curl_options[ CURLOPT_CAINFO ] = $ca_bundle;
+		}
+		curl_setopt_array( $handle->curl, $curl_options );
+		curl_multi_add_handle( $handle->multi, $handle->curl );
+		return $handle;
+	}
+
 	/** Build the verified TLS context used by IP-pinned connections. */
 	private static function tls_context( string $host ) {
 		return stream_context_create( array(
@@ -427,17 +512,21 @@ class Static_Site_Importer_URL_Fetcher {
 
 	/** Poll a nonblocking connection. Null means it remains in flight. */
 	private static function native_poll( Static_Site_Importer_URL_Fetcher_Native_Handle $handle ) {
+		if ( null !== $handle->multi ) {
+			return self::native_curl_poll( $handle );
+		}
 		if ( '' !== $handle->error ) {
 			if ( self::native_retry( $handle ) ) {
 				return null;
 			}
 			return new WP_Error( 'static_site_importer_url_connect_failed', $handle->error );
 		}
-		if ( microtime( true ) - $handle->started >= $handle->options['timeout'] ) {
+		if ( self::native_deadline_exhausted( $handle ) || microtime( true ) - $handle->started >= $handle->options['timeout'] ) {
+			$deadline_exhausted = self::native_deadline_exhausted( $handle ) || ! empty( $handle->options['deadline_limited'] );
 			if ( self::native_retry( $handle ) ) {
 				return null;
 			}
-			return new WP_Error( 'static_site_importer_url_timeout', 'The URL request timed out.' );
+			return new WP_Error( $deadline_exhausted ? 'static_site_importer_url_deadline_exhausted' : 'static_site_importer_url_timeout', $deadline_exhausted ? 'The URL request deadline was exhausted.' : 'The URL request timed out.' );
 		}
 		if ( ! $handle->crypto ) {
 			$crypto = @stream_socket_enable_crypto( $handle->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- TLS failures are returned as a reason-coded URL error.
@@ -473,6 +562,11 @@ class Static_Site_Importer_URL_Fetcher {
 				self::cancel_transport( null, $handle, 'too_large' );
 				return new WP_Error( 'static_site_importer_url_too_large', 'The URL response exceeded the maximum allowed size.' );
 			}
+			$separator = strpos( $handle->raw, "\r\n\r\n" );
+			if ( ( false === $separator && strlen( $handle->raw ) > self::HEADER_MAX_BYTES ) || ( false !== $separator && $separator + 4 > self::HEADER_MAX_BYTES ) ) {
+				self::cancel_transport( null, $handle, 'too_large' );
+				return new WP_Error( 'static_site_importer_url_too_large', 'The URL response exceeded the maximum allowed size.' );
+			}
 		}
 		if ( ! feof( $handle->socket ) ) {
 			return null;
@@ -489,9 +583,56 @@ class Static_Site_Importer_URL_Fetcher {
 		return self::parse_response( substr( $handle->raw, 0, $separator ), $body );
 	}
 
+	/** Advance curl without blocking; completion is collected from its per-request multi handle. */
+	private static function native_curl_poll( Static_Site_Importer_URL_Fetcher_Native_Handle $handle ) {
+		if ( self::native_deadline_exhausted( $handle ) ) {
+			self::cancel_transport( null, $handle, 'deadline_exhausted' );
+			return new WP_Error( 'static_site_importer_url_deadline_exhausted', 'The URL request deadline was exhausted.' );
+		}
+		do {
+			$status = curl_multi_exec( $handle->multi, $running );
+		} while ( CURLM_CALL_MULTI_PERFORM === $status );
+		if ( CURLM_OK !== $status ) {
+			self::cancel_transport( null, $handle, 'curl_multi_failed' );
+			return new WP_Error( 'static_site_importer_url_connect_failed', 'Could not progress the URL request.' );
+		}
+		$info = curl_multi_info_read( $handle->multi );
+		if ( false === $info ) {
+			return null;
+		}
+		$result = (int) $info['result'];
+		if ( '' !== $handle->limit_error ) {
+			self::cancel_transport( null, $handle, 'too_large' );
+			return new WP_Error( 'static_site_importer_url_too_large', 'The URL response exceeded the maximum allowed size.' );
+		}
+		if ( CURLE_OK !== $result ) {
+			$error              = curl_error( $handle->curl );
+			$deadline_exhausted = ! empty( $handle->options['deadline_limited'] );
+			if ( self::native_retry( $handle ) ) {
+				return null;
+			}
+			self::cancel_transport( null, $handle, 'curl_failed' );
+			if ( CURLE_OPERATION_TIMEDOUT === $result ) {
+				return new WP_Error( $deadline_exhausted ? 'static_site_importer_url_deadline_exhausted' : 'static_site_importer_url_timeout', $deadline_exhausted ? 'The URL request deadline was exhausted.' : 'The URL request timed out.' );
+			}
+			return new WP_Error( 'static_site_importer_url_connect_failed', '' !== $error ? $error : 'Could not connect to the URL.' );
+		}
+		self::cancel_transport( null, $handle, 'completed' );
+		$headers = preg_split( "/\r\n\r\n|\n\n|\r\r/", trim( $handle->response_headers ) );
+		$header  = is_array( $headers ) ? (string) end( $headers ) : '';
+		return self::parse_response( $header, $handle->body );
+	}
+
+	private static function native_deadline_exhausted( Static_Site_Importer_URL_Fetcher_Native_Handle $handle ): bool {
+		return null !== $handle->options['deadline'] && is_callable( $handle->options['clock'] ) && call_user_func( $handle->options['clock'] ) >= $handle->options['deadline'];
+	}
+
 	/** Retry another already validated DNS address without re-resolving the hostname. */
 	private static function native_retry( Static_Site_Importer_URL_Fetcher_Native_Handle $handle ): bool {
 		self::cancel_transport( null, $handle, 'retry_ip' );
+		if ( self::native_deadline_exhausted( $handle ) ) {
+			return false;
+		}
 		$next_ip = $handle->ip_index + 1;
 		if ( ! isset( $handle->target['ips'][ $next_ip ] ) ) {
 			return false;
@@ -499,7 +640,11 @@ class Static_Site_Importer_URL_Fetcher {
 		$target                = $handle->target;
 		$connect_target        = $target;
 		$connect_target['ips'] = array_slice( $target['ips'], $next_ip );
-		$next                  = self::native_start( $connect_target, $handle->options );
+		$options               = $handle->options;
+		if ( null !== $options['deadline'] && is_callable( $options['clock'] ) ) {
+			$options['timeout'] = max( 0.001, min( $options['timeout'], $options['deadline'] - call_user_func( $options['clock'] ) ) );
+		}
+		$next                  = self::native_start( $connect_target, $options );
 		foreach ( get_object_vars( $next ) as $name => $value ) {
 			$handle->$name = $value;
 		}
@@ -687,6 +832,11 @@ class Static_Site_Importer_URL_Fetcher {
 		while ( ! feof( $socket ) ) {
 			$raw .= fread( $socket, self::BODY_READ_CHUNK ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fread -- Reads a bounded HTTP response from a validated public socket.
 			if ( strlen( $raw ) > $max_bytes + self::HEADER_MAX_BYTES ) {
+				fclose( $socket ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes a validated public HTTP socket, not a filesystem handle.
+				return new WP_Error( 'static_site_importer_url_too_large', 'The URL response exceeded the maximum allowed size.' );
+			}
+			$separator = strpos( $raw, "\r\n\r\n" );
+			if ( ( false === $separator && strlen( $raw ) > self::HEADER_MAX_BYTES ) || ( false !== $separator && $separator + 4 > self::HEADER_MAX_BYTES ) ) {
 				fclose( $socket ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes a validated public HTTP socket, not a filesystem handle.
 				return new WP_Error( 'static_site_importer_url_too_large', 'The URL response exceeded the maximum allowed size.' );
 			}

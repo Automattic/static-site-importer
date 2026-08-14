@@ -196,6 +196,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			return $manifest['final_result'];
 		}$importer         = $importer ?? static fn ( array $artifact, array $import_args ) => Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
 		$shared_plan       = new Static_Site_Importer_Shared_Resource_Plan( $workspace );
+		$payload_reader    = self::payload_reader( $workspace );
 		$cursor            = Static_Site_Importer_Artifact_Batch_Cursor::hydrate( $manifest['batches'] );
 		$effective_batches = 0;
 		while ( true ) {
@@ -228,6 +229,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				return $write;
 			}
 			if ( null !== $deadline ) {
+				$known_asset_paths = $shared_plan->source_paths();
 				$ready_raw     = self::retained_runtime( $workspace, $ready_cache_name, $ready_cache_name, $ready_cache_name, $routes );
 				$ready_runtime = array();
 				if ( is_string( $ready_raw ) && is_array( json_decode( $ready_raw, true ) ) ) {
@@ -241,6 +243,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 					$ready_args['require_complete_collection'] = true;
 					$ready_args['asset_failure_policy']        = count( $routes ) > 1 ? 'preserve_failed_external_assets' : 'preserve_external';
 					$ready_args['hydration_mode']              = 'page_ready';
+					$ready_args['_static_site_importer_known_asset_paths'] = $known_asset_paths;
 					$ready_runtime                             = Static_Site_Importer_URL_Site_Collector::collect( $batch_entry, $ready_args, $fetcher );
 					if ( is_wp_error( $ready_runtime ) ) {
 						if ( self::deadline_error( $ready_runtime ) ) {
@@ -304,24 +307,28 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$decoded = is_string( $raw ) ? json_decode( $raw, true ) : null;
 			$runtime = is_array( $decoded ) ? $decoded : array();
 			if ( empty( $runtime ) ) {
+				$known_asset_paths = $shared_plan->source_paths();
 				$collect_args                                = $args;
 				$collect_args['_route_set']                  = array_values( array_unique( $routes ) );
 				$collect_args['_known_route_set']            = $manifest['routes'];
 				$collect_args['max_pages']                   = min( self::MAX_BATCH_PAGES + 1, count( $collect_args['_route_set'] ) + 1 );
 				$collect_args['require_complete_collection'] = true;
 				$collect_args['asset_failure_policy']        = count( $routes ) > 1 ? 'preserve_failed_external_assets' : 'preserve_external';
-				$collection_cursor_name                      = 'batches/' . $batch['batch_id'] . '.collection-cursor.json';
-				$collection_contract                         = hash(
+				$collect_args['_static_site_importer_collection_return_payload_references'] = null !== $payload_reader;
+				$collect_args['_static_site_importer_known_asset_paths'] = $known_asset_paths;
+				$collection_cursor_name = 'batches/' . $batch['batch_id'] . '.collection-cursor.json';
+				$collection_contract    = hash(
 					'sha256',
 					(string) wp_json_encode(
 						array(
-							'version' => 1,
-							'routes'  => $routes,
-							'mode'    => 'complete_snapshot',
+							'version'       => 2,
+							'routes'        => $routes,
+							'mode'          => 'complete_snapshot',
+							'shared_digest' => hash( 'sha256', (string) wp_json_encode( $known_asset_paths, JSON_UNESCAPED_SLASHES ) ),
 						)
 					)
 				);
-				$collect_args                                = array_merge(
+				$collect_args = array_merge(
 					$collect_args,
 					array(
 						'_static_site_importer_collection_contract'      => $collection_contract,
@@ -336,6 +343,16 @@ final class Static_Site_Importer_URL_Batch_Import {
 						'_static_site_importer_collection_resource_load' => static function ( array $retained ) use ( $workspace ) {
 							$body = isset( $retained['body_ref'] ) && is_string( $retained['body_ref'] ) ? $workspace->read_raw( $retained['body_ref'] ) : null;
 							return is_string( $body ) && hash_equals( (string) ( $retained['sha256'] ?? '' ), hash( 'sha256', $body ) ) ? $body : null;
+						},
+						'_static_site_importer_collection_resource_store' => static function ( string $body ) use ( $workspace ) {
+							$hash  = hash( 'sha256', $body );
+							$ref   = 'collection-finalized/' . $hash . '.bin';
+							$write = $workspace->publish_raw( $ref, $body );
+							return is_wp_error( $write ) ? null : array(
+								'body_ref' => $ref,
+								'sha256'   => $hash,
+								'bytes'    => strlen( $body ),
+							);
 						},
 						'_static_site_importer_collection_should_yield'  => null !== $deadline ? static fn (): bool => self::deadline_reached( $deadline, $clock ) : null,
 						'_static_site_importer_collection_cursor_save'   => static function ( array $cursor ) use ( $workspace, $collection_cursor_name ) {
@@ -375,13 +392,14 @@ final class Static_Site_Importer_URL_Batch_Import {
 								unset( $file['body'] );
 								$file['body_ref'] = $ref;
 								$file['sha256']   = $hash;
+								$file['bytes']    = strlen( $body );
 								$cursor['finalization']['files'][ $index ] = $file;
 							}
 							return $workspace->publish_json( $collection_cursor_name, $cursor );
 						},
 					)
 				);
-				$runtime                                     = Static_Site_Importer_URL_Site_Collector::collect( $batch_entry, $collect_args, $fetcher );
+				$runtime = Static_Site_Importer_URL_Site_Collector::collect( $batch_entry, $collect_args, $fetcher );
 				if ( is_wp_error( $runtime ) ) {
 					if ( self::deadline_error( $runtime ) ) {
 						$manifest['batches'] = self::legacy_batches( $cursor );
@@ -431,8 +449,30 @@ final class Static_Site_Importer_URL_Batch_Import {
 						'shared_plan_digest' => $shared['digest'],
 					);
 				}
-				$staged = self::prepare_staged_plans( $workspace, $runtime['artifact'], $shared['digest'] );
+				$staged_artifact = $runtime['artifact'];
+				$staged_paths    = array_fill_keys( array_column( $staged_artifact['files'] ?? array(), 'path' ), true );
+				foreach ( $shared_plan->retained_resources() as $resource ) {
+					if ( ! isset( $staged_paths[ $resource['path'] ?? '' ] ) ) {
+						$staged_artifact['files'][] = $resource;
+					}
+				}
+				$staged = self::prepare_staged_plans(
+					$workspace,
+					$staged_artifact,
+					$shared['digest'],
+					$payload_reader,
+					'batches/' . $batch['batch_id'] . '.staged-pages.json',
+					null !== $deadline ? static fn (): bool => self::deadline_reached( $deadline, $clock ) : null
+				);
 				if ( is_wp_error( $staged ) ) {
+					if ( self::deadline_error( $staged ) ) {
+						self::checkpoint_cache( $manifest, $cache );
+						$write = $run_manifest->save( $manifest );
+						if ( is_wp_error( $write ) ) {
+							return $write;
+						}
+						return self::continuation_result( $manifest, $manifest_path, $index, $effective_batches, $max_effective_batches, $max_invocation_seconds, 'deadline_exhausted' );
+					}
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $staged, $cache );
 				}
 				$runtime['shared_plan_digest'] = $shared['digest'];
@@ -450,7 +490,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				$manifest['stage_counters']['shared_plan_reconciliations'] = (int) ( $manifest['stage_counters']['shared_plan_reconciliations'] ?? 0 ) + 1;
 				$manifest['stage_counters']['shared_plan_invalidations']   = (int) ( $manifest['stage_counters']['shared_plan_invalidations'] ?? 0 ) + ( ! empty( $shared['changed'] ) ? 1 : 0 );
 				$manifest['stage_counters']['compiler_shared_prepares']    = (int) ( $manifest['stage_counters']['compiler_shared_prepares'] ?? 0 ) + ( $staged['shared_prepared'] ? 1 : 0 );
-				$manifest['stage_counters']['compiler_page_prepares']      = (int) ( $manifest['stage_counters']['compiler_page_prepares'] ?? 0 ) + count( $staged['page_plans'] );
+				$manifest['stage_counters']['compiler_page_prepares']      = (int) ( $manifest['stage_counters']['compiler_page_prepares'] ?? 0 ) + $staged['page_prepared'];
 				$manifest['external_asset_retained']                       = self::merge_external_assets( $manifest['external_asset_retained'] ?? array(), $runtime['source_metadata']['collection']['external_asset_retained'] ?? array(), $index );
 				self::checkpoint_cache( $manifest, $cache );
 				$manifest['batches'] = self::legacy_batches( $cursor );
@@ -477,7 +517,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				if ( is_wp_error( $write ) ) {
 					return $write;
 				}
-				$compiled_staged = self::compose_staged_plans( $staged );
+				$compiled_staged = self::compose_staged_plans( $staged, $payload_reader );
 				if ( is_wp_error( $compiled_staged ) ) {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $compiled_staged, $cache );
 				}
@@ -488,6 +528,9 @@ final class Static_Site_Importer_URL_Batch_Import {
 				$import_args['preserve_existing_theme_bootstrap'] = $index > 0;
 				$import_args['import_run_id']                     = $identity;
 				$import_args['compiled_artifact_result']          = $compiled_staged;
+				$import_args['_static_site_importer_precompiled_source'] = null !== $payload_reader;
+				// This reader is invocation-local workspace access, never plan state.
+				$import_args['_static_site_importer_payload_reader'] = $payload_reader;
 				$result = $importer( $runtime['artifact'], $import_args );
 				if ( is_wp_error( $result ) ) {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $result, $cache );
@@ -513,7 +556,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			unset( $result, $runtime, $raw );
 		}
 		if ( 'plan' === (string) ( $input['operation'] ?? 'apply' ) ) {
-			$final = self::compose_complete_plan( $workspace, $cursor );
+			$final = self::compose_complete_plan( $workspace, $cursor, $payload_reader );
 			if ( is_wp_error( $final ) ) {
 				return $final;
 			}
@@ -542,7 +585,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 	 * Persist the Blocks Engine staged envelopes. The shared envelope is created
 	 * once per retained resource digest; page envelopes remain batch-local.
 	 */
-	private static function prepare_staged_plans( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $artifact, string $resource_digest ): array|WP_Error {
+	private static function prepare_staged_plans( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $artifact, string $resource_digest, ?object $payload_reader = null, string $page_checkpoint = '', ?callable $should_yield = null ): array|WP_Error {
 		$compiler = self::staged_compiler();
 		if ( is_wp_error( $compiler ) ) {
 			return $compiler;
@@ -556,7 +599,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( ! is_callable( $prepare_shared ) || ! is_callable( $prepare_page ) ) {
 				return new WP_Error( 'static_site_importer_missing_transformer_capability', 'The Blocks Engine php-transformer does not support staged URL batch plans.' );
 			}
-			$shared = $shared_prepared ? call_user_func( $prepare_shared, $artifact ) : $stored['plan'];
+			$shared = $shared_prepared ? call_user_func( $prepare_shared, $artifact, $payload_reader ) : $stored['plan'];
 			if ( $shared_prepared ) {
 				$write = $workspace->publish_json(
 					'staged-compiler-shared.json',
@@ -569,16 +612,42 @@ final class Static_Site_Importer_URL_Batch_Import {
 					return $write;
 				}
 			}
-			$page_plans = array();
+			$page_contract = hash( 'sha256', $resource_digest . "\n" . (string) wp_json_encode( $artifact, JSON_UNESCAPED_SLASHES ) );
+			$page_state    = '' !== $page_checkpoint ? $workspace->read_raw( $page_checkpoint ) : null;
+			$page_state    = is_string( $page_state ) ? json_decode( $page_state, true ) : null;
+			$page_plans    = is_array( $page_state ) && hash_equals( $page_contract, (string) ( $page_state['contract'] ?? '' ) ) && is_array( $page_state['plans'] ?? null ) ? $page_state['plans'] : array();
+			$page_prepared = 0;
 			foreach ( $artifact['files'] ?? array() as $file ) {
 				if ( ! is_array( $file ) || 'text/html' !== strtolower( (string) ( $file['mime_type'] ?? '' ) ) || '' === (string) ( $file['path'] ?? '' ) ) {
 					continue;
 				}
-				$page_plans[] = call_user_func( $prepare_page, $artifact, $shared, (string) $file['path'] );
+				$page_id = (string) $file['path'];
+				if ( isset( $page_plans[ $page_id ] ) && is_array( $page_plans[ $page_id ] ) ) {
+					continue;
+				}
+				if ( null !== $should_yield && call_user_func( $should_yield ) ) {
+					return new WP_Error( 'static_site_importer_invocation_deadline_exceeded', 'The URL batch invocation deadline was reached during staged page preparation.' );
+				}
+				$page_plans[ $page_id ] = call_user_func( $prepare_page, $artifact, $shared, $page_id, $payload_reader );
+				++$page_prepared;
+				if ( '' !== $page_checkpoint ) {
+					$write = $workspace->publish_json(
+						$page_checkpoint,
+						array(
+							'contract' => $page_contract,
+							'plans'    => $page_plans,
+						)
+					);
+					if ( is_wp_error( $write ) ) {
+						return $write;
+					}
+				}
 			}
+			ksort( $page_plans, SORT_STRING );
 			return array(
 				'shared_plan'     => $shared,
-				'page_plans'      => $page_plans,
+				'page_plans'      => array_values( $page_plans ),
+				'page_prepared'   => $page_prepared,
 				'shared_prepared' => $shared_prepared,
 			);
 		} catch ( Throwable $error ) {
@@ -602,7 +671,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			'shared_prepared' => false,
 		);
 	}
-	private static function compose_staged_plans( array $staged ): array|WP_Error {
+	private static function compose_staged_plans( array $staged, ?object $payload_reader = null ): array|WP_Error {
 		$compiler = self::staged_compiler();
 		if ( is_wp_error( $compiler ) ) {
 			return $compiler;
@@ -612,7 +681,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( ! is_callable( $compose ) ) {
 				return new WP_Error( 'static_site_importer_missing_transformer_capability', 'The Blocks Engine php-transformer does not support staged URL batch plans.' );
 			}
-			$compiled = call_user_func( $compose, $staged['shared_plan'], $staged['page_plans'] );
+			$compiled = call_user_func( $compose, $staged['shared_plan'], $staged['page_plans'], $payload_reader );
 			if ( ! is_object( $compiled ) || ! is_callable( array( $compiled, 'toArray' ) ) ) {
 				return new WP_Error( 'static_site_importer_invalid_staged_compile', 'The Blocks Engine php-transformer returned an invalid staged URL batch plan.' );
 			}
@@ -622,6 +691,23 @@ final class Static_Site_Importer_URL_Batch_Import {
 		}
 	}
 
+	private static function payload_reader( Static_Site_Importer_Artifact_Run_Workspace $workspace ): ?object {
+		$interface = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\PayloadReader';
+		if ( ! interface_exists( $interface ) ) {
+			return null;
+		}
+		return new class( $workspace ) implements \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
+			public function __construct( private Static_Site_Importer_Artifact_Run_Workspace $workspace ) {}
+			public function read( array $reference ): string {
+				$bytes = $this->workspace->read_raw( (string) ( $reference['id'] ?? '' ) );
+				if ( ! is_string( $bytes ) ) {
+					throw new RuntimeException( 'A retained artifact payload is unavailable.' );
+				}
+				return $bytes;
+			}
+		};
+	}
+
 	/**
 	 * Compose every frozen batch page plan once after terminal URL acquisition.
 	 *
@@ -629,7 +715,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 	 * @param array<int,array<string,mixed>>               $cursor    Completed batch cursor.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	private static function compose_complete_plan( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $cursor ): array|WP_Error {
+	private static function compose_complete_plan( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $cursor, ?object $payload_reader = null ): array|WP_Error {
 		$shared_raw   = $workspace->read_raw( 'staged-compiler-shared.json' );
 		$shared_state = is_string( $shared_raw ) ? json_decode( $shared_raw, true ) : null;
 		$shared_plan  = is_array( $shared_state ) && is_array( $shared_state['plan'] ?? null ) ? $shared_state['plan'] : null;
@@ -676,7 +762,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 						continue;
 					}
 					try {
-						$fresh_plans[] = call_user_func( $prepare_page_callable, $runtime['artifact'], $shared_plan, (string) $file['path'] );
+						$fresh_plans[] = call_user_func( $prepare_page_callable, $runtime['artifact'], $shared_plan, (string) $file['path'], $payload_reader );
 					} catch ( Throwable $error ) {
 						return new WP_Error( 'static_site_importer_staged_reprepare_failed', $error->getMessage() );
 					}
@@ -691,7 +777,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 			array(
 				'shared_plan' => $shared_plan,
 				'page_plans'  => $page_plans,
-			)
+			),
+			$payload_reader
 		);
 		if ( is_wp_error( $compiled ) ) {
 			return $compiled;

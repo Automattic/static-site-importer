@@ -23,6 +23,7 @@ $GLOBALS['ssi_plan_posts']      = array();
 $GLOBALS['ssi_plan_meta']       = array();
 $GLOBALS['ssi_plan_options']    = array( 'show_on_front' => 'posts', 'page_on_front' => 0, 'blogname' => 'Before', 'use_smilies' => true );
 $GLOBALS['ssi_plan_fail_after'] = 0;
+$GLOBALS['ssi_plan_insert_calls'] = 0;
 $GLOBALS['ssi_plan_font_requests'] = array();
 mkdir( $GLOBALS['ssi_plan_root'], 0777, true );
 
@@ -90,6 +91,7 @@ function get_page_by_path( string $slug, $output, string $type ) {
 	return null;
 }
 function wp_insert_post( array $post, bool $wp_error ) {
+	++$GLOBALS['ssi_plan_insert_calls'];
 	if ( $GLOBALS['ssi_plan_fail_after'] && count( $GLOBALS['ssi_plan_posts'] ) >= $GLOBALS['ssi_plan_fail_after'] ) { return new WP_Error( 'simulated_post_failure' ); }
 	$id = ! empty( $post['ID'] ) ? (int) $post['ID'] : count( $GLOBALS['ssi_plan_posts'] ) + 1;
 	$GLOBALS['ssi_plan_posts'][ $id ] = $post;
@@ -165,6 +167,91 @@ $assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-pla
 $assert( 'posts' === $GLOBALS['ssi_plan_options']['show_on_front'], 'plan-only materialization does not change reading settings by default' );
 $assert( $receipt['plan']['pages'][0]['document_metadata']['links'][0]['resolved_url'] === 'https://example.test/wp-content/themes/site-plan/assets/assets/site.css', 'resolved metadata retains the declared stylesheet destination' );
 $assert( array() === $receipt['completed']['runtime_declarations']['asset_publications'], 'plans without publication declarations retain an explicit empty receipt collection' );
+$write_payload_bytes = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'write_payload_bytes' );
+$referenced_write = array(
+	'payload' => array( 'encoding' => 'base64', 'data' => '' ),
+	'payload_reference' => array( 'schema' => 'blocks-engine/payload-reference/v1', 'id' => 'binary-1', 'bytes' => 12, 'sha256' => hash( 'sha256', 'binary-bytes' ) ),
+);
+$reference_reads = 0;
+
+$reference_reader = new class( $reference_reads ) {
+	private $reads;
+	public function __construct( int &$reads ) { $this->reads =& $reads; }
+	public function read( array $reference ): string { ++$this->reads; return 'binary-bytes'; }
+};
+$reference_prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare( $plan, array( 'slug' => 'reference-ephemeral', '_static_site_importer_payload_reader' => $reference_reader ) );
+$assert( 'prepared' === ( $reference_prepared['status'] ?? '' ) && 0 === $reference_reads && ! isset( $reference_prepared['args']['_static_site_importer_payload_reader'] ) && isset( $reference_prepared['payload_reader'] ), 'prepared materialization retains payload readers ephemerally without dereferencing or serializing them in args' );
+$reference_bytes = $write_payload_bytes->invoke( null, $referenced_write, $reference_reader );
+$assert( 'binary-bytes' === $reference_bytes && 1 === $reference_reads, 'referenced binary writes resolve exactly once at their write boundary' );
+$reference_write_file = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'write_file' );
+$reference_root = $GLOBALS['ssi_plan_root'] . '/reference-ephemeral';
+mkdir( $reference_root, 0777, true );
+file_put_contents( $reference_root . '/existing.bin', 'binary-bytes' );
+$referenced_write['target_path'] = 'existing.bin';
+$referenced_write['source_path'] = 'existing.bin';
+$reference_reconciled = $reference_write_file->invoke( null, $reference_root, $referenced_write, $reference_reader );
+$assert( ! is_wp_error( $reference_reconciled ) && 1 === $reference_reads, 'byte-identical referenced files reconcile from their declared hash without reading workspace bytes' );
+$missing_reader = $write_payload_bytes->invoke( null, $referenced_write, null );
+$assert( is_wp_error( $missing_reader ) && 'static_site_importer_payload_reader_missing' === $missing_reader->get_error_code(), 'referenced writes fail deterministically when no ephemeral reader is available' );
+$mismatched_reference = $referenced_write;
+$mismatched_reference['payload_reference']['sha256'] = str_repeat( '0', 64 );
+$mismatch = $write_payload_bytes->invoke( null, $mismatched_reference, $reference_reader );
+$assert( is_wp_error( $mismatch ) && 'static_site_importer_payload_reference_hash_mismatch' === $mismatch->get_error_code(), 'referenced writes reject hash mismatches before filesystem mutation' );
+
+// Blocks Engine candidates retain the canonical inline payload and add an
+// opaque reference for materialization. The reference remains authoritative.
+$reference_result = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			'index.html' => '<main><h1>Reference</h1></main>',
+			'asset.bin'  => 'canonical-reference-bytes',
+		),
+	)
+)->toArray();
+$reference_plan = $reference_result['source_reports']['wordpress_site_plan'];
+foreach ( $reference_plan['writes'] as &$write ) {
+	if ( 'asset.bin' === $write['source_path'] ) {
+		$write['payload_reference'] = array(
+			'schema' => 'blocks-engine/payload-reference/v1',
+			'id'     => 'canonical-reference',
+			'bytes'  => strlen( 'canonical-reference-bytes' ),
+			'sha256' => hash( 'sha256', 'canonical-reference-bytes' ),
+		);
+	}
+}
+unset( $write );
+$reference_target = 'assets/asset.bin';
+$posts_before_reference_admission = $GLOBALS['ssi_plan_posts'];
+$inserts_before_reference_admission = $GLOBALS['ssi_plan_insert_calls'];
+$throwing_reader = new class {
+	public function read( array $reference ): string { throw new RuntimeException( 'workspace unavailable' ); }
+};
+$throwing_reference_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $reference_plan, array( 'slug' => 'reference-admission-throwing', '_static_site_importer_payload_reader' => $throwing_reader ) );
+$assert( 'rejected' === $throwing_reference_receipt['status'] && 'static_site_importer_payload_reference_unavailable' === ( $throwing_reference_receipt['diagnostics'][0]['reason_code'] ?? '' ) && $posts_before_reference_admission === $GLOBALS['ssi_plan_posts'] && $inserts_before_reference_admission === $GLOBALS['ssi_plan_insert_calls'] && ! file_exists( $GLOBALS['ssi_plan_root'] . '/reference-admission-throwing' ), 'throwing canonical reference readers reject before page or filesystem mutation' );
+$theme_generator_materialize = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'materialize_compiled_website_artifact' );
+$theme_generator_before_admission = $GLOBALS['ssi_plan_insert_calls'];
+$theme_generator_admission_failure = $theme_generator_materialize->invoke( null, array(), array( 'slug' => 'theme-generator-reference-admission', '_static_site_importer_payload_reader' => $throwing_reader ), $reference_plan, array(), array( 'unreachable' => true ), array( 'dependencies' => array(), 'entities' => array() ) );
+$assert( is_wp_error( $theme_generator_admission_failure ) && 'static_site_importer_payload_reference_unavailable' === $theme_generator_admission_failure->get_error_code() && $theme_generator_before_admission === $GLOBALS['ssi_plan_insert_calls'] && ! file_exists( $GLOBALS['ssi_plan_root'] . '/theme-generator-reference-admission' ), 'theme generator rejects unavailable references before companion, dependency, entity, page, or filesystem materialization' );
+$mismatched_reader = new class {
+	public function read( array $reference ): string { return 'corrupt-reference-bytes'; }
+};
+$mismatched_reference_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $reference_plan, array( 'slug' => 'reference-admission-mismatched', '_static_site_importer_payload_reader' => $mismatched_reader ) );
+$assert( 'rejected' === $mismatched_reference_receipt['status'] && 'static_site_importer_payload_reference_hash_mismatch' === ( $mismatched_reference_receipt['diagnostics'][0]['reason_code'] ?? '' ) && $posts_before_reference_admission === $GLOBALS['ssi_plan_posts'] && $inserts_before_reference_admission === $GLOBALS['ssi_plan_insert_calls'] && ! file_exists( $GLOBALS['ssi_plan_root'] . '/reference-admission-mismatched' ), 'mismatched canonical reference readers reject before page or filesystem mutation' );
+$valid_reader = new class {
+	public function read( array $reference ): string { return 'canonical-reference-bytes'; }
+};
+$valid_reference_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $reference_plan, array( 'slug' => 'reference-admission-valid', '_static_site_importer_payload_reader' => $valid_reader ) );
+$assert( 'completed' === $valid_reference_receipt['status'] && $inserts_before_reference_admission < $GLOBALS['ssi_plan_insert_calls'] && file_exists( $GLOBALS['ssi_plan_root'] . '/reference-admission-valid/' . $reference_target ) && 'canonical-reference-bytes' === file_get_contents( $GLOBALS['ssi_plan_root'] . '/reference-admission-valid/' . $reference_target ), 'valid canonical reference readers pass admission and materialize the declared write' );
+$prepared_for_admission = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare( $reference_plan, array( 'slug' => 'reference-admission-prepared', '_static_site_importer_payload_reader' => $valid_reader ) );
+$admitted_prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::admit_prepared( $prepared_for_admission );
+$assert( 'prepared' === ( $admitted_prepared['status'] ?? '' ) && ! empty( $admitted_prepared['payload_references_admitted'] ) && ! str_contains( (string) wp_json_encode( $admitted_prepared['plan'] ), 'payload_references_admitted' ) && ! str_contains( (string) wp_json_encode( Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $admitted_prepared ) ), 'payload_references_admitted' ), 'prepared admission marker is ephemeral and excluded from canonical plans and receipts' );
+$generator_admission = strpos( (string) $theme_generator_source, '::admit_prepared( $prepared )' );
+$generator_binding_preflight = strpos( (string) $theme_generator_source, 'with_resolved_runtime_binding_manifests', $generator_admission + 1 );
+$generator_companion = strpos( (string) $theme_generator_source, 'materialize_companion_dependency', $generator_admission + 1 );
+$generator_dependencies = strpos( (string) $theme_generator_source, 'materialize_prepared_dependencies', $generator_admission + 1 );
+$generator_entities = strpos( (string) $theme_generator_source, 'materialize_prepared_entities', $generator_admission + 1 );
+$assert( false !== $generator_admission && $generator_admission < $generator_binding_preflight && $generator_admission < $generator_companion && $generator_admission < $generator_dependencies && $generator_admission < $generator_entities, 'theme generator admits referenced payloads before runtime binding, companion, dependency, and entity materialization work' );
 $unbound_provenance = $receipt['completed']['block_provenance'] ?? array();
 $assert( count( $plan['pages'] ) === count( $unbound_provenance ) && count( $plan['pages'] ) === ( $receipt['completed']['block_provenance_count'] ?? 0 ), 'ordinary resolved pages receive receipt provenance without runtime bindings' );
 $assert( 'blocks-engine/wordpress-site-plan-resolver' === ( $unbound_provenance[0]['stages'][0]['stage'] ?? '' ) && hash( 'sha256', $receipt['plan']['pages'][0]['resolved_block_markup'] ) === ( $unbound_provenance[0]['stages'][0]['output']['sha256'] ?? '' ), 'ordinary page provenance records the resolver output hash' );
