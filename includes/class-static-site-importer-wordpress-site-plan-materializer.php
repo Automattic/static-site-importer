@@ -127,6 +127,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			$state['base_resolved']      = $resolved;
 			if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === $strategy['strategy'] ) {
+				$projection = Static_Site_Importer_Classic_Theme_Projection::prepare_for_materialization( $args['classic_theme_projection'], $resolved );
+				if ( is_wp_error( $projection ) ) {
+					throw new InvalidArgumentException( $projection->get_error_code() );
+				}
+				$args['classic_theme_projection'] = $projection;
 				$resolved['writes'] = Static_Site_Importer_Classic_Theme_Projection::resolved_writes( $resolved, Static_Site_Importer_Classic_Theme_Projection::writes( $args['classic_theme_projection'], $resolved, $theme_uri, (string) ( $args['name'] ?? $slug ) ) );
 				foreach ( $resolved['pages'] as &$page ) {
 					$page['resolved_block_markup'] = '';

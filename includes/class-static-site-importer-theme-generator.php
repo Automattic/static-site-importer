@@ -287,7 +287,7 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$bindings = $page_ready ? array() : self::runtime_entity_bindings( $lifecycle, $entities );
 		if ( is_wp_error( $bindings ) ) {
-			self::rollback_classic_entities( $lifecycle, $entities, $classic );
+			self::rollback_materialized_entities( $lifecycle, $entities );
 			return new WP_Error(
 				$bindings->get_error_code(),
 				$bindings->get_error_message(),
@@ -303,12 +303,12 @@ class Static_Site_Importer_Theme_Generator {
 		if ( $classic ) {
 			$classic_bindings = self::classic_runtime_entity_bindings( $lifecycle, $entities );
 			if ( is_wp_error( $classic_bindings ) ) {
-				self::rollback_classic_entities( $lifecycle, $entities, true );
+				self::rollback_materialized_entities( $lifecycle, $entities );
 				return new WP_Error( $classic_bindings->get_error_code(), $classic_bindings->get_error_message(), array( 'status' => 'partial', 'runtime_lifecycle' => $lifecycle, 'dependencies' => $dependencies, 'entities' => $entities ) );
 			}
 			$projection = Static_Site_Importer_Classic_Theme_Projection::apply_runtime_bindings( $prepared['args']['classic_theme_projection'], $classic_bindings );
 			if ( is_wp_error( $projection ) ) {
-				self::rollback_classic_entities( $lifecycle, $entities, true );
+				self::rollback_materialized_entities( $lifecycle, $entities );
 				return new WP_Error( $projection->get_error_code(), $projection->get_error_message(), array( 'status' => 'partial', 'runtime_lifecycle' => $lifecycle, 'dependencies' => $dependencies, 'entities' => $entities ) );
 			}
 			$prepared['args']['classic_theme_projection'] = $projection;
@@ -331,7 +331,7 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$receipt['theme_materialization'] = $theme_materialization;
 		if ( 'completed' !== $receipt['status'] ) {
-			self::rollback_classic_entities( $lifecycle, $entities, $classic );
+			self::rollback_materialized_entities( $lifecycle, $entities );
 			$error = $receipt['errors'][0] ?? array();
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan materialization failed.' ), $receipt );
 		}
@@ -339,7 +339,7 @@ class Static_Site_Importer_Theme_Generator {
 			return self::public_result_from_wordpress_site_plan_receipt( $receipt, $args, $lifecycle, $dependencies, $entities );
 		} catch ( Throwable $error ) {
 			$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $receipt, 'static_site_importer_projection_write_failed' );
-			self::rollback_classic_entities( $lifecycle, $entities, $classic );
+			self::rollback_materialized_entities( $lifecycle, $entities );
 			$receipt['status'] = 'partial';
 			$receipt['errors'][] = array(
 				'code'    => 'static_site_importer_projection_write_failed',
@@ -349,9 +349,8 @@ class Static_Site_Importer_Theme_Generator {
 		}
 	}
 
-	/** Compensate every completed entity declaration before reporting a classic failure. */
-	private static function rollback_classic_entities( array $lifecycle, array $reports, bool $classic ): void {
-		if ( ! $classic ) { return; }
+	/** Compensate every completed entity declaration before reporting any failure. */
+	private static function rollback_materialized_entities( array $lifecycle, array $reports ): void {
 		foreach ( array_reverse( array_keys( $lifecycle['entities'] ?? array() ) ) as $id ) {
 			$prepared = $lifecycle['entities'][ $id ];
 			if ( ! is_array( $prepared ) || ! is_array( $prepared['adapter'] ?? null ) || ! is_array( $reports[ $id ] ?? null ) ) { continue; }
@@ -1185,7 +1184,7 @@ class Static_Site_Importer_Theme_Generator {
 					'status' => 'error',
 					'reason' => $report->get_error_code(),
 				);
-				self::rollback_classic_entities( $lifecycle, $reports, $classic );
+				self::rollback_materialized_entities( $lifecycle, $reports );
 				return array(
 					'reports' => $reports,
 					'error'   => array(
@@ -1201,7 +1200,7 @@ class Static_Site_Importer_Theme_Generator {
 			if ( in_array( $report['status'] ?? '', array( 'failed', 'error' ), true ) || ! empty( $counts['failed'] ) || ! empty( $counts['error'] ) || ( ! empty( $prepared['required'] ) && $completed < $expected ) ) {
 				$code = isset( $report['code'] ) && is_scalar( $report['code'] ) ? (string) $report['code'] : 'static_site_importer_entity_materialization_failed';
 				$message = isset( $report['error'] ) && is_scalar( $report['error'] ) ? (string) $report['error'] : ( isset( $report['reason'] ) && is_scalar( $report['reason'] ) && '' !== (string) $report['reason'] ? (string) $report['reason'] : 'Runtime entity materialization failed for declaration: ' . $id . '.' );
-				self::rollback_classic_entities( $lifecycle, $reports, $classic );
+				self::rollback_materialized_entities( $lifecycle, $reports );
 				return array(
 					'reports' => $reports,
 					'error'   => array(

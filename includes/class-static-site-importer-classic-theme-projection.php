@@ -56,6 +56,65 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 		return $writes;
 	}
 
+	/**
+	 * Revalidate a projection received at the plan-only materializer boundary.
+	 *
+	 * Compiler callers build this projection from normalized artifacts, but direct
+	 * materializer callers have no such provenance. Keep every emitted surface
+	 * inert and require its page structure to match the resolved canonical plan.
+	 *
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public static function prepare_for_materialization( array $projection, array $resolved ) {
+		if ( 'static-site-importer/classic-theme-projection/v1' !== ( $projection['schema'] ?? null ) || ! is_array( $projection['pages'] ?? null ) || ! is_array( $projection['chrome'] ?? null ) || ! is_array( $projection['stylesheets'] ?? null ) || ! is_array( $projection['bindings'] ?? null ) ) {
+			return new WP_Error( 'static_site_importer_classic_projection_invalid', 'Classic materialization requires a complete classic projection schema.' );
+		}
+		$expected_pages = array();
+		foreach ( $resolved['pages'] ?? array() as $page ) {
+			$source = is_array( $page ) ? (string) ( $page['source_path'] ?? '' ) : '';
+			if ( ! self::valid_source_path( $source ) ) {
+				return new WP_Error( 'static_site_importer_classic_projection_invalid', 'The resolved plan contains an invalid classic page source path.' );
+			}
+			$expected_pages[ $source ] = true;
+		}
+		if ( count( $expected_pages ) !== count( $projection['pages'] ) || array() !== array_diff_key( $expected_pages, $projection['pages'] ) || array() !== array_diff_key( $projection['pages'], $expected_pages ) ) {
+			return new WP_Error( 'static_site_importer_classic_projection_page_structure_invalid', 'Classic projection pages must exactly match the resolved canonical plan.' );
+		}
+		$pages = array();
+		foreach ( $projection['pages'] as $source => $page ) {
+			if ( ! is_string( $source ) || ! is_array( $page ) || $source !== ( $page['source_path'] ?? null ) || ! is_string( $page['html'] ?? null ) ) {
+				return new WP_Error( 'static_site_importer_classic_projection_page_structure_invalid', 'Classic projection pages require matching source paths and HTML strings.' );
+			}
+			$pages[ $source ] = array( 'source_path' => $source, 'html' => self::sanitize_html( $page['html'] ) );
+		}
+		$chrome = array( 'header' => '', 'footer' => '', 'background' => '' );
+		foreach ( $projection['chrome'] as $part => $html ) {
+			if ( ! is_string( $part ) || ! array_key_exists( $part, $chrome ) || ! is_string( $html ) ) {
+				return new WP_Error( 'static_site_importer_classic_projection_chrome_structure_invalid', 'Classic projection chrome contains an unsupported surface.' );
+			}
+			$chrome[ $part ] = self::sanitize_html( $html );
+		}
+		$chrome_source = (string) ( $projection['chrome_source_path'] ?? '' );
+		if ( '' !== $chrome_source && ! isset( $expected_pages[ $chrome_source ] ) ) {
+			return new WP_Error( 'static_site_importer_classic_projection_chrome_structure_invalid', 'Classic projection chrome must reference a resolved page source.' );
+		}
+		$stylesheets = array();
+		foreach ( $projection['stylesheets'] as $source => $css ) {
+			if ( ! is_string( $source ) || ! self::valid_source_path( $source ) || ! is_string( $css ) ) {
+				return new WP_Error( 'static_site_importer_classic_projection_stylesheet_structure_invalid', 'Classic projection stylesheets require safe source paths and CSS strings.' );
+			}
+			$stylesheets[ $source ] = self::safe_stylesheet( $css ) ? $css : '';
+		}
+		foreach ( $projection['bindings'] as $binding ) {
+			if ( ! is_array( $binding ) ) {
+				return new WP_Error( 'static_site_importer_classic_projection_binding_structure_invalid', 'Classic projection bindings must be structured records.' );
+			}
+		}
+		ksort( $pages, SORT_STRING );
+		ksort( $stylesheets, SORT_STRING );
+		return array( 'schema' => 'static-site-importer/classic-theme-projection/v1', 'pages' => $pages, 'chrome' => $chrome, 'chrome_source_path' => $chrome_source, 'stylesheets' => $stylesheets, 'bindings' => $projection['bindings'] );
+	}
+
 	/** Replace block-theme presentation writes but retain every resolved asset write. */
 	public static function resolved_writes( array $resolved, array $classic_writes ): array { return array_merge( array_values( array_filter( $resolved['writes'] ?? array(), static fn( array $write ): bool => 'theme_asset' === ( $write['kind'] ?? '' ) ) ), $classic_writes ); }
 	/** Rebuild only classic scaffold data payloads after provider substitutions. */
@@ -129,6 +188,7 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 
 	/** @return array<string,string> */
 	private static function files( array $artifact ): array { $files = array(); foreach ( $artifact['files'] ?? array() as $key => $file ) { if ( is_string( $file ) ) { $files[(string) $key] = $file; continue; } if ( ! is_array( $file ) || ! isset( $file['path'] ) ) { continue; } $content = isset( $file['content'] ) ? (string) $file['content'] : ( isset( $file['content_base64'] ) ? base64_decode( (string) $file['content_base64'], true ) : '' ); if ( is_string( $content ) ) { $files[(string) $file['path']] = $content; } } return $files; }
+	private static function valid_source_path( string $path ): bool { return '' !== $path && ! str_starts_with( $path, '/' ) && ! str_contains( $path, "\0" ) && array() === array_filter( explode( '/', $path ), static fn( string $segment ): bool => '' === $segment || '.' === $segment || '..' === $segment ); }
 	/** @return array<string,string> */
 	private static function destination_urls( array $resolved, string $theme_uri ): array { $urls = array(); foreach ( $resolved['writes'] ?? array() as $write ) { $source = (string) ( $write['source_path'] ?? '' ); $target = (string) ( $write['target_path'] ?? '' ); if ( '' !== $source && '' !== $target && 'theme_asset' === ( $write['kind'] ?? '' ) ) { $urls[ trim( $source, '/' ) ] = rtrim( $theme_uri, '/' ) . '/' . ltrim( $target, '/' ); } } return $urls; }
 	private static function root_html( DOMDocument $dom ): string { $html = ''; $root = $dom->getElementById( 'ssi-classic-root' ); foreach ( iterator_to_array( $root?->childNodes ?? array() ) as $node ) { $html .= $dom->saveHTML( $node ); } return $html; }
