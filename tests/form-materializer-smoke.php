@@ -630,6 +630,38 @@ namespace {
 	$assert( ! str_contains( (string) $duplicate_generated_contents['posts/page-home.post_content'], '<!-- wp:html' ), 'graft-generated-home-core-html-removed' );
 	$assert( ! str_contains( (string) $duplicate_generated_contents['posts/page-contact.post_content'], '<!-- wp:html' ), 'graft-generated-contact-core-html-removed' );
 
+	// Complete fallback grafts retain authored context and presentation, rather than
+	// rebuilding a form from only its flat control list.
+	$cara_form_html = '<form class="contact-form"><h2>Contact Me</h2><label class="required-note"><span>*</span> Indicates required field</label><div class="name-row"><div class="first"><input aria-required="true" placeholder="First" type="text" name="first"><label>First</label></div><div class="last"><input aria-required="true" placeholder="Last" type="text" name="last"><label>Last</label></div></div><textarea aria-required="true" name="message" style="height:200px"></textarea><input type="submit" value="Submit"><a class="wsite-button"><span class="wsite-button-inner">Submit</span></a></form>';
+	$cara_report    = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/contact.html' );
+	$cara_report['diagnostics'][] = array(
+		'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_form_fallback', 'loss_class' => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+		'source_path' => 'website/contact.html', 'selector' => 'form.contact-form', 'tag' => 'form', 'html' => $cara_form_html,
+		'form' => array( 'class' => 'contact-form' ),
+		'controls' => array(
+			array( 'tag' => 'input', 'type' => 'text', 'name' => 'first', 'label' => 'First', 'aria-required' => 'true' ),
+			array( 'tag' => 'input', 'type' => 'text', 'name' => 'last', 'label' => 'Last', 'aria_required' => 'true' ),
+			array( 'tag' => 'textarea', 'type' => 'textarea', 'name' => 'message', 'label' => 'Message', 'aria-required' => 'true' ),
+			array( 'tag' => 'input', 'type' => 'submit', 'value' => 'Submit' ),
+		),
+		'control_topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false, 'nodes' => array(
+			array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div', 'class' => 'name-row' ),
+			array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'div', 'class' => 'first' ),
+			array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 0 ),
+			array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'tag' => 'div', 'class' => 'last' ),
+			array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => 0, 'depth' => 2, 'control' => 1 ),
+			array( 'id' => 'control-2', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 2 ),
+			array( 'id' => 'control-3', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 3 ),
+		) ),
+		'layout_graph' => $layout_graph( array( $layout_node( 'wrapper-0', array( 'display' => 'grid', 'columns' => 'repeat(2, 1fr)' ) ) ) ),
+	);
+	$cara_contents = array( 'website/contact.html' => $core_html_block( $cara_form_html ) );
+	$cara_seeding  = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $cara_report, array(), $cara_contents );
+	$cara_grafted  = (string) $cara_contents['website/contact.html'];
+	$assert( 1 === ( $cara_seeding['grafted_count'] ?? 0 ) && str_contains( $cara_grafted, '>Contact Me</h2>' ) && str_contains( $cara_grafted, '<p>* Indicates required field</p>' ), 'graft-preserves-authored-heading-and-required-note', $cara_grafted );
+	$assert( 2 === substr_count( $cara_grafted, '"width":50' ) && str_contains( $cara_grafted, '"required":true' ), 'graft-preserves-compound-name-widths-and-aria-required-semantics' );
+	$assert( str_contains( $cara_grafted, 'wsite-button') && str_contains( $cara_grafted, '>Submit</button>' ), 'graft-preserves-visible-submit-presentation' );
+
 	// A source fallback delegates to its generated-document finding instead of
 	// reporting a duplicate unanchorable graft after URL/class normalization.
 	$delegated_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
@@ -784,7 +816,7 @@ namespace {
 	$assert( 'woocommerce' === Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'shop' ), 'shop-provider-unaffected-by-form-override' );
 
 	if ( empty( $failures ) && in_array( '--emit-topology-markup', $argv ?? array(), true ) ) {
-		echo wp_json_encode( array( 'markup' => $topology_markup, 'depth_markup' => $deep_topology_markup ) ) . "\n";
+		echo wp_json_encode( array( 'markup' => $topology_markup, 'depth_markup' => $deep_topology_markup, 'cara_markup' => $cara_grafted ) ) . "\n";
 		exit( 0 );
 	}
 

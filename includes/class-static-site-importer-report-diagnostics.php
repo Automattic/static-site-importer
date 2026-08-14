@@ -1161,6 +1161,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			$diagnostic = $report['diagnostics'][ $index ];
 			$controls   = isset( $diagnostic['controls'] ) && is_array( $diagnostic['controls'] ) ? $diagnostic['controls'] : array();
 			$form       = isset( $diagnostic['form'] ) && is_array( $diagnostic['form'] ) ? $diagnostic['form'] : array();
+			$form       = self::preserved_form_presentation( $diagnostic, $form );
 			if ( empty( $controls ) && self::is_generated_core_html_form_diagnostic( $diagnostic ) ) {
 				$extracted                                   = self::extract_form_manifest_from_diagnostic( $diagnostic );
 				$controls                                    = $extracted['controls'];
@@ -1258,6 +1259,76 @@ class Static_Site_Importer_Report_Diagnostics {
 
 		$report['form_seeding'] = $seeding;
 		return $seeding;
+	}
+
+	/**
+	 * Carry bounded authored form context into the provider adapter.
+	 *
+	 * The fallback HTML is the only complete representation when a form island is
+	 * replaced, so retain headings, standalone notes, and a visible submit treatment
+	 * before the provider block is serialized.
+	 *
+	 * @param array<string,mixed> $diagnostic Form fallback finding.
+	 * @param array<string,mixed> $form       Extracted form metadata.
+	 * @return array<string,mixed>
+	 */
+	private static function preserved_form_presentation( array $diagnostic, array $form ): array {
+		$html = isset( $diagnostic['html'] ) && is_string( $diagnostic['html'] ) ? $diagnostic['html'] : ( isset( $diagnostic['source_html_preview'] ) && is_string( $diagnostic['source_html_preview'] ) ? $diagnostic['source_html_preview'] : '' );
+		if ( '' === $html ) {
+			return $form;
+		}
+
+		$context = array();
+		if ( preg_match_all( '/<h([1-6])\b[^>]*>(.*?)<\/h\1>/is', $html, $headings, PREG_SET_ORDER ) ) {
+			foreach ( array_slice( $headings, 0, 8 ) as $heading ) {
+				$text = self::form_presentation_text( $heading[2] );
+				if ( '' !== $text ) {
+					$context[] = array( 'type' => 'heading', 'level' => (int) $heading[1], 'text' => $text );
+				}
+			}
+		}
+		if ( preg_match_all( '/<label\b([^>]*)>(.*?)<\/label>/is', $html, $labels, PREG_SET_ORDER ) ) {
+			foreach ( array_slice( $labels, 0, 16 ) as $label ) {
+				if ( ! preg_match( '/(?:required|note|instruction|help)/i', $label[1] ) || preg_match( '/<(?:input|select|textarea|button)\b/i', $label[2] ) ) {
+					continue;
+				}
+				$text = self::form_presentation_text( $label[2] );
+				if ( '' !== $text && ! in_array( $text, array_column( $context, 'text' ), true ) ) {
+					$context[] = array( 'type' => 'paragraph', 'text' => $text );
+				}
+			}
+		}
+		if ( ! empty( $context ) ) {
+			$form['context_blocks'] = $context;
+		}
+
+		if ( preg_match_all( '/<(?:a|button)\b([^>]*)>(.*?)<\/(?:a|button)>/is', $html, $buttons, PREG_SET_ORDER ) ) {
+			foreach ( $buttons as $button ) {
+				$text    = self::form_presentation_text( $button[2] );
+				$classes = self::form_presentation_classes( $button[1] );
+				if ( '' !== $text && ! empty( $classes ) && preg_grep( '/(?:button|submit)/i', $classes ) ) {
+					$form['submit_presentation'] = array( 'text' => $text, 'classes' => $classes );
+					break;
+				}
+			}
+		}
+
+		return $form;
+	}
+
+	/** @return array<int,string> */
+	private static function form_presentation_classes( string $attributes ): array {
+		if ( ! preg_match( '/\bclass\s*=\s*(["\'])(.*?)\1/is', $attributes, $match ) ) {
+			return array();
+		}
+		$classes = preg_split( '/\s+/', trim( $match[2] ) );
+		return array_values( array_slice( array_filter( $classes ?: array(), static fn ( string $class ): bool => (bool) preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class ) ), 0, 8 ) );
+	}
+
+	private static function form_presentation_text( string $html ): string {
+		$plain = function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( $html ) : strip_tags( $html ); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- Fallback only for runtime-free smoke tests.
+		$text  = trim( preg_replace( '/\s+/', ' ', $plain ) ?: '' );
+		return substr( $text, 0, 200 );
 	}
 
 	/**
