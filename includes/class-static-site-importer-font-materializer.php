@@ -40,7 +40,9 @@ final class Static_Site_Importer_Font_Materializer {
 		}
 		if ( null !== $producer_faces ) {
 			if ( empty( $producer_faces['faces'] ) ) {
-				if ( ! empty( $diagnostics ) || ! self::resolved_plan_has_google_stylesheet( $resolved_plan ) ) {
+				if ( self::uses_inferred_google_fallback( $plan ) ) {
+					$producer_faces = null;
+				} elseif ( ! empty( $diagnostics ) || ! self::resolved_plan_has_google_stylesheet( $resolved_plan ) ) {
 					return array(
 						'writes'         => array(),
 						'diagnostics'    => $diagnostics,
@@ -135,6 +137,20 @@ final class Static_Site_Importer_Font_Materializer {
 			);
 		}
 		return self::with_runtime_registration( $writes, $resolved_plan, array(), $diagnostics );
+	}
+
+	private static function uses_inferred_google_fallback( array $plan ): bool {
+		if ( 'google_fonts' !== (string) ( $plan['provider'] ?? '' ) || empty( $plan['fonts'] ) || empty( $plan['imports'] ) ) {
+			return false;
+		}
+
+		foreach ( $plan['imports'] as $import ) {
+			if ( ! is_array( $import ) || 'unsupported' !== (string) ( $import['provider'] ?? '' ) ) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/** @return array{faces:array<int,array<string,mixed>>,imports:array<string,array<string,mixed>>,receipts:array<string,string>,svg_consumers:array<int,array<string,mixed>>}|null|WP_Error */

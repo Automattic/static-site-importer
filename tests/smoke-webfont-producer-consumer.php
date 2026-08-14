@@ -171,6 +171,14 @@ $local_plan['webfont_contract']['diagnostics'] = array();
 $local_overlay_without_diagnostics = Static_Site_Importer_Font_Materializer::prepare_overlay( $local_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
 $assert( ! is_wp_error( $local_overlay_without_diagnostics ) && array() === $local_overlay_without_diagnostics['writes'] && $request_count === count( $GLOBALS['ssi_webfont_requests'] ), 'an authoritative zero-face contract without diagnostics still suppresses legacy Google requests' );
 
+$inferred_google_plan = $local_plan;
+$inferred_google_plan['imports'] = array(
+	array( 'provider' => 'unsupported', 'href' => '/fonts/local.css' ),
+);
+$inferred_google_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $inferred_google_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
+$inferred_google_css = (string) ( array_values( array_filter( $inferred_google_overlay['writes'] ?? array(), static fn( array $write ): bool => 'assets/css/embedded-fonts.css' === $write['target_path'] ) )[0]['content'] ?? '' );
+$assert( ! is_wp_error( $inferred_google_overlay ) && str_contains( $inferred_google_css, "font-family:'Inter'" ) && $request_count < count( $GLOBALS['ssi_webfont_requests'] ), 'unsupported source imports defer to the explicit inferred Google Fonts fallback plan' );
+
 $italic_axis_plan = $producer_plan;
 $italic_axis_plan['webfont_contract']['faces'][0]['axes']['ital'] = array( 'kind' => 'static', 'value' => 0 );
 $italic_axis_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $italic_axis_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
