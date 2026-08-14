@@ -1161,7 +1161,6 @@ class Static_Site_Importer_Report_Diagnostics {
 			$diagnostic = $report['diagnostics'][ $index ];
 			$controls   = isset( $diagnostic['controls'] ) && is_array( $diagnostic['controls'] ) ? $diagnostic['controls'] : array();
 			$form       = isset( $diagnostic['form'] ) && is_array( $diagnostic['form'] ) ? $diagnostic['form'] : array();
-			$form       = self::preserved_form_presentation( $diagnostic, $form );
 			if ( empty( $controls ) && self::is_generated_core_html_form_diagnostic( $diagnostic ) ) {
 				$extracted                                   = self::extract_form_manifest_from_diagnostic( $diagnostic );
 				$controls                                    = $extracted['controls'];
@@ -1169,6 +1168,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				$report['diagnostics'][ $index ]['controls'] = $controls;
 				$report['diagnostics'][ $index ]['form']     = $form;
 			}
+			$form = self::preserved_form_presentation( $diagnostic, $form, $controls );
 			$manifest_forms[] = array(
 				'selector'    => isset( $diagnostic['selector'] ) && is_scalar( $diagnostic['selector'] ) ? (string) $diagnostic['selector'] : '',
 				'source_path' => isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : ( isset( $diagnostic['source'] ) && is_scalar( $diagnostic['source'] ) ? (string) $diagnostic['source'] : '' ),
@@ -1270,9 +1270,10 @@ class Static_Site_Importer_Report_Diagnostics {
 	 *
 	 * @param array<string,mixed> $diagnostic Form fallback finding.
 	 * @param array<string,mixed> $form       Extracted form metadata.
+	 * @param array<int,array<string,mixed>> $controls Extracted controls, enriched in place.
 	 * @return array<string,mixed>
 	 */
-	private static function preserved_form_presentation( array $diagnostic, array $form ): array {
+	private static function preserved_form_presentation( array $diagnostic, array $form, array &$controls ): array {
 		$html = isset( $diagnostic['html'] ) && is_string( $diagnostic['html'] ) ? $diagnostic['html'] : ( isset( $diagnostic['source_html_preview'] ) && is_string( $diagnostic['source_html_preview'] ) ? $diagnostic['source_html_preview'] : '' );
 		if ( '' === $html ) {
 			return $form;
@@ -1300,6 +1301,15 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 		if ( ! empty( $context ) ) {
 			$form['context_blocks'] = $context;
+		}
+		if ( preg_match_all( '/<textarea\b([^>]*)>/is', $html, $textareas, PREG_SET_ORDER ) ) {
+			$textarea_indexes = array_keys( array_filter( $controls, static fn ( array $control ): bool => 'textarea' === strtolower( (string) ( $control['tag'] ?? '' ) ) ) );
+			foreach ( $textareas as $index => $textarea ) {
+				if ( ! isset( $textarea_indexes[ $index ] ) || ! preg_match( '/\bstyle\s*=\s*(["\'])(.*?)\1/is', $textarea[1], $style ) || ! preg_match( '/(?:^|;)\s*height\s*:\s*([0-9]{1,4}(?:\.[0-9]+)?(?:px|em|rem|vh|vw|%))\s*(?:;|$)/i', $style[2], $height ) ) {
+					continue;
+				}
+				$controls[ $textarea_indexes[ $index ] ]['height'] = $height[1];
+			}
 		}
 
 		if ( preg_match_all( '/<(?:a|button)\b([^>]*)>(.*?)<\/(?:a|button)>/is', $html, $buttons, PREG_SET_ORDER ) ) {

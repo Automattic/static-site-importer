@@ -660,6 +660,7 @@ namespace {
 	$cara_grafted  = (string) $cara_contents['website/contact.html'];
 	$assert( 1 === ( $cara_seeding['grafted_count'] ?? 0 ) && str_contains( $cara_grafted, '>Contact Me</h2>' ) && str_contains( $cara_grafted, '<p>* Indicates required field</p>' ), 'graft-preserves-authored-heading-and-required-note', $cara_grafted );
 	$assert( 2 === substr_count( $cara_grafted, '"width":50' ) && str_contains( $cara_grafted, '"required":true' ), 'graft-preserves-compound-name-widths-and-aria-required-semantics' );
+	$assert( str_contains( $cara_grafted, '"minHeight":"200px"' ), 'graft-preserves-textarea-height' );
 	$assert( str_contains( $cara_grafted, 'wsite-button') && str_contains( $cara_grafted, '>Submit</button>' ), 'graft-preserves-visible-submit-presentation' );
 
 	// A source fallback delegates to its generated-document finding instead of

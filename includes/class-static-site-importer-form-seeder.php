@@ -749,6 +749,10 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			if ( 'textarea' === $lookup ) {
 				$input_attrs['type'] = 'textarea';
+				$height = isset( $control['height'] ) && is_scalar( $control['height'] ) ? trim( (string) $control['height'] ) : '';
+				if ( '' !== $height && preg_match( '/^[0-9]{1,4}(?:\.[0-9]+)?(?:px|em|rem|vh|vw|%)$/D', $height ) ) {
+					$input_attrs['style']['dimensions']['minHeight'] = $height;
+				}
 			} elseif ( 'select' === $lookup ) {
 				$input_attrs['type'] = 'dropdown';
 			}
