@@ -439,6 +439,19 @@ complete solved corpus. The replayable plan and operator summary identify this
 lane as `fixtures-solved-only/v1` and include active, solved, and selected corpus
 counts plus the full coverage inventory so CI artifacts prove the exact selection.
 
+### Editor Presentation Evidence
+
+New matrix runs emit `static-site-importer/editor-presentation-evidence/v2`.
+Its `expected_identities_complete` field records whether the expected global and
+front-page stylesheet identities came from a complete site-plan asset list. A
+declared `asset_count` that differs from supplied assets, an upstream truncation
+marker, or local evidence bounding makes that field false and prevents promotion.
+
+The promotion gate still reads v1 evidence when the fixture retains its raw site
+plan and that plan has a matching declared asset count and reproduces the exact
+expected identity set. A bounded summary or missing/partial plan is ambiguous and
+fails closed; rerun the matrix to produce v2 evidence.
+
 The solved-candidate gate also proves persisted Gutenberg editability. After
 visual parity capture, it inserts a fixture-specific paragraph through
 `wordpress.editor-actions`, saves with `core/editor.savePost`, reloads the editor,
@@ -495,6 +508,11 @@ After each fixture's import step, `buildFixtureMatrixRecipe` appends a
 `{ name, isValid, issues }` results plus `total_blocks`/`valid_blocks`/
 `invalid_blocks`. This reuses the existing wp-codebox editor-validation command
 rather than rebuilding a validator.
+
+Solved-site promotion additionally requires the WP Codebox artifact schema,
+`wordpress-block-editor` provider, `edited-post-content` source, a nonzero
+registered block-type count, and one complete recursive result per reported
+block. Counts-only or detached-content validation cannot satisfy promotion.
 
 The default `front-page` target resolves at runtime to the imported
 `page_on_front`, so validation exercises real imported content even though its

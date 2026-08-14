@@ -7,6 +7,7 @@ import { verifySolvedSitePromotion } from './verify-solved-site-promotion.mjs';
 
 const SSI_SHA = '1'.repeat(40);
 const BE_SHA = '2'.repeat(40);
+const WP_CODEBOX_SHA = '7'.repeat(40);
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-promotion-'));
@@ -19,8 +20,9 @@ function fixture() {
       fixture_id: 'solved', status: 'passed', success: true,
       quality_metrics: { pass: true, fallback_count: 0, core_html_block_count: 0, freeform_block_count: 0, invalid_block_count: 0 },
       block_composition: { block_total: 4, native_block_count: 4, core_html_block_count: 0 },
-      editor_validation: { validation_method: 'wp.blocks.validateBlock', total_blocks: 4, valid_blocks: 4, invalid_blocks: 0 },
+      editor_validation: { schema: 'wp-codebox/editor-validate-blocks/v1', validation_method: 'wp.blocks.validateBlock', validation_provider: 'wordpress-block-editor', content_source: 'edited-post-content', block_types_registered: 42, result_count: 4, results_complete: true, total_blocks: 4, valid_blocks: 4, invalid_blocks: 0 },
       editor_canvas: { status: 'captured', screenshot: path.join(root, 'editor.png') },
+      editor_presentation: { schema: 'static-site-importer/editor-presentation-evidence/v2', provider_schema: 'wp-codebox/editor-presentation/v1', canvas_document_type: 'iframe', iframe_count: 1, expected_identity_count: 1, observed_identity_count: 1, expected_identities: ['a'.repeat(64)], observed_identities: ['a'.repeat(64)], missing_identities: [], expected_identities_complete: true, coverage_complete: true },
       visual_parity_artifacts: { metrics: { mismatch_ratio: 0, mismatch_pixels: 0 }, artifacts: Object.fromEntries([
         ['source_screenshot', 'source.png'], ['imported_screenshot', 'candidate.png'], ['diff_screenshot', 'diff.png'], ['visual_diff', 'visual-diff.json'],
       ].map(([slot, file]) => [slot, { status: 'captured', ref: { path: path.join(root, file) } }])) },
@@ -35,10 +37,10 @@ function fixture() {
     generated_from: { result_schema: matrix.schema, fixture_count: matrix.fixtures.length },
     fixture_decisions: [{ fixture_id: 'solved', fixture_corpus: 'solved', acceptance_status: 'solved_candidate' }],
   };
-  const runtime = { nodeVersion: '20.19.4', phpVersion: '8.1.29', wordpressVersion: '7.0.2', homeboyVersion: 'v0.298.1', homeboySha256: '3'.repeat(64), homeboyExtensionsRef: '4'.repeat(40), wpCodeboxVersion: 'v0.18.4', wpCodeboxSha256: '5'.repeat(64), staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA };
+  const runtime = { nodeVersion: '20.19.4', phpVersion: '8.1.29', wordpressVersion: '7.0.4', homeboyVersion: 'v0.298.1', homeboySha256: '3'.repeat(64), homeboyExtensionsRef: '4'.repeat(40), wpCodeboxVersion: 'v0.20.0', wpCodeboxSha256: '5'.repeat(64), wpCodeboxSha: WP_CODEBOX_SHA, staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA };
   const paths = { matrix: path.join(root, 'matrix.json'), registry: path.join(root, 'registry.json'), runtime: path.join(root, 'runtime.json') };
   write(paths.matrix, matrix); write(paths.registry, registry); write(paths.runtime, runtime);
-  return { root, matrix, registry, runtime, paths, options: { matrixResult: paths.matrix, registry: paths.registry, runtimeInputs: paths.runtime, artifactRoot: root, staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA, fixtureTreeSha: '6'.repeat(40), solvedFixtureCount: 1, solvedFixtureIds: 'solved', runUrl: 'https://github.com/Automattic/static-site-importer/actions/runs/123', artifactUrl: 'https://github.com/Automattic/static-site-importer/actions/runs/123#artifacts', output: path.join(root, 'receipt.json'), manifestOutput: path.join(root, 'manifest.json') } };
+  return { root, matrix, registry, runtime, paths, options: { matrixResult: paths.matrix, registry: paths.registry, runtimeInputs: paths.runtime, artifactRoot: root, staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA, wpCodeboxSha: WP_CODEBOX_SHA, fixtureTreeSha: '6'.repeat(40), solvedFixtureCount: 1, solvedFixtureIds: 'solved', runUrl: 'https://github.com/Automattic/static-site-importer/actions/runs/123', artifactUrl: 'https://github.com/Automattic/static-site-importer/actions/runs/123#artifacts', output: path.join(root, 'receipt.json'), manifestOutput: path.join(root, 'manifest.json') } };
 }
 
 test('issues an accepted immutable promotion receipt', () => {
@@ -50,12 +52,37 @@ test('issues an accepted immutable promotion receipt', () => {
   assert.ok(receipt.evidence.artifacts.every((row) => /^[a-f0-9]{64}$/.test(row.sha256)));
 });
 
-test('pins the published WP Codebox workspace asset and checksum together', () => {
+test('accepts complete v1 presentation evidence with complete raw plan provenance', () => {
+  const input = fixture();
+  const presentation = input.matrix.fixtures[0].editor_presentation;
+  presentation.schema = 'static-site-importer/editor-presentation-evidence/v1';
+  delete presentation.expected_identities_complete;
+  input.matrix.fixtures[0].import_report = { blocks_engine: { wordpress_site_plan: { asset_count: 1, assets: [{ kind: 'css', content_hash: 'a'.repeat(64), scopes: [{ kind: 'global' }] }] } } };
+  write(input.paths.matrix, input.matrix);
+
+  assert.equal(verifySolvedSitePromotion(input.options).status, 'accepted');
+});
+
+test('accepts complete parent-document editor presentation evidence', () => {
+  const input = fixture();
+  input.matrix.fixtures[0].editor_presentation.canvas_document_type = 'parent';
+  input.matrix.fixtures[0].editor_presentation.iframe_count = 0;
+  write(input.paths.matrix, input.matrix);
+
+  assert.equal(verifySolvedSitePromotion(input.options).status, 'accepted');
+});
+
+test('pins an immutable WP Codebox candidate package and checksum together', () => {
   const workflow = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion.yml'), 'utf8');
-  assert.match(workflow, /WP_CODEBOX_VERSION: v0\.18\.4/);
-  assert.match(workflow, /WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0\.18\.4\.tgz/);
-  assert.match(workflow, /WP_CODEBOX_SHA256: 56d8f887a7b5109aa83927fd1cee5ec665af63cb72a35dba2df70f84b7ac47eb/);
-  assert.match(workflow, /releases\/download\/\$\{WP_CODEBOX_VERSION\}\/\$\{WP_CODEBOX_WORKSPACE_ASSET\}/);
+  const caller = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion-pr.yml'), 'utf8');
+  assert.match(workflow, /default: 831d30576984077ab4f68b5da599d4580de48165/);
+  assert.match(workflow, /WP_CODEBOX_VERSION: v0\.20\.0/);
+  assert.match(workflow, /WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0\.20\.0\.tgz/);
+  assert.match(workflow, /npm pack --pack-destination/);
+  assert.match(workflow, /WP_CODEBOX_SHA256=\$\(sha256sum/);
+  assert.match(workflow, /wpCodeboxSha:process\.env\.WP_CODEBOX_SHA/);
+  assert.match(caller, /blocks-engine-sha: 7858943a9913175993cc75870551c2e1926b4fb0/);
+  assert.match(caller, /wp-codebox-sha: 831d30576984077ab4f68b5da599d4580de48165/);
 });
 
 test('resolves uniquely named durable copies of transient runtime evidence', () => {
@@ -86,6 +113,14 @@ for (const [name, mutate, pattern] of [
   ['failed decision', (input) => { input.registry.fixture_decisions[0].acceptance_status = 'visual_only_blocker'; }, /solved_candidate/],
   ['partial receipt', (input) => { input.matrix.fixtures[0].matrix_evidence.materialization_receipt.status = 'partial'; }, /materialization receipt/],
   ['zero editor blocks', (input) => { input.matrix.fixtures[0].editor_validation.total_blocks = 0; input.matrix.fixtures[0].editor_validation.valid_blocks = 0; }, /editor validation/],
+  ['counts-only editor evidence', (input) => { delete input.matrix.fixtures[0].editor_validation.schema; }, /browser artifact schema/],
+  ['detached editor content', (input) => { input.matrix.fixtures[0].editor_validation.content_source = 'argument'; }, /loaded post editor content/],
+  ['missing registered block types', (input) => { input.matrix.fixtures[0].editor_validation.block_types_registered = 0; }, /registered block types/],
+  ['incomplete recursive results', (input) => { input.matrix.fixtures[0].editor_validation.result_count = 3; }, /recursive result/],
+  ['missing editor presentation', (input) => { delete input.matrix.fixtures[0].editor_presentation; }, /editor presentation evidence/],
+  ['incomplete editor stylesheet coverage', (input) => { input.matrix.fixtures[0].editor_presentation.coverage_complete = false; input.matrix.fixtures[0].editor_presentation.missing_identities = ['a'.repeat(64)]; }, /stylesheet coverage/],
+  ['contradictory editor presentation identities', (input) => { input.matrix.fixtures[0].editor_presentation.observed_identities = []; input.matrix.fixtures[0].editor_presentation.observed_identity_count = 0; }, /stylesheet coverage/],
+  ['contradictory parent canvas iframe count', (input) => { input.matrix.fixtures[0].editor_presentation.canvas_document_type = 'parent'; }, /stylesheet coverage/],
   ['visual mismatch', (input) => { input.matrix.fixtures[0].visual_parity_artifacts.metrics.mismatch_pixels = 1; }, /visual mismatch/],
   ['fallback block', (input) => { input.matrix.fixtures[0].quality_metrics.core_html_block_count = 1; }, /core_html_block_count/],
   ['non-native conversion', (input) => { input.matrix.fixtures[0].editor_quality.native_conversion_rate = 0.99; }, /native conversion rate/],

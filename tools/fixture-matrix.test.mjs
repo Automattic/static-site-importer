@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -97,14 +97,149 @@ import {
   runtimePresentationEvidenceProbeStep,
   writeFixtureMatrixResultArtifacts,
 } from '../lib/fixture-matrix.mjs';
+
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
 import { collectQualityMetrics } from '../lib/fixture-matrix/collectors/quality-metrics.mjs';
-import { collectSurfaceRecords } from '../lib/fixture-matrix/collectors/run-intake.mjs';
+import { collectEditorPresentation, collectSurfaceRecords } from '../lib/fixture-matrix/collectors/run-intake.mjs';
 import { runWpCodeboxRecipe, wpCodeboxBin } from './wp-codebox/recipe.mjs';
+
+const completeEditorPresentation = {
+  schema: 'static-site-importer/editor-presentation-evidence/v2',
+  provider_schema: 'wp-codebox/editor-presentation/v1',
+  canvas_document_type: 'iframe',
+  iframe_count: 1,
+  expected_identity_count: 1,
+  observed_identity_count: 1,
+  expected_identities: ['a'.repeat(64)],
+  observed_identities: ['a'.repeat(64)],
+  missing_identities: [],
+  expected_identities_complete: true,
+  coverage_complete: true,
+};
+
+const completeEditorValidation = {
+  schema: 'wp-codebox/editor-validate-blocks/v1',
+  validation_method: 'wp.blocks.validateBlock',
+  validation_provider: 'wordpress-block-editor',
+  content_source: 'edited-post-content',
+  block_types_registered: 42,
+  result_count: 8,
+  results_complete: true,
+  total_blocks: 8,
+  valid_blocks: 8,
+  invalid_blocks: 0,
+};
 
 const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fixtureRoot = path.join(packageRoot, 'tests', 'fixtures', 'fixture-matrix');
 const syntheticFixtureCount = 3;
+
+test('editor presentation intake compares inspected iframe identities with front-page CSS assets', () => {
+  const globalIdentity = 'a'.repeat(64);
+  const frontPageIdentity = 'b'.repeat(64);
+  const otherRouteIdentity = 'c'.repeat(64);
+  assert.deepEqual(collectEditorPresentation({
+    summary: {
+      editorPresentation: {
+        schema: 'wp-codebox/editor-presentation/v1',
+        canvasDocumentType: 'iframe',
+        iframeCount: 1,
+        generatedPresentationIdentities: [frontPageIdentity, globalIdentity, globalIdentity.toUpperCase()],
+      },
+    },
+    import_report: {
+      blocks_engine: {
+        wordpress_site_plan: {
+          assets: [
+            { kind: 'css', content_hash: globalIdentity, scopes: [{ kind: 'global' }] },
+            { kind: 'css', content_hash: frontPageIdentity, scopes: [{ kind: 'page', front_page: true }] },
+            { kind: 'css', content_hash: otherRouteIdentity, scopes: [{ kind: 'page', route_path: 'about' }] },
+          ],
+        },
+      },
+    },
+  }), {
+    schema: 'static-site-importer/editor-presentation-evidence/v2',
+    provider_schema: 'wp-codebox/editor-presentation/v1',
+    canvas_document_type: 'iframe',
+    iframe_count: 1,
+    expected_identity_count: 2,
+    observed_identity_count: 2,
+    expected_identities: [globalIdentity, frontPageIdentity],
+    observed_identities: [globalIdentity, frontPageIdentity],
+    missing_identities: [],
+    expected_identities_complete: true,
+    coverage_complete: true,
+  });
+});
+
+test('editor presentation intake uses bounded site-plan hashes when the import report is an artifact ref', () => {
+  const identity = 'd'.repeat(64);
+  assert.deepEqual(collectEditorPresentation({
+    editor_open: { summary: { editorPresentation: { schema: 'wp-codebox/editor-presentation/v1', canvasDocumentType: 'iframe', iframeCount: 1, generatedPresentationIdentities: [] } } },
+    import_report: { artifact_ref: 'import-report.json' },
+  }, {
+    wordpress_site_plan: { assets: [{ kind: 'css', payload_sha256: identity }] },
+  }), {
+    schema: 'static-site-importer/editor-presentation-evidence/v2',
+    provider_schema: 'wp-codebox/editor-presentation/v1',
+    canvas_document_type: 'iframe',
+    iframe_count: 1,
+    expected_identity_count: 1,
+    observed_identity_count: 0,
+    expected_identities: [identity],
+    observed_identities: [],
+    missing_identities: [identity],
+    expected_identities_complete: true,
+    coverage_complete: false,
+  });
+});
+
+test('bounded site-plan fallback retains scopes and cannot certify truncated presentation assets', () => {
+  const identity = (index) => index.toString(16).padStart(64, '0');
+  const assets = Array.from({ length: 51 }, (_, index) => ({
+    kind: 'css',
+    path: `assets/${String(index).padStart(2, '0')}.css`,
+    payload_sha256: identity(index),
+    scopes: [{ kind: 'page', ...(index === 0 ? { route_path: 'about' } : index === 1 ? { front_page: true } : { kind: 'global' }) }],
+  }));
+  const evidence = collectMatrixEvidence({
+    import_report: { blocks_engine: { wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2', assets } } },
+  });
+  const observed = evidence.wordpress_site_plan.assets.map((asset) => asset.payload_sha256);
+  const presentation = collectEditorPresentation({
+    summary: { editorPresentation: { schema: 'wp-codebox/editor-presentation/v1', iframeCount: 1, generatedPresentationIdentities: observed } },
+    import_report: { artifact_ref: 'import-report.json' },
+  }, evidence);
+
+  assert.equal(evidence.wordpress_site_plan.assets_truncated, true);
+  assert.deepEqual(evidence.wordpress_site_plan.assets[0].scopes, [{ kind: 'page', route_path: 'about' }]);
+  assert.equal(presentation.expected_identities.includes(identity(0)), false);
+  assert.equal(presentation.expected_identities.includes(identity(1)), true);
+  assert.equal(presentation.expected_identities_complete, false);
+  assert.equal(presentation.coverage_complete, false);
+});
+
+test('declared site-plan asset counts make partial fallback presentation evidence fail closed', () => {
+  const identity = (index) => index.toString(16).padStart(64, '0');
+  const assets = Array.from({ length: 50 }, (_, index) => ({
+    kind: 'css',
+    path: `assets/${String(index).padStart(2, '0')}.css`,
+    payload_sha256: identity(index),
+    scopes: [{ kind: 'global' }],
+  }));
+  const evidence = collectMatrixEvidence({
+    import_report: { blocks_engine: { wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2', asset_count: 51, assets } } },
+  });
+  const presentation = collectEditorPresentation({
+    summary: { editorPresentation: { schema: 'wp-codebox/editor-presentation/v1', iframeCount: 1, generatedPresentationIdentities: assets.map((asset) => asset.payload_sha256) } },
+    import_report: { artifact_ref: 'import-report.json' },
+  }, evidence);
+
+  assert.equal(evidence.wordpress_site_plan.assets_truncated, true);
+  assert.equal(presentation.expected_identities_complete, false);
+  assert.equal(presentation.coverage_complete, false);
+});
 
 test('matrix evidence requires and summarizes the canonical materialization receipt', () => {
   const evidence = collectMatrixEvidence({
@@ -344,15 +479,19 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         fixture_id: 'cv',
         status: 'passed',
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/cv/screenshot.png' }],
+        editor_presentation: completeEditorPresentation,
         visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
         block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
+        editor_validation: completeEditorValidation,
         editor_quality: { editor_validated_block_total: 8, editor_invalid_count: 0, core_html_block_count: 0 },
       },
       {
         fixture_id: 'artist',
         status: 'failed',
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/artist/screenshot.png' }],
+        editor_presentation: completeEditorPresentation,
         block_composition: { block_total: 10, native_block_count: 9, core_html_block_count: 1 },
+        editor_validation: completeEditorValidation,
         editor_quality: { editor_validated_block_total: 10, editor_invalid_count: 0, core_html_block_count: 1 },
         visual_diff_regions: [{ dominant_cause: 'position_offset', pixel_count: 2500 }],
       },
@@ -360,6 +499,8 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         fixture_id: 'coffee',
         status: 'failed',
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/coffee/screenshot.png' }],
+        editor_presentation: completeEditorPresentation,
+        editor_validation: completeEditorValidation,
         editor_quality: { editor_validated_block_total: 12, editor_invalid_count: 0, core_html_block_count: 0 },
         visual_diff_regions: [{ dominant_cause: 'font_metric_drift', pixel_count: 900 }],
       },
@@ -367,7 +508,9 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         fixture_id: 'saas',
         status: 'failed',
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/saas/screenshot.png' }],
+        editor_presentation: completeEditorPresentation,
         visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
+        editor_validation: completeEditorValidation,
         editor_quality: { editor_validated_block_total: 6, editor_invalid_count: 1, core_html_block_count: 0 },
       },
       {
@@ -412,12 +555,13 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
 
   assert.equal(decisions.cv.frontend_visual_status, 'passed');
   assert.equal(decisions.cv.editor_canvas_status, 'visible');
+  assert.equal(decisions.cv.editor_presentation_status, 'passed');
   assert.equal(decisions.cv.block_validity_status, 'valid');
   assert.equal(decisions.cv.editor_validity_status, 'valid');
   assert.equal(decisions.cv.native_editability_status, 'native_editable');
   assert.equal(decisions.cv.solved_candidate, true);
   assert.equal(decisions.cv.acceptance_status, 'solved_candidate');
-  assert.equal(decisions.cv.solved_candidate_reason, 'passed frontend visual parity, editor canvas evidence, block validity, and native editability without limitation patterns');
+  assert.equal(decisions.cv.solved_candidate_reason, 'passed frontend visual parity, editor presentation coverage, block validity, and native editability without limitation patterns');
   assert.equal(decisions.artist.native_editability_status, 'custom_block_candidate');
   assert.equal(decisions.artist.frontend_visual_status, 'visual_mismatch');
   assert.equal(decisions.artist.editor_canvas_status, 'visible');
@@ -437,7 +581,7 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
   assert.equal(decisions['runtime-provider'].acceptance_status, 'provider_runtime_blocker');
   assert.equal(decisions['cv-missing-editor-evidence'].frontend_visual_status, 'passed');
   assert.equal(decisions['cv-missing-editor-evidence'].editor_canvas_status, 'not_captured');
-  assert.equal(decisions['cv-missing-editor-evidence'].native_editability_status, 'native_editable');
+  assert.equal(decisions['cv-missing-editor-evidence'].native_editability_status, 'unknown');
   assert.equal(decisions['cv-missing-editor-evidence'].acceptance_status, 'evidence_gap');
   assert.equal(patterns['static-form'].limitation_type, 'real_gutenberg_gap');
   assert.equal(patterns['visual-position_offset'].limitation_type, 'visual_only_style_drift');
@@ -601,6 +745,9 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   assert.equal(recipe.artifacts.typed[0].path, recipe.workflow.steps[2].args[0].match(/--receipt-sidecar=([^ ]+)/)?.[1]);
   assert.equal(recipe.artifacts.typed[0].payloadSchema, 'static-site-importer/materialization-runtime-sidecar/v2');
   assert.match(recipe.workflow.steps[2].args[0], /--allow-failure/);
+  assert.equal(recipe.workflow.steps[3].metadata.phase, 'materialization-sidecar-readback');
+  assert.equal(recipe.workflow.steps[3].metadata.attempt_id, recipe.artifacts.typed[0].metadata.attempt_id);
+  assert.match(recipe.workflow.steps[3].args[0], /command=eval/);
   assert.deepEqual(recipe.inputs.stagedFiles[0], {
     source: '/tmp/artifacts/simple-site/artifact.json',
     target: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/artifact.json',
@@ -959,7 +1106,8 @@ test('fixture capability metadata does not alter provider setup or execution', (
   const fixtureSteps = (id) => recipe.workflow.steps.filter((step) => step.metadata?.fixture_id === id);
 
   const plainSteps = fixtureSteps('plain-site');
-  assert.deepEqual(plainSteps.map((step) => step.command), ['wordpress.wp-cli', 'wordpress.wp-cli', 'wordpress.wp-cli', 'wordpress.wp-cli']);
+  assert.equal(plainSteps.length, 5);
+  assert.ok(plainSteps.every((step) => step.command === 'wordpress.wp-cli'));
   assert.deepEqual(fixtureSteps('shop-site').map((step) => step.command), plainSteps.map((step) => step.command));
   assert.deepEqual(fixtureSteps('shop-forms-site').map((step) => step.command), plainSteps.map((step) => step.command));
   assert.equal(recipe.workflow.steps.some((step) => ['wordpress.plugin-setup', 'wordpress.run-php'].includes(step.command)), false);
@@ -1432,6 +1580,33 @@ test('materialization sidecars retain bounded evidence after oversized import st
   }
 });
 
+test('materialization sidecars survive WP Codebox typed artifact transport', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-typed-artifact-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'typed-sidecar-run' });
+  const directory = path.join(outputDirectory, 'simple-site');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: 'simple-site' }));
+  const sidecar = writeMaterializationSidecar({ directory, fixtureId: 'simple-site', runId: matrix.id, receipt: boundedSidecarReceipt() });
+  rmSync(path.join(directory, 'materialization-receipt--primary.json'));
+
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: {
+      declaredArtifacts: [{
+        schema: 'wp-codebox/recipe-declared-artifact-result/v1',
+        status: 'collected',
+        path: '/wordpress/wp-content/uploads/materialization-receipt--primary.json',
+        parsedJson: sidecar,
+      }],
+    },
+  });
+
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, 'verified');
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_receipt.status, 'completed');
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_receipt.operation_count, 99);
+});
+
 test('failure sidecars retain the bounded import result and front-page option observation', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-failed-import-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'failed-import-evidence' });
@@ -1515,6 +1690,26 @@ test('typed WP Codebox sidecar export materializes into the host intake path', (
   assert.deepEqual(result.fixtures[0].matrix_evidence.materialization_sidecar.documents, documents);
   assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.documents_total, 1);
   assert.deepEqual(result.fixtures[0].surface_lineage.find((surface) => surface.surface.id === 'front-page').materialized_document, { status: 'available', post_id: '42', post_type: 'page', post_slug: 'home', serialized_content_sha256: 'c'.repeat(64) });
+});
+
+test('bounded WP Codebox stdout sidecar readback reaches host intake without artifact projection', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-stdout-readback-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'sidecar-stdout-run' });
+  const directory = path.join(outputDirectory, 'simple-site');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: 'simple-site' }));
+  const sidecar = writeMaterializationSidecar({ directory, fixtureId: 'simple-site', runId: matrix.id, attemptId: 'batch-001', receipt: boundedSidecarReceipt() });
+  unlinkSync(path.join(directory, 'materialization-receipt--batch-001.json'));
+
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    sidecarAttemptId: 'batch-001',
+    codeboxOutput: { executions: [{ metadata: { fixture_id: 'simple-site', phase: 'materialization-sidecar-readback' }, stdout: JSON.stringify(sidecar) }] },
+  });
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, 'verified');
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_receipt.status, 'completed');
+  assert.equal(result.fixtures[0].matrix_evidence.missing.includes('materialization_receipt'), false);
 });
 
 test('persisted v1 and four-field v2 sidecars remain compatible while truncated documents make absent identities indeterminate', () => {
@@ -1635,6 +1830,7 @@ function writeMaterializationSidecar({ directory, fixtureId, runId, receipt, art
   }
   sidecar.content_sha256 = createHash('sha256').update(JSON.stringify(sidecar)).digest('hex');
   writeFileSync(path.join(directory, fileName || `materialization-receipt--${attemptId}.json`), JSON.stringify(sidecar));
+  return sidecar;
 }
 
 test('fixture attribution assigns a transform loss only with complete transformer lineage', () => {
@@ -5739,23 +5935,23 @@ test('recipe runs editor-validate-blocks against imported content after each imp
     staticSiteImporterPath: '/tmp/static-site-importer',
   });
 
-  // [activate, prepare, validate, visual-font-setup, suppress-onboarding, identity, editor-open, editor-validate-blocks]
+  // [activate, prepare, validate, sidecar-readback, visual-font-setup, suppress-onboarding, identity, editor-open, editor-validate-blocks]
   assert.equal(recipe.workflow.steps[1].command, 'wordpress.wp-cli');
   assert.match(recipe.workflow.steps[1].args[0], /prepare-artifact-dependencies/);
   assert.equal(recipe.workflow.steps[2].command, 'wordpress.wp-cli');
   assert.match(recipe.workflow.steps[2].args[0], /static-site-importer validate-artifact/);
-  assert.equal(recipe.workflow.steps[4].command, 'wordpress.wp-cli');
-  assert.equal(recipe.workflow.steps[4].metadata.phase, 'editor-preflight');
-  assert.match(recipe.workflow.steps[4].args[0], /woocommerce_onboarding_profile/);
-  const identityStep = recipe.workflow.steps[5];
+  const preflightStep = recipe.workflow.steps.find((step) => step.metadata?.phase === 'editor-preflight');
+  assert.equal(preflightStep.command, 'wordpress.wp-cli');
+  assert.match(preflightStep.args[0], /woocommerce_onboarding_profile/);
+  const identityStep = recipe.workflow.steps.find((step) => step.metadata?.phase === 'materialized-surface-identity');
   assert.equal(identityStep.command, 'wordpress.wp-cli');
   assert.equal(identityStep.metadata.phase, 'materialized-surface-identity');
-  const editorOpenStep = recipe.workflow.steps[6];
+  const editorOpenStep = recipe.workflow.steps.find((step) => step.command === 'wordpress.editor-open');
   assert.equal(editorOpenStep.command, 'wordpress.editor-open');
   assert.ok(editorOpenStep.args.includes('target=front-page'));
   assert.ok(editorOpenStep.args.includes('capture=screenshot,editor-state,editor-validity'));
   assert.ok(editorOpenStep.args.includes('artifact-prefix=files/browser/editor-open/simple-site'));
-  const editorStep = recipe.workflow.steps[7];
+  const editorStep = recipe.workflow.steps.find((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND);
   assert.equal(editorStep.command, EDITOR_VALIDATE_BLOCKS_COMMAND);
   assert.equal(editorStep.command, 'wordpress.editor-validate-blocks');
   assert.equal(editorStep.args.some((arg) => arg.includes('post-new.php')), false);
@@ -6120,12 +6316,10 @@ test('editor_block_invalid findings collected from fixture artifacts gate the ma
 });
 
 const ALL_VALID_EDITOR_VALIDATE_BLOCKS = {
-  schema: 'wp-codebox/editor-validate-blocks/v1',
-  validation_method: 'wp.blocks.validateBlock',
-  validation_provider: 'wordpress-block-editor',
+  ...completeEditorValidation,
+  result_count: 3,
   total_blocks: 3,
   valid_blocks: 3,
-  invalid_blocks: 0,
   results: [
     { name: 'core/heading', isValid: true, issues: [] },
     { name: 'core/paragraph', isValid: true, issues: [] },
@@ -6137,10 +6331,26 @@ test('collectEditorValidation reads the editor-validate-blocks shape into headli
   const metrics = collectEditorValidation(ALL_VALID_EDITOR_VALIDATE_BLOCKS);
   assert.equal(metrics.validation_method, 'wp.blocks.validateBlock');
   assert.equal(metrics.validation_provider, 'wordpress-block-editor');
+  assert.equal(metrics.schema, 'wp-codebox/editor-validate-blocks/v1');
+  assert.equal(metrics.content_source, 'edited-post-content');
+  assert.equal(metrics.block_types_registered, 42);
+  assert.equal(metrics.result_count, 3);
+  assert.equal(metrics.results_complete, true);
   assert.equal(metrics.total_blocks, 3);
   assert.equal(metrics.valid_blocks, 3);
   assert.equal(metrics.invalid_blocks, 0);
   assert.equal(collectEditorValidation({ unrelated: true }), null);
+});
+
+test('collectEditorValidation normalizes recipe browser evidence to the command schema', () => {
+  const metrics = collectEditorValidation({
+    ...ALL_VALID_EDITOR_VALIDATE_BLOCKS,
+    schema: 'wp-codebox/recipe-browser-evidence/v1',
+  });
+
+  assert.equal(metrics.schema, 'wp-codebox/editor-validate-blocks/v1');
+  assert.equal(metrics.content_source, 'edited-post-content');
+  assert.equal(metrics.block_types_registered, 42);
 });
 
 test('collectEditorValidation derives cross-surface totals from authoritative block results', () => {
@@ -6762,12 +6972,12 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
     pixelThreshold: 0.05,
   });
 
-  // [activate, prepare, validate, visual-font-setup, suppress-onboarding, identity, editor-open, editor-validation, visual-setup, visual-compare]
-  const visualSetupStep = recipe.workflow.steps[8];
+  // Resolve semantic phases so transport steps can be inserted without weakening the ordering contract.
+  const visualSetupStep = recipe.workflow.steps.find((step) => step.metadata?.phase === 'visual-setup');
   assert.equal(visualSetupStep.command, 'wordpress.wp-cli');
   assert.equal(visualSetupStep.metadata.phase, 'visual-setup');
   assert.match(visualSetupStep.args[0], /wp_update_custom_css_post/);
-  const visualStep = recipe.workflow.steps[9];
+  const visualStep = recipe.workflow.steps.find((step) => step.command === 'wordpress.visual-compare');
   assert.equal(visualStep.command, 'wordpress.visual-compare');
   const comparison = visualCompareMatrixComparison(visualStep);
   assert.equal(comparison.sourceUrl, 'file:///tmp/artifacts/simple-site/source/index.html');
@@ -8883,8 +9093,10 @@ test('solved fixture that stays solved_candidate keeps solved_candidate status',
         fixture_path: '/fixtures/solved/cv',
         status: 'passed',
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/cv/screenshot.png' }],
+        editor_presentation: completeEditorPresentation,
         visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
         block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
+        editor_validation: completeEditorValidation,
         editor_quality: { editor_validated_block_total: 8, editor_invalid_count: 0, core_html_block_count: 0 },
       },
     ],
@@ -8910,9 +9122,10 @@ test('solved-candidate gate hard-fails regressions while preserving acceptance e
     fixture_id: fixtureId,
     status: 'passed',
     artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: `files/browser/editor-open/${fixtureId}/screenshot.png` }],
+    editor_presentation: completeEditorPresentation,
     visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
     block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
-    editor_validation: { total_blocks: 8, valid_blocks: 8, invalid_blocks: 0, validation_method: 'wp.blocks.validateBlock' },
+    editor_validation: completeEditorValidation,
   });
   const solvedRegression = {
     ...acceptedResult('solved-site'),
@@ -8943,4 +9156,51 @@ test('solved-candidate gate hard-fails regressions while preserving acceptance e
   assert.equal(result.summary.fixture_failure_categories.solved_regression, 1);
   assert.ok(result.summary.gate_failure_reasons.some((reason) => reason.fixture_id === 'solved-site' && reason.category === 'solved_regression'));
   assert.equal(result.gutenberg_incompatibility_registry.fixture_decisions.find((decision) => decision.fixture_id === 'solved-site').acceptance_status, 'solved_regression');
+});
+
+test('solved-candidate registry rejects counts-only editor validation and contradictory presentation summaries', () => {
+  const base = {
+    fixture_id: 'cv',
+    status: 'passed',
+    artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot' }],
+    visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
+    block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
+    editor_validation: completeEditorValidation,
+    editor_presentation: completeEditorPresentation,
+  };
+  const countsOnly = buildGutenbergIncompatibilityRegistry({
+    fixtures: [{ ...base, editor_validation: { total_blocks: 8, valid_blocks: 8, invalid_blocks: 0 } }], findings: [],
+  }).fixture_decisions[0];
+  const contradictoryPresentation = buildGutenbergIncompatibilityRegistry({
+    fixtures: [{ ...base, editor_presentation: { ...completeEditorPresentation, observed_identities: [], observed_identity_count: 0 } }], findings: [],
+  }).fixture_decisions[0];
+
+  assert.equal(countsOnly.acceptance_status, 'evidence_gap');
+  assert.equal(contradictoryPresentation.acceptance_status, 'editor_blocker');
+});
+
+test('solved-candidate registry accepts complete v1 presentation evidence only with complete raw plan provenance', () => {
+  const identity = 'e'.repeat(64);
+  const fixture = {
+    fixture_id: 'legacy',
+    status: 'passed',
+    artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot' }],
+    visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
+    block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
+    editor_validation: completeEditorValidation,
+    editor_presentation: {
+      ...completeEditorPresentation,
+      schema: 'static-site-importer/editor-presentation-evidence/v1',
+      expected_identities: [identity],
+      observed_identities: [identity],
+    },
+    import_report: { blocks_engine: { wordpress_site_plan: { asset_count: 1, assets: [{ kind: 'css', content_hash: identity, scopes: [{ kind: 'global' }] }] } } },
+  };
+  const complete = buildGutenbergIncompatibilityRegistry({ fixtures: [fixture], findings: [] }).fixture_decisions[0];
+  const ambiguous = buildGutenbergIncompatibilityRegistry({
+    fixtures: [{ ...fixture, import_report: { blocks_engine: { wordpress_site_plan: { asset_count: 2, assets: fixture.import_report.blocks_engine.wordpress_site_plan.assets } } } }], findings: [],
+  }).fixture_decisions[0];
+
+  assert.equal(complete.acceptance_status, 'solved_candidate');
+  assert.equal(ambiguous.acceptance_status, 'editor_blocker');
 });

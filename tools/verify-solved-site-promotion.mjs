@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { editorPresentationEvidenceComplete } from '../lib/fixture-matrix/gutenberg-incompatibility-registry.mjs';
 
 export const RECEIPT_SCHEMA = 'static-site-importer/solved-site-promotion-receipt/v1';
 const MATRIX_SCHEMA = 'static-site-importer/fixture-matrix-result/v1';
@@ -18,6 +19,7 @@ export function verifySolvedSitePromotion(input) {
   assert(registry.schema === REGISTRY_SCHEMA, `Registry schema must be ${REGISTRY_SCHEMA}.`);
   assertSha(options.staticSiteImporterSha, 'Static Site Importer candidate SHA');
   assertSha(options.blocksEngineSha, 'Blocks Engine candidate SHA');
+  assertSha(options.wpCodeboxSha, 'WP Codebox candidate SHA');
   assertSha(options.fixtureTreeSha, 'Fixture tree SHA');
   assert(Number(options.solvedFixtureCount) === options.solvedFixtureIds.length,
     `--solved-fixture-count must equal the number of --solved-fixture-ids (${options.solvedFixtureIds.length}).`);
@@ -49,7 +51,7 @@ export function verifySolvedSitePromotion(input) {
     .sort();
   assert(JSON.stringify(registrySolvedIds) === JSON.stringify(options.solvedFixtureIds),
     `Registry must carry a solved fixture decision for every canonical solved fixture id: expected [${options.solvedFixtureIds.join(',')}] got [${registrySolvedIds.join(',')}]`);
-  const requiredFiles = [options.matrixResult, options.registry];
+  const requiredFiles = [options.matrixResult, options.registry, options.runtimeInputs];
   for (const fixture of matrix.fixtures) {
     verifyFixture(fixture, decisions.get(fixture.fixture_id), options, requiredFiles);
   }
@@ -116,13 +118,24 @@ function verifyFixture(fixture, decision, options, requiredFiles) {
   assertFiniteMetric(composition, 'core_html_block_count', id);
   assert(Number(composition.core_html_block_count) === 0, `${id}: core/html blocks are forbidden.`);
   const editor = fixture.editor_validation || {};
+  assert(editor.schema === 'wp-codebox/editor-validate-blocks/v1', `${id}: editor validation must carry the WP Codebox browser artifact schema.`);
   assert(editor.validation_method === 'wp.blocks.validateBlock', `${id}: editor validation must use wp.blocks.validateBlock.`);
+  assert(editor.validation_provider === 'wordpress-block-editor', `${id}: editor validation must use the WordPress block editor provider.`);
+  assert(editor.content_source === 'edited-post-content', `${id}: editor validation must inspect the loaded post editor content.`);
+  assert(Number(editor.block_types_registered) > 0, `${id}: editor validation must load registered block types.`);
   assertFiniteMetric(editor, 'total_blocks', id);
   assertFiniteMetric(editor, 'valid_blocks', id);
   assertFiniteMetric(editor, 'invalid_blocks', id);
+  assertFiniteMetric(editor, 'result_count', id);
+  assert(editor.results_complete === true && Number(editor.result_count) === Number(editor.total_blocks), `${id}: editor validation must include one complete recursive result per block.`);
   assert(Number(editor.total_blocks) > 0 && editor.valid_blocks === editor.total_blocks && Number(editor.invalid_blocks) === 0, `${id}: editor validation is incomplete or invalid.`);
   assert(fixture.editor_canvas?.status === 'captured', `${id}: editor canvas evidence is missing.`);
   addRequiredFile(requiredFiles, fixture.editor_canvas?.screenshot, `${id}: editor screenshot`, options.artifactRoot);
+  const editorPresentation = fixture.editor_presentation || {};
+  assert(['static-site-importer/editor-presentation-evidence/v1', 'static-site-importer/editor-presentation-evidence/v2'].includes(editorPresentation.schema), `${id}: editor presentation evidence is missing.`);
+  assert(editorPresentation.provider_schema === 'wp-codebox/editor-presentation/v1', `${id}: editor presentation must use WP Codebox canvas evidence.`);
+  assert(Number(editorPresentation.expected_identity_count) > 0, `${id}: editor presentation has no expected generated styles.`);
+  assert(editorPresentationEvidenceComplete(editorPresentation, fixture), `${id}: editor presentation stylesheet coverage is incomplete or contradictory.`);
   const visual = fixture.visual_parity_artifacts || {};
   const visualMetrics = visual.metrics || {};
   assertFiniteMetric(visualMetrics, 'mismatch_ratio', id);
@@ -153,6 +166,7 @@ function validateRuntime(runtime, options) {
   assert(/^[a-f0-9]{64}$/.test(runtime.wpCodeboxSha256), 'WP Codebox archive SHA-256 is invalid.');
   assert(runtime.staticSiteImporterSha === options.staticSiteImporterSha, 'Runtime SSI SHA does not match the candidate.');
   assert(runtime.blocksEngineSha === options.blocksEngineSha, 'Runtime Blocks Engine SHA does not match the candidate.');
+  assert(runtime.wpCodeboxSha === options.wpCodeboxSha, 'Runtime WP Codebox SHA does not match the candidate.');
 }
 
 function artifactManifest(files, root) {
@@ -198,7 +212,7 @@ function filesBelow(directory) {
 
 function normalizeOptions(input) {
   const options = { ...input };
-  for (const key of ['matrixResult', 'registry', 'runtimeInputs', 'artifactRoot', 'staticSiteImporterSha', 'blocksEngineSha', 'fixtureTreeSha', 'solvedFixtureCount', 'solvedFixtureIds', 'runUrl', 'artifactUrl', 'output', 'manifestOutput']) {
+  for (const key of ['matrixResult', 'registry', 'runtimeInputs', 'artifactRoot', 'staticSiteImporterSha', 'blocksEngineSha', 'wpCodeboxSha', 'fixtureTreeSha', 'solvedFixtureCount', 'solvedFixtureIds', 'runUrl', 'artifactUrl', 'output', 'manifestOutput']) {
     assert(options[key] !== undefined && options[key] !== '', `--${kebab(key)} is required.`);
   }
   options.solvedFixtureIds = String(options.solvedFixtureIds)
@@ -244,7 +258,7 @@ function camel(value) { return value.replace(/-([a-z])/g, (_match, letter) => le
 function kebab(value) { return value.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`); }
 
 function printHelp() {
-  process.stdout.write('Usage: node tools/verify-solved-site-promotion.mjs --matrix-result <file> --registry <file> --runtime-inputs <file> --artifact-root <dir> --static-site-importer-sha <sha> --blocks-engine-sha <sha> --fixture-tree-sha <sha> --solved-fixture-count <n> --solved-fixture-ids <id1,id2,...> --run-url <url> --artifact-url <url> --output <file> --manifest-output <file>\n');
+  process.stdout.write('Usage: node tools/verify-solved-site-promotion.mjs --matrix-result <file> --registry <file> --runtime-inputs <file> --artifact-root <dir> --static-site-importer-sha <sha> --blocks-engine-sha <sha> --wp-codebox-sha <sha> --fixture-tree-sha <sha> --solved-fixture-count <n> --solved-fixture-ids <id1,id2,...> --run-url <url> --artifact-url <url> --output <file> --manifest-output <file>\n');
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

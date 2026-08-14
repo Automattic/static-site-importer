@@ -16,8 +16,12 @@ test('fails editor validation when Gutenberg substitutes core/missing for a decl
   };
 
   assert.deepEqual(collectEditorValidation(payload), {
+    schema: 'wp-codebox/editor-validate-blocks/v1',
     validation_method: 'wp.blocks.validateBlock',
     validation_provider: 'wordpress-block-editor',
+    block_types_registered: 0,
+    result_count: 2,
+    results_complete: false,
     total_blocks: 2,
     valid_blocks: 1,
     invalid_blocks: 1,
