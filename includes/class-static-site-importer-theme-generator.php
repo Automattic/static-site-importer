@@ -319,6 +319,7 @@ class Static_Site_Importer_Theme_Generator {
 		$prepared['args']['provider_layout_overlays']   = $page_ready ? array() : self::provider_layout_overlays_from_entity_reports( $entities );
 		$prepared['args']['font_materialization']       = $page_ready ? array() : $prepared['args']['font_materialization'];
 		$prepared['args']['activate']                   = $page_ready ? false : ! empty( $prepared['args']['activate'] );
+		$prepared['args']['defer_materialization_commit'] = true;
 		$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared );
 		$receipt['completed']['companion_plugin'] = $companion_materialization;
 		$receipt['extensions']['gutenberg_gaps'] = self::project_gutenberg_gaps( $gutenberg_gaps, (string) ( $companion_materialization['status'] ?? 'not_materialized' ) );
@@ -337,6 +338,7 @@ class Static_Site_Importer_Theme_Generator {
 		try {
 			return self::public_result_from_wordpress_site_plan_receipt( $receipt, $args, $lifecycle, $dependencies, $entities );
 		} catch ( Throwable $error ) {
+			$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $receipt, 'static_site_importer_projection_write_failed' );
 			self::rollback_classic_entities( $lifecycle, $entities, $classic );
 			$receipt['status'] = 'partial';
 			$receipt['errors'][] = array(
@@ -674,7 +676,7 @@ class Static_Site_Importer_Theme_Generator {
 			}
 		}
 		$manifest['existing_matches'] = $receipt['existing_matches'] ?? array( 'pages' => array() );
-		$cleanup = self::cleanup_stale_generated_theme_files( $theme['dir'], $manifest, $args );
+		$cleanup = self::cleanup_stale_generated_theme_files( $theme['dir'], $manifest, $args, $receipt );
 		if ( is_wp_error( $cleanup ) ) {
 			throw new RuntimeException( $cleanup->get_error_message() ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The internal cleanup error is propagated as an exception message.
 		}
@@ -709,7 +711,7 @@ class Static_Site_Importer_Theme_Generator {
 		);
 		$theme_dir  = $theme['dir'];
 		$manifest_path = $theme_dir . '/static-site-importer-manifest.json';
-		self::write_plan_projection( $manifest_path, $manifest );
+		self::write_plan_projection( $manifest_path, $manifest, $receipt );
 		$report_path = '';
 		$validation_path = '';
 		$findings_path = '';
@@ -717,9 +719,9 @@ class Static_Site_Importer_Theme_Generator {
 			$report_path = $theme_dir . '/import-report.json';
 			$validation_path = $theme_dir . '/import-validation-result.json';
 			$findings_path = $theme_dir . '/finding-packets.json';
-			self::write_plan_projection( $report_path, $report );
-			self::write_plan_projection( $validation_path, $validation );
-			self::write_plan_projection( $findings_path, $findings );
+			self::write_plan_projection( $report_path, $report, $receipt );
+			self::write_plan_projection( $validation_path, $validation, $receipt );
+			self::write_plan_projection( $findings_path, $findings, $receipt );
 		}
 		$external_report_path = '';
 		$external_validation_result_path = '';
@@ -734,10 +736,14 @@ class Static_Site_Importer_Theme_Generator {
 					throw new RuntimeException( 'External report destination changed after preflight.' );
 				}
 			}
-			self::write_plan_projection( $external_report_path, $report );
-			self::write_plan_projection( $external_validation_result_path, $validation );
-			self::write_plan_projection( $external_finding_packets_path, $findings );
+			self::write_plan_projection( $external_report_path, $report, $receipt );
+			self::write_plan_projection( $external_validation_result_path, $validation, $receipt );
+			self::write_plan_projection( $external_finding_packets_path, $findings, $receipt );
 		}
+		if ( 'report_persistence' === (string) ( $args['inject_materialization_failure'] ?? '' ) ) {
+			throw new RuntimeException( 'Injected report persistence failure.' );
+		}
+		Static_Site_Importer_WordPress_Site_Plan_Materializer::commit_receipt( $receipt );
 		return array(
 			'theme_slug'                      => $theme['slug'],
 			'theme_name'                      => isset( $args['name'] ) ? (string) $args['name'] : $theme['slug'],
@@ -1451,7 +1457,8 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/** @param array<string,mixed> $payload */
-	private static function write_plan_projection( string $path, array $payload ): void {
+	private static function write_plan_projection( string $path, array $payload, array &$receipt = array() ): void {
+		Static_Site_Importer_WordPress_Site_Plan_Materializer::journal_receipt_file( $receipt, $path );
 		$json = wp_json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 		$data = false === $json ? false : $json . "\n";
 		$temp = is_string( $data ) ? tempnam( dirname( $path ), '.ssi-projection-' ) : false;
@@ -1555,7 +1562,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * @param array<string,mixed> $args             Import args.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	private static function cleanup_stale_generated_theme_files( string $theme_dir, array $current_manifest, array $args = array() ) {
+	private static function cleanup_stale_generated_theme_files( string $theme_dir, array $current_manifest, array $args = array(), array &$receipt = array() ) {
 		$previous_manifest_path = trailingslashit( $theme_dir ) . 'static-site-importer-manifest.json';
 		$cleanup                = array(
 			'enabled'                => true,
@@ -1589,6 +1596,9 @@ class Static_Site_Importer_Theme_Generator {
 				'notes'         => array( 'Page deletion is intentionally disabled; this cleanup only removes prior SSI-generated theme files and assets.' ),
 			),
 		);
+		if ( (string) ( $args['inject_materialization_failure'] ?? '' ) === 'stale_cleanup' ) {
+			return new WP_Error( 'injected_stale_cleanup_failure', 'Injected stale cleanup failure.' );
+		}
 
 		if ( ! is_file( $previous_manifest_path ) ) {
 			$cleanup['skipped'][] = array(
@@ -1614,7 +1624,7 @@ class Static_Site_Importer_Theme_Generator {
 			return $cleanup;
 		}
 
-		$page_reconciliation = self::reconcile_stale_manifest_pages( $previous_manifest, $current_manifest, $cleanup['pages']['action'] );
+		$page_reconciliation = self::reconcile_stale_manifest_pages( $previous_manifest, $current_manifest, $cleanup['pages']['action'], $receipt );
 		if ( is_wp_error( $page_reconciliation ) ) {
 			return $page_reconciliation;
 		}
@@ -1645,6 +1655,7 @@ class Static_Site_Importer_Theme_Generator {
 				);
 				continue;
 			}
+			Static_Site_Importer_WordPress_Site_Plan_Materializer::journal_receipt_file( $receipt, $path );
 
 			if ( ! wp_delete_file( $path ) ) {
 				return new WP_Error( 'static_site_importer_stale_generated_file_delete_failed', sprintf( 'Failed to delete stale generated theme file: %s', $relative ) );
@@ -1655,7 +1666,6 @@ class Static_Site_Importer_Theme_Generator {
 				'reason' => 'absent_from_current_manifest',
 			);
 		}
-
 		$cleanup['counts']['deleted'] = count( $cleanup['deleted'] );
 		$cleanup['counts']['skipped'] = count( $cleanup['skipped'] );
 
@@ -1686,7 +1696,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * @param string              $action            Reconciliation action.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	private static function reconcile_stale_manifest_pages( array $previous_manifest, array $current_manifest, string $action ) {
+	private static function reconcile_stale_manifest_pages( array $previous_manifest, array $current_manifest, string $action, array &$receipt = array() ) {
 		$reconciliation = array(
 			'enabled'     => true,
 			'policy'      => 'previous_manifest_provenance_report_first',
@@ -1767,6 +1777,7 @@ class Static_Site_Importer_Theme_Generator {
 
 			if ( 'draft' === $reconciliation['action'] ) {
 				if ( 'draft' !== $post->post_status ) {
+					Static_Site_Importer_WordPress_Site_Plan_Materializer::journal_receipt_post( $receipt, $post_id );
 					$result = wp_update_post(
 						array(
 							'ID'          => $post_id,

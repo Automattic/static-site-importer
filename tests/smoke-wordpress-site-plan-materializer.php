@@ -733,6 +733,27 @@ $assert( 'completed' === $receipt_repeat_policy['status'], 'repeated-activating-
 $assert( true === ( $receipt_repeat_policy['completed']['runtime_policy']['disable_smilies']['requested'] ?? null ) && true === ( $receipt_repeat_policy['completed']['runtime_policy']['disable_smilies']['applied'] ?? null ), 'repeated-activating-import-records-requested-and-applied' );
 $assert( false === $GLOBALS['ssi_plan_options']['use_smilies'], 'repeated-activating-import-keeps-use-smilies-false' );
 
+// Every runtime mutation boundary restores the exact option snapshot on failure.
+foreach ( array( 'after_activation', 'after_show_on_front', 'after_page_on_front', 'after_use_smilies', 'after_blogname' ) as $stage ) {
+	$before_options = array( 'stylesheet' => 'before-theme', 'template' => 'before-theme', 'show_on_front' => 'posts', 'page_on_front' => 71, 'blogname' => 'Before', 'use_smilies' => true );
+	$GLOBALS['ssi_plan_options'] = $before_options;
+	$failed_runtime = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan', 'overwrite' => true, 'activate' => true, 'site_title' => 'After', 'inject_materialization_failure' => $stage ) );
+	$assert( 'partial' === $failed_runtime['status'], 'injected runtime failure returns a partial receipt: ' . $stage );
+	$assert( $before_options === $GLOBALS['ssi_plan_options'], 'injected runtime failure restores every option and active theme: ' . $stage );
+}
+
+// Font overlays are journaled before each write, so a later verification failure restores bytes exactly.
+$font_before = array();
+foreach ( $font_plan['writes'] as $write ) {
+	$path = $GLOBALS['ssi_plan_root'] . '/font-site-plan/' . $write['target_path'];
+	$font_before[ $path ] = is_file( $path ) ? file_get_contents( $path ) : false;
+}
+$font_failed = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $font_plan, array( 'slug' => 'font-site-plan', 'overwrite' => true, 'font_materialization' => $font_materialization, 'inject_materialization_failure' => 'font_verification' ) );
+$assert( 'partial' === $font_failed['status'] && in_array( 'injected_font_verification_failure', array_column( $font_failed['diagnostics'], 'reason_code' ), true ), 'font verification failure follows overlay writes' );
+foreach ( $font_before as $path => $bytes ) {
+	$assert( $bytes === ( is_file( $path ) ? file_get_contents( $path ) : false ), 'font verification rollback restores theme bytes exactly: ' . $path );
+}
+
 $repeat = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan' ) );
 $assert( 'completed' === $repeat['status'], 'reconciliation repeat completes' );
 $assert( count( $GLOBALS['ssi_plan_posts'] ) === count( $plan['pages'] ), 'reconciliation preserves source page identity' );
