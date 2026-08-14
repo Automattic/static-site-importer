@@ -75,14 +75,14 @@ test('accepts complete parent-document editor presentation evidence', () => {
 test('pins an immutable WP Codebox candidate package and checksum together', () => {
   const workflow = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion.yml'), 'utf8');
   const caller = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion-pr.yml'), 'utf8');
-  assert.match(workflow, /default: 6f12c49111344b54ef62b9dbc1abdfe32a26103f/);
+  assert.match(workflow, /default: c2d8a10e4fcb11c2dc5efe028650683692523eed/);
   assert.match(workflow, /WP_CODEBOX_VERSION: v0\.20\.0/);
   assert.match(workflow, /WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0\.20\.0\.tgz/);
   assert.match(workflow, /npm pack --pack-destination/);
   assert.match(workflow, /WP_CODEBOX_SHA256=\$\(sha256sum/);
   assert.match(workflow, /wpCodeboxSha:process\.env\.WP_CODEBOX_SHA/);
   assert.match(caller, /blocks-engine-sha: 7858943a9913175993cc75870551c2e1926b4fb0/);
-  assert.match(caller, /wp-codebox-sha: 6f12c49111344b54ef62b9dbc1abdfe32a26103f/);
+  assert.match(caller, /wp-codebox-sha: c2d8a10e4fcb11c2dc5efe028650683692523eed/);
 });
 
 test('resolves uniquely named durable copies of transient runtime evidence', () => {

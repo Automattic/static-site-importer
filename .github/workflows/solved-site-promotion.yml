@@ -24,7 +24,7 @@ on:
       wp-codebox-sha:
         description: Full WP Codebox candidate commit SHA.
         required: false
-        default: 6f12c49111344b54ef62b9dbc1abdfe32a26103f
+        default: c2d8a10e4fcb11c2dc5efe028650683692523eed
         type: string
       wp-codebox-repository:
         description: Repository containing the WP Codebox candidate SHA.
