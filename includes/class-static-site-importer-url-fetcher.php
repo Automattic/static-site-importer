@@ -685,7 +685,7 @@ class Static_Site_Importer_URL_Fetcher {
 		$text_html        = preg_replace( '#<script\b[^>]*>.*?</script>#is', ' ', $html );
 		$text_html        = preg_replace( '#<style\b[^>]*>.*?</style>#is', ' ', (string) $text_html );
 		$text_html        = preg_replace( '#<template\b[^>]*>.*?</template>#is', ' ', (string) $text_html );
-		$content_elements = preg_match_all( '#<(?:main|article|h[1-6]|p)\b#i', (string) $text_html );
+		$content_elements = preg_match_all( '#<(?:main|article|h[1-6]|p|figure|picture|img|video)\b#i', (string) $text_html );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- Fallback only for non-WordPress smoke tests; WordPress runtimes use wp_strip_all_tags().
 		$stripped   = function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( (string) $text_html ) : strip_tags( (string) $text_html );
 		$text       = html_entity_decode( trim( preg_replace( '/\s+/', ' ', $stripped ) ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
