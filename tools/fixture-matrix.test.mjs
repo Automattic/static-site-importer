@@ -6286,6 +6286,17 @@ test('collectEditorValidation reads the editor-validate-blocks shape into headli
   assert.equal(collectEditorValidation({ unrelated: true }), null);
 });
 
+test('collectEditorValidation normalizes recipe browser evidence to the command schema', () => {
+  const metrics = collectEditorValidation({
+    ...ALL_VALID_EDITOR_VALIDATE_BLOCKS,
+    schema: 'wp-codebox/recipe-browser-evidence/v1',
+  });
+
+  assert.equal(metrics.schema, 'wp-codebox/editor-validate-blocks/v1');
+  assert.equal(metrics.content_source, 'edited-post-content');
+  assert.equal(metrics.block_types_registered, 42);
+});
+
 test('collectEditorValidation derives cross-surface totals from authoritative block results', () => {
   const metrics = collectEditorValidation({
     validation_method: 'wp.blocks.validateBlock',
