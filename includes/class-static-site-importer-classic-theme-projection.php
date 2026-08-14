@@ -117,7 +117,7 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 		}
 		$pages = array();
 		foreach ( $projection['pages'] as $source => $page ) {
-			if ( ! is_string( $source ) || ! is_array( $page ) || $source !== ( $page['source_path'] ?? null ) || ! is_string( $page['html'] ?? null ) ) {
+			if ( ! is_string( $source ) || ! is_array( $page ) || ( $page['source_path'] ?? null ) !== $source || ! is_string( $page['html'] ?? null ) ) {
 				return new WP_Error( 'static_site_importer_classic_projection_page_structure_invalid', 'Classic projection pages require matching source paths and HTML strings.' );
 			}
 			$pages[ $source ] = array(
@@ -289,7 +289,7 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 					return '';
 				} $child = true;
 				continue; }
-			if ( ! preg_match( '/^([a-z][a-z0-9-]*)?(?:#([A-Za-z][A-Za-z0-9_-]{0,79}))?(?:\.([A-Za-z][A-Za-z0-9_-]{0,79}))?(?::nth-child\(([1-9][0-9]*)\))?$/', $token, $m ) || '' === $token ) {
+			if ( ! preg_match( '/^([a-z][a-z0-9-]*)?(?:#([A-Za-z][A-Za-z0-9_-]{0,79}))?(?:\.([A-Za-z][A-Za-z0-9_-]{0,79}))?(?::nth-child\(([1-9][0-9]*)\))?$/', $token, $m ) ) {
 				return ''; }
 			$xpath .= '' === $xpath ? './/*' : ( $child ? '/*' : '//*' );
 			$child  = false;
@@ -350,10 +350,8 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 				continue;
 			} if ( ! is_array( $file ) || ! isset( $file['path'] ) ) {
 				continue;
-			} $content = isset( $file['content'] ) ? (string) $file['content'] : ( isset( $file['content_base64'] ) ? self::decode_base64_content( (string) $file['content_base64'] ) : '' );
-			if ( is_string( $content ) ) {
-				$files[ (string) $file['path'] ] = $content;
-			}
+			} $content                       = isset( $file['content'] ) ? (string) $file['content'] : ( isset( $file['content_base64'] ) ? self::decode_base64_content( (string) $file['content_base64'] ) : '' );
+			$files[ (string) $file['path'] ] = $content;
 		} return $files; }
 	private static function decode_base64_content( string $content ): string {
 		$decoded = base64_decode( $content, true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the explicit artifact content encoding after structural validation.
@@ -431,7 +429,7 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 		$value   = preg_replace_callback(
 			'/\\\\(?:([0-9a-f]{1,6})\s?|(.))/is',
 			static function ( array $m ): string {
-				return '' !== ( $m[1] ?? '' ) ? html_entity_decode( '&#x' . $m[1] . ';', ENT_QUOTES | ENT_HTML5 ) : (string) ( $m[2] ?? '' );
+				return '' !== $m[1] ? html_entity_decode( '&#x' . $m[1] . ';', ENT_QUOTES | ENT_HTML5 ) : (string) $m[2];
 			},
 			$value
 		) ?? '';

@@ -689,12 +689,13 @@ if ( ! function_exists( 'static_site_importer_ability_apply_approved_plan' ) ) {
 			if ( 'static-site-importer/classic-plan-input/v1' !== ( $classic['schema'] ?? '' ) || ! is_array( $args ) || 'classic' !== ( $args['theme_materialization'] ?? '' ) || ! is_array( $artifact ) || ! is_array( $projection ) || hash( 'sha256', (string) wp_json_encode( $plan ) ) !== ( $classic['plan_hash'] ?? '' ) || hash( 'sha256', (string) wp_json_encode( $artifact ) ) !== ( $classic['artifact_hash'] ?? '' ) || hash( 'sha256', (string) wp_json_encode( $projection ) ) !== ( $classic['projection_hash'] ?? '' ) || static_site_importer_ability_handoff_hash( $args ) !== ( $classic['args_hash'] ?? '' ) ) {
 				return static_site_importer_ability_error( 'static_site_importer_classic_plan_input_changed', 'The approved classic artifact or projection does not match its immutable plan input.' );
 			}
-			$rebuilt = Static_Site_Importer_Classic_Theme_Projection::build( $artifact, $plan );
-			if ( is_wp_error( $rebuilt ) || hash( 'sha256', (string) wp_json_encode( $rebuilt ) ) !== ( $classic['projection_hash'] ?? '' ) ) {
+			$projection_hash = $classic['projection_hash'];
+			$rebuilt         = Static_Site_Importer_Classic_Theme_Projection::build( $artifact, $plan );
+			if ( is_wp_error( $rebuilt ) || hash( 'sha256', (string) wp_json_encode( $rebuilt ) ) !== $projection_hash ) {
 				return static_site_importer_ability_error( 'static_site_importer_classic_projection_changed', 'The approved classic projection could not be reproduced from its immutable artifact.' );
 			}
 			$args['approved_classic_plan_hash']       = (string) $classic['plan_hash'];
-			$args['approved_classic_projection_hash'] = (string) $classic['projection_hash'];
+			$args['approved_classic_projection_hash'] = (string) $projection_hash;
 			$result                                   = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $args );
 			if ( is_wp_error( $result ) ) {
 				return static_site_importer_ability_error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );

@@ -1528,13 +1528,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	private static function active_theme_matches( string $slug ): bool {
 		$stylesheet = function_exists( 'get_stylesheet' ) ? get_stylesheet() : get_option( 'stylesheet', '' );
 		if ( function_exists( 'get_template' ) ) {
-			return $slug === $stylesheet && $slug === get_template();
+			return $stylesheet === $slug && get_template() === $slug;
 		}
-		return $slug === $stylesheet;
+		return $stylesheet === $slug;
 	}
 
 	private static function injected_failure( array $args, string $stage ): bool {
-		return $stage === (string) ( $args['inject_materialization_failure'] ?? '' );
+		return (string) ( $args['inject_materialization_failure'] ?? '' ) === $stage;
 	}
 
 	/** Add a late file mutation to a deferred materialization receipt. */
@@ -1552,7 +1552,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( isset( $receipt['transaction']->state['rollback']['posts'][ $id ] ) ) {
 			return;
 		}
-		if ( function_exists( 'get_post' ) && ( $post = get_post( $id, ARRAY_A ) ) ) {
+		$post = function_exists( 'get_post' ) ? get_post( $id, ARRAY_A ) : null;
+		if ( $post ) {
 			$receipt['transaction']->state['rollback']['posts'][ $id ] = array(
 				'existing'                => true,
 				'post'                    => $post,
@@ -1590,9 +1591,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( ! is_array( $before ) ) {
 				continue; }
 			if ( ! empty( $before['exists'] ) && is_string( $before['content'] ?? null ) ) {
-				file_put_contents( $path, $before['content'] );
+				self::restore_file( $path, $before['content'] );
 			} elseif ( is_file( $path ) ) {
-				unlink( $path ); } // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents,WordPress.WP.AlternativeFunctions.unlink_unlink -- Restores journaled importer destination bytes.
+				wp_delete_file( $path );
+			}
 		}
 		foreach ( $state['applied']['posts'] ?? array() as $applied ) {
 			$id     = (int) ( $applied['id'] ?? 0 );
@@ -1615,6 +1617,18 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$state['applied']['files'] = array();
 		$state['applied']['posts'] = array();
 		$state['diagnostics'][]    = array( 'reason_code' => 'materialization_rolled_back' );
+	}
+
+	/** Restore a journaled file through the WordPress filesystem abstraction. */
+	private static function restore_file( string $path, string $content ): void {
+		if ( ! function_exists( 'WP_Filesystem' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+		WP_Filesystem();
+		global $wp_filesystem;
+		if ( ! is_object( $wp_filesystem ) || ! is_callable( array( $wp_filesystem, 'put_contents' ) ) || ! call_user_func( array( $wp_filesystem, 'put_contents' ), $path, $content, 0644 ) ) {
+			throw new RuntimeException( 'materialization_rollback_file_restore_failed' );
+		}
 	}
 
 	/** @param array<string,mixed> $state @return array<string,mixed> */

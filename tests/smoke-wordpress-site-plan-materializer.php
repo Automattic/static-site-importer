@@ -65,6 +65,15 @@ function wp_slash( string $value ): string {
 	return addslashes( $value ); }
 function wp_mkdir_p( string $path ): bool {
 	return is_dir( $path ) || mkdir( $path, 0777, true ); }
+function WP_Filesystem(): bool {
+	$GLOBALS['wp_filesystem'] = new class {
+		public function put_contents( string $path, string $content, int $mode ): bool {
+			unset( $mode );
+			return false !== file_put_contents( $path, $content ); }
+	};
+	return true; }
+function wp_delete_file( string $path ): bool {
+	return unlink( $path ); }
 function wp_parse_url( string $url ) {
 	return parse_url( $url ); }
 function wp_safe_remote_get( string $url, array $args ) {

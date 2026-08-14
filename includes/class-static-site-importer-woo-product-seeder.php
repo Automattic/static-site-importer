@@ -280,7 +280,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			return array( 'failures' => $failures );
 		}
 		$updated = wp_update_post( $before['post'], true );
-		if ( is_wp_error( $updated ) || ! $updated ) {
+		if ( is_wp_error( $updated ) ) {
 			$failures[] = 'product_restore_failed'; }
 		foreach ( get_post_meta( $product_id ) as $key => $_ ) {
 			delete_post_meta( $product_id, $key ); }
@@ -298,7 +298,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	private static function cleanup_terms( array $term_ids ): array {
 		$failures = array();
 		foreach ( array_reverse( array_unique( array_map( 'intval', $term_ids ) ) ) as $term_id ) {
-			$term = get_term( $term_id, 'product_cat' );
+			$term  = get_term( $term_id, 'product_cat' );
 			$count = is_object( $term ) ? ( get_object_vars( $term )['count'] ?? 0 ) : 0;
 			if ( ! is_object( $term ) || (int) $count > 0 ) {
 				continue; }

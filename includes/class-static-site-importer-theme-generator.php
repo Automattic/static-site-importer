@@ -323,7 +323,7 @@ class Static_Site_Importer_Theme_Generator {
 					'dependencies'      => $dependencies,
 					'entities'          => $entities,
 				);
-				self::append_entity_compensation( $failure, $lifecycle, $entities, 'classic_runtime_projection', $projection->get_error_code() );
+				self::append_entity_compensation( $failure, $lifecycle, $entities, 'classic_runtime_projection', (string) $projection->get_error_code() );
 				return new WP_Error( $projection->get_error_code(), $projection->get_error_message(), $failure );
 			}
 			$prepared['args']['classic_theme_projection'] = $projection;
@@ -1430,7 +1430,7 @@ class Static_Site_Importer_Theme_Generator {
 				if ( empty( $render ) || '' === $source || empty( $selectors ) ) {
 					return new WP_Error( 'static_site_importer_classic_html_binding_unresolved', 'A required provider entity lacks adapter-owned server render output or a canonical HTML source selector.', array( 'declaration_id' => $declaration_id ) );
 				}
-				foreach ( array_values( $selectors ) as $index => $selector ) {
+				foreach ( $selectors as $index => $selector ) {
 					if ( ! is_string( $selector ) || '' === trim( $selector ) ) {
 						return new WP_Error( 'static_site_importer_classic_html_binding_invalid', 'Classic provider source selector is invalid.' ); }
 					$id = hash( 'sha256', "static-site-importer/classic-html-binding/v1\n{$declaration_id}\n{$source}\n{$selector}\n" . ( $index + 1 ) );
