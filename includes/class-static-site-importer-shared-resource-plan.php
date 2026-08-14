@@ -192,7 +192,8 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 	private static function canonical_url( string $url ): string {
 		$url   = Static_Site_Importer_URL_Fetcher::normalize_url( trim( $url ) );
 		$parts = function_exists( 'wp_parse_url' ) ? wp_parse_url( $url ) : parse_url( $url ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Standalone plan smoke tests run without WordPress URL helpers.
-		if ( ! is_array( $parts ) || ! in_array( strtolower( (string) ( $parts['scheme'] ?? '' ) ), array( 'http', 'https' ), true ) || empty( $parts['host'] ) ) {
+		$scheme = is_array( $parts ) ? strtolower( (string) ( $parts['scheme'] ?? '' ) ) : '';
+		if ( ! is_array( $parts ) || ! in_array( $scheme, array( 'http', 'https' ), true ) || empty( $parts['host'] ) ) {
 			return '';
 		}
 		$segments = array();
@@ -211,6 +212,6 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 		$path  = str_ends_with( (string) ( $parts['path'] ?? '/' ), '/' ) && '/' !== $path ? $path . '/' : $path;
 		$port  = isset( $parts['port'] ) ? ':' . (int) $parts['port'] : '';
 		$query = isset( $parts['query'] ) && '' !== $parts['query'] ? '?' . $parts['query'] : '';
-		return strtolower( (string) $parts['scheme'] ) . '://' . strtolower( (string) $parts['host'] ) . $port . $path . $query;
+		return $scheme . '://' . strtolower( (string) $parts['host'] ) . $port . $path . $query;
 	}
 }

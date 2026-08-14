@@ -159,7 +159,15 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 						'plan'             => isset( $prepared['plan'] ) && is_array( $prepared['plan'] ) ? $prepared['plan'] : array(),
 						'plan_hash'        => (string) ( $prepared['plan_hash'] ?? '' ),
 						'diagnostics'      => array( array( 'reason_code' => 'invalid_prepared_state' ) ),
-						'applied'          => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'runtime_declarations' => array( 'asset_publications' => array(), 'entity_bindings' => array() ) ),
+						'applied'          => array(
+							'posts'                => array(),
+							'files'                => array(),
+							'operations'           => array(),
+							'runtime_declarations' => array(
+								'asset_publications' => array(),
+								'entity_bindings'    => array(),
+							),
+						),
 						'skipped'          => array(),
 						'existing_matches' => array( 'pages' => array() ),
 					)
@@ -1283,7 +1291,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	 */
 	private static function verify_payload_references( array $writes, ?object $payload_reader ) {
 		foreach ( $writes as $write ) {
-			if ( ! is_array( $write ) || null === self::payload_reference( $write ) ) {
+			if ( null === self::payload_reference( $write ) ) {
 				continue;
 			}
 			$bytes = self::write_payload_bytes( $write, $payload_reader );

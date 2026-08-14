@@ -390,7 +390,7 @@ class Static_Site_Importer_URL_Fetcher {
 			$driver['cancel']( $handle, $reason );
 			return;
 		}
-		if ( is_object( $handle ) && null !== $handle->multi && null !== $handle->curl ) {
+		if ( $handle instanceof Static_Site_Importer_URL_Fetcher_Native_Handle && null !== $handle->multi && null !== $handle->curl ) {
 			curl_multi_remove_handle( $handle->multi, $handle->curl );
 			curl_multi_close( $handle->multi );
 			$handle->curl  = null;
@@ -456,34 +456,34 @@ class Static_Site_Importer_URL_Fetcher {
 		$url                     = $target['scheme'] . '://' . $url_host . ( ( 'https' === $target['scheme'] ? 443 : 80 ) === $target['port'] ? '' : ':' . $target['port'] ) . $target['path'];
 
 		$curl_options = array(
-				CURLOPT_URL               => $url,
-				CURLOPT_HTTPGET           => true,
-				CURLOPT_PROXY             => '',
-				CURLOPT_NOPROXY           => '*',
-				CURLOPT_FOLLOWLOCATION    => false,
-				CURLOPT_MAXREDIRS         => 0,
-				CURLOPT_HTTP_TRANSFER_DECODING => false,
-				CURLOPT_CONNECTTIMEOUT_MS => $timeout_ms,
-				CURLOPT_TIMEOUT_MS        => $timeout_ms,
-				CURLOPT_SSL_VERIFYPEER    => true,
-				CURLOPT_SSL_VERIFYHOST    => 2,
-				CURLOPT_HTTPHEADER        => array( 'Host: ' . $host_header, 'User-Agent: StaticSiteImporter/1.0', 'Accept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.1', 'Connection: close' ),
-				CURLOPT_HEADERFUNCTION    => static function( $curl, string $data ) use ( $handle ): int {
-					if ( strlen( $handle->response_headers ) + strlen( $data ) > self::HEADER_MAX_BYTES ) {
-						$handle->limit_error = 'headers';
-						return 0;
-					}
-					$handle->response_headers .= $data;
-					return strlen( $data );
-				},
-				CURLOPT_WRITEFUNCTION     => static function( $curl, string $data ) use ( $handle ): int {
-					if ( strlen( $handle->body ) + strlen( $data ) > $handle->options['max_bytes'] ) {
-						$handle->limit_error = 'body';
-						return 0;
-					}
-					$handle->body .= $data;
-					return strlen( $data );
-				},
+			CURLOPT_URL                    => $url,
+			CURLOPT_HTTPGET                => true,
+			CURLOPT_PROXY                  => '',
+			CURLOPT_NOPROXY                => '*',
+			CURLOPT_FOLLOWLOCATION         => false,
+			CURLOPT_MAXREDIRS              => 0,
+			CURLOPT_HTTP_TRANSFER_DECODING => false,
+			CURLOPT_CONNECTTIMEOUT_MS      => $timeout_ms,
+			CURLOPT_TIMEOUT_MS             => $timeout_ms,
+			CURLOPT_SSL_VERIFYPEER         => true,
+			CURLOPT_SSL_VERIFYHOST         => 2,
+			CURLOPT_HTTPHEADER             => array( 'Host: ' . $host_header, 'User-Agent: StaticSiteImporter/1.0', 'Accept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.1', 'Connection: close' ),
+			CURLOPT_HEADERFUNCTION         => static function( $curl, string $data ) use ( $handle ): int {
+				if ( strlen( $handle->response_headers ) + strlen( $data ) > self::HEADER_MAX_BYTES ) {
+					$handle->limit_error = 'headers';
+					return 0;
+				}
+				$handle->response_headers .= $data;
+				return strlen( $data );
+			},
+			CURLOPT_WRITEFUNCTION          => static function( $curl, string $data ) use ( $handle ): int {
+				if ( strlen( $handle->body ) + strlen( $data ) > $handle->options['max_bytes'] ) {
+					$handle->limit_error = 'body';
+					return 0;
+				}
+				$handle->body .= $data;
+				return strlen( $data );
+			},
 		);
 		if ( false === filter_var( $host, FILTER_VALIDATE_IP ) ) {
 			$curl_options[ CURLOPT_RESOLVE ] = array( $host . ':' . $target['port'] . ':' . $resolved_ip );
@@ -606,11 +606,11 @@ class Static_Site_Importer_URL_Fetcher {
 			return new WP_Error( 'static_site_importer_url_too_large', 'The URL response exceeded the maximum allowed size.' );
 		}
 		if ( CURLE_OK !== $result ) {
-			$error = curl_error( $handle->curl );
+			$error              = curl_error( $handle->curl );
+			$deadline_exhausted = ! empty( $handle->options['deadline_limited'] );
 			if ( self::native_retry( $handle ) ) {
 				return null;
 			}
-			$deadline_exhausted = self::native_deadline_exhausted( $handle ) || ! empty( $handle->options['deadline_limited'] );
 			self::cancel_transport( null, $handle, 'curl_failed' );
 			if ( CURLE_OPERATION_TIMEDOUT === $result ) {
 				return new WP_Error( $deadline_exhausted ? 'static_site_importer_url_deadline_exhausted' : 'static_site_importer_url_timeout', $deadline_exhausted ? 'The URL request deadline was exhausted.' : 'The URL request timed out.' );

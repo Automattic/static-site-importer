@@ -452,7 +452,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				$staged_artifact = $runtime['artifact'];
 				$staged_paths    = array_fill_keys( array_column( $staged_artifact['files'] ?? array(), 'path' ), true );
 				foreach ( $shared_plan->retained_resources() as $resource ) {
-					if ( is_array( $resource ) && ! isset( $staged_paths[ $resource['path'] ?? '' ] ) ) {
+					if ( ! isset( $staged_paths[ $resource['path'] ?? '' ] ) ) {
 						$staged_artifact['files'][] = $resource;
 					}
 				}
