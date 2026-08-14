@@ -72,6 +72,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		$preserve_asset_limits  = 'preserve_external' === $asset_failure_policy;
 		$page_ready             = 'page_ready' === ( $args['hydration_mode'] ?? '' );
 		$critical_assets        = array();
+		$known_asset_paths      = is_array( $args['_static_site_importer_known_asset_paths'] ?? null ) ? $args['_static_site_importer_known_asset_paths'] : array();
 		if ( $page_ready ) {
 			// A ready checkpoint may retain optional resources externally, but never a
 			// stylesheet or font dependency needed to render the collected page.
@@ -86,6 +87,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		$cursor_loader      = is_callable( $args['_static_site_importer_collection_cursor_load'] ?? null ) ? $args['_static_site_importer_collection_cursor_load'] : null;
 		$cursor_saver       = is_callable( $args['_static_site_importer_collection_cursor_save'] ?? null ) ? $args['_static_site_importer_collection_cursor_save'] : null;
 		$resource_loader    = is_callable( $args['_static_site_importer_collection_resource_load'] ?? null ) ? $args['_static_site_importer_collection_resource_load'] : null;
+		$resource_storer    = is_callable( $args['_static_site_importer_collection_resource_store'] ?? null ) ? $args['_static_site_importer_collection_resource_store'] : null;
 		$should_yield       = is_callable( $args['_static_site_importer_collection_should_yield'] ?? null ) ? $args['_static_site_importer_collection_should_yield'] : null;
 		$cursor             = null !== $cursor_loader ? call_user_func( $cursor_loader ) : null;
 		$cursor_schemas     = array( 'static-site-importer/url-collection-cursor/v1', 'static-site-importer/url-collection-cursor/v2' );
@@ -217,6 +219,9 @@ class Static_Site_Importer_URL_Site_Collector {
 				$critical_assets[ $asset_url ] = true;
 			}
 			foreach ( self::html_asset_urls( $body, $document_base_url, $scripts['asset_urls'] ) as $asset_url ) {
+				if ( isset( $known_asset_paths[ $asset_url ] ) ) {
+					continue;
+				}
 				if ( isset( $queued_assets[ $asset_url ] ) || isset( $resources[ $asset_url ] ) ) {
 					continue;
 				}
@@ -301,6 +306,9 @@ class Static_Site_Importer_URL_Site_Collector {
 
 			if ( 'text/css' === $content_type || str_ends_with( strtolower( (string) self::url_parts( $final_url, PHP_URL_PATH ) ), '.css' ) ) {
 				foreach ( self::css_asset_urls( $body, $final_url ) as $nested_url ) {
+					if ( isset( $known_asset_paths[ $nested_url ] ) ) {
+						continue;
+					}
 					if ( isset( $queued_assets[ $nested_url ] ) || isset( $resources[ $nested_url ] ) ) {
 						continue;
 					}
@@ -360,7 +368,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		usort( $script_exclusions, static fn ( array $left, array $right ): int => strcmp( implode( '|', $left ), implode( '|', $right ) ) );
 		$paths           = self::artifact_paths( $resources, $site_url );
 		$route_paths     = self::route_paths( $resources );
-		$reference_paths = $paths;
+		$reference_paths = array_merge( $known_asset_paths, $paths );
 		foreach ( $aliases as $requested_url => $final_url ) {
 			if ( isset( $paths[ $final_url ] ) ) {
 				$reference_paths[ $requested_url ] = $paths[ $final_url ];
@@ -397,9 +405,13 @@ class Static_Site_Importer_URL_Site_Collector {
 			} elseif ( 'text/css' === $resource['content_type'] || str_ends_with( strtolower( $path ), '.css' ) ) {
 				$body = self::rewrite_css( $body, $resource_url, $path, $reference_paths, $external_assets );
 			}
+			if ( ! Static_Site_Importer_Content_Policy::is_static_path( $path ) || ( Static_Site_Importer_Content_Policy::is_textual_path( $path ) && Static_Site_Importer_Content_Policy::contains_server_code( $body ) ) ) {
+				return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
+			}
 
 			$file = array(
 				'path'      => $path,
+				'source_url' => $resource_url,
 				'mime_type' => $resource['content_type'],
 				'body'      => $body,
 				'is_text'   => self::is_text( $resource['content_type'], $path ),
@@ -426,6 +438,29 @@ class Static_Site_Importer_URL_Site_Collector {
 		}
 		$files = array();
 		foreach ( $finalization['files'] as $retained_file ) {
+			if ( ! empty( $args['_static_site_importer_collection_return_payload_references'] ) ) {
+				$body = $retained_file['body'] ?? null;
+				if ( ! is_string( $body ) && ( ! isset( $retained_file['bytes'] ) || ! is_int( $retained_file['bytes'] ) ) && null !== $resource_loader ) {
+					$body = call_user_func( $resource_loader, $retained_file );
+				}
+				$path = (string) ( $retained_file['path'] ?? '' );
+				if ( ! Static_Site_Importer_Content_Policy::is_static_path( $path ) ) {
+					return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
+				}
+				$reference = isset( $retained_file['body_ref'] ) ? $retained_file : ( null !== $resource_storer && is_string( $body ) ? call_user_func( $resource_storer, $body ) : null );
+				if ( ! is_array( $reference ) || ! is_string( $reference['body_ref'] ?? null ) || ! is_string( $reference['sha256'] ?? null ) ) {
+					return new WP_Error( 'static_site_importer_collection_cursor_resource_invalid', 'A finalized URL collection resource could not be retained by reference.' );
+				}
+				$file                      = array_intersect_key( $retained_file, array_flip( array( 'path', 'source_url', 'mime_type', 'metadata' ) ) );
+				$file['payload_reference'] = array(
+					'schema' => 'blocks-engine/payload-reference/v1',
+					'id'     => $reference['body_ref'],
+					'bytes'  => isset( $reference['bytes'] ) && is_int( $reference['bytes'] ) ? $reference['bytes'] : strlen( (string) $body ),
+					'sha256' => $reference['sha256'],
+				);
+				$files[]                   = $file;
+				continue;
+			}
 			$body = $retained_file['body'] ?? null;
 			if ( ! is_string( $body ) && null !== $resource_loader ) {
 				$body = call_user_func( $resource_loader, $retained_file );
@@ -433,7 +468,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			if ( ! is_string( $body ) ) {
 				return new WP_Error( 'static_site_importer_collection_cursor_resource_invalid', 'A finalized URL collection resource could not be loaded.' );
 			}
-			$file = array_intersect_key( $retained_file, array_flip( array( 'path', 'mime_type', 'metadata' ) ) );
+			$file = array_intersect_key( $retained_file, array_flip( array( 'path', 'source_url', 'mime_type', 'metadata' ) ) );
 			if ( ! empty( $retained_file['is_text'] ) ) {
 				$file['content'] = $body;
 			} else {

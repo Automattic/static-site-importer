@@ -30,6 +30,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
 			return $prepared['receipt'];
 		}
+		$prepared = self::admit_prepared( $prepared );
+		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
+			return $prepared['receipt'];
+		}
 		return self::materialize_prepared( $prepared );
 	}
 
@@ -44,6 +48,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	 * @return array<string,mixed> Prepared state or a rejected receipt.
 	 */
 	public static function prepare( array $plan, array $args = array() ): array {
+		// Payload readers hold transient workspace access and must never enter a
+		// canonical plan hash, prepared-plan persistence, or receipt projection.
+		$payload_reader = $args['_static_site_importer_payload_reader'] ?? null;
+		unset( $args['_static_site_importer_payload_reader'] );
 		$state = array(
 			'plan'                         => $plan,
 			'plan_hash'                    => self::hash( $plan ),
@@ -62,6 +70,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'report_destinations'          => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
 			'external_report_destinations' => isset( $args['external_report_destinations'] ) && is_array( $args['external_report_destinations'] ) ? $args['external_report_destinations'] : array(),
 			'args'                         => $args,
+			'payload_reader'               => is_object( $payload_reader ) ? $payload_reader : null,
 		);
 
 		try {
@@ -130,6 +139,48 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return $state;
 	}
 
+	/**
+	 * Verify all reference-backed payloads before related runtime work begins.
+	 *
+	 * The success marker is intentionally ephemeral: it is neither part of the
+	 * canonical plan hash nor projected into materialization receipts. Individual
+	 * writes still reread and verify their payload immediately before mutation.
+	 *
+	 * @param array<string,mixed> $prepared Prepared materialization state.
+	 * @return array<string,mixed> Prepared state or a rejected receipt.
+	 */
+	public static function admit_prepared( array $prepared ): array {
+		if ( 'prepared' !== ( $prepared['status'] ?? '' ) || ! isset( $prepared['resolved']['writes'] ) || ! is_array( $prepared['resolved']['writes'] ) ) {
+			return array(
+				'status'  => 'rejected',
+				'receipt' => self::receipt(
+					'rejected',
+					array(
+						'plan'             => isset( $prepared['plan'] ) && is_array( $prepared['plan'] ) ? $prepared['plan'] : array(),
+						'plan_hash'        => (string) ( $prepared['plan_hash'] ?? '' ),
+						'diagnostics'      => array( array( 'reason_code' => 'invalid_prepared_state' ) ),
+						'applied'          => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'runtime_declarations' => array( 'asset_publications' => array(), 'entity_bindings' => array() ) ),
+						'skipped'          => array(),
+						'existing_matches' => array( 'pages' => array() ),
+					)
+				),
+			);
+		}
+		if ( ! empty( $prepared['payload_references_admitted'] ) ) {
+			return $prepared;
+		}
+		$references = self::verify_payload_references( $prepared['resolved']['writes'], is_object( $prepared['payload_reader'] ?? null ) ? $prepared['payload_reader'] : null );
+		if ( is_wp_error( $references ) ) {
+			$prepared['diagnostics'][] = array( 'reason_code' => $references->get_error_code() );
+			return array(
+				'status'  => 'rejected',
+				'receipt' => self::receipt( 'rejected', $prepared ),
+			);
+		}
+		$prepared['payload_references_admitted'] = true;
+		return $prepared;
+	}
+
 	/** @param array<string,mixed> $prepared @return array<string,mixed> */
 	public static function materialize_prepared( array $prepared ): array {
 		if ( 'prepared' !== ( $prepared['status'] ?? '' ) || ! isset( $prepared['plan'] ) || ! is_array( $prepared['plan'] ) ) {
@@ -154,6 +205,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			);
 		}
 		$state = self::refresh_prepared_destination( $prepared );
+		if ( 'prepared' !== ( $state['status'] ?? '' ) ) {
+			return $state['receipt'];
+		}
+		$state = self::admit_prepared( $state );
 		if ( 'prepared' !== ( $state['status'] ?? '' ) ) {
 			return $state['receipt'];
 		}
@@ -233,7 +288,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( ! empty( $args['preserve_existing_theme_bootstrap'] ) && in_array( $write['kind'] ?? '', array( 'theme_scaffold', 'theme_bootstrap', 'theme_template' ), true ) && is_file( $state['theme_dir'] . '/' . $write['target_path'] ) ) {
 				continue;
 			}
-			$result = self::write_file( $state['theme_dir'], $write );
+			$result = self::write_file( $state['theme_dir'], $write, $state['payload_reader'] );
 			if ( is_wp_error( $result ) ) {
 				return self::failed_receipt( $state, $result->get_error_code() );
 			}
@@ -312,6 +367,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$plan          = $prepared['plan'] ?? null;
 		$base_resolved = $prepared['base_resolved'] ?? null;
 		$args          = isset( $prepared['args'] ) && is_array( $prepared['args'] ) ? $prepared['args'] : array();
+		$payload_reader = is_object( $prepared['payload_reader'] ?? null ) ? $prepared['payload_reader'] : null;
 		if ( ! is_array( $plan ) || ! is_array( $base_resolved ) || self::hash( $plan ) !== ( $prepared['plan_hash'] ?? '' ) || self::hash( $base_resolved ) !== ( $prepared['base_resolved_hash'] ?? '' ) ) {
 			return array(
 				'status'  => 'rejected',
@@ -365,6 +421,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'uri'  => $theme_uri,
 			),
 			'args'                         => $args,
+			'payload_reader'               => $payload_reader,
 			'preparation'                  => array(
 				'canonical_validations'       => 1,
 				'plan_resolutions'            => 1,
@@ -456,6 +513,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		$state['provider_layout_overlay_writes'] = $overlay_writes;
 		foreach ( $state['resolved']['writes'] as $write ) {
+			if ( null !== self::payload_reference( $write ) && ! self::valid_payload_reference( self::payload_reference( $write ) ) ) {
+				throw new InvalidArgumentException( 'payload_reference_invalid' );
+			}
 			$path = $state['theme_dir'] . '/' . $write['target_path'];
 			if ( ! self::safe_destination( $state['theme_dir'], $write['target_path'] ) ) {
 				throw new InvalidArgumentException( 'unsafe_destination_path' );
@@ -646,16 +706,20 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	}
 
 	/** @param array<string,mixed> $write */
-	private static function write_file( string $theme_dir, array $write ) {
+	private static function write_file( string $theme_dir, array $write, ?object $payload_reader = null ) {
 		$path = $theme_dir . '/' . $write['target_path'];
-		$data = 'base64' === $write['payload']['encoding'] ? base64_decode( $write['payload']['data'], true ) : $write['payload']['data']; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes declared canonical artifact payload bytes.
-		if ( is_file( $path ) && is_string( $data ) && self::file_hash( $path ) === hash( 'sha256', $data ) ) {
+		$declared_hash = self::payload_hash( $write );
+		if ( is_file( $path ) && '' !== $declared_hash && self::file_hash( $path ) === $declared_hash ) {
 			return array(
 				'target_path'             => $write['target_path'],
 				'hash'                    => self::file_hash( $path ),
-				'payload_hash'            => $write['payload_hash'] ?? hash( 'sha256', $data ),
+				'payload_hash'            => $write['payload_hash'] ?? $declared_hash,
 				'reconciliation_identity' => $write['reconciliation_identity'] ?? hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ),
 			);
+		}
+		$data = self::write_payload_bytes( $write, $payload_reader );
+		if ( is_wp_error( $data ) ) {
+			return $data;
 		}
 		if ( ! is_dir( dirname( $path ) ) && ! wp_mkdir_p( dirname( $path ) ) ) {
 			return new WP_Error( 'theme_directory_create_failed' );
@@ -1040,6 +1104,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	}
 
 	private static function payload_data( array $write ): string {
+		if ( null !== self::payload_reference( $write ) ) {
+			return '';
+		}
 		$data = $write['payload']['data'] ?? '';
 		return 'base64' === ( $write['payload']['encoding'] ?? null ) && is_string( $data ) ? (string) base64_decode( $data, true ) : (string) $data; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes declared canonical payload bytes for receipt validation.
 	}
@@ -1183,8 +1250,74 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** @param array<string,mixed> $write */
 	private static function payload_hash( array $write ): string {
+		$reference = self::payload_reference( $write );
+		if ( null !== $reference ) {
+			return self::valid_payload_reference( $reference ) ? $reference['sha256'] : '';
+		}
 		$data = 'base64' === $write['payload']['encoding'] ? base64_decode( $write['payload']['data'], true ) : $write['payload']['data']; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes declared canonical payload bytes before hashing.
 		return is_string( $data ) ? hash( 'sha256', $data ) : '';
+	}
+
+	/** Return a declared binary reference without treating absent inline payloads as references. */
+	private static function payload_reference( array $write ): ?array {
+		$reference = $write['payload_reference'] ?? ( $write['payload']['reference'] ?? null );
+		return is_array( $reference ) ? $reference : ( array_key_exists( 'payload_reference', $write ) || array_key_exists( 'reference', $write['payload'] ?? array() ) ? array() : null );
+	}
+
+	private static function valid_payload_reference( array $reference ): bool {
+		return 'blocks-engine/payload-reference/v1' === ( $reference['schema'] ?? null )
+			&& is_string( $reference['id'] ?? null ) && '' !== $reference['id']
+			&& is_string( $reference['sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $reference['sha256'] )
+			&& ( ! isset( $reference['bytes'] ) || ( is_int( $reference['bytes'] ) && $reference['bytes'] >= 0 ) );
+	}
+
+	/**
+	 * Admit every reference-backed write before materialization starts.
+	 *
+	 * Each payload is read and discarded independently so an unavailable or
+	 * corrupted later resource cannot leave earlier pages or files behind.
+	 * write_payload_bytes() repeats the verification immediately before a write
+	 * to keep the write boundary safe if workspace contents change meanwhile.
+	 *
+	 * @param array<int,array<string,mixed>> $writes
+	 */
+	private static function verify_payload_references( array $writes, ?object $payload_reader ) {
+		foreach ( $writes as $write ) {
+			if ( ! is_array( $write ) || null === self::payload_reference( $write ) ) {
+				continue;
+			}
+			$bytes = self::write_payload_bytes( $write, $payload_reader );
+			if ( is_wp_error( $bytes ) ) {
+				return $bytes;
+			}
+		}
+		return true;
+	}
+
+	/** Resolve a reference exactly once at the write boundary and verify declared raw bytes. */
+	private static function write_payload_bytes( array $write, ?object $payload_reader ) {
+		$reference = self::payload_reference( $write );
+		if ( null === $reference ) {
+			return 'base64' === $write['payload']['encoding'] ? base64_decode( $write['payload']['data'], true ) : $write['payload']['data']; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes declared canonical artifact payload bytes.
+		}
+		if ( ! self::valid_payload_reference( $reference ) ) {
+			return new WP_Error( 'static_site_importer_payload_reference_invalid' );
+		}
+		if ( ! is_object( $payload_reader ) || ! is_callable( array( $payload_reader, 'read' ) ) ) {
+			return new WP_Error( 'static_site_importer_payload_reader_missing' );
+		}
+		try {
+			$bytes = $payload_reader->read( $reference );
+		} catch ( Throwable ) {
+			return new WP_Error( 'static_site_importer_payload_reference_unavailable' );
+		}
+		if ( ! is_string( $bytes ) ) {
+			return new WP_Error( 'static_site_importer_payload_reference_unavailable' );
+		}
+		if ( ( isset( $reference['bytes'] ) && strlen( $bytes ) !== $reference['bytes'] ) || ! hash_equals( $reference['sha256'], hash( 'sha256', $bytes ) ) ) {
+			return new WP_Error( 'static_site_importer_payload_reference_hash_mismatch' );
+		}
+		return $bytes;
 	}
 
 	private static function file_hash( string $path ): string {

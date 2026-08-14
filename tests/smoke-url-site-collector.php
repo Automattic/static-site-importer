@@ -58,7 +58,10 @@ if ( ! function_exists( 'wp_strip_all_tags' ) ) {
 }
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-fetcher.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-site-collector.php';
+$candidate_transformer = getenv( 'SSI_BLOCKS_ENGINE_PHP_TRANSFORMER' );
+if ( is_string( $candidate_transformer ) && is_readable( rtrim( $candidate_transformer, '/\\' ) . '/vendor/autoload.php' ) ) { require_once rtrim( $candidate_transformer, '/\\' ) . '/vendor/autoload.php'; class_exists( Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler::class ); class_exists( Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactNormalizer::class ); interface_exists( Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader::class ); }
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/php-transformer.php';
 

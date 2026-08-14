@@ -95,11 +95,15 @@ class Static_Site_Importer_Theme_Generator {
 
 	/** Compile an artifact into its immutable canonical WordPress site plan. */
 	public static function compile_website_artifact( array $artifact, array $args = array() ) {
-		$source_policy = Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
+		$precompiled   = ! empty( $args['_static_site_importer_precompiled_source'] ) && is_array( $args['compiled_artifact_result'] ?? null );
+		$source_policy = $precompiled ? true : Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
 		if ( is_wp_error( $source_policy ) ) {
 			return $source_policy;
 		}
-		$script_policy                       = Static_Site_Importer_Client_Script_Policy::apply( $artifact, $args );
+		$script_policy                       = $precompiled ? array(
+			'artifact' => $artifact,
+			'report'   => $args['source_metadata']['collection']['script_policy'] ?? array(),
+		) : Static_Site_Importer_Client_Script_Policy::apply( $artifact, $args );
 		$artifact                            = $script_policy['artifact'];
 		$args['client_script_policy_report'] = $script_policy['report'];
 		$compiler_class = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactCompiler';
@@ -194,6 +198,12 @@ class Static_Site_Importer_Theme_Generator {
 			$receipt = isset( $prepared['receipt'] ) && is_array( $prepared['receipt'] ) ? $prepared['receipt'] : array();
 			$error   = $receipt['errors'][0] ?? array();
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan destination preflight failed.' ), $receipt );
+		}
+		$prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::admit_prepared( $prepared );
+		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
+			$receipt = isset( $prepared['receipt'] ) && is_array( $prepared['receipt'] ) ? $prepared['receipt'] : array();
+			$error   = $receipt['errors'][0] ?? array();
+			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan payload admission failed.' ), $receipt );
 		}
 		$lifecycle = self::with_resolved_runtime_binding_manifests( $lifecycle, $prepared['resolved'] ?? array() );
 		$binding_preflight = self::preflight_runtime_entity_binding_anchors( $prepared['resolved'] ?? array(), $lifecycle, $args );
