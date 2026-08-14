@@ -25,6 +25,7 @@ $GLOBALS['ssi_plan_options']    = array( 'show_on_front' => 'posts', 'page_on_fr
 $GLOBALS['ssi_plan_fail_after'] = 0;
 $GLOBALS['ssi_plan_insert_calls'] = 0;
 $GLOBALS['ssi_plan_font_requests'] = array();
+$GLOBALS['ssi_plan_woo_cleanup_failures'] = false;
 mkdir( $GLOBALS['ssi_plan_root'], 0777, true );
 
 class WP_Error {
@@ -98,6 +99,35 @@ function wp_insert_post( array $post, bool $wp_error ) {
 	return $id;
 }
 function get_post_field( string $field, int $id ): string { return stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $id ][ $field ] ?? '' ) ); }
+function sanitize_title( string $value ): string { return trim( (string) preg_replace( '/-+/', '-', preg_replace( '/[^a-z0-9]+/', '-', strtolower( $value ) ) ), '-' ); }
+function wp_kses_post( string $value ): string { return $value; }
+function post_type_exists( string $type ): bool { return 'product' === $type; }
+function taxonomy_exists( string $taxonomy ): bool { return 'product_cat' === $taxonomy; }
+function term_exists( string $term, string $taxonomy ) { unset( $term, $taxonomy ); return null; }
+function wp_insert_term( string $term, string $taxonomy ) { unset( $term, $taxonomy ); return array( 'term_id' => 9001 ); }
+function wp_set_object_terms( int $object_id, array $terms, string $taxonomy ) { unset( $object_id, $taxonomy ); return $terms; }
+function wp_delete_post( int $id, bool $force_delete ) {
+	unset( $force_delete );
+	if ( ! empty( $GLOBALS['ssi_plan_woo_cleanup_failures'] ) && 9000 <= $id ) { return false; }
+	if ( ! isset( $GLOBALS['ssi_plan_posts'][ $id ] ) ) { return false; }
+	$post = $GLOBALS['ssi_plan_posts'][ $id ]; unset( $GLOBALS['ssi_plan_posts'][ $id ], $GLOBALS['ssi_plan_meta'][ $id ] ); return $post;
+}
+function get_term( int $id, string $taxonomy ) { unset( $taxonomy ); return 9001 === $id ? (object) array( 'term_id' => $id, 'count' => 0 ) : null; }
+function wp_delete_term( int $id, string $taxonomy ) { unset( $id, $taxonomy ); return empty( $GLOBALS['ssi_plan_woo_cleanup_failures'] ); }
+class WC_Product_Simple {
+	private array $data = array();
+	public function set_name( string $value ): void { $this->data['post_title'] = $value; }
+	public function set_slug( string $value ): void { $this->data['post_name'] = $value; }
+	public function set_status( string $value ): void { $this->data['post_status'] = $value; }
+	public function set_description( string $value ): void { $this->data['post_content'] = $value; }
+	public function set_short_description( string $value ): void { $this->data['post_excerpt'] = $value; }
+	public function set_regular_price( string $value ): void { unset( $value ); }
+	public function set_sale_price( string $value ): void { unset( $value ); }
+	public function set_stock_status( string $value ): void { unset( $value ); }
+	public function set_manage_stock( bool $value ): void { unset( $value ); }
+	public function set_stock_quantity( int $value ): void { unset( $value ); }
+	public function save(): int { $id = 9000 + count( array_filter( $GLOBALS['ssi_plan_posts'], static fn( array $post ): bool => 'product' === ( $post['post_type'] ?? '' ) ) ); $this->data['post_type'] = 'product'; $GLOBALS['ssi_plan_posts'][ $id ] = $this->data; return $id; }
+}
 class WP_Post_Type {
 	public string $name;
 	public bool $public;
@@ -275,6 +305,50 @@ $classic_artifact = array(
 $classic_plan = ( new ArtifactCompiler() )->compile( $classic_artifact )->toArray()['source_reports']['wordpress_site_plan'];
 $classic_projection = Static_Site_Importer_Classic_Theme_Projection::build( $classic_artifact, $classic_plan );
 $assert( ! is_wp_error( $classic_projection ), 'normalized artifact produces a render-neutral SSI classic projection without block reverse conversion' );
+$woo_late_failure_lifecycle = array(
+	'dependencies' => array(),
+	'entities'     => array(
+		'woo' => array(
+			'adapter'  => array(
+				'provider'          => 'woocommerce',
+				'materializer'      => array( 'Static_Site_Importer_Woo_Product_Seeder', 'seed' ),
+				'rollback_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'rollback' ),
+				'classic_binding_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_classic_render' ),
+			),
+			'manifest' => array( 'products' => array( array( 'slug' => 'residual-woo-product', 'name' => 'Residual Woo Product', 'categories' => array( 'Residual Woo Category' ), 'source_path' => 'index.html', 'selector' => 'h1' ) ) ),
+		),
+	),
+);
+foreach ( array(
+	'block'   => array( 'plan' => $plan, 'args' => array() ),
+	'classic' => array( 'plan' => $classic_plan, 'args' => array( 'theme_materialization' => 'classic', 'classic_theme_projection' => $classic_projection ) ),
+) as $strategy => $fixture ) {
+	$GLOBALS['ssi_plan_woo_cleanup_failures'] = true;
+	$late_failure = $theme_generator_materialize->invoke( null, array(), array_merge( array( 'slug' => 'woo-late-' . $strategy, 'seed_entities' => true, 'font_materialization' => array(), 'inject_materialization_failure' => 'report_persistence' ), $fixture['args'] ), $fixture['plan'], array(), null, $woo_late_failure_lifecycle, array() );
+	$late_receipt = is_wp_error( $late_failure ) ? $late_failure->get_error_data() : array();
+	$rollback = $late_receipt['entity_compensation']['entities'][0] ?? array();
+	$diagnostics = $late_receipt['diagnostics'] ?? array();
+	$assert(
+		is_wp_error( $late_failure )
+		&& 'partial' === ( $late_receipt['status'] ?? '' )
+		&& 'report_persistence' === ( $late_receipt['failure_context']['stage'] ?? '' )
+		&& 'partial' === ( $late_receipt['entity_compensation']['status'] ?? '' )
+		&& 'woo' === ( $rollback['entity_id'] ?? '' )
+		&& 'woocommerce' === ( $rollback['adapter'] ?? '' )
+		&& 'partial' === ( $rollback['status'] ?? '' )
+		&& ! empty( $rollback['rollback']['product_cleanup_failures'] ?? array() )
+		&& array( 9001 ) === ( $rollback['rollback']['term_cleanup_failures'] ?? array() )
+		&& ! empty( $rollback['residual_state']['products'] ?? array() )
+		&& array( 9001 ) === ( $rollback['residual_state']['terms'] ?? array() )
+		&& array() !== array_filter( $diagnostics, static fn( array $diagnostic ): bool => 'static_site_importer_projection_write_failed' === ( $diagnostic['reason_code'] ?? '' ) && 'report_persistence' === ( $diagnostic['stage'] ?? '' ) )
+		&& array() !== array_filter( $diagnostics, static fn( array $diagnostic ): bool => 'entity_compensation_partial' === ( $diagnostic['reason_code'] ?? '' ) && 'woo' === ( $diagnostic['entity_id'] ?? '' ) && 'woocommerce' === ( $diagnostic['adapter'] ?? '' ) ),
+		$strategy . ' late report persistence failure returns original stage and bounded Woo product/category residual compensation evidence'
+	);
+	$GLOBALS['ssi_plan_woo_cleanup_failures'] = false;
+	foreach ( $GLOBALS['ssi_plan_posts'] as $id => $post ) {
+		if ( 'product' === ( $post['post_type'] ?? '' ) ) { unset( $GLOBALS['ssi_plan_posts'][ $id ] ); }
+	}
+}
 $classic_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $classic_plan, array( 'slug' => 'classic-site-plan', 'name' => 'Classic Site', 'theme_materialization' => 'classic', 'classic_theme_projection' => $classic_projection, 'activate' => true ) );
 $classic_root = $GLOBALS['ssi_plan_root'] . '/classic-site-plan';
 $classic_pages = json_decode( (string) file_get_contents( $classic_root . '/classic-pages.json' ), true );
