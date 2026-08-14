@@ -112,7 +112,14 @@ class Static_Site_Importer_Plugin_Materializer {
 				$preparation = self::prepare_plugin_runtime( $slug, $preparation_callback );
 				if ( is_wp_error( $preparation ) ) {
 					self::restore_activation_lifecycle_actions( $lifecycle );
-					return self::failed_report( $report, $preparation );
+					if ( ! is_plugin_active( $plugin_file ) ) {
+						return self::failed_report( $report, $preparation );
+					}
+					$report['active']    = true;
+					$report['actions'][] = 'activated';
+					$report['status']    = 'activated_pending_fresh_runtime';
+					self::record_installed_provenance( $report );
+					return $report;
 				}
 				try {
 					$report['lifecycle_replay'] = self::complete_activation_lifecycle_replay( $lifecycle );
