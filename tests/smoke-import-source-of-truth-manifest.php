@@ -67,11 +67,11 @@ $user_id = wp_insert_post(
 );
 $assert( ! is_wp_error( $user_id ), 'user-page-created', is_wp_error( $user_id ) ? $user_id->get_error_message() : '' );
 
-$import = static function ( array $files, string $hash, string $run ) {
-	return Static_Site_Importer_Theme_Generator::import_website_artifact(
-		array( 'schema' => 'blocks-engine/php-transformer/site-artifact/v1', 'id' => 'artifact-source-of-truth-smoke', 'hash' => $hash, 'hash_algo' => 'sha256', 'entrypoint' => 'index.html', 'files' => $files ),
-		array( 'name' => 'Source Of Truth Smoke', 'slug' => 'source-of-truth-smoke-theme', 'overwrite' => true, 'activate' => false, 'import_run_id' => $run, 'write_theme_report_artifacts' => true )
-	);
+	$import = static function ( array $files, string $hash, string $run, array $options = array() ) {
+		return Static_Site_Importer_Theme_Generator::import_website_artifact(
+			array( 'schema' => 'blocks-engine/php-transformer/site-artifact/v1', 'id' => 'artifact-source-of-truth-smoke', 'hash' => $hash, 'hash_algo' => 'sha256', 'entrypoint' => 'index.html', 'files' => $files ),
+			array_merge( array( 'name' => 'Source Of Truth Smoke', 'slug' => 'source-of-truth-smoke-theme', 'overwrite' => true, 'activate' => false, 'import_run_id' => $run, 'write_theme_report_artifacts' => true ), $options )
+		);
 };
 
 $result = $import(
@@ -102,7 +102,9 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( ! is_file( $theme_dir . '/templates/page-protected.html' ) && ! is_file( $theme_dir . '/templates/page-old.html' ), 'legacy-page-templates-not-emitted' );
 	$assert( $stale_id > 0, 'first-import-created-stale-page' );
 	$assert( false !== file_put_contents( $unknown_file_path, '<!-- user file -->' ), 'unknown-file-created' );
-	$assert( $manifest === ( $report['source_of_truth'] ?? array() ), 'report-embeds-written-manifest' );
+		$assert( $manifest === ( $report['source_of_truth'] ?? array() ), 'report-embeds-written-manifest' );
+		$desired_kinds = array(); foreach ( $manifest['desired']['files'] ?? array() as $file ) { if ( is_array( $file ) ) { $desired_kinds[ $file['path'] ?? '' ] = $file['kind'] ?? ''; } }
+		$assert( 'theme_template' === ( $desired_kinds['templates/front-page.html'] ?? '' ) && 'theme_asset' === ( $desired_kinds['assets/assets/site.css'] ?? '' ) && ! in_array( 'materialized_theme_file', $desired_kinds, true ), 'block-default-manifest-preserves-canonical-write-kinds' );
 	$assert( 'ssi-source-of-truth-smoke-run' === ( $home_meta['import_run_id'] ?? '' ), 'owned-page-has-provenance-meta' );
 	$assert( '' === (string) get_post_meta( (int) $protected_id, '_static_site_importer_provenance', true ), 'protected-page-has-no-provenance-meta' );
 	$assert( '' === (string) get_post_meta( (int) $protected_id, '_static_site_importer_reconciliation_identity', true ), 'protected-page-has-no-reconciliation-identity-meta' );
@@ -112,13 +114,20 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( 1 === count( $protected_match ) && true === ( $protected_match[0]['protected'] ?? false ) && '/protected' === ( $protected_match[0]['route'] ?? '' ), 'manifest-records-protected-canonical-route-match' );
 	$assert( ! isset( $report['generated_theme']['block_documents'][0]['core_html_block_count'] ), 'projection-omits-unreported-core-html-metric' );
 
-	$reimport = $import(
+		$preserved_bootstrap = $theme_dir . '/static-site-importer-batch-bootstrap/preserved.php';
+		wp_mkdir_p( dirname( $preserved_bootstrap ) );
+		$previous_manifest = $manifest;
+		$previous_manifest['desired']['files'][] = array( 'path' => 'static-site-importer-batch-bootstrap/preserved.php', 'kind' => 'theme_bootstrap' );
+		file_put_contents( $preserved_bootstrap, "<?php\n" );
+		file_put_contents( $result['manifest_path'], wp_json_encode( $previous_manifest ) );
+		$reimport = $import(
 		array(
 			array( 'path' => 'index.html', 'content' => '<main><h1>Source Of Truth Home Updated</h1></main>' ),
 			array( 'path' => 'assets/site.css', 'content' => 'body{color:#222}' ),
 		),
 		'sha256:source-of-truth-smoke-reimport',
-		'ssi-source-of-truth-smoke-reimport-run'
+			'ssi-source-of-truth-smoke-reimport-run',
+			array( 'batch_import' => true, 'preserve_existing_theme_bootstrap' => true )
 	);
 	$assert( ! is_wp_error( $reimport ), 'reimport-succeeds', is_wp_error( $reimport ) ? $reimport->get_error_message() : '' );
 	if ( ! is_wp_error( $reimport ) ) {
@@ -136,6 +145,8 @@ if ( ! is_wp_error( $result ) ) {
 		$assert( str_contains( (string) get_post_field( 'post_content', $protected_id ), 'Protected original content.' ) && str_contains( (string) get_post_field( 'post_content', $user_id ), 'User original content.' ), 'reimport-preserves-protected-and-user-pages' );
 		$assert( in_array( $stale_id, $stale_page_ids, true ) && 'publish' === get_post_status( $stale_id ) && 'report_only' === ( $reimport_manifest['cleanup']['pages']['action'] ?? '' ), 'reimport-reports-but-preserves-stale-page' );
 		$assert( $reimport_manifest === ( $reimport_report['source_of_truth'] ?? array() ), 'reimport-report-embeds-cleanup-manifest' );
+		$reimport_kinds = array(); foreach ( $reimport_manifest['desired']['files'] ?? array() as $file ) { if ( is_array( $file ) ) { $reimport_kinds[ $file['path'] ?? '' ] = $file['kind'] ?? ''; } }
+		$assert( is_file( $preserved_bootstrap ) && 'theme_bootstrap' === ( $reimport_kinds['static-site-importer-batch-bootstrap/preserved.php'] ?? '' ) && ! in_array( 'static-site-importer-batch-bootstrap/preserved.php', $deleted_paths, true ), 'old-v1-manifest-preserved-bootstrap-remains-owned-during-reconciliation' );
 	}
 }
 

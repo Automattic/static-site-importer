@@ -70,6 +70,9 @@ namespace {
 			return json_encode( $data );
 		}
 	}
+	if ( ! function_exists( 'is_wp_error' ) ) {
+		function is_wp_error( $value ) { return $value instanceof WP_Error; }
+	}
 	if ( ! function_exists( 'wp_strip_all_tags' ) ) {
 		function wp_strip_all_tags( $text ) {
 			return strip_tags( (string) $text );
@@ -97,6 +100,24 @@ namespace {
 			unset( $path, $output, $post_type );
 			return null;
 		}
+	}
+	if ( ! function_exists( 'term_exists' ) ) {
+		function term_exists( $term, $taxonomy = '' ) { unset( $term, $taxonomy ); return null; }
+	}
+	if ( ! function_exists( 'wp_insert_term' ) ) {
+		function wp_insert_term( $term, $taxonomy = '' ) { unset( $term, $taxonomy ); return array( 'term_id' => 1 ); }
+	}
+	if ( ! function_exists( 'wp_set_object_terms' ) ) {
+		function wp_set_object_terms( $object_id, $terms, $taxonomy = '' ) { unset( $object_id, $taxonomy ); return $terms; }
+	}
+	if ( ! function_exists( 'wp_delete_post' ) ) {
+		function wp_delete_post( $post_id, $force_delete = false ) { unset( $post_id, $force_delete ); return true; }
+	}
+	if ( ! function_exists( 'get_term' ) ) {
+		function get_term( $term, $taxonomy = '' ) { unset( $term, $taxonomy ); return null; }
+	}
+	if ( ! function_exists( 'wp_delete_term' ) ) {
+		function wp_delete_term( $term, $taxonomy = '' ) { unset( $term, $taxonomy ); return true; }
 	}
 
 	if ( ! class_exists( 'WC_Product_Simple' ) ) {

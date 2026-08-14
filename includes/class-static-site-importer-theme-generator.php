@@ -579,16 +579,28 @@ class Static_Site_Importer_Theme_Generator {
 			)
 		);
 		$artifact['hash'] = (string) ( $args['artifact_hash'] ?? $artifact['hash'] ?? $plan['source']['source_hash'] );
-		// The receipt is authoritative for strategy-specific writes. A classic
-		// projection replaces block templates while retaining canonical assets.
+		// The resolved write plan is authoritative, including files retained from a
+		// previous batch. Applied receipts omit intentionally preserved bootstrap
+		// and scaffold writes, which must remain owned rather than becoming stale.
 		$desired_files = array_map(
-			static fn( array $file ): array => array(
-				'path' => $file['target_path'],
-				'kind' => 'materialized_theme_file',
+			static fn( array $write ): array => array(
+				'path' => $write['target_path'],
+				'kind' => $write['kind'],
 			),
-			$receipt['completed']['files'] ?? array()
+			array_values( array_filter( $receipt['plan']['writes'] ?? array(), static fn( $write ): bool => is_array( $write ) && is_scalar( $write['target_path'] ?? null ) && is_scalar( $write['kind'] ?? null ) ) )
 		);
 		$desired_file_paths = array_fill_keys( array_column( $desired_files, 'path' ), true );
+		foreach ( $receipt['completed']['files'] ?? array() as $file ) {
+			$path = is_array( $file ) && is_scalar( $file['target_path'] ?? null ) ? (string) $file['target_path'] : '';
+			if ( '' === $path || isset( $desired_file_paths[ $path ] ) ) {
+				continue;
+			}
+			$desired_file_paths[ $path ] = true;
+			$desired_files[] = array(
+				'path' => $path,
+				'kind' => is_scalar( $file['kind'] ?? null ) ? (string) $file['kind'] : 'materialized_theme_file',
+			);
+		}
 		$desired_assets = array_map(
 			static fn( array $asset ): array => array(
 				'source_path' => $asset['source_path'],
