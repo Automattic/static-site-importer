@@ -187,13 +187,13 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$materialization_plan = isset( $compiled['source_reports']['materialization_plan'] ) && is_array( $compiled['source_reports']['materialization_plan'] ) ? $compiled['source_reports']['materialization_plan'] : array();
 		return array(
-			'artifact'             => $artifact,
-			'args'                 => $args,
-			'compiled'             => $compiled,
-			'plan'                 => $plan,
-			'gutenberg_gaps'       => $gutenberg_gaps,
-			'companion_payload'    => $companion_payload,
-			'materialization_plan' => $materialization_plan,
+			'artifact'              => $artifact,
+			'args'                  => $args,
+			'compiled'              => $compiled,
+			'plan'                  => $plan,
+			'gutenberg_gaps'        => $gutenberg_gaps,
+			'companion_payload'     => $companion_payload,
+			'materialization_plan'  => $materialization_plan,
 			'theme_materialization' => $strategy['evidence'],
 		);
 	}
@@ -270,7 +270,7 @@ class Static_Site_Importer_Theme_Generator {
 		$entity_result = $page_ready ? array(
 			'reports' => array(),
 			'error'   => null,
-		) : self::materialize_prepared_entities( $lifecycle, $args, $classic );
+		) : self::materialize_prepared_entities( $lifecycle, $args );
 		$entities      = $entity_result['reports'];
 		if ( null !== $entity_result['error'] ) {
 			$error = $entity_result['error'];
@@ -280,7 +280,7 @@ class Static_Site_Importer_Theme_Generator {
 				'dependencies'      => $dependencies,
 				'entities'          => $entities,
 			);
-			self::append_entity_compensation( $failure, $lifecycle, $entities, 'entity_materialization', $error['code'] );
+			self::append_entity_compensation( $failure, $lifecycle, $entities, 'entity_materialization', (string) $error['code'] );
 			return new WP_Error(
 				$error['code'],
 				$error['message'],
@@ -289,8 +289,13 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$bindings = $page_ready ? array() : self::runtime_entity_bindings( $lifecycle, $entities );
 		if ( is_wp_error( $bindings ) ) {
-			$failure = array( 'status' => 'partial', 'runtime_lifecycle' => $lifecycle, 'dependencies' => $dependencies, 'entities' => $entities );
-			self::append_entity_compensation( $failure, $lifecycle, $entities, 'runtime_entity_bindings', $bindings->get_error_code() );
+			$failure = array(
+				'status'            => 'partial',
+				'runtime_lifecycle' => $lifecycle,
+				'dependencies'      => $dependencies,
+				'entities'          => $entities,
+			);
+			self::append_entity_compensation( $failure, $lifecycle, $entities, 'runtime_entity_bindings', (string) $bindings->get_error_code() );
 			return new WP_Error(
 				$bindings->get_error_code(),
 				$bindings->get_error_message(),
@@ -301,13 +306,23 @@ class Static_Site_Importer_Theme_Generator {
 		if ( $classic ) {
 			$classic_bindings = self::classic_runtime_entity_bindings( $lifecycle, $entities );
 			if ( is_wp_error( $classic_bindings ) ) {
-				$failure = array( 'status' => 'partial', 'runtime_lifecycle' => $lifecycle, 'dependencies' => $dependencies, 'entities' => $entities );
-				self::append_entity_compensation( $failure, $lifecycle, $entities, 'classic_runtime_entity_bindings', $classic_bindings->get_error_code() );
+				$failure = array(
+					'status'            => 'partial',
+					'runtime_lifecycle' => $lifecycle,
+					'dependencies'      => $dependencies,
+					'entities'          => $entities,
+				);
+				self::append_entity_compensation( $failure, $lifecycle, $entities, 'classic_runtime_entity_bindings', (string) $classic_bindings->get_error_code() );
 				return new WP_Error( $classic_bindings->get_error_code(), $classic_bindings->get_error_message(), $failure );
 			}
 			$projection = Static_Site_Importer_Classic_Theme_Projection::apply_runtime_bindings( $prepared['args']['classic_theme_projection'], $classic_bindings );
 			if ( is_wp_error( $projection ) ) {
-				$failure = array( 'status' => 'partial', 'runtime_lifecycle' => $lifecycle, 'dependencies' => $dependencies, 'entities' => $entities );
+				$failure = array(
+					'status'            => 'partial',
+					'runtime_lifecycle' => $lifecycle,
+					'dependencies'      => $dependencies,
+					'entities'          => $entities,
+				);
 				self::append_entity_compensation( $failure, $lifecycle, $entities, 'classic_runtime_projection', $projection->get_error_code() );
 				return new WP_Error( $projection->get_error_code(), $projection->get_error_message(), $failure );
 			}
@@ -352,33 +367,60 @@ class Static_Site_Importer_Theme_Generator {
 
 	/** Compensate completed entities in reverse order and retain bounded residual evidence. */
 	private static function rollback_materialized_entities( array $lifecycle, array $reports ): array {
-		$compensation = array( 'schema' => 'static-site-importer/entity-compensation-receipt/v1', 'status' => 'rolled_back', 'entities' => array(), 'errors' => array(), 'truncated' => false );
+		$compensation = array(
+			'schema'    => 'static-site-importer/entity-compensation-receipt/v1',
+			'status'    => 'rolled_back',
+			'entities'  => array(),
+			'errors'    => array(),
+			'truncated' => false,
+		);
 		foreach ( array_reverse( array_keys( $lifecycle['entities'] ?? array() ) ) as $id ) {
 			$prepared = $lifecycle['entities'][ $id ];
-			if ( ! is_array( $prepared ) || ! is_array( $prepared['adapter'] ?? null ) || ! is_array( $reports[ $id ] ?? null ) ) { continue; }
+			if ( ! is_array( $prepared ) || ! is_array( $prepared['adapter'] ?? null ) || ! is_array( $reports[ $id ] ?? null ) ) {
+				continue; }
 			$adapter = $prepared['adapter'];
 			try {
 				$result = Static_Site_Importer_Entity_Materializer_Registry::rollback( $adapter, $reports[ $id ] );
 			} catch ( Throwable $error ) {
 				$result = new WP_Error( 'static_site_importer_entity_rollback_exception', $error->getMessage() );
 			}
-			$entry = array( 'entity_id' => (string) $id, 'adapter' => (string) ( $adapter['provider'] ?? '' ) );
+			$entry = array(
+				'entity_id' => (string) $id,
+				'adapter'   => (string) ( $adapter['provider'] ?? '' ),
+			);
 			if ( is_wp_error( $result ) ) {
 				$entry['status'] = 'failed';
-				$entry['errors'] = array( array( 'code' => $result->get_error_code(), 'message' => $result->get_error_message() ) );
+				$entry['errors'] = array(
+					array(
+						'code'    => $result->get_error_code(),
+						'message' => $result->get_error_message(),
+					),
+				);
 			} elseif ( is_array( $result ) ) {
 				$entry['status'] = (string) ( $result['status'] ?? 'failed' );
 				$entry['rollback'] = self::bounded_entity_rollback_result( $result );
 				$entry['residual_state'] = self::entity_rollback_residual_state( $entry['rollback'] );
 			} else {
 				$entry['status'] = 'failed';
-				$entry['errors'] = array( array( 'code' => 'static_site_importer_entity_rollback_invalid', 'message' => 'The entity rollback callback did not return a receipt.' ) );
+				$entry['errors'] = array(
+					array(
+						'code'    => 'static_site_importer_entity_rollback_invalid',
+						'message' => 'The entity rollback callback did not return a receipt.',
+					),
+				);
 			}
 			if ( ! in_array( $entry['status'], array( 'rolled_back', 'skipped', 'not_requested' ), true ) ) {
 				$compensation['status'] = 'partial';
-				$compensation['errors'][] = array( 'entity_id' => $entry['entity_id'], 'adapter' => $entry['adapter'], 'status' => $entry['status'] );
+				$compensation['errors'][] = array(
+					'entity_id' => $entry['entity_id'],
+					'adapter'   => $entry['adapter'],
+					'status'    => $entry['status'],
+				);
 			}
-			if ( count( $compensation['entities'] ) < 32 ) { $compensation['entities'][] = $entry; } else { $compensation['truncated'] = true; }
+			if ( count( $compensation['entities'] ) < 32 ) {
+				$compensation['entities'][] = $entry;
+			} else {
+				$compensation['truncated'] = true; }
 		}
 		$compensation['errors'] = array_slice( $compensation['errors'], 0, 32 );
 		return $compensation;
@@ -387,26 +429,39 @@ class Static_Site_Importer_Theme_Generator {
 	/** Attach failure context and compensation diagnostics to public and internal receipts. */
 	private static function append_entity_compensation( array &$result, array $lifecycle, array $reports, string $stage, string $code ): void {
 		$compensation = self::rollback_materialized_entities( $lifecycle, $reports );
-		$result['failure_context'] = array( 'stage' => $stage, 'code' => $code );
+		$result['failure_context'] = array(
+			'stage' => $stage,
+			'code'  => $code,
+		);
 		$result['entity_compensation'] = $compensation;
 		$result['diagnostics'] = is_array( $result['diagnostics'] ?? null ) ? $result['diagnostics'] : array();
-		$result['diagnostics'][] = array( 'reason_code' => $code, 'stage' => $stage );
+		$result['diagnostics'][] = array(
+			'reason_code' => $code,
+			'stage'       => $stage,
+		);
 		foreach ( $compensation['entities'] as $entry ) {
 			if ( 'rolled_back' !== ( $entry['status'] ?? '' ) ) {
-				$result['diagnostics'][] = array( 'reason_code' => 'entity_compensation_' . (string) $entry['status'], 'stage' => $stage, 'entity_id' => $entry['entity_id'], 'adapter' => $entry['adapter'] );
+				$result['diagnostics'][] = array(
+					'reason_code' => 'entity_compensation_' . (string) $entry['status'],
+					'stage'       => $stage,
+					'entity_id'   => $entry['entity_id'],
+					'adapter'     => $entry['adapter'],
+				);
 			}
 		}
 		if ( isset( $result['completed']['runtime_declarations'] ) && is_array( $result['completed']['runtime_declarations'] ) ) {
 			$result['completed']['runtime_declarations']['entity_compensation'] = $compensation;
 		}
-		if ( 'partial' === $compensation['status'] && 'completed' === ( $result['status'] ?? null ) ) { $result['status'] = 'partial'; }
+		if ( 'partial' === $compensation['status'] && 'completed' === ( $result['status'] ?? null ) ) {
+			$result['status'] = 'partial'; }
 	}
 
 	/** Keep provider rollback diagnostics useful without exposing unbounded provider receipts. */
 	private static function bounded_entity_rollback_result( array $result ): array {
 		$bounded = array();
 		foreach ( array( 'status', 'reason', 'product_cleanup_failures', 'term_cleanup_failures', 'form_cleanup_failures' ) as $key ) {
-			if ( ! array_key_exists( $key, $result ) ) { continue; }
+			if ( ! array_key_exists( $key, $result ) ) {
+				continue; }
 			$bounded[ $key ] = is_array( $result[ $key ] ) ? array_slice( $result[ $key ], 0, 32 ) : $result[ $key ];
 		}
 		return $bounded;
@@ -415,9 +470,12 @@ class Static_Site_Importer_Theme_Generator {
 	/** Name provider objects that could remain after a partial compensation. */
 	private static function entity_rollback_residual_state( array $rollback ): array {
 		$residual = array();
-		if ( ! empty( $rollback['product_cleanup_failures'] ) ) { $residual['products'] = $rollback['product_cleanup_failures']; }
-		if ( ! empty( $rollback['term_cleanup_failures'] ) ) { $residual['terms'] = $rollback['term_cleanup_failures']; }
-		if ( ! empty( $rollback['form_cleanup_failures'] ) ) { $residual['forms'] = $rollback['form_cleanup_failures']; }
+		if ( ! empty( $rollback['product_cleanup_failures'] ) ) {
+			$residual['products'] = $rollback['product_cleanup_failures']; }
+		if ( ! empty( $rollback['term_cleanup_failures'] ) ) {
+			$residual['terms'] = $rollback['term_cleanup_failures']; }
+		if ( ! empty( $rollback['form_cleanup_failures'] ) ) {
+			$residual['forms'] = $rollback['form_cleanup_failures']; }
 		return $residual;
 	}
 
@@ -528,13 +586,16 @@ class Static_Site_Importer_Theme_Generator {
 	private static function normalize_classic_product_grid_entities( array $products, string $default_source ) {
 		$normalized = array();
 		foreach ( $products as $product ) {
-			if ( ! is_array( $product ) ) { return new WP_Error( 'static_site_importer_classic_product_shape_invalid', 'Product-grid bridge contains an invalid product.' ); }
+			if ( ! is_array( $product ) ) {
+				return new WP_Error( 'static_site_importer_classic_product_shape_invalid', 'Product-grid bridge contains an invalid product.' ); }
 			$selectors = is_array( $product['source_selectors'] ?? null ) ? array_values( array_unique( array_filter( array_map( 'trim', $product['source_selectors'] ) ) ) ) : array();
 			$leaves = array_values( array_filter( $selectors, static fn( string $selector ): bool => str_contains( $selector, '#' ) || str_contains( $selector, ':nth-child(' ) || preg_match( '/(?:^|\s)(?:li|article|\.product-card)(?:\b|[.#:])/', $selector ) ) );
-			if ( 1 !== count( $leaves ) ) { return new WP_Error( 'static_site_importer_classic_product_selector_ambiguous', 'Product-grid bridge requires exactly one product leaf selector per product.' ); }
+			if ( 1 !== count( $leaves ) ) {
+				return new WP_Error( 'static_site_importer_classic_product_selector_ambiguous', 'Product-grid bridge requires exactly one product leaf selector per product.' ); }
 			$product['selector'] = $leaves[0];
 			$product['source_path'] = isset( $product['source_path'] ) && is_string( $product['source_path'] ) && '' !== $product['source_path'] ? $product['source_path'] : $default_source;
-			if ( '' === $product['source_path'] ) { return new WP_Error( 'static_site_importer_classic_product_source_missing', 'Product-grid bridge requires a source path.' ); }
+			if ( '' === $product['source_path'] ) {
+				return new WP_Error( 'static_site_importer_classic_product_source_missing', 'Product-grid bridge requires a source path.' ); }
 			$normalized[] = $product;
 		}
 		return $normalized;
@@ -1223,7 +1284,7 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/** @return array{reports:array<string,mixed>,error:?array{code:string,message:string}} */
-	private static function materialize_prepared_entities( array $lifecycle, array $args, bool $classic = false ): array {
+	private static function materialize_prepared_entities( array $lifecycle, array $args ): array {
 		$reports = array();
 		$required = array_filter( $lifecycle['entities'], static fn( array $prepared ): bool => ! empty( $prepared['required'] ) );
 		if ( empty( $args['seed_entities'] ) && empty( $required ) ) {
@@ -1349,14 +1410,17 @@ class Static_Site_Importer_Theme_Generator {
 			}
 			$manifest = is_array( $prepared['manifest'] ?? null ) ? $prepared['manifest'] : array();
 			$report = is_array( $reports[ $declaration_id ] ?? null ) ? $reports[ $declaration_id ] : array();
-			if ( 'waived' === ( $report['status'] ?? '' ) ) { continue; }
+			if ( 'waived' === ( $report['status'] ?? '' ) ) {
+				continue; }
 			$key = isset( $manifest['products'] ) ? 'products' : 'forms';
 			$results = array();
 			foreach ( $report[ $key ] ?? array() as $result ) {
-				if ( is_array( $result ) ) { $results[ 'products' === $key ? (string) ( $result['slug'] ?? '' ) : (string) ( $result['source_path'] ?? '' ) . "\n" . (string) ( $result['selector'] ?? '' ) ] = $result; }
+				if ( is_array( $result ) ) {
+					$results[ 'products' === $key ? (string) ( $result['slug'] ?? '' ) : (string) ( $result['source_path'] ?? '' ) . "\n" . (string) ( $result['selector'] ?? '' ) ] = $result; }
 			}
 			foreach ( $manifest[ $key ] ?? array() as $entity ) {
-				if ( ! is_array( $entity ) ) { continue; }
+				if ( ! is_array( $entity ) ) {
+					continue; }
 				$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
 				$render = Static_Site_Importer_Entity_Materializer_Registry::binding_classic_render( $prepared['adapter'], $entity, $results[ $entity_key ] ?? array() );
 				$source = (string) ( $entity['source_path'] ?? '' );
@@ -1367,9 +1431,21 @@ class Static_Site_Importer_Theme_Generator {
 					return new WP_Error( 'static_site_importer_classic_html_binding_unresolved', 'A required provider entity lacks adapter-owned server render output or a canonical HTML source selector.', array( 'declaration_id' => $declaration_id ) );
 				}
 				foreach ( array_values( $selectors ) as $index => $selector ) {
-					if ( ! is_string( $selector ) || '' === trim( $selector ) ) { return new WP_Error( 'static_site_importer_classic_html_binding_invalid', 'Classic provider source selector is invalid.' ); }
+					if ( ! is_string( $selector ) || '' === trim( $selector ) ) {
+						return new WP_Error( 'static_site_importer_classic_html_binding_invalid', 'Classic provider source selector is invalid.' ); }
 					$id = hash( 'sha256', "static-site-importer/classic-html-binding/v1\n{$declaration_id}\n{$source}\n{$selector}\n" . ( $index + 1 ) );
-					$bindings[] = array( 'schema' => 'static-site-importer/classic-html-binding/v1', 'source_path' => $source, 'selector' => $selector, 'occurrence' => 1, 'replacement_html' => '<div class="static-site-importer-runtime-binding" data-static-site-importer-binding="' . $id . '"><!--static-site-importer-binding:' . $id . '--></div>', 'render' => $render, 'reconciliation_identity' => $id, 'declaration_id' => $declaration_id, 'provider' => $prepared['adapter']['provider'] ?? '', 'status' => 'completed' );
+					$bindings[] = array(
+						'schema'                  => 'static-site-importer/classic-html-binding/v1',
+						'source_path'             => $source,
+						'selector'                => $selector,
+						'occurrence'              => 1,
+						'replacement_html'        => '<div class="static-site-importer-runtime-binding" data-static-site-importer-binding="' . $id . '"><!--static-site-importer-binding:' . $id . '--></div>',
+						'render'                  => $render,
+						'reconciliation_identity' => $id,
+						'declaration_id'          => $declaration_id,
+						'provider'                => $prepared['adapter']['provider'] ?? '',
+						'status'                  => 'completed',
+					);
 				}
 			}
 		}
@@ -1391,14 +1467,28 @@ class Static_Site_Importer_Theme_Generator {
 			$manifest = is_array( $prepared['manifest'] ?? null ) ? $prepared['manifest'] : array();
 			$key = isset( $manifest['products'] ) ? 'products' : 'forms';
 			foreach ( $manifest[ $key ] ?? array() as $entity ) {
-				if ( ! is_array( $entity ) ) { continue; }
+				if ( ! is_array( $entity ) ) {
+					continue; }
 				$source = (string) ( $entity['source_path'] ?? '' );
 				$selector = (string) ( $entity['selector'] ?? '' );
-				if ( '' === $source || '' === $selector ) { return new WP_Error( 'static_site_importer_classic_html_binding_invalid', 'Classic provider entity lacks a canonical leaf source selector.' ); }
+				if ( '' === $source || '' === $selector ) {
+					return new WP_Error( 'static_site_importer_classic_html_binding_invalid', 'Classic provider entity lacks a canonical leaf source selector.' ); }
 				$claim = $source . "\n" . $selector . "\n1";
-				if ( isset( $claims[ $claim ] ) ) { return new WP_Error( 'static_site_importer_classic_html_binding_duplicate', 'Classic provider entities claim the same source DOM identity.', array( 'selector' => $selector, 'source_path' => $source ) ); }
+				if ( isset( $claims[ $claim ] ) ) {
+					return new WP_Error(
+						'static_site_importer_classic_html_binding_duplicate',
+						'Classic provider entities claim the same source DOM identity.',
+						array(
+							'selector'    => $selector,
+							'source_path' => $source,
+						)
+					); }
 				$claims[ $claim ] = true;
-				$bindings[] = array( 'source_path' => $source, 'selector' => $selector, 'occurrence' => 1 );
+				$bindings[] = array(
+					'source_path' => $source,
+					'selector'    => $selector,
+					'occurrence'  => 1,
+				);
 			}
 		}
 		return Static_Site_Importer_Classic_Theme_Projection::preflight_bindings( $projection, $bindings );

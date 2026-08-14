@@ -581,17 +581,17 @@ if ( ! function_exists( 'static_site_importer_ability_plan_artifact' ) ) {
 			),
 		);
 		if ( 'classic' === ( $compiled['args']['theme_materialization'] ?? '' ) ) {
-			$encoded_artifact   = wp_json_encode( $compiled['artifact'] );
-			$encoded_projection = wp_json_encode( $compiled['args']['classic_theme_projection'] ?? array() );
+			$encoded_artifact                    = wp_json_encode( $compiled['artifact'] );
+			$encoded_projection                  = wp_json_encode( $compiled['args']['classic_theme_projection'] ?? array() );
 			$response['classic_materialization'] = array(
-				'schema'            => 'static-site-importer/classic-plan-input/v1',
-				'plan_hash'         => hash( 'sha256', (string) wp_json_encode( $compiled['plan'] ) ),
-				'artifact_hash'     => hash( 'sha256', false !== $encoded_artifact ? $encoded_artifact : '' ),
-				'projection_hash'   => hash( 'sha256', false !== $encoded_projection ? $encoded_projection : '' ),
-				'args_hash'         => static_site_importer_ability_handoff_hash( $compiled['args'] ),
-				'artifact'          => $compiled['artifact'],
-				'projection'        => $compiled['args']['classic_theme_projection'],
-				'normalized_args'   => $compiled['args'],
+				'schema'          => 'static-site-importer/classic-plan-input/v1',
+				'plan_hash'       => hash( 'sha256', (string) wp_json_encode( $compiled['plan'] ) ),
+				'artifact_hash'   => hash( 'sha256', false !== $encoded_artifact ? $encoded_artifact : '' ),
+				'projection_hash' => hash( 'sha256', false !== $encoded_projection ? $encoded_projection : '' ),
+				'args_hash'       => static_site_importer_ability_handoff_hash( $compiled['args'] ),
+				'artifact'        => $compiled['artifact'],
+				'projection'      => $compiled['args']['classic_theme_projection'],
+				'normalized_args' => $compiled['args'],
 			);
 		}
 
@@ -655,7 +655,7 @@ if ( ! function_exists( 'static_site_importer_ability_import_url_operation' ) ) 
 				),
 			)
 		);
-		$args = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
+		$args     = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
 		if ( 'classic' === $args['theme_materialization'] && is_array( $terminal['artifact'] ?? null ) ) {
 			$projection = Static_Site_Importer_Classic_Theme_Projection::build( $terminal['artifact'], $terminal['plan'] );
 			if ( is_wp_error( $projection ) ) {
@@ -687,7 +687,7 @@ if ( ! function_exists( 'static_site_importer_ability_apply_approved_plan' ) ) {
 			$projection = $classic['projection'] ?? null;
 			$args       = $classic['normalized_args'] ?? null;
 			if ( 'static-site-importer/classic-plan-input/v1' !== ( $classic['schema'] ?? '' ) || ! is_array( $args ) || 'classic' !== ( $args['theme_materialization'] ?? '' ) || ! is_array( $artifact ) || ! is_array( $projection ) || hash( 'sha256', (string) wp_json_encode( $plan ) ) !== ( $classic['plan_hash'] ?? '' ) || hash( 'sha256', (string) wp_json_encode( $artifact ) ) !== ( $classic['artifact_hash'] ?? '' ) || hash( 'sha256', (string) wp_json_encode( $projection ) ) !== ( $classic['projection_hash'] ?? '' ) || static_site_importer_ability_handoff_hash( $args ) !== ( $classic['args_hash'] ?? '' ) ) {
-			return static_site_importer_ability_error( 'static_site_importer_classic_plan_input_changed', 'The approved classic artifact or projection does not match its immutable plan input.' );
+				return static_site_importer_ability_error( 'static_site_importer_classic_plan_input_changed', 'The approved classic artifact or projection does not match its immutable plan input.' );
 			}
 			$rebuilt = Static_Site_Importer_Classic_Theme_Projection::build( $artifact, $plan );
 			if ( is_wp_error( $rebuilt ) || hash( 'sha256', (string) wp_json_encode( $rebuilt ) ) !== ( $classic['projection_hash'] ?? '' ) ) {
@@ -695,11 +695,19 @@ if ( ! function_exists( 'static_site_importer_ability_apply_approved_plan' ) ) {
 			}
 			$args['approved_classic_plan_hash']       = (string) $classic['plan_hash'];
 			$args['approved_classic_projection_hash'] = (string) $classic['projection_hash'];
-			$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $args );
+			$result                                   = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $args );
 			if ( is_wp_error( $result ) ) {
 				return static_site_importer_ability_error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
 			}
-			return array( 'success' => true, 'operation' => 'apply', 'plan' => $plan, 'applied_plan' => $plan, 'applied_plan_hash' => $classic['plan_hash'], 'result' => $result, 'error' => null );
+			return array(
+				'success'           => true,
+				'operation'         => 'apply',
+				'plan'              => $plan,
+				'applied_plan'      => $plan,
+				'applied_plan_hash' => $classic['plan_hash'],
+				'result'            => $result,
+				'error'             => null,
+			);
 		}
 		$receipt = static_site_importer_ability_materialize_wordpress_site_plan( $input );
 		$success = 'completed' === ( $receipt['status'] ?? '' );

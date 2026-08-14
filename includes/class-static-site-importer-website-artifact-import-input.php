@@ -54,7 +54,10 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		),
 		'client_script_provenance'             => array( 'type' => 'object' ),
 		'client_script_isolated'               => array( 'type' => 'boolean' ),
-		'theme_materialization'                => array( 'type' => 'string', 'enum' => array( 'block', 'classic' ) ),
+		'theme_materialization'                => array(
+			'type' => 'string',
+			'enum' => array( 'block', 'classic' ),
+		),
 	);
 
 	/**

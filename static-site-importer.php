@@ -141,7 +141,7 @@ if ( ! function_exists( 'static_site_importer_cli_approved_plan' ) ) {
 		if ( '' === $path || ! is_file( $path ) || ! is_readable( $path ) || is_link( $path ) ) {
 			return new WP_Error( 'static_site_importer_cli_plan_invalid', 'Apply requires --plan=<readable JSON plan response file>.' );
 		}
-		$raw = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads an explicit operator-owned plan response.
+		$raw  = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads an explicit operator-owned plan response.
 		$plan = is_string( $raw ) ? json_decode( $raw, true ) : null;
 		return is_array( $plan ) ? $plan : new WP_Error( 'static_site_importer_cli_plan_invalid', 'Apply plan must be a JSON object.' );
 	}
@@ -181,9 +181,16 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			}
 			if ( 'apply' === $operation && isset( $assoc_args['plan'] ) ) {
 				$plan = static_site_importer_cli_approved_plan( $assoc_args );
-				if ( is_wp_error( $plan ) ) { WP_CLI::error( $plan->get_error_message() ); }
-				$result = static_site_importer_cli_import( array( 'operation' => 'apply', 'plan' => $plan ) );
-				if ( empty( $result['success'] ) ) { WP_CLI::error( (string) ( $result['error']['message'] ?? 'Static site plan apply failed.' ) ); }
+				if ( is_wp_error( $plan ) ) {
+					WP_CLI::error( $plan->get_error_message() ); }
+				$result = static_site_importer_cli_import(
+					array(
+						'operation' => 'apply',
+						'plan'      => $plan,
+					)
+				);
+				if ( empty( $result['success'] ) ) {
+					WP_CLI::error( (string) ( $result['error']['message'] ?? 'Static site plan apply failed.' ) ); }
 				WP_CLI::success( 'Applied approved import plan.' );
 				return;
 			}
@@ -269,12 +276,20 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 		'static-site-importer import-url',
 		static function ( array $args, array $assoc_args ): void {
 			$operation = isset( $assoc_args['operation'] ) ? (string) $assoc_args['operation'] : 'apply';
-			if ( ! in_array( $operation, array( 'plan', 'apply' ), true ) ) { WP_CLI::error( '--operation must be plan or apply.' ); }
+			if ( ! in_array( $operation, array( 'plan', 'apply' ), true ) ) {
+				WP_CLI::error( '--operation must be plan or apply.' ); }
 			if ( 'apply' === $operation && isset( $assoc_args['plan'] ) ) {
 				$plan = static_site_importer_cli_approved_plan( $assoc_args );
-				if ( is_wp_error( $plan ) ) { WP_CLI::error( $plan->get_error_message() ); }
-				$result = static_site_importer_cli_import( array( 'operation' => 'apply', 'plan' => $plan ) );
-				if ( empty( $result['success'] ) ) { WP_CLI::error( (string) ( $result['error']['message'] ?? 'Static site plan apply failed.' ) ); }
+				if ( is_wp_error( $plan ) ) {
+					WP_CLI::error( $plan->get_error_message() ); }
+				$result = static_site_importer_cli_import(
+					array(
+						'operation' => 'apply',
+						'plan'      => $plan,
+					)
+				);
+				if ( empty( $result['success'] ) ) {
+					WP_CLI::error( (string) ( $result['error']['message'] ?? 'Static site plan apply failed.' ) ); }
 				WP_CLI::success( 'Applied approved import plan.' );
 				return;
 			}
@@ -283,7 +298,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				WP_CLI::error( 'Provide a public source URL.' );
 			}
 
-			$input  = array(
+			$input = array(
 				'operation'                 => $operation,
 				'source'                    => array(
 					'type' => 'url',
@@ -651,7 +666,7 @@ function static_site_importer_cli_materialized_documents( array $pages ): array 
 		if ( ! $post instanceof WP_Post ) {
 			continue;
 		}
-		$permalink = get_permalink( $post );
+		$permalink   = get_permalink( $post );
 		$source_path = static_site_importer_cli_sidecar_lineage_value( $source_path );
 		$route       = static_site_importer_cli_sidecar_route_value( wp_parse_url( (string) $permalink, PHP_URL_PATH ) );
 		if ( '' === $source_path || '' === $route ) {
@@ -661,7 +676,7 @@ function static_site_importer_cli_materialized_documents( array $pages ): array 
 		if ( count( $rows ) >= $max_rows ) {
 			continue;
 		}
-		$rows[]    = array(
+		$rows[] = array(
 			'source_path'               => $source_path,
 			'route'                     => $route,
 			'post_id'                   => (string) $post->ID,

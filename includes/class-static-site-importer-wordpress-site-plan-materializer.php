@@ -85,7 +85,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'external_report_destinations' => isset( $args['external_report_destinations'] ) && is_array( $args['external_report_destinations'] ) ? $args['external_report_destinations'] : array(),
 			'args'                         => $args,
 			'payload_reader'               => is_object( $payload_reader ) ? $payload_reader : null,
-			'rollback'                     => array( 'posts' => array(), 'files' => array(), 'options' => array() ),
+			'rollback'                     => array(
+				'posts'   => array(),
+				'files'   => array(),
+				'options' => array(),
+			),
 		);
 
 		try {
@@ -125,14 +129,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			} catch ( InvalidArgumentException $error ) {
 				throw new InvalidArgumentException( $error->getMessage(), 0, $error );
 			}
-			$state['base_resolved']      = $resolved;
+			$state['base_resolved'] = $resolved;
 			if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === $strategy['strategy'] ) {
 				$projection = Static_Site_Importer_Classic_Theme_Projection::prepare_for_materialization( $args['classic_theme_projection'], $resolved );
 				if ( is_wp_error( $projection ) ) {
-					throw new InvalidArgumentException( $projection->get_error_code() );
+					throw new InvalidArgumentException( (string) $projection->get_error_code() );
 				}
 				$args['classic_theme_projection'] = $projection;
-				$resolved['writes'] = Static_Site_Importer_Classic_Theme_Projection::resolved_writes( $resolved, Static_Site_Importer_Classic_Theme_Projection::writes( $args['classic_theme_projection'], $resolved, $theme_uri, (string) ( $args['name'] ?? $slug ) ) );
+				$resolved['writes']               = Static_Site_Importer_Classic_Theme_Projection::resolved_writes( $resolved, Static_Site_Importer_Classic_Theme_Projection::writes( $args['classic_theme_projection'], $resolved, $theme_uri, (string) ( $args['name'] ?? $slug ) ) );
 				foreach ( $resolved['pages'] as &$page ) {
 					$page['resolved_block_markup'] = '';
 				}
@@ -220,16 +224,27 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	/** Return a non-mutating receipt for a rejected strategy before destination preflight. */
 	private static function failed_strategy_receipt( array $plan, array $args, WP_Error $error ): array {
 		$state = array(
-			'plan' => $plan,
-			'plan_hash' => self::hash( $plan ),
-			'diagnostics' => array( array( 'reason_code' => $error->get_error_code() ) ),
-			'applied' => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'runtime_declarations' => array( 'asset_publications' => array(), 'entity_bindings' => array() ) ),
-			'skipped' => array(),
-			'existing_matches' => array( 'pages' => array() ),
-			'args' => $args,
+			'plan'                  => $plan,
+			'plan_hash'             => self::hash( $plan ),
+			'diagnostics'           => array( array( 'reason_code' => $error->get_error_code() ) ),
+			'applied'               => array(
+				'posts'                => array(),
+				'files'                => array(),
+				'operations'           => array(),
+				'runtime_declarations' => array(
+					'asset_publications' => array(),
+					'entity_bindings'    => array(),
+				),
+			),
+			'skipped'               => array(),
+			'existing_matches'      => array( 'pages' => array() ),
+			'args'                  => $args,
 			'theme_materialization' => is_array( $error->get_error_data() ) && isset( $error->get_error_data()['theme_materialization'] ) && is_array( $error->get_error_data()['theme_materialization'] ) ? $error->get_error_data()['theme_materialization'] : self::strategy_evidence( $args ),
 		);
-		return array( 'status' => 'rejected', 'receipt' => self::receipt( 'rejected', $state ) );
+		return array(
+			'status'  => 'rejected',
+			'receipt' => self::receipt( 'rejected', $state ),
+		);
 	}
 
 	/** @param array<string,mixed> $prepared @return array<string,mixed> */
@@ -435,29 +450,32 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	 * @return array<string,mixed>
 	 */
 	private static function refresh_prepared_destination( array $prepared ): array {
-		$plan          = $prepared['plan'] ?? null;
-		$base_resolved = $prepared['base_resolved'] ?? null;
-		$args          = isset( $prepared['args'] ) && is_array( $prepared['args'] ) ? $prepared['args'] : array();
+		$plan           = $prepared['plan'] ?? null;
+		$base_resolved  = $prepared['base_resolved'] ?? null;
+		$args           = isset( $prepared['args'] ) && is_array( $prepared['args'] ) ? $prepared['args'] : array();
 		$payload_reader = is_object( $prepared['payload_reader'] ?? null ) ? $prepared['payload_reader'] : null;
 		if ( ! is_array( $plan ) || ! is_array( $base_resolved ) || self::hash( $plan ) !== ( $prepared['plan_hash'] ?? '' ) || self::hash( $base_resolved ) !== ( $prepared['base_resolved_hash'] ?? '' ) ) {
 			return array(
 				'status'  => 'rejected',
-				'receipt' => self::receipt( 'rejected', array(
-					'plan'             => is_array( $plan ) ? $plan : array(),
-					'plan_hash'        => '',
-					'diagnostics'      => array( array( 'reason_code' => 'prepared_projection_changed' ) ),
-					'applied'          => array(
-						'posts'                => array(),
-						'files'                => array(),
-						'operations'           => array(),
-						'runtime_declarations' => array(
-							'asset_publications' => array(),
-							'entity_bindings'    => array(),
+				'receipt' => self::receipt(
+					'rejected',
+					array(
+						'plan'             => is_array( $plan ) ? $plan : array(),
+						'plan_hash'        => '',
+						'diagnostics'      => array( array( 'reason_code' => 'prepared_projection_changed' ) ),
+						'applied'          => array(
+							'posts'                => array(),
+							'files'                => array(),
+							'operations'           => array(),
+							'runtime_declarations' => array(
+								'asset_publications' => array(),
+								'entity_bindings'    => array(),
+							),
 						),
-					),
-					'skipped'          => array(),
-					'existing_matches' => array( 'pages' => array() ),
-				) ),
+						'skipped'          => array(),
+						'existing_matches' => array( 'pages' => array() ),
+					)
+				),
 			);
 		}
 
@@ -493,7 +511,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			),
 			'args'                         => $args,
 			'payload_reader'               => $payload_reader,
-			'rollback'                     => array( 'posts' => array(), 'files' => array(), 'options' => array() ),
+			'rollback'                     => array(
+				'posts'   => array(),
+				'files'   => array(),
+				'options' => array(),
+			),
 			'preparation'                  => array(
 				'canonical_validations'       => 1,
 				'plan_resolutions'            => 1,
@@ -651,10 +673,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( 'page' === $post_type ) {
 			$parent = '' === $page['parent_source_path'] ? 0 : ( $source_ids[ $page['parent_source_path'] ] ?? self::existing_source_page_id( $page['parent_source_path'], $import_run_id ) );
 			if ( $parent <= 0 && '' !== $page['parent_source_path'] ) {
-				return new WP_Error( 'missing_parent_page', 'The parent route has not been materialized by this import run.', array(
-					'source_path'        => $page['source_path'],
-					'parent_source_path' => $page['parent_source_path'],
-				) );
+				return new WP_Error(
+					'missing_parent_page',
+					'The parent route has not been materialized by this import run.',
+					array(
+						'source_path'        => $page['source_path'],
+						'parent_source_path' => $page['parent_source_path'],
+					)
+				);
 			}
 		} else {
 			$parent = 0;
@@ -779,7 +805,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** @param array<string,mixed> $write */
 	private static function write_file( string $theme_dir, array $write, ?object $payload_reader = null ) {
-		$path = $theme_dir . '/' . $write['target_path'];
+		$path          = $theme_dir . '/' . $write['target_path'];
 		$declared_hash = self::payload_hash( $write );
 		if ( is_file( $path ) && '' !== $declared_hash && self::file_hash( $path ) === $declared_hash ) {
 			return array(
@@ -851,27 +877,33 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		$require = "\nrequire_once __DIR__ . '/" . $include . "';\n";
 		if ( ! str_contains( $current, $require ) ) {
-			$include_write = self::write_file( $theme_dir, array(
-				'target_path'  => $include,
-				'source_path'  => $write['source_path'],
-				'payload'      => array(
-					'encoding' => 'utf8',
-					'data'     => $bootstrap,
-				),
-				'payload_hash' => $hash,
-			) );
+			$include_write = self::write_file(
+				$theme_dir,
+				array(
+					'target_path'  => $include,
+					'source_path'  => $write['source_path'],
+					'payload'      => array(
+						'encoding' => 'utf8',
+						'data'     => $bootstrap,
+					),
+					'payload_hash' => $hash,
+				)
+			);
 			if ( is_wp_error( $include_write ) ) {
 				return $include_write;
 			}
-			$functions_write = self::write_file( $theme_dir, array(
-				'target_path'  => $write['target_path'],
-				'source_path'  => $write['source_path'],
-				'payload'      => array(
-					'encoding' => 'utf8',
-					'data'     => $current . $require,
-				),
-				'payload_hash' => hash( 'sha256', $current . $require ),
-			) );
+			$functions_write = self::write_file(
+				$theme_dir,
+				array(
+					'target_path'  => $write['target_path'],
+					'source_path'  => $write['source_path'],
+					'payload'      => array(
+						'encoding' => 'utf8',
+						'data'     => $current . $require,
+					),
+					'payload_hash' => hash( 'sha256', $current . $require ),
+				)
+			);
 			if ( is_wp_error( $functions_write ) ) {
 				return $functions_write;
 			}
@@ -910,14 +942,17 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				self::record_overlay_stylesheet_file( $state['applied']['files'], $path, $target, $content );
 				continue;
 			}
-			$result = self::write_file( $state['theme_dir'], array(
-				'target_path' => $target,
-				'source_path' => $target,
-				'payload'     => array(
-					'encoding' => 'utf8',
-					'data'     => $content,
-				),
-			) );
+			$result = self::write_file(
+				$state['theme_dir'],
+				array(
+					'target_path' => $target,
+					'source_path' => $target,
+					'payload'     => array(
+						'encoding' => 'utf8',
+						'data'     => $content,
+					),
+				)
+			);
 			if ( is_wp_error( $result ) ) {
 				return $result;
 			}
@@ -966,7 +1001,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			: Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], (string) $state['theme']['slug'], $source_css, array(), array(), $overlays );
 	}
 
-	/** @param array<string,mixed> $state @param array{writes:array<int,array<string,string>>,diagnostics:array<int,array<string,string>>} $overlay */
+	/** @param array<mixed> $state @param array{writes:array<int,array<string,string>>,diagnostics:array<int,array<string,string>>} $overlay */
 	private static function apply_font_overlay( array &$state, array $overlay ) {
 		$reports = array();
 		foreach ( $overlay['writes'] as $write ) {
@@ -1227,12 +1262,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	private static function existing_source_page_id( string $source_path, string $import_run_id ): int {
 		if ( '' === $import_run_id ) {
 			return 0; }
-		$posts = get_posts( array(
-			'post_type'   => 'page',
-			'post_status' => 'any',
-			'meta_key'    => '_static_site_importer_provenance',
-			'numberposts' => -1,
-		) );
+		$posts = get_posts(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'any',
+				'meta_key'    => '_static_site_importer_provenance',
+				'numberposts' => -1,
+			)
+		);
 		foreach ( $posts as $post ) {
 			$provenance = json_decode( (string) get_post_meta( $post->ID, '_static_site_importer_provenance', true ), true );
 			if ( is_array( $provenance ) && ( $provenance['source_path'] ?? '' ) === $source_path && ( $provenance['import_run_id'] ?? '' ) === $import_run_id ) {
@@ -1437,18 +1474,33 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	/** Journal a post before any insert/update so failed theme writes restore it exactly enough for SSI ownership. */
 	private static function journal_post( array &$state, array $page ): void {
 		$id = (int) ( $page['planned_existing_id'] ?? 0 );
-		if ( isset( $state['rollback']['posts'][ $id ] ) ) { return; }
-		if ( $id > 0 && function_exists( 'get_post' ) && ( $post = get_post( $id, ARRAY_A ) ) ) {
-			$state['rollback']['posts'][ $id ] = array( 'existing' => true, 'post' => $post, 'provenance' => get_post_meta( $id, '_static_site_importer_provenance', true ), 'reconciliation_identity' => get_post_meta( $id, self::RECONCILIATION_META_KEY, true ) );
+		if ( isset( $state['rollback']['posts'][ $id ] ) ) {
+			return; }
+		$post = 0 < $id && function_exists( 'get_post' ) ? get_post( $id, ARRAY_A ) : null;
+		if ( $post ) {
+			$state['rollback']['posts'][ $id ] = array(
+				'existing'                => true,
+				'post'                    => $post,
+				'provenance'              => get_post_meta( $id, '_static_site_importer_provenance', true ),
+				'reconciliation_identity' => get_post_meta( $id, self::RECONCILIATION_META_KEY, true ),
+			);
 			return;
 		}
-		$state['rollback']['posts'][ 'new:' . (string) $page['source_path'] ] = array( 'existing' => false, 'source_path' => (string) $page['source_path'] );
+		$state['rollback']['posts'][ 'new:' . (string) $page['source_path'] ] = array(
+			'existing'    => false,
+			'source_path' => (string) $page['source_path'],
+		);
 	}
 
 	/** Journal original file bytes before atomic replacement. */
 	private static function journal_file( array &$state, string $path ): void {
-		if ( isset( $state['rollback']['files'][ $path ] ) ) { return; }
-		$state['rollback']['files'][ $path ] = is_file( $path ) ? array( 'exists' => true, 'content' => file_get_contents( $path ) ) : array( 'exists' => false ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Captures pre-write importer destination bytes for rollback.
+		if ( isset( $state['rollback']['files'][ $path ] ) ) {
+			return; }
+		$content                             = is_file( $path ) ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Captures pre-write importer destination bytes for rollback.
+		$state['rollback']['files'][ $path ] = false !== $content ? array(
+			'exists'  => true,
+			'content' => $content,
+		) : array( 'exists' => false );
 	}
 
 	/** Snapshot all runtime state this materializer can mutate before activation. */
@@ -1457,9 +1509,12 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( isset( $state['rollback']['options'][ $option ] ) ) {
 				continue;
 			}
-			$missing = '__static_site_importer_missing_' . $option . '__';
-			$value = get_option( $option, $missing );
-			$state['rollback']['options'][ $option ] = array( 'exists' => $missing !== $value, 'value' => $value );
+			$missing                                 = '__static_site_importer_missing_' . $option . '__';
+			$value                                   = get_option( $option, $missing );
+			$state['rollback']['options'][ $option ] = array(
+				'exists' => $value !== $missing,
+				'value'  => $value,
+			);
 		}
 	}
 
@@ -1498,7 +1553,12 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			return;
 		}
 		if ( function_exists( 'get_post' ) && ( $post = get_post( $id, ARRAY_A ) ) ) {
-			$receipt['transaction']->state['rollback']['posts'][ $id ] = array( 'existing' => true, 'post' => $post, 'provenance' => get_post_meta( $id, '_static_site_importer_provenance', true ), 'reconciliation_identity' => get_post_meta( $id, self::RECONCILIATION_META_KEY, true ) );
+			$receipt['transaction']->state['rollback']['posts'][ $id ] = array(
+				'existing'                => true,
+				'post'                    => $post,
+				'provenance'              => get_post_meta( $id, '_static_site_importer_provenance', true ),
+				'reconciliation_identity' => get_post_meta( $id, self::RECONCILIATION_META_KEY, true ),
+			);
 		}
 	}
 
@@ -1512,33 +1572,49 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( ! isset( $receipt['transaction'] ) || ! is_object( $receipt['transaction'] ) || ! is_array( $receipt['transaction']->state ?? null ) ) {
 			return $receipt;
 		}
-		$state = $receipt['transaction']->state;
+		$state                  = $receipt['transaction']->state;
 		$state['diagnostics'][] = array( 'reason_code' => $reason );
 		self::rollback( $state );
-		$result = self::receipt( 'partial', $state );
+		$result                        = self::receipt( 'partial', $state );
 		$receipt['transaction']->state = $state;
-		$result['transaction'] = $receipt['transaction'];
+		$result['transaction']         = $receipt['transaction'];
 		return $result;
 	}
 
 	/** Revert importer-owned writes and posts on a failed materialization receipt. */
 	private static function rollback( array &$state ): void {
-		if ( ! empty( $state['rollback']['done'] ) ) { return; }
+		if ( ! empty( $state['rollback']['done'] ) ) {
+			return; }
 		$state['rollback']['done'] = true;
 		foreach ( array_reverse( $state['rollback']['files'] ?? array(), true ) as $path => $before ) {
-			if ( ! is_array( $before ) ) { continue; }
-			if ( ! empty( $before['exists'] ) && is_string( $before['content'] ?? null ) ) { file_put_contents( $path, $before['content'] ); } elseif ( is_file( $path ) ) { unlink( $path ); } // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents,WordPress.WP.AlternativeFunctions.unlink_unlink -- Restores journaled importer destination bytes.
+			if ( ! is_array( $before ) ) {
+				continue; }
+			if ( ! empty( $before['exists'] ) && is_string( $before['content'] ?? null ) ) {
+				file_put_contents( $path, $before['content'] );
+			} elseif ( is_file( $path ) ) {
+				unlink( $path ); } // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents,WordPress.WP.AlternativeFunctions.unlink_unlink -- Restores journaled importer destination bytes.
 		}
 		foreach ( $state['applied']['posts'] ?? array() as $applied ) {
-			$id = (int) ( $applied['id'] ?? 0 ); $before = $state['rollback']['posts'][ $id ] ?? null;
-			if ( ! is_array( $before ) || $id <= 0 ) { continue; }
-			if ( ! empty( $before['existing'] ) ) { wp_update_post( $before['post'] ); update_post_meta( $id, '_static_site_importer_provenance', $before['provenance'] ); update_post_meta( $id, self::RECONCILIATION_META_KEY, $before['reconciliation_identity'] ); } elseif ( function_exists( 'wp_delete_post' ) ) { wp_delete_post( $id, true ); }
+			$id     = (int) ( $applied['id'] ?? 0 );
+			$before = $state['rollback']['posts'][ $id ] ?? null;
+			if ( ! is_array( $before ) || $id <= 0 ) {
+				continue; }
+			if ( ! empty( $before['existing'] ) ) {
+				wp_update_post( $before['post'] );
+				update_post_meta( $id, '_static_site_importer_provenance', $before['provenance'] );
+				update_post_meta( $id, self::RECONCILIATION_META_KEY, $before['reconciliation_identity'] );
+			} elseif ( function_exists( 'wp_delete_post' ) ) {
+				wp_delete_post( $id, true ); }
 		}
 		foreach ( array_reverse( $state['rollback']['options'] ?? array(), true ) as $option => $before ) {
-			if ( ! empty( $before['exists'] ) ) { update_option( $option, $before['value'] ); } elseif ( function_exists( 'delete_option' ) ) { delete_option( $option ); }
+			if ( ! empty( $before['exists'] ) ) {
+				update_option( $option, $before['value'] );
+			} elseif ( function_exists( 'delete_option' ) ) {
+				delete_option( $option ); }
 		}
-		$state['applied']['files'] = array(); $state['applied']['posts'] = array();
-		$state['diagnostics'][] = array( 'reason_code' => 'materialization_rolled_back' );
+		$state['applied']['files'] = array();
+		$state['applied']['posts'] = array();
+		$state['diagnostics'][]    = array( 'reason_code' => 'materialization_rolled_back' );
 	}
 
 	/** @param array<string,mixed> $state @return array<string,mixed> */
@@ -1549,7 +1625,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$block_provenance       = array();
 		$block_provenance_count = 0;
 		$written_sources        = array_fill_keys( array_filter( array_column( $state['applied']['posts'] ?? array(), 'source_path' ), 'is_string' ), true );
-		$receipt_pages = $resolved_plan['pages'] ?? array();
+		$receipt_pages          = $resolved_plan['pages'] ?? array();
 		foreach ( $receipt_pages as &$page ) {
 			if ( isset( $written_sources[ $page['source_path'] ] ) ) {
 				$materialized_markup = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' );
@@ -1570,8 +1646,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		unset( $page );
 		$resolved_plan['pages'] = $receipt_pages;
-		$errors = array();
-		$pages  = isset( $state['source_ids'] ) && is_array( $state['source_ids'] ) ? $state['source_ids'] : array();
+		$errors                 = array();
+		$pages                  = isset( $state['source_ids'] ) && is_array( $state['source_ids'] ) ? $state['source_ids'] : array();
 		foreach ( $state['diagnostics'] as $diagnostic ) {
 			if ( isset( $diagnostic['reason_code'] ) && is_string( $diagnostic['reason_code'] ) ) {
 				$errors[] = array(
@@ -1633,10 +1709,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	private static function strategy_evidence( array $args ): array {
 		$strategy = Static_Site_Importer_Theme_Materialization_Strategy::normalize( $args );
 		if ( is_wp_error( $strategy ) ) {
-			return array( 'schema' => 'static-site-importer/theme-materialization-evidence/v1', 'status' => 'invalid', 'reason_code' => $strategy->get_error_code() );
+			return array(
+				'schema'      => 'static-site-importer/theme-materialization-evidence/v1',
+				'status'      => 'invalid',
+				'reason_code' => $strategy->get_error_code(),
+			);
 		}
 		if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === $strategy['strategy'] && is_array( $args['classic_theme_projection'] ?? null ) ) {
-			$strategy['evidence']['status'] = 'source_artifact_projection';
+			$strategy['evidence']['status']            = 'source_artifact_projection';
 			$strategy['evidence']['projection_schema'] = $args['classic_theme_projection']['schema'] ?? '';
 		}
 		return $strategy['evidence'];
