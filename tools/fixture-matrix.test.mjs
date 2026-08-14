@@ -66,7 +66,9 @@ import {
   normalizeLiveWpParityReport,
   selectFixtureSurfaces,
   buildFixtureArtifact,
+  buildFixturePolicyArtifact,
   createFixtureMatrix,
+  pathinfoExtension,
   editorBlockValidationStep,
   EDITOR_VALIDATE_BLOCKS_COMMAND,
   EDITOR_VALIDATION_METHOD,
@@ -3344,6 +3346,121 @@ test('materializes generated artifact roots into matrix-compatible fixtures', ()
   const betaArtifact = buildFixtureArtifact(matrix.fixtures.find((fixture) => fixture.id === 'beta-site'));
   assert.deepEqual(betaArtifact.compiler_limits, { max_files: 25, max_file_bytes: 10485760, max_total_bytes: 335544320 });
   assert.equal(betaArtifact.files.some((file) => file.path.includes('generated-artifact-metadata')), false);
+});
+
+test('positive matrix artifacts retain compiled static output and receipt build-source exclusions', () => {
+  const fixtureRoot = mkdtempSync(path.join(tmpdir(), 'ssi-compiled-static-output-'));
+  const fixtureDirectory = path.join(fixtureRoot, 'compiled-site');
+  mkdirSync(path.join(fixtureDirectory, 'css'), { recursive: true });
+  mkdirSync(path.join(fixtureDirectory, 'js'), { recursive: true });
+  writeFileSync(path.join(fixtureDirectory, 'index.html'), '<main>Compiled static output</main>');
+  writeFileSync(path.join(fixtureDirectory, 'css', 'site.css'), 'main { color: green; }');
+  writeFileSync(path.join(fixtureDirectory, 'js', 'site.js'), 'console.log("static");');
+  writeFileSync(path.join(fixtureDirectory, 'quartz.config.ts'), 'export default {};');
+
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot });
+  const artifact = buildFixtureArtifact(matrix.fixtures[0]);
+
+  assert.deepEqual(matrix.fixtures.map((fixture) => fixture.id), ['compiled-site']);
+  assert.deepEqual(artifact.files.map((file) => file.path), [
+    'website/css/site.css',
+    'website/index.html',
+    'website/js/site.js',
+  ]);
+  assert.deepEqual(artifact.source_metadata.artifact_exclusions, [{
+    schema: 'static-site-importer/fixture-artifact-exclusion/v1',
+    source_path: realpathSync(path.join(fixtureDirectory, 'quartz.config.ts')),
+    artifact_path: 'website/quartz.config.ts',
+    reason: 'not_static_import_content',
+  }]);
+  const policyArtifact = buildFixturePolicyArtifact(matrix.fixtures[0]);
+  assert.deepEqual(policyArtifact.files.map((file) => file.path), ['website/quartz.config.ts']);
+  assert.equal(policyArtifact.files[0].source_path, realpathSync(path.join(fixtureDirectory, 'quartz.config.ts')));
+  assert.equal(stageFixtureSource(matrix.fixtures[0], mkdtempSync(path.join(tmpdir(), 'ssi-compiled-static-stage-'))).includes('quartz.config.ts'), false);
+});
+
+test('generated negative policy lane gates unexpected acceptance while expected rejection preserves the positive lane', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-negative-policy-'));
+  try {
+    const fixture = path.join(root, 'site');
+    mkdirSync(fixture, { recursive: true });
+    writeFileSync(path.join(fixture, 'index.html'), '<main>Safe</main>');
+    writeFileSync(path.join(fixture, '.config.ts'), 'export default {};');
+    const matrix = createFixtureMatrix({ fixture_root: root });
+    const recipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', staticSiteImporterPath: '/tmp/ssi', editorValidation: false, visualParity: false });
+    const lane = recipe.workflow.steps.find((step) => step.metadata?.phase === 'negative-policy');
+    assert.equal(buildFixtureArtifact(matrix.fixtures[0]).files.some((file) => file.path === 'website/.config.ts'), false);
+    assert.ok(lane);
+    assert.equal(lane.metadata.phase, 'negative-policy');
+    assert.equal(lane.metadata.classification, 'expected_policy_rejection');
+    assert.match(lane.args[0], /static-site-importer validate-artifact/);
+    assert.match(lane.args[0], /policy-rejection-artifact\.json/);
+    assert.match(lane.args[0], /--format=fixture-matrix/);
+    assert.match(lane.args[0], /--allow-failure/);
+    assert.doesNotMatch(lane.args[0], /Static_Site_Importer_Content_Policy/);
+    const outputDirectory = path.join(root, 'output');
+    mkdirSync(path.join(outputDirectory, 'site'), { recursive: true });
+    writeFileSync(path.join(outputDirectory, 'site', 'policy-rejection-artifact.json'), JSON.stringify(buildFixturePolicyArtifact(matrix.fixtures[0])));
+    const expectedRejection = collectFixtureMatrixRunResults({
+      matrix,
+      outputDirectory,
+      codeboxOutput: [
+        {
+          fixture_id: 'site',
+          metadata: lane.metadata,
+          status: 'failed',
+          success: false,
+          summary: { error_code: 'static_site_importer_executable_source_rejected' },
+          diagnostics: [{ code: 'static_site_importer_executable_source_rejected' }],
+        },
+        { fixture_id: 'site', status: 'passed', success: true },
+      ],
+    });
+    assert.equal(expectedRejection.fixtures[0].status, 'passed');
+    assert.equal(expectedRejection.summary.failed, 0);
+    assert.equal(expectedRejection.fixtures[0].policy_rejections.classification, 'expected_policy_rejection');
+    assert.equal(expectedRejection.fixtures[0].policy_rejections.receipts[0].status, 'rejected');
+
+    const unexpectedAcceptance = collectFixtureMatrixRunResults({
+      matrix,
+      outputDirectory,
+      codeboxOutput: [
+        { fixture_id: 'site', metadata: lane.metadata, status: 'passed', success: true },
+        { fixture_id: 'site', status: 'passed', success: true },
+      ],
+    });
+    assert.equal(unexpectedAcceptance.fixtures[0].status, 'failed');
+    assert.equal(unexpectedAcceptance.fixtures[0].success, false);
+    assert.equal(unexpectedAcceptance.summary.failed, 1);
+    assert.equal(unexpectedAcceptance.fixtures[0].policy_rejections.receipts[0].status, 'unexpectedly_accepted');
+    assert.deepEqual(unexpectedAcceptance.fixtures[0].diagnostics, [
+      {
+        kind: 'fixture_policy_unexpected_acceptance',
+        loss_class: 'fixture_policy_unexpected_acceptance',
+        gate: true,
+        fixture_scoped: true,
+        message: 'Fixture policy probe accepted excluded non-static source content.',
+      },
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('matrix extension handling matches PHP PATHINFO semantics and counts mjs as JavaScript', () => {
+  assert.equal(pathinfoExtension('.env'), 'env');
+  assert.equal(pathinfoExtension('.config.ts'), 'ts');
+  assert.equal(pathinfoExtension('assets/app.MJS'), 'mjs');
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-mjs-artifact-'));
+  try {
+    mkdirSync(path.join(root, 'site'), { recursive: true });
+    writeFileSync(path.join(root, 'site', 'index.html'), '<main>MJS</main>');
+    writeFileSync(path.join(root, 'site', 'app.mjs'), 'export {};');
+    const artifact = buildFixtureArtifact(createFixtureMatrix({ fixture_root: root }).fixtures[0]);
+    assert.equal(artifact.summary.has_js, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('resolves Blocks Engine PHP transformer override paths', () => {

@@ -81,15 +81,24 @@ if ( ! function_exists( 'add_action' ) ) {
 }
 
 if ( ! class_exists( 'WP_Error' ) ) {
-	class WP_Error {}
+	class WP_Error {
+		public function __construct( private string $code = '', private string $message = '', private mixed $data = null ) {}
+		public function get_error_code(): string { return $this->code; }
+		public function get_error_message(): string { return $this->message; }
+		public function get_error_data(): mixed { return $this->data; }
+	}
 }
 
 if ( ! class_exists( 'Static_Site_Importer_Theme_Generator' ) ) {
 	class Static_Site_Importer_Theme_Generator {
 		public static array $last_args = array();
 
-		public static function import_website_artifact( array $artifact, array $args = array() ): array {
+		public static function import_website_artifact( array $artifact, array $args = array() ) {
 			self::$last_args = $args;
+			$policy = Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
+			if ( is_wp_error( $policy ) ) {
+				return $policy;
+			}
 			return array( 'quality' => array( 'pass' => true ) );
 		}
 	}
@@ -110,6 +119,7 @@ if ( ! function_exists( 'static_site_importer_source_runtime' ) ) {
 }
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-website-artifact-import-input.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-import-runtime.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-figma-import.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
@@ -207,6 +217,21 @@ foreach ( array_keys( Static_Site_Importer_Website_Artifact_Import_Input::SCHEMA
 $assert( str_ends_with( $validation_args['report'], '/import-report.json' ), 'validation-owns-report-path' );
 $assert( 'contract-1' === ( $validation_args['source_metadata']['request_id'] ?? '' ), 'validation-preserves-caller-metadata' );
 $assert( 'static-site-importer/current-runtime' === ( $validation_args['source_metadata']['validation_provider'] ?? '' ), 'validation-adds-provider-metadata' );
+
+$policy_validation = Static_Site_Importer_Validation_Runtime::validate_artifact(
+	array_merge(
+		$input,
+		array(
+			'artifact' => array(
+				'schema' => 'blocks-engine/php-transformer/site-artifact/v1',
+				'files'  => array( array( 'path' => 'website/quartz.config.ts', 'content_base64' => base64_encode( 'export default {};' ) ) ),
+			),
+			'artifact_dir' => sys_get_temp_dir() . '/ssi-import-input-policy-' . uniqid( '', true ),
+		)
+	)
+);
+$assert( is_wp_error( $policy_validation ), 'validation-runtime-import-pipeline-rejects-excluded-source' );
+$assert( 'static_site_importer_executable_source_rejected' === $policy_validation->get_error_code(), 'validation-runtime-import-pipeline-preserves-policy-rejection' );
 
 if ( is_dir( $artifact_dir ) ) {
 	rmdir( $artifact_dir );
