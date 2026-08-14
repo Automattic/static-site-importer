@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -745,6 +745,9 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   assert.equal(recipe.artifacts.typed[0].path, recipe.workflow.steps[2].args[0].match(/--receipt-sidecar=([^ ]+)/)?.[1]);
   assert.equal(recipe.artifacts.typed[0].payloadSchema, 'static-site-importer/materialization-runtime-sidecar/v2');
   assert.match(recipe.workflow.steps[2].args[0], /--allow-failure/);
+  assert.equal(recipe.workflow.steps[3].metadata.phase, 'materialization-sidecar-readback');
+  assert.equal(recipe.workflow.steps[3].metadata.attempt_id, recipe.artifacts.typed[0].metadata.attempt_id);
+  assert.match(recipe.workflow.steps[3].args[0], /command=eval/);
   assert.deepEqual(recipe.inputs.stagedFiles[0], {
     source: '/tmp/artifacts/simple-site/artifact.json',
     target: '/wordpress/wp-content/uploads/static-site-importer-fixture-matrix/simple-site/artifact.json',
@@ -1103,7 +1106,8 @@ test('fixture capability metadata does not alter provider setup or execution', (
   const fixtureSteps = (id) => recipe.workflow.steps.filter((step) => step.metadata?.fixture_id === id);
 
   const plainSteps = fixtureSteps('plain-site');
-  assert.deepEqual(plainSteps.map((step) => step.command), ['wordpress.wp-cli', 'wordpress.wp-cli', 'wordpress.wp-cli', 'wordpress.wp-cli']);
+  assert.equal(plainSteps.length, 5);
+  assert.ok(plainSteps.every((step) => step.command === 'wordpress.wp-cli'));
   assert.deepEqual(fixtureSteps('shop-site').map((step) => step.command), plainSteps.map((step) => step.command));
   assert.deepEqual(fixtureSteps('shop-forms-site').map((step) => step.command), plainSteps.map((step) => step.command));
   assert.equal(recipe.workflow.steps.some((step) => ['wordpress.plugin-setup', 'wordpress.run-php'].includes(step.command)), false);
@@ -1686,6 +1690,26 @@ test('typed WP Codebox sidecar export materializes into the host intake path', (
   assert.deepEqual(result.fixtures[0].matrix_evidence.materialization_sidecar.documents, documents);
   assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.documents_total, 1);
   assert.deepEqual(result.fixtures[0].surface_lineage.find((surface) => surface.surface.id === 'front-page').materialized_document, { status: 'available', post_id: '42', post_type: 'page', post_slug: 'home', serialized_content_sha256: 'c'.repeat(64) });
+});
+
+test('bounded WP Codebox stdout sidecar readback reaches host intake without artifact projection', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-stdout-readback-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'sidecar-stdout-run' });
+  const directory = path.join(outputDirectory, 'simple-site');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: 'simple-site' }));
+  const sidecar = writeMaterializationSidecar({ directory, fixtureId: 'simple-site', runId: matrix.id, attemptId: 'batch-001', receipt: boundedSidecarReceipt() });
+  unlinkSync(path.join(directory, 'materialization-receipt--batch-001.json'));
+
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    sidecarAttemptId: 'batch-001',
+    codeboxOutput: { executions: [{ metadata: { fixture_id: 'simple-site', phase: 'materialization-sidecar-readback' }, stdout: JSON.stringify(sidecar) }] },
+  });
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, 'verified');
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_receipt.status, 'completed');
+  assert.equal(result.fixtures[0].matrix_evidence.missing.includes('materialization_receipt'), false);
 });
 
 test('persisted v1 and four-field v2 sidecars remain compatible while truncated documents make absent identities indeterminate', () => {
@@ -5911,23 +5935,23 @@ test('recipe runs editor-validate-blocks against imported content after each imp
     staticSiteImporterPath: '/tmp/static-site-importer',
   });
 
-  // [activate, prepare, validate, visual-font-setup, suppress-onboarding, identity, editor-open, editor-validate-blocks]
+  // [activate, prepare, validate, sidecar-readback, visual-font-setup, suppress-onboarding, identity, editor-open, editor-validate-blocks]
   assert.equal(recipe.workflow.steps[1].command, 'wordpress.wp-cli');
   assert.match(recipe.workflow.steps[1].args[0], /prepare-artifact-dependencies/);
   assert.equal(recipe.workflow.steps[2].command, 'wordpress.wp-cli');
   assert.match(recipe.workflow.steps[2].args[0], /static-site-importer validate-artifact/);
-  assert.equal(recipe.workflow.steps[4].command, 'wordpress.wp-cli');
-  assert.equal(recipe.workflow.steps[4].metadata.phase, 'editor-preflight');
-  assert.match(recipe.workflow.steps[4].args[0], /woocommerce_onboarding_profile/);
-  const identityStep = recipe.workflow.steps[5];
+  const preflightStep = recipe.workflow.steps.find((step) => step.metadata?.phase === 'editor-preflight');
+  assert.equal(preflightStep.command, 'wordpress.wp-cli');
+  assert.match(preflightStep.args[0], /woocommerce_onboarding_profile/);
+  const identityStep = recipe.workflow.steps.find((step) => step.metadata?.phase === 'materialized-surface-identity');
   assert.equal(identityStep.command, 'wordpress.wp-cli');
   assert.equal(identityStep.metadata.phase, 'materialized-surface-identity');
-  const editorOpenStep = recipe.workflow.steps[6];
+  const editorOpenStep = recipe.workflow.steps.find((step) => step.command === 'wordpress.editor-open');
   assert.equal(editorOpenStep.command, 'wordpress.editor-open');
   assert.ok(editorOpenStep.args.includes('target=front-page'));
   assert.ok(editorOpenStep.args.includes('capture=screenshot,editor-state,editor-validity'));
   assert.ok(editorOpenStep.args.includes('artifact-prefix=files/browser/editor-open/simple-site'));
-  const editorStep = recipe.workflow.steps[7];
+  const editorStep = recipe.workflow.steps.find((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND);
   assert.equal(editorStep.command, EDITOR_VALIDATE_BLOCKS_COMMAND);
   assert.equal(editorStep.command, 'wordpress.editor-validate-blocks');
   assert.equal(editorStep.args.some((arg) => arg.includes('post-new.php')), false);
@@ -6948,12 +6972,12 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
     pixelThreshold: 0.05,
   });
 
-  // [activate, prepare, validate, visual-font-setup, suppress-onboarding, identity, editor-open, editor-validation, visual-setup, visual-compare]
-  const visualSetupStep = recipe.workflow.steps[8];
+  // Resolve semantic phases so transport steps can be inserted without weakening the ordering contract.
+  const visualSetupStep = recipe.workflow.steps.find((step) => step.metadata?.phase === 'visual-setup');
   assert.equal(visualSetupStep.command, 'wordpress.wp-cli');
   assert.equal(visualSetupStep.metadata.phase, 'visual-setup');
   assert.match(visualSetupStep.args[0], /wp_update_custom_css_post/);
-  const visualStep = recipe.workflow.steps[9];
+  const visualStep = recipe.workflow.steps.find((step) => step.command === 'wordpress.visual-compare');
   assert.equal(visualStep.command, 'wordpress.visual-compare');
   const comparison = visualCompareMatrixComparison(visualStep);
   assert.equal(comparison.sourceUrl, 'file:///tmp/artifacts/simple-site/source/index.html');
