@@ -41,6 +41,16 @@ $staged_resumed = $prepare_staged->invoke( null, $staged_workspace, $staged_arti
 if ( ! is_wp_error( $staged_interrupted ) || 'static_site_importer_invocation_deadline_exceeded' !== $staged_interrupted->get_error_code() || 1 !== count( $staged_checkpoint['plans'] ?? array() ) || is_wp_error( $staged_resumed ) || 2 !== ( $staged_resumed['page_prepared'] ?? -1 ) || 3 !== count( $staged_resumed['page_plans'] ?? array() ) ) { throw new RuntimeException( 'staged page preparation must checkpoint each completed page and resume only unfinished pages' ); }
 $staged_workspace->purge();
 
+$payload_workspace_root = sys_get_temp_dir() . '/ssi-collection-payload-' . bin2hex( random_bytes( 4 ) );
+wp_mkdir_p( $payload_workspace_root );
+$payload_workspace = new Static_Site_Importer_Artifact_Run_Workspace( $payload_workspace_root, 'corruption' );
+$store_payload      = new ReflectionMethod( Static_Site_Importer_URL_Batch_Import::class, 'store_collection_payload' );
+$stored_payload     = $store_payload->invoke( null, $payload_workspace, 'verified-payload' );
+if ( is_wp_error( $stored_payload ) || false === file_put_contents( $payload_workspace->path( $stored_payload['body_ref'] ), 'corrupt-payload' ) ) { throw new RuntimeException( 'collection payload corruption fixture setup failed' ); }
+$corrupt_payload = $store_payload->invoke( null, $payload_workspace, 'verified-payload' );
+if ( ! is_wp_error( $corrupt_payload ) || 'static_site_importer_collection_payload_corrupt' !== $corrupt_payload->get_error_code() ) { throw new RuntimeException( 'content-addressed collection payload reuse must verify existing bytes' ); }
+$payload_workspace->purge();
+
 $responses = array(
 	'https://batch.test/sitemap.xml' => array( 'application/xml', '<sitemapindex><sitemap><loc>https://batch.test/one.xml</loc></sitemap><sitemap><loc>https://batch.test/two.xml</loc></sitemap></sitemapindex>' ),
 	'https://batch.test/one.xml' => array( 'application/xml', '<urlset><url><loc>https://batch.test/</loc></url><url><loc>https://batch.test/about/</loc></url></urlset>' ),

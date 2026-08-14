@@ -114,7 +114,6 @@ class Static_Site_Importer_URL_Site_Collector {
 		} else {
 			$cursor = null;
 		}
-
 		if ( null === $cursor ) {
 			$finalization = null;
 			$sitemap_urls = isset( $args['_route_set'] ) && is_array( $args['_route_set'] ) ? array_values( $args['_route_set'] ) : self::sitemap_urls( $entry_url, $fetcher, $fetch_args );
@@ -240,6 +239,11 @@ class Static_Site_Importer_URL_Site_Collector {
 				$queued_assets[ $asset_url ] = true;
 				$asset_queue[]               = $asset_url;
 			}
+			$retained = self::retain_collection_payload( $resources[ $final_url ], $resource_storer );
+			if ( is_wp_error( $retained ) ) {
+				return $retained;
+			}
+			$resources[ $final_url ] = $retained;
 		}
 
 		$asset_fetcher = self::prefetched_fetcher( array_slice( $asset_queue, 0, $max_assets ), array_merge( $fetch_args, array( 'content_types' => array() ) ), $fetcher, $use_many_fetcher, $args );
@@ -325,10 +329,17 @@ class Static_Site_Importer_URL_Site_Collector {
 					$asset_queue[]                = $nested_url;
 				}
 			}
+			$retained = self::retain_collection_payload( $resources[ $final_url ], $resource_storer );
+			if ( is_wp_error( $retained ) ) {
+				return $retained;
+			}
+			$resources[ $final_url ] = $retained;
 		}
-		$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $external_pages, $critical_assets, $entry_resource_url, $site_url, $sitemap_urls, $finalization );
-		if ( is_wp_error( $checkpoint ) ) {
-			return $checkpoint;
+		if ( null === $finalization ) {
+			$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $external_pages, $critical_assets, $entry_resource_url, $site_url, $sitemap_urls );
+			if ( is_wp_error( $checkpoint ) ) {
+				return $checkpoint;
+			}
 		}
 
 		if ( ( ! empty( $truncated ) || ! empty( $failures ) ) && ! empty( $args['require_complete_collection'] ) ) {
@@ -382,8 +393,12 @@ class Static_Site_Importer_URL_Site_Collector {
 				'files'          => array(),
 				'snapshot_files' => array(),
 				'external_pages' => $external_pages,
+				'assembly_next'  => 0,
+				'artifact_files' => array(),
 			);
 		}
+		$finalization['assembly_next']  = (int) ( $finalization['assembly_next'] ?? 0 );
+		$finalization['artifact_files'] = is_array( $finalization['artifact_files'] ?? null ) ? $finalization['artifact_files'] : array();
 		$resource_count = count( $resource_urls );
 		while ( $finalization['next_resource'] < $resource_count ) {
 			if ( null !== $should_yield && call_user_func( $should_yield ) ) {
@@ -392,6 +407,11 @@ class Static_Site_Importer_URL_Site_Collector {
 			}
 			$resource_url = $resource_urls[ $finalization['next_resource'] ];
 			$resource     = $resources[ $resource_url ];
+			$resource     = self::retain_collection_payload( $resource, $resource_storer, $resource_loader );
+			if ( is_wp_error( $resource ) ) {
+				return $resource;
+			}
+			$resources[ $resource_url ] = $resource;
 			$body         = $resource['body'] ?? null;
 			if ( ! is_string( $body ) && null !== $resource_loader ) {
 				$body = call_user_func( $resource_loader, $resource );
@@ -419,6 +439,10 @@ class Static_Site_Importer_URL_Site_Collector {
 			if ( 'html' === $resource['kind'] ) {
 				$file['metadata'] = array( 'route_path' => $route_paths[ $resource_url ] );
 			}
+			$file = self::retain_collection_payload( $file, $resource_storer );
+			if ( is_wp_error( $file ) ) {
+				return $file;
+			}
 			$finalization['files'][]          = $file;
 			$finalization['snapshot_files'][] = array(
 				'path'       => $path,
@@ -428,53 +452,72 @@ class Static_Site_Importer_URL_Site_Collector {
 				'sha256'     => hash( 'sha256', $body ),
 			);
 			++$finalization['next_resource'];
-			$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $finalization['external_pages'], $critical_assets, $entry_resource_url, $site_url, $sitemap_urls, $finalization );
-			if ( is_wp_error( $checkpoint ) ) {
-				return $checkpoint;
+		}
+		$file_count = count( $finalization['files'] );
+		while ( $finalization['assembly_next'] < $file_count ) {
+			if ( null !== $should_yield && call_user_func( $should_yield ) ) {
+				$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $finalization['external_pages'], $critical_assets, $entry_resource_url, $site_url, $sitemap_urls, $finalization );
+				return is_wp_error( $checkpoint ) ? $checkpoint : new WP_Error( 'static_site_importer_invocation_deadline_exceeded', 'The URL batch invocation deadline was reached during artifact assembly.' );
 			}
-		}
-		if ( null !== $should_yield && call_user_func( $should_yield ) ) {
-			return new WP_Error( 'static_site_importer_invocation_deadline_exceeded', 'The URL batch invocation deadline was reached before artifact assembly.' );
-		}
-		$files = array();
-		foreach ( $finalization['files'] as $retained_file ) {
+			$index         = $finalization['assembly_next'];
+			$retained_file = $finalization['files'][ $index ];
 			if ( ! empty( $args['_static_site_importer_collection_return_payload_references'] ) ) {
-				$body = $retained_file['body'] ?? null;
-				if ( ! is_string( $body ) && ( ! isset( $retained_file['bytes'] ) || ! is_int( $retained_file['bytes'] ) ) && null !== $resource_loader ) {
-					$body = call_user_func( $resource_loader, $retained_file );
+				$retained_file = self::retain_collection_payload( $retained_file, $resource_storer, $resource_loader );
+				if ( is_wp_error( $retained_file ) ) {
+					return $retained_file;
 				}
+				$finalization['files'][ $index ] = $retained_file;
 				$path = (string) ( $retained_file['path'] ?? '' );
 				if ( ! Static_Site_Importer_Content_Policy::is_static_path( $path ) ) {
 					return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
 				}
-				$reference = isset( $retained_file['body_ref'] ) ? $retained_file : ( null !== $resource_storer && is_string( $body ) ? call_user_func( $resource_storer, $body ) : null );
-				if ( ! is_array( $reference ) || ! is_string( $reference['body_ref'] ?? null ) || ! is_string( $reference['sha256'] ?? null ) ) {
+				if ( ! is_string( $retained_file['body_ref'] ?? null ) || ! is_string( $retained_file['sha256'] ?? null ) || ! isset( $retained_file['bytes'] ) ) {
 					return new WP_Error( 'static_site_importer_collection_cursor_resource_invalid', 'A finalized URL collection resource could not be retained by reference.' );
 				}
 				$file                      = array_intersect_key( $retained_file, array_flip( array( 'path', 'source_url', 'mime_type', 'metadata' ) ) );
 				$file['payload_reference'] = array(
 					'schema' => 'blocks-engine/payload-reference/v1',
-					'id'     => $reference['body_ref'],
-					'bytes'  => isset( $reference['bytes'] ) && is_int( $reference['bytes'] ) ? $reference['bytes'] : strlen( (string) $body ),
-					'sha256' => $reference['sha256'],
+					'id'     => $retained_file['body_ref'],
+					'bytes'  => (int) $retained_file['bytes'],
+					'sha256' => $retained_file['sha256'],
 				);
-				$files[]                   = $file;
-				continue;
-			}
-			$body = $retained_file['body'] ?? null;
-			if ( ! is_string( $body ) && null !== $resource_loader ) {
-				$body = call_user_func( $resource_loader, $retained_file );
-			}
-			if ( ! is_string( $body ) ) {
-				return new WP_Error( 'static_site_importer_collection_cursor_resource_invalid', 'A finalized URL collection resource could not be loaded.' );
-			}
-			$file = array_intersect_key( $retained_file, array_flip( array( 'path', 'source_url', 'mime_type', 'metadata' ) ) );
-			if ( ! empty( $retained_file['is_text'] ) ) {
-				$file['content'] = $body;
 			} else {
-				$file['content_base64'] = base64_encode( $body ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes binary artifact payload bytes.
+				$retained_file = self::retain_collection_payload( $retained_file, $resource_storer, $resource_loader );
+				if ( is_wp_error( $retained_file ) ) {
+					return $retained_file;
+				}
+				$finalization['files'][ $index ] = $retained_file;
+				$file                            = $retained_file;
 			}
-			$files[] = $file;
+			$finalization['artifact_files'][] = $file;
+			++$finalization['assembly_next'];
+		}
+		$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $finalization['external_pages'], $critical_assets, $entry_resource_url, $site_url, $sitemap_urls, $finalization );
+		if ( is_wp_error( $checkpoint ) ) {
+			return $checkpoint;
+		}
+		if ( null !== $should_yield && call_user_func( $should_yield ) ) {
+			return new WP_Error( 'static_site_importer_invocation_deadline_exceeded', 'The URL batch invocation deadline was reached before artifact digest assembly.' );
+		}
+		$files = $finalization['artifact_files'];
+		if ( empty( $args['_static_site_importer_collection_return_payload_references'] ) ) {
+			$files = array();
+			foreach ( $finalization['artifact_files'] as $retained_file ) {
+				$body = $retained_file['body'] ?? null;
+				if ( ! is_string( $body ) && null !== $resource_loader ) {
+					$body = call_user_func( $resource_loader, $retained_file );
+				}
+				if ( ! is_string( $body ) ) {
+					return new WP_Error( 'static_site_importer_collection_cursor_resource_invalid', 'A finalized URL collection resource could not be loaded.' );
+				}
+				$file = array_intersect_key( $retained_file, array_flip( array( 'path', 'source_url', 'mime_type', 'metadata' ) ) );
+				if ( ! empty( $retained_file['is_text'] ) ) {
+					$file['content'] = $body;
+				} else {
+					$file['content_base64'] = base64_encode( $body ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes binary artifact payload bytes.
+				}
+				$files[] = $file;
+			}
 		}
 		$snapshot_files = $finalization['snapshot_files'];
 		$external_pages = $finalization['external_pages'];
@@ -603,6 +646,36 @@ class Static_Site_Importer_URL_Site_Collector {
 				'updated_at'         => gmdate( 'c' ),
 			)
 		);
+	}
+
+	/** @return array<string,mixed>|WP_Error */
+	private static function retain_collection_payload( array $record, ?callable $storer, ?callable $loader = null ) {
+		$body = $record['body'] ?? null;
+		if ( ! is_string( $body ) && null !== $storer && null !== $loader && isset( $record['body_ref'] ) && 'static-site-importer/retained-payload/v1' !== ( $record['retention_schema'] ?? '' ) ) {
+			$body = call_user_func( $loader, $record );
+		}
+		if ( ! is_string( $body ) || null === $storer ) {
+			return $record;
+		}
+
+		$reference = call_user_func( $storer, $body );
+		if ( is_wp_error( $reference ) ) {
+			return $reference;
+		}
+		if ( ! is_array( $reference ) || ! is_string( $reference['body_ref'] ?? null ) || ! is_string( $reference['sha256'] ?? null ) || ! hash_equals( hash( 'sha256', $body ), $reference['sha256'] ) ) {
+			return new WP_Error( 'static_site_importer_collection_cursor_resource_invalid', 'A URL collection payload could not be retained with a verified content reference.' );
+		}
+		$bytes = isset( $reference['bytes'] ) ? (int) $reference['bytes'] : strlen( $body );
+		if ( strlen( $body ) !== $bytes ) {
+			return new WP_Error( 'static_site_importer_collection_cursor_resource_invalid', 'A retained URL collection payload byte count does not match its content.' );
+		}
+
+		unset( $record['body'] );
+		$record['body_ref'] = $reference['body_ref'];
+		$record['sha256']   = $reference['sha256'];
+		$record['bytes']    = $bytes;
+		$record['retention_schema'] = 'static-site-importer/retained-payload/v1';
+		return $record;
 	}
 
 	private static function source_broken_asset_status( WP_Error $error ): int {
