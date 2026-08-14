@@ -711,6 +711,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 
 		$page_plans = array();
 		$snapshots  = array();
+		$files      = array();
+		$entrypoint = '';
 		foreach ( $cursor as $batch ) {
 			$batch_id = (string) ( $batch['batch_id'] ?? '' );
 			$raw      = '' !== $batch_id ? $workspace->read_raw( 'batches/' . $batch_id . '.json' ) : null;
@@ -721,6 +723,14 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$snapshot = $runtime['source_metadata']['snapshot']['sha256'] ?? null;
 			if ( is_string( $snapshot ) && '' !== $snapshot ) {
 				$snapshots[] = $snapshot;
+			}
+			if ( is_array( $runtime['artifact'] ?? null ) ) {
+				$entrypoint = '' === $entrypoint ? (string) ( $runtime['artifact']['entrypoint'] ?? '' ) : $entrypoint;
+				foreach ( $runtime['artifact']['files'] ?? array() as $file ) {
+					if ( is_array( $file ) && '' !== (string) ( $file['path'] ?? '' ) ) {
+						$files[ (string) $file['path'] ] = $file;
+					}
+				}
 			}
 
 			$batch_digest = (string) ( $runtime['shared_plan_digest'] ?? '' );
@@ -773,6 +783,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				'snapshot_identity' => hash( 'sha256', (string) wp_json_encode( $snapshots ) ),
 				'snapshots'         => $snapshots,
 			),
+			'artifact'                 => array( 'schema' => 'blocks-engine/php-transformer/site-artifact/v1', 'entrypoint' => $entrypoint, 'files' => array_values( $files ) ),
 		);
 	}
 

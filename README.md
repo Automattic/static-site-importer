@@ -270,8 +270,12 @@ This materializer is intentionally generic: WooCommerce is the first plugin-back
 
 The canonical ability uses `source.type` (`artifact`, `url`, or `upload`) and `operation` (`plan` or `apply`). Artifact planning returns the canonical WordPress site plan, diagnostics, quality evidence, and source provenance without writing to the destination. Upload sources contain an opaque `upload_ref` resolved only by the server-side `static_site_importer_resolve_upload_reference` filter; callers never provide filesystem paths.
 
+Use `--theme-materialization=block|classic` with both `import-theme` and `import-url`; `block` is the default. Use `--operation=plan` to emit a plan response without writes. Apply a saved response with `--operation=apply --plan=/absolute/path/to/plan-response.json`; SSI reads the regular local JSON file and routes it through the canonical ability. A classic plan response includes a versioned, hashed normalized artifact, projection, and complete normalized arguments bundle. Apply verifies every digest and requires the immutable `theme_materialization=classic` strategy before running the full classic lifecycle.
+
 ```bash
 wp static-site-importer import-theme /path/to/site/index.html \
+	--operation=plan \
+	--theme-materialization=block \
   --slug=wordpress-is-dead \
   --name="WordPress Is Dead" \
   --activate \

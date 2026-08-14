@@ -9,6 +9,12 @@ use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver;
 
 require_once __DIR__ . '/class-static-site-importer-stylesheet-materializer.php';
+if ( ! class_exists( 'Static_Site_Importer_Theme_Materialization_Strategy' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-theme-materialization-strategy.php';
+}
+if ( ! class_exists( 'Static_Site_Importer_Classic_Theme_Projection' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-classic-theme-projection.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Current_Site_Capabilities' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-current-site-capabilities.php';
 }
@@ -52,6 +58,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		// canonical plan hash, prepared-plan persistence, or receipt projection.
 		$payload_reader = $args['_static_site_importer_payload_reader'] ?? null;
 		unset( $args['_static_site_importer_payload_reader'] );
+		$strategy = Static_Site_Importer_Theme_Materialization_Strategy::normalize( $args );
+		if ( is_wp_error( $strategy ) ) {
+			return self::failed_strategy_receipt( $plan, $args, $strategy );
+		}
+		$args['theme_materialization'] = $strategy['strategy'];
+		if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === $strategy['strategy'] && ! is_array( $args['classic_theme_projection'] ?? null ) ) {
+			return self::failed_strategy_receipt( $plan, $args, new WP_Error( 'static_site_importer_classic_source_projection_missing', 'Classic materialization requires the SSI source-artifact projection prepared before this plan-only boundary.' ) );
+		}
 		$state = array(
 			'plan'                         => $plan,
 			'plan_hash'                    => self::hash( $plan ),
@@ -111,6 +125,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				throw new InvalidArgumentException( $error->getMessage(), 0, $error );
 			}
 			$state['base_resolved']      = $resolved;
+			if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === $strategy['strategy'] ) {
+				$resolved['writes'] = Static_Site_Importer_Classic_Theme_Projection::resolved_writes( $resolved, Static_Site_Importer_Classic_Theme_Projection::writes( $args['classic_theme_projection'], $resolved, $theme_uri, (string) ( $args['name'] ?? $slug ) ) );
+				foreach ( $resolved['pages'] as &$page ) {
+					$page['resolved_block_markup'] = '';
+				}
+				unset( $page );
+				$state['base_resolved'] = $resolved;
+			}
 			$state['base_resolved_hash'] = self::hash( $resolved );
 			$state['resolved']           = $resolved;
 			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'] );
@@ -187,6 +209,21 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		$prepared['payload_references_admitted'] = true;
 		return $prepared;
+	}
+
+	/** Return a non-mutating receipt for a rejected strategy before destination preflight. */
+	private static function failed_strategy_receipt( array $plan, array $args, WP_Error $error ): array {
+		$state = array(
+			'plan' => $plan,
+			'plan_hash' => self::hash( $plan ),
+			'diagnostics' => array( array( 'reason_code' => $error->get_error_code() ) ),
+			'applied' => array( 'posts' => array(), 'files' => array(), 'operations' => array(), 'runtime_declarations' => array( 'asset_publications' => array(), 'entity_bindings' => array() ) ),
+			'skipped' => array(),
+			'existing_matches' => array( 'pages' => array() ),
+			'args' => $args,
+			'theme_materialization' => is_array( $error->get_error_data() ) && isset( $error->get_error_data()['theme_materialization'] ) && is_array( $error->get_error_data()['theme_materialization'] ) ? $error->get_error_data()['theme_materialization'] : self::strategy_evidence( $args ),
+		);
+		return array( 'status' => 'rejected', 'receipt' => self::receipt( 'rejected', $state ) );
 	}
 
 	/** @param array<string,mixed> $prepared @return array<string,mixed> */
@@ -471,7 +508,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$state['page_ids']   = array();
 		$state['source_ids'] = array();
 		foreach ( $state['resolved']['pages'] as &$page ) {
-			if ( ! isset( $page['resolved_block_markup'] ) || ! is_string( $page['resolved_block_markup'] ) || '' === trim( $page['resolved_block_markup'] ) ) {
+			if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC !== ( $state['args']['theme_materialization'] ?? null ) && ( ! isset( $page['resolved_block_markup'] ) || ! is_string( $page['resolved_block_markup'] ) || '' === trim( $page['resolved_block_markup'] ) ) ) {
 				throw new InvalidArgumentException( 'page_missing_final_block_markup' );
 			}
 			$route = (string) ( $page['route']['path'] ?? '' );
@@ -1365,7 +1402,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$block_provenance       = array();
 		$block_provenance_count = 0;
 		$written_sources        = array_fill_keys( array_filter( array_column( $state['applied']['posts'] ?? array(), 'source_path' ), 'is_string' ), true );
-		foreach ( $resolved_plan['pages'] as &$page ) {
+		$receipt_pages = $resolved_plan['pages'] ?? array();
+		foreach ( $receipt_pages as &$page ) {
 			if ( isset( $written_sources[ $page['source_path'] ] ) ) {
 				$materialized_markup = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' );
 				++$block_provenance_count;
@@ -1384,6 +1422,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 		}
 		unset( $page );
+		$resolved_plan['pages'] = $receipt_pages;
 		$errors = array();
 		$pages  = isset( $state['source_ids'] ) && is_array( $state['source_ids'] ) ? $state['source_ids'] : array();
 		foreach ( $state['diagnostics'] as $diagnostic ) {
@@ -1435,7 +1474,21 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'preparation'               => $state['preparation'] ?? array(),
 			'diagnostics'               => $state['diagnostics'],
 			'errors'                    => $errors,
+			'theme_materialization'     => $state['theme_materialization'] ?? self::strategy_evidence( $state['args'] ?? array() ),
 		);
+	}
+
+	/** @return array<string,mixed> */
+	private static function strategy_evidence( array $args ): array {
+		$strategy = Static_Site_Importer_Theme_Materialization_Strategy::normalize( $args );
+		if ( is_wp_error( $strategy ) ) {
+			return array( 'schema' => 'static-site-importer/theme-materialization-evidence/v1', 'status' => 'invalid', 'reason_code' => $strategy->get_error_code() );
+		}
+		if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === $strategy['strategy'] && is_array( $args['classic_theme_projection'] ?? null ) ) {
+			$strategy['evidence']['status'] = 'source_artifact_projection';
+			$strategy['evidence']['projection_schema'] = $args['classic_theme_projection']['schema'] ?? '';
+		}
+		return $strategy['evidence'];
 	}
 
 	/**

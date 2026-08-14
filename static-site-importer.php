@@ -48,6 +48,8 @@ foreach ( $static_site_importer_figma_transformers as $static_site_importer_figm
 
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-site-identity.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-website-artifact-import-input.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-materialization-strategy.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-classic-theme-projection.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-client-script-policy.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-document.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-source-page.php';
@@ -132,6 +134,19 @@ if ( ! function_exists( 'static_site_importer_cli_write_validation_output' ) ) {
 	}
 }
 
+if ( ! function_exists( 'static_site_importer_cli_approved_plan' ) ) {
+	/** Read an explicit JSON plan response from a local regular file. */
+	function static_site_importer_cli_approved_plan( array $assoc_args ) {
+		$path = isset( $assoc_args['plan'] ) ? (string) $assoc_args['plan'] : '';
+		if ( '' === $path || ! is_file( $path ) || ! is_readable( $path ) || is_link( $path ) ) {
+			return new WP_Error( 'static_site_importer_cli_plan_invalid', 'Apply requires --plan=<readable JSON plan response file>.' );
+		}
+		$raw = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads an explicit operator-owned plan response.
+		$plan = is_string( $raw ) ? json_decode( $raw, true ) : null;
+		return is_array( $plan ) ? $plan : new WP_Error( 'static_site_importer_cli_plan_invalid', 'Apply plan must be a JSON object.' );
+	}
+}
+
 if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 	WP_CLI::add_command(
 		'static-site-importer materialize-wordpress-site-plan',
@@ -160,6 +175,18 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 	WP_CLI::add_command(
 		'static-site-importer import-theme',
 		static function ( array $args, array $assoc_args ): void {
+			$operation = isset( $assoc_args['operation'] ) ? (string) $assoc_args['operation'] : 'apply';
+			if ( ! in_array( $operation, array( 'plan', 'apply' ), true ) ) {
+				WP_CLI::error( '--operation must be plan or apply.' );
+			}
+			if ( 'apply' === $operation && isset( $assoc_args['plan'] ) ) {
+				$plan = static_site_importer_cli_approved_plan( $assoc_args );
+				if ( is_wp_error( $plan ) ) { WP_CLI::error( $plan->get_error_message() ); }
+				$result = static_site_importer_cli_import( array( 'operation' => 'apply', 'plan' => $plan ) );
+				if ( empty( $result['success'] ) ) { WP_CLI::error( (string) ( $result['error']['message'] ?? 'Static site plan apply failed.' ) ); }
+				WP_CLI::success( 'Applied approved import plan.' );
+				return;
+			}
 			$entry = isset( $args[0] ) ? (string) $args[0] : '';
 			if ( '' === $entry || ! is_readable( $entry ) || ! is_file( $entry ) ) {
 				WP_CLI::error( 'Provide a readable source HTML file.' );
@@ -200,6 +227,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			$entry_realpath = realpath( $entry );
 			$entrypoint     = false !== $entry_realpath ? ltrim( str_replace( '\\', '/', substr( $entry_realpath, strlen( $root ) ) ), '/' ) : basename( $entry );
 			$input          = array(
+				'operation'                    => $operation,
 				'artifact'                     => array(
 					'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
 					'entrypoint' => $entrypoint,
@@ -215,6 +243,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'materialize_dependencies'     => ! isset( $assoc_args['skip-dependency-materialization'] ),
 				'report'                       => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
 				'asset_materialization_policy' => isset( $assoc_args['asset-materialization-policy'] ) ? (string) $assoc_args['asset-materialization-policy'] : '',
+				'theme_materialization'        => isset( $assoc_args['theme-materialization'] ) ? (string) $assoc_args['theme-materialization'] : 'block',
 			);
 
 			$result = static_site_importer_cli_import(
@@ -227,6 +256,10 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				$error = isset( $result['error'] ) && is_array( $result['error'] ) ? $result['error'] : array();
 				WP_CLI::error( (string) ( $error['message'] ?? 'Static site import failed.' ) );
 			}
+			if ( 'plan' === $operation ) {
+				WP_CLI::line( (string) wp_json_encode( $result, JSON_UNESCAPED_SLASHES ) );
+				return;
+			}
 
 			WP_CLI::success( sprintf( 'Imported %s.', (string) ( $result['result']['theme_slug'] ?? $input['slug'] ) ) );
 		}
@@ -235,12 +268,23 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 	WP_CLI::add_command(
 		'static-site-importer import-url',
 		static function ( array $args, array $assoc_args ): void {
+			$operation = isset( $assoc_args['operation'] ) ? (string) $assoc_args['operation'] : 'apply';
+			if ( ! in_array( $operation, array( 'plan', 'apply' ), true ) ) { WP_CLI::error( '--operation must be plan or apply.' ); }
+			if ( 'apply' === $operation && isset( $assoc_args['plan'] ) ) {
+				$plan = static_site_importer_cli_approved_plan( $assoc_args );
+				if ( is_wp_error( $plan ) ) { WP_CLI::error( $plan->get_error_message() ); }
+				$result = static_site_importer_cli_import( array( 'operation' => 'apply', 'plan' => $plan ) );
+				if ( empty( $result['success'] ) ) { WP_CLI::error( (string) ( $result['error']['message'] ?? 'Static site plan apply failed.' ) ); }
+				WP_CLI::success( 'Applied approved import plan.' );
+				return;
+			}
 			$url = isset( $args[0] ) ? (string) $args[0] : '';
 			if ( '' === trim( $url ) ) {
 				WP_CLI::error( 'Provide a public source URL.' );
 			}
 
 			$input  = array(
+				'operation'                 => $operation,
 				'source'                    => array(
 					'type' => 'url',
 					'url'  => $url,
@@ -254,6 +298,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'fail_on_quality'           => isset( $assoc_args['fail-on-quality'] ),
 				'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
 				'report'                    => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
+				'theme_materialization'     => isset( $assoc_args['theme-materialization'] ) ? (string) $assoc_args['theme-materialization'] : 'block',
 			);
 			if ( isset( $assoc_args['import-id'] ) ) {
 				$input['source']['import_id'] = (string) $assoc_args['import-id'];
@@ -264,6 +309,10 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				WP_CLI::error( (string) ( $error['message'] ?? 'Static site URL import failed.' ) );
 			}
 			if ( ! empty( $result['continuation'] ) ) {
+				WP_CLI::line( (string) wp_json_encode( $result, JSON_UNESCAPED_SLASHES ) );
+				return;
+			}
+			if ( 'plan' === $operation ) {
 				WP_CLI::line( (string) wp_json_encode( $result, JSON_UNESCAPED_SLASHES ) );
 				return;
 			}

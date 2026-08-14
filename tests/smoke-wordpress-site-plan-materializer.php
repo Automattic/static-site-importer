@@ -252,6 +252,26 @@ $generator_companion = strpos( (string) $theme_generator_source, 'materialize_co
 $generator_dependencies = strpos( (string) $theme_generator_source, 'materialize_prepared_dependencies', $generator_admission + 1 );
 $generator_entities = strpos( (string) $theme_generator_source, 'materialize_prepared_entities', $generator_admission + 1 );
 $assert( false !== $generator_admission && $generator_admission < $generator_binding_preflight && $generator_admission < $generator_companion && $generator_admission < $generator_dependencies && $generator_admission < $generator_entities, 'theme generator admits referenced payloads before runtime binding, companion, dependency, and entity materialization work' );
+
+$classic_artifact = array(
+	'entrypoint' => 'index.html',
+	'files'      => array(
+		'index.html'      => '<html><head><link rel="stylesheet" href="assets/site.css"></head><body><header><a href="about.html">Nav</a></header><main><img src="assets/logo.svg" onerror="alert(1)"><a href="javascript:alert(1)">Unsafe</a><h1>Home</h1></main><footer>Footer</footer><script>alert(1)</script></body></html>',
+		'about.html'      => '<main><h1>About</h1><img src="assets/logo.svg"></main>',
+		'assets/logo.svg' => '<svg xmlns="http://www.w3.org/2000/svg"/>',
+		'assets/site.css' => 'main{background:url(logo.svg)}',
+	),
+);
+$classic_plan = ( new ArtifactCompiler() )->compile( $classic_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$classic_projection = Static_Site_Importer_Classic_Theme_Projection::build( $classic_artifact, $classic_plan );
+$assert( ! is_wp_error( $classic_projection ), 'normalized artifact produces a render-neutral SSI classic projection without block reverse conversion' );
+$classic_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $classic_plan, array( 'slug' => 'classic-site-plan', 'name' => 'Classic Site', 'theme_materialization' => 'classic', 'classic_theme_projection' => $classic_projection, 'activate' => true ) );
+$classic_root = $GLOBALS['ssi_plan_root'] . '/classic-site-plan';
+$classic_pages = json_decode( (string) file_get_contents( $classic_root . '/classic-pages.json' ), true );
+$assert( 'completed' === $classic_receipt['status'] && 'source_artifact_projection' === ( $classic_receipt['theme_materialization']['status'] ?? '' ), 'classic strategy materializes through the canonical receipt path with strategy evidence' );
+$assert( array() === array_diff( array( 'style.css', 'functions.php', 'header.php', 'footer.php', 'front-page.php', 'page.php', 'single.php', 'index.php', 'archive.php', 'search.php', '404.php', 'classic-pages.json', 'classic-chrome.json', 'classic-bindings.json', 'assets/assets/logo.svg', 'assets/assets/site.css' ), array_column( $classic_receipt['completed']['files'], 'target_path' ) ), 'classic receipt records the complete fixed scaffold, canonical assets, and inert data files' );
+$assert( str_contains( (string) ( $classic_pages['pages']['index.html']['html'] ?? '' ), 'https://example.test/wp-content/themes/classic-site-plan/assets/assets/logo.svg' ) && ! str_contains( (string) ( $classic_pages['pages']['index.html']['html'] ?? '' ), 'onerror=') && ! str_contains( (string) ( $classic_pages['pages']['index.html']['html'] ?? '' ), 'javascript:' ) && ! str_contains( (string) ( $classic_pages['pages']['index.html']['html'] ?? '' ), '<script' ), 'classic page data rewrites declared asset URLs and strips executable artifact HTML' );
+$assert( str_contains( (string) file_get_contents( $classic_root . '/functions.php' ), "get_post_meta( get_queried_object_id()") && str_contains( (string) file_get_contents( $classic_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-classic'") && 'classic-site-plan' === ( $GLOBALS['ssi_plan_options']['stylesheet'] ?? '' ), 'classic scaffold resolves data by reconciliation provenance, enqueues its stylesheet, and activates through the existing operation lifecycle' );
 $unbound_provenance = $receipt['completed']['block_provenance'] ?? array();
 $assert( count( $plan['pages'] ) === count( $unbound_provenance ) && count( $plan['pages'] ) === ( $receipt['completed']['block_provenance_count'] ?? 0 ), 'ordinary resolved pages receive receipt provenance without runtime bindings' );
 $assert( 'blocks-engine/wordpress-site-plan-resolver' === ( $unbound_provenance[0]['stages'][0]['stage'] ?? '' ) && hash( 'sha256', $receipt['plan']['pages'][0]['resolved_block_markup'] ) === ( $unbound_provenance[0]['stages'][0]['output']['sha256'] ?? '' ), 'ordinary page provenance records the resolver output hash' );
@@ -423,6 +443,9 @@ $bridged_declarations = $bridged_product_grid_plan['runtime_declarations'] ?? ar
 $assert( 2 === count( $bridged_declarations ) && 'shop' === ( $bridged_declarations[0]['capability'] ?? '' ) && 'products' === ( $bridged_declarations[1]['type'] ?? '' ), 'active Blocks Engine product-grid findings bridge into explicit v2 commerce declarations' );
 $assert( true === in_array( 'entity_collection:products', $bridged_declarations[0]['required_for'] ?? array(), true ), 'bridged product entities retain the required commerce dependency relationship' );
 $assert( array( 'tour-tee', 'signed-cd' ) === array_column( $bridged_declarations[1]['payload']['entities'] ?? array(), 'slug' ), 'bridge preserves product-grid evidence as normalized Woo entity rows' );
+$bridged_products = $bridged_declarations[1]['payload']['entities'] ?? array();
+$bridged_selectors = array_column( $bridged_products, 'selector' );
+$assert( 2 === count( array_unique( $bridged_selectors ) ) && 2 === count( array_filter( $bridged_selectors, static fn( $selector ): bool => is_string( $selector ) && '' !== $selector ) ) && 2 === count( array_filter( array_column( $bridged_products, 'source_path' ), static fn( $source ): bool => is_string( $source ) && '' !== $source ) ), 'actual product-grid bridge source_selectors normalize into deterministic exact classic leaf source identities' );
 $bridged_lifecycle = ( new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'prepare_wordpress_site_plan_lifecycle' ) )->invoke( null, $bridged_product_grid_plan, array() );
 $assert( 'runtime_declarations' === ( $bridged_lifecycle['status'] ?? '' ) && true === ( reset( $bridged_lifecycle['entities'] )['required'] ?? false ), 'bridged product entities enter the required canonical seeding lifecycle' );
 

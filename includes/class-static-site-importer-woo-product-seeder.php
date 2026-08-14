@@ -21,6 +21,13 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		return $id > 0 ? '<!-- wp:shortcode -->[add_to_cart id="' . $id . '"]<!-- /wp:shortcode -->' : '';
 	}
 
+	/** Return fixed Woo shortcode data for a classic runtime binding. */
+	public static function binding_classic_render( array $entity, array $result ): array {
+		unset( $entity );
+		$id = isset( $result['id'] ) ? (int) $result['id'] : 0;
+		return $id > 0 ? array( 'kind' => 'shortcode', 'content' => '[add_to_cart id="' . $id . '"]' ) : array();
+	}
+
 	/**
 	 * Seed simple products from a validated manifest.
 	 *

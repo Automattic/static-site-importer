@@ -237,6 +237,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return is_string( $markup ) ? trim( $markup ) : '';
 	}
 
+	/** Resolve adapter-owned classic server render data without inspecting source HTML. */
+	public static function binding_classic_render( array $adapter, array $entity, array $result ): array {
+		$callback = $adapter['classic_binding_callback'] ?? null;
+		$render = is_callable( $callback ) ? call_user_func( $callback, $entity, $result ) : array();
+		return is_array( $render ) && in_array( $render['kind'] ?? null, array( 'shortcode', 'blocks' ), true ) && is_string( $render['content'] ?? null ) && '' !== trim( $render['content'] ) ? $render : array();
+	}
+
 	/**
 	 * Build an adapter-owned empty entity report.
 	 *
@@ -552,6 +559,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'validator'        => array( self::class, 'validate_woo_products_manifest' ),
 				'materializer'     => array( 'Static_Site_Importer_Woo_Product_Seeder', 'seed' ),
 				'binding_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_block_markup' ),
+				'classic_binding_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_classic_render' ),
 				'report_callback'  => array( 'Static_Site_Importer_Woo_Product_Seeder', 'new_report' ),
 				'presentation'     => 'Static_Site_Importer_Commerce_Presentation',
 				'dependencies'     => array(
@@ -575,6 +583,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'validator'        => array( self::class, 'validate_forms_manifest' ),
 				'materializer'     => array( 'Static_Site_Importer_Form_Seeder', 'seed' ),
 				'binding_callback' => array( 'Static_Site_Importer_Form_Seeder', 'binding_block_markup' ),
+				'classic_binding_callback' => array( 'Static_Site_Importer_Form_Seeder', 'binding_classic_render' ),
 				'report_callback'  => array( 'Static_Site_Importer_Form_Seeder', 'new_report' ),
 				'dependencies'     => array(
 					array(

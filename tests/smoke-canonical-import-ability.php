@@ -39,9 +39,11 @@ class Static_Site_Importer_Theme_Generator {
 	public static $compiled = 0;
 	public static $applied = 0;
 	public static $last_args = array();
-	public static function compile_website_artifact( $artifact, $args ) { ++self::$compiled; return array( 'artifact' => $artifact, 'args' => $args, 'compiled' => array(), 'plan' => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2', 'quality' => array( 'pass' => true ), 'diagnostics' => array( array( 'code' => 'planned' ) ) ), 'gutenberg_gaps' => array(), 'companion_payload' => null, 'materialization_plan' => array() ); }
-	public static function import_website_artifact( $artifact, $args ) { ++self::$applied; self::$last_args = $args; return array( 'quality' => array( 'pass' => true ), 'import_report_summary' => array( 'status' => 'completed' ) ); }
+	public static $drift = false;
+	public static function compile_website_artifact( $artifact, $args ) { ++self::$compiled; $plan = array( 'schema' => 'blocks-engine/wordpress-site-plan/v2', 'quality' => array( 'pass' => true ), 'diagnostics' => array( array( 'code' => 'planned' ) ) ); if ( 'classic' === ( $args['theme_materialization'] ?? '' ) ) { $args['classic_theme_projection'] = Static_Site_Importer_Classic_Theme_Projection::build( $artifact, $plan ); } return array( 'artifact' => $artifact, 'args' => $args, 'compiled' => array(), 'plan' => $plan, 'gutenberg_gaps' => array(), 'companion_payload' => null, 'materialization_plan' => array() ); }
+	public static function import_website_artifact( $artifact, $args ) { if ( self::$drift && isset( $args['approved_classic_plan_hash'] ) ) { return new WP_Error( 'static_site_importer_approved_classic_plan_changed', 'drift' ); } ++self::$applied; self::$last_args = $args; return array( 'quality' => array( 'pass' => true ), 'import_report_summary' => array( 'status' => 'completed' ) ); }
 }
+class Static_Site_Importer_Classic_Theme_Projection { public static function build( $artifact, $plan ) { return array( 'schema' => 'static-site-importer/classic-theme-projection/v1', 'artifact' => $artifact['entrypoint'] ?? '', 'plan' => $plan['schema'] ?? '' ); } }
 class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	public static $plans = array();
 	public static function materialize( $plan, $args ) {
@@ -82,6 +84,18 @@ $resumed = static_site_importer_ability_import( array( 'runtime_lifecycle_phase'
 if ( empty( $resumed['success'] ) || 'resume' !== ( Static_Site_Importer_Theme_Generator::$last_args['runtime_lifecycle_phase'] ?? '' ) || 'prepared-request' !== ( Static_Site_Importer_Theme_Generator::$last_args['runtime_lifecycle_request_id'] ?? '' ) || '00000000-0000-4000-8000-000000000001' !== ( Static_Site_Importer_Theme_Generator::$last_args['runtime_lifecycle_invocation_id'] ?? '' ) ) { throw new RuntimeException( 'canonical imports must preserve the lifecycle handoff while assigning a server-owned invocation identity' ); }
 $approved = array( 'schema' => 'blocks-engine/wordpress-site-plan/v2', 'pages' => array() );
 $approved_apply = static_site_importer_ability_import( array( 'operation' => 'apply', 'plan' => $approved, 'slug' => 'approved-plan' ) );
-if ( empty( $approved_apply['success'] ) || $approved !== ( Static_Site_Importer_WordPress_Site_Plan_Materializer::$plans[0]['plan'] ?? null ) || 2 !== Static_Site_Importer_Theme_Generator::$applied ) { throw new RuntimeException( 'approved plan apply must delegate the exact plan without recompiling' ); }
+	if ( empty( $approved_apply['success'] ) || $approved !== ( Static_Site_Importer_WordPress_Site_Plan_Materializer::$plans[0]['plan'] ?? null ) || 2 !== Static_Site_Importer_Theme_Generator::$applied ) { throw new RuntimeException( 'approved plan apply must delegate the exact plan without recompiling' ); }
+$classic_plan = static_site_importer_ability_import( array( 'operation' => 'plan', 'theme_materialization' => 'classic', 'source' => array( 'type' => 'files', 'entrypoint' => 'website/index.html', 'files' => $files ) ) );
+$classic_apply = static_site_importer_ability_import( array( 'operation' => 'apply', 'plan' => $classic_plan ) );
+	if ( empty( $classic_plan['classic_materialization']['artifact_hash'] ) || empty( $classic_plan['classic_materialization']['projection_hash'] ) || empty( $classic_apply['success'] ) || 3 !== Static_Site_Importer_Theme_Generator::$applied ) { throw new RuntimeException( 'classic plan apply must verify its immutable artifact/projection bundle and use the full artifact materialization lifecycle' ); }
+$tampered_strategy = $classic_plan;
+$tampered_strategy['classic_materialization']['normalized_args']['theme_materialization'] = 'block';
+$tampered_args = $classic_plan;
+$tampered_args['classic_materialization']['normalized_args']['activate'] = true;
+if ( 'static_site_importer_classic_plan_input_changed' !== ( static_site_importer_ability_import( array( 'operation' => 'apply', 'plan' => $tampered_strategy ) )['error']['code'] ?? '' ) || 'static_site_importer_classic_plan_input_changed' !== ( static_site_importer_ability_import( array( 'operation' => 'apply', 'plan' => $tampered_args ) )['error']['code'] ?? '' ) ) { throw new RuntimeException( 'classic apply rejects strategy and normalized argument tampering before materialization' ); }
+Static_Site_Importer_Theme_Generator::$drift = true;
+$writes_before_drift = Static_Site_Importer_Theme_Generator::$applied;
+$drift = static_site_importer_ability_import( array( 'operation' => 'apply', 'plan' => $classic_plan ) );
+if ( 'static_site_importer_approved_classic_plan_changed' !== ( $drift['error']['code'] ?? '' ) || $writes_before_drift !== Static_Site_Importer_Theme_Generator::$applied ) { throw new RuntimeException( 'compiler drift rejects the approved classic plan before materialization writes or entity lifecycle work' ); }
 if ( ! static_site_importer_ability_import_permission_callback( array( 'operation' => 'plan' ) ) || static_site_importer_ability_import_permission_callback( array( 'operation' => 'apply' ) ) ) { throw new RuntimeException( 'plan and apply must use distinct capabilities' ); }
 echo "Canonical import ability smoke passed.\n";

@@ -53,6 +53,7 @@ class Static_Site_Importer_Theme_Generator {
 		$gutenberg_gaps       = $compiled_import['gutenberg_gaps'];
 		$companion_payload    = $compiled_import['companion_payload'];
 		$materialization_plan = $compiled_import['materialization_plan'];
+		$theme_materialization = $compiled_import['theme_materialization'];
 		$args['font_materialization'] = isset( $materialization_plan['theme']['font_materialization'] ) && is_array( $materialization_plan['theme']['font_materialization'] ) ? $materialization_plan['theme']['font_materialization'] : array();
 		if ( ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) ) {
 			return new WP_Error(
@@ -90,12 +91,17 @@ class Static_Site_Importer_Theme_Generator {
 			return new WP_Error( 'static_site_importer_fresh_runtime_required', 'Provider validation must resume in a fresh WordPress request after dependency preparation.' );
 		}
 
-		return self::materialize_compiled_website_artifact( $artifact, $args, $plan, $gutenberg_gaps, $companion_payload, $lifecycle );
+		return self::materialize_compiled_website_artifact( $artifact, $args, $plan, $gutenberg_gaps, $companion_payload, $lifecycle, $theme_materialization );
 	}
 
 	/** Compile an artifact into its immutable canonical WordPress site plan. */
 	public static function compile_website_artifact( array $artifact, array $args = array() ) {
 		$precompiled   = ! empty( $args['_static_site_importer_precompiled_source'] ) && is_array( $args['compiled_artifact_result'] ?? null );
+		$strategy = Static_Site_Importer_Theme_Materialization_Strategy::normalize( $args );
+		if ( is_wp_error( $strategy ) ) {
+			return $strategy;
+		}
+		$args['theme_materialization'] = $strategy['strategy'];
 		$source_policy = $precompiled ? true : Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
 		if ( is_wp_error( $source_policy ) ) {
 			return $source_policy;
@@ -164,6 +170,21 @@ class Static_Site_Importer_Theme_Generator {
 			}
 		}
 		$plan = self::bridge_product_grid_findings_to_runtime_declarations( $plan );
+		if ( isset( $args['approved_classic_plan_hash'] ) && is_string( $args['approved_classic_plan_hash'] ) && ! hash_equals( $args['approved_classic_plan_hash'], hash( 'sha256', (string) wp_json_encode( $plan ) ) ) ) {
+			return new WP_Error( 'static_site_importer_approved_classic_plan_changed', 'Recompilation did not reproduce the approved canonical classic plan.' );
+		}
+		if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === $strategy['strategy'] ) {
+			$projection = Static_Site_Importer_Classic_Theme_Projection::build( $artifact, $plan );
+			if ( is_wp_error( $projection ) ) {
+				return $projection;
+			}
+			$args['classic_theme_projection'] = $projection;
+			if ( isset( $args['approved_classic_projection_hash'] ) && is_string( $args['approved_classic_projection_hash'] ) && ! hash_equals( $args['approved_classic_projection_hash'], hash( 'sha256', (string) wp_json_encode( $projection ) ) ) ) {
+				return new WP_Error( 'static_site_importer_approved_classic_projection_changed', 'Recompilation did not reproduce the approved classic projection.' );
+			}
+			$strategy['evidence']['status'] = 'source_artifact_projection';
+			$strategy['evidence']['projection_schema'] = $projection['schema'];
+		}
 		$materialization_plan = isset( $compiled['source_reports']['materialization_plan'] ) && is_array( $compiled['source_reports']['materialization_plan'] ) ? $compiled['source_reports']['materialization_plan'] : array();
 		return array(
 			'artifact'             => $artifact,
@@ -173,11 +194,12 @@ class Static_Site_Importer_Theme_Generator {
 			'gutenberg_gaps'       => $gutenberg_gaps,
 			'companion_payload'    => $companion_payload,
 			'materialization_plan' => $materialization_plan,
+			'theme_materialization' => $strategy['evidence'],
 		);
 	}
 
 	/** Materialize a previously compiled canonical plan through the existing write path. */
-	private static function materialize_compiled_website_artifact( array $artifact, array $args, array $plan, array $gutenberg_gaps, $companion_payload, array $lifecycle ) {
+	private static function materialize_compiled_website_artifact( array $artifact, array $args, array $plan, array $gutenberg_gaps, $companion_payload, array $lifecycle, array $theme_materialization ) {
 
 		$theme_dir = trailingslashit( get_theme_root() ) . $args['slug'];
 		$report_destinations = array( $theme_dir . '/static-site-importer-manifest.json' );
@@ -206,7 +228,8 @@ class Static_Site_Importer_Theme_Generator {
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan payload admission failed.' ), $receipt );
 		}
 		$lifecycle = self::with_resolved_runtime_binding_manifests( $lifecycle, $prepared['resolved'] ?? array() );
-		$binding_preflight = self::preflight_runtime_entity_binding_anchors( $prepared['resolved'] ?? array(), $lifecycle, $args );
+		$classic = Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === ( $args['theme_materialization'] ?? null );
+		$binding_preflight = $classic ? self::preflight_classic_runtime_entity_bindings( $prepared['args']['classic_theme_projection'], $lifecycle, $args ) : self::preflight_runtime_entity_binding_anchors( $prepared['resolved'] ?? array(), $lifecycle, $args );
 		if ( is_wp_error( $binding_preflight ) ) {
 			return $binding_preflight;
 		}
@@ -275,7 +298,21 @@ class Static_Site_Importer_Theme_Generator {
 				)
 			);
 		}
-		$prepared['args']['runtime_entity_bindings']    = $bindings;
+		$prepared['args']['runtime_entity_bindings']    = $classic ? array() : $bindings;
+		if ( $classic ) {
+			$classic_bindings = self::classic_runtime_entity_bindings( $lifecycle, $entities );
+			if ( is_wp_error( $classic_bindings ) ) {
+				return new WP_Error( $classic_bindings->get_error_code(), $classic_bindings->get_error_message(), array( 'status' => 'partial', 'runtime_lifecycle' => $lifecycle, 'dependencies' => $dependencies, 'entities' => $entities ) );
+			}
+			$projection = Static_Site_Importer_Classic_Theme_Projection::apply_runtime_bindings( $prepared['args']['classic_theme_projection'], $classic_bindings );
+			if ( is_wp_error( $projection ) ) {
+				return new WP_Error( $projection->get_error_code(), $projection->get_error_message(), array( 'status' => 'partial', 'runtime_lifecycle' => $lifecycle, 'dependencies' => $dependencies, 'entities' => $entities ) );
+			}
+			$prepared['args']['classic_theme_projection'] = $projection;
+			$prepared['base_resolved'] = Static_Site_Importer_Classic_Theme_Projection::with_projection_writes( $prepared['base_resolved'], $projection, (string) $prepared['theme']['uri'], (string) ( $prepared['args']['name'] ?? $prepared['theme']['slug'] ) );
+			$prepared['base_resolved_hash'] = hash( 'sha256', (string) wp_json_encode( $prepared['base_resolved'], JSON_UNESCAPED_SLASHES ) );
+			$prepared['args']['classic_runtime_bindings'] = $classic_bindings;
+		}
 		$prepared['args']['provider_layout_overlays']   = $page_ready ? array() : self::provider_layout_overlays_from_entity_reports( $entities );
 		$prepared['args']['font_materialization']       = $page_ready ? array() : $prepared['args']['font_materialization'];
 		$prepared['args']['activate']                   = $page_ready ? false : ! empty( $prepared['args']['activate'] );
@@ -285,6 +322,10 @@ class Static_Site_Importer_Theme_Generator {
 		$receipt['completed']['runtime_declarations']['dependencies'] = $dependencies;
 		$receipt['completed']['runtime_declarations']['entities'] = $entities;
 		$receipt['runtime_lifecycle'] = $lifecycle;
+		if ( $classic ) {
+			$receipt['completed']['runtime_declarations']['classic_html_bindings'] = $prepared['args']['classic_runtime_bindings'] ?? array();
+		}
+		$receipt['theme_materialization'] = $theme_materialization;
 		if ( 'completed' !== $receipt['status'] ) {
 			$error = $receipt['errors'][0] ?? array();
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan materialization failed.' ), $receipt );
@@ -369,6 +410,11 @@ class Static_Site_Importer_Theme_Generator {
 		if ( ! empty( $validation['errors'] ) || empty( $validation['products'] ) ) {
 			return $plan;
 		}
+		$source_path = (string) ( $plan['source']['entry_path'] ?? '' );
+		$products = self::normalize_classic_product_grid_entities( $validation['products'], $source_path );
+		if ( is_wp_error( $products ) ) {
+			return $plan;
+		}
 
 		$declarations = isset( $plan['runtime_declarations'] ) && is_array( $plan['runtime_declarations'] ) ? $plan['runtime_declarations'] : array();
 		foreach ( $declarations as $declaration ) {
@@ -377,8 +423,7 @@ class Static_Site_Importer_Theme_Generator {
 			}
 		}
 
-		$source_path = (string) ( $plan['source']['entry_path'] ?? '' );
-		$identity    = hash( 'sha256', "static-site-importer/product-grid-bridge/v1\n" . wp_json_encode( $validation['products'] ) );
+		$identity    = hash( 'sha256', "static-site-importer/product-grid-bridge/v1\n" . wp_json_encode( $products ) );
 		$declarations[] = array(
 			'kind'                    => 'dependency',
 			'capability'              => 'shop',
@@ -392,12 +437,28 @@ class Static_Site_Importer_Theme_Generator {
 			'source_path'             => $source_path,
 			'payload'                 => array(
 				'schema'   => 'generic/products/v1',
-				'entities' => $validation['products'],
+				'entities' => $products,
 			),
 			'reconciliation_identity' => hash( 'sha256', $identity . "\nentities" ),
 		);
 		$plan['runtime_declarations'] = $declarations;
 		return $plan;
+	}
+
+	/** Normalize bridge report source_selectors into one exact leaf source identity. */
+	private static function normalize_classic_product_grid_entities( array $products, string $default_source ) {
+		$normalized = array();
+		foreach ( $products as $product ) {
+			if ( ! is_array( $product ) ) { return new WP_Error( 'static_site_importer_classic_product_shape_invalid', 'Product-grid bridge contains an invalid product.' ); }
+			$selectors = is_array( $product['source_selectors'] ?? null ) ? array_values( array_unique( array_filter( array_map( 'trim', $product['source_selectors'] ) ) ) ) : array();
+			$leaves = array_values( array_filter( $selectors, static fn( string $selector ): bool => str_contains( $selector, '#' ) || str_contains( $selector, ':nth-child(' ) || preg_match( '/(?:^|\s)(?:li|article|\.product-card)(?:\b|[.#:])/', $selector ) ) );
+			if ( 1 !== count( $leaves ) ) { return new WP_Error( 'static_site_importer_classic_product_selector_ambiguous', 'Product-grid bridge requires exactly one product leaf selector per product.' ); }
+			$product['selector'] = $leaves[0];
+			$product['source_path'] = isset( $product['source_path'] ) && is_string( $product['source_path'] ) && '' !== $product['source_path'] ? $product['source_path'] : $default_source;
+			if ( '' === $product['source_path'] ) { return new WP_Error( 'static_site_importer_classic_product_source_missing', 'Product-grid bridge requires a source path.' ); }
+			$normalized[] = $product;
+		}
+		return $normalized;
 	}
 
 	/**
@@ -437,6 +498,7 @@ class Static_Site_Importer_Theme_Generator {
 			),
 			'quality'                          => $quality,
 			'client_script_policy'             => $args['client_script_policy_report'] ?? array(),
+			'theme_materialization'            => $receipt['theme_materialization'] ?? array(),
 			'diagnostics'                      => $diagnostics,
 			'entity_lifecycle'                 => $entity_lifecycle,
 			'companion_plugin_materialization' => $receipt['completed']['companion_plugin'] ?? array(
@@ -500,12 +562,14 @@ class Static_Site_Importer_Theme_Generator {
 			)
 		);
 		$artifact['hash'] = (string) ( $args['artifact_hash'] ?? $artifact['hash'] ?? $plan['source']['source_hash'] );
+		// The receipt is authoritative for strategy-specific writes. A classic
+		// projection replaces block templates while retaining canonical assets.
 		$desired_files = array_map(
-			static fn( array $write ): array => array(
-				'path' => $write['target_path'],
-				'kind' => $write['kind'],
+			static fn( array $file ): array => array(
+				'path' => $file['target_path'],
+				'kind' => 'materialized_theme_file',
 			),
-			$plan['writes']
+			$receipt['completed']['files'] ?? array()
 		);
 		$desired_file_paths = array_fill_keys( array_column( $desired_files, 'path' ), true );
 		$desired_assets = array_map(
@@ -1179,6 +1243,70 @@ class Static_Site_Importer_Theme_Generator {
 			}
 		}
 		return $bindings;
+	}
+
+	/** Build classic bindings from canonical entity source selectors, never block anchors. */
+	private static function classic_runtime_entity_bindings( array $lifecycle, array $reports ) {
+		$bindings = array();
+		foreach ( $lifecycle['entities'] as $declaration_id => $prepared ) {
+			if ( ! is_callable( $prepared['adapter']['classic_binding_callback'] ?? null ) ) {
+				return new WP_Error( 'static_site_importer_classic_provider_render_unavailable', 'Classic provider entity lacks an adapter-owned server render callback.', array( 'declaration_id' => $declaration_id ) );
+			}
+			$manifest = is_array( $prepared['manifest'] ?? null ) ? $prepared['manifest'] : array();
+			$report = is_array( $reports[ $declaration_id ] ?? null ) ? $reports[ $declaration_id ] : array();
+			if ( 'waived' === ( $report['status'] ?? '' ) ) { continue; }
+			$key = isset( $manifest['products'] ) ? 'products' : 'forms';
+			$results = array();
+			foreach ( $report[ $key ] ?? array() as $result ) {
+				if ( is_array( $result ) ) { $results[ 'products' === $key ? (string) ( $result['slug'] ?? '' ) : (string) ( $result['source_path'] ?? '' ) . "\n" . (string) ( $result['selector'] ?? '' ) ] = $result; }
+			}
+			foreach ( $manifest[ $key ] ?? array() as $entity ) {
+				if ( ! is_array( $entity ) ) { continue; }
+				$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
+				$render = Static_Site_Importer_Entity_Materializer_Registry::binding_classic_render( $prepared['adapter'], $entity, $results[ $entity_key ] ?? array() );
+				$source = (string) ( $entity['source_path'] ?? '' );
+				// Products can share a detected grid container. Bind only the canonical
+				// leaf selector; replacing the container once per product is ambiguous.
+				$selectors = array_filter( array( $entity['selector'] ?? '' ) );
+				if ( empty( $render ) || '' === $source || empty( $selectors ) ) {
+					return new WP_Error( 'static_site_importer_classic_html_binding_unresolved', 'A required provider entity lacks adapter-owned server render output or a canonical HTML source selector.', array( 'declaration_id' => $declaration_id ) );
+				}
+				foreach ( array_values( $selectors ) as $index => $selector ) {
+					if ( ! is_string( $selector ) || '' === trim( $selector ) ) { return new WP_Error( 'static_site_importer_classic_html_binding_invalid', 'Classic provider source selector is invalid.' ); }
+					$id = hash( 'sha256', "static-site-importer/classic-html-binding/v1\n{$declaration_id}\n{$source}\n{$selector}\n" . ( $index + 1 ) );
+					$bindings[] = array( 'schema' => 'static-site-importer/classic-html-binding/v1', 'source_path' => $source, 'selector' => $selector, 'occurrence' => 1, 'replacement_html' => '<div class="static-site-importer-runtime-binding" data-static-site-importer-binding="' . $id . '"><!--static-site-importer-binding:' . $id . '--></div>', 'render' => $render, 'reconciliation_identity' => $id, 'declaration_id' => $declaration_id, 'provider' => $prepared['adapter']['provider'] ?? '', 'status' => 'completed' );
+				}
+			}
+		}
+		return $bindings;
+	}
+
+	/** Validate every classic source identity before dependencies or seeders run. */
+	private static function preflight_classic_runtime_entity_bindings( array $projection, array $lifecycle, array $args ) {
+		$bindings = array();
+		$claims = array();
+		foreach ( $lifecycle['entities'] as $declaration_id => $prepared ) {
+			$waiver_arg = (string) ( $prepared['adapter']['waiver_arg'] ?? '' );
+			if ( '' !== $waiver_arg && ! empty( $args[ $waiver_arg ] ) ) {
+				continue;
+			}
+			if ( ! is_callable( $prepared['adapter']['classic_binding_callback'] ?? null ) ) {
+				return new WP_Error( 'static_site_importer_classic_provider_render_unavailable', 'Classic provider entity lacks an adapter-owned server render callback.', array( 'declaration_id' => $declaration_id ) );
+			}
+			$manifest = is_array( $prepared['manifest'] ?? null ) ? $prepared['manifest'] : array();
+			$key = isset( $manifest['products'] ) ? 'products' : 'forms';
+			foreach ( $manifest[ $key ] ?? array() as $entity ) {
+				if ( ! is_array( $entity ) ) { continue; }
+				$source = (string) ( $entity['source_path'] ?? '' );
+				$selector = (string) ( $entity['selector'] ?? '' );
+				if ( '' === $source || '' === $selector ) { return new WP_Error( 'static_site_importer_classic_html_binding_invalid', 'Classic provider entity lacks a canonical leaf source selector.' ); }
+				$claim = $source . "\n" . $selector . "\n1";
+				if ( isset( $claims[ $claim ] ) ) { return new WP_Error( 'static_site_importer_classic_html_binding_duplicate', 'Classic provider entities claim the same source DOM identity.', array( 'selector' => $selector, 'source_path' => $source ) ); }
+				$claims[ $claim ] = true;
+				$bindings[] = array( 'source_path' => $source, 'selector' => $selector, 'occurrence' => 1 );
+			}
+		}
+		return Static_Site_Importer_Classic_Theme_Projection::preflight_bindings( $projection, $bindings );
 	}
 
 	/** Verify every declared source anchor before providers create or update entities. */
