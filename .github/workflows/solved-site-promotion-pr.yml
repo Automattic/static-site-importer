@@ -26,4 +26,5 @@ jobs:
     with:
       static-site-importer-sha: ${{ github.event.pull_request.head.sha || github.sha }}
       static-site-importer-repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-      blocks-engine-sha: db79ae3ddfe352dea8dc3c60322374a25e7c0359
+      blocks-engine-sha: e1c43046ad7f6e66e8aaa686da2c93a2fef7dfdd
+      wp-codebox-sha: 0b33cbc388cfee6884079125fc06dd132d979cbc
