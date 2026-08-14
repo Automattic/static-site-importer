@@ -85,6 +85,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'external_report_destinations' => isset( $args['external_report_destinations'] ) && is_array( $args['external_report_destinations'] ) ? $args['external_report_destinations'] : array(),
 			'args'                         => $args,
 			'payload_reader'               => is_object( $payload_reader ) ? $payload_reader : null,
+			'rollback'                     => array( 'posts' => array(), 'files' => array() ),
 		);
 
 		try {
@@ -274,9 +275,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( ! empty( $page['skip_materialization'] ) ) {
 				continue;
 			}
+			self::journal_post( $state, $page );
 			$post = self::materialize_page( $page, $state['source_ids'], (string) ( $args['import_run_id'] ?? '' ) );
 			if ( is_wp_error( $post ) ) {
 				return self::failed_receipt( $state, $post->get_error_code() );
+			}
+			if ( empty( $page['planned_existing_id'] ) ) {
+				$state['rollback']['posts'][ $post ] = array( 'existing' => false );
 			}
 			$state['page_ids'][ $page['reconciliation_identity'] ] = $post;
 			$state['source_ids'][ $page['source_path'] ]           = $post;
@@ -318,6 +323,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 		foreach ( $state['resolved']['writes'] as $write ) {
 			$path = $state['theme_dir'] . '/' . $write['target_path'];
+			self::journal_file( $state, $path );
 			if ( isset( $state['provider_layout_overlay_writes'][ $path ] ) && is_file( $path ) && self::file_hash( $path ) === hash( 'sha256', $state['provider_layout_overlay_writes'][ $path ] ) ) {
 				$state['applied']['files'][] = self::canonical_file_receipt( $path, $write );
 				continue;
@@ -1373,6 +1379,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	/** @param array<string,mixed> $state */
 	private static function failed_receipt( array $state, int|string $reason ): array {
 		$state['diagnostics'][] = array( 'reason_code' => (string) $reason );
+		self::rollback( $state );
 		return self::receipt( 'partial', $state );
 	}
 
@@ -1391,7 +1398,43 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				}
 			}
 		}
+		self::rollback( $state );
 		return self::receipt( 'partial', $state );
+	}
+
+	/** Journal a post before any insert/update so failed theme writes restore it exactly enough for SSI ownership. */
+	private static function journal_post( array &$state, array $page ): void {
+		$id = (int) ( $page['planned_existing_id'] ?? 0 );
+		if ( isset( $state['rollback']['posts'][ $id ] ) ) { return; }
+		if ( $id > 0 && function_exists( 'get_post' ) && ( $post = get_post( $id, ARRAY_A ) ) ) {
+			$state['rollback']['posts'][ $id ] = array( 'existing' => true, 'post' => $post, 'provenance' => get_post_meta( $id, '_static_site_importer_provenance', true ) );
+			return;
+		}
+		$state['rollback']['posts'][ 'new:' . (string) $page['source_path'] ] = array( 'existing' => false, 'source_path' => (string) $page['source_path'] );
+	}
+
+	/** Journal original file bytes before atomic replacement. */
+	private static function journal_file( array &$state, string $path ): void {
+		if ( isset( $state['rollback']['files'][ $path ] ) ) { return; }
+		$state['rollback']['files'][ $path ] = is_file( $path ) ? array( 'exists' => true, 'content' => file_get_contents( $path ) ) : array( 'exists' => false ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Captures pre-write importer destination bytes for rollback.
+	}
+
+	/** Revert importer-owned writes and posts on a failed materialization receipt. */
+	private static function rollback( array &$state ): void {
+		if ( ! empty( $state['rollback']['done'] ) ) { return; }
+		$state['rollback']['done'] = true;
+		foreach ( array_reverse( $state['applied']['files'] ?? array() ) as $file ) {
+			$path = $state['theme_dir'] . '/' . (string) ( $file['target_path'] ?? '' ); $before = $state['rollback']['files'][ $path ] ?? null;
+			if ( ! is_array( $before ) ) { continue; }
+			if ( ! empty( $before['exists'] ) && is_string( $before['content'] ?? null ) ) { file_put_contents( $path, $before['content'] ); } elseif ( is_file( $path ) ) { unlink( $path ); } // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents,WordPress.WP.AlternativeFunctions.unlink_unlink -- Restores journaled importer destination bytes.
+		}
+		foreach ( $state['applied']['posts'] ?? array() as $applied ) {
+			$id = (int) ( $applied['id'] ?? 0 ); $before = $state['rollback']['posts'][ $id ] ?? null;
+			if ( ! is_array( $before ) || $id <= 0 ) { continue; }
+			if ( ! empty( $before['existing'] ) ) { wp_update_post( $before['post'] ); update_post_meta( $id, '_static_site_importer_provenance', $before['provenance'] ); } elseif ( function_exists( 'wp_delete_post' ) ) { wp_delete_post( $id, true ); }
+		}
+		$state['applied']['files'] = array(); $state['applied']['posts'] = array();
+		$state['diagnostics'][] = array( 'reason_code' => 'materialization_rolled_back' );
 	}
 
 	/** @param array<string,mixed> $state @return array<string,mixed> */

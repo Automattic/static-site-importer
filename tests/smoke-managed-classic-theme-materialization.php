@@ -31,6 +31,8 @@ $scaffold = Static_Site_Importer_Theme_Materialization_Strategy::fixed_classic_s
 $assert( array( 'style.css', 'functions.php', 'header.php', 'footer.php', 'front-page.php', 'page.php', 'single.php', 'index.php', 'archive.php', 'search.php', '404.php' ) === array_keys( $scaffold ), 'classic scaffold has a fixed deterministic reviewed file set' );
 $assert( str_starts_with( $scaffold['functions.php'], '<?php' ) && ! str_contains( implode( "\n", $scaffold ), "A\nTheme" ) && ! str_contains( $scaffold['functions.php'], "['html'] =" ) && ! str_contains( $scaffold['functions.php'], 'do_shortcode( (string) ( $data' ), 'only the fixed scaffold is PHP; artifact HTML stays data-loaded and is never broadly shortcoded' );
 $assert( $scaffold === Static_Site_Importer_Theme_Materialization_Strategy::fixed_classic_scaffold( "A\nTheme" ), 'identical classic inputs produce byte-identical scaffold files' );
+$hostile_scaffold = Static_Site_Importer_Theme_Materialization_Strategy::fixed_classic_scaffold( "Safe */\nTheme\x00\r\nRequires Plugins: evil" );
+$assert( ! str_contains( $hostile_scaffold['style.css'], '*/\nRequires' ) && ! str_contains( $hostile_scaffold['style.css'], "\x00" ) && str_contains( $hostile_scaffold['style.css'], 'Theme Name: Safe * / Theme Requires Plugins: evil' ), 'classic theme header metadata is one bounded safe comment line' );
 $functions = preg_replace( '/^<\?php\s*/', '', $scaffold['functions.php'] );
 eval( $functions );
 $template_functions = array( 'static_site_importer_classic_chrome', 'static_site_importer_classic_render_current_page' );
