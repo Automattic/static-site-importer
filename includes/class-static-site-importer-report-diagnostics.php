@@ -1174,7 +1174,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				$report['diagnostics'][ $index ]['controls'] = $controls;
 				$report['diagnostics'][ $index ]['form']     = $form;
 			}
-			$form = self::apply_form_presentation( is_array( $diagnostic['form_presentation'] ?? null ) ? $diagnostic['form_presentation'] : array(), $form, $controls );
+			$form             = self::apply_form_presentation( is_array( $diagnostic['form_presentation'] ?? null ) ? $diagnostic['form_presentation'] : array(), $form, $controls );
 			$manifest_forms[] = array(
 				'selector'    => isset( $diagnostic['selector'] ) && is_scalar( $diagnostic['selector'] ) ? (string) $diagnostic['selector'] : '',
 				'source_path' => isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : ( isset( $diagnostic['source'] ) && is_scalar( $diagnostic['source'] ) ? (string) $diagnostic['source'] : '' ),
@@ -1215,8 +1215,8 @@ class Static_Site_Importer_Report_Diagnostics {
 			$seeding['validation_errors'] = $validation['errors'];
 		}
 
-		$pending = $indexes;
-		$rows    = isset( $seeding['forms'] ) && is_array( $seeding['forms'] ) ? $seeding['forms'] : array();
+		$pending        = $indexes;
+		$rows           = isset( $seeding['forms'] ) && is_array( $seeding['forms'] ) ? $seeding['forms'] : array();
 		$graft_requests = array();
 		foreach ( $rows as $row ) {
 			if ( ! is_array( $row ) ) {
@@ -1232,9 +1232,13 @@ class Static_Site_Importer_Report_Diagnostics {
 			if ( empty( $row['runtime_mapped'] ) ) {
 				if ( 'interleaved_context_unrepresentable' === ( $row['reason'] ?? '' ) ) {
 					$report['diagnostics'][] = array(
-						'type' => 'form_context_unrepresentable', 'diagnostic_code' => 'form_context_interleaved', 'reason' => 'interleaved_context_unrepresentable',
-						'source_path' => $source_path, 'selector' => $selector, 'loss_class' => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
-						'message' => 'Form context occurs between controls and was left in the original fallback to avoid semantic reordering.',
+						'type'            => 'form_context_unrepresentable',
+						'diagnostic_code' => 'form_context_interleaved',
+						'reason'          => 'interleaved_context_unrepresentable',
+						'source_path'     => $source_path,
+						'selector'        => $selector,
+						'loss_class'      => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+						'message'         => 'Form context occurs between controls and was left in the original fallback to avoid semantic reordering.',
 					);
 				}
 				$pending = array_values( array_diff( $pending, array( $index ) ) );
@@ -1303,8 +1307,8 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * replaced, so retain headings, standalone notes, and a visible submit treatment
 	 * before the provider block is serialized.
 	 *
-	 * @param string              $html       Complete internal fallback HTML.
-	 * @param array<string,mixed> $form       Extracted form metadata.
+	 * @param string                         $html       Complete internal fallback HTML.
+	 * @param array<string,mixed>            $form       Extracted form metadata.
 	 * @param array<int,array<string,mixed>> $controls Extracted controls, enriched in place.
 	 * @return array<string,mixed>
 	 */
@@ -1332,9 +1336,16 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 			$text = self::form_presentation_text( $node->textContent );
 			if ( preg_match( '/^h[1-6]$/', $tag ) && '' !== $text ) {
-				$context[] = array( 'type' => 'heading', 'level' => (int) substr( $tag, 1 ), 'text' => $text );
+				$context[] = array(
+					'type'  => 'heading',
+					'level' => (int) substr( $tag, 1 ),
+					'text'  => $text,
+				);
 			} elseif ( 'label' === $tag && preg_match( '/(?:required|note|instruction|help)/i', $node->getAttribute( 'class' ) ) && '' !== $text ) {
-				$context[] = array( 'type' => 'paragraph', 'text' => $text );
+				$context[] = array(
+					'type' => 'paragraph',
+					'text' => $text,
+				);
 			}
 		}
 		if ( ! empty( $context ) ) {
@@ -1363,11 +1374,11 @@ class Static_Site_Importer_Report_Diagnostics {
 			$visible_node = self::next_element_sibling( $node );
 			if ( self::submit_control_is_visually_hidden( $node ) && $visible_node instanceof DOMElement && in_array( strtolower( $visible_node->nodeName ), array( 'a', 'button' ), true ) ) {
 				$visible = self::submit_presentation_from_node( $visible_node );
-				if ( '' !== (string) ( $visible['text'] ?? '' ) && (string) ( $visible['text'] ?? '' ) === (string) ( $presentation['text'] ?? '' ) ) {
+				if ( '' !== $visible['text'] && $visible['text'] === $presentation['text'] ) {
 					$presentation = $visible;
 				}
 			}
-			if ( '' !== (string) ( $presentation['text'] ?? '' ) ) {
+			if ( '' !== $presentation['text'] ) {
 				$form['submit_presentation'] = $presentation;
 			}
 			break;
@@ -1390,11 +1401,11 @@ class Static_Site_Importer_Report_Diagnostics {
 		$doc->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
 		libxml_clear_errors();
 		libxml_use_internal_errors( $previous );
-		$form_node = $doc->getElementsByTagName( 'form' )->item( 0 );
-		$before    = array();
-		$after     = array();
-		$interleaved = false;
-		$seen_controls = 0;
+		$form_node      = $doc->getElementsByTagName( 'form' )->item( 0 );
+		$before         = array();
+		$after          = array();
+		$interleaved    = false;
+		$seen_controls  = 0;
 		$total_controls = count( $manifest['controls'] );
 		if ( $form_node instanceof DOMElement ) {
 			foreach ( $form_node->getElementsByTagName( '*' ) as $node ) {
@@ -1404,7 +1415,14 @@ class Static_Site_Importer_Report_Diagnostics {
 					continue;
 				}
 				$text = self::form_presentation_text( $node->textContent );
-				$item = preg_match( '/^h[1-6]$/', $tag ) && '' !== $text ? array( 'type' => 'heading', 'level' => (int) substr( $tag, 1 ), 'text' => $text ) : ( in_array( $tag, array( 'label', 'p' ), true ) && preg_match( '/(?:required|note|instruction|help)/i', $node->getAttribute( 'class' ) ) && '' !== $text ? array( 'type' => 'paragraph', 'text' => $text ) : null );
+				$item = preg_match( '/^h[1-6]$/', $tag ) && '' !== $text ? array(
+					'type'  => 'heading',
+					'level' => (int) substr( $tag, 1 ),
+					'text'  => $text,
+				) : ( in_array( $tag, array( 'label', 'p' ), true ) && preg_match( '/(?:required|note|instruction|help)/i', $node->getAttribute( 'class' ) ) && '' !== $text ? array(
+					'type' => 'paragraph',
+					'text' => $text,
+				) : null );
 				if ( ! is_array( $item ) ) {
 					continue;
 				}
@@ -1423,27 +1441,32 @@ class Static_Site_Importer_Report_Diagnostics {
 				$heights[ $index ] = $control['height'];
 			}
 		}
-		$fingerprint = array(
-			'class' => $manifest['form']['class'] ?? '', 'action' => $manifest['form']['action'] ?? '', 'method' => $manifest['form']['method'] ?? '',
-			'controls' => array_map( static fn ( array $control ): array => array_intersect_key( $control, array_flip( array( 'tag', 'type', 'name', 'id', 'label' ) ) ), $manifest['controls'] ),
-			'submit_text' => $form['submit_presentation']['text'] ?? '',
-			'context_before_hash' => hash( 'sha256', wp_json_encode( $before ) ), 'context_after_hash' => hash( 'sha256', wp_json_encode( $after ) ),
+		$fingerprint    = array(
+			'class'               => $manifest['form']['class'] ?? '',
+			'action'              => $manifest['form']['action'] ?? '',
+			'method'              => $manifest['form']['method'] ?? '',
+			'controls'            => array_map( static fn ( array $control ): array => array_intersect_key( $control, array_flip( array( 'tag', 'type', 'name', 'id', 'label' ) ) ), $manifest['controls'] ),
+			'submit_text'         => $form['submit_presentation']['text'] ?? '',
+			'context_before_hash' => hash( 'sha256', (string) wp_json_encode( $before ) ),
+			'context_after_hash'  => hash( 'sha256', (string) wp_json_encode( $after ) ),
 		);
 		$stored_heights = array_slice( $heights, 0, 16, true );
-		return array_filter( array(
-			'schema' => 'generic/form-presentation/v1',
-			'selector' => $selector,
-			// The transformer supplies the form's document-wide position. A selector's
-			// nth-of-type position is scoped to siblings and cannot safely identify it.
-			'document_ordinal' => $occurrence > 0 ? $occurrence : null,
-			'fingerprint' => hash( 'sha256', wp_json_encode( $fingerprint ) ),
-			'context_before' => array_slice( $before, 0, 8 ),
-			'context_after' => array_slice( $after, 0, 8 ),
-			'interleaved_context' => $interleaved,
-			'submit_presentation' => $form['submit_presentation'] ?? null,
-			'textarea_heights' => $stored_heights,
-			'textarea_height_omitted_count' => max( 0, count( $heights ) - count( $stored_heights ) ),
-		) );
+		return array_filter(
+			array(
+				'schema'                        => 'generic/form-presentation/v1',
+				'selector'                      => $selector,
+				// The transformer supplies the form's document-wide position. A selector's
+				// nth-of-type position is scoped to siblings and cannot safely identify it.
+				'document_ordinal'              => $occurrence > 0 ? $occurrence : null,
+				'fingerprint'                   => hash( 'sha256', (string) wp_json_encode( $fingerprint ) ),
+				'context_before'                => array_slice( $before, 0, 8 ),
+				'context_after'                 => array_slice( $after, 0, 8 ),
+				'interleaved_context'           => $interleaved,
+				'submit_presentation'           => $form['submit_presentation'] ?? null,
+				'textarea_heights'              => $stored_heights,
+				'textarea_height_omitted_count' => max( 0, count( $heights ) - count( $stored_heights ) ),
+			)
+		);
 	}
 
 	/** Apply structured presentation facts without retaining source HTML. */
@@ -1480,7 +1503,10 @@ class Static_Site_Importer_Report_Diagnostics {
 				return self::form_manifest_from_html( $block['html'] );
 			}
 		}
-		return array( 'form' => array(), 'controls' => array() );
+		return array(
+			'form'     => array(),
+			'controls' => array(),
+		);
 	}
 
 	/**
@@ -1505,7 +1531,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			$candidate = self::form_presentation_from_html( $block['html'] );
 			if ( hash_equals( $presentation['fingerprint'], (string) ( $candidate['fingerprint'] ?? '' ) ) ) {
 				$block['document_ordinal'] = $document_ordinal;
-				$matches[]                  = $block;
+				$matches[]                 = $block;
 			}
 		}
 
@@ -1539,7 +1565,10 @@ class Static_Site_Importer_Report_Diagnostics {
 	/** @return array{text:string,classes:array<int,string>} */
 	private static function submit_presentation_from_node( DOMElement $node ): array {
 		$text = 'input' === strtolower( $node->nodeName ) ? trim( $node->getAttribute( 'value' ) ) : self::form_presentation_text( $node->textContent );
-		return array( 'text' => $text, 'classes' => self::form_presentation_classes( 'class="' . $node->getAttribute( 'class' ) . '"' ) );
+		return array(
+			'text'    => $text,
+			'classes' => self::form_presentation_classes( 'class="' . $node->getAttribute( 'class' ) . '"' ),
+		);
 	}
 
 	private static function submit_control_is_visually_hidden( DOMElement $node ): bool {
@@ -1561,13 +1590,13 @@ class Static_Site_Importer_Report_Diagnostics {
 			return array();
 		}
 		$classes = preg_split( '/\s+/', trim( $match[2] ) );
-		return array_values( array_slice( array_filter( $classes ?: array(), static fn ( string $class ): bool => (bool) preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class ) ), 0, 8 ) );
+		return array_slice( array_filter( is_array( $classes ) ? $classes : array(), static fn ( string $class_name ): bool => (bool) preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ), 0, 8 );
 	}
 
 	private static function form_presentation_text( string $html ): string {
 		$plain = function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( $html ) : strip_tags( $html ); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- Fallback only for runtime-free smoke tests.
-		$text  = trim( preg_replace( '/\s+/', ' ', $plain ) ?: '' );
-		return substr( $text, 0, 200 );
+		$normalized = preg_replace( '/\s+/', ' ', $plain );
+		return substr( trim( is_string( $normalized ) ? $normalized : '' ), 0, 200 );
 	}
 
 	/**
@@ -1678,17 +1707,6 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 		sort( $identity );
 		return $identity;
-	}
-
-	/**
-	 * Extract the provider manifest shape from a generated core/html form diagnostic.
-	 *
-	 * @param array<string,mixed> $diagnostic Diagnostic row.
-	 * @return array{form:array<string,string>,controls:array<int,array<string,mixed>>}
-	 */
-	private static function extract_form_manifest_from_diagnostic( array $diagnostic ): array {
-		$html = self::first_scalar( $diagnostic, array( 'source_html_preview', 'html_excerpt', 'excerpt' ) );
-		return self::form_manifest_from_html( $html );
 	}
 
 	/**
@@ -2018,8 +2036,8 @@ class Static_Site_Importer_Report_Diagnostics {
 				continue;
 			}
 
-			$position = $block['offset'] ?? -1;
-			if ( ! is_int( $position ) || $position < 0 || $block['serialized'] !== substr( $content, $position, strlen( $block['serialized'] ) ) ) {
+			$position = $block['offset'];
+			if ( 0 > $position || substr( $content, $position, strlen( $block['serialized'] ) ) !== $block['serialized'] ) {
 				continue;
 			}
 

@@ -358,22 +358,27 @@ class Static_Site_Importer_Form_Seeder {
 		$selector    = isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '';
 		$source_path = isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '';
 
-		$scope                    = self::layout_scope( $form );
-		$field_blocks             = array();
-		$mapped_types             = array();
-		$submit_text              = 'Submit';
-		$skipped                  = array();
-		$control_attribute_losses = array();
-		$has_topology             = isset( $form['control_topology'] );
-		$has_source_submit        = false;
+		$scope                         = self::layout_scope( $form );
+		$field_blocks                  = array();
+		$mapped_types                  = array();
+		$submit_text                   = 'Submit';
+		$skipped                       = array();
+		$control_attribute_losses      = array();
+		$has_topology                  = isset( $form['control_topology'] );
+		$has_source_submit             = false;
 		$textarea_height_omitted_count = (int) ( $form['form']['textarea_height_omitted_count'] ?? 0 );
 		if ( ! empty( $form['form']['interleaved_context'] ) ) {
 			return array(
-				'selector' => $selector, 'source_path' => $source_path, 'provider' => self::PROVIDER_ID,
-				'block_name' => 'jetpack/contact-form', 'status' => 'skipped', 'reason' => 'interleaved_context_unrepresentable', 'runtime_mapped' => false,
+				'selector'       => $selector,
+				'source_path'    => $source_path,
+				'provider'       => self::PROVIDER_ID,
+				'block_name'     => 'jetpack/contact-form',
+				'status'         => 'skipped',
+				'reason'         => 'interleaved_context_unrepresentable',
+				'runtime_mapped' => false,
 			);
 		}
-		$submit_presentation      = isset( $form['form']['submit_presentation'] ) && is_array( $form['form']['submit_presentation'] ) ? $form['form']['submit_presentation'] : array();
+		$submit_presentation = isset( $form['form']['submit_presentation'] ) && is_array( $form['form']['submit_presentation'] ) ? $form['form']['submit_presentation'] : array();
 		if ( is_string( $submit_presentation['text'] ?? null ) && '' !== trim( $submit_presentation['text'] ) ) {
 			$submit_text = trim( $submit_presentation['text'] );
 		}
@@ -454,7 +459,11 @@ class Static_Site_Importer_Form_Seeder {
 		$layout_form['layout_graph'] = $provider_graph;
 		$layout                      = Static_Site_Importer_Computed_Layout_Strategy::apply( $layout_form, $inner_blocks );
 		if ( $textarea_height_omitted_count > 0 ) {
-			$control_attribute_losses[] = array( 'dimension' => 'control', 'reason_code' => 'textarea_height_omitted', 'omitted_count' => $textarea_height_omitted_count );
+			$control_attribute_losses[] = array(
+				'dimension'     => 'control',
+				'reason_code'   => 'textarea_height_omitted',
+				'omitted_count' => $textarea_height_omitted_count,
+			);
 		}
 		self::append_receipt_entries( $layout['receipt'], 'operations', $topology['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
@@ -759,7 +768,7 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			if ( 'textarea' === $lookup ) {
 				$input_attrs['type'] = 'textarea';
-				$height = isset( $control['height'] ) && is_scalar( $control['height'] ) ? trim( (string) $control['height'] ) : '';
+				$height              = isset( $control['height'] ) && is_scalar( $control['height'] ) ? trim( (string) $control['height'] ) : '';
 				if ( '' !== $height && preg_match( '/^[0-9]{1,4}(?:\.[0-9]+)?(?:px|em|rem|vh|vw|%)$/D', $height ) ) {
 					$input_attrs['style']['dimensions']['minHeight'] = $height;
 				}
