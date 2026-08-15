@@ -29,6 +29,19 @@
 							setAttributes( { applyToCurrentSite: Boolean( value ) } );
 						},
 					} )
+					: null,
+				components && components.SelectControl
+					? el( components.SelectControl, {
+						label: 'Theme materialization',
+						value: attributes.themeMaterialization || 'block',
+						options: [
+							{ label: 'Editable block theme', value: 'block' },
+							{ label: 'Managed classic theme', value: 'classic' },
+						],
+						onChange( value ) {
+							setAttributes( { themeMaterialization: value === 'classic' ? 'classic' : 'block' } );
+						},
+					} )
 					: null
 			);
 		},
