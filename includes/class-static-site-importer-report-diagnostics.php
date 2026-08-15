@@ -1217,6 +1217,7 @@ class Static_Site_Importer_Report_Diagnostics {
 
 		$pending = $indexes;
 		$rows    = isset( $seeding['forms'] ) && is_array( $seeding['forms'] ) ? $seeding['forms'] : array();
+		$graft_requests = array();
 		foreach ( $rows as $row ) {
 			if ( ! is_array( $row ) ) {
 				continue;
@@ -1261,17 +1262,34 @@ class Static_Site_Importer_Report_Diagnostics {
 			if ( $generated_document_owns_graft ) {
 				$report['diagnostics'][ $index ]['graft_delegated_to_generated_document'] = true;
 			} elseif ( ! empty( $page_contents ) ) {
-				$markup = isset( $row['block_markup'] ) && is_scalar( $row['block_markup'] ) ? (string) $row['block_markup'] : '';
-				$graft  = self::graft_form_block_into_page_contents( $report['diagnostics'][ $index ], $markup, $page_contents );
-				if ( $graft['grafted'] ) {
-					++$seeding['grafted_count'];
-				}
-				$report['diagnostics'][ $index ] = $graft['finding'];
-				if ( ! empty( $graft['diagnostic'] ) ) {
-					$report['diagnostics'][] = $graft['diagnostic'];
-				}
+				$graft_requests[] = array(
+					'index'  => $index,
+					'markup' => isset( $row['block_markup'] ) && is_scalar( $row['block_markup'] ) ? (string) $row['block_markup'] : '',
+				);
 			}
 			$pending = array_values( array_diff( $pending, array( $index ) ) );
+		}
+
+		// Resolve duplicate forms from right to left, so removing a later form never
+		// changes the document-wide ordinal used by an earlier source finding.
+		usort(
+			$graft_requests,
+			static function ( array $left, array $right ) use ( $report ): int {
+				$left_ordinal  = (int) ( $report['diagnostics'][ $left['index'] ]['form_presentation']['document_ordinal'] ?? 0 );
+				$right_ordinal = (int) ( $report['diagnostics'][ $right['index'] ]['form_presentation']['document_ordinal'] ?? 0 );
+				return $right_ordinal <=> $left_ordinal;
+			}
+		);
+		foreach ( $graft_requests as $request ) {
+			$index = $request['index'];
+			$graft = self::graft_form_block_into_page_contents( $report['diagnostics'][ $index ], $request['markup'], $page_contents );
+			if ( $graft['grafted'] ) {
+				++$seeding['grafted_count'];
+			}
+			$report['diagnostics'][ $index ] = $graft['finding'];
+			if ( ! empty( $graft['diagnostic'] ) ) {
+				$report['diagnostics'][] = $graft['diagnostic'];
+			}
 		}
 
 		$report['form_seeding'] = $seeding;
@@ -1468,7 +1486,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Select a generated core/html form using a fingerprint and document-wide ordinal.
 	 *
-	 * @return array{serialized:string,html:string,document_ordinal:int}|null
+	 * @return array{serialized:string,html:string,offset:int,document_ordinal:int}|null
 	 */
 	private static function matching_core_html_form_block( array $presentation, string $content ): ?array {
 		if ( ! is_string( $presentation['fingerprint'] ?? null ) ) {
@@ -2000,8 +2018,8 @@ class Static_Site_Importer_Report_Diagnostics {
 				continue;
 			}
 
-			$position = strpos( $content, $block['serialized'] );
-			if ( false === $position ) {
+			$position = $block['offset'] ?? -1;
+			if ( ! is_int( $position ) || $position < 0 || $block['serialized'] !== substr( $content, $position, strlen( $block['serialized'] ) ) ) {
 				continue;
 			}
 
@@ -2056,26 +2074,28 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * Extract serialized core/html blocks and their decoded HTML payloads.
 	 *
 	 * @param string $content Serialized block document.
-	 * @return array<int,array{serialized:string,html:string}>
+	 * @return array<int,array{serialized:string,html:string,offset:int}>
 	 */
 	private static function serialized_core_html_blocks( string $content ): array {
 		$blocks  = array();
 		$matches = array();
-		preg_match_all( '/<!--\s+wp:html\s+(\{.*?\})\s+\/-->/s', $content, $matches, PREG_SET_ORDER );
-		preg_match_all( '/<!--\s+wp:html\s+(\{.*?\})\s+-->(.*?)<!--\s+\/wp:html\s+-->/s', $content, $wrapped_matches, PREG_SET_ORDER );
+		preg_match_all( '/<!--\s+wp:html\s+(\{.*?\})\s+\/-->/s', $content, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE );
+		preg_match_all( '/<!--\s+wp:html\s+(\{.*?\})\s+-->(.*?)<!--\s+\/wp:html\s+-->/s', $content, $wrapped_matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE );
 		$matches = array_merge( $matches, $wrapped_matches );
 
 		foreach ( $matches as $match ) {
-			$attrs = json_decode( (string) $match[1], true );
-			$html  = is_array( $attrs ) && isset( $attrs['content'] ) && is_scalar( $attrs['content'] ) ? (string) $attrs['content'] : ( isset( $match[2] ) ? (string) $match[2] : '' );
+			$attrs = json_decode( (string) $match[1][0], true );
+			$html  = is_array( $attrs ) && isset( $attrs['content'] ) && is_scalar( $attrs['content'] ) ? (string) $attrs['content'] : ( isset( $match[2] ) ? (string) $match[2][0] : '' );
 			if ( '' !== $html ) {
 				$blocks[] = array(
-					'serialized' => (string) $match[0],
+					'serialized' => (string) $match[0][0],
 					'html'       => $html,
+					'offset'     => (int) $match[0][1],
 				);
 			}
 		}
 
+		usort( $blocks, static fn ( array $left, array $right ): int => $left['offset'] <=> $right['offset'] );
 		return $blocks;
 	}
 

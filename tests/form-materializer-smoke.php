@@ -770,6 +770,23 @@ namespace {
 	$ordinal_seeding = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $ordinal_report, array(), $ordinal_contents );
 	$assert( 2 === ( $ordinal_seeding['grafted_count'] ?? 0 ) && 2 === ( $second_candidate['document_ordinal'] ?? 0 ) && 3 === ( $third_candidate['document_ordinal'] ?? 0 ) && str_contains( $ordinal_contents['website/ordinals.html'], 'unrelated' ), 'graft-matches-identical-forms-by-document-ordinal-despite-preceding-form-and-reversed-diagnostics' );
 
+	$ascending_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/ascending-ordinals.html' );
+	foreach ( array( array( 2, 'Second' ), array( 3, 'Third' ) ) as $ordinal_source ) {
+		$ordinal = $ordinal_source[0];
+		$label   = $ordinal_source[1];
+		$ascending_report['diagnostics'][] = array(
+			'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_form_fallback', 'loss_class' => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+			'source_path' => 'website/ascending-ordinals.html', 'selector' => 'form.ascending-' . strtolower( $label ), 'tag' => 'form',
+			'form_presentation' => Static_Site_Importer_Report_Diagnostics::form_presentation_from_html( $identical_form, 'form.ascending-' . strtolower( $label ), $ordinal ),
+			'form' => array( 'class' => 'identical' ), 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => $label ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ),
+		);
+	}
+	$ascending_contents = array( 'website/ascending-ordinals.html' => $core_html_block( '<form class="unrelated"><input name="other" type="email"><button type="submit">Other</button></form>' ) . $core_html_block( $identical_form ) . $core_html_block( $identical_form ) );
+	$ascending_seeding  = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $ascending_report, array(), $ascending_contents );
+	$second_position    = strpos( $ascending_contents['website/ascending-ordinals.html'], '"label":"Second"' );
+	$third_position     = strpos( $ascending_contents['website/ascending-ordinals.html'], '"label":"Third"' );
+	$assert( 2 === ( $ascending_seeding['grafted_count'] ?? 0 ) && false !== $second_position && false !== $third_position && $second_position < $third_position && str_contains( $ascending_contents['website/ascending-ordinals.html'], 'unrelated' ), 'graft-uses-original-document-ordinals-for-ascending-diagnostics' );
+
 	$ambiguous_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/ambiguous.html' );
 	$ambiguous_report['diagnostics'][] = array(
 		'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_form_fallback', 'loss_class' => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
