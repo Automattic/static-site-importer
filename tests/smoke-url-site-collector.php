@@ -190,6 +190,29 @@ $shuffled = Static_Site_Importer_URL_Site_Collector::collect(
 );
 $assert( ! is_wp_error( $shuffled ) && ( $snapshot['sha256'] ?? '' ) === ( $shuffled['source_metadata']['snapshot']['sha256'] ?? null ), 'snapshot-hash-independent-of-discovery-order' );
 
+$bounded_transport_starts = 0;
+$bounded_transport        = array(
+	'start'  => static function ( array $target, array $options ) use ( &$bounded_transport_starts ): object {
+		++$bounded_transport_starts;
+		return (object) array( 'target' => $target, 'options' => $options );
+	},
+	'poll'   => static fn ( object $handle ): array => array( 'status_code' => 200, 'headers' => array( 'content-type' => array( 'text/html' ) ), 'body' => '<main>Bounded host transport</main>' ),
+	'cancel' => static function (): void {},
+);
+$bounded_transport_result = Static_Site_Importer_URL_Site_Collector::collect(
+	'http://1.1.1.1/',
+	array(
+		'max_pages'                                      => 1,
+		'max_assets'                                     => 0,
+		'_route_set'                                     => array( 'http://1.1.1.1/' ),
+		'_static_site_importer_fetch_many_transport'     => $bounded_transport,
+		'_static_site_importer_collection_contract'      => 'bounded-transport-test',
+		'_static_site_importer_collection_cursor_save'   => static fn (): bool => true,
+	),
+	static fn ( string $url, array $fetch_args ) => Static_Site_Importer_URL_Fetcher::fetch( $url, $fetch_args + array( 'deadline' => microtime( true ) + 1 ) )
+);
+$assert( 1 === $bounded_transport_starts && ! is_wp_error( $bounded_transport_result ), 'resumable-single-fetch-path-uses-custom-bounded-transport' );
+
 $finalization_cursor = null;
 $retained_bodies     = array();
 $retained_loads      = array();

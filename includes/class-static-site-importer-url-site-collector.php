@@ -53,6 +53,9 @@ class Static_Site_Importer_URL_Site_Collector {
 		$fetcher                 = self::scheduled_fetcher( $fetcher, $args );
 		$fetch_args              = array_intersect_key( $args, array_flip( array( 'timeout' ) ) );
 		$fetch_args['max_bytes'] = min( self::MAX_RESPONSE_BYTES, $max_total_bytes, max( 1, (int) ( $args['max_bytes'] ?? 5242880 ) ) );
+		if ( isset( $args['_static_site_importer_fetch_many_transport'] ) && is_array( $args['_static_site_importer_fetch_many_transport'] ) ) {
+			$fetch_args['transport'] = $args['_static_site_importer_fetch_many_transport'];
+		}
 
 		$page_queue             = array( $entry_url );
 		$asset_queue            = array();
