@@ -425,6 +425,7 @@ $assert( ! str_contains( $rest_source, 'generate_in_current_runtime' ), 'rest-do
 
 $metadata = json_decode( file_get_contents( dirname( __DIR__ ) . '/blocks/importer/block.json' ), true );
 $assert( is_array( $metadata ), 'block-json-decodes' );
+$assert( 'block' === ( $metadata['attributes']['themeMaterialization']['default'] ?? '' ), 'block-json-defaults-to-block-materialization' );
 $assert( 'static-site-importer/importer' === ( $metadata['name'] ?? '' ), 'block-name-is-product-importer' );
 $assert( 'Static Site Importer' === ( $metadata['title'] ?? '' ), 'block-title-is-product-name' );
 $assert( isset( $metadata['viewScript'] ), 'block-has-frontend-script' );
@@ -495,6 +496,9 @@ $assert( ! str_contains( $html, 'Import status' ), 'render-omits-import-status-s
 $assert( str_contains( $html, 'Import your site' ), 'render-uses-custom-title' );
 $assert( str_contains( $html, 'https://example.com/source' ), 'render-uses-default-url' );
 $assert( str_contains( static_site_importer_render_block(), 'Generate WordPress Website' ), 'render-preview-mode-button-generates-wordpress-website' );
+$assert( str_contains( static_site_importer_render_block(), 'data-static-site-importer-theme-materialization="block"' ), 'render-defaults-to-block-materialization' );
+$assert( str_contains( static_site_importer_render_block( array( 'themeMaterialization' => 'classic' ) ), 'data-static-site-importer-theme-materialization="classic"' ), 'render-projects-classic-materialization' );
+$assert( str_contains( static_site_importer_render_block( array( 'themeMaterialization' => 'invalid' ) ), 'data-static-site-importer-theme-materialization="block"' ), 'render-fails-safe-to-block-materialization' );
 $playground_html = static_site_importer_render_block( array( 'openInPlayground' => true ) );
 $assert( str_contains( $playground_html, 'data-static-site-importer-apply-to-current-site="0"' ), 'render-playground-does-not-enable-current-site-apply' );
 $assert( str_contains( $playground_html, 'data-static-site-importer-open-in-playground="1"' ), 'render-can-target-playground-with-generate-label' );
@@ -611,6 +615,7 @@ $assert( str_contains( $view_js, 'input.click()' ), 'view-opens-selected-hidden-
 $assert( str_contains( $view_js, 'webkitGetAsEntry' ), 'view-supports-dropped-directory-entries' );
 $assert( str_contains( $view_js, 'archive: await buildArchive( uploadInputs, root )' ), 'view-sends-zip-from-combined-upload-as-archive-payload' );
 $assert( str_contains( $view_js, "formData.append( 'figma_file', file )" ), 'view-sends-figma-file-as-multipart-upload' );
+$assert( str_contains( $view_js, "formData.append( 'theme_materialization', themeMaterialization )" ), 'view-sends-figma-materialization-strategy' );
 $assert( str_contains( $view_js, "data-static-site-importer-figma-available' ) !== '1'" ), 'view-guards-figma-submit-by-runtime-capability' );
 $assert( ! str_contains( $view_js, 'buildFigmaFile' ), 'view-does-not-build-figma-file-payload' );
 $assert( str_contains( $view_js, '/\\.zip$/i' ), 'view-excludes-zip-files-from-generic-static-upload' );
@@ -622,6 +627,7 @@ $assert( str_contains( $view_js, 'isCurrentSiteImport' ), 'view-names-current-si
 $assert( str_contains( $view_js, 'apply_to_current_site: isCurrentSiteImport' ), 'view-sends-current-site-apply-flag-only-from-apply-mode' );
 $assert( str_contains( $view_js, 'activate: isCurrentSiteImport' ), 'view-activates-only-current-site-imports' );
 $assert( str_contains( $view_js, 'overwrite: isCurrentSiteImport' ), 'view-overwrites-only-current-site-imports' );
+$assert( str_contains( $view_js, 'theme_materialization: themeMaterialization' ), 'view-sends-materialization-strategy-for-json-imports-and-continuations' );
 $assert( ! str_contains( $view_js, 'about:blank' ), 'view-does-not-open-window-before-preview-url-is-ready' );
 $assert( ! str_contains( $view_js, 'openPendingPreviewWindow' ), 'view-has-no-pending-preview-window-helper' );
 $assert( str_contains( $view_js, 'openPreview( report )' ), 'view-opens-preview-only-after-report-is-ready' );

@@ -29,6 +29,11 @@
     "openInPlayground": {
       "type": "boolean",
       "default": true
+    },
+    "themeMaterialization": {
+      "type": "string",
+      "enum": ["block", "classic"],
+      "default": "block"
     }
   },
   "editorScript": "file:./editor.js",
