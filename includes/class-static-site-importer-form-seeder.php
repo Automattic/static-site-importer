@@ -366,6 +366,12 @@ class Static_Site_Importer_Form_Seeder {
 		$control_attribute_losses = array();
 		$has_topology             = isset( $form['control_topology'] );
 		$has_source_submit        = false;
+		if ( ! empty( $form['form']['interleaved_context'] ) ) {
+			return array(
+				'selector' => $selector, 'source_path' => $source_path, 'provider' => self::PROVIDER_ID,
+				'block_name' => 'jetpack/contact-form', 'status' => 'skipped', 'reason' => 'interleaved_context_unrepresentable', 'runtime_mapped' => false,
+			);
+		}
 		$submit_presentation      = isset( $form['form']['submit_presentation'] ) && is_array( $form['form']['submit_presentation'] ) ? $form['form']['submit_presentation'] : array();
 		if ( is_string( $submit_presentation['text'] ?? null ) && '' !== trim( $submit_presentation['text'] ) ) {
 			$submit_text = trim( $submit_presentation['text'] );
@@ -461,7 +467,7 @@ class Static_Site_Importer_Form_Seeder {
 		self::append_receipt_entries( $layout['receipt'], 'operations', $overlay['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $overlay['losses'] );
 		$layout['receipt']['status'] = $layout['receipt']['operations_total'] > 0 ? 'applied' : ( $layout['receipt']['losses_total'] > 0 ? 'deferred' : 'skipped' );
-		$markup                      = self::context_block_markup( $form ) . self::serialize_block( 'jetpack/contact-form', $form_attrs, $inner_blocks );
+		$markup                      = self::context_block_markup( $form, 'context_before' ) . self::serialize_block( 'jetpack/contact-form', $form_attrs, $inner_blocks ) . self::context_block_markup( $form, 'context_after' );
 
 		return array(
 			'selector'                    => $selector,
@@ -855,8 +861,8 @@ class Static_Site_Importer_Form_Seeder {
 	}
 
 	/** Serialize source context as editable core blocks beside the provider form. */
-	private static function context_block_markup( array $form ): string {
-		$context = isset( $form['form']['context_before'] ) && is_array( $form['form']['context_before'] ) ? $form['form']['context_before'] : array();
+	private static function context_block_markup( array $form, string $position ): string {
+		$context = isset( $form['form'][ $position ] ) && is_array( $form['form'][ $position ] ) ? $form['form'][ $position ] : array();
 		$markup  = '';
 		foreach ( $context as $block ) {
 			if ( ! is_array( $block ) || ! is_string( $block['text'] ?? null ) || '' === trim( $block['text'] ) ) {
