@@ -230,8 +230,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 			}
 			if ( null !== $deadline ) {
 				$known_asset_paths = $shared_plan->source_paths();
-				$ready_raw     = self::retained_runtime( $workspace, $ready_cache_name, $ready_cache_name, $ready_cache_name, $routes );
-				$ready_runtime = array();
+				$ready_raw         = self::retained_runtime( $workspace, $ready_cache_name, $ready_cache_name, $ready_cache_name, $routes );
+				$ready_runtime     = array();
 				if ( is_string( $ready_raw ) && is_array( json_decode( $ready_raw, true ) ) ) {
 					$ready_runtime = json_decode( $ready_raw, true );
 				}
@@ -244,7 +244,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 					$ready_args['asset_failure_policy']        = count( $routes ) > 1 ? 'preserve_failed_external_assets' : 'preserve_external';
 					$ready_args['hydration_mode']              = 'page_ready';
 					$ready_args['_static_site_importer_known_asset_paths'] = $known_asset_paths;
-					$ready_runtime                             = Static_Site_Importer_URL_Site_Collector::collect( $batch_entry, $ready_args, $fetcher );
+					$ready_runtime = Static_Site_Importer_URL_Site_Collector::collect( $batch_entry, $ready_args, $fetcher );
 					if ( is_wp_error( $ready_runtime ) ) {
 						if ( self::deadline_error( $ready_runtime ) ) {
 							$manifest['batches'] = self::legacy_batches( $cursor );
@@ -307,7 +307,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$decoded = is_string( $raw ) ? json_decode( $raw, true ) : null;
 			$runtime = is_array( $decoded ) ? $decoded : array();
 			if ( empty( $runtime ) ) {
-				$known_asset_paths = $shared_plan->source_paths();
+				$known_asset_paths                           = $shared_plan->source_paths();
 				$collect_args                                = $args;
 				$collect_args['_route_set']                  = array_values( array_unique( $routes ) );
 				$collect_args['_known_route_set']            = $manifest['routes'];
@@ -315,7 +315,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				$collect_args['require_complete_collection'] = true;
 				$collect_args['asset_failure_policy']        = count( $routes ) > 1 ? 'preserve_failed_external_assets' : 'preserve_external';
 				$collect_args['_static_site_importer_collection_return_payload_references'] = null !== $payload_reader;
-				$collect_args['_static_site_importer_known_asset_paths'] = $known_asset_paths;
+				$collect_args['_static_site_importer_known_asset_paths']                    = $known_asset_paths;
 				$collection_cursor_name = 'batches/' . $batch['batch_id'] . '.collection-cursor.json';
 				$collection_contract    = hash(
 					'sha256',
@@ -328,7 +328,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 						)
 					)
 				);
-				$collect_args = array_merge(
+				$collect_args           = array_merge(
 					$collect_args,
 					array(
 						'_static_site_importer_collection_contract'      => $collection_contract,
@@ -351,7 +351,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 						},
 					)
 				);
-				$runtime = Static_Site_Importer_URL_Site_Collector::collect( $batch_entry, $collect_args, $fetcher );
+				$runtime                = Static_Site_Importer_URL_Site_Collector::collect( $batch_entry, $collect_args, $fetcher );
 				if ( is_wp_error( $runtime ) ) {
 					if ( self::deadline_error( $runtime ) ) {
 						$manifest['batches'] = self::legacy_batches( $cursor );
@@ -688,7 +688,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 	 * Compose every frozen batch page plan once after terminal URL acquisition.
 	 *
 	 * @param Static_Site_Importer_Artifact_Run_Workspace $workspace Frozen batch workspace.
-	 * @param array<int,array<string,mixed>>               $cursor    Completed batch cursor.
+	 * @param array<int,array<string,mixed>>              $cursor    Completed batch cursor.
 	 * @return array<string,mixed>|WP_Error
 	 */
 	private static function compose_complete_plan( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $cursor, ?object $payload_reader = null ): array|WP_Error {
@@ -711,6 +711,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 
 		$page_plans = array();
 		$snapshots  = array();
+		$files      = array();
+		$entrypoint = '';
 		foreach ( $cursor as $batch ) {
 			$batch_id = (string) ( $batch['batch_id'] ?? '' );
 			$raw      = '' !== $batch_id ? $workspace->read_raw( 'batches/' . $batch_id . '.json' ) : null;
@@ -721,6 +723,14 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$snapshot = $runtime['source_metadata']['snapshot']['sha256'] ?? null;
 			if ( is_string( $snapshot ) && '' !== $snapshot ) {
 				$snapshots[] = $snapshot;
+			}
+			if ( is_array( $runtime['artifact'] ?? null ) ) {
+				$entrypoint = '' === $entrypoint ? (string) ( $runtime['artifact']['entrypoint'] ?? '' ) : $entrypoint;
+				foreach ( $runtime['artifact']['files'] ?? array() as $file ) {
+					if ( is_array( $file ) && '' !== (string) ( $file['path'] ?? '' ) ) {
+						$files[ (string) $file['path'] ] = $file;
+					}
+				}
 			}
 
 			$batch_digest = (string) ( $runtime['shared_plan_digest'] ?? '' );
@@ -772,6 +782,11 @@ final class Static_Site_Importer_URL_Batch_Import {
 			'provenance'               => array(
 				'snapshot_identity' => hash( 'sha256', (string) wp_json_encode( $snapshots ) ),
 				'snapshots'         => $snapshots,
+			),
+			'artifact'                 => array(
+				'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
+				'entrypoint' => $entrypoint,
+				'files'      => array_values( $files ),
 			),
 		);
 	}
@@ -1163,10 +1178,15 @@ final class Static_Site_Importer_URL_Batch_Import {
 		);
 	}
 	private static function materialized_routes( array $batches ): int {
-		return array_sum( array_map( static function ( array $batch ): int {
-			$completed_routes = (int) ( $batch['completed_routes'] ?? 0 );
-			return 0 !== $completed_routes ? $completed_routes : ( 'page_ready' === ( $batch['state'] ?? '' ) ? count( $batch['route_indexes'] ?? array() ) : 0 );
-		}, $batches ) );
+		return array_sum(
+			array_map(
+				static function ( array $batch ): int {
+					$completed_routes = (int) ( $batch['completed_routes'] ?? 0 );
+					return 0 !== $completed_routes ? $completed_routes : ( 'page_ready' === ( $batch['state'] ?? '' ) ? count( $batch['route_indexes'] ?? array() ) : 0 );
+				},
+				$batches
+			)
+		);
 	}
 	private static function contract( string $url, array $input, array $args, int $batch_pages ): array {
 		foreach ( array_keys( $args ) as $key ) {

@@ -107,10 +107,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 		}
 
-		// No adapter matched the selected provider; fall back to the first
-		// adapter registered for the capability so a misconfigured provider does
-		// not silently drop materialization.
-		return $capability_adapters[0] ?? array();
+		// A configured provider is an explicit security/transaction boundary.
+		// Never route it to a different adapter implicitly.
+		return array();
 	}
 
 	/**
@@ -227,6 +226,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return $report;
 	}
 
+	/** Roll back a provider receipt. Classic transactions fail closed without this contract. */
+	public static function rollback( array $adapter, array $report ) {
+		$rollback = $adapter['rollback_callback'] ?? null;
+		return is_callable( $rollback ) ? call_user_func( $rollback, $report ) : new WP_Error( 'static_site_importer_entity_rollback_unavailable', 'The selected entity provider does not declare rollback support.' );
+	}
+
 	/** Resolve provider-owned block markup for one canonical entity binding. */
 	public static function binding_block_markup( array $adapter, array $entity, array $result ): string {
 		$callback = $adapter['binding_callback'] ?? null;
@@ -235,6 +240,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 		$markup = call_user_func( $callback, $entity, $result );
 		return is_string( $markup ) ? trim( $markup ) : '';
+	}
+
+	/** Resolve adapter-owned classic server render data without inspecting source HTML. */
+	public static function binding_classic_render( array $adapter, array $entity, array $result ): array {
+		$callback = $adapter['classic_binding_callback'] ?? null;
+		$render   = is_callable( $callback ) ? call_user_func( $callback, $entity, $result ) : array();
+		return is_array( $render ) && in_array( $render['kind'] ?? null, array( 'shortcode', 'blocks' ), true ) && is_string( $render['content'] ?? null ) && '' !== trim( $render['content'] ) ? $render : array();
 	}
 
 	/**
@@ -542,19 +554,21 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	private static function adapters(): array {
 		$adapters = array(
 			'woocommerce_simple_product' => array(
-				'id'               => 'woocommerce_simple_product',
-				'entity_type'      => 'product',
-				'capability'       => 'shop',
-				'provider'         => 'woocommerce',
-				'label'            => 'WooCommerce simple product',
-				'report_key'       => 'product_seeding',
-				'waiver_arg'       => 'allow_missing_woocommerce',
-				'validator'        => array( self::class, 'validate_woo_products_manifest' ),
-				'materializer'     => array( 'Static_Site_Importer_Woo_Product_Seeder', 'seed' ),
-				'binding_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_block_markup' ),
-				'report_callback'  => array( 'Static_Site_Importer_Woo_Product_Seeder', 'new_report' ),
-				'presentation'     => 'Static_Site_Importer_Commerce_Presentation',
-				'dependencies'     => array(
+				'id'                       => 'woocommerce_simple_product',
+				'entity_type'              => 'product',
+				'capability'               => 'shop',
+				'provider'                 => 'woocommerce',
+				'label'                    => 'WooCommerce simple product',
+				'report_key'               => 'product_seeding',
+				'waiver_arg'               => 'allow_missing_woocommerce',
+				'validator'                => array( self::class, 'validate_woo_products_manifest' ),
+				'materializer'             => array( 'Static_Site_Importer_Woo_Product_Seeder', 'seed' ),
+				'rollback_callback'        => array( 'Static_Site_Importer_Woo_Product_Seeder', 'rollback' ),
+				'binding_callback'         => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_block_markup' ),
+				'classic_binding_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_classic_render' ),
+				'report_callback'          => array( 'Static_Site_Importer_Woo_Product_Seeder', 'new_report' ),
+				'presentation'             => 'Static_Site_Importer_Commerce_Presentation',
+				'dependencies'             => array(
 					array(
 						'type'                  => 'wp_org_plugin',
 						'slug'                  => 'woocommerce',
@@ -565,18 +579,20 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				),
 			),
 			'jetpack_contact_form'       => array(
-				'id'               => 'jetpack_contact_form',
-				'entity_type'      => 'form',
-				'capability'       => 'form',
-				'provider'         => 'jetpack',
-				'label'            => 'Jetpack contact form',
-				'report_key'       => 'form_seeding',
-				'waiver_arg'       => 'allow_missing_jetpack',
-				'validator'        => array( self::class, 'validate_forms_manifest' ),
-				'materializer'     => array( 'Static_Site_Importer_Form_Seeder', 'seed' ),
-				'binding_callback' => array( 'Static_Site_Importer_Form_Seeder', 'binding_block_markup' ),
-				'report_callback'  => array( 'Static_Site_Importer_Form_Seeder', 'new_report' ),
-				'dependencies'     => array(
+				'id'                       => 'jetpack_contact_form',
+				'entity_type'              => 'form',
+				'capability'               => 'form',
+				'provider'                 => 'jetpack',
+				'label'                    => 'Jetpack contact form',
+				'report_key'               => 'form_seeding',
+				'waiver_arg'               => 'allow_missing_jetpack',
+				'validator'                => array( self::class, 'validate_forms_manifest' ),
+				'materializer'             => array( 'Static_Site_Importer_Form_Seeder', 'seed' ),
+				'rollback_callback'        => array( 'Static_Site_Importer_Form_Seeder', 'rollback' ),
+				'binding_callback'         => array( 'Static_Site_Importer_Form_Seeder', 'binding_block_markup' ),
+				'classic_binding_callback' => array( 'Static_Site_Importer_Form_Seeder', 'binding_classic_render' ),
+				'report_callback'          => array( 'Static_Site_Importer_Form_Seeder', 'new_report' ),
+				'dependencies'             => array(
 					array(
 						'type'                  => 'wp_org_plugin',
 						'slug'                  => 'jetpack',
@@ -977,7 +993,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				return array( 'error' => 'computed_layout_graph parents must precede children.' );
 			}
 			$source = $node['source'];
-			if ( ! self::has_only_keys( $source, array( 'tag', 'id', 'classes' ) ) || ! is_string( $source['tag'] ?? null ) || ! preg_match( '/^[a-z][a-z0-9-]{0,30}$/D', $source['tag'] ) || ( isset($source['id']) && ( ! is_string($source['id']) || ! preg_match('/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $source['id']) ) ) || ! is_array($source['classes'] ?? null) || count($source['classes']) > 8 ) {
+			if ( ! self::has_only_keys( $source, array( 'tag', 'id', 'classes' ) ) || ! is_string( $source['tag'] ?? null ) || ! preg_match( '/^[a-z][a-z0-9-]{0,30}$/D', $source['tag'] ) || ( isset( $source['id'] ) && ( ! is_string( $source['id'] ) || ! preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $source['id'] ) ) ) || ! is_array( $source['classes'] ?? null ) || count( $source['classes'] ) > 8 ) {
 				return array( 'error' => 'layout_graph source identity is unsafe.' );
 			}
 			$layout      = $node['layout'];
@@ -992,9 +1008,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'kind'       => $node['kind'],
 				'parent'     => $parent,
 				'order'      => $node['order'],
-				'source'     => array_intersect_key($source, array_flip(array( 'tag', 'id', 'classes' ))),
-				'layout'     => array_intersect_key($layout, array_flip($layout_keys)),
-				'provenance' => array_slice($node['provenance'], 0, 16),
+				'source'     => array_intersect_key( $source, array_flip( array( 'tag', 'id', 'classes' ) ) ),
+				'layout'     => array_intersect_key( $layout, array_flip( $layout_keys ) ),
+				'provenance' => array_slice( $node['provenance'], 0, 16 ),
 			);
 			$seen[ $node['id'] ] = true;
 			$nodes[]             = $clean;
@@ -1029,10 +1045,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'schema'      => 'generic/computed-layout-graph/v1',
 				'basis'       => $candidate['basis'],
 				'truncated'   => false,
-				'limits'      => array_intersect_key($candidate['limits'], array_flip(array( 'nodes', 'depth', 'rules_per_node' ))),
+				'limits'      => array_intersect_key( $candidate['limits'], array_flip( array( 'nodes', 'depth', 'rules_per_node' ) ) ),
 				'nodes'       => $nodes,
 				'variants'    => $variants,
-				'diagnostics' => array_slice($candidate['diagnostics'], 0, 32),
+				'diagnostics' => array_slice( $candidate['diagnostics'], 0, 32 ),
 			),
 		);
 	}

@@ -125,7 +125,7 @@ $assert     = static function ( bool $condition, string $label ) use ( &$asserti
 	}
 };
 
-$input = array(
+$input  = array(
 	'slug'                                 => 'contract-theme',
 	'name'                                 => 'Contract Theme',
 	'site_title'                           => 'Contract Site',
@@ -152,6 +152,7 @@ $input = array(
 	'client_script_policy'                 => 'isolated_preview',
 	'client_script_provenance'             => array( 'ref' => 'contract:preview' ),
 	'client_script_isolated'               => true,
+	'theme_materialization'                => 'classic',
 );
 $direct = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
 
@@ -161,7 +162,17 @@ $assert( true === $default_input['disable_smilies'], 'disable-smilies-defaults-t
 $assert( true === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'disable_smilies' => '1' ) )['disable_smilies'], 'disable-smilies-coerces-true-string' );
 $assert( false === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'disable_smilies' => '0' ) )['disable_smilies'], 'disable-smilies-coerces-false-string' );
 
-static_site_importer_ability_import( array_merge( $input, array( 'source' => array( 'type' => 'files', 'files' => array() ) ) ) );
+static_site_importer_ability_import(
+	array_merge(
+		$input,
+		array(
+			'source' => array(
+				'type'  => 'files',
+				'files' => array(),
+			),
+		)
+	)
+);
 $direct_entrypoint = Static_Site_Importer_Theme_Generator::$last_args;
 
 foreach ( array_keys( Static_Site_Importer_Website_Artifact_Import_Input::SCHEMA_PROPERTIES ) as $field ) {
@@ -171,15 +182,41 @@ foreach ( array_keys( Static_Site_Importer_Website_Artifact_Import_Input::SCHEMA
 }
 $assert( ! isset( Static_Site_Importer_Website_Artifact_Import_Input::SCHEMA_PROPERTIES['report'] ), 'remote-schema-omits-report-destination' );
 $assert( ! array_key_exists( 'report', Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'report' => '/tmp/report.json' ) ) ), 'remote-normalizer-rejects-report-destination' );
-$rejected_report = static_site_importer_ability_import( array( 'report' => '/tmp/report.json', 'source' => array( 'type' => 'files', 'files' => array() ) ) );
+$rejected_report = static_site_importer_ability_import(
+	array(
+		'report' => '/tmp/report.json',
+		'source' => array(
+			'type'  => 'files',
+			'files' => array(),
+		),
+	)
+);
 $assert( 'static_site_importer_report_destination_forbidden' === ( $rejected_report['error']['code'] ?? '' ), 'ability-rejects-report-destination' );
 $cli_report = sys_get_temp_dir() . '/ssi-cli-report-' . uniqid( '', true ) . '.json';
-$cli_result = static_site_importer_cli_import( array_merge( $input, array( 'report' => $cli_report, 'source' => array( 'type' => 'files', 'files' => array() ) ) ) );
+$cli_result = static_site_importer_cli_import(
+	array_merge(
+		$input,
+		array(
+			'report' => $cli_report,
+			'source' => array(
+				'type'  => 'files',
+				'files' => array(),
+			),
+		)
+	)
+);
 $assert( ! empty( $cli_result['success'] ), 'cli-report-output-seam-succeeds' );
 $assert( $cli_report === ( Static_Site_Importer_Theme_Generator::$last_args['report'] ?? '' ), 'cli-report-output-seam-forwards-only-internally' );
 
 $url_method = new ReflectionMethod( Static_Site_Importer_URL_Import_Runtime::class, 'import_args' );
-$url = $url_method->invoke( null, $input, array( 'provider' => 'contract-provider', 'source_metadata' => array( 'provider_id' => 'source-1' ) ) );
+$url        = $url_method->invoke(
+	null,
+	$input,
+	array(
+		'provider'        => 'contract-provider',
+		'source_metadata' => array( 'provider_id' => 'source-1' ),
+	)
+);
 foreach ( array_keys( Static_Site_Importer_Website_Artifact_Import_Input::SCHEMA_PROPERTIES ) as $field ) {
 	if ( 'source_metadata' !== $field ) {
 		$assert( $direct[ $field ] === $url[ $field ], 'url-equivalent-' . $field );
@@ -188,7 +225,11 @@ foreach ( array_keys( Static_Site_Importer_Website_Artifact_Import_Input::SCHEMA
 $assert( 'contract-1' === ( $url['source_metadata']['request_id'] ?? '' ), 'url-preserves-caller-metadata' );
 $assert( 'source-1' === ( $url['source_metadata']['provider_id'] ?? '' ), 'url-preserves-provider-metadata' );
 
-$artifact = array( 'schema' => 'test/artifact/v1', 'files' => array(), 'provenance' => array( 'provider' => 'figma' ) );
+$artifact = array(
+	'schema'     => 'test/artifact/v1',
+	'files'      => array(),
+	'provenance' => array( 'provider' => 'figma' ),
+);
 $figma    = Static_Site_Importer_Figma_Import::import_input( $input, $artifact );
 foreach ( array_keys( Static_Site_Importer_Website_Artifact_Import_Input::SCHEMA_PROPERTIES ) as $field ) {
 	if ( 'source_metadata' !== $field ) {
@@ -198,8 +239,16 @@ foreach ( array_keys( Static_Site_Importer_Website_Artifact_Import_Input::SCHEMA
 $assert( 'contract-1' === ( $figma['source_metadata']['request_id'] ?? '' ), 'figma-preserves-caller-metadata' );
 $assert( 'figma' === ( $figma['source_metadata']['provider'] ?? '' ), 'figma-adds-provider-metadata' );
 
-$artifact_dir = sys_get_temp_dir() . '/ssi-import-input-' . uniqid( '', true );
-$validation   = Static_Site_Importer_Validation_Runtime::validate_artifact( array_merge( $input, array( 'artifact' => $artifact, 'artifact_dir' => $artifact_dir ) ) );
+$artifact_dir    = sys_get_temp_dir() . '/ssi-import-input-' . uniqid( '', true );
+$validation      = Static_Site_Importer_Validation_Runtime::validate_artifact(
+	array_merge(
+		$input,
+		array(
+			'artifact'     => $artifact,
+			'artifact_dir' => $artifact_dir,
+		)
+	)
+);
 $validation_args = Static_Site_Importer_Theme_Generator::$last_args;
 foreach ( array_keys( Static_Site_Importer_Website_Artifact_Import_Input::SCHEMA_PROPERTIES ) as $field ) {
 	if ( 'source_metadata' !== $field ) {
@@ -219,4 +268,4 @@ if ( $failures ) {
 	exit( 1 );
 }
 
-echo sprintf( "Website artifact import input smoke passed (%d assertions).\n", $assertions );
+printf( "Website artifact import input smoke passed (%d assertions).\n", $assertions );
