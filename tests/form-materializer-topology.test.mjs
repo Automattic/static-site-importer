@@ -72,7 +72,7 @@ test( 'provider-constrained topology emits nested fields and an editor-valid cor
 		cwd: process.cwd(),
 		encoding: 'utf8',
 	} );
-	const { markup, depth_markup: depthMarkup } = JSON.parse( output );
+	const { markup, depth_markup: depthMarkup, cara_markup: caraMarkup } = JSON.parse( output );
 	const warnings = [];
 	const originalWarn = console.warn;
 	const originalError = console.error;
@@ -107,6 +107,12 @@ test( 'provider-constrained topology emits nested fields and an editor-valid cor
 	assert.equal( coreButtons.length, 1 );
 	assert.equal( validateBlock( coreButtons[ 0 ] )[ 0 ], true );
 	assert.match( serialize( coreButtons ), /form-button-submit is-submit/ );
+	const caraBlocks = parse( caraMarkup );
+	assert.equal( caraBlocks[ 0 ].name, 'core/heading' );
+	assert.equal( caraBlocks[ 1 ].name, 'core/paragraph' );
+	assert.match( caraMarkup, /"required":true/ );
+	assert.match( caraMarkup, /wsite-button/ );
+	assert.equal( serialize( parse( serialize( caraBlocks ) ) ), serialize( caraBlocks ), 'complete fallback graft is Gutenberg byte-stable after canonical serialization' );
 } );
 
 test( 'Jetpack provider definitions are explicitly unavailable to this core-only validation', () => {

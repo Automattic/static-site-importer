@@ -358,14 +358,30 @@ class Static_Site_Importer_Form_Seeder {
 		$selector    = isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '';
 		$source_path = isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '';
 
-		$scope                    = self::layout_scope( $form );
-		$field_blocks             = array();
-		$mapped_types             = array();
-		$submit_text              = 'Submit';
-		$skipped                  = array();
-		$control_attribute_losses = array();
-		$has_topology             = isset( $form['control_topology'] );
-		$has_source_submit        = false;
+		$scope                         = self::layout_scope( $form );
+		$field_blocks                  = array();
+		$mapped_types                  = array();
+		$submit_text                   = 'Submit';
+		$skipped                       = array();
+		$control_attribute_losses      = array();
+		$has_topology                  = isset( $form['control_topology'] );
+		$has_source_submit             = false;
+		$textarea_height_omitted_count = (int) ( $form['form']['textarea_height_omitted_count'] ?? 0 );
+		if ( ! empty( $form['form']['interleaved_context'] ) ) {
+			return array(
+				'selector'       => $selector,
+				'source_path'    => $source_path,
+				'provider'       => self::PROVIDER_ID,
+				'block_name'     => 'jetpack/contact-form',
+				'status'         => 'skipped',
+				'reason'         => 'interleaved_context_unrepresentable',
+				'runtime_mapped' => false,
+			);
+		}
+		$submit_presentation = isset( $form['form']['submit_presentation'] ) && is_array( $form['form']['submit_presentation'] ) ? $form['form']['submit_presentation'] : array();
+		if ( is_string( $submit_presentation['text'] ?? null ) && '' !== trim( $submit_presentation['text'] ) ) {
+			$submit_text = trim( $submit_presentation['text'] );
+		}
 
 		foreach ( $controls as $control_index => $control ) {
 			if ( ! is_array( $control ) ) {
@@ -380,7 +396,7 @@ class Static_Site_Importer_Form_Seeder {
 				$submit_text       = '' !== $text ? $text : $submit_text;
 				$has_source_submit = true;
 				if ( $has_topology ) {
-					$field_blocks[ $control_index ] = self::submit_button_block( $submit_text, self::layout_node_class( $scope, 'control-' . $control_index ) );
+					$field_blocks[ $control_index ] = self::submit_button_block( $submit_text, self::layout_node_class( $scope, 'control-' . $control_index ), $submit_presentation );
 				}
 				continue;
 			}
@@ -427,7 +443,7 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$inner_blocks = $topology['blocks'];
 		if ( ! $has_topology || ! $has_source_submit ) {
-			$inner_blocks[] = self::submit_button_block( $submit_text, self::layout_node_class( $scope, 'control-submit' ) );
+			$inner_blocks[] = self::submit_button_block( $submit_text, self::layout_node_class( $scope, 'control-submit' ), $submit_presentation );
 		}
 		$form['topology_losses'] = $topology['losses'];
 		$provider_graph          = is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(
@@ -442,6 +458,13 @@ class Static_Site_Importer_Form_Seeder {
 		$layout_form                 = $form;
 		$layout_form['layout_graph'] = $provider_graph;
 		$layout                      = Static_Site_Importer_Computed_Layout_Strategy::apply( $layout_form, $inner_blocks );
+		if ( $textarea_height_omitted_count > 0 ) {
+			$control_attribute_losses[] = array(
+				'dimension'     => 'control',
+				'reason_code'   => 'textarea_height_omitted',
+				'omitted_count' => $textarea_height_omitted_count,
+			);
+		}
 		self::append_receipt_entries( $layout['receipt'], 'operations', $topology['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
 		$inner_blocks                 = $layout['blocks'];
@@ -457,7 +480,7 @@ class Static_Site_Importer_Form_Seeder {
 		self::append_receipt_entries( $layout['receipt'], 'operations', $overlay['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $overlay['losses'] );
 		$layout['receipt']['status'] = $layout['receipt']['operations_total'] > 0 ? 'applied' : ( $layout['receipt']['losses_total'] > 0 ? 'deferred' : 'skipped' );
-		$markup                      = self::serialize_block( 'jetpack/contact-form', $form_attrs, $inner_blocks );
+		$markup                      = self::context_block_markup( $form, 'context_before' ) . self::serialize_block( 'jetpack/contact-form', $form_attrs, $inner_blocks ) . self::context_block_markup( $form, 'context_after' );
 
 		return array(
 			'selector'                    => $selector,
@@ -687,7 +710,7 @@ class Static_Site_Importer_Form_Seeder {
 
 		$attrs = array();
 		$label = self::control_text( $control );
-		if ( ! empty( $control['required'] ) ) {
+		if ( ! empty( $control['required'] ) || 'true' === strtolower( trim( (string) ( $control['aria-required'] ?? $control['aria_required'] ?? '' ) ) ) ) {
 			$attrs['required'] = true;
 		}
 		$id = isset( $control['id'] ) && is_scalar( $control['id'] ) ? trim( (string) $control['id'] ) : '';
@@ -745,6 +768,10 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			if ( 'textarea' === $lookup ) {
 				$input_attrs['type'] = 'textarea';
+				$height              = isset( $control['height'] ) && is_scalar( $control['height'] ) ? trim( (string) $control['height'] ) : '';
+				if ( '' !== $height && preg_match( '/^[0-9]{1,4}(?:\.[0-9]+)?(?:px|em|rem|vh|vw|%)$/D', $height ) ) {
+					$input_attrs['style']['dimensions']['minHeight'] = $height;
+				}
 			} elseif ( 'select' === $lookup ) {
 				$input_attrs['type'] = 'dropdown';
 			}
@@ -817,6 +844,7 @@ class Static_Site_Importer_Form_Seeder {
 	private static function receipt_loss_requires_gate( array $loss ): bool {
 		return 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' )
 			|| 'unsupported_control_attribute' === ( $loss['reason_code'] ?? '' )
+			|| 'textarea_height_omitted' === ( $loss['reason_code'] ?? '' )
 			|| in_array( $loss['dimension'] ?? '', array( 'semantic', 'topology' ), true )
 			|| in_array( $loss['reason_code'] ?? '', array( 'provider_structure_mismatch', 'direct_child_relationship_unrepresentable' ), true );
 	}
@@ -827,8 +855,9 @@ class Static_Site_Importer_Form_Seeder {
 	 * @param string $text Submit button label.
 	 * @return array<string, mixed>
 	 */
-	private static function submit_button_block( string $text, string $class_name = '' ): array {
-		$class_name = trim( 'form-button-submit is-submit ' . $class_name );
+	private static function submit_button_block( string $text, string $class_name = '', array $presentation = array() ): array {
+		$source_classes = isset( $presentation['classes'] ) && is_array( $presentation['classes'] ) ? implode( ' ', array_filter( $presentation['classes'], 'is_string' ) ) : '';
+		$class_name     = trim( 'form-button-submit is-submit ' . $source_classes . ' ' . $class_name );
 		return array(
 			'name'    => 'core/button',
 			'attrs'   => array(
@@ -843,6 +872,24 @@ class Static_Site_Importer_Form_Seeder {
 			'content' => '' !== trim( $text ) ? trim( $text ) : 'Submit',
 			'wrapper' => 'submit',
 		);
+	}
+
+	/** Serialize source context as editable core blocks beside the provider form. */
+	private static function context_block_markup( array $form, string $position ): string {
+		$context = isset( $form['form'][ $position ] ) && is_array( $form['form'][ $position ] ) ? $form['form'][ $position ] : array();
+		$markup  = '';
+		foreach ( $context as $block ) {
+			if ( ! is_array( $block ) || ! is_string( $block['text'] ?? null ) || '' === trim( $block['text'] ) ) {
+				continue;
+			}
+			if ( 'heading' === ( $block['type'] ?? null ) ) {
+				$level   = min( 6, max( 1, (int) ( $block['level'] ?? 2 ) ) );
+				$markup .= self::serialize_block( 'core/heading', 2 === $level ? array() : array( 'level' => $level ), array(), 'heading', $block['text'] );
+			} elseif ( 'paragraph' === ( $block['type'] ?? null ) ) {
+				$markup .= self::serialize_block( 'core/paragraph', array(), array(), 'paragraph', $block['text'] );
+			}
+		}
+		return $markup;
 	}
 
 	/**
@@ -971,7 +1018,7 @@ class Static_Site_Importer_Form_Seeder {
 			}
 		}
 
-		if ( empty( $inner_blocks ) && 'submit' !== $wrapper ) {
+		if ( empty( $inner_blocks ) && ! in_array( $wrapper, array( 'submit', 'heading', 'paragraph' ), true ) ) {
 			return '<!-- wp:' . $comment_name . $attr_json . ' /-->';
 		}
 
@@ -999,6 +1046,11 @@ class Static_Site_Importer_Form_Seeder {
 		} elseif ( 'submit' === $wrapper ) {
 			$classes      = trim( 'wp-block-button ' . (string) ( $attrs['className'] ?? '' ) );
 			$inner_markup = '<div class="' . self::escape_attribute( $classes ) . '"><button type="submit" class="wp-block-button__link wp-element-button">' . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</button></div>';
+		} elseif ( 'heading' === $wrapper ) {
+			$level        = min( 6, max( 1, (int) ( $attrs['level'] ?? 2 ) ) );
+			$inner_markup = '<h' . $level . ' class="wp-block-heading">' . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</h' . $level . '>';
+		} elseif ( 'paragraph' === $wrapper ) {
+			$inner_markup = '<p>' . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</p>';
 		} elseif ( 'group' === $wrapper ) {
 			$classes = 'wp-block-group' . ( ! empty( $attrs['className'] ) ? ' ' . $attrs['className'] : '' );
 			if ( 'flex' === ( $attrs['layout']['type'] ?? '' ) ) {

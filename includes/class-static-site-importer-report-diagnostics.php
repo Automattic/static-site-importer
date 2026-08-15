@@ -227,7 +227,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'type'                  => $type,
 			'source'                => $source,
 			'selector'              => '' !== $selector ? $selector : null,
-			'excerpt'               => self::diagnostic_excerpt( wp_strip_all_tags( $element_html ) ),
+			'excerpt'               => self::diagnostic_excerpt( function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( $element_html ) : strip_tags( $element_html ) ), // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- Fallback only for runtime-free smoke tests.
 			'source_html_preview'   => self::diagnostic_excerpt( $element_html ),
 			'emitted_block_preview' => self::diagnostic_excerpt( $emitted ),
 			'reason'                => isset( $context['reason'] ) ? (string) $context['reason'] : 'unknown',
@@ -245,6 +245,12 @@ class Static_Site_Importer_Report_Diagnostics {
 
 		if ( isset( $context['path'] ) && is_scalar( $context['path'] ) ) {
 			$entry['block_path'] = (string) $context['path'];
+		}
+		if ( 'form' === strtolower( (string) $entry['tag_name'] ) ) {
+			$manifest                   = self::form_manifest_from_html( $element_html );
+			$entry['form']              = $manifest['form'];
+			$entry['controls']          = $manifest['controls'];
+			$entry['form_presentation'] = self::form_presentation_from_html( $element_html, $selector, (int) ( $context['occurrence'] ?? 0 ) );
 		}
 
 		return $entry;
@@ -1162,12 +1168,13 @@ class Static_Site_Importer_Report_Diagnostics {
 			$controls   = isset( $diagnostic['controls'] ) && is_array( $diagnostic['controls'] ) ? $diagnostic['controls'] : array();
 			$form       = isset( $diagnostic['form'] ) && is_array( $diagnostic['form'] ) ? $diagnostic['form'] : array();
 			if ( empty( $controls ) && self::is_generated_core_html_form_diagnostic( $diagnostic ) ) {
-				$extracted                                   = self::extract_form_manifest_from_diagnostic( $diagnostic );
+				$extracted                                   = self::form_manifest_from_core_html( $diagnostic, $page_contents );
 				$controls                                    = $extracted['controls'];
 				$form                                        = $extracted['form'];
 				$report['diagnostics'][ $index ]['controls'] = $controls;
 				$report['diagnostics'][ $index ]['form']     = $form;
 			}
+			$form             = self::apply_form_presentation( is_array( $diagnostic['form_presentation'] ?? null ) ? $diagnostic['form_presentation'] : array(), $form, $controls );
 			$manifest_forms[] = array(
 				'selector'    => isset( $diagnostic['selector'] ) && is_scalar( $diagnostic['selector'] ) ? (string) $diagnostic['selector'] : '',
 				'source_path' => isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : ( isset( $diagnostic['source'] ) && is_scalar( $diagnostic['source'] ) ? (string) $diagnostic['source'] : '' ),
@@ -1208,10 +1215,11 @@ class Static_Site_Importer_Report_Diagnostics {
 			$seeding['validation_errors'] = $validation['errors'];
 		}
 
-		$pending = $indexes;
-		$rows    = isset( $seeding['forms'] ) && is_array( $seeding['forms'] ) ? $seeding['forms'] : array();
+		$pending        = $indexes;
+		$rows           = isset( $seeding['forms'] ) && is_array( $seeding['forms'] ) ? $seeding['forms'] : array();
+		$graft_requests = array();
 		foreach ( $rows as $row ) {
-			if ( ! is_array( $row ) || empty( $row['runtime_mapped'] ) ) {
+			if ( ! is_array( $row ) ) {
 				continue;
 			}
 
@@ -1219,6 +1227,21 @@ class Static_Site_Importer_Report_Diagnostics {
 			$source_path = isset( $row['source_path'] ) && is_scalar( $row['source_path'] ) ? (string) $row['source_path'] : '';
 			$index       = self::form_finding_index_for_selector( $report['diagnostics'], $pending, $selector, $source_path );
 			if ( null === $index ) {
+				continue;
+			}
+			if ( empty( $row['runtime_mapped'] ) ) {
+				if ( 'interleaved_context_unrepresentable' === ( $row['reason'] ?? '' ) ) {
+					$report['diagnostics'][] = array(
+						'type'            => 'form_context_unrepresentable',
+						'diagnostic_code' => 'form_context_interleaved',
+						'reason'          => 'interleaved_context_unrepresentable',
+						'source_path'     => $source_path,
+						'selector'        => $selector,
+						'loss_class'      => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+						'message'         => 'Form context occurs between controls and was left in the original fallback to avoid semantic reordering.',
+					);
+				}
+				$pending = array_values( array_diff( $pending, array( $index ) ) );
 				continue;
 			}
 
@@ -1243,21 +1266,391 @@ class Static_Site_Importer_Report_Diagnostics {
 			if ( $generated_document_owns_graft ) {
 				$report['diagnostics'][ $index ]['graft_delegated_to_generated_document'] = true;
 			} elseif ( ! empty( $page_contents ) ) {
-				$markup = isset( $row['block_markup'] ) && is_scalar( $row['block_markup'] ) ? (string) $row['block_markup'] : '';
-				$graft  = self::graft_form_block_into_page_contents( $report['diagnostics'][ $index ], $markup, $page_contents );
-				if ( $graft['grafted'] ) {
-					++$seeding['grafted_count'];
-				}
-				$report['diagnostics'][ $index ] = $graft['finding'];
-				if ( ! empty( $graft['diagnostic'] ) ) {
-					$report['diagnostics'][] = $graft['diagnostic'];
-				}
+				$graft_requests[] = array(
+					'index'  => $index,
+					'markup' => isset( $row['block_markup'] ) && is_scalar( $row['block_markup'] ) ? (string) $row['block_markup'] : '',
+				);
 			}
 			$pending = array_values( array_diff( $pending, array( $index ) ) );
 		}
 
+		// Resolve duplicate forms from right to left, so removing a later form never
+		// changes the document-wide ordinal used by an earlier source finding.
+		usort(
+			$graft_requests,
+			static function ( array $left, array $right ) use ( $report ): int {
+				$left_ordinal  = (int) ( $report['diagnostics'][ $left['index'] ]['form_presentation']['document_ordinal'] ?? 0 );
+				$right_ordinal = (int) ( $report['diagnostics'][ $right['index'] ]['form_presentation']['document_ordinal'] ?? 0 );
+				return $right_ordinal <=> $left_ordinal;
+			}
+		);
+		foreach ( $graft_requests as $request ) {
+			$index = $request['index'];
+			$graft = self::graft_form_block_into_page_contents( $report['diagnostics'][ $index ], $request['markup'], $page_contents );
+			if ( $graft['grafted'] ) {
+				++$seeding['grafted_count'];
+			}
+			$report['diagnostics'][ $index ] = $graft['finding'];
+			if ( ! empty( $graft['diagnostic'] ) ) {
+				$report['diagnostics'][] = $graft['diagnostic'];
+			}
+		}
+
 		$report['form_seeding'] = $seeding;
 		return $seeding;
+	}
+
+	/**
+	 * Carry bounded authored form context into the provider adapter.
+	 *
+	 * The fallback HTML is the only complete representation when a form island is
+	 * replaced, so retain headings, standalone notes, and a visible submit treatment
+	 * before the provider block is serialized.
+	 *
+	 * @param string                         $html       Complete internal fallback HTML.
+	 * @param array<string,mixed>            $form       Extracted form metadata.
+	 * @param array<int,array<string,mixed>> $controls Extracted controls, enriched in place.
+	 * @return array<string,mixed>
+	 */
+	private static function preserved_form_presentation( string $html, array $form, array &$controls ): array {
+		if ( '' === $html ) {
+			return $form;
+		}
+
+		$doc      = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$doc->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		$form_node = $doc->getElementsByTagName( 'form' )->item( 0 );
+		if ( null === $form_node ) {
+			return $form;
+		}
+
+		$context = array();
+		$nodes   = $form_node->getElementsByTagName( '*' );
+		foreach ( $nodes as $node ) {
+			$tag = strtolower( $node->nodeName );
+			if ( in_array( $tag, array( 'input', 'select', 'textarea', 'button' ), true ) ) {
+				break;
+			}
+			$text = self::form_presentation_text( $node->textContent );
+			if ( preg_match( '/^h[1-6]$/', $tag ) && '' !== $text ) {
+				$context[] = array(
+					'type'  => 'heading',
+					'level' => (int) substr( $tag, 1 ),
+					'text'  => $text,
+				);
+			} elseif ( 'label' === $tag && preg_match( '/(?:required|note|instruction|help)/i', $node->getAttribute( 'class' ) ) && '' !== $text ) {
+				$context[] = array(
+					'type' => 'paragraph',
+					'text' => $text,
+				);
+			}
+		}
+		if ( ! empty( $context ) ) {
+			$form['context_before'] = $context;
+		}
+
+		$textarea_index = 0;
+		foreach ( $nodes as $node ) {
+			if ( 'textarea' !== strtolower( $node->nodeName ) ) {
+				continue;
+			}
+			while ( isset( $controls[ $textarea_index ] ) && 'textarea' !== strtolower( (string) ( $controls[ $textarea_index ]['tag'] ?? '' ) ) ) {
+				++$textarea_index;
+			}
+			if ( isset( $controls[ $textarea_index ] ) && preg_match( '/(?:^|;)\s*height\s*:\s*([0-9]{1,4}(?:\.[0-9]+)?(?:px|em|rem|vh|vw|%))\s*(?:;|$)/i', $node->getAttribute( 'style' ), $height ) ) {
+				$controls[ $textarea_index ]['height'] = $height[1];
+			}
+			++$textarea_index;
+		}
+
+		foreach ( $nodes as $node ) {
+			if ( ! self::is_submit_control_node( $node ) ) {
+				continue;
+			}
+			$presentation = self::submit_presentation_from_node( $node );
+			$visible_node = self::next_element_sibling( $node );
+			if ( self::submit_control_is_visually_hidden( $node ) && $visible_node instanceof DOMElement && in_array( strtolower( $visible_node->nodeName ), array( 'a', 'button' ), true ) ) {
+				$visible = self::submit_presentation_from_node( $visible_node );
+				if ( '' !== $visible['text'] && $visible['text'] === $presentation['text'] ) {
+					$presentation = $visible;
+				}
+			}
+			if ( '' !== $presentation['text'] ) {
+				$form['submit_presentation'] = $presentation;
+			}
+			break;
+		}
+
+		return $form;
+	}
+
+	/**
+	 * Extract bounded presentation facts while the exact fallback form is in scope.
+	 * Raw fallback HTML never enters a diagnostic or materialization manifest.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public static function form_presentation_from_html( string $html, string $selector = '', int $occurrence = 0 ): array {
+		$manifest = self::form_manifest_from_html( $html );
+		$form     = self::preserved_form_presentation( $html, $manifest['form'], $manifest['controls'] );
+		$doc      = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$doc->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		$form_node      = $doc->getElementsByTagName( 'form' )->item( 0 );
+		$before         = array();
+		$after          = array();
+		$interleaved    = false;
+		$seen_controls  = 0;
+		$total_controls = count( $manifest['controls'] );
+		if ( $form_node instanceof DOMElement ) {
+			foreach ( $form_node->getElementsByTagName( '*' ) as $node ) {
+				$tag = strtolower( $node->nodeName );
+				if ( in_array( $tag, array( 'input', 'select', 'textarea', 'button' ), true ) ) {
+					++$seen_controls;
+					continue;
+				}
+				$text = self::form_presentation_text( $node->textContent );
+				$item = preg_match( '/^h[1-6]$/', $tag ) && '' !== $text ? array(
+					'type'  => 'heading',
+					'level' => (int) substr( $tag, 1 ),
+					'text'  => $text,
+				) : ( in_array( $tag, array( 'label', 'p' ), true ) && preg_match( '/(?:required|note|instruction|help)/i', $node->getAttribute( 'class' ) ) && '' !== $text ? array(
+					'type' => 'paragraph',
+					'text' => $text,
+				) : null );
+				if ( ! is_array( $item ) ) {
+					continue;
+				}
+				if ( 0 === $seen_controls ) {
+					$before[] = $item;
+				} elseif ( $seen_controls >= $total_controls ) {
+					$after[] = $item;
+				} else {
+					$interleaved = true;
+				}
+			}
+		}
+		$heights = array();
+		foreach ( $manifest['controls'] as $index => $control ) {
+			if ( isset( $control['height'] ) ) {
+				$heights[ $index ] = $control['height'];
+			}
+		}
+		$fingerprint    = array(
+			'class'               => $manifest['form']['class'] ?? '',
+			'action'              => $manifest['form']['action'] ?? '',
+			'method'              => $manifest['form']['method'] ?? '',
+			'controls'            => array_map( static fn ( array $control ): array => array_intersect_key( $control, array_flip( array( 'tag', 'type', 'name', 'id', 'label' ) ) ), $manifest['controls'] ),
+			'submit_text'         => $form['submit_presentation']['text'] ?? '',
+			'context_before_hash' => hash( 'sha256', (string) wp_json_encode( $before ) ),
+			'context_after_hash'  => hash( 'sha256', (string) wp_json_encode( $after ) ),
+		);
+		$stored_heights = array_slice( $heights, 0, 16, true );
+		return array_filter(
+			array(
+				'schema'                        => 'generic/form-presentation/v1',
+				'selector'                      => $selector,
+				// The transformer supplies the form's document-wide position. A selector's
+				// nth-of-type position is scoped to siblings and cannot safely identify it.
+				'document_ordinal'              => $occurrence > 0 ? $occurrence : null,
+				'fingerprint'                   => hash( 'sha256', (string) wp_json_encode( $fingerprint ) ),
+				'context_before'                => array_slice( $before, 0, 8 ),
+				'context_after'                 => array_slice( $after, 0, 8 ),
+				'interleaved_context'           => $interleaved,
+				'submit_presentation'           => $form['submit_presentation'] ?? null,
+				'textarea_heights'              => $stored_heights,
+				'textarea_height_omitted_count' => max( 0, count( $heights ) - count( $stored_heights ) ),
+			)
+		);
+	}
+
+	/** Apply bounded presentation from canonical form bindings before provider validation. */
+	public static function apply_form_binding_presentation( array $entity ): array {
+		$presentations = array();
+		$control_shape = self::ordered_form_control_identity( isset( $entity['controls'] ) && is_array( $entity['controls'] ) ? $entity['controls'] : array() );
+		$bindings      = isset( $entity['bindings'] ) && is_array( $entity['bindings'] ) ? $entity['bindings'] : array();
+		foreach ( $bindings as $binding ) {
+			if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || 'form' !== ( $binding['role'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > 262144 ) {
+				continue;
+			}
+			$manifest = self::form_manifest_from_html( $binding['search_block_markup'] );
+			if ( self::ordered_form_control_identity( $manifest['controls'] ) !== $control_shape ) {
+				return $entity;
+			}
+			$presentation = self::form_presentation_from_html(
+				$binding['search_block_markup'],
+				is_string( $entity['selector'] ?? null ) ? $entity['selector'] : '',
+				$binding['occurrence']
+			);
+			if ( 'generic/form-presentation/v1' === ( $presentation['schema'] ?? null ) ) {
+				$presentations[] = $presentation;
+			}
+		}
+		$presentation_keys = array_map(
+			static fn( array $presentation ): string => hash( 'sha256', (string) wp_json_encode( array_intersect_key( $presentation, array_flip( array( 'context_before', 'context_after', 'interleaved_context', 'submit_presentation', 'textarea_heights', 'textarea_height_omitted_count' ) ) ) ) ),
+			$presentations
+		);
+		if ( empty( $presentations ) || 1 !== count( array_unique( $presentation_keys ) ) ) {
+			return $entity;
+		}
+
+		$controls           = isset( $entity['controls'] ) && is_array( $entity['controls'] ) ? $entity['controls'] : array();
+		$form               = isset( $entity['form'] ) && is_array( $entity['form'] ) ? $entity['form'] : array();
+		$entity['form']     = self::apply_form_presentation( $presentations[0], $form, $controls );
+		$entity['controls'] = $controls;
+		return $entity;
+	}
+
+	/** @param array<int,mixed> $controls @return array<int,string> */
+	private static function ordered_form_control_identity( array $controls ): array {
+		return array_map(
+			static function ( $control ): string {
+				if ( ! is_array( $control ) ) {
+					return '';
+				}
+				$identity = array_map( static fn( string $key ): string => isset( $control[ $key ] ) && is_scalar( $control[ $key ] ) ? strtolower( trim( (string) $control[ $key ] ) ) : '', array( 'tag', 'type', 'name', 'id' ) );
+				if ( '' === $identity[1] && in_array( $identity[0], array( 'select', 'textarea' ), true ) ) {
+					$identity[1] = $identity[0];
+				}
+				return hash( 'sha256', implode( ':', $identity ) );
+			},
+			array_values( $controls )
+		);
+	}
+
+	/** Apply structured presentation facts without retaining source HTML. */
+	private static function apply_form_presentation( array $presentation, array $form, array &$controls ): array {
+		if ( 'generic/form-presentation/v1' !== ( $presentation['schema'] ?? null ) ) {
+			return $form;
+		}
+		foreach ( array( 'context_before', 'context_after', 'submit_presentation' ) as $key ) {
+			if ( isset( $presentation[ $key ] ) ) {
+				$form[ $key ] = $presentation[ $key ];
+			}
+		}
+		if ( ! empty( $presentation['interleaved_context'] ) ) {
+			$form['interleaved_context'] = true;
+		}
+		if ( ! empty( $presentation['textarea_height_omitted_count'] ) ) {
+			$form['textarea_height_omitted_count'] = (int) $presentation['textarea_height_omitted_count'];
+		}
+		foreach ( $presentation['textarea_heights'] ?? array() as $index => $height ) {
+			if ( isset( $controls[ $index ] ) && is_string( $height ) ) {
+				$controls[ $index ]['height'] = $height;
+			}
+		}
+		return $form;
+	}
+
+	/** Extract a generated core/html form only when its structured fingerprint matches. */
+	private static function form_manifest_from_core_html( array $diagnostic, array $page_contents ): array {
+		$presentation = is_array( $diagnostic['form_presentation'] ?? null ) ? $diagnostic['form_presentation'] : array();
+		$source_path  = self::first_scalar( $diagnostic, array( 'graft_source_path', 'source_path', 'source' ) );
+		foreach ( self::form_fallback_page_content_keys_for_source( $source_path, $page_contents ) as $key ) {
+			$block = self::matching_core_html_form_block( $presentation, (string) ( $page_contents[ $key ] ?? '' ) );
+			if ( null !== $block ) {
+				return self::form_manifest_from_html( $block['html'] );
+			}
+		}
+		return array(
+			'form'     => array(),
+			'controls' => array(),
+		);
+	}
+
+	/**
+	 * Select a generated core/html form using a fingerprint and document-wide ordinal.
+	 *
+	 * @return array{serialized:string,html:string,offset:int,document_ordinal:int}|null
+	 */
+	private static function matching_core_html_form_block( array $presentation, string $content ): ?array {
+		if ( ! is_string( $presentation['fingerprint'] ?? null ) ) {
+			return null;
+		}
+
+		$matches          = array();
+		$document_ordinal = 0;
+		foreach ( self::serialized_core_html_blocks( $content ) as $block ) {
+			$form_count = self::form_count_from_html( $block['html'] );
+			if ( 1 !== $form_count ) {
+				$document_ordinal += $form_count;
+				continue;
+			}
+			++$document_ordinal;
+			$candidate = self::form_presentation_from_html( $block['html'] );
+			if ( hash_equals( $presentation['fingerprint'], (string) ( $candidate['fingerprint'] ?? '' ) ) ) {
+				$block['document_ordinal'] = $document_ordinal;
+				$matches[]                 = $block;
+			}
+		}
+
+		if ( 1 === count( $matches ) ) {
+			return $matches[0];
+		}
+
+		$source_ordinal = (int) ( $presentation['document_ordinal'] ?? 0 );
+		if ( $source_ordinal < 1 ) {
+			return null;
+		}
+		$ordinal_matches = array_values( array_filter( $matches, static fn ( array $block ): bool => $source_ordinal === $block['document_ordinal'] ) );
+		return 1 === count( $ordinal_matches ) ? $ordinal_matches[0] : null;
+	}
+
+	private static function form_count_from_html( string $html ): int {
+		$doc      = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$doc->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		return $doc->getElementsByTagName( 'form' )->length;
+	}
+
+	private static function is_submit_control_node( DOMElement $node ): bool {
+		$tag  = strtolower( $node->nodeName );
+		$type = strtolower( trim( $node->getAttribute( 'type' ) ) );
+		return ( 'input' === $tag && in_array( $type, array( 'submit', 'image' ), true ) ) || ( 'button' === $tag && ( '' === $type || 'submit' === $type ) );
+	}
+
+	/** @return array{text:string,classes:array<int,string>} */
+	private static function submit_presentation_from_node( DOMElement $node ): array {
+		$text = 'input' === strtolower( $node->nodeName ) ? trim( $node->getAttribute( 'value' ) ) : self::form_presentation_text( $node->textContent );
+		return array(
+			'text'    => $text,
+			'classes' => self::form_presentation_classes( 'class="' . $node->getAttribute( 'class' ) . '"' ),
+		);
+	}
+
+	private static function submit_control_is_visually_hidden( DOMElement $node ): bool {
+		return (bool) preg_match( '/(?:display\s*:\s*none|visibility\s*:\s*hidden|left\s*:\s*-\s*[0-9]+px)/i', $node->getAttribute( 'style' ) );
+	}
+
+	private static function next_element_sibling( DOMElement $node ): ?DOMElement {
+		for ( $sibling = $node->nextSibling; null !== $sibling; $sibling = $sibling->nextSibling ) {
+			if ( $sibling instanceof DOMElement ) {
+				return $sibling;
+			}
+		}
+		return null;
+	}
+
+	/** @return array<int,string> */
+	private static function form_presentation_classes( string $attributes ): array {
+		if ( ! preg_match( '/\bclass\s*=\s*(["\'])(.*?)\1/is', $attributes, $match ) ) {
+			return array();
+		}
+		$classes = preg_split( '/\s+/', trim( $match[2] ) );
+		return array_slice( array_filter( is_array( $classes ) ? $classes : array(), static fn ( string $class_name ): bool => (bool) preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ), 0, 8 );
+	}
+
+	private static function form_presentation_text( string $html ): string {
+		$plain      = function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( $html ) : strip_tags( $html ); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- Fallback only for runtime-free smoke tests.
+		$normalized = preg_replace( '/\s+/', ' ', $plain );
+		return substr( trim( is_string( $normalized ) ? $normalized : '' ), 0, 200 );
 	}
 
 	/**
@@ -1371,17 +1764,6 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
-	 * Extract the provider manifest shape from a generated core/html form diagnostic.
-	 *
-	 * @param array<string,mixed> $diagnostic Diagnostic row.
-	 * @return array{form:array<string,string>,controls:array<int,array<string,mixed>>}
-	 */
-	private static function extract_form_manifest_from_diagnostic( array $diagnostic ): array {
-		$html = self::first_scalar( $diagnostic, array( 'source_html_preview', 'html_excerpt', 'excerpt' ) );
-		return self::form_manifest_from_html( $html );
-	}
-
-	/**
 	 * Extract a provider-neutral form manifest from complete HTML.
 	 *
 	 * @param string $html Form HTML.
@@ -1418,8 +1800,10 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		$controls = array();
-		foreach ( array( 'input', 'textarea', 'select', 'button' ) as $tag_name ) {
-			foreach ( $form_node->getElementsByTagName( $tag_name ) as $control_node ) {
+		foreach ( $form_node->getElementsByTagName( '*' ) as $control_node ) {
+			if ( ! in_array( strtolower( $control_node->tagName ), array( 'input', 'textarea', 'select', 'button' ), true ) ) {
+				continue;
+			}
 				$control = array(
 					'tag'  => strtolower( $control_node->tagName ),
 					'type' => strtolower( trim( $control_node->getAttribute( 'type' ) ) ),
@@ -1449,9 +1833,11 @@ class Static_Site_Importer_Report_Diagnostics {
 				if ( $control_node->hasAttribute( 'required' ) ) {
 					$control['required'] = true;
 				}
+				if ( $control_node->hasAttribute( 'aria-required' ) ) {
+					$control['aria-required'] = $control_node->getAttribute( 'aria-required' );
+				}
 
 				$controls[] = $control;
-			}
 		}
 
 		return array(
@@ -1569,6 +1955,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	private static function form_receipt_loss_requires_gate( array $loss ): bool {
 		return 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' )
 			|| 'unsupported_control_attribute' === ( $loss['reason_code'] ?? '' )
+			|| 'textarea_height_omitted' === ( $loss['reason_code'] ?? '' )
 			|| in_array( $loss['dimension'] ?? '', array( 'semantic', 'topology' ), true )
 			|| in_array( $loss['reason_code'] ?? '', array( 'provider_structure_mismatch', 'direct_child_relationship_unrepresentable' ), true );
 	}
@@ -1698,27 +2085,26 @@ class Static_Site_Importer_Report_Diagnostics {
 	private static function graft_form_block_into_core_html_fallback( array $finding, string $block_markup, string $source_path, array &$page_contents ): array {
 		foreach ( self::form_fallback_page_content_keys_for_source( $source_path, $page_contents ) as $key ) {
 			$content = (string) ( $page_contents[ $key ] ?? '' );
-			foreach ( self::serialized_core_html_blocks( $content ) as $block ) {
-				if ( ! self::core_html_form_matches_finding( $block['html'], $finding ) ) {
-					continue;
-				}
-
-				$position = strpos( $content, $block['serialized'] );
-				if ( false === $position ) {
-					continue;
-				}
-
-				$page_contents[ $key ]               = substr( $content, 0, $position ) . $block_markup . substr( $content, $position + strlen( $block['serialized'] ) );
-				$finding['content_grafted']          = true;
-				$finding['grafted_post_content_key'] = $key;
-				$finding['graft_anchor']             = 'core_html_form_block';
-
-				return array(
-					'grafted'    => true,
-					'finding'    => $finding,
-					'diagnostic' => null,
-				);
+			$block   = self::matching_core_html_form_block( is_array( $finding['form_presentation'] ?? null ) ? $finding['form_presentation'] : array(), $content );
+			if ( null === $block ) {
+				continue;
 			}
+
+			$position = $block['offset'];
+			if ( 0 > $position || substr( $content, $position, strlen( $block['serialized'] ) ) !== $block['serialized'] ) {
+				continue;
+			}
+
+			$page_contents[ $key ]               = substr( $content, 0, $position ) . $block_markup . substr( $content, $position + strlen( $block['serialized'] ) );
+			$finding['content_grafted']          = true;
+			$finding['grafted_post_content_key'] = $key;
+			$finding['graft_anchor']             = 'core_html_form_block';
+
+			return array(
+				'grafted'    => true,
+				'finding'    => $finding,
+				'diagnostic' => null,
+			);
 		}
 
 		$finding['content_grafted'] = false;
@@ -1760,64 +2146,31 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * Extract serialized core/html blocks and their decoded HTML payloads.
 	 *
 	 * @param string $content Serialized block document.
-	 * @return array<int,array{serialized:string,html:string}>
+	 * @return array<int,array{serialized:string,html:string,offset:int}>
 	 */
 	private static function serialized_core_html_blocks( string $content ): array {
 		$blocks  = array();
 		$matches = array();
-		preg_match_all( '/<!--\s+wp:html\s+(\{.*?\})\s+\/-->/s', $content, $matches, PREG_SET_ORDER );
-		preg_match_all( '/<!--\s+wp:html\s+(\{.*?\})\s+-->(.*?)<!--\s+\/wp:html\s+-->/s', $content, $wrapped_matches, PREG_SET_ORDER );
+		preg_match_all( '/<!--\s+wp:html\s+(\{.*?\})\s+\/-->/s', $content, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE );
+		preg_match_all( '/<!--\s+wp:html\s+(\{.*?\})\s+-->(.*?)<!--\s+\/wp:html\s+-->/s', $content, $wrapped_matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE );
 		$matches = array_merge( $matches, $wrapped_matches );
 
 		foreach ( $matches as $match ) {
-			$attrs = json_decode( (string) $match[1], true );
-			$html  = is_array( $attrs ) && isset( $attrs['content'] ) && is_scalar( $attrs['content'] ) ? (string) $attrs['content'] : ( isset( $match[2] ) ? (string) $match[2] : '' );
+			$attrs = json_decode( (string) $match[1][0], true );
+			$html  = is_array( $attrs ) && isset( $attrs['content'] ) && is_scalar( $attrs['content'] ) ? (string) $attrs['content'] : ( isset( $match[2] ) ? (string) $match[2][0] : '' );
 			if ( '' !== $html ) {
 				$blocks[] = array(
-					'serialized' => (string) $match[0],
+					'serialized' => (string) $match[0][0],
 					'html'       => $html,
+					'offset'     => (int) $match[0][1],
 				);
 			}
 		}
 
+		usort( $blocks, static fn ( array $left, array $right ): int => $left['offset'] <=> $right['offset'] );
 		return $blocks;
 	}
 
-	/**
-	 * Determine whether a decoded core/html form payload matches a form finding.
-	 *
-	 * @param string              $html    Decoded core/html payload.
-	 * @param array<string,mixed> $finding Form finding.
-	 * @return bool
-	 */
-	private static function core_html_form_matches_finding( string $html, array $finding ): bool {
-		if ( ! str_contains( strtolower( $html ), '<form' ) ) {
-			return false;
-		}
-
-		$form = isset( $finding['form'] ) && is_array( $finding['form'] ) ? $finding['form'] : array();
-		foreach ( array( 'class', 'action', 'method' ) as $field ) {
-			$value = isset( $form[ $field ] ) && is_scalar( $form[ $field ] ) ? trim( (string) $form[ $field ] ) : '';
-			if ( '' !== $value && ! str_contains( $html, $value ) ) {
-				return false;
-			}
-		}
-
-		$controls = isset( $finding['controls'] ) && is_array( $finding['controls'] ) ? $finding['controls'] : array();
-		foreach ( $controls as $control ) {
-			if ( ! is_array( $control ) ) {
-				continue;
-			}
-			foreach ( array( 'id', 'name' ) as $field ) {
-				$value = isset( $control[ $field ] ) && is_scalar( $control[ $field ] ) ? trim( (string) $control[ $field ] ) : '';
-				if ( '' !== $value && ! str_contains( $html, $value ) ) {
-					return false;
-				}
-			}
-		}
-
-		return true;
-	}
 
 	/**
 	 * Resolve the page content key that owns a form finding's fallback region.
