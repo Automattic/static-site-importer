@@ -1052,6 +1052,9 @@ class Static_Site_Importer_Theme_Generator {
 			}
 			if ( 'entity_collection' === $kind ) {
 				$entities = isset( $declaration['payload']['entities'] ) && is_array( $declaration['payload']['entities'] ) ? $declaration['payload']['entities'] : array();
+				if ( 'form' === $capability ) {
+					$entities = array_map( static fn( $entity ) => is_array( $entity ) ? Static_Site_Importer_Report_Diagnostics::apply_form_binding_presentation( $entity ) : $entity, $entities );
+				}
 				$manifest = 'shop' === $capability ? array(
 					'schema_version' => 1,
 					'products'       => $entities,

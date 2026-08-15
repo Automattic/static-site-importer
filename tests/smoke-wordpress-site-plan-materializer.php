@@ -1087,6 +1087,12 @@ $topology_form                             = array(
 			'label' => 'Name',
 		),
 		array(
+			'tag'   => 'textarea',
+			'type'  => 'textarea',
+			'name'  => 'message',
+			'label' => 'Message',
+		),
+		array(
 			'tag'   => 'button',
 			'type'  => 'submit',
 			'label' => 'Send',
@@ -1124,6 +1130,23 @@ $topology_form                             = array(
 				'depth'   => 0,
 				'control' => 1,
 			),
+			array(
+				'id'      => 'control-2',
+				'kind'    => 'control',
+				'parent'  => null,
+				'order'   => 2,
+				'depth'   => 0,
+				'control' => 2,
+			),
+		),
+	),
+	'bindings'         => array(
+		array(
+			'schema'                       => 'generic/block-binding/v1',
+			'source_path'                  => 'index.html',
+			'search_block_markup'          => '<!-- wp:html --><form class="contact"><h2>Contact Me</h2><label class="required-note">* Indicates required field</label><input name="name"><textarea name="message" style="height:200px"></textarea><button type="submit" class="wsite-button">Send</button></form><!-- /wp:html -->',
+			'occurrence'                   => 1,
+			'role'                         => 'form',
 		),
 	),
 );
@@ -1148,8 +1171,55 @@ $runtime_form_plan['runtime_declarations'] = array(
 	),
 );
 $runtime_form_lifecycle                    = $prepare_lifecycle->invoke( null, $runtime_form_plan, array() );
-$runtime_form_manifest                     = $runtime_form_lifecycle['entities'][ $form_declaration_id ]['manifest']['forms'][0] ?? array();
+$assert( ! is_wp_error( $runtime_form_lifecycle ), 'canonical form binding presentation passes runtime declaration validation' . ( is_wp_error( $runtime_form_lifecycle ) ? ': ' . $runtime_form_lifecycle->get_error_code() . ' ' . wp_json_encode( $runtime_form_lifecycle->get_error_data() ) : '' ) );
+$runtime_form_manifest                     = is_wp_error( $runtime_form_lifecycle ) ? array() : ( $runtime_form_lifecycle['entities'][ $form_declaration_id ]['manifest']['forms'][0] ?? array() );
 $assert( 'section' === ( $runtime_form_manifest['control_topology']['nodes'][0]['tag'] ?? '' ), 'runtime declarations retain validated form topology' );
+$assert( 'Contact Me' === ( $runtime_form_manifest['form']['context_before'][0]['text'] ?? '' ) && '* Indicates required field' === ( $runtime_form_manifest['form']['context_before'][1]['text'] ?? '' ), 'canonical form bindings preserve ordered heading and required-note context before provider validation' );
+$assert( '200px' === ( $runtime_form_manifest['controls'][1]['height'] ?? '' ) && 'Send' === ( $runtime_form_manifest['form']['submit_presentation']['text'] ?? '' ) && in_array( 'wsite-button', $runtime_form_manifest['form']['submit_presentation']['classes'] ?? array(), true ), 'canonical form bindings preserve textarea sizing and visible submit presentation before provider validation' );
+$presentation_conflicts = array(
+	str_replace( 'Contact Me', 'Write Me', $topology_form['bindings'][0]['search_block_markup'] ),
+	str_replace( '</form>', '<p class="help-note">After</p></form>', $topology_form['bindings'][0]['search_block_markup'] ),
+	str_replace( '<textarea', '<p class="help-note">Between</p><textarea', $topology_form['bindings'][0]['search_block_markup'] ),
+	str_replace( 'class="wsite-button"', 'class="alternate-button"', $topology_form['bindings'][0]['search_block_markup'] ),
+	str_replace( 'height:200px', 'height:300px', $topology_form['bindings'][0]['search_block_markup'] ),
+);
+foreach ( $presentation_conflicts as $conflicting_markup ) {
+	$conflicting_presentation_form = $topology_form;
+	$conflicting_presentation_form['bindings'][] = array_replace( $topology_form['bindings'][0], array( 'search_block_markup' => $conflicting_markup ) );
+	$assert( ! isset( Static_Site_Importer_Report_Diagnostics::apply_form_binding_presentation( $conflicting_presentation_form )['form']['context_before'] ), 'conflicting bounded presentation across canonical form bindings fails closed' );
+}
+$many_textarea_controls = array();
+$many_textareas_full    = '<form>';
+$many_textareas_partial = '<form>';
+for ( $index = 0; $index < 17; ++$index ) {
+	$many_textarea_controls[] = array( 'tag' => 'textarea', 'type' => 'textarea', 'name' => 'message-' . $index );
+	$many_textareas_full     .= '<textarea name="message-' . $index . '" style="height:200px"></textarea>';
+	$many_textareas_partial  .= '<textarea name="message-' . $index . '"' . ( 16 === $index ? '' : ' style="height:200px"' ) . '></textarea>';
+}
+$many_textarea_controls[] = array( 'tag' => 'button', 'type' => 'submit' );
+$many_textareas_full     .= '<button type="submit">Send</button></form>';
+$many_textareas_partial  .= '<button type="submit">Send</button></form>';
+$many_textarea_form       = array(
+	'controls' => $many_textarea_controls,
+	'bindings' => array(
+		array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'index.html', 'search_block_markup' => $many_textareas_full, 'occurrence' => 1, 'role' => 'form' ),
+		array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'index.html', 'search_block_markup' => $many_textareas_partial, 'occurrence' => 1, 'role' => 'form' ),
+	),
+);
+$assert( ! isset( Static_Site_Importer_Report_Diagnostics::apply_form_binding_presentation( $many_textarea_form )['controls'][0]['height'] ), 'conflicting bounded textarea-height omission counts fail closed' );
+$reordered_presentation_form             = $topology_form;
+$reordered_presentation_form['controls'] = array_reverse( $reordered_presentation_form['controls'] );
+$assert( ! isset( Static_Site_Importer_Report_Diagnostics::apply_form_binding_presentation( $reordered_presentation_form )['form']['context_before'] ), 'binding presentation fails closed when declaration control order does not match the exact anchor' );
+$invalid_presentation_form                            = $topology_form;
+$invalid_presentation_form['bindings'][0]['schema']   = 'generic/block-binding/invalid';
+$assert( ! isset( Static_Site_Importer_Report_Diagnostics::apply_form_binding_presentation( $invalid_presentation_form )['form']['context_before'] ), 'non-canonical form bindings are ignored before presentation extraction' );
+$scalar_bindings_form             = $topology_form;
+$scalar_bindings_form['bindings'] = 'invalid';
+$assert( $scalar_bindings_form === Static_Site_Importer_Report_Diagnostics::apply_form_binding_presentation( $scalar_bindings_form ), 'malformed binding collections remain unchanged for structured provider validation' );
+$malformed_entity_plan = $runtime_form_plan;
+$malformed_entity_plan['runtime_declarations'][1]['payload']['entities'] = array( 'invalid' );
+$malformed_entity_lifecycle = $prepare_lifecycle->invoke( null, $malformed_entity_plan, array() );
+$assert( is_wp_error( $malformed_entity_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $malformed_entity_lifecycle->get_error_code(), 'malformed form entities retain structured pre-provider rejection' );
 
 $unknown_topology_form                                  = $topology_form;
 $unknown_topology_form['control_topology']['untrusted'] = 'reject-me';

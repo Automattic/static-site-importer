@@ -1469,6 +1469,60 @@ class Static_Site_Importer_Report_Diagnostics {
 		);
 	}
 
+	/** Apply bounded presentation from canonical form bindings before provider validation. */
+	public static function apply_form_binding_presentation( array $entity ): array {
+		$presentations  = array();
+		$control_shape = self::ordered_form_control_identity( isset( $entity['controls'] ) && is_array( $entity['controls'] ) ? $entity['controls'] : array() );
+		$bindings      = isset( $entity['bindings'] ) && is_array( $entity['bindings'] ) ? $entity['bindings'] : array();
+		foreach ( $bindings as $binding ) {
+			if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || 'form' !== ( $binding['role'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > 262144 ) {
+				continue;
+			}
+			$manifest = self::form_manifest_from_html( $binding['search_block_markup'] );
+			if ( $control_shape !== self::ordered_form_control_identity( $manifest['controls'] ) ) {
+				return $entity;
+			}
+			$presentation = self::form_presentation_from_html(
+				$binding['search_block_markup'],
+				is_string( $entity['selector'] ?? null ) ? $entity['selector'] : '',
+				$binding['occurrence']
+			);
+			if ( 'generic/form-presentation/v1' === ( $presentation['schema'] ?? null ) ) {
+				$presentations[] = $presentation;
+			}
+		}
+		$presentation_keys = array_map(
+			static fn( array $presentation ): string => hash( 'sha256', (string) wp_json_encode( array_intersect_key( $presentation, array_flip( array( 'context_before', 'context_after', 'interleaved_context', 'submit_presentation', 'textarea_heights', 'textarea_height_omitted_count' ) ) ) ) ),
+			$presentations
+		);
+		if ( empty( $presentations ) || 1 !== count( array_unique( $presentation_keys ) ) ) {
+			return $entity;
+		}
+
+		$controls           = isset( $entity['controls'] ) && is_array( $entity['controls'] ) ? $entity['controls'] : array();
+		$form               = isset( $entity['form'] ) && is_array( $entity['form'] ) ? $entity['form'] : array();
+		$entity['form']     = self::apply_form_presentation( $presentations[0], $form, $controls );
+		$entity['controls'] = $controls;
+		return $entity;
+	}
+
+	/** @param array<int,mixed> $controls @return array<int,string> */
+	private static function ordered_form_control_identity( array $controls ): array {
+		return array_map(
+			static function ( $control ): string {
+				if ( ! is_array( $control ) ) {
+					return '';
+				}
+				$identity = array_map( static fn( string $key ): string => isset( $control[ $key ] ) && is_scalar( $control[ $key ] ) ? strtolower( trim( (string) $control[ $key ] ) ) : '', array( 'tag', 'type', 'name', 'id' ) );
+				if ( '' === $identity[1] && in_array( $identity[0], array( 'select', 'textarea' ), true ) ) {
+					$identity[1] = $identity[0];
+				}
+				return hash( 'sha256', implode( ':', $identity ) );
+			},
+			array_values( $controls )
+		);
+	}
+
 	/** Apply structured presentation facts without retaining source HTML. */
 	private static function apply_form_presentation( array $presentation, array $form, array &$controls ): array {
 		if ( 'generic/form-presentation/v1' !== ( $presentation['schema'] ?? null ) ) {
