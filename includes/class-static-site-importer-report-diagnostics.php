@@ -1415,7 +1415,9 @@ class Static_Site_Importer_Report_Diagnostics {
 		return array_filter( array(
 			'schema' => 'generic/form-presentation/v1',
 			'selector' => $selector,
-			'occurrence' => $occurrence > 0 ? $occurrence : self::form_selector_occurrence( $selector ),
+			// The transformer supplies the form's document-wide position. A selector's
+			// nth-of-type position is scoped to siblings and cannot safely identify it.
+			'document_ordinal' => $occurrence > 0 ? $occurrence : null,
 			'fingerprint' => hash( 'sha256', wp_json_encode( $fingerprint ) ),
 			'context_before' => array_slice( $before, 0, 8 ),
 			'context_after' => array_slice( $after, 0, 8 ),
@@ -1424,10 +1426,6 @@ class Static_Site_Importer_Report_Diagnostics {
 			'textarea_heights' => $stored_heights,
 			'textarea_height_omitted_count' => max( 0, count( $heights ) - count( $stored_heights ) ),
 		) );
-	}
-
-	private static function form_selector_occurrence( string $selector ): int {
-		return preg_match( '/:nth-of-type\((\d+)\)/', $selector, $match ) ? max( 1, (int) $match[1] ) : 0;
 	}
 
 	/** Apply structured presentation facts without retaining source HTML. */
@@ -1459,21 +1457,59 @@ class Static_Site_Importer_Report_Diagnostics {
 		$presentation = is_array( $diagnostic['form_presentation'] ?? null ) ? $diagnostic['form_presentation'] : array();
 		$source_path  = self::first_scalar( $diagnostic, array( 'graft_source_path', 'source_path', 'source' ) );
 		foreach ( self::form_fallback_page_content_keys_for_source( $source_path, $page_contents ) as $key ) {
-			foreach ( self::serialized_core_html_blocks( (string) ( $page_contents[ $key ] ?? '' ) ) as $block ) {
-				if ( self::form_presentation_matches_html( $presentation, $block['html'] ) ) {
-					return self::form_manifest_from_html( $block['html'] );
-				}
+			$block = self::matching_core_html_form_block( $presentation, (string) ( $page_contents[ $key ] ?? '' ) );
+			if ( null !== $block ) {
+				return self::form_manifest_from_html( $block['html'] );
 			}
 		}
 		return array( 'form' => array(), 'controls' => array() );
 	}
 
-	private static function form_presentation_matches_html( array $presentation, string $html ): bool {
+	/**
+	 * Select a generated core/html form using a fingerprint and document-wide ordinal.
+	 *
+	 * @return array{serialized:string,html:string,document_ordinal:int}|null
+	 */
+	private static function matching_core_html_form_block( array $presentation, string $content ): ?array {
 		if ( ! is_string( $presentation['fingerprint'] ?? null ) ) {
-			return false;
+			return null;
 		}
-		$candidate = self::form_presentation_from_html( $html, (string) ( $presentation['selector'] ?? '' ) );
-		return hash_equals( $presentation['fingerprint'], (string) ( $candidate['fingerprint'] ?? '' ) );
+
+		$matches          = array();
+		$document_ordinal = 0;
+		foreach ( self::serialized_core_html_blocks( $content ) as $block ) {
+			$form_count = self::form_count_from_html( $block['html'] );
+			if ( 1 !== $form_count ) {
+				$document_ordinal += $form_count;
+				continue;
+			}
+			++$document_ordinal;
+			$candidate = self::form_presentation_from_html( $block['html'] );
+			if ( hash_equals( $presentation['fingerprint'], (string) ( $candidate['fingerprint'] ?? '' ) ) ) {
+				$block['document_ordinal'] = $document_ordinal;
+				$matches[]                  = $block;
+			}
+		}
+
+		if ( 1 === count( $matches ) ) {
+			return $matches[0];
+		}
+
+		$source_ordinal = (int) ( $presentation['document_ordinal'] ?? 0 );
+		if ( $source_ordinal < 1 ) {
+			return null;
+		}
+		$ordinal_matches = array_values( array_filter( $matches, static fn ( array $block ): bool => $source_ordinal === $block['document_ordinal'] ) );
+		return 1 === count( $ordinal_matches ) ? $ordinal_matches[0] : null;
+	}
+
+	private static function form_count_from_html( string $html ): int {
+		$doc      = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$doc->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		return $doc->getElementsByTagName( 'form' )->length;
 	}
 
 	private static function is_submit_control_node( DOMElement $node ): bool {
@@ -1829,6 +1865,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	private static function form_receipt_loss_requires_gate( array $loss ): bool {
 		return 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' )
 			|| 'unsupported_control_attribute' === ( $loss['reason_code'] ?? '' )
+			|| 'textarea_height_omitted' === ( $loss['reason_code'] ?? '' )
 			|| in_array( $loss['dimension'] ?? '', array( 'semantic', 'topology' ), true )
 			|| in_array( $loss['reason_code'] ?? '', array( 'provider_structure_mismatch', 'direct_child_relationship_unrepresentable' ), true );
 	}
@@ -1958,32 +1995,26 @@ class Static_Site_Importer_Report_Diagnostics {
 	private static function graft_form_block_into_core_html_fallback( array $finding, string $block_markup, string $source_path, array &$page_contents ): array {
 		foreach ( self::form_fallback_page_content_keys_for_source( $source_path, $page_contents ) as $key ) {
 			$content = (string) ( $page_contents[ $key ] ?? '' );
-			$matches = array_values( array_filter( self::serialized_core_html_blocks( $content ), static fn ( array $block ): bool => self::core_html_form_matches_finding( $block['html'], $finding ) ) );
-			if ( empty( $matches ) ) {
+			$block   = self::matching_core_html_form_block( is_array( $finding['form_presentation'] ?? null ) ? $finding['form_presentation'] : array(), $content );
+			if ( null === $block ) {
 				continue;
 			}
-			$occurrence = (int) ( $finding['form_presentation']['occurrence'] ?? 0 );
-			if ( count( $matches ) > 1 && ( $occurrence < 1 || $occurrence > count( $matches ) ) ) {
+
+			$position = strpos( $content, $block['serialized'] );
+			if ( false === $position ) {
 				continue;
 			}
-			foreach ( array( count( $matches ) > 1 ? $matches[ $occurrence - 1 ] : $matches[0] ) as $block ) {
 
-				$position = strpos( $content, $block['serialized'] );
-				if ( false === $position ) {
-					continue;
-				}
+			$page_contents[ $key ]               = substr( $content, 0, $position ) . $block_markup . substr( $content, $position + strlen( $block['serialized'] ) );
+			$finding['content_grafted']          = true;
+			$finding['grafted_post_content_key'] = $key;
+			$finding['graft_anchor']             = 'core_html_form_block';
 
-				$page_contents[ $key ]               = substr( $content, 0, $position ) . $block_markup . substr( $content, $position + strlen( $block['serialized'] ) );
-				$finding['content_grafted']          = true;
-				$finding['grafted_post_content_key'] = $key;
-				$finding['graft_anchor']             = 'core_html_form_block';
-
-				return array(
-					'grafted'    => true,
-					'finding'    => $finding,
-					'diagnostic' => null,
-				);
-			}
+			return array(
+				'grafted'    => true,
+				'finding'    => $finding,
+				'diagnostic' => null,
+			);
 		}
 
 		$finding['content_grafted'] = false;
@@ -2048,44 +2079,6 @@ class Static_Site_Importer_Report_Diagnostics {
 		return $blocks;
 	}
 
-	/**
-	 * Determine whether a decoded core/html form payload matches a form finding.
-	 *
-	 * @param string              $html    Decoded core/html payload.
-	 * @param array<string,mixed> $finding Form finding.
-	 * @return bool
-	 */
-	private static function core_html_form_matches_finding( string $html, array $finding ): bool {
-		if ( ! str_contains( strtolower( $html ), '<form' ) ) {
-			return false;
-		}
-		if ( is_array( $finding['form_presentation'] ?? null ) ) {
-			return self::form_presentation_matches_html( $finding['form_presentation'], $html );
-		}
-
-		$form = isset( $finding['form'] ) && is_array( $finding['form'] ) ? $finding['form'] : array();
-		foreach ( array( 'class', 'action', 'method' ) as $field ) {
-			$value = isset( $form[ $field ] ) && is_scalar( $form[ $field ] ) ? trim( (string) $form[ $field ] ) : '';
-			if ( '' !== $value && ! str_contains( $html, $value ) ) {
-				return false;
-			}
-		}
-
-		$controls = isset( $finding['controls'] ) && is_array( $finding['controls'] ) ? $finding['controls'] : array();
-		foreach ( $controls as $control ) {
-			if ( ! is_array( $control ) ) {
-				continue;
-			}
-			foreach ( array( 'id', 'name' ) as $field ) {
-				$value = isset( $control[ $field ] ) && is_scalar( $control[ $field ] ) ? trim( (string) $control[ $field ] ) : '';
-				if ( '' !== $value && ! str_contains( $html, $value ) ) {
-					return false;
-				}
-			}
-		}
-
-		return true;
-	}
 
 	/**
 	 * Resolve the page content key that owns a form finding's fallback region.

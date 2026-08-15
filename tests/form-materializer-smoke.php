@@ -360,6 +360,23 @@ namespace {
 	$number_control_seeding = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $number_control_report, array() );
 	$number_control_finding = $number_control_report['diagnostics'][0] ?? array();
 	$assert( false === ( $number_control_finding['runtime_mapped'] ?? true ) && array( 'min', 'max' ) === array_column( $number_control_finding['form_receipt_unaccepted_losses'] ?? array(), 'attribute' ) && 2 === ( $number_control_seeding['unaccepted_receipt_loss_count'] ?? 0 ), 'number-unsupported-attributes-gate-form-runtime-acceptance' );
+	$height_controls = array();
+	$height_html     = '<form class="many-heights">';
+	for ( $height_index = 1; $height_index <= 17; ++$height_index ) {
+		$height_html       .= '<textarea name="message-' . $height_index . '" style="height:' . $height_index . 'px"></textarea>';
+		$height_controls[] = array( 'tag' => 'textarea', 'type' => 'textarea', 'name' => 'message-' . $height_index );
+	}
+	$height_html       .= '<button type="submit">Send</button></form>';
+	$height_controls[] = array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' );
+	$height_report      = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/many-heights.html' );
+	$height_report['diagnostics'][] = array(
+		'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_form_fallback', 'loss_class' => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+		'source_path' => 'website/many-heights.html', 'selector' => 'form.many-heights', 'tag' => 'form', 'controls' => $height_controls,
+		'form_presentation' => Static_Site_Importer_Report_Diagnostics::form_presentation_from_html( $height_html, 'form.many-heights', 1 ),
+	);
+	$height_seeding = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $height_report, array() );
+	$height_finding = $height_report['diagnostics'][0] ?? array();
+	$assert( false === ( $height_finding['runtime_mapped'] ?? true ) && 'textarea_height_omitted' === ( $height_finding['form_receipt_unaccepted_losses'][0]['reason_code'] ?? '' ) && 1 === ( $height_seeding['unaccepted_receipt_loss_count'] ?? 0 ), 'omitted-textarea-heights-gate-form-runtime-acceptance' );
 	$newsletter = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.newsletter', 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ), array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Subscribe to newsletter' ) ) ) ) ) );
 	$assert( 'Subscribe to newsletter' === ( $newsletter['forms'][0]['submit_text'] ?? '' ), 'canonical-control-text-preserves-newsletter-submit-label' );
 	if ( function_exists( 'parse_blocks' ) ) {
@@ -734,6 +751,36 @@ namespace {
 	$paired_seeding = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $paired_report, array(), $paired_contents );
 	$assert( 2 === ( $paired_seeding['grafted_count'] ?? 0 ) && str_contains( $paired_contents['website/paired.html'], '>Send Alpha</button>' ) && str_contains( $paired_contents['website/paired.html'], '>Send Beta</button>' ) && str_contains( $paired_contents['website/paired.html'], 'Alpha heading' ) && str_contains( $paired_contents['website/paired.html'], 'Beta heading' ), 'graft-pairs-same-action-same-control-forms-by-presentation-fingerprint' );
 
+	$identical_form = '<form class="identical"><input name="email" type="email"><button type="submit">Send</button></form>';
+	$ordinal_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/ordinals.html' );
+	foreach ( array( array( 3, 'Third' ), array( 2, 'Second' ) ) as $ordinal_source ) {
+		$ordinal = $ordinal_source[0];
+		$label   = $ordinal_source[1];
+		$ordinal_report['diagnostics'][] = array(
+			'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_form_fallback', 'loss_class' => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+			'source_path' => 'website/ordinals.html', 'selector' => 'form.identical-' . strtolower( $label ), 'tag' => 'form',
+			'form_presentation' => Static_Site_Importer_Report_Diagnostics::form_presentation_from_html( $identical_form, 'form.identical-' . strtolower( $label ), $ordinal ),
+			'form' => array( 'class' => 'identical' ), 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => $label ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ),
+		);
+	}
+	$ordinal_contents = array( 'website/ordinals.html' => $core_html_block( '<form class="unrelated"><input name="other" type="email"><button type="submit">Other</button></form>' ) . $core_html_block( $identical_form ) . $core_html_block( $identical_form ) );
+	$resolve_core_html_form = new ReflectionMethod( 'Static_Site_Importer_Report_Diagnostics', 'matching_core_html_form_block' );
+	$second_candidate       = $resolve_core_html_form->invoke( null, $ordinal_report['diagnostics'][1]['form_presentation'], $ordinal_contents['website/ordinals.html'] );
+	$third_candidate        = $resolve_core_html_form->invoke( null, $ordinal_report['diagnostics'][0]['form_presentation'], $ordinal_contents['website/ordinals.html'] );
+	$ordinal_seeding = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $ordinal_report, array(), $ordinal_contents );
+	$assert( 2 === ( $ordinal_seeding['grafted_count'] ?? 0 ) && 2 === ( $second_candidate['document_ordinal'] ?? 0 ) && 3 === ( $third_candidate['document_ordinal'] ?? 0 ) && str_contains( $ordinal_contents['website/ordinals.html'], 'unrelated' ), 'graft-matches-identical-forms-by-document-ordinal-despite-preceding-form-and-reversed-diagnostics' );
+
+	$ambiguous_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/ambiguous.html' );
+	$ambiguous_report['diagnostics'][] = array(
+		'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_form_fallback', 'loss_class' => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+		'source_path' => 'website/ambiguous.html', 'selector' => 'form.identical', 'tag' => 'form',
+		'form_presentation' => Static_Site_Importer_Report_Diagnostics::form_presentation_from_html( $identical_form, 'form.identical' ),
+		'form' => array( 'class' => 'identical' ), 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ),
+	);
+	$ambiguous_contents = array( 'website/ambiguous.html' => $core_html_block( $identical_form ) . $core_html_block( $identical_form ) );
+	$ambiguous_seeding = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $ambiguous_report, array(), $ambiguous_contents );
+	$assert( 0 === ( $ambiguous_seeding['grafted_count'] ?? -1 ) && 2 === substr_count( $ambiguous_contents['website/ambiguous.html'], '<!-- wp:html' ), 'graft-fails-closed-for-ambiguous-fingerprint-without-document-ordinal' );
+
 	// A source fallback delegates to its generated-document finding instead of
 	// reporting a duplicate unanchorable graft after URL/class normalization.
 	$delegated_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/index.html' );
@@ -757,6 +804,7 @@ namespace {
 		'source_html_preview' => $core_html_form,
 		'form'                => array( 'class' => 'newsletter-form', 'action' => '#', 'method' => 'post' ),
 		'controls'            => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ) ),
+		'form_presentation'   => Static_Site_Importer_Report_Diagnostics::form_presentation_from_html( $core_html_form, 'form.generated-form', 1 ),
 	);
 	$delegated_contents = array( 'parts/footer.html' => $core_html_block( $core_html_form ) );
 	$delegated_seeding  = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $delegated_report, array(), $delegated_contents );
