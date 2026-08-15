@@ -366,6 +366,7 @@ class Static_Site_Importer_Form_Seeder {
 		$control_attribute_losses = array();
 		$has_topology             = isset( $form['control_topology'] );
 		$has_source_submit        = false;
+		$textarea_height_omitted_count = (int) ( $form['form']['textarea_height_omitted_count'] ?? 0 );
 		if ( ! empty( $form['form']['interleaved_context'] ) ) {
 			return array(
 				'selector' => $selector, 'source_path' => $source_path, 'provider' => self::PROVIDER_ID,
@@ -452,6 +453,9 @@ class Static_Site_Importer_Form_Seeder {
 		$layout_form                 = $form;
 		$layout_form['layout_graph'] = $provider_graph;
 		$layout                      = Static_Site_Importer_Computed_Layout_Strategy::apply( $layout_form, $inner_blocks );
+		if ( $textarea_height_omitted_count > 0 ) {
+			$control_attribute_losses[] = array( 'dimension' => 'control', 'reason_code' => 'textarea_height_omitted', 'omitted_count' => $textarea_height_omitted_count );
+		}
 		self::append_receipt_entries( $layout['receipt'], 'operations', $topology['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
 		$inner_blocks                 = $layout['blocks'];

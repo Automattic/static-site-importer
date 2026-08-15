@@ -250,7 +250,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			$manifest                   = self::form_manifest_from_html( $element_html );
 			$entry['form']              = $manifest['form'];
 			$entry['controls']          = $manifest['controls'];
-			$entry['form_presentation'] = self::form_presentation_from_html( $element_html, $selector );
+			$entry['form_presentation'] = self::form_presentation_from_html( $element_html, $selector, (int) ( $context['occurrence'] ?? 0 ) );
 		}
 
 		return $entry;
@@ -1364,7 +1364,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 *
 	 * @return array<string,mixed>
 	 */
-	public static function form_presentation_from_html( string $html, string $selector = '' ): array {
+	public static function form_presentation_from_html( string $html, string $selector = '', int $occurrence = 0 ): array {
 		$manifest = self::form_manifest_from_html( $html );
 		$form     = self::preserved_form_presentation( $html, $manifest['form'], $manifest['controls'] );
 		$doc      = new DOMDocument();
@@ -1405,16 +1405,29 @@ class Static_Site_Importer_Report_Diagnostics {
 				$heights[ $index ] = $control['height'];
 			}
 		}
+		$fingerprint = array(
+			'class' => $manifest['form']['class'] ?? '', 'action' => $manifest['form']['action'] ?? '', 'method' => $manifest['form']['method'] ?? '',
+			'controls' => array_map( static fn ( array $control ): array => array_intersect_key( $control, array_flip( array( 'tag', 'type', 'name', 'id', 'label' ) ) ), $manifest['controls'] ),
+			'submit_text' => $form['submit_presentation']['text'] ?? '',
+			'context_before_hash' => hash( 'sha256', wp_json_encode( $before ) ), 'context_after_hash' => hash( 'sha256', wp_json_encode( $after ) ),
+		);
+		$stored_heights = array_slice( $heights, 0, 16, true );
 		return array_filter( array(
 			'schema' => 'generic/form-presentation/v1',
 			'selector' => $selector,
-			'fingerprint' => hash( 'sha256', wp_json_encode( array( 'action' => $manifest['form']['action'] ?? '', 'controls' => array_map( static fn ( array $control ): array => array_intersect_key( $control, array_flip( array( 'tag', 'type', 'name', 'id' ) ) ), $manifest['controls'] ) ) ) ),
+			'occurrence' => $occurrence > 0 ? $occurrence : self::form_selector_occurrence( $selector ),
+			'fingerprint' => hash( 'sha256', wp_json_encode( $fingerprint ) ),
 			'context_before' => array_slice( $before, 0, 8 ),
 			'context_after' => array_slice( $after, 0, 8 ),
 			'interleaved_context' => $interleaved,
 			'submit_presentation' => $form['submit_presentation'] ?? null,
-			'textarea_heights' => $heights,
+			'textarea_heights' => $stored_heights,
+			'textarea_height_omitted_count' => max( 0, count( $heights ) - count( $stored_heights ) ),
 		) );
+	}
+
+	private static function form_selector_occurrence( string $selector ): int {
+		return preg_match( '/:nth-of-type\((\d+)\)/', $selector, $match ) ? max( 1, (int) $match[1] ) : 0;
 	}
 
 	/** Apply structured presentation facts without retaining source HTML. */
@@ -1429,6 +1442,9 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 		if ( ! empty( $presentation['interleaved_context'] ) ) {
 			$form['interleaved_context'] = true;
+		}
+		if ( ! empty( $presentation['textarea_height_omitted_count'] ) ) {
+			$form['textarea_height_omitted_count'] = (int) $presentation['textarea_height_omitted_count'];
 		}
 		foreach ( $presentation['textarea_heights'] ?? array() as $index => $height ) {
 			if ( isset( $controls[ $index ] ) && is_string( $height ) ) {
@@ -1942,10 +1958,15 @@ class Static_Site_Importer_Report_Diagnostics {
 	private static function graft_form_block_into_core_html_fallback( array $finding, string $block_markup, string $source_path, array &$page_contents ): array {
 		foreach ( self::form_fallback_page_content_keys_for_source( $source_path, $page_contents ) as $key ) {
 			$content = (string) ( $page_contents[ $key ] ?? '' );
-			foreach ( self::serialized_core_html_blocks( $content ) as $block ) {
-				if ( ! self::core_html_form_matches_finding( $block['html'], $finding ) ) {
-					continue;
-				}
+			$matches = array_values( array_filter( self::serialized_core_html_blocks( $content ), static fn ( array $block ): bool => self::core_html_form_matches_finding( $block['html'], $finding ) ) );
+			if ( empty( $matches ) ) {
+				continue;
+			}
+			$occurrence = (int) ( $finding['form_presentation']['occurrence'] ?? 0 );
+			if ( count( $matches ) > 1 && ( $occurrence < 1 || $occurrence > count( $matches ) ) ) {
+				continue;
+			}
+			foreach ( array( count( $matches ) > 1 ? $matches[ $occurrence - 1 ] : $matches[0] ) as $block ) {
 
 				$position = strpos( $content, $block['serialized'] );
 				if ( false === $position ) {

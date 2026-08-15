@@ -719,20 +719,20 @@ namespace {
 	$assert( 0 === ( $interleaved_seeding['grafted_count'] ?? -1 ) && str_contains( $interleaved_contents['website/interleaved.html'], 'This note is between fields.') && 'form_context_interleaved' === ( $interleaved_report['diagnostics'][1]['diagnostic_code'] ?? '' ), 'graft-fails-closed-for-interleaved-context-with-truthful-diagnostic' );
 
 	$paired_forms = array(
-		'<form class="same" action="/a"><input name="email" type="email"><button type="submit">Send A</button></form>',
-		'<form class="same" action="/b"><input name="email" type="email"><button type="submit">Send B</button></form>',
+		'<form class="same" action="/submit"><h2>Alpha heading</h2><input name="email" type="email" aria-label="Alpha email"><button class="alpha-submit" type="submit">Send Alpha</button></form>',
+		'<form class="same" action="/submit"><h2>Beta heading</h2><input name="email" type="email" aria-label="Beta email"><button class="beta-submit" type="submit">Send Beta</button></form>',
 	);
 	$paired_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/paired.html' );
 	foreach ( $paired_forms as $paired_index => $paired_form ) {
 		$paired_report['diagnostics'][] = array(
 			'type' => 'unsupported_html_fallback', 'diagnostic_code' => 'html_form_fallback', 'loss_class' => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
 			'source_path' => 'website/paired.html', 'selector' => 'form.same:nth-of-type(' . ( $paired_index + 1 ) . ')', 'tag' => 'form', 'form_presentation' => Static_Site_Importer_Report_Diagnostics::form_presentation_from_html( $paired_form, 'form.same:nth-of-type(' . ( $paired_index + 1 ) . ')' ),
-			'form' => array( 'class' => 'same', 'action' => '/' . ( 0 === $paired_index ? 'a' : 'b' ) ), 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' . ( 0 === $paired_index ? ' A' : ' B' ) ) ),
+			'form' => array( 'class' => 'same', 'action' => '/submit' ), 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send ' . ( 0 === $paired_index ? 'Alpha' : 'Beta' ) ) ),
 		);
 	}
 	$paired_contents = array( 'website/paired.html' => $core_html_block( $paired_forms[1] ) . $core_html_block( $paired_forms[0] ) );
 	$paired_seeding = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $paired_report, array(), $paired_contents );
-	$assert( 2 === ( $paired_seeding['grafted_count'] ?? 0 ) && str_contains( $paired_contents['website/paired.html'], '>Send A</button>' ) && str_contains( $paired_contents['website/paired.html'], '>Send B</button>' ), 'graft-pairs-same-named-forms-by-action-and-control-fingerprint' );
+	$assert( 2 === ( $paired_seeding['grafted_count'] ?? 0 ) && str_contains( $paired_contents['website/paired.html'], '>Send Alpha</button>' ) && str_contains( $paired_contents['website/paired.html'], '>Send Beta</button>' ) && str_contains( $paired_contents['website/paired.html'], 'Alpha heading' ) && str_contains( $paired_contents['website/paired.html'], 'Beta heading' ), 'graft-pairs-same-action-same-control-forms-by-presentation-fingerprint' );
 
 	// A source fallback delegates to its generated-document finding instead of
 	// reporting a duplicate unanchorable graft after URL/class normalization.
