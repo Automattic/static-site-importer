@@ -1471,7 +1471,7 @@ class Static_Site_Importer_Report_Diagnostics {
 
 	/** Apply bounded presentation from canonical form bindings before provider validation. */
 	public static function apply_form_binding_presentation( array $entity ): array {
-		$presentations  = array();
+		$presentations = array();
 		$control_shape = self::ordered_form_control_identity( isset( $entity['controls'] ) && is_array( $entity['controls'] ) ? $entity['controls'] : array() );
 		$bindings      = isset( $entity['bindings'] ) && is_array( $entity['bindings'] ) ? $entity['bindings'] : array();
 		foreach ( $bindings as $binding ) {
@@ -1479,7 +1479,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				continue;
 			}
 			$manifest = self::form_manifest_from_html( $binding['search_block_markup'] );
-			if ( $control_shape !== self::ordered_form_control_identity( $manifest['controls'] ) ) {
+			if ( self::ordered_form_control_identity( $manifest['controls'] ) !== $control_shape ) {
 				return $entity;
 			}
 			$presentation = self::form_presentation_from_html(
@@ -1648,7 +1648,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	private static function form_presentation_text( string $html ): string {
-		$plain = function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( $html ) : strip_tags( $html ); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- Fallback only for runtime-free smoke tests.
+		$plain      = function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( $html ) : strip_tags( $html ); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- Fallback only for runtime-free smoke tests.
 		$normalized = preg_replace( '/\s+/', ' ', $plain );
 		return substr( trim( is_string( $normalized ) ? $normalized : '' ), 0, 200 );
 	}
