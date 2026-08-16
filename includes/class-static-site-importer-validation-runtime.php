@@ -18,8 +18,9 @@ if ( ! class_exists( 'Static_Site_Importer_Website_Artifact_Import_Input' ) ) {
  */
 class Static_Site_Importer_Validation_Runtime {
 
-	public const RESULT_SCHEMA                = 'static-site-importer/import-validation-result/v1';
-	public const FIXTURE_MATRIX_RESULT_SCHEMA = 'static-site-importer/fixture-matrix-validation-result/v1';
+	public const RESULT_SCHEMA                    = 'static-site-importer/import-validation-result/v1';
+	public const FIXTURE_MATRIX_RESULT_SCHEMA     = 'static-site-importer/fixture-matrix-validation-result/v1';
+	public const LIFECYCLE_ARTIFACT_DIGEST_SCHEMA = 'static-site-importer/lifecycle-artifact-digest/v1';
 
 	/**
 	 * Project the full validation result into the bounded fixture-matrix contract.
@@ -156,6 +157,57 @@ class Static_Site_Importer_Validation_Runtime {
 			'dependencies'      => $result['dependencies'] ?? array(),
 			'runtime_lifecycle' => $result['runtime_lifecycle'] ?? array(),
 		);
+	}
+
+	/**
+	 * Build a streaming digest for the exact JSON file handed between CLI lifecycle steps.
+	 *
+	 * This supplements, but does not replace, the canonical artifact_sha256 receipt field.
+	 *
+	 * @param string $artifact_path Artifact JSON file path.
+	 * @return array<string,string>|WP_Error
+	 */
+	public static function lifecycle_artifact_digest_from_file( string $artifact_path ) {
+		$digest = is_readable( $artifact_path ) ? hash_file( 'sha256', $artifact_path ) : false;
+		if ( ! is_string( $digest ) || ! preg_match( '/^[a-f0-9]{64}$/', $digest ) ) {
+			return new WP_Error( 'static_site_importer_lifecycle_artifact_digest_missing', 'The lifecycle artifact digest could not be calculated.' );
+		}
+
+		return array(
+			'schema'         => self::LIFECYCLE_ARTIFACT_DIGEST_SCHEMA,
+			'representation' => 'artifact-json-file-bytes',
+			'sha256'         => $digest,
+		);
+	}
+
+	/**
+	 * Verify that a lifecycle receipt binds to the supplied artifact.
+	 *
+	 * Versioned file digests are authoritative for newer CLI receipts and avoid
+	 * serializing the decoded artifact a second time. Receipts without one retain
+	 * the original canonical wp_json_encode() identity for compatibility.
+	 *
+	 * @param array<string,mixed> $receipt       Lifecycle receipt.
+	 * @param string              $artifact_path Artifact JSON file path.
+	 * @param array<string,mixed> $artifact      Decoded artifact for legacy receipts.
+	 */
+	public static function lifecycle_receipt_matches_artifact( array $receipt, string $artifact_path, array $artifact ): bool {
+		if ( isset( $receipt['artifact_digest'] ) ) {
+			$digest = $receipt['artifact_digest'];
+			if ( ! is_array( $digest ) || self::LIFECYCLE_ARTIFACT_DIGEST_SCHEMA !== ( $digest['schema'] ?? '' ) || 'artifact-json-file-bytes' !== ( $digest['representation'] ?? '' ) || ! is_string( $digest['sha256'] ) || ! preg_match( '/^[a-f0-9]{64}$/', $digest['sha256'] ) ) {
+				return false;
+			}
+
+			$current_digest = self::lifecycle_artifact_digest_from_file( $artifact_path );
+
+			return ! is_wp_error( $current_digest ) && hash_equals( $digest['sha256'], $current_digest['sha256'] );
+		}
+
+		// v1 receipts predate file-byte digests and retain their canonical identity.
+		$encoded_artifact = wp_json_encode( $artifact );
+		$artifact_hash    = false !== $encoded_artifact ? hash( 'sha256', $encoded_artifact ) : '';
+
+		return is_string( $receipt['artifact_sha256'] ?? null ) && hash_equals( $receipt['artifact_sha256'], $artifact_hash );
 	}
 
 	/** Resolve the server-owned identity for one validation invocation. */
