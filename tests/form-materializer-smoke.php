@@ -214,6 +214,18 @@ namespace {
 	$assert( array() === $submit_only['forms'], 'submit-only-form-rejected' );
 	$assert( ! empty( $submit_only['errors'] ), 'submit-only-form-error-recorded' );
 
+	// Truncated graphs remain producer fallback evidence, never runtime input.
+	$truncated_css   = str_repeat( '@media (min-width:1px){', 9 ) . '.form{display:grid}' . str_repeat( '}', 9 );
+	$truncated_forms = str_repeat( '<form class="form"><input name="email"><button type="submit">Send</button></form>', 8 );
+	$truncated_result = ( new \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile(
+		array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => '<style>' . $truncated_css . '</style>' . $truncated_forms ) )
+	)->toArray();
+	$truncated_fallbacks = array_values( array_filter( $truncated_result['fallbacks'] ?? array(), static fn( mixed $fallback ): bool => true === ( $fallback['layout_graph']['truncated'] ?? false ) ) );
+	$truncated_forms_declaration = array_values( array_filter( $truncated_result['source_reports']['wordpress_site_plan']['runtime_declarations'] ?? array(), static fn( mixed $declaration ): bool => 'forms' === ( $declaration['type'] ?? null ) ) )[0] ?? array();
+	$truncated_runtime_forms = $truncated_forms_declaration['payload']['entities'] ?? array();
+	$truncated_validation    = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => $truncated_runtime_forms ) );
+	$assert( 8 === count( $truncated_fallbacks ) && 8 === count( $truncated_runtime_forms ) && array() === array_filter( $truncated_runtime_forms, static fn( mixed $form ): bool => array_key_exists( 'layout_graph', $form ) ) && empty( $truncated_validation['errors'] ), 'truncated-layout-graphs-are-omitted-before-strict-runtime-validation' );
+
 	// --- Jetpack form seeder maps controls to contact-form blocks -----------
 	$forms_manifest = array(
 		'forms' => array(
