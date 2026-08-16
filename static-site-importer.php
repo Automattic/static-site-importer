@@ -371,12 +371,13 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			if ( is_wp_error( $result ) ) {
 				WP_CLI::error( $result->get_error_message() );
 			}
+			/** @var array<string,mixed> $result */
 			$artifact_digest = Static_Site_Importer_Validation_Runtime::lifecycle_artifact_digest_from_file( (string) ( $assoc_args['artifact'] ?? '' ) );
 			if ( is_wp_error( $artifact_digest ) ) {
 				WP_CLI::error( $artifact_digest->get_error_message() );
 			}
 			$result['artifact_digest'] = $artifact_digest;
-			$json = wp_json_encode( $result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+			$json                      = wp_json_encode( $result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 			if ( false === $json ) {
 				WP_CLI::error( 'Failed to encode dependency preparation receipt.' );
 			}
@@ -424,9 +425,9 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				$input['artifact'] = $artifact;
 			}
 			if ( isset( $assoc_args['lifecycle-receipt'] ) ) {
-				$receipt_json     = file_get_contents( (string) $assoc_args['lifecycle-receipt'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads its explicit lifecycle handoff receipt.
-				$receipt          = json_decode( false === $receipt_json ? '' : $receipt_json, true );
-				$artifact_path    = isset( $assoc_args['artifact'] ) ? (string) $assoc_args['artifact'] : '';
+				$receipt_json  = file_get_contents( (string) $assoc_args['lifecycle-receipt'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads its explicit lifecycle handoff receipt.
+				$receipt       = json_decode( false === $receipt_json ? '' : $receipt_json, true );
+				$artifact_path = isset( $assoc_args['artifact'] ) ? (string) $assoc_args['artifact'] : '';
 				if ( ! is_array( $receipt ) || 'static-site-importer/runtime-lifecycle-receipt/v1' !== ( $receipt['schema'] ?? '' ) || 'dependencies_prepared' !== ( $receipt['status'] ?? '' ) || ! isset( $input['artifact'] ) || ! Static_Site_Importer_Validation_Runtime::lifecycle_receipt_matches_artifact( $receipt, $artifact_path, $input['artifact'] ) ) {
 					WP_CLI::error( 'The --lifecycle-receipt must be a completed receipt for this exact artifact.' );
 				}
