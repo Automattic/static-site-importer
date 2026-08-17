@@ -57,7 +57,10 @@ if ( ! function_exists( 'wp_generate_uuid4' ) ) {
 }
 
 if ( ! function_exists( 'wp_json_encode' ) ) {
+	$wp_json_encode_calls = 0;
 	function wp_json_encode( $value ) {
+		global $wp_json_encode_calls;
+		++$wp_json_encode_calls;
 		return json_encode( $value );
 	}
 }
@@ -276,7 +279,33 @@ $same_invocation_result       = Static_Site_Importer_Validation_Runtime::validat
 );
 $assert( is_wp_error( $same_invocation_result ) && 'static_site_importer_fresh_runtime_required' === $same_invocation_result->get_error_code(), 'same-invocation-resume-rejected' );
 
+$lifecycle_artifact_path = $artifact_dir . '/lifecycle-artifact.json';
+$lifecycle_artifact      = array( 'schema' => 'test/website-artifact/v1', 'files' => array( array( 'path' => 'website/index.html', 'content' => str_repeat( 'x', 8192 ) ) ) );
+file_put_contents( $lifecycle_artifact_path, json_encode( $lifecycle_artifact ) );
+$file_digest = Static_Site_Importer_Validation_Runtime::lifecycle_artifact_digest_from_file( $lifecycle_artifact_path );
+$receipt     = array(
+	'artifact_sha256' => hash( 'sha256', wp_json_encode( $lifecycle_artifact ) ),
+	'artifact_digest' => $file_digest,
+);
+$wp_json_encode_calls = 0;
+$assert( Static_Site_Importer_Validation_Runtime::lifecycle_receipt_matches_artifact( $receipt, $lifecycle_artifact_path, $lifecycle_artifact ) && 0 === $wp_json_encode_calls, 'versioned-cli-receipt-uses-streaming-file-digest-without-reencoding-artifact' );
+
+$mismatched_receipt                                = $receipt;
+$mismatched_receipt['artifact_digest']['sha256'] = str_repeat( '0', 64 );
+$wp_json_encode_calls                              = 0;
+$assert( ! Static_Site_Importer_Validation_Runtime::lifecycle_receipt_matches_artifact( $mismatched_receipt, $lifecycle_artifact_path, $lifecycle_artifact ) && 0 === $wp_json_encode_calls, 'mismatched-versioned-digest-is-rejected-without-legacy-fallback' );
+
+$legacy_receipt       = array( 'artifact_sha256' => hash( 'sha256', wp_json_encode( $lifecycle_artifact ) ) );
+$wp_json_encode_calls = 0;
+$assert( Static_Site_Importer_Validation_Runtime::lifecycle_receipt_matches_artifact( $legacy_receipt, $lifecycle_artifact_path, $lifecycle_artifact ) && 1 === $wp_json_encode_calls, 'legacy-receipt-retains-canonical-artifact-sha256-semantics' );
+
+$unknown_digest_receipt = $receipt;
+$unknown_digest_receipt['artifact_digest']['schema'] = 'static-site-importer/lifecycle-artifact-digest/v2';
+$wp_json_encode_calls = 0;
+$assert( ! Static_Site_Importer_Validation_Runtime::lifecycle_receipt_matches_artifact( $unknown_digest_receipt, $lifecycle_artifact_path, $lifecycle_artifact ) && 0 === $wp_json_encode_calls, 'unknown-versioned-digest-is-rejected-without-changing-its-meaning' );
+
 unlink( $report_path );
+unlink( $lifecycle_artifact_path );
 rmdir( $default_artifact_dir );
 rmdir( $override_artifact_dir );
 rmdir( $resume_artifact_dir );
