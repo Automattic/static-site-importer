@@ -6,6 +6,16 @@ Import a static site or generated website artifact into WordPress pages and a co
 
 Static Site Importer is a WordPress plugin. It requires the [Blocks Engine PHP transformer](https://github.com/Automattic/blocks-engine/tree/trunk/php-transformer) Composer package and calls that package's canonical helper functions for generic artifact compilation and format conversion.
 
+## Development packages
+
+Build a production-shaped development ZIP using immutable Blocks Engine source without changing this checkout's Composer files:
+
+```bash
+npm run build:dev-package -- --blocks-engine-path ../blocks-engine --blocks-engine-ref origin/trunk
+```
+
+The command resolves the requested ref once, archives `php-transformer/` and `figma-transformer/` from that commit into an isolated temporary snapshot, installs production dependencies there, and delegates ZIP assembly to `homeboy review build`. The ZIP and adjacent provenance JSON are written to `build/`. Use `--output-dir <path>` to select another destination. The receipt records SSI `HEAD`, a dirty worktree identity when present, the Blocks Engine ref and SHA, Composer lock digest, ZIP digest, and schema version.
+
 ## Runtime package profiles
 
 `runtime-package-manifest.json` is the canonical package-composition contract for constrained or embedded WordPress runtimes. Consumers locate the manifest inside the normal plugin release, select a named profile, copy only matching relative paths, and fail if any declared `required_files` entry is absent. The contract is deployment-neutral: storage, archive transport, scheduling, and runtime infrastructure remain consumer concerns.
