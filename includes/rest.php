@@ -1241,17 +1241,70 @@ function static_site_importer_rest_archive_files( array $archive ) {
 		return new WP_Error( 'static_site_importer_archive_tempfile_failed', __( 'Uploaded ZIP archive could not be staged for extraction.', 'static-site-importer' ), array( 'status' => 500 ) );
 	}
 
-	$zip = new ZipArchive();
-	if ( true !== $zip->open( $tmp ) ) {
-		if ( file_exists( $tmp ) ) {
-			wp_delete_file( $tmp );
+	return static_site_importer_archive_files_from_path( $tmp, $limits, true );
+}
+
+/**
+ * Extract a server-owned staged ZIP without taking lifecycle ownership.
+ *
+ * The canonical ability calls this only after an opaque reference resolver has
+ * supplied the path. Direct ability and REST inputs never route staged paths here.
+ *
+ * @param array<string,mixed> $archive Resolved archive payload.
+ * @return array<int,array<string,mixed>>|WP_Error
+ */
+function static_site_importer_staged_archive_files( array $archive ) {
+	$name = isset( $archive['name'] ) ? (string) $archive['name'] : '';
+	$path = isset( $archive['staged_path'] ) ? (string) $archive['staged_path'] : '';
+	if ( ! preg_match( '/\.zip$/i', $name ) ) {
+		return new WP_Error( 'static_site_importer_invalid_archive_type', __( 'ZIP uploads must use a .zip file.', 'static-site-importer' ), array( 'status' => 400 ) );
+	}
+
+	$is_absolute = str_starts_with( $path, '/' ) || 1 === preg_match( '#^[A-Za-z]:[\\\\/]#', $path );
+	$real_path   = $is_absolute && ! is_link( $path ) ? realpath( $path ) : false;
+	if ( false === $real_path || ! is_file( $real_path ) || ! is_readable( $real_path ) ) {
+		return new WP_Error( 'static_site_importer_staged_archive_invalid', __( 'The staged ZIP archive is unavailable.', 'static-site-importer' ), array( 'status' => 400 ) );
+	}
+
+	$limits = static_site_importer_staged_archive_limits();
+	$size   = filesize( $real_path );
+	if ( false === $size || $size > $limits['max_archive_bytes'] ) {
+		return static_site_importer_rest_archive_limit_error( 'staged_bytes_exceeded' );
+	}
+
+	return static_site_importer_archive_files_from_path( $real_path, $limits, false );
+}
+
+/**
+ * Validate and extract a ZIP from a local path.
+ *
+ * @param string            $archive_path Local ZIP path.
+ * @param array<string,int> $limits       Bounded archive policy.
+ * @param bool              $delete_path  Whether this importer owns the path.
+ * @return array<int,array<string,mixed>>|WP_Error
+ */
+function static_site_importer_archive_files_from_path( string $archive_path, array $limits, bool $delete_path ) {
+	if ( ! class_exists( 'ZipArchive' ) ) {
+		return new WP_Error( 'static_site_importer_zip_unavailable', __( 'ZIP archive extraction is unavailable on this server.', 'static-site-importer' ), array( 'status' => 500 ) );
+	}
+
+	$cleanup = static function ( $zip = null ) use ( $archive_path, $delete_path ): void {
+		if ( $zip instanceof ZipArchive ) {
+			$zip->close();
 		}
+		if ( $delete_path && file_exists( $archive_path ) ) {
+			wp_delete_file( $archive_path );
+		}
+	};
+
+	$zip = new ZipArchive();
+	if ( true !== $zip->open( $archive_path ) ) {
+		$cleanup();
 		return new WP_Error( 'static_site_importer_archive_open_failed', __( 'Uploaded ZIP archive could not be opened.', 'static-site-importer' ), array( 'status' => 400 ) );
 	}
 
 	if ( $zip->numFiles > $limits['max_entries'] ) {
-		$zip->close();
-		wp_delete_file( $tmp );
+		$cleanup( $zip );
 		return static_site_importer_rest_archive_limit_error( 'entry_count_exceeded' );
 	}
 
@@ -1259,29 +1312,25 @@ function static_site_importer_rest_archive_files( array $archive ) {
 	for ( $i = 0; $i < $zip->numFiles; $i++ ) {
 		$stat = $zip->statIndex( $i );
 		if ( ! is_array( $stat ) || $stat['size'] < 0 || $stat['comp_size'] < 0 ) {
-			$zip->close();
-			wp_delete_file( $tmp );
+			$cleanup( $zip );
 			return new WP_Error( 'static_site_importer_archive_metadata_invalid', __( 'A ZIP archive entry has invalid metadata.', 'static-site-importer' ), array( 'status' => 400 ) );
 		}
 
 		$entry_uncompressed_bytes = (int) $stat['size'];
 		$entry_compressed_bytes   = (int) $stat['comp_size'];
 		if ( $entry_uncompressed_bytes > $limits['max_entry_uncompressed_bytes'] ) {
-			$zip->close();
-			wp_delete_file( $tmp );
+			$cleanup( $zip );
 			return static_site_importer_rest_archive_limit_error( 'entry_uncompressed_bytes_exceeded' );
 		}
 
 		$total_uncompressed_bytes += $entry_uncompressed_bytes;
 		if ( $total_uncompressed_bytes > $limits['max_total_uncompressed_bytes'] ) {
-			$zip->close();
-			wp_delete_file( $tmp );
+			$cleanup( $zip );
 			return static_site_importer_rest_archive_limit_error( 'total_uncompressed_bytes_exceeded' );
 		}
 
 		if ( 0 === $entry_compressed_bytes ? $entry_uncompressed_bytes > 0 : $entry_uncompressed_bytes / $entry_compressed_bytes > $limits['max_compression_ratio'] ) {
-			$zip->close();
-			wp_delete_file( $tmp );
+			$cleanup( $zip );
 			return static_site_importer_rest_archive_limit_error( 'compression_ratio_exceeded' );
 		}
 	}
@@ -1303,10 +1352,7 @@ function static_site_importer_rest_archive_files( array $archive ) {
 		}
 
 		if ( ! Static_Site_Importer_Content_Policy::is_static_path( $path ) ) {
-			$zip->close();
-			if ( file_exists( $tmp ) ) {
-				wp_delete_file( $tmp );
-			}
+			$cleanup( $zip );
 			return new WP_Error(
 				'static_site_importer_executable_source_rejected',
 				__( 'ZIP archives may contain static content only.', 'static-site-importer' ),
@@ -1319,10 +1365,7 @@ function static_site_importer_rest_archive_files( array $archive ) {
 
 		$file_content = $zip->getFromIndex( $i );
 		if ( false === $file_content ) {
-			$zip->close();
-			if ( file_exists( $tmp ) ) {
-				wp_delete_file( $tmp );
-			}
+			$cleanup( $zip );
 			return new WP_Error( 'static_site_importer_archive_entry_read_failed', __( 'A ZIP archive entry could not be read.', 'static-site-importer' ), array( 'status' => 400 ) );
 		}
 
@@ -1333,10 +1376,7 @@ function static_site_importer_rest_archive_files( array $archive ) {
 		);
 	}
 
-	$zip->close();
-	if ( file_exists( $tmp ) ) {
-		wp_delete_file( $tmp );
-	}
+	$cleanup( $zip );
 
 	return $files;
 }
@@ -1364,6 +1404,37 @@ function static_site_importer_rest_archive_limits(): array {
 		'max_compression_ratio'        => 100,
 	);
 	$limits      = apply_filters( 'static_site_importer_archive_limits', $defaults );
+	$limits      = is_array( $limits ) ? $limits : $defaults;
+
+	foreach ( $hard_limits as $key => $maximum ) {
+		$candidate      = isset( $limits[ $key ] ) ? (int) $limits[ $key ] : $defaults[ $key ];
+		$limits[ $key ] = min( $maximum, max( 1, $candidate ) );
+	}
+
+	return $limits;
+}
+
+/**
+ * Return hard-bounded limits for server-owned staged ZIP archives.
+ *
+ * @return array<string,int>
+ */
+function static_site_importer_staged_archive_limits(): array {
+	$hard_limits = array(
+		'max_archive_bytes'            => 262144000,
+		'max_entries'                  => 10000,
+		'max_entry_uncompressed_bytes' => 67108864,
+		'max_total_uncompressed_bytes' => 268435456,
+		'max_compression_ratio'        => 200,
+	);
+	$defaults    = array(
+		'max_archive_bytes'            => 209715200,
+		'max_entries'                  => 5000,
+		'max_entry_uncompressed_bytes' => 52428800,
+		'max_total_uncompressed_bytes' => 262144000,
+		'max_compression_ratio'        => 100,
+	);
+	$limits      = apply_filters( 'static_site_importer_staged_archive_limits', $defaults );
 	$limits      = is_array( $limits ) ? $limits : $defaults;
 
 	foreach ( $hard_limits as $key => $maximum ) {
