@@ -428,6 +428,9 @@ if ( ! function_exists( 'static_site_importer_ability_import' ) ) {
 
 		$provenance = array( 'type' => $type );
 		$reference  = (string) ( $source['ref'] ?? '' );
+		if ( 'zip' === $type && ! empty( $source['zip']['staged_path'] ) ) {
+			return static_site_importer_ability_error( 'static_site_importer_staged_archive_forbidden', 'Staged archive paths must come from a server-owned opaque reference resolver.' );
+		}
 		if ( '' !== $reference ) {
 			$resolved = apply_filters( 'static_site_importer_resolve_source_reference', null, $reference, $type, $input );
 			if ( ! is_array( $resolved ) ) {
@@ -462,6 +465,11 @@ if ( ! function_exists( 'static_site_importer_ability_import' ) ) {
 			$runtime_source['html'] = (string) ( $source['html'] ?? '' );
 		} elseif ( 'files' === $type ) {
 			$runtime_source['files'] = isset( $source['files'] ) && is_array( $source['files'] ) ? $source['files'] : array();
+		} elseif ( ! empty( $source['zip']['staged_path'] ) ) {
+			$runtime_source['files'] = static_site_importer_staged_archive_files( $source['zip'] );
+			if ( is_wp_error( $runtime_source['files'] ) ) {
+				return static_site_importer_ability_error( (string) $runtime_source['files']->get_error_code(), $runtime_source['files']->get_error_message(), $runtime_source['files']->get_error_data() );
+			}
 		} else {
 			$runtime_source['archive'] = isset( $source['zip'] ) && is_array( $source['zip'] ) ? $source['zip'] : array();
 		}

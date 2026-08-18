@@ -70,6 +70,15 @@ function static_site_importer_source_runtime( $source ) {
 		'source_metadata' => array(),
 	);
 }
+function static_site_importer_staged_archive_files( $archive ) {
+	$GLOBALS['ssi_staged_archives'][] = $archive;
+	return array(
+		array(
+			'path'    => 'website/index.html',
+			'content' => '<h1>Staged ZIP</h1>',
+		),
+	);
+}
 class Static_Site_Importer_Theme_Generator {
 	public static $compiled = 0;
 	public static $applied  = 0;
@@ -179,6 +188,17 @@ $rejected = static_site_importer_ability_import(
 );
 if ( 'static_site_importer_source_reference_unresolved' !== ( $rejected['error']['code'] ?? '' ) ) {
 	throw new RuntimeException( 'caller paths must not be accepted without an opaque reference resolver' ); }
+$rejected_staged_path = static_site_importer_ability_import(
+	array(
+		'operation' => 'plan',
+		'source'    => array(
+			'type' => 'zip',
+			'zip'  => array( 'name' => 'website.zip', 'staged_path' => '/tmp/caller-path.zip' ),
+		),
+	)
+);
+if ( 'static_site_importer_staged_archive_forbidden' !== ( $rejected_staged_path['error']['code'] ?? '' ) ) {
+	throw new RuntimeException( 'direct staged archive paths must be rejected before source normalization' ); }
 $GLOBALS['ssi_filters']['static_site_importer_resolve_source_reference'] = static function ( $value, $reference, $type ) {
 	return 'opaque-zip-1' === $reference && 'zip' === $type ? array(
 		'source'     => array(
@@ -201,6 +221,28 @@ $zip = static_site_importer_ability_import(
 );
 if ( empty( $zip['success'] ) || 'server' !== ( $zip['source']['provenance']['owner'] ?? '' ) ) {
 	throw new RuntimeException( 'opaque references must resolve the declared source type' ); }
+$GLOBALS['ssi_filters']['static_site_importer_resolve_source_reference'] = static function ( $value, $reference, $type ) {
+	return 'staged-zip-1' === $reference && 'zip' === $type ? array(
+		'source'     => array(
+			'zip' => array(
+				'name'        => 'website.zip',
+				'staged_path' => '/srv/private/website.zip',
+			),
+		),
+		'provenance' => array( 'owner' => 'server' ),
+	) : $value;
+};
+$staged_zip = static_site_importer_ability_import(
+	array(
+		'operation' => 'plan',
+		'source'    => array(
+			'type' => 'zip',
+			'ref'  => 'staged-zip-1',
+		),
+	)
+);
+if ( empty( $staged_zip['success'] ) || '/srv/private/website.zip' !== ( $GLOBALS['ssi_staged_archives'][0]['staged_path'] ?? '' ) || isset( $GLOBALS['ssi_runtime_sources'][3]['archive'] ) ) {
+	throw new RuntimeException( 'resolved staged archives must normalize through files without inline archive bytes' ); }
 $url = static_site_importer_ability_import(
 	array(
 		'operation' => 'plan',

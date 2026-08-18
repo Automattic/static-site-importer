@@ -1270,6 +1270,59 @@ if ( class_exists( 'ZipArchive' ) ) {
 	$hard_limited = static_site_importer_rest_archive_limits();
 	unset( $GLOBALS['ssi_filters']['static_site_importer_archive_limits'] );
 	$assert( 52428800 >= $hard_limited['max_encoded_bytes'], 'rest-zip-filter-cannot-exceed-encoded-hard-ceiling' );
+
+	$staged_path = tempnam( sys_get_temp_dir(), 'ssi-staged-' );
+	$staged_zip  = new ZipArchive();
+	$staged_zip->open( $staged_path, ZipArchive::OVERWRITE );
+	$staged_zip->addFromString( 'index.html', '<main>Staged</main>' );
+	$staged_zip->close();
+	$staged = static_site_importer_staged_archive_files(
+		array(
+			'name'        => 'website.zip',
+			'staged_path' => $staged_path,
+		)
+	);
+	$assert( is_array( $staged ) && 'website/index.html' === ( $staged[0]['path'] ?? '' ), 'staged-zip-extracts-provider-owned-archive' );
+	$assert( file_exists( $staged_path ), 'staged-zip-preserves-provider-owned-archive' );
+
+	$symlink_path = $staged_path . '.link';
+	if ( function_exists( 'symlink' ) && @symlink( $staged_path, $symlink_path ) ) {
+		$symlinked = static_site_importer_staged_archive_files(
+			array(
+				'name'        => 'website.zip',
+				'staged_path' => $symlink_path,
+			)
+		);
+		$assert( is_wp_error( $symlinked ) && 'static_site_importer_staged_archive_invalid' === $symlinked->get_error_code(), 'staged-zip-rejects-symlink' );
+		@unlink( $symlink_path );
+	}
+
+	$GLOBALS['ssi_filters']['static_site_importer_staged_archive_limits'] = array(
+		static function ( array $limits ): array {
+			$limits['max_archive_bytes'] = 1;
+			return $limits;
+		},
+	);
+	$oversized_staged = static_site_importer_staged_archive_files(
+		array(
+			'name'        => 'website.zip',
+			'staged_path' => $staged_path,
+		)
+	);
+	unset( $GLOBALS['ssi_filters']['static_site_importer_staged_archive_limits'] );
+	$assert( is_wp_error( $oversized_staged ) && 'static_site_importer_archive_staged_bytes_exceeded' === $oversized_staged->get_error_code(), 'staged-zip-enforces-archive-byte-limit' );
+	$assert( file_exists( $staged_path ), 'staged-zip-preserves-provider-archive-on-policy-failure' );
+	@unlink( $staged_path );
+
+	$GLOBALS['ssi_filters']['static_site_importer_staged_archive_limits'] = array(
+		static function ( array $limits ): array {
+			$limits['max_archive_bytes'] = PHP_INT_MAX;
+			return $limits;
+		},
+	);
+	$hard_staged_limits = static_site_importer_staged_archive_limits();
+	unset( $GLOBALS['ssi_filters']['static_site_importer_staged_archive_limits'] );
+	$assert( 262144000 === $hard_staged_limits['max_archive_bytes'], 'staged-zip-filter-cannot-exceed-hard-ceiling' );
 }
 
 $artifact = static_site_importer_rest_source_artifact(
