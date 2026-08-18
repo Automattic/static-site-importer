@@ -15,6 +15,9 @@ if ( ! class_exists( 'Static_Site_Importer_Artifact_Run_Workspace' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Website_Artifact_Import_Input' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-website-artifact-import-input.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-content-policy.php';
+}
 
 /**
  * Converts Figma import requests into website artifacts and imports them.
@@ -872,7 +875,12 @@ class Static_Site_Importer_Figma_Import {
 					);
 				}
 
-				$record['content'] = (string) $file['content'];
+				$content = (string) $file['content'];
+				if ( Static_Site_Importer_Content_Policy::is_textual_path( $path ) ) {
+					$record['content'] = $content;
+				} else {
+					$record['content_base64'] = base64_encode( $content ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Preserves binary transformer output across the textual artifact compiler boundary.
+				}
 			} else {
 				return new WP_Error(
 					'static_site_importer_figma_file_payload_missing',
