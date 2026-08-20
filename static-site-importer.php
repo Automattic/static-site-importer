@@ -407,6 +407,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'allow_missing_woocommerce'            => isset( $assoc_args['allow-missing-woocommerce'] ),
 				'require_proven_dynamic_client_assets' => ! isset( $assoc_args['allow-unproven-dynamic-client-assets'] ),
 			);
+			$input = static_site_importer_cli_apply_client_script_args( $input, $assoc_args );
 			if ( isset( $assoc_args['host-staged-dependencies'] ) ) {
 				$input['materialize_dependencies'] = false;
 			}
@@ -538,13 +539,28 @@ function static_site_importer_cli_artifact_input( array $assoc_args ) {
 	if ( ! is_array( $artifact ) ) {
 		return new WP_Error( 'static_site_importer_cli_artifact_invalid', 'The --artifact file must contain a JSON object.' );
 	}
-	return array(
+	return static_site_importer_cli_apply_client_script_args( array(
 		'artifact'  => $artifact,
 		'slug'      => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
 		'name'      => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
 		'activate'  => ! isset( $assoc_args['no-activate'] ),
 		'overwrite' => ! isset( $assoc_args['no-overwrite'] ),
-	);
+	), $assoc_args );
+}
+
+/** Apply the explicit isolated-preview script policy shared by artifact lifecycle commands. */
+function static_site_importer_cli_apply_client_script_args( array $input, array $assoc_args ): array {
+	if ( isset( $assoc_args['client-script-policy'] ) ) {
+		$input['client_script_policy'] = (string) $assoc_args['client-script-policy'];
+	}
+	if ( isset( $assoc_args['client-script-provenance'] ) ) {
+		$input['client_script_provenance'] = array( 'ref' => (string) $assoc_args['client-script-provenance'] );
+	}
+	if ( isset( $assoc_args['client-script-isolated'] ) ) {
+		$input['client_script_isolated'] = true;
+	}
+
+	return $input;
 }
 
 /**

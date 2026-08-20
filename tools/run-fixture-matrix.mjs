@@ -1071,7 +1071,7 @@ function printDependencyOverlayReferenceHelp() {
 // Visual attribution controls are separate so the main usage text remains
 // readable alongside the long routing contract above.
 function printVisualAttributionHelp() {
-  process.stdout.write('  --max-explanation-elements <n>      Maximum source elements for visual attribution.\n  --max-explanation-candidates <n>    Maximum candidate elements for visual attribution.\n  --explain-selectors <list>          Comma-separated selectors targeted for visual attribution.\n');
+  process.stdout.write('  --visual-parity-viewport-width <n>  Browser viewport width for visual capture.\n  --visual-parity-viewport-height <n> Browser viewport height for visual capture.\n  --max-explanation-elements <n>      Maximum source elements for visual attribution.\n  --max-explanation-candidates <n>    Maximum candidate elements for visual attribution.\n  --explain-selectors <list>          Comma-separated selectors targeted for visual attribution.\n');
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
