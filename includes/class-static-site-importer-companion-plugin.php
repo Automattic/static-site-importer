@@ -39,6 +39,9 @@ if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
  */
 class Static_Site_Importer_Companion_Plugin {
 
+	/** Maximum declared script files and dependency handles per block. */
+	private const MAX_SCRIPT_DEPENDENCIES = 32;
+
 	/**
 	 * Payload schema identifier consumed by the scaffolder.
 	 */
@@ -112,6 +115,10 @@ class Static_Site_Importer_Companion_Plugin {
 			$metadata = $block['block_json'];
 			if ( isset( $block['render'] ) && is_scalar( $block['render'] ) ) {
 				$metadata['render'] = 'file:./render.php';
+			}
+			$script_dependencies = self::validate_script_dependencies( $block, $assets, $metadata );
+			if ( is_wp_error( $script_dependencies ) ) {
+				return $script_dependencies;
 			}
 			$references = self::metadata_file_references( $metadata );
 			foreach ( $references as $path ) {
@@ -394,6 +401,9 @@ class Static_Site_Importer_Companion_Plugin {
 				continue;
 			}
 			$files[ $relative ] = (string) $content;
+		}
+		foreach ( self::script_dependencies( $block ) as $relative => $dependencies ) {
+			$files[ self::asset_manifest_path( $relative ) ] = self::asset_manifest( $dependencies, (string) $assets[ $relative ] );
 		}
 		$metadata = isset( $block['block_json'] ) && is_array( $block['block_json'] ) && ! array_is_list( $block['block_json'] );
 		if ( $metadata ) {
@@ -991,6 +1001,74 @@ class Static_Site_Importer_Companion_Plugin {
 		}
 
 		return implode( '/', $segments );
+	}
+
+	/**
+	 * Validate compiler-declared WordPress script dependencies before generating
+	 * trusted PHP asset manifests.
+	 *
+	 * @param array<string,mixed> $block    Block payload entry.
+	 * @param array<string,mixed> $assets   Declared static block assets.
+	 * @param array<string,mixed> $metadata Block metadata, including render normalization.
+	 * @return true|WP_Error
+	 */
+	private static function validate_script_dependencies( array $block, array $assets, array $metadata ) {
+		$dependencies = $block['script_dependencies'] ?? array();
+		if ( ! is_array( $dependencies ) || ( ! empty( $dependencies ) && array_is_list( $dependencies ) ) || count( $dependencies ) > self::MAX_SCRIPT_DEPENDENCIES ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_script_dependencies_invalid', 'Block script_dependencies must be a bounded object map.' );
+		}
+
+		$script_references = self::metadata_script_file_references( $metadata );
+		foreach ( $dependencies as $path => $handles ) {
+			if ( ! is_string( $path ) || self::sanitize_relative_path( $path ) !== $path || ! preg_match( '/\.(?:js|mjs)$/', $path ) || ! array_key_exists( $path, $assets ) || ! isset( $script_references[ $path ] ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_script_dependency_path_invalid', 'Block script_dependencies must reference a declared JavaScript asset used by block metadata.' );
+			}
+			if ( ! is_array( $handles ) || ! array_is_list( $handles ) || count( $handles ) > self::MAX_SCRIPT_DEPENDENCIES ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_script_dependencies_invalid', 'Each script dependency declaration must be a bounded list.' );
+			}
+			$seen = array();
+			foreach ( $handles as $handle ) {
+				if ( ! is_string( $handle ) || ! preg_match( '/^[a-z0-9_-]+$/', $handle ) || isset( $seen[ $handle ] ) ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_script_dependency_handle_invalid', 'Script dependency handles must be unique safe WordPress handles.' );
+				}
+				$seen[ $handle ] = true;
+			}
+		}
+
+		return true;
+	}
+
+	/** @return array<string,array<int,string>> */
+	private static function script_dependencies( array $block ): array {
+		return isset( $block['script_dependencies'] ) && is_array( $block['script_dependencies'] ) ? $block['script_dependencies'] : array();
+	}
+
+	/** @return array<string,bool> */
+	private static function metadata_script_file_references( array $block_json ): array {
+		$references = array();
+		foreach ( array( 'editorScript', 'script', 'viewScript', 'viewScriptModule' ) as $key ) {
+			$values = isset( $block_json[ $key ] ) && is_array( $block_json[ $key ] ) ? $block_json[ $key ] : array( $block_json[ $key ] ?? null );
+			foreach ( $values as $value ) {
+				if ( is_string( $value ) && str_starts_with( $value, 'file:./' ) ) {
+					$path = self::sanitize_relative_path( substr( $value, 7 ) );
+					if ( '' !== $path ) {
+						$references[ $path ] = true;
+					}
+				}
+			}
+		}
+
+		return $references;
+	}
+
+	/** @return string */
+	private static function asset_manifest_path( string $script_path ): string {
+		return substr( $script_path, 0, strrpos( $script_path, '.' ) ) . '.asset.php';
+	}
+
+	/** @param array<int,string> $dependencies */
+	private static function asset_manifest( array $dependencies, string $content ): string {
+		return "<?php\nreturn array(\n\t'dependencies' => " . self::export_php_value( $dependencies, 1 ) . ",\n\t'version' => '" . hash( 'sha256', $content ) . "',\n);\n";
 	}
 
 	/** @return array<int,string> */
