@@ -760,6 +760,19 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   assert.deepEqual(recipe.inputs.mounts, []);
 });
 
+test('fixture matrix run config projects an explicit visual viewport into browser recipes', () => {
+  const config = normalizeFixtureMatrixRunConfig({
+    fixtureRoot: '/tmp/fixtures',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    visualParityViewportWidth: 390,
+    visualParityViewportHeight: 844,
+  });
+  const input = fixtureMatrixRecipeInput(config);
+  assert.deepEqual(input.visualParityViewport, { width: 390, height: 844 });
+  assert.equal(fixtureMatrixHomeboySettings(config).SSI_FIXTURE_MATRIX_VISUAL_PARITY_VIEWPORT_WIDTH, '390');
+  assert.equal(fixtureMatrixHomeboySettings(config).SSI_FIXTURE_MATRIX_VISUAL_PARITY_VIEWPORT_HEIGHT, '844');
+});
+
 test('runtime presentation evidence persists, merges, and reaches the Blocks Engine compilation input in order', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'runtime-presentation-evidence' });
   const defaultRecipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', staticSiteImporterPath: '/tmp/static-site-importer' });
