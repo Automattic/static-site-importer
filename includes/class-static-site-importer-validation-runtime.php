@@ -106,6 +106,9 @@ class Static_Site_Importer_Validation_Runtime {
 		if ( isset( $input['runtime_lifecycle_request_id'] ) ) {
 			$import_args['runtime_lifecycle_request_id'] = (string) $input['runtime_lifecycle_request_id'];
 		}
+		if ( isset( $input['runtime_lifecycle_checkpoint'] ) ) {
+			$import_args['runtime_lifecycle_checkpoint'] = (string) $input['runtime_lifecycle_checkpoint'];
+		}
 		$import_args['runtime_lifecycle_invocation_id'] = self::invocation_id( $invocation_id );
 
 		$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
@@ -156,6 +159,7 @@ class Static_Site_Importer_Validation_Runtime {
 			'fresh_runtime'     => $result['fresh_runtime'] ?? array(),
 			'dependencies'      => $result['dependencies'] ?? array(),
 			'runtime_lifecycle' => $result['runtime_lifecycle'] ?? array(),
+			'runtime_lifecycle_checkpoint' => $result['runtime_lifecycle_checkpoint'] ?? ( $result['fresh_runtime']['lifecycle_checkpoint_id'] ?? '' ),
 		);
 	}
 

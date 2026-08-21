@@ -29,6 +29,9 @@ if ( ! class_exists( 'Static_Site_Importer_Report_Diagnostics' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-client-script-policy.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Lifecycle_Compile_Checkpoint' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-lifecycle-compile-checkpoint.php';
+}
 
 /**
  * Generates a block theme from a static HTML document.
@@ -43,16 +46,51 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public static function import_website_artifact( array $artifact, array $args = array() ) {
-		$compiled_import = self::compile_website_artifact( $artifact, $args );
-		if ( is_wp_error( $compiled_import ) ) {
-			return $compiled_import;
+		$request_artifact    = $artifact;
+		$checkpoint_owner    = Static_Site_Importer_Lifecycle_Compile_Checkpoint::current_owner();
+		$phase               = (string) ( $args['runtime_lifecycle_phase'] ?? '' );
+		$prepared_invocation = (string) ( $args['runtime_lifecycle_request_id'] ?? '' );
+		$current_invocation  = (string) ( $args['runtime_lifecycle_invocation_id'] ?? '' );
+		if ( 'resume' === $phase && '' !== $prepared_invocation && $prepared_invocation === $current_invocation ) {
+			return new WP_Error( 'static_site_importer_fresh_runtime_required', 'Provider validation must resume in a fresh WordPress request after dependency preparation.' );
 		}
-		$artifact             = $compiled_import['artifact'];
-		$args                 = $compiled_import['args'];
-		$plan                 = $compiled_import['plan'];
-		$gutenberg_gaps       = $compiled_import['gutenberg_gaps'];
-		$companion_payload    = $compiled_import['companion_payload'];
-		$materialization_plan = $compiled_import['materialization_plan'];
+		$request_args = $args;
+		$checkpoint  = null;
+		$resume_args = array();
+		if ( 'resume' === $phase && '' !== (string) ( $args['runtime_lifecycle_checkpoint'] ?? '' ) ) {
+			$checkpoint = Static_Site_Importer_Lifecycle_Compile_Checkpoint::load(
+				(string) $args['runtime_lifecycle_checkpoint'],
+				$request_artifact,
+				$request_args,
+				$checkpoint_owner,
+				(string) ( $args['_static_site_importer_lifecycle_checkpoint_root'] ?? '' )
+			);
+			if ( is_wp_error( $checkpoint ) ) {
+				return $checkpoint;
+			}
+			$compiled_import = $checkpoint['payload'];
+			if ( ! isset( $compiled_import['artifact'], $compiled_import['args'], $compiled_import['plan'], $compiled_import['gutenberg_gaps'], $compiled_import['materialization_plan'], $compiled_import['theme_materialization'] ) || ! is_array( $compiled_import['artifact'] ) || ! is_array( $compiled_import['args'] ) || ! is_array( $compiled_import['plan'] ) || ! is_array( $compiled_import['gutenberg_gaps'] ) || ! is_array( $compiled_import['materialization_plan'] ) || ! is_array( $compiled_import['theme_materialization'] ) ) {
+				return new WP_Error( 'static_site_importer_lifecycle_checkpoint_invalid', 'The lifecycle compile checkpoint payload is invalid.' );
+			}
+			$resume_args = array(
+				'runtime_lifecycle_phase'         => $phase,
+				'runtime_lifecycle_request_id'    => $prepared_invocation,
+				'runtime_lifecycle_invocation_id' => $current_invocation,
+				'runtime_lifecycle_checkpoint'    => (string) $request_args['runtime_lifecycle_checkpoint'],
+			);
+		} else {
+			$compiled_import = self::compile_website_artifact( $artifact, $args );
+			if ( is_wp_error( $compiled_import ) ) {
+				return $compiled_import;
+			}
+		}
+		$artifact              = $compiled_import['artifact'];
+		$args                  = $compiled_import['args'];
+		$args                  = array_merge( $args, $resume_args );
+		$plan                  = $compiled_import['plan'];
+		$gutenberg_gaps        = $compiled_import['gutenberg_gaps'];
+		$companion_payload     = $compiled_import['companion_payload'];
+		$materialization_plan  = $compiled_import['materialization_plan'];
 		$theme_materialization = $compiled_import['theme_materialization'];
 		$args['font_materialization'] = isset( $materialization_plan['theme']['font_materialization'] ) && is_array( $materialization_plan['theme']['font_materialization'] ) ? $materialization_plan['theme']['font_materialization'] : array();
 		if ( ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) ) {
@@ -74,6 +112,24 @@ class Static_Site_Importer_Theme_Generator {
 			return Static_Site_Importer_Entity_Materializer_Registry::dependency_plan( $lifecycle, hash( 'sha256', false !== $encoded_artifact ? $encoded_artifact : '' ) );
 		}
 		if ( 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
+			$handle = Static_Site_Importer_Lifecycle_Compile_Checkpoint::create(
+				$request_artifact,
+				$request_args,
+				array(
+					'artifact'              => $artifact,
+					'args'                  => $args,
+					'plan'                  => $plan,
+					'gutenberg_gaps'        => $gutenberg_gaps,
+					'companion_payload'     => $companion_payload,
+					'materialization_plan'  => $materialization_plan,
+					'theme_materialization' => $theme_materialization,
+				),
+				$checkpoint_owner,
+				(string) ( $args['_static_site_importer_lifecycle_checkpoint_root'] ?? '' )
+			);
+			if ( is_wp_error( $handle ) ) {
+				return $handle;
+			}
 			$dependencies = self::materialize_prepared_dependencies( $lifecycle, $args );
 			if ( is_wp_error( $dependencies ) ) {
 				return $dependencies;
@@ -82,16 +138,19 @@ class Static_Site_Importer_Theme_Generator {
 				'status'            => 'dependencies_prepared',
 				'runtime_lifecycle' => $lifecycle,
 				'dependencies'      => $dependencies,
-				'fresh_runtime'     => array( 'request_id' => (string) ( $args['runtime_lifecycle_invocation_id'] ?? '' ) ),
+				'fresh_runtime'     => array(
+					'request_id'             => (string) ( $args['runtime_lifecycle_invocation_id'] ?? '' ),
+					'lifecycle_checkpoint_id' => $handle,
+				),
+				'runtime_lifecycle_checkpoint' => $handle,
 			);
 		}
-		$prepared_invocation = (string) ( $args['runtime_lifecycle_request_id'] ?? '' );
-		$current_invocation  = (string) ( $args['runtime_lifecycle_invocation_id'] ?? '' );
-		if ( 'resume' === ( $args['runtime_lifecycle_phase'] ?? '' ) && '' !== $prepared_invocation && $prepared_invocation === $current_invocation ) {
-			return new WP_Error( 'static_site_importer_fresh_runtime_required', 'Provider validation must resume in a fresh WordPress request after dependency preparation.' );
-		}
 
-		return self::materialize_compiled_website_artifact( $artifact, $args, $plan, $gutenberg_gaps, $companion_payload, $lifecycle, $theme_materialization );
+		$result = self::materialize_compiled_website_artifact( $artifact, $args, $plan, $gutenberg_gaps, $companion_payload, $lifecycle, $theme_materialization );
+		if ( ! is_wp_error( $result ) && is_array( $checkpoint ) ) {
+			$checkpoint['workspace']->cleanup( 'success' );
+		}
+		return $result;
 	}
 
 	/** Compile an artifact into its immutable canonical WordPress site plan. */

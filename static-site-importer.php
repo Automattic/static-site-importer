@@ -55,6 +55,7 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-do
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-source-page.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-fetcher.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-artifact-run.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-lifecycle-compile-checkpoint.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-source-normalizer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-content-policy.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-url-site-collector.php';
@@ -434,6 +435,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				}
 				$input['runtime_lifecycle_phase']      = 'resume';
 				$input['runtime_lifecycle_request_id'] = (string) ( $receipt['fresh_runtime']['request_id'] ?? '' );
+				$input['runtime_lifecycle_checkpoint'] = (string) ( $receipt['fresh_runtime']['lifecycle_checkpoint_id'] ?? $receipt['runtime_lifecycle_checkpoint'] ?? '' );
 			}
 
 			if ( isset( $assoc_args['generated-theme-ref'] ) ) {
