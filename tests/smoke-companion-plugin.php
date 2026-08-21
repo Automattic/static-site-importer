@@ -231,7 +231,7 @@ $payload = array(
 				'supports'   => array(
 					'interactivity' => true,
 				),
-				'editorScript' => 'file:./editor.js',
+				'editorScript' => 'file:./index.js',
 				'script'       => array( 'file:./script.js', 'shared-script-handle' ),
 				'style'        => 'file:./style.css',
 				'editorStyle'  => 'file:./editor.css',
@@ -242,7 +242,7 @@ $payload = array(
 			),
 			'render'     => '<div class="ssi-hero">Example hero</div>',
 			'assets'     => array(
-				'editor.js'  => 'window.SSIEditor = true;',
+				'index.js'   => 'window.SSIEditor = true;',
 				'script.js'  => 'window.SSIScript = true;',
 				'style.css'  => '.ssi-hero { color: inherit; }',
 				'editor.css' => '.editor-styles-wrapper .ssi-hero { color: inherit; }',
@@ -250,6 +250,9 @@ $payload = array(
 				'view-module.js' => 'export const SSIView = true;',
 				'view.css' => '.ssi-hero { display: block; }',
 				'variations.json' => '[]',
+			),
+			'script_dependencies' => array(
+				'index.js' => array( 'wp-blocks', 'wp-block-editor', 'wp-element' ),
 			),
 		),
 	),
@@ -297,6 +300,18 @@ $assert( 'failed' === ( $php_asset_report['status'] ?? '' ) && empty( $GLOBALS['
 $php_render = $payload;
 $php_render['blocks'][0]['render'] = '<?php system( "id" );';
 $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $php_render ) ), 'php-render-template-rejected' );
+$malformed_dependencies = $payload;
+$malformed_dependencies['blocks'][0]['script_dependencies'] = array( array( 'wp-blocks' ) );
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $malformed_dependencies ) ), 'script-dependency-map-must-be-an-object' );
+$unsafe_dependency_path = $payload;
+$unsafe_dependency_path['blocks'][0]['script_dependencies'] = array( '../index.js' => array( 'wp-blocks' ) );
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $unsafe_dependency_path ) ), 'script-dependency-path-must-be-safe' );
+$missing_dependency_asset = $payload;
+unset( $missing_dependency_asset['blocks'][0]['assets']['index.js'] );
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $missing_dependency_asset ) ), 'script-dependency-asset-must-exist-and-be-referenced' );
+$invalid_dependency_handle = $payload;
+$invalid_dependency_handle['blocks'][0]['script_dependencies']['index.js'] = array( 'wp-blocks', 'wp blocks' );
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $invalid_dependency_handle ) ), 'script-dependency-handle-must-be-safe' );
 
 // 1. Scaffolder emits a valid plugin file set.
 $descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $payload );
@@ -329,10 +344,12 @@ if ( is_array( $descriptor ) ) {
 	$assert( array() === $invalid_schema_types, 'main-file-emits-only-builtin-rest-schema-types', implode( ',', $invalid_schema_types ) );
 	$block_json = $files['ssi-example-site/blocks/custom-hero/block.json'] ?? '';
 	$assert( '' !== $block_json, 'metadata-block-json-emitted' );
-	$assert( str_contains( $block_json, '"editorScript": "file:./editor.js"' ), 'metadata-block-json-declares-editor-script' );
+	$assert( str_contains( $block_json, '"editorScript": "file:./index.js"' ), 'metadata-block-json-declares-editor-script' );
 	$assert( str_contains( $block_json, '"viewScript"' ) && str_contains( $block_json, '"file:./view.js"' ), 'metadata-block-json-declares-view-script' );
 	$assert( str_contains( $block_json, '"viewScriptModule"' ) && str_contains( $block_json, '"viewStyle"' ) && str_contains( $block_json, '"script"' ), 'metadata-block-json-retains-all-core-metadata-fields' );
-	$assert( isset( $files['ssi-example-site/blocks/custom-hero/editor.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/script.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/style.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/editor.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view-module.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/variations.json'] ), 'metadata-block-assets-emitted' );
+	$assert( isset( $files['ssi-example-site/blocks/custom-hero/index.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/script.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/style.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/editor.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view-module.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/variations.json'] ), 'metadata-block-assets-emitted' );
+	$asset_manifest = $files['ssi-example-site/blocks/custom-hero/index.asset.php'] ?? '';
+	$assert( str_contains( $asset_manifest, "'dependencies' => array(\n\t\t'wp-blocks',\n\t\t'wp-block-editor',\n\t\t'wp-element'," ) && str_contains( $asset_manifest, "'version' => '" . hash( 'sha256', 'window.SSIEditor = true;' ) . "'" ), 'script-dependency-asset-manifest-is-deterministic' );
 
 	// The render.php is the server-rendered template the render_callback runs.
 	$render = $files['ssi-example-site/blocks/custom-hero/render.php'] ?? '';
@@ -437,7 +454,10 @@ $assert( 'ssi-example-site/ssi-example-site.php' === get_option( Static_Site_Imp
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ), 'install-writes-main-file-to-disk' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/render.php' ), 'install-writes-render-php-to-disk' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/block.json' ), 'install-emits-block-json' );
-$assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/editor.js' ), 'install-emits-declared-editor-asset' );
+$assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.js' ), 'install-emits-declared-editor-asset' );
+$written_asset_manifest = WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.asset.php';
+$asset_manifest_value  = file_exists( $written_asset_manifest ) ? include $written_asset_manifest : null;
+$assert( array( 'dependencies' => array( 'wp-blocks', 'wp-block-editor', 'wp-element' ), 'version' => hash( 'sha256', 'window.SSIEditor = true;' ) ) === $asset_manifest_value, 'installed-asset-manifest-executes-with-dependencies-and-content-version' );
 $assert( in_array( 'example/custom-hero', WP_Block_Type_Registry::$registered, true ), 'install-registers-declared-block-before-editor-use' );
 $assert( isset( $GLOBALS['static_site_importer_companion_block_owners']['example/custom-hero'] ), 'install-records-declared-block-owner-before-editor-use' );
 $written_main = file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) ? (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) : '';
