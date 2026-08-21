@@ -94,7 +94,8 @@ if ( ! class_exists( 'Static_Site_Importer_Theme_Generator' ) ) {
 			if ( 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
 				return array(
 					'status'        => 'dependencies_prepared',
-					'fresh_runtime' => array( 'request_id' => $args['runtime_lifecycle_invocation_id'] ?? '' ),
+					'fresh_runtime' => array( 'request_id' => $args['runtime_lifecycle_invocation_id'] ?? '', 'lifecycle_checkpoint_id' => 'checkpoint-id' ),
+					'runtime_lifecycle_checkpoint' => 'checkpoint-id',
 				);
 			}
 			if ( 'resume' === ( $args['runtime_lifecycle_phase'] ?? '' ) && ( $args['runtime_lifecycle_request_id'] ?? '' ) === ( $args['runtime_lifecycle_invocation_id'] ?? '' ) ) {
@@ -251,7 +252,10 @@ $prepare_receipt    = Static_Site_Importer_Validation_Runtime::prepare_artifact_
 	)
 );
 $prepared_invocation = (string) ( $prepare_receipt['fresh_runtime']['request_id'] ?? '' );
+$prepared_metadata   = Static_Site_Importer_Theme_Generator::$last_args['source_metadata'] ?? array();
 $assert( '' !== $prepared_invocation, 'prepare-receipt-carries-invocation' );
+$assert( 'checkpoint-id' === ( $prepare_receipt['fresh_runtime']['lifecycle_checkpoint_id'] ?? '' ) && 'checkpoint-id' === ( $prepare_receipt['runtime_lifecycle_checkpoint'] ?? '' ), 'prepare-receipt-carries-checkpoint-in-fresh-runtime-and-compatibility-field' );
+$assert( 'static-site-importer/current-runtime' === ( $prepared_metadata['validation_provider'] ?? '' ), 'prepare-and-resume-share-validation-provider-metadata' );
 
 $resume_artifact_dir = $artifact_dir . '/persistent-worker-resume';
 $resume_result       = Static_Site_Importer_Validation_Runtime::validate_artifact(
@@ -261,10 +265,12 @@ $resume_result       = Static_Site_Importer_Validation_Runtime::validate_artifac
 		'slug'                         => 'persistent-worker',
 		'runtime_lifecycle_phase'      => 'resume',
 		'runtime_lifecycle_request_id' => $prepare_receipt['fresh_runtime']['request_id'],
+		'runtime_lifecycle_checkpoint' => $prepare_receipt['runtime_lifecycle_checkpoint'],
 	)
 );
 $assert( ! is_wp_error( $resume_result ), 'distinct-invocation-resume-proceeds-in-one-process' );
 $assert( $prepared_invocation !== ( Static_Site_Importer_Theme_Generator::$last_args['runtime_lifecycle_invocation_id'] ?? '' ), 'separate-runtime-calls-receive-distinct-invocations' );
+$assert( $prepared_metadata === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata'] ?? array() ), 'prepare-and-resume-bind-identical-source-metadata' );
 
 $same_invocation_artifact_dir = $artifact_dir . '/same-invocation-resume';
 $same_invocation_result       = Static_Site_Importer_Validation_Runtime::validate_artifact(

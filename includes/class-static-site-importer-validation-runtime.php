@@ -106,6 +106,9 @@ class Static_Site_Importer_Validation_Runtime {
 		if ( isset( $input['runtime_lifecycle_request_id'] ) ) {
 			$import_args['runtime_lifecycle_request_id'] = (string) $input['runtime_lifecycle_request_id'];
 		}
+		if ( isset( $input['runtime_lifecycle_checkpoint'] ) ) {
+			$import_args['runtime_lifecycle_checkpoint'] = (string) $input['runtime_lifecycle_checkpoint'];
+		}
 		$import_args['runtime_lifecycle_invocation_id'] = self::invocation_id( $invocation_id );
 
 		$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
@@ -126,6 +129,10 @@ class Static_Site_Importer_Validation_Runtime {
 	public static function prepare_artifact_dependencies( array $input, string $invocation_id = '' ) {
 		$input['runtime_lifecycle_phase']  = 'prepare';
 		$input['materialize_dependencies'] = true;
+		$input['source_metadata']          = array_merge(
+			isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array(),
+			array( 'validation_provider' => 'static-site-importer/current-runtime' )
+		);
 		$artifact                          = isset( $input['artifact'] ) && is_array( $input['artifact'] ) ? $input['artifact'] : array();
 		if ( empty( $artifact ) ) {
 			return new WP_Error( 'static_site_importer_validation_artifact_missing', 'Dependency preparation requires an artifact JSON object.' );
@@ -149,13 +156,14 @@ class Static_Site_Importer_Validation_Runtime {
 		}
 		$encoded_artifact = wp_json_encode( $artifact );
 		return array(
-			'schema'            => 'static-site-importer/runtime-lifecycle-receipt/v1',
-			'status'            => (string) ( $result['status'] ?? 'failed' ),
-			'artifact_sha256'   => hash( 'sha256', false !== $encoded_artifact ? $encoded_artifact : '' ),
-			'slug'              => $input['slug'],
-			'fresh_runtime'     => $result['fresh_runtime'] ?? array(),
-			'dependencies'      => $result['dependencies'] ?? array(),
-			'runtime_lifecycle' => $result['runtime_lifecycle'] ?? array(),
+			'schema'                       => 'static-site-importer/runtime-lifecycle-receipt/v1',
+			'status'                       => (string) ( $result['status'] ?? 'failed' ),
+			'artifact_sha256'              => hash( 'sha256', false !== $encoded_artifact ? $encoded_artifact : '' ),
+			'slug'                         => $input['slug'],
+			'fresh_runtime'                => $result['fresh_runtime'] ?? array(),
+			'dependencies'                 => $result['dependencies'] ?? array(),
+			'runtime_lifecycle'            => $result['runtime_lifecycle'] ?? array(),
+			'runtime_lifecycle_checkpoint' => $result['runtime_lifecycle_checkpoint'] ?? ( $result['fresh_runtime']['lifecycle_checkpoint_id'] ?? '' ),
 		);
 	}
 

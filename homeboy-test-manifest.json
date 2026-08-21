@@ -23,6 +23,7 @@
     "tests/smoke-current-site-capabilities.php": { "environment": "standalone-php" },
     "tests/smoke-importer-block.php": { "environment": "standalone-php" },
     "tests/smoke-inline-svg-materialization.php": { "environment": "standalone-php" },
+    "tests/smoke-lifecycle-compile-checkpoint.php": { "environment": "standalone-php" },
     "tests/smoke-materialized-block-content-validation.php": { "environment": "standalone-php" },
     "tests/smoke-managed-classic-theme-materialization.php": { "environment": "standalone-php" },
     "tests/smoke-playground-import-primitive.php": { "environment": "standalone-php" },

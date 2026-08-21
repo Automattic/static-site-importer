@@ -139,6 +139,7 @@ $input  = array(
 	'materialize_dependencies'             => false,
 	'runtime_lifecycle_phase'              => 'resume',
 	'runtime_lifecycle_request_id'         => 'prepared-request',
+	'runtime_lifecycle_checkpoint'         => '0123456789abcdef0123456789abcdef',
 	'require_proven_dynamic_client_assets' => false,
 	'seed_entities'                        => true,
 	'products_manifest'                    => array( 'products' => array() ),
