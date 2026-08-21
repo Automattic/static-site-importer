@@ -466,9 +466,15 @@ if ( ! function_exists( 'static_site_importer_ability_import' ) ) {
 		} elseif ( 'files' === $type ) {
 			$runtime_source['files'] = isset( $source['files'] ) && is_array( $source['files'] ) ? $source['files'] : array();
 		} elseif ( ! empty( $source['zip']['staged_path'] ) ) {
-			$runtime_source['files'] = static_site_importer_staged_archive_files( $source['zip'] );
+			$runtime_source['files'] = static_site_importer_staged_archive_files( $source['zip'], true );
 			if ( is_wp_error( $runtime_source['files'] ) ) {
 				return static_site_importer_ability_error( (string) $runtime_source['files']->get_error_code(), $runtime_source['files']->get_error_message(), $runtime_source['files']->get_error_data() );
+			}
+			if ( 'apply' === $operation ) {
+				$payload_reader = static_site_importer_staged_archive_payload_reader( $source['zip'] );
+				if ( is_wp_error( $payload_reader ) ) {
+					return static_site_importer_ability_error( (string) $payload_reader->get_error_code(), $payload_reader->get_error_message(), $payload_reader->get_error_data() );
+				}
 			}
 		} else {
 			$runtime_source['archive'] = isset( $source['zip'] ) && is_array( $source['zip'] ) ? $source['zip'] : array();
@@ -494,6 +500,9 @@ if ( ! function_exists( 'static_site_importer_ability_import' ) ) {
 		);
 
 		$args = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
+		if ( isset( $payload_reader ) ) {
+			$args['_static_site_importer_payload_reader'] = $payload_reader;
+		}
 		if ( '' !== $args['runtime_lifecycle_phase'] ) {
 			$args['runtime_lifecycle_invocation_id'] = wp_generate_uuid4();
 		}
@@ -689,6 +698,10 @@ if ( ! function_exists( 'static_site_importer_ability_apply_approved_plan' ) ) {
 	function static_site_importer_ability_apply_approved_plan( array $input ): array {
 		$approved = $input['plan'];
 		$plan     = isset( $approved['plan'] ) && is_array( $approved['plan'] ) ? $approved['plan'] : $approved;
+		$payload_reader = static_site_importer_ability_approved_plan_payload_reader( $input, $approved );
+		if ( is_wp_error( $payload_reader ) ) {
+			return static_site_importer_ability_error( (string) $payload_reader->get_error_code(), $payload_reader->get_error_message(), $payload_reader->get_error_data() );
+		}
 		$classic  = isset( $approved['classic_materialization'] ) && is_array( $approved['classic_materialization'] ) ? $approved['classic_materialization'] : ( isset( $input['classic_materialization'] ) && is_array( $input['classic_materialization'] ) ? $input['classic_materialization'] : null );
 		if ( is_array( $classic ) ) {
 			$artifact   = $classic['artifact'] ?? null;
@@ -704,6 +717,9 @@ if ( ! function_exists( 'static_site_importer_ability_apply_approved_plan' ) ) {
 			}
 			$args['approved_classic_plan_hash']       = (string) $classic['plan_hash'];
 			$args['approved_classic_projection_hash'] = (string) $projection_hash;
+			if ( is_object( $payload_reader ) ) {
+				$args['_static_site_importer_payload_reader'] = $payload_reader;
+			}
 			$result                                   = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $args );
 			if ( is_wp_error( $result ) ) {
 				return static_site_importer_ability_error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
@@ -718,6 +734,9 @@ if ( ! function_exists( 'static_site_importer_ability_apply_approved_plan' ) ) {
 				'error'             => null,
 			);
 		}
+		if ( is_object( $payload_reader ) ) {
+			$input['_static_site_importer_payload_reader'] = $payload_reader;
+		}
 		$receipt = static_site_importer_ability_materialize_wordpress_site_plan( $input );
 		$success = 'completed' === ( $receipt['status'] ?? '' );
 
@@ -731,6 +750,30 @@ if ( ! function_exists( 'static_site_importer_ability_apply_approved_plan' ) ) {
 				'message' => 'The approved plan could not be materialized.',
 			) ),
 		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_ability_approved_plan_payload_reader' ) ) {
+	/** Resolve the opaque staged ZIP again only for the transient apply reader. */
+	function static_site_importer_ability_approved_plan_payload_reader( array $input, array $approved ) {
+		$source = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : ( isset( $approved['source'] ) && is_array( $approved['source'] ) ? $approved['source'] : array() );
+		if ( 'zip' !== (string) ( $source['type'] ?? '' ) ) {
+			return null;
+		}
+		$reference = (string) ( $source['ref'] ?? ( $source['provenance']['ref'] ?? '' ) );
+		if ( '' === $reference ) {
+			return null;
+		}
+		$resolved = apply_filters( 'static_site_importer_resolve_source_reference', null, $reference, 'zip', $input );
+		if ( ! is_array( $resolved ) ) {
+			return new WP_Error( 'static_site_importer_source_reference_unresolved', 'The opaque source reference was not resolved by a server-owned resolver.' );
+		}
+		$resolved_source = isset( $resolved['source'] ) && is_array( $resolved['source'] ) ? $resolved['source'] : $resolved;
+		$archive         = isset( $resolved_source['zip'] ) && is_array( $resolved_source['zip'] ) ? $resolved_source['zip'] : array();
+		if ( empty( $archive['staged_path'] ) ) {
+			return new WP_Error( 'static_site_importer_staged_archive_invalid', 'The approved plan requires a resolver-owned staged ZIP archive.' );
+		}
+		return static_site_importer_staged_archive_payload_reader( $archive );
 	}
 }
 

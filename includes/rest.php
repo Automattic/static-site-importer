@@ -1061,6 +1061,14 @@ function static_site_importer_source_runtime( array $source ) {
 				continue;
 			}
 
+			if ( isset( $file['payload_reference'] ) && is_array( $file['payload_reference'] ) ) {
+				$files[] = array(
+					'path'              => $path,
+					'payload_reference' => $file['payload_reference'],
+				);
+				continue;
+			}
+
 			if ( isset( $file['content_base64'] ) ) {
 				// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes uploaded artifact payload content.
 				$content = base64_decode( (string) $file['content_base64'], true );
@@ -1253,7 +1261,17 @@ function static_site_importer_rest_archive_files( array $archive ) {
  * @param array<string,mixed> $archive Resolved archive payload.
  * @return array<int,array<string,mixed>>|WP_Error
  */
-function static_site_importer_staged_archive_files( array $archive ) {
+function static_site_importer_staged_archive_files( array $archive, bool $return_payload_references = false ) {
+	$path = static_site_importer_staged_archive_path( $archive );
+	if ( is_wp_error( $path ) ) {
+		return $path;
+	}
+
+	return static_site_importer_archive_files_from_path( $path, static_site_importer_staged_archive_limits(), false, $return_payload_references );
+}
+
+/** Resolve a server-owned staged archive without transferring ownership to SSI. */
+function static_site_importer_staged_archive_path( array $archive ) {
 	$name = isset( $archive['name'] ) ? (string) $archive['name'] : '';
 	$path = isset( $archive['staged_path'] ) ? (string) $archive['staged_path'] : '';
 	if ( ! preg_match( '/\.zip$/i', $name ) ) {
@@ -1266,13 +1284,57 @@ function static_site_importer_staged_archive_files( array $archive ) {
 		return new WP_Error( 'static_site_importer_staged_archive_invalid', __( 'The staged ZIP archive is unavailable.', 'static-site-importer' ), array( 'status' => 400 ) );
 	}
 
-	$limits = static_site_importer_staged_archive_limits();
-	$size   = filesize( $real_path );
-	if ( false === $size || $size > $limits['max_archive_bytes'] ) {
+	$size = filesize( $real_path );
+	if ( false === $size || $size > static_site_importer_staged_archive_limits()['max_archive_bytes'] ) {
 		return static_site_importer_rest_archive_limit_error( 'staged_bytes_exceeded' );
 	}
 
-	return static_site_importer_archive_files_from_path( $real_path, $limits, false );
+	return $real_path;
+}
+
+/** Return a transient reader for verified entries in a resolver-owned staged ZIP. */
+function static_site_importer_staged_archive_payload_reader( array $archive ) {
+	$path = static_site_importer_staged_archive_path( $archive );
+	if ( is_wp_error( $path ) ) {
+		return $path;
+	}
+
+	return new class( $path ) {
+		public function __construct( private string $archive_path ) {}
+
+		public function read( array $reference ): string {
+			$id = isset( $reference['id'] ) ? (string) $reference['id'] : '';
+			if ( ! str_starts_with( $id, 'zip-entry:' ) ) {
+				throw new RuntimeException( 'The staged payload reference is invalid.' );
+			}
+			$entry = rawurldecode( substr( $id, strlen( 'zip-entry:' ) ) );
+			if ( '' === $entry || static_site_importer_rest_artifact_path( $entry ) === '' ) {
+				throw new RuntimeException( 'The staged payload reference is invalid.' );
+			}
+			$path = static_site_importer_staged_archive_path( array( 'name' => 'payload.zip', 'staged_path' => $this->archive_path ) );
+			if ( is_wp_error( $path ) ) {
+				throw new RuntimeException( 'The staged archive is unavailable.' );
+			}
+			$zip = new ZipArchive();
+			if ( true !== $zip->open( $path ) ) {
+				throw new RuntimeException( 'The staged archive is unavailable.' );
+			}
+			try {
+				$stat = $zip->statName( $entry );
+				$limits = static_site_importer_staged_archive_limits();
+				if ( ! is_array( $stat ) || ! isset( $reference['bytes'] ) || ! is_int( $reference['bytes'] ) || (int) $stat['size'] !== $reference['bytes'] || (int) $stat['size'] > $limits['max_entry_uncompressed_bytes'] || ( 0 === (int) $stat['comp_size'] ? (int) $stat['size'] > 0 : (int) $stat['size'] / (int) $stat['comp_size'] > $limits['max_compression_ratio'] ) ) {
+					throw new RuntimeException( 'The staged payload byte count changed.' );
+				}
+				$bytes = $zip->getFromName( $entry );
+			} finally {
+				$zip->close();
+			}
+			if ( false === $bytes ) {
+				throw new RuntimeException( 'The staged payload is unavailable.' );
+			}
+			return $bytes;
+		}
+	};
 }
 
 /**
@@ -1283,7 +1345,7 @@ function static_site_importer_staged_archive_files( array $archive ) {
  * @param bool              $delete_path  Whether this importer owns the path.
  * @return array<int,array<string,mixed>>|WP_Error
  */
-function static_site_importer_archive_files_from_path( string $archive_path, array $limits, bool $delete_path ) {
+function static_site_importer_archive_files_from_path( string $archive_path, array $limits, bool $delete_path, bool $return_payload_references = false ) {
 	if ( ! class_exists( 'ZipArchive' ) ) {
 		return new WP_Error( 'static_site_importer_zip_unavailable', __( 'ZIP archive extraction is unavailable on this server.', 'static-site-importer' ), array( 'status' => 500 ) );
 	}
@@ -1367,6 +1429,19 @@ function static_site_importer_archive_files_from_path( string $archive_path, arr
 		if ( false === $file_content ) {
 			$cleanup( $zip );
 			return new WP_Error( 'static_site_importer_archive_entry_read_failed', __( 'A ZIP archive entry could not be read.', 'static-site-importer' ), array( 'status' => 400 ) );
+		}
+
+		if ( $return_payload_references && ! Static_Site_Importer_Content_Policy::is_textual_path( $path ) ) {
+			$files[] = array(
+				'path'              => $path,
+				'payload_reference' => array(
+					'schema' => 'blocks-engine/payload-reference/v1',
+					'id'     => 'zip-entry:' . rawurlencode( $entry ),
+					'bytes'  => strlen( $file_content ),
+					'sha256' => hash( 'sha256', $file_content ),
+				),
+			);
+			continue;
 		}
 
 		$files[] = array(
