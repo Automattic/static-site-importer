@@ -51,9 +51,6 @@ class Static_Site_Importer_Theme_Generator {
 		$phase               = (string) ( $args['runtime_lifecycle_phase'] ?? '' );
 		$prepared_invocation = (string) ( $args['runtime_lifecycle_request_id'] ?? '' );
 		$current_invocation  = (string) ( $args['runtime_lifecycle_invocation_id'] ?? '' );
-		if ( 'resume' === $phase && '' !== $prepared_invocation && $prepared_invocation === $current_invocation ) {
-			return new WP_Error( 'static_site_importer_fresh_runtime_required', 'Provider validation must resume in a fresh WordPress request after dependency preparation.' );
-		}
 		$request_args = $args;
 		$checkpoint  = null;
 		$resume_args = array();
@@ -132,6 +129,7 @@ class Static_Site_Importer_Theme_Generator {
 			}
 			$dependencies = self::materialize_prepared_dependencies( $lifecycle, $args );
 			if ( is_wp_error( $dependencies ) ) {
+				Static_Site_Importer_Lifecycle_Compile_Checkpoint::discard( $handle, (string) ( $args['_static_site_importer_lifecycle_checkpoint_root'] ?? '' ) );
 				return $dependencies;
 			}
 			return array(
@@ -146,8 +144,14 @@ class Static_Site_Importer_Theme_Generator {
 			);
 		}
 
+		if ( is_array( $checkpoint ) ) {
+			$claimed = Static_Site_Importer_Lifecycle_Compile_Checkpoint::claim( $checkpoint['workspace'] );
+			if ( is_wp_error( $claimed ) ) {
+				return $claimed;
+			}
+		}
 		$result = self::materialize_compiled_website_artifact( $artifact, $args, $plan, $gutenberg_gaps, $companion_payload, $lifecycle, $theme_materialization );
-		if ( ! is_wp_error( $result ) && is_array( $checkpoint ) ) {
+		if ( is_array( $checkpoint ) ) {
 			$checkpoint['workspace']->cleanup( 'success' );
 		}
 		return $result;
