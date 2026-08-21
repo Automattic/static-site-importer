@@ -634,10 +634,10 @@ final class Static_Site_Importer_URL_Batch_Import {
 				return new WP_Error( 'static_site_importer_missing_transformer_capability', 'The Blocks Engine php-transformer does not support staged URL batch plans.' );
 			}
 			$compiled = call_user_func( $compose, $staged['shared_plan'], $staged['page_plans'], $payload_reader );
-			if ( ! is_object( $compiled ) || ! is_callable( array( $compiled, 'toArray' ) ) ) {
+			if ( ! is_object( $compiled ) || ( ! is_callable( array( $compiled, 'toWordPressSitePlanView' ) ) && ! is_callable( array( $compiled, 'toArray' ) ) ) ) {
 				return new WP_Error( 'static_site_importer_invalid_staged_compile', 'The Blocks Engine php-transformer returned an invalid staged URL batch plan.' );
 			}
-			return call_user_func( array( $compiled, 'toArray' ) );
+			return is_callable( array( $compiled, 'toWordPressSitePlanView' ) ) ? call_user_func( array( $compiled, 'toWordPressSitePlanView' ) ) : call_user_func( array( $compiled, 'toArray' ) );
 		} catch ( Throwable $error ) {
 			return new WP_Error( 'static_site_importer_staged_compose_failed', $error->getMessage() );
 		}
@@ -769,7 +769,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 		if ( is_wp_error( $compiled ) ) {
 			return $compiled;
 		}
-		$plan = $compiled['source_reports']['wordpress_site_plan'] ?? null;
+		$plan = 'blocks-engine/wordpress-site-plan-view/v1' === ( $compiled['schema'] ?? '' ) ? ( $compiled['wordpress_site_plan'] ?? null ) : ( $compiled['source_reports']['wordpress_site_plan'] ?? null );
 		if ( ! is_array( $plan ) ) {
 			return new WP_Error( 'static_site_importer_url_plan_missing', 'The frozen URL run did not compose a canonical WordPress site plan.' );
 		}
