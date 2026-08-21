@@ -405,7 +405,7 @@ class Static_Site_Importer_Plugin_Materializer {
 
 		// A byte-identical entrypoint proves this is the prior SSI scaffold for the
 		// same destination and payload, rather than a coincidental block namespace.
-		return hash_equals( $expected_main, (string) file_get_contents( $path ) );
+		return hash_equals( $expected_main, (string) file_get_contents( $path ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Byte-compares the importer-owned companion entrypoint on disk.
 	}
 
 	/** Resolve filesystem aliases before comparing an active generated plugin owner. */
