@@ -8,9 +8,9 @@ if ( ! class_exists( 'Static_Site_Importer_Artifact_Run_Workspace' ) ) {
 }
 
 final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
-	private const SCHEMA = 'static-site-importer/lifecycle-compile-checkpoint/v1';
-	private const TTL    = 21600;
-	private const CLEANUP_HOOK = 'static_site_importer_purge_lifecycle_compile_checkpoints';
+	private const SCHEMA                       = 'static-site-importer/lifecycle-compile-checkpoint/v1';
+	private const TTL                          = 21600;
+	private const CLEANUP_HOOK                 = 'static_site_importer_purge_lifecycle_compile_checkpoints';
 	private static ?string $runtime_generation = null;
 
 	public static function create( array $artifact, array $request_args, array $materialization, string $owner, string $root = '' ) {
@@ -34,7 +34,7 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 			'materialization_plan'  => $materialization['materialization_plan'],
 			'theme_materialization' => $materialization['theme_materialization'],
 		);
-		$json = wp_json_encode( $payload );
+		$json    = wp_json_encode( $payload );
 		if ( ! is_string( $json ) ) {
 			return new WP_Error( 'static_site_importer_lifecycle_checkpoint_encode_failed', 'The lifecycle compile checkpoint could not be encoded.' );
 		}
@@ -71,10 +71,13 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 			return new WP_Error( 'static_site_importer_fresh_runtime_required', 'Provider validation must resume in a fresh WordPress runtime after dependency preparation.' );
 		}
 		$json = wp_json_encode( $record['payload'] );
-		if ( ! is_string( $json ) || ! hash_equals( $record['payload_sha256'], hash( 'sha256', $json ) ) || $record['binding'] !== self::binding( $artifact, $request_args, $owner ) ) {
+		if ( ! is_string( $json ) || ! hash_equals( $record['payload_sha256'], hash( 'sha256', $json ) ) || self::binding( $artifact, $request_args, $owner ) !== $record['binding'] ) {
 			return new WP_Error( 'static_site_importer_lifecycle_checkpoint_mismatch', 'The lifecycle compile checkpoint does not match this import request.' );
 		}
-		return array( 'workspace' => $workspace, 'payload' => $record['payload'] );
+		return array(
+			'workspace' => $workspace,
+			'payload'   => $record['payload'],
+		);
 	}
 
 	/** Atomically reserve a loaded checkpoint for one terminal materialization attempt. */
@@ -148,7 +151,14 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 			return new WP_Error( 'static_site_importer_lifecycle_checkpoint_unavailable', 'The lifecycle compile checkpoint workspace is unavailable.' );
 		}
 		try {
-			return new Static_Site_Importer_Artifact_Run_Workspace( $root, 'lifecycle-' . $handle, array( 'on_success' => 'purge_on_success', 'expires_at' => gmdate( 'c', time() + self::ttl() ) ) );
+			return new Static_Site_Importer_Artifact_Run_Workspace(
+				$root,
+				'lifecycle-' . $handle,
+				array(
+					'on_success' => 'purge_on_success',
+					'expires_at' => gmdate( 'c', time() + self::ttl() ),
+				)
+			);
 		} catch ( RuntimeException $error ) {
 			return new WP_Error( 'static_site_importer_lifecycle_checkpoint_unavailable', $error->getMessage() );
 		}
@@ -182,10 +192,10 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 		return function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_lifecycle_checkpoint_implementation_binding', $binding ) : $binding;
 	}
 
-	private static function class_binding( string $class, bool $with_dependencies = false ): array {
-		$file = class_exists( $class ) ? ( new ReflectionClass( $class ) )->getFileName() : false;
+	private static function class_binding( string $class_name, bool $with_dependencies = false ): array {
+		$file = class_exists( $class_name ) ? ( new ReflectionClass( $class_name ) )->getFileName() : false;
 		$data = array(
-			'class'       => $class,
+			'class'       => $class_name,
 			'file_sha256' => is_string( $file ) && is_readable( $file ) ? hash_file( 'sha256', $file ) : '',
 		);
 		if ( $with_dependencies ) {

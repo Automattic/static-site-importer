@@ -133,11 +133,11 @@ class Static_Site_Importer_Theme_Generator {
 				return $dependencies;
 			}
 			return array(
-				'status'            => 'dependencies_prepared',
-				'runtime_lifecycle' => $lifecycle,
-				'dependencies'      => $dependencies,
-				'fresh_runtime'     => array(
-					'request_id'             => (string) ( $args['runtime_lifecycle_invocation_id'] ?? '' ),
+				'status'                       => 'dependencies_prepared',
+				'runtime_lifecycle'            => $lifecycle,
+				'dependencies'                 => $dependencies,
+				'fresh_runtime'                => array(
+					'request_id'              => (string) ( $args['runtime_lifecycle_invocation_id'] ?? '' ),
 					'lifecycle_checkpoint_id' => $handle,
 				),
 				'runtime_lifecycle_checkpoint' => $handle,
