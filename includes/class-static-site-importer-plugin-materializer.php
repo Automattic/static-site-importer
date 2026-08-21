@@ -390,7 +390,7 @@ class Static_Site_Importer_Plugin_Materializer {
 
 		if ( is_array( $owner ) ) {
 			return (string) ( $owner['plugin_file'] ?? '' ) === $plugin_file
-				&& str_replace( '\\', '/', (string) ( $owner['plugin_path'] ?? '' ) ) === $path;
+				&& self::canonical_plugin_path( (string) ( $owner['plugin_path'] ?? '' ) ) === self::canonical_plugin_path( $path );
 		}
 
 		if ( ! $overwrite || '' === $path || ! is_readable( $path ) ) {
@@ -406,6 +406,12 @@ class Static_Site_Importer_Plugin_Materializer {
 		// A byte-identical entrypoint proves this is the prior SSI scaffold for the
 		// same destination and payload, rather than a coincidental block namespace.
 		return hash_equals( $expected_main, (string) file_get_contents( $path ) );
+	}
+
+	/** Resolve filesystem aliases before comparing an active generated plugin owner. */
+	private static function canonical_plugin_path( string $path ): string {
+		$resolved = '' !== $path ? realpath( $path ) : false;
+		return str_replace( '\\', '/', false !== $resolved ? $resolved : $path );
 	}
 
 	/**
