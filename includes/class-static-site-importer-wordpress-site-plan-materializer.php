@@ -341,6 +341,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			unset( $binding_report );
 		}
 
+		$short_write_attempt = 0;
 		foreach ( $state['resolved']['writes'] as $write ) {
 			$path = $state['theme_dir'] . '/' . $write['target_path'];
 			self::journal_file( $state, $path );
@@ -359,7 +360,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( ! empty( $args['preserve_existing_theme_bootstrap'] ) && in_array( $write['kind'] ?? '', array( 'theme_scaffold', 'theme_bootstrap', 'theme_template' ), true ) && is_file( $state['theme_dir'] . '/' . $write['target_path'] ) ) {
 				continue;
 			}
-			$result = self::write_file( $state['theme_dir'], $write, $state['payload_reader'] );
+			$chunk_writer = self::injected_failure( $args, 'theme_write_short' ) ? static function ( $stream, string $data ) use ( &$short_write_attempt ): int {
+				if ( 0 < $short_write_attempt++ ) {
+					return 0;
+				}
+				$length = max( 1, intdiv( strlen( $data ), 2 ) );
+				return (int) fwrite( $stream, substr( $data, 0, $length ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Deterministic test-only short-write injection.
+			} : null;
+			$result = self::write_file( $state['theme_dir'], $write, $state['payload_reader'], $chunk_writer );
 			if ( is_wp_error( $result ) ) {
 				return self::failed_receipt( $state, $result->get_error_code() );
 			}
@@ -804,7 +812,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	}
 
 	/** @param array<string,mixed> $write */
-	private static function write_file( string $theme_dir, array $write, ?object $payload_reader = null ) {
+	private static function write_file( string $theme_dir, array $write, ?object $payload_reader = null, ?Closure $chunk_writer = null ) {
 		$path          = $theme_dir . '/' . $write['target_path'];
 		$declared_hash = self::payload_hash( $write );
 		if ( is_file( $path ) && '' !== $declared_hash && self::file_hash( $path ) === $declared_hash ) {
@@ -822,8 +830,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( ! is_dir( dirname( $path ) ) && ! wp_mkdir_p( dirname( $path ) ) ) {
 			return new WP_Error( 'theme_directory_create_failed' );
 		}
-		$temp = tempnam( dirname( $path ), '.ssi-plan-' );
-		if ( false === $data || false === $temp || false === file_put_contents( $temp, $data ) || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents,WordPress.WP.AlternativeFunctions.rename_rename -- Atomically materializes the canonical declared theme write.
+		$temp   = tempnam( dirname( $path ), '.ssi-plan-' );
+		$stream = false !== $temp ? fopen( $temp, 'wb' ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Streams the canonical theme write into an atomic temporary file.
+		$written = is_resource( $stream ) && self::write_all( $stream, $data, $chunk_writer ) && fflush( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fflush -- Flushes complete canonical write bytes before publication.
+		$closed = ! is_resource( $stream ) || fclose( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes canonical write before atomic publication.
+		if ( false === $data || false === $temp || ! $written || ! $closed || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Atomically materializes only complete canonical declared theme writes.
 			if ( is_string( $temp ) && file_exists( $temp ) ) {
 				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed temporary materialization file.
 			}
@@ -835,6 +846,21 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'payload_hash'            => $write['payload_hash'] ?? hash( 'sha256', $data ),
 			'reconciliation_identity' => $write['reconciliation_identity'] ?? hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ),
 		);
+	}
+
+	/** Write every canonical byte or fail before the temporary file can be published. */
+	private static function write_all( $stream, string $data, ?Closure $chunk_writer = null ): bool {
+		$offset = 0;
+		$length = strlen( $data );
+		while ( $offset < $length ) {
+			$remaining = substr( $data, $offset );
+			$written   = null === $chunk_writer ? fwrite( $stream, $remaining ) : $chunk_writer( $stream, $remaining ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Handles short writes while materializing canonical theme bytes.
+			if ( ! is_int( $written ) || 0 >= $written || strlen( $remaining ) < $written ) {
+				return false;
+			}
+			$offset += $written;
+		}
+		return true;
 	}
 
 	/** Report final bytes while retaining the canonical write's reconciliation identity. */
@@ -1781,6 +1807,51 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** @param array<string,mixed> $plan */
 	private static function hash( array $plan ): string {
-		return hash( 'sha256', (string) wp_json_encode( $plan, JSON_UNESCAPED_SLASHES ) );
+		$context = hash_init( 'sha256' );
+		self::hash_json_value( $context, $plan );
+		return hash_final( $context );
+	}
+
+	/** Stream the exact JSON token sequence previously passed to hash(). */
+	private static function hash_json_value( $context, mixed $value ): void {
+		if ( ! is_array( $value ) ) {
+			hash_update( $context, (string) wp_json_encode( $value, JSON_UNESCAPED_SLASHES ) );
+			return;
+		}
+		if ( self::json_list( $value ) ) {
+			hash_update( $context, '[' );
+			foreach ( $value as $index => $item ) {
+				if ( 0 !== $index ) {
+					hash_update( $context, ',' );
+				}
+				self::hash_json_value( $context, $item );
+			}
+			hash_update( $context, ']' );
+			return;
+		}
+		hash_update( $context, '{' );
+		$first = true;
+		foreach ( $value as $key => $item ) {
+			if ( ! $first ) {
+				hash_update( $context, ',' );
+			}
+			$first = false;
+			hash_update( $context, (string) wp_json_encode( (string) $key, JSON_UNESCAPED_SLASHES ) );
+			hash_update( $context, ':' );
+			self::hash_json_value( $context, $item );
+		}
+		hash_update( $context, '}' );
+	}
+
+	/** Match PHP's array-to-JSON list detection without materializing JSON. */
+	private static function json_list( array $value ): bool {
+		$index = 0;
+		foreach ( $value as $key => $_ ) {
+			if ( $key !== $index ) {
+				return false;
+			}
+			++$index;
+		}
+		return true;
 	}
 }

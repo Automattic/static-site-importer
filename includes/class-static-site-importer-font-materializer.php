@@ -406,7 +406,8 @@ final class Static_Site_Importer_Font_Materializer {
 					}
 					$rewritten     = str_replace( $source_url, '../fonts/' . basename( $asset['target_path'] ), $rewritten );
 					$svg_rewritten = str_replace( $source_url, 'data:font/' . $asset['format'] . ';base64,' . base64_encode( $asset['payload'] ), $svg_rewritten ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes a fetched font asset for a data URL.
-					$assets[]      = $asset + array( 'source_url' => $source_url );
+					// Writes retain the exact bytes; receipts retain only durable evidence.
+					$assets[] = self::asset_receipt( $asset, $source_url );
 				}
 				$css[ hash( 'sha256', $rewritten ) ]                          = $rewritten;
 				$svg_faces[ $face['id'] ][ hash( 'sha256', $svg_rewritten ) ] = $svg_rewritten;
@@ -562,6 +563,17 @@ final class Static_Site_Importer_Font_Materializer {
 			'format'          => $format,
 			'expected_sha256' => $expected_sha256,
 			'observed_sha256' => $hash,
+		);
+	}
+
+	/** Return public receipt evidence without carrying the downloaded binary payload. */
+	private static function asset_receipt( array $asset, string $source_url ): array {
+		return array(
+			'target_path'     => $asset['target_path'],
+			'format'          => $asset['format'],
+			'source_url'      => $source_url,
+			'expected_sha256' => $asset['expected_sha256'],
+			'observed_sha256' => $asset['observed_sha256'],
 		);
 	}
 
