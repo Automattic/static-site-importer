@@ -469,7 +469,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				if ( is_wp_error( $write ) ) {
 					return $write;
 				}
-				$terminal         = array_key_last( $cursor ) === $index;
+				$terminal = array_key_last( $cursor ) === $index;
 				if ( $terminal ) {
 					// The terminal batch finalizes the whole run, so it composes every frozen page plan with the retained shared plan.
 					$complete = self::compose_complete_plan( $workspace, $cursor, $payload_reader );
@@ -665,7 +665,10 @@ final class Static_Site_Importer_URL_Batch_Import {
 		return new class( $workspace ) implements \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
 			public function __construct( private Static_Site_Importer_Artifact_Run_Workspace $workspace ) {}
 			public function read( array $reference ): string {
-				$bytes = $this->workspace->read_raw( (string) $reference['id'] );
+				if ( ! isset( $reference['id'] ) || ! is_string( $reference['id'] ) ) {
+					throw new RuntimeException( 'A retained artifact payload reference is malformed.' );
+				}
+				$bytes = $this->workspace->read_raw( $reference['id'] );
 				if ( ! is_string( $bytes ) ) {
 					throw new RuntimeException( 'A retained artifact payload is unavailable.' );
 				}
