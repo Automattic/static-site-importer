@@ -207,7 +207,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$inventory_hash        = substr( hash( 'sha256', (string) wp_json_encode( array( $block_specs, $preserved ) ) ), 0, 16 );
 		$registration_callback = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash . '_register_blocks';
 		$main_file             = $plugin_slug . '/' . $plugin_slug . '.php';
-		$files     = array_merge(
+		$files                 = array_merge(
 			array(
 				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_specs, $preserved, $main_file, $inventory_hash ),
 			),
@@ -215,23 +215,23 @@ class Static_Site_Importer_Companion_Plugin {
 		);
 
 		$descriptor = array(
-			'schema'          => self::PAYLOAD_SCHEMA,
-			'slug'            => $plugin_slug,
-			'namespace'       => $block_namespace,
-			'site_slug'       => $site_slug,
-			'plugin_file'     => $main_file,
+			'schema'                => self::PAYLOAD_SCHEMA,
+			'slug'                  => $plugin_slug,
+			'namespace'             => $block_namespace,
+			'site_slug'             => $site_slug,
+			'plugin_file'           => $main_file,
 			'registration_callback' => $registration_callback,
-			'mu_plugin'       => $mu_plugin,
-			'block_names'     => $block_names,
+			'mu_plugin'             => $mu_plugin,
+			'block_names'           => $block_names,
 			// Handles of preserved island scripts the plugin carries + enqueues
 			// scoped. Exposed so the gate/diagnostics can account for preserved
 			// island JS as companion-plugin-carried (theme-independent) rather
 			// than theme-coupled.
-			'island_handles'  => array_map(
+			'island_handles'        => array_map(
 				static fn ( array $island ): string => (string) $island['handle'],
 				$preserved
 			),
-			'runtime_scripts' => array_map(
+			'runtime_scripts'       => array_map(
 				static fn ( array $island ): array => array(
 					'handle'          => (string) $island['handle'],
 					'block'           => (string) $island['block'],
@@ -241,8 +241,8 @@ class Static_Site_Importer_Companion_Plugin {
 				),
 				$preserved
 			),
-			'loader_file'     => '',
-			'files'           => $files,
+			'loader_file'           => '',
+			'files'                 => $files,
 		);
 
 		if ( $mu_plugin ) {
@@ -1063,7 +1063,8 @@ class Static_Site_Importer_Companion_Plugin {
 
 	/** @return string */
 	private static function asset_manifest_path( string $script_path ): string {
-		return substr( $script_path, 0, strrpos( $script_path, '.' ) ) . '.asset.php';
+		$extension_offset = strrpos( $script_path, '.' );
+		return false === $extension_offset ? $script_path . '.asset.php' : substr( $script_path, 0, $extension_offset ) . '.asset.php';
 	}
 
 	/** @param array<int,string> $dependencies */
