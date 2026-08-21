@@ -11,7 +11,7 @@ The receipt is emitted only when:
 - every imported block is native and editor-valid through WP Codebox's loaded-post `wp.blocks.validateBlock` browser artifact, with registered block types and one complete recursive result per block;
 - source, imported, diff, and visual-diff artifacts exist with zero mismatch;
 - all evidence files are content-hashed under the uploaded artifact root;
-- the hashed runtime-input artifact binds the WP Codebox package checksum to its candidate commit;
+- the hashed runtime-input artifact binds the WP Codebox release version and package checksum to its release commit;
 - reviewer-facing references resolve to the GitHub Actions run and artifact list.
 
 SSI owns this decision and its schema. Homeboy may consume the receipt for generic finalization after validating the candidate and artifact identity chain; it does not reinterpret solved-site policy.

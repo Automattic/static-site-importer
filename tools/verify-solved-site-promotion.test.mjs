@@ -37,7 +37,7 @@ function fixture() {
     generated_from: { result_schema: matrix.schema, fixture_count: matrix.fixtures.length },
     fixture_decisions: [{ fixture_id: 'solved', fixture_corpus: 'solved', acceptance_status: 'solved_candidate' }],
   };
-  const runtime = { nodeVersion: '20.19.4', phpVersion: '8.1.29', wordpressVersion: '7.0.4', homeboyVersion: 'v0.298.1', homeboySha256: '3'.repeat(64), homeboyExtensionsRef: '4'.repeat(40), wpCodeboxVersion: 'v0.20.0', wpCodeboxSha256: '5'.repeat(64), wpCodeboxSha: WP_CODEBOX_SHA, staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA };
+  const runtime = { nodeVersion: '20.19.4', phpVersion: '8.1.29', wordpressVersion: '7.0.4', homeboyVersion: 'v0.298.1', homeboySha256: '3'.repeat(64), homeboyExtensionsRef: '4'.repeat(40), wpCodeboxVersion: 'v0.21.0', wpCodeboxSha256: '5'.repeat(64), wpCodeboxSha: WP_CODEBOX_SHA, staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA };
   const paths = { matrix: path.join(root, 'matrix.json'), registry: path.join(root, 'registry.json'), runtime: path.join(root, 'runtime.json') };
   write(paths.matrix, matrix); write(paths.registry, registry); write(paths.runtime, runtime);
   return { root, matrix, registry, runtime, paths, options: { matrixResult: paths.matrix, registry: paths.registry, runtimeInputs: paths.runtime, artifactRoot: root, staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA, wpCodeboxSha: WP_CODEBOX_SHA, fixtureTreeSha: '6'.repeat(40), solvedFixtureCount: 1, solvedFixtureIds: 'solved', runUrl: 'https://github.com/Automattic/static-site-importer/actions/runs/123', artifactUrl: 'https://github.com/Automattic/static-site-importer/actions/runs/123#artifacts', output: path.join(root, 'receipt.json'), manifestOutput: path.join(root, 'manifest.json') } };
@@ -72,17 +72,19 @@ test('accepts complete parent-document editor presentation evidence', () => {
   assert.equal(verifySolvedSitePromotion(input.options).status, 'accepted');
 });
 
-test('pins an immutable WP Codebox candidate package and checksum together', () => {
+test('pins an immutable WP Codebox release package, commit, and checksum together', () => {
   const workflow = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion.yml'), 'utf8');
   const caller = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion-pr.yml'), 'utf8');
-  assert.match(workflow, /default: 831d30576984077ab4f68b5da599d4580de48165/);
-  assert.match(workflow, /WP_CODEBOX_VERSION: v0\.20\.0/);
-  assert.match(workflow, /WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0\.20\.0\.tgz/);
-  assert.match(workflow, /npm pack --pack-destination/);
-  assert.match(workflow, /WP_CODEBOX_SHA256=\$\(sha256sum/);
+  assert.match(workflow, /WP_CODEBOX_VERSION: v0\.21\.0/);
+  assert.match(workflow, /WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0\.21\.0\.tgz/);
+  assert.match(workflow, /WP_CODEBOX_SHA256: 8f5fdd58ff4c78186155e29de2dec07004ac2eacba93131bb39d32f466272990/);
+  assert.match(workflow, /WP_CODEBOX_SHA: b1ef4aa66a34924c3760d5176c58a497d7eaabcd/);
+  assert.match(workflow, /releases\/download\/\$\{WP_CODEBOX_VERSION\}\/\$\{WP_CODEBOX_WORKSPACE_ASSET\}/);
+  assert.match(workflow, /sha256sum --check --status/);
+  assert.doesNotMatch(workflow, /Checkout WP Codebox candidate|npm pack --pack-destination|wp-codebox-sha:/);
   assert.match(workflow, /wpCodeboxSha:process\.env\.WP_CODEBOX_SHA/);
   assert.match(caller, /blocks-engine-sha: 7858943a9913175993cc75870551c2e1926b4fb0/);
-  assert.match(caller, /wp-codebox-sha: 831d30576984077ab4f68b5da599d4580de48165/);
+  assert.doesNotMatch(caller, /wp-codebox-sha:/);
 });
 
 test('resolves uniquely named durable copies of transient runtime evidence', () => {
