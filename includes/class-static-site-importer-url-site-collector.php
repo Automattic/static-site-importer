@@ -402,7 +402,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		}
 		$finalization['assembly_next']  = (int) ( $finalization['assembly_next'] ?? 0 );
 		$finalization['artifact_files'] = is_array( $finalization['artifact_files'] ?? null ) ? $finalization['artifact_files'] : array();
-		$resource_count = count( $resource_urls );
+		$resource_count                 = count( $resource_urls );
 		while ( $finalization['next_resource'] < $resource_count ) {
 			if ( null !== $should_yield && call_user_func( $should_yield ) ) {
 				$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $finalization['external_pages'], $critical_assets, $entry_resource_url, $site_url, $sitemap_urls, $finalization );
@@ -415,7 +415,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				return $resource;
 			}
 			$resources[ $resource_url ] = $resource;
-			$body         = $resource['body'] ?? null;
+			$body                       = $resource['body'] ?? null;
 			if ( ! is_string( $body ) && null !== $resource_loader ) {
 				$body = call_user_func( $resource_loader, $resource );
 			}
@@ -470,7 +470,7 @@ class Static_Site_Importer_URL_Site_Collector {
 					return $retained_file;
 				}
 				$finalization['files'][ $index ] = $retained_file;
-				$path = (string) ( $retained_file['path'] ?? '' );
+				$path                            = (string) ( $retained_file['path'] ?? '' );
 				if ( ! Static_Site_Importer_Content_Policy::is_static_path( $path ) ) {
 					return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
 				}
@@ -674,9 +674,9 @@ class Static_Site_Importer_URL_Site_Collector {
 		}
 
 		unset( $record['body'] );
-		$record['body_ref'] = $reference['body_ref'];
-		$record['sha256']   = $reference['sha256'];
-		$record['bytes']    = $bytes;
+		$record['body_ref']         = $reference['body_ref'];
+		$record['sha256']           = $reference['sha256'];
+		$record['bytes']            = $bytes;
 		$record['retention_schema'] = 'static-site-importer/retained-payload/v1';
 		return $record;
 	}

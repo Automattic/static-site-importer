@@ -104,7 +104,7 @@ class Static_Site_Importer_Plugin_Materializer {
 				}
 				$report['active']    = true;
 				$report['actions'][] = 'reconciled_activated';
-				$preparation = self::prepare_plugin_runtime( $slug, $preparation_callback );
+				$preparation         = self::prepare_plugin_runtime( $slug, $preparation_callback );
 				if ( is_wp_error( $preparation ) ) {
 					return self::failed_report( $report, $preparation );
 				}
