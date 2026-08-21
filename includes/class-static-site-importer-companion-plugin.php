@@ -200,7 +200,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$inventory_hash        = substr( hash( 'sha256', (string) wp_json_encode( array( $block_specs, $preserved ) ) ), 0, 16 );
 		$registration_callback = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash . '_register_blocks';
 		$main_file             = $plugin_slug . '/' . $plugin_slug . '.php';
-		$files     = array_merge(
+		$files                 = array_merge(
 			array(
 				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_specs, $preserved, $main_file, $inventory_hash ),
 			),

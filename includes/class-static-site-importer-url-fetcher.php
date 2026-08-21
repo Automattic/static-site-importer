@@ -440,20 +440,20 @@ class Static_Site_Importer_URL_Fetcher {
 
 	/** Start a curl request pinned to one already validated IP without changing Host or SNI. */
 	private static function native_curl_start( array $target, array $options ): Static_Site_Importer_URL_Fetcher_Native_Handle {
-		$handle                  = new Static_Site_Importer_URL_Fetcher_Native_Handle();
-		$handle->target          = $target;
-		$handle->options         = $options;
-		$handle->started         = microtime( true );
-		$handle->ip_index        = 0;
-		$handle->multi           = curl_multi_init();
-		$handle->curl            = curl_init();
-		$ip                      = $target['ips'][0];
-		$host                    = $target['host'];
-		$host_header             = $host . ( ( 'https' === $target['scheme'] ? 443 : 80 ) === $target['port'] ? '' : ':' . $target['port'] );
-		$resolved_ip             = str_contains( $ip, ':' ) ? '[' . $ip . ']' : $ip;
-		$timeout_ms              = max( 1, (int) ceil( $options['timeout'] * 1000 ) );
-		$url_host                = str_contains( $host, ':' ) ? '[' . $host . ']' : $host;
-		$url                     = $target['scheme'] . '://' . $url_host . ( ( 'https' === $target['scheme'] ? 443 : 80 ) === $target['port'] ? '' : ':' . $target['port'] ) . $target['path'];
+		$handle           = new Static_Site_Importer_URL_Fetcher_Native_Handle();
+		$handle->target   = $target;
+		$handle->options  = $options;
+		$handle->started  = microtime( true );
+		$handle->ip_index = 0;
+		$handle->multi    = curl_multi_init();
+		$handle->curl     = curl_init();
+		$ip               = $target['ips'][0];
+		$host             = $target['host'];
+		$host_header      = $host . ( ( 'https' === $target['scheme'] ? 443 : 80 ) === $target['port'] ? '' : ':' . $target['port'] );
+		$resolved_ip      = str_contains( $ip, ':' ) ? '[' . $ip . ']' : $ip;
+		$timeout_ms       = max( 1, (int) ceil( $options['timeout'] * 1000 ) );
+		$url_host         = str_contains( $host, ':' ) ? '[' . $host . ']' : $host;
+		$url              = $target['scheme'] . '://' . $url_host . ( ( 'https' === $target['scheme'] ? 443 : 80 ) === $target['port'] ? '' : ':' . $target['port'] ) . $target['path'];
 
 		$curl_options = array(
 			CURLOPT_URL                    => $url,
@@ -488,7 +488,7 @@ class Static_Site_Importer_URL_Fetcher {
 		if ( false === filter_var( $host, FILTER_VALIDATE_IP ) ) {
 			$curl_options[ CURLOPT_RESOLVE ] = array( $host . ':' . $target['port'] . ':' . $resolved_ip );
 		}
-		$ca_bundle    = ABSPATH . WPINC . '/certificates/ca-bundle.crt';
+		$ca_bundle = ABSPATH . WPINC . '/certificates/ca-bundle.crt';
 		if ( is_readable( $ca_bundle ) ) {
 			$curl_options[ CURLOPT_CAINFO ] = $ca_bundle;
 		}
@@ -644,7 +644,7 @@ class Static_Site_Importer_URL_Fetcher {
 		if ( null !== $options['deadline'] && is_callable( $options['clock'] ) ) {
 			$options['timeout'] = max( 0.001, min( $options['timeout'], $options['deadline'] - call_user_func( $options['clock'] ) ) );
 		}
-		$next                  = self::native_start( $connect_target, $options );
+		$next = self::native_start( $connect_target, $options );
 		foreach ( get_object_vars( $next ) as $name => $value ) {
 			$handle->$name = $value;
 		}

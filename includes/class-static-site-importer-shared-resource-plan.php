@@ -53,7 +53,7 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 			if ( ! is_array( $resource ) || ! $this->materializable_resource( $resource ) ) {
 				continue;
 			}
-			$resource['source_url'] = self::canonical_url( $resource['source_url'] );
+			$resource['source_url']               = self::canonical_url( $resource['source_url'] );
 			$resources[ $resource['source_url'] ] = $resource;
 		}
 		ksort( $resources, SORT_STRING );
@@ -190,8 +190,8 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 	}
 
 	private static function canonical_url( string $url ): string {
-		$url   = Static_Site_Importer_URL_Fetcher::normalize_url( trim( $url ) );
-		$parts = function_exists( 'wp_parse_url' ) ? wp_parse_url( $url ) : parse_url( $url ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Standalone plan smoke tests run without WordPress URL helpers.
+		$url    = Static_Site_Importer_URL_Fetcher::normalize_url( trim( $url ) );
+		$parts  = function_exists( 'wp_parse_url' ) ? wp_parse_url( $url ) : parse_url( $url ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Standalone plan smoke tests run without WordPress URL helpers.
 		$scheme = is_array( $parts ) ? strtolower( (string) ( $parts['scheme'] ?? '' ) ) : '';
 		if ( ! is_array( $parts ) || ! in_array( $scheme, array( 'http', 'https' ), true ) || empty( $parts['host'] ) ) {
 			return '';

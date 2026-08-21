@@ -7,7 +7,7 @@
 
 class Static_Site_Importer_URL_Fetcher_Native_Handle {
 	public mixed $multi = null;
-	public mixed $curl = null;
+	public mixed $curl  = null;
 	public mixed $socket;
 	public array $target;
 	public array $options;
@@ -18,6 +18,6 @@ class Static_Site_Importer_URL_Fetcher_Native_Handle {
 	public string $error;
 	public int $ip_index;
 	public string $response_headers = '';
-	public string $body = '';
-	public string $limit_error = '';
+	public string $body             = '';
+	public string $limit_error      = '';
 }
