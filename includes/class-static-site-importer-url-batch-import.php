@@ -469,13 +469,23 @@ final class Static_Site_Importer_URL_Batch_Import {
 				if ( is_wp_error( $write ) ) {
 					return $write;
 				}
-				$compiled_staged = self::compose_staged_plans( $staged, $payload_reader );
-				if ( is_wp_error( $compiled_staged ) ) {
-					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $compiled_staged, $cache );
+				$terminal         = array_key_last( $cursor ) === $index;
+				if ( $terminal ) {
+					// The terminal batch finalizes the whole run, so it composes every frozen page plan with the retained shared plan.
+					$complete = self::compose_complete_plan( $workspace, $cursor, $payload_reader );
+					if ( is_wp_error( $complete ) ) {
+						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $complete, $cache );
+					}
+					$compiled_staged = $complete['compiled_artifact_result'];
+				} else {
+					$compiled_staged = self::compose_staged_plans( $staged, $payload_reader );
+					if ( is_wp_error( $compiled_staged ) ) {
+						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $compiled_staged, $cache );
+					}
 				}
 				$manifest['stage_counters']['compiler_compositions'] = (int) ( $manifest['stage_counters']['compiler_compositions'] ?? 0 ) + 1;
 				$import_args                                      = Static_Site_Importer_URL_Import_Runtime::batch_import_args( $input, $runtime );
-				$import_args['activate']                          = array_key_last( $cursor ) === $index && ! empty( $input['activate'] );
+				$import_args['activate']                          = $terminal && ! empty( $input['activate'] );
 				$import_args['batch_import']                      = true;
 				$import_args['preserve_existing_theme_bootstrap'] = $index > 0;
 				$import_args['import_run_id']                     = $identity;
@@ -737,12 +747,14 @@ final class Static_Site_Importer_URL_Batch_Import {
 				}
 			}
 
-			$batch_digest = (string) ( $runtime['shared_plan_digest'] ?? '' );
-			if ( '' === $batch_digest && ! empty( $runtime['staged_page_plans'] ) ) {
-				$batch_digest = (string) ( $runtime['staged_page_plans'][0]['shared_digest'] ?? '' );
-			}
+			// The binding check lives in the compiler plan domain: each staged page plan carries the
+			// shared compiler plan digest it was prepared against, and the vendor composer rejects
+			// page plans that bind to a different shared plan. A mismatch (or a missing binding)
+			// means the shared plan was rebuilt since the batch was staged, so the frozen page
+			// plans must be reprepared against the plan that is actually being composed.
+			$batch_binding = (string) ( $runtime['staged_page_plans'][0]['shared_digest'] ?? '' );
 
-			if ( '' !== $current_digest && ! hash_equals( $current_digest, $batch_digest ) ) {
+			if ( '' === $batch_binding || ! hash_equals( $current_digest, $batch_binding ) ) {
 				if ( ! is_array( $runtime['artifact']['files'] ?? null ) ) {
 					return new WP_Error( 'static_site_importer_url_plan_batch_artifact_missing', 'The frozen URL run cannot reprepare a stale staged batch without its retained artifact.' );
 				}
