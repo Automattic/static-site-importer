@@ -661,9 +661,6 @@ final class Static_Site_Importer_URL_Batch_Import {
 		return new class( $workspace ) implements \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
 			public function __construct( private Static_Site_Importer_Artifact_Run_Workspace $workspace ) {}
 			public function read( array $reference ): string {
-				if ( ! isset( $reference['id'] ) || ! is_string( $reference['id'] ) ) {
-					throw new RuntimeException( 'A retained artifact payload reference is malformed.' );
-				}
 				$bytes = $this->workspace->read_raw( $reference['id'] );
 				if ( ! is_string( $bytes ) ) {
 					throw new RuntimeException( 'A retained artifact payload is unavailable.' );
