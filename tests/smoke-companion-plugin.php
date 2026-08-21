@@ -463,8 +463,17 @@ $assert( isset( $GLOBALS['static_site_importer_companion_block_owners']['example
 $written_main = file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) ? (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) : '';
 $assert( str_contains( $written_main, 'register_block_type' ), 'written-main-file-registers-blocks' );
 
-// A second overwrite import starts in a fresh request with the first import's
-// generated block still registered but without its request-local owner record.
+// Runtime paths may use filesystem aliases (for example /var and /private/var
+// on macOS) while still identifying the same generated companion entrypoint.
+$GLOBALS['static_site_importer_companion_block_owners']['example/custom-hero'] = array(
+	'plugin_file' => 'ssi-example-site/ssi-example-site.php',
+	'plugin_path' => dirname( WP_PLUGIN_DIR ) . '/plugins/../plugins/ssi-example-site/ssi-example-site.php',
+);
+$aliased_owner_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload, static fn (): bool => true );
+$assert( 'refreshed' === ( $aliased_owner_report['status'] ?? '' ), 'same-companion-filesystem-alias-reuses-registered-block' );
+
+// A second overwrite import can also start without its request-local owner
+// record when the active entrypoint is byte-identical to the pending scaffold.
 $GLOBALS['static_site_importer_companion_block_owners'] = array();
 $overwrite_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload, static fn (): bool => true, true );
 $assert( 'refreshed' === ( $overwrite_report['status'] ?? '' ), 'same-companion-overwrite-reuses-prior-registered-block' );
