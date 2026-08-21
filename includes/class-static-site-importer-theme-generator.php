@@ -1687,16 +1687,91 @@ class Static_Site_Importer_Theme_Generator {
 	/** @param array<string,mixed> $payload */
 	private static function write_plan_projection( string $path, array $payload, array &$receipt = array() ): void {
 		Static_Site_Importer_WordPress_Site_Plan_Materializer::journal_receipt_file( $receipt, $path );
-		$json = wp_json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
-		$data = false === $json ? false : $json . "\n";
-		$temp = is_string( $data ) ? tempnam( dirname( $path ), '.ssi-projection-' ) : false;
-		$written = is_string( $data ) && false !== $temp ? file_put_contents( $temp, $data ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Atomically writes preflighted public import artifacts.
-		if ( false === $data || false === $temp || strlen( $data ) !== $written || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Same-directory rename atomically publishes the preflighted artifact.
+		$temp = tempnam( dirname( $path ), '.ssi-projection-' );
+		$stream = false !== $temp ? fopen( $temp, 'wb' ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Streams a public projection into an atomic temporary file.
+		$written = is_resource( $stream ) && self::write_json_projection( $stream, $payload, 0 ) && self::write_all( $stream, "\n" ) && fflush( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fflush -- Flushes the complete temporary projection before publication.
+		$closed = ! is_resource( $stream ) || fclose( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the complete temporary projection before publication.
+		if ( ! $written || ! $closed || false === $temp || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Same-directory rename atomically publishes the complete preflighted artifact.
 			if ( is_string( $temp ) && file_exists( $temp ) ) {
 				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed atomic projection temporary file.
 			}
 			throw new RuntimeException( 'Failed to write a preflighted import artifact.' );
 		}
+	}
+
+	/** Stream JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES without a full payload string. */
+	private static function write_json_projection( $stream, mixed $value, int $depth ): bool {
+		if ( 512 < $depth ) {
+			return false;
+		}
+		if ( is_object( $value ) ) {
+			$value = $value instanceof JsonSerializable ? $value->jsonSerialize() : get_object_vars( $value );
+			return self::write_json_object( $stream, $value, $depth );
+		}
+		if ( ! is_array( $value ) ) {
+			$json = wp_json_encode( $value, JSON_UNESCAPED_SLASHES );
+			return false !== $json && self::write_all( $stream, $json );
+		}
+		$list = self::json_list( $value );
+		return self::write_json_container( $stream, $value, $depth, $list );
+	}
+
+	/** @param array<mixed> $value */
+	private static function write_json_object( $stream, array $value, int $depth ): bool {
+		return self::write_json_container( $stream, $value, $depth, false );
+	}
+
+	/** @param array<mixed> $value */
+	private static function write_json_container( $stream, array $value, int $depth, bool $list ): bool {
+		if ( empty( $value ) ) {
+			return self::write_all( $stream, $list ? '[]' : '{}' );
+		}
+		if ( ! self::write_all( $stream, $list ? '[' : '{' ) ) {
+			return false;
+		}
+		$first = true;
+		foreach ( $value as $key => $item ) {
+			if ( ! self::write_all( $stream, $first ? "\n" : ",\n" ) || ! self::write_all( $stream, str_repeat( '    ', $depth + 1 ) ) ) {
+				return false;
+			}
+			$first = false;
+			if ( ! $list ) {
+				$key_json = wp_json_encode( (string) $key, JSON_UNESCAPED_SLASHES );
+				if ( false === $key_json || ! self::write_all( $stream, $key_json . ': ' ) ) {
+					return false;
+				}
+			}
+			if ( ! self::write_json_projection( $stream, $item, $depth + 1 ) ) {
+				return false;
+			}
+		}
+		return self::write_all( $stream, "\n" . str_repeat( '    ', $depth ) . ( $list ? ']' : '}' ) );
+	}
+
+	/** Write every byte or fail before the temporary projection can be published. */
+	private static function write_all( $stream, string $data ): bool {
+		$offset = 0;
+		$length = strlen( $data );
+		while ( $offset < $length ) {
+			$written = fwrite( $stream, substr( $data, $offset ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Handles short writes while streaming a public projection.
+			if ( ! is_int( $written ) || 0 >= $written ) {
+				return false;
+			}
+			$offset += $written;
+		}
+		return true;
+	}
+
+	/** Match PHP's array-to-JSON list detection without encoding an array. */
+	private static function json_list( array $value ): bool {
+		$index = 0;
+		foreach ( $value as $key => $_ ) {
+			if ( $key !== $index ) {
+				return false;
+			}
+			++$index;
+		}
+		return true;
 	}
 
 	/**

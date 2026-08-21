@@ -60,6 +60,9 @@ function get_theme_root_uri(): string {
 function trailingslashit( string $path ): string {
 	return rtrim( $path, '/' ) . '/'; }
 function wp_json_encode( $value, int $options = 0 ) {
+	if ( ! empty( $GLOBALS['ssi_plan_count_aggregate_encodes'] ) && ( is_array( $value ) || is_object( $value ) ) ) {
+		$GLOBALS['ssi_plan_json_array_calls'] = (int) ( $GLOBALS['ssi_plan_json_array_calls'] ?? 0 ) + 1;
+	}
 	return json_encode( $value, $options ); }
 function wp_slash( string $value ): string {
 	return addslashes( $value ); }
@@ -90,7 +93,7 @@ function wp_safe_remote_get( string $url, array $args ) {
 	if ( 'https://fonts.example.test/inter.woff2' === $url ) {
 		return array(
 			'response' => array( 'code' => 200 ),
-			'body'     => 'inter-variable-glyph-payload',
+			'body'     => $GLOBALS['ssi_plan_binary_font'],
 		);
 	}
 	if ( str_starts_with( $url, 'https://fonts.googleapis.com/' ) ) {
@@ -309,6 +312,16 @@ $assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-pla
 $assert( 'posts' === $GLOBALS['ssi_plan_options']['show_on_front'], 'plan-only materialization does not change reading settings by default' );
 $assert( $receipt['plan']['pages'][0]['document_metadata']['links'][0]['resolved_url'] === 'https://example.test/wp-content/themes/site-plan/assets/assets/site.css', 'resolved metadata retains the declared stylesheet destination' );
 $assert( array() === $receipt['completed']['runtime_declarations']['asset_publications'], 'plans without publication declarations retain an explicit empty receipt collection' );
+$short_write_target  = (string) ( $plan['writes'][0]['target_path'] ?? '' );
+$short_write_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$plan,
+	array(
+		'slug'                           => 'short-write-plan',
+		'inject_materialization_failure' => 'theme_write_short',
+	)
+);
+$short_write_path = $GLOBALS['ssi_plan_root'] . '/short-write-plan/' . $short_write_target;
+$assert( 'partial' === $short_write_receipt['status'] && 'theme_write_failed' === ( $short_write_receipt['errors'][0]['code'] ?? '' ) && array() === ( $short_write_receipt['completed']['files'] ?? null ) && array() === ( $short_write_receipt['wordpress'] ?? null ) && ! is_file( $short_write_path ) && empty( glob( dirname( $short_write_path ) . '/.ssi-plan-*' ) ), 'short canonical writes cannot publish a truncated destination and return a rolled-back error receipt' );
 $write_payload_bytes = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'write_payload_bytes' );
 $referenced_write    = array(
 	'payload'           => array(
@@ -782,7 +795,8 @@ $assert( Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><te
 $assert( Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><text font-family="serif, Example Font">Label</text></svg>', array( 'example font' ) ), 'SVG presentation attributes normalize case and fallback-list position' );
 $assert( ! Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><text font-family="Example Font Pro, sans-serif">Label</text></svg>', array( 'Example Font' ) ), 'SVG font matching compares complete family tokens instead of prefixes' );
 
-$inter_payload                                        = 'inter-variable-glyph-payload';
+$inter_payload                                        = "\xff" . str_repeat( "\x80", 1048575 );
+$GLOBALS['ssi_plan_binary_font']                      = $inter_payload;
 $typed_font_plan                                      = array(
 	'schema'           => 'blocks-engine/php-transformer/font-materialization-plan/v1',
 	'webfont_contract' => array(
@@ -931,6 +945,55 @@ $assert(
 	'nested producer contract retains static and range weights, all axes, unicode ranges, and receipt provenance'
 );
 $assert( $inter_payload === file_get_contents( $typed_font_root . '/' . $typed_faces[0]['assets'][0]['target_path'] ) && $inter_payload === file_get_contents( $typed_font_root . '/' . $typed_faces[1]['assets'][0]['target_path'] ), 'typed font assets are locally materialized as verified binary payloads without network-dependent test fixtures' );
+$typed_asset = $typed_faces[0]['assets'][0] ?? array();
+$assert( array( 'target_path', 'format', 'source_url', 'expected_sha256', 'observed_sha256' ) === array_keys( $typed_asset ) && ! isset( $typed_asset['payload'] ) && hash( 'sha256', $inter_payload ) === ( $typed_asset['observed_sha256'] ?? '' ) && is_string( wp_json_encode( $typed_font_receipt, JSON_UNESCAPED_SLASHES ) ), 'completed font receipts exclude invalid binary payloads while retaining path, format, source, and digest evidence' );
+$typed_plan_writes = $typed_font_receipt['plan']['writes'] ?? array();
+$assert( ! empty( $typed_plan_writes ) && array() === array_filter( $typed_plan_writes, static fn( array $write ): bool => ! isset( $write['payload']['encoding'], $write['payload']['data'] ) ), 'public receipt plan preserves the canonical v2 write payload shape and encoding' );
+$projection_path = $GLOBALS['ssi_plan_root'] . '/large-invalid-binary-report.json';
+$projection_payload = array( 'schema' => 'static-site-importer/import-report/v1', 'materialization_receipt' => $typed_font_receipt );
+$projection_receipt = $typed_font_receipt;
+$write_projection = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'write_plan_projection' );
+$write_projection->invokeArgs( null, array( $projection_path, $projection_payload, &$projection_receipt ) );
+$projection_json = (string) file_get_contents( $projection_path );
+$projection = json_decode( $projection_json, true );
+$assert( is_array( $projection ) && false === str_contains( $projection_json, $inter_payload ) && hash( 'sha256', $inter_payload ) === ( $projection['materialization_receipt']['completed']['font_materialization']['required_faces'][0]['assets'][0]['observed_sha256'] ?? '' ), 'streamed report persistence retains canonical receipt structure without invalid font bytes while retaining digest evidence' );
+$json_compatibility_payload = array(
+	'unicode' => json_decode( '"\\u00e9 \\u6f22 \\ud83d\\ude80"' ),
+	'escaped' => "quote:\" slash:/ backslash:\\ control:\n\t\x01",
+);
+$json_compatibility_path = $GLOBALS['ssi_plan_root'] . '/json-compatibility.json';
+$json_compatibility_receipt = array();
+$write_projection->invokeArgs( null, array( $json_compatibility_path, $json_compatibility_payload, &$json_compatibility_receipt ) );
+$assert( (string) wp_json_encode( $json_compatibility_payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) . "\n" === file_get_contents( $json_compatibility_path ), 'streamed public JSON matches historical WordPress encoding for Unicode, quotes, slashes, and control characters' );
+$deferred_font_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$font_plan,
+	array(
+		'slug'                        => 'deferred-font-report-plan',
+		'font_materialization'        => $typed_font_plan,
+		'defer_materialization_commit' => true,
+	)
+);
+$large_asset_base64 = base64_encode( $inter_payload );
+$deferred_font_receipt['plan']['assets'][] = array(
+	'source_path'    => 'assets/fonts/large-invalid.woff2',
+	'target_path'    => 'assets/fonts/large-invalid.woff2',
+	'content_base64' => $large_asset_base64,
+);
+$GLOBALS['ssi_plan_json_array_calls'] = 0;
+$GLOBALS['ssi_plan_count_aggregate_encodes'] = true;
+$production_result = $write_projection->getDeclaringClass()->getMethod( 'public_result_from_wordpress_site_plan_receipt' )->invoke(
+	null,
+	$deferred_font_receipt,
+	array(
+		'slug'                         => 'deferred-font-report-plan',
+		'artifact_hash'                => hash( 'sha256', 'deferred-font-report-plan' ),
+		'write_theme_report_artifacts' => true,
+	)
+);
+$GLOBALS['ssi_plan_count_aggregate_encodes'] = false;
+$production_report_json = (string) file_get_contents( $production_result['report_path'] ?? '' );
+$production_report = json_decode( $production_report_json, true );
+$assert( 0 === $GLOBALS['ssi_plan_json_array_calls'] && is_array( $production_report ) && $large_asset_base64 === ( $production_report['blocks_engine']['wordpress_site_plan']['assets'][ count( $production_report['blocks_engine']['wordpress_site_plan']['assets'] ) - 1 ]['content_base64'] ?? '' ) && isset( $production_report['materialization_receipt']['transaction']['state'] ) && hash( 'sha256', $inter_payload ) === ( $production_report['materialization_receipt']['completed']['font_materialization']['required_faces'][0]['assets'][0]['observed_sha256'] ?? '' ), 'production report assembly streams deferred transaction state and large base64 assets without aggregate JSON encoding while preserving canonical report fields and invalid-font digest evidence' );
 $typed_css = (string) file_get_contents( $typed_font_root . '/assets/css/embedded-fonts.css' );
 $assert( str_contains( $typed_css, 'font-weight:100 900' ) && str_contains( $typed_css, 'font-stretch:75% 125%' ) && str_contains( $typed_css, 'unicode-range:U+0000-00FF' ) && ! str_contains( $typed_css, 'fonts.example.test' ), 'producer font faces preserve all declared axes and unicode ranges while rewriting only local sources' );
 $typed_readiness = (string) file_get_contents( $typed_font_root . '/assets/js/font-readiness.js' );
@@ -968,7 +1031,7 @@ $font_without_svg_root    = $GLOBALS['ssi_plan_root'] . '/font-site-plan-without
 $assert( 'completed' === $font_without_svg_receipt['status'], 'canonical font materialization completes without SVG consumers' );
 $assert( str_contains( (string) file_get_contents( $font_without_svg_root . '/assets/css/embedded-fonts.css' ), 'data:font/woff2;base64,' ), 'page fonts are self-contained without SVG consumers' );
 $assert( str_contains( (string) file_get_contents( $font_without_svg_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-embedded-fonts'" ), 'page fonts load without SVG consumers' );
-$assert( 7 === count( $GLOBALS['ssi_plan_font_requests'] ), 'each successful and rejected font materialization resolves only its declared stylesheet or typed payload URLs' );
+$assert( 9 === count( $GLOBALS['ssi_plan_font_requests'] ), 'each successful and rejected font materialization resolves only its declared stylesheet or typed payload URLs' );
 
 $nested_route_result = ( new ArtifactCompiler() )->compile(
 	array(
@@ -2186,5 +2249,19 @@ $descendant_only = $parent_order->invoke(
 	'batch-parent-run'
 );
 $assert( is_array( $descendant_only ) && 1 === count( $descendant_only ) && 'website/external/child/index.html' === ( $descendant_only[0]['source_path'] ?? '' ), 'external provenance parent satisfies ordering without being emitted as a page' );
+
+$hash_plan = array(
+	'schema' => 'test/plan/v1',
+	'escaped' => "quote:\" slash:/ backslash:\\ control:\n\t\x01",
+	'unicode' => json_decode( '"\\u00e9 \\u6f22 \\ud83d\\ude80"' ),
+	'large' => array_fill( 0, 256, str_repeat( 'plan-token/', 1024 ) ),
+);
+$GLOBALS['ssi_plan_count_aggregate_encodes'] = true;
+$legacy_hash = hash( 'sha256', (string) wp_json_encode( $hash_plan, JSON_UNESCAPED_SLASHES ) );
+$GLOBALS['ssi_plan_json_array_calls'] = 0;
+$plan_hash_method = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'hash' );
+$streamed_hash = $plan_hash_method->invoke( null, $hash_plan );
+$GLOBALS['ssi_plan_count_aggregate_encodes'] = false;
+$assert( $legacy_hash === $streamed_hash && 0 === $GLOBALS['ssi_plan_json_array_calls'], 'streamed plan hashing preserves canonical JSON SHA-256 identity without materializing the full plan JSON' );
 
 echo "WordPress site plan materializer smoke passed.\n";
