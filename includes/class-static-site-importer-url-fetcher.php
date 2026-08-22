@@ -528,7 +528,7 @@ class Static_Site_Importer_URL_Fetcher {
 			}
 			return new WP_Error( $deadline_exhausted ? 'static_site_importer_url_deadline_exhausted' : 'static_site_importer_url_timeout', $deadline_exhausted ? 'The URL request deadline was exhausted.' : 'The URL request timed out.' );
 		}
-		if ( ! $handle->crypto && ! empty( $handle->options['deadline_limited'] ) && null === $handle->multi ) {
+		if ( ! $handle->crypto && ! empty( $handle->options['deadline_limited'] ) ) {
 			// No cancellable transport for TLS under a clamped deadline.
 			// stream_socket_enable_crypto cannot be interrupted in PHP.wasm
 			// once entered (run_b303502076684 inv 2 blocked 121s).
