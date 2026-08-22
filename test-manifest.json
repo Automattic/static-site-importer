@@ -63,6 +63,7 @@
     { "path": "tests/smoke-static-interactive-artifact.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-url-batch-import-wordpress.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-website-artifact-document-metadata.php", "environment": "wordpress-runtime" },
+    { "path": "tests/smoke-export-resolved-block-theme.php", "environment": "wordpress-runtime", "command": ["wp", "--skip-plugins=static-site-importer", "eval-file", "tests/smoke-export-resolved-block-theme.php"] },
     { "path": "tests/StaticSiteImporterFallbackDiagnosticsTest.php", "environment": "wordpress-runtime", "command": ["phpunit", "tests/StaticSiteImporterFallbackDiagnosticsTest.php"] },
     { "path": "tests/form-materializer-topology.test.mjs", "environment": "node" },
     { "path": "tools/build-dev-package.test.mjs", "environment": "node" },
