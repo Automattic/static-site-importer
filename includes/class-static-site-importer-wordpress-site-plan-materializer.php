@@ -350,6 +350,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			unset( $binding_report );
 		}
+		$route_links = self::rewrite_materialized_route_links( $state );
+		if ( is_wp_error( $route_links ) ) {
+			return self::failed_receipt_from_error( $state, $route_links );
+		}
 
 		$short_write_attempt = 0;
 		foreach ( $state['resolved']['writes'] as $write ) {
@@ -727,6 +731,96 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		update_post_meta( (int) $id, self::RECONCILIATION_META_KEY, $page['reconciliation_identity'] );
 		return (int) $id;
+	}
+
+	/** Resolve destination-independent route references after WordPress has assigned every permalink. */
+	private static function rewrite_materialized_route_links( array &$state ) {
+		$routes = array();
+		foreach ( $state['ordered_pages'] as $page ) {
+			$source_path = (string) ( $page['source_path'] ?? '' );
+			$route       = self::normalized_route_path( (string) ( $page['route']['path'] ?? '' ) );
+			$post_id     = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
+			$permalink   = $post_id > 0 && function_exists( 'get_permalink' ) ? get_permalink( $post_id ) : false;
+			if ( '' !== $route && is_string( $permalink ) && '' !== $permalink ) {
+				$routes[ $route ] = $permalink;
+			}
+		}
+		if ( array() === $routes ) {
+			return true;
+		}
+
+		foreach ( $state['ordered_pages'] as $page ) {
+			if ( ! empty( $page['skip_materialization'] ) ) {
+				continue;
+			}
+			$source_path = (string) ( $page['source_path'] ?? '' );
+			$post_id     = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
+			$content     = $post_id > 0 && function_exists( 'get_post_field' ) ? get_post_field( 'post_content', $post_id ) : null;
+			if ( ! is_string( $content ) ) {
+				return new WP_Error( 'route_link_rewrite_failed', 'Materialized page content could not be read for route-link resolution.', array( 'source_path' => $source_path ) );
+			}
+			$rewritten = self::rewrite_route_references( $content, $routes );
+			if ( $rewritten !== $content ) {
+				$updated = wp_update_post(
+					array(
+						'ID'           => $post_id,
+						'post_content' => wp_slash( $rewritten ),
+					),
+					true
+				);
+				if ( is_wp_error( $updated ) ) {
+					return $updated;
+				}
+				$provenance = json_decode( (string) get_post_meta( $post_id, '_static_site_importer_provenance', true ), true );
+				if ( is_array( $provenance ) ) {
+					$provenance['content_hash'] = hash( 'sha256', $rewritten );
+					update_post_meta( $post_id, '_static_site_importer_provenance', wp_json_encode( $provenance ) );
+				}
+			}
+			foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
+				if ( ( $binding_report['source_path'] ?? '' ) === $source_path && 'completed' === ( $binding_report['status'] ?? '' ) ) {
+					$binding_report['materialized_content_hash'] = hash( 'sha256', $rewritten );
+				}
+			}
+			unset( $binding_report );
+		}
+
+		return true;
+	}
+
+	/** @param array<string,string> $routes */
+	private static function rewrite_route_references( string $content, array $routes ): string {
+		$replace = static function ( array $matches ) use ( $routes ): string {
+			$value = (string) $matches[2];
+			if ( '' === $value || preg_match( '~^(?:[a-z][a-z0-9+.-]*:|//|#|\?)~i', $value ) ) {
+				return $matches[0];
+			}
+			$suffix = '';
+			if ( preg_match( '/^([^?#]*)(.*)$/', $value, $parts ) ) {
+				$value  = $parts[1];
+				$suffix = $parts[2];
+			}
+			$route = self::normalized_route_path( $value );
+			return isset( $routes[ $route ] ) ? $matches[1] . $routes[ $route ] . $suffix . $matches[3] : $matches[0];
+		};
+		foreach ( array(
+			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*["\'])([^"\']+)(["\'])/i',
+			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\")([^"\\\\]*)(\\\\")/i',
+			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u0022)(.*?)(\\\\u0022)/i',
+			'/(["\'](?:url|href|action)["\']\s*:\s*["\'])([^"\']+)(["\'])/i',
+		) as $pattern ) {
+			$content = preg_replace_callback( $pattern, $replace, $content ) ?? $content;
+		}
+
+		return $content;
+	}
+
+	private static function normalized_route_path( string $path ): string {
+		if ( '' === $path || ! str_starts_with( $path, '/' ) ) {
+			return '';
+		}
+		$normalized = '/' . trim( $path, '/' );
+		return '/' === $path ? '/' : $normalized;
 	}
 
 	/** Apply exact provider bindings to the resolved projection while retaining canonical plan markup. */

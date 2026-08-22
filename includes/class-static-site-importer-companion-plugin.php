@@ -42,6 +42,9 @@ class Static_Site_Importer_Companion_Plugin {
 	/** Maximum declared script files and dependency handles per block. */
 	private const MAX_SCRIPT_DEPENDENCIES = 32;
 
+	/** SSI-owned renderer available to typed responsive-media blocks. */
+	private const RESPONSIVE_MEDIA_RENDERER = 'static-site-importer/responsive-media/v1';
+
 	/**
 	 * Payload schema identifier consumed by the scaffolder.
 	 */
@@ -113,11 +116,24 @@ class Static_Site_Importer_Companion_Plugin {
 					return new WP_Error( 'static_site_importer_companion_plugin_asset_path_invalid', sprintf( 'Block %s has an unsafe asset path.', $name ) );
 				}
 			}
+			$renderer = $block['renderer'] ?? null;
+			if ( null !== $renderer ) {
+				if ( ! is_string( $renderer ) || self::RESPONSIVE_MEDIA_RENDERER !== $renderer ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_renderer_invalid', sprintf( 'Block %s must declare a supported typed renderer.', $name ) );
+				}
+				if ( array_key_exists( 'render', $block ) ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_renderer_conflict', sprintf( 'Block %s cannot declare both render markup and a typed renderer.', $name ) );
+				}
+				$content_schema = $block['block_json']['attributes']['content'] ?? null;
+				if ( ! is_array( $content_schema ) || 'string' !== ( $content_schema['type'] ?? null ) ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_renderer_attributes_invalid', sprintf( 'Block %s responsive-media renderer requires a string content attribute.', $name ) );
+				}
+			}
 			if ( isset( $block['render'] ) && is_scalar( $block['render'] ) && Static_Site_Importer_Content_Policy::contains_server_code( (string) $block['render'] ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_render_invalid', sprintf( 'Block %s render markup must be static HTML.', $name ) );
 			}
 			$metadata = $block['block_json'];
-			if ( isset( $block['render'] ) && is_scalar( $block['render'] ) ) {
+			if ( ( isset( $block['render'] ) && is_scalar( $block['render'] ) ) || null !== $renderer ) {
 				$metadata['render'] = 'file:./render.php';
 			}
 			$script_dependencies = self::validate_script_dependencies( $block, $assets, $metadata );
@@ -126,7 +142,7 @@ class Static_Site_Importer_Companion_Plugin {
 			}
 			$references = self::metadata_file_references( $metadata );
 			foreach ( $references as $path ) {
-				if ( ! array_key_exists( $path, $assets ) && ! ( 'render.php' === $path && isset( $block['render'] ) && is_scalar( $block['render'] ) ) ) {
+				if ( ! array_key_exists( $path, $assets ) && ! ( 'render.php' === $path && ( ( isset( $block['render'] ) && is_scalar( $block['render'] ) ) || null !== $renderer ) ) ) {
 					return new WP_Error( 'static_site_importer_companion_plugin_metadata_asset_missing', sprintf( 'Block %s metadata references undeclared asset %s.', $name, $path ) );
 				}
 			}
@@ -388,11 +404,12 @@ class Static_Site_Importer_Companion_Plugin {
 			return $args;
 		}
 
-		$has_render = isset( $block['render'] ) && is_scalar( $block['render'] );
-		$render     = $has_render ? (string) $block['render'] : '';
+		$renderer   = isset( $block['renderer'] ) && is_string( $block['renderer'] ) ? $block['renderer'] : '';
+		$has_render = ( isset( $block['render'] ) && is_scalar( $block['render'] ) ) || '' !== $renderer;
+		$render     = isset( $block['render'] ) && is_scalar( $block['render'] ) ? (string) $block['render'] : '';
 		$files      = array();
 		if ( $has_render ) {
-			$files['render.php'] = self::normalize_render( $render );
+			$files['render.php'] = '' !== $renderer ? self::typed_renderer( $renderer ) : self::normalize_render( $render );
 		}
 
 		// Carried static assets (e.g. block stylesheets or a hand-written
@@ -986,6 +1003,134 @@ class Static_Site_Importer_Companion_Plugin {
 		// Static source markup is data, never executable template source. The only
 		// PHP in this file is SSI-generated code that emits an escaped literal.
 		return "<?php\n/** Generated companion block render. */\n\necho '" . self::php_single_quote( $render ) . "'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static source markup was validated before compilation.\n";
+	}
+
+	/**
+	 * Build an SSI-owned render template for an audited renderer identifier.
+	 *
+	 * @param string $renderer Validated renderer identifier.
+	 * @return string
+	 */
+	private static function typed_renderer( string $renderer ): string {
+		if ( self::RESPONSIVE_MEDIA_RENDERER !== $renderer ) {
+			return '';
+		}
+
+		return <<<'PHP'
+<?php
+/** Generated responsive-media companion block render. */
+
+$content    = is_string( $attributes['content'] ?? null ) ? $attributes['content'] : '';
+$normalized = strtolower( preg_replace( '/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+/', '', html_entity_decode( $content, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) ?? '' );
+if ( preg_match( '/<\s*(?:script|style|iframe|object|embed|svg)\b|\son[a-z]+\s*=/i', $normalized ) ) {
+	return;
+}
+
+$safe_url = static function ( string $url ): bool {
+	$normalized_url = strtolower( preg_replace( '/[\x00-\x20\x7f]+/', '', html_entity_decode( $url, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) ?? '' );
+	$normalized_url = rawurldecode( rawurldecode( $normalized_url ) );
+	if ( '' === $normalized_url || ! preg_match( '/^([a-z][a-z0-9+.-]*):/i', $normalized_url, $scheme ) ) {
+		return '' !== $normalized_url;
+	}
+	if ( in_array( strtolower( $scheme[1] ), array( 'http', 'https' ), true ) ) {
+		return true;
+	}
+	return (bool) preg_match( '#^data:image/(?:avif|gif|jpeg|png|webp);base64,[a-z0-9+/=]+$#i', $normalized_url );
+};
+
+$sanitize_srcset = static function ( string $srcset ) use ( $safe_url ): string {
+	$candidates = array();
+	for ( $offset = 0, $length = strlen( $srcset ); $offset < $length; ) {
+		while ( $offset < $length && ( ctype_space( $srcset[ $offset ] ) || ',' === $srcset[ $offset ] ) ) {
+			++$offset;
+		}
+		$url_start = $offset;
+		while ( $offset < $length && ! ctype_space( $srcset[ $offset ] ) ) {
+			++$offset;
+		}
+		$url = substr( $srcset, $url_start, $offset - $url_start );
+		while ( $offset < $length && ctype_space( $srcset[ $offset ] ) ) {
+			++$offset;
+		}
+		$descriptor_start = $offset;
+		for ( $parentheses = 0; $offset < $length; ++$offset ) {
+			if ( '(' === $srcset[ $offset ] ) {
+				++$parentheses;
+			} elseif ( ')' === $srcset[ $offset ] && $parentheses > 0 ) {
+				--$parentheses;
+			} elseif ( ',' === $srcset[ $offset ] && 0 === $parentheses ) {
+				break;
+			}
+		}
+		$descriptor = trim( substr( $srcset, $descriptor_start, $offset - $descriptor_start ) );
+		if ( '' !== $url && $safe_url( $url ) ) {
+			$candidates[] = $url . ( '' === $descriptor ? '' : ' ' . $descriptor );
+		}
+	}
+	return implode( ', ', $candidates );
+};
+
+$content = preg_replace_callback(
+	'/\bsrcset\s*=\s*(?:(["\'])(.*?)\1|([^\s>]+))/is',
+	static function ( array $match ) use ( $sanitize_srcset ): string {
+		$srcset = $sanitize_srcset( '' !== ( $match[2] ?? '' ) ? $match[2] : ( $match[3] ?? '' ) );
+		return '' === $srcset ? '' : 'srcset="' . esc_attr( $srcset ) . '"';
+	},
+	$content
+) ?? '';
+
+// Preserve audited raster data URLs through KSES's protocol filter without
+// allowing the data scheme for links or other URL-bearing attributes.
+$data_images = array();
+$content     = preg_replace_callback(
+	'/\bsrc\s*=\s*(["\'])(data:image\/(?:avif|gif|jpeg|png|webp);base64,[a-z0-9+\/=]+)\1/i',
+	static function ( array $match ) use ( &$data_images ): string {
+		$placeholder                 = '/ssi-data-image-' . hash( 'sha256', $match[2] ) . '.invalid';
+		$data_images[ $placeholder ] = $match[2];
+		return 'src=' . $match[1] . $placeholder . $match[1];
+	},
+	$content
+) ?? '';
+
+$global = array(
+	'aria-controls'    => true,
+	'aria-current'     => true,
+	'aria-describedby' => true,
+	'aria-details'     => true,
+	'aria-expanded'    => true,
+	'aria-hidden'      => true,
+	'aria-label'       => true,
+	'aria-labelledby'  => true,
+	'aria-live'        => true,
+	'class'            => true,
+	'data-*'           => true,
+	'dir'              => true,
+	'hidden'           => true,
+	'id'               => true,
+	'lang'              => true,
+	'role'              => true,
+	'style'             => true,
+	'tabindex'          => true,
+	'title'             => true,
+	'xml:lang'          => true,
+);
+$output = wp_kses(
+	$content,
+	array(
+		'a'          => array_merge( $global, array( 'download' => true, 'href' => true, 'rel' => true, 'target' => true ) ),
+		'figure'     => $global,
+		'figcaption' => $global,
+		'picture'    => $global,
+		'source'     => array_merge( $global, array( 'media' => true, 'sizes' => true, 'srcset' => true, 'type' => true ) ),
+		'img'        => array_merge( $global, array( 'alt' => true, 'height' => true, 'loading' => true, 'longdesc' => true, 'sizes' => true, 'src' => true, 'srcset' => true, 'usemap' => true, 'width' => true ) ),
+	)
+);
+foreach ( $data_images as $placeholder => $data_image ) {
+	$output = str_replace( 'src="' . $placeholder . '"', 'src="' . esc_attr( $data_image ) . '"', $output );
+	$output = str_replace( "src='" . $placeholder . "'", "src='" . esc_attr( $data_image ) . "'", $output );
+}
+echo $output; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- KSES-sanitized bounded media markup.
+PHP;
 	}
 
 	/**
