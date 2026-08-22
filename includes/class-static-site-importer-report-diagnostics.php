@@ -2116,8 +2116,10 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
-	 * Return candidate page content keys for a resolved source path, preferring the
-	 * matching page and falling back to the supplied order.
+	 * Return candidate page content keys for a resolved source path.
+	 *
+	 * A resolvable source owns its fallback. Only source-less or unresolvable legacy
+	 * findings may scan the supplied page order for a matching core/html fallback.
 	 *
 	 * @param string               $source_path   Resolved post_content path.
 	 * @param array<string,string> $page_contents Materialized page post_content keyed by source filename.
@@ -2133,10 +2135,12 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 		}
 
+		if ( ! empty( $keys ) ) {
+			return $keys;
+		}
+
 		foreach ( array_keys( $page_contents ) as $key ) {
-			if ( ! in_array( (string) $key, $keys, true ) ) {
-				$keys[] = (string) $key;
-			}
+			$keys[] = (string) $key;
 		}
 
 		return $keys;
@@ -2175,8 +2179,8 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Resolve the page content key that owns a form finding's fallback region.
 	 *
-	 * Prefers the finding's own source page; only falls back to scanning other
-	 * provided pages when the finding carries no resolvable source path.
+	 * A resolvable source page exclusively owns the fallback region. Only source-less
+	 * or unresolvable legacy findings scan page contents in their supplied order.
 	 *
 	 * @param string               $source_path   Finding source path.
 	 * @param string               $region        Serialized readable fallback region.
@@ -2184,12 +2188,23 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return string|null
 	 */
 	private static function form_fallback_page_content_key( string $source_path, string $region, array $page_contents ): ?string {
+		$source_keys = array();
 		if ( '' !== $source_path ) {
-			foreach ( $page_contents as $key => $content ) {
-				if ( self::form_source_paths_match( $source_path, (string) $key ) && str_contains( (string) $content, $region ) ) {
-					return (string) $key;
+			foreach ( array_keys( $page_contents ) as $key ) {
+				if ( self::form_source_paths_match( $source_path, (string) $key ) ) {
+					$source_keys[] = (string) $key;
 				}
 			}
+		}
+
+		if ( ! empty( $source_keys ) ) {
+			foreach ( $source_keys as $key ) {
+				if ( str_contains( (string) $page_contents[ $key ], $region ) ) {
+					return $key;
+				}
+			}
+
+			return null;
 		}
 
 		foreach ( $page_contents as $key => $content ) {

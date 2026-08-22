@@ -945,6 +945,60 @@ namespace {
 	$assert( 'no_readable_fallback_blocks' === ( $unanchorable_diag['reason'] ?? '' ), 'graft-unanchorable-reason' );
 	$assert( '<!-- wp:paragraph --><p>keep this fallback page</p><!-- /wp:paragraph -->' === $unanchorable_grafted, 'graft-unanchorable-fallback-left-in-place' );
 
+	// Identical forms on two pages only replace the finding's resolved owner page.
+	$two_page_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/owner.html' );
+	$two_page_report['diagnostics'][] = array(
+		'type'            => 'unsupported_html_fallback',
+		'diagnostic_code' => 'html_form_fallback',
+		'loss_class'      => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+		'source_path'     => 'website/owner.html',
+		'selector'        => 'form.identical',
+		'tag'             => 'form',
+		'form_presentation' => Static_Site_Importer_Report_Diagnostics::form_presentation_from_html( $identical_form, 'form.identical', 1 ),
+		'form'            => array( 'class' => 'identical' ),
+		'controls'        => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ),
+	);
+	$two_page_contents = array(
+		'website/owner.html' => $core_html_block( $identical_form ),
+		'website/other.html' => $core_html_block( $identical_form ),
+	);
+	$two_page_seeding = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $two_page_report, array(), $two_page_contents );
+	$assert( 1 === ( $two_page_seeding['grafted_count'] ?? 0 ) && str_contains( $two_page_contents['website/owner.html'], 'wp:jetpack/contact-form' ) && str_contains( $two_page_contents['website/other.html'], '<!-- wp:html' ) && ! str_contains( $two_page_contents['website/other.html'], 'wp:jetpack/contact-form' ), 'graft-two-identical-page-forms-only-mutates-declared-owner' );
+
+	// A resolvable page owns its finding even when an identical anchor exists elsewhere.
+	$owned_page_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/owned.html' );
+	$owned_page_report['diagnostics'][] = array(
+		'type'            => 'unsupported_html_fallback',
+		'diagnostic_code' => 'html_form_fallback',
+		'loss_class'      => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+		'source_path'     => 'website/owned.html',
+		'selector'        => 'form.identical',
+		'tag'             => 'form',
+		'form_presentation' => Static_Site_Importer_Report_Diagnostics::form_presentation_from_html( $identical_form, 'form.identical', 1 ),
+		'form'            => array( 'class' => 'identical' ),
+		'controls'        => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ),
+	);
+	$owned_page_contents = array(
+		'website/owned.html' => '<!-- wp:paragraph --><p>owner anchor is absent</p><!-- /wp:paragraph -->',
+		'website/other.html' => $core_html_block( $identical_form ),
+	);
+	$owned_page_seeding = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $owned_page_report, array(), $owned_page_contents );
+	$owned_page_diag    = array_values( array_filter( $owned_page_report['diagnostics'], static fn ( array $diagnostic ): bool => 'form_block_graft_unanchorable' === ( $diagnostic['type'] ?? '' ) ) );
+	$assert( 0 === ( $owned_page_seeding['grafted_count'] ?? -1 ) && false === ( $owned_page_report['diagnostics'][0]['content_grafted'] ?? true ), 'graft-resolved-source-missing-anchor-is-not-grafted' );
+	$assert( 1 === count( $owned_page_diag ) && 'no_readable_fallback_blocks' === ( $owned_page_diag[0]['reason'] ?? '' ) && 'website/owned.html' === ( $owned_page_diag[0]['source_path'] ?? '' ), 'graft-resolved-source-emits-bounded-owner-diagnostic' );
+	$assert( str_contains( $owned_page_contents['website/other.html'], '<!-- wp:html' ) && ! str_contains( $owned_page_contents['website/other.html'], 'wp:jetpack/contact-form' ), 'graft-resolved-source-never-mutates-identical-other-page-form' );
+
+	// Source-less legacy findings retain deterministic page-order fallback lookup.
+	$legacy_source_less_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/legacy.html' );
+	$legacy_source_less_report['diagnostics'][] = $owned_page_report['diagnostics'][0];
+	unset( $legacy_source_less_report['diagnostics'][0]['source_path'] );
+	$legacy_source_less_contents = array(
+		'website/first.html'  => $core_html_block( $identical_form ),
+		'website/second.html' => $core_html_block( $identical_form ),
+	);
+	$legacy_source_less_seeding = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $legacy_source_less_report, array(), $legacy_source_less_contents );
+	$assert( 1 === ( $legacy_source_less_seeding['grafted_count'] ?? 0 ) && str_contains( $legacy_source_less_contents['website/first.html'], 'wp:jetpack/contact-form' ) && str_contains( $legacy_source_less_contents['website/second.html'], '<!-- wp:html' ), 'graft-source-less-fallback-scans-page-order-deterministically' );
+
 	// --- Provider override routes to a different registered adapter ----------
 	add_filter(
 		'static_site_importer_entity_materializers',
