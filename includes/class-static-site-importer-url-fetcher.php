@@ -528,6 +528,16 @@ class Static_Site_Importer_URL_Fetcher {
 			}
 			return new WP_Error( $deadline_exhausted ? 'static_site_importer_url_deadline_exhausted' : 'static_site_importer_url_timeout', $deadline_exhausted ? 'The URL request deadline was exhausted.' : 'The URL request timed out.' );
 		}
+		if ( ! $handle->crypto && ! empty( $handle->options['deadline_limited'] ) && null === $handle->multi ) {
+			// No cancellable transport for TLS under a clamped deadline.
+			// stream_socket_enable_crypto cannot be interrupted in PHP.wasm
+			// once entered (run_b303502076684 inv 2 blocked 121s).
+			// See #979 comment 5298861024: readiness polling was disproved.
+			if ( self::native_retry( $handle ) ) {
+				return null;
+			}
+			return new WP_Error( 'static_site_importer_url_deadline_exhausted', 'The URL request deadline was exhausted.' );
+		}
 		if ( ! $handle->crypto ) {
 			$crypto = @stream_socket_enable_crypto( $handle->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- TLS failures are returned as a reason-coded URL error.
 			if ( false === $crypto ) {
