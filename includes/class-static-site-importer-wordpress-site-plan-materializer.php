@@ -750,7 +750,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			$rewritten = self::rewrite_route_references( $content, $routes );
 			if ( $rewritten !== $content ) {
-				$updated = wp_update_post( array( 'ID' => $post_id, 'post_content' => wp_slash( $rewritten ) ), true );
+				$updated = wp_update_post(
+					array(
+						'ID'           => $post_id,
+						'post_content' => wp_slash( $rewritten ),
+					),
+					true
+				);
 				if ( is_wp_error( $updated ) ) {
 					return $updated;
 				}
@@ -773,10 +779,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** @param array<string,string> $routes */
 	private static function rewrite_route_references( string $content, array $routes ): string {
-		$replace = static function ( array $match ) use ( $routes ): string {
-			$value = (string) $match[2];
+		$replace = static function ( array $matches ) use ( $routes ): string {
+			$value = (string) $matches[2];
 			if ( '' === $value || preg_match( '~^(?:[a-z][a-z0-9+.-]*:|//|#|\?)~i', $value ) ) {
-				return $match[0];
+				return $matches[0];
 			}
 			$suffix = '';
 			if ( preg_match( '/^([^?#]*)(.*)$/', $value, $parts ) ) {
@@ -784,7 +790,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				$suffix = $parts[2];
 			}
 			$route = self::normalized_route_path( $value );
-			return isset( $routes[ $route ] ) ? $match[1] . $routes[ $route ] . $suffix . $match[3] : $match[0];
+			return isset( $routes[ $route ] ) ? $matches[1] . $routes[ $route ] . $suffix . $matches[3] : $matches[0];
 		};
 		foreach ( array(
 			'/(\b(?:href|action)\s*=\s*["\'])([^"\']+)(["\'])/i',
