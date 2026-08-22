@@ -12,7 +12,7 @@ The existing seam is enough for first implementations:
 
 - Blocks Engine emits `static-site-importer/companion-plugin/v1` payloads under `source_reports.companion_plugin_payload`.
 - SSI materializes that payload as a generated plugin dependency under `companion_plugins.dependencies`.
-- Typed payload blocks write `block.json`, render files, and declared assets; WordPress registers them from their block directories so `editorScript`, `style`, `editorStyle`, and `viewScript` file references resolve normally. PHP-only dynamic registration remains available for legacy scaffolds.
+- Typed payload blocks write `block.json`, render files, and declared assets; WordPress registers them from their block directories so `editorScript`, `style`, `editorStyle`, and `viewScript` file references resolve normally. A block may select an explicitly audited SSI-owned renderer by versioned identifier; producer-authored PHP and unknown renderers remain invalid. PHP-only dynamic registration remains available for legacy scaffolds.
 - Provider-backed features should continue to use SSI entity materializer adapters before falling back to a companion block.
 
 ## Candidate Blocks
