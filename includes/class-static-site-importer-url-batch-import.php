@@ -1060,7 +1060,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 		return array(
 			'theme_slug'                 => $result['theme_slug'] ?? '',
 			'snapshot_sha256'            => $runtime['source_metadata']['snapshot']['sha256'] ?? '',
-			'plan_hash'                  => $result['materialization_receipt']['plan_hash'] ?? '',
+			'plan_identity'              => $result['materialization_receipt']['plan_identity'] ?? array(),
 			'terminal_batch_report_path' => $result['report_path'] ?? '',
 			'quality'                    => self::quality_evidence( $result['quality'] ?? ( $result['import_report_summary']['quality_pass'] ?? null ) ),
 		);

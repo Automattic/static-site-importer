@@ -30,7 +30,7 @@ Hosts provide the package through the `static_site_importer_playground_package` 
 
 ## Canonical Site Plans
 
-`static-site-importer/materialize-wordpress-site-plan` is the generic plan-only boundary for a `blocks-engine/wordpress-site-plan/v2` produced by Blocks Engine 0.4.4. SSI calls the package's canonical validator and resolver, then owns WordPress/filesystem preflight, materialization, reconciliation, and the `static-site-importer/materialization-receipt/v1` response. It accepts no source HTML or transformer result envelope.
+`static-site-importer/materialize-wordpress-site-plan` is the generic plan-only boundary for a `blocks-engine/wordpress-site-plan/v2` produced by Blocks Engine. SSI calls the package's canonical validator and resolver, then owns WordPress/filesystem preflight, materialization, reconciliation, and the `static-site-importer/materialization-receipt/v2` response. Plan, report, classic handoff, and receipt bindings use the producer's `blocks-engine/wordpress-site-plan-identity/v1`; the materializer keeps its `prepared_resolved_projection_hash` separate for prepare-to-write TOCTOU detection. It accepts no source HTML or transformer result envelope.
 
 For an isolated runtime matrix, invoke the ability with `plan`, `slug`, and optional `overwrite`, or use:
 

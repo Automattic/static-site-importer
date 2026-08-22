@@ -110,7 +110,7 @@ class Static_Site_Importer_Theme_Generator {
 			'materialization_plan' => array(),
 		); }
 	public static function import_website_artifact( $artifact, $args ) {
-		if ( self::$drift && isset( $args['approved_classic_plan_hash'] ) ) {
+		if ( self::$drift && isset( $args['approved_classic_plan_identity'] ) ) {
 			return new WP_Error( 'static_site_importer_approved_classic_plan_changed', 'drift' );
 		} ++self::$applied;
 		self::$last_args = $args;
@@ -136,7 +136,7 @@ class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		);
 		return array(
 			'status'         => 'completed',
-			'receipt_schema' => 'static-site-importer/materialization-receipt/v1',
+			'receipt_schema' => 'static-site-importer/materialization-receipt/v2',
 		);
 	}
 }

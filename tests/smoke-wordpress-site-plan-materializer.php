@@ -390,7 +390,7 @@ $assert( 'installed_activated' === ( $gap_diagnostics[0]['materialization_status
 
 $receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan' ) );
 $assert( 'completed' === $receipt['status'], 'valid plan completes' );
-$assert( 'static-site-importer/materialization-receipt/v1' === $receipt['schema'], 'receipt schema is stable' );
+$assert( 'static-site-importer/materialization-receipt/v2' === $receipt['schema'] && $plan['plan_identity'] === ( $receipt['plan_identity'] ?? null ), 'receipt binds the producer plan identity.' );
 $assert( count( $plan['writes'] ) === count( $receipt['generated_files'] ), 'all canonical writes are materialized' );
 $assert( file_exists( $GLOBALS['ssi_plan_root'] . '/site-plan/templates/front-page.html' ), 'templates are materialized' );
 $assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-plan/assets/assets/site.css' ), 'https://example.test/wp-content/themes/site-plan/assets/assets/logo.svg' ), 'root-relative stylesheet references resolve to declared theme assets' );
@@ -864,7 +864,6 @@ $font_result          = ( new ArtifactCompiler() )->compile(
 )->toArray();
 $font_plan            = $font_result['source_reports']['wordpress_site_plan'];
 $font_materialization = $font_result['source_reports']['materialization_plan']['theme']['font_materialization'];
-$font_plan_hash       = hash( 'sha256', (string) wp_json_encode( $font_plan, JSON_UNESCAPED_SLASHES ) );
 $font_receipt         = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$font_plan,
 	array(
@@ -874,7 +873,7 @@ $font_receipt         = Static_Site_Importer_WordPress_Site_Plan_Materializer::m
 );
 $font_root            = $GLOBALS['ssi_plan_root'] . '/font-site-plan';
 $assert( 'completed' === $font_receipt['status'], 'canonical font materialization completes' );
-$assert( $font_plan_hash === $font_receipt['plan_hash'], 'font overlay leaves the canonical source plan unchanged' );
+$assert( $font_plan['plan_identity'] === ( $font_receipt['plan_identity'] ?? null ), 'font overlay leaves the producer canonical plan identity unchanged' );
 $assert( file_exists( $font_root . '/assets/css/fonts.css' ), 'declared font stylesheet is materialized' );
 $assert( str_contains( (string) file_get_contents( $font_root . '/assets/css/embedded-fonts.css' ), 'data:font/woff2;base64,' ), 'self-contained font stylesheet is materialized' );
 $assert( str_contains( (string) file_get_contents( $font_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-embedded-fonts'" ), 'generated theme loads self-contained font stylesheet' );

@@ -171,7 +171,7 @@ $reconciled_result = array(
 		),
 	),
 	'materialization_receipt' => array(
-		'schema' => 'static-site-importer/materialization-receipt/v1',
+		'schema' => 'static-site-importer/materialization-receipt/v2',
 		'status' => 'completed',
 	),
 );
@@ -181,7 +181,7 @@ $assert( 331 === ( $reconciled_contract['quality_counts']['block_count'] ?? null
 $assert( 450 === ( $reconciled_contract['quality_counts']['fallback_count'] ?? null ), 'success-envelope-emits-unresolved-fallback-count' );
 $assert( 8 === ( $reconciled_contract['quality_counts']['materialized']['fallback_count'] ?? null ), 'success-envelope-uses-provider-reconciliation' );
 $assert( 'blocks_engine.wordpress_site_plan.quality' === ( $reconciled_contract['quality_counts']['provenance']['source_detected']['path'] ?? '' ), 'success-envelope-identifies-compiler-provenance' );
-$assert( 'static-site-importer/materialization-receipt/v1' === ( $reconciled_contract['quality_counts']['provenance']['materialized']['receipt'] ?? '' ), 'success-envelope-identifies-materialization-receipt' );
+$assert( 'static-site-importer/materialization-receipt/v2' === ( $reconciled_contract['quality_counts']['provenance']['materialized']['receipt'] ?? '' ), 'success-envelope-identifies-materialization-receipt' );
 $assert( false === ( $reconciled_contract['quality_counts']['consistent'] ?? true ), 'success-envelope-flags-contradictory-quality-layers' );
 $assert( 'quality_count_consistency_failure' === ( $reconciled_contract['diagnostics'][0]['type'] ?? '' ), 'success-envelope-emits-consistency-diagnostic' );
 

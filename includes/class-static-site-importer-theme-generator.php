@@ -245,7 +245,7 @@ class Static_Site_Importer_Theme_Generator {
 				return $companion_validation;
 			}
 		}
-		if ( isset( $args['approved_classic_plan_hash'] ) && is_string( $args['approved_classic_plan_hash'] ) && ! hash_equals( $args['approved_classic_plan_hash'], hash( 'sha256', (string) wp_json_encode( $plan ) ) ) ) {
+		if ( isset( $args['approved_classic_plan_identity'] ) && is_array( $args['approved_classic_plan_identity'] ) && $args['approved_classic_plan_identity'] !== ( $plan['plan_identity'] ?? null ) ) {
 			return new WP_Error( 'static_site_importer_approved_classic_plan_changed', 'Recompilation did not reproduce the approved canonical classic plan.' );
 		}
 		if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === $strategy['strategy'] ) {
@@ -403,7 +403,7 @@ class Static_Site_Importer_Theme_Generator {
 			}
 			$prepared['args']['classic_theme_projection'] = $projection;
 			$prepared['base_resolved'] = Static_Site_Importer_Classic_Theme_Projection::with_projection_writes( $prepared['base_resolved'], $projection, (string) $prepared['theme']['uri'], (string) ( $prepared['args']['name'] ?? $prepared['theme']['slug'] ) );
-			$prepared['base_resolved_hash'] = hash( 'sha256', (string) wp_json_encode( $prepared['base_resolved'], JSON_UNESCAPED_SLASHES ) );
+			$prepared['prepared_resolved_projection_hash'] = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepared_resolved_projection_hash( $prepared['base_resolved'] );
 			$prepared['args']['classic_runtime_bindings'] = $classic_bindings;
 		}
 		$prepared['args']['provider_layout_overlays']   = $page_ready ? array() : self::provider_layout_overlays_from_entity_reports( $entities );
@@ -624,6 +624,7 @@ class Static_Site_Importer_Theme_Generator {
 		$report       = array(
 			'schema'                           => 'static-site-importer/import-report/v1',
 			'import_run_id'                    => self::import_run_id( $args ),
+			'plan_identity'                    => $receipt['plan_identity'] ?? array(),
 			'blocks_engine'                    => array(
 				'transformer'         => self::transformer_provenance(),
 				'wordpress_site_plan' => $plan,
