@@ -209,19 +209,32 @@ class Static_Site_Importer_Theme_Generator {
 
 		// A URL batch run composes this canonical compiler result before the one
 		// serialized WordPress mutation. Direct callers retain whole-artifact compilation.
-		$compiled = isset( $args['compiled_artifact_result'] ) && is_array( $args['compiled_artifact_result'] ) ? $args['compiled_artifact_result'] : ( new $compiler_class() )->compile( $artifact )->toArray();
+		if ( isset( $args['compiled_artifact_result'] ) && is_array( $args['compiled_artifact_result'] ) ) {
+			$compiled = $args['compiled_artifact_result'];
+		} else {
+			$compiler_result = ( new $compiler_class() )->compile( $artifact );
+			$view_method     = 'toWordPressSitePlanView';
+			$compiled        = is_callable( array( $compiler_result, $view_method ) ) ? ( new ReflectionMethod( $compiler_result, $view_method ) )->invoke( $compiler_result ) : $compiler_result->toArray();
+		}
 		if ( ! is_array( $compiled ) ) {
 			return new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid result.' );
 		}
-		$plan = isset( $compiled['source_reports']['wordpress_site_plan'] ) && is_array( $compiled['source_reports']['wordpress_site_plan'] ) ? $compiled['source_reports']['wordpress_site_plan'] : array();
+		$source_reports = 'blocks-engine/wordpress-site-plan-view/v1' === ( $compiled['schema'] ?? '' ) ? array(
+			'wordpress_site_plan'             => $compiled['wordpress_site_plan'] ?? array(),
+			'wordpress_site_plan_diagnostics' => $compiled['diagnostics'] ?? array(),
+			'gutenberg_gaps'                  => $compiled['gutenberg_gaps'] ?? array(),
+			'companion_plugin_payload'        => $compiled['companion_plugin_payload'] ?? array(),
+			'materialization_plan'            => array( 'theme' => array( 'font_materialization' => $compiled['font_materialization'] ?? array() ) ),
+		) : ( is_array( $compiled['source_reports'] ?? null ) ? $compiled['source_reports'] : array() );
+		$plan = isset( $source_reports['wordpress_site_plan'] ) && is_array( $source_reports['wordpress_site_plan'] ) ? $source_reports['wordpress_site_plan'] : array();
 		if ( empty( $plan ) ) {
-			$diagnostics = isset( $compiled['source_reports']['wordpress_site_plan_diagnostics'] ) && is_array( $compiled['source_reports']['wordpress_site_plan_diagnostics'] ) ? wp_json_encode( $compiled['source_reports']['wordpress_site_plan_diagnostics'] ) : '';
+			$diagnostics = isset( $source_reports['wordpress_site_plan_diagnostics'] ) && is_array( $source_reports['wordpress_site_plan_diagnostics'] ) ? wp_json_encode( $source_reports['wordpress_site_plan_diagnostics'] ) : '';
 			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.' . ( false !== $diagnostics ? ' ' . $diagnostics : '' ), $compiled );
 		}
 		$companion_payload = null;
-		$gutenberg_gaps    = isset( $compiled['source_reports']['gutenberg_gaps'] ) && is_array( $compiled['source_reports']['gutenberg_gaps'] ) ? $compiled['source_reports']['gutenberg_gaps'] : array();
-		if ( array_key_exists( 'companion_plugin_payload', $compiled['source_reports'] ?? array() ) ) {
-			$companion_payload = $compiled['source_reports']['companion_plugin_payload'];
+		$gutenberg_gaps    = isset( $source_reports['gutenberg_gaps'] ) && is_array( $source_reports['gutenberg_gaps'] ) ? $source_reports['gutenberg_gaps'] : array();
+		if ( ! empty( $source_reports['companion_plugin_payload'] ) ) {
+			$companion_payload = $source_reports['companion_plugin_payload'];
 			if ( ! is_array( $companion_payload ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_payload_invalid', 'Compiled companion_plugin_payload must be an object.' );
 			}
@@ -248,7 +261,7 @@ class Static_Site_Importer_Theme_Generator {
 			$strategy['evidence']['status'] = 'source_artifact_projection';
 			$strategy['evidence']['projection_schema'] = $projection['schema'];
 		}
-		$materialization_plan = isset( $compiled['source_reports']['materialization_plan'] ) && is_array( $compiled['source_reports']['materialization_plan'] ) ? $compiled['source_reports']['materialization_plan'] : array();
+		$materialization_plan = isset( $source_reports['materialization_plan'] ) && is_array( $source_reports['materialization_plan'] ) ? $source_reports['materialization_plan'] : array();
 		return array(
 			'artifact'              => $artifact,
 			'args'                  => $args,
@@ -1712,8 +1725,8 @@ class Static_Site_Importer_Theme_Generator {
 			$json = wp_json_encode( $value, JSON_UNESCAPED_SLASHES );
 			return false !== $json && self::write_all( $stream, $json );
 		}
-		$list = self::json_list( $value );
-		return self::write_json_container( $stream, $value, $depth, $list );
+		$is_list = self::json_list( $value );
+		return self::write_json_container( $stream, $value, $depth, $is_list );
 	}
 
 	/** @param array<mixed> $value */
@@ -1722,11 +1735,11 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/** @param array<mixed> $value */
-	private static function write_json_container( $stream, array $value, int $depth, bool $list ): bool {
+	private static function write_json_container( $stream, array $value, int $depth, bool $is_list ): bool {
 		if ( empty( $value ) ) {
-			return self::write_all( $stream, $list ? '[]' : '{}' );
+			return self::write_all( $stream, $is_list ? '[]' : '{}' );
 		}
-		if ( ! self::write_all( $stream, $list ? '[' : '{' ) ) {
+		if ( ! self::write_all( $stream, $is_list ? '[' : '{' ) ) {
 			return false;
 		}
 		$first = true;
@@ -1735,7 +1748,7 @@ class Static_Site_Importer_Theme_Generator {
 				return false;
 			}
 			$first = false;
-			if ( ! $list ) {
+			if ( ! $is_list ) {
 				$key_json = wp_json_encode( (string) $key, JSON_UNESCAPED_SLASHES );
 				if ( false === $key_json || ! self::write_all( $stream, $key_json . ': ' ) ) {
 					return false;
@@ -1745,7 +1758,7 @@ class Static_Site_Importer_Theme_Generator {
 				return false;
 			}
 		}
-		return self::write_all( $stream, "\n" . str_repeat( '    ', $depth ) . ( $list ? ']' : '}' ) );
+		return self::write_all( $stream, "\n" . str_repeat( '    ', $depth ) . ( $is_list ? ']' : '}' ) );
 	}
 
 	/** Write every byte or fail before the temporary projection can be published. */
