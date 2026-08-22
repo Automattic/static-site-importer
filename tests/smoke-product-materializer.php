@@ -80,6 +80,15 @@ namespace {
 		}
 	}
 
+	// Product grafts depend on WordPress Core for canonical anchor serialization.
+	$wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: '/Users/chubes/Studio/intelligence-chubes4';
+	$parser  = rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-parser.php';
+	$blocks  = rtrim( $wp_root, '/\\' ) . '/wp-includes/blocks.php';
+	if ( is_readable( $parser ) && is_readable( $blocks ) ) {
+		require_once $parser;
+		require_once $blocks;
+	}
+
 	// --- WooCommerce runtime mock ------------------------------------------------
 	// Captures the seeded simple products so the smoke test can assert the prices
 	// the seeder wrote without a live WooCommerce install.
@@ -311,6 +320,14 @@ namespace {
 			),
 		),
 	);
+	$graft_report['diagnostics'][0]['readable_blocks'][0]['attrs'] = array(
+		'backslash' => 'C:\\products\\shop',
+		'delimiter' => 'before -- after',
+		'angle'     => '<cart>',
+		'ampersand' => 'cart & checkout',
+		'quote'     => 'Click "buy"',
+	);
+	$button_region                 = serialize_blocks( $graft_report['diagnostics'][0]['readable_blocks'] );
 	$page_contents                 = array( 'website/shop.html' => $button_region );
 	$graft_seeding                 = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $graft_report, array(), $page_contents );
 	$assert( 1 === ( $graft_seeding['shortcode_grafted_count'] ?? 0 ), 'shortcode-grafted-count' );
@@ -318,6 +335,7 @@ namespace {
 	$assert( str_contains( $page_contents['website/shop.html'], '<!-- wp:shortcode -->[add_to_cart id="' ), 'page-content-has-add-to-cart-shortcode' );
 	$assert( ! str_contains( $page_contents['website/shop.html'], '>Add to cart<' ), 'page-content-removes-static-add-to-cart' );
 	$assert( ! str_contains( $page_contents['website/shop.html'], '>Buy now<' ), 'page-content-removes-static-buy-now' );
+	$assert( str_contains( $button_region, '\\u005c' ) && str_contains( $button_region, '\\u002d\\u002d' ) && str_contains( $button_region, '\\u003c' ) && str_contains( $button_region, '\\u003e' ) && str_contains( $button_region, '\\u0026' ) && str_contains( $button_region, '\\u0022' ), 'product-graft-anchor-uses-core-sensitive-attribute-serialization' );
 
 	// A resolvable product finding cannot consume an identical region on another page.
 	$owned_graft_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/owned-shop.html' );
