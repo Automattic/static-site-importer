@@ -287,6 +287,51 @@ $plan     = $result['source_reports']['wordpress_site_plan'];
 $assert( 'blocks-engine/wordpress-site-plan/v2' === $plan['schema'], 'compiler emits the released v2 site plan' );
 $assert( isset( $result['source_reports']['wordpress_site_plan']['reporting'] ), 'compiler exposes the plan in source reports' );
 
+$plan_hash = static function ( array $candidate ): string {
+	unset( $candidate['quality']['editability_report'], $candidate['quality']['editability_report_plan_hash'], $candidate['quality']['editability_report_required'] );
+	$hash = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'hash' );
+	return $hash->invoke( null, $candidate );
+};
+$with_editability_report = static function ( array $candidate ) use ( $result, $plan_hash ): array {
+	$candidate['quality']['editability_report_required']  = true;
+	$candidate['quality']['editability_report']           = $result['source_reports']['editability_report'];
+	$candidate['quality']['editability_report_plan_hash'] = $plan_hash( $candidate );
+	return $candidate;
+};
+$strict_editability_plan = $with_editability_report( $plan );
+$strict_editability_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $strict_editability_plan, array( 'slug' => 'strict-editability-plan' ) );
+$assert( 'completed' === $strict_editability_receipt['status'] && 'passed' === ( $strict_editability_receipt['editability_report']['status'] ?? '' ) && 'blocks-engine/php-transformer/editability-report/v1' === ( $strict_editability_receipt['editability_report']['report_schema'] ?? '' ), 'valid hash-bound Blocks Engine editability reports are admitted before materialization' );
+
+$compatibility_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'compatibility-editability-plan' ) );
+$assert( 'completed' === $compatibility_receipt['status'] && 'compatibility_policy_only' === ( $compatibility_receipt['editability_report']['status'] ?? '' ) && 'editability_report_compatibility_policy_only' === ( $compatibility_receipt['editability_report']['diagnostic']['reason_code'] ?? '' ), 'current producer plans retain explicit compatibility evidence' );
+
+$missing_report_plan                                        = $plan;
+$missing_report_plan['quality']['editability_report_required'] = true;
+$insert_calls_before_missing                                = $GLOBALS['ssi_plan_insert_calls'];
+$missing_report_receipt                                     = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $missing_report_plan, array( 'slug' => 'missing-editability-report' ) );
+$assert( 'rejected' === $missing_report_receipt['status'] && 'editability_report_required' === ( $missing_report_receipt['errors'][0]['code'] ?? '' ) && $insert_calls_before_missing === $GLOBALS['ssi_plan_insert_calls'], 'required reports reject missing producer evidence before any write' );
+
+$malformed_report_plan                                      = $strict_editability_plan;
+$malformed_report_plan['quality']['editability_report']['schema'] = 'blocks-engine/php-transformer/editability-report/v0';
+$malformed_report_receipt                                   = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $malformed_report_plan, array( 'slug' => 'malformed-editability-report' ) );
+$assert( 'rejected' === $malformed_report_receipt['status'] && 'editability_report_schema_invalid' === ( $malformed_report_receipt['errors'][0]['code'] ?? '' ), 'malformed editability reports are rejected deterministically' );
+
+$hash_mismatch_plan                                      = $strict_editability_plan;
+$hash_mismatch_plan['quality']['editability_report_plan_hash'] = str_repeat( '0', 64 );
+$hash_mismatch_receipt                                   = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $hash_mismatch_plan, array( 'slug' => 'mismatched-editability-report' ) );
+$assert( 'rejected' === $hash_mismatch_receipt['status'] && 'editability_report_plan_hash_mismatch' === ( $hash_mismatch_receipt['errors'][0]['code'] ?? '' ), 'reports bound to a different canonical plan are rejected' );
+
+$failed_policy_plan                                              = $strict_editability_plan;
+$failed_policy_plan['quality']['status']                        = 'failed';
+$failed_policy_plan['quality']['pass']                          = false;
+$failed_policy_plan['quality']['editability_policy']['schema']  = 'blocks-engine/php-transformer/editability-policy/v1';
+$failed_policy_plan['quality']['editability_policy']['enforcement'] = 'required';
+$failed_policy_plan['quality']['editability_policy']['status']  = 'failed';
+$failed_policy_plan['quality']['editability_policy']['failures'] = array( array( 'metric' => 'max_nesting_depth', 'actual' => 21, 'maximum' => 20, 'source_path' => 'about.html' ) );
+$failed_policy_plan['quality']['editability_report_plan_hash']  = $plan_hash( $failed_policy_plan );
+$failed_policy_receipt                                          = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $failed_policy_plan, array( 'slug' => 'failed-editability-policy' ) );
+$assert( 'rejected' === $failed_policy_receipt['status'] && 'editability_policy_failed' === ( $failed_policy_receipt['errors'][0]['code'] ?? '' ) && 'about.html' === ( $failed_policy_receipt['editability_report']['diagnostic']['threshold_failures'][0]['source_path'] ?? '' ), 'failed producer thresholds hard-gate materialization with bounded source diagnostics' );
+
 // Gutenberg gaps are SSI receipt/report extensions and must never alter the
 // compiler-owned plan, whose schema and hash are producer contracts.
 $canonical_plan = $plan;
