@@ -50,6 +50,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		'compiler_options'                     => array( 'type' => 'object' ),
 		'source_metadata'                      => array( 'type' => 'object' ),
 		'validation_artifacts'                 => array( 'type' => 'object' ),
+		'quality_budget'                       => array( 'type' => 'object' ),
 		'client_script_policy'                 => array(
 			'type' => 'string',
 			'enum' => array( 'inert', 'isolated_preview' ),
@@ -97,6 +98,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 				'compiler_options'                     => array(),
 				'source_metadata'                      => array(),
 				'validation_artifacts'                 => array(),
+				'quality_budget'                       => array(),
 				'client_script_policy'                 => 'inert',
 				'client_script_provenance'             => array(),
 				'client_script_isolated'               => false,
@@ -117,7 +119,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		foreach ( array( 'activate', 'overwrite', 'disable_smilies', 'remove_default_content', 'fail_on_quality', 'allow_missing_woocommerce', 'allow_missing_jetpack', 'materialize_dependencies', 'require_proven_dynamic_client_assets', 'seed_entities', 'write_theme_report_artifacts', 'client_script_isolated' ) as $field ) {
 			$values[ $field ] = (bool) $values[ $field ];
 		}
-		foreach ( array( 'products_manifest', 'commerce_context', 'asset_map', 'compiler_options', 'source_metadata', 'validation_artifacts', 'client_script_provenance' ) as $field ) {
+		foreach ( array( 'products_manifest', 'commerce_context', 'asset_map', 'compiler_options', 'source_metadata', 'validation_artifacts', 'quality_budget', 'client_script_provenance' ) as $field ) {
 			$values[ $field ] = is_array( $values[ $field ] ) ? $values[ $field ] : array();
 		}
 

@@ -357,6 +357,7 @@ class Static_Site_Importer_Report_Diagnostics {
 					'owner'  => (string) ( $report['semantic_fidelity']['gate_owner'] ?? 'benchmark_harness' ),
 				),
 			),
+			'quality_budget_admission' => isset( $report['quality_budget_admission'] ) && is_array( $report['quality_budget_admission'] ) ? $report['quality_budget_admission'] : array(),
 			'diagnostic_summary'      => $summary['diagnostic_summary'] ?? array(),
 			'diagnostics'             => self::compact_import_report_diagnostics( $diagnostics ),
 			'diagnostic_refs'         => isset( $quality['diagnostic_refs'] ) && is_array( $quality['diagnostic_refs'] ) ? $quality['diagnostic_refs'] : array(),

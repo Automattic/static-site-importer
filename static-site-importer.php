@@ -83,6 +83,7 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-re
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-font-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-document-type-classifier.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-current-site-capabilities.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-quality-budget-admission.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-figma-import.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-exporter.php';
