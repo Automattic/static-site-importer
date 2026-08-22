@@ -209,7 +209,7 @@ class Static_Site_Importer_Companion_Plugin {
 				return $built;
 			}
 
-			$block_names[] = $built['block_name'];
+			$block_names[]       = $built['block_name'];
 			$block_directories[] = $built['dir'];
 			foreach ( $built['files'] as $relative => $content ) {
 				$files[ $plugin_slug . '/blocks/' . $built['dir'] . '/' . $relative ] = $content;
@@ -549,10 +549,10 @@ class Static_Site_Importer_Companion_Plugin {
 		string $plugin_file,
 		string $inventory_hash
 	): string {
-		$header_name  = sprintf( 'SSI Companion: %s', $site_name );
-		$fn_prefix    = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash;
-		$const_prefix = strtoupper( $fn_prefix );
-		$islands_php  = self::export_islands_php( $preserved );
+		$header_name     = sprintf( 'SSI Companion: %s', $site_name );
+		$fn_prefix       = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash;
+		$const_prefix    = strtoupper( $fn_prefix );
+		$islands_php     = self::export_islands_php( $preserved );
 		$directories_php = self::export_php_value( array_values( $block_directories ), 1 );
 
 		$lines   = array();
@@ -585,7 +585,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
 		$lines[] = '';
-		$lines[] = '\tforeach ( ' . $directories_php . ' as $block_dir ) {';
+		$lines[] = "\tforeach ( " . $directories_php . ' as $block_dir ) {';
 		$lines[] = sprintf( "\t\t\$registered = register_block_type( %s_DIR . 'blocks/' . \$block_dir );", $const_prefix );
 		$lines[] = "\t\tif ( \$registered instanceof WP_Block_Type ) {";
 		$lines[] = "\t\t\tif ( ! isset( \$GLOBALS['static_site_importer_companion_block_owners'] ) || ! is_array( \$GLOBALS['static_site_importer_companion_block_owners'] ) ) {";
