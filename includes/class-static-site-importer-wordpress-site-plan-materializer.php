@@ -102,6 +102,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'receipt' => self::receipt( 'rejected', $state ),
 			);
 		}
+		$state['editability_report'] = self::editability_report_admission( $plan );
+		if ( 'rejected' === $state['editability_report']['status'] ) {
+			$state['diagnostics'][] = $state['editability_report']['diagnostic'];
+			return array(
+				'status'  => 'rejected',
+				'receipt' => self::receipt( 'rejected', $state ),
+			);
+		}
 
 		try {
 			$slug = sanitize_key( (string) ( $args['slug'] ?? '' ) );
@@ -1855,6 +1863,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'skipped_targets'           => $state['skipped'],
 			'existing_matches'          => $state['existing_matches'],
 			'preparation'               => $state['preparation'] ?? array(),
+			'editability_report'        => $state['editability_report'] ?? array(
+				'schema' => 'static-site-importer/editability-report-admission/v1',
+				'status' => 'not_checked',
+			),
 			'diagnostics'               => $state['diagnostics'],
 			'errors'                    => $errors,
 			'theme_materialization'     => $state['theme_materialization'] ?? self::strategy_evidence( $state['args'] ?? array() ),
@@ -1863,6 +1875,86 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$receipt['transaction'] = (object) array( 'state' => $state );
 		}
 		return $receipt;
+	}
+
+	/**
+	 * Admit producer-owned editability evidence without recreating its metrics or policy.
+	 *
+	 * Current Blocks Engine plans carry the required policy but not the report binding.
+	 * That compatibility path is explicit and can be retired by setting
+	 * quality.editability_report_required on plans from upgraded producers.
+	 *
+	 * @param array<string,mixed> $plan
+	 * @return array<string,mixed>
+	 */
+	private static function editability_report_admission( array $plan ): array {
+		$quality = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
+		$policy  = isset( $quality['editability_policy'] ) && is_array( $quality['editability_policy'] ) ? $quality['editability_policy'] : array();
+		$base    = array(
+			'schema'        => 'static-site-importer/editability-report-admission/v1',
+			'owning_layer'  => 'blocks-engine',
+			'policy_schema' => (string) ( $policy['schema'] ?? '' ),
+		);
+		if ( 'blocks-engine/php-transformer/editability-policy/v1' !== ( $policy['schema'] ?? null ) || 'required' !== ( $policy['enforcement'] ?? null ) || ! in_array( $policy['status'] ?? null, array( 'passed', 'failed' ), true ) || ! isset( $policy['failures'] ) || ! is_array( $policy['failures'] ) ) {
+			return self::rejected_editability_report_admission( $base, 'editability_policy_invalid' );
+		}
+		if ( 'failed' === $policy['status'] ) {
+			return self::rejected_editability_report_admission( $base, 'editability_policy_failed', $policy['failures'] );
+		}
+
+		$report = $quality['editability_report'] ?? null;
+		if ( null === $report ) {
+			if ( ! empty( $quality['editability_report_required'] ) ) {
+				return self::rejected_editability_report_admission( $base, 'editability_report_required' );
+			}
+			return array_merge(
+				$base,
+				array(
+					'status' => 'compatibility_policy_only',
+					'diagnostic' => array(
+						'reason_code'  => 'editability_report_compatibility_policy_only',
+						'owning_layer' => 'blocks-engine',
+					),
+				)
+			);
+		}
+		if ( ! is_array( $report ) || 'blocks-engine/php-transformer/editability-report/v2' !== ( $report['schema'] ?? null ) || ! is_array( $report['metrics'] ?? null ) || ! is_array( $report['block_types'] ?? null ) || ! is_array( $report['signals'] ?? null ) || ! is_array( $report['signal_totals'] ?? null ) ) {
+			return self::rejected_editability_report_admission( $base, 'editability_report_schema_invalid' );
+		}
+		$bound_hash = $quality['editability_report_plan_hash'] ?? null;
+		if ( ! is_string( $bound_hash ) || ! preg_match( '/^[a-f0-9]{64}$/', $bound_hash ) ) {
+			return self::rejected_editability_report_admission( $base, 'editability_report_plan_hash_invalid' );
+		}
+		$unbound_plan = $plan;
+		unset( $unbound_plan['quality']['editability_report'], $unbound_plan['quality']['editability_report_plan_hash'], $unbound_plan['quality']['editability_report_required'] );
+		$expected_hash = self::hash( $unbound_plan );
+		if ( ! hash_equals( $expected_hash, $bound_hash ) ) {
+			return self::rejected_editability_report_admission( $base, 'editability_report_plan_hash_mismatch' );
+		}
+		return array_merge(
+			$base,
+			array(
+				'status'          => 'passed',
+				'report_schema'   => $report['schema'],
+				'plan_hash'       => $bound_hash,
+				'diagnostic'      => array(
+					'reason_code'  => 'editability_report_verified',
+					'owning_layer' => 'blocks-engine',
+				),
+			)
+		);
+	}
+
+	/** @param array<string,mixed> $base @param array<int,mixed> $failures @return array<string,mixed> */
+	private static function rejected_editability_report_admission( array $base, string $reason_code, array $failures = array() ): array {
+		$diagnostic = array(
+			'reason_code'  => $reason_code,
+			'owning_layer' => 'blocks-engine',
+		);
+		if ( array() !== $failures ) {
+			$diagnostic['threshold_failures'] = array_slice( array_values( array_filter( $failures, 'is_array' ) ), 0, 10 );
+		}
+		return array_merge( $base, array( 'status' => 'rejected', 'diagnostic' => $diagnostic ) );
 	}
 
 	/** @return array<string,mixed> */
