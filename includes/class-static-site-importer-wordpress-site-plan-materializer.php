@@ -369,7 +369,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				$length = max( 1, intdiv( strlen( $data ), 2 ) );
 				return (int) fwrite( $stream, substr( $data, 0, $length ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Deterministic test-only short-write injection.
 			} : null;
-			$result = self::write_file( $state['theme_dir'], $write, $state['payload_reader'], $chunk_writer );
+			$result       = self::write_file( $state['theme_dir'], $write, $state['payload_reader'], $chunk_writer );
 			if ( is_wp_error( $result ) ) {
 				return self::failed_receipt( $state, $result->get_error_code() );
 			}
@@ -752,8 +752,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			$seen[ $binding['reconciliation_identity'] ] = true;
 			self::validate_runtime_entity_binding_fragment( $binding, $diagnostics );
-			$index                                       = $pages[ $binding['source_path'] ];
-			$content                                     = (string) ( $plan['pages'][ $index ]['materialized_block_markup'] ?? $plan['pages'][ $index ]['resolved_block_markup'] ?? '' );
+			$index   = $pages[ $binding['source_path'] ];
+			$content = (string) ( $plan['pages'][ $index ]['materialized_block_markup'] ?? $plan['pages'][ $index ]['resolved_block_markup'] ?? '' );
 			if ( substr_count( $content, $binding['search_block_markup'] ) < $binding['occurrence'] ) {
 				throw new InvalidArgumentException( 'runtime_entity_binding_cardinality_mismatch' );
 			}
@@ -800,11 +800,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	private static function validate_runtime_entity_binding_fragment( array $binding, array &$diagnostics ): void {
 		if ( ! self::is_complete_block_document( (string) $binding['replacement_block_markup'] ) ) {
 			$diagnostics[] = array(
-				'reason_code'               => 'runtime_entity_binding_replacement_invalid',
-				'source_path'               => $binding['source_path'],
-				'reconciliation_identity'   => $binding['reconciliation_identity'],
-				'declaration_id'            => $binding['declaration_id'] ?? '',
-				'provider'                  => $binding['provider'] ?? '',
+				'reason_code'             => 'runtime_entity_binding_replacement_invalid',
+				'source_path'             => $binding['source_path'],
+				'reconciliation_identity' => $binding['reconciliation_identity'],
+				'declaration_id'          => $binding['declaration_id'] ?? '',
+				'provider'                => $binding['provider'] ?? '',
 			);
 			throw new InvalidArgumentException( 'runtime_entity_binding_replacement_invalid' );
 		}
@@ -823,12 +823,12 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( ! is_array( $page ) ) {
 				continue;
 			}
-			$markup       = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' );
-			$source_path  = (string) ( $page['source_path'] ?? '' );
+			$markup        = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' );
+			$source_path   = (string) ( $page['source_path'] ?? '' );
 			$page_bindings = array_values(
 				array_filter(
 					$bindings,
-					static fn ( $binding ): bool => is_array( $binding ) && $source_path === ( $binding['source_path'] ?? '' )
+					static fn ( $binding ): bool => is_array( $binding ) && ( $binding['source_path'] ?? '' ) === $source_path
 				)
 			);
 			if ( self::is_complete_block_document( $markup ) ) {
@@ -860,18 +860,15 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			throw new InvalidArgumentException( 'block_document_validation_unavailable' );
 		}
 		$blocks = parse_blocks( $markup );
-		if ( ! is_array( $blocks ) || ! self::block_document_has_only_blocks( $blocks ) ) {
+		if ( ! self::block_document_has_only_blocks( $blocks ) ) {
 			return false;
 		}
-		$serialized = serialize_blocks( $blocks );
-		if ( ! is_string( $serialized ) ) {
-			return false;
-		}
+		$serialized    = serialize_blocks( $blocks );
 		$round_tripped = parse_blocks( $serialized );
-		return is_array( $round_tripped ) && self::block_document_has_only_blocks( $round_tripped ) && self::block_document_topology( $blocks ) === self::block_document_topology( $round_tripped );
+		return self::block_document_has_only_blocks( $round_tripped ) && self::block_document_topology( $blocks ) === self::block_document_topology( $round_tripped );
 	}
 
-	/** @param array<int,mixed> $blocks @return bool */
+	/** @param array<array-key,mixed> $blocks @return bool */
 	private static function block_document_has_only_blocks( array $blocks ): bool {
 		foreach ( $blocks as $block ) {
 			if ( ! is_array( $block ) ) {
@@ -891,16 +888,20 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return true;
 	}
 
-	/** @param array<int,mixed> $blocks @return array<int,mixed> */
+	/** @param array<array-key,mixed> $blocks @return array<int,mixed> */
 	private static function block_document_topology( array $blocks ): array {
 		$topology = array();
 		foreach ( $blocks as $block ) {
 			if ( ! is_array( $block ) || ! is_string( $block['blockName'] ?? null ) || '' === $block['blockName'] ) {
 				continue;
 			}
+			$inner_blocks = $block['innerBlocks'] ?? array();
+			if ( ! is_array( $inner_blocks ) ) {
+				$inner_blocks = array();
+			}
 			$topology[] = array(
 				'name'  => $block['blockName'],
-				'inner' => self::block_document_topology( is_array( $block['innerBlocks'] ?? null ) ? $block['innerBlocks'] : array() ),
+				'inner' => self::block_document_topology( $inner_blocks ),
 			);
 		}
 		return $topology;
@@ -950,10 +951,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( ! is_dir( dirname( $path ) ) && ! wp_mkdir_p( dirname( $path ) ) ) {
 			return new WP_Error( 'theme_directory_create_failed' );
 		}
-		$temp   = tempnam( dirname( $path ), '.ssi-plan-' );
-		$stream = false !== $temp ? fopen( $temp, 'wb' ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Streams the canonical theme write into an atomic temporary file.
+		$temp    = tempnam( dirname( $path ), '.ssi-plan-' );
+		$stream  = false !== $temp ? fopen( $temp, 'wb' ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Streams the canonical theme write into an atomic temporary file.
 		$written = is_resource( $stream ) && self::write_all( $stream, $data, $chunk_writer ) && fflush( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fflush -- Flushes complete canonical write bytes before publication.
-		$closed = ! is_resource( $stream ) || fclose( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes canonical write before atomic publication.
+		$closed  = ! is_resource( $stream ) || fclose( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes canonical write before atomic publication.
 		if ( false === $data || false === $temp || ! $written || ! $closed || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Atomically materializes only complete canonical declared theme writes.
 			if ( is_string( $temp ) && file_exists( $temp ) ) {
 				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed temporary materialization file.
