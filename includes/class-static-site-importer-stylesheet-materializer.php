@@ -10,6 +10,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 require_once __DIR__ . '/class-static-site-importer-provider-layout-overlay.php';
+if ( ! class_exists( '\\Automattic\\BlocksEngine\\PhpTransformer\\AssetAnalysis\\CssUrlRewriter' ) ) {
+	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/AssetAnalysis/CssUrlRewriter.php';
+}
 
 /**
  * Builds generated theme stylesheet write payloads.
@@ -100,22 +103,21 @@ class Static_Site_Importer_Stylesheet_Materializer {
 			return $css;
 		}
 
-		return (string) preg_replace_callback(
-			'#url\(\s*(["\']?)([^)"\']+)\1\s*\)#i',
-			static function ( array $matches ) use ( $replacements ): string {
-				$raw = trim( (string) $matches[2] );
+		return \Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\CssUrlRewriter::rewrite(
+			$css,
+			static function ( string $raw ) use ( $replacements ): string {
+				$raw = trim( $raw );
 				if ( '' === $raw || preg_match( '#^(?:data:|https?://|//)#i', $raw ) ) {
-					return $matches[0];
+					return $raw;
 				}
 
 				$key = self::normalize_css_asset_ref( $raw );
 				if ( '' === $key || ! isset( $replacements[ $key ] ) ) {
-					return $matches[0];
+					return $raw;
 				}
 
-				return 'url("' . esc_url_raw( $replacements[ $key ] ) . '")';
-			},
-			$css
+				return esc_url_raw( $replacements[ $key ] );
+			}
 		);
 	}
 
@@ -153,7 +155,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		$ref = preg_replace( '#/+#', '/', (string) $ref );
 		$ref = trim( (string) $ref, '/' );
 
-		return preg_match( '#^[A-Za-z0-9_./-]+$#', $ref ) ? $ref : '';
+		return preg_match( '#^[A-Za-z0-9_./,-]+$#', $ref ) ? $ref : '';
 	}
 
 	/**

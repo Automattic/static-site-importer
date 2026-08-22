@@ -663,6 +663,27 @@ $assert( in_array( 'https://redirect.test/assets/background.png', $redirect_requ
 $assert( in_array( 'website/docs/index.html', $redirect_paths, true ) && in_array( 'website/assets/css/style.css', $redirect_paths, true ), 'redirected-resources-use-final-identities' );
 $assert( str_contains( (string) ( $redirect_files['website/index.html']['content'] ?? '' ), 'href="/docs/"' ), 'redirected-page-link-rewritten-to-final-route' );
 
+$srcset_requests = array();
+$srcset_result = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://srcset.test/',
+	array( 'request_delay_ms' => 0 ),
+	static function ( string $url, array $args ) use ( &$srcset_requests ) {
+		unset( $args );
+		$srcset_requests[] = $url;
+		if ( 'https://srcset.test/' === $url ) {
+			return array( 'body' => '<main><img srcset="/images/hero,wide.png 1x, data:image/png;base64,AA== 2x"></main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
+		}
+		if ( 'https://srcset.test/images/hero,wide.png' === $url ) {
+			return array( 'body' => "\x89PNGsrcset", 'metadata' => array( 'content_type' => 'image/png', 'final_url' => $url ) );
+		}
+		return new WP_Error( 'unexpected_srcset_request', $url );
+	}
+);
+$srcset_files = array_column( $srcset_result['artifact']['files'] ?? array(), null, 'path' );
+$srcset_html  = (string) ( $srcset_files['website/index.html']['content'] ?? '' );
+$assert( ! is_wp_error( $srcset_result ) && in_array( 'https://srcset.test/images/hero,wide.png', $srcset_requests, true ) && ! in_array( 'https://srcset.test/images/hero', $srcset_requests, true ), 'collector-keeps-url-internal-commas-in-srcset-candidates' );
+$assert( str_contains( $srcset_html, 'data:image/png;base64,AA== 2x' ) && str_contains( $srcset_html, 'hero-wide.png 1x' ), 'collector-preserves-data-url-srcset-candidates-during-rewrite' );
+
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( PHP_EOL, $failures ) . PHP_EOL );
 	exit( 1 );
