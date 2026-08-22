@@ -388,7 +388,6 @@ require_once dirname( __DIR__ ) . '/includes/abilities.php';
 require_once dirname( __DIR__ ) . '/includes/rest.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-document.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-source-page.php';
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-page-materializer.php';
 
 $plugin_source = file_get_contents( dirname( __DIR__ ) . '/static-site-importer.php' );
 $assert( is_string( $plugin_source ), 'plugin-source-readable' );
@@ -1046,44 +1045,6 @@ $assert( 'https://github.com/Automattic/static-site-importer/releases/download/{
 $assert( 'vfs' === ( $plugin_step['pluginData']['resource'] ?? '' ), 'playground-blueprint-installs-verified-vfs-package' );
 $assert( ( $download_step['path'] ?? null ) === ( $plugin_step['pluginData']['path'] ?? null ), 'playground-blueprint-installs-downloaded-package' );
 $assert( str_contains( $blueprint_code, '{{PACKAGE_SHA256}}' ), 'playground-blueprint-verifies-release-package' );
-
-$GLOBALS['ssi_test_options']['static_site_importer_protected_pages'] = array( 'import', 'tools/settings', '42' );
-$assert( Static_Site_Importer_Page_Materializer::is_protected_page( new WP_Post( 7, 'import' ) ), 'protected-page-matches-slug' );
-$assert( Static_Site_Importer_Page_Materializer::is_protected_page( new WP_Post( 8, 'settings' ) ), 'protected-page-matches-path' );
-$assert( Static_Site_Importer_Page_Materializer::is_protected_page( new WP_Post( 42, 'other' ) ), 'protected-page-matches-id' );
-$assert( ! Static_Site_Importer_Page_Materializer::is_protected_page( new WP_Post( 9, 'ordinary' ) ), 'ordinary-page-is-not-protected' );
-
-$html_source_page = Static_Site_Importer_Source_Page::from_materialization_plan_page(
-	array(
-		'source_path'  => 'website/index.html',
-		'title'        => 'Figma HTML',
-		'slug'         => 'figma-html',
-		'body_format' => 'blocks',
-		'block_markup' => '<!-- wp:heading {"level":1,"style":{"background":{"backgroundImage":"url(assets/bg.png)"}}} --><h1 style="background-image:url(&quot;assets/bg.png&quot;)">Figma HTML</h1><!-- /wp:heading --><!-- wp:image {"url":"assets/hero.png","alt":"Hero"} --><figure class="wp-block-image"><img src="assets/hero.png" alt="Hero" /></figure><!-- /wp:image -->',
-	)
-);
-$assert( ! is_wp_error( $html_source_page ), 'html-materialization-source-page-builds' );
-if ( ! is_wp_error( $html_source_page ) ) {
-	$html_page_artifacts = Static_Site_Importer_Page_Materializer::page_artifacts(
-		array( 'website/index.html' => $html_source_page ),
-		'figma-import',
-		array(
-			'website/assets/bg.png' => array(
-				'final_url' => 'https://example.test/wp-content/themes/figma-import/assets/materialized/website/assets/bg.png',
-			),
-			'website/assets/hero.png' => array(
-				'final_url' => 'https://example.test/wp-content/themes/figma-import/assets/materialized/website/assets/hero.png',
-			),
-		)
-	);
-	$assert( ! str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', '<!-- wp:html -->' ), 'html-materialization-avoids-core-html-block' );
-	$assert( str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', '<!-- wp:heading' ), 'html-materialization-converts-html-to-blocks' );
-	$assert( str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', 'https://example.test/wp-content/themes/figma-import/assets/materialized/website/assets/hero.png' ), 'html-materialization-rewrites-root-relative-asset-reference' );
-	$assert( ! str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', '"url":"assets/hero.png"' ), 'html-materialization-rewrites-block-json-asset-reference' );
-	$assert( str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', 'https://example.test/wp-content/themes/figma-import/assets/materialized/website/assets/bg.png' ), 'html-materialization-rewrites-css-url-asset-reference' );
-	$assert( ! str_contains( $html_page_artifacts['contents']['website/index.html'] ?? '', 'url(assets/bg.png)' ), 'html-materialization-removes-source-css-url-reference' );
-	$assert( array() === $html_page_artifacts['diagnostics'], 'html-materialization-does-not-emit-unsupported-format-diagnostic' );
-}
 
 Static_Site_Importer_Theme_Generator::$last_artifact = array();
 Static_Site_Importer_Theme_Generator::$last_args     = array();
