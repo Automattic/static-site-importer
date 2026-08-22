@@ -665,6 +665,7 @@ class Static_Site_Importer_Theme_Generator {
 			),
 			'source_documents'                 => array(
 				'source'                       => 'blocks_engine',
+				'total_count'                  => count( $plan['pages'] ),
 				'blocks_engine_document_count' => count( $plan['pages'] ),
 				'blocks_engine_documents'      => array_map(
 					static fn( array $page ): array => array(
@@ -683,7 +684,6 @@ class Static_Site_Importer_Theme_Generator {
 		);
 		$report['source_artifact'] = array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ) );
 		$report['materialization_receipt'] = $receipt;
-		$quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $report, $args );
 		$artifact = array_merge(
 			isset( $args['source_artifact_reference'] ) && is_array( $args['source_artifact_reference'] ) ? $args['source_artifact_reference'] : array(),
 			array_filter(
@@ -810,33 +810,9 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$manifest['cleanup'] = $cleanup;
 		$report['source_of_truth'] = $manifest;
-		$visual_parity = array(
-			'schema'    => 'static-site-importer/visual-parity-artifacts/v1',
-			'status'    => 'pending',
-			'owner'     => 'codebox_runtime',
-			'artifacts' => array(
-				'import_report'     => array(
-					'status' => 'captured',
-					'ref'    => array( 'artifact_name' => 'import-report.json' ),
-				),
-				'source_screenshot' => array( 'status' => 'pending' ),
-				'visual_diff'       => array( 'capture_state' => 'not_captured' ),
-			),
-		);
-		$report['visual_parity_artifacts'] = $visual_parity;
-		$validation = array(
-			'schema'                  => 'blocks-engine/import-validation-result/v1',
-			'artifact_type'           => 'ImportValidationResult',
-			'status'                  => ! empty( $quality['pass'] ) ? 'passed' : 'failed',
-			'diagnostics'             => $diagnostics,
-			'quality'                 => $quality,
-			'visual_parity_artifacts' => $visual_parity,
-		);
-		$findings   = array(
-			'schema'        => 'blocks-engine/finding-packets/v1',
-			'artifact_type' => 'FindingPacketSet',
-			'findings'      => $diagnostics,
-		);
+		$quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $args );
+		$validation = $report['import_validation_result'];
+		$findings   = $report['finding_packets'];
 		$theme_dir  = $theme['dir'];
 		$manifest_path = $theme_dir . '/static-site-importer-manifest.json';
 		self::write_plan_projection( $manifest_path, $manifest, $receipt );
