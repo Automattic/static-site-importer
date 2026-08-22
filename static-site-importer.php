@@ -610,7 +610,7 @@ function static_site_importer_cli_write_materialization_sidecar( array $result, 
 	}
 	$receipt                   = isset( $result['materialization_receipt'] ) && is_array( $result['materialization_receipt'] ) ? $result['materialization_receipt'] : array();
 	$completed                 = isset( $receipt['completed'] ) && is_array( $receipt['completed'] ) ? $receipt['completed'] : array();
-	$is_completed              = 'static-site-importer/materialization-receipt/v1' === ( $receipt['schema'] ?? '' ) && 'completed' === ( $receipt['status'] ?? '' ) && isset( $receipt['plan_hash'] ) && is_string( $receipt['plan_hash'] ) && preg_match( '/^(?:sha256:)?[a-f0-9]{64}$/', $receipt['plan_hash'] ) && isset( $completed['pages'], $completed['files'] ) && is_array( $completed['pages'] ) && is_array( $completed['files'] );
+	$is_completed              = 'static-site-importer/materialization-receipt/v2' === ( $receipt['schema'] ?? '' ) && 'completed' === ( $receipt['status'] ?? '' ) && is_array( $receipt['plan_identity'] ?? null ) && is_string( $receipt['plan_identity']['schema'] ?? null ) && is_string( $receipt['plan_identity']['hash'] ?? null ) && preg_match( '/^[a-f0-9]{64}$/', $receipt['plan_identity']['hash'] ) && isset( $completed['pages'], $completed['files'] ) && is_array( $completed['pages'] ) && is_array( $completed['files'] );
 	$summary                   = $is_completed ? static_site_importer_cli_materialization_summary( $receipt, $result ) : static_site_importer_cli_failed_materialization_summary( $result );
 	$documents                 = $is_completed ? static_site_importer_cli_materialized_documents( $completed['pages'] ) : array(
 		'rows'      => array(),
@@ -724,7 +724,7 @@ function static_site_importer_cli_materialized_documents( array $pages ): array 
 function static_site_importer_cli_failed_materialization_summary( array $result ): array {
 	$error_code = static_site_importer_cli_sidecar_token_value( $result['error']['code'] ?? $result['code'] ?? 'import_failed', 80 );
 	return array(
-		'schema'          => 'static-site-importer/materialization-receipt/v1',
+		'schema'          => 'static-site-importer/materialization-receipt/v2',
 		'status'          => 'failed',
 		'page_count'      => 0,
 		'file_count'      => 0,
@@ -782,11 +782,11 @@ function static_site_importer_cli_materialization_summary( array $receipt, array
 		}
 	}
 	$layout    = isset( $receipt['computed_layout'] ) && is_array( $receipt['computed_layout'] ) ? $receipt['computed_layout'] : array();
-	$plan_hash = isset( $receipt['plan_hash'] ) && is_string( $receipt['plan_hash'] ) && preg_match( '/^(?:sha256:)?[a-f0-9]{64}$/', $receipt['plan_hash'] ) ? $receipt['plan_hash'] : '';
+	$plan_identity = is_array( $receipt['plan_identity'] ?? null ) ? $receipt['plan_identity'] : array();
 	return array(
-		'schema'                 => 'static-site-importer/materialization-receipt/v1',
+		'schema'                 => 'static-site-importer/materialization-receipt/v2',
 		'status'                 => 'completed',
-		'plan_hash'              => $plan_hash,
+		'plan_identity'          => $plan_identity,
 		'page_count'             => min( 10000000, count( $completed['pages'] ?? array() ) ),
 		'file_count'             => min( 10000000, count( $completed['files'] ?? array() ) ),
 		'operation_count'        => min( 10000000, count( $operations ) ),

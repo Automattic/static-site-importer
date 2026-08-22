@@ -256,7 +256,7 @@ class Static_Site_Importer_Validation_Runtime {
 	public static function error_result_from_wp_error( WP_Error $error, array $input = array() ): array {
 		$slug       = isset( $input['slug'] ) ? sanitize_title( (string) $input['slug'] ) : '';
 		$error_data = $error->get_error_data();
-		$receipt    = is_array( $error_data ) && 'static-site-importer/materialization-receipt/v1' === ( $error_data['schema'] ?? '' ) ? $error_data : array();
+		$receipt    = is_array( $error_data ) && 'static-site-importer/materialization-receipt/v2' === ( $error_data['schema'] ?? '' ) ? $error_data : array();
 		$diagnostic = array(
 			'type'        => 'validation_error',
 			'severity'    => 'error',

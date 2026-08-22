@@ -21,7 +21,7 @@ if ( ! class_exists( 'Static_Site_Importer_Current_Site_Capabilities' ) ) {
 }
 
 final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
-	public const RECEIPT_SCHEMA           = 'static-site-importer/materialization-receipt/v1';
+	public const RECEIPT_SCHEMA           = 'static-site-importer/materialization-receipt/v2';
 	private const RECONCILIATION_META_KEY = '_static_site_importer_reconciliation_identity';
 	private const BLOCK_PROVENANCE_LIMIT  = 50;
 
@@ -69,7 +69,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		$state = array(
 			'plan'                         => $plan,
-			'plan_hash'                    => self::hash( $plan ),
+			'plan_identity'                => self::plan_identity( $plan ),
 			'diagnostics'                  => array(),
 			'applied'                      => array(
 				'posts'                => array(),
@@ -94,6 +94,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		);
 
 		try {
+			if ( array() === $state['plan_identity'] ) {
+				throw new InvalidArgumentException( 'canonical_plan_identity_mismatch' );
+			}
 			WordPressSitePlan::assertValid( $plan );
 		} catch ( InvalidArgumentException $error ) {
 			$state['diagnostics'][] = array( 'reason_code' => 'canonical_plan_rejected' );
@@ -152,7 +155,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				unset( $page );
 				$state['base_resolved'] = $resolved;
 			}
-			$state['base_resolved_hash'] = self::hash( $resolved );
+			$state['prepared_resolved_projection_hash'] = self::prepared_resolved_projection_hash( $resolved );
 			$state['resolved']           = $resolved;
 			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
 			self::validate_materialized_block_documents( $state['resolved'], $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
@@ -199,7 +202,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					'rejected',
 					array(
 						'plan'             => isset( $prepared['plan'] ) && is_array( $prepared['plan'] ) ? $prepared['plan'] : array(),
-						'plan_hash'        => (string) ( $prepared['plan_hash'] ?? '' ),
+						'plan_identity'    => is_array( $prepared['plan_identity'] ?? null ) ? $prepared['plan_identity'] : array(),
 						'diagnostics'      => array( array( 'reason_code' => 'invalid_prepared_state' ) ),
 						'applied'          => array(
 							'posts'                => array(),
@@ -235,7 +238,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	private static function failed_strategy_receipt( array $plan, array $args, WP_Error $error ): array {
 		$state = array(
 			'plan'                  => $plan,
-			'plan_hash'             => self::hash( $plan ),
+			'plan_identity'         => self::plan_identity( $plan ),
 			'diagnostics'           => array( array( 'reason_code' => $error->get_error_code() ) ),
 			'applied'               => array(
 				'posts'                => array(),
@@ -264,7 +267,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'rejected',
 				array(
 					'plan'             => array(),
-					'plan_hash'        => '',
+					'plan_identity'    => array(),
 					'diagnostics'      => array( array( 'reason_code' => 'invalid_prepared_state' ) ),
 					'applied'          => array(
 						'posts'                => array(),
@@ -476,14 +479,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$base_resolved  = $prepared['base_resolved'] ?? null;
 		$args           = isset( $prepared['args'] ) && is_array( $prepared['args'] ) ? $prepared['args'] : array();
 		$payload_reader = is_object( $prepared['payload_reader'] ?? null ) ? $prepared['payload_reader'] : null;
-		if ( ! is_array( $plan ) || ! is_array( $base_resolved ) || self::hash( $plan ) !== ( $prepared['plan_hash'] ?? '' ) || self::hash( $base_resolved ) !== ( $prepared['base_resolved_hash'] ?? '' ) ) {
+		if ( ! is_array( $plan ) || ! is_array( $base_resolved ) || self::plan_identity( $plan ) !== ( $prepared['plan_identity'] ?? null ) || self::prepared_resolved_projection_hash( $base_resolved ) !== ( $prepared['prepared_resolved_projection_hash'] ?? '' ) ) {
 			return array(
 				'status'  => 'rejected',
 				'receipt' => self::receipt(
 					'rejected',
 					array(
 						'plan'             => is_array( $plan ) ? $plan : array(),
-						'plan_hash'        => '',
+						'plan_identity'    => array(),
 						'diagnostics'      => array( array( 'reason_code' => 'prepared_projection_changed' ) ),
 						'applied'          => array(
 							'posts'                => array(),
@@ -507,10 +510,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$theme_dir  = trailingslashit( $theme_root ) . $slug;
 		$state      = array(
 			'plan'                         => $plan,
-			'plan_hash'                    => $prepared['plan_hash'],
+			'plan_identity'                => $prepared['plan_identity'],
 			'editability_report'           => $prepared['editability_report'] ?? array(),
 			'base_resolved'                => $base_resolved,
-			'base_resolved_hash'           => $prepared['base_resolved_hash'],
+			'prepared_resolved_projection_hash' => $prepared['prepared_resolved_projection_hash'],
 			'resolved'                     => $base_resolved,
 			'diagnostics'                  => array(),
 			'applied'                      => array(
@@ -1922,7 +1925,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$receipt = array(
 			'schema'                    => self::RECEIPT_SCHEMA,
 			'status'                    => $status,
-			'plan_hash'                 => $state['plan_hash'],
+			'plan_identity'             => $state['plan_identity'],
 			'plan'                      => $resolved_plan,
 			'theme'                     => $state['theme'] ?? array(),
 			'completed'                 => array(
@@ -2123,6 +2126,23 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$context = hash_init( 'sha256' );
 		self::hash_json_value( $context, $plan );
 		return hash_final( $context );
+	}
+
+	/** @return array{schema:string,hash:string}|array{} */
+	private static function plan_identity( array $plan ): array {
+		$identity = $plan['plan_identity'] ?? null;
+		if ( ! is_array( $identity ) || 'blocks-engine/wordpress-site-plan-identity/v1' !== ( $identity['schema'] ?? null ) || ! is_string( $identity['hash'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', $identity['hash'] ) ) {
+			return array();
+		}
+		return array(
+			'schema' => $identity['schema'],
+			'hash'   => $identity['hash'],
+		);
+	}
+
+	/** Hash the resolved projection only for prepare-to-write change detection. */
+	public static function prepared_resolved_projection_hash( array $projection ): string {
+		return self::hash( $projection );
 	}
 
 	/** Stream the exact JSON token sequence previously passed to hash(). */

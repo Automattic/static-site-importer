@@ -597,7 +597,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 			'static_site_importer_font_materialization_failed',
 			'Font materialization failed.',
 			array(
-				'schema'      => 'static-site-importer/materialization-receipt/v1',
+				'schema'      => 'static-site-importer/materialization-receipt/v2',
 				'status'      => 'partial',
 				'diagnostics' => array(
 					array(

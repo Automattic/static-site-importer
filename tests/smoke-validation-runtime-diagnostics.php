@@ -190,9 +190,9 @@ $result = $method->invoke(
 		'quality'                 => array( 'pass' => false ),
 		'theme_slug'              => 'ssi-fixture-theme',
 		'materialization_receipt' => array(
-			'schema'    => 'static-site-importer/materialization-receipt/v1',
+			'schema'    => 'static-site-importer/materialization-receipt/v2',
 			'status'    => 'completed',
-			'plan_hash' => 'plan-hash',
+			'plan_identity' => array( 'schema' => 'blocks-engine/wordpress-site-plan-identity/v1', 'hash' => str_repeat( 'a', 64 ) ),
 			'completed' => array(
 				'pages'           => array( 'index.html' => 1 ),
 				'files'           => array( array( 'target_path' => 'style.css' ) ),

@@ -558,7 +558,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 		return array(
 			'schema'                     => isset( $receipt['schema'] ) && is_scalar( $receipt['schema'] ) ? (string) $receipt['schema'] : '',
 			'status'                     => isset( $receipt['status'] ) && is_scalar( $receipt['status'] ) ? (string) $receipt['status'] : '',
-			'plan_hash'                  => isset( $receipt['plan_hash'] ) && is_scalar( $receipt['plan_hash'] ) ? (string) $receipt['plan_hash'] : '',
+			'plan_identity'              => isset( $receipt['plan_identity'] ) && is_array( $receipt['plan_identity'] ) ? $receipt['plan_identity'] : array(),
 			'page_count'                 => isset( $completed['pages'] ) && is_array( $completed['pages'] ) ? count( $completed['pages'] ) : 0,
 			'file_count'                 => isset( $completed['files'] ) && is_array( $completed['files'] ) ? count( $completed['files'] ) : 0,
 			'operation_count'            => isset( $completed['operations'] ) && is_array( $completed['operations'] ) ? count( $completed['operations'] ) : 0,
