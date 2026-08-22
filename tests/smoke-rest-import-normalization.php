@@ -46,6 +46,7 @@ $options = array(
 	'compiler_options'             => array( 'include_conversion_report' => false ),
 	'source_metadata'              => array( 'request_id' => 'rest-normalization-smoke', 'source' => 'caller' ),
 	'validation_artifacts'         => array( 'visual_diff' => array( 'ref' => 'rest-diff' ) ),
+	'quality_admission'            => array( 'mode' => 'preview', 'budgets' => array( 'max_raw_html_fallback_count' => 0 ) ),
 );
 $artifact = array(
 	'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',

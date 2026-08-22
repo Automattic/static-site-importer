@@ -151,6 +151,7 @@ $input  = array(
 	'compiler_options'                     => array( 'include_conversion_report' => false ),
 	'source_metadata'                      => array( 'request_id' => 'contract-1' ),
 	'validation_artifacts'                 => array( 'visual_diff' => array( 'path' => '/tmp/diff.png' ) ),
+	'quality_admission'                    => array( 'mode' => 'preview', 'budgets' => array( 'max_raw_html_fallback_count' => 0 ) ),
 	'client_script_policy'                 => 'isolated_preview',
 	'client_script_provenance'             => array( 'ref' => 'contract:preview' ),
 	'client_script_isolated'               => true,

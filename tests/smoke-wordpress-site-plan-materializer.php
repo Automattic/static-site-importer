@@ -347,7 +347,7 @@ $with_editability_report = static function ( array $candidate ) use ( $result, $
 };
 $strict_editability_plan = $with_editability_report( $plan );
 $strict_editability_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $strict_editability_plan, array( 'slug' => 'strict-editability-plan' ) );
-$assert( 'completed' === $strict_editability_receipt['status'] && 'passed' === ( $strict_editability_receipt['editability_report']['status'] ?? '' ) && 'blocks-engine/php-transformer/editability-report/v1' === ( $strict_editability_receipt['editability_report']['report_schema'] ?? '' ), 'valid hash-bound Blocks Engine editability reports are admitted before materialization' );
+$assert( 'completed' === $strict_editability_receipt['status'] && 'passed' === ( $strict_editability_receipt['editability_report']['status'] ?? '' ) && 'blocks-engine/php-transformer/editability-report/v2' === ( $strict_editability_receipt['editability_report']['report_schema'] ?? '' ), 'valid hash-bound Blocks Engine editability reports are admitted before materialization' );
 
 $compatibility_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'compatibility-editability-plan' ) );
 $assert( 'completed' === $compatibility_receipt['status'] && 'compatibility_policy_only' === ( $compatibility_receipt['editability_report']['status'] ?? '' ) && 'editability_report_compatibility_policy_only' === ( $compatibility_receipt['editability_report']['diagnostic']['reason_code'] ?? '' ), 'current producer plans retain explicit compatibility evidence' );
@@ -414,6 +414,7 @@ $assert( 'installed_activated' === ( $gap_diagnostics[0]['materialization_status
 $receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan' ) );
 $assert( 'completed' === $receipt['status'], 'valid plan completes' );
 $assert( 'static-site-importer/materialization-receipt/v2' === $receipt['schema'] && $plan['plan_identity'] === ( $receipt['plan_identity'] ?? null ), 'receipt binds the producer plan identity.' );
+$assert( 'static-site-importer/quality-admission/v1' === ( $receipt['quality_admission']['schema'] ?? '' ) && 'unknown' === ( $receipt['quality_admission']['status'] ?? '' ), 'materialization receipt persists explicit unknown quality evidence when canonical evidence is absent' );
 $assert( count( $plan['writes'] ) === count( $receipt['generated_files'] ), 'all canonical writes are materialized' );
 $assert( file_exists( $GLOBALS['ssi_plan_root'] . '/site-plan/templates/front-page.html' ), 'templates are materialized' );
 $assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-plan/assets/assets/site.css' ), 'https://example.test/wp-content/themes/site-plan/assets/assets/logo.svg' ), 'root-relative stylesheet references resolve to declared theme assets' );

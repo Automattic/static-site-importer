@@ -20,6 +20,9 @@ if ( ! class_exists( 'Static_Site_Importer_Classic_Theme_Projection' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Current_Site_Capabilities' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-current-site-capabilities.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Quality_Admission' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-quality-admission.php';
+}
 
 final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	public const RECEIPT_SCHEMA           = 'static-site-importer/materialization-receipt/v2';
@@ -2071,6 +2074,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'errors'                    => $errors,
 			'theme_materialization'     => $state['theme_materialization'] ?? self::strategy_evidence( $state['args'] ?? array() ),
 		);
+		$receipt['quality_admission']                      = Static_Site_Importer_Quality_Admission::evaluate( $resolved_plan, $state['args'] ?? array() );
+		$receipt['quality_admission']['mechanical_status'] = $status;
 		if ( ! empty( $state['args']['defer_materialization_commit'] ) && 'completed' === $status ) {
 			$receipt['transaction'] = (object) array( 'state' => $state );
 		}
@@ -2118,7 +2123,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				)
 			);
 		}
-		if ( ! is_array( $report ) || 'blocks-engine/php-transformer/editability-report/v1' !== ( $report['schema'] ?? null ) || ! is_array( $report['metrics'] ?? null ) || ! is_array( $report['block_types'] ?? null ) || ! is_array( $report['signals'] ?? null ) || ! is_array( $report['signal_totals'] ?? null ) ) {
+		// v2 adds scoped document evidence without changing the aggregate fields SSI admits.
+		if ( ! is_array( $report ) || ! in_array( $report['schema'] ?? null, array( 'blocks-engine/php-transformer/editability-report/v1', 'blocks-engine/php-transformer/editability-report/v2' ), true ) || ! is_array( $report['metrics'] ?? null ) || ! is_array( $report['block_types'] ?? null ) || ! is_array( $report['signals'] ?? null ) || ! is_array( $report['signal_totals'] ?? null ) ) {
 			return self::rejected_editability_report_admission( $base, 'editability_report_schema_invalid' );
 		}
 		$bound_hash = $quality['editability_report_plan_hash'] ?? null;
