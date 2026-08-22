@@ -231,6 +231,9 @@ if ( ! function_exists( 'static_site_importer_source_runtime' ) ) {
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-exporter.php';
 require_once dirname( __DIR__ ) . '/includes/abilities.php';
 
+$theme_generator_source = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php' );
+$theme_exporter_source  = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-exporter.php' );
+
 if ( ! class_exists( 'Static_Site_Importer_Theme_Generator' ) ) {
 	class Static_Site_Importer_Theme_Generator {
 		public static array $last_artifact = array();
@@ -268,6 +271,8 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 
 $assert( ! is_wp_error( $result ), 'export-succeeds', is_wp_error( $result ) ? $result->get_error_message() : '' );
 $assert( true === ( $result['success'] ?? false ), 'ability-success' );
+$assert( 0 === preg_match( '/public static function export_theme\\s*\\(/', (string) $theme_generator_source ), 'theme-generator-has-no-exporter-copy' );
+$assert( 1 === preg_match_all( '/public static function export_theme\\s*\\(/', (string) $theme_exporter_source ), 'theme-exporter-is-the-single-export-implementation' );
 $artifact = $result['website_artifact'] ?? array();
 $assert( ! isset( $result['artifact_set'] ), 'artifact-set-wrapper-removed' );
 $assert( ! isset( $result['files'] ), 'top-level-files-wrapper-removed' );
