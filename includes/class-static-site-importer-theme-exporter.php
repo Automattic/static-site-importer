@@ -116,7 +116,12 @@ class Static_Site_Importer_Theme_Exporter {
 				$page_id   = isset( $page->ID ) ? (int) $page->ID : 0;
 				$template  = $is_front ? 'front-page' : 'page';
 				$page_html = self::export_resolved_template_html( $page, $theme_slug, $is_front );
-				$chrome    = '' === $page_html ? self::export_theme_chrome_html( $theme_dir, $template ) : array( 'before' => '', 'after' => '' );
+				$chrome    = '' === $page_html
+					? self::export_theme_chrome_html( $theme_dir, $template )
+					: array(
+						'before' => '',
+						'after'  => '',
+					);
 				if ( '' === $page_html ) {
 					$page_html = self::blocks_to_html( isset( $page->post_content ) ? (string) $page->post_content : '' );
 				}
@@ -394,12 +399,13 @@ class Static_Site_Importer_Theme_Exporter {
 			$hierarchy = self::export_template_hierarchy( $page, $is_front );
 			$template  = resolve_block_template( $hierarchy[0], $hierarchy, '' );
 		}
-		if ( ! is_object( $template ) || ! isset( $template->content ) || '' === (string) $template->content ) {
+		if ( null === $template || '' === $template->content ) {
 			return '';
 		}
 
 		global $post;
 		$previous_post = $post ?? null;
+		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Dynamic block rendering reads the exported document from the global post context.
 		$post          = $page;
 		if ( function_exists( 'setup_postdata' ) ) {
 			setup_postdata( $page );
@@ -408,6 +414,7 @@ class Static_Site_Importer_Theme_Exporter {
 		if ( function_exists( 'wp_reset_postdata' ) ) {
 			wp_reset_postdata();
 		}
+		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restore the caller's global post after rendering the exported document.
 		$post = $previous_post;
 
 		return $html;
@@ -497,6 +504,7 @@ class Static_Site_Importer_Theme_Exporter {
 			$head .= '<link rel="stylesheet" href="style.css">';
 		}
 		if ( $include_global_styles ) {
+			// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedStylesheet -- This method emits standalone static HTML, not a WordPress-rendered page.
 			$head .= '<link rel="stylesheet" href="global-styles.css">';
 		}
 
@@ -620,7 +628,7 @@ class Static_Site_Importer_Theme_Exporter {
 		}
 
 		$stylesheet = wp_get_global_stylesheet();
-		if ( ! is_string( $stylesheet ) || '' === trim( $stylesheet ) ) {
+		if ( '' === trim( $stylesheet ) ) {
 			return null;
 		}
 
