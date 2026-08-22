@@ -504,6 +504,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$state      = array(
 			'plan'                         => $plan,
 			'plan_hash'                    => $prepared['plan_hash'],
+			'editability_report'           => $prepared['editability_report'] ?? array(),
 			'base_resolved'                => $base_resolved,
 			'base_resolved_hash'           => $prepared['base_resolved_hash'],
 			'resolved'                     => $base_resolved,
@@ -1895,10 +1896,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'owning_layer'  => 'blocks-engine',
 			'policy_schema' => (string) ( $policy['schema'] ?? '' ),
 		);
-		if ( 'blocks-engine/php-transformer/editability-policy/v1' !== ( $policy['schema'] ?? null ) || 'required' !== ( $policy['enforcement'] ?? null ) || ! in_array( $policy['status'] ?? null, array( 'passed', 'failed' ), true ) || ! isset( $policy['failures'] ) || ! is_array( $policy['failures'] ) ) {
+		if ( array() !== $policy && ( 'blocks-engine/php-transformer/editability-policy/v1' !== ( $policy['schema'] ?? null ) || 'required' !== ( $policy['enforcement'] ?? null ) || ! in_array( $policy['status'] ?? null, array( 'passed', 'failed' ), true ) || ! isset( $policy['failures'] ) || ! is_array( $policy['failures'] ) ) ) {
 			return self::rejected_editability_report_admission( $base, 'editability_policy_invalid' );
 		}
-		if ( 'failed' === $policy['status'] ) {
+		if ( 'failed' === ( $policy['status'] ?? null ) ) {
 			return self::rejected_editability_report_admission( $base, 'editability_policy_failed', $policy['failures'] );
 		}
 
@@ -1918,7 +1919,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				)
 			);
 		}
-		if ( ! is_array( $report ) || 'blocks-engine/php-transformer/editability-report/v2' !== ( $report['schema'] ?? null ) || ! is_array( $report['metrics'] ?? null ) || ! is_array( $report['block_types'] ?? null ) || ! is_array( $report['signals'] ?? null ) || ! is_array( $report['signal_totals'] ?? null ) ) {
+		if ( ! is_array( $report ) || 'blocks-engine/php-transformer/editability-report/v1' !== ( $report['schema'] ?? null ) || ! is_array( $report['metrics'] ?? null ) || ! is_array( $report['block_types'] ?? null ) || ! is_array( $report['signals'] ?? null ) || ! is_array( $report['signal_totals'] ?? null ) ) {
 			return self::rejected_editability_report_admission( $base, 'editability_report_schema_invalid' );
 		}
 		$bound_hash = $quality['editability_report_plan_hash'] ?? null;
