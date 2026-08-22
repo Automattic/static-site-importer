@@ -1574,7 +1574,7 @@ function static_site_importer_rest_source_file_path( string $path, array $report
 	}
 
 	foreach ( $report_paths as $report_path ) {
-		if ( is_string( $report_path ) && $path === static_site_importer_rest_normalize_artifact_path( $report_path ) ) {
+		if ( is_string( $report_path ) && static_site_importer_rest_normalize_artifact_path( $report_path ) === $path ) {
 			return $path;
 		}
 	}
