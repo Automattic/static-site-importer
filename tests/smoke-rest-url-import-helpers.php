@@ -60,6 +60,15 @@ if ( ! function_exists( 'home_url' ) ) {
 	function home_url( $path = '/' ) { return 'https://current-site.test' . $path; }
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
+	class Static_Site_Importer_Content_Policy {
+		public static function validate_artifact( array $artifact ): true {
+			unset( $artifact );
+			return true;
+		}
+	}
+}
+
 $GLOBALS['ssi_ability_results']  = array();
 $GLOBALS['ssi_ability_last_input'] = null;
 
@@ -78,6 +87,25 @@ if ( ! function_exists( 'wp_get_ability' ) ) {
 }
 
 require_once dirname( __DIR__ ) . '/includes/rest.php';
+
+$report_paths = array( 'interaction-states.json', 'reports/capture.json' );
+$assert( 'interaction-states.json' === static_site_importer_rest_source_file_path( 'interaction-states.json', $report_paths ), 'declared-root-report-path-is-preserved' );
+$assert( 'reports/capture.json' === static_site_importer_rest_source_file_path( 'reports/capture.json', $report_paths ), 'declared-nested-report-path-is-preserved' );
+$assert( 'website/index.html' === static_site_importer_rest_source_file_path( 'index.html', $report_paths ), 'ordinary-source-file-remains-website-rooted' );
+$assert( 'website/interaction-states.json' === static_site_importer_rest_source_file_path( 'interaction-states.json', array() ), 'undeclared-report-like-file-remains-website-rooted' );
+$artifact_runtime = static_site_importer_source_runtime(
+	array(
+		'entrypoint' => 'website/index.html',
+		'metadata'   => array( 'reports' => $report_paths ),
+		'files'      => array(
+			array( 'path' => 'website/index.html', 'content' => '<main>Example</main>' ),
+			array( 'path' => 'interaction-states.json', 'content' => '{}' ),
+			array( 'path' => 'diagnostics.json', 'content' => '{}' ),
+		),
+	)
+);
+$artifact_paths = is_array( $artifact_runtime ) ? array_column( $artifact_runtime['artifact']['files'] ?? array(), 'path' ) : array();
+$assert( array( 'website/index.html', 'interaction-states.json', 'website/diagnostics.json' ) === $artifact_paths, 'source-runtime-preserves-only-declared-report-paths' );
 
 $continuation_envelope = array(
 	'success'               => true,

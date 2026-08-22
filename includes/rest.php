@@ -1029,7 +1029,9 @@ function static_site_importer_source_runtime( array $source ) {
 		);
 	}
 
-	$files = array();
+	$files        = array();
+	$metadata     = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
+	$report_paths = isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array();
 
 	if ( isset( $source['html'] ) && '' !== trim( (string) $source['html'] ) ) {
 		$files[] = array(
@@ -1044,7 +1046,7 @@ function static_site_importer_source_runtime( array $source ) {
 				continue;
 			}
 
-			$path = isset( $file['path'] ) ? static_site_importer_rest_artifact_path( (string) $file['path'] ) : '';
+			$path = isset( $file['path'] ) ? static_site_importer_rest_source_file_path( (string) $file['path'], $report_paths ) : '';
 			if ( '' === $path ) {
 				continue;
 			}
@@ -1107,8 +1109,6 @@ function static_site_importer_source_runtime( array $source ) {
 	if ( '' === $entrypoint || ! in_array( $entrypoint, array_column( $files, 'path' ), true ) ) {
 		$entrypoint = static_site_importer_rest_entrypoint( $files );
 	}
-
-	$metadata = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
 
 	$artifact      = array_merge(
 		$metadata,
@@ -1551,16 +1551,50 @@ function static_site_importer_rest_archive_limit_error( string $reason ): WP_Err
  * @return string
  */
 function static_site_importer_rest_artifact_path( string $path ): string {
-	$path = str_replace( '\\', '/', $path );
-	$path = preg_replace( '#(^|/)\.\.(?=/|$)#', '', $path );
-	$path = ltrim( (string) $path, '/' );
-	$path = preg_replace( '#/+#', '/', $path );
+	$path = static_site_importer_rest_normalize_artifact_path( $path );
 
 	if ( '' === $path ) {
 		return '';
 	}
 
 	return str_starts_with( $path, 'website/' ) ? $path : 'website/' . $path;
+}
+
+/**
+ * Normalize a source file path while preserving paths declared by an artifact report manifest.
+ *
+ * @param string       $path         File path.
+ * @param array<mixed> $report_paths Artifact report paths.
+ * @return string
+ */
+function static_site_importer_rest_source_file_path( string $path, array $report_paths ): string {
+	$path = static_site_importer_rest_normalize_artifact_path( $path );
+	if ( '' === $path ) {
+		return '';
+	}
+
+	foreach ( $report_paths as $report_path ) {
+		if ( is_string( $report_path ) && static_site_importer_rest_normalize_artifact_path( $report_path ) === $path ) {
+			return $path;
+		}
+	}
+
+	return static_site_importer_rest_artifact_path( $path );
+}
+
+/**
+ * Normalize a relative artifact path without assigning it to the website root.
+ *
+ * @param string $path File path.
+ * @return string
+ */
+function static_site_importer_rest_normalize_artifact_path( string $path ): string {
+	$path = str_replace( '\\', '/', $path );
+	$path = preg_replace( '#(^|/)\.\.(?=/|$)#', '', $path );
+	$path = ltrim( (string) $path, '/' );
+	$path = preg_replace( '#/+#', '/', $path );
+
+	return (string) $path;
 }
 
 /**
