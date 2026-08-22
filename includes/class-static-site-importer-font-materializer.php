@@ -592,14 +592,10 @@ final class Static_Site_Importer_Font_Materializer {
 		}
 		$bootstrap .= "\nadd_action( 'wp_enqueue_scripts', static function (): void {\n";
 		$bootstrap .= "    wp_enqueue_style( 'static-site-importer-embedded-fonts', get_theme_file_uri( 'assets/css/embedded-fonts.css' ), array(), null );\n";
-		if ( ! empty( $required_faces ) ) {
-			$bootstrap .= "    wp_enqueue_script( 'static-site-importer-font-readiness', get_theme_file_uri( 'assets/js/font-readiness.js' ), array(), null, false );\n";
-		}
+		$bootstrap .= "    wp_enqueue_script( 'static-site-importer-font-readiness', get_theme_file_uri( 'assets/js/font-readiness.js' ), array(), null, false );\n";
 		$bootstrap .= "} );\n";
 		$writes[]   = self::write( 'functions.php', $bootstrap, 'theme.font_materialization' );
-		if ( ! empty( $required_faces ) ) {
-			$writes[] = self::write( 'assets/js/font-readiness.js', self::readiness_script( $required_faces ), 'theme.font_materialization' );
-		}
+		$writes[] = self::write( 'assets/js/font-readiness.js', self::readiness_script( $required_faces ), 'theme.font_materialization' );
 		return array(
 			'writes'         => $writes,
 			'diagnostics'    => $diagnostics,

@@ -7059,9 +7059,9 @@ test('visual attribution options normalize positive limits and targeted selector
   });
 });
 
-test('visual attribution defaults leave visual-compare matrix JSON byte-compatible', () => {
+test('visual parity defaults require the candidate font readiness record', () => {
   const step = visualParityCompareStep({ fixture: { id: 'shop' } });
-  assert.equal(step.args[0], 'matrix-json={"comparisons":[{"name":"shop","sourceUrl":"/wp-content/uploads/static-site-importer-fixture-matrix/shop/source/index.html","candidateUrl":"/","sourceLabel":"shop-source","candidateLabel":"shop-candidate","viewport":"1280x1600","fullPage":true,"waitFor":"duration","durationMs":"4000ms","blockExternalRequests":true,"threshold":0}]}');
+  assert.equal(step.args[0], 'matrix-json={"comparisons":[{"name":"shop","sourceUrl":"/wp-content/uploads/static-site-importer-fixture-matrix/shop/source/index.html","candidateUrl":"/","sourceLabel":"shop-source","candidateLabel":"shop-candidate","viewport":"1280x1600","fullPage":true,"waitFor":"duration","durationMs":"4000ms","blockExternalRequests":true,"candidateRequiredReadinessRecord":"#static-site-importer-font-readiness","threshold":0}]}');
 });
 
 test('visual attribution options reach every fixture matrix comparison', () => {
@@ -8155,6 +8155,27 @@ test('visual-compare dimension mismatch gates even with zero pixel metrics when 
   const diagnostics = collectVisualParityDiagnostics(payload, { gate: true });
   assert.equal(diagnostics.length, 1);
   assert.equal(diagnostics[0].dimension_mismatch, true);
+});
+
+test('required candidate readiness failure is an evidence gap, not a pixel regression', () => {
+  const payload = {
+    schema: 'wp-codebox/visual-compare/v1',
+    comparison: { mismatchPixels: 200, totalPixels: 1000, dimensionMismatch: false },
+    captureDiagnostics: {
+      candidate: {
+        effectiveCapture: {
+          readiness: {
+            records: [{ selector: '#static-site-importer-font-readiness', expectedStatus: 'loaded', observedStatus: 'missing', status: 'invalid' }],
+          },
+        },
+      },
+    },
+  };
+  const diagnostics = collectVisualParityDiagnostics(payload, { threshold: 0.1, gate: true });
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].kind, 'visual_parity_evidence_incomplete');
+  assert.equal(diagnostics[0].loss_class, 'evidence_gap');
+  assert.equal(diagnostics[0].visual_parity_gate, true);
 });
 
 test('(fair) dimension-dominated raw ratio does NOT gate when the overlap is faithful', () => {
