@@ -266,6 +266,57 @@ $payload = array(
 );
 
 $assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $payload ), 'canonical-payload-validates-all-core-metadata-fields' );
+$dialog_payload = array(
+	'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+	'site_slug' => 'captured-dialog-site',
+	'site_name' => 'Captured Dialog Site',
+	'blocks'    => array(
+		array(
+			'name'       => 'captured-dialog',
+			'block_json' => array(
+				'apiVersion'   => 3,
+				'name'         => 'ssi-captured-dialog-site/captured-dialog',
+				'title'        => 'Dialog',
+				'category'     => 'widgets',
+				'editorScript' => 'file:./index.js',
+				'viewScript'   => 'file:./view.js',
+				'attributes'   => array(
+					'dialogId'       => array( 'type' => 'string', 'default' => '' ),
+					'triggerIds'     => array( 'type' => 'array', 'default' => array(), 'items' => array( 'type' => 'string' ) ),
+					'addCloseButton' => array( 'type' => 'boolean', 'default' => false ),
+				),
+				'supports'     => array( 'html' => false, 'customClassName' => false ),
+			),
+			'view_js'   => '(function(){document.querySelectorAll("dialog[data-blocks-engine-triggers]").forEach(function(dialog){dialog.showModal();});})();',
+			'assets'    => array(
+				'index.js' => '(function(blocks,blockEditor,element){blocks.registerBlockType("ssi-captured-dialog-site/captured-dialog",{edit:function(){return element.createElement(blockEditor.InnerBlocks);},save:function(){return element.createElement("dialog",null,element.createElement(blockEditor.InnerBlocks.Content));}});})(window.wp.blocks,window.wp.blockEditor,window.wp.element);',
+			),
+			'script_dependencies' => array(
+				'index.js' => array( 'wp-blocks', 'wp-block-editor', 'wp-element' ),
+			),
+		),
+	),
+	'preserved_js' => array(),
+);
+$dialog_validation = Static_Site_Importer_Companion_Plugin::validate_payload( $dialog_payload );
+$assert( true === $dialog_validation, 'captured-dialog-payload-validates', is_wp_error( $dialog_validation ) ? $dialog_validation->get_error_message() : '' );
+$dialog_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $dialog_payload );
+$assert( is_array( $dialog_descriptor ), 'captured-dialog-payload-scaffolds' );
+if ( is_array( $dialog_descriptor ) ) {
+	$dialog_files = $dialog_descriptor['files'] ?? array();
+	$dialog_block_json = (string) ( $dialog_files['ssi-captured-dialog-site/blocks/captured-dialog/block.json'] ?? '' );
+	$assert( str_contains( $dialog_block_json, '"viewScript": "file:./view.js"' ), 'captured-dialog-metadata-retains-scoped-view-script' );
+	$assert( str_contains( (string) ( $dialog_files['ssi-captured-dialog-site/blocks/captured-dialog/view.js'] ?? '' ), 'showModal' ), 'captured-dialog-scaffold-writes-native-dialog-behavior' );
+	$assert( str_contains( (string) ( $dialog_files['ssi-captured-dialog-site/blocks/captured-dialog/index.js'] ?? '' ), 'InnerBlocks' ), 'captured-dialog-scaffold-writes-editable-inner-block-editor' );
+}
+$conflicting_dialog_payload = $dialog_payload;
+$conflicting_dialog_payload['blocks'][0]['assets']['view.js'] = 'window.conflict = true;';
+$conflicting_dialog_validation = Static_Site_Importer_Companion_Plugin::validate_payload( $conflicting_dialog_payload );
+$assert( is_wp_error( $conflicting_dialog_validation ) && 'static_site_importer_companion_plugin_view_script_conflict' === $conflicting_dialog_validation->get_error_code(), 'captured-dialog-conflicting-view-script-rejected' );
+$unsafe_dialog_payload = $dialog_payload;
+$unsafe_dialog_payload['blocks'][0]['view_js'] = '<?php system( "id" );';
+$unsafe_dialog_validation = Static_Site_Importer_Companion_Plugin::validate_payload( $unsafe_dialog_payload );
+$assert( is_wp_error( $unsafe_dialog_validation ) && 'static_site_importer_companion_plugin_view_script_invalid' === $unsafe_dialog_validation->get_error_code(), 'captured-dialog-server-code-view-script-rejected' );
 $missing_metadata_asset = $payload;
 unset( $missing_metadata_asset['blocks'][0]['assets']['view-module.js'] );
 $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $missing_metadata_asset ) ), 'array-metadata-file-reference-requires-declared-asset' );
