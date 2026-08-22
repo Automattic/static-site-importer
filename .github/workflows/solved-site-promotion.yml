@@ -114,7 +114,7 @@ jobs:
           TRANSFORMER_VERSION=$(composer show automattic/blocks-engine-php-transformer --format=json | php -r "\$package = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo ltrim(\$package['versions'][0], 'v');")
           composer config --json repositories.blocks-engine-candidate "{\"type\":\"path\",\"url\":\"../blocks-engine/php-transformer\",\"options\":{\"symlink\":false,\"versions\":{\"automattic/blocks-engine-php-transformer\":\"${TRANSFORMER_VERSION}\"}}}"
           composer update automattic/blocks-engine-php-transformer --with-dependencies --no-interaction --prefer-dist --no-progress
-          TRANSFORMER_PATH=$(composer show automattic/blocks-engine-php-transformer --path)
+          TRANSFORMER_PATH=$(composer show automattic/blocks-engine-php-transformer --path | php -r 'echo preg_replace("/^\\S+\\s+/", "", trim( stream_get_contents( STDIN ) ) );')
           diff --brief --recursive --exclude=.git "$GITHUB_WORKSPACE/blocks-engine/php-transformer" "$TRANSFORMER_PATH"
 
       - name: Install pinned Homeboy and Extensions
