@@ -2366,4 +2366,20 @@ $streamed_hash = $plan_hash_method->invoke( null, $hash_plan );
 $GLOBALS['ssi_plan_count_aggregate_encodes'] = false;
 $assert( $legacy_hash === $streamed_hash && 0 === $GLOBALS['ssi_plan_json_array_calls'], 'streamed plan hashing preserves canonical JSON SHA-256 identity without materializing the full plan JSON' );
 
+$root_media_result = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'website/index.html',
+		'files'      => array(
+			'website/index.html'        => '<main><img src="/media/example.jpg?size=large#hero" srcset="/media/example.jpg?size=small#hero 1x, https://cdn.example.test/example.jpg 2x, data:image/png;base64,AA== 3x"><div style="background-image:url(/media/example.jpg?size=large#hero)"></div></main>',
+			'website/media/example.jpg' => 'fixture image',
+		),
+	)
+)->toArray();
+$root_media_plan    = $root_media_result['source_reports']['wordpress_site_plan'];
+$root_media_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $root_media_plan, array( 'slug' => 'root-media-plan' ) );
+$root_media_page_id = (int) ( $root_media_receipt['completed']['pages']['website/index.html'] ?? 0 );
+$root_media_content = stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $root_media_page_id ]['post_content'] ?? '' ) );
+$root_media_url     = 'https://example.test/wp-content/themes/root-media-plan/assets/website/media/example.jpg';
+$assert( 'completed' === $root_media_receipt['status'] && str_contains( $root_media_content, $root_media_url . '?size=large#hero' ) && str_contains( $root_media_content, 'srcset="' . $root_media_url . '?size=small#hero 1x, https://cdn.example.test/example.jpg 2x, data:image/png;base64,AA== 3x"' ) && str_contains( $root_media_content, '"url":"' . $root_media_url . '"' ) && ! str_contains( $root_media_content, 'src="/media/example.jpg' ), 'root-relative captured media resolves through the canonical theme asset map while preserving query fragments, CSS references, and srcset external/data candidates' );
+
 echo "WordPress site plan materializer smoke passed.\n";
