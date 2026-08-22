@@ -315,6 +315,25 @@ $plan['plan_identity'] = array(
 	'hash'   => hash( 'sha256', 'released-transformer-plan-identity-fixture' ),
 );
 
+// The standalone harness loads Core's parser, not its init registrations.
+$register_document_blocks = static function ( array $blocks ) use ( &$register_document_blocks ): void {
+	foreach ( $blocks as $block ) {
+		if ( ! is_array( $block ) ) {
+			continue;
+		}
+		$name = $block['blockName'] ?? null;
+		if ( is_string( $name ) && '' !== $name && ! WP_Block_Type_Registry::get_instance()->is_registered( $name ) ) {
+			WP_Block_Type_Registry::get_instance()->register( $name, array() );
+		}
+		if ( isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
+			$register_document_blocks( $block['innerBlocks'] );
+		}
+	}
+};
+foreach ( $plan['pages'] as $page ) {
+	$register_document_blocks( parse_blocks( (string) ( $page['canonical_block_markup'] ?? '' ) ) );
+}
+
 $plan_hash = static function ( array $candidate ): string {
 	unset( $candidate['quality']['editability_report'], $candidate['quality']['editability_report_plan_hash'], $candidate['quality']['editability_report_required'] );
 	$hash = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'hash' );
@@ -1465,6 +1484,10 @@ $binding_artifact    = array(
 	'files'      => array( 'index.html' => '<main><h1>Binding</h1><p>Replace me</p></main>' ),
 );
 $binding_plan        = ( new ArtifactCompiler() )->compile( $binding_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+foreach ( $binding_plan['pages'] as $page ) {
+	$register_document_blocks( parse_blocks( (string) ( $page['canonical_block_markup'] ?? '' ) ) );
+}
+WP_Block_Type_Registry::get_instance()->register( 'core/shortcode', array() );
 $binding_plan['plan_identity'] = array(
 	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
 	'hash'   => hash( 'sha256', 'released-transformer-binding-plan-identity-fixture' ),
@@ -1640,7 +1663,7 @@ $contains_block = static function ( array $blocks, string $block_name ) use ( &$
 	return false;
 };
 $assert( null !== WP_Block_Type_Registry::get_instance()->get_registered( $provider_block_name ), 'registered provider block is available to the materialization runtime' );
-$assert( 'completed' === $provider_binding_receipt['status'], 'registered provider blocks pass the generic Core admission boundary without an importer allowlist' );
+$assert( 'completed' === $provider_binding_receipt['status'], 'registered provider blocks pass editor admission without an importer allowlist' );
 $assert( $contains_block( parse_blocks( $provider_markup ), $provider_block_name ), 'registered provider block survives the persisted document round-trip' );
 $unknown_block_binding                            = $provider_binding;
 $unknown_block_binding['reconciliation_identity'] = hash( 'sha256', 'unknown-provider-binding' );
@@ -1652,8 +1675,23 @@ $unknown_block_receipt                            = Static_Site_Importer_WordPre
 		'runtime_entity_bindings' => array( $unknown_block_binding ),
 	)
 );
-$unknown_markup = $unknown_block_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '';
-$assert( 'completed' === $unknown_block_receipt['status'] && $contains_block( parse_blocks( $unknown_markup ), 'future-provider/control' ), 'unknown block names pass through the generic Core admission boundary unchanged' );
+$unknown_diagnostic = $unknown_block_receipt['diagnostics'][0] ?? array();
+$assert( 'rejected' === $unknown_block_receipt['status'] && 'unsupported_persisted_block' === ( $unknown_block_receipt['errors'][0]['code'] ?? '' ) && 'future-provider/control' === ( $unknown_diagnostic['block_name'] ?? '' ) && 'unsupported' === ( $unknown_diagnostic['block_classification'] ?? '' ), 'undeclared unknown blocks fail editor admission with bounded diagnostics' );
+WP_Block_Type_Registry::get_instance()->register( 'example/companion-control', array() );
+$GLOBALS['static_site_importer_companion_block_owners']['example/companion-control'] = array( 'plugin_file' => 'ssi-example/ssi-example.php' );
+$companion_binding = $provider_binding;
+$companion_binding['reconciliation_identity'] = hash( 'sha256', 'declared-companion-binding' );
+$companion_binding['replacement_block_markup'] = '<!-- wp:example/companion-control --><div>Companion control</div><!-- /wp:example/companion-control -->';
+$companion_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $binding_plan, array( 'slug' => 'declared-companion-binding-plan', 'runtime_entity_bindings' => array( $companion_binding ) ) );
+$assert( 'completed' === $companion_receipt['status'], 'declared companion blocks pass after registration' );
+WP_Block_Type_Registry::get_instance()->register( 'example/restricted-parent', array( 'allowed_blocks' => array( 'core/paragraph' ) ) );
+WP_Block_Type_Registry::get_instance()->register( 'example/restricted-child', array( 'parent' => array( 'example/other-parent' ) ) );
+$hierarchy_binding = $provider_binding;
+$hierarchy_binding['reconciliation_identity'] = hash( 'sha256', 'hierarchy-diagnostic-binding' );
+$hierarchy_binding['replacement_block_markup'] = '<!-- wp:example/restricted-parent --><!-- wp:example/restricted-child --><div>Restricted child</div><!-- /wp:example/restricted-child --><!-- /wp:example/restricted-parent -->';
+$hierarchy_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $binding_plan, array( 'slug' => 'hierarchy-diagnostic-binding-plan', 'runtime_entity_bindings' => array( $hierarchy_binding ) ) );
+$hierarchy_reasons = array_column( $hierarchy_receipt['diagnostics'] ?? array(), 'reason_code' );
+$assert( 'completed' === $hierarchy_receipt['status'] && in_array( 'block_child_not_allowed', $hierarchy_reasons, true ) && in_array( 'block_parent_requirement_not_met', $hierarchy_reasons, true ), 'registered blocks retain parent and allowedBlocks editor-quality diagnostics' );
 $invalid_binding         = array(
 	'schema'                   => 'static-site-importer/runtime-entity-binding/v1',
 	'source_path'              => 'index.html',
@@ -1691,6 +1729,7 @@ $form_fallback                                    = array(
 );
 $form_fallback_identity                           = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $form_fallback );
 $form_fallback_hash                               = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $form_fallback );
+WP_Block_Type_Registry::get_instance()->register( 'jetpack/contact-form', array() );
 $form_binding                                     = array(
 	'schema'                           => 'static-site-importer/runtime-entity-binding/v1',
 	'source_path'                      => 'index.html',
@@ -2457,6 +2496,13 @@ $child_plan                     = ( new ArtifactCompiler() )->compile(
 		),
 	)
 )->toArray()['source_reports']['wordpress_site_plan'];
+$register_plan_blocks = static function ( array $candidate ) use ( $register_document_blocks ): void {
+	foreach ( $candidate['pages'] as $page ) {
+		$register_document_blocks( parse_blocks( (string) ( $page['canonical_block_markup'] ?? '' ) ) );
+	}
+};
+$register_plan_blocks( $parent_plan );
+$register_plan_blocks( $child_plan );
 $child_plan['plan_identity'] = array(
 	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
 	'hash'   => hash( 'sha256', 'released-transformer-child-plan-identity-fixture' ),
@@ -2512,6 +2558,7 @@ $route_artifact            = array(
 	),
 );
 $route_plan                = ( new ArtifactCompiler() )->compile( $route_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$register_plan_blocks( $route_plan );
 $route_receipt             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $route_plan, array( 'slug' => 'route-link-plan' ) );
 $route_home                = current( array_filter( $GLOBALS['ssi_plan_posts'], static fn( array $post ): bool => 'index' === ( $post['post_name'] ?? '' ) ) );
 $route_content             = is_array( $route_home ) ? stripslashes( (string) ( $route_home['post_content'] ?? '' ) ) : '';
@@ -2544,6 +2591,7 @@ $root_media_result = ( new ArtifactCompiler() )->compile(
 	)
 )->toArray();
 $root_media_plan    = $root_media_result['source_reports']['wordpress_site_plan'];
+$register_plan_blocks( $root_media_plan );
 $root_media_plan['plan_identity'] = array(
 	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
 	'hash'   => hash( 'sha256', 'released-transformer-root-media-plan-identity-fixture' ),
