@@ -68,6 +68,10 @@ namespace {
 		require_once $parser;
 		require_once $blocks;
 	}
+	if ( ! function_exists( 'serialize_blocks' ) ) {
+		fwrite( STDERR, "SKIP: WordPress block serialization is unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
+		exit( 0 );
+	}
 
 	$GLOBALS['ssi_jetpack_form_blocks_available'] = true;
 	$GLOBALS['ssi_jetpack_registered_form_blocks'] = array(
@@ -644,8 +648,8 @@ namespace {
 			'innerContent' => array( '<p>Email Send</p>' ),
 		),
 	);
-	$core_sensitive_anchor = serialize_blocks( $core_sensitive_blocks );
 	$anchor_serializer     = new ReflectionMethod( 'Static_Site_Importer_Report_Diagnostics', 'serialize_readable_graft_anchor' );
+	$core_sensitive_anchor = serialize_blocks( $core_sensitive_blocks );
 	$assert( $core_sensitive_anchor === $anchor_serializer->invoke( null, $core_sensitive_blocks ), 'graft-anchor-byte-matches-core-for-sensitive-attributes' );
 	$assert( str_contains( $core_sensitive_anchor, '\\u005c' ) && str_contains( $core_sensitive_anchor, '\\u002d\\u002d' ) && str_contains( $core_sensitive_anchor, '\\u003c' ) && str_contains( $core_sensitive_anchor, '\\u003e' ) && str_contains( $core_sensitive_anchor, '\\u0026' ) && str_contains( $core_sensitive_anchor, '\\u0022' ), 'graft-anchor-core-escapes-sensitive-attributes' );
 

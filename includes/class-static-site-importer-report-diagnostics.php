@@ -2269,7 +2269,15 @@ class Static_Site_Importer_Report_Diagnostics {
 			return '';
 		}
 
-		return serialize_blocks( $readable_blocks );
+		/**
+		 * The transformer emits Core's parsed-block shape. This explicit boundary
+		 * preserves the broad diagnostic input type while Core serializes the tree.
+		 *
+		 * @var array<int|string,array{blockName:string|null,attrs:array,innerBlocks:array<array>,innerHTML:string,innerContent:array}> $core_blocks
+		 */
+		$core_blocks = $readable_blocks;
+
+		return serialize_blocks( $core_blocks );
 	}
 
 	/**
