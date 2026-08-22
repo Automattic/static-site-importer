@@ -1072,19 +1072,32 @@ $product_grid_artifact     = array(
 	'files'      => array(
 		'index.html' => '<main><ul class="products"><li><article class="product-card"><h3>Tour Tee</h3><p>Heavy cotton shirt.</p><div class="price">$30</div><button class="add-to-cart">Add to cart</button></article></li><li><article class="product-card"><h3>Signed CD</h3><p>Hand-signed disc.</p><div class="price">$15</div><button class="add-to-cart">Add to cart</button></article></li></ul></main>',
 	),
+	'runtime_declarations' => array(
+		array( 'kind' => 'dependency', 'capability' => 'shop', 'source_path' => 'index.html', 'required_for' => array( 'entity_collection:products' ) ),
+		array(
+			'kind'        => 'entity_collection',
+			'type'        => 'products',
+			'source_path' => 'index.html',
+			'payload'     => array(
+				'schema'   => 'generic/products/v1',
+				'entities' => array(
+					array( 'name' => 'Tour Tee', 'slug' => 'tour-tee', 'regular_price' => '30', 'source_path' => 'index.html', 'selector' => 'ul.products li:nth-child(1)' ),
+					array( 'name' => 'Signed CD', 'slug' => 'signed-cd', 'regular_price' => '15', 'source_path' => 'index.html', 'selector' => 'ul.products li:nth-child(2)' ),
+				),
+			),
+		),
+	),
 );
 $product_grid_plan         = ( new ArtifactCompiler() )->compile( $product_grid_artifact )->toArray()['source_reports']['wordpress_site_plan'];
-$bridge_product_grid       = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'bridge_product_grid_findings_to_runtime_declarations' );
-$bridged_product_grid_plan = $bridge_product_grid->invoke( null, $product_grid_plan );
-$bridged_declarations      = $bridged_product_grid_plan['runtime_declarations'] ?? array();
-$assert( 2 === count( $bridged_declarations ) && 'shop' === ( $bridged_declarations[0]['capability'] ?? '' ) && 'products' === ( $bridged_declarations[1]['type'] ?? '' ), 'active Blocks Engine product-grid findings bridge into explicit v2 commerce declarations' );
-$assert( true === in_array( 'entity_collection:products', $bridged_declarations[0]['required_for'] ?? array(), true ), 'bridged product entities retain the required commerce dependency relationship' );
-$assert( array( 'tour-tee', 'signed-cd' ) === array_column( $bridged_declarations[1]['payload']['entities'] ?? array(), 'slug' ), 'bridge preserves product-grid evidence as normalized Woo entity rows' );
-$bridged_products  = $bridged_declarations[1]['payload']['entities'] ?? array();
-$bridged_selectors = array_column( $bridged_products, 'selector' );
-$assert( 2 === count( array_unique( $bridged_selectors ) ) && 2 === count( array_filter( $bridged_selectors, static fn( $selector ): bool => is_string( $selector ) && '' !== $selector ) ) && 2 === count( array_filter( array_column( $bridged_products, 'source_path' ), static fn( $source ): bool => is_string( $source ) && '' !== $source ) ), 'actual product-grid bridge source_selectors normalize into deterministic exact classic leaf source identities' );
-$bridged_lifecycle = ( new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'prepare_wordpress_site_plan_lifecycle' ) )->invoke( null, $bridged_product_grid_plan, array() );
-$assert( 'runtime_declarations' === ( $bridged_lifecycle['status'] ?? '' ) && true === ( reset( $bridged_lifecycle['entities'] )['required'] ?? false ), 'bridged product entities enter the required canonical seeding lifecycle' );
+$declared_products = $product_grid_plan['runtime_declarations'] ?? array();
+$assert( 2 === count( $declared_products ) && 'shop' === ( $declared_products[0]['capability'] ?? '' ) && 'products' === ( $declared_products[1]['type'] ?? '' ), 'canonical plans carry explicit typed product declarations without diagnostic mutation' );
+$assert( true === in_array( 'entity_collection:products', $declared_products[0]['required_for'] ?? array(), true ), 'declared product entities retain the required capability relationship' );
+$assert( array( 'tour-tee', 'signed-cd' ) === array_column( $declared_products[1]['payload']['entities'] ?? array(), 'slug' ), 'canonical declarations retain product rows unchanged' );
+$declared_entities  = $declared_products[1]['payload']['entities'] ?? array();
+$declared_selectors = array_column( $declared_entities, 'selector' );
+$assert( 2 === count( array_unique( $declared_selectors ) ) && 2 === count( array_filter( $declared_selectors, static fn( $selector ): bool => is_string( $selector ) && '' !== $selector ) ) && 2 === count( array_filter( array_column( $declared_entities, 'source_path' ), static fn( $source ): bool => is_string( $source ) && '' !== $source ) ), 'canonical declarations retain compiler-owned exact classic source identities' );
+$declared_lifecycle = ( new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'prepare_wordpress_site_plan_lifecycle' ) )->invoke( null, $product_grid_plan, array() );
+$assert( 'runtime_declarations' === ( $declared_lifecycle['status'] ?? '' ) && true === ( reset( $declared_lifecycle['entities'] )['required'] ?? false ), 'declared product entities enter the generic runtime lifecycle' );
 
 $entity_artifact                         = $artifact;
 $entity_search                           = '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button {"tagName":"button","text":"Add"} --><div class="wp-block-button"><button type="button" class="wp-block-button__link wp-element-button">Add</button></div><!-- /wp:button --></div><!-- /wp:buttons -->';
