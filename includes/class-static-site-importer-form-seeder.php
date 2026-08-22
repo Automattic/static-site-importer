@@ -1007,7 +1007,7 @@ class Static_Site_Importer_Form_Seeder {
 	 * @param string                          $wrapper     Persisted inner-block wrapper element.
 	 * @return string
 	 */
-	private static function serialize_block( string $name, array $attrs, array $inner_blocks = array(), string $wrapper = '', string $content = '' ): string {
+	private static function serialize_block_markup( string $name, array $attrs, array $inner_blocks = array(), string $wrapper = '', string $content = '' ): string {
 		$comment_name = str_starts_with( $name, 'core/' ) ? substr( $name, 5 ) : $name;
 		$attr_json    = '';
 		if ( ! empty( $attrs ) ) {
@@ -1027,7 +1027,7 @@ class Static_Site_Importer_Form_Seeder {
 			if ( empty( $block['name'] ) ) {
 				continue;
 			}
-			$inner[] = self::serialize_block(
+			$inner[] = self::serialize_block_markup(
 				(string) $block['name'],
 				isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array(),
 				isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array(),
@@ -1064,6 +1064,78 @@ class Static_Site_Importer_Form_Seeder {
 		}
 
 		return '<!-- wp:' . $comment_name . $attr_json . ' -->' . "\n" . $inner_markup . "\n" . '<!-- /wp:' . $comment_name . ' -->';
+	}
+
+	/** Serialize a generated block through WordPress's canonical block serializer. */
+	private static function serialize_block( string $name, array $attrs, array $inner_blocks = array(), string $wrapper = '', string $content = '' ): string {
+		return serialize_block( self::parsed_block( $name, $attrs, $inner_blocks, $wrapper, $content ) );
+	}
+
+	/** Build a parsed block, keeping Jetpack's required saved markup in innerContent. */
+	private static function parsed_block( string $name, array $attrs, array $inner_blocks = array(), string $wrapper = '', string $content = '' ): array {
+		$children = array();
+		foreach ( $inner_blocks as $block ) {
+			if ( ! empty( $block['name'] ) ) {
+				$children[] = self::parsed_block(
+					(string) $block['name'],
+					isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array(),
+					isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array(),
+					isset( $block['wrapper'] ) && is_string( $block['wrapper'] ) ? $block['wrapper'] : '',
+					isset( $block['content'] ) && is_string( $block['content'] ) ? $block['content'] : ''
+				);
+			}
+		}
+
+		$prefix = '';
+		$suffix = '';
+		if ( 'jetpack/contact-form' === $name ) {
+			$classes = 'wp-block-jetpack-contact-form';
+			if ( isset( $attrs['className'] ) && is_scalar( $attrs['className'] ) && '' !== trim( (string) $attrs['className'] ) ) {
+				$classes .= ' ' . trim( (string) $attrs['className'] );
+			}
+			$prefix = "\n<div class=\"" . self::escape_attribute( $classes ) . '">';
+			$suffix = "</div>\n";
+		} elseif ( 'submit' === $wrapper ) {
+			$classes = trim( 'wp-block-button ' . (string) ( $attrs['className'] ?? '' ) );
+			$prefix  = "\n<div class=\"" . self::escape_attribute( $classes ) . '"><button type="submit" class="wp-block-button__link wp-element-button">' . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . "</button></div>\n";
+		} elseif ( 'heading' === $wrapper ) {
+			$level  = min( 6, max( 1, (int) ( $attrs['level'] ?? 2 ) ) );
+			$prefix = "\n<h" . $level . ' class="wp-block-heading">' . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</h' . $level . ">\n";
+		} elseif ( 'paragraph' === $wrapper ) {
+			$prefix = "\n<p>" . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . "</p>\n";
+		} elseif ( 'group' === $wrapper ) {
+			$classes = 'wp-block-group' . ( ! empty( $attrs['className'] ) ? ' ' . $attrs['className'] : '' );
+			if ( 'flex' === ( $attrs['layout']['type'] ?? '' ) ) {
+				$classes .= ' is-layout-flex';
+			}
+			$id     = ! empty( $attrs['anchor'] ) ? ' id="' . self::escape_attribute( (string) $attrs['anchor'] ) . '"' : '';
+			$tag    = ! empty( $attrs['tagName'] ) ? (string) $attrs['tagName'] : 'div';
+			$prefix = "\n<" . $tag . $id . ' class="' . self::escape_attribute( $classes ) . '">';
+			$suffix = '</' . $tag . ">\n";
+		} elseif ( in_array( $wrapper, array( 'div', 'ul' ), true ) ) {
+			$prefix = "\n<" . $wrapper . '>';
+			$suffix = '</' . $wrapper . ">\n";
+		}
+
+		$inner_content = array();
+		if ( '' !== $prefix || '' !== $suffix || ! empty( $children ) ) {
+			$inner_content[] = $prefix;
+			foreach ( $children as $index => $_child ) {
+				$inner_content[] = null;
+				if ( $index < count( $children ) - 1 ) {
+					$inner_content[] = "\n";
+				}
+			}
+			$inner_content[] = $suffix;
+		}
+
+		return array(
+			'blockName'    => $name,
+			'attrs'        => $attrs,
+			'innerBlocks'  => $children,
+			'innerHTML'    => implode( '', array_filter( $inner_content, 'is_string' ) ),
+			'innerContent' => $inner_content,
+		);
 	}
 
 	/**
