@@ -391,8 +391,8 @@ class Static_Site_Importer_URL_Fetcher {
 			return;
 		}
 		if ( $handle instanceof Static_Site_Importer_URL_Fetcher_Native_Handle && null !== $handle->multi && null !== $handle->curl ) {
-			curl_multi_remove_handle( $handle->multi, $handle->curl );
-			curl_multi_close( $handle->multi );
+			curl_multi_remove_handle( $handle->multi, $handle->curl ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_multi_remove_handle -- Tears down the curl multi handle behind an IP-pinned request.
+			curl_multi_close( $handle->multi ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_multi_close -- Releases the curl multi transport after an IP-pinned request.
 			$handle->curl  = null;
 			$handle->multi = null;
 			return;
@@ -445,8 +445,8 @@ class Static_Site_Importer_URL_Fetcher {
 		$handle->options  = $options;
 		$handle->started  = microtime( true );
 		$handle->ip_index = 0;
-		$handle->multi    = curl_multi_init();
-		$handle->curl     = curl_init();
+		$handle->multi    = curl_multi_init(); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_multi_init -- Initializes the curl multi transport for an IP-pinned request.
+		$handle->curl     = curl_init(); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_init -- Initializes the curl handle for an IP-pinned request.
 		$ip               = $target['ips'][0];
 		$host             = $target['host'];
 		$host_header      = $host . ( ( 'https' === $target['scheme'] ? 443 : 80 ) === $target['port'] ? '' : ':' . $target['port'] );
@@ -492,8 +492,8 @@ class Static_Site_Importer_URL_Fetcher {
 		if ( is_readable( $ca_bundle ) ) {
 			$curl_options[ CURLOPT_CAINFO ] = $ca_bundle;
 		}
-		curl_setopt_array( $handle->curl, $curl_options );
-		curl_multi_add_handle( $handle->multi, $handle->curl );
+		curl_setopt_array( $handle->curl, $curl_options ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt_array -- Configures the IP-pinned request without changing Host or SNI.
+		curl_multi_add_handle( $handle->multi, $handle->curl ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_multi_add_handle -- Registers the IP-pinned request with the curl multi transport.
 		return $handle;
 	}
 
@@ -590,13 +590,13 @@ class Static_Site_Importer_URL_Fetcher {
 			return new WP_Error( 'static_site_importer_url_deadline_exhausted', 'The URL request deadline was exhausted.' );
 		}
 		do {
-			$status = curl_multi_exec( $handle->multi, $running );
+			$status = curl_multi_exec( $handle->multi, $running ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_multi_exec -- Advances the nonblocking IP-pinned request without blocking.
 		} while ( CURLM_CALL_MULTI_PERFORM === $status );
 		if ( CURLM_OK !== $status ) {
 			self::cancel_transport( null, $handle, 'curl_multi_failed' );
 			return new WP_Error( 'static_site_importer_url_connect_failed', 'Could not progress the URL request.' );
 		}
-		$info = curl_multi_info_read( $handle->multi );
+		$info = curl_multi_info_read( $handle->multi ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_multi_info_read -- Collects the completed IP-pinned request from the curl multi transport.
 		if ( false === $info ) {
 			return null;
 		}
@@ -606,7 +606,7 @@ class Static_Site_Importer_URL_Fetcher {
 			return new WP_Error( 'static_site_importer_url_too_large', 'The URL response exceeded the maximum allowed size.' );
 		}
 		if ( CURLE_OK !== $result ) {
-			$error              = curl_error( $handle->curl );
+			$error              = curl_error( $handle->curl ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_error -- Reads the transport error for a reason-coded URL failure.
 			$deadline_exhausted = ! empty( $handle->options['deadline_limited'] );
 			if ( self::native_retry( $handle ) ) {
 				return null;
