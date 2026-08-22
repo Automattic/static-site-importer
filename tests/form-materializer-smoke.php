@@ -628,6 +628,27 @@ namespace {
 	$assert( str_contains( (string) $mapped_source_contents['posts/page-home.post_content'], 'wp:jetpack/contact-form' ), 'graft-source-document-key-contact-form' );
 	$assert( 'posts/page-home.post_content' === ( $mapped_source_report['diagnostics'][0]['graft_source_path'] ?? '' ), 'graft-source-path-recorded' );
 
+	// Graft anchors delegate every delimiter-sensitive byte to Core serialization.
+	$core_sensitive_blocks = array(
+		array(
+			'blockName'    => 'core/paragraph',
+			'attrs'        => array(
+				'backslash' => 'C:\\forms\\contact',
+				'delimiter' => 'before -- after',
+				'angle'     => '<form>',
+				'ampersand' => 'forms & support',
+				'quote'     => 'She said "submit"',
+			),
+			'innerBlocks'  => array(),
+			'innerHTML'    => '<p>Email Send</p>',
+			'innerContent' => array( '<p>Email Send</p>' ),
+		),
+	);
+	$core_sensitive_anchor = serialize_blocks( $core_sensitive_blocks );
+	$anchor_serializer     = new ReflectionMethod( 'Static_Site_Importer_Report_Diagnostics', 'serialize_readable_graft_anchor' );
+	$assert( $core_sensitive_anchor === $anchor_serializer->invoke( null, $core_sensitive_blocks ), 'graft-anchor-byte-matches-core-for-sensitive-attributes' );
+	$assert( str_contains( $core_sensitive_anchor, '\\u005c' ) && str_contains( $core_sensitive_anchor, '\\u002d\\u002d' ) && str_contains( $core_sensitive_anchor, '\\u003c' ) && str_contains( $core_sensitive_anchor, '\\u003e' ) && str_contains( $core_sensitive_anchor, '\\u0026' ) && str_contains( $core_sensitive_anchor, '\\u0022' ), 'graft-anchor-core-escapes-sensitive-attributes' );
+
 	// --- Generated core/html form diagnostics materialize per page ---------------
 	$core_html_form = '<form class="newsletter-form" action="#" method="post" novalidate><input type="email" name="email" placeholder="your@email.com" autocomplete="email" required aria-label="Email address"><button type="submit">Subscribe</button></form>';
 	$core_html_block = static function ( string $html ): string {

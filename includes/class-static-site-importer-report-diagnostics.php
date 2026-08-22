@@ -2040,7 +2040,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		$readable = isset( $finding['readable_blocks'] ) && is_array( $finding['readable_blocks'] ) ? $finding['readable_blocks'] : array();
-		$region   = self::serialize_readable_form_blocks( $readable );
+		$region   = self::serialize_readable_graft_anchor( $readable );
 		if ( '' === $region ) {
 			$core_html_graft = self::graft_form_block_into_core_html_fallback( $finding, $block_markup, $source_path, $page_contents );
 			return $core_html_graft['grafted'] ? $core_html_graft : $unanchorable( 'no_readable_fallback_blocks' );
@@ -2256,103 +2256,20 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
-	 * Serialize a transformer-style readable_blocks tree to comment-delimited
-	 * block markup.
+	 * Serialize a transformer-readable anchor with the WordPress runtime.
 	 *
-	 * Mirrors Automattic\BlocksEngine\PhpTransformer\WordPress\Runtime block
-	 * serialization so the result matches the exact fallback region the
-	 * transformer emitted into serialized_blocks (and thus into post_content).
+	 * Graft anchors compare byte-for-byte with post_content, so Core owns all
+	 * Gutenberg delimiter and attribute escaping.
 	 *
 	 * @param array<int,array<string,mixed>> $readable_blocks Readable fallback block tree.
 	 * @return string
 	 */
-	private static function serialize_readable_form_blocks( array $readable_blocks ): string {
-		$serialized = '';
-		foreach ( array_values( $readable_blocks ) as $block ) {
-			$serialized .= self::serialize_readable_form_block( $block );
-		}
-		return $serialized;
-	}
-
-	/**
-	 * Serialize one transformer-style block node to comment-delimited markup.
-	 *
-	 * @param array<string,mixed> $block Block node (blockName/attrs/innerBlocks/innerHTML/innerContent).
-	 * @return string
-	 */
-	private static function serialize_readable_form_block( array $block ): string {
-		$content = self::serialize_readable_form_inner_content( $block );
-		$name    = isset( $block['blockName'] ) && is_string( $block['blockName'] ) ? $block['blockName'] : '';
-		if ( '' === $name ) {
-			return $content;
-		}
-
-		$name  = str_starts_with( $name, 'core/' ) ? substr( $name, 5 ) : $name;
-		$attrs = self::serialize_readable_form_block_attributes( isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array() );
-		if ( '' === $content ) {
-			return '<!-- wp:' . $name . $attrs . ' /-->';
-		}
-
-		return '<!-- wp:' . $name . $attrs . ' -->' . $content . '<!-- /wp:' . $name . ' -->';
-	}
-
-	/**
-	 * Serialize a transformer-style block's inner content.
-	 *
-	 * @param array<string,mixed> $block Block node.
-	 * @return string
-	 */
-	private static function serialize_readable_form_inner_content( array $block ): string {
-		$inner_blocks  = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? array_values( array_filter( $block['innerBlocks'], 'is_array' ) ) : array();
-		$inner_content = $block['innerContent'] ?? null;
-
-		if ( ! is_array( $inner_content ) ) {
-			$serialized = '';
-			foreach ( $inner_blocks as $inner_block ) {
-				$serialized .= self::serialize_readable_form_block( $inner_block );
-			}
-			return $serialized . ( isset( $block['innerHTML'] ) && is_string( $block['innerHTML'] ) ? $block['innerHTML'] : '' );
-		}
-
-		$serialized = '';
-		$index      = 0;
-		foreach ( $inner_content as $part ) {
-			if ( null === $part ) {
-				$inner_block = $inner_blocks[ $index ] ?? null;
-				$serialized .= is_array( $inner_block ) ? self::serialize_readable_form_block( $inner_block ) : '';
-				++$index;
-				continue;
-			}
-			$serialized .= (string) $part;
-		}
-
-		return $serialized;
-	}
-
-	/**
-	 * Serialize block attributes for a comment delimiter, matching WordPress core.
-	 *
-	 * @param array<string,mixed> $attrs Block attributes.
-	 * @return string
-	 */
-	private static function serialize_readable_form_block_attributes( array $attrs ): string {
-		if ( array() === $attrs ) {
+	private static function serialize_readable_graft_anchor( array $readable_blocks ): string {
+		if ( ! function_exists( 'serialize_blocks' ) ) {
 			return '';
 		}
 
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Fallback only for non-WordPress smoke tests; WordPress runtimes use wp_json_encode().
-		$encoded = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) : json_encode( $attrs, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
-		if ( ! is_string( $encoded ) ) {
-			return '';
-		}
-
-		$encoded = preg_replace( '/--/', '\\u002d\\u002d', $encoded ) ?? $encoded;
-		$encoded = preg_replace( '/</', '\\u003c', $encoded ) ?? $encoded;
-		$encoded = preg_replace( '/>/', '\\u003e', $encoded ) ?? $encoded;
-		$encoded = preg_replace( '/&/', '\\u0026', $encoded ) ?? $encoded;
-		$encoded = preg_replace( '/\\\\"/', '\\u0022', $encoded ) ?? $encoded;
-
-		return ' ' . $encoded;
+		return serialize_blocks( $readable_blocks );
 	}
 
 	/**
@@ -2522,7 +2439,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		$readable = isset( $finding['readable_blocks'] ) && is_array( $finding['readable_blocks'] ) ? $finding['readable_blocks'] : array();
-		$region   = self::serialize_readable_form_blocks( $readable );
+		$region   = self::serialize_readable_graft_anchor( $readable );
 		if ( '' === $region ) {
 			return $unanchorable( 'no_readable_fallback_blocks' );
 		}
