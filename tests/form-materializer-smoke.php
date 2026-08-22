@@ -918,7 +918,7 @@ namespace {
 		$dialog_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/contact-dialog.html' );
 		$dialog_report['diagnostics'][] = $build_form_diagnostic( $single_fallback, 'website/contact-dialog.html' );
 		$dialog_contents                = array(
-			'website/contact-dialog.html' => '<!-- wp:ssi-example/captured-dialog {"dialogId":"contact-dialog","triggerId":"contact-trigger"} --><dialog id="contact-dialog" data-blocks-engine-trigger="contact-trigger">' . $single_serialized . '</dialog><!-- /wp:ssi-example/captured-dialog -->',
+			'website/contact-dialog.html' => '<!-- wp:ssi-example/captured-dialog {"dialogId":"contact-dialog","triggerIds":["contact-trigger"]} --><dialog id="contact-dialog" data-blocks-engine-triggers="contact-trigger">' . $single_serialized . '</dialog><!-- /wp:ssi-example/captured-dialog -->',
 		);
 		$dialog_seeding = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $dialog_report, array(), $dialog_contents );
 		$dialog_grafted = (string) ( $dialog_contents['website/contact-dialog.html'] ?? '' );

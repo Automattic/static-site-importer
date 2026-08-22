@@ -282,12 +282,12 @@ $dialog_payload = array(
 				'viewScript'   => 'file:./view.js',
 				'attributes'   => array(
 					'dialogId'       => array( 'type' => 'string', 'default' => '' ),
-					'triggerId'      => array( 'type' => 'string', 'default' => '' ),
+					'triggerIds'     => array( 'type' => 'array', 'default' => array(), 'items' => array( 'type' => 'string' ) ),
 					'addCloseButton' => array( 'type' => 'boolean', 'default' => false ),
 				),
 				'supports'     => array( 'html' => false, 'customClassName' => false ),
 			),
-			'view_js'   => '(function(){document.querySelectorAll("dialog[data-blocks-engine-trigger]").forEach(function(dialog){var trigger=document.getElementById(dialog.getAttribute("data-blocks-engine-trigger"));if(trigger)trigger.addEventListener("click",function(){dialog.showModal();});});})();',
+			'view_js'   => '(function(){document.querySelectorAll("dialog[data-blocks-engine-triggers]").forEach(function(dialog){dialog.showModal();});})();',
 			'assets'    => array(
 				'index.js' => '(function(blocks,blockEditor,element){blocks.registerBlockType("ssi-captured-dialog-site/captured-dialog",{edit:function(){return element.createElement(blockEditor.InnerBlocks);},save:function(){return element.createElement("dialog",null,element.createElement(blockEditor.InnerBlocks.Content));}});})(window.wp.blocks,window.wp.blockEditor,window.wp.element);',
 			),
