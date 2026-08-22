@@ -146,7 +146,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			$state['base_resolved_hash'] = self::hash( $resolved );
 			$state['resolved']           = $resolved;
-			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'] );
+			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
+			self::validate_materialized_block_documents( $state['resolved'], $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
 			$state['theme_dir'] = $theme_dir;
 			$state['theme']     = array(
 				'slug' => $slug,
@@ -546,7 +547,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( ( $prepared['theme']['dir'] ?? null ) !== $theme_dir || ( $prepared['theme']['uri'] ?? null ) !== $theme_uri ) {
 				throw new InvalidArgumentException( 'prepared_destination_changed' );
 			}
-			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'] );
+			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
+			self::validate_materialized_block_documents( $state['resolved'], $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
 		} catch ( InvalidArgumentException $error ) {
 			$state['diagnostics'][] = array( 'reason_code' => $error->getMessage() );
@@ -719,7 +721,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	}
 
 	/** Apply exact provider bindings to the resolved projection while retaining canonical plan markup. */
-	private static function apply_runtime_entity_bindings( array &$plan, array $bindings, array &$reports ): void {
+	private static function apply_runtime_entity_bindings( array &$plan, array $bindings, array &$reports, array &$diagnostics ): void {
 		$pages = array();
 		foreach ( $plan['pages'] as $index => $page ) {
 			$pages[ $page['source_path'] ] = $index;
@@ -749,6 +751,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				}
 			}
 			$seen[ $binding['reconciliation_identity'] ] = true;
+			self::validate_runtime_entity_binding_fragment( $binding, $diagnostics );
 			$index                                       = $pages[ $binding['source_path'] ];
 			$content                                     = (string) ( $plan['pages'][ $index ]['materialized_block_markup'] ?? $plan['pages'][ $index ]['resolved_block_markup'] ?? '' );
 			if ( substr_count( $content, $binding['search_block_markup'] ) < $binding['occurrence'] ) {
@@ -785,6 +788,122 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$report['materialized_content_hash'] = hash( 'sha256', (string) ( $plan['pages'][ $index ]['materialized_block_markup'] ?? $plan['pages'][ $index ]['resolved_block_markup'] ) );
 		}
 		unset( $report );
+	}
+
+	/**
+	 * Reject a provider fragment unless Core can round-trip it as a complete block document.
+	 *
+	 * @param array<string,mixed> $binding     Runtime entity binding.
+	 * @param array<int,mixed>    $diagnostics Admission diagnostics.
+	 * @return void
+	 */
+	private static function validate_runtime_entity_binding_fragment( array $binding, array &$diagnostics ): void {
+		if ( ! self::is_complete_block_document( (string) $binding['replacement_block_markup'] ) ) {
+			$diagnostics[] = array(
+				'reason_code'               => 'runtime_entity_binding_replacement_invalid',
+				'source_path'               => $binding['source_path'],
+				'reconciliation_identity'   => $binding['reconciliation_identity'],
+				'declaration_id'            => $binding['declaration_id'] ?? '',
+				'provider'                  => $binding['provider'] ?? '',
+			);
+			throw new InvalidArgumentException( 'runtime_entity_binding_replacement_invalid' );
+		}
+	}
+
+	/**
+	 * Admit each post document after every runtime binding has been applied.
+	 *
+	 * @param array<string,mixed> $plan        Resolved plan with runtime replacements.
+	 * @param array<string,mixed> $bindings    Binding reports keyed by reconciliation identity.
+	 * @param array<int,mixed>    $diagnostics Admission diagnostics.
+	 * @return void
+	 */
+	private static function validate_materialized_block_documents( array $plan, array $bindings, array &$diagnostics ): void {
+		foreach ( $plan['pages'] ?? array() as $page ) {
+			if ( ! is_array( $page ) ) {
+				continue;
+			}
+			$markup       = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' );
+			$source_path  = (string) ( $page['source_path'] ?? '' );
+			$page_bindings = array_values(
+				array_filter(
+					$bindings,
+					static fn ( $binding ): bool => is_array( $binding ) && $source_path === ( $binding['source_path'] ?? '' )
+				)
+			);
+			if ( self::is_complete_block_document( $markup ) ) {
+				continue;
+			}
+			$diagnostic = array(
+				'reason_code' => 'runtime_entity_bound_block_document_invalid',
+				'source_path' => $source_path,
+			);
+			if ( array() !== $page_bindings ) {
+				$diagnostic['binding_reconciliation_identities'] = array_values( array_filter( array_column( $page_bindings, 'reconciliation_identity' ), 'is_string' ) );
+			}
+			$diagnostics[] = $diagnostic;
+			throw new InvalidArgumentException( 'runtime_entity_bound_block_document_invalid' );
+		}
+	}
+
+	/**
+	 * Use WordPress's parser and serializer as the generic block-document boundary.
+	 *
+	 * The parser intentionally accepts block names it does not know, so registered
+	 * provider blocks and future blocks pass through without an importer allowlist.
+	 *
+	 * @param string $markup Block document markup.
+	 * @return bool
+	 */
+	private static function is_complete_block_document( string $markup ): bool {
+		if ( ! function_exists( 'parse_blocks' ) || ! function_exists( 'serialize_blocks' ) ) {
+			throw new InvalidArgumentException( 'block_document_validation_unavailable' );
+		}
+		$blocks = parse_blocks( $markup );
+		if ( ! is_array( $blocks ) || ! self::block_document_has_only_blocks( $blocks ) ) {
+			return false;
+		}
+		$serialized = serialize_blocks( $blocks );
+		if ( ! is_string( $serialized ) ) {
+			return false;
+		}
+		$round_tripped = parse_blocks( $serialized );
+		return is_array( $round_tripped ) && self::block_document_has_only_blocks( $round_tripped ) && self::block_document_topology( $blocks ) === self::block_document_topology( $round_tripped );
+	}
+
+	/** @param array<int,mixed> $blocks @return bool */
+	private static function block_document_has_only_blocks( array $blocks ): bool {
+		foreach ( $blocks as $block ) {
+			if ( ! is_array( $block ) ) {
+				return false;
+			}
+			$name = $block['blockName'] ?? null;
+			if ( ! is_string( $name ) || '' === $name ) {
+				if ( '' !== trim( (string) ( $block['innerHTML'] ?? '' ) ) ) {
+					return false;
+				}
+				continue;
+			}
+			if ( ! isset( $block['innerBlocks'] ) || ! is_array( $block['innerBlocks'] ) || ! self::block_document_has_only_blocks( $block['innerBlocks'] ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** @param array<int,mixed> $blocks @return array<int,mixed> */
+	private static function block_document_topology( array $blocks ): array {
+		$topology = array();
+		foreach ( $blocks as $block ) {
+			if ( ! is_array( $block ) || ! is_string( $block['blockName'] ?? null ) || '' === $block['blockName'] ) {
+				continue;
+			}
+			$topology[] = array(
+				'name'  => $block['blockName'],
+				'inner' => self::block_document_topology( is_array( $block['innerBlocks'] ?? null ) ? $block['innerBlocks'] : array() ),
+			);
+		}
+		return $topology;
 	}
 
 	/** @param array<string,mixed> $state @param array<string,mixed> $page */

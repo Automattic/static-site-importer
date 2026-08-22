@@ -244,6 +244,15 @@ class WP_Post_Type {
 function get_post_type_object( string $post_type ): ?object {
 	return in_array( $post_type, array( 'page', 'post' ), true ) ? new WP_Post_Type( $post_type ) : null;
 }
+function wp_parse_args( $args, array $defaults = array() ): array {
+	return array_merge( $defaults, is_array( $args ) ? $args : array() );
+}
+
+$wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: '/Users/chubes/Studio/intelligence-chubes4';
+require_once rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-parser.php';
+require_once rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-type.php';
+require_once rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-type-registry.php';
+require_once rtrim( $wp_root, '/\\' ) . '/wp-includes/blocks.php';
 
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-font-materializer.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-document-type-classifier.php';
@@ -1463,6 +1472,74 @@ $duplicate_binding_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializ
 );
 $duplicate_markup          = $duplicate_binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '';
 $assert( str_contains( $duplicate_markup, '[add_to_cart id="42"]' ) && str_contains( $duplicate_markup, '[add_to_cart id="43"]' ), 'duplicate markup anchors resolve by descending deterministic occurrence' );
+$duplicate_blocks = parse_blocks( $duplicate_markup );
+$assert( 'core/group' === ( $duplicate_blocks[0]['blockName'] ?? '' ) && array( 'core/shortcode', 'core/shortcode' ) === array_column( $duplicate_blocks[0]['innerBlocks'] ?? array(), 'blockName' ), 'multiple nested replacements preserve the surrounding parsed block topology' );
+$malformed_fragment_binding                            = $invalid_coverage_binding;
+$malformed_fragment_binding['reconciliation_identity'] = hash( 'sha256', 'malformed-fragment-binding' );
+$malformed_fragment_binding['replacement_block_markup'] = '<div>Provider control without a block wrapper</div>';
+$malformed_fragment_binding['superseded_runtime_selectors'] = array( '.add-to-cart' );
+$inserts_before_malformed_fragment                     = $GLOBALS['ssi_plan_insert_calls'];
+$malformed_fragment_receipt                            = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$binding_plan,
+	array(
+		'slug'                    => 'malformed-fragment-binding-plan',
+		'runtime_entity_bindings' => array( $malformed_fragment_binding ),
+	)
+);
+$malformed_fragment_diagnostic = $malformed_fragment_receipt['diagnostics'][0] ?? array();
+$assert( 'rejected' === $malformed_fragment_receipt['status'] && 'runtime_entity_binding_replacement_invalid' === ( $malformed_fragment_receipt['errors'][0]['code'] ?? '' ) && $inserts_before_malformed_fragment === $GLOBALS['ssi_plan_insert_calls'] && 'index.html' === ( $malformed_fragment_diagnostic['source_path'] ?? '' ) && $malformed_fragment_binding['reconciliation_identity'] === ( $malformed_fragment_diagnostic['reconciliation_identity'] ?? '' ), 'malformed replacement fragments are rejected with binding attribution before page mutation' );
+$topology_breaking_binding                            = $invalid_coverage_binding;
+$topology_breaking_binding['reconciliation_identity'] = hash( 'sha256', 'topology-breaking-binding' );
+$topology_breaking_binding['search_block_markup']     = '<!-- wp:paragraph {"content":"Replace me"} -->';
+$topology_breaking_binding['replacement_block_markup'] = '<!-- wp:shortcode /-->';
+$topology_breaking_binding['superseded_runtime_selectors'] = array( '.add-to-cart' );
+$inserts_before_topology_break                         = $GLOBALS['ssi_plan_insert_calls'];
+$topology_breaking_receipt                             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$binding_plan,
+	array(
+		'slug'                    => 'topology-breaking-binding-plan',
+		'runtime_entity_bindings' => array( $topology_breaking_binding ),
+	)
+);
+$topology_breaking_diagnostic = $topology_breaking_receipt['diagnostics'][0] ?? array();
+$assert( 'rejected' === $topology_breaking_receipt['status'] && 'runtime_entity_bound_block_document_invalid' === ( $topology_breaking_receipt['errors'][0]['code'] ?? '' ) && $inserts_before_topology_break === $GLOBALS['ssi_plan_insert_calls'] && 'index.html' === ( $topology_breaking_diagnostic['source_path'] ?? '' ) && array( $topology_breaking_binding['reconciliation_identity'] ) === ( $topology_breaking_diagnostic['binding_reconciliation_identities'] ?? array() ), 'final complete documents are rejected when a valid fragment breaks surrounding topology' );
+$provider_block_name = 'static-site-importer/runtime-provider-test';
+WP_Block_Type_Registry::get_instance()->register( $provider_block_name, array() );
+$provider_binding                            = $invalid_coverage_binding;
+$provider_binding['reconciliation_identity'] = hash( 'sha256', 'registered-provider-binding' );
+$provider_binding['replacement_block_markup'] = '<!-- wp:static-site-importer/runtime-provider-test --><div>Provider control</div><!-- /wp:static-site-importer/runtime-provider-test -->';
+$provider_binding['superseded_runtime_selectors'] = array( '.add-to-cart' );
+$provider_binding_receipt                    = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$binding_plan,
+	array(
+		'slug'                    => 'registered-provider-binding-plan',
+		'runtime_entity_bindings' => array( $provider_binding ),
+	)
+);
+$provider_markup = $provider_binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '';
+$contains_block = static function ( array $blocks, string $block_name ) use ( &$contains_block ): bool {
+	foreach ( $blocks as $block ) {
+		if ( $block_name === ( $block['blockName'] ?? '' ) || ( ! empty( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) && $contains_block( $block['innerBlocks'], $block_name ) ) ) {
+			return true;
+		}
+	}
+	return false;
+};
+$assert( null !== WP_Block_Type_Registry::get_instance()->get_registered( $provider_block_name ), 'registered provider block is available to the materialization runtime' );
+$assert( 'completed' === $provider_binding_receipt['status'], 'registered provider blocks pass the generic Core admission boundary without an importer allowlist' );
+$assert( $contains_block( parse_blocks( $provider_markup ), $provider_block_name ), 'registered provider block survives the persisted document round-trip' );
+$unknown_block_binding                            = $provider_binding;
+$unknown_block_binding['reconciliation_identity'] = hash( 'sha256', 'unknown-provider-binding' );
+$unknown_block_binding['replacement_block_markup'] = '<!-- wp:future-provider/control --><div>Future provider control</div><!-- /wp:future-provider/control -->';
+$unknown_block_receipt                            = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$binding_plan,
+	array(
+		'slug'                    => 'unknown-provider-binding-plan',
+		'runtime_entity_bindings' => array( $unknown_block_binding ),
+	)
+);
+$unknown_markup = $unknown_block_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '';
+$assert( 'completed' === $unknown_block_receipt['status'] && $contains_block( parse_blocks( $unknown_markup ), 'future-provider/control' ), 'unknown block names pass through the generic Core admission boundary unchanged' );
 $invalid_binding         = array(
 	'schema'                   => 'static-site-importer/runtime-entity-binding/v1',
 	'source_path'              => 'index.html',
