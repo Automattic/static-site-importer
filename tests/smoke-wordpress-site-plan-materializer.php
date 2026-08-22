@@ -249,10 +249,17 @@ function wp_parse_args( $args, array $defaults = array() ): array {
 }
 
 $wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: '/Users/chubes/Studio/intelligence-chubes4';
-require_once rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-parser.php';
-require_once rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-type.php';
-require_once rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-type-registry.php';
-require_once rtrim( $wp_root, '/\\' ) . '/wp-includes/blocks.php';
+$wp_includes = rtrim( $wp_root, '/\\' ) . '/wp-includes/';
+$core_files  = array( 'class-wp-block-parser.php', 'class-wp-block-type.php', 'class-wp-block-type-registry.php', 'blocks.php' );
+foreach ( $core_files as $core_file ) {
+	if ( ! is_readable( $wp_includes . $core_file ) ) {
+		fwrite( STDERR, "SKIP: WordPress parser/serializer files are unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
+		exit( 0 );
+	}
+}
+foreach ( $core_files as $core_file ) {
+	require_once $wp_includes . $core_file;
+}
 
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-font-materializer.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-document-type-classifier.php';

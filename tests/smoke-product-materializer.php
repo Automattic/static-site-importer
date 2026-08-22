@@ -88,6 +88,10 @@ namespace {
 		require_once $parser;
 		require_once $blocks;
 	}
+	if ( ! function_exists( 'serialize_blocks' ) ) {
+		fwrite( STDERR, "SKIP: WordPress block serialization is unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
+		exit( 0 );
+	}
 
 	// --- WooCommerce runtime mock ------------------------------------------------
 	// Captures the seeded simple products so the smoke test can assert the prices

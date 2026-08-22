@@ -83,7 +83,7 @@ test('pins an immutable WP Codebox release package, commit, and checksum togethe
   assert.match(workflow, /sha256sum --check --status/);
   assert.doesNotMatch(workflow, /Checkout WP Codebox candidate|npm pack --pack-destination|wp-codebox-sha:/);
   assert.match(workflow, /wpCodeboxSha:process\.env\.WP_CODEBOX_SHA/);
-  assert.match(caller, /blocks-engine-sha: 7858943a9913175993cc75870551c2e1926b4fb0/);
+  assert.match(caller, /blocks-engine-sha: e32b74191771be44af5357c26aaff46ef98bc1ce/);
   assert.doesNotMatch(caller, /wp-codebox-sha:/);
 });
 

@@ -10,6 +10,8 @@ final class Static_Site_Importer_Font_Materializer {
 	private const CSS_LIMIT        = 262144;
 	private const FONT_LIMIT       = 2097152;
 	private const TOTAL_FONT_LIMIT = 4194304;
+	private const REQUEST_ATTEMPTS = 3;
+	private const RETRY_DELAY      = 100000;
 
 	/**
 	 * Resolve an explicit font plan into receipt-owned theme writes.
@@ -80,6 +82,9 @@ final class Static_Site_Importer_Font_Materializer {
 		}
 
 		$font_faces = self::resolve_google_font_faces( $plan, $families, $diagnostics );
+		if ( is_wp_error( $font_faces ) ) {
+			return $font_faces;
+		}
 		if ( 'preserved' === $font_faces['state'] ) {
 			$preserved_url = (string) $font_faces['url'];
 			$fallback_url  = self::is_google_stylesheet_url( $preserved_url ) ? $preserved_url : '';
@@ -116,6 +121,8 @@ final class Static_Site_Importer_Font_Materializer {
 				$outer_detail['aggregate_bytes'] = (int) ( $font_faces['aggregate_bytes'] ?? $font_faces['observed_bytes'] );
 			} elseif ( 'google_fonts_stylesheet_preserved_due_to_size' === $outer_detail['reason'] ) {
 				$outer_detail['limit_bytes'] = self::CSS_LIMIT;
+			} elseif ( 'font_payload_preserved_due_to_size' === $outer_detail['reason'] ) {
+				$outer_detail['limit_bytes'] = self::FONT_LIMIT;
 			}
 			$diagnostics[] = self::diagnostic_with_detail( 'font_materialization_partial_preserved', $outer_detail );
 			if ( '' === $css_body ) {
@@ -585,14 +592,10 @@ final class Static_Site_Importer_Font_Materializer {
 		}
 		$bootstrap .= "\nadd_action( 'wp_enqueue_scripts', static function (): void {\n";
 		$bootstrap .= "    wp_enqueue_style( 'static-site-importer-embedded-fonts', get_theme_file_uri( 'assets/css/embedded-fonts.css' ), array(), null );\n";
-		if ( ! empty( $required_faces ) ) {
-			$bootstrap .= "    wp_enqueue_script( 'static-site-importer-font-readiness', get_theme_file_uri( 'assets/js/font-readiness.js' ), array(), null, false );\n";
-		}
+		$bootstrap .= "    wp_enqueue_script( 'static-site-importer-font-readiness', get_theme_file_uri( 'assets/js/font-readiness.js' ), array(), null, false );\n";
 		$bootstrap .= "} );\n";
 		$writes[]   = self::write( 'functions.php', $bootstrap, 'theme.font_materialization' );
-		if ( ! empty( $required_faces ) ) {
-			$writes[] = self::write( 'assets/js/font-readiness.js', self::readiness_script( $required_faces ), 'theme.font_materialization' );
-		}
+		$writes[] = self::write( 'assets/js/font-readiness.js', self::readiness_script( $required_faces ), 'theme.font_materialization' );
 		return array(
 			'writes'         => $writes,
 			'diagnostics'    => $diagnostics,
@@ -673,8 +676,9 @@ final class Static_Site_Importer_Font_Materializer {
 	/** @param array<int,string> $families @param array<int,array<string,string>> $diagnostics
 	 *  @return array{state:'embedded',css:string}
 	 *          | array{state:'preserved',reason:string,observed_bytes:int,url:string,aggregate_bytes?:int}
+	 *          | WP_Error
 	 */
-	private static function resolve_google_font_faces( array $plan, array $families, array &$diagnostics ): array {
+	private static function resolve_google_font_faces( array $plan, array $families, array &$diagnostics ): array|WP_Error {
 		$imports = array();
 		foreach ( $plan['stylesheets'] ?? array() as $stylesheet ) {
 			$content = is_array( $stylesheet ) && is_scalar( $stylesheet['content'] ?? null ) ? (string) $stylesheet['content'] : '';
@@ -719,12 +723,7 @@ final class Static_Site_Importer_Font_Materializer {
 						'limit_bytes'    => self::CSS_LIMIT,
 					)
 				);
-				return array(
-					'state'          => 'preserved',
-					'reason'         => 'stylesheet_fetch_failed',
-					'observed_bytes' => strlen( $css ),
-					'url'            => $import,
-				);
+				return new WP_Error( 'static_site_importer_font_materialization_failed', '', $diagnostics );
 			}
 			if ( strlen( $css ) > self::CSS_LIMIT ) {
 				$diagnostics[] = self::diagnostic_with_detail(
@@ -743,6 +742,9 @@ final class Static_Site_Importer_Font_Materializer {
 				);
 			}
 			$embedded = self::embed_font_sources( $css, $families, $font_payloads, $font_payload_bytes, $diagnostics );
+			if ( is_wp_error( $embedded ) ) {
+				return $embedded;
+			}
 			if ( 'preserved' === $embedded['state'] ) {
 				if ( '' === (string) $embedded['url'] ) {
 					$embedded['url'] = $import;
@@ -760,8 +762,9 @@ final class Static_Site_Importer_Font_Materializer {
 	/** @param array<int,string> $families @param array<string,string> $payloads @param array<int,array<string,string>> $diagnostics
 	 *  @return array{state:'embedded',css:string}
 	 *          | array{state:'preserved',reason:string,observed_bytes:int,url:string,aggregate_bytes?:int}
+	 *          | WP_Error
 	 */
-	private static function embed_font_sources( string $css, array $families, array &$payloads, int &$payload_bytes, array &$diagnostics ): array {
+	private static function embed_font_sources( string $css, array $families, array &$payloads, int &$payload_bytes, array &$diagnostics ): array|WP_Error {
 		if ( ! preg_match_all( '/@font-face\s*\{([^{}]*)\}/is', $css, $faces ) ) {
 			$diagnostics[] = self::diagnostic_with_detail(
 				'stylesheet_font_faces_missing',
@@ -811,7 +814,7 @@ final class Static_Site_Importer_Font_Materializer {
 					$response = self::request( $url, self::FONT_LIMIT );
 					$payload  = is_wp_error( $response ) ? '' : (string) wp_remote_retrieve_body( $response );
 					$observed = strlen( $payload );
-					if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) || '' === $payload || $observed > self::FONT_LIMIT ) {
+					if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) || '' === $payload ) {
 						$diagnostics[] = self::diagnostic_with_detail(
 							'font_payload_fetch_failed',
 							array(
@@ -820,9 +823,20 @@ final class Static_Site_Importer_Font_Materializer {
 								'limit_bytes'    => self::FONT_LIMIT,
 							)
 						);
+						return new WP_Error( 'static_site_importer_font_materialization_failed', '', $diagnostics );
+					}
+					if ( $observed > self::FONT_LIMIT ) {
+						$diagnostics[] = self::diagnostic_with_detail(
+							'font_payload_preserved_due_to_size',
+							array(
+								'url'            => $url,
+								'observed_bytes' => $observed,
+								'limit_bytes'    => self::FONT_LIMIT,
+							)
+						);
 						return array(
 							'state'          => 'preserved',
-							'reason'         => 'font_payload_fetch_failed',
+							'reason'         => 'font_payload_preserved_due_to_size',
 							'observed_bytes' => $observed,
 							'url'            => $url,
 						);
@@ -870,14 +884,14 @@ final class Static_Site_Importer_Font_Materializer {
 			'headers'             => array( 'User-Agent' => 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' ),
 		);
 		$response = null;
-		for ( $attempt = 1; $attempt <= 3; ++$attempt ) {
+		for ( $attempt = 1; $attempt <= self::REQUEST_ATTEMPTS; ++$attempt ) {
 			$response = wp_safe_remote_get( $url, $args );
 			$status   = is_wp_error( $response ) ? 0 : (int) wp_remote_retrieve_response_code( $response );
 			if ( ! is_wp_error( $response ) && 0 !== $status && ! in_array( $status, array( 408, 429 ), true ) && $status < 500 ) {
 				break;
 			}
-			if ( $attempt < 3 ) {
-				usleep( 100000 * $attempt );
+			if ( $attempt < self::REQUEST_ATTEMPTS ) {
+				usleep( self::RETRY_DELAY * $attempt );
 			}
 		}
 		return $response;
