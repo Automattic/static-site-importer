@@ -100,15 +100,16 @@ class Static_Site_Importer_Companion_Plugin {
 				return new WP_Error( 'static_site_importer_companion_plugin_block_json_name_invalid', sprintf( 'Block %s resolves to a duplicate WordPress block name.', $name ) );
 			}
 			$block_names[ $effective_name ] = true;
-			$assets                         = self::block_assets( $block );
+			$declared_assets                = $block['assets'] ?? array();
+			if ( ! is_array( $declared_assets ) || ( ! empty( $declared_assets ) && array_is_list( $declared_assets ) ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_assets_invalid', sprintf( 'Block %s assets must be an object.', $name ) );
+			}
+			$assets = self::block_assets( $block );
 			if ( is_wp_error( $assets ) ) {
 				return $assets;
 			}
-			if ( ! is_array( $assets ) || ( ! empty( $assets ) && array_is_list( $assets ) ) ) {
-				return new WP_Error( 'static_site_importer_companion_plugin_assets_invalid', sprintf( 'Block %s assets must be an object.', $name ) );
-			}
 			foreach ( $assets as $path => $content ) {
-				if ( ! is_string( $path ) || self::sanitize_relative_path( $path ) !== $path || ! Static_Site_Importer_Content_Policy::is_companion_asset_path( $path ) || ! is_scalar( $content ) || Static_Site_Importer_Content_Policy::contains_server_code( (string) $content ) ) {
+				if ( self::sanitize_relative_path( $path ) !== $path || ! Static_Site_Importer_Content_Policy::is_companion_asset_path( $path ) || ! is_scalar( $content ) || Static_Site_Importer_Content_Policy::contains_server_code( (string) $content ) ) {
 					return new WP_Error( 'static_site_importer_companion_plugin_asset_path_invalid', sprintf( 'Block %s has an unsafe asset path.', $name ) );
 				}
 			}
@@ -446,7 +447,7 @@ class Static_Site_Importer_Companion_Plugin {
 	 * as `file:./view.js`, so validation and scaffolding must see one canonical
 	 * asset regardless of which producer representation supplied it.
 	 *
-	 * @return array<string,mixed>|WP_Error
+	 * @return array<array-key,mixed>|WP_Error
 	 */
 	private static function block_assets( array $block ) {
 		$assets = isset( $block['assets'] ) && is_array( $block['assets'] ) ? $block['assets'] : array();
