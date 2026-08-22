@@ -319,6 +319,20 @@ namespace {
 	$assert( ! str_contains( $page_contents['website/shop.html'], '>Add to cart<' ), 'page-content-removes-static-add-to-cart' );
 	$assert( ! str_contains( $page_contents['website/shop.html'], '>Buy now<' ), 'page-content-removes-static-buy-now' );
 
+	// A resolvable product finding cannot consume an identical region on another page.
+	$owned_graft_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/owned-shop.html' );
+	$owned_graft_report['diagnostics'][] = $graft_report['diagnostics'][0];
+	$owned_graft_report['diagnostics'][0]['source_path'] = 'website/owned-shop.html';
+	$owned_graft_contents = array(
+		'website/owned-shop.html' => '<!-- wp:paragraph --><p>owner anchor is absent</p><!-- /wp:paragraph -->',
+		'website/other-shop.html' => $button_region,
+	);
+	$owned_graft_seeding = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $owned_graft_report, array(), $owned_graft_contents );
+	$owned_graft_diag    = array_values( array_filter( $owned_graft_report['diagnostics'], static fn ( array $diagnostic ): bool => 'product_add_to_cart_graft_unanchorable' === ( $diagnostic['type'] ?? '' ) ) );
+	$assert( 0 === ( $owned_graft_seeding['shortcode_grafted_count'] ?? -1 ) && false === ( $owned_graft_report['diagnostics'][0]['product_shortcode_grafted'] ?? true ), 'product-graft-resolved-source-missing-anchor-is-not-grafted' );
+	$assert( 1 === count( $owned_graft_diag ) && 'fallback_region_not_found_in_post_content' === ( $owned_graft_diag[0]['reason'] ?? '' ) && 'website/owned-shop.html' === ( $owned_graft_diag[0]['source_path'] ?? '' ), 'product-graft-resolved-source-emits-bounded-owner-diagnostic' );
+	$assert( str_contains( $owned_graft_contents['website/other-shop.html'], '>Add to cart<' ) && ! str_contains( $owned_graft_contents['website/other-shop.html'], '[add_to_cart id=' ), 'product-graft-resolved-source-never-mutates-identical-other-page-region' );
+
 	// Grafting requires a seeded Woo product ID; source-only product metadata is not enough.
 	$graft_method   = new ReflectionMethod( 'Static_Site_Importer_Report_Diagnostics', 'graft_product_add_to_cart_shortcodes_into_page_contents' );
 	$no_id_contents = array( 'website/shop.html' => $button_region );
