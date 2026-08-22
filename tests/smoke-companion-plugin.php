@@ -230,9 +230,8 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 	}
 };
 
-// Synthetic minimal payload: one PHP-only dynamic block (attributes + render)
-// plus a preserved island scoped to that block. Generic; no fixture-specific
-// strings.
+// Synthetic metadata block with a render file plus a preserved island scoped to
+// that block. Generic; no fixture-specific strings.
 $payload = array(
 	'schema'       => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
 	'site_slug'    => 'Example Site',
@@ -250,11 +249,11 @@ $payload = array(
 						'default' => '',
 					),
 					'content' => array(
-						'type'    => 'content',
+						'type'    => 'string',
 						'default' => '',
 					),
 					'text'    => array(
-						'type'    => 'text',
+						'type'    => 'string',
 						'default' => '',
 					),
 					'nested'  => array(
@@ -433,19 +432,10 @@ if ( is_array( $descriptor ) ) {
 	$assert( str_contains( $main, "add_filter( 'render_block'" ), 'main-file-scopes-island-enqueue' );
 	$assert( str_contains( $main, 'wp_enqueue_script' ), 'main-file-enqueues-island-js' );
 
-	$assert( str_contains( $main, "register_block_type( SSI_EXAMPLE_SITE_" ) && str_contains( $main, "_DIR . 'blocks/' . (string) \$spec['dir'] )" ), 'main-file-registers-metadata-block-directory' );
-	$assert( str_contains( $main, "\$registered instanceof WP_Block_Type" ) && str_contains( $main, "static_site_importer_companion_block_owners" ) && str_contains( $main, "'plugin_file' => 'ssi-example-site/ssi-example-site.php'" ), 'main-file-records-owner-only-after-matching-registration' );
+	$assert( str_contains( $main, "register_block_type( SSI_EXAMPLE_SITE_" ) && str_contains( $main, "_DIR . 'blocks/' . \$block_dir )" ), 'main-file-registers-metadata-block-directory' );
+	$assert( str_contains( $main, "\$registered instanceof WP_Block_Type" ) && str_contains( $main, "static_site_importer_companion_block_owners" ) && str_contains( $main, "'plugin_file' => 'ssi-example-site/ssi-example-site.php'" ), 'main-file-records-owner-after-metadata-registration' );
 	$assert( ! str_contains( $main, 'Requires Plugins:' ) && ! str_contains( $main, 'Static_Site_Importer_' ) && ! str_contains( $main, 'Automattic\\BlocksEngine' ), 'generated-plugin-declares-no-importer-or-compiler-runtime-dependency' );
-	$assert( str_contains( $main, "register_block_type( (string) \$spec['name'], \$args )" ), 'main-file-retains-php-only-fallback-registration' );
-	$assert( str_contains( $main, "'api_version' => 3" ), 'main-file-declares-api-version' );
-	$assert( str_contains( $main, "'name' => 'example/custom-hero'" ), 'main-file-carries-declared-block-name' );
-	$assert( str_contains( $main, "'attributes' =>" ) && str_contains( $main, "'heading' =>" ), 'main-file-declares-php-attributes' );
-	$assert( str_contains( $main, "'content' =>" ) && str_contains( $main, "'text' =>" ), 'main-file-preserves-semantic-attribute-names' );
-	$assert( ! str_contains( $main, "'type' => 'content'" ) && ! str_contains( $main, "'type' => 'text'" ), 'main-file-normalizes-invalid-rest-schema-types' );
-	$builtin_schema_types = array( 'array', 'object', 'string', 'number', 'integer', 'boolean', 'null' );
-	preg_match_all( "/'type' => '([^']+)'/", $main, $type_matches );
-	$invalid_schema_types = array_values( array_diff( $type_matches[1] ?? array(), $builtin_schema_types ) );
-	$assert( array() === $invalid_schema_types, 'main-file-emits-only-builtin-rest-schema-types', implode( ',', $invalid_schema_types ) );
+	$assert( ! str_contains( $main, 'block_specs' ) && ! str_contains( $main, 'render_callback' ) && ! str_contains( $main, "register_block_type( (string)" ), 'main-file-has-no-php-only-registration-fallback' );
 	$block_json = $files['ssi-example-site/blocks/custom-hero/block.json'] ?? '';
 	$assert( '' !== $block_json, 'metadata-block-json-emitted' );
 	$assert( str_contains( $block_json, '"editorScript": "file:./index.js"' ), 'metadata-block-json-declares-editor-script' );
@@ -455,7 +445,7 @@ if ( is_array( $descriptor ) ) {
 	$asset_manifest = $files['ssi-example-site/blocks/custom-hero/index.asset.php'] ?? '';
 	$assert( str_contains( $asset_manifest, "'dependencies' => array(\n\t\t'wp-blocks',\n\t\t'wp-block-editor',\n\t\t'wp-element'," ) && str_contains( $asset_manifest, "'version' => '" . hash( 'sha256', 'window.SSIEditor = true;' ) . "'" ), 'script-dependency-asset-manifest-is-deterministic' );
 
-	// The render.php is the server-rendered template the render_callback runs.
+	// The metadata render target remains a server-rendered template.
 	$render = $files['ssi-example-site/blocks/custom-hero/render.php'] ?? '';
 	$assert( '' !== $render, 'render-php-emitted' );
 	$assert( str_starts_with( ltrim( $render ), '<?php' ), 'render-php-opens-with-php-tag' );
@@ -506,7 +496,7 @@ if ( is_array( $render_variants ) ) {
 
 	// A block with no render payload remains static and uses its saved post markup.
 	$assert( ! isset( $variant_files['ssi-render-variants/blocks/static-card/render.php'] ), 'static-block-omits-render-php' );
-	$assert( str_contains( $variant_main, "'metadata' => true" ), 'static-block-registered-from-metadata' );
+	$assert( str_contains( $variant_main, "'static-card'" ) && str_contains( $variant_main, "register_block_type" ), 'static-block-registered-from-metadata' );
 	$static_block_json = $variant_files['ssi-render-variants/blocks/static-card/block.json'] ?? '';
 	$assert( str_contains( $static_block_json, '"name": "blocks-engine/description-list"' ), 'static-block-preserves-canonical-name' );
 	$assert( ! str_contains( $static_block_json, '"render"' ), 'static-block-preserves-static-rendering' );
@@ -518,7 +508,7 @@ if ( is_array( $render_variants ) ) {
 	// Metadata is emitted and the generated render.php remains its render target.
 	$variant_block_json = array_filter( array_keys( $variant_files ), static fn ( string $path ): bool => str_ends_with( $path, '/block.json' ) );
 	$assert( 2 === count( $variant_block_json ), 'render-variants-emit-block-json', implode( ',', $variant_block_json ) );
-	$assert( ! str_contains( $variant_main, 'file:./custom-render.php' ), 'php-args-drop-upstream-render-key' );
+	$assert( ! str_contains( $variant_main, 'file:./custom-render.php' ), 'generated-main-file-uses-no-render-arguments' );
 }
 
 // Typed renderers emit only SSI-owned PHP and sanitize editable attributes at runtime.
