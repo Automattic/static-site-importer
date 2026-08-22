@@ -62,7 +62,7 @@ if ( ! function_exists( 'home_url' ) ) {
 
 if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
 	class Static_Site_Importer_Content_Policy {
-		public static function validate_artifact( array $artifact ): true {
+		public static function validate_artifact( array $artifact ): bool {
 			unset( $artifact );
 			return true;
 		}
