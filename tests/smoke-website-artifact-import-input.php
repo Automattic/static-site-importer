@@ -133,6 +133,7 @@ $input  = array(
 	'activate'                             => true,
 	'overwrite'                            => true,
 	'disable_smilies'                      => true,
+	'remove_default_content'               => false,
 	'fail_on_quality'                      => true,
 	'allow_missing_woocommerce'            => true,
 	'allow_missing_jetpack'                => true,
@@ -162,6 +163,8 @@ $default_input = Static_Site_Importer_Website_Artifact_Import_Input::normalize( 
 $assert( true === $default_input['disable_smilies'], 'disable-smilies-defaults-true' );
 $assert( true === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'disable_smilies' => '1' ) )['disable_smilies'], 'disable-smilies-coerces-true-string' );
 $assert( false === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'disable_smilies' => '0' ) )['disable_smilies'], 'disable-smilies-coerces-false-string' );
+$assert( true === $default_input['remove_default_content'], 'remove-default-content-defaults-true' );
+$assert( false === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'remove_default_content' => '0' ) )['remove_default_content'], 'remove-default-content-coerces-false-string' );
 
 static_site_importer_ability_import(
 	array_merge(

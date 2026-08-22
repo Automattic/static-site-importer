@@ -10,6 +10,7 @@ use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanRe
 
 require_once __DIR__ . '/class-static-site-importer-stylesheet-materializer.php';
 require_once __DIR__ . '/class-static-site-importer-protected-page-policy.php';
+require_once __DIR__ . '/class-static-site-importer-default-content.php';
 if ( ! class_exists( 'Static_Site_Importer_Theme_Materialization_Strategy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-theme-materialization-strategy.php';
 }
@@ -67,6 +68,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === $strategy['strategy'] && ! is_array( $args['classic_theme_projection'] ?? null ) ) {
 			return self::failed_strategy_receipt( $plan, $args, new WP_Error( 'static_site_importer_classic_source_projection_missing', 'Classic materialization requires the SSI source-artifact projection prepared before this plan-only boundary.' ) );
 		}
+		$default_content = self::discover_default_content( $args );
 		$state = array(
 			'plan'                         => $plan,
 			'plan_hash'                    => self::hash( $plan ),
@@ -86,6 +88,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'external_report_destinations' => isset( $args['external_report_destinations'] ) && is_array( $args['external_report_destinations'] ) ? $args['external_report_destinations'] : array(),
 			'args'                         => $args,
 			'payload_reader'               => is_object( $payload_reader ) ? $payload_reader : null,
+			'default_content'              => $default_content,
 			'rollback'                     => array(
 				'posts'   => array(),
 				'files'   => array(),
@@ -462,6 +465,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 		}
 
+		$state['applied']['runtime_policy']['remove_default_content'] = ! empty( $args['remove_default_content'] )
+			? Static_Site_Importer_Default_Content::remove( $state['default_content'] )
+			: array( 'status' => 'skipped', 'reason' => 'disabled', 'removed' => array( 'posts' => array(), 'comments' => array() ), 'skipped' => array() );
+
 		return self::receipt( 'completed', $state );
 	}
 
@@ -534,6 +541,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			),
 			'args'                         => $args,
 			'payload_reader'               => $payload_reader,
+			'default_content'              => isset( $prepared['default_content'] ) && is_array( $prepared['default_content'] ) ? $prepared['default_content'] : array(),
 			'rollback'                     => array(
 				'posts'   => array(),
 				'files'   => array(),
@@ -1774,6 +1782,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return false !== update_option( $option, $value ) && get_option( $option, null ) === $value;
 	}
 
+	/** @param array<string,mixed> $args @return array<string,mixed> */
+	private static function discover_default_content( array &$args ): array {
+		$requested                      = isset( $args['remove_default_content'] ) ? (bool) $args['remove_default_content'] : true;
+		$args['remove_default_content'] = (bool) apply_filters( 'static_site_importer_remove_default_content', $requested, $args );
+		return $args['remove_default_content'] ? Static_Site_Importer_Default_Content::discover() : array( 'eligible' => false, 'posts' => array(), 'comments' => array() );
+	}
+
 	private static function active_theme_matches( string $slug ): bool {
 		$stylesheet = function_exists( 'get_stylesheet' ) ? get_stylesheet() : get_option( 'stylesheet', '' );
 		if ( function_exists( 'get_template' ) ) {
@@ -1943,6 +1958,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					'disable_smilies' => array(
 						'requested' => isset( $state['args']['disable_smilies'] ) ? (bool) $state['args']['disable_smilies'] : true,
 						'applied'   => isset( $state['applied']['runtime_policy']['disable_smilies'] ) && true === $state['applied']['runtime_policy']['disable_smilies'],
+					),
+					'remove_default_content' => array(
+						'requested' => isset( $state['args']['remove_default_content'] ) ? (bool) $state['args']['remove_default_content'] : true,
+						'report'    => $state['applied']['runtime_policy']['remove_default_content'] ?? array( 'status' => 'not_applied' ),
 					),
 				),
 				'materialized_pages'         => $materialized_pages,
