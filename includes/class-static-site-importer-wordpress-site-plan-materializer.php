@@ -20,6 +20,9 @@ if ( ! class_exists( 'Static_Site_Importer_Classic_Theme_Projection' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Current_Site_Capabilities' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-current-site-capabilities.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Quality_Budget_Admission' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-quality-budget-admission.php';
+}
 
 final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	public const RECEIPT_SCHEMA           = 'static-site-importer/materialization-receipt/v2';
@@ -167,6 +170,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'dir'  => $theme_dir,
 				'uri'  => $theme_uri,
 			);
+			$state['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $resolved, $args );
+			if ( Static_Site_Importer_Quality_Budget_Admission::rejects_materialization( $state['quality_budget_admission'] ) ) {
+				$state['diagnostics'][] = array( 'reason_code' => 'quality_budget_failed', 'quality_budget' => $state['quality_budget_admission'] );
+				return array( 'status' => 'rejected', 'receipt' => self::receipt( 'rejected', $state ) );
+			}
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
 		} catch ( InvalidArgumentException $error ) {
 			$state['diagnostics'][] = array( 'reason_code' => $error->getMessage() );
@@ -584,6 +592,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				throw new InvalidArgumentException( 'prepared_destination_changed' );
 			}
 			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
+			$state['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $state['resolved'], $args );
+			if ( Static_Site_Importer_Quality_Budget_Admission::rejects_materialization( $state['quality_budget_admission'] ) ) {
+				$state['diagnostics'][] = array( 'reason_code' => 'quality_budget_failed', 'quality_budget' => $state['quality_budget_admission'] );
+				return array( 'status' => 'rejected', 'receipt' => self::receipt( 'rejected', $state ) );
+			}
 			self::validate_materialized_block_documents( $state['resolved'], $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
 		} catch ( InvalidArgumentException $error ) {
@@ -2067,10 +2080,12 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'schema' => 'static-site-importer/editability-report-admission/v1',
 				'status' => 'not_checked',
 			),
+			'quality_budget_admission'  => $state['quality_budget_admission'] ?? Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $resolved_plan, $state['args'] ?? array() ),
 			'diagnostics'               => $state['diagnostics'],
 			'errors'                    => $errors,
 			'theme_materialization'     => $state['theme_materialization'] ?? self::strategy_evidence( $state['args'] ?? array() ),
 		);
+		$receipt['quality_budget_admission']['mechanical_status'] = 'completed' === $status ? 'completed' : $status;
 		if ( ! empty( $state['args']['defer_materialization_commit'] ) && 'completed' === $status ) {
 			$receipt['transaction'] = (object) array( 'state' => $state );
 		}

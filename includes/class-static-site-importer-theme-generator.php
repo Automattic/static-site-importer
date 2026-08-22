@@ -812,7 +812,12 @@ class Static_Site_Importer_Theme_Generator {
 		$manifest['cleanup'] = $cleanup;
 		$report['source_of_truth'] = $manifest;
 		$quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $args );
-		$validation = $report['import_validation_result'];
+		$receipt['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $receipt['plan'] ?? array(), $args, $report );
+		$receipt['quality_budget_admission']['mechanical_status'] = $receipt['status'] ?? 'completed';
+		$report['quality_budget_admission'] = $receipt['quality_budget_admission'];
+		$report['materialization_receipt'] = $receipt;
+		$validation = Static_Site_Importer_Report_Diagnostics::import_validation_result( $report, $quality );
+		$report['import_validation_result'] = $validation;
 		$findings   = $report['finding_packets'];
 		$theme_dir  = $theme['dir'];
 		$manifest_path = $theme_dir . '/static-site-importer-manifest.json';
