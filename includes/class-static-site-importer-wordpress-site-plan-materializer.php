@@ -155,7 +155,6 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$state['base_resolved_hash'] = self::hash( $resolved );
 			$state['resolved']           = $resolved;
 			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
-			self::validate_materialized_block_documents( $state['resolved'], $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
 			$state['theme_dir'] = $theme_dir;
 			$state['theme']     = array(
 				'slug' => $slug,
@@ -291,6 +290,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$capabilities = Static_Site_Importer_Current_Site_Capabilities::check_plan( $state );
 		if ( is_wp_error( $capabilities ) ) {
 			return self::failed_receipt_from_error( $state, $capabilities );
+		}
+		try {
+			self::validate_materialized_block_documents( $state['resolved'], $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
+		} catch ( InvalidArgumentException $error ) {
+			return self::receipt( 'rejected', $state );
 		}
 		$args         = $state['args'];
 		$font_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay(
@@ -820,7 +824,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	}
 
 	/**
-	 * Admit each post document after every runtime binding has been applied.
+	 * Admit each post document after runtime dependencies and bindings are ready.
 	 *
 	 * @param array<string,mixed> $plan        Resolved plan with runtime replacements.
 	 * @param array<string,mixed> $bindings    Binding reports keyed by reconciliation identity.
@@ -840,26 +844,27 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					static fn ( $binding ): bool => is_array( $binding ) && ( $binding['source_path'] ?? '' ) === $source_path
 				)
 			);
-			if ( self::is_complete_block_document( $markup ) ) {
-				continue;
+			if ( ! self::is_complete_block_document( $markup ) ) {
+				$diagnostic = array(
+					'reason_code' => 'runtime_entity_bound_block_document_invalid',
+					'source_path' => $source_path,
+				);
+				if ( array() !== $page_bindings ) {
+					$diagnostic['binding_reconciliation_identities'] = array_values( array_filter( array_column( $page_bindings, 'reconciliation_identity' ), 'is_string' ) );
+				}
+				$diagnostics[] = $diagnostic;
+				throw new InvalidArgumentException( 'runtime_entity_bound_block_document_invalid' );
 			}
-			$diagnostic = array(
-				'reason_code' => 'runtime_entity_bound_block_document_invalid',
-				'source_path' => $source_path,
-			);
-			if ( array() !== $page_bindings ) {
-				$diagnostic['binding_reconciliation_identities'] = array_values( array_filter( array_column( $page_bindings, 'reconciliation_identity' ), 'is_string' ) );
+			$admission = self::block_document_editor_admission( $markup, $source_path );
+			$diagnostics = array_merge( $diagnostics, $admission['diagnostics'] );
+			if ( ! $admission['admitted'] ) {
+				throw new InvalidArgumentException( 'unsupported_persisted_block' );
 			}
-			$diagnostics[] = $diagnostic;
-			throw new InvalidArgumentException( 'runtime_entity_bound_block_document_invalid' );
 		}
 	}
 
 	/**
-	 * Use WordPress's parser and serializer as the generic block-document boundary.
-	 *
-	 * The parser intentionally accepts block names it does not know, so registered
-	 * provider blocks and future blocks pass through without an importer allowlist.
+	 * Use WordPress's parser and serializer as the transport boundary.
 	 *
 	 * @param string $markup Block document markup.
 	 * @return bool
@@ -875,6 +880,57 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$serialized    = serialize_blocks( $blocks );
 		$round_tripped = parse_blocks( $serialized );
 		return self::block_document_has_only_blocks( $round_tripped ) && self::block_document_topology( $blocks ) === self::block_document_topology( $round_tripped );
+	}
+
+	/**
+	 * Verify that the editor can load every persisted block without a name allowlist.
+	 *
+	 * @return array{admitted:bool,diagnostics:array<int,array<string,mixed>>}
+	 */
+	private static function block_document_editor_admission( string $markup, string $source_path ): array {
+		if ( ! class_exists( 'WP_Block_Type_Registry' ) ) {
+			throw new InvalidArgumentException( 'block_editor_admission_unavailable' );
+		}
+		$registry    = WP_Block_Type_Registry::get_instance();
+		$diagnostics = array();
+		$unsupported = false;
+		$inspect     = static function ( array $blocks, ?string $parent_name = null ) use ( &$inspect, $registry, $source_path, &$diagnostics, &$unsupported ): void {
+			foreach ( $blocks as $block ) {
+				if ( ! is_array( $block ) || ! is_string( $block['blockName'] ?? null ) || '' === $block['blockName'] ) {
+					continue;
+				}
+				$name       = $block['blockName'];
+				$block_type = $registry->get_registered( $name );
+				if ( ! $block_type ) {
+					$unsupported = true;
+					if ( self::BLOCK_PROVENANCE_LIMIT > count( $diagnostics ) ) {
+						$diagnostics[] = array(
+							'reason_code'          => 'unsupported_persisted_block',
+							'source_path'          => $source_path,
+							'block_name'           => $name,
+							'block_classification' => 'unsupported',
+						);
+					}
+				} else {
+					$classification = str_starts_with( $name, 'core/' ) ? 'registered_core' : 'registered_provider';
+					$owners         = $GLOBALS['static_site_importer_companion_block_owners'] ?? array();
+					if ( 'registered_provider' === $classification && is_array( $owners ) && isset( $owners[ $name ] ) && is_array( $owners[ $name ] ) ) {
+						$classification = 'declared_companion_dependency';
+					}
+					if ( is_array( $block_type->parent ) && ! in_array( $parent_name, $block_type->parent, true ) && self::BLOCK_PROVENANCE_LIMIT > count( $diagnostics ) ) {
+						$diagnostics[] = array( 'reason_code' => 'block_parent_requirement_not_met', 'source_path' => $source_path, 'block_name' => $name, 'parent_block_name' => $parent_name, 'block_classification' => $classification );
+					}
+					$parent_type = null === $parent_name ? null : $registry->get_registered( $parent_name );
+					if ( $parent_type && is_array( $parent_type->allowed_blocks ) && ! in_array( $name, $parent_type->allowed_blocks, true ) && self::BLOCK_PROVENANCE_LIMIT > count( $diagnostics ) ) {
+						$diagnostics[] = array( 'reason_code' => 'block_child_not_allowed', 'source_path' => $source_path, 'block_name' => $name, 'parent_block_name' => $parent_name, 'block_classification' => $classification );
+					}
+				}
+				$inner_blocks = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
+				$inspect( $inner_blocks, $name );
+			}
+		};
+		$inspect( parse_blocks( $markup ) );
+		return array( 'admitted' => ! $unsupported, 'diagnostics' => $diagnostics );
 	}
 
 	/** @param array<array-key,mixed> $blocks @return bool */
