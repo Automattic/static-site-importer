@@ -48,8 +48,6 @@ foreach ( $static_site_importer_figma_transformers as $static_site_importer_figm
 
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-site-identity.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-website-artifact-import-input.php';
-require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-materialization-strategy.php';
-require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-classic-theme-projection.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-client-script-policy.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-document.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-source-page.php';
@@ -254,7 +252,6 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'materialize_dependencies'     => ! isset( $assoc_args['skip-dependency-materialization'] ),
 				'report'                       => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
 				'asset_materialization_policy' => isset( $assoc_args['asset-materialization-policy'] ) ? (string) $assoc_args['asset-materialization-policy'] : '',
-				'theme_materialization'        => isset( $assoc_args['theme-materialization'] ) ? (string) $assoc_args['theme-materialization'] : 'block',
 			);
 
 			$result = static_site_importer_cli_import(
@@ -317,7 +314,6 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'fail_on_quality'           => isset( $assoc_args['fail-on-quality'] ),
 				'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
 				'report'                    => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
-				'theme_materialization'     => isset( $assoc_args['theme-materialization'] ) ? (string) $assoc_args['theme-materialization'] : 'block',
 			);
 			if ( isset( $assoc_args['import-id'] ) ) {
 				$input['source']['import_id'] = (string) $assoc_args['import-id'];

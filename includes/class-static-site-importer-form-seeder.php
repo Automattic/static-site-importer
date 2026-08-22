@@ -39,15 +39,6 @@ class Static_Site_Importer_Form_Seeder {
 		return ! empty( $result['runtime_mapped'] ) && is_string( $result['block_markup'] ?? null ) ? $result['block_markup'] : '';
 	}
 
-	/** Return adapter-owned Jetpack block data for classic server rendering. */
-	public static function binding_classic_render( array $entity, array $result ): array {
-		unset( $entity );
-		return ! empty( $result['runtime_mapped'] ) && is_string( $result['block_markup'] ?? null ) && '' !== trim( $result['block_markup'] ) ? array(
-			'kind'    => 'blocks',
-			'content' => $result['block_markup'],
-		) : array();
-	}
-
 	/**
 	 * Provider id this seeder materializes for.
 	 */

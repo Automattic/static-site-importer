@@ -271,13 +271,11 @@
 		const restUrl = root.getAttribute( 'data-static-site-importer-figma-rest-url' );
 		const nonce = root.getAttribute( 'data-static-site-importer-nonce' );
 		const isCurrentSiteImport = root.getAttribute( 'data-static-site-importer-apply-to-current-site' ) === '1';
-		const themeMaterialization = root.getAttribute( 'data-static-site-importer-theme-materialization' ) === 'classic' ? 'classic' : 'block';
 		const formData = new FormData();
 		formData.append( 'figma_file', file );
 		formData.append( 'apply_to_current_site', isCurrentSiteImport ? '1' : '0' );
 		formData.append( 'activate', isCurrentSiteImport ? '1' : '0' );
 		formData.append( 'overwrite', isCurrentSiteImport ? '1' : '0' );
-		formData.append( 'theme_materialization', themeMaterialization );
 
 		showStatus( root, isCurrentSiteImport ? 'Importing Figma file to this site...' : 'Preparing Figma file for WordPress preview...' );
 
@@ -335,7 +333,6 @@
 			const uploadInputs = root.querySelectorAll( '[data-static-site-importer-source-files], [data-static-site-importer-source-directory]' );
 			const provider = root.getAttribute( 'data-static-site-importer-provider' ) || '';
 			const isCurrentSiteImport = root.getAttribute( 'data-static-site-importer-apply-to-current-site' ) === '1';
-			const themeMaterialization = root.getAttribute( 'data-static-site-importer-theme-materialization' ) === 'classic' ? 'classic' : 'block';
 			const source = {
 				url: sourceUrl ? sourceUrl.value : '',
 				html: html ? html.value : '',
@@ -362,7 +359,6 @@
 						apply_to_current_site: isCurrentSiteImport,
 						activate: isCurrentSiteImport,
 						overwrite: isCurrentSiteImport,
-						theme_materialization: themeMaterialization,
 					};
 					if ( importId ) {
 						body.source = Object.assign( {}, importSource, { import_id: importId } );

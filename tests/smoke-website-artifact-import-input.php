@@ -153,7 +153,6 @@ $input  = array(
 	'client_script_policy'                 => 'isolated_preview',
 	'client_script_provenance'             => array( 'ref' => 'contract:preview' ),
 	'client_script_isolated'               => true,
-	'theme_materialization'                => 'classic',
 );
 $direct = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
 

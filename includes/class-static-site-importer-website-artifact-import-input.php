@@ -55,10 +55,6 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		),
 		'client_script_provenance'             => array( 'type' => 'object' ),
 		'client_script_isolated'               => array( 'type' => 'boolean' ),
-		'theme_materialization'                => array(
-			'type' => 'string',
-			'enum' => array( 'block', 'classic' ),
-		),
 	);
 
 	/**
@@ -98,7 +94,6 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 				'client_script_policy'                 => 'inert',
 				'client_script_provenance'             => array(),
 				'client_script_isolated'               => false,
-				'theme_materialization'                => 'block',
 			),
 			$defaults
 		);
@@ -109,7 +104,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 			}
 		}
 
-		foreach ( array( 'slug', 'name', 'site_title', 'stale_page_action', 'runtime_lifecycle_phase', 'runtime_lifecycle_request_id', 'runtime_lifecycle_checkpoint', 'asset_materialization_policy', 'client_script_policy', 'theme_materialization' ) as $field ) {
+		foreach ( array( 'slug', 'name', 'site_title', 'stale_page_action', 'runtime_lifecycle_phase', 'runtime_lifecycle_request_id', 'runtime_lifecycle_checkpoint', 'asset_materialization_policy', 'client_script_policy' ) as $field ) {
 			$values[ $field ] = is_scalar( $values[ $field ] ) ? (string) $values[ $field ] : '';
 		}
 		foreach ( array( 'activate', 'overwrite', 'disable_smilies', 'fail_on_quality', 'allow_missing_woocommerce', 'allow_missing_jetpack', 'materialize_dependencies', 'require_proven_dynamic_client_assets', 'seed_entities', 'write_theme_report_artifacts', 'client_script_isolated' ) as $field ) {

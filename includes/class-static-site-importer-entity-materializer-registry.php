@@ -226,7 +226,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return $report;
 	}
 
-	/** Roll back a provider receipt. Classic transactions fail closed without this contract. */
+	/** Roll back a provider receipt. Transactions fail closed without this contract. */
 	public static function rollback( array $adapter, array $report ) {
 		$rollback = $adapter['rollback_callback'] ?? null;
 		return is_callable( $rollback ) ? call_user_func( $rollback, $report ) : new WP_Error( 'static_site_importer_entity_rollback_unavailable', 'The selected entity provider does not declare rollback support.' );
@@ -240,13 +240,6 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 		$markup = call_user_func( $callback, $entity, $result );
 		return is_string( $markup ) ? trim( $markup ) : '';
-	}
-
-	/** Resolve adapter-owned classic server render data without inspecting source HTML. */
-	public static function binding_classic_render( array $adapter, array $entity, array $result ): array {
-		$callback = $adapter['classic_binding_callback'] ?? null;
-		$render   = is_callable( $callback ) ? call_user_func( $callback, $entity, $result ) : array();
-		return is_array( $render ) && in_array( $render['kind'] ?? null, array( 'shortcode', 'blocks' ), true ) && is_string( $render['content'] ?? null ) && '' !== trim( $render['content'] ) ? $render : array();
 	}
 
 	/**
@@ -565,7 +558,6 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'materializer'             => array( 'Static_Site_Importer_Woo_Product_Seeder', 'seed' ),
 				'rollback_callback'        => array( 'Static_Site_Importer_Woo_Product_Seeder', 'rollback' ),
 				'binding_callback'         => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_block_markup' ),
-				'classic_binding_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_classic_render' ),
 				'report_callback'          => array( 'Static_Site_Importer_Woo_Product_Seeder', 'new_report' ),
 				'presentation'             => 'Static_Site_Importer_Commerce_Presentation',
 				'dependencies'             => array(
@@ -590,7 +582,6 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'materializer'             => array( 'Static_Site_Importer_Form_Seeder', 'seed' ),
 				'rollback_callback'        => array( 'Static_Site_Importer_Form_Seeder', 'rollback' ),
 				'binding_callback'         => array( 'Static_Site_Importer_Form_Seeder', 'binding_block_markup' ),
-				'classic_binding_callback' => array( 'Static_Site_Importer_Form_Seeder', 'binding_classic_render' ),
 				'report_callback'          => array( 'Static_Site_Importer_Form_Seeder', 'new_report' ),
 				'dependencies'             => array(
 					array(

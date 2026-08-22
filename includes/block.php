@@ -40,7 +40,6 @@ function static_site_importer_render_block( array $attributes = array() ): strin
 	$default_url           = isset( $attributes['defaultUrl'] ) ? esc_url_raw( (string) $attributes['defaultUrl'] ) : '';
 	$apply                 = ! empty( $attributes['applyToCurrentSite'] );
 	$playground            = ! empty( $attributes['openInPlayground'] );
-	$theme_materialization = 'classic' === ( $attributes['themeMaterialization'] ?? '' ) ? 'classic' : 'block';
 	$button_text           = $apply ? __( 'Import to this site', 'static-site-importer' ) : __( 'Generate WordPress Website', 'static-site-importer' );
 
 	/**
@@ -89,7 +88,7 @@ function static_site_importer_render_block( array $attributes = array() ): strin
 
 	ob_start();
 	?>
-	<div class="<?php echo esc_attr( $wrapper_classes ); ?>"<?php echo $extra_attr; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Name sanitized, value escaped with esc_attr() above. ?> data-static-site-importer data-static-site-importer-rest-url="<?php echo esc_url( rest_url( 'static-site-importer/v1/imports' ) ); ?>" data-static-site-importer-figma-rest-url="<?php echo esc_url( rest_url( 'static-site-importer/v1/import-figma-file' ) ); ?>" data-static-site-importer-figma-available="<?php echo $figma_available ? '1' : '0'; ?>" data-static-site-importer-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>" data-static-site-importer-provider="<?php echo esc_attr( $provider ); ?>" data-static-site-importer-theme-materialization="<?php echo esc_attr( $theme_materialization ); ?>" data-static-site-importer-apply-to-current-site="<?php echo $apply ? '1' : '0'; ?>" data-static-site-importer-open-in-playground="<?php echo $playground ? '1' : '0'; ?>">
+	<div class="<?php echo esc_attr( $wrapper_classes ); ?>"<?php echo $extra_attr; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Name sanitized, value escaped with esc_attr() above. ?> data-static-site-importer data-static-site-importer-rest-url="<?php echo esc_url( rest_url( 'static-site-importer/v1/imports' ) ); ?>" data-static-site-importer-figma-rest-url="<?php echo esc_url( rest_url( 'static-site-importer/v1/import-figma-file' ) ); ?>" data-static-site-importer-figma-available="<?php echo $figma_available ? '1' : '0'; ?>" data-static-site-importer-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>" data-static-site-importer-provider="<?php echo esc_attr( $provider ); ?>" data-static-site-importer-apply-to-current-site="<?php echo $apply ? '1' : '0'; ?>" data-static-site-importer-open-in-playground="<?php echo $playground ? '1' : '0'; ?>">
 		<section class="ssi-importer__panel" aria-labelledby="ssi-importer-title">
 			<p class="ssi-importer__eyebrow"><?php esc_html_e( 'Static Site Importer', 'static-site-importer' ); ?></p>
 			<h1 id="ssi-importer-title" class="ssi-importer__title"><?php echo esc_html( $title ); ?></h1>

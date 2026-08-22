@@ -588,18 +588,6 @@ $block_late_failure = $theme_generator_materialize->invoke(
 );
 $assert( is_wp_error( $block_late_failure ) && 'static_site_importer_projection_write_failed' === $block_late_failure->get_error_code() && array( 'form', 'woo' ) === $rollback_order, 'block-mode Woo and form entities compensate in reverse order when report persistence fails after materialization' );
 
-$classic_artifact   = array(
-	'entrypoint' => 'index.html',
-	'files'      => array(
-		'index.html'      => '<html><head><link rel="stylesheet" href="assets/site.css"></head><body><header><a href="about.html">Nav</a></header><main><img src="assets/logo.svg" onerror="alert(1)"><a href="javascript:alert(1)">Unsafe</a><h1>Home</h1></main><footer>Footer</footer><script>alert(1)</script></body></html>',
-		'about.html'      => '<main><h1>About</h1><img src="assets/logo.svg"></main>',
-		'assets/logo.svg' => '<svg xmlns="http://www.w3.org/2000/svg"/>',
-		'assets/site.css' => 'main{background:url(logo.svg)}',
-	),
-);
-$classic_plan       = ( new ArtifactCompiler() )->compile( $classic_artifact )->toArray()['source_reports']['wordpress_site_plan'];
-$classic_projection = Static_Site_Importer_Classic_Theme_Projection::build( $classic_artifact, $classic_plan );
-$assert( ! is_wp_error( $classic_projection ), 'normalized artifact produces a render-neutral SSI classic projection without block reverse conversion' );
 $woo_late_failure_lifecycle = array(
 	'dependencies' => array(),
 	'entities'     => array(
@@ -608,7 +596,6 @@ $woo_late_failure_lifecycle = array(
 				'provider'                 => 'woocommerce',
 				'materializer'             => array( 'Static_Site_Importer_Woo_Product_Seeder', 'seed' ),
 				'rollback_callback'        => array( 'Static_Site_Importer_Woo_Product_Seeder', 'rollback' ),
-				'classic_binding_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_classic_render' ),
 			),
 			'manifest' => array(
 				'products' => array(
@@ -624,33 +611,18 @@ $woo_late_failure_lifecycle = array(
 		),
 	),
 );
-foreach ( array(
-	'block'   => array(
-		'plan' => $plan,
-		'args' => array(),
-	),
-	'classic' => array(
-		'plan' => $classic_plan,
-		'args' => array(
-			'theme_materialization'    => 'classic',
-			'classic_theme_projection' => $classic_projection,
-		),
-	),
-) as $strategy => $fixture ) {
+foreach ( array( 'block' ) as $strategy ) {
 	$GLOBALS['ssi_plan_woo_cleanup_failures'] = true;
 	$late_failure                             = $theme_generator_materialize->invoke(
 		null,
 		array(),
-		array_merge(
-			array(
-				'slug'                           => 'woo-late-' . $strategy,
-				'seed_entities'                  => true,
-				'font_materialization'           => array(),
-				'inject_materialization_failure' => 'report_persistence',
-			),
-			$fixture['args']
+		array(
+			'slug'                           => 'woo-late-' . $strategy,
+			'seed_entities'                  => true,
+			'font_materialization'           => array(),
+			'inject_materialization_failure' => 'report_persistence',
 		),
-		$fixture['plan'],
+		$plan,
 		array(),
 		null,
 		$woo_late_failure_lifecycle,
@@ -681,52 +653,6 @@ foreach ( array(
 			unset( $GLOBALS['ssi_plan_posts'][ $id ] ); }
 	}
 }
-$classic_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
-	$classic_plan,
-	array(
-		'slug'                     => 'classic-site-plan',
-		'name'                     => 'Classic Site',
-		'theme_materialization'    => 'classic',
-		'classic_theme_projection' => $classic_projection,
-		'activate'                 => true,
-	)
-);
-$classic_root    = $GLOBALS['ssi_plan_root'] . '/classic-site-plan';
-$classic_pages   = json_decode( (string) file_get_contents( $classic_root . '/classic-pages.json' ), true );
-$assert( 'completed' === $classic_receipt['status'] && 'source_artifact_projection' === ( $classic_receipt['theme_materialization']['status'] ?? '' ), 'classic strategy materializes through the canonical receipt path with strategy evidence' );
-$assert( array() === array_diff( array( 'style.css', 'functions.php', 'header.php', 'footer.php', 'front-page.php', 'page.php', 'single.php', 'index.php', 'archive.php', 'search.php', '404.php', 'classic-pages.json', 'classic-chrome.json', 'classic-bindings.json', 'assets/assets/logo.svg', 'assets/assets/site.css' ), array_column( $classic_receipt['completed']['files'], 'target_path' ) ), 'classic receipt records the complete fixed scaffold, canonical assets, and inert data files' );
-$assert( str_contains( (string) ( $classic_pages['pages']['index.html']['html'] ?? '' ), 'https://example.test/wp-content/themes/classic-site-plan/assets/assets/logo.svg' ) && ! str_contains( (string) ( $classic_pages['pages']['index.html']['html'] ?? '' ), 'onerror=' ) && ! str_contains( (string) ( $classic_pages['pages']['index.html']['html'] ?? '' ), 'javascript:' ) && ! str_contains( (string) ( $classic_pages['pages']['index.html']['html'] ?? '' ), '<script' ), 'classic page data rewrites declared asset URLs and strips executable artifact HTML' );
-$assert( str_contains( (string) file_get_contents( $classic_root . '/functions.php' ), 'get_post_meta( get_queried_object_id()' ) && str_contains( (string) file_get_contents( $classic_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-classic'" ) && 'classic-site-plan' === ( $GLOBALS['ssi_plan_options']['stylesheet'] ?? '' ), 'classic scaffold resolves data by reconciliation provenance, enqueues its stylesheet, and activates through the existing operation lifecycle' );
-$hostile_projection                                   = $classic_projection;
-$hostile_projection['pages']['index.html']['html']    = '<main><script>classic-hostile</script><img src="javascript:classic-hostile" onerror="classic-hostile"><iframe srcdoc="<script>classic-hostile</script>"></iframe><svg><animate attributeName="href" values="javascript:classic-hostile"></animate></svg></main>';
-$hostile_projection['chrome']['header']               = '<header onclick="classic-hostile"><a href="javascript:classic-hostile">Hostile</a><svg><set attributeName="href" to="javascript:classic-hostile"></set></svg></header>';
-$hostile_projection['stylesheets']['assets/site.css'] = 'body{background:url(javascript:classic-hostile);behavior:url(classic-hostile)}';
-$hostile_receipt                                      = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
-	$classic_plan,
-	array(
-		'slug'                     => 'classic-hostile-direct',
-		'name'                     => 'Classic Hostile Direct',
-		'theme_materialization'    => 'classic',
-		'classic_theme_projection' => $hostile_projection,
-	)
-);
-$hostile_root   = $GLOBALS['ssi_plan_root'] . '/classic-hostile-direct';
-$hostile_output = (string) file_get_contents( $hostile_root . '/classic-pages.json' ) . (string) file_get_contents( $hostile_root . '/classic-chrome.json' ) . (string) file_get_contents( $hostile_root . '/classic-bindings.json' ) . (string) file_get_contents( $hostile_root . '/functions.php' ) . (string) file_get_contents( $hostile_root . '/style.css' );
-$assert( 'completed' === $hostile_receipt['status'] && array() === array_filter( array( '<script', 'onerror', 'onclick', 'javascript:', 'srcdoc', '<iframe', '<animate', '<set', 'behavior:' ), static fn( string $needle ): bool => str_contains( strtolower( $hostile_output ), $needle ) ), 'direct classic projections sanitize script, event, javascript URL, srcdoc, and SVG mutation payloads before JSON or PHP rendering' );
-$invalid_projection                         = $classic_projection;
-$invalid_projection['pages']['forged.html'] = array(
-	'source_path' => 'forged.html',
-	'html'        => '<script>classic-hostile</script>',
-);
-$invalid_projection_receipt                 = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
-	$classic_plan,
-	array(
-		'slug'                     => 'classic-invalid-direct',
-		'theme_materialization'    => 'classic',
-		'classic_theme_projection' => $invalid_projection,
-	)
-);
-$assert( 'rejected' === $invalid_projection_receipt['status'] && 'static_site_importer_classic_projection_page_structure_invalid' === ( $invalid_projection_receipt['diagnostics'][0]['reason_code'] ?? '' ) && ! is_dir( $GLOBALS['ssi_plan_root'] . '/classic-invalid-direct' ), 'direct classic projections reject forged structural page fields before mutation' );
 $unbound_provenance = $receipt['completed']['block_provenance'] ?? array();
 $assert( count( $plan['pages'] ) === count( $unbound_provenance ) && count( $plan['pages'] ) === ( $receipt['completed']['block_provenance_count'] ?? 0 ), 'ordinary resolved pages receive receipt provenance without runtime bindings' );
 $assert( 'blocks-engine/wordpress-site-plan-resolver' === ( $unbound_provenance[0]['stages'][0]['stage'] ?? '' ) && hash( 'sha256', $receipt['plan']['pages'][0]['resolved_block_markup'] ) === ( $unbound_provenance[0]['stages'][0]['output']['sha256'] ?? '' ), 'ordinary page provenance records the resolver output hash' );
@@ -1140,7 +1066,7 @@ $assert( true === in_array( 'entity_collection:products', $declared_products[0][
 $assert( array( 'tour-tee', 'signed-cd' ) === array_column( $declared_products[1]['payload']['entities'] ?? array(), 'slug' ), 'canonical declarations retain product rows unchanged' );
 $declared_entities  = $declared_products[1]['payload']['entities'] ?? array();
 $declared_selectors = array_column( $declared_entities, 'selector' );
-$assert( 2 === count( array_unique( $declared_selectors ) ) && 2 === count( array_filter( $declared_selectors, static fn( $selector ): bool => is_string( $selector ) && '' !== $selector ) ) && 2 === count( array_filter( array_column( $declared_entities, 'source_path' ), static fn( $source ): bool => is_string( $source ) && '' !== $source ) ), 'canonical declarations retain compiler-owned exact classic source identities' );
+$assert( 2 === count( array_unique( $declared_selectors ) ) && 2 === count( array_filter( $declared_selectors, static fn( $selector ): bool => is_string( $selector ) && '' !== $selector ) ) && 2 === count( array_filter( array_column( $declared_entities, 'source_path' ), static fn( $source ): bool => is_string( $source ) && '' !== $source ) ), 'canonical declarations retain compiler-owned exact source identities' );
 $declared_lifecycle = ( new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'prepare_wordpress_site_plan_lifecycle' ) )->invoke( null, $product_grid_plan, array() );
 $assert( 'runtime_declarations' === ( $declared_lifecycle['status'] ?? '' ) && true === ( reset( $declared_lifecycle['entities'] )['required'] ?? false ), 'declared product entities enter the generic runtime lifecycle' );
 
