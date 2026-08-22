@@ -30,7 +30,7 @@ Hosts provide the package through the `static_site_importer_playground_package` 
 
 ## Canonical Site Plans
 
-`static-site-importer/materialize-wordpress-site-plan` is the generic plan-only boundary for a `blocks-engine/wordpress-site-plan/v2` produced by Blocks Engine 0.4.4. SSI calls the package's canonical validator and resolver, then owns WordPress/filesystem preflight, materialization, reconciliation, and the `static-site-importer/materialization-receipt/v1` response. It accepts no source HTML or transformer result envelope.
+`static-site-importer/materialize-wordpress-site-plan` is the generic plan-only boundary for a `blocks-engine/wordpress-site-plan/v2` produced by Blocks Engine. SSI calls the package's canonical validator and resolver, then owns WordPress/filesystem preflight, materialization, reconciliation, and the `static-site-importer/materialization-receipt/v2` response. Plan, report, classic handoff, and receipt bindings use the producer's `blocks-engine/wordpress-site-plan-identity/v1`; the materializer keeps its `prepared_resolved_projection_hash` separate for prepare-to-write TOCTOU detection. It accepts no source HTML or transformer result envelope.
 
 For an isolated runtime matrix, invoke the ability with `plan`, `slug`, and optional `overwrite`, or use:
 
@@ -76,6 +76,8 @@ When a generated artifact contains full-document HTML, Static Site Importer rout
 - Creates deterministic `wp_navigation` posts for supported header/footer navigation and references them from generated template parts.
 - Keeps imported pages native and editor-visible; page content belongs to WordPress pages while the generated theme owns shared chrome, background decoration, styles, scripts, and template wrappers.
 - Optionally activates the generated theme and assigns the imported `index.html` page as the front page when that page exists.
+- Names the generated theme from the resolved imported site title unless the caller supplies an explicit name.
+- Removes untouched WordPress installation content (`Hello world!`, `Sample Page`, and the sample comment) from fresh sites by default.
 
 ## Requirements
 
@@ -96,6 +98,17 @@ At runtime, SSI loads the transformer package from `vendor/` and calls `blocks_e
 4. Leave **Activate imported theme** checked if the generated theme should become active immediately.
 
 The admin path always overwrites an existing generated theme with the same slug. Pasted HTML, fetched URL HTML, and direct HTML uploads are copied into a generated upload work directory as `index.html` and imported as a single-page site. ZIP uploads are for multi-page static sites or bundled source-site exports; they are extracted to an upload work directory, the selected `index.html` is used as the entry file, sibling HTML files from that extracted site directory are imported, and nested `.md` / `.markdown` files are imported as content pages. The importer does not require the original source model to be a single `index.html`; it needs one selected HTML entry file for shared shell/chrome and imports the source content documents it can read.
+
+## Site Identity and Default Content
+
+The imported site's resolved title is also the generated theme name, so a producer's generic package name does not replace the site identity. Callers can still pass `name` and `slug`. Developers can customize the final values with `static_site_importer_theme_name` and `static_site_importer_theme_slug`:
+
+```php
+add_filter( 'static_site_importer_theme_name', static fn ( string $name ): string => $name . ' Theme' );
+add_filter( 'static_site_importer_theme_slug', static fn ( string $slug ): string => 'custom-' . $slug );
+```
+
+Imports remove untouched core seed content on sites where WordPress still reports `fresh_site`. Records are fingerprinted before page materialization and checked again before deletion, so edited or replaced content is preserved. Set the canonical import argument `remove_default_content` to `false`, pass `--keep-default-content` to WP-CLI import commands, or use the `static_site_importer_remove_default_content` filter to disable cleanup.
 
 ## Theming The Importer Block
 

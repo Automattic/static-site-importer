@@ -162,6 +162,23 @@ function wp_insert_post( array $post, bool $wp_error ) {
 	$GLOBALS['ssi_plan_posts'][ $id ] = $post;
 	return $id;
 }
+function wp_update_post( array $post, bool $wp_error = false ) {
+	unset( $wp_error );
+	$id = (int) ( $post['ID'] ?? 0 );
+	if ( $id <= 0 || ! isset( $GLOBALS['ssi_plan_posts'][ $id ] ) ) {
+		return new WP_Error( 'missing_post' );
+	}
+	$GLOBALS['ssi_plan_posts'][ $id ] = array_merge( $GLOBALS['ssi_plan_posts'][ $id ], $post );
+	return $id;
+}
+function get_permalink( int|WP_Post $post ): string {
+	$id   = $post instanceof WP_Post ? $post->ID : $post;
+	$data = $GLOBALS['ssi_plan_posts'][ $id ] ?? array();
+	if ( 'post' === ( $data['post_type'] ?? '' ) ) {
+		return 'https://example.test/2024/03/' . (string) ( $data['post_name'] ?? '' ) . '/';
+	}
+	return 'https://example.test/' . (string) ( $data['post_name'] ?? '' ) . '/';
+}
 function get_post_field( string $field, int $id ): string {
 	return stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $id ][ $field ] ?? '' ) ); }
 function sanitize_title( string $value ): string {
@@ -248,11 +265,18 @@ function wp_parse_args( $args, array $defaults = array() ): array {
 	return array_merge( $defaults, is_array( $args ) ? $args : array() );
 }
 
-$wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: '/Users/chubes/Studio/intelligence-chubes4';
-require_once rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-parser.php';
-require_once rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-type.php';
-require_once rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-type-registry.php';
-require_once rtrim( $wp_root, '/\\' ) . '/wp-includes/blocks.php';
+$wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: ( defined( 'ABSPATH' ) ? ABSPATH : '' );
+$wp_includes = rtrim( $wp_root, '/\\' ) . '/wp-includes/';
+$core_files  = array( 'class-wp-block-parser.php', 'class-wp-block-type.php', 'class-wp-block-type-registry.php', 'blocks.php' );
+foreach ( $core_files as $core_file ) {
+	if ( ! is_readable( $wp_includes . $core_file ) ) {
+		fwrite( STDERR, "SKIP: WordPress parser/serializer files are unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
+		exit( 0 );
+	}
+}
+foreach ( $core_files as $core_file ) {
+	require_once $wp_includes . $core_file;
+}
 
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-font-materializer.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-document-type-classifier.php';
@@ -286,6 +310,10 @@ $result   = ( new ArtifactCompiler() )->compile( $artifact )->toArray();
 $plan     = $result['source_reports']['wordpress_site_plan'];
 $assert( 'blocks-engine/wordpress-site-plan/v2' === $plan['schema'], 'compiler emits the released v2 site plan' );
 $assert( isset( $result['source_reports']['wordpress_site_plan']['reporting'] ), 'compiler exposes the plan in source reports' );
+$plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-plan-identity-fixture' ),
+);
 
 // The standalone harness loads Core's parser, not its init registrations.
 $register_document_blocks = static function ( array $blocks ) use ( &$register_document_blocks ): void {
@@ -385,7 +413,7 @@ $assert( 'installed_activated' === ( $gap_diagnostics[0]['materialization_status
 
 $receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan' ) );
 $assert( 'completed' === $receipt['status'], 'valid plan completes' );
-$assert( 'static-site-importer/materialization-receipt/v1' === $receipt['schema'], 'receipt schema is stable' );
+$assert( 'static-site-importer/materialization-receipt/v2' === $receipt['schema'] && $plan['plan_identity'] === ( $receipt['plan_identity'] ?? null ), 'receipt binds the producer plan identity.' );
 $assert( count( $plan['writes'] ) === count( $receipt['generated_files'] ), 'all canonical writes are materialized' );
 $assert( file_exists( $GLOBALS['ssi_plan_root'] . '/site-plan/templates/front-page.html' ), 'templates are materialized' );
 $assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-plan/assets/assets/site.css' ), 'https://example.test/wp-content/themes/site-plan/assets/assets/logo.svg' ), 'root-relative stylesheet references resolve to declared theme assets' );
@@ -467,6 +495,10 @@ $reference_result = ( new ArtifactCompiler() )->compile(
 	)
 )->toArray();
 $reference_plan   = $reference_result['source_reports']['wordpress_site_plan'];
+$reference_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-reference-plan-identity-fixture' ),
+);
 foreach ( $reference_plan['writes'] as &$write ) {
 	if ( 'asset.bin' === $write['source_path'] ) {
 		$write['payload_reference'] = array(
@@ -617,6 +649,10 @@ $classic_artifact   = array(
 	),
 );
 $classic_plan       = ( new ArtifactCompiler() )->compile( $classic_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$classic_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-classic-plan-identity-fixture' ),
+);
 $classic_projection = Static_Site_Importer_Classic_Theme_Projection::build( $classic_artifact, $classic_plan );
 $assert( ! is_wp_error( $classic_projection ), 'normalized artifact produces a render-neutral SSI classic projection without block reverse conversion' );
 $woo_late_failure_lifecycle = array(
@@ -858,8 +894,11 @@ $font_result          = ( new ArtifactCompiler() )->compile(
 	)
 )->toArray();
 $font_plan            = $font_result['source_reports']['wordpress_site_plan'];
+$font_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-font-plan-identity-fixture' ),
+);
 $font_materialization = $font_result['source_reports']['materialization_plan']['theme']['font_materialization'];
-$font_plan_hash       = hash( 'sha256', (string) wp_json_encode( $font_plan, JSON_UNESCAPED_SLASHES ) );
 $font_receipt         = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$font_plan,
 	array(
@@ -869,7 +908,7 @@ $font_receipt         = Static_Site_Importer_WordPress_Site_Plan_Materializer::m
 );
 $font_root            = $GLOBALS['ssi_plan_root'] . '/font-site-plan';
 $assert( 'completed' === $font_receipt['status'], 'canonical font materialization completes' );
-$assert( $font_plan_hash === $font_receipt['plan_hash'], 'font overlay leaves the canonical source plan unchanged' );
+$assert( $font_plan['plan_identity'] === ( $font_receipt['plan_identity'] ?? null ), 'font overlay leaves the producer canonical plan identity unchanged' );
 $assert( file_exists( $font_root . '/assets/css/fonts.css' ), 'declared font stylesheet is materialized' );
 $assert( str_contains( (string) file_get_contents( $font_root . '/assets/css/embedded-fonts.css' ), 'data:font/woff2;base64,' ), 'self-contained font stylesheet is materialized' );
 $assert( str_contains( (string) file_get_contents( $font_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-embedded-fonts'" ), 'generated theme loads self-contained font stylesheet' );
@@ -1105,6 +1144,10 @@ $font_without_svg_result  = ( new ArtifactCompiler() )->compile(
 		),
 	)
 )->toArray();
+$font_without_svg_result['source_reports']['wordpress_site_plan']['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-font-without-svg-plan-identity-fixture' ),
+);
 $font_without_svg_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$font_without_svg_result['source_reports']['wordpress_site_plan'],
 	array(
@@ -1445,6 +1488,10 @@ foreach ( $binding_plan['pages'] as $page ) {
 	$register_document_blocks( parse_blocks( (string) ( $page['canonical_block_markup'] ?? '' ) ) );
 }
 WP_Block_Type_Registry::get_instance()->register( 'core/shortcode', array() );
+$binding_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-binding-plan-identity-fixture' ),
+);
 $binding_search      = '<!-- wp:paragraph {"content":"Replace me"} --><p>Replace me</p><!-- /wp:paragraph -->';
 $binding_replacement = '<!-- wp:shortcode -->[add_to_cart id="42"]<!-- /wp:shortcode -->';
 $binding_receipt     = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
@@ -1527,6 +1574,10 @@ $duplicate_binding_plan    = ( new ArtifactCompiler() )->compile(
 		'files'      => array( 'index.html' => '<main><p>Same</p><p>Same</p></main>' ),
 	)
 )->toArray()['source_reports']['wordpress_site_plan'];
+$duplicate_binding_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-duplicate-binding-plan-identity-fixture' ),
+);
 $duplicate_search          = '<!-- wp:paragraph {"content":"Same"} --><p>Same</p><!-- /wp:paragraph -->';
 $duplicate_binding_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$duplicate_binding_plan,
@@ -1874,6 +1925,10 @@ $publication_artifact    = array(
 	),
 );
 $publication_plan        = ( new ArtifactCompiler() )->compile( $publication_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$publication_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-publication-plan-identity-fixture' ),
+);
 $publication_receipt     = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $publication_plan, array( 'slug' => 'publication-plan' ) );
 $publication_id          = $publication_plan['runtime_declarations'][0]['reconciliation_identity'];
 $publication_report      = $publication_receipt['completed']['runtime_declarations']['asset_publications'][ $publication_id ] ?? array();
@@ -2053,6 +2108,11 @@ $assert( 'rejected' === $rejected['status'], 'invalid plan is rejected' );
 $assert( $before_posts === count( $GLOBALS['ssi_plan_posts'] ), 'invalid plan creates no posts' );
 $assert( $before_files === count( glob( $GLOBALS['ssi_plan_root'] . '/reject/**/*' ) ?: array() ), 'invalid plan writes no files' );
 
+$missing_identity = $plan;
+unset( $missing_identity['plan_identity'] );
+$missing_identity_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $missing_identity, array( 'slug' => 'missing-plan-identity' ) );
+$assert( 'rejected' === $missing_identity_receipt['status'] && 'canonical_plan_rejected' === ( $missing_identity_receipt['errors'][0]['code'] ?? '' ), 'plans require a versioned producer identity before materialization' );
+
 $tampered_prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare(
 	$plan,
 	array(
@@ -2093,6 +2153,10 @@ $external_dynamic_artifact                         = $artifact;
 $external_dynamic_artifact['files']['index.html'] .= '<script src="https://cdn.example.test/runtime.js"></script>';
 $external_dynamic_plan                             = ( new ArtifactCompiler() )->compile( $external_dynamic_artifact )->toArray()['source_reports']['wordpress_site_plan'];
 WordPressSitePlan::assertValid( $external_dynamic_plan );
+$external_dynamic_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-external-dynamic-plan-identity-fixture' ),
+);
 $assert( 'not_proven' === $external_dynamic_plan['reference_semantics']['dynamic_client_assets']['status'], 'compiler marks external dynamic scripts as not proven' );
 
 $dynamic_before_posts   = $GLOBALS['ssi_plan_posts'];
@@ -2123,6 +2187,10 @@ $dynamic_artifact                            = $artifact;
 $dynamic_artifact['files']['index.html']    .= '<script src="assets/site.js"></script>';
 $dynamic_artifact['files']['assets/site.js'] = 'window.sitePlan = true;';
 $dynamic_plan                                = ( new ArtifactCompiler() )->compile( $dynamic_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$dynamic_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-dynamic-plan-identity-fixture' ),
+);
 $dynamic_completed                           = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $dynamic_plan, array( 'slug' => 'dynamic-plan' ) );
 $assert( 'completed' === $dynamic_completed['status'], 'declared static local scripts are proven and materialize' );
 
@@ -2136,6 +2204,10 @@ $many_plan    = ( new ArtifactCompiler() )->compile(
 		'files'      => $many_files,
 	)
 )->toArray()['source_reports']['wordpress_site_plan'];
+$many_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-many-plan-identity-fixture' ),
+);
 $many_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $many_plan, array( 'slug' => 'many-pages-plan' ) );
 $assert( 51 === ( $many_receipt['completed']['block_provenance_count'] ?? 0 ) && 50 === count( $many_receipt['completed']['block_provenance'] ?? array() ) && true === ( $many_receipt['completed']['block_provenance_truncated'] ?? false ), 'receipt enforces the provenance cap before downstream projection' );
 
@@ -2234,6 +2306,10 @@ $nested_index_artifact     = array(
 	),
 );
 $nested_index_plan         = ( new ArtifactCompiler() )->compile( $nested_index_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$nested_index_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-nested-index-plan-identity-fixture' ),
+);
 $nested_index_receipt      = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $nested_index_plan, array( 'slug' => 'nested-index-plan' ) );
 $nested_index_ids          = $nested_index_receipt['completed']['pages'] ?? array();
 $home_id                   = (int) ( $nested_index_ids['website/index.html'] ?? 0 );
@@ -2256,6 +2332,10 @@ $classify_artifact         = array(
 	),
 );
 $classify_plan             = ( new ArtifactCompiler() )->compile( $classify_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$classify_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-classify-plan-identity-fixture' ),
+);
 $classify_receipt          = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $classify_plan, array( 'slug' => 'classify-plan' ) );
 $classify_ids              = $classify_receipt['completed']['pages'] ?? array();
 $home_id                   = (int) ( $classify_ids['index.html'] ?? 0 );
@@ -2294,6 +2374,10 @@ $tz_artifact = array(
 	),
 );
 $tz_plan     = ( new ArtifactCompiler() )->compile( $tz_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$tz_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-timezone-plan-identity-fixture' ),
+);
 $tz_receipt  = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $tz_plan, array( 'slug' => 'tz-plan' ) );
 $tz_id       = (int) ( ( $tz_receipt['completed']['pages'] ?? array() )['essays/dated.html'] ?? 0 );
 // post_date is site-local and wp_insert_post derives it from post_date_gmt;
@@ -2315,6 +2399,10 @@ $reclassify_artifact       = array(
 	),
 );
 $reclassify_plan           = ( new ArtifactCompiler() )->compile( $reclassify_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$reclassify_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-reclassify-plan-identity-fixture' ),
+);
 $reclassify_first          = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $reclassify_plan, array( 'slug' => 'reclassify-plan' ) );
 $first_id                  = (int) ( ( $reclassify_first['completed']['pages'] ?? array() )['notes/post.html'] ?? 0 );
 $assert( 'page' === ( $GLOBALS['ssi_plan_posts'][ $first_id ]['post_type'] ?? null ), 'undated document imports as a page before reclassification' );
@@ -2348,6 +2436,10 @@ $parented_artifact         = array(
 	),
 );
 $parented_plan             = ( new ArtifactCompiler() )->compile( $parented_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$parented_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-parented-plan-identity-fixture' ),
+);
 $parented_receipt          = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $parented_plan, array( 'slug' => 'parented-plan' ) );
 $parented_ids              = $parented_receipt['completed']['pages'] ?? array();
 $parented_blog_id          = (int) ( $parented_ids['about/blog/index.html'] ?? 0 );
@@ -2363,6 +2455,10 @@ $explicit_artifact         = array(
 	),
 );
 $explicit_plan             = ( new ArtifactCompiler() )->compile( $explicit_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$explicit_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-explicit-plan-identity-fixture' ),
+);
 $explicit_receipt          = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $explicit_plan, array( 'slug' => 'explicit-plan' ) );
 $explicit_ids              = $explicit_receipt['completed']['pages'] ?? array();
 $ideas_id                  = (int) ( $explicit_ids['notes/ideas.md'] ?? 0 );
@@ -2387,6 +2483,10 @@ $parent_plan                    = ( new ArtifactCompiler() )->compile(
 		),
 	)
 )->toArray()['source_reports']['wordpress_site_plan'];
+$parent_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-parent-plan-identity-fixture' ),
+);
 $child_plan                     = ( new ArtifactCompiler() )->compile(
 	array(
 		'entrypoint' => 'website/index.html',
@@ -2403,6 +2503,10 @@ $register_plan_blocks = static function ( array $candidate ) use ( $register_doc
 };
 $register_plan_blocks( $parent_plan );
 $register_plan_blocks( $child_plan );
+$child_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-child-plan-identity-fixture' ),
+);
 $parent_batch                   = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$parent_plan,
 	array(
@@ -2443,6 +2547,25 @@ $descendant_only = $parent_order->invoke(
 );
 $assert( is_array( $descendant_only ) && 1 === count( $descendant_only ) && 'website/external/child/index.html' === ( $descendant_only[0]['source_path'] ?? '' ), 'external provenance parent satisfies ordering without being emitted as a page' );
 
+$GLOBALS['ssi_plan_posts'] = array();
+$GLOBALS['ssi_plan_meta']  = array();
+$route_artifact            = array(
+	'entrypoint' => 'website/index.html',
+	'files'      => array(
+		'website/index.html'         => '<main><a href="contact/index.html">Contact</a><a href="post/news/index.html">News</a></main>',
+		'website/contact/index.html' => '<main>Contact</main>',
+		array( 'path' => 'website/post/news/index.html', 'content' => '<article><time datetime="2024-03-01">March 1</time><h1>News</h1></article>', 'metadata' => array( 'post_type' => 'post' ) ),
+	),
+);
+$route_plan                = ( new ArtifactCompiler() )->compile( $route_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$route_receipt             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $route_plan, array( 'slug' => 'route-link-plan' ) );
+$route_home                = current( array_filter( $GLOBALS['ssi_plan_posts'], static fn( array $post ): bool => 'index' === ( $post['post_name'] ?? '' ) ) );
+$route_content             = is_array( $route_home ) ? stripslashes( (string) ( $route_home['post_content'] ?? '' ) ) : '';
+$assert( 'completed' === ( $route_receipt['status'] ?? '' ) && str_contains( $route_content, 'href="https://example.test/contact/"' ) && str_contains( $route_content, 'href="https://example.test/2024/03/news/"' ), 'canonical routes resolve to actual WordPress page and dated-post permalinks after materialization' );
+$rewrite_route_references = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'rewrite_route_references' );
+$pin_route_content        = $rewrite_route_references->invoke( null, 'data-pin-url=\\u0022/post/news\\u0022', array( '/post/news' => 'https://example.test/2024/03/news/' ) );
+$assert( 'data-pin-url=\\u0022https://example.test/2024/03/news/\\u0022' === $pin_route_content, 'escaped route-bearing data URL attributes resolve to the materialized WordPress permalink' );
+
 $hash_plan = array(
 	'schema' => 'test/plan/v1',
 	'escaped' => "quote:\" slash:/ backslash:\\ control:\n\t\x01",
@@ -2468,6 +2591,10 @@ $root_media_result = ( new ArtifactCompiler() )->compile(
 )->toArray();
 $root_media_plan    = $root_media_result['source_reports']['wordpress_site_plan'];
 $register_plan_blocks( $root_media_plan );
+$root_media_plan['plan_identity'] = array(
+	'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+	'hash'   => hash( 'sha256', 'released-transformer-root-media-plan-identity-fixture' ),
+);
 $root_media_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $root_media_plan, array( 'slug' => 'root-media-plan' ) );
 $root_media_page_id = (int) ( $root_media_receipt['completed']['pages']['website/index.html'] ?? 0 );
 $root_media_content = stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $root_media_page_id ]['post_content'] ?? '' ) );

@@ -10,6 +10,7 @@ use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanRe
 
 require_once __DIR__ . '/class-static-site-importer-stylesheet-materializer.php';
 require_once __DIR__ . '/class-static-site-importer-protected-page-policy.php';
+require_once __DIR__ . '/class-static-site-importer-default-content.php';
 if ( ! class_exists( 'Static_Site_Importer_Theme_Materialization_Strategy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-theme-materialization-strategy.php';
 }
@@ -21,7 +22,7 @@ if ( ! class_exists( 'Static_Site_Importer_Current_Site_Capabilities' ) ) {
 }
 
 final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
-	public const RECEIPT_SCHEMA           = 'static-site-importer/materialization-receipt/v1';
+	public const RECEIPT_SCHEMA           = 'static-site-importer/materialization-receipt/v2';
 	private const RECONCILIATION_META_KEY = '_static_site_importer_reconciliation_identity';
 	private const BLOCK_PROVENANCE_LIMIT  = 50;
 
@@ -67,9 +68,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === $strategy['strategy'] && ! is_array( $args['classic_theme_projection'] ?? null ) ) {
 			return self::failed_strategy_receipt( $plan, $args, new WP_Error( 'static_site_importer_classic_source_projection_missing', 'Classic materialization requires the SSI source-artifact projection prepared before this plan-only boundary.' ) );
 		}
-		$state = array(
+		$default_content           = self::discover_default_content( $args );
+		$state                     = array(
 			'plan'                         => $plan,
-			'plan_hash'                    => self::hash( $plan ),
+			'plan_identity'                => self::plan_identity( $plan ),
 			'diagnostics'                  => array(),
 			'applied'                      => array(
 				'posts'                => array(),
@@ -86,6 +88,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'external_report_destinations' => isset( $args['external_report_destinations'] ) && is_array( $args['external_report_destinations'] ) ? $args['external_report_destinations'] : array(),
 			'args'                         => $args,
 			'payload_reader'               => is_object( $payload_reader ) ? $payload_reader : null,
+			'default_content'              => $default_content,
 			'rollback'                     => array(
 				'posts'   => array(),
 				'files'   => array(),
@@ -94,6 +97,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		);
 
 		try {
+			if ( array() === $state['plan_identity'] ) {
+				throw new InvalidArgumentException( 'canonical_plan_identity_mismatch' );
+			}
 			WordPressSitePlan::assertValid( $plan );
 		} catch ( InvalidArgumentException $error ) {
 			$state['diagnostics'][] = array( 'reason_code' => 'canonical_plan_rejected' );
@@ -152,7 +158,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				unset( $page );
 				$state['base_resolved'] = $resolved;
 			}
-			$state['base_resolved_hash'] = self::hash( $resolved );
+			$state['prepared_resolved_projection_hash'] = self::prepared_resolved_projection_hash( $resolved );
 			$state['resolved']           = $resolved;
 			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
 			$state['theme_dir'] = $theme_dir;
@@ -198,7 +204,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					'rejected',
 					array(
 						'plan'             => isset( $prepared['plan'] ) && is_array( $prepared['plan'] ) ? $prepared['plan'] : array(),
-						'plan_hash'        => (string) ( $prepared['plan_hash'] ?? '' ),
+						'plan_identity'    => is_array( $prepared['plan_identity'] ?? null ) ? $prepared['plan_identity'] : array(),
 						'diagnostics'      => array( array( 'reason_code' => 'invalid_prepared_state' ) ),
 						'applied'          => array(
 							'posts'                => array(),
@@ -234,7 +240,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	private static function failed_strategy_receipt( array $plan, array $args, WP_Error $error ): array {
 		$state = array(
 			'plan'                  => $plan,
-			'plan_hash'             => self::hash( $plan ),
+			'plan_identity'         => self::plan_identity( $plan ),
 			'diagnostics'           => array( array( 'reason_code' => $error->get_error_code() ) ),
 			'applied'               => array(
 				'posts'                => array(),
@@ -263,7 +269,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'rejected',
 				array(
 					'plan'             => array(),
-					'plan_hash'        => '',
+					'plan_identity'    => array(),
 					'diagnostics'      => array( array( 'reason_code' => 'invalid_prepared_state' ) ),
 					'applied'          => array(
 						'posts'                => array(),
@@ -353,6 +359,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				}
 			}
 			unset( $binding_report );
+		}
+		$route_links = self::rewrite_materialized_route_links( $state );
+		if ( is_wp_error( $route_links ) ) {
+			return self::failed_receipt_from_error( $state, $route_links );
 		}
 
 		$short_write_attempt = 0;
@@ -462,6 +472,18 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 		}
 
+		$state['applied']['runtime_policy']['remove_default_content'] = ! empty( $args['remove_default_content'] )
+			? Static_Site_Importer_Default_Content::remove( $state['default_content'] )
+			: array(
+				'status'  => 'skipped',
+				'reason'  => 'disabled',
+				'removed' => array(
+					'posts'    => array(),
+					'comments' => array(),
+				),
+				'skipped' => array(),
+			);
+
 		return self::receipt( 'completed', $state );
 	}
 
@@ -476,14 +498,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$base_resolved  = $prepared['base_resolved'] ?? null;
 		$args           = isset( $prepared['args'] ) && is_array( $prepared['args'] ) ? $prepared['args'] : array();
 		$payload_reader = is_object( $prepared['payload_reader'] ?? null ) ? $prepared['payload_reader'] : null;
-		if ( ! is_array( $plan ) || ! is_array( $base_resolved ) || self::hash( $plan ) !== ( $prepared['plan_hash'] ?? '' ) || self::hash( $base_resolved ) !== ( $prepared['base_resolved_hash'] ?? '' ) ) {
+		if ( ! is_array( $plan ) || ! is_array( $base_resolved ) || self::plan_identity( $plan ) !== ( $prepared['plan_identity'] ?? null ) || self::prepared_resolved_projection_hash( $base_resolved ) !== ( $prepared['prepared_resolved_projection_hash'] ?? '' ) ) {
 			return array(
 				'status'  => 'rejected',
 				'receipt' => self::receipt(
 					'rejected',
 					array(
 						'plan'             => is_array( $plan ) ? $plan : array(),
-						'plan_hash'        => '',
+						'plan_identity'    => array(),
 						'diagnostics'      => array( array( 'reason_code' => 'prepared_projection_changed' ) ),
 						'applied'          => array(
 							'posts'                => array(),
@@ -507,10 +529,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$theme_dir  = trailingslashit( $theme_root ) . $slug;
 		$state      = array(
 			'plan'                         => $plan,
-			'plan_hash'                    => $prepared['plan_hash'],
+			'plan_identity'                => $prepared['plan_identity'],
 			'editability_report'           => $prepared['editability_report'] ?? array(),
 			'base_resolved'                => $base_resolved,
-			'base_resolved_hash'           => $prepared['base_resolved_hash'],
+			'prepared_resolved_projection_hash' => $prepared['prepared_resolved_projection_hash'],
 			'resolved'                     => $base_resolved,
 			'diagnostics'                  => array(),
 			'applied'                      => array(
@@ -534,6 +556,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			),
 			'args'                         => $args,
 			'payload_reader'               => $payload_reader,
+			'default_content'              => isset( $prepared['default_content'] ) && is_array( $prepared['default_content'] ) ? $prepared['default_content'] : array(),
 			'rollback'                     => array(
 				'posts'   => array(),
 				'files'   => array(),
@@ -731,6 +754,96 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		update_post_meta( (int) $id, self::RECONCILIATION_META_KEY, $page['reconciliation_identity'] );
 		return (int) $id;
+	}
+
+	/** Resolve destination-independent route references after WordPress has assigned every permalink. */
+	private static function rewrite_materialized_route_links( array &$state ) {
+		$routes = array();
+		foreach ( $state['ordered_pages'] as $page ) {
+			$source_path = (string) ( $page['source_path'] ?? '' );
+			$route       = self::normalized_route_path( (string) ( $page['route']['path'] ?? '' ) );
+			$post_id     = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
+			$permalink   = $post_id > 0 && function_exists( 'get_permalink' ) ? get_permalink( $post_id ) : false;
+			if ( '' !== $route && is_string( $permalink ) && '' !== $permalink ) {
+				$routes[ $route ] = $permalink;
+			}
+		}
+		if ( array() === $routes ) {
+			return true;
+		}
+
+		foreach ( $state['ordered_pages'] as $page ) {
+			if ( ! empty( $page['skip_materialization'] ) ) {
+				continue;
+			}
+			$source_path = (string) ( $page['source_path'] ?? '' );
+			$post_id     = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
+			$content     = $post_id > 0 && function_exists( 'get_post_field' ) ? get_post_field( 'post_content', $post_id ) : null;
+			if ( ! is_string( $content ) ) {
+				return new WP_Error( 'route_link_rewrite_failed', 'Materialized page content could not be read for route-link resolution.', array( 'source_path' => $source_path ) );
+			}
+			$rewritten = self::rewrite_route_references( $content, $routes );
+			if ( $rewritten !== $content ) {
+				$updated = wp_update_post(
+					array(
+						'ID'           => $post_id,
+						'post_content' => wp_slash( $rewritten ),
+					),
+					true
+				);
+				if ( is_wp_error( $updated ) ) {
+					return $updated;
+				}
+				$provenance = json_decode( (string) get_post_meta( $post_id, '_static_site_importer_provenance', true ), true );
+				if ( is_array( $provenance ) ) {
+					$provenance['content_hash'] = hash( 'sha256', $rewritten );
+					update_post_meta( $post_id, '_static_site_importer_provenance', wp_json_encode( $provenance ) );
+				}
+			}
+			foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
+				if ( ( $binding_report['source_path'] ?? '' ) === $source_path && 'completed' === ( $binding_report['status'] ?? '' ) ) {
+					$binding_report['materialized_content_hash'] = hash( 'sha256', $rewritten );
+				}
+			}
+			unset( $binding_report );
+		}
+
+		return true;
+	}
+
+	/** @param array<string,string> $routes */
+	private static function rewrite_route_references( string $content, array $routes ): string {
+		$replace = static function ( array $matches ) use ( $routes ): string {
+			$value = (string) $matches[2];
+			if ( '' === $value || preg_match( '~^(?:[a-z][a-z0-9+.-]*:|//|#|\?)~i', $value ) ) {
+				return $matches[0];
+			}
+			$suffix = '';
+			if ( preg_match( '/^([^?#]*)(.*)$/', $value, $parts ) ) {
+				$value  = $parts[1];
+				$suffix = $parts[2];
+			}
+			$route = self::normalized_route_path( $value );
+			return isset( $routes[ $route ] ) ? $matches[1] . $routes[ $route ] . $suffix . $matches[3] : $matches[0];
+		};
+		foreach ( array(
+			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*["\'])([^"\']+)(["\'])/i',
+			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\")([^"\\\\]*)(\\\\")/i',
+			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u0022)(.*?)(\\\\u0022)/i',
+			'/(["\'](?:url|href|action)["\']\s*:\s*["\'])([^"\']+)(["\'])/i',
+		) as $pattern ) {
+			$content = preg_replace_callback( $pattern, $replace, $content ) ?? $content;
+		}
+
+		return $content;
+	}
+
+	private static function normalized_route_path( string $path ): string {
+		if ( '' === $path || ! str_starts_with( $path, '/' ) ) {
+			return '';
+		}
+		$normalized = '/' . trim( $path, '/' );
+		return '/' === $path ? '/' : $normalized;
 	}
 
 	/** Apply exact provider bindings to the resolved projection while retaining canonical plan markup. */
@@ -1751,6 +1864,17 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return false !== update_option( $option, $value ) && get_option( $option, null ) === $value;
 	}
 
+	/** @param array<string,mixed> $args @return array<string,mixed> */
+	private static function discover_default_content( array &$args ): array {
+		$requested                      = isset( $args['remove_default_content'] ) ? (bool) $args['remove_default_content'] : true;
+		$args['remove_default_content'] = (bool) apply_filters( 'static_site_importer_remove_default_content', $requested, $args );
+		return $args['remove_default_content'] ? Static_Site_Importer_Default_Content::discover() : array(
+			'eligible' => false,
+			'posts'    => array(),
+			'comments' => array(),
+		);
+	}
+
 	private static function active_theme_matches( string $slug ): bool {
 		$stylesheet = function_exists( 'get_stylesheet' ) ? get_stylesheet() : get_option( 'stylesheet', '' );
 		if ( function_exists( 'get_template' ) ) {
@@ -1899,7 +2023,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$receipt = array(
 			'schema'                    => self::RECEIPT_SCHEMA,
 			'status'                    => $status,
-			'plan_hash'                 => $state['plan_hash'],
+			'plan_identity'             => $state['plan_identity'],
 			'plan'                      => $resolved_plan,
 			'theme'                     => $state['theme'] ?? array(),
 			'completed'                 => array(
@@ -1917,9 +2041,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					'files'  => array(),
 				),
 				'runtime_policy'             => array(
-					'disable_smilies' => array(
+					'disable_smilies'        => array(
 						'requested' => isset( $state['args']['disable_smilies'] ) ? (bool) $state['args']['disable_smilies'] : true,
 						'applied'   => isset( $state['applied']['runtime_policy']['disable_smilies'] ) && true === $state['applied']['runtime_policy']['disable_smilies'],
+					),
+					'remove_default_content' => array(
+						'requested' => isset( $state['args']['remove_default_content'] ) ? (bool) $state['args']['remove_default_content'] : true,
+						'report'    => $state['applied']['runtime_policy']['remove_default_content'] ?? array( 'status' => 'not_applied' ),
 					),
 				),
 				'materialized_pages'         => $materialized_pages,
@@ -2100,6 +2228,23 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$context = hash_init( 'sha256' );
 		self::hash_json_value( $context, $plan );
 		return hash_final( $context );
+	}
+
+	/** @return array{schema:string,hash:string}|array{} */
+	private static function plan_identity( array $plan ): array {
+		$identity = $plan['plan_identity'] ?? null;
+		if ( ! is_array( $identity ) || 'blocks-engine/wordpress-site-plan-identity/v1' !== ( $identity['schema'] ?? null ) || ! is_string( $identity['hash'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', $identity['hash'] ) ) {
+			return array();
+		}
+		return array(
+			'schema' => $identity['schema'],
+			'hash'   => $identity['hash'],
+		);
+	}
+
+	/** Hash the resolved projection only for prepare-to-write change detection. */
+	public static function prepared_resolved_projection_hash( array $projection ): string {
+		return self::hash( $projection );
 	}
 
 	/** Stream the exact JSON token sequence previously passed to hash(). */

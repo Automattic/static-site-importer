@@ -42,6 +42,12 @@ if ( ! function_exists( 'wp_parse_url' ) ) {
 	}
 }
 
+if ( ! function_exists( 'apply_filters' ) ) {
+	function apply_filters( string $hook, $value, ...$args ) {
+		return isset( $GLOBALS['ssi_identity_filters'][ $hook ] ) ? $GLOBALS['ssi_identity_filters'][ $hook ]( $value, ...$args ) : $value;
+	}
+}
+
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-site-identity.php';
 
 $assertions = 0;
@@ -129,6 +135,16 @@ $is_taken  = static fn ( string $slug ): bool => isset( $taken[ $slug ] );
 $assert( 'maya-devon-3' === Static_Site_Importer_Site_Identity::unique_slug( 'maya-devon', $is_taken ), 'unique-slug-appends-next-free-suffix' );
 $assert( 'fresh-slug' === Static_Site_Importer_Site_Identity::unique_slug( 'fresh-slug', $is_taken ), 'unique-slug-returns-desired-when-free' );
 $assert( Static_Site_Importer_Site_Identity::DEFAULT_SLUG === Static_Site_Importer_Site_Identity::unique_slug( '', static fn ( string $slug ): bool => false ), 'unique-slug-falls-back-to-constant-when-empty' );
+
+// 9. Developers can customize generated theme metadata without replacing identity resolution.
+$GLOBALS['ssi_identity_filters']['static_site_importer_theme_name'] = static fn ( string $name ): string => $name . ' Custom Theme';
+$GLOBALS['ssi_identity_filters']['static_site_importer_theme_slug'] = static fn ( string $slug ): string => 'custom-' . $slug;
+$identity = Static_Site_Importer_Site_Identity::resolve( array( 'site_title' => 'Inherited Site Name' ) );
+$assert( 'Inherited Site Name Custom Theme' === $identity['name'], 'theme-name-filter' );
+$assert( 'custom-inherited-site-name-custom-theme' === $identity['slug'], 'theme-slug-filter-sees-filtered-name' );
+unset( $GLOBALS['ssi_identity_filters'] );
+$identity = Static_Site_Importer_Site_Identity::resolve( array( 'name' => 'Custom Theme Name', 'site_title' => 'Inherited Site Name' ) );
+$assert( 'Custom Theme Name' === $identity['name'], 'explicit-theme-name-overrides-inherited-site-name' );
 
 if ( empty( $failures ) ) {
 	echo 'OK: site identity smoke passed (' . (int) $assertions . " assertions)\n";

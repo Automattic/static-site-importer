@@ -126,6 +126,18 @@ $artifact_dir = sys_get_temp_dir() . '/ssi-validation-runtime-diagnostics-' . un
 mkdir( $artifact_dir, 0777, true );
 $report_path = $artifact_dir . '/import-report.json';
 
+$physical_artifact_root = $artifact_dir . '/physical';
+$aliased_artifact_root  = $artifact_dir . '/aliased';
+mkdir( $physical_artifact_root );
+if ( function_exists( 'symlink' ) && symlink( $physical_artifact_root, $aliased_artifact_root ) ) {
+	$artifact_dir_method = new ReflectionMethod( Static_Site_Importer_Validation_Runtime::class, 'artifact_dir' );
+	$resolved_artifact_dir = $artifact_dir_method->invoke( null, array( 'artifact_dir' => $aliased_artifact_root . '/validation' ), 'fixture' );
+	$assert( realpath( $physical_artifact_root . '/validation' ) === $resolved_artifact_dir, 'validation-artifact-directory-resolves-symlinked-ancestor' );
+	rmdir( $physical_artifact_root . '/validation' );
+	unlink( $aliased_artifact_root );
+}
+rmdir( $physical_artifact_root );
+
 file_put_contents(
 	$report_path,
 	json_encode(
@@ -178,9 +190,9 @@ $result = $method->invoke(
 		'quality'                 => array( 'pass' => false ),
 		'theme_slug'              => 'ssi-fixture-theme',
 		'materialization_receipt' => array(
-			'schema'    => 'static-site-importer/materialization-receipt/v1',
+			'schema'    => 'static-site-importer/materialization-receipt/v2',
 			'status'    => 'completed',
-			'plan_hash' => 'plan-hash',
+			'plan_identity' => array( 'schema' => 'blocks-engine/wordpress-site-plan-identity/v1', 'hash' => str_repeat( 'a', 64 ) ),
 			'completed' => array(
 				'pages'           => array( 'index.html' => 1 ),
 				'files'           => array( array( 'target_path' => 'style.css' ) ),

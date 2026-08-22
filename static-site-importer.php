@@ -49,6 +49,7 @@ foreach ( $static_site_importer_figma_transformers as $static_site_importer_figm
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-site-identity.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-website-artifact-import-input.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-materialization-strategy.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-srcset-parser.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-classic-theme-projection.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-client-script-policy.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-document.php';
@@ -163,10 +164,11 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 			}
 			$receipt = static_site_importer_ability_materialize_wordpress_site_plan(
 				array(
-					'plan'            => $plan,
-					'slug'            => (string) $assoc_args['slug'],
-					'overwrite'       => isset( $assoc_args['overwrite'] ),
-					'disable_smilies' => ! isset( $assoc_args['no-disable-smilies'] ),
+					'plan'                   => $plan,
+					'slug'                   => (string) $assoc_args['slug'],
+					'overwrite'              => isset( $assoc_args['overwrite'] ),
+					'disable_smilies'        => ! isset( $assoc_args['no-disable-smilies'] ),
+					'remove_default_content' => ! isset( $assoc_args['keep-default-content'] ),
 				)
 			);
 			WP_CLI::line( (string) wp_json_encode( $receipt, JSON_UNESCAPED_SLASHES ) );
@@ -249,6 +251,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'activate'                     => isset( $assoc_args['activate'] ),
 				'overwrite'                    => isset( $assoc_args['overwrite'] ),
 				'disable_smilies'              => ! isset( $assoc_args['no-disable-smilies'] ),
+				'remove_default_content'       => ! isset( $assoc_args['keep-default-content'] ),
 				'fail_on_quality'              => isset( $assoc_args['fail-on-quality'] ),
 				'allow_missing_woocommerce'    => isset( $assoc_args['allow-missing-woocommerce'] ),
 				'materialize_dependencies'     => ! isset( $assoc_args['skip-dependency-materialization'] ),
@@ -314,6 +317,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 				'activate'                  => isset( $assoc_args['activate'] ),
 				'overwrite'                 => isset( $assoc_args['overwrite'] ),
 				'disable_smilies'           => ! isset( $assoc_args['no-disable-smilies'] ),
+				'remove_default_content'    => ! isset( $assoc_args['keep-default-content'] ),
 				'fail_on_quality'           => isset( $assoc_args['fail-on-quality'] ),
 				'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
 				'report'                    => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
@@ -609,7 +613,7 @@ function static_site_importer_cli_write_materialization_sidecar( array $result, 
 	}
 	$receipt                   = isset( $result['materialization_receipt'] ) && is_array( $result['materialization_receipt'] ) ? $result['materialization_receipt'] : array();
 	$completed                 = isset( $receipt['completed'] ) && is_array( $receipt['completed'] ) ? $receipt['completed'] : array();
-	$is_completed              = 'static-site-importer/materialization-receipt/v1' === ( $receipt['schema'] ?? '' ) && 'completed' === ( $receipt['status'] ?? '' ) && isset( $receipt['plan_hash'] ) && is_string( $receipt['plan_hash'] ) && preg_match( '/^(?:sha256:)?[a-f0-9]{64}$/', $receipt['plan_hash'] ) && isset( $completed['pages'], $completed['files'] ) && is_array( $completed['pages'] ) && is_array( $completed['files'] );
+	$is_completed              = 'static-site-importer/materialization-receipt/v2' === ( $receipt['schema'] ?? '' ) && 'completed' === ( $receipt['status'] ?? '' ) && is_array( $receipt['plan_identity'] ?? null ) && is_string( $receipt['plan_identity']['schema'] ?? null ) && is_string( $receipt['plan_identity']['hash'] ?? null ) && preg_match( '/^[a-f0-9]{64}$/', $receipt['plan_identity']['hash'] ) && isset( $completed['pages'], $completed['files'] ) && is_array( $completed['pages'] ) && is_array( $completed['files'] );
 	$summary                   = $is_completed ? static_site_importer_cli_materialization_summary( $receipt, $result ) : static_site_importer_cli_failed_materialization_summary( $result );
 	$documents                 = $is_completed ? static_site_importer_cli_materialized_documents( $completed['pages'] ) : array(
 		'rows'      => array(),
@@ -723,7 +727,7 @@ function static_site_importer_cli_materialized_documents( array $pages ): array 
 function static_site_importer_cli_failed_materialization_summary( array $result ): array {
 	$error_code = static_site_importer_cli_sidecar_token_value( $result['error']['code'] ?? $result['code'] ?? 'import_failed', 80 );
 	return array(
-		'schema'          => 'static-site-importer/materialization-receipt/v1',
+		'schema'          => 'static-site-importer/materialization-receipt/v2',
 		'status'          => 'failed',
 		'page_count'      => 0,
 		'file_count'      => 0,
@@ -781,11 +785,11 @@ function static_site_importer_cli_materialization_summary( array $receipt, array
 		}
 	}
 	$layout    = isset( $receipt['computed_layout'] ) && is_array( $receipt['computed_layout'] ) ? $receipt['computed_layout'] : array();
-	$plan_hash = isset( $receipt['plan_hash'] ) && is_string( $receipt['plan_hash'] ) && preg_match( '/^(?:sha256:)?[a-f0-9]{64}$/', $receipt['plan_hash'] ) ? $receipt['plan_hash'] : '';
+	$plan_identity = is_array( $receipt['plan_identity'] ?? null ) ? $receipt['plan_identity'] : array();
 	return array(
-		'schema'                 => 'static-site-importer/materialization-receipt/v1',
+		'schema'                 => 'static-site-importer/materialization-receipt/v2',
 		'status'                 => 'completed',
-		'plan_hash'              => $plan_hash,
+		'plan_identity'          => $plan_identity,
 		'page_count'             => min( 10000000, count( $completed['pages'] ?? array() ) ),
 		'file_count'             => min( 10000000, count( $completed['files'] ?? array() ) ),
 		'operation_count'        => min( 10000000, count( $operations ) ),

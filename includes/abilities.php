@@ -125,12 +125,13 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 				'input_schema'        => array(
 					'type'       => 'object',
 					'properties' => array(
-						'plan'            => array( 'type' => 'object' ),
-						'slug'            => array( 'type' => 'string' ),
-						'activate'        => array( 'type' => 'boolean' ),
-						'site_title'      => array( 'type' => 'string' ),
-						'overwrite'       => array( 'type' => 'boolean' ),
-						'disable_smilies' => array( 'type' => 'boolean' ),
+						'plan'                   => array( 'type' => 'object' ),
+						'slug'                   => array( 'type' => 'string' ),
+						'activate'               => array( 'type' => 'boolean' ),
+						'site_title'             => array( 'type' => 'string' ),
+						'overwrite'              => array( 'type' => 'boolean' ),
+						'disable_smilies'        => array( 'type' => 'boolean' ),
+						'remove_default_content' => array( 'type' => 'boolean' ),
 					),
 					'required'   => array( 'plan', 'slug' ),
 				),
@@ -601,8 +602,8 @@ if ( ! function_exists( 'static_site_importer_ability_plan_artifact' ) ) {
 			$encoded_artifact                    = wp_json_encode( $compiled['artifact'] );
 			$encoded_projection                  = wp_json_encode( $compiled['args']['classic_theme_projection'] ?? array() );
 			$response['classic_materialization'] = array(
-				'schema'          => 'static-site-importer/classic-plan-input/v1',
-				'plan_hash'       => hash( 'sha256', (string) wp_json_encode( $compiled['plan'] ) ),
+				'schema'          => 'static-site-importer/classic-plan-input/v2',
+				'plan_identity'   => $compiled['plan']['plan_identity'] ?? array(),
 				'artifact_hash'   => hash( 'sha256', false !== $encoded_artifact ? $encoded_artifact : '' ),
 				'projection_hash' => hash( 'sha256', false !== $encoded_projection ? $encoded_projection : '' ),
 				'args_hash'       => static_site_importer_ability_handoff_hash( $compiled['args'] ),
@@ -679,8 +680,8 @@ if ( ! function_exists( 'static_site_importer_ability_import_url_operation' ) ) 
 				return static_site_importer_ability_error( (string) $projection->get_error_code(), $projection->get_error_message(), $projection->get_error_data() );
 			}
 			$response['classic_materialization'] = array(
-				'schema'          => 'static-site-importer/classic-plan-input/v1',
-				'plan_hash'       => hash( 'sha256', (string) wp_json_encode( $terminal['plan'] ) ),
+				'schema'          => 'static-site-importer/classic-plan-input/v2',
+				'plan_identity'   => $terminal['plan']['plan_identity'] ?? array(),
 				'artifact_hash'   => hash( 'sha256', (string) wp_json_encode( $terminal['artifact'] ) ),
 				'projection_hash' => hash( 'sha256', (string) wp_json_encode( $projection ) ),
 				'args_hash'       => static_site_importer_ability_handoff_hash( $args ),
@@ -707,7 +708,7 @@ if ( ! function_exists( 'static_site_importer_ability_apply_approved_plan' ) ) {
 			$artifact   = $classic['artifact'] ?? null;
 			$projection = $classic['projection'] ?? null;
 			$args       = $classic['normalized_args'] ?? null;
-			if ( 'static-site-importer/classic-plan-input/v1' !== ( $classic['schema'] ?? '' ) || ! is_array( $args ) || 'classic' !== ( $args['theme_materialization'] ?? '' ) || ! is_array( $artifact ) || ! is_array( $projection ) || hash( 'sha256', (string) wp_json_encode( $plan ) ) !== ( $classic['plan_hash'] ?? '' ) || hash( 'sha256', (string) wp_json_encode( $artifact ) ) !== ( $classic['artifact_hash'] ?? '' ) || hash( 'sha256', (string) wp_json_encode( $projection ) ) !== ( $classic['projection_hash'] ?? '' ) || static_site_importer_ability_handoff_hash( $args ) !== ( $classic['args_hash'] ?? '' ) ) {
+			if ( 'static-site-importer/classic-plan-input/v2' !== ( $classic['schema'] ?? '' ) || ! is_array( $args ) || 'classic' !== ( $args['theme_materialization'] ?? '' ) || ! is_array( $artifact ) || ! is_array( $projection ) || ! is_array( $classic['plan_identity'] ?? null ) || $plan['plan_identity'] !== $classic['plan_identity'] || hash( 'sha256', (string) wp_json_encode( $artifact ) ) !== ( $classic['artifact_hash'] ?? '' ) || hash( 'sha256', (string) wp_json_encode( $projection ) ) !== ( $classic['projection_hash'] ?? '' ) || static_site_importer_ability_handoff_hash( $args ) !== ( $classic['args_hash'] ?? '' ) ) {
 				return static_site_importer_ability_error( 'static_site_importer_classic_plan_input_changed', 'The approved classic artifact or projection does not match its immutable plan input.' );
 			}
 			$projection_hash = $classic['projection_hash'];
@@ -715,7 +716,7 @@ if ( ! function_exists( 'static_site_importer_ability_apply_approved_plan' ) ) {
 			if ( is_wp_error( $rebuilt ) || hash( 'sha256', (string) wp_json_encode( $rebuilt ) ) !== $projection_hash ) {
 				return static_site_importer_ability_error( 'static_site_importer_classic_projection_changed', 'The approved classic projection could not be reproduced from its immutable artifact.' );
 			}
-			$args['approved_classic_plan_hash']       = (string) $classic['plan_hash'];
+			$args['approved_classic_plan_identity']   = $classic['plan_identity'];
 			$args['approved_classic_projection_hash'] = (string) $projection_hash;
 			if ( is_object( $payload_reader ) ) {
 				$args['_static_site_importer_payload_reader'] = $payload_reader;
@@ -729,7 +730,7 @@ if ( ! function_exists( 'static_site_importer_ability_apply_approved_plan' ) ) {
 				'operation'         => 'apply',
 				'plan'              => $plan,
 				'applied_plan'      => $plan,
-				'applied_plan_hash' => $classic['plan_hash'],
+				'applied_plan_identity' => $classic['plan_identity'],
 				'result'            => $result,
 				'error'             => null,
 			);

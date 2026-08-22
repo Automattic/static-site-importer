@@ -72,6 +72,17 @@ test('accepts complete parent-document editor presentation evidence', () => {
   assert.equal(verifySolvedSitePromotion(input.options).status, 'accepted');
 });
 
+test('accepts a completed v2 materialization receipt identity', () => {
+  const input = fixture();
+  input.matrix.fixtures[0].matrix_evidence.materialization_receipt = {
+    status: 'completed',
+    plan_identity: { schema: 'blocks-engine/wordpress-site-plan-identity/v1', hash: 'a'.repeat(64) },
+  };
+  write(input.paths.matrix, input.matrix);
+
+  assert.equal(verifySolvedSitePromotion(input.options).status, 'accepted');
+});
+
 test('pins an immutable WP Codebox release package, commit, and checksum together', () => {
   const workflow = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion.yml'), 'utf8');
   const caller = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion-pr.yml'), 'utf8');
@@ -83,7 +94,7 @@ test('pins an immutable WP Codebox release package, commit, and checksum togethe
   assert.match(workflow, /sha256sum --check --status/);
   assert.doesNotMatch(workflow, /Checkout WP Codebox candidate|npm pack --pack-destination|wp-codebox-sha:/);
   assert.match(workflow, /wpCodeboxSha:process\.env\.WP_CODEBOX_SHA/);
-  assert.match(caller, /blocks-engine-sha: 7858943a9913175993cc75870551c2e1926b4fb0/);
+  assert.match(caller, /blocks-engine-sha: c47e806f9e758528b6d19cfda0bd3c20d46a6309/);
   assert.doesNotMatch(caller, /wp-codebox-sha:/);
 });
 

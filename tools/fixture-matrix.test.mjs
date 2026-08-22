@@ -1625,6 +1625,33 @@ test('materialization sidecars survive WP Codebox typed artifact transport', () 
   assert.equal(result.fixtures[0].matrix_evidence.materialization_receipt.operation_count, 99);
 });
 
+test('materialization sidecars preserve v2 plan identity through typed artifact transport', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-v2-identity-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'v2-identity-sidecar-run' });
+  const directory = path.join(outputDirectory, 'simple-site');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: 'simple-site' }));
+  const receipt = {
+    ...boundedSidecarReceipt(),
+    schema: 'static-site-importer/materialization-receipt/v2',
+    plan_identity: { schema: 'blocks-engine/wordpress-site-plan-identity/v1', hash: 'c'.repeat(64) },
+  };
+  delete receipt.plan_hash;
+  const sidecar = writeMaterializationSidecar({ directory, fixtureId: 'simple-site', runId: matrix.id, receipt, schema: 'static-site-importer/materialization-runtime-sidecar/v2' });
+  rmSync(path.join(directory, 'materialization-receipt--primary.json'));
+
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: { declaredArtifacts: [{ schema: 'wp-codebox/recipe-declared-artifact-result/v1', status: 'collected', path: '/wordpress/wp-content/uploads/materialization-receipt--primary.json', parsedJson: sidecar }] },
+  });
+
+  const evidence = result.fixtures[0].matrix_evidence;
+  assert.equal(evidence.missing.includes('materialization_receipt'), false);
+  assert.deepEqual(evidence.materialization_receipt.plan_identity, { schema: 'blocks-engine/wordpress-site-plan-identity/v1', hash: 'c'.repeat(64) });
+  assert.equal(evidence.materialization_receipt.plan_hash, 'c'.repeat(64));
+});
+
 test('failure sidecars retain the bounded import result and front-page option observation', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-failed-import-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'failed-import-evidence' });
@@ -7059,9 +7086,9 @@ test('visual attribution options normalize positive limits and targeted selector
   });
 });
 
-test('visual attribution defaults leave visual-compare matrix JSON byte-compatible', () => {
+test('visual parity defaults require the candidate font readiness record', () => {
   const step = visualParityCompareStep({ fixture: { id: 'shop' } });
-  assert.equal(step.args[0], 'matrix-json={"comparisons":[{"name":"shop","sourceUrl":"/wp-content/uploads/static-site-importer-fixture-matrix/shop/source/index.html","candidateUrl":"/","sourceLabel":"shop-source","candidateLabel":"shop-candidate","viewport":"1280x1600","fullPage":true,"waitFor":"duration","durationMs":"4000ms","blockExternalRequests":true,"threshold":0}]}');
+  assert.equal(step.args[0], 'matrix-json={"comparisons":[{"name":"shop","sourceUrl":"/wp-content/uploads/static-site-importer-fixture-matrix/shop/source/index.html","candidateUrl":"/","sourceLabel":"shop-source","candidateLabel":"shop-candidate","viewport":"1280x1600","fullPage":true,"waitFor":"duration","durationMs":"4000ms","blockExternalRequests":true,"candidateRequiredReadinessRecord":"#static-site-importer-font-readiness","threshold":0}]}');
 });
 
 test('visual attribution options reach every fixture matrix comparison', () => {
@@ -8155,6 +8182,27 @@ test('visual-compare dimension mismatch gates even with zero pixel metrics when 
   const diagnostics = collectVisualParityDiagnostics(payload, { gate: true });
   assert.equal(diagnostics.length, 1);
   assert.equal(diagnostics[0].dimension_mismatch, true);
+});
+
+test('required candidate readiness failure is an evidence gap, not a pixel regression', () => {
+  const payload = {
+    schema: 'wp-codebox/visual-compare/v1',
+    comparison: { mismatchPixels: 200, totalPixels: 1000, dimensionMismatch: false },
+    captureDiagnostics: {
+      candidate: {
+        effectiveCapture: {
+          readiness: {
+            records: [{ selector: '#static-site-importer-font-readiness', expectedStatus: 'loaded', observedStatus: 'missing', status: 'invalid' }],
+          },
+        },
+      },
+    },
+  };
+  const diagnostics = collectVisualParityDiagnostics(payload, { threshold: 0.1, gate: true });
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].kind, 'visual_parity_evidence_incomplete');
+  assert.equal(diagnostics[0].loss_class, 'evidence_gap');
+  assert.equal(diagnostics[0].visual_parity_gate, true);
 });
 
 test('(fair) dimension-dominated raw ratio does NOT gate when the overlap is faithful', () => {
