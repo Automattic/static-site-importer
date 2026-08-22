@@ -125,11 +125,11 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 				'input_schema'        => array(
 					'type'       => 'object',
 					'properties' => array(
-						'plan'            => array( 'type' => 'object' ),
-						'slug'            => array( 'type' => 'string' ),
-						'activate'        => array( 'type' => 'boolean' ),
-						'site_title'      => array( 'type' => 'string' ),
-						'overwrite'       => array( 'type' => 'boolean' ),
+						'plan'                   => array( 'type' => 'object' ),
+						'slug'                   => array( 'type' => 'string' ),
+						'activate'               => array( 'type' => 'boolean' ),
+						'site_title'             => array( 'type' => 'string' ),
+						'overwrite'              => array( 'type' => 'boolean' ),
 						'disable_smilies'        => array( 'type' => 'boolean' ),
 						'remove_default_content' => array( 'type' => 'boolean' ),
 					),

@@ -21,7 +21,12 @@ final class Static_Site_Importer_Default_Content {
 			return $result;
 		}
 
-		foreach ( array( 1 => 'post', 2 => 'page' ) as $id => $post_type ) {
+		foreach (
+			array(
+				1 => 'post',
+				2 => 'page',
+			) as $id => $post_type
+		) {
 			$post = get_post( $id );
 			if ( ! $post instanceof WP_Post || $post_type !== $post->post_type || ! self::has_default_guid( $post, $id ) || '' !== (string) get_post_meta( $id, '_static_site_importer_provenance', true ) ) {
 				continue;
@@ -47,7 +52,10 @@ final class Static_Site_Importer_Default_Content {
 	public static function remove( array $discovery ): array {
 		$report = array(
 			'status'  => ! empty( $discovery['eligible'] ) ? 'completed' : 'skipped',
-			'removed' => array( 'posts' => array(), 'comments' => array() ),
+			'removed' => array(
+				'posts'    => array(),
+				'comments' => array(),
+			),
 			'skipped' => array(),
 		);
 		if ( empty( $discovery['eligible'] ) ) {
@@ -59,14 +67,22 @@ final class Static_Site_Importer_Default_Content {
 			$id      = (int) ( $candidate['id'] ?? 0 );
 			$comment = get_comment( $id );
 			if ( ! $comment instanceof WP_Comment || ! hash_equals( (string) ( $candidate['fingerprint'] ?? '' ), self::comment_fingerprint( $comment ) ) ) {
-				$report['skipped'][] = array( 'type' => 'comment', 'id' => $id, 'reason' => 'record_changed' );
+				$report['skipped'][] = array(
+					'type'   => 'comment',
+					'id'     => $id,
+					'reason' => 'record_changed',
+				);
 				continue;
 			}
 			if ( wp_delete_comment( $id, true ) ) {
 				$report['removed']['comments'][] = $id;
 			} else {
 				$report['status']    = 'partial';
-				$report['skipped'][] = array( 'type' => 'comment', 'id' => $id, 'reason' => 'delete_failed' );
+				$report['skipped'][] = array(
+					'type'   => 'comment',
+					'id'     => $id,
+					'reason' => 'delete_failed',
+				);
 			}
 		}
 
@@ -74,14 +90,22 @@ final class Static_Site_Importer_Default_Content {
 			$id   = (int) ( $candidate['id'] ?? 0 );
 			$post = get_post( $id );
 			if ( ! $post instanceof WP_Post || ! hash_equals( (string) ( $candidate['fingerprint'] ?? '' ), self::post_fingerprint( $post ) ) ) {
-				$report['skipped'][] = array( 'type' => 'post', 'id' => $id, 'reason' => 'record_changed' );
+				$report['skipped'][] = array(
+					'type'   => 'post',
+					'id'     => $id,
+					'reason' => 'record_changed',
+				);
 				continue;
 			}
 			if ( wp_delete_post( $id, true ) ) {
 				$report['removed']['posts'][] = $id;
 			} else {
 				$report['status']    = 'partial';
-				$report['skipped'][] = array( 'type' => 'post', 'id' => $id, 'reason' => 'delete_failed' );
+				$report['skipped'][] = array(
+					'type'   => 'post',
+					'id'     => $id,
+					'reason' => 'delete_failed',
+				);
 			}
 		}
 

@@ -68,8 +68,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === $strategy['strategy'] && ! is_array( $args['classic_theme_projection'] ?? null ) ) {
 			return self::failed_strategy_receipt( $plan, $args, new WP_Error( 'static_site_importer_classic_source_projection_missing', 'Classic materialization requires the SSI source-artifact projection prepared before this plan-only boundary.' ) );
 		}
-		$default_content = self::discover_default_content( $args );
-		$state = array(
+		$default_content           = self::discover_default_content( $args );
+		$state                     = array(
 			'plan'                         => $plan,
 			'plan_hash'                    => self::hash( $plan ),
 			'diagnostics'                  => array(),
@@ -467,7 +467,15 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 		$state['applied']['runtime_policy']['remove_default_content'] = ! empty( $args['remove_default_content'] )
 			? Static_Site_Importer_Default_Content::remove( $state['default_content'] )
-			: array( 'status' => 'skipped', 'reason' => 'disabled', 'removed' => array( 'posts' => array(), 'comments' => array() ), 'skipped' => array() );
+			: array(
+				'status'  => 'skipped',
+				'reason'  => 'disabled',
+				'removed' => array(
+					'posts'    => array(),
+					'comments' => array(),
+				),
+				'skipped' => array(),
+			);
 
 		return self::receipt( 'completed', $state );
 	}
@@ -1786,7 +1794,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	private static function discover_default_content( array &$args ): array {
 		$requested                      = isset( $args['remove_default_content'] ) ? (bool) $args['remove_default_content'] : true;
 		$args['remove_default_content'] = (bool) apply_filters( 'static_site_importer_remove_default_content', $requested, $args );
-		return $args['remove_default_content'] ? Static_Site_Importer_Default_Content::discover() : array( 'eligible' => false, 'posts' => array(), 'comments' => array() );
+		return $args['remove_default_content'] ? Static_Site_Importer_Default_Content::discover() : array(
+			'eligible' => false,
+			'posts'    => array(),
+			'comments' => array(),
+		);
 	}
 
 	private static function active_theme_matches( string $slug ): bool {
@@ -1955,7 +1967,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					'files'  => array(),
 				),
 				'runtime_policy'             => array(
-					'disable_smilies' => array(
+					'disable_smilies'        => array(
 						'requested' => isset( $state['args']['disable_smilies'] ) ? (bool) $state['args']['disable_smilies'] : true,
 						'applied'   => isset( $state['applied']['runtime_policy']['disable_smilies'] ) && true === $state['applied']['runtime_policy']['disable_smilies'],
 					),
