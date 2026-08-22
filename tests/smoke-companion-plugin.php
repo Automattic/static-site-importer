@@ -384,6 +384,7 @@ if ( is_array( $descriptor ) ) {
 
 	$assert( str_contains( $main, "register_block_type( SSI_EXAMPLE_SITE_" ) && str_contains( $main, "_DIR . 'blocks/' . (string) \$spec['dir'] )" ), 'main-file-registers-metadata-block-directory' );
 	$assert( str_contains( $main, "\$registered instanceof WP_Block_Type" ) && str_contains( $main, "static_site_importer_companion_block_owners" ) && str_contains( $main, "'plugin_file' => 'ssi-example-site/ssi-example-site.php'" ), 'main-file-records-owner-only-after-matching-registration' );
+	$assert( ! str_contains( $main, 'Requires Plugins:' ) && ! str_contains( $main, 'Static_Site_Importer_' ) && ! str_contains( $main, 'Automattic\\BlocksEngine' ), 'generated-plugin-declares-no-importer-or-compiler-runtime-dependency' );
 	$assert( str_contains( $main, "register_block_type( (string) \$spec['name'], \$args )" ), 'main-file-retains-php-only-fallback-registration' );
 	$assert( str_contains( $main, "'api_version' => 3" ), 'main-file-declares-api-version' );
 	$assert( str_contains( $main, "'name' => 'example/custom-hero'" ), 'main-file-carries-declared-block-name' );
@@ -475,6 +476,7 @@ $assert( is_array( $typed_descriptor ), 'typed-renderer-scaffold-returns-descrip
 if ( is_array( $typed_descriptor ) ) {
 	$typed_render = $typed_descriptor['files']['ssi-example-site/blocks/custom-hero/render.php'] ?? '';
 	$assert( str_contains( $typed_render, 'Generated responsive-media companion block render' ) && ! str_contains( $typed_render, 'producer/arbitrary' ), 'typed-renderer-emits-ssi-owned-template' );
+	$assert( ! str_contains( $typed_render, 'Static_Site_Importer_' ) && ! str_contains( $typed_render, 'Automattic\\BlocksEngine' ), 'typed-renderer-is-self-contained-after-import' );
 	$attributes = array(
 		'content' => '<a data-track="profile" aria-label="Profile" href="/profile" target="_blank" rel="noopener"><picture><source media="(min-width:800px)" srcset="safe.webp 1x, javascript:alert(1) 2x, hero,wide.webp 3x"><img src="data:image/png;base64,aGVsbG8=" srcset="safe.png 1x, %6a%61vascript:alert(1) 2x, data:image/svg+xml;base64,PHN2Zz4= 3x" alt="Profile"></picture></a>',
 	);
@@ -534,6 +536,38 @@ $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' )
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/render.php' ), 'install-writes-render-php-to-disk' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/block.json' ), 'install-emits-block-json' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.js' ), 'install-emits-declared-editor-asset' );
+$standalone_bootstrap = <<<'PHP'
+define( 'ABSPATH', __DIR__ . '/' );
+class WP_Block_Type {
+	public function __construct( public string $name ) {}
+}
+function plugin_dir_path( string $file ): string { return dirname( $file ) . '/'; }
+function plugin_dir_url( string $file ): string { return 'https://example.test/plugins/' . basename( dirname( $file ) ) . '/'; }
+function add_action( string $hook, callable|string $callback ): void { if ( 'init' === $hook ) { call_user_func( $callback ); } }
+function add_filter( string $hook, callable|string $callback, int $priority = 10, int $accepted_args = 1 ): void {}
+function register_block_type( string $path, array $args = array() ): WP_Block_Type|false {
+	$metadata = is_file( $path . '/block.json' ) ? json_decode( (string) file_get_contents( $path . '/block.json' ), true ) : array();
+	$name = is_array( $metadata ) ? (string) ( $metadata['name'] ?? '' ) : '';
+	return '' !== $name ? new WP_Block_Type( $name ) : false;
+}
+function get_option( string $name, mixed $default = false ): mixed { return $default; }
+require $argv[1];
+exit( isset( $GLOBALS['static_site_importer_companion_block_owners']['example/custom-hero'] ) ? 0 : 1 );
+PHP;
+$standalone_process = proc_open(
+	array( PHP_BINARY, '-r', $standalone_bootstrap, WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ),
+	array( 1 => array( 'pipe', 'w' ), 2 => array( 'pipe', 'w' ) ),
+	$standalone_pipes
+);
+$standalone_output = '';
+$standalone_status = 1;
+if ( is_resource( $standalone_process ) ) {
+	$standalone_output = stream_get_contents( $standalone_pipes[1] ) . stream_get_contents( $standalone_pipes[2] );
+	fclose( $standalone_pipes[1] );
+	fclose( $standalone_pipes[2] );
+	$standalone_status = proc_close( $standalone_process );
+}
+$assert( 0 === $standalone_status, 'generated-plugin-loads-without-importer-or-compiler', $standalone_output );
 $written_asset_manifest = WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.asset.php';
 $asset_manifest_value  = file_exists( $written_asset_manifest ) ? include $written_asset_manifest : null;
 $assert( array( 'dependencies' => array( 'wp-blocks', 'wp-block-editor', 'wp-element' ), 'version' => hash( 'sha256', 'window.SSIEditor = true;' ) ) === $asset_manifest_value, 'installed-asset-manifest-executes-with-dependencies-and-content-version' );

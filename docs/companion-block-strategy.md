@@ -8,6 +8,11 @@ SSI owns WordPress runtime materialization: generated metadata blocks, legacy
 PHP-only dynamic registration, provider dependency checks, activation, and
 import diagnostics.
 
+The generated theme and companion plugins are the terminal runtime artifact.
+They contain their complete render, editor, style, and island implementations,
+use WordPress core or explicitly materialized provider plugins only, and remain
+functional after Static Site Importer and Blocks Engine are removed.
+
 The existing seam is enough for first implementations:
 
 - Blocks Engine emits `static-site-importer/companion-plugin/v1` payloads under `source_reports.companion_plugin_payload`.

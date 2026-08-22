@@ -162,6 +162,23 @@ function wp_insert_post( array $post, bool $wp_error ) {
 	$GLOBALS['ssi_plan_posts'][ $id ] = $post;
 	return $id;
 }
+function wp_update_post( array $post, bool $wp_error = false ) {
+	unset( $wp_error );
+	$id = (int) ( $post['ID'] ?? 0 );
+	if ( $id <= 0 || ! isset( $GLOBALS['ssi_plan_posts'][ $id ] ) ) {
+		return new WP_Error( 'missing_post' );
+	}
+	$GLOBALS['ssi_plan_posts'][ $id ] = array_merge( $GLOBALS['ssi_plan_posts'][ $id ], $post );
+	return $id;
+}
+function get_permalink( int|WP_Post $post ): string {
+	$id   = $post instanceof WP_Post ? $post->ID : $post;
+	$data = $GLOBALS['ssi_plan_posts'][ $id ] ?? array();
+	if ( 'post' === ( $data['post_type'] ?? '' ) ) {
+		return 'https://example.test/2024/03/' . (string) ( $data['post_name'] ?? '' ) . '/';
+	}
+	return 'https://example.test/' . (string) ( $data['post_name'] ?? '' ) . '/';
+}
 function get_post_field( string $field, int $id ): string {
 	return stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $id ][ $field ] ?? '' ) ); }
 function sanitize_title( string $value ): string {
@@ -2256,6 +2273,22 @@ $descendant_only = $parent_order->invoke(
 	'batch-parent-run'
 );
 $assert( is_array( $descendant_only ) && 1 === count( $descendant_only ) && 'website/external/child/index.html' === ( $descendant_only[0]['source_path'] ?? '' ), 'external provenance parent satisfies ordering without being emitted as a page' );
+
+$GLOBALS['ssi_plan_posts'] = array();
+$GLOBALS['ssi_plan_meta']  = array();
+$route_artifact            = array(
+	'entrypoint' => 'website/index.html',
+	'files'      => array(
+		'website/index.html'         => '<main><a href="contact/index.html">Contact</a><a href="post/news/index.html">News</a></main>',
+		'website/contact/index.html' => '<main>Contact</main>',
+		array( 'path' => 'website/post/news/index.html', 'content' => '<article><time datetime="2024-03-01">March 1</time><h1>News</h1></article>', 'metadata' => array( 'post_type' => 'post' ) ),
+	),
+);
+$route_plan                = ( new ArtifactCompiler() )->compile( $route_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$route_receipt             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $route_plan, array( 'slug' => 'route-link-plan' ) );
+$route_home                = current( array_filter( $GLOBALS['ssi_plan_posts'], static fn( array $post ): bool => 'index' === ( $post['post_name'] ?? '' ) ) );
+$route_content             = is_array( $route_home ) ? stripslashes( (string) ( $route_home['post_content'] ?? '' ) ) : '';
+$assert( 'completed' === ( $route_receipt['status'] ?? '' ) && str_contains( $route_content, 'href="https://example.test/contact/"' ) && str_contains( $route_content, 'href="https://example.test/2024/03/news/"' ), 'canonical routes resolve to actual WordPress page and dated-post permalinks after materialization' );
 
 $hash_plan = array(
 	'schema' => 'test/plan/v1',
