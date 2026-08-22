@@ -793,9 +793,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			return isset( $routes[ $route ] ) ? $matches[1] . $routes[ $route ] . $suffix . $matches[3] : $matches[0];
 		};
 		foreach ( array(
-			'/(\b(?:href|action)\s*=\s*["\'])([^"\']+)(["\'])/i',
-			'/(\b(?:href|action)\s*=\s*\\\\")([^"\\\\]*)(\\\\")/i',
-			'/(\b(?:href|action)\s*=\s*\\\\u0022)(.*?)(\\\\u0022)/i',
+			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*["\'])([^"\']+)(["\'])/i',
+			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\")([^"\\\\]*)(\\\\")/i',
+			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*\\\\u0022)(.*?)(\\\\u0022)/i',
 			'/(["\'](?:url|href|action)["\']\s*:\s*["\'])([^"\']+)(["\'])/i',
 		) as $pattern ) {
 			$content = preg_replace_callback( $pattern, $replace, $content ) ?? $content;
