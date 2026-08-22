@@ -232,7 +232,6 @@ class Static_Site_Importer_Theme_Generator {
 				return $companion_validation;
 			}
 		}
-		$plan = self::bridge_product_grid_findings_to_runtime_declarations( $plan );
 		if ( isset( $args['approved_classic_plan_hash'] ) && is_string( $args['approved_classic_plan_hash'] ) && ! hash_equals( $args['approved_classic_plan_hash'], hash( 'sha256', (string) wp_json_encode( $plan ) ) ) ) {
 			return new WP_Error( 'static_site_importer_approved_classic_plan_changed', 'Recompilation did not reproduce the approved canonical classic plan.' );
 		}
@@ -580,88 +579,6 @@ class Static_Site_Importer_Theme_Generator {
 		}
 
 		return $projected;
-	}
-
-	/**
-	 * Declare detected Blocks Engine product grids for the canonical v2 lifecycle.
-	 *
-	 * Product-grid findings carry product data but no canonical block replacement
-	 * anchors, so this bridge seeds only the explicit commerce entities. Provider
-	 * bindings remain limited to declarations that include their own exact anchors.
-	 *
-	 * @param array<string,mixed> $plan Compiled WordPress site plan.
-	 * @return array<string,mixed>
-	 */
-	private static function bridge_product_grid_findings_to_runtime_declarations( array $plan ): array {
-		$diagnostics = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
-		$products    = Static_Site_Importer_Report_Diagnostics::product_grid_manifest_products( $diagnostics );
-		if ( empty( $products ) ) {
-			return $plan;
-		}
-
-		$adapter    = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
-		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest_generic(
-			$adapter,
-			array(
-				'schema_version' => 1,
-				'products'       => $products,
-			)
-		);
-		if ( ! empty( $validation['errors'] ) || empty( $validation['products'] ) ) {
-			return $plan;
-		}
-		$source_path = (string) ( $plan['source']['entry_path'] ?? '' );
-		$products = self::normalize_classic_product_grid_entities( $validation['products'], $source_path );
-		if ( is_wp_error( $products ) ) {
-			return $plan;
-		}
-
-		$declarations = isset( $plan['runtime_declarations'] ) && is_array( $plan['runtime_declarations'] ) ? $plan['runtime_declarations'] : array();
-		foreach ( $declarations as $declaration ) {
-			if ( is_array( $declaration ) && 'entity_collection' === ( $declaration['kind'] ?? null ) && 'products' === ( $declaration['type'] ?? null ) ) {
-				return $plan;
-			}
-		}
-
-		$identity    = hash( 'sha256', "static-site-importer/product-grid-bridge/v1\n" . wp_json_encode( $products ) );
-		$declarations[] = array(
-			'kind'                    => 'dependency',
-			'capability'              => 'shop',
-			'source_path'             => $source_path,
-			'required_for'            => array( 'entity_collection:products' ),
-			'reconciliation_identity' => hash( 'sha256', $identity . "\ndependency" ),
-		);
-		$declarations[] = array(
-			'kind'                    => 'entity_collection',
-			'type'                    => 'products',
-			'source_path'             => $source_path,
-			'payload'                 => array(
-				'schema'   => 'generic/products/v1',
-				'entities' => $products,
-			),
-			'reconciliation_identity' => hash( 'sha256', $identity . "\nentities" ),
-		);
-		$plan['runtime_declarations'] = $declarations;
-		return $plan;
-	}
-
-	/** Normalize bridge report source_selectors into one exact leaf source identity. */
-	private static function normalize_classic_product_grid_entities( array $products, string $default_source ) {
-		$normalized = array();
-		foreach ( $products as $product ) {
-			if ( ! is_array( $product ) ) {
-				return new WP_Error( 'static_site_importer_classic_product_shape_invalid', 'Product-grid bridge contains an invalid product.' ); }
-			$selectors = is_array( $product['source_selectors'] ?? null ) ? array_values( array_unique( array_filter( array_map( 'trim', $product['source_selectors'] ) ) ) ) : array();
-			$leaves = array_values( array_filter( $selectors, static fn( string $selector ): bool => str_contains( $selector, '#' ) || str_contains( $selector, ':nth-child(' ) || preg_match( '/(?:^|\s)(?:li|article|\.product-card)(?:\b|[.#:])/', $selector ) ) );
-			if ( 1 !== count( $leaves ) ) {
-				return new WP_Error( 'static_site_importer_classic_product_selector_ambiguous', 'Product-grid bridge requires exactly one product leaf selector per product.' ); }
-			$product['selector'] = $leaves[0];
-			$product['source_path'] = isset( $product['source_path'] ) && is_string( $product['source_path'] ) && '' !== $product['source_path'] ? $product['source_path'] : $default_source;
-			if ( '' === $product['source_path'] ) {
-				return new WP_Error( 'static_site_importer_classic_product_source_missing', 'Product-grid bridge requires a source path.' ); }
-			$normalized[] = $product;
-		}
-		return $normalized;
 	}
 
 	/**
