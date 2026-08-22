@@ -1625,6 +1625,33 @@ test('materialization sidecars survive WP Codebox typed artifact transport', () 
   assert.equal(result.fixtures[0].matrix_evidence.materialization_receipt.operation_count, 99);
 });
 
+test('materialization sidecars preserve v2 plan identity through typed artifact transport', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-v2-identity-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'v2-identity-sidecar-run' });
+  const directory = path.join(outputDirectory, 'simple-site');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: 'simple-site' }));
+  const receipt = {
+    ...boundedSidecarReceipt(),
+    schema: 'static-site-importer/materialization-receipt/v2',
+    plan_identity: { schema: 'blocks-engine/wordpress-site-plan-identity/v1', hash: 'c'.repeat(64) },
+  };
+  delete receipt.plan_hash;
+  const sidecar = writeMaterializationSidecar({ directory, fixtureId: 'simple-site', runId: matrix.id, receipt, schema: 'static-site-importer/materialization-runtime-sidecar/v2' });
+  rmSync(path.join(directory, 'materialization-receipt--primary.json'));
+
+  const result = collectFixtureMatrixRunResults({
+    matrix,
+    outputDirectory,
+    codeboxOutput: { declaredArtifacts: [{ schema: 'wp-codebox/recipe-declared-artifact-result/v1', status: 'collected', path: '/wordpress/wp-content/uploads/materialization-receipt--primary.json', parsedJson: sidecar }] },
+  });
+
+  const evidence = result.fixtures[0].matrix_evidence;
+  assert.equal(evidence.missing.includes('materialization_receipt'), false);
+  assert.deepEqual(evidence.materialization_receipt.plan_identity, { schema: 'blocks-engine/wordpress-site-plan-identity/v1', hash: 'c'.repeat(64) });
+  assert.equal(evidence.materialization_receipt.plan_hash, 'c'.repeat(64));
+});
+
 test('failure sidecars retain the bounded import result and front-page option observation', () => {
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-failed-import-'));
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'failed-import-evidence' });

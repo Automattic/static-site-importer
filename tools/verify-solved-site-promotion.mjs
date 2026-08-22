@@ -148,7 +148,9 @@ function verifyFixture(fixture, decision, options, requiredFiles) {
   }
   const evidence = fixture.matrix_evidence || {};
   assert(evidence.readiness === 'verified' && (evidence.missing || []).length === 0, `${id}: runtime evidence is incomplete.`);
-  assert(evidence.materialization_receipt?.status === 'completed' && evidence.materialization_receipt?.plan_hash, `${id}: completed materialization receipt is missing.`);
+  const receipt = evidence.materialization_receipt || {};
+  const receiptIdentity = receipt.plan_identity || {};
+  assert(receipt.status === 'completed' && (receipt.plan_hash || (receiptIdentity.schema === 'blocks-engine/wordpress-site-plan-identity/v1' && receiptIdentity.hash)), `${id}: completed materialization receipt is missing.`);
   assert(evidence.transformer?.package_reference === options.blocksEngineSha, `${id}: transformer provenance does not match the Blocks Engine candidate.`);
   const editorQuality = fixture.editor_quality || {};
   assertFiniteMetric(editorQuality, 'native_conversion_rate', id);

@@ -72,6 +72,17 @@ test('accepts complete parent-document editor presentation evidence', () => {
   assert.equal(verifySolvedSitePromotion(input.options).status, 'accepted');
 });
 
+test('accepts a completed v2 materialization receipt identity', () => {
+  const input = fixture();
+  input.matrix.fixtures[0].matrix_evidence.materialization_receipt = {
+    status: 'completed',
+    plan_identity: { schema: 'blocks-engine/wordpress-site-plan-identity/v1', hash: 'a'.repeat(64) },
+  };
+  write(input.paths.matrix, input.matrix);
+
+  assert.equal(verifySolvedSitePromotion(input.options).status, 'accepted');
+});
+
 test('pins an immutable WP Codebox release package, commit, and checksum together', () => {
   const workflow = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion.yml'), 'utf8');
   const caller = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion-pr.yml'), 'utf8');
