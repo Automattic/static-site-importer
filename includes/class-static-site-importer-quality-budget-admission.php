@@ -23,31 +23,31 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 	 * @return array<string,mixed>
 	 */
 	public static function evaluate( array $plan, array $resolved, array $args = array(), array $report = array() ): array {
-		$budget = isset( $args['quality_budget'] ) && is_array( $args['quality_budget'] ) ? $args['quality_budget'] : ( isset( $args['quality_budgets'] ) && is_array( $args['quality_budgets'] ) ? $args['quality_budgets'] : array() );
-		$mode   = in_array( $budget['mode'] ?? 'preview', array( 'production', 'production_ready' ), true ) ? 'production' : 'preview';
-		$quality = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
-		$metrics = isset( $quality['metrics'] ) && is_array( $quality['metrics'] ) ? $quality['metrics'] : $quality;
-		$diagnostics = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
-		$writes = isset( $resolved['writes'] ) && is_array( $resolved['writes'] ) ? $resolved['writes'] : ( isset( $plan['writes'] ) && is_array( $plan['writes'] ) ? $plan['writes'] : array() );
-		$native_blocks = self::metric( $metrics, array( 'native_block_count', 'block_count' ) );
-		$core_html = self::metric( $metrics, array( 'core_html_block_count' ) );
-		$families = self::core_html_families( $diagnostics );
-		$unresolved_media = self::metric( $metrics, array( 'unresolved_media_count', 'unresolved_asset_count' ) );
+		$budget                  = isset( $args['quality_budget'] ) && is_array( $args['quality_budget'] ) ? $args['quality_budget'] : ( isset( $args['quality_budgets'] ) && is_array( $args['quality_budgets'] ) ? $args['quality_budgets'] : array() );
+		$mode                    = in_array( $budget['mode'] ?? 'preview', array( 'production', 'production_ready' ), true ) ? 'production' : 'preview';
+		$quality                 = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
+		$metrics                 = isset( $quality['metrics'] ) && is_array( $quality['metrics'] ) ? $quality['metrics'] : $quality;
+		$diagnostics             = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
+		$writes                  = isset( $resolved['writes'] ) && is_array( $resolved['writes'] ) ? $resolved['writes'] : ( isset( $plan['writes'] ) && is_array( $plan['writes'] ) ? $plan['writes'] : array() );
+		$native_blocks           = self::metric( $metrics, array( 'native_block_count', 'block_count' ) );
+		$core_html               = self::metric( $metrics, array( 'core_html_block_count' ) );
+		$families                = self::core_html_families( $diagnostics );
+		$unresolved_media        = self::metric( $metrics, array( 'unresolved_media_count', 'unresolved_asset_count' ) );
 		$unresolved_dependencies = self::metric( $metrics, array( 'unresolved_dependency_count', 'dependency_failure_count', 'runtime_dependency_parity_issue_count' ) );
-		$bootstrap_bytes = self::bootstrap_bytes( $writes );
-		$stylesheets = self::stylesheet_count( $writes );
-		$evidence = array(
-			'native_block_count'            => $native_blocks,
-			'core_html_block_count'         => $core_html,
-			'core_html_families'            => $families,
-			'unresolved_media_count'        => $unresolved_media,
-			'unresolved_dependency_count'   => $unresolved_dependencies,
-			'bootstrap_bytes'               => $bootstrap_bytes,
-			'stylesheet_asset_count'        => $stylesheets,
-			'visual_gate'                   => self::gate_status( $args, $report, 'visual' ),
-			'editor_gate'                   => self::gate_status( $args, $report, 'editor' ),
+		$bootstrap_bytes         = self::bootstrap_bytes( $writes );
+		$stylesheets             = self::stylesheet_count( $writes );
+		$evidence                = array(
+			'native_block_count'          => $native_blocks,
+			'core_html_block_count'       => $core_html,
+			'core_html_families'          => $families,
+			'unresolved_media_count'      => $unresolved_media,
+			'unresolved_dependency_count' => $unresolved_dependencies,
+			'bootstrap_bytes'             => $bootstrap_bytes,
+			'stylesheet_asset_count'      => $stylesheets,
+			'visual_gate'                 => self::gate_status( $args, $report, 'visual' ),
+			'editor_gate'                 => self::gate_status( $args, $report, 'editor' ),
 		);
-		$limits = array(
+		$limits                  = array(
 			'max_native_block_count'          => $native_blocks,
 			'max_core_html_block_count'       => $core_html,
 			'max_core_html_family_count'      => count( $families ),
@@ -56,7 +56,7 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 			'max_bootstrap_bytes'             => $bootstrap_bytes,
 			'max_stylesheet_asset_count'      => $stylesheets,
 		);
-		$failures = array();
+		$failures                = array();
 		foreach ( $limits as $limit => $actual ) {
 			if ( ! array_key_exists( $limit, $budget ) ) {
 				continue;
@@ -110,7 +110,7 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 			if ( ! is_array( $diagnostic ) || ! str_contains( (string) ( $diagnostic['type'] ?? $diagnostic['reason_code'] ?? '' ), 'core_html' ) ) {
 				continue;
 			}
-			$family = (string) ( $diagnostic['tag_name'] ?? $diagnostic['block_name'] ?? 'unknown' );
+			$family              = (string) ( $diagnostic['tag_name'] ?? $diagnostic['block_name'] ?? 'unknown' );
 			$families[ $family ] = ( $families[ $family ] ?? 0 ) + 1;
 		}
 		ksort( $families, SORT_STRING );
@@ -143,8 +143,8 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 	/** @param array<string,mixed> $args @param array<string,mixed> $report */
 	private static function gate_status( array $args, array $report, string $gate ): string {
 		$artifacts = isset( $args['validation_artifacts'] ) && is_array( $args['validation_artifacts'] ) ? $args['validation_artifacts'] : array();
-		if ( isset( $artifacts[ $gate . '_gate']['status'] ) ) {
-			return (string) $artifacts[ $gate . '_gate']['status'];
+		if ( isset( $artifacts[ $gate . '_gate' ]['status'] ) ) {
+			return (string) $artifacts[ $gate . '_gate' ]['status'];
 		}
 		if ( 'visual' === $gate && 'passed' === ( $report['visual_fidelity']['status'] ?? null ) ) {
 			return 'passed';
@@ -156,6 +156,12 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 	}
 
 	private static function failure( string $metric, string $status, $actual, $limit ): array {
-		return array( 'metric' => $metric, 'status' => $status, 'actual' => $actual, 'limit' => $limit, 'repair_class' => in_array( $metric, array( 'bootstrap_bytes', 'stylesheet_asset_count' ), true ) ? 'static-site-importer' : ( str_ends_with( $metric, '_gate' ) ? 'runtime-validation' : 'blocks-engine' ) );
+		return array(
+			'metric'       => $metric,
+			'status'       => $status,
+			'actual'       => $actual,
+			'limit'        => $limit,
+			'repair_class' => in_array( $metric, array( 'bootstrap_bytes', 'stylesheet_asset_count' ), true ) ? 'static-site-importer' : ( str_ends_with( $metric, '_gate' ) ? 'runtime-validation' : 'blocks-engine' ),
+		);
 	}
 }

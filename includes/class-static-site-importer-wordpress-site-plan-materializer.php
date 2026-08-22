@@ -172,8 +172,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			);
 			$state['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $resolved, $args );
 			if ( Static_Site_Importer_Quality_Budget_Admission::rejects_materialization( $state['quality_budget_admission'] ) ) {
-				$state['diagnostics'][] = array( 'reason_code' => 'quality_budget_failed', 'quality_budget' => $state['quality_budget_admission'] );
-				return array( 'status' => 'rejected', 'receipt' => self::receipt( 'rejected', $state ) );
+				$state['diagnostics'][] = array(
+					'reason_code'    => 'quality_budget_failed',
+					'quality_budget' => $state['quality_budget_admission'],
+				);
+				return array(
+					'status'  => 'rejected',
+					'receipt' => self::receipt( 'rejected', $state ),
+				);
 			}
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
 		} catch ( InvalidArgumentException $error ) {
@@ -594,8 +600,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
 			$state['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $state['resolved'], $args );
 			if ( Static_Site_Importer_Quality_Budget_Admission::rejects_materialization( $state['quality_budget_admission'] ) ) {
-				$state['diagnostics'][] = array( 'reason_code' => 'quality_budget_failed', 'quality_budget' => $state['quality_budget_admission'] );
-				return array( 'status' => 'rejected', 'receipt' => self::receipt( 'rejected', $state ) );
+				$state['diagnostics'][] = array(
+					'reason_code'    => 'quality_budget_failed',
+					'quality_budget' => $state['quality_budget_admission'],
+				);
+				return array(
+					'status'  => 'rejected',
+					'receipt' => self::receipt( 'rejected', $state ),
+				);
 			}
 			self::validate_materialized_block_documents( $state['resolved'], $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
