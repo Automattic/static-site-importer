@@ -94,10 +94,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		);
 
 		try {
-			WordPressSitePlan::assertValid( $plan );
-			if ( $state['plan_identity'] !== WordPressSitePlan::planIdentity( $plan ) ) {
+			if ( array() === $state['plan_identity'] ) {
 				throw new InvalidArgumentException( 'canonical_plan_identity_mismatch' );
 			}
+			WordPressSitePlan::assertValid( $plan );
 		} catch ( InvalidArgumentException $error ) {
 			$state['diagnostics'][] = array( 'reason_code' => 'canonical_plan_rejected' );
 			return array(
@@ -2131,7 +2131,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	/** @return array{schema:string,hash:string}|array{} */
 	private static function plan_identity( array $plan ): array {
 		$identity = $plan['plan_identity'] ?? null;
-		return is_array( $identity ) && is_string( $identity['schema'] ?? null ) && is_string( $identity['hash'] ?? null ) ? $identity : array();
+		if ( ! is_array( $identity ) || 'blocks-engine/wordpress-site-plan-identity/v1' !== ( $identity['schema'] ?? null ) || ! is_string( $identity['hash'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', $identity['hash'] ) ) {
+			return array();
+		}
+		return array(
+			'schema' => $identity['schema'],
+			'hash'   => $identity['hash'],
+		);
 	}
 
 	/** Hash the resolved projection only for prepare-to-write change detection. */

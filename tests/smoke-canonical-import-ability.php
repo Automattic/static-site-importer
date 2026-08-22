@@ -94,9 +94,13 @@ class Static_Site_Importer_Theme_Generator {
 	public static function compile_website_artifact( $artifact, $args ) {
 		++self::$compiled;
 		$plan = array(
-			'schema'      => 'blocks-engine/wordpress-site-plan/v2',
-			'quality'     => array( 'pass' => true ),
-			'diagnostics' => array( array( 'code' => 'planned' ) ),
+			'schema'        => 'blocks-engine/wordpress-site-plan/v2',
+			'plan_identity' => array(
+				'schema' => 'blocks-engine/wordpress-site-plan-identity/v1',
+				'hash'   => hash( 'sha256', 'canonical-import-ability-plan' ),
+			),
+			'quality'       => array( 'pass' => true ),
+			'diagnostics'   => array( array( 'code' => 'planned' ) ),
 		);
 		if ( 'classic' === ( $args['theme_materialization'] ?? '' ) ) {
 			$args['classic_theme_projection'] = Static_Site_Importer_Classic_Theme_Projection::build( $artifact, $plan );
