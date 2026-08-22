@@ -1311,7 +1311,12 @@ function static_site_importer_staged_archive_payload_reader( array $archive ) {
 			if ( '' === $entry || static_site_importer_rest_artifact_path( $entry ) === '' ) {
 				throw new RuntimeException( 'The staged payload reference is invalid.' );
 			}
-			$path = static_site_importer_staged_archive_path( array( 'name' => 'payload.zip', 'staged_path' => $this->archive_path ) );
+			$path = static_site_importer_staged_archive_path(
+				array(
+					'name'        => 'payload.zip',
+					'staged_path' => $this->archive_path,
+				)
+			);
 			if ( is_wp_error( $path ) ) {
 				throw new RuntimeException( 'The staged archive is unavailable.' );
 			}
@@ -1320,7 +1325,7 @@ function static_site_importer_staged_archive_payload_reader( array $archive ) {
 				throw new RuntimeException( 'The staged archive is unavailable.' );
 			}
 			try {
-				$stat = $zip->statName( $entry );
+				$stat   = $zip->statName( $entry );
 				$limits = static_site_importer_staged_archive_limits();
 				if ( ! is_array( $stat ) || ! isset( $reference['bytes'] ) || ! is_int( $reference['bytes'] ) || (int) $stat['size'] !== $reference['bytes'] || (int) $stat['size'] > $limits['max_entry_uncompressed_bytes'] || ( 0 === (int) $stat['comp_size'] ? (int) $stat['size'] > 0 : (int) $stat['size'] / (int) $stat['comp_size'] > $limits['max_compression_ratio'] ) ) {
 					throw new RuntimeException( 'The staged payload byte count changed.' );

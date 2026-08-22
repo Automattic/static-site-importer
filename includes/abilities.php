@@ -696,13 +696,13 @@ if ( ! function_exists( 'static_site_importer_ability_import_url_operation' ) ) 
 if ( ! function_exists( 'static_site_importer_ability_apply_approved_plan' ) ) {
 	/** @param array<string,mixed> $input @return array<string,mixed> */
 	function static_site_importer_ability_apply_approved_plan( array $input ): array {
-		$approved = $input['plan'];
-		$plan     = isset( $approved['plan'] ) && is_array( $approved['plan'] ) ? $approved['plan'] : $approved;
+		$approved       = $input['plan'];
+		$plan           = isset( $approved['plan'] ) && is_array( $approved['plan'] ) ? $approved['plan'] : $approved;
 		$payload_reader = static_site_importer_ability_approved_plan_payload_reader( $input, $approved );
 		if ( is_wp_error( $payload_reader ) ) {
 			return static_site_importer_ability_error( (string) $payload_reader->get_error_code(), $payload_reader->get_error_message(), $payload_reader->get_error_data() );
 		}
-		$classic  = isset( $approved['classic_materialization'] ) && is_array( $approved['classic_materialization'] ) ? $approved['classic_materialization'] : ( isset( $input['classic_materialization'] ) && is_array( $input['classic_materialization'] ) ? $input['classic_materialization'] : null );
+		$classic = isset( $approved['classic_materialization'] ) && is_array( $approved['classic_materialization'] ) ? $approved['classic_materialization'] : ( isset( $input['classic_materialization'] ) && is_array( $input['classic_materialization'] ) ? $input['classic_materialization'] : null );
 		if ( is_array( $classic ) ) {
 			$artifact   = $classic['artifact'] ?? null;
 			$projection = $classic['projection'] ?? null;
@@ -720,7 +720,7 @@ if ( ! function_exists( 'static_site_importer_ability_apply_approved_plan' ) ) {
 			if ( is_object( $payload_reader ) ) {
 				$args['_static_site_importer_payload_reader'] = $payload_reader;
 			}
-			$result                                   = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $args );
+			$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $args );
 			if ( is_wp_error( $result ) ) {
 				return static_site_importer_ability_error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
 			}
