@@ -100,7 +100,10 @@ class Static_Site_Importer_Companion_Plugin {
 				return new WP_Error( 'static_site_importer_companion_plugin_block_json_name_invalid', sprintf( 'Block %s resolves to a duplicate WordPress block name.', $name ) );
 			}
 			$block_names[ $effective_name ] = true;
-			$assets                         = $block['assets'] ?? array();
+			$assets                         = self::block_assets( $block );
+			if ( is_wp_error( $assets ) ) {
+				return $assets;
+			}
 			if ( ! is_array( $assets ) || ( ! empty( $assets ) && array_is_list( $assets ) ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_assets_invalid', sprintf( 'Block %s assets must be an object.', $name ) );
 			}
@@ -394,7 +397,10 @@ class Static_Site_Importer_Companion_Plugin {
 		// Carried static assets (e.g. block stylesheets or a hand-written
 		// Interactivity API view module) ride alongside render.php. These are
 		// pass-through files, not generated JS build output.
-		$assets = isset( $block['assets'] ) && is_array( $block['assets'] ) ? $block['assets'] : array();
+		$assets = self::block_assets( $block );
+		if ( is_wp_error( $assets ) ) {
+			return $assets;
+		}
 		foreach ( $assets as $relative => $content ) {
 			$relative = self::sanitize_relative_path( (string) $relative );
 			if ( '' === $relative || ! is_scalar( $content ) ) {
@@ -430,6 +436,32 @@ class Static_Site_Importer_Companion_Plugin {
 			),
 			'files'      => $files,
 		);
+	}
+
+	/**
+	 * Normalize producer-owned dedicated assets into the metadata file map.
+	 *
+	 * Blocks Engine carries a generated block's audited frontend script in the
+	 * established `view_js` slot. WordPress block metadata addresses that payload
+	 * as `file:./view.js`, so validation and scaffolding must see one canonical
+	 * asset regardless of which producer representation supplied it.
+	 *
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private static function block_assets( array $block ) {
+		$assets = isset( $block['assets'] ) && is_array( $block['assets'] ) ? $block['assets'] : array();
+		if ( ! array_key_exists( 'view_js', $block ) ) {
+			return $assets;
+		}
+		if ( ! is_scalar( $block['view_js'] ) || Static_Site_Importer_Content_Policy::contains_server_code( (string) $block['view_js'] ) ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_view_script_invalid', 'Companion block view_js must contain safe JavaScript.' );
+		}
+		$view_js = (string) $block['view_js'];
+		if ( isset( $assets['view.js'] ) && (string) $assets['view.js'] !== $view_js ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_view_script_conflict', 'Companion block view_js conflicts with its declared view.js asset.' );
+		}
+		$assets['view.js'] = $view_js;
+		return $assets;
 	}
 
 	/**

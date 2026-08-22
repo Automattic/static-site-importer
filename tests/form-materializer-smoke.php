@@ -913,6 +913,20 @@ namespace {
 		$assert( str_contains( $single_grafted, 'Contact' ), 'graft-content-preserves-surrounding-content' );
 		$assert( ! str_contains( $single_grafted, '<!-- wp:html' ), 'graft-content-has-no-core-html-island' );
 
+		// The same form binding remains graftable when Blocks Engine places the
+		// editable fallback inside a generated companion dialog block.
+		$dialog_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/contact-dialog.html' );
+		$dialog_report['diagnostics'][] = $build_form_diagnostic( $single_fallback, 'website/contact-dialog.html' );
+		$dialog_contents                = array(
+			'website/contact-dialog.html' => '<!-- wp:ssi-example/captured-dialog {"dialogId":"contact-dialog","triggerId":"contact-trigger"} --><dialog id="contact-dialog" data-blocks-engine-trigger="contact-trigger">' . $single_serialized . '</dialog><!-- /wp:ssi-example/captured-dialog -->',
+		);
+		$dialog_seeding = Static_Site_Importer_Report_Diagnostics::materialize_form_findings( $dialog_report, array(), $dialog_contents );
+		$dialog_grafted = (string) ( $dialog_contents['website/contact-dialog.html'] ?? '' );
+		$assert( 1 === ( $dialog_seeding['grafted_count'] ?? 0 ), 'dialog-form-grafted-once' );
+		$assert( str_contains( $dialog_grafted, '<!-- wp:ssi-example/captured-dialog' ) && str_contains( $dialog_grafted, '<dialog id="contact-dialog"' ), 'dialog-form-graft-preserves-companion-wrapper' );
+		$assert( str_contains( $dialog_grafted, 'wp:jetpack/contact-form' ) && str_contains( $dialog_grafted, 'wp:jetpack/field-email' ), 'dialog-form-graft-materializes-wordpress-owned-form-blocks' );
+		$assert( ! str_contains( $dialog_grafted, 'mailto:hello@example.com' ), 'dialog-form-graft-removes-source-provider-endpoint' );
+
 		// Multi-form page: two forms on one page graft independently.
 		$multi_html       = '<section><h2>Contact A</h2><form class="contact-a" action="mailto:a@example.com" method="post"><input id="a-email" type="email" name="email" required aria-label="Email"><textarea name="msg" aria-label="Message"></textarea><button type="submit">Send A</button></form></section><section><h2>Contact B</h2><form class="contact-b" action="mailto:b@example.com" method="post"><input id="b-name" type="text" name="name" required aria-label="Name"><button type="submit">Send B</button></form></section>';
 		$multi_transform  = blocks_engine_php_transformer_transform_html( $multi_html );
