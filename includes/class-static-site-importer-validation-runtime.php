@@ -374,11 +374,12 @@ class Static_Site_Importer_Validation_Runtime {
 		}
 
 		$created = function_exists( 'wp_mkdir_p' ) ? wp_mkdir_p( $directory ) : false;
-		if ( ! $created ) {
+		$resolved = $created ? realpath( $directory ) : false;
+		if ( false === $resolved || ! is_dir( $resolved ) ) {
 			return new WP_Error( 'static_site_importer_validation_artifact_dir_failed', 'Could not create validation artifact directory.' );
 		}
 
-		return $directory;
+		return $resolved;
 	}
 
 	/**
