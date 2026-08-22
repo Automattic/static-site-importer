@@ -998,72 +998,76 @@ class Static_Site_Importer_Form_Seeder {
 		return $labels;
 	}
 
-	/**
-	 * Serialize a block tree to WordPress block-comment markup.
-	 *
-	 * @param string                          $name        Block name.
-	 * @param array<string, mixed>            $attrs       Block attributes.
-	 * @param array<int, array<string,mixed>> $inner_blocks Child block definitions.
-	 * @param string                          $wrapper     Persisted inner-block wrapper element.
-	 * @return string
-	 */
+	/** Serialize a generated block through WordPress's canonical block serializer. */
 	private static function serialize_block( string $name, array $attrs, array $inner_blocks = array(), string $wrapper = '', string $content = '' ): string {
-		$comment_name = str_starts_with( $name, 'core/' ) ? substr( $name, 5 ) : $name;
-		$attr_json    = '';
-		if ( ! empty( $attrs ) ) {
-			$encoded = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs ) : json_encode( $attrs ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode
-			if ( is_string( $encoded ) && '[]' !== $encoded ) {
-				$encoded   = str_replace( array( '--', '<', '>', '&', '\\"' ), array( '\u002d\u002d', '\u003c', '\u003e', '\u0026', '\u0022' ), $encoded );
-				$attr_json = ' ' . $encoded;
-			}
-		}
+		return serialize_block( self::parsed_block( $name, $attrs, $inner_blocks, $wrapper, $content ) );
+	}
 
-		if ( empty( $inner_blocks ) && ! in_array( $wrapper, array( 'submit', 'heading', 'paragraph' ), true ) ) {
-			return '<!-- wp:' . $comment_name . $attr_json . ' /-->';
-		}
-
-		$inner = array();
+	/** Build a parsed block, keeping Jetpack's required saved markup in innerContent. */
+	private static function parsed_block( string $name, array $attrs, array $inner_blocks = array(), string $wrapper = '', string $content = '' ): array {
+		$children = array();
 		foreach ( $inner_blocks as $block ) {
-			if ( empty( $block['name'] ) ) {
-				continue;
+			if ( ! empty( $block['name'] ) ) {
+				$children[] = self::parsed_block(
+					(string) $block['name'],
+					isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array(),
+					isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array(),
+					isset( $block['wrapper'] ) && is_string( $block['wrapper'] ) ? $block['wrapper'] : '',
+					isset( $block['content'] ) && is_string( $block['content'] ) ? $block['content'] : ''
+				);
 			}
-			$inner[] = self::serialize_block(
-				(string) $block['name'],
-				isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array(),
-				isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array(),
-				isset( $block['wrapper'] ) && is_string( $block['wrapper'] ) ? $block['wrapper'] : '',
-				isset( $block['content'] ) && is_string( $block['content'] ) ? $block['content'] : ''
-			);
 		}
 
-		$inner_markup = implode( "\n", $inner );
+		$prefix = '';
+		$suffix = '';
 		if ( 'jetpack/contact-form' === $name ) {
 			$classes = 'wp-block-jetpack-contact-form';
 			if ( isset( $attrs['className'] ) && is_scalar( $attrs['className'] ) && '' !== trim( (string) $attrs['className'] ) ) {
 				$classes .= ' ' . trim( (string) $attrs['className'] );
 			}
-			$inner_markup = '<div class="' . self::escape_attribute( $classes ) . '">' . $inner_markup . '</div>';
+			$prefix = "\n<div class=\"" . self::escape_attribute( $classes ) . '">';
+			$suffix = "</div>\n";
 		} elseif ( 'submit' === $wrapper ) {
-			$classes      = trim( 'wp-block-button ' . (string) ( $attrs['className'] ?? '' ) );
-			$inner_markup = '<div class="' . self::escape_attribute( $classes ) . '"><button type="submit" class="wp-block-button__link wp-element-button">' . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</button></div>';
+			$classes = trim( 'wp-block-button ' . (string) ( $attrs['className'] ?? '' ) );
+			$prefix  = "\n<div class=\"" . self::escape_attribute( $classes ) . '"><button type="submit" class="wp-block-button__link wp-element-button">' . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . "</button></div>\n";
 		} elseif ( 'heading' === $wrapper ) {
-			$level        = min( 6, max( 1, (int) ( $attrs['level'] ?? 2 ) ) );
-			$inner_markup = '<h' . $level . ' class="wp-block-heading">' . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</h' . $level . '>';
+			$level  = min( 6, max( 1, (int) ( $attrs['level'] ?? 2 ) ) );
+			$prefix = "\n<h" . $level . ' class="wp-block-heading">' . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</h' . $level . ">\n";
 		} elseif ( 'paragraph' === $wrapper ) {
-			$inner_markup = '<p>' . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</p>';
+			$prefix = "\n<p>" . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . "</p>\n";
 		} elseif ( 'group' === $wrapper ) {
 			$classes = 'wp-block-group' . ( ! empty( $attrs['className'] ) ? ' ' . $attrs['className'] : '' );
 			if ( 'flex' === ( $attrs['layout']['type'] ?? '' ) ) {
 				$classes .= ' is-layout-flex';
 			}
-			$id           = ! empty( $attrs['anchor'] ) ? ' id="' . self::escape_attribute( (string) $attrs['anchor'] ) . '"' : '';
-			$tag          = ! empty( $attrs['tagName'] ) ? (string) $attrs['tagName'] : 'div';
-			$inner_markup = '<' . $tag . $id . ' class="' . self::escape_attribute( $classes ) . '">' . $inner_markup . '</' . $tag . '>';
+			$id     = ! empty( $attrs['anchor'] ) ? ' id="' . self::escape_attribute( (string) $attrs['anchor'] ) . '"' : '';
+			$tag    = ! empty( $attrs['tagName'] ) ? (string) $attrs['tagName'] : 'div';
+			$prefix = "\n<" . $tag . $id . ' class="' . self::escape_attribute( $classes ) . '">';
+			$suffix = '</' . $tag . ">\n";
 		} elseif ( in_array( $wrapper, array( 'div', 'ul' ), true ) ) {
-			$inner_markup = '<' . $wrapper . '>' . $inner_markup . '</' . $wrapper . '>';
+			$prefix = "\n<" . $wrapper . '>';
+			$suffix = '</' . $wrapper . ">\n";
 		}
 
-		return '<!-- wp:' . $comment_name . $attr_json . ' -->' . "\n" . $inner_markup . "\n" . '<!-- /wp:' . $comment_name . ' -->';
+		$inner_content = array();
+		if ( '' !== $prefix || '' !== $suffix || ! empty( $children ) ) {
+			$inner_content[] = $prefix;
+			foreach ( $children as $index => $_child ) {
+				$inner_content[] = null;
+				if ( $index < count( $children ) - 1 ) {
+					$inner_content[] = "\n";
+				}
+			}
+			$inner_content[] = $suffix;
+		}
+
+		return array(
+			'blockName'    => $name,
+			'attrs'        => $attrs,
+			'innerBlocks'  => $children,
+			'innerHTML'    => implode( '', array_filter( $inner_content, 'is_string' ) ),
+			'innerContent' => $inner_content,
+		);
 	}
 
 	/**
