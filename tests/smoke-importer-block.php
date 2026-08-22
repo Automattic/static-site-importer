@@ -1245,6 +1245,58 @@ if ( class_exists( 'ZipArchive' ) ) {
 	);
 	$assert( is_array( $staged ) && 'website/index.html' === ( $staged[0]['path'] ?? '' ), 'staged-zip-extracts-provider-owned-archive' );
 	$assert( file_exists( $staged_path ), 'staged-zip-preserves-provider-owned-archive' );
+	$staged_zip = new ZipArchive();
+	$staged_zip->open( $staged_path, ZipArchive::OVERWRITE );
+	$staged_zip->addFromString( 'index.html', '<main>Staged</main>' );
+	$staged_binary = str_repeat( "\x00\xffPNG", 65536 );
+	$staged_zip->addFromString( 'assets/photo.png', $staged_binary );
+	$staged_zip->setCompressionName( 'assets/photo.png', ZipArchive::CM_STORE );
+	$staged_zip->addFromString( 'assets/logo.svg', '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>' );
+	$staged_zip->close();
+	$referenced_staged = static_site_importer_staged_archive_files(
+		array(
+			'name'        => 'website.zip',
+			'staged_path' => $staged_path,
+		),
+		true
+	);
+	$referenced_by_path = is_array( $referenced_staged ) ? array_column( $referenced_staged, null, 'path' ) : array();
+	$assert( isset( $referenced_by_path['website/assets/photo.png']['payload_reference'] ) && ! isset( $referenced_by_path['website/assets/photo.png']['content_base64'] ) && isset( $referenced_by_path['website/assets/logo.svg']['content_base64'] ), 'staged-zip-references-only-non-svg-binary-entries' );
+	$inline_binary = base64_encode( $staged_binary );
+	$inline_plan   = wp_json_encode(
+		array(
+			'assets' => array( array( 'content_base64' => $inline_binary ) ),
+			'writes' => array( array( 'payload' => array( 'data' => $inline_binary ) ) ),
+		)
+	);
+	$reference_plan = wp_json_encode(
+		array(
+			'assets' => array( $referenced_by_path['website/assets/photo.png'] ),
+			'writes' => array( array( 'payload_reference' => $referenced_by_path['website/assets/photo.png']['payload_reference'] ) ),
+		)
+	);
+	$assert( is_string( $inline_plan ) && is_string( $reference_plan ) && strlen( $reference_plan ) < strlen( $inline_plan ) / 100, 'staged-zip-reference-plan-eliminates-duplicated-binary-payload-size', strlen( $reference_plan ) . '/' . strlen( $inline_plan ) );
+	$staged_reader = static_site_importer_staged_archive_payload_reader( array( 'name' => 'website.zip', 'staged_path' => $staged_path ) );
+	$staged_bytes  = is_object( $staged_reader ) ? $staged_reader->read( $referenced_by_path['website/assets/photo.png']['payload_reference'] ) : '';
+	$assert( hash( 'sha256', $staged_bytes ) === ( $referenced_by_path['website/assets/photo.png']['payload_reference']['sha256'] ?? '' ), 'staged-zip-reader-reopens-and-reads-the-declared-reference' );
+	$inline_staged   = static_site_importer_staged_archive_files( array( 'name' => 'website.zip', 'staged_path' => $staged_path ) );
+	$artifact_compiler = new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler();
+	$inline_compiled   = $artifact_compiler->compile( array( 'entrypoint' => 'website/index.html', 'files' => $inline_staged ) )->toArray();
+	$reference_compiled = $artifact_compiler->compile( array( 'entrypoint' => 'website/index.html', 'files' => $referenced_staged ) )->toArray();
+	$inline_site_plan   = $inline_compiled['source_reports']['wordpress_site_plan'] ?? array();
+	$reference_site_plan = $reference_compiled['source_reports']['wordpress_site_plan'] ?? array();
+	$inline_plan_json   = wp_json_encode( $inline_site_plan );
+	$reference_plan_json = wp_json_encode( $reference_site_plan );
+	$assert( is_string( $inline_plan_json ) && is_string( $reference_plan_json ) && str_contains( $reference_plan_json, 'payload_reference' ) && ! str_contains( $reference_plan_json, $inline_binary ) && strlen( $reference_plan_json ) < strlen( $inline_plan_json ) / 50, 'staged-zip-compiler-plan-removes-duplicated-binary-assets-and-writes', strlen( $reference_plan_json ) . '/' . strlen( $inline_plan_json ) );
+	$staged_zip = new ZipArchive();
+	$staged_zip->open( $staged_path, ZipArchive::OVERWRITE );
+	$staged_zip->addFromString( 'index.html', '<main>Staged</main>' );
+	$staged_zip->addFromString( 'assets/photo.png', str_repeat( 'x', strlen( $staged_binary ) ) );
+	$staged_zip->setCompressionName( 'assets/photo.png', ZipArchive::CM_STORE );
+	$staged_zip->addFromString( 'assets/logo.svg', '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>' );
+	$staged_zip->close();
+	$tampered_bytes = $staged_reader->read( $referenced_by_path['website/assets/photo.png']['payload_reference'] );
+	$assert( ! hash_equals( $referenced_by_path['website/assets/photo.png']['payload_reference']['sha256'], hash( 'sha256', $tampered_bytes ) ), 'staged-zip-reader-does-not-cache-tampered-payloads-before-materializer-verification' );
 
 	$symlink_path = $staged_path . '.link';
 	if ( function_exists( 'symlink' ) && @symlink( $staged_path, $symlink_path ) ) {

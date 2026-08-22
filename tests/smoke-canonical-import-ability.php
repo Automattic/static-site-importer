@@ -79,6 +79,13 @@ function static_site_importer_staged_archive_files( $archive ) {
 		),
 	);
 }
+function static_site_importer_staged_archive_payload_reader( $archive ) {
+	$GLOBALS['ssi_staged_reader_archives'][] = $archive;
+	return new class() {
+		public function read( array $reference ): string {
+			return 'staged bytes'; }
+	};
+}
 class Static_Site_Importer_Theme_Generator {
 	public static $compiled = 0;
 	public static $applied  = 0;
@@ -243,6 +250,15 @@ $staged_zip = static_site_importer_ability_import(
 );
 if ( empty( $staged_zip['success'] ) || '/srv/private/website.zip' !== ( $GLOBALS['ssi_staged_archives'][0]['staged_path'] ?? '' ) || isset( $GLOBALS['ssi_runtime_sources'][3]['archive'] ) ) {
 	throw new RuntimeException( 'resolved staged archives must normalize through files without inline archive bytes' ); }
+$approved_staged_zip = static_site_importer_ability_import(
+	array(
+		'operation' => 'apply',
+		'plan'      => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2' ),
+		'source'    => array( 'type' => 'zip', 'ref' => 'staged-zip-1' ),
+	)
+);
+if ( empty( $approved_staged_zip['success'] ) || '/srv/private/website.zip' !== ( $GLOBALS['ssi_staged_reader_archives'][0]['staged_path'] ?? '' ) || ! is_object( Static_Site_Importer_WordPress_Site_Plan_Materializer::$plans[0]['args']['_static_site_importer_payload_reader'] ?? null ) ) {
+	throw new RuntimeException( 'approved staged ZIP plans must reacquire a transient payload reader through the opaque resolver' ); }
 $url = static_site_importer_ability_import(
 	array(
 		'operation' => 'plan',
@@ -289,7 +305,7 @@ $approved_apply = static_site_importer_ability_import(
 		'slug'      => 'approved-plan',
 	)
 );
-if ( empty( $approved_apply['success'] ) || $approved !== ( Static_Site_Importer_WordPress_Site_Plan_Materializer::$plans[0]['plan'] ?? null ) || 2 !== Static_Site_Importer_Theme_Generator::$applied ) {
+if ( empty( $approved_apply['success'] ) || $approved !== ( Static_Site_Importer_WordPress_Site_Plan_Materializer::$plans[1]['plan'] ?? null ) || 2 !== Static_Site_Importer_Theme_Generator::$applied ) {
 	throw new RuntimeException( 'approved plan apply must delegate the exact plan without recompiling' ); }
 $classic_plan  = static_site_importer_ability_import(
 	array(
