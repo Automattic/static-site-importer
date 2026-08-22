@@ -328,6 +328,11 @@ $assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-pla
 $assert( 'posts' === $GLOBALS['ssi_plan_options']['show_on_front'], 'plan-only materialization does not change reading settings by default' );
 $assert( $receipt['plan']['pages'][0]['document_metadata']['links'][0]['resolved_url'] === 'https://example.test/wp-content/themes/site-plan/assets/assets/site.css', 'resolved metadata retains the declared stylesheet destination' );
 $assert( array() === $receipt['completed']['runtime_declarations']['asset_publications'], 'plans without publication declarations retain an explicit empty receipt collection' );
+$producer_page_markup = (string) ( $receipt['plan']['pages'][0]['resolved_block_markup'] ?? '' );
+$page_source          = (string) ( $receipt['plan']['pages'][0]['source_path'] ?? '' );
+$page_id              = (int) ( $receipt['completed']['pages'][ $page_source ] ?? 0 );
+$persisted_page       = stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $page_id ]['post_content'] ?? '' ) );
+$assert( $producer_page_markup === $persisted_page, 'materializer-persists-producer-block-markup-without-html-recompilation' );
 $short_write_target  = (string) ( $plan['writes'][0]['target_path'] ?? '' );
 $short_write_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$plan,
