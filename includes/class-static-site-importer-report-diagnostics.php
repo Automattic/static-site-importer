@@ -2156,7 +2156,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$blocks  = array();
 		$matches = array();
 		preg_match_all( '/<!--\s+wp:html\s+(\{.*?\})\s+\/-->/s', $content, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE );
-		preg_match_all( '/<!--\s+wp:html\s+(\{.*?\})\s+-->(.*?)<!--\s+\/wp:html\s+-->/s', $content, $wrapped_matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE );
+		preg_match_all( '/<!--\s+wp:html(?:\s+(\{.*?\}))?\s+-->(.*?)<!--\s+\/wp:html\s+-->/s', $content, $wrapped_matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE );
 		$matches = array_merge( $matches, $wrapped_matches );
 
 		foreach ( $matches as $match ) {
