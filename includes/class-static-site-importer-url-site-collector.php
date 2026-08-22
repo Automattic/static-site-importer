@@ -433,11 +433,11 @@ class Static_Site_Importer_URL_Site_Collector {
 			}
 
 			$file = array(
-				'path'      => $path,
+				'path'       => $path,
 				'source_url' => $resource_url,
-				'mime_type' => $resource['content_type'],
-				'body'      => $body,
-				'is_text'   => self::is_text( $resource['content_type'], $path ),
+				'mime_type'  => $resource['content_type'],
+				'body'       => $body,
+				'is_text'    => self::is_text( $resource['content_type'], $path ),
 			);
 			if ( 'html' === $resource['kind'] ) {
 				$file['metadata'] = array( 'route_path' => $route_paths[ $resource_url ] );
