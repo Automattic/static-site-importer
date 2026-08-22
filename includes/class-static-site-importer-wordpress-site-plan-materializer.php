@@ -9,6 +9,7 @@ use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver;
 
 require_once __DIR__ . '/class-static-site-importer-stylesheet-materializer.php';
+require_once __DIR__ . '/class-static-site-importer-protected-page-policy.php';
 if ( ! class_exists( 'Static_Site_Importer_Theme_Materialization_Strategy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-theme-materialization-strategy.php';
 }
@@ -789,7 +790,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	/** @param array<string,mixed> $state @param array<string,mixed> $page */
 	private static function plan_existing_page( array &$state, array $page, WP_Post $existing, string $reason ): array {
 		$id                          = (int) $existing->ID;
-		$protected                   = class_exists( 'Static_Site_Importer_Page_Materializer' ) && Static_Site_Importer_Page_Materializer::is_protected_page( $existing );
+		$protected                   = Static_Site_Importer_Protected_Page_Policy::is_protected_page( $existing );
 		$page['planned_existing_id'] = $id;
 		$state['page_ids'][ $page['reconciliation_identity'] ] = $id;
 		$state['source_ids'][ $page['source_path'] ]           = $id;
@@ -1315,8 +1316,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	/**
 	 * Whether a post type is registered on the runtime import target.
 	 *
-	 * Mirrors Static_Site_Importer_Page_Materializer::page_post_type(): any
-	 * registered type is valid; internal types without an object (revision,
+	 * Any registered type is valid; internal types without an object (revision,
 	 * nav_menu_item, wp_template_part) fall back to 'page'.
 	 *
 	 * @param string $post_type Post type name.

@@ -46,9 +46,16 @@ class WP_Error {
 }
 class WP_Post {
 	public int $ID;
+	public string $post_name;
 	public function __construct( int $id ) {
-		$this->ID = $id; }
+		$this->ID        = $id;
+		$this->post_name = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_name'] ?? '' ); }
 }
+function apply_filters( string $hook, $value, ...$args ) {
+	unset( $hook, $args );
+	return $value; }
+function get_page_uri( WP_Post $post ): string {
+	return (string) ( $GLOBALS['ssi_plan_posts'][ $post->ID ]['post_name'] ?? '' ); }
 function is_wp_error( $value ): bool {
 	return $value instanceof WP_Error; }
 function sanitize_key( string $value ): string {

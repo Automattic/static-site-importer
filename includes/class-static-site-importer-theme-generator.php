@@ -2048,7 +2048,7 @@ class Static_Site_Importer_Theme_Generator {
 				continue;
 			}
 
-			if ( Static_Site_Importer_Page_Materializer::is_protected_page( $post ) ) {
+			if ( Static_Site_Importer_Protected_Page_Policy::is_protected_page( $post ) ) {
 				$reconciliation['skipped'][] = array(
 					'post_id'     => $post_id,
 					'source_path' => $source_path,
