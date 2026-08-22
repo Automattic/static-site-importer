@@ -1910,7 +1910,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			return array_merge(
 				$base,
 				array(
-					'status' => 'compatibility_policy_only',
+					'status'     => 'compatibility_policy_only',
 					'diagnostic' => array(
 						'reason_code'  => 'editability_report_compatibility_policy_only',
 						'owning_layer' => 'blocks-engine',
@@ -1934,10 +1934,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return array_merge(
 			$base,
 			array(
-				'status'          => 'passed',
-				'report_schema'   => $report['schema'],
-				'plan_hash'       => $bound_hash,
-				'diagnostic'      => array(
+				'status'        => 'passed',
+				'report_schema' => $report['schema'],
+				'plan_hash'     => $bound_hash,
+				'diagnostic'    => array(
 					'reason_code'  => 'editability_report_verified',
 					'owning_layer' => 'blocks-engine',
 				),
@@ -1954,7 +1954,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( array() !== $failures ) {
 			$diagnostic['threshold_failures'] = array_slice( array_values( array_filter( $failures, 'is_array' ) ), 0, 10 );
 		}
-		return array_merge( $base, array( 'status' => 'rejected', 'diagnostic' => $diagnostic ) );
+		return array_merge(
+			$base,
+			array(
+				'status'     => 'rejected',
+				'diagnostic' => $diagnostic,
+			)
+		);
 	}
 
 	/** @return array<string,mixed> */
