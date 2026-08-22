@@ -855,7 +855,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				$diagnostics[] = $diagnostic;
 				throw new InvalidArgumentException( 'runtime_entity_bound_block_document_invalid' );
 			}
-			$admission = self::block_document_editor_admission( $markup, $source_path );
+			$admission   = self::block_document_editor_admission( $markup, $source_path );
 			$diagnostics = array_merge( $diagnostics, $admission['diagnostics'] );
 			if ( ! $admission['admitted'] ) {
 				throw new InvalidArgumentException( 'unsupported_persisted_block' );
@@ -918,11 +918,23 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 						$classification = 'declared_companion_dependency';
 					}
 					if ( is_array( $block_type->parent ) && ! in_array( $parent_name, $block_type->parent, true ) && self::BLOCK_PROVENANCE_LIMIT > count( $diagnostics ) ) {
-						$diagnostics[] = array( 'reason_code' => 'block_parent_requirement_not_met', 'source_path' => $source_path, 'block_name' => $name, 'parent_block_name' => $parent_name, 'block_classification' => $classification );
+						$diagnostics[] = array(
+							'reason_code'          => 'block_parent_requirement_not_met',
+							'source_path'          => $source_path,
+							'block_name'           => $name,
+							'parent_block_name'    => $parent_name,
+							'block_classification' => $classification,
+						);
 					}
 					$parent_type = null === $parent_name ? null : $registry->get_registered( $parent_name );
 					if ( $parent_type && is_array( $parent_type->allowed_blocks ) && ! in_array( $name, $parent_type->allowed_blocks, true ) && self::BLOCK_PROVENANCE_LIMIT > count( $diagnostics ) ) {
-						$diagnostics[] = array( 'reason_code' => 'block_child_not_allowed', 'source_path' => $source_path, 'block_name' => $name, 'parent_block_name' => $parent_name, 'block_classification' => $classification );
+						$diagnostics[] = array(
+							'reason_code'          => 'block_child_not_allowed',
+							'source_path'          => $source_path,
+							'block_name'           => $name,
+							'parent_block_name'    => $parent_name,
+							'block_classification' => $classification,
+						);
 					}
 				}
 				$inner_blocks = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
@@ -930,7 +942,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 		};
 		$inspect( parse_blocks( $markup ) );
-		return array( 'admitted' => ! $unsupported, 'diagnostics' => $diagnostics );
+		return array(
+			'admitted'    => ! $unsupported,
+			'diagnostics' => $diagnostics,
+		);
 	}
 
 	/** @param array<array-key,mixed> $blocks @return bool */
