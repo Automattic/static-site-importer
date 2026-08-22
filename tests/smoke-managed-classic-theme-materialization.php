@@ -155,6 +155,18 @@ $unsafe_projection = Static_Site_Importer_Classic_Theme_Projection::build(
 );
 $unsafe_html       = $unsafe_projection['pages']['index.html']['html'] ?? '';
 $assert( ! is_wp_error( $unsafe_projection ) && ! str_contains( strtolower( $unsafe_html ), 'javascript:' ) && ! str_contains( strtolower( $unsafe_html ), '@import' ) && str_contains( $unsafe_html, '[artifact_shortcode]' ), 'hostile encoded URL and CSS schemes fail closed while artifact shortcode syntax remains inert text' );
+$srcset_projection = Static_Site_Importer_Classic_Theme_Projection::build(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array( 'index.html' => '<main><img srcset="assets/hero,wide.png 1x, data:image/png;base64,AA== 2x"></main>' ),
+	),
+	array(
+		'source' => array( 'entry_path' => 'index.html' ),
+		'pages'  => array( array( 'source_path' => 'index.html' ) ),
+	)
+);
+$srcset_html = (string) ( $srcset_projection['pages']['index.html']['html'] ?? '' );
+$assert( ! is_wp_error( $srcset_projection ) && str_contains( $srcset_html, 'assets/hero,wide.png 1x' ) && str_contains( $srcset_html, 'data:image/png;base64,AA== 2x' ), 'classic projection preserves data URLs and URL-internal commas in srcset candidates' );
 $smil_projection = Static_Site_Importer_Classic_Theme_Projection::build(
 	array(
 		'entrypoint' => 'index.html',

@@ -9,6 +9,12 @@
 if ( ! class_exists( 'Static_Site_Importer_Source_Normalizer' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-source-normalizer.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Srcset_Parser' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-srcset-parser.php';
+}
+if ( ! class_exists( '\\Automattic\\BlocksEngine\\PhpTransformer\\AssetAnalysis\\CssUrlRewriter' ) ) {
+	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/AssetAnalysis/CssUrlRewriter.php';
+}
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -862,8 +868,8 @@ class Static_Site_Importer_URL_Site_Collector {
 			}
 		}
 		foreach ( self::tag_attribute_values( $html, 'img|source', 'srcset' ) as $srcset ) {
-			foreach ( explode( ',', (string) $srcset ) as $candidate ) {
-				$reference = preg_split( '/\s+/', trim( $candidate ) )[0] ?? '';
+			foreach ( Static_Site_Importer_Srcset_Parser::parse( (string) $srcset ) as $candidate ) {
+				$reference = $candidate['url'];
 				$url       = self::resolve_url( $reference, $base_url );
 				if ( '' !== $url ) {
 					$urls[] = $url;
@@ -1079,11 +1085,10 @@ class Static_Site_Importer_URL_Site_Collector {
 			'#\bsrcset\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))#is',
 			static function ( array $matches ) use ( $base_url, $source_path, $paths, $external_assets ): string {
 				$candidates = array();
-				foreach ( explode( ',', self::matched_attribute_value( $matches, 1 ) ) as $candidate ) {
-					$parts        = preg_split( '/\s+/', trim( $candidate ), 2 );
-					$url          = self::resolve_url( $parts[0] ?? '', $base_url );
-					$ref          = isset( $paths[ $url ] ) ? self::relative_path( $source_path, $paths[ $url ] ) : ( isset( $external_assets[ $url ] ) ? self::external_asset_url( $url, (string) ( $parts[0] ?? '' ) ) : ( $parts[0] ?? '' ) );
-					$candidates[] = trim( $ref . ' ' . ( $parts[1] ?? '' ) );
+				foreach ( Static_Site_Importer_Srcset_Parser::parse( self::matched_attribute_value( $matches, 1 ) ) as $candidate ) {
+					$url          = self::resolve_url( $candidate['url'], $base_url );
+					$ref          = isset( $paths[ $url ] ) ? self::relative_path( $source_path, $paths[ $url ] ) : ( isset( $external_assets[ $url ] ) ? self::external_asset_url( $url, $candidate['url'] ) : $candidate['url'] );
+					$candidates[] = trim( $ref . ' ' . $candidate['descriptor'] );
 				}
 				return 'srcset="' . implode( ', ', $candidates ) . '"';
 			},
@@ -1094,13 +1099,12 @@ class Static_Site_Importer_URL_Site_Collector {
 
 	/** @param array<string,string> $paths */
 	private static function rewrite_css( string $css, string $base_url, string $source_path, array $paths, array $external_assets = array() ): string {
-		$css = (string) preg_replace_callback(
-			'#url\(\s*(["\']?)(.*?)\1\s*\)#is',
-			static function ( array $matches ) use ( $base_url, $source_path, $paths, $external_assets ): string {
-				$url = self::resolve_url( $matches[2], $base_url );
-				return isset( $paths[ $url ] ) ? 'url(' . $matches[1] . self::relative_path( $source_path, $paths[ $url ] ) . $matches[1] . ')' : ( isset( $external_assets[ $url ] ) ? 'url(' . $matches[1] . self::external_asset_url( $url, $matches[2] ) . $matches[1] . ')' : $matches[0] );
-			},
-			$css
+		$css = \Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\CssUrlRewriter::rewrite(
+			$css,
+			static function ( string $reference ) use ( $base_url, $source_path, $paths, $external_assets ): string {
+				$url = self::resolve_url( $reference, $base_url );
+				return isset( $paths[ $url ] ) ? self::relative_path( $source_path, $paths[ $url ] ) : ( isset( $external_assets[ $url ] ) ? self::external_asset_url( $url, $reference ) : $reference );
+			}
 		);
 		return (string) preg_replace_callback(
 			'#@import\s+(["\'])(.*?)\1#is',
