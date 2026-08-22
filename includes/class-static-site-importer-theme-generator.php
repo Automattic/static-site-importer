@@ -213,7 +213,8 @@ class Static_Site_Importer_Theme_Generator {
 			$compiled = $args['compiled_artifact_result'];
 		} else {
 			$compiler_result = ( new $compiler_class() )->compile( $artifact );
-			$compiled        = is_callable( array( $compiler_result, 'toWordPressSitePlanView' ) ) ? $compiler_result->toWordPressSitePlanView() : $compiler_result->toArray();
+			$view_method     = 'toWordPressSitePlanView';
+			$compiled        = is_callable( array( $compiler_result, $view_method ) ) ? ( new ReflectionMethod( $compiler_result, $view_method ) )->invoke( $compiler_result ) : $compiler_result->toArray();
 		}
 		if ( ! is_array( $compiled ) ) {
 			return new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid result.' );
@@ -1724,8 +1725,8 @@ class Static_Site_Importer_Theme_Generator {
 			$json = wp_json_encode( $value, JSON_UNESCAPED_SLASHES );
 			return false !== $json && self::write_all( $stream, $json );
 		}
-		$list = self::json_list( $value );
-		return self::write_json_container( $stream, $value, $depth, $list );
+		$is_list = self::json_list( $value );
+		return self::write_json_container( $stream, $value, $depth, $is_list );
 	}
 
 	/** @param array<mixed> $value */
@@ -1734,11 +1735,11 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/** @param array<mixed> $value */
-	private static function write_json_container( $stream, array $value, int $depth, bool $list ): bool {
+	private static function write_json_container( $stream, array $value, int $depth, bool $is_list ): bool {
 		if ( empty( $value ) ) {
-			return self::write_all( $stream, $list ? '[]' : '{}' );
+			return self::write_all( $stream, $is_list ? '[]' : '{}' );
 		}
-		if ( ! self::write_all( $stream, $list ? '[' : '{' ) ) {
+		if ( ! self::write_all( $stream, $is_list ? '[' : '{' ) ) {
 			return false;
 		}
 		$first = true;
@@ -1747,7 +1748,7 @@ class Static_Site_Importer_Theme_Generator {
 				return false;
 			}
 			$first = false;
-			if ( ! $list ) {
+			if ( ! $is_list ) {
 				$key_json = wp_json_encode( (string) $key, JSON_UNESCAPED_SLASHES );
 				if ( false === $key_json || ! self::write_all( $stream, $key_json . ': ' ) ) {
 					return false;
@@ -1757,7 +1758,7 @@ class Static_Site_Importer_Theme_Generator {
 				return false;
 			}
 		}
-		return self::write_all( $stream, "\n" . str_repeat( '    ', $depth ) . ( $list ? ']' : '}' ) );
+		return self::write_all( $stream, "\n" . str_repeat( '    ', $depth ) . ( $is_list ? ']' : '}' ) );
 	}
 
 	/** Write every byte or fail before the temporary projection can be published. */
