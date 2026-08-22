@@ -108,6 +108,8 @@ jobs:
 
       - name: Install Static Site Importer dependencies
         working-directory: static-site-importer
+        env:
+          BLOCKS_ENGINE_SHA: ${{ inputs.blocks-engine-sha }}
         run: |
           npm ci
           composer install --no-interaction --prefer-dist --no-progress
@@ -115,7 +117,10 @@ jobs:
           composer config --json repositories.blocks-engine-candidate "{\"type\":\"path\",\"url\":\"../blocks-engine/php-transformer\",\"options\":{\"symlink\":false,\"versions\":{\"automattic/blocks-engine-php-transformer\":\"${TRANSFORMER_VERSION}\"}}}"
           composer update automattic/blocks-engine-php-transformer --with-dependencies --no-interaction --prefer-dist --no-progress
           TRANSFORMER_PATH=$(composer show automattic/blocks-engine-php-transformer --path | php -r 'echo preg_replace("/^\\S+\\s+/", "", trim( stream_get_contents( STDIN ) ) );')
-          diff --brief --recursive --exclude=.git "$GITHUB_WORKSPACE/blocks-engine/php-transformer" "$TRANSFORMER_PATH"
+          TRANSFORMER_ARCHIVE="$RUNNER_TEMP/blocks-engine-php-transformer"
+          mkdir -p "$TRANSFORMER_ARCHIVE"
+          git -C "$GITHUB_WORKSPACE/blocks-engine" archive --format=tar "$BLOCKS_ENGINE_SHA:php-transformer" | tar --extract --directory "$TRANSFORMER_ARCHIVE"
+          diff --brief --recursive "$TRANSFORMER_ARCHIVE" "$TRANSFORMER_PATH"
 
       - name: Install pinned Homeboy and Extensions
         run: |

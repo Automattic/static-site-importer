@@ -265,7 +265,7 @@ function wp_parse_args( $args, array $defaults = array() ): array {
 	return array_merge( $defaults, is_array( $args ) ? $args : array() );
 }
 
-$wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: '/Users/chubes/Studio/intelligence-chubes4';
+$wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: ( defined( 'ABSPATH' ) ? ABSPATH : '' );
 $wp_includes = rtrim( $wp_root, '/\\' ) . '/wp-includes/';
 $core_files  = array( 'class-wp-block-parser.php', 'class-wp-block-type.php', 'class-wp-block-type-registry.php', 'blocks.php' );
 foreach ( $core_files as $core_file ) {
