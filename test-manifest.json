@@ -70,6 +70,7 @@
     { "path": "tests/StaticSiteImporterFallbackDiagnosticsTest.php", "environment": "wordpress-runtime", "command": ["phpunit", "tests/StaticSiteImporterFallbackDiagnosticsTest.php"] },
     { "path": "tests/form-materializer-topology.test.mjs", "environment": "node" },
     { "path": "tools/build-dev-package.test.mjs", "environment": "node" },
+    { "path": "tools/acceptance-handoff.test.mjs", "environment": "node" },
     { "path": "tools/fig-intent-parity-report.test.mjs", "environment": "node" },
     { "path": "tools/fixture-matrix.test.mjs", "environment": "node" },
     { "path": "tools/php-wasm-zstd.test.mjs", "environment": "node" },
