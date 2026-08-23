@@ -48,19 +48,19 @@ class Static_Site_Importer_Plugin_Materializer {
 
 		$report['attempted'] = true;
 
-		$deps = self::load_admin_dependencies();
-		if ( is_wp_error( $deps ) ) {
-			return self::failed_report( $report, $deps );
-		}
-
 		$plugin_path   = trailingslashit( WP_PLUGIN_DIR ) . $plugin_file;
 		$needs_install = ! self::plugin_entrypoint_exists( $plugin_path );
 		if ( ! $needs_install ) {
 			$report['installed'] = true;
 		} else {
+			$report['attempted_actions'][] = 'install';
 			$capabilities = Static_Site_Importer_Current_Site_Capabilities::check_plugin_install( true );
 			if ( is_wp_error( $capabilities ) ) {
 				return self::failed_report( $report, $capabilities );
+			}
+			$deps = self::load_admin_dependencies();
+			if ( is_wp_error( $deps ) ) {
+				return self::failed_report( $report, $deps );
 			}
 			$install = self::install_wp_org_plugin( $slug );
 			if ( is_wp_error( $install ) ) {
@@ -76,9 +76,14 @@ class Static_Site_Importer_Plugin_Materializer {
 				$report['actions'][] = 'installed';
 			}
 		}
+		$activation_deps = self::load_activation_dependencies();
+		if ( is_wp_error( $activation_deps ) ) {
+			return self::failed_report( $report, $activation_deps );
+		}
 
 		if ( function_exists( 'is_plugin_active' ) && is_plugin_active( $plugin_file ) ) {
 			$report['active'] = true;
+			$report['attempted_actions'][] = 'prepare_runtime';
 			$preparation      = self::prepare_plugin_runtime( $slug, $preparation_callback );
 			if ( is_wp_error( $preparation ) ) {
 				return self::failed_report( $report, $preparation );
@@ -88,6 +93,7 @@ class Static_Site_Importer_Plugin_Materializer {
 			if ( is_wp_error( $capabilities ) ) {
 				return self::failed_report( $report, $capabilities );
 			}
+			$report['attempted_actions'][] = 'activate';
 			$lifecycle = self::prepare_activation_lifecycle_replay();
 			try {
 				$activate = activate_plugin( $plugin_file );
@@ -104,11 +110,13 @@ class Static_Site_Importer_Plugin_Materializer {
 				}
 				$report['active']    = true;
 				$report['actions'][] = 'reconciled_activated';
+				$report['attempted_actions'][] = 'prepare_runtime';
 				$preparation         = self::prepare_plugin_runtime( $slug, $preparation_callback );
 				if ( is_wp_error( $preparation ) ) {
 					return self::failed_report( $report, $preparation );
 				}
 			} else {
+				$report['attempted_actions'][] = 'prepare_runtime';
 				$preparation = self::prepare_plugin_runtime( $slug, $preparation_callback );
 				if ( is_wp_error( $preparation ) ) {
 					self::restore_activation_lifecycle_actions( $lifecycle );
@@ -561,9 +569,10 @@ class Static_Site_Importer_Plugin_Materializer {
 			'attempted'   => false,
 			'installed'   => false,
 			'active'      => false,
-			'actions'     => array(),
-			'error'       => '',
-			'provenance'  => array(
+			'actions'           => array(),
+			'attempted_actions' => array(),
+			'error'             => '',
+			'provenance'        => array(
 				'source'  => 'wordpress.org',
 				'version' => '',
 				'sha256'  => '',
@@ -792,6 +801,27 @@ class Static_Site_Importer_Plugin_Materializer {
 			return new WP_Error(
 				'static_site_importer_plugin_upgrader_unavailable',
 				'WordPress plugin upgrader classes are unavailable.'
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Load only the WordPress dependency required to activate an installed plugin.
+	 *
+	 * @return true|WP_Error
+	 */
+	private static function load_activation_dependencies() {
+		$file = ABSPATH . 'wp-admin/includes/plugin.php';
+		if ( is_readable( $file ) ) {
+			require_once $file;
+		}
+
+		if ( ! function_exists( 'is_plugin_active' ) || ! function_exists( 'activate_plugin' ) ) {
+			return new WP_Error(
+				'static_site_importer_plugin_activation_unavailable',
+				'WordPress plugin activation functions are unavailable.'
 			);
 		}
 
