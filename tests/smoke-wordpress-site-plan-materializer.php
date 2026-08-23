@@ -1772,6 +1772,27 @@ $assert( 0 === ( $form_quality_report['quality']['fallback_count'] ?? -1 ) && 1 
 $resolved_form_quality    = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $form_quality_report, array( 'fail_on_quality' => true ) );
 $resolved_form_validation = Static_Site_Importer_Report_Diagnostics::import_validation_result( $form_quality_report, $resolved_form_quality );
 $assert( true === ( $resolved_form_quality['pass'] ?? false ) && false === ( $resolved_form_quality['fail_import'] ?? true ) && array() === ( $resolved_form_quality['failure_reasons'] ?? null ) && 'passed' === ( $resolved_form_validation['status'] ?? '' ), 'receipt-resolved form fallback clears derived quality gates and validation status' );
+$form_admission = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'can_defer_form_quality_admission' );
+$form_admission_plan = array(
+	'quality' => array( 'metrics' => array( 'fallback_count' => 1 ), 'failure_reasons' => array( 'unsupported_html_fallback' ) ),
+	'diagnostics' => array( $form_fallback ),
+);
+$form_admission_lifecycle = array(
+	'entities' => array(
+		'forms' => array(
+			'adapter' => array( 'capability' => 'form' ),
+			'declaration' => array( 'payload' => array( 'schema' => 'generic/forms/v1' ) ),
+			'manifest' => array( 'forms' => array( array( 'source_path' => 'index.html', 'selector' => 'form.newsletter', 'bindings' => array( $form_binding ) ) ) ),
+		),
+	),
+);
+$assert( true === $form_admission->invoke( null, $form_admission_plan, $form_admission_lifecycle ), 'typed provider-materializable form fallback defers only until receipt reconciliation' );
+$missing_binding_lifecycle = $form_admission_lifecycle;
+$missing_binding_lifecycle['entities']['forms']['manifest']['forms'][0]['bindings'] = array();
+$assert( false === $form_admission->invoke( null, $form_admission_plan, $missing_binding_lifecycle ), 'unbound provider form fallback remains rejected before materialization' );
+$unrelated_failure_plan = $form_admission_plan;
+$unrelated_failure_plan['quality']['failure_reasons'][] = 'core_html_block';
+$assert( false === $form_admission->invoke( null, $unrelated_failure_plan, $form_admission_lifecycle ), 'unrelated quality failures remain rejected before materialization' );
 $other_failure_report                                     = $form_quality_report;
 $other_failure_report['quality']['core_html_block_count'] = 1;
 $other_failure_quality                                    = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $other_failure_report, array( 'fail_on_quality' => true ) );
@@ -1848,6 +1869,30 @@ $tampered_content_report['diagnostics']               = array( $form_fallback );
 $tampered_content_report['materialization_receipt']   = $tampered_content_receipt;
 Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $tampered_content_report );
 $assert( 1 === ( $tampered_content_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $tampered_content_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'tampered persisted page digest cannot resolve a fallback' );
+$deferred_form_plan                = $binding_plan;
+$deferred_form_plan['quality']     = array(
+	'pass'            => false,
+	'metrics'         => array( 'fallback_count' => 1 ),
+	'failure_reasons' => array( 'unsupported_html_fallback' ),
+);
+$deferred_form_plan['diagnostics'] = array( $form_fallback );
+$deferred_form_receipt             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$deferred_form_plan,
+	array(
+		'slug'                       => 'deferred-form-quality-plan',
+		'runtime_entity_bindings'    => array( $form_binding ),
+		'defer_materialization_commit' => true,
+	)
+);
+$deferred_form_receipt['completed']['runtime_declarations']['entity_bindings'][ hash( 'sha256', 'form-fallback-binding' ) ]['persisted_fragment_hash'] = hash( 'sha256', 'tampered deferred fragment' );
+$final_quality_gate = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'public_result_from_wordpress_site_plan_receipt' );
+$final_quality_error = $final_quality_gate->invoke(
+	null,
+	$deferred_form_receipt,
+	array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true )
+);
+$final_quality_receipt = is_wp_error( $final_quality_error ) ? $final_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
+$assert( is_wp_error( $final_quality_error ) && 'static_site_importer_quality_gate_failed' === $final_quality_error->get_error_code() && 'partial' === ( $final_quality_receipt['status'] ?? '' ), 'mismatched deferred form receipt fails final admission and rolls back the transaction' );
 $resumed_form_binding_receipt                             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$binding_plan,
 	array(
