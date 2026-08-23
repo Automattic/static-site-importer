@@ -462,13 +462,16 @@ function static_site_importer_cli_artifact_input( array $assoc_args ) {
 	if ( ! is_array( $artifact ) ) {
 		return new WP_Error( 'static_site_importer_cli_artifact_invalid', 'The --artifact file must contain a JSON object.' );
 	}
-	return static_site_importer_cli_apply_client_script_args( array(
-		'artifact'  => $artifact,
-		'slug'      => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
-		'name'      => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
-		'activate'  => ! isset( $assoc_args['no-activate'] ),
-		'overwrite' => ! isset( $assoc_args['no-overwrite'] ),
-	), $assoc_args );
+	return static_site_importer_cli_apply_client_script_args(
+		array(
+			'artifact'  => $artifact,
+			'slug'      => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
+			'name'      => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
+			'activate'  => ! isset( $assoc_args['no-activate'] ),
+			'overwrite' => ! isset( $assoc_args['no-overwrite'] ),
+		),
+		$assoc_args
+	);
 }
 
 /** Apply the explicit isolated-preview script policy shared by artifact lifecycle commands. */
@@ -698,7 +701,7 @@ function static_site_importer_cli_materialization_summary( array $receipt, array
 			}
 		}
 	}
-	$layout    = isset( $receipt['computed_layout'] ) && is_array( $receipt['computed_layout'] ) ? $receipt['computed_layout'] : array();
+	$layout        = isset( $receipt['computed_layout'] ) && is_array( $receipt['computed_layout'] ) ? $receipt['computed_layout'] : array();
 	$plan_identity = is_array( $receipt['plan_identity'] ?? null ) ? $receipt['plan_identity'] : array();
 	return array(
 		'schema'                 => 'static-site-importer/materialization-receipt/v2',
