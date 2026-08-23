@@ -6,11 +6,13 @@
  * @package StaticSiteImporter
  */
 
+use Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\SrcsetParser;
+
 if ( ! class_exists( 'Static_Site_Importer_Source_Normalizer' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-source-normalizer.php';
 }
-if ( ! class_exists( 'Static_Site_Importer_Srcset_Parser' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-srcset-parser.php';
+if ( ! class_exists( SrcsetParser::class ) ) {
+	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/AssetAnalysis/SrcsetParser.php';
 }
 if ( ! class_exists( '\\Automattic\\BlocksEngine\\PhpTransformer\\AssetAnalysis\\CssUrlRewriter' ) ) {
 	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/AssetAnalysis/CssUrlRewriter.php';
@@ -868,7 +870,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			}
 		}
 		foreach ( self::tag_attribute_values( $html, 'img|source', 'srcset' ) as $srcset ) {
-			foreach ( Static_Site_Importer_Srcset_Parser::parse( (string) $srcset ) as $candidate ) {
+			foreach ( SrcsetParser::parse( (string) $srcset ) as $candidate ) {
 				$reference = $candidate['url'];
 				$url       = self::resolve_url( $reference, $base_url );
 				if ( '' !== $url ) {
@@ -1085,7 +1087,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			'#\bsrcset\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))#is',
 			static function ( array $matches ) use ( $base_url, $source_path, $paths, $external_assets ): string {
 				$candidates = array();
-				foreach ( Static_Site_Importer_Srcset_Parser::parse( self::matched_attribute_value( $matches, 1 ) ) as $candidate ) {
+				foreach ( SrcsetParser::parse( self::matched_attribute_value( $matches, 1 ) ) as $candidate ) {
 					$url          = self::resolve_url( $candidate['url'], $base_url );
 					$ref          = isset( $paths[ $url ] ) ? self::relative_path( $source_path, $paths[ $url ] ) : ( isset( $external_assets[ $url ] ) ? self::external_asset_url( $url, $candidate['url'] ) : $candidate['url'] );
 					$candidates[] = trim( $ref . ' ' . $candidate['descriptor'] );
