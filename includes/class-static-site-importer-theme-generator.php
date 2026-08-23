@@ -94,7 +94,7 @@ class Static_Site_Importer_Theme_Generator {
 		$theme_materialization = $compiled_import['theme_materialization'];
 		$args['font_materialization'] = isset( $materialization_plan['theme']['font_materialization'] ) && is_array( $materialization_plan['theme']['font_materialization'] ) ? $materialization_plan['theme']['font_materialization'] : array();
 		if ( ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) ) {
-			$failed_plan = Static_Site_Importer_Failed_Plan_Validation::build( $plan, $args );
+			$failed_plan = Static_Site_Importer_Failed_Plan_Validation::build( $plan, $args, $compiled_import['compiled'] ?? array() );
 			try {
 				$failed_plan['artifact_refs'] = Static_Site_Importer_Failed_Plan_Validation::persist( $failed_plan, (string) ( $args['report'] ?? '' ) );
 			} catch ( Throwable $error ) {
