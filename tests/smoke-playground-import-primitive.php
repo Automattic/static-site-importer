@@ -9,6 +9,8 @@
  *  - passing [ 'install' => false ] omits the installPlugin step (for runtimes
  *    where SSI is already present) while keeping login + runPHP;
  *  - the runPHP code runs the proven import entrypoint;
+ *  - import failures emit a bounded structured diagnostic and retain a nonzero
+ *    process status before WordPress recovery mode can hide the exception;
  *  - static_site_importer_playground_import_blueprint() produces the same step
  *    set as the legacy static_site_importer_rest_playground_blueprint(), proving
  *    the legacy function delegates to the public primitive.
@@ -196,6 +198,63 @@ $assert(
 	'runphp-preview-result',
 	'runPHP code persists the preview result option'
 );
+$assert(
+	false !== strpos( $run_php_code, 'static-site-importer/playground-import-failure/v1' ),
+	'runphp-failure-schema',
+	'runPHP code emits the Playground import failure schema'
+);
+$assert(
+	false !== strpos( $run_php_code, 'substr( $error->getMessage(), 0, 1000 )' ),
+	'runphp-bounded-failure-message',
+	'runPHP code bounds failure messages'
+);
+$assert(
+	false !== strpos( $run_php_code, 'exit( 1 )' ),
+	'runphp-failure-status',
+	'runPHP code retains a nonzero failure status'
+);
+$user_steps = static_site_importer_playground_import_steps( $input, array( 'install' => false, 'user_id' => 7 ) );
+$user_code  = (string) ( $user_steps[1]['code'] ?? '' );
+$assert( false !== strpos( $user_code, 'wp_set_current_user( 7 )' ), 'runphp-explicit-user', 'runPHP code explicitly selects the requested import user' );
+$invalid_user = static_site_importer_playground_import_steps( $input, array( 'install' => false, 'user_id' => 0 ) );
+$assert( is_wp_error( $invalid_user ) && 'static_site_importer_playground_user_invalid' === $invalid_user->code, 'runphp-invalid-user', 'invalid explicit import users fail closed' );
+
+$bootstrap_path = tempnam( sys_get_temp_dir(), 'ssi-playground-bootstrap-' );
+$assert( false !== $bootstrap_path, 'runphp-failure-bootstrap', 'temporary failure bootstrap is available' );
+if ( false !== $bootstrap_path ) {
+	file_put_contents(
+		$bootstrap_path,
+		'<?php function static_site_importer_ability_import( array $input ) { throw new Error( "diagnostic marker" ); }'
+	);
+	$executable_code = str_replace( '/wordpress/wp-load.php', $bootstrap_path, $run_php_code );
+	$process         = proc_open(
+		array( PHP_BINARY ),
+		array(
+			0 => array( 'pipe', 'r' ),
+			1 => array( 'pipe', 'w' ),
+			2 => array( 'pipe', 'w' ),
+		),
+		$pipes
+	);
+	if ( is_resource( $process ) ) {
+		fwrite( $pipes[0], $executable_code );
+		fclose( $pipes[0] );
+		$failure_output = stream_get_contents( $pipes[1] );
+		fclose( $pipes[1] );
+		fclose( $pipes[2] );
+		$failure_status = proc_close( $process );
+		$marker_pos     = strpos( $failure_output, 'STATIC_SITE_IMPORTER_PLAYGROUND_IMPORT_FAILURE ' );
+		$failure_json   = false !== $marker_pos ? trim( substr( $failure_output, $marker_pos + strlen( 'STATIC_SITE_IMPORTER_PLAYGROUND_IMPORT_FAILURE ' ) ) ) : '';
+		$failure_data   = json_decode( $failure_json, true );
+		$assert( 1 === $failure_status, 'runphp-failure-exit', 'generated import code exits nonzero on Throwable' );
+		$assert( false !== $marker_pos, 'runphp-failure-marker', 'generated import code emits the stable failure marker' );
+		$assert( 'static-site-importer/playground-import-failure/v1' === ( $failure_data['schema'] ?? '' ), 'runphp-failure-output-schema', 'generated import code emits the structured failure schema' );
+		$assert( 'diagnostic marker' === ( $failure_data['error']['message'] ?? '' ), 'runphp-failure-output-message', 'generated import code preserves the exception message' );
+	} else {
+		$assert( false, 'runphp-failure-process', 'generated import code can be executed in a PHP subprocess' );
+	}
+	unlink( $bootstrap_path );
+}
 
 // --- Case 4: blueprint primitive matches the legacy REST blueprint (delegation parity). ---
 $primitive_blueprint = static_site_importer_playground_import_blueprint( $input, array( 'package' => $package ) );
