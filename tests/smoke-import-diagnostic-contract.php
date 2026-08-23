@@ -20,6 +20,12 @@ if ( ! function_exists( 'sanitize_key' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_json_encode' ) ) {
+	function wp_json_encode( $value ) {
+		return json_encode( $value );
+	}
+}
+
 if ( ! function_exists( 'doing_action' ) ) {
 	function doing_action( $hook_name = null ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 		return false;
@@ -478,6 +484,67 @@ $assert( 'accepted_runtime_preservation' === ( $runtime_preservation_diagnostic[
 $assert( 'client_script_execution' === ( $runtime_preservation_diagnostic['runtime_requirement'] ?? '' ), 'contract-preserves-runtime-requirement' );
 $assert( 'preserve' === ( $runtime_preservation_diagnostic['disposition'] ?? '' ), 'contract-preserves-runtime-disposition' );
 $assert( 'preserve_verbatim' === ( $runtime_preservation_diagnostic['js_handling'] ?? '' ), 'contract-preserves-runtime-js-handling' );
+
+$normalized_form_fallback = array(
+	'type'        => 'unsupported_html_fallback',
+	'code'        => 'html_form_fallback',
+	'reason_code' => 'html_form_fallback',
+	'source_path' => 'index.html',
+	'selector'    => 'form.newsletter',
+	'form'        => array( 'class' => 'newsletter' ),
+	'controls'    => array(
+		array(
+			'tag'  => 'input',
+			'type' => 'email',
+			'name' => 'email',
+		),
+	),
+);
+$hidden_response_iframe = array(
+	'type'                => 'unsupported_html_fallback',
+	'code'                => 'html_form_fallback',
+	'reason_code'         => 'html_form_fallback',
+	'source_path'         => 'index.html',
+	'selector'            => 'iframe.form-response',
+	'source_html_preview' => '<iframe class="form-response" hidden></iframe>',
+);
+$form_identity    = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $normalized_form_fallback );
+$form_hash        = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $normalized_form_fallback );
+$block_hash       = hash( 'sha256', '<!-- wp:jetpack/contact-form -->newsletter<!-- /wp:jetpack/contact-form -->' );
+$page_hash        = hash( 'sha256', '<!-- wp:group -->materialized page<!-- /wp:group -->' );
+$provider_receipt = array(
+	'schema'                           => 'static-site-importer/quality-resolution-receipt/v1',
+	'status'                           => 'completed',
+	'fallback_reconciliation_identity' => $form_identity,
+	'fallback_hash'                    => $form_hash,
+	'binding_reconciliation_identity'  => hash( 'sha256', 'form-fallback-binding' ),
+	'materialized_block_hash'          => $block_hash,
+	'persisted_fragment_hash'          => $block_hash,
+	'materialized_content_hash'        => $page_hash,
+	'provider'                         => 'jetpack',
+);
+$normalized_form_report = array(
+	'quality'                 => array( 'fallback_count' => 2 ),
+	'diagnostics'             => array( $normalized_form_fallback, $hidden_response_iframe ),
+	'materialization_receipt' => array(
+		'completed' => array(
+			'materialized_pages' => array(
+				'index.html' => array( 'content_hash' => $page_hash ),
+			),
+		),
+	),
+);
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $normalized_form_report, array( $provider_receipt ) );
+$assert( 1 === ( $normalized_form_report['quality']['fallback_count'] ?? 0 ) && 2 === ( $normalized_form_report['quality']['source_fallback_count'] ?? 0 ) && 1 === ( $normalized_form_report['quality_resolutions']['resolved_by_provider'] ?? 0 ), 'normalized-form-diagnostic-reconciles-exact-provider-receipt' );
+$assert( 'resolved_by_provider' === ( $normalized_form_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ) && 'unresolved' === ( $normalized_form_report['quality_resolutions']['resolutions'][1]['state'] ?? '' ), 'unreceipted-hidden-response-iframe-remains-unresolved' );
+
+$mismatched_receipt                  = $provider_receipt;
+$mismatched_receipt['fallback_hash'] = hash( 'sha256', 'mismatched fallback' );
+$mismatched_form_report              = $normalized_form_report;
+$mismatched_form_report['quality']   = array( 'fallback_count' => 1 );
+$mismatched_form_report['diagnostics'] = array( $normalized_form_fallback );
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $mismatched_form_report, array( $mismatched_receipt ) );
+$assert( 1 === ( $mismatched_form_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $mismatched_form_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'normalized-form-diagnostic-rejects-mismatched-provider-receipt' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
