@@ -14,7 +14,7 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 	private const MAX_DIAGNOSTICS = 50;
 
 	/** @return array<string,mixed> */
-	public static function build( array $plan, array $args = array() ): array {
+	public static function build( array $plan, array $args = array(), array $compiled = array() ): array {
 		$diagnostics = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
 		$report = array(
 			'schema'      => 'static-site-importer/import-report/v1',
@@ -23,12 +23,8 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 			'theme_slug'  => (string) ( $args['slug'] ?? '' ),
 			'quality'     => isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array(),
 			'diagnostics' => array_slice( $diagnostics, 0, self::MAX_DIAGNOSTICS ),
-			'blocks_engine' => array(
-				'wordpress_site_plan' => array(
-					'schema'  => (string) ( $plan['schema'] ?? 'blocks-engine/wordpress-site-plan/v2' ),
-					'quality' => isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array(),
-				),
-			),
+			'blocks_engine' => self::compiler_evidence( $plan, $compiled ),
+			'source_documents' => self::source_documents( $plan ),
 			'failure_context' => array(
 				'stage' => 'pre_materialization_quality_admission',
 				'code'  => 'static_site_importer_quality_gate_failed',
@@ -53,6 +49,53 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 			'import_report_summary'    => $report['compact_summary'],
 			'import_validation_result' => $report['import_validation_result'],
 			'finding_packets'          => $report['finding_packets'],
+		);
+	}
+
+	/** @return array<string,mixed> */
+	private static function compiler_evidence( array $plan, array $compiled ): array {
+		$source     = isset( $plan['source'] ) && is_array( $plan['source'] ) ? $plan['source'] : array();
+		$reporting  = isset( $plan['reporting'] ) && is_array( $plan['reporting'] ) ? $plan['reporting'] : array();
+		$metrics    = isset( $reporting['metrics'] ) && is_array( $reporting['metrics'] ) ? $reporting['metrics'] : array();
+		$provenance = isset( $compiled['provenance'] ) && is_array( $compiled['provenance'] ) ? $compiled['provenance'] : ( isset( $source['provenance'] ) && is_array( $source['provenance'] ) ? $source['provenance'] : array() );
+		$summary    = array_filter(
+			array(
+				'schema'           => (string) ( $compiled['result_schema'] ?? $compiled['schema'] ?? '' ),
+				'status'           => (string) ( $compiled['status'] ?? '' ),
+				'source'           => (string) ( $source['schema'] ?? '' ),
+				'page_count'       => (int) ( $metrics['source_document_count'] ?? count( $plan['pages'] ?? array() ) ),
+				'block_count'      => (int) ( $plan['quality']['metrics']['block_count'] ?? 0 ),
+				'diagnostic_count' => count( $plan['diagnostics'] ?? array() ),
+			),
+			static fn( $value ): bool => '' !== $value
+		);
+
+		return array(
+			'available'           => ! empty( $compiled ),
+			'website_artifact'    => array(
+				'summary'    => $summary,
+				'provenance' => array_slice( $provenance, 0, self::MAX_DIAGNOSTICS ),
+			),
+			'wordpress_site_plan' => array(
+				'schema'  => (string) ( $plan['schema'] ?? 'blocks-engine/wordpress-site-plan/v2' ),
+				'source'  => $source,
+				'quality' => isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array(),
+			),
+		);
+	}
+
+	/** @return array<string,mixed> */
+	private static function source_documents( array $plan ): array {
+		$pages = isset( $plan['pages'] ) && is_array( $plan['pages'] ) ? $plan['pages'] : array();
+		return array(
+			'source'                       => 'blocks_engine',
+			'total_count'                  => count( $pages ),
+			'blocks_engine_document_count' => count( $pages ),
+			'counts_by_format'             => array(
+				'html'     => count( $pages ),
+				'markdown' => 0,
+				'mdx'      => 0,
+			),
 		);
 	}
 
