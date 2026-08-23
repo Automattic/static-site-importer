@@ -280,7 +280,7 @@ function static_site_importer_rest_create_playground_open( array $artifact, arra
  * skips the GitHub release install step and imports against the bundled plugin.
  *
  * @param array<string,mixed> $input   Import ability input.
- * @param array<string,mixed> $options Optional. { install: bool (default true), package: array }.
+ * @param array<string,mixed> $options Optional. { install: bool (default true), package: array, user_id: positive int }.
  * @return array<int,array<string,mixed>>|WP_Error
  */
 function static_site_importer_playground_import_steps( array $input, array $options = array() ) {
@@ -289,23 +289,48 @@ function static_site_importer_playground_import_steps( array $input, array $opti
 	if ( is_wp_error( $package ) ) {
 		return $package;
 	}
+	$user_id = array_key_exists( 'user_id', $options ) ? (int) $options['user_id'] : 0;
+	if ( array_key_exists( 'user_id', $options ) && $user_id <= 0 ) {
+		return new WP_Error( 'static_site_importer_playground_user_invalid', __( 'The Playground import user ID must be a positive integer.', 'static-site-importer' ) );
+	}
 
 	// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Generates self-contained Playground import code.
 	$input_literal = var_export( $input, true );
+	$user_code     = $user_id > 0 ? '
+	if ( ! function_exists( "wp_set_current_user" ) ) {
+		throw new RuntimeException( "WordPress user selection is unavailable." );
+	}
+	wp_set_current_user( ' . $user_id . ' );
+' : '';
 	$import_code   = '<?php
-require_once "/wordpress/wp-load.php";
+try {
+	require_once "/wordpress/wp-load.php";' . $user_code . '
 
-if ( ! function_exists( "static_site_importer_ability_import" ) ) {
-	throw new RuntimeException( "Static Site Importer import function is unavailable." );
+	if ( ! function_exists( "static_site_importer_ability_import" ) ) {
+		throw new RuntimeException( "Static Site Importer import function is unavailable." );
+	}
+	$input = ' . $input_literal . ';
+	$result = static_site_importer_ability_import( $input );
+
+	if ( ! is_array( $result ) || empty( $result["success"] ) ) {
+		throw new RuntimeException( "Static Site Importer Playground import failed: " . wp_json_encode( $result ) );
+	}
+
+	update_option( "static_site_importer_playground_preview_result", $result, false );
+} catch ( Throwable $error ) {
+	$diagnostic = array(
+		"schema" => "static-site-importer/playground-import-failure/v1",
+		"error"  => array(
+			"type"    => get_class( $error ),
+			"message" => substr( $error->getMessage(), 0, 1000 ),
+			"file"    => basename( $error->getFile() ),
+			"line"    => $error->getLine(),
+		),
+	);
+	$encoded = function_exists( "wp_json_encode" ) ? wp_json_encode( $diagnostic ) : json_encode( $diagnostic );
+	echo "\nSTATIC_SITE_IMPORTER_PLAYGROUND_IMPORT_FAILURE " . $encoded . "\n";
+	exit( 1 );
 }
-$input = ' . $input_literal . ';
-$result = static_site_importer_ability_import( $input );
-
-if ( ! is_array( $result ) || empty( $result["success"] ) ) {
-	throw new RuntimeException( "Static Site Importer Playground import failed: " . wp_json_encode( $result ) );
-}
-
-update_option( "static_site_importer_playground_preview_result", $result, false );
 ?>';
 
 	$steps = array(
@@ -359,7 +384,7 @@ update_option( "static_site_importer_playground_preview_result", $result, false 
  * {@see static_site_importer_rest_playground_blueprint()} returns today.
  *
  * @param array<string,mixed> $input   Import ability input.
- * @param array<string,mixed> $options Optional. { install: bool (default true), package: array }.
+ * @param array<string,mixed> $options Optional. { install: bool (default true), package: array, user_id: positive int }.
  * @return array<string,mixed>|WP_Error
  */
 function static_site_importer_playground_import_blueprint( array $input, array $options = array() ) {

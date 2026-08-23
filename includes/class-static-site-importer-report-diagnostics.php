@@ -3611,8 +3611,10 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 		}
 
-		if ( isset( $compiler_summary['diagnostic_count'] ) ) {
-			$summary['diagnostic_count'] = (int) $compiler_summary['diagnostic_count'];
+		foreach ( array( 'page_count', 'block_count', 'diagnostic_count' ) as $field ) {
+			if ( isset( $compiler_summary[ $field ] ) ) {
+				$summary[ $field ] = (int) $compiler_summary[ $field ];
+			}
 		}
 
 		return $summary;

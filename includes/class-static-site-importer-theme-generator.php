@@ -99,7 +99,8 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$deferred_form_quality_admission = ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) && self::can_defer_form_quality_admission( $plan, $lifecycle );
 		if ( ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) && ! $deferred_form_quality_admission ) {
-			$failed_plan = Static_Site_Importer_Failed_Plan_Validation::build( $plan, $args );
+			$compiled_evidence = isset( $compiled_import['compiled'] ) && is_array( $compiled_import['compiled'] ) ? $compiled_import['compiled'] : array();
+			$failed_plan       = Static_Site_Importer_Failed_Plan_Validation::build( $plan, $args, $compiled_evidence );
 			try {
 				$failed_plan['artifact_refs'] = Static_Site_Importer_Failed_Plan_Validation::persist( $failed_plan, (string) ( $args['report'] ?? '' ) );
 			} catch ( Throwable $error ) {

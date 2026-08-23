@@ -37,11 +37,21 @@ for ( $index = 0; $index < 75; ++$index ) {
 }
 $plan = array(
 	'schema'      => 'blocks-engine/wordpress-site-plan/v2',
-	'quality'     => array( 'pass' => false, 'metrics' => array( 'fallback_count' => 0 ), 'failure_reasons' => array( 'document_nesting', 'empty_wrapper' ) ),
+	'source'      => array( 'schema' => 'blocks-engine/php-transformer/site-artifact/v1', 'provenance' => array( array( 'source_format' => 'artifact', 'source_hash' => str_repeat( 'a', 64 ) ) ) ),
+	'pages'       => array_map( static fn( int $index ): array => array( 'source_path' => 'website/page-' . $index . '.html' ), range( 1, 8 ) ),
+	'reporting'   => array( 'metrics' => array( 'source_document_count' => 8, 'block_document_count' => 8, 'native_block_count' => 102 ) ),
+	'quality'     => array( 'pass' => false, 'metrics' => array( 'fallback_count' => 0, 'block_count' => 102 ), 'failure_reasons' => array( 'document_nesting', 'empty_wrapper' ) ),
 	'diagnostics' => $diagnostics,
 );
 $original_plan = $plan;
-$artifacts = Static_Site_Importer_Failed_Plan_Validation::build( $plan, array( 'slug' => 'zero-fallback-failure', 'fail_on_quality' => true ) );
+$compiled = array(
+	'schema'        => 'blocks-engine/php-transformer/materialization-view/v1',
+	'result_schema' => 'blocks-engine/php-transformer/result/v1',
+	'status'        => 'failed',
+	'documents'     => array_map( static fn( int $index ): array => array( 'source_path' => 'website/page-' . $index . '.html' ), range( 1, 8 ) ),
+	'provenance'    => array( array( 'source_format' => 'artifact', 'source_hash' => str_repeat( 'b', 64 ) ) ),
+);
+$artifacts = Static_Site_Importer_Failed_Plan_Validation::build( $plan, array( 'slug' => 'zero-fallback-failure', 'fail_on_quality' => true ), $compiled );
 
 $assert( false === ( $artifacts['import_report']['quality']['pass'] ?? true ), 'zero-fallback canonical quality failure remains failed' );
 $assert( true === ( $artifacts['import_report']['quality']['fail_import'] ?? false ), 'failed plan is marked terminal in the standard quality shape' );
@@ -49,6 +59,13 @@ $assert( 0 === ( $artifacts['import_report']['quality']['fallback_count'] ?? -1 
 $assert( 50 === count( $artifacts['import_report']['diagnostics'] ?? array() ), 'failed-plan report bounds diagnostics' );
 $assert( true === ( $artifacts['import_report']['diagnostics_truncated'] ?? false ), 'failed-plan report records truncation' );
 $assert( 75 === ( $artifacts['import_report']['diagnostic_count'] ?? 0 ), 'failed-plan report retains original diagnostic count' );
+$assert( true === ( $artifacts['import_report']['compact_summary']['compiler']['available'] ?? false ), 'failed-plan report preserves compiler availability' );
+$assert( 'blocks-engine/php-transformer/result/v1' === ( $artifacts['import_report']['compact_summary']['compiler']['schema'] ?? '' ), 'failed-plan report preserves compiler result schema' );
+$assert( 'failed' === ( $artifacts['import_report']['compact_summary']['compiler']['status'] ?? '' ), 'failed-plan report preserves compiler status' );
+$assert( 102 === ( $artifacts['import_report']['compact_summary']['compiler']['block_count'] ?? 0 ), 'failed-plan report preserves compiler block summary' );
+$assert( $compiled['provenance'] === ( $artifacts['import_report']['blocks_engine']['website_artifact']['provenance'] ?? null ), 'failed-plan report preserves compiler provenance' );
+$assert( 8 === ( $artifacts['import_report']['compact_summary']['source_document_count'] ?? 0 ), 'failed-plan report derives source-document count from canonical plan pages' );
+$assert( 8 === ( $artifacts['import_validation_result']['counts']['source_documents'] ?? 0 ), 'failed-plan validation receipt preserves source-document count' );
 $assert( 'blocks-engine/import-validation-result/v1' === ( $artifacts['import_validation_result']['schema'] ?? '' ), 'standard validation artifact schema is preserved' );
 $assert( 'blocks-engine/finding-packets/v1' === ( $artifacts['finding_packets']['schema'] ?? '' ), 'standard finding packet schema is preserved' );
 $assert( $plan === $original_plan, 'failed-plan evidence generation does not mutate the canonical plan' );
