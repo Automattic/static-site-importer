@@ -21,6 +21,7 @@
     { "path": "tests/editor-validation-contract.test.mjs", "environment": "node" },
     { "path": "tests/smoke-entity-materializer-registry.php", "environment": "standalone-php" },
     { "path": "tests/smoke-external-report-destinations.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-failed-plan-validation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-export-theme-ability.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-diagnostic-contract.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-disposition.php", "environment": "standalone-php" },
