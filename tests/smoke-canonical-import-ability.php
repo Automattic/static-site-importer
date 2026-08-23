@@ -159,6 +159,14 @@ class Static_Site_Importer_URL_Import_Runtime {
 	}
 }
 require dirname( __DIR__ ) . '/includes/abilities.php';
+$assert_service = static function ( bool $condition, string $message ): void {
+	if ( ! $condition ) {
+		throw new RuntimeException( $message );
+	}
+};
+$assert_service( class_exists( Static_Site_Importer_Canonical_Import_Service::class ), 'canonical import service must load with direct Ability callers' );
+$service_source = file_get_contents( ( new ReflectionClass( Static_Site_Importer_Canonical_Import_Service::class ) )->getFileName() );
+$assert_service( is_string( $service_source ) && ! str_contains( $service_source, 'static_site_importer_ability_' ), 'canonical service must not depend on Ability-named helpers' );
 $files = array(
 	array(
 		'path'    => 'website/index.html',
@@ -176,6 +184,21 @@ $plan  = static_site_importer_ability_import(
 );
 if ( empty( $plan['success'] ) || 'blocks-engine/wordpress-site-plan/v2' !== ( $plan['plan']['schema'] ?? '' ) || 1 !== Static_Site_Importer_Theme_Generator::$compiled || 0 !== Static_Site_Importer_Theme_Generator::$applied ) {
 	throw new RuntimeException( 'pasted HTML planning must compile exactly once without materializing' ); }
+$service_plan = Static_Site_Importer_Canonical_Import_Service::import(
+	array(
+		'operation' => 'plan',
+		'source'    => array(
+			'type' => 'html',
+			'html' => '<h1>HTML</h1>',
+		),
+	)
+);
+if ( $plan !== $service_plan || 2 !== Static_Site_Importer_Theme_Generator::$compiled ) {
+	throw new RuntimeException( 'Ability and canonical service planning must have identical envelopes' ); }
+$wrapper_error = static_site_importer_ability_error( 'canonical-wrapper', 'wrapper' );
+$service_error = Static_Site_Importer_Canonical_Import_Service::error( 'canonical-wrapper', 'wrapper' );
+if ( $wrapper_error !== $service_error ) {
+	throw new RuntimeException( 'Ability helper wrappers must preserve canonical error envelopes' ); }
 $files_plan = static_site_importer_ability_import(
 	array(
 		'operation' => 'plan',
@@ -186,7 +209,7 @@ $files_plan = static_site_importer_ability_import(
 		),
 	)
 );
-if ( empty( $files_plan['success'] ) || $files !== ( $GLOBALS['ssi_runtime_sources'][1]['files'] ?? null ) ) {
+if ( empty( $files_plan['success'] ) || $files !== ( $GLOBALS['ssi_runtime_sources'][2]['files'] ?? null ) ) {
 	throw new RuntimeException( 'file sources must use the canonical source normalizer' ); }
 $rejected = static_site_importer_ability_import(
 	array(
@@ -252,7 +275,7 @@ $staged_zip = static_site_importer_ability_import(
 		),
 	)
 );
-if ( empty( $staged_zip['success'] ) || '/srv/private/website.zip' !== ( $GLOBALS['ssi_staged_archives'][0]['staged_path'] ?? '' ) || isset( $GLOBALS['ssi_runtime_sources'][3]['archive'] ) ) {
+if ( empty( $staged_zip['success'] ) || '/srv/private/website.zip' !== ( $GLOBALS['ssi_staged_archives'][0]['staged_path'] ?? '' ) || isset( $GLOBALS['ssi_runtime_sources'][4]['archive'] ) ) {
 	throw new RuntimeException( 'resolved staged archives must normalize through files without inline archive bytes' ); }
 $approved_staged_zip = static_site_importer_ability_import(
 	array(

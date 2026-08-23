@@ -1044,10 +1044,10 @@ test('matrix import recipes declare the complete required sidecar contract', () 
 });
 
 test('validate-artifact sidecar contract preserves legacy calls and rejects partial arguments', () => {
-  const plugin = readFileSync(path.join(packageRoot, 'static-site-importer.php'), 'utf8');
-  const start = plugin.indexOf('function static_site_importer_cli_materialization_sidecar_contract');
-  const end = plugin.indexOf('\n}\n\n/**', start) + 2;
-  const contract = plugin.slice(start, end);
+  const transport = readFileSync(path.join(packageRoot, 'includes/cli.php'), 'utf8');
+  const start = transport.indexOf('function static_site_importer_cli_materialization_sidecar_contract');
+  const end = transport.indexOf('\n}\n\n/**', start) + 2;
+  const contract = transport.slice(start, end);
   const code = `class WP_Error { public $code; function __construct($code) { $this->code = $code; } } function is_wp_error($value) { return $value instanceof WP_Error; } ${contract} $cases = array(static_site_importer_cli_materialization_sidecar_contract(array()), static_site_importer_cli_materialization_sidecar_contract(array('receipt-sidecar' => '/tmp/sidecar.json', 'receipt-run-id' => 'run', 'receipt-step-id' => 'import', 'receipt-attempt-id' => 'attempt')), static_site_importer_cli_materialization_sidecar_contract(array('receipt-sidecar' => '/tmp/sidecar.json'))); echo json_encode(array($cases[0], $cases[1], is_wp_error($cases[2]) ? $cases[2]->code : 'not-error'));`;
   const result = spawnSync('php', ['-r', code], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);

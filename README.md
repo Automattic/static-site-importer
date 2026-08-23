@@ -1,6 +1,6 @@
 # Static Site Importer
 
-Import a static site or generated website artifact into WordPress pages and a companion block theme.
+Import a static site or generated website artifact into WordPress pages and an intentional companion block or classic theme.
 
 [![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?php=8.5&blueprint-url=https%3A%2F%2Fautomattic.github.io%2Fstatic-site-importer%2Fplayground%2Flatest%2Fblueprint.json)
 
@@ -53,7 +53,7 @@ Static Site Importer is the WordPress materialization layer for static website i
 
 The conversion stack is split by responsibility:
 
-- **Static Site Importer** owns WordPress intake, safety checks, page/theme creation, asset placement, import reports, quality gates, and block-theme materialization.
+- **Static Site Importer** owns WordPress intake, safety checks, page/theme creation, asset placement, import reports, quality gates, and intentional block or classic theme materialization.
 - **Blocks Engine PHP transformer** owns the generic `ArtifactCompiler`, its diagnostics, and the `source_reports.wordpress_site_plan` v2 output. SSI materializes that plan into WordPress and returns the receipt and import report.
 
 ## Content-Only Security Boundary
