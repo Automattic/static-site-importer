@@ -81,7 +81,7 @@ class Static_Site_Importer_Plugin_Materializer {
 			return self::failed_report( $report, $activation_deps );
 		}
 
-		if ( is_plugin_active( $plugin_file ) ) {
+		if ( function_exists( 'is_plugin_active' ) && is_plugin_active( $plugin_file ) ) {
 			$report['active'] = true;
 			$report['attempted_actions'][] = 'prepare_runtime';
 			$preparation      = self::prepare_plugin_runtime( $slug, $preparation_callback );
