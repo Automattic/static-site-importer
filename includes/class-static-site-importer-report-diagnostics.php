@@ -1681,11 +1681,22 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return bool
 	 */
 	private static function is_materializable_form_diagnostic( array $diagnostic ): bool {
-		if ( 'html_form_fallback' === (string) ( $diagnostic['diagnostic_code'] ?? '' ) ) {
+		if ( self::is_form_fallback_diagnostic( $diagnostic ) ) {
 			return true;
 		}
 
 		return self::is_generated_core_html_form_diagnostic( $diagnostic );
+	}
+
+	/** Identify the canonical form fallback across raw and normalized diagnostics. */
+	private static function is_form_fallback_diagnostic( array $diagnostic ): bool {
+		foreach ( array( 'diagnostic_code', 'code', 'reason_code' ) as $key ) {
+			if ( 'html_form_fallback' === (string) ( $diagnostic[ $key ] ?? '' ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -2997,7 +3008,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$resolved    = 0;
 		$resolutions = array();
 		foreach ( $report['diagnostics'] ?? array() as $index => $diagnostic ) {
-			if ( ! is_array( $diagnostic ) || 'html_form_fallback' !== (string) ( $diagnostic['diagnostic_code'] ?? '' ) ) {
+			if ( ! is_array( $diagnostic ) || ! self::is_form_fallback_diagnostic( $diagnostic ) ) {
 				continue;
 			}
 			$identity             = self::fallback_reconciliation_identity( $diagnostic );
