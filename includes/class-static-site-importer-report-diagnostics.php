@@ -325,6 +325,8 @@ class Static_Site_Importer_Report_Diagnostics {
 				'source_documents'              => (int) ( $source_documents['total_count'] ?? 0 ),
 				'diagnostics'                   => count( $diagnostics ),
 				'fallback_blocks'               => (int) ( $quality['fallback_count'] ?? 0 ),
+				'unsupported_fallbacks'          => (int) ( $quality['unsupported_fallback_count'] ?? 0 ),
+				'accepted_preserved_runtime_islands' => (int) ( $quality['accepted_preserved_runtime_island_count'] ?? 0 ),
 				'content_loss'                  => (int) ( $quality['content_loss_count'] ?? 0 ),
 				'empty_conversions'             => (int) ( $quality['empty_conversion_count'] ?? 0 ),
 				'core_html_blocks'              => (int) ( $quality['core_html_block_count'] ?? 0 ),
@@ -340,7 +342,8 @@ class Static_Site_Importer_Report_Diagnostics {
 				'semantic_parity_failures'      => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
 			),
 			'quality_gates'           => array(
-				'fallback_blocks'           => self::validation_gate( 'fallback_blocks', (int) ( $quality['fallback_count'] ?? 0 ), $quality ),
+				'fallback_blocks'           => self::validation_gate( 'fallback_blocks', (int) ( $quality['unsupported_fallback_count'] ?? 0 ), $quality ),
+				'accepted_preserved_runtime_islands' => self::validation_gate( 'accepted_preserved_runtime_islands', (int) ( $quality['accepted_preserved_runtime_island_count'] ?? 0 ), $quality ),
 				'conversion_failures'       => self::validation_gate( 'conversion_failures', (int) ( $quality['content_loss_count'] ?? 0 ) + (int) ( $quality['empty_conversion_count'] ?? 0 ) + (int) ( $quality['invalid_block_count'] ?? 0 ), $quality ),
 				'generated_fallback_blocks' => self::validation_gate( 'generated_fallback_blocks', (int) ( $quality['core_html_block_count'] ?? 0 ) + (int) ( $quality['freeform_block_count'] ?? 0 ), $quality ),
 				'asset_materialization'     => self::validation_gate( 'asset_materialization', (int) ( $quality['svg_materialization_failure_count'] ?? 0 ) + (int) ( $quality['svg_sprite_reference_failure_count'] ?? 0 ), $quality ),
@@ -410,8 +413,11 @@ class Static_Site_Importer_Report_Diagnostics {
 		self::normalize_import_diagnostics( $report );
 
 		$quality = $report['quality'];
+		$fallback_admission = self::fallback_admission_counts( $report['diagnostics'] ?? array(), (int) $quality['fallback_count'] );
+		$quality['accepted_preserved_runtime_island_count'] = $fallback_admission['accepted'];
+		$quality['unsupported_fallback_count']               = $fallback_admission['unsupported'];
 		$reasons = array();
-		if ( $quality['fallback_count'] > 0 ) {
+		if ( $quality['unsupported_fallback_count'] > 0 ) {
 			$reasons[] = 'unsupported_html_fallback';
 		}
 		if ( $quality['content_loss_count'] > 0 ) {
@@ -457,7 +463,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		if ( ! empty( $args['fail_on_quality'] ) && ! $quality['pass'] ) {
 			$quality['fail_import'] = true;
 		}
-		if ( array_key_exists( 'max_fallbacks', $args ) && null !== $args['max_fallbacks'] && $quality['fallback_count'] > (int) $args['max_fallbacks'] ) {
+		if ( array_key_exists( 'max_fallbacks', $args ) && null !== $args['max_fallbacks'] && $quality['unsupported_fallback_count'] > (int) $args['max_fallbacks'] ) {
 			$quality['fail_import'] = true;
 		}
 		if ( in_array( 'woocommerce_missing', $reasons, true ) ) {
@@ -484,6 +490,8 @@ class Static_Site_Importer_Report_Diagnostics {
 		return array(
 			'pass'                                  => true,
 			'fallback_count'                        => 0,
+			'unsupported_fallback_count'            => 0,
+			'accepted_preserved_runtime_island_count' => 0,
 			'content_loss_count'                    => 0,
 			'empty_conversion_count'                => 0,
 			'core_html_block_count'                 => 0,
@@ -527,6 +535,59 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		$report['quality'] = $quality;
+	}
+
+	/**
+	 * Split compiler fallbacks into fail-closed unsupported loss and explicitly
+	 * accepted, bounded runtime preservation. A count without matching evidence
+	 * remains unsupported so producers cannot weaken the admission gate by label.
+	 *
+	 * @param array<int,mixed> $diagnostics Normalized diagnostics.
+	 * @param int              $fallback_count Compiler fallback count.
+	 * @return array{accepted:int,unsupported:int}
+	 */
+	private static function fallback_admission_counts( array $diagnostics, int $fallback_count ): array {
+		$accepted = 0;
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( is_array( $diagnostic ) && self::is_accepted_preserved_runtime_island( $diagnostic ) ) {
+				++$accepted;
+			}
+		}
+
+		$accepted = min( max( 0, $fallback_count ), $accepted );
+		return array(
+			'accepted'    => $accepted,
+			'unsupported' => max( 0, $fallback_count - $accepted ),
+		);
+	}
+
+	/**
+	 * Require a complete generic runtime-preservation contract before admitting a
+	 * fallback. Raw HTML and unsafe or unbounded payloads always remain gated.
+	 *
+	 * @param array<string,mixed> $diagnostic Normalized diagnostic.
+	 */
+	private static function is_accepted_preserved_runtime_island( array $diagnostic ): bool {
+		if ( 'unsupported_html_fallback' !== ( $diagnostic['type'] ?? '' ) ) {
+			return false;
+		}
+		if ( ! in_array( $diagnostic['loss_class'] ?? '', array( 'runtime_island_preserved', 'preserved_runtime_island' ), true ) || ! in_array( $diagnostic['acceptability'] ?? '', array( 'acceptable_conversion', 'acceptable_preservation' ), true ) ) {
+			return false;
+		}
+		if ( 'sanitized_embed_markup' !== ( $diagnostic['preservation_strategy'] ?? '' ) || '' === trim( (string) ( $diagnostic['runtime_requirement'] ?? '' ) ) || '' === trim( (string) ( $diagnostic['materialization_path'] ?? '' ) ) ) {
+			return false;
+		}
+		if ( '' === trim( (string) ( $diagnostic['id'] ?? '' ) ) || '' === trim( (string) ( $diagnostic['source_path'] ?? '' ) ) || '' === trim( (string) ( $diagnostic['selector'] ?? '' ) ) || '' === trim( (string) ( $diagnostic['reason_code'] ?? '' ) ) ) {
+			return false;
+		}
+
+		$payload = (string) ( $diagnostic['source_html_preview'] ?? $diagnostic['html_excerpt'] ?? '' );
+		if ( '' === trim( $payload ) || strlen( $payload ) > 8192 ) {
+			return false;
+		}
+
+		return 1 !== preg_match( '/<\s*(?:script|style)\b|\bon[a-z]+\s*=|(?:javascript|data)\s*:|\bsrcdoc\s*=|<!--\s*wp:(?:html|freeform)\b/i', $payload )
+			&& ! in_array( $diagnostic['block_name'] ?? '', array( 'core/html', 'core/freeform' ), true );
 	}
 
 	/**
@@ -644,6 +705,8 @@ class Static_Site_Importer_Report_Diagnostics {
 			'fail_import'                           => ! empty( $quality['fail_import'] ),
 			'failure_reasons'                       => isset( $quality['failure_reasons'] ) && is_array( $quality['failure_reasons'] ) ? array_values( $quality['failure_reasons'] ) : array(),
 			'fallback_count'                        => (int) ( $quality['fallback_count'] ?? 0 ),
+			'unsupported_fallback_count'            => (int) ( $quality['unsupported_fallback_count'] ?? 0 ),
+			'accepted_preserved_runtime_island_count' => (int) ( $quality['accepted_preserved_runtime_island_count'] ?? 0 ),
 			'content_loss_count'                    => (int) ( $quality['content_loss_count'] ?? 0 ),
 			'empty_conversion_count'                => (int) ( $quality['empty_conversion_count'] ?? 0 ),
 			'core_html_block_count'                 => (int) ( $quality['core_html_block_count'] ?? 0 ),
@@ -680,7 +743,8 @@ class Static_Site_Importer_Report_Diagnostics {
 	 */
 	private static function validation_gate( string $name, int $count, array $quality ): array {
 		$ref_keys = array(
-			'fallback_blocks'           => 'fallback_count',
+			'fallback_blocks'           => 'unsupported_fallback_count',
+			'accepted_preserved_runtime_islands' => 'accepted_preserved_runtime_island_count',
 			'conversion_failures'       => 'content_loss_count',
 			'generated_fallback_blocks' => 'core_html_block_count',
 			'asset_materialization'     => 'svg_materialization_failure_count',
@@ -1049,6 +1113,13 @@ class Static_Site_Importer_Report_Diagnostics {
 				'repair_bucket'          => isset( $diagnostic['repair_bucket'] ) && is_scalar( $diagnostic['repair_bucket'] ) ? (string) $diagnostic['repair_bucket'] : '',
 				'loss_class'             => isset( $diagnostic['loss_class'] ) && is_scalar( $diagnostic['loss_class'] ) ? (string) $diagnostic['loss_class'] : Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ),
 				'acceptability'          => isset( $diagnostic['acceptability'] ) && is_scalar( $diagnostic['acceptability'] ) ? (string) $diagnostic['acceptability'] : self::diagnostic_acceptability( Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ) ),
+			),
+			'preservation'         => array_filter(
+				array(
+					'strategy'            => isset( $diagnostic['preservation_strategy'] ) && is_scalar( $diagnostic['preservation_strategy'] ) ? (string) $diagnostic['preservation_strategy'] : '',
+					'runtime_requirement' => isset( $diagnostic['runtime_requirement'] ) && is_scalar( $diagnostic['runtime_requirement'] ) ? (string) $diagnostic['runtime_requirement'] : '',
+					'materialization_path' => isset( $diagnostic['materialization_path'] ) && is_scalar( $diagnostic['materialization_path'] ) ? (string) $diagnostic['materialization_path'] : '',
+				)
 			),
 			'provenance'           => self::validation_provenance( $report ),
 			'reproduction_context' => array_merge(
@@ -3243,6 +3314,8 @@ class Static_Site_Importer_Report_Diagnostics {
 	private static function quality_diagnostic_refs( array $diagnostics ): array {
 		$types_by_count = array(
 			'fallback_count'                        => array( 'unsupported_html_fallback' ),
+			'unsupported_fallback_count'            => array( 'unsupported_html_fallback' ),
+			'accepted_preserved_runtime_island_count' => array( 'unsupported_html_fallback' ),
 			'content_loss_count'                    => array( 'content_loss_abort' ),
 			'empty_conversion_count'                => array( 'empty_conversion' ),
 			'core_html_block_count'                 => array( 'core_html_block' ),
@@ -3262,8 +3335,17 @@ class Static_Site_Importer_Report_Diagnostics {
 			$refs[ $count_key ] = array_values(
 				array_filter(
 					array_map(
-						static function ( array $diagnostic ) use ( $types ): string {
-							return in_array( $diagnostic['type'] ?? '', $types, true ) && isset( $diagnostic['id'] ) ? (string) $diagnostic['id'] : '';
+					static function ( array $diagnostic ) use ( $count_key, $types ): string {
+							if ( ! in_array( $diagnostic['type'] ?? '', $types, true ) || ! isset( $diagnostic['id'] ) ) {
+								return '';
+							}
+							if ( 'accepted_preserved_runtime_island_count' === $count_key && ! self::is_accepted_preserved_runtime_island( $diagnostic ) ) {
+								return '';
+							}
+							if ( 'unsupported_fallback_count' === $count_key && self::is_accepted_preserved_runtime_island( $diagnostic ) ) {
+								return '';
+							}
+							return (string) $diagnostic['id'];
 						},
 						$diagnostics
 					)

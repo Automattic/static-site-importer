@@ -239,7 +239,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 				$diagnostic['source_diagnostic'] = $source_diagnostic;
 			}
 
-			foreach ( array( 'message', 'reason', 'excerpt', 'source_snippet', 'source_html_preview', 'emitted_block_preview', 'observed_output', 'html_excerpt', 'block_name', 'block_path', 'script_path', 'element', 'tag_name', 'tag', 'src', 'href', 'expected', 'observed', 'suggested_primitive', 'diagnostic_code', 'mapped_provider', 'materialization_status', 'runtime_requirement', 'preservation_status', 'disposition', 'js_handling' ) as $field ) {
+			foreach ( array( 'message', 'reason', 'excerpt', 'source_snippet', 'source_html_preview', 'emitted_block_preview', 'observed_output', 'html_excerpt', 'block_name', 'block_path', 'script_path', 'element', 'tag_name', 'tag', 'src', 'href', 'expected', 'observed', 'suggested_primitive', 'diagnostic_code', 'mapped_provider', 'materialization_status', 'runtime_requirement', 'materialization_path', 'preservation_strategy', 'preservation_status', 'disposition', 'js_handling' ) as $field ) {
 				$value = self::first_scalar( $row, array( $field ), '' );
 				if ( '' !== $value ) {
 					$diagnostic[ $field ] = $value;
