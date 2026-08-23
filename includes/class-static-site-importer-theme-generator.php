@@ -93,7 +93,12 @@ class Static_Site_Importer_Theme_Generator {
 		$materialization_plan  = $compiled_import['materialization_plan'];
 		$theme_materialization = $compiled_import['theme_materialization'];
 		$args['font_materialization'] = isset( $materialization_plan['theme']['font_materialization'] ) && is_array( $materialization_plan['theme']['font_materialization'] ) ? $materialization_plan['theme']['font_materialization'] : array();
-		if ( ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) ) {
+		$lifecycle = self::prepare_wordpress_site_plan_lifecycle( $plan, $args );
+		if ( is_wp_error( $lifecycle ) ) {
+			return $lifecycle;
+		}
+		$deferred_form_quality_admission = ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) && self::can_defer_form_quality_admission( $plan, $lifecycle );
+		if ( ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) && ! $deferred_form_quality_admission ) {
 			$failed_plan = Static_Site_Importer_Failed_Plan_Validation::build( $plan, $args );
 			try {
 				$failed_plan['artifact_refs'] = Static_Site_Importer_Failed_Plan_Validation::persist( $failed_plan, (string) ( $args['report'] ?? '' ) );
@@ -112,9 +117,8 @@ class Static_Site_Importer_Theme_Generator {
 				)
 			);
 		}
-		$lifecycle = self::prepare_wordpress_site_plan_lifecycle( $plan, $args );
-		if ( is_wp_error( $lifecycle ) ) {
-			return $lifecycle;
+		if ( $deferred_form_quality_admission ) {
+			$args['_static_site_importer_deferred_form_quality_admission'] = true;
 		}
 		if ( 'plan' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
 			$encoded_artifact = wp_json_encode( $artifact );
@@ -816,6 +820,19 @@ class Static_Site_Importer_Theme_Generator {
 				}
 			}
 		}
+		$quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $args );
+		if ( ! empty( $args['_static_site_importer_deferred_form_quality_admission'] ) && ! $quality['pass'] ) {
+			$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $receipt, 'static_site_importer_quality_gate_failed' );
+			return new WP_Error(
+				'static_site_importer_quality_gate_failed',
+				'Website artifact did not pass the final quality gate after provider receipt reconciliation.',
+				array(
+					'quality'                 => $quality,
+					'diagnostics'             => $report['diagnostics'],
+					'materialization_receipt' => $receipt,
+				)
+			);
+		}
 		$manifest['existing_matches'] = $receipt['existing_matches'] ?? array( 'pages' => array() );
 		$cleanup = self::cleanup_stale_generated_theme_files( $theme['dir'], $manifest, $args, $receipt );
 		if ( is_wp_error( $cleanup ) ) {
@@ -823,7 +840,6 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$manifest['cleanup'] = $cleanup;
 		$report['source_of_truth'] = $manifest;
-		$quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $args );
 		$receipt['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $receipt['plan'] ?? array(), $args, $report );
 		$receipt['quality_budget_admission']['mechanical_status'] = $receipt['status'] ?? 'completed';
 		$report['quality_budget_admission'] = $receipt['quality_budget_admission'];
@@ -1110,6 +1126,56 @@ class Static_Site_Importer_Theme_Generator {
 			$lifecycle['status'] = 'runtime_declarations';
 		}
 		return $lifecycle;
+	}
+
+	/**
+	 * Permit only receipt-reconcilable typed form fallbacks to reach lifecycle materialization.
+	 *
+	 * The compiler plan remains canonical and fail-closed. This narrowly postpones its
+	 * form-only quality decision until a provider has persisted hash-bound replacements.
+	 */
+	private static function can_defer_form_quality_admission( array $plan, array $lifecycle ): bool {
+		$quality         = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
+		$metrics         = isset( $quality['metrics'] ) && is_array( $quality['metrics'] ) ? $quality['metrics'] : $quality;
+		$fallback_count  = isset( $metrics['fallback_count'] ) && is_numeric( $metrics['fallback_count'] ) ? (int) $metrics['fallback_count'] : 0;
+		$failure_reasons = isset( $quality['failure_reasons'] ) && is_array( $quality['failure_reasons'] ) ? $quality['failure_reasons'] : array();
+		$diagnostics     = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
+		if ( $fallback_count < 1 || empty( $failure_reasons ) || array_diff( $failure_reasons, array( 'unsupported_html_fallback' ) ) ) {
+			return false;
+		}
+
+		$materializable = array();
+		foreach ( $lifecycle['entities'] ?? array() as $prepared ) {
+			if ( ! is_array( $prepared ) || 'form' !== ( $prepared['adapter']['capability'] ?? null ) || 'generic/forms/v1' !== ( $prepared['declaration']['payload']['schema'] ?? null ) ) {
+				continue;
+			}
+			foreach ( $prepared['manifest']['forms'] ?? array() as $form ) {
+				if ( is_array( $form ) && ! empty( $form['bindings'] ) ) {
+					$materializable[ (string) ( $form['source_path'] ?? '' ) . "\n" . (string) ( $form['selector'] ?? '' ) ] = true;
+				}
+			}
+		}
+
+		$forms = 0;
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) ) {
+				continue;
+			}
+			$is_form = 'html_form_fallback' === ( $diagnostic['diagnostic_code'] ?? $diagnostic['code'] ?? $diagnostic['reason_code'] ?? null );
+			if ( ! $is_form && 'unsupported_html_fallback' === ( $diagnostic['type'] ?? null ) ) {
+				return false;
+			}
+			if ( ! $is_form ) {
+				continue;
+			}
+			$key = (string) ( $diagnostic['source_path'] ?? $diagnostic['source'] ?? '' ) . "\n" . (string) ( $diagnostic['selector'] ?? '' );
+			if ( ! isset( $materializable[ $key ] ) ) {
+				return false;
+			}
+			++$forms;
+		}
+
+		return $forms === $fallback_count;
 	}
 
 	/**

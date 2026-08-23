@@ -1772,6 +1772,27 @@ $assert( 0 === ( $form_quality_report['quality']['fallback_count'] ?? -1 ) && 1 
 $resolved_form_quality    = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $form_quality_report, array( 'fail_on_quality' => true ) );
 $resolved_form_validation = Static_Site_Importer_Report_Diagnostics::import_validation_result( $form_quality_report, $resolved_form_quality );
 $assert( true === ( $resolved_form_quality['pass'] ?? false ) && false === ( $resolved_form_quality['fail_import'] ?? true ) && array() === ( $resolved_form_quality['failure_reasons'] ?? null ) && 'passed' === ( $resolved_form_validation['status'] ?? '' ), 'receipt-resolved form fallback clears derived quality gates and validation status' );
+$form_admission = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'can_defer_form_quality_admission' );
+$form_admission_plan = array(
+	'quality' => array( 'metrics' => array( 'fallback_count' => 1 ), 'failure_reasons' => array( 'unsupported_html_fallback' ) ),
+	'diagnostics' => array( $form_fallback ),
+);
+$form_admission_lifecycle = array(
+	'entities' => array(
+		'forms' => array(
+			'adapter' => array( 'capability' => 'form' ),
+			'declaration' => array( 'payload' => array( 'schema' => 'generic/forms/v1' ) ),
+			'manifest' => array( 'forms' => array( array( 'source_path' => 'index.html', 'selector' => 'form.newsletter', 'bindings' => array( $form_binding ) ) ) ),
+		),
+	),
+);
+$assert( true === $form_admission->invoke( null, $form_admission_plan, $form_admission_lifecycle ), 'typed provider-materializable form fallback defers only until receipt reconciliation' );
+$missing_binding_lifecycle = $form_admission_lifecycle;
+$missing_binding_lifecycle['entities']['forms']['manifest']['forms'][0]['bindings'] = array();
+$assert( false === $form_admission->invoke( null, $form_admission_plan, $missing_binding_lifecycle ), 'unbound provider form fallback remains rejected before materialization' );
+$unrelated_failure_plan = $form_admission_plan;
+$unrelated_failure_plan['quality']['failure_reasons'][] = 'core_html_block';
+$assert( false === $form_admission->invoke( null, $unrelated_failure_plan, $form_admission_lifecycle ), 'unrelated quality failures remain rejected before materialization' );
 $other_failure_report                                     = $form_quality_report;
 $other_failure_report['quality']['core_html_block_count'] = 1;
 $other_failure_quality                                    = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $other_failure_report, array( 'fail_on_quality' => true ) );
