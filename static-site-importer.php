@@ -49,7 +49,6 @@ foreach ( $static_site_importer_figma_transformers as $static_site_importer_figm
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-site-identity.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-website-artifact-import-input.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-theme-materialization-strategy.php';
-require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-srcset-parser.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-classic-theme-projection.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-client-script-policy.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-document.php';

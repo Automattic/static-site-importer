@@ -5,14 +5,16 @@
  * @package StaticSiteImporter
  */
 
+use Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\SrcsetParser;
+
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 if ( ! class_exists( 'Static_Site_Importer_Document' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-document.php';
 }
-if ( ! class_exists( 'Static_Site_Importer_Srcset_Parser' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-srcset-parser.php';
+if ( ! class_exists( SrcsetParser::class ) ) {
+	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/AssetAnalysis/SrcsetParser.php';
 }
 
 final class Static_Site_Importer_Classic_Theme_Projection {
@@ -440,7 +442,7 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 	private static function safe_url( string $url ): bool {
 		return ! preg_match( '/^(?:javascript|vbscript|data:text\/html)/i', self::canonical_url( $url ) ); }
 	private static function safe_srcset( string $srcset ): string {
-		return implode( ', ', array_filter( array_map( static fn( array $candidate ): string => self::safe_url( $candidate['url'] ) ? trim( $candidate['url'] . ' ' . $candidate['descriptor'] ) : '', Static_Site_Importer_Srcset_Parser::parse( $srcset ) ) ) ); }
+		return implode( ', ', array_filter( array_map( static fn( array $candidate ): string => self::safe_url( $candidate['url'] ) ? trim( $candidate['url'] . ' ' . $candidate['descriptor'] ) : '', SrcsetParser::parse( $srcset ) ) ) ); }
 	private static function rewrite_srcset( string $srcset, string $dir, array $assets, array $routes ): string {
 		return implode(
 			', ',
@@ -449,7 +451,7 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 					static function ( array $candidate ) use ( $dir, $assets, $routes ): string {
 						return self::safe_url( $candidate['url'] ) ? self::replacement( $candidate['url'], $dir, $assets, $routes ) . ( '' !== $candidate['descriptor'] ? ' ' . $candidate['descriptor'] : '' ) : '';
 					},
-					Static_Site_Importer_Srcset_Parser::parse( $srcset )
+					SrcsetParser::parse( $srcset )
 				)
 			)
 		); }
