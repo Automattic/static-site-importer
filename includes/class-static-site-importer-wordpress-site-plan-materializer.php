@@ -106,6 +106,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			WordPressSitePlan::assertValid( $plan );
 		} catch ( InvalidArgumentException $error ) {
 			$state['diagnostics'][] = array( 'reason_code' => 'canonical_plan_rejected' );
+			$state['failure_reason'] = 'canonical_plan_rejected';
 			return array(
 				'status'  => 'rejected',
 				'receipt' => self::receipt( 'rejected', $state ),
@@ -114,6 +115,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$state['editability_report'] = self::editability_report_admission( $plan );
 		if ( 'rejected' === $state['editability_report']['status'] ) {
 			$state['diagnostics'][] = $state['editability_report']['diagnostic'];
+			$state['failure_reason'] = (string) ( $state['editability_report']['diagnostic']['reason_code'] ?? 'editability_report_rejected' );
 			return array(
 				'status'  => 'rejected',
 				'receipt' => self::receipt( 'rejected', $state ),
@@ -176,6 +178,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					'reason_code'    => 'quality_budget_failed',
 					'quality_budget' => $state['quality_budget_admission'],
 				);
+				$state['failure_reason'] = 'quality_budget_failed';
 				return array(
 					'status'  => 'rejected',
 					'receipt' => self::receipt( 'rejected', $state ),
@@ -184,6 +187,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
 		} catch ( InvalidArgumentException $error ) {
 			$state['diagnostics'][] = array( 'reason_code' => $error->getMessage() );
+			$state['failure_reason'] = $error->getMessage();
 			return array(
 				'status'  => 'rejected',
 				'receipt' => self::receipt( 'rejected', $state ),
@@ -220,6 +224,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 						'plan'             => isset( $prepared['plan'] ) && is_array( $prepared['plan'] ) ? $prepared['plan'] : array(),
 						'plan_identity'    => is_array( $prepared['plan_identity'] ?? null ) ? $prepared['plan_identity'] : array(),
 						'diagnostics'      => array( array( 'reason_code' => 'invalid_prepared_state' ) ),
+						'failure_reason'   => 'invalid_prepared_state',
 						'applied'          => array(
 							'posts'                => array(),
 							'files'                => array(),
@@ -241,6 +246,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$references = self::verify_payload_references( $prepared['resolved']['writes'], is_object( $prepared['payload_reader'] ?? null ) ? $prepared['payload_reader'] : null );
 		if ( is_wp_error( $references ) ) {
 			$prepared['diagnostics'][] = array( 'reason_code' => $references->get_error_code() );
+			$prepared['failure_reason'] = $references->get_error_code();
 			return array(
 				'status'  => 'rejected',
 				'receipt' => self::receipt( 'rejected', $prepared ),
@@ -256,6 +262,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'plan'                  => $plan,
 			'plan_identity'         => self::plan_identity( $plan ),
 			'diagnostics'           => array( array( 'reason_code' => $error->get_error_code() ) ),
+			'failure_reason'        => $error->get_error_code(),
 			'applied'               => array(
 				'posts'                => array(),
 				'files'                => array(),
@@ -285,6 +292,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					'plan'             => array(),
 					'plan_identity'    => array(),
 					'diagnostics'      => array( array( 'reason_code' => 'invalid_prepared_state' ) ),
+					'failure_reason'   => 'invalid_prepared_state',
 					'applied'          => array(
 						'posts'                => array(),
 						'files'                => array(),
@@ -314,6 +322,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		try {
 			self::validate_materialized_block_documents( $state['resolved'], $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
 		} catch ( InvalidArgumentException $error ) {
+			$state['failure_reason'] = $error->getMessage();
 			return self::receipt( 'rejected', $state );
 		}
 		$args         = $state['args'];
@@ -521,6 +530,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 						'plan'             => is_array( $plan ) ? $plan : array(),
 						'plan_identity'    => array(),
 						'diagnostics'      => array( array( 'reason_code' => 'prepared_projection_changed' ) ),
+						'failure_reason'   => 'prepared_projection_changed',
 						'applied'          => array(
 							'posts'                => array(),
 							'files'                => array(),
@@ -604,6 +614,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					'reason_code'    => 'quality_budget_failed',
 					'quality_budget' => $state['quality_budget_admission'],
 				);
+				$state['failure_reason'] = 'quality_budget_failed';
 				return array(
 					'status'  => 'rejected',
 					'receipt' => self::receipt( 'rejected', $state ),
@@ -613,6 +624,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
 		} catch ( InvalidArgumentException $error ) {
 			$state['diagnostics'][] = array( 'reason_code' => $error->getMessage() );
+			$state['failure_reason'] = $error->getMessage();
 			return array(
 				'status'  => 'rejected',
 				'receipt' => self::receipt( 'rejected', $state ),
@@ -1812,6 +1824,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	/** @param array<string,mixed> $state */
 	private static function failed_receipt( array $state, int|string $reason ): array {
 		$state['diagnostics'][] = array( 'reason_code' => (string) $reason );
+		$state['failure_reason'] = (string) $reason;
 		self::rollback( $state );
 		return self::receipt( 'partial', $state );
 	}
@@ -1819,6 +1832,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	/** @param array<string,mixed> $state */
 	private static function failed_receipt_from_error( array $state, WP_Error $error ): array {
 		$state['diagnostics'][] = array( 'reason_code' => $error->get_error_code() );
+		$state['failure_reason'] = $error->get_error_code();
 		$data                   = $error->get_error_data();
 		if ( is_array( $data ) ) {
 			foreach ( $data as $diagnostic ) {
@@ -1950,6 +1964,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		$state                  = $receipt['transaction']->state;
 		$state['diagnostics'][] = array( 'reason_code' => $reason );
+		$state['failure_reason'] = $reason;
 		self::rollback( $state );
 		$result                        = self::receipt( 'partial', $state );
 		$receipt['transaction']->state = $state;
@@ -2037,13 +2052,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$resolved_plan['pages'] = $receipt_pages;
 		$errors                 = array();
 		$pages                  = isset( $state['source_ids'] ) && is_array( $state['source_ids'] ) ? $state['source_ids'] : array();
-		foreach ( $state['diagnostics'] as $diagnostic ) {
-			if ( isset( $diagnostic['reason_code'] ) && is_string( $diagnostic['reason_code'] ) ) {
-				$errors[] = array(
-					'code'    => $diagnostic['reason_code'],
-					'message' => $diagnostic['reason_code'],
-				);
-			}
+		if ( isset( $state['failure_reason'] ) && is_string( $state['failure_reason'] ) && '' !== $state['failure_reason'] ) {
+			$errors[] = array(
+				'code'    => $state['failure_reason'],
+				'message' => $state['failure_reason'],
+			);
 		}
 		$receipt = array(
 			'schema'                    => self::RECEIPT_SCHEMA,

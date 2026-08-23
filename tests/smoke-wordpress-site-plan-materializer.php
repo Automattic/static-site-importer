@@ -1691,7 +1691,17 @@ $hierarchy_binding['reconciliation_identity'] = hash( 'sha256', 'hierarchy-diagn
 $hierarchy_binding['replacement_block_markup'] = '<!-- wp:example/restricted-parent --><!-- wp:example/restricted-child --><div>Restricted child</div><!-- /wp:example/restricted-child --><!-- /wp:example/restricted-parent -->';
 $hierarchy_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $binding_plan, array( 'slug' => 'hierarchy-diagnostic-binding-plan', 'runtime_entity_bindings' => array( $hierarchy_binding ) ) );
 $hierarchy_reasons = array_column( $hierarchy_receipt['diagnostics'] ?? array(), 'reason_code' );
-$assert( 'completed' === $hierarchy_receipt['status'] && in_array( 'block_child_not_allowed', $hierarchy_reasons, true ) && in_array( 'block_parent_requirement_not_met', $hierarchy_reasons, true ), 'registered blocks retain parent and allowedBlocks editor-quality diagnostics' );
+$assert( 'completed' === $hierarchy_receipt['status'] && array() === ( $hierarchy_receipt['errors'] ?? null ) && in_array( 'block_child_not_allowed', $hierarchy_reasons, true ) && in_array( 'block_parent_requirement_not_met', $hierarchy_reasons, true ), 'registered blocks retain parent and allowedBlocks editor-quality diagnostics without reporting transaction errors' );
+$hierarchy_failure_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$binding_plan,
+	array(
+		'slug'                           => 'hierarchy-diagnostic-failure-plan',
+		'runtime_entity_bindings'        => array( $hierarchy_binding ),
+		'inject_materialization_failure' => 'theme_write_short',
+	)
+);
+$hierarchy_failure_reasons = array_column( $hierarchy_failure_receipt['diagnostics'] ?? array(), 'reason_code' );
+$assert( 'partial' === $hierarchy_failure_receipt['status'] && 'theme_write_failed' === ( $hierarchy_failure_receipt['errors'][0]['code'] ?? '' ) && in_array( 'block_child_not_allowed', $hierarchy_failure_reasons, true ) && in_array( 'block_parent_requirement_not_met', $hierarchy_failure_reasons, true ), 'failed receipts retain nonfatal editor diagnostics while exposing the transaction-breaking cause first' );
 $invalid_binding         = array(
 	'schema'                   => 'static-site-importer/runtime-entity-binding/v1',
 	'source_path'              => 'index.html',
