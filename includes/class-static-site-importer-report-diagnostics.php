@@ -314,57 +314,60 @@ class Static_Site_Importer_Report_Diagnostics {
 		$source_documents = isset( $report['source_documents'] ) && is_array( $report['source_documents'] ) ? $report['source_documents'] : array();
 
 		return array(
-			'schema'                  => 'blocks-engine/import-validation-result/v1',
-			'artifact_type'           => 'ImportValidationResult',
-			'version'                 => 1,
-			'status'                  => ! empty( $quality['fail_import'] ) ? 'failed' : ( ! empty( $quality['pass'] ) ? 'passed' : 'reported' ),
-			'quality_pass'            => ! empty( $quality['pass'] ),
-			'fail_import'             => ! empty( $quality['fail_import'] ),
-			'failure_reasons'         => isset( $quality['failure_reasons'] ) && is_array( $quality['failure_reasons'] ) ? array_values( $quality['failure_reasons'] ) : array(),
-			'counts'                  => array(
-				'source_documents'              => (int) ( $source_documents['total_count'] ?? 0 ),
-				'diagnostics'                   => count( $diagnostics ),
-				'fallback_blocks'               => (int) ( $quality['fallback_count'] ?? 0 ),
-				'content_loss'                  => (int) ( $quality['content_loss_count'] ?? 0 ),
-				'empty_conversions'             => (int) ( $quality['empty_conversion_count'] ?? 0 ),
-				'core_html_blocks'              => (int) ( $quality['core_html_block_count'] ?? 0 ),
-				'freeform_blocks'               => (int) ( $quality['freeform_block_count'] ?? 0 ),
-				'invalid_blocks'                => (int) ( $quality['invalid_block_count'] ?? 0 ),
-				'invalid_block_documents'       => (int) ( $quality['invalid_block_document_count'] ?? 0 ),
-				'unsafe_svgs'                   => (int) ( $quality['unsafe_svg_count'] ?? 0 ),
-				'svg_materialization_failures'  => (int) ( $quality['svg_materialization_failure_count'] ?? 0 ),
-				'svg_sprite_reference_failures' => (int) ( $quality['svg_sprite_reference_failure_count'] ?? 0 ),
-				'commerce_dependency_failures'  => (int) ( $quality['commerce_dependency_failures'] ?? 0 ),
-				'interaction_candidates'        => (int) ( $quality['interaction_candidate_count'] ?? 0 ),
-				'runtime_dependency_parity'     => (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ),
-				'semantic_parity_failures'      => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
+			'schema'                   => 'blocks-engine/import-validation-result/v1',
+			'artifact_type'            => 'ImportValidationResult',
+			'version'                  => 1,
+			'status'                   => ! empty( $quality['fail_import'] ) ? 'failed' : ( ! empty( $quality['pass'] ) ? 'passed' : 'reported' ),
+			'quality_pass'             => ! empty( $quality['pass'] ),
+			'fail_import'              => ! empty( $quality['fail_import'] ),
+			'failure_reasons'          => isset( $quality['failure_reasons'] ) && is_array( $quality['failure_reasons'] ) ? array_values( $quality['failure_reasons'] ) : array(),
+			'counts'                   => array(
+				'source_documents'                   => (int) ( $source_documents['total_count'] ?? 0 ),
+				'diagnostics'                        => count( $diagnostics ),
+				'fallback_blocks'                    => (int) ( $quality['fallback_count'] ?? 0 ),
+				'unsupported_fallbacks'              => (int) ( $quality['unsupported_fallback_count'] ?? 0 ),
+				'accepted_preserved_runtime_islands' => (int) ( $quality['accepted_preserved_runtime_island_count'] ?? 0 ),
+				'content_loss'                       => (int) ( $quality['content_loss_count'] ?? 0 ),
+				'empty_conversions'                  => (int) ( $quality['empty_conversion_count'] ?? 0 ),
+				'core_html_blocks'                   => (int) ( $quality['core_html_block_count'] ?? 0 ),
+				'freeform_blocks'                    => (int) ( $quality['freeform_block_count'] ?? 0 ),
+				'invalid_blocks'                     => (int) ( $quality['invalid_block_count'] ?? 0 ),
+				'invalid_block_documents'            => (int) ( $quality['invalid_block_document_count'] ?? 0 ),
+				'unsafe_svgs'                        => (int) ( $quality['unsafe_svg_count'] ?? 0 ),
+				'svg_materialization_failures'       => (int) ( $quality['svg_materialization_failure_count'] ?? 0 ),
+				'svg_sprite_reference_failures'      => (int) ( $quality['svg_sprite_reference_failure_count'] ?? 0 ),
+				'commerce_dependency_failures'       => (int) ( $quality['commerce_dependency_failures'] ?? 0 ),
+				'interaction_candidates'             => (int) ( $quality['interaction_candidate_count'] ?? 0 ),
+				'runtime_dependency_parity'          => (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ),
+				'semantic_parity_failures'           => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
 			),
-			'quality_gates'           => array(
-				'fallback_blocks'           => self::validation_gate( 'fallback_blocks', (int) ( $quality['fallback_count'] ?? 0 ), $quality ),
-				'conversion_failures'       => self::validation_gate( 'conversion_failures', (int) ( $quality['content_loss_count'] ?? 0 ) + (int) ( $quality['empty_conversion_count'] ?? 0 ) + (int) ( $quality['invalid_block_count'] ?? 0 ), $quality ),
-				'generated_fallback_blocks' => self::validation_gate( 'generated_fallback_blocks', (int) ( $quality['core_html_block_count'] ?? 0 ) + (int) ( $quality['freeform_block_count'] ?? 0 ), $quality ),
-				'asset_materialization'     => self::validation_gate( 'asset_materialization', (int) ( $quality['svg_materialization_failure_count'] ?? 0 ) + (int) ( $quality['svg_sprite_reference_failure_count'] ?? 0 ), $quality ),
-				'commerce_dependencies'     => self::validation_gate( 'commerce_dependencies', (int) ( $quality['commerce_dependency_failures'] ?? 0 ), $quality ),
-				'interaction_candidates'    => self::validation_gate( 'interaction_candidates', (int) ( $quality['interaction_candidate_count'] ?? 0 ), $quality ),
-				'runtime_dependency_parity' => self::validation_gate( 'runtime_dependency_parity', (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ), $quality ),
-				'semantic_parity'           => self::validation_gate( 'semantic_parity', (int) ( $quality['semantic_parity_failure_count'] ?? 0 ), $quality ),
-				'visual_fidelity'           => array(
+			'quality_gates'            => array(
+				'fallback_blocks'                    => self::validation_gate( 'fallback_blocks', (int) ( $quality['unsupported_fallback_count'] ?? 0 ), $quality ),
+				'accepted_preserved_runtime_islands' => self::validation_gate( 'accepted_preserved_runtime_islands', (int) ( $quality['accepted_preserved_runtime_island_count'] ?? 0 ), $quality ),
+				'conversion_failures'                => self::validation_gate( 'conversion_failures', (int) ( $quality['content_loss_count'] ?? 0 ) + (int) ( $quality['empty_conversion_count'] ?? 0 ) + (int) ( $quality['invalid_block_count'] ?? 0 ), $quality ),
+				'generated_fallback_blocks'          => self::validation_gate( 'generated_fallback_blocks', (int) ( $quality['core_html_block_count'] ?? 0 ) + (int) ( $quality['freeform_block_count'] ?? 0 ), $quality ),
+				'asset_materialization'              => self::validation_gate( 'asset_materialization', (int) ( $quality['svg_materialization_failure_count'] ?? 0 ) + (int) ( $quality['svg_sprite_reference_failure_count'] ?? 0 ), $quality ),
+				'commerce_dependencies'              => self::validation_gate( 'commerce_dependencies', (int) ( $quality['commerce_dependency_failures'] ?? 0 ), $quality ),
+				'interaction_candidates'             => self::validation_gate( 'interaction_candidates', (int) ( $quality['interaction_candidate_count'] ?? 0 ), $quality ),
+				'runtime_dependency_parity'          => self::validation_gate( 'runtime_dependency_parity', (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ), $quality ),
+				'semantic_parity'                    => self::validation_gate( 'semantic_parity', (int) ( $quality['semantic_parity_failure_count'] ?? 0 ), $quality ),
+				'visual_fidelity'                    => array(
 					'status' => (string) ( $report['visual_fidelity']['status'] ?? 'requires_external_render_check' ),
 					'owner'  => (string) ( $report['visual_fidelity']['gate_owner'] ?? 'benchmark_harness' ),
 				),
-				'semantic_fidelity'         => array(
+				'semantic_fidelity'                  => array(
 					'status' => (string) ( $report['semantic_fidelity']['status'] ?? 'requires_external_render_check' ),
 					'owner'  => (string) ( $report['semantic_fidelity']['gate_owner'] ?? 'benchmark_harness' ),
 				),
 			),
 			'quality_budget_admission' => isset( $report['quality_budget_admission'] ) && is_array( $report['quality_budget_admission'] ) ? $report['quality_budget_admission'] : array(),
-			'diagnostic_summary'      => $summary['diagnostic_summary'] ?? array(),
-			'diagnostics'             => self::compact_import_report_diagnostics( $diagnostics ),
-			'diagnostic_refs'         => isset( $quality['diagnostic_refs'] ) && is_array( $quality['diagnostic_refs'] ) ? $quality['diagnostic_refs'] : array(),
-			'artifacts'               => self::validation_artifact_refs(),
-			'visual_parity_artifacts' => isset( $report['visual_parity_artifacts'] ) && is_array( $report['visual_parity_artifacts'] ) ? $report['visual_parity_artifacts'] : self::visual_parity_artifact_contract(),
-			'provenance'              => self::validation_provenance( $report ),
-			'reproduction_context'    => self::validation_reproduction_context( $report ),
+			'diagnostic_summary'       => $summary['diagnostic_summary'] ?? array(),
+			'diagnostics'              => self::compact_import_report_diagnostics( $diagnostics ),
+			'diagnostic_refs'          => isset( $quality['diagnostic_refs'] ) && is_array( $quality['diagnostic_refs'] ) ? $quality['diagnostic_refs'] : array(),
+			'artifacts'                => self::validation_artifact_refs(),
+			'visual_parity_artifacts'  => isset( $report['visual_parity_artifacts'] ) && is_array( $report['visual_parity_artifacts'] ) ? $report['visual_parity_artifacts'] : self::visual_parity_artifact_contract(),
+			'provenance'               => self::validation_provenance( $report ),
+			'reproduction_context'     => self::validation_reproduction_context( $report ),
 		);
 	}
 
@@ -409,9 +412,12 @@ class Static_Site_Importer_Report_Diagnostics {
 		self::mark_active_companion_script_fallbacks_materialized( $report );
 		self::normalize_import_diagnostics( $report );
 
-		$quality = $report['quality'];
+		$quality            = $report['quality'];
+		$fallback_admission = self::fallback_admission_counts( $report['diagnostics'] ?? array(), (int) $quality['fallback_count'] );
+		$quality['accepted_preserved_runtime_island_count'] = $fallback_admission['accepted'];
+		$quality['unsupported_fallback_count']              = $fallback_admission['unsupported'];
 		$reasons = array();
-		if ( $quality['fallback_count'] > 0 ) {
+		if ( $quality['unsupported_fallback_count'] > 0 ) {
 			$reasons[] = 'unsupported_html_fallback';
 		}
 		if ( $quality['content_loss_count'] > 0 ) {
@@ -457,7 +463,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		if ( ! empty( $args['fail_on_quality'] ) && ! $quality['pass'] ) {
 			$quality['fail_import'] = true;
 		}
-		if ( array_key_exists( 'max_fallbacks', $args ) && null !== $args['max_fallbacks'] && $quality['fallback_count'] > (int) $args['max_fallbacks'] ) {
+		if ( array_key_exists( 'max_fallbacks', $args ) && null !== $args['max_fallbacks'] && $quality['unsupported_fallback_count'] > (int) $args['max_fallbacks'] ) {
 			$quality['fail_import'] = true;
 		}
 		if ( in_array( 'woocommerce_missing', $reasons, true ) ) {
@@ -482,23 +488,25 @@ class Static_Site_Importer_Report_Diagnostics {
 	 */
 	private static function quality_defaults(): array {
 		return array(
-			'pass'                                  => true,
-			'fallback_count'                        => 0,
-			'content_loss_count'                    => 0,
-			'empty_conversion_count'                => 0,
-			'core_html_block_count'                 => 0,
-			'freeform_block_count'                  => 0,
-			'invalid_block_count'                   => 0,
-			'invalid_block_document_count'          => 0,
-			'unsafe_svg_count'                      => 0,
-			'svg_materialization_failure_count'     => 0,
-			'svg_sprite_reference_failure_count'    => 0,
-			'commerce_dependency_failures'          => 0,
-			'companion_plugin_dependency_failures'  => 0,
-			'interaction_candidate_count'           => 0,
-			'runtime_dependency_parity_issue_count' => 0,
-			'semantic_parity_failure_count'         => 0,
-			'failure_reasons'                       => array(),
+			'pass'                                    => true,
+			'fallback_count'                          => 0,
+			'unsupported_fallback_count'              => 0,
+			'accepted_preserved_runtime_island_count' => 0,
+			'content_loss_count'                      => 0,
+			'empty_conversion_count'                  => 0,
+			'core_html_block_count'                   => 0,
+			'freeform_block_count'                    => 0,
+			'invalid_block_count'                     => 0,
+			'invalid_block_document_count'            => 0,
+			'unsafe_svg_count'                        => 0,
+			'svg_materialization_failure_count'       => 0,
+			'svg_sprite_reference_failure_count'      => 0,
+			'commerce_dependency_failures'            => 0,
+			'companion_plugin_dependency_failures'    => 0,
+			'interaction_candidate_count'             => 0,
+			'runtime_dependency_parity_issue_count'   => 0,
+			'semantic_parity_failure_count'           => 0,
+			'failure_reasons'                         => array(),
 		);
 	}
 
@@ -527,6 +535,59 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		$report['quality'] = $quality;
+	}
+
+	/**
+	 * Split compiler fallbacks into fail-closed unsupported loss and explicitly
+	 * accepted, bounded runtime preservation. A count without matching evidence
+	 * remains unsupported so producers cannot weaken the admission gate by label.
+	 *
+	 * @param array<int,mixed> $diagnostics Normalized diagnostics.
+	 * @param int              $fallback_count Compiler fallback count.
+	 * @return array{accepted:int,unsupported:int}
+	 */
+	private static function fallback_admission_counts( array $diagnostics, int $fallback_count ): array {
+		$accepted = 0;
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( is_array( $diagnostic ) && self::is_accepted_preserved_runtime_island( $diagnostic ) ) {
+				++$accepted;
+			}
+		}
+
+		$accepted = min( max( 0, $fallback_count ), $accepted );
+		return array(
+			'accepted'    => $accepted,
+			'unsupported' => max( 0, $fallback_count - $accepted ),
+		);
+	}
+
+	/**
+	 * Require a complete generic runtime-preservation contract before admitting a
+	 * fallback. Raw HTML and unsafe or unbounded payloads always remain gated.
+	 *
+	 * @param array<string,mixed> $diagnostic Normalized diagnostic.
+	 */
+	private static function is_accepted_preserved_runtime_island( array $diagnostic ): bool {
+		if ( 'unsupported_html_fallback' !== ( $diagnostic['type'] ?? '' ) ) {
+			return false;
+		}
+		if ( ! in_array( $diagnostic['loss_class'] ?? '', array( 'runtime_island_preserved', 'preserved_runtime_island' ), true ) || ! in_array( $diagnostic['acceptability'] ?? '', array( 'acceptable_conversion', 'acceptable_preservation' ), true ) ) {
+			return false;
+		}
+		if ( 'sanitized_embed_markup' !== ( $diagnostic['preservation_strategy'] ?? '' ) || '' === trim( (string) ( $diagnostic['runtime_requirement'] ?? '' ) ) || '' === trim( (string) ( $diagnostic['materialization_path'] ?? '' ) ) ) {
+			return false;
+		}
+		if ( '' === trim( (string) ( $diagnostic['id'] ?? '' ) ) || '' === trim( (string) ( $diagnostic['source_path'] ?? '' ) ) || '' === trim( (string) ( $diagnostic['selector'] ?? '' ) ) || '' === trim( (string) ( $diagnostic['reason_code'] ?? '' ) ) ) {
+			return false;
+		}
+
+		$payload = (string) ( $diagnostic['source_html_preview'] ?? $diagnostic['html_excerpt'] ?? '' );
+		if ( '' === trim( $payload ) || strlen( $payload ) > 8192 ) {
+			return false;
+		}
+
+		return 1 !== preg_match( '/<\s*(?:script|style)\b|\bon[a-z]+\s*=|(?:javascript|data)\s*:|\bsrcdoc\s*=|<!--\s*wp:(?:html|freeform)\b/i', $payload )
+			&& ! in_array( $diagnostic['block_name'] ?? '', array( 'core/html', 'core/freeform' ), true );
 	}
 
 	/**
@@ -633,40 +694,42 @@ class Static_Site_Importer_Report_Diagnostics {
 		$product_seeding        = isset( $report['product_seeding'] ) && is_array( $report['product_seeding'] ) ? $report['product_seeding'] : array();
 
 		return array(
-			'schema'                                => 'static-site-importer/import-metrics/v1',
-			'version'                               => 1,
-			'report_version'                        => (int) ( $report['version'] ?? 0 ),
-			'status'                                => ! empty( $quality['fail_import'] ) ? 'failed' : 'completed',
-			'theme_slug'                            => isset( $report['theme_slug'] ) ? (string) $report['theme_slug'] : '',
-			'entry_file'                            => isset( $report['entry_file'] ) ? (string) $report['entry_file'] : '',
-			'compiler'                              => self::compact_import_report_compiler_summary( $report ),
-			'quality_pass'                          => ! empty( $quality['pass'] ),
-			'fail_import'                           => ! empty( $quality['fail_import'] ),
-			'failure_reasons'                       => isset( $quality['failure_reasons'] ) && is_array( $quality['failure_reasons'] ) ? array_values( $quality['failure_reasons'] ) : array(),
-			'fallback_count'                        => (int) ( $quality['fallback_count'] ?? 0 ),
-			'content_loss_count'                    => (int) ( $quality['content_loss_count'] ?? 0 ),
-			'empty_conversion_count'                => (int) ( $quality['empty_conversion_count'] ?? 0 ),
-			'core_html_block_count'                 => (int) ( $quality['core_html_block_count'] ?? 0 ),
-			'freeform_block_count'                  => (int) ( $quality['freeform_block_count'] ?? 0 ),
-			'invalid_block_count'                   => (int) ( $quality['invalid_block_count'] ?? 0 ),
-			'invalid_block_document_count'          => (int) ( $quality['invalid_block_document_count'] ?? 0 ),
-			'interaction_candidate_count'           => (int) ( $quality['interaction_candidate_count'] ?? 0 ),
-			'runtime_dependency_parity_issue_count' => (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ),
-			'semantic_parity_failure_count'         => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
-			'source_document_count'                 => (int) ( $source_documents['total_count'] ?? 0 ),
-			'unresolved_link_count'                 => (int) ( $source_documents['unresolved_link_count'] ?? 0 ),
-			'commerce'                              => $commerce,
-			'commerce_context'                      => $commerce_context,
-			'plugin_materialization'                => $plugin_materialization,
-			'product_seeding'                       => $product_seeding,
-			'visual_parity_artifacts'               => isset( $report['visual_parity_artifacts'] ) && is_array( $report['visual_parity_artifacts'] ) ? $report['visual_parity_artifacts'] : self::visual_parity_artifact_contract(),
-			'semantic_parity'                       => self::compact_semantic_parity_summary( $report ),
-			'diagnostic_count'                      => count( $diagnostics ),
-			'diagnostic_summary'                    => self::compact_import_report_diagnostic_summary( $diagnostics ),
-			'loss_class_summary'                    => Static_Site_Importer_Diagnostic_Loss_Classes::counts( $diagnostics ),
-			'warning_summaries'                     => self::compact_import_report_diagnostic_summaries_by_severity( $diagnostics, 'warning' ),
-			'error_summaries'                       => self::compact_import_report_diagnostic_summaries_by_severity( $diagnostics, 'error' ),
-			'diagnostics'                           => self::compact_import_report_diagnostics( $diagnostics ),
+			'schema'                                  => 'static-site-importer/import-metrics/v1',
+			'version'                                 => 1,
+			'report_version'                          => (int) ( $report['version'] ?? 0 ),
+			'status'                                  => ! empty( $quality['fail_import'] ) ? 'failed' : 'completed',
+			'theme_slug'                              => isset( $report['theme_slug'] ) ? (string) $report['theme_slug'] : '',
+			'entry_file'                              => isset( $report['entry_file'] ) ? (string) $report['entry_file'] : '',
+			'compiler'                                => self::compact_import_report_compiler_summary( $report ),
+			'quality_pass'                            => ! empty( $quality['pass'] ),
+			'fail_import'                             => ! empty( $quality['fail_import'] ),
+			'failure_reasons'                         => isset( $quality['failure_reasons'] ) && is_array( $quality['failure_reasons'] ) ? array_values( $quality['failure_reasons'] ) : array(),
+			'fallback_count'                          => (int) ( $quality['fallback_count'] ?? 0 ),
+			'unsupported_fallback_count'              => (int) ( $quality['unsupported_fallback_count'] ?? 0 ),
+			'accepted_preserved_runtime_island_count' => (int) ( $quality['accepted_preserved_runtime_island_count'] ?? 0 ),
+			'content_loss_count'                      => (int) ( $quality['content_loss_count'] ?? 0 ),
+			'empty_conversion_count'                  => (int) ( $quality['empty_conversion_count'] ?? 0 ),
+			'core_html_block_count'                   => (int) ( $quality['core_html_block_count'] ?? 0 ),
+			'freeform_block_count'                    => (int) ( $quality['freeform_block_count'] ?? 0 ),
+			'invalid_block_count'                     => (int) ( $quality['invalid_block_count'] ?? 0 ),
+			'invalid_block_document_count'            => (int) ( $quality['invalid_block_document_count'] ?? 0 ),
+			'interaction_candidate_count'             => (int) ( $quality['interaction_candidate_count'] ?? 0 ),
+			'runtime_dependency_parity_issue_count'   => (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ),
+			'semantic_parity_failure_count'           => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
+			'source_document_count'                   => (int) ( $source_documents['total_count'] ?? 0 ),
+			'unresolved_link_count'                   => (int) ( $source_documents['unresolved_link_count'] ?? 0 ),
+			'commerce'                                => $commerce,
+			'commerce_context'                        => $commerce_context,
+			'plugin_materialization'                  => $plugin_materialization,
+			'product_seeding'                         => $product_seeding,
+			'visual_parity_artifacts'                 => isset( $report['visual_parity_artifacts'] ) && is_array( $report['visual_parity_artifacts'] ) ? $report['visual_parity_artifacts'] : self::visual_parity_artifact_contract(),
+			'semantic_parity'                         => self::compact_semantic_parity_summary( $report ),
+			'diagnostic_count'                        => count( $diagnostics ),
+			'diagnostic_summary'                      => self::compact_import_report_diagnostic_summary( $diagnostics ),
+			'loss_class_summary'                      => Static_Site_Importer_Diagnostic_Loss_Classes::counts( $diagnostics ),
+			'warning_summaries'                       => self::compact_import_report_diagnostic_summaries_by_severity( $diagnostics, 'warning' ),
+			'error_summaries'                         => self::compact_import_report_diagnostic_summaries_by_severity( $diagnostics, 'error' ),
+			'diagnostics'                             => self::compact_import_report_diagnostics( $diagnostics ),
 		);
 	}
 
@@ -680,14 +743,15 @@ class Static_Site_Importer_Report_Diagnostics {
 	 */
 	private static function validation_gate( string $name, int $count, array $quality ): array {
 		$ref_keys = array(
-			'fallback_blocks'           => 'fallback_count',
-			'conversion_failures'       => 'content_loss_count',
-			'generated_fallback_blocks' => 'core_html_block_count',
-			'asset_materialization'     => 'svg_materialization_failure_count',
-			'commerce_dependencies'     => 'commerce_dependency_failures',
-			'interaction_candidates'    => 'interaction_candidate_count',
-			'runtime_dependency_parity' => 'runtime_dependency_parity_issue_count',
-			'semantic_parity'           => 'semantic_parity_failure_count',
+			'fallback_blocks'                    => 'unsupported_fallback_count',
+			'accepted_preserved_runtime_islands' => 'accepted_preserved_runtime_island_count',
+			'conversion_failures'                => 'content_loss_count',
+			'generated_fallback_blocks'          => 'core_html_block_count',
+			'asset_materialization'              => 'svg_materialization_failure_count',
+			'commerce_dependencies'              => 'commerce_dependency_failures',
+			'interaction_candidates'             => 'interaction_candidate_count',
+			'runtime_dependency_parity'          => 'runtime_dependency_parity_issue_count',
+			'semantic_parity'                    => 'semantic_parity_failure_count',
 		);
 		$ref_key  = $ref_keys[ $name ] ?? $name;
 
@@ -1049,6 +1113,13 @@ class Static_Site_Importer_Report_Diagnostics {
 				'repair_bucket'          => isset( $diagnostic['repair_bucket'] ) && is_scalar( $diagnostic['repair_bucket'] ) ? (string) $diagnostic['repair_bucket'] : '',
 				'loss_class'             => isset( $diagnostic['loss_class'] ) && is_scalar( $diagnostic['loss_class'] ) ? (string) $diagnostic['loss_class'] : Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ),
 				'acceptability'          => isset( $diagnostic['acceptability'] ) && is_scalar( $diagnostic['acceptability'] ) ? (string) $diagnostic['acceptability'] : self::diagnostic_acceptability( Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ) ),
+			),
+			'preservation'         => array_filter(
+				array(
+					'strategy'             => isset( $diagnostic['preservation_strategy'] ) && is_scalar( $diagnostic['preservation_strategy'] ) ? (string) $diagnostic['preservation_strategy'] : '',
+					'runtime_requirement'  => isset( $diagnostic['runtime_requirement'] ) && is_scalar( $diagnostic['runtime_requirement'] ) ? (string) $diagnostic['runtime_requirement'] : '',
+					'materialization_path' => isset( $diagnostic['materialization_path'] ) && is_scalar( $diagnostic['materialization_path'] ) ? (string) $diagnostic['materialization_path'] : '',
+				)
 			),
 			'provenance'           => self::validation_provenance( $report ),
 			'reproduction_context' => array_merge(
@@ -3242,19 +3313,21 @@ class Static_Site_Importer_Report_Diagnostics {
 	 */
 	private static function quality_diagnostic_refs( array $diagnostics ): array {
 		$types_by_count = array(
-			'fallback_count'                        => array( 'unsupported_html_fallback' ),
-			'content_loss_count'                    => array( 'content_loss_abort' ),
-			'empty_conversion_count'                => array( 'empty_conversion' ),
-			'core_html_block_count'                 => array( 'core_html_block' ),
-			'freeform_block_count'                  => array( 'freeform_block' ),
-			'invalid_block_count'                   => array( 'invalid_block_document' ),
-			'unsafe_svg_count'                      => array( 'unsafe_inline_svg' ),
-			'svg_materialization_failure_count'     => array( 'svg_materialization_failure' ),
-			'svg_sprite_reference_failure_count'    => array( 'svg_sprite_reference_failure' ),
-			'commerce_dependency_failures'          => array( 'commerce_dependency_failure' ),
-			'interaction_candidate_count'           => array( 'interaction_candidate' ),
-			'runtime_dependency_parity_issue_count' => array( 'runtime_dependency_missing_dom_target', 'runtime_dependency_unsupported_element_reference', 'runtime_dependency_parity_issue' ),
-			'semantic_parity_failure_count'         => array( 'semantic_parity_navigation_missing', 'semantic_parity_navigation_mismatch', 'semantic_parity_landmark_missing', 'semantic_parity_failure' ),
+			'fallback_count'                          => array( 'unsupported_html_fallback' ),
+			'unsupported_fallback_count'              => array( 'unsupported_html_fallback' ),
+			'accepted_preserved_runtime_island_count' => array( 'unsupported_html_fallback' ),
+			'content_loss_count'                      => array( 'content_loss_abort' ),
+			'empty_conversion_count'                  => array( 'empty_conversion' ),
+			'core_html_block_count'                   => array( 'core_html_block' ),
+			'freeform_block_count'                    => array( 'freeform_block' ),
+			'invalid_block_count'                     => array( 'invalid_block_document' ),
+			'unsafe_svg_count'                        => array( 'unsafe_inline_svg' ),
+			'svg_materialization_failure_count'       => array( 'svg_materialization_failure' ),
+			'svg_sprite_reference_failure_count'      => array( 'svg_sprite_reference_failure' ),
+			'commerce_dependency_failures'            => array( 'commerce_dependency_failure' ),
+			'interaction_candidate_count'             => array( 'interaction_candidate' ),
+			'runtime_dependency_parity_issue_count'   => array( 'runtime_dependency_missing_dom_target', 'runtime_dependency_unsupported_element_reference', 'runtime_dependency_parity_issue' ),
+			'semantic_parity_failure_count'           => array( 'semantic_parity_navigation_missing', 'semantic_parity_navigation_mismatch', 'semantic_parity_landmark_missing', 'semantic_parity_failure' ),
 		);
 
 		$refs = array();
@@ -3262,9 +3335,18 @@ class Static_Site_Importer_Report_Diagnostics {
 			$refs[ $count_key ] = array_values(
 				array_filter(
 					array_map(
-						static function ( array $diagnostic ) use ( $types ): string {
-							return in_array( $diagnostic['type'] ?? '', $types, true ) && isset( $diagnostic['id'] ) ? (string) $diagnostic['id'] : '';
-						},
+					static function ( array $diagnostic ) use ( $count_key, $types ): string {
+						if ( ! in_array( $diagnostic['type'] ?? '', $types, true ) || ! isset( $diagnostic['id'] ) ) {
+							return '';
+						}
+						if ( 'accepted_preserved_runtime_island_count' === $count_key && ! self::is_accepted_preserved_runtime_island( $diagnostic ) ) {
+							return '';
+						}
+						if ( 'unsupported_fallback_count' === $count_key && self::is_accepted_preserved_runtime_island( $diagnostic ) ) {
+							return '';
+						}
+							return (string) $diagnostic['id'];
+					},
 						$diagnostics
 					)
 				)
