@@ -79,6 +79,7 @@ require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-di
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-artifact-diagnostics-adapter.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-validation-runtime.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-report-diagnostics.php';
+require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-failed-plan-validation.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-font-materializer.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-document-type-classifier.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/class-static-site-importer-current-site-capabilities.php';

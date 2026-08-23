@@ -26,6 +26,9 @@ if ( ! class_exists( 'Static_Site_Importer_Block_Document_Reporter' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Report_Diagnostics' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-report-diagnostics.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Failed_Plan_Validation' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-failed-plan-validation.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-client-script-policy.php';
 }
@@ -91,12 +94,21 @@ class Static_Site_Importer_Theme_Generator {
 		$theme_materialization = $compiled_import['theme_materialization'];
 		$args['font_materialization'] = isset( $materialization_plan['theme']['font_materialization'] ) && is_array( $materialization_plan['theme']['font_materialization'] ) ? $materialization_plan['theme']['font_materialization'] : array();
 		if ( ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) ) {
+			$failed_plan = Static_Site_Importer_Failed_Plan_Validation::build( $plan, $args );
+			try {
+				$failed_plan['artifact_refs'] = Static_Site_Importer_Failed_Plan_Validation::persist( $failed_plan, (string) ( $args['report'] ?? '' ) );
+			} catch ( Throwable $error ) {
+				$failed_plan['artifact_persistence_error'] = $error->getMessage();
+			}
 			return new WP_Error(
 				'static_site_importer_quality_gate_failed',
 				'Website artifact did not pass the canonical plan quality gate.',
-				array(
-					'quality'     => $plan['quality'] ?? array(),
-					'diagnostics' => $plan['diagnostics'] ?? array(),
+				array_merge(
+					array(
+						'quality'     => $plan['quality'] ?? array(),
+						'diagnostics' => $plan['diagnostics'] ?? array(),
+					),
+					$failed_plan
 				)
 			);
 		}
