@@ -232,6 +232,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return is_callable( $rollback ) ? call_user_func( $rollback, $report ) : new WP_Error( 'static_site_importer_entity_rollback_unavailable', 'The selected entity provider does not declare rollback support.' );
 	}
 
+	/** Return a registered immutable identity for the adapter's rollback behavior. */
+	public static function rollback_contract_id( array $adapter ): string {
+		$id = $adapter['rollback_contract_id'] ?? null;
+		return is_string( $id ) && 1 === preg_match( '~^[a-z0-9][a-z0-9._/-]{2,127}$~', $id ) ? $id : '';
+	}
+
 	/** Resolve provider-owned block markup for one canonical entity binding. */
 	public static function binding_block_markup( array $adapter, array $entity, array $result ): string {
 		$callback = $adapter['binding_callback'] ?? null;
@@ -564,6 +570,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'validator'                => array( self::class, 'validate_woo_products_manifest' ),
 				'materializer'             => array( 'Static_Site_Importer_Woo_Product_Seeder', 'seed' ),
 				'rollback_callback'        => array( 'Static_Site_Importer_Woo_Product_Seeder', 'rollback' ),
+				'rollback_contract_id'     => 'static-site-importer/woocommerce-product-rollback/v1',
 				'binding_callback'         => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_block_markup' ),
 				'classic_binding_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_classic_render' ),
 				'report_callback'          => array( 'Static_Site_Importer_Woo_Product_Seeder', 'new_report' ),
@@ -589,6 +596,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'validator'                => array( self::class, 'validate_forms_manifest' ),
 				'materializer'             => array( 'Static_Site_Importer_Form_Seeder', 'seed' ),
 				'rollback_callback'        => array( 'Static_Site_Importer_Form_Seeder', 'rollback' ),
+				'rollback_contract_id'     => 'static-site-importer/jetpack-form-rollback/v1',
 				'binding_callback'         => array( 'Static_Site_Importer_Form_Seeder', 'binding_block_markup' ),
 				'classic_binding_callback' => array( 'Static_Site_Importer_Form_Seeder', 'binding_classic_render' ),
 				'report_callback'          => array( 'Static_Site_Importer_Form_Seeder', 'new_report' ),
@@ -632,7 +640,15 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		 */
 		/** @var mixed $filtered */
 		$filtered = function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_entity_materializers', $adapters ) : $adapters;
-		return is_array( $filtered ) ? $filtered : $adapters;
+		if ( ! is_array( $filtered ) ) {
+			return $adapters;
+		}
+		foreach ( $filtered as $id => $adapter ) {
+			if ( ! is_array( $adapter ) || (string) ( $adapter['id'] ?? '' ) !== (string) $id || '' === self::rollback_contract_id( $adapter ) ) {
+				unset( $filtered[ $id ] );
+			}
+		}
+		return $filtered;
 	}
 
 	/**
