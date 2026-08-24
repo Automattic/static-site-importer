@@ -1,0 +1,3 @@
+:root { --accent: #c2410c; }
+body { margin: 0; font-family: sans-serif; }
+.card { border: 2px solid var(--accent); padding: 1rem; }
