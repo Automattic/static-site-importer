@@ -71,7 +71,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				)
 			);
 		}
-		$companion = self::materialize_companion_dependency( $companion_payload, $args, $page_ready );
+		$companion = self::materialize_companion_dependency( $companion_payload, $prepared, $page_ready );
 		if ( is_wp_error( $companion ) ) {
 			return $companion;
 		}
@@ -162,7 +162,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	}
 
 	/** Materialize the compiler-declared companion before provider dependencies. */
-	private static function materialize_companion_dependency( $payload, array $args, bool $page_ready ) {
+	private static function materialize_companion_dependency( $payload, array $prepared, bool $page_ready ) {
+		$args = is_array( $prepared['args'] ?? null ) ? $prepared['args'] : array();
 		if ( null === $payload ) {
 			return array(
 				'status' => 'skipped',
@@ -175,6 +176,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'reason' => $page_ready ? 'page_ready_scope' : 'dependency_materialization_disabled',
 			);
 		}
+		$payload    = self::resolve_companion_asset_references( $payload, $prepared['plan'] ?? array(), $prepared['resolved'] ?? array() );
 		$dependency = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $payload );
 		$result     = Static_Site_Importer_Entity_Materializer_Registry::materialize_companion_dependency( $dependency, ! empty( $args['overwrite'] ) );
 		if ( 'failed' === ( $result['status'] ?? '' ) ) {
@@ -182,6 +184,32 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_companion_plugin_materialization_failed' ), (string) ( $error['message'] ?? 'Companion-plugin materialization failed.' ), $result );
 		}
 		return $result;
+	}
+
+	/** Resolve browser-visible asset references carried by generated block renders. */
+	private static function resolve_companion_asset_references( array $payload, array $plan, array $resolved ): array {
+		$tokens    = isset( $plan['reference_tokens'] ) && is_array( $plan['reference_tokens'] ) ? $plan['reference_tokens'] : array();
+		$theme_uri = isset( $resolved['resolution']['theme_uri'] ) && is_string( $resolved['resolution']['theme_uri'] ) ? $resolved['resolution']['theme_uri'] : '';
+		if ( empty( $tokens ) || '' === $theme_uri ) {
+			return $payload;
+		}
+
+		$entries = array_values( array_filter( $plan['pages'] ?? array(), static fn( mixed $page ): bool => is_array( $page ) && ! empty( $page['entrypoint'] ) ) );
+		$entry   = $entries[0] ?? null;
+		$origin  = is_array( $entry ) && is_string( $entry['source_path'] ?? null ) ? $entry['source_path'] : '';
+		$root    = '' === $origin || '.' === dirname( $origin ) ? '' : trim( dirname( $origin ), '/' );
+		$canonicalizer = new \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\AssetReferenceCanonicalizer( $tokens, $root );
+		$references    = WordPressSitePlanResolver::references( $tokens, $theme_uri );
+
+		foreach ( $payload['blocks'] ?? array() as $index => $block ) {
+			if ( ! is_array( $block ) || ! is_string( $block['render'] ?? null ) ) {
+				continue;
+			}
+			$canonical = $canonicalizer->content( $block['render'], $origin );
+			$payload['blocks'][ $index ]['render'] = WordPressSitePlanResolver::resolvePayload( $canonical, $references );
+		}
+
+		return $payload;
 	}
 
 	/** Public because checkpoint preparation provisions the same typed dependencies. */

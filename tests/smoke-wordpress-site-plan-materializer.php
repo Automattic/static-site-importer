@@ -2890,4 +2890,18 @@ $root_media_content = stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $root
 $root_media_url     = 'https://example.test/wp-content/themes/root-media-plan/assets/website/media/example.jpg';
 $assert( 'completed' === $root_media_receipt['status'] && 4 === substr_count( $root_media_content, $root_media_url ) && str_contains( $root_media_content, '"url":"' . $root_media_url . '"' ) && str_contains( $root_media_content, 'blocks-engine-background-image' ) && ! str_contains( $root_media_content, '/media/example.jpg?' ), 'root-relative captured media resolves through the canonical theme asset map for image and background-image blocks' );
 
+$resolved_root_media_plan = ( new \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver() )->resolve(
+	$root_media_plan,
+	array( 'theme_uri' => 'https://example.test/wp-content/themes/root-media-plan', 'runtime_capabilities' => array( 'asset_materialization' ) )
+);
+$resolve_companion_assets = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'resolve_companion_asset_references' );
+$resolved_companion       = $resolve_companion_assets->invoke(
+	null,
+	array( 'blocks' => array( array( 'render' => '<img src="/media/example.jpg"><source srcset="/media/example.jpg 1x">' ) ) ),
+	$root_media_plan,
+	$resolved_root_media_plan
+);
+$resolved_companion_html = (string) ( $resolved_companion['blocks'][0]['render'] ?? '' );
+$assert( str_contains( $resolved_companion_html, 'src="' . $root_media_url . '"' ) && str_contains( $resolved_companion_html, 'srcset="' . $root_media_url . ' 1x"' ) && ! str_contains( $resolved_companion_html, '="/media/example.jpg' ), 'generated companion block renders resolve canonical root-relative assets through the materialized theme map' );
+
 echo "WordPress site plan materializer smoke passed.\n";

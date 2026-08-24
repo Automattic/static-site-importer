@@ -1130,7 +1130,11 @@ foreach ( $data_images as $placeholder => $data_image ) {
 echo $output; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- KSES-sanitized bounded media markup.
 PHP;
 
-		return preg_replace( '/^<\?php\n/', "<?php\n" . $layout . "\nif ( 'media' !== \$kind ) {\n\treturn;\n}\n\n", $media ) ?? '';
+		return preg_replace_callback(
+			'/^<\?php\n/',
+			static fn(): string => "<?php\n" . $layout . "\nif ( 'media' !== \$kind ) {\n\treturn;\n}\n\n",
+			$media
+		) ?? '';
 	}
 
 	/**
