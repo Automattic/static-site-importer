@@ -511,11 +511,11 @@ $assert( is_array( $layout_descriptor ), 'layout-renderer-scaffold-returns-descr
 if ( is_array( $layout_descriptor ) ) {
 	$layout_render = $layout_descriptor['files']['ssi-example-site/blocks/custom-hero/render.php'] ?? '';
 	$assert( str_contains( $layout_render, 'Generated responsive-media layout mode companion block render' ) && ! str_contains( $layout_render, 'responsive-layout/v1' ), 'layout-mode-uses-released-renderer-template' );
-	$attributes = array( 'kind' => 'layout', 'content' => '<main class="story"><header><nav><a href="/about">About</a></nav></header><section><h1>Story</h1><p>Safe copy <strong>with emphasis</strong>.</p><button type="button">Read more</button><wow-image data-hook="hero"><img src="data:image/png;base64,aGVybw==" alt="Hero" decoding="async"></wow-image><svg viewBox="0 0 10 10" preserveAspectRatio="xMidYMid slice" focusable="false" role="img" aria-label="Mark"><path d="M0 0L10 10" stroke="#000"></path></svg></section></main>' );
+	$attributes = array( 'kind' => 'layout', 'content' => '<main class="story"><header><nav><a href="/about">About</a></nav></header><section><h1>Story</h1><p>Safe copy <strong>with emphasis</strong>.</p><button type="button">Read more</button><wow-image data-hook="hero"><img src="data:image/png;base64,aGVybw==" alt="Hero" decoding="async" fetchpriority="high"></wow-image><svg viewBox="0 0 10 10" preserveAspectRatio="xMidYMid slice" focusable="false" role="img" aria-label="Mark"><path d="M0 0L10 10" stroke="#000"></path></svg></section></main>' );
 	ob_start();
 	eval( '?>' . $layout_render );
 	$layout_output = (string) ob_get_clean();
-	foreach ( array( '<main class="story">', '<nav>', '<h1>Story</h1>', '<button type="button">Read more</button>', '<wow-image data-hook="hero">', '<img src="data:image/png;base64,aGVybw==" alt="Hero" decoding="async">', '<svg viewBox="0 0 10 10" preserveAspectRatio="xMidYMid slice" focusable="false" role="img" aria-label="Mark">', '<path d="M0 0L10 10" stroke="#000"></path>' ) as $fragment ) {
+	foreach ( array( '<main class="story">', '<nav>', '<h1>Story</h1>', '<button type="button">Read more</button>', '<wow-image data-hook="hero">', '<img src="data:image/png;base64,aGVybw==" alt="Hero" decoding="async" fetchpriority="high">', '<svg viewBox="0 0 10 10" preserveAspectRatio="xMidYMid slice" focusable="false" role="img" aria-label="Mark">', '<path d="M0 0L10 10" stroke="#000"></path>' ) as $fragment ) {
 		$assert( str_contains( $layout_output, $fragment ), 'layout-renderer-preserves-' . $fragment );
 	}
 

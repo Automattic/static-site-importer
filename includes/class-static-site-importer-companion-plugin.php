@@ -981,7 +981,7 @@ $output = wp_kses(
 		'form' => array_merge( $flow, array( 'action' => true, 'method' => true ) ),
 		'figure' => $flow, 'figcaption' => $flow, 'picture' => $flow,
 		'source' => array_merge( $global, array( 'media' => true, 'sizes' => true, 'src' => true, 'srcset' => true, 'type' => true ) ),
-		'img' => array_merge( $global, array( 'alt' => true, 'decoding' => true, 'height' => true, 'loading' => true, 'longdesc' => true, 'sizes' => true, 'src' => true, 'srcset' => true, 'usemap' => true, 'width' => true ) ),
+		'img' => array_merge( $global, array( 'alt' => true, 'decoding' => true, 'fetchpriority' => true, 'height' => true, 'loading' => true, 'longdesc' => true, 'sizes' => true, 'src' => true, 'srcset' => true, 'usemap' => true, 'width' => true ) ),
 		'video' => array_merge( $global, array( 'autoplay' => true, 'controls' => true, 'height' => true, 'loop' => true, 'muted' => true, 'playsinline' => true, 'poster' => true, 'preload' => true, 'src' => true, 'width' => true ) ),
 		'audio' => array_merge( $global, array( 'autoplay' => true, 'controls' => true, 'loop' => true, 'muted' => true, 'preload' => true, 'src' => true ) ),
 		'svg' => array_merge( $svg_global, array( 'fill' => true, 'focusable' => true, 'height' => true, 'preserveaspectratio' => true, 'stroke' => true, 'viewbox' => true, 'width' => true, 'xmlns' => true, 'xmlns:xlink' => true ) ),
