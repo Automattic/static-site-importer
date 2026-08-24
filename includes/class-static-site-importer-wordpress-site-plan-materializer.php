@@ -798,7 +798,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** Resolve destination-independent route references after WordPress has assigned every permalink. */
 	private static function rewrite_materialized_route_links( array &$state ) {
-		$routes               = array();
+		$routes              = array();
 		$front_page_identity = self::front_page_reconciliation_identity( $state['resolved']['operations'] ?? array() );
 		foreach ( $state['ordered_pages'] as $page ) {
 			$source_path = (string) ( $page['source_path'] ?? '' );
