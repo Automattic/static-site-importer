@@ -1975,41 +1975,88 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return $result;
 	}
 
-	/** Revert importer-owned writes and posts on a failed materialization receipt. */
+	/** Revert importer-owned runtime state, writes, and posts on a failed receipt. */
 	private static function rollback( array &$state ): void {
 		if ( ! empty( $state['rollback']['done'] ) ) {
 			return; }
 		$state['rollback']['done'] = true;
+		self::restore_runtime( $state );
 		foreach ( array_reverse( $state['rollback']['files'] ?? array(), true ) as $path => $before ) {
 			if ( ! is_array( $before ) ) {
 				continue; }
-			if ( ! empty( $before['exists'] ) && is_string( $before['content'] ?? null ) ) {
-				self::restore_file( $path, $before['content'] );
-			} elseif ( is_file( $path ) ) {
-				wp_delete_file( $path );
+			try {
+				if ( ! empty( $before['exists'] ) && is_string( $before['content'] ?? null ) ) {
+					self::restore_file( $path, $before['content'] );
+				} elseif ( is_file( $path ) && ! wp_delete_file( $path ) ) {
+					throw new RuntimeException( 'materialization_rollback_file_delete_failed' );
+				}
+			} catch ( Throwable $error ) {
+				self::record_rollback_failure( $state, 'file', (string) $path, $error );
 			}
 		}
-		foreach ( $state['applied']['posts'] ?? array() as $applied ) {
+		foreach ( array_reverse( $state['applied']['posts'] ?? array() ) as $applied ) {
 			$id     = (int) ( $applied['id'] ?? 0 );
-			$before = $state['rollback']['posts'][ $id ] ?? null;
+			$before = $state['rollback']['posts'][ $id ] ?? $state['rollback']['posts'][ 'new:' . (string) ( $applied['source_path'] ?? '' ) ] ?? null;
 			if ( ! is_array( $before ) || $id <= 0 ) {
 				continue; }
-			if ( ! empty( $before['existing'] ) ) {
-				wp_update_post( $before['post'] );
-				update_post_meta( $id, '_static_site_importer_provenance', $before['provenance'] );
-				update_post_meta( $id, self::RECONCILIATION_META_KEY, $before['reconciliation_identity'] );
-			} elseif ( function_exists( 'wp_delete_post' ) ) {
-				wp_delete_post( $id, true ); }
-		}
-		foreach ( array_reverse( $state['rollback']['options'] ?? array(), true ) as $option => $before ) {
-			if ( ! empty( $before['exists'] ) ) {
-				update_option( $option, $before['value'] );
-			} elseif ( function_exists( 'delete_option' ) ) {
-				delete_option( $option ); }
+			try {
+				if ( ! empty( $before['existing'] ) ) {
+					wp_update_post( $before['post'] );
+					update_post_meta( $id, '_static_site_importer_provenance', $before['provenance'] );
+					update_post_meta( $id, self::RECONCILIATION_META_KEY, $before['reconciliation_identity'] );
+				} elseif ( function_exists( 'wp_delete_post' ) && ! wp_delete_post( $id, true ) ) {
+					throw new RuntimeException( 'materialization_rollback_post_delete_failed' );
+				}
+			} catch ( Throwable $error ) {
+				self::record_rollback_failure( $state, 'post', (string) $id, $error );
+			}
 		}
 		$state['applied']['files'] = array();
 		$state['applied']['posts'] = array();
 		$state['diagnostics'][]    = array( 'reason_code' => 'materialization_rolled_back' );
+	}
+
+	/** Restore options and the prior active theme before deleting generated theme files. */
+	private static function restore_runtime( array &$state ): void {
+		$options = $state['rollback']['options'] ?? array();
+		$stylesheet = $options['stylesheet']['value'] ?? null;
+		if ( ! empty( $options['stylesheet']['exists'] ) && is_string( $stylesheet ) && '' !== $stylesheet && function_exists( 'switch_theme' ) ) {
+			try {
+				switch_theme( $stylesheet );
+				if ( ! self::active_theme_matches( $stylesheet ) ) {
+					throw new RuntimeException( 'materialization_rollback_theme_restore_failed' );
+				}
+			} catch ( Throwable $error ) {
+				self::record_rollback_failure( $state, 'theme', $stylesheet, $error );
+			}
+		}
+		foreach ( array_reverse( $options, true ) as $option => $before ) {
+			try {
+				if ( ! empty( $before['exists'] ) ) {
+					update_option( $option, $before['value'] );
+				} elseif ( function_exists( 'delete_option' ) ) {
+					delete_option( $option );
+				}
+			} catch ( Throwable $error ) {
+				self::record_rollback_failure( $state, 'option', (string) $option, $error );
+			}
+		}
+	}
+
+	/** Retain bounded failure evidence without replaying the immutable journal on retry. */
+	private static function record_rollback_failure( array &$state, string $kind, string $target, Throwable $error ): void {
+		$state['rollback']['partial'] = true;
+		if ( count( $state['rollback']['failures'] ?? array() ) < 32 ) {
+			$state['rollback']['failures'][] = array(
+				'kind'    => $kind,
+				'target'  => $target,
+				'code'    => $error->getMessage(),
+			);
+		}
+		$state['diagnostics'][] = array(
+			'reason_code' => 'materialization_rollback_' . $kind . '_failed',
+			'target'      => $target,
+		);
 	}
 
 	/** Restore a journaled file through the WordPress filesystem abstraction. */
@@ -2104,6 +2151,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'operations'                => $state['applied']['operations'],
 			'skipped_targets'           => $state['skipped'],
 			'existing_matches'          => $state['existing_matches'],
+			'rollback'                  => array(
+				'status'   => ! empty( $state['rollback']['partial'] ) ? 'partial' : ( ! empty( $state['rollback']['done'] ) ? 'rolled_back' : 'not_requested' ),
+				'failures' => array_slice( is_array( $state['rollback']['failures'] ?? null ) ? $state['rollback']['failures'] : array(), 0, 32 ),
+			),
 			'preparation'               => $state['preparation'] ?? array(),
 			'editability_report'        => $state['editability_report'] ?? array(
 				'schema' => 'static-site-importer/editability-report-admission/v1',

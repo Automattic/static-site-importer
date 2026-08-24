@@ -470,6 +470,8 @@ class Static_Site_Importer_Theme_Generator {
 			$prepared = $lifecycle['entities'][ $id ];
 			if ( ! is_array( $prepared ) || ! is_array( $prepared['adapter'] ?? null ) || ! is_array( $reports[ $id ] ?? null ) ) {
 				continue; }
+			if ( ! self::entity_report_requires_rollback( $reports[ $id ] ) ) {
+				continue; }
 			$adapter = $prepared['adapter'];
 			try {
 				$result = Static_Site_Importer_Entity_Materializer_Registry::rollback( $adapter, $reports[ $id ] );
@@ -516,6 +518,11 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$compensation['errors'] = array_slice( $compensation['errors'], 0, 32 );
 		return $compensation;
+	}
+
+	/** Only callbacks with an explicit mutation receipt may perform destructive compensation. */
+	private static function entity_report_requires_rollback( array $report ): bool {
+		return in_array( $report['status'] ?? null, array( 'completed', 'materialized', 'mapped', 'mutated' ), true );
 	}
 
 	/** Attach failure context and compensation diagnostics to public and internal receipts. */
