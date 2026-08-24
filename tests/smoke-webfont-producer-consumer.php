@@ -29,6 +29,9 @@ function wp_safe_remote_get( string $url, array $args ) {
 	if ( 'https://fonts.gstatic.com/s/inter/v1/inter-latin.woff2' === $url ) {
 		return array( 'response' => array( 'code' => 200 ), 'body' => 'fixture-37-inter-variable-font' );
 	}
+	if ( 'https://cdn.coffee-festival.example/assets/ObsidianDisplay.woff2' === $url ) {
+		return array( 'response' => array( 'code' => 200 ), 'body' => 'coffee-festival-obsidian-display-font' );
+	}
 	return new WP_Error( 'unexpected_request' );
 }
 function wp_remote_retrieve_response_code( $response ): int { return (int) ( $response['response']['code'] ?? 0 ); }
@@ -41,6 +44,8 @@ $assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) throw new RuntimeException( $message );
 };
 
+$assert( 'v0.6.1' === \Composer\InstalledVersions::getPrettyVersion( 'automattic/blocks-engine-php-transformer' ), 'producer-consumer integration runs against the locked Blocks Engine php-transformer v0.6.1 dependency' );
+
 $fixture_html = '<!doctype html><html><head><link rel="stylesheet" href="css/style.css"></head><body><main>Inter fixture</main></body></html>';
 $fixture_css  = "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');\n:root{--font:'Inter',system-ui,sans-serif}body{font-family:var(--font)}";
 $producer_plan = ( new Automattic\BlocksEngine\PhpTransformer\StaticSite\FontMaterialization\FontMaterializationPlanBuilder() )->fromWebFontSources(
@@ -49,7 +54,7 @@ $producer_plan = ( new Automattic\BlocksEngine\PhpTransformer\StaticSite\FontMat
 	array( array( 'path' => 'css/style.css', 'content' => $fixture_css, 'source_hash' => hash( 'sha256', $fixture_css ) ) )
 );
 $contract = $producer_plan['webfont_contract'] ?? array();
-$assert( 'blocks-engine/webfont-materialization/v1' === ( $contract['schema'] ?? '' ) && 1 === count( $contract['imports'] ?? array() ) && 9 === count( $contract['faces'] ?? array() ), 'fixture 37 sibling compiler emits the nested shared import and typed Inter face records' );
+$assert( 'blocks-engine/webfont-materialization/v1' === ( $contract['schema'] ?? '' ) && 1 === count( $contract['imports'] ?? array() ) && 9 === count( $contract['faces'] ?? array() ) && 'css' === ( $contract['imports'][0]['source']['format'] ?? null ), 'the installed producer emits the nested shared import and typed Inter face records consumed by SSI' );
 $assert( count( $contract['faces'] ?? array() ) === count( $contract['receipts'] ?? array() ) && 'required' === ( $contract['browser_readiness']['state'] ?? '' ), 'fixture 37 producer preserves nested browser readiness receipt IDs' );
 
 $overlay = Static_Site_Importer_Font_Materializer::prepare_overlay(
@@ -170,6 +175,62 @@ $assert( 'producer_webfont_import_unsupported_provider' === ( $local_overlay['di
 $local_plan['webfont_contract']['diagnostics'] = array();
 $local_overlay_without_diagnostics = Static_Site_Importer_Font_Materializer::prepare_overlay( $local_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
 $assert( ! is_wp_error( $local_overlay_without_diagnostics ) && array() === $local_overlay_without_diagnostics['writes'] && $request_count === count( $GLOBALS['ssi_webfont_requests'] ), 'an authoritative zero-face contract without diagnostics still suppresses legacy Google requests' );
+
+// Producer-shaped Blocks Engine #1129 contract observed in Coffee Festival.
+$direct_font_url   = 'https://cdn.coffee-festival.example/assets/ObsidianDisplay.woff2';
+$direct_source     = array( 'url' => $direct_font_url, 'format' => 'font', 'expected_digest' => null, 'observed_digest' => null );
+$direct_import_id  = 'webfont-import-coffee-festival';
+$direct_face_id    = 'webfont-face-coffee-festival';
+$direct_receipt_id = 'webfont-receipt-coffee-festival';
+$direct_plan = array(
+	'schema' => 'blocks-engine/php-transformer/font-materialization-plan/v1',
+	'provider' => 'direct',
+	'stylesheets' => array( array( 'path' => 'assets/css/fonts.css', 'content' => '@font-face{src:url("' . $direct_font_url . '")}') ),
+	'webfont_contract' => array(
+		'schema' => 'blocks-engine/webfont-materialization/v1',
+		'imports' => array( array( 'id' => $direct_import_id, 'provider' => 'direct', 'state' => 'declared', 'source' => $direct_source, 'provenance' => array( 'source_kind' => 'css_font_face', 'source_path' => 'assets/site.css', 'source_hash' => hash( 'sha256', 'coffee-festival' ), 'selector' => 'css:@font-face(1)' ), 'diagnostics' => array() ) ),
+		'faces' => array( array( 'id' => $direct_face_id, 'import_id' => $direct_import_id, 'receipt_id' => $direct_receipt_id, 'state' => 'declared', 'family' => 'Obsidian Display', 'style' => 'oblique', 'weight' => array( 'kind' => 'range', 'min' => 300, 'max' => 800 ), 'axes' => array( 'wght' => array( 'kind' => 'range', 'min' => 300, 'max' => 800 ) ), 'unicode_ranges' => array( 'U+0000-00FF' ), 'sources' => array( $direct_source ) ) ),
+		'receipts' => array( array( 'id' => $direct_receipt_id, 'face_id' => $direct_face_id, 'import_id' => $direct_import_id, 'required' => true, 'state' => 'pending_browser_readiness' ) ),
+		'svg_consumers' => array(),
+		'browser_readiness' => array( 'schema' => 'blocks-engine/webfont-browser-readiness/v1', 'required_receipt_ids' => array( $direct_receipt_id ), 'state' => 'required' ),
+		'diagnostics' => array(),
+	),
+);
+$direct_before = count( $GLOBALS['ssi_webfont_requests'] );
+$direct_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $direct_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
+$direct_writes = is_wp_error( $direct_overlay ) ? array() : $direct_overlay['writes'];
+$direct_css = (string) ( array_values( array_filter( $direct_writes, static fn( array $write ): bool => 'assets/css/embedded-fonts.css' === $write['target_path'] ) )[0]['content'] ?? '' );
+$assert( ! is_wp_error( $direct_overlay ) && array( $direct_font_url ) === array_slice( $GLOBALS['ssi_webfont_requests'], $direct_before ), 'source-proven Coffee Festival direct faces fetch exactly one font binary' );
+$assert( str_contains( $direct_css, 'font-family:"Obsidian Display"' ) && str_contains( $direct_css, 'font-style:oblique' ) && str_contains( $direct_css, 'font-weight:300 800' ) && str_contains( $direct_css, 'unicode-range:U+0000-00FF' ), 'source-proven Coffee Festival direct faces preserve typed typography' );
+$assert( ! str_contains( $direct_css, $direct_font_url ) && str_contains( $direct_css, '../fonts/' ), 'source-proven Coffee Festival direct faces emit local CSS rather than a remote stylesheet reference' );
+$assert( 'direct' === ( $direct_overlay['required_faces'][0]['source']['provider'] ?? '' ) && 'font' === ( $direct_overlay['required_faces'][0]['source']['format'] ?? '' ) && 'assets/site.css' === ( $direct_overlay['required_faces'][0]['source']['provenance']['source_path'] ?? '' ) && $direct_receipt_id === ( $direct_overlay['required_faces'][0]['receipt_id'] ?? '' ), 'direct receipts retain canonical producer provenance and readiness identity' );
+
+$invalid_direct_plan = $direct_plan;
+$invalid_direct_plan['webfont_contract']['imports'][0]['source']['format'] = 'css';
+$invalid_direct_before = count( $GLOBALS['ssi_webfont_requests'] );
+$invalid_direct_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $invalid_direct_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
+$assert( is_wp_error( $invalid_direct_overlay ) && 'static_site_importer_font_materialization_producer_import_invalid' === $invalid_direct_overlay->get_error_code() && $invalid_direct_before === count( $GLOBALS['ssi_webfont_requests'] ), 'direct imports with stylesheet source formats fail closed before any request' );
+
+$mismatched_direct_plan = $direct_plan;
+$mismatched_direct_plan['webfont_contract']['faces'][0]['sources'][0]['url'] = 'https://cdn.coffee-festival.example/assets/unbound.woff2';
+$mismatched_direct_before = count( $GLOBALS['ssi_webfont_requests'] );
+$mismatched_direct_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $mismatched_direct_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
+$assert( is_wp_error( $mismatched_direct_overlay ) && 'static_site_importer_font_materialization_producer_face_invalid' === $mismatched_direct_overlay->get_error_code() && $mismatched_direct_before === count( $GLOBALS['ssi_webfont_requests'] ), 'direct face sources that are not bound to their declared import fail closed before any request' );
+
+$receipt_mutations = array(
+	'exact import ID' => static function ( array &$contract ): void { $contract['receipts'][0]['import_id'] = 'webfont-import-other'; },
+	'required state' => static function ( array &$contract ): void { $contract['receipts'][0]['required'] = false; },
+	'exact face ID' => static function ( array &$contract ): void { $contract['receipts'][0]['face_id'] = 'webfont-face-other'; },
+	'unique receipt ID' => static function ( array &$contract ): void { $contract['receipts'][] = $contract['receipts'][0]; $contract['browser_readiness']['required_receipt_ids'][] = $contract['receipts'][0]['id']; },
+	'pending readiness state' => static function ( array &$contract ): void { $contract['receipts'][0]['state'] = 'completed'; },
+);
+foreach ( $receipt_mutations as $case => $mutate ) {
+	$receipt_plan = $direct_plan;
+	$mutate( $receipt_plan['webfont_contract'] );
+	$receipt_before = count( $GLOBALS['ssi_webfont_requests'] );
+	$receipt_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $receipt_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
+	$assert( is_wp_error( $receipt_overlay ) && in_array( $receipt_overlay->get_error_code(), array( 'static_site_importer_font_materialization_producer_receipts_invalid', 'static_site_importer_font_materialization_producer_face_invalid' ), true ) && $receipt_before === count( $GLOBALS['ssi_webfont_requests'] ), 'canonical receipt validation fails closed before any request for ' . $case );
+}
 
 $inferred_google_plan = $local_plan;
 $inferred_google_plan['imports'] = array(

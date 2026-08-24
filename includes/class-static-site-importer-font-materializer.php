@@ -36,7 +36,9 @@ final class Static_Site_Importer_Font_Materializer {
 		if ( is_wp_error( $producer_faces ) ) {
 			return $producer_faces;
 		}
-		$writes = self::stylesheet_writes( $plan );
+		// Typed contracts are self-contained in embedded-fonts.css. Retaining the
+		// producer projection would leave direct font URLs in a generated theme.
+		$writes = self::stylesheet_writes( $plan, null === $producer_faces );
 		if ( is_wp_error( $writes ) ) {
 			return $writes;
 		}
@@ -190,43 +192,63 @@ final class Static_Site_Importer_Font_Materializer {
 		}
 		$imports = array();
 		foreach ( $contract['imports'] ?? array() as $import ) {
-			$source = is_array( $import ) && is_array( $import['source'] ?? null ) ? $import['source'] : array();
-			if ( ! is_array( $import ) || 'declared' !== ( $import['state'] ?? '' ) || ! is_string( $import['id'] ?? null ) || 'css' !== ( $source['format'] ?? '' ) || ! is_string( $source['url'] ?? null ) || ! self::is_google_stylesheet_url( $source['url'] ) ) {
+			$source    = is_array( $import ) && is_array( $import['source'] ?? null ) ? $import['source'] : array();
+			$provider  = is_array( $import ) ? (string) ( $import['provider'] ?? '' ) : '';
+			$is_google = 'google_fonts' === $provider && 'css' === ( $source['format'] ?? '' ) && is_string( $source['url'] ?? null ) && self::is_google_stylesheet_url( $source['url'] );
+			$is_direct = 'direct' === $provider && 'font' === ( $source['format'] ?? '' ) && is_string( $source['url'] ?? null ) && self::is_direct_font_url( $source['url'] ) && self::valid_direct_provenance( $import['provenance'] ?? null );
+			if ( ! is_array( $import ) || 'declared' !== ( $import['state'] ?? '' ) || ! is_string( $import['id'] ?? null ) || ( ! $is_google && ! $is_direct ) ) {
 				$diagnostics[] = self::diagnostic( 'producer_import_invalid' );
 				return new WP_Error( 'static_site_importer_font_materialization_producer_import_invalid', '', $diagnostics );
 			}
 			$imports[ $import['id'] ] = array(
 				'id'              => $import['id'],
+				'provider'        => $provider,
+				'format'          => $source['format'],
 				'href'            => $source['url'],
 				'expected_digest' => $source['expected_digest'] ?? null,
+				'provenance'      => is_array( $import['provenance'] ?? null ) ? $import['provenance'] : array(),
 			);
 		}
-		$receipts = array();
-		foreach ( $contract['receipts'] ?? array() as $receipt ) {
-			if ( is_array( $receipt ) && 'pending_browser_readiness' === ( $receipt['state'] ?? '' ) && is_string( $receipt['id'] ?? null ) && is_string( $receipt['face_id'] ?? null ) ) {
-				$receipts[ $receipt['face_id'] ] = $receipt['id'];
-			}
+		$receipt_rows = $contract['receipts'] ?? array();
+		$receipts     = array();
+		$receipt_ids  = array();
+		if ( ! is_array( $receipt_rows ) || ! array_is_list( $receipt_rows ) ) {
+			$diagnostics[] = self::diagnostic( 'producer_readiness_receipts_invalid' );
+			return new WP_Error( 'static_site_importer_font_materialization_producer_receipts_invalid', '', $diagnostics );
 		}
-		if ( $required && array_values( $receipts ) !== array_values( $contract['browser_readiness']['required_receipt_ids'] ?? array() ) ) {
+		foreach ( $receipt_rows as $receipt ) {
+			if ( ! is_array( $receipt ) || ! is_string( $receipt['id'] ?? null ) || '' === $receipt['id'] || isset( $receipt_ids[ $receipt['id'] ] ) || ! is_string( $receipt['face_id'] ?? null ) || '' === $receipt['face_id'] || isset( $receipts[ $receipt['face_id'] ] ) || ! is_string( $receipt['import_id'] ?? null ) || '' === $receipt['import_id'] || true !== ( $receipt['required'] ?? null ) || 'pending_browser_readiness' !== ( $receipt['state'] ?? null ) ) {
+				$diagnostics[] = self::diagnostic( 'producer_readiness_receipts_invalid' );
+				return new WP_Error( 'static_site_importer_font_materialization_producer_receipts_invalid', '', $diagnostics );
+			}
+			$receipt_ids[ $receipt['id'] ]   = true;
+			$receipts[ $receipt['face_id'] ] = $receipt;
+		}
+		$receipt_ids_by_face = array_map( static fn( array $receipt ): string => $receipt['id'], $receipts );
+		$required_ids        = $contract['browser_readiness']['required_receipt_ids'] ?? null;
+		if ( ! $required || ! is_array( $required_ids ) || ! array_is_list( $required_ids ) || array_column( $receipt_rows, 'id' ) !== $required_ids ) {
 			$diagnostics[] = self::diagnostic( 'producer_readiness_receipts_invalid' );
 			return new WP_Error( 'static_site_importer_font_materialization_producer_receipts_invalid', '', $diagnostics );
 		}
 		$normalized = array();
 		foreach ( $faces as $face_index => $face ) {
-			if ( ! is_array( $face ) || 'declared' !== ( $face['state'] ?? '' ) || ! is_string( $face['id'] ?? null ) || ! isset( $imports[ $face['import_id'] ?? '' ] ) || ! isset( $receipts[ $face['id'] ] ) || ( $face['receipt_id'] ?? null ) !== $receipts[ $face['id'] ] || ! is_array( $face['axes'] ?? null ) || ! is_array( $face['unicode_ranges'] ?? null ) ) {
+			$import              = is_array( $face ) ? ( $imports[ $face['import_id'] ?? '' ] ?? null ) : null;
+			$direct_source_valid = ! is_array( $import ) || 'direct' !== $import['provider'] || self::direct_face_source_matches_import( $face, $import );
+			$receipt             = is_array( $face ) ? ( $receipts[ $face['id'] ?? '' ] ?? null ) : null;
+			if ( ! is_array( $face ) || 'declared' !== ( $face['state'] ?? '' ) || ! is_string( $face['id'] ?? null ) || ! isset( $imports[ $face['import_id'] ?? '' ] ) || ! is_array( $receipt ) || ( $face['receipt_id'] ?? null ) !== $receipt['id'] || $face['id'] !== $receipt['face_id'] || $face['import_id'] !== $receipt['import_id'] || ! is_array( $face['axes'] ?? null ) || ! is_array( $face['unicode_ranges'] ?? null ) || ! $direct_source_valid ) {
 				$diagnostics[] = self::diagnostic_with_detail(
 					'producer_face_or_receipt_invalid',
 					array(
 						'face_index'     => $face_index,
 						'face_id'        => is_array( $face ) && is_string( $face['id'] ?? null ) ? $face['id'] : null,
-						'invalid_fields' => self::invalid_producer_face_fields( $face, $imports, $receipts ),
+						'invalid_fields' => self::invalid_producer_face_fields( $face, $imports, $receipt_ids_by_face ),
 					)
 				);
 				return new WP_Error( 'static_site_importer_font_materialization_producer_face_invalid', '', $diagnostics );
 			}
 			$family = trim( (string) ( $face['family'] ?? '' ) );
 			$style  = (string) ( $face['style'] ?? 'normal' );
-			if ( '' === $family || ! in_array( $style, array( 'normal', 'italic' ), true ) || ! self::valid_weight( $face['weight'] ?? null ) || ! self::valid_axes( $face['axes'] ) ) {
+			if ( '' === $family || ! in_array( $style, array( 'normal', 'italic', 'oblique' ), true ) || ! self::valid_weight( $face['weight'] ?? null ) || ! self::valid_axes( $face['axes'] ) ) {
 				$diagnostics[] = self::diagnostic_with_detail(
 					'producer_face_invalid',
 					array(
@@ -241,14 +263,18 @@ final class Static_Site_Importer_Font_Materializer {
 			$face['import_ref'] = $face['import_id'];
 			$normalized[]       = $face;
 		}
-		$svg_consumers = self::svg_consumers( $contract, $normalized, $receipts, $resolved_plan, $diagnostics );
+		if ( count( $normalized ) !== count( $receipts ) || array_diff_key( $receipts, array_column( $normalized, null, 'id' ) ) ) {
+			$diagnostics[] = self::diagnostic( 'producer_readiness_receipts_invalid' );
+			return new WP_Error( 'static_site_importer_font_materialization_producer_receipts_invalid', '', $diagnostics );
+		}
+		$svg_consumers = self::svg_consumers( $contract, $normalized, $receipt_ids_by_face, $resolved_plan, $diagnostics );
 		if ( is_wp_error( $svg_consumers ) ) {
 			return $svg_consumers;
 		}
 		return array(
 			'faces'         => $normalized,
 			'imports'       => $imports,
-			'receipts'      => $receipts,
+			'receipts'      => $receipt_ids_by_face,
 			'svg_consumers' => $svg_consumers,
 		);
 	}
@@ -351,7 +377,7 @@ final class Static_Site_Importer_Font_Materializer {
 		if ( '' === trim( (string) ( $face['family'] ?? '' ) ) ) {
 			$invalid[] = 'family';
 		}
-		if ( ! in_array( (string) ( $face['style'] ?? 'normal' ), array( 'normal', 'italic' ), true ) ) {
+		if ( ! in_array( (string) ( $face['style'] ?? 'normal' ), array( 'normal', 'italic', 'oblique' ), true ) ) {
 			$invalid[] = 'style';
 		}
 		if ( ! self::valid_weight( $face['weight'] ?? null ) ) {
@@ -376,48 +402,64 @@ final class Static_Site_Importer_Font_Materializer {
 		foreach ( $producer['faces'] as $face ) {
 			$import = $producer['imports'][ $face['import_ref'] ];
 			$url    = (string) $import['href'];
-			if ( ! isset( $stylesheet_cache[ $url ] ) ) {
-				$response   = self::request( $url, self::CSS_LIMIT );
-				$stylesheet = is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ? '' : (string) wp_remote_retrieve_body( $response );
-				if ( '' === $stylesheet || strlen( $stylesheet ) > self::CSS_LIMIT || ! self::expected_digest_matches( (string) ( $import['expected_digest'] ?? '' ), $stylesheet ) ) {
-					$diagnostics[] = self::diagnostic( '' === $stylesheet ? 'producer_stylesheet_fetch_failed' : 'producer_stylesheet_digest_mismatch' );
-					return new WP_Error( 'static_site_importer_font_materialization_producer_stylesheet_failed', '', $diagnostics );
+			if ( 'direct' === $import['provider'] ) {
+				if ( ! isset( $asset_cache[ $url ] ) ) {
+					$asset = self::download_font_asset( $url, $total, $diagnostics, (string) ( $face['expected_sha256'] ?? '' ) );
+					if ( is_wp_error( $asset ) ) {
+						return $asset;
+					}
+					$asset_cache[ $url ]             = $asset;
+					$writes[ $asset['target_path'] ] = self::write( $asset['target_path'], $asset['payload'], $url, 'base64' );
 				}
-				$stylesheet_cache[ $url ] = array(
-					'css'             => $stylesheet,
-					'observed_digest' => 'sha256:' . hash( 'sha256', $stylesheet ),
-				);
-			}
-			$blocks = self::matching_producer_blocks( $stylesheet_cache[ $url ]['css'], $face );
-			if ( empty( $blocks ) ) {
-				$diagnostics[] = self::diagnostic( 'producer_face_source_missing' );
-				return new WP_Error( 'static_site_importer_font_materialization_producer_face_source_missing', '', $diagnostics );
-			}
-			$assets = array();
-			foreach ( $blocks as $block ) {
-				$rewritten     = $block;
-				$svg_rewritten = $block;
-				foreach ( self::font_urls( $block ) as $source_url ) {
-					if ( ! isset( $asset_cache[ $source_url ] ) ) {
-						$asset = self::download_font_asset( $source_url, $total, $diagnostics, (string) ( $face['expected_sha256'] ?? '' ) );
-						if ( is_wp_error( $asset ) ) {
-							return $asset;
+				$asset                           = $asset_cache[ $url ];
+				$block                           = self::direct_font_face_css( $face, $asset );
+				$css[ hash( 'sha256', $block ) ] = $block;
+				$svg_faces[ $face['id'] ][ hash( 'sha256', $block ) ] = str_replace( '../fonts/' . basename( $asset['target_path'] ), 'data:font/' . $asset['format'] . ';base64,' . base64_encode( $asset['payload'] ), $block ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes a fetched font asset for a data URL.
+				$assets = array( self::asset_receipt( $asset, $url ) );
+			} else {
+				if ( ! isset( $stylesheet_cache[ $url ] ) ) {
+					$response   = self::request( $url, self::CSS_LIMIT );
+					$stylesheet = is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ? '' : (string) wp_remote_retrieve_body( $response );
+					if ( '' === $stylesheet || strlen( $stylesheet ) > self::CSS_LIMIT || ! self::expected_digest_matches( (string) ( $import['expected_digest'] ?? '' ), $stylesheet ) ) {
+						$diagnostics[] = self::diagnostic( '' === $stylesheet ? 'producer_stylesheet_fetch_failed' : 'producer_stylesheet_digest_mismatch' );
+						return new WP_Error( 'static_site_importer_font_materialization_producer_stylesheet_failed', '', $diagnostics );
+					}
+					$stylesheet_cache[ $url ] = array(
+						'css'             => $stylesheet,
+						'observed_digest' => 'sha256:' . hash( 'sha256', $stylesheet ),
+					);
+				}
+				$blocks = self::matching_producer_blocks( $stylesheet_cache[ $url ]['css'], $face );
+				if ( empty( $blocks ) ) {
+					$diagnostics[] = self::diagnostic( 'producer_face_source_missing' );
+					return new WP_Error( 'static_site_importer_font_materialization_producer_face_source_missing', '', $diagnostics );
+				}
+				$assets = array();
+				foreach ( $blocks as $block ) {
+					$rewritten     = $block;
+					$svg_rewritten = $block;
+					foreach ( self::font_urls( $block ) as $source_url ) {
+						if ( ! isset( $asset_cache[ $source_url ] ) ) {
+							$asset = self::download_font_asset( $source_url, $total, $diagnostics, (string) ( $face['expected_sha256'] ?? '' ) );
+							if ( is_wp_error( $asset ) ) {
+								return $asset;
+							}
+							$asset_cache[ $source_url ]      = $asset;
+							$writes[ $asset['target_path'] ] = self::write( $asset['target_path'], $asset['payload'], $source_url, 'base64' );
 						}
-						$asset_cache[ $source_url ]      = $asset;
-						$writes[ $asset['target_path'] ] = self::write( $asset['target_path'], $asset['payload'], $source_url, 'base64' );
+						$asset = $asset_cache[ $source_url ];
+						if ( '' !== (string) ( $face['expected_sha256'] ?? '' ) && ! hash_equals( strtolower( (string) $face['expected_sha256'] ), $asset['observed_sha256'] ) ) {
+							$diagnostics[] = self::diagnostic( 'producer_font_digest_mismatch' );
+							return new WP_Error( 'static_site_importer_font_materialization_producer_font_digest_mismatch', '', $diagnostics );
+						}
+						$rewritten     = str_replace( $source_url, '../fonts/' . basename( $asset['target_path'] ), $rewritten );
+						$svg_rewritten = str_replace( $source_url, 'data:font/' . $asset['format'] . ';base64,' . base64_encode( $asset['payload'] ), $svg_rewritten ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes a fetched font asset for a data URL.
+						// Writes retain the exact bytes; receipts retain only durable evidence.
+						$assets[] = self::asset_receipt( $asset, $source_url );
 					}
-					$asset = $asset_cache[ $source_url ];
-					if ( '' !== (string) ( $face['expected_sha256'] ?? '' ) && ! hash_equals( strtolower( (string) $face['expected_sha256'] ), $asset['observed_sha256'] ) ) {
-						$diagnostics[] = self::diagnostic( 'producer_font_digest_mismatch' );
-						return new WP_Error( 'static_site_importer_font_materialization_producer_font_digest_mismatch', '', $diagnostics );
-					}
-					$rewritten     = str_replace( $source_url, '../fonts/' . basename( $asset['target_path'] ), $rewritten );
-					$svg_rewritten = str_replace( $source_url, 'data:font/' . $asset['format'] . ';base64,' . base64_encode( $asset['payload'] ), $svg_rewritten ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes a fetched font asset for a data URL.
-					// Writes retain the exact bytes; receipts retain only durable evidence.
-					$assets[] = self::asset_receipt( $asset, $source_url );
+					$css[ hash( 'sha256', $rewritten ) ]                          = $rewritten;
+					$svg_faces[ $face['id'] ][ hash( 'sha256', $svg_rewritten ) ] = $svg_rewritten;
 				}
-				$css[ hash( 'sha256', $rewritten ) ]                          = $rewritten;
-				$svg_faces[ $face['id'] ][ hash( 'sha256', $svg_rewritten ) ] = $svg_rewritten;
 			}
 			$receipt_face         = array(
 				'face_id'                => $face['id'],
@@ -428,7 +470,13 @@ final class Static_Site_Importer_Font_Materializer {
 				'weight'                 => $face['weight'],
 				'axes'                   => $face['axes'],
 				'unicode_ranges'         => $face['unicode_ranges'],
-				'import_observed_digest' => $stylesheet_cache[ $url ]['observed_digest'],
+				'import_observed_digest' => $stylesheet_cache[ $url ]['observed_digest'] ?? null,
+				'source'                 => array(
+					'provider'   => $import['provider'],
+					'format'     => $import['format'],
+					'url'        => $url,
+					'provenance' => $import['provenance'],
+				),
 				'status'                 => 'materialized',
 				'assets'                 => array_values( array_unique( $assets, SORT_REGULAR ) ),
 			);
@@ -584,6 +632,36 @@ final class Static_Site_Importer_Font_Materializer {
 		);
 	}
 
+	/** A direct face must bind its typed source to the declared direct import. */
+	private static function direct_face_source_matches_import( array $face, array $import ): bool {
+		$sources = $face['sources'] ?? null;
+		return is_array( $sources ) && 1 === count( $sources ) && is_array( $sources[0] ?? null ) && 'font' === ( $sources[0]['format'] ?? null ) && ( $import['href'] ?? null ) === ( $sources[0]['url'] ?? null );
+	}
+
+	/** Direct producer sources are restricted to standalone HTTPS font binaries. */
+	private static function is_direct_font_url( string $url ): bool {
+		$parts = wp_parse_url( $url );
+		$path  = is_array( $parts ) ? strtolower( (string) ( $parts['path'] ?? '' ) ) : '';
+		return is_array( $parts ) && 'https' === strtolower( (string) ( $parts['scheme'] ?? '' ) ) && ! empty( $parts['host'] ) && ( ! isset( $parts['port'] ) || 443 === (int) $parts['port'] ) && ! isset( $parts['user'] ) && ! isset( $parts['pass'] ) && 1 === preg_match( '/\.woff2?$/', $path );
+	}
+
+	/** Direct URLs require the producer's immutable CSS @font-face provenance. */
+	private static function valid_direct_provenance( mixed $provenance ): bool {
+		return is_array( $provenance ) && 'css_font_face' === ( $provenance['source_kind'] ?? null ) && is_string( $provenance['source_path'] ?? null ) && '' !== $provenance['source_path'] && self::valid_sha256( $provenance['source_hash'] ?? null ) && is_string( $provenance['selector'] ?? null ) && 1 === preg_match( '/^css:@font-face\([1-9][0-9]*\)$/', $provenance['selector'] );
+	}
+
+	/** Reconstruct the direct face from typed producer data with a local asset URL. */
+	private static function direct_font_face_css( array $face, array $asset ): string {
+		$weight = 'range' === $face['weight']['kind'] ? $face['weight']['min'] . ' ' . $face['weight']['max'] : (string) $face['weight']['value'];
+		$css    = '@font-face{font-family:"' . addcslashes( (string) $face['family'], "\\\"\n\r" ) . '";font-style:' . $face['style'] . ';font-weight:' . $weight . ';src:url("../fonts/' . basename( $asset['target_path'] ) . '") format("' . $asset['format'] . '");';
+		foreach ( $face['unicode_ranges'] as $range ) {
+			if ( is_string( $range ) && 1 === preg_match( '/^U\+[0-9A-F?-]+$/i', $range ) ) {
+				$css .= 'unicode-range:' . $range . ';';
+			}
+		}
+		return $css . '}';
+	}
+
 	/** @param array<int,array<string,mixed>> $writes @param array<int,array<string,mixed>> $required_faces @param array<int,array<string,string>> $diagnostics */
 	private static function with_runtime_registration( array $writes, array $resolved_plan, array $required_faces, array $diagnostics, array $faces = array(), array $svg_receipts = array(), array $svg_consumers = array() ) {
 		$bootstrap = self::canonical_write_content( $resolved_plan['writes'] ?? array(), 'functions.php' );
@@ -595,7 +673,7 @@ final class Static_Site_Importer_Font_Materializer {
 		$bootstrap .= "    wp_enqueue_script( 'static-site-importer-font-readiness', get_theme_file_uri( 'assets/js/font-readiness.js' ), array(), null, false );\n";
 		$bootstrap .= "} );\n";
 		$writes[]   = self::write( 'functions.php', $bootstrap, 'theme.font_materialization' );
-		$writes[] = self::write( 'assets/js/font-readiness.js', self::readiness_script( $required_faces ), 'theme.font_materialization' );
+		$writes[]   = self::write( 'assets/js/font-readiness.js', self::readiness_script( $required_faces ), 'theme.font_materialization' );
 		return array(
 			'writes'         => $writes,
 			'diagnostics'    => $diagnostics,
@@ -613,7 +691,10 @@ final class Static_Site_Importer_Font_Materializer {
 	}
 
 	/** @return array<int,array<string,string>>|WP_Error */
-	private static function stylesheet_writes( array $plan ) {
+	private static function stylesheet_writes( array $plan, bool $include_stylesheets = true ) {
+		if ( ! $include_stylesheets ) {
+			return array();
+		}
 		$rows = isset( $plan['stylesheets'] ) && is_array( $plan['stylesheets'] ) ? $plan['stylesheets'] : array();
 		if ( empty( $rows ) && isset( $plan['css'] ) && is_scalar( $plan['css'] ) && '' !== trim( (string) $plan['css'] ) ) {
 			$rows[] = array(
