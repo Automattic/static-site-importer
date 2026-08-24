@@ -2222,7 +2222,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				)
 			);
 		}
-		if ( ! is_array( $report ) || 'blocks-engine/php-transformer/editability-report/v1' !== ( $report['schema'] ?? null ) || ! is_array( $report['metrics'] ?? null ) || ! is_array( $report['block_types'] ?? null ) || ! is_array( $report['signals'] ?? null ) || ! is_array( $report['signal_totals'] ?? null ) ) {
+		if ( ! is_array( $report ) || 'blocks-engine/php-transformer/editability-report/v2' !== ( $report['schema'] ?? null ) || ! is_array( $report['metrics'] ?? null ) || ! is_array( $report['block_types'] ?? null ) || ! is_array( $report['signals'] ?? null ) || ! is_array( $report['signal_totals'] ?? null ) ) {
 			return self::rejected_editability_report_admission( $base, 'editability_report_schema_invalid' );
 		}
 		$bound_hash = $quality['editability_report_plan_hash'] ?? null;
@@ -2230,8 +2230,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			return self::rejected_editability_report_admission( $base, 'editability_report_plan_hash_invalid' );
 		}
 		$unbound_plan = $plan;
-		unset( $unbound_plan['quality']['editability_report'], $unbound_plan['quality']['editability_report_plan_hash'], $unbound_plan['quality']['editability_report_required'] );
-		$expected_hash = self::hash( $unbound_plan );
+		unset( $unbound_plan['plan_identity'], $unbound_plan['quality']['editability_report'], $unbound_plan['quality']['editability_report_plan_hash'], $unbound_plan['quality']['editability_report_required'] );
+		$expected_hash = WordPressSitePlan::planIdentity( $unbound_plan )['hash'];
 		if ( ! hash_equals( $expected_hash, $bound_hash ) ) {
 			return self::rejected_editability_report_admission( $base, 'editability_report_plan_hash_mismatch' );
 		}
