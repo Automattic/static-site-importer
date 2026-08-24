@@ -372,8 +372,12 @@ class Static_Site_Importer_Companion_Plugin {
 		$has_render    = ( isset( $block['render'] ) && is_scalar( $block['render'] ) ) || '' !== $renderer;
 		$render        = isset( $block['render'] ) && is_scalar( $block['render'] ) ? (string) $block['render'] : '';
 		$files         = array();
-		if ( $has_render ) {
-			$files['render.php'] = '' !== $renderer ? self::typed_renderer( $renderer ) : self::normalize_render( $render );
+		if ( '' !== $renderer ) {
+			$files['render.php'] = self::typed_renderer( $renderer );
+		} elseif ( self::has_editable_content_render( $block ) ) {
+			$files['render.php'] = self::editable_content_renderer();
+		} elseif ( $has_render ) {
+			$files['render.php'] = self::normalize_render( $render );
 		}
 
 		// Carried static assets (e.g. block stylesheets or a hand-written
@@ -783,6 +787,23 @@ class Static_Site_Importer_Companion_Plugin {
 		// Static source markup is data, never executable template source. The only
 		// PHP in this file is SSI-generated code that emits an escaped literal.
 		return "<?php\n/** Generated companion block render. */\n\necho '" . self::php_single_quote( $render ) . "'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static source markup was validated before compilation.\n";
+	}
+
+	/** Whether static payload markup represents an editable per-instance content attribute. */
+	private static function has_editable_content_render( array $block ): bool {
+		$content_schema = $block['block_json']['attributes']['content'] ?? null;
+		return isset( $block['render'] ) && is_scalar( $block['render'] ) && is_array( $content_schema ) && 'string' === ( $content_schema['type'] ?? null );
+	}
+
+	/** Build the SSI-owned safe boundary for generic editable companion content. */
+	private static function editable_content_renderer(): string {
+		return <<<'PHP'
+<?php
+/** Generated editable-content companion block render. */
+
+$content = is_string( $attributes['content'] ?? null ) ? $attributes['content'] : '';
+echo wp_kses_post( $content ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Sanitized at this server-render boundary.
+PHP;
 	}
 
 	/**

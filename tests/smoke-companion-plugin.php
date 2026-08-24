@@ -120,6 +120,28 @@ if ( ! function_exists( 'wp_kses' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_kses_post' ) ) {
+	function wp_kses_post( string $content ): string {
+		$global = array(
+			'aria-*' => true,
+			'class'  => true,
+			'data-*' => true,
+			'id'     => true,
+			'style'  => true,
+		);
+		return wp_kses(
+			$content,
+			array(
+				'a'    => array_merge( $global, array( 'href' => true, 'rel' => true, 'target' => true ) ),
+				'div'  => $global,
+				'img'  => array_merge( $global, array( 'alt' => true, 'height' => true, 'src' => true, 'width' => true ) ),
+				'p'    => $global,
+				'span' => $global,
+			)
+		);
+	}
+}
+
 if ( ! function_exists( 'sanitize_title' ) ) {
 	function sanitize_title( string $title ): string {
 		$title = strtolower( trim( $title ) );
@@ -449,7 +471,29 @@ if ( is_array( $descriptor ) ) {
 	$render = $files['ssi-example-site/blocks/custom-hero/render.php'] ?? '';
 	$assert( '' !== $render, 'render-php-emitted' );
 	$assert( str_starts_with( ltrim( $render ), '<?php' ), 'render-php-opens-with-php-tag' );
-	$assert( str_contains( $render, "echo '<div class=\"ssi-hero\">Example hero</div>';" ) && ! str_contains( $render, 'system(' ), 'render-php-emits-static-source-markup-only' );
+	$assert( str_contains( $render, 'Generated editable-content companion block render' ) && str_contains( $render, 'wp_kses_post' ) && ! str_contains( $render, 'Example hero' ), 'editable-render-uses-ssi-owned-safe-boundary' );
+
+	$render_frontend = static function ( string $template, array $attributes ): string {
+		$content = '';
+		$block   = null;
+		ob_start();
+		eval( '?>' . $template );
+		return (string) ob_get_clean();
+	};
+	$canonical_url  = 'https://example.test/wp-content/themes/generated-example/assets/media/hero.jpg';
+	$imported_output = $render_frontend(
+		$render,
+		array( 'content' => '<div class="ssi-hero"><img src="' . $canonical_url . '" alt=""><p>Imported hero</p></div>' )
+	);
+	$assert( str_contains( $imported_output, $canonical_url ) && ! str_contains( $imported_output, 'Example hero' ), 'editable-render-outputs-imported-canonicalized-url', $imported_output );
+
+	$edited_url    = 'https://example.test/wp-content/themes/generated-example/assets/media/edited-hero.jpg';
+	$edited_output = $render_frontend(
+		$render,
+		array( 'content' => '<div class="ssi-hero" onclick="alert(1)"><img src="' . $edited_url . '" alt=""><p>Edited hero</p><script>alert(1)</script></div>' )
+	);
+	$assert( str_contains( $edited_output, $edited_url ) && str_contains( $edited_output, 'Edited hero' ) && ! str_contains( $edited_output, $canonical_url ), 'editable-render-reflects-saved-content-edit', $edited_output );
+	$assert( ! str_contains( $edited_output, '<script' ) && ! str_contains( $edited_output, 'onclick' ), 'editable-render-sanitizes-current-content-at-server-boundary', $edited_output );
 
 	// Preserved island JS (#496) is separate carried JS and still rides along.
 	$island_files = array_filter( array_keys( $files ), static fn ( string $path ): bool => str_contains( $path, '/islands/' ) && str_ends_with( $path, '.js' ) );
