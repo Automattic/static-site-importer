@@ -2090,7 +2090,15 @@ $contract_changed_quality_error = $final_quality_gate->invoke(
 );
 $contract_changed_quality_receipt = is_wp_error( $contract_changed_quality_error ) ? $contract_changed_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
 $assert( is_wp_error( $contract_changed_quality_error ) && 5 === $provider_rollbacks && 'rolled_back' === ( $contract_changed_quality_receipt['entity_compensation']['entities'][0]['rollback']['status'] ?? '' ) && true === ( $contract_changed_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ) && ( $required_changed_quality_receipt['entity_compensation']['binding']['rollback_contracts_hash'] ?? '' ) !== ( $contract_changed_quality_receipt['entity_compensation']['binding']['rollback_contracts_hash'] ?? '' ), 'a changed rollback contract cannot reuse compensation evidence and retains bounded rollback status' );
-$ordered_rollback_plan                = $plan;
+$ordered_rollback_plan                = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'ordered-rollback/index.html',
+		'files'      => array(
+			'ordered-rollback/index.html' => '<main><h1>Rollback home</h1></main>',
+			'ordered-rollback/child.html' => '<main><h1>Rollback child</h1></main>',
+		),
+	)
+)->toArray()['source_reports']['wordpress_site_plan'];
 $ordered_rollback_options             = array(
 	'stylesheet'    => 'before-child-theme',
 	'template'      => 'before-parent-theme',
@@ -2150,7 +2158,13 @@ $ordered_quality_receipt['plan']['diagnostics'] = $deferred_form_receipt['plan']
 $ordered_retry_error = $final_quality_gate->invoke( null, $ordered_quality_receipt, array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ), $ordered_lifecycle, array(), $ordered_reports );
 $assert( is_wp_error( $ordered_retry_error ) && $events_before_ordered_retry === $GLOBALS['ssi_plan_rollback_events'] && array( 'mutated' ) === $ordered_provider_calls, 'ordered production rollback preserves journal and provider compensation idempotence on retry' );
 unset( $GLOBALS['ssi_plan_rollback_events'] );
-$partial_rollback_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'partial-rollback-journal', 'defer_materialization_commit' => true ) );
+$partial_rollback_plan    = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'partial-rollback/index.html',
+		'files'      => array( 'partial-rollback/index.html' => '<main><h1>Partial rollback</h1></main>' ),
+	)
+)->toArray()['source_reports']['wordpress_site_plan'];
+$partial_rollback_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $partial_rollback_plan, array( 'slug' => 'partial-rollback-journal', 'defer_materialization_commit' => true ) );
 $partial_rollback_file    = array_key_last( $partial_rollback_receipt['transaction']->state['rollback']['files'] ?? array() );
 $GLOBALS['ssi_plan_rollback_fail_file'] = true;
 $partial_rollback_result = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $partial_rollback_receipt, 'injected_rollback_failure' );
@@ -2413,7 +2427,12 @@ foreach ( $font_before as $path => $bytes ) {
 
 $repeat = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan' ) );
 $assert( 'completed' === $repeat['status'], 'reconciliation repeat completes' );
-$assert( count( $GLOBALS['ssi_plan_posts'] ) === count( $plan['pages'] ), 'reconciliation preserves source page identity' );
+$plan_page_identities   = array_column( $plan['pages'], 'reconciliation_identity' );
+$reconciled_plan_posts = array_filter(
+	$GLOBALS['ssi_plan_meta'],
+	static fn( array $meta ): bool => in_array( $meta['_static_site_importer_reconciliation_identity'] ?? '', $plan_page_identities, true )
+);
+$assert( count( $reconciled_plan_posts ) === count( $plan['pages'] ), 'reconciliation preserves source page identity' );
 
 $before_posts      = count( $GLOBALS['ssi_plan_posts'] );
 $before_files      = count( glob( $GLOBALS['ssi_plan_root'] . '/reject/**/*' ) ?: array() );
