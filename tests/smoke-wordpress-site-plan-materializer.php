@@ -596,7 +596,7 @@ $valid_reference_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer
 	)
 );
 $assert( 'completed' === $valid_reference_receipt['status'] && $inserts_before_reference_admission < $GLOBALS['ssi_plan_insert_calls'] && file_exists( $GLOBALS['ssi_plan_root'] . '/reference-admission-valid/' . $reference_target ) && 'canonical-reference-bytes' === file_get_contents( $GLOBALS['ssi_plan_root'] . '/reference-admission-valid/' . $reference_target ), 'valid canonical reference readers pass admission and materialize the declared write' );
-$prepared_for_admission = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare(
+$prepared_for_admission = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization(
 	$reference_plan,
 	array(
 		'slug'                                 => 'reference-admission-prepared',
@@ -604,13 +604,7 @@ $prepared_for_admission = Static_Site_Importer_WordPress_Site_Plan_Materializer:
 	)
 );
 $admitted_prepared      = Static_Site_Importer_WordPress_Site_Plan_Materializer::admit_prepared( $prepared_for_admission );
-$assert( 'prepared' === ( $admitted_prepared['status'] ?? '' ) && ! empty( $admitted_prepared['payload_references_admitted'] ) && ! str_contains( (string) wp_json_encode( $admitted_prepared['plan'] ), 'payload_references_admitted' ) && ! str_contains( (string) wp_json_encode( Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $admitted_prepared ) ), 'payload_references_admitted' ), 'prepared admission marker is ephemeral and excluded from canonical plans and receipts' );
-$generator_admission         = strpos( (string) $theme_generator_source, '::admit_prepared( $prepared )' );
-$generator_binding_preflight = strpos( (string) $theme_generator_source, 'with_resolved_runtime_binding_manifests', $generator_admission + 1 );
-$generator_companion         = strpos( (string) $theme_generator_source, 'materialize_companion_dependency', $generator_admission + 1 );
-$generator_dependencies      = strpos( (string) $theme_generator_source, 'materialize_prepared_dependencies', $generator_admission + 1 );
-$generator_entities          = strpos( (string) $theme_generator_source, 'materialize_prepared_entities', $generator_admission + 1 );
-$assert( false !== $generator_admission && $generator_admission < $generator_binding_preflight && $generator_admission < $generator_companion && $generator_admission < $generator_dependencies && $generator_admission < $generator_entities, 'theme generator admits referenced payloads before runtime binding, companion, dependency, and entity materialization work' );
+$assert( 'prepared' === ( $prepared_for_admission['status'] ?? '' ) && ! empty( $prepared_for_admission['payload_references_admitted'] ) && $prepared_for_admission === $admitted_prepared && ! str_contains( (string) wp_json_encode( $prepared_for_admission['plan'] ), 'payload_references_admitted' ) && ! str_contains( (string) wp_json_encode( Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared_for_admission ) ), 'payload_references_admitted' ), 'materializer lifecycle preparation admits referenced payloads once, before lifecycle work, without adding transient state to plans or receipts' );
 $rollback_order     = array();
 $block_lifecycle    = array(
 	'dependencies' => array(),

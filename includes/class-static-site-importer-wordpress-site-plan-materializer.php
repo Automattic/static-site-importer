@@ -37,11 +37,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	 * @return array<string,mixed> Receipt.
 	 */
 	public static function materialize( array $plan, array $args = array() ): array {
-		$prepared = self::prepare( $plan, $args );
-		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
-			return $prepared['receipt'];
-		}
-		$prepared = self::admit_prepared( $prepared );
+		$prepared = self::prepare_for_materialization( $plan, $args );
 		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
 			return $prepared['receipt'];
 		}
@@ -203,6 +199,12 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'immutable_projection_reused' => false,
 		);
 		return $state;
+	}
+
+	/** Prepare the canonical plan state that may safely precede provider provisioning. */
+	public static function prepare_for_materialization( array $plan, array $args = array() ): array {
+		$prepared = self::prepare( $plan, $args );
+		return 'prepared' === ( $prepared['status'] ?? '' ) ? self::admit_prepared( $prepared ) : $prepared;
 	}
 
 	/**

@@ -307,17 +307,11 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$args['report_destinations'] = $report_destinations;
 		$args['external_report_destinations'] = $external_report_destinations;
-		$prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare( $plan, $args );
+		$prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization( $plan, $args );
 		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
 			$receipt = isset( $prepared['receipt'] ) && is_array( $prepared['receipt'] ) ? $prepared['receipt'] : array();
 			$error   = $receipt['errors'][0] ?? array();
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan destination preflight failed.' ), $receipt );
-		}
-		$prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::admit_prepared( $prepared );
-		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
-			$receipt = isset( $prepared['receipt'] ) && is_array( $prepared['receipt'] ) ? $prepared['receipt'] : array();
-			$error   = $receipt['errors'][0] ?? array();
-			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan payload admission failed.' ), $receipt );
 		}
 		$lifecycle = self::with_resolved_runtime_binding_manifests( $lifecycle, $prepared['resolved'] ?? array() );
 		$classic = Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === ( $args['theme_materialization'] ?? null );
