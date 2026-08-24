@@ -185,6 +185,11 @@ class Static_Site_Importer_Theme_Generator {
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
+		return self::project_materialization_result( $result, $args );
+	}
+
+	/** Project one completed canonical lifecycle into the compatibility result envelope. */
+	private static function project_materialization_result( array $result, array $args ) {
 		try {
 			return self::public_result_from_wordpress_site_plan_receipt( $result['receipt'], $args, $result['lifecycle'], $result['dependencies'], $result['entities'] );
 		} catch ( Throwable $error ) {
@@ -195,7 +200,7 @@ class Static_Site_Importer_Theme_Generator {
 				'message' => $error->getMessage(),
 			);
 			$stage = 'report_persistence' === (string) ( $args['inject_materialization_failure'] ?? '' ) ? 'report_persistence' : 'public_projection';
-			Static_Site_Importer_WordPress_Site_Plan_Materializer::append_entity_compensation( $receipt, $result['lifecycle'], $result['entities'], $stage, 'static_site_importer_projection_write_failed' );
+			self::append_entity_compensation( $receipt, $result['lifecycle'], $result['entities'], $stage, 'static_site_importer_projection_write_failed' );
 			return new WP_Error( 'static_site_importer_projection_write_failed', 'Website materialization completed partially because a public projection could not be written.', $receipt );
 		}
 	}
@@ -829,7 +834,7 @@ class Static_Site_Importer_Theme_Generator {
 			} elseif ( ! empty( $existing_compensation ) ) {
 				$receipt['previous_entity_compensation_binding_mismatch'] = true;
 			}
-			Static_Site_Importer_WordPress_Site_Plan_Materializer::append_entity_compensation( $receipt, $lifecycle, $entities, 'final_quality_admission', 'static_site_importer_quality_gate_failed' );
+			self::append_entity_compensation( $receipt, $lifecycle, $entities, 'final_quality_admission', 'static_site_importer_quality_gate_failed' );
 			return new WP_Error(
 				'static_site_importer_quality_gate_failed',
 				'Website artifact did not pass the final quality gate after provider receipt reconciliation.',

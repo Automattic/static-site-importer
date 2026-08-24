@@ -413,7 +413,7 @@ $assert( 'rejected' === $failed_policy_receipt['status'] && 'editability_policy_
 // Gutenberg gaps are SSI receipt/report extensions and must never alter the
 // compiler-owned plan, whose schema and hash are producer contracts.
 $canonical_plan = $plan;
-$project_gaps   = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'project_gutenberg_gaps' );
+$project_gaps   = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'project_gutenberg_gaps' );
 $gaps           = $project_gaps->invoke(
 	null,
 	array(
@@ -650,6 +650,8 @@ $block_late_failure = Static_Site_Importer_WordPress_Site_Plan_Materializer::mat
 	array(),
 	array()
 );
+$project_materialization_result = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'project_materialization_result' );
+$block_late_failure = $project_materialization_result->invoke( null, $block_late_failure, $block_prepared['args'] );
 $assert( is_wp_error( $block_late_failure ) && 'static_site_importer_projection_write_failed' === $block_late_failure->get_error_code() && array( 'form', 'woo' ) === $rollback_order, 'block-mode Woo and form entities compensate in reverse order when report persistence fails after materialization' );
 $deferred_rollback_order = array();
 $woo_snapshot_restored   = false;
@@ -694,16 +696,13 @@ $deferred_quality_lifecycle = array(
 	),
 );
 $posts_before_deferred_quality = $GLOBALS['ssi_plan_posts'];
-$deferred_quality_failure      = $theme_generator_materialize->invoke(
-	null,
-	array(),
-	array( 'slug' => 'deferred-quality-compensation', 'seed_entities' => true, 'font_materialization' => array(), 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+$deferred_quality_prepared     = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization(
 	$deferred_quality_plan,
-	array(),
-	null,
-	$deferred_quality_lifecycle,
-	array()
+	array( 'slug' => 'deferred-quality-compensation', 'seed_entities' => true, 'font_materialization' => array(), 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
 );
+$deferred_quality_receipt = $deferred_quality_prepared['receipt'] ?? array();
+$deferred_quality_error   = $deferred_quality_receipt['errors'][0] ?? array();
+$deferred_quality_failure = new WP_Error( (string) ( $deferred_quality_error['code'] ?? '' ), (string) ( $deferred_quality_error['message'] ?? '' ), $deferred_quality_receipt );
 $deferred_quality_receipt = is_wp_error( $deferred_quality_failure ) ? $deferred_quality_failure->get_error_data() : array();
 $assert( is_wp_error( $deferred_quality_failure ) && 'editability_policy_failed' === $deferred_quality_failure->get_error_code() && array() === $deferred_rollback_order && ! $woo_snapshot_restored && $posts_before_deferred_quality === $GLOBALS['ssi_plan_posts'] && 'editability_policy_failed' === ( $deferred_quality_receipt['errors'][0]['code'] ?? '' ), 'failed canonical editability policy rejects before provider mutation or rollback work' );
 
@@ -758,10 +757,7 @@ foreach ( array(
 	),
 ) as $strategy => $fixture ) {
 	$GLOBALS['ssi_plan_woo_cleanup_failures'] = true;
-	$late_failure                             = $theme_generator_materialize->invoke(
-		null,
-		array(),
-		array_merge(
+	$late_args                                = array_merge(
 			array(
 				'slug'                           => 'woo-late-' . $strategy,
 				'seed_entities'                  => true,
@@ -769,13 +765,19 @@ foreach ( array(
 				'inject_materialization_failure' => 'report_persistence',
 			),
 			$fixture['args']
-		),
+		);
+	$late_prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization(
 		$fixture['plan'],
-		array(),
-		null,
+		$late_args
+	);
+	$late_failure = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared_lifecycle(
+		$late_prepared,
 		$woo_late_failure_lifecycle,
+		null,
+		array(),
 		array()
 	);
+	$late_failure = $project_materialization_result->invoke( null, $late_failure, $late_prepared['args'] );
 	$late_receipt                             = is_wp_error( $late_failure ) ? $late_failure->get_error_data() : array();
 	$rollback                                 = $late_receipt['entity_compensation']['entities'][0] ?? array();
 	$diagnostics                              = $late_receipt['diagnostics'] ?? array();
@@ -859,7 +861,7 @@ $overlay            = array(
 	'sha256' => hash( 'sha256', $overlay_css ),
 	'bytes'  => strlen( $overlay_css ),
 );
-$collect_overlays   = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'provider_layout_overlays_from_entity_reports' );
+$collect_overlays   = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'provider_layout_overlays_from_entity_reports' );
 $collected_overlays = $collect_overlays->invoke( null, array( array( 'forms' => array( array( 'provider_layout_overlay_css' => array() ), array( 'provider_layout_overlay_css' => $overlay ), array( 'provider_layout_overlay_css' => array( 'malformed' => true ) ) ) ) ) );
 $assert( array( $overlay, array( 'malformed' => true ) ) === $collected_overlays, 'provider layout collection omits empty absence sentinels without hiding non-empty overlays from strict validation' );
 $overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
@@ -1366,8 +1368,8 @@ $resolved_binding_plan     = array(
 	),
 	'runtime_declarations' => array( $resolved_declaration ),
 );
-$resolve_binding_manifests = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'with_resolved_runtime_binding_manifests' );
-$preflight_bindings        = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'preflight_runtime_entity_binding_anchors' );
+$resolve_binding_manifests = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'with_resolved_runtime_binding_manifests' );
+$preflight_bindings        = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'preflight_runtime_entity_binding_anchors' );
 $assert( is_wp_error( $preflight_bindings->invoke( null, $resolved_binding_plan, $token_lifecycle, array() ) ), 'canonical token anchors fail against destination-specific resolved page URLs before projection' );
 $resolved_lifecycle = $resolve_binding_manifests->invoke( null, $token_lifecycle, $resolved_binding_plan );
 $assert( $token_anchor === ( $token_lifecycle['entities'][ $token_entity_declaration_id ]['manifest']['products'][0]['bindings'][0]['search_block_markup'] ?? '' ) && $resolved_anchor === ( $resolved_lifecycle['entities'][ $token_entity_declaration_id ]['manifest']['products'][0]['bindings'][0]['search_block_markup'] ?? '' ), 'resolved binding projection changes only lifecycle binding anchors and preserves canonical declarations' );
@@ -1544,7 +1546,7 @@ $duplicate_topology_plan['runtime_declarations'][1]['payload']['entities'] = arr
 $duplicate_topology_lifecycle = $prepare_lifecycle->invoke( null, $duplicate_topology_plan, array() );
 $assert( is_wp_error( $duplicate_topology_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $duplicate_topology_lifecycle->get_error_code(), 'duplicate runtime topology identifiers are rejected before provider traversal' );
 
-$binding_method        = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'runtime_entity_bindings' );
+$binding_method        = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'runtime_entity_bindings' );
 $entity_declaration_id = (string) array_key_first( $entity_lifecycle['entities'] );
 $entity_bindings       = $binding_method->invoke(
 	null,
@@ -1995,7 +1997,7 @@ $deferred_form_lifecycle   = array(
 		),
 	),
 );
-$materialize_entities = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'materialize_prepared_entities' );
+$materialize_entities = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'materialize_prepared_entities' );
 $deferred_entities    = $materialize_entities->invoke( null, $deferred_form_lifecycle, array( 'seed_entities' => true ) );
 $final_quality_gate = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'public_result_from_wordpress_site_plan_receipt' );
 $final_quality_error = $final_quality_gate->invoke(
