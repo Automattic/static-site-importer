@@ -520,6 +520,12 @@ class Static_Site_Importer_Theme_Generator {
 
 	/** Attach failure context and compensation diagnostics to public and internal receipts. */
 	private static function append_entity_compensation( array &$result, array $lifecycle, array $reports, string $stage, string $code ): void {
+		if ( isset( $result['entity_compensation'] ) && is_array( $result['entity_compensation'] ) && 'static-site-importer/entity-compensation-receipt/v1' === ( $result['entity_compensation']['schema'] ?? null ) ) {
+			if ( isset( $result['completed']['runtime_declarations'] ) && is_array( $result['completed']['runtime_declarations'] ) ) {
+				$result['completed']['runtime_declarations']['entity_compensation'] = $result['entity_compensation'];
+			}
+			return;
+		}
 		$compensation = self::rollback_materialized_entities( $lifecycle, $reports );
 		$result['failure_context'] = array(
 			'stage' => $stage,
@@ -823,7 +829,15 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $args );
 		if ( ! empty( $args['_static_site_importer_deferred_form_quality_admission'] ) && ! $quality['pass'] ) {
+			$existing_compensation = isset( $receipt['entity_compensation'] ) && is_array( $receipt['entity_compensation'] ) ? $receipt['entity_compensation'] : array();
+			$existing_failure_context = isset( $receipt['failure_context'] ) && is_array( $receipt['failure_context'] ) ? $receipt['failure_context'] : array();
 			$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $receipt, 'static_site_importer_quality_gate_failed' );
+			if ( ! empty( $existing_compensation ) ) {
+				$receipt['entity_compensation'] = $existing_compensation;
+			}
+			if ( ! empty( $existing_failure_context ) ) {
+				$receipt['failure_context'] = $existing_failure_context;
+			}
 			self::append_entity_compensation( $receipt, $lifecycle, $entities, 'final_quality_admission', 'static_site_importer_quality_gate_failed' );
 			return new WP_Error(
 				'static_site_importer_quality_gate_failed',

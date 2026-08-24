@@ -638,6 +638,56 @@ $block_late_failure = $theme_generator_materialize->invoke(
 	array()
 );
 $assert( is_wp_error( $block_late_failure ) && 'static_site_importer_projection_write_failed' === $block_late_failure->get_error_code() && array( 'form', 'woo' ) === $rollback_order, 'block-mode Woo and form entities compensate in reverse order when report persistence fails after materialization' );
+$deferred_rollback_order = array();
+$woo_snapshot_restored   = false;
+$deferred_quality_plan   = $plan;
+$deferred_quality_plan['quality'] = array(
+	'pass'            => false,
+	'metrics'         => array( 'fallback_count' => 1 ),
+	'failure_reasons' => array( 'unsupported_html_fallback' ),
+);
+$deferred_quality_plan['diagnostics'] = array( array( 'type' => 'unsupported_html_fallback' ) );
+$deferred_quality_lifecycle = array(
+	'dependencies' => array(),
+	'entities'     => array(
+		'woo' => array(
+			'adapter'  => array(
+				'provider'          => 'woocommerce-like',
+				'materializer'      => static fn( array $manifest ): array => array( 'status' => 'completed', 'counts' => array( 'created' => 1 ), 'products' => $manifest['products'], 'rollback' => array( 'existing_product' => array( 'id' => 77, 'name' => 'Before import' ) ) ),
+				'rollback_callback' => static function ( array $report ) use ( &$deferred_rollback_order, &$woo_snapshot_restored ): array {
+					$deferred_rollback_order[] = 'woo';
+					$woo_snapshot_restored = array( 'id' => 77, 'name' => 'Before import' ) === ( $report['rollback']['existing_product'] ?? null );
+					return array( 'status' => 'rolled_back', 'reason' => 'restored_existing_product' );
+				},
+			),
+			'manifest' => array( 'products' => array( array( 'slug' => 'existing-product' ) ) ),
+		),
+		'form' => array(
+			'adapter'  => array(
+				'provider'          => 'jetpack-like',
+				'materializer'      => static fn( array $manifest ): array => array( 'status' => 'completed', 'counts' => array( 'created' => 1 ), 'forms' => $manifest['forms'] ),
+				'rollback_callback' => static function ( array $report ) use ( &$deferred_rollback_order ): array {
+					$deferred_rollback_order[] = 'form';
+					return array( 'status' => 'rolled_back' );
+				},
+			),
+			'manifest' => array( 'forms' => array( array( 'source_path' => 'index.html', 'selector' => 'form.newsletter' ) ) ),
+		),
+	),
+);
+$posts_before_deferred_quality = $GLOBALS['ssi_plan_posts'];
+$deferred_quality_failure      = $theme_generator_materialize->invoke(
+	null,
+	array(),
+	array( 'slug' => 'deferred-quality-compensation', 'seed_entities' => true, 'font_materialization' => array(), 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+	$deferred_quality_plan,
+	array(),
+	null,
+	$deferred_quality_lifecycle,
+	array()
+);
+$deferred_quality_receipt = is_wp_error( $deferred_quality_failure ) ? $deferred_quality_failure->get_error_data() : array();
+$assert( is_wp_error( $deferred_quality_failure ) && 'static_site_importer_quality_gate_failed' === $deferred_quality_failure->get_error_code() && array( 'form', 'woo' ) === $deferred_rollback_order && $woo_snapshot_restored && $posts_before_deferred_quality === $GLOBALS['ssi_plan_posts'] && 'rolled_back' === ( $deferred_quality_receipt['entity_compensation']['status'] ?? '' ) && 'final_quality_admission' === ( $deferred_quality_receipt['failure_context']['stage'] ?? '' ), 'theme generator final quality admission compensates providers in reverse order, restores pre-existing provider state, and rolls back the site plan' );
 
 $classic_artifact   = array(
 	'entrypoint' => 'index.html',
@@ -1920,6 +1970,16 @@ $final_quality_error = $final_quality_gate->invoke(
 $final_quality_receipt = is_wp_error( $final_quality_error ) ? $final_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
 $entity_compensation = $final_quality_receipt['entity_compensation'] ?? array();
 $assert( is_wp_error( $final_quality_error ) && 'static_site_importer_quality_gate_failed' === $final_quality_error->get_error_code() && 1 === $provider_materializations && 1 === $provider_rollbacks && 'partial' === ( $final_quality_receipt['status'] ?? '' ) && 'rolled_back' === ( $entity_compensation['entities'][0]['status'] ?? '' ), 'mismatched deferred form receipt rejects final admission and rolls back both provider entities and the site-plan transaction' );
+$retried_quality_error = $final_quality_gate->invoke(
+	null,
+	$final_quality_receipt,
+	array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+	$deferred_form_lifecycle,
+	array(),
+	$deferred_entities['reports']
+);
+$retried_quality_receipt = is_wp_error( $retried_quality_error ) ? $retried_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
+$assert( is_wp_error( $retried_quality_error ) && 1 === $provider_rollbacks && $entity_compensation === ( $retried_quality_receipt['entity_compensation'] ?? array() ), 'repeated deferred finalization reuses the recorded provider compensation receipt without re-running destructive rollback callbacks' );
 $resumed_form_binding_receipt                             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$binding_plan,
 	array(
