@@ -1885,14 +1885,41 @@ $deferred_form_receipt             = Static_Site_Importer_WordPress_Site_Plan_Ma
 	)
 );
 $deferred_form_receipt['completed']['runtime_declarations']['entity_bindings'][ hash( 'sha256', 'form-fallback-binding' ) ]['persisted_fragment_hash'] = hash( 'sha256', 'tampered deferred fragment' );
+$provider_materializations = 0;
+$provider_rollbacks        = 0;
+$deferred_form_lifecycle   = array(
+	'entities' => array(
+		'forms' => array(
+			'adapter' => array(
+				'capability'        => 'form',
+				'provider'          => 'lifecycle-test',
+				'materializer'      => static function ( array $manifest ) use ( &$provider_materializations ): array {
+					++$provider_materializations;
+					return array( 'status' => 'completed', 'counts' => array( 'created' => count( $manifest['forms'] ?? array() ) ), 'forms' => $manifest['forms'] ?? array() );
+				},
+				'rollback_callback' => static function ( array $report ) use ( &$provider_rollbacks ): array {
+					++$provider_rollbacks;
+					return array( 'status' => 'rolled_back' );
+				},
+			),
+			'manifest' => array( 'forms' => array( array( 'source_path' => 'index.html', 'selector' => 'form.newsletter' ) ) ),
+		),
+	),
+);
+$materialize_entities = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'materialize_prepared_entities' );
+$deferred_entities    = $materialize_entities->invoke( null, $deferred_form_lifecycle, array( 'seed_entities' => true ) );
 $final_quality_gate = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'public_result_from_wordpress_site_plan_receipt' );
 $final_quality_error = $final_quality_gate->invoke(
 	null,
 	$deferred_form_receipt,
-	array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true )
+	array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+	$deferred_form_lifecycle,
+	array(),
+	$deferred_entities['reports']
 );
 $final_quality_receipt = is_wp_error( $final_quality_error ) ? $final_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
-$assert( is_wp_error( $final_quality_error ) && 'static_site_importer_quality_gate_failed' === $final_quality_error->get_error_code() && 'partial' === ( $final_quality_receipt['status'] ?? '' ), 'mismatched deferred form receipt fails final admission and rolls back the transaction' );
+$entity_compensation = $final_quality_receipt['entity_compensation'] ?? array();
+$assert( is_wp_error( $final_quality_error ) && 'static_site_importer_quality_gate_failed' === $final_quality_error->get_error_code() && 1 === $provider_materializations && 1 === $provider_rollbacks && 'partial' === ( $final_quality_receipt['status'] ?? '' ) && 'rolled_back' === ( $entity_compensation['entities'][0]['status'] ?? '' ), 'mismatched deferred form receipt rejects final admission and rolls back both provider entities and the site-plan transaction' );
 $resumed_form_binding_receipt                             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$binding_plan,
 	array(

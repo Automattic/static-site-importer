@@ -824,6 +824,7 @@ class Static_Site_Importer_Theme_Generator {
 		$quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $args );
 		if ( ! empty( $args['_static_site_importer_deferred_form_quality_admission'] ) && ! $quality['pass'] ) {
 			$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $receipt, 'static_site_importer_quality_gate_failed' );
+			self::append_entity_compensation( $receipt, $lifecycle, $entities, 'final_quality_admission', 'static_site_importer_quality_gate_failed' );
 			return new WP_Error(
 				'static_site_importer_quality_gate_failed',
 				'Website artifact did not pass the final quality gate after provider receipt reconciliation.',
