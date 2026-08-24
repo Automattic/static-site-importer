@@ -55,6 +55,7 @@ class Static_Site_Importer_Theme_Generator {
 		$prepared_invocation = (string) ( $args['runtime_lifecycle_request_id'] ?? '' );
 		$current_invocation  = (string) ( $args['runtime_lifecycle_invocation_id'] ?? '' );
 		$request_args = $args;
+		$payload_reader = is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null;
 		$checkpoint  = null;
 		$resume_args = array();
 		if ( 'resume' === $phase && '' !== (string) ( $args['runtime_lifecycle_checkpoint'] ?? '' ) ) {
@@ -87,6 +88,9 @@ class Static_Site_Importer_Theme_Generator {
 		$artifact              = $compiled_import['artifact'];
 		$args                  = $compiled_import['args'];
 		$args                  = array_merge( $args, $resume_args );
+		if ( is_object( $payload_reader ) ) {
+			$args['_static_site_importer_payload_reader'] = $payload_reader;
+		}
 		$plan                  = $compiled_import['plan'];
 		$gutenberg_gaps        = $compiled_import['gutenberg_gaps'];
 		$companion_payload     = $compiled_import['companion_payload'];
