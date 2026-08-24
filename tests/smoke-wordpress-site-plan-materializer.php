@@ -387,6 +387,12 @@ $hash_mismatch_plan['quality']['editability_report_plan_hash'] = str_repeat( '0'
 $hash_mismatch_receipt                                   = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $hash_mismatch_plan, array( 'slug' => 'mismatched-editability-report' ) );
 $assert( 'rejected' === $hash_mismatch_receipt['status'] && 'editability_report_plan_hash_mismatch' === ( $hash_mismatch_receipt['errors'][0]['code'] ?? '' ), 'reports bound to a different canonical plan are rejected' );
 
+$forged_identity_plan                         = $strict_editability_plan;
+$forged_identity_plan['plan_identity']['hash'] = str_repeat( '0', 64 );
+$insert_calls_before_forged_identity           = $GLOBALS['ssi_plan_insert_calls'];
+$forged_identity_receipt                       = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $forged_identity_plan, array( 'slug' => 'forged-plan-identity' ) );
+$assert( 'rejected' === $forged_identity_receipt['status'] && 'WordPress site plan identity is stale.' === ( $forged_identity_receipt['errors'][0]['code'] ?? '' ) && $insert_calls_before_forged_identity === $GLOBALS['ssi_plan_insert_calls'], 'forged canonical plan identities reject before materialization' );
+
 $failed_policy_plan                                              = $strict_editability_plan;
 $failed_policy_plan['quality']['status']                        = 'failed';
 $failed_policy_plan['quality']['pass']                          = false;
