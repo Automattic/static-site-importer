@@ -50,7 +50,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 			return self::error( 'static_site_importer_invalid_import_source', 'source.type must be html, files, zip, or url.' );
 		}
 		if ( self::direct_artifact_continuation_available() && in_array( $type, array( 'html', 'files' ), true ) && '' !== (string) ( $source['import_id'] ?? '' ) ) {
-			$args = self::direct_artifact_args( $input );
+			$args   = self::direct_artifact_args( $input );
 			$result = Static_Site_Importer_Direct_Artifact_Import::resume( (string) $source['import_id'], $args, $type, $operation, $source );
 			return is_wp_error( $result ) ? self::error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() ) : $result;
 		}

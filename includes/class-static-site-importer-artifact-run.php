@@ -31,9 +31,9 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 			throw new RuntimeException( 'Artifact workspace could not be created.' );
 		}
 
-		$existing     = $this->read_raw( 'workspace.json' );
-		$record       = is_string( $existing ) ? json_decode( $existing, true ) : null;
-		if ( ( is_file( $this->directory . '/workspace.json' ) || is_string( $existing ) ) && ( ! is_array( $record ) || 'static-site-importer/artifact-workspace/v1' !== ( $record['schema'] ?? '' ) || $token !== ( $record['purpose'] ?? '' ) ) ) {
+		$existing = $this->read_raw( 'workspace.json' );
+		$record   = is_string( $existing ) ? json_decode( $existing, true ) : null;
+		if ( ( is_file( $this->directory . '/workspace.json' ) || is_string( $existing ) ) && ( ! is_array( $record ) || 'static-site-importer/artifact-workspace/v1' !== ( $record['schema'] ?? '' ) || ( $record['purpose'] ?? '' ) !== $token ) ) {
 			throw new RuntimeException( 'Artifact workspace ownership record is invalid.' );
 		}
 		$this->record = is_array( $record ) ? $record : array(
@@ -148,7 +148,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		$handle = fopen( $path, 'c' );
 		if ( false === $handle || ! flock( $handle, LOCK_EX | LOCK_NB ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_flock -- Serializes one importer-owned run executor.
 			if ( is_resource( $handle ) ) {
-				fclose( $handle );
+				fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the native stream required by flock after a failed lock attempt.
 			}
 			return new WP_Error( 'static_site_importer_artifact_workspace_locked', 'The artifact run is already executing.' );
 		}
@@ -158,7 +158,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 	public function release_lock( $handle ): void {
 		if ( is_resource( $handle ) ) {
 			flock( $handle, LOCK_UN ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_flock -- Releases the importer-owned run lock.
-			fclose( $handle );
+			fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the native stream only after releasing its advisory lock.
 		}
 	}
 
@@ -277,8 +277,8 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 			$record  = is_string( $raw ) ? json_decode( $raw, true ) : null;
 			$expires = is_array( $record ) ? ( $record['retention']['expires_at'] ?? '' ) : '';
 			if ( is_string( $expires ) && '' !== $expires && strtotime( $expires ) <= time() ) {
-				$workspace  = new self( $resolved_parent, substr( basename( $path ), strlen( '.ssi-artifact-run-' ) ) );
-				$lock       = $workspace->acquire_lock( 'execution.lock' );
+				$workspace = new self( $resolved_parent, substr( basename( $path ), strlen( '.ssi-artifact-run-' ) ) );
+				$lock      = $workspace->acquire_lock( 'execution.lock' );
 				if ( is_wp_error( $lock ) ) {
 					continue;
 				}
@@ -316,14 +316,14 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Writes a private temporary checkpoint file.
 			$written = fwrite( $handle, substr( $bytes, $offset ) );
 			if ( false === $written || 0 === $written ) {
-				fclose( $handle );
+				fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the native stream used by the complete-write loop on failure.
 				return false;
 			}
 			$offset += $written;
 		}
 		$flushed = fflush( $handle );
 		$synced  = ! function_exists( 'fsync' ) || fsync( $handle );
-		$closed  = fclose( $handle );
+		$closed  = fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Preserves flush, sync, then close durability ordering on the native stream.
 		return $flushed && $synced && $closed;
 	}
 
