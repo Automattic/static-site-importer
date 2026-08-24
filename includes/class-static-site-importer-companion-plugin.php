@@ -962,9 +962,15 @@ if ( preg_match_all( '/\s+(aria-[a-z][a-z0-9-]*)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\
 		$svg_global[ strtolower( $aria_name ) ] = true;
 	}
 }
+$custom_elements = array();
+if ( preg_match_all( '/<\s*([a-z][a-z0-9]*-[a-z0-9-]+)\b/i', $content, $custom_names ) ) {
+	foreach ( $custom_names[1] as $custom_name ) {
+		$custom_elements[ strtolower( $custom_name ) ] = $flow;
+	}
+}
 $output = wp_kses(
 	$content,
-	array(
+	array_merge( array(
 		'main' => $flow, 'article' => $flow, 'aside' => $flow, 'section' => $flow, 'header' => $flow,
 		'footer' => $flow, 'nav' => $flow, 'div' => $flow, 'span' => $global, 'p' => $flow,
 		'h1' => $flow, 'h2' => $flow, 'h3' => $flow, 'h4' => $flow, 'h5' => $flow, 'h6' => $flow,
@@ -990,7 +996,7 @@ $output = wp_kses(
 		'rect' => array_merge( $svg_global, array( 'fill' => true, 'height' => true, 'opacity' => true, 'rx' => true, 'ry' => true, 'stroke' => true, 'stroke-width' => true, 'width' => true, 'x' => true, 'y' => true ) ),
 		'text' => array_merge( $svg_global, array( 'fill' => true, 'font-family' => true, 'font-size' => true, 'font-weight' => true, 'text-anchor' => true, 'x' => true, 'y' => true ) ),
 		'tspan' => array_merge( $svg_global, array( 'dx' => true, 'dy' => true, 'fill' => true, 'x' => true, 'y' => true ) ), 'title' => $svg_global, 'desc' => $svg_global,
-	)
+	), $custom_elements )
 );
 foreach ( $data_images as $placeholder => $data_image ) {
 	$output = str_replace( 'src="' . $placeholder . '"', 'src="' . esc_attr( $data_image ) . '"', $output );
