@@ -1051,6 +1051,7 @@ namespace {
 				'capability' => 'form',
 				'provider'   => 'gravity_forms',
 				'waiver_arg' => 'allow_missing_gravity_forms',
+				'rollback_contract_id' => 'test/gravity-forms-rollback/v1',
 			);
 			return $adapters;
 		}

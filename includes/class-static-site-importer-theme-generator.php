@@ -573,20 +573,28 @@ class Static_Site_Importer_Theme_Generator {
 			'source_ids'                        => $transaction_state['source_ids'] ?? array(),
 		);
 		$lifecycle_entities = array();
+		$rollback_contracts_valid = true;
 		foreach ( $lifecycle['entities'] ?? array() as $id => $prepared ) {
 			if ( ! is_array( $prepared ) ) {
 				continue;
 			}
 			$adapter = is_array( $prepared['adapter'] ?? null ) ? $prepared['adapter'] : array();
+			$rollback_contract_id = Static_Site_Importer_Entity_Materializer_Registry::rollback_contract_id( $adapter );
+			if ( '' === $rollback_contract_id ) {
+				$rollback_contracts_valid = false;
+			}
 			$lifecycle_entities[ (string) $id ] = array(
 				'adapter'     => array_intersect_key( $adapter, array_flip( array( 'id', 'capability', 'provider', 'waiver_arg' ) ) ),
 				'declaration' => is_array( $prepared['declaration'] ?? null ) ? $prepared['declaration'] : array(),
 				'manifest'    => is_array( $prepared['manifest'] ?? null ) ? $prepared['manifest'] : array(),
+				'required'    => true === ( $prepared['required'] ?? false ),
+				'rollback_contract_id' => $rollback_contract_id,
 			);
 		}
 		ksort( $lifecycle_entities, SORT_STRING );
 		$receipt = array(
 			'schema'                     => $result['schema'] ?? '',
+			'receipt_instance_id'        => $result['receipt_instance_id'] ?? '',
 			'plan_identity'              => $result['plan_identity'] ?? array(),
 			'theme'                      => $result['theme'] ?? array(),
 			'reconciliation_identities'  => $result['reconciliation_identities'] ?? array(),
@@ -597,8 +605,10 @@ class Static_Site_Importer_Theme_Generator {
 			'schema'                 => 'static-site-importer/entity-compensation-binding/v1',
 			'receipt_identity'       => self::compensation_hash( $receipt ),
 			'plan_identity'          => $result['plan_identity'] ?? array(),
+			'receipt_instance_id'    => $receipt['receipt_instance_id'],
 			'transaction_identity'   => $receipt['transaction_identity'],
 			'lifecycle_entities_hash' => self::compensation_hash( $lifecycle_entities ),
+			'rollback_contracts_hash' => $rollback_contracts_valid ? self::compensation_hash( array_column( $lifecycle_entities, 'rollback_contract_id' ) ) : '',
 			'provider_reports_hash'  => self::compensation_hash( $reports ),
 		);
 	}
@@ -609,10 +619,17 @@ class Static_Site_Importer_Theme_Generator {
 		return 'static-site-importer/entity-compensation-receipt/v1' === ( $compensation['schema'] ?? null )
 			&& 'static-site-importer/entity-compensation-binding/v1' === ( $binding['schema'] ?? null )
 			&& '' !== ( $binding['receipt_identity'] ?? '' )
+			&& self::valid_compensation_receipt_instance_id( $binding['receipt_instance_id'] ?? null )
 			&& '' !== ( $binding['transaction_identity'] ?? '' )
 			&& '' !== ( $binding['lifecycle_entities_hash'] ?? '' )
+			&& '' !== ( $binding['rollback_contracts_hash'] ?? '' )
 			&& '' !== ( $binding['provider_reports_hash'] ?? '' )
 			&& $binding === self::compensation_binding( $result, $lifecycle, $reports );
+	}
+
+	/** Reject compensation reuse unless it carries a canonical server receipt identity. */
+	private static function valid_compensation_receipt_instance_id( mixed $id ): bool {
+		return is_string( $id ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $id );
 	}
 
 	/** Hash recursively sorted scalar data so equivalent receipts produce the same binding. */

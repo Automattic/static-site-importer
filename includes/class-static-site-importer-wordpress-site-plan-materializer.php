@@ -75,6 +75,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$state                     = array(
 			'plan'                         => $plan,
 			'plan_identity'                => self::plan_identity( $plan ),
+			'receipt_instance_id'          => self::receipt_instance_id(),
 			'diagnostics'                  => array(),
 			'applied'                      => array(
 				'posts'                => array(),
@@ -261,6 +262,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$state = array(
 			'plan'                  => $plan,
 			'plan_identity'         => self::plan_identity( $plan ),
+			'receipt_instance_id'   => self::receipt_instance_id(),
 			'diagnostics'           => array( array( 'reason_code' => $error->get_error_code() ) ),
 			'failure_reason'        => $error->get_error_code(),
 			'applied'               => array(
@@ -285,7 +287,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** @param array<string,mixed> $prepared @return array<string,mixed> */
 	public static function materialize_prepared( array $prepared ): array {
-		if ( 'prepared' !== ( $prepared['status'] ?? '' ) || ! isset( $prepared['plan'] ) || ! is_array( $prepared['plan'] ) ) {
+		if ( 'prepared' !== ( $prepared['status'] ?? '' ) || ! isset( $prepared['plan'] ) || ! is_array( $prepared['plan'] ) || ! self::valid_receipt_instance_id( $prepared['receipt_instance_id'] ?? null ) ) {
 			return self::receipt(
 				'rejected',
 				array(
@@ -521,7 +523,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$base_resolved  = $prepared['base_resolved'] ?? null;
 		$args           = isset( $prepared['args'] ) && is_array( $prepared['args'] ) ? $prepared['args'] : array();
 		$payload_reader = is_object( $prepared['payload_reader'] ?? null ) ? $prepared['payload_reader'] : null;
-		if ( ! is_array( $plan ) || ! is_array( $base_resolved ) || self::plan_identity( $plan ) !== ( $prepared['plan_identity'] ?? null ) || self::prepared_resolved_projection_hash( $base_resolved ) !== ( $prepared['prepared_resolved_projection_hash'] ?? '' ) ) {
+		if ( ! is_array( $plan ) || ! is_array( $base_resolved ) || ! self::valid_receipt_instance_id( $prepared['receipt_instance_id'] ?? null ) || self::plan_identity( $plan ) !== ( $prepared['plan_identity'] ?? null ) || self::prepared_resolved_projection_hash( $base_resolved ) !== ( $prepared['prepared_resolved_projection_hash'] ?? '' ) ) {
 			return array(
 				'status'  => 'rejected',
 				'receipt' => self::receipt(
@@ -554,6 +556,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$state      = array(
 			'plan'                         => $plan,
 			'plan_identity'                => $prepared['plan_identity'],
+			'receipt_instance_id'          => $prepared['receipt_instance_id'],
 			'editability_report'           => $prepared['editability_report'] ?? array(),
 			'base_resolved'                => $base_resolved,
 			'prepared_resolved_projection_hash' => $prepared['prepared_resolved_projection_hash'],
@@ -2062,6 +2065,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'schema'                    => self::RECEIPT_SCHEMA,
 			'status'                    => $status,
 			'plan_identity'             => $state['plan_identity'],
+			'receipt_instance_id'       => self::valid_receipt_instance_id( $state['receipt_instance_id'] ?? null ) ? $state['receipt_instance_id'] : self::receipt_instance_id(),
 			'plan'                      => $resolved_plan,
 			'theme'                     => $state['theme'] ?? array(),
 			'completed'                 => array(
@@ -2115,6 +2119,16 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$receipt['transaction'] = (object) array( 'state' => $state );
 		}
 		return $receipt;
+	}
+
+	/** Generate a server-side receipt identity that cannot be inferred from the plan. */
+	private static function receipt_instance_id(): string {
+		return bin2hex( random_bytes( 32 ) );
+	}
+
+	/** Validate the persistent receipt identity across deferred materialization phases. */
+	private static function valid_receipt_instance_id( mixed $id ): bool {
+		return is_string( $id ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $id );
 	}
 
 	/**

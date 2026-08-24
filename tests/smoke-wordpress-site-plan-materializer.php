@@ -590,6 +590,7 @@ $block_lifecycle    = array(
 		'woo'  => array(
 			'adapter'  => array(
 				'provider'          => 'woocommerce',
+				'rollback_contract_id' => 'test/woocommerce-rollback/v1',
 				'materializer'      => static fn( array $manifest ): array => array(
 					'status'   => 'completed',
 					'counts'   => array( 'created' => 1 ),
@@ -604,6 +605,7 @@ $block_lifecycle    = array(
 		'form' => array(
 			'adapter'  => array(
 				'provider'          => 'jetpack',
+				'rollback_contract_id' => 'test/jetpack-rollback/v1',
 				'materializer'      => static fn( array $manifest ): array => array(
 					'status' => 'completed',
 					'counts' => array( 'created' => 1 ),
@@ -653,6 +655,7 @@ $deferred_quality_lifecycle = array(
 		'woo' => array(
 			'adapter'  => array(
 				'provider'          => 'woocommerce-like',
+				'rollback_contract_id' => 'test/woocommerce-like-rollback/v1',
 				'materializer'      => static fn( array $manifest ): array => array( 'status' => 'completed', 'counts' => array( 'created' => 1 ), 'products' => $manifest['products'], 'rollback' => array( 'existing_product' => array( 'id' => 77, 'name' => 'Before import' ) ) ),
 				'rollback_callback' => static function ( array $report ) use ( &$deferred_rollback_order, &$woo_snapshot_restored ): array {
 					$deferred_rollback_order[] = 'woo';
@@ -665,6 +668,7 @@ $deferred_quality_lifecycle = array(
 		'form' => array(
 			'adapter'  => array(
 				'provider'          => 'jetpack-like',
+				'rollback_contract_id' => 'test/jetpack-like-rollback/v1',
 				'materializer'      => static fn( array $manifest ): array => array( 'status' => 'completed', 'counts' => array( 'created' => 1 ), 'forms' => $manifest['forms'] ),
 				'rollback_callback' => static function ( array $report ) use ( &$deferred_rollback_order ): array {
 					$deferred_rollback_order[] = 'form';
@@ -711,6 +715,7 @@ $woo_late_failure_lifecycle = array(
 		'woo' => array(
 			'adapter'  => array(
 				'provider'                 => 'woocommerce',
+				'rollback_contract_id'     => 'static-site-importer/woocommerce-product-rollback/v1',
 				'materializer'             => array( 'Static_Site_Importer_Woo_Product_Seeder', 'seed' ),
 				'rollback_callback'        => array( 'Static_Site_Importer_Woo_Product_Seeder', 'rollback' ),
 				'classic_binding_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_classic_render' ),
@@ -1943,6 +1948,7 @@ $deferred_form_lifecycle   = array(
 			'adapter' => array(
 				'capability'        => 'form',
 				'provider'          => 'lifecycle-test',
+				'rollback_contract_id' => 'test/lifecycle-form-rollback/v1',
 				'materializer'      => static function ( array $manifest ) use ( &$provider_materializations ): array {
 					++$provider_materializations;
 					return array( 'status' => 'completed', 'counts' => array( 'created' => count( $manifest['forms'] ?? array() ) ), 'forms' => $manifest['forms'] ?? array() );
@@ -2001,6 +2007,46 @@ $cross_quality_error = $final_quality_gate->invoke(
 );
 $cross_quality_receipt = is_wp_error( $cross_quality_error ) ? $cross_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
 $assert( is_wp_error( $cross_quality_error ) && 2 === $provider_rollbacks && true === ( $cross_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ) && $entity_compensation['binding'] !== ( $cross_quality_receipt['entity_compensation']['binding'] ?? array() ), 'cross-receipt compensation evidence cannot suppress the second receipt rollback' );
+$nonce_only_cross_receipt = $final_quality_receipt;
+$nonce_only_cross_receipt['receipt_instance_id'] = str_repeat( 'a', 64 );
+$nonce_only_quality_error = $final_quality_gate->invoke(
+	null,
+	$nonce_only_cross_receipt,
+	array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+	$deferred_form_lifecycle,
+	array(),
+	$deferred_entities['reports']
+);
+$nonce_only_quality_receipt = is_wp_error( $nonce_only_quality_error ) ? $nonce_only_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
+$assert( is_wp_error( $nonce_only_quality_error ) && 3 === $provider_rollbacks && true === ( $nonce_only_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ) && $entity_compensation['binding'] !== ( $nonce_only_quality_receipt['entity_compensation']['binding'] ?? array() ), 'identical receipt projections with distinct server receipt identities cannot reuse compensation evidence' );
+$required_changed_lifecycle = $deferred_form_lifecycle;
+$required_changed_lifecycle['entities']['forms']['required'] = true;
+$required_changed_quality_error = $final_quality_gate->invoke(
+	null,
+	$nonce_only_quality_receipt,
+	array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+	$required_changed_lifecycle,
+	array(),
+	$deferred_entities['reports']
+);
+$required_changed_quality_receipt = is_wp_error( $required_changed_quality_error ) ? $required_changed_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
+$assert( is_wp_error( $required_changed_quality_error ) && 4 === $provider_rollbacks && true === ( $required_changed_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ), 'a changed required lifecycle declaration cannot reuse compensation evidence' );
+$contract_changed_lifecycle = $required_changed_lifecycle;
+$contract_changed_lifecycle['entities']['forms']['adapter']['rollback_contract_id'] = 'test/lifecycle-form-rollback/v2';
+$contract_changed_lifecycle['entities']['forms']['adapter']['rollback_callback'] = static function ( array $report ) use ( &$provider_rollbacks ): array {
+	++$provider_rollbacks;
+	return array( 'status' => 'rolled_back', 'contract' => 'v2' );
+};
+$contract_changed_quality_error = $final_quality_gate->invoke(
+	null,
+	$required_changed_quality_receipt,
+	array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+	$contract_changed_lifecycle,
+	array(),
+	$deferred_entities['reports']
+);
+$contract_changed_quality_receipt = is_wp_error( $contract_changed_quality_error ) ? $contract_changed_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
+$assert( is_wp_error( $contract_changed_quality_error ) && 5 === $provider_rollbacks && 'v2' === ( $contract_changed_quality_receipt['entity_compensation']['entities'][0]['rollback']['contract'] ?? '' ) && true === ( $contract_changed_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ), 'a changed rollback implementation requires a changed typed contract and cannot reuse compensation evidence' );
 $resumed_form_binding_receipt                             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$binding_plan,
 	array(
