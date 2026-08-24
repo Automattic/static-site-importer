@@ -2084,6 +2084,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'provenance'              => get_post_meta( $id, '_static_site_importer_provenance', true ),
 				'reconciliation_identity' => get_post_meta( $id, self::RECONCILIATION_META_KEY, true ),
 				'producer_reconciliation_identity' => get_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY, true ),
+				'producer_reconciliation_identity_exists' => metadata_exists( 'post', $id, self::PRODUCER_RECONCILIATION_META_KEY ),
 			);
 			return;
 		}
@@ -2170,6 +2171,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'provenance'              => get_post_meta( $id, '_static_site_importer_provenance', true ),
 				'reconciliation_identity' => get_post_meta( $id, self::RECONCILIATION_META_KEY, true ),
 				'producer_reconciliation_identity' => get_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY, true ),
+				'producer_reconciliation_identity_exists' => metadata_exists( 'post', $id, self::PRODUCER_RECONCILIATION_META_KEY ),
 			);
 		}
 	}
@@ -2223,7 +2225,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					wp_update_post( $before['post'] );
 					update_post_meta( $id, '_static_site_importer_provenance', $before['provenance'] );
 					update_post_meta( $id, self::RECONCILIATION_META_KEY, $before['reconciliation_identity'] );
-					update_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY, $before['producer_reconciliation_identity'] );
+					if ( ! empty( $before['producer_reconciliation_identity_exists'] ) ) {
+						update_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY, $before['producer_reconciliation_identity'] );
+					} else {
+						delete_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY );
+					}
 				} elseif ( function_exists( 'wp_delete_post' ) && ! wp_delete_post( $id, true ) ) {
 					throw new RuntimeException( 'materialization_rollback_post_delete_failed' );
 				}

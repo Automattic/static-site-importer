@@ -155,6 +155,10 @@ function update_post_meta( int $id, string $key, string $value ): void {
 	$GLOBALS['ssi_plan_meta'][ $id ][ $key ] = $value; }
 function get_post_meta( int $id, string $key, bool $single = true ): string {
 	return (string) ( $GLOBALS['ssi_plan_meta'][ $id ][ $key ] ?? '' ); }
+function metadata_exists( string $meta_type, int $id, string $key ): bool {
+	return 'post' === $meta_type && array_key_exists( $key, $GLOBALS['ssi_plan_meta'][ $id ] ?? array() ); }
+function delete_post_meta( int $id, string $key ): void {
+	unset( $GLOBALS['ssi_plan_meta'][ $id ][ $key ] ); }
 function get_posts( array $args ): array {
 	foreach ( $GLOBALS['ssi_plan_meta'] as $id => $meta ) {
 		if ( isset( $meta[ $args['meta_key'] ] ) && ( ! isset( $args['meta_value'] ) || $meta[ $args['meta_key'] ] === $args['meta_value'] ) ) {
@@ -2894,6 +2898,15 @@ $root_media_content = stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $root
 $root_media_url     = 'https://example.test/wp-content/themes/root-media-plan/assets/website/media/example.jpg';
 $assert( 'completed' === $root_media_receipt['status'] && 4 === substr_count( $root_media_content, $root_media_url ) && str_contains( $root_media_content, '"url":"' . $root_media_url . '"' ) && str_contains( $root_media_content, 'blocks-engine-background-image' ) && ! str_contains( $root_media_content, '/media/example.jpg?' ), 'root-relative captured media resolves through the canonical theme asset map for image and background-image blocks' );
 $assert( ( $root_media_plan['pages'][0]['reconciliation_identity'] ?? '' ) === ( $GLOBALS['ssi_plan_meta'][ $root_media_page_id ]['_blocks_engine_reconciliation_identity'] ?? '' ), 'materialized posts expose the producer reconciliation identity required by scoped theme bootstrap assets' );
+unset( $GLOBALS['ssi_plan_meta'][ $root_media_page_id ]['_blocks_engine_reconciliation_identity'] );
+$root_media_rollback = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$root_media_plan,
+	array(
+		'slug'                           => 'root-media-plan',
+		'inject_materialization_failure' => 'theme_write_short',
+	)
+);
+$assert( 'partial' === $root_media_rollback['status'] && ! array_key_exists( '_blocks_engine_reconciliation_identity', $GLOBALS['ssi_plan_meta'][ $root_media_page_id ] ?? array() ), 'failed re-import restores the absence of producer reconciliation metadata on an existing post' );
 
 $resolved_root_media_plan = ( new \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver() )->resolve(
 	$root_media_plan,
