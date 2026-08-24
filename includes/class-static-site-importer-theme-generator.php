@@ -522,7 +522,17 @@ class Static_Site_Importer_Theme_Generator {
 
 	/** Only callbacks with an explicit mutation receipt may perform destructive compensation. */
 	private static function entity_report_requires_rollback( array $report ): bool {
-		return in_array( $report['status'] ?? null, array( 'completed', 'materialized', 'mapped', 'mutated' ), true );
+		if ( ! in_array( $report['status'] ?? null, array( 'completed', 'materialized', 'mapped', 'mutated' ), true ) ) {
+			return false;
+		}
+		foreach ( array( 'products', 'forms', 'entities', 'mutations' ) as $key ) {
+			foreach ( $report[ $key ] ?? array() as $row ) {
+				if ( is_array( $row ) && in_array( $row['status'] ?? null, array( 'created', 'updated', 'mapped', 'materialized', 'mutated' ), true ) ) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	/** Attach failure context and compensation diagnostics to public and internal receipts. */

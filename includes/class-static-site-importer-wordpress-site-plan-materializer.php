@@ -1917,12 +1917,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		);
 	}
 
-	private static function active_theme_matches( string $slug ): bool {
-		$stylesheet = function_exists( 'get_stylesheet' ) ? get_stylesheet() : get_option( 'stylesheet', '' );
-		if ( function_exists( 'get_template' ) ) {
-			return $stylesheet === $slug && get_template() === $slug;
-		}
-		return $stylesheet === $slug;
+	private static function active_theme_matches( string $stylesheet, ?string $template = null ): bool {
+		$template = $template ?? $stylesheet;
+		return ( function_exists( 'get_stylesheet' ) ? get_stylesheet() : get_option( 'stylesheet', '' ) ) === $stylesheet
+			&& ( function_exists( 'get_template' ) ? get_template() : get_option( 'template', '' ) ) === $template;
 	}
 
 	private static function injected_failure( array $args, string $stage ): bool {
@@ -2020,10 +2018,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	private static function restore_runtime( array &$state ): void {
 		$options = $state['rollback']['options'] ?? array();
 		$stylesheet = $options['stylesheet']['value'] ?? null;
-		if ( ! empty( $options['stylesheet']['exists'] ) && is_string( $stylesheet ) && '' !== $stylesheet && function_exists( 'switch_theme' ) ) {
+		$template   = $options['template']['value'] ?? null;
+		if ( ! empty( $options['stylesheet']['exists'] ) && ! empty( $options['template']['exists'] ) && is_string( $stylesheet ) && '' !== $stylesheet && is_string( $template ) && '' !== $template && function_exists( 'switch_theme' ) ) {
 			try {
 				switch_theme( $stylesheet );
-				if ( ! self::active_theme_matches( $stylesheet ) ) {
+				if ( ! self::active_theme_matches( $stylesheet, $template ) ) {
 					throw new RuntimeException( 'materialization_rollback_theme_restore_failed' );
 				}
 			} catch ( Throwable $error ) {
