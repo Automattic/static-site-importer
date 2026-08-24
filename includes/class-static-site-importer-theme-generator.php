@@ -125,6 +125,13 @@ class Static_Site_Importer_Theme_Generator {
 			$encoded_artifact = wp_json_encode( $artifact );
 			return Static_Site_Importer_Entity_Materializer_Registry::dependency_plan( $lifecycle, hash( 'sha256', false !== $encoded_artifact ? $encoded_artifact : '' ) );
 		}
+		$prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization( $plan, $args );
+		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
+			$receipt = isset( $prepared['receipt'] ) && is_array( $prepared['receipt'] ) ? $prepared['receipt'] : array();
+			$error   = $receipt['errors'][0] ?? array();
+			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan destination preflight failed.' ), $receipt );
+		}
+		$args = $prepared['args'];
 		if ( 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
 			$handle = Static_Site_Importer_Lifecycle_Compile_Checkpoint::create(
 				$request_artifact,
@@ -167,7 +174,7 @@ class Static_Site_Importer_Theme_Generator {
 				return $claimed;
 			}
 		}
-		$result = self::materialize_compiled_website_artifact( $artifact, $args, $plan, $gutenberg_gaps, $companion_payload, $lifecycle, $theme_materialization );
+		$result = self::materialize_compiled_website_artifact( $artifact, $args, $plan, $gutenberg_gaps, $companion_payload, $lifecycle, $theme_materialization, $prepared );
 		if ( is_array( $checkpoint ) ) {
 			$checkpoint['workspace']->cleanup( 'success' );
 		}
@@ -291,28 +298,7 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/** Materialize a previously compiled canonical plan through the existing write path. */
-	private static function materialize_compiled_website_artifact( array $artifact, array $args, array $plan, array $gutenberg_gaps, $companion_payload, array $lifecycle, array $theme_materialization ) {
-
-		$theme_dir = trailingslashit( get_theme_root() ) . $args['slug'];
-		$report_destinations = array( $theme_dir . '/static-site-importer-manifest.json' );
-		if ( ! empty( $args['write_theme_report_artifacts'] ) ) {
-			$report_destinations = array_merge( $report_destinations, array( $theme_dir . '/import-report.json', $theme_dir . '/import-validation-result.json', $theme_dir . '/finding-packets.json' ) );
-		}
-		$external_report_destinations = array();
-		if ( ! empty( $args['report'] ) ) {
-			$external_report_destinations[] = (string) $args['report'];
-			$external_report_destinations[] = trailingslashit( dirname( (string) $args['report'] ) ) . 'import-validation-result.json';
-			$external_report_destinations[] = trailingslashit( dirname( (string) $args['report'] ) ) . 'finding-packets.json';
-			$report_destinations = array_merge( $report_destinations, $external_report_destinations );
-		}
-		$args['report_destinations'] = $report_destinations;
-		$args['external_report_destinations'] = $external_report_destinations;
-		$prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization( $plan, $args );
-		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
-			$receipt = isset( $prepared['receipt'] ) && is_array( $prepared['receipt'] ) ? $prepared['receipt'] : array();
-			$error   = $receipt['errors'][0] ?? array();
-			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan destination preflight failed.' ), $receipt );
-		}
+	private static function materialize_compiled_website_artifact( array $artifact, array $args, array $plan, array $gutenberg_gaps, $companion_payload, array $lifecycle, array $theme_materialization, array $prepared ) {
 		$lifecycle = self::with_resolved_runtime_binding_manifests( $lifecycle, $prepared['resolved'] ?? array() );
 		$classic = Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === ( $args['theme_materialization'] ?? null );
 		$binding_preflight = $classic ? self::preflight_classic_runtime_entity_bindings( $prepared['args']['classic_theme_projection'], $lifecycle, $args ) : self::preflight_runtime_entity_binding_anchors( $prepared['resolved'] ?? array(), $lifecycle, $args );

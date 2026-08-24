@@ -541,8 +541,13 @@ $reference_plan['plan_identity'] = WordPressSitePlan::planIdentity( $reference_p
 $reference_target                   = 'assets/asset.bin';
 $posts_before_reference_admission   = $GLOBALS['ssi_plan_posts'];
 $inserts_before_reference_admission = $GLOBALS['ssi_plan_insert_calls'];
-$throwing_reader                    = new class() {
+$throwing_reads                     = 0;
+$throwing_reader                    = new class( $throwing_reads ) {
+	private $reads;
+	public function __construct( int &$reads ) {
+		$this->reads =& $reads; }
 	public function read( array $reference ): string {
+		++$this->reads;
 		throw new RuntimeException( 'workspace unavailable' ); }
 };
 $throwing_reference_receipt         = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
@@ -552,7 +557,7 @@ $throwing_reference_receipt         = Static_Site_Importer_WordPress_Site_Plan_M
 		'_static_site_importer_payload_reader' => $throwing_reader,
 	)
 );
-$assert( 'rejected' === $throwing_reference_receipt['status'] && 'static_site_importer_payload_reference_unavailable' === ( $throwing_reference_receipt['diagnostics'][0]['reason_code'] ?? '' ) && $posts_before_reference_admission === $GLOBALS['ssi_plan_posts'] && $inserts_before_reference_admission === $GLOBALS['ssi_plan_insert_calls'] && ! file_exists( $GLOBALS['ssi_plan_root'] . '/reference-admission-throwing' ), 'throwing canonical reference readers reject before page or filesystem mutation' );
+$assert( 'rejected' === $throwing_reference_receipt['status'] && 'static_site_importer_payload_reference_unavailable' === ( $throwing_reference_receipt['diagnostics'][0]['reason_code'] ?? '' ) && 1 === $throwing_reads && $posts_before_reference_admission === $GLOBALS['ssi_plan_posts'] && $inserts_before_reference_admission === $GLOBALS['ssi_plan_insert_calls'] && ! file_exists( $GLOBALS['ssi_plan_root'] . '/reference-admission-throwing' ), 'throwing canonical reference readers are admitted once before page or filesystem mutation' );
 $theme_generator_materialize       = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'materialize_compiled_website_artifact' );
 $theme_generator_before_admission  = $GLOBALS['ssi_plan_insert_calls'];
 $theme_generator_admission_failure = $theme_generator_materialize->invoke(

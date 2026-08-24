@@ -203,8 +203,26 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** Prepare the canonical plan state that may safely precede provider provisioning. */
 	public static function prepare_for_materialization( array $plan, array $args = array() ): array {
+		$args = self::with_report_destinations( $args );
 		$prepared = self::prepare( $plan, $args );
 		return 'prepared' === ( $prepared['status'] ?? '' ) ? self::admit_prepared( $prepared ) : $prepared;
+	}
+
+	/** Add the importer-owned report targets before canonical destination preflight. */
+	private static function with_report_destinations( array $args ): array {
+		$theme_dir = trailingslashit( get_theme_root() ) . sanitize_key( (string) ( $args['slug'] ?? '' ) );
+		$reports   = array( $theme_dir . '/static-site-importer-manifest.json' );
+		if ( ! empty( $args['write_theme_report_artifacts'] ) ) {
+			$reports = array_merge( $reports, array( $theme_dir . '/import-report.json', $theme_dir . '/import-validation-result.json', $theme_dir . '/finding-packets.json' ) );
+		}
+		$external = array();
+		if ( ! empty( $args['report'] ) ) {
+			$external = array( (string) $args['report'], trailingslashit( dirname( (string) $args['report'] ) ) . 'import-validation-result.json', trailingslashit( dirname( (string) $args['report'] ) ) . 'finding-packets.json' );
+			$reports  = array_merge( $reports, $external );
+		}
+		$args['report_destinations']          = $reports;
+		$args['external_report_destinations'] = $external;
+		return $args;
 	}
 
 	/**
