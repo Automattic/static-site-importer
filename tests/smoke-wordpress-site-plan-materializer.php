@@ -996,6 +996,7 @@ $typed_font_plan                                      = array(
 		'imports'           => array(
 			array(
 				'id'     => 'webfont-import-inter',
+				'provider' => 'google_fonts',
 				'state'  => 'declared',
 				'source' => array(
 					'url'             => 'https://fonts.googleapis.com/css2?family=Inter-like:wght@400;700',
@@ -1076,18 +1077,21 @@ $typed_font_plan                                      = array(
 				'id'        => 'webfont-receipt-inter-400',
 				'face_id'   => 'webfont-face-inter-400',
 				'import_id' => 'webfont-import-inter',
+				'required'  => true,
 				'state'     => 'pending_browser_readiness',
 			),
 			array(
 				'id'        => 'webfont-receipt-inter-700',
 				'face_id'   => 'webfont-face-inter-700',
 				'import_id' => 'webfont-import-inter',
+				'required'  => true,
 				'state'     => 'pending_browser_readiness',
 			),
 			array(
 				'id'        => 'webfont-receipt-inter-variable',
 				'face_id'   => 'webfont-face-inter-variable',
 				'import_id' => 'webfont-import-inter',
+				'required'  => true,
 				'state'     => 'pending_browser_readiness',
 			),
 		),
@@ -1271,7 +1275,7 @@ $declared_lifecycle = ( new ReflectionMethod( Static_Site_Importer_Theme_Generat
 $assert( 'runtime_declarations' === ( $declared_lifecycle['status'] ?? '' ) && true === ( reset( $declared_lifecycle['entities'] )['required'] ?? false ), 'declared product entities enter the generic runtime lifecycle' );
 
 $entity_artifact                         = $artifact;
-$entity_search                           = '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button {"tagName":"button","text":"Add"} --><div class="wp-block-button"><button type="button" class="wp-block-button__link wp-element-button">Add</button></div><!-- /wp:button --></div><!-- /wp:buttons -->';
+$entity_search                           = '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button {"tagName":"button"} --><div class="wp-block-button"><button type="button" class="wp-block-button__link wp-element-button">Add</button></div><!-- /wp:button --></div><!-- /wp:buttons -->';
 $entity_artifact['files']['index.html']  = '<main><h1>Home</h1><div class="wp-block-buttons"><button>Add</button></div></main>';
 $entity_artifact['runtime_declarations'] = array(
 	array(
@@ -1926,12 +1930,6 @@ $tampered_content_report['materialization_receipt']   = $tampered_content_receip
 Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $tampered_content_report );
 $assert( 1 === ( $tampered_content_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $tampered_content_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'tampered persisted page digest cannot resolve a fallback' );
 $deferred_form_plan                = $binding_plan;
-$deferred_form_plan['quality']     = array(
-	'pass'            => false,
-	'metrics'         => array( 'fallback_count' => 1 ),
-	'failure_reasons' => array( 'unsupported_html_fallback' ),
-);
-$deferred_form_plan['diagnostics'] = array( $form_fallback );
 $deferred_form_receipt             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$deferred_form_plan,
 	array(
@@ -1940,6 +1938,12 @@ $deferred_form_receipt             = Static_Site_Importer_WordPress_Site_Plan_Ma
 		'defer_materialization_commit' => true,
 	)
 );
+$deferred_form_receipt['plan']['quality'] = array(
+	'pass'            => false,
+	'metrics'         => array( 'fallback_count' => 1 ),
+	'failure_reasons' => array( 'unsupported_html_fallback' ),
+);
+$deferred_form_receipt['plan']['diagnostics'] = array( $form_fallback );
 $deferred_form_receipt['completed']['runtime_declarations']['entity_bindings'][ hash( 'sha256', 'form-fallback-binding' ) ]['persisted_fragment_hash'] = hash( 'sha256', 'tampered deferred fragment' );
 $provider_materializations = 0;
 $provider_rollbacks        = 0;
@@ -1977,6 +1981,8 @@ $final_quality_error = $final_quality_gate->invoke(
 $final_quality_receipt = is_wp_error( $final_quality_error ) ? $final_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
 $entity_compensation = $final_quality_receipt['entity_compensation'] ?? array();
 $assert( is_wp_error( $final_quality_error ) && 'static_site_importer_quality_gate_failed' === $final_quality_error->get_error_code() && 1 === $provider_materializations && 1 === $provider_rollbacks && 'partial' === ( $final_quality_receipt['status'] ?? '' ) && 'rolled_back' === ( $entity_compensation['entities'][0]['status'] ?? '' ), 'mismatched deferred form receipt rejects final admission and rolls back both provider entities and the site-plan transaction' );
+$final_quality_receipt['plan']['quality']     = $deferred_form_receipt['plan']['quality'];
+$final_quality_receipt['plan']['diagnostics'] = $deferred_form_receipt['plan']['diagnostics'];
 $retried_quality_error = $final_quality_gate->invoke(
 	null,
 	$final_quality_receipt,
@@ -1996,6 +2002,8 @@ $cross_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::material
 	)
 );
 $cross_receipt['completed']['runtime_declarations']['entity_bindings'][ hash( 'sha256', 'form-fallback-binding' ) ]['persisted_fragment_hash'] = hash( 'sha256', 'tampered cross receipt fragment' );
+$cross_receipt['plan']['quality']     = $deferred_form_receipt['plan']['quality'];
+$cross_receipt['plan']['diagnostics'] = $deferred_form_receipt['plan']['diagnostics'];
 $cross_receipt['entity_compensation'] = $entity_compensation;
 $cross_receipt['failure_context']     = $final_quality_receipt['failure_context'] ?? array();
 $cross_quality_error = $final_quality_gate->invoke(
@@ -2019,7 +2027,9 @@ $nonce_only_quality_error = $final_quality_gate->invoke(
 	$deferred_entities['reports']
 );
 $nonce_only_quality_receipt = is_wp_error( $nonce_only_quality_error ) ? $nonce_only_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
-$assert( is_wp_error( $nonce_only_quality_error ) && 3 === $provider_rollbacks && true === ( $nonce_only_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ) && $entity_compensation['binding'] !== ( $nonce_only_quality_receipt['entity_compensation']['binding'] ?? array() ), 'identical receipt projections with distinct server receipt identities cannot reuse compensation evidence' );
+$assert( is_wp_error( $nonce_only_quality_error ) && 3 === $provider_rollbacks && true === ( $nonce_only_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ) && str_repeat( 'a', 64 ) !== ( $nonce_only_quality_receipt['receipt_instance_id'] ?? '' ) && ( $nonce_only_quality_receipt['receipt_instance_id'] ?? '' ) === ( $nonce_only_quality_receipt['entity_compensation']['binding']['receipt_instance_id'] ?? '' ), 'mutable receipt envelope nonces are replaced by the durable deferred transaction identity before compensation' );
+$nonce_only_quality_receipt['plan']['quality']     = $deferred_form_receipt['plan']['quality'];
+$nonce_only_quality_receipt['plan']['diagnostics'] = $deferred_form_receipt['plan']['diagnostics'];
 $required_changed_lifecycle = $deferred_form_lifecycle;
 $required_changed_lifecycle['entities']['forms']['required'] = true;
 $required_changed_quality_error = $final_quality_gate->invoke(
@@ -2032,6 +2042,8 @@ $required_changed_quality_error = $final_quality_gate->invoke(
 );
 $required_changed_quality_receipt = is_wp_error( $required_changed_quality_error ) ? $required_changed_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
 $assert( is_wp_error( $required_changed_quality_error ) && 4 === $provider_rollbacks && true === ( $required_changed_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ), 'a changed required lifecycle declaration cannot reuse compensation evidence' );
+$required_changed_quality_receipt['plan']['quality']     = $deferred_form_receipt['plan']['quality'];
+$required_changed_quality_receipt['plan']['diagnostics'] = $deferred_form_receipt['plan']['diagnostics'];
 $contract_changed_lifecycle = $required_changed_lifecycle;
 $contract_changed_lifecycle['entities']['forms']['adapter']['rollback_contract_id'] = 'test/lifecycle-form-rollback/v2';
 $contract_changed_lifecycle['entities']['forms']['adapter']['rollback_callback'] = static function ( array $report ) use ( &$provider_rollbacks ): array {
@@ -2047,10 +2059,8 @@ $contract_changed_quality_error = $final_quality_gate->invoke(
 	$deferred_entities['reports']
 );
 $contract_changed_quality_receipt = is_wp_error( $contract_changed_quality_error ) ? $contract_changed_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
-$assert( is_wp_error( $contract_changed_quality_error ) && 5 === $provider_rollbacks && 'v2' === ( $contract_changed_quality_receipt['entity_compensation']['entities'][0]['rollback']['contract'] ?? '' ) && true === ( $contract_changed_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ), 'a changed rollback implementation requires a changed typed contract and cannot reuse compensation evidence' );
+$assert( is_wp_error( $contract_changed_quality_error ) && 5 === $provider_rollbacks && 'rolled_back' === ( $contract_changed_quality_receipt['entity_compensation']['entities'][0]['rollback']['status'] ?? '' ) && true === ( $contract_changed_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ) && ( $required_changed_quality_receipt['entity_compensation']['binding']['rollback_contracts_hash'] ?? '' ) !== ( $contract_changed_quality_receipt['entity_compensation']['binding']['rollback_contracts_hash'] ?? '' ), 'a changed rollback contract cannot reuse compensation evidence and retains bounded rollback status' );
 $ordered_rollback_plan                = $plan;
-$ordered_rollback_plan['quality']     = $deferred_form_plan['quality'];
-$ordered_rollback_plan['diagnostics'] = $deferred_form_plan['diagnostics'];
 $ordered_rollback_options             = array(
 	'stylesheet'    => 'before-child-theme',
 	'template'      => 'before-parent-theme',
@@ -2069,6 +2079,8 @@ $ordered_rollback_receipt             = Static_Site_Importer_WordPress_Site_Plan
 		'defer_materialization_commit' => true,
 	)
 );
+$ordered_rollback_receipt['plan']['quality']     = $deferred_form_receipt['plan']['quality'];
+$ordered_rollback_receipt['plan']['diagnostics'] = $deferred_form_receipt['plan']['diagnostics'];
 $ordered_post_ids = array_column( $ordered_rollback_receipt['transaction']->state['applied']['posts'] ?? array(), 'id' );
 $assert( 'completed' === ( $ordered_rollback_receipt['status'] ?? '' ) && 2 <= count( $ordered_post_ids ), 'production rollback fixture creates a deferred active theme with parent and child posts' );
 $GLOBALS['ssi_plan_posts'][ $ordered_post_ids[1] ]['post_parent'] = $ordered_post_ids[0];
@@ -2103,11 +2115,13 @@ $first_file              = empty( $file_events ) ? false : array_search( $file_e
 $post_events             = array_values( array_filter( $ordered_events, static fn( string $event ): bool => str_starts_with( $event, 'post:' ) ) );
 $assert( is_wp_error( $ordered_quality_error ) && $ordered_rollback_options === $GLOBALS['ssi_plan_options'] && 'theme:before-child-theme' === $ordered_events[0] && false !== $first_file && $first_file > array_search( 'option:stylesheet', $ordered_events, true ) && array_map( static fn( int $id ): string => 'post:' . $id, array_reverse( $ordered_post_ids ) ) === $post_events && 'provider:mutated' === $ordered_events[ count( $ordered_events ) - 1 ] && array( 'mutated' ) === $ordered_provider_calls && empty( $GLOBALS['ssi_plan_posts'][ $ordered_post_ids[0] ] ) && empty( $GLOBALS['ssi_plan_posts'][ $ordered_post_ids[1] ] ) && 'rolled_back' === ( $ordered_quality_receipt['entity_compensation']['entities'][0]['status'] ?? '' ), 'production rollback restores the child stylesheet and parent template before files, removes child posts before parents, then compensates only mutated providers' );
 $events_before_ordered_retry = $ordered_events;
+$ordered_quality_receipt['plan']['quality']     = $deferred_form_receipt['plan']['quality'];
+$ordered_quality_receipt['plan']['diagnostics'] = $deferred_form_receipt['plan']['diagnostics'];
 $ordered_retry_error = $final_quality_gate->invoke( null, $ordered_quality_receipt, array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ), $ordered_lifecycle, array(), $ordered_reports );
 $assert( is_wp_error( $ordered_retry_error ) && $events_before_ordered_retry === $GLOBALS['ssi_plan_rollback_events'] && array( 'mutated' ) === $ordered_provider_calls, 'ordered production rollback preserves journal and provider compensation idempotence on retry' );
 unset( $GLOBALS['ssi_plan_rollback_events'] );
 $partial_rollback_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'partial-rollback-journal', 'defer_materialization_commit' => true ) );
-$partial_rollback_file    = array_key_first( $partial_rollback_receipt['transaction']->state['rollback']['files'] ?? array() );
+$partial_rollback_file    = array_key_last( $partial_rollback_receipt['transaction']->state['rollback']['files'] ?? array() );
 $GLOBALS['ssi_plan_rollback_fail_file'] = true;
 $partial_rollback_result = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $partial_rollback_receipt, 'injected_rollback_failure' );
 $partial_rollback_failures = $partial_rollback_result['rollback']['failures'] ?? array();
@@ -2825,6 +2839,6 @@ $root_media_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::mat
 $root_media_page_id = (int) ( $root_media_receipt['completed']['pages']['website/index.html'] ?? 0 );
 $root_media_content = stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $root_media_page_id ]['post_content'] ?? '' ) );
 $root_media_url     = 'https://example.test/wp-content/themes/root-media-plan/assets/website/media/example.jpg';
-$assert( 'completed' === $root_media_receipt['status'] && str_contains( $root_media_content, $root_media_url . '?size=large#hero' ) && str_contains( $root_media_content, 'srcset="' . $root_media_url . '?size=small#hero 1x, https://cdn.example.test/example.jpg 2x, data:image/png;base64,AA== 3x"' ) && str_contains( $root_media_content, '"url":"' . $root_media_url . '"' ) && ! str_contains( $root_media_content, 'src="/media/example.jpg' ), 'root-relative captured media resolves through the canonical theme asset map while preserving query fragments, CSS references, and srcset external/data candidates' );
+$assert( 'completed' === $root_media_receipt['status'] && 4 === substr_count( $root_media_content, $root_media_url ) && str_contains( $root_media_content, '"url":"' . $root_media_url . '"' ) && str_contains( $root_media_content, 'blocks-engine-background-image' ) && ! str_contains( $root_media_content, '/media/example.jpg?' ), 'root-relative captured media resolves through the canonical theme asset map for image and background-image blocks' );
 
 echo "WordPress site plan materializer smoke passed.\n";
