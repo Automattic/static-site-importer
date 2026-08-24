@@ -31,6 +31,7 @@ $GLOBALS['ssi_plan_fail_after']           = 0;
 $GLOBALS['ssi_plan_insert_calls']         = 0;
 $GLOBALS['ssi_plan_font_requests']        = array();
 $GLOBALS['ssi_plan_woo_cleanup_failures'] = false;
+$GLOBALS['ssi_plan_theme_templates']      = array();
 mkdir( $GLOBALS['ssi_plan_root'], 0777, true );
 
 class WP_Error {
@@ -83,7 +84,10 @@ function WP_Filesystem(): bool {
 	};
 	return true; }
 function wp_delete_file( string $path ): bool {
-	return unlink( $path ); }
+	if ( isset( $GLOBALS['ssi_plan_rollback_events'] ) ) {
+		$GLOBALS['ssi_plan_rollback_events'][] = 'file:' . basename( $path );
+	}
+	return ! ( $GLOBALS['ssi_plan_rollback_fail_file'] ?? false ) && unlink( $path ); }
 function wp_parse_url( string $url ) {
 	return parse_url( $url ); }
 function wp_safe_remote_get( string $url, array $args ) {
@@ -124,6 +128,9 @@ function wp_remote_retrieve_body( $response ): string {
 function get_option( string $key, mixed $default = false ): mixed {
 	return $GLOBALS['ssi_plan_options'][ $key ] ?? $default; }
 function update_option( string $key, $value ): bool {
+	if ( isset( $GLOBALS['ssi_plan_rollback_events'] ) ) {
+		$GLOBALS['ssi_plan_rollback_events'][] = 'option:' . $key;
+	}
 	if ( array_key_exists( $key, $GLOBALS['ssi_plan_options'] ) && $GLOBALS['ssi_plan_options'][ $key ] === $value ) {
 		return false; // Core semantics: unchanged value writes no row and returns false.
 	}
@@ -131,7 +138,15 @@ function update_option( string $key, $value ): bool {
 	return true;
 }
 function switch_theme( string $slug ): void {
-	$GLOBALS['ssi_plan_options']['stylesheet'] = $slug; }
+	if ( isset( $GLOBALS['ssi_plan_rollback_events'] ) ) {
+		$GLOBALS['ssi_plan_rollback_events'][] = 'theme:' . $slug;
+	}
+	$GLOBALS['ssi_plan_options']['stylesheet'] = $slug;
+	$GLOBALS['ssi_plan_options']['template'] = $GLOBALS['ssi_plan_theme_templates'][ $slug ] ?? $slug; }
+function get_stylesheet(): string {
+	return (string) ( $GLOBALS['ssi_plan_options']['stylesheet'] ?? '' ); }
+function get_template(): string {
+	return (string) ( $GLOBALS['ssi_plan_options']['template'] ?? '' ); }
 function convert_smilies( string $content, string $which = 'content' ): string {
 	return ( $GLOBALS['ssi_plan_options']['use_smilies'] ?? true ) ? 'smilied-' . $which : $content; }
 function sanitize_text_field( string $value ): string {
@@ -200,6 +215,9 @@ function wp_set_object_terms( int $object_id, array $terms, string $taxonomy ) {
 	return $terms; }
 function wp_delete_post( int $id, bool $force_delete ) {
 	unset( $force_delete );
+	if ( isset( $GLOBALS['ssi_plan_rollback_events'] ) ) {
+		$GLOBALS['ssi_plan_rollback_events'][] = 'post:' . $id;
+	}
 	if ( ! empty( $GLOBALS['ssi_plan_woo_cleanup_failures'] ) && 9000 <= $id ) {
 		return false; }
 	if ( ! isset( $GLOBALS['ssi_plan_posts'][ $id ] ) ) {
@@ -590,10 +608,11 @@ $block_lifecycle    = array(
 		'woo'  => array(
 			'adapter'  => array(
 				'provider'          => 'woocommerce',
+				'rollback_contract_id' => 'test/woocommerce-rollback/v1',
 				'materializer'      => static fn( array $manifest ): array => array(
 					'status'   => 'completed',
 					'counts'   => array( 'created' => 1 ),
-					'products' => array( array( 'slug' => $manifest['products'][0]['slug'] ) ),
+					'products' => array( array( 'slug' => $manifest['products'][0]['slug'], 'status' => 'created' ) ),
 				),
 				'rollback_callback' => static function ( array $report ) use ( &$rollback_order ): array {
 					$rollback_order[] = 'woo';
@@ -604,6 +623,7 @@ $block_lifecycle    = array(
 		'form' => array(
 			'adapter'  => array(
 				'provider'          => 'jetpack',
+				'rollback_contract_id' => 'test/jetpack-rollback/v1',
 				'materializer'      => static fn( array $manifest ): array => array(
 					'status' => 'completed',
 					'counts' => array( 'created' => 1 ),
@@ -611,6 +631,7 @@ $block_lifecycle    = array(
 						array(
 							'source_path' => $manifest['forms'][0]['source_path'],
 							'selector'    => '',
+							'status'      => 'mapped',
 						),
 					),
 				),
@@ -638,6 +659,58 @@ $block_late_failure = $theme_generator_materialize->invoke(
 	array()
 );
 $assert( is_wp_error( $block_late_failure ) && 'static_site_importer_projection_write_failed' === $block_late_failure->get_error_code() && array( 'form', 'woo' ) === $rollback_order, 'block-mode Woo and form entities compensate in reverse order when report persistence fails after materialization' );
+$deferred_rollback_order = array();
+$woo_snapshot_restored   = false;
+$deferred_quality_plan   = $plan;
+$deferred_quality_plan['quality'] = array(
+	'pass'            => false,
+	'metrics'         => array( 'fallback_count' => 1 ),
+	'failure_reasons' => array( 'unsupported_html_fallback' ),
+);
+$deferred_quality_plan['diagnostics'] = array( array( 'type' => 'unsupported_html_fallback' ) );
+$deferred_quality_lifecycle = array(
+	'dependencies' => array(),
+	'entities'     => array(
+		'woo' => array(
+			'adapter'  => array(
+				'provider'          => 'woocommerce-like',
+				'rollback_contract_id' => 'test/woocommerce-like-rollback/v1',
+				'materializer'      => static fn( array $manifest ): array => array( 'status' => 'completed', 'counts' => array( 'created' => 1 ), 'products' => array_map( static fn( array $product ): array => array_merge( $product, array( 'status' => 'created' ) ), $manifest['products'] ), 'rollback' => array( 'existing_product' => array( 'id' => 77, 'name' => 'Before import' ) ) ),
+				'rollback_callback' => static function ( array $report ) use ( &$deferred_rollback_order, &$woo_snapshot_restored ): array {
+					$deferred_rollback_order[] = 'woo';
+					$woo_snapshot_restored = array( 'id' => 77, 'name' => 'Before import' ) === ( $report['rollback']['existing_product'] ?? null );
+					return array( 'status' => 'rolled_back', 'reason' => 'restored_existing_product' );
+				},
+			),
+			'manifest' => array( 'products' => array( array( 'slug' => 'existing-product' ) ) ),
+		),
+		'form' => array(
+			'adapter'  => array(
+				'provider'          => 'jetpack-like',
+				'rollback_contract_id' => 'test/jetpack-like-rollback/v1',
+				'materializer'      => static fn( array $manifest ): array => array( 'status' => 'completed', 'counts' => array( 'created' => 1 ), 'forms' => array_map( static fn( array $form ): array => array_merge( $form, array( 'status' => 'mapped' ) ), $manifest['forms'] ) ),
+				'rollback_callback' => static function ( array $report ) use ( &$deferred_rollback_order ): array {
+					$deferred_rollback_order[] = 'form';
+					return array( 'status' => 'rolled_back' );
+				},
+			),
+			'manifest' => array( 'forms' => array( array( 'source_path' => 'index.html', 'selector' => 'form.newsletter' ) ) ),
+		),
+	),
+);
+$posts_before_deferred_quality = $GLOBALS['ssi_plan_posts'];
+$deferred_quality_failure      = $theme_generator_materialize->invoke(
+	null,
+	array(),
+	array( 'slug' => 'deferred-quality-compensation', 'seed_entities' => true, 'font_materialization' => array(), 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+	$deferred_quality_plan,
+	array(),
+	null,
+	$deferred_quality_lifecycle,
+	array()
+);
+$deferred_quality_receipt = is_wp_error( $deferred_quality_failure ) ? $deferred_quality_failure->get_error_data() : array();
+$assert( is_wp_error( $deferred_quality_failure ) && 'static_site_importer_quality_gate_failed' === $deferred_quality_failure->get_error_code() && array( 'form', 'woo' ) === $deferred_rollback_order && $woo_snapshot_restored && $posts_before_deferred_quality === $GLOBALS['ssi_plan_posts'] && 'rolled_back' === ( $deferred_quality_receipt['entity_compensation']['status'] ?? '' ) && 'final_quality_admission' === ( $deferred_quality_receipt['failure_context']['stage'] ?? '' ), 'theme generator final quality admission compensates providers in reverse order, restores pre-existing provider state, and rolls back the site plan' );
 
 $classic_artifact   = array(
 	'entrypoint' => 'index.html',
@@ -661,6 +734,7 @@ $woo_late_failure_lifecycle = array(
 		'woo' => array(
 			'adapter'  => array(
 				'provider'                 => 'woocommerce',
+				'rollback_contract_id'     => 'static-site-importer/woocommerce-product-rollback/v1',
 				'materializer'             => array( 'Static_Site_Importer_Woo_Product_Seeder', 'seed' ),
 				'rollback_callback'        => array( 'Static_Site_Importer_Woo_Product_Seeder', 'rollback' ),
 				'classic_binding_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_classic_render' ),
@@ -1885,14 +1959,179 @@ $deferred_form_receipt             = Static_Site_Importer_WordPress_Site_Plan_Ma
 	)
 );
 $deferred_form_receipt['completed']['runtime_declarations']['entity_bindings'][ hash( 'sha256', 'form-fallback-binding' ) ]['persisted_fragment_hash'] = hash( 'sha256', 'tampered deferred fragment' );
+$provider_materializations = 0;
+$provider_rollbacks        = 0;
+$deferred_form_lifecycle   = array(
+	'entities' => array(
+		'forms' => array(
+			'adapter' => array(
+				'capability'        => 'form',
+				'provider'          => 'lifecycle-test',
+				'rollback_contract_id' => 'test/lifecycle-form-rollback/v1',
+				'materializer'      => static function ( array $manifest ) use ( &$provider_materializations ): array {
+					++$provider_materializations;
+					return array( 'status' => 'completed', 'counts' => array( 'created' => count( $manifest['forms'] ?? array() ) ), 'forms' => array_map( static fn( array $form ): array => array_merge( $form, array( 'status' => 'mapped' ) ), $manifest['forms'] ?? array() ) );
+				},
+				'rollback_callback' => static function ( array $report ) use ( &$provider_rollbacks ): array {
+					++$provider_rollbacks;
+					return array( 'status' => 'rolled_back' );
+				},
+			),
+			'manifest' => array( 'forms' => array( array( 'source_path' => 'index.html', 'selector' => 'form.newsletter' ) ) ),
+		),
+	),
+);
+$materialize_entities = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'materialize_prepared_entities' );
+$deferred_entities    = $materialize_entities->invoke( null, $deferred_form_lifecycle, array( 'seed_entities' => true ) );
 $final_quality_gate = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'public_result_from_wordpress_site_plan_receipt' );
 $final_quality_error = $final_quality_gate->invoke(
 	null,
 	$deferred_form_receipt,
-	array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true )
+	array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+	$deferred_form_lifecycle,
+	array(),
+	$deferred_entities['reports']
 );
 $final_quality_receipt = is_wp_error( $final_quality_error ) ? $final_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
-$assert( is_wp_error( $final_quality_error ) && 'static_site_importer_quality_gate_failed' === $final_quality_error->get_error_code() && 'partial' === ( $final_quality_receipt['status'] ?? '' ), 'mismatched deferred form receipt fails final admission and rolls back the transaction' );
+$entity_compensation = $final_quality_receipt['entity_compensation'] ?? array();
+$assert( is_wp_error( $final_quality_error ) && 'static_site_importer_quality_gate_failed' === $final_quality_error->get_error_code() && 1 === $provider_materializations && 1 === $provider_rollbacks && 'partial' === ( $final_quality_receipt['status'] ?? '' ) && 'rolled_back' === ( $entity_compensation['entities'][0]['status'] ?? '' ), 'mismatched deferred form receipt rejects final admission and rolls back both provider entities and the site-plan transaction' );
+$retried_quality_error = $final_quality_gate->invoke(
+	null,
+	$final_quality_receipt,
+	array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+	$deferred_form_lifecycle,
+	array(),
+	$deferred_entities['reports']
+);
+$retried_quality_receipt = is_wp_error( $retried_quality_error ) ? $retried_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
+$assert( is_wp_error( $retried_quality_error ) && 1 === $provider_rollbacks && $entity_compensation === ( $retried_quality_receipt['entity_compensation'] ?? array() ), 'repeated deferred finalization reuses the recorded provider compensation receipt without re-running destructive rollback callbacks' );
+$cross_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$deferred_form_plan,
+	array(
+		'slug'                        => 'deferred-form-quality-cross-receipt',
+		'runtime_entity_bindings'     => array( $form_binding ),
+		'defer_materialization_commit' => true,
+	)
+);
+$cross_receipt['completed']['runtime_declarations']['entity_bindings'][ hash( 'sha256', 'form-fallback-binding' ) ]['persisted_fragment_hash'] = hash( 'sha256', 'tampered cross receipt fragment' );
+$cross_receipt['entity_compensation'] = $entity_compensation;
+$cross_receipt['failure_context']     = $final_quality_receipt['failure_context'] ?? array();
+$cross_quality_error = $final_quality_gate->invoke(
+	null,
+	$cross_receipt,
+	array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+	$deferred_form_lifecycle,
+	array(),
+	$deferred_entities['reports']
+);
+$cross_quality_receipt = is_wp_error( $cross_quality_error ) ? $cross_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
+$assert( is_wp_error( $cross_quality_error ) && 2 === $provider_rollbacks && true === ( $cross_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ) && $entity_compensation['binding'] !== ( $cross_quality_receipt['entity_compensation']['binding'] ?? array() ), 'cross-receipt compensation evidence cannot suppress the second receipt rollback' );
+$nonce_only_cross_receipt = $final_quality_receipt;
+$nonce_only_cross_receipt['receipt_instance_id'] = str_repeat( 'a', 64 );
+$nonce_only_quality_error = $final_quality_gate->invoke(
+	null,
+	$nonce_only_cross_receipt,
+	array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+	$deferred_form_lifecycle,
+	array(),
+	$deferred_entities['reports']
+);
+$nonce_only_quality_receipt = is_wp_error( $nonce_only_quality_error ) ? $nonce_only_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
+$assert( is_wp_error( $nonce_only_quality_error ) && 3 === $provider_rollbacks && true === ( $nonce_only_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ) && $entity_compensation['binding'] !== ( $nonce_only_quality_receipt['entity_compensation']['binding'] ?? array() ), 'identical receipt projections with distinct server receipt identities cannot reuse compensation evidence' );
+$required_changed_lifecycle = $deferred_form_lifecycle;
+$required_changed_lifecycle['entities']['forms']['required'] = true;
+$required_changed_quality_error = $final_quality_gate->invoke(
+	null,
+	$nonce_only_quality_receipt,
+	array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+	$required_changed_lifecycle,
+	array(),
+	$deferred_entities['reports']
+);
+$required_changed_quality_receipt = is_wp_error( $required_changed_quality_error ) ? $required_changed_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
+$assert( is_wp_error( $required_changed_quality_error ) && 4 === $provider_rollbacks && true === ( $required_changed_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ), 'a changed required lifecycle declaration cannot reuse compensation evidence' );
+$contract_changed_lifecycle = $required_changed_lifecycle;
+$contract_changed_lifecycle['entities']['forms']['adapter']['rollback_contract_id'] = 'test/lifecycle-form-rollback/v2';
+$contract_changed_lifecycle['entities']['forms']['adapter']['rollback_callback'] = static function ( array $report ) use ( &$provider_rollbacks ): array {
+	++$provider_rollbacks;
+	return array( 'status' => 'rolled_back', 'contract' => 'v2' );
+};
+$contract_changed_quality_error = $final_quality_gate->invoke(
+	null,
+	$required_changed_quality_receipt,
+	array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+	$contract_changed_lifecycle,
+	array(),
+	$deferred_entities['reports']
+);
+$contract_changed_quality_receipt = is_wp_error( $contract_changed_quality_error ) ? $contract_changed_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
+$assert( is_wp_error( $contract_changed_quality_error ) && 5 === $provider_rollbacks && 'v2' === ( $contract_changed_quality_receipt['entity_compensation']['entities'][0]['rollback']['contract'] ?? '' ) && true === ( $contract_changed_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ), 'a changed rollback implementation requires a changed typed contract and cannot reuse compensation evidence' );
+$ordered_rollback_plan                = $plan;
+$ordered_rollback_plan['quality']     = $deferred_form_plan['quality'];
+$ordered_rollback_plan['diagnostics'] = $deferred_form_plan['diagnostics'];
+$ordered_rollback_options             = array(
+	'stylesheet'    => 'before-child-theme',
+	'template'      => 'before-parent-theme',
+	'show_on_front' => 'posts',
+	'page_on_front' => 71,
+	'blogname'      => 'Before rollback',
+	'use_smilies'   => true,
+);
+$GLOBALS['ssi_plan_options']          = $ordered_rollback_options;
+$GLOBALS['ssi_plan_theme_templates']['before-child-theme'] = 'before-parent-theme';
+$ordered_rollback_receipt             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$ordered_rollback_plan,
+	array(
+		'slug'                       => 'ordered-production-rollback',
+		'activate'                   => true,
+		'defer_materialization_commit' => true,
+	)
+);
+$ordered_post_ids = array_column( $ordered_rollback_receipt['transaction']->state['applied']['posts'] ?? array(), 'id' );
+$assert( 'completed' === ( $ordered_rollback_receipt['status'] ?? '' ) && 2 <= count( $ordered_post_ids ), 'production rollback fixture creates a deferred active theme with parent and child posts' );
+$GLOBALS['ssi_plan_posts'][ $ordered_post_ids[1] ]['post_parent'] = $ordered_post_ids[0];
+$ordered_provider_calls = array();
+$ordered_lifecycle      = array(
+	'entities' => array(
+		'not_materialized' => array( 'adapter' => array( 'provider' => 'not-materialized', 'rollback_contract_id' => 'test/not-materialized/v1', 'rollback_callback' => static function () use ( &$ordered_provider_calls ): array { $ordered_provider_calls[] = 'not_materialized'; return array( 'status' => 'rolled_back' ); } ) ),
+		'skipped'          => array( 'adapter' => array( 'provider' => 'skipped', 'rollback_contract_id' => 'test/skipped/v1', 'rollback_callback' => static function () use ( &$ordered_provider_calls ): array { $ordered_provider_calls[] = 'skipped'; return array( 'status' => 'rolled_back' ); } ) ),
+		'waived'           => array( 'adapter' => array( 'provider' => 'waived', 'rollback_contract_id' => 'test/waived/v1', 'rollback_callback' => static function () use ( &$ordered_provider_calls ): array { $ordered_provider_calls[] = 'waived'; return array( 'status' => 'rolled_back' ); } ) ),
+		'mutated'          => array( 'adapter' => array( 'provider' => 'mutated', 'rollback_contract_id' => 'test/mutated/v1', 'rollback_callback' => static function () use ( &$ordered_provider_calls ): array { $ordered_provider_calls[] = 'mutated'; $GLOBALS['ssi_plan_rollback_events'][] = 'provider:mutated'; return array( 'status' => 'rolled_back' ); } ) ),
+	),
+);
+$ordered_reports = array(
+	'not_materialized' => array( 'status' => 'not_materialized' ),
+	'skipped'          => array( 'status' => 'completed', 'forms' => array( array( 'status' => 'skipped' ) ) ),
+	'waived'           => array( 'status' => 'waived' ),
+	'mutated'          => array( 'status' => 'mutated', 'counts' => array( 'created' => 1 ), 'mutations' => array( array( 'status' => 'mutated' ) ) ),
+);
+$GLOBALS['ssi_plan_rollback_events'] = array();
+$ordered_quality_error = $final_quality_gate->invoke(
+	null,
+	$ordered_rollback_receipt,
+	array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+	$ordered_lifecycle,
+	array(),
+	$ordered_reports
+);
+$ordered_quality_receipt = is_wp_error( $ordered_quality_error ) ? $ordered_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
+$ordered_events          = $GLOBALS['ssi_plan_rollback_events'];
+$file_events             = array_values( array_filter( $ordered_events, static fn( string $event ): bool => str_starts_with( $event, 'file:' ) ) );
+$first_file              = empty( $file_events ) ? false : array_search( $file_events[0], $ordered_events, true );
+$post_events             = array_values( array_filter( $ordered_events, static fn( string $event ): bool => str_starts_with( $event, 'post:' ) ) );
+$assert( is_wp_error( $ordered_quality_error ) && $ordered_rollback_options === $GLOBALS['ssi_plan_options'] && 'theme:before-child-theme' === $ordered_events[0] && false !== $first_file && $first_file > array_search( 'option:stylesheet', $ordered_events, true ) && array_map( static fn( int $id ): string => 'post:' . $id, array_reverse( $ordered_post_ids ) ) === $post_events && 'provider:mutated' === $ordered_events[ count( $ordered_events ) - 1 ] && array( 'mutated' ) === $ordered_provider_calls && empty( $GLOBALS['ssi_plan_posts'][ $ordered_post_ids[0] ] ) && empty( $GLOBALS['ssi_plan_posts'][ $ordered_post_ids[1] ] ) && 'rolled_back' === ( $ordered_quality_receipt['entity_compensation']['entities'][0]['status'] ?? '' ), 'production rollback restores the child stylesheet and parent template before files, removes child posts before parents, then compensates only mutated providers' );
+$events_before_ordered_retry = $ordered_events;
+$ordered_retry_error = $final_quality_gate->invoke( null, $ordered_quality_receipt, array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ), $ordered_lifecycle, array(), $ordered_reports );
+$assert( is_wp_error( $ordered_retry_error ) && $events_before_ordered_retry === $GLOBALS['ssi_plan_rollback_events'] && array( 'mutated' ) === $ordered_provider_calls, 'ordered production rollback preserves journal and provider compensation idempotence on retry' );
+unset( $GLOBALS['ssi_plan_rollback_events'] );
+$partial_rollback_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'partial-rollback-journal', 'defer_materialization_commit' => true ) );
+$partial_rollback_file    = array_key_first( $partial_rollback_receipt['transaction']->state['rollback']['files'] ?? array() );
+$GLOBALS['ssi_plan_rollback_fail_file'] = true;
+$partial_rollback_result = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $partial_rollback_receipt, 'injected_rollback_failure' );
+$partial_rollback_failures = $partial_rollback_result['rollback']['failures'] ?? array();
+$GLOBALS['ssi_plan_rollback_fail_file'] = false;
+$partial_rollback_retry = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $partial_rollback_result, 'injected_rollback_retry' );
+$assert( 'partial' === ( $partial_rollback_result['rollback']['status'] ?? '' ) && 'file' === ( $partial_rollback_failures[0]['kind'] ?? '' ) && $partial_rollback_file === ( $partial_rollback_failures[0]['target'] ?? '' ) && ! empty( $partial_rollback_result['transaction']->state['rollback']['done'] ) && $partial_rollback_failures === ( $partial_rollback_retry['rollback']['failures'] ?? array() ) && is_file( $partial_rollback_file ), 'injected rollback failures retain partial journal evidence and do not replay destructive operations on retry' );
 $resumed_form_binding_receipt                             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$binding_plan,
 	array(

@@ -71,10 +71,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === $strategy['strategy'] && ! is_array( $args['classic_theme_projection'] ?? null ) ) {
 			return self::failed_strategy_receipt( $plan, $args, new WP_Error( 'static_site_importer_classic_source_projection_missing', 'Classic materialization requires the SSI source-artifact projection prepared before this plan-only boundary.' ) );
 		}
-		$default_content           = self::discover_default_content( $args );
-		$state                     = array(
+		$default_content = self::discover_default_content( $args );
+		$state           = array(
 			'plan'                         => $plan,
 			'plan_identity'                => self::plan_identity( $plan ),
+			'receipt_instance_id'          => self::receipt_instance_id(),
 			'diagnostics'                  => array(),
 			'applied'                      => array(
 				'posts'                => array(),
@@ -105,7 +106,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			WordPressSitePlan::assertValid( $plan );
 		} catch ( InvalidArgumentException $error ) {
-			$state['diagnostics'][] = array( 'reason_code' => 'canonical_plan_rejected' );
+			$state['diagnostics'][]  = array( 'reason_code' => 'canonical_plan_rejected' );
 			$state['failure_reason'] = 'canonical_plan_rejected';
 			return array(
 				'status'  => 'rejected',
@@ -114,7 +115,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		$state['editability_report'] = self::editability_report_admission( $plan );
 		if ( 'rejected' === $state['editability_report']['status'] ) {
-			$state['diagnostics'][] = $state['editability_report']['diagnostic'];
+			$state['diagnostics'][]  = $state['editability_report']['diagnostic'];
 			$state['failure_reason'] = (string) ( $state['editability_report']['diagnostic']['reason_code'] ?? 'editability_report_rejected' );
 			return array(
 				'status'  => 'rejected',
@@ -164,17 +165,17 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				$state['base_resolved'] = $resolved;
 			}
 			$state['prepared_resolved_projection_hash'] = self::prepared_resolved_projection_hash( $resolved );
-			$state['resolved']           = $resolved;
+			$state['resolved']                          = $resolved;
 			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
-			$state['theme_dir'] = $theme_dir;
-			$state['theme']     = array(
+			$state['theme_dir']                = $theme_dir;
+			$state['theme']                    = array(
 				'slug' => $slug,
 				'dir'  => $theme_dir,
 				'uri'  => $theme_uri,
 			);
 			$state['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $resolved, $args );
 			if ( Static_Site_Importer_Quality_Budget_Admission::rejects_materialization( $state['quality_budget_admission'] ) ) {
-				$state['diagnostics'][] = array(
+				$state['diagnostics'][]  = array(
 					'reason_code'    => 'quality_budget_failed',
 					'quality_budget' => $state['quality_budget_admission'],
 				);
@@ -186,7 +187,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
 		} catch ( InvalidArgumentException $error ) {
-			$state['diagnostics'][] = array( 'reason_code' => $error->getMessage() );
+			$state['diagnostics'][]  = array( 'reason_code' => $error->getMessage() );
 			$state['failure_reason'] = $error->getMessage();
 			return array(
 				'status'  => 'rejected',
@@ -245,7 +246,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		$references = self::verify_payload_references( $prepared['resolved']['writes'], is_object( $prepared['payload_reader'] ?? null ) ? $prepared['payload_reader'] : null );
 		if ( is_wp_error( $references ) ) {
-			$prepared['diagnostics'][] = array( 'reason_code' => $references->get_error_code() );
+			$prepared['diagnostics'][]  = array( 'reason_code' => $references->get_error_code() );
 			$prepared['failure_reason'] = $references->get_error_code();
 			return array(
 				'status'  => 'rejected',
@@ -261,6 +262,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$state = array(
 			'plan'                  => $plan,
 			'plan_identity'         => self::plan_identity( $plan ),
+			'receipt_instance_id'   => self::receipt_instance_id(),
 			'diagnostics'           => array( array( 'reason_code' => $error->get_error_code() ) ),
 			'failure_reason'        => $error->get_error_code(),
 			'applied'               => array(
@@ -285,7 +287,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** @param array<string,mixed> $prepared @return array<string,mixed> */
 	public static function materialize_prepared( array $prepared ): array {
-		if ( 'prepared' !== ( $prepared['status'] ?? '' ) || ! isset( $prepared['plan'] ) || ! is_array( $prepared['plan'] ) ) {
+		if ( 'prepared' !== ( $prepared['status'] ?? '' ) || ! isset( $prepared['plan'] ) || ! is_array( $prepared['plan'] ) || ! self::valid_receipt_instance_id( $prepared['receipt_instance_id'] ?? null ) ) {
 			return self::receipt(
 				'rejected',
 				array(
@@ -521,7 +523,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$base_resolved  = $prepared['base_resolved'] ?? null;
 		$args           = isset( $prepared['args'] ) && is_array( $prepared['args'] ) ? $prepared['args'] : array();
 		$payload_reader = is_object( $prepared['payload_reader'] ?? null ) ? $prepared['payload_reader'] : null;
-		if ( ! is_array( $plan ) || ! is_array( $base_resolved ) || self::plan_identity( $plan ) !== ( $prepared['plan_identity'] ?? null ) || self::prepared_resolved_projection_hash( $base_resolved ) !== ( $prepared['prepared_resolved_projection_hash'] ?? '' ) ) {
+		if ( ! is_array( $plan ) || ! is_array( $base_resolved ) || ! self::valid_receipt_instance_id( $prepared['receipt_instance_id'] ?? null ) || self::plan_identity( $plan ) !== ( $prepared['plan_identity'] ?? null ) || self::prepared_resolved_projection_hash( $base_resolved ) !== ( $prepared['prepared_resolved_projection_hash'] ?? '' ) ) {
 			return array(
 				'status'  => 'rejected',
 				'receipt' => self::receipt(
@@ -552,14 +554,15 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$theme_uri  = trailingslashit( get_theme_root_uri() ) . $slug;
 		$theme_dir  = trailingslashit( $theme_root ) . $slug;
 		$state      = array(
-			'plan'                         => $plan,
-			'plan_identity'                => $prepared['plan_identity'],
-			'editability_report'           => $prepared['editability_report'] ?? array(),
-			'base_resolved'                => $base_resolved,
+			'plan'                              => $plan,
+			'plan_identity'                     => $prepared['plan_identity'],
+			'receipt_instance_id'               => $prepared['receipt_instance_id'],
+			'editability_report'                => $prepared['editability_report'] ?? array(),
+			'base_resolved'                     => $base_resolved,
 			'prepared_resolved_projection_hash' => $prepared['prepared_resolved_projection_hash'],
-			'resolved'                     => $base_resolved,
-			'diagnostics'                  => array(),
-			'applied'                      => array(
+			'resolved'                          => $base_resolved,
+			'diagnostics'                       => array(),
+			'applied'                           => array(
 				'posts'                => array(),
 				'files'                => array(),
 				'operations'           => array(),
@@ -568,25 +571,25 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					'entity_bindings'    => array(),
 				),
 			),
-			'skipped'                      => array(),
-			'existing_matches'             => array( 'pages' => array() ),
-			'report_destinations'          => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
-			'external_report_destinations' => isset( $args['external_report_destinations'] ) && is_array( $args['external_report_destinations'] ) ? $args['external_report_destinations'] : array(),
-			'theme_dir'                    => $theme_dir,
-			'theme'                        => array(
+			'skipped'                           => array(),
+			'existing_matches'                  => array( 'pages' => array() ),
+			'report_destinations'               => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
+			'external_report_destinations'      => isset( $args['external_report_destinations'] ) && is_array( $args['external_report_destinations'] ) ? $args['external_report_destinations'] : array(),
+			'theme_dir'                         => $theme_dir,
+			'theme'                             => array(
 				'slug' => $slug,
 				'dir'  => $theme_dir,
 				'uri'  => $theme_uri,
 			),
-			'args'                         => $args,
-			'payload_reader'               => $payload_reader,
-			'default_content'              => isset( $prepared['default_content'] ) && is_array( $prepared['default_content'] ) ? $prepared['default_content'] : array(),
-			'rollback'                     => array(
+			'args'                              => $args,
+			'payload_reader'                    => $payload_reader,
+			'default_content'                   => isset( $prepared['default_content'] ) && is_array( $prepared['default_content'] ) ? $prepared['default_content'] : array(),
+			'rollback'                          => array(
 				'posts'   => array(),
 				'files'   => array(),
 				'options' => array(),
 			),
-			'preparation'                  => array(
+			'preparation'                       => array(
 				'canonical_validations'       => 1,
 				'plan_resolutions'            => 1,
 				'destination_preflights'      => 2,
@@ -610,7 +613,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
 			$state['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $state['resolved'], $args );
 			if ( Static_Site_Importer_Quality_Budget_Admission::rejects_materialization( $state['quality_budget_admission'] ) ) {
-				$state['diagnostics'][] = array(
+				$state['diagnostics'][]  = array(
 					'reason_code'    => 'quality_budget_failed',
 					'quality_budget' => $state['quality_budget_admission'],
 				);
@@ -623,7 +626,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			self::validate_materialized_block_documents( $state['resolved'], $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
 		} catch ( InvalidArgumentException $error ) {
-			$state['diagnostics'][] = array( 'reason_code' => $error->getMessage() );
+			$state['diagnostics'][]  = array( 'reason_code' => $error->getMessage() );
 			$state['failure_reason'] = $error->getMessage();
 			return array(
 				'status'  => 'rejected',
@@ -1823,7 +1826,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** @param array<string,mixed> $state */
 	private static function failed_receipt( array $state, int|string $reason ): array {
-		$state['diagnostics'][] = array( 'reason_code' => (string) $reason );
+		$state['diagnostics'][]  = array( 'reason_code' => (string) $reason );
 		$state['failure_reason'] = (string) $reason;
 		self::rollback( $state );
 		return self::receipt( 'partial', $state );
@@ -1831,9 +1834,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** @param array<string,mixed> $state */
 	private static function failed_receipt_from_error( array $state, WP_Error $error ): array {
-		$state['diagnostics'][] = array( 'reason_code' => $error->get_error_code() );
+		$state['diagnostics'][]  = array( 'reason_code' => $error->get_error_code() );
 		$state['failure_reason'] = $error->get_error_code();
-		$data                   = $error->get_error_data();
+		$data                    = $error->get_error_data();
 		if ( is_array( $data ) ) {
 			foreach ( $data as $diagnostic ) {
 				if ( ! is_array( $diagnostic ) ) {
@@ -1914,12 +1917,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		);
 	}
 
-	private static function active_theme_matches( string $slug ): bool {
-		$stylesheet = function_exists( 'get_stylesheet' ) ? get_stylesheet() : get_option( 'stylesheet', '' );
-		if ( function_exists( 'get_template' ) ) {
-			return $stylesheet === $slug && get_template() === $slug;
-		}
-		return $stylesheet === $slug;
+	private static function active_theme_matches( string $stylesheet, ?string $template = null ): bool {
+		$template = $template ?? $stylesheet;
+		return ( function_exists( 'get_stylesheet' ) ? get_stylesheet() : get_option( 'stylesheet', '' ) ) === $stylesheet
+			&& ( function_exists( 'get_template' ) ? get_template() : get_option( 'template', '' ) ) === $template;
 	}
 
 	private static function injected_failure( array $args, string $stage ): bool {
@@ -1962,8 +1963,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( ! isset( $receipt['transaction'] ) || ! is_object( $receipt['transaction'] ) || ! is_array( $receipt['transaction']->state ?? null ) ) {
 			return $receipt;
 		}
-		$state                  = $receipt['transaction']->state;
-		$state['diagnostics'][] = array( 'reason_code' => $reason );
+		$state                   = $receipt['transaction']->state;
+		$state['diagnostics'][]  = array( 'reason_code' => $reason );
 		$state['failure_reason'] = $reason;
 		self::rollback( $state );
 		$result                        = self::receipt( 'partial', $state );
@@ -1972,41 +1973,89 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return $result;
 	}
 
-	/** Revert importer-owned writes and posts on a failed materialization receipt. */
+	/** Revert importer-owned runtime state, writes, and posts on a failed receipt. */
 	private static function rollback( array &$state ): void {
 		if ( ! empty( $state['rollback']['done'] ) ) {
 			return; }
 		$state['rollback']['done'] = true;
+		self::restore_runtime( $state );
 		foreach ( array_reverse( $state['rollback']['files'] ?? array(), true ) as $path => $before ) {
 			if ( ! is_array( $before ) ) {
 				continue; }
-			if ( ! empty( $before['exists'] ) && is_string( $before['content'] ?? null ) ) {
-				self::restore_file( $path, $before['content'] );
-			} elseif ( is_file( $path ) ) {
-				wp_delete_file( $path );
+			try {
+				if ( ! empty( $before['exists'] ) && is_string( $before['content'] ?? null ) ) {
+					self::restore_file( $path, $before['content'] );
+				} elseif ( is_file( $path ) && ! wp_delete_file( $path ) ) {
+					throw new RuntimeException( 'materialization_rollback_file_delete_failed' );
+				}
+			} catch ( Throwable $error ) {
+				self::record_rollback_failure( $state, 'file', (string) $path, $error );
 			}
 		}
-		foreach ( $state['applied']['posts'] ?? array() as $applied ) {
+		foreach ( array_reverse( $state['applied']['posts'] ?? array() ) as $applied ) {
 			$id     = (int) ( $applied['id'] ?? 0 );
-			$before = $state['rollback']['posts'][ $id ] ?? null;
+			$before = $state['rollback']['posts'][ $id ] ?? $state['rollback']['posts'][ 'new:' . (string) ( $applied['source_path'] ?? '' ) ] ?? null;
 			if ( ! is_array( $before ) || $id <= 0 ) {
 				continue; }
-			if ( ! empty( $before['existing'] ) ) {
-				wp_update_post( $before['post'] );
-				update_post_meta( $id, '_static_site_importer_provenance', $before['provenance'] );
-				update_post_meta( $id, self::RECONCILIATION_META_KEY, $before['reconciliation_identity'] );
-			} elseif ( function_exists( 'wp_delete_post' ) ) {
-				wp_delete_post( $id, true ); }
-		}
-		foreach ( array_reverse( $state['rollback']['options'] ?? array(), true ) as $option => $before ) {
-			if ( ! empty( $before['exists'] ) ) {
-				update_option( $option, $before['value'] );
-			} elseif ( function_exists( 'delete_option' ) ) {
-				delete_option( $option ); }
+			try {
+				if ( ! empty( $before['existing'] ) ) {
+					wp_update_post( $before['post'] );
+					update_post_meta( $id, '_static_site_importer_provenance', $before['provenance'] );
+					update_post_meta( $id, self::RECONCILIATION_META_KEY, $before['reconciliation_identity'] );
+				} elseif ( function_exists( 'wp_delete_post' ) && ! wp_delete_post( $id, true ) ) {
+					throw new RuntimeException( 'materialization_rollback_post_delete_failed' );
+				}
+			} catch ( Throwable $error ) {
+				self::record_rollback_failure( $state, 'post', (string) $id, $error );
+			}
 		}
 		$state['applied']['files'] = array();
 		$state['applied']['posts'] = array();
 		$state['diagnostics'][]    = array( 'reason_code' => 'materialization_rolled_back' );
+	}
+
+	/** Restore options and the prior active theme before deleting generated theme files. */
+	private static function restore_runtime( array &$state ): void {
+		$options    = $state['rollback']['options'] ?? array();
+		$stylesheet = $options['stylesheet']['value'] ?? null;
+		$template   = $options['template']['value'] ?? null;
+		if ( ! empty( $options['stylesheet']['exists'] ) && ! empty( $options['template']['exists'] ) && is_string( $stylesheet ) && '' !== $stylesheet && is_string( $template ) && '' !== $template && function_exists( 'switch_theme' ) ) {
+			try {
+				switch_theme( $stylesheet );
+				if ( ! self::active_theme_matches( $stylesheet, $template ) ) {
+					throw new RuntimeException( 'materialization_rollback_theme_restore_failed' );
+				}
+			} catch ( Throwable $error ) {
+				self::record_rollback_failure( $state, 'theme', $stylesheet, $error );
+			}
+		}
+		foreach ( array_reverse( $options, true ) as $option => $before ) {
+			try {
+				if ( ! empty( $before['exists'] ) ) {
+					update_option( $option, $before['value'] );
+				} elseif ( function_exists( 'delete_option' ) ) {
+					delete_option( $option );
+				}
+			} catch ( Throwable $error ) {
+				self::record_rollback_failure( $state, 'option', (string) $option, $error );
+			}
+		}
+	}
+
+	/** Retain bounded failure evidence without replaying the immutable journal on retry. */
+	private static function record_rollback_failure( array &$state, string $kind, string $target, Throwable $error ): void {
+		$state['rollback']['partial'] = true;
+		if ( count( $state['rollback']['failures'] ?? array() ) < 32 ) {
+			$state['rollback']['failures'][] = array(
+				'kind'   => $kind,
+				'target' => $target,
+				'code'   => $error->getMessage(),
+			);
+		}
+		$state['diagnostics'][] = array(
+			'reason_code' => 'materialization_rollback_' . $kind . '_failed',
+			'target'      => $target,
+		);
 	}
 
 	/** Restore a journaled file through the WordPress filesystem abstraction. */
@@ -2062,6 +2111,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'schema'                    => self::RECEIPT_SCHEMA,
 			'status'                    => $status,
 			'plan_identity'             => $state['plan_identity'],
+			'receipt_instance_id'       => self::valid_receipt_instance_id( $state['receipt_instance_id'] ?? null ) ? $state['receipt_instance_id'] : self::receipt_instance_id(),
 			'plan'                      => $resolved_plan,
 			'theme'                     => $state['theme'] ?? array(),
 			'completed'                 => array(
@@ -2100,6 +2150,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'operations'                => $state['applied']['operations'],
 			'skipped_targets'           => $state['skipped'],
 			'existing_matches'          => $state['existing_matches'],
+			'rollback'                  => array(
+				'status'   => ! empty( $state['rollback']['partial'] ) ? 'partial' : ( ! empty( $state['rollback']['done'] ) ? 'rolled_back' : 'not_requested' ),
+				'failures' => array_slice( is_array( $state['rollback']['failures'] ?? null ) ? $state['rollback']['failures'] : array(), 0, 32 ),
+			),
 			'preparation'               => $state['preparation'] ?? array(),
 			'editability_report'        => $state['editability_report'] ?? array(
 				'schema' => 'static-site-importer/editability-report-admission/v1',
@@ -2115,6 +2169,16 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$receipt['transaction'] = (object) array( 'state' => $state );
 		}
 		return $receipt;
+	}
+
+	/** Generate a server-side receipt identity that cannot be inferred from the plan. */
+	private static function receipt_instance_id(): string {
+		return bin2hex( random_bytes( 32 ) );
+	}
+
+	/** Validate the persistent receipt identity across deferred materialization phases. */
+	private static function valid_receipt_instance_id( mixed $id ): bool {
+		return is_string( $id ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $id );
 	}
 
 	/**

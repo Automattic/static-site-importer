@@ -470,6 +470,8 @@ class Static_Site_Importer_Theme_Generator {
 			$prepared = $lifecycle['entities'][ $id ];
 			if ( ! is_array( $prepared ) || ! is_array( $prepared['adapter'] ?? null ) || ! is_array( $reports[ $id ] ?? null ) ) {
 				continue; }
+			if ( ! self::entity_report_requires_rollback( $reports[ $id ] ) ) {
+				continue; }
 			$adapter = $prepared['adapter'];
 			try {
 				$result = Static_Site_Importer_Entity_Materializer_Registry::rollback( $adapter, $reports[ $id ] );
@@ -518,9 +520,36 @@ class Static_Site_Importer_Theme_Generator {
 		return $compensation;
 	}
 
+	/** Only callbacks with an explicit mutation receipt may perform destructive compensation. */
+	private static function entity_report_requires_rollback( array $report ): bool {
+		if ( ! in_array( $report['status'] ?? null, array( 'completed', 'materialized', 'mapped', 'mutated' ), true ) ) {
+			return false;
+		}
+		foreach ( array( 'products', 'forms', 'entities', 'mutations' ) as $key ) {
+			foreach ( $report[ $key ] ?? array() as $row ) {
+				if ( is_array( $row ) && in_array( $row['status'] ?? null, array( 'created', 'updated', 'mapped', 'materialized', 'mutated' ), true ) ) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	/** Attach failure context and compensation diagnostics to public and internal receipts. */
 	private static function append_entity_compensation( array &$result, array $lifecycle, array $reports, string $stage, string $code ): void {
+		$existing_compensation = isset( $result['entity_compensation'] ) && is_array( $result['entity_compensation'] ) ? $result['entity_compensation'] : array();
+		if ( self::compensation_binding_matches( $existing_compensation, $result, $lifecycle, $reports ) ) {
+			if ( isset( $result['completed']['runtime_declarations'] ) && is_array( $result['completed']['runtime_declarations'] ) ) {
+				$result['completed']['runtime_declarations']['entity_compensation'] = $result['entity_compensation'];
+			}
+			return;
+		}
 		$compensation = self::rollback_materialized_entities( $lifecycle, $reports );
+		$compensation['binding'] = self::compensation_binding( $result, $lifecycle, $reports );
+		if ( ! empty( $existing_compensation ) || ! empty( $result['previous_entity_compensation_binding_mismatch'] ) ) {
+			$compensation['superseded_binding_mismatch'] = true;
+		}
+		unset( $result['previous_entity_compensation_binding_mismatch'] );
 		$result['failure_context'] = array(
 			'stage' => $stage,
 			'code'  => $code,
@@ -546,6 +575,112 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		if ( 'partial' === $compensation['status'] && 'completed' === ( $result['status'] ?? null ) ) {
 			$result['status'] = 'partial'; }
+	}
+
+	/** Bind idempotent compensation to the exact receipt, lifecycle declarations, and provider reports. */
+	private static function compensation_binding( array $result, array $lifecycle, array $reports ): array {
+		$transaction_state = isset( $result['transaction'] ) && is_object( $result['transaction'] ) && is_array( $result['transaction']->state ?? null ) ? $result['transaction']->state : array();
+		$transaction       = array(
+			'plan_identity'                     => $result['plan_identity'] ?? array(),
+			'theme'                             => $result['theme'] ?? array(),
+			'import_run_id'                     => $transaction_state['args']['import_run_id'] ?? '',
+			'prepared_resolved_projection_hash' => $transaction_state['prepared_resolved_projection_hash'] ?? '',
+			'applied'                           => $transaction_state['applied'] ?? array(),
+			'page_ids'                          => $transaction_state['page_ids'] ?? array(),
+			'source_ids'                        => $transaction_state['source_ids'] ?? array(),
+		);
+		$lifecycle_entities = array();
+		$rollback_contracts_valid = true;
+		foreach ( $lifecycle['entities'] ?? array() as $id => $prepared ) {
+			if ( ! is_array( $prepared ) ) {
+				continue;
+			}
+			$adapter = is_array( $prepared['adapter'] ?? null ) ? $prepared['adapter'] : array();
+			$rollback_contract_id = Static_Site_Importer_Entity_Materializer_Registry::rollback_contract_id( $adapter );
+			if ( '' === $rollback_contract_id ) {
+				$rollback_contracts_valid = false;
+			}
+			$lifecycle_entities[ (string) $id ] = array(
+				'adapter'              => array_intersect_key( $adapter, array_flip( array( 'id', 'capability', 'provider', 'waiver_arg' ) ) ),
+				'declaration'          => is_array( $prepared['declaration'] ?? null ) ? $prepared['declaration'] : array(),
+				'manifest'             => is_array( $prepared['manifest'] ?? null ) ? $prepared['manifest'] : array(),
+				'required'             => true === ( $prepared['required'] ?? false ),
+				'rollback_contract_id' => $rollback_contract_id,
+			);
+		}
+		ksort( $lifecycle_entities, SORT_STRING );
+		$receipt = array(
+			'schema'                    => $result['schema'] ?? '',
+			'receipt_instance_id'       => $result['receipt_instance_id'] ?? '',
+			'plan_identity'             => $result['plan_identity'] ?? array(),
+			'theme'                     => $result['theme'] ?? array(),
+			'reconciliation_identities' => $result['reconciliation_identities'] ?? array(),
+			'materialized_pages'        => $result['completed']['materialized_pages'] ?? array(),
+			'transaction_identity'      => self::compensation_hash( $transaction ),
+		);
+		return array(
+			'schema'                  => 'static-site-importer/entity-compensation-binding/v1',
+			'receipt_identity'        => self::compensation_hash( $receipt ),
+			'plan_identity'           => $result['plan_identity'] ?? array(),
+			'receipt_instance_id'     => $receipt['receipt_instance_id'],
+			'transaction_identity'    => $receipt['transaction_identity'],
+			'lifecycle_entities_hash' => self::compensation_hash( $lifecycle_entities ),
+			'rollback_contracts_hash' => $rollback_contracts_valid ? self::compensation_hash( array_column( $lifecycle_entities, 'rollback_contract_id' ) ) : '',
+			'provider_reports_hash'   => self::compensation_hash( $reports ),
+		);
+	}
+
+	/** Only an exact, complete binding may suppress another provider rollback. */
+	private static function compensation_binding_matches( array $compensation, array $result, array $lifecycle, array $reports ): bool {
+		$binding = isset( $compensation['binding'] ) && is_array( $compensation['binding'] ) ? $compensation['binding'] : array();
+		return 'static-site-importer/entity-compensation-receipt/v1' === ( $compensation['schema'] ?? null )
+			&& 'static-site-importer/entity-compensation-binding/v1' === ( $binding['schema'] ?? null )
+			&& '' !== ( $binding['receipt_identity'] ?? '' )
+			&& self::valid_compensation_receipt_instance_id( $binding['receipt_instance_id'] ?? null )
+			&& '' !== ( $binding['transaction_identity'] ?? '' )
+			&& '' !== ( $binding['lifecycle_entities_hash'] ?? '' )
+			&& '' !== ( $binding['rollback_contracts_hash'] ?? '' )
+			&& '' !== ( $binding['provider_reports_hash'] ?? '' )
+			&& self::compensation_binding( $result, $lifecycle, $reports ) === $binding;
+	}
+
+	/** Reject compensation reuse unless it carries a canonical server receipt identity. */
+	private static function valid_compensation_receipt_instance_id( mixed $id ): bool {
+		return is_string( $id ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $id );
+	}
+
+	/** Hash recursively sorted scalar data so equivalent receipts produce the same binding. */
+	private static function compensation_hash( array $value ): string {
+		$valid = true;
+		$normalize = static function ( array $input ) use ( &$normalize, &$valid ): array {
+			if ( array_is_list( $input ) ) {
+				return array_map(
+					static function ( $item ) use ( &$normalize, &$valid ) {
+						if ( is_array( $item ) ) {
+							return $normalize( $item );
+						}
+						if ( ! is_scalar( $item ) && null !== $item ) {
+							$valid = false;
+						}
+						return $item;
+					},
+					$input
+				);
+			}
+			ksort( $input, SORT_STRING );
+			foreach ( $input as $key => $item ) {
+				if ( is_array( $item ) ) {
+					$input[ $key ] = $normalize( $item );
+					continue;
+				}
+				if ( ! is_scalar( $item ) && null !== $item ) {
+					$valid = false;
+				}
+			}
+			return $input;
+		};
+		$json = wp_json_encode( $normalize( $value ) );
+		return $valid && is_string( $json ) ? hash( 'sha256', $json ) : '';
 	}
 
 	/** Keep provider rollback diagnostics useful without exposing unbounded provider receipts. */
@@ -823,7 +958,19 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		$quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $args );
 		if ( ! empty( $args['_static_site_importer_deferred_form_quality_admission'] ) && ! $quality['pass'] ) {
+			$existing_compensation = isset( $receipt['entity_compensation'] ) && is_array( $receipt['entity_compensation'] ) ? $receipt['entity_compensation'] : array();
+			$existing_failure_context = isset( $receipt['failure_context'] ) && is_array( $receipt['failure_context'] ) ? $receipt['failure_context'] : array();
+			$reuse_compensation = self::compensation_binding_matches( $existing_compensation, $receipt, $lifecycle, $entities );
 			$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $receipt, 'static_site_importer_quality_gate_failed' );
+			if ( $reuse_compensation ) {
+				$receipt['entity_compensation'] = $existing_compensation;
+				if ( ! empty( $existing_failure_context ) ) {
+					$receipt['failure_context'] = $existing_failure_context;
+				}
+			} elseif ( ! empty( $existing_compensation ) ) {
+				$receipt['previous_entity_compensation_binding_mismatch'] = true;
+			}
+			self::append_entity_compensation( $receipt, $lifecycle, $entities, 'final_quality_admission', 'static_site_importer_quality_gate_failed' );
 			return new WP_Error(
 				'static_site_importer_quality_gate_failed',
 				'Website artifact did not pass the final quality gate after provider receipt reconciliation.',
