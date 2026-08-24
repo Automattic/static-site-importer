@@ -192,8 +192,13 @@ function get_permalink( int|WP_Post $post ): string {
 	if ( 'post' === ( $data['post_type'] ?? '' ) ) {
 		return 'https://example.test/2024/03/' . (string) ( $data['post_name'] ?? '' ) . '/';
 	}
+	if ( 'page' === ( $GLOBALS['ssi_plan_options']['show_on_front'] ?? '' ) && $id === (int) ( $GLOBALS['ssi_plan_options']['page_on_front'] ?? 0 ) ) {
+		return home_url( '/' );
+	}
 	return 'https://example.test/' . (string) ( $data['post_name'] ?? '' ) . '/';
 }
+function home_url( string $path = '/' ): string {
+	return 'https://example.test' . $path; }
 function get_post_field( string $field, int $id ): string {
 	return stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $id ][ $field ] ?? '' ) ); }
 function sanitize_title( string $value ): string {
@@ -1247,6 +1252,41 @@ $nested_route_result = ( new ArtifactCompiler() )->compile(
 )->toArray();
 $nested_routes       = array_column( $nested_route_result['source_reports']['wordpress_site_plan']['routes'], 'target_path', 'source_path' );
 $assert( 3 === count( $nested_routes ) && '/' === ( $nested_routes['website/index.html'] ?? '' ) && '/api' === ( $nested_routes['website/api/index.html'] ?? '' ) && '/lifecycle' === ( $nested_routes['website/lifecycle/index.html'] ?? '' ), 'nested index documents retain distinct routes when the declared root entrypoint is ordered last' );
+
+$front_page_links_result = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'website/index.html',
+		'files'      => array(
+			'website/index.html'       => '<main><h1>Home</h1></main>',
+			'website/about.html'       => '<main><a href="/index.html?view=home#top">HOME</a><a href="/index/index.html?view=route#section">Index route</a></main>',
+			'website/index/index.html' => '<main><h1>Index route</h1></main>',
+		),
+	)
+)->toArray();
+$front_page_links_plan   = $front_page_links_result['source_reports']['wordpress_site_plan'];
+foreach ( $front_page_links_plan['pages'] as $page ) {
+	$register_document_blocks( parse_blocks( (string) ( $page['canonical_block_markup'] ?? '' ) ) );
+}
+$GLOBALS['ssi_plan_options'] = array(
+	'show_on_front' => 'posts',
+	'page_on_front' => 0,
+	'blogname'      => 'Before',
+	'use_smilies'   => true,
+);
+$front_page_links_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$front_page_links_plan,
+	array(
+		'slug'      => 'front-page-links',
+		'overwrite' => true,
+		'activate'  => true,
+	)
+);
+$front_page_links_pages   = $front_page_links_receipt['completed']['pages'] ?? array();
+$front_page_id            = (int) ( $front_page_links_pages['website/index.html'] ?? 0 );
+$about_page_id            = (int) ( $front_page_links_pages['website/about.html'] ?? 0 );
+$about_page_content       = get_post_field( 'post_content', $about_page_id );
+$assert( 'completed' === $front_page_links_receipt['status'] && $front_page_id === (int) $GLOBALS['ssi_plan_options']['page_on_front'] && 'page' === $GLOBALS['ssi_plan_options']['show_on_front'] && 'https://example.test/' === get_permalink( $front_page_id ), 'the declared website entrypoint becomes the static front page with the root permalink' );
+$assert( str_contains( $about_page_content, 'https://example.test/?view=home#top' ) && str_contains( $about_page_content, 'https://example.test/index/?view=route#section' ) && ! str_contains( $about_page_content, 'https://example.test/index.html' ), 'front-page aliases resolve to home while the distinct nested index route retains its native navigation URL and suffix' );
 
 $product_grid_artifact     = array(
 	'entrypoint' => 'index.html',

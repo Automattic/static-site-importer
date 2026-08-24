@@ -798,14 +798,15 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** Resolve destination-independent route references after WordPress has assigned every permalink. */
 	private static function rewrite_materialized_route_links( array &$state ) {
-		$routes = array();
+		$routes              = array();
+		$front_page_identity = self::front_page_reconciliation_identity( $state['resolved']['operations'] ?? array() );
 		foreach ( $state['ordered_pages'] as $page ) {
 			$source_path = (string) ( $page['source_path'] ?? '' );
 			$route       = self::normalized_route_path( (string) ( $page['route']['path'] ?? '' ) );
 			$post_id     = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
 			$permalink   = $post_id > 0 && function_exists( 'get_permalink' ) ? get_permalink( $post_id ) : false;
 			if ( '' !== $route && is_string( $permalink ) && '' !== $permalink ) {
-				$routes[ $route ] = $permalink;
+				$routes[ $route ] = (string) ( $page['reconciliation_identity'] ?? '' ) === $front_page_identity ? home_url( '/' ) : $permalink;
 			}
 		}
 		if ( array() === $routes ) {
@@ -849,6 +850,17 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 
 		return true;
+	}
+
+	/** @param array<int,array<string,mixed>> $operations */
+	private static function front_page_reconciliation_identity( array $operations ): string {
+		foreach ( $operations as $operation ) {
+			if ( 'site_reading' === ( $operation['kind'] ?? null ) && is_string( $operation['front_page_reconciliation_identity'] ?? null ) ) {
+				return $operation['front_page_reconciliation_identity'];
+			}
+		}
+
+		return '';
 	}
 
 	/** @param array<string,string> $routes */
