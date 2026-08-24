@@ -209,13 +209,24 @@ final class Static_Site_Importer_Font_Materializer {
 				'provenance'      => is_array( $import['provenance'] ?? null ) ? $import['provenance'] : array(),
 			);
 		}
-		$receipts = array();
-		foreach ( $contract['receipts'] ?? array() as $receipt ) {
-			if ( is_array( $receipt ) && 'pending_browser_readiness' === ( $receipt['state'] ?? '' ) && is_string( $receipt['id'] ?? null ) && is_string( $receipt['face_id'] ?? null ) ) {
-				$receipts[ $receipt['face_id'] ] = $receipt['id'];
-			}
+		$receipt_rows = $contract['receipts'] ?? array();
+		$receipts     = array();
+		$receipt_ids  = array();
+		if ( ! is_array( $receipt_rows ) || ! array_is_list( $receipt_rows ) ) {
+			$diagnostics[] = self::diagnostic( 'producer_readiness_receipts_invalid' );
+			return new WP_Error( 'static_site_importer_font_materialization_producer_receipts_invalid', '', $diagnostics );
 		}
-		if ( $required && array_values( $receipts ) !== array_values( $contract['browser_readiness']['required_receipt_ids'] ?? array() ) ) {
+		foreach ( $receipt_rows as $receipt ) {
+			if ( ! is_array( $receipt ) || ! is_string( $receipt['id'] ?? null ) || '' === $receipt['id'] || isset( $receipt_ids[ $receipt['id'] ] ) || ! is_string( $receipt['face_id'] ?? null ) || '' === $receipt['face_id'] || isset( $receipts[ $receipt['face_id'] ] ) || ! is_string( $receipt['import_id'] ?? null ) || '' === $receipt['import_id'] || true !== ( $receipt['required'] ?? null ) || 'pending_browser_readiness' !== ( $receipt['state'] ?? null ) ) {
+				$diagnostics[] = self::diagnostic( 'producer_readiness_receipts_invalid' );
+				return new WP_Error( 'static_site_importer_font_materialization_producer_receipts_invalid', '', $diagnostics );
+			}
+			$receipt_ids[ $receipt['id'] ]    = true;
+			$receipts[ $receipt['face_id'] ] = $receipt;
+		}
+		$receipt_ids_by_face = array_map( static fn( array $receipt ): string => $receipt['id'], $receipts );
+		$required_ids = $contract['browser_readiness']['required_receipt_ids'] ?? null;
+		if ( ! $required || ! is_array( $required_ids ) || ! array_is_list( $required_ids ) || array_column( $receipt_rows, 'id' ) !== $required_ids ) {
 			$diagnostics[] = self::diagnostic( 'producer_readiness_receipts_invalid' );
 			return new WP_Error( 'static_site_importer_font_materialization_producer_receipts_invalid', '', $diagnostics );
 		}
@@ -223,13 +234,14 @@ final class Static_Site_Importer_Font_Materializer {
 		foreach ( $faces as $face_index => $face ) {
 			$import = is_array( $face ) ? ( $imports[ $face['import_id'] ?? '' ] ?? null ) : null;
 			$direct_source_valid = ! is_array( $import ) || 'direct' !== $import['provider'] || self::direct_face_source_matches_import( $face, $import );
-			if ( ! is_array( $face ) || 'declared' !== ( $face['state'] ?? '' ) || ! is_string( $face['id'] ?? null ) || ! isset( $imports[ $face['import_id'] ?? '' ] ) || ! isset( $receipts[ $face['id'] ] ) || ( $face['receipt_id'] ?? null ) !== $receipts[ $face['id'] ] || ! is_array( $face['axes'] ?? null ) || ! is_array( $face['unicode_ranges'] ?? null ) || ! $direct_source_valid ) {
+			$receipt = is_array( $face ) ? ( $receipts[ $face['id'] ?? '' ] ?? null ) : null;
+			if ( ! is_array( $face ) || 'declared' !== ( $face['state'] ?? '' ) || ! is_string( $face['id'] ?? null ) || ! isset( $imports[ $face['import_id'] ?? '' ] ) || ! is_array( $receipt ) || ( $face['receipt_id'] ?? null ) !== $receipt['id'] || $face['id'] !== $receipt['face_id'] || $face['import_id'] !== $receipt['import_id'] || ! is_array( $face['axes'] ?? null ) || ! is_array( $face['unicode_ranges'] ?? null ) || ! $direct_source_valid ) {
 				$diagnostics[] = self::diagnostic_with_detail(
 					'producer_face_or_receipt_invalid',
 					array(
 						'face_index'     => $face_index,
 						'face_id'        => is_array( $face ) && is_string( $face['id'] ?? null ) ? $face['id'] : null,
-						'invalid_fields' => self::invalid_producer_face_fields( $face, $imports, $receipts ),
+						'invalid_fields' => self::invalid_producer_face_fields( $face, $imports, $receipt_ids_by_face ),
 					)
 				);
 				return new WP_Error( 'static_site_importer_font_materialization_producer_face_invalid', '', $diagnostics );
@@ -251,14 +263,18 @@ final class Static_Site_Importer_Font_Materializer {
 			$face['import_ref'] = $face['import_id'];
 			$normalized[]       = $face;
 		}
-		$svg_consumers = self::svg_consumers( $contract, $normalized, $receipts, $resolved_plan, $diagnostics );
+		if ( count( $normalized ) !== count( $receipts ) || array_diff_key( $receipts, array_column( $normalized, null, 'id' ) ) ) {
+			$diagnostics[] = self::diagnostic( 'producer_readiness_receipts_invalid' );
+			return new WP_Error( 'static_site_importer_font_materialization_producer_receipts_invalid', '', $diagnostics );
+		}
+		$svg_consumers = self::svg_consumers( $contract, $normalized, $receipt_ids_by_face, $resolved_plan, $diagnostics );
 		if ( is_wp_error( $svg_consumers ) ) {
 			return $svg_consumers;
 		}
 		return array(
 			'faces'         => $normalized,
 			'imports'       => $imports,
-			'receipts'      => $receipts,
+			'receipts'      => $receipt_ids_by_face,
 			'svg_consumers' => $svg_consumers,
 		);
 	}

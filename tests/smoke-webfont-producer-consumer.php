@@ -44,6 +44,8 @@ $assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) throw new RuntimeException( $message );
 };
 
+$assert( 'v0.6.0' === \Composer\InstalledVersions::getPrettyVersion( 'automattic/blocks-engine-php-transformer' ), 'producer-consumer integration runs against the locked Blocks Engine php-transformer v0.6.0 dependency' );
+
 $fixture_html = '<!doctype html><html><head><link rel="stylesheet" href="css/style.css"></head><body><main>Inter fixture</main></body></html>';
 $fixture_css  = "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');\n:root{--font:'Inter',system-ui,sans-serif}body{font-family:var(--font)}";
 $producer_plan = ( new Automattic\BlocksEngine\PhpTransformer\StaticSite\FontMaterialization\FontMaterializationPlanBuilder() )->fromWebFontSources(
@@ -52,7 +54,7 @@ $producer_plan = ( new Automattic\BlocksEngine\PhpTransformer\StaticSite\FontMat
 	array( array( 'path' => 'css/style.css', 'content' => $fixture_css, 'source_hash' => hash( 'sha256', $fixture_css ) ) )
 );
 $contract = $producer_plan['webfont_contract'] ?? array();
-$assert( 'blocks-engine/webfont-materialization/v1' === ( $contract['schema'] ?? '' ) && 1 === count( $contract['imports'] ?? array() ) && 9 === count( $contract['faces'] ?? array() ), 'fixture 37 sibling compiler emits the nested shared import and typed Inter face records' );
+$assert( 'blocks-engine/webfont-materialization/v1' === ( $contract['schema'] ?? '' ) && 1 === count( $contract['imports'] ?? array() ) && 9 === count( $contract['faces'] ?? array() ) && 'css' === ( $contract['imports'][0]['source']['format'] ?? null ), 'the installed producer emits the nested shared import and typed Inter face records consumed by SSI' );
 $assert( count( $contract['faces'] ?? array() ) === count( $contract['receipts'] ?? array() ) && 'required' === ( $contract['browser_readiness']['state'] ?? '' ), 'fixture 37 producer preserves nested browser readiness receipt IDs' );
 
 $overlay = Static_Site_Importer_Font_Materializer::prepare_overlay(
@@ -214,6 +216,21 @@ $mismatched_direct_plan['webfont_contract']['faces'][0]['sources'][0]['url'] = '
 $mismatched_direct_before = count( $GLOBALS['ssi_webfont_requests'] );
 $mismatched_direct_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $mismatched_direct_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
 $assert( is_wp_error( $mismatched_direct_overlay ) && 'static_site_importer_font_materialization_producer_face_invalid' === $mismatched_direct_overlay->get_error_code() && $mismatched_direct_before === count( $GLOBALS['ssi_webfont_requests'] ), 'direct face sources that are not bound to their declared import fail closed before any request' );
+
+$receipt_mutations = array(
+	'exact import ID' => static function ( array &$contract ): void { $contract['receipts'][0]['import_id'] = 'webfont-import-other'; },
+	'required state' => static function ( array &$contract ): void { $contract['receipts'][0]['required'] = false; },
+	'exact face ID' => static function ( array &$contract ): void { $contract['receipts'][0]['face_id'] = 'webfont-face-other'; },
+	'unique receipt ID' => static function ( array &$contract ): void { $contract['receipts'][] = $contract['receipts'][0]; $contract['browser_readiness']['required_receipt_ids'][] = $contract['receipts'][0]['id']; },
+	'pending readiness state' => static function ( array &$contract ): void { $contract['receipts'][0]['state'] = 'completed'; },
+);
+foreach ( $receipt_mutations as $case => $mutate ) {
+	$receipt_plan = $direct_plan;
+	$mutate( $receipt_plan['webfont_contract'] );
+	$receipt_before = count( $GLOBALS['ssi_webfont_requests'] );
+	$receipt_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $receipt_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
+	$assert( is_wp_error( $receipt_overlay ) && in_array( $receipt_overlay->get_error_code(), array( 'static_site_importer_font_materialization_producer_receipts_invalid', 'static_site_importer_font_materialization_producer_face_invalid' ), true ) && $receipt_before === count( $GLOBALS['ssi_webfont_requests'] ), 'canonical receipt validation fails closed before any request for ' . $case );
+}
 
 $inferred_google_plan = $local_plan;
 $inferred_google_plan['imports'] = array(
