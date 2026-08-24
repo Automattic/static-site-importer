@@ -94,11 +94,15 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-theme-generator.php',
 	'class-static-site-importer-provider-presentation.php',
 	'class-static-site-importer-commerce-presentation.php',
+	'class-static-site-importer-direct-artifact-import.php',
 	'class-static-site-importer-canonical-import-service.php',
 );
 foreach ( $static_site_importer_includes as $static_site_importer_include ) {
 	require_once STATIC_SITE_IMPORTER_PATH . 'includes/' . $static_site_importer_include;
 }
+
+Static_Site_Importer_Direct_Artifact_Import::register_cleanup();
+register_deactivation_hook( __FILE__, array( Static_Site_Importer_Direct_Artifact_Import::class, 'unschedule_cleanup' ) );
 
 Static_Site_Importer_Figma_Import::register_default_zstd_decoder();
 Static_Site_Importer_Entity_Materializer_Registry::register_presentations();

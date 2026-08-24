@@ -22,6 +22,7 @@
     "tests/smoke-import-permission-filter.php": { "environment": "standalone-php" },
     "tests/smoke-current-site-capabilities.php": { "environment": "standalone-php" },
     "tests/smoke-default-content.php": { "environment": "standalone-php" },
+    "tests/smoke-direct-artifact-import.php": { "environment": "standalone-php" },
     "tests/smoke-importer-block.php": { "environment": "standalone-php" },
     "tests/smoke-lifecycle-compile-checkpoint.php": { "environment": "standalone-php" },
     "tests/smoke-materialized-block-content-validation.php": { "environment": "standalone-php" },

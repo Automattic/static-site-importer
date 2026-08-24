@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Direct_Artifact_Import' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-direct-artifact-import.php';
+}
+
 class Static_Site_Importer_Canonical_Import_Service {
 	private static string $cli_report_destination = '';
 
@@ -44,6 +48,11 @@ class Static_Site_Importer_Canonical_Import_Service {
 		}
 		if ( ! in_array( $type, array( 'html', 'files', 'zip', 'url' ), true ) ) {
 			return self::error( 'static_site_importer_invalid_import_source', 'source.type must be html, files, zip, or url.' );
+		}
+		if ( self::direct_artifact_continuation_available() && in_array( $type, array( 'html', 'files' ), true ) && '' !== (string) ( $source['import_id'] ?? '' ) ) {
+			$args   = self::direct_artifact_args( $input );
+			$result = Static_Site_Importer_Direct_Artifact_Import::resume( (string) $source['import_id'], $args, $type, $operation, $source );
+			return is_wp_error( $result ) ? self::error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() ) : $result;
 		}
 
 		$provenance = array( 'type' => $type );
@@ -110,15 +119,13 @@ class Static_Site_Importer_Canonical_Import_Service {
 				'source_metadata' => $runtime['source_metadata'],
 			)
 		);
-		$args       = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
+		$args       = self::direct_artifact_args( $input );
 		if ( isset( $payload_reader ) ) {
 			$args['_static_site_importer_payload_reader'] = $payload_reader;
 		}
-		if ( '' !== $args['runtime_lifecycle_phase'] ) {
-			$args['runtime_lifecycle_invocation_id'] = wp_generate_uuid4();
-		}
-		if ( '' !== self::$cli_report_destination ) {
-			$args['report'] = self::$cli_report_destination;
+		if ( self::direct_artifact_continuation_available() && in_array( $type, array( 'html', 'files' ), true ) && 'resume' !== $args['runtime_lifecycle_phase'] && self::artifact_html_page_count( $artifact ) > 1 ) {
+			$result = Static_Site_Importer_Direct_Artifact_Import::start( $artifact, $args, $type, $operation, $provenance );
+			return is_wp_error( $result ) ? self::error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() ) : $result;
 		}
 		if ( 'plan' === $operation ) {
 			return self::plan_artifact( $artifact, $args, $type, $provenance );
@@ -128,6 +135,38 @@ class Static_Site_Importer_Canonical_Import_Service {
 			return self::error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
 		}
 		return self::success( $result, $input );
+	}
+
+	/** @param array<string,mixed> $input @return array<string,mixed> */
+	private static function direct_artifact_args( array $input ): array {
+		$args = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
+		if ( '' !== $args['runtime_lifecycle_phase'] ) {
+			$args['runtime_lifecycle_invocation_id'] = wp_generate_uuid4();
+		}
+		if ( '' !== self::$cli_report_destination ) {
+			$args['report'] = self::$cli_report_destination;
+		}
+		return $args;
+	}
+
+	/** @param array<string,mixed> $artifact */
+	private static function artifact_html_page_count( array $artifact ): int {
+		$count = 0;
+		foreach ( is_array( $artifact['files'] ?? null ) ? $artifact['files'] : array() as $file ) {
+			if ( ! is_array( $file ) ) {
+				continue;
+			}
+			$path = strtolower( (string) ( $file['path'] ?? '' ) );
+			$mime = strtolower( (string) ( $file['mime_type'] ?? '' ) );
+			if ( str_ends_with( $path, '.html' ) || str_ends_with( $path, '.htm' ) || str_contains( $mime, 'html' ) ) {
+				++$count;
+			}
+		}
+		return $count;
+	}
+
+	private static function direct_artifact_continuation_available(): bool {
+		return function_exists( 'wp_json_encode' ) && function_exists( 'wp_mkdir_p' ) && function_exists( 'wp_upload_dir' );
 	}
 
 	/** @param array<string,mixed> $input @return array<string,mixed> */

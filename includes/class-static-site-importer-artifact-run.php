@@ -31,8 +31,11 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 			throw new RuntimeException( 'Artifact workspace could not be created.' );
 		}
 
-		$existing     = $this->read_raw( 'workspace.json' );
-		$record       = is_string( $existing ) ? json_decode( $existing, true ) : null;
+		$existing = $this->read_raw( 'workspace.json' );
+		$record   = is_string( $existing ) ? json_decode( $existing, true ) : null;
+		if ( ( is_file( $this->directory . '/workspace.json' ) || is_string( $existing ) ) && ( ! is_array( $record ) || 'static-site-importer/artifact-workspace/v1' !== ( $record['schema'] ?? '' ) || ( $record['purpose'] ?? '' ) !== $token ) ) {
+			throw new RuntimeException( 'Artifact workspace ownership record is invalid.' );
+		}
 		$this->record = is_array( $record ) ? $record : array(
 			'schema'     => 'static-site-importer/artifact-workspace/v1',
 			'purpose'    => $token,
@@ -76,8 +79,8 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		}
 
 		$temp    = tempnam( $parent, '.ssi-artifact-' );
-		$written = false === $temp ? false : file_put_contents( $temp, $bytes ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes an importer-owned temporary file before atomic publication.
-		if ( false === $temp || strlen( $bytes ) !== $written || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Atomically publishes importer-owned workspace data on the same filesystem.
+		$written = is_string( $temp ) && self::write_complete_file( $temp, $bytes );
+		if ( ! is_string( $temp ) || ! $written || ! self::filesystem_operation( static fn () => rename( $temp, $path ) ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Atomically publishes importer-owned workspace data on the same filesystem.
 			if ( is_string( $temp ) && is_file( $temp ) ) {
 				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed importer-owned temporary file.
 			}
@@ -87,9 +90,76 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		return $path;
 	}
 
+	/** Atomically publish immutable bytes, accepting only an identical existing value. */
+	public function publish_raw_once( string $relative, string $bytes ) {
+		$path = $this->path( $relative );
+		if ( is_wp_error( $path ) ) {
+			return $path;
+		}
+
+		$parent = dirname( $path );
+		if ( ! is_dir( $parent ) && ! mkdir( $parent, 0700, true ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- Creates importer-owned nested directories without initializing a global filesystem transport.
+			return new WP_Error( 'static_site_importer_artifact_workspace_unavailable', 'Workspace directory is unavailable.' );
+		}
+		if ( is_link( $parent ) || ! str_starts_with( (string) realpath( $parent ) . '/', $this->directory . '/' ) ) {
+			return new WP_Error( 'static_site_importer_artifact_workspace_symlink', 'Workspace writes must remain in owned directories.' );
+		}
+
+		$temp    = tempnam( $parent, '.ssi-artifact-' );
+		$written = is_string( $temp ) && self::write_complete_file( $temp, $bytes );
+		$linked  = $written && self::filesystem_operation( static fn () => link( $temp, $path ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_link -- Hard-link publication atomically creates an immutable checkpoint on the same filesystem.
+		if ( is_string( $temp ) && is_file( $temp ) ) {
+			unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes the private publication temporary file.
+		}
+		if ( $linked ) {
+			return $path;
+		}
+		if ( is_file( $path ) && hash_equals( hash( 'sha256', $bytes ), hash( 'sha256', (string) $this->read_raw( $relative ) ) ) ) {
+			return $path;
+		}
+
+		return new WP_Error( 'static_site_importer_artifact_workspace_conflict', 'An immutable workspace checkpoint already exists with different content.' );
+	}
+
 	public function publish_json( string $relative, array $data ) {
 		$json = wp_json_encode( $data, JSON_PRETTY_PRINT );
 		return is_string( $json ) ? $this->publish_raw( $relative, $json ) : new WP_Error( 'static_site_importer_artifact_workspace_json_invalid', 'Workspace JSON could not be encoded.' );
+	}
+
+	public function publish_json_once( string $relative, array $data ) {
+		$json = wp_json_encode( $data, JSON_PRETTY_PRINT );
+		return is_string( $json ) ? $this->publish_raw_once( $relative, $json ) : new WP_Error( 'static_site_importer_artifact_workspace_json_invalid', 'Workspace JSON could not be encoded.' );
+	}
+
+	/** Atomically claim a private workspace directory exactly once. */
+	public function claim_directory( string $relative ): bool {
+		$path = $this->path( $relative . '/claim' );
+		$path = is_string( $path ) ? dirname( $path ) : '';
+		return '' !== $path && ! is_link( $path ) && self::filesystem_operation( static fn () => mkdir( $path, 0700 ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- mkdir is the atomic workspace claim primitive.
+	}
+
+	/** Acquire a non-blocking workspace execution lock. */
+	public function acquire_lock( string $relative ) {
+		$path = $this->path( $relative );
+		if ( ! is_string( $path ) || is_link( $path ) ) {
+			return new WP_Error( 'static_site_importer_artifact_workspace_path_invalid', 'The workspace lock path is invalid.' );
+		}
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Opens an importer-owned advisory lock file.
+		$handle = fopen( $path, 'c' );
+		if ( false === $handle || ! flock( $handle, LOCK_EX | LOCK_NB ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_flock -- Serializes one importer-owned run executor.
+			if ( is_resource( $handle ) ) {
+				fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the native stream required by flock after a failed lock attempt.
+			}
+			return new WP_Error( 'static_site_importer_artifact_workspace_locked', 'The artifact run is already executing.' );
+		}
+		return $handle;
+	}
+
+	public function release_lock( $handle ): void {
+		if ( is_resource( $handle ) ) {
+			flock( $handle, LOCK_UN ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_flock -- Releases the importer-owned run lock.
+			fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the native stream only after releasing its advisory lock.
+		}
 	}
 
 	public function read_raw( string $relative ): ?string {
@@ -207,8 +277,16 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 			$record  = is_string( $raw ) ? json_decode( $raw, true ) : null;
 			$expires = is_array( $record ) ? ( $record['retention']['expires_at'] ?? '' ) : '';
 			if ( is_string( $expires ) && '' !== $expires && strtotime( $expires ) <= time() ) {
-				$workspace  = new self( $resolved_parent, substr( basename( $path ), strlen( '.ssi-artifact-run-' ) ) );
-				$receipts[] = $workspace->purge();
+				$workspace = new self( $resolved_parent, substr( basename( $path ), strlen( '.ssi-artifact-run-' ) ) );
+				$lock      = $workspace->acquire_lock( 'execution.lock' );
+				if ( is_wp_error( $lock ) ) {
+					continue;
+				}
+				try {
+					$receipts[] = $workspace->purge();
+				} finally {
+					$workspace->release_lock( $lock );
+				}
 			}
 		}
 
@@ -224,6 +302,29 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads importer-owned workspace metadata while treating concurrent removal as absent.
 		$bytes = self::filesystem_operation( static fn () => file_get_contents( $path ) );
 		return is_string( $bytes ) ? $bytes : null;
+	}
+
+	private static function write_complete_file( string $path, string $bytes ): bool {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Writes and flushes a private temporary file before atomic publication.
+		$handle = fopen( $path, 'wb' );
+		if ( false === $handle ) {
+			return false;
+		}
+		$offset = 0;
+		$length = strlen( $bytes );
+		while ( $offset < $length ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Writes a private temporary checkpoint file.
+			$written = fwrite( $handle, substr( $bytes, $offset ) );
+			if ( false === $written || 0 === $written ) {
+				fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the native stream used by the complete-write loop on failure.
+				return false;
+			}
+			$offset += $written;
+		}
+		$flushed = fflush( $handle );
+		$synced  = ! function_exists( 'fsync' ) || fsync( $handle );
+		$closed  = fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Preserves flush, sync, then close durability ordering on the native stream.
+		return $flushed && $synced && $closed;
 	}
 
 	private static function filesystem_operation( callable $operation ): mixed {
