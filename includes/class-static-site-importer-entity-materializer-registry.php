@@ -570,7 +570,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'validator'                => array( self::class, 'validate_woo_products_manifest' ),
 				'materializer'             => array( 'Static_Site_Importer_Woo_Product_Seeder', 'seed' ),
 				'rollback_callback'        => array( 'Static_Site_Importer_Woo_Product_Seeder', 'rollback' ),
-				'rollback_contract_id'      => 'static-site-importer/woocommerce-product-rollback/v1',
+				'rollback_contract_id'     => 'static-site-importer/woocommerce-product-rollback/v1',
 				'binding_callback'         => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_block_markup' ),
 				'classic_binding_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_classic_render' ),
 				'report_callback'          => array( 'Static_Site_Importer_Woo_Product_Seeder', 'new_report' ),
@@ -596,7 +596,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'validator'                => array( self::class, 'validate_forms_manifest' ),
 				'materializer'             => array( 'Static_Site_Importer_Form_Seeder', 'seed' ),
 				'rollback_callback'        => array( 'Static_Site_Importer_Form_Seeder', 'rollback' ),
-				'rollback_contract_id'      => 'static-site-importer/jetpack-form-rollback/v1',
+				'rollback_contract_id'     => 'static-site-importer/jetpack-form-rollback/v1',
 				'binding_callback'         => array( 'Static_Site_Importer_Form_Seeder', 'binding_block_markup' ),
 				'classic_binding_callback' => array( 'Static_Site_Importer_Form_Seeder', 'binding_classic_render' ),
 				'report_callback'          => array( 'Static_Site_Importer_Form_Seeder', 'new_report' ),
@@ -644,7 +644,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			return $adapters;
 		}
 		foreach ( $filtered as $id => $adapter ) {
-			if ( ! is_array( $adapter ) || (string) $id !== (string) ( $adapter['id'] ?? '' ) || '' === self::rollback_contract_id( $adapter ) ) {
+			if ( ! is_array( $adapter ) || (string) ( $adapter['id'] ?? '' ) !== (string) $id || '' === self::rollback_contract_id( $adapter ) ) {
 				unset( $filtered[ $id ] );
 			}
 		}

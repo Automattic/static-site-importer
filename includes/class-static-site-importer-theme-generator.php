@@ -601,32 +601,32 @@ class Static_Site_Importer_Theme_Generator {
 				$rollback_contracts_valid = false;
 			}
 			$lifecycle_entities[ (string) $id ] = array(
-				'adapter'     => array_intersect_key( $adapter, array_flip( array( 'id', 'capability', 'provider', 'waiver_arg' ) ) ),
-				'declaration' => is_array( $prepared['declaration'] ?? null ) ? $prepared['declaration'] : array(),
-				'manifest'    => is_array( $prepared['manifest'] ?? null ) ? $prepared['manifest'] : array(),
-				'required'    => true === ( $prepared['required'] ?? false ),
+				'adapter'              => array_intersect_key( $adapter, array_flip( array( 'id', 'capability', 'provider', 'waiver_arg' ) ) ),
+				'declaration'          => is_array( $prepared['declaration'] ?? null ) ? $prepared['declaration'] : array(),
+				'manifest'             => is_array( $prepared['manifest'] ?? null ) ? $prepared['manifest'] : array(),
+				'required'             => true === ( $prepared['required'] ?? false ),
 				'rollback_contract_id' => $rollback_contract_id,
 			);
 		}
 		ksort( $lifecycle_entities, SORT_STRING );
 		$receipt = array(
-			'schema'                     => $result['schema'] ?? '',
-			'receipt_instance_id'        => $result['receipt_instance_id'] ?? '',
-			'plan_identity'              => $result['plan_identity'] ?? array(),
-			'theme'                      => $result['theme'] ?? array(),
-			'reconciliation_identities'  => $result['reconciliation_identities'] ?? array(),
-			'materialized_pages'         => $result['completed']['materialized_pages'] ?? array(),
-			'transaction_identity'       => self::compensation_hash( $transaction ),
+			'schema'                    => $result['schema'] ?? '',
+			'receipt_instance_id'       => $result['receipt_instance_id'] ?? '',
+			'plan_identity'             => $result['plan_identity'] ?? array(),
+			'theme'                     => $result['theme'] ?? array(),
+			'reconciliation_identities' => $result['reconciliation_identities'] ?? array(),
+			'materialized_pages'        => $result['completed']['materialized_pages'] ?? array(),
+			'transaction_identity'      => self::compensation_hash( $transaction ),
 		);
 		return array(
-			'schema'                 => 'static-site-importer/entity-compensation-binding/v1',
-			'receipt_identity'       => self::compensation_hash( $receipt ),
-			'plan_identity'          => $result['plan_identity'] ?? array(),
-			'receipt_instance_id'    => $receipt['receipt_instance_id'],
-			'transaction_identity'   => $receipt['transaction_identity'],
+			'schema'                  => 'static-site-importer/entity-compensation-binding/v1',
+			'receipt_identity'        => self::compensation_hash( $receipt ),
+			'plan_identity'           => $result['plan_identity'] ?? array(),
+			'receipt_instance_id'     => $receipt['receipt_instance_id'],
+			'transaction_identity'    => $receipt['transaction_identity'],
 			'lifecycle_entities_hash' => self::compensation_hash( $lifecycle_entities ),
 			'rollback_contracts_hash' => $rollback_contracts_valid ? self::compensation_hash( array_column( $lifecycle_entities, 'rollback_contract_id' ) ) : '',
-			'provider_reports_hash'  => self::compensation_hash( $reports ),
+			'provider_reports_hash'   => self::compensation_hash( $reports ),
 		);
 	}
 
@@ -641,7 +641,7 @@ class Static_Site_Importer_Theme_Generator {
 			&& '' !== ( $binding['lifecycle_entities_hash'] ?? '' )
 			&& '' !== ( $binding['rollback_contracts_hash'] ?? '' )
 			&& '' !== ( $binding['provider_reports_hash'] ?? '' )
-			&& $binding === self::compensation_binding( $result, $lifecycle, $reports );
+			&& self::compensation_binding( $result, $lifecycle, $reports ) === $binding;
 	}
 
 	/** Reject compensation reuse unless it carries a canonical server receipt identity. */
