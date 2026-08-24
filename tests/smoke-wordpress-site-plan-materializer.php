@@ -1980,6 +1980,27 @@ $retried_quality_error = $final_quality_gate->invoke(
 );
 $retried_quality_receipt = is_wp_error( $retried_quality_error ) ? $retried_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
 $assert( is_wp_error( $retried_quality_error ) && 1 === $provider_rollbacks && $entity_compensation === ( $retried_quality_receipt['entity_compensation'] ?? array() ), 'repeated deferred finalization reuses the recorded provider compensation receipt without re-running destructive rollback callbacks' );
+$cross_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$deferred_form_plan,
+	array(
+		'slug'                        => 'deferred-form-quality-cross-receipt',
+		'runtime_entity_bindings'     => array( $form_binding ),
+		'defer_materialization_commit' => true,
+	)
+);
+$cross_receipt['completed']['runtime_declarations']['entity_bindings'][ hash( 'sha256', 'form-fallback-binding' ) ]['persisted_fragment_hash'] = hash( 'sha256', 'tampered cross receipt fragment' );
+$cross_receipt['entity_compensation'] = $entity_compensation;
+$cross_receipt['failure_context']     = $final_quality_receipt['failure_context'] ?? array();
+$cross_quality_error = $final_quality_gate->invoke(
+	null,
+	$cross_receipt,
+	array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+	$deferred_form_lifecycle,
+	array(),
+	$deferred_entities['reports']
+);
+$cross_quality_receipt = is_wp_error( $cross_quality_error ) ? $cross_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
+$assert( is_wp_error( $cross_quality_error ) && 2 === $provider_rollbacks && true === ( $cross_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ) && $entity_compensation['binding'] !== ( $cross_quality_receipt['entity_compensation']['binding'] ?? array() ), 'cross-receipt compensation evidence cannot suppress the second receipt rollback' );
 $resumed_form_binding_receipt                             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$binding_plan,
 	array(
