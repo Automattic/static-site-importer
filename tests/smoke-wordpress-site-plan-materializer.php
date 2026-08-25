@@ -861,7 +861,7 @@ $overlay            = array(
 	'sha256' => hash( 'sha256', $overlay_css ),
 	'bytes'  => strlen( $overlay_css ),
 );
-$collect_overlays   = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'provider_layout_overlays_from_entity_reports' );
+$collect_overlays   = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'provider_layout_overlays' );
 $collected_overlays = $collect_overlays->invoke( null, array( array( 'forms' => array( array( 'provider_layout_overlay_css' => array() ), array( 'provider_layout_overlay_css' => $overlay ), array( 'provider_layout_overlay_css' => array( 'malformed' => true ) ) ) ) ) );
 $assert( array( $overlay, array( 'malformed' => true ) ) === $collected_overlays, 'provider layout collection omits empty absence sentinels without hiding non-empty overlays from strict validation' );
 $overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
@@ -1301,7 +1301,7 @@ $assert( array( 'tour-tee', 'signed-cd' ) === array_column( $declared_products[1
 $declared_entities  = $declared_products[1]['payload']['entities'] ?? array();
 $declared_selectors = array_column( $declared_entities, 'selector' );
 $assert( 2 === count( array_unique( $declared_selectors ) ) && 2 === count( array_filter( $declared_selectors, static fn( $selector ): bool => is_string( $selector ) && '' !== $selector ) ) && 2 === count( array_filter( array_column( $declared_entities, 'source_path' ), static fn( $source ): bool => is_string( $source ) && '' !== $source ) ), 'canonical declarations retain compiler-owned exact classic source identities' );
-$declared_lifecycle = ( new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'prepare_wordpress_site_plan_lifecycle' ) )->invoke( null, $product_grid_plan, array() );
+$declared_lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $product_grid_plan, array() );
 $assert( 'runtime_declarations' === ( $declared_lifecycle['status'] ?? '' ) && true === ( reset( $declared_lifecycle['entities'] )['required'] ?? false ), 'declared product entities enter the generic runtime lifecycle' );
 
 $entity_artifact                         = $artifact;
@@ -1342,7 +1342,7 @@ $entity_artifact['runtime_declarations'] = array(
 	),
 );
 $entity_plan                             = ( new ArtifactCompiler() )->compile( $entity_artifact )->toArray()['source_reports']['wordpress_site_plan'];
-$prepare_lifecycle                       = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'prepare_wordpress_site_plan_lifecycle' );
+$prepare_lifecycle                       = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'plan_runtime_lifecycle' );
 $entity_lifecycle                        = $prepare_lifecycle->invoke( null, $entity_plan, array() );
 $assert( 'runtime_declarations' === ( $entity_lifecycle['status'] ?? '' ), 'v2 entity declarations enter the active SSI runtime lifecycle' );
 $assert( 'woocommerce_simple_product' === ( $entity_lifecycle['entities'][ $entity_plan['runtime_declarations'][1]['reconciliation_identity'] ]['adapter']['id'] ?? '' ) || 'woocommerce_simple_product' === ( reset( $entity_lifecycle['entities'] )['adapter']['id'] ?? '' ), 'product collections resolve through the configured WooCommerce adapter' );
@@ -1368,7 +1368,7 @@ $resolved_binding_plan     = array(
 	),
 	'runtime_declarations' => array( $resolved_declaration ),
 );
-$resolve_binding_manifests = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'with_resolved_runtime_binding_manifests' );
+$resolve_binding_manifests = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'with_resolved_binding_manifests' );
 $preflight_bindings        = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'preflight_runtime_entity_binding_anchors' );
 $assert( is_wp_error( $preflight_bindings->invoke( null, $resolved_binding_plan, $token_lifecycle, array() ) ), 'canonical token anchors fail against destination-specific resolved page URLs before projection' );
 $resolved_lifecycle = $resolve_binding_manifests->invoke( null, $token_lifecycle, $resolved_binding_plan );
@@ -1488,7 +1488,7 @@ $presentation_conflicts = array(
 foreach ( $presentation_conflicts as $conflicting_markup ) {
 	$conflicting_presentation_form = $topology_form;
 	$conflicting_presentation_form['bindings'][] = array_replace( $topology_form['bindings'][0], array( 'search_block_markup' => $conflicting_markup ) );
-	$assert( ! isset( Static_Site_Importer_Report_Diagnostics::apply_form_binding_presentation( $conflicting_presentation_form )['form']['context_before'] ), 'conflicting bounded presentation across canonical form bindings fails closed' );
+	$assert( ! isset( Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $conflicting_presentation_form )['form']['context_before'] ), 'conflicting bounded presentation across canonical form bindings fails closed' );
 }
 $many_textarea_controls = array();
 $many_textareas_full    = '<form>';
@@ -1508,16 +1508,16 @@ $many_textarea_form       = array(
 		array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'index.html', 'search_block_markup' => $many_textareas_partial, 'occurrence' => 1, 'role' => 'form' ),
 	),
 );
-$assert( ! isset( Static_Site_Importer_Report_Diagnostics::apply_form_binding_presentation( $many_textarea_form )['controls'][0]['height'] ), 'conflicting bounded textarea-height omission counts fail closed' );
+$assert( ! isset( Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $many_textarea_form )['controls'][0]['height'] ), 'conflicting bounded textarea-height omission counts fail closed' );
 $reordered_presentation_form             = $topology_form;
 $reordered_presentation_form['controls'] = array_reverse( $reordered_presentation_form['controls'] );
-$assert( ! isset( Static_Site_Importer_Report_Diagnostics::apply_form_binding_presentation( $reordered_presentation_form )['form']['context_before'] ), 'binding presentation fails closed when declaration control order does not match the exact anchor' );
+$assert( ! isset( Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $reordered_presentation_form )['form']['context_before'] ), 'binding presentation fails closed when declaration control order does not match the exact anchor' );
 $invalid_presentation_form                            = $topology_form;
 $invalid_presentation_form['bindings'][0]['schema']   = 'generic/block-binding/invalid';
-$assert( ! isset( Static_Site_Importer_Report_Diagnostics::apply_form_binding_presentation( $invalid_presentation_form )['form']['context_before'] ), 'non-canonical form bindings are ignored before presentation extraction' );
+$assert( ! isset( Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $invalid_presentation_form )['form']['context_before'] ), 'non-canonical form bindings are ignored before presentation extraction' );
 $scalar_bindings_form             = $topology_form;
 $scalar_bindings_form['bindings'] = 'invalid';
-$assert( $scalar_bindings_form === Static_Site_Importer_Report_Diagnostics::apply_form_binding_presentation( $scalar_bindings_form ), 'malformed binding collections remain unchanged for structured provider validation' );
+$assert( $scalar_bindings_form === Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $scalar_bindings_form ), 'malformed binding collections remain unchanged for structured provider validation' );
 $malformed_entity_plan = $runtime_form_plan;
 $malformed_entity_plan['runtime_declarations'][1]['payload']['entities'] = array( 'invalid' );
 $malformed_entity_lifecycle = $prepare_lifecycle->invoke( null, $malformed_entity_plan, array() );
@@ -1546,7 +1546,7 @@ $duplicate_topology_plan['runtime_declarations'][1]['payload']['entities'] = arr
 $duplicate_topology_lifecycle = $prepare_lifecycle->invoke( null, $duplicate_topology_plan, array() );
 $assert( is_wp_error( $duplicate_topology_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $duplicate_topology_lifecycle->get_error_code(), 'duplicate runtime topology identifiers are rejected before provider traversal' );
 
-$binding_method        = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'runtime_entity_bindings' );
+$binding_method        = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'block_bindings' );
 $entity_declaration_id = (string) array_key_first( $entity_lifecycle['entities'] );
 $entity_bindings       = $binding_method->invoke(
 	null,
@@ -1618,7 +1618,7 @@ $binding_post_id = (int) ( $binding_receipt['completed']['pages']['index.html'] 
 $assert( str_contains( $GLOBALS['ssi_plan_posts'][ $binding_post_id ]['post_content'] ?? '', '[add_to_cart id=\"42\"]' ), 'page write uses provider-bound markup rather than the static fallback' );
 $assert( 'completed' === ( reset( $binding_receipt['completed']['runtime_declarations']['entity_bindings'] )['status'] ?? '' ), 'receipt proves canonical runtime entity binding completion' );
 $assert( array( '.add-to-cart' ) === ( reset( $binding_receipt['completed']['runtime_declarations']['entity_bindings'] )['superseded_runtime_selectors'] ?? null ), 'completed receipt retains provider runtime-selector coverage' );
-$reconcile_diagnostics = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'diagnostics_after_completed_entity_bindings' );
+$reconcile_diagnostics = new ReflectionMethod( Static_Site_Importer_Report_Diagnostics::class, 'after_completed_entity_bindings' );
 $runtime_diagnostics   = array(
 	array(
 		'code'        => 'preserved_runtime_island',
@@ -1862,7 +1862,7 @@ $assert( 0 === ( $form_quality_report['quality']['fallback_count'] ?? -1 ) && 1 
 $resolved_form_quality    = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $form_quality_report, array( 'fail_on_quality' => true ) );
 $resolved_form_validation = Static_Site_Importer_Report_Diagnostics::import_validation_result( $form_quality_report, $resolved_form_quality );
 $assert( true === ( $resolved_form_quality['pass'] ?? false ) && false === ( $resolved_form_quality['fail_import'] ?? true ) && array() === ( $resolved_form_quality['failure_reasons'] ?? null ) && 'passed' === ( $resolved_form_validation['status'] ?? '' ), 'receipt-resolved form fallback clears derived quality gates and validation status' );
-$form_admission = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'can_defer_form_quality_admission' );
+$form_admission = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'can_defer_form_quality_admission' );
 $form_admission_plan = array(
 	'quality' => array( 'metrics' => array( 'fallback_count' => 1 ), 'failure_reasons' => array( 'unsupported_html_fallback' ) ),
 	'diagnostics' => array( $form_fallback ),
@@ -1997,7 +1997,7 @@ $deferred_form_lifecycle   = array(
 		),
 	),
 );
-$materialize_entities = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'materialize_prepared_entities' );
+$materialize_entities = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'materialize_lifecycle_entities' );
 $deferred_entities    = $materialize_entities->invoke( null, $deferred_form_lifecycle, array( 'seed_entities' => true ) );
 $final_quality_gate = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'public_result_from_wordpress_site_plan_receipt' );
 $final_quality_error = $final_quality_gate->invoke(
