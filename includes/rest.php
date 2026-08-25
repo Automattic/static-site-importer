@@ -884,7 +884,7 @@ function static_site_importer_rest_execute_import_ability( string $ability_name,
  * Route a URL-only REST import through the canonical unified import ability.
  *
  * The unified `static-site-importer/import` ability dispatches on `type`; setting
- * `type=url` routes to {@see static_site_importer_ability_import_url_operation()}.
+	 * `type=url` routes to {@see Static_Site_Importer_Canonical_Import_Service::import_url_operation()}.
  * This helper shapes the input the ability expects and unwraps the result
  * envelope into the REST response shape.
  *

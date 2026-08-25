@@ -292,13 +292,41 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<string, mixed>
 	 */
 	public static function finalize_report( array &$report, array $args ): array {
-		$quality                            = self::finalize_quality_report( $report, $args );
-		$report['visual_parity_artifacts']  = self::visual_parity_artifact_contract( isset( $args['validation_artifacts'] ) && is_array( $args['validation_artifacts'] ) ? $args['validation_artifacts'] : array() );
+		$quality                           = self::finalize_quality_report( $report, $args );
+		$report['visual_parity_artifacts'] = self::visual_parity_artifact_contract( isset( $args['validation_artifacts'] ) && is_array( $args['validation_artifacts'] ) ? $args['validation_artifacts'] : array() );
+		self::refresh_projections( $report, $quality, false );
+
+		return $quality;
+	}
+
+	/**
+	 * Refresh every public projection from one finalized report state.
+	 *
+	 * @param array<string,mixed> $report  Finalized import report.
+	 * @param array<string,mixed> $quality Finalized quality gate state.
+	 * @param bool                $build_fixture Whether to build the fixture projection.
+	 * @return array<string,mixed>
+	 */
+	public static function refresh_projections( array &$report, array $quality, bool $build_fixture = true ): array {
+		$report['quality']                  = $quality;
 		$report['compact_summary']          = self::import_report_summary( $report, $quality );
 		$report['finding_packets']          = self::finding_packets( $report );
 		$report['import_validation_result'] = self::import_validation_result( $report, $quality );
 
-		return $quality;
+		if ( $build_fixture && class_exists( 'Static_Site_Importer_Diagnostic_Contract' ) ) {
+			return Static_Site_Importer_Diagnostic_Contract::build(
+				array(
+					'success'                  => empty( $quality['fail_import'] ),
+					'status'                   => (string) ( $report['compact_summary']['status'] ?? '' ),
+					'slug'                     => (string) ( $report['theme_slug'] ?? '' ),
+					'import_validation_result' => $report['import_validation_result'],
+					'import_report'            => $report,
+					'materialization_receipt'  => isset( $report['materialization_receipt'] ) && is_array( $report['materialization_receipt'] ) ? $report['materialization_receipt'] : array(),
+				)
+			);
+		}
+
+		return array();
 	}
 
 	/**

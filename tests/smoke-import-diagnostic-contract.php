@@ -485,6 +485,41 @@ $assert( 'client_script_execution' === ( $runtime_preservation_diagnostic['runti
 $assert( 'preserve' === ( $runtime_preservation_diagnostic['disposition'] ?? '' ), 'contract-preserves-runtime-disposition' );
 $assert( 'preserve_verbatim' === ( $runtime_preservation_diagnostic['js_handling'] ?? '' ), 'contract-preserves-runtime-js-handling' );
 
+$finalized_report = array(
+	'schema'      => 'static-site-importer/import-report/v1',
+	'version'     => 1,
+	'theme_slug'  => 'finalized-diagnostic-source',
+	'quality'     => array( 'fallback_count' => 0 ),
+	'diagnostics' => array(
+		array(
+			'type'        => 'invalid_block_content',
+			'source_path' => 'templates/front-page.html',
+		),
+	),
+	'blocks_engine' => array(
+		'conversion_report' => array(
+			'diagnostics' => array(
+				array(
+					'type'        => 'stale_nested_diagnostic',
+					'source_path' => 'legacy-report.html',
+				),
+			),
+		),
+	),
+);
+$finalized_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $finalized_report, array() );
+$finalized_report['materialization_receipt'] = array(
+	'schema'    => 'static-site-importer/materialization-receipt/v2',
+	'status'    => 'completed',
+	'completed' => array( 'pages' => array( 1 ) ),
+);
+$cached_contract = Static_Site_Importer_Report_Diagnostics::refresh_projections( $finalized_report, $finalized_quality );
+$assert( 1 === ( $cached_contract['diagnostic_summary']['total'] ?? 0 ), 'finalized-report-is-sole-diagnostic-source' );
+$assert( 'invalid_block_content' === ( $cached_contract['diagnostics'][0]['type'] ?? '' ), 'finalized-report-builds-fixture-projection' );
+$assert( $cached_contract === Static_Site_Importer_Canonical_Import_Service::success_diagnostics_contract( array( 'fixture_diagnostics' => $cached_contract, 'import_report' => $finalized_report ) ), 'canonical-service-reuses-finalized-fixture-projection' );
+$assert( 'completed' === ( $cached_contract['materialization_receipt']['status'] ?? '' ), 'projection-refresh-includes-final-receipt' );
+$assert( ( $finalized_report['compact_summary']['status'] ?? '' ) === ( $cached_contract['status'] ?? '' ), 'projection-refresh-keeps-statuses-aligned' );
+
 $normalized_form_fallback = array(
 	'type'        => 'unsupported_html_fallback',
 	'code'        => 'html_form_fallback',
