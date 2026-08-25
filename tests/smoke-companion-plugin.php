@@ -250,6 +250,7 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-companio
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-plugin-materializer.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 
 $failures   = array();
 $assertions = 0;
@@ -914,6 +915,23 @@ $replacement_report  = Static_Site_Importer_Plugin_Materializer::ensure_generate
 $assert( in_array( 'ssi-example-site/ssi-example-site.php', $GLOBALS['ssi_companion_deactivated'], true ), 'replacement-deactivates-previous-companion' );
 $assert( in_array( 'replaced:ssi-example-site/ssi-example-site.php', $replacement_report['actions'] ?? array(), true ), 'replacement-reports-previous-companion' );
 $assert( 'ssi-replacement-site/ssi-replacement-site.php' === get_option( Static_Site_Importer_Plugin_Materializer::ACTIVE_COMPANION_OPTION ), 'replacement-records-current-companion-plugin' );
+
+$page_ready_payload                                         = $payload;
+$page_ready_payload['site_slug']                            = 'page-ready-site';
+$page_ready_payload['site_name']                            = 'Page Ready Site';
+$page_ready_payload['blocks'][0]['block_json']['name'] = 'example/page-ready-control';
+$page_ready_materializer                                    = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'materialize_companion_dependency' );
+$page_ready_report                                          = $page_ready_materializer->invoke(
+	null,
+	$page_ready_payload,
+	array(
+		'args'     => array(),
+		'plan'     => array(),
+		'resolved' => array(),
+	),
+	true
+);
+$assert( 'skipped' !== ( $page_ready_report['status'] ?? '' ) && in_array( 'example/page-ready-control', WP_Block_Type_Registry::$registered, true ), 'page-ready-checkpoint-materializes-and-registers-declared-companion-blocks' );
 
 // Cleanup generated fixtures.
 $cleanup = static function ( string $dir ) use ( &$cleanup ): void {
