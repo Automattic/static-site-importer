@@ -388,11 +388,11 @@ class Static_Site_Importer_Canonical_Import_Service {
 		if ( 25 < count( $contract_diagnostics ) ) {
 			$contract_diagnostics = array_merge( array_slice( $contract_diagnostics, 0, 24 ), array_slice( $contract_diagnostics, -1 ) );
 		}
-		$remaining_items  = 400;
-		$bounded_contract = self::bounded_inline_value( $contract, $remaining_items );
-		$bounded_contract = is_array( $bounded_contract ) ? $bounded_contract : array();
-		$remaining_items  = 1000;
-		$diagnostics      = self::bounded_inline_value( $contract_diagnostics, $remaining_items );
+		$remaining_items                 = 400;
+		$bounded_contract                = self::bounded_inline_value( $contract, $remaining_items );
+		$bounded_contract                = is_array( $bounded_contract ) ? $bounded_contract : array();
+		$remaining_items                 = 1000;
+		$diagnostics                     = self::bounded_inline_value( $contract_diagnostics, $remaining_items );
 		$bounded_contract['diagnostics'] = is_array( $diagnostics ) ? $diagnostics : array();
 		if ( function_exists( 'do_action' ) ) {
 			do_action( 'static_site_importer_import_completed', $bounded_contract, $result, $input );
@@ -400,7 +400,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 		return array(
 			'success'             => true,
 			'result'              => $result,
-			'diagnostics'         => isset( $bounded_contract['diagnostics'] ) && is_array( $bounded_contract['diagnostics'] ) ? $bounded_contract['diagnostics'] : array(),
+			'diagnostics'         => $bounded_contract['diagnostics'],
 			'fixture_diagnostics' => $bounded_contract,
 		);
 	}
@@ -464,9 +464,9 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'materialization_receipt_summary' => self::bounded_inline_value( $receipt_summary, $remaining ),
 		);
 		if ( isset( $result['pages'] ) && is_array( $result['pages'] ) ) {
-			$page_items               = 100;
-			$bounded['page_count']    = count( $result['pages'] );
-			$bounded['pages']         = self::bounded_inline_value( $result['pages'], $page_items );
+			$page_items                 = 100;
+			$bounded['page_count']      = count( $result['pages'] );
+			$bounded['pages']           = self::bounded_inline_value( $result['pages'], $page_items );
 			$bounded['pages_truncated'] = count( $result['pages'] ) > count( $bounded['pages'] );
 		}
 		foreach ( $inline_keys as $key ) {
@@ -542,7 +542,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 				'message' => $error->getMessage(),
 			);
 		}
-		$artifacts['status']         = empty( $artifacts['errors'] ) ? 'completed' : 'failed';
+		$artifacts['status']          = empty( $artifacts['errors'] ) ? 'completed' : 'failed';
 		$result['response_artifacts'] = $artifacts;
 		return $result;
 	}
