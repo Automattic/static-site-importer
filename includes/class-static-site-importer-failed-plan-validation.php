@@ -39,16 +39,14 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 		$quality['pass']            = false;
 		$quality['fail_import']     = true;
 		$quality['failure_reasons'] = self::failure_reasons( $plan, $quality );
-		$report['quality']          = $quality;
-		$report['compact_summary']  = Static_Site_Importer_Report_Diagnostics::import_report_summary( $report, $quality );
-		$report['finding_packets']  = Static_Site_Importer_Report_Diagnostics::finding_packets( $report );
-		$report['import_validation_result'] = Static_Site_Importer_Report_Diagnostics::import_validation_result( $report, $quality );
+		$fixture_diagnostics = Static_Site_Importer_Report_Diagnostics::refresh_projections( $report, $quality );
 
 		return array(
 			'import_report'            => $report,
 			'import_report_summary'    => $report['compact_summary'],
 			'import_validation_result' => $report['import_validation_result'],
 			'finding_packets'          => $report['finding_packets'],
+			'fixture_diagnostics'      => $fixture_diagnostics,
 		);
 	}
 

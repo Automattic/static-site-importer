@@ -856,8 +856,8 @@ class Static_Site_Importer_Theme_Generator {
 		$receipt['quality_budget_admission']['mechanical_status'] = $receipt['status'] ?? 'completed';
 		$report['quality_budget_admission'] = $receipt['quality_budget_admission'];
 		$report['materialization_receipt'] = $receipt;
-		$validation = Static_Site_Importer_Report_Diagnostics::import_validation_result( $report, $quality );
-		$report['import_validation_result'] = $validation;
+		$fixture_diagnostics = Static_Site_Importer_Report_Diagnostics::refresh_projections( $report, $quality );
+		$validation = $report['import_validation_result'];
 		$findings   = $report['finding_packets'];
 		$theme_dir  = $theme['dir'];
 		$manifest_path = $theme_dir . '/static-site-importer-manifest.json';
@@ -913,6 +913,7 @@ class Static_Site_Importer_Theme_Generator {
 			),
 			'import_validation_result'        => $validation,
 			'finding_packets'                 => $findings,
+			'fixture_diagnostics'             => $fixture_diagnostics,
 			'quality'                         => $quality,
 			'source_of_truth'                 => $manifest,
 			'progress_events'                 => array(

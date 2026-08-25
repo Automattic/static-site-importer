@@ -439,64 +439,7 @@ if ( ! function_exists( 'static_site_importer_ability_apply_approved_plan' ) ) {
 	}
 }
 
-if ( ! function_exists( 'static_site_importer_success_diagnostics_contract' ) ) {
-	/**
-	 * Build the import-diagnostics contract from a successful import result.
-	 *
-	 * Maps the success result shape returned by
-	 * Static_Site_Importer_Theme_Generator::import_website_artifact() into the keys the
-	 * diagnostic contract reads. Fields the contract needs but the result does not carry
-	 * are mapped from what the import returns rather than fabricated.
-	 *
-	 * @param array<string,mixed> $result Import result.
-	 * @return array<string,mixed>
-	 */
-	function static_site_importer_success_diagnostics_contract( array $result ): array {
-		return Static_Site_Importer_Canonical_Import_Service::success_diagnostics_contract( $result );
-	}
-}
-
-if ( ! function_exists( 'static_site_importer_error_diagnostics' ) ) {
-	/**
-	 * Promote nested validation diagnostics to top-level ability fields.
-	 *
-	 * @param string              $code                  Error code.
-	 * @param string              $message               Error message.
-	 * @param mixed               $data                  Optional error data.
-	 * @param array<string,mixed> $import_report_summary Import report summary.
-	 * @return array<int,array<string,mixed>>
-	 */
-	function static_site_importer_error_diagnostics( string $code, string $message, $data, array $import_report_summary ): array {
-		return Static_Site_Importer_Canonical_Import_Service::error_diagnostics( $code, $message, $data, $import_report_summary );
-	}
-}
-
-if ( ! function_exists( 'static_site_importer_is_actionable_error_diagnostic' ) ) {
-	/**
-	 * Check whether an error diagnostic has machine-actionable identity or source context.
-	 *
-	 * @param mixed $diagnostic Candidate diagnostic.
-	 * @return bool
-	 */
-	function static_site_importer_is_actionable_error_diagnostic( $diagnostic ): bool {
-		return Static_Site_Importer_Canonical_Import_Service::is_actionable_error_diagnostic( $diagnostic );
-	}
-}
-
-if ( ! function_exists( 'static_site_importer_failure_report_summary' ) ) {
-	/**
-	 * Build a minimal report summary for failures that happen before a report file exists.
-	 *
-	 * @param string $code    Error code.
-	 * @param string $message Error message.
-	 * @return array<string, mixed>
-	 */
-	function static_site_importer_failure_report_summary( string $code, string $message ): array {
-		return Static_Site_Importer_Canonical_Import_Service::failure_report_summary( $code, $message );
-	}
-}
-
-// Public Ability helper names remain callable compatibility adapters.
+// Public Ability result helpers remain callable compatibility adapters.
 if ( ! function_exists( 'static_site_importer_ability_error' ) ) {
 	function static_site_importer_ability_error( string $code, string $message, $data = null ): array {
 		return Static_Site_Importer_Canonical_Import_Service::error( $code, $message, $data );
@@ -506,30 +449,6 @@ if ( ! function_exists( 'static_site_importer_ability_error' ) ) {
 if ( ! function_exists( 'static_site_importer_ability_import_success' ) ) {
 	function static_site_importer_ability_import_success( array $result, array $input ): array {
 		return Static_Site_Importer_Canonical_Import_Service::success( $result, $input );
-	}
-}
-
-if ( ! function_exists( 'static_site_importer_ability_handoff_hash' ) ) {
-	function static_site_importer_ability_handoff_hash( array $value ): string {
-		return Static_Site_Importer_Canonical_Import_Service::handoff_hash( $value );
-	}
-}
-
-if ( ! function_exists( 'static_site_importer_ability_plan_artifact' ) ) {
-	function static_site_importer_ability_plan_artifact( array $artifact, array $args, string $type, array $provenance ): array {
-		return Static_Site_Importer_Canonical_Import_Service::plan_artifact( $artifact, $args, $type, $provenance );
-	}
-}
-
-if ( ! function_exists( 'static_site_importer_ability_import_url_operation' ) ) {
-	function static_site_importer_ability_import_url_operation( array $input, array $source ): array {
-		return Static_Site_Importer_Canonical_Import_Service::import_url_operation( $input, $source );
-	}
-}
-
-if ( ! function_exists( 'static_site_importer_ability_approved_plan_payload_reader' ) ) {
-	function static_site_importer_ability_approved_plan_payload_reader( array $input, array $approved ) {
-		return Static_Site_Importer_Canonical_Import_Service::approved_plan_payload_reader( $input, $approved );
 	}
 }
 
