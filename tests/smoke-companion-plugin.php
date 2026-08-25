@@ -516,9 +516,10 @@ if ( is_array( $layout_descriptor ) ) {
 	ob_start();
 	eval( '?>' . $layout_render );
 	$layout_output = (string) ob_get_clean();
-	foreach ( array( '<main class="story"', '<nav>', '<h1>Story</h1>', '<button type="button">Read more</button>', '<wow-image data-hook="hero">', '<img src="data:image/png;base64,aGVybw==" alt="Hero" decoding="async" fetchpriority="high">', '<svg viewBox="0 0 10 10" preserveAspectRatio="xMidYMid slice" focusable="false" role="img" aria-label="Mark">', '<path d="M0 0L10 10" stroke="#000"></path>' ) as $fragment ) {
+	foreach ( array( '<main class="story"', '<nav>', '<h1>Story</h1>', '<button type="button">Read more</button>', '<img src="data:image/png;base64,aGVybw==" alt="Hero" decoding="async" fetchpriority="high">', '<svg viewBox="0 0 10 10" preserveAspectRatio="xMidYMid slice" focusable="false" role="img" aria-label="Mark">', '<path d="M0 0L10 10" stroke="#000"></path>' ) as $fragment ) {
 		$assert( str_contains( $layout_output, $fragment ), 'layout-renderer-preserves-' . $fragment );
 	}
+	$assert( ! str_contains( $layout_output, '<wow-image' ), 'layout-renderer-unwraps-potentially-active-custom-elements' );
 	$assert( str_contains( $layout_output, 'position:absolute' ) && str_contains( $layout_output, 'width:405px' ) && str_contains( $layout_output, 'height:516.812px' ) && str_contains( $layout_output, 'overflow:hidden' ), 'layout-renderer-preserves-quoted-inline-geometry', $layout_output );
 
 	$busy_bears_contract = json_decode( (string) file_get_contents( __DIR__ . '/fixtures/busy-bears-responsive-layout-contract.json' ), true );
@@ -586,7 +587,7 @@ if ( is_array( $layout_descriptor ) ) {
 			}
 		}
 	}
-	$attributes = array( 'content' => '<main onclick="alert(1)" data-wp-interactive="bad" style="background:url(javascript:alert(0))"><script>alert(2)</script><a href="%256a%2561vascript:alert(3)">bad</a><img src="javascript:alert(4)" srcset="safe.jpg 1x, javascript:alert(6) 2x"><audio><source src="song.mp3" type="audio/mpeg"></audio><svg onload="alert(5)"><foreignObject>bad</foreignObject><animate attributeName="x"></animate><defs><linearGradient id="paint"><stop offset="0" stop-color="#fff"></stop></linearGradient></defs><path fill="url(https://evil.test/x.svg#paint)" stroke="url(#paint)" d="M0 0"></path><use href="https://evil.test/icons.svg#icon"></use></svg></main>' );
+	$attributes = array( 'content' => '<main onclick="alert(1)" data-wp-interactive data-wp-bind=> data-wp-context="bad" style="background:url(javascript:alert(0))"><script>alert(2)</script><a href="%256a%2561vascript:alert(3)">bad</a><img src="javascript:alert(4)" srcset="safe.jpg 1x, javascript:alert(6) 2x"><audio><source src="song.mp3" type="audio/mpeg"></audio><svg onload="alert(5)"><foreignObject>bad</foreignObject><animate attributeName="x"></animate><defs><linearGradient id="paint"><stop offset="0" stop-color="#fff"></stop></linearGradient></defs><path fill="url(https://evil.test/x.svg#paint)" stroke="url(#paint)" d="M0 0"></path><use href="https://evil.test/icons.svg#icon"></use></svg></main>' );
 	ob_start();
 	eval( '?>' . $layout_render );
 	$unsafe_layout_output = strtolower( (string) ob_get_clean() );
@@ -595,6 +596,16 @@ if ( is_array( $layout_descriptor ) ) {
 	}
 	$assert( str_contains( $unsafe_layout_output, '<path' ) && str_contains( $unsafe_layout_output, 'd="m0 0"' ), 'layout-renderer-keeps-safe-svg-shapes' );
 	$assert( str_contains( $unsafe_layout_output, '<source src="song.mp3" type="audio/mpeg">' ) && str_contains( $unsafe_layout_output, 'stroke="url(#paint)"' ), 'layout-renderer-keeps-safe-local-media-and-svg-references' );
+	$attributes = array( 'content' => '<main>Before<svg><path fill="url(https://evil.test/unclosed.svg#paint)" d="M0 0"></path>' );
+	ob_start();
+	eval( '?>' . $layout_render );
+	$malformed_svg_output = strtolower( (string) ob_get_clean() );
+	$assert( str_contains( $malformed_svg_output, '<main>before' ) && ! str_contains( $malformed_svg_output, '<svg' ) && ! str_contains( $malformed_svg_output, 'evil.test' ), 'layout-renderer-rejects-unclosed-svg-before-url-bearing-attributes-are-admitted' );
+	$attributes = array( 'content' => '<main>Before<svg><svg></svg><path fill="url(https://evil.test/nested.svg#paint)" d="M0 0"></path></svg>After</main>' );
+	ob_start();
+	eval( '?>' . $layout_render );
+	$nested_svg_output = strtolower( (string) ob_get_clean() );
+	$assert( str_contains( $nested_svg_output, '<main>beforeafter</main>' ) && ! str_contains( $nested_svg_output, '<svg' ) && ! str_contains( $nested_svg_output, 'evil.test' ), 'layout-renderer-rejects-nested-svg-before-url-bearing-attributes-are-admitted' );
 }
 
 WP_Block_Type_Registry::$registered[] = 'example/custom-hero';

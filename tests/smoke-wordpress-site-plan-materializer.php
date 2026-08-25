@@ -2899,14 +2899,17 @@ $root_media_url     = 'https://example.test/wp-content/themes/root-media-plan/as
 $assert( 'completed' === $root_media_receipt['status'] && 4 === substr_count( $root_media_content, $root_media_url ) && str_contains( $root_media_content, '"url":"' . $root_media_url . '"' ) && str_contains( $root_media_content, 'blocks-engine-background-image' ) && ! str_contains( $root_media_content, '/media/example.jpg?' ), 'root-relative captured media resolves through the canonical theme asset map for image and background-image blocks' );
 $assert( ( $root_media_plan['pages'][0]['reconciliation_identity'] ?? '' ) === ( $GLOBALS['ssi_plan_meta'][ $root_media_page_id ]['_blocks_engine_reconciliation_identity'] ?? '' ), 'materialized posts expose the producer reconciliation identity required by scoped theme bootstrap assets' );
 unset( $GLOBALS['ssi_plan_meta'][ $root_media_page_id ]['_blocks_engine_reconciliation_identity'] );
+$assert( wp_delete_file( (string) $root_media_receipt['theme']['dir'] . '/style.css' ), 'rollback fixture removes one generated target to force overwrite materialization' );
 $root_media_rollback = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$root_media_plan,
 	array(
 		'slug'                           => 'root-media-plan',
+		'overwrite'                      => true,
 		'inject_materialization_failure' => 'theme_write_short',
 	)
 );
-$assert( 'partial' === $root_media_rollback['status'] && ! array_key_exists( '_blocks_engine_reconciliation_identity', $GLOBALS['ssi_plan_meta'][ $root_media_page_id ] ?? array() ), 'failed re-import restores the absence of producer reconciliation metadata on an existing post' );
+$assert( 'partial' === $root_media_rollback['status'], 'injected theme write failure produces a partial re-import receipt' );
+$assert( ! array_key_exists( '_blocks_engine_reconciliation_identity', $GLOBALS['ssi_plan_meta'][ $root_media_page_id ] ?? array() ), 'failed re-import restores the absence of producer reconciliation metadata on an existing post' );
 
 $resolved_root_media_plan = ( new \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver() )->resolve(
 	$root_media_plan,

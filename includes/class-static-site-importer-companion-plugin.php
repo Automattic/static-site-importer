@@ -827,7 +827,10 @@ PHP;
 $content = is_string( $attributes['content'] ?? null ) ? $attributes['content'] : '';
 $content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*>.*?</\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\s*>#is', '', $content ) ?? '';
 $content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*/?\s*>#is', '', $content ) ?? '';
+$content = preg_replace( '#</?\s*[a-z][a-z0-9]*-[a-z0-9-]+\b[^>]*>#i', '', $content ) ?? '';
 $content = preg_replace( '/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $content ) ?? '';
+$content = preg_replace( '/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)\s*=\s*(?=\/?>)/i', '', $content ) ?? '';
+$content = preg_replace( '/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)(?=\s|\/?>)/i', '', $content ) ?? '';
 
 $safe_url = static function ( string $url, bool $image = false ): bool {
 	$normalized = strtolower( preg_replace( '/[\x00-\x20\x7f]+/', '', html_entity_decode( $url, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) ?? '' );
@@ -879,6 +882,9 @@ $content = preg_replace_callback(
 	},
 	$content
 ) ?? '';
+$content = preg_match( '#<svg\b[^>]*>(?:(?!</svg\s*>).)*<svg\b#is', $content ) ? ( preg_replace( '#<svg\b[^>]*>.*</svg\s*>#is', '', $content ) ?? '' ) : $content;
+$content = preg_replace( '#<svg\b[^>]*/\s*>#is', '', $content ) ?? '';
+$content = preg_replace( '#<svg\b[^>]*>(?:(?!</svg\s*>).)*$#is', '', $content ) ?? '';
 $content = preg_replace_callback(
 	'#<svg\b[^>]*>.*?</svg\s*>#is',
 	static function ( array $match ): string {
@@ -959,15 +965,9 @@ if ( preg_match_all( '/\s+(aria-[a-z][a-z0-9-]*)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\
 		$svg_global[ strtolower( $aria_name ) ] = true;
 	}
 }
-$custom_elements = array();
-if ( preg_match_all( '/<\s*([a-z][a-z0-9]*-[a-z0-9-]+)\b/i', $content, $custom_names ) ) {
-	foreach ( $custom_names[1] as $custom_name ) {
-		$custom_elements[ strtolower( $custom_name ) ] = $flow;
-	}
-}
 $output = wp_kses(
 	$content,
-	array_merge( array(
+	array(
 		'main' => $flow, 'article' => $flow, 'aside' => $flow, 'section' => $flow, 'header' => $flow,
 		'footer' => $flow, 'nav' => $flow, 'div' => $flow, 'span' => $global, 'p' => $flow,
 		'h1' => $flow, 'h2' => $flow, 'h3' => $flow, 'h4' => $flow, 'h5' => $flow, 'h6' => $flow,
@@ -999,7 +999,7 @@ $output = wp_kses(
 		'rect' => array_merge( $svg_global, array( 'fill' => true, 'height' => true, 'opacity' => true, 'rx' => true, 'ry' => true, 'stroke' => true, 'stroke-width' => true, 'width' => true, 'x' => true, 'y' => true ) ),
 		'text' => array_merge( $svg_global, array( 'fill' => true, 'font-family' => true, 'font-size' => true, 'font-weight' => true, 'text-anchor' => true, 'x' => true, 'y' => true ) ),
 		'tspan' => array_merge( $svg_global, array( 'dx' => true, 'dy' => true, 'fill' => true, 'x' => true, 'y' => true ) ), 'title' => $svg_global, 'desc' => $svg_global,
-	), $custom_elements )
+	)
 );
 foreach ( $data_images as $placeholder => $data_image ) {
 	$output = str_replace( 'src="' . $placeholder . '"', 'src="' . esc_attr( $data_image ) . '"', $output );

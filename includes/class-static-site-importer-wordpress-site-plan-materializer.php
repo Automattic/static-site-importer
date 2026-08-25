@@ -554,8 +554,16 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( empty( $page['planned_existing_id'] ) ) {
 				$state['rollback']['posts'][ $post ] = array( 'existing' => false );
 			}
+			$state['applied']['posts'][] = array(
+				'id'                      => $post,
+				'source_path'             => $page['source_path'],
+				'reconciliation_identity' => $page['reconciliation_identity'],
+			);
 			$state['page_ids'][ $page['reconciliation_identity'] ] = $post;
 			$state['source_ids'][ $page['source_path'] ]           = $post;
+			if ( ! self::write_post_meta( $post, self::RECONCILIATION_META_KEY, (string) $page['reconciliation_identity'] ) || ! self::write_post_meta( $post, self::PRODUCER_RECONCILIATION_META_KEY, (string) $page['reconciliation_identity'] ) ) {
+				return self::failed_receipt( $state, 'materialization_reconciliation_metadata_write_failed' );
+			}
 			$materialized_markup                                   = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] );
 			update_post_meta(
 				$post,
@@ -569,11 +577,6 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 						'content_hash'            => hash( 'sha256', $materialized_markup ),
 					)
 				)
-			);
-			$state['applied']['posts'][] = array(
-				'id'                      => $post,
-				'source_path'             => $page['source_path'],
-				'reconciliation_identity' => $page['reconciliation_identity'],
 			);
 			foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
 				if ( ( $binding_report['source_path'] ?? '' ) === $page['source_path'] ) {
@@ -998,9 +1001,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( is_wp_error( $id ) ) {
 			return $id;
 		}
-		update_post_meta( (int) $id, self::RECONCILIATION_META_KEY, $page['reconciliation_identity'] );
-		update_post_meta( (int) $id, self::PRODUCER_RECONCILIATION_META_KEY, $page['reconciliation_identity'] );
 		return (int) $id;
+	}
+
+	/** Persist and verify importer-owned post metadata. */
+	private static function write_post_meta( int $id, string $key, string $value ): bool {
+		update_post_meta( $id, $key, $value );
+		return metadata_exists( 'post', $id, $key ) && $value === (string) get_post_meta( $id, $key, true );
 	}
 
 	/** Resolve destination-independent route references after WordPress has assigned every permalink. */
@@ -2226,9 +2233,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					update_post_meta( $id, '_static_site_importer_provenance', $before['provenance'] );
 					update_post_meta( $id, self::RECONCILIATION_META_KEY, $before['reconciliation_identity'] );
 					if ( ! empty( $before['producer_reconciliation_identity_exists'] ) ) {
-						update_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY, $before['producer_reconciliation_identity'] );
+						if ( ! self::write_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY, (string) $before['producer_reconciliation_identity'] ) ) {
+							throw new RuntimeException( 'materialization_rollback_post_meta_restore_failed' );
+						}
 					} else {
 						delete_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY );
+						if ( metadata_exists( 'post', $id, self::PRODUCER_RECONCILIATION_META_KEY ) ) {
+							throw new RuntimeException( 'materialization_rollback_post_meta_delete_failed' );
+						}
 					}
 				} elseif ( function_exists( 'wp_delete_post' ) && ! wp_delete_post( $id, true ) ) {
 					throw new RuntimeException( 'materialization_rollback_post_delete_failed' );
