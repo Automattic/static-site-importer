@@ -481,8 +481,7 @@ class Static_Site_Importer_Form_Seeder {
 		self::append_receipt_entries( $layout['receipt'], 'losses', $overlay['losses'] );
 		$layout['receipt']['status'] = $layout['receipt']['operations_total'] > 0 ? 'applied' : ( $layout['receipt']['losses_total'] > 0 ? 'deferred' : 'skipped' );
 		$markup                      = self::context_block_markup( $form, 'context_before' ) . self::serialize_block( 'jetpack/contact-form', $form_attrs, $inner_blocks ) . self::context_block_markup( $form, 'context_after' );
-
-		return array(
+		$row                         = array(
 			'selector'                    => $selector,
 			'source_path'                 => $source_path,
 			'provider'                    => self::PROVIDER_ID,
@@ -499,6 +498,29 @@ class Static_Site_Importer_Form_Seeder {
 			'provider_layout_target_map'  => $target_map,
 			'provider_layout_overlay_css' => $overlay['overlay'],
 		);
+		$unaccepted_losses           = array_values(
+			array_filter(
+				$layout['receipt']['losses'] ?? array(),
+				static fn( $loss ): bool => is_array( $loss ) && self::receipt_loss_requires_gate( $loss ) && true !== apply_filters( 'static_site_importer_form_receipt_loss_accepted', false, $loss, $form, $row )
+			)
+		);
+		$gate_overflow_count         = (int) ( $layout['receipt']['gate_required_loss_overflow_count'] ?? 0 );
+		if ( $gate_overflow_count > 0 ) {
+			$unaccepted_losses[] = array(
+				'dimension'   => 'topology',
+				'reason_code' => 'form_receipt_gate_loss_overflow',
+				'loss_count'  => $gate_overflow_count,
+				'loss_hash'   => (string) ( $layout['receipt']['gate_required_loss_overflow_hash'] ?? '' ),
+			);
+		}
+		if ( ! empty( $unaccepted_losses ) ) {
+			$row['provider_mapped']                = true;
+			$row['runtime_mapped']                 = false;
+			$row['reason']                         = 'form_receipt_loss_unaccepted';
+			$row['form_receipt_unaccepted_losses'] = $unaccepted_losses;
+			$row['unaccepted_receipt_loss_count']  = count( $unaccepted_losses );
+		}
+		return $row;
 	}
 
 	/**

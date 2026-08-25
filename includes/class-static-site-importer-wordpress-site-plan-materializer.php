@@ -55,14 +55,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	 */
 	public static function materialize_prepared_lifecycle( array $prepared, array $lifecycle, $companion_payload, array $gutenberg_gaps, array $theme_materialization ) {
 		$args      = is_array( $prepared['args'] ?? null ) ? $prepared['args'] : array();
-		$lifecycle = Static_Site_Importer_Theme_Generator::with_resolved_runtime_binding_manifests( $lifecycle, is_array( $prepared['resolved'] ?? null ) ? $prepared['resolved'] : array() );
+		$lifecycle = Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $lifecycle, is_array( $prepared['resolved'] ?? null ) ? $prepared['resolved'] : array() );
 		$classic   = Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === ( $args['theme_materialization'] ?? null );
 		$preflight = $classic ? Static_Site_Importer_Theme_Generator::preflight_classic_runtime_entity_bindings( $prepared['args']['classic_theme_projection'], $lifecycle, $args ) : Static_Site_Importer_Theme_Generator::preflight_runtime_entity_binding_anchors( $prepared['resolved'] ?? array(), $lifecycle, $args );
 		if ( is_wp_error( $preflight ) ) {
 			return $preflight;
 		}
 		$page_ready = ! empty( $args['page_ready_checkpoint'] );
-		if ( $page_ready && Static_Site_Importer_Theme_Generator::page_ready_requires_final_hydration( $lifecycle, $args ) ) {
+		if ( $page_ready && Static_Site_Importer_Entity_Materializer_Registry::page_ready_requires_final_hydration( $lifecycle, $args ) ) {
 			return new WP_Error(
 				'static_site_importer_page_ready_runtime_bindings_deferred',
 				'Page-ready materialization requires runtime entity bindings and must wait for complete-snapshot hydration.',
@@ -83,12 +83,12 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$entity_result = $page_ready ? array(
 			'reports' => array(),
 			'error'   => null,
-		) : Static_Site_Importer_Theme_Generator::materialize_prepared_entities( $lifecycle, $args );
+		) : Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $lifecycle, $args );
 		$entities      = $entity_result['reports'];
 		if ( null !== $entity_result['error'] ) {
 			return self::lifecycle_failure( $entity_result['error'], $lifecycle, $dependencies, $entities, 'entity_materialization' );
 		}
-		$bindings = $page_ready ? array() : Static_Site_Importer_Theme_Generator::runtime_entity_bindings( $lifecycle, $entities );
+		$bindings = $page_ready ? array() : Static_Site_Importer_Entity_Materializer_Registry::block_bindings( $lifecycle, $entities );
 		if ( is_wp_error( $bindings ) ) {
 			return self::lifecycle_failure(
 				array(
@@ -103,7 +103,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		$prepared['args']['runtime_entity_bindings'] = $classic ? array() : $bindings;
 		if ( $classic ) {
-			$classic_bindings = Static_Site_Importer_Theme_Generator::classic_runtime_entity_bindings( $lifecycle, $entities );
+			$classic_bindings = Static_Site_Importer_Entity_Materializer_Registry::classic_bindings( $lifecycle, $entities );
 			if ( is_wp_error( $classic_bindings ) ) {
 				return self::lifecycle_failure(
 					array(
@@ -134,7 +134,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$prepared['prepared_resolved_projection_hash'] = self::prepared_resolved_projection_hash( $prepared['base_resolved'] );
 			$prepared['args']['classic_runtime_bindings']  = $classic_bindings;
 		}
-		$prepared['args']['provider_layout_overlays']     = $page_ready ? array() : Static_Site_Importer_Theme_Generator::provider_layout_overlays_from_entity_reports( $entities );
+		$prepared['args']['provider_layout_overlays']     = $page_ready ? array() : Static_Site_Importer_Entity_Materializer_Registry::provider_layout_overlays( $entities );
 		$prepared['args']['font_materialization']         = $page_ready ? array() : ( $prepared['args']['font_materialization'] ?? array() );
 		$prepared['args']['activate']                     = $page_ready ? false : ! empty( $prepared['args']['activate'] );
 		$prepared['args']['defer_materialization_commit'] = true;
@@ -215,7 +215,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** Public because checkpoint preparation provisions the same typed dependencies. */
 	public static function materialize_runtime_dependencies( array $lifecycle, array $args ) {
-		return Static_Site_Importer_Theme_Generator::materialize_prepared_dependencies( $lifecycle, $args );
+		return Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_dependencies( $lifecycle, $args );
 	}
 
 	/** Return a provider-compensated error before canonical plan mutation begins. */
