@@ -25,10 +25,10 @@ if ( ! class_exists( 'Static_Site_Importer_Quality_Budget_Admission' ) ) {
 }
 
 final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
-	public const RECEIPT_SCHEMA           = 'static-site-importer/materialization-receipt/v2';
-	private const RECONCILIATION_META_KEY = '_static_site_importer_reconciliation_identity';
+	public const RECEIPT_SCHEMA                    = 'static-site-importer/materialization-receipt/v2';
+	private const RECONCILIATION_META_KEY          = '_static_site_importer_reconciliation_identity';
 	private const PRODUCER_RECONCILIATION_META_KEY = '_blocks_engine_reconciliation_identity';
-	private const BLOCK_PROVENANCE_LIMIT  = 50;
+	private const BLOCK_PROVENANCE_LIMIT           = 50;
 
 	/**
 	 * Materialize a fully canonical v2 plan. Compilation and plan validation belong to Blocks Engine.
@@ -195,10 +195,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			return $payload;
 		}
 
-		$entries = array_values( array_filter( $plan['pages'] ?? array(), static fn( mixed $page ): bool => is_array( $page ) && ! empty( $page['entrypoint'] ) ) );
-		$entry   = $entries[0] ?? null;
-		$origin  = is_array( $entry ) && is_string( $entry['source_path'] ?? null ) ? $entry['source_path'] : '';
-		$root    = '' === $origin || '.' === dirname( $origin ) ? '' : trim( dirname( $origin ), '/' );
+		$entries       = array_values( array_filter( $plan['pages'] ?? array(), static fn( mixed $page ): bool => is_array( $page ) && ! empty( $page['entrypoint'] ) ) );
+		$entry         = $entries[0] ?? null;
+		$origin        = is_array( $entry ) && is_string( $entry['source_path'] ?? null ) ? $entry['source_path'] : '';
+		$root          = '' === $origin || '.' === dirname( $origin ) ? '' : trim( dirname( $origin ), '/' );
 		$canonicalizer = new \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\AssetReferenceCanonicalizer( $tokens, $root );
 		$references    = WordPressSitePlanResolver::references( $tokens, $theme_uri );
 
@@ -206,7 +206,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( ! is_array( $block ) || ! is_string( $block['render'] ?? null ) ) {
 				continue;
 			}
-			$canonical = $canonicalizer->content( $block['render'], $origin );
+			$canonical                             = $canonicalizer->content( $block['render'], $origin );
 			$payload['blocks'][ $index ]['render'] = WordPressSitePlanResolver::resolvePayload( $canonical, $references );
 		}
 
@@ -554,7 +554,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( empty( $page['planned_existing_id'] ) ) {
 				$state['rollback']['posts'][ $post ] = array( 'existing' => false );
 			}
-			$state['applied']['posts'][] = array(
+			$state['applied']['posts'][]                           = array(
 				'id'                      => $post,
 				'source_path'             => $page['source_path'],
 				'reconciliation_identity' => $page['reconciliation_identity'],
@@ -564,7 +564,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( ! self::write_post_meta( $post, self::RECONCILIATION_META_KEY, (string) $page['reconciliation_identity'] ) || ! self::write_post_meta( $post, self::PRODUCER_RECONCILIATION_META_KEY, (string) $page['reconciliation_identity'] ) ) {
 				return self::failed_receipt( $state, 'materialization_reconciliation_metadata_write_failed' );
 			}
-			$materialized_markup                                   = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] );
+			$materialized_markup = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] );
 			update_post_meta(
 				$post,
 				'_static_site_importer_provenance',
@@ -2086,11 +2086,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$post = 0 < $id && function_exists( 'get_post' ) ? get_post( $id, ARRAY_A ) : null;
 		if ( $post ) {
 			$state['rollback']['posts'][ $id ] = array(
-				'existing'                => true,
-				'post'                    => $post,
-				'provenance'              => get_post_meta( $id, '_static_site_importer_provenance', true ),
-				'reconciliation_identity' => get_post_meta( $id, self::RECONCILIATION_META_KEY, true ),
-				'producer_reconciliation_identity' => get_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY, true ),
+				'existing'                                => true,
+				'post'                                    => $post,
+				'provenance'                              => get_post_meta( $id, '_static_site_importer_provenance', true ),
+				'reconciliation_identity'                 => get_post_meta( $id, self::RECONCILIATION_META_KEY, true ),
+				'producer_reconciliation_identity'        => get_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY, true ),
 				'producer_reconciliation_identity_exists' => metadata_exists( 'post', $id, self::PRODUCER_RECONCILIATION_META_KEY ),
 			);
 			return;
@@ -2173,11 +2173,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$post = function_exists( 'get_post' ) ? get_post( $id, ARRAY_A ) : null;
 		if ( $post ) {
 			$receipt['transaction']->state['rollback']['posts'][ $id ] = array(
-				'existing'                => true,
-				'post'                    => $post,
-				'provenance'              => get_post_meta( $id, '_static_site_importer_provenance', true ),
-				'reconciliation_identity' => get_post_meta( $id, self::RECONCILIATION_META_KEY, true ),
-				'producer_reconciliation_identity' => get_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY, true ),
+				'existing'                                => true,
+				'post'                                    => $post,
+				'provenance'                              => get_post_meta( $id, '_static_site_importer_provenance', true ),
+				'reconciliation_identity'                 => get_post_meta( $id, self::RECONCILIATION_META_KEY, true ),
+				'producer_reconciliation_identity'        => get_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY, true ),
 				'producer_reconciliation_identity_exists' => metadata_exists( 'post', $id, self::PRODUCER_RECONCILIATION_META_KEY ),
 			);
 		}

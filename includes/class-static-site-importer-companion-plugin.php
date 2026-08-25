@@ -1010,7 +1010,7 @@ $output = preg_replace_callback(
 ) ?? '';
 echo $output; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- KSES-sanitized bounded semantic layout markup.
 PHP;
-		$media = <<<'PHP'
+		$media  = <<<'PHP'
 <?php
 /** Generated responsive-media companion block render. */
 
