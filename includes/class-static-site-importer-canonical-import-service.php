@@ -381,21 +381,33 @@ class Static_Site_Importer_Canonical_Import_Service {
 
 	/** @param array<string,mixed> $result @param array<string,mixed> $input @return array<string,mixed> */
 	public static function success( array $result, array $input ): array {
-		$contract = self::success_diagnostics_contract( $result );
-		$result   = self::bound_success_result( $result );
+		$contract             = self::success_diagnostics_contract( $result );
+		$result               = self::bound_success_result( $result );
+		$contract_diagnostics = isset( $contract['diagnostics'] ) && is_array( $contract['diagnostics'] ) ? $contract['diagnostics'] : array();
+		unset( $contract['diagnostics'] );
+		if ( 25 < count( $contract_diagnostics ) ) {
+			$contract_diagnostics = array_merge( array_slice( $contract_diagnostics, 0, 24 ), array_slice( $contract_diagnostics, -1 ) );
+		}
+		$remaining_items  = 400;
+		$bounded_contract = self::bounded_inline_value( $contract, $remaining_items );
+		$bounded_contract = is_array( $bounded_contract ) ? $bounded_contract : array();
+		$remaining_items  = 1000;
+		$diagnostics      = self::bounded_inline_value( $contract_diagnostics, $remaining_items );
+		$bounded_contract['diagnostics'] = is_array( $diagnostics ) ? $diagnostics : array();
 		if ( function_exists( 'do_action' ) ) {
-			do_action( 'static_site_importer_import_completed', $contract, $result, $input );
+			do_action( 'static_site_importer_import_completed', $bounded_contract, $result, $input );
 		}
 		return array(
 			'success'             => true,
 			'result'              => $result,
-			'diagnostics'         => isset( $contract['diagnostics'] ) && is_array( $contract['diagnostics'] ) ? $contract['diagnostics'] : array(),
-			'fixture_diagnostics' => $contract,
+			'diagnostics'         => isset( $bounded_contract['diagnostics'] ) && is_array( $bounded_contract['diagnostics'] ) ? $bounded_contract['diagnostics'] : array(),
+			'fixture_diagnostics' => $bounded_contract,
 		);
 	}
 
 	/** Persist unbounded success payloads and replace them with durable references. */
 	public static function bound_success_result( array $result ): array {
+		$details  = $result;
 		$payloads = array_filter(
 			array(
 				'import_report'           => isset( $result['import_report'] ) && is_array( $result['import_report'] ) ? $result['import_report'] : null,
@@ -424,7 +436,45 @@ class Static_Site_Importer_Canonical_Import_Service {
 		if ( isset( $payloads['import_report']['materialization_receipt'] ) ) {
 			$payloads['import_report']['materialization_receipt'] = $receipt_summary;
 		}
-		unset( $result['import_report'], $result['materialization_receipt'] );
+		unset( $details['import_report'], $details['materialization_receipt'] );
+		$payloads['result_details'] = $details;
+
+		$inline_keys = array(
+			'theme_slug',
+			'theme_name',
+			'theme_dir',
+			'report_path',
+			'validation_result_path',
+			'finding_packets_path',
+			'external_report_path',
+			'external_validation_result_path',
+			'external_finding_packets_path',
+			'manifest_path',
+			'import_id',
+			'import_run_id',
+			'status',
+			'import_report_summary',
+			'import_validation_result',
+			'fixture_diagnostics',
+			'quality',
+			'progress_events',
+		);
+		$remaining = 200;
+		$bounded   = array(
+			'materialization_receipt_summary' => self::bounded_inline_value( $receipt_summary, $remaining ),
+		);
+		if ( isset( $result['pages'] ) && is_array( $result['pages'] ) ) {
+			$page_items               = 100;
+			$bounded['page_count']    = count( $result['pages'] );
+			$bounded['pages']         = self::bounded_inline_value( $result['pages'], $page_items );
+			$bounded['pages_truncated'] = count( $result['pages'] ) > count( $bounded['pages'] );
+		}
+		foreach ( $inline_keys as $key ) {
+			if ( array_key_exists( $key, $result ) ) {
+				$bounded[ $key ] = self::bounded_inline_value( $result[ $key ], $remaining );
+			}
+		}
+		$result = $bounded;
 
 		$artifacts = array(
 			'schema'    => 'static-site-importer/import-response-artifacts/v1',
@@ -432,10 +482,10 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'artifacts' => array(),
 			'errors'    => array(),
 		);
-		$uploads   = function_exists( 'wp_upload_dir' ) ? wp_upload_dir() : array();
-		$basedir   = is_array( $uploads ) && is_string( $uploads['basedir'] ?? null ) ? rtrim( $uploads['basedir'], '/\\' ) : '';
+		$uploads = function_exists( 'wp_upload_dir' ) ? wp_upload_dir() : array();
+		$basedir = is_string( $uploads['basedir'] ?? null ) ? rtrim( $uploads['basedir'], '/\\' ) : '';
 		// Share the retained-run root so the existing daily expiry sweep owns these artifacts.
-		$root      = $basedir . '/static-site-importer/direct-artifact-imports';
+		$root = $basedir . '/static-site-importer/direct-artifact-imports';
 		if ( '' === $basedir || ! function_exists( 'wp_mkdir_p' ) || ( ! is_dir( $root ) && ! wp_mkdir_p( $root ) ) ) {
 			$artifacts['errors'][] = array(
 				'code'    => 'static_site_importer_import_response_workspace_unavailable',
@@ -445,10 +495,11 @@ class Static_Site_Importer_Canonical_Import_Service {
 			return $result;
 		}
 
-		$report   = $payloads['import_report'] ?? array();
-		$identity = (string) ( $report['import_run_id'] ?? $receipt['receipt_instance_id'] ?? '' );
+		$report        = $payloads['import_report'] ?? array();
+		$identity      = (string) ( $report['import_run_id'] ?? $receipt['receipt_instance_id'] ?? '' );
+		$plan_identity = is_array( $receipt['plan_identity'] ?? null ) ? $receipt['plan_identity'] : array();
 		if ( '' === $identity ) {
-			$identity = hash( 'sha256', (string) ( $result['theme_slug'] ?? '' ) . "\n" . (string) ( $receipt['plan_identity']['hash'] ?? '' ) );
+			$identity = hash( 'sha256', (string) ( $result['theme_slug'] ?? '' ) . "\n" . (string) ( $plan_identity['hash'] ?? '' ) );
 		}
 		$identity = trim( (string) preg_replace( '/[^A-Za-z0-9_-]/', '-', $identity ), '-' );
 		try {
@@ -494,6 +545,29 @@ class Static_Site_Importer_Canonical_Import_Service {
 		$artifacts['status']         = empty( $artifacts['errors'] ) ? 'completed' : 'failed';
 		$result['response_artifacts'] = $artifacts;
 		return $result;
+	}
+
+	/** Return a globally bounded transport projection while preserving array shape. */
+	private static function bounded_inline_value( $value, int &$remaining_items, int $depth = 0 ) {
+		if ( 0 >= $remaining_items || 8 <= $depth ) {
+			return null;
+		}
+		--$remaining_items;
+		if ( is_string( $value ) ) {
+			return strlen( $value ) > 256 ? substr( $value, 0, 256 ) : $value;
+		}
+		if ( ! is_array( $value ) ) {
+			return is_scalar( $value ) || null === $value ? $value : null;
+		}
+
+		$bounded = array();
+		foreach ( $value as $key => $item ) {
+			if ( 0 >= $remaining_items ) {
+				break;
+			}
+			$bounded[ $key ] = self::bounded_inline_value( $item, $remaining_items, $depth + 1 );
+		}
+		return $bounded;
 	}
 
 	/** @param array<string,mixed> $result @return array<string,mixed> */
