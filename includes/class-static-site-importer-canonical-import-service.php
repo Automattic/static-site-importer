@@ -419,8 +419,8 @@ class Static_Site_Importer_Canonical_Import_Service {
 			return $result;
 		}
 
-		$receipt = $payloads['materialization_receipt'] ?? array();
-		$receipt_summary = array_filter(
+		$receipt                                   = $payloads['materialization_receipt'] ?? array();
+		$receipt_summary                           = array_filter(
 			array(
 				'schema'              => $receipt['schema'] ?? null,
 				'status'              => $receipt['status'] ?? null,
@@ -459,8 +459,8 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'quality',
 			'progress_events',
 		);
-		$remaining = 200;
-		$bounded   = array(
+		$remaining   = 200;
+		$bounded     = array(
 			'materialization_receipt_summary' => self::bounded_inline_value( $receipt_summary, $remaining ),
 		);
 		if ( isset( $result['pages'] ) && is_array( $result['pages'] ) ) {
@@ -482,12 +482,12 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'artifacts' => array(),
 			'errors'    => array(),
 		);
-		$uploads = function_exists( 'wp_upload_dir' ) ? wp_upload_dir() : array();
-		$basedir = is_string( $uploads['basedir'] ?? null ) ? rtrim( $uploads['basedir'], '/\\' ) : '';
+		$uploads   = function_exists( 'wp_upload_dir' ) ? wp_upload_dir() : array();
+		$basedir   = is_string( $uploads['basedir'] ?? null ) ? rtrim( $uploads['basedir'], '/\\' ) : '';
 		// Share the retained-run root so the existing daily expiry sweep owns these artifacts.
 		$root = $basedir . '/static-site-importer/direct-artifact-imports';
 		if ( '' === $basedir || ! function_exists( 'wp_mkdir_p' ) || ( ! is_dir( $root ) && ! wp_mkdir_p( $root ) ) ) {
-			$artifacts['errors'][] = array(
+			$artifacts['errors'][]        = array(
 				'code'    => 'static_site_importer_import_response_workspace_unavailable',
 				'message' => 'The importer-owned response artifact workspace is unavailable.',
 			);
