@@ -97,7 +97,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 			return self::normalize_diagnostic_rows( $finalized );
 		}
 
-		$sources = array(
+		$sources    = array(
 			array( $result['diagnostics'] ?? array(), '' ),
 			array( $result['artifact_diagnostics']['diagnostics'] ?? array(), '' ),
 			array( $result['import_validation_result']['diagnostics'] ?? array(), '' ),

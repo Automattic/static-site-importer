@@ -375,7 +375,7 @@ class Static_Site_Importer_Validation_Runtime {
 			$directory  = trailingslashit( $base_dir ) . 'static-site-importer/validation-' . sanitize_title( $slug ) . '-' . sanitize_key( uniqid( '', true ) );
 		}
 
-		$created = function_exists( 'wp_mkdir_p' ) ? wp_mkdir_p( $directory ) : false;
+		$created  = function_exists( 'wp_mkdir_p' ) ? wp_mkdir_p( $directory ) : false;
 		$resolved = $created ? realpath( $directory ) : false;
 		if ( false === $resolved || ! is_dir( $resolved ) ) {
 			return new WP_Error( 'static_site_importer_validation_artifact_dir_failed', 'Could not create validation artifact directory.' );
