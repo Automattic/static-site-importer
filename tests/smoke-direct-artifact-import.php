@@ -163,6 +163,10 @@ $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'
 		'compile_batch_pages' => 1,
 	)
 );
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'][] = static fn ( array $policy ): array => array_merge( $policy, array( 'freeze_continuation_bytes' => 1 ) );
+$frozen = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+$assert( ! empty( $frozen['success'] ) && ! empty( $frozen['continuation'] ) && 'artifact_frozen' === ( $frozen['continuation_reason'] ?? '' ) && 0 === ( $frozen['artifact_run']['progress']['prepared_count'] ?? -1 ), 'large direct artifacts must yield after durable freezing so source request memory can unwind before compilation' );
+array_pop( $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] );
 
 $first = Static_Site_Importer_Canonical_Import_Service::import( $input() );
 $assert( ! empty( $first['success'] ) && ! empty( $first['continuation'] ) && 'pages_remaining' === ( $first['continuation_reason'] ?? '' ) && 1 === ( $first['artifact_run']['progress']['prepared_count'] ?? 0 ) && 0 === ( $first['artifact_run']['progress']['receipt_count'] ?? -1 ) && 'continuing' === ( $first['import_report_summary']['status'] ?? '' ), 'the first invocation must durably prepare only its bounded page batch and explicitly continue' );

@@ -109,6 +109,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( is_wp_error( $write ) ) {
 			return $write;
 		}
+		$artifact_bytes = 0;
+		if ( self::exceeds_string_bytes( $artifact, self::run_policy()['freeze_continuation_bytes'], $artifact_bytes ) ) {
+			return self::continuation( $run, 'artifact_frozen' );
+		}
 
 		return self::execute( $workspace, $run );
 	}
@@ -879,13 +883,13 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( is_wp_error( $write ) ) {
 			return $write;
 		}
-		$raw = $workspace->read_raw( $relative );
-		if ( ! is_string( $raw ) ) {
+		$raw_hash = is_string( $write ) ? hash_file( 'sha256', $write ) : false;
+		if ( ! is_string( $raw_hash ) ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_checkpoint_missing', 'The published direct artifact checkpoint could not be verified.' );
 		}
 		return array(
 			'file'    => $relative,
-			'sha256'  => hash( 'sha256', $raw ),
+			'sha256'  => $raw_hash,
 			'payload' => $payload_hash,
 		);
 	}
@@ -894,7 +898,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$relative = is_string( $ref['file'] ?? null ) ? $ref['file'] : '';
 		$raw      = '' !== $relative ? $workspace->read_raw( $relative ) : null;
 		$record   = is_string( $raw ) ? json_decode( $raw, true ) : null;
-		if ( ! is_string( $raw ) || ! is_array( $record ) || ! hash_equals( (string) ( $ref['sha256'] ?? '' ), hash( 'sha256', $raw ) ) || self::CHECKPOINT_SCHEMA !== ( $record['schema'] ?? '' ) || ( $record['kind'] ?? '' ) !== $kind || ( $record['import_id'] ?? '' ) !== $run['import_id'] || ( $run['binding']['artifact_identity'] ?? '' ) !== ( $record['artifact_identity'] ?? '' ) || ! is_array( $record['payload'] ?? null ) || ! hash_equals( (string) ( $record['payload_sha256'] ?? '' ), self::hash( $record['payload'] ) ) || ! hash_equals( (string) ( $ref['payload'] ?? '' ), (string) $record['payload_sha256'] ) || ! self::checkpoint_contract_valid( $record['payload'], $kind, $run ) ) {
+		$raw_hash = is_string( $raw ) ? hash( 'sha256', $raw ) : '';
+		unset( $raw );
+		if ( ! is_array( $record ) || ! hash_equals( (string) ( $ref['sha256'] ?? '' ), $raw_hash ) || self::CHECKPOINT_SCHEMA !== ( $record['schema'] ?? '' ) || ( $record['kind'] ?? '' ) !== $kind || ( $record['import_id'] ?? '' ) !== $run['import_id'] || ( $run['binding']['artifact_identity'] ?? '' ) !== ( $record['artifact_identity'] ?? '' ) || ! is_array( $record['payload'] ?? null ) || ! hash_equals( (string) ( $record['payload_sha256'] ?? '' ), self::hash( $record['payload'] ) ) || ! hash_equals( (string) ( $ref['payload'] ?? '' ), (string) $record['payload_sha256'] ) || ! self::checkpoint_contract_valid( $record['payload'], $kind, $run ) ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_checkpoint_invalid', 'A retained direct artifact checkpoint failed its identity, hash, or contract validation.' );
 		}
 		return $record['payload'];
@@ -1006,10 +1012,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 
 	private static function run_policy(): array {
 		$policy = array(
-			'prepare_batch_pages'    => 2,
-			'compile_batch_pages'    => 2,
-			'max_invocation_seconds' => 20.0,
-			'clock'                  => static fn (): float => microtime( true ),
+			'prepare_batch_pages'       => 2,
+			'compile_batch_pages'       => 2,
+			'max_invocation_seconds'    => 20.0,
+			'freeze_continuation_bytes' => 8 * 1024 * 1024,
+			'clock'                     => static fn (): float => microtime( true ),
 		);
 		if ( function_exists( 'apply_filters' ) ) {
 			$filtered = apply_filters( 'static_site_importer_direct_artifact_run_policy', $policy );
@@ -1017,11 +1024,28 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$policy = array_merge( $policy, $filtered );
 			}
 		}
-		$policy['prepare_batch_pages']    = min( 20, max( 1, (int) $policy['prepare_batch_pages'] ) );
-		$policy['compile_batch_pages']    = min( 20, max( 1, (int) $policy['compile_batch_pages'] ) );
-		$policy['max_invocation_seconds'] = max( 0.001, (float) $policy['max_invocation_seconds'] );
-		$policy['clock']                  = is_callable( $policy['clock'] ) ? $policy['clock'] : static fn (): float => microtime( true );
+		$policy['prepare_batch_pages']       = min( 20, max( 1, (int) $policy['prepare_batch_pages'] ) );
+		$policy['compile_batch_pages']       = min( 20, max( 1, (int) $policy['compile_batch_pages'] ) );
+		$policy['max_invocation_seconds']    = max( 0.001, (float) $policy['max_invocation_seconds'] );
+		$policy['freeze_continuation_bytes'] = max( 1, (int) $policy['freeze_continuation_bytes'] );
+		$policy['clock']                     = is_callable( $policy['clock'] ) ? $policy['clock'] : static fn (): float => microtime( true );
 		return $policy;
+	}
+
+	private static function exceeds_string_bytes( $value, int $limit, int &$bytes ): bool {
+		if ( is_string( $value ) ) {
+			$bytes += strlen( $value );
+			return $bytes > $limit;
+		}
+		if ( ! is_array( $value ) ) {
+			return false;
+		}
+		foreach ( $value as $item ) {
+			if ( self::exceeds_string_bytes( $item, $limit, $bytes ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static function implementation_binding(): array {
