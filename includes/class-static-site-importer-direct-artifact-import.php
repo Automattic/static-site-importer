@@ -30,7 +30,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	/** Start a server-owned run after normal canonical source normalization. */
 	public static function start( array $artifact, array $args, string $source_type, string $operation, array $provenance ) {
 		$freeze_started  = microtime( true );
-		$source_identity = hash( 'sha256', (string) wp_json_encode( $artifact ) );
+		$source_identity = self::hash_json( $artifact, false );
 		$source_policy   = Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
 		if ( is_wp_error( $source_policy ) ) {
 			return $source_policy;
@@ -1123,8 +1123,48 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	}
 
 	private static function hash( array $value ): string {
-		$json = wp_json_encode( self::canonical( $value ) );
-		return hash( 'sha256', is_string( $json ) ? $json : '' );
+		return self::hash_json( $value, true );
+	}
+
+	private static function hash_json( array $value, bool $canonical ): string {
+		$context = hash_init( 'sha256' );
+		self::hash_json_value( $context, $value, $canonical );
+		return hash_final( $context );
+	}
+
+	/** Stream JSON tokens so artifact identity never requires an artifact-sized string. */
+	private static function hash_json_value( $context, $value, bool $canonical ): void {
+		if ( ! is_array( $value ) ) {
+			$encoded = wp_json_encode( $value );
+			hash_update( $context, is_string( $encoded ) ? $encoded : '' );
+			return;
+		}
+		if ( array_is_list( $value ) ) {
+			hash_update( $context, '[' );
+			foreach ( $value as $index => $item ) {
+				if ( 0 !== $index ) {
+					hash_update( $context, ',' );
+				}
+				self::hash_json_value( $context, $item, $canonical );
+			}
+			hash_update( $context, ']' );
+			return;
+		}
+		$keys = array_keys( $value );
+		if ( $canonical ) {
+			sort( $keys, SORT_STRING );
+		}
+		hash_update( $context, '{' );
+		foreach ( $keys as $index => $key ) {
+			if ( 0 !== $index ) {
+				hash_update( $context, ',' );
+			}
+			$encoded_key = wp_json_encode( (string) $key );
+			hash_update( $context, is_string( $encoded_key ) ? $encoded_key : '' );
+			hash_update( $context, ':' );
+			self::hash_json_value( $context, $value[ $key ], $canonical );
+		}
+		hash_update( $context, '}' );
 	}
 
 	private static function canonical( $value ) {
