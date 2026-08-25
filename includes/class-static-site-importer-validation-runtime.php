@@ -350,7 +350,9 @@ class Static_Site_Importer_Validation_Runtime {
 				'finding_packets'         => self::local_file_artifact_ref( $finding_packets_path, 'static-site-importer/finding-packets' ),
 			),
 		);
-		$result['fixture_diagnostics'] = Static_Site_Importer_Diagnostic_Contract::build( $result );
+		$result['fixture_diagnostics'] = isset( $import_result['fixture_diagnostics'] ) && is_array( $import_result['fixture_diagnostics'] )
+			? $import_result['fixture_diagnostics']
+			: Static_Site_Importer_Diagnostic_Contract::build( $result );
 		$result['diagnostics']         = isset( $result['fixture_diagnostics']['diagnostics'] ) && is_array( $result['fixture_diagnostics']['diagnostics'] ) ? $result['fixture_diagnostics']['diagnostics'] : array();
 		$result['diagnostic_summary']  = isset( $result['fixture_diagnostics']['diagnostic_summary'] ) && is_array( $result['fixture_diagnostics']['diagnostic_summary'] ) ? $result['fixture_diagnostics']['diagnostic_summary'] : array();
 
@@ -373,7 +375,7 @@ class Static_Site_Importer_Validation_Runtime {
 			$directory  = trailingslashit( $base_dir ) . 'static-site-importer/validation-' . sanitize_title( $slug ) . '-' . sanitize_key( uniqid( '', true ) );
 		}
 
-		$created = function_exists( 'wp_mkdir_p' ) ? wp_mkdir_p( $directory ) : false;
+		$created  = function_exists( 'wp_mkdir_p' ) ? wp_mkdir_p( $directory ) : false;
 		$resolved = $created ? realpath( $directory ) : false;
 		if ( false === $resolved || ! is_dir( $resolved ) ) {
 			return new WP_Error( 'static_site_importer_validation_artifact_dir_failed', 'Could not create validation artifact directory.' );

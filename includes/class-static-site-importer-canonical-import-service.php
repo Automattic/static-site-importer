@@ -395,6 +395,9 @@ class Static_Site_Importer_Canonical_Import_Service {
 
 	/** @param array<string,mixed> $result @return array<string,mixed> */
 	public static function success_diagnostics_contract( array $result ): array {
+		if ( isset( $result['fixture_diagnostics'] ) && is_array( $result['fixture_diagnostics'] ) ) {
+			return $result['fixture_diagnostics'];
+		}
 		$validation  = isset( $result['import_validation_result'] ) && is_array( $result['import_validation_result'] ) ? $result['import_validation_result'] : array();
 		$quality     = isset( $result['quality'] ) && is_array( $result['quality'] ) ? $result['quality'] : array();
 		$diagnostics = isset( $validation['diagnostics'] ) && is_array( $validation['diagnostics'] ) ? $validation['diagnostics'] : array();

@@ -4,7 +4,7 @@
  *
  * The unified `static-site-importer/import` ability dispatches on
  * `source.type`; URL sources are routed through
- * `static_site_importer_ability_import_url_operation()`. The REST router
+ * `Static_Site_Importer_Canonical_Import_Service::import_url_operation()`. The REST router
  * (`static_site_importer_rest_route_url_import`) shapes the input the
  * ability expects and unwraps the result envelope into the REST response.
  *

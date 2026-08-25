@@ -82,7 +82,7 @@ When a generated artifact contains full-document HTML, Static Site Importer rout
 ## Requirements
 
 - WordPress 6.6 or later.
-- PHP 8.1 or later.
+- PHP 8.2 or later.
 - Composer dependencies installed with `composer install`.
 - Node dependencies installed only when running the JavaScript block-validation smoke tests.
 
@@ -462,7 +462,7 @@ The `wordpress-is-dead` smoke verifies the multi-page fixture, generated block-t
 homeboy test static-site-importer --path /path/to/static-site-importer
 ```
 
-The GitHub workflow runs `Extra-Chill/homeboy-action@v2` with the `test` command across PHP 8.1, 8.2, 8.3, and 8.4.
+The GitHub workflow runs `Extra-Chill/homeboy-action@v2` with the `test` command across PHP 8.2, 8.3, 8.4, and 8.5.
 
 ### JavaScript Block Validation
 

@@ -30,7 +30,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	/** Start a server-owned run after normal canonical source normalization. */
 	public static function start( array $artifact, array $args, string $source_type, string $operation, array $provenance ) {
 		$freeze_started  = microtime( true );
-		$source_identity = hash( 'sha256', (string) wp_json_encode( $artifact ) );
+		$source_identity = self::hash_json( $artifact, false );
 		$source_policy   = Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
 		if ( is_wp_error( $source_policy ) ) {
 			return $source_policy;
@@ -109,6 +109,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( is_wp_error( $write ) ) {
 			return $write;
 		}
+		$artifact_bytes = 0;
+		if ( self::exceeds_string_bytes( $artifact, self::run_policy()['freeze_continuation_bytes'], $artifact_bytes ) ) {
+			return self::continuation( $run, 'artifact_frozen' );
+		}
 
 		return self::execute( $workspace, $run );
 	}
@@ -177,7 +181,6 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		$policy       = self::run_policy();
 		$clock        = $policy['clock'];
-		$deadline     = call_user_func( $clock ) + $policy['max_invocation_seconds'];
 		$run['state'] = 'running';
 		$write        = self::write_run( $workspace, $run );
 		if ( is_wp_error( $write ) ) {
@@ -286,6 +289,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					return self::fail( $workspace, $run, 'prepare_pages_checkpoint', $write );
 				}
 			}
+			// Retained-state validation is prerequisite work; reserve the full
+			// invocation budget for a new bounded prepare/compile unit.
+			$deadline = call_user_func( $clock ) + $policy['max_invocation_seconds'];
 
 			$pending_plans = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['pages'] ?? array() ) ) );
 			$prepare_ids   = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending_plans, 0, $policy['prepare_batch_pages'] );
@@ -867,25 +873,35 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			return new WP_Error( 'static_site_importer_direct_artifact_checkpoint_rejected', 'The direct artifact checkpoint publication was rejected.' );
 		}
 		$payload_hash = self::hash( $payload );
-		$record       = array(
+		$shards       = array();
+		if ( in_array( $kind, array( 'artifact', 'shared' ), true ) ) {
+			$sharded = self::publish_file_shards( $workspace, $payload, $kind );
+			if ( is_wp_error( $sharded ) ) {
+				return $sharded;
+			}
+			$payload = $sharded['payload'];
+			$shards  = $sharded['shards'];
+		}
+		$record = array(
 			'schema'            => self::CHECKPOINT_SCHEMA,
 			'kind'              => $kind,
 			'import_id'         => $run['import_id'],
 			'artifact_identity' => $run['binding']['artifact_identity'],
 			'payload_sha256'    => $payload_hash,
 			'payload'           => $payload,
+			'shards'            => $shards,
 		);
-		$write        = $workspace->publish_json_once( $relative, $record );
+		$write  = $workspace->publish_json_once( $relative, $record );
 		if ( is_wp_error( $write ) ) {
 			return $write;
 		}
-		$raw = $workspace->read_raw( $relative );
-		if ( ! is_string( $raw ) ) {
+		$raw_hash = is_string( $write ) ? hash_file( 'sha256', $write ) : false;
+		if ( ! is_string( $raw_hash ) ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_checkpoint_missing', 'The published direct artifact checkpoint could not be verified.' );
 		}
 		return array(
 			'file'    => $relative,
-			'sha256'  => hash( 'sha256', $raw ),
+			'sha256'  => $raw_hash,
 			'payload' => $payload_hash,
 		);
 	}
@@ -894,7 +910,15 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$relative = is_string( $ref['file'] ?? null ) ? $ref['file'] : '';
 		$raw      = '' !== $relative ? $workspace->read_raw( $relative ) : null;
 		$record   = is_string( $raw ) ? json_decode( $raw, true ) : null;
-		if ( ! is_string( $raw ) || ! is_array( $record ) || ! hash_equals( (string) ( $ref['sha256'] ?? '' ), hash( 'sha256', $raw ) ) || self::CHECKPOINT_SCHEMA !== ( $record['schema'] ?? '' ) || ( $record['kind'] ?? '' ) !== $kind || ( $record['import_id'] ?? '' ) !== $run['import_id'] || ( $run['binding']['artifact_identity'] ?? '' ) !== ( $record['artifact_identity'] ?? '' ) || ! is_array( $record['payload'] ?? null ) || ! hash_equals( (string) ( $record['payload_sha256'] ?? '' ), self::hash( $record['payload'] ) ) || ! hash_equals( (string) ( $ref['payload'] ?? '' ), (string) $record['payload_sha256'] ) || ! self::checkpoint_contract_valid( $record['payload'], $kind, $run ) ) {
+		$raw_hash = is_string( $raw ) ? hash( 'sha256', $raw ) : '';
+		unset( $raw );
+		if ( is_array( $record ) && in_array( $kind, array( 'artifact', 'shared' ), true ) ) {
+			$record = self::hydrate_file_shards( $workspace, $record, $kind );
+			if ( is_wp_error( $record ) ) {
+				return $record;
+			}
+		}
+		if ( ! is_array( $record ) || ! hash_equals( (string) ( $ref['sha256'] ?? '' ), $raw_hash ) || self::CHECKPOINT_SCHEMA !== ( $record['schema'] ?? '' ) || ( $record['kind'] ?? '' ) !== $kind || ( $record['import_id'] ?? '' ) !== $run['import_id'] || ( $run['binding']['artifact_identity'] ?? '' ) !== ( $record['artifact_identity'] ?? '' ) || ! is_array( $record['payload'] ?? null ) || ! hash_equals( (string) ( $record['payload_sha256'] ?? '' ), self::hash( $record['payload'] ) ) || ! hash_equals( (string) ( $ref['payload'] ?? '' ), (string) $record['payload_sha256'] ) || ! self::checkpoint_contract_valid( $record['payload'], $kind, $run ) ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_checkpoint_invalid', 'A retained direct artifact checkpoint failed its identity, hash, or contract validation.' );
 		}
 		return $record['payload'];
@@ -906,6 +930,12 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( ! is_string( $raw ) ) {
 			return array();
 		}
+		if ( is_array( $record ) && in_array( $kind, array( 'artifact', 'shared' ), true ) ) {
+			$record = self::hydrate_file_shards( $workspace, $record, $kind );
+			if ( is_wp_error( $record ) ) {
+				return $record;
+			}
+		}
 		if ( ! is_array( $record ) || self::CHECKPOINT_SCHEMA !== ( $record['schema'] ?? '' ) || ( $record['kind'] ?? '' ) !== $kind || ( $record['import_id'] ?? '' ) !== $run['import_id'] || ( $run['binding']['artifact_identity'] ?? '' ) !== ( $record['artifact_identity'] ?? '' ) || ! is_array( $record['payload'] ?? null ) || ! hash_equals( (string) ( $record['payload_sha256'] ?? '' ), self::hash( $record['payload'] ) ) || ! self::checkpoint_contract_valid( $record['payload'], $kind, $run ) ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_checkpoint_invalid', 'An unpublished retained checkpoint failed validation.' );
 		}
@@ -914,6 +944,61 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			'sha256'  => hash( 'sha256', $raw ),
 			'payload' => $record['payload_sha256'],
 		);
+	}
+
+	private static function publish_file_shards( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $payload, string $kind ) {
+		$files  = 'artifact' === $kind ? ( $payload['artifact']['files'] ?? null ) : ( $payload['plan']['artifact']['files'] ?? null );
+		$files  = is_array( $files ) ? $files : array();
+		$shards = array();
+		foreach ( array_values( $files ) as $index => $file ) {
+			$relative = $kind . '-files/' . sprintf( '%05d.json', $index );
+			$write    = $workspace->publish_json_once( $relative, array( 'file' => $file ) );
+			$sha256   = is_string( $write ) ? hash_file( 'sha256', $write ) : false;
+			if ( is_wp_error( $write ) ) {
+				return $write;
+			}
+			if ( ! is_string( $sha256 ) ) {
+				return new WP_Error( 'static_site_importer_direct_artifact_shard_missing', 'A published direct artifact file shard could not be verified.' );
+			}
+			$shards[] = array(
+				'file'   => $relative,
+				'sha256' => $sha256,
+			);
+		}
+		if ( 'artifact' === $kind ) {
+			$payload['artifact']['files'] = array();
+		} else {
+			$payload['plan']['artifact']['files'] = array();
+		}
+		return array(
+			'payload' => $payload,
+			'shards'  => $shards,
+		);
+	}
+
+	private static function hydrate_file_shards( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $record, string $kind ) {
+		$stored_files = 'artifact' === $kind ? ( $record['payload']['artifact']['files'] ?? null ) : ( $record['payload']['plan']['artifact']['files'] ?? null );
+		if ( ! is_array( $stored_files ) || ! empty( $stored_files ) || ! is_array( $record['shards'] ?? null ) ) {
+			return new WP_Error( 'static_site_importer_direct_artifact_shards_invalid', 'The retained direct artifact file shard manifest is invalid.' );
+		}
+		$files = array();
+		foreach ( $record['shards'] as $shard ) {
+			$relative = is_array( $shard ) && is_string( $shard['file'] ?? null ) ? $shard['file'] : '';
+			$raw      = '' !== $relative ? $workspace->read_raw( $relative ) : null;
+			$sha256   = is_string( $raw ) ? hash( 'sha256', $raw ) : '';
+			$decoded  = is_string( $raw ) ? json_decode( $raw, true ) : null;
+			unset( $raw );
+			if ( ! is_array( $decoded ) || ! array_key_exists( 'file', $decoded ) || ! hash_equals( (string) ( $shard['sha256'] ?? '' ), $sha256 ) ) {
+				return new WP_Error( 'static_site_importer_direct_artifact_shard_invalid', 'A retained direct artifact file shard failed validation.' );
+			}
+			$files[] = $decoded['file'];
+		}
+		if ( 'artifact' === $kind ) {
+			$record['payload']['artifact']['files'] = $files;
+		} else {
+			$record['payload']['plan']['artifact']['files'] = $files;
+		}
+		return $record;
 	}
 
 	private static function write_run( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run ) {
@@ -1006,10 +1091,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 
 	private static function run_policy(): array {
 		$policy = array(
-			'prepare_batch_pages'    => 2,
-			'compile_batch_pages'    => 2,
-			'max_invocation_seconds' => 20.0,
-			'clock'                  => static fn (): float => microtime( true ),
+			'prepare_batch_pages'       => 2,
+			'compile_batch_pages'       => 2,
+			'max_invocation_seconds'    => 20.0,
+			'freeze_continuation_bytes' => 8 * 1024 * 1024,
+			'clock'                     => static fn (): float => microtime( true ),
 		);
 		if ( function_exists( 'apply_filters' ) ) {
 			$filtered = apply_filters( 'static_site_importer_direct_artifact_run_policy', $policy );
@@ -1017,11 +1103,28 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$policy = array_merge( $policy, $filtered );
 			}
 		}
-		$policy['prepare_batch_pages']    = min( 20, max( 1, (int) $policy['prepare_batch_pages'] ) );
-		$policy['compile_batch_pages']    = min( 20, max( 1, (int) $policy['compile_batch_pages'] ) );
-		$policy['max_invocation_seconds'] = max( 0.001, (float) $policy['max_invocation_seconds'] );
-		$policy['clock']                  = is_callable( $policy['clock'] ) ? $policy['clock'] : static fn (): float => microtime( true );
+		$policy['prepare_batch_pages']       = min( 20, max( 1, (int) $policy['prepare_batch_pages'] ) );
+		$policy['compile_batch_pages']       = min( 20, max( 1, (int) $policy['compile_batch_pages'] ) );
+		$policy['max_invocation_seconds']    = max( 0.001, (float) $policy['max_invocation_seconds'] );
+		$policy['freeze_continuation_bytes'] = max( 1, (int) $policy['freeze_continuation_bytes'] );
+		$policy['clock']                     = is_callable( $policy['clock'] ) ? $policy['clock'] : static fn (): float => microtime( true );
 		return $policy;
+	}
+
+	private static function exceeds_string_bytes( $value, int $limit, int &$bytes ): bool {
+		if ( is_string( $value ) ) {
+			$bytes += strlen( $value );
+			return $bytes > $limit;
+		}
+		if ( ! is_array( $value ) ) {
+			return false;
+		}
+		foreach ( $value as $item ) {
+			if ( self::exceeds_string_bytes( $item, $limit, $bytes ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static function implementation_binding(): array {
@@ -1123,8 +1226,48 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	}
 
 	private static function hash( array $value ): string {
-		$json = wp_json_encode( self::canonical( $value ) );
-		return hash( 'sha256', is_string( $json ) ? $json : '' );
+		return self::hash_json( $value, true );
+	}
+
+	private static function hash_json( array $value, bool $canonical ): string {
+		$context = hash_init( 'sha256' );
+		self::hash_json_value( $context, $value, $canonical );
+		return hash_final( $context );
+	}
+
+	/** Stream JSON tokens so artifact identity never requires an artifact-sized string. */
+	private static function hash_json_value( $context, $value, bool $canonical ): void {
+		if ( ! is_array( $value ) ) {
+			$encoded = wp_json_encode( $value );
+			hash_update( $context, is_string( $encoded ) ? $encoded : '' );
+			return;
+		}
+		if ( array_is_list( $value ) ) {
+			hash_update( $context, '[' );
+			foreach ( $value as $index => $item ) {
+				if ( 0 !== $index ) {
+					hash_update( $context, ',' );
+				}
+				self::hash_json_value( $context, $item, $canonical );
+			}
+			hash_update( $context, ']' );
+			return;
+		}
+		$keys = array_keys( $value );
+		if ( $canonical ) {
+			sort( $keys, SORT_STRING );
+		}
+		hash_update( $context, '{' );
+		foreach ( $keys as $index => $key ) {
+			if ( 0 !== $index ) {
+				hash_update( $context, ',' );
+			}
+			$encoded_key = wp_json_encode( (string) $key );
+			hash_update( $context, is_string( $encoded_key ) ? $encoded_key : '' );
+			hash_update( $context, ':' );
+			self::hash_json_value( $context, $value[ $key ], $canonical );
+		}
+		hash_update( $context, '}' );
 	}
 
 	private static function canonical( $value ) {

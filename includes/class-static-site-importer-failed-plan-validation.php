@@ -16,16 +16,16 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 	/** @return array<string,mixed> */
 	public static function build( array $plan, array $args = array(), array $compiled = array() ): array {
 		$diagnostics = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
-		$report = array(
-			'schema'      => 'static-site-importer/import-report/v1',
-			'version'     => 1,
-			'status'      => 'failed',
-			'theme_slug'  => (string) ( $args['slug'] ?? '' ),
-			'quality'     => isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array(),
-			'diagnostics' => array_slice( $diagnostics, 0, self::MAX_DIAGNOSTICS ),
-			'blocks_engine' => self::compiler_evidence( $plan, $compiled ),
+		$report      = array(
+			'schema'           => 'static-site-importer/import-report/v1',
+			'version'          => 1,
+			'status'           => 'failed',
+			'theme_slug'       => (string) ( $args['slug'] ?? '' ),
+			'quality'          => isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array(),
+			'diagnostics'      => array_slice( $diagnostics, 0, self::MAX_DIAGNOSTICS ),
+			'blocks_engine'    => self::compiler_evidence( $plan, $compiled ),
 			'source_documents' => self::source_documents( $plan ),
-			'failure_context' => array(
+			'failure_context'  => array(
 				'stage' => 'pre_materialization_quality_admission',
 				'code'  => 'static_site_importer_quality_gate_failed',
 			),
@@ -35,20 +35,18 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 			$report['diagnostic_count']      = count( $diagnostics );
 		}
 
-		$quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, array_merge( $args, array( 'fail_on_quality' => true ) ) );
+		$quality                    = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, array_merge( $args, array( 'fail_on_quality' => true ) ) );
 		$quality['pass']            = false;
 		$quality['fail_import']     = true;
 		$quality['failure_reasons'] = self::failure_reasons( $plan, $quality );
-		$report['quality']          = $quality;
-		$report['compact_summary']  = Static_Site_Importer_Report_Diagnostics::import_report_summary( $report, $quality );
-		$report['finding_packets']  = Static_Site_Importer_Report_Diagnostics::finding_packets( $report );
-		$report['import_validation_result'] = Static_Site_Importer_Report_Diagnostics::import_validation_result( $report, $quality );
+		$fixture_diagnostics        = Static_Site_Importer_Report_Diagnostics::refresh_projections( $report, $quality );
 
 		return array(
 			'import_report'            => $report,
 			'import_report_summary'    => $report['compact_summary'],
 			'import_validation_result' => $report['import_validation_result'],
 			'finding_packets'          => $report['finding_packets'],
+			'fixture_diagnostics'      => $fixture_diagnostics,
 		);
 	}
 
@@ -105,7 +103,7 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 			return array();
 		}
 		$directory = dirname( $report_path );
-		$paths = array(
+		$paths     = array(
 			'import_report'            => $report_path,
 			'import_validation_result' => trailingslashit( $directory ) . 'import-validation-result.json',
 			'finding_packets'          => trailingslashit( $directory ) . 'finding-packets.json',
@@ -142,7 +140,7 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 
 	private static function write( string $path, array $payload ): void {
 		$temp = tempnam( dirname( $path ), '.ssi-failed-plan-' );
-		$json = function_exists( 'wp_json_encode' ) ? wp_json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) : json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+		$json = function_exists( 'wp_json_encode' ) ? wp_json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) : json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone smoke tests do not load WordPress encoding helpers.
 		if ( false === $temp || false === $json || false === file_put_contents( $temp, $json . "\n" ) || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents,WordPress.WP.AlternativeFunctions.rename_rename -- Atomically writes bounded explicit report artifacts.
 			if ( is_string( $temp ) && file_exists( $temp ) ) {
 				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed atomic report temporary file.
