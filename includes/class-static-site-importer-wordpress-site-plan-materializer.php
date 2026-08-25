@@ -1007,7 +1007,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	/** Persist and verify importer-owned post metadata. */
 	private static function write_post_meta( int $id, string $key, string $value ): bool {
 		update_post_meta( $id, $key, $value );
-		return metadata_exists( 'post', $id, $key ) && $value === (string) get_post_meta( $id, $key, true );
+		return metadata_exists( 'post', $id, $key ) && (string) get_post_meta( $id, $key, true ) === $value;
 	}
 
 	/** Resolve destination-independent route references after WordPress has assigned every permalink. */
