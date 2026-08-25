@@ -30,6 +30,7 @@ $GLOBALS['ssi_companion_deactivated'] = array();
 $GLOBALS['ssi_companion_options']     = array();
 $GLOBALS['static_site_importer_companion_block_owners'] = array();
 $GLOBALS['ssi_companion_actions']     = array();
+$GLOBALS['ssi_companion_filters']     = array();
 
 if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_Error {
@@ -73,6 +74,13 @@ if ( ! class_exists( 'WP_Block_Type' ) ) {
 if ( ! function_exists( 'is_wp_error' ) ) {
 	function is_wp_error( mixed $thing ): bool {
 		return $thing instanceof WP_Error;
+	}
+}
+
+if ( ! function_exists( 'apply_filters' ) ) {
+	function apply_filters( string $hook, mixed $value ): mixed {
+		$filter = $GLOBALS['ssi_companion_filters'][ $hook ] ?? null;
+		return is_callable( $filter ) ? $filter( $value ) : $value;
 	}
 }
 
@@ -412,13 +420,30 @@ $php_render['blocks'][0]['render'] = '<?php system( "id" );';
 $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $php_render ) ), 'php-render-template-rejected' );
 $typed_renderer = $payload;
 unset( $typed_renderer['blocks'][0]['render'] );
-$typed_renderer['blocks'][0]['renderer'] = 'static-site-importer/responsive-media/v1';
+$typed_renderer['blocks'][0]['renderer'] = 'blocks-engine/responsive-media/v1';
 $typed_renderer['blocks'][0]['block_json']['attributes']['content']['type'] = 'string';
 $typed_renderer['blocks'][0]['block_json']['attributes']['kind'] = array( 'type' => 'string', 'default' => 'media' );
 $assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $typed_renderer ), 'known-typed-renderer-validates' );
 $unknown_renderer = $typed_renderer;
 $unknown_renderer['blocks'][0]['renderer'] = 'producer/arbitrary/v1';
 $assert( 'static_site_importer_companion_plugin_renderer_invalid' === Static_Site_Importer_Companion_Plugin::validate_payload( $unknown_renderer )->get_error_code(), 'unknown-typed-renderer-rejected' );
+$GLOBALS['ssi_companion_filters']['static_site_importer_companion_renderers'] = static function ( array $renderers ): array {
+	$renderers['producer/custom/v1'] = '<?php echo esc_html( (string) ( $attributes["content"] ?? "" ) );';
+	return $renderers;
+};
+$custom_renderer = $typed_renderer;
+$custom_renderer['blocks'][0]['renderer'] = 'producer/custom/v1';
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $custom_renderer ), 'registered-producer-renderer-validates' );
+$custom_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $custom_renderer );
+$assert( is_array( $custom_descriptor ) && str_contains( (string) ( $custom_descriptor['files']['ssi-example-site/blocks/custom-hero/render.php'] ?? '' ), 'esc_html' ), 'registered-producer-renderer-materializes' );
+$GLOBALS['ssi_companion_filters']['static_site_importer_companion_renderers'] = static function ( array $renderers ): array {
+	$renderers['producer/malformed/v1'] = 'not a PHP render template';
+	return $renderers;
+};
+$malformed_renderer = $typed_renderer;
+$malformed_renderer['blocks'][0]['renderer'] = 'producer/malformed/v1';
+$assert( 'static_site_importer_companion_plugin_renderer_invalid' === Static_Site_Importer_Companion_Plugin::validate_payload( $malformed_renderer )->get_error_code(), 'malformed-registered-renderer-rejected' );
+unset( $GLOBALS['ssi_companion_filters']['static_site_importer_companion_renderers'] );
 $renderer_conflict = $typed_renderer;
 $renderer_conflict['blocks'][0]['render'] = '<div>conflict</div>';
 $assert( 'static_site_importer_companion_plugin_renderer_conflict' === Static_Site_Importer_Companion_Plugin::validate_payload( $renderer_conflict )->get_error_code(), 'typed-renderer-and-markup-conflict-rejected' );
@@ -426,7 +451,7 @@ $invalid_renderer_attributes = $typed_renderer;
 $invalid_renderer_attributes['blocks'][0]['block_json']['attributes']['content']['type'] = 'object';
 $assert( 'static_site_importer_companion_plugin_renderer_attributes_invalid' === Static_Site_Importer_Companion_Plugin::validate_payload( $invalid_renderer_attributes )->get_error_code(), 'typed-renderer-requires-declared-string-content' );
 $layout_renderer = $typed_renderer;
-$layout_renderer['blocks'][0]['renderer'] = 'static-site-importer/responsive-layout/v1';
+$layout_renderer['blocks'][0]['renderer'] = 'blocks-engine/responsive-layout/v1';
 $layout_renderer['blocks'][0]['block_json']['name'] = 'example/responsive-layout';
 $assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $layout_renderer ), 'known-layout-renderer-validates' );
 $malformed_dependencies = $payload;

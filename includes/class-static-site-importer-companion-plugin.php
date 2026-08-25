@@ -39,15 +39,15 @@ class Static_Site_Importer_Companion_Plugin {
 	private const MAX_SCRIPT_DEPENDENCIES = 32;
 
 	/** SSI-owned renderer available to typed responsive-media blocks. */
-	private const RESPONSIVE_MEDIA_RENDERER = 'static-site-importer/responsive-media/v1';
+	private const RESPONSIVE_MEDIA_RENDERER = 'blocks-engine/responsive-media/v1';
 
 	/** SSI-owned renderer available to typed responsive-layout blocks. */
-	private const RESPONSIVE_LAYOUT_RENDERER = 'static-site-importer/responsive-layout/v1';
+	private const RESPONSIVE_LAYOUT_RENDERER = 'blocks-engine/responsive-layout/v1';
 
 	/**
 	 * Payload schema identifier consumed by the scaffolder.
 	 */
-	public const PAYLOAD_SCHEMA = 'static-site-importer/companion-plugin/v1';
+	public const PAYLOAD_SCHEMA = 'blocks-engine/wordpress-companion-plugin/v1';
 
 	/**
 	 * Validate a canonical compiled companion payload before any WordPress writes.
@@ -57,7 +57,7 @@ class Static_Site_Importer_Companion_Plugin {
 	 */
 	public static function validate_payload( array $payload ) {
 		if ( self::PAYLOAD_SCHEMA !== ( $payload['schema'] ?? null ) ) {
-			return new WP_Error( 'static_site_importer_companion_plugin_schema_invalid', 'Companion-plugin payload must use static-site-importer/companion-plugin/v1.' );
+			return new WP_Error( 'static_site_importer_companion_plugin_schema_invalid', 'Companion-plugin payload must use blocks-engine/wordpress-companion-plugin/v1.' );
 		}
 		if ( '' === self::site_slug( $payload ) ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_site_slug_missing', 'Companion-plugin payload must declare a non-empty site_slug.' );
@@ -117,7 +117,7 @@ class Static_Site_Importer_Companion_Plugin {
 			}
 			$renderer = $block['renderer'] ?? null;
 			if ( null !== $renderer ) {
-				if ( ! is_string( $renderer ) || ! in_array( $renderer, array( self::RESPONSIVE_MEDIA_RENDERER, self::RESPONSIVE_LAYOUT_RENDERER ), true ) ) {
+				if ( ! is_string( $renderer ) || '' === self::typed_renderer( $renderer ) ) {
 					return new WP_Error( 'static_site_importer_companion_plugin_renderer_invalid', sprintf( 'Block %s must declare a supported typed renderer.', $name ) );
 				}
 				if ( array_key_exists( 'render', $block ) ) {
@@ -816,10 +816,6 @@ PHP;
 	 * @return string
 	 */
 	private static function typed_renderer( string $renderer ): string {
-		if ( ! in_array( $renderer, array( self::RESPONSIVE_MEDIA_RENDERER, self::RESPONSIVE_LAYOUT_RENDERER ), true ) ) {
-			return '';
-		}
-
 		$layout = <<<'PHP'
 <?php
 /** Generated responsive-layout companion block render. */
@@ -1014,10 +1010,6 @@ $output = preg_replace_callback(
 ) ?? '';
 echo $output; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- KSES-sanitized bounded semantic layout markup.
 PHP;
-		if ( self::RESPONSIVE_LAYOUT_RENDERER === $renderer ) {
-			return $layout;
-		}
-
 		$media = <<<'PHP'
 <?php
 /** Generated responsive-media companion block render. */
@@ -1134,7 +1126,18 @@ foreach ( $data_images as $placeholder => $data_image ) {
 echo $output; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- KSES-sanitized bounded media markup.
 PHP;
 
-		return $media;
+		$renderers = array(
+			self::RESPONSIVE_MEDIA_RENDERER  => $media,
+			self::RESPONSIVE_LAYOUT_RENDERER => $layout,
+		);
+		if ( function_exists( 'apply_filters' ) ) {
+			$renderers = apply_filters( 'static_site_importer_companion_renderers', $renderers );
+		}
+		if ( ! is_array( $renderers ) ) {
+			return '';
+		}
+		$source = $renderers[ $renderer ] ?? '';
+		return is_string( $source ) && str_starts_with( $source, '<?php' ) ? $source : '';
 	}
 
 	/**
