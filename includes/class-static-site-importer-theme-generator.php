@@ -55,6 +55,7 @@ class Static_Site_Importer_Theme_Generator {
 		$prepared_invocation = (string) ( $args['runtime_lifecycle_request_id'] ?? '' );
 		$current_invocation  = (string) ( $args['runtime_lifecycle_invocation_id'] ?? '' );
 		$request_args = $args;
+		$payload_reader = is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null;
 		$checkpoint  = null;
 		$resume_args = array();
 		if ( 'resume' === $phase && '' !== (string) ( $args['runtime_lifecycle_checkpoint'] ?? '' ) ) {
@@ -87,6 +88,9 @@ class Static_Site_Importer_Theme_Generator {
 		$artifact              = $compiled_import['artifact'];
 		$args                  = $compiled_import['args'];
 		$args                  = array_merge( $args, $resume_args );
+		if ( is_object( $payload_reader ) ) {
+			$args['_static_site_importer_payload_reader'] = $payload_reader;
+		}
 		$plan                  = $compiled_import['plan'];
 		$gutenberg_gaps        = $compiled_import['gutenberg_gaps'];
 		$companion_payload     = $compiled_import['companion_payload'];
@@ -125,6 +129,13 @@ class Static_Site_Importer_Theme_Generator {
 			$encoded_artifact = wp_json_encode( $artifact );
 			return Static_Site_Importer_Entity_Materializer_Registry::dependency_plan( $lifecycle, hash( 'sha256', false !== $encoded_artifact ? $encoded_artifact : '' ) );
 		}
+		$prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization( $plan, $args );
+		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
+			$receipt = isset( $prepared['receipt'] ) && is_array( $prepared['receipt'] ) ? $prepared['receipt'] : array();
+			$error   = $receipt['errors'][0] ?? array();
+			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan destination preflight failed.' ), $receipt );
+		}
+		$args = $prepared['args'];
 		if ( 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
 			$handle = Static_Site_Importer_Lifecycle_Compile_Checkpoint::create(
 				$request_artifact,
@@ -144,7 +155,7 @@ class Static_Site_Importer_Theme_Generator {
 			if ( is_wp_error( $handle ) ) {
 				return $handle;
 			}
-			$dependencies = self::materialize_prepared_dependencies( $lifecycle, $args );
+			$dependencies = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_runtime_dependencies( $lifecycle, $args );
 			if ( is_wp_error( $dependencies ) ) {
 				Static_Site_Importer_Lifecycle_Compile_Checkpoint::discard( $handle, (string) ( $args['_static_site_importer_lifecycle_checkpoint_root'] ?? '' ) );
 				return $dependencies;
@@ -167,11 +178,31 @@ class Static_Site_Importer_Theme_Generator {
 				return $claimed;
 			}
 		}
-		$result = self::materialize_compiled_website_artifact( $artifact, $args, $plan, $gutenberg_gaps, $companion_payload, $lifecycle, $theme_materialization );
+		$result = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared_lifecycle( $prepared, $lifecycle, $companion_payload, $gutenberg_gaps, $theme_materialization );
 		if ( is_array( $checkpoint ) ) {
 			$checkpoint['workspace']->cleanup( 'success' );
 		}
-		return $result;
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+		return self::project_materialization_result( $result, $args );
+	}
+
+	/** Project one completed canonical lifecycle into the compatibility result envelope. */
+	private static function project_materialization_result( array $result, array $args ) {
+		try {
+			return self::public_result_from_wordpress_site_plan_receipt( $result['receipt'], $args, $result['lifecycle'], $result['dependencies'], $result['entities'] );
+		} catch ( Throwable $error ) {
+			$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $result['receipt'], 'static_site_importer_projection_write_failed' );
+			$receipt['status'] = 'partial';
+			$receipt['errors'][] = array(
+				'code'    => 'static_site_importer_projection_write_failed',
+				'message' => $error->getMessage(),
+			);
+			$stage = 'report_persistence' === (string) ( $args['inject_materialization_failure'] ?? '' ) ? 'report_persistence' : 'public_projection';
+			self::append_entity_compensation( $receipt, $result['lifecycle'], $result['entities'], $stage, 'static_site_importer_projection_write_failed' );
+			return new WP_Error( 'static_site_importer_projection_write_failed', 'Website materialization completed partially because a public projection could not be written.', $receipt );
+		}
 	}
 
 	/** Compile an artifact into its immutable canonical WordPress site plan. */
@@ -290,173 +321,6 @@ class Static_Site_Importer_Theme_Generator {
 		);
 	}
 
-	/** Materialize a previously compiled canonical plan through the existing write path. */
-	private static function materialize_compiled_website_artifact( array $artifact, array $args, array $plan, array $gutenberg_gaps, $companion_payload, array $lifecycle, array $theme_materialization ) {
-
-		$theme_dir = trailingslashit( get_theme_root() ) . $args['slug'];
-		$report_destinations = array( $theme_dir . '/static-site-importer-manifest.json' );
-		if ( ! empty( $args['write_theme_report_artifacts'] ) ) {
-			$report_destinations = array_merge( $report_destinations, array( $theme_dir . '/import-report.json', $theme_dir . '/import-validation-result.json', $theme_dir . '/finding-packets.json' ) );
-		}
-		$external_report_destinations = array();
-		if ( ! empty( $args['report'] ) ) {
-			$external_report_destinations[] = (string) $args['report'];
-			$external_report_destinations[] = trailingslashit( dirname( (string) $args['report'] ) ) . 'import-validation-result.json';
-			$external_report_destinations[] = trailingslashit( dirname( (string) $args['report'] ) ) . 'finding-packets.json';
-			$report_destinations = array_merge( $report_destinations, $external_report_destinations );
-		}
-		$args['report_destinations'] = $report_destinations;
-		$args['external_report_destinations'] = $external_report_destinations;
-		$prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare( $plan, $args );
-		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
-			$receipt = isset( $prepared['receipt'] ) && is_array( $prepared['receipt'] ) ? $prepared['receipt'] : array();
-			$error   = $receipt['errors'][0] ?? array();
-			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan destination preflight failed.' ), $receipt );
-		}
-		$prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::admit_prepared( $prepared );
-		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
-			$receipt = isset( $prepared['receipt'] ) && is_array( $prepared['receipt'] ) ? $prepared['receipt'] : array();
-			$error   = $receipt['errors'][0] ?? array();
-			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan payload admission failed.' ), $receipt );
-		}
-		$lifecycle = self::with_resolved_runtime_binding_manifests( $lifecycle, $prepared['resolved'] ?? array() );
-		$classic = Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === ( $args['theme_materialization'] ?? null );
-		$binding_preflight = $classic ? self::preflight_classic_runtime_entity_bindings( $prepared['args']['classic_theme_projection'], $lifecycle, $args ) : self::preflight_runtime_entity_binding_anchors( $prepared['resolved'] ?? array(), $lifecycle, $args );
-		if ( is_wp_error( $binding_preflight ) ) {
-			return $binding_preflight;
-		}
-		$page_ready = ! empty( $args['page_ready_checkpoint'] );
-		if ( $page_ready && self::page_ready_requires_final_hydration( $lifecycle, $args ) ) {
-			return new WP_Error(
-				'static_site_importer_page_ready_runtime_bindings_deferred',
-				'Page-ready materialization requires runtime entity bindings and must wait for complete-snapshot hydration.',
-				array(
-					'status'                => 'deferred',
-					'materialization_scope' => 'page_ready',
-				)
-			);
-		}
-		$companion_materialization = array(
-			'status' => 'skipped',
-			'reason' => 'companion_plugin_payload_absent',
-		);
-		if ( null !== $companion_payload ) {
-			if ( $page_ready || ( array_key_exists( 'materialize_dependencies', $args ) && false === (bool) $args['materialize_dependencies'] ) ) {
-				$companion_materialization = array(
-					'status' => 'skipped',
-					'reason' => $page_ready ? 'page_ready_scope' : 'dependency_materialization_disabled',
-				);
-			} else {
-				$dependency                 = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $companion_payload );
-				$companion_materialization = Static_Site_Importer_Entity_Materializer_Registry::materialize_companion_dependency( $dependency, ! empty( $args['overwrite'] ) );
-				if ( 'failed' === ( $companion_materialization['status'] ?? '' ) ) {
-					$error = $companion_materialization['error'] ?? array();
-					return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_companion_plugin_materialization_failed' ), (string) ( $error['message'] ?? 'Companion-plugin materialization failed.' ), $companion_materialization );
-				}
-			}
-		}
-		$dependencies = $page_ready ? array() : self::materialize_prepared_dependencies( $lifecycle, $args );
-		if ( is_wp_error( $dependencies ) ) {
-			return $dependencies;
-		}
-		$entity_result = $page_ready ? array(
-			'reports' => array(),
-			'error'   => null,
-		) : self::materialize_prepared_entities( $lifecycle, $args );
-		$entities      = $entity_result['reports'];
-		if ( null !== $entity_result['error'] ) {
-			$error = $entity_result['error'];
-			$failure = array(
-				'status'            => 'partial',
-				'runtime_lifecycle' => $lifecycle,
-				'dependencies'      => $dependencies,
-				'entities'          => $entities,
-			);
-			self::append_entity_compensation( $failure, $lifecycle, $entities, 'entity_materialization', (string) $error['code'] );
-			return new WP_Error(
-				$error['code'],
-				$error['message'],
-				$failure
-			);
-		}
-		$bindings = $page_ready ? array() : self::runtime_entity_bindings( $lifecycle, $entities );
-		if ( is_wp_error( $bindings ) ) {
-			$failure = array(
-				'status'            => 'partial',
-				'runtime_lifecycle' => $lifecycle,
-				'dependencies'      => $dependencies,
-				'entities'          => $entities,
-			);
-			self::append_entity_compensation( $failure, $lifecycle, $entities, 'runtime_entity_bindings', (string) $bindings->get_error_code() );
-			return new WP_Error(
-				$bindings->get_error_code(),
-				$bindings->get_error_message(),
-				$failure
-			);
-		}
-		$prepared['args']['runtime_entity_bindings']    = $classic ? array() : $bindings;
-		if ( $classic ) {
-			$classic_bindings = self::classic_runtime_entity_bindings( $lifecycle, $entities );
-			if ( is_wp_error( $classic_bindings ) ) {
-				$failure = array(
-					'status'            => 'partial',
-					'runtime_lifecycle' => $lifecycle,
-					'dependencies'      => $dependencies,
-					'entities'          => $entities,
-				);
-				self::append_entity_compensation( $failure, $lifecycle, $entities, 'classic_runtime_entity_bindings', (string) $classic_bindings->get_error_code() );
-				return new WP_Error( $classic_bindings->get_error_code(), $classic_bindings->get_error_message(), $failure );
-			}
-			$projection = Static_Site_Importer_Classic_Theme_Projection::apply_runtime_bindings( $prepared['args']['classic_theme_projection'], $classic_bindings );
-			if ( is_wp_error( $projection ) ) {
-				$failure = array(
-					'status'            => 'partial',
-					'runtime_lifecycle' => $lifecycle,
-					'dependencies'      => $dependencies,
-					'entities'          => $entities,
-				);
-				self::append_entity_compensation( $failure, $lifecycle, $entities, 'classic_runtime_projection', (string) $projection->get_error_code() );
-				return new WP_Error( $projection->get_error_code(), $projection->get_error_message(), $failure );
-			}
-			$prepared['args']['classic_theme_projection'] = $projection;
-			$prepared['base_resolved'] = Static_Site_Importer_Classic_Theme_Projection::with_projection_writes( $prepared['base_resolved'], $projection, (string) $prepared['theme']['uri'], (string) ( $prepared['args']['name'] ?? $prepared['theme']['slug'] ) );
-			$prepared['prepared_resolved_projection_hash'] = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepared_resolved_projection_hash( $prepared['base_resolved'] );
-			$prepared['args']['classic_runtime_bindings'] = $classic_bindings;
-		}
-		$prepared['args']['provider_layout_overlays']   = $page_ready ? array() : self::provider_layout_overlays_from_entity_reports( $entities );
-		$prepared['args']['font_materialization']       = $page_ready ? array() : $prepared['args']['font_materialization'];
-		$prepared['args']['activate']                   = $page_ready ? false : ! empty( $prepared['args']['activate'] );
-		$prepared['args']['defer_materialization_commit'] = true;
-		$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared );
-		$receipt['completed']['companion_plugin'] = $companion_materialization;
-		$receipt['extensions']['gutenberg_gaps'] = self::project_gutenberg_gaps( $gutenberg_gaps, (string) ( $companion_materialization['status'] ?? 'not_materialized' ) );
-		$receipt['completed']['runtime_declarations']['dependencies'] = $dependencies;
-		$receipt['completed']['runtime_declarations']['entities'] = $entities;
-		$receipt['runtime_lifecycle'] = $lifecycle;
-		if ( $classic ) {
-			$receipt['completed']['runtime_declarations']['classic_html_bindings'] = $prepared['args']['classic_runtime_bindings'] ?? array();
-		}
-		$receipt['theme_materialization'] = $theme_materialization;
-		if ( 'completed' !== $receipt['status'] ) {
-			$error = $receipt['errors'][0] ?? array();
-			self::append_entity_compensation( $receipt, $lifecycle, $entities, 'wordpress_site_plan_materialization', (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ) );
-			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan materialization failed.' ), $receipt );
-		}
-		try {
-			return self::public_result_from_wordpress_site_plan_receipt( $receipt, $args, $lifecycle, $dependencies, $entities );
-		} catch ( Throwable $error ) {
-			$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $receipt, 'static_site_importer_projection_write_failed' );
-			$receipt['status'] = 'partial';
-			$receipt['errors'][] = array(
-				'code'    => 'static_site_importer_projection_write_failed',
-				'message' => $error->getMessage(),
-			);
-			$stage = 'report_persistence' === (string) ( $args['inject_materialization_failure'] ?? '' ) ? 'report_persistence' : 'public_projection';
-			self::append_entity_compensation( $receipt, $lifecycle, $entities, $stage, 'static_site_importer_projection_write_failed' );
-			return new WP_Error( 'static_site_importer_projection_write_failed', 'Website materialization completed partially because a public projection could not be written.', $receipt );
-		}
-	}
-
 	/** Compensate completed entities in reverse order and retain bounded residual evidence. */
 	private static function rollback_materialized_entities( array $lifecycle, array $reports ): array {
 		$compensation = array(
@@ -536,7 +400,7 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/** Attach failure context and compensation diagnostics to public and internal receipts. */
-	private static function append_entity_compensation( array &$result, array $lifecycle, array $reports, string $stage, string $code ): void {
+	public static function append_entity_compensation( array &$result, array $lifecycle, array $reports, string $stage, string $code ): void {
 		$existing_compensation = isset( $result['entity_compensation'] ) && is_array( $result['entity_compensation'] ) ? $result['entity_compensation'] : array();
 		if ( self::compensation_binding_matches( $existing_compensation, $result, $lifecycle, $reports ) ) {
 			if ( isset( $result['completed']['runtime_declarations'] ) && is_array( $result['completed']['runtime_declarations'] ) ) {
@@ -707,7 +571,7 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/** Collect only structured compiler overlays emitted by successful form seeding. */
-	private static function provider_layout_overlays_from_entity_reports( array $reports ): array {
+	public static function provider_layout_overlays_from_entity_reports( array $reports ): array {
 		$overlays = array();
 		foreach ( $reports as $report ) {
 			foreach ( is_array( $report['forms'] ?? null ) ? $report['forms'] : array() as $form ) {
@@ -720,7 +584,7 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/** Project compiler gap rows into stable materialization diagnostics. */
-	private static function project_gutenberg_gaps( array $gaps, string $materialization_status = 'not_materialized' ): array {
+	public static function project_gutenberg_gaps( array $gaps, string $materialization_status = 'not_materialized' ): array {
 		$projected = array();
 		foreach ( $gaps as $index => $gap ) {
 			if ( ! is_array( $gap ) ) {
@@ -1337,7 +1201,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * @param array<string,mixed> $resolved Resolved WordPress site plan.
 	 * @return array<string,mixed>
 	 */
-	private static function with_resolved_runtime_binding_manifests( array $lifecycle, array $resolved ): array {
+	public static function with_resolved_runtime_binding_manifests( array $lifecycle, array $resolved ): array {
 		$declarations = isset( $resolved['runtime_declarations'] ) && is_array( $resolved['runtime_declarations'] ) ? $resolved['runtime_declarations'] : array();
 		if ( empty( $declarations ) ) {
 			return $lifecycle;
@@ -1414,7 +1278,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * Runtime bindings change page markup with provider-owned identities, so the
 	 * page-ready checkpoint cannot safely materialize their static fallback.
 	 */
-	private static function page_ready_requires_final_hydration( array $lifecycle, array $args ): bool {
+	public static function page_ready_requires_final_hydration( array $lifecycle, array $args ): bool {
 		foreach ( $lifecycle['entities'] as $prepared ) {
 			$waiver_arg = (string) ( $prepared['adapter']['waiver_arg'] ?? '' );
 			if ( '' !== $waiver_arg && ! empty( $args[ $waiver_arg ] ) ) {
@@ -1433,7 +1297,7 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/** @return array<string,mixed>|WP_Error */
-	private static function materialize_prepared_dependencies( array $lifecycle, array $args ) {
+	public static function materialize_prepared_dependencies( array $lifecycle, array $args ) {
 		$reports = array();
 		foreach ( $lifecycle['dependencies'] as $id => $prepared ) {
 			$adapter = $prepared['adapter'];
@@ -1488,7 +1352,7 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/** @return array{reports:array<string,mixed>,error:?array{code:string,message:string}} */
-	private static function materialize_prepared_entities( array $lifecycle, array $args ): array {
+	public static function materialize_prepared_entities( array $lifecycle, array $args ): array {
 		$reports = array();
 		$required = array_filter( $lifecycle['entities'], static fn( array $prepared ): bool => ! empty( $prepared['required'] ) );
 		if ( empty( $args['seed_entities'] ) && empty( $required ) ) {
@@ -1543,7 +1407,7 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/** Build exact provider-owned block replacements without consulting diagnostics. */
-	private static function runtime_entity_bindings( array $lifecycle, array $reports ) {
+	public static function runtime_entity_bindings( array $lifecycle, array $reports ) {
 		$bindings = array();
 		foreach ( $lifecycle['entities'] as $declaration_id => $prepared ) {
 			$manifest = isset( $prepared['manifest'] ) && is_array( $prepared['manifest'] ) ? $prepared['manifest'] : array();
@@ -1606,7 +1470,7 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/** Build classic bindings from canonical entity source selectors, never block anchors. */
-	private static function classic_runtime_entity_bindings( array $lifecycle, array $reports ) {
+	public static function classic_runtime_entity_bindings( array $lifecycle, array $reports ) {
 		$bindings = array();
 		foreach ( $lifecycle['entities'] as $declaration_id => $prepared ) {
 			if ( ! is_callable( $prepared['adapter']['classic_binding_callback'] ?? null ) ) {
@@ -1657,7 +1521,7 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/** Validate every classic source identity before dependencies or seeders run. */
-	private static function preflight_classic_runtime_entity_bindings( array $projection, array $lifecycle, array $args ) {
+	public static function preflight_classic_runtime_entity_bindings( array $projection, array $lifecycle, array $args ) {
 		$bindings = array();
 		$claims = array();
 		foreach ( $lifecycle['entities'] as $declaration_id => $prepared ) {
@@ -1699,7 +1563,7 @@ class Static_Site_Importer_Theme_Generator {
 	}
 
 	/** Verify every declared source anchor before providers create or update entities. */
-	private static function preflight_runtime_entity_binding_anchors( array $plan, array $lifecycle, array $args ) {
+	public static function preflight_runtime_entity_binding_anchors( array $plan, array $lifecycle, array $args ) {
 		$pages = array();
 		foreach ( is_array( $plan['pages'] ?? null ) ? $plan['pages'] : array() as $page ) {
 			if ( is_array( $page ) && is_string( $page['source_path'] ?? null ) ) {

@@ -541,8 +541,13 @@ $reference_plan['plan_identity'] = WordPressSitePlan::planIdentity( $reference_p
 $reference_target                   = 'assets/asset.bin';
 $posts_before_reference_admission   = $GLOBALS['ssi_plan_posts'];
 $inserts_before_reference_admission = $GLOBALS['ssi_plan_insert_calls'];
-$throwing_reader                    = new class() {
+$throwing_reads                     = 0;
+$throwing_reader                    = new class( $throwing_reads ) {
+	private $reads;
+	public function __construct( int &$reads ) {
+		$this->reads =& $reads; }
 	public function read( array $reference ): string {
+		++$this->reads;
 		throw new RuntimeException( 'workspace unavailable' ); }
 };
 $throwing_reference_receipt         = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
@@ -552,26 +557,8 @@ $throwing_reference_receipt         = Static_Site_Importer_WordPress_Site_Plan_M
 		'_static_site_importer_payload_reader' => $throwing_reader,
 	)
 );
-$assert( 'rejected' === $throwing_reference_receipt['status'] && 'static_site_importer_payload_reference_unavailable' === ( $throwing_reference_receipt['diagnostics'][0]['reason_code'] ?? '' ) && $posts_before_reference_admission === $GLOBALS['ssi_plan_posts'] && $inserts_before_reference_admission === $GLOBALS['ssi_plan_insert_calls'] && ! file_exists( $GLOBALS['ssi_plan_root'] . '/reference-admission-throwing' ), 'throwing canonical reference readers reject before page or filesystem mutation' );
-$theme_generator_materialize       = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'materialize_compiled_website_artifact' );
-$theme_generator_before_admission  = $GLOBALS['ssi_plan_insert_calls'];
-$theme_generator_admission_failure = $theme_generator_materialize->invoke(
-	null,
-	array(),
-	array(
-		'slug'                                 => 'theme-generator-reference-admission',
-		'_static_site_importer_payload_reader' => $throwing_reader,
-	),
-	$reference_plan,
-	array(),
-	array( 'unreachable' => true ),
-	array(
-		'dependencies' => array(),
-		'entities'     => array(),
-	),
-	array()
-);
-$assert( is_wp_error( $theme_generator_admission_failure ) && 'static_site_importer_payload_reference_unavailable' === $theme_generator_admission_failure->get_error_code() && $theme_generator_before_admission === $GLOBALS['ssi_plan_insert_calls'] && ! file_exists( $GLOBALS['ssi_plan_root'] . '/theme-generator-reference-admission' ), 'theme generator rejects unavailable references before companion, dependency, entity, page, or filesystem materialization' );
+$assert( 'rejected' === $throwing_reference_receipt['status'] && 'static_site_importer_payload_reference_unavailable' === ( $throwing_reference_receipt['diagnostics'][0]['reason_code'] ?? '' ) && 1 === $throwing_reads && $posts_before_reference_admission === $GLOBALS['ssi_plan_posts'] && $inserts_before_reference_admission === $GLOBALS['ssi_plan_insert_calls'] && ! file_exists( $GLOBALS['ssi_plan_root'] . '/reference-admission-throwing' ), 'throwing canonical reference readers are admitted once before page or filesystem mutation' );
+$assert( false === strpos( (string) $theme_generator_source, 'function materialize_compiled_website_artifact' ), 'theme generator has no parallel compiled-artifact materialization state machine' );
 $mismatched_reader            = new class() {
 	public function read( array $reference ): string {
 		return 'corrupt-reference-bytes'; }
@@ -596,7 +583,7 @@ $valid_reference_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer
 	)
 );
 $assert( 'completed' === $valid_reference_receipt['status'] && $inserts_before_reference_admission < $GLOBALS['ssi_plan_insert_calls'] && file_exists( $GLOBALS['ssi_plan_root'] . '/reference-admission-valid/' . $reference_target ) && 'canonical-reference-bytes' === file_get_contents( $GLOBALS['ssi_plan_root'] . '/reference-admission-valid/' . $reference_target ), 'valid canonical reference readers pass admission and materialize the declared write' );
-$prepared_for_admission = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare(
+$prepared_for_admission = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization(
 	$reference_plan,
 	array(
 		'slug'                                 => 'reference-admission-prepared',
@@ -604,13 +591,7 @@ $prepared_for_admission = Static_Site_Importer_WordPress_Site_Plan_Materializer:
 	)
 );
 $admitted_prepared      = Static_Site_Importer_WordPress_Site_Plan_Materializer::admit_prepared( $prepared_for_admission );
-$assert( 'prepared' === ( $admitted_prepared['status'] ?? '' ) && ! empty( $admitted_prepared['payload_references_admitted'] ) && ! str_contains( (string) wp_json_encode( $admitted_prepared['plan'] ), 'payload_references_admitted' ) && ! str_contains( (string) wp_json_encode( Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $admitted_prepared ) ), 'payload_references_admitted' ), 'prepared admission marker is ephemeral and excluded from canonical plans and receipts' );
-$generator_admission         = strpos( (string) $theme_generator_source, '::admit_prepared( $prepared )' );
-$generator_binding_preflight = strpos( (string) $theme_generator_source, 'with_resolved_runtime_binding_manifests', $generator_admission + 1 );
-$generator_companion         = strpos( (string) $theme_generator_source, 'materialize_companion_dependency', $generator_admission + 1 );
-$generator_dependencies      = strpos( (string) $theme_generator_source, 'materialize_prepared_dependencies', $generator_admission + 1 );
-$generator_entities          = strpos( (string) $theme_generator_source, 'materialize_prepared_entities', $generator_admission + 1 );
-$assert( false !== $generator_admission && $generator_admission < $generator_binding_preflight && $generator_admission < $generator_companion && $generator_admission < $generator_dependencies && $generator_admission < $generator_entities, 'theme generator admits referenced payloads before runtime binding, companion, dependency, and entity materialization work' );
+$assert( 'prepared' === ( $prepared_for_admission['status'] ?? '' ) && ! empty( $prepared_for_admission['payload_references_admitted'] ) && $prepared_for_admission === $admitted_prepared && ! str_contains( (string) wp_json_encode( $prepared_for_admission['plan'] ), 'payload_references_admitted' ) && ! str_contains( (string) wp_json_encode( Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared_for_admission ) ), 'payload_references_admitted' ), 'materializer lifecycle preparation admits referenced payloads once, before lifecycle work, without adding transient state to plans or receipts' );
 $rollback_order     = array();
 $block_lifecycle    = array(
 	'dependencies' => array(),
@@ -653,21 +634,24 @@ $block_lifecycle    = array(
 		),
 	),
 );
-$block_late_failure = $theme_generator_materialize->invoke(
-	null,
-	array(),
+$block_prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization(
+	$plan,
 	array(
 		'slug'                           => 'block-entity-late-failure',
 		'seed_entities'                  => true,
 		'font_materialization'           => array(),
 		'inject_materialization_failure' => 'report_persistence',
-	),
-	$plan,
-	array(),
-	null,
+	)
+);
+$block_late_failure = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared_lifecycle(
+	$block_prepared,
 	$block_lifecycle,
+	null,
+	array(),
 	array()
 );
+$project_materialization_result = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'project_materialization_result' );
+$block_late_failure = $project_materialization_result->invoke( null, $block_late_failure, $block_prepared['args'] );
 $assert( is_wp_error( $block_late_failure ) && 'static_site_importer_projection_write_failed' === $block_late_failure->get_error_code() && array( 'form', 'woo' ) === $rollback_order, 'block-mode Woo and form entities compensate in reverse order when report persistence fails after materialization' );
 $deferred_rollback_order = array();
 $woo_snapshot_restored   = false;
@@ -712,16 +696,13 @@ $deferred_quality_lifecycle = array(
 	),
 );
 $posts_before_deferred_quality = $GLOBALS['ssi_plan_posts'];
-$deferred_quality_failure      = $theme_generator_materialize->invoke(
-	null,
-	array(),
-	array( 'slug' => 'deferred-quality-compensation', 'seed_entities' => true, 'font_materialization' => array(), 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
+$deferred_quality_prepared     = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization(
 	$deferred_quality_plan,
-	array(),
-	null,
-	$deferred_quality_lifecycle,
-	array()
+	array( 'slug' => 'deferred-quality-compensation', 'seed_entities' => true, 'font_materialization' => array(), 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
 );
+$deferred_quality_receipt = $deferred_quality_prepared['receipt'] ?? array();
+$deferred_quality_error   = $deferred_quality_receipt['errors'][0] ?? array();
+$deferred_quality_failure = new WP_Error( (string) ( $deferred_quality_error['code'] ?? '' ), (string) ( $deferred_quality_error['message'] ?? '' ), $deferred_quality_receipt );
 $deferred_quality_receipt = is_wp_error( $deferred_quality_failure ) ? $deferred_quality_failure->get_error_data() : array();
 $assert( is_wp_error( $deferred_quality_failure ) && 'editability_policy_failed' === $deferred_quality_failure->get_error_code() && array() === $deferred_rollback_order && ! $woo_snapshot_restored && $posts_before_deferred_quality === $GLOBALS['ssi_plan_posts'] && 'editability_policy_failed' === ( $deferred_quality_receipt['errors'][0]['code'] ?? '' ), 'failed canonical editability policy rejects before provider mutation or rollback work' );
 
@@ -776,10 +757,7 @@ foreach ( array(
 	),
 ) as $strategy => $fixture ) {
 	$GLOBALS['ssi_plan_woo_cleanup_failures'] = true;
-	$late_failure                             = $theme_generator_materialize->invoke(
-		null,
-		array(),
-		array_merge(
+	$late_args                                = array_merge(
 			array(
 				'slug'                           => 'woo-late-' . $strategy,
 				'seed_entities'                  => true,
@@ -787,13 +765,19 @@ foreach ( array(
 				'inject_materialization_failure' => 'report_persistence',
 			),
 			$fixture['args']
-		),
+		);
+	$late_prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization(
 		$fixture['plan'],
-		array(),
-		null,
+		$late_args
+	);
+	$late_failure = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared_lifecycle(
+		$late_prepared,
 		$woo_late_failure_lifecycle,
+		null,
+		array(),
 		array()
 	);
+	$late_failure = $project_materialization_result->invoke( null, $late_failure, $late_prepared['args'] );
 	$late_receipt                             = is_wp_error( $late_failure ) ? $late_failure->get_error_data() : array();
 	$rollback                                 = $late_receipt['entity_compensation']['entities'][0] ?? array();
 	$diagnostics                              = $late_receipt['diagnostics'] ?? array();
@@ -2106,7 +2090,15 @@ $contract_changed_quality_error = $final_quality_gate->invoke(
 );
 $contract_changed_quality_receipt = is_wp_error( $contract_changed_quality_error ) ? $contract_changed_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
 $assert( is_wp_error( $contract_changed_quality_error ) && 5 === $provider_rollbacks && 'rolled_back' === ( $contract_changed_quality_receipt['entity_compensation']['entities'][0]['rollback']['status'] ?? '' ) && true === ( $contract_changed_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ) && ( $required_changed_quality_receipt['entity_compensation']['binding']['rollback_contracts_hash'] ?? '' ) !== ( $contract_changed_quality_receipt['entity_compensation']['binding']['rollback_contracts_hash'] ?? '' ), 'a changed rollback contract cannot reuse compensation evidence and retains bounded rollback status' );
-$ordered_rollback_plan                = $plan;
+$ordered_rollback_plan                = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'ordered-rollback/index.html',
+		'files'      => array(
+			'ordered-rollback/index.html' => '<main><h1>Rollback home</h1></main>',
+			'ordered-rollback/child.html' => '<main><h1>Rollback child</h1></main>',
+		),
+	)
+)->toArray()['source_reports']['wordpress_site_plan'];
 $ordered_rollback_options             = array(
 	'stylesheet'    => 'before-child-theme',
 	'template'      => 'before-parent-theme',
@@ -2166,7 +2158,13 @@ $ordered_quality_receipt['plan']['diagnostics'] = $deferred_form_receipt['plan']
 $ordered_retry_error = $final_quality_gate->invoke( null, $ordered_quality_receipt, array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ), $ordered_lifecycle, array(), $ordered_reports );
 $assert( is_wp_error( $ordered_retry_error ) && $events_before_ordered_retry === $GLOBALS['ssi_plan_rollback_events'] && array( 'mutated' ) === $ordered_provider_calls, 'ordered production rollback preserves journal and provider compensation idempotence on retry' );
 unset( $GLOBALS['ssi_plan_rollback_events'] );
-$partial_rollback_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'partial-rollback-journal', 'defer_materialization_commit' => true ) );
+$partial_rollback_plan    = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'partial-rollback/index.html',
+		'files'      => array( 'partial-rollback/index.html' => '<main><h1>Partial rollback</h1></main>' ),
+	)
+)->toArray()['source_reports']['wordpress_site_plan'];
+$partial_rollback_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $partial_rollback_plan, array( 'slug' => 'partial-rollback-journal', 'defer_materialization_commit' => true ) );
 $partial_rollback_file    = array_key_last( $partial_rollback_receipt['transaction']->state['rollback']['files'] ?? array() );
 $GLOBALS['ssi_plan_rollback_fail_file'] = true;
 $partial_rollback_result = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $partial_rollback_receipt, 'injected_rollback_failure' );
@@ -2429,7 +2427,12 @@ foreach ( $font_before as $path => $bytes ) {
 
 $repeat = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan' ) );
 $assert( 'completed' === $repeat['status'], 'reconciliation repeat completes' );
-$assert( count( $GLOBALS['ssi_plan_posts'] ) === count( $plan['pages'] ), 'reconciliation preserves source page identity' );
+$plan_page_identities   = array_column( $plan['pages'], 'reconciliation_identity' );
+$reconciled_plan_posts = array_filter(
+	$GLOBALS['ssi_plan_meta'],
+	static fn( array $meta ): bool => in_array( $meta['_static_site_importer_reconciliation_identity'] ?? '', $plan_page_identities, true )
+);
+$assert( count( $reconciled_plan_posts ) === count( $plan['pages'] ), 'reconciliation preserves source page identity' );
 
 $before_posts      = count( $GLOBALS['ssi_plan_posts'] );
 $before_files      = count( glob( $GLOBALS['ssi_plan_root'] . '/reject/**/*' ) ?: array() );
