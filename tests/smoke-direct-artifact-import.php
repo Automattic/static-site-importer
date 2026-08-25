@@ -112,6 +112,9 @@ $ordered = array( 'z' => array( 'b' => 2, 'a' => 1 ), 'a' => 'https://example.co
 $canonical = array( 'a' => 'https://example.com/a/b', 'z' => array( 'a' => 1, 'b' => 2 ) );
 $assert( hash( 'sha256', (string) wp_json_encode( $ordered ) ) === $hash_json->invoke( null, $ordered, false ), 'streamed source identity must preserve the exact ordered JSON hash' );
 $assert( hash( 'sha256', (string) wp_json_encode( $canonical ) ) === $hash_json->invoke( null, $ordered, true ), 'streamed checkpoint identity must preserve the exact recursively canonical JSON hash' );
+$assert( wp_mkdir_p( $test_root ), 'the fixture workspace root must be created' );
+$primitive_workspace = new Static_Site_Importer_Artifact_Run_Workspace( $test_root, 'direct-checkpoint-primitives' );
+$assert( ! is_wp_error( $primitive_workspace->publish_json_once( 'ordered.json', $ordered ) ) && wp_json_encode( $ordered, JSON_PRETTY_PRINT ) === $primitive_workspace->read_raw( 'ordered.json' ), 'streamed immutable JSON must preserve exact pretty-printed checkpoint bytes' );
 $large_chunk = str_repeat( 'x', 1024 * 1024 );
 $large_artifact = array();
 for ( $index = 0; $index < 96; ++$index ) {
@@ -120,11 +123,10 @@ for ( $index = 0; $index < 96; ++$index ) {
 memory_reset_peak_usage();
 $memory_before = memory_get_usage( true );
 $large_identity = $hash_json->invoke( null, $large_artifact, false );
+$large_checkpoint = $primitive_workspace->publish_json_once( 'large.json', $large_artifact );
 $identity_peak_delta = memory_get_peak_usage( true ) - $memory_before;
-$assert( preg_match( '/^[a-f0-9]{64}$/', $large_identity ) && $identity_peak_delta < 16 * 1024 * 1024, 'streamed identity must not allocate the logical 96 MB artifact as one JSON string' );
+$assert( preg_match( '/^[a-f0-9]{64}$/', $large_identity ) && ! is_wp_error( $large_checkpoint ) && $identity_peak_delta < 16 * 1024 * 1024, 'streamed identity and checkpoint publication must not allocate the logical 96 MB artifact as one JSON string' );
 unset( $large_artifact, $large_chunk );
-$assert( wp_mkdir_p( $test_root ), 'the fixture workspace root must be created' );
-$primitive_workspace = new Static_Site_Importer_Artifact_Run_Workspace( $test_root, 'direct-checkpoint-primitives' );
 $assert( ! is_wp_error( $primitive_workspace->publish_raw_once( 'immutable.json', '{"value":1}' ) ), 'immutable checkpoint publication must succeed once' );
 $assert( ! is_wp_error( $primitive_workspace->publish_raw_once( 'immutable.json', '{"value":1}' ) ), 'identical immutable checkpoint replay must be accepted' );
 $immutable_conflict = $primitive_workspace->publish_raw_once( 'immutable.json', '{"value":2}' );
