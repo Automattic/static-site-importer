@@ -880,7 +880,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$payload = $sharded['payload'];
 			$shards  = $sharded['shards'];
 		}
-		$record       = array(
+		$record = array(
 			'schema'            => self::CHECKPOINT_SCHEMA,
 			'kind'              => $kind,
 			'import_id'         => $run['import_id'],
@@ -889,7 +889,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			'payload'           => $payload,
 			'shards'            => $shards,
 		);
-		$write        = $workspace->publish_json_once( $relative, $record );
+		$write  = $workspace->publish_json_once( $relative, $record );
 		if ( is_wp_error( $write ) ) {
 			return $write;
 		}
