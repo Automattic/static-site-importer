@@ -426,6 +426,7 @@ $invalid_renderer_attributes = $typed_renderer;
 $invalid_renderer_attributes['blocks'][0]['block_json']['attributes']['content']['type'] = 'object';
 $assert( 'static_site_importer_companion_plugin_renderer_attributes_invalid' === Static_Site_Importer_Companion_Plugin::validate_payload( $invalid_renderer_attributes )->get_error_code(), 'typed-renderer-requires-declared-string-content' );
 $layout_renderer = $typed_renderer;
+$layout_renderer['blocks'][0]['renderer'] = 'static-site-importer/responsive-layout/v1';
 $layout_renderer['blocks'][0]['block_json']['name'] = 'example/responsive-layout';
 $assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $layout_renderer ), 'known-layout-renderer-validates' );
 $malformed_dependencies = $payload;
@@ -510,8 +511,8 @@ $layout_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $layout_re
 $assert( is_array( $layout_descriptor ), 'layout-renderer-scaffold-returns-descriptor' );
 if ( is_array( $layout_descriptor ) ) {
 	$layout_render = $layout_descriptor['files']['ssi-example-site/blocks/custom-hero/render.php'] ?? '';
-	$assert( str_contains( $layout_render, 'Generated responsive-media layout mode companion block render' ) && ! str_contains( $layout_render, 'responsive-layout/v1' ), 'layout-mode-uses-released-renderer-template' );
-	$attributes = array( 'kind' => 'layout', 'content' => '<main class="story" style="position:absolute;inset:0 auto auto 0;width:405px;height:516.812px;overflow:hidden"><header><nav><a href="/about">About</a></nav></header><section><h1>Story</h1><p>Safe copy <strong>with emphasis</strong>.</p><button type="button">Read more</button><wow-image data-hook="hero"><img src="data:image/png;base64,aGVybw==" alt="Hero" decoding="async" fetchpriority="high"></wow-image><svg viewBox="0 0 10 10" preserveAspectRatio="xMidYMid slice" focusable="false" role="img" aria-label="Mark"><path d="M0 0L10 10" stroke="#000"></path></svg></section></main>' );
+	$assert( str_contains( $layout_render, 'Generated responsive-layout companion block render' ) && ! str_contains( $layout_render, 'Generated responsive-media companion block render' ), 'dedicated-layout-renderer-uses-own-template' );
+	$attributes = array( 'content' => '<main class="story" style="position:absolute;inset:0 auto auto 0;width:405px;height:516.812px;overflow:hidden"><header><nav><a href="/about">About</a></nav></header><section><h1>Story</h1><p>Safe copy <strong>with emphasis</strong>.</p><button type="button">Read more</button><wow-image data-hook="hero"><img src="data:image/png;base64,aGVybw==" alt="Hero" decoding="async" fetchpriority="high"></wow-image><svg viewBox="0 0 10 10" preserveAspectRatio="xMidYMid slice" focusable="false" role="img" aria-label="Mark"><path d="M0 0L10 10" stroke="#000"></path></svg></section></main>' );
 	ob_start();
 	eval( '?>' . $layout_render );
 	$layout_output = (string) ob_get_clean();
@@ -519,6 +520,21 @@ if ( is_array( $layout_descriptor ) ) {
 		$assert( str_contains( $layout_output, $fragment ), 'layout-renderer-preserves-' . $fragment );
 	}
 	$assert( str_contains( $layout_output, 'position:absolute' ) && str_contains( $layout_output, 'width:405px' ) && str_contains( $layout_output, 'height:516.812px' ) && str_contains( $layout_output, 'overflow:hidden' ), 'layout-renderer-preserves-quoted-inline-geometry', $layout_output );
+
+	$busy_bears_contract = json_decode( (string) file_get_contents( __DIR__ . '/fixtures/busy-bears-responsive-layout-contract.json' ), true );
+	$assert( 'static-site-importer/frozen-responsive-layout-contract/v1' === ( $busy_bears_contract['schema'] ?? '' ) && 2 === count( $busy_bears_contract['pages'] ?? array() ), 'busy-bears-frozen-layout-contract-loads' );
+	$assert( 14069 === ( $busy_bears_contract['pages'][0]['captured_layouts'][0]['bytes'] ?? 0 ) && 'd39d2adaa5550e80d3d997239c4de20c8aadc0f570185f11d24049baa9274ffb' === ( $busy_bears_contract['pages'][0]['captured_layouts'][0]['sha256'] ?? '' ) && 24895 === ( $busy_bears_contract['pages'][1]['captured_layouts'][1]['bytes'] ?? 0 ) && '3b1b2d2cd4c8af7b29b8b9848343dc41235dfb4b8cf6dad4d56661b8a0d5e69e' === ( $busy_bears_contract['pages'][1]['captured_layouts'][1]['sha256'] ?? '' ), 'busy-bears-contract-pins-captured-layout-identities' );
+	foreach ( $busy_bears_contract['pages'] ?? array() as $page ) {
+		$attributes = array( 'content' => (string) ( $page['content'] ?? '' ) );
+		ob_start();
+		eval( '?>' . $layout_render );
+		$page_output = (string) ob_get_clean();
+		foreach ( $page['expected_text'] ?? array() as $expected_text ) {
+			$assert( str_contains( $page_output, $expected_text ), 'busy-bears-layout-renders-' . (string) $page['path'] . '-' . $expected_text, $page_output );
+		}
+		$assert( str_contains( $page_output, '<form' ) && str_contains( $page_output, '<label' ) && str_contains( $page_output, '<input' ) && str_contains( $page_output, '<textarea' ) && str_contains( $page_output, '<svg' ), 'busy-bears-layout-renders-controls-and-svg-' . (string) $page['path'], $page_output );
+		$assert( preg_match( '/min-height:([1-9][0-9]*(?:\.[0-9]+)?)px/', $page_output ) === 1, 'busy-bears-layout-retains-nonzero-height-' . (string) $page['path'], $page_output );
+	}
 
 	// The producer admits these globals on every SVG element. Verify the rendered
 	// DOM, including local IDs and arbitrary aria-* names, rather than PHP text.
@@ -551,7 +567,7 @@ if ( is_array( $layout_descriptor ) ) {
 		$svg_content .= '<' . $tag . ' ' . $svg_attributes( $tag, $svg_shapes[ $tag ] ) . '></' . $tag . '>';
 	}
 	$svg_content .= '</svg>';
-	$attributes = array( 'kind' => 'layout', 'content' => $svg_content );
+	$attributes = array( 'content' => $svg_content );
 	ob_start();
 	eval( '?>' . $layout_render );
 	$svg_output = (string) ob_get_clean();
@@ -570,7 +586,7 @@ if ( is_array( $layout_descriptor ) ) {
 			}
 		}
 	}
-	$attributes = array( 'kind' => 'layout', 'content' => '<main onclick="alert(1)" data-wp-interactive="bad" style="background:url(javascript:alert(0))"><script>alert(2)</script><a href="%256a%2561vascript:alert(3)">bad</a><img src="javascript:alert(4)" srcset="safe.jpg 1x, javascript:alert(6) 2x"><audio><source src="song.mp3" type="audio/mpeg"></audio><svg onload="alert(5)"><foreignObject>bad</foreignObject><animate attributeName="x"></animate><defs><linearGradient id="paint"><stop offset="0" stop-color="#fff"></stop></linearGradient></defs><path fill="url(https://evil.test/x.svg#paint)" stroke="url(#paint)" d="M0 0"></path><use href="https://evil.test/icons.svg#icon"></use></svg></main>' );
+	$attributes = array( 'content' => '<main onclick="alert(1)" data-wp-interactive="bad" style="background:url(javascript:alert(0))"><script>alert(2)</script><a href="%256a%2561vascript:alert(3)">bad</a><img src="javascript:alert(4)" srcset="safe.jpg 1x, javascript:alert(6) 2x"><audio><source src="song.mp3" type="audio/mpeg"></audio><svg onload="alert(5)"><foreignObject>bad</foreignObject><animate attributeName="x"></animate><defs><linearGradient id="paint"><stop offset="0" stop-color="#fff"></stop></linearGradient></defs><path fill="url(https://evil.test/x.svg#paint)" stroke="url(#paint)" d="M0 0"></path><use href="https://evil.test/icons.svg#icon"></use></svg></main>' );
 	ob_start();
 	eval( '?>' . $layout_render );
 	$unsafe_layout_output = strtolower( (string) ob_get_clean() );

@@ -41,6 +41,9 @@ class Static_Site_Importer_Companion_Plugin {
 	/** SSI-owned renderer available to typed responsive-media blocks. */
 	private const RESPONSIVE_MEDIA_RENDERER = 'static-site-importer/responsive-media/v1';
 
+	/** SSI-owned renderer available to typed responsive-layout blocks. */
+	private const RESPONSIVE_LAYOUT_RENDERER = 'static-site-importer/responsive-layout/v1';
+
 	/**
 	 * Payload schema identifier consumed by the scaffolder.
 	 */
@@ -114,7 +117,7 @@ class Static_Site_Importer_Companion_Plugin {
 			}
 			$renderer = $block['renderer'] ?? null;
 			if ( null !== $renderer ) {
-				if ( ! is_string( $renderer ) || self::RESPONSIVE_MEDIA_RENDERER !== $renderer ) {
+				if ( ! is_string( $renderer ) || ! in_array( $renderer, array( self::RESPONSIVE_MEDIA_RENDERER, self::RESPONSIVE_LAYOUT_RENDERER ), true ) ) {
 					return new WP_Error( 'static_site_importer_companion_plugin_renderer_invalid', sprintf( 'Block %s must declare a supported typed renderer.', $name ) );
 				}
 				if ( array_key_exists( 'render', $block ) ) {
@@ -122,11 +125,7 @@ class Static_Site_Importer_Companion_Plugin {
 				}
 				$content_schema = $block['block_json']['attributes']['content'] ?? null;
 				if ( ! is_array( $content_schema ) || 'string' !== ( $content_schema['type'] ?? null ) ) {
-					return new WP_Error( 'static_site_importer_companion_plugin_renderer_attributes_invalid', sprintf( 'Block %s responsive-media renderer requires a string content attribute.', $name ) );
-				}
-				$kind_schema = $block['block_json']['attributes']['kind'] ?? null;
-				if ( ! is_array( $kind_schema ) || 'string' !== ( $kind_schema['type'] ?? null ) || 'media' !== ( $kind_schema['default'] ?? null ) ) {
-					return new WP_Error( 'static_site_importer_companion_plugin_renderer_attributes_invalid', sprintf( 'Block %s responsive-media renderer requires the released string kind attribute with a media default.', $name ) );
+					return new WP_Error( 'static_site_importer_companion_plugin_renderer_attributes_invalid', sprintf( 'Block %s typed renderer requires a string content attribute.', $name ) );
 				}
 			}
 			if ( isset( $block['render'] ) && is_scalar( $block['render'] ) && Static_Site_Importer_Content_Policy::contains_server_code( (string) $block['render'] ) ) {
@@ -817,15 +816,13 @@ PHP;
 	 * @return string
 	 */
 	private static function typed_renderer( string $renderer ): string {
-		if ( self::RESPONSIVE_MEDIA_RENDERER !== $renderer ) {
+		if ( ! in_array( $renderer, array( self::RESPONSIVE_MEDIA_RENDERER, self::RESPONSIVE_LAYOUT_RENDERER ), true ) ) {
 			return '';
 		}
 
 		$layout = <<<'PHP'
-/** Generated responsive-media layout mode companion block render. */
-
-$kind = is_string( $attributes['kind'] ?? null ) ? $attributes['kind'] : '';
-if ( 'layout' === $kind ) {
+<?php
+/** Generated responsive-layout companion block render. */
 
 $content = is_string( $attributes['content'] ?? null ) ? $attributes['content'] : '';
 $content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*>.*?</\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\s*>#is', '', $content ) ?? '';
@@ -979,6 +976,12 @@ $output = wp_kses(
 		'a' => array_merge( $global, array( 'download' => true, 'href' => true, 'rel' => true, 'target' => true ) ),
 		'button' => array_merge( $global, array( 'disabled' => true, 'name' => true, 'type' => true, 'value' => true ) ),
 		'form' => array_merge( $flow, array( 'action' => true, 'method' => true ) ),
+		'fieldset' => array_merge( $flow, array( 'disabled' => true, 'name' => true ) ), 'legend' => $global,
+		'label' => array_merge( $global, array( 'for' => true ) ),
+		'input' => array_merge( $global, array( 'autocomplete' => true, 'checked' => true, 'disabled' => true, 'max' => true, 'maxlength' => true, 'min' => true, 'minlength' => true, 'multiple' => true, 'name' => true, 'pattern' => true, 'placeholder' => true, 'readonly' => true, 'required' => true, 'step' => true, 'type' => true, 'value' => true ) ),
+		'textarea' => array_merge( $global, array( 'cols' => true, 'disabled' => true, 'maxlength' => true, 'minlength' => true, 'name' => true, 'placeholder' => true, 'readonly' => true, 'required' => true, 'rows' => true ) ),
+		'select' => array_merge( $global, array( 'disabled' => true, 'multiple' => true, 'name' => true, 'required' => true, 'size' => true ) ),
+		'option' => array_merge( $global, array( 'disabled' => true, 'label' => true, 'selected' => true, 'value' => true ) ),
 		'figure' => $flow, 'figcaption' => $flow, 'picture' => $flow,
 		'source' => array_merge( $global, array( 'media' => true, 'sizes' => true, 'src' => true, 'srcset' => true, 'type' => true ) ),
 		'img' => array_merge( $global, array( 'alt' => true, 'decoding' => true, 'fetchpriority' => true, 'height' => true, 'loading' => true, 'longdesc' => true, 'sizes' => true, 'src' => true, 'srcset' => true, 'usemap' => true, 'width' => true ) ),
@@ -1010,9 +1013,10 @@ $output = preg_replace_callback(
 	$output
 ) ?? '';
 echo $output; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- KSES-sanitized bounded semantic layout markup.
-return;
-}
 PHP;
+		if ( self::RESPONSIVE_LAYOUT_RENDERER === $renderer ) {
+			return $layout;
+		}
 
 		$media = <<<'PHP'
 <?php
@@ -1130,11 +1134,7 @@ foreach ( $data_images as $placeholder => $data_image ) {
 echo $output; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- KSES-sanitized bounded media markup.
 PHP;
 
-		return preg_replace_callback(
-			'/^<\?php\n/',
-			static fn(): string => "<?php\n" . $layout . "\nif ( 'media' !== \$kind ) {\n\treturn;\n}\n\n",
-			$media
-		) ?? '';
+		return $media;
 	}
 
 	/**
