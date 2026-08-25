@@ -107,8 +107,26 @@ $assert = static function ( bool $condition, string $message ): void {
 		throw new RuntimeException( $message );
 	}
 };
+$hash_json = new ReflectionMethod( Static_Site_Importer_Direct_Artifact_Import::class, 'hash_json' );
+$ordered = array( 'z' => array( 'b' => 2, 'a' => 1 ), 'a' => 'https://example.com/a/b' );
+$canonical = array( 'a' => 'https://example.com/a/b', 'z' => array( 'a' => 1, 'b' => 2 ) );
+$assert( hash( 'sha256', (string) wp_json_encode( $ordered ) ) === $hash_json->invoke( null, $ordered, false ), 'streamed source identity must preserve the exact ordered JSON hash' );
+$assert( hash( 'sha256', (string) wp_json_encode( $canonical ) ) === $hash_json->invoke( null, $ordered, true ), 'streamed checkpoint identity must preserve the exact recursively canonical JSON hash' );
 $assert( wp_mkdir_p( $test_root ), 'the fixture workspace root must be created' );
 $primitive_workspace = new Static_Site_Importer_Artifact_Run_Workspace( $test_root, 'direct-checkpoint-primitives' );
+$assert( ! is_wp_error( $primitive_workspace->publish_json_once( 'ordered.json', $ordered ) ) && wp_json_encode( $ordered, JSON_PRETTY_PRINT ) === $primitive_workspace->read_raw( 'ordered.json' ), 'streamed immutable JSON must preserve exact pretty-printed checkpoint bytes' );
+$large_chunk = str_repeat( 'x', 1024 * 1024 );
+$large_artifact = array();
+for ( $index = 0; $index < 96; ++$index ) {
+	$large_artifact[ 'file-' . $index ] = array( 'content' => $large_chunk );
+}
+memory_reset_peak_usage();
+$memory_before = memory_get_usage( true );
+$large_identity = $hash_json->invoke( null, $large_artifact, false );
+$large_checkpoint = $primitive_workspace->publish_json_once( 'large.json', $large_artifact );
+$identity_peak_delta = memory_get_peak_usage( true ) - $memory_before;
+$assert( preg_match( '/^[a-f0-9]{64}$/', $large_identity ) && ! is_wp_error( $large_checkpoint ) && $identity_peak_delta < 16 * 1024 * 1024, 'streamed identity and checkpoint publication must not allocate the logical 96 MB artifact as one JSON string' );
+unset( $large_artifact, $large_chunk );
 $assert( ! is_wp_error( $primitive_workspace->publish_raw_once( 'immutable.json', '{"value":1}' ) ), 'immutable checkpoint publication must succeed once' );
 $assert( ! is_wp_error( $primitive_workspace->publish_raw_once( 'immutable.json', '{"value":1}' ) ), 'identical immutable checkpoint replay must be accepted' );
 $immutable_conflict = $primitive_workspace->publish_raw_once( 'immutable.json', '{"value":2}' );
@@ -145,6 +163,12 @@ $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'
 		'compile_batch_pages' => 1,
 	)
 );
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'][] = static fn ( array $policy ): array => array_merge( $policy, array( 'freeze_continuation_bytes' => 1 ) );
+$frozen = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+$assert( ! empty( $frozen['success'] ) && ! empty( $frozen['continuation'] ) && 'artifact_frozen' === ( $frozen['continuation_reason'] ?? '' ) && 0 === ( $frozen['artifact_run']['progress']['prepared_count'] ?? -1 ), 'large direct artifacts must yield after durable freezing so source request memory can unwind before compilation' );
+array_pop( $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] );
+$frozen_resumed = Static_Site_Importer_Canonical_Import_Service::import( $resume( (string) $frozen['import_id'], 'plan' ) );
+$assert( ! empty( $frozen_resumed['success'] ) && ! empty( $frozen_resumed['continuation'] ) && 1 === ( $frozen_resumed['artifact_run']['progress']['prepared_count'] ?? 0 ), 'source-free resume must validate and hydrate immutable artifact file shards before bounded page work' );
 
 $first = Static_Site_Importer_Canonical_Import_Service::import( $input() );
 $assert( ! empty( $first['success'] ) && ! empty( $first['continuation'] ) && 'pages_remaining' === ( $first['continuation_reason'] ?? '' ) && 1 === ( $first['artifact_run']['progress']['prepared_count'] ?? 0 ) && 0 === ( $first['artifact_run']['progress']['receipt_count'] ?? -1 ) && 'continuing' === ( $first['import_report_summary']['status'] ?? '' ), 'the first invocation must durably prepare only its bounded page batch and explicitly continue' );
