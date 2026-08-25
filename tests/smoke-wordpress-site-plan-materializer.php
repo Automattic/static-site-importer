@@ -155,6 +155,10 @@ function update_post_meta( int $id, string $key, string $value ): void {
 	$GLOBALS['ssi_plan_meta'][ $id ][ $key ] = $value; }
 function get_post_meta( int $id, string $key, bool $single = true ): string {
 	return (string) ( $GLOBALS['ssi_plan_meta'][ $id ][ $key ] ?? '' ); }
+function metadata_exists( string $meta_type, int $id, string $key ): bool {
+	return 'post' === $meta_type && array_key_exists( $key, $GLOBALS['ssi_plan_meta'][ $id ] ?? array() ); }
+function delete_post_meta( int $id, string $key ): void {
+	unset( $GLOBALS['ssi_plan_meta'][ $id ][ $key ] ); }
 function get_posts( array $args ): array {
 	foreach ( $GLOBALS['ssi_plan_meta'] as $id => $meta ) {
 		if ( isset( $meta[ $args['meta_key'] ] ) && ( ! isset( $args['meta_value'] ) || $meta[ $args['meta_key'] ] === $args['meta_value'] ) ) {
@@ -318,6 +322,7 @@ $assert = static function ( bool $condition, string $message ): void {
 };
 
 $theme_generator_source = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php' );
+$materializer_source    = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-materializer.php' );
 $assert( false === strpos( (string) $theme_generator_source, 'function import_compiled_website_artifact' ), 'canonical import has no legacy compiled-artifact execution path' );
 
 $artifact = array(
@@ -592,6 +597,9 @@ $prepared_for_admission = Static_Site_Importer_WordPress_Site_Plan_Materializer:
 );
 $admitted_prepared      = Static_Site_Importer_WordPress_Site_Plan_Materializer::admit_prepared( $prepared_for_admission );
 $assert( 'prepared' === ( $prepared_for_admission['status'] ?? '' ) && ! empty( $prepared_for_admission['payload_references_admitted'] ) && $prepared_for_admission === $admitted_prepared && ! str_contains( (string) wp_json_encode( $prepared_for_admission['plan'] ), 'payload_references_admitted' ) && ! str_contains( (string) wp_json_encode( Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared_for_admission ) ), 'payload_references_admitted' ), 'materializer lifecycle preparation admits referenced payloads once, before lifecycle work, without adding transient state to plans or receipts' );
+$materializer_companion_assets = strpos( (string) $materializer_source, 'resolve_companion_asset_references( $payload' );
+$materializer_companion        = strpos( (string) $materializer_source, '::materialize_companion_dependency( $dependency', $materializer_companion_assets + 1 );
+$assert( false !== $materializer_companion_assets && $materializer_companion_assets < $materializer_companion, 'materializer resolves generated companion assets before companion dependency materialization' );
 $rollback_order     = array();
 $block_lifecycle    = array(
 	'dependencies' => array(),
@@ -2889,5 +2897,32 @@ $root_media_page_id = (int) ( $root_media_receipt['completed']['pages']['website
 $root_media_content = stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $root_media_page_id ]['post_content'] ?? '' ) );
 $root_media_url     = 'https://example.test/wp-content/themes/root-media-plan/assets/website/media/example.jpg';
 $assert( 'completed' === $root_media_receipt['status'] && 4 === substr_count( $root_media_content, $root_media_url ) && str_contains( $root_media_content, '"url":"' . $root_media_url . '"' ) && str_contains( $root_media_content, 'blocks-engine-background-image' ) && ! str_contains( $root_media_content, '/media/example.jpg?' ), 'root-relative captured media resolves through the canonical theme asset map for image and background-image blocks' );
+$assert( ( $root_media_plan['pages'][0]['reconciliation_identity'] ?? '' ) === ( $GLOBALS['ssi_plan_meta'][ $root_media_page_id ]['_blocks_engine_reconciliation_identity'] ?? '' ), 'materialized posts expose the producer reconciliation identity required by scoped theme bootstrap assets' );
+unset( $GLOBALS['ssi_plan_meta'][ $root_media_page_id ]['_blocks_engine_reconciliation_identity'] );
+$assert( wp_delete_file( (string) $root_media_receipt['theme']['dir'] . '/style.css' ), 'rollback fixture removes one generated target to force overwrite materialization' );
+$root_media_rollback = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$root_media_plan,
+	array(
+		'slug'                           => 'root-media-plan',
+		'overwrite'                      => true,
+		'inject_materialization_failure' => 'theme_write_short',
+	)
+);
+$assert( 'partial' === $root_media_rollback['status'], 'injected theme write failure produces a partial re-import receipt' );
+$assert( ! array_key_exists( '_blocks_engine_reconciliation_identity', $GLOBALS['ssi_plan_meta'][ $root_media_page_id ] ?? array() ), 'failed re-import restores the absence of producer reconciliation metadata on an existing post' );
+
+$resolved_root_media_plan = ( new \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver() )->resolve(
+	$root_media_plan,
+	array( 'theme_uri' => 'https://example.test/wp-content/themes/root-media-plan', 'runtime_capabilities' => array( 'asset_materialization' ) )
+);
+$resolve_companion_assets = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'resolve_companion_asset_references' );
+$resolved_companion       = $resolve_companion_assets->invoke(
+	null,
+	array( 'blocks' => array( array( 'render' => '<img src="/media/example.jpg"><source srcset="/media/example.jpg 1x">' ) ) ),
+	$root_media_plan,
+	$resolved_root_media_plan
+);
+$resolved_companion_html = (string) ( $resolved_companion['blocks'][0]['render'] ?? '' );
+$assert( str_contains( $resolved_companion_html, 'src="' . $root_media_url . '"' ) && str_contains( $resolved_companion_html, 'srcset="' . $root_media_url . ' 1x"' ) && ! str_contains( $resolved_companion_html, '="/media/example.jpg' ), 'generated companion block renders resolve canonical root-relative assets through the materialized theme map' );
 
 echo "WordPress site plan materializer smoke passed.\n";

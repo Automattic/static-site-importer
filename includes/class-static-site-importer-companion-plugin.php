@@ -39,12 +39,15 @@ class Static_Site_Importer_Companion_Plugin {
 	private const MAX_SCRIPT_DEPENDENCIES = 32;
 
 	/** SSI-owned renderer available to typed responsive-media blocks. */
-	private const RESPONSIVE_MEDIA_RENDERER = 'static-site-importer/responsive-media/v1';
+	private const RESPONSIVE_MEDIA_RENDERER = 'blocks-engine/responsive-media/v1';
+
+	/** SSI-owned renderer available to typed responsive-layout blocks. */
+	private const RESPONSIVE_LAYOUT_RENDERER = 'blocks-engine/responsive-layout/v1';
 
 	/**
 	 * Payload schema identifier consumed by the scaffolder.
 	 */
-	public const PAYLOAD_SCHEMA = 'static-site-importer/companion-plugin/v1';
+	public const PAYLOAD_SCHEMA = 'blocks-engine/wordpress-companion-plugin/v1';
 
 	/**
 	 * Validate a canonical compiled companion payload before any WordPress writes.
@@ -54,7 +57,7 @@ class Static_Site_Importer_Companion_Plugin {
 	 */
 	public static function validate_payload( array $payload ) {
 		if ( self::PAYLOAD_SCHEMA !== ( $payload['schema'] ?? null ) ) {
-			return new WP_Error( 'static_site_importer_companion_plugin_schema_invalid', 'Companion-plugin payload must use static-site-importer/companion-plugin/v1.' );
+			return new WP_Error( 'static_site_importer_companion_plugin_schema_invalid', 'Companion-plugin payload must use blocks-engine/wordpress-companion-plugin/v1.' );
 		}
 		if ( '' === self::site_slug( $payload ) ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_site_slug_missing', 'Companion-plugin payload must declare a non-empty site_slug.' );
@@ -114,7 +117,7 @@ class Static_Site_Importer_Companion_Plugin {
 			}
 			$renderer = $block['renderer'] ?? null;
 			if ( null !== $renderer ) {
-				if ( ! is_string( $renderer ) || self::RESPONSIVE_MEDIA_RENDERER !== $renderer ) {
+				if ( ! is_string( $renderer ) || '' === self::typed_renderer( $renderer ) ) {
 					return new WP_Error( 'static_site_importer_companion_plugin_renderer_invalid', sprintf( 'Block %s must declare a supported typed renderer.', $name ) );
 				}
 				if ( array_key_exists( 'render', $block ) ) {
@@ -122,7 +125,7 @@ class Static_Site_Importer_Companion_Plugin {
 				}
 				$content_schema = $block['block_json']['attributes']['content'] ?? null;
 				if ( ! is_array( $content_schema ) || 'string' !== ( $content_schema['type'] ?? null ) ) {
-					return new WP_Error( 'static_site_importer_companion_plugin_renderer_attributes_invalid', sprintf( 'Block %s responsive-media renderer requires a string content attribute.', $name ) );
+					return new WP_Error( 'static_site_importer_companion_plugin_renderer_attributes_invalid', sprintf( 'Block %s typed renderer requires a string content attribute.', $name ) );
 				}
 			}
 			if ( isset( $block['render'] ) && is_scalar( $block['render'] ) && Static_Site_Importer_Content_Policy::contains_server_code( (string) $block['render'] ) ) {
@@ -813,11 +816,201 @@ PHP;
 	 * @return string
 	 */
 	private static function typed_renderer( string $renderer ): string {
-		if ( self::RESPONSIVE_MEDIA_RENDERER !== $renderer ) {
-			return '';
-		}
+		$layout = <<<'PHP'
+<?php
+/** Generated responsive-layout companion block render. */
 
-		return <<<'PHP'
+$content = is_string( $attributes['content'] ?? null ) ? $attributes['content'] : '';
+$content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*>.*?</\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\s*>#is', '', $content ) ?? '';
+$content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*/?\s*>#is', '', $content ) ?? '';
+$content = preg_replace( '#</?\s*[a-z][a-z0-9]*-[a-z0-9-]+\b[^>]*>#i', '', $content ) ?? '';
+$content = preg_replace( '/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $content ) ?? '';
+$content = preg_replace( '/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)\s*=\s*(?=\/?>)/i', '', $content ) ?? '';
+$content = preg_replace( '/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)(?=\s|\/?>)/i', '', $content ) ?? '';
+
+$safe_url = static function ( string $url, bool $image = false ): bool {
+	$normalized = strtolower( preg_replace( '/[\x00-\x20\x7f]+/', '', html_entity_decode( $url, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) ?? '' );
+	$normalized = rawurldecode( rawurldecode( $normalized ) );
+	if ( '' === $normalized || ! preg_match( '/^([a-z][a-z0-9+.-]*):/i', $normalized, $scheme ) ) {
+		return '' !== $normalized;
+	}
+	if ( in_array( strtolower( $scheme[1] ), array( 'http', 'https' ), true ) ) {
+		return true;
+	}
+	return $image && (bool) preg_match( '#^data:image/(?:avif|gif|jpeg|png|webp);base64,[a-z0-9+/=]+$#i', $normalized );
+};
+$sanitize_srcset = static function ( string $srcset ) use ( $safe_url ): string {
+	$candidates = array();
+	for ( $offset = 0, $length = strlen( $srcset ); $offset < $length; ) {
+		while ( $offset < $length && ( ctype_space( $srcset[ $offset ] ) || ',' === $srcset[ $offset ] ) ) {
+			++$offset;
+		}
+		$url_start = $offset;
+		while ( $offset < $length && ! ctype_space( $srcset[ $offset ] ) ) {
+			++$offset;
+		}
+		$url = substr( $srcset, $url_start, $offset - $url_start );
+		while ( $offset < $length && ctype_space( $srcset[ $offset ] ) ) {
+			++$offset;
+		}
+		$descriptor_start = $offset;
+		for ( $parentheses = 0; $offset < $length; ++$offset ) {
+			if ( '(' === $srcset[ $offset ] ) {
+				++$parentheses;
+			} elseif ( ')' === $srcset[ $offset ] && $parentheses > 0 ) {
+				--$parentheses;
+			} elseif ( ',' === $srcset[ $offset ] && 0 === $parentheses ) {
+				break;
+			}
+		}
+		$descriptor = trim( substr( $srcset, $descriptor_start, $offset - $descriptor_start ) );
+		if ( '' !== $url && $safe_url( $url, true ) ) {
+			$candidates[] = $url . ( '' === $descriptor ? '' : ' ' . $descriptor );
+		}
+	}
+	return implode( ', ', $candidates );
+};
+$content = preg_replace_callback(
+	'/\bsrcset\s*=\s*(?:("|\')(.*?)\1|([^\s>]+))/is',
+	static function ( array $match ) use ( $sanitize_srcset ): string {
+		$srcset = $sanitize_srcset( '' !== ( $match[2] ?? '' ) ? $match[2] : ( $match[3] ?? '' ) );
+		return '' === $srcset ? '' : 'srcset="' . esc_attr( $srcset ) . '"';
+	},
+	$content
+) ?? '';
+$content = preg_match( '#<svg\b[^>]*>(?:(?!</svg\s*>).)*<svg\b#is', $content ) ? ( preg_replace( '#<svg\b[^>]*>.*</svg\s*>#is', '', $content ) ?? '' ) : $content;
+$content = preg_replace( '#<svg\b[^>]*/\s*>#is', '', $content ) ?? '';
+$content = preg_replace( '#<svg\b[^>]*>(?:(?!</svg\s*>).)*$#is', '', $content ) ?? '';
+$content = preg_replace_callback(
+	'#<svg\b[^>]*>.*?</svg\s*>#is',
+	static function ( array $match ): string {
+		$svg = $match[0];
+		$ids = array();
+		if ( preg_match_all( '/\bid\s*=\s*(?:"([^"\s]+)"|\'([^\'\s]+)\'|([^\s>]+))/i', $svg, $id_matches ) ) {
+			foreach ( $id_matches[1] as $index => $double_quoted ) {
+				$id = '' !== $double_quoted ? $double_quoted : ( '' !== $id_matches[2][ $index ] ? $id_matches[2][ $index ] : $id_matches[3][ $index ] );
+				if ( preg_match( '/^[A-Za-z][A-Za-z0-9_.:-]*$/', $id ) ) {
+					$ids[ $id ] = true;
+				}
+			}
+		}
+		$svg = preg_replace_callback(
+			'/url\(\s*(["\']?)([^\s)"\']+)\1\s*\)/i',
+			static function ( array $url_match ) use ( $ids ): string {
+				$reference = $url_match[2];
+				return str_starts_with( $reference, '#' ) && isset( $ids[ substr( $reference, 1 ) ] ) ? $url_match[0] : '';
+			},
+			$svg
+		) ?? '';
+		$svg = preg_replace_callback(
+			'/\s+(?:href|xlink:href)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))/i',
+			static function ( array $href_match ) use ( $ids ): string {
+				$reference = '' !== ( $href_match[1] ?? '' ) ? $href_match[1] : ( '' !== ( $href_match[2] ?? '' ) ? $href_match[2] : ( $href_match[3] ?? '' ) );
+				return str_starts_with( $reference, '#' ) && isset( $ids[ substr( $reference, 1 ) ] ) ? ' href="' . esc_attr( $reference ) . '"' : '';
+			},
+			$svg
+		) ?? '';
+		return preg_replace( '#<use\b(?![^>]*(?:href|xlink:href)=)[^>]*(?:/>|>.*?</use\s*>)#is', '', $svg ) ?? '';
+	},
+	$content
+) ?? '';
+$content = preg_replace_callback(
+	'/\bstyle\s*=\s*(?:("|\')(.*?)\1|([^\s>]+))/is',
+	static function ( array $match ) use ( $safe_url ): string {
+		$value = '' !== ( $match[2] ?? '' ) ? $match[2] : ( $match[3] ?? '' );
+		if ( preg_match_all( '/url\(\s*["\']?([^\s)"\']+)/i', $value, $urls ) ) {
+			foreach ( $urls[1] as $url ) {
+				if ( ! $safe_url( $url, true ) ) {
+					return '';
+				}
+			}
+		}
+		return 'style="' . esc_attr( $value ) . '"';
+	},
+	$content
+) ?? '';
+
+// Preserve audited raster data URLs through KSES's protocol filter without
+// allowing the data scheme for links or other URL-bearing attributes.
+$data_images = array();
+$content     = preg_replace_callback(
+	'/\bsrc\s*=\s*(["\'])(data:image\/(?:avif|gif|jpeg|png|webp);base64,[a-z0-9+\/=]+)\1/i',
+	static function ( array $match ) use ( &$data_images ): string {
+		$placeholder                 = '/ssi-data-image-' . hash( 'sha256', $match[2] ) . '.invalid';
+		$data_images[ $placeholder ] = $match[2];
+		return 'src=' . $match[1] . $placeholder . $match[1];
+	},
+	$content
+) ?? '';
+
+$global = array(
+	'aria-controls' => true, 'aria-current' => true, 'aria-describedby' => true, 'aria-details' => true,
+	'aria-expanded' => true, 'aria-hidden' => true, 'aria-label' => true, 'aria-labelledby' => true,
+	'aria-live' => true, 'class' => true, 'data-*' => true, 'dir' => true, 'hidden' => true, 'id' => true,
+	'lang' => true, 'role' => true, 'style' => true, 'tabindex' => true, 'title' => true, 'xml:lang' => true,
+);
+$flow = array_merge( $global, array( 'align' => true ) );
+$svg_global = array(
+	'aria-hidden' => true, 'aria-label' => true, 'aria-labelledby' => true, 'class' => true, 'id' => true,
+	'role' => true, 'title' => true,
+);
+// KSES supports data-* but not aria-* wildcards. Admit syntactically valid
+// producer attributes explicitly so SVG accessibility metadata survives.
+if ( preg_match_all( '/\s+(aria-[a-z][a-z0-9-]*)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)/i', $content, $aria_names ) ) {
+	foreach ( $aria_names[1] as $aria_name ) {
+		$svg_global[ strtolower( $aria_name ) ] = true;
+	}
+}
+$output = wp_kses(
+	$content,
+	array(
+		'main' => $flow, 'article' => $flow, 'aside' => $flow, 'section' => $flow, 'header' => $flow,
+		'footer' => $flow, 'nav' => $flow, 'div' => $flow, 'span' => $global, 'p' => $flow,
+		'h1' => $flow, 'h2' => $flow, 'h3' => $flow, 'h4' => $flow, 'h5' => $flow, 'h6' => $flow,
+		'ul' => $flow, 'ol' => $flow, 'li' => $flow, 'dl' => $flow, 'dt' => $flow, 'dd' => $flow,
+		'strong' => $global, 'b' => $global, 'em' => $global, 'i' => $global, 'small' => $global, 'br' => $global,
+		'a' => array_merge( $global, array( 'download' => true, 'href' => true, 'rel' => true, 'target' => true ) ),
+		'button' => array_merge( $global, array( 'disabled' => true, 'name' => true, 'type' => true, 'value' => true ) ),
+		'form' => array_merge( $flow, array( 'action' => true, 'method' => true ) ),
+		'fieldset' => array_merge( $flow, array( 'disabled' => true, 'name' => true ) ), 'legend' => $global,
+		'label' => array_merge( $global, array( 'for' => true ) ),
+		'input' => array_merge( $global, array( 'autocomplete' => true, 'checked' => true, 'disabled' => true, 'max' => true, 'maxlength' => true, 'min' => true, 'minlength' => true, 'multiple' => true, 'name' => true, 'pattern' => true, 'placeholder' => true, 'readonly' => true, 'required' => true, 'step' => true, 'type' => true, 'value' => true ) ),
+		'textarea' => array_merge( $global, array( 'cols' => true, 'disabled' => true, 'maxlength' => true, 'minlength' => true, 'name' => true, 'placeholder' => true, 'readonly' => true, 'required' => true, 'rows' => true ) ),
+		'select' => array_merge( $global, array( 'disabled' => true, 'multiple' => true, 'name' => true, 'required' => true, 'size' => true ) ),
+		'option' => array_merge( $global, array( 'disabled' => true, 'label' => true, 'selected' => true, 'value' => true ) ),
+		'figure' => $flow, 'figcaption' => $flow, 'picture' => $flow,
+		'source' => array_merge( $global, array( 'media' => true, 'sizes' => true, 'src' => true, 'srcset' => true, 'type' => true ) ),
+		'img' => array_merge( $global, array( 'alt' => true, 'decoding' => true, 'fetchpriority' => true, 'height' => true, 'loading' => true, 'longdesc' => true, 'sizes' => true, 'src' => true, 'srcset' => true, 'usemap' => true, 'width' => true ) ),
+		'video' => array_merge( $global, array( 'autoplay' => true, 'controls' => true, 'height' => true, 'loop' => true, 'muted' => true, 'playsinline' => true, 'poster' => true, 'preload' => true, 'src' => true, 'width' => true ) ),
+		'audio' => array_merge( $global, array( 'autoplay' => true, 'controls' => true, 'loop' => true, 'muted' => true, 'preload' => true, 'src' => true ) ),
+		'svg' => array_merge( $svg_global, array( 'fill' => true, 'focusable' => true, 'height' => true, 'preserveaspectratio' => true, 'stroke' => true, 'viewbox' => true, 'width' => true, 'xmlns' => true, 'xmlns:xlink' => true ) ),
+		'defs' => $svg_global, 'symbol' => array_merge( $svg_global, array( 'viewbox' => true ) ), 'lineargradient' => array_merge( $svg_global, array( 'gradientunits' => true, 'x1' => true, 'x2' => true, 'y1' => true, 'y2' => true ) ), 'radialgradient' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'r' => true ) ), 'stop' => array_merge( $svg_global, array( 'offset' => true, 'stop-color' => true, 'stop-opacity' => true ) ), 'clippath' => $svg_global, 'mask' => $svg_global, 'use' => array_merge( $svg_global, array( 'href' => true, 'xlink:href' => true ) ),
+		'g' => array_merge( $svg_global, array( 'clip-path' => true, 'fill' => true, 'fill-opacity' => true, 'opacity' => true, 'stroke' => true, 'stroke-width' => true, 'transform' => true ) ),
+		'path' => array_merge( $svg_global, array( 'd' => true, 'fill' => true, 'fill-rule' => true, 'opacity' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'stroke-width' => true, 'transform' => true ) ),
+		'circle' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'fill' => true, 'opacity' => true, 'r' => true, 'stroke' => true, 'stroke-width' => true ) ),
+		'ellipse' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'fill' => true, 'opacity' => true, 'rx' => true, 'ry' => true, 'stroke' => true, 'stroke-width' => true ) ),
+		'line' => array_merge( $svg_global, array( 'fill' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-width' => true, 'x1' => true, 'x2' => true, 'y1' => true, 'y2' => true ) ),
+		'polygon' => array_merge( $svg_global, array( 'fill' => true, 'points' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'stroke-width' => true ) ),
+		'polyline' => array_merge( $svg_global, array( 'fill' => true, 'points' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'stroke-width' => true ) ),
+		'rect' => array_merge( $svg_global, array( 'fill' => true, 'height' => true, 'opacity' => true, 'rx' => true, 'ry' => true, 'stroke' => true, 'stroke-width' => true, 'width' => true, 'x' => true, 'y' => true ) ),
+		'text' => array_merge( $svg_global, array( 'fill' => true, 'font-family' => true, 'font-size' => true, 'font-weight' => true, 'text-anchor' => true, 'x' => true, 'y' => true ) ),
+		'tspan' => array_merge( $svg_global, array( 'dx' => true, 'dy' => true, 'fill' => true, 'x' => true, 'y' => true ) ), 'title' => $svg_global, 'desc' => $svg_global,
+	)
+);
+foreach ( $data_images as $placeholder => $data_image ) {
+	$output = str_replace( 'src="' . $placeholder . '"', 'src="' . esc_attr( $data_image ) . '"', $output );
+	$output = str_replace( "src='" . $placeholder . "'", "src='" . esc_attr( $data_image ) . "'", $output );
+}
+$output = preg_replace_callback(
+	'#<svg\b[^>]*>#i',
+	static function ( array $match ): string {
+		return preg_replace( array( '/\bviewbox\b/i', '/\bpreserveaspectratio\b/i' ), array( 'viewBox', 'preserveAspectRatio' ), $match[0] ) ?? $match[0];
+	},
+	$output
+) ?? '';
+echo $output; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- KSES-sanitized bounded semantic layout markup.
+PHP;
+		$media  = <<<'PHP'
 <?php
 /** Generated responsive-media companion block render. */
 
@@ -932,6 +1125,19 @@ foreach ( $data_images as $placeholder => $data_image ) {
 }
 echo $output; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- KSES-sanitized bounded media markup.
 PHP;
+
+		$renderers = array(
+			self::RESPONSIVE_MEDIA_RENDERER  => $media,
+			self::RESPONSIVE_LAYOUT_RENDERER => $layout,
+		);
+		if ( function_exists( 'apply_filters' ) ) {
+			$renderers = apply_filters( 'static_site_importer_companion_renderers', $renderers );
+		}
+		if ( ! is_array( $renderers ) ) {
+			return '';
+		}
+		$source = $renderers[ $renderer ] ?? '';
+		return is_string( $source ) && str_starts_with( $source, '<?php' ) ? $source : '';
 	}
 
 	/**

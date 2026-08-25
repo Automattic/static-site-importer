@@ -30,6 +30,7 @@ $GLOBALS['ssi_companion_deactivated'] = array();
 $GLOBALS['ssi_companion_options']     = array();
 $GLOBALS['static_site_importer_companion_block_owners'] = array();
 $GLOBALS['ssi_companion_actions']     = array();
+$GLOBALS['ssi_companion_filters']     = array();
 
 if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_Error {
@@ -73,6 +74,13 @@ if ( ! class_exists( 'WP_Block_Type' ) ) {
 if ( ! function_exists( 'is_wp_error' ) ) {
 	function is_wp_error( mixed $thing ): bool {
 		return $thing instanceof WP_Error;
+	}
+}
+
+if ( ! function_exists( 'apply_filters' ) ) {
+	function apply_filters( string $hook, mixed $value ): mixed {
+		$filter = $GLOBALS['ssi_companion_filters'][ $hook ] ?? null;
+		return is_callable( $filter ) ? $filter( $value ) : $value;
 	}
 }
 
@@ -412,18 +420,40 @@ $php_render['blocks'][0]['render'] = '<?php system( "id" );';
 $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $php_render ) ), 'php-render-template-rejected' );
 $typed_renderer = $payload;
 unset( $typed_renderer['blocks'][0]['render'] );
-$typed_renderer['blocks'][0]['renderer'] = 'static-site-importer/responsive-media/v1';
+$typed_renderer['blocks'][0]['renderer'] = 'blocks-engine/responsive-media/v1';
 $typed_renderer['blocks'][0]['block_json']['attributes']['content']['type'] = 'string';
+$typed_renderer['blocks'][0]['block_json']['attributes']['kind'] = array( 'type' => 'string', 'default' => 'media' );
 $assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $typed_renderer ), 'known-typed-renderer-validates' );
 $unknown_renderer = $typed_renderer;
 $unknown_renderer['blocks'][0]['renderer'] = 'producer/arbitrary/v1';
 $assert( 'static_site_importer_companion_plugin_renderer_invalid' === Static_Site_Importer_Companion_Plugin::validate_payload( $unknown_renderer )->get_error_code(), 'unknown-typed-renderer-rejected' );
+$GLOBALS['ssi_companion_filters']['static_site_importer_companion_renderers'] = static function ( array $renderers ): array {
+	$renderers['producer/custom/v1'] = '<?php echo esc_html( (string) ( $attributes["content"] ?? "" ) );';
+	return $renderers;
+};
+$custom_renderer = $typed_renderer;
+$custom_renderer['blocks'][0]['renderer'] = 'producer/custom/v1';
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $custom_renderer ), 'registered-producer-renderer-validates' );
+$custom_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $custom_renderer );
+$assert( is_array( $custom_descriptor ) && str_contains( (string) ( $custom_descriptor['files']['ssi-example-site/blocks/custom-hero/render.php'] ?? '' ), 'esc_html' ), 'registered-producer-renderer-materializes' );
+$GLOBALS['ssi_companion_filters']['static_site_importer_companion_renderers'] = static function ( array $renderers ): array {
+	$renderers['producer/malformed/v1'] = 'not a PHP render template';
+	return $renderers;
+};
+$malformed_renderer = $typed_renderer;
+$malformed_renderer['blocks'][0]['renderer'] = 'producer/malformed/v1';
+$assert( 'static_site_importer_companion_plugin_renderer_invalid' === Static_Site_Importer_Companion_Plugin::validate_payload( $malformed_renderer )->get_error_code(), 'malformed-registered-renderer-rejected' );
+unset( $GLOBALS['ssi_companion_filters']['static_site_importer_companion_renderers'] );
 $renderer_conflict = $typed_renderer;
 $renderer_conflict['blocks'][0]['render'] = '<div>conflict</div>';
 $assert( 'static_site_importer_companion_plugin_renderer_conflict' === Static_Site_Importer_Companion_Plugin::validate_payload( $renderer_conflict )->get_error_code(), 'typed-renderer-and-markup-conflict-rejected' );
 $invalid_renderer_attributes = $typed_renderer;
 $invalid_renderer_attributes['blocks'][0]['block_json']['attributes']['content']['type'] = 'object';
 $assert( 'static_site_importer_companion_plugin_renderer_attributes_invalid' === Static_Site_Importer_Companion_Plugin::validate_payload( $invalid_renderer_attributes )->get_error_code(), 'typed-renderer-requires-declared-string-content' );
+$layout_renderer = $typed_renderer;
+$layout_renderer['blocks'][0]['renderer'] = 'blocks-engine/responsive-layout/v1';
+$layout_renderer['blocks'][0]['block_json']['name'] = 'example/responsive-layout';
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $layout_renderer ), 'known-layout-renderer-validates' );
 $malformed_dependencies = $payload;
 $malformed_dependencies['blocks'][0]['script_dependencies'] = array( array( 'wp-blocks' ) );
 $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $malformed_dependencies ) ), 'script-dependency-map-must-be-an-object' );
@@ -500,6 +530,109 @@ if ( is_array( $descriptor ) ) {
 	$assert( 1 === count( $island_files ), 'preserved-island-js-file-emitted' );
 }
 
+// The layout renderer preserves safe semantic content while its media sibling
+// remains restricted to media-only markup.
+$layout_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $layout_renderer );
+$assert( is_array( $layout_descriptor ), 'layout-renderer-scaffold-returns-descriptor' );
+if ( is_array( $layout_descriptor ) ) {
+	$layout_render = $layout_descriptor['files']['ssi-example-site/blocks/custom-hero/render.php'] ?? '';
+	$assert( str_contains( $layout_render, 'Generated responsive-layout companion block render' ) && ! str_contains( $layout_render, 'Generated responsive-media companion block render' ), 'dedicated-layout-renderer-uses-own-template' );
+	$attributes = array( 'content' => '<main class="story" style="position:absolute;inset:0 auto auto 0;width:405px;height:516.812px;overflow:hidden"><header><nav><a href="/about">About</a></nav></header><section><h1>Story</h1><p>Safe copy <strong>with emphasis</strong>.</p><button type="button">Read more</button><wow-image data-hook="hero"><img src="data:image/png;base64,aGVybw==" alt="Hero" decoding="async" fetchpriority="high"></wow-image><svg viewBox="0 0 10 10" preserveAspectRatio="xMidYMid slice" focusable="false" role="img" aria-label="Mark"><path d="M0 0L10 10" stroke="#000"></path></svg></section></main>' );
+	ob_start();
+	eval( '?>' . $layout_render );
+	$layout_output = (string) ob_get_clean();
+	foreach ( array( '<main class="story"', '<nav>', '<h1>Story</h1>', '<button type="button">Read more</button>', '<img src="data:image/png;base64,aGVybw==" alt="Hero" decoding="async" fetchpriority="high">', '<svg viewBox="0 0 10 10" preserveAspectRatio="xMidYMid slice" focusable="false" role="img" aria-label="Mark">', '<path d="M0 0L10 10" stroke="#000"></path>' ) as $fragment ) {
+		$assert( str_contains( $layout_output, $fragment ), 'layout-renderer-preserves-' . $fragment );
+	}
+	$assert( ! str_contains( $layout_output, '<wow-image' ), 'layout-renderer-unwraps-potentially-active-custom-elements' );
+	$assert( str_contains( $layout_output, 'position:absolute' ) && str_contains( $layout_output, 'width:405px' ) && str_contains( $layout_output, 'height:516.812px' ) && str_contains( $layout_output, 'overflow:hidden' ), 'layout-renderer-preserves-quoted-inline-geometry', $layout_output );
+
+	$busy_bears_contract = json_decode( (string) file_get_contents( __DIR__ . '/fixtures/busy-bears-responsive-layout-contract.json' ), true );
+	$assert( 'static-site-importer/frozen-responsive-layout-contract/v1' === ( $busy_bears_contract['schema'] ?? '' ) && 2 === count( $busy_bears_contract['pages'] ?? array() ), 'busy-bears-frozen-layout-contract-loads' );
+	$assert( 14069 === ( $busy_bears_contract['pages'][0]['captured_layouts'][0]['bytes'] ?? 0 ) && 'd39d2adaa5550e80d3d997239c4de20c8aadc0f570185f11d24049baa9274ffb' === ( $busy_bears_contract['pages'][0]['captured_layouts'][0]['sha256'] ?? '' ) && 24895 === ( $busy_bears_contract['pages'][1]['captured_layouts'][1]['bytes'] ?? 0 ) && '3b1b2d2cd4c8af7b29b8b9848343dc41235dfb4b8cf6dad4d56661b8a0d5e69e' === ( $busy_bears_contract['pages'][1]['captured_layouts'][1]['sha256'] ?? '' ), 'busy-bears-contract-pins-captured-layout-identities' );
+	foreach ( $busy_bears_contract['pages'] ?? array() as $page ) {
+		$attributes = array( 'content' => (string) ( $page['content'] ?? '' ) );
+		ob_start();
+		eval( '?>' . $layout_render );
+		$page_output = (string) ob_get_clean();
+		foreach ( $page['expected_text'] ?? array() as $expected_text ) {
+			$assert( str_contains( $page_output, $expected_text ), 'busy-bears-layout-renders-' . (string) $page['path'] . '-' . $expected_text, $page_output );
+		}
+		$assert( str_contains( $page_output, '<form' ) && str_contains( $page_output, '<label' ) && str_contains( $page_output, '<input' ) && str_contains( $page_output, '<textarea' ) && str_contains( $page_output, '<svg' ), 'busy-bears-layout-renders-controls-and-svg-' . (string) $page['path'], $page_output );
+		$assert( preg_match( '/min-height:([1-9][0-9]*(?:\.[0-9]+)?)px/', $page_output ) === 1, 'busy-bears-layout-retains-nonzero-height-' . (string) $page['path'], $page_output );
+	}
+
+	// The producer admits these globals on every SVG element. Verify the rendered
+	// DOM, including local IDs and arbitrary aria-* names, rather than PHP text.
+	$svg_globals = array( 'class' => 'ssi-%s', 'id' => 'node-%s', 'role' => 'img', 'title' => 'title-%s', 'aria-label' => 'label-%s', 'aria-roledescription' => 'graphic-%s' );
+	$svg_shapes  = array(
+		'svg' => array( 'viewbox' => '0 0 10 10' ),
+		'g' => array( 'fill' => 'red', 'stroke' => 'blue', 'stroke-width' => '2', 'transform' => 'translate(1 2)' ),
+		'path' => array( 'd' => 'M0 0', 'fill' => 'url(#node-lineargradient)', 'stroke' => 'blue', 'stroke-width' => '2', 'stroke-linecap' => 'round', 'stroke-linejoin' => 'bevel' ),
+		'circle' => array( 'cx' => '1', 'cy' => '2', 'r' => '3', 'fill' => 'red', 'stroke' => 'blue', 'stroke-width' => '2' ),
+		'ellipse' => array( 'cx' => '1', 'cy' => '2', 'rx' => '3', 'ry' => '4', 'fill' => 'red', 'stroke' => 'blue', 'stroke-width' => '2' ),
+		'line' => array( 'x1' => '1', 'x2' => '2', 'y1' => '3', 'y2' => '4', 'stroke' => 'blue', 'stroke-width' => '2', 'stroke-linecap' => 'round' ),
+		'polyline' => array( 'points' => '0,0 1,1', 'fill' => 'red', 'stroke' => 'blue', 'stroke-width' => '2', 'stroke-linecap' => 'round', 'stroke-linejoin' => 'bevel' ),
+		'polygon' => array( 'points' => '0,0 1,1 2,0', 'fill' => 'red', 'stroke' => 'blue', 'stroke-width' => '2', 'stroke-linecap' => 'round', 'stroke-linejoin' => 'bevel' ),
+		'rect' => array( 'x' => '1', 'y' => '2', 'width' => '3', 'height' => '4', 'rx' => '1', 'ry' => '2', 'fill' => 'red', 'stroke' => 'blue', 'stroke-width' => '2' ),
+		'defs' => array(),
+		'lineargradient' => array( 'gradientunits' => 'userSpaceOnUse', 'x1' => '0', 'x2' => '1', 'y1' => '0', 'y2' => '1' ),
+		'radialgradient' => array( 'cx' => '1', 'cy' => '2', 'r' => '3' ),
+		'stop' => array( 'offset' => '0', 'stop-color' => '#fff', 'stop-opacity' => '0.5' ),
+	);
+	$svg_attributes = static function ( string $tag, array $attributes ) use ( $svg_globals ): string {
+		$rendered = array();
+		foreach ( array_merge( $svg_globals, $attributes ) as $name => $value ) {
+			$rendered[] = $name . '="' . sprintf( $value, $tag ) . '"';
+		}
+		return implode( ' ', $rendered );
+	};
+	$svg_content = '<svg ' . $svg_attributes( 'svg', $svg_shapes['svg'] ) . '>';
+	$svg_content .= '<defs ' . $svg_attributes( 'defs', $svg_shapes['defs'] ) . '><linearGradient ' . $svg_attributes( 'lineargradient', $svg_shapes['lineargradient'] ) . '><stop ' . $svg_attributes( 'stop', $svg_shapes['stop'] ) . '></stop></linearGradient><radialGradient ' . $svg_attributes( 'radialgradient', $svg_shapes['radialgradient'] ) . '></radialGradient></defs>';
+	foreach ( array( 'g', 'path', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'rect' ) as $tag ) {
+		$svg_content .= '<' . $tag . ' ' . $svg_attributes( $tag, $svg_shapes[ $tag ] ) . '></' . $tag . '>';
+	}
+	$svg_content .= '</svg>';
+	$attributes = array( 'content' => $svg_content );
+	ob_start();
+	eval( '?>' . $layout_render );
+	$svg_output = (string) ob_get_clean();
+	$svg_document = new DOMDocument();
+	$previous_libxml_errors = libxml_use_internal_errors( true );
+	$svg_document->loadHTML( '<div>' . $svg_output . '</div>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD | LIBXML_NONET );
+	libxml_clear_errors();
+	libxml_use_internal_errors( $previous_libxml_errors );
+	foreach ( $svg_shapes as $tag => $shape_attributes ) {
+		$element = ( new DOMXPath( $svg_document ) )->query( '//*[@id="node-' . $tag . '"]' )->item( 0 );
+		$expected = array_merge( $svg_globals, $shape_attributes );
+		$assert( $element instanceof DOMElement && count( $element->attributes ) === count( $expected ), 'layout-renderer-retains-exact-svg-attributes-' . $tag );
+		if ( $element instanceof DOMElement ) {
+			foreach ( $expected as $name => $value ) {
+				$assert( sprintf( $value, $tag ) === $element->getAttribute( $name ), 'layout-renderer-retains-svg-' . $tag . '-' . $name );
+			}
+		}
+	}
+	$attributes = array( 'content' => '<main onclick="alert(1)" data-wp-interactive data-wp-bind=> data-wp-context="bad" style="background:url(javascript:alert(0))"><script>alert(2)</script><a href="%256a%2561vascript:alert(3)">bad</a><img src="javascript:alert(4)" srcset="safe.jpg 1x, javascript:alert(6) 2x"><audio><source src="song.mp3" type="audio/mpeg"></audio><svg onload="alert(5)"><foreignObject>bad</foreignObject><animate attributeName="x"></animate><defs><linearGradient id="paint"><stop offset="0" stop-color="#fff"></stop></linearGradient></defs><path fill="url(https://evil.test/x.svg#paint)" stroke="url(#paint)" d="M0 0"></path><use href="https://evil.test/icons.svg#icon"></use></svg></main>' );
+	ob_start();
+	eval( '?>' . $layout_render );
+	$unsafe_layout_output = strtolower( (string) ob_get_clean() );
+	foreach ( array( 'onclick', 'data-wp-', '<script', 'javascript:', '%256a', 'onload', 'foreignobject', '<animate', '<use', 'https://evil.test' ) as $fragment ) {
+		$assert( ! str_contains( $unsafe_layout_output, $fragment ), 'layout-renderer-removes-' . $fragment );
+	}
+	$assert( str_contains( $unsafe_layout_output, '<path' ) && str_contains( $unsafe_layout_output, 'd="m0 0"' ), 'layout-renderer-keeps-safe-svg-shapes' );
+	$assert( str_contains( $unsafe_layout_output, '<source src="song.mp3" type="audio/mpeg">' ) && str_contains( $unsafe_layout_output, 'stroke="url(#paint)"' ), 'layout-renderer-keeps-safe-local-media-and-svg-references' );
+	$attributes = array( 'content' => '<main>Before<svg><path fill="url(https://evil.test/unclosed.svg#paint)" d="M0 0"></path>' );
+	ob_start();
+	eval( '?>' . $layout_render );
+	$malformed_svg_output = strtolower( (string) ob_get_clean() );
+	$assert( str_contains( $malformed_svg_output, '<main>before' ) && ! str_contains( $malformed_svg_output, '<svg' ) && ! str_contains( $malformed_svg_output, 'evil.test' ), 'layout-renderer-rejects-unclosed-svg-before-url-bearing-attributes-are-admitted' );
+	$attributes = array( 'content' => '<main>Before<svg><svg></svg><path fill="url(https://evil.test/nested.svg#paint)" d="M0 0"></path></svg>After</main>' );
+	ob_start();
+	eval( '?>' . $layout_render );
+	$nested_svg_output = strtolower( (string) ob_get_clean() );
+	$assert( str_contains( $nested_svg_output, '<main>beforeafter</main>' ) && ! str_contains( $nested_svg_output, '<svg' ) && ! str_contains( $nested_svg_output, 'evil.test' ), 'layout-renderer-rejects-nested-svg-before-url-bearing-attributes-are-admitted' );
+}
+
 WP_Block_Type_Registry::$registered[] = 'example/custom-hero';
 $collision_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload );
 $assert( 'failed' === ( $collision_report['status'] ?? '' ) && 'static_site_importer_companion_plugin_block_name_collision' === ( $collision_report['error']['code'] ?? '' ) && 'runtime_block_name_collision' === ( $collision_report['diagnostics'][0]['reason_code'] ?? '' ), 'registered-block-name-collision-fails-with-structured-receipt' );
@@ -563,6 +696,7 @@ if ( is_array( $typed_descriptor ) ) {
 	$assert( str_contains( $typed_render, 'Generated responsive-media companion block render' ) && ! str_contains( $typed_render, 'producer/arbitrary' ), 'typed-renderer-emits-ssi-owned-template' );
 	$assert( ! str_contains( $typed_render, 'Static_Site_Importer_' ) && ! str_contains( $typed_render, 'Automattic\\BlocksEngine' ), 'typed-renderer-is-self-contained-after-import' );
 	$attributes = array(
+		'kind'    => 'media',
 		'content' => '<a data-track="profile" aria-label="Profile" href="/profile" target="_blank" rel="noopener"><picture><source media="(min-width:800px)" srcset="safe.webp 1x, javascript:alert(1) 2x, hero,wide.webp 3x"><img src="data:image/png;base64,aGVsbG8=" srcset="safe.png 1x, %6a%61vascript:alert(1) 2x, data:image/svg+xml;base64,PHN2Zz4= 3x" alt="Profile"></picture></a>',
 	);
 	ob_start();
@@ -575,7 +709,7 @@ if ( is_array( $typed_descriptor ) ) {
 		$assert( ! str_contains( $typed_output, $fragment ), 'typed-renderer-removes-' . $fragment );
 	}
 	foreach ( array( '<script>alert(1)</script>', '<img src=x onerror=alert(1)>', '<a href="data:text/html;base64,PHNjcmlwdD4=">x</a>', '<img srcset=javascript:alert(1)>' ) as $unsafe_content ) {
-		$attributes = array( 'content' => $unsafe_content );
+		$attributes = array( 'kind' => 'media', 'content' => $unsafe_content );
 		ob_start();
 		eval( '?>' . $typed_render );
 		$unsafe_output = strtolower( (string) ob_get_clean() );
