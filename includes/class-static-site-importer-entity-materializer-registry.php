@@ -380,7 +380,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** Normalize typed runtime declarations into validated provider lifecycle entries. */
 	public static function plan_runtime_lifecycle( array $plan, array $args ) {
-		$lifecycle = array(
+		$lifecycle    = array(
 			'status'       => 'not_requested',
 			'dependencies' => array(),
 			'entities'     => array(),
@@ -401,7 +401,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$required   = self::runtime_declaration_is_required( $declaration, $declarations );
 			if ( '' === $capability ) {
 				if ( $required ) {
-					return new WP_Error( 'static_site_importer_unsupported_required_runtime_declaration', 'SSI cannot materialize required runtime declaration: ' . $name . '.', array( 'status' => 'rejected', 'declaration_id' => $key ) );
+					return new WP_Error(
+						'static_site_importer_unsupported_required_runtime_declaration',
+						'SSI cannot materialize required runtime declaration: ' . $name . '.',
+						array(
+							'status'         => 'rejected',
+							'declaration_id' => $key,
+						)
+					);
 				}
 				$lifecycle['diagnostics'][] = array(
 					'code'                    => 'unsupported_optional_runtime_declaration',
@@ -414,13 +421,31 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$adapter_key = (string) ( $declaration['adapter_key'] ?? $declaration['payload']['adapter_key'] ?? '' );
 			$adapter     = '' === $adapter_key ? self::adapter_for_capability( $capability ) : self::adapter( $adapter_key );
 			if ( empty( $adapter ) ) {
-				return new WP_Error( 'static_site_importer_runtime_provider_unavailable', 'SSI has no configured provider for runtime capability: ' . $capability . '.', array( 'status' => 'rejected', 'declaration_id' => $key ) );
+				return new WP_Error(
+					'static_site_importer_runtime_provider_unavailable',
+					'SSI has no configured provider for runtime capability: ' . $capability . '.',
+					array(
+						'status'         => 'rejected',
+						'declaration_id' => $key,
+					)
+				);
 			}
 			if ( (string) ( $adapter['capability'] ?? '' ) !== $capability ) {
-				return new WP_Error( 'static_site_importer_runtime_adapter_invalid', 'Runtime declaration adapter does not support its declared capability.', array( 'status' => 'rejected', 'declaration_id' => $key ) );
+				return new WP_Error(
+					'static_site_importer_runtime_adapter_invalid',
+					'Runtime declaration adapter does not support its declared capability.',
+					array(
+						'status'         => 'rejected',
+						'declaration_id' => $key,
+					)
+				);
 			}
 			if ( 'dependency' === $kind ) {
-				$lifecycle['dependencies'][ $key ] = array( 'adapter' => $adapter, 'declaration' => $declaration, 'required' => $required );
+				$lifecycle['dependencies'][ $key ] = array(
+					'adapter'     => $adapter,
+					'declaration' => $declaration,
+					'required'    => $required,
+				);
 				continue;
 			}
 			if ( 'entity_collection' !== $kind ) {
@@ -430,25 +455,68 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( 'form' === $capability ) {
 				$entities = array_map( static fn( $entity ) => is_array( $entity ) ? self::prepare_form_entity( $entity ) : $entity, $entities );
 			}
-			$manifest   = 'shop' === $capability ? array( 'schema_version' => 1, 'products' => $entities ) : array( 'forms' => $entities );
+			$manifest   = 'shop' === $capability ? array(
+				'schema_version' => 1,
+				'products'       => $entities,
+			) : array( 'forms' => $entities );
 			$validation = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? array( 'errors' => array() ) : self::validate_manifest_generic( $adapter, $manifest );
 			if ( ! empty( $validation['errors'] ) ) {
-				return new WP_Error( 'static_site_importer_runtime_entity_invalid', 'Runtime entity declaration failed SSI provider validation.', array( 'status' => 'rejected', 'declaration_id' => $key, 'errors' => $validation['errors'] ) );
+				return new WP_Error(
+					'static_site_importer_runtime_entity_invalid',
+					'Runtime entity declaration failed SSI provider validation.',
+					array(
+						'status'         => 'rejected',
+						'declaration_id' => $key,
+						'errors'         => $validation['errors'],
+					)
+				);
 			}
-			$normalized_manifest = 'shop' === $capability ? array( 'schema_version' => 1, 'products' => $validation['products'] ?? array() ) : array( 'forms' => $validation['forms'] ?? array() );
-			$lifecycle['entities'][ $key ] = array( 'adapter' => $adapter, 'manifest' => $normalized_manifest, 'declaration' => $declaration, 'required' => $required );
+			$normalized_manifest           = 'shop' === $capability ? array(
+				'schema_version' => 1,
+				'products'       => $validation['products'] ?? array(),
+			) : array( 'forms' => $validation['forms'] ?? array() );
+			$lifecycle['entities'][ $key ] = array(
+				'adapter'     => $adapter,
+				'manifest'    => $normalized_manifest,
+				'declaration' => $declaration,
+				'required'    => $required,
+			);
 			if ( ! isset( $lifecycle['dependencies'][ $key ] ) ) {
-				$lifecycle['dependencies'][ $key ] = array( 'adapter' => $adapter, 'declaration' => $declaration, 'required' => $required );
+				$lifecycle['dependencies'][ $key ] = array(
+					'adapter'     => $adapter,
+					'declaration' => $declaration,
+					'required'    => $required,
+				);
 			}
 		}
 		if ( isset( $args['products_manifest'] ) && is_array( $args['products_manifest'] ) && ! empty( $args['products_manifest'] ) ) {
 			$adapter    = self::product_adapter();
 			$validation = self::validate_manifest_generic( $adapter, $args['products_manifest'] );
 			if ( ! empty( $validation['errors'] ) ) {
-				return new WP_Error( 'static_site_importer_products_manifest_invalid', 'Caller products_manifest failed SSI provider validation.', array( 'status' => 'rejected', 'errors' => $validation['errors'] ) );
+				return new WP_Error(
+					'static_site_importer_products_manifest_invalid',
+					'Caller products_manifest failed SSI provider validation.',
+					array(
+						'status' => 'rejected',
+						'errors' => $validation['errors'],
+					)
+				);
 			}
-			$lifecycle['dependencies']['caller_override'] = array( 'adapter' => $adapter, 'declaration' => array( 'reconciliation_identity' => 'caller_override', 'kind' => 'dependency' ) );
-			$lifecycle['entities']['caller_override']     = array( 'adapter' => $adapter, 'manifest' => $args['products_manifest'], 'declaration' => array( 'reconciliation_identity' => 'caller_override', 'kind' => 'entity_collection' ) );
+			$lifecycle['dependencies']['caller_override'] = array(
+				'adapter'     => $adapter,
+				'declaration' => array(
+					'reconciliation_identity' => 'caller_override',
+					'kind'                    => 'dependency',
+				),
+			);
+			$lifecycle['entities']['caller_override']     = array(
+				'adapter'     => $adapter,
+				'manifest'    => $args['products_manifest'],
+				'declaration' => array(
+					'reconciliation_identity' => 'caller_override',
+					'kind'                    => 'entity_collection',
+				),
+			);
 			$lifecycle['status']                          = 'caller_override';
 		} elseif ( ! empty( $lifecycle['dependencies'] ) || ! empty( $lifecycle['entities'] ) ) {
 			$lifecycle['status'] = 'runtime_declarations';
@@ -586,7 +654,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** Project resolver-owned binding anchors into validated lifecycle manifests. */
 	public static function with_resolved_binding_manifests( array $lifecycle, array $resolved ): array {
-		$declarations = isset( $resolved['runtime_declarations'] ) && is_array( $resolved['runtime_declarations'] ) ? $resolved['runtime_declarations'] : array();
+		$declarations      = isset( $resolved['runtime_declarations'] ) && is_array( $resolved['runtime_declarations'] ) ? $resolved['runtime_declarations'] : array();
 		$resolved_entities = array();
 		foreach ( $declarations as $declaration ) {
 			$id = is_array( $declaration ) ? (string) ( $declaration['reconciliation_identity'] ?? '' ) : '';
@@ -653,20 +721,46 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$adapter = $prepared['adapter'];
 			$waived  = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? '' ) ] );
 			if ( $waived ) {
-				$reports[ $id ] = array( 'status' => 'waived', 'provider' => $adapter['provider'] ?? '' );
+				$reports[ $id ] = array(
+					'status'   => 'waived',
+					'provider' => $adapter['provider'] ?? '',
+				);
 				continue;
 			}
 			if ( empty( $args['materialize_dependencies'] ) && ! self::dependencies_available( $adapter ) && ! empty( $prepared['required'] ) ) {
-				return new WP_Error( 'static_site_importer_required_runtime_dependency_missing', 'A required runtime dependency is unavailable and dependency materialization is disabled.', array( 'status' => 'rejected', 'declaration_id' => $id ) );
+				return new WP_Error(
+					'static_site_importer_required_runtime_dependency_missing',
+					'A required runtime dependency is unavailable and dependency materialization is disabled.',
+					array(
+						'status'         => 'rejected',
+						'declaration_id' => $id,
+					)
+				);
 			}
 			$reports[ $id ] = ! empty( $args['materialize_dependencies'] ) ? self::materialize_plugin_dependencies( $adapter, ! empty( $args['overwrite'] ) ) : array( 'status' => 'available' );
 			foreach ( $reports[ $id ] as $plugin_report ) {
 				if ( is_array( $plugin_report ) && 'failed' === ( $plugin_report['status'] ?? '' ) ) {
-					return new WP_Error( 'static_site_importer_required_runtime_dependency_failed', 'SSI could not install or activate a required runtime dependency.', array( 'status' => 'partial', 'declaration_id' => $id, 'dependency' => $plugin_report ) );
+					return new WP_Error(
+						'static_site_importer_required_runtime_dependency_failed',
+						'SSI could not install or activate a required runtime dependency.',
+						array(
+							'status'         => 'partial',
+							'declaration_id' => $id,
+							'dependency'     => $plugin_report,
+						)
+					);
 				}
 			}
 			if ( 'prepare' !== ( $args['runtime_lifecycle_phase'] ?? '' ) && ! self::dependencies_available( $adapter ) && ! empty( $prepared['required'] ) ) {
-				return new WP_Error( 'static_site_importer_required_runtime_dependency_missing', 'SSI could not prepare a required runtime dependency.', array( 'status' => 'partial', 'completed_declaration_ids' => array_keys( $reports ), 'dependency_reports' => $reports ) );
+				return new WP_Error(
+					'static_site_importer_required_runtime_dependency_missing',
+					'SSI could not prepare a required runtime dependency.',
+					array(
+						'status'                    => 'partial',
+						'completed_declaration_ids' => array_keys( $reports ),
+						'dependency_reports'        => $reports,
+					)
+				);
 			}
 		}
 		return $reports;
@@ -677,30 +771,54 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$reports  = array();
 		$required = array_filter( $lifecycle['entities'] ?? array(), static fn( array $prepared ): bool => ! empty( $prepared['required'] ) );
 		if ( empty( $args['seed_entities'] ) && empty( $required ) ) {
-			return array( 'reports' => $reports, 'error' => null );
+			return array(
+				'reports' => $reports,
+				'error'   => null,
+			);
 		}
 		foreach ( $lifecycle['entities'] ?? array() as $id => $prepared ) {
 			$adapter = $prepared['adapter'];
 			if ( ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? '' ) ] ) ) {
-				$reports[ $id ] = array( 'status' => 'waived', 'provider' => $adapter['provider'] ?? '' );
+				$reports[ $id ] = array(
+					'status'   => 'waived',
+					'provider' => $adapter['provider'] ?? '',
+				);
 				continue;
 			}
 			$report = self::materialize( $adapter, $prepared['manifest'] );
 			if ( is_wp_error( $report ) ) {
-				$reports[ $id ] = array( 'status' => 'error', 'reason' => $report->get_error_code() );
-				return array( 'reports' => $reports, 'error' => array( 'code' => (string) $report->get_error_code(), 'message' => $report->get_error_message() ) );
+				$reports[ $id ] = array(
+					'status' => 'error',
+					'reason' => $report->get_error_code(),
+				);
+				return array(
+					'reports' => $reports,
+					'error'   => array(
+						'code'    => (string) $report->get_error_code(),
+						'message' => $report->get_error_message(),
+					),
+				);
 			}
 			$reports[ $id ] = $report;
-			$counts    = is_array( $report['counts'] ?? null ) ? $report['counts'] : array();
-			$expected  = count( is_array( $prepared['manifest']['products'] ?? null ) ? $prepared['manifest']['products'] : ( $prepared['manifest']['forms'] ?? array() ) );
-			$completed = array_sum( array_map( 'intval', array_intersect_key( $counts, array_flip( array( 'created', 'updated', 'mapped', 'skipped' ) ) ) ) );
+			$counts         = is_array( $report['counts'] ?? null ) ? $report['counts'] : array();
+			$expected       = count( is_array( $prepared['manifest']['products'] ?? null ) ? $prepared['manifest']['products'] : ( $prepared['manifest']['forms'] ?? array() ) );
+			$completed      = array_sum( array_map( 'intval', array_intersect_key( $counts, array_flip( array( 'created', 'updated', 'mapped', 'skipped' ) ) ) ) );
 			if ( in_array( $report['status'] ?? '', array( 'failed', 'error' ), true ) || ! empty( $counts['failed'] ) || ! empty( $counts['error'] ) || ( ! empty( $prepared['required'] ) && $completed < $expected ) ) {
 				$code    = isset( $report['code'] ) && is_scalar( $report['code'] ) ? (string) $report['code'] : 'static_site_importer_entity_materialization_failed';
 				$message = isset( $report['error'] ) && is_scalar( $report['error'] ) ? (string) $report['error'] : ( isset( $report['reason'] ) && is_scalar( $report['reason'] ) && '' !== (string) $report['reason'] ? (string) $report['reason'] : 'Runtime entity materialization failed for declaration: ' . $id . '.' );
-				return array( 'reports' => $reports, 'error' => array( 'code' => $code, 'message' => $message ) );
+				return array(
+					'reports' => $reports,
+					'error'   => array(
+						'code'    => $code,
+						'message' => $message,
+					),
+				);
 			}
 		}
-		return array( 'reports' => $reports, 'error' => null );
+		return array(
+			'reports' => $reports,
+			'error'   => null,
+		);
 	}
 
 	/** Build exact provider-owned block replacements without consulting diagnostics. */
@@ -729,7 +847,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				$key         = 'products' === $entity_key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
 				$replacement = self::binding_block_markup( $prepared['adapter'], $entity, $results[ $key ] ?? array() );
 				if ( '' === $replacement ) {
-					return new WP_Error( 'static_site_importer_runtime_binding_unresolved', 'A required provider entity did not produce binding block markup.', array( 'declaration_id' => $declaration_id, 'entity_key' => $key ) );
+					return new WP_Error(
+						'static_site_importer_runtime_binding_unresolved',
+						'A required provider entity did not produce binding block markup.',
+						array(
+							'declaration_id' => $declaration_id,
+							'entity_key'     => $key,
+						)
+					);
 				}
 				foreach ( $entity['bindings'] as $binding ) {
 					$bindings[] = array(
@@ -788,7 +913,18 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						return new WP_Error( 'static_site_importer_classic_html_binding_invalid', 'Classic provider source selector is invalid.' );
 					}
 					$id         = hash( 'sha256', "static-site-importer/classic-html-binding/v1\n{$declaration_id}\n{$source}\n{$selector}\n" . ( $index + 1 ) );
-					$bindings[] = array( 'schema' => 'static-site-importer/classic-html-binding/v1', 'source_path' => $source, 'selector' => $selector, 'occurrence' => 1, 'replacement_html' => '<div class="static-site-importer-runtime-binding" data-static-site-importer-binding="' . $id . '"><!--static-site-importer-binding:' . $id . '--></div>', 'render' => $render, 'reconciliation_identity' => $id, 'declaration_id' => $declaration_id, 'provider' => $prepared['adapter']['provider'] ?? '', 'status' => 'completed' );
+					$bindings[] = array(
+						'schema'                  => 'static-site-importer/classic-html-binding/v1',
+						'source_path'             => $source,
+						'selector'                => $selector,
+						'occurrence'              => 1,
+						'replacement_html'        => '<div class="static-site-importer-runtime-binding" data-static-site-importer-binding="' . $id . '"><!--static-site-importer-binding:' . $id . '--></div>',
+						'render'                  => $render,
+						'reconciliation_identity' => $id,
+						'declaration_id'          => $declaration_id,
+						'provider'                => $prepared['adapter']['provider'] ?? '',
+						'status'                  => 'completed',
+					);
 				}
 			}
 		}
