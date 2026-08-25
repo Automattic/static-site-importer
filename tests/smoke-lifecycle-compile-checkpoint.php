@@ -26,14 +26,14 @@ namespace {
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-lifecycle-compile-checkpoint.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
 	if ( '--checkpoint-child' === ( $argv[1] ?? '' ) ) {
-		$artifact = array( 'schema' => 'test/v1', 'files' => array() ); $args = array( 'slug' => (string) ( $argv[6] ?? 'checkpoint' ), 'name' => 'Checkpoint' ); $loaded = Static_Site_Importer_Lifecycle_Compile_Checkpoint::load( (string) $argv[2], $artifact, $args, (string) ( $argv[4] ?? 'site:17;user:23' ), (string) $argv[3] );
+		$artifact = array( 'schema' => 'test/v1', 'files' => array() ); $args = array( 'slug' => (string) ( $argv[6] ?? 'checkpoint' ), 'name' => 'Checkpoint', 'source_metadata' => array( 'source' => 'fixture' ) ); $loaded = Static_Site_Importer_Lifecycle_Compile_Checkpoint::load( (string) $argv[2], $artifact, $args, (string) ( $argv[4] ?? 'site:17;user:23' ), (string) $argv[3] );
 		if ( is_wp_error( $loaded ) ) { fwrite( STDERR, $loaded->get_error_code() ); exit( 1 ); }
 		if ( in_array( $argv[5] ?? '', array( 'claim', 'consume' ), true ) ) { $claim = Static_Site_Importer_Lifecycle_Compile_Checkpoint::claim( $loaded['workspace'] ); if ( is_wp_error( $claim ) ) { fwrite( STDERR, $claim->get_error_code() ); exit( 1 ); } if ( 'consume' === ( $argv[5] ?? '' ) ) { $loaded['workspace']->cleanup( 'success' ); } }
 		exit( 0);
 	}
 	$root = sys_get_temp_dir() . '/ssi-lifecycle-checkpoint-' . bin2hex( random_bytes( 4 ) ); wp_mkdir_p( $root );
 	$artifact = array( 'schema' => 'test/v1', 'files' => array() );
-	$args = array( 'slug' => 'checkpoint', 'name' => 'Checkpoint', '_static_site_importer_lifecycle_checkpoint_root' => $root );
+	$args = array( 'slug' => 'checkpoint', 'name' => 'Checkpoint', 'source_metadata' => array( 'source' => 'fixture' ), '_static_site_importer_lifecycle_checkpoint_root' => $root );
 	$prepared = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $args + array( 'runtime_lifecycle_phase' => 'prepare', 'runtime_lifecycle_invocation_id' => 'prepare-request' ) );
 	if ( is_wp_error( $prepared ) || 1 !== \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler::$calls || ! preg_match( '/^[a-f0-9]{32}$/', $prepared['runtime_lifecycle_checkpoint'] ?? '' ) || empty( $prepared['fresh_runtime']['lifecycle_checkpoint_id'] ) || empty( \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler::$artifacts[0]['script_policy_applied'] ) ) { throw new \RuntimeException( 'prepare must compile once, return its handle, and retain a non-identity policy artifact' ); }
 	$handle = $prepared['runtime_lifecycle_checkpoint'];
@@ -47,6 +47,17 @@ namespace {
 	if ( ! is_wp_error( $resumed ) || 'static_site_importer_fresh_runtime_required' !== $resumed->get_error_code() || 1 !== \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler::$calls ) { throw new \RuntimeException( 'a different caller invocation must not bypass the same-runtime guard' ); }
 	$child = static function ( string $mode = '', string $owner = 'site:17;user:23', string $action = '', string $checkpoint = '', string $slug = 'checkpoint' ) use ( $handle, $root ): array { $checkpoint = '' !== $checkpoint ? $checkpoint : $handle; $command = (string) PHP_BINARY . ' ' . escapeshellarg( __FILE__ ) . ' --checkpoint-child ' . escapeshellarg( $checkpoint ) . ' ' . escapeshellarg( $root ) . ' ' . escapeshellarg( $owner ) . ' ' . escapeshellarg( $action ) . ' ' . escapeshellarg( $slug ); $environment = '' === $mode ? null : array_merge( $_ENV, array( 'SSI_CHECKPOINT_BINDING_MUTATION' => $mode ) ); $process = proc_open( $command, array( 1 => array( 'pipe', 'w' ), 2 => array( 'pipe', 'w' ) ), $pipes, null, $environment ); $output = is_resource( $process ) ? stream_get_contents( $pipes[1] ) . stream_get_contents( $pipes[2] ) : ''; if ( is_resource( $process ) ) { fclose( $pipes[1] ); fclose( $pipes[2] ); $status = proc_close( $process ); } else { $status = 1; } return array( $status, $output ); };
 	$fresh = $child(); if ( 0 !== $fresh[0] ) { throw new \RuntimeException( 'a separate PHP process must load a valid checkpoint: ' . $fresh[1] ); }
+	$direct_args = $args;
+	$direct_args['client_script_policy_report'] = array( 'policy' => 'isolated_preview' );
+	$direct_args['compiled_artifact_result'] = array( 'schema' => 'blocks-engine/php-transformer/result/v1' );
+	$direct_args['_static_site_importer_precompiled_source'] = true;
+	$direct_args['import_run_id'] = str_repeat( 'a', 64 );
+	$direct_args['source_metadata']['collection']['script_policy'] = array( 'policy' => 'isolated_preview' );
+	$direct_payload = array( 'artifact' => $artifact, 'args' => $direct_args, 'plan' => array( 'schema' => 'test-plan/v1' ), 'gutenberg_gaps' => array(), 'companion_payload' => null, 'materialization_plan' => array(), 'theme_materialization' => array() );
+	$direct = Static_Site_Importer_Lifecycle_Compile_Checkpoint::create( $artifact, $direct_args, $direct_payload, 'site:17;user:23', $root );
+	$direct_fresh = $child( '', 'site:17;user:23', '', $direct );
+	if ( 0 !== $direct_fresh[0] ) { throw new \RuntimeException( 'a direct artifact checkpoint must bind caller inputs rather than derived compile fields: ' . $direct_fresh[1] ); }
+	Static_Site_Importer_Lifecycle_Compile_Checkpoint::discard( $direct, $root );
 	$policy_changed = $child( 'policy' ); if ( 0 === $policy_changed[0] || ! str_contains( $policy_changed[1], 'static_site_importer_lifecycle_checkpoint_mismatch' ) ) { throw new \RuntimeException( 'policy fingerprint changes must reject the checkpoint' ); }
 	$compiler_changed = $child( 'compiler' ); if ( 0 === $compiler_changed[0] || ! str_contains( $compiler_changed[1], 'static_site_importer_lifecycle_checkpoint_mismatch' ) ) { throw new \RuntimeException( 'compiler dependency fingerprint changes must reject the checkpoint' ); }
 	$same = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $args + array( 'runtime_lifecycle_phase' => 'resume', 'runtime_lifecycle_request_id' => 'prepare-request', 'runtime_lifecycle_invocation_id' => 'prepare-request', 'runtime_lifecycle_checkpoint' => $handle ) );
