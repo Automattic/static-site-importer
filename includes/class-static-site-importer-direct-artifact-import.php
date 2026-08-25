@@ -529,7 +529,8 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					if ( is_wp_error( $materialized ) ) {
 						return self::fail( $workspace, $run, 'materialize', $materialized );
 					}
-					$ref = self::publish_checkpoint( $workspace, $run, 'materialization', 'materialization-result.json', array( 'result' => $materialized ) );
+					$materialized = Static_Site_Importer_Canonical_Import_Service::bound_success_result( $materialized );
+					$ref          = self::publish_checkpoint( $workspace, $run, 'materialization', 'materialization-result.json', array( 'result' => $materialized ) );
 					if ( is_wp_error( $ref ) ) {
 						return self::fail( $workspace, $run, 'materialize', $ref );
 					}
