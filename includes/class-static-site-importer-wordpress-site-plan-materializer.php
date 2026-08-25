@@ -171,10 +171,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'reason' => 'companion_plugin_payload_absent',
 			);
 		}
-		if ( $page_ready || ( array_key_exists( 'materialize_dependencies', $args ) && false === (bool) $args['materialize_dependencies'] ) ) {
+		if ( array_key_exists( 'materialize_dependencies', $args ) && false === (bool) $args['materialize_dependencies'] ) {
 			return array(
 				'status' => 'skipped',
-				'reason' => $page_ready ? 'page_ready_scope' : 'dependency_materialization_disabled',
+				'reason' => 'dependency_materialization_disabled',
 			);
 		}
 		$payload    = self::resolve_companion_asset_references( $payload, $prepared['plan'] ?? array(), $prepared['resolved'] ?? array() );
