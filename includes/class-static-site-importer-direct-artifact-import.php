@@ -872,8 +872,8 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		$payload_hash = self::hash( $payload );
 		$shards       = array();
-		if ( 'artifact' === $kind ) {
-			$sharded = self::publish_artifact_shards( $workspace, $payload );
+		if ( in_array( $kind, array( 'artifact', 'shared' ), true ) ) {
+			$sharded = self::publish_file_shards( $workspace, $payload, $kind );
 			if ( is_wp_error( $sharded ) ) {
 				return $sharded;
 			}
@@ -910,8 +910,8 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$record   = is_string( $raw ) ? json_decode( $raw, true ) : null;
 		$raw_hash = is_string( $raw ) ? hash( 'sha256', $raw ) : '';
 		unset( $raw );
-		if ( is_array( $record ) && 'artifact' === $kind ) {
-			$record = self::hydrate_artifact_shards( $workspace, $record );
+		if ( is_array( $record ) && in_array( $kind, array( 'artifact', 'shared' ), true ) ) {
+			$record = self::hydrate_file_shards( $workspace, $record, $kind );
 			if ( is_wp_error( $record ) ) {
 				return $record;
 			}
@@ -928,8 +928,8 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( ! is_string( $raw ) ) {
 			return array();
 		}
-		if ( is_array( $record ) && 'artifact' === $kind ) {
-			$record = self::hydrate_artifact_shards( $workspace, $record );
+		if ( is_array( $record ) && in_array( $kind, array( 'artifact', 'shared' ), true ) ) {
+			$record = self::hydrate_file_shards( $workspace, $record, $kind );
 			if ( is_wp_error( $record ) ) {
 				return $record;
 			}
@@ -944,11 +944,12 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		);
 	}
 
-	private static function publish_artifact_shards( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $payload ) {
-		$files  = is_array( $payload['artifact']['files'] ?? null ) ? $payload['artifact']['files'] : array();
+	private static function publish_file_shards( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $payload, string $kind ) {
+		$files  = 'artifact' === $kind ? ( $payload['artifact']['files'] ?? null ) : ( $payload['plan']['artifact']['files'] ?? null );
+		$files  = is_array( $files ) ? $files : array();
 		$shards = array();
 		foreach ( array_values( $files ) as $index => $file ) {
-			$relative = 'artifact-files/' . sprintf( '%05d.json', $index );
+			$relative = $kind . '-files/' . sprintf( '%05d.json', $index );
 			$write    = $workspace->publish_json_once( $relative, array( 'file' => $file ) );
 			$sha256   = is_string( $write ) ? hash_file( 'sha256', $write ) : false;
 			if ( is_wp_error( $write ) ) {
@@ -962,15 +963,20 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				'sha256' => $sha256,
 			);
 		}
-		$payload['artifact']['files'] = array();
+		if ( 'artifact' === $kind ) {
+			$payload['artifact']['files'] = array();
+		} else {
+			$payload['plan']['artifact']['files'] = array();
+		}
 		return array(
 			'payload' => $payload,
 			'shards'  => $shards,
 		);
 	}
 
-	private static function hydrate_artifact_shards( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $record ) {
-		if ( ! isset( $record['payload']['artifact']['files'] ) || ! is_array( $record['payload']['artifact']['files'] ) || ! empty( $record['payload']['artifact']['files'] ) || ! is_array( $record['shards'] ?? null ) ) {
+	private static function hydrate_file_shards( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $record, string $kind ) {
+		$stored_files = 'artifact' === $kind ? ( $record['payload']['artifact']['files'] ?? null ) : ( $record['payload']['plan']['artifact']['files'] ?? null );
+		if ( ! is_array( $stored_files ) || ! empty( $stored_files ) || ! is_array( $record['shards'] ?? null ) ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_shards_invalid', 'The retained direct artifact file shard manifest is invalid.' );
 		}
 		$files = array();
@@ -985,7 +991,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			}
 			$files[] = $decoded['file'];
 		}
-		$record['payload']['artifact']['files'] = $files;
+		if ( 'artifact' === $kind ) {
+			$record['payload']['artifact']['files'] = $files;
+		} else {
+			$record['payload']['plan']['artifact']['files'] = $files;
+		}
 		return $record;
 	}
 
