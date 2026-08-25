@@ -382,6 +382,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 	/** @param array<string,mixed> $result @param array<string,mixed> $input @return array<string,mixed> */
 	public static function success( array $result, array $input ): array {
 		$contract = self::success_diagnostics_contract( $result );
+		$result   = self::bound_success_result( $result );
 		if ( function_exists( 'do_action' ) ) {
 			do_action( 'static_site_importer_import_completed', $contract, $result, $input );
 		}
@@ -391,6 +392,108 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'diagnostics'         => isset( $contract['diagnostics'] ) && is_array( $contract['diagnostics'] ) ? $contract['diagnostics'] : array(),
 			'fixture_diagnostics' => $contract,
 		);
+	}
+
+	/** Persist unbounded success payloads and replace them with durable references. */
+	public static function bound_success_result( array $result ): array {
+		$payloads = array_filter(
+			array(
+				'import_report'           => isset( $result['import_report'] ) && is_array( $result['import_report'] ) ? $result['import_report'] : null,
+				'materialization_receipt' => isset( $result['materialization_receipt'] ) && is_array( $result['materialization_receipt'] ) ? $result['materialization_receipt'] : null,
+			),
+			'is_array'
+		);
+		if ( empty( $payloads ) ) {
+			return $result;
+		}
+
+		$receipt = $payloads['materialization_receipt'] ?? array();
+		$receipt_summary = array_filter(
+			array(
+				'schema'              => $receipt['schema'] ?? null,
+				'status'              => $receipt['status'] ?? null,
+				'receipt_instance_id' => $receipt['receipt_instance_id'] ?? null,
+				'plan_identity'       => $receipt['plan_identity'] ?? null,
+			),
+			static fn ( $value ): bool => null !== $value
+		);
+		$result['materialization_receipt_summary'] = $receipt_summary;
+		if ( isset( $payloads['materialization_receipt'] ) ) {
+			unset( $payloads['materialization_receipt']['plan'] );
+		}
+		if ( isset( $payloads['import_report']['materialization_receipt'] ) ) {
+			$payloads['import_report']['materialization_receipt'] = $receipt_summary;
+		}
+		unset( $result['import_report'], $result['materialization_receipt'] );
+
+		$artifacts = array(
+			'schema'    => 'static-site-importer/import-response-artifacts/v1',
+			'status'    => 'failed',
+			'artifacts' => array(),
+			'errors'    => array(),
+		);
+		$uploads   = function_exists( 'wp_upload_dir' ) ? wp_upload_dir() : array();
+		$basedir   = is_array( $uploads ) && is_string( $uploads['basedir'] ?? null ) ? rtrim( $uploads['basedir'], '/\\' ) : '';
+		// Share the retained-run root so the existing daily expiry sweep owns these artifacts.
+		$root      = $basedir . '/static-site-importer/direct-artifact-imports';
+		if ( '' === $basedir || ! function_exists( 'wp_mkdir_p' ) || ( ! is_dir( $root ) && ! wp_mkdir_p( $root ) ) ) {
+			$artifacts['errors'][] = array(
+				'code'    => 'static_site_importer_import_response_workspace_unavailable',
+				'message' => 'The importer-owned response artifact workspace is unavailable.',
+			);
+			$result['response_artifacts'] = $artifacts;
+			return $result;
+		}
+
+		$report   = $payloads['import_report'] ?? array();
+		$identity = (string) ( $report['import_run_id'] ?? $receipt['receipt_instance_id'] ?? '' );
+		if ( '' === $identity ) {
+			$identity = hash( 'sha256', (string) ( $result['theme_slug'] ?? '' ) . "\n" . (string) ( $receipt['plan_identity']['hash'] ?? '' ) );
+		}
+		$identity = trim( (string) preg_replace( '/[^A-Za-z0-9_-]/', '-', $identity ), '-' );
+		try {
+			$workspace = new Static_Site_Importer_Artifact_Run_Workspace(
+				$root,
+				'import-response-' . ( '' !== $identity ? $identity : hash( 'sha256', microtime( true ) . wp_rand() ) ),
+				array(
+					'on_success' => 'retain',
+					'expires_at' => gmdate( 'c', time() + WEEK_IN_SECONDS ),
+				)
+			);
+			foreach ( $payloads as $name => $payload ) {
+				$path = $workspace->publish_json_once( str_replace( '_', '-', $name ) . '.json', $payload );
+				if ( is_wp_error( $path ) ) {
+					$artifacts['errors'][] = array(
+						'code'    => $path->get_error_code(),
+						'message' => $path->get_error_message(),
+					);
+					continue;
+				}
+				$digest = hash_file( 'sha256', $path );
+				$bytes  = filesize( $path );
+				if ( ! is_string( $digest ) || false === $bytes ) {
+					$artifacts['errors'][] = array(
+						'code'    => 'static_site_importer_import_response_artifact_unverifiable',
+						'message' => 'A persisted response artifact could not be verified.',
+					);
+					continue;
+				}
+				$artifacts['artifacts'][ $name ] = array(
+					'path'   => $path,
+					'sha256' => $digest,
+					'bytes'  => $bytes,
+					'schema' => is_string( $payload['schema'] ?? null ) ? $payload['schema'] : '',
+				);
+			}
+		} catch ( Throwable $error ) {
+			$artifacts['errors'][] = array(
+				'code'    => 'static_site_importer_import_response_artifact_persistence_failed',
+				'message' => $error->getMessage(),
+			);
+		}
+		$artifacts['status']         = empty( $artifacts['errors'] ) ? 'completed' : 'failed';
+		$result['response_artifacts'] = $artifacts;
+		return $result;
 	}
 
 	/** @param array<string,mixed> $result @return array<string,mixed> */
