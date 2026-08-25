@@ -181,7 +181,6 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		$policy       = self::run_policy();
 		$clock        = $policy['clock'];
-		$deadline     = call_user_func( $clock ) + $policy['max_invocation_seconds'];
 		$run['state'] = 'running';
 		$write        = self::write_run( $workspace, $run );
 		if ( is_wp_error( $write ) ) {
@@ -290,6 +289,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					return self::fail( $workspace, $run, 'prepare_pages_checkpoint', $write );
 				}
 			}
+			// Retained-state validation is prerequisite work; reserve the full
+			// invocation budget for a new bounded prepare/compile unit.
+			$deadline = call_user_func( $clock ) + $policy['max_invocation_seconds'];
 
 			$pending_plans = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['pages'] ?? array() ) ) );
 			$prepare_ids   = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending_plans, 0, $policy['prepare_batch_pages'] );
