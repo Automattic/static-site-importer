@@ -120,13 +120,11 @@ $large_artifact = array();
 for ( $index = 0; $index < 96; ++$index ) {
 	$large_artifact[ 'file-' . $index ] = array( 'content' => $large_chunk );
 }
-if ( function_exists( 'memory_reset_peak_usage' ) ) {
-	memory_reset_peak_usage();
-}
-$memory_peak_before = memory_get_peak_usage( true );
+memory_reset_peak_usage();
+$memory_before = memory_get_usage( true );
 $large_identity = $hash_json->invoke( null, $large_artifact, false );
 $large_checkpoint = $primitive_workspace->publish_json_once( 'large.json', $large_artifact );
-$identity_peak_delta = memory_get_peak_usage( true ) - $memory_peak_before;
+$identity_peak_delta = memory_get_peak_usage( true ) - $memory_before;
 $assert( preg_match( '/^[a-f0-9]{64}$/', $large_identity ) && ! is_wp_error( $large_checkpoint ) && $identity_peak_delta < 16 * 1024 * 1024, 'streamed identity and checkpoint publication must not allocate the logical 96 MB artifact as one JSON string' );
 unset( $large_artifact, $large_chunk );
 $assert( ! is_wp_error( $primitive_workspace->publish_raw_once( 'immutable.json', '{"value":1}' ) ), 'immutable checkpoint publication must succeed once' );
