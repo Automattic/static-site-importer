@@ -138,12 +138,12 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$prepared['args']['activate']                     = $page_ready ? false : ! empty( $prepared['args']['activate'] );
 		$prepared['args']['defer_materialization_commit'] = true;
 
-		$receipt = self::materialize_prepared( $prepared );
-		$receipt['completed']['companion_plugin']                     = $companion;
-		$receipt['extensions']['gutenberg_gaps']                      = Static_Site_Importer_Theme_Generator::project_gutenberg_gaps( $gutenberg_gaps, (string) ( $companion['status'] ?? 'not_materialized' ) );
+		$receipt                                  = self::materialize_prepared( $prepared );
+		$receipt['completed']['companion_plugin'] = $companion;
+		$receipt['extensions']['gutenberg_gaps']  = Static_Site_Importer_Theme_Generator::project_gutenberg_gaps( $gutenberg_gaps, (string) ( $companion['status'] ?? 'not_materialized' ) );
 		$receipt['completed']['runtime_declarations']['dependencies'] = $dependencies;
 		$receipt['completed']['runtime_declarations']['entities']     = $entities;
-		$receipt['runtime_lifecycle']                                = $lifecycle;
+		$receipt['runtime_lifecycle']                                 = $lifecycle;
 		if ( $classic ) {
 			$receipt['completed']['runtime_declarations']['classic_html_bindings'] = $prepared['args']['classic_runtime_bindings'] ?? array();
 		}
