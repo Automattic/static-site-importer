@@ -6038,6 +6038,8 @@ test('recipe runs editor-validate-blocks against imported content after each imp
   assert.equal(editorOpenStep.command, 'wordpress.editor-open');
   assert.ok(editorOpenStep.args.includes('target=front-page'));
   assert.ok(editorOpenStep.args.includes('capture=screenshot,editor-state,editor-validity'));
+  assert.ok(editorOpenStep.args.some((arg) => arg.startsWith('presentation-url=')));
+  assert.ok(editorOpenStep.args.includes('presentation-frontend-selector=.wp-block-post-content'));
   assert.ok(editorOpenStep.args.includes('artifact-prefix=files/browser/editor-open/simple-site'));
   const editorStep = recipe.workflow.steps.find((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND);
   assert.equal(editorStep.command, EDITOR_VALIDATE_BLOCKS_COMMAND);
@@ -6131,6 +6133,7 @@ test('fixture matrix browser surfaces default to front page and opt into bounded
   assert.ok(editorOpenSteps[0].args.includes('artifact-prefix=files/browser/editor-open/artist'));
   assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
   assert.ok(editorOpenSteps[1].args.includes('post-slug=about'));
+  assert.ok(editorOpenSteps[1].args.includes('presentation-url=/about/'));
   assert.equal(editorOpenSteps[1].args.some((arg) => arg.startsWith('url=')), false);
   assert.ok(editorOpenSteps[1].args.includes('artifact-prefix=files/browser/editor-open/artist/about'));
   assert.ok(editorOpenSteps[2].args.includes('post-type=page'));
