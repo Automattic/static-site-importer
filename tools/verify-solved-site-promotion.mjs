@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { editorPresentationEvidenceComplete } from '../lib/fixture-matrix/gutenberg-incompatibility-registry.mjs';
+import { editorInteractionEvidenceComplete, editorPresentationEvidenceComplete } from '../lib/fixture-matrix/gutenberg-incompatibility-registry.mjs';
 
 export const RECEIPT_SCHEMA = 'static-site-importer/solved-site-promotion-receipt/v1';
 const MATRIX_SCHEMA = 'static-site-importer/fixture-matrix-result/v1';
@@ -85,6 +85,8 @@ export function verifySolvedSitePromotion(input) {
       solved_candidate: 'passed',
       materialization_receipts: 'passed',
       editor: 'passed',
+      editor_presentation: 'passed',
+      editor_interaction: 'passed',
       visual: 'passed',
       native_blocks: 'passed',
       artifacts: 'passed',
@@ -132,10 +134,15 @@ function verifyFixture(fixture, decision, options, requiredFiles) {
   assert(fixture.editor_canvas?.status === 'captured', `${id}: editor canvas evidence is missing.`);
   addRequiredFile(requiredFiles, fixture.editor_canvas?.screenshot, `${id}: editor screenshot`, options.artifactRoot);
   const editorPresentation = fixture.editor_presentation || {};
-  assert(['static-site-importer/editor-presentation-evidence/v1', 'static-site-importer/editor-presentation-evidence/v2'].includes(editorPresentation.schema), `${id}: editor presentation evidence is missing.`);
+  assert(editorPresentation.schema === 'static-site-importer/editor-presentation-evidence/v3', `${id}: matched editor presentation evidence is missing.`);
   assert(editorPresentation.provider_schema === 'wp-codebox/editor-presentation/v1', `${id}: editor presentation must use WP Codebox canvas evidence.`);
   assert(Number(editorPresentation.expected_identity_count) > 0, `${id}: editor presentation has no expected generated styles.`);
-  assert(editorPresentationEvidenceComplete(editorPresentation, fixture), `${id}: editor presentation stylesheet coverage is incomplete or contradictory.`);
+  assert(editorPresentationEvidenceComplete(editorPresentation, fixture), `${id}: editor presentation evidence is incomplete or contradictory.`);
+  const matchedRendering = editorPresentation.matched_rendering || {};
+  for (const [slot, label] of [['frontend_screenshot', 'matched frontend screenshot'], ['editor_screenshot', 'matched editor screenshot'], ['diff_screenshot', 'matched editor diff']]) {
+    addRequiredFile(requiredFiles, matchedRendering[slot], `${id}: ${label}`, options.artifactRoot);
+  }
+  assert(editorInteractionEvidenceComplete(fixture.editor_interaction), `${id}: editor interaction evidence is incomplete.`);
   const visual = fixture.visual_parity_artifacts || {};
   const visualMetrics = visual.metrics || {};
   assertFiniteMetric(visualMetrics, 'mismatch_ratio', id);
