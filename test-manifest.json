@@ -24,6 +24,7 @@
     { "path": "tests/smoke-failed-plan-validation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-export-theme-ability.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-diagnostic-contract.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-missing-author-stylesheet-diagnostics.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-disposition.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-permission-filter.php", "environment": "standalone-php" },
     { "path": "tests/smoke-current-site-capabilities.php", "environment": "standalone-php" },
