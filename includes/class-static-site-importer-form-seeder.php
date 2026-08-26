@@ -131,7 +131,11 @@ class Static_Site_Importer_Form_Seeder {
 		$report['provider']             = self::PROVIDER_ID;
 		$report['available']            = $available;
 		$report['availability_details'] = $availability;
-		$report['status']               = 'completed';
+		$report['status']               = $available ? 'completed' : 'failed';
+		if ( ! $available ) {
+			$report['code']   = 'static_site_importer_form_provider_unavailable';
+			$report['reason'] = 'provider_unavailable';
+		}
 
 		foreach ( $forms as $form ) {
 			$row               = $available ? self::seed_form( $form, true ) : self::unavailable_form_row( $form );
@@ -501,7 +505,7 @@ class Static_Site_Importer_Form_Seeder {
 		$unaccepted_losses           = array_values(
 			array_filter(
 				$layout['receipt']['losses'] ?? array(),
-				static fn( $loss ): bool => is_array( $loss ) && self::receipt_loss_requires_gate( $loss ) && true !== apply_filters( 'static_site_importer_form_receipt_loss_accepted', false, $loss, $form, $row )
+				static fn( $loss ): bool => is_array( $loss ) && self::receipt_loss_requires_gate( $loss ) && ! self::provider_represents_receipt_loss( $loss, $form, $field_blocks ) && true !== apply_filters( 'static_site_importer_form_receipt_loss_accepted', false, $loss, $form, $row )
 			)
 		);
 		$gate_overflow_count         = (int) ( $layout['receipt']['gate_required_loss_overflow_count'] ?? 0 );
@@ -516,11 +520,33 @@ class Static_Site_Importer_Form_Seeder {
 		if ( ! empty( $unaccepted_losses ) ) {
 			$row['provider_mapped']                = true;
 			$row['runtime_mapped']                 = false;
+			$row['status']                         = 'error';
 			$row['reason']                         = 'form_receipt_loss_unaccepted';
 			$row['form_receipt_unaccepted_losses'] = $unaccepted_losses;
 			$row['unaccepted_receipt_loss_count']  = count( $unaccepted_losses );
 		}
 		return $row;
+	}
+
+	/** A source label wrapper is carried by the mapped Jetpack field's label child. */
+	private static function provider_represents_receipt_loss( array $loss, array $form, array $field_blocks ): bool {
+		if ( 'unsupported_semantic_wrapper' !== ( $loss['reason_code'] ?? '' ) || ! is_string( $loss['node_hash'] ?? null ) ) {
+			return false;
+		}
+		$nodes = isset( $form['control_topology']['nodes'] ) && is_array( $form['control_topology']['nodes'] ) ? $form['control_topology']['nodes'] : array();
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? '' ) || 'label' !== ( $node['tag'] ?? '' ) || hash( 'sha256', (string) ( $node['id'] ?? '' ) ) !== $loss['node_hash'] ) {
+				continue;
+			}
+			$controls = array_values(
+				array_filter(
+					$nodes,
+					static fn( $candidate ): bool => is_array( $candidate ) && 'control' === ( $candidate['kind'] ?? '' ) && ( $candidate['parent'] ?? '' ) === ( $node['id'] ?? '' ) && is_int( $candidate['control'] ?? null ) && isset( $field_blocks[ $candidate['control'] ] )
+				)
+			);
+			return 1 === count( $controls );
+		}
+		return false;
 	}
 
 	/**

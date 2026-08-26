@@ -222,6 +222,12 @@ $assert( 1 === ( $work['content_policy_applications'] ?? 0 ) && 1 === ( $work['c
 $assert( 1 === ( $work['materialization_claims'] ?? 0 ) && 1 === ( $work['materializations'] ?? 0 ) && true === ( $GLOBALS['ssi_direct_last_args']['_static_site_importer_precompiled_source'] ?? false ), 'apply must claim once and use the precompiled source handoff' );
 $assert( 0 === ( $terminal_work['html_document_transform_count'] ?? -1 ) && 0 === ( $terminal_work['normalization_count'] ?? -1 ), 'terminal composition must perform zero HTML transforms and normalization' );
 $assert( ! str_contains( (string) json_encode( $terminal['artifact_run'] ), $test_root ) && ! str_contains( (string) json_encode( $terminal['artifact_run'] ), 'website/index.html' ), 'public run evidence must remain bounded and path-free' );
+$composed_plan = $GLOBALS['ssi_direct_compiled_results'][0]['source_reports']['wordpress_site_plan'] ?? array();
+$form_declarations = array_values( array_filter( $composed_plan['runtime_declarations'] ?? array(), static fn( $declaration ): bool => is_array( $declaration ) && 'entity_collection' === ( $declaration['kind'] ?? '' ) && 'forms' === ( $declaration['type'] ?? '' ) ) );
+$form_dependencies = array_values( array_filter( $composed_plan['runtime_declarations'] ?? array(), static fn( $declaration ): bool => is_array( $declaration ) && 'dependency' === ( $declaration['kind'] ?? '' ) && 'form' === ( $declaration['capability'] ?? '' ) ) );
+$assert( 2 === ( $composed_plan['quality']['metrics']['fallback_count'] ?? -1 ) && 2 === count( $form_declarations[0]['payload']['entities'] ?? array() ), 'real terminal composition must retain both route-level provider-materializable form entities' );
+$assert( array() === array_filter( $form_declarations[0]['payload']['entities'] ?? array(), static fn( $entity ): bool => ! is_array( $entity ) || empty( $entity['bindings'] ) ), 'real terminal composition must retain an exact provider binding for each form entity' );
+$assert( in_array( 'entity_collection:forms', $form_dependencies[0]['required_for'] ?? array(), true ), 'compact page receipts must compose the form provider admission relationship' );
 
 $replay = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
 $assert( $terminal === $replay && 1 === $GLOBALS['ssi_direct_mutations'], 'terminal replay must return the durable response without compile or mutation' );
