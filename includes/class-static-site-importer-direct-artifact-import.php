@@ -23,7 +23,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	private const RUN_SCHEMA                    = 'static-site-importer/direct-artifact-run/v1';
 	private const CHECKPOINT_SCHEMA             = 'static-site-importer/direct-artifact-checkpoint/v1';
 	private const EVIDENCE_SCHEMA               = 'static-site-importer/direct-artifact-run-evidence/v1';
-	private const RECEIPT_SCHEMA                = 'blocks-engine/php-transformer/compiled-page-receipt/v2';
+	private const RECEIPT_SCHEMAS               = array(
+		'blocks-engine/php-transformer/compiled-page-receipt/v2',
+		'blocks-engine/php-transformer/compiled-page-receipt/v3',
+	);
 	private const TTL                           = 604800;
 	private const CLEANUP_HOOK                  = 'static_site_importer_purge_direct_artifact_imports';
 	private static array $checkpoint_read_cache = array();
@@ -717,11 +720,15 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	}
 
 	private static function validate_receipt( $receipt, array $page_plan, array $shared ) {
+		$receipt_schema     = $receipt['receipt_schema'] ?? '';
 		$reduction          = is_array( $receipt['terminal_reduction'] ?? null ) ? $receipt['terminal_reduction'] : array();
-		$required_reduction = array( 'files', 'normalization', 'source_documents', 'owned_transformable_paths', 'stylesheet_occurrence_files', 'component_facts', 'block_types' );
+		$required_reduction = array( 'normalization', 'source_documents', 'owned_transformable_paths', 'stylesheet_occurrence_files', 'component_facts', 'block_types' );
+		if ( 'blocks-engine/php-transformer/compiled-page-receipt/v2' === $receipt_schema ) {
+			$required_reduction[] = 'files';
+		}
 		$reduction_complete = empty( array_diff( $required_reduction, array_keys( $reduction ) ) );
-		if ( ! is_array( $receipt ) || self::RECEIPT_SCHEMA !== ( $receipt['receipt_schema'] ?? '' ) || ( $page_plan['page_id'] ?? '' ) !== ( $receipt['page_id'] ?? '' ) || ( $shared['digest'] ?? '' ) !== ( $receipt['shared_digest'] ?? '' ) || ( $shared['shared_reduction_digest'] ?? '' ) !== ( $receipt['shared_reduction_digest'] ?? '' ) || ( $page_plan['compiler_options'] ?? null ) !== ( $receipt['compiler_options'] ?? null ) || ( $page_plan['output_schema'] ?? null ) !== ( $receipt['output_schema'] ?? null ) || ( $page_plan['digest'] ?? '' ) === ( $receipt['digest'] ?? '' ) || empty( $receipt['digest'] ) || ! is_array( $receipt['compiled_documents'] ?? null ) || ! is_array( $receipt['owned_document_paths'] ?? null ) || ! $reduction_complete ) {
-			return new WP_Error( 'static_site_importer_direct_artifact_receipt_invalid', 'A compiled page receipt does not satisfy the frozen v2 receipt contract.' );
+		if ( ! is_array( $receipt ) || ! in_array( $receipt_schema, self::RECEIPT_SCHEMAS, true ) || ( $page_plan['page_id'] ?? '' ) !== ( $receipt['page_id'] ?? '' ) || ( $shared['digest'] ?? '' ) !== ( $receipt['shared_digest'] ?? '' ) || ( $shared['shared_reduction_digest'] ?? '' ) !== ( $receipt['shared_reduction_digest'] ?? '' ) || ( $page_plan['compiler_options'] ?? null ) !== ( $receipt['compiler_options'] ?? null ) || ( $page_plan['output_schema'] ?? null ) !== ( $receipt['output_schema'] ?? null ) || ( $page_plan['digest'] ?? '' ) === ( $receipt['digest'] ?? '' ) || empty( $receipt['digest'] ) || ! is_array( $receipt['compiled_documents'] ?? null ) || ! is_array( $receipt['owned_document_paths'] ?? null ) || ! $reduction_complete ) {
+			return new WP_Error( 'static_site_importer_direct_artifact_receipt_invalid', 'A compiled page receipt does not satisfy a published terminal receipt contract.' );
 		}
 		return true;
 	}
@@ -1194,7 +1201,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		if ( 'receipt' === $kind ) {
 			return is_string( $payload['page_id'] ?? null )
-				&& self::RECEIPT_SCHEMA === ( $payload['receipt']['receipt_schema'] ?? '' )
+				&& in_array( $payload['receipt']['receipt_schema'] ?? '', self::RECEIPT_SCHEMAS, true )
 				&& ( $payload['receipt']['page_id'] ?? null ) === $payload['page_id']
 				&& is_array( $payload['receipt']['terminal_reduction'] ?? null );
 		}
