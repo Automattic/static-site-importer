@@ -193,7 +193,7 @@ test('editor presentation intake compares provider-resolved expected and observe
 });
 
 test('editor interaction intake requires typed state transitions without retaining step bulk', () => {
-  assert.deepEqual(collectEditorInteraction([{
+  assert.deepEqual(collectEditorInteraction([{ command: 'wordpress.editor-actions', metadata: { recipe_phase: 'editor-persistence' } }, {
     command: 'wordpress.editor-actions',
     steps: [
       { index: 0, kind: 'navigate', status: 'ok' },
