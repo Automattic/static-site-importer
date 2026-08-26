@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import test from "node:test"
-import { buildDevelopmentPackage, developmentComposerManifest, overlayWorkingTree, parseArguments, provenance, worktreeIdentity } from "./build-dev-package.mjs"
+import { buildDevelopmentPackage, commandFailureMessage, developmentComposerManifest, overlayWorkingTree, parseArguments, provenance, worktreeIdentity } from "./build-dev-package.mjs"
 
 test("parses explicit Blocks Engine inputs and sensible defaults", () => {
   const defaults = parseArguments([], "/workspace/static-site-importer")
@@ -102,4 +102,18 @@ test("worktree overlay rejects reconstructable directories", async () => {
   await mkdir(join(directory, "source", "vendor"), { recursive: true })
   await assert.rejects(() => overlayWorkingTree(join(directory, "source"), join(directory, "snapshot"), ["vendor/cache.php"]), /reconstructable path/)
   await rm(directory, { recursive: true, force: true })
+})
+
+test("nested command failures preserve bounded stdout and stderr evidence", () => {
+  const stdoutOnly = commandFailureMessage("homeboy", ["review", "build"], { status: 7, stdout: Buffer.from("structured stdout"), stderr: Buffer.from(""), message: "generic failure" })
+  assert.equal(stdoutOnly, "homeboy review build (exit 7) failed: structured stdout")
+
+  const combined = commandFailureMessage("homeboy", ["review", "build"], { status: 1, stdout: Buffer.from("stdout evidence"), stderr: Buffer.from("stderr evidence"), message: "generic failure" })
+  assert.match(combined, /stdout evidence\nstderr evidence$/)
+
+  const oversized = commandFailureMessage("homeboy", ["review", "build"], { status: 1, stdout: Buffer.from(`start-${"x".repeat(65536)}-end`), stderr: Buffer.from(""), message: "generic failure" })
+  assert.match(oversized, /start-/)
+  assert.match(oversized, /truncated \d+ characters/)
+  assert.match(oversized, /-end$/)
+  assert.ok(oversized.length < 33000)
 })
