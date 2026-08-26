@@ -6038,7 +6038,7 @@ test('recipe runs editor-validate-blocks against imported content after each imp
   assert.equal(editorOpenStep.command, 'wordpress.editor-open');
   assert.ok(editorOpenStep.args.includes('target=front-page'));
   assert.ok(editorOpenStep.args.includes('capture=screenshot,editor-state,editor-validity'));
-  assert.ok(editorOpenStep.args.some((arg) => arg.startsWith('presentation-url=')));
+  assert.ok(editorOpenStep.args.includes('presentation-url=/'));
   assert.ok(editorOpenStep.args.includes('presentation-frontend-selector=.wp-block-post-content'));
   assert.ok(editorOpenStep.args.includes('artifact-prefix=files/browser/editor-open/simple-site'));
   const editorStep = recipe.workflow.steps.find((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND);
