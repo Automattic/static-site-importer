@@ -160,7 +160,6 @@ $resume = static fn ( string $id, string $operation = 'apply' ): array => array(
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'][] = static fn ( array $policy ): array => array_merge(
 	$policy,
 	array(
-		'prepare_batch_pages' => 1,
 		'compile_batch_pages' => 1,
 	)
 );
@@ -172,10 +171,10 @@ $frozen = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' 
 $assert( ! empty( $frozen['success'] ) && ! empty( $frozen['continuation'] ) && 'artifact_frozen' === ( $frozen['continuation_reason'] ?? '' ) && 0 === ( $frozen['artifact_run']['progress']['prepared_count'] ?? -1 ), 'large direct artifacts must yield after durable freezing so source request memory can unwind before compilation' );
 array_pop( $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] );
 $frozen_resumed = Static_Site_Importer_Canonical_Import_Service::import( $resume( (string) $frozen['import_id'], 'plan' ) );
-$assert( ! empty( $frozen_resumed['success'] ) && ! empty( $frozen_resumed['continuation'] ) && 1 === ( $frozen_resumed['artifact_run']['progress']['prepared_count'] ?? 0 ), 'source-free resume must validate and hydrate immutable artifact file shards before bounded page work' );
+$assert( ! empty( $frozen_resumed['success'] ) && ! empty( $frozen_resumed['continuation'] ) && 3 === ( $frozen_resumed['artifact_run']['progress']['prepared_count'] ?? 0 ) && 1 === ( $frozen_resumed['artifact_run']['progress']['receipt_count'] ?? 0 ), 'source-free resume must hydrate the immutable artifact once, prepare every page in one pass, and compile only its bounded receipt batch' );
 
 $first = Static_Site_Importer_Canonical_Import_Service::import( $input() );
-$assert( ! empty( $first['success'] ) && ! empty( $first['continuation'] ) && 'pages_remaining' === ( $first['continuation_reason'] ?? '' ) && 1 === ( $first['artifact_run']['progress']['prepared_count'] ?? 0 ) && 0 === ( $first['artifact_run']['progress']['receipt_count'] ?? -1 ) && 'continuing' === ( $first['import_report_summary']['status'] ?? '' ), 'the first invocation must durably prepare only its bounded page batch and explicitly continue' );
+$assert( ! empty( $first['success'] ) && ! empty( $first['continuation'] ) && 'pages_remaining' === ( $first['continuation_reason'] ?? '' ) && 3 === ( $first['artifact_run']['progress']['prepared_count'] ?? 0 ) && 1 === ( $first['artifact_run']['progress']['receipt_count'] ?? -1 ) && 'continuing' === ( $first['import_report_summary']['status'] ?? '' ), 'the first invocation must durably prepare all page plans in one partition, compile one bounded receipt batch, and explicitly continue' );
 $import_id = (string) $first['import_id'];
 $mismatch = $resume( $import_id );
 $mismatch['slug'] = 'different-frozen-contract';
@@ -189,20 +188,15 @@ $assert( ! empty( $busy['continuation'] ) && 'run_in_progress' === ( $busy['cont
 $locked_workspace->release_lock( $execution_lock );
 $GLOBALS['ssi_direct_checkpoint_reads'] = array();
 $second = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
-$assert( ! empty( $second['continuation'] ) && 2 === ( $second['artifact_run']['progress']['prepared_count'] ?? 0 ) && 0 === ( $second['artifact_run']['progress']['receipt_count'] ?? -1 ), 'resume must skip the first durable page plan and prepare only the next page' );
-$assert( 1 === ( $GLOBALS['ssi_direct_checkpoint_reads']['artifact'] ?? 0 ) && 1 === ( $GLOBALS['ssi_direct_checkpoint_reads']['shared'] ?? 0 ), 'a preparation resume must hydrate each required large checkpoint once' );
-$third = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
-$assert( ! empty( $third['continuation'] ) && 3 === ( $third['artifact_run']['progress']['prepared_count'] ?? 0 ) && 1 === ( $third['artifact_run']['progress']['receipt_count'] ?? 0 ), 'the final preparation invocation may compile only its bounded first page batch' );
-$GLOBALS['ssi_direct_checkpoint_reads'] = array();
-$fourth = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
-$assert( ! empty( $fourth['continuation'] ) && 2 === ( $fourth['artifact_run']['progress']['receipt_count'] ?? 0 ), 'resume must skip the first durable receipt and compile only the next page' );
+$assert( ! empty( $second['continuation'] ) && 3 === ( $second['artifact_run']['progress']['prepared_count'] ?? 0 ) && 2 === ( $second['artifact_run']['progress']['receipt_count'] ?? -1 ), 'resume must reuse every durable page plan and compile only the next receipt batch' );
 $assert( 0 === ( $GLOBALS['ssi_direct_checkpoint_reads']['artifact'] ?? 0 ) && 1 === ( $GLOBALS['ssi_direct_checkpoint_reads']['shared'] ?? 0 ) && 1 === ( $GLOBALS['ssi_direct_checkpoint_reads']['page_plan'] ?? 0 ), 'a compile-only resume must skip the source artifact and decode each consumed checkpoint once' );
-$terminal = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
+$third = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
+$terminal = $third;
 $work = $terminal['artifact_run']['work'] ?? array();
 $terminal_work = $terminal['artifact_run']['terminal_result_work'] ?? array();
 $assert( ! empty( $terminal['success'] ) && empty( $terminal['continuation'] ) && 1 === $GLOBALS['ssi_direct_mutations'], 'resumed apply must perform exactly one importer mutation' );
 $assert( array( 1, 1, 1 ) === ( $work['page_compile_counts'] ?? null ) && 3 === count( $terminal['artifact_run']['receipt_identities'] ?? array() ) && 3 === ( $work['pages_compiled'] ?? 0 ), 'durable counters and receipt evidence must prove every page compiled exactly once' );
-$assert( 3 === ( $work['page_prepare_passes'] ?? 0 ) && 3 === ( $work['page_plans_prepared'] ?? 0 ), 'durable counters must prove every page was prepared in a bounded pass exactly once' );
+$assert( 1 === ( $work['page_prepare_passes'] ?? 0 ) && 3 === ( $work['page_plans_prepared'] ?? 0 ), 'durable counters must prove every page plan was prepared by one whole-artifact partition' );
 $assert( 1 === ( $work['content_policy_applications'] ?? 0 ) && 1 === ( $work['client_script_policy_applications'] ?? 0 ), 'content and client script policy must each run once before the artifact is frozen' );
 $assert( 1 === ( $work['materialization_claims'] ?? 0 ) && 1 === ( $work['materializations'] ?? 0 ) && true === ( $GLOBALS['ssi_direct_last_args']['_static_site_importer_precompiled_source'] ?? false ), 'apply must claim once and use the precompiled source handoff' );
 $assert( 0 === ( $terminal_work['html_document_transform_count'] ?? -1 ) && 0 === ( $terminal_work['normalization_count'] ?? -1 ), 'terminal composition must perform zero HTML transforms and normalization' );
@@ -211,7 +205,7 @@ $assert( ! str_contains( (string) json_encode( $terminal['artifact_run'] ), $tes
 $replay = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
 $assert( $terminal === $replay && 1 === $GLOBALS['ssi_direct_mutations'], 'terminal replay must return the durable response without compile or mutation' );
 
-$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'prepare_batch_pages' => 20, 'compile_batch_pages' => 20 ) ) );
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_batch_pages' => 20 ) ) );
 $clean = Static_Site_Importer_Canonical_Import_Service::import( $input() );
 $canonical = static function ( array $response ): array {
 	unset( $response['import_id'], $response['artifact_run'] );

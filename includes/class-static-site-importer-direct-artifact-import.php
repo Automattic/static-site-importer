@@ -20,17 +20,18 @@ if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy' ) ) {
 }
 
 final class Static_Site_Importer_Direct_Artifact_Import {
-	private const RUN_SCHEMA        = 'static-site-importer/direct-artifact-run/v1';
-	private const CHECKPOINT_SCHEMA = 'static-site-importer/direct-artifact-checkpoint/v1';
-	private const EVIDENCE_SCHEMA   = 'static-site-importer/direct-artifact-run-evidence/v1';
-	private const RECEIPT_SCHEMA    = 'blocks-engine/php-transformer/compiled-page-receipt/v2';
-	private const TTL               = 604800;
-	private const CLEANUP_HOOK      = 'static_site_importer_purge_direct_artifact_imports';
+	private const RUN_SCHEMA                    = 'static-site-importer/direct-artifact-run/v1';
+	private const CHECKPOINT_SCHEMA             = 'static-site-importer/direct-artifact-checkpoint/v1';
+	private const EVIDENCE_SCHEMA               = 'static-site-importer/direct-artifact-run-evidence/v1';
+	private const RECEIPT_SCHEMA                = 'blocks-engine/php-transformer/compiled-page-receipt/v2';
+	private const TTL                           = 604800;
+	private const CLEANUP_HOOK                  = 'static_site_importer_purge_direct_artifact_imports';
 	private static array $checkpoint_read_cache = array();
 
 	/** Start a server-owned run after normal canonical source normalization. */
 	public static function start( array $artifact, array $args, string $source_type, string $operation, array $provenance ) {
 		self::$checkpoint_read_cache = array();
+
 		$freeze_started  = microtime( true );
 		$source_identity = self::hash_json( $artifact, false );
 		$source_policy   = Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
@@ -209,10 +210,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				return self::fail( $workspace, $run, 'compiler', $compiler );
 			}
 			$prepare_shared = array( $compiler, 'prepareShared' );
-			$prepare_page   = array( $compiler, 'preparePage' );
+			$prepare_pages  = array( $compiler, 'preparePages' );
 			$compile_pages  = array( $compiler, 'compilePreparedPages' );
 			$compose        = array( $compiler, 'compose' );
-			if ( ! is_callable( $prepare_shared ) || ! is_callable( $prepare_page ) || ! is_callable( $compile_pages ) || ! is_callable( $compose ) ) {
+			if ( ! is_callable( $prepare_shared ) || ! is_callable( $prepare_pages ) || ! is_callable( $compile_pages ) || ! is_callable( $compose ) ) {
 				return self::fail( $workspace, $run, 'compiler', new WP_Error( 'static_site_importer_invalid_transformer', 'The direct artifact compiler does not implement the staged compilation contract.' ) );
 			}
 			$artifact_state = null;
@@ -298,7 +299,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$deadline = call_user_func( $clock ) + $policy['max_invocation_seconds'];
 
 			$pending_plans = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['pages'] ?? array() ) ) );
-			$prepare_ids   = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending_plans, 0, $policy['prepare_batch_pages'] );
+			$prepare_ids   = self::deadline_reached( $deadline, $clock ) ? array() : $pending_plans;
 			if ( ! empty( $prepare_ids ) ) {
 				if ( self::deadline_reached( $deadline, $clock ) ) {
 					return self::continuation( $run, 'deadline_exhausted' );
@@ -308,15 +309,16 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				if ( is_wp_error( $entered ) ) {
 					return $entered;
 				}
-				$run = $entered;
+				$run            = $entered;
 				$artifact_state = $load_artifact();
 				if ( is_wp_error( $artifact_state ) ) {
 					return $artifact_state;
 				}
 				self::before_phase( 'prepare_pages', $run, $prepare_ids );
 				$run['work']['page_prepare_passes'] = (int) $run['work']['page_prepare_passes'] + 1;
+				$page_plans                         = call_user_func( $prepare_pages, $artifact_state['artifact'], $shared );
 				foreach ( $prepare_ids as $page_id ) {
-					$page_plan = call_user_func( $prepare_page, $artifact_state['artifact'], $shared, $page_id );
+					$page_plan = $page_plans[ $page_id ] ?? null;
 					$validated = self::validate_page_plan( $page_plan, $shared, $page_id );
 					if ( is_wp_error( $validated ) ) {
 						return self::fail( $workspace, $run, 'prepare_pages', $validated, array( $page_id ) );
@@ -499,6 +501,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			}
 			$artifact = $artifact_state['artifact'];
 			$args     = $artifact_state['args'];
+
 			$args['compiled_artifact_result']                 = $composed_state['result'];
 			$args['_static_site_importer_precompiled_source'] = true;
 
@@ -1086,7 +1089,6 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 
 	private static function run_policy(): array {
 		$policy = array(
-			'prepare_batch_pages'       => 2,
 			'compile_batch_pages'       => 2,
 			'max_invocation_seconds'    => 20.0,
 			'freeze_continuation_bytes' => 8 * 1024 * 1024,
@@ -1098,7 +1100,6 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$policy = array_merge( $policy, $filtered );
 			}
 		}
-		$policy['prepare_batch_pages']       = min( 20, max( 1, (int) $policy['prepare_batch_pages'] ) );
 		$policy['compile_batch_pages']       = min( 20, max( 1, (int) $policy['compile_batch_pages'] ) );
 		$policy['max_invocation_seconds']    = max( 0.001, (float) $policy['max_invocation_seconds'] );
 		$policy['freeze_continuation_bytes'] = max( 1, (int) $policy['freeze_continuation_bytes'] );
