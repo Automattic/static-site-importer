@@ -166,9 +166,22 @@ function runCommand(command, args, { cwd }) {
   try {
     return execFileSync(command, args, { cwd, encoding: "buffer", stdio: ["ignore", "pipe", "pipe"] })
   } catch (error) {
-    const detail = error.stderr?.toString().trim() || error.message
-    throw new Error(`${command} ${args.join(" ")} failed: ${detail}`)
+    throw new Error(commandFailureMessage(command, args, error))
   }
+}
+
+export function commandFailureMessage(command, args, error) {
+  const status = Number.isInteger(error.status) ? ` (exit ${error.status})` : ""
+  const output = [boundedOutput(error.stdout), boundedOutput(error.stderr)].filter(Boolean).join("\n")
+  return `${command} ${args.join(" ")}${status} failed: ${output || error.message}`
+}
+
+function boundedOutput(output, limit = 32768) {
+  const value = output?.toString().trim() ?? ""
+  if (value.length <= limit) return value
+  const marker = `\n...[truncated ${value.length - limit} characters]...\n`
+  const edge = Math.floor((limit - marker.length) / 2)
+  return `${value.slice(0, edge)}${marker}${value.slice(-edge)}`
 }
 
 function text(value) {
