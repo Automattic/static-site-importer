@@ -718,8 +718,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	public static function materialize_lifecycle_dependencies( array $lifecycle, array $args ) {
 		$reports = array();
 		foreach ( $lifecycle['dependencies'] ?? array() as $id => $prepared ) {
-			$adapter = $prepared['adapter'];
-			$waived  = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? '' ) ] );
+			$adapter  = $prepared['adapter'];
+			$required = ! empty( $prepared['required'] ) || self::lifecycle_entity_has_bindings( $lifecycle['entities'][ $id ] ?? array() );
+			$waived   = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? '' ) ] );
 			if ( $waived ) {
 				$reports[ $id ] = array(
 					'status'   => 'waived',
@@ -727,7 +728,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				);
 				continue;
 			}
-			if ( empty( $args['materialize_dependencies'] ) && ! self::dependencies_available( $adapter ) && ! empty( $prepared['required'] ) ) {
+			if ( empty( $args['materialize_dependencies'] ) && ! self::dependencies_available( $adapter ) && $required ) {
 				return new WP_Error(
 					'static_site_importer_required_runtime_dependency_missing',
 					'A required runtime dependency is unavailable and dependency materialization is disabled.',
@@ -751,7 +752,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					);
 				}
 			}
-			if ( 'prepare' !== ( $args['runtime_lifecycle_phase'] ?? '' ) && ! self::dependencies_available( $adapter ) && ! empty( $prepared['required'] ) ) {
+			if ( 'prepare' !== ( $args['runtime_lifecycle_phase'] ?? '' ) && ! self::dependencies_available( $adapter ) && $required ) {
 				return new WP_Error(
 					'static_site_importer_required_runtime_dependency_missing',
 					'SSI could not prepare a required runtime dependency.',
@@ -769,7 +770,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	/** Materialize all prepared provider entities and retain their receipts. */
 	public static function materialize_lifecycle_entities( array $lifecycle, array $args ): array {
 		$reports  = array();
-		$required = array_filter( $lifecycle['entities'] ?? array(), static fn( array $prepared ): bool => ! empty( $prepared['required'] ) );
+		$required = array_filter( $lifecycle['entities'] ?? array(), static fn( array $prepared ): bool => ! empty( $prepared['required'] ) || self::lifecycle_entity_has_bindings( $prepared ) );
 		if ( empty( $args['seed_entities'] ) && empty( $required ) ) {
 			return array(
 				'reports' => $reports,
@@ -802,8 +803,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$reports[ $id ] = $report;
 			$counts         = is_array( $report['counts'] ?? null ) ? $report['counts'] : array();
 			$expected       = count( is_array( $prepared['manifest']['products'] ?? null ) ? $prepared['manifest']['products'] : ( $prepared['manifest']['forms'] ?? array() ) );
-			$completed      = array_sum( array_map( 'intval', array_intersect_key( $counts, array_flip( array( 'created', 'updated', 'mapped', 'skipped' ) ) ) ) );
-			if ( in_array( $report['status'] ?? '', array( 'failed', 'error' ), true ) || ! empty( $counts['failed'] ) || ! empty( $counts['error'] ) || ( ! empty( $prepared['required'] ) && $completed < $expected ) ) {
+			$completed_keys = self::lifecycle_entity_has_bindings( $prepared ) ? array( 'created', 'updated', 'mapped' ) : array( 'created', 'updated', 'mapped', 'skipped' );
+			$completed      = array_sum( array_map( 'intval', array_intersect_key( $counts, array_flip( $completed_keys ) ) ) );
+			if ( in_array( $report['status'] ?? '', array( 'failed', 'error' ), true ) || ! empty( $counts['failed'] ) || ! empty( $counts['error'] ) || ( ( ! empty( $prepared['required'] ) || self::lifecycle_entity_has_bindings( $prepared ) ) && $completed < $expected ) ) {
 				$code    = isset( $report['code'] ) && is_scalar( $report['code'] ) ? (string) $report['code'] : 'static_site_importer_entity_materialization_failed';
 				$message = isset( $report['error'] ) && is_scalar( $report['error'] ) ? (string) $report['error'] : ( isset( $report['reason'] ) && is_scalar( $report['reason'] ) && '' !== (string) $report['reason'] ? (string) $report['reason'] : 'Runtime entity materialization failed for declaration: ' . $id . '.' );
 				return array(
@@ -819,6 +821,18 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'reports' => $reports,
 			'error'   => null,
 		);
+	}
+
+	/** A canonical page binding makes its provider entity part of materialization. */
+	private static function lifecycle_entity_has_bindings( array $prepared ): bool {
+		$manifest = is_array( $prepared['manifest'] ?? null ) ? $prepared['manifest'] : array();
+		$entities = is_array( $manifest['products'] ?? null ) ? $manifest['products'] : ( is_array( $manifest['forms'] ?? null ) ? $manifest['forms'] : array() );
+		foreach ( $entities as $entity ) {
+			if ( is_array( $entity ) && ! empty( $entity['bindings'] ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Build exact provider-owned block replacements without consulting diagnostics. */

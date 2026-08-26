@@ -60,6 +60,19 @@ namespace {
 			return true;
 		}
 	}
+	if ( ! class_exists( 'WP_Error' ) ) {
+		class WP_Error {
+			public function __construct( private string $code, private string $message = '', private $data = null ) {}
+			public function get_error_code(): string { return $this->code; }
+			public function get_error_message(): string { return $this->message; }
+			public function get_error_data() { return $this->data; }
+		}
+	}
+	if ( ! function_exists( 'is_wp_error' ) ) {
+		function is_wp_error( $value ): bool {
+			return class_exists( 'WP_Error' ) && $value instanceof WP_Error;
+		}
+	}
 
 	$wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: '/Users/chubes/Studio/intelligence-chubes4';
 	$parser  = rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-parser.php';
@@ -287,6 +300,19 @@ namespace {
 	$assert( str_contains( $escaped_label_markup, '<!-- wp:jetpack/label ' . $expected_sensitive_attrs . ' /-->' ), 'field-attributes-byte-match-core-escaping', $escaped_label_markup );
 	$assert( str_contains( $expected_sensitive_attrs, '\\u005c' ) && str_contains( $expected_sensitive_attrs, '\\u0022' ) && str_contains( $expected_sensitive_attrs, '\\u002d\\u002d' ) && str_contains( $expected_sensitive_attrs, '\\u003c' ) && str_contains( $expected_sensitive_attrs, '\\u003e' ) && str_contains( $expected_sensitive_attrs, '\\u0026' ), 'field-attributes-core-escapes-every-comment-sensitive-character', $expected_sensitive_attrs );
 	$assert( $escaped_label_markup === serialize_blocks( parse_blocks( $escaped_label_markup ) ), 'field-attributes-round-trip-through-wordpress-block-parser', $escaped_label_markup );
+
+	// --- Composed route forms materialize directly without caller seeding ----
+	$route_form = '<main><form class="contact"><label>Email <input type="email" name="email" required></label><button type="submit">Contact me</button></form></main>';
+	$composed_result = ( new \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile(
+		array( 'entrypoint' => 'about.html', 'files' => array( 'about.html' => $route_form, 'contact.html' => $route_form ) )
+	)->toArray();
+	$composed_plan = $composed_result['source_reports']['wordpress_site_plan'] ?? array();
+	$composed_lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $composed_plan, array() );
+	$composed_entities = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $composed_lifecycle, array( 'seed_entities' => false ) );
+	$composed_bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bindings( $composed_lifecycle, $composed_entities['reports'] ?? array() );
+	$composed_form_receipt = reset( $composed_entities['reports'] );
+	$assert( 2 === ( $composed_plan['quality']['metrics']['fallback_count'] ?? -1 ) && 2 === ( $composed_form_receipt['counts']['mapped'] ?? 0 ), 'composed-route-forms-produce-one-provider-receipt' );
+	$assert( is_array( $composed_bindings ) && 2 === count( $composed_bindings ) && array() === array_filter( $composed_bindings, static fn( array $binding ): bool => 'jetpack' !== ( $binding['provider'] ?? '' ) || '' === ( $binding['fallback_reconciliation_identity'] ?? '' ) ), 'composed-route-forms-produce-identity-bound-provider-bindings', (string) wp_json_encode( array( 'receipt' => $composed_form_receipt, 'bindings' => $composed_bindings ) ) );
 
 	// --- Generic topology preserves nested rows and source presentation hooks --
 	$topology_form = array(
@@ -530,6 +556,7 @@ namespace {
 	$GLOBALS['ssi_jetpack_form_blocks_available'] = false;
 	$unavailable_seed                              = Static_Site_Importer_Form_Seeder::seed( $forms_manifest );
 	$unavailable_row                               = $unavailable_seed['forms'][0] ?? array();
+	$assert( 'failed' === ( $unavailable_seed['status'] ?? '' ) && 'static_site_importer_form_provider_unavailable' === ( $unavailable_seed['code'] ?? '' ), 'seed-unavailable-provider-fails-explicitly' );
 	$assert( 1 === ( $unavailable_seed['counts']['skipped'] ?? 0 ), 'seed-unavailable-provider-skips-form' );
 	$assert( 'provider_unavailable' === ( $unavailable_row['reason'] ?? '' ), 'seed-unavailable-provider-reason' );
 	$assert( false === ( $unavailable_row['runtime_mapped'] ?? true ), 'seed-unavailable-provider-not-runtime-mapped' );

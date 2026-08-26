@@ -279,6 +279,10 @@ class Static_Site_Importer_Theme_Generator {
 			$diagnostics = isset( $source_reports['wordpress_site_plan_diagnostics'] ) && is_array( $source_reports['wordpress_site_plan_diagnostics'] ) ? wp_json_encode( $source_reports['wordpress_site_plan_diagnostics'] ) : '';
 			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.' . ( false !== $diagnostics ? ' ' . $diagnostics : '' ), $compiled );
 		}
+		// The compile boundary is the only seam holding both the canonical plan's
+		// asset-to-route scopes and the source artifact; derive author-stylesheet
+		// coverage findings here and let the report projection publish them.
+		$args['missing_author_stylesheet_diagnostics'] = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics( $plan, $artifact );
 		$companion_payload = null;
 		$gutenberg_gaps    = isset( $source_reports['gutenberg_gaps'] ) && is_array( $source_reports['gutenberg_gaps'] ) ? $source_reports['gutenberg_gaps'] : array();
 		if ( ! empty( $source_reports['companion_plugin_payload'] ) ) {
@@ -624,6 +628,9 @@ class Static_Site_Importer_Theme_Generator {
 		$diagnostics = array_merge( $diagnostics, $lifecycle['diagnostics'] ?? array() );
 		$gutenberg_gaps = isset( $receipt['extensions']['gutenberg_gaps'] ) && is_array( $receipt['extensions']['gutenberg_gaps'] ) ? $receipt['extensions']['gutenberg_gaps'] : array();
 		$diagnostics = array_merge( $diagnostics, $gutenberg_gaps );
+		if ( isset( $args['missing_author_stylesheet_diagnostics'] ) && is_array( $args['missing_author_stylesheet_diagnostics'] ) ) {
+			$diagnostics = array_merge( $diagnostics, array_values( array_filter( $args['missing_author_stylesheet_diagnostics'], 'is_array' ) ) );
+		}
 		$report       = array(
 			'schema'                           => 'static-site-importer/import-report/v1',
 			'import_run_id'                    => self::import_run_id( $args ),

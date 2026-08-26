@@ -26,4 +26,10 @@ $assert( 'preview' === $preview['status'] && 'failed' === $preview['production_s
 $unknown = Static_Site_Importer_Quality_Budget_Admission::evaluate( array(), array(), array() );
 $assert( 'not_proven' === $unknown['production_status'] && 'preview' === $unknown['status'], 'imports without budget evidence remain explicitly not proven' );
 
+$source_fallback_plan = array( 'quality' => array( 'metrics' => array( 'fallback_count' => 2 ) ) );
+$resolved_fallbacks = Static_Site_Importer_Quality_Budget_Admission::evaluate( $source_fallback_plan, array(), array( 'quality_budget' => array( 'mode' => 'production', 'max_fallback_count' => 0 ) ), array( 'quality' => array( 'fallback_count' => 0, 'source_fallback_count' => 2 ) ) );
+$assert( 'passed' === $resolved_fallbacks['production_status'] && 0 === $resolved_fallbacks['evidence']['fallback_count'], 'zero-fallback admission uses the provider-reconciled materialized result' );
+$unresolved_fallbacks = Static_Site_Importer_Quality_Budget_Admission::evaluate( $source_fallback_plan, array(), array( 'quality_budget' => array( 'mode' => 'production', 'max_fallback_count' => 0 ) ) );
+$assert( 'failed' === $unresolved_fallbacks['production_status'] && 2 === $unresolved_fallbacks['evidence']['fallback_count'], 'unresolved provider-materializable fallbacks fail zero-fallback admission' );
+
 print "quality budget admission smoke passed\n";
