@@ -20,15 +20,18 @@ if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy' ) ) {
 }
 
 final class Static_Site_Importer_Direct_Artifact_Import {
-	private const RUN_SCHEMA        = 'static-site-importer/direct-artifact-run/v1';
-	private const CHECKPOINT_SCHEMA = 'static-site-importer/direct-artifact-checkpoint/v1';
-	private const EVIDENCE_SCHEMA   = 'static-site-importer/direct-artifact-run-evidence/v1';
-	private const RECEIPT_SCHEMA    = 'blocks-engine/php-transformer/compiled-page-receipt/v2';
-	private const TTL               = 604800;
-	private const CLEANUP_HOOK      = 'static_site_importer_purge_direct_artifact_imports';
+	private const RUN_SCHEMA                    = 'static-site-importer/direct-artifact-run/v1';
+	private const CHECKPOINT_SCHEMA             = 'static-site-importer/direct-artifact-checkpoint/v1';
+	private const EVIDENCE_SCHEMA               = 'static-site-importer/direct-artifact-run-evidence/v1';
+	private const RECEIPT_SCHEMA                = 'blocks-engine/php-transformer/compiled-page-receipt/v2';
+	private const TTL                           = 604800;
+	private const CLEANUP_HOOK                  = 'static_site_importer_purge_direct_artifact_imports';
+	private static array $checkpoint_read_cache = array();
 
 	/** Start a server-owned run after normal canonical source normalization. */
 	public static function start( array $artifact, array $args, string $source_type, string $operation, array $provenance ) {
+		self::$checkpoint_read_cache = array();
+
 		$freeze_started  = microtime( true );
 		$source_identity = self::hash_json( $artifact, false );
 		$source_policy   = Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
@@ -119,6 +122,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 
 	/** Resume an opaque run without reacquiring source bytes. */
 	public static function resume( string $import_id, array $args, string $source_type, string $operation, array $source ) {
+		self::$checkpoint_read_cache = array();
 		if ( ! preg_match( '/^[a-f0-9]{64}$/', $import_id ) ) {
 			return new WP_Error( 'static_site_importer_invalid_direct_artifact_import_id', 'The direct artifact import_id is invalid.' );
 		}
@@ -148,10 +152,6 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		if ( self::implementation_binding() !== ( $run['binding']['implementation'] ?? null ) ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_implementation_changed', 'The retained direct artifact run was created by a different compiler or policy implementation.' );
-		}
-		$validated = self::validate_retained_refs( $workspace, $run );
-		if ( is_wp_error( $validated ) ) {
-			return $validated;
 		}
 		if ( 'completed' === ( $run['state'] ?? '' ) ) {
 			$final = self::read_checkpoint( $workspace, $run, $run['refs']['final'] ?? array(), 'final' );
@@ -210,18 +210,19 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				return self::fail( $workspace, $run, 'compiler', $compiler );
 			}
 			$prepare_shared = array( $compiler, 'prepareShared' );
-			$prepare_page   = array( $compiler, 'preparePage' );
+			$prepare_pages  = array( $compiler, 'preparePages' );
 			$compile_pages  = array( $compiler, 'compilePreparedPages' );
 			$compose        = array( $compiler, 'compose' );
-			if ( ! is_callable( $prepare_shared ) || ! is_callable( $prepare_page ) || ! is_callable( $compile_pages ) || ! is_callable( $compose ) ) {
+			if ( ! is_callable( $prepare_shared ) || ! is_callable( $prepare_pages ) || ! is_callable( $compile_pages ) || ! is_callable( $compose ) ) {
 				return self::fail( $workspace, $run, 'compiler', new WP_Error( 'static_site_importer_invalid_transformer', 'The direct artifact compiler does not implement the staged compilation contract.' ) );
 			}
-			$artifact_state = self::read_checkpoint( $workspace, $run, $run['refs']['artifact'], 'artifact' );
-			if ( is_wp_error( $artifact_state ) ) {
+			$artifact_state = null;
+			$load_artifact  = static function () use ( &$artifact_state, $workspace, $run ) {
+				if ( null === $artifact_state ) {
+					$artifact_state = self::read_checkpoint( $workspace, $run, $run['refs']['artifact'], 'artifact' );
+				}
 				return $artifact_state;
-			}
-			$artifact = $artifact_state['artifact'];
-			$args     = $artifact_state['args'];
+			};
 
 			if ( empty( $run['refs']['shared'] ) ) {
 				$shared_ref = self::existing_checkpoint_ref( $workspace, $run, 'shared-plan.json', 'shared' );
@@ -240,6 +241,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				}
 			}
 			if ( empty( $run['refs']['shared'] ) ) {
+				$artifact_state = $load_artifact();
+				if ( is_wp_error( $artifact_state ) ) {
+					return $artifact_state;
+				}
 				$started = microtime( true );
 				$entered = self::enter_phase( $workspace, $run, 'prepare_shared' );
 				if ( is_wp_error( $entered ) ) {
@@ -247,7 +252,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				}
 				$run = $entered;
 				self::before_phase( 'prepare_shared', $run );
-				$shared = call_user_func( $prepare_shared, $artifact );
+				$shared = call_user_func( $prepare_shared, $artifact_state['artifact'] );
 				if ( 'blocks-engine/php-transformer/staged-shared-plan/v1' !== ( $shared['schema'] ?? '' ) || empty( $shared['digest'] ) || ! is_array( $shared['analysis']['page_ids'] ?? null ) ) {
 					throw new RuntimeException( 'Blocks Engine returned an invalid shared plan.' );
 				}
@@ -294,7 +299,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$deadline = call_user_func( $clock ) + $policy['max_invocation_seconds'];
 
 			$pending_plans = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['pages'] ?? array() ) ) );
-			$prepare_ids   = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending_plans, 0, $policy['prepare_batch_pages'] );
+			$prepare_ids   = self::deadline_reached( $deadline, $clock ) ? array() : $pending_plans;
 			if ( ! empty( $prepare_ids ) ) {
 				if ( self::deadline_reached( $deadline, $clock ) ) {
 					return self::continuation( $run, 'deadline_exhausted' );
@@ -304,11 +309,16 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				if ( is_wp_error( $entered ) ) {
 					return $entered;
 				}
-				$run = $entered;
+				$run            = $entered;
+				$artifact_state = $load_artifact();
+				if ( is_wp_error( $artifact_state ) ) {
+					return $artifact_state;
+				}
 				self::before_phase( 'prepare_pages', $run, $prepare_ids );
 				$run['work']['page_prepare_passes'] = (int) $run['work']['page_prepare_passes'] + 1;
+				$page_plans                         = call_user_func( $prepare_pages, $artifact_state['artifact'], $shared );
 				foreach ( $prepare_ids as $page_id ) {
-					$page_plan = call_user_func( $prepare_page, $artifact, $shared, $page_id );
+					$page_plan = $page_plans[ $page_id ] ?? null;
 					$validated = self::validate_page_plan( $page_plan, $shared, $page_id );
 					if ( is_wp_error( $validated ) ) {
 						return self::fail( $workspace, $run, 'prepare_pages', $validated, array( $page_id ) );
@@ -485,6 +495,13 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			if ( self::deadline_reached( $deadline, $clock ) ) {
 				return self::continuation( $run, 'deadline_exhausted' );
 			}
+			$artifact_state = $load_artifact();
+			if ( is_wp_error( $artifact_state ) ) {
+				return $artifact_state;
+			}
+			$artifact = $artifact_state['artifact'];
+			$args     = $artifact_state['args'];
+
 			$args['compiled_artifact_result']                 = $composed_state['result'];
 			$args['_static_site_importer_precompiled_source'] = true;
 
@@ -709,34 +726,6 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		return true;
 	}
 
-	/** Validate every referenced retained value before a resumed phase reads it. */
-	private static function validate_retained_refs( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run ) {
-		$kinds = array(
-			'artifact'        => 'artifact',
-			'shared'          => 'shared',
-			'composed'        => 'composed',
-			'materialization' => 'materialization',
-			'final'           => 'final',
-		);
-		foreach ( $kinds as $key => $kind ) {
-			if ( isset( $run['refs'][ $key ] ) && is_wp_error( self::read_checkpoint( $workspace, $run, $run['refs'][ $key ], $kind ) ) ) {
-				return self::read_checkpoint( $workspace, $run, $run['refs'][ $key ], $kind );
-			}
-		}
-		foreach ( array(
-			'pages'    => 'page_plan',
-			'receipts' => 'receipt',
-		) as $key => $kind ) {
-			foreach ( is_array( $run['refs'][ $key ] ?? null ) ? $run['refs'][ $key ] : array() as $ref ) {
-				$value = self::read_checkpoint( $workspace, $run, $ref, $kind );
-				if ( is_wp_error( $value ) ) {
-					return $value;
-				}
-			}
-		}
-		return true;
-	}
-
 	/** Persist the boundary before entering an uninterruptible owning call. */
 	private static function enter_phase( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run, string $phase, array $page_ids = array() ) {
 		$run['phase']                           = $phase;
@@ -908,6 +897,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	}
 
 	private static function read_checkpoint( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run, array $ref, string $kind ) {
+		$cache_key = spl_object_id( $workspace ) . ':' . $kind . ':' . (string) ( $ref['sha256'] ?? '' );
+		if ( array_key_exists( $cache_key, self::$checkpoint_read_cache ) ) {
+			return self::$checkpoint_read_cache[ $cache_key ];
+		}
 		$relative = is_string( $ref['file'] ?? null ) ? $ref['file'] : '';
 		$raw      = '' !== $relative ? $workspace->read_raw( $relative ) : null;
 		$record   = is_string( $raw ) ? json_decode( $raw, true ) : null;
@@ -922,7 +915,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( ! is_array( $record ) || ! hash_equals( (string) ( $ref['sha256'] ?? '' ), $raw_hash ) || self::CHECKPOINT_SCHEMA !== ( $record['schema'] ?? '' ) || ( $record['kind'] ?? '' ) !== $kind || ( $record['import_id'] ?? '' ) !== $run['import_id'] || ( $run['binding']['artifact_identity'] ?? '' ) !== ( $record['artifact_identity'] ?? '' ) || ! is_array( $record['payload'] ?? null ) || ! hash_equals( (string) ( $record['payload_sha256'] ?? '' ), self::hash( $record['payload'] ) ) || ! hash_equals( (string) ( $ref['payload'] ?? '' ), (string) $record['payload_sha256'] ) || ! self::checkpoint_contract_valid( $record['payload'], $kind, $run ) ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_checkpoint_invalid', 'A retained direct artifact checkpoint failed its identity, hash, or contract validation.' );
 		}
-		return $record['payload'];
+		self::$checkpoint_read_cache[ $cache_key ] = $record['payload'];
+		if ( function_exists( 'do_action' ) ) {
+			do_action( 'static_site_importer_direct_artifact_checkpoint_read', $kind, self::evidence( $run ) );
+		}
+		return self::$checkpoint_read_cache[ $cache_key ];
 	}
 
 	private static function existing_checkpoint_ref( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run, string $relative, string $kind ) {
@@ -1092,7 +1089,6 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 
 	private static function run_policy(): array {
 		$policy = array(
-			'prepare_batch_pages'       => 2,
 			'compile_batch_pages'       => 2,
 			'max_invocation_seconds'    => 20.0,
 			'freeze_continuation_bytes' => 8 * 1024 * 1024,
@@ -1104,7 +1100,6 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$policy = array_merge( $policy, $filtered );
 			}
 		}
-		$policy['prepare_batch_pages']       = min( 20, max( 1, (int) $policy['prepare_batch_pages'] ) );
 		$policy['compile_batch_pages']       = min( 20, max( 1, (int) $policy['compile_batch_pages'] ) );
 		$policy['max_invocation_seconds']    = max( 0.001, (float) $policy['max_invocation_seconds'] );
 		$policy['freeze_continuation_bytes'] = max( 1, (int) $policy['freeze_continuation_bytes'] );
