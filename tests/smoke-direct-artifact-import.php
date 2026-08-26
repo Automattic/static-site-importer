@@ -10,6 +10,7 @@ $GLOBALS['ssi_direct_actions'] = array();
 $GLOBALS['ssi_direct_mutations'] = 0;
 $GLOBALS['ssi_direct_last_args'] = array();
 $GLOBALS['ssi_direct_compiled_results'] = array();
+$GLOBALS['ssi_direct_checkpoint_reads'] = array();
 
 class WP_Error {
 	public function __construct( private string $code, private string $message = '', private $data = null ) {}
@@ -163,6 +164,9 @@ $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'
 		'compile_batch_pages' => 1,
 	)
 );
+$GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_checkpoint_read'][] = static function ( string $kind ): void {
+	$GLOBALS['ssi_direct_checkpoint_reads'][ $kind ] = (int) ( $GLOBALS['ssi_direct_checkpoint_reads'][ $kind ] ?? 0 ) + 1;
+};
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'][] = static fn ( array $policy ): array => array_merge( $policy, array( 'freeze_continuation_bytes' => 1 ) );
 $frozen = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
 $assert( ! empty( $frozen['success'] ) && ! empty( $frozen['continuation'] ) && 'artifact_frozen' === ( $frozen['continuation_reason'] ?? '' ) && 0 === ( $frozen['artifact_run']['progress']['prepared_count'] ?? -1 ), 'large direct artifacts must yield after durable freezing so source request memory can unwind before compilation' );
@@ -183,12 +187,16 @@ $assert( is_resource( $execution_lock ), 'the fixture must own the serialized ex
 $busy = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
 $assert( ! empty( $busy['continuation'] ) && 'run_in_progress' === ( $busy['continuation_reason'] ?? '' ) && 0 === $GLOBALS['ssi_direct_mutations'], 'a concurrent resume must yield without mutating run state or WordPress' );
 $locked_workspace->release_lock( $execution_lock );
+$GLOBALS['ssi_direct_checkpoint_reads'] = array();
 $second = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
 $assert( ! empty( $second['continuation'] ) && 2 === ( $second['artifact_run']['progress']['prepared_count'] ?? 0 ) && 0 === ( $second['artifact_run']['progress']['receipt_count'] ?? -1 ), 'resume must skip the first durable page plan and prepare only the next page' );
+$assert( 1 === ( $GLOBALS['ssi_direct_checkpoint_reads']['artifact'] ?? 0 ) && 1 === ( $GLOBALS['ssi_direct_checkpoint_reads']['shared'] ?? 0 ), 'a preparation resume must hydrate each required large checkpoint once' );
 $third = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
 $assert( ! empty( $third['continuation'] ) && 3 === ( $third['artifact_run']['progress']['prepared_count'] ?? 0 ) && 1 === ( $third['artifact_run']['progress']['receipt_count'] ?? 0 ), 'the final preparation invocation may compile only its bounded first page batch' );
+$GLOBALS['ssi_direct_checkpoint_reads'] = array();
 $fourth = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
 $assert( ! empty( $fourth['continuation'] ) && 2 === ( $fourth['artifact_run']['progress']['receipt_count'] ?? 0 ), 'resume must skip the first durable receipt and compile only the next page' );
+$assert( 0 === ( $GLOBALS['ssi_direct_checkpoint_reads']['artifact'] ?? 0 ) && 1 === ( $GLOBALS['ssi_direct_checkpoint_reads']['shared'] ?? 0 ) && 1 === ( $GLOBALS['ssi_direct_checkpoint_reads']['page_plan'] ?? 0 ), 'a compile-only resume must skip the source artifact and decode each consumed checkpoint once' );
 $terminal = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
 $work = $terminal['artifact_run']['work'] ?? array();
 $terminal_work = $terminal['artifact_run']['terminal_result_work'] ?? array();
