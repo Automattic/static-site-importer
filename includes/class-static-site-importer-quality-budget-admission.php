@@ -34,6 +34,12 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 		$families                = self::core_html_families( $diagnostics );
 		$unresolved_media        = self::metric( $metrics, array( 'unresolved_media_count', 'unresolved_asset_count' ) );
 		$unresolved_dependencies = self::metric( $metrics, array( 'unresolved_dependency_count', 'dependency_failure_count', 'runtime_dependency_parity_issue_count' ) );
+		$materialized_quality     = isset( $report['quality'] ) && is_array( $report['quality'] ) ? $report['quality'] : array();
+		$materialized_metrics     = isset( $materialized_quality['metrics'] ) && is_array( $materialized_quality['metrics'] ) ? $materialized_quality['metrics'] : $materialized_quality;
+		$fallbacks                = self::metric( $materialized_metrics, array( 'fallback_count', 'unresolved_fallback_count' ) );
+		if ( null === $fallbacks ) {
+			$fallbacks = self::metric( $metrics, array( 'fallback_count', 'unresolved_fallback_count' ) );
+		}
 		$bootstrap_bytes         = self::bootstrap_bytes( $writes );
 		$stylesheets             = self::stylesheet_count( $writes );
 		$evidence                = array(
@@ -42,6 +48,7 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 			'core_html_families'          => $families,
 			'unresolved_media_count'      => $unresolved_media,
 			'unresolved_dependency_count' => $unresolved_dependencies,
+			'fallback_count'               => $fallbacks,
 			'bootstrap_bytes'             => $bootstrap_bytes,
 			'stylesheet_asset_count'      => $stylesheets,
 			'visual_gate'                 => self::gate_status( $args, $report, 'visual' ),
@@ -53,6 +60,7 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 			'max_core_html_family_count'      => count( $families ),
 			'max_unresolved_media_count'      => $unresolved_media,
 			'max_unresolved_dependency_count' => $unresolved_dependencies,
+			'max_fallback_count'               => $fallbacks,
 			'max_bootstrap_bytes'             => $bootstrap_bytes,
 			'max_stylesheet_asset_count'      => $stylesheets,
 		);
