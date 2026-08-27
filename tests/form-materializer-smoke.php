@@ -547,6 +547,15 @@ namespace {
 	$assert( empty( $hidden_control_validation['errors'] ) && array() === $hidden_control_losses, 'hidden-control-plumbing-records-no-topology-loss' );
 	$assert( 'mapped' === ( $hidden_control_row['status'] ?? '' ) && empty( $hidden_control_row['form_receipt_unaccepted_losses'] ), 'hidden-control-plumbing-keeps-the-form-materializable' );
 	$assert( str_contains( $hidden_control_markup, 'First name' ) && str_contains( $hidden_control_markup, 'Message' ) && ! str_contains( $hidden_control_markup, 'ucfid' ), 'hidden-control-plumbing-is-dropped-without-disturbing-authored-fields' );
+	$list_wrapper = $topology_form;
+	$list_wrapper['forms'][0]['control_topology']['nodes'][0]['tag'] = 'ul';
+	$list_wrapper['forms'][0]['layout_graph']['nodes'] = array();
+	$list_wrapper_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $list_wrapper );
+	$list_wrapper_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $list_wrapper_validation['forms'] ) );
+	$list_wrapper_row = $list_wrapper_seed['forms'][0] ?? array();
+	$list_wrapper_markup = (string) ( $list_wrapper_row['block_markup'] ?? '' );
+	$assert( 'mapped' === ( $list_wrapper_row['status'] ?? '' ) && empty( $list_wrapper_row['form_receipt_unaccepted_losses'] ), 'list-grouping-wrapper-keeps-the-form-materializable' );
+	$assert( str_contains( $list_wrapper_markup, 'First name' ) && str_contains( $list_wrapper_markup, 'Email' ) && ! str_contains( $list_wrapper_markup, '<ul' ), 'list-grouping-wrapper-flattens-into-provider-fields' );
 	$deep_topology = $topology_form;
 	$deep_nodes = array();
 	for ( $depth = 0; $depth < 8; ++$depth ) {
