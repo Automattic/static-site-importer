@@ -536,6 +536,17 @@ namespace {
 	$assert( empty( $unsupported_control_validation['errors'] ) && array( 'file' ) === ( $unsupported_control_row['skipped_types'] ?? array() ), 'unsupported-file-control-keeps-provider-skipped-type-diagnostic' );
 	$assert( 'topology' === ( $unsupported_control_loss['dimension'] ?? '' ) && 'unsupported_control_unrepresentable' === ( $unsupported_control_loss['reason_code'] ?? '' ) && 1 === ( $unsupported_control_loss['control_index'] ?? null ) && hash( 'sha256', 'file' ) === ( $unsupported_control_loss['control_type_hash'] ?? '' ) && 64 === strlen( (string) ( $unsupported_control_loss['node_hash'] ?? '' ) ), 'unsupported-file-control-records-node-addressable-topology-loss' );
 	$assert( str_contains( $unsupported_control_markup, 'First name' ) && ! str_contains( $unsupported_control_markup, 'Attachment' ) && str_contains( $unsupported_control_markup, 'Message' ), 'unsupported-file-control-preserves-supported-topology-order-around-loss' );
+	$hidden_control = $topology_form;
+	$hidden_control['forms'][0]['controls'][] = array( 'tag' => 'input', 'type' => 'hidden', 'name' => 'ucfid', 'value' => '980337499904279388' );
+	$hidden_control['forms'][0]['control_topology']['nodes'][] = array( 'id' => 'control-4', 'kind' => 'control', 'parent' => null, 'order' => 3, 'depth' => 0, 'control' => 4 );
+	$hidden_control_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $hidden_control );
+	$hidden_control_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $hidden_control_validation['forms'] ) );
+	$hidden_control_row = $hidden_control_seed['forms'][0] ?? array();
+	$hidden_control_markup = (string) ( $hidden_control_row['block_markup'] ?? '' );
+	$hidden_control_losses = array_values( array_filter( $hidden_control_row['computed_layout_receipt']['losses'] ?? array(), static fn ( $loss ): bool => 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' ) ) );
+	$assert( empty( $hidden_control_validation['errors'] ) && array() === $hidden_control_losses, 'hidden-control-plumbing-records-no-topology-loss' );
+	$assert( 'mapped' === ( $hidden_control_row['status'] ?? '' ) && empty( $hidden_control_row['form_receipt_unaccepted_losses'] ), 'hidden-control-plumbing-keeps-the-form-materializable' );
+	$assert( str_contains( $hidden_control_markup, 'First name' ) && str_contains( $hidden_control_markup, 'Message' ) && ! str_contains( $hidden_control_markup, 'ucfid' ), 'hidden-control-plumbing-is-dropped-without-disturbing-authored-fields' );
 	$deep_topology = $topology_form;
 	$deep_nodes = array();
 	for ( $depth = 0; $depth < 8; ++$depth ) {

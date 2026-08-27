@@ -528,6 +528,20 @@ class Static_Site_Importer_Form_Seeder {
 		return $row;
 	}
 
+	/**
+	 * Report whether a source control carries content the provider is expected to represent.
+	 *
+	 * Hidden inputs carry the source platform's form-handler plumbing, such as endpoint
+	 * identifiers and captcha tokens, rather than content an author wrote or a visitor sees.
+	 * A provider form supersedes that plumbing, so leaving hidden inputs behind is the intended
+	 * conversion rather than a fidelity loss.
+	 *
+	 * @param string $type Normalized source control type.
+	 */
+	private static function control_carries_authored_content( string $type ): bool {
+		return 'hidden' !== $type;
+	}
+
 	/** A source label wrapper is carried by the mapped Jetpack field's label child. */
 	private static function provider_represents_receipt_loss( array $loss, array $form, array $field_blocks ): bool {
 		if ( 'unsupported_semantic_wrapper' !== ( $loss['reason_code'] ?? '' ) || ! is_string( $loss['node_hash'] ?? null ) ) {
@@ -713,7 +727,10 @@ class Static_Site_Importer_Form_Seeder {
 					if ( isset( $field_blocks[ $control_index ] ) ) {
 						$blocks[] = $field_blocks[ $control_index ];
 					} elseif ( isset( $controls[ $control_index ] ) ) {
-						$type     = strtolower( trim( (string) ( $controls[ $control_index ]['type'] ?? $controls[ $control_index ]['tag'] ?? '' ) ) );
+						$type = strtolower( trim( (string) ( $controls[ $control_index ]['type'] ?? $controls[ $control_index ]['tag'] ?? '' ) ) );
+						if ( ! self::control_carries_authored_content( $type ) ) {
+							continue;
+						}
 						$losses[] = array(
 							'dimension'         => 'topology',
 							'reason_code'       => 'unsupported_control_unrepresentable',
