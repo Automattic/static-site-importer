@@ -215,6 +215,7 @@ URL intake rules:
 - External assets must be directly referenced by fetched HTML or CSS and pass the same public-IP and redirect validation as page URLs.
 - Only `http` and `https` URLs are accepted.
 - Localhost, loopback, link-local, private, and otherwise reserved IP targets are rejected before connecting.
+- Address classification is owned by SSI and behaves identically on every supported PHP version. Addresses are compared as packed bytes against an explicit RFC 6890 block table, IPv4-in-IPv6 encodings such as `::ffff:127.0.0.1` are unmapped so the classified address is the address the transport connects to, and shared address space (`100.64.0.0/10`) is treated as non-public.
 - Redirect targets are revalidated with the same policy and capped.
 - Requests use a timeout and maximum response size, require an HTML-like content type, and do not forward cookies, authorization headers, or embedded URL credentials.
 - Import reports include source URL, final URL, status code, content type, fetch timestamps, response size, and redirect history.

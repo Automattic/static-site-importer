@@ -10,6 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 require_once __DIR__ . '/class-static-site-importer-url-fetcher-native-handle.php';
+require_once __DIR__ . '/class-static-site-importer-ip-classifier.php';
 
 /**
  * Fetches one public HTML URL into an importer work directory.
@@ -742,10 +743,14 @@ class Static_Site_Importer_URL_Fetcher {
 			return $ips;
 		}
 
+		$targets = array();
 		foreach ( $ips as $ip ) {
-			if ( ! self::is_public_ip( $ip ) ) {
+			$canonical = Static_Site_Importer_IP_Classifier::normalize( $ip );
+			if ( null === $canonical || ! Static_Site_Importer_IP_Classifier::is_public( $canonical ) ) {
 				return new WP_Error( 'static_site_importer_url_private_ip', 'The URL resolves to a private, loopback, link-local, or otherwise reserved IP address.' );
 			}
+
+			$targets[] = $canonical;
 		}
 
 		$path = (string) ( $parts['path'] ?? '/' );
@@ -762,7 +767,7 @@ class Static_Site_Importer_URL_Fetcher {
 			'host'   => $host,
 			'port'   => $port,
 			'path'   => $path,
-			'ips'    => array_values( $ips ),
+			'ips'    => array_values( array_unique( $targets ) ),
 		);
 	}
 
@@ -981,16 +986,6 @@ class Static_Site_Importer_URL_Fetcher {
 		}
 
 		return $ips;
-	}
-
-	/**
-	 * Determine whether an IP is public internet routable.
-	 *
-	 * @param string $ip IP address.
-	 * @return bool
-	 */
-	private static function is_public_ip( string $ip ): bool {
-		return (bool) filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE );
 	}
 
 	/**
