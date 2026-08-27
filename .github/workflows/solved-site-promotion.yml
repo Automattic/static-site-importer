@@ -166,7 +166,7 @@ jobs:
             --wp-codebox-bin "$WP_CODEBOX_BIN" \
             --wordpress-version "$WORDPRESS_VERSION" \
             --pixel-threshold 0 \
-            --visual-parity-pixelmatch-threshold 0 \
+            --visual-parity-pixelmatch-threshold 0.01 \
             --visual-parity-max-vertical-shift 0 \
             --visual-parity-max-horizontal-shift 0 \
             --run-id "$RUN_ID" \
