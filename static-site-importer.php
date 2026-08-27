@@ -60,6 +60,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-client-script-policy.php',
 	'class-static-site-importer-document.php',
 	'class-static-site-importer-source-page.php',
+	'class-static-site-importer-ip-classifier.php',
 	'class-static-site-importer-url-fetcher.php',
 	'class-static-site-importer-artifact-run.php',
 	'class-static-site-importer-source-normalizer.php',

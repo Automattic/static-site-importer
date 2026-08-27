@@ -47,6 +47,8 @@
     { "path": "tests/smoke-url-concurrent-fetcher.php", "environment": "standalone-php" },
     { "path": "tests/smoke-url-curl-deadline.php", "environment": "standalone-php" },
     { "path": "tests/smoke-url-resolver-provider.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-ip-classifier.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-url-mapped-ipv6-guard.php", "environment": "standalone-php" },
     { "path": "tests/smoke-url-tls-context.php", "environment": "standalone-php" },
     { "path": "tests/smoke-validation-runtime-diagnostics.php", "environment": "standalone-php" },
     { "path": "tests/smoke-visual-repair-css.php", "environment": "standalone-php" },
