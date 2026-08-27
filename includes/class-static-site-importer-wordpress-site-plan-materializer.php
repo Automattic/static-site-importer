@@ -72,7 +72,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				)
 			);
 		}
-		$companion = self::materialize_companion_dependency( $companion_payload, $prepared, $page_ready );
+		$companion = self::materialize_companion_dependency( $companion_payload, $prepared );
 		if ( is_wp_error( $companion ) ) {
 			return $companion;
 		}
@@ -162,8 +162,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		);
 	}
 
-	/** Materialize the compiler-declared companion before provider dependencies. */
-	private static function materialize_companion_dependency( $payload, array $prepared, bool $page_ready ) {
+	/** Materialize the compiler-declared companion before provider dependencies, in every materialization scope. */
+	private static function materialize_companion_dependency( $payload, array $prepared ) {
 		$args = is_array( $prepared['args'] ?? null ) ? $prepared['args'] : array();
 		if ( null === $payload ) {
 			return array(
