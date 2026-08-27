@@ -800,27 +800,47 @@ class Static_Site_Importer_Companion_Plugin {
 
 	/** Build the SSI-owned safe boundary for generic editable companion content. */
 	private static function editable_content_renderer(): string {
-		return <<<'PHP'
-<?php
-/** Generated editable-content companion block render. */
-
-$content = is_string( $attributes['content'] ?? null ) ? $attributes['content'] : '';
-echo wp_kses_post( $content ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Sanitized at this server-render boundary.
-PHP;
+		return self::safe_markup_renderer( 'editable-content' );
 	}
 
 	/**
-	 * Build an SSI-owned render template for an audited renderer identifier.
+	 * Compose a companion render template on the shared audited safe-markup
+	 * boundary, so editable-content and typed layout blocks sanitize through
+	 * one policy instead of duplicated divergent logic.
 	 *
-	 * @param string $renderer Validated renderer identifier.
+	 * The template reads the block's string content attribute into $content,
+	 * passes it through safe_markup_boundary(), and echoes the sanitized
+	 * $output.
+	 *
+	 * @param string $kind Renderer label for the generated doc comment.
 	 * @return string
 	 */
-	private static function typed_renderer( string $renderer ): string {
-		$layout = <<<'PHP'
-<?php
-/** Generated responsive-layout companion block render. */
+	private static function safe_markup_renderer( string $kind ): string {
+		$prologue = sprintf(
+			"<?php\n/** Generated %s companion block render. */\n\n\$content = is_string( \$attributes['content'] ?? null ) ? \$attributes['content'] : '';\n",
+			$kind
+		);
+		$epilogue = 'echo $output; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- KSES-sanitized bounded markup through the shared audited safe-markup boundary.';
+		return $prologue . self::safe_markup_boundary() . "\n" . $epilogue;
+	}
 
-$content = is_string( $attributes['content'] ?? null ) ? $attributes['content'] : '';
+	/**
+	 * The audited safe-markup boundary shared by every content-rendering
+	 * companion template.
+	 *
+	 * Consumes the string $content variable and produces the sanitized $output
+	 * variable: executable and animation vectors (script, style, iframe,
+	 * object, embed, foreignObject, animate, animateMotion, animateTransform,
+	 * set), custom elements, and on* / data-wp-* attributes are removed in
+	 * paired, self-closing, and bare attribute forms, URL-bearing attributes
+	 * are protocol-checked, and the result is KSES-filtered against an
+	 * SVG-aware allowlist so inline SVG structure survives while nothing
+	 * executable reaches the frontend.
+	 *
+	 * @return string
+	 */
+	private static function safe_markup_boundary(): string {
+		return <<<'PHP'
 $content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*>.*?</\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\s*>#is', '', $content ) ?? '';
 $content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*/?\s*>#is', '', $content ) ?? '';
 $content = preg_replace( '#</?\s*[a-z][a-z0-9]*-[a-z0-9-]+\b[^>]*>#i', '', $content ) ?? '';
@@ -1008,8 +1028,17 @@ $output = preg_replace_callback(
 	},
 	$output
 ) ?? '';
-echo $output; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- KSES-sanitized bounded semantic layout markup.
 PHP;
+	}
+
+	/**
+	 * Build an SSI-owned render template for an audited renderer identifier.
+	 *
+	 * @param string $renderer Validated renderer identifier.
+	 * @return string
+	 */
+	private static function typed_renderer( string $renderer ): string {
+		$layout = self::safe_markup_renderer( 'responsive-layout' );
 		$media  = <<<'PHP'
 <?php
 /** Generated responsive-media companion block render. */

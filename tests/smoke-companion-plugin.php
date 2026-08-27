@@ -128,28 +128,6 @@ if ( ! function_exists( 'wp_kses' ) ) {
 	}
 }
 
-if ( ! function_exists( 'wp_kses_post' ) ) {
-	function wp_kses_post( string $content ): string {
-		$global = array(
-			'aria-*' => true,
-			'class'  => true,
-			'data-*' => true,
-			'id'     => true,
-			'style'  => true,
-		);
-		return wp_kses(
-			$content,
-			array(
-				'a'    => array_merge( $global, array( 'href' => true, 'rel' => true, 'target' => true ) ),
-				'div'  => $global,
-				'img'  => array_merge( $global, array( 'alt' => true, 'height' => true, 'src' => true, 'width' => true ) ),
-				'p'    => $global,
-				'span' => $global,
-			)
-		);
-	}
-}
-
 if ( ! function_exists( 'sanitize_title' ) ) {
 	function sanitize_title( string $title ): string {
 		$title = strtolower( trim( $title ) );
@@ -502,7 +480,7 @@ if ( is_array( $descriptor ) ) {
 	$render = $files['ssi-example-site/blocks/custom-hero/render.php'] ?? '';
 	$assert( '' !== $render, 'render-php-emitted' );
 	$assert( str_starts_with( ltrim( $render ), '<?php' ), 'render-php-opens-with-php-tag' );
-	$assert( str_contains( $render, 'Generated editable-content companion block render' ) && str_contains( $render, 'wp_kses_post' ) && ! str_contains( $render, 'Example hero' ), 'editable-render-uses-ssi-owned-safe-boundary' );
+	$assert( str_contains( $render, 'Generated editable-content companion block render' ) && ! str_contains( $render, 'wp_kses_post' ) && ! str_contains( $render, 'Example hero' ), 'editable-render-uses-ssi-owned-safe-boundary' );
 
 	$render_frontend = static function ( string $template, array $attributes ): string {
 		$content = '';
@@ -525,6 +503,23 @@ if ( is_array( $descriptor ) ) {
 	);
 	$assert( str_contains( $edited_output, $edited_url ) && str_contains( $edited_output, 'Edited hero' ) && ! str_contains( $edited_output, $canonical_url ), 'editable-render-reflects-saved-content-edit', $edited_output );
 	$assert( ! str_contains( $edited_output, '<script' ) && ! str_contains( $edited_output, 'onclick' ), 'editable-render-sanitizes-current-content-at-server-boundary', $edited_output );
+
+	// Inline SVG artwork in editable companion content renders instead of
+	// being deleted by a sanitization boundary without SVG elements (#1361).
+	$svg_markup = '<div class="ssi-map"><svg viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="Route map"><path d="M0 0 L100 100" stroke="black" fill="none"></path><circle cx="50" cy="50" r="5" fill="red"></circle></svg></div>';
+	$svg_output = $render_frontend( $render, array( 'content' => $svg_markup ) );
+	foreach ( array( '<svg viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="Route map">', '<path d="M0 0 L100 100" stroke="black" fill="none">', '<circle cx="50" cy="50" r="5" fill="red">' ) as $fragment ) {
+		$assert( str_contains( $svg_output, $fragment ), 'editable-render-preserves-inline-svg-' . $fragment, $svg_output );
+	}
+
+	// Every executable and animation vector stays stripped from editable
+	// rendering, across paired, self-closing, and bare/unquoted forms.
+	$hostile_markup = '<main onclick=alert(1) onmouseover=\'alert(2)\' data-wp-interactive data-wp-context=\'{"bad":true}\'><img src="safe.jpg" onerror=alert(4)><span>Kept copy</span><svg onload=alert(5)><path d="M0 0 L10 10" stroke="blue"></path><animate attributeName="x"></animate><animatemotion dur="1s"></animatemotion><set attributeName="z" to="1"></set><foreignObject><p>hidden</p></foreignObject></svg><script>alert(3)</script><style>*{color:red}</style><iframe src="https://evil.test/frame"></iframe><iframe src="https://evil.test/frame2"/><object data="https://evil.test/object"></object><object data="https://evil.test/object2"/><embed src="https://evil.test/embed"></embed><embed src="https://evil.test/embed2"/><animatetransform attributeName="transform"/><wow-image data-hook="hero">Custom element</wow-image></main>';
+	$hostile_output = strtolower( $render_frontend( $render, array( 'content' => $hostile_markup ) ) );
+	foreach ( array( '<script', '<style', '<iframe', '<object', '<embed', '<foreignobject', '<animate', '<animatemotion', '<animatetransform', '<set', '<wow-image', 'onclick', 'onmouseover', 'onerror', 'onload', 'data-wp-', 'evil.test' ) as $fragment ) {
+		$assert( ! str_contains( $hostile_output, $fragment ), 'editable-render-removes-' . $fragment, $hostile_output );
+	}
+	$assert( str_contains( $hostile_output, '<svg' ) && str_contains( $hostile_output, '<path d="m0 0 l10 10" stroke="blue"' ) && str_contains( $hostile_output, 'safe.jpg' ) && str_contains( $hostile_output, 'kept copy' ), 'editable-render-keeps-safe-svg-and-content-through-shared-boundary', $hostile_output );
 
 	// Preserved island JS (#496) is separate carried JS and still rides along.
 	$island_files = array_filter( array_keys( $files ), static fn ( string $path ): bool => str_contains( $path, '/islands/' ) && str_ends_with( $path, '.js' ) );
@@ -632,6 +627,12 @@ if ( is_array( $layout_descriptor ) ) {
 	eval( '?>' . $layout_render );
 	$nested_svg_output = strtolower( (string) ob_get_clean() );
 	$assert( str_contains( $nested_svg_output, '<main>beforeafter</main>' ) && ! str_contains( $nested_svg_output, '<svg' ) && ! str_contains( $nested_svg_output, 'evil.test' ), 'layout-renderer-rejects-nested-svg-before-url-bearing-attributes-are-admitted' );
+
+	// The editable-content and layout render templates resolve to one shared
+	// sanitization policy: identical input must render byte-identical output,
+	// so the two paths cannot diverge in safety or supported markup (#1361).
+	$shared_policy_input = array( 'content' => $svg_markup . $hostile_markup );
+	$assert( $render_frontend( $render, $shared_policy_input ) === $render_frontend( $layout_render, $shared_policy_input ), 'editable-and-layout-renderers-share-one-sanitization-policy' );
 }
 
 WP_Block_Type_Registry::$registered[] = 'example/custom-hero';
