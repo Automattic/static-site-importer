@@ -41,18 +41,20 @@ class Static_Site_Importer_Document_Metadata_Reporter {
 			'scripts'     => self::normalize_document_scripts( $metadata['scripts'] ?? array() ),
 		);
 
-		$report['generated_theme']['document_metadata'] = $normalized;
-		$report['diagnostics'][]                        = array(
-			'type'         => 'document_metadata_routed',
-			'source'       => $normalized['source_path'],
-			'severity'     => 'info',
-			'stage'        => 'website_artifact_materialization',
-			'constraints'  => 'report_only',
-			'message'      => 'Full-document metadata/assets were routed through the generated_theme.document_metadata contract instead of generated page block content.',
-			'meta_count'   => count( $normalized['meta'] ),
-			'link_count'   => count( $normalized['links'] ),
-			'style_count'  => count( $normalized['styles'] ),
-			'script_count' => count( $normalized['scripts'] ),
+		$report->set_in_section( 'generated_theme', 'document_metadata', $normalized );
+		$report->append_diagnostic(
+			array(
+				'type'         => 'document_metadata_routed',
+				'source'       => $normalized['source_path'],
+				'severity'     => 'info',
+				'stage'        => 'website_artifact_materialization',
+				'constraints'  => 'report_only',
+				'message'      => 'Full-document metadata/assets were routed through the generated_theme.document_metadata contract instead of generated page block content.',
+				'meta_count'   => count( $normalized['meta'] ),
+				'link_count'   => count( $normalized['links'] ),
+				'style_count'  => count( $normalized['styles'] ),
+				'script_count' => count( $normalized['scripts'] ),
+			)
 		);
 	}
 

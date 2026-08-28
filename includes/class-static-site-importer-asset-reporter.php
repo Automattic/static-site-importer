@@ -32,10 +32,20 @@ class Static_Site_Importer_Asset_Reporter {
 
 		$asset_map = self::normalize_asset_map( isset( $args['asset_map'] ) && is_array( $args['asset_map'] ) ? $args['asset_map'] : array() );
 
-		$report['assets']['policy']         = 'theme';
-		$report['assets']['local_policy']   = $asset_policy;
-		$report['asset_map']['supplied']    = ! empty( $asset_map );
-		$report['asset_map']['entry_count'] = count( $asset_map );
+		$report->merge_section(
+			'assets',
+			array(
+				'policy'       => 'theme',
+				'local_policy' => $asset_policy,
+			)
+		);
+		$report->merge_section(
+			'asset_map',
+			array(
+				'supplied'    => ! empty( $asset_map ),
+				'entry_count' => count( $asset_map ),
+			)
+		);
 
 		return $asset_policy;
 	}

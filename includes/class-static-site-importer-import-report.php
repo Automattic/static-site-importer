@@ -12,11 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Declares the import-report top-level schema and owns mutation of that envelope.
  *
- * Three factories historically built `static-site-importer/import-report/v1`
- * arrays (conversion, site-plan receipt, failed-plan) and then 8 classes
- * mutated the result by reference. This object is the single declared shape:
- * unknown top-level keys throw, known keys are writable, and `to_array()` is
- * the persistence/REST seam so serialized output stays an array.
+ * Reads may use ArrayAccess. Writes go through named mutators so nested
+ * `$report['quality']['x'] = 0` cannot bypass the schema. `to_array()` is the
+ * persistence/REST seam.
  */
 final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSerializable {
 
@@ -24,11 +22,6 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 
 	/**
 	 * Every top-level key the import report may carry.
-	 *
-	 * Union of the conversion factory, the site-plan receipt factory, the
-	 * failed-plan factory, and keys written during finalization. Nested
-	 * structure inside these keys is owned by the writer; this list is the
-	 * top-level contract.
 	 *
 	 * @var array<int,string>
 	 */
@@ -86,13 +79,6 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 	private array $data = array();
 
 	/**
-	 * Placeholder returned by reference when a known key is missing.
-	 *
-	 * @var mixed
-	 */
-	private $missing = null;
-
-	/**
 	 * @param array<string,mixed> $data Initial envelope.
 	 */
 	private function __construct( array $data ) {
@@ -106,9 +92,6 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 
 	/**
 	 * Wrap an existing array envelope.
-	 *
-	 * Unknown keys already present are preserved so older reports still load;
-	 * subsequent writes of a *new* unknown key throw.
 	 *
 	 * @param array<string,mixed> $data Existing envelope.
 	 */
@@ -126,7 +109,7 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 	}
 
 	/**
-	 * Persistable array form. Byte-identical to the historical envelope.
+	 * Persistable array form.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -141,48 +124,170 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 		return $this->data;
 	}
 
-	/**
-	 * Whether a top-level key is part of the declared schema.
-	 */
 	public static function is_known_key( string $key ): bool {
 		return in_array( $key, self::TOP_LEVEL_KEYS, true );
 	}
 
+	public function has( string $key ): bool {
+		return array_key_exists( $key, $this->data );
+	}
+
 	/**
-	 * Append a diagnostic row.
+	 * Read a top-level value.
+	 */
+	public function get( string $key, mixed $default = null ): mixed {
+		return array_key_exists( $key, $this->data ) ? $this->data[ $key ] : $default;
+	}
+
+	/**
+	 * Replace a top-level value. Unknown keys throw.
+	 */
+	public function set( string $key, mixed $value ): void {
+		if ( ! self::is_known_key( $key ) && ! array_key_exists( $key, $this->data ) ) {
+			throw new InvalidArgumentException( sprintf( 'Unknown import-report top-level key "%s".', $key ) );
+		}
+		$this->data[ $key ] = $value;
+	}
+
+	/**
+	 * Read a top-level array section.
 	 *
+	 * @return array<string,mixed>
+	 */
+	public function section( string $key ): array {
+		$value = $this->get( $key, array() );
+		return is_array( $value ) ? $value : array();
+	}
+
+	/**
+	 * Replace a top-level array section.
+	 *
+	 * @param array<string,mixed> $section Section payload.
+	 */
+	public function set_section( string $key, array $section ): void {
+		$this->set( $key, $section );
+	}
+
+	/**
+	 * Overlay keys onto a top-level array section.
+	 *
+	 * @param array<string,mixed> $values Values to merge.
+	 */
+	public function merge_section( string $key, array $values ): void {
+		$this->set_section( $key, array_replace( $this->section( $key ), $values ) );
+	}
+
+	/**
+	 * Set one child of a top-level array section.
+	 */
+	public function set_in_section( string $key, string $child, mixed $value ): void {
+		$section           = $this->section( $key );
+		$section[ $child ] = $value;
+		$this->set_section( $key, $section );
+	}
+
+	/**
+	 * Append a row onto a list nested under a top-level section.
+	 *
+	 * @param array<string,mixed> $row Row to append.
+	 */
+	public function append_to_section( string $key, string $list_key, array $row ): void {
+		$section = $this->section( $key );
+		$list    = isset( $section[ $list_key ] ) && is_array( $section[ $list_key ] ) ? $section[ $list_key ] : array();
+		$list[]  = $row;
+		$section[ $list_key ] = $list;
+		$this->set_section( $key, $section );
+	}
+
+	/**
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function diagnostics(): array {
+		$diagnostics = $this->get( 'diagnostics', array() );
+		return is_array( $diagnostics ) ? array_values( $diagnostics ) : array();
+	}
+
+	/**
+	 * @param array<int,array<string,mixed>> $diagnostics Diagnostic rows.
+	 */
+	public function set_diagnostics( array $diagnostics ): void {
+		$this->set( 'diagnostics', array_values( $diagnostics ) );
+	}
+
+	/**
 	 * @param array<string,mixed> $diagnostic Diagnostic row.
 	 */
 	public function append_diagnostic( array $diagnostic ): void {
-		if ( ! isset( $this->data['diagnostics'] ) || ! is_array( $this->data['diagnostics'] ) ) {
-			$this->data['diagnostics'] = array();
+		$diagnostics   = $this->diagnostics();
+		$diagnostics[] = $diagnostic;
+		$this->set_diagnostics( $diagnostics );
+	}
+
+	/**
+	 * @param callable(array<string,mixed>):bool $keep Predicate.
+	 */
+	public function filter_diagnostics( callable $keep ): void {
+		$this->set_diagnostics( array_values( array_filter( $this->diagnostics(), $keep ) ) );
+	}
+
+	/**
+	 * @param array<string,mixed> $diagnostic Replacement row.
+	 */
+	public function replace_diagnostic( int $index, array $diagnostic ): void {
+		$diagnostics = $this->diagnostics();
+		if ( ! array_key_exists( $index, $diagnostics ) ) {
+			throw new InvalidArgumentException( sprintf( 'Import report has no diagnostic at index %d.', $index ) );
 		}
-		$this->data['diagnostics'][] = $diagnostic;
+		$diagnostics[ $index ] = $diagnostic;
+		$this->set_diagnostics( $diagnostics );
+	}
+
+	/**
+	 * @return array<string,mixed>
+	 */
+	public function quality(): array {
+		return $this->section( 'quality' );
+	}
+
+	/**
+	 * @param array<string,mixed> $quality Quality payload.
+	 */
+	public function set_quality( array $quality ): void {
+		$this->set_section( 'quality', $quality );
+	}
+
+	/**
+	 * @param array<string,mixed> $quality Quality overlay.
+	 */
+	public function merge_quality( array $quality ): void {
+		$this->merge_section( 'quality', $quality );
+	}
+
+	public function increment_quality( string $metric, int $amount = 1 ): void {
+		$quality            = $this->quality();
+		$quality[ $metric ] = (int) ( $quality[ $metric ] ?? 0 ) + $amount;
+		$this->set_quality( $quality );
 	}
 
 	public function offsetExists( mixed $offset ): bool {
 		return is_string( $offset ) && array_key_exists( $offset, $this->data );
 	}
 
-	public function &offsetGet( mixed $offset ): mixed {
+	/**
+	 * Read-only. Nested `$report['quality']['x'] = 0` does not persist; use mutators.
+	 */
+	public function offsetGet( mixed $offset ): mixed {
 		if ( ! is_string( $offset ) ) {
 			throw new InvalidArgumentException( 'Import report keys must be strings.' );
 		}
-		if ( array_key_exists( $offset, $this->data ) ) {
-			return $this->data[ $offset ];
-		}
-		$this->missing = null;
-		return $this->missing;
+		return $this->get( $offset );
 	}
 
 	public function offsetSet( mixed $offset, mixed $value ): void {
 		if ( ! is_string( $offset ) ) {
 			throw new InvalidArgumentException( 'Import report keys must be strings.' );
 		}
-		if ( ! self::is_known_key( $offset ) && ! array_key_exists( $offset, $this->data ) ) {
-			throw new InvalidArgumentException( sprintf( 'Unknown import-report top-level key "%s".', $offset ) );
-		}
-		$this->data[ $offset ] = $value;
+		$this->set( $offset, $value );
 	}
 
 	public function offsetUnset( mixed $offset ): void {

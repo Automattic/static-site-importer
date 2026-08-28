@@ -1861,7 +1861,7 @@ $form_binding_receipt                             = Static_Site_Importer_WordPre
 );
 $form_binding_report                              = reset( $form_binding_receipt['completed']['runtime_declarations']['entity_bindings'] );
 $form_quality_report                              = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
-$form_quality_report['quality']['fallback_count'] = 1;
+$form_quality_report->merge_quality( array( 'fallback_count' => 1 ) );
 $form_quality_report['diagnostics']               = array( $form_fallback );
 $form_quality_report['materialization_receipt']   = $form_binding_receipt;
 Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $form_quality_report );
@@ -1892,7 +1892,7 @@ $unrelated_failure_plan = $form_admission_plan;
 $unrelated_failure_plan['quality']['failure_reasons'][] = 'core_html_block';
 $assert( false === $form_admission->invoke( null, $unrelated_failure_plan, $form_admission_lifecycle ), 'unrelated quality failures remain rejected before materialization' );
 $other_failure_report                                     = Static_Site_Importer_Import_Report::from_array( $form_quality_report->to_array() );
-$other_failure_report['quality']['core_html_block_count'] = 1;
+$other_failure_report->merge_quality( array( 'core_html_block_count' => 1 ) );
 $other_failure_quality                                    = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $other_failure_report, array( 'fail_on_quality' => true ) );
 $other_failure_validation                                 = Static_Site_Importer_Report_Diagnostics::import_validation_result( $other_failure_report, $other_failure_quality );
 $assert( 0 === ( $other_failure_quality['fallback_count'] ?? -1 ) && false === ( $other_failure_quality['pass'] ?? true ) && true === ( $other_failure_quality['fail_import'] ?? false ) && array( 'core_html_block' ) === ( $other_failure_quality['failure_reasons'] ?? null ) && 'failed' === ( $other_failure_validation['status'] ?? '' ), 'receipt reconciliation preserves unrelated quality failures and validation status' );
@@ -1954,7 +1954,7 @@ $assert( false === ( $partial_quality['pass'] ?? true ) && true === ( $partial_q
 $tampered_fragment_receipt = $form_binding_receipt;
 $tampered_fragment_receipt['completed']['runtime_declarations']['entity_bindings'][ hash( 'sha256', 'form-fallback-binding' ) ]['persisted_fragment_hash'] = hash( 'sha256', 'tampered fragment' );
 $tampered_fragment_report                              = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
-$tampered_fragment_report['quality']['fallback_count'] = 1;
+$tampered_fragment_report->merge_quality( array( 'fallback_count' => 1 ) );
 $tampered_fragment_report['diagnostics']               = array( $form_fallback );
 $tampered_fragment_report['materialization_receipt']   = $tampered_fragment_receipt;
 Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $tampered_fragment_report );
@@ -1962,7 +1962,7 @@ $assert( 1 === ( $tampered_fragment_report['quality']['fallback_count'] ?? 0 ) &
 $tampered_content_receipt = $form_binding_receipt;
 $tampered_content_receipt['completed']['runtime_declarations']['entity_bindings'][ hash( 'sha256', 'form-fallback-binding' ) ]['materialized_content_hash'] = hash( 'sha256', 'tampered page' );
 $tampered_content_report                              = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
-$tampered_content_report['quality']['fallback_count'] = 1;
+$tampered_content_report->merge_quality( array( 'fallback_count' => 1 ) );
 $tampered_content_report['diagnostics']               = array( $form_fallback );
 $tampered_content_report['materialization_receipt']   = $tampered_content_receipt;
 Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $tampered_content_report );
@@ -2188,7 +2188,7 @@ $resumed_form_binding_receipt                             = Static_Site_Importer
 	)
 );
 $resumed_form_quality_report                              = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
-$resumed_form_quality_report['quality']['fallback_count'] = 1;
+$resumed_form_quality_report->merge_quality( array( 'fallback_count' => 1 ) );
 $resumed_form_quality_report['diagnostics']               = array( $form_fallback );
 $resumed_form_quality_report['materialization_receipt']   = $resumed_form_binding_receipt;
 Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $resumed_form_quality_report );

@@ -613,13 +613,17 @@ $assert( 1 === ( $safe_runtime_report['import_validation_result']['counts']['acc
 $assert( 'sanitized_embed_markup' === ( $safe_runtime_report['finding_packets']['packets'][0]['preservation']['strategy'] ?? '' ) && 'runtime_island_registry' === ( $safe_runtime_report['finding_packets']['packets'][0]['preservation']['materialization_path'] ?? '' ), 'finding-packet-preserves-runtime-island-contract-evidence' );
 
 $unsafe_runtime_report = Static_Site_Importer_Import_Report::from_array( $safe_runtime_report->to_array() );
-$unsafe_runtime_report['diagnostics'][0]['source_html_preview'] = '<iframe srcdoc="<script>alert(1)</script>"></iframe>';
+$unsafe_diagnostics    = $unsafe_runtime_report->diagnostics();
+$unsafe_diagnostics[0]['source_html_preview'] = '<iframe srcdoc="<script>alert(1)</script>"></iframe>';
+$unsafe_runtime_report->set_diagnostics( $unsafe_diagnostics );
 $unsafe_runtime_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $unsafe_runtime_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $unsafe_runtime_quality['pass'] ?? true ) && true === ( $unsafe_runtime_quality['fail_import'] ?? false ), 'unsafe-runtime-iframe-remains-fail-closed' );
 $assert( 0 === ( $unsafe_runtime_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $unsafe_runtime_quality['unsupported_fallback_count'] ?? 0 ), 'unsafe-runtime-iframe-is-counted-as-unsupported-fallback' );
 
 $incomplete_runtime_report = Static_Site_Importer_Import_Report::from_array( $safe_runtime_report->to_array() );
-unset( $incomplete_runtime_report['diagnostics'][0]['materialization_path'] );
+$incomplete_diagnostics    = $incomplete_runtime_report->diagnostics();
+unset( $incomplete_diagnostics[0]['materialization_path'] );
+$incomplete_runtime_report->set_diagnostics( $incomplete_diagnostics );
 $incomplete_runtime_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $incomplete_runtime_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $incomplete_runtime_quality['pass'] ?? true ) && true === ( $incomplete_runtime_quality['fail_import'] ?? false ), 'missing-runtime-materialization-contract-remains-fail-closed' );
 

@@ -194,8 +194,8 @@ class Static_Site_Importer_Report_Diagnostics {
 		$files     = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
 		$source    = (string) ( $compiled['provenance']['source'] ?? ( $compiled['input']['entry_path'] ?? 'website_artifact' ) );
 
-		$source_documents = array_merge(
-			$report['source_documents'],
+		$source_documents                              = array_merge(
+			$report->section( 'source_documents' ),
 			array(
 				'total_count'      => 1,
 				'counts_by_format' => array(
@@ -205,19 +205,19 @@ class Static_Site_Importer_Report_Diagnostics {
 				),
 			)
 		);
-
-		$report['source_documents']                            = $source_documents;
-		$report['source_documents']['direct_website_artifact'] = array(
+		$source_documents['direct_website_artifact'] = array(
 			'source'     => '' !== $source ? $source : 'website_artifact',
 			'file_count' => count( $files ),
 		);
-
-		$report['diagnostics'][] = array(
-			'type'        => 'website_artifact_materialization_contract_note',
-			'source'      => '' !== $source ? $source : 'website_artifact',
-			'message'     => 'Direct materialization consumed block_markup, documents, files, and materialization-plan artifacts. Static Site Importer owns WordPress writes and product seeding while Blocks Engine owns materializer-neutral site/theme compilation.',
-			'contract'    => isset( $compiled['schema'] ) && is_scalar( $compiled['schema'] ) ? (string) $compiled['schema'] : 'blocks-engine/php-transformer/result/v1',
-			'constraints' => 'report_only',
+		$report->set_section( 'source_documents', $source_documents );
+		$report->append_diagnostic(
+			array(
+				'type'        => 'website_artifact_materialization_contract_note',
+				'source'      => '' !== $source ? $source : 'website_artifact',
+				'message'     => 'Direct materialization consumed block_markup, documents, files, and materialization-plan artifacts. Static Site Importer owns WordPress writes and product seeding while Blocks Engine owns materializer-neutral site/theme compilation.',
+				'contract'    => isset( $compiled['schema'] ) && is_scalar( $compiled['schema'] ) ? (string) $compiled['schema'] : 'blocks-engine/php-transformer/result/v1',
+				'constraints' => 'report_only',
+			)
 		);
 	}
 
@@ -964,17 +964,12 @@ class Static_Site_Importer_Report_Diagnostics {
 			return;
 		}
 
-		if ( ! isset( $report['companion_plugins'] ) || ! is_array( $report['companion_plugins'] ) ) {
-			$report['companion_plugins'] = array( 'dependencies' => array() );
+		$companion = $report->section( 'companion_plugins' );
+		if ( ! isset( $companion['dependencies'] ) || ! is_array( $companion['dependencies'] ) ) {
+			$companion['dependencies'] = array();
 		}
-		if ( ! isset( $report['companion_plugins']['dependencies'] ) || ! is_array( $report['companion_plugins']['dependencies'] ) ) {
-			$report['companion_plugins']['dependencies'] = array();
-		}
-		$report['companion_plugins']['dependencies'][ $slug ] = $row;
-
-		if ( ! isset( $report['diagnostics'] ) || ! is_array( $report['diagnostics'] ) ) {
-			$report['diagnostics'] = array();
-		}
+		$companion['dependencies'][ $slug ] = $row;
+		$report->set_section( 'companion_plugins', $companion );
 
 		$source = 'companion_plugins.dependencies.' . $slug;
 
@@ -998,34 +993,34 @@ class Static_Site_Importer_Report_Diagnostics {
 				$present['runtime_carried'] = true;
 				$present['message']         = sprintf( 'Companion plugin %s is active; generated blocks and preserved island JS are carried theme-independently.', $slug );
 			}
-			$report['diagnostics'][] = $present;
+			$report->append_diagnostic( $present );
 			return;
 		}
 
 		if ( $waived ) {
-			$report['diagnostics'][] = array(
-				'code'        => 'companion_plugin_waived',
-				'severity'    => 'warning',
-				'source'      => $source,
-				'message'     => sprintf( 'Companion plugin %s requirement was waived; generated blocks were not installed.', $slug ),
-				'slug'        => $slug,
-				'block_names' => $row['block_names'] ?? array(),
+			$report->append_diagnostic(
+				array(
+					'code'        => 'companion_plugin_waived',
+					'severity'    => 'warning',
+					'source'      => $source,
+					'message'     => sprintf( 'Companion plugin %s requirement was waived; generated blocks were not installed.', $slug ),
+					'slug'        => $slug,
+					'block_names' => $row['block_names'] ?? array(),
+				)
 			);
 			return;
 		}
 
-		if ( ! isset( $report['quality'] ) || ! is_array( $report['quality'] ) ) {
-			$report['quality'] = array();
-		}
-		$report['quality']['companion_plugin_dependency_failures'] = (int) ( $report['quality']['companion_plugin_dependency_failures'] ?? 0 ) + 1;
-
-		$report['diagnostics'][] = array(
-			'code'        => 'companion_plugin_missing',
-			'severity'    => 'error',
-			'source'      => $source,
-			'message'     => sprintf( 'Companion plugin %s is required to house generated blocks but is not installed/active.', $slug ),
-			'slug'        => $slug,
-			'block_names' => $row['block_names'] ?? array(),
+		$report->increment_quality( 'companion_plugin_dependency_failures' );
+		$report->append_diagnostic(
+			array(
+				'code'        => 'companion_plugin_missing',
+				'severity'    => 'error',
+				'source'      => $source,
+				'message'     => sprintf( 'Companion plugin %s is required to house generated blocks but is not installed/active.', $slug ),
+				'slug'        => $slug,
+				'block_names' => $row['block_names'] ?? array(),
+			)
 		);
 	}
 
@@ -2085,19 +2080,19 @@ class Static_Site_Importer_Report_Diagnostics {
 			foreach ( $slugs as $slug ) {
 				if ( isset( $seeded_products_by_slug[ $slug ] ) ) {
 					++$seeding['mapped_count'];
-					$report['diagnostics'][ $index ] = self::mark_product_finding_mapped( $report['diagnostics'][ $index ], $seeding['provider'] );
+					$report->replace_diagnostic( $index, self::mark_product_finding_mapped( $report->diagnostics()[ $index ], $seeding['provider'] ) );
 					break;
 				}
 			}
 
 			if ( ! empty( $page_contents ) ) {
-				$graft                           = self::graft_product_add_to_cart_shortcodes_into_page_contents( $report['diagnostics'][ $index ], $seeded_products_by_slug, $page_contents );
-				$report['diagnostics'][ $index ] = $graft['finding'];
+				$graft = self::graft_product_add_to_cart_shortcodes_into_page_contents( $report->diagnostics()[ $index ], $seeded_products_by_slug, $page_contents );
+				$report->replace_diagnostic( $index, $graft['finding'] );
 				if ( $graft['grafted'] ) {
 					++$seeding['shortcode_grafted_count'];
 				}
 				if ( is_array( $graft['diagnostic'] ) ) {
-					$report['diagnostics'][] = $graft['diagnostic'];
+					$report->append_diagnostic( $graft['diagnostic'] );
 				}
 			}
 		}
@@ -2584,8 +2579,9 @@ class Static_Site_Importer_Report_Diagnostics {
 			return;
 		}
 
-		$resolved = array();
-		foreach ( $report['diagnostics'] as &$diagnostic ) {
+		$resolved    = array();
+		$diagnostics = $report->diagnostics();
+		foreach ( $diagnostics as &$diagnostic ) {
 			if ( ! is_array( $diagnostic ) || ! self::is_script_runtime_fallback_diagnostic( $diagnostic ) ) {
 				continue;
 			}
@@ -2610,9 +2606,12 @@ class Static_Site_Importer_Report_Diagnostics {
 			$resolved[ $selector ]                       = true;
 		}
 		unset( $diagnostic );
+		$report->set_diagnostics( $diagnostics );
 
 		if ( ! empty( $resolved ) ) {
-			$report['quality']['fallback_count'] = max( 0, (int) ( $report['quality']['fallback_count'] ?? 0 ) - count( $resolved ) );
+			$quality                   = $report->quality();
+			$quality['fallback_count'] = max( 0, (int) ( $quality['fallback_count'] ?? 0 ) - count( $resolved ) );
+			$report->set_quality( $quality );
 		}
 	}
 
@@ -2656,14 +2655,13 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return void
 	 */
 	public static function reconcile_provider_materialized_fallbacks( Static_Site_Importer_Import_Report $report, array $receipts = array() ): void {
-		if ( ! isset( $report['quality'] ) || ! is_array( $report['quality'] ) ) {
-			$report['quality'] = array();
-		}
-		$source_total                               = max(
-			(int) ( $report['quality']['source_fallback_count'] ?? 0 ),
-			(int) ( $report['quality']['fallback_count'] ?? 0 )
+		$quality      = $report->quality();
+		$source_total = max(
+			(int) ( $quality['source_fallback_count'] ?? 0 ),
+			(int) ( $quality['fallback_count'] ?? 0 )
 		);
-		$report['quality']['source_fallback_count'] = $source_total;
+		$quality['source_fallback_count'] = $source_total;
+		$report->set_quality( $quality );
 
 		if ( empty( $receipts ) ) {
 			$bindings = $report['materialization_receipt']['completed']['runtime_declarations']['entity_bindings'] ?? array();
@@ -2720,7 +2718,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'state'        => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
 				'receipt'      => $receipt,
 			);
-			$report['diagnostics'][ $index ]                = $diagnostic;
+			$report->replace_diagnostic( $index, $diagnostic );
 			if ( $resolved_by_provider ) {
 				++$resolved;
 			}
@@ -2732,7 +2730,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			);
 		}
 
-		$report['quality']['fallback_count'] = max( 0, $source_total - $resolved );
+		$report->merge_quality( array( 'fallback_count' => max( 0, $source_total - $resolved ) ) );
 		$report['quality_resolutions']       = array(
 			'schema'                    => 'static-site-importer/quality-resolutions/v1',
 			'source_fallback_count'     => $source_total,
@@ -3000,7 +2998,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 		}
 
-		$report['source_documents']['diagnostic_refs'] = $refs;
+		$report->set_in_section( 'source_documents', 'diagnostic_refs', $refs );
 	}
 
 	/**

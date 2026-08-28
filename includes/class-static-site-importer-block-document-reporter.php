@@ -41,7 +41,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 
 			$block_markup                                   = self::generated_block_document_markup( $relative_path, $content );
 			$analysis                                       = self::analyze_generated_block_document( $relative_path, $block_markup, $report );
-			$report['generated_theme']['block_documents'][] = $analysis;
+			$report->append_to_section( 'generated_theme', 'block_documents', $analysis );
 		}
 	}
 
@@ -52,21 +52,21 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 * @return void
 	 */
 	public static function reset_generated_block_document_analysis( Static_Site_Importer_Import_Report $report ): void {
-		foreach ( array( 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count' ) as $metric ) {
-			$report['quality'][ $metric ] = 0;
-		}
-
-		$diagnostics                                       = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
-		$report['diagnostics']                             = array_values(
-			array_filter(
-				$diagnostics,
-				static function ( $diagnostic ): bool {
-					return ! is_array( $diagnostic ) || 'generated_theme_block_analysis' !== (string) ( $diagnostic['stage'] ?? '' );
-				}
+		$report->merge_quality(
+			array(
+				'core_html_block_count'        => 0,
+				'freeform_block_count'         => 0,
+				'invalid_block_count'          => 0,
+				'invalid_block_document_count' => 0,
 			)
 		);
-		$report['materialized_content']['block_documents'] = array();
-		$report['generated_theme']['block_documents']      = array();
+		$report->filter_diagnostics(
+			static function ( $diagnostic ): bool {
+				return ! is_array( $diagnostic ) || 'generated_theme_block_analysis' !== (string) ( $diagnostic['stage'] ?? '' );
+			}
+		);
+		$report->set_in_section( 'materialized_content', 'block_documents', array() );
+		$report->set_in_section( 'generated_theme', 'block_documents', array() );
 	}
 
 	/**
@@ -139,11 +139,11 @@ class Static_Site_Importer_Block_Document_Reporter {
 			$first_differing_token = self::first_differing_block_document_token( $block_markup, $serialized );
 		}
 
-		$report['quality']['core_html_block_count'] += $core_html_count;
-		$report['quality']['freeform_block_count']  += $freeform_count;
-		$report['quality']['invalid_block_count']   += $invalid_count;
+		$report->increment_quality( 'core_html_block_count', $core_html_count );
+		$report->increment_quality( 'freeform_block_count', $freeform_count );
+		$report->increment_quality( 'invalid_block_count', $invalid_count );
 		if ( $invalid_count > 0 ) {
-			++$report['quality']['invalid_block_document_count'];
+			$report->increment_quality( 'invalid_block_document_count' );
 			$first_invalid_block = $invalid_blocks[0] ?? self::first_parsed_block_summary( $analyzed_blocks );
 			$validation_message  = $serialization_mismatch ? 'Serialized block document differs from generated block markup.' : 'Generated block document contains parser-exposed invalid block markup.';
 			$diagnostic          = array(
@@ -170,7 +170,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 				$diagnostic['first_differing_token'] = $first_differing_token;
 			}
 
-			$report['diagnostics'][] = $diagnostic;
+			$report->append_diagnostic( $diagnostic );
 		}
 
 		return array(
@@ -295,7 +295,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 			$diagnostic['form']     = $manifest['form'];
 			$diagnostic['controls'] = $manifest['controls'];
 		}
-		$report['diagnostics'][] = $diagnostic;
+		$report->append_diagnostic( $diagnostic );
 	}
 
 	/**
@@ -337,8 +337,8 @@ class Static_Site_Importer_Block_Document_Reporter {
 		$entry['emitted_block_preview'] = Static_Site_Importer_Report_Diagnostics::diagnostic_excerpt( $emitted );
 		$entry['malformed']             = $malformed;
 
-		$report['diagnostics'][]                        = $entry;
-		$report['generated_theme']['freeform_blocks'][] = $entry;
+		$report->append_diagnostic( $entry );
+		$report->append_to_section( 'generated_theme', 'freeform_blocks', $entry );
 	}
 
 	/**
