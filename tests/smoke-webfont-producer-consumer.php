@@ -71,6 +71,14 @@ $assert( array_column( $contract['faces'], 'id' ) === array_column( $overlay['fa
 $assert( str_contains( $readiness, 'static-site-importer-font-readiness' ) && str_contains( $readiness, 'receipt_id' ) && str_contains( $readiness, 'status:"missing"' ), 'browser readiness serializes loaded or missing records with producer receipt IDs into the captured DOM' );
 $assert( hash( 'sha256', 'fixture-37-inter-variable-font' ) === ( $overlay['required_faces'][0]['assets'][0]['observed_sha256'] ?? '' ), 'materialization receipt retains the observed payload digest for each producer face' );
 
+$empty_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay(
+	array(),
+	array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) )
+);
+$empty_readiness = (string) ( array_values( array_filter( $empty_overlay['writes'], static fn( array $write ): bool => 'assets/js/font-readiness.js' === $write['target_path'] ) )[0]['content'] ?? '' );
+$empty_bootstrap = (string) ( array_values( array_filter( $empty_overlay['writes'], static fn( array $write ): bool => 'functions.php' === $write['target_path'] ) )[0]['content'] ?? '' );
+$assert( str_contains( $empty_readiness, 'document.fonts.ready' ) && str_contains( $empty_bootstrap, 'static-site-importer-font-readiness' ) && ! str_contains( $empty_bootstrap, 'static-site-importer-embedded-fonts' ), 'plans without materialized font faces still emit browser readiness evidence without enqueueing a nonexistent stylesheet' );
+
 $svg = '<svg xmlns="http://www.w3.org/2000/svg"><text font-family="Inter">Fixture 37</text></svg>';
 $svg_source_path = 'assets/materialized-svg/fixture-37.svg';
 $svg_write_path = 'assets/materialized-svg/fixture-37.svg';
@@ -112,7 +120,7 @@ $harness = <<<'JS'
 const source = Buffer.from(process.argv[1], 'base64').toString('utf8');
 let record;
 global.document = {
-  fonts: { load: async () => [], check: () => true },
+  fonts: { ready: Promise.resolve(), load: async () => [], check: () => true },
   documentElement: { dataset: {} },
   getElementById: () => record,
   createElement: () => (record = {}),
@@ -124,7 +132,7 @@ global.window = global;
   await new Promise((resolve) => setImmediate(resolve));
   const loaded = JSON.parse(record.textContent);
   record = undefined;
-  document.fonts = { load: () => new Promise(() => {}), check: () => false };
+  document.fonts = { ready: Promise.resolve(), load: () => new Promise(() => {}), check: () => false };
   global.setTimeout = (callback) => setImmediate(callback);
   global.clearTimeout = () => {};
   eval(source);
