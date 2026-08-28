@@ -172,14 +172,15 @@ export async function runFixtureMatrix(options) {
     })
     : null;
   const fixtureRoot = path.resolve(intake?.fixture_root || options.fixtureRoot || path.join(packageRoot, 'tests', 'fixtures', 'fixture-matrix'));
+  const fixtureMaxDepth = intake ? 1 : options.maxDepth;
   const staticSiteImporterPath = options.staticSiteImporterPath || process.env.HOMEBOY_STATIC_SITE_IMPORTER_PATH || process.cwd();
   const dependencyOverrides = prepareDependencyOverrides(options);
-  const fixtureInspection = inspectFixtureDirectories(fixtureRoot, { maxDepth: options.maxDepth });
+  const fixtureInspection = inspectFixtureDirectories(fixtureRoot, { maxDepth: fixtureMaxDepth });
   const matrixInput = {
     id: options.id || `static-site-importer-fixture-matrix-${Date.now()}`,
     fixture_root: fixtureRoot,
     entrypoint: options.entrypoint || 'index.html',
-    maxDepth: options.maxDepth,
+    maxDepth: fixtureMaxDepth,
     // Lane selection comes from authored fixture manifests only. Absent options
     // leave the full matrix intact; missing metadata stays unknown rather than guessed.
     class: options.fixtureClass || options.class,

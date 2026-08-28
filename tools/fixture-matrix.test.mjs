@@ -3587,6 +3587,36 @@ test('materializes generated artifact roots into matrix-compatible fixtures', ()
   assert.equal(betaArtifact.files.some((file) => file.path.includes('generated-artifact-metadata')), false);
 });
 
+test('keeps a generated multi-page website as one matrix fixture', async () => {
+  const sourceRoot = mkdtempSync(path.join(tmpdir(), 'ssi-generated-multi-page-artifact-'));
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-generated-multi-page-output-'));
+  mkdirSync(path.join(sourceRoot, 'site'), { recursive: true });
+  writeFileSync(path.join(sourceRoot, 'site', 'artifact.json'), JSON.stringify({
+    schema: 'blocks-engine/php-transformer/site-artifact/v1',
+    metadata: { site: 'Multi Page' },
+    files: [
+      { path: 'website/index.html', content: '<link rel="icon" href="/external/favicon.ico"><h1>Home</h1>' },
+      { path: 'website/anchor/index.html', content: '<link rel="icon" href="/external/favicon.ico"><h1>Anchor</h1>' },
+      { path: 'website/external/favicon.ico', content_base64: Buffer.from('icon').toString('base64') },
+    ],
+  }));
+
+  const { summary } = await runFixtureMatrix({
+    artifactRoot: sourceRoot,
+    outputDirectory,
+    staticSiteImporterPath: packageRoot,
+    run: false,
+  });
+  const matrix = JSON.parse(readFileSync(path.join(outputDirectory, 'matrix.json'), 'utf8'));
+  const artifact = JSON.parse(readFileSync(path.join(outputDirectory, 'multi-page', 'artifact.json'), 'utf8'));
+
+  assert.equal(summary.fixture_count, 1);
+  assert.deepEqual(matrix.fixtures.map((fixture) => fixture.id), ['multi-page']);
+  assert.equal(artifact.summary.file_count, 3);
+  assert.equal(artifact.files.some((file) => file.path === 'website/anchor/index.html'), true);
+  assert.equal(artifact.files.some((file) => file.path === 'website/external/favicon.ico'), true);
+});
+
 test('resolves Blocks Engine PHP transformer override paths', () => {
   const repoRoot = mkdtempSync(path.join(tmpdir(), 'blocks-engine-'));
   const transformerPackageRoot = path.join(repoRoot, 'php-transformer');
