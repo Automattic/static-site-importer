@@ -7341,6 +7341,35 @@ test('stageFixtureSource copies the normalized fixture source into the served so
   assert.ok(Number.isFinite(written.metadata.performance.artifact_writing_ms));
 });
 
+test('staged visual source rebases site-root assets without changing the import artifact', () => {
+  const fixtureDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-root-relative-source-'));
+  const sourceDirectory = path.join(fixtureDirectory, 'fixture');
+  mkdirSync(path.join(sourceDirectory, 'nested'), { recursive: true });
+  mkdirSync(path.join(sourceDirectory, 'assets', 'css'), { recursive: true });
+  writeFileSync(path.join(sourceDirectory, 'index.html'), '<link rel="stylesheet" href="/assets/css/site.css"><img src="/media/hero.jpg" srcset="/media/hero.jpg 1x, /media/hero@2x.jpg 2x"><a href="//external.test/page">External</a>');
+  writeFileSync(path.join(sourceDirectory, 'nested', 'index.html'), '<script src="/assets/app.js"></script><a href="#section">Section</a>');
+  writeFileSync(path.join(sourceDirectory, 'assets', 'css', 'site.css'), '@import "/assets/css/base.css"; .hero{background:url(\'/media/hero.jpg?size=large#crop\')} .icon{background:url(data:image/png;base64,AA)}');
+
+  const fixture = { id: 'Root Relative', directory: sourceDirectory };
+  const artifact = buildFixtureArtifact(fixture);
+  const artifactHtml = Buffer.from(artifact.files.find((file) => file.path === 'website/index.html').content_base64, 'base64').toString('utf8');
+  assert.match(artifactHtml, /href="\/assets\/css\/site\.css"/);
+
+  stageFixtureSource(fixture, fixtureDirectory);
+  const rootHtml = readFileSync(path.join(fixtureDirectory, 'source', 'index.html'), 'utf8');
+  const nestedHtml = readFileSync(path.join(fixtureDirectory, 'source', 'nested', 'index.html'), 'utf8');
+  const css = readFileSync(path.join(fixtureDirectory, 'source', 'assets', 'css', 'site.css'), 'utf8');
+  assert.match(rootHtml, /href="\.\/assets\/css\/site\.css"/);
+  assert.match(rootHtml, /src="\.\/media\/hero\.jpg"/);
+  assert.match(rootHtml, /srcset="\.\/media\/hero\.jpg 1x, \.\/media\/hero@2x\.jpg 2x"/);
+  assert.match(rootHtml, /href="\/\/external\.test\/page"/);
+  assert.match(nestedHtml, /src="\.\.\/assets\/app\.js"/);
+  assert.match(nestedHtml, /href="#section"/);
+  assert.match(css, /@import "\.\.\/\.\.\/assets\/css\/base\.css"/);
+  assert.match(css, /url\('\.\.\/\.\.\/media\/hero\.jpg\?size=large#crop'\)/);
+  assert.match(css, /url\(data:image\/png;base64,AA\)/);
+});
+
 test('platform attribution is excluded from both import artifacts and visual baselines', () => {
   const fixtureDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-platform-chrome-source-'));
   const sourceDirectory = path.join(fixtureDirectory, 'fixture');
