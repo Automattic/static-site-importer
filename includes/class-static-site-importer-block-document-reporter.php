@@ -29,7 +29,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 *
 	 * @param array<string,string> $writes    Generated theme writes keyed by absolute path.
 	 * @param string               $theme_dir Generated theme directory.
-	 * @param array<string,mixed>  $report    Conversion report (mutated by reference).
+	 * @param Static_Site_Importer_Import_Report  $report    Conversion report (mutated by reference).
 	 * @return void
 	 */
 	public static function analyze_generated_theme_block_documents( array $writes, string $theme_dir, Static_Site_Importer_Import_Report $report ): void {
@@ -39,8 +39,8 @@ class Static_Site_Importer_Block_Document_Reporter {
 				continue;
 			}
 
-			$block_markup                                   = self::generated_block_document_markup( $relative_path, $content );
-			$analysis                                       = self::analyze_generated_block_document( $relative_path, $block_markup, $report );
+			$block_markup = self::generated_block_document_markup( $relative_path, $content );
+			$analysis     = self::analyze_generated_block_document( $relative_path, $block_markup, $report );
 			$report->append_to_section( 'generated_theme', 'block_documents', $analysis );
 		}
 	}
@@ -48,7 +48,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 	/**
 	 * Clear generated-document analysis before analyzing mutated final documents.
 	 *
-	 * @param array<string,mixed> $report Conversion report (mutated by reference).
+	 * @param Static_Site_Importer_Import_Report $report Conversion report (mutated by reference).
 	 * @return void
 	 */
 	public static function reset_generated_block_document_analysis( Static_Site_Importer_Import_Report $report ): void {
@@ -102,7 +102,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 *
 	 * @param string              $relative_path Theme-relative path.
 	 * @param string              $block_markup  Block markup.
-	 * @param array<string,mixed> $report        Conversion report (mutated by reference).
+	 * @param Static_Site_Importer_Import_Report $report        Conversion report (mutated by reference).
 	 * @return array<string,mixed>
 	 */
 	public static function analyze_generated_block_document( string $relative_path, string $block_markup, Static_Site_Importer_Import_Report $report ): array {
@@ -194,7 +194,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 * @param int                            $freeform_count  Freeform block count.
 	 * @param int                            $invalid_count   Invalid block count.
 	 * @param array<int,mixed>               $invalid_blocks  Collected invalid block summaries.
-	 * @param array<string,mixed>            $report          Conversion report (mutated by reference).
+	 * @param Static_Site_Importer_Import_Report            $report          Conversion report (mutated by reference).
 	 * @param string                         $source          Theme-relative source document path.
 	 * @param array<int,int>                 $path            Parsed block path.
 	 * @return void
@@ -268,7 +268,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 * @param string              $source Theme-relative source document path.
 	 * @param array<int,int>      $path   Parsed block path.
 	 * @param array<string,mixed> $block  Parsed block.
-	 * @param array<string,mixed> $report Conversion report (mutated by reference).
+	 * @param Static_Site_Importer_Import_Report $report Conversion report (mutated by reference).
 	 * @return void
 	 */
 	private static function record_generated_core_html_block( string $source, array $path, array $block, Static_Site_Importer_Import_Report $report ): void {
@@ -305,7 +305,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 * @param array<int,int>      $path       Parsed block path.
 	 * @param array<string,mixed> $block      Parsed block.
 	 * @param bool                $malformed  Whether the block parser exposed raw HTML without a block name.
-	 * @param array<string,mixed> $report     Conversion report (mutated by reference).
+	 * @param Static_Site_Importer_Import_Report $report     Conversion report (mutated by reference).
 	 * @return void
 	 */
 	private static function record_generated_freeform_block( string $source, array $path, array $block, bool $malformed, Static_Site_Importer_Import_Report $report ): void {

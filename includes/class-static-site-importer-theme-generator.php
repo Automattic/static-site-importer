@@ -631,8 +631,7 @@ class Static_Site_Importer_Theme_Generator {
 		if ( isset( $args['missing_author_stylesheet_diagnostics'] ) && is_array( $args['missing_author_stylesheet_diagnostics'] ) ) {
 			$diagnostics = array_merge( $diagnostics, array_values( array_filter( $args['missing_author_stylesheet_diagnostics'], 'is_array' ) ) );
 		}
-		$report       = Static_Site_Importer_Import_Report::from_array(
-			array(
+		$envelope     = array(
 			'schema'                           => Static_Site_Importer_Import_Report::SCHEMA,
 			'import_run_id'                    => self::import_run_id( $args ),
 			'plan_identity'                    => $receipt['plan_identity'] ?? array(),
@@ -693,8 +692,8 @@ class Static_Site_Importer_Theme_Generator {
 					'mdx'      => 0,
 				),
 			),
-			)
 		);
+		$report       = Static_Site_Importer_Import_Report::from_array( $envelope );
 		$report['source_artifact'] = array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ) );
 		$report['materialization_receipt'] = $receipt;
 		$artifact = array_merge(

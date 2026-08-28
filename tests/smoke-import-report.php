@@ -91,6 +91,23 @@ try {
 }
 $assert( $unknown_threw, 'unknown-key-throws' );
 
+// A stale envelope round-trips its unknown keys but never launders them into the schema.
+$stale = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'schema'        => Static_Site_Importer_Import_Report::SCHEMA,
+		'retired_field' => 'carried',
+	)
+);
+$assert( 'carried' === $stale->get( 'retired_field' ), 'stale-key-readable' );
+$assert( 'carried' === ( $stale->to_array()['retired_field'] ?? null ), 'stale-key-round-trips' );
+$stale_threw = false;
+try {
+	$stale->set( 'retired_field', 'rewritten' );
+} catch ( InvalidArgumentException $e ) {
+	$stale_threw = true;
+}
+$assert( $stale_threw, 'stale-key-is-not-writable' );
+
 $isolated = Static_Site_Importer_Import_Report::from_array( array() );
 $policy   = Static_Site_Importer_Asset_Reporter::initialize_report( $isolated, array() );
 $assert( 'copy_to_theme' === $policy, 'asset-reporter-default-policy' );

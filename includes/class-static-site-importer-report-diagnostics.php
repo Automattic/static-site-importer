@@ -56,8 +56,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return Static_Site_Importer_Import_Report
 	 */
 	public static function new_conversion_report( string $html_path, array $source_metadata = array() ): Static_Site_Importer_Import_Report {
-		return Static_Site_Importer_Import_Report::from_array(
-			array(
+		$envelope = array(
 			'schema'                  => Static_Site_Importer_Import_Report::SCHEMA,
 			'version'                 => 1,
 			'entry_file'              => $html_path,
@@ -178,14 +177,15 @@ class Static_Site_Importer_Report_Diagnostics {
 				'Visual fidelity requires browser rendering; use visual_parity_artifacts for durable Codebox/runtime evidence and explicit pending/not-captured slots.',
 				'Semantic fidelity requires browser DOM extraction; use semantic_fidelity.comparison_targets to compare source static HTML against the generated WordPress URL.',
 			),
-			)
 		);
+
+		return Static_Site_Importer_Import_Report::from_array( $envelope );
 	}
 
 	/**
 	 * Record source and contract notes for direct website-artifact materialization.
 	 *
-	 * @param array<string,mixed> $report   Import report.
+	 * @param Static_Site_Importer_Import_Report $report   Import report.
 	 * @param array<string,mixed> $compiled Compiler result envelope.
 	 * @return void
 	 */
@@ -194,7 +194,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$files     = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
 		$source    = (string) ( $compiled['provenance']['source'] ?? ( $compiled['input']['entry_path'] ?? 'website_artifact' ) );
 
-		$source_documents                              = array_merge(
+		$source_documents                            = array_merge(
 			$report->section( 'source_documents' ),
 			array(
 				'total_count'      => 1,
@@ -310,7 +310,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Finalize quality summary, compact summary, and artifact diagnostics.
 	 *
-	 * @param array<string,mixed> $report Import report.
+	 * @param Static_Site_Importer_Import_Report $report Import report.
 	 * @param array<string,mixed> $args   Import args.
 	 * @return array<string, mixed>
 	 */
@@ -325,7 +325,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Refresh every public projection from one finalized report state.
 	 *
-	 * @param array<string,mixed> $report  Finalized import report.
+	 * @param Static_Site_Importer_Import_Report $report  Finalized import report.
 	 * @param array<string,mixed> $quality Finalized quality gate state.
 	 * @param bool                $build_fixture Whether to build the fixture projection.
 	 * @return array<string,mixed>
@@ -355,7 +355,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Build the first-class import validation artifact for automation consumers.
 	 *
-	 * @param array<string,mixed> $report  Full import report.
+	 * @param array<string,mixed>|Static_Site_Importer_Import_Report $report  Full import report.
 	 * @param array<string,mixed> $quality Finalized quality gate state.
 	 * @return array<string,mixed>
 	 */
@@ -425,7 +425,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Build the finding packet artifact set for repair-loop routing.
 	 *
-	 * @param array<string,mixed> $report Full import report.
+	 * @param array<string,mixed>|Static_Site_Importer_Import_Report $report Full import report.
 	 * @return array<string,mixed>
 	 */
 	public static function finding_packets( array|Static_Site_Importer_Import_Report $report ): array {
@@ -753,7 +753,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Finalize quality summary and gate status.
 	 *
-	 * @param array<string,mixed> $report Import report.
+	 * @param Static_Site_Importer_Import_Report $report Import report.
 	 * @param array<string,mixed> $args   Import args.
 	 * @return array<string, mixed>
 	 */
@@ -869,7 +869,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * report value while making the quality gate consume its authoritative fallback
 	 * count until a materialization receipt explicitly resolves it.
 	 *
-	 * @param array<string,mixed> $report Import report.
+	 * @param Static_Site_Importer_Import_Report $report Import report.
 	 * @return void
 	 */
 	private static function normalize_quality_report( Static_Site_Importer_Import_Report $report ): void {
@@ -952,7 +952,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * declared dependency row is stored under `companion_plugins.dependencies` keyed
 	 * by the namespaced companion slug, distinct from `commerce.dependencies`.
 	 *
-	 * @param array<string, mixed> $report     Conversion report (mutated in place).
+	 * @param Static_Site_Importer_Import_Report $report     Conversion report (mutated in place).
 	 * @param array<string, mixed> $dependency Companion dependency definition.
 	 * @param bool                 $waived     Whether enforcement is waived.
 	 * @return void
@@ -1027,7 +1027,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Build the compact report summary consumed by validation harnesses.
 	 *
-	 * @param array<string, mixed> $report  Full conversion report.
+	 * @param array<string,mixed>|Static_Site_Importer_Import_Report $report  Full conversion report.
 	 * @param array<string, mixed> $quality Finalized quality summary.
 	 * @return array<string, mixed>
 	 */
@@ -1356,7 +1356,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Build provenance for machine artifacts.
 	 *
-	 * @param array<string,mixed> $report Full import report.
+	 * @param array<string,mixed>|Static_Site_Importer_Import_Report $report Full import report.
 	 * @return array<string,mixed>
 	 */
 	private static function validation_provenance( array|Static_Site_Importer_Import_Report $report ): array {
@@ -1376,7 +1376,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Build import-level reproduction context for machine artifacts.
 	 *
-	 * @param array<string,mixed> $report Full import report.
+	 * @param array<string,mixed>|Static_Site_Importer_Import_Report $report Full import report.
 	 * @return array<string,mixed>
 	 */
 	private static function validation_reproduction_context( array|Static_Site_Importer_Import_Report $report ): array {
@@ -1429,7 +1429,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * Convert one normalized diagnostic into a FindingPacket.
 	 *
 	 * @param array<string,mixed> $diagnostic Normalized diagnostic.
-	 * @param array<string,mixed> $report     Full import report.
+	 * @param array<string,mixed>|Static_Site_Importer_Import_Report $report     Full import report.
 	 * @return array<string,mixed>
 	 */
 	private static function finding_packet_from_diagnostic( array $diagnostic, array|Static_Site_Importer_Import_Report $report ): array {
@@ -1986,7 +1986,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * keep no signal and stay an unacceptable parity loss, which lets the existing
 	 * commerce dependency gate report the missing runtime.
 	 *
-	 * @param array<string,mixed>  $report        Import report (mutated in place).
+	 * @param Static_Site_Importer_Import_Report  $report        Import report (mutated in place).
 	 * @param array<string,mixed>  $args          Import args.
 	 * @param array<string,string> $page_contents Materialized page post_content keyed by source filename, mutated in place.
 	 * @return array<string,mixed> The recorded product_finding_seeding report.
@@ -2539,7 +2539,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Compact semantic parity metrics for import-report summaries.
 	 *
-	 * @param array<string,mixed> $report Full import report.
+	 * @param array<string,mixed>|Static_Site_Importer_Import_Report $report Full import report.
 	 * @return array<string,mixed>
 	 */
 	private static function compact_semantic_parity_summary( array|Static_Site_Importer_Import_Report $report ): array {
@@ -2562,7 +2562,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Resolve script fallback diagnostics after the generated companion plugin is active.
 	 *
-	 * @param array<string,mixed>            $report          Import report.
+	 * @param Static_Site_Importer_Import_Report            $report          Import report.
 	 * @param array<int,array<string,mixed>> $runtime_scripts Materialized companion scripts.
 	 * @param string                         $slug             Companion plugin slug.
 	 * @return void
@@ -2626,7 +2626,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Reconcile late-added fallback rows against active companion dependencies.
 	 *
-	 * @param array<string,mixed> $report Import report.
+	 * @param Static_Site_Importer_Import_Report $report Import report.
 	 * @return void
 	 */
 	private static function mark_active_companion_script_fallbacks_materialized( Static_Site_Importer_Import_Report $report ): void {
@@ -2651,12 +2651,12 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * quality count excludes a form after a completed receipt proves that exact
 	 * source fallback was replaced by the provider's persisted block markup.
 	 *
-	 * @param array<string,mixed> $report Import report.
+	 * @param Static_Site_Importer_Import_Report $report Import report.
 	 * @return void
 	 */
 	public static function reconcile_provider_materialized_fallbacks( Static_Site_Importer_Import_Report $report, array $receipts = array() ): void {
-		$quality      = $report->quality();
-		$source_total = max(
+		$quality                          = $report->quality();
+		$source_total                     = max(
 			(int) ( $quality['source_fallback_count'] ?? 0 ),
 			(int) ( $quality['fallback_count'] ?? 0 )
 		);
@@ -2731,14 +2731,14 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		$report->merge_quality( array( 'fallback_count' => max( 0, $source_total - $resolved ) ) );
-		$report['quality_resolutions']       = array(
+		$report['quality_resolutions']     = array(
 			'schema'                    => 'static-site-importer/quality-resolutions/v1',
 			'source_fallback_count'     => $source_total,
 			'resolved_by_provider'      => $resolved,
 			'unresolved_fallback_count' => max( 0, $source_total - $resolved ),
 			'resolutions'               => $resolutions,
 		);
-		$report['fallback_reconciliation']   = $report['quality_resolutions'];
+		$report['fallback_reconciliation'] = $report['quality_resolutions'];
 	}
 
 	/**
@@ -2761,7 +2761,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Normalize import diagnostics into a stable, machine-actionable shape.
 	 *
-	 * @param array<string,mixed> $report Import report.
+	 * @param Static_Site_Importer_Import_Report $report Import report.
 	 * @return void
 	 */
 	private static function normalize_import_diagnostics( Static_Site_Importer_Import_Report $report ): void {
@@ -2972,7 +2972,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Link source-document counts back to concrete diagnostics.
 	 *
-	 * @param array<string,mixed> $report Import report.
+	 * @param Static_Site_Importer_Import_Report $report Import report.
 	 * @return void
 	 */
 	private static function normalize_source_document_diagnostic_refs( Static_Site_Importer_Import_Report $report ): void {
@@ -3204,7 +3204,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Summarize compiler evidence for compact import metrics.
 	 *
-	 * @param array<string,mixed> $report Full conversion report.
+	 * @param array<string,mixed>|Static_Site_Importer_Import_Report $report Full conversion report.
 	 * @return array<string,mixed>
 	 */
 	private static function compact_import_report_compiler_summary( array|Static_Site_Importer_Import_Report $report ): array {

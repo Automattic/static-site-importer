@@ -79,7 +79,7 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 	private array $data = array();
 
 	/**
-	 * @param array<string,mixed> $data Initial envelope.
+	 * @param array<mixed> $data Initial envelope.
 	 */
 	private function __construct( array $data ) {
 		foreach ( $data as $key => $value ) {
@@ -93,7 +93,7 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 	/**
 	 * Wrap an existing array envelope.
 	 *
-	 * @param array<string,mixed> $data Existing envelope.
+	 * @param array<mixed> $data Existing envelope.
 	 */
 	public static function from_array( array $data ): self {
 		return new self( $data );
@@ -135,15 +135,20 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 	/**
 	 * Read a top-level value.
 	 */
-	public function get( string $key, mixed $default = null ): mixed {
-		return array_key_exists( $key, $this->data ) ? $this->data[ $key ] : $default;
+	public function get( string $key, mixed $fallback = null ): mixed {
+		return array_key_exists( $key, $this->data ) ? $this->data[ $key ] : $fallback;
 	}
 
 	/**
-	 * Replace a top-level value. Unknown keys throw.
+	 * Replace a top-level value. Only declared keys are writable.
+	 *
+	 * Undeclared keys carried in by {@see from_array()} stay readable and
+	 * round-trip through {@see to_array()}, but cannot be written, so loading a
+	 * stale envelope never launders a key into the schema.
 	 */
 	public function set( string $key, mixed $value ): void {
-		if ( ! self::is_known_key( $key ) && ! array_key_exists( $key, $this->data ) ) {
+		if ( ! self::is_known_key( $key ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Internal schema violation message; this class runs before any WordPress escaping API is guaranteed.
 			throw new InvalidArgumentException( sprintf( 'Unknown import-report top-level key "%s".', $key ) );
 		}
 		$this->data[ $key ] = $value;
@@ -192,15 +197,18 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 	 * @param array<string,mixed> $row Row to append.
 	 */
 	public function append_to_section( string $key, string $list_key, array $row ): void {
-		$section = $this->section( $key );
-		$list    = isset( $section[ $list_key ] ) && is_array( $section[ $list_key ] ) ? $section[ $list_key ] : array();
-		$list[]  = $row;
+		$section              = $this->section( $key );
+		$list                 = isset( $section[ $list_key ] ) && is_array( $section[ $list_key ] ) ? $section[ $list_key ] : array();
+		$list[]               = $row;
 		$section[ $list_key ] = $list;
 		$this->set_section( $key, $section );
 	}
 
 	/**
-	 * @return array<int,array<string,mixed>>
+	 * Diagnostic rows. Entries are not type-narrowed: callers walk heterogeneous
+	 * envelopes loaded from persisted JSON.
+	 *
+	 * @return array<int,mixed>
 	 */
 	public function diagnostics(): array {
 		$diagnostics = $this->get( 'diagnostics', array() );
@@ -208,7 +216,7 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 	}
 
 	/**
-	 * @param array<int,array<string,mixed>> $diagnostics Diagnostic rows.
+	 * @param array<int,mixed> $diagnostics Diagnostic rows.
 	 */
 	public function set_diagnostics( array $diagnostics ): void {
 		$this->set( 'diagnostics', array_values( $diagnostics ) );
@@ -224,18 +232,19 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 	}
 
 	/**
-	 * @param callable(array<string,mixed>):bool $keep Predicate.
+	 * @param callable(mixed):bool $keep Predicate.
 	 */
 	public function filter_diagnostics( callable $keep ): void {
 		$this->set_diagnostics( array_values( array_filter( $this->diagnostics(), $keep ) ) );
 	}
 
 	/**
-	 * @param array<string,mixed> $diagnostic Replacement row.
+	 * @param array<mixed> $diagnostic Replacement row.
 	 */
 	public function replace_diagnostic( int $index, array $diagnostic ): void {
 		$diagnostics = $this->diagnostics();
 		if ( ! array_key_exists( $index, $diagnostics ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Internal schema violation message; this class runs before any WordPress escaping API is guaranteed.
 			throw new InvalidArgumentException( sprintf( 'Import report has no diagnostic at index %d.', $index ) );
 		}
 		$diagnostics[ $index ] = $diagnostic;

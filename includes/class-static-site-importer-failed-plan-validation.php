@@ -20,8 +20,7 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 	/** @return array<string,mixed> */
 	public static function build( array $plan, array $args = array(), array $compiled = array() ): array {
 		$diagnostics = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
-		$report      = Static_Site_Importer_Import_Report::from_array(
-			array(
+		$envelope    = array(
 			'schema'           => Static_Site_Importer_Import_Report::SCHEMA,
 			'version'          => 1,
 			'status'           => 'failed',
@@ -34,8 +33,8 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 				'stage' => 'pre_materialization_quality_admission',
 				'code'  => 'static_site_importer_quality_gate_failed',
 			),
-			)
 		);
+		$report      = Static_Site_Importer_Import_Report::from_array( $envelope );
 		if ( count( $diagnostics ) > self::MAX_DIAGNOSTICS ) {
 			$report['diagnostics_truncated'] = true;
 			$report['diagnostic_count']      = count( $diagnostics );

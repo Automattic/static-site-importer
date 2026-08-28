@@ -57,6 +57,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-website-artifact-import-input.php',
 	'class-static-site-importer-theme-materialization-strategy.php',
 	'class-static-site-importer-classic-theme-projection.php',
+	'class-static-site-importer-client-script-policy-report.php',
 	'class-static-site-importer-client-script-policy.php',
 	'class-static-site-importer-document.php',
 	'class-static-site-importer-source-page.php',

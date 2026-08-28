@@ -9,52 +9,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-/**
- * Client-script policy report. Disposition keys are closed: dropped, quarantined, preserved.
- */
-final class Static_Site_Importer_Client_Script_Policy_Report {
-
-	public const SCHEMA       = 'static-site-importer/client-script-policy-report/v1';
-	public const DISPOSITIONS = array( 'dropped', 'quarantined', 'preserved' );
-
-	/**
-	 * @param array<int,array<string,mixed>> $dropped
-	 * @param array<int,array<string,mixed>> $quarantined
-	 * @param array<int,array<string,mixed>> $preserved
-	 */
-	public function __construct(
-		private string $policy,
-		private string $trust,
-		private string $provenance,
-		private array $dropped = array(),
-		private array $quarantined = array(),
-		private array $preserved = array()
-	) {}
-
-	/**
-	 * @param array<string,mixed> $row
-	 */
-	public function record( string $disposition, array $row ): void {
-		if ( ! in_array( $disposition, self::DISPOSITIONS, true ) ) {
-			throw new InvalidArgumentException( sprintf( 'Unknown client-script disposition "%s".', $disposition ) );
-		}
-		$this->{$disposition}[] = $row;
-	}
-
-	/**
-	 * @return array<string,mixed>
-	 */
-	public function to_array(): array {
-		return array(
-			'schema'      => self::SCHEMA,
-			'policy'      => $this->policy,
-			'trust'       => $this->trust,
-			'provenance'  => $this->provenance,
-			'dropped'     => $this->dropped,
-			'quarantined' => $this->quarantined,
-			'preserved'   => $this->preserved,
-		);
-	}
+if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy_Report' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-client-script-policy-report.php';
 }
 
 /** Applies an explicit, provenance-bound client-script policy before compilation. */
