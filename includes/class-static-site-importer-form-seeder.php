@@ -549,8 +549,15 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$nodes = isset( $form['control_topology']['nodes'] ) && is_array( $form['control_topology']['nodes'] ) ? $form['control_topology']['nodes'] : array();
 		foreach ( $nodes as $node ) {
-			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? '' ) || 'label' !== ( $node['tag'] ?? '' ) || hash( 'sha256', (string) ( $node['id'] ?? '' ) ) !== $loss['node_hash'] ) {
+			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? '' ) || hash( 'sha256', (string) ( $node['id'] ?? '' ) ) !== $loss['node_hash'] ) {
 				continue;
+			}
+			$tag = (string) ( $node['tag'] ?? 'div' );
+			if ( in_array( $tag, array( 'ul', 'ol', 'li' ), true ) ) {
+				return true;
+			}
+			if ( 'label' !== $tag ) {
+				return false;
 			}
 			$controls = array_values(
 				array_filter(
