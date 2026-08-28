@@ -53,7 +53,7 @@ class Static_Site_Importer_Plugin_Materializer {
 			$report['installed'] = true;
 		} else {
 			$report['attempted_actions'][] = 'install';
-			$capabilities = Static_Site_Importer_Current_Site_Capabilities::check_plugin_install( true );
+			$capabilities                  = Static_Site_Importer_Current_Site_Capabilities::check_plugin_install( true );
 			if ( is_wp_error( $capabilities ) ) {
 				return self::failed_report( $report, $capabilities );
 			}
@@ -81,9 +81,9 @@ class Static_Site_Importer_Plugin_Materializer {
 		}
 
 		if ( function_exists( 'is_plugin_active' ) && is_plugin_active( $plugin_file ) ) {
-			$report['active'] = true;
+			$report['active']              = true;
 			$report['attempted_actions'][] = 'prepare_runtime';
-			$preparation      = self::prepare_plugin_runtime( $slug, $preparation_callback );
+			$preparation                   = self::prepare_plugin_runtime( $slug, $preparation_callback );
 			if ( is_wp_error( $preparation ) ) {
 				return self::failed_report( $report, $preparation );
 			}
@@ -93,7 +93,7 @@ class Static_Site_Importer_Plugin_Materializer {
 				return self::failed_report( $report, $capabilities );
 			}
 			$report['attempted_actions'][] = 'activate';
-			$lifecycle = self::prepare_activation_lifecycle_replay();
+			$lifecycle                     = self::prepare_activation_lifecycle_replay();
 			try {
 				$activate = activate_plugin( $plugin_file );
 			} catch ( Throwable $error ) {
@@ -107,16 +107,16 @@ class Static_Site_Importer_Plugin_Materializer {
 				if ( ! is_plugin_active( $plugin_file ) ) {
 					return self::failed_report( $report, $activate );
 				}
-				$report['active']    = true;
-				$report['actions'][] = 'reconciled_activated';
+				$report['active']              = true;
+				$report['actions'][]           = 'reconciled_activated';
 				$report['attempted_actions'][] = 'prepare_runtime';
-				$preparation         = self::prepare_plugin_runtime( $slug, $preparation_callback );
+				$preparation                   = self::prepare_plugin_runtime( $slug, $preparation_callback );
 				if ( is_wp_error( $preparation ) ) {
 					return self::failed_report( $report, $preparation );
 				}
 			} else {
 				$report['attempted_actions'][] = 'prepare_runtime';
-				$preparation = self::prepare_plugin_runtime( $slug, $preparation_callback );
+				$preparation                   = self::prepare_plugin_runtime( $slug, $preparation_callback );
 				if ( is_wp_error( $preparation ) ) {
 					self::restore_activation_lifecycle_actions( $lifecycle );
 					if ( ! is_plugin_active( $plugin_file ) ) {
@@ -243,7 +243,7 @@ class Static_Site_Importer_Plugin_Materializer {
 				return self::failed_report( $report, $registered );
 			}
 			$report['registration'] = $registered;
-			$report = self::replace_active_generated_companion( $plugin_file, $report );
+			$report                 = self::replace_active_generated_companion( $plugin_file, $report );
 			if ( function_exists( 'update_option' ) ) {
 				update_option( self::ACTIVE_COMPANION_OPTION, $plugin_file, false );
 			}
@@ -410,6 +410,7 @@ class Static_Site_Importer_Plugin_Materializer {
 
 		// A byte-identical entrypoint proves this is the prior SSI scaffold for the
 		// same destination and payload, rather than a coincidental block namespace.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local scaffold file from the plugin directory, not a remote URL.
 		return hash_equals( $expected_main, (string) file_get_contents( $path ) );
 	}
 
@@ -565,13 +566,13 @@ class Static_Site_Importer_Plugin_Materializer {
 	 */
 	private static function new_report( string $slug, string $plugin_file ): array {
 		return array(
-			'slug'        => $slug,
-			'plugin_file' => $plugin_file,
-			'source'      => 'wordpress.org',
-			'status'      => 'not_run',
-			'attempted'   => false,
-			'installed'   => false,
-			'active'      => false,
+			'slug'              => $slug,
+			'plugin_file'       => $plugin_file,
+			'source'            => 'wordpress.org',
+			'status'            => 'not_run',
+			'attempted'         => false,
+			'installed'         => false,
+			'active'            => false,
 			'actions'           => array(),
 			'attempted_actions' => array(),
 			'error'             => '',
