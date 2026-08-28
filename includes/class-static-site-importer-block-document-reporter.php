@@ -6,13 +6,17 @@
  * server-visible block-quality issues and records actionable diagnostics into the
  * import conversion report. Extracted from Static_Site_Importer_Theme_Generator as a
  * behavior-preserving decomposition slice; the generator delegates to this class and
- * passes its conversion report by reference.
+ * passes its conversion report object.
  *
  * @package StaticSiteImporter
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
+}
+
+if ( ! class_exists( 'Static_Site_Importer_Import_Report' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-import-report.php';
 }
 
 /**
@@ -28,7 +32,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 * @param array<string,mixed>  $report    Conversion report (mutated by reference).
 	 * @return void
 	 */
-	public static function analyze_generated_theme_block_documents( array $writes, string $theme_dir, array &$report ): void {
+	public static function analyze_generated_theme_block_documents( array $writes, string $theme_dir, Static_Site_Importer_Import_Report $report ): void {
 		foreach ( $writes as $path => $content ) {
 			$relative_path = ltrim( str_replace( trailingslashit( $theme_dir ), '', $path ), '/' );
 			if ( ! self::is_generated_block_document_path( $relative_path ) ) {
@@ -47,7 +51,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 * @param array<string,mixed> $report Conversion report (mutated by reference).
 	 * @return void
 	 */
-	public static function reset_generated_block_document_analysis( array &$report ): void {
+	public static function reset_generated_block_document_analysis( Static_Site_Importer_Import_Report $report ): void {
 		foreach ( array( 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count' ) as $metric ) {
 			$report['quality'][ $metric ] = 0;
 		}
@@ -101,7 +105,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 * @param array<string,mixed> $report        Conversion report (mutated by reference).
 	 * @return array<string,mixed>
 	 */
-	public static function analyze_generated_block_document( string $relative_path, string $block_markup, array &$report ): array {
+	public static function analyze_generated_block_document( string $relative_path, string $block_markup, Static_Site_Importer_Import_Report $report ): array {
 		$validation_method = function_exists( 'parse_blocks' ) && function_exists( 'serialize_blocks' ) ? 'wordpress_parse_blocks_serialize_blocks' : 'unavailable';
 		if ( 'unavailable' === $validation_method ) {
 			return array(
@@ -195,7 +199,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 * @param array<int,int>                 $path            Parsed block path.
 	 * @return void
 	 */
-	private static function analyze_generated_block_list( array $blocks, int &$block_count, int &$core_html_count, int &$freeform_count, int &$invalid_count, array &$invalid_blocks, array &$report, string $source = '', array $path = array() ): void {
+	private static function analyze_generated_block_list( array $blocks, int &$block_count, int &$core_html_count, int &$freeform_count, int &$invalid_count, array &$invalid_blocks, Static_Site_Importer_Import_Report $report, string $source = '', array $path = array() ): void {
 		foreach ( $blocks as $index => $block ) {
 			$block_path = array_merge( $path, array( $index ) );
 			$name       = isset( $block['blockName'] ) ? $block['blockName'] : null;
@@ -267,7 +271,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 * @param array<string,mixed> $report Conversion report (mutated by reference).
 	 * @return void
 	 */
-	private static function record_generated_core_html_block( string $source, array $path, array $block, array &$report ): void {
+	private static function record_generated_core_html_block( string $source, array $path, array $block, Static_Site_Importer_Import_Report $report ): void {
 		$html = '';
 		if ( isset( $block['attrs']['content'] ) && is_string( $block['attrs']['content'] ) ) {
 			$html = $block['attrs']['content'];
@@ -304,7 +308,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 * @param array<string,mixed> $report     Conversion report (mutated by reference).
 	 * @return void
 	 */
-	private static function record_generated_freeform_block( string $source, array $path, array $block, bool $malformed, array &$report ): void {
+	private static function record_generated_freeform_block( string $source, array $path, array $block, bool $malformed, Static_Site_Importer_Import_Report $report ): void {
 		$html = '';
 		if ( isset( $block['innerHTML'] ) && is_string( $block['innerHTML'] ) ) {
 			$html = $block['innerHTML'];

@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Import_Report' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-import-report.php';
+}
+
 /**
  * Records compiler-routed full-document metadata into the import report.
  */
@@ -16,11 +20,11 @@ class Static_Site_Importer_Document_Metadata_Reporter {
 	/**
 	 * Record compiler-routed full-document metadata and asset references.
 	 *
-	 * @param array<string,mixed> $report    Conversion report envelope, passed by reference.
+	 * @param Static_Site_Importer_Import_Report $report Conversion report envelope.
 	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
 	 * @return void
 	 */
-	public static function record( array &$report, array $artifacts ): void {
+	public static function record( Static_Site_Importer_Import_Report $report, array $artifacts ): void {
 		$metadata = isset( $artifacts['document_metadata'] ) && is_array( $artifacts['document_metadata'] ) ? $artifacts['document_metadata'] : array();
 		if ( 'blocks-engine/php-transformer/document-metadata/v1' !== (string) ( $metadata['schema'] ?? '' ) ) {
 			return;

@@ -1891,7 +1891,7 @@ $assert( false === $form_admission->invoke( null, $form_admission_plan, $missing
 $unrelated_failure_plan = $form_admission_plan;
 $unrelated_failure_plan['quality']['failure_reasons'][] = 'core_html_block';
 $assert( false === $form_admission->invoke( null, $unrelated_failure_plan, $form_admission_lifecycle ), 'unrelated quality failures remain rejected before materialization' );
-$other_failure_report                                     = $form_quality_report;
+$other_failure_report                                     = Static_Site_Importer_Import_Report::from_array( $form_quality_report->to_array() );
 $other_failure_report['quality']['core_html_block_count'] = 1;
 $other_failure_quality                                    = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $other_failure_report, array( 'fail_on_quality' => true ) );
 $other_failure_validation                                 = Static_Site_Importer_Report_Diagnostics::import_validation_result( $other_failure_report, $other_failure_quality );

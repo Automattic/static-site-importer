@@ -42,8 +42,7 @@ class Static_Site_Importer_Plugin_Materializer {
 			$report['status']    = 'already_available';
 			$report['installed'] = true;
 			$report['active']    = true;
-			self::record_installed_provenance( $report );
-			return $report;
+			return self::record_installed_provenance( $report );
 		}
 
 		$report['attempted'] = true;
@@ -126,8 +125,7 @@ class Static_Site_Importer_Plugin_Materializer {
 					$report['active']    = true;
 					$report['actions'][] = 'activated';
 					$report['status']    = 'activated_pending_fresh_runtime';
-					self::record_installed_provenance( $report );
-					return $report;
+					return self::record_installed_provenance( $report );
 				}
 				try {
 					$report['lifecycle_replay'] = self::complete_activation_lifecycle_replay( $lifecycle );
@@ -154,8 +152,7 @@ class Static_Site_Importer_Plugin_Materializer {
 		if ( ! self::available( $availability_check ) ) {
 			$report['status'] = 'activated_pending_fresh_runtime';
 		}
-		self::record_installed_provenance( $report );
-		return $report;
+		return self::record_installed_provenance( $report );
 	}
 
 	/** @return true|WP_Error */
@@ -246,7 +243,7 @@ class Static_Site_Importer_Plugin_Materializer {
 				return self::failed_report( $report, $registered );
 			}
 			$report['registration'] = $registered;
-			self::replace_active_generated_companion( $plugin_file, $report );
+			$report = self::replace_active_generated_companion( $plugin_file, $report );
 			if ( function_exists( 'update_option' ) ) {
 				update_option( self::ACTIVE_COMPANION_OPTION, $plugin_file, false );
 			}
@@ -288,7 +285,7 @@ class Static_Site_Importer_Plugin_Materializer {
 			return self::failed_report( $report, $registered );
 		}
 		$report['registration'] = $registered;
-		self::replace_active_generated_companion( $plugin_file, $report );
+		$report                 = self::replace_active_generated_companion( $plugin_file, $report );
 		if ( function_exists( 'update_option' ) ) {
 			update_option( self::ACTIVE_COMPANION_OPTION, $plugin_file, false );
 		}
@@ -428,20 +425,26 @@ class Static_Site_Importer_Plugin_Materializer {
 	 * @param string               $plugin_file New generated companion basename.
 	 * @param array<string, mixed> $report      Materialization report.
 	 */
-	private static function replace_active_generated_companion( string $plugin_file, array &$report ): void {
+	/**
+	 * @param array<string,mixed> $report Materialization report.
+	 * @return array<string,mixed>
+	 */
+	private static function replace_active_generated_companion( string $plugin_file, array $report ): array {
 		if ( ! function_exists( 'get_option' ) ) {
-			return;
+			return $report;
 		}
 
 		$previous = (string) get_option( self::ACTIVE_COMPANION_OPTION, '' );
 		if ( '' === $previous || $plugin_file === $previous || ! function_exists( 'deactivate_plugins' ) ) {
-			return;
+			return $report;
 		}
 
 		if ( ! function_exists( 'is_plugin_active' ) || is_plugin_active( $previous ) ) {
 			deactivate_plugins( $previous );
 			$report['actions'][] = 'replaced:' . $previous;
 		}
+
+		return $report;
 	}
 
 	/**
@@ -580,11 +583,16 @@ class Static_Site_Importer_Plugin_Materializer {
 		);
 	}
 
-	/** Record the exact activated plugin entrypoint instead of inferring a package version. */
-	private static function record_installed_provenance( array &$report ): void {
+	/**
+	 * Record the exact activated plugin entrypoint instead of inferring a package version.
+	 *
+	 * @param array<string,mixed> $report Materialization report.
+	 * @return array<string,mixed>
+	 */
+	private static function record_installed_provenance( array $report ): array {
 		$file = trailingslashit( WP_PLUGIN_DIR ) . (string) $report['plugin_file'];
 		if ( ! is_readable( $file ) ) {
-			return;
+			return $report;
 		}
 		$headers              = function_exists( 'get_plugin_data' ) ? get_plugin_data( $file, false, false ) : array();
 		$sha256               = hash_file( 'sha256', $file );
@@ -593,6 +601,7 @@ class Static_Site_Importer_Plugin_Materializer {
 			'version' => (string) ( $headers['Version'] ?? '' ),
 			'sha256'  => false !== $sha256 ? $sha256 : '',
 		);
+		return $report;
 	}
 
 	/** Re-read an upgrader-mutated entrypoint instead of reusing pre-install state. */

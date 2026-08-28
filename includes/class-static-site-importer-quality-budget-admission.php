@@ -22,7 +22,7 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 	 * @param array<string,mixed> $report
 	 * @return array<string,mixed>
 	 */
-	public static function evaluate( array $plan, array $resolved, array $args = array(), array $report = array() ): array {
+	public static function evaluate( array $plan, array $resolved, array $args = array(), array|Static_Site_Importer_Import_Report $report = array() ): array {
 		$budget                  = isset( $args['quality_budget'] ) && is_array( $args['quality_budget'] ) ? $args['quality_budget'] : ( isset( $args['quality_budgets'] ) && is_array( $args['quality_budgets'] ) ? $args['quality_budgets'] : array() );
 		$mode                    = in_array( $budget['mode'] ?? 'preview', array( 'production', 'production_ready' ), true ) ? 'production' : 'preview';
 		$quality                 = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();

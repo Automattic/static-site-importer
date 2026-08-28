@@ -12,6 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Product_Handoff_Contract' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-product-handoff-contract.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Import_Report' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-import-report.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-diagnostic-loss-classes.php';
 }
@@ -50,11 +53,12 @@ class Static_Site_Importer_Report_Diagnostics {
 	 *
 	 * @param string              $html_path       Imported entry file.
 	 * @param array<string,mixed> $source_metadata Source metadata.
-	 * @return array<string, mixed>
+	 * @return Static_Site_Importer_Import_Report
 	 */
-	public static function new_conversion_report( string $html_path, array $source_metadata = array() ): array {
-		return array(
-			'schema'                  => Static_Site_Importer_Product_Handoff_Contract::SSI_IMPORT_REPORT_SCHEMA,
+	public static function new_conversion_report( string $html_path, array $source_metadata = array() ): Static_Site_Importer_Import_Report {
+		return Static_Site_Importer_Import_Report::from_array(
+			array(
+			'schema'                  => Static_Site_Importer_Import_Report::SCHEMA,
 			'version'                 => 1,
 			'entry_file'              => $html_path,
 			'source'                  => array_merge(
@@ -174,6 +178,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'Visual fidelity requires browser rendering; use visual_parity_artifacts for durable Codebox/runtime evidence and explicit pending/not-captured slots.',
 				'Semantic fidelity requires browser DOM extraction; use semantic_fidelity.comparison_targets to compare source static HTML against the generated WordPress URL.',
 			),
+			)
 		);
 	}
 
@@ -184,7 +189,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,mixed> $compiled Compiler result envelope.
 	 * @return void
 	 */
-	public static function record_direct_website_artifact_source_summary( array &$report, array $compiled ): void {
+	public static function record_direct_website_artifact_source_summary( Static_Site_Importer_Import_Report $report, array $compiled ): void {
 		$artifacts = isset( $compiled['artifacts'] ) && is_array( $compiled['artifacts'] ) ? $compiled['artifacts'] : array();
 		$files     = isset( $artifacts['files'] ) && is_array( $artifacts['files'] ) ? $artifacts['files'] : array();
 		$source    = (string) ( $compiled['provenance']['source'] ?? ( $compiled['input']['entry_path'] ?? 'website_artifact' ) );
@@ -309,7 +314,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,mixed> $args   Import args.
 	 * @return array<string, mixed>
 	 */
-	public static function finalize_report( array &$report, array $args ): array {
+	public static function finalize_report( Static_Site_Importer_Import_Report $report, array $args ): array {
 		$quality                           = self::finalize_quality_report( $report, $args );
 		$report['visual_parity_artifacts'] = self::visual_parity_artifact_contract( isset( $args['validation_artifacts'] ) && is_array( $args['validation_artifacts'] ) ? $args['validation_artifacts'] : array() );
 		self::refresh_projections( $report, $quality, false );
@@ -325,7 +330,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param bool                $build_fixture Whether to build the fixture projection.
 	 * @return array<string,mixed>
 	 */
-	public static function refresh_projections( array &$report, array $quality, bool $build_fixture = true ): array {
+	public static function refresh_projections( Static_Site_Importer_Import_Report $report, array $quality, bool $build_fixture = true ): array {
 		$report['quality']                  = $quality;
 		$report['compact_summary']          = self::import_report_summary( $report, $quality );
 		$report['finding_packets']          = self::finding_packets( $report );
@@ -338,7 +343,7 @@ class Static_Site_Importer_Report_Diagnostics {
 					'status'                   => (string) ( $report['compact_summary']['status'] ?? '' ),
 					'slug'                     => (string) ( $report['theme_slug'] ?? '' ),
 					'import_validation_result' => $report['import_validation_result'],
-					'import_report'            => $report,
+					'import_report'            => $report->to_array(),
 					'materialization_receipt'  => isset( $report['materialization_receipt'] ) && is_array( $report['materialization_receipt'] ) ? $report['materialization_receipt'] : array(),
 				)
 			);
@@ -354,7 +359,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,mixed> $quality Finalized quality gate state.
 	 * @return array<string,mixed>
 	 */
-	public static function import_validation_result( array $report, array $quality ): array {
+	public static function import_validation_result( array|Static_Site_Importer_Import_Report $report, array $quality ): array {
 		$summary          = self::import_report_summary( $report, $quality );
 		$diagnostics      = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
 		$source_documents = isset( $report['source_documents'] ) && is_array( $report['source_documents'] ) ? $report['source_documents'] : array();
@@ -423,7 +428,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,mixed> $report Full import report.
 	 * @return array<string,mixed>
 	 */
-	public static function finding_packets( array $report ): array {
+	public static function finding_packets( array|Static_Site_Importer_Import_Report $report ): array {
 		$diagnostics = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
 		$packets     = array();
 
@@ -752,7 +757,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,mixed> $args   Import args.
 	 * @return array<string, mixed>
 	 */
-	public static function finalize_quality_report( array &$report, array $args ): array {
+	public static function finalize_quality_report( Static_Site_Importer_Import_Report $report, array $args ): array {
 		self::normalize_quality_report( $report );
 		self::reconcile_provider_materialized_fallbacks( $report );
 		self::mark_active_companion_script_fallbacks_materialized( $report );
@@ -867,7 +872,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,mixed> $report Import report.
 	 * @return void
 	 */
-	private static function normalize_quality_report( array &$report ): void {
+	private static function normalize_quality_report( Static_Site_Importer_Import_Report $report ): void {
 		$supplied = isset( $report['quality'] ) && is_array( $report['quality'] ) ? $report['quality'] : array();
 		$metrics  = isset( $supplied['metrics'] ) && is_array( $supplied['metrics'] ) ? $supplied['metrics'] : array();
 		$quality  = array_merge( self::quality_defaults(), $metrics, $supplied );
@@ -952,7 +957,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param bool                 $waived     Whether enforcement is waived.
 	 * @return void
 	 */
-	public static function record_companion_plugin_dependency( array &$report, array $dependency, bool $waived ): void {
+	public static function record_companion_plugin_dependency( Static_Site_Importer_Import_Report $report, array $dependency, bool $waived ): void {
 		$row  = Static_Site_Importer_Entity_Materializer_Registry::companion_dependency_row( $dependency, $waived );
 		$slug = (string) ( $row['slug'] ?? '' );
 		if ( '' === $slug ) {
@@ -1031,7 +1036,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string, mixed> $quality Finalized quality summary.
 	 * @return array<string, mixed>
 	 */
-	public static function import_report_summary( array $report, array $quality ): array {
+	public static function import_report_summary( array|Static_Site_Importer_Import_Report $report, array $quality ): array {
 		$diagnostics            = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
 		$source_documents       = isset( $report['source_documents'] ) && is_array( $report['source_documents'] ) ? $report['source_documents'] : array();
 		$commerce               = isset( $report['commerce'] ) && is_array( $report['commerce'] ) ? $report['commerce'] : array();
@@ -1359,7 +1364,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,mixed> $report Full import report.
 	 * @return array<string,mixed>
 	 */
-	private static function validation_provenance( array $report ): array {
+	private static function validation_provenance( array|Static_Site_Importer_Import_Report $report ): array {
 		$source   = isset( $report['source'] ) && is_array( $report['source'] ) ? $report['source'] : array();
 		$compiler = isset( $report['blocks_engine']['website_artifact'] ) && is_array( $report['blocks_engine']['website_artifact'] ) ? $report['blocks_engine']['website_artifact'] : array();
 
@@ -1379,7 +1384,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,mixed> $report Full import report.
 	 * @return array<string,mixed>
 	 */
-	private static function validation_reproduction_context( array $report ): array {
+	private static function validation_reproduction_context( array|Static_Site_Importer_Import_Report $report ): array {
 		return array(
 			'entry_file'       => isset( $report['entry_file'] ) ? (string) $report['entry_file'] : '',
 			'theme_slug'       => isset( $report['theme_slug'] ) ? (string) $report['theme_slug'] : '',
@@ -1432,7 +1437,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,mixed> $report     Full import report.
 	 * @return array<string,mixed>
 	 */
-	private static function finding_packet_from_diagnostic( array $diagnostic, array $report ): array {
+	private static function finding_packet_from_diagnostic( array $diagnostic, array|Static_Site_Importer_Import_Report $report ): array {
 		$id       = isset( $diagnostic['id'] ) && is_scalar( $diagnostic['id'] ) ? (string) $diagnostic['id'] : 'finding';
 		$type     = isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : 'import_diagnostic';
 		$severity = isset( $diagnostic['severity'] ) && is_scalar( $diagnostic['severity'] ) ? (string) $diagnostic['severity'] : self::diagnostic_severity( $type );
@@ -1991,7 +1996,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,string> $page_contents Materialized page post_content keyed by source filename, mutated in place.
 	 * @return array<string,mixed> The recorded product_finding_seeding report.
 	 */
-	public static function materialize_product_findings( array &$report, array $args = array(), array &$page_contents = array() ): array {
+	public static function materialize_product_findings( Static_Site_Importer_Import_Report $report, array $args = array(), array &$page_contents = array() ): array {
 		$adapter = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
 
 		$diagnostics = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
@@ -2542,7 +2547,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,mixed> $report Full import report.
 	 * @return array<string,mixed>
 	 */
-	private static function compact_semantic_parity_summary( array $report ): array {
+	private static function compact_semantic_parity_summary( array|Static_Site_Importer_Import_Report $report ): array {
 		$semantic_parity = isset( $report['blocks_engine']['semantic_parity'] ) && is_array( $report['blocks_engine']['semantic_parity'] ) ? $report['blocks_engine']['semantic_parity'] : array();
 		if ( empty( $semantic_parity ) ) {
 			return array(
@@ -2567,7 +2572,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param string                         $slug             Companion plugin slug.
 	 * @return void
 	 */
-	private static function mark_companion_script_fallbacks_materialized( array &$report, array $runtime_scripts, string $slug ): void {
+	private static function mark_companion_script_fallbacks_materialized( Static_Site_Importer_Import_Report $report, array $runtime_scripts, string $slug ): void {
 		$selectors = array();
 		foreach ( $runtime_scripts as $script ) {
 			$selector = self::first_scalar( $script, array( 'selector' ) );
@@ -2625,7 +2630,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,mixed> $report Import report.
 	 * @return void
 	 */
-	private static function mark_active_companion_script_fallbacks_materialized( array &$report ): void {
+	private static function mark_active_companion_script_fallbacks_materialized( Static_Site_Importer_Import_Report $report ): void {
 		$dependencies = $report['companion_plugins']['dependencies'] ?? array();
 		if ( ! is_array( $dependencies ) ) {
 			return;
@@ -2650,7 +2655,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,mixed> $report Import report.
 	 * @return void
 	 */
-	public static function reconcile_provider_materialized_fallbacks( array &$report, array $receipts = array() ): void {
+	public static function reconcile_provider_materialized_fallbacks( Static_Site_Importer_Import_Report $report, array $receipts = array() ): void {
 		if ( ! isset( $report['quality'] ) || ! is_array( $report['quality'] ) ) {
 			$report['quality'] = array();
 		}
@@ -2761,7 +2766,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,mixed> $report Import report.
 	 * @return void
 	 */
-	private static function normalize_import_diagnostics( array &$report ): void {
+	private static function normalize_import_diagnostics( Static_Site_Importer_Import_Report $report ): void {
 		if ( empty( $report['diagnostics'] ) || ! is_array( $report['diagnostics'] ) ) {
 			return;
 		}
@@ -2972,7 +2977,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,mixed> $report Import report.
 	 * @return void
 	 */
-	private static function normalize_source_document_diagnostic_refs( array &$report ): void {
+	private static function normalize_source_document_diagnostic_refs( Static_Site_Importer_Import_Report $report ): void {
 		$diagnostics = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
 		$refs        = array(
 			'unresolved_link_count'      => array(),
@@ -3204,7 +3209,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,mixed> $report Full conversion report.
 	 * @return array<string,mixed>
 	 */
-	private static function compact_import_report_compiler_summary( array $report ): array {
+	private static function compact_import_report_compiler_summary( array|Static_Site_Importer_Import_Report $report ): array {
 		$compiler = isset( $report['blocks_engine'] ) && is_array( $report['blocks_engine'] ) ? $report['blocks_engine'] : array();
 		$summary  = array(
 			'available'      => ! empty( $compiler['available'] ),
