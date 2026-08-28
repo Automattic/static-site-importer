@@ -122,7 +122,15 @@ global.window = global;
 (async () => {
   eval(source);
   await new Promise((resolve) => setImmediate(resolve));
-  console.log(JSON.stringify({ candidate_dom_artifact: `<script id="static-site-importer-font-readiness" type="application/json">${record.textContent}</script>`, readiness: JSON.parse(record.textContent) }));
+  const loaded = JSON.parse(record.textContent);
+  record = undefined;
+  document.fonts = { load: () => new Promise(() => {}), check: () => false };
+  global.setTimeout = (callback) => setImmediate(callback);
+  global.clearTimeout = () => {};
+  eval(source);
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  console.log(JSON.stringify({ candidate_dom_artifact: `<script id="static-site-importer-font-readiness" type="application/json">${record.textContent}</script>`, loaded, timed_out: JSON.parse(record.textContent) }));
 })();
 JS;
 $process = proc_open( array( 'node', '-e', $harness, base64_encode( $readiness ) ), array( 1 => array( 'pipe', 'w' ), 2 => array( 'pipe', 'w' ) ), $pipes );
@@ -137,7 +145,8 @@ if ( is_resource( $process ) ) {
 	$harness_status = 1;
 }
 $harness_result = json_decode( $harness_output, true );
-$assert( 0 === $harness_status && '' === $harness_error && is_array( $harness_result ) && 'loaded' === ( $harness_result['readiness']['status'] ?? '' ) && array_column( $contract['receipts'], 'id' ) === array_column( $harness_result['readiness']['faces'] ?? array(), 'receipt_id' ) && str_contains( $harness_result['candidate_dom_artifact'] ?? '', 'static-site-importer-font-readiness' ), 'readiness script executes in a deterministic DOM harness and emits receipt-keyed candidate DOM capture evidence: ' . $harness_error . ' ' . $harness_output );
+$assert( 0 === $harness_status && '' === $harness_error && is_array( $harness_result ) && 'loaded' === ( $harness_result['loaded']['status'] ?? '' ) && array_column( $contract['receipts'], 'id' ) === array_column( $harness_result['loaded']['faces'] ?? array(), 'receipt_id' ) && str_contains( $harness_result['candidate_dom_artifact'] ?? '', 'static-site-importer-font-readiness' ), 'readiness script executes in a deterministic DOM harness and emits receipt-keyed candidate DOM capture evidence: ' . $harness_error . ' ' . $harness_output );
+$assert( 'missing' === ( $harness_result['timed_out']['status'] ?? '' ) && array_column( $contract['receipts'], 'id' ) === array_column( $harness_result['timed_out']['faces'] ?? array(), 'receipt_id' ) && count( array_filter( $harness_result['timed_out']['faces'] ?? array(), static fn( array $face ): bool => 'missing' === ( $face['status'] ?? '' ) && 'timeout' === ( $face['error'] ?? '' ) ) ) === count( $contract['receipts'] ), 'never-settling font loads emit bounded receipt-keyed missing evidence: ' . $harness_error . ' ' . $harness_output );
 
 $legacy_consumer_plan = $producer_plan;
 unset( $legacy_consumer_plan['webfont_contract'] );
