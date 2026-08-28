@@ -44,12 +44,7 @@ final class Static_Site_Importer_Font_Materializer {
 				if ( self::uses_inferred_google_fallback( $plan ) ) {
 					$producer_faces = null;
 				} elseif ( ! empty( $diagnostics ) || ! self::resolved_plan_has_google_stylesheet( $resolved_plan ) ) {
-					return array(
-						'writes'         => array(),
-						'diagnostics'    => $diagnostics,
-						'faces'          => array(),
-						'required_faces' => array(),
-					);
+					return self::with_runtime_registration( array(), $resolved_plan, array(), $diagnostics, array(), array(), array(), false );
 				}
 			} else {
 				$materialized = self::materialize_producer_faces( $producer_faces, $diagnostics );
@@ -65,19 +60,13 @@ final class Static_Site_Importer_Font_Materializer {
 			}
 		}
 		if ( 'google_fonts' !== (string) ( $plan['provider'] ?? '' ) ) {
-			return array(
-				'writes'      => $writes,
-				'diagnostics' => $diagnostics,
-			);
+			return self::with_runtime_registration( $writes, $resolved_plan, array(), $diagnostics, array(), array(), array(), self::has_embedded_stylesheet( $writes ) );
 		}
 
 		$families   = self::font_families( $plan['fonts'] ?? array() );
 		$svg_writes = self::matching_svg_writes( $resolved_plan['writes'] ?? array(), $families );
 		if ( empty( $families ) ) {
-			return array(
-				'writes'      => $writes,
-				'diagnostics' => $diagnostics,
-			);
+			return self::with_runtime_registration( $writes, $resolved_plan, array(), $diagnostics, array(), array(), array(), self::has_embedded_stylesheet( $writes ) );
 		}
 
 		$font_faces = self::resolve_google_font_faces( $plan, $families, $diagnostics );
@@ -681,6 +670,11 @@ final class Static_Site_Importer_Font_Materializer {
 			'svg_receipts'   => $svg_receipts,
 			'svg_consumers'  => $svg_consumers,
 		);
+	}
+
+	/** @param array<int,array<string,mixed>> $writes */
+	private static function has_embedded_stylesheet( array $writes ): bool {
+		return (bool) array_filter( $writes, static fn( array $write ): bool => 'assets/css/embedded-fonts.css' === ( $write['target_path'] ?? '' ) );
 	}
 
 	/** @param array<int,array<string,mixed>> $faces */
