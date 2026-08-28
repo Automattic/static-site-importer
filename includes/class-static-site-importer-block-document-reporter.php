@@ -6,13 +6,17 @@
  * server-visible block-quality issues and records actionable diagnostics into the
  * import conversion report. Extracted from Static_Site_Importer_Theme_Generator as a
  * behavior-preserving decomposition slice; the generator delegates to this class and
- * passes its conversion report by reference.
+ * passes its conversion report object.
  *
  * @package StaticSiteImporter
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
+}
+
+if ( ! class_exists( 'Static_Site_Importer_Import_Report' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-import-report.php';
 }
 
 /**
@@ -25,44 +29,44 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 *
 	 * @param array<string,string> $writes    Generated theme writes keyed by absolute path.
 	 * @param string               $theme_dir Generated theme directory.
-	 * @param array<string,mixed>  $report    Conversion report (mutated by reference).
+	 * @param Static_Site_Importer_Import_Report  $report    Conversion report (mutated by reference).
 	 * @return void
 	 */
-	public static function analyze_generated_theme_block_documents( array $writes, string $theme_dir, array &$report ): void {
+	public static function analyze_generated_theme_block_documents( array $writes, string $theme_dir, Static_Site_Importer_Import_Report $report ): void {
 		foreach ( $writes as $path => $content ) {
 			$relative_path = ltrim( str_replace( trailingslashit( $theme_dir ), '', $path ), '/' );
 			if ( ! self::is_generated_block_document_path( $relative_path ) ) {
 				continue;
 			}
 
-			$block_markup                                   = self::generated_block_document_markup( $relative_path, $content );
-			$analysis                                       = self::analyze_generated_block_document( $relative_path, $block_markup, $report );
-			$report['generated_theme']['block_documents'][] = $analysis;
+			$block_markup = self::generated_block_document_markup( $relative_path, $content );
+			$analysis     = self::analyze_generated_block_document( $relative_path, $block_markup, $report );
+			$report->append_to_section( 'generated_theme', 'block_documents', $analysis );
 		}
 	}
 
 	/**
 	 * Clear generated-document analysis before analyzing mutated final documents.
 	 *
-	 * @param array<string,mixed> $report Conversion report (mutated by reference).
+	 * @param Static_Site_Importer_Import_Report $report Conversion report (mutated by reference).
 	 * @return void
 	 */
-	public static function reset_generated_block_document_analysis( array &$report ): void {
-		foreach ( array( 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count' ) as $metric ) {
-			$report['quality'][ $metric ] = 0;
-		}
-
-		$diagnostics                                       = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? $report['diagnostics'] : array();
-		$report['diagnostics']                             = array_values(
-			array_filter(
-				$diagnostics,
-				static function ( $diagnostic ): bool {
-					return ! is_array( $diagnostic ) || 'generated_theme_block_analysis' !== (string) ( $diagnostic['stage'] ?? '' );
-				}
+	public static function reset_generated_block_document_analysis( Static_Site_Importer_Import_Report $report ): void {
+		$report->merge_quality(
+			array(
+				'core_html_block_count'        => 0,
+				'freeform_block_count'         => 0,
+				'invalid_block_count'          => 0,
+				'invalid_block_document_count' => 0,
 			)
 		);
-		$report['materialized_content']['block_documents'] = array();
-		$report['generated_theme']['block_documents']      = array();
+		$report->filter_diagnostics(
+			static function ( $diagnostic ): bool {
+				return ! is_array( $diagnostic ) || 'generated_theme_block_analysis' !== (string) ( $diagnostic['stage'] ?? '' );
+			}
+		);
+		$report->set_in_section( 'materialized_content', 'block_documents', array() );
+		$report->set_in_section( 'generated_theme', 'block_documents', array() );
 	}
 
 	/**
@@ -98,10 +102,10 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 *
 	 * @param string              $relative_path Theme-relative path.
 	 * @param string              $block_markup  Block markup.
-	 * @param array<string,mixed> $report        Conversion report (mutated by reference).
+	 * @param Static_Site_Importer_Import_Report $report        Conversion report (mutated by reference).
 	 * @return array<string,mixed>
 	 */
-	public static function analyze_generated_block_document( string $relative_path, string $block_markup, array &$report ): array {
+	public static function analyze_generated_block_document( string $relative_path, string $block_markup, Static_Site_Importer_Import_Report $report ): array {
 		$validation_method = function_exists( 'parse_blocks' ) && function_exists( 'serialize_blocks' ) ? 'wordpress_parse_blocks_serialize_blocks' : 'unavailable';
 		if ( 'unavailable' === $validation_method ) {
 			return array(
@@ -135,11 +139,11 @@ class Static_Site_Importer_Block_Document_Reporter {
 			$first_differing_token = self::first_differing_block_document_token( $block_markup, $serialized );
 		}
 
-		$report['quality']['core_html_block_count'] += $core_html_count;
-		$report['quality']['freeform_block_count']  += $freeform_count;
-		$report['quality']['invalid_block_count']   += $invalid_count;
+		$report->increment_quality( 'core_html_block_count', $core_html_count );
+		$report->increment_quality( 'freeform_block_count', $freeform_count );
+		$report->increment_quality( 'invalid_block_count', $invalid_count );
 		if ( $invalid_count > 0 ) {
-			++$report['quality']['invalid_block_document_count'];
+			$report->increment_quality( 'invalid_block_document_count' );
 			$first_invalid_block = $invalid_blocks[0] ?? self::first_parsed_block_summary( $analyzed_blocks );
 			$validation_message  = $serialization_mismatch ? 'Serialized block document differs from generated block markup.' : 'Generated block document contains parser-exposed invalid block markup.';
 			$diagnostic          = array(
@@ -166,7 +170,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 				$diagnostic['first_differing_token'] = $first_differing_token;
 			}
 
-			$report['diagnostics'][] = $diagnostic;
+			$report->append_diagnostic( $diagnostic );
 		}
 
 		return array(
@@ -190,12 +194,12 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 * @param int                            $freeform_count  Freeform block count.
 	 * @param int                            $invalid_count   Invalid block count.
 	 * @param array<int,mixed>               $invalid_blocks  Collected invalid block summaries.
-	 * @param array<string,mixed>            $report          Conversion report (mutated by reference).
+	 * @param Static_Site_Importer_Import_Report            $report          Conversion report (mutated by reference).
 	 * @param string                         $source          Theme-relative source document path.
 	 * @param array<int,int>                 $path            Parsed block path.
 	 * @return void
 	 */
-	private static function analyze_generated_block_list( array $blocks, int &$block_count, int &$core_html_count, int &$freeform_count, int &$invalid_count, array &$invalid_blocks, array &$report, string $source = '', array $path = array() ): void {
+	private static function analyze_generated_block_list( array $blocks, int &$block_count, int &$core_html_count, int &$freeform_count, int &$invalid_count, array &$invalid_blocks, Static_Site_Importer_Import_Report $report, string $source = '', array $path = array() ): void {
 		foreach ( $blocks as $index => $block ) {
 			$block_path = array_merge( $path, array( $index ) );
 			$name       = isset( $block['blockName'] ) ? $block['blockName'] : null;
@@ -264,10 +268,10 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 * @param string              $source Theme-relative source document path.
 	 * @param array<int,int>      $path   Parsed block path.
 	 * @param array<string,mixed> $block  Parsed block.
-	 * @param array<string,mixed> $report Conversion report (mutated by reference).
+	 * @param Static_Site_Importer_Import_Report $report Conversion report (mutated by reference).
 	 * @return void
 	 */
-	private static function record_generated_core_html_block( string $source, array $path, array $block, array &$report ): void {
+	private static function record_generated_core_html_block( string $source, array $path, array $block, Static_Site_Importer_Import_Report $report ): void {
 		$html = '';
 		if ( isset( $block['attrs']['content'] ) && is_string( $block['attrs']['content'] ) ) {
 			$html = $block['attrs']['content'];
@@ -291,7 +295,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 			$diagnostic['form']     = $manifest['form'];
 			$diagnostic['controls'] = $manifest['controls'];
 		}
-		$report['diagnostics'][] = $diagnostic;
+		$report->append_diagnostic( $diagnostic );
 	}
 
 	/**
@@ -301,10 +305,10 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 * @param array<int,int>      $path       Parsed block path.
 	 * @param array<string,mixed> $block      Parsed block.
 	 * @param bool                $malformed  Whether the block parser exposed raw HTML without a block name.
-	 * @param array<string,mixed> $report     Conversion report (mutated by reference).
+	 * @param Static_Site_Importer_Import_Report $report     Conversion report (mutated by reference).
 	 * @return void
 	 */
-	private static function record_generated_freeform_block( string $source, array $path, array $block, bool $malformed, array &$report ): void {
+	private static function record_generated_freeform_block( string $source, array $path, array $block, bool $malformed, Static_Site_Importer_Import_Report $report ): void {
 		$html = '';
 		if ( isset( $block['innerHTML'] ) && is_string( $block['innerHTML'] ) ) {
 			$html = $block['innerHTML'];
@@ -333,8 +337,8 @@ class Static_Site_Importer_Block_Document_Reporter {
 		$entry['emitted_block_preview'] = Static_Site_Importer_Report_Diagnostics::diagnostic_excerpt( $emitted );
 		$entry['malformed']             = $malformed;
 
-		$report['diagnostics'][]                        = $entry;
-		$report['generated_theme']['freeform_blocks'][] = $entry;
+		$report->append_diagnostic( $entry );
+		$report->append_to_section( 'generated_theme', 'freeform_blocks', $entry );
 	}
 
 	/**

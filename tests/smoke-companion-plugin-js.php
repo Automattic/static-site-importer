@@ -176,16 +176,18 @@ $assert( array( 'hero-island', 'runtime-unit-effect-carousel' ) === ( $row['isla
 
 // Active companion: present diagnostic flags JS as runtime-carried theme-independently.
 $GLOBALS['ssi_companion_js_active'] = true;
-$report                            = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
-$report['quality']['fallback_count'] = 1;
-$report['diagnostics'][] = array(
-	'code'       => 'html_script_fallback',
-	'kind'       => 'unsupported_html_fallback',
-	'type'       => 'unsupported_html_fallback',
-	'tag'        => 'script',
-	'selector'   => 'script:nth-of-type(1)',
-	'source_path' => 'index.html',
-);
+	$report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
+	$report->merge_quality( array( 'fallback_count' => 1 ) );
+	$report->append_diagnostic(
+		array(
+			'code'        => 'html_script_fallback',
+			'kind'        => 'unsupported_html_fallback',
+			'type'        => 'unsupported_html_fallback',
+			'tag'         => 'script',
+			'selector'    => 'script:nth-of-type(1)',
+			'source_path' => 'index.html',
+		)
+	);
 Static_Site_Importer_Report_Diagnostics::record_companion_plugin_dependency( $report, $dependency, false );
 $present = array_values( array_filter( $report['diagnostics'] ?? array(), static fn ( array $d ): bool => 'companion_plugin_present' === ( $d['code'] ?? '' ) ) );
 $assert( 1 === count( $present ), 'present-diagnostic-emitted-when-active' );
@@ -195,14 +197,16 @@ $materialized = array_values( array_filter( $report['diagnostics'] ?? array(), s
 $assert( 1 === count( $materialized ), 'companion-materialization-resolves-script-fallback' );
 $assert( 'native_conversion' === ( $materialized[0]['loss_class'] ?? '' ), 'materialized-script-is-native-conversion-outcome' );
 $assert( 0 === ( $report['quality']['fallback_count'] ?? -1 ), 'materialized-script-no-longer-counts-as-fallback' );
-$report['diagnostics'][] = array(
-	'code'        => 'html_script_fallback',
-	'kind'        => 'html',
-	'tag'         => 'script',
-	'selector'    => 'script:nth-of-type(1)',
-	'source_path' => 'index.html',
-	'reason'      => 'script_requires_runtime',
-);
+	$report->append_diagnostic(
+		array(
+			'code'        => 'html_script_fallback',
+			'kind'        => 'html',
+			'tag'         => 'script',
+			'selector'    => 'script:nth-of-type(1)',
+			'source_path' => 'index.html',
+			'reason'      => 'script_requires_runtime',
+		)
+	);
 Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $report, array() );
 $unresolved = array_filter( $report['diagnostics'], static fn ( array $d ): bool => 'html_script_fallback' === ( $d['code'] ?? '' ) );
 $assert( empty( $unresolved ), 'finalization-reconciles-late-script-fallback-rows' );

@@ -631,8 +631,8 @@ class Static_Site_Importer_Theme_Generator {
 		if ( isset( $args['missing_author_stylesheet_diagnostics'] ) && is_array( $args['missing_author_stylesheet_diagnostics'] ) ) {
 			$diagnostics = array_merge( $diagnostics, array_values( array_filter( $args['missing_author_stylesheet_diagnostics'], 'is_array' ) ) );
 		}
-		$report       = array(
-			'schema'                           => 'static-site-importer/import-report/v1',
+		$envelope     = array(
+			'schema'                           => Static_Site_Importer_Import_Report::SCHEMA,
 			'import_run_id'                    => self::import_run_id( $args ),
 			'plan_identity'                    => $receipt['plan_identity'] ?? array(),
 			'blocks_engine'                    => array(
@@ -693,6 +693,7 @@ class Static_Site_Importer_Theme_Generator {
 				),
 			),
 		);
+		$report       = Static_Site_Importer_Import_Report::from_array( $envelope );
 		$report['source_artifact'] = array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ) );
 		$report['materialization_receipt'] = $receipt;
 		$artifact = array_merge(
@@ -863,7 +864,7 @@ class Static_Site_Importer_Theme_Generator {
 			$report_path = $theme_dir . '/import-report.json';
 			$validation_path = $theme_dir . '/import-validation-result.json';
 			$findings_path = $theme_dir . '/finding-packets.json';
-			self::write_plan_projection( $report_path, $report, $receipt );
+			self::write_plan_projection( $report_path, $report->to_array(), $receipt );
 			self::write_plan_projection( $validation_path, $validation, $receipt );
 			self::write_plan_projection( $findings_path, $findings, $receipt );
 		}
@@ -880,7 +881,7 @@ class Static_Site_Importer_Theme_Generator {
 					throw new RuntimeException( 'External report destination changed after preflight.' );
 				}
 			}
-			self::write_plan_projection( $external_report_path, $report, $receipt );
+			self::write_plan_projection( $external_report_path, $report->to_array(), $receipt );
 			self::write_plan_projection( $external_validation_result_path, $validation, $receipt );
 			self::write_plan_projection( $external_finding_packets_path, $findings, $receipt );
 		}
@@ -900,7 +901,7 @@ class Static_Site_Importer_Theme_Generator {
 			'external_finding_packets_path'   => $external_finding_packets_path,
 			'manifest_path'                   => $manifest_path,
 			'pages'                           => $receipt['completed']['pages'],
-			'import_report'                   => $report,
+			'import_report'                   => $report->to_array(),
 			'import_report_summary'           => array(
 				'status'           => $receipt['status'],
 				'diagnostic_count' => count( $diagnostics ),

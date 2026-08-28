@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Import_Report' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-import-report.php';
+}
+
 final class Static_Site_Importer_Failed_Plan_Validation {
 
 	private const MAX_DIAGNOSTICS = 50;
@@ -16,8 +20,8 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 	/** @return array<string,mixed> */
 	public static function build( array $plan, array $args = array(), array $compiled = array() ): array {
 		$diagnostics = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
-		$report      = array(
-			'schema'           => 'static-site-importer/import-report/v1',
+		$envelope    = array(
+			'schema'           => Static_Site_Importer_Import_Report::SCHEMA,
 			'version'          => 1,
 			'status'           => 'failed',
 			'theme_slug'       => (string) ( $args['slug'] ?? '' ),
@@ -30,6 +34,7 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 				'code'  => 'static_site_importer_quality_gate_failed',
 			),
 		);
+		$report      = Static_Site_Importer_Import_Report::from_array( $envelope );
 		if ( count( $diagnostics ) > self::MAX_DIAGNOSTICS ) {
 			$report['diagnostics_truncated'] = true;
 			$report['diagnostic_count']      = count( $diagnostics );
@@ -42,7 +47,7 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 		$fixture_diagnostics        = Static_Site_Importer_Report_Diagnostics::refresh_projections( $report, $quality );
 
 		return array(
-			'import_report'            => $report,
+			'import_report'            => $report->to_array(),
 			'import_report_summary'    => $report['compact_summary'],
 			'import_validation_result' => $report['import_validation_result'],
 			'finding_packets'          => $report['finding_packets'],

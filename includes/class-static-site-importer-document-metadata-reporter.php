@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Import_Report' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-import-report.php';
+}
+
 /**
  * Records compiler-routed full-document metadata into the import report.
  */
@@ -16,11 +20,11 @@ class Static_Site_Importer_Document_Metadata_Reporter {
 	/**
 	 * Record compiler-routed full-document metadata and asset references.
 	 *
-	 * @param array<string,mixed> $report    Conversion report envelope, passed by reference.
+	 * @param Static_Site_Importer_Import_Report $report Conversion report envelope.
 	 * @param array<string,mixed> $artifacts WordPress artifacts from Blocks Engine.
 	 * @return void
 	 */
-	public static function record( array &$report, array $artifacts ): void {
+	public static function record( Static_Site_Importer_Import_Report $report, array $artifacts ): void {
 		$metadata = isset( $artifacts['document_metadata'] ) && is_array( $artifacts['document_metadata'] ) ? $artifacts['document_metadata'] : array();
 		if ( 'blocks-engine/php-transformer/document-metadata/v1' !== (string) ( $metadata['schema'] ?? '' ) ) {
 			return;
@@ -37,18 +41,20 @@ class Static_Site_Importer_Document_Metadata_Reporter {
 			'scripts'     => self::normalize_document_scripts( $metadata['scripts'] ?? array() ),
 		);
 
-		$report['generated_theme']['document_metadata'] = $normalized;
-		$report['diagnostics'][]                        = array(
-			'type'         => 'document_metadata_routed',
-			'source'       => $normalized['source_path'],
-			'severity'     => 'info',
-			'stage'        => 'website_artifact_materialization',
-			'constraints'  => 'report_only',
-			'message'      => 'Full-document metadata/assets were routed through the generated_theme.document_metadata contract instead of generated page block content.',
-			'meta_count'   => count( $normalized['meta'] ),
-			'link_count'   => count( $normalized['links'] ),
-			'style_count'  => count( $normalized['styles'] ),
-			'script_count' => count( $normalized['scripts'] ),
+		$report->set_in_section( 'generated_theme', 'document_metadata', $normalized );
+		$report->append_diagnostic(
+			array(
+				'type'         => 'document_metadata_routed',
+				'source'       => $normalized['source_path'],
+				'severity'     => 'info',
+				'stage'        => 'website_artifact_materialization',
+				'constraints'  => 'report_only',
+				'message'      => 'Full-document metadata/assets were routed through the generated_theme.document_metadata contract instead of generated page block content.',
+				'meta_count'   => count( $normalized['meta'] ),
+				'link_count'   => count( $normalized['links'] ),
+				'style_count'  => count( $normalized['styles'] ),
+				'script_count' => count( $normalized['scripts'] ),
+			)
 		);
 	}
 
