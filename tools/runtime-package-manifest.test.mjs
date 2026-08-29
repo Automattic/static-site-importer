@@ -23,8 +23,13 @@ test("website artifact import profile is complete and capability scoped", async 
   })
   assert.deepEqual(
     homeboy.scopes?.release?.include,
-    profile.selectors.filter(({ path }) => !path.startsWith("vendor/")).map(({ path }) => path),
-    "Homeboy release coverage must match the profile's tracked source selectors",
+    [],
+    "Homeboy release coverage must clear inherited source selectors",
+  )
+  assert.deepEqual(
+    homeboy.scopes?.release?.exclude,
+    ["bench/", "homeboy-test-manifest.json", "lib/", "registry/", "rigs/", "test-manifest.json", "tools/"],
+    "Homeboy release coverage must exclude tracked development surfaces outside the runtime profile",
   )
   assert.deepEqual(profile.abilities, [
     "static-site-importer/import",

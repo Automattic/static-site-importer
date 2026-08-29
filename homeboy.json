@@ -45,11 +45,15 @@
   "remote_path": "wp-content/plugins/static-site-importer",
   "scopes": {
     "release": {
-      "include": [
-        "runtime-package-manifest.json",
-        "static-site-importer.php",
-        "blocks/",
-        "includes/"
+      "include": [],
+      "exclude": [
+        "bench/",
+        "homeboy-test-manifest.json",
+        "lib/",
+        "registry/",
+        "rigs/",
+        "test-manifest.json",
+        "tools/"
       ]
     }
   },
