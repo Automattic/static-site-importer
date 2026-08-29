@@ -35,7 +35,7 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 			'theme_materialization' => $materialization['theme_materialization'],
 		);
 		unset( $payload['args']['_static_site_importer_payload_reader'] );
-		$json    = wp_json_encode( $payload );
+		$json = wp_json_encode( $payload );
 		if ( ! is_string( $json ) ) {
 			return new WP_Error( 'static_site_importer_lifecycle_checkpoint_encode_failed', 'The lifecycle compile checkpoint could not be encoded.' );
 		}
