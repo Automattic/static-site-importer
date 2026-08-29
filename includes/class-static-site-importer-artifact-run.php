@@ -170,6 +170,14 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		if ( ! is_string( $path ) || is_link( $path ) ) {
 			return new WP_Error( 'static_site_importer_artifact_workspace_path_invalid', 'The workspace lock path is invalid.' );
 		}
+		$provided = function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_artifact_workspace_lock', null, 'acquire', $path, null ) : null;
+		if ( null !== $provided ) {
+			return is_wp_error( $provided ) ? $provided : array(
+				'schema' => 'static-site-importer/artifact-workspace-lock/v1',
+				'path'   => $path,
+				'token'  => $provided,
+			);
+		}
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Opens an importer-owned advisory lock file.
 		$handle = fopen( $path, 'c' );
 		if ( false === $handle || ! flock( $handle, LOCK_EX | LOCK_NB ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_flock -- Serializes one importer-owned run executor.
@@ -182,6 +190,12 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 	}
 
 	public function release_lock( $handle ): void {
+		if ( is_array( $handle ) && 'static-site-importer/artifact-workspace-lock/v1' === ( $handle['schema'] ?? '' ) && is_string( $handle['path'] ?? null ) ) {
+			if ( function_exists( 'apply_filters' ) ) {
+				apply_filters( 'static_site_importer_artifact_workspace_lock', null, 'release', $handle['path'], $handle['token'] ?? null );
+			}
+			return;
+		}
 		if ( is_resource( $handle ) ) {
 			flock( $handle, LOCK_UN ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_flock -- Releases the importer-owned run lock.
 			fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the native stream only after releasing its advisory lock.
