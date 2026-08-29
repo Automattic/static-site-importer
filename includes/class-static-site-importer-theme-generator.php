@@ -757,6 +757,7 @@ class Static_Site_Importer_Theme_Generator {
 			'schema'          => 'static-site-importer/source-of-truth-manifest/v1',
 			'version'         => 1,
 			'import_run_id'   => $report['import_run_id'],
+			'build'           => Static_Site_Importer_Build_Provenance::describe(),
 			'artifact'        => array_merge( $artifact, array( 'provenance' => $plan['source']['provenance'] ) ),
 			'manifest_path'   => 'static-site-importer-manifest.json',
 			'generated_theme' => array(
