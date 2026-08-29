@@ -191,7 +191,7 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 				array_map(
 					static fn( array $finding ): array => array(
 						'code'     => (string) ( $finding['status'] ?? 'evidence_gap' ),
-						'dimension'=> (string) ( $finding['dimension'] ?? '' ),
+						'dimension' => (string) ( $finding['dimension'] ?? '' ),
 					),
 					isset( $document['findings'] ) && is_array( $document['findings'] ) ? $document['findings'] : array()
 				)
@@ -497,7 +497,7 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 	 */
 	private static function task_row( array $index, string $id ): ?array {
 		foreach ( $index as $item ) {
-			if ( is_array( $item ) && $id === ( $item['id'] ?? '' ) ) {
+			if ( is_array( $item ) && ( $item['id'] ?? '' ) === $id ) {
 				return $item;
 			}
 		}
