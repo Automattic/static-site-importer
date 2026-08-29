@@ -44,12 +44,7 @@ final class Static_Site_Importer_Font_Materializer {
 				if ( self::uses_inferred_google_fallback( $plan ) ) {
 					$producer_faces = null;
 				} elseif ( ! empty( $diagnostics ) || ! self::resolved_plan_has_google_stylesheet( $resolved_plan ) ) {
-					return array(
-						'writes'         => array(),
-						'diagnostics'    => $diagnostics,
-						'faces'          => array(),
-						'required_faces' => array(),
-					);
+					return self::with_runtime_registration( array(), $resolved_plan, array(), $diagnostics, array(), array(), array(), false );
 				}
 			} else {
 				$materialized = self::materialize_producer_faces( $producer_faces, $diagnostics );

@@ -187,11 +187,13 @@ $local_plan['webfont_contract'] = array(
 );
 $request_count = count( $GLOBALS['ssi_webfont_requests'] );
 $local_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $local_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
-$assert( ! is_wp_error( $local_overlay ) && array() === $local_overlay['writes'] && $request_count === count( $GLOBALS['ssi_webfont_requests'] ), 'an authoritative local-font contract never falls back to synthesized Google requests' );
+$local_write_paths = array_column( $local_overlay['writes'] ?? array(), 'target_path' );
+$assert( ! is_wp_error( $local_overlay ) && in_array( 'functions.php', $local_write_paths, true ) && in_array( 'assets/js/font-readiness.js', $local_write_paths, true ) && ! in_array( 'assets/css/embedded-fonts.css', $local_write_paths, true ) && $request_count === count( $GLOBALS['ssi_webfont_requests'] ), 'an authoritative local-font contract emits readiness without falling back to synthesized Google requests' );
 $assert( 'producer_webfont_import_unsupported_provider' === ( $local_overlay['diagnostics'][0]['reason'] ?? '' ), 'non-required local-font producer diagnostics survive the handoff without blocking import' );
 $local_plan['webfont_contract']['diagnostics'] = array();
 $local_overlay_without_diagnostics = Static_Site_Importer_Font_Materializer::prepare_overlay( $local_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
-$assert( ! is_wp_error( $local_overlay_without_diagnostics ) && array() === $local_overlay_without_diagnostics['writes'] && $request_count === count( $GLOBALS['ssi_webfont_requests'] ), 'an authoritative zero-face contract without diagnostics still suppresses legacy Google requests' );
+$local_write_paths_without_diagnostics = array_column( $local_overlay_without_diagnostics['writes'] ?? array(), 'target_path' );
+$assert( ! is_wp_error( $local_overlay_without_diagnostics ) && in_array( 'functions.php', $local_write_paths_without_diagnostics, true ) && in_array( 'assets/js/font-readiness.js', $local_write_paths_without_diagnostics, true ) && ! in_array( 'assets/css/embedded-fonts.css', $local_write_paths_without_diagnostics, true ) && $request_count === count( $GLOBALS['ssi_webfont_requests'] ), 'an authoritative zero-face contract emits readiness while suppressing legacy Google requests' );
 
 // Producer-shaped Blocks Engine #1129 contract observed in Coffee Festival.
 $direct_font_url   = 'https://cdn.coffee-festival.example/assets/ObsidianDisplay.woff2';
