@@ -107,6 +107,12 @@ class Static_Site_Importer_Theme_Generator {
 		if ( is_wp_error( $GLOBALS['ssi_direct_materialization_error'] ?? null ) ) {
 			return $GLOBALS['ssi_direct_materialization_error'];
 		}
+		if ( 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
+			return array(
+				'status'                       => 'dependencies_prepared',
+				'runtime_lifecycle_checkpoint' => 'prepare-checkpoint',
+			);
+		}
 		++$GLOBALS['ssi_direct_mutations'];
 		$GLOBALS['ssi_direct_last_args'] = $args;
 		$GLOBALS['ssi_direct_compiled_results'][] = $args['compiled_artifact_result'];
@@ -184,7 +190,8 @@ foreach ( array( 'index.html', 'about.html', 'contact.html', 'styles.css' ) as $
 		'content' => (string) file_get_contents( $fixture . '/' . $name ),
 	);
 }
-$input = static fn ( string $operation = 'apply' ): array => array(
+
+$input = static fn ( string $operation = 'apply', array $lifecycle = array() ): array => array_merge( array(
 	'operation' => $operation,
 	'slug'      => 'direct-artifact-fixture',
 	'source'    => array(
@@ -192,15 +199,15 @@ $input = static fn ( string $operation = 'apply' ): array => array(
 		'entrypoint' => 'website/index.html',
 		'files'      => $files,
 	),
-);
-$resume = static fn ( string $id, string $operation = 'apply' ): array => array(
+), $lifecycle );
+$resume = static fn ( string $id, string $operation = 'apply', array $lifecycle = array() ): array => array_merge( array(
 	'operation' => $operation,
 	'slug'      => 'direct-artifact-fixture',
 	'source'    => array(
 		'type'      => 'files',
 		'import_id' => $id,
 	),
-);
+), $lifecycle );
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'][] = static fn ( array $policy ): array => array_merge(
 	$policy,
 	array(
@@ -275,6 +282,33 @@ $canonical_compiled = static function ( array $result ) use ( &$canonical_compil
 	return $result;
 };
 $assert( $canonical_compiled( $GLOBALS['ssi_direct_compiled_results'][0] ) === $canonical_compiled( $GLOBALS['ssi_direct_compiled_results'][1] ), 'clean and resumed composition must produce identical canonical plans, companion payloads, pages, writes, diagnostics, and reconciliation identities' );
+
+$prepare_mutation_count = $GLOBALS['ssi_direct_mutations'];
+$prepare = Static_Site_Importer_Canonical_Import_Service::import(
+	$input(
+		'apply',
+		array(
+			'runtime_lifecycle_phase'      => 'prepare',
+			'runtime_lifecycle_request_id' => 'prepare-request',
+			'runtime_lifecycle_checkpoint' => 'prepare-checkpoint',
+		)
+	)
+);
+$prepare_work = $prepare['artifact_run']['work'] ?? array();
+$compiled_count = count( $GLOBALS['ssi_direct_compiled_results'] );
+$assert( ! empty( $prepare['success'] ) && 'dependencies_prepared' === ( $prepare['result']['status'] ?? '' ) && 3 === ( $prepare_work['pages_compiled'] ?? 0 ) && $prepare_mutation_count === $GLOBALS['ssi_direct_mutations'], 'a lifecycle prepare direct run must complete compilation, retain its dependency response, and avoid WordPress mutation' );
+$prepared_replay = Static_Site_Importer_Canonical_Import_Service::import(
+	$resume(
+		(string) $prepare['import_id'],
+		'apply',
+		array(
+			'runtime_lifecycle_phase'      => 'resume',
+			'runtime_lifecycle_request_id' => 'resume-request',
+			'runtime_lifecycle_checkpoint' => 'resume-checkpoint',
+		)
+	)
+);
+$assert( $prepare === $prepared_replay && $prepare_mutation_count === $GLOBALS['ssi_direct_mutations'] && $compiled_count === count( $GLOBALS['ssi_direct_compiled_results'] ), 'a fresh lifecycle resume must return the retained prepare response without additional compile or materialization work' );
 
 $binary = str_repeat( "\x00\xffZIP", 1024 );
 $binary_ref = array(
