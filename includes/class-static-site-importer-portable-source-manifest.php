@@ -18,7 +18,7 @@ class Static_Site_Importer_Portable_Source_Manifest {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public static function project( array $artifact ) {
-		$files = isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? $artifact['files'] : array();
+		$files   = isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? $artifact['files'] : array();
 		$by_path = array();
 		foreach ( $files as $file ) {
 			if ( ! is_array( $file ) ) {
@@ -70,7 +70,7 @@ class Static_Site_Importer_Portable_Source_Manifest {
 			return self::error( 'static_site_importer_portable_source_files_invalid', 'The portable source manifest must declare a non-empty files list.' );
 		}
 
-		$projected = array();
+		$projected      = array();
 		$declared_paths = array();
 		foreach ( $declared as $declaration ) {
 			if ( ! is_array( $declaration ) || array_is_list( $declaration ) ) {
@@ -85,6 +85,7 @@ class Static_Site_Importer_Portable_Source_Manifest {
 				return self::error( 'static_site_importer_portable_source_duplicate_file', 'Portable source file declarations must be unique.', array( 'path' => $relative ) );
 			}
 			$declared_paths[ $relative ] = true;
+
 			$transport_root = implode( '/', array_filter( array( $manifest_base, $root ), static fn( string $part ): bool => '' !== $part ) );
 			$transport_path = '' === $transport_root ? $relative : $transport_root . '/' . $relative;
 			if ( $manifest_path === $transport_path || ! isset( $by_path[ $transport_path ] ) ) {
