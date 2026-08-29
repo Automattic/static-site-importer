@@ -15,6 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler;
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\RuntimeDeclarations;
+use Automattic\BlocksEngine\PhpTransformer\WordPress\Runtime as Blocks_Engine_WordPress_Runtime;
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
 
 define( 'OBJECT', 'OBJECT' );
@@ -292,18 +293,7 @@ function wp_parse_args( $args, array $defaults = array() ): array {
 	return array_merge( $defaults, is_array( $args ) ? $args : array() );
 }
 
-$wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: ( defined( 'ABSPATH' ) ? ABSPATH : '' );
-$wp_includes = rtrim( $wp_root, '/\\' ) . '/wp-includes/';
-$core_files  = array( 'class-wp-block-parser.php', 'class-wp-block-type.php', 'class-wp-block-type-registry.php', 'blocks.php' );
-foreach ( $core_files as $core_file ) {
-	if ( ! is_readable( $wp_includes . $core_file ) ) {
-		fwrite( STDERR, "SKIP: WordPress parser/serializer files are unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
-		exit( 0 );
-	}
-}
-foreach ( $core_files as $core_file ) {
-	require_once $wp_includes . $core_file;
-}
+require_once __DIR__ . '/support/wordpress-block-registry.inc';
 
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-font-materializer.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-document-type-classifier.php';
@@ -312,6 +302,7 @@ require dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-sit
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-build-provenance.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
 
@@ -339,7 +330,8 @@ $plan     = $result['source_reports']['wordpress_site_plan'];
 $assert( 'blocks-engine/wordpress-site-plan/v2' === $plan['schema'], 'compiler emits the released v2 site plan' );
 $assert( isset( $result['source_reports']['wordpress_site_plan']['reporting'] ), 'compiler exposes the plan in source reports' );
 
-// The standalone harness loads Core's parser, not its init registrations.
+$block_runtime = new Blocks_Engine_WordPress_Runtime();
+// The standalone transformer runtime parses blocks but does not own registrations.
 $register_document_blocks = static function ( array $blocks ) use ( &$register_document_blocks ): void {
 	foreach ( $blocks as $block ) {
 		if ( ! is_array( $block ) ) {
@@ -355,7 +347,7 @@ $register_document_blocks = static function ( array $blocks ) use ( &$register_d
 	}
 };
 foreach ( $plan['pages'] as $page ) {
-	$register_document_blocks( parse_blocks( (string) ( $page['canonical_block_markup'] ?? '' ) ) );
+	$register_document_blocks( $block_runtime->parseBlocks( (string) ( $page['canonical_block_markup'] ?? '' ) ) );
 }
 
 $plan_hash = static function ( array $candidate ): string {
@@ -450,7 +442,7 @@ $assert( 'installed_activated' === ( $gap_diagnostics[0]['materialization_status
 $receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan' ) );
 $assert( 'completed' === $receipt['status'], 'valid plan completes' );
 $assert( 'static-site-importer/materialization-receipt/v2' === $receipt['schema'] && $plan['plan_identity'] === ( $receipt['plan_identity'] ?? null ), 'receipt binds the producer plan identity.' );
-$assert( count( $plan['writes'] ) === count( $receipt['generated_files'] ), 'all canonical writes are materialized' );
+$assert( array() === array_diff( array_column( $plan['writes'], 'target_path' ), array_column( $receipt['generated_files'], 'target_path' ) ), 'all canonical writes are materialized alongside generated support assets' );
 $assert( file_exists( $GLOBALS['ssi_plan_root'] . '/site-plan/templates/front-page.html' ), 'templates are materialized' );
 $assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-plan/assets/assets/site.css' ), 'https://example.test/wp-content/themes/site-plan/assets/assets/logo.svg' ), 'root-relative stylesheet references resolve to declared theme assets' );
 $assert( 'posts' === $GLOBALS['ssi_plan_options']['show_on_front'], 'plan-only materialization does not change reading settings by default' );
@@ -587,7 +579,7 @@ $valid_reference_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer
 		'_static_site_importer_payload_reader' => $valid_reader,
 	)
 );
-$assert( 'completed' === $valid_reference_receipt['status'] && $inserts_before_reference_admission < $GLOBALS['ssi_plan_insert_calls'] && file_exists( $GLOBALS['ssi_plan_root'] . '/reference-admission-valid/' . $reference_target ) && 'canonical-reference-bytes' === file_get_contents( $GLOBALS['ssi_plan_root'] . '/reference-admission-valid/' . $reference_target ), 'valid canonical reference readers pass admission and materialize the declared write' );
+$assert( 'completed' === $valid_reference_receipt['status'] && $inserts_before_reference_admission < $GLOBALS['ssi_plan_insert_calls'] && file_exists( $GLOBALS['ssi_plan_root'] . '/reference-admission-valid/' . $reference_target ) && 'canonical-reference-bytes' === file_get_contents( $GLOBALS['ssi_plan_root'] . '/reference-admission-valid/' . $reference_target ), 'valid canonical reference readers pass admission and materialize the declared write: ' . wp_json_encode( array( 'status' => $valid_reference_receipt['status'] ?? null, 'errors' => $valid_reference_receipt['errors'] ?? array(), 'diagnostics' => $valid_reference_receipt['diagnostics'] ?? array() ) ) );
 $prepared_for_admission = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization(
 	$reference_plan,
 	array(
@@ -1208,7 +1200,7 @@ $invalid_typed_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::
 		'font_materialization' => $invalid_typed_plan,
 	)
 );
-$assert( 'partial' === $invalid_typed_receipt['status'] && 'static_site_importer_font_materialization_producer_stylesheet_failed' === ( $invalid_typed_receipt['errors'][0]['code'] ?? '' ), 'required producer source digest mismatch fails explicitly before theme activation' );
+$assert( 'rejected' === $invalid_typed_receipt['status'] && 'static_site_importer_font_materialization_producer_stylesheet_failed' === ( $invalid_typed_receipt['errors'][0]['code'] ?? '' ) && is_string( wp_json_encode( $invalid_typed_receipt ) ) && ! str_contains( (string) wp_json_encode( $invalid_typed_receipt ), 'font_overlay' ), 'required producer source digest mismatch rejects before filesystem mutation with a serializable public receipt' );
 $assert( 'producer_stylesheet_digest_mismatch' === ( $invalid_typed_receipt['diagnostics'][1]['reason_code'] ?? '' ), 'font materialization receipts retain the producer failure reason instead of only the generic error code' );
 
 $font_without_svg_result  = ( new ArtifactCompiler() )->compile(
@@ -1257,7 +1249,7 @@ $front_page_links_result = ( new ArtifactCompiler() )->compile(
 )->toArray();
 $front_page_links_plan   = $front_page_links_result['source_reports']['wordpress_site_plan'];
 foreach ( $front_page_links_plan['pages'] as $page ) {
-	$register_document_blocks( parse_blocks( (string) ( $page['canonical_block_markup'] ?? '' ) ) );
+	$register_document_blocks( $block_runtime->parseBlocks( (string) ( $page['canonical_block_markup'] ?? '' ) ) );
 }
 $GLOBALS['ssi_plan_options'] = array(
 	'show_on_front' => 'posts',
@@ -1591,10 +1583,10 @@ $binding_artifact    = array(
 );
 $binding_plan        = ( new ArtifactCompiler() )->compile( $binding_artifact )->toArray()['source_reports']['wordpress_site_plan'];
 foreach ( $binding_plan['pages'] as $page ) {
-	$register_document_blocks( parse_blocks( (string) ( $page['canonical_block_markup'] ?? '' ) ) );
+	$register_document_blocks( $block_runtime->parseBlocks( (string) ( $page['canonical_block_markup'] ?? '' ) ) );
 }
 WP_Block_Type_Registry::get_instance()->register( 'core/shortcode', array() );
-$binding_search      = '<!-- wp:paragraph {"content":"Replace me"} --><p>Replace me</p><!-- /wp:paragraph -->';
+$binding_search      = '<!-- wp:paragraph --><p>Replace me</p><!-- /wp:paragraph -->';
 $binding_replacement = '<!-- wp:shortcode -->[add_to_cart id="42"]<!-- /wp:shortcode -->';
 $binding_receipt     = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$binding_plan,
@@ -1676,7 +1668,7 @@ $duplicate_binding_plan    = ( new ArtifactCompiler() )->compile(
 		'files'      => array( 'index.html' => '<main><p>Same</p><p>Same</p></main>' ),
 	)
 )->toArray()['source_reports']['wordpress_site_plan'];
-$duplicate_search          = '<!-- wp:paragraph {"content":"Same"} --><p>Same</p><!-- /wp:paragraph -->';
+$duplicate_search          = '<!-- wp:paragraph --><p>Same</p><!-- /wp:paragraph -->';
 $duplicate_binding_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$duplicate_binding_plan,
 	array(
@@ -1707,7 +1699,7 @@ $duplicate_binding_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializ
 );
 $duplicate_markup          = $duplicate_binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '';
 $assert( str_contains( $duplicate_markup, '[add_to_cart id="42"]' ) && str_contains( $duplicate_markup, '[add_to_cart id="43"]' ), 'duplicate markup anchors resolve by descending deterministic occurrence' );
-$duplicate_blocks = parse_blocks( $duplicate_markup );
+$duplicate_blocks = $block_runtime->parseBlocks( $duplicate_markup );
 $assert( 'core/group' === ( $duplicate_blocks[0]['blockName'] ?? '' ) && array( 'core/shortcode', 'core/shortcode' ) === array_column( $duplicate_blocks[0]['innerBlocks'] ?? array(), 'blockName' ), 'multiple nested replacements preserve the surrounding parsed block topology' );
 $malformed_fragment_binding                            = $invalid_coverage_binding;
 $malformed_fragment_binding['reconciliation_identity'] = hash( 'sha256', 'malformed-fragment-binding' );
@@ -1725,7 +1717,7 @@ $malformed_fragment_diagnostic = $malformed_fragment_receipt['diagnostics'][0] ?
 $assert( 'rejected' === $malformed_fragment_receipt['status'] && 'runtime_entity_binding_replacement_invalid' === ( $malformed_fragment_receipt['errors'][0]['code'] ?? '' ) && $inserts_before_malformed_fragment === $GLOBALS['ssi_plan_insert_calls'] && 'index.html' === ( $malformed_fragment_diagnostic['source_path'] ?? '' ) && $malformed_fragment_binding['reconciliation_identity'] === ( $malformed_fragment_diagnostic['reconciliation_identity'] ?? '' ), 'malformed replacement fragments are rejected with binding attribution before page mutation' );
 $topology_breaking_binding                            = $invalid_coverage_binding;
 $topology_breaking_binding['reconciliation_identity'] = hash( 'sha256', 'topology-breaking-binding' );
-$topology_breaking_binding['search_block_markup']     = '<!-- wp:paragraph {"content":"Replace me"} -->';
+$topology_breaking_binding['search_block_markup']     = '<!-- wp:paragraph -->';
 $topology_breaking_binding['replacement_block_markup'] = '<!-- wp:shortcode /-->';
 $topology_breaking_binding['superseded_runtime_selectors'] = array( '.add-to-cart' );
 $inserts_before_topology_break                         = $GLOBALS['ssi_plan_insert_calls'];
@@ -1762,7 +1754,7 @@ $contains_block = static function ( array $blocks, string $block_name ) use ( &$
 };
 $assert( null !== WP_Block_Type_Registry::get_instance()->get_registered( $provider_block_name ), 'registered provider block is available to the materialization runtime' );
 $assert( 'completed' === $provider_binding_receipt['status'], 'registered provider blocks pass editor admission without an importer allowlist' );
-$assert( $contains_block( parse_blocks( $provider_markup ), $provider_block_name ), 'registered provider block survives the persisted document round-trip' );
+$assert( $contains_block( $block_runtime->parseBlocks( $provider_markup ), $provider_block_name ), 'registered provider block survives the persisted document round-trip' );
 $unknown_block_binding                            = $provider_binding;
 $unknown_block_binding['reconciliation_identity'] = hash( 'sha256', 'unknown-provider-binding' );
 $unknown_block_binding['replacement_block_markup'] = '<!-- wp:future-provider/control --><div>Future provider control</div><!-- /wp:future-provider/control -->';
@@ -2800,9 +2792,9 @@ $child_plan                     = ( new ArtifactCompiler() )->compile(
 		),
 	)
 )->toArray()['source_reports']['wordpress_site_plan'];
-$register_plan_blocks = static function ( array $candidate ) use ( $register_document_blocks ): void {
+$register_plan_blocks = static function ( array $candidate ) use ( $register_document_blocks, $block_runtime ): void {
 	foreach ( $candidate['pages'] as $page ) {
-		$register_document_blocks( parse_blocks( (string) ( $page['canonical_block_markup'] ?? '' ) ) );
+		$register_document_blocks( $block_runtime->parseBlocks( (string) ( $page['canonical_block_markup'] ?? '' ) ) );
 	}
 };
 $register_plan_blocks( $parent_plan );
@@ -2896,7 +2888,7 @@ $root_media_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::mat
 $root_media_page_id = (int) ( $root_media_receipt['completed']['pages']['website/index.html'] ?? 0 );
 $root_media_content = stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $root_media_page_id ]['post_content'] ?? '' ) );
 $root_media_url     = 'https://example.test/wp-content/themes/root-media-plan/assets/website/media/example.jpg';
-$assert( 'completed' === $root_media_receipt['status'] && 4 === substr_count( $root_media_content, $root_media_url ) && str_contains( $root_media_content, '"url":"' . $root_media_url . '"' ) && str_contains( $root_media_content, 'blocks-engine-background-image' ) && ! str_contains( $root_media_content, '/media/example.jpg?' ), 'root-relative captured media resolves through the canonical theme asset map for image and background-image blocks' );
+$assert( 'completed' === $root_media_receipt['status'] && 2 === substr_count( $root_media_content, $root_media_url ) && str_contains( $root_media_content, 'src="' . $root_media_url . '?size=large#hero"' ) && str_contains( $root_media_content, 'blocks-engine-background-image' ) && ! str_contains( $root_media_content, 'src="/media/example.jpg' ), 'root-relative captured media resolves through the canonical theme asset map while preserving query and fragment suffixes' );
 $assert( ( $root_media_plan['pages'][0]['reconciliation_identity'] ?? '' ) === ( $GLOBALS['ssi_plan_meta'][ $root_media_page_id ]['_blocks_engine_reconciliation_identity'] ?? '' ), 'materialized posts expose the producer reconciliation identity required by scoped theme bootstrap assets' );
 unset( $GLOBALS['ssi_plan_meta'][ $root_media_page_id ]['_blocks_engine_reconciliation_identity'] );
 $assert( wp_delete_file( (string) $root_media_receipt['theme']['dir'] . '/style.css' ), 'rollback fixture removes one generated target to force overwrite materialization' );
