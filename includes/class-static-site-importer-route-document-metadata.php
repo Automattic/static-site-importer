@@ -43,7 +43,7 @@ final class Static_Site_Importer_Route_Document_Metadata {
 
 		$decoded_title = html_entity_decode( (string) $title, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- Standalone materializer smoke tests run without WordPress tag helpers.
-		$title         = trim( function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( $decoded_title ) : strip_tags( $decoded_title ) );
+		$title = trim( function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( $decoded_title ) : strip_tags( $decoded_title ) );
 		return strlen( $title ) <= 1000 ? $title : '';
 	}
 }
