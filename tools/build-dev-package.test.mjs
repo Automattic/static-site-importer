@@ -69,6 +69,7 @@ test("orchestration packages modified and untracked source bytes without changin
   await mkdir(engine, { recursive: true })
   await writeFile(join(source, "composer.json"), JSON.stringify({ require: { php: "^8.1" } }))
   await writeFile(join(source, "composer.lock"), "caller lock")
+  await writeFile(join(source, "homeboy.json"), JSON.stringify({ extensions: { wordpress: { settings: { package_profile: { manifest: "runtime-package-manifest.json", profile: "website-artifact-import" } } } } }))
   await writeFile(join(source, "tracked.txt"), "modified tracked bytes")
   await writeFile(join(source, "untracked.txt"), "untracked bytes")
   await mkdir(join(source, "vendor"), { recursive: true })
@@ -88,13 +89,19 @@ test("orchestration packages modified and untracked source bytes without changin
       if (command === "composer") return writeFile(join(context.cwd, "composer.lock"), "temporary lock")
       if (command === "homeboy" && args[0] === "review") return Promise.all([readFile(join(context.cwd, "tracked.txt"), "utf8"), readFile(join(context.cwd, "untracked.txt"), "utf8"), readFile(join(context.cwd, packagedIdentityFile), "utf8")]).then(([tracked, untracked, identity]) => {
         packagedIdentity = JSON.parse(identity)
-        return mkdir(join(context.cwd, "build"), { recursive: true }).then(() => writeFile(join(context.cwd, "build/static-site-importer.zip"), `${tracked}|${untracked}`))
+        return readFile(join(context.cwd, "homeboy.json"), "utf8").then((homeboy) => {
+          assert.deepEqual(JSON.parse(homeboy).extensions.wordpress.settings.package_profile, {})
+          return mkdir(join(context.cwd, "build"), { recursive: true }).then(() => writeFile(join(context.cwd, "build/static-site-importer.zip"), `${tracked}|${untracked}`))
+        })
       })
       return Buffer.from("")
     },
     async extractArchive(_archive, destination) {
       extracted += 1
-      if (extracted === 1) await writeFile(join(destination, "composer.json"), JSON.stringify({ require: { php: "^8.1" } }))
+      if (extracted === 1) {
+        await writeFile(join(destination, "composer.json"), JSON.stringify({ require: { php: "^8.1" } }))
+        await writeFile(join(destination, "homeboy.json"), JSON.stringify({ extensions: { wordpress: { settings: { package_profile: { manifest: "runtime-package-manifest.json", profile: "website-artifact-import" } } } } }))
+      }
       else await mkdir(join(destination, "php-transformer"), { recursive: true })
     },
   })
