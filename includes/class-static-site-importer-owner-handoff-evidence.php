@@ -14,9 +14,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 final class Static_Site_Importer_Owner_Handoff_Evidence {
 
-	public const SCHEMA                = 'static-site-importer/owner-handoff-evidence/v1';
-	public const PLAN_IDENTITY_SCHEMA  = 'blocks-engine/wordpress-site-plan-identity/v1';
-	public const OWNER_TASK_SCHEMA     = 'static-site-importer/owner-task-check/v1';
+	public const SCHEMA               = 'static-site-importer/owner-handoff-evidence/v1';
+	public const PLAN_IDENTITY_SCHEMA = 'blocks-engine/wordpress-site-plan-identity/v1';
+	public const OWNER_TASK_SCHEMA    = 'static-site-importer/owner-task-check/v1';
 
 	public const DIMENSION_IDS = array(
 		'route_content_completeness',
@@ -51,42 +51,42 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 	);
 
 	private const RANK = array(
-		'hard_failure'             => 5,
-		'evidence_gap'             => 4,
-		'required_owner_decision'  => 3,
-		'acceptable_conversion'    => 2,
-		'informational'            => 1,
-		'pass'                     => 0,
+		'hard_failure'            => 5,
+		'evidence_gap'            => 4,
+		'required_owner_decision' => 3,
+		'acceptable_conversion'   => 2,
+		'informational'           => 1,
+		'pass'                    => 0,
 	);
 
 	private const OWNERS = array(
-		'route_content_completeness'        => 'static-site-importer',
-		'visual_acceptance'                 => 'static-site-importer',
-		'editability_shared_regions'        => 'blocks-engine',
-		'editor_presentation_persistence'   => 'static-site-importer',
-		'media_library_ownership'           => 'static-site-importer',
-		'link_portability'                  => 'static-site-importer',
-		'provider_functionality'            => 'static-site-importer',
-		'site_identity_metadata'            => 'static-site-importer',
-		'accessibility'                     => 'static-site-importer',
-		'frontend_performance'              => 'static-site-importer',
-		'deployment_rollback'               => 'static-site-importer',
-		'owner_tasks'                       => 'static-site-importer',
+		'route_content_completeness'      => 'static-site-importer',
+		'visual_acceptance'               => 'static-site-importer',
+		'editability_shared_regions'      => 'blocks-engine',
+		'editor_presentation_persistence' => 'static-site-importer',
+		'media_library_ownership'         => 'static-site-importer',
+		'link_portability'                => 'static-site-importer',
+		'provider_functionality'          => 'static-site-importer',
+		'site_identity_metadata'          => 'static-site-importer',
+		'accessibility'                   => 'static-site-importer',
+		'frontend_performance'            => 'static-site-importer',
+		'deployment_rollback'             => 'static-site-importer',
+		'owner_tasks'                     => 'static-site-importer',
 	);
 
 	private const ACTIONS = array(
-		'route_content_completeness'        => 'Supply a completed materialization receipt bound to the canonical plan hash.',
-		'visual_acceptance'                 => 'Provide desktop and mobile visual acceptance evidence for every materialized route.',
-		'editability_shared_regions'        => 'Admit a hash-bound Blocks Engine editability report with shared-region ownership.',
-		'editor_presentation_persistence'   => 'Provide editor presentation coverage and persisted edit/save/reload evidence.',
-		'media_library_ownership'           => 'Import replaceable media as WordPress attachments with stable Media Library IDs.',
-		'link_portability'                  => 'Prove internal-link rewrites and inventory remaining external URLs.',
-		'provider_functionality'            => 'Record provider-functionality receipts, including a successful form submission.',
-		'site_identity_metadata'            => 'Materialize document titles, canonical metadata, site identity, and unresolved placeholders.',
-		'accessibility'                     => 'Provide keyboard and accessibility evidence for the generated frontend.',
-		'frontend_performance'              => 'Provide bounded generated-frontend performance evidence.',
-		'deployment_rollback'               => 'Record dependency, deployment, and rollback readiness on the materialization receipt.',
-		'owner_tasks'                       => 'Prove text, image, navigation, shared-footer, and form-recipient edits with save/reload validation.',
+		'route_content_completeness'      => 'Supply a completed materialization receipt bound to the canonical plan hash.',
+		'visual_acceptance'               => 'Provide desktop and mobile visual acceptance evidence for every materialized route.',
+		'editability_shared_regions'      => 'Admit a hash-bound Blocks Engine editability report with shared-region ownership.',
+		'editor_presentation_persistence' => 'Provide editor presentation coverage and persisted edit/save/reload evidence.',
+		'media_library_ownership'         => 'Import replaceable media as WordPress attachments with stable Media Library IDs.',
+		'link_portability'                => 'Prove internal-link rewrites and inventory remaining external URLs.',
+		'provider_functionality'          => 'Record provider-functionality receipts, including a successful form submission.',
+		'site_identity_metadata'          => 'Materialize document titles, canonical metadata, site identity, and unresolved placeholders.',
+		'accessibility'                   => 'Provide keyboard and accessibility evidence for the generated frontend.',
+		'frontend_performance'            => 'Provide bounded generated-frontend performance evidence.',
+		'deployment_rollback'             => 'Record dependency, deployment, and rollback readiness on the materialization receipt.',
+		'owner_tasks'                     => 'Prove text, image, navigation, shared-footer, and form-recipient edits with save/reload validation.',
 	);
 
 	/**
@@ -121,12 +121,12 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 			$worst = self::worse( $worst, $dimension['status'] );
 		}
 		if ( ! self::valid_plan_identity( $plan ) || ! self::sha256( $receipt_hash ) ) {
-			$worst = self::worse( $worst, 'evidence_gap' );
+			$worst      = self::worse( $worst, 'evidence_gap' );
 			$findings[] = self::finding( 'route_content_completeness', 'evidence_gap', '', 'plan_identity', self::OWNERS['route_content_completeness'], 'Bind the report to a canonical plan identity hash and materialization receipt hash.', $plan );
 		}
-		$disposition = 'hard_failure' === $worst ? 'failed' : ( 'evidence_gap' === $worst ? 'not_proven' : ( 'required_owner_decision' === $worst ? 'owner_decisions_required' : 'passed' ) );
-		$allowed     = ! in_array( $worst, array( 'hard_failure', 'evidence_gap' ), true );
-		$document    = array(
+		$disposition             = 'hard_failure' === $worst ? 'failed' : ( 'evidence_gap' === $worst ? 'not_proven' : ( 'required_owner_decision' === $worst ? 'owner_decisions_required' : 'passed' ) );
+		$allowed                 = ! in_array( $worst, array( 'hard_failure', 'evidence_gap' ), true );
+		$document                = array(
 			'schema'                         => self::SCHEMA,
 			'plan_identity'                  => self::valid_plan_identity( $plan ) ? $plan : null,
 			'materialization_receipt_sha256' => self::sha256( $receipt_hash ) ? $receipt_hash : null,
@@ -190,7 +190,7 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 			'reasons'                => $allowed ? array() : array_values(
 				array_map(
 					static fn( array $finding ): array => array(
-						'code'     => (string) ( $finding['status'] ?? 'evidence_gap' ),
+						'code'      => (string) ( $finding['status'] ?? 'evidence_gap' ),
 						'dimension' => (string) ( $finding['dimension'] ?? '' ),
 					),
 					isset( $document['findings'] ) && is_array( $document['findings'] ) ? $document['findings'] : array()
@@ -203,7 +203,7 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 	 * @param array<string,mixed> $document Owner-handoff document.
 	 */
 	public static function render_report_card( array $document ): string {
-		$lines   = array(
+		$lines = array(
 			'# Owner handoff report card',
 			'',
 			'Disposition: `' . (string) ( $document['disposition'] ?? 'not_proven' ) . '`',
@@ -217,8 +217,8 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 			}
 			$lines[] = '- ' . (string) ( $dimension['id'] ?? '' ) . ': `' . (string) ( $dimension['status'] ?? 'evidence_gap' ) . '`';
 		}
-		$lines[] = '';
-		$lines[] = '## Remaining actions';
+		$lines[]  = '';
+		$lines[]  = '## Remaining actions';
 		$findings = isset( $document['findings'] ) && is_array( $document['findings'] ) ? $document['findings'] : array();
 		if ( array() === $findings ) {
 			$lines[] = '- None.';
@@ -227,7 +227,7 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 			if ( ! is_array( $finding ) ) {
 				continue;
 			}
-			$scope = trim( (string) ( $finding['route'] ?? '' ) . ' ' . (string) ( $finding['component'] ?? '' ) );
+			$scope   = trim( (string) ( $finding['route'] ?? '' ) . ' ' . (string) ( $finding['component'] ?? '' ) );
 			$lines[] = '- `' . (string) ( $finding['status'] ?? '' ) . '` ' . (string) ( $finding['dimension'] ?? '' ) . ( '' !== $scope ? ' (' . $scope . ')' : '' ) . ' — ' . (string) ( $finding['recommended_next_action'] ?? '' ) . ' (owning: ' . (string) ( $finding['owning_repository'] ?? '' ) . ')';
 		}
 		return implode( "\n", $lines ) . "\n";
@@ -243,7 +243,7 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 		$action    = self::ACTIONS[ $id ];
 		$reference = self::reference( $evidence );
 		if ( 'route_content_completeness' === $id ) {
-			$evidence = array() !== $receipt ? $receipt : $evidence;
+			$evidence  = array() !== $receipt ? $receipt : $evidence;
 			$reference = self::reference( $evidence );
 			$status    = self::receipt_status( $evidence );
 			return self::dimension( $id, $status, $owner, $action, $reference, '', 'materialization_receipt' );
@@ -353,7 +353,7 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 	 * @param mixed $evidence Evidence.
 	 */
 	private static function editor_status( mixed $evidence ): string {
-		$row = self::object( $evidence );
+		$row          = self::object( $evidence );
 		$presentation = self::object( $row['editor_presentation'] ?? $row );
 		$persistence  = self::object( $row['persistence'] ?? $row['editor_persistence'] ?? null );
 		$coverage     = $presentation['coverage_complete'] ?? null;
@@ -406,7 +406,7 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 	 * @param mixed $evidence Evidence.
 	 */
 	private static function provider_status( mixed $evidence ): string {
-		$row = self::object( $evidence );
+		$row      = self::object( $evidence );
 		$receipts = isset( $row['receipts'] ) && is_array( $row['receipts'] ) ? $row['receipts'] : null;
 		if ( ! is_array( $receipts ) ) {
 			return 'evidence_gap';
@@ -427,7 +427,7 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 	 * @param mixed $evidence Evidence.
 	 */
 	private static function identity_status( mixed $evidence ): string {
-		$row = self::object( $evidence );
+		$row   = self::object( $evidence );
 		$title = isset( $row['title'] ) && is_scalar( $row['title'] ) ? trim( (string) $row['title'] ) : '';
 		if ( '' === $title || ! array_key_exists( 'placeholders', $row ) || ! is_array( $row['placeholders'] ) ) {
 			return 'evidence_gap';
@@ -474,9 +474,9 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 		$worst = 'pass';
 		$index = isset( $row['tasks'] ) && is_array( $row['tasks'] ) ? $row['tasks'] : $row;
 		foreach ( self::OWNER_TASK_IDS as $id ) {
-			$item   = is_array( $index[ $id ] ?? null ) ? $index[ $id ] : self::task_row( $index, $id );
-			$status = self::task_status( $item );
-			$worst  = self::worse( $worst, $status );
+			$item    = is_array( $index[ $id ] ?? null ) ? $index[ $id ] : self::task_row( $index, $id );
+			$status  = self::task_status( $item );
+			$worst   = self::worse( $worst, $status );
 			$tasks[] = array(
 				'id'        => $id,
 				'status'    => $status,
