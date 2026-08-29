@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "static-site-importer/provider-submission-evidence/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status"],
+  "properties": {
+    "schema": { "const": "static-site-importer/provider-submission-evidence/v1" },
+    "status": { "enum": ["accepted", "failed"] },
+    "code": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1 },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page_path", "form_identity", "provider_id", "provider_version", "plan_hash", "materialization_receipt"],
+      "properties": {
+        "page_path": { "type": "string", "minLength": 1 },
+        "form_identity": { "type": "string", "minLength": 1 },
+        "provider_id": { "type": "string", "minLength": 1 },
+        "provider_version": { "type": "string", "minLength": 1 },
+        "plan_hash": { "type": "string", "minLength": 1 },
+        "materialization_receipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "plan_hash"],
+          "properties": {
+            "status": { "const": "completed" },
+            "plan_hash": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "owner", "source_endpoint_retained"],
+      "properties": {
+        "url": { "type": "string", "minLength": 1 },
+        "owner": { "const": "wordpress" },
+        "source_endpoint_retained": { "const": false }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "local"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "id": { "type": "string", "minLength": 1 },
+        "local": { "const": true }
+      }
+    },
+    "behaviors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_field_failure", "valid_success", "provider_failure", "duplicate_submit"],
+      "properties": {
+        "required_field_failure": { "const": "passed" },
+        "valid_success": { "const": "passed" },
+        "provider_failure": { "const": "passed" },
+        "duplicate_submit": { "const": "passed" }
+      }
+    },
+    "notification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capable", "transport", "reason", "sent"],
+      "properties": {
+        "capable": { "type": "boolean" },
+        "transport": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "sent": { "type": "boolean" }
+      }
+    },
+    "forms": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#" }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "accepted" } }, "required": ["status"] },
+      "then": {
+        "anyOf": [
+          { "required": ["binding", "request", "receipt", "behaviors", "notification"] },
+          { "required": ["forms"] }
+        ]
+      }
+    }
+  ]
+}

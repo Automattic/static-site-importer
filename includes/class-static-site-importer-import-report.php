@@ -55,6 +55,7 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 		'plugin_materialization',
 		'product_finding_seeding',
 		'product_seeding',
+		'provider_submission',
 		'quality',
 		'quality_budget_admission',
 		'quality_resolutions',

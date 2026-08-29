@@ -155,6 +155,48 @@ function verifyFixture(fixture, decision, options, requiredFiles) {
   const editorQuality = fixture.editor_quality || {};
   assertFiniteMetric(editorQuality, 'native_conversion_rate', id);
   assert(Number(editorQuality.native_conversion_rate) === 1, `${id}: native conversion rate must equal 1.`);
+  verifyProviderSubmission(fixture, id);
+}
+
+function verifyProviderSubmission(fixture, id) {
+  const report = objectValue(fixture.import_report || fixture.importReport);
+  const evidence = fixture.provider_submission || fixture.providerSubmission || report.provider_submission || report.providerSubmission;
+  if (!requiresProviderSubmission(report, evidence)) return;
+  assert(evidence && typeof evidence === 'object' && !Array.isArray(evidence), `${id}: provider submission evidence is missing.`);
+  assert(evidence.schema === 'static-site-importer/provider-submission-evidence/v1', `${id}: provider submission evidence schema is invalid.`);
+  assert(evidence.status === 'accepted', `${id}: provider submission evidence is not accepted.`);
+  const forms = Array.isArray(evidence.forms) ? evidence.forms : [evidence];
+  assert(forms.length > 0, `${id}: provider submission evidence has no forms.`);
+  for (const form of forms) {
+    assert(form?.schema === 'static-site-importer/provider-submission-evidence/v1', `${id}: provider submission form schema is invalid.`);
+    assert(form.status === 'accepted', `${id}: provider submission form evidence is not accepted.`);
+    const binding = objectValue(form.binding);
+    for (const key of ['page_path', 'form_identity', 'provider_id', 'provider_version', 'plan_hash']) {
+      assert(typeof binding[key] === 'string' && binding[key], `${id}: provider submission binding ${key} is missing.`);
+    }
+    assert(binding.materialization_receipt?.status === 'completed' && binding.materialization_receipt?.plan_hash, `${id}: provider submission materialization receipt is missing.`);
+    const request = objectValue(form.request);
+    assert(request.owner === 'wordpress' && request.source_endpoint_retained === false && typeof request.url === 'string' && request.url, `${id}: provider submission did not prove a WordPress-owned endpoint.`);
+    const receipt = objectValue(form.receipt);
+    assert(receipt.local === true && typeof receipt.id === 'string' && receipt.id && typeof receipt.type === 'string' && receipt.type, `${id}: provider submission local receipt is missing.`);
+    const behaviors = objectValue(form.behaviors);
+    for (const key of ['required_field_failure', 'valid_success', 'provider_failure', 'duplicate_submit']) {
+      assert(behaviors[key] === 'passed', `${id}: provider submission ${key} is unproven.`);
+    }
+    const notification = objectValue(form.notification);
+    assert(typeof notification.capable === 'boolean' && typeof notification.sent === 'boolean' && typeof notification.transport === 'string' && notification.transport && typeof notification.reason === 'string' && notification.reason, `${id}: provider notification capability is missing.`);
+  }
+}
+
+function requiresProviderSubmission(report, evidence) {
+  if (evidence && typeof evidence === 'object') return true;
+  if (Number(report.form_seeding?.counts?.mapped || report.formSeeding?.counts?.mapped || 0) > 0) return true;
+  const entities = report.entity_lifecycle?.entities || report.entityLifecycle?.entities || {};
+  return Object.values(entities).some((entity) => Number(entity?.counts?.mapped || 0) > 0 || (entity?.forms || []).some((form) => form?.runtime_mapped === true));
+}
+
+function objectValue(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
 function validateRuntime(runtime, options) {

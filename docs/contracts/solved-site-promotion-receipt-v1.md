@@ -8,6 +8,7 @@ The receipt is emitted only when:
 - the selected and solved corpora are non-empty;
 - every registry decision is `solved_candidate`;
 - every import has a completed materialization receipt;
+- every mapped provider form has accepted WordPress-owned submission evidence with a local receipt, a WordPress-owned endpoint, and notification capability recorded separately from storage;
 - every imported block is native and editor-valid through WP Codebox's loaded-post `wp.blocks.validateBlock` browser artifact, with registered block types and one complete recursive result per block;
 - source, imported, diff, and visual-diff artifacts exist with zero mismatch;
 - all evidence files are content-hashed under the uploaded artifact root;

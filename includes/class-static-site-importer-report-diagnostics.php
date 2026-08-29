@@ -1039,6 +1039,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$commerce_context       = isset( $report['commerce_context'] ) && is_array( $report['commerce_context'] ) ? $report['commerce_context'] : array();
 		$plugin_materialization = isset( $report['plugin_materialization'] ) && is_array( $report['plugin_materialization'] ) ? $report['plugin_materialization'] : array();
 		$product_seeding        = isset( $report['product_seeding'] ) && is_array( $report['product_seeding'] ) ? $report['product_seeding'] : array();
+		$provider_submission    = isset( $report['provider_submission'] ) && is_array( $report['provider_submission'] ) ? $report['provider_submission'] : array();
 
 		return array(
 			'schema'                                  => 'static-site-importer/import-metrics/v1',
@@ -1069,6 +1070,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'commerce_context'                        => $commerce_context,
 			'plugin_materialization'                  => $plugin_materialization,
 			'product_seeding'                         => $product_seeding,
+			'provider_submission'                     => $provider_submission,
 			'visual_parity_artifacts'                 => isset( $report['visual_parity_artifacts'] ) && is_array( $report['visual_parity_artifacts'] ) ? $report['visual_parity_artifacts'] : self::visual_parity_artifact_contract(),
 			'semantic_parity'                         => self::compact_semantic_parity_summary( $report ),
 			'diagnostic_count'                        => count( $diagnostics ),

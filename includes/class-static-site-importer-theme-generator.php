@@ -35,6 +35,9 @@ if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Lifecycle_Compile_Checkpoint' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-lifecycle-compile-checkpoint.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Provider_Submission_Evidence' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-provider-submission-evidence.php';
+}
 
 /**
  * Generates a block theme from a static HTML document.
@@ -695,6 +698,23 @@ class Static_Site_Importer_Theme_Generator {
 				),
 			),
 		);
+		$plan_hash = (string) ( $receipt['plan_hash'] ?? ( is_array( $receipt['plan_identity'] ?? null ) ? ( $receipt['plan_identity']['hash'] ?? '' ) : '' ) );
+		$provider_submission = Static_Site_Importer_Provider_Submission_Evidence::from_entity_reports(
+			$entities,
+			array(
+				'provider_version'        => defined( 'JETPACK__VERSION' ) ? (string) JETPACK__VERSION : (string) ( $args['provider_version'] ?? 'unversioned' ),
+				'plan_hash'               => $plan_hash,
+				'materialization_receipt' => array(
+					'status'    => (string) ( $receipt['status'] ?? '' ),
+					'plan_hash' => $plan_hash,
+				),
+				'site_origin'             => function_exists( 'home_url' ) ? home_url( '/' ) : (string) ( $args['site_origin'] ?? '' ),
+				'adapter'                 => $args['provider_submission_adapter'] ?? null,
+			)
+		);
+		if ( is_array( $provider_submission ) ) {
+			$envelope['provider_submission'] = $provider_submission;
+		}
 		$report       = Static_Site_Importer_Import_Report::from_array( $envelope );
 		$report['source_artifact'] = array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ) );
 		$report['materialization_receipt'] = $receipt;

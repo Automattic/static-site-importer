@@ -43,6 +43,29 @@ function fixture() {
   return { root, matrix, registry, runtime, paths, options: { matrixResult: paths.matrix, registry: paths.registry, runtimeInputs: paths.runtime, artifactRoot: root, staticSiteImporterSha: SSI_SHA, blocksEngineSha: BE_SHA, wpCodeboxSha: WP_CODEBOX_SHA, fixtureTreeSha: '6'.repeat(40), solvedFixtureCount: 1, solvedFixtureIds: 'solved', runUrl: 'https://github.com/Automattic/static-site-importer/actions/runs/123', artifactUrl: 'https://github.com/Automattic/static-site-importer/actions/runs/123#artifacts', output: path.join(root, 'receipt.json'), manifestOutput: path.join(root, 'manifest.json') } };
 }
 
+function acceptedProviderSubmission() {
+  return {
+    schema: 'static-site-importer/provider-submission-evidence/v1',
+    status: 'accepted',
+    forms: [{
+      schema: 'static-site-importer/provider-submission-evidence/v1',
+      status: 'accepted',
+      binding: {
+        page_path: 'index.html',
+        form_identity: 'index.html\nform.signup',
+        provider_id: 'jetpack',
+        provider_version: '16.0.1',
+        plan_hash: 'abc',
+        materialization_receipt: { status: 'completed', plan_hash: 'abc' },
+      },
+      request: { url: 'http://nimbus.test/', owner: 'wordpress', source_endpoint_retained: false },
+      receipt: { type: 'feedback', id: 'feedback-1', local: true },
+      behaviors: { required_field_failure: 'passed', valid_success: 'passed', provider_failure: 'passed', duplicate_submit: 'passed' },
+      notification: { capable: false, transport: 'none', reason: 'no_external_mail_transport', sent: false },
+    }],
+  };
+}
+
 test('issues an accepted immutable promotion receipt', () => {
   const input = fixture();
   const receipt = verifySolvedSitePromotion(input.options);
@@ -69,6 +92,13 @@ test('accepts complete parent-document editor presentation evidence', () => {
   input.matrix.fixtures[0].editor_presentation.iframe_count = 0;
   write(input.paths.matrix, input.matrix);
 
+  assert.equal(verifySolvedSitePromotion(input.options).status, 'accepted');
+});
+
+test('accepts mapped provider forms with WordPress-owned local receipt evidence', () => {
+  const input = fixture();
+  input.matrix.fixtures[0].import_report = { provider_submission: acceptedProviderSubmission() };
+  write(input.paths.matrix, input.matrix);
   assert.equal(verifySolvedSitePromotion(input.options).status, 'accepted');
 });
 
@@ -130,6 +160,11 @@ for (const [name, mutate, pattern] of [
   ['detached editor content', (input) => { input.matrix.fixtures[0].editor_validation.content_source = 'argument'; }, /loaded post editor content/],
   ['missing registered block types', (input) => { input.matrix.fixtures[0].editor_validation.block_types_registered = 0; }, /registered block types/],
   ['incomplete recursive results', (input) => { input.matrix.fixtures[0].editor_validation.result_count = 3; }, /recursive result/],
+  ['mapped forms without submission evidence', (input) => { input.matrix.fixtures[0].import_report = { entity_lifecycle: { entities: { form: { counts: { mapped: 1 }, forms: [{ runtime_mapped: true }] } } } }; }, /provider submission evidence is missing/],
+  ['failed provider submission', (input) => { input.matrix.fixtures[0].import_report = { provider_submission: { schema: 'static-site-importer/provider-submission-evidence/v1', status: 'failed', code: 'provider_cannot_accept_submissions' } }; }, /not accepted/],
+  ['source endpoint retained', (input) => { const evidence = acceptedProviderSubmission(); evidence.forms[0].request.source_endpoint_retained = true; input.matrix.fixtures[0].import_report = { provider_submission: evidence }; }, /WordPress-owned endpoint/],
+  ['missing local receipt', (input) => { const evidence = acceptedProviderSubmission(); delete evidence.forms[0].receipt.id; input.matrix.fixtures[0].import_report = { provider_submission: evidence }; }, /local receipt/],
+  ['missing notification capability', (input) => { const evidence = acceptedProviderSubmission(); delete evidence.forms[0].notification; input.matrix.fixtures[0].import_report = { provider_submission: evidence }; }, /notification capability/],
   ['missing editor presentation', (input) => { delete input.matrix.fixtures[0].editor_presentation; }, /editor presentation evidence/],
   ['incomplete editor stylesheet coverage', (input) => { input.matrix.fixtures[0].editor_presentation.coverage_complete = false; input.matrix.fixtures[0].editor_presentation.missing_identities = ['a'.repeat(64)]; }, /stylesheet coverage/],
   ['contradictory editor presentation identities', (input) => { input.matrix.fixtures[0].editor_presentation.observed_identities = []; input.matrix.fixtures[0].editor_presentation.observed_identity_count = 0; }, /stylesheet coverage/],
