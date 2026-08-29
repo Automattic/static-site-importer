@@ -185,18 +185,22 @@ foreach ( array( 'index.html', 'about.html', 'contact.html', 'styles.css' ) as $
 	);
 }
 $input = static fn ( string $operation = 'apply' ): array => array(
-	'operation' => $operation,
-	'slug'      => 'direct-artifact-fixture',
-	'source'    => array(
+	'operation'               => $operation,
+	'slug'                    => 'direct-artifact-fixture',
+	'runtime_lifecycle_phase' => 'prepare',
+	'source'                  => array(
 		'type'       => 'files',
 		'entrypoint' => 'website/index.html',
 		'files'      => $files,
 	),
 );
 $resume = static fn ( string $id, string $operation = 'apply' ): array => array(
-	'operation' => $operation,
-	'slug'      => 'direct-artifact-fixture',
-	'source'    => array(
+	'operation'                    => $operation,
+	'slug'                         => 'direct-artifact-fixture',
+	'runtime_lifecycle_phase'      => 'resume',
+	'runtime_lifecycle_request_id' => '00000000-0000-4000-8000-000000000827',
+	'runtime_lifecycle_checkpoint' => '0123456789abcdef0123456789abcdef',
+	'source'                       => array(
 		'type'      => 'files',
 		'import_id' => $id,
 	),
