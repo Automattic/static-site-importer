@@ -1693,7 +1693,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$controls   = array();
 		$orders     = array();
 		foreach ( $nodes as $index => $node ) {
-			if ( ! is_array( $node ) || ! self::has_only_keys( $node, ( $node['kind'] ?? null ) === 'wrapper' ? array( 'id', 'kind', 'parent', 'order', 'depth', 'tag', 'source_id', 'class' ) : array( 'id', 'kind', 'parent', 'order', 'depth', 'control' ) ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:wrapper|control)-[A-Za-z0-9_-]{1,80}$/D', $node['id'] ) || isset( $seen_ids[ $node['id'] ] ) || ! in_array( $node['kind'] ?? null, array( 'wrapper', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_int( $node['depth'] ?? null ) || $node['depth'] < 0 || $node['depth'] > $max_depth ) {
+			if ( ! is_array( $node ) || ! self::has_only_keys( $node, ( $node['kind'] ?? null ) === 'wrapper' ? array( 'id', 'kind', 'parent', 'order', 'depth', 'tag', 'source_id', 'class', 'fieldset_semantics' ) : array( 'id', 'kind', 'parent', 'order', 'depth', 'control' ) ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:wrapper|control)-[A-Za-z0-9_-]{1,80}$/D', $node['id'] ) || isset( $seen_ids[ $node['id'] ] ) || ! in_array( $node['kind'] ?? null, array( 'wrapper', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_int( $node['depth'] ?? null ) || $node['depth'] < 0 || $node['depth'] > $max_depth ) {
 				return array( 'error' => 'control_topology contains an unsupported node.' );
 			}
 			$parent = $node['parent'] ?? null;
@@ -1738,6 +1738,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						return array( 'error' => 'control_topology presentation hooks must be bounded safe identifiers and supported Gutenberg group tags.' );
 					}
 					$normalized_node[ $field ] = $value;
+				}
+				if ( isset( $node['fieldset_semantics'] ) ) {
+					if ( 'fieldset' !== ( $node['tag'] ?? '' ) || ! in_array( $node['fieldset_semantics'], array( 'plain_group', 'labelled_group', 'disabled_group', 'attributed_group' ), true ) ) {
+						return array( 'error' => 'control_topology fieldset semantics must describe a fieldset wrapper.' );
+					}
+					$normalized_node['fieldset_semantics'] = $node['fieldset_semantics'];
 				}
 			}
 			$seen_ids[ $node['id'] ]                 = $normalized_node;
