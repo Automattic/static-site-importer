@@ -515,7 +515,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 
 			$args['compiled_artifact_result']                 = $composed_state['result'];
 			$args['_static_site_importer_precompiled_source'] = true;
-			$args['_static_site_importer_payload_reader']      = $payload_reader;
+			$args['_static_site_importer_payload_reader']     = $payload_reader;
 
 			if ( 'plan' === $run['binding']['operation'] ) {
 				$entered = self::enter_phase( $workspace, $run, 'canonical_plan' );
@@ -801,7 +801,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			'work'                 => array(
 				'content_policy_applications'       => (int) ( $run['work']['content_policy_applications'] ?? 0 ),
 				'client_script_policy_applications' => (int) ( $run['work']['client_script_policy_applications'] ?? 0 ),
-				'payloads_retained'                  => (int) ( $run['work']['payloads_retained'] ?? 0 ),
+				'payloads_retained'                 => (int) ( $run['work']['payloads_retained'] ?? 0 ),
 				'shared_prepares'                   => (int) ( $run['work']['shared_prepares'] ?? 0 ),
 				'page_prepare_passes'               => (int) ( $run['work']['page_prepare_passes'] ?? 0 ),
 				'page_plans_prepared'               => (int) ( $run['work']['page_plans_prepared'] ?? 0 ),
@@ -1119,7 +1119,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				return new WP_Error( 'static_site_importer_direct_artifact_payload_reference_invalid', 'A direct artifact payload reference is invalid.' );
 			}
 			$id       = $reference['id'];
-			$contract = array( 'sha256' => $reference['sha256'], 'bytes' => $reference['bytes'] );
+			$contract = array(
+				'sha256' => $reference['sha256'],
+				'bytes'  => $reference['bytes'],
+			);
 			if ( isset( $references[ $id ] ) && $references[ $id ] !== $contract ) {
 				return new WP_Error( 'static_site_importer_direct_artifact_payload_reference_conflict', 'A direct artifact reuses one payload reference for different bytes.' );
 			}
@@ -1159,9 +1162,8 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			public function __construct( private Static_Site_Importer_Artifact_Run_Workspace $workspace ) {}
 
 			public function read( array $reference ): string {
-				$id    = is_string( $reference['id'] ?? null ) ? $reference['id'] : '';
-				$bytes = '' !== $id ? $this->workspace->read_raw( 'payloads/' . hash( 'sha256', $id ) . '.bin' ) : null;
-				if ( ! is_string( $bytes ) || ! is_int( $reference['bytes'] ?? null ) || strlen( $bytes ) !== $reference['bytes'] || ! is_string( $reference['sha256'] ?? null ) || ! hash_equals( $reference['sha256'], hash( 'sha256', $bytes ) ) ) {
+				$bytes = $this->workspace->read_raw( 'payloads/' . hash( 'sha256', $reference['id'] ) . '.bin' );
+				if ( null === $bytes || strlen( $bytes ) !== $reference['bytes'] || ! hash_equals( $reference['sha256'], hash( 'sha256', $bytes ) ) ) {
 					throw new RuntimeException( 'A retained direct artifact payload is unavailable or corrupt.' );
 				}
 				return $bytes;
