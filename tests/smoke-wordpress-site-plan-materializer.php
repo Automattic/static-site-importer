@@ -1587,7 +1587,7 @@ $assert( array() === $waived_bindings, 'explicit provider waiver retains static 
 
 $binding_artifact    = array(
 	'entrypoint' => 'index.html',
-	'files'      => array( 'index.html' => '<main><h1>Binding</h1><p>Replace me</p></main>' ),
+	'files'      => array( 'index.html' => '<main><h1>Binding</h1><p>Replace me</p><a href="/">Home</a></main>' ),
 );
 $binding_plan        = ( new ArtifactCompiler() )->compile( $binding_artifact )->toArray()['source_reports']['wordpress_site_plan'];
 foreach ( $binding_plan['pages'] as $page ) {
@@ -1866,6 +1866,7 @@ $form_quality_report['diagnostics']               = array( $form_fallback );
 $form_quality_report['materialization_receipt']   = $form_binding_receipt;
 Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $form_quality_report );
 $assert( 'completed' === ( $form_binding_report['status'] ?? '' ) && ( $form_binding_report['materialized_content_hash'] ?? '' ) === hash( 'sha256', $form_binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '' ), 'form quality receipt is emitted after the persisted page replacement' );
+$assert( str_contains( (string) ( $form_binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '' ), 'https://example.test/' ), 'form quality receipt retains final route-rewritten page content' );
 $assert( 0 === ( $form_quality_report['quality']['fallback_count'] ?? -1 ) && 1 === ( $form_quality_report['quality']['source_fallback_count'] ?? 0 ) && 'resolved_by_provider' === ( $form_quality_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'persisted form receipt resolves only its identity-and-hash-bound source fallback' );
 $resolved_form_quality    = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $form_quality_report, array( 'fail_on_quality' => true ) );
 $resolved_form_validation = Static_Site_Importer_Report_Diagnostics::import_validation_result( $form_quality_report, $resolved_form_quality );
