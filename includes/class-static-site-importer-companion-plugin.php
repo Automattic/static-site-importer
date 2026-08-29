@@ -844,9 +844,21 @@ class Static_Site_Importer_Companion_Plugin {
 $content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*>.*?</\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\s*>#is', '', $content ) ?? '';
 $content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*/?\s*>#is', '', $content ) ?? '';
 $content = preg_replace( '#</?\s*[a-z][a-z0-9]*-[a-z0-9-]+\b[^>]*>#i', '', $content ) ?? '';
-$content = preg_replace( '/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $content ) ?? '';
-$content = preg_replace( '/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)\s*=\s*(?=\/?>)/i', '', $content ) ?? '';
-$content = preg_replace( '/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)(?=\s|\/?>)/i', '', $content ) ?? '';
+$content = preg_replace_callback(
+	'#<[a-z](?:"[^"]*"|\'[^\']*\'|=>|[^>])*>#i',
+	static function ( array $match ): string {
+		return preg_replace(
+			array(
+				'/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)/i',
+				'/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)\s*=\s*(?=\/?>)/i',
+				'/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)(?=\s|\/?>)/i',
+			),
+			'',
+			$match[0]
+		) ?? '';
+	},
+	$content
+) ?? '';
 
 $safe_url = static function ( string $url, bool $image = false ): bool {
 	$normalized = strtolower( preg_replace( '/[\x00-\x20\x7f]+/', '', html_entity_decode( $url, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) ?? '' );

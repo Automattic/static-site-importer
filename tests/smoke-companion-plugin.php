@@ -544,6 +544,12 @@ if ( is_array( $layout_descriptor ) ) {
 	}
 	$assert( ! str_contains( $layout_output, '<wow-image' ), 'layout-renderer-unwraps-potentially-active-custom-elements' );
 	$assert( str_contains( $layout_output, 'position:absolute' ) && str_contains( $layout_output, 'width:405px' ) && str_contains( $layout_output, 'height:516.812px' ) && str_contains( $layout_output, 'overflow:hidden' ), 'layout-renderer-preserves-quoted-inline-geometry', $layout_output );
+	$attributes = array( 'content' => '<p>Report in one section with online notes only once.</p><button onclick onmouseover="alert(1)" data-wp-interactive>Go</button>' );
+	ob_start();
+	eval( '?>' . $layout_render );
+	$ordinary_on_text_output = strtolower( (string) ob_get_clean() );
+	$assert( str_contains( $ordinary_on_text_output, 'report in one section with online notes only once.' ), 'layout-renderer-preserves-ordinary-on-text', $ordinary_on_text_output );
+	$assert( ! str_contains( $ordinary_on_text_output, 'onclick' ) && ! str_contains( $ordinary_on_text_output, 'onmouseover' ) && ! str_contains( $ordinary_on_text_output, 'data-wp-' ), 'layout-renderer-still-removes-executable-attributes-from-tags', $ordinary_on_text_output );
 
 	$busy_bears_contract = json_decode( (string) file_get_contents( __DIR__ . '/fixtures/busy-bears-responsive-layout-contract.json' ), true );
 	$assert( 'static-site-importer/frozen-responsive-layout-contract/v1' === ( $busy_bears_contract['schema'] ?? '' ) && 2 === count( $busy_bears_contract['pages'] ?? array() ), 'busy-bears-frozen-layout-contract-loads' );
