@@ -12,6 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Direct_Artifact_Import' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-direct-artifact-import.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Portable_Source_Manifest' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-portable-source-manifest.php';
+}
 
 class Static_Site_Importer_Canonical_Import_Service {
 	private static string $cli_report_destination = '';
@@ -106,7 +109,10 @@ class Static_Site_Importer_Canonical_Import_Service {
 		if ( is_wp_error( $runtime ) ) {
 			return self::error( (string) $runtime->get_error_code(), $runtime->get_error_message(), $runtime->get_error_data() );
 		}
-		$artifact = $runtime['artifact'];
+		$artifact = Static_Site_Importer_Portable_Source_Manifest::project( $runtime['artifact'] );
+		if ( is_wp_error( $artifact ) ) {
+			return self::error( (string) $artifact->get_error_code(), $artifact->get_error_message(), $artifact->get_error_data() );
+		}
 		if ( empty( $artifact ) ) {
 			return self::error( 'static_site_importer_missing_website_artifact', 'The source did not normalize to a website artifact.' );
 		}
