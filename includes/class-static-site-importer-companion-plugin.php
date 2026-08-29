@@ -965,7 +965,7 @@ $content     = preg_replace_callback(
 
 $global = array(
 	'aria-controls' => true, 'aria-current' => true, 'aria-describedby' => true, 'aria-details' => true,
-	'aria-expanded' => true, 'aria-hidden' => true, 'aria-label' => true, 'aria-labelledby' => true,
+	'aria-disabled' => true, 'aria-expanded' => true, 'aria-hidden' => true, 'aria-label' => true, 'aria-labelledby' => true,
 	'aria-live' => true, 'class' => true, 'data-*' => true, 'dir' => true, 'hidden' => true, 'id' => true,
 	'lang' => true, 'role' => true, 'style' => true, 'tabindex' => true, 'title' => true, 'xml:lang' => true,
 );
@@ -1120,6 +1120,7 @@ $global = array(
 	'aria-current'     => true,
 	'aria-describedby' => true,
 	'aria-details'     => true,
+	'aria-disabled'    => true,
 	'aria-expanded'    => true,
 	'aria-hidden'      => true,
 	'aria-label'       => true,

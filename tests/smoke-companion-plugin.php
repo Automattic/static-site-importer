@@ -503,6 +503,8 @@ if ( is_array( $descriptor ) ) {
 	);
 	$assert( str_contains( $edited_output, $edited_url ) && str_contains( $edited_output, 'Edited hero' ) && ! str_contains( $edited_output, $canonical_url ), 'editable-render-reflects-saved-content-edit', $edited_output );
 	$assert( ! str_contains( $edited_output, '<script' ) && ! str_contains( $edited_output, 'onclick' ), 'editable-render-sanitizes-current-content-at-server-boundary', $edited_output );
+	$stateful_output = $render_frontend( $render, array( 'content' => '<div class="button" aria-disabled="false"><a href="#target">Try Me</a></div>' ) );
+	$assert( str_contains( $stateful_output, 'aria-disabled="false"' ), 'editable-render-preserves-aria-disabled-state-for-authored-selectors', $stateful_output );
 
 	// Inline SVG artwork in editable companion content renders instead of
 	// being deleted by a sanitization boundary without SVG elements (#1361).
