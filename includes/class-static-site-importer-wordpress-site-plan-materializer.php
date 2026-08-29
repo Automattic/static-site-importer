@@ -930,7 +930,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			);
 		if ( is_wp_error( $font_overlay ) ) {
 			$state['preflight_error'] = $font_overlay;
-			throw new InvalidArgumentException( (string) $font_overlay->get_error_code() ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Internal error code, not rendered output.
+			throw new InvalidArgumentException( sanitize_key( (string) $font_overlay->get_error_code() ) );
 		}
 		$state['font_overlay']          = $font_overlay;
 		$state['composed_theme_writes'] = array_merge( $overlay_writes, self::font_overlay_writes( $state['theme_dir'], $font_overlay ) );
@@ -1093,6 +1093,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				}
 			}
 			unset( $binding_report );
+			foreach ( $state['resolved']['pages'] as &$resolved_page ) {
+				if ( ( $resolved_page['source_path'] ?? '' ) === $source_path ) {
+					$resolved_page['materialized_block_markup'] = $rewritten;
+					break;
+				}
+			}
+			unset( $resolved_page );
 		}
 
 		return true;
@@ -1552,7 +1559,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		);
 	}
 
-	/** Persist admitted provider overlay CSS into every generated frontend/editor stylesheet. */
+	/** Persist admitted provider overlay CSS and its frontend delivery bootstrap. */
 	private static function apply_provider_layout_overlays( array &$state, array $overlays ) {
 		$admitted = array_filter( $overlays, static fn( $overlay ): bool => null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $overlay ) );
 		if ( empty( $admitted ) ) {
@@ -1608,7 +1615,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		);
 	}
 
-	/** Derive expected overlay-composed stylesheets from their canonical plan payloads. */
+	/** Derive expected overlay-composed stylesheets and frontend delivery bootstrap. */
 	private static function provider_layout_stylesheet_writes( array $state, array $overlays ) {
 		if ( empty( $overlays ) ) {
 			return array();
@@ -1620,6 +1627,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 		$stylesheets = array();
 		$source_css  = '';
+		$functions   = null;
 		foreach ( $state['resolved']['writes'] as $write ) {
 			$target = (string) ( $write['target_path'] ?? '' );
 			$css    = self::payload_data( $write );
@@ -1629,13 +1637,23 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( in_array( $target, array( 'style.css', 'assets/css/editor-style.css' ), true ) ) {
 				$stylesheets[ $state['theme_dir'] . '/' . $target ] = $css;
 			}
+			if ( 'functions.php' === $target ) {
+				$functions = $css;
+			}
+		}
+		if ( ! is_string( $functions ) || ! str_starts_with( ltrim( $functions ), '<?php' ) ) {
+			return new WP_Error( 'provider_layout_stylesheet_missing' );
 		}
 		if ( isset( $stylesheets[ $state['theme_dir'] . '/style.css' ], $stylesheets[ $state['theme_dir'] . '/assets/css/editor-style.css' ] ) ) {
-			return Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], '', '', array(), array(), $overlays, $stylesheets );
+			$writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], '', '', array(), array(), $overlays, $stylesheets );
+		} elseif ( '' !== $source_css ) {
+			$writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], (string) $state['theme']['slug'], $source_css, array(), array(), $overlays );
+		} else {
+			return new WP_Error( 'provider_layout_stylesheet_missing' );
 		}
-		return '' === $source_css
-			? new WP_Error( 'provider_layout_stylesheet_missing' )
-			: Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], (string) $state['theme']['slug'], $source_css, array(), array(), $overlays );
+		$bootstrap                                        = "\n/* Static Site Importer provider layout overlay delivery. */\nadd_action( 'wp_enqueue_scripts', static function (): void {\n\twp_enqueue_style( 'static-site-importer-provider-layout-overlay', get_stylesheet_uri(), array(), wp_get_theme()->get( 'Version' ) );\n}, 20 );\n";
+		$writes[ $state['theme_dir'] . '/functions.php' ] = str_contains( $functions, $bootstrap ) ? $functions : $functions . $bootstrap;
+		return $writes;
 	}
 
 	/** @param array<mixed> $state @param array{writes:array<int,array<string,string>>,diagnostics:array<int,array<string,string>>} $overlay */
