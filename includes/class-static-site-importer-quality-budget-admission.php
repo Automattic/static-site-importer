@@ -35,7 +35,9 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 		$unresolved_media        = self::metric( $metrics, array( 'unresolved_media_count', 'unresolved_asset_count' ) );
 		$unresolved_dependencies = self::metric( $metrics, array( 'unresolved_dependency_count', 'dependency_failure_count', 'runtime_dependency_parity_issue_count' ) );
 		$materialized_quality    = isset( $report['quality'] ) && is_array( $report['quality'] ) ? $report['quality'] : array();
-		$materialized_metrics    = isset( $materialized_quality['metrics'] ) && is_array( $materialized_quality['metrics'] ) ? $materialized_quality['metrics'] : $materialized_quality;
+		$materialized_metrics    = array_merge( isset( $materialized_quality['metrics'] ) && is_array( $materialized_quality['metrics'] ) ? $materialized_quality['metrics'] : array(), $materialized_quality );
+		$native_blocks           = self::metric( $materialized_metrics, array( 'native_block_count', 'block_count' ) ) ?? $native_blocks;
+		$core_html               = self::metric( $materialized_metrics, array( 'core_html_block_count' ) ) ?? $core_html;
 		$fallbacks               = self::metric( $materialized_metrics, array( 'fallback_count', 'unresolved_fallback_count' ) );
 		if ( null === $fallbacks ) {
 			$fallbacks = self::metric( $metrics, array( 'fallback_count', 'unresolved_fallback_count' ) );

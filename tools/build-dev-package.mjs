@@ -146,6 +146,11 @@ export async function buildDevelopmentPackage(options, dependencies = {}) {
     const identity = { ssiSha, ssiDiff, blocksEngineSha, blocksEngineRef: options.blocksEngineRef, composerLock }
     await writeFile(join(snapshot, packagedIdentityFile), `${JSON.stringify(buildIdentity(identity), null, 2)}\n`)
 
+    const homeboyPath = join(snapshot, "homeboy.json")
+    const homeboy = JSON.parse(await readFile(homeboyPath, "utf8"))
+    homeboy.extensions.wordpress.settings.package_profile = {}
+    await writeFile(homeboyPath, `${JSON.stringify(homeboy, null, 2)}\n`)
+
     await run("homeboy", ["review", "--placement", "local", "build", "static-site-importer", "--path", snapshot], { cwd: snapshot })
     const generatedZip = join(snapshot, "build", "static-site-importer.zip")
     if (!await exists(generatedZip)) throw new Error(`Homeboy completed without the expected artifact: ${generatedZip}`)

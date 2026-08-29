@@ -1945,11 +1945,11 @@ $partial_quality_counters = array(
 	'source_fallback_count'                 => 1,
 );
 $assert(
-	$partial_quality_counters === array_intersect_key( $partial_quality, $partial_quality_counters ) && 1 === ( $partial_quality['block_count'] ?? 0 ) && array(
+	$partial_quality_counters === array_intersect_key( $partial_quality, $partial_quality_counters ) && 6 === ( $partial_quality['block_count'] ?? 0 ) && array(
 		'block_count'    => 1,
 		'fallback_count' => 1,
 	) === ( $partial_quality['metrics'] ?? null ),
-	'partial website-artifact result composition preserves supplied metrics and normalizes the complete quality counter schema'
+	'partial website-artifact result composition preserves supplied compiler metrics and reports final materialized block counts'
 );
 $assert( false === ( $partial_quality['pass'] ?? true ) && true === ( $partial_quality['fail_import'] ?? false ) && in_array( 'unsupported_html_fallback', $partial_quality['failure_reasons'] ?? array(), true ), 'partial website-artifact reports retain unresolved compiler fallbacks as strict quality failures' );
 $tampered_fragment_receipt = $form_binding_receipt;
