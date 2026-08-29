@@ -16,6 +16,11 @@ test("website artifact import profile is complete and capability scoped", async 
 
   const profile = manifest.profiles?.["website-artifact-import"]
   assert.ok(profile)
+  const homeboy = JSON.parse(await readFile(join(root, "homeboy.json"), "utf8"))
+  assert.deepEqual(homeboy.extensions?.wordpress?.settings?.package_profile, {
+    manifest: "runtime-package-manifest.json",
+    profile: "website-artifact-import",
+  })
   assert.deepEqual(profile.abilities, [
     "static-site-importer/import",
     "static-site-importer/materialize-wordpress-site-plan",
@@ -40,8 +45,21 @@ test("website artifact import profile is complete and capability scoped", async 
   assert.ok(selected.some((path) => path.startsWith("vendor/league/")))
   assert.ok(selected.length > profile.required_files.length)
 
-  for (const excluded of ["tests/", "tools/", "docs/", "lib/", "node_modules/", "vendor/automattic/blocks-engine-figma-transformer/"]) {
+  for (const excluded of ["bench/", "build/", "docs/", "lib/", "node_modules/", "tests/", "tools/", "vendor/automattic/blocks-engine-figma-transformer/"]) {
     assert.equal(selected.some((path) => path.startsWith(excluded)), false, `profile leaked excluded tree: ${excluded}`)
+  }
+  for (const excluded of ["homeboy-test-manifest.json", "test-manifest.json"]) assert.equal(selected.includes(excluded), false, `profile leaked test manifest: ${excluded}`)
+  assert.equal(selected.includes("build-provenance.json"), false, "release profile must not require development build identity")
+
+  if (process.env.STATIC_SITE_IMPORTER_PACKAGE_ZIP) {
+    const archive = execFileSync("unzip", ["-Z1", process.env.STATIC_SITE_IMPORTER_PACKAGE_ZIP], { encoding: "utf8" })
+      .trim().split("\n").filter((path) => path && !path.endsWith("/"))
+      .map((path) => {
+        const prefix = `${manifest.package_root}/`
+        assert.ok(path.startsWith(prefix), `archive entry escaped package root: ${path}`)
+        return path.slice(prefix.length)
+      }).sort()
+    assert.deepEqual(archive, selected, "release archive must contain exactly the website-artifact-import profile")
   }
 })
 
