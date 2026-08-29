@@ -1084,6 +1084,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				}
 			}
 			unset( $binding_report );
+			foreach ( $state['resolved']['pages'] as &$resolved_page ) {
+				if ( ( $resolved_page['source_path'] ?? '' ) === $source_path ) {
+					$resolved_page['materialized_block_markup'] = $rewritten;
+					break;
+				}
+			}
+			unset( $resolved_page );
 		}
 
 		return true;
