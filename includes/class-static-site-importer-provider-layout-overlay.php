@@ -113,7 +113,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				); }
 		}
 		if ( empty( $losses ) ) {
-			$rules[]      = $validated_map['scope'] . '{position:relative;pointer-events:auto}';
+			$rules[]      = $validated_map['scope'] . '{position:relative;z-index:1;pointer-events:auto}';
 			$operations[] = array(
 				'dimension'   => 'interaction',
 				'strategy'    => 'provider_interaction_carrier',
@@ -166,7 +166,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12})?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
-		$allowed = array( 'display', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'position', 'pointer-events' );
+		$allowed = array( 'display', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'position', 'z-index', 'pointer-events' );
 		foreach ( explode( ';', $matches[2] ) as $declaration ) {
 			if ( ! preg_match( '/^([a-z-]+):(.+)$/D', $declaration, $parts ) || ! in_array( $parts[1], $allowed, true ) || ! self::safe_value( str_replace( array( 'grid-template-columns', 'grid-template-rows', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area' ), array( 'columns', 'rows', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'flex_grow', 'flex_shrink', 'flex_basis', 'column', 'row', 'area' ), $parts[1] ), $parts[2] ) ) {
 				return false;
@@ -236,6 +236,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		if ( 'position' === $fact ) {
 			return 'relative' === $value;
+		}
+		if ( 'z-index' === $fact ) {
+			return '1' === $value;
 		}
 		if ( 'pointer-events' === $fact ) {
 			return 'auto' === $value;
