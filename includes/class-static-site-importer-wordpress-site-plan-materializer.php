@@ -574,7 +574,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'reconciliation_identity' => $page['reconciliation_identity'],
 				'content_hash'            => hash( 'sha256', $materialized_markup ),
 			);
-			$document_title = Static_Site_Importer_Route_Document_Metadata::title_from_page( $page );
+			$document_title     = Static_Site_Importer_Route_Document_Metadata::title_from_page( $page );
 			if ( '' !== $document_title ) {
 				$provenance['document_title'] = $document_title;
 			}
