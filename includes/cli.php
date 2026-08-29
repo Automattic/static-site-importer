@@ -296,7 +296,7 @@ if ( ! function_exists( 'static_site_importer_cli_import_run_fresh_runtime' ) ) 
 			}
 			return $decoded;
 		} finally {
-			if ( is_string( $path ) && is_file( $path ) ) {
+			if ( is_file( $path ) ) {
 				unlink( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes the host-owned continuation request after the fresh runtime returns.
 			}
 		}
