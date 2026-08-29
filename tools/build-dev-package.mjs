@@ -8,6 +8,10 @@ import { fileURLToPath } from "node:url"
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const schema = "static-site-importer/development-package-provenance/v1"
 
+// Shipped inside the package so an imported site can name the build that produced it.
+// Static_Site_Importer_Build_Provenance reads this file from the plugin root at import time.
+export const packagedIdentityFile = "build-provenance.json"
+
 export function parseArguments(argv, cwd = process.cwd()) {
   const options = {
     blocksEnginePath: resolve(cwd, "../blocks-engine"),
@@ -53,7 +57,7 @@ export function developmentComposerManifest(manifest, packageRoot) {
   }
 }
 
-export function provenance({ ssiSha, ssiDiff, blocksEngineSha, blocksEngineRef, composerLock, zip }) {
+export function buildIdentity({ ssiSha, ssiDiff, blocksEngineSha, blocksEngineRef, composerLock }) {
   return {
     schema,
     command: "npm run build:dev-package",
@@ -64,8 +68,11 @@ export function provenance({ ssiSha, ssiDiff, blocksEngineSha, blocksEngineRef, 
     },
     blocks_engine: { ref: blocksEngineRef, sha: blocksEngineSha },
     composer_lock_sha256: digest(composerLock),
-    zip: { file: basename(zip.path), sha256: digest(zip.bytes) },
   }
+}
+
+export function provenance({ zip, ...identity }) {
+  return { ...buildIdentity(identity), zip: { file: basename(zip.path), sha256: digest(zip.bytes) } }
 }
 
 export async function overlayWorkingTree(sourceRoot, snapshot, paths) {
@@ -135,6 +142,10 @@ export async function buildDevelopmentPackage(options, dependencies = {}) {
     await writeFile(composerPath, `${JSON.stringify(developmentComposerManifest(manifest, temporaryDirectory), null, 2)}\n`)
     await run("composer", ["update", "automattic/blocks-engine-php-transformer", "automattic/blocks-engine-figma-transformer", "--with-all-dependencies", "--no-dev", "--no-interaction", "--prefer-dist"], { cwd: snapshot })
 
+    const composerLock = await readFile(join(snapshot, "composer.lock"))
+    const identity = { ssiSha, ssiDiff, blocksEngineSha, blocksEngineRef: options.blocksEngineRef, composerLock }
+    await writeFile(join(snapshot, packagedIdentityFile), `${JSON.stringify(buildIdentity(identity), null, 2)}\n`)
+
     await run("homeboy", ["review", "--placement", "local", "build", "static-site-importer", "--path", snapshot], { cwd: snapshot })
     const generatedZip = join(snapshot, "build", "static-site-importer.zip")
     if (!await exists(generatedZip)) throw new Error(`Homeboy completed without the expected artifact: ${generatedZip}`)
@@ -146,14 +157,7 @@ export async function buildDevelopmentPackage(options, dependencies = {}) {
     const outputZip = join(options.outputDir, outputName)
     await mkdir(options.outputDir, { recursive: true })
     await cp(generatedZip, outputZip)
-    const receipt = provenance({
-      ssiSha,
-      ssiDiff,
-      blocksEngineSha,
-      blocksEngineRef: options.blocksEngineRef,
-      composerLock: await readFile(join(snapshot, "composer.lock")),
-      zip: { path: outputZip, bytes: await readFile(outputZip) },
-    })
+    const receipt = provenance({ ...identity, zip: { path: outputZip, bytes: await readFile(outputZip) } })
     const provenancePath = `${outputZip}.json`
     await writeFile(provenancePath, `${JSON.stringify(receipt, null, 2)}\n`)
     return { zip: outputZip, provenance: provenancePath, receipt }

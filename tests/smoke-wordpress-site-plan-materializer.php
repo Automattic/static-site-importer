@@ -302,6 +302,7 @@ require dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-sit
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-build-provenance.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
 

@@ -773,6 +773,32 @@ test('fixture matrix run config projects an explicit visual viewport into browse
   assert.equal(fixtureMatrixHomeboySettings(config).SSI_FIXTURE_MATRIX_VISUAL_PARITY_VIEWPORT_HEIGHT, '844');
 });
 
+test('configured pixelmatch colour threshold reaches the comparator and the pixel-count gate stays host-side', () => {
+  const config = normalizeFixtureMatrixRunConfig({
+    fixtureRoot: '/tmp/fixtures',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    pixelThreshold: 0,
+    visualParityPixelmatchThreshold: 0.01,
+  });
+
+  // The colour distance must reach the recipe, because `wordpress.visual-compare`
+  // passes its `threshold` option straight into `pixelmatch`. A gate-only
+  // projection leaves the comparator on a value nobody configured (#1404).
+  const input = fixtureMatrixRecipeInput(config);
+  assert.equal(input.visualParityPixelmatchThreshold, 0.01);
+  assert.equal(fixtureMatrixGateConfig(config).visualParity.pixelmatchThreshold, 0.01);
+  assert.equal(fixtureMatrixGateConfig(config).visualParity.threshold, 0);
+
+  const comparison = visualCompareMatrixComparison(visualParityCompareStep({ fixture: { id: 'shop' }, ...input }));
+  assert.equal(comparison.threshold, 0.01, 'the comparator receives the colour distance, not the allowed pixel fraction');
+
+  // The allowed FRACTION of mismatched pixels gates host-side and must never be
+  // sent as the comparator's colour distance: at 0 it demands a bit-exact render.
+  const zeroFraction = visualCompareMatrixComparison(visualParityCompareStep({ fixture: { id: 'shop' }, pixelThreshold: 0 }));
+  assert.equal(zeroFraction.threshold, 0.01);
+  assert.notEqual(zeroFraction.threshold, 0);
+});
+
 test('runtime presentation evidence persists, merges, and reaches the Blocks Engine compilation input in order', () => {
   const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'runtime-presentation-evidence' });
   const defaultRecipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', staticSiteImporterPath: '/tmp/static-site-importer' });
@@ -7045,6 +7071,7 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
     artifactsDirectory: '/tmp/artifacts',
     staticSiteImporterPath: '/tmp/static-site-importer',
     pixelThreshold: 0.05,
+    visualParityPixelmatchThreshold: 0.05,
   });
 
   // Resolve semantic phases so transport steps can be inserted without weakening the ordering contract.
@@ -7067,7 +7094,7 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
   });
   const defaultThresholdVisualStep = defaultThresholdRecipe.workflow.steps.find((step) => step.command === 'wordpress.visual-compare');
   assert.equal(defaultThresholdVisualStep.command, 'wordpress.visual-compare');
-  assert.equal(visualCompareMatrixComparison(defaultThresholdVisualStep).threshold, 0, 'visual parity defaults to exact pixel parity');
+  assert.equal(visualCompareMatrixComparison(defaultThresholdVisualStep).threshold, 0.01, 'visual parity defaults to a sub-perceptual colour distance, not a bit-exact render');
 
   const disabled = buildFixtureMatrixRecipe({
     matrix,
@@ -7081,7 +7108,7 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
 test('visualParityCompareStep composes the existing wordpress.visual-compare command with per-fixture overrides', () => {
   const step = visualParityCompareStep({
     fixture: { id: 'shop', source_url: 'http://127.0.0.1:4173/shop/index.html', candidate_url: '/?p=42' },
-    pixelThreshold: 0.2,
+    visualParityPixelmatchThreshold: 0.2,
   });
   assert.equal(step.command, 'wordpress.visual-compare');
   assert.equal(step.allowFailure, true);
@@ -7118,7 +7145,7 @@ test('visual attribution options normalize positive limits and targeted selector
 
 test('visual parity defaults require the candidate font readiness record', () => {
   const step = visualParityCompareStep({ fixture: { id: 'shop' } });
-  assert.equal(step.args[0], 'matrix-json={"comparisons":[{"name":"shop","sourceUrl":"/wp-content/uploads/static-site-importer-fixture-matrix/shop/source/index.html","candidateUrl":"/","sourceLabel":"shop-source","candidateLabel":"shop-candidate","viewport":"1280x1600","fullPage":true,"waitFor":"duration","durationMs":"4000ms","blockExternalRequests":true,"candidateRequiredReadinessRecord":"#static-site-importer-font-readiness","threshold":0}]}');
+  assert.equal(step.args[0], 'matrix-json={"comparisons":[{"name":"shop","sourceUrl":"/wp-content/uploads/static-site-importer-fixture-matrix/shop/source/index.html","candidateUrl":"/","sourceLabel":"shop-source","candidateLabel":"shop-candidate","viewport":"1280x1600","fullPage":true,"waitFor":"duration","durationMs":"4000ms","blockExternalRequests":true,"candidateRequiredReadinessRecord":"#static-site-importer-font-readiness","threshold":0.01}]}');
 });
 
 test('visual attribution options reach every fixture matrix comparison', () => {
