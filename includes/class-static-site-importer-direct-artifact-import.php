@@ -516,6 +516,13 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$args['compiled_artifact_result']                 = $composed_state['result'];
 			$args['_static_site_importer_precompiled_source'] = true;
 			$args['_static_site_importer_payload_reader']     = $payload_reader;
+			if ( '' === trim( (string) ( $args['report'] ?? '' ) ) ) {
+				$failed_plan_report = self::failed_plan_report_destination( $workspace );
+				if ( is_wp_error( $failed_plan_report ) ) {
+					return self::fail( $workspace, $run, 'failed_plan_report_destination', $failed_plan_report );
+				}
+				$args['failed_plan_report_destination'] = $failed_plan_report;
+			}
 
 			if ( 'plan' === $run['binding']['operation'] ) {
 				$entered = self::enter_phase( $workspace, $run, 'canonical_plan' );
@@ -1063,6 +1070,14 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		} catch ( RuntimeException $error ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_workspace_unavailable', $error->getMessage() );
 		}
+	}
+
+	/** Reserve the retained run's private location for a possible gate-failure report. */
+	private static function failed_plan_report_destination( Static_Site_Importer_Artifact_Run_Workspace $workspace ) {
+		if ( ! $workspace->claim_directory( 'failed-plan' ) && ! is_dir( $workspace->directory() . '/failed-plan' ) ) {
+			return new WP_Error( 'static_site_importer_direct_artifact_failed_plan_workspace_unavailable', 'The failed-plan artifact workspace is unavailable.' );
+		}
+		return $workspace->path( 'failed-plan/import-report.json' );
 	}
 
 	/** Register expiry cleanup without exposing retained workspace paths. */

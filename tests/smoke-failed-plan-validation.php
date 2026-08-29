@@ -80,6 +80,15 @@ $assert( 'pre_materialization_quality_admission' === ( $persisted['failure_conte
 
 $paths_again = Static_Site_Importer_Failed_Plan_Validation::persist( $artifacts, $root . '/import-report.json' );
 $assert( $paths === $paths_again, 'retrying a failed plan refreshes its owned report artifacts' );
+$oversized = $artifacts;
+$oversized['import_report'] = array( 'payload' => str_repeat( 'x', 10485761 ) );
+try {
+	Static_Site_Importer_Failed_Plan_Validation::persist( $oversized, $root . '/oversized-import-report.json' );
+	$oversized_rejected = false;
+} catch ( RuntimeException $error ) {
+	$oversized_rejected = str_contains( $error->getMessage(), '10 MiB bound' );
+}
+$assert( $oversized_rejected, 'failed-plan artifacts enforce the existing 10 MiB per-file bound' );
 foreach ( $paths as $path ) {
 	unlink( $path );
 }

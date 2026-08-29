@@ -16,6 +16,7 @@ if ( ! class_exists( 'Static_Site_Importer_Import_Report' ) ) {
 final class Static_Site_Importer_Failed_Plan_Validation {
 
 	private const MAX_DIAGNOSTICS = 50;
+	private const MAX_ARTIFACT_BYTES = 10485760;
 
 	/** @return array<string,mixed> */
 	public static function build( array $plan, array $args = array(), array $compiled = array() ): array {
@@ -144,8 +145,11 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 	}
 
 	private static function write( string $path, array $payload ): void {
-		$temp = tempnam( dirname( $path ), '.ssi-failed-plan-' );
 		$json = function_exists( 'wp_json_encode' ) ? wp_json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) : json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone smoke tests do not load WordPress encoding helpers.
+		if ( is_string( $json ) && strlen( $json ) + 1 > self::MAX_ARTIFACT_BYTES ) {
+			throw new RuntimeException( 'Failed-plan report artifact exceeds its 10 MiB bound.' );
+		}
+		$temp = tempnam( dirname( $path ), '.ssi-failed-plan-' );
 		if ( false === $temp || false === $json || false === file_put_contents( $temp, $json . "\n" ) || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents,WordPress.WP.AlternativeFunctions.rename_rename -- Atomically writes bounded explicit report artifacts.
 			if ( is_string( $temp ) && file_exists( $temp ) ) {
 				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed atomic report temporary file.
