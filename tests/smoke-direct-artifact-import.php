@@ -276,7 +276,6 @@ $canonical_compiled = static function ( array $result ) use ( &$canonical_compil
 };
 $assert( $canonical_compiled( $GLOBALS['ssi_direct_compiled_results'][0] ) === $canonical_compiled( $GLOBALS['ssi_direct_compiled_results'][1] ), 'clean and resumed composition must produce identical canonical plans, companion payloads, pages, writes, diagnostics, and reconciliation identities' );
 
-<<<<<<< HEAD
 $binary = str_repeat( "\x00\xffZIP", 1024 );
 $binary_ref = array(
 	'schema' => 'blocks-engine/payload-reference/v1',
@@ -434,6 +433,7 @@ $quality_failure_response = $quality_failure_data['failure']['error']['data'] ??
 $assert( 'inline_svg_fallback' === ( $quality_failure_response['quality']['fallbacks'][0]['reason'] ?? '' ) && 'runtime_dependent_content' === ( $quality_failure_response['quality']['editability_policy']['failures'][0] ?? '' ) && $quality_failure_response === $quality_failure_evidence, 'quality-gate failures must return actionable fallback and editability reasons in both caller and run evidence' );
 $scrubbed_quality = $quality_failure_response['quality'] ?? array();
 $assert( ! isset( $scrubbed_quality['path'], $scrubbed_quality['workspace'], $scrubbed_quality['manifest'] ) && 1000 === strlen( $scrubbed_quality['long_value'] ?? '' ) && true === ( $scrubbed_quality['many']['_truncated'] ?? false ) && '[truncated]' === ( $scrubbed_quality['over_deep']['one']['two']['three']['four'] ?? '' ), 'quality-gate evidence must retain path stripping, string and item caps, and the original depth bound' );
+$GLOBALS['ssi_direct_materialization_error'] = null;
 $cli_report = $test_root . '/cli-import-report.json';
 Static_Site_Importer_Canonical_Import_Service::import_with_cli_report( $input(), $cli_report );
 $assert( $cli_report === ( $GLOBALS['ssi_direct_last_args']['report'] ?? '' ) && ! isset( $GLOBALS['ssi_direct_last_args']['failed_plan_report_destination'] ), 'the explicit CLI report destination remains authoritative over the owned failed-plan destination' );

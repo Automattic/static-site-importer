@@ -522,6 +522,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					return self::fail( $workspace, $run, 'failed_plan_report_destination', $failed_plan_report );
 				}
 				$args['failed_plan_report_destination'] = $failed_plan_report;
+				$args['failed_plan_artifact_prefix']    = 'direct-' . $run['import_id'] . '/failed-plan';
 			}
 
 			if ( 'plan' === $run['binding']['operation'] ) {

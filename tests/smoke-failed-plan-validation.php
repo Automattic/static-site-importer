@@ -80,6 +80,11 @@ $assert( 'pre_materialization_quality_admission' === ( $persisted['failure_conte
 
 $paths_again = Static_Site_Importer_Failed_Plan_Validation::persist( $artifacts, $root . '/import-report.json' );
 $assert( $paths === $paths_again, 'retrying a failed plan refreshes its owned report artifacts' );
+$artifact_refs = Static_Site_Importer_Failed_Plan_Validation::artifact_refs( 'direct-import-123/failed-plan' );
+$assert( 'direct-import-123/failed-plan/import-report.json' === ( $artifact_refs['import_report']['artifact_id'] ?? '' ), 'direct failure payloads expose stable artifact identifiers' );
+$assert( ! isset( $artifact_refs['import_report']['path'], $artifact_refs['import_report']['full_path'], $artifact_refs['import_report']['local_path'] ), 'direct failure payload refs do not expose local paths' );
+$resolved_paths = array_combine( array_keys( $artifact_refs ), array_values( $paths ) );
+$assert( is_file( $resolved_paths['import_report'] ?? '' ) && is_file( $resolved_paths['import_validation_result'] ?? '' ) && is_file( $resolved_paths['finding_packets'] ?? '' ), 'opaque direct failure refs resolve to persisted owned artifacts' );
 $oversized = $artifacts;
 $oversized['import_report'] = array( 'payload' => str_repeat( 'x', 10485761 ) );
 try {

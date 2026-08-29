@@ -15,7 +15,7 @@ if ( ! class_exists( 'Static_Site_Importer_Import_Report' ) ) {
 
 final class Static_Site_Importer_Failed_Plan_Validation {
 
-	private const MAX_DIAGNOSTICS = 50;
+	private const MAX_DIAGNOSTICS    = 50;
 	private const MAX_ARTIFACT_BYTES = 10485760;
 
 	/** @return array<string,mixed> */
@@ -123,6 +123,28 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 		self::write( $paths['import_validation_result'], isset( $artifacts['import_validation_result'] ) && is_array( $artifacts['import_validation_result'] ) ? $artifacts['import_validation_result'] : array() );
 		self::write( $paths['finding_packets'], isset( $artifacts['finding_packets'] ) && is_array( $artifacts['finding_packets'] ) ? $artifacts['finding_packets'] : array() );
 		return $paths;
+	}
+
+	/** @return array<string,array<string,string>> */
+	public static function artifact_refs( string $prefix ): array {
+		$prefix = trim( $prefix, '/' );
+		if ( '' === $prefix ) {
+			return array();
+		}
+		return array(
+			'import_report'            => array(
+				'artifact_id' => $prefix . '/import-report.json',
+				'kind'        => 'blocks-engine/import-report',
+			),
+			'import_validation_result' => array(
+				'artifact_id' => $prefix . '/import-validation-result.json',
+				'kind'        => 'blocks-engine/import-validation-result',
+			),
+			'finding_packets'          => array(
+				'artifact_id' => $prefix . '/finding-packets.json',
+				'kind'        => 'blocks-engine/finding-packets',
+			),
+		);
 	}
 
 	/** @return array<int,string> */

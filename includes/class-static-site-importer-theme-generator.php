@@ -106,7 +106,9 @@ class Static_Site_Importer_Theme_Generator {
 			$compiled_evidence = isset( $compiled_import['compiled'] ) && is_array( $compiled_import['compiled'] ) ? $compiled_import['compiled'] : array();
 			$failed_plan       = Static_Site_Importer_Failed_Plan_Validation::build( $plan, $args, $compiled_evidence );
 			try {
-				$failed_plan['artifact_refs'] = Static_Site_Importer_Failed_Plan_Validation::persist( $failed_plan, (string) ( $args['failed_plan_report_destination'] ?? $args['report'] ?? '' ) );
+				$paths           = Static_Site_Importer_Failed_Plan_Validation::persist( $failed_plan, (string) ( $args['failed_plan_report_destination'] ?? $args['report'] ?? '' ) );
+				$artifact_prefix = (string) ( $args['failed_plan_artifact_prefix'] ?? '' );
+				$failed_plan['artifact_refs'] = '' !== $artifact_prefix ? Static_Site_Importer_Failed_Plan_Validation::artifact_refs( $artifact_prefix ) : $paths;
 			} catch ( Throwable $error ) {
 				$failed_plan['artifact_persistence_error'] = $error->getMessage();
 			}
