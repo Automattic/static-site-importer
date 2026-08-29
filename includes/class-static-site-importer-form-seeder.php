@@ -566,16 +566,16 @@ class Static_Site_Importer_Form_Seeder {
 				foreach ( array_keys( $field_blocks ) as $control_index ) {
 					$control_node = null;
 					foreach ( $nodes as $candidate ) {
-						if ( is_array( $candidate ) && 'control' === ( $candidate['kind'] ?? '' ) && $control_index === ( $candidate['control'] ?? null ) ) {
+						if ( is_array( $candidate ) && 'control' === ( $candidate['kind'] ?? '' ) && ( $candidate['control'] ?? null ) === $control_index ) {
 							$control_node = $candidate;
 							break;
 						}
 					}
 					$parent = $control_node['parent'] ?? null;
-					while ( is_string( $parent ) && $parent !== ( $node['id'] ?? '' ) ) {
+					while ( is_string( $parent ) && ( $node['id'] ?? '' ) !== $parent ) {
 						$parent = $nodes_by_id[ $parent ]['parent'] ?? null;
 					}
-					if ( $parent !== ( $node['id'] ?? '' ) ) {
+					if ( ( $node['id'] ?? '' ) !== $parent ) {
 						return false;
 					}
 				}
