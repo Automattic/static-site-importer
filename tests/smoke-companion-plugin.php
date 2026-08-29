@@ -171,6 +171,10 @@ if ( ! function_exists( 'add_filter' ) ) {
 	function add_filter( string $hook, callable|string $callback ): void {}
 }
 
+if ( ! function_exists( 'remove_filter' ) ) {
+	function remove_filter( string $hook, callable|string $callback ): void {}
+}
+
 if ( ! function_exists( 'register_block_type' ) ) {
 	function register_block_type( string $block, array $args = array() ): WP_Block_Type|false {
 		$name = isset( $args['name'] ) ? (string) $args['name'] : '';
@@ -535,7 +539,7 @@ $assert( is_array( $layout_descriptor ), 'layout-renderer-scaffold-returns-descr
 if ( is_array( $layout_descriptor ) ) {
 	$layout_render = $layout_descriptor['files']['ssi-example-site/blocks/custom-hero/render.php'] ?? '';
 	$assert( str_contains( $layout_render, 'Generated responsive-layout companion block render' ) && ! str_contains( $layout_render, 'Generated responsive-media companion block render' ), 'dedicated-layout-renderer-uses-own-template' );
-	$attributes = array( 'content' => '<main class="story" style="position:absolute;inset:0 auto auto 0;width:405px;height:516.812px;overflow:hidden"><header><nav><a href="/about">About</a></nav></header><section><h1>Story</h1><p>Safe copy <strong>with emphasis</strong>.</p><button type="button">Read more</button><wow-image data-hook="hero"><img src="data:image/png;base64,aGVybw==" alt="Hero" decoding="async" fetchpriority="high"></wow-image><svg viewBox="0 0 10 10" preserveAspectRatio="xMidYMid slice" focusable="false" role="img" aria-label="Mark"><path d="M0 0L10 10" stroke="#000"></path></svg></section></main>' );
+	$attributes = array( 'content' => '<main class="story" style="position:absolute;inset:0 auto auto 0;width:405px;height:516.812px;overflow:hidden;overflow-x:visible;overflow-y:clip"><header><nav><a href="/about">About</a></nav></header><section><h1>Story</h1><p>Safe copy <strong>with emphasis</strong>.</p><button type="button">Read more</button><wow-image data-hook="hero"><img src="data:image/png;base64,aGVybw==" alt="Hero" decoding="async" fetchpriority="high"></wow-image><svg viewBox="0 0 10 10" preserveAspectRatio="xMidYMid slice" focusable="false" role="img" aria-label="Mark"><path d="M0 0L10 10" stroke="#000"></path></svg></section></main>' );
 	ob_start();
 	eval( '?>' . $layout_render );
 	$layout_output = (string) ob_get_clean();
@@ -544,6 +548,8 @@ if ( is_array( $layout_descriptor ) ) {
 	}
 	$assert( ! str_contains( $layout_output, '<wow-image' ), 'layout-renderer-unwraps-potentially-active-custom-elements' );
 	$assert( str_contains( $layout_output, 'position:absolute' ) && str_contains( $layout_output, 'width:405px' ) && str_contains( $layout_output, 'height:516.812px' ) && str_contains( $layout_output, 'overflow:hidden' ), 'layout-renderer-preserves-quoted-inline-geometry', $layout_output );
+	$assert( str_contains( $layout_output, 'overflow-x:visible' ) && str_contains( $layout_output, 'overflow-y:clip' ), 'layout-renderer-preserves-axis-specific-overflow', $layout_output );
+	$assert( str_contains( $layout_render, "add_filter( 'safe_style_css', \$safe_style_css )" ) && str_contains( $layout_render, "remove_filter( 'safe_style_css', \$safe_style_css )" ), 'layout-renderer-bounds-axis-overflow-css-filter', $layout_render );
 	$attributes = array( 'content' => '<p>Report in one section with online notes only once.</p><button onclick onmouseover="alert(1)" data-wp-interactive>Go</button>' );
 	ob_start();
 	eval( '?>' . $layout_render );

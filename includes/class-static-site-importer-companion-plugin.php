@@ -993,6 +993,10 @@ if ( preg_match_all( '/\s+(aria-[a-z][a-z0-9-]*)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\
 		$svg_global[ strtolower( $aria_name ) ] = true;
 	}
 }
+$safe_style_css = static function ( array $properties ): array {
+	return array_values( array_unique( array_merge( $properties, array( 'overflow-x', 'overflow-y' ) ) ) );
+};
+add_filter( 'safe_style_css', $safe_style_css );
 $output = wp_kses(
 	$content,
 	array(
@@ -1029,6 +1033,7 @@ $output = wp_kses(
 		'tspan' => array_merge( $svg_global, array( 'dx' => true, 'dy' => true, 'fill' => true, 'x' => true, 'y' => true ) ), 'title' => $svg_global, 'desc' => $svg_global,
 	)
 );
+remove_filter( 'safe_style_css', $safe_style_css );
 foreach ( $data_images as $placeholder => $data_image ) {
 	$output = str_replace( 'src="' . $placeholder . '"', 'src="' . esc_attr( $data_image ) . '"', $output );
 	$output = str_replace( "src='" . $placeholder . "'", "src='" . esc_attr( $data_image ) . "'", $output );
