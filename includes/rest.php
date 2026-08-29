@@ -1323,8 +1323,12 @@ function static_site_importer_staged_archive_payload_reader( array $archive ) {
 	if ( is_wp_error( $path ) ) {
 		return $path;
 	}
+	$interface = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\PayloadReader';
+	if ( ! interface_exists( $interface ) ) {
+		return new WP_Error( 'static_site_importer_missing_transformer_capability', 'Blocks Engine php-transformer does not expose the staged payload reader contract.' );
+	}
 
-	return new class( $path ) {
+	return new class( $path ) implements \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
 		public function __construct( private string $archive_path ) {}
 
 		public function read( array $reference ): string {
