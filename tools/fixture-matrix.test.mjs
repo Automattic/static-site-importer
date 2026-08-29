@@ -348,7 +348,7 @@ test('discovers SSI fixtures and writes Blocks Engine site artifacts', () => {
   assert.equal(matrix.count, 1);
   assert.equal(matrix.fixtures[0].id, 'simple-site');
   assert.equal(artifact.schema, 'blocks-engine/php-transformer/site-artifact/v1');
-  // Files are base64-encoded exactly like the product's `import-theme` CLI, so
+  // Files are base64-encoded exactly like the product's canonical import request, so
   // hydrate via `content_base64` to read the payload.
   const indexFile = artifact.files.find((file) => file.path === 'website/index.html');
   assert.ok(indexFile);
@@ -697,7 +697,7 @@ test('gutenberg incompatibility registry artifacts are written with fixture matr
 
 test('matrix artifacts use the product base64 encoding for EVERY payload, including text', () => {
   // Guards the smoke-test-theater regression: the matrix must build artifacts
-  // with the SAME `content_base64` encoding the real SSI `import-theme` CLI
+  // with the SAME `content_base64` encoding the real SSI import command
   // emits (static-site-importer.php base64-encodes every file unconditionally).
   // A plain-`content` text payload here means the gate is exercising a path the
   // product never produces — exactly how an empty-style.css bug stayed green.

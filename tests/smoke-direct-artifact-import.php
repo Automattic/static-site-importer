@@ -11,6 +11,8 @@ $GLOBALS['ssi_direct_mutations'] = 0;
 $GLOBALS['ssi_direct_last_args'] = array();
 $GLOBALS['ssi_direct_compiled_results'] = array();
 $GLOBALS['ssi_direct_checkpoint_reads'] = array();
+$GLOBALS['ssi_direct_staged_files'] = array();
+$GLOBALS['ssi_direct_staged_payloads'] = array();
 
 class WP_Error {
 	public function __construct( private string $code, private string $message = '', private $data = null ) {}
@@ -44,15 +46,33 @@ function static_site_importer_source_runtime( array $source ): array {
 		$file['mime_type'] = str_ends_with( $path, '.html' ) ? 'text/html' : ( str_ends_with( $path, '.css' ) ? 'text/css' : 'application/octet-stream' );
 		$files[] = $file;
 	}
+	$entrypoint = (string) ( $source['entrypoint'] ?? '' );
+	if ( '' === $entrypoint ) {
+		$entrypoint = 'website/index.html';
+	}
 	return array(
 		'artifact' => array(
 			'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
-			'entrypoint' => (string) ( $source['entrypoint'] ?? 'website/index.html' ),
+			'entrypoint' => $entrypoint,
 			'files'      => $files,
 		),
 		'provider' => 'direct-artifact-smoke',
 		'source_metadata' => array( 'fixture' => 'direct-artifact-multi-page' ),
 	);
+}
+function static_site_importer_staged_archive_files( array $archive, bool $payload_references = false ): array {
+	return $GLOBALS['ssi_direct_staged_files'];
+}
+function static_site_importer_staged_archive_payload_reader( array $archive ): object {
+	return new class() implements \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
+		public function read( array $reference ): string {
+			$id = (string) ( $reference['id'] ?? '' );
+			if ( ! isset( $GLOBALS['ssi_direct_staged_payloads'][ $id ] ) ) {
+				throw new RuntimeException( 'The staged fixture payload is unavailable.' );
+			}
+			return $GLOBALS['ssi_direct_staged_payloads'][ $id ];
+		}
+	};
 }
 
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
@@ -139,7 +159,7 @@ $assert( hash( 'sha256', (string) wp_json_encode( $ordered ) ) === $hash_json->i
 $assert( hash( 'sha256', (string) wp_json_encode( $canonical ) ) === $hash_json->invoke( null, $ordered, true ), 'streamed checkpoint identity must preserve the exact recursively canonical JSON hash' );
 $assert( wp_mkdir_p( $test_root ), 'the fixture workspace root must be created' );
 $primitive_workspace = new Static_Site_Importer_Artifact_Run_Workspace( $test_root, 'direct-checkpoint-primitives' );
-$assert( ! is_wp_error( $primitive_workspace->publish_json_once( 'ordered.json', $ordered ) ) && wp_json_encode( $ordered, JSON_PRETTY_PRINT ) === $primitive_workspace->read_raw( 'ordered.json' ), 'streamed immutable JSON must preserve exact pretty-printed checkpoint bytes' );
+$assert( ! is_wp_error( $primitive_workspace->publish_json_once( 'ordered.json', $ordered ) ) && wp_json_encode( $ordered, JSON_PRETTY_PRINT | JSON_PRESERVE_ZERO_FRACTION ) === $primitive_workspace->read_raw( 'ordered.json' ), 'streamed immutable JSON must preserve exact pretty-printed checkpoint bytes' );
 $large_chunk = str_repeat( 'x', 1024 * 1024 );
 $large_artifact = array();
 for ( $index = 0; $index < 96; ++$index ) {
@@ -256,6 +276,81 @@ $canonical_compiled = static function ( array $result ) use ( &$canonical_compil
 };
 $assert( $canonical_compiled( $GLOBALS['ssi_direct_compiled_results'][0] ) === $canonical_compiled( $GLOBALS['ssi_direct_compiled_results'][1] ), 'clean and resumed composition must produce identical canonical plans, companion payloads, pages, writes, diagnostics, and reconciliation identities' );
 
+$binary = str_repeat( "\x00\xffZIP", 1024 );
+$binary_ref = array(
+	'schema' => 'blocks-engine/payload-reference/v1',
+	'id'     => 'zip-entry:assets%2Fphoto.png',
+	'sha256' => hash( 'sha256', $binary ),
+	'bytes'  => strlen( $binary ),
+);
+$GLOBALS['ssi_direct_staged_payloads'][ $binary_ref['id'] ] = $binary;
+$GLOBALS['ssi_direct_staged_files'] = $files;
+$GLOBALS['ssi_direct_staged_files'][] = array(
+	'path'              => 'website/assets/photo.png',
+	'mime_type'         => 'image/png',
+	'payload_reference' => $binary_ref,
+);
+$GLOBALS['ssi_direct_filters']['static_site_importer_resolve_source_reference'][] = static function ( $resolved, string $reference, string $type ) {
+	return 'durable-zip' === $reference && 'zip' === $type ? array(
+		'source' => array( 'zip' => array( 'name' => 'website.zip', 'staged_path' => '/resolver-owned/website.zip' ) ),
+		'provenance' => array( 'owner' => 'server' ),
+	) : $resolved;
+};
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_batch_pages' => 1 ) ) );
+$zip_first = Static_Site_Importer_Canonical_Import_Service::import(
+	array(
+		'operation' => 'plan',
+		'source'    => array( 'type' => 'zip', 'ref' => 'durable-zip' ),
+	)
+);
+$zip_id = (string) ( $zip_first['import_id'] ?? '' );
+$assert( ! empty( $zip_first['continuation'] ) && 1 === ( $zip_first['artifact_run']['work']['payloads_retained'] ?? 0 ), 'resolver-owned multi-page ZIP planning must enter the durable phase machine and retain each referenced payload once' );
+$zip_workspace = new Static_Site_Importer_Artifact_Run_Workspace( $test_root . '/static-site-importer/direct-artifact-imports', 'direct-' . $zip_id );
+$assert( $binary === $zip_workspace->read_raw( 'payloads/' . hash( 'sha256', $binary_ref['id'] ) . '.bin' ), 'the direct run must own verified payload bytes without changing their canonical reference id' );
+$zip_artifact = static_site_importer_source_runtime( array( 'files' => $GLOBALS['ssi_direct_staged_files'] ) )['artifact'];
+$zip_reader = static_site_importer_staged_archive_payload_reader( array() );
+$zip_compiler = new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler();
+$zip_shared = $zip_compiler->prepareShared( $zip_artifact, $zip_reader );
+$zip_pages = $zip_compiler->preparePages( $zip_artifact, $zip_shared, $zip_reader );
+$zip_receipts = $zip_compiler->compilePreparedPages( $zip_shared, array_values( $zip_pages ), $zip_reader );
+$zip_uninterrupted_plan = $zip_compiler->compose( $zip_shared, array_values( $zip_receipts ) )->toArray()['source_reports']['wordpress_site_plan'];
+$GLOBALS['ssi_direct_staged_payloads'] = array();
+$zip_terminal = $zip_first;
+for ( $attempt = 0; $attempt < 10 && ! empty( $zip_terminal['continuation'] ); ++$attempt ) {
+	$zip_terminal = Static_Site_Importer_Canonical_Import_Service::import(
+		array(
+			'operation' => 'plan',
+			'source'    => array( 'type' => 'zip', 'import_id' => $zip_id ),
+		)
+	);
+}
+$assert( ! empty( $zip_terminal['success'] ) && empty( $zip_terminal['continuation'] ) && 'blocks-engine/wordpress-site-plan/v2' === ( $zip_terminal['plan']['schema'] ?? '' ), 'ZIP continuation must finish from retained payloads without reacquiring the resolver-owned archive' );
+$assert( str_contains( (string) wp_json_encode( $zip_terminal['plan'] ), $binary_ref['id'] ) && ! str_contains( (string) wp_json_encode( $zip_terminal['plan'] ), base64_encode( $binary ) ), 'durable ZIP planning must preserve compact canonical payload references instead of inlining binary bytes' );
+$first_difference = static function ( $left, $right, string $path = '$' ) use ( &$first_difference ): string {
+	if ( gettype( $left ) !== gettype( $right ) ) {
+		return $path . ':type';
+	}
+	if ( ! is_array( $left ) ) {
+		return $left === $right ? '' : $path . ':' . (string) wp_json_encode( array( $left, $right ) );
+	}
+	if ( array_keys( $left ) !== array_keys( $right ) ) {
+		return $path . ':keys:' . (string) wp_json_encode( array( array_keys( $left ), array_keys( $right ) ) );
+	}
+	foreach ( $left as $key => $value ) {
+		$difference = $first_difference( $value, $right[ $key ], $path . '.' . $key );
+		if ( '' !== $difference ) {
+			return $difference;
+		}
+	}
+	return '';
+};
+$zip_uninterrupted_canonical = $canonical_compiled( $zip_uninterrupted_plan );
+$zip_resumed_canonical = $canonical_compiled( $zip_terminal['plan'] );
+$assert( $zip_uninterrupted_canonical === $zip_resumed_canonical, 'resumed ZIP planning must produce the byte-identical canonical plan from uninterrupted staged compilation outside process observations: ' . $first_difference( $zip_uninterrupted_canonical, $zip_resumed_canonical ) );
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_batch_pages' => 20 ) ) );
+$owned_report_destination = (string) ( $GLOBALS['ssi_direct_last_args']['failed_plan_report_destination'] ?? '' );
+$assert( str_contains( $owned_report_destination, '/static-site-importer/direct-artifact-imports/.ssi-artifact-run-direct-' ) && str_ends_with( $owned_report_destination, '/failed-plan/import-report.json' ) && is_dir( dirname( $owned_report_destination ) ), 'direct Ability runs reserve an importer-owned failed-plan report destination inside the retained workspace' );
+
 $fail_materialization = true;
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_checkpoint_publish'][] = static function ( $allowed, string $kind ) use ( &$fail_materialization ) {
 	if ( $fail_materialization && 'materialization' === $kind ) {
@@ -338,6 +433,10 @@ $quality_failure_response = $quality_failure_data['failure']['error']['data'] ??
 $assert( 'inline_svg_fallback' === ( $quality_failure_response['quality']['fallbacks'][0]['reason'] ?? '' ) && 'runtime_dependent_content' === ( $quality_failure_response['quality']['editability_policy']['failures'][0] ?? '' ) && $quality_failure_response === $quality_failure_evidence, 'quality-gate failures must return actionable fallback and editability reasons in both caller and run evidence' );
 $scrubbed_quality = $quality_failure_response['quality'] ?? array();
 $assert( ! isset( $scrubbed_quality['path'], $scrubbed_quality['workspace'], $scrubbed_quality['manifest'] ) && 1000 === strlen( $scrubbed_quality['long_value'] ?? '' ) && true === ( $scrubbed_quality['many']['_truncated'] ?? false ) && '[truncated]' === ( $scrubbed_quality['over_deep']['one']['two']['three']['four'] ?? '' ), 'quality-gate evidence must retain path stripping, string and item caps, and the original depth bound' );
+$GLOBALS['ssi_direct_materialization_error'] = null;
+$cli_report = $test_root . '/cli-import-report.json';
+Static_Site_Importer_Canonical_Import_Service::import_with_cli_report( $input(), $cli_report );
+$assert( $cli_report === ( $GLOBALS['ssi_direct_last_args']['report'] ?? '' ) && ! isset( $GLOBALS['ssi_direct_last_args']['failed_plan_report_destination'] ), 'the explicit CLI report destination remains authoritative over the owned failed-plan destination' );
 
 Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $test_root );
 $primitive_workspace->purge();

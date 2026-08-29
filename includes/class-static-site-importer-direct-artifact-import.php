@@ -32,7 +32,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	private static array $checkpoint_read_cache = array();
 
 	/** Start a server-owned run after normal canonical source normalization. */
-	public static function start( array $artifact, array $args, string $source_type, string $operation, array $provenance ) {
+	public static function start( array $artifact, array $args, string $source_type, string $operation, array $provenance, ?object $payload_reader = null ) {
 		self::$checkpoint_read_cache = array();
 
 		$freeze_started  = microtime( true );
@@ -42,17 +42,23 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			return $source_policy;
 		}
 
-		$policy                                = Static_Site_Importer_Client_Script_Policy::apply( $artifact, $args );
-		$artifact                              = $policy['artifact'];
-		$args['client_script_policy_report']   = $policy['report'];
-		$args['source_metadata']['collection'] = is_array( $args['source_metadata']['collection'] ?? null ) ? $args['source_metadata']['collection'] : array();
-		$args['source_metadata']['collection']['script_policy'] = $policy['report'];
-		$identity  = self::hash( $artifact );
 		$import_id = bin2hex( random_bytes( 32 ) );
 		$workspace = self::workspace( $import_id, true );
 		if ( is_wp_error( $workspace ) ) {
 			return $workspace;
 		}
+		$retained = self::retain_payloads( $artifact, $payload_reader, $workspace );
+		if ( is_wp_error( $retained ) ) {
+			$workspace->purge();
+			return $retained;
+		}
+		unset( $args['_static_site_importer_payload_reader'] );
+		$policy                                = Static_Site_Importer_Client_Script_Policy::apply( $artifact, $args );
+		$artifact                              = $policy['artifact'];
+		$args['client_script_policy_report']   = $policy['report'];
+		$args['source_metadata']['collection'] = is_array( $args['source_metadata']['collection'] ?? null ) ? $args['source_metadata']['collection'] : array();
+		$args['source_metadata']['collection']['script_policy'] = $policy['report'];
+		$identity = self::hash( $artifact );
 
 		$run          = array(
 			'import_id'  => $import_id,
@@ -75,6 +81,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			'work'       => array(
 				'content_policy_applications'       => 1,
 				'client_script_policy_applications' => 1,
+				'payloads_retained'                 => $retained,
 				'shared_prepares'                   => 0,
 				'page_prepare_passes'               => 0,
 				'page_plans_prepared'               => 0,
@@ -216,6 +223,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$prepare_pages  = array( $compiler, 'preparePages' );
 			$compile_pages  = array( $compiler, 'compilePreparedPages' );
 			$compose        = array( $compiler, 'compose' );
+			$payload_reader = self::payload_reader( $workspace );
 			if ( ! is_callable( $prepare_shared ) || ! is_callable( $prepare_pages ) || ! is_callable( $compile_pages ) || ! is_callable( $compose ) ) {
 				return self::fail( $workspace, $run, 'compiler', new WP_Error( 'static_site_importer_invalid_transformer', 'The direct artifact compiler does not implement the staged compilation contract.' ) );
 			}
@@ -255,7 +263,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				}
 				$run = $entered;
 				self::before_phase( 'prepare_shared', $run );
-				$shared = call_user_func( $prepare_shared, $artifact_state['artifact'] );
+				$shared = call_user_func( $prepare_shared, $artifact_state['artifact'], $payload_reader );
 				if ( 'blocks-engine/php-transformer/staged-shared-plan/v1' !== ( $shared['schema'] ?? '' ) || empty( $shared['digest'] ) || ! is_array( $shared['analysis']['page_ids'] ?? null ) ) {
 					throw new RuntimeException( 'Blocks Engine returned an invalid shared plan.' );
 				}
@@ -319,7 +327,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				}
 				self::before_phase( 'prepare_pages', $run, $prepare_ids );
 				$run['work']['page_prepare_passes'] = (int) $run['work']['page_prepare_passes'] + 1;
-				$page_plans                         = call_user_func( $prepare_pages, $artifact_state['artifact'], $shared );
+				$page_plans                         = call_user_func( $prepare_pages, $artifact_state['artifact'], $shared, $payload_reader );
 				foreach ( $prepare_ids as $page_id ) {
 					$page_plan = $page_plans[ $page_id ] ?? null;
 					$validated = self::validate_page_plan( $page_plan, $shared, $page_id );
@@ -395,7 +403,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				}
 				$run = $entered;
 				self::before_phase( 'compile_pages', $run, $batch_ids );
-				$batch = call_user_func( $compile_pages, $shared, array_values( $plans ) );
+				$batch = call_user_func( $compile_pages, $shared, array_values( $plans ), $payload_reader );
 				if ( ! is_array( $batch ) || array_keys( $batch ) !== $batch_ids ) {
 					return self::fail( $workspace, $run, 'compile_pages', new WP_Error( 'static_site_importer_direct_artifact_receipt_set_mismatch', 'Blocks Engine did not return the exact requested compiled receipt batch.' ), $batch_ids );
 				}
@@ -470,7 +478,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$composed = call_user_func( array( $result, 'toArray' ) );
 				$metrics  = is_array( $composed['metrics'] ?? null ) ? $composed['metrics'] : array();
 				if ( 0 !== (int) ( $metrics['html_document_transform_count'] ?? 0 ) || 0 !== (int) ( $metrics['normalization_count'] ?? 0 ) ) {
-					throw new RuntimeException( 'Terminal receipt composition performed HTML transforms or normalization.' );
+					throw new RuntimeException( sprintf( 'Terminal receipt composition performed %d HTML transforms and %d normalization passes.', (int) ( $metrics['html_document_transform_count'] ?? 0 ), (int) ( $metrics['normalization_count'] ?? 0 ) ) );
 				}
 				$ref = self::publish_checkpoint( $workspace, $run, 'composed', 'composed-result.json', array(
 					'result'        => $composed,
@@ -507,6 +515,15 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 
 			$args['compiled_artifact_result']                 = $composed_state['result'];
 			$args['_static_site_importer_precompiled_source'] = true;
+			$args['_static_site_importer_payload_reader']     = $payload_reader;
+			if ( '' === trim( (string) ( $args['report'] ?? '' ) ) ) {
+				$failed_plan_report = self::failed_plan_report_destination( $workspace );
+				if ( is_wp_error( $failed_plan_report ) ) {
+					return self::fail( $workspace, $run, 'failed_plan_report_destination', $failed_plan_report );
+				}
+				$args['failed_plan_report_destination'] = $failed_plan_report;
+				$args['failed_plan_artifact_prefix']    = 'direct-' . $run['import_id'] . '/failed-plan';
+			}
 
 			if ( 'plan' === $run['binding']['operation'] ) {
 				$entered = self::enter_phase( $workspace, $run, 'canonical_plan' );
@@ -792,6 +809,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			'work'                 => array(
 				'content_policy_applications'       => (int) ( $run['work']['content_policy_applications'] ?? 0 ),
 				'client_script_policy_applications' => (int) ( $run['work']['client_script_policy_applications'] ?? 0 ),
+				'payloads_retained'                 => (int) ( $run['work']['payloads_retained'] ?? 0 ),
 				'shared_prepares'                   => (int) ( $run['work']['shared_prepares'] ?? 0 ),
 				'page_prepare_passes'               => (int) ( $run['work']['page_prepare_passes'] ?? 0 ),
 				'page_plans_prepared'               => (int) ( $run['work']['page_plans_prepared'] ?? 0 ),
@@ -1055,6 +1073,14 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 	}
 
+	/** Reserve the retained run's private location for a possible gate-failure report. */
+	private static function failed_plan_report_destination( Static_Site_Importer_Artifact_Run_Workspace $workspace ) {
+		if ( ! $workspace->claim_directory( 'failed-plan' ) && ! is_dir( $workspace->directory() . '/failed-plan' ) ) {
+			return new WP_Error( 'static_site_importer_direct_artifact_failed_plan_workspace_unavailable', 'The failed-plan artifact workspace is unavailable.' );
+		}
+		return $workspace->path( 'failed-plan/import-report.json' );
+	}
+
 	/** Register expiry cleanup without exposing retained workspace paths. */
 	public static function register_cleanup(): void {
 		if ( function_exists( 'add_action' ) ) {
@@ -1092,6 +1118,77 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		$compiler = new $class();
 		return function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_direct_artifact_compiler', $compiler ) : $compiler;
+	}
+
+	/** Retain every reference-backed artifact payload before the source archive can disappear. */
+	private static function retain_payloads( array $artifact, ?object $reader, Static_Site_Importer_Artifact_Run_Workspace $workspace ) {
+		$references = array();
+		foreach ( is_array( $artifact['files'] ?? null ) ? $artifact['files'] : array() as $file ) {
+			if ( ! is_array( $file ) ) {
+				continue;
+			}
+			$reference = $file['payload_reference'] ?? ( is_array( $file['payload']['reference'] ?? null ) ? $file['payload']['reference'] : null );
+			if ( null === $reference ) {
+				continue;
+			}
+			if ( ! is_array( $reference ) || 'blocks-engine/payload-reference/v1' !== ( $reference['schema'] ?? null ) || ! is_string( $reference['id'] ?? null ) || '' === $reference['id'] || ! is_string( $reference['sha256'] ?? null ) || 1 !== preg_match( '/^[a-f0-9]{64}$/', $reference['sha256'] ) || ! is_int( $reference['bytes'] ?? null ) || 0 > $reference['bytes'] ) {
+				return new WP_Error( 'static_site_importer_direct_artifact_payload_reference_invalid', 'A direct artifact payload reference is invalid.' );
+			}
+			$id       = $reference['id'];
+			$contract = array(
+				'sha256' => $reference['sha256'],
+				'bytes'  => $reference['bytes'],
+			);
+			if ( isset( $references[ $id ] ) && $references[ $id ] !== $contract ) {
+				return new WP_Error( 'static_site_importer_direct_artifact_payload_reference_conflict', 'A direct artifact reuses one payload reference for different bytes.' );
+			}
+			$references[ $id ] = $contract;
+		}
+		if ( empty( $references ) ) {
+			return 0;
+		}
+		if ( ! is_object( $reader ) || ! is_callable( array( $reader, 'read' ) ) ) {
+			return new WP_Error( 'static_site_importer_direct_artifact_payload_reader_missing', 'Reference-backed direct artifacts require a payload reader.' );
+		}
+		foreach ( $references as $id => $contract ) {
+			$reference = array(
+				'schema' => 'blocks-engine/payload-reference/v1',
+				'id'     => $id,
+				'sha256' => $contract['sha256'],
+				'bytes'  => $contract['bytes'],
+			);
+			try {
+				$bytes = $reader->read( $reference );
+			} catch ( Throwable $error ) {
+				return new WP_Error( 'static_site_importer_direct_artifact_payload_unavailable', 'A referenced direct artifact payload is unavailable.' );
+			}
+			if ( ! is_string( $bytes ) || strlen( $bytes ) !== $contract['bytes'] || ! hash_equals( $contract['sha256'], hash( 'sha256', $bytes ) ) ) {
+				return new WP_Error( 'static_site_importer_direct_artifact_payload_mismatch', 'A referenced direct artifact payload does not match its declared digest and byte count.' );
+			}
+			$published = $workspace->publish_raw_once( self::payload_file( $id ), $bytes );
+			if ( is_wp_error( $published ) ) {
+				return $published;
+			}
+		}
+		return count( $references );
+	}
+
+	private static function payload_reader( Static_Site_Importer_Artifact_Run_Workspace $workspace ): object {
+		return new class( $workspace ) implements \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
+			public function __construct( private Static_Site_Importer_Artifact_Run_Workspace $workspace ) {}
+
+			public function read( array $reference ): string {
+				$bytes = $this->workspace->read_raw( 'payloads/' . hash( 'sha256', $reference['id'] ) . '.bin' );
+				if ( null === $bytes || strlen( $bytes ) !== $reference['bytes'] || ! hash_equals( $reference['sha256'], hash( 'sha256', $bytes ) ) ) {
+					throw new RuntimeException( 'A retained direct artifact payload is unavailable or corrupt.' );
+				}
+				return $bytes;
+			}
+		};
+	}
+
+	private static function payload_file( string $id ): string {
+		return 'payloads/' . hash( 'sha256', $id ) . '.bin';
 	}
 
 	private static function run_policy(): array {
@@ -1150,7 +1247,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	}
 
 	private static function binding_args( array $args ): array {
-		unset( $args['runtime_lifecycle_invocation_id'], $args['client_script_policy_report'], $args['missing_author_stylesheet_diagnostics'], $args['compiled_artifact_result'], $args['_static_site_importer_precompiled_source'], $args['import_run_id'] );
+		unset( $args['runtime_lifecycle_invocation_id'], $args['client_script_policy_report'], $args['missing_author_stylesheet_diagnostics'], $args['compiled_artifact_result'], $args['_static_site_importer_precompiled_source'], $args['_static_site_importer_payload_reader'], $args['import_run_id'] );
 		if ( is_array( $args['source_metadata']['collection'] ?? null ) ) {
 			unset( $args['source_metadata']['collection']['script_policy'] );
 			if ( empty( $args['source_metadata']['collection'] ) ) {
@@ -1241,7 +1338,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	/** Stream JSON tokens so artifact identity never requires an artifact-sized string. */
 	private static function hash_json_value( $context, $value, bool $canonical ): void {
 		if ( ! is_array( $value ) ) {
-			$encoded = wp_json_encode( $value );
+			$encoded = wp_json_encode( $value, JSON_PRESERVE_ZERO_FRACTION );
 			hash_update( $context, is_string( $encoded ) ? $encoded : '' );
 			return;
 		}

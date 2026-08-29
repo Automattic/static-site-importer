@@ -416,7 +416,7 @@
 					showStatus( root, 'WordPress Playground opened.' );
 				} else if ( report.success && report.preview && 'unavailable' === report.preview.status ) {
 					const requirement = report.preview.requires_ability_capable_target;
-					showStatus( root, requirement ? ( report.preview.message || 'URL preview needs a disposable WordPress target that exposes the import-url ability.' ) : ( report.preview.message || 'Preview unavailable: WP Codebox did not return a preview URL or Playground blueprint URL.' ) );
+					showStatus( root, requirement ? ( report.preview.message || 'URL preview needs a disposable WordPress target that exposes the import ability.' ) : ( report.preview.message || 'Preview unavailable: WP Codebox did not return a preview URL or Playground blueprint URL.' ) );
 				} else {
 					showStatus( root, report.success ? 'Preview request complete.' : 'Preview request failed.' );
 				}

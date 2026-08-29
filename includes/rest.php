@@ -1323,12 +1323,16 @@ function static_site_importer_staged_archive_payload_reader( array $archive ) {
 	if ( is_wp_error( $path ) ) {
 		return $path;
 	}
+	$interface = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\PayloadReader';
+	if ( ! interface_exists( $interface ) ) {
+		return new WP_Error( 'static_site_importer_missing_transformer_capability', 'Blocks Engine php-transformer does not expose the staged payload reader contract.' );
+	}
 
-	return new class( $path ) {
+	return new class( $path ) implements \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
 		public function __construct( private string $archive_path ) {}
 
 		public function read( array $reference ): string {
-			$id = isset( $reference['id'] ) ? (string) $reference['id'] : '';
+			$id = $reference['id'];
 			if ( ! str_starts_with( $id, 'zip-entry:' ) ) {
 				throw new RuntimeException( 'The staged payload reference is invalid.' );
 			}
@@ -1352,7 +1356,7 @@ function static_site_importer_staged_archive_payload_reader( array $archive ) {
 			try {
 				$stat   = $zip->statName( $entry );
 				$limits = static_site_importer_staged_archive_limits();
-				if ( ! is_array( $stat ) || ! isset( $reference['bytes'] ) || ! is_int( $reference['bytes'] ) || (int) $stat['size'] !== $reference['bytes'] || (int) $stat['size'] > $limits['max_entry_uncompressed_bytes'] || ( 0 === (int) $stat['comp_size'] ? (int) $stat['size'] > 0 : (int) $stat['size'] / (int) $stat['comp_size'] > $limits['max_compression_ratio'] ) ) {
+				if ( ! is_array( $stat ) || (int) $stat['size'] !== $reference['bytes'] || (int) $stat['size'] > $limits['max_entry_uncompressed_bytes'] || ( 0 === (int) $stat['comp_size'] ? (int) $stat['size'] > 0 : (int) $stat['size'] / (int) $stat['comp_size'] > $limits['max_compression_ratio'] ) ) {
 					throw new RuntimeException( 'The staged payload byte count changed.' );
 				}
 				$bytes = $zip->getFromName( $entry );

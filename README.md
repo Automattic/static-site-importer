@@ -67,7 +67,7 @@ When a generated artifact contains full-document HTML, Static Site Importer rout
 - Adds an **Import Static Site** button on the **Appearance -> Themes** screen.
 - Accepts pasted HTML, one public HTML URL, a direct `.html` / `.htm` upload, or a ZIP containing a static-site folder with an `index.html` shell/chrome entry point.
 - Allows ZIP/CLI source-site imports to include nested `.md` / `.markdown` content documents; `.mdx` is skipped with explicit diagnostics because MDX runtime components are not supported.
-- Provides a WP-CLI importer for a local HTML entry file or one public HTML URL; the local source file does not need to be named `index.html` unless you want automatic front-page assignment.
+- Provides one WP-CLI importer, `wp static-site-importer import`, for pasted HTML, website files, ZIP archives, and public URLs through the canonical `static-site-importer/import` ability.
 - Discovers readable sibling `*.html` files beside the selected entry file and recursive Markdown content documents under the source tree, then imports them as WordPress pages.
 - Compiles static HTML fragments and Markdown content through the Blocks Engine PHP transformer package helpers.
 - Stores converted page bodies on the imported WordPress pages as `post_content`.
@@ -292,43 +292,50 @@ This materializer is intentionally generic: WooCommerce is the first plugin-back
 
 ## CLI Usage
 
-The canonical ability uses `source.type` (`artifact`, `url`, or `upload`) and `operation` (`plan` or `apply`). Artifact planning returns the canonical WordPress site plan, diagnostics, quality evidence, and source provenance without writing to the destination. Upload sources contain an opaque `upload_ref` resolved only by the server-side `static_site_importer_resolve_upload_reference` filter; callers never provide filesystem paths.
+The canonical ability uses `source.type` (`html`, `files`, `zip`, or `url`) and `operation` (`plan` or `apply`). Planning returns the canonical WordPress site plan, diagnostics, quality evidence, and source provenance without writing to the destination. Reference-backed sources use opaque `source.ref` values resolved only by the server-side `static_site_importer_resolve_source_reference` filter; ability callers never provide filesystem paths.
 
-Use `--theme-materialization=block|classic` with both `import-theme` and `import-url`; `block` is the default. Use `--operation=plan` to emit a plan response without writes. Apply a saved response with `--operation=apply --plan=/absolute/path/to/plan-response.json`; SSI reads the regular local JSON file and routes it through the canonical ability. A classic plan response includes a versioned, hashed normalized artifact, projection, and complete normalized arguments bundle. Apply verifies every digest and requires the immutable `theme_materialization=classic` strategy before running the full classic lifecycle.
+`static-site-importer import` is the canonical host command. Its request file is the exact `static-site-importer/import` ability input, so every source type and option has one contract across PHP, REST, and WP-CLI. The command owns bounded continuation: it relaunches the same import step in fresh WordPress runtimes, passes SSI's opaque `import_id`, and prints only the terminal JSON result. A terminal failure prints the same machine-readable envelope and exits nonzero.
 
 ```bash
-wp static-site-importer import-theme /path/to/site/index.html \
-	--operation=plan \
-	--theme-materialization=block \
-  --slug=wordpress-is-dead \
-  --name="WordPress Is Dead" \
-  --activate \
-  --overwrite
-
-wp static-site-importer import-theme \
-  --url=https://example.com/ \
-  --slug=example-import \
-  --keep-source \
-  --report=report.json
-
-wp static-site-importer import-url https://example.com/ \
-  --slug=example-import \
-  --keep-source \
-  --report=report.json
-
-wp static-site-importer import-url https://example.com/ \
-  --slug=example-site \
-  --activate \
-  --overwrite
-
-# Commerce-bearing import on a host without WooCommerce: skip seeding and continue.
-wp static-site-importer import-theme /path/to/store/index.html \
-  --slug=store-no-woo \
-  --allow-missing-woocommerce \
-  --keep-source
+wp static-site-importer import --request=/absolute/path/to/import-request.json
 ```
 
-The CLI path imports all readable sibling `*.html` files in the same directory as the provided entry file plus recursive `.md` / `.markdown` content documents under the source tree. The entry file supplies the theme title, shared source chrome, background decoration, styles, and inline scripts; each source content file supplies a WordPress page body. `.mdx` files are unsupported and reported as skipped diagnostics.
+```json
+{
+  "operation": "apply",
+  "source": {
+    "type": "files",
+    "entrypoint": "index.html",
+    "files": [
+      {
+        "path": "index.html",
+        "content": "<main><h1>Portable site</h1></main>"
+      }
+    ]
+  },
+  "slug": "portable-site",
+  "name": "Portable Site",
+  "activate": true,
+  "overwrite": true
+}
+```
+
+The host prints one `static-site-importer/import-cli-receipt/v1` object. Use `--report=/absolute/path/to/import-report.json` for the operator-owned report destination and `--max-steps=<count>` to bound continuation (default 256). `--single-step` is the internal fresh-runtime seam; host integrations invoke the command without it. `--url=` is a minimal ergonomic source argument.
+
+Use `--theme-materialization=block|classic`; `block` is the default. Use `--operation=plan` or `"operation": "plan"` in the request to emit a plan without writes. Apply a saved response with `--plan=/absolute/path/to/plan-response.json`. A classic plan response includes a versioned, hashed normalized artifact, projection, and complete normalized arguments bundle. Apply verifies every digest and requires the immutable `theme_materialization=classic` strategy before running the full classic lifecycle.
+
+```bash
+wp static-site-importer import --url=https://example.com/ \
+  --operation=plan \
+  --slug=example-site \
+  > url-plan-receipt.json
+
+jq '.response' url-plan-receipt.json > url-plan.json
+wp static-site-importer import --plan=/absolute/path/to/url-plan.json
+
+# Commerce-bearing import: put allow_missing_woocommerce in the request JSON.
+wp static-site-importer import --request=/absolute/path/to/store-request.json
+```
 
 `index.html` has special front-page behavior: it becomes the `home` page slug and, when `--activate` is used, is assigned as the site's static front page. If the imported directory has no `index.html`, the pages are still imported, but the importer does not assign `page_on_front` automatically.
 
