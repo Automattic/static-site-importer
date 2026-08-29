@@ -450,7 +450,7 @@ $assert( 'installed_activated' === ( $gap_diagnostics[0]['materialization_status
 $receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan' ) );
 $assert( 'completed' === $receipt['status'], 'valid plan completes' );
 $assert( 'static-site-importer/materialization-receipt/v2' === $receipt['schema'] && $plan['plan_identity'] === ( $receipt['plan_identity'] ?? null ), 'receipt binds the producer plan identity.' );
-$assert( count( $plan['writes'] ) === count( $receipt['generated_files'] ), 'all canonical writes are materialized' );
+$assert( count( $plan['writes'] ) === count( $receipt['generated_files'] ), sprintf( 'all canonical writes are materialized (planned: %s, generated: %s)', wp_json_encode( array_column( $plan['writes'], 'target_path' ) ), wp_json_encode( array_column( $receipt['generated_files'], 'target_path' ) ) ) );
 $assert( file_exists( $GLOBALS['ssi_plan_root'] . '/site-plan/templates/front-page.html' ), 'templates are materialized' );
 $assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-plan/assets/assets/site.css' ), 'https://example.test/wp-content/themes/site-plan/assets/assets/logo.svg' ), 'root-relative stylesheet references resolve to declared theme assets' );
 $assert( 'posts' === $GLOBALS['ssi_plan_options']['show_on_front'], 'plan-only materialization does not change reading settings by default' );
@@ -881,7 +881,7 @@ $overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materi
 );
 $overlay_root    = $GLOBALS['ssi_plan_root'] . '/provider-overlay-plan';
 $assert( 'completed' === $overlay_receipt['status'] && 'completed' === ( $overlay_receipt['completed']['provider_layout_overlays']['status'] ?? '' ), 'provider layout receipt is applied only after stylesheet writes complete' );
-$assert( str_contains( (string) file_get_contents( $overlay_root . '/style.css' ), 'provider layout overlay: abcdef123456' ) && str_contains( (string) file_get_contents( $overlay_root . '/assets/css/editor-style.css' ), 'provider layout overlay: abcdef123456' ), 'generated frontend and editor stylesheets contain the deduplicated provider overlay' );
+$assert( str_contains( (string) file_get_contents( $overlay_root . '/style.css' ), 'provider layout overlay: abcdef123456' ) && str_contains( (string) file_get_contents( $overlay_root . '/assets/css/editor-style.css' ), 'provider layout overlay: abcdef123456' ) && str_contains( (string) file_get_contents( $overlay_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-provider-layout-overlay', get_stylesheet_uri()" ), 'generated frontend and editor stylesheets contain the deduplicated provider overlay and the frontend stylesheet is enqueued' );
 $resumed_overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$plan,
 	array(
@@ -890,16 +890,17 @@ $resumed_overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer
 	)
 );
 $resumed_overlay_files   = $resumed_overlay_receipt['completed']['provider_layout_overlays']['files'] ?? array();
-$assert( 'completed' === $resumed_overlay_receipt['status'] && 'already_satisfied' === ( $resumed_overlay_receipt['completed']['provider_layout_overlays']['status'] ?? '' ) && 2 === count( $resumed_overlay_files ) && array() === array_filter( $resumed_overlay_files, static fn( array $file ): bool => 'already_satisfied' !== ( $file['status'] ?? '' ) ), 'resumed provider overlay reconciles byte-identical stylesheet state with receipt evidence' );
-$canonical_overlay_targets = array( 'style.css', 'assets/css/editor-style.css' );
+$assert( 'completed' === $resumed_overlay_receipt['status'] && 'already_satisfied' === ( $resumed_overlay_receipt['completed']['provider_layout_overlays']['status'] ?? '' ) && 3 === count( $resumed_overlay_files ) && array() === array_filter( $resumed_overlay_files, static fn( array $file ): bool => 'already_satisfied' !== ( $file['status'] ?? '' ) ), 'resumed provider overlay reconciles byte-identical stylesheet and delivery state with receipt evidence' );
+$canonical_overlay_targets = array( 'style.css', 'assets/css/editor-style.css', 'functions.php' );
 $canonical_overlay_entries = static fn( array $receipt ): array => array_values( array_filter( $receipt['generated_files'] ?? array(), static fn( array $file ): bool => in_array( $file['target_path'] ?? '', $canonical_overlay_targets, true ) ) );
 $initial_overlay_entries   = $canonical_overlay_entries( $overlay_receipt );
 $resumed_overlay_entries   = $canonical_overlay_entries( $resumed_overlay_receipt );
-$assert( 2 === count( $initial_overlay_entries ) && $initial_overlay_entries === $resumed_overlay_entries && $initial_overlay_entries === array_values( array_filter( $overlay_receipt['completed']['files'] ?? array(), static fn( array $file ): bool => in_array( $file['target_path'] ?? '', $canonical_overlay_targets, true ) ) ) && $resumed_overlay_entries === array_values( array_filter( $resumed_overlay_receipt['completed']['files'] ?? array(), static fn( array $file ): bool => in_array( $file['target_path'] ?? '', $canonical_overlay_targets, true ) ) ), 'overlay resume preserves compatible canonical stylesheet entries in completed and legacy file receipts' );
-$assert( array() === array_filter( $resumed_overlay_entries, static fn( array $file ): bool => ! isset( $file['reconciliation_identity'], $file['hash'], $file['payload_hash'] ) || isset( $file['status'] ) ) && array() === array_filter( $resumed_overlay_entries, static fn( array $file ): bool => ! in_array( $file['hash'], array( hash_file( 'sha256', $overlay_root . '/style.css' ), hash_file( 'sha256', $overlay_root . '/assets/css/editor-style.css' ) ), true ) ), 'canonical stylesheet receipt entries preserve reconciliation compatibility with final overlay bytes' );
+$assert( 3 === count( $initial_overlay_entries ) && $initial_overlay_entries === $resumed_overlay_entries && $initial_overlay_entries === array_values( array_filter( $overlay_receipt['completed']['files'] ?? array(), static fn( array $file ): bool => in_array( $file['target_path'] ?? '', $canonical_overlay_targets, true ) ) ) && $resumed_overlay_entries === array_values( array_filter( $resumed_overlay_receipt['completed']['files'] ?? array(), static fn( array $file ): bool => in_array( $file['target_path'] ?? '', $canonical_overlay_targets, true ) ) ), 'overlay resume preserves compatible canonical stylesheet and delivery entries in completed and legacy file receipts' );
+$assert( array() === array_filter( $resumed_overlay_entries, static fn( array $file ): bool => ! isset( $file['reconciliation_identity'], $file['hash'], $file['payload_hash'] ) || isset( $file['status'] ) ) && array() === array_filter( $resumed_overlay_entries, static fn( array $file ): bool => ! in_array( $file['hash'], array( hash_file( 'sha256', $overlay_root . '/style.css' ), hash_file( 'sha256', $overlay_root . '/assets/css/editor-style.css' ), hash_file( 'sha256', $overlay_root . '/functions.php' ) ), true ) ), 'canonical stylesheet and delivery receipts preserve reconciliation compatibility with final overlay bytes' );
 $overlay_hashes                = array(
 	'style.css'                   => hash_file( 'sha256', $overlay_root . '/style.css' ),
 	'assets/css/editor-style.css' => hash_file( 'sha256', $overlay_root . '/assets/css/editor-style.css' ),
+	'functions.php'               => hash_file( 'sha256', $overlay_root . '/functions.php' ),
 );
 $conflicting_overlay           = $overlay;
 $conflicting_overlay['css']    = str_replace( 'gap:1rem', 'gap:2rem', $overlay['css'] );
@@ -912,7 +913,7 @@ $conflicting_overlay_receipt   = Static_Site_Importer_WordPress_Site_Plan_Materi
 		'provider_layout_overlays' => array( $conflicting_overlay ),
 	)
 );
-$assert( 'rejected' === $conflicting_overlay_receipt['status'] && 'provider_layout_overlay_rejected' === ( $conflicting_overlay_receipt['diagnostics'][0]['reason_code'] ?? '' ) && $overlay_hashes['style.css'] === hash_file( 'sha256', $overlay_root . '/style.css' ) && $overlay_hashes['assets/css/editor-style.css'] === hash_file( 'sha256', $overlay_root . '/assets/css/editor-style.css' ), 'conflicting provider overlay is rejected before either stylesheet changes' );
+$assert( 'rejected' === $conflicting_overlay_receipt['status'] && 'provider_layout_overlay_rejected' === ( $conflicting_overlay_receipt['diagnostics'][0]['reason_code'] ?? '' ) && $overlay_hashes['style.css'] === hash_file( 'sha256', $overlay_root . '/style.css' ) && $overlay_hashes['assets/css/editor-style.css'] === hash_file( 'sha256', $overlay_root . '/assets/css/editor-style.css' ) && $overlay_hashes['functions.php'] === hash_file( 'sha256', $overlay_root . '/functions.php' ), 'conflicting provider overlay is rejected before stylesheet or delivery bootstrap changes' );
 $forged_overlay        = $overlay;
 $forged_overlay['css'] = "/* Static Site Importer provider layout overlay: abcdef123456 */\nbody{background:url(https://example.test/x)}\n";
 $forged_root           = $GLOBALS['ssi_plan_root'] . '/forged-provider-overlay-plan';
@@ -953,12 +954,19 @@ $explicit_styles_writes = $explicit_styles->invoke(
 						'data'     => '.editor-styles-wrapper{color:black}',
 					),
 				),
+				array(
+					'target_path' => 'functions.php',
+					'payload'     => array(
+						'encoding' => 'utf8',
+						'data'     => '<?php',
+					),
+				),
 			),
 		),
 	),
 	array( $overlay )
 );
-$assert( is_array( $explicit_styles_writes ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'body{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', '.editor-styles-wrapper{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', 'provider layout overlay: abcdef123456' ), 'explicit canonical frontend and editor stylesheet payloads derive independent overlay-composed writes' );
+$assert( is_array( $explicit_styles_writes ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'body{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', '.editor-styles-wrapper{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/functions.php' ] ?? '', 'static-site-importer-provider-layout-overlay' ), 'explicit canonical frontend and editor stylesheet payloads derive independent overlay-composed writes with frontend delivery' );
 
 $font_result          = ( new ArtifactCompiler() )->compile(
 	array(
