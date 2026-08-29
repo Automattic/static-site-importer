@@ -112,6 +112,14 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					'responsive'  => true,
 				); }
 		}
+		if ( empty( $losses ) ) {
+			$rules[]      = $validated_map['scope'] . '{position:relative;pointer-events:auto}';
+			$operations[] = array(
+				'dimension'   => 'interaction',
+				'strategy'    => 'provider_interaction_carrier',
+				'target_hash' => hash( 'sha256', $validated_map['scope'] ),
+			);
+		}
 		$css     = empty( $rules ) ? '' : '/* Static Site Importer provider layout overlay: ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $rules ) ) ) . "\n";
 		$overlay = '' === $css ? array() : array(
 			'schema' => self::OVERLAY_SCHEMA,
@@ -155,10 +163,10 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( preg_match( '/^@media (\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\))\{(.+)\}$/D', $rule, $matches ) ) {
 			return self::safe_compiled_rule( $matches[2] );
 		}
-		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}))\{([^{}]+)\}$/D', $rule, $matches ) ) {
+		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12})?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
-		$allowed = array( 'display', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area' );
+		$allowed = array( 'display', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'position', 'pointer-events' );
 		foreach ( explode( ';', $matches[2] ) as $declaration ) {
 			if ( ! preg_match( '/^([a-z-]+):(.+)$/D', $declaration, $parts ) || ! in_array( $parts[1], $allowed, true ) || ! self::safe_value( str_replace( array( 'grid-template-columns', 'grid-template-rows', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area' ), array( 'columns', 'rows', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'flex_grow', 'flex_shrink', 'flex_basis', 'column', 'row', 'area' ), $parts[1] ), $parts[2] ) ) {
 				return false;
@@ -225,6 +233,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		if ( in_array( $fact, array( 'order', 'flex_grow', 'flex_shrink' ), true ) ) {
 			return (bool) preg_match( '/^-?[0-9]+(?:\.[0-9]+)?$/D', $value );
+		}
+		if ( 'position' === $fact ) {
+			return 'relative' === $value;
+		}
+		if ( 'pointer-events' === $fact ) {
+			return 'auto' === $value;
 		}
 		return (bool) preg_match( '/^(?:auto|none|span [1-9][0-9]*|[1-9][0-9]*|(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr)|minmax\((?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr), ?(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr)\)|repeat\([1-9][0-9]*, ?(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr)\))+(?: \/ [1-9][0-9]*)?$/D', $value );
 	}
