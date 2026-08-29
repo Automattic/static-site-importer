@@ -32,7 +32,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 	 * @return void
 	 */
 	public static function analyze_materialized_block_documents( array $documents, Static_Site_Importer_Import_Report $report ): void {
-		$documents = array_values( array_filter( $documents, static fn( $document ): bool => is_array( $document ) && is_string( $document['path'] ?? null ) && is_string( $document['content'] ?? null ) && '' !== trim( $document['content'] ) ) );
+		$documents = array_values( array_filter( $documents, static fn( $document ): bool => is_string( $document['path'] ?? null ) && is_string( $document['content'] ?? null ) && '' !== trim( $document['content'] ) ) );
 		if ( empty( $documents ) ) {
 			return;
 		}
