@@ -172,7 +172,7 @@ $assert( 0 === ( $form_report['quality']['core_html_block_count'] ?? -1 ), 'post
 $assert( 0 === count( array_filter( $form_report['diagnostics'], static fn ( array $diagnostic ): bool => 'generated_document_contains_core_html' === ( $diagnostic['reason'] ?? '' ) ) ), 'pre-graft-core-html-diagnostic-removed' );
 
 $materialized_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( '/tmp/source/index.html' );
-$materialized_report->merge_quality( array( 'core_html_block_count' => 9 ) );
+$materialized_report->merge_quality( array( 'block_count' => 9, 'core_html_block_count' => 9 ) );
 $materialized_report->set_in_section( 'generated_theme', 'block_documents', array( array( 'path' => 'source-projection', 'content' => 'retained' ) ) );
 Static_Site_Importer_Block_Document_Reporter::analyze_materialized_block_documents(
 	array(
@@ -182,6 +182,7 @@ Static_Site_Importer_Block_Document_Reporter::analyze_materialized_block_documen
 	$materialized_report
 );
 $assert( 1 === ( $materialized_report['quality']['core_html_block_count'] ?? -1 ), 'materialized-analysis-replaces-stale-core-html-count' );
+$assert( 2 === ( $materialized_report['quality']['block_count'] ?? -1 ), 'materialized-analysis-replaces-stale-block-count' );
 $assert( 2 === count( $materialized_report['materialized_content']['block_documents'] ?? array() ), 'materialized-analysis-reports-every-final-page' );
 $assert( 1 === count( $materialized_report['generated_theme']['block_documents'] ?? array() ), 'materialized-analysis-preserves-source-projection' );
 
