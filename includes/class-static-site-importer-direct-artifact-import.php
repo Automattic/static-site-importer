@@ -584,14 +584,31 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					}
 					$response = Static_Site_Importer_Canonical_Import_Service::success(
 						$prepared,
-						array_merge( $args, array( 'operation' => 'apply', 'source' => array( 'type' => $run['binding']['source_type'], 'import_id' => $run['import_id'] ) ) )
+						array_merge(
+							$args,
+							array(
+								'operation' => 'apply',
+								'source'    => array(
+									'type'      => $run['binding']['source_type'],
+									'import_id' => $run['import_id'],
+								),
+							)
+						)
 					);
 					$run['state']                              = 'running';
 					$run['phase']                              = 'dependencies_prepared';
 					$run['progress']['phase']                  = 'dependencies_prepared';
 					$run['progress']['updated_at']             = gmdate( 'c' );
 					$run['work']['lifecycle_preparations']     = 1;
-					$response                                  = array_merge( $response, array( 'import_id' => $run['import_id'], 'continuation' => true, 'continuation_reason' => 'dependencies_prepared', 'artifact_run' => self::evidence( $run ) ) );
+					$response                                  = array_merge(
+						$response,
+						array(
+							'import_id'           => $run['import_id'],
+							'continuation'        => true,
+							'continuation_reason' => 'dependencies_prepared',
+							'artifact_run'        => self::evidence( $run ),
+						)
+					);
 					$lifecycle_preparation_ref                 = self::publish_checkpoint( $workspace, $run, 'lifecycle_preparation', 'lifecycle-preparation-response.json', array( 'response' => $response ) );
 					if ( is_wp_error( $lifecycle_preparation_ref ) ) {
 						return self::fail( $workspace, $run, 'lifecycle_preparation', $lifecycle_preparation_ref );

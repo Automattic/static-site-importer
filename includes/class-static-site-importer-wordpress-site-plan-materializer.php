@@ -930,7 +930,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			);
 		if ( is_wp_error( $font_overlay ) ) {
 			$state['preflight_error'] = $font_overlay;
-			throw new InvalidArgumentException( (string) $font_overlay->get_error_code() );
+			throw new InvalidArgumentException( sanitize_key( (string) $font_overlay->get_error_code() ) );
 		}
 		$state['font_overlay']          = $font_overlay;
 		$state['composed_theme_writes'] = array_merge( $overlay_writes, self::font_overlay_writes( $state['theme_dir'], $font_overlay ) );
