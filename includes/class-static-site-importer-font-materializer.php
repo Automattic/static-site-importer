@@ -663,7 +663,7 @@ final class Static_Site_Importer_Font_Materializer {
 	private static function with_runtime_registration( array $writes, array $resolved_plan, array $required_faces, array $diagnostics, array $faces = array(), array $svg_receipts = array(), array $svg_consumers = array(), bool $enqueue_stylesheet = true ) {
 		$bootstrap = self::canonical_write_content( $resolved_plan['writes'] ?? array(), 'functions.php' );
 		if ( null === $bootstrap ) {
-			return new WP_Error( 'static_site_importer_font_materialization_bootstrap_target_missing' );
+			$bootstrap = "<?php\n";
 		}
 		$bootstrap .= "\nadd_action( 'wp_enqueue_scripts', static function (): void {\n";
 		if ( $enqueue_stylesheet ) {

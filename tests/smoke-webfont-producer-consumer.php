@@ -73,11 +73,11 @@ $assert( hash( 'sha256', 'fixture-37-inter-variable-font' ) === ( $overlay['requ
 
 $empty_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay(
 	array(),
-	array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) )
+	array( 'writes' => array() )
 );
 $empty_readiness = (string) ( array_values( array_filter( $empty_overlay['writes'], static fn( array $write ): bool => 'assets/js/font-readiness.js' === $write['target_path'] ) )[0]['content'] ?? '' );
 $empty_bootstrap = (string) ( array_values( array_filter( $empty_overlay['writes'], static fn( array $write ): bool => 'functions.php' === $write['target_path'] ) )[0]['content'] ?? '' );
-$assert( str_contains( $empty_readiness, 'document.fonts.ready' ) && str_contains( $empty_bootstrap, 'static-site-importer-font-readiness' ) && ! str_contains( $empty_bootstrap, 'static-site-importer-embedded-fonts' ), 'plans without materialized font faces still emit browser readiness evidence without enqueueing a nonexistent stylesheet' );
+$assert( str_starts_with( $empty_bootstrap, '<?php' ) && str_contains( $empty_readiness, 'document.fonts.ready' ) && str_contains( $empty_bootstrap, 'static-site-importer-font-readiness' ) && ! str_contains( $empty_bootstrap, 'static-site-importer-embedded-fonts' ), 'plans without a canonical bootstrap or materialized font faces synthesize browser readiness without enqueueing a nonexistent stylesheet' );
 
 $svg = '<svg xmlns="http://www.w3.org/2000/svg"><text font-family="Inter">Fixture 37</text></svg>';
 $svg_source_path = 'assets/materialized-svg/fixture-37.svg';

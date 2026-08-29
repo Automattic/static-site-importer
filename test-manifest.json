@@ -58,7 +58,7 @@
     { "path": "tests/smoke-google-fonts-cap-fallback.php", "environment": "standalone-php" },
     { "path": "tests/smoke-google-fonts-retry-determinism.php", "environment": "standalone-php" },
     { "path": "tests/smoke-website-artifact-import-input.php", "environment": "standalone-php" },
-    { "path": "tests/smoke-wordpress-site-plan-materializer.php", "environment": "wordpress-runtime" },
+    { "path": "tests/smoke-wordpress-site-plan-materializer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-product-seeder-rollback.php", "environment": "standalone-php" },
     { "path": "tests/smoke-artifact-run-primitives.php", "environment": "standalone-php" },
     { "path": "tests/smoke-shared-resource-plan.php", "environment": "standalone-php" },
