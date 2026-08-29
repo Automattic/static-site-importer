@@ -14,6 +14,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Static_Site_Importer_Entity_Materializer_Registry {
 
+	private const FORM_CONTROL_TOPOLOGY_MAX_DEPTH = 16;
+
 	/**
 	 * Per-capability provider selection contract.
 	 *
@@ -1673,7 +1675,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$max_depth = $candidate['max_depth'] ?? null;
 		$max_nodes = $candidate['max_nodes'] ?? null;
 		$nodes     = $candidate['nodes'] ?? null;
-		if ( ! is_int( $max_depth ) || $max_depth < 0 || $max_depth > 8 || ! is_int( $max_nodes ) || $max_nodes < 1 || $max_nodes > 128 || ! is_array( $nodes ) || ! array_is_list( $nodes ) || count( $nodes ) > $max_nodes ) {
+		if ( ! is_int( $max_depth ) || $max_depth < 0 || $max_depth > self::FORM_CONTROL_TOPOLOGY_MAX_DEPTH || ! is_int( $max_nodes ) || $max_nodes < 1 || $max_nodes > 128 || ! is_array( $nodes ) || ! array_is_list( $nodes ) || count( $nodes ) > $max_nodes ) {
 			return array( 'error' => 'control_topology exceeds the supported generic bounds.' );
 		}
 		if ( true === ( $candidate['truncated'] ?? false ) ) {
