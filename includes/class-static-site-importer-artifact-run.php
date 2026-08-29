@@ -122,7 +122,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 	}
 
 	public function publish_json( string $relative, array $data ) {
-		$json = wp_json_encode( $data, JSON_PRETTY_PRINT );
+		$json = wp_json_encode( $data, JSON_PRETTY_PRINT | JSON_PRESERVE_ZERO_FRACTION );
 		return is_string( $json ) ? $this->publish_raw( $relative, $json ) : new WP_Error( 'static_site_importer_artifact_workspace_json_invalid', 'Workspace JSON could not be encoded.' );
 	}
 
@@ -369,7 +369,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 	/** Stream the exact JSON_PRETTY_PRINT token sequence without one complete JSON allocation. */
 	private static function write_json_value( $handle, $value, int $depth ): bool {
 		if ( ! is_array( $value ) ) {
-			$encoded = wp_json_encode( $value, JSON_PRETTY_PRINT );
+			$encoded = wp_json_encode( $value, JSON_PRETTY_PRINT | JSON_PRESERVE_ZERO_FRACTION );
 			return is_string( $encoded ) && self::write_complete_handle( $handle, $encoded );
 		}
 		if ( empty( $value ) ) {
@@ -386,7 +386,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 				return false;
 			}
 			if ( ! $list ) {
-				$encoded_key = wp_json_encode( (string) $key, JSON_PRETTY_PRINT );
+				$encoded_key = wp_json_encode( (string) $key, JSON_PRETTY_PRINT | JSON_PRESERVE_ZERO_FRACTION );
 				if ( ! is_string( $encoded_key ) || ! self::write_complete_handle( $handle, $encoded_key . ': ' ) ) {
 					return false;
 				}
