@@ -21,6 +21,11 @@ test("website artifact import profile is complete and capability scoped", async 
     manifest: "runtime-package-manifest.json",
     profile: "website-artifact-import",
   })
+  assert.deepEqual(
+    homeboy.scopes?.release?.include,
+    profile.selectors.filter(({ path }) => !path.startsWith("vendor/")).map(({ path }) => path),
+    "Homeboy release coverage must match the profile's tracked source selectors",
+  )
   assert.deepEqual(profile.abilities, [
     "static-site-importer/import",
     "static-site-importer/materialize-wordpress-site-plan",
