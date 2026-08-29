@@ -665,6 +665,7 @@ final class Static_Site_Importer_Font_Materializer {
 		if ( null === $bootstrap ) {
 			return new WP_Error( 'static_site_importer_font_materialization_bootstrap_target_missing' );
 		}
+		$bootstrap .= "\nadd_action( 'after_setup_theme', static function (): void {\n    add_theme_support( 'editor-styles' );\n    add_editor_style( 'assets/css/editor-style.css' );\n} );\n";
 		$bootstrap .= "\nadd_action( 'wp_enqueue_scripts', static function (): void {\n";
 		if ( $enqueue_stylesheet ) {
 			$bootstrap .= "    wp_enqueue_style( 'static-site-importer-embedded-fonts', get_theme_file_uri( 'assets/css/embedded-fonts.css' ), array(), null );\n";
