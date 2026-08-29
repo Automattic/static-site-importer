@@ -1648,6 +1648,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( is_file( $path ) && self::file_hash( $path ) === hash( 'sha256', $content ) ) {
 				$result = array(
 					'target_path'             => $target,
+					'source_path'             => (string) ( $write['source_path'] ?? $target ),
 					'hash'                    => self::file_hash( $path ),
 					'payload_hash'            => hash( 'sha256', $content ),
 					'reconciliation_identity' => hash( 'sha256', "font-materialization\n" . $target ),
