@@ -12,6 +12,7 @@ use Automattic\BlocksEngine\PhpTransformer\WordPress\Runtime as Blocks_Engine_Wo
 require_once __DIR__ . '/class-static-site-importer-stylesheet-materializer.php';
 require_once __DIR__ . '/class-static-site-importer-protected-page-policy.php';
 require_once __DIR__ . '/class-static-site-importer-default-content.php';
+require_once __DIR__ . '/class-static-site-importer-route-document-metadata.php';
 if ( ! class_exists( 'Static_Site_Importer_Theme_Materialization_Strategy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-theme-materialization-strategy.php';
 }
@@ -566,18 +567,21 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				return self::failed_receipt( $state, 'materialization_reconciliation_metadata_write_failed' );
 			}
 			$materialized_markup = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] );
+			$provenance          = array(
+				'schema'                  => 'static-site-importer/page-provenance/v1',
+				'import_run_id'           => (string) ( $args['import_run_id'] ?? '' ),
+				'source_path'             => $page['source_path'],
+				'reconciliation_identity' => $page['reconciliation_identity'],
+				'content_hash'            => hash( 'sha256', $materialized_markup ),
+			);
+			$document_title = Static_Site_Importer_Route_Document_Metadata::title_from_page( $page );
+			if ( '' !== $document_title ) {
+				$provenance['document_title'] = $document_title;
+			}
 			update_post_meta(
 				$post,
 				'_static_site_importer_provenance',
-				wp_json_encode(
-					array(
-						'schema'                  => 'static-site-importer/page-provenance/v1',
-						'import_run_id'           => (string) ( $args['import_run_id'] ?? '' ),
-						'source_path'             => $page['source_path'],
-						'reconciliation_identity' => $page['reconciliation_identity'],
-						'content_hash'            => hash( 'sha256', $materialized_markup ),
-					)
-				)
+				wp_json_encode( $provenance )
 			);
 			foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
 				if ( ( $binding_report['source_path'] ?? '' ) === $page['source_path'] ) {

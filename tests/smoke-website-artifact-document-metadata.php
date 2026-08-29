@@ -144,6 +144,7 @@ if ( ! is_wp_error( $result ) ) {
 	$provenance = json_decode( (string) get_post_meta( $page_id, '_static_site_importer_provenance', true ), true );
 	$assert( 'ssi-smoke-run-001' === ( $provenance['import_run_id'] ?? '' ), 'page-provenance-meta-includes-import-run-id' );
 	$assert( 'index.html' === ( $provenance['source_path'] ?? '' ), 'page-provenance-meta-includes-source-path' );
+	$assert( 'Ember & Rye' === ( $provenance['document_title'] ?? '' ), 'page-provenance-meta-includes-document-title' );
 	$assert( 'blocks-engine/import-validation-result/v1' === ( $validation_result['schema'] ?? '' ), 'validation-result-schema' );
 	$assert( 'ImportValidationResult' === ( $validation_result['artifact_type'] ?? '' ), 'validation-result-artifact-type' );
 	$assert( 'passed' === ( $validation_result['status'] ?? '' ), 'validation-result-status-passed' );
@@ -176,6 +177,11 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( true === ( $scripts[0]['defer'] ?? false ), 'script-defer-is-preserved-in-document-metadata' );
 	$bootstrap = $read( $theme_dir . '/functions.php' );
 	$assert( str_contains( $bootstrap, "get_theme_file_uri( 'assets/assets/site.css' )" ), 'theme-bootstrap-enqueues-the-canonical-stylesheet', $bootstrap );
+	$previous_query       = $GLOBALS['wp_query'] ?? null;
+	$GLOBALS['wp_query']  = new WP_Query( array( 'page_id' => $page_id ) );
+	$rendered_route_title = wp_get_document_title();
+	$GLOBALS['wp_query']  = $previous_query;
+	$assert( 'Ember & Rye' === $rendered_route_title, 'single-page-runtime-title-matches-document-metadata', $rendered_route_title );
 }
 
 $missing_template_parts_result = Static_Site_Importer_Theme_Generator::import_website_artifact(
@@ -276,6 +282,19 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 	$assert( 'menu' === ( $documents_by_source['website/menu.html']['slug'] ?? '' ), 'menu-page-materializes' );
 	$assert( 'contact' === ( $documents_by_source['website/contact.html']['slug'] ?? '' ), 'contact-page-materializes' );
 	$assert( 'blocks-engine/wordpress-site-plan/v2' === ( $wordpress_site_plan['schema'] ?? '' ), 'wordpress-site-plan-contract-is-recorded' );
+	$multi_page_ids = $multi_page_result['pages'] ?? array();
+	foreach ( array( 'website/index.html' => 'Home Page', 'website/menu.html' => 'Menu Page' ) as $source_path => $expected_title ) {
+		$route_page_id       = (int) ( $multi_page_ids[ $source_path ] ?? 0 );
+		$route_page          = 0 < $route_page_id ? get_post( $route_page_id ) : null;
+		$provenance          = json_decode( (string) get_post_meta( $route_page_id, '_static_site_importer_provenance', true ), true );
+		$previous_query      = $GLOBALS['wp_query'] ?? null;
+		$GLOBALS['wp_query'] = new WP_Query( array( 'page_id' => $route_page_id ) );
+		$rendered_title      = wp_get_document_title();
+		$GLOBALS['wp_query'] = $previous_query;
+		$assert( $expected_title === ( $provenance['document_title'] ?? '' ), 'multi-page-provenance-retains-' . sanitize_key( $source_path ) . '-title' );
+		$assert( $expected_title === $rendered_title, 'multi-page-runtime-renders-' . sanitize_key( $source_path ) . '-title', $rendered_title );
+		$assert( $route_page instanceof WP_Post && $route_page->post_title !== $rendered_title, 'multi-page-editor-title-remains-independent-for-' . sanitize_key( $source_path ) );
+	}
 	$assert( 'blocks-engine/import-validation-result/v1' === ( $multi_report['import_validation_result']['schema'] ?? '' ), 'theme-report-persists-finalized-validation-result' );
 	$assert( $multi_report['import_validation_result'] === $multi_validation, 'theme-validation-sidecar-matches-finalized-report-contract' );
 	$assert( $multi_report['finding_packets'] === $multi_findings, 'theme-findings-sidecar-matches-finalized-report-contract' );
