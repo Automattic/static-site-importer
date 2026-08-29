@@ -7346,8 +7346,8 @@ test('staged visual source rebases site-root assets without changing the import 
   const sourceDirectory = path.join(fixtureDirectory, 'fixture');
   mkdirSync(path.join(sourceDirectory, 'nested'), { recursive: true });
   mkdirSync(path.join(sourceDirectory, 'assets', 'css'), { recursive: true });
-  writeFileSync(path.join(sourceDirectory, 'index.html'), '<link rel="stylesheet" href="/assets/css/site.css"><img src="/media/hero.jpg" srcset="/media/hero.jpg 1x, /media/hero@2x.jpg 2x"><a href="//external.test/page">External</a>');
-  writeFileSync(path.join(sourceDirectory, 'nested', 'index.html'), '<script src="/assets/app.js"></script><a href="#section">Section</a>');
+  writeFileSync(path.join(sourceDirectory, 'index.html'), '<link rel="stylesheet" href="/assets/css/site.css"><style>@font-face{src:url("/fonts/example.woff2")}</style><img src="/media/hero.jpg" srcset="/media/hero.jpg 1x, /media/hero@2x.jpg 2x" style="background:url(\'/media/hero.jpg\')"><a href="//external.test/page">External</a>');
+  writeFileSync(path.join(sourceDirectory, 'nested', 'index.html'), '<script src="/assets/app.js"></script><style>.hero{background:url(/media/hero.jpg)}</style><a href="#section">Section</a>');
   writeFileSync(path.join(sourceDirectory, 'assets', 'css', 'site.css'), '@import "/assets/css/base.css"; .hero{background:url(\'/media/hero.jpg?size=large#crop\')} .icon{background:url(data:image/png;base64,AA)}');
 
   const fixture = { id: 'Root Relative', directory: sourceDirectory };
@@ -7362,8 +7362,11 @@ test('staged visual source rebases site-root assets without changing the import 
   assert.match(rootHtml, /href="\.\/assets\/css\/site\.css"/);
   assert.match(rootHtml, /src="\.\/media\/hero\.jpg"/);
   assert.match(rootHtml, /srcset="\.\/media\/hero\.jpg 1x, \.\/media\/hero@2x\.jpg 2x"/);
+  assert.match(rootHtml, /url\("\.\/fonts\/example\.woff2"\)/);
+  assert.match(rootHtml, /style="background:url\('\.\/media\/hero\.jpg'\)"/);
   assert.match(rootHtml, /href="\/\/external\.test\/page"/);
   assert.match(nestedHtml, /src="\.\.\/assets\/app\.js"/);
+  assert.match(nestedHtml, /url\(\.\.\/media\/hero\.jpg\)/);
   assert.match(nestedHtml, /href="#section"/);
   assert.match(css, /@import "\.\.\/\.\.\/assets\/css\/base\.css"/);
   assert.match(css, /url\('\.\.\/\.\.\/media\/hero\.jpg\?size=large#crop'\)/);
