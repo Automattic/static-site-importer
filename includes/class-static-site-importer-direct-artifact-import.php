@@ -92,6 +92,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				'materialization_claims'            => 0,
 				'materialization_attempts'          => 0,
 				'materializations'                  => 0,
+				'lifecycle_preparation_claims'       => 0,
+				'lifecycle_preparation_attempts'     => 0,
+				'lifecycle_preparations'             => 0,
 			),
 			'progress'   => array(
 				'phase'         => 'freezing',
@@ -127,7 +130,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			return self::continuation( $run, 'artifact_frozen' );
 		}
 
-		return self::execute( $workspace, $run );
+		return self::execute( $workspace, $run, $args );
 	}
 
 	/** Resume an opaque run without reacquiring source bytes. */
@@ -168,23 +171,23 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			return is_wp_error( $final ) ? $final : $final['response'];
 		}
 
-		return self::execute( $workspace, $run );
+		return self::execute( $workspace, $run, $args );
 	}
 
 	/** Continue the phase machine until its server-owned work boundary. */
-	private static function execute( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run ) {
+	private static function execute( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run, array $request_args ) {
 		$lock = $workspace->acquire_lock( 'execution.lock' );
 		if ( is_wp_error( $lock ) ) {
 			return self::continuation( $run, 'run_in_progress' );
 		}
 		try {
-			return self::execute_locked( $workspace, $run );
+			return self::execute_locked( $workspace, $run, $request_args );
 		} finally {
 			$workspace->release_lock( $lock );
 		}
 	}
 
-	private static function execute_locked( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run ) {
+	private static function execute_locked( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run, array $request_args ) {
 		if ( $workspace->is_expired() ) {
 			$workspace->purge();
 			return new WP_Error( 'static_site_importer_direct_artifact_run_expired', 'The retained direct artifact run expired and must be restarted.' );
@@ -512,6 +515,28 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			}
 			$artifact = $artifact_state['artifact'];
 			$args     = $artifact_state['args'];
+			$lifecycle_preparation_ref = self::existing_checkpoint_ref( $workspace, $run, 'lifecycle-preparation-response.json', 'lifecycle_preparation' );
+			if ( is_wp_error( $lifecycle_preparation_ref ) ) {
+				return $lifecycle_preparation_ref;
+			}
+			if ( ! empty( $lifecycle_preparation_ref ) ) {
+				$run['refs']['lifecycle_preparation'] = $lifecycle_preparation_ref;
+				$prepared = self::read_checkpoint( $workspace, $run, $lifecycle_preparation_ref, 'lifecycle_preparation' );
+				if ( is_wp_error( $prepared ) ) {
+					return $prepared;
+				}
+				if ( '' === trim( (string) ( $request_args['runtime_lifecycle_checkpoint'] ?? '' ) ) ) {
+					return $prepared['response'];
+				}
+				$prepared_result = $prepared['response']['result'];
+				$prepared_request_id = (string) ( $prepared_result['fresh_runtime']['request_id'] ?? '' );
+				if ( 'resume' !== ( $request_args['runtime_lifecycle_phase'] ?? '' )
+					|| ! hash_equals( (string) $prepared_result['runtime_lifecycle_checkpoint'], (string) $request_args['runtime_lifecycle_checkpoint'] )
+					|| ( '' !== $prepared_request_id && ! hash_equals( $prepared_request_id, (string) ( $request_args['runtime_lifecycle_request_id'] ?? '' ) ) ) ) {
+					return new WP_Error( 'static_site_importer_direct_artifact_lifecycle_resume_mismatch', 'The runtime lifecycle resume transport does not match the durable dependency preparation response.' );
+				}
+				$args = self::with_lifecycle_transport( $args, $request_args );
+			}
 
 			$args['compiled_artifact_result']                 = $composed_state['result'];
 			$args['_static_site_importer_precompiled_source'] = true;
@@ -537,6 +562,44 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				}
 				$response['source']['identity'] = (string) ( $run['binding']['source_identity'] ?? '' );
 			} else {
+				if ( empty( $lifecycle_preparation_ref ) && 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
+					if ( ! $workspace->claim_directory( 'lifecycle-preparation-claim' ) ) {
+						return self::fail( $workspace, $run, 'lifecycle_preparation_claim', new WP_Error( 'static_site_importer_direct_artifact_lifecycle_preparation_ambiguous', 'Runtime dependency preparation was already claimed without a durable result; the import will not repeat dependency mutation.' ) );
+					}
+					$run['work']['lifecycle_preparation_claims']   = 1;
+					$run['work']['lifecycle_preparation_attempts'] = (int) $run['work']['lifecycle_preparation_attempts'] + 1;
+					$args['import_run_id']                         = $run['import_id'];
+					$entered                                       = self::enter_phase( $workspace, $run, 'prepare_lifecycle' );
+					if ( is_wp_error( $entered ) ) {
+						return $entered;
+					}
+					$run = $entered;
+					self::before_phase( 'prepare_lifecycle', $run );
+					$prepared = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $args );
+					if ( is_wp_error( $prepared ) ) {
+						return self::fail( $workspace, $run, 'prepare_lifecycle', $prepared );
+					}
+					if ( 'dependencies_prepared' !== ( $prepared['status'] ?? '' ) || '' === trim( (string) ( $prepared['runtime_lifecycle_checkpoint'] ?? '' ) ) ) {
+						return self::fail( $workspace, $run, 'prepare_lifecycle', new WP_Error( 'static_site_importer_direct_artifact_lifecycle_preparation_invalid', 'Runtime dependency preparation did not return a resumable lifecycle checkpoint.' ) );
+					}
+					$response = Static_Site_Importer_Canonical_Import_Service::success(
+						$prepared,
+						array_merge( $args, array( 'operation' => 'apply', 'source' => array( 'type' => $run['binding']['source_type'], 'import_id' => $run['import_id'] ) ) )
+					);
+					$run['state']                              = 'running';
+					$run['phase']                              = 'dependencies_prepared';
+					$run['progress']['phase']                  = 'dependencies_prepared';
+					$run['progress']['updated_at']             = gmdate( 'c' );
+					$run['work']['lifecycle_preparations']     = 1;
+					$response                                  = array_merge( $response, array( 'import_id' => $run['import_id'], 'continuation' => true, 'continuation_reason' => 'dependencies_prepared', 'artifact_run' => self::evidence( $run ) ) );
+					$lifecycle_preparation_ref                 = self::publish_checkpoint( $workspace, $run, 'lifecycle_preparation', 'lifecycle-preparation-response.json', array( 'response' => $response ) );
+					if ( is_wp_error( $lifecycle_preparation_ref ) ) {
+						return self::fail( $workspace, $run, 'lifecycle_preparation', $lifecycle_preparation_ref );
+					}
+					$run['refs']['lifecycle_preparation'] = $lifecycle_preparation_ref;
+					$write = self::write_run( $workspace, $run );
+					return is_wp_error( $write ) ? self::fail( $workspace, $run, 'lifecycle_preparation_checkpoint', $write ) : $response;
+				}
 				if ( empty( $run['refs']['materialization'] ) ) {
 					$materialization_ref = self::existing_checkpoint_ref( $workspace, $run, 'materialization-result.json', 'materialization' );
 					if ( is_wp_error( $materialization_ref ) ) {
@@ -637,6 +700,13 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$run['progress']['updated_at']         = gmdate( 'c' );
 		$write                                 = self::write_run( $workspace, $run );
 		return is_wp_error( $write ) ? $write : $run;
+	}
+
+	private static function with_lifecycle_transport( array $args, array $request_args ): array {
+		foreach ( array( 'runtime_lifecycle_phase', 'runtime_lifecycle_request_id', 'runtime_lifecycle_invocation_id', 'runtime_lifecycle_checkpoint' ) as $key ) {
+			$args[ $key ] = $request_args[ $key ] ?? '';
+		}
+		return $args;
 	}
 
 	/** @return array<string,mixed>|WP_Error */
@@ -820,6 +890,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				'materialization_claims'            => (int) ( $run['work']['materialization_claims'] ?? 0 ),
 				'materialization_attempts'          => (int) ( $run['work']['materialization_attempts'] ?? 0 ),
 				'materializations'                  => (int) ( $run['work']['materializations'] ?? 0 ),
+				'lifecycle_preparation_claims'       => (int) ( $run['work']['lifecycle_preparation_claims'] ?? 0 ),
+				'lifecycle_preparation_attempts'     => (int) ( $run['work']['lifecycle_preparation_attempts'] ?? 0 ),
+				'lifecycle_preparations'             => (int) ( $run['work']['lifecycle_preparations'] ?? 0 ),
 			),
 			'phase_timings'        => array_map(
 				'floatval',
@@ -1247,7 +1320,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	}
 
 	private static function binding_args( array $args ): array {
-		unset( $args['runtime_lifecycle_invocation_id'], $args['client_script_policy_report'], $args['missing_author_stylesheet_diagnostics'], $args['compiled_artifact_result'], $args['_static_site_importer_precompiled_source'], $args['_static_site_importer_payload_reader'], $args['import_run_id'] );
+		unset( $args['runtime_lifecycle_phase'], $args['runtime_lifecycle_request_id'], $args['runtime_lifecycle_invocation_id'], $args['runtime_lifecycle_checkpoint'], $args['client_script_policy_report'], $args['missing_author_stylesheet_diagnostics'], $args['compiled_artifact_result'], $args['_static_site_importer_precompiled_source'], $args['_static_site_importer_payload_reader'], $args['import_run_id'] );
 		if ( is_array( $args['source_metadata']['collection'] ?? null ) ) {
 			unset( $args['source_metadata']['collection']['script_policy'] );
 			if ( empty( $args['source_metadata']['collection'] ) ) {
@@ -1310,6 +1383,14 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		if ( 'materialization' === $kind ) {
 			return is_array( $payload['result'] ?? null );
+		}
+		if ( 'lifecycle_preparation' === $kind ) {
+			return is_array( $payload['response'] ?? null )
+				&& ! empty( $payload['response']['success'] )
+				&& ! empty( $payload['response']['continuation'] )
+				&& 'dependencies_prepared' === ( $payload['response']['continuation_reason'] ?? '' )
+				&& '' !== trim( (string) ( $payload['response']['result']['runtime_lifecycle_checkpoint'] ?? '' ) )
+				&& '' !== trim( (string) ( $payload['response']['result']['fresh_runtime']['request_id'] ?? '' ) );
 		}
 		if ( 'final' === $kind ) {
 			return is_array( $payload['response'] ?? null ) && ! empty( $payload['response']['success'] ) && empty( $payload['response']['continuation'] );
