@@ -81,6 +81,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( is_wp_error( $dependencies ) ) {
 			return $dependencies;
 		}
+		if ( ! isset( $args['plan_hash'] ) || ! is_scalar( $args['plan_hash'] ) || '' === (string) $args['plan_hash'] ) {
+			$args['plan_hash'] = is_string( $prepared['plan_identity']['hash'] ?? null ) ? $prepared['plan_identity']['hash'] : '';
+		}
 		$entity_result = $page_ready ? array(
 			'reports' => array(),
 			'error'   => null,

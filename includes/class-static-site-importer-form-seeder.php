@@ -485,6 +485,17 @@ class Static_Site_Importer_Form_Seeder {
 		self::append_receipt_entries( $layout['receipt'], 'losses', $overlay['losses'] );
 		$layout['receipt']['status'] = $layout['receipt']['operations_total'] > 0 ? 'applied' : ( $layout['receipt']['losses_total'] > 0 ? 'deferred' : 'skipped' );
 		$markup                      = self::context_block_markup( $form, 'context_before' ) . self::serialize_block( 'jetpack/contact-form', $form_attrs, $inner_blocks ) . self::context_block_markup( $form, 'context_after' );
+		$source_action               = isset( $form['form']['action'] ) && is_scalar( $form['form']['action'] ) ? trim( (string) $form['form']['action'] ) : '';
+		$required_fields             = array();
+		foreach ( $controls as $control ) {
+			if ( ! is_array( $control ) || empty( $control['required'] ) ) {
+				continue;
+			}
+			$name = isset( $control['name'] ) && is_scalar( $control['name'] ) ? trim( (string) $control['name'] ) : '';
+			if ( '' !== $name ) {
+				$required_fields[] = $name;
+			}
+		}
 		$row                         = array(
 			'selector'                    => $selector,
 			'source_path'                 => $source_path,
@@ -495,6 +506,8 @@ class Static_Site_Importer_Form_Seeder {
 			'field_blocks'                => $mapped_types,
 			'skipped_types'               => array_values( array_unique( array_filter( $skipped ) ) ),
 			'submit_text'                 => $submit_text,
+			'source_action'               => $source_action,
+			'required_fields'             => $required_fields,
 			'runtime_mapped'              => true,
 			'runtime_carried'             => $available,
 			'block_markup'                => $markup,

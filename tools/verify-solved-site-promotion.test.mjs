@@ -49,7 +49,28 @@ test('issues an accepted immutable promotion receipt', () => {
   assert.equal(receipt.status, 'accepted');
   assert.equal(receipt.candidate.blocks_engine_sha, BE_SHA);
   assert.equal(receipt.corpus.selected_fixture_count, 1);
+  assert.equal(receipt.gates.provider_submission, 'passed');
   assert.ok(receipt.evidence.artifacts.every((row) => /^[a-f0-9]{64}$/.test(row.sha256)));
+});
+
+test('accepts mapped form submission evidence bound to the materialization receipt', () => {
+  const input = fixture();
+  input.matrix.fixtures[0].provider_submission_evidence = {
+    schema: 'static-site-importer/provider-submission-evidence/v1',
+    status: 'accepted',
+    notification: { capability: 'unavailable', required_for_receipt: false, transport: 'none', sent: false },
+    forms: [{
+      schema: 'static-site-importer/provider-submission-evidence/v1',
+      status: 'accepted',
+      identity: { form_identity: 'a'.repeat(64), plan_hash: 'abc', provider: 'jetpack', provider_version: 'wordpress-owned' },
+      request: { endpoint_kind: 'wordpress_owned', endpoint: 'static-site-importer/provider-submission-store/v1', source_endpoint_retained: false },
+      receipt: { kind: 'local_submission_record', id: 'sub_1', stored: true },
+      notification: { capability: 'unavailable', required_for_receipt: false, sent: false },
+      behaviors: {},
+    }],
+  };
+  write(input.paths.matrix, input.matrix);
+  assert.equal(verifySolvedSitePromotion(input.options).gates.provider_submission, 'passed');
 });
 
 test('accepts complete v1 presentation evidence with complete raw plan provenance', () => {
@@ -157,6 +178,20 @@ for (const [name, mutate, pattern] of [
   ['registry source schema mismatch', (input) => { input.registry.generated_from.result_schema = 'other/schema'; }, /result_schema/],
   ['registry fixture count mismatch', (input) => { input.registry.generated_from.fixture_count = 2; }, /fixture_count/],
   ['registry solved decision missing', (input) => { input.registry.fixture_decisions[0].fixture_corpus = 'active'; }, /solved fixture decision/],
+  ['mapped form without submission evidence', (input) => { input.matrix.fixtures[0].import_report = { entity_lifecycle: { entities: { forms: { counts: { mapped: 1 } } } } }; }, /provider submission evidence/],
+  ['mapped form with source endpoint retained', (input) => {
+    input.matrix.fixtures[0].provider_submission_evidence = {
+      schema: 'static-site-importer/provider-submission-evidence/v1',
+      status: 'accepted',
+      notification: { capability: 'unavailable', required_for_receipt: false, sent: false },
+      forms: [{
+        status: 'accepted',
+        request: { endpoint_kind: 'wordpress_owned', source_endpoint_retained: true },
+        receipt: { stored: true },
+        identity: { plan_hash: 'abc' },
+      }],
+    };
+  }, /source submission endpoint/],
 ]) {
   test(`fails closed for ${name}`, () => {
     const input = fixture(); mutate(input); write(input.paths.matrix, input.matrix); write(input.paths.registry, input.registry); write(input.paths.runtime, input.runtime);

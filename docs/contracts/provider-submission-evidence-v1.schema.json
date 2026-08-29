@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "static-site-importer/provider-submission-evidence/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status", "forms", "notification"],
+  "properties": {
+    "schema": { "const": "static-site-importer/provider-submission-evidence/v1" },
+    "status": { "enum": ["accepted", "failed", "skipped"] },
+    "identity": { "type": "object" },
+    "forms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["schema", "status", "identity", "request", "receipt", "notification", "behaviors"],
+        "properties": {
+          "schema": { "const": "static-site-importer/provider-submission-evidence/v1" },
+          "status": { "enum": ["accepted", "failed"] },
+          "reason": { "type": "string" },
+          "identity": {
+            "type": "object",
+            "properties": {
+              "source_path": { "type": "string" },
+              "selector": { "type": "string" },
+              "form_identity": { "type": "string", "minLength": 1 },
+              "provider": { "type": "string" },
+              "provider_version": { "type": "string" },
+              "plan_hash": { "type": "string" },
+              "materialization_receipt": { "type": "object" }
+            }
+          },
+          "request": {
+            "type": "object",
+            "required": ["endpoint_kind", "endpoint", "source_endpoint_retained"],
+            "properties": {
+              "endpoint_kind": { "const": "wordpress_owned" },
+              "endpoint": { "const": "static-site-importer/provider-submission-store/v1" },
+              "source_action": { "type": "string" },
+              "source_endpoint_external": { "type": "boolean" },
+              "source_endpoint_retained": { "const": false }
+            }
+          },
+          "receipt": {
+            "type": "object",
+            "required": ["kind", "stored"],
+            "properties": {
+              "kind": { "type": "string", "minLength": 1 },
+              "id": { "type": "string" },
+              "stored": { "type": "boolean" }
+            }
+          },
+          "notification": {
+            "type": "object",
+            "required": ["capability", "required_for_receipt", "sent"],
+            "properties": {
+              "capability": { "enum": ["configured", "unavailable"] },
+              "required_for_receipt": { "const": false },
+              "transport": { "const": "none" },
+              "sent": { "const": false }
+            }
+          },
+          "behaviors": { "type": "object" }
+        }
+      }
+    },
+    "notification": {
+      "type": "object",
+      "required": ["capability", "required_for_receipt", "sent"],
+      "properties": {
+        "capability": { "enum": ["configured", "unavailable"] },
+        "required_for_receipt": { "const": false },
+        "transport": { "const": "none" },
+        "sent": { "type": "boolean" }
+      }
+    }
+  }
+}

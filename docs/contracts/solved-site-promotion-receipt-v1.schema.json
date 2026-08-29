@@ -45,16 +45,17 @@
     "gates": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["matrix", "solved_candidate", "materialization_receipts", "editor", "visual", "native_blocks", "artifacts"],
-      "properties": {
-        "matrix": { "const": "passed" },
-        "solved_candidate": { "const": "passed" },
-        "materialization_receipts": { "const": "passed" },
-        "editor": { "const": "passed" },
-        "visual": { "const": "passed" },
-        "native_blocks": { "const": "passed" },
-        "artifacts": { "const": "passed" }
-      }
+        "required": ["matrix", "solved_candidate", "materialization_receipts", "editor", "visual", "native_blocks", "artifacts", "provider_submission"],
+        "properties": {
+          "matrix": { "const": "passed" },
+          "solved_candidate": { "const": "passed" },
+          "materialization_receipts": { "const": "passed" },
+          "editor": { "const": "passed" },
+          "visual": { "const": "passed" },
+          "native_blocks": { "const": "passed" },
+          "artifacts": { "const": "passed" },
+          "provider_submission": { "const": "passed" }
+        }
     },
     "evidence": {
       "type": "object",

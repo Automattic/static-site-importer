@@ -35,6 +35,9 @@ if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Lifecycle_Compile_Checkpoint' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-lifecycle-compile-checkpoint.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Provider_Submission_Evidence' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-provider-submission-evidence.php';
+}
 
 /**
  * Generates a block theme from a static HTML document.
@@ -647,6 +650,16 @@ class Static_Site_Importer_Theme_Generator {
 			'theme_materialization'            => $receipt['theme_materialization'] ?? array(),
 			'diagnostics'                      => $diagnostics,
 			'entity_lifecycle'                 => $entity_lifecycle,
+			'provider_submission_evidence'     => Static_Site_Importer_Provider_Submission_Evidence::bind_identity(
+				Static_Site_Importer_Provider_Submission_Evidence::from_entity_reports( $entities ),
+				array(
+					'plan_hash'               => is_string( $receipt['plan_identity']['hash'] ?? null ) ? $receipt['plan_identity']['hash'] : (string) ( $receipt['plan_hash'] ?? '' ),
+					'materialization_receipt' => array(
+						'status' => (string) ( $receipt['status'] ?? '' ),
+						'schema' => (string) ( $receipt['schema'] ?? '' ),
+					),
+				)
+			),
 			'companion_plugin_materialization' => $receipt['completed']['companion_plugin'] ?? array(
 				'status' => 'skipped',
 				'reason' => 'companion_plugin_payload_absent',

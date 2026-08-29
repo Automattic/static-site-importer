@@ -88,6 +88,7 @@ export function verifySolvedSitePromotion(input) {
       visual: 'passed',
       native_blocks: 'passed',
       artifacts: 'passed',
+      provider_submission: 'passed',
     },
     evidence: {
       run_url: options.runUrl,
@@ -155,6 +156,29 @@ function verifyFixture(fixture, decision, options, requiredFiles) {
   const editorQuality = fixture.editor_quality || {};
   assertFiniteMetric(editorQuality, 'native_conversion_rate', id);
   assert(Number(editorQuality.native_conversion_rate) === 1, `${id}: native conversion rate must equal 1.`);
+  verifyProviderSubmission(fixture, receipt);
+}
+
+function verifyProviderSubmission(fixture, receipt) {
+  const id = String(fixture.fixture_id || 'unknown');
+  const evidence = fixture.provider_submission_evidence || fixture.import_report?.provider_submission_evidence || fixture.matrix_evidence?.provider_submission_evidence || {};
+  const forms = Array.isArray(evidence.forms) ? evidence.forms : [];
+  const entityReports = Object.values(fixture.import_report?.entity_lifecycle?.entities || {});
+  const mapped = forms.length > 0 || entityReports.some((report) => Number(report?.counts?.mapped || 0) > 0);
+  if (!mapped) return;
+  assert(evidence.schema === 'static-site-importer/provider-submission-evidence/v1', `${id}: provider submission evidence schema is missing.`);
+  assert(evidence.status === 'accepted', `${id}: provider submission evidence was not accepted.`);
+  assert(evidence.notification?.required_for_receipt === false, `${id}: notification must not be required for local receipt.`);
+  assert(evidence.notification?.sent === false, `${id}: verification must not send notification.`);
+  const planHash = receipt.plan_hash || receipt.plan_identity?.hash || '';
+  assert(forms.length > 0, `${id}: mapped forms require per-form submission evidence.`);
+  for (const form of forms) {
+    assert(form.status === 'accepted', `${id}: mapped form submission was not accepted.`);
+    assert(form.request?.endpoint_kind === 'wordpress_owned', `${id}: submission must reach a WordPress-owned provider.`);
+    assert(form.request?.source_endpoint_retained === false, `${id}: source submission endpoint must not be retained.`);
+    assert(form.receipt?.stored === true, `${id}: provider receipt was not stored.`);
+    if (planHash) assert(form.identity?.plan_hash === planHash, `${id}: submission evidence is not bound to the plan hash.`);
+  }
 }
 
 function validateRuntime(runtime, options) {

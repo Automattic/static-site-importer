@@ -9,6 +9,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+require_once __DIR__ . '/class-static-site-importer-provider-submission-evidence.php';
+
 /**
  * Registers import-time entity validators, dependency requirements, and writers.
  */
@@ -803,6 +805,29 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				);
 			}
 			$reports[ $id ] = $report;
+			if ( 'form' === (string) ( $adapter['capability'] ?? '' ) ) {
+				$evidence = Static_Site_Importer_Provider_Submission_Evidence::verify_report(
+					$report,
+					array(
+						'provider'                 => (string) ( $adapter['provider'] ?? $report['provider'] ?? '' ),
+						'provider_version'         => Static_Site_Importer_Provider_Submission_Evidence::provider_version( $adapter, is_array( $report ) ? $report : array() ),
+						'plan_hash'                => isset( $args['plan_hash'] ) && is_scalar( $args['plan_hash'] ) ? (string) $args['plan_hash'] : '',
+						'materialization_receipt'  => isset( $args['materialization_receipt'] ) && is_array( $args['materialization_receipt'] ) ? $args['materialization_receipt'] : array(),
+					)
+				);
+				$report['provider_submission_evidence'] = $evidence;
+				$reports[ $id ]                         = $report;
+				$mapped                                 = (int) ( $report['counts']['mapped'] ?? 0 );
+				if ( $mapped > 0 && 'accepted' !== ( $evidence['status'] ?? '' ) ) {
+					return array(
+						'reports' => $reports,
+						'error'   => array(
+							'code'    => 'static_site_importer_provider_submission_unproven',
+							'message' => 'A mapped provider form did not prove a WordPress-owned submission receipt.',
+						),
+					);
+				}
+			}
 			$counts         = is_array( $report['counts'] ?? null ) ? $report['counts'] : array();
 			$expected       = count( is_array( $prepared['manifest']['products'] ?? null ) ? $prepared['manifest']['products'] : ( $prepared['manifest']['forms'] ?? array() ) );
 			$completed_keys = self::lifecycle_entity_has_bindings( $prepared ) ? array( 'created', 'updated', 'mapped' ) : array( 'created', 'updated', 'mapped', 'skipped' );
