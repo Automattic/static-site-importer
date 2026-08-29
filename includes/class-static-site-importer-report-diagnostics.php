@@ -118,6 +118,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'source_of_truth'         => array(
 				'schema'           => 'static-site-importer/source-of-truth-manifest/v1',
 				'import_run_id'    => '',
+				'build'            => array(),
 				'artifact'         => array(),
 				'desired'          => array(
 					'pages'  => array(),

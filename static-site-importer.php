@@ -53,6 +53,7 @@ Static_Site_Importer_Lifecycle_Compile_Checkpoint::register_cleanup();
 register_deactivation_hook( __FILE__, array( Static_Site_Importer_Lifecycle_Compile_Checkpoint::class, 'unschedule_cleanup' ) );
 
 $static_site_importer_includes = array(
+	'class-static-site-importer-build-provenance.php',
 	'class-static-site-importer-site-identity.php',
 	'class-static-site-importer-website-artifact-import-input.php',
 	'class-static-site-importer-theme-materialization-strategy.php',

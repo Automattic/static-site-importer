@@ -11,6 +11,7 @@
     { "path": "tests/smoke-ability-error-report-summary.php", "environment": "standalone-php" },
     { "path": "tests/smoke-ability-import-success-diagnostics.php", "environment": "standalone-php" },
     { "path": "tests/smoke-ability-registration-idempotent.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-build-provenance.php", "environment": "standalone-php" },
     { "path": "tests/smoke-canonical-import-ability.php", "environment": "standalone-php" },
     { "path": "tests/smoke-cli-import-continuation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-client-script-policy.php", "environment": "standalone-php" },
