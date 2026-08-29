@@ -556,6 +556,31 @@ class Static_Site_Importer_Form_Seeder {
 			if ( in_array( $tag, array( 'ul', 'ol', 'li' ), true ) ) {
 				return true;
 			}
+			if ( 'fieldset' === $tag && 'plain_group' === ( $node['fieldset_semantics'] ?? '' ) && null === ( $node['parent'] ?? null ) ) {
+				$nodes_by_id = array();
+				foreach ( $nodes as $candidate ) {
+					if ( is_array( $candidate ) && is_string( $candidate['id'] ?? null ) ) {
+						$nodes_by_id[ $candidate['id'] ] = $candidate;
+					}
+				}
+				foreach ( array_keys( $field_blocks ) as $control_index ) {
+					$control_node = null;
+					foreach ( $nodes as $candidate ) {
+						if ( is_array( $candidate ) && 'control' === ( $candidate['kind'] ?? '' ) && $control_index === ( $candidate['control'] ?? null ) ) {
+							$control_node = $candidate;
+							break;
+						}
+					}
+					$parent = $control_node['parent'] ?? null;
+					while ( is_string( $parent ) && $parent !== ( $node['id'] ?? '' ) ) {
+						$parent = $nodes_by_id[ $parent ]['parent'] ?? null;
+					}
+					if ( $parent !== ( $node['id'] ?? '' ) ) {
+						return false;
+					}
+				}
+				return ! empty( $field_blocks );
+			}
 			if ( 'label' !== $tag ) {
 				return false;
 			}
