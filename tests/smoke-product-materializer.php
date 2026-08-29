@@ -219,8 +219,9 @@ namespace {
 	}
 
 	// --- materialize_product_findings: manifest + seeding + gate-closure -----
-	$report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/shop.html' );
-	$report['diagnostics'][] = array(
+	$report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/shop.html' );
+	$report->append_diagnostic(
+		array(
 		'type'               => 'unsupported_html_fallback',
 		'diagnostic_code'    => 'html_product_grid_fallback',
 		'loss_class'         => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
@@ -250,6 +251,7 @@ namespace {
 				'source_selector'  => 'ul.products li:nth-child(2)',
 			),
 		),
+		)
 	);
 
 	$seeding = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $report, array() );
@@ -295,8 +297,9 @@ namespace {
 		. '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button">Add to cart</a></div><!-- /wp:button --></div><!-- /wp:buttons -->'
 		. '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button">Buy now</a></div><!-- /wp:button --></div><!-- /wp:buttons -->'
 		. '</div><!-- /wp:group -->';
-	$graft_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/shop.html' );
-	$graft_report['diagnostics'][] = array(
+	$graft_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/shop.html' );
+	$graft_report->append_diagnostic(
+		array(
 		'type'               => 'unsupported_html_fallback',
 		'diagnostic_code'    => 'html_product_grid_fallback',
 		'loss_class'         => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
@@ -323,15 +326,18 @@ namespace {
 				'has_cart_control' => true,
 			),
 		),
+		)
 	);
-	$graft_report['diagnostics'][0]['readable_blocks'][0]['attrs'] = array(
+	$graft_diagnostics = $graft_report->diagnostics();
+	$graft_diagnostics[0]['readable_blocks'][0]['attrs'] = array(
 		'backslash' => 'C:\\products\\shop',
 		'delimiter' => 'before -- after',
 		'angle'     => '<cart>',
 		'ampersand' => 'cart & checkout',
 		'quote'     => 'Click "buy"',
 	);
-	$button_region                 = serialize_blocks( $graft_report['diagnostics'][0]['readable_blocks'] );
+	$graft_report->set_diagnostics( $graft_diagnostics );
+	$button_region                 = serialize_blocks( $graft_report->diagnostics()[0]['readable_blocks'] );
 	$page_contents                 = array( 'website/shop.html' => $button_region );
 	$graft_seeding                 = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $graft_report, array(), $page_contents );
 	$assert( 1 === ( $graft_seeding['shortcode_grafted_count'] ?? 0 ), 'shortcode-grafted-count' );
@@ -342,9 +348,10 @@ namespace {
 	$assert( str_contains( $button_region, '\\u005c' ) && str_contains( $button_region, '\\u002d\\u002d' ) && str_contains( $button_region, '\\u003c' ) && str_contains( $button_region, '\\u003e' ) && str_contains( $button_region, '\\u0026' ) && str_contains( $button_region, '\\u0022' ), 'product-graft-anchor-uses-core-sensitive-attribute-serialization' );
 
 	// A resolvable product finding cannot consume an identical region on another page.
-	$owned_graft_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/owned-shop.html' );
-	$owned_graft_report['diagnostics'][] = $graft_report['diagnostics'][0];
-	$owned_graft_report['diagnostics'][0]['source_path'] = 'website/owned-shop.html';
+	$owned_graft_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/owned-shop.html' );
+	$owned_finding      = $graft_report->diagnostics()[0];
+	$owned_finding['source_path'] = 'website/owned-shop.html';
+	$owned_graft_report->append_diagnostic( $owned_finding );
 	$owned_graft_contents = array(
 		'website/owned-shop.html' => '<!-- wp:paragraph --><p>owner anchor is absent</p><!-- /wp:paragraph -->',
 		'website/other-shop.html' => $button_region,
@@ -378,9 +385,10 @@ namespace {
 	$assert( ! str_contains( $no_id_contents['website/shop.html'], '[add_to_cart id=' ), 'no-product-id-no-shortcode' );
 
 	// Quantity/options/custom state stay as honest preserved runtime HTML.
-	$unsafe_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/shop.html' );
-	$unsafe_report['diagnostics'][] = $graft_report['diagnostics'][0];
-	$unsafe_report['diagnostics'][0]['products'][0]['has_quantity_control'] = true;
+	$unsafe_report  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/shop.html' );
+	$unsafe_finding = $graft_report->diagnostics()[0];
+	$unsafe_finding['products'][0]['has_quantity_control'] = true;
+	$unsafe_report->append_diagnostic( $unsafe_finding );
 	$unsafe_contents = array( 'website/shop.html' => str_replace( '<!-- wp:buttons -->', '<button class="qty-btn">+</button><span class="qty-display">1</span><!-- wp:buttons -->', $button_region ) );
 	$unsafe_seeding  = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $unsafe_report, array(), $unsafe_contents );
 	$assert( 0 === ( $unsafe_seeding['shortcode_grafted_count'] ?? -1 ), 'unsafe-shortcode-not-grafted' );

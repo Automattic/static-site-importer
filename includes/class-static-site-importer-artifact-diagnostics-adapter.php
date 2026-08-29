@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Import_Report' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-import-report.php';
+}
+
 /**
  * Builds artifact diagnostics without owning the WP Codebox diagnostics schema.
  */
@@ -20,7 +24,7 @@ class Static_Site_Importer_Artifact_Diagnostics_Adapter {
 	 * @param array<string,mixed> $report Import report.
 	 * @return array<string,mixed>
 	 */
-	public static function build_for_import_report( array $report ): array {
+	public static function build_for_import_report( array|Static_Site_Importer_Import_Report $report ): array {
 		$input   = array( 'diagnostics' => $report['diagnostics'] ?? array() );
 		$options = array(
 			'source'          => 'static-site-importer',
@@ -73,7 +77,7 @@ class Static_Site_Importer_Artifact_Diagnostics_Adapter {
 	 * @param array<string,mixed> $report Import report.
 	 * @return array<string,mixed>
 	 */
-	private static function build_static_site_importer_diagnostics( array $report ): array {
+	private static function build_static_site_importer_diagnostics( array|Static_Site_Importer_Import_Report $report ): array {
 		$diagnostics = isset( $report['diagnostics'] ) && is_array( $report['diagnostics'] ) ? array_values( $report['diagnostics'] ) : array();
 		$summary     = array(
 			'total'   => count( $diagnostics ),

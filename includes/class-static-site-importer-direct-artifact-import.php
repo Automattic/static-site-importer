@@ -32,7 +32,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	private static array $checkpoint_read_cache = array();
 
 	/** Start a server-owned run after normal canonical source normalization. */
-	public static function start( array $artifact, array $args, string $source_type, string $operation, array $provenance ) {
+	public static function start( array $artifact, array $args, string $source_type, string $operation, array $provenance, ?object $payload_reader = null ) {
 		self::$checkpoint_read_cache = array();
 
 		$freeze_started  = microtime( true );
@@ -42,17 +42,23 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			return $source_policy;
 		}
 
-		$policy                                = Static_Site_Importer_Client_Script_Policy::apply( $artifact, $args );
-		$artifact                              = $policy['artifact'];
-		$args['client_script_policy_report']   = $policy['report'];
-		$args['source_metadata']['collection'] = is_array( $args['source_metadata']['collection'] ?? null ) ? $args['source_metadata']['collection'] : array();
-		$args['source_metadata']['collection']['script_policy'] = $policy['report'];
-		$identity  = self::hash( $artifact );
 		$import_id = bin2hex( random_bytes( 32 ) );
 		$workspace = self::workspace( $import_id, true );
 		if ( is_wp_error( $workspace ) ) {
 			return $workspace;
 		}
+		$retained = self::retain_payloads( $artifact, $payload_reader, $workspace );
+		if ( is_wp_error( $retained ) ) {
+			$workspace->purge();
+			return $retained;
+		}
+		unset( $args['_static_site_importer_payload_reader'] );
+		$policy                                = Static_Site_Importer_Client_Script_Policy::apply( $artifact, $args );
+		$artifact                              = $policy['artifact'];
+		$args['client_script_policy_report']   = $policy['report'];
+		$args['source_metadata']['collection'] = is_array( $args['source_metadata']['collection'] ?? null ) ? $args['source_metadata']['collection'] : array();
+		$args['source_metadata']['collection']['script_policy'] = $policy['report'];
+		$identity = self::hash( $artifact );
 
 		$run          = array(
 			'import_id'  => $import_id,
@@ -75,6 +81,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			'work'       => array(
 				'content_policy_applications'       => 1,
 				'client_script_policy_applications' => 1,
+				'payloads_retained'                 => $retained,
 				'shared_prepares'                   => 0,
 				'page_prepare_passes'               => 0,
 				'page_plans_prepared'               => 0,
@@ -85,6 +92,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				'materialization_claims'            => 0,
 				'materialization_attempts'          => 0,
 				'materializations'                  => 0,
+				'lifecycle_preparation_claims'      => 0,
+				'lifecycle_preparation_attempts'    => 0,
+				'lifecycle_preparations'            => 0,
 			),
 			'progress'   => array(
 				'phase'         => 'freezing',
@@ -120,7 +130,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			return self::continuation( $run, 'artifact_frozen' );
 		}
 
-		return self::execute( $workspace, $run );
+		return self::execute( $workspace, $run, $args );
 	}
 
 	/** Resume an opaque run without reacquiring source bytes. */
@@ -161,23 +171,23 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			return is_wp_error( $final ) ? $final : $final['response'];
 		}
 
-		return self::execute( $workspace, $run );
+		return self::execute( $workspace, $run, $args );
 	}
 
 	/** Continue the phase machine until its server-owned work boundary. */
-	private static function execute( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run ) {
+	private static function execute( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run, array $request_args ) {
 		$lock = $workspace->acquire_lock( 'execution.lock' );
 		if ( is_wp_error( $lock ) ) {
 			return self::continuation( $run, 'run_in_progress' );
 		}
 		try {
-			return self::execute_locked( $workspace, $run );
+			return self::execute_locked( $workspace, $run, $request_args );
 		} finally {
 			$workspace->release_lock( $lock );
 		}
 	}
 
-	private static function execute_locked( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run ) {
+	private static function execute_locked( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run, array $request_args ) {
 		if ( $workspace->is_expired() ) {
 			$workspace->purge();
 			return new WP_Error( 'static_site_importer_direct_artifact_run_expired', 'The retained direct artifact run expired and must be restarted.' );
@@ -216,6 +226,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$prepare_pages  = array( $compiler, 'preparePages' );
 			$compile_pages  = array( $compiler, 'compilePreparedPages' );
 			$compose        = array( $compiler, 'compose' );
+			$payload_reader = self::payload_reader( $workspace );
 			if ( ! is_callable( $prepare_shared ) || ! is_callable( $prepare_pages ) || ! is_callable( $compile_pages ) || ! is_callable( $compose ) ) {
 				return self::fail( $workspace, $run, 'compiler', new WP_Error( 'static_site_importer_invalid_transformer', 'The direct artifact compiler does not implement the staged compilation contract.' ) );
 			}
@@ -255,7 +266,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				}
 				$run = $entered;
 				self::before_phase( 'prepare_shared', $run );
-				$shared = call_user_func( $prepare_shared, $artifact_state['artifact'] );
+				$shared = call_user_func( $prepare_shared, $artifact_state['artifact'], $payload_reader );
 				if ( 'blocks-engine/php-transformer/staged-shared-plan/v1' !== ( $shared['schema'] ?? '' ) || empty( $shared['digest'] ) || ! is_array( $shared['analysis']['page_ids'] ?? null ) ) {
 					throw new RuntimeException( 'Blocks Engine returned an invalid shared plan.' );
 				}
@@ -319,7 +330,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				}
 				self::before_phase( 'prepare_pages', $run, $prepare_ids );
 				$run['work']['page_prepare_passes'] = (int) $run['work']['page_prepare_passes'] + 1;
-				$page_plans                         = call_user_func( $prepare_pages, $artifact_state['artifact'], $shared );
+				$page_plans                         = call_user_func( $prepare_pages, $artifact_state['artifact'], $shared, $payload_reader );
 				foreach ( $prepare_ids as $page_id ) {
 					$page_plan = $page_plans[ $page_id ] ?? null;
 					$validated = self::validate_page_plan( $page_plan, $shared, $page_id );
@@ -395,7 +406,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				}
 				$run = $entered;
 				self::before_phase( 'compile_pages', $run, $batch_ids );
-				$batch = call_user_func( $compile_pages, $shared, array_values( $plans ) );
+				$batch = call_user_func( $compile_pages, $shared, array_values( $plans ), $payload_reader );
 				if ( ! is_array( $batch ) || array_keys( $batch ) !== $batch_ids ) {
 					return self::fail( $workspace, $run, 'compile_pages', new WP_Error( 'static_site_importer_direct_artifact_receipt_set_mismatch', 'Blocks Engine did not return the exact requested compiled receipt batch.' ), $batch_ids );
 				}
@@ -470,7 +481,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$composed = call_user_func( array( $result, 'toArray' ) );
 				$metrics  = is_array( $composed['metrics'] ?? null ) ? $composed['metrics'] : array();
 				if ( 0 !== (int) ( $metrics['html_document_transform_count'] ?? 0 ) || 0 !== (int) ( $metrics['normalization_count'] ?? 0 ) ) {
-					throw new RuntimeException( 'Terminal receipt composition performed HTML transforms or normalization.' );
+					throw new RuntimeException( sprintf( 'Terminal receipt composition performed %d HTML transforms and %d normalization passes.', (int) ( $metrics['html_document_transform_count'] ?? 0 ), (int) ( $metrics['normalization_count'] ?? 0 ) ) );
 				}
 				$ref = self::publish_checkpoint( $workspace, $run, 'composed', 'composed-result.json', array(
 					'result'        => $composed,
@@ -502,11 +513,42 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			if ( is_wp_error( $artifact_state ) ) {
 				return $artifact_state;
 			}
-			$artifact = $artifact_state['artifact'];
-			$args     = $artifact_state['args'];
+			$artifact                  = $artifact_state['artifact'];
+			$args                      = $artifact_state['args'];
+			$lifecycle_preparation_ref = self::existing_checkpoint_ref( $workspace, $run, 'lifecycle-preparation-response.json', 'lifecycle_preparation' );
+			if ( is_wp_error( $lifecycle_preparation_ref ) ) {
+				return $lifecycle_preparation_ref;
+			}
+			if ( ! empty( $lifecycle_preparation_ref ) ) {
+				$run['refs']['lifecycle_preparation'] = $lifecycle_preparation_ref;
+				$prepared                             = self::read_checkpoint( $workspace, $run, $lifecycle_preparation_ref, 'lifecycle_preparation' );
+				if ( is_wp_error( $prepared ) ) {
+					return $prepared;
+				}
+				if ( '' === trim( (string) ( $request_args['runtime_lifecycle_checkpoint'] ?? '' ) ) ) {
+					return $prepared['response'];
+				}
+				$prepared_result     = $prepared['response']['result'];
+				$prepared_request_id = (string) ( $prepared_result['fresh_runtime']['request_id'] ?? '' );
+				if ( 'resume' !== ( $request_args['runtime_lifecycle_phase'] ?? '' )
+					|| ! hash_equals( (string) $prepared_result['runtime_lifecycle_checkpoint'], (string) $request_args['runtime_lifecycle_checkpoint'] )
+					|| ( '' !== $prepared_request_id && ! hash_equals( $prepared_request_id, (string) ( $request_args['runtime_lifecycle_request_id'] ?? '' ) ) ) ) {
+					return new WP_Error( 'static_site_importer_direct_artifact_lifecycle_resume_mismatch', 'The runtime lifecycle resume transport does not match the durable dependency preparation response.' );
+				}
+				$args = self::with_lifecycle_transport( $args, $request_args );
+			}
 
 			$args['compiled_artifact_result']                 = $composed_state['result'];
 			$args['_static_site_importer_precompiled_source'] = true;
+			$args['_static_site_importer_payload_reader']     = $payload_reader;
+			if ( '' === trim( (string) ( $args['report'] ?? '' ) ) ) {
+				$failed_plan_report = self::failed_plan_report_destination( $workspace );
+				if ( is_wp_error( $failed_plan_report ) ) {
+					return self::fail( $workspace, $run, 'failed_plan_report_destination', $failed_plan_report );
+				}
+				$args['failed_plan_report_destination'] = $failed_plan_report;
+				$args['failed_plan_artifact_prefix']    = 'direct-' . $run['import_id'] . '/failed-plan';
+			}
 
 			if ( 'plan' === $run['binding']['operation'] ) {
 				$entered = self::enter_phase( $workspace, $run, 'canonical_plan' );
@@ -520,6 +562,62 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				}
 				$response['source']['identity'] = (string) ( $run['binding']['source_identity'] ?? '' );
 			} else {
+				if ( empty( $lifecycle_preparation_ref ) && 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
+					if ( ! $workspace->claim_directory( 'lifecycle-preparation-claim' ) ) {
+						return self::fail( $workspace, $run, 'lifecycle_preparation_claim', new WP_Error( 'static_site_importer_direct_artifact_lifecycle_preparation_ambiguous', 'Runtime dependency preparation was already claimed without a durable result; the import will not repeat dependency mutation.' ) );
+					}
+					$run['work']['lifecycle_preparation_claims']   = 1;
+					$run['work']['lifecycle_preparation_attempts'] = (int) $run['work']['lifecycle_preparation_attempts'] + 1;
+					$args['import_run_id']                         = $run['import_id'];
+
+					$entered = self::enter_phase( $workspace, $run, 'prepare_lifecycle' );
+					if ( is_wp_error( $entered ) ) {
+						return $entered;
+					}
+					$run = $entered;
+					self::before_phase( 'prepare_lifecycle', $run );
+					$prepared = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $args );
+					if ( is_wp_error( $prepared ) ) {
+						return self::fail( $workspace, $run, 'prepare_lifecycle', $prepared );
+					}
+					if ( 'dependencies_prepared' !== ( $prepared['status'] ?? '' ) || '' === trim( (string) ( $prepared['runtime_lifecycle_checkpoint'] ?? '' ) ) ) {
+						return self::fail( $workspace, $run, 'prepare_lifecycle', new WP_Error( 'static_site_importer_direct_artifact_lifecycle_preparation_invalid', 'Runtime dependency preparation did not return a resumable lifecycle checkpoint.' ) );
+					}
+					$response                              = Static_Site_Importer_Canonical_Import_Service::success(
+						$prepared,
+						array_merge(
+							$args,
+							array(
+								'operation' => 'apply',
+								'source'    => array(
+									'type'      => $run['binding']['source_type'],
+									'import_id' => $run['import_id'],
+								),
+							)
+						)
+					);
+					$run['state']                          = 'running';
+					$run['phase']                          = 'dependencies_prepared';
+					$run['progress']['phase']              = 'dependencies_prepared';
+					$run['progress']['updated_at']         = gmdate( 'c' );
+					$run['work']['lifecycle_preparations'] = 1;
+					$response                              = array_merge(
+						$response,
+						array(
+							'import_id'           => $run['import_id'],
+							'continuation'        => true,
+							'continuation_reason' => 'dependencies_prepared',
+							'artifact_run'        => self::evidence( $run ),
+						)
+					);
+					$lifecycle_preparation_ref             = self::publish_checkpoint( $workspace, $run, 'lifecycle_preparation', 'lifecycle-preparation-response.json', array( 'response' => $response ) );
+					if ( is_wp_error( $lifecycle_preparation_ref ) ) {
+						return self::fail( $workspace, $run, 'lifecycle_preparation', $lifecycle_preparation_ref );
+					}
+					$run['refs']['lifecycle_preparation'] = $lifecycle_preparation_ref;
+					$write                                = self::write_run( $workspace, $run );
+					return is_wp_error( $write ) ? self::fail( $workspace, $run, 'lifecycle_preparation_checkpoint', $write ) : $response;
+				}
 				if ( empty( $run['refs']['materialization'] ) ) {
 					$materialization_ref = self::existing_checkpoint_ref( $workspace, $run, 'materialization-result.json', 'materialization' );
 					if ( is_wp_error( $materialization_ref ) ) {
@@ -620,6 +718,13 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$run['progress']['updated_at']         = gmdate( 'c' );
 		$write                                 = self::write_run( $workspace, $run );
 		return is_wp_error( $write ) ? $write : $run;
+	}
+
+	private static function with_lifecycle_transport( array $args, array $request_args ): array {
+		foreach ( array( 'runtime_lifecycle_phase', 'runtime_lifecycle_request_id', 'runtime_lifecycle_invocation_id', 'runtime_lifecycle_checkpoint' ) as $key ) {
+			$args[ $key ] = $request_args[ $key ] ?? '';
+		}
+		return $args;
 	}
 
 	/** @return array<string,mixed>|WP_Error */
@@ -774,7 +879,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				'attempted_page_ids' => array_map( static fn ( string $id ): string => hash( 'sha256', $id ), array_slice( is_array( $failure['attempted_page_ids'] ?? null ) ? $failure['attempted_page_ids'] : array(), 0, 20 ) ),
 				'phase_started_at'   => (string) ( $failure['phase_started_at'] ?? '' ),
 				'elapsed_seconds'    => (float) ( $failure['elapsed_seconds'] ?? 0 ),
-				'error'              => self::scrub_error( $failure['error'] ?? array() ),
+				'error'              => self::scrub_failure( array( 'error' => $failure['error'] ?? array() ) )['error'],
 			),
 			array_slice( is_array( $run['failures'] ?? null ) ? $run['failures'] : array(), -5 )
 		);
@@ -792,6 +897,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			'work'                 => array(
 				'content_policy_applications'       => (int) ( $run['work']['content_policy_applications'] ?? 0 ),
 				'client_script_policy_applications' => (int) ( $run['work']['client_script_policy_applications'] ?? 0 ),
+				'payloads_retained'                 => (int) ( $run['work']['payloads_retained'] ?? 0 ),
 				'shared_prepares'                   => (int) ( $run['work']['shared_prepares'] ?? 0 ),
 				'page_prepare_passes'               => (int) ( $run['work']['page_prepare_passes'] ?? 0 ),
 				'page_plans_prepared'               => (int) ( $run['work']['page_plans_prepared'] ?? 0 ),
@@ -802,6 +908,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				'materialization_claims'            => (int) ( $run['work']['materialization_claims'] ?? 0 ),
 				'materialization_attempts'          => (int) ( $run['work']['materialization_attempts'] ?? 0 ),
 				'materializations'                  => (int) ( $run['work']['materializations'] ?? 0 ),
+				'lifecycle_preparation_claims'      => (int) ( $run['work']['lifecycle_preparation_claims'] ?? 0 ),
+				'lifecycle_preparation_attempts'    => (int) ( $run['work']['lifecycle_preparation_attempts'] ?? 0 ),
+				'lifecycle_preparations'            => (int) ( $run['work']['lifecycle_preparations'] ?? 0 ),
 			),
 			'phase_timings'        => array_map(
 				'floatval',
@@ -849,7 +958,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$error_data                    = array(
 			'import_id'    => (string) ( $run['import_id'] ?? '' ),
 			'artifact_run' => self::evidence( $run ),
-			'failure'      => self::scrub_error( $failure ),
+			'failure'      => self::scrub_failure( $failure ),
 			'resumable'    => ! in_array( $phase, array( 'materialize', 'materialization_claim' ), true ),
 		);
 		if ( is_wp_error( $write ) ) {
@@ -1055,6 +1164,14 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 	}
 
+	/** Reserve the retained run's private location for a possible gate-failure report. */
+	private static function failed_plan_report_destination( Static_Site_Importer_Artifact_Run_Workspace $workspace ) {
+		if ( ! $workspace->claim_directory( 'failed-plan' ) && ! is_dir( $workspace->directory() . '/failed-plan' ) ) {
+			return new WP_Error( 'static_site_importer_direct_artifact_failed_plan_workspace_unavailable', 'The failed-plan artifact workspace is unavailable.' );
+		}
+		return $workspace->path( 'failed-plan/import-report.json' );
+	}
+
 	/** Register expiry cleanup without exposing retained workspace paths. */
 	public static function register_cleanup(): void {
 		if ( function_exists( 'add_action' ) ) {
@@ -1092,6 +1209,77 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		$compiler = new $class();
 		return function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_direct_artifact_compiler', $compiler ) : $compiler;
+	}
+
+	/** Retain every reference-backed artifact payload before the source archive can disappear. */
+	private static function retain_payloads( array $artifact, ?object $reader, Static_Site_Importer_Artifact_Run_Workspace $workspace ) {
+		$references = array();
+		foreach ( is_array( $artifact['files'] ?? null ) ? $artifact['files'] : array() as $file ) {
+			if ( ! is_array( $file ) ) {
+				continue;
+			}
+			$reference = $file['payload_reference'] ?? ( is_array( $file['payload']['reference'] ?? null ) ? $file['payload']['reference'] : null );
+			if ( null === $reference ) {
+				continue;
+			}
+			if ( ! is_array( $reference ) || 'blocks-engine/payload-reference/v1' !== ( $reference['schema'] ?? null ) || ! is_string( $reference['id'] ?? null ) || '' === $reference['id'] || ! is_string( $reference['sha256'] ?? null ) || 1 !== preg_match( '/^[a-f0-9]{64}$/', $reference['sha256'] ) || ! is_int( $reference['bytes'] ?? null ) || 0 > $reference['bytes'] ) {
+				return new WP_Error( 'static_site_importer_direct_artifact_payload_reference_invalid', 'A direct artifact payload reference is invalid.' );
+			}
+			$id       = $reference['id'];
+			$contract = array(
+				'sha256' => $reference['sha256'],
+				'bytes'  => $reference['bytes'],
+			);
+			if ( isset( $references[ $id ] ) && $references[ $id ] !== $contract ) {
+				return new WP_Error( 'static_site_importer_direct_artifact_payload_reference_conflict', 'A direct artifact reuses one payload reference for different bytes.' );
+			}
+			$references[ $id ] = $contract;
+		}
+		if ( empty( $references ) ) {
+			return 0;
+		}
+		if ( ! is_object( $reader ) || ! is_callable( array( $reader, 'read' ) ) ) {
+			return new WP_Error( 'static_site_importer_direct_artifact_payload_reader_missing', 'Reference-backed direct artifacts require a payload reader.' );
+		}
+		foreach ( $references as $id => $contract ) {
+			$reference = array(
+				'schema' => 'blocks-engine/payload-reference/v1',
+				'id'     => $id,
+				'sha256' => $contract['sha256'],
+				'bytes'  => $contract['bytes'],
+			);
+			try {
+				$bytes = $reader->read( $reference );
+			} catch ( Throwable $error ) {
+				return new WP_Error( 'static_site_importer_direct_artifact_payload_unavailable', 'A referenced direct artifact payload is unavailable.' );
+			}
+			if ( ! is_string( $bytes ) || strlen( $bytes ) !== $contract['bytes'] || ! hash_equals( $contract['sha256'], hash( 'sha256', $bytes ) ) ) {
+				return new WP_Error( 'static_site_importer_direct_artifact_payload_mismatch', 'A referenced direct artifact payload does not match its declared digest and byte count.' );
+			}
+			$published = $workspace->publish_raw_once( self::payload_file( $id ), $bytes );
+			if ( is_wp_error( $published ) ) {
+				return $published;
+			}
+		}
+		return count( $references );
+	}
+
+	private static function payload_reader( Static_Site_Importer_Artifact_Run_Workspace $workspace ): object {
+		return new class( $workspace ) implements \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
+			public function __construct( private Static_Site_Importer_Artifact_Run_Workspace $workspace ) {}
+
+			public function read( array $reference ): string {
+				$bytes = $this->workspace->read_raw( 'payloads/' . hash( 'sha256', $reference['id'] ) . '.bin' );
+				if ( null === $bytes || strlen( $bytes ) !== $reference['bytes'] || ! hash_equals( $reference['sha256'], hash( 'sha256', $bytes ) ) ) {
+					throw new RuntimeException( 'A retained direct artifact payload is unavailable or corrupt.' );
+				}
+				return $bytes;
+			}
+		};
+	}
+
+	private static function payload_file( string $id ): string {
+		return 'payloads/' . hash( 'sha256', $id ) . '.bin';
 	}
 
 	private static function run_policy(): array {
@@ -1150,7 +1338,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	}
 
 	private static function binding_args( array $args ): array {
-		unset( $args['runtime_lifecycle_invocation_id'], $args['client_script_policy_report'], $args['missing_author_stylesheet_diagnostics'], $args['compiled_artifact_result'], $args['_static_site_importer_precompiled_source'], $args['import_run_id'] );
+		unset( $args['runtime_lifecycle_phase'], $args['runtime_lifecycle_request_id'], $args['runtime_lifecycle_invocation_id'], $args['runtime_lifecycle_checkpoint'], $args['_static_site_importer_lifecycle_checkpoint_root'], $args['client_script_policy_report'], $args['missing_author_stylesheet_diagnostics'], $args['compiled_artifact_result'], $args['_static_site_importer_precompiled_source'], $args['_static_site_importer_payload_reader'], $args['import_run_id'] );
 		if ( is_array( $args['source_metadata']['collection'] ?? null ) ) {
 			unset( $args['source_metadata']['collection']['script_policy'] );
 			if ( empty( $args['source_metadata']['collection'] ) ) {
@@ -1214,6 +1402,14 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( 'materialization' === $kind ) {
 			return is_array( $payload['result'] ?? null );
 		}
+		if ( 'lifecycle_preparation' === $kind ) {
+			return is_array( $payload['response'] ?? null )
+				&& ! empty( $payload['response']['success'] )
+				&& ! empty( $payload['response']['continuation'] )
+				&& 'dependencies_prepared' === ( $payload['response']['continuation_reason'] ?? '' )
+				&& '' !== trim( (string) ( $payload['response']['result']['runtime_lifecycle_checkpoint'] ?? '' ) )
+				&& '' !== trim( (string) ( $payload['response']['result']['fresh_runtime']['request_id'] ?? '' ) );
+		}
 		if ( 'final' === $kind ) {
 			return is_array( $payload['response'] ?? null ) && ! empty( $payload['response']['success'] ) && empty( $payload['response']['continuation'] );
 		}
@@ -1241,7 +1437,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	/** Stream JSON tokens so artifact identity never requires an artifact-sized string. */
 	private static function hash_json_value( $context, $value, bool $canonical ): void {
 		if ( ! is_array( $value ) ) {
-			$encoded = wp_json_encode( $value );
+			$encoded = wp_json_encode( $value, JSON_PRESERVE_ZERO_FRACTION );
 			hash_update( $context, is_string( $encoded ) ? $encoded : '' );
 			return;
 		}
@@ -1307,6 +1503,15 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				continue;
 			}
 			$clean[ $key ] = self::scrub_error( $item, $depth + 1 );
+		}
+		return $clean;
+	}
+
+	private static function scrub_failure( array $failure ): array {
+		$clean = self::scrub_error( $failure );
+		if ( is_array( $failure['error'] ?? null ) && array_key_exists( 'data', $failure['error'] ) ) {
+			// Error data is bounded when the failure is recorded; do not spend its depth budget again on the failure envelope.
+			$clean['error']['data'] = $failure['error']['data'];
 		}
 		return $clean;
 	}

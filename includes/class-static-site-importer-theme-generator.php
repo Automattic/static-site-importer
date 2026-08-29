@@ -106,7 +106,9 @@ class Static_Site_Importer_Theme_Generator {
 			$compiled_evidence = isset( $compiled_import['compiled'] ) && is_array( $compiled_import['compiled'] ) ? $compiled_import['compiled'] : array();
 			$failed_plan       = Static_Site_Importer_Failed_Plan_Validation::build( $plan, $args, $compiled_evidence );
 			try {
-				$failed_plan['artifact_refs'] = Static_Site_Importer_Failed_Plan_Validation::persist( $failed_plan, (string) ( $args['report'] ?? '' ) );
+				$paths           = Static_Site_Importer_Failed_Plan_Validation::persist( $failed_plan, (string) ( $args['failed_plan_report_destination'] ?? $args['report'] ?? '' ) );
+				$artifact_prefix = (string) ( $args['failed_plan_artifact_prefix'] ?? '' );
+				$failed_plan['artifact_refs'] = '' !== $artifact_prefix ? Static_Site_Importer_Failed_Plan_Validation::artifact_refs( $artifact_prefix ) : $paths;
 			} catch ( Throwable $error ) {
 				$failed_plan['artifact_persistence_error'] = $error->getMessage();
 			}
@@ -631,8 +633,8 @@ class Static_Site_Importer_Theme_Generator {
 		if ( isset( $args['missing_author_stylesheet_diagnostics'] ) && is_array( $args['missing_author_stylesheet_diagnostics'] ) ) {
 			$diagnostics = array_merge( $diagnostics, array_values( array_filter( $args['missing_author_stylesheet_diagnostics'], 'is_array' ) ) );
 		}
-		$report       = array(
-			'schema'                           => 'static-site-importer/import-report/v1',
+		$envelope     = array(
+			'schema'                           => Static_Site_Importer_Import_Report::SCHEMA,
 			'import_run_id'                    => self::import_run_id( $args ),
 			'plan_identity'                    => $receipt['plan_identity'] ?? array(),
 			'blocks_engine'                    => array(
@@ -693,8 +695,10 @@ class Static_Site_Importer_Theme_Generator {
 				),
 			),
 		);
+		$report       = Static_Site_Importer_Import_Report::from_array( $envelope );
 		$report['source_artifact'] = array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ) );
 		$report['materialization_receipt'] = $receipt;
+		Static_Site_Importer_Block_Document_Reporter::analyze_materialized_block_documents( $report['generated_theme']['block_documents'], $report );
 		$artifact = array_merge(
 			isset( $args['source_artifact_reference'] ) && is_array( $args['source_artifact_reference'] ) ? $args['source_artifact_reference'] : array(),
 			array_filter(
@@ -754,6 +758,7 @@ class Static_Site_Importer_Theme_Generator {
 			'schema'          => 'static-site-importer/source-of-truth-manifest/v1',
 			'version'         => 1,
 			'import_run_id'   => $report['import_run_id'],
+			'build'           => Static_Site_Importer_Build_Provenance::describe(),
 			'artifact'        => array_merge( $artifact, array( 'provenance' => $plan['source']['provenance'] ) ),
 			'manifest_path'   => 'static-site-importer-manifest.json',
 			'generated_theme' => array(
@@ -863,7 +868,7 @@ class Static_Site_Importer_Theme_Generator {
 			$report_path = $theme_dir . '/import-report.json';
 			$validation_path = $theme_dir . '/import-validation-result.json';
 			$findings_path = $theme_dir . '/finding-packets.json';
-			self::write_plan_projection( $report_path, $report, $receipt );
+			self::write_plan_projection( $report_path, $report->to_array(), $receipt );
 			self::write_plan_projection( $validation_path, $validation, $receipt );
 			self::write_plan_projection( $findings_path, $findings, $receipt );
 		}
@@ -880,7 +885,7 @@ class Static_Site_Importer_Theme_Generator {
 					throw new RuntimeException( 'External report destination changed after preflight.' );
 				}
 			}
-			self::write_plan_projection( $external_report_path, $report, $receipt );
+			self::write_plan_projection( $external_report_path, $report->to_array(), $receipt );
 			self::write_plan_projection( $external_validation_result_path, $validation, $receipt );
 			self::write_plan_projection( $external_finding_packets_path, $findings, $receipt );
 		}
@@ -900,7 +905,7 @@ class Static_Site_Importer_Theme_Generator {
 			'external_finding_packets_path'   => $external_finding_packets_path,
 			'manifest_path'                   => $manifest_path,
 			'pages'                           => $receipt['completed']['pages'],
-			'import_report'                   => $report,
+			'import_report'                   => $report->to_array(),
 			'import_report_summary'           => array(
 				'status'           => $receipt['status'],
 				'diagnostic_count' => count( $diagnostics ),

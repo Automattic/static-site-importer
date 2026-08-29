@@ -19,10 +19,10 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 	 * @param array<string,mixed> $plan
 	 * @param array<string,mixed> $resolved
 	 * @param array<string,mixed> $args
-	 * @param array<string,mixed> $report
+	 * @param array<string,mixed>|Static_Site_Importer_Import_Report $report
 	 * @return array<string,mixed>
 	 */
-	public static function evaluate( array $plan, array $resolved, array $args = array(), array $report = array() ): array {
+	public static function evaluate( array $plan, array $resolved, array $args = array(), array|Static_Site_Importer_Import_Report $report = array() ): array {
 		$budget                  = isset( $args['quality_budget'] ) && is_array( $args['quality_budget'] ) ? $args['quality_budget'] : ( isset( $args['quality_budgets'] ) && is_array( $args['quality_budgets'] ) ? $args['quality_budgets'] : array() );
 		$mode                    = in_array( $budget['mode'] ?? 'preview', array( 'production', 'production_ready' ), true ) ? 'production' : 'preview';
 		$quality                 = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
@@ -35,7 +35,9 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 		$unresolved_media        = self::metric( $metrics, array( 'unresolved_media_count', 'unresolved_asset_count' ) );
 		$unresolved_dependencies = self::metric( $metrics, array( 'unresolved_dependency_count', 'dependency_failure_count', 'runtime_dependency_parity_issue_count' ) );
 		$materialized_quality    = isset( $report['quality'] ) && is_array( $report['quality'] ) ? $report['quality'] : array();
-		$materialized_metrics    = isset( $materialized_quality['metrics'] ) && is_array( $materialized_quality['metrics'] ) ? $materialized_quality['metrics'] : $materialized_quality;
+		$materialized_metrics    = array_merge( isset( $materialized_quality['metrics'] ) && is_array( $materialized_quality['metrics'] ) ? $materialized_quality['metrics'] : array(), $materialized_quality );
+		$native_blocks           = self::metric( $materialized_metrics, array( 'native_block_count', 'block_count' ) ) ?? $native_blocks;
+		$core_html               = self::metric( $materialized_metrics, array( 'core_html_block_count' ) ) ?? $core_html;
 		$fallbacks               = self::metric( $materialized_metrics, array( 'fallback_count', 'unresolved_fallback_count' ) );
 		if ( null === $fallbacks ) {
 			$fallbacks = self::metric( $metrics, array( 'fallback_count', 'unresolved_fallback_count' ) );
@@ -148,8 +150,8 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 		return $count;
 	}
 
-	/** @param array<string,mixed> $args @param array<string,mixed> $report */
-	private static function gate_status( array $args, array $report, string $gate ): string {
+	/** @param array<string,mixed> $args @param array<string,mixed>|Static_Site_Importer_Import_Report $report */
+	private static function gate_status( array $args, array|Static_Site_Importer_Import_Report $report, string $gate ): string {
 		$artifacts = isset( $args['validation_artifacts'] ) && is_array( $args['validation_artifacts'] ) ? $args['validation_artifacts'] : array();
 		if ( isset( $artifacts[ $gate . '_gate' ]['status'] ) ) {
 			return (string) $artifacts[ $gate . '_gate' ]['status'];

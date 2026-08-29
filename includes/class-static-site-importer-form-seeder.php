@@ -528,6 +528,20 @@ class Static_Site_Importer_Form_Seeder {
 		return $row;
 	}
 
+	/**
+	 * Report whether a source control carries content the provider is expected to represent.
+	 *
+	 * Hidden inputs carry the source platform's form-handler plumbing, such as endpoint
+	 * identifiers and captcha tokens, rather than content an author wrote or a visitor sees.
+	 * A provider form supersedes that plumbing, so leaving hidden inputs behind is the intended
+	 * conversion rather than a fidelity loss.
+	 *
+	 * @param string $type Normalized source control type.
+	 */
+	private static function control_carries_authored_content( string $type ): bool {
+		return 'hidden' !== $type;
+	}
+
 	/** A source label wrapper is carried by the mapped Jetpack field's label child. */
 	private static function provider_represents_receipt_loss( array $loss, array $form, array $field_blocks ): bool {
 		if ( 'unsupported_semantic_wrapper' !== ( $loss['reason_code'] ?? '' ) || ! is_string( $loss['node_hash'] ?? null ) ) {
@@ -535,8 +549,40 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$nodes = isset( $form['control_topology']['nodes'] ) && is_array( $form['control_topology']['nodes'] ) ? $form['control_topology']['nodes'] : array();
 		foreach ( $nodes as $node ) {
-			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? '' ) || 'label' !== ( $node['tag'] ?? '' ) || hash( 'sha256', (string) ( $node['id'] ?? '' ) ) !== $loss['node_hash'] ) {
+			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? '' ) || hash( 'sha256', (string) ( $node['id'] ?? '' ) ) !== $loss['node_hash'] ) {
 				continue;
+			}
+			$tag = (string) ( $node['tag'] ?? 'div' );
+			if ( in_array( $tag, array( 'ul', 'ol', 'li' ), true ) ) {
+				return true;
+			}
+			if ( 'fieldset' === $tag && 'plain_group' === ( $node['fieldset_semantics'] ?? '' ) && null === ( $node['parent'] ?? null ) ) {
+				$nodes_by_id = array();
+				foreach ( $nodes as $candidate ) {
+					if ( is_array( $candidate ) && is_string( $candidate['id'] ?? null ) ) {
+						$nodes_by_id[ $candidate['id'] ] = $candidate;
+					}
+				}
+				foreach ( array_keys( $field_blocks ) as $control_index ) {
+					$control_node = null;
+					foreach ( $nodes as $candidate ) {
+						if ( is_array( $candidate ) && 'control' === ( $candidate['kind'] ?? '' ) && ( $candidate['control'] ?? null ) === $control_index ) {
+							$control_node = $candidate;
+							break;
+						}
+					}
+					$parent = $control_node['parent'] ?? null;
+					while ( is_string( $parent ) && ( $node['id'] ?? '' ) !== $parent ) {
+						$parent = $nodes_by_id[ $parent ]['parent'] ?? null;
+					}
+					if ( ( $node['id'] ?? '' ) !== $parent ) {
+						return false;
+					}
+				}
+				return ! empty( $field_blocks );
+			}
+			if ( 'label' !== $tag ) {
+				return false;
 			}
 			$controls = array_values(
 				array_filter(
@@ -713,7 +759,10 @@ class Static_Site_Importer_Form_Seeder {
 					if ( isset( $field_blocks[ $control_index ] ) ) {
 						$blocks[] = $field_blocks[ $control_index ];
 					} elseif ( isset( $controls[ $control_index ] ) ) {
-						$type     = strtolower( trim( (string) ( $controls[ $control_index ]['type'] ?? $controls[ $control_index ]['tag'] ?? '' ) ) );
+						$type = strtolower( trim( (string) ( $controls[ $control_index ]['type'] ?? $controls[ $control_index ]['tag'] ?? '' ) ) );
+						if ( ! self::control_carries_authored_content( $type ) ) {
+							continue;
+						}
 						$losses[] = array(
 							'dimension'         => 'topology',
 							'reason_code'       => 'unsupported_control_unrepresentable',

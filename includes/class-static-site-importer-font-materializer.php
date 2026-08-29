@@ -22,10 +22,7 @@ final class Static_Site_Importer_Font_Materializer {
 	 */
 	public static function prepare_overlay( array $plan, array $resolved_plan ) {
 		if ( empty( $plan ) ) {
-			return array(
-				'writes'      => array(),
-				'diagnostics' => array(),
-			);
+			return self::with_runtime_registration( array(), $resolved_plan, array(), array(), array(), array(), array(), false );
 		}
 		if ( self::PLAN_SCHEMA !== (string) ( $plan['schema'] ?? '' ) ) {
 			return new WP_Error( 'static_site_importer_font_materialization_plan_invalid' );
@@ -47,12 +44,7 @@ final class Static_Site_Importer_Font_Materializer {
 				if ( self::uses_inferred_google_fallback( $plan ) ) {
 					$producer_faces = null;
 				} elseif ( ! empty( $diagnostics ) || ! self::resolved_plan_has_google_stylesheet( $resolved_plan ) ) {
-					return array(
-						'writes'         => array(),
-						'diagnostics'    => $diagnostics,
-						'faces'          => array(),
-						'required_faces' => array(),
-					);
+					return self::with_runtime_registration( array(), $resolved_plan, array(), $diagnostics, array(), array(), array(), false );
 				}
 			} else {
 				$materialized = self::materialize_producer_faces( $producer_faces, $diagnostics );
@@ -663,13 +655,15 @@ final class Static_Site_Importer_Font_Materializer {
 	}
 
 	/** @param array<int,array<string,mixed>> $writes @param array<int,array<string,mixed>> $required_faces @param array<int,array<string,string>> $diagnostics */
-	private static function with_runtime_registration( array $writes, array $resolved_plan, array $required_faces, array $diagnostics, array $faces = array(), array $svg_receipts = array(), array $svg_consumers = array() ) {
+	private static function with_runtime_registration( array $writes, array $resolved_plan, array $required_faces, array $diagnostics, array $faces = array(), array $svg_receipts = array(), array $svg_consumers = array(), bool $enqueue_stylesheet = true ) {
 		$bootstrap = self::canonical_write_content( $resolved_plan['writes'] ?? array(), 'functions.php' );
 		if ( null === $bootstrap ) {
-			return new WP_Error( 'static_site_importer_font_materialization_bootstrap_target_missing' );
+			$bootstrap = "<?php\n";
 		}
 		$bootstrap .= "\nadd_action( 'wp_enqueue_scripts', static function (): void {\n";
-		$bootstrap .= "    wp_enqueue_style( 'static-site-importer-embedded-fonts', get_theme_file_uri( 'assets/css/embedded-fonts.css' ), array(), null );\n";
+		if ( $enqueue_stylesheet ) {
+			$bootstrap .= "    wp_enqueue_style( 'static-site-importer-embedded-fonts', get_theme_file_uri( 'assets/css/embedded-fonts.css' ), array(), null );\n";
+		}
 		$bootstrap .= "    wp_enqueue_script( 'static-site-importer-font-readiness', get_theme_file_uri( 'assets/js/font-readiness.js' ), array(), null, false );\n";
 		$bootstrap .= "} );\n";
 		$writes[]   = self::write( 'functions.php', $bootstrap, 'theme.font_materialization' );
@@ -687,7 +681,7 @@ final class Static_Site_Importer_Font_Materializer {
 	/** @param array<int,array<string,mixed>> $faces */
 	private static function readiness_script( array $faces ): string {
 		$faces_json = wp_json_encode( $faces, JSON_UNESCAPED_SLASHES );
-		return '(async()=>{const faces=' . $faces_json . ';const glyphs="SSI glyph evidence 0123456789";const weight=face=>face.weight.kind==="range"?face.weight.min+" "+face.weight.max:face.weight.value;const results=await Promise.all(faces.map(async face=>{const descriptor=(face.style||"normal")+" "+weight(face)+" 1em "+JSON.stringify(face.family);try{await document.fonts.load(descriptor,glyphs);return {...face,status:document.fonts.check(descriptor,glyphs)?"loaded":"missing"};}catch(error){return {...face,status:"missing",error:String(error)}}}));const readiness={schema:"static-site-importer/font-readiness/v1",status:results.every(face=>face.status==="loaded")?"loaded":"missing",faces:results};window.__staticSiteImporterFontReadiness=readiness;document.documentElement.dataset.staticSiteImporterFontReadiness=readiness.status;let record=document.getElementById("static-site-importer-font-readiness");if(!record){record=document.createElement("script");record.id="static-site-importer-font-readiness";record.type="application/json";document.head.append(record)}record.textContent=JSON.stringify(readiness);})();' . "\n";
+		return '(async()=>{const faces=' . $faces_json . ';const glyphs="SSI glyph evidence 0123456789";const weight=face=>face.weight.kind==="range"?face.weight.min+" "+face.weight.max:face.weight.value;const bounded=(promise,fallback)=>new Promise(resolve=>{let timer;let settled=false;const finish=result=>{if(settled)return;settled=true;clearTimeout(timer);resolve(result)};timer=setTimeout(()=>finish(fallback),5000);Promise.resolve(promise).then(finish,()=>finish(fallback))});const fontSetReady=await bounded(Promise.resolve(document.fonts.ready).then(()=>true),false);const probe=face=>{const descriptor=(face.style||"normal")+" "+weight(face)+" 1em "+JSON.stringify(face.family);return bounded(Promise.resolve().then(()=>document.fonts.load(descriptor,glyphs)).then(()=>({...face,status:document.fonts.check(descriptor,glyphs)?"loaded":"missing"}),error=>({...face,status:"missing",error:String(error)})),{...face,status:"missing",error:"timeout"})};const results=await Promise.all(faces.map(probe));const readiness={schema:"static-site-importer/font-readiness/v1",status:fontSetReady&&results.every(face=>face.status==="loaded")?"loaded":"missing",faces:results};window.__staticSiteImporterFontReadiness=readiness;document.documentElement.dataset.staticSiteImporterFontReadiness=readiness.status;let record=document.getElementById("static-site-importer-font-readiness");if(!record){record=document.createElement("script");record.id="static-site-importer-font-readiness";record.type="application/json";document.head.append(record)}record.textContent=JSON.stringify(readiness);})();' . "\n";
 	}
 
 	/** @return array<int,array<string,string>>|WP_Error */
