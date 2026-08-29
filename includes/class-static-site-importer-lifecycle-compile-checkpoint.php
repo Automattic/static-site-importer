@@ -166,7 +166,7 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 	}
 
 	private static function binding( array $artifact, array $args, string $owner ): array {
-		unset( $args['runtime_lifecycle_phase'], $args['runtime_lifecycle_request_id'], $args['runtime_lifecycle_invocation_id'], $args['runtime_lifecycle_checkpoint'], $args['_static_site_importer_lifecycle_checkpoint_root'], $args['report'], $args['client_script_policy_report'], $args['missing_author_stylesheet_diagnostics'], $args['compiled_artifact_result'], $args['_static_site_importer_precompiled_source'], $args['_static_site_importer_payload_reader'], $args['import_run_id'] );
+		unset( $args['runtime_lifecycle_phase'], $args['runtime_lifecycle_request_id'], $args['runtime_lifecycle_invocation_id'], $args['runtime_lifecycle_checkpoint'], $args['_static_site_importer_lifecycle_checkpoint_root'], $args['report'], $args['failed_plan_report_destination'], $args['failed_plan_artifact_prefix'], $args['client_script_policy_report'], $args['missing_author_stylesheet_diagnostics'], $args['compiled_artifact_result'], $args['_static_site_importer_precompiled_source'], $args['_static_site_importer_payload_reader'], $args['import_run_id'] );
 		if ( is_array( $args['source_metadata']['collection'] ?? null ) ) {
 			unset( $args['source_metadata']['collection']['script_policy'] );
 			if ( empty( $args['source_metadata']['collection'] ) ) {
