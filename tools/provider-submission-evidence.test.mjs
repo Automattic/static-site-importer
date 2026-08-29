@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
+import { spawnSync } from 'node:child_process';
 import { collectFixtureMatrixRunResults } from '../lib/fixture-matrix/collectors/run-intake.mjs';
 import { providerSubmissionReportProjection, sha256, validateProviderSubmissionEvidence } from '../lib/fixture-matrix/provider-submission-evidence.mjs';
+import { buildFixtureMatrixRecipe } from '../lib/fixture-matrix/steps/recipe-builder.mjs';
 import { normalizeFixtureMatrixResult } from '../lib/fixture-matrix/result.mjs';
 
 const FORM = 'a'.repeat(64);
@@ -93,3 +95,30 @@ for (const [name, mutate, code] of [
     assert.ok(validateProviderSubmissionEvidence(input).errors.includes(code));
   });
 }
+
+test('emits a WordPress runtime verification step for required provider submissions', () => {
+  const recipe = buildFixtureMatrixRecipe({
+    matrix: {
+      id: 'provider-submission-runtime',
+      fixtures: [{
+        id: 'nimbus',
+        label: 'nimbus',
+        directory: '/fixtures/nimbus',
+        entrypoint: 'index.html',
+        provider_submissions: [{ required: true, page_route: '/contact', form_identity: 'a'.repeat(64), provider_id: 'wordpress/forms', provider_owner: 'wordpress' }],
+      }],
+    },
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    editorValidation: false,
+    visualParity: false,
+  });
+  const step = recipe.workflow.steps.find((candidate) => candidate.metadata?.phase === 'provider-submission-evidence');
+  assert.equal(step?.metadata?.fixture_id, 'nimbus');
+  const command = step?.args?.[0] || '';
+  const decoded = spawnSync('sh', ['-c', `set -- ${command}; printf "%s" "$2"`], { encoding: 'utf8' });
+  assert.equal(decoded.status, 0, decoded.stderr);
+  const transported = Buffer.from(decoded.stdout.match(/base64_decode\('([^']+)'\)/)?.[1] || '', 'base64').toString('utf8');
+  assert.match(transported, /Static_Site_Importer_Provider_Submission_Evidence::verify_runtime/);
+  const lint = spawnSync('php', ['-l'], { input: `<?php\n${transported}`, encoding: 'utf8' });
+  assert.equal(lint.status, 0, lint.stderr || lint.stdout);
+});
