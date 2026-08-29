@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "static-site-importer/owner-handoff-evidence/v1",
+  "type": "object",
+  "required": ["schema", "plan_identity", "materialization_receipt_sha256", "dimensions", "findings", "owner_tasks", "disposition", "accepted_built_allowed", "report_card"],
+  "properties": {
+    "schema": { "const": "static-site-importer/owner-handoff-evidence/v1" },
+    "plan_identity": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["schema", "hash"],
+          "properties": {
+            "schema": { "const": "blocks-engine/wordpress-site-plan-identity/v1" },
+            "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+          }
+        }
+      ]
+    },
+    "materialization_receipt_sha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "dimensions": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/dimension" }
+    },
+    "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+    "owner_tasks": { "$ref": "#/$defs/ownerTasks" },
+    "disposition": { "enum": ["passed", "failed", "not_proven", "owner_decisions_required"] },
+    "accepted_built_allowed": { "type": "boolean" },
+    "report_card": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "status": { "enum": ["pass", "hard_failure", "required_owner_decision", "acceptable_conversion", "informational", "evidence_gap"] },
+    "dimension": {
+      "type": "object",
+      "required": ["id", "status", "owning_repository"],
+      "properties": {
+        "id": { "enum": ["route_content_completeness", "visual_acceptance", "editability_shared_regions", "editor_presentation_persistence", "media_library_ownership", "link_portability", "provider_functionality", "site_identity_metadata", "accessibility", "frontend_performance", "deployment_rollback", "owner_tasks"] },
+        "status": { "$ref": "#/$defs/status" },
+        "owning_repository": { "type": "string", "minLength": 1 },
+        "evidence_reference": { "$ref": "#/$defs/reference" }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "required": ["dimension", "status", "route", "component", "owning_repository", "recommended_next_action"],
+      "properties": {
+        "dimension": { "type": "string" },
+        "status": { "$ref": "#/$defs/status" },
+        "route": { "type": "string" },
+        "component": { "type": "string" },
+        "evidence_reference": { "$ref": "#/$defs/reference" },
+        "owning_repository": { "type": "string" },
+        "recommended_next_action": { "type": "string", "minLength": 1 }
+      }
+    },
+    "ownerTasks": {
+      "type": "object",
+      "required": ["schema", "status", "tasks"],
+      "properties": {
+        "schema": { "const": "static-site-importer/owner-task-check/v1" },
+        "status": { "$ref": "#/$defs/status" },
+        "tasks": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "required": ["id", "status"],
+            "properties": {
+              "id": { "enum": ["text_edit", "image_replace", "navigation_edit", "shared_footer_edit", "form_recipient_edit"] },
+              "status": { "$ref": "#/$defs/status" },
+              "persisted": { "type": "boolean" },
+              "reloaded": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "reference": {
+      "type": ["object", "null"],
+      "properties": {
+        "schema": { "type": "string" },
+        "path": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    }
+  }
+}
