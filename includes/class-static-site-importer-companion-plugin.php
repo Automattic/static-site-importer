@@ -844,9 +844,21 @@ class Static_Site_Importer_Companion_Plugin {
 $content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*>.*?</\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\s*>#is', '', $content ) ?? '';
 $content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*/?\s*>#is', '', $content ) ?? '';
 $content = preg_replace( '#</?\s*[a-z][a-z0-9]*-[a-z0-9-]+\b[^>]*>#i', '', $content ) ?? '';
-$content = preg_replace( '/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $content ) ?? '';
-$content = preg_replace( '/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)\s*=\s*(?=\/?>)/i', '', $content ) ?? '';
-$content = preg_replace( '/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)(?=\s|\/?>)/i', '', $content ) ?? '';
+$content = preg_replace_callback(
+	'#<[a-z](?:"[^"]*"|\'[^\']*\'|=>|[^>])*>#i',
+	static function ( array $match ): string {
+		return preg_replace(
+			array(
+				'/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)/i',
+				'/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)\s*=\s*(?=\/?>)/i',
+				'/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)(?=\s|\/?>)/i',
+			),
+			'',
+			$match[0]
+		) ?? '';
+	},
+	$content
+) ?? '';
 
 $safe_url = static function ( string $url, bool $image = false ): bool {
 	$normalized = strtolower( preg_replace( '/[\x00-\x20\x7f]+/', '', html_entity_decode( $url, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) ?? '' );
@@ -965,7 +977,7 @@ $content     = preg_replace_callback(
 
 $global = array(
 	'aria-controls' => true, 'aria-current' => true, 'aria-describedby' => true, 'aria-details' => true,
-	'aria-expanded' => true, 'aria-hidden' => true, 'aria-label' => true, 'aria-labelledby' => true,
+	'aria-disabled' => true, 'aria-expanded' => true, 'aria-hidden' => true, 'aria-label' => true, 'aria-labelledby' => true,
 	'aria-live' => true, 'class' => true, 'data-*' => true, 'dir' => true, 'hidden' => true, 'id' => true,
 	'lang' => true, 'role' => true, 'style' => true, 'tabindex' => true, 'title' => true, 'xml:lang' => true,
 );
@@ -981,6 +993,10 @@ if ( preg_match_all( '/\s+(aria-[a-z][a-z0-9-]*)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\
 		$svg_global[ strtolower( $aria_name ) ] = true;
 	}
 }
+$safe_style_css = static function ( array $properties ): array {
+	return array_values( array_unique( array_merge( $properties, array( 'overflow-x', 'overflow-y' ) ) ) );
+};
+add_filter( 'safe_style_css', $safe_style_css );
 $output = wp_kses(
 	$content,
 	array(
@@ -1017,6 +1033,7 @@ $output = wp_kses(
 		'tspan' => array_merge( $svg_global, array( 'dx' => true, 'dy' => true, 'fill' => true, 'x' => true, 'y' => true ) ), 'title' => $svg_global, 'desc' => $svg_global,
 	)
 );
+remove_filter( 'safe_style_css', $safe_style_css );
 foreach ( $data_images as $placeholder => $data_image ) {
 	$output = str_replace( 'src="' . $placeholder . '"', 'src="' . esc_attr( $data_image ) . '"', $output );
 	$output = str_replace( "src='" . $placeholder . "'", "src='" . esc_attr( $data_image ) . "'", $output );
@@ -1120,6 +1137,7 @@ $global = array(
 	'aria-current'     => true,
 	'aria-describedby' => true,
 	'aria-details'     => true,
+	'aria-disabled'    => true,
 	'aria-expanded'    => true,
 	'aria-hidden'      => true,
 	'aria-label'       => true,
