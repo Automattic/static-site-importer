@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "static-site-importer/owner-handoff-evidence/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "bindings", "dimensions", "findings", "counts", "disposition", "handoff_admitted", "evidence_sha256", "report_card"],
+  "properties": {
+    "schema": { "const": "static-site-importer/owner-handoff-evidence/v1" },
+    "version": { "const": 1 },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan_identity", "materialization_receipt", "verified", "gaps"],
+      "properties": {
+        "plan_identity": { "anyOf": [{ "$ref": "#/$defs/planIdentity" }, { "type": "null" }] },
+        "materialization_receipt": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["schema", "status", "sha256", "plan_identity", "receipt_instance_id"],
+              "properties": {
+                "schema": { "const": "static-site-importer/materialization-receipt/v2" },
+                "status": { "enum": ["completed", "failed", "partial", "rejected"] },
+                "sha256": { "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+                "plan_identity": { "anyOf": [{ "$ref": "#/$defs/planIdentity" }, { "type": "null" }] },
+                "receipt_instance_id": { "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "verified": { "type": "boolean" },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code"],
+            "properties": { "code": { "type": "string", "minLength": 1 } }
+          }
+        }
+      }
+    },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_content_completeness", "visual_acceptance", "editability_and_shared_regions", "editor_presentation_and_persistence", "media_library_ownership", "link_portability", "interaction_and_provider_functionality", "document_metadata_and_identity", "accessibility", "frontend_performance", "dependency_deployment_rollback", "owner_task_check"],
+      "properties": {
+        "route_content_completeness": { "$ref": "#/$defs/dimension" },
+        "visual_acceptance": { "$ref": "#/$defs/dimension" },
+        "editability_and_shared_regions": { "$ref": "#/$defs/dimension" },
+        "editor_presentation_and_persistence": { "$ref": "#/$defs/dimension" },
+        "media_library_ownership": { "$ref": "#/$defs/dimension" },
+        "link_portability": { "$ref": "#/$defs/dimension" },
+        "interaction_and_provider_functionality": { "$ref": "#/$defs/dimension" },
+        "document_metadata_and_identity": { "$ref": "#/$defs/dimension" },
+        "accessibility": { "$ref": "#/$defs/dimension" },
+        "frontend_performance": { "$ref": "#/$defs/dimension" },
+        "dependency_deployment_rollback": { "$ref": "#/$defs/dimension" },
+        "owner_task_check": { "$ref": "#/$defs/dimension" }
+      }
+    },
+    "findings": { "type": "array", "maxItems": 1200, "items": { "$ref": "#/$defs/finding" } },
+    "counts": { "$ref": "#/$defs/counts" },
+    "disposition": { "enum": ["ready", "needs_owner", "blocked", "not_proven"] },
+    "handoff_admitted": { "type": "boolean" },
+    "evidence_sha256": { "$ref": "#/$defs/sha256" },
+    "report_card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "evidence_sha256", "disposition", "handoff_admitted", "headline", "counts", "dimensions", "findings"],
+      "properties": {
+        "schema": { "const": "static-site-importer/owner-handoff-report-card/v1" },
+        "evidence_sha256": { "$ref": "#/$defs/sha256" },
+        "disposition": { "enum": ["ready", "needs_owner", "blocked", "not_proven"] },
+        "handoff_admitted": { "type": "boolean" },
+        "headline": { "type": "string", "minLength": 1 },
+        "counts": { "$ref": "#/$defs/counts" },
+        "dimensions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["dimension", "status"],
+            "properties": { "dimension": { "type": "string" }, "status": { "$ref": "#/$defs/status" } }
+          }
+        },
+        "findings": { "type": "array", "maxItems": 1200, "items": { "$ref": "#/$defs/finding" } }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "planIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "hash"],
+      "properties": { "schema": { "const": "blocks-engine/wordpress-site-plan-identity/v1" }, "hash": { "$ref": "#/$defs/sha256" } }
+    },
+    "status": { "enum": ["pass", "hard_failure", "owner_decision", "acceptable_conversion", "informational", "evidence_gap"] },
+    "reference": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["schema", "sha256"],
+          "properties": {
+            "schema": { "type": "string", "minLength": 1 },
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "selector": { "type": "string" },
+            "sources": { "type": "array" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "state", "dimension", "reason_code"],
+          "properties": {
+            "schema": { "const": "static-site-importer/owner-handoff-dimension-evidence/v1" },
+            "state": { "const": "missing" },
+            "dimension": { "type": "string", "minLength": 1 },
+            "reason_code": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pass", "hard_failure", "owner_decision", "acceptable_conversion", "informational", "evidence_gap"],
+      "properties": {
+        "pass": { "type": "integer", "minimum": 0 },
+        "hard_failure": { "type": "integer", "minimum": 0 },
+        "owner_decision": { "type": "integer", "minimum": 0 },
+        "acceptable_conversion": { "type": "integer", "minimum": 0 },
+        "informational": { "type": "integer", "minimum": 0 },
+        "evidence_gap": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "dimension", "status", "reason_code", "affected", "evidence", "owning_repository", "next_action", "summary"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "dimension": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/$defs/status" },
+        "reason_code": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "affected": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["route", "component"],
+          "properties": { "route": { "type": "string", "minLength": 1, "maxLength": 2048 }, "component": { "type": "string", "minLength": 1, "maxLength": 256 } }
+        },
+        "evidence": { "$ref": "#/$defs/reference" },
+        "owning_repository": { "type": "string", "minLength": 1 },
+        "next_action": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      }
+    },
+    "dimension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dimension", "status", "mandatory", "evidence", "owning_repository", "finding_ids"],
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "pass" } }, "required": ["status"] },
+          "then": { "properties": { "evidence": { "required": ["sha256"] } } }
+        }
+      ],
+      "properties": {
+        "dimension": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/$defs/status" },
+        "mandatory": { "const": true },
+        "evidence": { "$ref": "#/$defs/reference" },
+        "owning_repository": { "type": "string", "minLength": 1 },
+        "finding_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "operations": { "type": "object" }
+      }
+    }
+  }
+}

@@ -18,6 +18,9 @@ if ( ! class_exists( 'Static_Site_Importer_Import_Report' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-diagnostic-loss-classes.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Owner_Handoff_Evidence' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-owner-handoff-evidence.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-entity-materializer-registry.php';
 }
@@ -336,6 +339,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$report['compact_summary']          = self::import_report_summary( $report, $quality );
 		$report['finding_packets']          = self::finding_packets( $report );
 		$report['import_validation_result'] = self::import_validation_result( $report, $quality );
+		$report['owner_handoff_evidence']   = Static_Site_Importer_Owner_Handoff_Evidence::compose_from_report( $report, $quality );
 
 		if ( $build_fixture && class_exists( 'Static_Site_Importer_Diagnostic_Contract' ) ) {
 			return Static_Site_Importer_Diagnostic_Contract::build(

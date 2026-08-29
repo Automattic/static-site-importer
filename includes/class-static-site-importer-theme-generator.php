@@ -892,6 +892,7 @@ class Static_Site_Importer_Theme_Generator {
 			throw new RuntimeException( 'Injected report persistence failure.' );
 		}
 		Static_Site_Importer_WordPress_Site_Plan_Materializer::commit_receipt( $receipt );
+		$report['materialization_receipt'] = $receipt;
 		return array(
 			'theme_slug'                      => $theme['slug'],
 			'theme_name'                      => isset( $args['name'] ) ? (string) $args['name'] : $theme['slug'],
