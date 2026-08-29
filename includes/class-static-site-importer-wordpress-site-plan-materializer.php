@@ -1651,7 +1651,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		} else {
 			return new WP_Error( 'provider_layout_stylesheet_missing' );
 		}
-		$bootstrap                                      = "\n/* Static Site Importer provider layout overlay delivery. */\nadd_action( 'wp_enqueue_scripts', static function (): void {\n\twp_enqueue_style( 'static-site-importer-provider-layout-overlay', get_stylesheet_uri(), array(), wp_get_theme()->get( 'Version' ) );\n}, 20 );\n";
+		$bootstrap                                        = "\n/* Static Site Importer provider layout overlay delivery. */\nadd_action( 'wp_enqueue_scripts', static function (): void {\n\twp_enqueue_style( 'static-site-importer-provider-layout-overlay', get_stylesheet_uri(), array(), wp_get_theme()->get( 'Version' ) );\n}, 20 );\n";
 		$writes[ $state['theme_dir'] . '/functions.php' ] = str_contains( $functions, $bootstrap ) ? $functions : $functions . $bootstrap;
 		return $writes;
 	}
@@ -1673,7 +1673,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			$path = $state['theme_dir'] . '/' . $target;
 			if ( is_file( $path ) && self::file_hash( $path ) === hash( 'sha256', $content ) ) {
-				$result   = array(
+				$result    = array(
 					'target_path'             => $target,
 					'hash'                    => self::file_hash( $path ),
 					'payload_hash'            => hash( 'sha256', $content ),
