@@ -15,7 +15,8 @@ if ( ! class_exists( 'Static_Site_Importer_Import_Report' ) ) {
 
 final class Static_Site_Importer_Failed_Plan_Validation {
 
-	private const MAX_DIAGNOSTICS = 50;
+	private const MAX_DIAGNOSTICS    = 50;
+	private const MAX_ARTIFACT_BYTES = 10485760;
 
 	/** @return array<string,mixed> */
 	public static function build( array $plan, array $args = array(), array $compiled = array() ): array {
@@ -124,6 +125,28 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 		return $paths;
 	}
 
+	/** @return array<string,array<string,string>> */
+	public static function artifact_refs( string $prefix ): array {
+		$prefix = trim( $prefix, '/' );
+		if ( '' === $prefix ) {
+			return array();
+		}
+		return array(
+			'import_report'            => array(
+				'artifact_id' => $prefix . '/import-report.json',
+				'kind'        => 'blocks-engine/import-report',
+			),
+			'import_validation_result' => array(
+				'artifact_id' => $prefix . '/import-validation-result.json',
+				'kind'        => 'blocks-engine/import-validation-result',
+			),
+			'finding_packets'          => array(
+				'artifact_id' => $prefix . '/finding-packets.json',
+				'kind'        => 'blocks-engine/finding-packets',
+			),
+		);
+	}
+
 	/** @return array<int,string> */
 	private static function failure_reasons( array $plan, array $quality ): array {
 		$reasons = isset( $plan['quality']['failure_reasons'] ) && is_array( $plan['quality']['failure_reasons'] ) ? $plan['quality']['failure_reasons'] : ( $quality['failure_reasons'] ?? array() );
@@ -144,8 +167,11 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 	}
 
 	private static function write( string $path, array $payload ): void {
-		$temp = tempnam( dirname( $path ), '.ssi-failed-plan-' );
 		$json = function_exists( 'wp_json_encode' ) ? wp_json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) : json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone smoke tests do not load WordPress encoding helpers.
+		if ( is_string( $json ) && strlen( $json ) + 1 > self::MAX_ARTIFACT_BYTES ) {
+			throw new RuntimeException( 'Failed-plan report artifact exceeds its 10 MiB bound.' );
+		}
+		$temp = tempnam( dirname( $path ), '.ssi-failed-plan-' );
 		if ( false === $temp || false === $json || false === file_put_contents( $temp, $json . "\n" ) || ! rename( $temp, $path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents,WordPress.WP.AlternativeFunctions.rename_rename -- Atomically writes bounded explicit report artifacts.
 			if ( is_string( $temp ) && file_exists( $temp ) ) {
 				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed atomic report temporary file.
