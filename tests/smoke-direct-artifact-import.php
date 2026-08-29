@@ -80,9 +80,12 @@ class Static_Site_Importer_Theme_Generator {
 			'theme_materialization' => array( 'strategy' => 'block' ),
 		);
 	}
-	public static function import_website_artifact( array $artifact, array $args = array() ): array {
+	public static function import_website_artifact( array $artifact, array $args = array() ) {
 		if ( true !== ( $args['_static_site_importer_precompiled_source'] ?? null ) || ! is_array( $args['compiled_artifact_result'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', (string) ( $args['import_run_id'] ?? '' ) ) ) {
 			throw new RuntimeException( 'Materialization must receive the frozen precompiled result and stable run id.' );
+		}
+		if ( is_wp_error( $GLOBALS['ssi_direct_materialization_error'] ?? null ) ) {
+			return $GLOBALS['ssi_direct_materialization_error'];
 		}
 		++$GLOBALS['ssi_direct_mutations'];
 		$GLOBALS['ssi_direct_last_args'] = $args;
@@ -313,6 +316,28 @@ $assert( 'static_site_importer_direct_artifact_phase_failed' === ( $thrown['erro
 $thrown_id = (string) ( $thrown_data['import_id'] ?? '' );
 $recovered_throw = Static_Site_Importer_Canonical_Import_Service::import( $resume( $thrown_id, 'plan' ) );
 $assert( ! empty( $recovered_throw['success'] ) && empty( $recovered_throw['continuation'] ), 'a thrown phase failure must resume from durable receipts without recompiling pages' );
+
+$quality_failure_data = array(
+	'quality' => array(
+		'status'             => 'failed',
+		'fallbacks'          => array( array( 'pattern_family' => 'inline_svg', 'reason' => 'inline_svg_fallback' ) ),
+		'editability_policy' => array( 'failures' => array( 'runtime_dependent_content' ) ),
+		'path'               => $test_root . '/private-path',
+		'workspace'          => 'private-workspace',
+		'manifest'           => 'private-manifest',
+		'long_value'         => str_repeat( 'x', 1001 ),
+		'many'               => array_fill( 0, 21, 'item' ),
+		'over_deep'          => array( 'one' => array( 'two' => array( 'three' => array( 'four' => array( 'five' => 'bounded' ) ) ) ) ),
+	),
+);
+$GLOBALS['ssi_direct_materialization_error'] = new WP_Error( 'static_site_importer_quality_gate_failed', 'Website artifact did not pass the canonical plan quality gate.', $quality_failure_data );
+$quality_failure = Static_Site_Importer_Canonical_Import_Service::import( $input() );
+$quality_failure_data = $quality_failure['error']['data'] ?? array();
+$quality_failure_evidence = $quality_failure_data['artifact_run']['failures'][0]['error']['data'] ?? array();
+$quality_failure_response = $quality_failure_data['failure']['error']['data'] ?? array();
+$assert( 'inline_svg_fallback' === ( $quality_failure_response['quality']['fallbacks'][0]['reason'] ?? '' ) && 'runtime_dependent_content' === ( $quality_failure_response['quality']['editability_policy']['failures'][0] ?? '' ) && $quality_failure_response === $quality_failure_evidence, 'quality-gate failures must return actionable fallback and editability reasons in both caller and run evidence' );
+$scrubbed_quality = $quality_failure_response['quality'] ?? array();
+$assert( ! isset( $scrubbed_quality['path'], $scrubbed_quality['workspace'], $scrubbed_quality['manifest'] ) && 1000 === strlen( $scrubbed_quality['long_value'] ?? '' ) && true === ( $scrubbed_quality['many']['_truncated'] ?? false ) && '[truncated]' === ( $scrubbed_quality['over_deep']['one']['two']['three']['four'] ?? '' ), 'quality-gate evidence must retain path stripping, string and item caps, and the original depth bound' );
 
 Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $test_root );
 $primitive_workspace->purge();

@@ -774,7 +774,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				'attempted_page_ids' => array_map( static fn ( string $id ): string => hash( 'sha256', $id ), array_slice( is_array( $failure['attempted_page_ids'] ?? null ) ? $failure['attempted_page_ids'] : array(), 0, 20 ) ),
 				'phase_started_at'   => (string) ( $failure['phase_started_at'] ?? '' ),
 				'elapsed_seconds'    => (float) ( $failure['elapsed_seconds'] ?? 0 ),
-				'error'              => self::scrub_error( $failure['error'] ?? array() ),
+				'error'              => self::scrub_failure( array( 'error' => $failure['error'] ?? array() ) )['error'],
 			),
 			array_slice( is_array( $run['failures'] ?? null ) ? $run['failures'] : array(), -5 )
 		);
@@ -849,7 +849,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$error_data                    = array(
 			'import_id'    => (string) ( $run['import_id'] ?? '' ),
 			'artifact_run' => self::evidence( $run ),
-			'failure'      => self::scrub_error( $failure ),
+			'failure'      => self::scrub_failure( $failure ),
 			'resumable'    => ! in_array( $phase, array( 'materialize', 'materialization_claim' ), true ),
 		);
 		if ( is_wp_error( $write ) ) {
@@ -1307,6 +1307,15 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				continue;
 			}
 			$clean[ $key ] = self::scrub_error( $item, $depth + 1 );
+		}
+		return $clean;
+	}
+
+	private static function scrub_failure( array $failure ): array {
+		$clean = self::scrub_error( $failure );
+		if ( is_array( $failure['error'] ?? null ) && array_key_exists( 'data', $failure['error'] ) ) {
+			// Error data is bounded when the failure is recorded; do not spend its depth budget again on the failure envelope.
+			$clean['error']['data'] = $failure['error']['data'];
 		}
 		return $clean;
 	}
