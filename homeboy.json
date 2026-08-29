@@ -43,6 +43,16 @@
   },
   "id": "static-site-importer",
   "remote_path": "wp-content/plugins/static-site-importer",
+  "scopes": {
+    "release": {
+      "include": [
+        "runtime-package-manifest.json",
+        "static-site-importer.php",
+        "blocks/",
+        "includes/"
+      ]
+    }
+  },
   "version_targets": [
     {
       "file": "static-site-importer.php",
