@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { editorPresentationEvidenceComplete } from '../lib/fixture-matrix/gutenberg-incompatibility-registry.mjs';
+import { validateProviderSubmissionEvidence } from '../lib/fixture-matrix/provider-submission-evidence.mjs';
 
 export const RECEIPT_SCHEMA = 'static-site-importer/solved-site-promotion-receipt/v1';
 const MATRIX_SCHEMA = 'static-site-importer/fixture-matrix-result/v1';
@@ -84,6 +85,7 @@ export function verifySolvedSitePromotion(input) {
       matrix: 'passed',
       solved_candidate: 'passed',
       materialization_receipts: 'passed',
+      provider_submissions: 'passed',
       editor: 'passed',
       visual: 'passed',
       native_blocks: 'passed',
@@ -151,6 +153,12 @@ function verifyFixture(fixture, decision, options, requiredFiles) {
   const receipt = evidence.materialization_receipt || {};
   const receiptIdentity = receipt.plan_identity || {};
   assert(receipt.status === 'completed' && (receipt.plan_hash || (receiptIdentity.schema === 'blocks-engine/wordpress-site-plan-identity/v1' && receiptIdentity.hash)), `${id}: completed materialization receipt is missing.`);
+  const routeEntityMapping = (fixture.surface_lineage || []).map((surface) => ({ route: surface?.surface?.source_entry, entity: String(surface?.materialized_document?.post_id ?? '') })).filter((row) => row.route && row.entity);
+  const submissionValidation = validateProviderSubmissionEvidence({ fixtureId: id, requirements: fixture.provider_submissions, evidence: fixture.provider_submission_evidence, materializationReceipt: receipt, routeEntityMapping });
+  assert(submissionValidation.valid, `${id}: provider submission evidence failed: ${submissionValidation.errors.join(', ')}.`);
+  if (submissionValidation.required) {
+    for (const envelope of fixture.provider_submission_evidence || []) addRequiredFile(requiredFiles, envelope?.artifact_ref?.path, `${id}: provider submission evidence`, options.artifactRoot);
+  }
   assert(evidence.transformer?.package_reference === options.blocksEngineSha, `${id}: transformer provenance does not match the Blocks Engine candidate.`);
   const editorQuality = fixture.editor_quality || {};
   assertFiniteMetric(editorQuality, 'native_conversion_rate', id);

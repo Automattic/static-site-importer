@@ -14,8 +14,10 @@
     "visual_evidence": { "type": "array", "items": { "$ref": "#/$defs/routeEvidence" } },
     "editor_evidence": { "type": "array", "items": { "$ref": "#/$defs/routeEvidence" } },
     "quality_projection": { "$ref": "#/$defs/reference" },
+    "provider_submission_requirements": { "$ref": "#/$defs/reference" },
+    "provider_submission_evidence": { "$ref": "#/$defs/reference" },
     "disposition": { "enum": ["passed", "failed", "not_proven"] },
-    "not_proven": { "type": "array", "items": { "type": "object", "required": ["code"], "properties": { "code": { "enum": ["input_identity_missing", "compiler_identity_missing", "site_plan_missing", "site_plan_invalid", "materialization_receipt_missing", "materialization_failed", "route_entity_mapping_missing", "visual_evidence_missing", "editor_evidence_missing", "quality_projection_missing", "artifact_missing", "hash_mismatch"] } } } }
+    "not_proven": { "type": "array", "items": { "type": "object", "required": ["code"], "properties": { "code": { "enum": ["input_identity_missing", "compiler_identity_missing", "site_plan_missing", "site_plan_invalid", "materialization_receipt_missing", "materialization_failed", "route_entity_mapping_missing", "visual_evidence_missing", "editor_evidence_missing", "quality_projection_missing", "provider_submission_evidence_missing", "provider_submission_evidence_invalid", "artifact_missing", "hash_mismatch"] } } } }
   },
   "$defs": {
     "reference": { "type": ["object", "null"], "properties": { "path": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+" }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }, "required": ["path", "sha256"] },
