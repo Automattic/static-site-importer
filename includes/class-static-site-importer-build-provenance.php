@@ -62,7 +62,7 @@ class Static_Site_Importer_Build_Provenance {
 				'figma_transformer' => function_exists( 'blocks_engine_figma_transformer_version' ) ? (string) blocks_engine_figma_transformer_version() : '',
 			),
 		);
-		$receipt = self::development_package_receipt();
+		$receipt    = self::development_package_receipt();
 		if ( array() !== $receipt ) {
 			$provenance['development_package'] = $receipt;
 		}
