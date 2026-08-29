@@ -371,7 +371,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
 		} catch ( InvalidArgumentException $error ) {
 			if ( isset( $state['preflight_error'] ) && is_wp_error( $state['preflight_error'] ) ) {
-				return array( 'status' => 'rejected', 'receipt' => self::rejected_receipt_from_error( $state, $state['preflight_error'] ) );
+				return array(
+					'status'  => 'rejected',
+					'receipt' => self::rejected_receipt_from_error( $state, $state['preflight_error'] ),
+				);
 			}
 			$state['diagnostics'][]  = array( 'reason_code' => $error->getMessage() );
 			$state['failure_reason'] = $error->getMessage();
@@ -835,7 +838,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
 		} catch ( InvalidArgumentException $error ) {
 			if ( isset( $state['preflight_error'] ) && is_wp_error( $state['preflight_error'] ) ) {
-				return array( 'status' => 'rejected', 'receipt' => self::rejected_receipt_from_error( $state, $state['preflight_error'] ) );
+				return array(
+					'status'  => 'rejected',
+					'receipt' => self::rejected_receipt_from_error( $state, $state['preflight_error'] ),
+				);
 			}
 			$state['diagnostics'][]  = array( 'reason_code' => $error->getMessage() );
 			$state['failure_reason'] = $error->getMessage();
@@ -904,11 +910,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			throw new InvalidArgumentException( 'provider_layout_overlay_rejected' );
 		}
 		$state['provider_layout_overlay_writes'] = $overlay_writes;
-		$font_resolved                          = $state['resolved'];
+		$font_resolved                           = $state['resolved'];
 		foreach ( $font_resolved['writes'] as &$write ) {
 			$path = $state['theme_dir'] . '/' . (string) ( $write['target_path'] ?? '' );
 			if ( isset( $overlay_writes[ $path ] ) ) {
-				$write['payload']      = array( 'encoding' => 'utf8', 'data' => $overlay_writes[ $path ] );
+				$write['payload']      = array(
+					'encoding' => 'utf8',
+					'data'     => $overlay_writes[ $path ],
+				);
 				$write['payload_hash'] = hash( 'sha256', $overlay_writes[ $path ] );
 			}
 		}
@@ -921,7 +930,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			);
 		if ( is_wp_error( $font_overlay ) ) {
 			$state['preflight_error'] = $font_overlay;
-			throw new InvalidArgumentException( $font_overlay->get_error_code() );
+			throw new InvalidArgumentException( (string) $font_overlay->get_error_code() ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Internal error code, not rendered output.
 		}
 		$state['font_overlay']          = $font_overlay;
 		$state['composed_theme_writes'] = array_merge( $overlay_writes, self::font_overlay_writes( $state['theme_dir'], $font_overlay ) );
@@ -1633,7 +1642,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	private static function apply_font_overlay( array &$state, array $overlay ) {
 		$reports = array();
 		foreach ( $overlay['writes'] as $write ) {
-			$target = (string) ( $write['target_path'] ?? '' );
+			$target  = (string) ( $write['target_path'] ?? '' );
 			$content = 'base64' === ( $write['encoding'] ?? 'utf8' ) ? base64_decode( (string) ( $write['content'] ?? '' ), true ) : (string) ( $write['content'] ?? '' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the declared font overlay payload for idempotent reconciliation.
 			if ( false === $content ) {
 				return new WP_Error( 'static_site_importer_font_materialization_payload_invalid' );
@@ -1646,7 +1655,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			$path = $state['theme_dir'] . '/' . $target;
 			if ( is_file( $path ) && self::file_hash( $path ) === hash( 'sha256', $content ) ) {
-				$result = array(
+				$result    = array(
 					'target_path'             => $target,
 					'hash'                    => self::file_hash( $path ),
 					'payload_hash'            => hash( 'sha256', $content ),
