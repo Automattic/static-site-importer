@@ -135,6 +135,11 @@ $assert( ! is_wp_error( $user_id ), 'user-page-created', is_wp_error( $user_id )
 		$assert( $stale_id > 0, 'first-import-created-stale-page' );
 		$assert( false !== file_put_contents( $unknown_file_path, '<!-- user file -->' ), 'unknown-file-created' );
 		$assert( $manifest === ( $report['source_of_truth'] ?? array() ), 'report-embeds-written-manifest' );
+		$build = $manifest['build'] ?? array();
+		$assert( Static_Site_Importer_Build_Provenance::SCHEMA === ( $build['schema'] ?? '' ), 'manifest-records-build-provenance' );
+		$assert( STATIC_SITE_IMPORTER_VERSION === ( $build['static_site_importer']['version'] ?? '' ), 'manifest-records-importer-version' );
+		$assert( '' !== (string) ( $build['blocks_engine']['php_transformer'] ?? '' ), 'manifest-records-blocks-engine-version' );
+		$assert( 1 === preg_match( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', (string) ( $build['imported_at'] ?? '' ) ), 'manifest-records-import-timestamp' );
 		$desired_kinds = array();
 		foreach ( $manifest['desired']['files'] ?? array() as $file ) {
 			if ( is_array( $file ) ) {

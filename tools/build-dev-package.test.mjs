@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import test from "node:test"
-import { buildDevelopmentPackage, commandFailureMessage, developmentComposerManifest, overlayWorkingTree, parseArguments, provenance, worktreeIdentity } from "./build-dev-package.mjs"
+import { buildDevelopmentPackage, buildIdentity, commandFailureMessage, developmentComposerManifest, overlayWorkingTree, packagedIdentityFile, parseArguments, provenance, worktreeIdentity } from "./build-dev-package.mjs"
 
 test("parses explicit Blocks Engine inputs and sensible defaults", () => {
   const defaults = parseArguments([], "/workspace/static-site-importer")
@@ -47,6 +47,18 @@ test("provenance binds immutable refs, the dirty identity, lock, and ZIP", async
   await rm(directory, { recursive: true, force: true })
 })
 
+test("packaged build identity carries the source identity the ZIP digest cannot", () => {
+  const inputs = { ssiSha: "a".repeat(40), ssiDiff: null, blocksEngineSha: "c".repeat(40), blocksEngineRef: "origin/trunk", composerLock: Buffer.from("lock fixture") }
+  const identity = buildIdentity(inputs)
+  assert.equal(identity.schema, "static-site-importer/development-package-provenance/v1")
+  assert.deepEqual(identity.static_site_importer, { head: "a".repeat(40), dirty: false, diff_sha256: null })
+  assert.deepEqual(identity.blocks_engine, { ref: "origin/trunk", sha: "c".repeat(40) })
+  assert.ok(!("zip" in identity), "the identity shipped inside the package cannot digest the package")
+  const { zip, ...receiptIdentity } = provenance({ ...inputs, zip: { path: "/tmp/package.zip", bytes: Buffer.from("zip fixture") } })
+  assert.deepEqual(receiptIdentity, identity)
+  assert.equal(zip.file, "package.zip")
+})
+
 test("orchestration packages modified and untracked source bytes without changing the caller", async () => {
   const fixture = await mkdtemp(join(tmpdir(), "ssi-dev-package-fixture-"))
   const source = join(fixture, "source")
@@ -63,6 +75,7 @@ test("orchestration packages modified and untracked source bytes without changin
   await writeFile(join(source, "vendor", "ignored.txt"), "ignored bytes")
   const commands = []
   let extracted = 0
+  let packagedIdentity = null
   const result = await buildDevelopmentPackage({ blocksEnginePath: engine, blocksEngineRef: "candidate", outputDir: output }, {
     sourceRoot: source,
     temporaryDirectory: temporary,
@@ -73,7 +86,10 @@ test("orchestration packages modified and untracked source bytes without changin
       if (command === "git" && args[0] === "status") return Buffer.from(" M tracked.txt\0?? untracked.txt\0")
       if (command === "git" && args[0] === "ls-files") return Buffer.from("composer.json\0composer.lock\0tracked.txt\0untracked.txt\0")
       if (command === "composer") return writeFile(join(context.cwd, "composer.lock"), "temporary lock")
-      if (command === "homeboy") return Promise.all([readFile(join(context.cwd, "tracked.txt"), "utf8"), readFile(join(context.cwd, "untracked.txt"), "utf8")]).then(([tracked, untracked]) => mkdir(join(context.cwd, "build"), { recursive: true }).then(() => writeFile(join(context.cwd, "build/static-site-importer.zip"), `${tracked}|${untracked}`)))
+      if (command === "homeboy" && args[0] === "review") return Promise.all([readFile(join(context.cwd, "tracked.txt"), "utf8"), readFile(join(context.cwd, "untracked.txt"), "utf8"), readFile(join(context.cwd, packagedIdentityFile), "utf8")]).then(([tracked, untracked, identity]) => {
+        packagedIdentity = JSON.parse(identity)
+        return mkdir(join(context.cwd, "build"), { recursive: true }).then(() => writeFile(join(context.cwd, "build/static-site-importer.zip"), `${tracked}|${untracked}`))
+      })
       return Buffer.from("")
     },
     async extractArchive(_archive, destination) {
@@ -94,6 +110,9 @@ test("orchestration packages modified and untracked source bytes without changin
   assert.equal(result.receipt.static_site_importer.diff_sha256, await worktreeIdentity(source, ["composer.json", "composer.lock", "tracked.txt", "untracked.txt"]))
   await assert.rejects(() => readFile(join(temporary, "static-site-importer", "vendor", "ignored.txt"), "utf8"), /ENOENT/)
   assert.equal((await readFile(result.provenance, "utf8")).includes("candidate"), true)
+  assert.equal(packagedIdentity.blocks_engine.sha, "b".repeat(40), "the build identity is packaged before Homeboy builds the ZIP")
+  assert.equal(packagedIdentity.static_site_importer.diff_sha256, result.receipt.static_site_importer.diff_sha256)
+  assert.equal(packagedIdentity.composer_lock_sha256, result.receipt.composer_lock_sha256)
   await rm(fixture, { recursive: true, force: true })
 })
 
