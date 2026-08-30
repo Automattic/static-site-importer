@@ -284,11 +284,16 @@ class Static_Site_Importer_Theme_Generator {
 			if ( ! is_array( $companion_payload ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_payload_invalid', 'Compiled companion_plugin_payload must be an object.' );
 			}
-			$companion_payload['site_slug'] = '' !== (string) ( $companion_payload['site_slug'] ?? '' ) ? (string) $companion_payload['site_slug'] : $args['slug'];
-			$companion_payload['site_name'] = '' !== (string) ( $companion_payload['site_name'] ?? '' ) ? (string) $companion_payload['site_name'] : $args['name'];
-			$companion_validation = Static_Site_Importer_Companion_Plugin::validate_payload( $companion_payload );
-			if ( is_wp_error( $companion_validation ) ) {
-				return $companion_validation;
+			$companion_payload = Static_Site_Importer_Companion_Plugin::without_theme_owned_scripts( $companion_payload, is_array( $plan['assets'] ?? null ) ? $plan['assets'] : array() );
+			if ( ! Static_Site_Importer_Companion_Plugin::has_materializable_content( $companion_payload ) ) {
+				$companion_payload = null;
+			} else {
+				$companion_payload['site_slug'] = '' !== (string) ( $companion_payload['site_slug'] ?? '' ) ? (string) $companion_payload['site_slug'] : $args['slug'];
+				$companion_payload['site_name'] = '' !== (string) ( $companion_payload['site_name'] ?? '' ) ? (string) $companion_payload['site_name'] : $args['name'];
+				$companion_validation = Static_Site_Importer_Companion_Plugin::validate_payload( $companion_payload );
+				if ( is_wp_error( $companion_validation ) ) {
+					return $companion_validation;
+				}
 			}
 		}
 		if ( isset( $args['approved_classic_plan_identity'] ) && is_array( $args['approved_classic_plan_identity'] ) && ( $plan['plan_identity'] ?? null ) !== $args['approved_classic_plan_identity'] ) {
