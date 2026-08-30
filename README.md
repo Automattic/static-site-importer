@@ -2,8 +2,6 @@
 
 Import a static site or generated website artifact into WordPress pages and an intentional companion block or classic theme.
 
-[![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?php=8.5&blueprint-url=https%3A%2F%2Fautomattic.github.io%2Fstatic-site-importer%2Fplayground%2Flatest%2Fblueprint.json)
-
 Static Site Importer is a WordPress plugin. It requires the [Blocks Engine PHP transformer](https://github.com/Automattic/blocks-engine/tree/trunk/php-transformer) Composer package and calls that package's canonical helper functions for generic artifact compilation and format conversion.
 
 ## Development packages
@@ -21,12 +19,6 @@ The command resolves the requested ref once, archives `php-transformer/` and `fi
 `runtime-package-manifest.json` is the canonical package-composition contract for constrained or embedded WordPress runtimes. Consumers locate the manifest inside the normal plugin release, select a named profile, copy only matching relative paths, and fail if any declared `required_files` entry is absent. The contract is deployment-neutral: storage, archive transport, scheduling, and runtime infrastructure remain consumer concerns.
 
 The initial `website-artifact-import` profile provides the artifact import, validation, WordPress site-plan materialization, and manifest-inspection abilities. It includes SSI's WordPress/PHP runtime and the Blocks Engine PHP transformer dependency while excluding Figma, tests, tools, docs, Node dependencies, and other development-only trees. The same immutable contract is available from `static-site-importer/get-runtime-package-manifest` for runtime discovery.
-
-## Playground package integrity
-
-Generated Playground previews accept an SSI package only when it declares `url`, `version`, and a SHA-256 `sha256` (or `digest`) value. Production selection accepts either the exact GitHub release asset URL for that version or a content-addressed URL containing the declared digest. Playground downloads the archive to its virtual filesystem, verifies its SHA-256 before `installPlugin`, and records the version, digest, and URL in the preview request provenance.
-
-Hosts provide the package through the `static_site_importer_playground_package` filter or the public blueprint primitive's explicit `package` option. A bundled runtime passes `install => false`; this remains the WordPress Build content-addressed package flow and never downloads a second SSI archive. Development-only package URLs require an explicit `development => true` selection and still require a valid digest. Mutable aliases such as `releases/latest` are rejected.
 
 ## Canonical Site Plans
 
@@ -104,27 +96,9 @@ add_filter( 'static_site_importer_theme_slug', static fn ( string $slug ): strin
 
 Imports remove untouched core seed content on sites where WordPress still reports `fresh_site`. Records are fingerprinted before page materialization and checked again before deletion, so edited or replaced content is preserved. Set the canonical import argument `remove_default_content` to `false`, pass `--keep-default-content` to WP-CLI import commands, or use the `static_site_importer_remove_default_content` filter to disable cleanup.
 
-## Playground Demo UI
+## REST Imports
 
-The repository retains a minimal, frontend-only `static-site-importer/importer` block under `demos/playground-importer/`. It is packaged separately for the README Playground experience and is excluded from the Static Site Importer release ZIP and runtime package profile.
-
-## Browser Playground Demo
-
-Open Static Site Importer in a disposable WordPress Playground site:
-
-[![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?php=8.5&blueprint-url=https%3A%2F%2Fautomattic.github.io%2Fstatic-site-importer%2Fplayground%2Flatest%2Fblueprint.json)
-
-The blueprint installs and activates the packaged Static Site Importer release plus the separately published Playground demo plugin, logs the visitor in, and opens `/import/` with the demo-only `static-site-importer/importer` block configured to generate a WordPress website. Testers can enter one public URL to collect and liberate a site into editable WordPress blocks, upload site files, choose a folder, upload a ZIP, or paste HTML. The canonical demo boots without optional PHP side modules. Figma upload is enabled only when the active runtime provides a zstd decoder; otherwise the importer explains that the capability is unavailable while keeping every other source type usable.
-
-The optional extension manifest, side module, and safe launch blueprint are published to the repository's GitHub Pages site. Each release gets immutable versioned assets. The safe `playground/latest/blueprint.json` alias advances and is browser-verified independently; optional extension aliases advance only after their own runtime proof passes. This keeps an experimental side module from taking down the canonical demo while GitHub Pages supplies the CORS headers required by Playground. The extension is produced from pinned `php-ext-zstd` and vendored `libzstd` source by the release workflow; no unpublished branch, localhost URL, PECL installation, or host `zstd` executable is used.
-
-### Direct Playground Previews
-
-`POST /wp-json/static-site-importer/v1/imports` builds a website artifact from `source` (`url`, `html`, `files`, `archive`, or `artifact`). It opens a disposable Playground by default; set `apply_to_current_site: true` to import into the installed WordPress site instead.
-
-The default response has `mode: "playground"`, `provider: "static-site-importer/direct-playground-blueprint"`, and `preview.url`. `preview.url` and `preview.playground.blueprint_url` are direct `https://playground.wordpress.net/#...` URLs; `preview.playground.preview_url` is `/` and `preview.playground.ref` identifies the generated blueprint.
-
-PHP consumers can build the same blueprint with `static_site_importer_playground_import_steps()` or `static_site_importer_playground_import_blueprint()`, and create a direct preview response with `static_site_importer_build_playground_preview()`. For normalized website artifacts, call `static_site_importer_import_website_artifact_with_disposition()`; consumers can claim that flow through the `static_site_importer_import_disposition` filter, or return `null` to use the built-in non-destructive Playground preview.
+`POST /wp-json/static-site-importer/v1/imports` normalizes `source` (`url`, `html`, `files`, `archive`, or `artifact`) and executes the canonical `static-site-importer/import` ability in the installed WordPress runtime. Product-specific interfaces and disposable preview orchestration belong in their owning product layers and consume the same ability contract.
 
 URL intake rules:
 

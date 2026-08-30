@@ -1,9 +1,9 @@
 <?php
 /**
- * Smoke test: importer block metadata, registration, and rendered shell.
+ * Smoke test: REST import adapters and source normalization.
  *
  * Run from the repository root:
- * php tests/smoke-importer-block.php
+ * php tests/smoke-rest-import.php
  *
  * @package StaticSiteImporter
  */
@@ -26,7 +26,6 @@ $assert = static function ( bool $condition, string $label, string $detail = '' 
 	}
 };
 
-$GLOBALS['ssi_registered_block'] = null;
 $GLOBALS['ssi_test_options']     = array();
 $GLOBALS['ssi_filters']          = array();
 $GLOBALS['ssi_home_url']         = 'https://example.test/';
@@ -38,17 +37,6 @@ defined( 'WEEK_IN_SECONDS' ) || define( 'WEEK_IN_SECONDS', 7 * 24 * 60 * 60 );
 if ( ! function_exists( 'wp_generate_uuid4' ) ) {
 	function wp_generate_uuid4(): string {
 		return '00000000-0000-4000-8000-000000000000';
-	}
-}
-
-if ( ! function_exists( 'register_block_type' ) ) {
-	function register_block_type( string $path, array $args = array() ): bool {
-		$GLOBALS['ssi_registered_block'] = array(
-			'path' => $path,
-			'args' => $args,
-		);
-
-		return true;
 	}
 }
 
@@ -369,8 +357,6 @@ if ( ! function_exists( 'get_page_uri' ) ) {
 	}
 }
 
-define( 'STATIC_SITE_IMPORTER_PLAYGROUND_DEMO_PATH', dirname( __DIR__ ) . '/demos/playground-importer/' );
-require_once STATIC_SITE_IMPORTER_PLAYGROUND_DEMO_PATH . 'includes/block.php';
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 $figma_transformer_bootstrap = dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-figma-transformer/figma-transformer/figma-transformer.php';
 if ( is_readable( $figma_transformer_bootstrap ) ) {
@@ -418,119 +404,8 @@ $assert( 0 === $zstd_disabled_status, 'figma-zstd-decoder-fails-closed-without-p
 
 $rest_source = file_get_contents( dirname( __DIR__ ) . '/includes/rest.php' );
 $assert( is_string( $rest_source ), 'rest-source-readable' );
-$assert( ! str_contains( $rest_source, 'figma-preview-blueprint' ), 'rest-does-not-register-stored-figma-blueprint-route' );
-$assert( ! str_contains( $rest_source, 'static_site_importer_rest_store_figma_blueprint' ), 'rest-does-not-store-playground-blueprints' );
-$assert( ! str_contains( $rest_source, 'https://playground.wordpress.net/?url=%2F' ), 'rest-does-not-return-empty-playground-url' );
-$assert( ! str_contains( $rest_source, 'generate_in_current_runtime' ), 'rest-does-not-accept-current-runtime-mode' );
-
-$metadata = json_decode( file_get_contents( STATIC_SITE_IMPORTER_PLAYGROUND_DEMO_PATH . 'blocks/importer/block.json' ), true );
-$assert( is_array( $metadata ), 'block-json-decodes' );
-$assert( 'static-site-importer/importer' === ( $metadata['name'] ?? '' ), 'block-name-is-product-importer' );
-$assert( 'Static Site Importer' === ( $metadata['title'] ?? '' ), 'block-title-is-product-name' );
-$assert( isset( $metadata['viewScript'] ), 'block-has-frontend-script' );
-$assert( ! isset( $metadata['editorScript'] ), 'demo-block-has-no-editor-ui' );
-$assert( ! isset( $metadata['attributes'] ), 'demo-block-has-no-configuration-api' );
-
-static_site_importer_playground_demo_register_block();
-
-$registered = $GLOBALS['ssi_registered_block'];
-$assert( is_array( $registered ), 'block-registers' );
-$assert( STATIC_SITE_IMPORTER_PLAYGROUND_DEMO_PATH . 'blocks/importer' === ( $registered['path'] ?? '' ), 'demo-block-registers-metadata-directory' );
-$assert( 'static_site_importer_playground_demo_render_block' === ( $registered['args']['render_callback'] ?? '' ), 'demo-block-registers-render-callback' );
-
-$html = static_site_importer_playground_demo_render_block();
-
-$assert( str_contains( $html, 'data-static-site-importer' ), 'render-has-root-hook' );
-$assert( str_contains( $html, 'data-static-site-importer-rest-url="https://example.test/wp-json/static-site-importer/v1/imports"' ), 'render-exposes-import-rest-route' );
-$assert( str_contains( $html, 'data-static-site-importer-figma-rest-url="https://example.test/wp-json/static-site-importer/v1/import-figma-file"' ), 'render-exposes-figma-file-rest-route' );
-$assert( str_contains( $html, 'data-static-site-importer-figma-available="1"' ), 'render-advertises-available-figma-capability' );
-$assert( str_contains( $html, 'data-static-site-importer-source-url' ), 'render-has-url-input-hook' );
-$assert( str_contains( $html, 'Capture a public site' ), 'render-labels-public-site-capture' );
-$assert( str_contains( $html, 'data-static-site-importer-source-files' ), 'render-has-file-input-hook' );
-$assert( str_contains( $html, 'Drop website source' ), 'render-has-decoupled-dropzone-label' );
-$assert( str_contains( $html, 'Drag a folder, ZIP, or static site files here.' ), 'render-has-upload-dropzone-copy' );
-$assert( str_contains( $html, 'data-static-site-importer-dropzone' ), 'render-has-upload-dropzone-hook' );
-$assert( str_contains( $html, 'Choose website source' ), 'render-has-decoupled-source-picker-label' );
-$assert( ! str_contains( $html, 'data-static-site-importer-source-type' ), 'render-omits-source-type-dropdown-hook' );
-$assert( ! str_contains( $html, '<select' ), 'render-omits-source-type-dropdown' );
-$assert( str_contains( $html, 'data-static-site-importer-upload-files' ), 'render-has-files-upload-button-hook' );
-$assert( str_contains( $html, 'data-static-site-importer-upload-folder' ), 'render-has-folder-upload-button-hook' );
-$assert( str_contains( $html, 'data-static-site-importer-upload-figma' ), 'render-has-figma-upload-button-hook' );
-$assert( str_contains( $html, 'File(s)' ), 'render-has-files-visible-upload-affordance' );
-$assert( str_contains( $html, 'Figma' ), 'render-has-figma-upload-choice' );
-$assert( str_contains( $html, 'Folder' ), 'render-preserves-folder-upload-choice' );
-$assert( str_contains( $html, 'data-static-site-importer-source-directory' ), 'render-preserves-directory-upload-hook' );
-$assert( str_contains( $html, 'data-static-site-importer-source-figma-file' ), 'render-has-separate-figma-upload-hook' );
-$assert( str_contains( $html, 'webkitdirectory' ), 'render-preserves-directory-picker' );
-$assert( str_contains( $html, 'hidden data-static-site-importer-source-files' ) || str_contains( $html, 'data-static-site-importer-source-files hidden' ), 'render-hides-file-input-behind-trigger' );
-$assert( str_contains( $html, 'hidden data-static-site-importer-source-directory' ) || str_contains( $html, 'data-static-site-importer-source-directory hidden' ), 'render-hides-directory-input-behind-trigger' );
-$assert( str_contains( $html, 'hidden data-static-site-importer-source-figma-file' ) || str_contains( $html, 'data-static-site-importer-source-figma-file hidden' ), 'render-hides-figma-input-behind-trigger' );
-$assert( ! str_contains( $html, '<details class="ssi-importer__upload-picker"' ), 'render-omits-upload-expander' );
-$assert( ! str_contains( $html, '<summary class="ssi-importer__upload-button"' ), 'render-omits-upload-summary-button' );
-$assert( ! str_contains( $html, 'Upload Figma file' ), 'render-omits-separate-figma-upload-label' );
-$assert( str_contains( $html, 'accept=".fig" hidden data-static-site-importer-source-figma-file' ) || str_contains( $html, 'accept=".fig" data-static-site-importer-source-figma-file hidden' ), 'render-accepts-fig-only-on-dedicated-input' );
-$assert( ! str_contains( $html, 'data-static-site-importer-source-archive' ), 'render-omits-separate-zip-upload-hook' );
-$assert( str_contains( $html, '.zip,application/zip' ), 'render-accepts-zip-in-combined-upload' );
-$assert( str_contains( $html, 'data-static-site-importer-source-html' ), 'render-has-html-input-hook' );
-$assert( str_contains( $html, '<summary class="ssi-importer__label">Paste HTML</summary>' ), 'render-collapses-paste-html-by-default' );
-$assert( str_contains( $html, 'data-static-site-importer-submit' ), 'render-has-submit-hook' );
-$assert( str_contains( $html, 'data-static-site-importer-progress' ), 'render-has-progress-hook' );
-$assert( ! str_contains( $html, 'data-static-site-importer-preview-link' ), 'render-omits-redundant-preview-link-hook' );
-$assert( str_contains( $html, 'data-static-site-importer-report' ), 'render-has-report-hook' );
-$assert( ! str_contains( $html, 'Import status' ), 'render-omits-import-status-section-copy' );
-$assert( str_contains( static_site_importer_playground_demo_render_block(), 'Generate WordPress Website' ), 'render-preview-mode-button-generates-wordpress-website' );
-$preview_html = static_site_importer_playground_demo_render_block();
-$assert( ! str_contains( $preview_html, 'data-static-site-importer-apply-to-current-site' ), 'render-has-no-current-site-import-mode' );
-$assert( str_contains( $preview_html, 'Generate WordPress Website' ), 'render-preview-button-generates-wordpress-website' );
-$assert( ! str_contains( $preview_html, 'Import to this site' ), 'render-preview-button-does-not-say-import-to-this-site' );
-
-$GLOBALS['ssi_figma_zstd_available'] = false;
-$safe_playground_html                = static_site_importer_playground_demo_render_block();
-$assert( str_contains( $safe_playground_html, 'data-static-site-importer-figma-available="0"' ), 'render-advertises-unavailable-figma-capability' );
-$assert( str_contains( $safe_playground_html, 'data-static-site-importer-upload-figma disabled aria-disabled="true"' ), 'render-disables-figma-without-zstd' );
-$assert( str_contains( $safe_playground_html, 'data-static-site-importer-figma-unavailable' ), 'render-explains-unavailable-figma-capability' );
-$assert( str_contains( $safe_playground_html, 'Other source types remain available.' ), 'render-keeps-safe-import-paths-actionable' );
-$GLOBALS['ssi_figma_zstd_available'] = true;
-
-$block_css = file_get_contents( STATIC_SITE_IMPORTER_PLAYGROUND_DEMO_PATH . 'blocks/importer/style.css' );
-$assert( is_string( $block_css ), 'block-css-readable' );
-$assert( ! str_contains( $block_css, '.ssi-importer--editor' ), 'demo-css-has-no-editor-ui' );
-
-$view_js = file_get_contents( STATIC_SITE_IMPORTER_PLAYGROUND_DEMO_PATH . 'blocks/importer/view.js' );
-$assert( is_string( $view_js ), 'view-js-readable' );
-$assert( str_contains( $view_js, 'webkitRelativePath' ), 'view-preserves-directory-relative-paths' );
-$assert( str_contains( $view_js, "root.querySelector( '[data-static-site-importer-source-url]' )" ), 'view-reads-visible-url-input' );
-$assert( str_contains( $view_js, 'url: sourceUrl ? sourceUrl.value' ), 'view-submits-visible-url-value' );
-$assert( str_contains( $view_js, 'const isUrlOnly = Boolean' ), 'view-detects-url-only-source-after-reading-uploads' );
-$assert( str_contains( $view_js, 'data-static-site-importer-source-directory' ), 'view-reads-directory-upload-input' );
-$assert( ! str_contains( $view_js, 'data-static-site-importer-source-type' ), 'view-omits-source-type-dropdown' );
-$assert( str_contains( $view_js, 'data-static-site-importer-upload-files' ), 'view-binds-files-upload-button' );
-$assert( str_contains( $view_js, 'data-static-site-importer-upload-folder' ), 'view-binds-folder-upload-button' );
-$assert( str_contains( $view_js, 'data-static-site-importer-upload-figma' ), 'view-binds-figma-upload-button' );
-$assert( str_contains( $view_js, 'input.click()' ), 'view-opens-selected-hidden-input' );
-$assert( str_contains( $view_js, 'webkitGetAsEntry' ), 'view-supports-dropped-directory-entries' );
-$assert( str_contains( $view_js, 'archive: await buildArchive( uploadInputs, root )' ), 'view-sends-zip-from-combined-upload-as-archive-payload' );
-$assert( str_contains( $view_js, "formData.append( 'figma_file', file )" ), 'view-sends-figma-file-as-multipart-upload' );
-$assert( str_contains( $view_js, "formData.append( 'theme_materialization', 'block' )" ), 'view-fixes-figma-materialization-to-block-theme' );
-$assert( str_contains( $view_js, "data-static-site-importer-figma-available' ) !== '1'" ), 'view-guards-figma-submit-by-runtime-capability' );
-$assert( ! str_contains( $view_js, 'buildFigmaFile' ), 'view-does-not-build-figma-file-payload' );
-$assert( str_contains( $view_js, '/\\.zip$/i' ), 'view-excludes-zip-files-from-generic-static-upload' );
-$assert( str_contains( $view_js, 'data-static-site-importer-source-figma-file' ), 'view-reads-separate-figma-file-input' );
-$assert( str_contains( $view_js, 'shouldIncludeSiteFile' ), 'view-skips-known-non-site-upload-files-before-reading' );
-$assert( ! str_contains( $view_js, 'CurrentRuntime' ), 'view-does-not-reference-current-runtime-mode' );
-$assert( ! str_contains( $view_js, 'generate_in_current_runtime' ), 'view-does-not-send-current-runtime-flag' );
-$assert( ! str_contains( $view_js, 'isCurrentSiteImport' ), 'view-has-no-current-site-import-mode' );
-$assert( str_contains( $view_js, 'apply_to_current_site: false' ), 'view-fixes-json-imports-to-playground-preview' );
-$assert( str_contains( $view_js, "theme_materialization: 'block'" ), 'view-fixes-json-materialization-to-block-theme' );
-$assert( ! str_contains( $view_js, 'about:blank' ), 'view-does-not-open-window-before-preview-url-is-ready' );
-$assert( ! str_contains( $view_js, 'openPendingPreviewWindow' ), 'view-has-no-pending-preview-window-helper' );
-$assert( str_contains( $view_js, 'openPreview( report )' ), 'view-opens-preview-only-after-report-is-ready' );
-$assert( str_contains( $view_js, 'static_site_importer_continuation_limit_reached' ), 'view-reports-nonterminal-continuation-limit' );
-$assert( str_contains( $view_js, '! response.ok || report.error' ), 'view-does-not-report-continuation-errors-as-complete' );
-$assert( str_contains( $view_js, 'playground.blueprint_url || preview.url' ), 'view-opens-playground-blueprint-for-generated-site' );
-$generic_preview_message = implode( ' ', array( 'no', 'preview', 'provider', 'is', 'configured' ) );
-$assert( ! str_contains( $view_js, $generic_preview_message ), 'view-does-not-reference-generic-preview-message' );
-$assert( ! str_contains( $view_js, 'Open WordPress preview' ) && ! str_contains( $html, 'Open WordPress preview' ), 'view-and-render-omit-redundant-preview-link-label' );
+$assert( ! str_contains( strtolower( $rest_source ), 'playground' ), 'rest-contains-no-playground-generation' );
+$assert( ! str_contains( strtolower( $rest_source ), 'blueprint' ), 'rest-contains-no-blueprint-generation' );
 
 $GLOBALS['ssi_test_options']['static_site_importer_figma_allow_local_runner'] = true;
 $GLOBALS['ssi_home_url'] = 'http://localhost:8882/';
@@ -543,75 +418,22 @@ $assert( static_site_importer_rest_import_figma_allows_local_runner( $local_figm
 $GLOBALS['ssi_home_url'] = 'https://example.test/';
 unset( $GLOBALS['ssi_test_options']['static_site_importer_figma_allow_local_runner'], $GLOBALS['ssi_test_options']['static_site_importer_figma_allowed_site_hosts'] );
 
-$assert( 'playground' === static_site_importer_rest_import_mode( array() ), 'rest-mode-defaults-to-open-in-playground' );
-$assert( 'playground' === static_site_importer_rest_import_mode( array( 'open_in_playground' => true ) ), 'rest-mode-supports-open-in-playground' );
-$assert( 'current_site' === static_site_importer_rest_import_mode( array( 'apply_to_current_site' => true, 'open_in_playground' => true ) ), 'rest-mode-current-site-import-wins-when-explicit' );
-
 Static_Site_Importer_Theme_Generator::$last_artifact = array();
 $apply_response = static_site_importer_rest_create_import(
 	new WP_REST_Request(
 		array(
-			'apply_to_current_site' => true,
-			'activate'              => true,
-			'overwrite'             => true,
-			'source'                => array(
+			'activate'  => true,
+			'overwrite' => true,
+			'source'    => array(
 				'html' => '<main>Apply</main>',
 			),
 		)
 	)
 );
-$assert( true === ( $apply_response['success'] ?? null ), 'rest-current-site-apply-is-explicitly-available' );
-$assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['activate'] ?? null ), 'rest-current-site-apply-preserves-activate' );
-$assert( isset( $apply_response['result'] ), 'rest-current-site-apply-returns-ability-envelope' );
-$assert( 'https://example.test/' === ( $apply_response['preview']['url'] ?? '' ), 'rest-current-site-apply-returns-site-preview-url' );
-
-Static_Site_Importer_Theme_Generator::$last_artifact = array();
-Static_Site_Importer_Theme_Generator::$last_args     = array();
-add_filter(
-	'static_site_importer_playground_package',
-	static fn() => array(
-		'url'     => 'https://github.com/Automattic/static-site-importer/releases/download/v1.2.3/static-site-importer.zip',
-		'version' => 'v1.2.3',
-		'sha256'  => str_repeat( 'a', 64 ),
-	)
-);
-$playground_response = static_site_importer_rest_create_import(
-	new WP_REST_Request(
-		array(
-			'apply_to_current_site' => false,
-			'open_in_playground'    => true,
-			'source'                => array(
-				'html' => '<main>Generate</main>',
-			),
-		)
-	)
-);
-$assert( true === ( $playground_response['success'] ?? null ), 'rest-playground-open-succeeds-without-codebox' );
-$assert( 'playground' === ( $playground_response['mode'] ?? '' ), 'rest-playground-open-reports-mode' );
-$assert( array() === Static_Site_Importer_Theme_Generator::$last_args, 'rest-playground-open-does-not-import-into-current-site' );
-$assert( str_starts_with( $playground_response['preview']['url'] ?? '', 'https://playground.wordpress.net/#' ), 'rest-playground-open-returns-direct-playground-blueprint-url' );
-$assert( ! str_starts_with( $playground_response['preview']['url'] ?? '', 'https://playground.wordpress.net/?url=' ), 'rest-playground-open-does-not-return-empty-playground-url' );
-$assert( '/' === ( $playground_response['preview']['playground']['preview_url'] ?? '' ), 'rest-playground-open-records-playground-preview-path' );
-$playground_blueprint_json = rawurldecode( substr( (string) ( $playground_response['preview']['playground']['blueprint_url'] ?? '' ), strlen( 'https://playground.wordpress.net/#' ) ) );
-$playground_blueprint      = json_decode( $playground_blueprint_json, true );
-$assert( is_array( $playground_blueprint ), 'rest-playground-open-blueprint-decodes' );
-$playground_blueprint_code = wp_json_encode( $playground_blueprint );
-$playground_download_steps = array_values( array_filter( $playground_blueprint['steps'] ?? array(), static fn( array $step ): bool => 'writeFile' === ( $step['step'] ?? '' ) ) );
-$playground_plugin_steps   = array_values( array_filter( $playground_blueprint['steps'] ?? array(), static fn( array $step ): bool => 'installPlugin' === ( $step['step'] ?? '' ) ) );
-$playground_download_step  = $playground_download_steps[0] ?? array();
-$playground_plugin_step    = $playground_plugin_steps[0] ?? array();
-$assert( 'https://github.com/Automattic/static-site-importer/releases/download/v1.2.3/static-site-importer.zip' === ( $playground_download_step['data']['url'] ?? '' ), 'rest-playground-open-blueprint-downloads-pinned-release-zip' );
-$assert( 'vfs' === ( $playground_plugin_step['pluginData']['resource'] ?? '' ), 'rest-playground-open-blueprint-installs-verified-vfs-package' );
-$assert( ( $playground_download_step['path'] ?? null ) === ( $playground_plugin_step['pluginData']['path'] ?? null ), 'rest-playground-open-blueprint-installs-downloaded-package' );
-$assert( str_contains( (string) $playground_blueprint_code, str_repeat( 'a', 64 ) ), 'rest-playground-open-blueprint-verifies-package-digest' );
-$assert( str_contains( (string) $playground_blueprint_code, 'static_site_importer_ability_import' ), 'rest-playground-open-blueprint-runs-import-ability' );
-$assert( str_contains( (string) $playground_blueprint_code, "'activate' => true" ), 'rest-playground-open-blueprint-activates-generated-site' );
-$assert( str_contains( (string) $playground_blueprint_code, "'overwrite' => true" ), 'rest-playground-open-blueprint-overwrites-generated-site' );
-// Sourceless HTML (no <title>, no URL) still falls back to the generic identity constant.
-$assert( str_contains( (string) $playground_blueprint_code, "'slug' => 'generated-wordpress-website'" ), 'rest-playground-open-blueprint-uses-non-legacy-generated-theme-slug' );
-$assert( str_contains( (string) $playground_blueprint_code, "'name' => 'Generated WordPress Website'" ), 'rest-playground-open-blueprint-uses-generated-theme-name' );
-$assert( ! str_contains( (string) $playground_blueprint_code, 'imported-website-artifact' ), 'rest-playground-open-blueprint-omits-legacy-theme-slug' );
-$assert( ! str_contains( (string) $playground_blueprint_code, 'Codebox' ), 'rest-playground-open-blueprint-does-not-introduce-codebox' );
+$assert( true === ( $apply_response['success'] ?? null ), 'rest-import-applies-to-current-site' );
+$assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['activate'] ?? null ), 'rest-import-preserves-activate' );
+$assert( isset( $apply_response['result'] ), 'rest-import-returns-ability-envelope' );
+$assert( 'https://example.test/' === ( $apply_response['preview']['url'] ?? '' ), 'rest-import-returns-site-preview-url' );
 
 $GLOBALS['ssi_last_url_provider_request'] = array();
 
@@ -639,46 +461,14 @@ if ( ! function_exists( 'wp_get_ability' ) ) {
 	}
 }
 
-$GLOBALS['ssi_url_ability_id'] = 'playground-stub-id';
-$GLOBALS['ssi_url_ability_inputs'] = array();
-
-$url_playground_response = static_site_importer_rest_create_import(
-	new WP_REST_Request(
-		array(
-			'apply_to_current_site' => false,
-			'open_in_playground'    => true,
-			'source'                => array(
-				'url'       => 'facebook.com',
-				'import_id' => 'playground-stub-id',
-			),
-			'provider'              => 'test-provider',
-			'provider_args'         => array(
-				'token' => 'playground-provider-arg',
-			),
-		)
-	)
-);
-$assert( ! is_wp_error( $url_playground_response ), 'rest-playground-url-only-does-not-error', is_wp_error( $url_playground_response ) ? $url_playground_response->get_error_code() . ': ' . $url_playground_response->get_error_message() : '' );
-if ( is_wp_error( $url_playground_response ) ) {
-	$url_playground_response = array();
-}
-$assert( true === ( $url_playground_response['success'] ?? null ), 'rest-playground-url-only-succeeds' );
-$assert( 'static-site-importer/import' === ( $url_playground_response['requires_ability_capable_target']['ability'] ?? '' ), 'rest-playground-url-only-requires-ability-name' );
-$assert( 'facebook.com' === ( $url_playground_response['requires_ability_capable_target']['url'] ?? '' ), 'rest-playground-url-only-requires-ability-url' );
-$assert( 'playground-stub-id' === ( $url_playground_response['requires_ability_capable_target']['import_id'] ?? '' ), 'rest-playground-url-only-requires-ability-import-id' );
-$assert( 0 === count( $GLOBALS['ssi_url_ability_inputs'] ), 'rest-playground-url-only-ability-not-invoked' );
-$assert( 'ability_capable_target_required' === ( $url_playground_response['continuation_reason'] ?? '' ), 'rest-playground-url-only-continuation-reason' );
-$assert( array() === Static_Site_Importer_Theme_Generator::$last_args, 'rest-playground-url-only-does-not-import-current-site' );
-
 Static_Site_Importer_Theme_Generator::$last_args = array();
-$GLOBALS['ssi_url_ability_id']     = 'current-site-stub-id';
+$GLOBALS['ssi_url_ability_id']     = 'rest-stub-id';
 $GLOBALS['ssi_url_ability_inputs'] = array();
 
 $current_site_url_response = static_site_importer_rest_create_import(
 	new WP_REST_Request(
 		array(
-			'apply_to_current_site' => true,
-			'source'                => array(
+			'source' => array(
 				'url' => 'facebook.com',
 			),
 		)
@@ -690,7 +480,7 @@ if ( is_wp_error( $current_site_url_response ) ) {
 }
 $assert( true === ( $current_site_url_response['success'] ?? null ), 'rest-current-site-url-only-succeeds' );
 $assert( true === ( $current_site_url_response['continuation'] ?? null ), 'rest-current-site-url-only-returns-continuation' );
-$assert( 'current-site-stub-id' === ( $current_site_url_response['import_id'] ?? '' ), 'rest-current-site-url-only-returns-import-id' );
+$assert( 'rest-stub-id' === ( $current_site_url_response['import_id'] ?? '' ), 'rest-current-site-url-only-returns-import-id' );
 $assert( 1 === count( $GLOBALS['ssi_url_ability_inputs'] ), 'rest-current-site-url-only-ability-invoked-once' );
 $assert( 'facebook.com' === ( $GLOBALS['ssi_url_ability_inputs'][0]['source']['url'] ?? '' ), 'rest-current-site-url-only-ability-receives-source-url' );
 $assert( 'url' === ( $GLOBALS['ssi_url_ability_inputs'][0]['source']['type'] ?? '' ), 'rest-current-site-url-only-ability-receives-source-type' );
@@ -700,8 +490,7 @@ $client_shell_html = '<!doctype html><html><head><title>Client App</title>' . st
 $pasted_shell_response = static_site_importer_rest_create_import(
 	new WP_REST_Request(
 		array(
-			'apply_to_current_site' => false,
-			'source'                => array(
+			'source' => array(
 				'html' => $client_shell_html,
 			),
 		)
@@ -715,8 +504,7 @@ $assert( 'website/index.html' === ( $pasted_shell_error_data['diagnostic']['sour
 $uploaded_shell_response = static_site_importer_rest_create_import(
 	new WP_REST_Request(
 		array(
-			'apply_to_current_site' => false,
-			'source'                => array(
+			'source' => array(
 				'files' => array(
 					array(
 						'path'           => 'index.html',
@@ -731,28 +519,6 @@ $assert( is_wp_error( $uploaded_shell_response ), 'rest-uploaded-client-shell-er
 $assert( 'static_site_importer_client_rendered_app_shell' === ( is_wp_error( $uploaded_shell_response ) ? $uploaded_shell_response->get_error_code() : '' ), 'rest-uploaded-client-shell-error-code' );
 $uploaded_shell_error_data = is_wp_error( $uploaded_shell_response ) ? $uploaded_shell_response->get_error_data() : array();
 $assert( 'website/index.html' === ( $uploaded_shell_error_data['diagnostic']['source_path'] ?? '' ), 'rest-uploaded-client-shell-diagnostic-source-path' );
-
-// A real source document title now names the generated theme/site via the
-// site-identity primitive instead of collapsing to the generic constant.
-Static_Site_Importer_Theme_Generator::$last_args = array();
-$titled_playground_response = static_site_importer_rest_create_import(
-	new WP_REST_Request(
-		array(
-			'apply_to_current_site' => false,
-			'open_in_playground'    => true,
-			'source'                => array(
-				'html' => '<!doctype html><html><head><title>Maya &amp; Devon &#8212; Home</title></head><body><main>Generate</main></body></html>',
-			),
-		)
-	)
-);
-$titled_blueprint_json = rawurldecode( substr( (string) ( $titled_playground_response['preview']['playground']['blueprint_url'] ?? '' ), strlen( 'https://playground.wordpress.net/#' ) ) );
-$titled_blueprint      = json_decode( $titled_blueprint_json, true );
-$titled_blueprint_code = wp_json_encode( is_array( $titled_blueprint ) ? $titled_blueprint : array() );
-$assert( str_contains( (string) $titled_blueprint_code, "'name' => 'Maya & Devon'" ), 'rest-playground-open-derives-name-from-source-document-title' );
-$assert( str_contains( (string) $titled_blueprint_code, "'slug' => 'maya-devon'" ), 'rest-playground-open-derives-slug-from-source-document-title' );
-$assert( ! str_contains( (string) $titled_blueprint_code, 'generated-wordpress-website' ), 'rest-playground-open-titled-source-omits-generic-constant' );
-$assert( ! str_contains( (string) $titled_blueprint_code, 'url_import_provider' ), 'rest-playground-open-non-url-source-omits-url-provider-metadata' );
 
 $figma_upload_artifact = Static_Site_Importer_Figma_Import::website_artifact_from_input(
 	array(
@@ -862,41 +628,36 @@ if ( class_exists( 'ZipArchive' ) ) {
 	$fig_archive->addFromString( 'canvas.fig', $fig_canvas );
 	$fig_archive->addFromString( 'meta.json', '{"name":"Public Import Fixture"}' );
 	$fig_archive->close();
+	$fig_archive_base64 = base64_encode( file_get_contents( $fig_path ) );
 
 	Static_Site_Importer_Theme_Generator::$last_artifact = array();
 	Static_Site_Importer_Theme_Generator::$last_args     = array();
 	$fig_upload_response = static_site_importer_rest_create_import(
 		new WP_REST_Request(
 			array(
-				'apply_to_current_site' => false,
-				'source'                => array(
+				'source' => array(
 					'figma_file' => array(
 						'name'           => 'design.fig',
 						'type'           => 'application/octet-stream',
-						'content_base64' => base64_encode( file_get_contents( $fig_path ) ),
+						'content_base64' => $fig_archive_base64,
 					),
 				),
 			)
 		)
 	);
-	$assert( ! is_wp_error( $fig_upload_response ), 'rest-fig-upload-playground-does-not-error', is_wp_error( $fig_upload_response ) ? $fig_upload_response->get_error_code() . ': ' . $fig_upload_response->get_error_message() : '' );
+	$assert( ! is_wp_error( $fig_upload_response ), 'rest-fig-upload-does-not-error', is_wp_error( $fig_upload_response ) ? $fig_upload_response->get_error_code() . ': ' . $fig_upload_response->get_error_message() : '' );
 	if ( is_wp_error( $fig_upload_response ) ) {
 		$fig_upload_response = array();
 	}
-	$assert( true === ( $fig_upload_response['success'] ?? null ), 'rest-fig-upload-playground-succeeds' );
-	$assert( 'playground' === ( $fig_upload_response['mode'] ?? '' ), 'rest-fig-upload-uses-playground-mode' );
-	$assert( str_starts_with( $fig_upload_response['preview']['url'] ?? '', 'https://playground.wordpress.net/#' ), 'rest-fig-upload-returns-direct-playground-blueprint-url' );
-	$assert( 'figma_file' === ( $fig_upload_response['request']['source'] ?? '' ), 'rest-fig-upload-records-distinct-source' );
-	$assert( array() === Static_Site_Importer_Theme_Generator::$last_args, 'rest-fig-upload-playground-does-not-import-current-site' );
-	$fig_upload_blueprint_json = rawurldecode( substr( (string) ( $fig_upload_response['preview']['playground']['blueprint_url'] ?? '' ), strlen( 'https://playground.wordpress.net/#' ) ) );
-	$assert( str_contains( $fig_upload_blueprint_json, 'Synthetic FIG Upload' ), 'rest-fig-upload-blueprint-contains-transformed-artifact' );
-	$assert( ! str_contains( $fig_upload_blueprint_json, 'content_base64' ), 'rest-fig-upload-blueprint-does-not-carry-raw-fig-source' );
+	$assert( true === ( $fig_upload_response['success'] ?? null ), 'rest-fig-upload-succeeds' );
+	$fig_upload_input = end( $GLOBALS['ssi_url_ability_inputs'] );
+	$fig_upload_json  = wp_json_encode( $fig_upload_input );
+	$assert( str_contains( (string) $fig_upload_json, 'Synthetic FIG Upload' ), 'rest-fig-upload-sends-transformed-artifact-to-ability' );
+	$assert( ! str_contains( (string) $fig_upload_json, $fig_archive_base64 ), 'rest-fig-upload-does-not-forward-raw-fig-source' );
 
 	$fig_multipart_response = static_site_importer_rest_import_figma_file(
 		new WP_REST_Request(
-			array(
-				'apply_to_current_site' => false,
-			),
+			array(),
 			array(
 				'figma_file' => array(
 					'name'     => 'design.fig',
@@ -909,40 +670,16 @@ if ( class_exists( 'ZipArchive' ) ) {
 		)
 	);
 	@unlink( $fig_path );
-	$assert( ! is_wp_error( $fig_multipart_response ), 'rest-fig-multipart-playground-does-not-error', is_wp_error( $fig_multipart_response ) ? $fig_multipart_response->get_error_code() . ': ' . $fig_multipart_response->get_error_message() : '' );
+	$assert( ! is_wp_error( $fig_multipart_response ), 'rest-fig-multipart-does-not-error', is_wp_error( $fig_multipart_response ) ? $fig_multipart_response->get_error_code() . ': ' . $fig_multipart_response->get_error_message() : '' );
 	if ( is_wp_error( $fig_multipart_response ) ) {
 		$fig_multipart_response = array();
 	}
-	$assert( true === ( $fig_multipart_response['success'] ?? null ), 'rest-fig-multipart-playground-succeeds' );
-	$assert( 'playground' === ( $fig_multipart_response['mode'] ?? '' ), 'rest-fig-multipart-uses-playground-mode' );
-	$assert( str_starts_with( $fig_multipart_response['preview']['url'] ?? '', 'https://playground.wordpress.net/#' ), 'rest-fig-multipart-returns-direct-playground-blueprint-url' );
-	$fig_multipart_blueprint_json = rawurldecode( substr( (string) ( $fig_multipart_response['preview']['playground']['blueprint_url'] ?? '' ), strlen( 'https://playground.wordpress.net/#' ) ) );
-	$assert( str_contains( $fig_multipart_blueprint_json, 'Synthetic FIG Upload' ), 'rest-fig-multipart-blueprint-contains-transformed-artifact' );
-	$assert( ! str_contains( $fig_multipart_blueprint_json, 'content_base64' ), 'rest-fig-multipart-blueprint-does-not-carry-raw-fig-source' );
+	$assert( true === ( $fig_multipart_response['success'] ?? null ), 'rest-fig-multipart-succeeds' );
+	$fig_multipart_input = end( $GLOBALS['ssi_url_ability_inputs'] );
+	$fig_multipart_json  = wp_json_encode( $fig_multipart_input );
+	$assert( str_contains( (string) $fig_multipart_json, 'Synthetic FIG Upload' ), 'rest-fig-multipart-sends-transformed-artifact-to-ability' );
+	$assert( ! str_contains( (string) $fig_multipart_json, $fig_archive_base64 ), 'rest-fig-multipart-does-not-forward-raw-fig-source' );
 }
-
-$blueprint = json_decode( file_get_contents( dirname( __DIR__ ) . '/docs/playground/blueprint.json' ), true );
-$assert( is_array( $blueprint ), 'playground-blueprint-decodes' );
-$assert( '/import/' === ( $blueprint['landingPage'] ?? '' ), 'playground-blueprint-lands-on-import-page' );
-$blueprint_code = implode( "\n", array_map( static fn( array $step ): string => isset( $step['code'] ) ? (string) $step['code'] : '', $blueprint['steps'] ?? array() ) );
-$assert( str_contains( $blueprint_code, 'static-site-importer/importer' ), 'playground-blueprint-creates-importer-block-page' );
-$assert( str_contains( $blueprint_code, '<!-- wp:static-site-importer/importer /-->' ), 'playground-blueprint-uses-unconfigured-demo-block' );
-$assert( ! str_contains( $blueprint_code, 'generateInCurrentRuntime' ), 'playground-blueprint-does-not-reference-current-runtime-generation' );
-$assert( str_contains( $blueprint_code, 'static_site_importer_protected_pages' ), 'playground-blueprint-protects-import-page' );
-$download_steps = array_values( array_filter( $blueprint['steps'] ?? array(), static fn( array $step ): bool => 'writeFile' === ( $step['step'] ?? '' ) ) );
-$plugin_steps   = array_values( array_filter( $blueprint['steps'] ?? array(), static fn( array $step ): bool => 'installPlugin' === ( $step['step'] ?? '' ) ) );
-$download_step  = $download_steps[0] ?? array();
-$plugin_step    = $plugin_steps[0] ?? array();
-$demo_download  = $download_steps[1] ?? array();
-$demo_plugin    = $plugin_steps[1] ?? array();
-$assert( 'https://github.com/Automattic/static-site-importer/releases/download/{{RELEASE_TAG}}/static-site-importer.zip' === ( $download_step['data']['url'] ?? '' ), 'playground-blueprint-downloads-same-release-package' );
-$assert( 'vfs' === ( $plugin_step['pluginData']['resource'] ?? '' ), 'playground-blueprint-installs-verified-vfs-package' );
-$assert( ( $download_step['path'] ?? null ) === ( $plugin_step['pluginData']['path'] ?? null ), 'playground-blueprint-installs-downloaded-package' );
-$assert( str_contains( $blueprint_code, '{{PACKAGE_SHA256}}' ), 'playground-blueprint-verifies-release-package' );
-$assert( 'https://automattic.github.io/static-site-importer/playground/{{RELEASE_TAG}}/static-site-importer-playground-demo.zip' === ( $demo_download['data']['url'] ?? '' ), 'playground-blueprint-downloads-separate-demo-package' );
-$assert( 'static-site-importer-playground-demo' === ( $demo_plugin['options']['targetFolderName'] ?? '' ), 'playground-blueprint-installs-separate-demo-plugin' );
-$assert( ( $demo_download['path'] ?? null ) === ( $demo_plugin['pluginData']['path'] ?? null ), 'playground-blueprint-installs-downloaded-demo-package' );
-$assert( str_contains( $blueprint_code, '{{DEMO_PACKAGE_SHA256}}' ), 'playground-blueprint-verifies-demo-package' );
 
 Static_Site_Importer_Theme_Generator::$last_artifact = array();
 Static_Site_Importer_Theme_Generator::$last_args     = array();
@@ -988,24 +725,11 @@ $figma_response = static_site_importer_rest_import_figma(
 $assert( true === ( $figma_response['success'] ?? null ), 'figma-rest-response-succeeds' );
 $assert( 'figma-to-wordpress/runner-response/v1' === ( $figma_response['schema'] ?? '' ), 'figma-rest-response-uses-runner-schema' );
 $assert( 'created' === ( $figma_response['status'] ?? '' ), 'figma-rest-response-created-status' );
-$assert( str_starts_with( $figma_response['open_url'] ?? '', 'https://playground.wordpress.net/#' ), 'figma-rest-response-open-url-is-direct-playground-blueprint' );
-$assert( isset( $figma_response['preview_session']['playground']['blueprint_url'] ), 'figma-rest-response-exposes-playground-blueprint-url' );
-$assert( array() === Static_Site_Importer_Theme_Generator::$last_artifact, 'figma-rest-preview-does-not-apply-to-current-site' );
-$figma_open_url_parts = wp_parse_url( (string) $figma_response['open_url'] );
-$assert( isset( $figma_open_url_parts['fragment'] ), 'figma-playground-uses-self-contained-blueprint-fragment' );
-$figma_blueprint_ref = (string) ( $figma_response['preview_session']['playground']['ref'] ?? '' );
-$assert( preg_match( '/^[a-f0-9]{64}$/', $figma_blueprint_ref ) === 1, 'figma-preview-exposes-blueprint-ref' );
-$figma_blueprint_response = json_decode( rawurldecode( (string) ( $figma_open_url_parts['fragment'] ?? '' ) ), true );
-$assert( is_array( $figma_blueprint_response ), 'figma-blueprint-hydrates' );
-$figma_blueprint_code = wp_json_encode( $figma_blueprint_response );
-$assert( str_contains( (string) $figma_blueprint_code, 'static_site_importer_ability_import' ), 'figma-blueprint-invokes-ssi-import-function' );
-$assert( str_contains( (string) $figma_blueprint_code, 'website/index.html' ) || str_contains( (string) $figma_blueprint_code, 'website\/index.html' ), 'figma-artifact-entrypoint-normalized' );
-$assert( str_contains( (string) $figma_blueprint_code, 'website/assets/styles.css' ) || str_contains( (string) $figma_blueprint_code, 'website\/assets\/styles.css' ), 'figma-artifact-file-path-normalized' );
-$assert( str_contains( (string) $figma_blueprint_code, "'activate' => true" ), 'figma-preview-defaults-to-activate-in-playground' );
-$assert( str_contains( (string) $figma_blueprint_code, "'overwrite' => true" ), 'figma-preview-defaults-to-overwrite-in-playground' );
-$assert( str_contains( (string) $figma_blueprint_code, "'name' => 'Fisiostetic'" ), 'figma-import-name-derived-from-metadata' );
-$assert( str_contains( (string) $figma_blueprint_code, "'site_title' => 'Fisiostetic'" ), 'figma-import-site-title-derived-from-metadata' );
-$assert( str_contains( (string) $figma_blueprint_code, "'source' => 'figma-to-wordpress'" ), 'figma-artifact-provenance-source' );
+$assert( 'https://example.test/' === ( $figma_response['open_url'] ?? '' ), 'figma-rest-response-opens-current-site' );
+$figma_rest_input = end( $GLOBALS['ssi_url_ability_inputs'] );
+$assert( 'Fisiostetic' === ( $figma_rest_input['name'] ?? '' ), 'figma-import-name-derived-from-metadata' );
+$assert( 'Fisiostetic' === ( $figma_rest_input['site_title'] ?? '' ), 'figma-import-site-title-derived-from-metadata' );
+$assert( 'figma-to-wordpress' === ( $figma_rest_input['source_metadata']['source'] ?? '' ), 'figma-artifact-provenance-source' );
 
 $figma_diagnostics_input = array(
 	'schema'     => 'figma-to-wordpress/runner-request/v1',
@@ -1275,4 +999,4 @@ if ( $failures ) {
 	exit( 1 );
 }
 
-echo sprintf( "Importer block smoke passed (%d assertions).\n", $assertions );
+echo sprintf( "REST import smoke passed (%d assertions).\n", $assertions );

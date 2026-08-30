@@ -1,6 +1,6 @@
 <?php
 /**
- * Smoke test: the REST import adapter forwards normalized importer input.
+ * Smoke test: the REST import adapter normalizes canonical importer input.
  *
  * Run inside a WordPress site:
  * wp eval-file tests/smoke-rest-import-normalization.php
@@ -54,47 +54,20 @@ $artifact = array(
 		array( 'path' => 'website/index.html', 'content' => '<main><h1>REST smoke</h1></main>' ),
 	),
 );
-$captured = array();
-
-add_filter( 'static_site_importer_can_manage_imports', '__return_true' );
-add_filter(
-	'static_site_importer_import_disposition',
-	static function ( $disposition, array $seen_artifact, array $seen_input, array $context ) use ( &$captured ) {
-		$captured = array(
-			'artifact' => $seen_artifact,
-			'input'    => $seen_input,
-			'context'  => $context,
-		);
-
-		return array( 'success' => true, 'mode' => 'captured' );
-	},
-	10,
-	4
-);
-
-do_action( 'rest_api_init' );
-$request = new WP_REST_Request( 'POST', '/static-site-importer/v1/imports' );
-$request->set_header( 'content-type', 'application/json' );
-$request->set_body( wp_json_encode( array_merge( $options, array( 'source' => array( 'artifact' => $artifact ) ) ) ) );
-$response = rest_get_server()->dispatch( $request );
-
-$assert( 200 === $response->get_status(), 'rest-response-success', (string) $response->get_status() );
-$assert( $artifact === ( $captured['artifact'] ?? null ), 'disposition-receives-provided-artifact' );
-$assert( 'playground' === ( $captured['context']['mode'] ?? '' ), 'rest-defaults-to-playground-mode' );
-$assert( $artifact === ( $captured['context']['source']['artifact'] ?? null ), 'rest-context-preserves-source' );
+$captured = static_site_importer_rest_import_args( array_merge( $options, array( 'source' => array( 'artifact' => $artifact ) ) ) );
 
 foreach ( array_keys( Static_Site_Importer_Website_Artifact_Import_Input::SCHEMA_PROPERTIES ) as $field ) {
 	if ( in_array( $field, array( 'slug', 'name', 'source_metadata' ), true ) ) {
 		continue;
 	}
-	$assert( $options[ $field ] === ( $captured['input'][ $field ] ?? null ), 'canonical-option-' . $field );
+	$assert( $options[ $field ] === ( $captured[ $field ] ?? null ), 'canonical-option-' . $field );
 }
 
-$assert( 'rest-import' === ( $captured['input']['slug'] ?? '' ), 'slug-is-rest-sanitized' );
-$assert( 'REST Import' === ( $captured['input']['name'] ?? '' ), 'name-is-rest-sanitized' );
-$assert( 'rest-normalization-smoke' === ( $captured['input']['source_metadata']['request_id'] ?? '' ), 'caller-source-metadata-is-preserved' );
-$assert( 'static_site_importer_block' === ( $captured['input']['source_metadata']['source'] ?? '' ), 'rest-source-metadata-is-applied' );
-$assert( ! array_key_exists( 'report', $captured['input'] ?? array() ), 'rest-rejects-report-destination' );
+$assert( 'rest-import' === ( $captured['slug'] ?? '' ), 'slug-is-rest-sanitized' );
+$assert( 'REST Import' === ( $captured['name'] ?? '' ), 'name-is-rest-sanitized' );
+$assert( 'rest-normalization-smoke' === ( $captured['source_metadata']['request_id'] ?? '' ), 'caller-source-metadata-is-preserved' );
+$assert( 'static_site_importer_rest' === ( $captured['source_metadata']['source'] ?? '' ), 'rest-source-metadata-is-applied' );
+$assert( ! array_key_exists( 'report', $captured ), 'rest-rejects-report-destination' );
 
 $rejected_report_params = static_site_importer_rest_import_args( array( 'report' => '/tmp/report.json' ) );
 $assert( ! array_key_exists( 'report', $rejected_report_params ), 'rest-schema-rejects-report-destination' );
