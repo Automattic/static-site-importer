@@ -55,12 +55,27 @@ if ( ! function_exists( 'static_site_importer_cli_approved_plan' ) ) {
 	}
 }
 
+if ( ! function_exists( 'static_site_importer_cli_direct_artifact_run_policy' ) ) {
+	/** Use the CLI worker runtime for a larger bounded shared-analysis batch. */
+	function static_site_importer_cli_direct_artifact_run_policy( array $policy ): array {
+		$policy['compile_batch_pages'] = 20;
+		return $policy;
+	}
+}
+
 if ( ! function_exists( 'static_site_importer_cli_import' ) ) {
 	/** Run an import with the explicit, local WP-CLI report output seam. */
 	function static_site_importer_cli_import( array $input ): array {
 		$report = isset( $input['report'] ) ? (string) $input['report'] : '';
 		unset( $input['report'] );
-		return Static_Site_Importer_Canonical_Import_Service::import_with_cli_report( $input, $report );
+		$policy_added = function_exists( 'add_filter' ) && add_filter( 'static_site_importer_direct_artifact_run_policy', 'static_site_importer_cli_direct_artifact_run_policy' );
+		try {
+			return Static_Site_Importer_Canonical_Import_Service::import_with_cli_report( $input, $report );
+		} finally {
+			if ( $policy_added && function_exists( 'remove_filter' ) ) {
+				remove_filter( 'static_site_importer_direct_artifact_run_policy', 'static_site_importer_cli_direct_artifact_run_policy' );
+			}
+		}
 	}
 }
 
