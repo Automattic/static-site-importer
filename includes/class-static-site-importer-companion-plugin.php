@@ -375,6 +375,7 @@ class Static_Site_Importer_Companion_Plugin {
 			if ( isset( $asset['content'] ) && is_scalar( $asset['content'] ) ) {
 				$content = (string) $asset['content'];
 			} elseif ( isset( $asset['content_base64'] ) && is_string( $asset['content_base64'] ) ) {
+				// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decode the compiler's declared asset payload.
 				$decoded = base64_decode( $asset['content_base64'], true );
 				$content = false === $decoded ? null : $decoded;
 			}
