@@ -547,8 +547,21 @@ $hidden_response_iframe = array(
 	'selector'            => 'iframe.form-response',
 	'source_html_preview' => '<iframe class="form-response" hidden></iframe>',
 );
-$form_identity    = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $normalized_form_fallback );
-$form_hash        = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $normalized_form_fallback );
+$reordered_form_entity = array(
+	'selector'    => 'form.newsletter',
+	'source_path' => 'index.html',
+	'form'        => array( 'class' => 'newsletter' ),
+	'controls'    => array(
+		array(
+			'name' => 'email',
+			'type' => 'email',
+			'tag'  => 'input',
+		),
+	),
+);
+$form_identity    = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $reordered_form_entity );
+$form_hash        = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $reordered_form_entity );
+$assert( $form_hash === Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $normalized_form_fallback ) && $form_identity === Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $normalized_form_fallback ), 'form-fallback-reconciliation-canonicalizes-associative-key-order' );
 $block_hash       = hash( 'sha256', '<!-- wp:jetpack/contact-form -->newsletter<!-- /wp:jetpack/contact-form -->' );
 $page_hash        = hash( 'sha256', '<!-- wp:group -->materialized page<!-- /wp:group -->' );
 $provider_receipt = array(

@@ -91,8 +91,10 @@ class Static_Site_Importer_Theme_Generator {
 	public static $applied  = 0;
 	public static $drift    = false;
 	public static $last_args = array();
+	public static $last_artifact = array();
 	public static function compile_website_artifact( $artifact, $args ) {
 		++self::$compiled;
+		self::$last_artifact = $artifact;
 		$plan = array(
 			'schema'        => 'blocks-engine/wordpress-site-plan/v2',
 			'plan_identity' => array(
@@ -211,6 +213,35 @@ $files_plan = static_site_importer_ability_import(
 );
 if ( empty( $files_plan['success'] ) || $files !== ( $GLOBALS['ssi_runtime_sources'][2]['files'] ?? null ) ) {
 	throw new RuntimeException( 'file sources must use the canonical source normalizer' ); }
+$portable_html = '<h1>Portable</h1>';
+$portable_css  = 'h1{color:green}';
+$portable_manifest = json_encode(
+	array(
+		'schema'     => Static_Site_Importer_Portable_Source_Manifest::SCHEMA,
+		'root'       => 'website',
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			array( 'path' => 'index.html', 'sha256' => hash( 'sha256', $portable_html ) ),
+			array( 'path' => 'css/site.css', 'sha256' => hash( 'sha256', $portable_css ) ),
+		),
+	)
+);
+$portable_plan = static_site_importer_ability_import(
+	array(
+		'operation' => 'plan',
+		'source'    => array(
+			'type'  => 'files',
+			'files' => array(
+				array( 'path' => Static_Site_Importer_Portable_Source_Manifest::FILENAME, 'content' => $portable_manifest ),
+				array( 'path' => 'website/index.html', 'content' => $portable_html ),
+				array( 'path' => 'website/css/site.css', 'content' => $portable_css ),
+				array( 'path' => 'fixture.json', 'content' => '{}' ),
+			),
+		),
+	)
+);
+if ( empty( $portable_plan['success'] ) || 'index.html' !== ( Static_Site_Importer_Theme_Generator::$last_artifact['entrypoint'] ?? '' ) || array( 'index.html', 'css/site.css' ) !== array_column( Static_Site_Importer_Theme_Generator::$last_artifact['files'] ?? array(), 'path' ) ) {
+	throw new RuntimeException( 'canonical imports must project portable source manifests before compilation' ); }
 $rejected = static_site_importer_ability_import(
 	array(
 		'operation' => 'plan',
@@ -275,7 +306,7 @@ $staged_zip = static_site_importer_ability_import(
 		),
 	)
 );
-if ( empty( $staged_zip['success'] ) || '/srv/private/website.zip' !== ( $GLOBALS['ssi_staged_archives'][0]['staged_path'] ?? '' ) || isset( $GLOBALS['ssi_runtime_sources'][4]['archive'] ) ) {
+if ( empty( $staged_zip['success'] ) || '/srv/private/website.zip' !== ( $GLOBALS['ssi_staged_archives'][0]['staged_path'] ?? '' ) || isset( $GLOBALS['ssi_runtime_sources'][ array_key_last( $GLOBALS['ssi_runtime_sources'] ) ]['archive'] ) ) {
 	throw new RuntimeException( 'resolved staged archives must normalize through files without inline archive bytes' ); }
 $approved_staged_zip = static_site_importer_ability_import(
 	array(

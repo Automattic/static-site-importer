@@ -44,7 +44,7 @@ $assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) throw new RuntimeException( $message );
 };
 
-$assert( 'v0.8.0' === \Composer\InstalledVersions::getPrettyVersion( 'automattic/blocks-engine-php-transformer' ), 'producer-consumer integration runs against the locked Blocks Engine php-transformer v0.8.0 dependency' );
+$assert( 'v0.8.3' === \Composer\InstalledVersions::getPrettyVersion( 'automattic/blocks-engine-php-transformer' ), 'producer-consumer integration runs against the locked Blocks Engine php-transformer v0.8.3 dependency' );
 
 $fixture_html = '<!doctype html><html><head><link rel="stylesheet" href="css/style.css"></head><body><main>Inter fixture</main></body></html>';
 $fixture_css  = "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');\n:root{--font:'Inter',system-ui,sans-serif}body{font-family:var(--font)}";
@@ -73,11 +73,11 @@ $assert( hash( 'sha256', 'fixture-37-inter-variable-font' ) === ( $overlay['requ
 
 $empty_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay(
 	array(),
-	array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) )
+	array( 'writes' => array() )
 );
 $empty_readiness = (string) ( array_values( array_filter( $empty_overlay['writes'], static fn( array $write ): bool => 'assets/js/font-readiness.js' === $write['target_path'] ) )[0]['content'] ?? '' );
 $empty_bootstrap = (string) ( array_values( array_filter( $empty_overlay['writes'], static fn( array $write ): bool => 'functions.php' === $write['target_path'] ) )[0]['content'] ?? '' );
-$assert( str_contains( $empty_readiness, 'document.fonts.ready' ) && str_contains( $empty_bootstrap, 'static-site-importer-font-readiness' ) && ! str_contains( $empty_bootstrap, 'static-site-importer-embedded-fonts' ), 'plans without materialized font faces still emit browser readiness evidence without enqueueing a nonexistent stylesheet' );
+$assert( str_starts_with( $empty_bootstrap, '<?php' ) && str_contains( $empty_readiness, 'document.fonts.ready' ) && str_contains( $empty_bootstrap, 'static-site-importer-font-readiness' ) && ! str_contains( $empty_bootstrap, 'static-site-importer-embedded-fonts' ), 'plans without a canonical bootstrap or materialized font faces synthesize browser readiness without enqueueing a nonexistent stylesheet' );
 $assert( str_contains( $empty_bootstrap, "add_theme_support( 'editor-styles' )" ) && str_contains( $empty_bootstrap, "add_editor_style( 'assets/css/editor-style.css' )" ), 'generated themes register their dedicated stylesheet for the block editor independently of font materialization' );
 
 $svg = '<svg xmlns="http://www.w3.org/2000/svg"><text font-family="Inter">Fixture 37</text></svg>';
@@ -188,11 +188,13 @@ $local_plan['webfont_contract'] = array(
 );
 $request_count = count( $GLOBALS['ssi_webfont_requests'] );
 $local_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay( $local_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
-$assert( ! is_wp_error( $local_overlay ) && array() === $local_overlay['writes'] && $request_count === count( $GLOBALS['ssi_webfont_requests'] ), 'an authoritative local-font contract never falls back to synthesized Google requests' );
+$local_write_paths = array_column( $local_overlay['writes'] ?? array(), 'target_path' );
+$assert( ! is_wp_error( $local_overlay ) && in_array( 'functions.php', $local_write_paths, true ) && in_array( 'assets/js/font-readiness.js', $local_write_paths, true ) && ! in_array( 'assets/css/embedded-fonts.css', $local_write_paths, true ) && $request_count === count( $GLOBALS['ssi_webfont_requests'] ), 'an authoritative local-font contract emits readiness without falling back to synthesized Google requests' );
 $assert( 'producer_webfont_import_unsupported_provider' === ( $local_overlay['diagnostics'][0]['reason'] ?? '' ), 'non-required local-font producer diagnostics survive the handoff without blocking import' );
 $local_plan['webfont_contract']['diagnostics'] = array();
 $local_overlay_without_diagnostics = Static_Site_Importer_Font_Materializer::prepare_overlay( $local_plan, array( 'writes' => array( array( 'target_path' => 'functions.php', 'payload' => array( 'encoding' => 'utf8', 'data' => '<?php' ) ) ) ) );
-$assert( ! is_wp_error( $local_overlay_without_diagnostics ) && array() === $local_overlay_without_diagnostics['writes'] && $request_count === count( $GLOBALS['ssi_webfont_requests'] ), 'an authoritative zero-face contract without diagnostics still suppresses legacy Google requests' );
+$local_write_paths_without_diagnostics = array_column( $local_overlay_without_diagnostics['writes'] ?? array(), 'target_path' );
+$assert( ! is_wp_error( $local_overlay_without_diagnostics ) && in_array( 'functions.php', $local_write_paths_without_diagnostics, true ) && in_array( 'assets/js/font-readiness.js', $local_write_paths_without_diagnostics, true ) && ! in_array( 'assets/css/embedded-fonts.css', $local_write_paths_without_diagnostics, true ) && $request_count === count( $GLOBALS['ssi_webfont_requests'] ), 'an authoritative zero-face contract emits readiness while suppressing legacy Google requests' );
 
 // Producer-shaped Blocks Engine #1129 contract observed in Coffee Festival.
 $direct_font_url   = 'https://cdn.coffee-festival.example/assets/ObsidianDisplay.woff2';

@@ -243,10 +243,10 @@ type/placement, `defer`/`async`, and payload presence, SHA-256, and byte count;
 payload source is never retained in the matrix output.
 
 `summary.matrix_evidence_readiness` aggregates the fixture states. `verified`
-means provenance and a current materialization plan were captured. Historical or
-otherwise incomplete outputs are explicitly `legacy_evidence_missing` (with the
-missing fields listed), so they cannot be read as evidence of current released
-transformer behavior. A dry, unexecuted matrix is `not_captured`.
+means provenance and a current materialization plan were captured. Incomplete
+outputs are explicitly `runtime_evidence_incomplete` (with the missing fields
+listed), so they cannot be read as evidence of current released transformer
+behavior. A dry, unexecuted matrix is `not_captured`.
 
 Every matrix run also writes `visual-parity-evidence-report.json` and
 `visual-parity-evidence-report.md`. These artifacts make the staged-output proof

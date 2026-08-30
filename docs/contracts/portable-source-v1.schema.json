@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Automattic/static-site-importer/blob/main/docs/contracts/portable-source-v1.schema.json",
+  "title": "Static Site Importer Portable Source Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "root", "entrypoint", "files"],
+  "properties": {
+    "schema": {
+      "const": "static-site-importer/portable-source/v1"
+    },
+    "root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entrypoint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          }
+        }
+      }
+    }
+  }
+}

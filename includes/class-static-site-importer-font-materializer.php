@@ -44,12 +44,7 @@ final class Static_Site_Importer_Font_Materializer {
 				if ( self::uses_inferred_google_fallback( $plan ) ) {
 					$producer_faces = null;
 				} elseif ( ! empty( $diagnostics ) || ! self::resolved_plan_has_google_stylesheet( $resolved_plan ) ) {
-					return array(
-						'writes'         => array(),
-						'diagnostics'    => $diagnostics,
-						'faces'          => array(),
-						'required_faces' => array(),
-					);
+					return self::with_runtime_registration( array(), $resolved_plan, array(), $diagnostics, array(), array(), array(), false );
 				}
 			} else {
 				$materialized = self::materialize_producer_faces( $producer_faces, $diagnostics );
@@ -663,7 +658,7 @@ final class Static_Site_Importer_Font_Materializer {
 	private static function with_runtime_registration( array $writes, array $resolved_plan, array $required_faces, array $diagnostics, array $faces = array(), array $svg_receipts = array(), array $svg_consumers = array(), bool $enqueue_stylesheet = true ) {
 		$bootstrap = self::canonical_write_content( $resolved_plan['writes'] ?? array(), 'functions.php' );
 		if ( null === $bootstrap ) {
-			return new WP_Error( 'static_site_importer_font_materialization_bootstrap_target_missing' );
+			$bootstrap = "<?php\n";
 		}
 		$bootstrap .= "\nadd_action( 'after_setup_theme', static function (): void {\n    add_theme_support( 'editor-styles' );\n    add_editor_style( 'assets/css/editor-style.css' );\n} );\n";
 		$bootstrap .= "\nadd_action( 'wp_enqueue_scripts', static function (): void {\n";

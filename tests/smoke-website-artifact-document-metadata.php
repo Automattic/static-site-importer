@@ -98,8 +98,10 @@ if ( ! is_wp_error( $result ) ) {
 	}
 	$metadata = $report['generated_theme']['document_metadata'] ?? array();
 	$scripts  = $metadata['scripts'] ?? array();
+	$materialized_documents = $report['materialized_content']['block_documents'] ?? array();
 
 	$assert( array() === $pattern_documents, 'single-document-import-does-not-generate-page-pattern-copy' );
+	$assert( 1 === count( $materialized_documents ) && 'posts/page-home.post_content' === ( $materialized_documents[0]['path'] ?? '' ), 'final-page-post-content-is-analyzed-before-quality-admission' );
 	$assert( str_contains( $content, 'Fire, flour, patience.' ), 'body-content-is-preserved' );
 	$single_template_parts_by_path = array();
 	foreach ( $template_parts as $template_part ) {

@@ -355,9 +355,28 @@ namespace {
 	$assert( 2 === substr_count( $topology_markup, '"width":50' ), 'topology-maps-proven-equal-grid-to-field-widths' );
 	$assert( str_contains( $topology_markup, 'First name' ) && str_contains( $topology_markup, 'Email' ) && str_contains( $topology_markup, 'Message' ), 'topology-preserves-labels' );
 	$assert( 1 === substr_count( $topology_markup, '<!-- wp:button ' ), 'topology-submit-control-emits-one-core-button-in-source-position' );
-	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && 4 === ( $topology_receipt['operation_count'] ?? 0 ) && 'provider_equal_width_fields' === ( $topology_receipt['operations'][3]['strategy'] ?? '' ), 'computed-layout-equal-grid-applies-with-bounded-receipt' );
+	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && 5 === ( $topology_receipt['operation_count'] ?? 0 ) && 'provider_equal_width_fields' === ( $topology_receipt['operations'][3]['strategy'] ?? '' ) && 'provider_interaction_carrier' === ( $topology_receipt['operations'][4]['strategy'] ?? '' ), 'computed-layout-equal-grid-applies-with-bounded-receipt' );
 	$topology_seed_repeat = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_topology['forms'] ) );
 	$assert( $topology_markup === (string) ( $topology_seed_repeat['forms'][0]['block_markup'] ?? '' ), 'provider-layout-classes-are-stable-for-identical-source-form' );
+	$deep_topology_form = $topology_form;
+	$deep_nodes         = array();
+	$parent             = null;
+	for ( $depth = 0; $depth < 9; ++$depth ) {
+		$id           = 'wrapper-deep-' . $depth;
+		$deep_nodes[] = array( 'id' => $id, 'kind' => 'wrapper', 'parent' => $parent, 'order' => 0, 'depth' => $depth, 'tag' => 'div' );
+		$parent       = $id;
+	}
+	$deep_nodes[] = array( 'id' => 'control-deep-0', 'kind' => 'control', 'parent' => $parent, 'order' => 0, 'depth' => 9, 'control' => 0 );
+	for ( $control = 1; $control < 4; ++$control ) {
+		$deep_nodes[] = array( 'id' => 'control-deep-' . $control, 'kind' => 'control', 'parent' => null, 'order' => $control, 'depth' => 0, 'control' => $control );
+	}
+	$deep_topology_form['forms'][0]['control_topology'] = array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => 16, 'max_nodes' => 128, 'nodes' => $deep_nodes, 'truncated' => false );
+	$validated_deep_topology = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $deep_topology_form );
+	$deep_topology_seed      = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_deep_topology['forms'] ?? array() ) );
+	$assert( empty( $validated_deep_topology['errors'] ) && 1 === count( $deep_topology_seed['forms'] ?? array() ), 'depth-nine-topology-validates-and-materializes' );
+	$overdeep_topology_form = $deep_topology_form;
+	$overdeep_topology_form['forms'][0]['control_topology']['max_depth'] = 17;
+	$assert( ! empty( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $overdeep_topology_form )['errors'] ), 'topology-depth-above-supported-bound-rejects' );
 	$provider_map = $topology_seed['forms'][0]['provider_layout_target_map'] ?? array();
 	$assert( 'generic/provider-layout-target-map/v1' === ( $provider_map['schema'] ?? '' ) && array() === ( $provider_map['targets'] ?? null ), 'provider-layout-map-omits-flattened-wrapper-targets' );
 	$class_owned_form = $validated_topology['forms'][0];
@@ -376,7 +395,7 @@ namespace {
 	$root_graph = $layout_graph( array( $layout_node( 'form', array( 'display' => 'flex', 'direction' => 'row', 'gap' => '1rem' ), 'form' ) ) );
 	$root_map = array( 'schema' => 'generic/provider-layout-target-map/v1', 'provider' => 'jetpack', 'scope' => '.ssi-form-123456789abc', 'targets' => array( array( 'node' => 'form', 'selector' => '.ssi-form-123456789abc > form.jetpack-contact-form__form', 'capabilities' => array( 'container_layout', 'responsive_layout' ) ) ) );
 	$root_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $root_graph, $root_map );
-	$assert( str_contains( $root_overlay['css'], '.ssi-form-123456789abc > form.jetpack-contact-form__form{display:flex;flex-direction:row;gap:1rem}' ) && 'provider_selector_transposition' === ( $root_overlay['operations'][0]['strategy'] ?? '' ), 'provider-layout-root-targets-native-jetpack-form' );
+	$assert( str_contains( $root_overlay['css'], '.ssi-form-123456789abc > form.jetpack-contact-form__form{display:flex;flex-direction:row;gap:1rem}' ) && str_contains( $root_overlay['css'], '.ssi-form-123456789abc{position:relative;z-index:1;pointer-events:auto}' ) && 'provider_selector_transposition' === ( $root_overlay['operations'][0]['strategy'] ?? '' ) && 'provider_interaction_carrier' === ( $root_overlay['operations'][1]['strategy'] ?? '' ), 'provider-layout-root-targets-native-jetpack-form-with-an-interaction-carrier' );
 	$unsafe_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $layout_graph( array( $layout_node( 'form', array( 'display' => 'url(https://example.test/x)' ), 'form' ) ) ), $root_map );
 	$assert( '' === $unsafe_overlay['css'] && 'unsafe_layout_value' === ( $unsafe_overlay['losses'][0]['reason_code'] ?? '' ), 'provider-layout-overlay-rejects-unsafe-values' );
 	$bad_map = $root_map; $bad_map['targets'][0]['selector'] = 'body .anything';
@@ -504,6 +523,25 @@ namespace {
 	$semantic_markup = (string) ( $semantic_seed['forms'][0]['block_markup'] ?? '' );
 	$semantic_losses = $semantic_seed['forms'][0]['computed_layout_receipt']['losses'] ?? array();
 	$assert( 2 === count( $semantic_losses ) && 'semantic' === ( $semantic_losses[0]['dimension'] ?? '' ) && ! str_contains( $semantic_markup, '<fieldset' ) && ! str_contains( $semantic_markup, '<label' ), 'semantic-wrapper-losses-cover-topology-wrappers-without-layout-graph-nodes' );
+	$plain_root_fieldset = $topology_form;
+	$plain_root_fieldset['forms'][0]['control_topology']['nodes'][0]['tag'] = 'fieldset';
+	$plain_root_fieldset['forms'][0]['control_topology']['nodes'][0]['fieldset_semantics'] = 'plain_group';
+	$plain_root_fieldset['forms'][0]['control_topology']['nodes'][5]['parent'] = 'wrapper-0';
+	$plain_root_fieldset['forms'][0]['control_topology']['nodes'][5]['depth'] = 1;
+	$plain_root_fieldset['forms'][0]['control_topology']['nodes'][5]['order'] = 2;
+	$plain_root_fieldset['forms'][0]['control_topology']['nodes'][6]['depth'] = 2;
+	$plain_root_fieldset['forms'][0]['control_topology']['nodes'][7]['parent'] = 'wrapper-0';
+	$plain_root_fieldset['forms'][0]['control_topology']['nodes'][7]['depth'] = 1;
+	$plain_root_fieldset['forms'][0]['control_topology']['nodes'][7]['order'] = 3;
+	$plain_root_fieldset['forms'][0]['layout_graph']['nodes'] = array();
+	$plain_root_fieldset_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $plain_root_fieldset );
+	$plain_root_fieldset_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $plain_root_fieldset_validation['forms'] ?? array() ) );
+	$assert( empty( $plain_root_fieldset_validation['errors'] ) && 'mapped' === ( $plain_root_fieldset_seed['forms'][0]['status'] ?? '' ) && empty( $plain_root_fieldset_seed['forms'][0]['form_receipt_unaccepted_losses'] ?? array() ), 'provider-form-carries-plain-root-fieldset-grouping', wp_json_encode( array( 'validation' => $plain_root_fieldset_validation, 'seed' => $plain_root_fieldset_seed ) ) );
+	$labelled_root_fieldset = $plain_root_fieldset;
+	$labelled_root_fieldset['forms'][0]['control_topology']['nodes'][0]['fieldset_semantics'] = 'labelled_group';
+	$labelled_root_fieldset_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $labelled_root_fieldset );
+	$labelled_root_fieldset_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $labelled_root_fieldset_validation['forms'] ?? array() ) );
+	$assert( 'error' === ( $labelled_root_fieldset_seed['forms'][0]['status'] ?? '' ) && 'unsupported_semantic_wrapper' === ( $labelled_root_fieldset_seed['forms'][0]['form_receipt_unaccepted_losses'][0]['reason_code'] ?? '' ), 'provider-form-rejects-labelled-root-fieldset-loss', wp_json_encode( array( 'validation' => $labelled_root_fieldset_validation, 'seed' => $labelled_root_fieldset_seed ) ) );
 	$legacy_without_submit = $forms_manifest;
 	array_pop( $legacy_without_submit['forms'][0]['controls'] );
 	$legacy_without_submit_seed = Static_Site_Importer_Form_Seeder::seed( $legacy_without_submit );

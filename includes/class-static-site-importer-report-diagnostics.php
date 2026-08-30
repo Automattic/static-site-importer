@@ -1855,13 +1855,29 @@ class Static_Site_Importer_Report_Diagnostics {
 	public static function fallback_reconciliation_hash( array $fallback ): string {
 		$source = isset( $fallback['form'] ) || isset( $fallback['controls'] )
 			? wp_json_encode(
-				array(
-					'form'     => $fallback['form'] ?? array(),
-					'controls' => $fallback['controls'] ?? array(),
+				self::canonical_fallback_value(
+					array(
+						'form'     => $fallback['form'] ?? array(),
+						'controls' => $fallback['controls'] ?? array(),
+					)
 				)
 			)
 			: self::first_scalar( $fallback, array( 'source_html_preview', 'html_excerpt', 'excerpt' ) );
 		return hash( 'sha256', (string) $source );
+	}
+
+	/** Canonicalize associative metadata while retaining authored list order. */
+	private static function canonical_fallback_value( mixed $value ): mixed {
+		if ( ! is_array( $value ) ) {
+			return $value;
+		}
+		foreach ( $value as $key => $child ) {
+			$value[ $key ] = self::canonical_fallback_value( $child );
+		}
+		if ( ! array_is_list( $value ) ) {
+			ksort( $value, SORT_STRING );
+		}
+		return $value;
 	}
 
 	/** @param array<string,mixed> $fallback */
