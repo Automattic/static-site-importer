@@ -5,39 +5,6 @@
   "category": "widgets",
   "description": "Capture a public site or import static site files into a WordPress block theme.",
   "textdomain": "static-site-importer",
-  "attributes": {
-    "title": {
-      "type": "string",
-      "default": "Bring a site into WordPress."
-    },
-    "intro": {
-      "type": "string",
-      "default": "Capture a public site, upload site files, choose a folder, upload a ZIP, or paste HTML. Static Site Importer will compile it into a block theme."
-    },
-    "provider": {
-      "type": "string",
-      "default": ""
-    },
-    "defaultUrl": {
-      "type": "string",
-      "default": ""
-    },
-    "applyToCurrentSite": {
-      "type": "boolean",
-      "default": false
-    },
-    "openInPlayground": {
-      "type": "boolean",
-      "default": true
-    },
-    "themeMaterialization": {
-      "type": "string",
-      "enum": ["block", "classic"],
-      "default": "block"
-    }
-  },
-  "editorScript": "file:./editor.js",
   "viewScript": "file:./view.js",
-  "style": "file:./style.css",
-  "editorStyle": "file:./style.css"
+  "style": "file:./style.css"
 }

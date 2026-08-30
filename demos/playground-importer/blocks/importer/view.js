@@ -270,16 +270,12 @@
 
 		const restUrl = root.getAttribute( 'data-static-site-importer-figma-rest-url' );
 		const nonce = root.getAttribute( 'data-static-site-importer-nonce' );
-		const isCurrentSiteImport = root.getAttribute( 'data-static-site-importer-apply-to-current-site' ) === '1';
-		const themeMaterialization = root.getAttribute( 'data-static-site-importer-theme-materialization' ) === 'classic' ? 'classic' : 'block';
 		const formData = new FormData();
 		formData.append( 'figma_file', file );
-		formData.append( 'apply_to_current_site', isCurrentSiteImport ? '1' : '0' );
-		formData.append( 'activate', isCurrentSiteImport ? '1' : '0' );
-		formData.append( 'overwrite', isCurrentSiteImport ? '1' : '0' );
-		formData.append( 'theme_materialization', themeMaterialization );
+		formData.append( 'apply_to_current_site', '0' );
+		formData.append( 'theme_materialization', 'block' );
 
-		showStatus( root, isCurrentSiteImport ? 'Importing Figma file to this site...' : 'Preparing Figma file for WordPress preview...' );
+		showStatus( root, 'Preparing Figma file for WordPress preview...' );
 
 		try {
 			const response = await fetch( restUrl, {
@@ -291,9 +287,7 @@
 			} );
 			const report = await response.json();
 			setReport( root, report );
-			if ( response.ok && isCurrentSiteImport && report.success ) {
-				showStatus( root, 'Figma import complete.' );
-			} else if ( response.ok && report.success && previewUrl( report ) ) {
+			if ( response.ok && report.success && previewUrl( report ) ) {
 				openPreview( report );
 				showStatus( root, 'WordPress Playground opened.' );
 			} else {
@@ -333,9 +327,6 @@
 			const sourceUrl = root.querySelector( '[data-static-site-importer-source-url]' );
 			const html = root.querySelector( '[data-static-site-importer-source-html]' );
 			const uploadInputs = root.querySelectorAll( '[data-static-site-importer-source-files], [data-static-site-importer-source-directory]' );
-			const provider = root.getAttribute( 'data-static-site-importer-provider' ) || '';
-			const isCurrentSiteImport = root.getAttribute( 'data-static-site-importer-apply-to-current-site' ) === '1';
-			const themeMaterialization = root.getAttribute( 'data-static-site-importer-theme-materialization' ) === 'classic' ? 'classic' : 'block';
 			const source = {
 				url: sourceUrl ? sourceUrl.value : '',
 				html: html ? html.value : '',
@@ -350,7 +341,7 @@
 			}
 
 			const isUrlOnly = Boolean( source.url.trim() && ! source.html.trim() && ! source.files.length && ! source.archive );
-			showStatus( root, isCurrentSiteImport ? 'Importing to this site...' : 'Preparing WordPress preview...' );
+			showStatus( root, 'Preparing WordPress preview...' );
 			submit.disabled = true;
 
 			try {
@@ -359,16 +350,11 @@
 				const postImport = async function ( importSource, importId ) {
 					const body = {
 						source: importSource,
-						apply_to_current_site: isCurrentSiteImport,
-						activate: isCurrentSiteImport,
-						overwrite: isCurrentSiteImport,
-						theme_materialization: themeMaterialization,
+						apply_to_current_site: false,
+						theme_materialization: 'block',
 					};
 					if ( importId ) {
 						body.source = Object.assign( {}, importSource, { import_id: importId } );
-					}
-					if ( ! isUrlOnly && '' !== provider ) {
-						body.provider = provider;
 					}
 					return fetch( restUrl, {
 						method: 'POST',
@@ -409,8 +395,6 @@
 
 				if ( ! response.ok || report.error ) {
 					showStatus( root, ( report.error && report.error.message ) ? report.error.message : 'Import request failed.' );
-				} else if ( isCurrentSiteImport && report.success ) {
-					showStatus( root, 'Import complete.' );
 				} else if ( report.success && previewUrl( report ) ) {
 					openPreview( report );
 					showStatus( root, 'WordPress Playground opened.' );

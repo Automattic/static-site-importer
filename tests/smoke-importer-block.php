@@ -425,13 +425,11 @@ $assert( ! str_contains( $rest_source, 'generate_in_current_runtime' ), 'rest-do
 
 $metadata = json_decode( file_get_contents( STATIC_SITE_IMPORTER_PLAYGROUND_DEMO_PATH . 'blocks/importer/block.json' ), true );
 $assert( is_array( $metadata ), 'block-json-decodes' );
-$assert( 'block' === ( $metadata['attributes']['themeMaterialization']['default'] ?? '' ), 'block-json-defaults-to-block-materialization' );
 $assert( 'static-site-importer/importer' === ( $metadata['name'] ?? '' ), 'block-name-is-product-importer' );
 $assert( 'Static Site Importer' === ( $metadata['title'] ?? '' ), 'block-title-is-product-name' );
 $assert( isset( $metadata['viewScript'] ), 'block-has-frontend-script' );
-$assert( false === ( $metadata['attributes']['applyToCurrentSite']['default'] ?? null ), 'block-defaults-current-site-import-off' );
-$assert( true === ( $metadata['attributes']['openInPlayground']['default'] ?? null ), 'block-defaults-to-open-in-playground' );
-$assert( ! isset( $metadata['attributes']['generateInCurrentRuntime'] ), 'block-has-no-current-runtime-generation-mode' );
+$assert( ! isset( $metadata['editorScript'] ), 'demo-block-has-no-editor-ui' );
+$assert( ! isset( $metadata['attributes'] ), 'demo-block-has-no-configuration-api' );
 
 static_site_importer_playground_demo_register_block();
 
@@ -440,27 +438,14 @@ $assert( is_array( $registered ), 'block-registers' );
 $assert( STATIC_SITE_IMPORTER_PLAYGROUND_DEMO_PATH . 'blocks/importer' === ( $registered['path'] ?? '' ), 'demo-block-registers-metadata-directory' );
 $assert( 'static_site_importer_playground_demo_render_block' === ( $registered['args']['render_callback'] ?? '' ), 'demo-block-registers-render-callback' );
 
-$html = static_site_importer_playground_demo_render_block(
-	array(
-		'title'              => 'Import your site',
-		'intro'              => 'Upload files, paste HTML, or start from a URL.',
-		'provider'           => 'Private Provider!',
-		'defaultUrl'         => 'https://example.com/source',
-		'applyToCurrentSite' => true,
-	)
-);
+$html = static_site_importer_playground_demo_render_block();
 
 $assert( str_contains( $html, 'data-static-site-importer' ), 'render-has-root-hook' );
 $assert( str_contains( $html, 'data-static-site-importer-rest-url="https://example.test/wp-json/static-site-importer/v1/imports"' ), 'render-exposes-import-rest-route' );
 $assert( str_contains( $html, 'data-static-site-importer-figma-rest-url="https://example.test/wp-json/static-site-importer/v1/import-figma-file"' ), 'render-exposes-figma-file-rest-route' );
 $assert( str_contains( $html, 'data-static-site-importer-figma-available="1"' ), 'render-advertises-available-figma-capability' );
-$assert( str_contains( $html, 'data-static-site-importer-provider="privateprovider"' ), 'render-sanitizes-provider' );
-$assert( str_contains( $html, 'data-static-site-importer-apply-to-current-site="1"' ), 'render-exposes-current-site-apply-flag' );
-$assert( str_contains( $html, 'data-static-site-importer-open-in-playground="0"' ), 'render-exposes-open-in-playground-flag' );
 $assert( str_contains( $html, 'data-static-site-importer-source-url' ), 'render-has-url-input-hook' );
 $assert( str_contains( $html, 'Capture a public site' ), 'render-labels-public-site-capture' );
-$assert( str_contains( $html, 'data-static-site-importer-default-url="https://example.com/source"' ), 'render-preserves-default-url-for-programmatic-use' );
-$assert( str_contains( $html, 'value="https://example.com/source"' ), 'render-prefills-visible-url-input' );
 $assert( str_contains( $html, 'data-static-site-importer-source-files' ), 'render-has-file-input-hook' );
 $assert( str_contains( $html, 'Drop website source' ), 'render-has-decoupled-dropzone-label' );
 $assert( str_contains( $html, 'Drag a folder, ZIP, or static site files here.' ), 'render-has-upload-dropzone-copy' );
@@ -493,112 +478,23 @@ $assert( str_contains( $html, 'data-static-site-importer-progress' ), 'render-ha
 $assert( ! str_contains( $html, 'data-static-site-importer-preview-link' ), 'render-omits-redundant-preview-link-hook' );
 $assert( str_contains( $html, 'data-static-site-importer-report' ), 'render-has-report-hook' );
 $assert( ! str_contains( $html, 'Import status' ), 'render-omits-import-status-section-copy' );
-$assert( str_contains( $html, 'Import your site' ), 'render-uses-custom-title' );
-$assert( str_contains( $html, 'https://example.com/source' ), 'render-uses-default-url' );
 $assert( str_contains( static_site_importer_playground_demo_render_block(), 'Generate WordPress Website' ), 'render-preview-mode-button-generates-wordpress-website' );
-$assert( str_contains( static_site_importer_playground_demo_render_block(), 'data-static-site-importer-theme-materialization="block"' ), 'render-defaults-to-block-materialization' );
-$assert( str_contains( static_site_importer_playground_demo_render_block( array( 'themeMaterialization' => 'classic' ) ), 'data-static-site-importer-theme-materialization="classic"' ), 'render-projects-classic-materialization' );
-$assert( str_contains( static_site_importer_playground_demo_render_block( array( 'themeMaterialization' => 'invalid' ) ), 'data-static-site-importer-theme-materialization="block"' ), 'render-fails-safe-to-block-materialization' );
-$playground_html = static_site_importer_playground_demo_render_block( array( 'openInPlayground' => true ) );
-$assert( str_contains( $playground_html, 'data-static-site-importer-apply-to-current-site="0"' ), 'render-playground-does-not-enable-current-site-apply' );
-$assert( str_contains( $playground_html, 'data-static-site-importer-open-in-playground="1"' ), 'render-can-target-playground-with-generate-label' );
-$assert( str_contains( $playground_html, 'Generate WordPress Website' ), 'render-playground-button-generates-wordpress-website' );
-$assert( ! str_contains( $playground_html, 'Import to this site' ), 'render-playground-button-does-not-say-import-to-this-site' );
+$preview_html = static_site_importer_playground_demo_render_block();
+$assert( ! str_contains( $preview_html, 'data-static-site-importer-apply-to-current-site' ), 'render-has-no-current-site-import-mode' );
+$assert( str_contains( $preview_html, 'Generate WordPress Website' ), 'render-preview-button-generates-wordpress-website' );
+$assert( ! str_contains( $preview_html, 'Import to this site' ), 'render-preview-button-does-not-say-import-to-this-site' );
 
 $GLOBALS['ssi_figma_zstd_available'] = false;
-$safe_playground_html                = static_site_importer_playground_demo_render_block( array( 'openInPlayground' => true ) );
+$safe_playground_html                = static_site_importer_playground_demo_render_block();
 $assert( str_contains( $safe_playground_html, 'data-static-site-importer-figma-available="0"' ), 'render-advertises-unavailable-figma-capability' );
 $assert( str_contains( $safe_playground_html, 'data-static-site-importer-upload-figma disabled aria-disabled="true"' ), 'render-disables-figma-without-zstd' );
 $assert( str_contains( $safe_playground_html, 'data-static-site-importer-figma-unavailable' ), 'render-explains-unavailable-figma-capability' );
 $assert( str_contains( $safe_playground_html, 'Other source types remain available.' ), 'render-keeps-safe-import-paths-actionable' );
 $GLOBALS['ssi_figma_zstd_available'] = true;
 
-/*
- * Theming seam: the block ships a host-overridable `--ssi-importer-*` custom
- * property surface with neutral defaults, plus filters to append wrapper classes
- * and attributes. This lets a host theme reskin the importer to its own design
- * system without touching SSI, forking the stylesheet, or using `!important`.
- * The seam is additive and Studio-Native-agnostic.
- */
 $block_css = file_get_contents( STATIC_SITE_IMPORTER_PLAYGROUND_DEMO_PATH . 'blocks/importer/style.css' );
 $assert( is_string( $block_css ), 'block-css-readable' );
-
-// Themeable custom-property surface is declared on the block root with defaults.
-$ssi_expected_tokens = array(
-	'--ssi-importer-surface',
-	'--ssi-importer-surface-muted',
-	'--ssi-importer-fg',
-	'--ssi-importer-fg-muted',
-	'--ssi-importer-accent',
-	'--ssi-importer-accent-fg',
-	'--ssi-importer-accent-hover',
-	'--ssi-importer-border',
-	'--ssi-importer-dropzone-border',
-	'--ssi-importer-success',
-	'--ssi-importer-radius',
-	'--ssi-importer-radius-field',
-	'--ssi-importer-radius-pill',
-	'--ssi-importer-shadow',
-	'--ssi-importer-max-width',
-	'--ssi-importer-gap',
-	'--ssi-importer-padding',
-	'--ssi-importer-font',
-	'--ssi-importer-title-size',
-);
-foreach ( $ssi_expected_tokens as $ssi_token ) {
-	// Declared as a default (`--token:`) and consumed at least once (`var(--token)`).
-	$assert( str_contains( $block_css, $ssi_token . ':' ), 'block-css-declares-token' . str_replace( '--ssi-importer', '', $ssi_token ) );
-	$assert( str_contains( $block_css, 'var(' . $ssi_token . ')' ), 'block-css-consumes-token' . str_replace( '--ssi-importer', '', $ssi_token ) );
-}
-
-// Defaults preserve the standalone appearance (neutral surface, dark accent).
-$assert( str_contains( $block_css, '--ssi-importer-surface: #fff;' ), 'block-css-default-surface-intact' );
-$assert( str_contains( $block_css, '--ssi-importer-accent: #101517;' ), 'block-css-default-accent-intact' );
-$assert( str_contains( $block_css, '--ssi-importer-fg: #101517;' ), 'block-css-default-fg-intact' );
-
-// Seam ships no product-specific knowledge (fully host-agnostic).
-$assert( ! str_contains( strtolower( $block_css ), 'studio' ), 'block-css-has-no-studio-native-knowledge' );
-$assert( ! str_contains( $block_css, '--sw-' ), 'block-css-references-no-host-tokens' );
-$assert( ! str_contains( $block_css, '!important' ), 'block-css-uses-no-important-hacks' );
-
-// Additive/non-breaking: the default wrapper class + core hooks are unchanged.
-$default_wrapper = static_site_importer_playground_demo_render_block();
-$assert( str_contains( $default_wrapper, '<div class="ssi-importer"' ), 'render-default-wrapper-class-intact' );
-$assert( str_contains( $default_wrapper, 'data-static-site-importer ' ), 'render-default-preserves-core-root-hook' );
-
-// Wrapper-class filter: a host can append a scoping class; base class stays.
-$GLOBALS['ssi_filters']['static_site_importer_block_wrapper_classes'][] = static function ( string $classes ): string {
-	return $classes . ' host-native-importer';
-};
-$themed_class_html = static_site_importer_playground_demo_render_block();
-$assert( str_contains( $themed_class_html, 'ssi-importer host-native-importer' ), 'render-wrapper-class-filter-appends-host-class' );
-$assert( str_contains( $themed_class_html, 'data-static-site-importer ' ), 'render-wrapper-class-filter-keeps-core-hook' );
-$GLOBALS['ssi_filters']['static_site_importer_block_wrapper_classes'] = array();
-
-// A host that drops the base class still gets it back (defaults always apply).
-$GLOBALS['ssi_filters']['static_site_importer_block_wrapper_classes'][] = static function (): string {
-	return 'host-only';
-};
-$reasserted_html = static_site_importer_playground_demo_render_block();
-$assert( str_contains( $reasserted_html, 'ssi-importer host-only' ), 'render-wrapper-class-filter-reasserts-base-class' );
-$GLOBALS['ssi_filters']['static_site_importer_block_wrapper_classes'] = array();
-
-// Wrapper-attributes filter: a host can project its tokens via inline style.
-$GLOBALS['ssi_filters']['static_site_importer_block_wrapper_attributes'][] = static function ( array $attrs ): array {
-	$attrs['style']            = '--ssi-importer-accent:#3858e9;--ssi-importer-surface:#101517';
-	$attrs['data-host-native'] = '1';
-	// Attempts to override core hooks / class must be ignored by the seam.
-	$attrs['class']                              = 'evil-override';
-	$attrs['data-static-site-importer-rest-url'] = 'https://evil.example/';
-	return $attrs;
-};
-$themed_attr_html = static_site_importer_playground_demo_render_block();
-$assert( str_contains( $themed_attr_html, 'style="--ssi-importer-accent:#3858e9;--ssi-importer-surface:#101517"' ), 'render-wrapper-attr-filter-projects-host-tokens' );
-$assert( str_contains( $themed_attr_html, 'data-host-native="1"' ), 'render-wrapper-attr-filter-adds-host-attribute' );
-$assert( ! str_contains( $themed_attr_html, 'evil-override' ), 'render-wrapper-attr-filter-cannot-override-class' );
-$assert( str_contains( $themed_attr_html, 'data-static-site-importer-rest-url="https://example.test/wp-json/static-site-importer/v1/imports"' ), 'render-wrapper-attr-filter-cannot-override-core-hooks' );
-$assert( ! str_contains( $themed_attr_html, 'https://evil.example/' ), 'render-wrapper-attr-filter-rejects-core-hook-collision' );
-$GLOBALS['ssi_filters']['static_site_importer_block_wrapper_attributes'] = array();
+$assert( ! str_contains( $block_css, '.ssi-importer--editor' ), 'demo-css-has-no-editor-ui' );
 
 $view_js = file_get_contents( STATIC_SITE_IMPORTER_PLAYGROUND_DEMO_PATH . 'blocks/importer/view.js' );
 $assert( is_string( $view_js ), 'view-js-readable' );
@@ -615,7 +511,7 @@ $assert( str_contains( $view_js, 'input.click()' ), 'view-opens-selected-hidden-
 $assert( str_contains( $view_js, 'webkitGetAsEntry' ), 'view-supports-dropped-directory-entries' );
 $assert( str_contains( $view_js, 'archive: await buildArchive( uploadInputs, root )' ), 'view-sends-zip-from-combined-upload-as-archive-payload' );
 $assert( str_contains( $view_js, "formData.append( 'figma_file', file )" ), 'view-sends-figma-file-as-multipart-upload' );
-$assert( str_contains( $view_js, "formData.append( 'theme_materialization', themeMaterialization )" ), 'view-sends-figma-materialization-strategy' );
+$assert( str_contains( $view_js, "formData.append( 'theme_materialization', 'block' )" ), 'view-fixes-figma-materialization-to-block-theme' );
 $assert( str_contains( $view_js, "data-static-site-importer-figma-available' ) !== '1'" ), 'view-guards-figma-submit-by-runtime-capability' );
 $assert( ! str_contains( $view_js, 'buildFigmaFile' ), 'view-does-not-build-figma-file-payload' );
 $assert( str_contains( $view_js, '/\\.zip$/i' ), 'view-excludes-zip-files-from-generic-static-upload' );
@@ -623,11 +519,9 @@ $assert( str_contains( $view_js, 'data-static-site-importer-source-figma-file' )
 $assert( str_contains( $view_js, 'shouldIncludeSiteFile' ), 'view-skips-known-non-site-upload-files-before-reading' );
 $assert( ! str_contains( $view_js, 'CurrentRuntime' ), 'view-does-not-reference-current-runtime-mode' );
 $assert( ! str_contains( $view_js, 'generate_in_current_runtime' ), 'view-does-not-send-current-runtime-flag' );
-$assert( str_contains( $view_js, 'isCurrentSiteImport' ), 'view-names-current-site-import-mode-explicitly' );
-$assert( str_contains( $view_js, 'apply_to_current_site: isCurrentSiteImport' ), 'view-sends-current-site-apply-flag-only-from-apply-mode' );
-$assert( str_contains( $view_js, 'activate: isCurrentSiteImport' ), 'view-activates-only-current-site-imports' );
-$assert( str_contains( $view_js, 'overwrite: isCurrentSiteImport' ), 'view-overwrites-only-current-site-imports' );
-$assert( str_contains( $view_js, 'theme_materialization: themeMaterialization' ), 'view-sends-materialization-strategy-for-json-imports-and-continuations' );
+$assert( ! str_contains( $view_js, 'isCurrentSiteImport' ), 'view-has-no-current-site-import-mode' );
+$assert( str_contains( $view_js, 'apply_to_current_site: false' ), 'view-fixes-json-imports-to-playground-preview' );
+$assert( str_contains( $view_js, "theme_materialization: 'block'" ), 'view-fixes-json-materialization-to-block-theme' );
 $assert( ! str_contains( $view_js, 'about:blank' ), 'view-does-not-open-window-before-preview-url-is-ready' );
 $assert( ! str_contains( $view_js, 'openPendingPreviewWindow' ), 'view-has-no-pending-preview-window-helper' );
 $assert( str_contains( $view_js, 'openPreview( report )' ), 'view-opens-preview-only-after-report-is-ready' );
@@ -1032,10 +926,7 @@ $assert( is_array( $blueprint ), 'playground-blueprint-decodes' );
 $assert( '/import/' === ( $blueprint['landingPage'] ?? '' ), 'playground-blueprint-lands-on-import-page' );
 $blueprint_code = implode( "\n", array_map( static fn( array $step ): string => isset( $step['code'] ) ? (string) $step['code'] : '', $blueprint['steps'] ?? array() ) );
 $assert( str_contains( $blueprint_code, 'static-site-importer/importer' ), 'playground-blueprint-creates-importer-block-page' );
-$assert( str_contains( $blueprint_code, '"title":"Import HTML to WordPress"' ), 'playground-blueprint-uses-import-html-title' );
-$assert( str_contains( $blueprint_code, '"intro":"Upload a website or paste HTML. Static Site Importer will generate your new WordPress website."' ), 'playground-blueprint-uses-generate-website-copy' );
-$assert( str_contains( $blueprint_code, '"applyToCurrentSite":false' ), 'playground-blueprint-generates-wordpress-website' );
-$assert( str_contains( $blueprint_code, '"openInPlayground":true' ), 'playground-blueprint-targets-open-in-playground' );
+$assert( str_contains( $blueprint_code, '<!-- wp:static-site-importer/importer /-->' ), 'playground-blueprint-uses-unconfigured-demo-block' );
 $assert( ! str_contains( $blueprint_code, 'generateInCurrentRuntime' ), 'playground-blueprint-does-not-reference-current-runtime-generation' );
 $assert( str_contains( $blueprint_code, 'static_site_importer_protected_pages' ), 'playground-blueprint-protects-import-page' );
 $download_steps = array_values( array_filter( $blueprint['steps'] ?? array(), static fn( array $step ): bool => 'writeFile' === ( $step['step'] ?? '' ) ) );
