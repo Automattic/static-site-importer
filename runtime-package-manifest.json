@@ -22,10 +22,6 @@
         },
         {
           "type": "prefix",
-          "path": "blocks/"
-        },
-        {
-          "type": "prefix",
           "path": "includes/"
         },
         {

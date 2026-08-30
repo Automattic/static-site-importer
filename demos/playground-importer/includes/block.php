@@ -2,7 +2,7 @@
 /**
  * Importer block registration and render callback.
  *
- * @package StaticSiteImporter
+ * @package StaticSiteImporterPlaygroundDemo
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -14,11 +14,11 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * @return void
  */
-function static_site_importer_register_block(): void {
+function static_site_importer_playground_demo_register_block(): void {
 	register_block_type(
-		STATIC_SITE_IMPORTER_PATH . 'blocks/importer',
+		STATIC_SITE_IMPORTER_PLAYGROUND_DEMO_PATH . 'blocks/importer',
 		array(
-			'render_callback' => 'static_site_importer_render_block',
+			'render_callback' => 'static_site_importer_playground_demo_render_block',
 		)
 	);
 }
@@ -29,7 +29,7 @@ function static_site_importer_register_block(): void {
  * @param array<string,mixed> $attributes Block attributes.
  * @return string
  */
-function static_site_importer_render_block( array $attributes = array() ): string {
+function static_site_importer_playground_demo_render_block( array $attributes = array() ): string {
 	$figma_available       = Static_Site_Importer_Figma_Import::zstd_decoder_available();
 	$title                 = isset( $attributes['title'] ) && '' !== trim( (string) $attributes['title'] ) ? (string) $attributes['title'] : __( 'Bring a site into WordPress.', 'static-site-importer' );
 	$default_intro         = $figma_available

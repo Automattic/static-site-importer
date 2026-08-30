@@ -64,7 +64,6 @@ When a generated artifact contains full-document HTML, Static Site Importer rout
 
 ## What It Does
 
-- Adds an **Import Static Site** button on the **Appearance -> Themes** screen.
 - Accepts pasted HTML, one public HTML URL, a direct `.html` / `.htm` upload, or a ZIP containing a static-site folder with an `index.html` shell/chrome entry point.
 - Allows ZIP/CLI source-site imports to include nested `.md` / `.markdown` content documents; `.mdx` is skipped with explicit diagnostics because MDX runtime components are not supported.
 - Provides one WP-CLI importer, `wp static-site-importer import`, for pasted HTML, website files, ZIP archives, and public URLs through the canonical `static-site-importer/import` ability.
@@ -90,14 +89,9 @@ SSI requires `automattic/blocks-engine-php-transformer:^0.4.3`. Until the packag
 
 At runtime, SSI loads the transformer package from `vendor/` and calls `blocks_engine_php_transformer_compile_artifact()` and `blocks_engine_php_transformer_convert_format()` directly.
 
-## Admin Usage
+## Runtime Interfaces
 
-1. Open **Appearance -> Themes** and click **Import Static Site** beside the standard **Add Theme** button.
-2. Paste a single HTML document, enter a public `http` / `https` URL, upload a single `.html` / `.htm` file, or upload a ZIP containing a static-site folder with an `index.html` entry point and optional `.md` / `.markdown` content documents.
-3. Optionally provide a theme name and slug.
-4. Leave **Activate imported theme** checked if the generated theme should become active immediately.
-
-The admin path always overwrites an existing generated theme with the same slug. Pasted HTML, fetched URL HTML, and direct HTML uploads are copied into a generated upload work directory as `index.html` and imported as a single-page site. ZIP uploads are for multi-page static sites or bundled source-site exports; they are extracted to an upload work directory, the selected `index.html` is used as the entry file, sibling HTML files from that extracted site directory are imported, and nested `.md` / `.markdown` files are imported as content pages. The importer does not require the original source model to be a single `index.html`; it needs one selected HTML entry file for shared shell/chrome and imports the source content documents it can read.
+Static Site Importer is an infrastructure plugin. Its supported runtime surfaces are WordPress abilities, WP-CLI commands, REST endpoints, and PHP consumer APIs. It does not register an admin screen or ship an end-user Gutenberg block.
 
 ## Site Identity and Default Content
 
@@ -110,9 +104,11 @@ add_filter( 'static_site_importer_theme_slug', static fn ( string $slug ): strin
 
 Imports remove untouched core seed content on sites where WordPress still reports `fresh_site`. Records are fingerprinted before page materialization and checked again before deletion, so edited or replaced content is preserved. Set the canonical import argument `remove_default_content` to `false`, pass `--keep-default-content` to WP-CLI import commands, or use the `static_site_importer_remove_default_content` filter to disable cleanup.
 
-## Theming The Importer Block
+## Playground Demo UI
 
-The `static-site-importer/importer` block ships neutral, standalone-friendly defaults, and is fully themeable by a host so it can match the host's design system — without forking the block, patching its stylesheet, or using forced style overrides. There are three complementary, additive seams. Standalone consumers who set nothing still get the default importer.
+The repository retains a demo-only `static-site-importer/importer` block under `demos/playground-importer/`. It is packaged separately for the README Playground experience and is excluded from the Static Site Importer release ZIP and runtime package profile.
+
+The demo block ships neutral, standalone-friendly defaults and is fully themeable by a host without forking the block, patching its stylesheet, or using forced style overrides. There are three complementary, additive seams.
 
 ### 1. Design tokens (CSS custom properties)
 
@@ -192,7 +188,7 @@ Open Static Site Importer in a disposable WordPress Playground site:
 
 [![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?php=8.5&blueprint-url=https%3A%2F%2Fautomattic.github.io%2Fstatic-site-importer%2Fplayground%2Flatest%2Fblueprint.json)
 
-The blueprint installs and activates the packaged Static Site Importer release, logs the visitor in, and opens `/import/` with the `static-site-importer/importer` block configured to generate a WordPress website. Testers can enter one public URL to collect and liberate a site into editable WordPress blocks, upload site files, choose a folder, upload a ZIP, or paste HTML. The canonical demo boots without optional PHP side modules. Figma upload is enabled only when the active runtime provides a zstd decoder; otherwise the importer explains that the capability is unavailable while keeping every other source type usable.
+The blueprint installs and activates the packaged Static Site Importer release plus the separately published Playground demo plugin, logs the visitor in, and opens `/import/` with the demo-only `static-site-importer/importer` block configured to generate a WordPress website. Testers can enter one public URL to collect and liberate a site into editable WordPress blocks, upload site files, choose a folder, upload a ZIP, or paste HTML. The canonical demo boots without optional PHP side modules. Figma upload is enabled only when the active runtime provides a zstd decoder; otherwise the importer explains that the capability is unavailable while keeping every other source type usable.
 
 The optional extension manifest, side module, and safe launch blueprint are published to the repository's GitHub Pages site. Each release gets immutable versioned assets. The safe `playground/latest/blueprint.json` alias advances and is browser-verified independently; optional extension aliases advance only after their own runtime proof passes. This keeps an experimental side module from taking down the canonical demo while GitHub Pages supplies the CORS headers required by Playground. The extension is produced from pinned `php-ext-zstd` and vendored `libzstd` source by the release workflow; no unpublished branch, localhost URL, PECL installation, or host `zstd` executable is used.
 
@@ -448,15 +444,7 @@ npm run test:validation -- --json
 
 ### PHP Smokes
 
-PHP smokes run inside WordPress with SSI's Composer dependencies installed:
-
-```bash
-wp eval-file tests/smoke-admin-import-html-entry.php
-wp eval-file tests/smoke-url-import-entry.php
-wp eval-file tests/smoke-editor-style-support.php
-wp eval-file tests/smoke-wordpress-is-dead-fixture.php
-wp eval-file tests/smoke-mixed-source-fixture.php
-```
+PHP smokes are declared in `test-manifest.json`; run the standalone lane with `npm test` or the complete configured lanes with `npm run test:all`.
 
 `php tests/smoke-wordpress-site-plan-materializer.php` runs outside WordPress and verifies that Blocks Engine's direct `ArtifactCompiler` output is consumed through `source_reports.wordpress_site_plan` v2 and materialized into the stable receipt contract.
 
