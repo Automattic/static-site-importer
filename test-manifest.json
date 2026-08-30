@@ -83,6 +83,7 @@
     { "path": "tools/acceptance-handoff.test.mjs", "environment": "node" },
     { "path": "tools/fig-intent-parity-report.test.mjs", "environment": "node" },
     { "path": "tools/fixture-matrix.test.mjs", "environment": "node" },
+    { "path": "tools/php-wasm-zstd.test.mjs", "environment": "node" },
     { "path": "tools/promote-solved-fixture.test.mjs", "environment": "node" },
     { "path": "tools/run-test-manifest.test.mjs", "environment": "node" },
     { "path": "tools/run-fig-fixture-e2e.test.mjs", "environment": "node" },

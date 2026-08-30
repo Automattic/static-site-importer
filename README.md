@@ -2,6 +2,8 @@
 
 Import a static site or generated website artifact into WordPress pages and an intentional companion block or classic theme.
 
+[![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?php=8.5&blueprint-url=https%3A%2F%2Fautomattic.github.io%2Fstatic-site-importer%2Fplayground%2Flatest%2Fblueprint.json)
+
 Static Site Importer is a WordPress plugin. It requires the [Blocks Engine PHP transformer](https://github.com/Automattic/blocks-engine/tree/trunk/php-transformer) Composer package and calls that package's canonical helper functions for generic artifact compilation and format conversion.
 
 ## Development packages
@@ -84,6 +86,16 @@ At runtime, SSI loads the transformer package from `vendor/` and calls `blocks_e
 ## Runtime Interfaces
 
 Static Site Importer is an infrastructure plugin. Its supported runtime surfaces are WordPress abilities, WP-CLI commands, REST endpoints, and PHP consumer APIs. It does not register an admin screen or ship an end-user Gutenberg block.
+
+## Browser Playground Demo
+
+Open the separate demo interface in a disposable WordPress Playground site:
+
+[![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?php=8.5&blueprint-url=https%3A%2F%2Fautomattic.github.io%2Fstatic-site-importer%2Fplayground%2Flatest%2Fblueprint.json)
+
+The release blueprint installs the infrastructure-only Static Site Importer package and a separate demo plugin built from `demos/playground-importer/`. The demo plugin owns the `static-site-importer/importer` block and consumes SSI's public REST contract to import into the disposable Playground site. The SSI plugin and its runtime package contain no demo UI or demo registration.
+
+Testers can enter one public URL, upload static site files, choose a folder, upload a ZIP, or paste HTML. Figma upload is enabled only when the Playground runtime provides the optional zstd extension; all other source types remain available without it. Tagged blueprints and demo packages are published through the [Playground publication contract](docs/playground/publication-contract.md), while the README uses the browser-verified `playground/latest/blueprint.json` alias.
 
 ## Site Identity and Default Content
 

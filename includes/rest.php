@@ -111,7 +111,7 @@ function static_site_importer_rest_import_figma( WP_REST_Request $request ) {
 		return $artifact;
 	}
 
-	$params = array_merge(
+	$params       = array_merge(
 		$input,
 		array(
 			'activate'  => array_key_exists( 'activate', $input ) ? ! empty( $input['activate'] ) : true,
