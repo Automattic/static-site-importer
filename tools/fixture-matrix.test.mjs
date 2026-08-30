@@ -262,7 +262,7 @@ test('matrix evidence requires and summarizes the canonical materialization rece
 
 test('matrix evidence fails closed when the materialization receipt is absent', () => {
   const evidence = collectMatrixEvidence({ import_report: { blocks_engine: { transformer: { package: 'package', version: '1.0.0', reference: 'a'.repeat(40) }, wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2', assets: [] } } } });
-  assert.equal(evidence.readiness, 'legacy_evidence_missing');
+  assert.equal(evidence.readiness, 'runtime_evidence_incomplete');
   assert.ok(evidence.missing.includes('materialization_receipt'));
 });
 
@@ -1592,10 +1592,10 @@ test('fixture matrix labels reports without runtime provenance and materializati
     codeboxOutput: { fixture_id: 'simple-site', status: 'passed', import_report: { blocks_engine: { available: true } } },
   });
 
-  assert.equal(result.fixtures[0].matrix_evidence.readiness, 'legacy_evidence_missing');
+  assert.equal(result.fixtures[0].matrix_evidence.readiness, 'runtime_evidence_incomplete');
   assert.deepEqual(result.fixtures[0].matrix_evidence.missing, ['transformer_package', 'transformer_version', 'transformer_reference', 'wordpress_site_plan', 'materialization_receipt']);
   assert.equal(result.summary.matrix_evidence_readiness.status, 'incomplete');
-  assert.equal(result.summary.matrix_evidence_readiness.counts.legacy_evidence_missing, 1);
+  assert.equal(result.summary.matrix_evidence_readiness.counts.runtime_evidence_incomplete, 1);
 });
 
 test('materialization sidecars retain bounded evidence after oversized import stdout', () => {
@@ -1992,7 +1992,7 @@ test('fixture attribution records missing lineage as a blind spot instead of def
     results: [{
       fixture_id: 'simple-site',
       status: 'failed',
-      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'legacy_evidence_missing', missing: ['transformer_reference', 'wordpress_site_plan', 'materialization_receipt'] },
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'runtime_evidence_incomplete', missing: ['transformer_reference', 'wordpress_site_plan', 'materialization_receipt'] },
       diagnostics: [{ kind: 'visual_parity_mismatch', message: 'Visual mismatch has no lineage.' }],
     }],
   });
@@ -2009,7 +2009,7 @@ test('materialization attribution reports missing transformer provenance as a bo
     results: [{
       fixture_id: 'simple-site',
       status: 'failed',
-      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'legacy_evidence_missing', missing: ['transformer_package', 'transformer_version', 'transformer_reference'] },
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'runtime_evidence_incomplete', missing: ['transformer_package', 'transformer_version', 'transformer_reference'] },
       diagnostics: [{ kind: 'missing_asset', attribution_boundary: 'materialization', candidate_repo: 'static-site-importer', message: 'Materialization omitted a stylesheet.' }],
     }],
   });
@@ -2039,7 +2039,7 @@ test('versioned fixture evidence replaces an unproven caller-supplied owner', ()
     results: [{
       fixture_id: 'simple-site',
       status: 'failed',
-      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'legacy_evidence_missing', missing: ['transformer_reference'] },
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'runtime_evidence_incomplete', missing: ['transformer_reference'] },
       diagnostics: [{ kind: 'layout_shift', candidate_repo: 'blocks-engine', message: 'Strict contract lacks ownership evidence.' }],
     }],
   });
