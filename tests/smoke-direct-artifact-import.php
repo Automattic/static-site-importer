@@ -349,6 +349,30 @@ $zip_pages = $zip_compiler->preparePages( $zip_artifact, $zip_shared, $zip_reade
 $zip_receipts = $zip_compiler->compilePreparedPages( $zip_shared, array_values( $zip_pages ), $zip_reader );
 $zip_uninterrupted_plan = $zip_compiler->compose( $zip_shared, array_values( $zip_receipts ) )->toArray()['source_reports']['wordpress_site_plan'];
 $GLOBALS['ssi_direct_staged_payloads'] = array();
+$GLOBALS['ssi_direct_compose_payload_reader'] = null;
+$GLOBALS['ssi_direct_compose_reused_compile_reader'] = false;
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_compiler'][] = static function ( object $compiler ): object {
+	return new class( $compiler ) {
+		private ?object $compile_reader = null;
+
+		public function __construct( private object $compiler ) {}
+
+		public function compilePreparedPages( array $shared, array $plans, ?object $payload_reader = null ) {
+			$this->compile_reader = $payload_reader;
+			return $this->compiler->compilePreparedPages( $shared, $plans, $payload_reader );
+		}
+
+		public function compose( array $shared, array $receipts, ?object $payload_reader = null ) {
+			$GLOBALS['ssi_direct_compose_payload_reader'] = $payload_reader;
+			$GLOBALS['ssi_direct_compose_reused_compile_reader'] = null !== $payload_reader && $payload_reader === $this->compile_reader;
+			return $this->compiler->compose( $shared, $receipts, $payload_reader );
+		}
+
+		public function __call( string $method, array $arguments ) {
+			return $this->compiler->{$method}( ...$arguments );
+		}
+	};
+};
 $zip_terminal = $zip_first;
 for ( $attempt = 0; $attempt < 10 && ! empty( $zip_terminal['continuation'] ); ++$attempt ) {
 	$zip_terminal = Static_Site_Importer_Canonical_Import_Service::import(
@@ -359,6 +383,7 @@ for ( $attempt = 0; $attempt < 10 && ! empty( $zip_terminal['continuation'] ); +
 	);
 }
 $assert( ! empty( $zip_terminal['success'] ) && empty( $zip_terminal['continuation'] ) && 'blocks-engine/wordpress-site-plan/v2' === ( $zip_terminal['plan']['schema'] ?? '' ), 'ZIP continuation must finish from retained payloads without reacquiring the resolver-owned archive' );
+$assert( true === $GLOBALS['ssi_direct_compose_reused_compile_reader'] && $binary === $GLOBALS['ssi_direct_compose_payload_reader']->read( $binary_ref ), 'terminal ZIP composition must receive the exact retained payload reader used by the final compile batch' );
 $assert( str_contains( (string) wp_json_encode( $zip_terminal['plan'] ), $binary_ref['id'] ) && ! str_contains( (string) wp_json_encode( $zip_terminal['plan'] ), base64_encode( $binary ) ), 'durable ZIP planning must preserve compact canonical payload references instead of inlining binary bytes' );
 $first_difference = static function ( $left, $right, string $path = '$' ) use ( &$first_difference ): string {
 	if ( gettype( $left ) !== gettype( $right ) ) {
