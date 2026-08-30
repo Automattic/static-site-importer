@@ -263,19 +263,18 @@ class Static_Site_Importer_Theme_Generator {
 			$compiled = $args['compiled_artifact_result'];
 		} else {
 			$compiler_result = ( new $compiler_class() )->compile( $artifact );
-			$view_method     = 'toWordPressSitePlanView';
-			$compiled        = is_callable( array( $compiler_result, $view_method ) ) ? ( new ReflectionMethod( $compiler_result, $view_method ) )->invoke( $compiler_result ) : $compiler_result->toArray();
+			$compiled        = $compiler_result->toWordPressSitePlanView();
 		}
-		if ( ! is_array( $compiled ) ) {
-			return new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid result.' );
+		if ( 'blocks-engine/wordpress-site-plan-view/v1' !== ( $compiled['schema'] ?? '' ) ) {
+			return new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid WordPress site plan view.' );
 		}
-		$source_reports = 'blocks-engine/wordpress-site-plan-view/v1' === ( $compiled['schema'] ?? '' ) ? array(
+		$source_reports = array(
 			'wordpress_site_plan'             => $compiled['wordpress_site_plan'] ?? array(),
 			'wordpress_site_plan_diagnostics' => $compiled['diagnostics'] ?? array(),
 			'gutenberg_gaps'                  => $compiled['gutenberg_gaps'] ?? array(),
 			'companion_plugin_payload'        => $compiled['companion_plugin_payload'] ?? array(),
 			'materialization_plan'            => array( 'theme' => array( 'font_materialization' => $compiled['font_materialization'] ?? array() ) ),
-		) : ( is_array( $compiled['source_reports'] ?? null ) ? $compiled['source_reports'] : array() );
+		);
 		$plan = isset( $source_reports['wordpress_site_plan'] ) && is_array( $source_reports['wordpress_site_plan'] ) ? $source_reports['wordpress_site_plan'] : array();
 		if ( empty( $plan ) ) {
 			$diagnostics = isset( $source_reports['wordpress_site_plan_diagnostics'] ) && is_array( $source_reports['wordpress_site_plan_diagnostics'] ) ? wp_json_encode( $source_reports['wordpress_site_plan_diagnostics'] ) : '';
