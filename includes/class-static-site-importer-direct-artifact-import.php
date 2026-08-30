@@ -475,11 +475,14 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$run = $entered;
 				self::before_phase( 'compose', $run, $run['page_ids'] );
 				$result = call_user_func( $compose, $shared, array_values( $receipts ) );
-				if ( ! is_object( $result ) || ! is_callable( array( $result, 'toArray' ) ) ) {
+				if ( ! is_object( $result ) || ! is_callable( array( $result, 'toWordPressSitePlanView' ) ) ) {
 					throw new RuntimeException( 'Blocks Engine returned an invalid composed result.' );
 				}
-				$composed = call_user_func( array( $result, 'toArray' ) );
-				$metrics  = is_array( $composed['metrics'] ?? null ) ? $composed['metrics'] : array();
+				$composed = call_user_func( array( $result, 'toWordPressSitePlanView' ) );
+				if ( ! is_array( $composed ) || 'blocks-engine/wordpress-site-plan-view/v1' !== ( $composed['schema'] ?? '' ) ) {
+					throw new RuntimeException( 'Blocks Engine returned an invalid composed WordPress site plan view.' );
+				}
+				$metrics = is_array( $result->metrics ?? null ) ? $result->metrics : array();
 				if ( 0 !== (int) ( $metrics['html_document_transform_count'] ?? 0 ) || 0 !== (int) ( $metrics['normalization_count'] ?? 0 ) ) {
 					throw new RuntimeException( sprintf( 'Terminal receipt composition performed %d HTML transforms and %d normalization passes.', (int) ( $metrics['html_document_transform_count'] ?? 0 ), (int) ( $metrics['normalization_count'] ?? 0 ) ) );
 				}
@@ -1395,7 +1398,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		if ( 'composed' === $kind ) {
 			$work = is_array( $payload['terminal_work'] ?? null ) ? $payload['terminal_work'] : array();
-			return 'blocks-engine/php-transformer/result/v1' === ( $payload['result']['schema'] ?? '' )
+			return 'blocks-engine/wordpress-site-plan-view/v1' === ( $payload['result']['schema'] ?? '' )
 				&& 0 === (int) ( $work['html_document_transform_count'] ?? -1 )
 				&& 0 === (int) ( $work['normalization_count'] ?? -1 );
 		}

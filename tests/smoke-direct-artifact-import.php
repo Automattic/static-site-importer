@@ -86,7 +86,7 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-direct-a
 class Static_Site_Importer_Theme_Generator {
 	public static function compile_website_artifact( array $artifact, array $args = array() ) {
 		$compiled = $args['compiled_artifact_result'] ?? array();
-		$plan = is_array( $compiled['source_reports']['wordpress_site_plan'] ?? null ) ? $compiled['source_reports']['wordpress_site_plan'] : array();
+		$plan = is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array();
 		if ( empty( $plan ) ) {
 			return new WP_Error( 'missing_precompiled_plan', 'The smoke materializer requires the real staged compiler result.' );
 		}
@@ -95,9 +95,9 @@ class Static_Site_Importer_Theme_Generator {
 			'args'                  => $args,
 			'compiled'              => $compiled,
 			'plan'                  => $plan,
-			'gutenberg_gaps'        => $compiled['source_reports']['gutenberg_gaps'] ?? array(),
+			'gutenberg_gaps'        => $compiled['gutenberg_gaps'] ?? array(),
 			'companion_payload'     => null,
-			'materialization_plan'  => $compiled['source_reports']['materialization_plan'] ?? array(),
+			'materialization_plan'  => array( 'theme' => array( 'font_materialization' => $compiled['font_materialization'] ?? array() ) ),
 			'theme_materialization' => array( 'strategy' => 'block' ),
 		);
 	}
@@ -120,7 +120,7 @@ class Static_Site_Importer_Theme_Generator {
 		++$GLOBALS['ssi_direct_mutations'];
 		$GLOBALS['ssi_direct_last_args'] = $args;
 		$GLOBALS['ssi_direct_compiled_results'][] = $args['compiled_artifact_result'];
-		$plan = $args['compiled_artifact_result']['source_reports']['wordpress_site_plan'] ?? array();
+		$plan = $args['compiled_artifact_result']['wordpress_site_plan'] ?? array();
 		return array(
 			'theme_slug'            => 'direct-artifact-fixture',
 			'theme_name'            => 'Direct Artifact Fixture',
@@ -255,7 +255,7 @@ $assert( 1 === ( $work['content_policy_applications'] ?? 0 ) && 1 === ( $work['c
 $assert( 1 === ( $work['materialization_claims'] ?? 0 ) && 1 === ( $work['materializations'] ?? 0 ) && true === ( $GLOBALS['ssi_direct_last_args']['_static_site_importer_precompiled_source'] ?? false ), 'apply must claim once and use the precompiled source handoff' );
 $assert( 0 === ( $terminal_work['html_document_transform_count'] ?? -1 ) && 0 === ( $terminal_work['normalization_count'] ?? -1 ), 'terminal composition must perform zero HTML transforms and normalization' );
 $assert( ! str_contains( (string) json_encode( $terminal['artifact_run'] ), $test_root ) && ! str_contains( (string) json_encode( $terminal['artifact_run'] ), 'website/index.html' ), 'public run evidence must remain bounded and path-free' );
-$composed_plan = $GLOBALS['ssi_direct_compiled_results'][0]['source_reports']['wordpress_site_plan'] ?? array();
+$composed_plan = $GLOBALS['ssi_direct_compiled_results'][0]['wordpress_site_plan'] ?? array();
 $form_declarations = array_values( array_filter( $composed_plan['runtime_declarations'] ?? array(), static fn( $declaration ): bool => is_array( $declaration ) && 'entity_collection' === ( $declaration['kind'] ?? '' ) && 'forms' === ( $declaration['type'] ?? '' ) ) );
 $form_dependencies = array_values( array_filter( $composed_plan['runtime_declarations'] ?? array(), static fn( $declaration ): bool => is_array( $declaration ) && 'dependency' === ( $declaration['kind'] ?? '' ) && 'form' === ( $declaration['capability'] ?? '' ) ) );
 $assert( 2 === ( $composed_plan['quality']['metrics']['fallback_count'] ?? -1 ) && 2 === count( $form_declarations[0]['payload']['entities'] ?? array() ), 'real terminal composition must retain both route-level provider-materializable form entities' );

@@ -263,22 +263,14 @@ class Static_Site_Importer_Theme_Generator {
 			$compiled = $args['compiled_artifact_result'];
 		} else {
 			$compiler_result = ( new $compiler_class() )->compile( $artifact );
-			$view_method     = 'toWordPressSitePlanView';
-			$compiled        = is_callable( array( $compiler_result, $view_method ) ) ? ( new ReflectionMethod( $compiler_result, $view_method ) )->invoke( $compiler_result ) : $compiler_result->toArray();
+			$compiled        = $compiler_result->toWordPressSitePlanView();
 		}
-		if ( ! is_array( $compiled ) ) {
-			return new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid result.' );
+		if ( 'blocks-engine/wordpress-site-plan-view/v1' !== ( $compiled['schema'] ?? '' ) ) {
+			return new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid WordPress site plan view.' );
 		}
-		$source_reports = 'blocks-engine/wordpress-site-plan-view/v1' === ( $compiled['schema'] ?? '' ) ? array(
-			'wordpress_site_plan'             => $compiled['wordpress_site_plan'] ?? array(),
-			'wordpress_site_plan_diagnostics' => $compiled['diagnostics'] ?? array(),
-			'gutenberg_gaps'                  => $compiled['gutenberg_gaps'] ?? array(),
-			'companion_plugin_payload'        => $compiled['companion_plugin_payload'] ?? array(),
-			'materialization_plan'            => array( 'theme' => array( 'font_materialization' => $compiled['font_materialization'] ?? array() ) ),
-		) : ( is_array( $compiled['source_reports'] ?? null ) ? $compiled['source_reports'] : array() );
-		$plan = isset( $source_reports['wordpress_site_plan'] ) && is_array( $source_reports['wordpress_site_plan'] ) ? $source_reports['wordpress_site_plan'] : array();
+		$plan = is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array();
 		if ( empty( $plan ) ) {
-			$diagnostics = isset( $source_reports['wordpress_site_plan_diagnostics'] ) && is_array( $source_reports['wordpress_site_plan_diagnostics'] ) ? wp_json_encode( $source_reports['wordpress_site_plan_diagnostics'] ) : '';
+			$diagnostics = is_array( $compiled['diagnostics'] ?? null ) ? wp_json_encode( $compiled['diagnostics'] ) : '';
 			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.' . ( false !== $diagnostics ? ' ' . $diagnostics : '' ), $compiled );
 		}
 		// The compile boundary is the only seam holding both the canonical plan's
@@ -286,17 +278,22 @@ class Static_Site_Importer_Theme_Generator {
 		// coverage findings here and let the report projection publish them.
 		$args['missing_author_stylesheet_diagnostics'] = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics( $plan, $artifact );
 		$companion_payload = null;
-		$gutenberg_gaps    = isset( $source_reports['gutenberg_gaps'] ) && is_array( $source_reports['gutenberg_gaps'] ) ? $source_reports['gutenberg_gaps'] : array();
-		if ( ! empty( $source_reports['companion_plugin_payload'] ) ) {
-			$companion_payload = $source_reports['companion_plugin_payload'];
+		$gutenberg_gaps    = is_array( $compiled['gutenberg_gaps'] ?? null ) ? $compiled['gutenberg_gaps'] : array();
+		if ( ! empty( $compiled['companion_plugin_payload'] ) ) {
+			$companion_payload = $compiled['companion_plugin_payload'];
 			if ( ! is_array( $companion_payload ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_payload_invalid', 'Compiled companion_plugin_payload must be an object.' );
 			}
-			$companion_payload['site_slug'] = '' !== (string) ( $companion_payload['site_slug'] ?? '' ) ? (string) $companion_payload['site_slug'] : $args['slug'];
-			$companion_payload['site_name'] = '' !== (string) ( $companion_payload['site_name'] ?? '' ) ? (string) $companion_payload['site_name'] : $args['name'];
-			$companion_validation = Static_Site_Importer_Companion_Plugin::validate_payload( $companion_payload );
-			if ( is_wp_error( $companion_validation ) ) {
-				return $companion_validation;
+			$companion_payload = Static_Site_Importer_Companion_Plugin::without_theme_owned_scripts( $companion_payload, is_array( $plan['assets'] ?? null ) ? $plan['assets'] : array() );
+			if ( ! Static_Site_Importer_Companion_Plugin::has_materializable_content( $companion_payload ) ) {
+				$companion_payload = null;
+			} else {
+				$companion_payload['site_slug'] = '' !== (string) ( $companion_payload['site_slug'] ?? '' ) ? (string) $companion_payload['site_slug'] : $args['slug'];
+				$companion_payload['site_name'] = '' !== (string) ( $companion_payload['site_name'] ?? '' ) ? (string) $companion_payload['site_name'] : $args['name'];
+				$companion_validation = Static_Site_Importer_Companion_Plugin::validate_payload( $companion_payload );
+				if ( is_wp_error( $companion_validation ) ) {
+					return $companion_validation;
+				}
 			}
 		}
 		if ( isset( $args['approved_classic_plan_identity'] ) && is_array( $args['approved_classic_plan_identity'] ) && ( $plan['plan_identity'] ?? null ) !== $args['approved_classic_plan_identity'] ) {
@@ -314,7 +311,7 @@ class Static_Site_Importer_Theme_Generator {
 			$strategy['evidence']['status'] = 'source_artifact_projection';
 			$strategy['evidence']['projection_schema'] = $projection['schema'];
 		}
-		$materialization_plan = isset( $source_reports['materialization_plan'] ) && is_array( $source_reports['materialization_plan'] ) ? $source_reports['materialization_plan'] : array();
+		$materialization_plan = array( 'theme' => array( 'font_materialization' => is_array( $compiled['font_materialization'] ?? null ) ? $compiled['font_materialization'] : array() ) );
 		return array(
 			'artifact'              => $artifact,
 			'args'                  => $args,
@@ -698,6 +695,7 @@ class Static_Site_Importer_Theme_Generator {
 		$report       = Static_Site_Importer_Import_Report::from_array( $envelope );
 		$report['source_artifact'] = array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ) );
 		$report['materialization_receipt'] = $receipt;
+		Static_Site_Importer_Block_Document_Reporter::analyze_materialized_block_documents( $report['generated_theme']['block_documents'], $report );
 		$artifact = array_merge(
 			isset( $args['source_artifact_reference'] ) && is_array( $args['source_artifact_reference'] ) ? $args['source_artifact_reference'] : array(),
 			array_filter(
@@ -1228,89 +1226,6 @@ class Static_Site_Importer_Theme_Generator {
 			++$index;
 		}
 		return true;
-	}
-
-	/**
-	 * Materialize a compiled website artifact directly into WordPress theme artifacts.
-	 *
-	 * @param array<string,mixed> $compiled Compiler result envelope.
-	 * @param array<string,mixed> $args     Import args.
-	 * @return array<string,mixed>|WP_Error
-	 */
-	/**
-	 * Build the canonical progress timeline returned to host chat/Codebox callers.
-	 *
-	 * @param string               $import_run_id Import run id.
-	 * @param string               $theme_slug    Theme slug.
-	 * @param array<string,int>    $page_ids      Materialized page IDs.
-	 * @param array<string,string> $writes        Theme file writes.
-	 * @param array<string,mixed>  $quality       Quality summary.
-	 * @param array<string,mixed>  $validation    Validation result.
-	 * @param string               $report_path   External report path.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function import_progress_events( string $import_run_id, string $theme_slug, array $page_ids, array $writes, array $quality, array $validation, string $report_path ): array {
-		$now               = gmdate( 'c' );
-		$page_count        = count( $page_ids );
-		$file_count        = count( $writes );
-		$diagnostic_count  = isset( $validation['diagnostics'] ) && is_array( $validation['diagnostics'] ) ? count( $validation['diagnostics'] ) : 0;
-		$quality_passed    = empty( $quality['fail_import'] );
-		$review_pending    = ! $quality_passed;
-		$common            = array(
-			'schema'        => 'wp-codebox/live-progress-event/v1',
-			'run_id'        => $import_run_id,
-			'source_schema' => 'static-site-importer/materialization-progress/v1',
-			'timestamp'     => $now,
-		);
-
-		return array(
-			array_merge(
-				$common,
-				array(
-					'phase'    => 'ssi.materialization.completed',
-					'status'   => 'succeeded',
-					'label'    => 'Materialized WordPress content',
-					'progress' => array(
-						'current'   => $page_count,
-						'completed' => $page_count,
-						'total'     => $page_count,
-						'percent'   => 100,
-						'unit'      => 'pages',
-					),
-					'detail'   => array(
-						'theme_slug' => $theme_slug,
-						'file_count' => $file_count,
-					),
-				)
-			),
-			array_merge(
-				$common,
-				array(
-					'phase'       => 'ssi.validation.completed',
-					'status'      => $quality_passed ? 'succeeded' : 'failed',
-					'label'       => $quality_passed ? 'Validation passed' : 'Validation needs review',
-					'diagnostics' => array(
-						'count' => $diagnostic_count,
-					),
-				)
-			),
-			array_merge(
-				$common,
-				array(
-					'phase'     => $review_pending ? 'ssi.review.pending' : 'ssi.saved.completed',
-					'status'    => $review_pending ? 'running' : 'succeeded',
-					'label'     => $review_pending ? 'Review pending' : 'Saved to WordPress',
-					'artifacts' => array_filter(
-						array(
-							'import_report' => '' !== $report_path ? array(
-								'path' => $report_path,
-								'kind' => 'json',
-							) : null,
-						)
-					),
-				)
-			),
-		);
 	}
 
 	/**
