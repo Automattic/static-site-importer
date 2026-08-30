@@ -284,11 +284,16 @@ class Static_Site_Importer_Theme_Generator {
 			if ( ! is_array( $companion_payload ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_payload_invalid', 'Compiled companion_plugin_payload must be an object.' );
 			}
-			$companion_payload['site_slug'] = '' !== (string) ( $companion_payload['site_slug'] ?? '' ) ? (string) $companion_payload['site_slug'] : $args['slug'];
-			$companion_payload['site_name'] = '' !== (string) ( $companion_payload['site_name'] ?? '' ) ? (string) $companion_payload['site_name'] : $args['name'];
-			$companion_validation = Static_Site_Importer_Companion_Plugin::validate_payload( $companion_payload );
-			if ( is_wp_error( $companion_validation ) ) {
-				return $companion_validation;
+			$companion_payload = Static_Site_Importer_Companion_Plugin::without_theme_owned_scripts( $companion_payload, is_array( $plan['assets'] ?? null ) ? $plan['assets'] : array() );
+			if ( ! Static_Site_Importer_Companion_Plugin::has_materializable_content( $companion_payload ) ) {
+				$companion_payload = null;
+			} else {
+				$companion_payload['site_slug'] = '' !== (string) ( $companion_payload['site_slug'] ?? '' ) ? (string) $companion_payload['site_slug'] : $args['slug'];
+				$companion_payload['site_name'] = '' !== (string) ( $companion_payload['site_name'] ?? '' ) ? (string) $companion_payload['site_name'] : $args['name'];
+				$companion_validation = Static_Site_Importer_Companion_Plugin::validate_payload( $companion_payload );
+				if ( is_wp_error( $companion_validation ) ) {
+					return $companion_validation;
+				}
 			}
 		}
 		if ( isset( $args['approved_classic_plan_identity'] ) && is_array( $args['approved_classic_plan_identity'] ) && ( $plan['plan_identity'] ?? null ) !== $args['approved_classic_plan_identity'] ) {
@@ -1221,89 +1226,6 @@ class Static_Site_Importer_Theme_Generator {
 			++$index;
 		}
 		return true;
-	}
-
-	/**
-	 * Materialize a compiled website artifact directly into WordPress theme artifacts.
-	 *
-	 * @param array<string,mixed> $compiled Compiler result envelope.
-	 * @param array<string,mixed> $args     Import args.
-	 * @return array<string,mixed>|WP_Error
-	 */
-	/**
-	 * Build the canonical progress timeline returned to host chat/Codebox callers.
-	 *
-	 * @param string               $import_run_id Import run id.
-	 * @param string               $theme_slug    Theme slug.
-	 * @param array<string,int>    $page_ids      Materialized page IDs.
-	 * @param array<string,string> $writes        Theme file writes.
-	 * @param array<string,mixed>  $quality       Quality summary.
-	 * @param array<string,mixed>  $validation    Validation result.
-	 * @param string               $report_path   External report path.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function import_progress_events( string $import_run_id, string $theme_slug, array $page_ids, array $writes, array $quality, array $validation, string $report_path ): array {
-		$now               = gmdate( 'c' );
-		$page_count        = count( $page_ids );
-		$file_count        = count( $writes );
-		$diagnostic_count  = isset( $validation['diagnostics'] ) && is_array( $validation['diagnostics'] ) ? count( $validation['diagnostics'] ) : 0;
-		$quality_passed    = empty( $quality['fail_import'] );
-		$review_pending    = ! $quality_passed;
-		$common            = array(
-			'schema'        => 'wp-codebox/live-progress-event/v1',
-			'run_id'        => $import_run_id,
-			'source_schema' => 'static-site-importer/materialization-progress/v1',
-			'timestamp'     => $now,
-		);
-
-		return array(
-			array_merge(
-				$common,
-				array(
-					'phase'    => 'ssi.materialization.completed',
-					'status'   => 'succeeded',
-					'label'    => 'Materialized WordPress content',
-					'progress' => array(
-						'current'   => $page_count,
-						'completed' => $page_count,
-						'total'     => $page_count,
-						'percent'   => 100,
-						'unit'      => 'pages',
-					),
-					'detail'   => array(
-						'theme_slug' => $theme_slug,
-						'file_count' => $file_count,
-					),
-				)
-			),
-			array_merge(
-				$common,
-				array(
-					'phase'       => 'ssi.validation.completed',
-					'status'      => $quality_passed ? 'succeeded' : 'failed',
-					'label'       => $quality_passed ? 'Validation passed' : 'Validation needs review',
-					'diagnostics' => array(
-						'count' => $diagnostic_count,
-					),
-				)
-			),
-			array_merge(
-				$common,
-				array(
-					'phase'     => $review_pending ? 'ssi.review.pending' : 'ssi.saved.completed',
-					'status'    => $review_pending ? 'running' : 'succeeded',
-					'label'     => $review_pending ? 'Review pending' : 'Saved to WordPress',
-					'artifacts' => array_filter(
-						array(
-							'import_report' => '' !== $report_path ? array(
-								'path' => $report_path,
-								'kind' => 'json',
-							) : null,
-						)
-					),
-				)
-			),
-		);
 	}
 
 	/**
