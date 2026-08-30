@@ -111,8 +111,9 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_path' ) ) {
 			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'The request-bundle reference must name a source beneath the request directory.' );
 		}
 
-		$cursor = $base;
-		foreach ( preg_split( '#[\\\\/]#', $relative ) ?: array() as $segment ) {
+		$cursor   = $base;
+		$segments = preg_split( '#[\\\\/]#', $relative );
+		foreach ( is_array( $segments ) ? $segments : array() as $segment ) {
 			if ( '' === $segment || '.' === $segment || '..' === $segment ) {
 				return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'The request-bundle reference must not contain empty or traversal segments.' );
 			}
@@ -166,9 +167,9 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				if ( false === $digest ) {
 					return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A request-bundle source file could not be verified.' );
 				}
-				$id             = 'request-bundle-file:' . rawurlencode( $relative );
-				$paths[ $id ]   = $absolute;
-				$files[]        = array(
+				$id           = 'request-bundle-file:' . rawurlencode( $relative );
+				$paths[ $id ] = $absolute;
+				$files[]      = array(
 					'path'              => $relative,
 					'payload_reference' => array(
 						'schema' => 'blocks-engine/payload-reference/v1',
@@ -240,7 +241,10 @@ if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
 					}
 					if ( 'files' === $type ) {
 						return array(
-							'source'         => array( 'type' => 'files', 'files' => $bundle['files'] ),
+							'source'         => array(
+								'type'  => 'files',
+								'files' => $bundle['files'],
+							),
 							'payload_reader' => $bundle['payload_reader'],
 							'provenance'     => array( 'transport' => 'cli-request-bundle' ),
 						);
