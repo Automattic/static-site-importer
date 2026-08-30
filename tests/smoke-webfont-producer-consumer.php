@@ -78,6 +78,7 @@ $empty_overlay = Static_Site_Importer_Font_Materializer::prepare_overlay(
 $empty_readiness = (string) ( array_values( array_filter( $empty_overlay['writes'], static fn( array $write ): bool => 'assets/js/font-readiness.js' === $write['target_path'] ) )[0]['content'] ?? '' );
 $empty_bootstrap = (string) ( array_values( array_filter( $empty_overlay['writes'], static fn( array $write ): bool => 'functions.php' === $write['target_path'] ) )[0]['content'] ?? '' );
 $assert( str_starts_with( $empty_bootstrap, '<?php' ) && str_contains( $empty_readiness, 'document.fonts.ready' ) && str_contains( $empty_bootstrap, 'static-site-importer-font-readiness' ) && ! str_contains( $empty_bootstrap, 'static-site-importer-embedded-fonts' ), 'plans without a canonical bootstrap or materialized font faces synthesize browser readiness without enqueueing a nonexistent stylesheet' );
+$assert( str_contains( $empty_bootstrap, "add_theme_support( 'editor-styles' )" ) && str_contains( $empty_bootstrap, "add_editor_style( 'assets/css/editor-style.css' )" ), 'generated themes register their dedicated stylesheet for the block editor independently of font materialization' );
 
 $svg = '<svg xmlns="http://www.w3.org/2000/svg"><text font-family="Inter">Fixture 37</text></svg>';
 $svg_source_path = 'assets/materialized-svg/fixture-37.svg';
