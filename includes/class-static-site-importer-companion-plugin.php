@@ -359,9 +359,6 @@ class Static_Site_Importer_Companion_Plugin {
 	private static function theme_script_hashes( array $assets ): array {
 		$hashes = array();
 		foreach ( $assets as $asset ) {
-			if ( ! is_array( $asset ) ) {
-				continue;
-			}
 			$path = '';
 			foreach ( array( 'target_path', 'path', 'source_path' ) as $field ) {
 				if ( isset( $asset[ $field ] ) && is_scalar( $asset[ $field ] ) && '' !== trim( (string) $asset[ $field ] ) ) {
