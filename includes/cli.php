@@ -59,7 +59,7 @@ if ( ! function_exists( 'static_site_importer_cli_import' ) ) {
 	/** Run an import with the explicit, local WP-CLI report output seam. */
 	function static_site_importer_cli_import( array $input ): array {
 		$report = isset( $input['report'] ) ? (string) $input['report'] : '';
-		unset( $input['report'] );
+		unset( $input['report'], $input['_cli_request_bundle_dir'] );
 		return Static_Site_Importer_Canonical_Import_Service::import_with_cli_report( $input, $report );
 	}
 }
@@ -95,6 +95,173 @@ if ( ! function_exists( 'static_site_importer_cli_read_request_json' ) ) {
 			return new WP_Error( 'static_site_importer_cli_request_invalid', 'Import request must be a JSON object.' );
 		}
 		return $data;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_request_bundle_path' ) ) {
+	/** Resolve a request-bundled path without trusting a caller-supplied filesystem path. */
+	function static_site_importer_cli_request_bundle_path( string $request_path, string $reference ) {
+		$prefix = 'request-bundle:';
+		if ( ! str_starts_with( $reference, $prefix ) ) {
+			return null;
+		}
+		$relative = substr( $reference, strlen( $prefix ) );
+		$base     = realpath( dirname( $request_path ) );
+		if ( false === $base || '' === $relative || str_starts_with( $relative, '/' ) || str_starts_with( $relative, '\\' ) ) {
+			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'The request-bundle reference must name a source beneath the request directory.' );
+		}
+
+		$cursor = $base;
+		foreach ( preg_split( '#[\\\\/]#', $relative ) ?: array() as $segment ) {
+			if ( '' === $segment || '.' === $segment || '..' === $segment ) {
+				return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'The request-bundle reference must not contain empty or traversal segments.' );
+			}
+			$cursor .= DIRECTORY_SEPARATOR . $segment;
+			if ( is_link( $cursor ) ) {
+				return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'The request-bundle source and its parent directories must not be symlinks.' );
+			}
+		}
+
+		$resolved = realpath( $cursor );
+		if ( false === $resolved || ! str_starts_with( $resolved, $base . DIRECTORY_SEPARATOR ) || ! is_readable( $resolved ) ) {
+			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'The request-bundle source must be readable and beneath the request directory.' );
+		}
+		return $resolved;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
+	/** Project a local source tree as metadata-only payload references. */
+	function static_site_importer_cli_request_bundle_files( string $directory ) {
+		if ( ! is_dir( $directory ) ) {
+			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A files request-bundle reference must resolve to a directory.' );
+		}
+		$files = array();
+		$paths = array();
+		try {
+			$iterator = new RecursiveIteratorIterator(
+				new RecursiveDirectoryIterator( $directory, FilesystemIterator::SKIP_DOTS ),
+				RecursiveIteratorIterator::LEAVES_ONLY
+			);
+			foreach ( $iterator as $item ) {
+				if ( $item->isLink() ) {
+					return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'Request-bundle source trees must not contain symlinks.' );
+				}
+				if ( ! $item->isFile() || ! $item->isReadable() ) {
+					continue;
+				}
+				$absolute = $item->getRealPath();
+				$relative = false !== $absolute ? str_replace( DIRECTORY_SEPARATOR, '/', substr( $absolute, strlen( $directory ) + 1 ) ) : '';
+				if ( '' === $relative || ( function_exists( 'static_site_importer_rest_artifact_path' ) && '' === static_site_importer_rest_artifact_path( $relative ) ) ) {
+					continue;
+				}
+				if ( function_exists( 'static_site_importer_rest_should_include_artifact_file' ) && ! static_site_importer_rest_should_include_artifact_file( $relative ) ) {
+					continue;
+				}
+				if ( class_exists( 'Static_Site_Importer_Content_Policy' ) && ! Static_Site_Importer_Content_Policy::is_static_path( $relative ) ) {
+					return new WP_Error( 'static_site_importer_executable_source_rejected', 'Request-bundle source trees may contain static content only.' );
+				}
+				$bytes  = $item->getSize();
+				$digest = hash_file( 'sha256', $absolute );
+				if ( false === $digest ) {
+					return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A request-bundle source file could not be verified.' );
+				}
+				$id             = 'request-bundle-file:' . rawurlencode( $relative );
+				$paths[ $id ]   = $absolute;
+				$files[]        = array(
+					'path'              => $relative,
+					'payload_reference' => array(
+						'schema' => 'blocks-engine/payload-reference/v1',
+						'id'     => $id,
+						'bytes'  => $bytes,
+						'sha256' => $digest,
+					),
+				);
+				if ( 10000 < count( $files ) ) {
+					return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A request-bundle source tree may contain at most 10,000 static files.' );
+				}
+			}
+		} catch ( UnexpectedValueException $error ) {
+			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', $error->getMessage() );
+		}
+		if ( empty( $files ) ) {
+			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'The request-bundle source tree contains no static files.' );
+		}
+		usort( $files, static fn( array $left, array $right ): int => strcmp( $left['path'], $right['path'] ) );
+		return array(
+			'files'          => $files,
+			'payload_reader' => new class( $paths ) {
+				/** @param array<string,string> $paths */
+				public function __construct( private array $paths ) {}
+				public function read( array $reference ): string {
+					$id   = (string) ( $reference['id'] ?? '' );
+					$path = $this->paths[ $id ] ?? '';
+					$real = '' !== $path && ! is_link( $path ) ? realpath( $path ) : false;
+					$data = $path === $real ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a verified CLI request-bundle payload on demand.
+					if ( false === $data ) {
+						throw new RuntimeException( 'The request-bundle payload is unavailable.' );
+					}
+					return $data;
+				}
+			},
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
+	/** Register the server-owned resolver for a source staged beside the explicit request. */
+	function static_site_importer_cli_prepare_request_bundle( array $input, string $request_path ) {
+		$source    = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
+		$reference = (string) ( $source['ref'] ?? '' );
+		if ( ! str_starts_with( $reference, 'request-bundle:' ) ) {
+			return $input;
+		}
+		$type = (string) ( $source['type'] ?? '' );
+		if ( ! in_array( $type, array( 'files', 'zip' ), true ) ) {
+			return new WP_Error( 'static_site_importer_cli_request_bundle_type_invalid', 'Request-bundle references support files and zip sources.' );
+		}
+		$resolved_path = static_site_importer_cli_request_bundle_path( $request_path, $reference );
+		if ( is_wp_error( $resolved_path ) ) {
+			return $resolved_path;
+		}
+		$bundle = 'files' === $type ? static_site_importer_cli_request_bundle_files( $resolved_path ) : null;
+		if ( is_wp_error( $bundle ) ) {
+			return $bundle;
+		}
+		if ( 'zip' === $type && ! is_file( $resolved_path ) ) {
+			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A zip request-bundle reference must resolve to a regular file.' );
+		}
+		if ( function_exists( 'add_filter' ) ) {
+			add_filter(
+				'static_site_importer_resolve_source_reference',
+				static function ( $resolved, string $candidate, string $candidate_type ) use ( $reference, $resolved_path, $type, $bundle ) {
+					if ( null !== $resolved || $reference !== $candidate || $type !== $candidate_type ) {
+						return $resolved;
+					}
+					if ( 'files' === $type ) {
+						return array(
+							'source'         => array( 'type' => 'files', 'files' => $bundle['files'] ),
+							'payload_reader' => $bundle['payload_reader'],
+							'provenance'     => array( 'transport' => 'cli-request-bundle' ),
+						);
+					}
+					return array(
+						'source'     => array(
+							'type' => 'zip',
+							'zip'  => array(
+								'name'        => basename( $resolved_path ),
+								'staged_path' => $resolved_path,
+							),
+						),
+						'provenance' => array( 'transport' => 'cli-request-bundle' ),
+					);
+				},
+				10,
+				3
+			);
+		}
+		$input['_cli_request_bundle_dir'] = realpath( dirname( $request_path ) );
+		return $input;
 	}
 }
 
@@ -161,7 +328,12 @@ if ( ! function_exists( 'static_site_importer_cli_import_input' ) ) {
 			return new WP_Error( 'static_site_importer_cli_request_conflict', 'Provide exactly one of --request, --url, or --plan.' );
 		}
 		if ( $has_request ) {
-			$input = static_site_importer_cli_read_request_json( (string) $assoc_args['request'] );
+			$request_path = (string) $assoc_args['request'];
+			$input        = static_site_importer_cli_read_request_json( $request_path );
+			if ( is_wp_error( $input ) ) {
+				return $input;
+			}
+			$input = static_site_importer_cli_prepare_request_bundle( $input, $request_path );
 			if ( is_wp_error( $input ) ) {
 				return $input;
 			}
@@ -268,7 +440,8 @@ if ( ! function_exists( 'static_site_importer_cli_write_step_request' ) ) {
 		if ( false === $json ) {
 			return new WP_Error( 'static_site_importer_cli_step_request_encode_failed', 'The import continuation request could not be encoded.' );
 		}
-		$temp = tempnam( sys_get_temp_dir(), 'ssi-import-' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_tempnam -- Writes a bounded host-owned continuation request for a fresh WP-CLI runtime.
+		$temp_dir = isset( $input['_cli_request_bundle_dir'] ) && is_dir( $input['_cli_request_bundle_dir'] ) ? (string) $input['_cli_request_bundle_dir'] : sys_get_temp_dir();
+		$temp     = tempnam( $temp_dir, 'ssi-import-' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_tempnam -- Writes a bounded host-owned continuation request for a fresh WP-CLI runtime.
 		if ( false === $temp || false === file_put_contents( $temp, $json ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes a bounded host-owned continuation request for a fresh WP-CLI runtime.
 			return new WP_Error( 'static_site_importer_cli_step_request_write_failed', 'The import continuation request could not be written.' );
 		}

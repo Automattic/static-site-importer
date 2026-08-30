@@ -36,6 +36,18 @@ if ( ! function_exists( 'wp_json_encode' ) ) {
 		return json_encode( $value, $options );
 	}
 }
+if ( ! function_exists( 'add_filter' ) ) {
+	$GLOBALS['ssi_cli_filters'] = array();
+	function add_filter( string $hook, callable $callback ): void {
+		$GLOBALS['ssi_cli_filters'][ $hook ][] = $callback;
+	}
+	function apply_filters( string $hook, $value, ...$args ) {
+		foreach ( $GLOBALS['ssi_cli_filters'][ $hook ] ?? array() as $callback ) {
+			$value = $callback( $value, ...$args );
+		}
+		return $value;
+	}
+}
 
 require dirname( __DIR__ ) . '/includes/cli.php';
 
@@ -74,6 +86,50 @@ file_put_contents( $invalid_json_path, '{not-json' );
 $invalid_json = static_site_importer_cli_read_request_json( $invalid_json_path );
 unlink( $invalid_json_path );
 $assert( is_wp_error( $invalid_json ), 'malformed-invalid-json' );
+
+$bundle_dir = sys_get_temp_dir() . '/ssi-request-bundle-' . bin2hex( random_bytes( 6 ) );
+mkdir( $bundle_dir );
+$bundle_request = $bundle_dir . '/request.json';
+$bundle_source  = $bundle_dir . '/source';
+mkdir( $bundle_source );
+file_put_contents( $bundle_source . '/index.html', '<h1>Bundle</h1>' );
+file_put_contents(
+	$bundle_request,
+	wp_json_encode(
+		array(
+			'operation' => 'apply',
+			'source'    => array(
+				'type' => 'files',
+				'ref'  => 'request-bundle:source',
+			),
+		)
+	)
+);
+$bundle_input = static_site_importer_cli_import_input( array(), array( 'request' => $bundle_request ) );
+$bundle_real_dir = realpath( $bundle_dir );
+$assert( is_array( $bundle_input ) && $bundle_real_dir === ( $bundle_input['_cli_request_bundle_dir'] ?? '' ), 'request-bundle-registers-directory' );
+$assert( realpath( $bundle_source ) === static_site_importer_cli_request_bundle_path( $bundle_request, 'request-bundle:source' ), 'request-bundle-resolves-source' );
+$resolved_bundle = apply_filters( 'static_site_importer_resolve_source_reference', null, 'request-bundle:source', 'files' );
+$assert( 'index.html' === ( $resolved_bundle['source']['files'][0]['path'] ?? '' ), 'request-bundle-registers-opaque-resolver' );
+$assert( '<h1>Bundle</h1>' === $resolved_bundle['payload_reader']->read( $resolved_bundle['source']['files'][0]['payload_reference'] ), 'request-bundle-reader-returns-source-bytes' );
+$bundle_step = static_site_importer_cli_write_step_request( $bundle_input );
+$assert( is_string( $bundle_step ) && $bundle_real_dir === dirname( $bundle_step ), 'request-bundle-keeps-fresh-runtime-adjacent' );
+if ( is_string( $bundle_step ) ) {
+	unlink( $bundle_step );
+}
+$traversal = static_site_importer_cli_request_bundle_path( $bundle_request, 'request-bundle:../source' );
+$assert( is_wp_error( $traversal ) && 'static_site_importer_cli_request_bundle_invalid' === $traversal->get_error_code(), 'request-bundle-rejects-traversal' );
+$missing_source = static_site_importer_cli_request_bundle_path( $bundle_request, 'request-bundle:missing' );
+$assert( is_wp_error( $missing_source ), 'request-bundle-rejects-missing-source' );
+$bundle_link = $bundle_dir . '/linked';
+symlink( $bundle_source, $bundle_link );
+$linked_source = static_site_importer_cli_request_bundle_path( $bundle_request, 'request-bundle:linked' );
+$assert( is_wp_error( $linked_source ), 'request-bundle-rejects-symlink' );
+unlink( $bundle_link );
+unlink( $bundle_source . '/index.html' );
+rmdir( $bundle_source );
+unlink( $bundle_request );
+rmdir( $bundle_dir );
 
 $request_path = tempnam( sys_get_temp_dir(), 'ssi-import-req-' );
 file_put_contents(
