@@ -302,6 +302,102 @@ class Static_Site_Importer_Companion_Plugin {
 	}
 
 	/**
+	 * Remove companion scripts already delivered by the generated theme.
+	 *
+	 * @param array<string,mixed>            $payload Companion-plugin payload.
+	 * @param array<int,array<string,mixed>> $assets  WordPress site-plan assets.
+	 * @return array<string,mixed>
+	 */
+	public static function without_theme_owned_scripts( array $payload, array $assets ): array {
+		$theme_hashes = self::theme_script_hashes( $assets );
+		if ( empty( $theme_hashes ) ) {
+			return $payload;
+		}
+
+		if ( isset( $payload['preserved_js'] ) && is_array( $payload['preserved_js'] ) ) {
+			$payload['preserved_js'] = array_values(
+				array_filter(
+					$payload['preserved_js'],
+					static fn( $entry ): bool => ! is_array( $entry ) || '' !== (string) ( $entry['block'] ?? '' ) || ! isset( $entry['content'] ) || ! is_scalar( $entry['content'] ) || ! isset( $theme_hashes[ hash( 'sha256', (string) $entry['content'] ) ] )
+				)
+			);
+		}
+
+		if ( isset( $payload['runtime_effects']['retained_modules'] ) && is_array( $payload['runtime_effects']['retained_modules'] ) ) {
+			$payload['runtime_effects']['retained_modules'] = array_values(
+				array_filter(
+					$payload['runtime_effects']['retained_modules'],
+					static fn( $module ): bool => ! is_array( $module ) || '' !== (string) ( $module['block'] ?? '' ) || ! isset( $module['content'] ) || ! is_scalar( $module['content'] ) || ! isset( $theme_hashes[ hash( 'sha256', (string) $module['content'] ) ] )
+				)
+			);
+		}
+
+		return $payload;
+	}
+
+	/** Whether a deduplicated payload still requires a companion plugin. */
+	public static function has_materializable_content( array $payload ): bool {
+		if ( ! empty( self::payload_blocks( $payload ) ) ) {
+			return true;
+		}
+
+		foreach ( is_array( $payload['preserved_js'] ?? null ) ? $payload['preserved_js'] : array() as $entry ) {
+			if ( is_array( $entry ) && isset( $entry['content'] ) && is_scalar( $entry['content'] ) && '' !== (string) $entry['content'] ) {
+				return true;
+			}
+		}
+		foreach ( is_array( $payload['runtime_effects']['retained_modules'] ?? null ) ? $payload['runtime_effects']['retained_modules'] : array() as $module ) {
+			if ( is_array( $module ) && isset( $module['content'] ) && is_scalar( $module['content'] ) && '' !== (string) $module['content'] ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/** @param array<int,array<string,mixed>> $assets @return array<string,true> */
+	private static function theme_script_hashes( array $assets ): array {
+		$hashes = array();
+		foreach ( $assets as $asset ) {
+			if ( ! is_array( $asset ) ) {
+				continue;
+			}
+			$path = '';
+			foreach ( array( 'target_path', 'path', 'source_path' ) as $field ) {
+				if ( isset( $asset[ $field ] ) && is_scalar( $asset[ $field ] ) && '' !== trim( (string) $asset[ $field ] ) ) {
+					$path = (string) $asset[ $field ];
+					break;
+				}
+			}
+			$kind = isset( $asset['kind'] ) && is_scalar( $asset['kind'] ) ? strtolower( (string) $asset['kind'] ) : '';
+			if ( ! in_array( $kind, array( 'js', 'mjs', 'javascript', 'script' ), true ) && ! preg_match( '/\.m?js(?:$|[?#])/i', $path ) ) {
+				continue;
+			}
+
+			$content = null;
+			if ( isset( $asset['content'] ) && is_scalar( $asset['content'] ) ) {
+				$content = (string) $asset['content'];
+			} elseif ( isset( $asset['content_base64'] ) && is_string( $asset['content_base64'] ) ) {
+				$decoded = base64_decode( $asset['content_base64'], true );
+				$content = false === $decoded ? null : $decoded;
+			}
+			if ( is_string( $content ) ) {
+				$hashes[ hash( 'sha256', $content ) ] = true;
+				continue;
+			}
+			foreach ( array( 'content_hash', 'hash' ) as $field ) {
+				$hash = isset( $asset[ $field ] ) && is_scalar( $asset[ $field ] ) ? strtolower( (string) $asset[ $field ] ) : '';
+				if ( preg_match( '/^[a-f0-9]{64}$/', $hash ) ) {
+					$hashes[ $hash ] = true;
+					break;
+				}
+			}
+		}
+
+		return $hashes;
+	}
+
+	/**
 	 * Sanitized site slug from the payload.
 	 *
 	 * @param array<string,mixed> $payload Generated companion-plugin payload.
