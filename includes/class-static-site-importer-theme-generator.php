@@ -263,22 +263,14 @@ class Static_Site_Importer_Theme_Generator {
 			$compiled = $args['compiled_artifact_result'];
 		} else {
 			$compiler_result = ( new $compiler_class() )->compile( $artifact );
-			$view_method     = 'toWordPressSitePlanView';
-			$compiled        = is_callable( array( $compiler_result, $view_method ) ) ? ( new ReflectionMethod( $compiler_result, $view_method ) )->invoke( $compiler_result ) : $compiler_result->toArray();
+			$compiled        = $compiler_result->toWordPressSitePlanView();
 		}
-		if ( ! is_array( $compiled ) ) {
-			return new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid result.' );
+		if ( 'blocks-engine/wordpress-site-plan-view/v1' !== ( $compiled['schema'] ?? '' ) ) {
+			return new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid WordPress site plan view.' );
 		}
-		$source_reports = 'blocks-engine/wordpress-site-plan-view/v1' === ( $compiled['schema'] ?? '' ) ? array(
-			'wordpress_site_plan'             => $compiled['wordpress_site_plan'] ?? array(),
-			'wordpress_site_plan_diagnostics' => $compiled['diagnostics'] ?? array(),
-			'gutenberg_gaps'                  => $compiled['gutenberg_gaps'] ?? array(),
-			'companion_plugin_payload'        => $compiled['companion_plugin_payload'] ?? array(),
-			'materialization_plan'            => array( 'theme' => array( 'font_materialization' => $compiled['font_materialization'] ?? array() ) ),
-		) : ( is_array( $compiled['source_reports'] ?? null ) ? $compiled['source_reports'] : array() );
-		$plan = isset( $source_reports['wordpress_site_plan'] ) && is_array( $source_reports['wordpress_site_plan'] ) ? $source_reports['wordpress_site_plan'] : array();
+		$plan = is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array();
 		if ( empty( $plan ) ) {
-			$diagnostics = isset( $source_reports['wordpress_site_plan_diagnostics'] ) && is_array( $source_reports['wordpress_site_plan_diagnostics'] ) ? wp_json_encode( $source_reports['wordpress_site_plan_diagnostics'] ) : '';
+			$diagnostics = is_array( $compiled['diagnostics'] ?? null ) ? wp_json_encode( $compiled['diagnostics'] ) : '';
 			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.' . ( false !== $diagnostics ? ' ' . $diagnostics : '' ), $compiled );
 		}
 		// The compile boundary is the only seam holding both the canonical plan's
@@ -286,9 +278,9 @@ class Static_Site_Importer_Theme_Generator {
 		// coverage findings here and let the report projection publish them.
 		$args['missing_author_stylesheet_diagnostics'] = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics( $plan, $artifact );
 		$companion_payload = null;
-		$gutenberg_gaps    = isset( $source_reports['gutenberg_gaps'] ) && is_array( $source_reports['gutenberg_gaps'] ) ? $source_reports['gutenberg_gaps'] : array();
-		if ( ! empty( $source_reports['companion_plugin_payload'] ) ) {
-			$companion_payload = $source_reports['companion_plugin_payload'];
+		$gutenberg_gaps    = is_array( $compiled['gutenberg_gaps'] ?? null ) ? $compiled['gutenberg_gaps'] : array();
+		if ( ! empty( $compiled['companion_plugin_payload'] ) ) {
+			$companion_payload = $compiled['companion_plugin_payload'];
 			if ( ! is_array( $companion_payload ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_payload_invalid', 'Compiled companion_plugin_payload must be an object.' );
 			}
@@ -314,7 +306,7 @@ class Static_Site_Importer_Theme_Generator {
 			$strategy['evidence']['status'] = 'source_artifact_projection';
 			$strategy['evidence']['projection_schema'] = $projection['schema'];
 		}
-		$materialization_plan = isset( $source_reports['materialization_plan'] ) && is_array( $source_reports['materialization_plan'] ) ? $source_reports['materialization_plan'] : array();
+		$materialization_plan = array( 'theme' => array( 'font_materialization' => is_array( $compiled['font_materialization'] ?? null ) ? $compiled['font_materialization'] : array() ) );
 		return array(
 			'artifact'              => $artifact,
 			'args'                  => $args,
