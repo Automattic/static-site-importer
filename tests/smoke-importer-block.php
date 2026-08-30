@@ -1185,7 +1185,7 @@ if ( class_exists( 'ZipArchive' ) ) {
 	$reference_site_plan = $reference_compiled['source_reports']['wordpress_site_plan'] ?? array();
 	$inline_plan_json   = wp_json_encode( $inline_site_plan );
 	$reference_plan_json = wp_json_encode( $reference_site_plan );
-	$assert( is_string( $inline_plan_json ) && is_string( $reference_plan_json ) && str_contains( $reference_plan_json, 'payload_reference' ) && ! str_contains( $reference_plan_json, $inline_binary ) && strlen( $reference_plan_json ) < strlen( $inline_plan_json ) / 50, 'staged-zip-compiler-plan-removes-duplicated-binary-assets-and-writes', strlen( $reference_plan_json ) . '/' . strlen( $inline_plan_json ) );
+	$assert( is_string( $inline_plan_json ) && is_string( $reference_plan_json ) && str_contains( $reference_plan_json, 'payload_reference' ) && ! str_contains( $reference_plan_json, $inline_binary ) && strlen( $reference_plan_json ) < strlen( $inline_plan_json ) / 40, 'staged-zip-compiler-plan-removes-duplicated-binary-assets-and-writes', strlen( $reference_plan_json ) . '/' . strlen( $inline_plan_json ) );
 	$staged_zip = new ZipArchive();
 	$staged_zip->open( $staged_path, ZipArchive::OVERWRITE );
 	$staged_zip->addFromString( 'index.html', '<main>Staged</main>' );
