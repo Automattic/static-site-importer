@@ -131,6 +131,62 @@ rmdir( $bundle_source );
 unlink( $bundle_request );
 rmdir( $bundle_dir );
 
+$bounded_bundle_dir = sys_get_temp_dir() . '/ssi-bounded-request-bundle-' . bin2hex( random_bytes( 6 ) );
+mkdir( $bounded_bundle_dir );
+file_put_contents( $bounded_bundle_dir . '/index.html', '<h1>Bounded</h1>' );
+for ( $index = 0; $index < 500; ++$index ) {
+	file_put_contents( $bounded_bundle_dir . '/asset-' . $index . '.css', 'a{}' );
+}
+$bounded_bundle = static_site_importer_cli_request_bundle_files( $bounded_bundle_dir );
+$assert( is_array( $bounded_bundle ) && 501 === count( $bounded_bundle['files'] ?? array() ), 'request-bundle-retains-files-above-compiler-default' );
+$assert( array( 'max_files' => 506, 'max_file_bytes' => 10485760, 'max_total_bytes' => 335544320 ) === ( $bounded_bundle['compiler_limits'] ?? null ), 'request-bundle-declares-verified-compiler-limits' );
+foreach ( scandir( $bounded_bundle_dir ) as $entry ) {
+	if ( '.' !== $entry && '..' !== $entry ) {
+		unlink( $bounded_bundle_dir . '/' . $entry );
+	}
+}
+rmdir( $bounded_bundle_dir );
+
+$count_limit_dir = sys_get_temp_dir() . '/ssi-request-bundle-count-' . bin2hex( random_bytes( 6 ) );
+mkdir( $count_limit_dir );
+for ( $index = 0; $index <= 5000; ++$index ) {
+	file_put_contents( $count_limit_dir . '/asset-' . $index . '.css', '' );
+}
+$count_limit = static_site_importer_cli_request_bundle_files( $count_limit_dir );
+$assert( is_wp_error( $count_limit ) && 'static_site_importer_cli_request_bundle_file_limit_exceeded' === $count_limit->get_error_code(), 'request-bundle-rejects-file-count-over-hard-boundary' );
+foreach ( scandir( $count_limit_dir ) as $entry ) {
+	if ( '.' !== $entry && '..' !== $entry ) {
+		unlink( $count_limit_dir . '/' . $entry );
+	}
+}
+rmdir( $count_limit_dir );
+
+$file_limit_dir = sys_get_temp_dir() . '/ssi-request-bundle-file-' . bin2hex( random_bytes( 6 ) );
+mkdir( $file_limit_dir );
+$file_limit_handle = fopen( $file_limit_dir . '/asset.css', 'w' );
+ftruncate( $file_limit_handle, 10485761 );
+fclose( $file_limit_handle );
+$file_limit = static_site_importer_cli_request_bundle_files( $file_limit_dir );
+$assert( is_wp_error( $file_limit ) && 'static_site_importer_cli_request_bundle_file_too_large' === $file_limit->get_error_code(), 'request-bundle-rejects-file-bytes-over-hard-boundary' );
+unlink( $file_limit_dir . '/asset.css' );
+rmdir( $file_limit_dir );
+
+$total_limit_dir = sys_get_temp_dir() . '/ssi-request-bundle-total-' . bin2hex( random_bytes( 6 ) );
+mkdir( $total_limit_dir );
+for ( $index = 0; $index < 26; ++$index ) {
+	$total_limit_handle = fopen( $total_limit_dir . '/asset-' . $index . '.css', 'w' );
+	ftruncate( $total_limit_handle, 10485760 );
+	fclose( $total_limit_handle );
+}
+$total_limit = static_site_importer_cli_request_bundle_files( $total_limit_dir );
+$assert( is_wp_error( $total_limit ) && 'static_site_importer_cli_request_bundle_total_too_large' === $total_limit->get_error_code(), 'request-bundle-rejects-aggregate-bytes-over-hard-boundary' );
+foreach ( scandir( $total_limit_dir ) as $entry ) {
+	if ( '.' !== $entry && '..' !== $entry ) {
+		unlink( $total_limit_dir . '/' . $entry );
+	}
+}
+rmdir( $total_limit_dir );
+
 $request_path = tempnam( sys_get_temp_dir(), 'ssi-import-req-' );
 file_put_contents(
 	$request_path,

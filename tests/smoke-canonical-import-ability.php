@@ -62,9 +62,10 @@ function static_site_importer_source_runtime( $source ) {
 	}
 	return array(
 		'artifact'        => array(
-			'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
-			'entrypoint' => $source['entrypoint'] ?? 'website/index.html',
-			'files'      => $files,
+			'schema'          => 'blocks-engine/php-transformer/site-artifact/v1',
+			'entrypoint'      => $source['entrypoint'] ?? 'website/index.html',
+			'compiler_limits' => $source['metadata']['compiler_limits'] ?? array(),
+			'files'           => $files,
 		),
 		'provider'        => 'canonical-source-test',
 		'source_metadata' => array(),
@@ -294,6 +295,13 @@ $reference_reader = new class() {
 $GLOBALS['ssi_filters']['static_site_importer_resolve_source_reference'] = static function ( $value, $reference, $type ) use ( $reference_reader ) {
 	return 'opaque-files-1' === $reference && 'files' === $type ? array(
 		'source'         => array(
+			'metadata' => array(
+				'compiler_limits' => array(
+					'max_files'       => 501,
+					'max_file_bytes'  => 10485760,
+					'max_total_bytes' => 335544320,
+				),
+			),
 			'files' => array(
 				array(
 					'path'              => 'website/index.html',
@@ -315,8 +323,8 @@ $referenced_files = static_site_importer_ability_import(
 		'source'    => array( 'type' => 'files', 'ref' => 'opaque-files-1' ),
 	)
 );
-if ( empty( $referenced_files['success'] ) || $reference_reader !== ( Static_Site_Importer_Theme_Generator::$last_args['_static_site_importer_payload_reader'] ?? null ) ) {
-	throw new RuntimeException( 'opaque file references must pass their server-owned payload reader to materialization' ); }
+if ( empty( $referenced_files['success'] ) || $reference_reader !== ( Static_Site_Importer_Theme_Generator::$last_args['_static_site_importer_payload_reader'] ?? null ) || 501 !== ( Static_Site_Importer_Theme_Generator::$last_artifact['compiler_limits']['max_files'] ?? null ) ) {
+	throw new RuntimeException( 'opaque file references must preserve their server-owned payload reader and compiler limits through normalization' ); }
 $GLOBALS['ssi_filters']['static_site_importer_resolve_source_reference'] = static function ( $value, $reference, $type ) {
 	return 'staged-zip-1' === $reference && 'zip' === $type ? array(
 		'source'     => array(
