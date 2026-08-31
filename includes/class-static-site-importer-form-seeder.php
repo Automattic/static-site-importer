@@ -467,10 +467,18 @@ class Static_Site_Importer_Form_Seeder {
 			$provider_graph['nodes']    = array_values( array_filter( $provider_graph['nodes'] ?? array(), static fn ( $node ): bool => ! is_array( $node ) || ! isset( $represented[ $node['id'] ?? '' ] ) ) );
 			$provider_graph['variants'] = array_values( array_filter( $provider_graph['variants'] ?? array(), static fn ( $variant ): bool => ! is_array( $variant ) || ! isset( $represented[ $variant['node'] ?? '' ] ) ) );
 		}
-		$layout_form                 = $form;
-		$layout_form['layout_graph'] = $provider_graph;
-		$layout                      = Static_Site_Importer_Computed_Layout_Strategy::apply( $layout_form, $inner_blocks );
-		if ( $textarea_height_omitted_count > 0 ) {
+		$native_visibility_targets = array_fill_keys( $topology['native_visibility_targets'], true );
+		foreach ( $provider_graph['nodes'] as &$provider_node ) {
+			if ( is_array( $provider_node ) && isset( $native_visibility_targets[ $provider_node['id'] ?? '' ] ) ) {
+				unset( $provider_node['layout']['display'] );
+			}
+		}
+		unset( $provider_node );
+		$layout_form                                        = $form;
+		$layout_form['layout_graph']                        = $provider_graph;
+		$layout_form['provider_represented_topology_nodes'] = $topology['represented_topology_nodes'];
+		$layout = Static_Site_Importer_Computed_Layout_Strategy::apply( $layout_form, $inner_blocks );
+		if ( 0 < $textarea_height_omitted_count ) {
 			$control_attribute_losses[] = array(
 				'dimension'     => 'control',
 				'reason_code'   => 'textarea_height_omitted',
@@ -479,19 +487,30 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $radio_groups['operations'], $topology['operations'] ) );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
-		$inner_blocks                 = $layout['blocks'];
-		$form_attrs                   = self::contact_form_attributes( $form, $scope );
-		$overlay_graph                = $provider_graph;
-		$overlay_graph['nodes']       = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
+		$inner_blocks              = $layout['blocks'];
+		$form_attrs                = self::contact_form_attributes( $form, $scope );
+		$overlay_graph             = $provider_graph;
+		$overlay_graph['nodes']    = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
+		$overlay_graph['variants'] = array_merge( $overlay_graph['variants'] ?? array(), $topology['responsive_variant_targets'] );
+		$overlay_node_ids          = array_fill_keys( array_map( static fn( array $node ): string => (string) $node['id'], $overlay_graph['nodes'] ), true );
+		foreach ( $topology['responsive_variant_targets'] as $variant ) {
+			if ( is_string( $variant['node'] ?? null ) && ! isset( $overlay_node_ids[ $variant['node'] ] ) ) {
+				$overlay_graph['nodes'][]             = array(
+					'id'     => $variant['node'],
+					'layout' => array(),
+				);
+				$overlay_node_ids[ $variant['node'] ] = true;
+			}
+		}
 		$overlay_nodes                = array_fill_keys( array_map( static fn ( array $node ): string => (string) $node['id'], $overlay_graph['nodes'] ), true );
-		$overlay_graph['variants']    = array_values( array_filter( $overlay_graph['variants'] ?? array(), static fn ( $variant ): bool => is_array( $variant ) && isset( $overlay_nodes[ $variant['node'] ?? '' ] ) ) );
+		$overlay_graph['variants']    = array_values( array_filter( $overlay_graph['variants'], static fn ( $variant ): bool => is_array( $variant ) && isset( $overlay_nodes[ $variant['node'] ?? '' ] ) ) );
 		$overlay_form                 = $form;
 		$overlay_form['layout_graph'] = $overlay_graph;
 		$target_map                   = self::provider_layout_target_map( $overlay_form, $scope );
 		$overlay                      = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $overlay['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $overlay['losses'] );
-		$layout['receipt']['status'] = $layout['receipt']['operations_total'] > 0 ? 'applied' : ( $layout['receipt']['losses_total'] > 0 ? 'deferred' : 'skipped' );
+		$layout['receipt']['status'] = 0 < $layout['receipt']['operations_total'] ? 'applied' : ( 0 < $layout['receipt']['losses_total'] ? 'deferred' : 'skipped' );
 		$markup                      = self::context_block_markup( $form, 'context_before' ) . self::serialize_block( 'jetpack/contact-form', $form_attrs, $inner_blocks ) . self::context_block_markup( $form, 'context_after' );
 		$row                         = array(
 			'selector'                    => $selector,
@@ -754,20 +773,24 @@ class Static_Site_Importer_Form_Seeder {
 
 	/**
 	 * Flatten the validated generic tree into Jetpack's constrained direct-child
-	 * grammar. Equal two- and four-column grids map to provider field widths;
-	 * other wrapper semantics/layout remain explicit receipt losses.
+	 * grammar. Equal two- and four-column grids and complete provenance-backed
+	 * percentage rows map to provider field widths; other wrapper semantics/layout
+	 * remain explicit receipt losses.
 	 *
 	 * @param array<int,array<string,mixed>> $field_blocks
 	 * @param array<int,array<string,mixed>> $controls
-	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>}|null
+	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>}|null
 	 */
 	private static function topology_inner_blocks( array $form, array $field_blocks, array $controls, array $suppressed_controls = array() ): ?array {
 		if ( ! isset( $form['control_topology'] ) ) {
 			return array(
-				'blocks'                   => array_values( $field_blocks ),
-				'losses'                   => array(),
-				'operations'               => array(),
-				'represented_layout_nodes' => array(),
+				'blocks'                     => array_values( $field_blocks ),
+				'losses'                     => array(),
+				'operations'                 => array(),
+				'represented_layout_nodes'   => array(),
+				'represented_topology_nodes' => array(),
+				'responsive_variant_targets' => array(),
+				'native_visibility_targets'  => array(),
 			);
 		}
 		$nodes = $form['control_topology']['nodes'] ?? null;
@@ -786,12 +809,15 @@ class Static_Site_Importer_Form_Seeder {
 			usort( $siblings, static fn ( array $left, array $right ): int => $left['order'] <=> $right['order'] );
 		}
 		unset( $siblings );
-		$losses                   = array();
-		$operations               = array();
-		$represented_layout_nodes = array();
-		$layout_by_node           = array();
-		$layout_nodes_by_id       = array();
-		$variants_by_node         = array();
+		$losses                     = array();
+		$operations                 = array();
+		$represented_layout_nodes   = array();
+		$represented_topology_nodes = array();
+		$responsive_variant_targets = array();
+		$native_visibility_targets  = array();
+		$layout_by_node             = array();
+		$layout_nodes_by_id         = array();
+		$variants_by_node           = array();
 		foreach ( $form['layout_graph']['nodes'] ?? array() as $layout_node ) {
 			if ( is_array( $layout_node ) && is_string( $layout_node['id'] ?? null ) ) {
 				$layout_by_node[ $layout_node['id'] ]     = is_array( $layout_node['layout'] ?? null ) ? $layout_node['layout'] : array();
@@ -800,7 +826,7 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		foreach ( $form['layout_graph']['variants'] ?? array() as $variant ) {
 			if ( is_array( $variant ) && is_string( $variant['node'] ?? null ) ) {
-				$variants_by_node[ $variant['node'] ] = true;
+				$variants_by_node[ $variant['node'] ][] = $variant;
 			}
 		}
 		foreach ( $nodes as $node ) {
@@ -860,8 +886,190 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			return $controls;
 		};
+		$topology_by_id   = array();
+		foreach ( $nodes as $node ) {
+			if ( is_array( $node ) && is_string( $node['id'] ?? null ) ) {
+				$topology_by_id[ $node['id'] ] = $node;
+			}
+		}
+		$has_unconditional_proven_property = static function ( array $node, string $property ): bool {
+			foreach ( $node['provenance'] ?? array() as $fact ) {
+				if ( is_array( $fact ) && null === ( $fact['condition'] ?? null ) && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && is_string( $fact['selector'] ?? null ) && in_array( $property, $fact['properties'] ?? array(), true ) ) {
+					return true;
+				}
+			}
+			return false;
+		};
+		$safe_percentage_variants          = static function ( array $variants ): bool {
+			foreach ( $variants as $variant ) {
+				$patch = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+				$width = $patch['width'] ?? null;
+				if ( ! is_array( $variant ) || ! is_array( $variant['condition'] ?? null ) || 'media' !== ( $variant['condition']['kind'] ?? null ) || ! is_string( $variant['condition']['query'] ?? null ) || 1 !== preg_match( '/^\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\)$/D', $variant['condition']['query'] ) || ! is_string( $width ) || 1 !== preg_match( '/^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)%$/D', $width ) || ( array( 'width' ) !== array_keys( $patch ) && array( 'display', 'width' ) !== array_keys( $patch ) ) || ( isset( $patch['display'] ) && 'block' !== $patch['display'] ) ) {
+					return false;
+				}
+				$proven = false;
+				foreach ( $variant['provenance'] ?? array() as $fact ) {
+					if ( is_array( $fact ) && ( $fact['condition'] ?? null ) === $variant['condition'] && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && is_string( $fact['selector'] ?? null ) && ! array_diff( array_keys( $patch ), $fact['properties'] ?? array() ) ) {
+						$proven = true;
+						break;
+					}
+				}
+				if ( ! $proven ) {
+					return false;
+				}
+			}
+			return true;
+		};
+		foreach ( $nodes as $node ) {
+			$id = is_array( $node ) && 'control' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
+			if ( '' === $id || 'none' !== ( $layout_by_node[ $id ]['display'] ?? null ) ) {
+				continue;
+			}
+			$control_index = $node['control'] ?? null;
+			if ( ! is_int( $control_index ) || ! isset( $field_blocks[ $control_index ] ) || 'core/button' === ( $field_blocks[ $control_index ]['name'] ?? '' ) ) {
+				continue;
+			}
+			$parent         = is_string( $node['parent'] ?? null ) ? $node['parent'] : '';
+			$layout_node    = $layout_nodes_by_id[ $id ] ?? null;
+			$source_classes = is_array( $layout_node['source']['classes'] ?? null ) ? $layout_node['source']['classes'] : array();
+			$class_proven   = ! empty( $source_classes ) && is_array( $layout_node ) && $has_unconditional_proven_property( $layout_node, 'display' );
+			foreach ( $layout_node['provenance'] ?? array() as $fact ) {
+				if ( ! is_array( $fact ) || ! in_array( 'display', $fact['properties'] ?? array(), true ) ) {
+					continue;
+				}
+				$selector       = is_string( $fact['selector'] ?? null ) ? $fact['selector'] : '';
+				$matches_source = false;
+				if ( null === ( $fact['condition'] ?? null ) && preg_match( '/^(?:[a-z][a-z0-9-]*)?(?:\.[a-zA-Z][a-zA-Z0-9_-]*)+$/D', $selector ) ) {
+					foreach ( $source_classes as $source_class ) {
+						if ( is_string( $source_class ) && '' !== $source_class && preg_match( '/\.' . preg_quote( $source_class, '/' ) . '(?![a-zA-Z0-9_-])/', $selector ) ) {
+							$matches_source = true;
+							break;
+						}
+					}
+				}
+				if ( ! $matches_source ) {
+					$class_proven = false;
+					break;
+				}
+			}
+			$replacement_proven = '' !== $parent
+				&& in_array( $parent, $represented_layout_nodes, true )
+				&& 1 === count( $children[ $parent ] ?? array() )
+				&& 'none' !== ( $layout_by_node[ $parent ]['display'] ?? null )
+				&& ! isset( $variants_by_node[ $parent ] )
+				&& ! isset( $variants_by_node[ $id ] )
+				&& $class_proven;
+			if ( ! $replacement_proven ) {
+				$losses[] = array(
+					'dimension'   => 'topology',
+					'reason_code' => 'provider_native_control_visibility_unrepresentable',
+					'node_hash'   => hash( 'sha256', $id ),
+				);
+				continue;
+			}
+			$native_visibility_targets[] = $id;
+			$operations[]                = array(
+				'dimension' => 'layout',
+				'strategy'  => 'provider_native_control_visibility',
+				'node_hash' => hash( 'sha256', $id ),
+			);
+		}
+		$percentage_width_parents = array();
+		if ( 'generic/computed-layout-graph/v2' === ( $form['layout_graph']['schema'] ?? null ) ) {
+			foreach ( $children as $parent => $siblings ) {
+				if ( '$root' === $parent || count( $siblings ) < 2 || isset( $variants_by_node[ $parent ] ) ) {
+					continue;
+				}
+				$indexes             = array();
+				$widths              = array();
+				$branches            = array();
+				$row_variant_targets = array();
+				foreach ( $siblings as $sibling ) {
+					$id              = $sibling['id'];
+					$layout_node     = $layout_nodes_by_id[ $id ] ?? null;
+					$layout          = is_array( $layout_node ) && is_array( $layout_node['layout'] ?? null ) ? $layout_node['layout'] : array();
+					$width           = is_string( $layout['width'] ?? null ) ? trim( $layout['width'] ) : '';
+					$width_proven    = is_array( $layout_node ) && $has_unconditional_proven_property( $layout_node, 'width' );
+					$branch_controls = $collect_controls( $sibling );
+					$value           = 1 === preg_match( '/^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)%$/D', $width ) ? (float) substr( $width, 0, -1 ) : 0.0;
+					$variants        = $variants_by_node[ $id ] ?? array();
+					if ( ! $safe_percentage_variants( $variants ) || ! $width_proven || 0 >= $value || 100 < $value || 1 !== count( $branch_controls ) || ! isset( $field_blocks[ $branch_controls[0] ] ) || 'core/button' === ( $field_blocks[ $branch_controls[0] ]['name'] ?? '' ) ) {
+						$indexes = array();
+						break;
+					}
+					$indexes[]  = $branch_controls[0];
+					$widths[]   = $value;
+					$branches[] = $id;
+					foreach ( $variants as $variant ) {
+						$variant['node']       = 'control-' . $branch_controls[0];
+						$row_variant_targets[] = $variant;
+					}
+				}
+				if ( empty( $indexes ) || 0.001 < abs( array_sum( $widths ) - 100.0 ) ) {
+					continue;
+				}
+				$responsive_variant_targets = array_merge( $responsive_variant_targets, $row_variant_targets );
+				foreach ( $indexes as $offset => $control_index ) {
+					$field_blocks[ $control_index ]['attrs']['width'] = round( $widths[ $offset ], 3 );
+				}
+				$represented_layout_nodes            = array_merge( $represented_layout_nodes, $branches );
+				$percentage_width_parents[ $parent ] = true;
+				$operations[]                        = array(
+					'dimension'   => 'layout',
+					'strategy'    => 'provider_percentage_width_fields',
+					'target_hash' => hash( 'sha256', $parent ),
+					'field_count' => count( $indexes ),
+					'widths_hash' => hash( 'sha256', (string) wp_json_encode( $widths ) ),
+				);
+
+				$table_chain  = array( $parent );
+				$table_tags   = array( 'tr', 'tbody', 'table' );
+				$cursor       = $parent;
+				$table_proven = true;
+				foreach ( $table_tags as $expected_tag ) {
+					$current            = $topology_by_id[ $cursor ] ?? null;
+					$layout             = $layout_by_node[ $cursor ] ?? array();
+					$allows_table_width = 'table' === $expected_tag && array( 'width' ) === array_keys( $layout ) && '100%' === ( $layout['width'] ?? null ) && isset( $layout_nodes_by_id[ $cursor ] ) && $has_unconditional_proven_property( $layout_nodes_by_id[ $cursor ], 'width' );
+					if ( ! is_array( $current ) || ( $current['tag'] ?? 'div' ) !== $expected_tag || ( $layout_nodes_by_id[ $cursor ]['source']['tag'] ?? '' ) !== $expected_tag || ( 'tr' !== $expected_tag && ! empty( $layout ) && ! $allows_table_width ) ) {
+						$table_proven = false;
+						break;
+					}
+					$cursor = $current['parent'] ?? null;
+					if ( is_string( $cursor ) ) {
+						$table_chain[] = $cursor;
+					}
+				}
+				foreach ( $branches as $branch ) {
+					if ( 'td' !== ( $topology_by_id[ $branch ]['tag'] ?? 'div' ) || 'td' !== ( $layout_nodes_by_id[ $branch ]['source']['tag'] ?? '' ) || array( 'width' ) !== array_keys( $layout_by_node[ $branch ] ?? array() ) ) {
+						$table_proven = false;
+					}
+				}
+				if ( $table_proven ) {
+					$represented_topology_nodes = array_merge( $represented_topology_nodes, $branches, array_slice( $table_chain, 0, 3 ) );
+					if ( array( 'width' ) === array_keys( $layout_by_node[ $table_chain[2] ] ?? array() ) ) {
+						$represented_layout_nodes[] = $table_chain[2];
+					}
+				}
+			}
+		}
+		foreach ( $nodes as $node ) {
+			$id               = is_array( $node ) ? ( $node['id'] ?? null ) : null;
+			$layout_node      = is_string( $id ) ? ( $layout_nodes_by_id[ $id ] ?? null ) : null;
+			$omitted_controls = is_array( $node ) ? $collect_controls( $node ) : array();
+			if ( 'wrapper' !== ( $node['kind'] ?? null ) || ! is_string( $id ) || array( 'display' => 'none' ) !== ( $layout_by_node[ $id ] ?? array() ) || isset( $variants_by_node[ $id ] ) || ! is_array( $layout_node ) || ! $has_unconditional_proven_property( $layout_node, 'display' ) || empty( $omitted_controls ) || array_filter( $omitted_controls, static fn( int $index ): bool => self::control_carries_authored_content( strtolower( trim( (string) ( $controls[ $index ]['type'] ?? $controls[ $index ]['tag'] ?? '' ) ) ) ) ) ) {
+				continue;
+			}
+			$represented_layout_nodes[]   = $id;
+			$represented_topology_nodes[] = $id;
+			$operations[]                 = array(
+				'dimension'     => 'topology',
+				'strategy'      => 'provider_omitted_runtime_controls',
+				'target_hash'   => hash( 'sha256', $id ),
+				'control_count' => count( $omitted_controls ),
+			);
+		}
 		foreach ( $children as $parent => $siblings ) {
-			if ( '$root' === $parent || ! isset( $layout_by_node[ $parent ] ) || isset( $variants_by_node[ $parent ] ) || ! in_array( count( $siblings ), array( 2, 4 ), true ) ) {
+			if ( '$root' === $parent || isset( $percentage_width_parents[ $parent ] ) || ! isset( $layout_by_node[ $parent ] ) || isset( $variants_by_node[ $parent ] ) || ! in_array( count( $siblings ), array( 2, 4 ), true ) ) {
 				continue;
 			}
 			$layout = $layout_by_node[ $parent ];
@@ -937,10 +1145,13 @@ class Static_Site_Importer_Form_Seeder {
 			return $blocks;
 		};
 		return array(
-			'blocks'                   => $build( '$root' ),
-			'losses'                   => $losses,
-			'operations'               => $operations,
-			'represented_layout_nodes' => $represented_layout_nodes,
+			'blocks'                     => $build( '$root' ),
+			'losses'                     => $losses,
+			'operations'                 => $operations,
+			'represented_layout_nodes'   => array_values( array_unique( array_map( 'strval', $represented_layout_nodes ) ) ),
+			'represented_topology_nodes' => array_values( array_unique( array_map( 'strval', $represented_topology_nodes ) ) ),
+			'responsive_variant_targets' => $responsive_variant_targets,
+			'native_visibility_targets'  => array_values( array_unique( array_map( 'strval', $native_visibility_targets ) ) ),
 		);
 	}
 
