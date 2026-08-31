@@ -5997,6 +5997,12 @@ test('recipe runs editor-validate-blocks against imported content after each imp
   assert.match(preflightStep.args[0], /woocommerce_onboarding_profile/);
   assert.match(preflightStep.args[0], /persisted_preferences/);
   assert.match(preflightStep.args[0], /welcomeGuide/);
+  const transportedEval = preflightStep.args[0]
+    .replace(/^command=eval '/, '')
+    .replace(/'$/, '')
+    .replace(/'\\''/g, "'");
+  const preflightLint = spawnSync('php', ['-l'], { input: `<?php\n${transportedEval}`, encoding: 'utf8' });
+  assert.equal(preflightLint.status, 0, preflightLint.stderr);
   const identityStep = recipe.workflow.steps.find((step) => step.metadata?.phase === 'materialized-surface-identity');
   assert.equal(identityStep.command, 'wordpress.wp-cli');
   assert.equal(identityStep.metadata.phase, 'materialized-surface-identity');
