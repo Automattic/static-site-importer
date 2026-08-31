@@ -97,7 +97,7 @@ test('pins an immutable WP Codebox release package, commit, and checksum togethe
   assert.match(workflow, /wpCodeboxSha:process\.env\.WP_CODEBOX_SHA/);
   assert.match(workflow, /"\$WP_CODEBOX_BIN" recipe validate --recipe "\$CONTRACT_RECIPE" --json/);
   assert.ok(workflow.indexOf('recipe validate --recipe') < workflow.indexOf('playwright/cli.js" install --with-deps chromium'));
-  assert.match(caller, /blocks-engine-sha: 42e7c4bf39c20d4716c804def0e396645ce356f2/);
+  assert.match(caller, /blocks-engine-sha: 55a0c86c1f5d20c81bde71cec0461c9dd00d0db0/);
   assert.doesNotMatch(caller, /wp-codebox-sha:/);
 });
 
