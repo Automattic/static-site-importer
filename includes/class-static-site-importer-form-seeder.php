@@ -371,6 +371,7 @@ class Static_Site_Importer_Form_Seeder {
 		$has_topology                  = isset( $form['control_topology'] );
 		$has_source_submit             = false;
 		$textarea_height_omitted_count = (int) ( $form['form']['textarea_height_omitted_count'] ?? 0 );
+		$radio_groups                  = self::labelled_radio_groups( $form, $controls );
 		if ( ! empty( $form['form']['interleaved_context'] ) ) {
 			return array(
 				'selector'       => $selector,
@@ -390,6 +391,12 @@ class Static_Site_Importer_Form_Seeder {
 		foreach ( $controls as $control_index => $control ) {
 			if ( ! is_array( $control ) ) {
 				continue;
+			}
+			if ( isset( $radio_groups['suppressed_controls'][ $control_index ] ) ) {
+				continue;
+			}
+			if ( isset( $radio_groups['groups'][ $control_index ] ) ) {
+				$control = $radio_groups['groups'][ $control_index ];
 			}
 
 			$type = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
@@ -433,7 +440,7 @@ class Static_Site_Importer_Form_Seeder {
 			);
 		}
 
-		$topology = self::topology_inner_blocks( $form, $field_blocks, $controls );
+		$topology = self::topology_inner_blocks( $form, $field_blocks, $controls, $radio_groups['suppressed_controls'] );
 		if ( null === $topology ) {
 			return array(
 				'selector'       => $selector,
@@ -449,7 +456,8 @@ class Static_Site_Importer_Form_Seeder {
 		if ( ! $has_topology || ! $has_source_submit ) {
 			$inner_blocks[] = self::submit_button_block( $submit_text, self::layout_node_class( $scope, 'control-submit' ), $submit_presentation );
 		}
-		$form['topology_losses'] = $topology['losses'];
+		$form['topology_losses']             = $topology['losses'];
+		$form['represented_semantic_nodes'] = $radio_groups['represented_semantic_nodes'];
 		$provider_graph          = is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(
 			'nodes'    => array(),
 			'variants' => array(),
@@ -469,7 +477,7 @@ class Static_Site_Importer_Form_Seeder {
 				'omitted_count' => $textarea_height_omitted_count,
 			);
 		}
-		self::append_receipt_entries( $layout['receipt'], 'operations', $topology['operations'] );
+		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $radio_groups['operations'], $topology['operations'] ) );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
 		$inner_blocks                 = $layout['blocks'];
 		$form_attrs                   = self::contact_form_attributes( $form, $scope );
@@ -596,6 +604,113 @@ class Static_Site_Importer_Form_Seeder {
 	}
 
 	/**
+	 * Aggregate only an exact labelled-fieldset radio topology that Jetpack can
+	 * represent as one field. The generic topology supplies membership and the
+	 * fieldset legend supplies the group label; no source markup is re-parsed.
+	 *
+	 * @return array{groups:array<int,array<string,mixed>>,suppressed_controls:array<int,bool>,represented_semantic_nodes:array<int,string>,operations:array<int,array<string,mixed>>}
+	 */
+	private static function labelled_radio_groups( array $form, array $controls ): array {
+		$result = array(
+			'groups'                     => array(),
+			'suppressed_controls'        => array(),
+			'represented_semantic_nodes' => array(),
+			'operations'                 => array(),
+		);
+		$nodes = $form['control_topology']['nodes'] ?? null;
+		if ( ! is_array( $nodes ) ) {
+			return $result;
+		}
+
+		$children = array();
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) {
+				return $result;
+			}
+			$children[ $node['parent'] ?? '$root' ][] = $node;
+		}
+		foreach ( $children as &$siblings ) {
+			usort( $siblings, static fn ( array $left, array $right ): int => $left['order'] <=> $right['order'] );
+		}
+		unset( $siblings );
+
+		$all_radio_names = array();
+		foreach ( $controls as $control_index => $control ) {
+			if ( ! is_array( $control ) || 'input' !== strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ) || 'radio' !== strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) ) {
+				continue;
+			}
+			$name = trim( (string) ( $control['name'] ?? '' ) );
+			if ( '' !== $name ) {
+				$all_radio_names[ $name ][] = $control_index;
+			}
+		}
+
+		foreach ( $nodes as $fieldset ) {
+			if ( ! is_array( $fieldset ) || 'wrapper' !== ( $fieldset['kind'] ?? null ) || 'fieldset' !== ( $fieldset['tag'] ?? null ) || 'labelled_group' !== ( $fieldset['fieldset_semantics'] ?? null ) || ! is_string( $fieldset['id'] ?? null ) || ! is_string( $fieldset['legend'] ?? null ) || '' === trim( $fieldset['legend'] ) ) {
+				continue;
+			}
+			$members          = array();
+			$semantic_nodes   = array( $fieldset['id'] );
+			$unambiguous_shape = true;
+			foreach ( $children[ $fieldset['id'] ] ?? array() as $label ) {
+				$label_children = $children[ $label['id'] ?? '' ] ?? array();
+				if ( 'wrapper' !== ( $label['kind'] ?? null ) || 'label' !== ( $label['tag'] ?? null ) || ! is_string( $label['id'] ?? null ) || 1 !== count( $label_children ) || 'control' !== ( $label_children[0]['kind'] ?? null ) || ! is_int( $label_children[0]['control'] ?? null ) ) {
+					$unambiguous_shape = false;
+					break;
+				}
+				$members[]        = $label_children[0]['control'];
+				$semantic_nodes[] = $label['id'];
+			}
+			if ( ! $unambiguous_shape || ! in_array( count( $members ), array( 2, 3, 4 ), true ) || count( $members ) !== count( array_unique( $members ) ) ) {
+				continue;
+			}
+			$first       = $controls[ $members[0] ] ?? null;
+			$name        = is_array( $first ) ? trim( (string) ( $first['name'] ?? '' ) ) : '';
+			$options     = array();
+			$required    = false;
+			foreach ( $members as $control_index ) {
+				$control = $controls[ $control_index ] ?? null;
+				if ( ! is_array( $control ) || 'input' !== strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ) || 'radio' !== strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) || $name !== trim( (string) ( $control['name'] ?? '' ) ) ) {
+					$unambiguous_shape = false;
+					break;
+				}
+				if ( ! isset( $control['label'] ) || ! is_scalar( $control['label'] ) || '' === trim( (string) $control['label'] ) ) {
+					$unambiguous_shape = false;
+					break;
+				}
+				$option = self::control_text( array( 'label' => $control['label'] ) );
+				$options[] = $option;
+				$required  = $required || ! empty( $control['required'] ) || 'true' === strtolower( trim( (string) ( $control['aria-required'] ?? $control['aria_required'] ?? '' ) ) );
+			}
+			if ( ! $unambiguous_shape || '' === $name || count( $all_radio_names[ $name ] ?? array() ) !== count( $members ) ) {
+				continue;
+			}
+
+			$group_control            = $first;
+			$group_control['text']    = trim( $fieldset['legend'] );
+			$group_control['label']   = trim( $fieldset['legend'] );
+			$group_control['options'] = $options;
+			if ( $required ) {
+				$group_control['required'] = true;
+			}
+			$result['groups'][ $members[0] ] = $group_control;
+			foreach ( array_slice( $members, 1 ) as $control_index ) {
+				$result['suppressed_controls'][ $control_index ] = true;
+			}
+			$result['represented_semantic_nodes'] = array_merge( $result['represented_semantic_nodes'], $semantic_nodes );
+			$result['operations'][]                = array(
+				'dimension'     => 'semantic',
+				'strategy'      => 'provider_radio_fieldset_equivalent',
+				'target_hash'   => hash( 'sha256', $fieldset['id'] ),
+				'control_count' => count( $members ),
+				'required'      => $required,
+			);
+		}
+
+		return $result;
+	}
+
+	/**
 	 * Flatten the validated generic tree into Jetpack's constrained direct-child
 	 * grammar. Equal two- and four-column grids map to provider field widths;
 	 * other wrapper semantics/layout remain explicit receipt losses.
@@ -604,7 +719,7 @@ class Static_Site_Importer_Form_Seeder {
 	 * @param array<int,array<string,mixed>> $controls
 	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>}|null
 	 */
-	private static function topology_inner_blocks( array $form, array $field_blocks, array $controls ): ?array {
+	private static function topology_inner_blocks( array $form, array $field_blocks, array $controls, array $suppressed_controls = array() ): ?array {
 		if ( ! isset( $form['control_topology'] ) ) {
 			return array(
 				'blocks'                   => array_values( $field_blocks ),
@@ -751,13 +866,15 @@ class Static_Site_Importer_Form_Seeder {
 				'node_hash'   => hash( 'sha256', $node_id ),
 			);
 		}
-		$build = static function ( string $parent_node ) use ( &$build, $children, $field_blocks, $controls, &$losses ): array {
+		$build = static function ( string $parent_node ) use ( &$build, $children, $field_blocks, $controls, $suppressed_controls, &$losses ): array {
 			$blocks = array();
 			foreach ( $children[ $parent_node ] ?? array() as $node ) {
 				if ( 'control' === ( $node['kind'] ?? null ) ) {
 					$control_index = $node['control'] ?? -1;
 					if ( isset( $field_blocks[ $control_index ] ) ) {
 						$blocks[] = $field_blocks[ $control_index ];
+					} elseif ( isset( $suppressed_controls[ $control_index ] ) ) {
+						continue;
 					} elseif ( isset( $controls[ $control_index ] ) ) {
 						$type = strtolower( trim( (string) ( $controls[ $control_index ]['type'] ?? $controls[ $control_index ]['tag'] ?? '' ) ) );
 						if ( ! self::control_carries_authored_content( $type ) ) {
