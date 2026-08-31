@@ -1886,6 +1886,15 @@ class Static_Site_Importer_Report_Diagnostics {
 
 	/** @param array<string,mixed> $fallback */
 	public static function fallback_reconciliation_identity( array $fallback ): string {
+		// Blocks Engine assigns this identity at fallback detection, before an
+		// importer-specific provider projection can alter its representation.
+		foreach ( array( 'source_fallback_identity', 'fallback_reconciliation_identity', 'fallback_identity' ) as $field ) {
+			$identity = $fallback[ $field ] ?? null;
+			if ( is_string( $identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $identity ) ) {
+				return $identity;
+			}
+		}
+
 		return hash( 'sha256', "static-site-importer/fallback-reconciliation/v1\n" . self::first_scalar( $fallback, array( 'source_path', 'source' ) ) . "\n" . self::first_scalar( $fallback, array( 'selector' ) ) . "\n" . self::fallback_reconciliation_hash( $fallback ) );
 	}
 
@@ -2708,7 +2717,13 @@ class Static_Site_Importer_Report_Diagnostics {
 			if ( ! is_array( $receipt ) || ! is_string( $receipt['fallback_reconciliation_identity'] ?? null ) ) {
 				continue;
 			}
-			$receipts_by_fallback[ $receipt['fallback_reconciliation_identity'] ] = $receipt;
+			$identity = $receipt['fallback_reconciliation_identity'];
+			if ( isset( $receipts_by_fallback[ $identity ] ) ) {
+				// A source identity is consumed once. Ambiguous proof must leave it unresolved.
+				$receipts_by_fallback[ $identity ] = false;
+				continue;
+			}
+			$receipts_by_fallback[ $identity ] = $receipt;
 		}
 		$resolved    = 0;
 		$resolutions = array();
@@ -2718,7 +2733,8 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 			$identity             = self::fallback_reconciliation_identity( $diagnostic );
 			$fallback_hash        = self::fallback_reconciliation_hash( $diagnostic );
-			$receipt              = $receipts_by_fallback[ $identity ] ?? array();
+			$candidate_receipt    = $receipts_by_fallback[ $identity ] ?? array();
+			$receipt              = is_array( $candidate_receipt ) ? $candidate_receipt : array();
 			$source_path          = self::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
 			$page_receipt         = $report['materialization_receipt']['completed']['materialized_pages'][ $source_path ] ?? array();
 			$page_hash            = is_array( $page_receipt ) && is_string( $page_receipt['content_hash'] ?? null ) ? $page_receipt['content_hash'] : '';
