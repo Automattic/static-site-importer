@@ -474,7 +474,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				}
 				$run = $entered;
 				self::before_phase( 'compose', $run, $run['page_ids'] );
-				$result = call_user_func( $compose, $shared, array_values( $receipts ) );
+				$result = call_user_func( $compose, $shared, array_values( $receipts ), $payload_reader );
 				if ( ! is_object( $result ) || ! is_callable( array( $result, 'toWordPressSitePlanView' ) ) ) {
 					throw new RuntimeException( 'Blocks Engine returned an invalid composed result.' );
 				}
