@@ -238,11 +238,6 @@ class Static_Site_Importer_Form_Seeder {
 
 	/** Activate and prepare Jetpack Forms through its canonical module lifecycle. */
 	public static function prepare_jetpack_forms_runtime() {
-		$availability = self::jetpack_forms_availability_details();
-		if ( ! empty( $availability['available'] ) ) {
-			return true;
-		}
-
 		$lifecycle_apis         = array(
 			'Jetpack::is_module_active'         => self::runtime_static_method_exists( 'Jetpack', 'is_module_active' ),
 			'Jetpack::activate_default_modules' => self::runtime_static_method_exists( 'Jetpack', 'activate_default_modules' ),
@@ -252,11 +247,25 @@ class Static_Site_Importer_Form_Seeder {
 			return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_lifecycle_missing', $missing_lifecycle_apis );
 		}
 
-		if ( ! self::invoke_runtime_static_method( 'Jetpack', 'is_module_active', array( 'contact-form' ) ) ) {
+		$required_modules = array( 'blocks', 'contact-form' );
+		$inactive_modules = array_values( array_filter(
+			$required_modules,
+			static fn ( string $module ): bool => ! self::invoke_runtime_static_method( 'Jetpack', 'is_module_active', array( $module ) )
+		) );
+		$availability     = self::jetpack_forms_availability_details();
+		if ( empty( $inactive_modules ) && ! empty( $availability['available'] ) ) {
+			return true;
+		}
+
+		if ( ! empty( $inactive_modules ) ) {
 			// Jetpack uses this inverted range to activate only explicitly supplied defaults.
-			self::invoke_runtime_static_method( 'Jetpack', 'activate_default_modules', array( 999, 1, array( 'contact-form' ), false, false ) );
-			if ( ! self::invoke_runtime_static_method( 'Jetpack', 'is_module_active', array( 'contact-form' ) ) ) {
-				return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_activation_failed', array( 'contact-form' ) );
+			self::invoke_runtime_static_method( 'Jetpack', 'activate_default_modules', array( 999, 1, $inactive_modules, false, false ) );
+			$inactive_modules = array_values( array_filter(
+				$required_modules,
+				static fn ( string $module ): bool => ! self::invoke_runtime_static_method( 'Jetpack', 'is_module_active', array( $module ) )
+			) );
+			if ( ! empty( $inactive_modules ) ) {
+				return self::jetpack_forms_runtime_error( 'static_site_importer_jetpack_forms_activation_failed', $inactive_modules );
 			}
 		}
 
