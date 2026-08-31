@@ -297,6 +297,8 @@ The default root is `website` with `entrypoint: "website/index.html"`. Callers c
 
 The product handoff contract is defined in `docs/product-handoff-contract.md` and locked by `tests/fixtures/product-handoff-contract/v1.json` plus `tests/smoke-product-handoff-contract.php`.
 
+Owner readiness after materialization uses `static-site-importer/owner-handoff-evidence/v1`. It binds the canonical plan identity and materialization receipt hashes, composes existing parity/editability/media/provider/metadata/runtime receipts, and renders the same envelope as a user-facing report card. Missing mandatory evidence is an `evidence_gap`; it is never treated as a pass. `accepted_built_allowed` is false when the report contains hard failures or evidence gaps. See `docs/contracts/owner-handoff-evidence-v1.md`.
+
 The handoff path is:
 
 - product caller sends a `blocks-engine/php-transformer/site-artifact/v1` input artifact;

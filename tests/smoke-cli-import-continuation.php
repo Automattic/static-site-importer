@@ -36,6 +36,18 @@ if ( ! function_exists( 'wp_json_encode' ) ) {
 		return json_encode( $value, $options );
 	}
 }
+if ( ! function_exists( 'add_filter' ) ) {
+	$GLOBALS['ssi_cli_filters'] = array();
+	function add_filter( string $hook, callable $callback ): void {
+		$GLOBALS['ssi_cli_filters'][ $hook ][] = $callback;
+	}
+	function apply_filters( string $hook, $value, ...$args ) {
+		foreach ( $GLOBALS['ssi_cli_filters'][ $hook ] ?? array() as $callback ) {
+			$value = $callback( $value, ...$args );
+		}
+		return $value;
+	}
+}
 
 require dirname( __DIR__ ) . '/includes/cli.php';
 
@@ -74,6 +86,106 @@ file_put_contents( $invalid_json_path, '{not-json' );
 $invalid_json = static_site_importer_cli_read_request_json( $invalid_json_path );
 unlink( $invalid_json_path );
 $assert( is_wp_error( $invalid_json ), 'malformed-invalid-json' );
+
+$bundle_dir = sys_get_temp_dir() . '/ssi-request-bundle-' . bin2hex( random_bytes( 6 ) );
+mkdir( $bundle_dir );
+$bundle_request = $bundle_dir . '/request.json';
+$bundle_source  = $bundle_dir . '/source';
+mkdir( $bundle_source );
+file_put_contents( $bundle_source . '/index.html', '<h1>Bundle</h1>' );
+file_put_contents(
+	$bundle_request,
+	wp_json_encode(
+		array(
+			'operation' => 'apply',
+			'source'    => array(
+				'type' => 'files',
+				'ref'  => 'request-bundle:source',
+			),
+		)
+	)
+);
+$bundle_input = static_site_importer_cli_import_input( array(), array( 'request' => $bundle_request ) );
+$bundle_real_dir = realpath( $bundle_dir );
+$assert( is_array( $bundle_input ) && $bundle_real_dir === ( $bundle_input['_cli_request_bundle_dir'] ?? '' ), 'request-bundle-registers-directory' );
+$assert( realpath( $bundle_source ) === static_site_importer_cli_request_bundle_path( $bundle_request, 'request-bundle:source' ), 'request-bundle-resolves-source' );
+$resolved_bundle = apply_filters( 'static_site_importer_resolve_source_reference', null, 'request-bundle:source', 'files' );
+$assert( 'index.html' === ( $resolved_bundle['source']['files'][0]['path'] ?? '' ), 'request-bundle-registers-opaque-resolver' );
+$assert( '<h1>Bundle</h1>' === $resolved_bundle['payload_reader']->read( $resolved_bundle['source']['files'][0]['payload_reference'] ), 'request-bundle-reader-returns-source-bytes' );
+$bundle_step = static_site_importer_cli_write_step_request( $bundle_input );
+$assert( is_string( $bundle_step ) && $bundle_real_dir === dirname( $bundle_step ), 'request-bundle-keeps-fresh-runtime-adjacent' );
+if ( is_string( $bundle_step ) ) {
+	unlink( $bundle_step );
+}
+$traversal = static_site_importer_cli_request_bundle_path( $bundle_request, 'request-bundle:../source' );
+$assert( is_wp_error( $traversal ) && 'static_site_importer_cli_request_bundle_invalid' === $traversal->get_error_code(), 'request-bundle-rejects-traversal' );
+$missing_source = static_site_importer_cli_request_bundle_path( $bundle_request, 'request-bundle:missing' );
+$assert( is_wp_error( $missing_source ), 'request-bundle-rejects-missing-source' );
+$bundle_link = $bundle_dir . '/linked';
+symlink( $bundle_source, $bundle_link );
+$linked_source = static_site_importer_cli_request_bundle_path( $bundle_request, 'request-bundle:linked' );
+$assert( is_wp_error( $linked_source ), 'request-bundle-rejects-symlink' );
+unlink( $bundle_link );
+unlink( $bundle_source . '/index.html' );
+rmdir( $bundle_source );
+unlink( $bundle_request );
+rmdir( $bundle_dir );
+
+$bounded_bundle_dir = sys_get_temp_dir() . '/ssi-bounded-request-bundle-' . bin2hex( random_bytes( 6 ) );
+mkdir( $bounded_bundle_dir );
+file_put_contents( $bounded_bundle_dir . '/index.html', '<h1>Bounded</h1>' );
+for ( $index = 0; $index < 500; ++$index ) {
+	file_put_contents( $bounded_bundle_dir . '/asset-' . $index . '.css', 'a{}' );
+}
+$bounded_bundle = static_site_importer_cli_request_bundle_files( $bounded_bundle_dir );
+$assert( is_array( $bounded_bundle ) && 501 === count( $bounded_bundle['files'] ?? array() ), 'request-bundle-retains-files-above-compiler-default' );
+$assert( array( 'max_files' => 506, 'max_file_bytes' => 10485760, 'max_total_bytes' => 335544320 ) === ( $bounded_bundle['compiler_limits'] ?? null ), 'request-bundle-declares-verified-compiler-limits' );
+foreach ( scandir( $bounded_bundle_dir ) as $entry ) {
+	if ( '.' !== $entry && '..' !== $entry ) {
+		unlink( $bounded_bundle_dir . '/' . $entry );
+	}
+}
+rmdir( $bounded_bundle_dir );
+
+$count_limit_dir = sys_get_temp_dir() . '/ssi-request-bundle-count-' . bin2hex( random_bytes( 6 ) );
+mkdir( $count_limit_dir );
+for ( $index = 0; $index <= 5000; ++$index ) {
+	file_put_contents( $count_limit_dir . '/asset-' . $index . '.css', '' );
+}
+$count_limit = static_site_importer_cli_request_bundle_files( $count_limit_dir );
+$assert( is_wp_error( $count_limit ) && 'static_site_importer_cli_request_bundle_file_limit_exceeded' === $count_limit->get_error_code(), 'request-bundle-rejects-file-count-over-hard-boundary' );
+foreach ( scandir( $count_limit_dir ) as $entry ) {
+	if ( '.' !== $entry && '..' !== $entry ) {
+		unlink( $count_limit_dir . '/' . $entry );
+	}
+}
+rmdir( $count_limit_dir );
+
+$file_limit_dir = sys_get_temp_dir() . '/ssi-request-bundle-file-' . bin2hex( random_bytes( 6 ) );
+mkdir( $file_limit_dir );
+$file_limit_handle = fopen( $file_limit_dir . '/asset.css', 'w' );
+ftruncate( $file_limit_handle, 10485761 );
+fclose( $file_limit_handle );
+$file_limit = static_site_importer_cli_request_bundle_files( $file_limit_dir );
+$assert( is_wp_error( $file_limit ) && 'static_site_importer_cli_request_bundle_file_too_large' === $file_limit->get_error_code(), 'request-bundle-rejects-file-bytes-over-hard-boundary' );
+unlink( $file_limit_dir . '/asset.css' );
+rmdir( $file_limit_dir );
+
+$total_limit_dir = sys_get_temp_dir() . '/ssi-request-bundle-total-' . bin2hex( random_bytes( 6 ) );
+mkdir( $total_limit_dir );
+for ( $index = 0; $index < 26; ++$index ) {
+	$total_limit_handle = fopen( $total_limit_dir . '/asset-' . $index . '.css', 'w' );
+	ftruncate( $total_limit_handle, 10485760 );
+	fclose( $total_limit_handle );
+}
+$total_limit = static_site_importer_cli_request_bundle_files( $total_limit_dir );
+$assert( is_wp_error( $total_limit ) && 'static_site_importer_cli_request_bundle_total_too_large' === $total_limit->get_error_code(), 'request-bundle-rejects-aggregate-bytes-over-hard-boundary' );
+foreach ( scandir( $total_limit_dir ) as $entry ) {
+	if ( '.' !== $entry && '..' !== $entry ) {
+		unlink( $total_limit_dir . '/' . $entry );
+	}
+}
+rmdir( $total_limit_dir );
 
 $request_path = tempnam( sys_get_temp_dir(), 'ssi-import-req-' );
 file_put_contents(
@@ -162,6 +274,41 @@ $assert( array( 'type' => 'files', 'import_id' => 'opaque-1' ) === ( $requests[2
 $assert( 'static-site-importer/import-cli-receipt/v1' === ( $receipt['schema'] ?? '' ), 'terminal-receipt-schema' );
 $assert( 'completed' === ( $receipt['status'] ?? '' ) && 3 === ( $receipt['steps'] ?? 0 ), 'terminal-success-status' );
 $assert( true === ( $receipt['response']['success'] ?? false ) && empty( $receipt['response']['continuation'] ), 'terminal-success-has-no-continuation' );
+
+$lifecycle_requests = array();
+$lifecycle_queue    = array(
+	array(
+		'success'               => true,
+		'continuation'          => true,
+		'continuation_reason'   => 'dependencies_prepared',
+		'import_id'             => 'durable-direct-run',
+		'result'                => array(
+			'status'                       => 'dependencies_prepared',
+			'runtime_lifecycle_checkpoint' => 'checkpoint-1453',
+			'fresh_runtime'                => array(
+				'request_id'              => 'prepare-request-1453',
+				'lifecycle_checkpoint_id' => 'checkpoint-1453',
+			),
+		),
+	),
+	array(
+		'success'      => true,
+		'continuation' => false,
+		'result'       => array( 'theme_slug' => 'fresh-runtime' ),
+	),
+);
+$lifecycle_receipt = static_site_importer_cli_run_import_host(
+	$files_input,
+	static function ( array $request ) use ( &$lifecycle_requests, &$lifecycle_queue ): array {
+		$lifecycle_requests[] = $request;
+		return array_shift( $lifecycle_queue );
+	}
+);
+$assert( ! isset( $lifecycle_requests[0]['runtime_lifecycle_phase'] ), 'ordinary-request-omits-caller-lifecycle' );
+$assert( 'resume' === ( $lifecycle_requests[1]['runtime_lifecycle_phase'] ?? '' ), 'dependency-continuation-enters-resume' );
+$assert( 'prepare-request-1453' === ( $lifecycle_requests[1]['runtime_lifecycle_request_id'] ?? '' ) && 'checkpoint-1453' === ( $lifecycle_requests[1]['runtime_lifecycle_checkpoint'] ?? '' ), 'fresh-runtime-preserves-lifecycle-transport' );
+$assert( array( 'type' => 'files', 'import_id' => 'durable-direct-run' ) === ( $lifecycle_requests[1]['source'] ?? null ), 'fresh-runtime-preserves-direct-run-identity' );
+$assert( 'completed' === ( $lifecycle_receipt['status'] ?? '' ) && 2 === ( $lifecycle_receipt['steps'] ?? 0 ), 'dependency-checkpoint-resumes-terminally' );
 
 $failed = static_site_importer_cli_run_import_host(
 	array( 'source' => array( 'type' => 'html', 'html' => '<h1>x</h1>' ) ),

@@ -21,6 +21,9 @@ if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-entity-materializer-registry.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Owner_Handoff_Evidence' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-owner-handoff-evidence.php';
+}
 
 /**
  * Builds SSI import reports and normalizes diagnostics for repair loops.
@@ -336,6 +339,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$report['compact_summary']          = self::import_report_summary( $report, $quality );
 		$report['finding_packets']          = self::finding_packets( $report );
 		$report['import_validation_result'] = self::import_validation_result( $report, $quality );
+		$report['owner_handoff_evidence']   = Static_Site_Importer_Owner_Handoff_Evidence::compose_from_import( $report, $quality );
 
 		if ( $build_fixture && class_exists( 'Static_Site_Importer_Diagnostic_Contract' ) ) {
 			return Static_Site_Importer_Diagnostic_Contract::build(
@@ -959,7 +963,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return void
 	 */
 	public static function record_companion_plugin_dependency( Static_Site_Importer_Import_Report $report, array $dependency, bool $waived ): void {
-		$row  = Static_Site_Importer_Entity_Materializer_Registry::companion_dependency_row( $dependency, $waived );
+		$row  = Static_Site_Importer_Dependency_Manager::companion_dependency_row( $dependency, $waived );
 		$slug = (string) ( $row['slug'] ?? '' );
 		if ( '' === $slug ) {
 			return;

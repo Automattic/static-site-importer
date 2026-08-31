@@ -139,9 +139,34 @@ jobs:
           curl --fail --location --retry 3 --retry-all-errors --output "$RUNNER_TEMP/wp-codebox/workspace.tgz" "https://github.com/Automattic/wp-codebox/releases/download/${WP_CODEBOX_VERSION}/${WP_CODEBOX_WORKSPACE_ASSET}"
           echo "${WP_CODEBOX_SHA256}  $RUNNER_TEMP/wp-codebox/workspace.tgz" | sha256sum --check --status
           npm install --global --prefix "$RUNNER_TEMP/wp-codebox" "$RUNNER_TEMP/wp-codebox/workspace.tgz"
-          node "$RUNNER_TEMP/wp-codebox/lib/node_modules/wp-codebox-workspace/node_modules/playwright/cli.js" install --with-deps chromium
           "$RUNNER_TEMP/wp-codebox/bin/wp-codebox" commands --json
           echo "WP_CODEBOX_BIN=$RUNNER_TEMP/wp-codebox/bin/wp-codebox" >> "$GITHUB_ENV"
+
+      - name: Validate solved-site recipe contract
+        working-directory: static-site-importer
+        env:
+          CONTRACT_RECIPE: ${{ runner.temp }}/solved-site-recipe-contract.json
+          STATIC_SITE_IMPORTER_PATH: ${{ github.workspace }}/static-site-importer
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import { buildFixtureMatrixRecipe } from './lib/fixture-matrix/steps/recipe-builder.mjs';
+
+          const recipe = buildFixtureMatrixRecipe({
+            matrix: { id: 'solved-site-contract', fixtures: [{ id: 'solved-site', label: 'solved-site', directory: '/fixtures/solved-site', entrypoint: 'index.html' }] },
+            staticSiteImporterPath: process.env.STATIC_SITE_IMPORTER_PATH,
+            artifactsDirectory: process.env.RUNNER_TEMP,
+            phasedDependencyPlanning: true,
+            editorValidation: false,
+            visualParity: false,
+            attemptId: 'contract',
+          });
+          fs.writeFileSync(process.env.CONTRACT_RECIPE, `${JSON.stringify(recipe, null, 2)}\n`);
+          NODE
+          "$WP_CODEBOX_BIN" recipe validate --recipe "$CONTRACT_RECIPE" --json
+
+      - name: Install pinned WP Codebox browser
+        run: node "$RUNNER_TEMP/wp-codebox/lib/node_modules/wp-codebox-workspace/node_modules/playwright/cli.js" install --with-deps chromium
 
       - name: Record pinned runtime inputs
         env:

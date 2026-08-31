@@ -103,6 +103,6 @@ final class Static_Site_Importer_Current_Site_Capabilities {
 	}
 
 	private static function is_cli(): bool {
-		return defined( 'WP_CLI' ) && WP_CLI;
+		return defined( 'WP_CLI' );
 	}
 }

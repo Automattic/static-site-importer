@@ -12,6 +12,7 @@ use Automattic\BlocksEngine\PhpTransformer\WordPress\Runtime as Blocks_Engine_Wo
 require_once __DIR__ . '/class-static-site-importer-stylesheet-materializer.php';
 require_once __DIR__ . '/class-static-site-importer-protected-page-policy.php';
 require_once __DIR__ . '/class-static-site-importer-default-content.php';
+require_once __DIR__ . '/class-static-site-importer-route-document-metadata.php';
 if ( ! class_exists( 'Static_Site_Importer_Theme_Materialization_Strategy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-theme-materialization-strategy.php';
 }
@@ -179,8 +180,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			);
 		}
 		$payload    = self::resolve_companion_asset_references( $payload, $prepared['plan'] ?? array(), $prepared['resolved'] ?? array() );
-		$dependency = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $payload );
-		$result     = Static_Site_Importer_Entity_Materializer_Registry::materialize_companion_dependency( $dependency, ! empty( $args['overwrite'] ) );
+		$dependency = Static_Site_Importer_Dependency_Manager::companion_plugin_dependency( $payload );
+		$result     = Static_Site_Importer_Dependency_Manager::materialize_companion_dependency( $dependency, ! empty( $args['overwrite'] ) );
 		if ( 'failed' === ( $result['status'] ?? '' ) ) {
 			$error = $result['error'] ?? array();
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_companion_plugin_materialization_failed' ), (string) ( $error['message'] ?? 'Companion-plugin materialization failed.' ), $result );
@@ -216,7 +217,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** Public because checkpoint preparation provisions the same typed dependencies. */
 	public static function materialize_runtime_dependencies( array $lifecycle, array $args ) {
-		return Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_dependencies( $lifecycle, $args );
+		return Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies( $lifecycle, $args );
 	}
 
 	/** Return a provider-compensated error before canonical plan mutation begins. */
@@ -566,18 +567,21 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				return self::failed_receipt( $state, 'materialization_reconciliation_metadata_write_failed' );
 			}
 			$materialized_markup = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] );
+			$provenance          = array(
+				'schema'                  => 'static-site-importer/page-provenance/v1',
+				'import_run_id'           => (string) ( $args['import_run_id'] ?? '' ),
+				'source_path'             => $page['source_path'],
+				'reconciliation_identity' => $page['reconciliation_identity'],
+				'content_hash'            => hash( 'sha256', $materialized_markup ),
+			);
+			$document_title      = Static_Site_Importer_Route_Document_Metadata::title_from_page( $page );
+			if ( '' !== $document_title ) {
+				$provenance['document_title'] = $document_title;
+			}
 			update_post_meta(
 				$post,
 				'_static_site_importer_provenance',
-				wp_json_encode(
-					array(
-						'schema'                  => 'static-site-importer/page-provenance/v1',
-						'import_run_id'           => (string) ( $args['import_run_id'] ?? '' ),
-						'source_path'             => $page['source_path'],
-						'reconciliation_identity' => $page['reconciliation_identity'],
-						'content_hash'            => hash( 'sha256', $materialized_markup ),
-					)
-				)
+				wp_json_encode( $provenance )
 			);
 			foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
 				if ( ( $binding_report['source_path'] ?? '' ) === $page['source_path'] ) {

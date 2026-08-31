@@ -74,6 +74,9 @@ class Static_Site_Importer_Plugin_Materializer {
 				$report['installed'] = true;
 				$report['actions'][] = 'installed';
 			}
+			if ( function_exists( 'wp_clean_plugins_cache' ) ) {
+				wp_clean_plugins_cache( false );
+			}
 		}
 		$activation_deps = self::load_activation_dependencies();
 		if ( is_wp_error( $activation_deps ) ) {
@@ -845,13 +848,16 @@ class Static_Site_Importer_Plugin_Materializer {
 	 * @return true|WP_Error
 	 */
 	private static function install_wp_org_plugin( string $slug ) {
-		if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
+		if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 			try {
 				$result = WP_CLI::runcommand(
 					'plugin install ' . escapeshellarg( $slug ),
 					array(
 						'return'        => true,
 						'exit_on_error' => false,
+						// Keep nested WP-CLI plugin discovery out of this request before
+						// activate_plugin() validates the newly written entrypoint.
+						'launch'        => true,
 					)
 				);
 				if ( 0 === $result || null === $result || true === $result ) {
