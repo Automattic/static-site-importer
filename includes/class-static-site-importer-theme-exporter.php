@@ -406,7 +406,7 @@ class Static_Site_Importer_Theme_Exporter {
 		global $post;
 		$previous_post = $post ?? null;
 		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Dynamic block rendering reads the exported document from the global post context.
-		$post          = $page;
+		$post = $page;
 		if ( function_exists( 'setup_postdata' ) ) {
 			setup_postdata( $page );
 		}
