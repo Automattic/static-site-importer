@@ -131,6 +131,10 @@ class Static_Site_Importer_Canonical_Import_Service {
 			$args['_static_site_importer_payload_reader'] = $payload_reader;
 		}
 		if ( self::direct_artifact_continuation_available() && in_array( $type, array( 'html', 'files', 'zip' ), true ) && 'resume' !== $args['runtime_lifecycle_phase'] && self::artifact_html_page_count( $artifact ) > 1 ) {
+			if ( 'apply' === $operation && '' === $args['runtime_lifecycle_phase'] ) {
+				$args['runtime_lifecycle_phase']         = 'prepare';
+				$args['runtime_lifecycle_invocation_id'] = wp_generate_uuid4();
+			}
 			$result = Static_Site_Importer_Direct_Artifact_Import::start( $artifact, $args, $type, $operation, $provenance, $payload_reader ?? null );
 			return is_wp_error( $result ) ? self::error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() ) : $result;
 		}
