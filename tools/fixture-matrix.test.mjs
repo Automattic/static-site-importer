@@ -5995,6 +5995,8 @@ test('recipe runs editor-validate-blocks against imported content after each imp
   const preflightStep = recipe.workflow.steps.find((step) => step.metadata?.phase === 'editor-preflight');
   assert.equal(preflightStep.command, 'wordpress.wp-cli');
   assert.match(preflightStep.args[0], /woocommerce_onboarding_profile/);
+  assert.match(preflightStep.args[0], /persisted_preferences/);
+  assert.match(preflightStep.args[0], /welcomeGuide/);
   const identityStep = recipe.workflow.steps.find((step) => step.metadata?.phase === 'materialized-surface-identity');
   assert.equal(identityStep.command, 'wordpress.wp-cli');
   assert.equal(identityStep.metadata.phase, 'materialized-surface-identity');
