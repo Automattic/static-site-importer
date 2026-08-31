@@ -298,7 +298,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				if ( $total_bytes + $bytes > $limits['max_total_bytes'] ) {
 					return new WP_Error( 'static_site_importer_cli_request_bundle_total_too_large', 'Request-bundle source files exceed the 256 MiB aggregate compiler limit.' );
 				}
-				$is_html = (bool) preg_match( '/\.html?$/i', $relative );
+				$is_html           = (bool) preg_match( '/\.html?$/i', $relative );
 				$inline_expansions = $is_html ? static_site_importer_cli_inline_expansion_count( $absolute ) : 0;
 				if ( count( $files ) + 1 + $generated_files + $inline_expansions > $limits['max_files'] ) {
 					return new WP_Error( 'static_site_importer_cli_request_bundle_file_limit_exceeded', 'Request-bundle source files and reserved inline expansion files exceed the 5,000-file compiler limit.' );
@@ -307,9 +307,9 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				if ( false === $digest ) {
 					return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A request-bundle source file could not be verified.' );
 				}
-				$id           = 'request-bundle-file:' . rawurlencode( $relative );
-				$paths[ $id ] = $absolute;
-				$files[]      = array(
+				$id               = 'request-bundle-file:' . rawurlencode( $relative );
+				$paths[ $id ]     = $absolute;
+				$files[]          = array(
 					'path'              => $relative,
 					'payload_reference' => array(
 						'schema' => 'blocks-engine/payload-reference/v1',
@@ -318,7 +318,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 						'sha256' => $digest,
 					),
 				);
-				$total_bytes += $bytes;
+				$total_bytes     += $bytes;
 				$generated_files += $inline_expansions;
 			}
 		} catch ( UnexpectedValueException | RuntimeException $error ) {
