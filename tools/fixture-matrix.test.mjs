@@ -773,6 +773,30 @@ test('fixture matrix run config projects an explicit visual viewport into browse
   assert.equal(fixtureMatrixHomeboySettings(config).SSI_FIXTURE_MATRIX_VISUAL_PARITY_VIEWPORT_HEIGHT, '844');
 });
 
+test('fixture matrix selects classic materialization without duplicating the visual parity lane', () => {
+  const config = normalizeFixtureMatrixRunConfig({
+    fixtureRoot: '/tmp/fixtures',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    themeMaterialization: 'classic',
+  });
+  assert.equal(fixtureMatrixRecipeInput(config).themeMaterialization, 'classic');
+  assert.equal(fixtureMatrixHomeboySettings(config).SSI_FIXTURE_MATRIX_THEME_MATERIALIZATION, 'classic');
+
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot });
+  const classicRecipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', staticSiteImporterPath: '/tmp/static-site-importer', themeMaterialization: 'classic' });
+  const classicImport = classicRecipe.workflow.steps.find((step) => /static-site-importer validate-artifact/.test(step.args?.[0] || ''));
+  assert.match(classicImport.args[0], /--theme-materialization=classic(?: |$)/);
+  assert.ok(classicRecipe.workflow.steps.some((step) => step.command === 'wordpress.visual-compare'));
+
+  const defaultRecipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', staticSiteImporterPath: '/tmp/static-site-importer' });
+  const defaultImport = defaultRecipe.workflow.steps.find((step) => /static-site-importer validate-artifact/.test(step.args?.[0] || ''));
+  assert.doesNotMatch(defaultImport.args[0], /--theme-materialization=/);
+  assert.throws(
+    () => normalizeFixtureMatrixRunConfig({ fixtureRoot: '/tmp/fixtures', staticSiteImporterPath: '/tmp/static-site-importer', themeMaterialization: 'hybrid' }),
+    /themeMaterialization must be one of: block, classic/,
+  );
+});
+
 test('configured pixelmatch colour threshold reaches the comparator and the pixel-count gate stays host-side', () => {
   const config = normalizeFixtureMatrixRunConfig({
     fixtureRoot: '/tmp/fixtures',
@@ -4029,6 +4053,7 @@ test('result evidence writes the derived coverage into summary and finding packe
 function fixtureMatrixRunConfigTestValue(key, field) {
   if (field.boolean) return key === 'editorValidation' || key === 'visualParityGate' ? 'false' : 'true';
   if (field.list) return [`${key}-one`, ` ${key}-two `, `${key}-one`];
+  if (field.enum) return field.enum.at(-1);
   if (field.string) return `/${key}`;
   if (field.integer) return String(field.integer.min === 0 ? 2 : 3);
   return '1.5';
@@ -4037,6 +4062,7 @@ function fixtureMatrixRunConfigTestValue(key, field) {
 function fixtureMatrixRunConfigFallbackValue(key, field) {
   if (field.boolean) return 'false';
   if (field.list) return `${key}-fallback`;
+  if (field.enum) return field.enum[0];
   if (field.string) return `/fallback-${key}`;
   if (field.integer) return String(field.integer.min === 0 ? 1 : 2);
   return '2.5';

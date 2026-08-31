@@ -62,7 +62,6 @@ $loopback->set_body(
 	wp_json_encode(
 		array(
 			'source'                => array( 'url' => 'https://127.0.0.1/' ),
-			'apply_to_current_site' => true,
 		)
 	)
 );
@@ -78,7 +77,6 @@ $host->set_body(
 	wp_json_encode(
 		array(
 			'source'                => array( 'url' => 'https://localhost/' ),
-			'apply_to_current_site' => true,
 		)
 	)
 );

@@ -118,9 +118,7 @@ Static_Site_Importer_Form_Seeder::register_runtime_bootstrap();
 Static_Site_Importer_Route_Document_Metadata::register();
 
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/abilities.php';
-require_once STATIC_SITE_IMPORTER_PATH . 'includes/block.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/rest.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/cli.php';
 
-add_action( 'init', 'static_site_importer_register_block' );
 add_action( 'rest_api_init', 'static_site_importer_register_rest_routes' );

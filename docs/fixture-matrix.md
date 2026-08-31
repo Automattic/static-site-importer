@@ -495,6 +495,11 @@ SSI-specific behavior remains here: plugin slug/defaults, fixture artifact
 packing, `static-site-importer validate-artifact` command construction,
 artifact expectations, and diagnostic-to-repair grouping.
 
+Use `--theme-materialization classic` on the operator wrapper, or set
+`SSI_FIXTURE_MATRIX_THEME_MATERIALIZATION=classic`, to run the same runtime and
+visual-parity evidence lane against SSI's managed classic-theme projection.
+`block` remains the default.
+
 ## Editor Block Validity Gate
 
 The PHP `validate-artifact` step proves blocks *serialize* (PHP
