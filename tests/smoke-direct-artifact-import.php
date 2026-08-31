@@ -355,22 +355,38 @@ $successful_fanout_work = $fanout_succeeded['artifact_run']['work'] ?? array();
 $assert( ! empty( $fanout_succeeded['success'] ) && empty( $fanout_succeeded['continuation'] ) && array( 2, 1 ) === ( $successful_fanout_shards[0] ?? null ) && 2 === ( $successful_fanout_work['compile_batches'] ?? 0 ) && array( 1, 1, 1 ) === ( $successful_fanout_work['page_compile_counts'] ?? null ), 'successful bounded fan-out must adopt every immutable worker receipt before the coordinator composes the result' );
 
 $fanout_shards = array();
-$fail_after_first_shard = true;
+$GLOBALS['ssi_direct_worker_compile_calls'] = 0;
+$GLOBALS['ssi_direct_fail_second_worker_page'] = true;
+$interrupt_worker = static function ( object $compiler ): object {
+	return new class( $compiler ) {
+		public function __construct( private object $compiler ) {}
+
+		public function compilePreparedPages( array $shared, array $plans, ?object $payload_reader = null ) {
+			++$GLOBALS['ssi_direct_worker_compile_calls'];
+			if ( ! empty( $GLOBALS['ssi_direct_fail_second_worker_page'] ) && 2 === $GLOBALS['ssi_direct_worker_compile_calls'] ) {
+				$GLOBALS['ssi_direct_fail_second_worker_page'] = false;
+				throw new RuntimeException( 'Injected interruption within one worker shard.' );
+			}
+			return $this->compiler->compilePreparedPages( $shared, $plans, $payload_reader );
+		}
+
+		public function __call( string $method, array $arguments ) {
+			return $this->compiler->{$method}( ...$arguments );
+		}
+	};
+};
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_compiler'][] = $interrupt_worker;
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array(
-	static function ( array $policy ) use ( &$fanout_shards, &$fail_after_first_shard ): array {
+	static function ( array $policy ) use ( &$fanout_shards ): array {
 		$policy['compile_batch_pages'] = 4;
 		$policy['compile_workers']     = 2;
 		$policy['compile_shard_pages'] = 2;
-		$policy['compile_fanout']      = static function ( string $import_id, array $shards ) use ( &$fanout_shards, &$fail_after_first_shard ) {
+		$policy['compile_fanout']      = static function ( string $import_id, array $shards ) use ( &$fanout_shards ) {
 			$fanout_shards[] = array_map( 'count', $shards );
-			foreach ( $shards as $index => $page_ids ) {
+			foreach ( $shards as $page_ids ) {
 				$result = Static_Site_Importer_Direct_Artifact_Import::compile_worker( $import_id, $page_ids );
 				if ( is_wp_error( $result ) ) {
 					return $result;
-				}
-				if ( $fail_after_first_shard && 0 === $index ) {
-					$fail_after_first_shard = false;
-					return new WP_Error( 'injected_compile_fanout_failure', 'Injected failure after one worker shard.' );
 				}
 			}
 			return true;
@@ -380,10 +396,12 @@ $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'
 );
 $fanout_failed = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
 $fanout_failure_data = $fanout_failed['error']['data'] ?? array();
-$assert( 'injected_compile_fanout_failure' === ( $fanout_failed['error']['code'] ?? '' ) && array( 2, 1 ) === ( $fanout_shards[0] ?? null ) && 0 === ( $fanout_failure_data['artifact_run']['progress']['receipt_count'] ?? -1 ), 'bounded fan-out must shard deterministically and leave run state coordinator-owned when a worker process fails' );
+$interrupted_receipts = glob( $test_root . '/static-site-importer/direct-artifact-imports/.ssi-artifact-run-direct-' . ( $fanout_failure_data['import_id'] ?? '' ) . '/receipts/*.json' );
+$assert( 'static_site_importer_direct_artifact_worker_failed' === ( $fanout_failed['error']['code'] ?? '' ) && array( 2, 1 ) === ( $fanout_shards[0] ?? null ) && 1 === count( is_array( $interrupted_receipts ) ? $interrupted_receipts : array() ) && 0 === ( $fanout_failure_data['artifact_run']['progress']['receipt_count'] ?? -1 ), 'an interruption within one worker shard must leave run state coordinator-owned after publishing each completed page receipt' );
 $fanout_recovered = Static_Site_Importer_Canonical_Import_Service::import( $resume( (string) ( $fanout_failure_data['import_id'] ?? '' ), 'plan' ) );
 $fanout_work = $fanout_recovered['artifact_run']['work'] ?? array();
-$assert( ! empty( $fanout_recovered['success'] ) && empty( $fanout_recovered['continuation'] ) && array( 1, 1, 1 ) === ( $fanout_work['page_compile_counts'] ?? null ) && 3 === ( $fanout_work['pages_compiled'] ?? 0 ), 'resume must adopt completed worker receipts and compile every page exactly once after a partial fan-out failure' );
+$assert( ! empty( $fanout_recovered['success'] ) && empty( $fanout_recovered['continuation'] ) && array( 1, 1, 1 ) === ( $fanout_work['page_compile_counts'] ?? null ) && 3 === ( $fanout_work['pages_compiled'] ?? 0 ), 'resume must adopt the page published before an interrupted shard and compile every page exactly once' );
+remove_filter( 'static_site_importer_direct_artifact_compiler', $interrupt_worker );
 
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_batch_pages' => 1 ) ) );
 $lifecycle_preparations_before = $GLOBALS['ssi_direct_lifecycle_preparations'];
