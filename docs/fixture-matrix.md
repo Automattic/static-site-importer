@@ -441,16 +441,20 @@ counts plus the full coverage inventory so CI artifacts prove the exact selectio
 
 ### Editor Presentation Evidence
 
-New matrix runs emit `static-site-importer/editor-presentation-evidence/v2`.
-Its `expected_identities_complete` field records whether the expected global and
-front-page stylesheet identities came from a complete site-plan asset list. A
-declared `asset_count` that differs from supplied assets, an upstream truncation
-marker, or local evidence bounding makes that field false and prevents promotion.
+New matrix runs emit `static-site-importer/editor-presentation-evidence/v3`.
+Its `expected_identities_complete` field records whether the expected generated
+stylesheet identities came from the complete Blocks Engine editor-presentation
+asset contract. SSI compares those identities without reconstructing route policy.
+A declared asset-count mismatch, upstream truncation marker, local evidence bound,
+or missing stylesheet coverage prevents promotion.
 
-The promotion gate still reads v1 evidence when the fixture retains its raw site
-plan and that plan has a matching declared asset count and reproduces the exact
-expected identity set. A bounded summary or missing/partial plan is ambiguous and
-fails closed; rerun the matrix to produce v2 evidence.
+The v3 evidence also requires an idle editor canvas without onboarding modals and
+matched frontend/editor content rendering at equivalent canvas widths. It does not
+require exact whole-window pixel equality because Gutenberg chrome and selection
+affordances differ. It fails closed for major editor-content geometry drift,
+unreadable or hidden content, unresolved assets, or missing comparison artifacts.
+Legacy stylesheet-only evidence is insufficient; rerun the matrix to produce v3
+evidence.
 
 The solved-candidate gate also proves persisted Gutenberg editability. After
 visual parity capture, it inserts a fixture-specific paragraph through

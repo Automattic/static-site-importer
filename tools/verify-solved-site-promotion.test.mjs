@@ -22,7 +22,8 @@ function fixture() {
       block_composition: { block_total: 4, native_block_count: 4, core_html_block_count: 0 },
       editor_validation: { schema: 'wp-codebox/editor-validate-blocks/v1', validation_method: 'wp.blocks.validateBlock', validation_provider: 'wordpress-block-editor', content_source: 'edited-post-content', block_types_registered: 42, result_count: 4, results_complete: true, total_blocks: 4, valid_blocks: 4, invalid_blocks: 0 },
       editor_canvas: { status: 'captured', screenshot: path.join(root, 'editor.png') },
-      editor_presentation: { schema: 'static-site-importer/editor-presentation-evidence/v2', provider_schema: 'wp-codebox/editor-presentation/v1', canvas_document_type: 'iframe', iframe_count: 1, expected_identity_count: 1, observed_identity_count: 1, expected_identities: ['a'.repeat(64)], observed_identities: ['a'.repeat(64)], missing_identities: [], expected_identities_complete: true, coverage_complete: true },
+      editor_presentation: { schema: 'static-site-importer/editor-presentation-evidence/v3', provider_schema: 'wp-codebox/editor-presentation/v1', canvas_document_type: 'iframe', iframe_count: 1, expected_identity_count: 1, observed_identity_count: 1, expected_identities: ['a'.repeat(64)], observed_identities: ['a'.repeat(64)], missing_identities: [], expected_identities_complete: true, coverage_complete: true, idle_canvas: { schema: 'wp-codebox/editor-idle-canvas/v1', status: 'captured', onboarding_modal_count: 0 }, matched_rendering: { schema: 'wp-codebox/editor-presentation-match/v1', status: 'passed', equivalent_canvas_widths: true, major_geometry_drift: false, unreadable_content: false, hidden_content: false, unresolved_asset_count: 0, frontend_screenshot: path.join(root, 'source.png'), editor_screenshot: path.join(root, 'editor.png'), diff_screenshot: path.join(root, 'diff.png') } },
+      editor_interaction: { schema: 'static-site-importer/editor-interaction-evidence/v1', provider_schema: 'wp-codebox/editor-actions/v1', selection: { status: 'ok' }, text_mutation: { status: 'ok', mutation_status: 'applied' }, block_movement: { status: 'ok', mutation_status: 'applied' }, save: { schema: 'wp-codebox/editor-save/v1', status: 'saved', marker_present: true }, reload: { status: 'ok' }, post_save_validation: { schema: 'wp-codebox/editor-validity/v1', status: 'clean' } },
       visual_parity_artifacts: { metrics: { mismatch_ratio: 0, mismatch_pixels: 0 }, artifacts: Object.fromEntries([
         ['source_screenshot', 'source.png'], ['imported_screenshot', 'candidate.png'], ['diff_screenshot', 'diff.png'], ['visual_diff', 'visual-diff.json'],
       ].map(([slot, file]) => [slot, { status: 'captured', ref: { path: path.join(root, file) } }])) },
@@ -52,7 +53,7 @@ test('issues an accepted immutable promotion receipt', () => {
   assert.ok(receipt.evidence.artifacts.every((row) => /^[a-f0-9]{64}$/.test(row.sha256)));
 });
 
-test('accepts complete v1 presentation evidence with complete raw plan provenance', () => {
+test('rejects legacy stylesheet-only presentation evidence despite complete raw plan provenance', () => {
   const input = fixture();
   const presentation = input.matrix.fixtures[0].editor_presentation;
   presentation.schema = 'static-site-importer/editor-presentation-evidence/v1';
@@ -60,7 +61,7 @@ test('accepts complete v1 presentation evidence with complete raw plan provenanc
   input.matrix.fixtures[0].import_report = { blocks_engine: { wordpress_site_plan: { asset_count: 1, assets: [{ kind: 'css', content_hash: 'a'.repeat(64), scopes: [{ kind: 'global' }] }] } } };
   write(input.paths.matrix, input.matrix);
 
-  assert.equal(verifySolvedSitePromotion(input.options).status, 'accepted');
+  assert.throws(() => verifySolvedSitePromotion(input.options), /matched editor presentation evidence/);
 });
 
 test('accepts complete parent-document editor presentation evidence', () => {
@@ -96,7 +97,7 @@ test('pins an immutable WP Codebox release package, commit, and checksum togethe
   assert.match(workflow, /wpCodeboxSha:process\.env\.WP_CODEBOX_SHA/);
   assert.match(workflow, /"\$WP_CODEBOX_BIN" recipe validate --recipe "\$CONTRACT_RECIPE" --json/);
   assert.ok(workflow.indexOf('recipe validate --recipe') < workflow.indexOf('playwright/cli.js" install --with-deps chromium'));
-  assert.match(caller, /blocks-engine-sha: ae9716efb388ffa338ed0aa6d1b423f6eca3082c/);
+  assert.match(caller, /blocks-engine-sha: fe5bff79df1e7a964b2367d0a120e1dbb1797f19/);
   assert.doesNotMatch(caller, /wp-codebox-sha:/);
 });
 
@@ -105,6 +106,7 @@ test('resolves uniquely named durable copies of transient runtime evidence', () 
   const durableEditor = path.join(input.root, 'uuid-editor.png');
   fs.renameSync(path.join(input.root, 'editor.png'), durableEditor);
   input.matrix.fixtures[0].editor_canvas.screenshot = '/transient/homeboy/editor.png';
+  input.matrix.fixtures[0].editor_presentation.matched_rendering.editor_screenshot = '/transient/homeboy/editor.png';
   write(input.paths.matrix, input.matrix);
   const receipt = verifySolvedSitePromotion(input.options);
   assert.ok(receipt.evidence.artifacts.some((row) => row.path === 'uuid-editor.png'));
@@ -133,9 +135,15 @@ for (const [name, mutate, pattern] of [
   ['missing registered block types', (input) => { input.matrix.fixtures[0].editor_validation.block_types_registered = 0; }, /registered block types/],
   ['incomplete recursive results', (input) => { input.matrix.fixtures[0].editor_validation.result_count = 3; }, /recursive result/],
   ['missing editor presentation', (input) => { delete input.matrix.fixtures[0].editor_presentation; }, /editor presentation evidence/],
-  ['incomplete editor stylesheet coverage', (input) => { input.matrix.fixtures[0].editor_presentation.coverage_complete = false; input.matrix.fixtures[0].editor_presentation.missing_identities = ['a'.repeat(64)]; }, /stylesheet coverage/],
-  ['contradictory editor presentation identities', (input) => { input.matrix.fixtures[0].editor_presentation.observed_identities = []; input.matrix.fixtures[0].editor_presentation.observed_identity_count = 0; }, /stylesheet coverage/],
-  ['contradictory parent canvas iframe count', (input) => { input.matrix.fixtures[0].editor_presentation.canvas_document_type = 'parent'; }, /stylesheet coverage/],
+  ['incomplete editor stylesheet coverage', (input) => { input.matrix.fixtures[0].editor_presentation.coverage_complete = false; input.matrix.fixtures[0].editor_presentation.missing_identities = ['a'.repeat(64)]; }, /editor presentation evidence/],
+  ['contradictory editor presentation identities', (input) => { input.matrix.fixtures[0].editor_presentation.observed_identities = []; input.matrix.fixtures[0].editor_presentation.observed_identity_count = 0; }, /editor presentation evidence/],
+  ['contradictory parent canvas iframe count', (input) => { input.matrix.fixtures[0].editor_presentation.canvas_document_type = 'parent'; }, /editor presentation evidence/],
+  ['onboarding modal in idle canvas', (input) => { input.matrix.fixtures[0].editor_presentation.idle_canvas.onboarding_modal_count = 1; }, /editor presentation evidence/],
+  ['major editor geometry drift', (input) => { input.matrix.fixtures[0].editor_presentation.matched_rendering.major_geometry_drift = true; }, /editor presentation evidence/],
+  ['unresolved editor asset', (input) => { input.matrix.fixtures[0].editor_presentation.matched_rendering.unresolved_asset_count = 1; }, /editor presentation evidence/],
+  ['missing matched editor artifact', (input) => { input.matrix.fixtures[0].editor_presentation.matched_rendering.diff_screenshot = ''; }, /editor presentation evidence/],
+  ['missing editor interaction', (input) => { delete input.matrix.fixtures[0].editor_interaction; }, /interaction evidence/],
+  ['editor movement no-op', (input) => { input.matrix.fixtures[0].editor_interaction.block_movement.mutation_status = 'no-op'; }, /interaction evidence/],
   ['visual mismatch', (input) => { input.matrix.fixtures[0].visual_parity_artifacts.metrics.mismatch_pixels = 1; }, /visual mismatch/],
   ['fallback block', (input) => { input.matrix.fixtures[0].quality_metrics.core_html_block_count = 1; }, /core_html_block_count/],
   ['non-native conversion', (input) => { input.matrix.fixtures[0].editor_quality.native_conversion_rate = 0.99; }, /native conversion rate/],
