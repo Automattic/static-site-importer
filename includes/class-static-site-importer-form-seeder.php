@@ -456,9 +456,9 @@ class Static_Site_Importer_Form_Seeder {
 		if ( ! $has_topology || ! $has_source_submit ) {
 			$inner_blocks[] = self::submit_button_block( $submit_text, self::layout_node_class( $scope, 'control-submit' ), $submit_presentation );
 		}
-		$form['topology_losses']             = $topology['losses'];
+		$form['topology_losses']            = $topology['losses'];
 		$form['represented_semantic_nodes'] = $radio_groups['represented_semantic_nodes'];
-		$provider_graph          = is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(
+		$provider_graph                     = is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(
 			'nodes'    => array(),
 			'variants' => array(),
 		);
@@ -605,8 +605,8 @@ class Static_Site_Importer_Form_Seeder {
 
 	/**
 	 * Aggregate only an exact labelled-fieldset radio topology that Jetpack can
-	 * represent as one field. The generic topology supplies membership and the
-	 * fieldset legend supplies the group label; no source markup is re-parsed.
+	 * represent as one field. The generic topology supplies membership and its
+	 * canonical binding supplies the source legend; no provider semantics are inferred.
 	 *
 	 * @return array{groups:array<int,array<string,mixed>>,suppressed_controls:array<int,bool>,represented_semantic_nodes:array<int,string>,operations:array<int,array<string,mixed>>}
 	 */
@@ -617,7 +617,7 @@ class Static_Site_Importer_Form_Seeder {
 			'represented_semantic_nodes' => array(),
 			'operations'                 => array(),
 		);
-		$nodes = $form['control_topology']['nodes'] ?? null;
+		$nodes  = $form['control_topology']['nodes'] ?? null;
 		if ( ! is_array( $nodes ) ) {
 			return $result;
 		}
@@ -634,6 +634,11 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		unset( $siblings );
 
+		$legends = self::labelled_fieldset_legends( $form, $nodes );
+		if ( empty( $legends ) ) {
+			return $result;
+		}
+
 		$all_radio_names = array();
 		foreach ( $controls as $control_index => $control ) {
 			if ( ! is_array( $control ) || 'input' !== strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ) || 'radio' !== strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) ) {
@@ -646,15 +651,19 @@ class Static_Site_Importer_Form_Seeder {
 		}
 
 		foreach ( $nodes as $fieldset ) {
-			if ( ! is_array( $fieldset ) || 'wrapper' !== ( $fieldset['kind'] ?? null ) || 'fieldset' !== ( $fieldset['tag'] ?? null ) || 'labelled_group' !== ( $fieldset['fieldset_semantics'] ?? null ) || ! is_string( $fieldset['id'] ?? null ) || ! is_string( $fieldset['legend'] ?? null ) || '' === trim( $fieldset['legend'] ) ) {
+			if ( ! is_array( $fieldset ) || 'wrapper' !== ( $fieldset['kind'] ?? null ) || 'fieldset' !== ( $fieldset['tag'] ?? null ) || 'labelled_group' !== ( $fieldset['fieldset_semantics'] ?? null ) || ! is_string( $fieldset['id'] ?? null ) || ! isset( $legends[ $fieldset['id'] ] ) ) {
 				continue;
 			}
-			$members          = array();
-			$semantic_nodes   = array( $fieldset['id'] );
+			$members           = array();
+			$semantic_nodes    = array( $fieldset['id'] );
 			$unambiguous_shape = true;
-			foreach ( $children[ $fieldset['id'] ] ?? array() as $label ) {
-				$label_children = $children[ $label['id'] ?? '' ] ?? array();
-				if ( 'wrapper' !== ( $label['kind'] ?? null ) || 'label' !== ( $label['tag'] ?? null ) || ! is_string( $label['id'] ?? null ) || 1 !== count( $label_children ) || 'control' !== ( $label_children[0]['kind'] ?? null ) || ! is_int( $label_children[0]['control'] ?? null ) ) {
+			$labels            = $children[ $fieldset['id'] ] ?? array();
+			if ( 1 === count( $labels ) && 'wrapper' === ( $labels[0]['kind'] ?? null ) && 'div' === ( $labels[0]['tag'] ?? null ) && is_string( $labels[0]['id'] ?? null ) ) {
+				$labels = $children[ $labels[0]['id'] ];
+			}
+			foreach ( $labels as $label ) {
+				$label_children = is_string( $label['id'] ?? null ) ? $children[ $label['id'] ] ?? array() : array();
+				if ( 'wrapper' !== ( $label['kind'] ?? null ) || 'label' !== ( $label['tag'] ?? null ) || 1 !== count( $label_children ) || 'control' !== ( $label_children[0]['kind'] ?? null ) || ! is_int( $label_children[0]['control'] ?? null ) ) {
 					$unambiguous_shape = false;
 					break;
 				}
@@ -664,13 +673,13 @@ class Static_Site_Importer_Form_Seeder {
 			if ( ! $unambiguous_shape || ! in_array( count( $members ), array( 2, 3, 4 ), true ) || count( $members ) !== count( array_unique( $members ) ) ) {
 				continue;
 			}
-			$first       = $controls[ $members[0] ] ?? null;
-			$name        = is_array( $first ) ? trim( (string) ( $first['name'] ?? '' ) ) : '';
-			$options     = array();
-			$required    = false;
+			$first    = $controls[ $members[0] ] ?? null;
+			$name     = is_array( $first ) ? trim( (string) ( $first['name'] ?? '' ) ) : '';
+			$options  = array();
+			$required = false;
 			foreach ( $members as $control_index ) {
 				$control = $controls[ $control_index ] ?? null;
-				if ( ! is_array( $control ) || 'input' !== strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ) || 'radio' !== strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) || $name !== trim( (string) ( $control['name'] ?? '' ) ) ) {
+				if ( ! is_array( $control ) || 'input' !== strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ) || 'radio' !== strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) || trim( (string) ( $control['name'] ?? '' ) ) !== $name ) {
 					$unambiguous_shape = false;
 					break;
 				}
@@ -678,7 +687,7 @@ class Static_Site_Importer_Form_Seeder {
 					$unambiguous_shape = false;
 					break;
 				}
-				$option = self::control_text( array( 'label' => $control['label'] ) );
+				$option    = self::control_text( array( 'label' => $control['label'] ) );
 				$options[] = $option;
 				$required  = $required || ! empty( $control['required'] ) || 'true' === strtolower( trim( (string) ( $control['aria-required'] ?? $control['aria_required'] ?? '' ) ) );
 			}
@@ -687,8 +696,8 @@ class Static_Site_Importer_Form_Seeder {
 			}
 
 			$group_control            = $first;
-			$group_control['text']    = trim( $fieldset['legend'] );
-			$group_control['label']   = trim( $fieldset['legend'] );
+			$group_control['text']    = $legends[ $fieldset['id'] ];
+			$group_control['label']   = $legends[ $fieldset['id'] ];
 			$group_control['options'] = $options;
 			if ( $required ) {
 				$group_control['required'] = true;
@@ -698,7 +707,7 @@ class Static_Site_Importer_Form_Seeder {
 				$result['suppressed_controls'][ $control_index ] = true;
 			}
 			$result['represented_semantic_nodes'] = array_merge( $result['represented_semantic_nodes'], $semantic_nodes );
-			$result['operations'][]                = array(
+			$result['operations'][]               = array(
 				'dimension'     => 'semantic',
 				'strategy'      => 'provider_radio_fieldset_equivalent',
 				'target_hash'   => hash( 'sha256', $fieldset['id'] ),
@@ -708,6 +717,39 @@ class Static_Site_Importer_Form_Seeder {
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Read only the source legend evidence already preserved in one canonical
+	 * binding. A count mismatch leaves every fieldset fail-closed.
+	 *
+	 * @param array<int,array<string,mixed>> $nodes
+	 * @return array<string,string>
+	 */
+	private static function labelled_fieldset_legends( array $form, array $nodes ): array {
+		$fieldset_ids = array();
+		foreach ( $nodes as $node ) {
+			if ( is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && 'fieldset' === ( $node['tag'] ?? null ) && 'labelled_group' === ( $node['fieldset_semantics'] ?? null ) && is_string( $node['id'] ?? null ) ) {
+				$fieldset_ids[] = $node['id'];
+			}
+		}
+		$bindings = $form['bindings'] ?? null;
+		if ( empty( $fieldset_ids ) || ! is_array( $bindings ) || 1 !== count( $bindings ) || ! is_array( $bindings[0] ?? null ) || ! is_string( $bindings[0]['search_block_markup'] ?? null ) ) {
+			return array();
+		}
+		$count   = preg_match_all( '~<fieldset\b[^>]*>\s*<legend\b[^>]*>(.*?)</legend>~is', $bindings[0]['search_block_markup'], $matches );
+		$legends = array();
+		if ( false === $count || count( $fieldset_ids ) !== $count ) {
+			return array();
+		}
+		foreach ( $matches[1] as $index => $markup ) {
+			$legend = preg_replace( '/\s+/', ' ', trim( html_entity_decode( wp_strip_all_tags( $markup ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) );
+			if ( ! is_string( $legend ) || '' === $legend || 200 < strlen( $legend ) ) {
+				return array();
+			}
+			$legends[ $fieldset_ids[ $index ] ] = $legend;
+		}
+		return $legends;
 	}
 
 	/**
