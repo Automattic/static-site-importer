@@ -133,13 +133,15 @@ rmdir( $bundle_dir );
 
 $bounded_bundle_dir = sys_get_temp_dir() . '/ssi-bounded-request-bundle-' . bin2hex( random_bytes( 6 ) );
 mkdir( $bounded_bundle_dir );
-file_put_contents( $bounded_bundle_dir . '/index.html', '<h1>Bounded</h1>' );
+$inline_styles  = str_repeat( '<style>.bounded{display:grid}</style>', 9 );
+$inline_scripts = str_repeat( '<script>document.documentElement.dataset.ready="true"</script>', 2 );
+file_put_contents( $bounded_bundle_dir . '/index.html', $inline_styles . $inline_scripts . '<h1>Bounded</h1>' );
 for ( $index = 0; $index < 500; ++$index ) {
 	file_put_contents( $bounded_bundle_dir . '/asset-' . $index . '.css', 'a{}' );
 }
 $bounded_bundle = static_site_importer_cli_request_bundle_files( $bounded_bundle_dir );
 $assert( is_array( $bounded_bundle ) && 501 === count( $bounded_bundle['files'] ?? array() ), 'request-bundle-retains-files-above-compiler-default' );
-$assert( array( 'max_files' => 506, 'max_file_bytes' => 10485760, 'max_total_bytes' => 335544320 ) === ( $bounded_bundle['compiler_limits'] ?? null ), 'request-bundle-declares-verified-compiler-limits' );
+$assert( array( 'max_files' => 512, 'max_file_bytes' => 10485760, 'max_total_bytes' => 335544320 ) === ( $bounded_bundle['compiler_limits'] ?? null ), 'request-bundle-reserves every inline style and script expansion' );
 foreach ( scandir( $bounded_bundle_dir ) as $entry ) {
 	if ( '.' !== $entry && '..' !== $entry ) {
 		unlink( $bounded_bundle_dir . '/' . $entry );
