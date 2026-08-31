@@ -62,6 +62,8 @@ if ( ! function_exists( 'sanitize_key' ) ) {
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-product-handoff-contract.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diagnostics-adapter.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-companion-plugin.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-plugin-materializer.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-manager.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 
@@ -211,8 +213,8 @@ if ( ! function_exists( 'is_plugin_active' ) ) {
 	}
 }
 
-$dependency = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $payload );
-$row        = Static_Site_Importer_Entity_Materializer_Registry::companion_dependency_row( $dependency, false );
+$dependency = Static_Site_Importer_Dependency_Manager::companion_plugin_dependency( $payload );
+$row        = Static_Site_Importer_Dependency_Manager::companion_dependency_row( $dependency, false );
 $assert( array( 'hero-island', 'runtime-unit-effect-carousel' ) === ( $row['island_handles'] ?? null ), 'dependency-row-carries-island-handles' );
 
 // Active companion: present diagnostic flags JS as runtime-carried theme-independently.

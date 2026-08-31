@@ -200,8 +200,13 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			if ( is_wp_error( $shared_state ) ) {
 				return $shared_state;
 			}
-			$shared = $shared_state['plan'];
-			$plans  = array();
+			$shared       = $shared_state['plan'];
+			$compiler     = self::compiler();
+			$compile_page = is_wp_error( $compiler ) ? null : array( $compiler, 'compilePreparedPages' );
+			if ( is_wp_error( $compiler ) || ! is_callable( $compile_page ) ) {
+				return is_wp_error( $compiler ) ? $compiler : new WP_Error( 'static_site_importer_invalid_transformer', 'The direct artifact compiler does not implement the staged compilation contract.' );
+			}
+			$published = 0;
 			foreach ( $page_ids as $page_id ) {
 				$existing = self::existing_checkpoint_ref( $workspace, $run, self::page_file( 'receipts', $page_id ), 'receipt' );
 				if ( is_wp_error( $existing ) ) {
@@ -219,39 +224,27 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					}
 					continue;
 				}
-				$plans[ $page_id ] = $page_state['plan'];
-			}
-			if ( empty( $plans ) ) {
-				return array(
-					'success'   => true,
-					'published' => 0,
-				);
-			}
-			$compiler      = self::compiler();
-			$compile_pages = is_wp_error( $compiler ) ? null : array( $compiler, 'compilePreparedPages' );
-			if ( is_wp_error( $compiler ) || ! is_callable( $compile_pages ) ) {
-				return is_wp_error( $compiler ) ? $compiler : new WP_Error( 'static_site_importer_invalid_transformer', 'The direct artifact compiler does not implement the staged compilation contract.' );
-			}
-			$batch = call_user_func( $compile_pages, $shared, array_values( $plans ), self::payload_reader( $workspace ) );
-			if ( ! is_array( $batch ) || array_keys( $batch ) !== array_keys( $plans ) ) {
-				return new WP_Error( 'static_site_importer_direct_artifact_receipt_set_mismatch', 'Blocks Engine did not return the exact requested compiled receipt shard.' );
-			}
-			foreach ( $plans as $page_id => $plan ) {
-				$valid = self::validate_receipt( $batch[ $page_id ], $plan, $shared );
+				$plan    = $page_state['plan'];
+				$receipt = call_user_func( $compile_page, $shared, array( $plan ), self::payload_reader( $workspace ) );
+				if ( ! is_array( $receipt ) || array( $page_id ) !== array_keys( $receipt ) ) {
+					return new WP_Error( 'static_site_importer_direct_artifact_receipt_set_mismatch', 'Blocks Engine did not return the exact requested compiled page receipt.' );
+				}
+				$valid = self::validate_receipt( $receipt[ $page_id ], $plan, $shared );
 				if ( is_wp_error( $valid ) ) {
 					return $valid;
 				}
-				$published = self::publish_checkpoint( $workspace, $run, 'receipt', self::page_file( 'receipts', $page_id ), array(
+				$checkpoint = self::publish_checkpoint( $workspace, $run, 'receipt', self::page_file( 'receipts', $page_id ), array(
 					'page_id' => $page_id,
-					'receipt' => $batch[ $page_id ],
+					'receipt' => $receipt[ $page_id ],
 				) );
-				if ( is_wp_error( $published ) ) {
-					return $published;
+				if ( is_wp_error( $checkpoint ) ) {
+					return $checkpoint;
 				}
+				++$published;
 			}
 			return array(
 				'success'   => true,
-				'published' => count( $plans ),
+				'published' => $published,
 			);
 		} catch ( Throwable $error ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_worker_failed', $error->getMessage() );

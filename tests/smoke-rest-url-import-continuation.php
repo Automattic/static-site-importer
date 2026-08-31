@@ -73,7 +73,6 @@ $first->set_body(
 	wp_json_encode(
 		array(
 			'source'                => array( 'url' => 'https://example.test/site' ),
-			'apply_to_current_site' => true,
 		)
 	)
 );
@@ -104,7 +103,6 @@ $second->set_body(
 	wp_json_encode(
 		array(
 			'source'                => array( 'url' => 'https://example.test/site', 'import_id' => 'bound-1' ),
-			'apply_to_current_site' => true,
 		)
 	)
 );
@@ -134,7 +132,6 @@ $third->set_body(
 	wp_json_encode(
 		array(
 			'source'                => array( 'url' => 'https://example.test/other', 'import_id' => 'bound-1' ),
-			'apply_to_current_site' => true,
 		)
 	)
 );

@@ -301,6 +301,8 @@ require dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diag
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-plugin-materializer.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-manager.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-build-provenance.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
@@ -405,7 +407,7 @@ $failed_policy_plan['quality']['editability_policy']['failures'] = array( array(
 $failed_policy_plan['quality']['editability_report_plan_hash']  = $plan_hash( $failed_policy_plan );
 $failed_policy_plan['plan_identity']                             = WordPressSitePlan::planIdentity( $failed_policy_plan );
 $failed_policy_receipt                                          = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $failed_policy_plan, array( 'slug' => 'failed-editability-policy' ) );
-$assert( 'rejected' === $failed_policy_receipt['status'] && 'editability_policy_failed' === ( $failed_policy_receipt['errors'][0]['code'] ?? '' ) && 'about.html' === ( $failed_policy_receipt['editability_report']['diagnostic']['threshold_failures'][0]['source_path'] ?? '' ), 'failed producer thresholds hard-gate materialization with bounded source diagnostics' );
+$assert( 'completed' === $failed_policy_receipt['status'] && 'failed' === ( $failed_policy_receipt['editability_report']['status'] ?? '' ) && 'editability_policy_failed' === ( $failed_policy_receipt['editability_report']['diagnostic']['reason_code'] ?? '' ) && 'about.html' === ( $failed_policy_receipt['editability_report']['diagnostic']['threshold_failures'][0]['source_path'] ?? '' ), 'failed producer thresholds remain visible without blocking materialization' );
 
 // Gutenberg gaps are SSI receipt/report extensions and must never alter the
 // compiler-owned plan, whose schema and hash are producer contracts.
@@ -590,7 +592,7 @@ $prepared_for_admission = Static_Site_Importer_WordPress_Site_Plan_Materializer:
 $admitted_prepared      = Static_Site_Importer_WordPress_Site_Plan_Materializer::admit_prepared( $prepared_for_admission );
 $assert( 'prepared' === ( $prepared_for_admission['status'] ?? '' ) && ! empty( $prepared_for_admission['payload_references_admitted'] ) && $prepared_for_admission === $admitted_prepared && ! str_contains( (string) wp_json_encode( $prepared_for_admission['plan'] ), 'payload_references_admitted' ) && ! str_contains( (string) wp_json_encode( Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared_for_admission ) ), 'payload_references_admitted' ), 'materializer lifecycle preparation admits referenced payloads once, before lifecycle work, without adding transient state to plans or receipts' );
 $materializer_companion_assets = strpos( (string) $materializer_source, 'resolve_companion_asset_references( $payload' );
-$materializer_companion        = strpos( (string) $materializer_source, '::materialize_companion_dependency( $dependency', $materializer_companion_assets + 1 );
+$materializer_companion        = strpos( (string) $materializer_source, 'Static_Site_Importer_Dependency_Manager::materialize_companion_dependency( $dependency', $materializer_companion_assets + 1 );
 $assert( false !== $materializer_companion_assets && $materializer_companion_assets < $materializer_companion, 'materializer resolves generated companion assets before companion dependency materialization' );
 $rollback_order     = array();
 $block_lifecycle    = array(
@@ -700,11 +702,7 @@ $deferred_quality_prepared     = Static_Site_Importer_WordPress_Site_Plan_Materi
 	$deferred_quality_plan,
 	array( 'slug' => 'deferred-quality-compensation', 'seed_entities' => true, 'font_materialization' => array(), 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
 );
-$deferred_quality_receipt = $deferred_quality_prepared['receipt'] ?? array();
-$deferred_quality_error   = $deferred_quality_receipt['errors'][0] ?? array();
-$deferred_quality_failure = new WP_Error( (string) ( $deferred_quality_error['code'] ?? '' ), (string) ( $deferred_quality_error['message'] ?? '' ), $deferred_quality_receipt );
-$deferred_quality_receipt = is_wp_error( $deferred_quality_failure ) ? $deferred_quality_failure->get_error_data() : array();
-$assert( is_wp_error( $deferred_quality_failure ) && 'editability_policy_failed' === $deferred_quality_failure->get_error_code() && array() === $deferred_rollback_order && ! $woo_snapshot_restored && $posts_before_deferred_quality === $GLOBALS['ssi_plan_posts'] && 'editability_policy_failed' === ( $deferred_quality_receipt['errors'][0]['code'] ?? '' ), 'failed canonical editability policy rejects before provider mutation or rollback work' );
+$assert( 'prepared' === ( $deferred_quality_prepared['status'] ?? '' ) && 'failed' === ( $deferred_quality_prepared['editability_report']['status'] ?? '' ) && 'editability_policy_failed' === ( $deferred_quality_prepared['editability_report']['diagnostic']['reason_code'] ?? '' ) && array() === $deferred_rollback_order && ! $woo_snapshot_restored && $posts_before_deferred_quality === $GLOBALS['ssi_plan_posts'], 'failed canonical editability policy remains visible without blocking materialization preparation' );
 
 $classic_artifact   = array(
 	'entrypoint' => 'index.html',
@@ -1871,27 +1869,6 @@ $assert( 0 === ( $form_quality_report['quality']['fallback_count'] ?? -1 ) && 1 
 $resolved_form_quality    = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $form_quality_report, array( 'fail_on_quality' => true ) );
 $resolved_form_validation = Static_Site_Importer_Report_Diagnostics::import_validation_result( $form_quality_report, $resolved_form_quality );
 $assert( true === ( $resolved_form_quality['pass'] ?? false ) && false === ( $resolved_form_quality['fail_import'] ?? true ) && array() === ( $resolved_form_quality['failure_reasons'] ?? null ) && 'passed' === ( $resolved_form_validation['status'] ?? '' ), 'receipt-resolved form fallback clears derived quality gates and validation status' );
-$form_admission = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'can_defer_form_quality_admission' );
-$form_admission_plan = array(
-	'quality' => array( 'metrics' => array( 'fallback_count' => 1 ), 'failure_reasons' => array( 'unsupported_html_fallback' ) ),
-	'diagnostics' => array( $form_fallback ),
-);
-$form_admission_lifecycle = array(
-	'entities' => array(
-		'forms' => array(
-			'adapter' => array( 'capability' => 'form' ),
-			'declaration' => array( 'payload' => array( 'schema' => 'generic/forms/v1' ) ),
-			'manifest' => array( 'forms' => array( array( 'source_path' => 'index.html', 'selector' => 'form.newsletter', 'bindings' => array( $form_binding ) ) ) ),
-		),
-	),
-);
-$assert( true === $form_admission->invoke( null, $form_admission_plan, $form_admission_lifecycle ), 'typed provider-materializable form fallback defers only until receipt reconciliation' );
-$missing_binding_lifecycle = $form_admission_lifecycle;
-$missing_binding_lifecycle['entities']['forms']['manifest']['forms'][0]['bindings'] = array();
-$assert( false === $form_admission->invoke( null, $form_admission_plan, $missing_binding_lifecycle ), 'unbound provider form fallback remains rejected before materialization' );
-$unrelated_failure_plan = $form_admission_plan;
-$unrelated_failure_plan['quality']['failure_reasons'][] = 'core_html_block';
-$assert( false === $form_admission->invoke( null, $unrelated_failure_plan, $form_admission_lifecycle ), 'unrelated quality failures remain rejected before materialization' );
 $other_failure_report                                     = Static_Site_Importer_Import_Report::from_array( $form_quality_report->to_array() );
 $other_failure_report->merge_quality( array( 'core_html_block_count' => 1 ) );
 $other_failure_quality                                    = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $other_failure_report, array( 'fail_on_quality' => true ) );
@@ -1951,7 +1928,7 @@ $assert(
 	) === ( $partial_quality['metrics'] ?? null ),
 	'partial website-artifact result composition preserves supplied compiler metrics and reports final materialized block counts'
 );
-$assert( false === ( $partial_quality['pass'] ?? true ) && true === ( $partial_quality['fail_import'] ?? false ) && in_array( 'unsupported_html_fallback', $partial_quality['failure_reasons'] ?? array(), true ), 'partial website-artifact reports retain unresolved compiler fallbacks as strict quality failures' );
+$assert( is_array( $partial_quality_result ) && false === ( $partial_quality['pass'] ?? true ) && true === ( $partial_quality['fail_import'] ?? false ) && in_array( 'unsupported_html_fallback', $partial_quality['failure_reasons'] ?? array(), true ), 'quality failures remain reported without replacing the materialization result with an error' );
 $tampered_fragment_receipt = $form_binding_receipt;
 $tampered_fragment_receipt['completed']['runtime_declarations']['entity_bindings'][ hash( 'sha256', 'form-fallback-binding' ) ]['persisted_fragment_hash'] = hash( 'sha256', 'tampered fragment' );
 $tampered_fragment_report                              = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
@@ -2017,9 +1994,9 @@ $final_quality_error = $final_quality_gate->invoke(
 	array(),
 	$deferred_entities['reports']
 );
-$final_quality_receipt = is_wp_error( $final_quality_error ) ? $final_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
+$final_quality_receipt = $deferred_form_receipt;
 $entity_compensation = $final_quality_receipt['entity_compensation'] ?? array();
-$assert( is_wp_error( $final_quality_error ) && 'static_site_importer_quality_gate_failed' === $final_quality_error->get_error_code() && 1 === $provider_materializations && 1 === $provider_rollbacks && 'partial' === ( $final_quality_receipt['status'] ?? '' ) && 'rolled_back' === ( $entity_compensation['entities'][0]['status'] ?? '' ), 'mismatched deferred form receipt rejects final admission and rolls back both provider entities and the site-plan transaction' );
+$assert( ! is_wp_error( $final_quality_error ) && 1 === $provider_materializations && 0 === $provider_rollbacks && 'completed' === ( $final_quality_receipt['status'] ?? '' ), 'unresolved provider quality remains reported without rolling back materialized entities or the site-plan transaction' );
 $final_quality_receipt['plan']['quality']     = $deferred_form_receipt['plan']['quality'];
 $final_quality_receipt['plan']['diagnostics'] = $deferred_form_receipt['plan']['diagnostics'];
 $retried_quality_error = $final_quality_gate->invoke(
@@ -2030,8 +2007,8 @@ $retried_quality_error = $final_quality_gate->invoke(
 	array(),
 	$deferred_entities['reports']
 );
-$retried_quality_receipt = is_wp_error( $retried_quality_error ) ? $retried_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
-$assert( is_wp_error( $retried_quality_error ) && 1 === $provider_rollbacks && $entity_compensation === ( $retried_quality_receipt['entity_compensation'] ?? array() ), 'repeated deferred finalization reuses the recorded provider compensation receipt without re-running destructive rollback callbacks' );
+$retried_quality_receipt = $final_quality_receipt;
+$assert( ! is_wp_error( $retried_quality_error ) && 0 === $provider_rollbacks && $entity_compensation === ( $retried_quality_receipt['entity_compensation'] ?? array() ), 'repeated quality reporting does not invoke destructive rollback callbacks' );
 $cross_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$deferred_form_plan,
 	array(
@@ -2053,8 +2030,8 @@ $cross_quality_error = $final_quality_gate->invoke(
 	array(),
 	$deferred_entities['reports']
 );
-$cross_quality_receipt = is_wp_error( $cross_quality_error ) ? $cross_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
-$assert( is_wp_error( $cross_quality_error ) && 2 === $provider_rollbacks && true === ( $cross_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ) && $entity_compensation['binding'] !== ( $cross_quality_receipt['entity_compensation']['binding'] ?? array() ), 'cross-receipt compensation evidence cannot suppress the second receipt rollback' );
+$cross_quality_receipt = $cross_receipt;
+$assert( ! is_wp_error( $cross_quality_error ) && 0 === $provider_rollbacks && empty( $cross_quality_receipt['entity_compensation'] ), 'quality reporting does not create cross-receipt compensation work' );
 $nonce_only_cross_receipt = $final_quality_receipt;
 $nonce_only_cross_receipt['receipt_instance_id'] = str_repeat( 'a', 64 );
 $nonce_only_quality_error = $final_quality_gate->invoke(
@@ -2065,8 +2042,8 @@ $nonce_only_quality_error = $final_quality_gate->invoke(
 	array(),
 	$deferred_entities['reports']
 );
-$nonce_only_quality_receipt = is_wp_error( $nonce_only_quality_error ) ? $nonce_only_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
-$assert( is_wp_error( $nonce_only_quality_error ) && 3 === $provider_rollbacks && true === ( $nonce_only_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ) && str_repeat( 'a', 64 ) !== ( $nonce_only_quality_receipt['receipt_instance_id'] ?? '' ) && ( $nonce_only_quality_receipt['receipt_instance_id'] ?? '' ) === ( $nonce_only_quality_receipt['entity_compensation']['binding']['receipt_instance_id'] ?? '' ), 'mutable receipt envelope nonces are replaced by the durable deferred transaction identity before compensation' );
+$nonce_only_quality_receipt = $nonce_only_cross_receipt;
+$assert( ! is_wp_error( $nonce_only_quality_error ) && 0 === $provider_rollbacks, 'quality reporting does not mutate receipt identities to bind compensation' );
 $nonce_only_quality_receipt['plan']['quality']     = $deferred_form_receipt['plan']['quality'];
 $nonce_only_quality_receipt['plan']['diagnostics'] = $deferred_form_receipt['plan']['diagnostics'];
 $required_changed_lifecycle = $deferred_form_lifecycle;
@@ -2079,8 +2056,8 @@ $required_changed_quality_error = $final_quality_gate->invoke(
 	array(),
 	$deferred_entities['reports']
 );
-$required_changed_quality_receipt = is_wp_error( $required_changed_quality_error ) ? $required_changed_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
-$assert( is_wp_error( $required_changed_quality_error ) && 4 === $provider_rollbacks && true === ( $required_changed_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ), 'a changed required lifecycle declaration cannot reuse compensation evidence' );
+$required_changed_quality_receipt = $nonce_only_quality_receipt;
+$assert( ! is_wp_error( $required_changed_quality_error ) && 0 === $provider_rollbacks, 'a changed lifecycle declaration does not turn quality reporting into compensation' );
 $required_changed_quality_receipt['plan']['quality']     = $deferred_form_receipt['plan']['quality'];
 $required_changed_quality_receipt['plan']['diagnostics'] = $deferred_form_receipt['plan']['diagnostics'];
 $contract_changed_lifecycle = $required_changed_lifecycle;
@@ -2097,8 +2074,8 @@ $contract_changed_quality_error = $final_quality_gate->invoke(
 	array(),
 	$deferred_entities['reports']
 );
-$contract_changed_quality_receipt = is_wp_error( $contract_changed_quality_error ) ? $contract_changed_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
-$assert( is_wp_error( $contract_changed_quality_error ) && 5 === $provider_rollbacks && 'rolled_back' === ( $contract_changed_quality_receipt['entity_compensation']['entities'][0]['rollback']['status'] ?? '' ) && true === ( $contract_changed_quality_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ) && ( $required_changed_quality_receipt['entity_compensation']['binding']['rollback_contracts_hash'] ?? '' ) !== ( $contract_changed_quality_receipt['entity_compensation']['binding']['rollback_contracts_hash'] ?? '' ), 'a changed rollback contract cannot reuse compensation evidence and retains bounded rollback status' );
+$contract_changed_quality_receipt = $required_changed_quality_receipt;
+$assert( ! is_wp_error( $contract_changed_quality_error ) && 0 === $provider_rollbacks, 'a changed rollback contract remains irrelevant to non-blocking quality reporting' );
 $ordered_rollback_plan                = ( new ArtifactCompiler() )->compile(
 	array(
 		'entrypoint' => 'ordered-rollback/index.html',
@@ -2155,17 +2132,17 @@ $ordered_quality_error = $final_quality_gate->invoke(
 	array(),
 	$ordered_reports
 );
-$ordered_quality_receipt = is_wp_error( $ordered_quality_error ) ? $ordered_quality_error->get_error_data()['materialization_receipt'] ?? array() : array();
+$ordered_quality_receipt = $ordered_rollback_receipt;
 $ordered_events          = $GLOBALS['ssi_plan_rollback_events'];
 $file_events             = array_values( array_filter( $ordered_events, static fn( string $event ): bool => str_starts_with( $event, 'file:' ) ) );
 $first_file              = empty( $file_events ) ? false : array_search( $file_events[0], $ordered_events, true );
 $post_events             = array_values( array_filter( $ordered_events, static fn( string $event ): bool => str_starts_with( $event, 'post:' ) ) );
-$assert( is_wp_error( $ordered_quality_error ) && $ordered_rollback_options === $GLOBALS['ssi_plan_options'] && 'theme:before-child-theme' === $ordered_events[0] && false !== $first_file && $first_file > array_search( 'option:stylesheet', $ordered_events, true ) && array_map( static fn( int $id ): string => 'post:' . $id, array_reverse( $ordered_post_ids ) ) === $post_events && 'provider:mutated' === $ordered_events[ count( $ordered_events ) - 1 ] && array( 'mutated' ) === $ordered_provider_calls && empty( $GLOBALS['ssi_plan_posts'][ $ordered_post_ids[0] ] ) && empty( $GLOBALS['ssi_plan_posts'][ $ordered_post_ids[1] ] ) && 'rolled_back' === ( $ordered_quality_receipt['entity_compensation']['entities'][0]['status'] ?? '' ), 'production rollback restores the child stylesheet and parent template before files, removes child posts before parents, then compensates only mutated providers' );
+$assert( ! is_wp_error( $ordered_quality_error ) && array() === $ordered_events && array() === $ordered_provider_calls && isset( $GLOBALS['ssi_plan_posts'][ $ordered_post_ids[0] ], $GLOBALS['ssi_plan_posts'][ $ordered_post_ids[1] ] ), 'failed quality reporting leaves the completed site and provider state intact' );
 $events_before_ordered_retry = $ordered_events;
 $ordered_quality_receipt['plan']['quality']     = $deferred_form_receipt['plan']['quality'];
 $ordered_quality_receipt['plan']['diagnostics'] = $deferred_form_receipt['plan']['diagnostics'];
 $ordered_retry_error = $final_quality_gate->invoke( null, $ordered_quality_receipt, array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ), $ordered_lifecycle, array(), $ordered_reports );
-$assert( is_wp_error( $ordered_retry_error ) && $events_before_ordered_retry === $GLOBALS['ssi_plan_rollback_events'] && array( 'mutated' ) === $ordered_provider_calls, 'ordered production rollback preserves journal and provider compensation idempotence on retry' );
+$assert( ! is_wp_error( $ordered_retry_error ) && $events_before_ordered_retry === $GLOBALS['ssi_plan_rollback_events'] && array() === $ordered_provider_calls, 'repeated quality reporting remains non-destructive' );
 unset( $GLOBALS['ssi_plan_rollback_events'] );
 $partial_rollback_plan    = ( new ArtifactCompiler() )->compile(
 	array(

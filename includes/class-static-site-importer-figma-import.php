@@ -219,12 +219,8 @@ class Static_Site_Importer_Figma_Import {
 			);
 		}
 
-		$preview    = isset( $ability_result['preview'] ) && is_array( $ability_result['preview'] ) ? $ability_result['preview'] : array();
-		$playground = isset( $preview['playground'] ) && is_array( $preview['playground'] ) ? $preview['playground'] : array();
-		$open_url   = isset( $preview['url'] ) ? (string) $preview['url'] : '';
-		if ( '' === $open_url && isset( $playground['blueprint_url'] ) ) {
-			$open_url = (string) $playground['blueprint_url'];
-		}
+		$preview  = isset( $ability_result['preview'] ) && is_array( $ability_result['preview'] ) ? $ability_result['preview'] : array();
+		$open_url = isset( $preview['url'] ) ? (string) $preview['url'] : '';
 
 		$response = array(
 			'schema'          => 'figma-to-wordpress/runner-response/v1',

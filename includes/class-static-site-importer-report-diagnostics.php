@@ -963,7 +963,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return void
 	 */
 	public static function record_companion_plugin_dependency( Static_Site_Importer_Import_Report $report, array $dependency, bool $waived ): void {
-		$row  = Static_Site_Importer_Entity_Materializer_Registry::companion_dependency_row( $dependency, $waived );
+		$row  = Static_Site_Importer_Dependency_Manager::companion_dependency_row( $dependency, $waived );
 		$slug = (string) ( $row['slug'] ?? '' );
 		if ( '' === $slug ) {
 			return;

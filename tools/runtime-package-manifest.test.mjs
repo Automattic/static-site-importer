@@ -28,7 +28,7 @@ test("website artifact import profile is complete and capability scoped", async 
   )
   assert.deepEqual(
     homeboy.scopes?.release?.exclude,
-    ["bench/", "homeboy-test-manifest.json", "lib/", "registry/", "rigs/", "test-manifest.json", "tools/"],
+    ["bench/", "demos/", "homeboy-test-manifest.json", "lib/", "registry/", "rigs/", "test-manifest.json", "tools/"],
     "Homeboy release coverage must exclude tracked development surfaces outside the runtime profile",
   )
   assert.deepEqual(profile.abilities, [
@@ -46,20 +46,31 @@ test("website artifact import profile is complete and capability scoped", async 
   }
 
   const candidates = new Set(execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" }).trim().split("\n").filter(Boolean))
+  for (const path of candidates) {
+    try {
+      if (!(await stat(join(root, path))).isFile()) candidates.delete(path)
+    } catch {
+      candidates.delete(path)
+    }
+  }
   candidates.add("runtime-package-manifest.json")
   for (const path of await listFiles(join(root, "vendor"))) candidates.add(path)
   const selected = [...candidates].filter((path) => profile.selectors.some((selector) => selector.type === "file" ? path === selector.path : path.startsWith(selector.path))).sort()
 
   for (const required of profile.required_files) assert.ok(selected.includes(required), `missing required runtime file: ${required}`)
-  assert.ok(selected.some((path) => path.startsWith("blocks/")))
+  assert.equal(selected.some((path) => path.startsWith("blocks/")), false, "runtime profile must not ship the demo block")
+  assert.equal(selected.includes("includes/block.php"), false, "runtime profile must not ship the demo block bootstrap")
   assert.ok(selected.some((path) => path.startsWith("vendor/league/")))
   assert.ok(selected.length > profile.required_files.length)
 
-  for (const excluded of ["bench/", "build/", "docs/", "lib/", "node_modules/", "tests/", "tools/", "vendor/automattic/blocks-engine-figma-transformer/"]) {
+  for (const excluded of ["bench/", "blocks/", "build/", "demos/", "docs/", "lib/", "node_modules/", "tests/", "tools/", "vendor/automattic/blocks-engine-figma-transformer/"]) {
     assert.equal(selected.some((path) => path.startsWith(excluded)), false, `profile leaked excluded tree: ${excluded}`)
   }
   for (const excluded of ["homeboy-test-manifest.json", "test-manifest.json"]) assert.equal(selected.includes(excluded), false, `profile leaked test manifest: ${excluded}`)
   assert.equal(selected.includes("build-provenance.json"), false, "release profile must not require development build identity")
+
+  const bootstrap = await readFile(join(root, "static-site-importer.php"), "utf8")
+  assert.doesNotMatch(bootstrap, /includes\/block\.php|static_site_importer_register_block/, "runtime bootstrap must remain UI-free")
 
   if (process.env.STATIC_SITE_IMPORTER_PACKAGE_ZIP) {
     const archive = execFileSync("unzip", ["-Z1", process.env.STATIC_SITE_IMPORTER_PACKAGE_ZIP], { encoding: "utf8" })

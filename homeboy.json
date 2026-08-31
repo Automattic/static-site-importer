@@ -48,6 +48,7 @@
       "include": [],
       "exclude": [
         "bench/",
+        "demos/",
         "homeboy-test-manifest.json",
         "lib/",
         "registry/",
