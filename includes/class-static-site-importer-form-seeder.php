@@ -58,6 +58,36 @@ class Static_Site_Importer_Form_Seeder {
 		if ( function_exists( 'add_action' ) ) {
 			add_action( 'jetpack_loaded', array( __CLASS__, 'bootstrap_jetpack_forms_runtime' ) );
 		}
+		if ( function_exists( 'add_filter' ) ) {
+			add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_provider_wrapper_classes' ) );
+		}
+	}
+
+	/** Project source wrapper classes onto Jetpack's existing field wrapper. */
+	public static function project_provider_wrapper_classes( string $html ): string {
+		$projected = preg_replace_callback(
+			'/\bclass=(["\'])(.*?)\1/s',
+			static function ( array $matches ): string {
+				$classes    = preg_split( '/\s+/', trim( $matches[2] ) ) ?: array();
+				$is_wrapper = (bool) array_filter( $classes, static fn ( string $class ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class ) );
+				$output     = array();
+				foreach ( $classes as $class ) {
+					if ( str_starts_with( $class, 'ssi-source-wrapper--' ) ) {
+						if ( $is_wrapper && str_ends_with( $class, '-wrap' ) ) {
+							$source_class = substr( $class, strlen( 'ssi-source-wrapper--' ), -strlen( '-wrap' ) );
+							if ( 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $source_class ) ) {
+								$output[] = $source_class;
+							}
+						}
+						continue;
+					}
+					$output[] = $class;
+				}
+				return 'class=' . $matches[1] . implode( ' ', array_values( array_unique( $output ) ) ) . $matches[1];
+			},
+			$html
+		);
+		return is_string( $projected ) ? $projected : $html;
 	}
 
 	/**
@@ -422,8 +452,10 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			unset( $field_block['losses'] );
 
-			$source_class                      = isset( $control['class'] ) && is_scalar( $control['class'] ) ? trim( (string) $control['class'] ) : '';
-			$field_block['attrs']['className'] = trim( $source_class . ' ' . self::layout_node_class( $scope, 'control-' . $control_index ) );
+			$source_class       = isset( $control['class'] ) && is_scalar( $control['class'] ) ? trim( (string) $control['class'] ) : '';
+			$has_provider_input = (bool) array_filter( $field_block['innerBlocks'] ?? array(), static fn ( array $block ): bool => in_array( $block['name'] ?? '', array( 'jetpack/input', 'jetpack/phone-input' ), true ) );
+			$field_source_class = $has_provider_input ? '' : $source_class;
+			$field_block['attrs']['className'] = trim( $field_source_class . ' ' . self::layout_node_class( $scope, 'control-' . $control_index ) );
 			$field_blocks[ $control_index ]    = $field_block;
 			$mapped_types[]                    = $field_block['name'];
 		}
@@ -818,7 +850,9 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 			$generated_class                                      = self::layout_node_class( self::layout_scope( $form ), $node['id'] );
-			$field_blocks[ $control_index ]['attrs']['className'] = trim( (string) ( $field_blocks[ $control_index ]['attrs']['className'] ?? '' ) . ' ' . $source_class . ' ' . $generated_class );
+			$wrapper_classes                                      = preg_split( '/\s+/', $source_class ) ?: array();
+			$wrapper_markers                                      = implode( ' ', array_map( static fn ( string $class ): string => 'ssi-source-wrapper--' . $class, $wrapper_classes ) );
+			$field_blocks[ $control_index ]['attrs']['className'] = trim( (string) ( $field_blocks[ $control_index ]['attrs']['className'] ?? '' ) . ' ' . $wrapper_markers . ' ' . $generated_class );
 			$operations[] = array(
 				'dimension'   => 'topology',
 				'strategy'    => 'provider_field_wrapper_class_projection',
@@ -1025,6 +1059,10 @@ class Static_Site_Importer_Form_Seeder {
 			$input_attrs = array(
 				'style' => array( 'border' => array( 'style' => 'solid' ) ),
 			);
+			$source_class = isset( $control['class'] ) && is_scalar( $control['class'] ) ? trim( (string) $control['class'] ) : '';
+			if ( '' !== $source_class ) {
+				$input_attrs['className'] = $source_class;
+			}
 			if ( '' !== $placeholder ) {
 				$input_attrs['placeholder'] = $placeholder;
 			}
