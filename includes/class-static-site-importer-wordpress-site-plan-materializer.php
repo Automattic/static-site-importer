@@ -2554,8 +2554,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				array(
 					'status'     => 'failed',
 					'diagnostic' => array(
-						'reason_code'       => 'editability_policy_failed',
-						'owning_layer'      => 'blocks-engine',
+						'reason_code'        => 'editability_policy_failed',
+						'owning_layer'       => 'blocks-engine',
 						'threshold_failures' => array_slice( array_values( array_filter( $policy['failures'], 'is_array' ) ), 0, 10 ),
 					),
 				)

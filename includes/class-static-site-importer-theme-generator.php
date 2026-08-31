@@ -576,9 +576,9 @@ class Static_Site_Importer_Theme_Generator {
 	 *
 	 * @param array<string,mixed> $receipt  Materialization receipt.
 	 * @param array<string,mixed> $args     Import args.
-	 * @return array<string,mixed>|WP_Error
+	 * @return array<string,mixed>
 	 */
-	private static function public_result_from_wordpress_site_plan_receipt( array $receipt, array $args, array $lifecycle = array(), array $dependencies = array(), array $entities = array() ): array|WP_Error {
+	private static function public_result_from_wordpress_site_plan_receipt( array $receipt, array $args, array $lifecycle = array(), array $dependencies = array(), array $entities = array() ): array {
 		$plan        = $receipt['plan'];
 		$theme        = $receipt['theme'];
 		$diagnostics  = Static_Site_Importer_Report_Diagnostics::after_completed_entity_bindings( isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array(), $receipt );
