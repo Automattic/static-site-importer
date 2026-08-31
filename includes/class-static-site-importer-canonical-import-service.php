@@ -74,6 +74,9 @@ class Static_Site_Importer_Canonical_Import_Service {
 			}
 			$source     = array_merge( $source, $resolved_source, array( 'type' => $type ) );
 			$provenance = array_merge( $provenance, array( 'ref' => $reference ), isset( $resolved['provenance'] ) && is_array( $resolved['provenance'] ) ? $resolved['provenance'] : array() );
+			if ( isset( $resolved['payload_reader'] ) && is_object( $resolved['payload_reader'] ) ) {
+				$payload_reader = $resolved['payload_reader'];
+			}
 		}
 		if ( 'url' === $type ) {
 			if ( 'apply' === $operation ) {

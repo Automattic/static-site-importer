@@ -35,6 +35,21 @@ function apply_filters( string $hook, $value, ...$args ) {
 	}
 	return $value;
 }
+function add_filter( string $hook, callable $callback ): bool {
+	$GLOBALS['ssi_direct_filters'][ $hook ][] = $callback;
+	return true;
+}
+function remove_filter( string $hook, callable $callback ): bool {
+	$callbacks = $GLOBALS['ssi_direct_filters'][ $hook ] ?? array();
+	foreach ( $callbacks as $index => $registered ) {
+		if ( $registered === $callback ) {
+			unset( $callbacks[ $index ] );
+			$GLOBALS['ssi_direct_filters'][ $hook ] = array_values( $callbacks );
+			return true;
+		}
+	}
+	return false;
+}
 function do_action( string $hook, ...$args ): void {
 	foreach ( $GLOBALS['ssi_direct_actions'][ $hook ] ?? array() as $callback ) {
 		$callback( ...$args );
@@ -135,6 +150,7 @@ class Static_Site_Importer_Theme_Generator {
 }
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-canonical-import-service.php';
+require_once dirname( __DIR__ ) . '/includes/cli.php';
 
 $assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
@@ -265,13 +281,15 @@ $assert( in_array( 'entity_collection:forms', $form_dependencies[0]['required_fo
 $replay = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
 $assert( $terminal === $replay && 1 === $GLOBALS['ssi_direct_mutations'], 'terminal replay must return the durable response without compile or mutation' );
 
-$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_batch_pages' => 20 ) ) );
-$clean = Static_Site_Importer_Canonical_Import_Service::import( $input() );
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array();
+$clean = static_site_importer_cli_import( $input() );
 $canonical = static function ( array $response ): array {
 	unset( $response['import_id'], $response['artifact_run'] );
 	return $response;
 };
-$assert( empty( $clean['continuation'] ) && 2 === $GLOBALS['ssi_direct_mutations'] && $canonical( $terminal ) === $canonical( $clean ), 'clean and resumed canonical apply outputs must match outside run observations' );
+$clean_work = $clean['artifact_run']['work'] ?? array();
+$assert( empty( $clean['continuation'] ) && 1 === ( $clean_work['compile_batches'] ?? 0 ) && 3 === ( $clean_work['pages_compiled'] ?? 0 ), 'the CLI worker must compile a multi-page artifact with one shared-analysis batch' );
+$assert( empty( $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] ) && 2 === $GLOBALS['ssi_direct_mutations'] && $canonical( $terminal ) === $canonical( $clean ), 'the CLI policy must remain scoped while clean and resumed canonical apply outputs match' );
 $canonical_compiled = static function ( array $result ) use ( &$canonical_compiled ): array {
 	unset( $result['metrics'], $result['work'] );
 	foreach ( $result as $key => &$value ) {

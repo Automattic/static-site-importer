@@ -46,6 +46,7 @@ $GLOBALS['ssi_activation_outcome'] = 'success';
 $GLOBALS['ssi_activation_attempts'] = 0;
 $GLOBALS['ssi_install_attempts'] = 0;
 $GLOBALS['ssi_install_outcome'] = 'success';
+$GLOBALS['ssi_plugin_cache_cleans'] = 0;
 
 function ssi_test_callback_id( callable $callback ): string {
 	if ( is_string( $callback ) ) return $callback;
@@ -70,6 +71,10 @@ function is_plugin_active( string $plugin_file ): bool { return $GLOBALS['ssi_pl
 function plugins_api( string $action, array $args ): object {
 	unset( $action, $args );
 	return (object) array( 'download_link' => 'https://example.test/absent-plugin.zip' );
+}
+function wp_clean_plugins_cache( bool $clear_update_cache = true ): void {
+	unset( $clear_update_cache );
+	++$GLOBALS['ssi_plugin_cache_cleans'];
 }
 function activate_plugin( string $plugin_file ) {
 	unset( $plugin_file );
@@ -190,6 +195,7 @@ $absent_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
 	static fn (): bool => true
 );
 $assert( 'installed_activated' === ( $absent_report['status'] ?? '' ) && 1 === $GLOBALS['ssi_install_attempts'] && in_array( 'install', $absent_report['attempted_actions'] ?? array(), true ) && in_array( 'activate', $absent_report['attempted_actions'] ?? array(), true ), 'absent-provider-installs-then-activates' );
+$assert( 1 === $GLOBALS['ssi_plugin_cache_cleans'], 'newly-installed-provider-refreshes-plugin-cache-before-activation' );
 
 unlink( WP_PLUGIN_DIR . '/absent-plugin/absent-plugin.php' );
 rmdir( WP_PLUGIN_DIR . '/absent-plugin' );
