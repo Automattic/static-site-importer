@@ -658,11 +658,11 @@ class Static_Site_Importer_Form_Seeder {
 			$semantic_nodes    = array( $fieldset['id'] );
 			$unambiguous_shape = true;
 			$labels            = $children[ $fieldset['id'] ] ?? array();
-			if ( 1 === count( $labels ) && 'wrapper' === ( $labels[0]['kind'] ?? null ) && 'div' === ( $labels[0]['tag'] ?? null ) && is_string( $labels[0]['id'] ?? null ) ) {
+			if ( 1 === count( $labels ) && 'wrapper' === ( $labels[0]['kind'] ?? null ) && 'div' === ( $labels[0]['tag'] ?? null ) ) {
 				$labels = $children[ $labels[0]['id'] ];
 			}
 			foreach ( $labels as $label ) {
-				$label_children = is_string( $label['id'] ?? null ) ? $children[ $label['id'] ] ?? array() : array();
+				$label_children = $children[ $label['id'] ] ?? array();
 				if ( 'wrapper' !== ( $label['kind'] ?? null ) || 'label' !== ( $label['tag'] ?? null ) || 1 !== count( $label_children ) || 'control' !== ( $label_children[0]['kind'] ?? null ) || ! is_int( $label_children[0]['control'] ?? null ) ) {
 					$unambiguous_shape = false;
 					break;
@@ -729,7 +729,7 @@ class Static_Site_Importer_Form_Seeder {
 	private static function labelled_fieldset_legends( array $form, array $nodes ): array {
 		$fieldset_ids = array();
 		foreach ( $nodes as $node ) {
-			if ( is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && 'fieldset' === ( $node['tag'] ?? null ) && 'labelled_group' === ( $node['fieldset_semantics'] ?? null ) && is_string( $node['id'] ?? null ) ) {
+			if ( 'wrapper' === ( $node['kind'] ?? null ) && 'fieldset' === ( $node['tag'] ?? null ) && 'labelled_group' === ( $node['fieldset_semantics'] ?? null ) && is_string( $node['id'] ?? null ) ) {
 				$fieldset_ids[] = $node['id'];
 			}
 		}
