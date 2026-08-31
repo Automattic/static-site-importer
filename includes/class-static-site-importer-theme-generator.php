@@ -607,6 +607,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * @param array<string,mixed> $args     Import args.
 	 * @return array<string,mixed>|WP_Error
 	 */
+	// @phpstan-ignore return.unusedType (Runtime coverage exercises the deferred WP_Error return.)
 	private static function public_result_from_wordpress_site_plan_receipt( array $receipt, array $args, array $lifecycle = array(), array $dependencies = array(), array $entities = array() ): array|WP_Error {
 		$plan        = $receipt['plan'];
 		$theme        = $receipt['theme'];
