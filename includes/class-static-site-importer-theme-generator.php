@@ -26,9 +26,6 @@ if ( ! class_exists( 'Static_Site_Importer_Block_Document_Reporter' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Report_Diagnostics' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-report-diagnostics.php';
 }
-if ( ! class_exists( 'Static_Site_Importer_Failed_Plan_Validation' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-failed-plan-validation.php';
-}
 if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-client-script-policy.php';
 }
@@ -100,32 +97,6 @@ class Static_Site_Importer_Theme_Generator {
 		$lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $plan, $args );
 		if ( is_wp_error( $lifecycle ) ) {
 			return $lifecycle;
-		}
-		$deferred_form_quality_admission = ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) && Static_Site_Importer_Entity_Materializer_Registry::can_defer_form_quality_admission( $plan, $lifecycle );
-		if ( ! empty( $args['fail_on_quality'] ) && empty( $plan['quality']['pass'] ) && ! $deferred_form_quality_admission ) {
-			$compiled_evidence = isset( $compiled_import['compiled'] ) && is_array( $compiled_import['compiled'] ) ? $compiled_import['compiled'] : array();
-			$failed_plan       = Static_Site_Importer_Failed_Plan_Validation::build( $plan, $args, $compiled_evidence );
-			try {
-				$paths           = Static_Site_Importer_Failed_Plan_Validation::persist( $failed_plan, (string) ( $args['failed_plan_report_destination'] ?? $args['report'] ?? '' ) );
-				$artifact_prefix = (string) ( $args['failed_plan_artifact_prefix'] ?? '' );
-				$failed_plan['artifact_refs'] = '' !== $artifact_prefix ? Static_Site_Importer_Failed_Plan_Validation::artifact_refs( $artifact_prefix ) : $paths;
-			} catch ( Throwable $error ) {
-				$failed_plan['artifact_persistence_error'] = $error->getMessage();
-			}
-			return new WP_Error(
-				'static_site_importer_quality_gate_failed',
-				'Website artifact did not pass the canonical plan quality gate.',
-				array_merge(
-					array(
-						'quality'     => $plan['quality'] ?? array(),
-						'diagnostics' => $plan['diagnostics'] ?? array(),
-					),
-					$failed_plan
-				)
-			);
-		}
-		if ( $deferred_form_quality_admission ) {
-			$args['_static_site_importer_deferred_form_quality_admission'] = true;
 		}
 		if ( 'plan' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
 			$encoded_artifact = wp_json_encode( $artifact );
@@ -817,30 +788,6 @@ class Static_Site_Importer_Theme_Generator {
 			}
 		}
 		$quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $args );
-		if ( ! empty( $args['_static_site_importer_deferred_form_quality_admission'] ) && ! $quality['pass'] ) {
-			$existing_compensation = isset( $receipt['entity_compensation'] ) && is_array( $receipt['entity_compensation'] ) ? $receipt['entity_compensation'] : array();
-			$existing_failure_context = isset( $receipt['failure_context'] ) && is_array( $receipt['failure_context'] ) ? $receipt['failure_context'] : array();
-			$reuse_compensation = self::compensation_binding_matches( $existing_compensation, $receipt, $lifecycle, $entities );
-			$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $receipt, 'static_site_importer_quality_gate_failed' );
-			if ( $reuse_compensation ) {
-				$receipt['entity_compensation'] = $existing_compensation;
-				if ( ! empty( $existing_failure_context ) ) {
-					$receipt['failure_context'] = $existing_failure_context;
-				}
-			} elseif ( ! empty( $existing_compensation ) ) {
-				$receipt['previous_entity_compensation_binding_mismatch'] = true;
-			}
-			self::append_entity_compensation( $receipt, $lifecycle, $entities, 'final_quality_admission', 'static_site_importer_quality_gate_failed' );
-			return new WP_Error(
-				'static_site_importer_quality_gate_failed',
-				'Website artifact did not pass the final quality gate after provider receipt reconciliation.',
-				array(
-					'quality'                 => $quality,
-					'diagnostics'             => $report['diagnostics'],
-					'materialization_receipt' => $receipt,
-				)
-			);
-		}
 		$manifest['existing_matches'] = $receipt['existing_matches'] ?? array( 'pages' => array() );
 		$cleanup = self::cleanup_stale_generated_theme_files( $theme['dir'], $manifest, $args, $receipt );
 		if ( is_wp_error( $cleanup ) ) {
