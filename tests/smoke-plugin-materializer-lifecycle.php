@@ -8,6 +8,7 @@
 $tmp = sys_get_temp_dir() . '/ssi-plugin-lifecycle-' . getmypid();
 define( 'ABSPATH', $tmp . '/wordpress/' );
 define( 'WP_PLUGIN_DIR', $tmp . '/plugins' );
+define( 'WP_CLI', true );
 mkdir( WP_PLUGIN_DIR . '/late-plugin', 0777, true );
 file_put_contents( WP_PLUGIN_DIR . '/late-plugin/late-plugin.php', "<?php\n" );
 
@@ -30,6 +31,24 @@ class Plugin_Upgrader {
 	}
 }
 class Automatic_Upgrader_Skin {}
+class WP_CLI {
+	public static array $commands = array();
+	public static function runcommand( string $command, array $options ): mixed {
+		self::$commands[] = array( 'command' => $command, 'options' => $options );
+		if ( empty( $options['launch'] ) ) {
+			return 1;
+		}
+		++$GLOBALS['ssi_install_attempts'];
+		if ( 'install_failure' === $GLOBALS['ssi_install_outcome'] ) {
+			return 1;
+		}
+		mkdir( WP_PLUGIN_DIR . '/absent-plugin', 0777, true );
+		file_put_contents( WP_PLUGIN_DIR . '/absent-plugin/absent-plugin.php', "<?php\n" );
+		// A launched WP-CLI install cannot poison this process's plugin scan.
+		$GLOBALS['ssi_plugin_entrypoint_discoverable'] = true;
+		return 0;
+	}
+}
 class SSI_Test_Hook {
 	public array $callbacks = array();
 }
@@ -47,6 +66,8 @@ $GLOBALS['ssi_activation_attempts'] = 0;
 $GLOBALS['ssi_install_attempts'] = 0;
 $GLOBALS['ssi_install_outcome'] = 'success';
 $GLOBALS['ssi_plugin_cache_cleans'] = 0;
+$GLOBALS['ssi_plugin_entrypoint_discoverable'] = true;
+$GLOBALS['ssi_preparation_calls'] = 0;
 
 function ssi_test_callback_id( callable $callback ): string {
 	if ( is_string( $callback ) ) return $callback;
@@ -79,6 +100,9 @@ function wp_clean_plugins_cache( bool $clear_update_cache = true ): void {
 function activate_plugin( string $plugin_file ) {
 	unset( $plugin_file );
 	++$GLOBALS['ssi_activation_attempts'];
+	if ( ! $GLOBALS['ssi_plugin_entrypoint_discoverable'] ) {
+		return new WP_Error( 'no_plugin_header', 'The plugin does not have a valid header.' );
+	}
 	if ( 'throw_without_state_change' !== $GLOBALS['ssi_activation_outcome'] ) {
 		$GLOBALS['ssi_plugin_active'] = true;
 	}
@@ -115,6 +139,7 @@ $report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
 	static fn (): bool => $GLOBALS['ssi_runtime_ready'],
 	static function (): bool {
 		$GLOBALS['ssi_prepared'] = true;
+		++$GLOBALS['ssi_preparation_calls'];
 		return true;
 	}
 );
@@ -188,14 +213,25 @@ unlink( WP_PLUGIN_DIR . '/late-plugin/late-plugin.php' );
 rmdir( WP_PLUGIN_DIR . '/late-plugin' );
 $GLOBALS['ssi_plugin_active'] = false;
 $GLOBALS['ssi_activation_outcome'] = 'success';
+$GLOBALS['ssi_plugin_entrypoint_discoverable'] = false;
+$GLOBALS['ssi_prepared'] = false;
+$GLOBALS['ssi_preparation_calls'] = 0;
 $absent_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
 	'absent-plugin',
 	'absent-plugin/absent-plugin.php',
 	static fn (): bool => $GLOBALS['ssi_plugin_active'],
-	static fn (): bool => true
+	static function (): bool {
+		$GLOBALS['ssi_prepared'] = true;
+		++$GLOBALS['ssi_preparation_calls'];
+		return true;
+	}
 );
 $assert( 'installed_activated' === ( $absent_report['status'] ?? '' ) && 1 === $GLOBALS['ssi_install_attempts'] && in_array( 'install', $absent_report['attempted_actions'] ?? array(), true ) && in_array( 'activate', $absent_report['attempted_actions'] ?? array(), true ), 'absent-provider-installs-then-activates' );
 $assert( 1 === $GLOBALS['ssi_plugin_cache_cleans'], 'newly-installed-provider-refreshes-plugin-cache-before-activation' );
+$assert( true === ( WP_CLI::$commands[0]['options']['launch'] ?? false ), 'wp-cli-install-launches-in-child-process' );
+$assert( true === $GLOBALS['ssi_plugin_entrypoint_discoverable'], 'launched-install-makes-fresh-entrypoint-discoverable' );
+$assert( true === ( $absent_report['active'] ?? false ), 'fresh-entrypoint-activates-in-same-execution' );
+$assert( 1 === $GLOBALS['ssi_preparation_calls'] && in_array( 'prepare_runtime', $absent_report['attempted_actions'] ?? array(), true ), 'fresh-entrypoint-prepares-in-same-execution' );
 
 unlink( WP_PLUGIN_DIR . '/absent-plugin/absent-plugin.php' );
 rmdir( WP_PLUGIN_DIR . '/absent-plugin' );
@@ -205,7 +241,7 @@ $install_failure_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_or
 	'absent-plugin/absent-plugin.php',
 	static fn (): bool => false
 );
-$assert( 'failed' === ( $install_failure_report['status'] ?? '' ) && 'absent-plugin' === ( $install_failure_report['slug'] ?? '' ) && in_array( 'install', $install_failure_report['attempted_actions'] ?? array(), true ) && 'install_failed' === ( $install_failure_report['error']['code'] ?? '' ) && 'Plugin installation failed.' === ( $install_failure_report['error']['message'] ?? '' ), 'installation-failure-evidence' );
+$assert( 'failed' === ( $install_failure_report['status'] ?? '' ) && 'absent-plugin' === ( $install_failure_report['slug'] ?? '' ) && in_array( 'install', $install_failure_report['attempted_actions'] ?? array(), true ) && 'static_site_importer_plugin_install_failed' === ( $install_failure_report['error']['code'] ?? '' ), 'installation-failure-evidence' );
 
 rmdir( WP_PLUGIN_DIR );
 rmdir( $tmp );

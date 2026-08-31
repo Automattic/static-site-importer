@@ -855,6 +855,9 @@ class Static_Site_Importer_Plugin_Materializer {
 					array(
 						'return'        => true,
 						'exit_on_error' => false,
+						// Keep nested WP-CLI plugin discovery out of this request before
+						// activate_plugin() validates the newly written entrypoint.
+						'launch'        => true,
 					)
 				);
 				if ( 0 === $result || null === $result || true === $result ) {
