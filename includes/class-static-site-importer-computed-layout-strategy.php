@@ -217,9 +217,11 @@ class Static_Site_Importer_Computed_Layout_Strategy {
 	}
 
 	private static function semantic_wrapper_losses( array $form, array $blocks ): array {
-		$serialized  = self::serialized_topology_blocks( $blocks );
-		$represented = array_fill_keys( is_array( $form['provider_represented_topology_nodes'] ?? null ) ? $form['provider_represented_topology_nodes'] : array(), true );
-		$losses      = array();
+		$serialized                    = self::serialized_topology_blocks( $blocks );
+		$represented_semantic_nodes    = is_array( $form['represented_semantic_nodes'] ?? null ) ? $form['represented_semantic_nodes'] : array();
+		$provider_represented_topology = is_array( $form['provider_represented_topology_nodes'] ?? null ) ? $form['provider_represented_topology_nodes'] : array();
+		$represented                   = array_fill_keys( array_merge( $represented_semantic_nodes, $provider_represented_topology ), true );
+		$losses                        = array();
 		foreach ( $form['control_topology']['nodes'] ?? array() as $node ) {
 			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || ! is_string( $node['id'] ?? null ) ) {
 				continue;

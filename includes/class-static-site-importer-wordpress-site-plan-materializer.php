@@ -358,17 +358,6 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'uri'  => $theme_uri,
 			);
 			$state['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $resolved, $args );
-			if ( Static_Site_Importer_Quality_Budget_Admission::rejects_materialization( $state['quality_budget_admission'] ) ) {
-				$state['diagnostics'][]  = array(
-					'reason_code'    => 'quality_budget_failed',
-					'quality_budget' => $state['quality_budget_admission'],
-				);
-				$state['failure_reason'] = 'quality_budget_failed';
-				return array(
-					'status'  => 'rejected',
-					'receipt' => self::receipt( 'rejected', $state ),
-				);
-			}
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
 		} catch ( InvalidArgumentException $error ) {
 			if ( isset( $state['preflight_error'] ) && is_wp_error( $state['preflight_error'] ) ) {
@@ -2560,7 +2549,17 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			return self::rejected_editability_report_admission( $base, 'editability_policy_invalid' );
 		}
 		if ( 'failed' === ( $policy['status'] ?? null ) ) {
-			return self::rejected_editability_report_admission( $base, 'editability_policy_failed', $policy['failures'] );
+			return array_merge(
+				$base,
+				array(
+					'status'     => 'failed',
+					'diagnostic' => array(
+						'reason_code'        => 'editability_policy_failed',
+						'owning_layer'       => 'blocks-engine',
+						'threshold_failures' => array_slice( array_values( array_filter( $policy['failures'], 'is_array' ) ), 0, 10 ),
+					),
+				)
+			);
 		}
 
 		$report = $quality['editability_report'] ?? null;

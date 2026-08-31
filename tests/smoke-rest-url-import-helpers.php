@@ -136,8 +136,7 @@ $GLOBALS['ssi_ability_results'] = array( $continuation_envelope );
 
 $result = static_site_importer_rest_route_url_import(
 	array( 'url' => 'https://example.test/start' ),
-	array( 'slug' => 'rest-continuation' ),
-	'current_site'
+	array( 'slug' => 'rest-continuation' )
 );
 
 $assert( is_array( $result ), 'route-url-import-returns-array' );
@@ -154,8 +153,7 @@ $GLOBALS['ssi_ability_last_input'] = null;
 
 $result = static_site_importer_rest_route_url_import(
 	array( 'url' => 'https://example.test/done' ),
-	array( 'slug' => 'rest-terminal' ),
-	'current_site'
+	array( 'slug' => 'rest-terminal' )
 );
 
 $assert( true === ( $result['success'] ?? false ), 'terminal-success-true' );
@@ -163,28 +161,6 @@ $assert( false === ( $result['continuation'] ?? false ), 'terminal-continuation-
 $assert( 'def456' === ( $result['import_id'] ?? '' ), 'terminal-import-id-propagates' );
 $assert( 'remote-site' === ( $result['terminal_batch_result']['theme_slug'] ?? '' ), 'terminal-batch-result-propagates' );
 $assert( ! isset( $result['preview'] ), 'terminal-current-site-does-not-advertise-preview' );
-
-// Playground mode short-circuits the ability call: it must not consume a
-// stubbed result, and the structured requirement is built directly.
-$GLOBALS['ssi_ability_results']   = array();
-$GLOBALS['ssi_ability_last_input'] = null;
-
-$result = static_site_importer_rest_route_url_import(
-	array( 'url' => 'https://example.test/preview' ),
-	array( 'slug' => 'rest-playground' ),
-	'playground'
-);
-
-$assert( is_array( $result ), 'playground-returns-array' );
-$assert( true === ( $result['success'] ?? false ), 'playground-success-true' );
-$assert( true === ( $result['continuation'] ?? false ), 'playground-continuation-true' );
-$assert( 'ability_capable_target_required' === ( $result['continuation_reason'] ?? '' ), 'playground-continuation-reason' );
-$assert( null === $GLOBALS['ssi_ability_last_input'], 'playground-does-not-invoke-ability' );
-$assert( 'static-site-importer/import' === ( $result['requires_ability_capable_target']['ability'] ?? '' ), 'playground-requirement-ability-is-unified' );
-$assert( 'https://example.test/preview' === ( $result['requires_ability_capable_target']['url'] ?? '' ), 'playground-requirement-url-echoes-source' );
-$assert( '' !== ( $result['requires_ability_capable_target']['import_id'] ?? '' ), 'playground-requirement-import-id-synthesized' );
-$assert( '' !== ( $result['requires_ability_capable_target']['message'] ?? '' ), 'playground-requirement-message-present' );
-$assert( 'rest-playground' === ( $result['requires_ability_capable_target']['normalized']['slug'] ?? '' ), 'playground-requirement-normalized-echo' );
 
 $import_id_envelope = array(
 	'success'               => true,
@@ -197,8 +173,7 @@ $GLOBALS['ssi_ability_results'] = array( $import_id_envelope );
 
 $result = static_site_importer_rest_route_url_import(
 	array( 'url' => 'https://example.test/continue', 'import_id' => 'bound-id' ),
-	array( 'slug' => 'rest-import-id' ),
-	'current_site'
+	array( 'slug' => 'rest-import-id' )
 );
 
 $assert( 'bound-id' === ( $GLOBALS['ssi_ability_last_input']['source']['import_id'] ?? '' ), 'ability-receives-rest-import-id' );

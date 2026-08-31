@@ -111,14 +111,19 @@ function static_site_importer_rest_import_figma( WP_REST_Request $request ) {
 		return $artifact;
 	}
 
-	$params = array_merge(
+	$params       = array_merge(
 		$input,
 		array(
 			'activate'  => array_key_exists( 'activate', $input ) ? ! empty( $input['activate'] ) : true,
 			'overwrite' => array_key_exists( 'overwrite', $input ) ? ! empty( $input['overwrite'] ) : true,
 		)
 	);
-	$result = static_site_importer_rest_create_figma_playground_preview( $artifact, Static_Site_Importer_Figma_Import::import_input( $params, $artifact ) );
+	$import_input = Static_Site_Importer_Figma_Import::import_input( $params, $artifact );
+	$result       = static_site_importer_rest_execute_import_ability(
+		'static-site-importer/import',
+		array_merge( $import_input, array( 'source' => static_site_importer_ability_files_source( $artifact ) ) ),
+		'static_site_importer_ability_import'
+	);
 	if ( is_wp_error( $result ) ) {
 		return $result;
 	}
@@ -130,18 +135,7 @@ function static_site_importer_rest_import_figma( WP_REST_Request $request ) {
 }
 
 /**
- * Create a direct Playground open URL for Figma imports.
- *
- * @param array<string,mixed> $artifact Website artifact.
- * @param array<string,mixed> $input    Import ability input.
- * @return array<string,mixed>|WP_Error
- */
-function static_site_importer_rest_create_figma_playground_preview( array $artifact, array $input ) {
-	return static_site_importer_rest_create_playground_open( $artifact, $input, 'figma' );
-}
-
-/**
- * Import a multipart .fig upload from the block UI.
+ * Import a multipart .fig upload.
  *
  * @param WP_REST_Request $request REST request.
  * @return WP_REST_Response|WP_Error
@@ -171,311 +165,18 @@ function static_site_importer_rest_import_figma_file( WP_REST_Request $request )
 
 	$input['artifact'] = $artifact;
 
-	if ( static_site_importer_rest_should_apply_to_current_site( $request->get_params() ) ) {
-		$input['activate']  = ! empty( $request->get_param( 'activate' ) );
-		$input['overwrite'] = ! empty( $request->get_param( 'overwrite' ) );
-		$result             = static_site_importer_rest_execute_import_ability(
-			'static-site-importer/import',
-			array_merge(
-				$input,
-				array( 'source' => static_site_importer_ability_files_source( $artifact ) )
-			),
-			'static_site_importer_ability_import'
-		);
-		if ( is_wp_error( $result ) ) {
-			return $result;
-		}
-
-		return rest_ensure_response( $result );
-	}
-
-	$input['activate']  = true;
-	$input['overwrite'] = true;
-	$result             = static_site_importer_rest_create_playground_open( $artifact, $input, 'figma_file' );
+	$input['activate']  = array_key_exists( 'activate', $request->get_params() ) ? ! empty( $request->get_param( 'activate' ) ) : true;
+	$input['overwrite'] = array_key_exists( 'overwrite', $request->get_params() ) ? ! empty( $request->get_param( 'overwrite' ) ) : true;
+	$result             = static_site_importer_rest_execute_import_ability(
+		'static-site-importer/import',
+		array_merge( $input, array( 'source' => static_site_importer_ability_files_source( $artifact ) ) ),
+		'static_site_importer_ability_import'
+	);
 	if ( is_wp_error( $result ) ) {
 		return $result;
 	}
 
-	$result['mode'] = 'playground';
-
 	return rest_ensure_response( $result );
-}
-
-/**
- * Create a direct Playground preview whose URL runs the import in the browser.
- *
- * @param array<string,mixed> $artifact Website artifact.
- * @param array<string,mixed> $input    Import ability input.
- * @param string              $source   Preview source label.
- * @return array<string,mixed>|WP_Error
- */
-function static_site_importer_rest_create_playground_open( array $artifact, array $input, string $source = 'upload' ) {
-	$package = static_site_importer_playground_package();
-	if ( is_wp_error( $package ) ) {
-		return $package;
-	}
-	$blueprint = static_site_importer_playground_import_blueprint( $input, array( 'package' => $package ) );
-	if ( is_wp_error( $blueprint ) ) {
-		return $blueprint;
-	}
-	$blueprint_json = wp_json_encode( $blueprint );
-	if ( ! is_string( $blueprint_json ) ) {
-		return new WP_Error( 'static_site_importer_playground_blueprint_encode_failed', __( 'Could not encode the Playground preview blueprint.', 'static-site-importer' ), array( 'status' => 500 ) );
-	}
-
-	$ref           = hash( 'sha256', $blueprint_json );
-	$blueprint_url = 'https://playground.wordpress.net/#' . rawurlencode( $blueprint_json );
-
-	$result = array(
-		'success'  => true,
-		'preview'  => array(
-			'status'     => 'ready',
-			'url'        => esc_url_raw( $blueprint_url ),
-			'playground' => array(
-				'blueprint_url' => esc_url_raw( $blueprint_url ),
-				'preview_url'   => '/',
-				'ref'           => $ref,
-			),
-		),
-		'provider' => 'static-site-importer/direct-playground-blueprint',
-		'request'  => array(
-			'schema'    => 'static-site-importer/playground-preview-request/v1',
-			'source'    => $source,
-			'artifact'  => array(
-				'entrypoint' => (string) ( $artifact['entrypoint'] ?? '' ),
-				'file_count' => isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? count( $artifact['files'] ) : 0,
-			),
-			'blueprint' => array(
-				'ref' => $ref,
-			),
-			'package'   => static_site_importer_playground_package_provenance( $package ),
-		),
-	);
-
-	$source_metadata        = isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array();
-	$figma_transform_report = isset( $source_metadata['figma_transform_report'] ) && is_array( $source_metadata['figma_transform_report'] ) ? $source_metadata['figma_transform_report'] : array();
-	if ( ! empty( $figma_transform_report ) ) {
-		$result['figma_transform_report'] = $figma_transform_report;
-	}
-
-	return $result;
-}
-
-/**
- * Build the Playground blueprint steps that import a website artifact on boot.
- *
- * Public, reusable primitive: consumers (for example, a host shell or a site
- * forge) can build the "import-on-boot" steps without reaching into the
- * REST-internal blueprint builder. The steps are byte-identical to the ones
- * {@see static_site_importer_rest_playground_blueprint()} ships today.
- *
- * The returned steps are:
- * - login
- * - writeFile + runPHP checksum verification + installPlugin (SSI package) —
- *   omitted when $options['install'] is false
- * - runPHP — runs static_site_importer_ability_import( $input )
- *
- * Pass `'install' => false` for hosts/runtimes where SSI is already present
- * (for example, shipped as a mu-plugin in a sandbox runtime) so the blueprint
- * skips the GitHub release install step and imports against the bundled plugin.
- *
- * @param array<string,mixed> $input   Import ability input.
- * @param array<string,mixed> $options Optional. { install: bool (default true), package: array, user_id: positive int }.
- * @return array<int,array<string,mixed>>|WP_Error
- */
-function static_site_importer_playground_import_steps( array $input, array $options = array() ) {
-	$install = ! array_key_exists( 'install', $options ) || ! empty( $options['install'] );
-	$package = $install ? static_site_importer_playground_package( $options ) : null;
-	if ( is_wp_error( $package ) ) {
-		return $package;
-	}
-	$user_id = array_key_exists( 'user_id', $options ) ? (int) $options['user_id'] : 0;
-	if ( array_key_exists( 'user_id', $options ) && $user_id <= 0 ) {
-		return new WP_Error( 'static_site_importer_playground_user_invalid', __( 'The Playground import user ID must be a positive integer.', 'static-site-importer' ) );
-	}
-
-	// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Generates self-contained Playground import code.
-	$input_literal = var_export( $input, true );
-	$user_code     = $user_id > 0 ? '
-	if ( ! function_exists( "wp_set_current_user" ) ) {
-		throw new RuntimeException( "WordPress user selection is unavailable." );
-	}
-	wp_set_current_user( ' . $user_id . ' );
-' : '';
-	$import_code   = '<?php
-try {
-	require_once "/wordpress/wp-load.php";' . $user_code . '
-
-	if ( ! function_exists( "static_site_importer_ability_import" ) ) {
-		throw new RuntimeException( "Static Site Importer import function is unavailable." );
-	}
-	$input = ' . $input_literal . ';
-	$result = static_site_importer_ability_import( $input );
-
-	if ( ! is_array( $result ) || empty( $result["success"] ) ) {
-		throw new RuntimeException( "Static Site Importer Playground import failed: " . wp_json_encode( $result ) );
-	}
-
-	update_option( "static_site_importer_playground_preview_result", $result, false );
-} catch ( Throwable $error ) {
-	$diagnostic = array(
-		"schema" => "static-site-importer/playground-import-failure/v1",
-		"error"  => array(
-			"type"    => get_class( $error ),
-			"message" => substr( $error->getMessage(), 0, 1000 ),
-			"file"    => basename( $error->getFile() ),
-			"line"    => $error->getLine(),
-		),
-	);
-	$encoded = function_exists( "wp_json_encode" ) ? wp_json_encode( $diagnostic ) : json_encode( $diagnostic );
-	echo "\nSTATIC_SITE_IMPORTER_PLAYGROUND_IMPORT_FAILURE " . $encoded . "\n";
-	exit( 1 );
-}
-?>';
-
-	$steps = array(
-		array(
-			'step' => 'login',
-		),
-	);
-
-	if ( $install ) {
-		$package_path = '/tmp/static-site-importer-' . substr( $package['sha256'], 0, 16 ) . '.zip';
-		$steps[]      = array(
-			'step' => 'writeFile',
-			'path' => $package_path,
-			'data' => array(
-				'resource' => 'url',
-				'url'      => $package['url'],
-			),
-		);
-		$steps[]      = array(
-			'step' => 'runPHP',
-			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Produces immutable PHP string literals for the Playground blueprint.
-			'code' => '<?php if ( ! hash_equals( ' . var_export( $package['sha256'], true ) . ', hash_file( "sha256", ' . var_export( $package_path, true ) . ' ) ) ) { throw new RuntimeException( "Static Site Importer package integrity verification failed." ); } ?>',
-		);
-		$steps[]      = array(
-			'step'       => 'installPlugin',
-			'pluginData' => array(
-				'resource' => 'vfs',
-				'path'     => $package_path,
-			),
-			'options'    => array(
-				'activate'         => true,
-				'targetFolderName' => 'static-site-importer',
-			),
-		);
-	}
-
-	$steps[] = array(
-		'step' => 'runPHP',
-		'code' => $import_code,
-	);
-
-	return $steps;
-}
-
-/**
- * Build the full Playground blueprint that imports a website artifact on boot.
- *
- * Public, reusable primitive that wraps {@see static_site_importer_playground_import_steps()}
- * into a complete blueprint ($schema, landingPage, preferredVersions, features,
- * steps). The blueprint shape is identical to what
- * {@see static_site_importer_rest_playground_blueprint()} returns today.
- *
- * @param array<string,mixed> $input   Import ability input.
- * @param array<string,mixed> $options Optional. { install: bool (default true), package: array, user_id: positive int }.
- * @return array<string,mixed>|WP_Error
- */
-function static_site_importer_playground_import_blueprint( array $input, array $options = array() ) {
-	$steps = static_site_importer_playground_import_steps( $input, $options );
-	if ( is_wp_error( $steps ) ) {
-		return $steps;
-	}
-
-	return array(
-		'$schema'           => 'https://playground.wordpress.net/blueprint-schema.json',
-		'landingPage'       => '/',
-		'preferredVersions' => array(
-			'php' => '8.2',
-			'wp'  => 'latest',
-		),
-		'features'          => array(
-			'networking' => true,
-		),
-		'steps'             => $steps,
-	);
-}
-
-/**
- * Build the WPSG-style self-contained Playground blueprint that runs the import.
- *
- * Thin REST-internal wrapper retained for backward compatibility. Delegates to
- * the public {@see static_site_importer_playground_import_blueprint()} primitive
- * with the install step enabled.
- *
- * @param array<string,mixed> $input Import ability input.
- * @return array<string,mixed>|WP_Error
- */
-function static_site_importer_rest_playground_blueprint( array $input ) {
-	return static_site_importer_playground_import_blueprint( $input );
-}
-
-/**
- * Select an integrity-verified package for a generated Playground preview.
- *
- * A production package must either be a GitHub release asset pinned to its
- * version or a URL whose path embeds the declared SHA-256. Hosts that bundle
- * SSI (including WordPress Build) retain the install=false path and never
- * download a second package.
- *
- * @param array<string,mixed> $options Blueprint options.
- * @return array{url:string,version:string,sha256:string}|WP_Error
- */
-function static_site_importer_playground_package( array $options = array() ) {
-	$package = isset( $options['package'] ) && is_array( $options['package'] ) ? $options['package'] : null;
-	if ( null === $package && function_exists( 'apply_filters' ) ) {
-		$package = apply_filters( 'static_site_importer_playground_package', null, $options );
-	}
-	if ( ! is_array( $package ) ) {
-		return new WP_Error( 'static_site_importer_playground_package_missing', __( 'A pinned, integrity-verified Static Site Importer package is required for Playground previews.', 'static-site-importer' ), array( 'status' => 503 ) );
-	}
-
-	$url            = isset( $package['url'] ) ? (string) $package['url'] : '';
-	$version        = isset( $package['version'] ) ? (string) $package['version'] : '';
-	$sha256         = strtolower( preg_replace( '/^sha256:/i', '', (string) ( $package['sha256'] ?? $package['digest'] ?? '' ) ) );
-	$is_development = ! empty( $package['development'] );
-	if ( '' === $url || '' === $version || ! preg_match( '/^[a-f0-9]{64}$/', $sha256 ) || ! filter_var( $url, FILTER_VALIDATE_URL ) ) {
-		return new WP_Error( 'static_site_importer_playground_package_invalid', __( 'The Static Site Importer Playground package must provide a URL, version, and SHA-256 digest.', 'static-site-importer' ), array( 'status' => 500 ) );
-	}
-
-	$release_asset = 'https://github.com/Automattic/static-site-importer/releases/download/' . rawurlencode( $version ) . '/static-site-importer.zip';
-	// phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- The standalone smoke harness does not load WordPress.
-	$url_path          = function_exists( 'wp_parse_url' ) ? wp_parse_url( $url, PHP_URL_PATH ) : parse_url( $url, PHP_URL_PATH );
-	$content_addressed = false !== strpos( strtolower( (string) $url_path ), $sha256 );
-	if ( ! $is_development && $url !== $release_asset && ! $content_addressed ) {
-		return new WP_Error( 'static_site_importer_playground_package_mutable', __( 'Static Site Importer Playground previews require a version-pinned release asset or content-addressed package URL.', 'static-site-importer' ), array( 'status' => 500 ) );
-	}
-
-	return array(
-		'url'     => $url,
-		'version' => $version,
-		'sha256'  => $sha256,
-	);
-}
-
-/**
- * Return package provenance for the current REST preview response.
- *
- * @param array<string,string> $package Package metadata.
- * @return array<string,string>
- */
-function static_site_importer_playground_package_provenance( array $package ): array {
-	return array(
-		'version' => $package['version'],
-		'sha256'  => $package['sha256'],
-		'url'     => $package['url'],
-	);
 }
 
 /**
@@ -626,24 +327,13 @@ function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 	if ( isset( $params['provider_args'] ) && is_array( $params['provider_args'] ) ) {
 		$input['provider_args'] = $params['provider_args'];
 	}
-	$mode = static_site_importer_rest_import_mode( $params );
-
 	if ( static_site_importer_rest_is_url_only_source( $source ) ) {
-		$url_result = static_site_importer_rest_route_url_import( $source, $input, $mode );
+		$url_result = static_site_importer_rest_route_url_import( $source, $input );
 		if ( is_wp_error( $url_result ) ) {
 			return $url_result;
 		}
 
 		return rest_ensure_response( $url_result );
-	}
-
-	if ( 'playground' === $mode ) {
-		$result = static_site_importer_rest_open_in_playground( $source, $input );
-		if ( is_wp_error( $result ) ) {
-			return $result;
-		}
-
-		return rest_ensure_response( $result );
 	}
 
 	$result = static_site_importer_rest_apply_to_current_site( $source, $input );
@@ -652,161 +342,6 @@ function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 	}
 
 	return rest_ensure_response( $result );
-}
-
-/**
- * Resolve the import execution mode from REST flags.
- *
- * Modes are intentionally limited:
- * - playground: return a browser Playground URL that runs the import there.
- * - current_site: explicit import into the installed WordPress site.
- *
- * @param array<string,mixed> $params Request params.
- * @return 'playground'|'current_site'
- */
-function static_site_importer_rest_import_mode( array $params ): string {
-	if ( ! empty( $params['apply_to_current_site'] ) ) {
-		return 'current_site';
-	}
-
-	return 'playground';
-}
-
-/**
- * Determine whether the request explicitly targets the current WordPress site.
- *
- * @param array<string,mixed> $params Request params.
- * @return bool
- */
-function static_site_importer_rest_should_apply_to_current_site( array $params ): bool {
-	return 'current_site' === static_site_importer_rest_import_mode( $params );
-}
-
-/**
- * Return a Playground URL that runs the import in the browser runtime.
- *
- * @param array<string,mixed> $source Source payload.
- * @param array<string,mixed> $input  Import args.
- * @return array<string,mixed>|WP_Error
- */
-function static_site_importer_rest_open_in_playground( array $source, array $input ) {
-	$input['activate']  = true;
-	$input['overwrite'] = true;
-	// This request is serialized into a disposable Playground runtime, never this site.
-	$input['client_script_isolated'] = true;
-
-	$runtime = static_site_importer_rest_source_runtime( $source, $input );
-	if ( is_wp_error( $runtime ) ) {
-		return $runtime;
-	}
-
-	$artifact        = $runtime['artifact'];
-	$source_metadata = isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array();
-	$source_metadata = array_merge( $source_metadata, $runtime['source_metadata'] );
-	if ( 'url' === (string) ( $source_metadata['source_type'] ?? '' ) && '' !== (string) $runtime['provider'] ) {
-		$source_metadata['url_import_provider'] = (string) $runtime['provider'];
-	}
-	$input['source_metadata'] = $source_metadata;
-	$input['artifact']        = $artifact;
-	$input['source']          = static_site_importer_ability_files_source( $artifact );
-
-	$identity = Static_Site_Importer_Site_Identity::resolve(
-		array(
-			'site_title' => isset( $input['site_title'] ) ? (string) $input['site_title'] : '',
-			'name'       => isset( $input['name'] ) ? (string) $input['name'] : '',
-			'slug'       => isset( $input['slug'] ) ? (string) $input['slug'] : '',
-			'artifact'   => $artifact,
-			'url'        => isset( $source['url'] ) ? (string) $source['url'] : '',
-		)
-	);
-	if ( empty( $input['name'] ) ) {
-		$input['name'] = $identity['name'];
-	}
-	if ( empty( $input['slug'] ) ) {
-		$input['slug'] = $identity['slug'];
-	}
-
-	$preview_source = isset( $source['figma_file'] ) ? 'figma_file' : 'upload';
-
-	return static_site_importer_import_website_artifact_with_disposition(
-		$artifact,
-		$input,
-		array(
-			'source'         => $source,
-			'mode'           => 'playground',
-			'preview_source' => $preview_source,
-		)
-	);
-}
-
-/**
- * Run a normalized website artifact through the consumer-defined import disposition.
- *
- * This is the shared seam used by both the REST import endpoint and direct
- * server-side callers (for example, a generator that produces an artifact
- * in-process). By the time execution reaches this function the artifact and
- * import args are already normalized, so a consumer decides only *what happens
- * to the import* — not how the artifact is built.
- *
- * Consumers register on the {@see 'static_site_importer_import_disposition'}
- * filter: return null to defer (to other consumers, then the built-in preview),
- * or return a response array / WP_Error to claim the import and define its
- * outcome. A claiming consumer owns any persistence it performs and the preview
- * it returns; it may call {@see static_site_importer_build_playground_preview()}
- * to reuse the built-in, non-destructive Playground preview.
- *
- * @param array<string,mixed> $artifact Normalized website artifact ({ schema, entrypoint, files }).
- * @param array<string,mixed> $input    Normalized import args (artifact, name, slug, activate, overwrite, ...).
- * @param array<string,mixed> $context  Optional context: { source, params, mode, preview_source }.
- * @return array<string,mixed>|WP_Error
- */
-function static_site_importer_import_website_artifact_with_disposition( array $artifact, array $input = array(), array $context = array() ) {
-	/**
-	 * Filter what happens to a normalized website-artifact import.
-	 *
-	 * Static Site Importer stays generic: it normalizes the artifact and then
-	 * lets a consumer (a product/bridge layer) define the import's disposition.
-	 * Return null to defer to the built-in Playground preview; return a response
-	 * array or WP_Error to claim the import.
-	 *
-	 * @param array<string,mixed>|WP_Error|null $disposition Null to defer; array/WP_Error to claim.
-	 * @param array<string,mixed>               $artifact    Normalized website artifact.
-	 * @param array<string,mixed>               $input       Normalized import args.
-	 * @param array<string,mixed>               $context     { source, params, mode, preview_source }.
-	 */
-	$disposition = apply_filters( 'static_site_importer_import_disposition', null, $artifact, $input, $context );
-	if ( null !== $disposition ) {
-		return $disposition;
-	}
-
-	$preview_source = isset( $context['preview_source'] ) ? (string) $context['preview_source'] : 'upload';
-	$result         = static_site_importer_build_playground_preview( $artifact, $input, $preview_source );
-	if ( is_array( $result ) ) {
-		$result['mode'] = 'playground';
-	}
-
-	return $result;
-}
-
-/**
- * Build a non-destructive, self-contained Playground preview for a website artifact.
- *
- * Stable, consumer-facing wrapper around the built-in Playground preview builder.
- * Disposition handlers that persist an artifact elsewhere (for example, into a
- * host product's project store) can call this to return a working preview URL
- * without reaching into REST-internal helpers.
- *
- * @param array<string,mixed> $artifact Normalized website artifact.
- * @param array<string,mixed> $input    Normalized import args.
- * @param string              $source   Preview source label.
- * @return array<string,mixed>|WP_Error
- */
-function static_site_importer_build_playground_preview( array $artifact, array $input = array(), string $source = 'consumer' ) {
-	if ( ! isset( $input['artifact'] ) ) {
-		$input['artifact'] = $artifact;
-	}
-
-	return static_site_importer_rest_create_playground_open( $artifact, $input, $source );
 }
 
 /**
@@ -888,22 +423,13 @@ function static_site_importer_rest_execute_import_ability( string $ability_name,
  * This helper shapes the input the ability expects and unwraps the result
  * envelope into the REST response shape.
  *
- * - current_site: terminal envelope is the import result.
- * - playground: short-circuits to a structured `requires_ability_capable_target`
- *   requirement (the shipped server never invokes the URL ability for previews).
- *
  * @param array<string,mixed> $source Source payload (expected to contain `url`).
  * @param array<string,mixed> $input  Normalized import args.
- * @param string              $mode   Resolved mode ('current_site'|'playground').
  * @return array<string,mixed>|WP_Error
  */
-function static_site_importer_rest_route_url_import( array $source, array $input, string $mode ) {
+function static_site_importer_rest_route_url_import( array $source, array $input ) {
 	$url       = isset( $source['url'] ) ? (string) $source['url'] : '';
 	$import_id = isset( $source['import_id'] ) ? (string) $source['import_id'] : ( isset( $input['import_id'] ) ? (string) $input['import_id'] : '' );
-
-	if ( 'playground' === $mode ) {
-		return static_site_importer_rest_url_playground_unavailable( $url, $import_id, $input );
-	}
 
 	$ability_in = array_merge(
 		$input,
@@ -953,40 +479,6 @@ function static_site_importer_rest_route_url_import( array $source, array $input
 }
 
 /**
- * Build the structured "disposable ability-capable target required" envelope.
- *
- * The PlayGround preview path never invokes the URL ability on the shipped
- * server (the caller will run the import inside its own disposable target).
- * This envelope hands the caller the URL plus a placeholder `import_id` they
- * must carry into that target and a structured requirement describing the
- * ability they need to invoke there.
- *
- * @param string              $url       Source URL.
- * @param string              $import_id Opaque import_id (placeholder until
- *                                       the disposable target mints its own).
- * @param array<string,mixed> $input     Normalized import args (forwarded for
- *                                       the disposable target to repeat).
- * @return array<string,mixed>
- */
-function static_site_importer_rest_url_playground_unavailable( string $url, string $import_id, array $input ) {
-	$placeholder_id = '' !== $import_id ? $import_id : ( function_exists( 'wp_generate_uuid4' ) ? wp_generate_uuid4() : '' );
-	return array(
-		'success'                         => true,
-		'continuation'                    => true,
-		'continuation_reason'             => 'ability_capable_target_required',
-		'import_id'                       => $placeholder_id,
-		'url'                             => $url,
-		'requires_ability_capable_target' => array(
-			'ability'    => 'static-site-importer/import',
-			'url'        => $url,
-			'import_id'  => $placeholder_id,
-			'message'    => __( 'URL preview needs a disposable WordPress target that exposes the static-site-importer/import ability. The reference client must run the import inside its own ability-capable environment.', 'static-site-importer' ),
-			'normalized' => $input,
-		),
-	);
-}
-
-/**
  * Build import args from REST input.
  *
  * @param array<string,mixed> $params Request params.
@@ -997,7 +489,7 @@ function static_site_importer_rest_import_args( array $params ): array {
 	$params['name']            = isset( $params['name'] ) ? sanitize_text_field( (string) $params['name'] ) : '';
 	$params['source_metadata'] = array_merge(
 		isset( $params['source_metadata'] ) && is_array( $params['source_metadata'] ) ? $params['source_metadata'] : array(),
-		array( 'source' => 'static_site_importer_block' )
+		array( 'source' => 'static_site_importer_rest' )
 	);
 
 	return Static_Site_Importer_Website_Artifact_Import_Input::normalize( $params );
