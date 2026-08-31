@@ -120,7 +120,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				'target_hash' => hash( 'sha256', $validated_map['scope'] ),
 			);
 		}
-		$css     = empty( $rules ) ? '' : '/* Static Site Importer provider layout overlay: ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $rules ) ) ) . "\n";
+		$css = empty( $rules ) ? '' : '/* Static Site Importer provider layout overlay: ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $rules ) ) ) . "\n";
 		if ( strlen( $css ) > self::MAX_OVERLAY_BYTES ) {
 			return array(
 				'overlay'    => array(),
