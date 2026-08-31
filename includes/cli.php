@@ -68,7 +68,10 @@ if ( ! function_exists( 'static_site_importer_cli_import' ) ) {
 	function static_site_importer_cli_import( array $input ): array {
 		$report = isset( $input['report'] ) ? (string) $input['report'] : '';
 		unset( $input['report'], $input['_cli_request_bundle_dir'] );
-		$policy_added = function_exists( 'add_filter' ) && add_filter( 'static_site_importer_direct_artifact_run_policy', 'static_site_importer_cli_direct_artifact_run_policy' );
+		$policy_added = function_exists( 'add_filter' );
+		if ( $policy_added ) {
+			add_filter( 'static_site_importer_direct_artifact_run_policy', 'static_site_importer_cli_direct_artifact_run_policy' );
+		}
 		try {
 			return Static_Site_Importer_Canonical_Import_Service::import_with_cli_report( $input, $report );
 		} finally {
