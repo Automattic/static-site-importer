@@ -3441,6 +3441,11 @@ test('fixture matrix intake consumes native editor-open output as canvas evidenc
           screenshot: 'files/browser/editor-screenshot.png',
           editorState: 'files/browser/editor-state.json',
           editorValidity: 'files/browser/editor-validity.json',
+          screenshots: [
+            'files/browser/presentation-frontend.png',
+            'files/browser/presentation-editor.png',
+            'files/browser/presentation-diff.png',
+          ],
         },
         summary: { editor: { blockCount: 4 } },
       },
@@ -3457,6 +3462,9 @@ test('fixture matrix intake consumes native editor-open output as canvas evidenc
     'files/browser/editor-screenshot.png',
     'files/browser/editor-state.json',
     'files/browser/editor-validity.json',
+    'files/browser/presentation-frontend.png',
+    'files/browser/presentation-editor.png',
+    'files/browser/presentation-diff.png',
   ]);
   assert.equal(decision.editor_canvas_status, 'visible');
 });
@@ -3484,6 +3492,9 @@ test('editor canvas artifacts are persisted in the matrix artifact root and refs
   mkdirSync(sourceDirectory, { recursive: true });
   writeFileSync(path.join(sourceDirectory, 'editor-screenshot.png'), 'screenshot');
   writeFileSync(path.join(sourceDirectory, 'editor-state.json'), '{"blocks":3}');
+  writeFileSync(path.join(sourceDirectory, 'presentation-frontend.png'), 'frontend');
+  writeFileSync(path.join(sourceDirectory, 'presentation-editor.png'), 'editor');
+  writeFileSync(path.join(sourceDirectory, 'presentation-diff.png'), 'diff');
   const result = materializeEditorCanvasArtifacts({
     outputDirectory,
     codeboxArtifactsDirectory,
@@ -3493,9 +3504,27 @@ test('editor canvas artifacts are persisted in the matrix artifact root and refs
         artifact_refs: [
           { artifact_id: 'editor-open-screenshot', kind: 'editor-canvas', path: 'files/browser/editor-screenshot.png' },
           { artifact_id: 'editor-open-editorState', kind: 'editor-canvas', path: 'files/browser/editor-state.json' },
+          { artifact_id: 'editor-open-screenshots-1', kind: 'editor-canvas', path: 'files/browser/presentation-frontend.png' },
+          { artifact_id: 'editor-open-screenshots-2', kind: 'editor-canvas', path: 'files/browser/presentation-editor.png' },
+          { artifact_id: 'editor-open-screenshots-3', kind: 'editor-canvas', path: 'files/browser/presentation-diff.png' },
         ],
         editor_canvas: { screenshot: 'files/browser/editor-screenshot.png' },
-        editor_open: { files: { screenshot: 'files/browser/editor-screenshot.png', editorState: 'files/browser/editor-state.json' } },
+        editor_open: {
+          files: {
+            screenshot: 'files/browser/editor-screenshot.png',
+            editorState: 'files/browser/editor-state.json',
+            screenshots: ['files/browser/presentation-frontend.png', 'files/browser/presentation-editor.png', 'files/browser/presentation-diff.png'],
+          },
+          summary: {
+            editorPresentation: {
+              matchedRendering: {
+                frontendScreenshot: 'files/browser/presentation-frontend.png',
+                editorScreenshot: 'files/browser/presentation-editor.png',
+                diffScreenshot: 'files/browser/presentation-diff.png',
+              },
+            },
+          },
+        },
         surfaces: [{
           surface_id: 'front-page',
           artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'editor-canvas', path: 'files/browser/editor-screenshot.png' }],
@@ -3507,20 +3536,31 @@ test('editor canvas artifacts are persisted in the matrix artifact root and refs
   const fixture = result.result.fixtures[0];
   const screenshotPath = path.join(outputDirectory, 'editor-canvas', 'simple-site', 'editor-screenshot.png');
   const statePath = path.join(outputDirectory, 'editor-canvas', 'simple-site', 'editor-state.json');
+  const frontendPath = path.join(outputDirectory, 'editor-canvas', 'simple-site', 'presentation-frontend.png');
+  const editorPath = path.join(outputDirectory, 'editor-canvas', 'simple-site', 'presentation-editor.png');
+  const diffPath = path.join(outputDirectory, 'editor-canvas', 'simple-site', 'presentation-diff.png');
 
   assert.equal(existsSync(screenshotPath), true);
   assert.equal(existsSync(statePath), true);
   assert.equal(fixture.editor_canvas.screenshot, screenshotPath);
   assert.equal(fixture.editor_open.files.editorState, statePath);
+  assert.deepEqual(fixture.editor_open.files.screenshots, [frontendPath, editorPath, diffPath]);
+  assert.equal(fixture.editor_open.summary.editorPresentation.matchedRendering.diffScreenshot, diffPath);
   assert.equal(fixture.surfaces[0].editor_open.files.screenshot, screenshotPath);
-  assert.deepEqual(fixture.artifact_refs.map((ref) => ref.path), [screenshotPath, statePath]);
+  assert.deepEqual(fixture.artifact_refs.map((ref) => ref.path), [screenshotPath, statePath, frontendPath, editorPath, diffPath]);
   assert.deepEqual(fixture.artifact_refs.map((ref) => ref.artifact_id), [
     'editor_canvas_simple-site_editor-open-screenshot',
     'editor_canvas_simple-site_editor-open-editorState',
+    'editor_canvas_simple-site_editor-open-screenshots-1',
+    'editor_canvas_simple-site_editor-open-screenshots-2',
+    'editor_canvas_simple-site_editor-open-screenshots-3',
   ]);
   assert.deepEqual(result.artifacts, {
     'editor_canvas_simple-site_editor-open-screenshot': { path: screenshotPath },
     'editor_canvas_simple-site_editor-open-editorState': { path: statePath },
+    'editor_canvas_simple-site_editor-open-screenshots-1': { path: frontendPath },
+    'editor_canvas_simple-site_editor-open-screenshots-2': { path: editorPath },
+    'editor_canvas_simple-site_editor-open-screenshots-3': { path: diffPath },
   });
 });
 

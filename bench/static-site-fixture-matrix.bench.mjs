@@ -735,13 +735,16 @@ function materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, cod
 }
 
 function rewriteEditorEvidencePaths(value, rewrites) {
+  if (typeof value === 'string') {
+    return rewritePath(value, rewrites);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => rewriteEditorEvidencePaths(item, rewrites));
+  }
   if (!value || typeof value !== 'object') {
     return value;
   }
-  const files = value.files && typeof value.files === 'object'
-    ? Object.fromEntries(Object.entries(value.files).map(([key, filePath]) => [key, rewritePath(filePath, rewrites)]))
-    : undefined;
-  return { ...value, ...(files ? { files } : {}), ...(value.screenshot ? { screenshot: rewritePath(value.screenshot, rewrites) } : {}) };
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, rewriteEditorEvidencePaths(item, rewrites)]));
 }
 
 export function materializeVisualCompareArtifacts(input = {}) {
