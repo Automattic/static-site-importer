@@ -536,6 +536,33 @@ if ( ! function_exists( 'static_site_importer_cli_import_receipt' ) ) {
 	}
 }
 
+if ( ! function_exists( 'static_site_importer_cli_import_progress' ) ) {
+	/** Project bounded operator progress from the durable artifact-run evidence. */
+	function static_site_importer_cli_import_progress( array $result, int $step, float $started_at, string $event, string $resume_command = '' ): array {
+		$evidence       = is_array( $result['artifact_run'] ?? null ) ? $result['artifact_run'] : array();
+		$progress       = is_array( $evidence['progress'] ?? null ) ? $evidence['progress'] : array();
+		$total          = max( 0, (int) ( $progress['page_count'] ?? 0 ) );
+		$complete       = min( $total, max( 0, (int) ( $progress['receipt_count'] ?? 0 ) ) );
+		$event          = 'heartbeat' === $event ? 'heartbeat' : 'continuation';
+		$resume_command = str_replace( '<import-id>', (string) ( $result['import_id'] ?? '' ), $resume_command );
+		return array_filter(
+			array(
+				'schema'              => 'static-site-importer/import-cli-progress/v1',
+				'event'               => $event,
+				'import_id'           => (string) ( $result['import_id'] ?? '' ),
+				'phase'               => (string) ( $evidence['phase'] ?? 'unknown' ),
+				'completed_units'     => $complete,
+				'total_units'         => $total,
+				'elapsed_seconds'     => max( 0.0, microtime( true ) - $started_at ),
+				'continuation_reason' => (string) ( $result['continuation_reason'] ?? '' ),
+				'step'                => $step,
+				'resume_command'      => $resume_command,
+			),
+			static fn ( $value ): bool => '' !== $value
+		);
+	}
+}
+
 if ( ! function_exists( 'static_site_importer_cli_decode_import_step' ) ) {
 	function static_site_importer_cli_decode_import_step( string $output ): ?array {
 		$lines = preg_split( '/\R/', trim( $output ) );
@@ -621,12 +648,17 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 	 * @param array<string,mixed> $input
 	 * @return array<string,mixed>
 	 */
-	function static_site_importer_cli_run_import_host( array $input, ?callable $invoke = null, int $max_steps = 0 ): array {
+	function static_site_importer_cli_run_import_host( array $input, ?callable $invoke = null, int $max_steps = 0, ?callable $emit_progress = null, string $resume_command = '' ): array {
 		$invoke    = $invoke ?? 'static_site_importer_cli_import_run_fresh_runtime';
 		$max_steps = min( 1024, max( 1, $max_steps > 0 ? $max_steps : static_site_importer_cli_import_max_steps() ) );
 		$steps     = 0;
+		$started_at = microtime( true );
+		$previous   = null;
 		while ( $steps < $max_steps ) {
 			++$steps;
+			if ( is_array( $previous ) && null !== $emit_progress ) {
+				$emit_progress( static_site_importer_cli_import_progress( $previous, $steps, $started_at, 'heartbeat', $resume_command ) );
+			}
 			$result = $invoke( $input );
 			if ( ! is_array( $result ) ) {
 				$result = static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', 'An import step did not return an object.' );
@@ -641,6 +673,9 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 					$steps
 				);
 			}
+			if ( null !== $emit_progress ) {
+				$emit_progress( static_site_importer_cli_import_progress( $result, $steps, $started_at, 'continuation', $resume_command ) );
+			}
 			$input = static_site_importer_cli_apply_import_id( $input, $import_id );
 			if ( 'dependencies_prepared' === ( $result['continuation_reason'] ?? '' ) ) {
 				$prepared                              = is_array( $result['result'] ?? null ) ? $result['result'] : array();
@@ -648,11 +683,27 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 				$input['runtime_lifecycle_request_id'] = (string) ( $prepared['fresh_runtime']['request_id'] ?? '' );
 				$input['runtime_lifecycle_checkpoint'] = (string) ( $prepared['fresh_runtime']['lifecycle_checkpoint_id'] ?? $prepared['runtime_lifecycle_checkpoint'] ?? '' );
 			}
+			$previous = $result;
 		}
 		return static_site_importer_cli_import_receipt(
 			static_site_importer_cli_import_error( 'static_site_importer_cli_continuation_bound_exceeded', 'The import exceeded its bounded continuation steps.' ),
 			$max_steps
 		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_import_resume_command' ) ) {
+	/** Build the exact command that resumes a durable CLI import. */
+	function static_site_importer_cli_import_resume_command( array $assoc_args, string $import_id ): string {
+		$parts = array( 'wp', 'static-site-importer', 'import' );
+		foreach ( $assoc_args as $key => $value ) {
+			if ( in_array( $key, array( 'import-id', 'max-steps', 'single-step' ), true ) ) {
+				continue;
+			}
+			$parts[] = is_bool( $value ) ? '--' . $key : '--' . $key . '=' . escapeshellarg( (string) $value );
+		}
+		$parts[] = '--import-id=' . $import_id;
+		return implode( ' ', $parts );
 	}
 }
 
@@ -667,6 +718,17 @@ if ( ! function_exists( 'static_site_importer_cli_emit_import_receipt' ) ) {
 		if ( 'completed' !== ( $receipt['status'] ?? '' ) ) {
 			WP_CLI::halt( 1 );
 		}
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_emit_import_progress' ) ) {
+	/** @param array<string,mixed> $progress */
+	function static_site_importer_cli_emit_import_progress( array $progress ): void {
+		$json = wp_json_encode( $progress, JSON_UNESCAPED_SLASHES );
+		if ( false === $json ) {
+			WP_CLI::error( 'Failed to encode import progress.' );
+		}
+		WP_CLI::line( (string) $json );
 	}
 }
 
@@ -702,7 +764,16 @@ if ( ! function_exists( 'static_site_importer_cli_import_command' ) ) {
 			return;
 		}
 		$max_steps = isset( $assoc_args['max-steps'] ) ? (int) $assoc_args['max-steps'] : 0;
-		static_site_importer_cli_emit_import_receipt( static_site_importer_cli_run_import_host( $input, null, $max_steps ) );
+		$resume_command = static_site_importer_cli_import_resume_command( $assoc_args, '<import-id>' );
+		static_site_importer_cli_emit_import_receipt(
+			static_site_importer_cli_run_import_host(
+				$input,
+				null,
+				$max_steps,
+				'static_site_importer_cli_emit_import_progress',
+				$resume_command
+			)
+		);
 	}
 }
 

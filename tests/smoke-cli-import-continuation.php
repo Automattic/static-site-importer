@@ -275,6 +275,68 @@ $assert( 'static-site-importer/import-cli-receipt/v1' === ( $receipt['schema'] ?
 $assert( 'completed' === ( $receipt['status'] ?? '' ) && 3 === ( $receipt['steps'] ?? 0 ), 'terminal-success-status' );
 $assert( true === ( $receipt['response']['success'] ?? false ) && empty( $receipt['response']['continuation'] ), 'terminal-success-has-no-continuation' );
 
+$progress_events = array();
+$slow_queue      = array(
+	array(
+		'success'             => true,
+		'continuation'        => true,
+		'continuation_reason' => 'run_in_progress',
+		'import_id'           => 'durable-slow-run',
+		'artifact_run'        => array(
+			'phase'    => 'compile_pages',
+			'progress' => array( 'page_count' => 34, 'receipt_count' => 12 ),
+		),
+	),
+	array(
+		'success'      => true,
+		'continuation' => false,
+		'result'       => array( 'theme_slug' => 'slow-import' ),
+	),
+);
+$slow_receipt = static_site_importer_cli_run_import_host(
+	$files_input,
+	static function () use ( &$slow_queue, &$progress_events ): array {
+		// A synchronous worker starts only after the durable-phase heartbeat is emitted.
+		if ( 1 === count( $slow_queue ) && 'heartbeat' !== ( $progress_events[1]['event'] ?? '' ) ) {
+			throw new RuntimeException( 'Slow worker started without a heartbeat.' );
+		}
+		return array_shift( $slow_queue );
+	},
+	0,
+	static function ( array $event ) use ( &$progress_events ): void {
+		$progress_events[] = $event;
+	},
+	'wp static-site-importer import --request=\'/tmp/request.json\' --import-id=<import-id>'
+);
+$assert( 'completed' === ( $slow_receipt['status'] ?? '' ) && 2 === ( $slow_receipt['steps'] ?? 0 ), 'slow-work-completes-with-one-terminal-receipt' );
+$assert( 2 === count( $progress_events ), 'slow-work-emits-continuation-and-heartbeat' );
+$assert( 'continuation' === ( $progress_events[0]['event'] ?? '' ) && 'compile_pages' === ( $progress_events[0]['phase'] ?? '' ), 'continuation-projects-durable-phase' );
+$assert( 12 === ( $progress_events[0]['completed_units'] ?? -1 ) && 34 === ( $progress_events[0]['total_units'] ?? -1 ), 'continuation-projects-durable-unit-counts' );
+$assert( 'heartbeat' === ( $progress_events[1]['event'] ?? '' ) && 'run_in_progress' === ( $progress_events[1]['continuation_reason'] ?? '' ), 'slow-work-heartbeat-precedes-next-synchronous-step' );
+$assert( 'wp static-site-importer import --request=\'/tmp/request.json\' --import-id=durable-slow-run' === ( $progress_events[1]['resume_command'] ?? '' ), 'progress-includes-exact-resume-command' );
+
+$interrupted_step = array(
+	'success'             => true,
+	'continuation'        => true,
+	'continuation_reason' => 'deadline_exhausted',
+	'import_id'           => 'durable-interrupted-run',
+	'artifact_run'        => array(
+		'phase'    => 'compile_pages',
+		'progress' => array( 'page_count' => 2, 'receipt_count' => 1 ),
+	),
+);
+$resume_requests = array();
+$resumed = static_site_importer_cli_run_import_host(
+	static_site_importer_cli_apply_import_id( $files_input, (string) $interrupted_step['import_id'] ),
+	static function ( array $request ) use ( &$resume_requests ): array {
+		$resume_requests[] = $request;
+		return array( 'success' => true, 'continuation' => false, 'result' => array( 'theme_slug' => 'resumed-import' ) );
+	}
+);
+$assert( 'compile_pages' === ( $interrupted_step['artifact_run']['phase'] ?? '' ) && 1 === ( $interrupted_step['artifact_run']['progress']['receipt_count'] ?? 0 ), 'interruption-keeps-durable-progress' );
+$assert( array( 'type' => 'files', 'import_id' => 'durable-interrupted-run' ) === ( $resume_requests[0]['source'] ?? null ), 'interruption-resumes-using-existing-durable-import-id' );
+$assert( 'completed' === ( $resumed['status'] ?? '' ) && 1 === ( $resumed['steps'] ?? 0 ), 'interrupted-run-resumes-to-terminal-receipt' );
+
 $lifecycle_requests = array();
 $lifecycle_queue    = array(
 	array(
@@ -368,6 +430,12 @@ $assert( str_contains( $spec['command'], 'static-site-importer import' ) && str_
 $assert( str_contains( $spec['command'], escapeshellarg( '/tmp/ssi-step.json' ) ), 'fresh-runtime-passes-request-file' );
 $assert( ! str_contains( $spec['command'], 'content_base64' ) && ! str_contains( $spec['command'], 'website/index.html' ), 'fresh-runtime-command-has-no-source-payload' );
 
+$resume_command = static_site_importer_cli_import_resume_command(
+	array( 'url' => 'https://example.com/', 'slug' => 'example', 'activate' => true, 'max-steps' => 1 ),
+	'opaque-resume-id'
+);
+$assert( "wp static-site-importer import --url='https://example.com/' --slug='example' --activate --import-id=opaque-resume-id" === $resume_command, 'resume-command-preserves-import-arguments-and-omits-host-controls' );
+
 $decoded = static_site_importer_cli_decode_import_step( "Deprecated: noise\n{\"success\":true,\"continuation\":false}\n" );
 $assert( true === ( $decoded['success'] ?? false ) && empty( $decoded['continuation'] ), 'fresh-process-decoding-selects-final-json-line' );
 $assert( null === static_site_importer_cli_decode_import_step( 'not json' ), 'fresh-process-output-without-json-is-rejected' );
@@ -415,6 +483,15 @@ try {
 $emitted = json_decode( (string) ( WP_CLI::$lines[0] ?? '' ), true );
 $assert( is_array( $emitted ) && 'failed' === ( $emitted['status'] ?? '' ), 'terminal-failure-prints-json-receipt' );
 $assert( ! str_contains( (string) ( WP_CLI::$lines[0] ?? '' ), 'Success:' ), 'terminal-failure-does-not-print-success' );
+
+WP_CLI::$lines = array();
+WP_CLI::$halt  = null;
+static_site_importer_cli_emit_import_progress( $progress_events[0] );
+static_site_importer_cli_emit_import_receipt( $slow_receipt );
+$typed_progress = json_decode( (string) ( WP_CLI::$lines[0] ?? '' ), true );
+$terminal_after_progress = json_decode( (string) ( WP_CLI::$lines[1] ?? '' ), true );
+$assert( 'static-site-importer/import-cli-progress/v1' === ( $typed_progress['schema'] ?? '' ), 'json-consumers-receive-typed-progress-events' );
+$assert( 'static-site-importer/import-cli-receipt/v1' === ( $terminal_after_progress['schema'] ?? '' ), 'json-consumers-receive-one-terminal-receipt-after-progress' );
 
 WP_CLI::$lines = array();
 WP_CLI::$halt  = null;
