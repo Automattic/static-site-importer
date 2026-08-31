@@ -662,9 +662,9 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 	 * @return array<string,mixed>
 	 */
 	function static_site_importer_cli_run_import_host( array $input, ?callable $invoke = null, int $max_steps = 0, ?callable $emit_progress = null, string $resume_command = '' ): array {
-		$invoke    = $invoke ?? 'static_site_importer_cli_import_run_fresh_runtime';
-		$max_steps = min( 1024, max( 1, $max_steps > 0 ? $max_steps : static_site_importer_cli_import_max_steps() ) );
-		$steps     = 0;
+		$invoke     = $invoke ?? 'static_site_importer_cli_import_run_fresh_runtime';
+		$max_steps  = min( 1024, max( 1, $max_steps > 0 ? $max_steps : static_site_importer_cli_import_max_steps() ) );
+		$steps      = 0;
 		$started_at = microtime( true );
 		$previous   = null;
 		while ( $steps < $max_steps ) {
@@ -776,7 +776,7 @@ if ( ! function_exists( 'static_site_importer_cli_import_command' ) ) {
 			static_site_importer_cli_emit_import_step( static_site_importer_cli_import( $input ) );
 			return;
 		}
-		$max_steps = isset( $assoc_args['max-steps'] ) ? (int) $assoc_args['max-steps'] : 0;
+		$max_steps      = isset( $assoc_args['max-steps'] ) ? (int) $assoc_args['max-steps'] : 0;
 		$resume_command = static_site_importer_cli_import_resume_command( $assoc_args, '<import-id>' );
 		static_site_importer_cli_emit_import_receipt(
 			static_site_importer_cli_run_import_host(
