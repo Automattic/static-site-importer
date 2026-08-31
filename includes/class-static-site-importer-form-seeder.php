@@ -459,6 +459,13 @@ class Static_Site_Importer_Form_Seeder {
 			$provider_graph['nodes']    = array_values( array_filter( $provider_graph['nodes'] ?? array(), static fn ( $node ): bool => ! is_array( $node ) || ! isset( $represented[ $node['id'] ?? '' ] ) ) );
 			$provider_graph['variants'] = array_values( array_filter( $provider_graph['variants'] ?? array(), static fn ( $variant ): bool => ! is_array( $variant ) || ! isset( $represented[ $variant['node'] ?? '' ] ) ) );
 		}
+		$native_visibility_targets = array_fill_keys( $topology['native_visibility_targets'], true );
+		foreach ( $provider_graph['nodes'] as &$provider_node ) {
+			if ( is_array( $provider_node ) && isset( $native_visibility_targets[ $provider_node['id'] ?? '' ] ) ) {
+				unset( $provider_node['layout']['display'] );
+			}
+		}
+		unset( $provider_node );
 		$layout_form                                          = $form;
 		$layout_form['layout_graph']                          = $provider_graph;
 		$layout_form['provider_represented_topology_nodes']   = $topology['represented_topology_nodes'];
@@ -612,7 +619,7 @@ class Static_Site_Importer_Form_Seeder {
 	 *
 	 * @param array<int,array<string,mixed>> $field_blocks
 	 * @param array<int,array<string,mixed>> $controls
-	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,responsive_variant_targets:array<int,array<string,mixed>>}|null
+	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>}|null
 	 */
 	private static function topology_inner_blocks( array $form, array $field_blocks, array $controls ): ?array {
 		if ( ! isset( $form['control_topology'] ) ) {
@@ -623,6 +630,7 @@ class Static_Site_Importer_Form_Seeder {
 				'represented_layout_nodes'   => array(),
 				'represented_topology_nodes' => array(),
 				'responsive_variant_targets' => array(),
+				'native_visibility_targets'  => array(),
 			);
 		}
 		$nodes = $form['control_topology']['nodes'] ?? null;
@@ -646,6 +654,7 @@ class Static_Site_Importer_Form_Seeder {
 		$represented_layout_nodes    = array();
 		$represented_topology_nodes = array();
 		$responsive_variant_targets = array();
+		$native_visibility_targets  = array();
 		$layout_by_node           = array();
 		$layout_nodes_by_id       = array();
 		$variants_by_node         = array();
@@ -753,7 +762,7 @@ class Static_Site_Importer_Form_Seeder {
 		};
 		foreach ( $nodes as $node ) {
 			$id = is_array( $node ) && 'control' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
-			if ( '' === $id || array( 'display' => 'none' ) !== ( $layout_by_node[ $id ] ?? array() ) ) {
+			if ( '' === $id || 'none' !== ( $layout_by_node[ $id ]['display'] ?? null ) ) {
 				continue;
 			}
 			$control_index = $node['control'] ?? null;
@@ -794,7 +803,7 @@ class Static_Site_Importer_Form_Seeder {
 				$losses[] = array( 'dimension' => 'topology', 'reason_code' => 'provider_native_control_visibility_unrepresentable', 'node_hash' => hash( 'sha256', $id ) );
 				continue;
 			}
-			$represented_layout_nodes[] = $id;
+			$native_visibility_targets[] = $id;
 			$operations[] = array( 'dimension' => 'layout', 'strategy' => 'provider_native_control_visibility', 'node_hash' => hash( 'sha256', $id ) );
 		}
 		$percentage_width_parents = array();
@@ -967,6 +976,7 @@ class Static_Site_Importer_Form_Seeder {
 			'represented_layout_nodes'   => array_values( array_unique( $represented_layout_nodes ) ),
 			'represented_topology_nodes' => array_values( array_unique( $represented_topology_nodes ) ),
 			'responsive_variant_targets' => $responsive_variant_targets,
+			'native_visibility_targets'  => array_values( array_unique( $native_visibility_targets ) ),
 		);
 	}
 
