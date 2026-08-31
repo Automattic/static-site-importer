@@ -29,6 +29,11 @@ namespace {
 			return json_encode( $value, $flags, $depth );
 		}
 	}
+	if ( ! function_exists( 'wp_strip_all_tags' ) ) {
+		function wp_strip_all_tags( string $text ): string {
+			return strip_tags( $text );
+		}
+	}
 
 	$GLOBALS['ssi_test_hooks'] = array();
 
@@ -542,6 +547,51 @@ namespace {
 	$labelled_root_fieldset_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $labelled_root_fieldset );
 	$labelled_root_fieldset_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $labelled_root_fieldset_validation['forms'] ?? array() ) );
 	$assert( 'error' === ( $labelled_root_fieldset_seed['forms'][0]['status'] ?? '' ) && 'unsupported_semantic_wrapper' === ( $labelled_root_fieldset_seed['forms'][0]['form_receipt_unaccepted_losses'][0]['reason_code'] ?? '' ), 'provider-form-rejects-labelled-root-fieldset-loss', wp_json_encode( array( 'validation' => $labelled_root_fieldset_validation, 'seed' => $labelled_root_fieldset_seed ) ) );
+	$labelled_radio_group = array(
+		'forms' => array(
+			array(
+				'selector' => 'form.wixui-form',
+				'controls' => array(
+					array( 'tag' => 'input', 'type' => 'radio', 'name' => 'comp-kf7in602', 'label' => 'Chakra Healing Session', 'required' => true ),
+					array( 'tag' => 'input', 'type' => 'radio', 'name' => 'comp-kf7in602', 'label' => 'Custom Healing Session' ),
+					array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Submit' ),
+				),
+				'bindings' => array(
+					array(
+						'schema' => 'generic/block-binding/v1', 'source_path' => 'website/cchfeedback/index.html', 'occurrence' => 1, 'role' => 'form',
+						'search_block_markup' => '<form><div id="comp-kf7in602" class="wixui-radio-button-group"><fieldset role="radiogroup" aria-required="true"><legend><div data-testid="groupLabel">What was your treatment?</div></legend><div data-testid="radioGroup"><label><input type="radio" required name="comp-kf7in602" value="Chakra Healing Session"></label><label><input type="radio" name="comp-kf7in602" value="Custom Healing Session"></label></div></fieldset></div></form>',
+					),
+				),
+				'control_topology' => array(
+					'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 16, 'truncated' => false,
+					'nodes' => array(
+						array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'fieldset', 'fieldset_semantics' => 'labelled_group' ),
+						array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'div' ),
+						array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'tag' => 'label' ),
+						array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => 0, 'depth' => 3, 'control' => 0 ),
+						array( 'id' => 'wrapper-3', 'kind' => 'wrapper', 'parent' => 'wrapper-1', 'order' => 1, 'depth' => 2, 'tag' => 'label' ),
+						array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-3', 'order' => 0, 'depth' => 3, 'control' => 1 ),
+						array( 'id' => 'control-2', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 2 ),
+					),
+				),
+			),
+		),
+	);
+	$labelled_radio_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $labelled_radio_group );
+	$labelled_radio_seed       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $labelled_radio_validation['forms'] ?? array() ) );
+	$labelled_radio_row        = $labelled_radio_seed['forms'][0] ?? array();
+	$labelled_radio_markup     = (string) ( $labelled_radio_row['block_markup'] ?? '' );
+	$labelled_radio_receipt    = $labelled_radio_row['computed_layout_receipt'] ?? array();
+	$assert( empty( $labelled_radio_validation['errors'] ) && 'mapped' === ( $labelled_radio_row['status'] ?? '' ) && true === ( $labelled_radio_row['runtime_mapped'] ?? false ) && 1 === ( $labelled_radio_row['field_count'] ?? 0 ), 'labelled-radio-fieldset-materializes-one-runtime-field', wp_json_encode( array( 'validation' => $labelled_radio_validation, 'seed' => $labelled_radio_seed ) ) );
+	$assert( 1 === substr_count( $labelled_radio_markup, '<!-- wp:jetpack/field-radio ' ) && str_contains( $labelled_radio_markup, '<!-- wp:jetpack/label {"label":"What was your treatment?"} /-->' ) && str_contains( $labelled_radio_markup, '"options":["Chakra Healing Session","Custom Healing Session"]' ) && str_contains( $labelled_radio_markup, '"required":true' ), 'labelled-radio-fieldset-serializes-legend-required-state-and-ordered-options', $labelled_radio_markup );
+	$assert( 'provider_radio_fieldset_equivalent' === ( $labelled_radio_receipt['operations'][0]['strategy'] ?? '' ) && 'semantic' === ( $labelled_radio_receipt['operations'][0]['dimension'] ?? '' ) && ! in_array( 'unsupported_semantic_wrapper', array_column( $labelled_radio_receipt['losses'] ?? array(), 'reason_code' ), true ), 'labelled-radio-fieldset-receipt-represents-semantics-without-waiver', wp_json_encode( $labelled_radio_receipt ) );
+	$assert( $labelled_radio_markup === serialize_blocks( parse_blocks( $labelled_radio_markup ) ), 'labelled-radio-fieldset-serialized-block-round-trips-through-wordpress', $labelled_radio_markup );
+	$ambiguous_radio_group = $labelled_radio_group;
+	$ambiguous_radio_group['forms'][0]['controls'][] = array( 'tag' => 'input', 'type' => 'radio', 'name' => 'comp-kf7in602', 'label' => 'No preference' );
+	$ambiguous_radio_group['forms'][0]['control_topology']['nodes'][] = array( 'id' => 'control-3', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 3 );
+	$ambiguous_radio_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $ambiguous_radio_group );
+	$ambiguous_radio_seed       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $ambiguous_radio_validation['forms'] ?? array() ) );
+	$assert( 'error' === ( $ambiguous_radio_seed['forms'][0]['status'] ?? '' ) && 'unsupported_semantic_wrapper' === ( $ambiguous_radio_seed['forms'][0]['form_receipt_unaccepted_losses'][0]['reason_code'] ?? '' ), 'ambiguous-labelled-radio-fieldset-remains-loss-gated', wp_json_encode( $ambiguous_radio_seed ) );
 	$legacy_without_submit = $forms_manifest;
 	array_pop( $legacy_without_submit['forms'][0]['controls'] );
 	$legacy_without_submit_seed = Static_Site_Importer_Form_Seeder::seed( $legacy_without_submit );
