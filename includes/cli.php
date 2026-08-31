@@ -56,12 +56,14 @@ if ( ! function_exists( 'static_site_importer_cli_approved_plan' ) ) {
 }
 
 if ( ! function_exists( 'static_site_importer_cli_direct_artifact_run_policy' ) ) {
-	/** Use the CLI worker runtime for a larger bounded shared-analysis batch. */
+	/** Use fanout only when this CLI runtime can launch receipt workers. */
 	function static_site_importer_cli_direct_artifact_run_policy( array $policy ): array {
-		$policy['compile_batch_pages'] = 20;
-		$policy['compile_workers']     = 4;
-		$policy['compile_shard_pages'] = 4;
-		$policy['compile_fanout']      = 'static_site_importer_cli_compile_artifact_pages_fanout';
+		if ( function_exists( 'proc_open' ) && ! empty( $_SERVER['argv'][0] ) ) {
+			$policy['compile_fanout_pages'] = 20;
+			$policy['compile_workers']      = 4;
+			$policy['compile_shard_pages']  = 4;
+			$policy['compile_fanout']       = 'static_site_importer_cli_compile_artifact_pages_fanout';
+		}
 		return $policy;
 	}
 }

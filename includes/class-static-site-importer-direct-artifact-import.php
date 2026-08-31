@@ -466,7 +466,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			}
 
 			$pending     = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['receipts'] ?? array() ) ) );
-			$batch_limit = null !== $policy['compile_fanout'] ? min( $policy['compile_batch_pages'], $policy['compile_workers'] * $policy['compile_shard_pages'] ) : $policy['compile_batch_pages'];
+			$batch_limit = 'fanout' === $policy['compile_mode']
+				? min( $policy['compile_fanout_pages'], $policy['compile_workers'] * $policy['compile_shard_pages'] )
+				: $policy['compile_in_process_pages'];
 			$batch_ids   = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending, 0, $batch_limit );
 			if ( ! empty( $batch_ids ) ) {
 				$started = microtime( true );
@@ -478,7 +480,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				self::before_phase( 'compile_pages', $run, $batch_ids );
 				$plans  = array();
 				$shards = array_chunk( $batch_ids, $policy['compile_shard_pages'] );
-				$fanout = null !== $policy['compile_fanout'] && 1 < count( $shards ) ? call_user_func( $policy['compile_fanout'], $run['import_id'], $shards ) : null;
+				$fanout = 'fanout' === $policy['compile_mode'] && 1 < count( $shards ) ? call_user_func( $policy['compile_fanout'], $run['import_id'], $shards ) : null;
 				if ( is_wp_error( $fanout ) ) {
 					return self::fail( $workspace, $run, 'compile_pages', $fanout, $batch_ids );
 				}
@@ -1396,7 +1398,8 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 
 	private static function run_policy(): array {
 		$policy = array(
-			'compile_batch_pages'       => 2,
+			'compile_fanout_pages'      => 2,
+			'compile_in_process_pages'  => 1,
 			'compile_workers'           => 1,
 			'compile_shard_pages'       => 2,
 			'compile_fanout'            => null,
@@ -1410,10 +1413,12 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$policy = array_merge( $policy, $filtered );
 			}
 		}
-		$policy['compile_batch_pages']       = min( 20, max( 1, (int) $policy['compile_batch_pages'] ) );
+		$policy['compile_fanout_pages']      = min( 20, max( 1, (int) $policy['compile_fanout_pages'] ) );
+		$policy['compile_in_process_pages']  = min( 4, max( 1, (int) $policy['compile_in_process_pages'] ) );
 		$policy['compile_workers']           = min( 4, max( 1, (int) $policy['compile_workers'] ) );
 		$policy['compile_shard_pages']       = min( 4, max( 1, (int) $policy['compile_shard_pages'] ) );
 		$policy['compile_fanout']            = is_callable( $policy['compile_fanout'] ) ? $policy['compile_fanout'] : null;
+		$policy['compile_mode']              = null === $policy['compile_fanout'] ? 'in_process' : 'fanout';
 		$policy['max_invocation_seconds']    = max( 0.001, (float) $policy['max_invocation_seconds'] );
 		$policy['freeze_continuation_bytes'] = max( 1, (int) $policy['freeze_continuation_bytes'] );
 		$policy['clock']                     = is_callable( $policy['clock'] ) ? $policy['clock'] : static fn (): float => microtime( true );

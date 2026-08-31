@@ -250,7 +250,7 @@ $drive_apply = static function ( array $request, ?callable $invoke = null ): arr
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'][] = static fn ( array $policy ): array => array_merge(
 	$policy,
 	array(
-		'compile_batch_pages' => 1,
+		'compile_in_process_pages' => 1,
 	)
 );
 $GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_checkpoint_read'][] = static function ( string $kind ): void {
@@ -331,10 +331,71 @@ $canonical_compiled = static function ( array $result ) use ( &$canonical_compil
 };
 $assert( $canonical_compiled( $GLOBALS['ssi_direct_compiled_results'][0] ) === $canonical_compiled( $GLOBALS['ssi_direct_compiled_results'][1] ), 'clean and resumed composition must produce identical canonical plans, companion payloads, pages, writes, diagnostics, and reconciliation identities' );
 
+$original_argv_zero = $_SERVER['argv'][0] ?? null;
+unset( $_SERVER['argv'][0] );
+$no_worker_receipt = static_site_importer_cli_run_import_host( $input(), 'static_site_importer_cli_import' );
+if ( null === $original_argv_zero ) {
+	unset( $_SERVER['argv'][0] );
+} else {
+	$_SERVER['argv'][0] = $original_argv_zero;
+}
+$no_worker = $no_worker_receipt['response'] ?? array();
+$no_worker_work = $no_worker['artifact_run']['work'] ?? array();
+$assert( empty( $no_worker['continuation'] ) && 3 === ( $no_worker_work['compile_batches'] ?? 0 ) && array( 1, 1, 1 ) === ( $no_worker_work['page_compile_counts'] ?? null ), 'the canonical CLI path without a process worker must checkpoint each in-process page unit' );
+$assert( $canonical( $terminal ) === $canonical( $no_worker ), 'in-process CLI fallback must preserve terminal response identity' );
+
+$baseline_plan = $drive_apply( $input( 'plan' ) );
+$slow_clock = 0.0;
+$slow_compiler = static function ( object $compiler ) use ( &$slow_clock ): object {
+	return new class( $compiler, $slow_clock ) {
+		private $elapsed;
+
+		public function __construct( private object $compiler, &$elapsed ) {
+			$this->elapsed =& $elapsed;
+		}
+
+		public function compilePreparedPages( array $shared, array $plans, ?object $payload_reader = null ) {
+			$this->elapsed += 11.0 * count( $plans );
+			return $this->compiler->compilePreparedPages( $shared, $plans, $payload_reader );
+		}
+
+		public function __call( string $method, array $arguments ) {
+			return $this->compiler->{$method}( ...$arguments );
+		}
+	};
+};
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_compiler'][] = $slow_compiler;
+
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array(
+	static function ( array $policy ) use ( &$slow_clock ): array {
+		return array_merge(
+			$policy,
+			array(
+				'compile_fanout_pages'     => 20,
+				'compile_in_process_pages' => 1,
+				'max_invocation_seconds'   => 10.0,
+				'clock'                    => static function () use ( &$slow_clock ): float { return $slow_clock; },
+			)
+		);
+	},
+);
+$slow_first = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+$slow_work = $slow_first['artifact_run']['work'] ?? array();
+$assert( 'deadline_exhausted' === ( $slow_first['continuation_reason'] ?? '' ) && 11.0 === $slow_clock && 1 === ( $slow_work['compile_batches'] ?? 0 ) && 1 === ( $slow_first['artifact_run']['progress']['receipt_count'] ?? 0 ), 'a slow no-fanout compiler must checkpoint one bounded unit near the invocation deadline instead of compiling the fanout width' );
+$slow_first_receipt = $slow_first['artifact_run']['receipt_identities'][0] ?? '';
+$slow_terminal = $slow_first;
+$slow_request = $resume( (string) $slow_first['import_id'], 'plan' );
+for ( $attempt = 0; $attempt < 10 && ! empty( $slow_terminal['continuation'] ); ++$attempt ) {
+	$slow_terminal = Static_Site_Importer_Canonical_Import_Service::import( $slow_request );
+}
+$assert( ! empty( $slow_terminal['success'] ) && empty( $slow_terminal['continuation'] ) && in_array( $slow_first_receipt, $slow_terminal['artifact_run']['receipt_identities'] ?? array(), true ) && $canonical_compiled( $baseline_plan['plan'] ) === $canonical_compiled( $slow_terminal['plan'] ), 'slow bounded continuation must preserve its checkpointed receipt and composed plan identities' );
+remove_filter( 'static_site_importer_direct_artifact_compiler', $slow_compiler );
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array();
+
 $successful_fanout_shards = array();
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array(
 	static function ( array $policy ) use ( &$successful_fanout_shards ): array {
-		$policy['compile_batch_pages'] = 4;
+		$policy['compile_fanout_pages'] = 4;
 		$policy['compile_workers']     = 2;
 		$policy['compile_shard_pages'] = 2;
 		$policy['compile_fanout']      = static function ( string $import_id, array $shards ) use ( &$successful_fanout_shards ) {
@@ -378,7 +439,7 @@ $interrupt_worker = static function ( object $compiler ): object {
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_compiler'][] = $interrupt_worker;
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array(
 	static function ( array $policy ) use ( &$fanout_shards ): array {
-		$policy['compile_batch_pages'] = 4;
+		$policy['compile_fanout_pages'] = 4;
 		$policy['compile_workers']     = 2;
 		$policy['compile_shard_pages'] = 2;
 		$policy['compile_fanout']      = static function ( string $import_id, array $shards ) use ( &$fanout_shards ) {
@@ -403,7 +464,7 @@ $fanout_work = $fanout_recovered['artifact_run']['work'] ?? array();
 $assert( ! empty( $fanout_recovered['success'] ) && empty( $fanout_recovered['continuation'] ) && array( 1, 1, 1 ) === ( $fanout_work['page_compile_counts'] ?? null ) && 3 === ( $fanout_work['pages_compiled'] ?? 0 ), 'resume must adopt the page published before an interrupted shard and compile every page exactly once' );
 remove_filter( 'static_site_importer_direct_artifact_compiler', $interrupt_worker );
 
-$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_batch_pages' => 1 ) ) );
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_in_process_pages' => 1 ) ) );
 $lifecycle_preparations_before = $GLOBALS['ssi_direct_lifecycle_preparations'];
 $lifecycle_input = $input();
 $lifecycle_prepared = Static_Site_Importer_Canonical_Import_Service::import( $lifecycle_input );
@@ -421,7 +482,7 @@ $lifecycle_resume['runtime_lifecycle_phase'] = 'resume';
 $lifecycle_resume['runtime_lifecycle_request_id'] = '00000000-0000-4000-8000-000000000827';
 $lifecycle_resume['runtime_lifecycle_checkpoint'] = 'ffffffffffffffffffffffffffffffff';
 $lifecycle_mismatch = Static_Site_Importer_Canonical_Import_Service::import( $lifecycle_resume );
-$assert( 'static_site_importer_direct_artifact_lifecycle_resume_mismatch' === ( $lifecycle_mismatch['error']['code'] ?? '' ) && 2 === $GLOBALS['ssi_direct_mutations'], 'invalid lifecycle transport must fail before consuming the final materialization claim' );
+$assert( 'static_site_importer_direct_artifact_lifecycle_resume_mismatch' === ( $lifecycle_mismatch['error']['code'] ?? '' ) && 3 === $GLOBALS['ssi_direct_mutations'], 'invalid lifecycle transport must fail before consuming the final materialization claim' );
 $lifecycle_resume['runtime_lifecycle_checkpoint'] = '0123456789abcdef0123456789abcdef';
 $lifecycle_terminal = Static_Site_Importer_Canonical_Import_Service::import( $lifecycle_resume );
 $assert( ! empty( $lifecycle_terminal['success'] ) && empty( $lifecycle_terminal['continuation'] ) && 'resume' === ( $GLOBALS['ssi_direct_last_args']['runtime_lifecycle_phase'] ?? '' ) && '0123456789abcdef0123456789abcdef' === ( $GLOBALS['ssi_direct_last_args']['runtime_lifecycle_checkpoint'] ?? '' ), 'the lifecycle checkpoint must resume the compiled direct artifact through exactly one terminal materialization' );
@@ -448,7 +509,7 @@ $GLOBALS['ssi_direct_filters']['static_site_importer_resolve_source_reference'][
 		'provenance' => array( 'owner' => 'server' ),
 	) : $resolved;
 };
-$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_batch_pages' => 1 ) ) );
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_in_process_pages' => 1 ) ) );
 $zip_first = Static_Site_Importer_Canonical_Import_Service::import(
 	array(
 		'operation' => 'plan',
@@ -524,7 +585,7 @@ $first_difference = static function ( $left, $right, string $path = '$' ) use ( 
 $zip_uninterrupted_canonical = $canonical_compiled( $zip_uninterrupted_plan );
 $zip_resumed_canonical = $canonical_compiled( $zip_terminal['plan'] );
 $assert( $zip_uninterrupted_canonical === $zip_resumed_canonical, 'resumed ZIP planning must produce the byte-identical canonical plan from uninterrupted staged compilation outside process observations: ' . $first_difference( $zip_uninterrupted_canonical, $zip_resumed_canonical ) );
-$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_batch_pages' => 20 ) ) );
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_in_process_pages' => 4 ) ) );
 $owned_report_destination = (string) ( $GLOBALS['ssi_direct_last_args']['failed_plan_report_destination'] ?? '' );
 $assert( str_contains( $owned_report_destination, '/static-site-importer/direct-artifact-imports/.ssi-artifact-run-direct-' ) && str_ends_with( $owned_report_destination, '/failed-plan/import-report.json' ) && is_dir( dirname( $owned_report_destination ) ), 'direct Ability runs reserve an importer-owned failed-plan report destination inside the retained workspace' );
 
