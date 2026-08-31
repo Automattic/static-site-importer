@@ -86,10 +86,10 @@ test('accepts a completed v2 materialization receipt identity', () => {
 test('pins an immutable WP Codebox release package, commit, and checksum together', () => {
   const workflow = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion.yml'), 'utf8');
   const caller = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion-pr.yml'), 'utf8');
-  assert.match(workflow, /WP_CODEBOX_VERSION: v0\.26\.2/);
-  assert.match(workflow, /WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0\.26\.2\.tgz/);
-  assert.match(workflow, /WP_CODEBOX_SHA256: a5ae55517b018fc11889226f25201296a1407da649da1c4ec03695b92ade45c6/);
-  assert.match(workflow, /WP_CODEBOX_SHA: d3fac4ad4e4bbf6dd457ea2cd46aeb1a081b217b/);
+  assert.match(workflow, /WP_CODEBOX_VERSION: v0\.26\.3/);
+  assert.match(workflow, /WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0\.26\.3\.tgz/);
+  assert.match(workflow, /WP_CODEBOX_SHA256: 68d69ba0a97f81761c52845b1a9330beba28aa2b57f29013441bb6c40fedebcf/);
+  assert.match(workflow, /WP_CODEBOX_SHA: 619914f3fed52ae84a2589092803cf8007a527b8/);
   assert.match(workflow, /releases\/download\/\$\{WP_CODEBOX_VERSION\}\/\$\{WP_CODEBOX_WORKSPACE_ASSET\}/);
   assert.match(workflow, /sha256sum --check --status/);
   assert.doesNotMatch(workflow, /Checkout WP Codebox candidate|npm pack --pack-destination|wp-codebox-sha:/);

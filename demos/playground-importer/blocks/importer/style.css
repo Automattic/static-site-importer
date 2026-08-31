@@ -1,21 +1,11 @@
 /**
  * Static Site Importer block styles.
  *
- * Theming seam: the block reskins entirely through the `--ssi-importer-*`
- * custom properties declared on `.ssi-importer` below. Every color, radius,
- * spacing, and font decision reads from a token, so a host theme or plugin can
- * restyle the importer to match its own design system by overriding these
- * custom properties on `.ssi-importer` (or any ancestor) — no forced overrides,
- * no forking this stylesheet, no product-specific knowledge in this block.
- *
- * The values declared here are neutral, standalone-friendly defaults. A generic
- * consumer with no host theme still gets a decent-looking importer; a host that
- * sets the tokens gets a native, on-brand importer. See the block theming seam
- * section of the README for the full token contract.
+ * Neutral defaults for the standalone Playground demo.
  */
 
 .ssi-importer {
-	/* ── Theming seam: host-overridable design tokens ──────────────────── */
+	/* Design tokens. */
 
 	/* Surfaces */
 	--ssi-importer-surface: #fff;
@@ -58,7 +48,7 @@
 	--ssi-importer-font: inherit;
 	--ssi-importer-title-size: clamp(30px, 5vw, 56px);
 
-	/* ── Block styles (all read from the tokens above) ─────────────────── */
+	/* Block styles. */
 
 	display: grid;
 	gap: var(--ssi-importer-gap);
@@ -71,10 +61,6 @@
 	color: var(--ssi-importer-fg);
 	box-shadow: var(--ssi-importer-shadow);
 	font-family: var(--ssi-importer-font);
-}
-
-.ssi-importer--editor {
-	display: block;
 }
 
 .ssi-importer__eyebrow,

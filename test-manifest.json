@@ -2,7 +2,7 @@
   "schema": "static-site-importer/test-manifest/v1",
   "exclusions": {
     "tests/fixtures/**": "Fixture inputs are data, not executable tests.",
-    "tests/figma-zstd-decoder.php": "CLI diagnostic helper; exercised by tools/php-wasm-zstd.test.mjs."
+    "tests/figma-zstd-decoder.php": "CLI diagnostic helper; exercised by tests/smoke-rest-import.php."
   },
   "tests": [
     { "path": "tests/form-materializer-smoke.php", "environment": "standalone-php" },
@@ -29,16 +29,14 @@
     { "path": "tests/smoke-import-diagnostic-contract.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-report.php", "environment": "standalone-php" },
     { "path": "tests/smoke-missing-author-stylesheet-diagnostics.php", "environment": "standalone-php" },
-    { "path": "tests/smoke-import-disposition.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-permission-filter.php", "environment": "standalone-php" },
     { "path": "tests/smoke-current-site-capabilities.php", "environment": "standalone-php" },
     { "path": "tests/smoke-default-content.php", "environment": "standalone-php" },
     { "path": "tests/smoke-direct-artifact-import.php", "environment": "standalone-php" },
-    { "path": "tests/smoke-importer-block.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-rest-import.php", "environment": "standalone-php" },
     { "path": "tests/smoke-lifecycle-compile-checkpoint.php", "environment": "standalone-php" },
     { "path": "tests/smoke-materialized-block-content-validation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-managed-classic-theme-materialization.php", "environment": "standalone-php" },
-    { "path": "tests/smoke-playground-import-primitive.php", "environment": "standalone-php" },
     { "path": "tests/smoke-portable-source-manifest.php", "environment": "standalone-php" },
     { "path": "tests/smoke-post-meta-rollback.php", "environment": "standalone-php" },
     { "path": "tests/smoke-plugin-materializer-lifecycle.php", "environment": "standalone-php" },

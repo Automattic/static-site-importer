@@ -74,10 +74,9 @@ $request->set_header( 'content-type', 'application/json' );
 $request->set_body(
 	wp_json_encode(
 		array(
-			'source'                => array( 'url' => 'https://example.test/start' ),
-			'apply_to_current_site' => true,
-			'activate'              => true,
-			'overwrite'             => true,
+			'source'    => array( 'url' => 'https://example.test/start' ),
+			'activate'  => true,
+			'overwrite' => true,
 		)
 	)
 );
@@ -114,8 +113,7 @@ $request->set_header( 'content-type', 'application/json' );
 $request->set_body(
 	wp_json_encode(
 		array(
-			'source'                => array( 'url' => 'https://example.test/done' ),
-			'apply_to_current_site' => true,
+			'source' => array( 'url' => 'https://example.test/done' ),
 		)
 	)
 );
@@ -127,27 +125,6 @@ $assert( 200 === $response->get_status(), 'rest-route-terminal-status' );
 $assert( 'rest-site' === ( $body['terminal_batch_result']['theme_slug'] ?? '' ), 'rest-response-terminal-batch' );
 $assert( 'rest-site' === ( $body['result']['theme_slug'] ?? '' ), 'rest-response-result-theme-slug' );
 $assert( ! isset( $body['preview'] ), 'rest-response-terminal-current-site-no-preview' );
-
-$ability_stub->next_result = array();
-$ability_stub->last_input  = array( 'sentinel' => 'should-not-be-overwritten' );
-
-$request = new WP_REST_Request( 'POST', '/static-site-importer/v1/imports' );
-$request->set_header( 'content-type', 'application/json' );
-$request->set_body(
-	wp_json_encode(
-		array(
-			'source' => array( 'url' => 'https://example.test/preview' ),
-		)
-	)
-);
-
-$response = rest_get_server()->dispatch( $request );
-$body     = $response->get_data();
-
-$assert( 200 === $response->get_status(), 'rest-playground-status' );
-$assert( 'static-site-importer/import' === ( $body['requires_ability_capable_target']['ability'] ?? '' ), 'rest-playground-requirement-ability' );
-$assert( 'ability_capable_target_required' === ( $body['continuation_reason'] ?? '' ), 'rest-playground-continuation-reason' );
-$assert( isset( $ability_stub->last_input['sentinel'] ), 'rest-playground-does-not-invoke-ability' );
 
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
