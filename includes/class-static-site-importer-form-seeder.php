@@ -60,7 +60,59 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		if ( function_exists( 'add_filter' ) ) {
 			add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_provider_wrapper_classes' ) );
+			add_filter( 'render_block_core/button', array( __CLASS__, 'project_provider_submit_presentation' ), 10, 2 );
 		}
+	}
+
+	/** Move source submit presentation from Core's wrapper onto its button control. */
+	public static function project_provider_submit_presentation( string $html, array $block = array() ): string {
+		$class_name = isset( $block['attrs']['className'] ) && is_string( $block['attrs']['className'] ) ? $block['attrs']['className'] : '';
+		if ( ! str_contains( $class_name, 'ssi-source-submit--' ) ) {
+			return $html;
+		}
+		$source_classes = array();
+		$projected      = preg_replace_callback(
+			'/\bclass=(["\'])(.*?)\1/s',
+			static function ( array $matches ) use ( &$source_classes ): string {
+				$classes = preg_split( '/\s+/', trim( $matches[2] ) );
+				$classes = false === $classes ? array() : $classes;
+				$output  = array();
+				foreach ( $classes as $candidate ) {
+					if ( preg_match( '/^ssi-source-submit--([A-Za-z_][A-Za-z0-9_-]{0,79})$/D', $candidate, $marker ) ) {
+						$source_classes[] = $marker[1];
+						continue;
+					}
+					$output[] = $candidate;
+				}
+				return 'class=' . $matches[1] . implode( ' ', $output ) . $matches[1];
+			},
+			$html,
+			1
+		);
+		if ( ! is_string( $projected ) || empty( $source_classes ) ) {
+			return $html;
+		}
+		$source_classes = array_values( array_unique( $source_classes ) );
+		$projected      = preg_replace_callback(
+			'/<button\b([^>]*)>/is',
+			static function ( array $matches ) use ( $source_classes ): string {
+				$attributes = $matches[1];
+				if ( preg_match( '/\bclass=(["\'])(.*?)\1/is', $attributes ) ) {
+					$attributes = preg_replace( '/\bclass=(["\'])(.*?)\1/is', 'class=$1$2 ' . implode( ' ', $source_classes ) . '$1', $attributes, 1 ) ?? $attributes;
+				} else {
+					$attributes .= ' class="' . implode( ' ', $source_classes ) . '"';
+				}
+				if ( preg_match( '/\bstyle=(["\'])(.*?)\1/is', $attributes ) ) {
+					$attributes = preg_replace( '/\bstyle=(["\'])(.*?)\1/is', 'style=$1$2;min-height:0$1', $attributes, 1 ) ?? $attributes;
+				} else {
+					$attributes .= ' style="min-height:0"';
+				}
+				return '<button' . $attributes . '>';
+			},
+			$projected,
+			1
+		);
+		return is_string( $projected ) ? $projected : $html;
 	}
 
 	/** Rebuild source input-only wrapper layers inside Jetpack's field shell. */
@@ -464,6 +516,9 @@ class Static_Site_Importer_Form_Seeder {
 				$text              = self::control_text( $control );
 				$submit_text       = '' !== $text ? $text : $submit_text;
 				$has_source_submit = true;
+				if ( isset( $control['presentation']['style'] ) && is_array( $control['presentation']['style'] ) ) {
+					$submit_presentation['block_attrs']['style'] = $control['presentation']['style'];
+				}
 				if ( empty( $submit_presentation['classes'] ) && isset( $control['class'] ) && is_scalar( $control['class'] ) ) {
 					$submit_classes                 = preg_split( '/\s+/', trim( (string) $control['class'] ) );
 					$submit_presentation['classes'] = false === $submit_classes ? array() : $submit_classes;
@@ -1444,19 +1499,25 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return array<string, mixed>
 	 */
 	private static function submit_button_block( string $text, string $class_name = '', array $presentation = array() ): array {
-		$source_classes = isset( $presentation['classes'] ) && is_array( $presentation['classes'] ) ? implode( ' ', array_filter( $presentation['classes'], 'is_string' ) ) : '';
-		$class_name     = trim( 'form-button-submit is-submit ' . $source_classes . ' ' . $class_name );
+		$source_classes = isset( $presentation['classes'] ) && is_array( $presentation['classes'] ) ? array_filter( $presentation['classes'], 'is_string' ) : array();
+		$source_markers = implode( ' ', array_map( static fn ( string $source_class ): string => 'ssi-source-submit--' . $source_class, $source_classes ) );
+		$block_style    = isset( $presentation['block_attrs']['style'] ) && is_array( $presentation['block_attrs']['style'] ) ? $presentation['block_attrs']['style'] : array();
+		$class_name     = trim( 'form-button-submit is-submit ' . $source_markers . ' ' . ( empty( $block_style ) ? '' : 'ssi-provider-submit-presentation' ) . ' ' . $class_name );
+		$attrs          = array(
+			'tagName'   => 'button',
+			'type'      => 'submit',
+			'lock'      => array(
+				'remove' => true,
+			),
+			'className' => $class_name,
+			'metadata'  => array( 'name' => 'Submit button' ),
+		);
+		if ( ! empty( $block_style ) ) {
+			$attrs['style'] = $block_style;
+		}
 		return array(
 			'name'    => 'core/button',
-			'attrs'   => array(
-				'tagName'   => 'button',
-				'type'      => 'submit',
-				'lock'      => array(
-					'remove' => true,
-				),
-				'className' => $class_name,
-				'metadata'  => array( 'name' => 'Submit button' ),
-			),
+			'attrs'   => $attrs,
 			'content' => '' !== trim( $text ) ? trim( $text ) : 'Submit',
 			'wrapper' => 'submit',
 		);
