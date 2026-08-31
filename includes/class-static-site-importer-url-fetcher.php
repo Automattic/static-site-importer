@@ -10,6 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 require_once __DIR__ . '/class-static-site-importer-url-fetcher-native-handle.php';
+require_once __DIR__ . '/class-static-site-importer-ip-classifier.php';
 
 /**
  * Fetches one public HTML URL into an importer work directory.
@@ -391,8 +392,8 @@ class Static_Site_Importer_URL_Fetcher {
 			return;
 		}
 		if ( $handle instanceof Static_Site_Importer_URL_Fetcher_Native_Handle && null !== $handle->multi && null !== $handle->curl ) {
-			curl_multi_remove_handle( $handle->multi, $handle->curl );
-			curl_multi_close( $handle->multi );
+			curl_multi_remove_handle( $handle->multi, $handle->curl ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_multi_remove_handle -- wp_remote_get() cannot pin a connection to the pre-validated IP, which is the control that keeps this transport inside the public-address boundary.
+			curl_multi_close( $handle->multi ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_multi_close -- wp_remote_get() cannot pin a connection to the pre-validated IP, which is the control that keeps this transport inside the public-address boundary.
 			$handle->curl  = null;
 			$handle->multi = null;
 			return;
@@ -445,8 +446,8 @@ class Static_Site_Importer_URL_Fetcher {
 		$handle->options  = $options;
 		$handle->started  = microtime( true );
 		$handle->ip_index = 0;
-		$handle->multi    = curl_multi_init();
-		$handle->curl     = curl_init();
+		$handle->multi    = curl_multi_init(); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_multi_init -- wp_remote_get() cannot pin a connection to the pre-validated IP, which is the control that keeps this transport inside the public-address boundary.
+		$handle->curl     = curl_init(); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_init -- wp_remote_get() cannot pin a connection to the pre-validated IP, which is the control that keeps this transport inside the public-address boundary.
 		$ip               = $target['ips'][0];
 		$host             = $target['host'];
 		$host_header      = $host . ( ( 'https' === $target['scheme'] ? 443 : 80 ) === $target['port'] ? '' : ':' . $target['port'] );
@@ -492,8 +493,8 @@ class Static_Site_Importer_URL_Fetcher {
 		if ( is_readable( $ca_bundle ) ) {
 			$curl_options[ CURLOPT_CAINFO ] = $ca_bundle;
 		}
-		curl_setopt_array( $handle->curl, $curl_options );
-		curl_multi_add_handle( $handle->multi, $handle->curl );
+		curl_setopt_array( $handle->curl, $curl_options ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt_array -- wp_remote_get() cannot pin a connection to the pre-validated IP, which is the control that keeps this transport inside the public-address boundary.
+		curl_multi_add_handle( $handle->multi, $handle->curl ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_multi_add_handle -- wp_remote_get() cannot pin a connection to the pre-validated IP, which is the control that keeps this transport inside the public-address boundary.
 		return $handle;
 	}
 
@@ -527,6 +528,16 @@ class Static_Site_Importer_URL_Fetcher {
 				return null;
 			}
 			return new WP_Error( $deadline_exhausted ? 'static_site_importer_url_deadline_exhausted' : 'static_site_importer_url_timeout', $deadline_exhausted ? 'The URL request deadline was exhausted.' : 'The URL request timed out.' );
+		}
+		if ( ! $handle->crypto && ! empty( $handle->options['deadline_limited'] ) ) {
+			// No cancellable transport for TLS under a clamped deadline.
+			// stream_socket_enable_crypto cannot be interrupted in PHP.wasm
+			// once entered (run_b303502076684 inv 2 blocked 121s).
+			// See #979 comment 5298861024: readiness polling was disproved.
+			if ( self::native_retry( $handle ) ) {
+				return null;
+			}
+			return new WP_Error( 'static_site_importer_url_deadline_exhausted', 'The URL request deadline was exhausted.' );
 		}
 		if ( ! $handle->crypto ) {
 			$crypto = @stream_socket_enable_crypto( $handle->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- TLS failures are returned as a reason-coded URL error.
@@ -590,13 +601,13 @@ class Static_Site_Importer_URL_Fetcher {
 			return new WP_Error( 'static_site_importer_url_deadline_exhausted', 'The URL request deadline was exhausted.' );
 		}
 		do {
-			$status = curl_multi_exec( $handle->multi, $running );
+			$status = curl_multi_exec( $handle->multi, $running ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_multi_exec -- wp_remote_get() cannot pin a connection to the pre-validated IP, which is the control that keeps this transport inside the public-address boundary.
 		} while ( CURLM_CALL_MULTI_PERFORM === $status );
 		if ( CURLM_OK !== $status ) {
 			self::cancel_transport( null, $handle, 'curl_multi_failed' );
 			return new WP_Error( 'static_site_importer_url_connect_failed', 'Could not progress the URL request.' );
 		}
-		$info = curl_multi_info_read( $handle->multi );
+		$info = curl_multi_info_read( $handle->multi ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_multi_info_read -- wp_remote_get() cannot pin a connection to the pre-validated IP, which is the control that keeps this transport inside the public-address boundary.
 		if ( false === $info ) {
 			return null;
 		}
@@ -606,7 +617,7 @@ class Static_Site_Importer_URL_Fetcher {
 			return new WP_Error( 'static_site_importer_url_too_large', 'The URL response exceeded the maximum allowed size.' );
 		}
 		if ( CURLE_OK !== $result ) {
-			$error              = curl_error( $handle->curl );
+			$error              = curl_error( $handle->curl ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_error -- wp_remote_get() cannot pin a connection to the pre-validated IP, which is the control that keeps this transport inside the public-address boundary.
 			$deadline_exhausted = ! empty( $handle->options['deadline_limited'] );
 			if ( self::native_retry( $handle ) ) {
 				return null;
@@ -742,10 +753,14 @@ class Static_Site_Importer_URL_Fetcher {
 			return $ips;
 		}
 
+		$targets = array();
 		foreach ( $ips as $ip ) {
-			if ( ! self::is_public_ip( $ip ) ) {
+			$canonical = Static_Site_Importer_IP_Classifier::normalize( $ip );
+			if ( null === $canonical || ! Static_Site_Importer_IP_Classifier::is_public( $canonical ) ) {
 				return new WP_Error( 'static_site_importer_url_private_ip', 'The URL resolves to a private, loopback, link-local, or otherwise reserved IP address.' );
 			}
+
+			$targets[] = $canonical;
 		}
 
 		$path = (string) ( $parts['path'] ?? '/' );
@@ -762,7 +777,7 @@ class Static_Site_Importer_URL_Fetcher {
 			'host'   => $host,
 			'port'   => $port,
 			'path'   => $path,
-			'ips'    => array_values( $ips ),
+			'ips'    => array_values( array_unique( $targets ) ),
 		);
 	}
 
@@ -981,16 +996,6 @@ class Static_Site_Importer_URL_Fetcher {
 		}
 
 		return $ips;
-	}
-
-	/**
-	 * Determine whether an IP is public internet routable.
-	 *
-	 * @param string $ip IP address.
-	 * @return bool
-	 */
-	private static function is_public_ip( string $ip ): bool {
-		return (bool) filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE );
 	}
 
 	/**

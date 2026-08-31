@@ -301,7 +301,7 @@ test('matrix evidence requires and summarizes the canonical materialization rece
 
 test('matrix evidence fails closed when the materialization receipt is absent', () => {
   const evidence = collectMatrixEvidence({ import_report: { blocks_engine: { transformer: { package: 'package', version: '1.0.0', reference: 'a'.repeat(40) }, wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2', assets: [] } } } });
-  assert.equal(evidence.readiness, 'legacy_evidence_missing');
+  assert.equal(evidence.readiness, 'runtime_evidence_incomplete');
   assert.ok(evidence.missing.includes('materialization_receipt'));
 });
 
@@ -387,7 +387,7 @@ test('discovers SSI fixtures and writes Blocks Engine site artifacts', () => {
   assert.equal(matrix.count, 1);
   assert.equal(matrix.fixtures[0].id, 'simple-site');
   assert.equal(artifact.schema, 'blocks-engine/php-transformer/site-artifact/v1');
-  // Files are base64-encoded exactly like the product's `import-theme` CLI, so
+  // Files are base64-encoded exactly like the product's canonical import request, so
   // hydrate via `content_base64` to read the payload.
   const indexFile = artifact.files.find((file) => file.path === 'website/index.html');
   assert.ok(indexFile);
@@ -740,7 +740,7 @@ test('gutenberg incompatibility registry artifacts are written with fixture matr
 
 test('matrix artifacts use the product base64 encoding for EVERY payload, including text', () => {
   // Guards the smoke-test-theater regression: the matrix must build artifacts
-  // with the SAME `content_base64` encoding the real SSI `import-theme` CLI
+  // with the SAME `content_base64` encoding the real SSI import command
   // emits (static-site-importer.php base64-encodes every file unconditionally).
   // A plain-`content` text payload here means the gate is exercising a path the
   // product never produces — exactly how an empty-style.css bug stayed green.
@@ -814,6 +814,32 @@ test('fixture matrix run config projects an explicit visual viewport into browse
   assert.deepEqual(input.visualParityViewport, { width: 390, height: 844 });
   assert.equal(fixtureMatrixHomeboySettings(config).SSI_FIXTURE_MATRIX_VISUAL_PARITY_VIEWPORT_WIDTH, '390');
   assert.equal(fixtureMatrixHomeboySettings(config).SSI_FIXTURE_MATRIX_VISUAL_PARITY_VIEWPORT_HEIGHT, '844');
+});
+
+test('configured pixelmatch colour threshold reaches the comparator and the pixel-count gate stays host-side', () => {
+  const config = normalizeFixtureMatrixRunConfig({
+    fixtureRoot: '/tmp/fixtures',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    pixelThreshold: 0,
+    visualParityPixelmatchThreshold: 0.01,
+  });
+
+  // The colour distance must reach the recipe, because `wordpress.visual-compare`
+  // passes its `threshold` option straight into `pixelmatch`. A gate-only
+  // projection leaves the comparator on a value nobody configured (#1404).
+  const input = fixtureMatrixRecipeInput(config);
+  assert.equal(input.visualParityPixelmatchThreshold, 0.01);
+  assert.equal(fixtureMatrixGateConfig(config).visualParity.pixelmatchThreshold, 0.01);
+  assert.equal(fixtureMatrixGateConfig(config).visualParity.threshold, 0);
+
+  const comparison = visualCompareMatrixComparison(visualParityCompareStep({ fixture: { id: 'shop' }, ...input }));
+  assert.equal(comparison.threshold, 0.01, 'the comparator receives the colour distance, not the allowed pixel fraction');
+
+  // The allowed FRACTION of mismatched pixels gates host-side and must never be
+  // sent as the comparator's colour distance: at 0 it demands a bit-exact render.
+  const zeroFraction = visualCompareMatrixComparison(visualParityCompareStep({ fixture: { id: 'shop' }, pixelThreshold: 0 }));
+  assert.equal(zeroFraction.threshold, 0.01);
+  assert.notEqual(zeroFraction.threshold, 0);
 });
 
 test('runtime presentation evidence persists, merges, and reaches the Blocks Engine compilation input in order', () => {
@@ -1609,10 +1635,10 @@ test('fixture matrix labels reports without runtime provenance and materializati
     codeboxOutput: { fixture_id: 'simple-site', status: 'passed', import_report: { blocks_engine: { available: true } } },
   });
 
-  assert.equal(result.fixtures[0].matrix_evidence.readiness, 'legacy_evidence_missing');
+  assert.equal(result.fixtures[0].matrix_evidence.readiness, 'runtime_evidence_incomplete');
   assert.deepEqual(result.fixtures[0].matrix_evidence.missing, ['transformer_package', 'transformer_version', 'transformer_reference', 'wordpress_site_plan', 'materialization_receipt']);
   assert.equal(result.summary.matrix_evidence_readiness.status, 'incomplete');
-  assert.equal(result.summary.matrix_evidence_readiness.counts.legacy_evidence_missing, 1);
+  assert.equal(result.summary.matrix_evidence_readiness.counts.runtime_evidence_incomplete, 1);
 });
 
 test('materialization sidecars retain bounded evidence after oversized import stdout', () => {
@@ -2009,7 +2035,7 @@ test('fixture attribution records missing lineage as a blind spot instead of def
     results: [{
       fixture_id: 'simple-site',
       status: 'failed',
-      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'legacy_evidence_missing', missing: ['transformer_reference', 'wordpress_site_plan', 'materialization_receipt'] },
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'runtime_evidence_incomplete', missing: ['transformer_reference', 'wordpress_site_plan', 'materialization_receipt'] },
       diagnostics: [{ kind: 'visual_parity_mismatch', message: 'Visual mismatch has no lineage.' }],
     }],
   });
@@ -2026,7 +2052,7 @@ test('materialization attribution reports missing transformer provenance as a bo
     results: [{
       fixture_id: 'simple-site',
       status: 'failed',
-      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'legacy_evidence_missing', missing: ['transformer_package', 'transformer_version', 'transformer_reference'] },
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'runtime_evidence_incomplete', missing: ['transformer_package', 'transformer_version', 'transformer_reference'] },
       diagnostics: [{ kind: 'missing_asset', attribution_boundary: 'materialization', candidate_repo: 'static-site-importer', message: 'Materialization omitted a stylesheet.' }],
     }],
   });
@@ -2056,7 +2082,7 @@ test('versioned fixture evidence replaces an unproven caller-supplied owner', ()
     results: [{
       fixture_id: 'simple-site',
       status: 'failed',
-      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'legacy_evidence_missing', missing: ['transformer_reference'] },
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'runtime_evidence_incomplete', missing: ['transformer_reference'] },
       diagnostics: [{ kind: 'layout_shift', candidate_repo: 'blocks-engine', message: 'Strict contract lacks ownership evidence.' }],
     }],
   });
@@ -3630,6 +3656,36 @@ test('materializes generated artifact roots into matrix-compatible fixtures', ()
   assert.equal(betaArtifact.files.some((file) => file.path.includes('generated-artifact-metadata')), false);
 });
 
+test('keeps a generated multi-page website as one matrix fixture', async () => {
+  const sourceRoot = mkdtempSync(path.join(tmpdir(), 'ssi-generated-multi-page-artifact-'));
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-generated-multi-page-output-'));
+  mkdirSync(path.join(sourceRoot, 'site'), { recursive: true });
+  writeFileSync(path.join(sourceRoot, 'site', 'artifact.json'), JSON.stringify({
+    schema: 'blocks-engine/php-transformer/site-artifact/v1',
+    metadata: { site: 'Multi Page' },
+    files: [
+      { path: 'website/index.html', content: '<link rel="icon" href="/external/favicon.ico"><h1>Home</h1>' },
+      { path: 'website/anchor/index.html', content: '<link rel="icon" href="/external/favicon.ico"><h1>Anchor</h1>' },
+      { path: 'website/external/favicon.ico', content_base64: Buffer.from('icon').toString('base64') },
+    ],
+  }));
+
+  const { summary } = await runFixtureMatrix({
+    artifactRoot: sourceRoot,
+    outputDirectory,
+    staticSiteImporterPath: packageRoot,
+    run: false,
+  });
+  const matrix = JSON.parse(readFileSync(path.join(outputDirectory, 'matrix.json'), 'utf8'));
+  const artifact = JSON.parse(readFileSync(path.join(outputDirectory, 'multi-page', 'artifact.json'), 'utf8'));
+
+  assert.equal(summary.fixture_count, 1);
+  assert.deepEqual(matrix.fixtures.map((fixture) => fixture.id), ['multi-page']);
+  assert.equal(artifact.summary.file_count, 3);
+  assert.equal(artifact.files.some((file) => file.path === 'website/anchor/index.html'), true);
+  assert.equal(artifact.files.some((file) => file.path === 'website/external/favicon.ico'), true);
+});
+
 test('resolves Blocks Engine PHP transformer override paths', () => {
   const repoRoot = mkdtempSync(path.join(tmpdir(), 'blocks-engine-'));
   const transformerPackageRoot = path.join(repoRoot, 'php-transformer');
@@ -4512,12 +4568,6 @@ test('fixture matrix records generic child command failures for failed WP Codebo
 function wpCodeboxBin() { return '/tmp/wp-codebox'; }
 function wpCodeboxCommand(bin) { return { command: bin, args: [] }; }
 async function runWpCodeboxRecipe(options) {
-  const recipe = require('node:fs').readFileSync(options.recipeFile, 'utf8');
-  if (recipe.includes('plan-artifact-dependencies')) {
-    require('node:fs').mkdirSync(options.artifactsDir, { recursive: true });
-    require('node:fs').writeFileSync(require('node:path').join(options.artifactsDir, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
-    return { exitCode: 0, outputFile: options.outputFile, json: {} };
-  }
   if (options.cwd !== require('node:path').dirname(options.outputFile)) {
     throw new Error('recipe-run did not receive the matrix output directory as cwd');
   }
@@ -4638,14 +4688,6 @@ import { join } from 'node:path';
 const outputIndex = process.argv.indexOf('--output');
 const outputFile = outputIndex >= 0 ? process.argv[outputIndex + 1] : '';
 const fixtureId = process.env.SSI_TEST_FAKE_WP_CODEBOX_FIXTURE_ID || 'large-output-fixture';
-const recipeFile = process.argv[process.argv.indexOf('--recipe') + 1];
-if (readFileSync(recipeFile, 'utf8').includes('plan-artifact-dependencies')) {
-  const artifacts = process.argv[process.argv.indexOf('--artifacts') + 1];
-  mkdirSync(artifacts, { recursive: true });
-  writeFileSync(join(artifacts, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
-  if (outputFile) writeFileSync(outputFile, '{}');
-  process.exit(0);
-}
 if (outputFile) {
   writeFileSync(outputFile, JSON.stringify({ cwd: process.cwd(), results: [{ fixture_id: fixtureId, status: 'succeeded' }] }));
 }
@@ -5375,29 +5417,6 @@ async function runWpCodeboxRecipe(options = {}) {
     captured.push(JSON.parse(recipe));
     fs.writeFileSync(capturedRecipes, JSON.stringify(captured));
   }
-  if (recipe.includes('plan-artifact-dependencies')) {
-    // Parse batch number from the discovery artifacts path (e.g. .../discovery/001-fixture-01/).
-    const discoveryMatch = String(options.recipeFile).match(/discovery\\/(\\d{3})/);
-    const discoveryBatch = discoveryMatch ? Number(discoveryMatch[1]) : 0;
-    inFlight += 1;
-    peakInFlight = Math.max(peakInFlight, inFlight);
-    recordPeak();
-    const unit = Number(process.env.SSI_TEST_RECIPE_UNIT_MS || '15');
-    const delay = discoveryBatch * unit;
-    await new Promise((resolve) => setTimeout(resolve, Math.max(1, delay)));
-    inFlight -= 1;
-    const throwDiscoveryBatch = Number(process.env.SSI_TEST_RECIPE_DISCOVERY_THROW_BATCH || '0');
-    if (throwDiscoveryBatch && throwDiscoveryBatch === discoveryBatch) {
-      const error = new Error('discovery failed for batch ' + discoveryBatch);
-      error.code = 19;
-      error.stdout = '';
-      error.stderr = 'discovery boom';
-      throw error;
-    }
-    fs.mkdirSync(options.artifactsDir, { recursive: true });
-    fs.writeFileSync(require('node:path').join(options.artifactsDir, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
-    return { exitCode: 0, outputFile: options.outputFile, json: {} };
-  }
   const batchNumber = batchNumberFromOutput(options.outputFile);
   inFlight += 1;
   peakInFlight = Math.max(peakInFlight, inFlight);
@@ -5461,7 +5480,6 @@ const CONCURRENCY_ENV_KEYS = [
   'SSI_TEST_RECIPE_BATCH_COUNT',
   'SSI_TEST_RECIPE_UNIT_MS',
   'SSI_TEST_RECIPE_THROW_BATCH',
-  'SSI_TEST_RECIPE_DISCOVERY_THROW_BATCH',
   'SSI_TEST_RECIPE_CAPTURE_FILE',
 ];
 
@@ -5516,7 +5534,7 @@ test('runFixtureMatrix caps WP Codebox batches in flight at the configured concu
   }
 });
 
-test('runFixtureMatrix uses the same candidate transformer overlay for dependency discovery and final import', async () => {
+test('runFixtureMatrix uses the candidate transformer overlay for planning and import in one recipe', async () => {
   const snapshot = snapshotConcurrencyEnv();
   const workspace = setupConcurrencyWorkspace('ssi-discovery-overlay-', 1);
   const transformerPath = path.join(workspace.root, 'blocks-engine', 'php-transformer');
@@ -5543,7 +5561,8 @@ test('runFixtureMatrix uses the same candidate transformer overlay for dependenc
 
     assert.equal(runtimeError, null);
     const recipes = JSON.parse(readFileSync(captureFile, 'utf8'));
-    const discoveryRecipe = recipes.find((recipe) => recipe.workflow.steps.some((step) => step.args?.some((arg) => arg.includes('plan-artifact-dependencies'))));
+    assert.equal(recipes.length, 1, 'planning and import execute in one WP Codebox runtime');
+    const combinedRecipe = recipes[0];
     const importRecipe = JSON.parse(readFileSync(summary.runtime.batches[0].recipe_file, 'utf8'));
     const expectedOverlay = {
       kind: 'composer-package',
@@ -5553,7 +5572,9 @@ test('runFixtureMatrix uses the same candidate transformer overlay for dependenc
       reference,
     };
 
-    assert.deepEqual(discoveryRecipe.inputs.dependency_overlays, [expectedOverlay]);
+    assert.ok(combinedRecipe.workflow.steps.some((step) => step.args?.some((arg) => arg.includes('plan-artifact-dependencies'))));
+    assert.ok(combinedRecipe.workflow.steps.some((step) => step.metadata?.phase === 'import'));
+    assert.deepEqual(combinedRecipe.inputs.dependency_overlays, [expectedOverlay]);
     assert.deepEqual(importRecipe.inputs.dependency_overlays, [expectedOverlay]);
   } finally {
     restoreConcurrencyEnv(snapshot);
@@ -5652,49 +5673,6 @@ test('runFixtureMatrix isolates a throwing batch so sibling batches still comple
   }
 });
 
-test('runFixtureMatrix isolates a dependency-discovery failure so sibling batches still complete', async () => {
-  const snapshot = snapshotConcurrencyEnv();
-  const workspace = setupConcurrencyWorkspace('ssi-discovery-isolation-', 4);
-  process.env.HOMEBOY_WP_CODEBOX_RECIPE_HELPER = workspace.helperPath;
-  process.env.SSI_TEST_RECIPE_BATCH_COUNT = '4';
-  process.env.SSI_TEST_RECIPE_UNIT_MS = '5';
-  process.env.SSI_TEST_RECIPE_DISCOVERY_THROW_BATCH = '2';
-
-  try {
-    const { summary, runtimeError } = await runFixtureMatrix({
-      id: 'discovery-isolation-matrix',
-      fixtureRoot: workspace.fixtureRoot,
-      outputDirectory: workspace.outputDirectory,
-      staticSiteImporterPath: workspace.staticSiteImporter,
-      run: true,
-      batchSize: 1,
-      concurrency: 4,
-      visualParity: false,
-    });
-
-    // The discovery failure surfaces as the runtime error + exit code, but the
-    // run still produced a full summary rather than rejecting.
-    assert.ok(runtimeError);
-    assert.match(runtimeError.message, /discovery failed/);
-    assert.equal(summary.runtime.exit_code, 19);
-
-    // Exactly one child-command failure with the correct stage.
-    const failures = summary.runtime.child_command_failures;
-    assert.equal(failures.length, 1);
-    assert.equal(failures[0].batch_id, 'batch-002');
-    assert.equal(failures[0].failure_stage, 'dependency_discovery');
-    assert.equal(failures[0].exit_status, 19);
-
-    // All four batches still ran; the three non-throwing siblings succeeded,
-    // proving one batch's discovery failure did not sink the others.
-    assert.equal(summary.runtime.batches.length, 4);
-    assert.equal(summary.result_summary.succeeded, 3);
-    assert.equal(summary.result_summary.failed, 1);
-  } finally {
-    restoreConcurrencyEnv(snapshot);
-  }
-});
-
 test('runFixtureMatrix recovers healthy fixtures from a poisoned batch sandbox', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-recovery-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
@@ -5715,12 +5693,6 @@ function fixtureIds(recipeFile) {
 function wpCodeboxBin() { return '/tmp/wp-codebox'; }
 function wpCodeboxCommand(bin) { return { command: bin, args: [] }; }
 async function runWpCodeboxRecipe(options) {
-  const recipe = fs.readFileSync(options.recipeFile, 'utf8');
-  if (recipe.includes('plan-artifact-dependencies')) {
-    fs.mkdirSync(options.artifactsDir, { recursive: true });
-    fs.writeFileSync(require('node:path').join(options.artifactsDir, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
-    return { exitCode: 0, outputFile: options.outputFile, json: {} };
-  }
   const ids = fixtureIds(options.recipeFile);
   if (ids.includes('hanging')) {
     const error = new Error('fixture hanging exceeded its deadline');
@@ -5775,14 +5747,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const recipePath = process.argv[process.argv.indexOf('--recipe') + 1];
 const recipe = fs.readFileSync(recipePath, 'utf8');
-if (recipe.includes('plan-artifact-dependencies')) {
-  const artifacts = process.argv[process.argv.indexOf('--artifacts') + 1];
-  const output = process.argv[process.argv.indexOf('--output') + 1];
-  fs.mkdirSync(artifacts, { recursive: true });
-  fs.writeFileSync(path.join(artifacts, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
-  fs.writeFileSync(output, '{}');
-  process.exit(0);
-}
 const recovery = path.basename(recipePath).match(/-recovery-(.+)\\.json$/);
 const ids = recovery ? [recovery[1]] : [...new Set(recipe.split('--slug=').slice(1).map((part) => part.split(' ')[0]))];
 if (ids.includes('hanging')) {
@@ -7064,6 +7028,7 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
     artifactsDirectory: '/tmp/artifacts',
     staticSiteImporterPath: '/tmp/static-site-importer',
     pixelThreshold: 0.05,
+    visualParityPixelmatchThreshold: 0.05,
   });
 
   // Resolve semantic phases so transport steps can be inserted without weakening the ordering contract.
@@ -7086,7 +7051,7 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
   });
   const defaultThresholdVisualStep = defaultThresholdRecipe.workflow.steps.find((step) => step.command === 'wordpress.visual-compare');
   assert.equal(defaultThresholdVisualStep.command, 'wordpress.visual-compare');
-  assert.equal(visualCompareMatrixComparison(defaultThresholdVisualStep).threshold, 0, 'visual parity defaults to exact pixel parity');
+  assert.equal(visualCompareMatrixComparison(defaultThresholdVisualStep).threshold, 0.01, 'visual parity defaults to a sub-perceptual colour distance, not a bit-exact render');
 
   const disabled = buildFixtureMatrixRecipe({
     matrix,
@@ -7100,7 +7065,7 @@ test('recipe runs a wordpress.visual-compare visual-parity step after each impor
 test('visualParityCompareStep composes the existing wordpress.visual-compare command with per-fixture overrides', () => {
   const step = visualParityCompareStep({
     fixture: { id: 'shop', source_url: 'http://127.0.0.1:4173/shop/index.html', candidate_url: '/?p=42' },
-    pixelThreshold: 0.2,
+    visualParityPixelmatchThreshold: 0.2,
   });
   assert.equal(step.command, 'wordpress.visual-compare');
   assert.equal(step.allowFailure, true);
@@ -7137,7 +7102,7 @@ test('visual attribution options normalize positive limits and targeted selector
 
 test('visual parity defaults require the candidate font readiness record', () => {
   const step = visualParityCompareStep({ fixture: { id: 'shop' } });
-  assert.equal(step.args[0], 'matrix-json={"comparisons":[{"name":"shop","sourceUrl":"/wp-content/uploads/static-site-importer-fixture-matrix/shop/source/index.html","candidateUrl":"/","sourceLabel":"shop-source","candidateLabel":"shop-candidate","viewport":"1280x1600","fullPage":true,"waitFor":"duration","durationMs":"4000ms","blockExternalRequests":true,"candidateRequiredReadinessRecord":"#static-site-importer-font-readiness","threshold":0}]}');
+  assert.equal(step.args[0], 'matrix-json={"comparisons":[{"name":"shop","sourceUrl":"/wp-content/uploads/static-site-importer-fixture-matrix/shop/source/index.html","candidateUrl":"/","sourceLabel":"shop-source","candidateLabel":"shop-candidate","viewport":"1280x1600","fullPage":true,"waitFor":"duration","durationMs":"4000ms","blockExternalRequests":true,"candidateRequiredReadinessRecord":"#static-site-importer-font-readiness","threshold":0.01}]}');
 });
 
 test('visual attribution options reach every fixture matrix comparison', () => {
@@ -7331,6 +7296,38 @@ test('stageFixtureSource copies the normalized fixture source into the served so
   assert.equal(written.metadata.source_staging.status, 'staged');
   assert.ok(written.metadata.artifact_bytes.staged_source > 0);
   assert.ok(Number.isFinite(written.metadata.performance.artifact_writing_ms));
+});
+
+test('staged visual source rebases site-root assets without changing the import artifact', () => {
+  const fixtureDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-root-relative-source-'));
+  const sourceDirectory = path.join(fixtureDirectory, 'fixture');
+  mkdirSync(path.join(sourceDirectory, 'nested'), { recursive: true });
+  mkdirSync(path.join(sourceDirectory, 'assets', 'css'), { recursive: true });
+  writeFileSync(path.join(sourceDirectory, 'index.html'), '<link rel="stylesheet" href="/assets/css/site.css"><style>@font-face{src:url("/fonts/example.woff2")}</style><img src="/media/hero.jpg" srcset="/media/hero.jpg 1x, /media/hero@2x.jpg 2x" style="background:url(\'/media/hero.jpg\')"><a href="//external.test/page">External</a>');
+  writeFileSync(path.join(sourceDirectory, 'nested', 'index.html'), '<script src="/assets/app.js"></script><style>.hero{background:url(/media/hero.jpg)}</style><a href="#section">Section</a>');
+  writeFileSync(path.join(sourceDirectory, 'assets', 'css', 'site.css'), '@import "/assets/css/base.css"; .hero{background:url(\'/media/hero.jpg?size=large#crop\')} .icon{background:url(data:image/png;base64,AA)}');
+
+  const fixture = { id: 'Root Relative', directory: sourceDirectory };
+  const artifact = buildFixtureArtifact(fixture);
+  const artifactHtml = Buffer.from(artifact.files.find((file) => file.path === 'website/index.html').content_base64, 'base64').toString('utf8');
+  assert.match(artifactHtml, /href="\/assets\/css\/site\.css"/);
+
+  stageFixtureSource(fixture, fixtureDirectory);
+  const rootHtml = readFileSync(path.join(fixtureDirectory, 'source', 'index.html'), 'utf8');
+  const nestedHtml = readFileSync(path.join(fixtureDirectory, 'source', 'nested', 'index.html'), 'utf8');
+  const css = readFileSync(path.join(fixtureDirectory, 'source', 'assets', 'css', 'site.css'), 'utf8');
+  assert.match(rootHtml, /href="\.\/assets\/css\/site\.css"/);
+  assert.match(rootHtml, /src="\.\/media\/hero\.jpg"/);
+  assert.match(rootHtml, /srcset="\.\/media\/hero\.jpg 1x, \.\/media\/hero@2x\.jpg 2x"/);
+  assert.match(rootHtml, /url\("\.\/fonts\/example\.woff2"\)/);
+  assert.match(rootHtml, /style="background:url\('\.\/media\/hero\.jpg'\)"/);
+  assert.match(rootHtml, /href="\/\/external\.test\/page"/);
+  assert.match(nestedHtml, /src="\.\.\/assets\/app\.js"/);
+  assert.match(nestedHtml, /url\(\.\.\/media\/hero\.jpg\)/);
+  assert.match(nestedHtml, /href="#section"/);
+  assert.match(css, /@import "\.\.\/\.\.\/assets\/css\/base\.css"/);
+  assert.match(css, /url\('\.\.\/\.\.\/media\/hero\.jpg\?size=large#crop'\)/);
+  assert.match(css, /url\(data:image\/png;base64,AA\)/);
 });
 
 test('platform attribution is excluded from both import artifacts and visual baselines', () => {

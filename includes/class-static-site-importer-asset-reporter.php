@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Import_Report' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-import-report.php';
+}
+
 /**
  * Initializes asset-map and local asset policy report fields.
  */
@@ -16,11 +20,11 @@ class Static_Site_Importer_Asset_Reporter {
 	/**
 	 * Initialize report fields for the caller-supplied local asset policy.
 	 *
-	 * @param array<string,mixed> $report Conversion report envelope, passed by reference.
+	 * @param Static_Site_Importer_Import_Report $report Conversion report envelope.
 	 * @param array<string,mixed> $args   Import args.
 	 * @return string|WP_Error Normalized local asset materialization policy, or error.
 	 */
-	public static function initialize_report( array &$report, array $args ) {
+	public static function initialize_report( Static_Site_Importer_Import_Report $report, array $args ) {
 		$asset_policy = self::normalize_asset_materialization_policy( $args['asset_materialization_policy'] ?? '' );
 		if ( is_wp_error( $asset_policy ) ) {
 			return $asset_policy;
@@ -28,10 +32,20 @@ class Static_Site_Importer_Asset_Reporter {
 
 		$asset_map = self::normalize_asset_map( isset( $args['asset_map'] ) && is_array( $args['asset_map'] ) ? $args['asset_map'] : array() );
 
-		$report['assets']['policy']         = 'theme';
-		$report['assets']['local_policy']   = $asset_policy;
-		$report['asset_map']['supplied']    = ! empty( $asset_map );
-		$report['asset_map']['entry_count'] = count( $asset_map );
+		$report->merge_section(
+			'assets',
+			array(
+				'policy'       => 'theme',
+				'local_policy' => $asset_policy,
+			)
+		);
+		$report->merge_section(
+			'asset_map',
+			array(
+				'supplied'    => ! empty( $asset_map ),
+				'entry_count' => count( $asset_map ),
+			)
+		);
 
 		return $asset_policy;
 	}

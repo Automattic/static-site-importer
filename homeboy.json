@@ -21,6 +21,10 @@
         "bench_env": {
           "STATIC_SITE_IMPORTER_CODEBOX_BROWSER_EVIDENCE": "runtime-post-step"
         },
+        "package_profile": {
+          "manifest": "runtime-package-manifest.json",
+          "profile": "website-artifact-import"
+        },
         "validation_dependencies": [],
         "wordpress_runtime_post_steps": [
           {
@@ -39,6 +43,20 @@
   },
   "id": "static-site-importer",
   "remote_path": "wp-content/plugins/static-site-importer",
+  "scopes": {
+    "release": {
+      "include": [],
+      "exclude": [
+        "bench/",
+        "homeboy-test-manifest.json",
+        "lib/",
+        "registry/",
+        "rigs/",
+        "test-manifest.json",
+        "tools/"
+      ]
+    }
+  },
   "version_targets": [
     {
       "file": "static-site-importer.php",

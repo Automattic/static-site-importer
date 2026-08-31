@@ -158,12 +158,12 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 		return hash( 'sha256', false === $json ? '' : $json );
 	}
 
-	/** @param array<string,mixed> $resource */
-	private function materializable_resource( array $resource ): bool {
-		if ( ! self::structurally_materializable( $resource ) ) {
+	/** @param array<string,mixed> $entry */
+	private function materializable_resource( array $entry ): bool {
+		if ( ! self::structurally_materializable( $entry ) ) {
 			return false;
 		}
-		$reference = $resource['payload_reference'] ?? null;
+		$reference = $entry['payload_reference'] ?? null;
 		if ( ! is_array( $reference ) ) {
 			return true;
 		}
@@ -173,14 +173,14 @@ final class Static_Site_Importer_Shared_Resource_Plan {
 			&& hash_equals( $reference['sha256'], hash( 'sha256', $bytes ) );
 	}
 
-	/** @param array<string,mixed> $resource */
-	private static function structurally_materializable( array $resource ): bool {
-		if ( '' === self::canonical_url( (string) ( $resource['source_url'] ?? '' ) ) || ! Static_Site_Importer_Content_Policy::is_static_path( (string) ( $resource['path'] ?? '' ) ) ) {
+	/** @param array<string,mixed> $entry */
+	private static function structurally_materializable( array $entry ): bool {
+		if ( '' === self::canonical_url( (string) ( $entry['source_url'] ?? '' ) ) || ! Static_Site_Importer_Content_Policy::is_static_path( (string) ( $entry['path'] ?? '' ) ) ) {
 			return false;
 		}
-		$has_content = isset( $resource['content'] ) && is_string( $resource['content'] );
-		$has_base64  = isset( $resource['content_base64'] ) && is_string( $resource['content_base64'] ) && false !== base64_decode( $resource['content_base64'], true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Validates retained binary payload bytes.
-		$reference   = $resource['payload_reference'] ?? null;
+		$has_content = isset( $entry['content'] ) && is_string( $entry['content'] );
+		$has_base64  = isset( $entry['content_base64'] ) && is_string( $entry['content_base64'] ) && false !== base64_decode( $entry['content_base64'], true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Validates retained binary payload bytes.
+		$reference   = $entry['payload_reference'] ?? null;
 		$has_ref     = is_array( $reference )
 			&& 'blocks-engine/payload-reference/v1' === ( $reference['schema'] ?? null )
 			&& is_string( $reference['id'] ?? null ) && '' !== $reference['id']

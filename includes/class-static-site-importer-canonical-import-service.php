@@ -12,6 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Direct_Artifact_Import' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-direct-artifact-import.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Portable_Source_Manifest' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-portable-source-manifest.php';
+}
 
 class Static_Site_Importer_Canonical_Import_Service {
 	private static string $cli_report_destination = '';
@@ -49,7 +52,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 		if ( ! in_array( $type, array( 'html', 'files', 'zip', 'url' ), true ) ) {
 			return self::error( 'static_site_importer_invalid_import_source', 'source.type must be html, files, zip, or url.' );
 		}
-		if ( self::direct_artifact_continuation_available() && in_array( $type, array( 'html', 'files' ), true ) && '' !== (string) ( $source['import_id'] ?? '' ) ) {
+		if ( self::direct_artifact_continuation_available() && in_array( $type, array( 'html', 'files', 'zip' ), true ) && '' !== (string) ( $source['import_id'] ?? '' ) ) {
 			$args   = self::direct_artifact_args( $input );
 			$result = Static_Site_Importer_Direct_Artifact_Import::resume( (string) $source['import_id'], $args, $type, $operation, $source );
 			return is_wp_error( $result ) ? self::error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() ) : $result;
@@ -71,6 +74,9 @@ class Static_Site_Importer_Canonical_Import_Service {
 			}
 			$source     = array_merge( $source, $resolved_source, array( 'type' => $type ) );
 			$provenance = array_merge( $provenance, array( 'ref' => $reference ), isset( $resolved['provenance'] ) && is_array( $resolved['provenance'] ) ? $resolved['provenance'] : array() );
+			if ( isset( $resolved['payload_reader'] ) && is_object( $resolved['payload_reader'] ) ) {
+				$payload_reader = $resolved['payload_reader'];
+			}
 		}
 		if ( 'url' === $type ) {
 			if ( 'apply' === $operation ) {
@@ -92,11 +98,9 @@ class Static_Site_Importer_Canonical_Import_Service {
 			if ( is_wp_error( $runtime_source['files'] ) ) {
 				return self::error( (string) $runtime_source['files']->get_error_code(), $runtime_source['files']->get_error_message(), $runtime_source['files']->get_error_data() );
 			}
-			if ( 'apply' === $operation ) {
-				$payload_reader = static_site_importer_staged_archive_payload_reader( $source['zip'] );
-				if ( is_wp_error( $payload_reader ) ) {
-					return self::error( (string) $payload_reader->get_error_code(), $payload_reader->get_error_message(), $payload_reader->get_error_data() );
-				}
+			$payload_reader = static_site_importer_staged_archive_payload_reader( $source['zip'] );
+			if ( is_wp_error( $payload_reader ) ) {
+				return self::error( (string) $payload_reader->get_error_code(), $payload_reader->get_error_message(), $payload_reader->get_error_data() );
 			}
 		} else {
 			$runtime_source['archive'] = isset( $source['zip'] ) && is_array( $source['zip'] ) ? $source['zip'] : array();
@@ -108,7 +112,10 @@ class Static_Site_Importer_Canonical_Import_Service {
 		if ( is_wp_error( $runtime ) ) {
 			return self::error( (string) $runtime->get_error_code(), $runtime->get_error_message(), $runtime->get_error_data() );
 		}
-		$artifact = $runtime['artifact'];
+		$artifact = Static_Site_Importer_Portable_Source_Manifest::project( $runtime['artifact'] );
+		if ( is_wp_error( $artifact ) ) {
+			return self::error( (string) $artifact->get_error_code(), $artifact->get_error_message(), $artifact->get_error_data() );
+		}
 		if ( empty( $artifact ) ) {
 			return self::error( 'static_site_importer_missing_website_artifact', 'The source did not normalize to a website artifact.' );
 		}
@@ -123,8 +130,8 @@ class Static_Site_Importer_Canonical_Import_Service {
 		if ( isset( $payload_reader ) ) {
 			$args['_static_site_importer_payload_reader'] = $payload_reader;
 		}
-		if ( self::direct_artifact_continuation_available() && in_array( $type, array( 'html', 'files' ), true ) && 'resume' !== $args['runtime_lifecycle_phase'] && self::artifact_html_page_count( $artifact ) > 1 ) {
-			$result = Static_Site_Importer_Direct_Artifact_Import::start( $artifact, $args, $type, $operation, $provenance );
+		if ( self::direct_artifact_continuation_available() && in_array( $type, array( 'html', 'files', 'zip' ), true ) && 'resume' !== $args['runtime_lifecycle_phase'] && self::artifact_html_page_count( $artifact ) > 1 ) {
+			$result = Static_Site_Importer_Direct_Artifact_Import::start( $artifact, $args, $type, $operation, $provenance, $payload_reader ?? null );
 			return is_wp_error( $result ) ? self::error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() ) : $result;
 		}
 		if ( 'plan' === $operation ) {

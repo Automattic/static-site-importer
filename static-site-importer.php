@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Static Site Importer
  * Description: Materialize compiled website artifacts into WordPress block and classic themes.
- * Version: 1.7.0
+ * Version: 1.8.5
  * Author: Chris Huber
  * Requires at least: 6.9
  * Requires PHP: 8.2
@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 define( 'STATIC_SITE_IMPORTER_PATH', plugin_dir_path( __FILE__ ) );
 define( 'STATIC_SITE_IMPORTER_URL', plugin_dir_url( __FILE__ ) );
-define( 'STATIC_SITE_IMPORTER_VERSION', '1.7.0' );
+define( 'STATIC_SITE_IMPORTER_VERSION', '1.8.5' );
 
 $static_site_importer_autoload = STATIC_SITE_IMPORTER_PATH . 'vendor/autoload.php';
 if ( is_readable( $static_site_importer_autoload ) ) {
@@ -53,16 +53,20 @@ Static_Site_Importer_Lifecycle_Compile_Checkpoint::register_cleanup();
 register_deactivation_hook( __FILE__, array( Static_Site_Importer_Lifecycle_Compile_Checkpoint::class, 'unschedule_cleanup' ) );
 
 $static_site_importer_includes = array(
+	'class-static-site-importer-build-provenance.php',
 	'class-static-site-importer-site-identity.php',
 	'class-static-site-importer-website-artifact-import-input.php',
 	'class-static-site-importer-theme-materialization-strategy.php',
 	'class-static-site-importer-classic-theme-projection.php',
+	'class-static-site-importer-client-script-policy-report.php',
 	'class-static-site-importer-client-script-policy.php',
 	'class-static-site-importer-document.php',
 	'class-static-site-importer-source-page.php',
+	'class-static-site-importer-ip-classifier.php',
 	'class-static-site-importer-url-fetcher.php',
 	'class-static-site-importer-artifact-run.php',
 	'class-static-site-importer-source-normalizer.php',
+	'class-static-site-importer-portable-source-manifest.php',
 	'class-static-site-importer-content-policy.php',
 	'class-static-site-importer-url-site-collector.php',
 	'class-static-site-importer-url-import-runtime.php',
@@ -71,6 +75,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-entity-materializer-registry.php',
 	'class-static-site-importer-asset-reporter.php',
 	'class-static-site-importer-document-metadata-reporter.php',
+	'class-static-site-importer-route-document-metadata.php',
 	'class-static-site-importer-protected-page-policy.php',
 	'class-static-site-importer-stylesheet-materializer.php',
 	'class-static-site-importer-provider-layout-overlay.php',
@@ -78,6 +83,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-form-seeder.php',
 	'class-static-site-importer-product-handoff-contract.php',
 	'class-static-site-importer-diagnostic-loss-classes.php',
+	'class-static-site-importer-import-report.php',
 	'class-static-site-importer-diagnostic-contract.php',
 	'class-static-site-importer-artifact-diagnostics-adapter.php',
 	'class-static-site-importer-validation-runtime.php',
@@ -87,6 +93,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-document-type-classifier.php',
 	'class-static-site-importer-current-site-capabilities.php',
 	'class-static-site-importer-quality-budget-admission.php',
+	'class-static-site-importer-owner-handoff-evidence.php',
 	'class-static-site-importer-wordpress-site-plan-materializer.php',
 	'class-static-site-importer-figma-import.php',
 	'class-static-site-importer-theme-exporter.php',
@@ -107,6 +114,7 @@ register_deactivation_hook( __FILE__, array( Static_Site_Importer_Direct_Artifac
 Static_Site_Importer_Figma_Import::register_default_zstd_decoder();
 Static_Site_Importer_Entity_Materializer_Registry::register_presentations();
 Static_Site_Importer_Form_Seeder::register_runtime_bootstrap();
+Static_Site_Importer_Route_Document_Metadata::register();
 
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/abilities.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/block.php';

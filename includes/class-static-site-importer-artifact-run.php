@@ -122,7 +122,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 	}
 
 	public function publish_json( string $relative, array $data ) {
-		$json = wp_json_encode( $data, JSON_PRETTY_PRINT );
+		$json = wp_json_encode( $data, JSON_PRETTY_PRINT | JSON_PRESERVE_ZERO_FRACTION );
 		return is_string( $json ) ? $this->publish_raw( $relative, $json ) : new WP_Error( 'static_site_importer_artifact_workspace_json_invalid', 'Workspace JSON could not be encoded.' );
 	}
 
@@ -170,6 +170,14 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		if ( ! is_string( $path ) || is_link( $path ) ) {
 			return new WP_Error( 'static_site_importer_artifact_workspace_path_invalid', 'The workspace lock path is invalid.' );
 		}
+		$provided = function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_artifact_workspace_lock', null, 'acquire', $path, null ) : null;
+		if ( null !== $provided ) {
+			return is_wp_error( $provided ) ? $provided : array(
+				'schema' => 'static-site-importer/artifact-workspace-lock/v1',
+				'path'   => $path,
+				'token'  => $provided,
+			);
+		}
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Opens an importer-owned advisory lock file.
 		$handle = fopen( $path, 'c' );
 		if ( false === $handle || ! flock( $handle, LOCK_EX | LOCK_NB ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_flock -- Serializes one importer-owned run executor.
@@ -182,6 +190,12 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 	}
 
 	public function release_lock( $handle ): void {
+		if ( is_array( $handle ) && 'static-site-importer/artifact-workspace-lock/v1' === ( $handle['schema'] ?? '' ) && is_string( $handle['path'] ?? null ) ) {
+			if ( function_exists( 'apply_filters' ) ) {
+				apply_filters( 'static_site_importer_artifact_workspace_lock', null, 'release', $handle['path'], $handle['token'] ?? null );
+			}
+			return;
+		}
 		if ( is_resource( $handle ) ) {
 			flock( $handle, LOCK_UN ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_flock -- Releases the importer-owned run lock.
 			fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the native stream only after releasing its advisory lock.
@@ -369,7 +383,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 	/** Stream the exact JSON_PRETTY_PRINT token sequence without one complete JSON allocation. */
 	private static function write_json_value( $handle, $value, int $depth ): bool {
 		if ( ! is_array( $value ) ) {
-			$encoded = wp_json_encode( $value, JSON_PRETTY_PRINT );
+			$encoded = wp_json_encode( $value, JSON_PRETTY_PRINT | JSON_PRESERVE_ZERO_FRACTION );
 			return is_string( $encoded ) && self::write_complete_handle( $handle, $encoded );
 		}
 		if ( empty( $value ) ) {
@@ -386,7 +400,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 				return false;
 			}
 			if ( ! $list ) {
-				$encoded_key = wp_json_encode( (string) $key, JSON_PRETTY_PRINT );
+				$encoded_key = wp_json_encode( (string) $key, JSON_PRETTY_PRINT | JSON_PRESERVE_ZERO_FRACTION );
 				if ( ! is_string( $encoded_key ) || ! self::write_complete_handle( $handle, $encoded_key . ': ' ) ) {
 					return false;
 				}

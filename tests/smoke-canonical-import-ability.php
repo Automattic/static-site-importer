@@ -62,9 +62,10 @@ function static_site_importer_source_runtime( $source ) {
 	}
 	return array(
 		'artifact'        => array(
-			'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
-			'entrypoint' => $source['entrypoint'] ?? 'website/index.html',
-			'files'      => $files,
+			'schema'          => 'blocks-engine/php-transformer/site-artifact/v1',
+			'entrypoint'      => $source['entrypoint'] ?? 'website/index.html',
+			'compiler_limits' => $source['metadata']['compiler_limits'] ?? array(),
+			'files'           => $files,
 		),
 		'provider'        => 'canonical-source-test',
 		'source_metadata' => array(),
@@ -91,8 +92,11 @@ class Static_Site_Importer_Theme_Generator {
 	public static $applied  = 0;
 	public static $drift    = false;
 	public static $last_args = array();
+	public static $last_artifact = array();
 	public static function compile_website_artifact( $artifact, $args ) {
 		++self::$compiled;
+		self::$last_artifact = $artifact;
+		self::$last_args     = $args;
 		$plan = array(
 			'schema'        => 'blocks-engine/wordpress-site-plan/v2',
 			'plan_identity' => array(
@@ -211,6 +215,35 @@ $files_plan = static_site_importer_ability_import(
 );
 if ( empty( $files_plan['success'] ) || $files !== ( $GLOBALS['ssi_runtime_sources'][2]['files'] ?? null ) ) {
 	throw new RuntimeException( 'file sources must use the canonical source normalizer' ); }
+$portable_html = '<h1>Portable</h1>';
+$portable_css  = 'h1{color:green}';
+$portable_manifest = json_encode(
+	array(
+		'schema'     => Static_Site_Importer_Portable_Source_Manifest::SCHEMA,
+		'root'       => 'website',
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			array( 'path' => 'index.html', 'sha256' => hash( 'sha256', $portable_html ) ),
+			array( 'path' => 'css/site.css', 'sha256' => hash( 'sha256', $portable_css ) ),
+		),
+	)
+);
+$portable_plan = static_site_importer_ability_import(
+	array(
+		'operation' => 'plan',
+		'source'    => array(
+			'type'  => 'files',
+			'files' => array(
+				array( 'path' => Static_Site_Importer_Portable_Source_Manifest::FILENAME, 'content' => $portable_manifest ),
+				array( 'path' => 'website/index.html', 'content' => $portable_html ),
+				array( 'path' => 'website/css/site.css', 'content' => $portable_css ),
+				array( 'path' => 'fixture.json', 'content' => '{}' ),
+			),
+		),
+	)
+);
+if ( empty( $portable_plan['success'] ) || 'index.html' !== ( Static_Site_Importer_Theme_Generator::$last_artifact['entrypoint'] ?? '' ) || array( 'index.html', 'css/site.css' ) !== array_column( Static_Site_Importer_Theme_Generator::$last_artifact['files'] ?? array(), 'path' ) ) {
+	throw new RuntimeException( 'canonical imports must project portable source manifests before compilation' ); }
 $rejected = static_site_importer_ability_import(
 	array(
 		'operation' => 'plan',
@@ -255,6 +288,43 @@ $zip = static_site_importer_ability_import(
 );
 if ( empty( $zip['success'] ) || 'server' !== ( $zip['source']['provenance']['owner'] ?? '' ) ) {
 	throw new RuntimeException( 'opaque references must resolve the declared source type' ); }
+$reference_reader = new class() {
+	public function read( array $reference ): string {
+		return '<h1>Referenced</h1>'; }
+};
+$GLOBALS['ssi_filters']['static_site_importer_resolve_source_reference'] = static function ( $value, $reference, $type ) use ( $reference_reader ) {
+	return 'opaque-files-1' === $reference && 'files' === $type ? array(
+		'source'         => array(
+			'metadata' => array(
+				'compiler_limits' => array(
+					'max_files'       => 501,
+					'max_file_bytes'  => 10485760,
+					'max_total_bytes' => 335544320,
+				),
+			),
+			'files' => array(
+				array(
+					'path'              => 'website/index.html',
+					'payload_reference' => array(
+						'schema' => 'blocks-engine/payload-reference/v1',
+						'id'     => 'request-bundle-file:index.html',
+						'bytes'  => 19,
+						'sha256' => hash( 'sha256', '<h1>Referenced</h1>' ),
+					),
+				),
+			),
+		),
+		'payload_reader' => $reference_reader,
+	) : $value;
+};
+$referenced_files = static_site_importer_ability_import(
+	array(
+		'operation' => 'plan',
+		'source'    => array( 'type' => 'files', 'ref' => 'opaque-files-1' ),
+	)
+);
+if ( empty( $referenced_files['success'] ) || $reference_reader !== ( Static_Site_Importer_Theme_Generator::$last_args['_static_site_importer_payload_reader'] ?? null ) || 501 !== ( Static_Site_Importer_Theme_Generator::$last_artifact['compiler_limits']['max_files'] ?? null ) ) {
+	throw new RuntimeException( 'opaque file references must preserve their server-owned payload reader and compiler limits through normalization' ); }
 $GLOBALS['ssi_filters']['static_site_importer_resolve_source_reference'] = static function ( $value, $reference, $type ) {
 	return 'staged-zip-1' === $reference && 'zip' === $type ? array(
 		'source'     => array(
@@ -275,7 +345,7 @@ $staged_zip = static_site_importer_ability_import(
 		),
 	)
 );
-if ( empty( $staged_zip['success'] ) || '/srv/private/website.zip' !== ( $GLOBALS['ssi_staged_archives'][0]['staged_path'] ?? '' ) || isset( $GLOBALS['ssi_runtime_sources'][4]['archive'] ) ) {
+if ( empty( $staged_zip['success'] ) || '/srv/private/website.zip' !== ( $GLOBALS['ssi_staged_archives'][0]['staged_path'] ?? '' ) || isset( $GLOBALS['ssi_runtime_sources'][ array_key_last( $GLOBALS['ssi_runtime_sources'] ) ]['archive'] ) ) {
 	throw new RuntimeException( 'resolved staged archives must normalize through files without inline archive bytes' ); }
 $approved_staged_zip = static_site_importer_ability_import(
 	array(

@@ -55,12 +55,562 @@ if ( ! function_exists( 'static_site_importer_cli_approved_plan' ) ) {
 	}
 }
 
+if ( ! function_exists( 'static_site_importer_cli_direct_artifact_run_policy' ) ) {
+	/** Use the CLI worker runtime for a larger bounded shared-analysis batch. */
+	function static_site_importer_cli_direct_artifact_run_policy( array $policy ): array {
+		$policy['compile_batch_pages'] = 20;
+		return $policy;
+	}
+}
+
 if ( ! function_exists( 'static_site_importer_cli_import' ) ) {
 	/** Run an import with the explicit, local WP-CLI report output seam. */
 	function static_site_importer_cli_import( array $input ): array {
 		$report = isset( $input['report'] ) ? (string) $input['report'] : '';
-		unset( $input['report'] );
-		return Static_Site_Importer_Canonical_Import_Service::import_with_cli_report( $input, $report );
+		unset( $input['report'], $input['_cli_request_bundle_dir'] );
+		$policy_added = function_exists( 'add_filter' );
+		if ( $policy_added ) {
+			add_filter( 'static_site_importer_direct_artifact_run_policy', 'static_site_importer_cli_direct_artifact_run_policy' );
+		}
+		try {
+			return Static_Site_Importer_Canonical_Import_Service::import_with_cli_report( $input, $report );
+		} finally {
+			if ( $policy_added && function_exists( 'remove_filter' ) ) {
+				remove_filter( 'static_site_importer_direct_artifact_run_policy', 'static_site_importer_cli_direct_artifact_run_policy' );
+			}
+		}
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_import_max_steps' ) ) {
+	function static_site_importer_cli_import_max_steps(): int {
+		return 256;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_import_error' ) ) {
+	/** @return array<string,mixed> */
+	function static_site_importer_cli_import_error( string $code, string $message ): array {
+		return array(
+			'success' => false,
+			'error'   => array(
+				'code'    => $code,
+				'message' => $message,
+			),
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_read_request_json' ) ) {
+	/** Read a canonical import ability request from a local regular file. */
+	function static_site_importer_cli_read_request_json( string $path ) {
+		if ( '' === $path || ! is_file( $path ) || ! is_readable( $path ) || is_link( $path ) ) {
+			return new WP_Error( 'static_site_importer_cli_request_invalid', 'Import requires --request=<readable JSON request file>.' );
+		}
+		$raw  = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads an explicit operator-owned import request.
+		$data = is_string( $raw ) ? json_decode( $raw, true ) : null;
+		if ( ! is_array( $data ) || array_is_list( $data ) ) {
+			return new WP_Error( 'static_site_importer_cli_request_invalid', 'Import request must be a JSON object.' );
+		}
+		return $data;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_request_bundle_path' ) ) {
+	/** Resolve a request-bundled path without trusting a caller-supplied filesystem path. */
+	function static_site_importer_cli_request_bundle_path( string $request_path, string $reference ) {
+		$prefix = 'request-bundle:';
+		if ( ! str_starts_with( $reference, $prefix ) ) {
+			return null;
+		}
+		$relative = substr( $reference, strlen( $prefix ) );
+		$base     = realpath( dirname( $request_path ) );
+		if ( false === $base || '' === $relative || str_starts_with( $relative, '/' ) || str_starts_with( $relative, '\\' ) ) {
+			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'The request-bundle reference must name a source beneath the request directory.' );
+		}
+
+		$cursor   = $base;
+		$segments = preg_split( '#[\\\\/]#', $relative );
+		foreach ( is_array( $segments ) ? $segments : array() as $segment ) {
+			if ( '' === $segment || '.' === $segment || '..' === $segment ) {
+				return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'The request-bundle reference must not contain empty or traversal segments.' );
+			}
+			$cursor .= DIRECTORY_SEPARATOR . $segment;
+			if ( is_link( $cursor ) ) {
+				return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'The request-bundle source and its parent directories must not be symlinks.' );
+			}
+		}
+
+		$resolved = realpath( $cursor );
+		if ( false === $resolved || ! str_starts_with( $resolved, $base . DIRECTORY_SEPARATOR ) || ! is_readable( $resolved ) ) {
+			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'The request-bundle source must be readable and beneath the request directory.' );
+		}
+		return $resolved;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
+	/** Return the bounded compiler contract for verified request-bundle files. */
+	function static_site_importer_cli_request_bundle_limits(): array {
+		return array(
+			'max_files'                 => 5000,
+			'max_file_bytes'            => 10485760,
+			'max_total_bytes'           => 268435456,
+			'generated_files_per_html'  => 5,
+			'generated_bytes_headroom' => 67108864,
+			'compiler_max_total_bytes' => 335544320,
+		);
+	}
+
+	/** Project a local source tree as metadata-only payload references. */
+	function static_site_importer_cli_request_bundle_files( string $directory ) {
+		if ( ! is_dir( $directory ) ) {
+			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A files request-bundle reference must resolve to a directory.' );
+		}
+		$limits     = static_site_importer_cli_request_bundle_limits();
+		$files      = array();
+		$paths      = array();
+		$total_bytes = 0;
+		$html_files  = 0;
+		try {
+			$iterator = new RecursiveIteratorIterator(
+				new RecursiveDirectoryIterator( $directory, FilesystemIterator::SKIP_DOTS ),
+				RecursiveIteratorIterator::LEAVES_ONLY
+			);
+			foreach ( $iterator as $item ) {
+				if ( $item->isLink() ) {
+					return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'Request-bundle source trees must not contain symlinks.' );
+				}
+				if ( ! $item->isFile() || ! $item->isReadable() ) {
+					continue;
+				}
+				$absolute = $item->getRealPath();
+				$relative = false !== $absolute ? str_replace( DIRECTORY_SEPARATOR, '/', substr( $absolute, strlen( $directory ) + 1 ) ) : '';
+				if ( '' === $relative || ( function_exists( 'static_site_importer_rest_artifact_path' ) && '' === static_site_importer_rest_artifact_path( $relative ) ) ) {
+					continue;
+				}
+				if ( function_exists( 'static_site_importer_rest_should_include_artifact_file' ) && ! static_site_importer_rest_should_include_artifact_file( $relative ) ) {
+					continue;
+				}
+				if ( class_exists( 'Static_Site_Importer_Content_Policy' ) && ! Static_Site_Importer_Content_Policy::is_static_path( $relative ) ) {
+					return new WP_Error( 'static_site_importer_executable_source_rejected', 'Request-bundle source trees may contain static content only.' );
+				}
+				$bytes = $item->getSize();
+				if ( $bytes > $limits['max_file_bytes'] ) {
+					return new WP_Error( 'static_site_importer_cli_request_bundle_file_too_large', 'A request-bundle source file exceeds the 10 MiB compiler limit.' );
+				}
+				if ( $total_bytes + $bytes > $limits['max_total_bytes'] ) {
+					return new WP_Error( 'static_site_importer_cli_request_bundle_total_too_large', 'Request-bundle source files exceed the 256 MiB aggregate compiler limit.' );
+				}
+				$is_html = (bool) preg_match( '/\.html?$/i', $relative );
+				if ( count( $files ) + 1 + ( $limits['generated_files_per_html'] * ( $html_files + ( $is_html ? 1 : 0 ) ) ) > $limits['max_files'] ) {
+					return new WP_Error( 'static_site_importer_cli_request_bundle_file_limit_exceeded', 'Request-bundle source files and reserved inline expansion files exceed the 5,000-file compiler limit.' );
+				}
+				$digest = hash_file( 'sha256', $absolute );
+				if ( false === $digest ) {
+					return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A request-bundle source file could not be verified.' );
+				}
+				$id           = 'request-bundle-file:' . rawurlencode( $relative );
+				$paths[ $id ] = $absolute;
+				$files[]      = array(
+					'path'              => $relative,
+					'payload_reference' => array(
+						'schema' => 'blocks-engine/payload-reference/v1',
+						'id'     => $id,
+						'bytes'  => $bytes,
+						'sha256' => $digest,
+					),
+				);
+				$total_bytes += $bytes;
+				$html_files  += $is_html ? 1 : 0;
+			}
+		} catch ( UnexpectedValueException $error ) {
+			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', $error->getMessage() );
+		}
+		if ( empty( $files ) ) {
+			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'The request-bundle source tree contains no static files.' );
+		}
+		usort( $files, static fn( array $left, array $right ): int => strcmp( $left['path'], $right['path'] ) );
+		return array(
+			'files'           => $files,
+			'compiler_limits' => array(
+				'max_files'       => count( $files ) + ( $limits['generated_files_per_html'] * $html_files ),
+				'max_file_bytes'  => $limits['max_file_bytes'],
+				'max_total_bytes' => min( $limits['compiler_max_total_bytes'], $limits['max_total_bytes'] + min( $limits['generated_bytes_headroom'], $limits['max_total_bytes'] ) ),
+			),
+			'payload_reader' => new class( $paths ) {
+				/** @param array<string,string> $paths */
+				public function __construct( private array $paths ) {}
+				public function read( array $reference ): string {
+					$id   = (string) ( $reference['id'] ?? '' );
+					$path = $this->paths[ $id ] ?? '';
+					$real = '' !== $path && ! is_link( $path ) ? realpath( $path ) : false;
+					$data = $path === $real ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a verified CLI request-bundle payload on demand.
+					if ( false === $data ) {
+						throw new RuntimeException( 'The request-bundle payload is unavailable.' );
+					}
+					return $data;
+				}
+			},
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
+	/** Register the server-owned resolver for a source staged beside the explicit request. */
+	function static_site_importer_cli_prepare_request_bundle( array $input, string $request_path ) {
+		$source    = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
+		$reference = (string) ( $source['ref'] ?? '' );
+		if ( ! str_starts_with( $reference, 'request-bundle:' ) ) {
+			return $input;
+		}
+		$type = (string) ( $source['type'] ?? '' );
+		if ( ! in_array( $type, array( 'files', 'zip' ), true ) ) {
+			return new WP_Error( 'static_site_importer_cli_request_bundle_type_invalid', 'Request-bundle references support files and zip sources.' );
+		}
+		$resolved_path = static_site_importer_cli_request_bundle_path( $request_path, $reference );
+		if ( is_wp_error( $resolved_path ) ) {
+			return $resolved_path;
+		}
+		$bundle = 'files' === $type ? static_site_importer_cli_request_bundle_files( $resolved_path ) : null;
+		if ( is_wp_error( $bundle ) ) {
+			return $bundle;
+		}
+		if ( 'zip' === $type && ! is_file( $resolved_path ) ) {
+			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A zip request-bundle reference must resolve to a regular file.' );
+		}
+		if ( function_exists( 'add_filter' ) ) {
+			add_filter(
+				'static_site_importer_resolve_source_reference',
+				static function ( $resolved, string $candidate, string $candidate_type ) use ( $reference, $resolved_path, $type, $bundle ) {
+					if ( null !== $resolved || $reference !== $candidate || $type !== $candidate_type ) {
+						return $resolved;
+					}
+					if ( 'files' === $type ) {
+						return array(
+							'source'         => array(
+								'type'     => 'files',
+								'files'    => $bundle['files'],
+								'metadata' => array( 'compiler_limits' => $bundle['compiler_limits'] ),
+							),
+							'payload_reader' => $bundle['payload_reader'],
+							'provenance'     => array( 'transport' => 'cli-request-bundle' ),
+						);
+					}
+					return array(
+						'source'     => array(
+							'type' => 'zip',
+							'zip'  => array(
+								'name'        => basename( $resolved_path ),
+								'staged_path' => $resolved_path,
+							),
+						),
+						'provenance' => array( 'transport' => 'cli-request-bundle' ),
+					);
+				},
+				10,
+				3
+			);
+		}
+		$input['_cli_request_bundle_dir'] = realpath( dirname( $request_path ) );
+		return $input;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_import_options' ) ) {
+	/** @param array<string,mixed> $assoc_args @return array<string,mixed> */
+	function static_site_importer_cli_import_options( array $assoc_args ): array {
+		return array(
+			'operation'                    => isset( $assoc_args['operation'] ) ? (string) $assoc_args['operation'] : 'apply',
+			'slug'                         => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
+			'name'                         => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
+			'site_title'                   => isset( $assoc_args['site-title'] ) ? (string) $assoc_args['site-title'] : '',
+			'activate'                     => isset( $assoc_args['activate'] ),
+			'overwrite'                    => isset( $assoc_args['overwrite'] ),
+			'disable_smilies'              => ! isset( $assoc_args['no-disable-smilies'] ),
+			'remove_default_content'       => ! isset( $assoc_args['keep-default-content'] ),
+			'fail_on_quality'              => isset( $assoc_args['fail-on-quality'] ),
+			'allow_missing_woocommerce'    => isset( $assoc_args['allow-missing-woocommerce'] ),
+			'materialize_dependencies'     => ! isset( $assoc_args['skip-dependency-materialization'] ),
+			'report'                       => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
+			'asset_materialization_policy' => isset( $assoc_args['asset-materialization-policy'] ) ? (string) $assoc_args['asset-materialization-policy'] : '',
+			'theme_materialization'        => isset( $assoc_args['theme-materialization'] ) ? (string) $assoc_args['theme-materialization'] : 'block',
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_apply_import_id' ) ) {
+	/**
+	 * Project an opaque SSI-owned import_id onto the next ability request.
+	 *
+	 * @param array<string,mixed> $input
+	 * @return array<string,mixed>
+	 */
+	function static_site_importer_cli_apply_import_id( array $input, string $import_id ): array {
+		if ( '' === $import_id ) {
+			return $input;
+		}
+		$type   = (string) ( $input['source']['type'] ?? '' );
+		$source = array(
+			'type'      => $type,
+			'import_id' => $import_id,
+		);
+		if ( 'url' === $type ) {
+			$source['url'] = (string) ( $input['source']['url'] ?? '' );
+		}
+		$input['source'] = $source;
+		return $input;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_import_input' ) ) {
+	/**
+	 * Normalize host command arguments into a canonical import ability request.
+	 *
+	 * @param array<int,string>   $args
+	 * @param array<string,mixed> $assoc_args
+	 * @return array<string,mixed>|WP_Error
+	 */
+	function static_site_importer_cli_import_input( array $args, array $assoc_args ) {
+		unset( $args );
+		$has_request = isset( $assoc_args['request'] );
+		$has_url     = isset( $assoc_args['url'] );
+		$has_plan    = isset( $assoc_args['plan'] );
+		if ( (int) $has_request + (int) $has_url + (int) $has_plan > 1 ) {
+			return new WP_Error( 'static_site_importer_cli_request_conflict', 'Provide exactly one of --request, --url, or --plan.' );
+		}
+		if ( $has_request ) {
+			$request_path = (string) $assoc_args['request'];
+			$input        = static_site_importer_cli_read_request_json( $request_path );
+			if ( is_wp_error( $input ) ) {
+				return $input;
+			}
+			$input = static_site_importer_cli_prepare_request_bundle( $input, $request_path );
+			if ( is_wp_error( $input ) ) {
+				return $input;
+			}
+			if ( isset( $assoc_args['report'] ) ) {
+				$input['report'] = (string) $assoc_args['report'];
+			}
+		} elseif ( $has_plan ) {
+			$plan = static_site_importer_cli_approved_plan( $assoc_args );
+			if ( is_wp_error( $plan ) ) {
+				return $plan;
+			}
+			$input         = static_site_importer_cli_import_options( $assoc_args );
+			$input['plan'] = $plan;
+		} elseif ( $has_url ) {
+			$url = trim( (string) $assoc_args['url'] );
+			if ( '' === $url ) {
+				return new WP_Error( 'static_site_importer_cli_url_invalid', 'Provide a public source URL.' );
+			}
+			$input           = static_site_importer_cli_import_options( $assoc_args );
+			$input['source'] = array(
+				'type' => 'url',
+				'url'  => $url,
+			);
+		} else {
+			return new WP_Error( 'static_site_importer_cli_request_invalid', 'Import requires --request=<readable JSON request file>.' );
+		}
+		$operation = (string) ( $input['operation'] ?? 'apply' );
+		if ( ! in_array( $operation, array( 'plan', 'apply' ), true ) ) {
+			return new WP_Error( 'static_site_importer_invalid_import_operation', 'operation must be plan or apply.' );
+		}
+		$input['operation'] = $operation;
+		if ( isset( $assoc_args['import-id'] ) ) {
+			$input = static_site_importer_cli_apply_import_id( $input, (string) $assoc_args['import-id'] );
+		}
+		if ( isset( $input['plan'] ) && is_array( $input['plan'] ) ) {
+			return $input;
+		}
+		$source = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
+		if ( ! in_array( (string) ( $source['type'] ?? '' ), array( 'html', 'files', 'zip', 'url' ), true ) ) {
+			return new WP_Error( 'static_site_importer_invalid_import_source', 'source.type must be html, files, zip, or url.' );
+		}
+		return $input;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_import_receipt' ) ) {
+	/**
+	 * @param array<string,mixed> $result
+	 * @return array<string,mixed>
+	 */
+	function static_site_importer_cli_import_receipt( array $result, int $steps ): array {
+		if ( ! empty( $result['continuation'] ) ) {
+			$result = static_site_importer_cli_import_error( 'static_site_importer_cli_nonterminal_receipt', 'A continuation is not a terminal import receipt.' );
+		}
+		$success = ! empty( $result['success'] ) && empty( $result['continuation'] );
+		return array(
+			'schema'   => 'static-site-importer/import-cli-receipt/v1',
+			'status'   => $success ? 'completed' : 'failed',
+			'steps'    => $steps,
+			'response' => $result,
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_decode_import_step' ) ) {
+	function static_site_importer_cli_decode_import_step( string $output ): ?array {
+		$lines = preg_split( '/\R/', trim( $output ) );
+		if ( ! is_array( $lines ) ) {
+			return null;
+		}
+		for ( $index = count( $lines ) - 1; $index >= 0; --$index ) {
+			$decoded = json_decode( $lines[ $index ], true );
+			if ( is_array( $decoded ) && ! array_is_list( $decoded ) ) {
+				return $decoded;
+			}
+		}
+		return null;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_import_fresh_runtime_spec' ) ) {
+	/**
+	 * @return array{command:string,options:array<string,mixed>}
+	 */
+	function static_site_importer_cli_import_fresh_runtime_spec( string $request_path ): array {
+		return array(
+			'command' => 'static-site-importer import --single-step --request=' . escapeshellarg( $request_path ),
+			'options' => array(
+				'launch'     => true,
+				'exit_error' => false,
+				'return'     => 'all',
+			),
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_write_step_request' ) ) {
+	/**
+	 * @param array<string,mixed> $input
+	 * @return string|WP_Error
+	 */
+	function static_site_importer_cli_write_step_request( array $input ) {
+		$json = function_exists( 'wp_json_encode' ) ? wp_json_encode( $input, JSON_UNESCAPED_SLASHES ) : false;
+		if ( false === $json ) {
+			return new WP_Error( 'static_site_importer_cli_step_request_encode_failed', 'The import continuation request could not be encoded.' );
+		}
+		$temp_dir = isset( $input['_cli_request_bundle_dir'] ) && is_dir( $input['_cli_request_bundle_dir'] ) ? (string) $input['_cli_request_bundle_dir'] : sys_get_temp_dir();
+		$temp     = tempnam( $temp_dir, 'ssi-import-' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_tempnam -- Writes a bounded host-owned continuation request for a fresh WP-CLI runtime.
+		if ( false === $temp || false === file_put_contents( $temp, $json ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes a bounded host-owned continuation request for a fresh WP-CLI runtime.
+			return new WP_Error( 'static_site_importer_cli_step_request_write_failed', 'The import continuation request could not be written.' );
+		}
+		return $temp;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_import_run_fresh_runtime' ) ) {
+	/** @param array<string,mixed> $input @return array<string,mixed> */
+	function static_site_importer_cli_import_run_fresh_runtime( array $input ): array {
+		$path = static_site_importer_cli_write_step_request( $input );
+		if ( is_wp_error( $path ) ) {
+			return static_site_importer_cli_import_error( (string) $path->get_error_code(), $path->get_error_message() );
+		}
+		try {
+			if ( ! class_exists( 'WP_CLI' ) ) {
+				return static_site_importer_cli_import_error( 'static_site_importer_cli_runtime_unavailable', 'WP-CLI is unavailable for a fresh import runtime.' );
+			}
+			$spec    = static_site_importer_cli_import_fresh_runtime_spec( $path );
+			$raw     = WP_CLI::runcommand( $spec['command'], $spec['options'] );
+			$stdout  = is_object( $raw ) ? (string) ( $raw->stdout ?? '' ) : ( is_string( $raw ) ? $raw : '' );
+			$decoded = static_site_importer_cli_decode_import_step( $stdout );
+			if ( ! is_array( $decoded ) ) {
+				return static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', 'A fresh import runtime did not return JSON.' );
+			}
+			return $decoded;
+		} finally {
+			if ( is_file( $path ) ) {
+				unlink( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes the host-owned continuation request after the fresh runtime returns.
+			}
+		}
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
+	/**
+	 * Drive bounded ability steps until a terminal result.
+	 *
+	 * @param array<string,mixed> $input
+	 * @return array<string,mixed>
+	 */
+	function static_site_importer_cli_run_import_host( array $input, ?callable $invoke = null, int $max_steps = 0 ): array {
+		$invoke    = $invoke ?? 'static_site_importer_cli_import_run_fresh_runtime';
+		$max_steps = min( 1024, max( 1, $max_steps > 0 ? $max_steps : static_site_importer_cli_import_max_steps() ) );
+		$steps     = 0;
+		while ( $steps < $max_steps ) {
+			++$steps;
+			$result = $invoke( $input );
+			if ( ! is_array( $result ) ) {
+				$result = static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', 'An import step did not return an object.' );
+			}
+			if ( empty( $result['continuation'] ) ) {
+				return static_site_importer_cli_import_receipt( $result, $steps );
+			}
+			$import_id = (string) ( $result['import_id'] ?? '' );
+			if ( '' === $import_id ) {
+				return static_site_importer_cli_import_receipt(
+					static_site_importer_cli_import_error( 'static_site_importer_cli_import_id_missing', 'A continuation did not include an opaque import_id.' ),
+					$steps
+				);
+			}
+			$input = static_site_importer_cli_apply_import_id( $input, $import_id );
+		}
+		return static_site_importer_cli_import_receipt(
+			static_site_importer_cli_import_error( 'static_site_importer_cli_continuation_bound_exceeded', 'The import exceeded its bounded continuation steps.' ),
+			$max_steps
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_emit_import_receipt' ) ) {
+	/** @param array<string,mixed> $receipt */
+	function static_site_importer_cli_emit_import_receipt( array $receipt ): void {
+		$json = wp_json_encode( $receipt, JSON_UNESCAPED_SLASHES );
+		if ( false === $json ) {
+			WP_CLI::error( 'Failed to encode import receipt.' );
+		}
+		WP_CLI::line( (string) $json );
+		if ( 'completed' !== ( $receipt['status'] ?? '' ) ) {
+			WP_CLI::halt( 1 );
+		}
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_emit_import_step' ) ) {
+	/** @param array<string,mixed> $result */
+	function static_site_importer_cli_emit_import_step( array $result ): void {
+		$json = wp_json_encode( $result, JSON_UNESCAPED_SLASHES );
+		if ( false === $json ) {
+			WP_CLI::error( 'Failed to encode import step result.' );
+		}
+		WP_CLI::line( (string) $json );
+		if ( empty( $result['success'] ) ) {
+			WP_CLI::halt( 1 );
+		}
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_import_command' ) ) {
+	/** Canonical host command for static-site-importer/import. */
+	function static_site_importer_cli_import_command( array $args, array $assoc_args ): void {
+		$input = static_site_importer_cli_import_input( $args, $assoc_args );
+		if ( is_wp_error( $input ) ) {
+			static_site_importer_cli_emit_import_receipt(
+				static_site_importer_cli_import_receipt(
+					static_site_importer_cli_import_error( (string) $input->get_error_code(), $input->get_error_message() ),
+					0
+				)
+			);
+			return;
+		}
+		if ( isset( $assoc_args['single-step'] ) ) {
+			static_site_importer_cli_emit_import_step( static_site_importer_cli_import( $input ) );
+			return;
+		}
+		$max_steps = isset( $assoc_args['max-steps'] ) ? (int) $assoc_args['max-steps'] : 0;
+		static_site_importer_cli_emit_import_receipt( static_site_importer_cli_run_import_host( $input, null, $max_steps ) );
 	}
 }
 
@@ -92,171 +642,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 		}
 	);
 
-	WP_CLI::add_command(
-		'static-site-importer import-theme',
-		static function ( array $args, array $assoc_args ): void {
-			$operation = isset( $assoc_args['operation'] ) ? (string) $assoc_args['operation'] : 'apply';
-			if ( ! in_array( $operation, array( 'plan', 'apply' ), true ) ) {
-				WP_CLI::error( '--operation must be plan or apply.' );
-			}
-			if ( 'apply' === $operation && isset( $assoc_args['plan'] ) ) {
-				$plan = static_site_importer_cli_approved_plan( $assoc_args );
-				if ( is_wp_error( $plan ) ) {
-					WP_CLI::error( $plan->get_error_message() ); }
-				$result = static_site_importer_cli_import(
-					array(
-						'operation' => 'apply',
-						'plan'      => $plan,
-					)
-				);
-				if ( empty( $result['success'] ) ) {
-					WP_CLI::error( (string) ( $result['error']['message'] ?? 'Static site plan apply failed.' ) ); }
-				WP_CLI::success( 'Applied approved import plan.' );
-				return;
-			}
-			$entry = isset( $args[0] ) ? (string) $args[0] : '';
-			if ( '' === $entry || ! is_readable( $entry ) || ! is_file( $entry ) ) {
-				WP_CLI::error( 'Provide a readable source HTML file.' );
-			}
-
-			$root = realpath( dirname( $entry ) );
-			if ( false === $root ) {
-				WP_CLI::error( 'Could not resolve the source directory.' );
-				return;
-			}
-			$root = (string) $root;
-
-			$files    = array();
-			$iterator = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $root, FilesystemIterator::SKIP_DOTS ) );
-			foreach ( $iterator as $file ) {
-				if ( ! $file instanceof SplFileInfo || ! $file->isFile() || ! $file->isReadable() ) {
-					continue;
-				}
-
-				$path     = $file->getPathname();
-				$relative = ltrim( str_replace( '\\', '/', substr( $path, strlen( $root ) ) ), '/' );
-				if ( '' === $relative ) {
-					continue;
-				}
-
-				$content = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads operator-provided source files.
-				if ( false === $content ) {
-					WP_CLI::error( sprintf( 'Could not read source file: %s', $path ) );
-					return;
-				}
-
-				$files[] = array(
-					'path'           => $relative,
-					'content_base64' => base64_encode( $content ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes declared artifact payload bytes, including binary assets.
-				);
-			}
-
-			$entry_realpath = realpath( $entry );
-			$entrypoint     = false !== $entry_realpath ? ltrim( str_replace( '\\', '/', substr( $entry_realpath, strlen( $root ) ) ), '/' ) : basename( $entry );
-			$input          = array(
-				'operation'                    => $operation,
-				'artifact'                     => array(
-					'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
-					'entrypoint' => $entrypoint,
-					'files'      => $files,
-				),
-				'slug'                         => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
-				'name'                         => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
-				'activate'                     => isset( $assoc_args['activate'] ),
-				'overwrite'                    => isset( $assoc_args['overwrite'] ),
-				'disable_smilies'              => ! isset( $assoc_args['no-disable-smilies'] ),
-				'remove_default_content'       => ! isset( $assoc_args['keep-default-content'] ),
-				'fail_on_quality'              => isset( $assoc_args['fail-on-quality'] ),
-				'allow_missing_woocommerce'    => isset( $assoc_args['allow-missing-woocommerce'] ),
-				'materialize_dependencies'     => ! isset( $assoc_args['skip-dependency-materialization'] ),
-				'report'                       => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
-				'asset_materialization_policy' => isset( $assoc_args['asset-materialization-policy'] ) ? (string) $assoc_args['asset-materialization-policy'] : '',
-				'theme_materialization'        => isset( $assoc_args['theme-materialization'] ) ? (string) $assoc_args['theme-materialization'] : 'block',
-			);
-
-			$result = static_site_importer_cli_import(
-				array_merge(
-					$input,
-					array( 'source' => static_site_importer_ability_files_source( $input['artifact'] ) )
-				)
-			);
-			if ( empty( $result['success'] ) ) {
-				$error = isset( $result['error'] ) && is_array( $result['error'] ) ? $result['error'] : array();
-				WP_CLI::error( (string) ( $error['message'] ?? 'Static site import failed.' ) );
-			}
-			if ( 'plan' === $operation ) {
-				WP_CLI::line( (string) wp_json_encode( $result, JSON_UNESCAPED_SLASHES ) );
-				return;
-			}
-
-			WP_CLI::success( sprintf( 'Imported %s.', (string) ( $result['result']['theme_slug'] ?? $input['slug'] ) ) );
-		}
-	);
-
-	WP_CLI::add_command(
-		'static-site-importer import-url',
-		static function ( array $args, array $assoc_args ): void {
-			$operation = isset( $assoc_args['operation'] ) ? (string) $assoc_args['operation'] : 'apply';
-			if ( ! in_array( $operation, array( 'plan', 'apply' ), true ) ) {
-				WP_CLI::error( '--operation must be plan or apply.' ); }
-			if ( 'apply' === $operation && isset( $assoc_args['plan'] ) ) {
-				$plan = static_site_importer_cli_approved_plan( $assoc_args );
-				if ( is_wp_error( $plan ) ) {
-					WP_CLI::error( $plan->get_error_message() ); }
-				$result = static_site_importer_cli_import(
-					array(
-						'operation' => 'apply',
-						'plan'      => $plan,
-					)
-				);
-				if ( empty( $result['success'] ) ) {
-					WP_CLI::error( (string) ( $result['error']['message'] ?? 'Static site plan apply failed.' ) ); }
-				WP_CLI::success( 'Applied approved import plan.' );
-				return;
-			}
-			$url = isset( $args[0] ) ? (string) $args[0] : '';
-			if ( '' === trim( $url ) ) {
-				WP_CLI::error( 'Provide a public source URL.' );
-			}
-
-			$input = array(
-				'operation'                 => $operation,
-				'source'                    => array(
-					'type' => 'url',
-					'url'  => $url,
-				),
-				'slug'                      => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
-				'name'                      => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
-				'site_title'                => isset( $assoc_args['site-title'] ) ? (string) $assoc_args['site-title'] : '',
-				'activate'                  => isset( $assoc_args['activate'] ),
-				'overwrite'                 => isset( $assoc_args['overwrite'] ),
-				'disable_smilies'           => ! isset( $assoc_args['no-disable-smilies'] ),
-				'remove_default_content'    => ! isset( $assoc_args['keep-default-content'] ),
-				'fail_on_quality'           => isset( $assoc_args['fail-on-quality'] ),
-				'allow_missing_woocommerce' => isset( $assoc_args['allow-missing-woocommerce'] ),
-				'report'                    => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
-				'theme_materialization'     => isset( $assoc_args['theme-materialization'] ) ? (string) $assoc_args['theme-materialization'] : 'block',
-			);
-			if ( isset( $assoc_args['import-id'] ) ) {
-				$input['source']['import_id'] = (string) $assoc_args['import-id'];
-			}
-			$result = static_site_importer_cli_import( $input );
-			if ( empty( $result['success'] ) ) {
-				$error = isset( $result['error'] ) && is_array( $result['error'] ) ? $result['error'] : array();
-				WP_CLI::error( (string) ( $error['message'] ?? 'Static site URL import failed.' ) );
-			}
-			if ( ! empty( $result['continuation'] ) ) {
-				WP_CLI::line( (string) wp_json_encode( $result, JSON_UNESCAPED_SLASHES ) );
-				return;
-			}
-			if ( 'plan' === $operation ) {
-				WP_CLI::line( (string) wp_json_encode( $result, JSON_UNESCAPED_SLASHES ) );
-				return;
-			}
-
-			WP_CLI::success( sprintf( 'Imported %s.', (string) ( $result['result']['theme_slug'] ?? $input['slug'] ) ) );
-		}
-	);
+	WP_CLI::add_command( 'static-site-importer import', 'static_site_importer_cli_import_command' );
 
 	WP_CLI::add_command(
 		'static-site-importer plan-artifact-dependencies',
