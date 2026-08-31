@@ -166,7 +166,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12})?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
-		$allowed = array( 'display', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'position', 'z-index', 'pointer-events' );
+		$allowed = array( 'display', 'width', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'position', 'z-index', 'pointer-events' );
 		foreach ( explode( ';', $matches[2] ) as $declaration ) {
 			if ( ! preg_match( '/^([a-z-]+):(.+)$/D', $declaration, $parts ) || ! in_array( $parts[1], $allowed, true ) || ! self::safe_value( str_replace( array( 'grid-template-columns', 'grid-template-rows', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area' ), array( 'columns', 'rows', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'flex_grow', 'flex_shrink', 'flex_basis', 'column', 'row', 'area' ), $parts[1] ), $parts[2] ) ) {
 				return false;
@@ -184,6 +184,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	private static function declarations( array $layout, array $capabilities, string $node, array &$losses ): array {
 		$map          = array(
 			'display'         => 'display',
+			'width'           => 'width',
 			'columns'         => 'grid-template-columns',
 			'rows'            => 'grid-template-rows',
 			'gap'             => 'gap',

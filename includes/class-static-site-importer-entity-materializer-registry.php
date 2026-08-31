@@ -1207,8 +1207,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** @return array{graph?:array<string,mixed>,error?:string} */
 	private static function normalize_computed_layout_graph( mixed $candidate ): array {
-		if ( ! is_array( $candidate ) || 'generic/computed-layout-graph/v1' !== ( $candidate['schema'] ?? null ) || 'source_css_cascade' !== ( $candidate['basis'] ?? null ) || ! is_bool( $candidate['truncated'] ?? null ) || ! is_array( $candidate['limits'] ?? null ) || ! is_int( $candidate['limits']['nodes'] ?? null ) || ! is_int( $candidate['limits']['depth'] ?? null ) || ! is_int( $candidate['limits']['rules_per_node'] ?? null ) || $candidate['limits']['nodes'] < 1 || $candidate['limits']['nodes'] > 128 || $candidate['limits']['depth'] < 0 || $candidate['limits']['depth'] > 8 || $candidate['limits']['rules_per_node'] < 1 || $candidate['limits']['rules_per_node'] > 16 || ! is_array( $candidate['nodes'] ?? null ) || ! array_is_list( $candidate['nodes'] ) || count( $candidate['nodes'] ) > $candidate['limits']['nodes'] || ! is_array( $candidate['variants'] ?? null ) || ! is_array( $candidate['diagnostics'] ?? null ) ) {
-			return array( 'error' => 'layout_graph must be a bounded canonical generic/computed-layout-graph/v1 graph.' );
+		$schema         = is_array( $candidate ) ? ( $candidate['schema'] ?? null ) : null;
+		$is_v2          = 'generic/computed-layout-graph/v2' === $schema;
+		$expected_depth = $is_v2 ? 16 : 8;
+		if ( ! is_array( $candidate ) || ( ! $is_v2 && 'generic/computed-layout-graph/v1' !== $schema ) || 'source_css_cascade' !== ( $candidate['basis'] ?? null ) || ! is_bool( $candidate['truncated'] ?? null ) || ! is_array( $candidate['limits'] ?? null ) || ! is_int( $candidate['limits']['nodes'] ?? null ) || ! is_int( $candidate['limits']['depth'] ?? null ) || ! is_int( $candidate['limits']['rules_per_node'] ?? null ) || $candidate['limits']['nodes'] < 1 || $candidate['limits']['nodes'] > 128 || $expected_depth !== $candidate['limits']['depth'] || $candidate['limits']['rules_per_node'] < 1 || $candidate['limits']['rules_per_node'] > 16 || ! is_array( $candidate['nodes'] ?? null ) || ! array_is_list( $candidate['nodes'] ) || count( $candidate['nodes'] ) > $candidate['limits']['nodes'] || ! is_array( $candidate['variants'] ?? null ) || ! is_array( $candidate['diagnostics'] ?? null ) ) {
+			return array( 'error' => 'layout_graph must use a bounded canonical computed-layout graph schema with its exact versioned depth.' );
 		}
 		if ( ! self::has_only_keys( $candidate, array( 'schema', 'basis', 'truncated', 'limits', 'nodes', 'variants', 'diagnostics' ) ) || ! self::has_only_keys( $candidate['limits'], array( 'nodes', 'depth', 'rules_per_node' ) ) ) {
 			return array( 'error' => 'layout_graph contains unknown canonical keys.' );
@@ -1232,8 +1235,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			$layout      = $node['layout'];
 			$layout_keys = array( 'display', 'columns', 'rows', 'gap', 'row_gap', 'column_gap', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'column', 'row', 'area', 'item_placement' );
+			if ( $is_v2 ) {
+				$layout_keys[] = 'width';
+			}
 			foreach ( $layout as $field => $value ) {
-				if ( ! in_array( $field, $layout_keys, true ) || ( ! is_scalar( $value ) && ! is_array( $value ) ) ) {
+				if ( ! in_array( $field, $layout_keys, true ) || ( ! is_scalar( $value ) && ! is_array( $value ) ) || ( 'width' === $field && ( ! is_string( $value ) || '' === trim( $value ) ) ) ) {
 					return array( 'error' => 'layout_graph layout facts must use only producer-supported keys.' );
 				}
 			}
@@ -1258,17 +1264,17 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				return array( 'error' => 'layout_graph contains an unsupported canonical variant.' );
 			}
 			foreach ( $variant['layout_patch'] as $property => $value ) {
-				if ( ! isset( self::layout_property_map()[ $property ] ) || ! is_string( $value ) || '' === trim( $value ) || ! isset( $variant['precedence'][ self::layout_property_map()[ $property ] ] ) ) {
+				if ( ! isset( self::layout_property_map( $is_v2 )[ $property ] ) || ! is_string( $value ) || '' === trim( $value ) || ! isset( $variant['precedence'][ self::layout_property_map( $is_v2 )[ $property ] ] ) ) {
 					return array( 'error' => 'layout_graph variant layout facts are malformed.' );
 				}
 			}
 			foreach ( $variant['precedence'] as $property => $precedence ) {
-				if ( ! isset( self::layout_producer_property_map()[ $property ] ) || ! isset( $variant['layout_patch'][ self::layout_producer_property_map()[ $property ] ] ) || ! is_array( $precedence ) || ! self::has_only_keys( $precedence, array( 'source_order', 'specificity', 'important' ) ) || ! is_int( $precedence['source_order'] ?? null ) || ! is_int( $precedence['specificity'] ?? null ) || ! is_bool( $precedence['important'] ?? null ) ) {
+				if ( ! isset( self::layout_producer_property_map( $is_v2 )[ $property ] ) || ! isset( $variant['layout_patch'][ self::layout_producer_property_map( $is_v2 )[ $property ] ] ) || ! is_array( $precedence ) || ! self::has_only_keys( $precedence, array( 'source_order', 'specificity', 'important' ) ) || ! is_int( $precedence['source_order'] ?? null ) || ! is_int( $precedence['specificity'] ?? null ) || ! is_bool( $precedence['important'] ?? null ) ) {
 					return array( 'error' => 'layout_graph variant precedence is malformed.' );
 				}
 			}
 			foreach ( $variant['provenance'] as $fact ) {
-				if ( ! is_array( $fact ) || ! self::has_only_keys( $fact, array( 'source_path', 'source_sha256', 'selector', 'condition', 'properties' ) ) || ! is_string( $fact['source_path'] ?? null ) || ! preg_match( '~^(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9._/-]+$~D', $fact['source_path'] ) || ! preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ?? '' ) || ! is_string( $fact['selector'] ?? null ) || '' === trim( $fact['selector'] ) || strlen( $fact['selector'] ) > 1024 || $fact['condition'] !== $variant['condition'] || ! is_array( $fact['properties'] ?? null ) || array() === $fact['properties'] || count( $fact['properties'] ) > 19 || array_filter( $fact['properties'], static fn( $property ): bool => ! is_string( $property ) || ! isset( self::layout_producer_property_map()[ $property ] ) || ! isset( $variant['layout_patch'][ self::layout_producer_property_map()[ $property ] ] ) ) ) {
+				if ( ! is_array( $fact ) || ! self::has_only_keys( $fact, array( 'source_path', 'source_sha256', 'selector', 'condition', 'properties' ) ) || ! is_string( $fact['source_path'] ?? null ) || ! preg_match( '~^(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9._/-]+$~D', $fact['source_path'] ) || ! preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ?? '' ) || ! is_string( $fact['selector'] ?? null ) || '' === trim( $fact['selector'] ) || strlen( $fact['selector'] ) > 1024 || $fact['condition'] !== $variant['condition'] || ! is_array( $fact['properties'] ?? null ) || array() === $fact['properties'] || count( $fact['properties'] ) > ( $is_v2 ? 20 : 19 ) || array_filter( $fact['properties'], static fn( $property ): bool => ! is_string( $property ) || ! isset( self::layout_producer_property_map( $is_v2 )[ $property ] ) || ! isset( $variant['layout_patch'][ self::layout_producer_property_map( $is_v2 )[ $property ] ] ) ) ) {
 					return array( 'error' => 'layout_graph variant provenance is malformed.' );
 				}
 			}
@@ -1276,7 +1282,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 		return array(
 			'graph' => array(
-				'schema'      => 'generic/computed-layout-graph/v1',
+				'schema'      => $schema,
 				'basis'       => $candidate['basis'],
 				'truncated'   => false,
 				'limits'      => array_intersect_key( $candidate['limits'], array_flip( array( 'nodes', 'depth', 'rules_per_node' ) ) ),
@@ -1402,8 +1408,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	}
 
 	/** @return array<string,string> */
-	private static function layout_property_map(): array {
-		return array(
+	private static function layout_property_map( bool $include_width = false ): array {
+		$map = array(
 			'display'         => 'display',
 			'columns'         => 'grid-template-columns',
 			'rows'            => 'grid-template-rows',
@@ -1426,11 +1432,15 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'flex_shrink'     => 'flex-shrink',
 			'flex_basis'      => 'flex-basis',
 		);
+		if ( $include_width ) {
+			$map['width'] = 'width';
+		}
+		return $map;
 	}
 
 	/** @return array<string,string> */
-	private static function layout_producer_property_map(): array {
-		return array_flip( self::layout_property_map() );
+	private static function layout_producer_property_map( bool $include_width = false ): array {
+		return array_flip( self::layout_property_map( $include_width ) );
 	}
 
 	/** @param array<int,string> $allowed */

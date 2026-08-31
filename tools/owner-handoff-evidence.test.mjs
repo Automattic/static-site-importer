@@ -21,6 +21,42 @@ const RECEIPT = {
   plan_identity: PLAN,
   rollback: { status: 'not_requested' },
 };
+const EDITOR_PRESENTATION = {
+  schema: 'static-site-importer/editor-presentation-evidence/v3',
+  provider_schema: 'wp-codebox/editor-presentation/v1',
+  canvas_document_type: 'iframe',
+  iframe_count: 1,
+  expected_identity_count: 1,
+  observed_identity_count: 1,
+  expected_identities: [HASH],
+  observed_identities: [HASH],
+  missing_identities: [],
+  expected_identities_complete: true,
+  coverage_complete: true,
+  idle_canvas: { schema: 'wp-codebox/editor-idle-canvas/v1', status: 'captured', onboarding_modal_count: 0 },
+  matched_rendering: {
+    schema: 'wp-codebox/editor-presentation-match/v1',
+    status: 'passed',
+    equivalent_canvas_widths: true,
+    major_geometry_drift: false,
+    unreadable_content: false,
+    hidden_content: false,
+    unresolved_asset_count: 0,
+    frontend_screenshot: 'frontend.png',
+    editor_screenshot: 'editor.png',
+    diff_screenshot: 'diff.png',
+  },
+};
+const EDITOR_INTERACTION = {
+  schema: 'static-site-importer/editor-interaction-evidence/v1',
+  provider_schema: 'wp-codebox/editor-actions/v1',
+  selection: { status: 'ok' },
+  text_mutation: { status: 'ok', mutation_status: 'applied' },
+  block_movement: { status: 'ok', mutation_status: 'applied' },
+  save: { schema: 'wp-codebox/editor-save/v1', status: 'saved', marker_present: true },
+  reload: { status: 'ok' },
+  post_save_validation: { schema: 'wp-codebox/editor-validity/v1', status: 'clean' },
+};
 
 function completeInput(overrides = {}) {
   return {
@@ -30,8 +66,8 @@ function completeInput(overrides = {}) {
       visual_acceptance: { desktop: { status: 'passed' }, mobile: { status: 'passed' } },
       editability_shared_regions: { schema: 'static-site-importer/editability-report-admission/v1', status: 'passed' },
       editor_presentation_persistence: {
-        schema: 'static-site-importer/editor-presentation-evidence/v2',
-        coverage_complete: true,
+        ...structuredClone(EDITOR_PRESENTATION),
+        interaction: structuredClone(EDITOR_INTERACTION),
         persistence: { persisted: true, reloaded: true },
       },
       media_library_ownership: { attachment_count: 3, replaceable_media_count: 3 },
@@ -61,6 +97,25 @@ test('owner handoff accepts complete hash-bound evidence', () => {
     reasons: [],
   });
   assert.match(document.report_card, /Accepted\/built allowed: yes/);
+});
+
+test('owner handoff fails closed for major editor geometry drift', () => {
+  const input = completeInput();
+  input.dimensions.editor_presentation_persistence.matched_rendering.major_geometry_drift = true;
+  const document = produceOwnerHandoffEvidence(input);
+  assert.equal(document.dimensions.find((row) => row.id === 'editor_presentation_persistence').status, 'evidence_gap');
+  assert.equal(document.accepted_built_allowed, false);
+});
+
+test('owner handoff rejects legacy stylesheet-only editor presentation evidence', () => {
+  const input = completeInput();
+  input.dimensions.editor_presentation_persistence = {
+    schema: 'static-site-importer/editor-presentation-evidence/v2',
+    coverage_complete: true,
+    persistence: { persisted: true, reloaded: true },
+  };
+  const document = produceOwnerHandoffEvidence(input);
+  assert.equal(document.dimensions.find((row) => row.id === 'editor_presentation_persistence').status, 'evidence_gap');
 });
 
 test('owner handoff records absent evidence without inferring a pass', () => {
