@@ -556,6 +556,12 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 				);
 			}
 			$input = static_site_importer_cli_apply_import_id( $input, $import_id );
+			if ( 'dependencies_prepared' === ( $result['continuation_reason'] ?? '' ) ) {
+				$prepared                              = is_array( $result['result'] ?? null ) ? $result['result'] : array();
+				$input['runtime_lifecycle_phase']      = 'resume';
+				$input['runtime_lifecycle_request_id'] = (string) ( $prepared['fresh_runtime']['request_id'] ?? '' );
+				$input['runtime_lifecycle_checkpoint'] = (string) ( $prepared['fresh_runtime']['lifecycle_checkpoint_id'] ?? $prepared['runtime_lifecycle_checkpoint'] ?? '' );
+			}
 		}
 		return static_site_importer_cli_import_receipt(
 			static_site_importer_cli_import_error( 'static_site_importer_cli_continuation_bound_exceeded', 'The import exceeded its bounded continuation steps.' ),

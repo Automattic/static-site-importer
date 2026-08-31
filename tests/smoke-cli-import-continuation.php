@@ -275,6 +275,41 @@ $assert( 'static-site-importer/import-cli-receipt/v1' === ( $receipt['schema'] ?
 $assert( 'completed' === ( $receipt['status'] ?? '' ) && 3 === ( $receipt['steps'] ?? 0 ), 'terminal-success-status' );
 $assert( true === ( $receipt['response']['success'] ?? false ) && empty( $receipt['response']['continuation'] ), 'terminal-success-has-no-continuation' );
 
+$lifecycle_requests = array();
+$lifecycle_queue    = array(
+	array(
+		'success'               => true,
+		'continuation'          => true,
+		'continuation_reason'   => 'dependencies_prepared',
+		'import_id'             => 'durable-direct-run',
+		'result'                => array(
+			'status'                       => 'dependencies_prepared',
+			'runtime_lifecycle_checkpoint' => 'checkpoint-1453',
+			'fresh_runtime'                => array(
+				'request_id'              => 'prepare-request-1453',
+				'lifecycle_checkpoint_id' => 'checkpoint-1453',
+			),
+		),
+	),
+	array(
+		'success'      => true,
+		'continuation' => false,
+		'result'       => array( 'theme_slug' => 'fresh-runtime' ),
+	),
+);
+$lifecycle_receipt = static_site_importer_cli_run_import_host(
+	$files_input,
+	static function ( array $request ) use ( &$lifecycle_requests, &$lifecycle_queue ): array {
+		$lifecycle_requests[] = $request;
+		return array_shift( $lifecycle_queue );
+	}
+);
+$assert( ! isset( $lifecycle_requests[0]['runtime_lifecycle_phase'] ), 'ordinary-request-omits-caller-lifecycle' );
+$assert( 'resume' === ( $lifecycle_requests[1]['runtime_lifecycle_phase'] ?? '' ), 'dependency-continuation-enters-resume' );
+$assert( 'prepare-request-1453' === ( $lifecycle_requests[1]['runtime_lifecycle_request_id'] ?? '' ) && 'checkpoint-1453' === ( $lifecycle_requests[1]['runtime_lifecycle_checkpoint'] ?? '' ), 'fresh-runtime-preserves-lifecycle-transport' );
+$assert( array( 'type' => 'files', 'import_id' => 'durable-direct-run' ) === ( $lifecycle_requests[1]['source'] ?? null ), 'fresh-runtime-preserves-direct-run-identity' );
+$assert( 'completed' === ( $lifecycle_receipt['status'] ?? '' ) && 2 === ( $lifecycle_receipt['steps'] ?? 0 ), 'dependency-checkpoint-resumes-terminally' );
+
 $failed = static_site_importer_cli_run_import_host(
 	array( 'source' => array( 'type' => 'html', 'html' => '<h1>x</h1>' ) ),
 	static fn (): array => array(
