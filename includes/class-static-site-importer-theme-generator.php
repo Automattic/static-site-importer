@@ -129,7 +129,7 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		if ( 'plan' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
 			$encoded_artifact = wp_json_encode( $artifact );
-			return Static_Site_Importer_Entity_Materializer_Registry::dependency_plan( $lifecycle, hash( 'sha256', false !== $encoded_artifact ? $encoded_artifact : '' ) );
+			return Static_Site_Importer_Dependency_Manager::dependency_plan( $lifecycle, hash( 'sha256', false !== $encoded_artifact ? $encoded_artifact : '' ) );
 		}
 		$prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization( $plan, $args );
 		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {

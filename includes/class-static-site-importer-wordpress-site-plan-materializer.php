@@ -180,8 +180,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			);
 		}
 		$payload    = self::resolve_companion_asset_references( $payload, $prepared['plan'] ?? array(), $prepared['resolved'] ?? array() );
-		$dependency = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $payload );
-		$result     = Static_Site_Importer_Entity_Materializer_Registry::materialize_companion_dependency( $dependency, ! empty( $args['overwrite'] ) );
+		$dependency = Static_Site_Importer_Dependency_Manager::companion_plugin_dependency( $payload );
+		$result     = Static_Site_Importer_Dependency_Manager::materialize_companion_dependency( $dependency, ! empty( $args['overwrite'] ) );
 		if ( 'failed' === ( $result['status'] ?? '' ) ) {
 			$error = $result['error'] ?? array();
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_companion_plugin_materialization_failed' ), (string) ( $error['message'] ?? 'Companion-plugin materialization failed.' ), $result );
@@ -217,7 +217,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** Public because checkpoint preparation provisions the same typed dependencies. */
 	public static function materialize_runtime_dependencies( array $lifecycle, array $args ) {
-		return Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_dependencies( $lifecycle, $args );
+		return Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies( $lifecycle, $args );
 	}
 
 	/** Return a provider-compensated error before canonical plan mutation begins. */

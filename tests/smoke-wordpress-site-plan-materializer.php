@@ -301,6 +301,8 @@ require dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diag
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-plugin-materializer.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-manager.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-build-provenance.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
@@ -590,7 +592,7 @@ $prepared_for_admission = Static_Site_Importer_WordPress_Site_Plan_Materializer:
 $admitted_prepared      = Static_Site_Importer_WordPress_Site_Plan_Materializer::admit_prepared( $prepared_for_admission );
 $assert( 'prepared' === ( $prepared_for_admission['status'] ?? '' ) && ! empty( $prepared_for_admission['payload_references_admitted'] ) && $prepared_for_admission === $admitted_prepared && ! str_contains( (string) wp_json_encode( $prepared_for_admission['plan'] ), 'payload_references_admitted' ) && ! str_contains( (string) wp_json_encode( Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared_for_admission ) ), 'payload_references_admitted' ), 'materializer lifecycle preparation admits referenced payloads once, before lifecycle work, without adding transient state to plans or receipts' );
 $materializer_companion_assets = strpos( (string) $materializer_source, 'resolve_companion_asset_references( $payload' );
-$materializer_companion        = strpos( (string) $materializer_source, '::materialize_companion_dependency( $dependency', $materializer_companion_assets + 1 );
+$materializer_companion        = strpos( (string) $materializer_source, 'Static_Site_Importer_Dependency_Manager::materialize_companion_dependency( $dependency', $materializer_companion_assets + 1 );
 $assert( false !== $materializer_companion_assets && $materializer_companion_assets < $materializer_companion, 'materializer resolves generated companion assets before companion dependency materialization' );
 $rollback_order     = array();
 $block_lifecycle    = array(

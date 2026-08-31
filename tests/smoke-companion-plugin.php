@@ -230,6 +230,7 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-companion-plugin.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-plugin-materializer.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-manager.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
@@ -886,22 +887,22 @@ $assert( ! in_array( 'activated', $mu_report['actions'] ?? array(), true ), 'mu-
 $assert( file_exists( WPMU_PLUGIN_DIR . '/ssi-example-site.php' ), 'mu-install-writes-root-loader' );
 
 // 4. Declared-dependency wiring: distinct generated/companion dependency entry.
-$dependency = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $payload );
+$dependency = Static_Site_Importer_Dependency_Manager::companion_plugin_dependency( $payload );
 $assert( 'companion_plugin' === ( $dependency['type'] ?? '' ), 'dependency-type-is-companion-plugin' );
 $assert( 'ssi-example-site' === ( $dependency['slug'] ?? '' ), 'dependency-slug-namespaced' );
 $assert( is_callable( $dependency['availability_callback'] ?? null ), 'dependency-has-availability-callback' );
 
 // The earlier install marked the regular companion active via the stub, so the
 // dependency row reflects a satisfied dependency.
-$active_row = Static_Site_Importer_Entity_Materializer_Registry::companion_dependency_row( $dependency, false );
+$active_row = Static_Site_Importer_Dependency_Manager::companion_dependency_row( $dependency, false );
 $assert( 'generated' === ( $active_row['source'] ?? '' ), 'dependency-row-source-generated' );
 $assert( true === ( $active_row['active'] ?? false ), 'dependency-row-active-when-installed' );
 $assert( array( 'example/custom-hero' ) === ( $active_row['block_names'] ?? array() ), 'dependency-row-carries-block-names' );
 
 // A not-yet-installed companion surfaces as a gate-visible failure.
 $missing_payload    = array_merge( $payload, array( 'site_slug' => 'second-site' ) );
-$missing_dependency = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $missing_payload );
-$assert( false === Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_available( $missing_dependency ), 'missing-companion-not-available' );
+$missing_dependency = Static_Site_Importer_Dependency_Manager::companion_plugin_dependency( $missing_payload );
+$assert( false === Static_Site_Importer_Dependency_Manager::companion_plugin_available( $missing_dependency ), 'missing-companion-not-available' );
 
 $gate_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
 Static_Site_Importer_Report_Diagnostics::record_companion_plugin_dependency( $gate_report, $missing_dependency, false );
