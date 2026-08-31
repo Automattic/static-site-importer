@@ -74,6 +74,9 @@ class Static_Site_Importer_Plugin_Materializer {
 				$report['installed'] = true;
 				$report['actions'][] = 'installed';
 			}
+			if ( function_exists( 'wp_clean_plugins_cache' ) ) {
+				wp_clean_plugins_cache( false );
+			}
 		}
 		$activation_deps = self::load_activation_dependencies();
 		if ( is_wp_error( $activation_deps ) ) {
