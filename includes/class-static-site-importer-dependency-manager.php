@@ -143,7 +143,7 @@ class Static_Site_Importer_Dependency_Manager {
 
 	/** @return array<string,mixed> */
 	public static function companion_plugin_dependency( array $payload ): array {
-		$dependency                              = array(
+		$dependency                          = array(
 			'type'        => 'companion_plugin',
 			'slug'        => Static_Site_Importer_Companion_Plugin::plugin_slug( $payload ),
 			'plugin_file' => Static_Site_Importer_Companion_Plugin::plugin_file( $payload ),
