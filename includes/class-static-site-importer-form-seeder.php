@@ -121,6 +121,7 @@ class Static_Site_Importer_Form_Seeder {
 			'number'   => 'jetpack/field-number',
 			'email'    => 'jetpack/field-email',
 			'tel'      => 'jetpack/field-telephone',
+			'phone'    => 'jetpack/field-telephone',
 			'url'      => 'jetpack/field-url',
 			'date'     => 'jetpack/field-date',
 			'textarea' => 'jetpack/field-textarea',
@@ -846,6 +847,16 @@ class Static_Site_Importer_Form_Seeder {
 			usort( $siblings, static fn ( array $left, array $right ): int => $left['order'] <=> $right['order'] );
 		}
 		unset( $siblings );
+		$provider_controls = array();
+		foreach ( $controls as $control_index => $control ) {
+			if ( ! is_array( $control ) || 'phone' !== strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) ) {
+				continue;
+			}
+			$previous = $controls[ $control_index - 1 ] ?? null;
+			if ( is_array( $previous ) && 'button' === strtolower( trim( (string) ( $previous['tag'] ?? '' ) ) ) && 'button' === strtolower( trim( (string) ( $previous['type'] ?? '' ) ) ) ) {
+				$provider_controls[ $control_index - 1 ] = true;
+			}
+		}
 		$losses                     = array();
 		$operations                 = array();
 		$represented_layout_nodes   = array();
@@ -1155,7 +1166,7 @@ class Static_Site_Importer_Form_Seeder {
 				'node_hash'   => hash( 'sha256', $node_id ),
 			);
 		}
-		$build = static function ( string $parent_node ) use ( &$build, $children, $field_blocks, $controls, $suppressed_controls, &$losses ): array {
+		$build = static function ( string $parent_node ) use ( &$build, $children, $field_blocks, $controls, $suppressed_controls, $provider_controls, &$losses ): array {
 			$blocks = array();
 			foreach ( $children[ $parent_node ] ?? array() as $node ) {
 				if ( 'control' === ( $node['kind'] ?? null ) ) {
@@ -1166,7 +1177,7 @@ class Static_Site_Importer_Form_Seeder {
 						continue;
 					} elseif ( isset( $controls[ $control_index ] ) ) {
 						$type = strtolower( trim( (string) ( $controls[ $control_index ]['type'] ?? $controls[ $control_index ]['tag'] ?? '' ) ) );
-						if ( ! self::control_carries_authored_content( $type ) ) {
+						if ( isset( $provider_controls[ $control_index ] ) || ! self::control_carries_authored_content( $type ) ) {
 							continue;
 						}
 						$losses[] = array(
@@ -1223,8 +1234,8 @@ class Static_Site_Importer_Form_Seeder {
 		if ( '' !== $id ) {
 			$attrs['id'] = $id;
 		}
-		if ( 'tel' === $lookup ) {
-			$attrs['showCountrySelector'] = false;
+		if ( in_array( $lookup, array( 'tel', 'phone' ), true ) ) {
+			$attrs['showCountrySelector'] = 'phone' === $lookup;
 		}
 		$placeholder = isset( $control['placeholder'] ) && is_scalar( $control['placeholder'] ) ? trim( (string) $control['placeholder'] ) : '';
 
@@ -1294,7 +1305,7 @@ class Static_Site_Importer_Form_Seeder {
 				$input_attrs['step'] = trim( (string) $control['step'] );
 			}
 			$inner_blocks[] = array(
-				'name'  => 'tel' === $lookup ? 'jetpack/phone-input' : 'jetpack/input',
+				'name'  => in_array( $lookup, array( 'tel', 'phone' ), true ) ? 'jetpack/phone-input' : 'jetpack/input',
 				'attrs' => $input_attrs,
 			);
 		}

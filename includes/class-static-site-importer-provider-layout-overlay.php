@@ -103,7 +103,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				continue; }
 			$declarations = self::declarations( $variant['layout_patch'], $target['capabilities'], $id, $losses );
 			if ( ! empty( $declarations ) ) {
-				$rules[]      = '@media ' . $variant['condition']['query'] . '{' . $target['selector'] . '{' . implode( ';', $declarations ) . '}}';
+				$rules[]      = self::conditional_rule( $variant['condition'], $target['selector'] . '{' . implode( ';', $declarations ) . '}' );
 				$operations[] = array(
 					'dimension'   => 'layout',
 					'strategy'    => 'provider_selector_transposition',
@@ -121,6 +121,20 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			);
 		}
 		$css     = empty( $rules ) ? '' : '/* Static Site Importer provider layout overlay: ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $rules ) ) ) . "\n";
+		if ( strlen( $css ) > self::MAX_OVERLAY_BYTES ) {
+			return array(
+				'overlay'    => array(),
+				'css'        => '',
+				'operations' => array(),
+				'losses'     => array(
+					array(
+						'dimension'   => 'layout',
+						'reason_code' => 'provider_structure_mismatch',
+						'map_error'   => 'provider layout overlay exceeds its bounded size.',
+					),
+				),
+			);
+		}
 		$overlay = '' === $css ? array() : array(
 			'schema' => self::OVERLAY_SCHEMA,
 			'css'    => $css,
@@ -160,7 +174,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_compiled_rule( string $rule ): bool {
-		if ( preg_match( '/^@media (\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\))\{(.+)\}$/D', $rule, $matches ) ) {
+		if ( preg_match( '/^@(?:media|container) (\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\))\{(.+)\}$/D', $rule, $matches ) ) {
 			return self::safe_compiled_rule( $matches[2] );
 		}
 		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12})?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
@@ -179,7 +193,20 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		return (bool) preg_match( '/^' . preg_quote( $scope, '/' ) . '(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12})$/D', $selector );
 	}
 	private static function safe_condition( mixed $condition ): bool {
-		return is_array( $condition ) && array_keys( $condition ) === array( 'kind', 'query' ) && 'media' === ( $condition['kind'] ?? null ) && is_string( $condition['query'] ?? null ) && (bool) preg_match( '/^\((?:min|max)-(?:width|height): ?(?:[0-9]+(?:\.[0-9]+)?)(?:px|em|rem|vw|vh)\)$/D', $condition['query'] );
+		if ( ! is_array( $condition ) ) {
+			return false;
+		}
+		if ( in_array( $condition['kind'] ?? null, array( 'media', 'container' ), true ) ) {
+			return array_keys( $condition ) === array( 'kind', 'query' ) && is_string( $condition['query'] ?? null ) && (bool) preg_match( '/^\((?:min|max)-(?:width|height): ?(?:[0-9]+(?:\.[0-9]+)?)(?:px|em|rem|vw|vh)\)$/D', $condition['query'] );
+		}
+		return 'all' === ( $condition['kind'] ?? null ) && array_keys( $condition ) === array( 'kind', 'conditions' ) && is_array( $condition['conditions'] ) && count( $condition['conditions'] ) >= 2 && count( $condition['conditions'] ) <= 4 && array_is_list( $condition['conditions'] ) && ! array_filter( $condition['conditions'], static fn ( $part ): bool => ! self::safe_condition( $part ) );
+	}
+	private static function conditional_rule( array $condition, string $rule ): string {
+		$conditions = 'all' === ( $condition['kind'] ?? null ) ? $condition['conditions'] : array( $condition );
+		foreach ( array_reverse( $conditions ) as $part ) {
+			$rule = '@' . $part['kind'] . ' ' . $part['query'] . '{' . $rule . '}';
+		}
+		return $rule;
 	}
 	private static function declarations( array $layout, array $capabilities, string $node, array &$losses ): array {
 		$map          = array(
@@ -244,7 +271,13 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( 'pointer-events' === $fact ) {
 			return 'auto' === $value;
 		}
-		return (bool) preg_match( '/^(?:auto|none|span [1-9][0-9]*|[1-9][0-9]*|(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr)|minmax\((?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr), ?(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr)\)|repeat\([1-9][0-9]*, ?(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr)\))+(?: \/ [1-9][0-9]*)?$/D', $value );
+		if ( in_array( $fact, array( 'column', 'row' ), true ) ) {
+			return (bool) preg_match( '/^(?:auto|[1-9][0-9]*|span [1-9][0-9]*) \/ (?:auto|[1-9][0-9]*|span [1-9][0-9]*)$/D', $value );
+		}
+		if ( 'area' === $fact ) {
+			return (bool) preg_match( '/^(?:auto|[1-9][0-9]*|span [1-9][0-9]*)(?: \/ (?:auto|[1-9][0-9]*|span [1-9][0-9]*)){3}$/D', $value );
+		}
+		return (bool) preg_match( '/^(?:var\(--[a-zA-Z][a-zA-Z0-9_-]{0,79}(?:, ?(?:0|[0-9]+(?:\.[0-9]+)?(?:px|rem|em|%|vw|vh)))?\)|auto|none|0|span [1-9][0-9]*|[1-9][0-9]*|(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr)|minmax\((?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr), ?(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr)\)|repeat\([1-9][0-9]*, ?(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr)\))+(?: \/ [1-9][0-9]*)?$/D', $value );
 	}
 	private static function loss( string $reason, string $node ): array { return array(
 		'dimension'   => 'layout',
