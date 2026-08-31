@@ -56,7 +56,7 @@ $responses = array(
 	'https://batch.test/one.xml' => array( 'application/xml', '<urlset><url><loc>https://batch.test/</loc></url><url><loc>https://batch.test/about/</loc></url></urlset>' ),
 	'https://batch.test/two.xml' => array( 'application/xml', '<urlset><url><loc>https://batch.test/about/team/</loc></url></urlset>' ),
 	'https://batch.test/' => array( 'text/html', '<main><a href="/about/">About</a><link rel="stylesheet" href="/empty.css"></main>' ),
-	'https://batch.test/about/' => array( 'text/html', '<main><a href="/about/team/">Team</a></main>' ),
+	'https://batch.test/about/' => array( 'text/html', '<main><a href="https://batch.test/about/team/">Team</a></main>' ),
 	'https://batch.test/about/team/' => array( 'text/html', '<main>Team</main>' ),
 	'https://batch.test/empty.css' => array( 'text/css', '' ),
 );
@@ -97,6 +97,14 @@ $batch_quality = $resumed['url_batch_run']['batch_quality'] ?? array();
 if ( 2 !== count( $batch_quality ) || 1 !== ( $batch_quality[0]['fallback_count'] ?? -1 ) || isset( $batch_quality[0]['fallbacks'] ) || true !== ( $batch_quality[0]['pass'] ?? null ) || true !== ( $batch_quality[1]['pass'] ?? null ) ) { throw new RuntimeException( 'resumed aggregates must derive bounded quality evidence for every completed batch without retaining fallback payloads' ); }
 $first_files = array_column( $artifacts[0]['artifact']['files'], null, 'path' );
 $second_files = array_column( $artifacts[1]['artifact']['files'], null, 'path' );
+$canonical_absolute_route = false;
+foreach ( $artifacts as $captured ) {
+	if ( ! str_starts_with( (string) ( $captured['artifact']['provenance']['source_url'] ?? '' ), 'https://batch.test/' ) ) { throw new RuntimeException( 'URL artifacts must retain their final source URL as compiler provenance' ); }
+	foreach ( $captured['args']['compiled_artifact_result']['wordpress_site_plan']['pages'] ?? array() as $page ) {
+		if ( 'website/about/index.html' === ( $page['source_path'] ?? '' ) && str_contains( (string) ( $page['canonical_block_markup'] ?? '' ), 'href="/about/team/"' ) ) { $canonical_absolute_route = true; }
+	}
+}
+if ( ! $canonical_absolute_route ) { throw new RuntimeException( 'staged URL compilation must canonicalize proven same-origin absolute links to materialized routes' ); }
 $reference_backed = interface_exists( Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader::class );
 if ( ! str_contains( (string) ( $artifacts[0]['content']['website/about/index.html'] ?? '' ), 'href="/about/team/"' ) || ( $reference_backed && ( isset( $first_files['website/about/index.html']['content'] ) || 'blocks-engine/payload-reference/v1' !== ( $first_files['website/about/index.html']['payload_reference']['schema'] ?? '' ) ) ) || ! isset( $first_files['website/empty.css'] ) || 2 < count( array_filter( $artifacts[0]['artifact']['files'], static fn( array $file ) => str_ends_with( $file['path'], 'index.html' ) ) ) || isset( $second_files['website/index.html'] ) || ! isset( $second_files['website/about/team/index.html'] ) || empty( $artifacts[1]['args']['preserve_existing_theme_bootstrap'] ) || 2 !== count( array_keys( $requests, 'https://batch.test/about/team/', true ) ) || 1 > ( $resumed['url_batch_run']['fetch_cache']['hits'] ?? 0 ) || is_dir( $legacy_cache ) ) { throw new RuntimeException( 'later batches must retain opaque verified payloads, exclude the unrelated root page, and preserve response reuse' ); }
 $again = Static_Site_Importer_URL_Batch_Import::import( $request, $input, $fetcher, static fn() => new WP_Error( 'should_not_run' ) );
