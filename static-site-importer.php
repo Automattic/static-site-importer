@@ -75,6 +75,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-entity-materializer-registry.php',
 	'class-static-site-importer-asset-reporter.php',
 	'class-static-site-importer-document-metadata-reporter.php',
+	'class-static-site-importer-route-document-metadata.php',
 	'class-static-site-importer-protected-page-policy.php',
 	'class-static-site-importer-stylesheet-materializer.php',
 	'class-static-site-importer-provider-layout-overlay.php',
@@ -112,6 +113,7 @@ register_deactivation_hook( __FILE__, array( Static_Site_Importer_Direct_Artifac
 Static_Site_Importer_Figma_Import::register_default_zstd_decoder();
 Static_Site_Importer_Entity_Materializer_Registry::register_presentations();
 Static_Site_Importer_Form_Seeder::register_runtime_bootstrap();
+Static_Site_Importer_Route_Document_Metadata::register();
 
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/abilities.php';
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/block.php';
