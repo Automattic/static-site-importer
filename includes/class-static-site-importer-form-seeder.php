@@ -422,7 +422,8 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			unset( $field_block['losses'] );
 
-			$field_block['attrs']['className'] = self::layout_node_class( $scope, 'control-' . $control_index );
+			$source_class                      = isset( $control['class'] ) && is_scalar( $control['class'] ) ? trim( (string) $control['class'] ) : '';
+			$field_block['attrs']['className'] = trim( $source_class . ' ' . self::layout_node_class( $scope, 'control-' . $control_index ) );
 			$field_blocks[ $control_index ]    = $field_block;
 			$mapped_types[]                    = $field_block['name'];
 		}
@@ -995,9 +996,14 @@ class Static_Site_Importer_Form_Seeder {
 				),
 			);
 		} elseif ( '' !== $label ) {
+			$label_attrs  = array( 'label' => $label );
+			$label_class  = isset( $control['label_class'] ) && is_scalar( $control['label_class'] ) ? trim( (string) $control['label_class'] ) : '';
+			if ( '' !== $label_class ) {
+				$label_attrs['className'] = $label_class;
+			}
 			$inner_blocks[] = array(
 				'name'  => 'jetpack/label',
-				'attrs' => array( 'label' => $label ),
+				'attrs' => $label_attrs,
 			);
 		}
 
