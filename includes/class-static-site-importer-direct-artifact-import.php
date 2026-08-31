@@ -174,6 +174,90 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		return self::execute( $workspace, $run, $args );
 	}
 
+	/** Compile one isolated page shard and publish only immutable receipt checkpoints. */
+	public static function compile_worker( string $import_id, array $page_ids ) {
+		self::$checkpoint_read_cache = array();
+		if ( ! preg_match( '/^[a-f0-9]{64}$/', $import_id ) || empty( $page_ids ) || array_values( array_unique( array_filter( $page_ids, 'is_string' ) ) ) !== array_values( $page_ids ) ) {
+			return new WP_Error( 'static_site_importer_direct_artifact_worker_request_invalid', 'The direct artifact compile worker request is invalid.' );
+		}
+		$workspace = self::workspace( $import_id, false );
+		if ( is_wp_error( $workspace ) ) {
+			return $workspace;
+		}
+		$run = self::read_run( $workspace, $import_id );
+		if ( is_wp_error( $run ) ) {
+			return $run;
+		}
+		if ( self::owner() !== ( $run['binding']['owner'] ?? '' ) || self::implementation_binding() !== ( $run['binding']['implementation'] ?? null ) ) {
+			return new WP_Error( 'static_site_importer_direct_artifact_worker_mismatch', 'The compile worker does not match the retained run owner or implementation.' );
+		}
+		if ( array_values( array_intersect( $run['page_ids'] ?? array(), $page_ids ) ) !== array_values( $page_ids ) || empty( $run['refs']['shared'] ) ) {
+			return new WP_Error( 'static_site_importer_direct_artifact_worker_pages_invalid', 'The compile worker page shard is not part of the retained run.' );
+		}
+
+		try {
+			$shared_state = self::read_checkpoint( $workspace, $run, $run['refs']['shared'], 'shared' );
+			if ( is_wp_error( $shared_state ) ) {
+				return $shared_state;
+			}
+			$shared = $shared_state['plan'];
+			$plans  = array();
+			foreach ( $page_ids as $page_id ) {
+				$existing = self::existing_checkpoint_ref( $workspace, $run, self::page_file( 'receipts', $page_id ), 'receipt' );
+				if ( is_wp_error( $existing ) ) {
+					return $existing;
+				}
+				$page_state = self::read_checkpoint( $workspace, $run, $run['refs']['pages'][ $page_id ] ?? array(), 'page_plan' );
+				if ( is_wp_error( $page_state ) ) {
+					return $page_state;
+				}
+				if ( ! empty( $existing ) ) {
+					$receipt_state = self::read_checkpoint( $workspace, $run, $existing, 'receipt' );
+					$valid         = is_wp_error( $receipt_state ) ? $receipt_state : self::validate_receipt( $receipt_state['receipt'], $page_state['plan'], $shared );
+					if ( is_wp_error( $valid ) ) {
+						return $valid;
+					}
+					continue;
+				}
+				$plans[ $page_id ] = $page_state['plan'];
+			}
+			if ( empty( $plans ) ) {
+				return array(
+					'success'   => true,
+					'published' => 0,
+				);
+			}
+			$compiler      = self::compiler();
+			$compile_pages = is_wp_error( $compiler ) ? null : array( $compiler, 'compilePreparedPages' );
+			if ( is_wp_error( $compiler ) || ! is_callable( $compile_pages ) ) {
+				return is_wp_error( $compiler ) ? $compiler : new WP_Error( 'static_site_importer_invalid_transformer', 'The direct artifact compiler does not implement the staged compilation contract.' );
+			}
+			$batch = call_user_func( $compile_pages, $shared, array_values( $plans ), self::payload_reader( $workspace ) );
+			if ( ! is_array( $batch ) || array_keys( $batch ) !== array_keys( $plans ) ) {
+				return new WP_Error( 'static_site_importer_direct_artifact_receipt_set_mismatch', 'Blocks Engine did not return the exact requested compiled receipt shard.' );
+			}
+			foreach ( $plans as $page_id => $plan ) {
+				$valid = self::validate_receipt( $batch[ $page_id ], $plan, $shared );
+				if ( is_wp_error( $valid ) ) {
+					return $valid;
+				}
+				$published = self::publish_checkpoint( $workspace, $run, 'receipt', self::page_file( 'receipts', $page_id ), array(
+					'page_id' => $page_id,
+					'receipt' => $batch[ $page_id ],
+				) );
+				if ( is_wp_error( $published ) ) {
+					return $published;
+				}
+			}
+			return array(
+				'success'   => true,
+				'published' => count( $plans ),
+			);
+		} catch ( Throwable $error ) {
+			return new WP_Error( 'static_site_importer_direct_artifact_worker_failed', $error->getMessage() );
+		}
+	}
+
 	/** Continue the phase machine until its server-owned work boundary. */
 	private static function execute( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run, array $request_args ) {
 		$lock = $workspace->acquire_lock( 'execution.lock' );
@@ -388,17 +472,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				}
 			}
 
-			$pending   = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['receipts'] ?? array() ) ) );
-			$batch_ids = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending, 0, $policy['compile_batch_pages'] );
+			$pending     = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['receipts'] ?? array() ) ) );
+			$batch_limit = null !== $policy['compile_fanout'] ? min( $policy['compile_batch_pages'], $policy['compile_workers'] * $policy['compile_shard_pages'] ) : $policy['compile_batch_pages'];
+			$batch_ids   = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending, 0, $batch_limit );
 			if ( ! empty( $batch_ids ) ) {
-				$plans = array();
-				foreach ( $batch_ids as $page_id ) {
-					$page_state = self::read_checkpoint( $workspace, $run, $run['refs']['pages'][ $page_id ] ?? array(), 'page_plan' );
-					if ( is_wp_error( $page_state ) ) {
-						return $page_state;
-					}
-					$plans[ $page_id ] = $page_state['plan'];
-				}
 				$started = microtime( true );
 				$entered = self::enter_phase( $workspace, $run, 'compile_pages', $batch_ids );
 				if ( is_wp_error( $entered ) ) {
@@ -406,40 +483,79 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				}
 				$run = $entered;
 				self::before_phase( 'compile_pages', $run, $batch_ids );
-				$batch = call_user_func( $compile_pages, $shared, array_values( $plans ), $payload_reader );
-				if ( ! is_array( $batch ) || array_keys( $batch ) !== $batch_ids ) {
+				$plans  = array();
+				$shards = array_chunk( $batch_ids, $policy['compile_shard_pages'] );
+				$fanout = null !== $policy['compile_fanout'] && 1 < count( $shards ) ? call_user_func( $policy['compile_fanout'], $run['import_id'], $shards ) : null;
+				if ( is_wp_error( $fanout ) ) {
+					return self::fail( $workspace, $run, 'compile_pages', $fanout, $batch_ids );
+				}
+				if ( true === $fanout ) {
+					$adopted = self::adopt_receipts( $workspace, $run, $shared );
+					if ( is_wp_error( $adopted ) ) {
+						return self::fail( $workspace, $run, 'compile_pages', $adopted, $batch_ids );
+					}
+					if ( array_values( array_intersect( array_keys( $adopted ), $batch_ids ) ) !== $batch_ids ) {
+						return self::fail( $workspace, $run, 'compile_pages', new WP_Error( 'static_site_importer_direct_artifact_receipt_set_mismatch', 'Compile workers did not publish the exact requested receipt shards.' ), $batch_ids );
+					}
+					$run['refs']['receipts'] = $adopted;
+					foreach ( array_keys( $adopted ) as $page_id ) {
+						$run['work']['page_compile_counts'][ $page_id ] = 1;
+					}
+					$run['work']['compile_batches']          = (int) $run['work']['compile_batches'] + count( $shards );
+					$run['work']['pages_compiled']           = count( $adopted );
+					$run['progress']['receipt_count']        = count( $adopted );
+					$run['progress']['updated_at']           = gmdate( 'c' );
+					$run['timings']['compile_pages_seconds'] = (float) ( $run['timings']['compile_pages_seconds'] ?? 0 ) + microtime( true ) - $started;
+					$write                                   = self::write_run( $workspace, $run );
+					if ( is_wp_error( $write ) ) {
+						return self::fail( $workspace, $run, 'compile_pages_checkpoint', $write, $batch_ids );
+					}
+					$batch = null;
+				} else {
+					foreach ( $batch_ids as $page_id ) {
+						$page_state = self::read_checkpoint( $workspace, $run, $run['refs']['pages'][ $page_id ] ?? array(), 'page_plan' );
+						if ( is_wp_error( $page_state ) ) {
+							return $page_state;
+						}
+						$plans[ $page_id ] = $page_state['plan'];
+					}
+					$batch = call_user_func( $compile_pages, $shared, array_values( $plans ), $payload_reader );
+				}
+				if ( null !== $batch && ( ! is_array( $batch ) || array_keys( $batch ) !== $batch_ids ) ) {
 					return self::fail( $workspace, $run, 'compile_pages', new WP_Error( 'static_site_importer_direct_artifact_receipt_set_mismatch', 'Blocks Engine did not return the exact requested compiled receipt batch.' ), $batch_ids );
 				}
-				foreach ( $batch_ids as $page_id ) {
-					$valid = self::validate_receipt( $batch[ $page_id ], $plans[ $page_id ], $shared );
-					if ( is_wp_error( $valid ) ) {
-						return self::fail( $workspace, $run, 'compile_pages', $valid, $batch_ids );
+				if ( null !== $batch ) {
+					foreach ( $batch_ids as $page_id ) {
+						$valid = self::validate_receipt( $batch[ $page_id ], $plans[ $page_id ], $shared );
+						if ( is_wp_error( $valid ) ) {
+							return self::fail( $workspace, $run, 'compile_pages', $valid, $batch_ids );
+						}
 					}
-				}
-				$run['work']['compile_batches'] = (int) $run['work']['compile_batches'] + 1;
-				foreach ( $batch_ids as $page_id ) {
-					$receipt = $batch[ $page_id ];
-					$ref     = self::publish_checkpoint( $workspace, $run, 'receipt', self::page_file( 'receipts', $page_id ), array(
-						'page_id' => $page_id,
-						'receipt' => $receipt,
-					) );
-					if ( is_wp_error( $ref ) ) {
-						return self::fail( $workspace, $run, 'compile_pages', $ref, $batch_ids );
+					$run['work']['compile_batches'] = (int) $run['work']['compile_batches'] + 1;
+					foreach ( $batch_ids as $page_id ) {
+						$receipt = $batch[ $page_id ];
+						$ref     = self::publish_checkpoint( $workspace, $run, 'receipt', self::page_file( 'receipts', $page_id ), array(
+							'page_id' => $page_id,
+							'receipt' => $receipt,
+						) );
+						if ( is_wp_error( $ref ) ) {
+							return self::fail( $workspace, $run, 'compile_pages', $ref, $batch_ids );
+						}
+						$run['refs']['receipts'][ $page_id ]            = $ref;
+						$run['work']['pages_compiled']                  = (int) $run['work']['pages_compiled'] + 1;
+						$run['work']['page_compile_counts'][ $page_id ] = (int) ( $run['work']['page_compile_counts'][ $page_id ] ?? 0 ) + 1;
+						$run['progress']['receipt_count']               = count( $run['refs']['receipts'] );
+						$run['progress']['updated_at']                  = gmdate( 'c' );
+						$write = self::write_run( $workspace, $run );
+						if ( is_wp_error( $write ) ) {
+							return self::fail( $workspace, $run, 'compile_pages_checkpoint', $write, array( $page_id ) );
+						}
 					}
-					$run['refs']['receipts'][ $page_id ]            = $ref;
-					$run['work']['pages_compiled']                  = (int) $run['work']['pages_compiled'] + 1;
-					$run['work']['page_compile_counts'][ $page_id ] = (int) ( $run['work']['page_compile_counts'][ $page_id ] ?? 0 ) + 1;
-					$run['progress']['receipt_count']               = count( $run['refs']['receipts'] );
-					$run['progress']['updated_at']                  = gmdate( 'c' );
-					$write = self::write_run( $workspace, $run );
+					$run['timings']['compile_pages_seconds'] = (float) ( $run['timings']['compile_pages_seconds'] ?? 0 ) + microtime( true ) - $started;
+					$write                                   = self::write_run( $workspace, $run );
 					if ( is_wp_error( $write ) ) {
-						return self::fail( $workspace, $run, 'compile_pages_checkpoint', $write, array( $page_id ) );
+						return self::fail( $workspace, $run, 'compile_pages_checkpoint', $write, $batch_ids );
 					}
-				}
-				$run['timings']['compile_pages_seconds'] = (float) ( $run['timings']['compile_pages_seconds'] ?? 0 ) + microtime( true ) - $started;
-				$write                                   = self::write_run( $workspace, $run );
-				if ( is_wp_error( $write ) ) {
-					return self::fail( $workspace, $run, 'compile_pages_checkpoint', $write, $batch_ids );
 				}
 			}
 
@@ -1288,6 +1404,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	private static function run_policy(): array {
 		$policy = array(
 			'compile_batch_pages'       => 2,
+			'compile_workers'           => 1,
+			'compile_shard_pages'       => 2,
+			'compile_fanout'            => null,
 			'max_invocation_seconds'    => 20.0,
 			'freeze_continuation_bytes' => 8 * 1024 * 1024,
 			'clock'                     => static fn (): float => microtime( true ),
@@ -1299,6 +1418,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			}
 		}
 		$policy['compile_batch_pages']       = min( 20, max( 1, (int) $policy['compile_batch_pages'] ) );
+		$policy['compile_workers']           = min( 4, max( 1, (int) $policy['compile_workers'] ) );
+		$policy['compile_shard_pages']       = min( 4, max( 1, (int) $policy['compile_shard_pages'] ) );
+		$policy['compile_fanout']            = is_callable( $policy['compile_fanout'] ) ? $policy['compile_fanout'] : null;
 		$policy['max_invocation_seconds']    = max( 0.001, (float) $policy['max_invocation_seconds'] );
 		$policy['freeze_continuation_bytes'] = max( 1, (int) $policy['freeze_continuation_bytes'] );
 		$policy['clock']                     = is_callable( $policy['clock'] ) ? $policy['clock'] : static fn (): float => microtime( true );

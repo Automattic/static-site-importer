@@ -59,7 +59,93 @@ if ( ! function_exists( 'static_site_importer_cli_direct_artifact_run_policy' ) 
 	/** Use the CLI worker runtime for a larger bounded shared-analysis batch. */
 	function static_site_importer_cli_direct_artifact_run_policy( array $policy ): array {
 		$policy['compile_batch_pages'] = 20;
+		$policy['compile_workers']     = 4;
+		$policy['compile_shard_pages'] = 4;
+		$policy['compile_fanout']      = 'static_site_importer_cli_compile_artifact_pages_fanout';
 		return $policy;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout' ) ) {
+	/** Run bounded receipt workers concurrently; return null when process spawning is unavailable. */
+	function static_site_importer_cli_compile_artifact_pages_fanout( string $import_id, array $shards ) {
+		if ( ! function_exists( 'proc_open' ) || empty( $_SERVER['argv'][0] ) ) {
+			return null;
+		}
+		$base_command = array( (string) $_SERVER['argv'][0], '--path=' . ABSPATH );
+		$config       = WP_CLI::get_runner()->config ?? array();
+		foreach ( array( 'url', 'user' ) as $key ) {
+			if ( '' !== (string) ( $config[ $key ] ?? '' ) ) {
+				$base_command[] = '--' . $key . '=' . (string) $config[ $key ];
+			}
+		}
+		$processes   = array();
+		$spawn_error = false;
+		foreach ( $shards as $index => $page_ids ) {
+			$encoded = rawurlencode( (string) wp_json_encode( array_values( $page_ids ) ) );
+			$command = array_merge( $base_command, array( 'static-site-importer', 'compile-artifact-pages', '--import-id=' . $import_id, '--pages=' . $encoded ) );
+			$pipes   = array();
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open -- WP-CLI uses isolated local workers for bounded page compilation.
+			$process = proc_open(
+				$command,
+				array(
+					1 => array( 'pipe', 'w' ),
+					2 => array( 'pipe', 'w' ),
+				),
+				$pipes,
+				null,
+				null,
+				array( 'bypass_shell' => true )
+			);
+			if ( ! is_resource( $process ) ) {
+				$spawn_error = true;
+				break;
+			}
+			stream_set_blocking( $pipes[1], false );
+			stream_set_blocking( $pipes[2], false );
+			$processes[ $index ] = array(
+				'process' => $process,
+				'pipes'   => $pipes,
+				'output'  => '',
+				'error'   => '',
+			);
+		}
+		if ( $spawn_error && empty( $processes ) ) {
+			return null;
+		}
+
+		$failures = array();
+		while ( ! empty( $processes ) ) {
+			foreach ( $processes as $index => &$worker ) {
+				$worker['output'] = substr( $worker['output'] . (string) stream_get_contents( $worker['pipes'][1] ), -16000 );
+				$worker['error']  = substr( $worker['error'] . (string) stream_get_contents( $worker['pipes'][2] ), -16000 );
+				$status           = proc_get_status( $worker['process'] );
+				if ( $status['running'] ) {
+					continue;
+				}
+				$worker['output'] = substr( $worker['output'] . (string) stream_get_contents( $worker['pipes'][1] ), -16000 );
+				$worker['error']  = substr( $worker['error'] . (string) stream_get_contents( $worker['pipes'][2] ), -16000 );
+				fclose( $worker['pipes'][1] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the worker stdout pipe before process collection.
+				fclose( $worker['pipes'][2] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the worker stderr pipe before process collection.
+				proc_close( $worker['process'] );
+				if ( 0 !== (int) $status['exitcode'] ) {
+					$failures[] = substr( trim( $worker['error'] . "\n" . $worker['output'] ), 0, 1000 );
+				}
+				unset( $processes[ $index ] );
+			}
+			unset( $worker );
+			if ( ! empty( $processes ) ) {
+				usleep( 10000 );
+			}
+		}
+		if ( $spawn_error || ! empty( $failures ) ) {
+			return new WP_Error(
+				'static_site_importer_direct_artifact_worker_process_failed',
+				'One or more compile workers failed.',
+				array( 'worker_errors' => array_slice( $failures, 0, 4 ) )
+			);
+		}
+		return true;
 	}
 }
 
@@ -153,10 +239,10 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	/** Return the bounded compiler contract for verified request-bundle files. */
 	function static_site_importer_cli_request_bundle_limits(): array {
 		return array(
-			'max_files'                 => 5000,
-			'max_file_bytes'            => 10485760,
-			'max_total_bytes'           => 268435456,
-			'generated_files_per_html'  => 5,
+			'max_files'                => 5000,
+			'max_file_bytes'           => 10485760,
+			'max_total_bytes'          => 268435456,
+			'generated_files_per_html' => 5,
 			'generated_bytes_headroom' => 67108864,
 			'compiler_max_total_bytes' => 335544320,
 		);
@@ -167,9 +253,9 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		if ( ! is_dir( $directory ) ) {
 			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A files request-bundle reference must resolve to a directory.' );
 		}
-		$limits     = static_site_importer_cli_request_bundle_limits();
-		$files      = array();
-		$paths      = array();
+		$limits      = static_site_importer_cli_request_bundle_limits();
+		$files       = array();
+		$paths       = array();
 		$total_bytes = 0;
 		$html_files  = 0;
 		try {
@@ -238,7 +324,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				'max_file_bytes'  => $limits['max_file_bytes'],
 				'max_total_bytes' => min( $limits['compiler_max_total_bytes'], $limits['max_total_bytes'] + min( $limits['generated_bytes_headroom'], $limits['max_total_bytes'] ) ),
 			),
-			'payload_reader' => new class( $paths ) {
+			'payload_reader'  => new class( $paths ) {
 				/** @param array<string,string> $paths */
 				public function __construct( private array $paths ) {}
 				public function read( array $reference ): string {
@@ -620,7 +706,7 @@ if ( ! function_exists( 'static_site_importer_cli_import_command' ) ) {
 	}
 }
 
-if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
+if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 	WP_CLI::add_command(
 		'static-site-importer materialize-wordpress-site-plan',
 		static function ( array $args, array $assoc_args ): void {
@@ -649,6 +735,24 @@ if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
 	);
 
 	WP_CLI::add_command( 'static-site-importer import', 'static_site_importer_cli_import_command' );
+
+	WP_CLI::add_command(
+		'static-site-importer compile-artifact-pages',
+		static function ( array $args, array $assoc_args ): void {
+			unset( $args );
+			$import_id = (string) ( $assoc_args['import-id'] ?? '' );
+			$decoded   = rawurldecode( (string) ( $assoc_args['pages'] ?? '' ) );
+			$page_ids  = json_decode( $decoded, true );
+			if ( ! is_array( $page_ids ) || ! array_is_list( $page_ids ) ) {
+				WP_CLI::error( 'Compile workers require a valid --import-id and encoded --pages shard.' );
+			}
+			$result = Static_Site_Importer_Direct_Artifact_Import::compile_worker( $import_id, $page_ids );
+			if ( is_wp_error( $result ) ) {
+				WP_CLI::error( $result->get_error_message() );
+			}
+			WP_CLI::line( (string) wp_json_encode( $result, JSON_UNESCAPED_SLASHES ) );
+		}
+	);
 
 	WP_CLI::add_command(
 		'static-site-importer plan-artifact-dependencies',

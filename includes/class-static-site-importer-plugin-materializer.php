@@ -848,7 +848,7 @@ class Static_Site_Importer_Plugin_Materializer {
 	 * @return true|WP_Error
 	 */
 	private static function install_wp_org_plugin( string $slug ) {
-		if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
+		if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 			try {
 				$result = WP_CLI::runcommand(
 					'plugin install ' . escapeshellarg( $slug ),
