@@ -331,6 +331,60 @@ $canonical_compiled = static function ( array $result ) use ( &$canonical_compil
 };
 $assert( $canonical_compiled( $GLOBALS['ssi_direct_compiled_results'][0] ) === $canonical_compiled( $GLOBALS['ssi_direct_compiled_results'][1] ), 'clean and resumed composition must produce identical canonical plans, companion payloads, pages, writes, diagnostics, and reconciliation identities' );
 
+$successful_fanout_shards = array();
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array(
+	static function ( array $policy ) use ( &$successful_fanout_shards ): array {
+		$policy['compile_batch_pages'] = 4;
+		$policy['compile_workers']     = 2;
+		$policy['compile_shard_pages'] = 2;
+		$policy['compile_fanout']      = static function ( string $import_id, array $shards ) use ( &$successful_fanout_shards ) {
+			$successful_fanout_shards[] = array_map( 'count', $shards );
+			foreach ( $shards as $page_ids ) {
+				$result = Static_Site_Importer_Direct_Artifact_Import::compile_worker( $import_id, $page_ids );
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
+			}
+			return true;
+		};
+		return $policy;
+	}
+);
+$fanout_succeeded = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+$successful_fanout_work = $fanout_succeeded['artifact_run']['work'] ?? array();
+$assert( ! empty( $fanout_succeeded['success'] ) && empty( $fanout_succeeded['continuation'] ) && array( 2, 1 ) === ( $successful_fanout_shards[0] ?? null ) && 2 === ( $successful_fanout_work['compile_batches'] ?? 0 ) && array( 1, 1, 1 ) === ( $successful_fanout_work['page_compile_counts'] ?? null ), 'successful bounded fan-out must adopt every immutable worker receipt before the coordinator composes the result' );
+
+$fanout_shards = array();
+$fail_after_first_shard = true;
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array(
+	static function ( array $policy ) use ( &$fanout_shards, &$fail_after_first_shard ): array {
+		$policy['compile_batch_pages'] = 4;
+		$policy['compile_workers']     = 2;
+		$policy['compile_shard_pages'] = 2;
+		$policy['compile_fanout']      = static function ( string $import_id, array $shards ) use ( &$fanout_shards, &$fail_after_first_shard ) {
+			$fanout_shards[] = array_map( 'count', $shards );
+			foreach ( $shards as $index => $page_ids ) {
+				$result = Static_Site_Importer_Direct_Artifact_Import::compile_worker( $import_id, $page_ids );
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
+				if ( $fail_after_first_shard && 0 === $index ) {
+					$fail_after_first_shard = false;
+					return new WP_Error( 'injected_compile_fanout_failure', 'Injected failure after one worker shard.' );
+				}
+			}
+			return true;
+		};
+		return $policy;
+	}
+);
+$fanout_failed = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+$fanout_failure_data = $fanout_failed['error']['data'] ?? array();
+$assert( 'injected_compile_fanout_failure' === ( $fanout_failed['error']['code'] ?? '' ) && array( 2, 1 ) === ( $fanout_shards[0] ?? null ) && 0 === ( $fanout_failure_data['artifact_run']['progress']['receipt_count'] ?? -1 ), 'bounded fan-out must shard deterministically and leave run state coordinator-owned when a worker process fails' );
+$fanout_recovered = Static_Site_Importer_Canonical_Import_Service::import( $resume( (string) ( $fanout_failure_data['import_id'] ?? '' ), 'plan' ) );
+$fanout_work = $fanout_recovered['artifact_run']['work'] ?? array();
+$assert( ! empty( $fanout_recovered['success'] ) && empty( $fanout_recovered['continuation'] ) && array( 1, 1, 1 ) === ( $fanout_work['page_compile_counts'] ?? null ) && 3 === ( $fanout_work['pages_compiled'] ?? 0 ), 'resume must adopt completed worker receipts and compile every page exactly once after a partial fan-out failure' );
+
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_batch_pages' => 1 ) ) );
 $lifecycle_preparations_before = $GLOBALS['ssi_direct_lifecycle_preparations'];
 $lifecycle_input = $input();
@@ -545,6 +599,38 @@ $GLOBALS['ssi_direct_materialization_error'] = null;
 $cli_report = $test_root . '/cli-import-report.json';
 $drive_apply( $input(), static fn ( array $step ): array => Static_Site_Importer_Canonical_Import_Service::import_with_cli_report( $step, $cli_report ) );
 $assert( $cli_report === ( $GLOBALS['ssi_direct_last_args']['report'] ?? '' ) && ! isset( $GLOBALS['ssi_direct_last_args']['failed_plan_report_destination'] ), 'the explicit CLI report destination remains authoritative over the owned failed-plan destination' );
+
+define( 'WP_CLI', true );
+class WP_CLI {
+	public static function get_runner(): object {
+		return (object) array( 'config' => array() );
+	}
+}
+$worker_events = $test_root . '/worker-events.log';
+$worker_script = $test_root . '/fake-wp-worker';
+$worker_source = '#!' . PHP_BINARY . "\n<?php\n"
+	. '$pages = array_values(array_filter($argv, static fn($arg) => str_starts_with($arg, "--pages=")));' . "\n"
+	. '$decoded = json_decode(rawurldecode(substr($pages[0] ?? "", 8)), true);' . "\n"
+	. '$events = $decoded[0] ?? ""; $marker = $decoded[1] ?? "missing";' . "\n"
+	. 'file_put_contents($events, "start:" . $marker . "\\n", FILE_APPEND | LOCK_EX);' . "\n"
+	. 'usleep(500000);' . "\n"
+	. 'file_put_contents($events, "end:" . $marker . "\\n", FILE_APPEND | LOCK_EX);' . "\n"
+	. 'exit("fail" === $marker ? 2 : 0);' . "\n";
+$assert( false !== file_put_contents( $worker_script, $worker_source ) && chmod( $worker_script, 0700 ), 'the process fan-out fixture worker must be executable' );
+$original_argv_zero = $_SERVER['argv'][0] ?? null;
+$_SERVER['argv'][0] = $worker_script;
+$process_fanout = static_site_importer_cli_compile_artifact_pages_fanout( str_repeat( 'a', 64 ), array( array( $worker_events, 'one' ), array( $worker_events, 'two' ), array( $worker_events, 'three' ) ) );
+$events = file( $worker_events, FILE_IGNORE_NEW_LINES );
+$starts = array_slice( is_array( $events ) ? $events : array(), 0, 3 );
+sort( $starts, SORT_STRING );
+$assert( true === $process_fanout && array( 'start:one', 'start:three', 'start:two' ) === $starts, 'the CLI fan-out adapter must start every bounded worker before waiting for completion' );
+$process_failure = static_site_importer_cli_compile_artifact_pages_fanout( str_repeat( 'b', 64 ), array( array( $worker_events, 'ok' ), array( $worker_events, 'fail' ) ) );
+$assert( is_wp_error( $process_failure ) && 'static_site_importer_direct_artifact_worker_process_failed' === $process_failure->get_error_code(), 'the CLI fan-out adapter must surface a nonzero worker exit as a structured compile failure' );
+if ( null === $original_argv_zero ) {
+	unset( $_SERVER['argv'][0] );
+} else {
+	$_SERVER['argv'][0] = $original_argv_zero;
+}
 
 Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $test_root );
 $primitive_workspace->purge();
