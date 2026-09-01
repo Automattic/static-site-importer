@@ -222,7 +222,7 @@ class Static_Site_Importer_Companion_Plugin {
 		foreach ( $preserved as $island ) {
 			$files[ $plugin_slug . '/' . $island['relative_src'] ] = $island['content'];
 		}
-		$provider_form_runtime = file_get_contents( __DIR__ . '/class-static-site-importer-provider-form-runtime.php' );
+		$provider_form_runtime = file_get_contents( __DIR__ . '/class-static-site-importer-provider-form-runtime.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the plugin-owned runtime source carried into generated companions.
 		if ( ! is_string( $provider_form_runtime ) || '' === $provider_form_runtime ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_provider_form_runtime_missing', 'Provider form runtime projection file is unavailable.' );
 		}

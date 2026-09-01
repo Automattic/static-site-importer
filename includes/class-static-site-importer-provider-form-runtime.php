@@ -85,8 +85,8 @@ final class Static_Site_Importer_Provider_Form_Runtime {
 		$projected      = preg_replace_callback(
 			'/\bclass=(["\'])(.*?)\1/s',
 			static function ( array $matches ) use ( &$wrapper_layers ): string {
-				$classes = preg_split( '/\s+/', trim( $matches[2] ) );
-				$classes = false === $classes ? array() : $classes;
+				$classes    = preg_split( '/\s+/', trim( $matches[2] ) );
+				$classes    = false === $classes ? array() : $classes;
 				$is_wrapper = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
 				$output     = array();
 				foreach ( $classes as $class_name ) {

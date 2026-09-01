@@ -1581,8 +1581,9 @@ class Static_Site_Importer_Form_Seeder {
 			$prefix = "\n<div class=\"" . self::escape_attribute( $classes ) . '">';
 			$suffix = "</div>\n";
 		} elseif ( 'submit' === $wrapper ) {
-			$classes = trim( 'wp-block-button ' . (string) ( $attrs['className'] ?? '' ) );
-			$prefix  = "\n<div class=\"" . self::escape_attribute( $classes ) . '"><button type="submit" class="wp-block-button__link wp-element-button">' . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . "</button></div>\n";
+			$classes           = trim( 'wp-block-button ' . (string) ( $attrs['className'] ?? '' ) );
+			$button_attributes = self::submit_button_saved_attributes( isset( $attrs['style'] ) && is_array( $attrs['style'] ) ? $attrs['style'] : array() );
+			$prefix            = "\n<div class=\"" . self::escape_attribute( $classes ) . '"><button type="submit"' . $button_attributes . '>' . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . "</button></div>\n";
 		} elseif ( 'heading' === $wrapper ) {
 			$level  = min( 6, max( 1, (int) ( $attrs['level'] ?? 2 ) ) );
 			$prefix = "\n<h" . $level . ' class="wp-block-heading">' . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</h' . $level . ">\n";
@@ -1621,6 +1622,59 @@ class Static_Site_Importer_Form_Seeder {
 			'innerHTML'    => implode( '', array_filter( $inner_content, 'is_string' ) ),
 			'innerContent' => $inner_content,
 		);
+	}
+
+	/** Match the Core Button save shape for the presentation styles SSI projects. */
+	private static function submit_button_saved_attributes( array $style ): string {
+		$classes      = array( 'wp-block-button__link' );
+		$declarations = array();
+		$color        = isset( $style['color'] ) && is_array( $style['color'] ) ? $style['color'] : array();
+		$typography   = isset( $style['typography'] ) && is_array( $style['typography'] ) ? $style['typography'] : array();
+		$spacing      = isset( $style['spacing'] ) && is_array( $style['spacing'] ) ? $style['spacing'] : array();
+
+		if ( isset( $color['text'] ) && is_scalar( $color['text'] ) && '' !== trim( (string) $color['text'] ) ) {
+			$classes[]      = 'has-text-color';
+			$declarations[] = 'color:' . trim( (string) $color['text'] );
+		}
+		if ( isset( $color['background'] ) && is_scalar( $color['background'] ) && '' !== trim( (string) $color['background'] ) ) {
+			$classes[]      = 'has-background';
+			$declarations[] = 'background-color:' . trim( (string) $color['background'] );
+		}
+		foreach ( array( 'margin', 'padding' ) as $property ) {
+			$values = isset( $spacing[ $property ] ) && is_array( $spacing[ $property ] ) ? $spacing[ $property ] : array();
+			foreach ( array( 'top', 'right', 'bottom', 'left' ) as $side ) {
+				if ( isset( $values[ $side ] ) && is_scalar( $values[ $side ] ) && '' !== trim( (string) $values[ $side ] ) ) {
+					$declarations[] = $property . '-' . $side . ':' . trim( (string) $values[ $side ] );
+				}
+			}
+		}
+		if ( isset( $style['shadow'] ) && is_scalar( $style['shadow'] ) && '' !== trim( (string) $style['shadow'] ) ) {
+			$declarations[] = 'box-shadow:' . trim( (string) $style['shadow'] );
+		}
+		$typography_properties = array(
+			'fontFamily'     => 'font-family',
+			'fontSize'       => 'font-size',
+			'fontStyle'      => 'font-style',
+			'fontWeight'     => 'font-weight',
+			'letterSpacing'  => 'letter-spacing',
+			'lineHeight'     => 'line-height',
+			'textDecoration' => 'text-decoration',
+			'textTransform'  => 'text-transform',
+		);
+		if ( isset( $typography['fontSize'] ) && is_scalar( $typography['fontSize'] ) && '' !== trim( (string) $typography['fontSize'] ) ) {
+			$classes[] = 'has-custom-font-size';
+		}
+		foreach ( $typography_properties as $attribute => $property ) {
+			if ( isset( $typography[ $attribute ] ) && is_scalar( $typography[ $attribute ] ) && '' !== trim( (string) $typography[ $attribute ] ) ) {
+				$declarations[] = $property . ':' . trim( (string) $typography[ $attribute ] );
+			}
+		}
+		$classes[] = 'wp-element-button';
+		$rendered  = ' class="' . self::escape_attribute( implode( ' ', $classes ) ) . '"';
+		if ( array() !== $declarations ) {
+			$rendered .= ' style="' . self::escape_attribute( implode( ';', $declarations ) ) . '"';
+		}
+		return $rendered;
 	}
 
 	/**
