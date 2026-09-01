@@ -494,7 +494,7 @@ namespace {
 	$unsafe_variant_form['layout_graph']['variants'][0]['provenance'][0]['properties'][] = 'display';
 	$unsafe_variant_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $unsafe_variant_form ) ) );
 	$unsafe_variant_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $unsafe_variant_validation['forms'] ?? array() ) )['forms'][0] ?? array();
-	$assert( 'error' === ( $unsafe_variant_row['status'] ?? '' ) && ! str_contains( (string) ( $unsafe_variant_row['block_markup'] ?? '' ), '"width":33.333' ), 'unsafe-percentage-variant-fails-closed' );
+	$assert( 'skipped' === ( $unsafe_variant_row['status'] ?? '' ) && ! str_contains( (string) ( $unsafe_variant_row['block_markup'] ?? '' ), '"width":33.333' ), 'unsafe-percentage-variant-fails-closed' );
 
 	$hidden_bookkeeping_form = array(
 		'selector' => 'form.runtime-controls',
@@ -508,7 +508,7 @@ namespace {
 	$hidden_variant_form = $hidden_bookkeeping_form;
 	$hidden_variant_form['layout_graph']['variants'][] = array( 'node' => 'wrapper-0', 'condition' => array( 'kind' => 'media', 'query' => '(max-width: 48rem)' ), 'layout_patch' => array( 'display' => 'block' ), 'precedence' => array( 'display' => array( 'source_order' => 1, 'specificity' => 10, 'important' => false ) ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'd', 64 ), 'selector' => '.runtime', 'condition' => array( 'kind' => 'media', 'query' => '(max-width: 48rem)' ), 'properties' => array( 'display' ) ) ) );
 	$hidden_variant_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $hidden_variant_form ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
-	$assert( 'error' === ( $hidden_variant_row['status'] ?? '' ) && in_array( 'provider_wrapper_layout_unrepresentable', array_column( $hidden_variant_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ), 'responsive-hidden-wrapper-remains-unrepresented' );
+	$assert( 'skipped' === ( $hidden_variant_row['status'] ?? '' ) && in_array( 'provider_wrapper_layout_unrepresentable', array_column( $hidden_variant_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ), 'responsive-hidden-wrapper-remains-unrepresented' );
 
 	$hidden_native_select = array(
 		'selector' => 'form.enhanced-select',
@@ -521,20 +521,20 @@ namespace {
 	$unproven_hidden_select = $hidden_native_select;
 	$unproven_hidden_select['layout_graph']['nodes'][2]['provenance'][0]['selector'] = '.replacement-shell .enhanced';
 	$unproven_hidden_select_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $unproven_hidden_select ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
-	$assert( 'error' === ( $unproven_hidden_select_row['status'] ?? '' ) && in_array( 'provider_native_control_visibility_unrepresentable', array_column( $unproven_hidden_select_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ), 'source-hidden-native-control-without-replacement-evidence-fails-closed', wp_json_encode( $unproven_hidden_select_row ) );
+	$assert( 'skipped' === ( $unproven_hidden_select_row['status'] ?? '' ) && in_array( 'provider_native_control_visibility_unrepresentable', array_column( $unproven_hidden_select_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ), 'source-hidden-native-control-without-replacement-evidence-fails-closed', wp_json_encode( $unproven_hidden_select_row ) );
 
 	$partial_width_form = $deep_width_form;
 	$partial_width_form['layout_graph']['nodes'][13]['layout']['width'] = '30%';
 	$partial_width_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $partial_width_form ) ) );
 	$partial_width_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $partial_width_validation['forms'] ?? array() ) )['forms'][0] ?? array();
-	$assert( 'error' === ( $partial_width_row['status'] ?? '' ) && ! str_contains( (string) ( $partial_width_row['block_markup'] ?? '' ), '"width":33.333' ) && ! str_contains( (string) ( $partial_width_row['provider_layout_overlay_css']['css'] ?? '' ), 'width:50%' ), 'partial-percentage-row-fails-closed' );
+	$assert( 'skipped' === ( $partial_width_row['status'] ?? '' ) && ! str_contains( (string) ( $partial_width_row['block_markup'] ?? '' ), '"width":33.333' ) && ! str_contains( (string) ( $partial_width_row['provider_layout_overlay_css']['css'] ?? '' ), 'width:50%' ), 'partial-percentage-row-fails-closed' );
 	$multiple_controls_form = $deep_width_form;
 	$multiple_controls_form['control_topology']['nodes'][21]['parent'] = 'wrapper-12';
 	$multiple_controls_form['control_topology']['nodes'][21]['order'] = 1;
 	$multiple_controls_form['control_topology']['nodes'][21]['depth'] = 13;
 	$multiple_controls_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $multiple_controls_form ) ) );
 	$multiple_controls_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $multiple_controls_validation['forms'] ?? array() ) )['forms'][0] ?? array();
-	$assert( empty( $multiple_controls_validation['errors'] ) && 'error' === ( $multiple_controls_row['status'] ?? '' ) && ! str_contains( (string) ( $multiple_controls_row['block_markup'] ?? '' ), '"width":33.333' ), 'multiple-controls-in-percentage-branch-fail-closed' );
+	$assert( empty( $multiple_controls_validation['errors'] ) && 'skipped' === ( $multiple_controls_row['status'] ?? '' ) && ! str_contains( (string) ( $multiple_controls_row['block_markup'] ?? '' ), '"width":33.333' ), 'multiple-controls-in-percentage-branch-fail-closed' );
 	$v1_with_width = $deep_width_form;
 	$v1_with_width['layout_graph']['schema'] = 'generic/computed-layout-graph/v1';
 	$v1_with_width['layout_graph']['limits']['depth'] = 8;
@@ -553,7 +553,7 @@ namespace {
 	$unproven_table_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $unproven_table_form ) ) );
 	$unproven_table_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $unproven_table_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$unproven_reasons = array_column( $unproven_table_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' );
-	$assert( 'error' === ( $unproven_table_row['status'] ?? '' ) && in_array( 'unsupported_semantic_wrapper', $unproven_reasons, true ), 'unproven-table-semantics-remain-gated', wp_json_encode( $unproven_table_row ) );
+	$assert( 'skipped' === ( $unproven_table_row['status'] ?? '' ) && in_array( 'unsupported_semantic_wrapper', $unproven_reasons, true ), 'unproven-table-semantics-remain-gated', wp_json_encode( $unproven_table_row ) );
 	$labelled_width_form = $deep_width_form;
 	$labelled_width_form['control_topology']['nodes'][0]['tag'] = 'fieldset';
 	$labelled_width_form['control_topology']['nodes'][0]['fieldset_semantics'] = 'labelled_group';
@@ -561,7 +561,7 @@ namespace {
 	$labelled_width_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $labelled_width_form ) ) );
 	$labelled_width_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $labelled_width_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$labelled_width_reasons = array_column( $labelled_width_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' );
-	$assert( 'error' === ( $labelled_width_row['status'] ?? '' ) && in_array( 'unsupported_semantic_wrapper', $labelled_width_reasons, true ) && 3 === substr_count( (string) ( $labelled_width_row['block_markup'] ?? '' ), '"width":33.333' ), 'percentage-width-proof-does-not-accept-labelled-fieldset-semantics', wp_json_encode( $labelled_width_row ) );
+	$assert( 'skipped' === ( $labelled_width_row['status'] ?? '' ) && in_array( 'unsupported_semantic_wrapper', $labelled_width_reasons, true ) && 3 === substr_count( (string) ( $labelled_width_row['block_markup'] ?? '' ), '"width":33.333' ), 'percentage-width-proof-does-not-accept-labelled-fieldset-semantics', wp_json_encode( $labelled_width_row ) );
 	$deep_topology_form = $topology_form;
 	$deep_nodes         = array();
 	$parent             = null;
@@ -631,6 +631,7 @@ namespace {
 	$assert( 'Request booking' === ( $booking_row['submit_text'] ?? '' ) && str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '>Request booking</button>' ), 'canonical-control-text-preserves-request-booking-submit-label' );
 	$assert( str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '"label":"Guests"' ) && str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '"step":"0.5"' ) && array( 'min', 'max' ) === array_column( $booking_row['computed_layout_receipt']['losses'] ?? array(), 'attribute' ), 'number-source-attributes-preserve-supported-step-and-report-min-max-losses' );
 	$assert( false === ( $booking_row['runtime_mapped'] ?? true ) && array( 'min', 'max' ) === array_column( $booking_row['form_receipt_unaccepted_losses'] ?? array(), 'attribute' ) && 2 === ( $booking_row['unaccepted_receipt_loss_count'] ?? 0 ), 'number-unsupported-attributes-gate-form-runtime-acceptance' );
+	$assert( 'skipped' === ( $booking_row['status'] ?? '' ) && 0 === ( $booking['counts']['error'] ?? -1 ), 'gated-form-is-a-provider-decline-not-a-materialization-error' );
 	$height_controls = array();
 	$height_html     = '<form class="many-heights">';
 	for ( $height_index = 1; $height_index <= 17; ++$height_index ) {
@@ -755,7 +756,7 @@ namespace {
 	$labelled_root_fieldset['forms'][0]['control_topology']['nodes'][0]['fieldset_semantics'] = 'labelled_group';
 	$labelled_root_fieldset_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $labelled_root_fieldset );
 	$labelled_root_fieldset_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $labelled_root_fieldset_validation['forms'] ?? array() ) );
-	$assert( 'error' === ( $labelled_root_fieldset_seed['forms'][0]['status'] ?? '' ) && 'unsupported_semantic_wrapper' === ( $labelled_root_fieldset_seed['forms'][0]['form_receipt_unaccepted_losses'][0]['reason_code'] ?? '' ), 'provider-form-rejects-labelled-root-fieldset-loss', wp_json_encode( array( 'validation' => $labelled_root_fieldset_validation, 'seed' => $labelled_root_fieldset_seed ) ) );
+	$assert( 'skipped' === ( $labelled_root_fieldset_seed['forms'][0]['status'] ?? '' ) && 'unsupported_semantic_wrapper' === ( $labelled_root_fieldset_seed['forms'][0]['form_receipt_unaccepted_losses'][0]['reason_code'] ?? '' ), 'provider-form-rejects-labelled-root-fieldset-loss', wp_json_encode( array( 'validation' => $labelled_root_fieldset_validation, 'seed' => $labelled_root_fieldset_seed ) ) );
 	$labelled_radio_group = array(
 		'forms' => array(
 			array(
@@ -800,7 +801,7 @@ namespace {
 	$ambiguous_radio_group['forms'][0]['control_topology']['nodes'][] = array( 'id' => 'control-3', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 3 );
 	$ambiguous_radio_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $ambiguous_radio_group );
 	$ambiguous_radio_seed       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $ambiguous_radio_validation['forms'] ?? array() ) );
-	$assert( 'error' === ( $ambiguous_radio_seed['forms'][0]['status'] ?? '' ) && 'unsupported_semantic_wrapper' === ( $ambiguous_radio_seed['forms'][0]['form_receipt_unaccepted_losses'][0]['reason_code'] ?? '' ), 'ambiguous-labelled-radio-fieldset-remains-loss-gated', wp_json_encode( $ambiguous_radio_seed ) );
+	$assert( 'skipped' === ( $ambiguous_radio_seed['forms'][0]['status'] ?? '' ) && 'unsupported_semantic_wrapper' === ( $ambiguous_radio_seed['forms'][0]['form_receipt_unaccepted_losses'][0]['reason_code'] ?? '' ), 'ambiguous-labelled-radio-fieldset-remains-loss-gated', wp_json_encode( $ambiguous_radio_seed ) );
 	$legacy_without_submit = $forms_manifest;
 	array_pop( $legacy_without_submit['forms'][0]['controls'] );
 	$legacy_without_submit_seed = Static_Site_Importer_Form_Seeder::seed( $legacy_without_submit );
