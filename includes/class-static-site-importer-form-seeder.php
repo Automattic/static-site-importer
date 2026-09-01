@@ -511,10 +511,10 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $radio_groups['operations'], $topology['operations'] ) );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
-		$inner_blocks              = $layout['blocks'];
-		$form_attrs                = self::contact_form_attributes( $form, $scope, $topology['form_classes'] );
-		$overlay_graph             = $provider_graph;
-		$overlay_graph['nodes']    = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
+		$inner_blocks           = $layout['blocks'];
+		$form_attrs             = self::contact_form_attributes( $form, $scope, $topology['form_classes'] );
+		$overlay_graph          = $provider_graph;
+		$overlay_graph['nodes'] = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
 		foreach ( $topology['overlay_node_targets'] as $target ) {
 			$merged = false;
 			foreach ( $overlay_graph['nodes'] as &$overlay_node ) {
@@ -827,7 +827,7 @@ class Static_Site_Importer_Form_Seeder {
 				'operations'                 => array(),
 				'represented_layout_nodes'   => array(),
 				'represented_topology_nodes' => array(),
-				'overlay_node_targets'        => array(),
+				'overlay_node_targets'       => array(),
 				'responsive_variant_targets' => array(),
 				'native_visibility_targets'  => array(),
 				'form_classes'               => array(),
@@ -853,7 +853,7 @@ class Static_Site_Importer_Form_Seeder {
 		$operations                 = array();
 		$represented_layout_nodes   = array();
 		$represented_topology_nodes = array();
-		$overlay_node_targets        = array();
+		$overlay_node_targets       = array();
 		$responsive_variant_targets = array();
 		$native_visibility_targets  = array();
 		$layout_by_node             = array();
@@ -993,6 +993,7 @@ class Static_Site_Importer_Form_Seeder {
 				if ( ! is_array( $variant ) || ! is_array( $variant['condition'] ?? null ) || 'media' !== ( $variant['condition']['kind'] ?? null ) || ! is_string( $variant['condition']['query'] ?? null ) || 1 !== preg_match( '/^\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\)$/D', $variant['condition']['query'] ) || ! is_string( $width ) || 1 !== preg_match( '/^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)%$/D', $width ) || ( array( 'width' ) !== array_keys( $patch ) && array( 'display', 'width' ) !== array_keys( $patch ) ) || ( isset( $patch['display'] ) && 'block' !== $patch['display'] ) ) {
 					return false;
 				}
+
 				$proven = false;
 				foreach ( $variant['provenance'] ?? array() as $fact ) {
 					if ( is_array( $fact ) && ( $fact['condition'] ?? null ) === $variant['condition'] && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && is_string( $fact['selector'] ?? null ) && ! array_diff( array_keys( $patch ), $fact['properties'] ?? array() ) ) {
@@ -1004,8 +1005,10 @@ class Static_Site_Importer_Form_Seeder {
 					return false;
 				}
 			}
+
 			return true;
 		};
+
 		$grid_span_width = static function ( mixed $columns, mixed $column ): ?string {
 			$columns = preg_replace( '/\s+/', '', is_string( $columns ) ? $columns : '' );
 			$column  = preg_replace( '/\s+/', '', is_string( $column ) ? $column : '' );
@@ -1047,10 +1050,13 @@ class Static_Site_Importer_Form_Seeder {
 			if ( ! $variants_safe ) {
 				continue;
 			}
-			$overlay_node_targets[]      = array( 'id' => 'control-' . $control_index, 'layout' => array( 'width' => $width ) );
+			$overlay_node_targets[]     = array(
+				'id'     => 'control-' . $control_index,
+				'layout' => array( 'width' => $width ),
+			);
 			$responsive_variant_targets = array_merge( $responsive_variant_targets, $target_variants );
 			$represented_layout_nodes[] = $id;
-			$operations[]                = array(
+			$operations[]               = array(
 				'dimension'   => 'layout',
 				'strategy'    => 'provider_grid_span_submit',
 				'target_hash' => hash( 'sha256', $id ),
@@ -1286,7 +1292,7 @@ class Static_Site_Importer_Form_Seeder {
 			'operations'                 => $operations,
 			'represented_layout_nodes'   => array_values( array_unique( array_map( 'strval', $represented_layout_nodes ) ) ),
 			'represented_topology_nodes' => array_values( array_unique( array_map( 'strval', $represented_topology_nodes ) ) ),
-			'overlay_node_targets'        => $overlay_node_targets,
+			'overlay_node_targets'       => $overlay_node_targets,
 			'responsive_variant_targets' => $responsive_variant_targets,
 			'native_visibility_targets'  => array_values( array_unique( array_map( 'strval', $native_visibility_targets ) ) ),
 			'form_classes'               => array_values( array_unique( $form_classes ) ),
