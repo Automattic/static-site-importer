@@ -578,9 +578,13 @@ class Static_Site_Importer_Form_Seeder {
 			);
 		}
 		if ( ! empty( $unaccepted_losses ) ) {
+			// The layout-fidelity gate is a decision not to represent this one form
+			// with the provider, exactly like an unsupported control topology. The
+			// converted source form stays in the page, so this is a per-entity
+			// decline the registry degrades around, never an import failure.
 			$row['provider_mapped']                = true;
 			$row['runtime_mapped']                 = false;
-			$row['status']                         = 'error';
+			$row['status']                         = 'skipped';
 			$row['reason']                         = 'form_receipt_loss_unaccepted';
 			$row['form_receipt_unaccepted_losses'] = $unaccepted_losses;
 			$row['unaccepted_receipt_loss_count']  = count( $unaccepted_losses );

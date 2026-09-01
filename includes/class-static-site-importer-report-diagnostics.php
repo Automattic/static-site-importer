@@ -52,6 +52,93 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
+	 * Name every entity a provider declined to materialize.
+	 *
+	 * A provider declines one entity when it cannot represent it faithfully -- an
+	 * unsupported control topology, or a layout it cannot carry without losing
+	 * fidelity. The imported page keeps the converted source markup at that
+	 * anchor, so the outcome is a bounded, reportable preservation rather than a
+	 * failure. Without these rows the decline is only reachable by reading the
+	 * entity lifecycle, which names the declaration by hash and nothing else.
+	 *
+	 * @param array<string,mixed> $entities Provider entity reports keyed by declaration id.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function provider_entity_decline_diagnostics( array $entities ): array {
+		$diagnostics = array();
+		foreach ( $entities as $declaration_id => $report ) {
+			if ( ! is_array( $report ) ) {
+				continue;
+			}
+			$provider = isset( $report['provider'] ) && is_scalar( $report['provider'] ) ? (string) $report['provider'] : '';
+			foreach ( array(
+				'forms'    => 'form',
+				'products' => 'product',
+			) as $collection => $entity_type ) {
+				foreach ( is_array( $report[ $collection ] ?? null ) ? $report[ $collection ] : array() as $row ) {
+					if ( ! is_array( $row ) || ! Static_Site_Importer_Entity_Materializer_Registry::entity_result_declined( $row ) ) {
+						continue;
+					}
+					$diagnostics[] = self::provider_entity_decline_diagnostic( (string) $declaration_id, $provider, $entity_type, $row );
+				}
+			}
+		}
+
+		return $diagnostics;
+	}
+
+	/**
+	 * Build one declined-entity diagnostic.
+	 *
+	 * @param string              $declaration_id Runtime declaration reconciliation identity.
+	 * @param string              $provider       Provider id that declined the entity.
+	 * @param string              $entity_type    Entity type the provider declined.
+	 * @param array<string,mixed> $row            Provider result row.
+	 * @return array<string,mixed>
+	 */
+	private static function provider_entity_decline_diagnostic( string $declaration_id, string $provider, string $entity_type, array $row ): array {
+		$reason      = isset( $row['reason'] ) && is_scalar( $row['reason'] ) && '' !== (string) $row['reason'] ? (string) $row['reason'] : 'provider_declined';
+		$source_path = isset( $row['source_path'] ) && is_scalar( $row['source_path'] ) ? (string) $row['source_path'] : '';
+		$selector    = isset( $row['selector'] ) && is_scalar( $row['selector'] ) ? (string) $row['selector'] : '';
+		$slug        = isset( $row['slug'] ) && is_scalar( $row['slug'] ) ? (string) $row['slug'] : '';
+		$located     = '' !== $source_path ? $source_path : ( '' !== $slug ? $slug : 'the imported site' );
+		$loss_count  = isset( $row['unaccepted_receipt_loss_count'] ) ? (int) $row['unaccepted_receipt_loss_count'] : 0;
+		$provider_id = '' !== $provider ? $provider : 'the configured provider';
+		$diagnostic  = array(
+			'id'              => 'provider-entity-declined-' . hash( 'sha256', $declaration_id . "\n" . $entity_type . "\n" . $source_path . "\n" . ( '' !== $selector ? $selector : $slug ) ),
+			'code'            => 'provider_entity_declined',
+			'type'            => 'static-site-importer',
+			'severity'        => 'warning',
+			'stage'           => 'entity_materialization',
+			'loss_class'      => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+			'reason_code'     => $reason,
+			'reason'          => $reason,
+			'provider'        => $provider,
+			'entity_type'     => $entity_type,
+			'declaration_id'  => $declaration_id,
+			'runtime_mapped'  => false,
+			'provider_mapped' => ! empty( $row['provider_mapped'] ),
+			'runtime_carried' => ! empty( $row['runtime_carried'] ),
+			'message'         => $provider_id . ' did not materialize a ' . $entity_type . ' detected in ' . $located . ' (' . $reason . ')'
+				. ( $loss_count > 0 ? ', which would have cost ' . $loss_count . ' unaccepted layout-fidelity ' . ( 1 === $loss_count ? 'loss' : 'losses' ) : '' )
+				. '. The imported page keeps its converted source markup for that ' . $entity_type . '.',
+		);
+		foreach ( array( 'source_path', 'selector', 'slug' ) as $field ) {
+			if ( isset( $row[ $field ] ) && is_scalar( $row[ $field ] ) && '' !== (string) $row[ $field ] ) {
+				$diagnostic[ $field ] = (string) $row[ $field ];
+			}
+		}
+		if ( $loss_count > 0 ) {
+			$diagnostic['unaccepted_receipt_loss_count'] = $loss_count;
+		}
+		if ( isset( $row['form_receipt_unaccepted_losses'] ) && is_array( $row['form_receipt_unaccepted_losses'] ) ) {
+			$diagnostic['form_receipt_unaccepted_losses'] = array_slice( array_values( array_filter( $row['form_receipt_unaccepted_losses'], 'is_array' ) ), 0, 16 );
+		}
+
+		return $diagnostic;
+	}
+
+	/**
 	 * Initialize a conversion report.
 	 *
 	 * @param string              $html_path       Imported entry file.
