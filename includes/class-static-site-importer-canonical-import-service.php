@@ -114,7 +114,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 		}
 		$runtime_artifact = $runtime['artifact'];
 		$source_path      = is_string( $input['source_metadata']['source_path'] ?? null ) ? trim( $input['source_metadata']['source_path'] ) : '';
-		$source_parts     = '' !== $source_path ? parse_url( $source_path ) : false;
+		$source_parts     = '' !== $source_path ? ( function_exists( 'wp_parse_url' ) ? wp_parse_url( $source_path ) : parse_url( $source_path ) ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Standalone import smoke tests run without WordPress URL helpers.
 		if (
 			! isset( $runtime_artifact['provenance']['source_url'] ) &&
 			is_array( $source_parts ) &&

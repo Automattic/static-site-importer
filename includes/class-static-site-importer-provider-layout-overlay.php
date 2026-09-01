@@ -10,8 +10,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class Static_Site_Importer_Provider_Layout_Overlay {
-	public const MAP_SCHEMA         = 'generic/provider-layout-target-map/v1';
-	public const OVERLAY_SCHEMA     = 'static-site-importer/provider-layout-overlay/v1';
+	public const MAP_SCHEMA                = 'generic/provider-layout-target-map/v1';
+	public const OVERLAY_SCHEMA            = 'static-site-importer/provider-layout-overlay/v1';
 	private const MAX_LAYOUT_OVERLAY_BYTES = 16384;
 	private const MAX_OVERLAY_BYTES        = 32768;
 
@@ -59,10 +59,10 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		return array(
 			'map' => array(
-				'schema'   => self::MAP_SCHEMA,
-				'provider' => $map['provider'],
-				'scope'    => $map['scope'],
-				'targets'  => $targets,
+				'schema'               => self::MAP_SCHEMA,
+				'provider'             => $map['provider'],
+				'scope'                => $map['scope'],
+				'targets'              => $targets,
 				'presentation_targets' => $presentation_targets,
 			),
 		);
@@ -175,7 +175,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				'target_hash' => hash( 'sha256', $validated_map['scope'] ),
 			);
 		}
-		$css = empty( $rules ) ? '' : '/* Static Site Importer provider layout overlay: ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $rules ) ) ) . "\n";
+		$css               = empty( $rules ) ? '' : '/* Static Site Importer provider layout overlay: ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $rules ) ) ) . "\n";
 		$max_overlay_bytes = empty( $presentation_graph ) ? self::MAX_LAYOUT_OVERLAY_BYTES : self::MAX_OVERLAY_BYTES;
 		if ( strlen( $css ) > $max_overlay_bytes ) {
 			return array(
@@ -236,7 +236,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?: > \.wp-block-button__link)?)?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
-		$layout_allowed = array( 'display', 'width', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'position', 'z-index', 'pointer-events' );
+		$layout_allowed       = array( 'display', 'width', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'position', 'z-index', 'pointer-events' );
 		$presentation_allowed = array_values( self::presentation_property_map() );
 		foreach ( explode( ';', $matches[2] ) as $declaration ) {
 			if ( ! preg_match( '/^([a-z-]+):(.+)$/D', $declaration, $parts ) || ( ! in_array( $parts[1], $layout_allowed, true ) && ! in_array( $parts[1], $presentation_allowed, true ) ) || ( in_array( $parts[1], $presentation_allowed, true ) ? ! self::safe_presentation_value( $parts[2] ) : ! self::safe_value( str_replace( array( 'grid-template-columns', 'grid-template-rows', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area' ), array( 'columns', 'rows', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'flex_grow', 'flex_shrink', 'flex_basis', 'column', 'row', 'area' ), $parts[1] ), $parts[2] ) ) ) {

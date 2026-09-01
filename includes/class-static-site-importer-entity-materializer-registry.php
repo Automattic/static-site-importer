@@ -1196,6 +1196,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					);
 					continue;
 				}
+				if ( ! array_key_exists( 'graph', $presentation ) ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.presentation_graph',
+						'message' => 'Form presentation normalization did not produce a graph.',
+					);
+					continue;
+				}
 				$row['presentation_graph'] = $presentation['graph'];
 			}
 			$form_key = $row['source_path'] . "\n" . $row['selector'];
@@ -1355,14 +1362,21 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				$clean[ $role ] = $normalized['role'];
 			}
 			$seen[ $row['index'] ] = true;
-			$controls[]             = $clean;
+			$controls[]            = $clean;
 		}
 		$variants = array();
 		foreach ( $candidate['variants'] as $variant ) {
 			if ( ! is_array( $variant ) || ! self::has_only_keys( $variant, array( 'index', 'role', 'condition', 'style_patch', 'precedence', 'provenance' ) ) || ! is_int( $variant['index'] ?? null ) || $variant['index'] < 0 || $variant['index'] >= 128 || ! in_array( $variant['role'] ?? null, array( 'control', 'label' ), true ) || ! self::valid_layout_condition( $variant['condition'] ?? null ) || ! is_array( $variant['style_patch'] ?? null ) || empty( $variant['style_patch'] ) || ! is_array( $variant['precedence'] ?? null ) || ! is_array( $variant['provenance'] ?? null ) ) {
 				return array( 'error' => 'presentation_graph contains an unsupported variant.' );
 			}
-			$role = self::normalize_form_presentation_role( array( 'styles' => $variant['style_patch'], 'provenance' => $variant['provenance'] ), $properties, $variant['condition'] );
+			$role = self::normalize_form_presentation_role(
+				array(
+					'styles'     => $variant['style_patch'],
+					'provenance' => $variant['provenance'],
+				),
+				$properties,
+				$variant['condition']
+			);
 			if ( isset( $role['error'] ) ) {
 				return $role;
 			}
@@ -1381,15 +1395,20 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'provenance'  => $role['role']['provenance'],
 			);
 		}
-		return array( 'graph' => array(
-			'schema'      => 'generic/computed-form-presentation/v1',
-			'basis'       => 'source_css_cascade',
-			'truncated'   => false,
-			'limits'      => array( 'controls' => 128, 'rules_per_role' => 32 ),
-			'controls'    => $controls,
-			'variants'    => $variants,
-			'diagnostics' => $candidate['diagnostics'],
-		) );
+		return array(
+			'graph' => array(
+				'schema'      => 'generic/computed-form-presentation/v1',
+				'basis'       => 'source_css_cascade',
+				'truncated'   => false,
+				'limits'      => array(
+					'controls'       => 128,
+					'rules_per_role' => 32,
+				),
+				'controls'    => $controls,
+				'variants'    => $variants,
+				'diagnostics' => $candidate['diagnostics'],
+			),
+		);
 	}
 
 	/** @param array<string,string> $properties @return array{role?:array<string,mixed>,error?:string} */
@@ -1407,7 +1426,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				return array( 'error' => 'presentation_graph provenance is malformed.' );
 			}
 		}
-		return array( 'role' => array( 'styles' => $candidate['styles'], 'provenance' => $candidate['provenance'] ) );
+		return array(
+			'role' => array(
+				'styles'     => $candidate['styles'],
+				'provenance' => $candidate['provenance'],
+			),
+		);
 	}
 
 	/** @return array<string,string> */

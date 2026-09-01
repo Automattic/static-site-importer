@@ -183,7 +183,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 * @return string
 	 */
 	private static function editor_style_css( string $css, array $visual_repair_styles = array(), bool $has_provider_layout = false ): string {
-		$repair_css = self::visual_repair_css_for_target( $visual_repair_styles, 'editor' );
+		$repair_css               = self::visual_repair_css_for_target( $visual_repair_styles, 'editor' );
 		$provider_placeholder_css = $has_provider_layout ? ".static-site-importer-empty-visual-group.wp-block-group__placeholder>.components-placeholder{display:none!important}\n" : '';
 
 		return "/*\nStatic Site Importer editor styles.\nGenerated separately from frontend style.css so editor wrapper repairs do not leak to public rendering.\n*/\n\n" . $css . "\n" . $provider_placeholder_css . $repair_css;
