@@ -112,6 +112,27 @@ test('resolves uniquely named durable copies of transient runtime evidence', () 
   assert.ok(receipt.evidence.artifacts.some((row) => row.path === 'uuid-editor.png'));
 });
 
+test('resolves fixture-specific Homeboy artifacts when canonical paths are absent', () => {
+  const input = fixture();
+  const expected = 'files/browser/editor-open/solved/presentation-frontend.png';
+  const selected = path.join(input.root, 'uuid-selected-presentation-frontend.png');
+  const other = path.join(input.root, 'uuid-other-presentation-frontend.png');
+  fs.writeFileSync(selected, 'selected fixture');
+  fs.writeFileSync(other, 'other fixture');
+  input.matrix.fixtures[0].editor_presentation.matched_rendering.frontend_screenshot = expected;
+  write(input.paths.matrix, input.matrix);
+  write(path.join(input.root, 'homeboy-bench-result.json'), {
+    data: { payload: { artifacts: [
+      { name: 'editor_canvas_solved_editor-open-screenshots-1', path: selected },
+      { name: 'editor_canvas_other_editor-open-screenshots-1', path: other },
+    ] } },
+  });
+
+  const receipt = verifySolvedSitePromotion(input.options);
+  assert.ok(receipt.evidence.artifacts.some((row) => row.path === path.basename(selected)));
+  assert.ok(!receipt.evidence.artifacts.some((row) => row.path === path.basename(other)));
+});
+
 test('materializes host runtime evidence into the durable artifact root', () => {
   const input = fixture();
   const externalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-promotion-runtime-'));
