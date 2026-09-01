@@ -515,6 +515,20 @@ class Static_Site_Importer_Form_Seeder {
 		$form_attrs                = self::contact_form_attributes( $form, $scope, $topology['form_classes'] );
 		$overlay_graph             = $provider_graph;
 		$overlay_graph['nodes']    = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
+		foreach ( $topology['overlay_node_targets'] as $target ) {
+			$merged = false;
+			foreach ( $overlay_graph['nodes'] as &$overlay_node ) {
+				if ( is_array( $overlay_node ) && ( $overlay_node['id'] ?? null ) === ( $target['id'] ?? null ) ) {
+					$overlay_node['layout'] = array_merge( is_array( $overlay_node['layout'] ?? null ) ? $overlay_node['layout'] : array(), $target['layout'] );
+					$merged                 = true;
+					break;
+				}
+			}
+			unset( $overlay_node );
+			if ( ! $merged ) {
+				$overlay_graph['nodes'][] = $target;
+			}
+		}
 		$overlay_graph['variants'] = array_merge( $overlay_graph['variants'] ?? array(), $topology['responsive_variant_targets'] );
 		$overlay_node_ids          = array_fill_keys( array_map( static fn( array $node ): string => (string) $node['id'], $overlay_graph['nodes'] ), true );
 		foreach ( $topology['responsive_variant_targets'] as $variant ) {
@@ -803,7 +817,7 @@ class Static_Site_Importer_Form_Seeder {
 	 *
 	 * @param array<int,array<string,mixed>> $field_blocks
 	 * @param array<int,array<string,mixed>> $controls
-	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>}|null
+	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>}|null
 	 */
 	private static function topology_inner_blocks( array $form, array $field_blocks, array $controls, array $suppressed_controls = array() ): ?array {
 		if ( ! isset( $form['control_topology'] ) ) {
@@ -813,6 +827,7 @@ class Static_Site_Importer_Form_Seeder {
 				'operations'                 => array(),
 				'represented_layout_nodes'   => array(),
 				'represented_topology_nodes' => array(),
+				'overlay_node_targets'        => array(),
 				'responsive_variant_targets' => array(),
 				'native_visibility_targets'  => array(),
 				'form_classes'               => array(),
@@ -838,6 +853,7 @@ class Static_Site_Importer_Form_Seeder {
 		$operations                 = array();
 		$represented_layout_nodes   = array();
 		$represented_topology_nodes = array();
+		$overlay_node_targets        = array();
 		$responsive_variant_targets = array();
 		$native_visibility_targets  = array();
 		$layout_by_node             = array();
@@ -990,6 +1006,56 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			return true;
 		};
+		$grid_span_width = static function ( mixed $columns, mixed $column ): ?string {
+			$columns = preg_replace( '/\s+/', '', is_string( $columns ) ? $columns : '' );
+			$column  = preg_replace( '/\s+/', '', is_string( $column ) ? $column : '' );
+			if ( ! is_string( $columns ) || ! is_string( $column ) || ! preg_match( '/^repeat\(([1-9][0-9]*),1fr\)$/D', $columns, $column_count ) || ! preg_match( '/^span([1-9][0-9]*)$/D', $column, $span ) || (int) $span[1] > (int) $column_count[1] ) {
+				return null;
+			}
+			return rtrim( rtrim( number_format( 100 * (int) $span[1] / (int) $column_count[1], 3, '.', '' ), '0' ), '.' ) . '%';
+		};
+		foreach ( $nodes as $node ) {
+			$id              = is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
+			$branch_controls = '' !== $id ? $collect_controls( $node ) : array();
+			$control_index   = 1 === count( $branch_controls ) ? $branch_controls[0] : null;
+			$layout_node     = $layout_nodes_by_id[ $id ] ?? null;
+			$layout_parent   = is_array( $layout_node ) && is_string( $layout_node['parent'] ?? null ) ? $layout_nodes_by_id[ $layout_node['parent'] ] ?? null : null;
+			$width           = is_array( $layout_node ) && is_array( $layout_parent ) ? $grid_span_width( $layout_parent['layout']['columns'] ?? null, $layout_node['layout']['column'] ?? null ) : null;
+			if ( ! is_int( $control_index ) || 'core/button' !== ( $field_blocks[ $control_index ]['name'] ?? '' ) || null === $width || ! $has_unconditional_proven_property( $layout_node, 'grid-column' ) || ! $has_unconditional_proven_property( $layout_parent, 'grid-template-columns' ) ) {
+				continue;
+			}
+			$target_variants = array();
+			$variants_safe   = true;
+			foreach ( $variants_by_node[ $id ] ?? array() as $variant ) {
+				$patch         = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+				$variant_width = array( 'column' ) === array_keys( $patch ) ? $grid_span_width( $layout_parent['layout']['columns'] ?? null, $patch['column'] ) : null;
+				$proven        = false;
+				foreach ( $variant['provenance'] ?? array() as $fact ) {
+					if ( is_array( $fact ) && ( $fact['condition'] ?? null ) === ( $variant['condition'] ?? null ) && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && in_array( 'grid-column', $fact['properties'] ?? array(), true ) ) {
+						$proven = true;
+						break;
+					}
+				}
+				if ( null === $variant_width || ! is_array( $variant['condition'] ?? null ) || 'media' !== ( $variant['condition']['kind'] ?? null ) || ! $proven ) {
+					$variants_safe = false;
+					break;
+				}
+				$variant['node']         = 'control-' . $control_index;
+				$variant['layout_patch'] = array( 'width' => $variant_width );
+				$target_variants[]       = $variant;
+			}
+			if ( ! $variants_safe ) {
+				continue;
+			}
+			$overlay_node_targets[]      = array( 'id' => 'control-' . $control_index, 'layout' => array( 'width' => $width ) );
+			$responsive_variant_targets = array_merge( $responsive_variant_targets, $target_variants );
+			$represented_layout_nodes[] = $id;
+			$operations[]                = array(
+				'dimension'   => 'layout',
+				'strategy'    => 'provider_grid_span_submit',
+				'target_hash' => hash( 'sha256', $id ),
+			);
+		}
 		foreach ( $nodes as $node ) {
 			$id = is_array( $node ) && 'control' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
 			if ( '' === $id || 'none' !== ( $layout_by_node[ $id ]['display'] ?? null ) ) {
@@ -1220,6 +1286,7 @@ class Static_Site_Importer_Form_Seeder {
 			'operations'                 => $operations,
 			'represented_layout_nodes'   => array_values( array_unique( array_map( 'strval', $represented_layout_nodes ) ) ),
 			'represented_topology_nodes' => array_values( array_unique( array_map( 'strval', $represented_topology_nodes ) ) ),
+			'overlay_node_targets'        => $overlay_node_targets,
 			'responsive_variant_targets' => $responsive_variant_targets,
 			'native_visibility_targets'  => array_values( array_unique( array_map( 'strval', $native_visibility_targets ) ) ),
 			'form_classes'               => array_values( array_unique( $form_classes ) ),
