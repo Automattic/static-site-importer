@@ -289,8 +289,24 @@ namespace {
 	$assert( str_contains( $markup, 'wp:jetpack/field-checkbox' ), 'markup-field-checkbox' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-textarea' ), 'markup-field-textarea' );
 	$assert( str_contains( $markup, 'wp:button' ) && ! str_contains( $markup, 'wp:jetpack/button' ), 'markup-canonical-core-submit-button' );
-	$assert( 1 === substr_count( $markup, '<!-- wp:button ' ) && str_contains( $markup, '<button type="submit" class="wp-block-button__link wp-element-button" style="padding-top:11px;padding-bottom:11px">Send message</button>' ), 'source-submit-control-emits-one-canonical-button' );
-	$assert( str_contains( $markup, 'form-button-submit is-submit ssi-source-submit--source-submit ssi-provider-submit-presentation' ) && str_contains( $markup, '"padding":{"top":"11px","bottom":"11px"}' ), 'source-submit-control-presentation-projects-onto-core-button' );
+	$assert( 1 === substr_count( $markup, '<!-- wp:button ' ) && str_contains( $markup, '<button type="submit" class="wp-block-button__link wp-element-button">Send message</button>' ), 'source-submit-control-emits-one-canonical-button' );
+	$assert( str_contains( $markup, 'form-button-submit is-submit ssi-source-submit--source-submit ssi-provider-submit-presentation' ), 'source-submit-control-presentation-projects-onto-core-button' );
+	// The source stylesheet governs this button, so the block claims no style
+	// attribute it would then have to reproduce in saved markup. That agreement
+	// with core's save() output is what keeps imported forms clean in the editor.
+	$submit_attrs = array();
+	foreach ( parse_blocks( $markup ) as $parsed_form ) {
+		$collect = static function ( array $blocks, callable $collect ) use ( &$submit_attrs ): void {
+			foreach ( $blocks as $parsed ) {
+				if ( 'core/button' === ( $parsed['blockName'] ?? '' ) ) {
+					$submit_attrs[] = $parsed['attrs'] ?? array();
+				}
+				$collect( $parsed['innerBlocks'] ?? array(), $collect );
+			}
+		};
+		$collect( array( $parsed_form ), $collect );
+	}
+	$assert( 1 === count( $submit_attrs ) && ! array_key_exists( 'style', $submit_attrs[0] ), 'source-submit-block-claims-no-unrenderable-style-attribute', wp_json_encode( $submit_attrs ) );
 	$assert( str_contains( $markup, 'hello@example.com' ), 'markup-mailto-recipient' );
 	$assert( str_contains( $markup, '"options":["Sales","Support"]' ), 'markup-select-options' );
 	$assert( 1 === preg_match( '/<div class="wp-block-jetpack-contact-form form contact ssi-form-[a-f0-9]{12}">/', $markup ), 'markup-contact-form-wrapper-and-source-classes' );

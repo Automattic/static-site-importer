@@ -115,12 +115,20 @@ test( 'provider-constrained topology emits nested fields and an editor-valid cor
 	assert.equal( coreButtons.length, 1 );
 	assert.equal( validateBlock( coreButtons[ 0 ] )[ 0 ], true );
 	assert.match( serialize( coreButtons ), /form-button-submit is-submit/ );
-	const styledBlocks = parse( styledMarkup );
+	// A submit whose presentation comes from the source stylesheet must also be
+	// editor-valid: the block claims no style attribute, so its saved markup
+	// matches what core's save() produces.
 	const styledButtons = [];
-	collectCoreButtons( styledBlocks );
-	for ( const block of coreButtons.slice( 1 ) ) styledButtons.push( block );
+	const collectStyled = ( generatedBlocks ) => {
+		for ( const block of generatedBlocks ) {
+			if ( block.name === 'core/button' ) styledButtons.push( block );
+			collectStyled( block.innerBlocks );
+		}
+	};
+	collectStyled( parse( styledMarkup ) );
 	assert.equal( styledButtons.length, 1 );
 	assert.equal( validateBlock( styledButtons[ 0 ] )[ 0 ], true );
+	assert.equal( styledButtons[ 0 ].attributes.style, undefined );
 	const caraBlocks = parse( caraMarkup );
 	assert.equal( caraBlocks[ 0 ].name, 'core/heading' );
 	assert.equal( caraBlocks[ 1 ].name, 'core/paragraph' );
