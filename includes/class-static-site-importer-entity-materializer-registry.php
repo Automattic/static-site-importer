@@ -615,8 +615,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$reports[ $id ] = $report;
 			$counts         = is_array( $report['counts'] ?? null ) ? $report['counts'] : array();
 			$expected       = count( is_array( $prepared['manifest']['products'] ?? null ) ? $prepared['manifest']['products'] : ( $prepared['manifest']['forms'] ?? array() ) );
-			$completed_keys = self::lifecycle_entity_has_bindings( $prepared ) ? array( 'created', 'updated', 'mapped' ) : array( 'created', 'updated', 'mapped', 'skipped' );
-			$completed      = array_sum( array_map( 'intval', array_intersect_key( $counts, array_flip( $completed_keys ) ) ) );
+			// A provider that declines one entity reports it as skipped. The compiled
+			// source fallback stays at that binding anchor, so the declaration is
+			// accounted for whether or not the entity carries a page binding.
+			$completed = array_sum( array_map( 'intval', array_intersect_key( $counts, array_flip( array( 'created', 'updated', 'mapped', 'skipped' ) ) ) ) );
 			if ( in_array( $report['status'] ?? '', array( 'failed', 'error' ), true ) || ! empty( $counts['failed'] ) || ! empty( $counts['error'] ) || ( ( ! empty( $prepared['required'] ) || self::lifecycle_entity_has_bindings( $prepared ) ) && $completed < $expected ) ) {
 				$code    = isset( $report['code'] ) && is_scalar( $report['code'] ) ? (string) $report['code'] : 'static_site_importer_entity_materialization_failed';
 				$message = isset( $report['error'] ) && is_scalar( $report['error'] ) ? (string) $report['error'] : ( isset( $report['reason'] ) && is_scalar( $report['reason'] ) && '' !== (string) $report['reason'] ? (string) $report['reason'] : 'Runtime entity materialization failed for declaration: ' . $id . '.' );
@@ -633,6 +635,21 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'reports' => $reports,
 			'error'   => null,
 		);
+	}
+
+	/**
+	 * Report whether a provider declined to represent one entity.
+	 *
+	 * A declined row is a deliberate provider decision -- an unsupported control
+	 * topology, or a layout the provider cannot carry without losing fidelity --
+	 * not a materialization failure. The page keeps the compiled source markup at
+	 * that binding anchor, so the binding is dropped instead of failing the import.
+	 * A result row that is absent entirely is still unresolved and stays fatal.
+	 *
+	 * @param array<string,mixed> $result Provider result row for one entity.
+	 */
+	public static function entity_result_declined( array $result ): bool {
+		return 'skipped' === ( $result['status'] ?? '' );
 	}
 
 	/** A canonical page binding makes its provider entity part of materialization. */
@@ -670,8 +687,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				if ( ! is_array( $entity ) || empty( $entity['bindings'] ) ) {
 					continue;
 				}
-				$key         = 'products' === $entity_key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
-				$replacement = self::binding_block_markup( $prepared['adapter'], $entity, $results[ $key ] ?? array() );
+				$key    = 'products' === $entity_key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
+				$result = is_array( $results[ $key ] ?? null ) ? $results[ $key ] : array();
+				if ( self::entity_result_declined( $result ) ) {
+					continue;
+				}
+				$replacement = self::binding_block_markup( $prepared['adapter'], $entity, $result );
 				if ( '' === $replacement ) {
 					return new WP_Error(
 						'static_site_importer_runtime_binding_unresolved',
@@ -728,9 +749,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					continue;
 				}
 				$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
-				$render     = self::binding_classic_render( $prepared['adapter'], $entity, $results[ $entity_key ] ?? array() );
-				$source     = (string) ( $entity['source_path'] ?? '' );
-				$selectors  = array_filter( array( $entity['selector'] ?? '' ) );
+				$result     = is_array( $results[ $entity_key ] ?? null ) ? $results[ $entity_key ] : array();
+				if ( self::entity_result_declined( $result ) ) {
+					continue;
+				}
+				$render    = self::binding_classic_render( $prepared['adapter'], $entity, $result );
+				$source    = (string) ( $entity['source_path'] ?? '' );
+				$selectors = array_filter( array( $entity['selector'] ?? '' ) );
 				if ( empty( $render ) || '' === $source || empty( $selectors ) ) {
 					return new WP_Error( 'static_site_importer_classic_html_binding_unresolved', 'A required provider entity lacks adapter-owned server render output or a canonical HTML source selector.', array( 'declaration_id' => $declaration_id ) );
 				}
@@ -762,7 +787,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$overlays = array();
 		foreach ( $reports as $report ) {
 			foreach ( is_array( $report['forms'] ?? null ) ? $report['forms'] : array() as $form ) {
-				if ( is_array( $form['provider_layout_overlay_css'] ?? null ) && ! empty( $form['provider_layout_overlay_css'] ) ) {
+				// A declined form leaves no provider block in the page, so its overlay
+				// would target selectors that were never materialized.
+				if ( ! empty( $form['runtime_mapped'] ) && is_array( $form['provider_layout_overlay_css'] ?? null ) && ! empty( $form['provider_layout_overlay_css'] ) ) {
 					$overlays[] = $form['provider_layout_overlay_css'];
 				}
 			}
