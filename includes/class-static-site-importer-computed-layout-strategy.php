@@ -229,14 +229,6 @@ class Static_Site_Importer_Computed_Layout_Strategy {
 			if ( isset( $represented[ $node['id'] ] ) ) {
 				continue;
 			}
-			if ( 'fieldset' === ( $node['tag'] ?? '' ) && 'plain_group' !== ( $node['fieldset_semantics'] ?? '' ) ) {
-				$losses[] = array(
-					'dimension'   => 'semantic',
-					'reason_code' => 'unsupported_semantic_wrapper',
-					'node_hash'   => hash( 'sha256', $node['id'] ),
-				);
-				continue;
-			}
 			$source_tag = $node['tag'] ?? 'div';
 			if ( 'div' === $source_tag ) {
 				continue;

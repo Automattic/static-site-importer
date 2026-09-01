@@ -726,7 +726,9 @@ namespace {
 	$plain_root_fieldset['forms'][0]['control_topology']['nodes'][7]['parent'] = 'wrapper-0';
 	$plain_root_fieldset['forms'][0]['control_topology']['nodes'][7]['depth'] = 1;
 	$plain_root_fieldset['forms'][0]['control_topology']['nodes'][7]['order'] = 3;
-	$plain_root_fieldset['forms'][0]['layout_graph']['nodes'] = array();
+	$plain_root_fieldset['forms'][0]['layout_graph']['nodes'] = array(
+		$layout_node( 'wrapper-0', array(), 'fieldset' ),
+	);
 	$plain_root_fieldset_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $plain_root_fieldset );
 	$plain_root_fieldset_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $plain_root_fieldset_validation['forms'] ?? array() ) );
 	$assert( empty( $plain_root_fieldset_validation['errors'] ) && 'mapped' === ( $plain_root_fieldset_seed['forms'][0]['status'] ?? '' ) && empty( $plain_root_fieldset_seed['forms'][0]['form_receipt_unaccepted_losses'] ?? array() ), 'provider-form-carries-plain-root-fieldset-grouping', wp_json_encode( array( 'validation' => $plain_root_fieldset_validation, 'seed' => $plain_root_fieldset_seed ) ) );
@@ -734,7 +736,7 @@ namespace {
 	$labelled_root_fieldset['forms'][0]['control_topology']['nodes'][0]['fieldset_semantics'] = 'labelled_group';
 	$labelled_root_fieldset_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $labelled_root_fieldset );
 	$labelled_root_fieldset_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $labelled_root_fieldset_validation['forms'] ?? array() ) );
-	$assert( 'skipped' === ( $labelled_root_fieldset_seed['forms'][0]['status'] ?? '' ) && 'unsupported_semantic_wrapper' === ( $labelled_root_fieldset_seed['forms'][0]['form_receipt_unaccepted_losses'][0]['reason_code'] ?? '' ), 'provider-form-rejects-labelled-root-fieldset-loss', wp_json_encode( array( 'validation' => $labelled_root_fieldset_validation, 'seed' => $labelled_root_fieldset_seed ) ) );
+	$assert( 'skipped' === ( $labelled_root_fieldset_seed['forms'][0]['status'] ?? '' ) && false === ( $labelled_root_fieldset_seed['forms'][0]['runtime_mapped'] ?? true ) && 'unsupported_semantic_wrapper' === ( $labelled_root_fieldset_seed['forms'][0]['form_receipt_unaccepted_losses'][0]['reason_code'] ?? '' ) && ! in_array( 'provider_radio_fieldset_equivalent', array_column( $labelled_root_fieldset_seed['forms'][0]['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'provider-form-declines-labelled-root-fieldset-without-semantic-equivalence', wp_json_encode( array( 'validation' => $labelled_root_fieldset_validation, 'seed' => $labelled_root_fieldset_seed ) ) );
 	$labelled_radio_group = array(
 		'forms' => array(
 			array(
