@@ -716,6 +716,11 @@ namespace {
 	$semantic_markup = (string) ( $semantic_seed['forms'][0]['block_markup'] ?? '' );
 	$semantic_losses = $semantic_seed['forms'][0]['computed_layout_receipt']['losses'] ?? array();
 	$assert( 2 === count( $semantic_losses ) && 'semantic' === ( $semantic_losses[0]['dimension'] ?? '' ) && ! str_contains( $semantic_markup, '<fieldset' ) && ! str_contains( $semantic_markup, '<label' ), 'semantic-wrapper-losses-cover-topology-wrappers-without-layout-graph-nodes' );
+	$neutral_span = $topology_form;
+	$neutral_span['forms'][0]['control_topology']['nodes'][1]['tag'] = 'span';
+	$neutral_span_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $neutral_span );
+	$neutral_span_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $neutral_span_validation['forms'] ?? array() ) );
+	$assert( empty( $neutral_span_validation['errors'] ) && 'mapped' === ( $neutral_span_seed['forms'][0]['status'] ?? '' ) && ! in_array( 'unsupported_semantic_wrapper', array_column( $neutral_span_seed['forms'][0]['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ), true ), 'neutral-span-wrapper-flattens-without-semantic-loss', wp_json_encode( array( 'validation' => $neutral_span_validation, 'seed' => $neutral_span_seed ) ) );
 	$plain_root_fieldset = $topology_form;
 	$plain_root_fieldset['forms'][0]['control_topology']['nodes'][0]['tag'] = 'fieldset';
 	$plain_root_fieldset['forms'][0]['control_topology']['nodes'][0]['fieldset_semantics'] = 'plain_group';

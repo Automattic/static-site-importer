@@ -230,7 +230,7 @@ class Static_Site_Importer_Computed_Layout_Strategy {
 				continue;
 			}
 			$source_tag = $node['tag'] ?? 'div';
-			if ( 'div' === $source_tag ) {
+			if ( in_array( $source_tag, array( 'div', 'span' ), true ) ) {
 				continue;
 			}
 			$block = $serialized[ $node['id'] ] ?? null;
