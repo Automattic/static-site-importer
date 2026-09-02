@@ -1085,8 +1085,8 @@ $global = array(
 );
 $flow = array_merge( $global, array( 'align' => true ) );
 $svg_global = array(
-	'aria-hidden' => true, 'aria-label' => true, 'aria-labelledby' => true, 'class' => true, 'id' => true,
-	'role' => true, 'title' => true,
+	'aria-hidden' => true, 'aria-label' => true, 'aria-labelledby' => true, 'class' => true, 'data-*' => true,
+	'id' => true, 'role' => true, 'style' => true, 'title' => true,
 );
 // KSES supports data-* but not aria-* wildcards. Admit syntactically valid
 // producer attributes explicitly so SVG accessibility metadata survives.

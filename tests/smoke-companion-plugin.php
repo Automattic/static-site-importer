@@ -570,6 +570,11 @@ if ( is_array( $layout_descriptor ) ) {
 	$ordinary_on_text_output = strtolower( (string) ob_get_clean() );
 	$assert( str_contains( $ordinary_on_text_output, 'report in one section with online notes only once.' ), 'layout-renderer-preserves-ordinary-on-text', $ordinary_on_text_output );
 	$assert( ! str_contains( $ordinary_on_text_output, 'onclick' ) && ! str_contains( $ordinary_on_text_output, 'onmouseover' ) && ! str_contains( $ordinary_on_text_output, 'data-wp-' ), 'layout-renderer-still-removes-executable-attributes-from-tags', $ordinary_on_text_output );
+	$attributes = array( 'content' => '<svg data-dom-store style="display:none"><defs id="dom-store-defs"></defs></svg>' );
+	ob_start();
+	eval( '?>' . $layout_render );
+	$hidden_svg_output = (string) ob_get_clean();
+	$assert( str_contains( $hidden_svg_output, 'data-dom-store' ) && str_contains( $hidden_svg_output, 'style="display:none"' ), 'layout-renderer-preserves-safe-hidden-svg-carrier-attributes', $hidden_svg_output );
 
 	$busy_bears_contract = json_decode( (string) file_get_contents( __DIR__ . '/fixtures/busy-bears-responsive-layout-contract.json' ), true );
 	$assert( 'static-site-importer/frozen-responsive-layout-contract/v1' === ( $busy_bears_contract['schema'] ?? '' ) && 2 === count( $busy_bears_contract['pages'] ?? array() ), 'busy-bears-frozen-layout-contract-loads' );
