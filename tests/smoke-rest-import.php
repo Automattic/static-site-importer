@@ -651,9 +651,8 @@ if ( class_exists( 'ZipArchive' ) ) {
 	}
 	$assert( true === ( $fig_upload_response['success'] ?? null ), 'rest-fig-upload-succeeds' );
 	$fig_upload_input = end( $GLOBALS['ssi_url_ability_inputs'] );
-	$fig_upload_json  = wp_json_encode( $fig_upload_input );
-	$assert( str_contains( (string) $fig_upload_json, 'Synthetic FIG Upload' ), 'rest-fig-upload-sends-transformed-artifact-to-ability' );
-	$assert( ! str_contains( (string) $fig_upload_json, $fig_archive_base64 ), 'rest-fig-upload-does-not-forward-raw-fig-source' );
+	$assert( 'figma' === ( $fig_upload_input['source']['type'] ?? '' ), 'rest-fig-upload-uses-canonical-figma-source' );
+	$assert( $fig_archive_base64 === ( $fig_upload_input['source']['figma_file']['content_base64'] ?? '' ), 'rest-fig-upload-forwards-raw-source-to-canonical-ability' );
 
 	$fig_multipart_response = static_site_importer_rest_import_figma_file(
 		new WP_REST_Request(
@@ -727,9 +726,8 @@ $assert( 'figma-to-wordpress/runner-response/v1' === ( $figma_response['schema']
 $assert( 'created' === ( $figma_response['status'] ?? '' ), 'figma-rest-response-created-status' );
 $assert( 'https://example.test/' === ( $figma_response['open_url'] ?? '' ), 'figma-rest-response-opens-current-site' );
 $figma_rest_input = end( $GLOBALS['ssi_url_ability_inputs'] );
-$assert( 'Fisiostetic' === ( $figma_rest_input['name'] ?? '' ), 'figma-import-name-derived-from-metadata' );
-$assert( 'Fisiostetic' === ( $figma_rest_input['site_title'] ?? '' ), 'figma-import-site-title-derived-from-metadata' );
-$assert( 'figma-to-wordpress' === ( $figma_rest_input['source_metadata']['source'] ?? '' ), 'figma-artifact-provenance-source' );
+$assert( 'figma' === ( $figma_rest_input['source']['type'] ?? '' ), 'figma-rest-routes-through-canonical-source-type' );
+$assert( isset( $figma_rest_input['artifact_bundle'] ), 'figma-rest-forwards-runner-artifact-bundle' );
 
 $figma_diagnostics_input = array(
 	'schema'     => 'figma-to-wordpress/runner-request/v1',
@@ -780,7 +778,8 @@ $assert( 'figma-diagnostics' === ( $figma_diagnostics['production_import_input']
 
 Static_Site_Importer_Theme_Generator::$last_artifact = array();
 Static_Site_Importer_Theme_Generator::$last_args     = array();
-$figma_import_result = Static_Site_Importer_Figma_Import::import( $figma_diagnostics_input );
+$figma_diagnostics_input['source']['type'] = 'figma';
+$figma_import_result = Static_Site_Importer_Canonical_Import_Service::import( $figma_diagnostics_input );
 $assert( true === ( $figma_import_result['success'] ?? null ), 'figma-import-scenegraph-succeeds' );
 $assert( 'static-site-importer/figma-transform-report/v1' === ( $figma_import_result['figma_transform_report']['schema'] ?? '' ), 'figma-import-result-exposes-durable-transform-report' );
 $assert( isset( $figma_import_result['figma_transform_report']['summary']['page_coverage'] ), 'figma-import-result-exposes-transform-summary' );
