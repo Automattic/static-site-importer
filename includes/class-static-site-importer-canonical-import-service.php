@@ -112,7 +112,22 @@ class Static_Site_Importer_Canonical_Import_Service {
 		if ( is_wp_error( $runtime ) ) {
 			return self::error( (string) $runtime->get_error_code(), $runtime->get_error_message(), $runtime->get_error_data() );
 		}
-		$artifact = Static_Site_Importer_Portable_Source_Manifest::project( $runtime['artifact'] );
+		$runtime_artifact = $runtime['artifact'];
+		$source_path      = is_string( $input['source_metadata']['source_path'] ?? null ) ? trim( $input['source_metadata']['source_path'] ) : '';
+		$source_parts     = '' !== $source_path ? ( function_exists( 'wp_parse_url' ) ? wp_parse_url( $source_path ) : parse_url( $source_path ) ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Standalone import smoke tests run without WordPress URL helpers.
+		if (
+			! isset( $runtime_artifact['provenance']['source_url'] ) &&
+			is_array( $source_parts ) &&
+			in_array( strtolower( (string) ( $source_parts['scheme'] ?? '' ) ), array( 'http', 'https' ), true ) &&
+			'' !== (string) ( $source_parts['host'] ?? '' ) &&
+			! isset( $source_parts['user'], $source_parts['pass'] )
+		) {
+			$runtime_artifact['provenance'] = array_merge(
+				is_array( $runtime_artifact['provenance'] ?? null ) ? $runtime_artifact['provenance'] : array(),
+				array( 'source_url' => $source_path )
+			);
+		}
+		$artifact = Static_Site_Importer_Portable_Source_Manifest::project( $runtime_artifact );
 		if ( is_wp_error( $artifact ) ) {
 			return self::error( (string) $artifact->get_error_code(), $artifact->get_error_message(), $artifact->get_error_data() );
 		}
