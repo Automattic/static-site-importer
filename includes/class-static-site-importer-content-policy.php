@@ -65,10 +65,17 @@ final class Static_Site_Importer_Content_Policy {
 			if ( ! is_array( $file ) || ! isset( $file['path'] ) || ! is_scalar( $file['path'] ) ) {
 				return new WP_Error( 'static_site_importer_artifact_file_invalid', 'Website artifacts must declare a path for every file.' );
 			}
-			$path = (string) $file['path'];
+			$path   = (string) $file['path'];
 			$format = self::source_format( $path );
 			if ( null !== $format && ! Static_Site_Importer_Runtime_Capabilities::supports_source_format( $format ) ) {
-				return new WP_Error( 'static_site_importer_source_format_unsupported', sprintf( 'The current runtime does not include the %s conversion capability required by %s.', $format, $path ), array( 'path' => $path, 'format' => $format ) );
+				return new WP_Error(
+					'static_site_importer_source_format_unsupported',
+					sprintf( 'The current runtime does not include the %s conversion capability required by %s.', $format, $path ),
+					array(
+						'path'   => $path,
+						'format' => $format,
+					)
+				);
 			}
 			if ( ! self::is_static_path( $path ) ) {
 				return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
