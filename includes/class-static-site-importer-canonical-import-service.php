@@ -162,7 +162,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 		if ( isset( $payload_reader ) ) {
 			$args['_static_site_importer_payload_reader'] = $payload_reader;
 		}
-		if ( self::direct_artifact_continuation_available() && in_array( $type, array( 'html', 'files', 'zip', 'figma' ), true ) && 'resume' !== $args['runtime_lifecycle_phase'] && self::artifact_html_page_count( $artifact ) > 1 ) {
+		if ( self::direct_artifact_continuation_available() && in_array( $type, array( 'html', 'files', 'zip', 'figma' ), true ) && 'resume' !== $args['runtime_lifecycle_phase'] && ( self::artifact_html_page_count( $artifact ) > 1 || self::artifact_has_payload_references( $artifact ) ) ) {
 			if ( 'apply' === $operation && '' === $args['runtime_lifecycle_phase'] ) {
 				$args['runtime_lifecycle_phase']         = 'prepare';
 				$args['runtime_lifecycle_invocation_id'] = wp_generate_uuid4();
@@ -206,6 +206,16 @@ class Static_Site_Importer_Canonical_Import_Service {
 			}
 		}
 		return $count;
+	}
+
+	/** @param array<string,mixed> $artifact */
+	private static function artifact_has_payload_references( array $artifact ): bool {
+		foreach ( is_array( $artifact['files'] ?? null ) ? $artifact['files'] : array() as $file ) {
+			if ( is_array( $file ) && is_array( $file['payload_reference'] ?? null ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static function direct_artifact_continuation_available(): bool {
