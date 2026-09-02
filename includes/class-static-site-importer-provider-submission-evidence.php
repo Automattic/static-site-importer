@@ -26,12 +26,12 @@ class Static_Site_Importer_Provider_Submission_Evidence {
 	 * @return array<int,array<string,mixed>>
 	 */
 	public static function verify_runtime( array $config ): array {
-		$fixture_id    = (string) ( $config['fixture_id'] ?? '' );
-		$requirements  = isset( $config['requirements'] ) && is_array( $config['requirements'] ) ? $config['requirements'] : array();
-		$receipt       = self::load_receipt( (string) ( $config['sidecar_path'] ?? '' ) );
-		$plan_hash     = self::plan_hash( $receipt );
-		$receipt_hash  = self::canonical_sha256( $receipt );
-		$envelopes     = array();
+		$fixture_id   = (string) ( $config['fixture_id'] ?? '' );
+		$requirements = isset( $config['requirements'] ) && is_array( $config['requirements'] ) ? $config['requirements'] : array();
+		$receipt      = self::load_receipt( (string) ( $config['sidecar_path'] ?? '' ) );
+		$plan_hash    = self::plan_hash( $receipt );
+		$receipt_hash = self::canonical_sha256( $receipt );
+		$envelopes    = array();
 		foreach ( $requirements as $requirement ) {
 			if ( ! is_array( $requirement ) || true !== ( $requirement['required'] ?? false ) ) {
 				continue;
@@ -53,11 +53,11 @@ class Static_Site_Importer_Provider_Submission_Evidence {
 	 * @return array<string,mixed>
 	 */
 	public static function verify_requirement( array $requirement, string $fixture_id, string $plan_hash, string $receipt_hash, string $artifact_path ): array {
-		$form = array(
-			'form_id'     => (string) ( $requirement['form_identity'] ?? 'form' ),
-			'provider'    => (string) ( $requirement['provider_id'] ?? 'jetpack' ),
-			'page_route'  => (string) ( $requirement['page_route'] ?? '' ),
-			'controls'    => array(
+		$form    = array(
+			'form_id'    => (string) ( $requirement['form_identity'] ?? 'form' ),
+			'provider'   => (string) ( $requirement['provider_id'] ?? 'jetpack' ),
+			'page_route' => (string) ( $requirement['page_route'] ?? '' ),
+			'controls'   => array(
 				array(
 					'type'     => 'email',
 					'name'     => 'email',
@@ -67,14 +67,14 @@ class Static_Site_Importer_Provider_Submission_Evidence {
 		);
 		$adapter = self::adapter( $form );
 		self::begin_mail_intercept();
-		$required = self::submit( $adapter, $form, 'required_field_failure' );
-		$valid    = self::submit( $adapter, $form, 'valid' );
-		$failure  = self::submit( $adapter, $form, 'provider_failure' );
-		$duplicate = self::submit( $adapter, $form, 'duplicate' );
-		$mail_sent = self::end_mail_intercept();
+		$required         = self::submit( $adapter, $form, 'required_field_failure' );
+		$valid            = self::submit( $adapter, $form, 'valid' );
+		$failure          = self::submit( $adapter, $form, 'provider_failure' );
+		$duplicate        = self::submit( $adapter, $form, 'duplicate' );
+		$mail_sent        = self::end_mail_intercept();
 		$source_contacted = self::source_endpoint_contacted( $form ) || $mail_sent;
-		$receipt_id = (string) ( $valid['receipt_id'] ?? '' );
-		$receipt_sha = (string) ( $valid['receipt_sha256'] ?? '' );
+		$receipt_id       = (string) ( $valid['receipt_id'] ?? '' );
+		$receipt_sha      = (string) ( $valid['receipt_sha256'] ?? '' );
 		if ( '' !== $receipt_id && is_callable( $adapter['cleanup'] ?? null ) ) {
 			call_user_func( $adapter['cleanup'], $receipt_id );
 		}
@@ -82,15 +82,15 @@ class Static_Site_Importer_Provider_Submission_Evidence {
 			'schema'                         => self::SCHEMA,
 			'fixture_id'                     => $fixture_id,
 			'page'                           => array(
-				'route'                => (string) ( $requirement['page_route'] ?? '' ),
-				'wordpress_entity_id'  => self::page_entity_id( (string) ( $requirement['page_route'] ?? '' ) ),
+				'route'               => (string) ( $requirement['page_route'] ?? '' ),
+				'wordpress_entity_id' => self::page_entity_id( (string) ( $requirement['page_route'] ?? '' ) ),
 			),
 			'form_identity'                  => (string) ( $requirement['form_identity'] ?? '' ),
 			'provider'                       => array(
-				'id'                   => (string) ( $requirement['provider_id'] ?? '' ),
-				'version'              => self::provider_version( (string) ( $requirement['provider_id'] ?? '' ) ),
-				'ownership'            => 'wordpress',
-				'submission_endpoint'  => array(
+				'id'                  => (string) ( $requirement['provider_id'] ?? '' ),
+				'version'             => self::provider_version( (string) ( $requirement['provider_id'] ?? '' ) ),
+				'ownership'           => 'wordpress',
+				'submission_endpoint' => array(
 					'scope'                     => 'wordpress-local',
 					'source_endpoint_contacted' => $source_contacted,
 				),
@@ -121,7 +121,7 @@ class Static_Site_Importer_Provider_Submission_Evidence {
 					'local_receipt_count' => (int) ( $failure['local_receipt_count'] ?? 0 ),
 				),
 				'duplicate_submit'       => array(
-					'status'              => self::behavior_status( empty( $duplicate['ok'] ) && 'success' === ( $duplicate['ui'] ?? '' ) && 1 === (int) ( $duplicate['local_receipt_count'] ?? 0 ) && $receipt_sha === (string) ( $duplicate['receipt_sha256'] ?? '' ) ),
+					'status'              => self::behavior_status( empty( $duplicate['ok'] ) && 'success' === ( $duplicate['ui'] ?? '' ) && 1 === (int) ( $duplicate['local_receipt_count'] ?? 0 ) && (string) ( $duplicate['receipt_sha256'] ?? '' ) === $receipt_sha ),
 					'ui'                  => (string) ( $duplicate['ui'] ?? '' ),
 					'local_receipt_count' => (int) ( $duplicate['local_receipt_count'] ?? 0 ),
 					'receipt_sha256'      => (string) ( $duplicate['receipt_sha256'] ?? '' ),
@@ -174,12 +174,12 @@ class Static_Site_Importer_Provider_Submission_Evidence {
 		}
 		$previous = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Evidence posts into the provider runtime.
 		$_POST    = array(
-			'action'           => 'grunion-contact-form',
-			'contact-form-id'  => (string) ( $form['form_id'] ?? 'ssi-evidence' ),
-			'email'            => 'required_field_failure' === $mode ? '' : 'owner@example.com',
+			'action'          => 'grunion-contact-form',
+			'contact-form-id' => (string) ( $form['form_id'] ?? 'ssi-evidence' ),
+			'email'           => 'required_field_failure' === $mode ? '' : 'owner@example.com',
 		);
 		try {
-			$instance = new $class( array(), '' );
+			$instance = new $class();
 			$ui       = $instance->process_submission();
 		} catch ( Throwable $error ) {
 			$_POST = $previous;
@@ -260,7 +260,7 @@ class Static_Site_Importer_Provider_Submission_Evidence {
 		}
 		if ( function_exists( 'get_page_by_path' ) && '' !== $route ) {
 			$page = get_page_by_path( trim( $route, '/' ) );
-			if ( is_object( $page ) && isset( $page->ID ) ) {
+			if ( $page instanceof WP_Post ) {
 				return (string) $page->ID;
 			}
 		}
@@ -285,7 +285,7 @@ class Static_Site_Importer_Provider_Submission_Evidence {
 			return array();
 		}
 		$receipt = isset( $payload['receipt'] ) && is_array( $payload['receipt'] ) ? $payload['receipt'] : $payload;
-		return is_array( $receipt ) ? $receipt : array();
+		return $receipt;
 	}
 
 	/**
