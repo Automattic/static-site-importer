@@ -112,6 +112,14 @@ $assert( realpath( $bundle_source ) === static_site_importer_cli_request_bundle_
 $resolved_bundle = apply_filters( 'static_site_importer_resolve_source_reference', null, 'request-bundle:source', 'files' );
 $assert( 'index.html' === ( $resolved_bundle['source']['files'][0]['path'] ?? '' ), 'request-bundle-registers-opaque-resolver' );
 $assert( '<h1>Bundle</h1>' === $resolved_bundle['payload_reader']->read( $resolved_bundle['source']['files'][0]['payload_reference'] ), 'request-bundle-reader-returns-source-bytes' );
+$figma_source = $bundle_dir . '/design.fig';
+file_put_contents( $figma_source, 'figma bytes' );
+$figma_bundle_input = static_site_importer_cli_prepare_request_bundle(
+	array( 'source' => array( 'type' => 'figma', 'ref' => 'request-bundle:design.fig' ) ),
+	$bundle_request
+);
+$resolved_figma = apply_filters( 'static_site_importer_resolve_source_reference', null, 'request-bundle:design.fig', 'figma' );
+$assert( is_array( $figma_bundle_input ) && realpath( $figma_source ) === ( $resolved_figma['source']['figma_file']['staged_path'] ?? '' ), 'request-bundle-registers-figma-source' );
 $bundle_step = static_site_importer_cli_write_step_request( $bundle_input );
 $assert( is_string( $bundle_step ) && $bundle_real_dir === dirname( $bundle_step ), 'request-bundle-keeps-fresh-runtime-adjacent' );
 if ( is_string( $bundle_step ) ) {
@@ -126,6 +134,7 @@ symlink( $bundle_source, $bundle_link );
 $linked_source = static_site_importer_cli_request_bundle_path( $bundle_request, 'request-bundle:linked' );
 $assert( is_wp_error( $linked_source ), 'request-bundle-rejects-symlink' );
 unlink( $bundle_link );
+unlink( $figma_source );
 unlink( $bundle_source . '/index.html' );
 rmdir( $bundle_source );
 unlink( $bundle_request );

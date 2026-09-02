@@ -150,35 +150,46 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 			'static-site-importer/import',
 			array(
 				'label'               => __( 'Import Static Site', 'static-site-importer' ),
-				'description'         => __( 'Plan or apply pasted HTML, website files, a ZIP archive, or a public URL through one canonical SSI import contract with intentional block or classic materialization.', 'static-site-importer' ),
+				'description'         => __( 'Plan or apply pasted HTML, website files, a ZIP archive, a public URL, or a Figma design through one canonical SSI import contract with intentional block or classic materialization.', 'static-site-importer' ),
 				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
 				'input_schema'        => array(
 					'type'       => 'object',
 					'properties' => array_merge(
 						array(
-							'operation' => array(
+							'operation'         => array(
 								'type' => 'string',
 								'enum' => array( 'plan', 'apply' ),
 							),
-							'plan'      => array( 'type' => 'object' ),
-							'source'    => array(
+							'plan'              => array( 'type' => 'object' ),
+							'artifact_bundle'   => array( 'type' => 'object' ),
+							'figma'             => array( 'type' => 'object' ),
+							'scenegraph'        => array( 'type' => 'object' ),
+							'goal'              => array( 'type' => 'string' ),
+							'transform_options' => array( 'type' => 'object' ),
+							'validation'        => array( 'type' => 'object' ),
+							'frame_id'          => array( 'type' => 'string' ),
+							'source'            => array(
 								'type'       => 'object',
 								'properties' => array(
-									'type'       => array(
+									'type'            => array(
 										'type' => 'string',
-										'enum' => array( 'html', 'files', 'zip', 'url' ),
+										'enum' => array( 'html', 'files', 'zip', 'url', 'figma' ),
 									),
-									'html'       => array( 'type' => 'string' ),
-									'files'      => array(
+									'html'            => array( 'type' => 'string' ),
+									'files'           => array(
 										'type'  => 'array',
 										'items' => array( 'type' => 'object' ),
 									),
-									'zip'        => array( 'type' => 'object' ),
-									'url'        => array( 'type' => 'string' ),
-									'entrypoint' => array( 'type' => 'string' ),
-									'metadata'   => array( 'type' => 'object' ),
-									'import_id'  => array( 'type' => 'string' ),
-									'ref'        => array( 'type' => 'string' ),
+									'zip'             => array( 'type' => 'object' ),
+									'url'             => array( 'type' => 'string' ),
+									'figma_file'      => array( 'type' => 'object' ),
+									'artifact_bundle' => array( 'type' => 'object' ),
+									'figma'           => array( 'type' => 'object' ),
+									'scenegraph'      => array( 'type' => 'object' ),
+									'entrypoint'      => array( 'type' => 'string' ),
+									'metadata'        => array( 'type' => 'object' ),
+									'import_id'       => array( 'type' => 'string' ),
+									'ref'             => array( 'type' => 'string' ),
 								),
 								'required'   => array( 'type' ),
 							),
@@ -189,35 +200,6 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 				'output_schema'       => array( 'type' => 'object' ),
 				'execute_callback'    => 'static_site_importer_ability_import',
 				'permission_callback' => 'static_site_importer_ability_import_permission_callback',
-				'meta'                => array( 'show_in_rest' => true ),
-			)
-		);
-
-		static_site_importer_register_ability_once(
-			'static-site-importer/import-figma',
-			array(
-				'label'               => __( 'Import Figma Design', 'static-site-importer' ),
-				'description'         => __( 'Convert a Figma runner request or scenegraph into a website artifact and import it as a WordPress block theme.', 'static-site-importer' ),
-				'category'            => STATIC_SITE_IMPORTER_ABILITY_CATEGORY,
-				'input_schema'        => array(
-					'type'       => 'object',
-					'properties' => array_merge(
-						array(
-							'artifact_bundle'   => array( 'type' => 'object' ),
-							'figma'             => array( 'type' => 'object' ),
-							'scenegraph'        => array( 'type' => 'object' ),
-							'source'            => array( 'type' => 'object' ),
-							'goal'              => array( 'type' => 'string' ),
-							'transform_options' => array( 'type' => 'object' ),
-							'validation'        => array( 'type' => 'object' ),
-							'frame_id'          => array( 'type' => 'string' ),
-						),
-						$import_properties
-					),
-				),
-				'output_schema'       => array( 'type' => 'object' ),
-				'execute_callback'    => 'static_site_importer_ability_import_figma',
-				'permission_callback' => 'static_site_importer_ability_permission_callback',
 				'meta'                => array( 'show_in_rest' => true ),
 			)
 		);
@@ -367,19 +349,6 @@ if ( ! function_exists( 'static_site_importer_ability_validate_artifact' ) ) {
 		);
 	}
 }
-
-if ( ! function_exists( 'static_site_importer_ability_import_figma' ) ) {
-	/**
-	 * Ability callback for Figma imports.
-	 *
-	 * @param array<string, mixed> $input Ability input.
-	 * @return array<string, mixed>
-	 */
-	function static_site_importer_ability_import_figma( array $input ): array {
-		return Static_Site_Importer_Figma_Import::import( $input );
-	}
-}
-
 
 if ( ! function_exists( 'static_site_importer_ability_export_theme' ) ) {
 	/**

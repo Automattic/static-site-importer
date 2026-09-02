@@ -22,6 +22,8 @@ function did_action() {
 function add_action() {}
 function current_user_can( $capability ) {
 	return ! empty( $GLOBALS['ssi_can'][ $capability ] ); }
+function sanitize_text_field( $value ) {
+	return (string) $value; }
 function apply_filters( $hook, $value, ...$args ) {
 	return isset( $GLOBALS['ssi_filters'][ $hook ] ) ? $GLOBALS['ssi_filters'][ $hook ]( $value, ...$args ) : $value; }
 class WP_Error {
@@ -215,6 +217,30 @@ $files_plan = static_site_importer_ability_import(
 );
 if ( empty( $files_plan['success'] ) || $files !== ( $GLOBALS['ssi_runtime_sources'][2]['files'] ?? null ) ) {
 	throw new RuntimeException( 'file sources must use the canonical source normalizer' ); }
+$figma_plan = static_site_importer_ability_import(
+	array(
+		'operation'       => 'plan',
+		'artifact_bundle' => array(
+			'root'       => 'website',
+			'entrypoint' => 'website/index.html',
+			'files'      => array( array( 'path' => 'website/index.html', 'content' => '<h1>Figma</h1>' ) ),
+		),
+		'source'          => array( 'type' => 'figma' ),
+	)
+);
+if ( empty( $figma_plan['success'] ) || 'figma' !== ( $figma_plan['source']['type'] ?? '' ) || 'website/index.html' !== ( Static_Site_Importer_Theme_Generator::$last_artifact['entrypoint'] ?? '' ) ) {
+	throw new RuntimeException( 'Figma sources must normalize and plan through the canonical import service' ); }
+$rejected_staged_figma = static_site_importer_ability_import(
+	array(
+		'operation' => 'plan',
+		'source'    => array(
+			'type'       => 'figma',
+			'figma_file' => array( 'name' => 'design.fig', 'staged_path' => '/tmp/caller-path.fig' ),
+		),
+	)
+);
+if ( 'static_site_importer_staged_figma_forbidden' !== ( $rejected_staged_figma['error']['code'] ?? '' ) ) {
+	throw new RuntimeException( 'direct staged Figma paths must be rejected before source normalization' ); }
 $portable_html = '<h1>Portable</h1>';
 $portable_css  = 'h1{color:green}';
 $portable_manifest = json_encode(
